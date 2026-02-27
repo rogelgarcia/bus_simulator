@@ -676,6 +676,9 @@ export class BuildingFabrication2View {
 
         this._hideFaceMarkEnabled = false;
         this._showDummyEnabled = false;
+        this._renderSlabEnabled = false;
+        this._debugDisableSuspect1Enabled = false;
+        this._debugDisableSuspect4Enabled = false;
         this._rulerEnabled = false;
         this._layoutAdjustEnabled = false;
         this._rulerPointA = null;
@@ -737,9 +740,18 @@ export class BuildingFabrication2View {
         this._pointerInViewport = false;
         this._setHideFaceMarkEnabled(false);
         this._setShowDummyEnabled(false);
+        this._setRenderSlabEnabled(false);
+        this._setDebugDisableSuspect1Enabled(false);
+        this._setDebugDisableSuspect4Enabled(false);
         this._setRulerEnabled(false);
         this._setLayoutAdjustEnabled(false);
-        this.ui.setViewToggles({ hideFaceMarkEnabled: false, showDummyEnabled: false });
+        this.ui.setViewToggles({
+            hideFaceMarkEnabled: false,
+            showDummyEnabled: false,
+            renderSlabEnabled: false,
+            debugDisableSuspect1Enabled: false,
+            debugDisableSuspect4Enabled: false
+        });
         this.ui.setRulerEnabled(false);
         this.ui.setLayoutAdjustEnabled(false);
         this.ui.setRulerLabel({ visible: false });
@@ -764,6 +776,9 @@ export class BuildingFabrication2View {
         this.ui.onViewModeChange = (mode) => this._applyViewMode(mode);
         this.ui.onHideFaceMarkChange = (enabled) => this._setHideFaceMarkEnabled(enabled);
         this.ui.onShowDummyChange = (enabled) => this._setShowDummyEnabled(enabled);
+        this.ui.onRenderSlabChange = (enabled) => this._setRenderSlabEnabled(enabled);
+        this.ui.onDebugDisableSuspect1Change = (enabled) => this._setDebugDisableSuspect1Enabled(enabled);
+        this.ui.onDebugDisableSuspect4Change = (enabled) => this._setDebugDisableSuspect4Enabled(enabled);
         this.ui.onRulerToggle = (enabled) => this._setRulerEnabled(enabled);
         this.ui.onAdjustLayoutToggle = (enabled) => this._setLayoutAdjustEnabled(enabled);
         this.ui.onSelectCatalogEntry = (configId) => this._loadConfigFromCatalog(configId);
@@ -848,6 +863,9 @@ export class BuildingFabrication2View {
         this._pointerInViewport = false;
         this._hideFaceMarkEnabled = false;
         this._showDummyEnabled = false;
+        this._renderSlabEnabled = false;
+        this._debugDisableSuspect1Enabled = false;
+        this._debugDisableSuspect4Enabled = false;
         this._rulerEnabled = false;
         this._layoutAdjustEnabled = false;
         this._rulerPointA = null;
@@ -861,6 +879,7 @@ export class BuildingFabrication2View {
         if (canvas) canvas.style.cursor = '';
         this.scene?.setFaceHighlightSuppressed?.(false);
         this.scene?.setShowDummy?.(false);
+        this.scene?.setRenderSlab?.(false);
         this.scene?.setRulerSegment?.(null, null);
         this.scene?.setLayoutEditState?.({ enabled: false, loop: null, hoverFaceId: null, hoverVertexIndex: null });
         this.scene?.clearHoveredBay?.();
@@ -880,6 +899,9 @@ export class BuildingFabrication2View {
         this.ui.onViewModeChange = null;
         this.ui.onHideFaceMarkChange = null;
         this.ui.onShowDummyChange = null;
+        this.ui.onRenderSlabChange = null;
+        this.ui.onDebugDisableSuspect1Change = null;
+        this.ui.onDebugDisableSuspect4Change = null;
         this.ui.onRulerToggle = null;
         this.ui.onAdjustLayoutToggle = null;
         this.ui.onSelectCatalogEntry = null;
@@ -2661,6 +2683,7 @@ export class BuildingFabrication2View {
             ...(layer?.interior && typeof layer.interior === 'object' ? layer.interior : {}),
             enabled: next
         };
+        this._syncUiState();
         this._requestRebuild({ preserveCamera: true });
     }
 
@@ -3603,6 +3626,28 @@ export class BuildingFabrication2View {
     _setShowDummyEnabled(enabled) {
         this._showDummyEnabled = !!enabled;
         this.scene?.setShowDummy?.(this._showDummyEnabled);
+    }
+
+    _setRenderSlabEnabled(enabled) {
+        const next = !!enabled;
+        if (next === this._renderSlabEnabled) return;
+        this._renderSlabEnabled = next;
+        this.scene?.setRenderSlab?.(next);
+    }
+
+    _setDebugDisableSuspect1Enabled(enabled) {
+        const next = !!enabled;
+        if (next === this._debugDisableSuspect1Enabled) return;
+        this._debugDisableSuspect1Enabled = next;
+        this.scene?.setDebugDisableSuspect1?.(next);
+    }
+
+    _setDebugDisableSuspect4Enabled(enabled) {
+        const next = !!enabled;
+        if (next === this._debugDisableSuspect4Enabled) return;
+        this._debugDisableSuspect4Enabled = next;
+        this.scene?.setDebugDisableSuspect4?.(next);
+        if (this._currentConfig) this._requestRebuild({ preserveCamera: true });
     }
 
     _setLayoutAdjustEnabled(enabled) {

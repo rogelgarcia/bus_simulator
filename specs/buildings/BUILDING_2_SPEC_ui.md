@@ -67,6 +67,10 @@ The view panel contains:
 - View toggles (switch-style widgets):
   - `Hide face mark in view` (default off, non-persistent): when enabled and the pointer is inside the viewport, suppress rendering of the face selection mark/line (selection state still updates).
   - `Show dummy` (default off, non-persistent): shows a reference ball (same mesh as the Meshes Debug tooling) positioned just outside the building’s **A/D corner** (world-space **min X / max Z** corner).
+  - `Render slab` (default off, non-persistent): renders a support slab under the current building footprint to visually close ground gaps.
+    - slab footprint is a rectangle expanded by `1m` on every side relative to the current building silhouette bounds,
+    - slab top aligns with the building base plane and slab thickness extends downward only,
+    - slab uses `Painted plaster wall` material (`pbr.plastered_wall_02`).
 
 ### 4.3 Right panel (phase-based)
 
@@ -177,6 +181,10 @@ Inside each `Floor layer` group, the UI order MUST be:
 1) `Layout` section:
    - `Number of floors` (slider + numeric input)
    - `Floor height` (slider + numeric input)
+   - `Interior` (`Off` / `On` grouped toggle, in this order):
+     - default is `Off`,
+     - toggle state must always reflect the current floor-layer runtime/model state,
+     - repeated toggles in the same session must be deterministic (no stuck/ghost active state).
 2) `Faces` section:
    - `A B C D` face buttons
    - a `link` button that opens a popup to select faces to link (master/slave) for this floor layer
@@ -343,7 +351,11 @@ The side-handle collapse/expand control remains available for manual layout cont
 ### 8.4 Material Configuration contents and scope
 
 The Material Configuration panel contains exactly two top-level flat sections (non-collapsible, no boxed details containers):
-1) `Base material` — base wall material selection + fundamental wall inputs (tint hue/saturation/value/intensity sliders, roughness, normal strength).
+1) `Base material` — base wall material selection + fundamental wall inputs:
+   - shared tint picker (hue wheel + SV triangle workflow),
+   - explicit tint `brightness` and `intensity` controls inside the picker,
+   - live tint thumbnail/hex preview,
+   - wall roughness and normal strength sliders.
 2) `Texture tiling` — UV scale/offset/rotation controls and “override tile meters” behavior.
 
 Material configuration is scoped per **floor-layer face**:

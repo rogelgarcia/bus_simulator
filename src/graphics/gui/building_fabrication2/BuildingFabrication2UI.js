@@ -2,6 +2,11 @@
 // Builds the HUD controls for Building Fabrication 2.
 
 import { getBeltCourseColorOptions } from '../../../app/buildings/BeltCourseColor.js';
+import {
+    WALL_BASE_TINT_STATE_DEFAULT,
+    applyWallBaseTintStateToWallBase,
+    resolveWallBaseTintStateFromWallBase
+} from '../../../app/buildings/WallBaseTintModel.js';
 import { resolveBuildingStylePbrMaterialId } from '../../content3d/catalogs/BuildingStyleCatalog.js';
 import { getPbrMaterialClassSectionsForBuildings } from '../../assets3d/materials/PbrMaterialCatalog.js';
 import { createTextureTilingMiniController } from '../building_fabrication/mini_controllers/TextureTilingMiniController.js';
@@ -10,6 +15,7 @@ import { applyMaterialSymbolToButton, createMaterialSymbolIcon } from '../shared
 import { MaterialPickerPopupController } from '../shared/material_picker/MaterialPickerPopupController.js';
 import { createMaterialPickerRowController } from '../shared/material_picker/MaterialPickerRowController.js';
 import { setMaterialThumbToColor, setMaterialThumbToTexture } from '../shared/material_picker/materialThumb.js';
+import { SharedHsvbTintPicker } from '../shared/tint_picker/SharedHsvbTintPicker.js';
 
 const PAGE_SIZE = 6;
 const FACE_IDS = Object.freeze(['A', 'B', 'C', 'D']);
@@ -152,115 +158,6 @@ function clampInt(value, min, max) {
     if (!Number.isFinite(num)) return min;
     const rounded = Math.round(num);
     return Math.max(min, Math.min(max, rounded));
-}
-
-function normalizeHueDegrees(value) {
-    const num = Number(value);
-    if (!Number.isFinite(num)) return 0;
-    const wrapped = ((num % 360) + 360) % 360;
-    return wrapped;
-}
-
-function rgb01FromHex(hex) {
-    const value = Number.isFinite(hex) ? ((Number(hex) >>> 0) & 0xffffff) : 0xffffff;
-    return {
-        r: ((value >> 16) & 0xff) / 255,
-        g: ((value >> 8) & 0xff) / 255,
-        b: (value & 0xff) / 255
-    };
-}
-
-function hexFromRgb01({ r = 1, g = 1, b = 1 } = {}) {
-    const rr = clamp(r, 0, 1);
-    const gg = clamp(g, 0, 1);
-    const bb = clamp(b, 0, 1);
-    const ir = Math.round(rr * 255) & 0xff;
-    const ig = Math.round(gg * 255) & 0xff;
-    const ib = Math.round(bb * 255) & 0xff;
-    return ((ir << 16) | (ig << 8) | ib) >>> 0;
-}
-
-function hsvFromRgb01({ r = 1, g = 1, b = 1 } = {}) {
-    const rr = clamp(r, 0, 1);
-    const gg = clamp(g, 0, 1);
-    const bb = clamp(b, 0, 1);
-    const max = Math.max(rr, gg, bb);
-    const min = Math.min(rr, gg, bb);
-    const delta = max - min;
-    let hue = 0;
-    if (delta > 1e-9) {
-        if (max === rr) hue = ((gg - bb) / delta) % 6;
-        else if (max === gg) hue = (bb - rr) / delta + 2;
-        else hue = (rr - gg) / delta + 4;
-        hue *= 60;
-    }
-    const saturation = max <= 1e-9 ? 0 : (delta / max);
-    return {
-        hueDeg: normalizeHueDegrees(hue),
-        saturation: clamp(saturation, 0, 1),
-        value: clamp(max, 0, 1)
-    };
-}
-
-function rgb01FromHsv({ hueDeg = 0, saturation = 0, value = 1 } = {}) {
-    const h = normalizeHueDegrees(hueDeg);
-    const s = clamp(saturation, 0, 1);
-    const v = clamp(value, 0, 1);
-    const c = v * s;
-    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-    const m = v - c;
-
-    let rr = 0;
-    let gg = 0;
-    let bb = 0;
-    if (h < 60) {
-        rr = c;
-        gg = x;
-    } else if (h < 120) {
-        rr = x;
-        gg = c;
-    } else if (h < 180) {
-        gg = c;
-        bb = x;
-    } else if (h < 240) {
-        gg = x;
-        bb = c;
-    } else if (h < 300) {
-        rr = x;
-        bb = c;
-    } else {
-        rr = c;
-        bb = x;
-    }
-
-    return {
-        r: clamp(rr + m, 0, 1),
-        g: clamp(gg + m, 0, 1),
-        b: clamp(bb + m, 0, 1)
-    };
-}
-
-function deriveTintControlStateFromHex(tintHex) {
-    const rgb = rgb01FromHex(tintHex);
-    const nearWhite = rgb.r >= 0.999 && rgb.g >= 0.999 && rgb.b >= 0.999;
-    const hsv = hsvFromRgb01(rgb);
-    return {
-        hueDeg: hsv.hueDeg,
-        saturation: hsv.saturation,
-        value: hsv.value,
-        intensity: nearWhite ? 0 : 1
-    };
-}
-
-function composeTintHexFromControls({ hueDeg = 0, saturation = 0, value = 1, intensity = 1 } = {}) {
-    const pure = rgb01FromHsv({ hueDeg, saturation, value });
-    const mix = clamp(intensity, 0, 1);
-    const mixed = {
-        r: (1 - mix) + (pure.r * mix),
-        g: (1 - mix) + (pure.g * mix),
-        b: (1 - mix) + (pure.b * mix)
-    };
-    return hexFromRgb01(mixed);
 }
 
 function normalizeOpeningAssetType(value, fallback = OPENING_ASSET_TYPE.WINDOW) {
@@ -540,13 +437,29 @@ export class BuildingFabrication2UI {
         const dummyToggle = makeViewToggle('Show dummy');
         this.showDummyToggle = dummyToggle.toggle;
         this.showDummyToggleInput = dummyToggle.input;
+        const renderSlabToggle = makeViewToggle('Render slab');
+        this.renderSlabToggle = renderSlabToggle.toggle;
+        this.renderSlabToggleInput = renderSlabToggle.input;
+        const suspect1Toggle = makeViewToggle('Debug: Disable suspect 1 (sun shadows)');
+        this.debugDisableSuspect1Toggle = suspect1Toggle.toggle;
+        this.debugDisableSuspect1ToggleInput = suspect1Toggle.input;
+        const suspect4Toggle = makeViewToggle('Debug: Disable suspect 4 (face overlays)');
+        this.debugDisableSuspect4Toggle = suspect4Toggle.toggle;
+        this.debugDisableSuspect4ToggleInput = suspect4Toggle.input;
+        this.viewDebugHint = document.createElement('div');
+        this.viewDebugHint.className = 'building-fab2-hint';
+        this.viewDebugHint.textContent = 'Debug isolation toggles for wall artifact testing only.';
 
         this.viewToggles.appendChild(this.hideFaceMarkToggle);
         this.viewToggles.appendChild(this.showDummyToggle);
+        this.viewToggles.appendChild(this.renderSlabToggle);
+        this.viewToggles.appendChild(this.debugDisableSuspect1Toggle);
+        this.viewToggles.appendChild(this.debugDisableSuspect4Toggle);
 
         this.viewPanel.appendChild(this.viewTitle);
         this.viewPanel.appendChild(this.viewModes);
         this.viewPanel.appendChild(this.viewToggles);
+        this.viewPanel.appendChild(this.viewDebugHint);
 
         this.rightEmptyHint = document.createElement('div');
         this.rightEmptyHint.className = 'building-fab2-hint building-fab2-right-hint';
@@ -790,6 +703,9 @@ export class BuildingFabrication2UI {
         this._viewMode = 'mesh';
         this._hideFaceMarkEnabled = false;
         this._showDummyEnabled = false;
+        this._renderSlabEnabled = false;
+        this._debugDisableSuspect1Enabled = false;
+        this._debugDisableSuspect4Enabled = false;
         this._rulerEnabled = false;
         this._layoutAdjustEnabled = false;
         this._layers = [];
@@ -825,6 +741,9 @@ export class BuildingFabrication2UI {
         this.onViewModeChange = null;
         this.onHideFaceMarkChange = null;
         this.onShowDummyChange = null;
+        this.onRenderSlabChange = null;
+        this.onDebugDisableSuspect1Change = null;
+        this.onDebugDisableSuspect4Change = null;
         this.onRulerToggle = null;
         this.onAdjustLayoutToggle = null;
         this.onSelectCatalogEntry = null;
@@ -896,6 +815,24 @@ export class BuildingFabrication2UI {
             this._syncShowDummyToggle();
             this.onShowDummyChange?.(this._showDummyEnabled);
         };
+        this._onRenderSlabToggleChange = () => {
+            if (this.renderSlabToggleInput.disabled) return;
+            this._renderSlabEnabled = !!this.renderSlabToggleInput.checked;
+            this._syncRenderSlabToggle();
+            this.onRenderSlabChange?.(this._renderSlabEnabled);
+        };
+        this._onDebugDisableSuspect1ToggleChange = () => {
+            if (this.debugDisableSuspect1ToggleInput.disabled) return;
+            this._debugDisableSuspect1Enabled = !!this.debugDisableSuspect1ToggleInput.checked;
+            this._syncDebugDisableSuspect1Toggle();
+            this.onDebugDisableSuspect1Change?.(this._debugDisableSuspect1Enabled);
+        };
+        this._onDebugDisableSuspect4ToggleChange = () => {
+            if (this.debugDisableSuspect4ToggleInput.disabled) return;
+            this._debugDisableSuspect4Enabled = !!this.debugDisableSuspect4ToggleInput.checked;
+            this._syncDebugDisableSuspect4Toggle();
+            this.onDebugDisableSuspect4Change?.(this._debugDisableSuspect4Enabled);
+        };
         this._onRulerClick = () => {
             if (this.rulerBtn.disabled) return;
             this._rulerEnabled = !this._rulerEnabled;
@@ -962,9 +899,18 @@ export class BuildingFabrication2UI {
         if (this.isLinkPopupOpen()) this._renderLinkPopup();
     }
 
-    setViewToggles({ hideFaceMarkEnabled = null, showDummyEnabled = null } = {}) {
+    setViewToggles({
+        hideFaceMarkEnabled = null,
+        showDummyEnabled = null,
+        renderSlabEnabled = null,
+        debugDisableSuspect1Enabled = null,
+        debugDisableSuspect4Enabled = null
+    } = {}) {
         if (hideFaceMarkEnabled !== null) this._hideFaceMarkEnabled = !!hideFaceMarkEnabled;
         if (showDummyEnabled !== null) this._showDummyEnabled = !!showDummyEnabled;
+        if (renderSlabEnabled !== null) this._renderSlabEnabled = !!renderSlabEnabled;
+        if (debugDisableSuspect1Enabled !== null) this._debugDisableSuspect1Enabled = !!debugDisableSuspect1Enabled;
+        if (debugDisableSuspect4Enabled !== null) this._debugDisableSuspect4Enabled = !!debugDisableSuspect4Enabled;
         this._syncViewButtons();
     }
 
@@ -1374,6 +1320,28 @@ export class BuildingFabrication2UI {
             return { key, map, entry };
         };
 
+        const resolveWallBaseProxy = (source) => {
+            const src = source && typeof source === 'object' ? source : {};
+            const tintState = resolveWallBaseTintStateFromWallBase(src, WALL_BASE_TINT_STATE_DEFAULT);
+            const out = {
+                roughness: clamp(src.roughness ?? 0.85, 0.0, 1.0),
+                normalStrength: clamp(src.normalStrength ?? src.normal ?? 0.9, 0.0, 2.0)
+            };
+            applyWallBaseTintStateToWallBase(out, tintState);
+            return out;
+        };
+
+        const createCommittedWallBaseFromProxy = (proxy) => {
+            const src = proxy && typeof proxy === 'object' ? proxy : {};
+            const tintState = resolveWallBaseTintStateFromWallBase(src, WALL_BASE_TINT_STATE_DEFAULT);
+            const out = {
+                roughness: clamp(src.roughness ?? 0.85, 0.0, 1.0),
+                normalStrength: clamp(src.normalStrength ?? src.normal ?? 0.9, 0.0, 2.0)
+            };
+            applyWallBaseTintStateToWallBase(out, tintState);
+            return out;
+        };
+
         const appendTintControls = ({
             container,
             allow = false,
@@ -1383,106 +1351,36 @@ export class BuildingFabrication2UI {
         } = {}) => {
             const textured = typeof isTexturedMaterial === 'function' ? isTexturedMaterial : () => true;
             const commit = typeof onCommit === 'function' ? onCommit : null;
-            const tintState = deriveTintControlStateFromHex(wallBaseProxy?.tintHex ?? 0xffffff);
+            const row = document.createElement('div');
+            row.className = 'building-fab-row building-fab-row-wide';
+            const label = document.createElement('div');
+            label.className = 'building-fab-row-label';
+            label.textContent = 'Tint';
+            const control = document.createElement('div');
+            control.className = 'building-fab2-tint-picker-host';
+            row.appendChild(label);
+            row.appendChild(control);
+            container.appendChild(row);
 
-            const hueRow = createRangeRow('Tint hue');
-            hueRow.range.min = '0';
-            hueRow.range.max = '360';
-            hueRow.range.step = '1';
-            hueRow.number.min = '0';
-            hueRow.number.max = '360';
-            hueRow.number.step = '1';
-
-            const saturationRow = createRangeRow('Tint saturation');
-            saturationRow.range.min = '0';
-            saturationRow.range.max = '1';
-            saturationRow.range.step = '0.01';
-            saturationRow.number.min = '0';
-            saturationRow.number.max = '1';
-            saturationRow.number.step = '0.01';
-
-            const valueRow = createRangeRow('Tint value');
-            valueRow.range.min = '0';
-            valueRow.range.max = '1';
-            valueRow.range.step = '0.01';
-            valueRow.number.min = '0';
-            valueRow.number.max = '1';
-            valueRow.number.step = '0.01';
-
-            const intensityRow = createRangeRow('Tint intensity');
-            intensityRow.range.min = '0';
-            intensityRow.range.max = '1';
-            intensityRow.range.step = '0.01';
-            intensityRow.number.min = '0';
-            intensityRow.number.max = '1';
-            intensityRow.number.step = '0.01';
+            const picker = new SharedHsvbTintPicker({
+                initialState: resolveWallBaseTintStateFromWallBase(wallBaseProxy, WALL_BASE_TINT_STATE_DEFAULT),
+                onChange: (nextState) => {
+                    if (!wallBaseProxy || typeof wallBaseProxy !== 'object') return;
+                    applyWallBaseTintStateToWallBase(wallBaseProxy, nextState);
+                    commit?.();
+                    syncRows();
+                }
+            });
+            control.appendChild(picker.element);
+            this._materialPanelDisposables.push(picker);
 
             const syncRows = () => {
                 const enabled = !!allow && !!textured();
-                const hue = normalizeHueDegrees(tintState.hueDeg);
-                const sat = clamp(tintState.saturation, 0, 1);
-                const val = clamp(tintState.value, 0, 1);
-                const intensity = clamp(tintState.intensity, 0, 1);
-
-                hueRow.range.disabled = !enabled;
-                hueRow.number.disabled = !enabled;
-                hueRow.range.value = String(hue);
-                hueRow.number.value = String(Math.round(hue));
-
-                saturationRow.range.disabled = !enabled;
-                saturationRow.number.disabled = !enabled;
-                saturationRow.range.value = String(sat);
-                saturationRow.number.value = sat.toFixed(2);
-
-                valueRow.range.disabled = !enabled;
-                valueRow.number.disabled = !enabled;
-                valueRow.range.value = String(val);
-                valueRow.number.value = val.toFixed(2);
-
-                intensityRow.range.disabled = !enabled;
-                intensityRow.number.disabled = !enabled;
-                intensityRow.range.value = String(intensity);
-                intensityRow.number.value = intensity.toFixed(2);
+                picker.setDisabled(!enabled);
+                picker.setState(resolveWallBaseTintStateFromWallBase(wallBaseProxy, WALL_BASE_TINT_STATE_DEFAULT));
             };
-
-            const commitTint = () => {
-                if (!wallBaseProxy || typeof wallBaseProxy !== 'object') return;
-                wallBaseProxy.tintHex = composeTintHexFromControls(tintState);
-                commit?.();
-                syncRows();
-            };
-
-            const setHue = (raw) => {
-                tintState.hueDeg = normalizeHueDegrees(raw);
-                commitTint();
-            };
-            const setSaturation = (raw) => {
-                tintState.saturation = clamp(raw, 0, 1);
-                commitTint();
-            };
-            const setValue = (raw) => {
-                tintState.value = clamp(raw, 0, 1);
-                commitTint();
-            };
-            const setIntensity = (raw) => {
-                tintState.intensity = clamp(raw, 0, 1);
-                commitTint();
-            };
-
-            hueRow.range.addEventListener('input', () => setHue(hueRow.range.value));
-            hueRow.number.addEventListener('input', () => setHue(hueRow.number.value));
-            saturationRow.range.addEventListener('input', () => setSaturation(saturationRow.range.value));
-            saturationRow.number.addEventListener('input', () => setSaturation(saturationRow.number.value));
-            valueRow.range.addEventListener('input', () => setValue(valueRow.range.value));
-            valueRow.number.addEventListener('input', () => setValue(valueRow.number.value));
-            intensityRow.range.addEventListener('input', () => setIntensity(intensityRow.range.value));
-            intensityRow.number.addEventListener('input', () => setIntensity(intensityRow.number.value));
 
             syncRows();
-            container.appendChild(hueRow.row);
-            container.appendChild(saturationRow.row);
-            container.appendChild(valueRow.row);
-            container.appendChild(intensityRow.row);
             return { syncRows };
         };
 
@@ -1602,21 +1500,13 @@ export class BuildingFabrication2UI {
                     : ((faceCfgForBay?.wallBase && typeof faceCfgForBay.wallBase === 'object')
                         ? faceCfgForBay.wallBase
                         : ((layer?.wallBase && typeof layer.wallBase === 'object') ? layer.wallBase : null));
-                const tintRaw = src?.tintHex ?? src?.tint ?? 0xffffff;
-                const tintHex = Number.isFinite(tintRaw) ? ((Number(tintRaw) >>> 0) & 0xffffff) : 0xffffff;
-                const roughness = clamp(src?.roughness ?? 0.85, 0.0, 1.0);
-                const normalStrength = clamp(src?.normalStrength ?? 0.9, 0.0, 2.0);
-                return { tintHex, roughness, normalStrength };
+                return resolveWallBaseProxy(src ?? null);
             };
 
             const wallBaseProxy = resolveEffectiveWallBase();
             const commitWallBase = () => {
                 if (!allowBayEdit) return;
-                bayCfg.wallBase = {
-                    tintHex: (Number(wallBaseProxy.tintHex) >>> 0) & 0xffffff,
-                    roughness: clamp(wallBaseProxy.roughness, 0.0, 1.0),
-                    normalStrength: clamp(wallBaseProxy.normalStrength, 0.0, 2.0)
-                };
+                bayCfg.wallBase = createCommittedWallBaseFromProxy(wallBaseProxy);
                 onChange();
             };
 
@@ -1713,7 +1603,11 @@ export class BuildingFabrication2UI {
             return;
         }
 
-        cfg.wallBase ??= { tintHex: 0xffffff, roughness: 0.85, normalStrength: 0.9 };
+        cfg.wallBase ??= {
+            ...applyWallBaseTintStateToWallBase({}, WALL_BASE_TINT_STATE_DEFAULT),
+            roughness: 0.85,
+            normalStrength: 0.9
+        };
         const resolveFaceMaterial = () => resolveMaterialWithFallback(cfg);
         const syncFaceLegacyTilingFromActiveMaterial = () => {
             const activeMaterial = resolveFaceMaterial();
@@ -1762,15 +1656,9 @@ export class BuildingFabrication2UI {
         baseSection.body.appendChild(wallMaterialPicker.row);
         baseSection.body.appendChild(createHint('These controls affect the full face wall surface.'));
 
-        const wallBaseProxy = {
-            tintHex: (Number(cfg.wallBase?.tintHex ?? 0xffffff) >>> 0) & 0xffffff,
-            roughness: clamp(cfg.wallBase?.roughness ?? 0.85, 0.0, 1.0),
-            normalStrength: clamp(cfg.wallBase?.normalStrength ?? 0.9, 0.0, 2.0)
-        };
+        const wallBaseProxy = resolveWallBaseProxy(cfg.wallBase);
         const commitWallBase = () => {
-            cfg.wallBase.tintHex = (Number(wallBaseProxy.tintHex) >>> 0) & 0xffffff;
-            cfg.wallBase.roughness = clamp(wallBaseProxy.roughness, 0.0, 1.0);
-            cfg.wallBase.normalStrength = clamp(wallBaseProxy.normalStrength, 0.0, 2.0);
+            cfg.wallBase = createCommittedWallBaseFromProxy(wallBaseProxy);
             onChange();
         };
 
@@ -1878,6 +1766,9 @@ export class BuildingFabrication2UI {
         this.viewModes.addEventListener('click', this._onViewModesClick);
         this.hideFaceMarkToggleInput.addEventListener('change', this._onHideFaceMarkToggleChange);
         this.showDummyToggleInput.addEventListener('change', this._onShowDummyToggleChange);
+        this.renderSlabToggleInput.addEventListener('change', this._onRenderSlabToggleChange);
+        this.debugDisableSuspect1ToggleInput.addEventListener('change', this._onDebugDisableSuspect1ToggleChange);
+        this.debugDisableSuspect4ToggleInput.addEventListener('change', this._onDebugDisableSuspect4ToggleChange);
         this.adjustLayoutBtn.addEventListener('click', this._onAdjustLayoutClick);
         this.adjustModeCloseBtn.addEventListener('click', this._onAdjustModeCloseClick);
         this.rulerBtn.addEventListener('click', this._onRulerClick);
@@ -1916,6 +1807,9 @@ export class BuildingFabrication2UI {
         this.viewModes.removeEventListener('click', this._onViewModesClick);
         this.hideFaceMarkToggleInput.removeEventListener('change', this._onHideFaceMarkToggleChange);
         this.showDummyToggleInput.removeEventListener('change', this._onShowDummyToggleChange);
+        this.renderSlabToggleInput.removeEventListener('change', this._onRenderSlabToggleChange);
+        this.debugDisableSuspect1ToggleInput.removeEventListener('change', this._onDebugDisableSuspect1ToggleChange);
+        this.debugDisableSuspect4ToggleInput.removeEventListener('change', this._onDebugDisableSuspect4ToggleChange);
         this.adjustLayoutBtn.removeEventListener('click', this._onAdjustLayoutClick);
         this.adjustModeCloseBtn.removeEventListener('click', this._onAdjustModeCloseClick);
         this.rulerBtn.removeEventListener('click', this._onRulerClick);
@@ -1949,6 +1843,9 @@ export class BuildingFabrication2UI {
         this.typeSelect.disabled = !allow || !hasBuilding;
         this.hideFaceMarkToggleInput.disabled = !allow;
         this.showDummyToggleInput.disabled = !allow || !hasBuilding;
+        this.renderSlabToggleInput.disabled = !allow || !hasBuilding;
+        this.debugDisableSuspect1ToggleInput.disabled = !allow || !hasBuilding;
+        this.debugDisableSuspect4ToggleInput.disabled = !allow || !hasBuilding;
         this.adjustLayoutBtn.disabled = !allow || !hasBuilding;
         this.adjustModeCloseBtn.disabled = !allow || !hasBuilding || !this._layoutAdjustEnabled;
         this.rulerBtn.disabled = !allow;
@@ -1969,6 +1866,9 @@ export class BuildingFabrication2UI {
         }
         this._syncHideFaceMarkToggle();
         this._syncShowDummyToggle();
+        this._syncRenderSlabToggle();
+        this._syncDebugDisableSuspect1Toggle();
+        this._syncDebugDisableSuspect4Toggle();
         this._syncAdjustLayoutButton();
         this._syncRulerButton();
     }
@@ -1979,6 +1879,18 @@ export class BuildingFabrication2UI {
 
     _syncShowDummyToggle() {
         this.showDummyToggleInput.checked = this._showDummyEnabled;
+    }
+
+    _syncRenderSlabToggle() {
+        this.renderSlabToggleInput.checked = this._renderSlabEnabled;
+    }
+
+    _syncDebugDisableSuspect1Toggle() {
+        this.debugDisableSuspect1ToggleInput.checked = this._debugDisableSuspect1Enabled;
+    }
+
+    _syncDebugDisableSuspect4Toggle() {
+        this.debugDisableSuspect4ToggleInput.checked = this._debugDisableSuspect4Enabled;
     }
 
     _syncRulerButton() {

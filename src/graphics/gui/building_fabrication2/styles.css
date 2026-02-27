@@ -176,6 +176,11 @@
     gap: 8px;
 }
 
+.building-fab2-tint-picker-host {
+    width: 100%;
+    min-width: 0;
+}
+
 .building-fab2-side-handle {
     width: 44px;
     max-width: 44px;

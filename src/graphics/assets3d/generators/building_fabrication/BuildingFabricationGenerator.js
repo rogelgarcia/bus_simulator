@@ -8,6 +8,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { ROOF_COLOR, resolveRoofColorHex } from '../../../../app/buildings/RoofColor.js';
 import { resolveBeltCourseColorHex } from '../../../../app/buildings/BeltCourseColor.js';
 import { BUILDING_STYLE } from '../../../../app/buildings/BuildingStyle.js';
+import { resolveWallBaseTintHexFromWallBase } from '../../../../app/buildings/WallBaseTintModel.js';
 import {
     getWindowFabricationCatalogEntries,
     normalizeWindowFabricationAssetType,
@@ -46,6 +47,7 @@ const FACADE_DEPTH_MIN_M = -2.0;
 const FACADE_DEPTH_MAX_M = 2.0;
 const FLOOR_INTERIOR_MATERIAL_SPEC = Object.freeze({ kind: 'texture', id: 'pbr.painted_plaster_wall' });
 const FLOOR_INTERIOR_TILE_METERS = 1.0;
+const FLOOR_INTERIOR_SHELL_INSET_METERS = 0.01;
 const OPENING_HEIGHT_MODE = Object.freeze({
     FIXED: 'fixed',
     FULL: 'full'
@@ -2093,7 +2095,7 @@ function makeWallMaterialFromSpec({ material, baseColorHex, textureCache, wallBa
     const base = wallBase && typeof wallBase === 'object' ? wallBase : null;
     const roughness = Number.isFinite(base?.roughness) ? base.roughness : 0.85;
     const normalStrength = Number.isFinite(base?.normalStrength) ? base.normalStrength : 0.9;
-    const tintHex = Number.isFinite(base?.tintHex) ? ((Number(base.tintHex) >>> 0) & 0xffffff) : 0xffffff;
+    const tintHex = resolveWallBaseTintHexFromWallBase(base ?? null);
 
     if (material?.kind === 'color') {
         const mat = new THREE.MeshStandardMaterial({
@@ -3358,7 +3360,8 @@ export function buildBuildingFabricationVisualParts({
     windowDefinitions = null,
     colors = null,
     overlays = null,
-    walls = null
+    walls = null,
+    debug = null
 } = {}) {
     const explicitFootprintLoops = normalizeFootprintLoopsInput(footprintLoops);
     const sourceFootprintLoops = explicitFootprintLoops.length
@@ -3390,6 +3393,8 @@ export function buildBuildingFabricationVisualParts({
     const showPlan = enabled.floorplan ?? true;
     const showBorder = enabled.border ?? true;
     const showFloors = enabled.floorDivisions ?? true;
+    const debugFlags = debug && typeof debug === 'object' ? debug : null;
+    const debugDisableSuspect4FaceOverrideOverlay = !!debugFlags?.disableSuspect4FaceOverrideOverlay;
 
     const solidMeshes = [];
     const wirePositions = [];
@@ -4683,7 +4688,13 @@ export function buildBuildingFabricationVisualParts({
                             if (interiorLoop && interiorLoop.length >= 3) {
                                 const interiorArea = signedArea(interiorLoop);
                                 const interiorLoopCcw = interiorArea < 0 ? interiorLoop.slice().reverse() : interiorLoop;
-                                const interiorShape = buildShapeFromLoops({ outerLoop: interiorLoopCcw, holeLoops: [] });
+                                const insetLoopRaw = offsetOrthogonalLoopXZ(interiorLoopCcw, FLOOR_INTERIOR_SHELL_INSET_METERS);
+                                const insetLoopSimplified = simplifyLoopConsecutiveCollinearXZ(insetLoopRaw, { tol: 1e-4, minEdge: 1e-3 });
+                                const insetArea = Array.isArray(insetLoopSimplified) ? Math.abs(signedArea(insetLoopSimplified)) : 0;
+                                const interiorShellLoop = (Array.isArray(insetLoopSimplified) && insetLoopSimplified.length >= 3 && insetArea > EPS)
+                                    ? insetLoopSimplified
+                                    : interiorLoopCcw;
+                                const interiorShape = buildShapeFromLoops({ outerLoop: interiorShellLoop, holeLoops: [] });
                                 const createInteriorMaterial = () => {
                                     const mat = makeWallMaterialFromSpec({
                                         material: FLOOR_INTERIOR_MATERIAL_SPEC,
@@ -4704,7 +4715,7 @@ export function buildBuildingFabricationVisualParts({
                                     const segmentYBottom = Number(seg?.yBottom) || 0;
                                     const segmentBaseY = layerStartY + segmentYBottom;
 
-                                    const interiorWallGeo = buildWallSidesGeometryFromLoopXZ(interiorLoop, {
+                                    const interiorWallGeo = buildWallSidesGeometryFromLoopXZ(interiorShellLoop, {
                                         height: interiorHeight,
                                         uvBaseV: yOffset + segmentYBottom
                                     });
@@ -4963,7 +4974,7 @@ export function buildBuildingFabricationVisualParts({
 
                     const usingFacadeStrips = wantsFacadeSilhouette && facadeFrames && Array.isArray(facadeStrips) && facadeStrips.length;
                     const faceMaterials = layer?.faceMaterials && typeof layer.faceMaterials === 'object' ? layer.faceMaterials : null;
-                    if (faceMaterials && !usingFacadeStrips) {
+                    if (faceMaterials && !usingFacadeStrips && !debugDisableSuspect4FaceOverrideOverlay) {
                         const mainLoop = wallOuterFacade[0] ?? null;
                         const frames = mainLoop ? computeQuadFacadeFramesFromLoop(mainLoop, { warnings }) : null;
                         if (frames) {

@@ -338,3 +338,101 @@ button:disabled .ui-icon { opacity: 0.4; }
 #ui-fade.is-blocking {
     pointer-events: auto;
 }
+
+.ui-shared-tint-picker {
+    width: 100%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ui-shared-tint-picker.is-disabled {
+    opacity: 0.65;
+}
+
+.ui-shared-tint-picker-top {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+}
+
+.ui-shared-tint-picker-canvas {
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(0,0,0,0.22);
+    touch-action: none;
+    cursor: crosshair;
+    flex: 0 0 auto;
+}
+
+.ui-shared-tint-picker-canvas.is-disabled {
+    cursor: default;
+}
+
+.ui-shared-tint-picker-preview {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ui-shared-tint-picker-swatch {
+    width: 100%;
+    min-height: 52px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: #ffffff;
+}
+
+.ui-shared-tint-picker-hex {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    opacity: 0.95;
+}
+
+.ui-shared-tint-picker-readout {
+    font-size: 11px;
+    opacity: 0.78;
+    line-height: 1.2;
+}
+
+.ui-shared-tint-picker-slider {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 88px) minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+}
+
+.ui-shared-tint-picker-slider-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.86;
+}
+
+.ui-shared-tint-picker-slider-controls {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 78px;
+    align-items: center;
+    gap: 8px;
+}
+
+.ui-shared-tint-picker-range {
+    width: 100%;
+    min-width: 0;
+}
+
+.ui-shared-tint-picker-number {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(0,0,0,0.25);
+    color: #e9f2ff;
+}

@@ -55,6 +55,7 @@ At a conceptual level, a Building v2 model includes:
 - **Materials**:
   - A building-level **base wall material** default exists.
   - Material configuration is authored per **floor-layer face**, and respects face master/slave inheritance (slaves do not duplicate config).
+  - Wall-base tint uses a shared persisted state contract (`tintHueDeg`, `tintSaturation`, `tintValue`, `tintIntensity`, `tintBrightness`) plus compatibility `tintHex`.
 - **Bay content** definitions (openings/windows, columns, wall segments), with constraints and omission rules.
 - **Reusable definitions** owned by the building (e.g., window definitions reused across bays).
 - **Bay window configuration** authored per floor-layer face bay, including:

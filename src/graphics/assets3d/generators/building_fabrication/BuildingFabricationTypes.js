@@ -4,6 +4,11 @@ import { BUILDING_STYLE, isBuildingStyle } from '../../../../app/buildings/Build
 import { isPbrBuildingWallMaterialId } from '../../materials/PbrMaterialCatalog.js';
 import { ROOF_COLOR, isRoofColor } from '../../../../app/buildings/RoofColor.js';
 import { BELT_COURSE_COLOR, isBeltCourseColor } from '../../../../app/buildings/BeltCourseColor.js';
+import {
+    WALL_BASE_TINT_STATE_DEFAULT,
+    applyWallBaseTintStateToWallBase,
+    resolveWallBaseTintStateFromWallBase
+} from '../../../../app/buildings/WallBaseTintModel.js';
 import { WINDOW_TYPE, getDefaultWindowParams, isWindowTypeId } from '../buildings/WindowTextureGenerator.js';
 
 function clamp(value, min, max) {
@@ -29,8 +34,12 @@ function deepClone(value) {
     return value;
 }
 
+const WALL_BASE_TINT_DEFAULT_FIELDS = Object.freeze(
+    applyWallBaseTintStateToWallBase({}, WALL_BASE_TINT_STATE_DEFAULT)
+);
+
 export const WALL_BASE_MATERIAL_DEFAULT = Object.freeze({
-    tintHex: 0xffffff,
+    ...WALL_BASE_TINT_DEFAULT_FIELDS,
     roughness: 0.85,
     normalStrength: 0.9
 });
@@ -53,11 +62,12 @@ export const WINDOW_REFLECTIVE_DEFAULT = Object.freeze({
 
 export function normalizeWallBaseMaterialConfig(value) {
     const src = value && typeof value === 'object' ? value : {};
-    const tintRaw = src.tintHex ?? src.tint ?? src.albedoTint ?? src.albedoTintHex ?? WALL_BASE_MATERIAL_DEFAULT.tintHex;
-    const tintHex = Number.isFinite(tintRaw) ? ((Number(tintRaw) >>> 0) & 0xffffff) : WALL_BASE_MATERIAL_DEFAULT.tintHex;
+    const tintState = resolveWallBaseTintStateFromWallBase(src, WALL_BASE_TINT_STATE_DEFAULT);
     const roughness = clamp(src.roughness ?? WALL_BASE_MATERIAL_DEFAULT.roughness, 0.0, 1.0);
     const normalStrength = clamp(src.normalStrength ?? src.normal ?? WALL_BASE_MATERIAL_DEFAULT.normalStrength, 0.0, 2.0);
-    return { tintHex, roughness, normalStrength };
+    const out = { roughness, normalStrength };
+    applyWallBaseTintStateToWallBase(out, tintState);
+    return out;
 }
 
 export function normalizeBuildingWindowVisualsConfig(value) {

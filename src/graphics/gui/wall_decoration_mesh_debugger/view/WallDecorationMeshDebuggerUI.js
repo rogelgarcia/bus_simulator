@@ -11,7 +11,13 @@ import {
     WALL_DECORATOR_POSITION,
     WALL_DECORATOR_WHERE_TO_APPLY
 } from '../../../../app/buildings/wall_decorators/index.js';
+import {
+    WALL_BASE_TINT_STATE_DEFAULT,
+    applyWallBaseTintStateToWallBase,
+    resolveWallBaseTintStateFromWallBase
+} from '../../../../app/buildings/WallBaseTintModel.js';
 import { PickerPopup } from '../../shared/PickerPopup.js';
+import { SharedHsvbTintPicker } from '../../shared/tint_picker/SharedHsvbTintPicker.js';
 
 const WALL_SURFACE_NONE_ID = 'none';
 const WALL_SURFACE_DEFAULT_OPTIONS = Object.freeze([
@@ -91,6 +97,12 @@ function normalizeConfigurationPropertyType(value) {
     return WALL_DECORATOR_PROPERTY_TYPE.FLOAT;
 }
 
+function normalizeConfigurationPropertyPicker(value) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === 'thumbnail') return 'thumbnail';
+    return '';
+}
+
 function normalizeConfigurationPropertySpecs(specs) {
     const src = Array.isArray(specs) ? specs : [];
     return src
@@ -106,7 +118,8 @@ function normalizeConfigurationPropertySpecs(specs) {
                             const optionId = String(opt?.id ?? '').trim();
                             if (!optionId) return null;
                             const optionLabel = String(opt?.label ?? optionId).trim();
-                            return { id: optionId, label: optionLabel };
+                            const previewUrl = typeof opt?.previewUrl === 'string' ? opt.previewUrl.trim() : '';
+                            return { id: optionId, label: optionLabel, previewUrl };
                         })
                         .filter((opt) => !!opt)
                     : [];
@@ -114,7 +127,8 @@ function normalizeConfigurationPropertySpecs(specs) {
                     id,
                     label,
                     type,
-                    options
+                    options,
+                    picker: normalizeConfigurationPropertyPicker(item?.picker)
                 };
             }
             if (type === WALL_DECORATOR_PROPERTY_TYPE.BOOL) {
@@ -137,116 +151,15 @@ function normalizeConfigurationPropertySpecs(specs) {
         .filter((item) => !!item);
 }
 
-function normalizeHueDegrees(value) {
-    const num = Number(value);
-    if (!Number.isFinite(num)) return 0;
-    return ((num % 360) + 360) % 360;
-}
-
-function rgb01FromHex(hex) {
-    const value = Number.isFinite(hex) ? ((Number(hex) >>> 0) & 0xffffff) : 0xffffff;
-    return {
-        r: ((value >> 16) & 0xff) / 255,
-        g: ((value >> 8) & 0xff) / 255,
-        b: (value & 0xff) / 255
-    };
-}
-
-function hexFromRgb01({ r = 1, g = 1, b = 1 } = {}) {
-    const rr = clamp(r, 0, 1);
-    const gg = clamp(g, 0, 1);
-    const bb = clamp(b, 0, 1);
-    const ir = Math.round(rr * 255) & 0xff;
-    const ig = Math.round(gg * 255) & 0xff;
-    const ib = Math.round(bb * 255) & 0xff;
-    return ((ir << 16) | (ig << 8) | ib) >>> 0;
-}
-
-function hsvFromRgb01({ r = 1, g = 1, b = 1 } = {}) {
-    const rr = clamp(r, 0, 1);
-    const gg = clamp(g, 0, 1);
-    const bb = clamp(b, 0, 1);
-    const max = Math.max(rr, gg, bb);
-    const min = Math.min(rr, gg, bb);
-    const delta = max - min;
-    let hue = 0;
-    if (delta > 1e-9) {
-        if (max === rr) hue = ((gg - bb) / delta) % 6;
-        else if (max === gg) hue = (bb - rr) / delta + 2;
-        else hue = (rr - gg) / delta + 4;
-        hue *= 60;
-    }
-    const saturation = max <= 1e-9 ? 0 : (delta / max);
-    return {
-        hueDeg: normalizeHueDegrees(hue),
-        saturation: clamp(saturation, 0, 1),
-        value: clamp(max, 0, 1)
-    };
-}
-
-function rgb01FromHsv({ hueDeg = 0, saturation = 0, value = 1 } = {}) {
-    const h = normalizeHueDegrees(hueDeg);
-    const s = clamp(saturation, 0, 1);
-    const v = clamp(value, 0, 1);
-    const c = v * s;
-    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-    const m = v - c;
-
-    let rr = 0;
-    let gg = 0;
-    let bb = 0;
-    if (h < 60) {
-        rr = c;
-        gg = x;
-    } else if (h < 120) {
-        rr = x;
-        gg = c;
-    } else if (h < 180) {
-        gg = c;
-        bb = x;
-    } else if (h < 240) {
-        gg = x;
-        bb = c;
-    } else if (h < 300) {
-        rr = x;
-        bb = c;
-    } else {
-        rr = c;
-        bb = x;
-    }
-
-    return {
-        r: clamp(rr + m, 0, 1),
-        g: clamp(gg + m, 0, 1),
-        b: clamp(bb + m, 0, 1)
-    };
-}
-
-function deriveTintControlStateFromHex(tintHex) {
-    const rgb = rgb01FromHex(tintHex);
-    const nearWhite = rgb.r >= 0.999 && rgb.g >= 0.999 && rgb.b >= 0.999;
-    const hsv = hsvFromRgb01(rgb);
-    return {
-        hueDeg: hsv.hueDeg,
-        saturation: hsv.saturation,
-        value: hsv.value,
-        intensity: nearWhite ? 0 : 1
-    };
-}
-
-function composeTintHexFromControls({ hueDeg = 0, saturation = 0, value = 1, intensity = 1 } = {}) {
-    const pure = rgb01FromHsv({ hueDeg, saturation, value });
-    const mix = clamp(intensity, 0, 1);
-    const mixed = {
-        r: (1 - mix) + (pure.r * mix),
-        g: (1 - mix) + (pure.g * mix),
-        b: (1 - mix) + (pure.b * mix)
-    };
-    return hexFromRgb01(mixed);
-}
-
 function normalizeViewMode(value) {
     return value === 'wireframe' ? 'wireframe' : 'mesh';
+}
+
+function normalizeDecoratorMaterialKind(value) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === 'match_wall' || raw === 'match wall' || raw === 'matchwall') return 'match_wall';
+    if (raw === 'color') return 'color';
+    return 'texture';
 }
 
 function makeChoiceRow({ label, value = '', options = [], onChange = null }) {
@@ -617,11 +530,15 @@ export class WallDecorationMeshDebuggerUI {
         textureOptions = null,
         colorOptions = null,
         viewMode = 'mesh',
+        wallMeshVisible = true,
+        dummyVisible = true,
         onChange = null,
         onLoadTypeEntry = null,
         onLoadPresetEntry = null,
         onViewModeChange = null,
-        onWallMaterialChange = null
+        onWallMaterialChange = null,
+        onWallMeshVisibleChange = null,
+        onDummyVisibleChange = null
     } = {}) {
         this._draft = sanitizeWallDecoratorDebuggerState(initialState ?? getDefaultWallDecoratorDebuggerState());
         this._typeOptions = normalizeOptions(typeOptions, [{ id: WALL_DECORATOR_ID.SIMPLE_SKIRT, label: 'Simple Skirt' }]);
@@ -632,6 +549,8 @@ export class WallDecorationMeshDebuggerUI {
         if (!this._wallMaterialOptions.some((opt) => opt.id === this._wallMaterialId)) {
             this._wallMaterialId = this._wallMaterialOptions[0]?.id ?? WALL_SURFACE_NONE_ID;
         }
+        this._wallMeshVisible = wallMeshVisible !== false;
+        this._dummyVisible = dummyVisible !== false;
         this._selectedPresetId = '';
         this._textureOptions = normalizeOptions(textureOptions, [{ id: 'pbr.brick_wall_11', label: 'Brick Wall 11' }]);
         this._colorOptions = normalizeOptions(colorOptions, [{ id: 'belt.white', label: 'White' }]);
@@ -641,6 +560,8 @@ export class WallDecorationMeshDebuggerUI {
         this._onLoadPresetEntry = typeof onLoadPresetEntry === 'function' ? onLoadPresetEntry : null;
         this._onViewModeChange = typeof onViewModeChange === 'function' ? onViewModeChange : null;
         this._onWallMaterialChange = typeof onWallMaterialChange === 'function' ? onWallMaterialChange : null;
+        this._onWallMeshVisibleChange = typeof onWallMeshVisibleChange === 'function' ? onWallMeshVisibleChange : null;
+        this._onDummyVisibleChange = typeof onDummyVisibleChange === 'function' ? onDummyVisibleChange : null;
         this._isSetting = false;
         this._activeTabId = 'catalog';
         this._tabs = new Map();
@@ -648,7 +569,7 @@ export class WallDecorationMeshDebuggerUI {
         this._controls = {};
         this._configurationControlById = new Map();
         this._pickerPopup = new PickerPopup();
-        this._tintControlState = deriveTintControlStateFromHex(this._draft.wallBase?.tintHex ?? 0xffffff);
+        this._tintControlState = resolveWallBaseTintStateFromWallBase(this._draft.wallBase, WALL_BASE_TINT_STATE_DEFAULT);
 
         this.leftStack = makeEl('div', 'wall-decoration-left-stack');
         this._buildLeftWallMaterialPanel();
@@ -683,6 +604,8 @@ export class WallDecorationMeshDebuggerUI {
 
         this._setActiveTab(this._activeTabId);
         this._syncViewModeControl();
+        this._syncWallMeshVisibilityControl();
+        this._syncDummyVisibilityControl();
         this._syncAllControlsFromDraft();
     }
 
@@ -693,6 +616,7 @@ export class WallDecorationMeshDebuggerUI {
     }
 
     destroy() {
+        this._controls?.tintPicker?.dispose?.();
         this._pickerPopup?.dispose?.();
         this._pickerPopup = null;
         this.leftStack?.remove?.();
@@ -702,14 +626,19 @@ export class WallDecorationMeshDebuggerUI {
     setState(nextState) {
         this._isSetting = true;
         this._draft = sanitizeWallDecoratorDebuggerState(nextState);
-        this._tintControlState = deriveTintControlStateFromHex(this._draft.wallBase?.tintHex ?? 0xffffff);
+        this._tintControlState = resolveWallBaseTintStateFromWallBase(this._draft.wallBase, WALL_BASE_TINT_STATE_DEFAULT);
         this._syncAllControlsFromDraft();
         this._isSetting = false;
     }
 
     setWallMaterialId(nextId) {
         const id = String(nextId ?? '').trim();
+        this._wallMaterialId = id;
         this._controls.wallMaterialBar?.setValue?.(id);
+        if (normalizeDecoratorMaterialKind(this._draft?.materialSelection?.kind) === 'match_wall') {
+            this._syncMaterialSelectOptions();
+            this._syncMaterialRowsDisabled();
+        }
     }
 
     _buildTab(id, label) {
@@ -759,9 +688,26 @@ export class WallDecorationMeshDebuggerUI {
         controls.appendChild(btnMesh);
         controls.appendChild(btnWire);
         panel.appendChild(controls);
+
+        const wallVisibility = makeToggleRow({
+            label: 'Show wall',
+            value: this._wallMeshVisible,
+            onChange: (next) => this._setWallMeshVisible(!!next, { emit: true })
+        });
+        panel.appendChild(wallVisibility.row);
+
+        const dummyVisibility = makeToggleRow({
+            label: 'Show dummy',
+            value: this._dummyVisible,
+            onChange: (next) => this._setDummyVisible(!!next, { emit: true })
+        });
+        panel.appendChild(dummyVisibility.row);
+
         this.leftStack.appendChild(panel);
 
         this._controls.viewMode = { panel, btnMesh, btnWire };
+        this._controls.wallMeshVisibility = wallVisibility;
+        this._controls.dummyVisibility = dummyVisibility;
     }
 
     _syncViewModeControl() {
@@ -782,6 +728,38 @@ export class WallDecorationMeshDebuggerUI {
         this._viewMode = mode;
         this._syncViewModeControl();
         if (emit) this._onViewModeChange?.(mode);
+    }
+
+    _syncWallMeshVisibilityControl() {
+        this._controls.wallMeshVisibility?.setValue?.(!!this._wallMeshVisible);
+    }
+
+    _setWallMeshVisible(next, { emit = false } = {}) {
+        const visible = !!next;
+        if (visible === this._wallMeshVisible) {
+            this._syncWallMeshVisibilityControl();
+            if (emit) this._onWallMeshVisibleChange?.(visible);
+            return;
+        }
+        this._wallMeshVisible = visible;
+        this._syncWallMeshVisibilityControl();
+        if (emit) this._onWallMeshVisibleChange?.(visible);
+    }
+
+    _syncDummyVisibilityControl() {
+        this._controls.dummyVisibility?.setValue?.(!!this._dummyVisible);
+    }
+
+    _setDummyVisible(next, { emit = false } = {}) {
+        const visible = !!next;
+        if (visible === this._dummyVisible) {
+            this._syncDummyVisibilityControl();
+            if (emit) this._onDummyVisibleChange?.(visible);
+            return;
+        }
+        this._dummyVisible = visible;
+        this._syncDummyVisibilityControl();
+        if (emit) this._onDummyVisibleChange?.(visible);
     }
 
     _buildLeftWallMaterialPanel() {
@@ -818,6 +796,8 @@ export class WallDecorationMeshDebuggerUI {
             btn.addEventListener('click', () => {
                 setActive(option.id);
                 this._onWallMaterialChange?.(option.id);
+                this._syncMaterialSelectOptions();
+                this._syncMaterialRowsDisabled();
             });
             group.appendChild(btn);
             buttons.set(option.id, btn);
@@ -985,6 +965,7 @@ export class WallDecorationMeshDebuggerUI {
             if (!propertyId) continue;
             const propertyType = normalizeConfigurationPropertyType(spec?.type);
             let control = null;
+            let controlKind = '';
 
             if (propertyType === WALL_DECORATOR_PROPERTY_TYPE.BOOL) {
                 control = makeToggleRow({
@@ -995,17 +976,28 @@ export class WallDecorationMeshDebuggerUI {
                         this._emit();
                     }
                 });
+                controlKind = 'bool';
             } else if (propertyType === WALL_DECORATOR_PROPERTY_TYPE.ENUM) {
                 const options = Array.isArray(spec?.options) ? spec.options : [];
-                control = makeChoiceRow({
-                    label: spec?.label ?? propertyId,
-                    value: String(this._draft?.configuration?.[propertyId] ?? ''),
-                    options,
-                    onChange: (next) => {
-                        this._draft.configuration[propertyId] = String(next ?? '');
-                        this._emit();
-                    }
-                });
+                const pickerMode = normalizeConfigurationPropertyPicker(spec?.picker);
+                if (pickerMode === 'thumbnail') {
+                    control = makeMaterialPickerRow({
+                        label: spec?.label ?? propertyId,
+                        onPick: () => this._openConfigurationEnumPicker({ propertyId, spec })
+                    });
+                    controlKind = 'enum_thumbnail';
+                } else {
+                    control = makeChoiceRow({
+                        label: spec?.label ?? propertyId,
+                        value: String(this._draft?.configuration?.[propertyId] ?? ''),
+                        options,
+                        onChange: (next) => {
+                            this._draft.configuration[propertyId] = String(next ?? '');
+                            this._emit();
+                        }
+                    });
+                    controlKind = 'enum_choice';
+                }
             } else {
                 const isInt = propertyType === WALL_DECORATOR_PROPERTY_TYPE.INT;
                 const min = Number.isFinite(spec?.min) ? Number(spec.min) : (isInt ? 0 : 0.0);
@@ -1025,12 +1017,63 @@ export class WallDecorationMeshDebuggerUI {
                         this._emit();
                     }
                 });
+                controlKind = isInt ? 'int' : 'float';
             }
 
             if (!control) continue;
-            this._configurationControlById.set(propertyId, { spec, control });
+            this._configurationControlById.set(propertyId, { spec, control, controlKind });
             host.appendChild(control.row);
         }
+    }
+
+    _syncConfigurationThumbnailEnumControl({ propertyId, spec, control }) {
+        const options = Array.isArray(spec?.options) ? spec.options : [];
+        const selectedId = String(this._draft?.configuration?.[propertyId] ?? '').trim();
+        const selected = options.find((opt) => String(opt?.id ?? '') === selectedId) ?? options[0] ?? null;
+
+        if (!selected) {
+            control?.setDisabled?.(true);
+            if (control?.textEl) control.textEl.textContent = 'No options available';
+            if (control?.thumb) setOptionsThumbToTexture(control.thumb, '', 'N/A');
+            return;
+        }
+
+        this._draft.configuration[propertyId] = String(selected.id ?? '');
+        control?.setDisabled?.(false);
+        if (control?.textEl) control.textEl.textContent = String(selected.label ?? selected.id ?? '');
+        if (control?.thumb) setOptionsThumbToTexture(control.thumb, selected.previewUrl ?? '', String(selected.label ?? selected.id ?? ''));
+    }
+
+    _openConfigurationEnumPicker({ propertyId, spec }) {
+        const property = String(propertyId ?? '').trim();
+        if (!property) return;
+        const entry = this._configurationControlById.get(property) ?? null;
+        const control = entry?.control ?? null;
+        if (!control || control.btn?.disabled) return;
+
+        const options = Array.isArray(spec?.options) ? spec.options : [];
+        if (!options.length) return;
+
+        this._pickerPopup?.open?.({
+            title: String(spec?.label ?? property),
+            sections: [{
+                label: String(spec?.label ?? 'Options'),
+                options: options.map((opt) => ({
+                    id: String(opt?.id ?? ''),
+                    label: String(opt?.label ?? opt?.id ?? ''),
+                    kind: 'texture',
+                    previewUrl: typeof opt?.previewUrl === 'string' ? opt.previewUrl : null
+                }))
+            }],
+            selectedId: String(this._draft?.configuration?.[property] ?? ''),
+            thumbImageFit: 'contain',
+            thumbImageScale: 1.0,
+            onSelect: (opt) => {
+                this._draft.configuration[property] = String(opt?.id ?? '');
+                this._syncConfigurationControlsFromDraft();
+                this._emit();
+            }
+        });
     }
 
     _syncConfigurationControlsFromDraft() {
@@ -1047,6 +1090,7 @@ export class WallDecorationMeshDebuggerUI {
         for (const [propertyId, entry] of this._configurationControlById.entries()) {
             const spec = entry?.spec ?? null;
             const control = entry?.control ?? null;
+            const controlKind = String(entry?.controlKind ?? '');
             if (!spec || !control) continue;
             const propertyType = normalizeConfigurationPropertyType(spec.type);
             const nextValue = this._draft?.configuration?.[propertyId];
@@ -1055,7 +1099,11 @@ export class WallDecorationMeshDebuggerUI {
                 continue;
             }
             if (propertyType === WALL_DECORATOR_PROPERTY_TYPE.ENUM) {
-                control.setValue(String(nextValue ?? ''));
+                if (controlKind === 'enum_thumbnail') {
+                    this._syncConfigurationThumbnailEnumControl({ propertyId, spec, control });
+                } else {
+                    control.setValue(String(nextValue ?? ''));
+                }
                 continue;
             }
             if (Number.isFinite(nextValue)) control.setValue(Number(nextValue));
@@ -1068,13 +1116,14 @@ export class WallDecorationMeshDebuggerUI {
 
         this._controls.materialKind = makeChoiceRow({
             label: 'Material kind',
-            value: this._draft.materialSelection?.kind ?? 'texture',
+            value: normalizeDecoratorMaterialKind(this._draft.materialSelection?.kind),
             options: [
                 { id: 'texture', label: 'Texture' },
-                { id: 'color', label: 'Color' }
+                { id: 'color', label: 'Color' },
+                { id: 'match_wall', label: 'Match wall' }
             ],
             onChange: (id) => {
-                const kind = id === 'color' ? 'color' : 'texture';
+                const kind = normalizeDecoratorMaterialKind(id);
                 this._draft.materialSelection.kind = kind;
                 this._syncMaterialSelectOptions();
                 this._syncMaterialRowsDisabled();
@@ -1089,54 +1138,20 @@ export class WallDecorationMeshDebuggerUI {
         });
         sectionMaterial.appendChild(this._controls.materialId.row);
 
-        this._controls.tintHue = makeNumberSliderRow({
-            label: 'Tint hue',
-            value: this._tintControlState.hueDeg,
-            min: 0,
-            max: 360,
-            step: 1,
-            digits: 0,
-            onChange: (next) => {
-                this._tintControlState.hueDeg = normalizeHueDegrees(next);
+        const tintRow = makeEl('div', 'options-row options-row-wide');
+        const tintLabel = makeEl('div', 'options-row-label', 'Tint');
+        const tintControl = makeEl('div', 'options-row-control options-row-control-wide');
+        this._controls.tintPicker = new SharedHsvbTintPicker({
+            initialState: this._tintControlState,
+            onChange: (nextState) => {
+                this._tintControlState = resolveWallBaseTintStateFromWallBase(nextState, WALL_BASE_TINT_STATE_DEFAULT);
                 this._commitTintFromUi();
             }
         });
-        this._controls.tintSaturation = makeNumberSliderRow({
-            label: 'Tint saturation',
-            value: this._tintControlState.saturation,
-            min: 0,
-            max: 1,
-            step: 0.01,
-            digits: 2,
-            onChange: (next) => {
-                this._tintControlState.saturation = clamp(next, 0, 1);
-                this._commitTintFromUi();
-            }
-        });
-        this._controls.tintValue = makeNumberSliderRow({
-            label: 'Tint value',
-            value: this._tintControlState.value,
-            min: 0,
-            max: 1,
-            step: 0.01,
-            digits: 2,
-            onChange: (next) => {
-                this._tintControlState.value = clamp(next, 0, 1);
-                this._commitTintFromUi();
-            }
-        });
-        this._controls.tintIntensity = makeNumberSliderRow({
-            label: 'Tint intensity',
-            value: this._tintControlState.intensity,
-            min: 0,
-            max: 1,
-            step: 0.01,
-            digits: 2,
-            onChange: (next) => {
-                this._tintControlState.intensity = clamp(next, 0, 1);
-                this._commitTintFromUi();
-            }
-        });
+        tintControl.appendChild(this._controls.tintPicker.element);
+        tintRow.appendChild(tintLabel);
+        tintRow.appendChild(tintControl);
+
         this._controls.wallRoughness = makeNumberSliderRow({
             label: 'Wall roughness',
             value: this._draft.wallBase?.roughness ?? 0.85,
@@ -1162,10 +1177,7 @@ export class WallDecorationMeshDebuggerUI {
             }
         });
 
-        sectionMaterial.appendChild(this._controls.tintHue.row);
-        sectionMaterial.appendChild(this._controls.tintSaturation.row);
-        sectionMaterial.appendChild(this._controls.tintValue.row);
-        sectionMaterial.appendChild(this._controls.tintIntensity.row);
+        sectionMaterial.appendChild(tintRow);
         sectionMaterial.appendChild(this._controls.wallRoughness.row);
         sectionMaterial.appendChild(this._controls.wallNormalStrength.row);
 
@@ -1263,7 +1275,8 @@ export class WallDecorationMeshDebuggerUI {
     }
 
     _commitTintFromUi() {
-        this._draft.wallBase.tintHex = composeTintHexFromControls(this._tintControlState);
+        this._draft.wallBase ??= {};
+        applyWallBaseTintStateToWallBase(this._draft.wallBase, this._tintControlState);
         this._emit();
     }
 
@@ -1275,14 +1288,34 @@ export class WallDecorationMeshDebuggerUI {
     }
 
     _syncMaterialSelectOptions() {
-        const kind = this._draft.materialSelection?.kind === 'color' ? 'color' : 'texture';
+        const kind = normalizeDecoratorMaterialKind(this._draft?.materialSelection?.kind);
+        const picker = this._controls?.materialId ?? null;
+
+        if (kind === 'match_wall') {
+            this._draft.materialSelection = { kind: 'match_wall', id: 'match_wall' };
+            if (picker) {
+                const wallSource = this._wallMaterialOptions.find((opt) => opt.id === this._wallMaterialId)
+                    ?? this._wallMaterialOptions[0]
+                    ?? null;
+                picker.setDisabled(true);
+                if (!wallSource) {
+                    picker.textEl.textContent = 'Match wall';
+                    setOptionsThumbToTexture(picker.thumb, '', 'Match wall');
+                    return;
+                }
+                picker.textEl.textContent = `Match wall (${wallSource.label})`;
+                if (wallSource.kind === 'none') setOptionsThumbToColor(picker.thumb, wallSource.hex ?? 0x9196a0, wallSource.label);
+                else setOptionsThumbToTexture(picker.thumb, wallSource.previewUrl ?? '', wallSource.label);
+            }
+            return;
+        }
+
         const options = kind === 'color' ? this._colorOptions : this._textureOptions;
         const previousId = this._draft.materialSelection?.id ?? '';
         const selected = options.find((opt) => opt.id === previousId) ?? options[0] ?? null;
         const selectedId = selected?.id ? String(selected.id) : '';
         this._draft.materialSelection = { kind, id: selectedId };
 
-        const picker = this._controls?.materialId ?? null;
         if (!picker) return;
         picker.setDisabled(!selected);
 
@@ -1299,7 +1332,9 @@ export class WallDecorationMeshDebuggerUI {
     }
 
     _buildMaterialPickerSections(kind) {
-        const mode = kind === 'color' ? 'color' : 'texture';
+        const normalizedKind = normalizeDecoratorMaterialKind(kind);
+        if (normalizedKind === 'match_wall') return [];
+        const mode = normalizedKind === 'color' ? 'color' : 'texture';
         const options = mode === 'color' ? this._colorOptions : this._textureOptions;
         if (!options.length) return [];
 
@@ -1345,7 +1380,8 @@ export class WallDecorationMeshDebuggerUI {
         const picker = this._controls?.materialId ?? null;
         if (!picker || picker.btn?.disabled) return;
 
-        const kind = this._draft.materialSelection?.kind === 'color' ? 'color' : 'texture';
+        const kind = normalizeDecoratorMaterialKind(this._draft?.materialSelection?.kind);
+        if (kind === 'match_wall') return;
         const sections = this._buildMaterialPickerSections(kind);
         if (!sections.length) return;
 
@@ -1366,22 +1402,24 @@ export class WallDecorationMeshDebuggerUI {
     }
 
     _syncMaterialRowsDisabled() {
-        const isTexture = this._draft.materialSelection?.kind !== 'color';
+        const kind = normalizeDecoratorMaterialKind(this._draft?.materialSelection?.kind);
+        const isTexture = kind === 'texture';
+        const isMatchWall = kind === 'match_wall';
         const tilingEnabled = !!this._draft.tiling?.enabled;
         const uvEnabled = !!this._draft.tiling?.uvEnabled;
 
-        this._controls.tintHue.setDisabled(!isTexture);
-        this._controls.tintSaturation.setDisabled(!isTexture);
-        this._controls.tintValue.setDisabled(!isTexture);
-        this._controls.tintIntensity.setDisabled(!isTexture);
-        this._controls.tilingEnabled.setDisabled(!isTexture);
+        this._controls.materialId?.setDisabled?.(isMatchWall);
+        this._controls.tintPicker?.setDisabled?.(!isTexture || isMatchWall);
+        this._controls.wallRoughness?.setDisabled?.(isMatchWall);
+        this._controls.wallNormalStrength?.setDisabled?.(isMatchWall);
+        this._controls.tilingEnabled.setDisabled(!isTexture || isMatchWall);
 
-        this._controls.tileMetersU.setDisabled(!isTexture || !tilingEnabled);
-        this._controls.tileMetersV.setDisabled(!isTexture || !tilingEnabled);
-        this._controls.uvEnabled.setDisabled(!isTexture);
-        this._controls.uvOffsetU.setDisabled(!isTexture || !uvEnabled);
-        this._controls.uvOffsetV.setDisabled(!isTexture || !uvEnabled);
-        this._controls.uvRotation.setDisabled(!isTexture || !uvEnabled);
+        this._controls.tileMetersU.setDisabled(!isTexture || !tilingEnabled || isMatchWall);
+        this._controls.tileMetersV.setDisabled(!isTexture || !tilingEnabled || isMatchWall);
+        this._controls.uvEnabled.setDisabled(!isTexture || isMatchWall);
+        this._controls.uvOffsetU.setDisabled(!isTexture || !uvEnabled || isMatchWall);
+        this._controls.uvOffsetV.setDisabled(!isTexture || !uvEnabled || isMatchWall);
+        this._controls.uvRotation.setDisabled(!isTexture || !uvEnabled || isMatchWall);
     }
 
     _syncAllControlsFromDraft() {
@@ -1392,14 +1430,11 @@ export class WallDecorationMeshDebuggerUI {
         this._controls.position.setValue(this._draft.position);
         this._syncConfigurationControlsFromDraft();
 
-        this._controls.materialKind.setValue(this._draft.materialSelection?.kind ?? 'texture');
+        this._controls.materialKind.setValue(normalizeDecoratorMaterialKind(this._draft.materialSelection?.kind));
         this._syncMaterialSelectOptions();
 
-        this._tintControlState = deriveTintControlStateFromHex(this._draft.wallBase?.tintHex ?? 0xffffff);
-        this._controls.tintHue.setValue(this._tintControlState.hueDeg);
-        this._controls.tintSaturation.setValue(this._tintControlState.saturation);
-        this._controls.tintValue.setValue(this._tintControlState.value);
-        this._controls.tintIntensity.setValue(this._tintControlState.intensity);
+        this._tintControlState = resolveWallBaseTintStateFromWallBase(this._draft.wallBase, WALL_BASE_TINT_STATE_DEFAULT);
+        this._controls.tintPicker?.setState?.(this._tintControlState);
         this._controls.wallRoughness.setValue(this._draft.wallBase?.roughness ?? 0.85);
         this._controls.wallNormalStrength.setValue(this._draft.wallBase?.normalStrength ?? 0.9);
 

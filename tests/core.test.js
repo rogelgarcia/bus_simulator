@@ -1820,8 +1820,28 @@ async function runTests() {
         assertEqual(layer.wallBase.roughness, 0, 'Expected roughness clamped to [0..1].');
         assertEqual(layer.wallBase.normalStrength, 2, 'Expected normalStrength clamped to [0..2].');
 
+        const tintStateLayer = createDefaultFloorLayer({
+            wallBase: {
+                tintHueDeg: 400,
+                tintSaturation: -5,
+                tintValue: 99,
+                tintIntensity: 99,
+                tintBrightness: 99
+            }
+        });
+        assertEqual(tintStateLayer.wallBase.tintHueDeg, 40, 'Expected tintHueDeg normalized to [0..360).');
+        assertEqual(tintStateLayer.wallBase.tintSaturation, 0, 'Expected tintSaturation clamped to [0..1].');
+        assertEqual(tintStateLayer.wallBase.tintValue, 1, 'Expected tintValue clamped to [0..1].');
+        assertEqual(tintStateLayer.wallBase.tintIntensity, 1, 'Expected tintIntensity clamped to [0..1].');
+        assertEqual(tintStateLayer.wallBase.tintBrightness, 2, 'Expected tintBrightness clamped to [0..2].');
+
         const defaults = createDefaultFloorLayer().wallBase;
         assertEqual(defaults.tintHex, WALL_BASE_MATERIAL_DEFAULT.tintHex, 'Expected default tintHex.');
+        assertEqual(defaults.tintHueDeg, WALL_BASE_MATERIAL_DEFAULT.tintHueDeg, 'Expected default tintHueDeg.');
+        assertEqual(defaults.tintSaturation, WALL_BASE_MATERIAL_DEFAULT.tintSaturation, 'Expected default tintSaturation.');
+        assertEqual(defaults.tintValue, WALL_BASE_MATERIAL_DEFAULT.tintValue, 'Expected default tintValue.');
+        assertEqual(defaults.tintIntensity, WALL_BASE_MATERIAL_DEFAULT.tintIntensity, 'Expected default tintIntensity.');
+        assertEqual(defaults.tintBrightness, WALL_BASE_MATERIAL_DEFAULT.tintBrightness, 'Expected default tintBrightness.');
         assertEqual(defaults.roughness, WALL_BASE_MATERIAL_DEFAULT.roughness, 'Expected default roughness.');
         assertEqual(defaults.normalStrength, WALL_BASE_MATERIAL_DEFAULT.normalStrength, 'Expected default normalStrength.');
     });
@@ -2209,7 +2229,26 @@ async function runTests() {
         }
     });
 
-    test('BuildingFabrication2UI: material panel uses flat base/tiling sections with tint sliders', () => {
+    test('BuildingFabrication2UI: view panel exposes Render slab toggle and callback', () => {
+        const ui = new BuildingFabrication2UI();
+        ui.mount(document.body);
+        try {
+            ui.setBuildingState({ hasBuilding: true, buildingName: 'Test', buildingType: 'business' });
+            assertTrue(!!ui.renderSlabToggleInput, 'Expected Render slab checkbox input.');
+            assertFalse(ui.renderSlabToggleInput.checked, 'Expected Render slab off by default.');
+
+            let changed = null;
+            ui.onRenderSlabChange = (enabled) => { changed = enabled; };
+            ui.renderSlabToggleInput.checked = true;
+            ui.renderSlabToggleInput.dispatchEvent(new Event('change'));
+
+            assertEqual(changed, true, 'Expected Render slab callback payload when toggled on.');
+        } finally {
+            ui.unmount();
+        }
+    });
+
+    test('BuildingFabrication2UI: material panel uses flat base/tiling sections with shared tint picker', () => {
         const ui = new BuildingFabrication2UI();
         ui.mount(document.body);
         try {
@@ -2265,10 +2304,12 @@ async function runTests() {
 
             const labels = Array.from(ui.materialBody.querySelectorAll('.building-fab-row-label'))
                 .map((el) => String(el.textContent || '').trim());
-            assertTrue(labels.includes('Tint hue'), 'Expected Tint hue slider row.');
-            assertTrue(labels.includes('Tint saturation'), 'Expected Tint saturation slider row.');
-            assertTrue(labels.includes('Tint value'), 'Expected Tint value slider row.');
-            assertTrue(labels.includes('Tint intensity'), 'Expected Tint intensity slider row.');
+            assertTrue(labels.includes('Tint'), 'Expected Tint row.');
+            assertFalse(labels.includes('Tint hue'), 'Expected old tint hue slider row removed.');
+            assertFalse(labels.includes('Tint saturation'), 'Expected old tint saturation slider row removed.');
+            assertFalse(labels.includes('Tint value'), 'Expected old tint value slider row removed.');
+            assertFalse(labels.includes('Tint intensity'), 'Expected old tint intensity slider row removed.');
+            assertTrue(!!ui.materialBody.querySelector('.ui-shared-tint-picker'), 'Expected shared tint picker component in BF2 material panel.');
         } finally {
             ui.unmount();
         }
@@ -2978,7 +3019,9 @@ async function runTests() {
         };
         const view = new BuildingFabrication2View(engine);
         let rebuildCalls = 0;
+        let syncCalls = 0;
         view._requestRebuild = () => { rebuildCalls += 1; };
+        view._syncUiState = () => { syncCalls += 1; };
         view._currentConfig = {
             layers: [{
                 id: 'floor_1',
@@ -2992,13 +3035,16 @@ async function runTests() {
         const floorLayer = view._currentConfig.layers[0];
         assertTrue(!!floorLayer?.interior?.enabled, 'Expected floor interior to enable.');
         assertEqual(rebuildCalls, 1, 'Expected rebuild when interior toggle changes.');
+        assertEqual(syncCalls, 1, 'Expected UI sync when interior toggle changes.');
 
         view._setFloorLayerInteriorEnabled('floor_1', true);
         assertEqual(rebuildCalls, 1, 'Expected no extra rebuild when interior toggle is unchanged.');
+        assertEqual(syncCalls, 1, 'Expected no extra UI sync when interior toggle is unchanged.');
 
         view._setFloorLayerInteriorEnabled('floor_1', false);
         assertFalse(!!floorLayer?.interior?.enabled, 'Expected floor interior to disable.');
         assertEqual(rebuildCalls, 2, 'Expected rebuild when interior toggle changes back.');
+        assertEqual(syncCalls, 2, 'Expected UI sync when interior toggle changes back.');
     });
 
     test('BuildingFabrication2UI: floor layout exposes Interior Off/On toggle after floor height', () => {
@@ -3233,6 +3279,33 @@ async function runTests() {
             scene.controls?.dispose?.();
             scene.controls = null;
         }
+    });
+
+    test('BuildingFabrication2Scene: render slab uses footprint extents and toggles cleanly', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const scene = new BuildingFabrication2Scene(engine);
+        scene.root = new THREE.Group();
+        engine.scene.add(scene.root);
+        scene._building = { group: new THREE.Group() };
+        scene._focusBox = new THREE.Box3(
+            new THREE.Vector3(-4, 0.2, -3),
+            new THREE.Vector3(6, 8.6, 5)
+        );
+        scene._wallTextures = { resolveMaterial: () => null, applyResolvedMaterial: () => {} };
+
+        scene.setRenderSlab(true);
+        assertTrue(!!scene._supportSlabMesh, 'Expected slab mesh to be created when Render slab is enabled.');
+        assertNear(scene._supportSlabMesh.scale.x, 12, 1e-6, 'Expected slab width to overhang footprint by 1m per side.');
+        assertNear(scene._supportSlabMesh.scale.z, 10, 1e-6, 'Expected slab depth to overhang footprint by 1m per side.');
+        assertNear(scene._supportSlabMesh.scale.y, 0.5, 1e-6, 'Expected slab thickness to use configured downward depth.');
+        assertNear(scene._supportSlabMesh.position.y, -0.05, 1e-6, 'Expected slab top to align with building base plane.');
+
+        scene.setRenderSlab(false);
+        assertFalse(!!scene._supportSlabMesh, 'Expected slab mesh to be cleared when Render slab is disabled.');
     });
 
     test('BuildingFabrication2View: ruler/layout modes disable camera mouse controls', () => {
@@ -4248,12 +4321,23 @@ async function runTests() {
 
     test('WallDecorationMeshDebuggerUI: exposes catalog, placement, configuration, and direct material controls', () => {
         const simpleSkirtEntry = getWallDecoratorCatalogEntryById(WALL_DECORATOR_ID.SIMPLE_SKIRT);
+        const ribbonEntry = getWallDecoratorCatalogEntryById(WALL_DECORATOR_ID.RIBBON);
+        const edgeBrickChainEntry = getWallDecoratorCatalogEntryById(WALL_DECORATOR_ID.EDGE_BRICK_CHAIN);
+        const angledSupportEntry = getWallDecoratorCatalogEntryById(WALL_DECORATOR_ID.ANGLED_SUPPORT_PROFILE);
         let selectedWallMaterialId = null;
+        let wallMeshVisible = null;
+        let dummyVisible = null;
         const ui = new WallDecorationMeshDebuggerUI({
             initialState: getDefaultWallDecoratorDebuggerState(),
-            typeEntries: simpleSkirtEntry ? [simpleSkirtEntry] : [],
+            typeEntries: [simpleSkirtEntry, ribbonEntry, edgeBrickChainEntry, angledSupportEntry].filter((entry) => !!entry),
             onWallMaterialChange: (id) => {
                 selectedWallMaterialId = String(id ?? '');
+            },
+            onWallMeshVisibleChange: (visible) => {
+                wallMeshVisible = !!visible;
+            },
+            onDummyVisibleChange: (visible) => {
+                dummyVisible = !!visible;
             }
         });
         try {
@@ -4304,12 +4388,19 @@ async function runTests() {
             assertTrue(labels.includes('Placement'), 'Expected Position control row.');
             assertTrue(labels.includes('Material kind'), 'Expected material kind control.');
             assertTrue(labels.includes('Material'), 'Expected material select control.');
-            assertTrue(labels.includes('Tint hue'), 'Expected tint hue slider.');
-            assertTrue(labels.includes('Tint saturation'), 'Expected tint saturation slider.');
-            assertTrue(labels.includes('Tint value'), 'Expected tint value slider.');
-            assertTrue(labels.includes('Tint intensity'), 'Expected tint intensity slider.');
+            assertTrue(labels.includes('Tint'), 'Expected tint row.');
+            assertFalse(labels.includes('Tint hue'), 'Expected tint hue slider removed in favor of shared picker.');
+            assertFalse(labels.includes('Tint saturation'), 'Expected tint saturation slider removed in favor of shared picker.');
+            assertFalse(labels.includes('Tint value'), 'Expected tint value slider removed in favor of shared picker.');
+            assertFalse(labels.includes('Tint intensity'), 'Expected tint intensity slider removed in favor of shared picker.');
+            assertTrue(!!ui.root.querySelector('.ui-shared-tint-picker'), 'Expected shared tint picker component in materials tab.');
             assertFalse(labels.includes('Type'), 'Expected no legend label for type picker blocks.');
             assertFalse(labels.includes('Preset'), 'Expected no legend label for preset picker blocks.');
+            const materialKindButtons = Array.from(ui.root.querySelectorAll('.options-row'))
+                .find((row) => String(row.querySelector('.options-row-label')?.textContent || '').trim() === 'Material kind')
+                ?.querySelectorAll('.options-choice-btn') ?? [];
+            const materialKindLabels = Array.from(materialKindButtons).map((el) => String(el.textContent || '').trim());
+            assertTrue(materialKindLabels.includes('Match wall'), 'Expected Match wall material kind option.');
 
             const decoratorButtons = Array.from(ui.root.querySelectorAll('.wall-decoration-catalog-btn'));
             assertTrue(decoratorButtons.length > 0, 'Expected catalog decorator block buttons.');
@@ -4329,6 +4420,24 @@ async function runTests() {
                 .map((el) => (el.textContent || '').trim());
             assertTrue(viewButtons.includes('Mesh'), 'Expected Mesh view toggle on left panel.');
             assertTrue(viewButtons.includes('Wireframe'), 'Expected Wireframe view toggle on left panel.');
+            const wallVisibilityLabel = Array.from(ui.leftStack?.querySelectorAll('.options-row-label') ?? [])
+                .find((el) => String(el.textContent || '').trim() === 'Show wall');
+            assertTrue(!!wallVisibilityLabel, 'Expected Show wall toggle in left View panel.');
+            const wallVisibilityInput = wallVisibilityLabel?.closest('.options-row')?.querySelector('input[type="checkbox"]') ?? null;
+            assertTrue(!!wallVisibilityInput, 'Expected Show wall toggle input.');
+            assertTrue(!!wallVisibilityInput?.checked, 'Expected wall mesh visible by default.');
+            wallVisibilityInput.checked = false;
+            wallVisibilityInput.dispatchEvent(new Event('change'));
+            assertEqual(wallMeshVisible, false, 'Expected wall visibility callback when Show wall is disabled.');
+            const dummyVisibilityLabel = Array.from(ui.leftStack?.querySelectorAll('.options-row-label') ?? [])
+                .find((el) => String(el.textContent || '').trim() === 'Show dummy');
+            assertTrue(!!dummyVisibilityLabel, 'Expected Show dummy toggle in left View panel.');
+            const dummyVisibilityInput = dummyVisibilityLabel?.closest('.options-row')?.querySelector('input[type="checkbox"]') ?? null;
+            assertTrue(!!dummyVisibilityInput, 'Expected Show dummy toggle input.');
+            assertTrue(!!dummyVisibilityInput?.checked, 'Expected dummy context visible by default.');
+            dummyVisibilityInput.checked = false;
+            dummyVisibilityInput.dispatchEvent(new Event('change'));
+            assertEqual(dummyVisible, false, 'Expected dummy visibility callback when Show dummy is disabled.');
 
             const whereChoice = ui?._controls?.whereToApply?.getValue?.() ?? '';
             const modeChoice = ui?._controls?.mode?.getValue?.() ?? '';
@@ -4342,10 +4451,54 @@ async function runTests() {
             });
             const configLabels = Array.from(ui.root.querySelectorAll('.wall-decoration-configuration-host .options-row-label'))
                 .map((el) => (el.textContent || '').trim());
-            assertTrue(configLabels.includes('Height (m)'), 'Expected float property control from type metadata.');
-            assertTrue(configLabels.includes('Edge cap thickness (cm)'), 'Expected int property control from type metadata.');
-            assertTrue(configLabels.includes('Edge cap'), 'Expected enum property control from type metadata.');
-            assertTrue(configLabels.includes('Corner connector'), 'Expected bool property control from type metadata.');
+            assertTrue(configLabels.includes('Preset'), 'Expected size preset control in type metadata.');
+            assertTrue(configLabels.includes('Offset mode'), 'Expected offset mode control in type metadata.');
+            assertTrue(configLabels.includes('Near-edge offset (m)'), 'Expected near-edge float control in type metadata.');
+            assertFalse(configLabels.includes('Height (m)'), 'Expected direct height slider replaced by preset control.');
+            assertFalse(configLabels.includes('Edge cap'), 'Expected legacy edge-cap controls removed.');
+
+            ui.setState({
+                ...getDefaultWallDecoratorDebuggerState({ decoratorId: WALL_DECORATOR_ID.RIBBON })
+            });
+            const ribbonConfigLabels = Array.from(ui.root.querySelectorAll('.wall-decoration-configuration-host .options-row-label'))
+                .map((el) => (el.textContent || '').trim());
+            assertTrue(ribbonConfigLabels.includes('Pattern'), 'Expected ribbon pattern configuration row.');
+            const ribbonPatternButton = Array.from(ui.root.querySelectorAll('.wall-decoration-configuration-host .options-material-picker'))
+                .find((el) => ((el.textContent || '').toLowerCase().includes('circle') || (el.textContent || '').toLowerCase().includes('flat-base x')));
+            assertTrue(!!ribbonPatternButton, 'Expected ribbon pattern thumbnail picker button.');
+
+            ui.setState({
+                ...getDefaultWallDecoratorDebuggerState({ decoratorId: WALL_DECORATOR_ID.EDGE_BRICK_CHAIN })
+            });
+            const edgeChainConfigLabels = Array.from(ui.root.querySelectorAll('.wall-decoration-configuration-host .options-row-label'))
+                .map((el) => (el.textContent || '').trim());
+            assertTrue(edgeChainConfigLabels.includes('Edge target'), 'Expected edge-target control for edge brick chain.');
+            assertTrue(edgeChainConfigLabels.includes('startY'), 'Expected startY range control for edge brick chain.');
+            assertTrue(edgeChainConfigLabels.includes('endY'), 'Expected endY range control for edge brick chain.');
+            assertTrue(edgeChainConfigLabels.includes('brickHeight'), 'Expected brickHeight control for edge brick chain.');
+            assertTrue(edgeChainConfigLabels.includes('Snap to fit'), 'Expected snap toggle for edge brick chain.');
+
+            const matchWallKindButton = Array.from(materialKindButtons)
+                .find((el) => String(el.textContent || '').trim() === 'Match wall');
+            assertTrue(!!matchWallKindButton, 'Expected Match wall kind button.');
+            matchWallKindButton.click();
+            assertEqual(ui?._draft?.materialSelection?.kind, 'match_wall', 'Expected material kind state to switch to match_wall.');
+            assertEqual(ui?._draft?.materialSelection?.id, 'match_wall', 'Expected match wall sentinel id.');
+            assertTrue(!!ui?._controls?.materialId?.btn?.disabled, 'Expected explicit material picker disabled in match wall mode.');
+            const matchWallText = String(ui?._controls?.materialId?.textEl?.textContent || '').trim();
+            assertTrue(matchWallText.includes('Match wall'), 'Expected material row to indicate match wall mode.');
+            assertTrue(matchWallText.includes('Brick Wall 11'), 'Expected match wall row to reflect active wall material source.');
+
+            ui.setState({
+                ...getDefaultWallDecoratorDebuggerState({ decoratorId: WALL_DECORATOR_ID.ANGLED_SUPPORT_PROFILE })
+            });
+            const angledConfigLabels = Array.from(ui.root.querySelectorAll('.wall-decoration-configuration-host .options-row-label'))
+                .map((el) => (el.textContent || '').trim());
+            assertTrue(angledConfigLabels.includes('Offset (m)'), 'Expected angled support offset control.');
+            assertTrue(angledConfigLabels.includes('Shift (m)'), 'Expected angled support shift control.');
+            assertTrue(angledConfigLabels.includes('Return Height (m)'), 'Expected angled support returnHeight control.');
+            assertFalse(angledConfigLabels.includes('Thickness (m)'), 'Expected no thickness control for angled support profile.');
+            assertFalse(angledConfigLabels.includes('Preset'), 'Expected angled support not to inherit skirt preset controls.');
 
             const wallSizeText = ui?._controls?.fixedWallSize?.text?.textContent ?? '';
             assertTrue(wallSizeText.includes('10.0m × 3.5m'), 'Expected fixed wall size to be shown.');
@@ -4371,6 +4524,518 @@ async function runTests() {
             assertNear(size.x, 10.0, 1e-6, 'Expected wall corner to span full facade width on X.');
             assertNear(size.y, 3.5, 1e-6, 'Expected wall corner to match facade height.');
             assertNear(size.z, 10.0, 1e-6, 'Expected wall corner to span both faces on Z.');
+
+            const positions = wallMeshes[0]?.geometry?.attributes?.position?.array ?? [];
+            const hasVertexXZ = (x, z, eps = 1e-4) => {
+                for (let i = 0; i < positions.length; i += 3) {
+                    const vx = Number(positions[i]) || 0;
+                    const vz = Number(positions[i + 2]) || 0;
+                    if (Math.abs(vx - x) <= eps && Math.abs(vz - z) <= eps) return true;
+                }
+                return false;
+            };
+            assertTrue(hasVertexXZ(5.0, 0.0), 'Expected exterior corner to remain a 90-degree edge.');
+            assertTrue(hasVertexXZ(4.7, -0.3), 'Expected inner offset intersection for the 45-degree internal wedge.');
+            assertFalse(hasVertexXZ(4.7, 0.0), 'Expected no outward-facing chamfer start on front edge.');
+            assertFalse(hasVertexXZ(5.0, -0.3), 'Expected no outward-facing chamfer end on right edge.');
+        } finally {
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: plaster wall preview uses 2m tiles with 90deg UV rotation', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        try {
+            view.scene = new THREE.Scene();
+            view._buildWalls();
+
+            const albedo = new THREE.Texture();
+            const normal = new THREE.Texture();
+            const roughness = new THREE.Texture();
+            const metalness = new THREE.Texture();
+            const ao = new THREE.Texture();
+            view._pbrLoader = {
+                resolveMaterial: () => ({
+                    textures: {
+                        baseColor: albedo,
+                        normal,
+                        roughness,
+                        metalness,
+                        ao
+                    },
+                    overrides: {
+                        effective: {
+                            normalStrength: 1.0,
+                            roughness: 0.8
+                        }
+                    }
+                })
+            };
+            view._wallMaterialId = 'pbr.plastered_wall_02';
+            view._applyWallMaterialToWallMesh();
+
+            assertNear(albedo.repeat.x, 5.0, 1e-6, 'Expected plaster preview U repeat from 2m tile size.');
+            assertNear(albedo.repeat.y, 1.75, 1e-6, 'Expected plaster preview V repeat from 2m tile size.');
+            assertNear(albedo.rotation, Math.PI * 0.5, 1e-6, 'Expected plaster preview UV rotation to be 90 degrees.');
+            assertNear(normal.rotation, Math.PI * 0.5, 1e-6, 'Expected normal map rotation to match plaster preview UV rotation.');
+            assertNear(roughness.rotation, Math.PI * 0.5, 1e-6, 'Expected roughness map rotation to match plaster preview UV rotation.');
+            assertNear(metalness.rotation, Math.PI * 0.5, 1e-6, 'Expected metalness map rotation to match plaster preview UV rotation.');
+            assertNear(ao.rotation, Math.PI * 0.5, 1e-6, 'Expected ao map rotation to match plaster preview UV rotation.');
+        } finally {
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: wall visibility toggle hides wall mesh while keeping decorators visible', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        try {
+            view.scene = new THREE.Scene();
+            view._buildWalls();
+            view._decoratorGroup = new THREE.Group();
+            view.scene.add(view._decoratorGroup);
+            const decorator = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+            view._decoratorGroup.add(decorator);
+
+            view._setWallMeshVisible(false);
+            assertFalse(!!view._wallMesh?.visible, 'Expected wall mesh hidden when view toggle disables wall.');
+            assertTrue(!!view._decoratorGroup?.visible, 'Expected decorator group to remain visible while wall is hidden.');
+
+            view._setWallMeshVisible(true);
+            assertTrue(!!view._wallMesh?.visible, 'Expected wall mesh visible when view toggle enables wall.');
+        } finally {
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: dummy visibility toggle hides dummy context without affecting wall/decorators', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        try {
+            view.scene = new THREE.Scene();
+            view._buildStaticScene();
+            assertTrue(!!view._dummyGroup?.visible, 'Expected dummy context visible by default.');
+            assertTrue(!!view._wallMesh?.visible, 'Expected wall mesh visible by default.');
+            assertTrue(!!view._decoratorGroup?.visible, 'Expected decorator group visible by default.');
+
+            view._setDummyVisible(false);
+            assertFalse(!!view._dummyGroup?.visible, 'Expected dummy context hidden when Show dummy is disabled.');
+            assertTrue(!!view._wallMesh?.visible, 'Expected wall mesh to remain visible when dummy context is hidden.');
+            assertTrue(!!view._decoratorGroup?.visible, 'Expected decorator group to remain visible when dummy context is hidden.');
+
+            view._setDummyVisible(true);
+            assertTrue(!!view._dummyGroup?.visible, 'Expected dummy context visible when Show dummy is enabled.');
+        } finally {
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: match wall material mode mirrors wall source on decorators', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+        try {
+            view.scene = new THREE.Scene();
+            mesh.userData.surfaceSizeMeters = { width: 1.0, height: 1.0 };
+            view._decoratorMeshes = [mesh];
+            view._state = {
+                ...getDefaultWallDecoratorDebuggerState({ decoratorId: WALL_DECORATOR_ID.SIMPLE_SKIRT }),
+                materialSelection: { kind: 'match_wall', id: 'match_wall' }
+            };
+
+            const albedo = new THREE.Texture();
+            const normal = new THREE.Texture();
+            const roughness = new THREE.Texture();
+            const metalness = new THREE.Texture();
+            const ao = new THREE.Texture();
+            view._pbrLoader = {
+                resolveMaterial: (id) => {
+                    if (id !== 'pbr.brick_wall_11') return null;
+                    return {
+                        textures: {
+                            baseColor: albedo,
+                            normal,
+                            roughness,
+                            metalness,
+                            ao
+                        },
+                        overrides: {
+                            effective: {
+                                normalStrength: 1.0,
+                                roughness: 0.8
+                            }
+                        }
+                    };
+                }
+            };
+
+            view._wallMaterialId = 'pbr.brick_wall_11';
+            view._reapplyDecoratorMaterials();
+            const mat = mesh.material;
+            assertTrue(!!mat?.map?.isTexture, 'Expected decorator to resolve texture map from active wall material in match wall mode.');
+            assertEqual(mat?.color?.getHex?.(), 0xffffff, 'Expected match wall textured mode to keep albedo tint neutral.');
+
+            view._wallMaterialId = 'none';
+            view._reapplyDecoratorMaterials();
+            assertEqual(mat?.map ?? null, null, 'Expected decorator texture map cleared when wall source is None.');
+            assertEqual(mat?.color?.getHex?.(), 0x9196a0, 'Expected decorator flat color to match None wall source color.');
+        } finally {
+            mesh.geometry?.dispose?.();
+            mesh.material?.dispose?.();
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: every decorator type resolves match_wall deterministically', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+        try {
+            view.scene = new THREE.Scene();
+            mesh.userData.surfaceSizeMeters = { width: 1.0, height: 1.0 };
+            const albedo = new THREE.Texture();
+            const normal = new THREE.Texture();
+            const roughness = new THREE.Texture();
+            const metalness = new THREE.Texture();
+            const ao = new THREE.Texture();
+            view._pbrLoader = {
+                resolveMaterial: (id) => {
+                    if (id !== 'pbr.brick_wall_11') return null;
+                    return {
+                        textures: {
+                            baseColor: albedo,
+                            normal,
+                            roughness,
+                            metalness,
+                            ao
+                        },
+                        overrides: {
+                            effective: {
+                                normalStrength: 1.0,
+                                roughness: 0.8
+                            }
+                        }
+                    };
+                }
+            };
+
+            const typeIds = [
+                WALL_DECORATOR_ID.SIMPLE_SKIRT,
+                WALL_DECORATOR_ID.RIBBON,
+                WALL_DECORATOR_ID.EDGE_BRICK_CHAIN,
+                WALL_DECORATOR_ID.HALF_DOME,
+                WALL_DECORATOR_ID.ANGLED_SUPPORT_PROFILE
+            ];
+            for (const typeId of typeIds) {
+                view._state = {
+                    ...getDefaultWallDecoratorDebuggerState({ decoratorId: typeId }),
+                    materialSelection: { kind: 'match_wall', id: 'match_wall' }
+                };
+                view._wallMaterialId = 'pbr.brick_wall_11';
+                view._applyStateMaterialToMesh(mesh);
+                const mat = mesh.material;
+                assertTrue(!!mat?.map?.isTexture, `Expected ${typeId} to resolve match_wall texture map.`);
+                assertEqual(mat?.color?.getHex?.(), 0xffffff, `Expected ${typeId} match_wall textured mode to keep neutral tint.`);
+
+                view._wallMaterialId = 'none';
+                view._applyStateMaterialToMesh(mesh);
+                assertEqual(mat?.map ?? null, null, `Expected ${typeId} match_wall to clear map when wall source is None.`);
+                assertEqual(mat?.color?.getHex?.(), 0x9196a0, `Expected ${typeId} match_wall flat mode to use wall fallback color.`);
+            }
+        } finally {
+            mesh.geometry?.dispose?.();
+            mesh.material?.dispose?.();
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: ribbon applies generated pattern normal map from grayscale pattern id', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+        const checksum = (arr) => {
+            let sum = 0;
+            for (let i = 0; i < arr.length; i += 17) sum = (sum + Number(arr[i] || 0)) >>> 0;
+            return sum >>> 0;
+        };
+        try {
+            mesh.userData.surfaceSizeMeters = { width: 1.2, height: 0.35 };
+            view._state = {
+                ...getDefaultWallDecoratorDebuggerState({ decoratorId: WALL_DECORATOR_ID.RIBBON }),
+                materialSelection: { kind: 'color', id: 'belt.white' },
+                configuration: {
+                    sizePreset: 'medium',
+                    offsetMode: 'normal',
+                    nearEdgeOffsetMeters: 0.1,
+                    patternId: 'circle',
+                    patternNormalIntensity: 1.8
+                },
+                wallBase: {
+                    ...getDefaultWallDecoratorDebuggerState({ decoratorId: WALL_DECORATOR_ID.RIBBON }).wallBase,
+                    normalStrength: 1.1
+                }
+            };
+
+            view._applyStateMaterialToMesh(mesh);
+            const mat = mesh.material;
+            assertTrue(!!mat?.normalMap?.isDataTexture, 'Expected ribbon style to generate a procedural normal DataTexture.');
+            const circleData = mat?.normalMap?.image?.data ?? null;
+            assertTrue(circleData instanceof Uint8Array, 'Expected ribbon normal map pixel data.');
+            assertTrue(circleData.some((v, idx) => ((idx % 4) === 0 || (idx % 4) === 1) && v !== 128), 'Expected ribbon normal map to contain non-flat XY normals.');
+            const circleChecksum = checksum(circleData);
+
+            view._state.configuration.patternId = 'flat_base_x';
+            view._applyStateMaterialToMesh(mesh);
+            const xData = mat?.normalMap?.image?.data ?? null;
+            assertTrue(xData instanceof Uint8Array, 'Expected ribbon normal map data after pattern switch.');
+            const xChecksum = checksum(xData);
+            assertTrue(circleChecksum !== xChecksum, 'Expected different ribbon normal output per selected pattern id.');
+        } finally {
+            mesh.geometry?.dispose?.();
+            mesh.material?.dispose?.();
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: curved ring sweeps half-circle profile with 45deg end miters', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        try {
+            view.scene = new THREE.Scene();
+            view._decoratorGroup = new THREE.Group();
+            view.scene.add(view._decoratorGroup);
+            view._catalogLoader = {
+                loadShapeSpecs: () => ([
+                    {
+                        role: 'curved_ring_front',
+                        faceId: 'front',
+                        geometryKind: 'curved_ring',
+                        miterStart45: false,
+                        miterEnd45: false,
+                        centerU: 0.0,
+                        centerV: 0.0,
+                        widthMeters: 2.0,
+                        heightMeters: 1.0,
+                        depthMeters: 0.5,
+                        outsetMeters: 0.03
+                    },
+                    {
+                        role: 'curved_ring_front_miter',
+                        faceId: 'front',
+                        geometryKind: 'curved_ring',
+                        miterStart45: false,
+                        miterEnd45: true,
+                        centerU: 4.5,
+                        centerV: 0.0,
+                        widthMeters: 1.2,
+                        heightMeters: 1.0,
+                        depthMeters: 0.5,
+                        outsetMeters: 0.0
+                    }
+                ])
+            };
+
+            view._rebuildDecoratorMeshes();
+            assertEqual(view._decoratorMeshes.length, 2, 'Expected two curved-ring meshes from catalog specs.');
+
+            const frontRing = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'curved_ring_front') ?? null;
+            assertTrue(!!frontRing, 'Expected front curved-ring mesh.');
+            assertEqual(frontRing?.geometry?.type, 'BufferGeometry', 'Expected curved ring geometry from profile sweep.');
+            assertEqual(String(frontRing?.userData?.geometryKind ?? ''), 'curved_ring', 'Expected geometry kind metadata on mesh.');
+
+            const frontBox = new THREE.Box3().setFromObject(frontRing);
+            const frontSize = frontBox.getSize(new THREE.Vector3());
+            assertNear(frontSize.x, 2.0, 0.08, 'Expected curved-ring sweep width from spec span.');
+            assertNear(frontSize.y, 1.0, 0.08, 'Expected curved-ring height from diameter.');
+            assertNear(frontSize.z, 0.5, 0.08, 'Expected curved-ring protrusion depth equals radius.');
+            assertNear(frontBox.min.z, 0.03, 0.02, 'Expected curved-ring flat back to sit at wall plane + outset.');
+            const ringGeoForWallFaceCheck = frontRing?.geometry?.index ? frontRing.geometry.toNonIndexed() : frontRing?.geometry ?? null;
+            const ringPos = ringGeoForWallFaceCheck?.attributes?.position?.array ?? [];
+            let minRingZ = Number.POSITIVE_INFINITY;
+            for (let i = 2; i < ringPos.length; i += 3) minRingZ = Math.min(minRingZ, Number(ringPos[i]) || 0.0);
+            let wallFacingTriCount = 0;
+            for (let i = 0; i + 8 < ringPos.length; i += 9) {
+                const z0 = Number(ringPos[i + 2]) || 0.0;
+                const z1 = Number(ringPos[i + 5]) || 0.0;
+                const z2 = Number(ringPos[i + 8]) || 0.0;
+                if (Math.abs(z0 - minRingZ) <= 1e-5 && Math.abs(z1 - minRingZ) <= 1e-5 && Math.abs(z2 - minRingZ) <= 1e-5) {
+                    wallFacingTriCount += 1;
+                }
+            }
+            assertEqual(wallFacingTriCount, 0, 'Expected curved ring to omit wall-facing cap triangles.');
+            const ringNormals = ringGeoForWallFaceCheck?.attributes?.normal?.array ?? [];
+            let outerNormalCount = 0;
+            let outerNormalSum = 0.0;
+            for (let i = 0; i + 8 < ringPos.length && i + 8 < ringNormals.length; i += 3) {
+                const z = Number(ringPos[i + 2]) || 0.0;
+                if (z < (minRingZ + 0.35)) continue;
+                const nz = Number(ringNormals[i + 2]) || 0.0;
+                outerNormalCount += 1;
+                outerNormalSum += nz;
+            }
+            assertTrue(outerNormalCount > 0, 'Expected curved-ring outer-face normal samples.');
+            assertTrue((outerNormalSum / outerNormalCount) > 0.15, 'Expected curved-ring outer-face normals to point outward (+Z), not inward.');
+            if (ringGeoForWallFaceCheck !== frontRing?.geometry) ringGeoForWallFaceCheck?.dispose?.();
+
+            const miterRing = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'curved_ring_front_miter') ?? null;
+            assertTrue(!!miterRing, 'Expected mitered curved-ring mesh.');
+            const positions = miterRing?.geometry?.attributes?.position?.array ?? [];
+            let maxFrontX = Number.NEGATIVE_INFINITY;
+            for (let i = 0; i < positions.length; i += 3) {
+                const x = Number(positions[i]) || 0.0;
+                const z = Number(positions[i + 2]) || 0.0;
+                if (z >= 0.24) maxFrontX = Math.max(maxFrontX, x);
+            }
+            assertTrue(maxFrontX <= 0.12, 'Expected end-side 45-degree miter to trim the curved-ring front-right side.');
+        } finally {
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: angled support profile uses swept profile and 45deg segment miter', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        try {
+            view.scene = new THREE.Scene();
+            view._decoratorGroup = new THREE.Group();
+            view.scene.add(view._decoratorGroup);
+            view._catalogLoader = {
+                loadShapeSpecs: () => ([
+                    {
+                        role: 'angled_support_front',
+                        faceId: 'front',
+                        geometryKind: 'angled_support_profile',
+                        centerU: 0.0,
+                        centerV: 0.0,
+                        widthMeters: 2.0,
+                        heightMeters: 0.25,
+                        depthMeters: 0.12,
+                        profileOffsetMeters: 0.12,
+                        profileShiftMeters: -0.04,
+                        profileReturnHeightMeters: 0.22,
+                        miterStart45: false,
+                        miterEnd45: false
+                    },
+                    {
+                        role: 'angled_support_front_miter',
+                        faceId: 'front',
+                        geometryKind: 'angled_support_profile',
+                        centerU: 3.8,
+                        centerV: 0.0,
+                        widthMeters: 1.2,
+                        heightMeters: 0.25,
+                        depthMeters: 0.12,
+                        profileOffsetMeters: 0.12,
+                        profileShiftMeters: 0.03,
+                        profileReturnHeightMeters: 0.25,
+                        miterStart45: false,
+                        miterEnd45: true
+                    }
+                ])
+            };
+
+            view._rebuildDecoratorMeshes();
+            assertEqual(view._decoratorMeshes.length, 2, 'Expected two angled-support meshes from catalog specs.');
+
+            const straightMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'angled_support_front') ?? null;
+            assertTrue(!!straightMesh, 'Expected straight angled-support mesh.');
+            assertEqual(String(straightMesh?.userData?.geometryKind ?? ''), 'angled_support_profile', 'Expected angled support geometry metadata.');
+
+            const straightBox = new THREE.Box3().setFromObject(straightMesh);
+            const straightSize = straightBox.getSize(new THREE.Vector3());
+            assertNear(straightSize.x, 2.0, 0.08, 'Expected swept profile length to follow spec width.');
+            assertNear(straightSize.z, 0.12, 0.04, 'Expected profile offset to define outward depth.');
+            assertTrue(straightSize.y > 0.20 && straightSize.y < 0.35, 'Expected signed shift + returnHeight to produce non-trivial profile height.');
+            const supportGeoForNormalCheck = straightMesh?.geometry?.index ? straightMesh.geometry.toNonIndexed() : straightMesh?.geometry ?? null;
+            const supportPos = supportGeoForNormalCheck?.attributes?.position?.array ?? [];
+            const supportNormals = supportGeoForNormalCheck?.attributes?.normal?.array ?? [];
+            let maxSupportZ = Number.NEGATIVE_INFINITY;
+            for (let i = 2; i < supportPos.length; i += 3) maxSupportZ = Math.max(maxSupportZ, Number(supportPos[i]) || 0.0);
+            let supportOuterCount = 0;
+            let supportOuterSum = 0.0;
+            for (let i = 0; i + 8 < supportPos.length && i + 8 < supportNormals.length; i += 3) {
+                const z = Number(supportPos[i + 2]) || 0.0;
+                if (z < maxSupportZ - 0.02) continue;
+                const nz = Number(supportNormals[i + 2]) || 0.0;
+                supportOuterCount += 1;
+                supportOuterSum += nz;
+            }
+            assertTrue(supportOuterCount > 0, 'Expected angled-support outer-face normal samples.');
+            assertTrue((supportOuterSum / supportOuterCount) > 0.15, 'Expected angled-support outer-face normals to point outward (+Z), not inward.');
+            if (supportGeoForNormalCheck !== straightMesh?.geometry) supportGeoForNormalCheck?.dispose?.();
+
+            const miterMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'angled_support_front_miter') ?? null;
+            assertTrue(!!miterMesh, 'Expected mitered angled-support mesh.');
+            const miterPositions = miterMesh?.geometry?.attributes?.position?.array ?? [];
+            let maxFrontX = Number.NEGATIVE_INFINITY;
+            for (let i = 0; i < miterPositions.length; i += 3) {
+                const x = Number(miterPositions[i]) || 0.0;
+                const z = Number(miterPositions[i + 2]) || 0.0;
+                if (z >= 0.06) maxFrontX = Math.max(maxFrontX, x);
+            }
+            assertTrue(maxFrontX < 0.52, 'Expected end-side miter to trim front edge at 45 degrees.');
+        } finally {
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: edge brick chain course applies 45deg miter cuts when requested', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        try {
+            view.scene = new THREE.Scene();
+            view._decoratorGroup = new THREE.Group();
+            view.scene.add(view._decoratorGroup);
+            view._catalogLoader = {
+                loadShapeSpecs: () => ([
+                    {
+                        role: 'front_right_course_000',
+                        faceId: 'front',
+                        geometryKind: 'edge_brick_chain_course',
+                        centerU: 4.8,
+                        centerV: -1.4,
+                        widthMeters: 0.20,
+                        heightMeters: 0.30,
+                        depthMeters: 0.08,
+                        outsetMeters: 0.0,
+                        miterStart45: false,
+                        miterEnd45: false
+                    },
+                    {
+                        role: 'front_right_course_001',
+                        faceId: 'front',
+                        geometryKind: 'edge_brick_chain_course',
+                        centerU: 4.8,
+                        centerV: -1.0,
+                        widthMeters: 0.20,
+                        heightMeters: 0.30,
+                        depthMeters: 0.08,
+                        outsetMeters: 0.0,
+                        miterStart45: false,
+                        miterEnd45: true
+                    }
+                ])
+            };
+
+            view._rebuildDecoratorMeshes();
+            assertEqual(view._decoratorMeshes.length, 2, 'Expected two edge-brick chain course meshes.');
+            const straightMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'front_right_course_000') ?? null;
+            const miterMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'front_right_course_001') ?? null;
+            assertTrue(!!straightMesh && !!miterMesh, 'Expected straight and mitered edge-brick course meshes.');
+            assertEqual(String(miterMesh?.userData?.geometryKind ?? ''), 'edge_brick_chain_course', 'Expected geometry kind metadata for edge-brick course.');
+
+            const miterPositions = miterMesh?.geometry?.attributes?.position?.array ?? [];
+            let maxFrontX = Number.NEGATIVE_INFINITY;
+            let maxWallX = Number.NEGATIVE_INFINITY;
+            for (let i = 0; i < miterPositions.length; i += 3) {
+                const x = Number(miterPositions[i]) || 0.0;
+                const z = Number(miterPositions[i + 2]) || 0.0;
+                if (z >= 0.03) maxFrontX = Math.max(maxFrontX, x);
+                if (z <= -0.03) maxWallX = Math.max(maxWallX, x);
+            }
+            assertTrue(maxFrontX < 0.06, 'Expected mitered edge-brick course to trim front-right side at 45 degrees.');
+            assertTrue(maxWallX >= 0.09, 'Expected mitered edge-brick course to keep full outer 90-degree corner reach at wall plane.');
         } finally {
             view._disposeSceneResources();
             view.scene = null;
@@ -4828,6 +5493,19 @@ async function runTests() {
 
         const interiorMeshes = (parts.solidMeshes ?? []).filter((m) => m?.userData?.buildingFab2Role === 'interior');
         assertTrue(interiorMeshes.length >= 3, 'Expected floor interior wall/floor/ceiling meshes when interior is enabled.');
+        const interiorWall = interiorMeshes.find((m) => m?.userData?.buildingFab2InteriorKind === 'wall') ?? null;
+        const facadeWall = (parts.solidMeshes ?? []).find((m) => (
+            m?.userData?.buildingFab2Role === 'wall' && m?.userData?.buildingFab2WallKind === 'facade'
+        )) ?? null;
+        assertTrue(!!interiorWall, 'Expected interior wall mesh.');
+        assertTrue(!!facadeWall, 'Expected facade wall mesh.');
+
+        const interiorBox = new THREE.Box3().setFromObject(interiorWall);
+        const facadeBox = new THREE.Box3().setFromObject(facadeWall);
+        const shrinkX = (facadeBox.max.x - facadeBox.min.x) - (interiorBox.max.x - interiorBox.min.x);
+        const shrinkZ = (facadeBox.max.z - facadeBox.min.z) - (interiorBox.max.z - interiorBox.min.z);
+        assertTrue(shrinkX > 0.008, 'Expected interior wall shell to inset in X to avoid shadow overlap artifacts.');
+        assertTrue(shrinkZ > 0.008, 'Expected interior wall shell to inset in Z to avoid shadow overlap artifacts.');
     });
 
     test('BuildingFabricationGenerator: bay openings render without generating interior shell meshes', () => {

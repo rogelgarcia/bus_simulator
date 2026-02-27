@@ -3,4 +3,4 @@
 // @ts-check
 
 export * from './WallDecoratorCatalog.js';
-
+export * from './RibbonPatternCatalog.js';

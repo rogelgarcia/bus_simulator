@@ -141,7 +141,10 @@ Given a solved facade layout, geometry generation MUST:
   - if a face is a slave, it inherits the master face’s wall material configuration (no duplicated config is owned by slaves).
 - A bay MAY override wall material and related wall material settings:
   - `wallMaterialOverride` (MaterialSpec),
-  - `wallBase` (albedo tint / roughness / normal strength),
+  - `wallBase`:
+    - tint state (`tintHueDeg`, `tintSaturation`, `tintValue`, `tintIntensity`, `tintBrightness`),
+    - compatibility `tintHex` output,
+    - roughness / normal strength,
   - `tiling` (tile meters + UV transform),
   - `materialVariation` (wall material variation config).
 - A bay MAY link (inherit) its **entire bay configuration** from another bay on the same face using `linkFromBayId`:
@@ -176,6 +179,7 @@ Compatibility note (transitional):
   - derive one interior room wall plane per face from the innermost street-floor run-window opening depth on that face,
   - generate side-wall returns for run-window openings by extending opening reveal depth to the derived interior wall plane,
   - include interior wall/floor/ceiling meshes.
+- Interior shell geometry MUST be inset slightly from the derived wall plane (e.g. ~`0.01m`) to avoid coplanar wall/shadow shimmer artifacts.
 - Street-floor interior vertical span (legacy pass) MUST run from street-floor base elevation to `floorHeight - 0.10m`.
 - Street-floor interior shell material assignments (legacy pass) are fixed:
   - interior walls: `Plastered wall 02` (`pbr.plastered_wall_02`)
@@ -183,6 +187,17 @@ Compatibility note (transitional):
   - interior ceiling: `Concrete layers 2` (`pbr.concrete_layers_02`)
 - Bay opening reveals remain local to the opening cutout depth and do not derive/emit an interior room shell.
 - Non-street-floor behavior remains unchanged unless explicitly defined by this pass.
+
+### 6.3 BF2 support slab (view helper)
+
+- Building Fabrication 2 MAY render an optional support slab helper under the building for viewport-only gap masking.
+- This helper is controlled by a non-persistent view toggle (`Render slab`) and MUST NOT modify the authored model or exported config.
+- When enabled:
+  - slab bounds are rectangular in world XZ and expanded by `1m` per side beyond the current building silhouette bounds,
+  - slab top Y aligns with the solved building base/floor plane,
+  - slab thickness extends downward only from that top plane,
+  - slab material uses `Painted plaster wall` (`pbr.plastered_wall_02`).
+- Toggling on/off and rebuilding within the same session MUST not leak helper meshes or leave stale geometry.
 
 ---
 

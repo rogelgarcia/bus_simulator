@@ -2,8 +2,23 @@
 // Catalog + debugger state model for procedural wall decorators.
 // @ts-check
 
+import {
+    WALL_BASE_TINT_STATE_DEFAULT,
+    applyWallBaseTintStateToWallBase,
+    resolveWallBaseTintStateFromWallBase
+} from '../WallBaseTintModel.js';
+import {
+    RIBBON_PATTERN_DEFAULT_ID,
+    getRibbonPatternOptions,
+    normalizeRibbonPatternId
+} from './RibbonPatternCatalog.js';
+
 export const WALL_DECORATOR_ID = Object.freeze({
-    SIMPLE_SKIRT: 'simple_skirt'
+    SIMPLE_SKIRT: 'simple_skirt',
+    HALF_DOME: 'half_dome',
+    ANGLED_SUPPORT_PROFILE: 'angled_support_profile',
+    RIBBON: 'ribbon',
+    EDGE_BRICK_CHAIN: 'edge_brick_chain'
 });
 export const WALL_DECORATOR_NONE_ID = '';
 
@@ -31,9 +46,54 @@ export const WALL_DECORATOR_PROPERTY_TYPE = Object.freeze({
     BOOL: 'bool'
 });
 
-const SIMPLE_SKIRT_OVERSIZE_METERS_DEFAULT = 0.05;
-const SIMPLE_SKIRT_HEIGHT_METERS_DEFAULT = 0.35;
+const SIMPLE_SKIRT_SIZE_PRESET = Object.freeze({
+    SMALL: 'small',
+    MEDIUM: 'medium',
+    LARGE: 'large'
+});
+const SIMPLE_SKIRT_OFFSET_MODE = Object.freeze({
+    NORMAL: 'normal',
+    EXTRA: 'extra'
+});
+const SIMPLE_SKIRT_SIZE_PRESET_VALUES = Object.freeze({
+    [SIMPLE_SKIRT_SIZE_PRESET.SMALL]: Object.freeze({ heightMeters: 0.20, offsetMeters: 0.02 }),
+    [SIMPLE_SKIRT_SIZE_PRESET.MEDIUM]: Object.freeze({ heightMeters: 0.50, offsetMeters: 0.05 }),
+    [SIMPLE_SKIRT_SIZE_PRESET.LARGE]: Object.freeze({ heightMeters: 1.00, offsetMeters: 0.10 })
+});
+const RIBBON_SIZE_PRESET = Object.freeze({
+    SMALL: 'small',
+    MEDIUM: 'medium',
+    LARGE: 'large'
+});
+const RIBBON_OFFSET_MODE = Object.freeze({
+    NORMAL: 'normal',
+    EXTRA: 'extra'
+});
+const RIBBON_SIZE_PRESET_VALUES = Object.freeze({
+    [RIBBON_SIZE_PRESET.SMALL]: Object.freeze({ heightMeters: 0.20, offsetMeters: 0.02 }),
+    [RIBBON_SIZE_PRESET.MEDIUM]: Object.freeze({ heightMeters: 0.50, offsetMeters: 0.05 }),
+    [RIBBON_SIZE_PRESET.LARGE]: Object.freeze({ heightMeters: 1.00, offsetMeters: 0.10 })
+});
+const HALF_DOME_DIAMETER_METERS_DEFAULT = 0.80;
+const HALF_DOME_OUTSET_METERS_DEFAULT = 0.0;
+const ANGLED_SUPPORT_PROFILE_OFFSET_METERS_DEFAULT = 0.10;
+const ANGLED_SUPPORT_PROFILE_SHIFT_METERS_DEFAULT = -0.03;
+const ANGLED_SUPPORT_PROFILE_RETURN_HEIGHT_METERS_DEFAULT = 0.20;
 const NEAR_EDGE_OFFSET_METERS_DEFAULT = 0.10;
+const RIBBON_PATTERN_NORMAL_INTENSITY_DEFAULT = 1.4;
+const EDGE_BRICK_CHAIN_EDGE_TARGET = Object.freeze({
+    LEFT: 'left',
+    RIGHT: 'right',
+    BOTH: 'both'
+});
+const EDGE_BRICK_CHAIN_BRICK_HEIGHT_METERS_DEFAULT = 0.30;
+const EDGE_BRICK_CHAIN_START_Y_METERS_DEFAULT = 0.0;
+const EDGE_BRICK_CHAIN_END_Y_METERS_DEFAULT = 3.5;
+const EDGE_BRICK_CHAIN_DEPTH_SCALE_DEFAULT = 0.25;
+const WALL_DECORATOR_MATCH_WALL_MATERIAL_SELECTION = Object.freeze({
+    kind: 'match_wall',
+    id: 'match_wall'
+});
 
 function deepClone(value) {
     return value && typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : value;
@@ -45,25 +105,14 @@ function clamp(value, min, max, fallback = min) {
     return Math.max(min, Math.min(max, num));
 }
 
-function normalizeHexColor(value, fallback = 0xffffff) {
-    if (Number.isFinite(value)) return (Number(value) >>> 0) & 0xffffff;
-    const raw = typeof value === 'string' ? value.trim() : '';
-    if (!raw) return fallback;
-    const v = raw.startsWith('#') ? raw.slice(1) : (raw.toLowerCase().startsWith('0x') ? raw.slice(2) : raw);
-    if (v.length === 6 && /^[0-9a-fA-F]{6}$/.test(v)) return parseInt(v, 16) & 0xffffff;
-    if (v.length === 3 && /^[0-9a-fA-F]{3}$/.test(v)) {
-        const r = v[0];
-        const g = v[1];
-        const b = v[2];
-        return parseInt(`${r}${r}${g}${g}${b}${b}`, 16) & 0xffffff;
-    }
-    return fallback;
-}
-
 function normalizeDecoratorId(value, { allowNone = false } = {}) {
     const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
     if (!raw) return allowNone ? WALL_DECORATOR_NONE_ID : WALL_DECORATOR_ID.SIMPLE_SKIRT;
     if (raw === WALL_DECORATOR_ID.SIMPLE_SKIRT) return WALL_DECORATOR_ID.SIMPLE_SKIRT;
+    if (raw === WALL_DECORATOR_ID.HALF_DOME) return WALL_DECORATOR_ID.HALF_DOME;
+    if (raw === WALL_DECORATOR_ID.ANGLED_SUPPORT_PROFILE) return WALL_DECORATOR_ID.ANGLED_SUPPORT_PROFILE;
+    if (raw === WALL_DECORATOR_ID.RIBBON) return WALL_DECORATOR_ID.RIBBON;
+    if (raw === WALL_DECORATOR_ID.EDGE_BRICK_CHAIN) return WALL_DECORATOR_ID.EDGE_BRICK_CHAIN;
     return allowNone ? WALL_DECORATOR_NONE_ID : WALL_DECORATOR_ID.SIMPLE_SKIRT;
 }
 
@@ -87,6 +136,45 @@ function normalizePosition(value) {
     return WALL_DECORATOR_POSITION.BOTTOM;
 }
 
+function normalizeSimpleSkirtSizePreset(value) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === SIMPLE_SKIRT_SIZE_PRESET.SMALL) return SIMPLE_SKIRT_SIZE_PRESET.SMALL;
+    if (raw === SIMPLE_SKIRT_SIZE_PRESET.LARGE) return SIMPLE_SKIRT_SIZE_PRESET.LARGE;
+    return SIMPLE_SKIRT_SIZE_PRESET.MEDIUM;
+}
+
+function normalizeSimpleSkirtOffsetMode(value) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === SIMPLE_SKIRT_OFFSET_MODE.EXTRA) return SIMPLE_SKIRT_OFFSET_MODE.EXTRA;
+    return SIMPLE_SKIRT_OFFSET_MODE.NORMAL;
+}
+
+function normalizeRibbonSizePreset(value) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === RIBBON_SIZE_PRESET.SMALL) return RIBBON_SIZE_PRESET.SMALL;
+    if (raw === RIBBON_SIZE_PRESET.LARGE) return RIBBON_SIZE_PRESET.LARGE;
+    return RIBBON_SIZE_PRESET.MEDIUM;
+}
+
+function normalizeRibbonOffsetMode(value) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === RIBBON_OFFSET_MODE.EXTRA) return RIBBON_OFFSET_MODE.EXTRA;
+    return RIBBON_OFFSET_MODE.NORMAL;
+}
+
+function normalizeEdgeBrickChainEdgeTarget(value) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === EDGE_BRICK_CHAIN_EDGE_TARGET.LEFT) return EDGE_BRICK_CHAIN_EDGE_TARGET.LEFT;
+    if (raw === EDGE_BRICK_CHAIN_EDGE_TARGET.RIGHT) return EDGE_BRICK_CHAIN_EDGE_TARGET.RIGHT;
+    return EDGE_BRICK_CHAIN_EDGE_TARGET.BOTH;
+}
+
+function normalizeDecoratorPropertyPicker(value) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === 'thumbnail') return 'thumbnail';
+    return '';
+}
+
 function normalizeDecoratorPropertyType(value) {
     const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
     if (raw === WALL_DECORATOR_PROPERTY_TYPE.INT) return WALL_DECORATOR_PROPERTY_TYPE.INT;
@@ -108,7 +196,10 @@ function normalizeEnumOptions(value) {
         const id = typeof item?.id === 'string' ? item.id.trim() : '';
         if (!id) continue;
         const label = typeof item?.label === 'string' && item.label.trim() ? item.label.trim() : id;
-        out.push(Object.freeze({ id, label }));
+        const previewUrl = typeof item?.previewUrl === 'string' && item.previewUrl.trim()
+            ? item.previewUrl.trim()
+            : '';
+        out.push(Object.freeze({ id, label, previewUrl }));
     }
     return Object.freeze(out);
 }
@@ -133,6 +224,7 @@ function normalizeTypePropertySpecs(value) {
             spec.step = Number.isFinite(item?.step) ? Number(item.step) : undefined;
         } else if (type === WALL_DECORATOR_PROPERTY_TYPE.ENUM) {
             spec.options = normalizeEnumOptions(item?.options);
+            spec.picker = normalizeDecoratorPropertyPicker(item?.picker);
         }
         out.push(Object.freeze(spec));
     }
@@ -190,6 +282,7 @@ function normalizeDecoratorConfiguration(value, propertySpecs, fallback = null) 
 
 function normalizeMaterialKind(value) {
     const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === 'match_wall' || raw === 'match wall' || raw === 'matchwall') return 'match_wall';
     if (raw === 'color') return 'color';
     return 'texture';
 }
@@ -198,6 +291,9 @@ function normalizeMaterialSelection(value, fallback) {
     const src = value && typeof value === 'object' ? value : null;
     const fb = fallback && typeof fallback === 'object' ? fallback : null;
     const kind = normalizeMaterialKind(src?.kind ?? fb?.kind);
+    if (kind === 'match_wall') {
+        return { kind: 'match_wall', id: 'match_wall' };
+    }
     const idRaw = typeof src?.id === 'string' && src.id.trim()
         ? src.id.trim()
         : (typeof fb?.id === 'string' ? fb.id.trim() : '');
@@ -208,11 +304,13 @@ function normalizeMaterialSelection(value, fallback) {
 function normalizeWallBase(value, fallback) {
     const src = value && typeof value === 'object' ? value : null;
     const fb = fallback && typeof fallback === 'object' ? fallback : null;
-    return {
-        tintHex: normalizeHexColor(src?.tintHex ?? src?.tint ?? fb?.tintHex ?? fb?.tint ?? 0xffffff, 0xffffff),
+    const tintState = resolveWallBaseTintStateFromWallBase(src ?? fb ?? {}, WALL_BASE_TINT_STATE_DEFAULT);
+    const out = {
         roughness: clamp(src?.roughness, 0.0, 1.0, clamp(fb?.roughness, 0.0, 1.0, 0.85)),
         normalStrength: clamp(src?.normalStrength ?? src?.normal, 0.0, 2.0, clamp(fb?.normalStrength ?? fb?.normal, 0.0, 2.0, 0.9))
     };
+    applyWallBaseTintStateToWallBase(out, tintState);
+    return out;
 }
 
 function normalizeTiling(value, fallback) {
@@ -254,24 +352,231 @@ function resolveCenterYForPosition(position, wallHeightMeters, decoratorHeightMe
     return bottom;
 }
 
+function resolveSimpleSkirtSizingFromConfiguration(configuration) {
+    const sizePreset = normalizeSimpleSkirtSizePreset(configuration?.sizePreset);
+    const offsetMode = normalizeSimpleSkirtOffsetMode(configuration?.offsetMode);
+    const preset = SIMPLE_SKIRT_SIZE_PRESET_VALUES[sizePreset] ?? SIMPLE_SKIRT_SIZE_PRESET_VALUES[SIMPLE_SKIRT_SIZE_PRESET.MEDIUM];
+    const offsetScale = offsetMode === SIMPLE_SKIRT_OFFSET_MODE.EXTRA ? 2.0 : 1.0;
+    return {
+        sizePreset,
+        offsetMode,
+        heightMeters: clamp(preset.heightMeters, 0.05, 5.0, 0.5),
+        offsetMeters: clamp(preset.offsetMeters * offsetScale, 0.005, 2.0, 0.05)
+    };
+}
+
+function resolveRibbonSizingFromConfiguration(configuration) {
+    const sizePreset = normalizeRibbonSizePreset(configuration?.sizePreset);
+    const offsetMode = normalizeRibbonOffsetMode(configuration?.offsetMode);
+    const preset = RIBBON_SIZE_PRESET_VALUES[sizePreset] ?? RIBBON_SIZE_PRESET_VALUES[RIBBON_SIZE_PRESET.MEDIUM];
+    const offsetScale = offsetMode === RIBBON_OFFSET_MODE.EXTRA ? 2.0 : 1.0;
+    return {
+        sizePreset,
+        offsetMode,
+        heightMeters: clamp(preset.heightMeters, 0.05, 5.0, 0.5),
+        offsetMeters: clamp(preset.offsetMeters * offsetScale, 0.005, 2.0, 0.05)
+    };
+}
+
+function buildEdgeBrickChainCourseHeights({
+    rangeMeters = 0.0,
+    baseHeightMeters = EDGE_BRICK_CHAIN_BRICK_HEIGHT_METERS_DEFAULT,
+    snapToFit = true
+} = {}) {
+    const span = Math.max(0.0, Number(rangeMeters) || 0.0);
+    if (span <= 1e-6) return [];
+    const base = clamp(baseHeightMeters, 0.05, 1.0, EDGE_BRICK_CHAIN_BRICK_HEIGHT_METERS_DEFAULT);
+    const pattern = [base, base * 0.5];
+    const heights = [];
+
+    if (snapToFit) {
+        let accumulated = 0.0;
+        let idx = 0;
+        while (accumulated < span - 1e-6 && idx < 1024) {
+            const h = Math.max(0.01, Number(pattern[idx % pattern.length]) || base);
+            heights.push(h);
+            accumulated += h;
+            idx += 1;
+        }
+        if (!heights.length) heights.push(Math.max(0.01, base));
+        const total = heights.reduce((sum, h) => sum + h, 0.0);
+        const scale = total > 1e-6 ? span / total : 1.0;
+        return heights.map((h) => h * scale);
+    }
+
+    let consumed = 0.0;
+    let idx = 0;
+    while (consumed < span - 1e-6 && idx < 1024) {
+        const raw = Math.max(0.01, Number(pattern[idx % pattern.length]) || base);
+        const remaining = Math.max(0.0, span - consumed);
+        const h = Math.min(raw, remaining);
+        if (h <= 1e-6) break;
+        heights.push(h);
+        consumed += h;
+        idx += 1;
+    }
+    return heights;
+}
+
+function pushSimpleSkirtSurroundSegmentSpecs({
+    specs,
+    rolePrefix,
+    faceId,
+    startU,
+    endU,
+    centerV,
+    heightMeters,
+    offsetMeters,
+    includeStartClosure = true,
+    includeEndClosure = true,
+    includeBottomClosure = true,
+    miterStart45 = false,
+    miterEnd45 = false
+}) {
+    const out = Array.isArray(specs) ? specs : [];
+    const minU = Math.min(Number(startU) || 0.0, Number(endU) || 0.0);
+    const maxU = Math.max(Number(startU) || 0.0, Number(endU) || 0.0);
+    const widthMeters = Math.max(0.01, maxU - minU);
+    const face = String(faceId ?? '').toLowerCase() === 'right' ? 'right' : 'front';
+    const roleBase = String(rolePrefix ?? face).trim() || face;
+    const height = clamp(heightMeters, 0.01, 100.0, 0.2);
+    const centerY = Number(centerV) || 0.0;
+    const offset = clamp(offsetMeters, 0.005, 4.0, 0.05);
+    const shellThickness = clamp(offset * 0.35, 0.008, Math.min(0.04, offset), Math.min(0.04, offset));
+    const shellOutset = Math.max(0.0, offset - shellThickness);
+    const centerUValue = minU + widthMeters * 0.5;
+
+    out.push({
+        role: `${roleBase}_main`,
+        faceId: face,
+        centerU: centerUValue,
+        centerV: centerY,
+        widthMeters,
+        heightMeters: height,
+        depthMeters: shellThickness,
+        outsetMeters: shellOutset,
+        miterStart45: !!miterStart45,
+        miterEnd45: !!miterEnd45
+    });
+    out.push({
+        role: `${roleBase}_closure_top`,
+        faceId: face,
+        centerU: centerUValue,
+        centerV: centerY + height * 0.5 + shellThickness * 0.5,
+        widthMeters,
+        heightMeters: shellThickness,
+        depthMeters: offset,
+        outsetMeters: 0.0,
+        miterStart45: !!miterStart45,
+        miterEnd45: !!miterEnd45
+    });
+    if (includeBottomClosure) {
+        out.push({
+            role: `${roleBase}_closure_bottom`,
+            faceId: face,
+            centerU: centerUValue,
+            centerV: centerY - height * 0.5 - shellThickness * 0.5,
+            widthMeters,
+            heightMeters: shellThickness,
+            depthMeters: offset,
+            outsetMeters: 0.0,
+            miterStart45: !!miterStart45,
+            miterEnd45: !!miterEnd45
+        });
+    }
+    if (includeStartClosure) {
+        out.push({
+            role: `${roleBase}_closure_start`,
+            faceId: face,
+            centerU: minU + shellThickness * 0.5,
+            centerV: centerY,
+            widthMeters: shellThickness,
+            heightMeters: height,
+            depthMeters: offset,
+            outsetMeters: 0.0,
+            miterStart45: false,
+            miterEnd45: false
+        });
+    }
+    if (includeEndClosure) {
+        out.push({
+            role: `${roleBase}_closure_end`,
+            faceId: face,
+            centerU: maxU - shellThickness * 0.5,
+            centerV: centerY,
+            widthMeters: shellThickness,
+            heightMeters: height,
+            depthMeters: offset,
+            outsetMeters: 0.0,
+            miterStart45: false,
+            miterEnd45: false
+        });
+    }
+
+    return {
+        shellThickness,
+        shellOutset
+    };
+}
+
 const SIMPLE_SKIRT_PROPERTY_SPECS = normalizeTypePropertySpecs([
     {
-        id: 'heightMeters',
-        label: 'Height (m)',
-        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
-        min: 0.05,
-        max: 2.5,
-        step: 0.01,
-        default: SIMPLE_SKIRT_HEIGHT_METERS_DEFAULT
+        id: 'sizePreset',
+        label: 'Preset',
+        type: WALL_DECORATOR_PROPERTY_TYPE.ENUM,
+        default: SIMPLE_SKIRT_SIZE_PRESET.MEDIUM,
+        options: [
+            { id: SIMPLE_SKIRT_SIZE_PRESET.SMALL, label: 'Small' },
+            { id: SIMPLE_SKIRT_SIZE_PRESET.MEDIUM, label: 'Medium' },
+            { id: SIMPLE_SKIRT_SIZE_PRESET.LARGE, label: 'Large' }
+        ]
     },
     {
-        id: 'depthOversizeMeters',
-        label: 'Depth oversize (m)',
+        id: 'offsetMode',
+        label: 'Offset mode',
+        type: WALL_DECORATOR_PROPERTY_TYPE.ENUM,
+        default: SIMPLE_SKIRT_OFFSET_MODE.NORMAL,
+        options: [
+            { id: SIMPLE_SKIRT_OFFSET_MODE.NORMAL, label: 'Normal' },
+            { id: SIMPLE_SKIRT_OFFSET_MODE.EXTRA, label: 'Extra' }
+        ]
+    },
+    {
+        id: 'nearEdgeOffsetMeters',
+        label: 'Near-edge offset (m)',
         type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
         min: 0.0,
-        max: 1.5,
+        max: 2.0,
         step: 0.01,
-        default: SIMPLE_SKIRT_OVERSIZE_METERS_DEFAULT
+        default: NEAR_EDGE_OFFSET_METERS_DEFAULT
+    }
+]);
+
+const SIMPLE_SKIRT_CONFIGURATION_DEFAULTS = Object.freeze(
+    buildDefaultConfigurationFromPropertySpecs(SIMPLE_SKIRT_PROPERTY_SPECS)
+);
+
+const RIBBON_PROPERTY_SPECS = normalizeTypePropertySpecs([
+    {
+        id: 'sizePreset',
+        label: 'Preset',
+        type: WALL_DECORATOR_PROPERTY_TYPE.ENUM,
+        default: RIBBON_SIZE_PRESET.MEDIUM,
+        options: [
+            { id: RIBBON_SIZE_PRESET.SMALL, label: 'Small' },
+            { id: RIBBON_SIZE_PRESET.MEDIUM, label: 'Medium' },
+            { id: RIBBON_SIZE_PRESET.LARGE, label: 'Large' }
+        ]
+    },
+    {
+        id: 'offsetMode',
+        label: 'Offset mode',
+        type: WALL_DECORATOR_PROPERTY_TYPE.ENUM,
+        default: RIBBON_OFFSET_MODE.NORMAL,
+        options: [
+            { id: RIBBON_OFFSET_MODE.NORMAL, label: 'Normal' },
+            { id: RIBBON_OFFSET_MODE.EXTRA, label: 'Extra' }
+        ]
     },
     {
         id: 'nearEdgeOffsetMeters',
@@ -283,35 +588,149 @@ const SIMPLE_SKIRT_PROPERTY_SPECS = normalizeTypePropertySpecs([
         default: NEAR_EDGE_OFFSET_METERS_DEFAULT
     },
     {
-        id: 'edgeCapMode',
-        label: 'Edge cap',
+        id: 'patternId',
+        label: 'Pattern',
         type: WALL_DECORATOR_PROPERTY_TYPE.ENUM,
-        default: 'auto',
+        default: RIBBON_PATTERN_DEFAULT_ID,
+        picker: 'thumbnail',
+        options: getRibbonPatternOptions().map((opt) => ({
+            id: opt.id,
+            label: opt.label,
+            previewUrl: opt.previewUrl
+        }))
+    },
+    {
+        id: 'patternNormalIntensity',
+        label: 'Pattern normal',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.1,
+        max: 4.0,
+        step: 0.05,
+        default: RIBBON_PATTERN_NORMAL_INTENSITY_DEFAULT
+    }
+]);
+
+const RIBBON_CONFIGURATION_DEFAULTS = Object.freeze(
+    buildDefaultConfigurationFromPropertySpecs(RIBBON_PROPERTY_SPECS)
+);
+
+const EDGE_BRICK_CHAIN_PROPERTY_SPECS = normalizeTypePropertySpecs([
+    {
+        id: 'edgeTarget',
+        label: 'Edge target',
+        type: WALL_DECORATOR_PROPERTY_TYPE.ENUM,
+        default: EDGE_BRICK_CHAIN_EDGE_TARGET.BOTH,
         options: [
-            { id: 'auto', label: 'Auto' },
-            { id: 'custom', label: 'Custom' },
-            { id: 'none', label: 'None' }
+            { id: EDGE_BRICK_CHAIN_EDGE_TARGET.LEFT, label: 'Left' },
+            { id: EDGE_BRICK_CHAIN_EDGE_TARGET.RIGHT, label: 'Right' },
+            { id: EDGE_BRICK_CHAIN_EDGE_TARGET.BOTH, label: 'Both' }
         ]
     },
     {
-        id: 'edgeCapThicknessCm',
-        label: 'Edge cap thickness (cm)',
-        type: WALL_DECORATOR_PROPERTY_TYPE.INT,
-        min: 1,
-        max: 30,
-        step: 1,
-        default: 4
+        id: 'startY',
+        label: 'startY',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.0,
+        max: 32.0,
+        step: 0.01,
+        default: EDGE_BRICK_CHAIN_START_Y_METERS_DEFAULT
     },
     {
-        id: 'cornerConnector',
-        label: 'Corner connector',
+        id: 'endY',
+        label: 'endY',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.0,
+        max: 32.0,
+        step: 0.01,
+        default: EDGE_BRICK_CHAIN_END_Y_METERS_DEFAULT
+    },
+    {
+        id: 'brickHeight',
+        label: 'brickHeight',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.05,
+        max: 1.0,
+        step: 0.01,
+        default: EDGE_BRICK_CHAIN_BRICK_HEIGHT_METERS_DEFAULT
+    },
+    {
+        id: 'snapToFit',
+        label: 'Snap to fit',
         type: WALL_DECORATOR_PROPERTY_TYPE.BOOL,
         default: true
     }
 ]);
 
-const SIMPLE_SKIRT_CONFIGURATION_DEFAULTS = Object.freeze(
-    buildDefaultConfigurationFromPropertySpecs(SIMPLE_SKIRT_PROPERTY_SPECS)
+const EDGE_BRICK_CHAIN_CONFIGURATION_DEFAULTS = Object.freeze(
+    buildDefaultConfigurationFromPropertySpecs(EDGE_BRICK_CHAIN_PROPERTY_SPECS)
+);
+
+const HALF_DOME_PROPERTY_SPECS = normalizeTypePropertySpecs([
+    {
+        id: 'diameterMeters',
+        label: 'Diameter (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.20,
+        max: 3.50,
+        step: 0.01,
+        default: HALF_DOME_DIAMETER_METERS_DEFAULT
+    },
+    {
+        id: 'outsetMeters',
+        label: 'Outset (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.0,
+        max: 0.5,
+        step: 0.01,
+        default: HALF_DOME_OUTSET_METERS_DEFAULT
+    },
+    {
+        id: 'nearEdgeOffsetMeters',
+        label: 'Near-edge offset (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.0,
+        max: 2.0,
+        step: 0.01,
+        default: NEAR_EDGE_OFFSET_METERS_DEFAULT
+    }
+]);
+
+const HALF_DOME_CONFIGURATION_DEFAULTS = Object.freeze(
+    buildDefaultConfigurationFromPropertySpecs(HALF_DOME_PROPERTY_SPECS)
+);
+
+const ANGLED_SUPPORT_PROFILE_PROPERTY_SPECS = normalizeTypePropertySpecs([
+    {
+        id: 'offset',
+        label: 'Offset (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.01,
+        max: 1.5,
+        step: 0.01,
+        default: ANGLED_SUPPORT_PROFILE_OFFSET_METERS_DEFAULT
+    },
+    {
+        id: 'shift',
+        label: 'Shift (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: -1.0,
+        max: 1.0,
+        step: 0.01,
+        default: ANGLED_SUPPORT_PROFILE_SHIFT_METERS_DEFAULT
+    },
+    {
+        id: 'returnHeight',
+        label: 'Return Height (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.01,
+        max: 2.0,
+        step: 0.01,
+        default: ANGLED_SUPPORT_PROFILE_RETURN_HEIGHT_METERS_DEFAULT
+    }
+]);
+
+const ANGLED_SUPPORT_PROFILE_CONFIGURATION_DEFAULTS = Object.freeze(
+    buildDefaultConfigurationFromPropertySpecs(ANGLED_SUPPORT_PROFILE_PROPERTY_SPECS)
 );
 
 function buildSimpleSkirtShapeSpecs({ state, wallSpec }) {
@@ -330,76 +749,536 @@ function buildSimpleSkirtShapeSpecs({ state, wallSpec }) {
         : wall.widthMeters;
     const wallHalfWidth = wall.widthMeters * 0.5;
     const startU = wallHalfWidth - targetWidth;
-    const centerU = startU + targetWidth * 0.5;
 
-    const widthMeters = targetWidth;
-    const depthMeters = wall.depthMeters + clamp(
-        configuration.depthOversizeMeters,
-        0.0,
-        1.5,
-        SIMPLE_SKIRT_OVERSIZE_METERS_DEFAULT
-    );
-    const heightMeters = clamp(
-        configuration.heightMeters,
-        0.05,
-        wall.heightMeters,
-        SIMPLE_SKIRT_HEIGHT_METERS_DEFAULT
-    );
+    const sizing = resolveSimpleSkirtSizingFromConfiguration(configuration);
+    const offsetMeters = clamp(sizing.offsetMeters, 0.005, 2.0, 0.05);
+    const heightMeters = clamp(sizing.heightMeters, 0.05, wall.heightMeters, 0.5);
     const centerV = resolveCenterYForPosition(
         position,
         wall.heightMeters,
         heightMeters,
         configuration.nearEdgeOffsetMeters
     );
-    const edgeCapMode = String(configuration.edgeCapMode ?? 'auto');
-    const edgeCapThicknessMeters = edgeCapMode === 'custom'
-        ? clamp((Number(configuration.edgeCapThicknessCm) || 0) * 0.01, 0.01, 0.3, 0.04)
-        : clamp(depthMeters * 0.25, 0.01, 0.04, 0.03);
+    const includeBottomClosure = position !== WALL_DECORATOR_POSITION.BOTTOM;
 
-    const specs = [{
-        role: 'front_strip',
-        faceId: 'front',
-        centerU,
-        centerV,
-        widthMeters,
-        heightMeters,
-        depthMeters
-    }];
+    const specs = [];
+    const frontStartU = startU;
+    const frontEndU = startU + targetWidth;
 
     if (mode === WALL_DECORATOR_MODE.CORNER) {
-        specs.push({
-            role: 'right_strip',
-            faceId: 'right',
-            // Right-face local U is distance from the front-right corner (z=0) towards negative z.
-            centerU: targetWidth * 0.5,
+        pushSimpleSkirtSurroundSegmentSpecs({
+            specs,
+            rolePrefix: 'front',
+            faceId: 'front',
+            startU: frontStartU,
+            endU: frontEndU,
             centerV,
-            widthMeters,
             heightMeters,
-            depthMeters
+            offsetMeters,
+            includeStartClosure: true,
+            includeEndClosure: false,
+            includeBottomClosure,
+            miterStart45: false,
+            miterEnd45: true
         });
-        if (configuration.cornerConnector !== false) {
-            specs.push({
-                role: 'corner_connector',
-                faceId: 'front',
-                centerU: wallHalfWidth - depthMeters * 0.5,
-                centerV,
-                widthMeters: depthMeters,
-                heightMeters,
-                depthMeters
-            });
-        }
+        pushSimpleSkirtSurroundSegmentSpecs({
+            specs,
+            rolePrefix: 'right',
+            faceId: 'right',
+            startU: 0.0,
+            endU: targetWidth,
+            centerV,
+            heightMeters,
+            offsetMeters,
+            includeStartClosure: false,
+            includeEndClosure: true,
+            includeBottomClosure,
+            miterStart45: true,
+            miterEnd45: false
+        });
     } else {
-        if (edgeCapMode !== 'none') {
-            specs.push({
-                role: 'front_corner_edge_cap',
-                faceId: 'front',
-                centerU: wallHalfWidth - edgeCapThicknessMeters * 0.5,
-                centerV,
-                widthMeters: edgeCapThicknessMeters,
-                heightMeters,
-                depthMeters
+        pushSimpleSkirtSurroundSegmentSpecs({
+            specs,
+            rolePrefix: 'front',
+            faceId: 'front',
+            startU: frontStartU,
+            endU: frontEndU,
+            centerV,
+            heightMeters,
+            offsetMeters,
+            includeStartClosure: true,
+            includeEndClosure: true,
+            includeBottomClosure
+        });
+    }
+
+    return specs;
+}
+
+function buildRibbonShapeSpecs({ state, wallSpec }) {
+    const whereToApply = normalizeWhereToApply(state?.whereToApply);
+    const mode = normalizeMode(state?.mode);
+    const position = normalizePosition(state?.position);
+    const wall = normalizeWallSpec(wallSpec);
+    const configuration = normalizeDecoratorConfiguration(
+        state?.configuration,
+        RIBBON_PROPERTY_SPECS,
+        RIBBON_CONFIGURATION_DEFAULTS
+    );
+
+    const targetWidth = whereToApply === WALL_DECORATOR_WHERE_TO_APPLY.HALF
+        ? wall.widthMeters * 0.5
+        : wall.widthMeters;
+    const wallHalfWidth = wall.widthMeters * 0.5;
+    const startU = wallHalfWidth - targetWidth;
+
+    const sizing = resolveRibbonSizingFromConfiguration(configuration);
+    const offsetMeters = clamp(sizing.offsetMeters, 0.005, 2.0, 0.05);
+    const heightMeters = clamp(sizing.heightMeters, 0.05, wall.heightMeters, 0.5);
+    const centerV = resolveCenterYForPosition(
+        position,
+        wall.heightMeters,
+        heightMeters,
+        configuration.nearEdgeOffsetMeters
+    );
+    const includeBottomClosure = position !== WALL_DECORATOR_POSITION.BOTTOM;
+    const patternId = normalizeRibbonPatternId(configuration.patternId, RIBBON_PATTERN_DEFAULT_ID);
+    const patternNormalIntensity = clamp(
+        configuration.patternNormalIntensity,
+        0.1,
+        4.0,
+        RIBBON_PATTERN_NORMAL_INTENSITY_DEFAULT
+    );
+
+    const specs = [];
+    const frontStartU = startU;
+    const frontEndU = startU + targetWidth;
+
+    if (mode === WALL_DECORATOR_MODE.CORNER) {
+        const maxInset = Math.max(0.01, targetWidth - 0.02);
+        const jointInset = clamp(offsetMeters, 0.01, maxInset, Math.min(0.08, maxInset));
+        const frontTrimmedEndU = Math.max(frontStartU + 0.01, frontEndU - jointInset);
+        const rightTrimmedStartU = Math.min(targetWidth - 0.01, jointInset);
+
+        const frontSegment = pushSimpleSkirtSurroundSegmentSpecs({
+            specs,
+            rolePrefix: 'front',
+            faceId: 'front',
+            startU: frontStartU,
+            endU: frontTrimmedEndU,
+            centerV,
+            heightMeters,
+            offsetMeters,
+            includeStartClosure: true,
+            includeEndClosure: false,
+            includeBottomClosure
+        });
+        const rightSegment = pushSimpleSkirtSurroundSegmentSpecs({
+            specs,
+            rolePrefix: 'right',
+            faceId: 'right',
+            startU: rightTrimmedStartU,
+            endU: targetWidth,
+            centerV,
+            heightMeters,
+            offsetMeters,
+            includeStartClosure: false,
+            includeEndClosure: true,
+            includeBottomClosure
+        });
+
+        const jointShellThickness = Math.max(
+            frontSegment?.shellThickness ?? 0.01,
+            rightSegment?.shellThickness ?? 0.01
+        );
+        const jointShellOutset = Math.max(
+            frontSegment?.shellOutset ?? 0.0,
+            rightSegment?.shellOutset ?? 0.0
+        );
+        const jointCenterOutset = jointShellOutset + jointShellThickness * 0.5;
+        const cornerInset = Math.max(0.0, jointCenterOutset * 0.5);
+        specs.push({
+            role: 'corner_joint_45',
+            faceId: 'front',
+            centerU: wallHalfWidth + cornerInset,
+            centerV,
+            widthMeters: Math.max(jointShellThickness * 2.0, jointCenterOutset * Math.SQRT2 + jointShellThickness),
+            heightMeters,
+            depthMeters: jointShellThickness,
+            outsetMeters: cornerInset,
+            yawDegrees: 45.0
+        });
+    } else {
+        pushSimpleSkirtSurroundSegmentSpecs({
+            specs,
+            rolePrefix: 'front',
+            faceId: 'front',
+            startU: frontStartU,
+            endU: frontEndU,
+            centerV,
+            heightMeters,
+            offsetMeters,
+            includeStartClosure: true,
+            includeEndClosure: true,
+            includeBottomClosure
+        });
+    }
+
+    for (const spec of specs) {
+        spec.geometryKind = 'ribbon';
+        spec.ribbonPatternId = patternId;
+        spec.ribbonPatternNormalIntensity = patternNormalIntensity;
+    }
+    return specs;
+}
+
+function buildEdgeBrickChainShapeSpecs({ state, wallSpec }) {
+    const whereToApply = normalizeWhereToApply(state?.whereToApply);
+    const mode = normalizeMode(state?.mode);
+    const wall = normalizeWallSpec(wallSpec);
+    const configuration = normalizeDecoratorConfiguration(
+        state?.configuration,
+        EDGE_BRICK_CHAIN_PROPERTY_SPECS,
+        EDGE_BRICK_CHAIN_CONFIGURATION_DEFAULTS
+    );
+
+    const targetWidth = whereToApply === WALL_DECORATOR_WHERE_TO_APPLY.HALF
+        ? wall.widthMeters * 0.5
+        : wall.widthMeters;
+    if (targetWidth <= 0.01) return [];
+
+    const wallHalfWidth = wall.widthMeters * 0.5;
+    const spanStartU = wallHalfWidth - targetWidth;
+    const spanEndU = spanStartU + targetWidth;
+    const edgeTarget = normalizeEdgeBrickChainEdgeTarget(configuration.edgeTarget);
+    const includeLeft = edgeTarget === EDGE_BRICK_CHAIN_EDGE_TARGET.LEFT || edgeTarget === EDGE_BRICK_CHAIN_EDGE_TARGET.BOTH;
+    const includeRight = edgeTarget === EDGE_BRICK_CHAIN_EDGE_TARGET.RIGHT || edgeTarget === EDGE_BRICK_CHAIN_EDGE_TARGET.BOTH;
+    if (!includeLeft && !includeRight) return [];
+
+    const brickHeight = clamp(configuration.brickHeight, 0.05, 1.0, EDGE_BRICK_CHAIN_BRICK_HEIGHT_METERS_DEFAULT);
+    const columnWidthMax = Math.max(0.06, targetWidth - 0.001);
+    const columnWidth = clamp(brickHeight * 0.66, 0.06, columnWidthMax, Math.min(0.20, columnWidthMax));
+    const depthMeters = clamp(brickHeight * EDGE_BRICK_CHAIN_DEPTH_SCALE_DEFAULT, 0.03, 0.18, 0.08);
+
+    const startY = clamp(configuration.startY, 0.0, wall.heightMeters, EDGE_BRICK_CHAIN_START_Y_METERS_DEFAULT);
+    const endY = clamp(configuration.endY, 0.0, wall.heightMeters, Math.min(wall.heightMeters, EDGE_BRICK_CHAIN_END_Y_METERS_DEFAULT));
+    const rangeStartY = Math.min(startY, endY);
+    const rangeEndY = Math.max(startY, endY);
+    const rangeMeters = Math.max(0.0, rangeEndY - rangeStartY);
+    if (rangeMeters <= 1e-6) return [];
+
+    const snapToFit = configuration.snapToFit !== false;
+    const courseHeights = buildEdgeBrickChainCourseHeights({
+        rangeMeters,
+        baseHeightMeters: brickHeight,
+        snapToFit
+    });
+    if (!courseHeights.length) return [];
+
+    const frontLeftCenterU = spanStartU + columnWidth * 0.5;
+    const frontRightCenterU = spanEndU - columnWidth * 0.5;
+    const rightCornerCenterU = columnWidth * 0.5;
+    const rightFarCenterU = Math.max(columnWidth * 0.5, targetWidth - columnWidth * 0.5);
+
+    const columns = [];
+    if (includeLeft) {
+        columns.push({
+            rolePrefix: 'front_left',
+            faceId: 'front',
+            edgeColumn: 'left',
+            centerU: Math.min(frontRightCenterU, frontLeftCenterU),
+            miterStart45: false,
+            miterEnd45: false
+        });
+    }
+    if (includeRight) {
+        columns.push({
+            rolePrefix: 'front_right',
+            faceId: 'front',
+            edgeColumn: 'right',
+            centerU: Math.max(frontLeftCenterU, frontRightCenterU),
+            miterStart45: false,
+            miterEnd45: mode === WALL_DECORATOR_MODE.CORNER
+        });
+    }
+    if (mode === WALL_DECORATOR_MODE.CORNER) {
+        if (includeRight) {
+            columns.push({
+                rolePrefix: 'right_corner',
+                faceId: 'right',
+                edgeColumn: 'right',
+                centerU: rightCornerCenterU,
+                miterStart45: true,
+                miterEnd45: false
             });
         }
+        if (includeLeft) {
+            columns.push({
+                rolePrefix: 'right_far',
+                faceId: 'right',
+                edgeColumn: 'left',
+                centerU: rightFarCenterU,
+                miterStart45: false,
+                miterEnd45: false
+            });
+        }
+    }
+
+    const specs = [];
+    let consumedY = 0.0;
+    const wallHalfHeight = wall.heightMeters * 0.5;
+    for (let courseIndex = 0; courseIndex < courseHeights.length; courseIndex += 1) {
+        const courseHeight = Math.max(0.01, Number(courseHeights[courseIndex]) || 0.01);
+        const centerYFromFloor = rangeStartY + consumedY + courseHeight * 0.5;
+        const centerV = -wallHalfHeight + centerYFromFloor;
+        for (const column of columns) {
+            specs.push({
+                role: `${column.rolePrefix}_course_${String(courseIndex).padStart(3, '0')}`,
+                faceId: column.faceId,
+                geometryKind: 'edge_brick_chain_course',
+                edgeColumn: column.edgeColumn,
+                centerU: column.centerU,
+                centerV,
+                widthMeters: columnWidth,
+                heightMeters: courseHeight,
+                depthMeters,
+                outsetMeters: 0.0,
+                miterStart45: column.miterStart45,
+                miterEnd45: column.miterEnd45,
+                edgeChainCourseIndex: courseIndex,
+                edgeChainSnapToFit: snapToFit
+            });
+        }
+        consumedY += courseHeight;
+    }
+
+    return specs;
+}
+
+function pushCurvedRingSegmentSpec({
+    specs,
+    role,
+    faceId,
+    startU,
+    endU,
+    centerV,
+    diameterMeters,
+    outsetMeters,
+    miterStart45 = false,
+    miterEnd45 = false
+}) {
+    const out = Array.isArray(specs) ? specs : [];
+    const minU = Math.min(Number(startU) || 0.0, Number(endU) || 0.0);
+    const maxU = Math.max(Number(startU) || 0.0, Number(endU) || 0.0);
+    const segmentWidth = Math.max(0.01, maxU - minU);
+    const diameter = Math.max(0.2, Number(diameterMeters) || HALF_DOME_DIAMETER_METERS_DEFAULT);
+    const radius = diameter * 0.5;
+
+    out.push({
+        role: String(role ?? 'curved_ring').trim() || 'curved_ring',
+        faceId: String(faceId ?? '').toLowerCase() === 'right' ? 'right' : 'front',
+        geometryKind: 'curved_ring',
+        centerU: minU + segmentWidth * 0.5,
+        centerV: Number(centerV) || 0.0,
+        widthMeters: segmentWidth,
+        heightMeters: diameter,
+        depthMeters: radius,
+        outsetMeters: clamp(outsetMeters, 0.0, 0.5, HALF_DOME_OUTSET_METERS_DEFAULT),
+        miterStart45: !!miterStart45,
+        miterEnd45: !!miterEnd45
+    });
+}
+
+function buildHalfDomeShapeSpecs({ state, wallSpec }) {
+    const whereToApply = normalizeWhereToApply(state?.whereToApply);
+    const mode = normalizeMode(state?.mode);
+    const position = normalizePosition(state?.position);
+    const wall = normalizeWallSpec(wallSpec);
+    const configuration = normalizeDecoratorConfiguration(
+        state?.configuration,
+        HALF_DOME_PROPERTY_SPECS,
+        HALF_DOME_CONFIGURATION_DEFAULTS
+    );
+
+    const targetWidth = whereToApply === WALL_DECORATOR_WHERE_TO_APPLY.HALF
+        ? wall.widthMeters * 0.5
+        : wall.widthMeters;
+    const wallHalfWidth = wall.widthMeters * 0.5;
+    const startU = wallHalfWidth - targetWidth;
+    const endU = startU + targetWidth;
+
+    const diameterMeters = clamp(
+        configuration.diameterMeters,
+        0.20,
+        Math.min(wall.heightMeters, wall.widthMeters),
+        HALF_DOME_DIAMETER_METERS_DEFAULT
+    );
+    const radiusMeters = diameterMeters * 0.5;
+    const centerV = resolveCenterYForPosition(
+        position,
+        wall.heightMeters,
+        diameterMeters,
+        configuration.nearEdgeOffsetMeters
+    );
+    const outsetMeters = clamp(configuration.outsetMeters, 0.0, 0.5, HALF_DOME_OUTSET_METERS_DEFAULT);
+
+    const specs = [];
+
+    if (mode === WALL_DECORATOR_MODE.CORNER) {
+        pushCurvedRingSegmentSpec({
+            specs,
+            role: 'curved_ring_front',
+            faceId: 'front',
+            startU,
+            endU,
+            centerV,
+            diameterMeters,
+            outsetMeters,
+            miterStart45: false,
+            miterEnd45: true
+        });
+
+        pushCurvedRingSegmentSpec({
+            specs,
+            role: 'curved_ring_right',
+            faceId: 'right',
+            startU: 0.0,
+            endU: targetWidth,
+            centerV,
+            diameterMeters,
+            outsetMeters,
+            miterStart45: true,
+            miterEnd45: false
+        });
+    } else {
+        pushCurvedRingSegmentSpec({
+            specs,
+            role: 'curved_ring_front',
+            faceId: 'front',
+            startU,
+            endU,
+            centerV,
+            diameterMeters,
+            outsetMeters,
+            miterStart45: false,
+            miterEnd45: false
+        });
+    }
+
+    return specs;
+}
+
+function pushAngledSupportProfileSegmentSpec({
+    specs,
+    role,
+    faceId,
+    startU,
+    endU,
+    centerV,
+    offsetMeters,
+    shiftMeters,
+    returnHeightMeters,
+    miterStart45 = false,
+    miterEnd45 = false
+}) {
+    const out = Array.isArray(specs) ? specs : [];
+    const minU = Math.min(Number(startU) || 0.0, Number(endU) || 0.0);
+    const maxU = Math.max(Number(startU) || 0.0, Number(endU) || 0.0);
+    const widthMeters = Math.max(0.01, maxU - minU);
+    const shift = Number(shiftMeters) || 0.0;
+    const returnHeight = clamp(returnHeightMeters, 0.01, 4.0, ANGLED_SUPPORT_PROFILE_RETURN_HEIGHT_METERS_DEFAULT);
+    const profileMinY = Math.min(0.0, shift);
+    const profileMaxY = Math.max(returnHeight, returnHeight + shift);
+    const profileHeightMeters = Math.max(0.01, profileMaxY - profileMinY);
+
+    out.push({
+        role: String(role ?? 'angled_support_profile').trim() || 'angled_support_profile',
+        faceId: String(faceId ?? '').toLowerCase() === 'right' ? 'right' : 'front',
+        geometryKind: 'angled_support_profile',
+        centerU: minU + widthMeters * 0.5,
+        centerV: Number(centerV) || 0.0,
+        widthMeters,
+        heightMeters: profileHeightMeters,
+        depthMeters: clamp(offsetMeters, 0.005, 4.0, ANGLED_SUPPORT_PROFILE_OFFSET_METERS_DEFAULT),
+        profileOffsetMeters: clamp(offsetMeters, 0.005, 4.0, ANGLED_SUPPORT_PROFILE_OFFSET_METERS_DEFAULT),
+        profileShiftMeters: shift,
+        profileReturnHeightMeters: returnHeight,
+        miterStart45: !!miterStart45,
+        miterEnd45: !!miterEnd45
+    });
+}
+
+function buildAngledSupportProfileShapeSpecs({ state, wallSpec }) {
+    const whereToApply = normalizeWhereToApply(state?.whereToApply);
+    const mode = normalizeMode(state?.mode);
+    const position = normalizePosition(state?.position);
+    const wall = normalizeWallSpec(wallSpec);
+    const configuration = normalizeDecoratorConfiguration(
+        state?.configuration,
+        ANGLED_SUPPORT_PROFILE_PROPERTY_SPECS,
+        ANGLED_SUPPORT_PROFILE_CONFIGURATION_DEFAULTS
+    );
+
+    const targetWidth = whereToApply === WALL_DECORATOR_WHERE_TO_APPLY.HALF
+        ? wall.widthMeters * 0.5
+        : wall.widthMeters;
+    const wallHalfWidth = wall.widthMeters * 0.5;
+    const startU = wallHalfWidth - targetWidth;
+    const endU = startU + targetWidth;
+
+    const offsetMeters = clamp(configuration.offset, 0.01, 1.5, ANGLED_SUPPORT_PROFILE_OFFSET_METERS_DEFAULT);
+    const shiftMeters = clamp(configuration.shift, -1.0, 1.0, ANGLED_SUPPORT_PROFILE_SHIFT_METERS_DEFAULT);
+    const returnHeightMeters = clamp(configuration.returnHeight, 0.01, 2.0, ANGLED_SUPPORT_PROFILE_RETURN_HEIGHT_METERS_DEFAULT);
+    const profileMinY = Math.min(0.0, shiftMeters);
+    const profileMaxY = Math.max(returnHeightMeters, returnHeightMeters + shiftMeters);
+    const profileHeightMeters = Math.max(0.01, profileMaxY - profileMinY);
+    const centerV = resolveCenterYForPosition(
+        position,
+        wall.heightMeters,
+        profileHeightMeters,
+        NEAR_EDGE_OFFSET_METERS_DEFAULT
+    );
+
+    const specs = [];
+    if (mode === WALL_DECORATOR_MODE.CORNER) {
+        pushAngledSupportProfileSegmentSpec({
+            specs,
+            role: 'angled_support_front',
+            faceId: 'front',
+            startU,
+            endU,
+            centerV,
+            offsetMeters,
+            shiftMeters,
+            returnHeightMeters,
+            miterStart45: false,
+            miterEnd45: true
+        });
+        pushAngledSupportProfileSegmentSpec({
+            specs,
+            role: 'angled_support_right',
+            faceId: 'right',
+            startU: 0.0,
+            endU: targetWidth,
+            centerV,
+            offsetMeters,
+            shiftMeters,
+            returnHeightMeters,
+            miterStart45: true,
+            miterEnd45: false
+        });
+    } else {
+        pushAngledSupportProfileSegmentSpec({
+            specs,
+            role: 'angled_support_front',
+            faceId: 'front',
+            startU,
+            endU,
+            centerV,
+            offsetMeters,
+            shiftMeters,
+            returnHeightMeters
+        });
     }
 
     return specs;
@@ -412,12 +1291,109 @@ const SIMPLE_SKIRT_DEFAULTS = Object.freeze({
     configuration: Object.freeze({
         ...SIMPLE_SKIRT_CONFIGURATION_DEFAULTS
     }),
-    materialSelection: Object.freeze({
-        kind: 'texture',
-        id: 'pbr.brick_wall_11'
-    }),
+    materialSelection: WALL_DECORATOR_MATCH_WALL_MATERIAL_SELECTION,
     wallBase: Object.freeze({
-        tintHex: 0xffffff,
+        ...applyWallBaseTintStateToWallBase({}, WALL_BASE_TINT_STATE_DEFAULT),
+        roughness: 0.85,
+        normalStrength: 0.9
+    }),
+    tiling: Object.freeze({
+        enabled: false,
+        tileMeters: 2.0,
+        tileMetersU: 2.0,
+        tileMetersV: 2.0,
+        uvEnabled: false,
+        offsetU: 0.0,
+        offsetV: 0.0,
+        rotationDegrees: 0.0
+    })
+});
+
+const RIBBON_DEFAULTS = Object.freeze({
+    whereToApply: WALL_DECORATOR_WHERE_TO_APPLY.ENTIRE_FACADE,
+    mode: WALL_DECORATOR_MODE.FACE,
+    position: WALL_DECORATOR_POSITION.BOTTOM,
+    configuration: Object.freeze({
+        ...RIBBON_CONFIGURATION_DEFAULTS
+    }),
+    materialSelection: WALL_DECORATOR_MATCH_WALL_MATERIAL_SELECTION,
+    wallBase: Object.freeze({
+        ...applyWallBaseTintStateToWallBase({}, WALL_BASE_TINT_STATE_DEFAULT),
+        roughness: 0.85,
+        normalStrength: 0.9
+    }),
+    tiling: Object.freeze({
+        enabled: false,
+        tileMeters: 2.0,
+        tileMetersU: 2.0,
+        tileMetersV: 2.0,
+        uvEnabled: false,
+        offsetU: 0.0,
+        offsetV: 0.0,
+        rotationDegrees: 0.0
+    })
+});
+
+const EDGE_BRICK_CHAIN_DEFAULTS = Object.freeze({
+    whereToApply: WALL_DECORATOR_WHERE_TO_APPLY.ENTIRE_FACADE,
+    mode: WALL_DECORATOR_MODE.FACE,
+    position: WALL_DECORATOR_POSITION.BOTTOM,
+    configuration: Object.freeze({
+        ...EDGE_BRICK_CHAIN_CONFIGURATION_DEFAULTS
+    }),
+    materialSelection: WALL_DECORATOR_MATCH_WALL_MATERIAL_SELECTION,
+    wallBase: Object.freeze({
+        ...applyWallBaseTintStateToWallBase({}, WALL_BASE_TINT_STATE_DEFAULT),
+        roughness: 0.85,
+        normalStrength: 0.9
+    }),
+    tiling: Object.freeze({
+        enabled: false,
+        tileMeters: 2.0,
+        tileMetersU: 2.0,
+        tileMetersV: 2.0,
+        uvEnabled: false,
+        offsetU: 0.0,
+        offsetV: 0.0,
+        rotationDegrees: 0.0
+    })
+});
+
+const HALF_DOME_DEFAULTS = Object.freeze({
+    whereToApply: WALL_DECORATOR_WHERE_TO_APPLY.ENTIRE_FACADE,
+    mode: WALL_DECORATOR_MODE.FACE,
+    position: WALL_DECORATOR_POSITION.BOTTOM,
+    configuration: Object.freeze({
+        ...HALF_DOME_CONFIGURATION_DEFAULTS
+    }),
+    materialSelection: WALL_DECORATOR_MATCH_WALL_MATERIAL_SELECTION,
+    wallBase: Object.freeze({
+        ...applyWallBaseTintStateToWallBase({}, WALL_BASE_TINT_STATE_DEFAULT),
+        roughness: 0.85,
+        normalStrength: 0.9
+    }),
+    tiling: Object.freeze({
+        enabled: false,
+        tileMeters: 2.0,
+        tileMetersU: 2.0,
+        tileMetersV: 2.0,
+        uvEnabled: false,
+        offsetU: 0.0,
+        offsetV: 0.0,
+        rotationDegrees: 0.0
+    })
+});
+
+const ANGLED_SUPPORT_PROFILE_DEFAULTS = Object.freeze({
+    whereToApply: WALL_DECORATOR_WHERE_TO_APPLY.ENTIRE_FACADE,
+    mode: WALL_DECORATOR_MODE.FACE,
+    position: WALL_DECORATOR_POSITION.BOTTOM,
+    configuration: Object.freeze({
+        ...ANGLED_SUPPORT_PROFILE_CONFIGURATION_DEFAULTS
+    }),
+    materialSelection: WALL_DECORATOR_MATCH_WALL_MATERIAL_SELECTION,
+    wallBase: Object.freeze({
+        ...applyWallBaseTintStateToWallBase({}, WALL_BASE_TINT_STATE_DEFAULT),
         roughness: 0.85,
         normalStrength: 0.9
     }),
@@ -441,6 +1417,38 @@ const WALL_DECORATOR_TYPE_CATALOG = Object.freeze([
         properties: SIMPLE_SKIRT_PROPERTY_SPECS,
         defaults: SIMPLE_SKIRT_DEFAULTS,
         createShapeSpecs: ({ state, wallSpec }) => buildSimpleSkirtShapeSpecs({ state, wallSpec })
+    }),
+    Object.freeze({
+        id: WALL_DECORATOR_ID.RIBBON,
+        label: 'Ribbon',
+        description: 'Skirt-style surround with pattern-driven normal-map relief.',
+        properties: RIBBON_PROPERTY_SPECS,
+        defaults: RIBBON_DEFAULTS,
+        createShapeSpecs: ({ state, wallSpec }) => buildRibbonShapeSpecs({ state, wallSpec })
+    }),
+    Object.freeze({
+        id: WALL_DECORATOR_ID.EDGE_BRICK_CHAIN,
+        label: 'Edge Brick Chain',
+        description: 'Edge-only alternating brick courses with optional snap-to-fit range behavior.',
+        properties: EDGE_BRICK_CHAIN_PROPERTY_SPECS,
+        defaults: EDGE_BRICK_CHAIN_DEFAULTS,
+        createShapeSpecs: ({ state, wallSpec }) => buildEdgeBrickChainShapeSpecs({ state, wallSpec })
+    }),
+    Object.freeze({
+        id: WALL_DECORATOR_ID.HALF_DOME,
+        label: 'Curved Ring',
+        description: 'Half-circle side profile swept along the facade span, with optional corner miter behavior.',
+        properties: HALF_DOME_PROPERTY_SPECS,
+        defaults: HALF_DOME_DEFAULTS,
+        createShapeSpecs: ({ state, wallSpec }) => buildHalfDomeShapeSpecs({ state, wallSpec })
+    }),
+    Object.freeze({
+        id: WALL_DECORATOR_ID.ANGLED_SUPPORT_PROFILE,
+        label: 'Angled Support Profile',
+        description: 'Continuous angled support profile sweep with signed shift and 45-degree corner miters.',
+        properties: ANGLED_SUPPORT_PROFILE_PROPERTY_SPECS,
+        defaults: ANGLED_SUPPORT_PROFILE_DEFAULTS,
+        createShapeSpecs: ({ state, wallSpec }) => buildAngledSupportProfileShapeSpecs({ state, wallSpec })
     })
 ]);
 
@@ -553,9 +1561,10 @@ export function loadWallDecoratorCatalogEntry(state, decoratorId) {
     return sanitizeWallDecoratorDebuggerState({
         ...current,
         decoratorId: entry.id,
-        whereToApply: defaults.whereToApply,
-        mode: defaults.mode,
-        position: defaults.position,
+        // Preserve placement controls when switching type so visual placement does not jump.
+        whereToApply: current.whereToApply,
+        mode: current.mode,
+        position: current.position,
         configuration: deepClone(defaults.configuration ?? {}),
         materialSelection: deepClone(defaults.materialSelection),
         wallBase: deepClone(defaults.wallBase),

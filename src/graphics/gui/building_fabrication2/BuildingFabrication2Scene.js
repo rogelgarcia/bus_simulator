@@ -38,6 +38,9 @@ const LAYOUT_WIDTH_GUIDE_Y_LIFT = 0.014;
 const LAYOUT_VERTEX_RING_COLOR = 0xffdf8e;
 const LAYOUT_VERTEX_RING_RADIUS = 0.4;
 const LAYOUT_VERTEX_RING_TUBE = 0.06;
+const SUPPORT_SLAB_OVERHANG_M = 1.0;
+const SUPPORT_SLAB_THICKNESS_M = 0.5;
+const SUPPORT_SLAB_MATERIAL_ID = 'pbr.plastered_wall_02';
 
 function isFaceId(faceId) {
     return faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D';
@@ -206,6 +209,11 @@ export class BuildingFabrication2Scene {
 
         this._showDummy = false;
         this._dummy = null;
+        this._renderSlab = false;
+        this._supportSlabMesh = null;
+        this._sun = null;
+        this._debugDisableSuspect1 = false;
+        this._debugDisableSuspect4 = false;
 
         this._rulerRaycaster = new THREE.Raycaster();
         this._rulerRayHits = [];
@@ -246,6 +254,7 @@ export class BuildingFabrication2Scene {
         this.controls = null;
 
         this._setDummyVisible(false);
+        this._clearSupportSlab();
 
         this._clearBuilding();
         this._clearFaceHighlight();
@@ -275,6 +284,9 @@ export class BuildingFabrication2Scene {
         this._layoutLoop = null;
         this._layoutHoverFaceId = null;
         this._layoutHoverVertexIndex = null;
+        this._sun = null;
+        this._debugDisableSuspect1 = false;
+        this._debugDisableSuspect4 = false;
     }
 
     update(dt) {
@@ -301,6 +313,17 @@ export class BuildingFabrication2Scene {
     setShowFloorplan(enabled) {
         this._showFloorplan = !!enabled;
         this._syncBuildingRenderMode();
+    }
+
+    setDebugDisableSuspect1(enabled) {
+        const next = !!enabled;
+        if (next === this._debugDisableSuspect1) return;
+        this._debugDisableSuspect1 = next;
+        this._applySuspect1ShadowDebugState();
+    }
+
+    setDebugDisableSuspect4(enabled) {
+        this._debugDisableSuspect4 = !!enabled;
     }
 
     setSelectedFaceId(faceId) {
@@ -363,6 +386,13 @@ export class BuildingFabrication2Scene {
         if (next === this._showDummy) return;
         this._showDummy = next;
         this._syncDummy();
+    }
+
+    setRenderSlab(enabled) {
+        const next = !!enabled;
+        if (next === this._renderSlab) return;
+        this._renderSlab = next;
+        this._syncSupportSlab();
     }
 
     getLayoutEditPlaneY() {
@@ -562,7 +592,10 @@ export class BuildingFabrication2Scene {
             facadeCornerDebug: this._facadeCornerDebug,
             windowDefinitions: config?.windowDefinitions ?? null,
             overlays: { wire: true, floorplan: true, border: false, floorDivisions: true },
-            walls: { inset: wallInset }
+            walls: { inset: wallInset },
+            debug: {
+                disableSuspect4FaceOverrideOverlay: this._debugDisableSuspect4
+            }
         });
         if (!parts) {
             disposeObject3D(group);
@@ -588,6 +621,7 @@ export class BuildingFabrication2Scene {
         this._syncBuildingRenderMode();
         this._syncSceneWireframe();
         this._updateFocusBoxFromObject(group);
+        this._syncSupportSlab();
         this._syncDummy();
 
         this._floorLayerYRangeById = this._computeFloorLayerYRangeById(layers);
@@ -692,6 +726,13 @@ export class BuildingFabrication2Scene {
         this._hoveredBayOverlay.removeFromParent();
         disposeObject3D(this._hoveredBayOverlay);
         this._hoveredBayOverlay = null;
+    }
+
+    _clearSupportSlab() {
+        if (!this._supportSlabMesh) return;
+        this._supportSlabMesh.removeFromParent();
+        disposeObject3D(this._supportSlabMesh);
+        this._supportSlabMesh = null;
     }
 
     _clearRulerLine() {
@@ -1191,10 +1232,22 @@ export class BuildingFabrication2Scene {
         sun.shadow.camera.right = 120;
         sun.shadow.camera.top = 120;
         sun.shadow.camera.bottom = -120;
+        this._sun = sun;
+        this._applySuspect1ShadowDebugState();
 
         this.root.add(hemi);
         this.root.add(sun);
         this.root.add(sun.target);
+    }
+
+    _applySuspect1ShadowDebugState() {
+        const sun = this._sun;
+        if (!sun) return;
+        const wantsSunShadows = !this._debugDisableSuspect1;
+        sun.castShadow = wantsSunShadows;
+        if (sun.shadow && 'needsUpdate' in sun.shadow) sun.shadow.needsUpdate = true;
+        const rendererShadowMap = this.engine?.renderer?.shadowMap ?? null;
+        if (rendererShadowMap && 'needsUpdate' in rendererShadowMap) rendererShadowMap.needsUpdate = true;
     }
 
     _buildCamera() {
@@ -1219,6 +1272,7 @@ export class BuildingFabrication2Scene {
         if (!this._building) {
             this._clearLayoutOverlays();
             this._clearHoveredBayOverlay();
+            this._clearSupportSlab();
             this._bayHighlightDataByLayerId = null;
             if (!preserveHoveredBay) this._hoveredBay = null;
             this._layoutLoop = null;
@@ -1230,6 +1284,7 @@ export class BuildingFabrication2Scene {
         this._building.group?.removeFromParent?.();
         disposeObject3D(this._building.group);
         this._building = null;
+        this._clearSupportSlab();
         this._focusBox = null;
         this._floorLayerYRangeById.clear();
         this._hoveredFloorLayerId = null;
@@ -1245,6 +1300,59 @@ export class BuildingFabrication2Scene {
         this._layoutWidthGuideFaceIds = null;
         this._syncFaceHighlight();
         this._syncDummy();
+    }
+
+    _syncSupportSlab() {
+        if (!this._renderSlab || !this.root || !this._building || !this._focusBox) {
+            this._clearSupportSlab();
+            return;
+        }
+
+        const box = this._focusBox;
+        const minX = Number(box.min.x);
+        const maxX = Number(box.max.x);
+        const minZ = Number(box.min.z);
+        const maxZ = Number(box.max.z);
+        const topY = Number(box.min.y);
+        if (!Number.isFinite(minX) || !Number.isFinite(maxX)
+            || !Number.isFinite(minZ) || !Number.isFinite(maxZ)
+            || !Number.isFinite(topY)) {
+            this._clearSupportSlab();
+            return;
+        }
+
+        const width = Math.max(EPS, (maxX - minX) + SUPPORT_SLAB_OVERHANG_M * DOUBLE);
+        const depth = Math.max(EPS, (maxZ - minZ) + SUPPORT_SLAB_OVERHANG_M * DOUBLE);
+        const thickness = Math.max(0.05, SUPPORT_SLAB_THICKNESS_M);
+        const centerX = (minX + maxX) * 0.5;
+        const centerZ = (minZ + maxZ) * 0.5;
+
+        if (!this._supportSlabMesh) {
+            const geo = new THREE.BoxGeometry(1, 1, 1);
+            const mat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 1.0,
+                metalness: 0.0
+            });
+            if (this._wallTextures?.resolveMaterial && this._wallTextures?.applyResolvedMaterial) {
+                const payload = this._wallTextures.resolveMaterial(SUPPORT_SLAB_MATERIAL_ID, {
+                    cloneTextures: false,
+                    diagnosticsTag: 'BuildingFabrication2Scene.support_slab'
+                });
+                this._wallTextures.applyResolvedMaterial(mat, payload, { clearOnMissing: true });
+            }
+
+            const slab = new THREE.Mesh(geo, mat);
+            slab.name = 'bf2_support_slab';
+            slab.castShadow = false;
+            slab.receiveShadow = true;
+            this.root.add(slab);
+            this._supportSlabMesh = slab;
+        }
+
+        this._supportSlabMesh.position.set(centerX, topY - thickness * 0.5, centerZ);
+        this._supportSlabMesh.scale.set(width, thickness, depth);
+        this._supportSlabMesh.visible = true;
     }
 
     _setDummyVisible(visible) {

@@ -217,6 +217,11 @@
     min-height: 38px;
 }
 
+.wall-decoration-left-panel .options-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    margin-top: 10px;
+}
+
 #ui-wall-decoration-mesh-debugger .wall-decoration-catalog-grid {
     width: 100%;
     justify-content: stretch;

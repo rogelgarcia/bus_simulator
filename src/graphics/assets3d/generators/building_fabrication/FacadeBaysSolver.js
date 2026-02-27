@@ -2,6 +2,12 @@
 // Simple deterministic bay repeater + width distribution solver for BF2 auth.
 // @ts-check
 
+import {
+    WALL_BASE_TINT_STATE_DEFAULT,
+    applyWallBaseTintStateToWallBase,
+    resolveWallBaseTintStateFromWallBase
+} from '../../../../app/buildings/WallBaseTintModel.js';
+
 const EPS = 1e-6;
 const BAY_MIN_WIDTH_M = 0.1;
 const MAX_EXPANDED_BAYS = 1200;
@@ -83,11 +89,12 @@ function normalizeMaterialSpec(value) {
 function normalizeWallBase(value) {
     const src = value && typeof value === 'object' ? value : null;
     if (!src) return null;
-    const tintRaw = src.tintHex ?? src.tint ?? src.albedoTint ?? src.albedoTintHex ?? 0xffffff;
-    const tintHex = Number.isFinite(tintRaw) ? ((Number(tintRaw) >>> 0) & 0xffffff) : 0xffffff;
+    const tintState = resolveWallBaseTintStateFromWallBase(src, WALL_BASE_TINT_STATE_DEFAULT);
     const roughness = clamp(src.roughness ?? 0.85, 0.0, 1.0);
     const normalStrength = clamp(src.normalStrength ?? src.normal ?? 0.9, 0.0, 2.0);
-    return { tintHex, roughness, normalStrength };
+    const out = { roughness, normalStrength };
+    applyWallBaseTintStateToWallBase(out, tintState);
+    return out;
 }
 
 function normalizeTiling(value) {
@@ -353,7 +360,7 @@ function normalizeBayWindowSpec(value) {
  * @property {string | null} [materialLinkFromBayId]
  * @property {{left:number, right:number, linked?: boolean} | null} [depth]
  * @property {{kind:'texture'|'color', id:string} | null} [wallMaterialOverride]
- * @property {{tintHex:number, roughness:number, normalStrength:number} | null} [wallBase]
+ * @property {{tintHex:number, tintHueDeg?:number, tintSaturation?:number, tintValue?:number, tintIntensity?:number, tintBrightness?:number, roughness:number, normalStrength:number} | null} [wallBase]
  * @property {{enabled:boolean, tileMeters:number, tileMetersU:number, tileMetersV:number, uvEnabled:boolean, offsetU:number, offsetV:number, rotationDegrees:number} | null} [tiling]
  * @property {object | null} [materialVariation]
  * @property {{enabled:true, defId:string, width:{minMeters:number, maxMeters:number|null}, padding:{leftMeters:number, rightMeters:number, linked?:boolean}} | null} [window]
@@ -374,7 +381,7 @@ function normalizeBayWindowSpec(value) {
  * @property {number | null} [maxWidthMeters]
  * @property {{left:number, right:number} | null} [depth]
  * @property {{kind:'texture'|'color', id:string} | null} [wallMaterialOverride]
- * @property {{tintHex:number, roughness:number, normalStrength:number} | null} [wallBase]
+ * @property {{tintHex:number, tintHueDeg?:number, tintSaturation?:number, tintValue?:number, tintIntensity?:number, tintBrightness?:number, roughness:number, normalStrength:number} | null} [wallBase]
  * @property {{enabled:boolean, tileMeters:number, tileMetersU:number, tileMetersV:number, uvEnabled:boolean, offsetU:number, offsetV:number, rotationDegrees:number} | null} [tiling]
  * @property {object | null} [materialVariation]
  * @property {{enabled:true, defId:string, width:{minMeters:number, maxMeters:number|null}, padding:{leftMeters:number, rightMeters:number, linked?:boolean}} | null} [window]
