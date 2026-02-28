@@ -60,12 +60,62 @@ function normalizeTypeEntries(entries) {
         .map((entry) => {
             const id = String(entry?.id ?? '').trim();
             if (!id) return null;
+            const catalogSectionId = String(entry?.catalogSectionId ?? '').trim().toLowerCase() || 'decorations';
+            const catalogSectionLabel = String(entry?.catalogSectionLabel ?? '').trim()
+                || (catalogSectionId === 'cornice' ? 'Cornice' : 'Decorations');
             return {
                 id,
                 label: String(entry?.label ?? id).trim(),
                 description: String(entry?.description ?? '').trim(),
-                properties: normalizeConfigurationPropertySpecs(entry?.properties)
+                catalogSectionId,
+                catalogSectionLabel,
+                properties: normalizeConfigurationPropertySpecs(entry?.properties),
+                presets: normalizeConfigurationPresets(entry?.presets),
+                presetGroups: normalizeConfigurationPresetGroups(entry?.presetGroups, entry?.presets)
             };
+        })
+        .filter((entry) => !!entry);
+}
+
+function normalizeConfigurationPresets(presets) {
+    const src = Array.isArray(presets) ? presets : [];
+    return src
+        .map((item) => {
+            const id = String(item?.id ?? '').trim();
+            if (!id) return null;
+            const label = String(item?.label ?? id).trim();
+            const configurationSrc = item?.configuration && typeof item.configuration === 'object'
+                ? item.configuration
+                : {};
+            const configuration = {};
+            for (const [key, value] of Object.entries(configurationSrc)) {
+                const propId = String(key ?? '').trim();
+                if (!propId) continue;
+                if (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean') {
+                    configuration[propId] = value;
+                }
+            }
+            return { id, label, configuration };
+        })
+        .filter((entry) => !!entry);
+}
+
+function normalizeConfigurationPresetGroups(groups, fallbackPresets = null) {
+    const src = Array.isArray(groups) ? groups : [];
+    const fallback = normalizeConfigurationPresets(fallbackPresets);
+    const source = src.length
+        ? src
+        : (fallback.length
+            ? [{ id: 'presets', label: 'Presets', options: fallback }]
+            : []);
+    return source
+        .map((item) => {
+            const id = String(item?.id ?? '').trim();
+            if (!id) return null;
+            const label = String(item?.label ?? id).trim();
+            const options = normalizeConfigurationPresets(item?.options);
+            if (!options.length) return null;
+            return { id, label, options };
         })
         .filter((entry) => !!entry);
 }
@@ -284,7 +334,11 @@ function makeCatalogButtonGridRow({
                 clearActive();
                 return;
             }
-            setActive(next);
+            if (buttons.has(next)) {
+                setActive(next);
+                return;
+            }
+            if (allowNone) clearActive();
         },
         getValue: () => current,
         setDisabled: (disabled) => {
@@ -542,7 +596,8 @@ export class WallDecorationMeshDebuggerUI {
     } = {}) {
         this._draft = sanitizeWallDecoratorDebuggerState(initialState ?? getDefaultWallDecoratorDebuggerState());
         this._typeOptions = normalizeOptions(typeOptions, [{ id: WALL_DECORATOR_ID.SIMPLE_SKIRT, label: 'Simple Skirt' }]);
-        this._typeEntryById = new Map(normalizeTypeEntries(typeEntries).map((entry) => [entry.id, entry]));
+        this._typeEntries = normalizeTypeEntries(typeEntries);
+        this._typeEntryById = new Map(this._typeEntries.map((entry) => [entry.id, entry]));
         this._presetOptions = normalizeOptions(presetOptions, []);
         this._wallMaterialOptions = normalizeWallSurfaceOptions(wallMaterialOptions);
         this._wallMaterialId = String(wallMaterialId ?? '').trim();
@@ -551,7 +606,6 @@ export class WallDecorationMeshDebuggerUI {
         }
         this._wallMeshVisible = wallMeshVisible !== false;
         this._dummyVisible = dummyVisible !== false;
-        this._selectedPresetId = '';
         this._textureOptions = normalizeOptions(textureOptions, [{ id: 'pbr.brick_wall_11', label: 'Brick Wall 11' }]);
         this._colorOptions = normalizeOptions(colorOptions, [{ id: 'belt.white', label: 'White' }]);
         this._viewMode = normalizeViewMode(viewMode);
@@ -582,6 +636,8 @@ export class WallDecorationMeshDebuggerUI {
 
         const header = makeEl('div', 'options-header');
         header.appendChild(makeEl('div', 'options-title', 'Wall Decoration Debugger'));
+        this._controls.selectedTypeHeader = makeEl('div', 'options-selected-type');
+        header.appendChild(this._controls.selectedTypeHeader);
         header.appendChild(makeEl('div', 'options-subtitle', 'RMB orbit · MMB pan · Wheel zoom · F frame · R reset · Esc back'));
 
         this.tabs = makeEl('div', 'options-tabs');
@@ -670,6 +726,29 @@ export class WallDecorationMeshDebuggerUI {
         section.appendChild(makeEl('div', 'options-section-title', title));
         pane.appendChild(section);
         return section;
+    }
+
+    _resolveSelectedTypeLabel() {
+        const id = String(this._draft?.decoratorId ?? '').trim();
+        if (!id) return '';
+        const opt = this._typeOptions.find((item) => String(item?.id ?? '').trim() === id) ?? null;
+        if (opt && String(opt.label ?? '').trim()) return String(opt.label).trim();
+        const entry = this._typeEntryById.get(id) ?? null;
+        if (entry && String(entry.label ?? '').trim()) return String(entry.label).trim();
+        return id;
+    }
+
+    _syncSelectedTypeHeader() {
+        const el = this._controls?.selectedTypeHeader ?? null;
+        if (!el) return;
+        const typeLabel = this._resolveSelectedTypeLabel();
+        if (!typeLabel) {
+            el.textContent = '(no type selected)';
+            el.classList.add('is-placeholder');
+            return;
+        }
+        el.textContent = typeLabel;
+        el.classList.remove('is-placeholder');
     }
 
     _buildLeftViewPanel() {
@@ -819,49 +898,58 @@ export class WallDecorationMeshDebuggerUI {
         const paneCatalog = this._panes.get('catalog');
         if (!paneCatalog) return;
 
-        const sectionTypes = this._appendSection('catalog', 'Types');
-        if (sectionTypes) {
-            this._controls.decoratorId = makeCatalogButtonGridRow({
+        const sectionGroups = new Map();
+        const sectionOrder = [];
+        for (const entry of this._typeEntries) {
+            const sectionId = String(entry?.catalogSectionId ?? '').trim().toLowerCase() || 'decorations';
+            const sectionLabel = String(entry?.catalogSectionLabel ?? '').trim()
+                || (sectionId === 'cornice' ? 'Cornice' : 'Decorations');
+            if (!sectionGroups.has(sectionId)) {
+                sectionGroups.set(sectionId, {
+                    id: sectionId,
+                    label: sectionLabel,
+                    options: []
+                });
+                sectionOrder.push(sectionId);
+            }
+            sectionGroups.get(sectionId).options.push({
+                id: entry.id,
+                label: entry.label
+            });
+        }
+        if (!sectionOrder.length && this._typeOptions.length) {
+            sectionOrder.push('decorations');
+            sectionGroups.set('decorations', {
+                id: 'decorations',
+                label: 'Decorations',
+                options: this._typeOptions.map((opt) => ({ id: opt.id, label: opt.label }))
+            });
+        }
+
+        this._controls.decoratorIdSections = [];
+        for (const sectionId of sectionOrder) {
+            const group = sectionGroups.get(sectionId);
+            if (!group || !Array.isArray(group.options) || !group.options.length) continue;
+            const section = this._appendSection('catalog', group.label);
+            if (!section) continue;
+            const control = makeCatalogButtonGridRow({
                 hideLabel: true,
                 allowNone: true,
                 value: this._draft.decoratorId,
-                options: this._typeOptions,
+                options: group.options,
                 onChange: (id) => {
                     const selectedId = String(id ?? this._draft.decoratorId);
                     this._draft.decoratorId = selectedId;
-                    this._selectedPresetId = '';
                     const maybeState = this._onLoadTypeEntry?.(selectedId);
                     if (maybeState && typeof maybeState === 'object') this.setState(maybeState);
                     else {
-                        this._syncConfigurationControlsFromDraft();
+                        this._syncAllControlsFromDraft();
                         this._emit();
                     }
                 }
             });
-            sectionTypes.appendChild(this._controls.decoratorId.row);
-        }
-
-        const sectionCatalog = this._appendSection('catalog', 'Catalog');
-        if (!sectionCatalog) return;
-
-        this._controls.presetId = makeCatalogButtonGridRow({
-            hideLabel: true,
-            allowNone: true,
-            value: this._selectedPresetId,
-            options: this._presetOptions,
-            onChange: (id) => {
-                const selectedId = String(id ?? '');
-                this._selectedPresetId = selectedId;
-                const maybeState = this._onLoadPresetEntry?.(selectedId);
-                if (maybeState && typeof maybeState === 'object') this.setState(maybeState);
-                else this._emit();
-            }
-        });
-        sectionCatalog.appendChild(this._controls.presetId.row);
-
-        if (!this._presetOptions.length) {
-            this._controls.emptyPresetHint = makeEl('div', 'options-note', 'No saved decoration presets yet.');
-            sectionCatalog.appendChild(this._controls.emptyPresetHint);
+            section.appendChild(control.row);
+            this._controls.decoratorIdSections.push(control);
         }
 
         this._controls.fixedWallSize = makeValueRow({
@@ -921,8 +1009,18 @@ export class WallDecorationMeshDebuggerUI {
     }
 
     _buildConfigurationTab() {
-        const sectionConfiguration = this._appendSection('configuration', 'Type Configuration');
-        if (!sectionConfiguration) return;
+        const sectionPresets = this._appendSection('configuration', 'Presets');
+        const sectionProperties = this._appendSection('configuration', 'Properties');
+        if (!sectionPresets || !sectionProperties) return;
+
+        this._controls.configurationPresetInfo = makeEl(
+            'div',
+            'options-note',
+            'Select a decoration type to access presets.'
+        );
+        this._controls.configurationPresetHost = makeEl('div', 'wall-decoration-configuration-preset-host');
+        sectionPresets.appendChild(this._controls.configurationPresetInfo);
+        sectionPresets.appendChild(this._controls.configurationPresetHost);
 
         this._controls.configurationInfo = makeEl(
             'div',
@@ -930,8 +1028,8 @@ export class WallDecorationMeshDebuggerUI {
             'Select a decoration type to edit configuration properties.'
         );
         this._controls.configurationHost = makeEl('div', 'wall-decoration-configuration-host');
-        sectionConfiguration.appendChild(this._controls.configurationInfo);
-        sectionConfiguration.appendChild(this._controls.configurationHost);
+        sectionProperties.appendChild(this._controls.configurationInfo);
+        sectionProperties.appendChild(this._controls.configurationHost);
         this._rebuildConfigurationControls();
     }
 
@@ -944,17 +1042,55 @@ export class WallDecorationMeshDebuggerUI {
     _rebuildConfigurationControls() {
         const host = this._controls?.configurationHost ?? null;
         const note = this._controls?.configurationInfo ?? null;
-        if (!host || !note) return;
+        const presetHost = this._controls?.configurationPresetHost ?? null;
+        const presetNote = this._controls?.configurationPresetInfo ?? null;
+        if (!host || !note || !presetHost || !presetNote) return;
 
         host.textContent = '';
+        presetHost.textContent = '';
         this._configurationControlById.clear();
+        this._controls.configurationPresetGroups = [];
 
         const typeEntry = this._getActiveTypeEntry();
         const propertySpecs = Array.isArray(typeEntry?.properties) ? typeEntry.properties : [];
+        const presetGroups = Array.isArray(typeEntry?.presetGroups) ? typeEntry.presetGroups : [];
         if (!typeEntry || !propertySpecs.length) {
+            presetNote.textContent = 'Select a decoration type to access presets.';
+            presetNote.style.display = '';
             note.textContent = 'Select a decoration type to edit configuration properties.';
             note.style.display = '';
             return;
+        }
+
+        if (presetGroups.length) {
+            presetNote.textContent = `Presets from ${typeEntry.label}.`;
+            presetNote.style.display = '';
+            for (const group of presetGroups) {
+                const groupId = String(group?.id ?? '').trim();
+                if (!groupId) continue;
+                const groupLabel = String(group?.label ?? groupId).trim();
+                const options = Array.isArray(group?.options) ? group.options : [];
+                if (!options.length) continue;
+                const control = makeCatalogButtonGridRow({
+                    label: groupLabel,
+                    hideLabel: false,
+                    allowNone: true,
+                    value: '',
+                    options: options.map((preset) => ({
+                        id: String(preset?.id ?? ''),
+                        label: String(preset?.label ?? preset?.id ?? '')
+                    })),
+                    onChange: (id) => this._applyConfigurationPresetForGroup(groupId, String(id ?? ''))
+                });
+                presetHost.appendChild(control.row);
+                this._controls.configurationPresetGroups.push({
+                    groupId,
+                    control
+                });
+            }
+        } else {
+            presetNote.textContent = 'No presets for this decoration type.';
+            presetNote.style.display = '';
         }
 
         note.textContent = `Properties from ${typeEntry.label}.`;
@@ -1026,6 +1162,106 @@ export class WallDecorationMeshDebuggerUI {
         }
     }
 
+    _applyConfigurationPresetForGroup(groupId, presetId) {
+        const typeEntry = this._getActiveTypeEntry();
+        const targetGroupId = String(groupId ?? '').trim();
+        const targetId = String(presetId ?? '').trim();
+        const groups = Array.isArray(typeEntry?.presetGroups) ? typeEntry.presetGroups : [];
+        const group = groups.find((item) => String(item?.id ?? '').trim() === targetGroupId) ?? null;
+        const options = Array.isArray(group?.options) ? group.options : [];
+        const preset = options.find((item) => String(item?.id ?? '') === targetId) ?? null;
+        if (!preset) return;
+
+        this._draft.configuration ??= {};
+        const nextConfiguration = { ...this._draft.configuration };
+        const presetConfiguration = preset?.configuration && typeof preset.configuration === 'object'
+            ? preset.configuration
+            : {};
+        for (const [key, value] of Object.entries(presetConfiguration)) {
+            const propertyId = String(key ?? '').trim();
+            if (!propertyId) continue;
+            nextConfiguration[propertyId] = value;
+        }
+        this._draft.configuration = nextConfiguration;
+        this._syncConfigurationControlsFromDraft();
+        this._emit();
+    }
+
+    _isPresetValueMatchForSpec(spec, presetValue, currentValue) {
+        const type = normalizeConfigurationPropertyType(spec?.type);
+        if (type === WALL_DECORATOR_PROPERTY_TYPE.BOOL) {
+            return !!presetValue === !!currentValue;
+        }
+        if (type === WALL_DECORATOR_PROPERTY_TYPE.ENUM) {
+            return String(presetValue ?? '') === String(currentValue ?? '');
+        }
+        if (type === WALL_DECORATOR_PROPERTY_TYPE.INT) {
+            const presetNum = Number(presetValue);
+            const currentNum = Number(currentValue);
+            if (!Number.isFinite(presetNum) || !Number.isFinite(currentNum)) return false;
+            return Math.round(presetNum) === Math.round(currentNum);
+        }
+        const presetNum = Number(presetValue);
+        const currentNum = Number(currentValue);
+        if (!Number.isFinite(presetNum) || !Number.isFinite(currentNum)) return false;
+        const step = Number.isFinite(spec?.step) ? Math.abs(Number(spec.step)) : 0.0;
+        const eps = Math.max(1e-6, step * 0.5);
+        return Math.abs(presetNum - currentNum) <= eps;
+    }
+
+    _isConfigurationPresetMatch(typeEntry, preset) {
+        const entry = typeEntry && typeof typeEntry === 'object' ? typeEntry : null;
+        const presetEntry = preset && typeof preset === 'object' ? preset : null;
+        if (!entry || !presetEntry) return false;
+        const presetConfiguration = presetEntry.configuration && typeof presetEntry.configuration === 'object'
+            ? presetEntry.configuration
+            : null;
+        if (!presetConfiguration) return false;
+        const keys = Object.keys(presetConfiguration);
+        if (!keys.length) return false;
+
+        const propertyById = new Map(
+            (Array.isArray(entry.properties) ? entry.properties : [])
+                .map((spec) => [String(spec?.id ?? '').trim(), spec])
+        );
+
+        for (const propertyId of keys) {
+            const spec = propertyById.get(String(propertyId ?? '').trim()) ?? null;
+            if (!spec) return false;
+            const presetValue = presetConfiguration[propertyId];
+            const currentValue = this._draft?.configuration?.[propertyId];
+            if (!this._isPresetValueMatchForSpec(spec, presetValue, currentValue)) return false;
+        }
+
+        return true;
+    }
+
+    _resolveMatchingConfigurationPresetId(typeEntry, groupId) {
+        const targetGroupId = String(groupId ?? '').trim();
+        if (!targetGroupId) return '';
+        const groups = Array.isArray(typeEntry?.presetGroups) ? typeEntry.presetGroups : [];
+        const group = groups.find((item) => String(item?.id ?? '').trim() === targetGroupId) ?? null;
+        const presets = Array.isArray(group?.options) ? group.options : [];
+        for (const preset of presets) {
+            if (this._isConfigurationPresetMatch(typeEntry, preset)) {
+                return String(preset?.id ?? '').trim();
+            }
+        }
+        return '';
+    }
+
+    _syncConfigurationPresetSelectionFromDraft() {
+        const typeEntry = this._getActiveTypeEntry();
+        const groupControls = Array.isArray(this._controls?.configurationPresetGroups)
+            ? this._controls.configurationPresetGroups
+            : [];
+        for (const entry of groupControls) {
+            const groupId = String(entry?.groupId ?? '').trim();
+            const matchedPresetId = this._resolveMatchingConfigurationPresetId(typeEntry, groupId);
+            entry?.control?.setValue?.(matchedPresetId);
+        }
+    }
+
     _syncConfigurationThumbnailEnumControl({ propertyId, spec, control }) {
         const options = Array.isArray(spec?.options) ? spec.options : [];
         const selectedId = String(this._draft?.configuration?.[propertyId] ?? '').trim();
@@ -1092,6 +1328,17 @@ export class WallDecorationMeshDebuggerUI {
             const control = entry?.control ?? null;
             const controlKind = String(entry?.controlKind ?? '');
             if (!spec || !control) continue;
+            const spacingMode = String(this._draft?.configuration?.spacingMode ?? '').trim().toLowerCase();
+            if (propertyId === 'spacingMeters') {
+                const blockSizeMeters = Number(this._draft?.configuration?.blockSizeMeters);
+                const isMatchBlock = spacingMode === 'match_block';
+                const displaySpacingMeters = isMatchBlock && Number.isFinite(blockSizeMeters)
+                    ? Math.max(0.0, blockSizeMeters * 2.0)
+                    : Number(this._draft?.configuration?.spacingMeters);
+                if (Number.isFinite(displaySpacingMeters)) control.setValue(Number(displaySpacingMeters));
+                control.setDisabled?.(isMatchBlock);
+                continue;
+            }
             const propertyType = normalizeConfigurationPropertyType(spec.type);
             const nextValue = this._draft?.configuration?.[propertyId];
             if (propertyType === WALL_DECORATOR_PROPERTY_TYPE.BOOL) {
@@ -1108,6 +1355,8 @@ export class WallDecorationMeshDebuggerUI {
             }
             if (Number.isFinite(nextValue)) control.setValue(Number(nextValue));
         }
+
+        this._syncConfigurationPresetSelectionFromDraft();
     }
 
     _buildMaterialsTab() {
@@ -1284,6 +1533,8 @@ export class WallDecorationMeshDebuggerUI {
         if (this._isSetting) return;
         const sanitized = sanitizeWallDecoratorDebuggerState(this._draft);
         this._draft = sanitized;
+        this._syncSelectedTypeHeader();
+        this._syncConfigurationPresetSelectionFromDraft();
         this._onChange?.(sanitized);
     }
 
@@ -1423,8 +1674,9 @@ export class WallDecorationMeshDebuggerUI {
     }
 
     _syncAllControlsFromDraft() {
-        this._controls.decoratorId.setOptions(this._typeOptions, this._draft.decoratorId);
-        if (this._controls.presetId) this._controls.presetId.setOptions(this._presetOptions, this._selectedPresetId);
+        const typeControls = Array.isArray(this._controls?.decoratorIdSections) ? this._controls.decoratorIdSections : [];
+        for (const control of typeControls) control?.setValue?.(this._draft.decoratorId);
+        this._syncSelectedTypeHeader();
         this._controls.whereToApply.setValue(this._draft.whereToApply);
         this._controls.mode.setValue(this._draft.mode);
         this._controls.position.setValue(this._draft.position);

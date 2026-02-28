@@ -18,7 +18,9 @@ export const WALL_DECORATOR_ID = Object.freeze({
     HALF_DOME: 'half_dome',
     ANGLED_SUPPORT_PROFILE: 'angled_support_profile',
     RIBBON: 'ribbon',
-    EDGE_BRICK_CHAIN: 'edge_brick_chain'
+    EDGE_BRICK_CHAIN: 'edge_brick_chain',
+    CORNICE_BASIC_BLOCK: 'cornice_basic_block',
+    CORNICE_ROUNDED: 'cornice_rounded'
 });
 export const WALL_DECORATOR_NONE_ID = '';
 
@@ -46,50 +48,45 @@ export const WALL_DECORATOR_PROPERTY_TYPE = Object.freeze({
     BOOL: 'bool'
 });
 
-const SIMPLE_SKIRT_SIZE_PRESET = Object.freeze({
-    SMALL: 'small',
-    MEDIUM: 'medium',
-    LARGE: 'large'
-});
-const SIMPLE_SKIRT_OFFSET_MODE = Object.freeze({
-    NORMAL: 'normal',
-    EXTRA: 'extra'
-});
-const SIMPLE_SKIRT_SIZE_PRESET_VALUES = Object.freeze({
-    [SIMPLE_SKIRT_SIZE_PRESET.SMALL]: Object.freeze({ heightMeters: 0.20, offsetMeters: 0.02 }),
-    [SIMPLE_SKIRT_SIZE_PRESET.MEDIUM]: Object.freeze({ heightMeters: 0.50, offsetMeters: 0.05 }),
-    [SIMPLE_SKIRT_SIZE_PRESET.LARGE]: Object.freeze({ heightMeters: 1.00, offsetMeters: 0.10 })
-});
-const RIBBON_SIZE_PRESET = Object.freeze({
-    SMALL: 'small',
-    MEDIUM: 'medium',
-    LARGE: 'large'
-});
-const RIBBON_OFFSET_MODE = Object.freeze({
-    NORMAL: 'normal',
-    EXTRA: 'extra'
-});
-const RIBBON_SIZE_PRESET_VALUES = Object.freeze({
-    [RIBBON_SIZE_PRESET.SMALL]: Object.freeze({ heightMeters: 0.20, offsetMeters: 0.02 }),
-    [RIBBON_SIZE_PRESET.MEDIUM]: Object.freeze({ heightMeters: 0.50, offsetMeters: 0.05 }),
-    [RIBBON_SIZE_PRESET.LARGE]: Object.freeze({ heightMeters: 1.00, offsetMeters: 0.10 })
-});
-const HALF_DOME_DIAMETER_METERS_DEFAULT = 0.80;
+const SIMPLE_SKIRT_OFFSET_SCALE_DEFAULT = 1.0;
+const SIMPLE_SKIRT_OFFSET_METERS_PER_HEIGHT = 0.10;
+const RIBBON_OFFSET_SCALE_DEFAULT = 1.0;
+const RIBBON_OFFSET_METERS_PER_HEIGHT = 0.10;
+const HALF_DOME_DIAMETER_METERS_DEFAULT = 0.10;
 const HALF_DOME_OUTSET_METERS_DEFAULT = 0.0;
 const ANGLED_SUPPORT_PROFILE_OFFSET_METERS_DEFAULT = 0.10;
-const ANGLED_SUPPORT_PROFILE_SHIFT_METERS_DEFAULT = -0.03;
-const ANGLED_SUPPORT_PROFILE_RETURN_HEIGHT_METERS_DEFAULT = 0.20;
+const ANGLED_SUPPORT_PROFILE_HEIGHT_METERS_DEFAULT = 0.20;
 const NEAR_EDGE_OFFSET_METERS_DEFAULT = 0.10;
+const FLAT_PANEL_THICKNESS_METERS = 0.005;
 const RIBBON_PATTERN_NORMAL_INTENSITY_DEFAULT = 1.4;
 const EDGE_BRICK_CHAIN_EDGE_TARGET = Object.freeze({
     LEFT: 'left',
     RIGHT: 'right',
     BOTH: 'both'
 });
-const EDGE_BRICK_CHAIN_BRICK_HEIGHT_METERS_DEFAULT = 0.30;
+const CORNICE_BASIC_BLOCK_SPACING_MODE = Object.freeze({
+    MATCH_BLOCK: 'match_block',
+    FIXED: 'fixed'
+});
+const CORNICE_ROUNDED_CURVATURE = Object.freeze({
+    CONVEX: 'convex',
+    CONCAVE: 'concave'
+});
+const EDGE_BRICK_CHAIN_BRICK_HEIGHT_METERS_DEFAULT = 0.10;
 const EDGE_BRICK_CHAIN_START_Y_METERS_DEFAULT = 0.0;
 const EDGE_BRICK_CHAIN_END_Y_METERS_DEFAULT = 3.5;
 const EDGE_BRICK_CHAIN_DEPTH_SCALE_DEFAULT = 0.25;
+const EDGE_BRICK_CHAIN_DEPTH_SCALE_MULTIPLIER_DEFAULT = 1.0;
+const EDGE_BRICK_CHAIN_WIDTH_LONG_SCALE = 1.35;
+const EDGE_BRICK_CHAIN_WIDTH_SHORT_SCALE = 0.70;
+const WALL_DECORATOR_CATALOG_SECTION = Object.freeze({
+    DECORATIONS: 'decorations',
+    CORNICE: 'cornice'
+});
+const WALL_DECORATOR_CATALOG_SECTION_LABEL = Object.freeze({
+    [WALL_DECORATOR_CATALOG_SECTION.DECORATIONS]: 'Decorations',
+    [WALL_DECORATOR_CATALOG_SECTION.CORNICE]: 'Cornice'
+});
 const WALL_DECORATOR_MATCH_WALL_MATERIAL_SELECTION = Object.freeze({
     kind: 'match_wall',
     id: 'match_wall'
@@ -113,6 +110,9 @@ function normalizeDecoratorId(value, { allowNone = false } = {}) {
     if (raw === WALL_DECORATOR_ID.ANGLED_SUPPORT_PROFILE) return WALL_DECORATOR_ID.ANGLED_SUPPORT_PROFILE;
     if (raw === WALL_DECORATOR_ID.RIBBON) return WALL_DECORATOR_ID.RIBBON;
     if (raw === WALL_DECORATOR_ID.EDGE_BRICK_CHAIN) return WALL_DECORATOR_ID.EDGE_BRICK_CHAIN;
+    if (raw === WALL_DECORATOR_ID.CORNICE_BASIC_BLOCK) return WALL_DECORATOR_ID.CORNICE_BASIC_BLOCK;
+    if (raw === WALL_DECORATOR_ID.CORNICE_ROUNDED) return WALL_DECORATOR_ID.CORNICE_ROUNDED;
+    if (raw === 'cornice_rounded_inverse') return WALL_DECORATOR_ID.CORNICE_ROUNDED;
     return allowNone ? WALL_DECORATOR_NONE_ID : WALL_DECORATOR_ID.SIMPLE_SKIRT;
 }
 
@@ -136,37 +136,23 @@ function normalizePosition(value) {
     return WALL_DECORATOR_POSITION.BOTTOM;
 }
 
-function normalizeSimpleSkirtSizePreset(value) {
-    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
-    if (raw === SIMPLE_SKIRT_SIZE_PRESET.SMALL) return SIMPLE_SKIRT_SIZE_PRESET.SMALL;
-    if (raw === SIMPLE_SKIRT_SIZE_PRESET.LARGE) return SIMPLE_SKIRT_SIZE_PRESET.LARGE;
-    return SIMPLE_SKIRT_SIZE_PRESET.MEDIUM;
-}
-
-function normalizeSimpleSkirtOffsetMode(value) {
-    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
-    if (raw === SIMPLE_SKIRT_OFFSET_MODE.EXTRA) return SIMPLE_SKIRT_OFFSET_MODE.EXTRA;
-    return SIMPLE_SKIRT_OFFSET_MODE.NORMAL;
-}
-
-function normalizeRibbonSizePreset(value) {
-    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
-    if (raw === RIBBON_SIZE_PRESET.SMALL) return RIBBON_SIZE_PRESET.SMALL;
-    if (raw === RIBBON_SIZE_PRESET.LARGE) return RIBBON_SIZE_PRESET.LARGE;
-    return RIBBON_SIZE_PRESET.MEDIUM;
-}
-
-function normalizeRibbonOffsetMode(value) {
-    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
-    if (raw === RIBBON_OFFSET_MODE.EXTRA) return RIBBON_OFFSET_MODE.EXTRA;
-    return RIBBON_OFFSET_MODE.NORMAL;
-}
-
 function normalizeEdgeBrickChainEdgeTarget(value) {
     const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
     if (raw === EDGE_BRICK_CHAIN_EDGE_TARGET.LEFT) return EDGE_BRICK_CHAIN_EDGE_TARGET.LEFT;
     if (raw === EDGE_BRICK_CHAIN_EDGE_TARGET.RIGHT) return EDGE_BRICK_CHAIN_EDGE_TARGET.RIGHT;
     return EDGE_BRICK_CHAIN_EDGE_TARGET.BOTH;
+}
+
+function normalizeCorniceBasicBlockSpacingMode(value) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === CORNICE_BASIC_BLOCK_SPACING_MODE.MATCH_BLOCK) return CORNICE_BASIC_BLOCK_SPACING_MODE.MATCH_BLOCK;
+    return CORNICE_BASIC_BLOCK_SPACING_MODE.FIXED;
+}
+
+function normalizeCorniceRoundedCurvature(value) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === CORNICE_ROUNDED_CURVATURE.CONCAVE) return CORNICE_ROUNDED_CURVATURE.CONCAVE;
+    return CORNICE_ROUNDED_CURVATURE.CONVEX;
 }
 
 function normalizeDecoratorPropertyPicker(value) {
@@ -353,28 +339,50 @@ function resolveCenterYForPosition(position, wallHeightMeters, decoratorHeightMe
 }
 
 function resolveSimpleSkirtSizingFromConfiguration(configuration) {
-    const sizePreset = normalizeSimpleSkirtSizePreset(configuration?.sizePreset);
-    const offsetMode = normalizeSimpleSkirtOffsetMode(configuration?.offsetMode);
-    const preset = SIMPLE_SKIRT_SIZE_PRESET_VALUES[sizePreset] ?? SIMPLE_SKIRT_SIZE_PRESET_VALUES[SIMPLE_SKIRT_SIZE_PRESET.MEDIUM];
-    const offsetScale = offsetMode === SIMPLE_SKIRT_OFFSET_MODE.EXTRA ? 2.0 : 1.0;
+    const heightMeters = clamp(configuration?.heightMeters, 0.05, 5.0, 0.5);
+    const offsetScale = clamp(configuration?.offsetScale, 0.1, 4.0, SIMPLE_SKIRT_OFFSET_SCALE_DEFAULT);
     return {
-        sizePreset,
-        offsetMode,
-        heightMeters: clamp(preset.heightMeters, 0.05, 5.0, 0.5),
-        offsetMeters: clamp(preset.offsetMeters * offsetScale, 0.005, 2.0, 0.05)
+        heightMeters,
+        offsetScale,
+        offsetMeters: clamp(
+            heightMeters * SIMPLE_SKIRT_OFFSET_METERS_PER_HEIGHT * offsetScale,
+            0.005,
+            2.0,
+            0.05
+        )
     };
 }
 
 function resolveRibbonSizingFromConfiguration(configuration) {
-    const sizePreset = normalizeRibbonSizePreset(configuration?.sizePreset);
-    const offsetMode = normalizeRibbonOffsetMode(configuration?.offsetMode);
-    const preset = RIBBON_SIZE_PRESET_VALUES[sizePreset] ?? RIBBON_SIZE_PRESET_VALUES[RIBBON_SIZE_PRESET.MEDIUM];
-    const offsetScale = offsetMode === RIBBON_OFFSET_MODE.EXTRA ? 2.0 : 1.0;
+    const heightMeters = clamp(configuration?.heightMeters, 0.05, 5.0, 0.5);
+    const offsetScale = clamp(configuration?.offsetScale, 0.1, 4.0, RIBBON_OFFSET_SCALE_DEFAULT);
     return {
-        sizePreset,
-        offsetMode,
-        heightMeters: clamp(preset.heightMeters, 0.05, 5.0, 0.5),
-        offsetMeters: clamp(preset.offsetMeters * offsetScale, 0.005, 2.0, 0.05)
+        heightMeters,
+        offsetScale,
+        offsetMeters: clamp(
+            heightMeters * RIBBON_OFFSET_METERS_PER_HEIGHT * offsetScale,
+            0.005,
+            2.0,
+            0.05
+        )
+    };
+}
+
+function resolveCorniceBasicBlockSizingFromConfiguration(configuration) {
+    const blockSizeMeters = clamp(configuration?.blockSizeMeters, 0.01, 2.0, 0.10);
+    const spacingMode = normalizeCorniceBasicBlockSpacingMode(configuration?.spacingMode);
+    const fixedSpacingMeters = clamp(configuration?.spacingMeters, 0.0, 2.0, 0.10);
+    const spacingMeters = spacingMode === CORNICE_BASIC_BLOCK_SPACING_MODE.MATCH_BLOCK
+        ? blockSizeMeters * 2.0
+        : fixedSpacingMeters;
+    const frontBottomLiftScale = clamp(configuration?.frontBottomLiftScale, 0.0, 1.0, 0.0);
+    return {
+        blockSizeMeters,
+        spacingMode,
+        fixedSpacingMeters,
+        spacingMeters: clamp(spacingMeters, 0.0, 2.0, 0.10),
+        frontBottomLiftScale,
+        frontBottomLiftMeters: clamp(blockSizeMeters * frontBottomLiftScale, 0.0, blockSizeMeters, 0.0)
     };
 }
 
@@ -386,28 +394,19 @@ function buildEdgeBrickChainCourseHeights({
     const span = Math.max(0.0, Number(rangeMeters) || 0.0);
     if (span <= 1e-6) return [];
     const base = clamp(baseHeightMeters, 0.05, 1.0, EDGE_BRICK_CHAIN_BRICK_HEIGHT_METERS_DEFAULT);
-    const pattern = [base, base * 0.5];
     const heights = [];
 
     if (snapToFit) {
-        let accumulated = 0.0;
-        let idx = 0;
-        while (accumulated < span - 1e-6 && idx < 1024) {
-            const h = Math.max(0.01, Number(pattern[idx % pattern.length]) || base);
-            heights.push(h);
-            accumulated += h;
-            idx += 1;
-        }
-        if (!heights.length) heights.push(Math.max(0.01, base));
-        const total = heights.reduce((sum, h) => sum + h, 0.0);
-        const scale = total > 1e-6 ? span / total : 1.0;
-        return heights.map((h) => h * scale);
+        const count = Math.max(1, Math.min(1024, Math.ceil(span / Math.max(1e-6, base))));
+        const h = span / count;
+        for (let i = 0; i < count; i += 1) heights.push(h);
+        return heights;
     }
 
     let consumed = 0.0;
     let idx = 0;
     while (consumed < span - 1e-6 && idx < 1024) {
-        const raw = Math.max(0.01, Number(pattern[idx % pattern.length]) || base);
+        const raw = Math.max(0.01, base);
         const remaining = Math.max(0.0, span - consumed);
         const h = Math.min(raw, remaining);
         if (h <= 1e-6) break;
@@ -416,6 +415,299 @@ function buildEdgeBrickChainCourseHeights({
         idx += 1;
     }
     return heights;
+}
+
+function resolveCorniceBasicBlockLayout({
+    spanMeters = 0.0,
+    blockSizeMeters = 0.10,
+    baseSpacingMeters = 0.10,
+    snapToFit = true
+} = {}) {
+    const span = Math.max(0.0, Number(spanMeters) || 0.0);
+    const blockRaw = Math.max(0.01, Number(blockSizeMeters) || 0.10);
+    if (span <= 1e-6) {
+        return {
+            count: 0,
+            blockSizeMeters: blockRaw,
+            spacingMeters: 0.0
+        };
+    }
+
+    const block = Math.min(blockRaw, span);
+    if (span <= block + 1e-6) {
+        return {
+            count: 1,
+            blockSizeMeters: block,
+            spacingMeters: span
+        };
+    }
+
+    // spacingMeters is center-to-center pitch, independent of block size.
+    const baseSpacing = Math.max(1e-6, Number(baseSpacingMeters) || 0.10);
+    const centerSpan = Math.max(0.0, span - block);
+    const safeIntervalCount = Math.max(0, Math.floor((centerSpan / baseSpacing) + 1e-9));
+    let count = snapToFit
+        ? (safeIntervalCount + 1)
+        : Math.floor(span / baseSpacing);
+    count = Math.max(1, Math.min(4096, count));
+    if (count <= 1) {
+        return {
+            count: 1,
+            blockSizeMeters: block,
+            spacingMeters: span
+        };
+    }
+
+    const spacingMeters = snapToFit
+        ? (centerSpan / (count - 1))
+        : baseSpacing;
+    return {
+        count,
+        blockSizeMeters: block,
+        spacingMeters
+    };
+}
+
+function pushCorniceBasicBlockFaceSpecs({
+    specs,
+    rolePrefix,
+    faceId,
+    startU,
+    endU,
+    centerV,
+    blockSizeMeters,
+    baseSpacingMeters,
+    frontBottomLiftMeters = 0.0,
+    snapToFit = true,
+    anchorMode = 'min',
+    geometryKind = 'cornice_block',
+    extra = null
+}) {
+    const out = Array.isArray(specs) ? specs : [];
+    const minU = Math.min(Number(startU) || 0.0, Number(endU) || 0.0);
+    const maxU = Math.max(Number(startU) || 0.0, Number(endU) || 0.0);
+    const spanMeters = Math.max(0.0, maxU - minU);
+    if (spanMeters <= 1e-6) return;
+
+    const layout = resolveCorniceBasicBlockLayout({
+        spanMeters,
+        blockSizeMeters,
+        baseSpacingMeters,
+        snapToFit
+    });
+    const count = Math.max(0, Math.floor(Number(layout.count) || 0));
+    if (count <= 0) return;
+
+    const block = Math.max(0.01, Number(layout.blockSizeMeters) || 0.10);
+    const spacing = Math.max(0.0, Number(layout.spacingMeters) || 0.0);
+    const frontBottomLift = clamp(frontBottomLiftMeters, 0.0, block, 0.0);
+    const anchor = String(anchorMode ?? '').trim().toLowerCase() === 'max' ? 'max' : 'min';
+    const roleBase = String(rolePrefix ?? 'cornice').trim() || 'cornice';
+    const face = String(faceId ?? '').toLowerCase() === 'right' ? 'right' : 'front';
+    const step = Math.max(1e-6, spacing);
+    const centersSpan = Math.max(0.0, (count - 1) * step);
+    const centeredInset = Math.max(0.0, (spanMeters - centersSpan) * 0.5);
+
+    for (let i = 0; i < count; i += 1) {
+        const centerU = anchor === 'max'
+            ? maxU - centeredInset - i * step
+            : minU + centeredInset + i * step;
+        const spec = {
+            role: `${roleBase}_block_${String(i).padStart(3, '0')}`,
+            faceId: face,
+            geometryKind: String(geometryKind ?? 'cornice_block').trim() || 'cornice_block',
+            centerU,
+            centerV: Number(centerV) || 0.0,
+            widthMeters: block,
+            heightMeters: block,
+            depthMeters: block,
+            outsetMeters: 0.0,
+            corniceFrontBottomLiftMeters: frontBottomLift,
+            corniceBlockIndex: i,
+            corniceBlockCount: count,
+            corniceBlockSizeMeters: block,
+            corniceSpacingMeters: spacing,
+            corniceSnapToFit: !!snapToFit
+        };
+        if (extra && typeof extra === 'object') {
+            for (const [key, value] of Object.entries(extra)) spec[key] = value;
+        }
+        out.push(spec);
+    }
+}
+
+function resolveEdgeBrickChainColumnSpan({
+    anchorMode = 'min',
+    anchorU = 0.0,
+    widthMeters = 0.1
+} = {}) {
+    const width = Math.max(0.01, Number(widthMeters) || 0.1);
+    const anchor = Number(anchorU) || 0.0;
+    const mode = String(anchorMode ?? '').trim().toLowerCase();
+    if (mode === 'max') {
+        const maxU = anchor;
+        const minU = maxU - width;
+        return {
+            minU,
+            maxU,
+            centerU: minU + width * 0.5
+        };
+    }
+    const minU = anchor;
+    const maxU = minU + width;
+    return {
+        minU,
+        maxU,
+        centerU: minU + width * 0.5
+    };
+}
+
+function pushEdgeBrickChainCapSpec({
+    specs,
+    role,
+    faceId,
+    capSide,
+    startU,
+    endU,
+    centerV,
+    depthMeters,
+    fullSpanStartU,
+    fullSpanEndU,
+    miterStart45 = false,
+    miterEnd45 = false,
+    edgeChainCourseIndex = 0,
+    edgeChainSnapToFit = true
+}) {
+    const out = Array.isArray(specs) ? specs : [];
+    const minU = Math.min(Number(startU) || 0.0, Number(endU) || 0.0);
+    const maxU = Math.max(Number(startU) || 0.0, Number(endU) || 0.0);
+    if (maxU - minU <= 1e-6) return;
+
+    const fullMinU = Math.min(Number(fullSpanStartU) || 0.0, Number(fullSpanEndU) || 0.0);
+    const fullMaxU = Math.max(Number(fullSpanStartU) || 0.0, Number(fullSpanEndU) || 0.0);
+    const eps = 1e-6;
+    const touchesStartEdge = Math.abs(minU - fullMinU) <= eps;
+    const touchesEndEdge = Math.abs(maxU - fullMaxU) <= eps;
+    const depth = clamp(depthMeters, 0.005, 4.0, 0.08);
+
+    pushSimpleSkirtFlatCapSpec({
+        specs: out,
+        role,
+        faceId,
+        capSide,
+        startU: minU,
+        endU: maxU,
+        centerV,
+        offsetMeters: depth,
+        cornerBridgeStartMeters: touchesStartEdge && miterStart45 ? depth : 0.0,
+        cornerBridgeEndMeters: touchesEndEdge && miterEnd45 ? depth : 0.0
+    });
+
+    const cap = out[out.length - 1];
+    if (!cap) return;
+    cap.edgeChainCap = true;
+    cap.edgeChainCourseIndex = Math.max(0, Math.floor(Number(edgeChainCourseIndex) || 0));
+    cap.edgeChainSnapToFit = !!edgeChainSnapToFit;
+}
+
+function appendEdgeBrickChainCapsForColumn({
+    specs,
+    column,
+    courseSpecs,
+    snapToFit
+}) {
+    const out = Array.isArray(specs) ? specs : [];
+    const courses = Array.isArray(courseSpecs) ? courseSpecs : [];
+    if (!courses.length) return;
+
+    const rolePrefix = String(column?.rolePrefix ?? 'edge').trim() || 'edge';
+    const anchorMode = String(column?.anchorMode ?? 'min').trim().toLowerCase() === 'max' ? 'max' : 'min';
+
+    const firstCourse = courses[0];
+    const lastCourse = courses[courses.length - 1];
+    const firstIndex = String(Math.max(0, Math.floor(Number(firstCourse.courseIndex) || 0))).padStart(3, '0');
+    const lastIndex = String(Math.max(0, Math.floor(Number(lastCourse.courseIndex) || 0))).padStart(3, '0');
+    pushEdgeBrickChainCapSpec({
+        specs: out,
+        role: `${rolePrefix}_course_${firstIndex}_cap_bottom_full`,
+        faceId: firstCourse.faceId,
+        capSide: 'bottom',
+        startU: firstCourse.minU,
+        endU: firstCourse.maxU,
+        centerV: firstCourse.centerV - firstCourse.heightMeters * 0.5,
+        depthMeters: firstCourse.depthMeters,
+        fullSpanStartU: firstCourse.minU,
+        fullSpanEndU: firstCourse.maxU,
+        miterStart45: firstCourse.miterStart45 === true,
+        miterEnd45: firstCourse.miterEnd45 === true,
+        edgeChainCourseIndex: firstCourse.courseIndex,
+        edgeChainSnapToFit: snapToFit
+    });
+    pushEdgeBrickChainCapSpec({
+        specs: out,
+        role: `${rolePrefix}_course_${lastIndex}_cap_top_full`,
+        faceId: lastCourse.faceId,
+        capSide: 'top',
+        startU: lastCourse.minU,
+        endU: lastCourse.maxU,
+        centerV: lastCourse.centerV + lastCourse.heightMeters * 0.5,
+        depthMeters: lastCourse.depthMeters,
+        fullSpanStartU: lastCourse.minU,
+        fullSpanEndU: lastCourse.maxU,
+        miterStart45: lastCourse.miterStart45 === true,
+        miterEnd45: lastCourse.miterEnd45 === true,
+        edgeChainCourseIndex: lastCourse.courseIndex,
+        edgeChainSnapToFit: snapToFit
+    });
+
+    for (let i = 0; i + 1 < courses.length; i += 1) {
+        const lower = courses[i];
+        const upper = courses[i + 1];
+        const lowerWidth = Math.max(0.0, Number(lower.widthMeters) || 0.0);
+        const upperWidth = Math.max(0.0, Number(upper.widthMeters) || 0.0);
+        if (Math.abs(lowerWidth - upperWidth) <= 1e-6) continue;
+
+        if (lowerWidth > upperWidth) {
+            const seamStartU = anchorMode === 'max' ? lower.minU : upper.maxU;
+            const seamEndU = anchorMode === 'max' ? upper.minU : lower.maxU;
+            pushEdgeBrickChainCapSpec({
+                specs: out,
+                role: `${rolePrefix}_seam_${String(lower.courseIndex).padStart(3, '0')}_${String(upper.courseIndex).padStart(3, '0')}_cap_top`,
+                faceId: lower.faceId,
+                capSide: 'top',
+                startU: seamStartU,
+                endU: seamEndU,
+                centerV: lower.centerV + lower.heightMeters * 0.5,
+                depthMeters: lower.depthMeters,
+                fullSpanStartU: lower.minU,
+                fullSpanEndU: lower.maxU,
+                miterStart45: lower.miterStart45 === true,
+                miterEnd45: lower.miterEnd45 === true,
+                edgeChainCourseIndex: lower.courseIndex,
+                edgeChainSnapToFit: snapToFit
+            });
+            continue;
+        }
+
+        const seamStartU = anchorMode === 'max' ? upper.minU : lower.maxU;
+        const seamEndU = anchorMode === 'max' ? lower.minU : upper.maxU;
+        pushEdgeBrickChainCapSpec({
+            specs: out,
+            role: `${rolePrefix}_seam_${String(lower.courseIndex).padStart(3, '0')}_${String(upper.courseIndex).padStart(3, '0')}_cap_bottom`,
+            faceId: upper.faceId,
+            capSide: 'bottom',
+            startU: seamStartU,
+            endU: seamEndU,
+            centerV: upper.centerV - upper.heightMeters * 0.5,
+            depthMeters: upper.depthMeters,
+            fullSpanStartU: upper.minU,
+            fullSpanEndU: upper.maxU,
+            miterStart45: upper.miterStart45 === true,
+            miterEnd45: upper.miterEnd45 === true,
+            edgeChainCourseIndex: upper.courseIndex,
+            edgeChainSnapToFit: snapToFit
+        });
+    }
 }
 
 function pushSimpleSkirtSurroundSegmentSpecs({
@@ -519,27 +811,119 @@ function pushSimpleSkirtSurroundSegmentSpecs({
     };
 }
 
+function pushSimpleSkirtFlatPanelSpec({
+    specs,
+    role,
+    faceId,
+    startU,
+    endU,
+    centerV,
+    heightMeters,
+    offsetMeters
+}) {
+    const out = Array.isArray(specs) ? specs : [];
+    const minU = Math.min(Number(startU) || 0.0, Number(endU) || 0.0);
+    const maxU = Math.max(Number(startU) || 0.0, Number(endU) || 0.0);
+    const widthMeters = Math.max(0.01, maxU - minU);
+    out.push({
+        role: String(role ?? 'front_main').trim() || 'front_main',
+        faceId: String(faceId ?? '').toLowerCase() === 'right' ? 'right' : 'front',
+        geometryKind: 'flat_panel',
+        centerU: minU + widthMeters * 0.5,
+        centerV: Number(centerV) || 0.0,
+        widthMeters,
+        heightMeters: clamp(heightMeters, 0.01, 100.0, 0.2),
+        depthMeters: FLAT_PANEL_THICKNESS_METERS,
+        outsetMeters: clamp(offsetMeters, 0.005, 4.0, 0.05)
+    });
+}
+
+function pushSimpleSkirtFlatCapSpec({
+    specs,
+    role,
+    faceId,
+    capSide,
+    startU,
+    endU,
+    centerV,
+    offsetMeters,
+    cornerBridgeStartMeters = 0.0,
+    cornerBridgeEndMeters = 0.0,
+    wallEdgeYOffsetMeters = 0.0
+}) {
+    const out = Array.isArray(specs) ? specs : [];
+    const minU = Math.min(Number(startU) || 0.0, Number(endU) || 0.0);
+    const maxU = Math.max(Number(startU) || 0.0, Number(endU) || 0.0);
+    const widthMeters = Math.max(0.01, maxU - minU);
+    const depthMeters = clamp(offsetMeters, 0.005, 4.0, 0.05);
+    out.push({
+        role: String(role ?? 'front_cap_top').trim() || 'front_cap_top',
+        faceId: String(faceId ?? '').toLowerCase() === 'right' ? 'right' : 'front',
+        geometryKind: 'flat_panel_cap',
+        capSide: String(capSide ?? '').toLowerCase() === 'bottom' ? 'bottom' : 'top',
+        centerU: minU + widthMeters * 0.5,
+        centerV: Number(centerV) || 0.0,
+        widthMeters,
+        heightMeters: depthMeters,
+        depthMeters,
+        outsetMeters: 0.0,
+        cornerBridgeStartMeters: clamp(cornerBridgeStartMeters, 0.0, 4.0, 0.0),
+        cornerBridgeEndMeters: clamp(cornerBridgeEndMeters, 0.0, 4.0, 0.0),
+        wallEdgeYOffsetMeters: clamp(wallEdgeYOffsetMeters, -4.0, 4.0, 0.0)
+    });
+}
+
+function pushSimpleSkirtFlatSideCapSpec({
+    specs,
+    role,
+    faceId,
+    centerU,
+    centerV,
+    heightMeters,
+    offsetMeters,
+    yawDegrees = 0.0,
+    wallEdgeTopYOffsetMeters = 0.0,
+    wallEdgeBottomYOffsetMeters = 0.0
+}) {
+    const out = Array.isArray(specs) ? specs : [];
+    const depthMeters = clamp(offsetMeters, 0.005, 4.0, 0.05);
+    const yaw = clamp(yawDegrees, -180.0, 180.0, 0.0);
+    const wallEdgeFlip = Math.abs(Math.abs(yaw) - 180.0) <= 1e-6;
+    out.push({
+        role: String(role ?? 'front_cap_side_start').trim() || 'front_cap_side_start',
+        faceId: String(faceId ?? '').toLowerCase() === 'right' ? 'right' : 'front',
+        geometryKind: 'flat_panel_side_cap',
+        centerU: Number(centerU) || 0.0,
+        centerV: Number(centerV) || 0.0,
+        widthMeters: depthMeters,
+        heightMeters: clamp(heightMeters, 0.01, 100.0, 0.2),
+        depthMeters,
+        outsetMeters: depthMeters * 0.5,
+        yawDegrees: yaw,
+        wallEdgeFlip,
+        wallEdgeTopYOffsetMeters: clamp(wallEdgeTopYOffsetMeters, -4.0, 4.0, 0.0),
+        wallEdgeBottomYOffsetMeters: clamp(wallEdgeBottomYOffsetMeters, -4.0, 4.0, 0.0)
+    });
+}
+
 const SIMPLE_SKIRT_PROPERTY_SPECS = normalizeTypePropertySpecs([
     {
-        id: 'sizePreset',
-        label: 'Preset',
-        type: WALL_DECORATOR_PROPERTY_TYPE.ENUM,
-        default: SIMPLE_SKIRT_SIZE_PRESET.MEDIUM,
-        options: [
-            { id: SIMPLE_SKIRT_SIZE_PRESET.SMALL, label: 'Small' },
-            { id: SIMPLE_SKIRT_SIZE_PRESET.MEDIUM, label: 'Medium' },
-            { id: SIMPLE_SKIRT_SIZE_PRESET.LARGE, label: 'Large' }
-        ]
+        id: 'heightMeters',
+        label: 'Height (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.05,
+        max: 2.0,
+        step: 0.01,
+        default: 0.50
     },
     {
-        id: 'offsetMode',
-        label: 'Offset mode',
-        type: WALL_DECORATOR_PROPERTY_TYPE.ENUM,
-        default: SIMPLE_SKIRT_OFFSET_MODE.NORMAL,
-        options: [
-            { id: SIMPLE_SKIRT_OFFSET_MODE.NORMAL, label: 'Normal' },
-            { id: SIMPLE_SKIRT_OFFSET_MODE.EXTRA, label: 'Extra' }
-        ]
+        id: 'offsetScale',
+        label: 'Offset scale',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.1,
+        max: 4.0,
+        step: 0.05,
+        default: SIMPLE_SKIRT_OFFSET_SCALE_DEFAULT
     },
     {
         id: 'nearEdgeOffsetMeters',
@@ -558,25 +942,22 @@ const SIMPLE_SKIRT_CONFIGURATION_DEFAULTS = Object.freeze(
 
 const RIBBON_PROPERTY_SPECS = normalizeTypePropertySpecs([
     {
-        id: 'sizePreset',
-        label: 'Preset',
-        type: WALL_DECORATOR_PROPERTY_TYPE.ENUM,
-        default: RIBBON_SIZE_PRESET.MEDIUM,
-        options: [
-            { id: RIBBON_SIZE_PRESET.SMALL, label: 'Small' },
-            { id: RIBBON_SIZE_PRESET.MEDIUM, label: 'Medium' },
-            { id: RIBBON_SIZE_PRESET.LARGE, label: 'Large' }
-        ]
+        id: 'heightMeters',
+        label: 'Height (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.05,
+        max: 2.0,
+        step: 0.01,
+        default: 0.50
     },
     {
-        id: 'offsetMode',
-        label: 'Offset mode',
-        type: WALL_DECORATOR_PROPERTY_TYPE.ENUM,
-        default: RIBBON_OFFSET_MODE.NORMAL,
-        options: [
-            { id: RIBBON_OFFSET_MODE.NORMAL, label: 'Normal' },
-            { id: RIBBON_OFFSET_MODE.EXTRA, label: 'Extra' }
-        ]
+        id: 'offsetScale',
+        label: 'Offset scale',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.1,
+        max: 4.0,
+        step: 0.05,
+        default: RIBBON_OFFSET_SCALE_DEFAULT
     },
     {
         id: 'nearEdgeOffsetMeters',
@@ -654,6 +1035,15 @@ const EDGE_BRICK_CHAIN_PROPERTY_SPECS = normalizeTypePropertySpecs([
         default: EDGE_BRICK_CHAIN_BRICK_HEIGHT_METERS_DEFAULT
     },
     {
+        id: 'depthScaleMultiplier',
+        label: 'Offset scale',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.1,
+        max: 3.0,
+        step: 0.05,
+        default: EDGE_BRICK_CHAIN_DEPTH_SCALE_MULTIPLIER_DEFAULT
+    },
+    {
         id: 'snapToFit',
         label: 'Snap to fit',
         type: WALL_DECORATOR_PROPERTY_TYPE.BOOL,
@@ -665,12 +1055,113 @@ const EDGE_BRICK_CHAIN_CONFIGURATION_DEFAULTS = Object.freeze(
     buildDefaultConfigurationFromPropertySpecs(EDGE_BRICK_CHAIN_PROPERTY_SPECS)
 );
 
+const CORNICE_BASIC_BLOCK_PROPERTY_SPECS = normalizeTypePropertySpecs([
+    {
+        id: 'blockSizeMeters',
+        label: 'Block size (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.01,
+        max: 0.50,
+        step: 0.01,
+        default: 0.10
+    },
+    {
+        id: 'spacingMode',
+        label: 'Spacing mode',
+        type: WALL_DECORATOR_PROPERTY_TYPE.ENUM,
+        default: CORNICE_BASIC_BLOCK_SPACING_MODE.MATCH_BLOCK,
+        options: [
+            { id: CORNICE_BASIC_BLOCK_SPACING_MODE.MATCH_BLOCK, label: 'Match block' },
+            { id: CORNICE_BASIC_BLOCK_SPACING_MODE.FIXED, label: 'Fixed' }
+        ]
+    },
+    {
+        id: 'spacingMeters',
+        label: 'Spacing (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.0,
+        max: 0.50,
+        step: 0.01,
+        default: 0.10
+    },
+    {
+        id: 'frontBottomLiftScale',
+        label: 'Front angle (x block)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.0,
+        max: 1.0,
+        step: 0.05,
+        default: 0.0
+    },
+    {
+        id: 'snapToFit',
+        label: 'Snap to fit',
+        type: WALL_DECORATOR_PROPERTY_TYPE.BOOL,
+        default: true
+    }
+]);
+
+const CORNICE_BASIC_BLOCK_CONFIGURATION_DEFAULTS = Object.freeze(
+    buildDefaultConfigurationFromPropertySpecs(CORNICE_BASIC_BLOCK_PROPERTY_SPECS)
+);
+
+const CORNICE_ROUNDED_PROPERTY_SPECS = normalizeTypePropertySpecs([
+    {
+        id: 'blockSizeMeters',
+        label: 'Block size (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.01,
+        max: 0.50,
+        step: 0.01,
+        default: 0.10
+    },
+    {
+        id: 'spacingMode',
+        label: 'Spacing mode',
+        type: WALL_DECORATOR_PROPERTY_TYPE.ENUM,
+        default: CORNICE_BASIC_BLOCK_SPACING_MODE.MATCH_BLOCK,
+        options: [
+            { id: CORNICE_BASIC_BLOCK_SPACING_MODE.MATCH_BLOCK, label: 'Match block' },
+            { id: CORNICE_BASIC_BLOCK_SPACING_MODE.FIXED, label: 'Fixed' }
+        ]
+    },
+    {
+        id: 'spacingMeters',
+        label: 'Spacing (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.0,
+        max: 0.50,
+        step: 0.01,
+        default: 0.10
+    },
+    {
+        id: 'curvature',
+        label: 'Curvature',
+        type: WALL_DECORATOR_PROPERTY_TYPE.ENUM,
+        default: CORNICE_ROUNDED_CURVATURE.CONVEX,
+        options: [
+            { id: CORNICE_ROUNDED_CURVATURE.CONVEX, label: 'Convex' },
+            { id: CORNICE_ROUNDED_CURVATURE.CONCAVE, label: 'Concave' }
+        ]
+    },
+    {
+        id: 'snapToFit',
+        label: 'Snap to fit',
+        type: WALL_DECORATOR_PROPERTY_TYPE.BOOL,
+        default: true
+    }
+]);
+
+const CORNICE_ROUNDED_CONFIGURATION_DEFAULTS = Object.freeze(
+    buildDefaultConfigurationFromPropertySpecs(CORNICE_ROUNDED_PROPERTY_SPECS)
+);
+
 const HALF_DOME_PROPERTY_SPECS = normalizeTypePropertySpecs([
     {
         id: 'diameterMeters',
         label: 'Diameter (m)',
         type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
-        min: 0.20,
+        min: 0.01,
         max: 3.50,
         step: 0.01,
         default: HALF_DOME_DIAMETER_METERS_DEFAULT
@@ -710,22 +1201,31 @@ const ANGLED_SUPPORT_PROFILE_PROPERTY_SPECS = normalizeTypePropertySpecs([
         default: ANGLED_SUPPORT_PROFILE_OFFSET_METERS_DEFAULT
     },
     {
-        id: 'shift',
-        label: 'Shift (m)',
+        id: 'height',
+        label: 'Height (m)',
         type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
-        min: -1.0,
-        max: 1.0,
-        step: 0.01,
-        default: ANGLED_SUPPORT_PROFILE_SHIFT_METERS_DEFAULT
-    },
-    {
-        id: 'returnHeight',
-        label: 'Return Height (m)',
-        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
-        min: 0.01,
+        min: 0.05,
         max: 2.0,
         step: 0.01,
-        default: ANGLED_SUPPORT_PROFILE_RETURN_HEIGHT_METERS_DEFAULT
+        default: ANGLED_SUPPORT_PROFILE_HEIGHT_METERS_DEFAULT
+    },
+    {
+        id: 'topCapAngleDeg',
+        label: 'Top cap angle (deg)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 10.0,
+        max: 80.0,
+        step: 1.0,
+        default: 45.0
+    },
+    {
+        id: 'bottomCapAngleDeg',
+        label: 'Bottom cap angle (deg)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 10.0,
+        max: 80.0,
+        step: 1.0,
+        default: 45.0
     }
 ]);
 
@@ -759,56 +1259,160 @@ function buildSimpleSkirtShapeSpecs({ state, wallSpec }) {
         heightMeters,
         configuration.nearEdgeOffsetMeters
     );
-    const includeBottomClosure = position !== WALL_DECORATOR_POSITION.BOTTOM;
 
     const specs = [];
     const frontStartU = startU;
     const frontEndU = startU + targetWidth;
+    const capTopCenterV = centerV + heightMeters * 0.5;
+    const capBottomCenterV = centerV - heightMeters * 0.5;
+    const includeTopCap = position !== WALL_DECORATOR_POSITION.TOP;
+    const includeBottomCap = position !== WALL_DECORATOR_POSITION.BOTTOM;
 
     if (mode === WALL_DECORATOR_MODE.CORNER) {
-        pushSimpleSkirtSurroundSegmentSpecs({
+        // Keep a simple flat strip: in corner mode each face reaches +offset towards the corner.
+        pushSimpleSkirtFlatPanelSpec({
             specs,
-            rolePrefix: 'front',
+            role: 'front_main',
             faceId: 'front',
             startU: frontStartU,
-            endU: frontEndU,
+            endU: frontEndU + offsetMeters,
             centerV,
             heightMeters,
-            offsetMeters,
-            includeStartClosure: true,
-            includeEndClosure: false,
-            includeBottomClosure,
-            miterStart45: false,
-            miterEnd45: true
+            offsetMeters
         });
-        pushSimpleSkirtSurroundSegmentSpecs({
+        pushSimpleSkirtFlatPanelSpec({
             specs,
-            rolePrefix: 'right',
+            role: 'right_main',
             faceId: 'right',
-            startU: 0.0,
+            startU: -offsetMeters,
             endU: targetWidth,
             centerV,
             heightMeters,
+            offsetMeters
+        });
+        if (includeTopCap) {
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'front_cap_top',
+                faceId: 'front',
+                capSide: 'top',
+                startU: frontStartU,
+                endU: frontEndU,
+                centerV: capTopCenterV,
+                offsetMeters,
+                cornerBridgeEndMeters: offsetMeters
+            });
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'right_cap_top',
+                faceId: 'right',
+                capSide: 'top',
+                startU: 0.0,
+                endU: targetWidth,
+                centerV: capTopCenterV,
+                offsetMeters,
+                cornerBridgeStartMeters: offsetMeters
+            });
+        }
+        if (includeBottomCap) {
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'front_cap_bottom',
+                faceId: 'front',
+                capSide: 'bottom',
+                startU: frontStartU,
+                endU: frontEndU,
+                centerV: capBottomCenterV,
+                offsetMeters,
+                cornerBridgeEndMeters: offsetMeters
+            });
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'right_cap_bottom',
+                faceId: 'right',
+                capSide: 'bottom',
+                startU: 0.0,
+                endU: targetWidth,
+                centerV: capBottomCenterV,
+                offsetMeters,
+                cornerBridgeStartMeters: offsetMeters
+            });
+        }
+        // Side caps are edge-driven: only the non-corner edge on each segment gets a side cap.
+        pushSimpleSkirtFlatSideCapSpec({
+            specs,
+            role: 'front_cap_side_start',
+            faceId: 'front',
+            centerU: frontStartU,
+            centerV,
+            heightMeters,
             offsetMeters,
-            includeStartClosure: false,
-            includeEndClosure: true,
-            includeBottomClosure,
-            miterStart45: true,
-            miterEnd45: false
+            yawDegrees: 180.0
+        });
+        pushSimpleSkirtFlatSideCapSpec({
+            specs,
+            role: 'right_cap_side_end',
+            faceId: 'right',
+            centerU: targetWidth,
+            centerV,
+            heightMeters,
+            offsetMeters,
+            yawDegrees: 0.0
         });
     } else {
-        pushSimpleSkirtSurroundSegmentSpecs({
+        pushSimpleSkirtFlatPanelSpec({
             specs,
-            rolePrefix: 'front',
+            role: 'front_main',
             faceId: 'front',
             startU: frontStartU,
             endU: frontEndU,
             centerV,
             heightMeters,
+            offsetMeters
+        });
+        if (includeTopCap) {
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'front_cap_top',
+                faceId: 'front',
+                capSide: 'top',
+                startU: frontStartU,
+                endU: frontEndU,
+                centerV: capTopCenterV,
+                offsetMeters
+            });
+        }
+        if (includeBottomCap) {
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'front_cap_bottom',
+                faceId: 'front',
+                capSide: 'bottom',
+                startU: frontStartU,
+                endU: frontEndU,
+                centerV: capBottomCenterV,
+                offsetMeters
+            });
+        }
+        pushSimpleSkirtFlatSideCapSpec({
+            specs,
+            role: 'front_cap_side_start',
+            faceId: 'front',
+            centerU: frontStartU,
+            centerV,
+            heightMeters,
             offsetMeters,
-            includeStartClosure: true,
-            includeEndClosure: true,
-            includeBottomClosure
+            yawDegrees: 180.0
+        });
+        pushSimpleSkirtFlatSideCapSpec({
+            specs,
+            role: 'front_cap_side_end',
+            faceId: 'front',
+            centerU: frontEndU,
+            centerV,
+            heightMeters,
+            offsetMeters,
+            yawDegrees: 0.0
         });
     }
 
@@ -841,7 +1445,8 @@ function buildRibbonShapeSpecs({ state, wallSpec }) {
         heightMeters,
         configuration.nearEdgeOffsetMeters
     );
-    const includeBottomClosure = position !== WALL_DECORATOR_POSITION.BOTTOM;
+    const includeTopCap = position !== WALL_DECORATOR_POSITION.TOP;
+    const includeBottomCap = position !== WALL_DECORATOR_POSITION.BOTTOM;
     const patternId = normalizeRibbonPatternId(configuration.patternId, RIBBON_PATTERN_DEFAULT_ID);
     const patternNormalIntensity = clamp(
         configuration.patternNormalIntensity,
@@ -853,79 +1458,156 @@ function buildRibbonShapeSpecs({ state, wallSpec }) {
     const specs = [];
     const frontStartU = startU;
     const frontEndU = startU + targetWidth;
+    const capTopCenterV = centerV + heightMeters * 0.5;
+    const capBottomCenterV = centerV - heightMeters * 0.5;
 
     if (mode === WALL_DECORATOR_MODE.CORNER) {
-        const maxInset = Math.max(0.01, targetWidth - 0.02);
-        const jointInset = clamp(offsetMeters, 0.01, maxInset, Math.min(0.08, maxInset));
-        const frontTrimmedEndU = Math.max(frontStartU + 0.01, frontEndU - jointInset);
-        const rightTrimmedStartU = Math.min(targetWidth - 0.01, jointInset);
-
-        const frontSegment = pushSimpleSkirtSurroundSegmentSpecs({
+        pushSimpleSkirtFlatPanelSpec({
             specs,
-            rolePrefix: 'front',
+            role: 'front_main',
             faceId: 'front',
             startU: frontStartU,
-            endU: frontTrimmedEndU,
+            endU: frontEndU + offsetMeters,
             centerV,
             heightMeters,
-            offsetMeters,
-            includeStartClosure: true,
-            includeEndClosure: false,
-            includeBottomClosure
+            offsetMeters
         });
-        const rightSegment = pushSimpleSkirtSurroundSegmentSpecs({
+        pushSimpleSkirtFlatPanelSpec({
             specs,
-            rolePrefix: 'right',
+            role: 'right_main',
             faceId: 'right',
-            startU: rightTrimmedStartU,
+            startU: -offsetMeters,
             endU: targetWidth,
             centerV,
             heightMeters,
-            offsetMeters,
-            includeStartClosure: false,
-            includeEndClosure: true,
-            includeBottomClosure
+            offsetMeters
         });
-
-        const jointShellThickness = Math.max(
-            frontSegment?.shellThickness ?? 0.01,
-            rightSegment?.shellThickness ?? 0.01
-        );
-        const jointShellOutset = Math.max(
-            frontSegment?.shellOutset ?? 0.0,
-            rightSegment?.shellOutset ?? 0.0
-        );
-        const jointCenterOutset = jointShellOutset + jointShellThickness * 0.5;
-        const cornerInset = Math.max(0.0, jointCenterOutset * 0.5);
-        specs.push({
-            role: 'corner_joint_45',
+        if (includeTopCap) {
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'front_cap_top',
+                faceId: 'front',
+                capSide: 'top',
+                startU: frontStartU,
+                endU: frontEndU,
+                centerV: capTopCenterV,
+                offsetMeters,
+                cornerBridgeEndMeters: offsetMeters
+            });
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'right_cap_top',
+                faceId: 'right',
+                capSide: 'top',
+                startU: 0.0,
+                endU: targetWidth,
+                centerV: capTopCenterV,
+                offsetMeters,
+                cornerBridgeStartMeters: offsetMeters
+            });
+        }
+        if (includeBottomCap) {
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'front_cap_bottom',
+                faceId: 'front',
+                capSide: 'bottom',
+                startU: frontStartU,
+                endU: frontEndU,
+                centerV: capBottomCenterV,
+                offsetMeters,
+                cornerBridgeEndMeters: offsetMeters
+            });
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'right_cap_bottom',
+                faceId: 'right',
+                capSide: 'bottom',
+                startU: 0.0,
+                endU: targetWidth,
+                centerV: capBottomCenterV,
+                offsetMeters,
+                cornerBridgeStartMeters: offsetMeters
+            });
+        }
+        pushSimpleSkirtFlatSideCapSpec({
+            specs,
+            role: 'front_cap_side_start',
             faceId: 'front',
-            centerU: wallHalfWidth + cornerInset,
+            centerU: frontStartU,
             centerV,
-            widthMeters: Math.max(jointShellThickness * 2.0, jointCenterOutset * Math.SQRT2 + jointShellThickness),
             heightMeters,
-            depthMeters: jointShellThickness,
-            outsetMeters: cornerInset,
-            yawDegrees: 45.0
+            offsetMeters,
+            yawDegrees: 180.0
+        });
+        pushSimpleSkirtFlatSideCapSpec({
+            specs,
+            role: 'right_cap_side_end',
+            faceId: 'right',
+            centerU: targetWidth,
+            centerV,
+            heightMeters,
+            offsetMeters,
+            yawDegrees: 0.0
         });
     } else {
-        pushSimpleSkirtSurroundSegmentSpecs({
+        pushSimpleSkirtFlatPanelSpec({
             specs,
-            rolePrefix: 'front',
+            role: 'front_main',
             faceId: 'front',
             startU: frontStartU,
             endU: frontEndU,
             centerV,
             heightMeters,
+            offsetMeters
+        });
+        if (includeTopCap) {
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'front_cap_top',
+                faceId: 'front',
+                capSide: 'top',
+                startU: frontStartU,
+                endU: frontEndU,
+                centerV: capTopCenterV,
+                offsetMeters
+            });
+        }
+        if (includeBottomCap) {
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'front_cap_bottom',
+                faceId: 'front',
+                capSide: 'bottom',
+                startU: frontStartU,
+                endU: frontEndU,
+                centerV: capBottomCenterV,
+                offsetMeters
+            });
+        }
+        pushSimpleSkirtFlatSideCapSpec({
+            specs,
+            role: 'front_cap_side_start',
+            faceId: 'front',
+            centerU: frontStartU,
+            centerV,
+            heightMeters,
             offsetMeters,
-            includeStartClosure: true,
-            includeEndClosure: true,
-            includeBottomClosure
+            yawDegrees: 180.0
+        });
+        pushSimpleSkirtFlatSideCapSpec({
+            specs,
+            role: 'front_cap_side_end',
+            faceId: 'front',
+            centerU: frontEndU,
+            centerV,
+            heightMeters,
+            offsetMeters,
+            yawDegrees: 0.0
         });
     }
 
     for (const spec of specs) {
-        spec.geometryKind = 'ribbon';
         spec.ribbonPatternId = patternId;
         spec.ribbonPatternNormalIntensity = patternNormalIntensity;
     }
@@ -957,8 +1639,21 @@ function buildEdgeBrickChainShapeSpecs({ state, wallSpec }) {
 
     const brickHeight = clamp(configuration.brickHeight, 0.05, 1.0, EDGE_BRICK_CHAIN_BRICK_HEIGHT_METERS_DEFAULT);
     const columnWidthMax = Math.max(0.06, targetWidth - 0.001);
-    const columnWidth = clamp(brickHeight * 0.66, 0.06, columnWidthMax, Math.min(0.20, columnWidthMax));
-    const depthMeters = clamp(brickHeight * EDGE_BRICK_CHAIN_DEPTH_SCALE_DEFAULT, 0.03, 0.18, 0.08);
+    const baseColumnWidth = clamp(brickHeight * 0.66, 0.06, columnWidthMax, Math.min(0.20, columnWidthMax));
+    const longColumnWidth = clamp(baseColumnWidth * EDGE_BRICK_CHAIN_WIDTH_LONG_SCALE, 0.04, columnWidthMax, baseColumnWidth);
+    const shortColumnWidth = clamp(baseColumnWidth * EDGE_BRICK_CHAIN_WIDTH_SHORT_SCALE, 0.03, columnWidthMax, baseColumnWidth);
+    const depthScaleMultiplier = clamp(
+        configuration.depthScaleMultiplier,
+        0.1,
+        3.0,
+        EDGE_BRICK_CHAIN_DEPTH_SCALE_MULTIPLIER_DEFAULT
+    );
+    const baseDepthMeters = clamp(
+        brickHeight * EDGE_BRICK_CHAIN_DEPTH_SCALE_DEFAULT * depthScaleMultiplier,
+        0.015,
+        0.30,
+        0.08
+    );
 
     const startY = clamp(configuration.startY, 0.0, wall.heightMeters, EDGE_BRICK_CHAIN_START_Y_METERS_DEFAULT);
     const endY = clamp(configuration.endY, 0.0, wall.heightMeters, Math.min(wall.heightMeters, EDGE_BRICK_CHAIN_END_Y_METERS_DEFAULT));
@@ -975,18 +1670,14 @@ function buildEdgeBrickChainShapeSpecs({ state, wallSpec }) {
     });
     if (!courseHeights.length) return [];
 
-    const frontLeftCenterU = spanStartU + columnWidth * 0.5;
-    const frontRightCenterU = spanEndU - columnWidth * 0.5;
-    const rightCornerCenterU = columnWidth * 0.5;
-    const rightFarCenterU = Math.max(columnWidth * 0.5, targetWidth - columnWidth * 0.5);
-
     const columns = [];
     if (includeLeft) {
         columns.push({
             rolePrefix: 'front_left',
             faceId: 'front',
             edgeColumn: 'left',
-            centerU: Math.min(frontRightCenterU, frontLeftCenterU),
+            anchorMode: 'min',
+            anchorU: spanStartU,
             miterStart45: false,
             miterEnd45: false
         });
@@ -996,7 +1687,8 @@ function buildEdgeBrickChainShapeSpecs({ state, wallSpec }) {
             rolePrefix: 'front_right',
             faceId: 'front',
             edgeColumn: 'right',
-            centerU: Math.max(frontLeftCenterU, frontRightCenterU),
+            anchorMode: 'max',
+            anchorU: spanEndU,
             miterStart45: false,
             miterEnd45: mode === WALL_DECORATOR_MODE.CORNER
         });
@@ -1007,7 +1699,8 @@ function buildEdgeBrickChainShapeSpecs({ state, wallSpec }) {
                 rolePrefix: 'right_corner',
                 faceId: 'right',
                 edgeColumn: 'right',
-                centerU: rightCornerCenterU,
+                anchorMode: 'min',
+                anchorU: 0.0,
                 miterStart45: true,
                 miterEnd45: false
             });
@@ -1017,7 +1710,8 @@ function buildEdgeBrickChainShapeSpecs({ state, wallSpec }) {
                 rolePrefix: 'right_far',
                 faceId: 'right',
                 edgeColumn: 'left',
-                centerU: rightFarCenterU,
+                anchorMode: 'max',
+                anchorU: targetWidth,
                 miterStart45: false,
                 miterEnd45: false
             });
@@ -1025,31 +1719,236 @@ function buildEdgeBrickChainShapeSpecs({ state, wallSpec }) {
     }
 
     const specs = [];
-    let consumedY = 0.0;
     const wallHalfHeight = wall.heightMeters * 0.5;
+    const verticalCourses = [];
+    let consumedY = 0.0;
     for (let courseIndex = 0; courseIndex < courseHeights.length; courseIndex += 1) {
         const courseHeight = Math.max(0.01, Number(courseHeights[courseIndex]) || 0.01);
+        const widthMeters = (courseIndex % 2 === 0) ? longColumnWidth : shortColumnWidth;
         const centerYFromFloor = rangeStartY + consumedY + courseHeight * 0.5;
-        const centerV = -wallHalfHeight + centerYFromFloor;
-        for (const column of columns) {
-            specs.push({
-                role: `${column.rolePrefix}_course_${String(courseIndex).padStart(3, '0')}`,
+        verticalCourses.push({
+            courseIndex,
+            centerV: -wallHalfHeight + centerYFromFloor,
+            widthMeters,
+            heightMeters: courseHeight
+        });
+        consumedY += courseHeight;
+    }
+
+    for (const column of columns) {
+        const columnCourseSpecs = [];
+        for (const course of verticalCourses) {
+            const span = resolveEdgeBrickChainColumnSpan({
+                anchorMode: column.anchorMode,
+                anchorU: column.anchorU,
+                widthMeters: course.widthMeters
+            });
+            const courseSpec = {
+                role: `${column.rolePrefix}_course_${String(course.courseIndex).padStart(3, '0')}`,
                 faceId: column.faceId,
                 geometryKind: 'edge_brick_chain_course',
                 edgeColumn: column.edgeColumn,
-                centerU: column.centerU,
-                centerV,
-                widthMeters: columnWidth,
-                heightMeters: courseHeight,
-                depthMeters,
+                centerU: span.centerU,
+                centerV: course.centerV,
+                widthMeters: course.widthMeters,
+                heightMeters: course.heightMeters,
+                depthMeters: baseDepthMeters,
                 outsetMeters: 0.0,
                 miterStart45: column.miterStart45,
                 miterEnd45: column.miterEnd45,
-                edgeChainCourseIndex: courseIndex,
+                edgeChainRemoveTopFace: true,
+                edgeChainRemoveBottomFace: true,
+                edgeChainRemoveStartFace: column.miterStart45 === true,
+                edgeChainRemoveEndFace: column.miterEnd45 === true,
+                edgeChainRemoveWallFace: true,
+                edgeChainRemoveOuterFace: false,
+                edgeChainCourseIndex: course.courseIndex,
                 edgeChainSnapToFit: snapToFit
+            };
+            specs.push(courseSpec);
+            columnCourseSpecs.push({
+                ...courseSpec,
+                courseIndex: course.courseIndex,
+                minU: span.minU,
+                maxU: span.maxU
             });
         }
-        consumedY += courseHeight;
+        appendEdgeBrickChainCapsForColumn({
+            specs,
+            column,
+            courseSpecs: columnCourseSpecs,
+            snapToFit
+        });
+    }
+
+    return specs;
+}
+
+function buildCorniceBasicBlockShapeSpecs({ state, wallSpec }) {
+    const whereToApply = normalizeWhereToApply(state?.whereToApply);
+    const mode = normalizeMode(state?.mode);
+    const position = normalizePosition(state?.position);
+    const wall = normalizeWallSpec(wallSpec);
+    const configuration = normalizeDecoratorConfiguration(
+        state?.configuration,
+        CORNICE_BASIC_BLOCK_PROPERTY_SPECS,
+        CORNICE_BASIC_BLOCK_CONFIGURATION_DEFAULTS
+    );
+
+    const targetWidth = whereToApply === WALL_DECORATOR_WHERE_TO_APPLY.HALF
+        ? wall.widthMeters * 0.5
+        : wall.widthMeters;
+    if (targetWidth <= 0.01) return [];
+
+    const wallHalfWidth = wall.widthMeters * 0.5;
+    const spanStartU = wallHalfWidth - targetWidth;
+    const spanEndU = spanStartU + targetWidth;
+    const sizing = resolveCorniceBasicBlockSizingFromConfiguration(configuration);
+    const blockSizeMeters = clamp(sizing.blockSizeMeters, 0.01, wall.heightMeters, 0.10);
+    const spacingMeters = clamp(sizing.spacingMeters, 0.0, 2.0, 0.10);
+    const frontBottomLiftMeters = clamp(sizing.frontBottomLiftMeters, 0.0, blockSizeMeters, 0.0);
+    const snapToFit = configuration.snapToFit !== false;
+    const centerV = resolveCenterYForPosition(
+        position,
+        wall.heightMeters,
+        blockSizeMeters,
+        NEAR_EDGE_OFFSET_METERS_DEFAULT
+    );
+
+    const specs = [];
+    if (mode === WALL_DECORATOR_MODE.CORNER) {
+        pushCorniceBasicBlockFaceSpecs({
+            specs,
+            rolePrefix: 'cornice_front',
+            faceId: 'front',
+            startU: spanStartU,
+            endU: spanEndU,
+            centerV,
+            blockSizeMeters,
+            baseSpacingMeters: spacingMeters,
+            frontBottomLiftMeters,
+            snapToFit,
+            anchorMode: 'max'
+        });
+        pushCorniceBasicBlockFaceSpecs({
+            specs,
+            rolePrefix: 'cornice_right',
+            faceId: 'right',
+            startU: 0.0,
+            endU: targetWidth,
+            centerV,
+            blockSizeMeters,
+            baseSpacingMeters: spacingMeters,
+            frontBottomLiftMeters,
+            snapToFit,
+            anchorMode: 'min'
+        });
+    } else {
+        pushCorniceBasicBlockFaceSpecs({
+            specs,
+            rolePrefix: 'cornice_front',
+            faceId: 'front',
+            startU: spanStartU,
+            endU: spanEndU,
+            centerV,
+            blockSizeMeters,
+            baseSpacingMeters: spacingMeters,
+            frontBottomLiftMeters,
+            snapToFit,
+            anchorMode: 'min'
+        });
+    }
+
+    return specs;
+}
+
+function buildCorniceRoundedShapeSpecs({ state, wallSpec }) {
+    const whereToApply = normalizeWhereToApply(state?.whereToApply);
+    const mode = normalizeMode(state?.mode);
+    const position = normalizePosition(state?.position);
+    const wall = normalizeWallSpec(wallSpec);
+    const configuration = normalizeDecoratorConfiguration(
+        state?.configuration,
+        CORNICE_ROUNDED_PROPERTY_SPECS,
+        CORNICE_ROUNDED_CONFIGURATION_DEFAULTS
+    );
+
+    const targetWidth = whereToApply === WALL_DECORATOR_WHERE_TO_APPLY.HALF
+        ? wall.widthMeters * 0.5
+        : wall.widthMeters;
+    if (targetWidth <= 0.01) return [];
+
+    const wallHalfWidth = wall.widthMeters * 0.5;
+    const spanStartU = wallHalfWidth - targetWidth;
+    const spanEndU = spanStartU + targetWidth;
+    const sizing = resolveCorniceBasicBlockSizingFromConfiguration({
+        blockSizeMeters: configuration.blockSizeMeters,
+        spacingMode: configuration.spacingMode,
+        spacingMeters: configuration.spacingMeters,
+        frontBottomLiftScale: 0.0
+    });
+    const blockSizeMeters = clamp(sizing.blockSizeMeters, 0.01, wall.heightMeters, 0.10);
+    const spacingMeters = clamp(sizing.spacingMeters, 0.0, 2.0, 0.10);
+    const snapToFit = configuration.snapToFit !== false;
+    const curvature = normalizeCorniceRoundedCurvature(configuration?.curvature);
+    const centerV = resolveCenterYForPosition(
+        position,
+        wall.heightMeters,
+        blockSizeMeters,
+        NEAR_EDGE_OFFSET_METERS_DEFAULT
+    );
+
+    const specs = [];
+    const roundedExtra = {
+        corniceRoundedCurvature: curvature
+    };
+    if (mode === WALL_DECORATOR_MODE.CORNER) {
+        pushCorniceBasicBlockFaceSpecs({
+            specs,
+            rolePrefix: 'cornice_rounded_front',
+            faceId: 'front',
+            startU: spanStartU,
+            endU: spanEndU,
+            centerV,
+            blockSizeMeters,
+            baseSpacingMeters: spacingMeters,
+            frontBottomLiftMeters: 0.0,
+            snapToFit,
+            anchorMode: 'max',
+            geometryKind: 'cornice_rounded_block',
+            extra: roundedExtra
+        });
+        pushCorniceBasicBlockFaceSpecs({
+            specs,
+            rolePrefix: 'cornice_rounded_right',
+            faceId: 'right',
+            startU: 0.0,
+            endU: targetWidth,
+            centerV,
+            blockSizeMeters,
+            baseSpacingMeters: spacingMeters,
+            frontBottomLiftMeters: 0.0,
+            snapToFit,
+            anchorMode: 'min',
+            geometryKind: 'cornice_rounded_block',
+            extra: roundedExtra
+        });
+    } else {
+        pushCorniceBasicBlockFaceSpecs({
+            specs,
+            rolePrefix: 'cornice_rounded_front',
+            faceId: 'front',
+            startU: spanStartU,
+            endU: spanEndU,
+            centerV,
+            blockSizeMeters,
+            baseSpacingMeters: spacingMeters,
+            frontBottomLiftMeters: 0.0,
+            snapToFit,
+            anchorMode: 'min',
+            geometryKind: 'cornice_rounded_block',
+            extra: roundedExtra
+        });
     }
 
     return specs;
@@ -1071,8 +1970,9 @@ function pushCurvedRingSegmentSpec({
     const minU = Math.min(Number(startU) || 0.0, Number(endU) || 0.0);
     const maxU = Math.max(Number(startU) || 0.0, Number(endU) || 0.0);
     const segmentWidth = Math.max(0.01, maxU - minU);
-    const diameter = Math.max(0.2, Number(diameterMeters) || HALF_DOME_DIAMETER_METERS_DEFAULT);
+    const diameter = Math.max(0.01, Number(diameterMeters) || HALF_DOME_DIAMETER_METERS_DEFAULT);
     const radius = diameter * 0.5;
+    const longitudinalSegments = Math.max(8, Math.min(4096, Math.ceil(segmentWidth / Math.max(1e-4, diameter * 0.25))));
 
     out.push({
         role: String(role ?? 'curved_ring').trim() || 'curved_ring',
@@ -1084,6 +1984,7 @@ function pushCurvedRingSegmentSpec({
         heightMeters: diameter,
         depthMeters: radius,
         outsetMeters: clamp(outsetMeters, 0.0, 0.5, HALF_DOME_OUTSET_METERS_DEFAULT),
+        longitudinalSegments,
         miterStart45: !!miterStart45,
         miterEnd45: !!miterEnd45
     });
@@ -1109,7 +2010,7 @@ function buildHalfDomeShapeSpecs({ state, wallSpec }) {
 
     const diameterMeters = clamp(
         configuration.diameterMeters,
-        0.20,
+        0.01,
         Math.min(wall.heightMeters, wall.widthMeters),
         HALF_DOME_DIAMETER_METERS_DEFAULT
     );
@@ -1168,46 +2069,6 @@ function buildHalfDomeShapeSpecs({ state, wallSpec }) {
     return specs;
 }
 
-function pushAngledSupportProfileSegmentSpec({
-    specs,
-    role,
-    faceId,
-    startU,
-    endU,
-    centerV,
-    offsetMeters,
-    shiftMeters,
-    returnHeightMeters,
-    miterStart45 = false,
-    miterEnd45 = false
-}) {
-    const out = Array.isArray(specs) ? specs : [];
-    const minU = Math.min(Number(startU) || 0.0, Number(endU) || 0.0);
-    const maxU = Math.max(Number(startU) || 0.0, Number(endU) || 0.0);
-    const widthMeters = Math.max(0.01, maxU - minU);
-    const shift = Number(shiftMeters) || 0.0;
-    const returnHeight = clamp(returnHeightMeters, 0.01, 4.0, ANGLED_SUPPORT_PROFILE_RETURN_HEIGHT_METERS_DEFAULT);
-    const profileMinY = Math.min(0.0, shift);
-    const profileMaxY = Math.max(returnHeight, returnHeight + shift);
-    const profileHeightMeters = Math.max(0.01, profileMaxY - profileMinY);
-
-    out.push({
-        role: String(role ?? 'angled_support_profile').trim() || 'angled_support_profile',
-        faceId: String(faceId ?? '').toLowerCase() === 'right' ? 'right' : 'front',
-        geometryKind: 'angled_support_profile',
-        centerU: minU + widthMeters * 0.5,
-        centerV: Number(centerV) || 0.0,
-        widthMeters,
-        heightMeters: profileHeightMeters,
-        depthMeters: clamp(offsetMeters, 0.005, 4.0, ANGLED_SUPPORT_PROFILE_OFFSET_METERS_DEFAULT),
-        profileOffsetMeters: clamp(offsetMeters, 0.005, 4.0, ANGLED_SUPPORT_PROFILE_OFFSET_METERS_DEFAULT),
-        profileShiftMeters: shift,
-        profileReturnHeightMeters: returnHeight,
-        miterStart45: !!miterStart45,
-        miterEnd45: !!miterEnd45
-    });
-}
-
 function buildAngledSupportProfileShapeSpecs({ state, wallSpec }) {
     const whereToApply = normalizeWhereToApply(state?.whereToApply);
     const mode = normalizeMode(state?.mode);
@@ -1227,57 +2088,190 @@ function buildAngledSupportProfileShapeSpecs({ state, wallSpec }) {
     const endU = startU + targetWidth;
 
     const offsetMeters = clamp(configuration.offset, 0.01, 1.5, ANGLED_SUPPORT_PROFILE_OFFSET_METERS_DEFAULT);
-    const shiftMeters = clamp(configuration.shift, -1.0, 1.0, ANGLED_SUPPORT_PROFILE_SHIFT_METERS_DEFAULT);
-    const returnHeightMeters = clamp(configuration.returnHeight, 0.01, 2.0, ANGLED_SUPPORT_PROFILE_RETURN_HEIGHT_METERS_DEFAULT);
-    const profileMinY = Math.min(0.0, shiftMeters);
-    const profileMaxY = Math.max(returnHeightMeters, returnHeightMeters + shiftMeters);
-    const profileHeightMeters = Math.max(0.01, profileMaxY - profileMinY);
+    const heightMeters = clamp(configuration.height, 0.05, 2.0, ANGLED_SUPPORT_PROFILE_HEIGHT_METERS_DEFAULT);
+    const topCapAngleDeg = clamp(configuration.topCapAngleDeg, 10.0, 80.0, 45.0);
+    const bottomCapAngleDeg = clamp(configuration.bottomCapAngleDeg, 10.0, 80.0, 45.0);
+    const topCapWallEdgeYOffsetMeters = clamp(
+        offsetMeters * Math.tan(topCapAngleDeg * Math.PI / 180.0),
+        -2.0,
+        2.0,
+        0.0
+    );
+    const bottomCapWallEdgeYOffsetMeters = clamp(
+        -offsetMeters * Math.tan(bottomCapAngleDeg * Math.PI / 180.0),
+        -2.0,
+        2.0,
+        0.0
+    );
     const centerV = resolveCenterYForPosition(
         position,
         wall.heightMeters,
-        profileHeightMeters,
+        heightMeters,
         NEAR_EDGE_OFFSET_METERS_DEFAULT
     );
+    const includeTopCap = position !== WALL_DECORATOR_POSITION.TOP;
+    const includeBottomCap = position !== WALL_DECORATOR_POSITION.BOTTOM;
+    const capTopCenterV = centerV + heightMeters * 0.5;
+    const capBottomCenterV = centerV - heightMeters * 0.5;
 
     const specs = [];
     if (mode === WALL_DECORATOR_MODE.CORNER) {
-        pushAngledSupportProfileSegmentSpec({
+        pushSimpleSkirtFlatPanelSpec({
             specs,
             role: 'angled_support_front',
             faceId: 'front',
             startU,
-            endU,
+            endU: endU + offsetMeters,
             centerV,
-            offsetMeters,
-            shiftMeters,
-            returnHeightMeters,
-            miterStart45: false,
-            miterEnd45: true
+            heightMeters,
+            offsetMeters
         });
-        pushAngledSupportProfileSegmentSpec({
+        pushSimpleSkirtFlatPanelSpec({
             specs,
             role: 'angled_support_right',
             faceId: 'right',
-            startU: 0.0,
+            startU: -offsetMeters,
             endU: targetWidth,
             centerV,
+            heightMeters,
+            offsetMeters
+        });
+        if (includeTopCap) {
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'angled_support_front_cap_top',
+                faceId: 'front',
+                capSide: 'top',
+                startU,
+                endU,
+                centerV: capTopCenterV,
+                offsetMeters,
+                cornerBridgeEndMeters: offsetMeters,
+                wallEdgeYOffsetMeters: topCapWallEdgeYOffsetMeters
+            });
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'angled_support_right_cap_top',
+                faceId: 'right',
+                capSide: 'top',
+                startU: 0.0,
+                endU: targetWidth,
+                centerV: capTopCenterV,
+                offsetMeters,
+                cornerBridgeStartMeters: offsetMeters,
+                wallEdgeYOffsetMeters: topCapWallEdgeYOffsetMeters
+            });
+        }
+        if (includeBottomCap) {
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'angled_support_front_cap_bottom',
+                faceId: 'front',
+                capSide: 'bottom',
+                startU,
+                endU,
+                centerV: capBottomCenterV,
+                offsetMeters,
+                cornerBridgeEndMeters: offsetMeters,
+                wallEdgeYOffsetMeters: bottomCapWallEdgeYOffsetMeters
+            });
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'angled_support_right_cap_bottom',
+                faceId: 'right',
+                capSide: 'bottom',
+                startU: 0.0,
+                endU: targetWidth,
+                centerV: capBottomCenterV,
+                offsetMeters,
+                cornerBridgeStartMeters: offsetMeters,
+                wallEdgeYOffsetMeters: bottomCapWallEdgeYOffsetMeters
+            });
+        }
+        pushSimpleSkirtFlatSideCapSpec({
+            specs,
+            role: 'angled_support_front_cap_side_start',
+            faceId: 'front',
+            centerU: startU,
+            centerV,
+            heightMeters,
             offsetMeters,
-            shiftMeters,
-            returnHeightMeters,
-            miterStart45: true,
-            miterEnd45: false
+            yawDegrees: 180.0,
+            wallEdgeTopYOffsetMeters: topCapWallEdgeYOffsetMeters,
+            wallEdgeBottomYOffsetMeters: bottomCapWallEdgeYOffsetMeters
+        });
+        pushSimpleSkirtFlatSideCapSpec({
+            specs,
+            role: 'angled_support_right_cap_side_end',
+            faceId: 'right',
+            centerU: targetWidth,
+            centerV,
+            heightMeters,
+            offsetMeters,
+            yawDegrees: 0.0,
+            wallEdgeTopYOffsetMeters: topCapWallEdgeYOffsetMeters,
+            wallEdgeBottomYOffsetMeters: bottomCapWallEdgeYOffsetMeters
         });
     } else {
-        pushAngledSupportProfileSegmentSpec({
+        pushSimpleSkirtFlatPanelSpec({
             specs,
             role: 'angled_support_front',
             faceId: 'front',
             startU,
             endU,
             centerV,
+            heightMeters,
+            offsetMeters
+        });
+        if (includeTopCap) {
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'angled_support_front_cap_top',
+                faceId: 'front',
+                capSide: 'top',
+                startU,
+                endU,
+                centerV: capTopCenterV,
+                offsetMeters,
+                wallEdgeYOffsetMeters: topCapWallEdgeYOffsetMeters
+            });
+        }
+        if (includeBottomCap) {
+            pushSimpleSkirtFlatCapSpec({
+                specs,
+                role: 'angled_support_front_cap_bottom',
+                faceId: 'front',
+                capSide: 'bottom',
+                startU,
+                endU,
+                centerV: capBottomCenterV,
+                offsetMeters,
+                wallEdgeYOffsetMeters: bottomCapWallEdgeYOffsetMeters
+            });
+        }
+        pushSimpleSkirtFlatSideCapSpec({
+            specs,
+            role: 'angled_support_front_cap_side_start',
+            faceId: 'front',
+            centerU: startU,
+            centerV,
+            heightMeters,
             offsetMeters,
-            shiftMeters,
-            returnHeightMeters
+            yawDegrees: 180.0,
+            wallEdgeTopYOffsetMeters: topCapWallEdgeYOffsetMeters,
+            wallEdgeBottomYOffsetMeters: bottomCapWallEdgeYOffsetMeters
+        });
+        pushSimpleSkirtFlatSideCapSpec({
+            specs,
+            role: 'angled_support_front_cap_side_end',
+            faceId: 'front',
+            centerU: endU,
+            centerV,
+            heightMeters,
+            offsetMeters,
+            yawDegrees: 0.0,
+            wallEdgeTopYOffsetMeters: topCapWallEdgeYOffsetMeters,
+            wallEdgeBottomYOffsetMeters: bottomCapWallEdgeYOffsetMeters
         });
     }
 
@@ -1359,6 +2353,56 @@ const EDGE_BRICK_CHAIN_DEFAULTS = Object.freeze({
     })
 });
 
+const CORNICE_BASIC_BLOCK_DEFAULTS = Object.freeze({
+    whereToApply: WALL_DECORATOR_WHERE_TO_APPLY.ENTIRE_FACADE,
+    mode: WALL_DECORATOR_MODE.CORNER,
+    position: WALL_DECORATOR_POSITION.TOP,
+    configuration: Object.freeze({
+        ...CORNICE_BASIC_BLOCK_CONFIGURATION_DEFAULTS
+    }),
+    materialSelection: WALL_DECORATOR_MATCH_WALL_MATERIAL_SELECTION,
+    wallBase: Object.freeze({
+        ...applyWallBaseTintStateToWallBase({}, WALL_BASE_TINT_STATE_DEFAULT),
+        roughness: 0.85,
+        normalStrength: 0.9
+    }),
+    tiling: Object.freeze({
+        enabled: false,
+        tileMeters: 2.0,
+        tileMetersU: 2.0,
+        tileMetersV: 2.0,
+        uvEnabled: false,
+        offsetU: 0.0,
+        offsetV: 0.0,
+        rotationDegrees: 0.0
+    })
+});
+
+const CORNICE_ROUNDED_DEFAULTS = Object.freeze({
+    whereToApply: CORNICE_BASIC_BLOCK_DEFAULTS.whereToApply,
+    mode: CORNICE_BASIC_BLOCK_DEFAULTS.mode,
+    position: CORNICE_BASIC_BLOCK_DEFAULTS.position,
+    configuration: Object.freeze({
+        ...CORNICE_ROUNDED_CONFIGURATION_DEFAULTS
+    }),
+    materialSelection: WALL_DECORATOR_MATCH_WALL_MATERIAL_SELECTION,
+    wallBase: Object.freeze({
+        ...applyWallBaseTintStateToWallBase({}, WALL_BASE_TINT_STATE_DEFAULT),
+        roughness: 0.85,
+        normalStrength: 0.9
+    }),
+    tiling: Object.freeze({
+        enabled: false,
+        tileMeters: 2.0,
+        tileMetersU: 2.0,
+        tileMetersV: 2.0,
+        uvEnabled: false,
+        offsetU: 0.0,
+        offsetV: 0.0,
+        rotationDegrees: 0.0
+    })
+});
+
 const HALF_DOME_DEFAULTS = Object.freeze({
     whereToApply: WALL_DECORATOR_WHERE_TO_APPLY.ENTIRE_FACADE,
     mode: WALL_DECORATOR_MODE.FACE,
@@ -1409,12 +2453,459 @@ const ANGLED_SUPPORT_PROFILE_DEFAULTS = Object.freeze({
     })
 });
 
+const SIMPLE_SKIRT_PRESETS = Object.freeze([
+    Object.freeze({
+        id: 'small',
+        label: 'Small',
+        configuration: Object.freeze({
+            heightMeters: 0.20,
+            offsetScale: SIMPLE_SKIRT_OFFSET_SCALE_DEFAULT,
+            nearEdgeOffsetMeters: NEAR_EDGE_OFFSET_METERS_DEFAULT
+        })
+    }),
+    Object.freeze({
+        id: 'medium',
+        label: 'Medium',
+        configuration: Object.freeze({
+            heightMeters: 0.50,
+            offsetScale: SIMPLE_SKIRT_OFFSET_SCALE_DEFAULT,
+            nearEdgeOffsetMeters: NEAR_EDGE_OFFSET_METERS_DEFAULT
+        })
+    }),
+    Object.freeze({
+        id: 'large',
+        label: 'Large',
+        configuration: Object.freeze({
+            heightMeters: 1.00,
+            offsetScale: SIMPLE_SKIRT_OFFSET_SCALE_DEFAULT,
+            nearEdgeOffsetMeters: NEAR_EDGE_OFFSET_METERS_DEFAULT
+        })
+    })
+]);
+
+const RIBBON_PRESETS = Object.freeze([
+    Object.freeze({
+        id: 'small',
+        label: 'Small',
+        configuration: Object.freeze({
+            heightMeters: 0.20,
+            offsetScale: RIBBON_OFFSET_SCALE_DEFAULT,
+            nearEdgeOffsetMeters: NEAR_EDGE_OFFSET_METERS_DEFAULT,
+            patternId: RIBBON_PATTERN_DEFAULT_ID,
+            patternNormalIntensity: RIBBON_PATTERN_NORMAL_INTENSITY_DEFAULT
+        })
+    }),
+    Object.freeze({
+        id: 'medium',
+        label: 'Medium',
+        configuration: Object.freeze({
+            heightMeters: 0.50,
+            offsetScale: RIBBON_OFFSET_SCALE_DEFAULT,
+            nearEdgeOffsetMeters: NEAR_EDGE_OFFSET_METERS_DEFAULT,
+            patternId: RIBBON_PATTERN_DEFAULT_ID,
+            patternNormalIntensity: RIBBON_PATTERN_NORMAL_INTENSITY_DEFAULT
+        })
+    }),
+    Object.freeze({
+        id: 'large',
+        label: 'Large',
+        configuration: Object.freeze({
+            heightMeters: 1.00,
+            offsetScale: RIBBON_OFFSET_SCALE_DEFAULT,
+            nearEdgeOffsetMeters: NEAR_EDGE_OFFSET_METERS_DEFAULT,
+            patternId: RIBBON_PATTERN_DEFAULT_ID,
+            patternNormalIntensity: RIBBON_PATTERN_NORMAL_INTENSITY_DEFAULT
+        })
+    })
+]);
+
+const EDGE_BRICK_CHAIN_PRESETS = Object.freeze([
+    Object.freeze({
+        id: 'both_edges',
+        label: 'Both Edges',
+        configuration: Object.freeze({
+            edgeTarget: EDGE_BRICK_CHAIN_EDGE_TARGET.BOTH,
+            startY: EDGE_BRICK_CHAIN_START_Y_METERS_DEFAULT,
+            endY: EDGE_BRICK_CHAIN_END_Y_METERS_DEFAULT,
+            brickHeight: EDGE_BRICK_CHAIN_BRICK_HEIGHT_METERS_DEFAULT,
+            depthScaleMultiplier: EDGE_BRICK_CHAIN_DEPTH_SCALE_MULTIPLIER_DEFAULT,
+            snapToFit: true
+        })
+    }),
+    Object.freeze({
+        id: 'left_edge',
+        label: 'Left Edge',
+        configuration: Object.freeze({
+            edgeTarget: EDGE_BRICK_CHAIN_EDGE_TARGET.LEFT,
+            startY: EDGE_BRICK_CHAIN_START_Y_METERS_DEFAULT,
+            endY: EDGE_BRICK_CHAIN_END_Y_METERS_DEFAULT,
+            brickHeight: EDGE_BRICK_CHAIN_BRICK_HEIGHT_METERS_DEFAULT,
+            depthScaleMultiplier: EDGE_BRICK_CHAIN_DEPTH_SCALE_MULTIPLIER_DEFAULT,
+            snapToFit: true
+        })
+    }),
+    Object.freeze({
+        id: 'right_edge',
+        label: 'Right Edge',
+        configuration: Object.freeze({
+            edgeTarget: EDGE_BRICK_CHAIN_EDGE_TARGET.RIGHT,
+            startY: EDGE_BRICK_CHAIN_START_Y_METERS_DEFAULT,
+            endY: EDGE_BRICK_CHAIN_END_Y_METERS_DEFAULT,
+            brickHeight: EDGE_BRICK_CHAIN_BRICK_HEIGHT_METERS_DEFAULT,
+            depthScaleMultiplier: EDGE_BRICK_CHAIN_DEPTH_SCALE_MULTIPLIER_DEFAULT,
+            snapToFit: true
+        })
+    })
+]);
+
+const CORNICE_BASIC_BLOCK_PRESETS = Object.freeze([
+    Object.freeze({
+        id: 'small',
+        label: 'Small',
+        configuration: Object.freeze({
+            blockSizeMeters: 0.05,
+            spacingMode: CORNICE_BASIC_BLOCK_SPACING_MODE.MATCH_BLOCK,
+            spacingMeters: 0.20,
+            frontBottomLiftScale: 0.0,
+            snapToFit: true
+        })
+    }),
+    Object.freeze({
+        id: 'medium',
+        label: 'Medium',
+        configuration: Object.freeze({
+            blockSizeMeters: 0.10,
+            spacingMode: CORNICE_BASIC_BLOCK_SPACING_MODE.MATCH_BLOCK,
+            spacingMeters: 0.30,
+            frontBottomLiftScale: 0.0,
+            snapToFit: true
+        })
+    })
+]);
+
+const CORNICE_ROUNDED_PRESETS = Object.freeze([
+    Object.freeze({
+        id: 'small',
+        label: 'Small',
+        configuration: Object.freeze({
+            blockSizeMeters: 0.05,
+            spacingMode: CORNICE_BASIC_BLOCK_SPACING_MODE.MATCH_BLOCK,
+            spacingMeters: 0.20,
+            curvature: CORNICE_ROUNDED_CURVATURE.CONVEX,
+            snapToFit: true
+        })
+    }),
+    Object.freeze({
+        id: 'medium',
+        label: 'Medium',
+        configuration: Object.freeze({
+            blockSizeMeters: 0.10,
+            spacingMode: CORNICE_BASIC_BLOCK_SPACING_MODE.MATCH_BLOCK,
+            spacingMeters: 0.30,
+            curvature: CORNICE_ROUNDED_CURVATURE.CONVEX,
+            snapToFit: true
+        })
+    })
+]);
+
+const SIMPLE_SKIRT_PRESET_GROUPS = Object.freeze([
+    Object.freeze({
+        id: 'size',
+        label: 'Size',
+        options: Object.freeze([
+            Object.freeze({ id: 'small', label: 'Small', configuration: Object.freeze({ heightMeters: 0.20 }) }),
+            Object.freeze({ id: 'medium', label: 'Medium', configuration: Object.freeze({ heightMeters: 0.50 }) }),
+            Object.freeze({ id: 'large', label: 'Large', configuration: Object.freeze({ heightMeters: 1.00 }) })
+        ])
+    }),
+    Object.freeze({
+        id: 'offset',
+        label: 'Offset',
+        options: Object.freeze([
+            Object.freeze({ id: 'normal', label: 'Normal', configuration: Object.freeze({ offsetScale: 1.0 }) }),
+            Object.freeze({ id: 'extra', label: 'Extra', configuration: Object.freeze({ offsetScale: 2.0 }) })
+        ])
+    })
+]);
+
+const RIBBON_PRESET_GROUPS = Object.freeze([
+    Object.freeze({
+        id: 'size',
+        label: 'Size',
+        options: Object.freeze([
+            Object.freeze({ id: 'small', label: 'Small', configuration: Object.freeze({ heightMeters: 0.20 }) }),
+            Object.freeze({ id: 'medium', label: 'Medium', configuration: Object.freeze({ heightMeters: 0.50 }) }),
+            Object.freeze({ id: 'large', label: 'Large', configuration: Object.freeze({ heightMeters: 1.00 }) })
+        ])
+    }),
+    Object.freeze({
+        id: 'offset',
+        label: 'Offset',
+        options: Object.freeze([
+            Object.freeze({ id: 'normal', label: 'Normal', configuration: Object.freeze({ offsetScale: 1.0 }) }),
+            Object.freeze({ id: 'extra', label: 'Extra', configuration: Object.freeze({ offsetScale: 2.0 }) })
+        ])
+    })
+]);
+
+const EDGE_BRICK_CHAIN_PRESET_GROUPS = Object.freeze([
+    Object.freeze({
+        id: 'size',
+        label: 'Size',
+        options: Object.freeze([
+            Object.freeze({ id: 'small', label: 'Small', configuration: Object.freeze({ brickHeight: 0.05 }) }),
+            Object.freeze({ id: 'medium', label: 'Medium', configuration: Object.freeze({ brickHeight: 0.10 }) }),
+            Object.freeze({ id: 'large', label: 'Large', configuration: Object.freeze({ brickHeight: 0.15 }) })
+        ])
+    }),
+    Object.freeze({
+        id: 'offset',
+        label: 'Offset',
+        options: Object.freeze([
+            Object.freeze({ id: 'small', label: 'Small', configuration: Object.freeze({ depthScaleMultiplier: 0.5 }) }),
+            Object.freeze({ id: 'normal', label: 'Normal', configuration: Object.freeze({ depthScaleMultiplier: 1.0 }) }),
+            Object.freeze({ id: 'extra', label: 'Extra', configuration: Object.freeze({ depthScaleMultiplier: 1.5 }) })
+        ])
+    })
+]);
+
+const CORNICE_BASIC_BLOCK_PRESET_GROUPS = Object.freeze([
+    Object.freeze({
+        id: 'block_size',
+        label: 'Block size',
+        options: Object.freeze([
+            Object.freeze({
+                id: 'small',
+                label: 'Small',
+                configuration: Object.freeze({ blockSizeMeters: 0.05 })
+            }),
+            Object.freeze({
+                id: 'medium',
+                label: 'Medium',
+                configuration: Object.freeze({ blockSizeMeters: 0.10 })
+            }),
+            Object.freeze({
+                id: 'large',
+                label: 'Large',
+                configuration: Object.freeze({ blockSizeMeters: 0.15 })
+            })
+        ])
+    }),
+    Object.freeze({
+        id: 'spacing',
+        label: 'Spacing',
+        options: Object.freeze([
+            Object.freeze({
+                id: 'match_block',
+                label: 'Match block',
+                configuration: Object.freeze({ spacingMode: CORNICE_BASIC_BLOCK_SPACING_MODE.MATCH_BLOCK })
+            }),
+            Object.freeze({
+                id: 'small',
+                label: 'Small',
+                configuration: Object.freeze({
+                    spacingMode: CORNICE_BASIC_BLOCK_SPACING_MODE.FIXED,
+                    spacingMeters: 0.10
+                })
+            }),
+            Object.freeze({
+                id: 'medium',
+                label: 'Medium',
+                configuration: Object.freeze({
+                    spacingMode: CORNICE_BASIC_BLOCK_SPACING_MODE.FIXED,
+                    spacingMeters: 0.20
+                })
+            }),
+            Object.freeze({
+                id: 'large',
+                label: 'Large',
+                configuration: Object.freeze({
+                    spacingMode: CORNICE_BASIC_BLOCK_SPACING_MODE.FIXED,
+                    spacingMeters: 0.30
+                })
+            })
+        ])
+    }),
+    Object.freeze({
+        id: 'front_angle',
+        label: 'Angle',
+        options: Object.freeze([
+            Object.freeze({
+                id: 'flat',
+                label: 'Flat',
+                configuration: Object.freeze({ frontBottomLiftScale: 0.0 })
+            }),
+            Object.freeze({
+                id: 'angle',
+                label: 'Angle',
+                configuration: Object.freeze({ frontBottomLiftScale: 0.5 })
+            })
+        ])
+    })
+]);
+
+const CORNICE_ROUNDED_PRESET_GROUPS = Object.freeze([
+    Object.freeze({
+        id: 'block_size',
+        label: 'Block size',
+        options: Object.freeze([
+            Object.freeze({
+                id: 'small',
+                label: 'Small',
+                configuration: Object.freeze({ blockSizeMeters: 0.05 })
+            }),
+            Object.freeze({
+                id: 'medium',
+                label: 'Medium',
+                configuration: Object.freeze({ blockSizeMeters: 0.10 })
+            }),
+            Object.freeze({
+                id: 'large',
+                label: 'Large',
+                configuration: Object.freeze({ blockSizeMeters: 0.15 })
+            })
+        ])
+    }),
+    Object.freeze({
+        id: 'spacing',
+        label: 'Spacing',
+        options: Object.freeze([
+            Object.freeze({
+                id: 'match_block',
+                label: 'Match block',
+                configuration: Object.freeze({ spacingMode: CORNICE_BASIC_BLOCK_SPACING_MODE.MATCH_BLOCK })
+            }),
+            Object.freeze({
+                id: 'small',
+                label: 'Small',
+                configuration: Object.freeze({
+                    spacingMode: CORNICE_BASIC_BLOCK_SPACING_MODE.FIXED,
+                    spacingMeters: 0.10
+                })
+            }),
+            Object.freeze({
+                id: 'medium',
+                label: 'Medium',
+                configuration: Object.freeze({
+                    spacingMode: CORNICE_BASIC_BLOCK_SPACING_MODE.FIXED,
+                    spacingMeters: 0.20
+                })
+            }),
+            Object.freeze({
+                id: 'large',
+                label: 'Large',
+                configuration: Object.freeze({
+                    spacingMode: CORNICE_BASIC_BLOCK_SPACING_MODE.FIXED,
+                    spacingMeters: 0.30
+                })
+            })
+        ])
+    }),
+    Object.freeze({
+        id: 'curvature',
+        label: 'Curvature',
+        options: Object.freeze([
+            Object.freeze({
+                id: 'convex',
+                label: 'Convex',
+                configuration: Object.freeze({ curvature: CORNICE_ROUNDED_CURVATURE.CONVEX })
+            }),
+            Object.freeze({
+                id: 'concave',
+                label: 'Concave',
+                configuration: Object.freeze({ curvature: CORNICE_ROUNDED_CURVATURE.CONCAVE })
+            })
+        ])
+    })
+]);
+
+const HALF_DOME_PRESETS = Object.freeze([
+    Object.freeze({
+        id: 'tiny',
+        label: 'Tiny',
+        configuration: Object.freeze({
+            diameterMeters: 0.01,
+            outsetMeters: HALF_DOME_OUTSET_METERS_DEFAULT,
+            nearEdgeOffsetMeters: NEAR_EDGE_OFFSET_METERS_DEFAULT
+        })
+    }),
+    Object.freeze({
+        id: 'small',
+        label: 'Small',
+        configuration: Object.freeze({
+            diameterMeters: 0.05,
+            outsetMeters: HALF_DOME_OUTSET_METERS_DEFAULT,
+            nearEdgeOffsetMeters: NEAR_EDGE_OFFSET_METERS_DEFAULT
+        })
+    }),
+    Object.freeze({
+        id: 'medium',
+        label: 'Medium',
+        configuration: Object.freeze({
+            diameterMeters: HALF_DOME_DIAMETER_METERS_DEFAULT,
+            outsetMeters: HALF_DOME_OUTSET_METERS_DEFAULT,
+            nearEdgeOffsetMeters: NEAR_EDGE_OFFSET_METERS_DEFAULT
+        })
+    }),
+    Object.freeze({
+        id: 'large',
+        label: 'Large',
+        configuration: Object.freeze({
+            diameterMeters: 0.20,
+            outsetMeters: HALF_DOME_OUTSET_METERS_DEFAULT,
+            nearEdgeOffsetMeters: NEAR_EDGE_OFFSET_METERS_DEFAULT
+        })
+    })
+]);
+
+const ANGLED_SUPPORT_PROFILE_PRESETS = Object.freeze([
+    Object.freeze({
+        id: 'small',
+        label: 'Small',
+        configuration: Object.freeze({
+            offset: 0.05,
+            height: 0.15,
+            topCapAngleDeg: 45.0,
+            bottomCapAngleDeg: 45.0
+        })
+    }),
+    Object.freeze({
+        id: 'medium',
+        label: 'Medium',
+        configuration: Object.freeze({
+            offset: ANGLED_SUPPORT_PROFILE_OFFSET_METERS_DEFAULT,
+            height: ANGLED_SUPPORT_PROFILE_HEIGHT_METERS_DEFAULT,
+            topCapAngleDeg: 45.0,
+            bottomCapAngleDeg: 45.0
+        })
+    }),
+    Object.freeze({
+        id: 'large',
+        label: 'Large',
+        configuration: Object.freeze({
+            offset: 0.15,
+            height: 0.30,
+            topCapAngleDeg: 45.0,
+            bottomCapAngleDeg: 45.0
+        })
+    })
+]);
+
 const WALL_DECORATOR_TYPE_CATALOG = Object.freeze([
     Object.freeze({
         id: WALL_DECORATOR_ID.SIMPLE_SKIRT,
         label: 'Simple Skirt',
         description: 'Bottom-aligned facade strip with face or corner routing.',
+        catalogSectionId: WALL_DECORATOR_CATALOG_SECTION.DECORATIONS,
+        catalogSectionLabel: WALL_DECORATOR_CATALOG_SECTION_LABEL[WALL_DECORATOR_CATALOG_SECTION.DECORATIONS],
+        defaultPlacement: Object.freeze({
+            whereToApply: SIMPLE_SKIRT_DEFAULTS.whereToApply,
+            mode: SIMPLE_SKIRT_DEFAULTS.mode,
+            position: SIMPLE_SKIRT_DEFAULTS.position
+        }),
         properties: SIMPLE_SKIRT_PROPERTY_SPECS,
+        presets: SIMPLE_SKIRT_PRESETS,
+        presetGroups: SIMPLE_SKIRT_PRESET_GROUPS,
         defaults: SIMPLE_SKIRT_DEFAULTS,
         createShapeSpecs: ({ state, wallSpec }) => buildSimpleSkirtShapeSpecs({ state, wallSpec })
     }),
@@ -1422,7 +2913,16 @@ const WALL_DECORATOR_TYPE_CATALOG = Object.freeze([
         id: WALL_DECORATOR_ID.RIBBON,
         label: 'Ribbon',
         description: 'Skirt-style surround with pattern-driven normal-map relief.',
+        catalogSectionId: WALL_DECORATOR_CATALOG_SECTION.DECORATIONS,
+        catalogSectionLabel: WALL_DECORATOR_CATALOG_SECTION_LABEL[WALL_DECORATOR_CATALOG_SECTION.DECORATIONS],
+        defaultPlacement: Object.freeze({
+            whereToApply: RIBBON_DEFAULTS.whereToApply,
+            mode: RIBBON_DEFAULTS.mode,
+            position: RIBBON_DEFAULTS.position
+        }),
         properties: RIBBON_PROPERTY_SPECS,
+        presets: RIBBON_PRESETS,
+        presetGroups: RIBBON_PRESET_GROUPS,
         defaults: RIBBON_DEFAULTS,
         createShapeSpecs: ({ state, wallSpec }) => buildRibbonShapeSpecs({ state, wallSpec })
     }),
@@ -1430,23 +2930,96 @@ const WALL_DECORATOR_TYPE_CATALOG = Object.freeze([
         id: WALL_DECORATOR_ID.EDGE_BRICK_CHAIN,
         label: 'Edge Brick Chain',
         description: 'Edge-only alternating brick courses with optional snap-to-fit range behavior.',
+        catalogSectionId: WALL_DECORATOR_CATALOG_SECTION.DECORATIONS,
+        catalogSectionLabel: WALL_DECORATOR_CATALOG_SECTION_LABEL[WALL_DECORATOR_CATALOG_SECTION.DECORATIONS],
+        defaultPlacement: Object.freeze({
+            whereToApply: EDGE_BRICK_CHAIN_DEFAULTS.whereToApply,
+            mode: EDGE_BRICK_CHAIN_DEFAULTS.mode,
+            position: EDGE_BRICK_CHAIN_DEFAULTS.position
+        }),
         properties: EDGE_BRICK_CHAIN_PROPERTY_SPECS,
+        presets: EDGE_BRICK_CHAIN_PRESETS,
+        presetGroups: EDGE_BRICK_CHAIN_PRESET_GROUPS,
         defaults: EDGE_BRICK_CHAIN_DEFAULTS,
         createShapeSpecs: ({ state, wallSpec }) => buildEdgeBrickChainShapeSpecs({ state, wallSpec })
+    }),
+    Object.freeze({
+        id: WALL_DECORATOR_ID.CORNICE_BASIC_BLOCK,
+        label: 'Cornice Blocks',
+        description: 'Top-oriented square block cornice with snap-adjusted edge fit.',
+        catalogSectionId: WALL_DECORATOR_CATALOG_SECTION.CORNICE,
+        catalogSectionLabel: WALL_DECORATOR_CATALOG_SECTION_LABEL[WALL_DECORATOR_CATALOG_SECTION.CORNICE],
+        defaultPlacement: Object.freeze({
+            whereToApply: CORNICE_BASIC_BLOCK_DEFAULTS.whereToApply,
+            mode: CORNICE_BASIC_BLOCK_DEFAULTS.mode,
+            position: CORNICE_BASIC_BLOCK_DEFAULTS.position
+        }),
+        properties: CORNICE_BASIC_BLOCK_PROPERTY_SPECS,
+        presets: CORNICE_BASIC_BLOCK_PRESETS,
+        presetGroups: CORNICE_BASIC_BLOCK_PRESET_GROUPS,
+        defaults: CORNICE_BASIC_BLOCK_DEFAULTS,
+        createShapeSpecs: ({ state, wallSpec }) => buildCorniceBasicBlockShapeSpecs({ state, wallSpec })
+    }),
+    Object.freeze({
+        id: WALL_DECORATOR_ID.CORNICE_ROUNDED,
+        label: 'Cornice Rounded',
+        description: 'Cornice-block spacing/placement clone with rounded front/bottom cover profile.',
+        catalogSectionId: WALL_DECORATOR_CATALOG_SECTION.CORNICE,
+        catalogSectionLabel: WALL_DECORATOR_CATALOG_SECTION_LABEL[WALL_DECORATOR_CATALOG_SECTION.CORNICE],
+        defaultPlacement: Object.freeze({
+            whereToApply: CORNICE_ROUNDED_DEFAULTS.whereToApply,
+            mode: CORNICE_ROUNDED_DEFAULTS.mode,
+            position: CORNICE_ROUNDED_DEFAULTS.position
+        }),
+        properties: CORNICE_ROUNDED_PROPERTY_SPECS,
+        presets: CORNICE_ROUNDED_PRESETS,
+        presetGroups: CORNICE_ROUNDED_PRESET_GROUPS,
+        defaults: CORNICE_ROUNDED_DEFAULTS,
+        createShapeSpecs: ({ state, wallSpec }) => buildCorniceRoundedShapeSpecs({ state, wallSpec })
     }),
     Object.freeze({
         id: WALL_DECORATOR_ID.HALF_DOME,
         label: 'Curved Ring',
         description: 'Half-circle side profile swept along the facade span, with optional corner miter behavior.',
+        catalogSectionId: WALL_DECORATOR_CATALOG_SECTION.DECORATIONS,
+        catalogSectionLabel: WALL_DECORATOR_CATALOG_SECTION_LABEL[WALL_DECORATOR_CATALOG_SECTION.DECORATIONS],
+        defaultPlacement: Object.freeze({
+            whereToApply: HALF_DOME_DEFAULTS.whereToApply,
+            mode: HALF_DOME_DEFAULTS.mode,
+            position: HALF_DOME_DEFAULTS.position
+        }),
         properties: HALF_DOME_PROPERTY_SPECS,
+        presets: HALF_DOME_PRESETS,
+        presetGroups: Object.freeze([
+            Object.freeze({
+                id: 'size',
+                label: 'Size',
+                options: HALF_DOME_PRESETS
+            })
+        ]),
         defaults: HALF_DOME_DEFAULTS,
         createShapeSpecs: ({ state, wallSpec }) => buildHalfDomeShapeSpecs({ state, wallSpec })
     }),
     Object.freeze({
         id: WALL_DECORATOR_ID.ANGLED_SUPPORT_PROFILE,
         label: 'Angled Support Profile',
-        description: 'Continuous angled support profile sweep with signed shift and 45-degree corner miters.',
+        description: 'Skirt-style flat panel/cap layout with independent top/bottom cap angles.',
+        catalogSectionId: WALL_DECORATOR_CATALOG_SECTION.DECORATIONS,
+        catalogSectionLabel: WALL_DECORATOR_CATALOG_SECTION_LABEL[WALL_DECORATOR_CATALOG_SECTION.DECORATIONS],
+        defaultPlacement: Object.freeze({
+            whereToApply: ANGLED_SUPPORT_PROFILE_DEFAULTS.whereToApply,
+            mode: ANGLED_SUPPORT_PROFILE_DEFAULTS.mode,
+            position: ANGLED_SUPPORT_PROFILE_DEFAULTS.position
+        }),
         properties: ANGLED_SUPPORT_PROFILE_PROPERTY_SPECS,
+        presets: ANGLED_SUPPORT_PROFILE_PRESETS,
+        presetGroups: Object.freeze([
+            Object.freeze({
+                id: 'size',
+                label: 'Size',
+                options: ANGLED_SUPPORT_PROFILE_PRESETS
+            })
+        ]),
         defaults: ANGLED_SUPPORT_PROFILE_DEFAULTS,
         createShapeSpecs: ({ state, wallSpec }) => buildAngledSupportProfileShapeSpecs({ state, wallSpec })
     })
@@ -1484,63 +3057,103 @@ export function getWallDecoratorTypeOptions() {
     return WALL_DECORATOR_TYPE_CATALOG.map((entry) => ({
         id: entry.id,
         label: entry.label,
-        description: entry.description
+        description: entry.description,
+        classId: String(entry.catalogSectionId ?? WALL_DECORATOR_CATALOG_SECTION.DECORATIONS),
+        classLabel: String(
+            entry.catalogSectionLabel
+            ?? WALL_DECORATOR_CATALOG_SECTION_LABEL[entry.catalogSectionId]
+            ?? WALL_DECORATOR_CATALOG_SECTION_LABEL[WALL_DECORATOR_CATALOG_SECTION.DECORATIONS]
+        )
     }));
 }
 
-export function getWallDecoratorTypeEntryById(value) {
-    const id = normalizeDecoratorId(value, { allowNone: true });
-    if (!id) return null;
-    return WALL_DECORATOR_TYPE_BY_ID.get(id) ?? null;
+export function getWallDecoratorCatalogEntryById(id) {
+    const key = normalizeDecoratorId(id, { allowNone: true });
+    return WALL_DECORATOR_TYPE_BY_ID.get(key) ?? null;
 }
 
-export function getWallDecoratorTypePropertySpecsById(value) {
-    const entry = getWallDecoratorTypeEntryById(value);
-    if (!entry) return [];
-    return Array.isArray(entry.properties) ? deepClone(entry.properties) : [];
+export function getWallDecoratorTypeEntryById(id) {
+    return getWallDecoratorCatalogEntryById(id);
+}
+
+export function getWallDecoratorTypePropertySpecsById(id) {
+    const entry = getWallDecoratorCatalogEntryById(id);
+    return entry?.properties ?? [];
 }
 
 export function getWallDecoratorPresetEntries() {
     return WALL_DECORATOR_PRESET_CATALOG;
 }
 
-export function getWallDecoratorPresetOptions() {
-    return WALL_DECORATOR_PRESET_CATALOG.map((entry) => ({
-        id: String(entry?.id ?? ''),
-        label: String(entry?.label ?? entry?.id ?? ''),
-        typeId: String(entry?.typeId ?? entry?.decoratorId ?? '')
-    })).filter((entry) => !!entry.id);
-}
-
-export function getWallDecoratorPresetEntryById(value) {
-    const id = typeof value === 'string' ? value.trim() : '';
-    if (!id) return null;
-    return WALL_DECORATOR_PRESET_BY_ID.get(id) ?? null;
-}
-
-// Back-compat aliases: "catalog" currently maps to decorator types.
-export function getWallDecoratorCatalogEntries() {
-    return getWallDecoratorTypeEntries();
+export function getWallDecoratorPresetEntryById(id) {
+    const key = String(id ?? '').trim();
+    if (!key) return null;
+    return WALL_DECORATOR_PRESET_BY_ID.get(key) ?? null;
 }
 
 export function getWallDecoratorCatalogOptions() {
     return getWallDecoratorTypeOptions();
 }
 
-export function getWallDecoratorCatalogEntryById(value) {
-    return getWallDecoratorTypeEntryById(value);
+export function getWallDecoratorPresetOptions() {
+    return getWallDecoratorPresetEntries();
+}
+
+export function loadWallDecoratorCatalogEntry(value, decoratorId) {
+    const base = sanitizeWallDecoratorDebuggerState(value);
+    const key = normalizeDecoratorId(decoratorId, { allowNone: true });
+    const previousEntry = WALL_DECORATOR_TYPE_BY_ID.get(base.decoratorId) ?? null;
+    const previousDefaults = previousEntry?.defaults ?? SIMPLE_SKIRT_DEFAULTS;
+    const previousDefaultPlacement = previousEntry?.defaultPlacement ?? null;
+    const entry = WALL_DECORATOR_TYPE_BY_ID.get(key) ?? null;
+    const defaults = entry?.defaults ?? SIMPLE_SKIRT_DEFAULTS;
+    const defaultPlacement = entry?.defaultPlacement ?? null;
+    const whereToApply = normalizeWhereToApply(base.whereToApply);
+    const mode = normalizeMode(base.mode);
+    const previousDefaultPosition = normalizePosition(previousDefaultPlacement?.position ?? previousDefaults.position);
+    const nextDefaultPosition = normalizePosition(defaultPlacement?.position ?? defaults.position);
+    const position = previousDefaultPosition === nextDefaultPosition
+        ? normalizePosition(base.position)
+        : nextDefaultPosition;
+
+    return sanitizeWallDecoratorDebuggerState({
+        ...base,
+        decoratorId: entry?.id ?? WALL_DECORATOR_NONE_ID,
+        whereToApply,
+        mode,
+        position,
+        configuration: entry ? deepClone(defaults.configuration) : {},
+        materialSelection: deepClone(defaults.materialSelection),
+        wallBase: deepClone(defaults.wallBase),
+        tiling: deepClone(defaults.tiling)
+    });
+}
+
+export function loadWallDecoratorPresetEntry(value, presetId) {
+    const base = sanitizeWallDecoratorDebuggerState(value);
+    const preset = getWallDecoratorPresetEntryById(presetId);
+    const presetState = preset?.state && typeof preset.state === 'object' ? deepClone(preset.state) : null;
+    if (!presetState) return base;
+    return sanitizeWallDecoratorDebuggerState({
+        ...base,
+        ...presetState
+    });
 }
 
 export function getDefaultWallDecoratorDebuggerState({ decoratorId = WALL_DECORATOR_NONE_ID } = {}) {
-    const entry = getWallDecoratorTypeEntryById(decoratorId);
-    if (!entry) {
-        return normalizeStateWithCatalogDefaults({
-            decoratorId: WALL_DECORATOR_NONE_ID
-        });
-    }
-    return normalizeStateWithCatalogDefaults({
-        decoratorId: entry.id,
-        ...deepClone(entry.defaults ?? SIMPLE_SKIRT_DEFAULTS)
+    const key = normalizeDecoratorId(decoratorId, { allowNone: true });
+    const entry = WALL_DECORATOR_TYPE_BY_ID.get(key) ?? null;
+    const defaults = entry?.defaults ?? SIMPLE_SKIRT_DEFAULTS;
+    return deepClone({
+        version: 1,
+        decoratorId: entry?.id ?? WALL_DECORATOR_NONE_ID,
+        whereToApply: defaults.whereToApply,
+        mode: defaults.mode,
+        position: defaults.position,
+        configuration: entry ? defaults.configuration : {},
+        materialSelection: defaults.materialSelection,
+        wallBase: defaults.wallBase,
+        tiling: defaults.tiling
     });
 }
 
@@ -1548,58 +3161,28 @@ export function sanitizeWallDecoratorDebuggerState(value) {
     return normalizeStateWithCatalogDefaults(value);
 }
 
-export function loadWallDecoratorCatalogEntry(state, decoratorId) {
-    const current = sanitizeWallDecoratorDebuggerState(state);
-    const entry = getWallDecoratorTypeEntryById(decoratorId) ?? getWallDecoratorTypeEntryById(current.decoratorId) ?? null;
-    if (!entry) {
-        return sanitizeWallDecoratorDebuggerState({
-            ...current,
-            decoratorId: WALL_DECORATOR_NONE_ID
-        });
-    }
-    const defaults = entry.defaults ?? SIMPLE_SKIRT_DEFAULTS;
-    return sanitizeWallDecoratorDebuggerState({
-        ...current,
-        decoratorId: entry.id,
-        // Preserve placement controls when switching type so visual placement does not jump.
-        whereToApply: current.whereToApply,
-        mode: current.mode,
-        position: current.position,
-        configuration: deepClone(defaults.configuration ?? {}),
-        materialSelection: deepClone(defaults.materialSelection),
-        wallBase: deepClone(defaults.wallBase),
-        tiling: deepClone(defaults.tiling)
-    });
-}
-
-export function loadWallDecoratorPresetEntry(state, presetId) {
-    const current = sanitizeWallDecoratorDebuggerState(state);
-    const preset = getWallDecoratorPresetEntryById(presetId);
-    if (!preset) return current;
-
-    const presetState = preset?.state && typeof preset.state === 'object'
-        ? deepClone(preset.state)
-        : {};
-    const typeId = normalizeDecoratorId(
-        preset?.typeId ?? preset?.decoratorId ?? presetState?.decoratorId ?? current.decoratorId,
-        { allowNone: true }
-    );
-    return sanitizeWallDecoratorDebuggerState({
-        ...current,
-        ...presetState,
-        decoratorId: typeId
-    });
-}
-
 export function buildWallDecoratorShapeSpecs(state, wallSpec) {
-    const sanitized = sanitizeWallDecoratorDebuggerState(state);
-    const entry = getWallDecoratorTypeEntryById(sanitized.decoratorId);
-    if (!entry) return [];
-    const createShapeSpecs = typeof entry?.createShapeSpecs === 'function' ? entry.createShapeSpecs : null;
-    if (!createShapeSpecs) return [];
-    const out = createShapeSpecs({
-        state: sanitized,
-        wallSpec: normalizeWallSpec(wallSpec)
-    });
-    return Array.isArray(out) ? deepClone(out) : [];
+    const safeState = sanitizeWallDecoratorDebuggerState(state);
+    const entry = WALL_DECORATOR_TYPE_BY_ID.get(safeState.decoratorId);
+    if (!entry || typeof entry.createShapeSpecs !== 'function') return [];
+    const specs = entry.createShapeSpecs({ state: safeState, wallSpec });
+    return Array.isArray(specs) ? specs.map((spec) => ({ ...spec })) : [];
+}
+
+export function resolveWallDecoratorCatalogSnapshot() {
+    return {
+        types: getWallDecoratorTypeEntries().map((entry) => ({
+            id: entry.id,
+            label: entry.label,
+            description: entry.description,
+            catalogSectionId: entry.catalogSectionId,
+            catalogSectionLabel: entry.catalogSectionLabel,
+            defaultPlacement: deepClone(entry.defaultPlacement),
+            properties: deepClone(entry.properties),
+            presets: deepClone(entry.presets),
+            presetGroups: deepClone(entry.presetGroups),
+            defaults: deepClone(entry.defaults)
+        })),
+        presets: getWallDecoratorPresetEntries().map((entry) => deepClone(entry))
+    };
 }

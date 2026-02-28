@@ -4323,13 +4323,22 @@ async function runTests() {
         const simpleSkirtEntry = getWallDecoratorCatalogEntryById(WALL_DECORATOR_ID.SIMPLE_SKIRT);
         const ribbonEntry = getWallDecoratorCatalogEntryById(WALL_DECORATOR_ID.RIBBON);
         const edgeBrickChainEntry = getWallDecoratorCatalogEntryById(WALL_DECORATOR_ID.EDGE_BRICK_CHAIN);
+        const corniceEntry = getWallDecoratorCatalogEntryById(WALL_DECORATOR_ID.CORNICE_BASIC_BLOCK);
+        const corniceRoundedEntry = getWallDecoratorCatalogEntryById(WALL_DECORATOR_ID.CORNICE_ROUNDED);
         const angledSupportEntry = getWallDecoratorCatalogEntryById(WALL_DECORATOR_ID.ANGLED_SUPPORT_PROFILE);
         let selectedWallMaterialId = null;
         let wallMeshVisible = null;
         let dummyVisible = null;
         const ui = new WallDecorationMeshDebuggerUI({
             initialState: getDefaultWallDecoratorDebuggerState(),
-            typeEntries: [simpleSkirtEntry, ribbonEntry, edgeBrickChainEntry, angledSupportEntry].filter((entry) => !!entry),
+            typeEntries: [
+                simpleSkirtEntry,
+                ribbonEntry,
+                edgeBrickChainEntry,
+                corniceEntry,
+                corniceRoundedEntry,
+                angledSupportEntry
+            ].filter((entry) => !!entry),
             onWallMaterialChange: (id) => {
                 selectedWallMaterialId = String(id ?? '');
             },
@@ -4373,13 +4382,21 @@ async function runTests() {
             assertTrue(tabLabels.includes('Configuration'), 'Expected Configuration tab.');
             assertTrue(tabLabels.includes('Materials'), 'Expected Materials tab.');
             assertFalse(tabLabels.includes('Position'), 'Expected Position tab merged into Placement.');
+            const selectedTypeHeader = ui.root.querySelector('.options-selected-type');
+            assertTrue(!!selectedTypeHeader, 'Expected selected decorator type label below title.');
+            assertEqual(
+                String(selectedTypeHeader?.textContent || '').trim(),
+                '(no type selected)',
+                'Expected selected-type header placeholder when no decorator type is selected.'
+            );
 
             const sectionTitles = Array.from(ui.root.querySelectorAll('.options-section-title'))
                 .map((el) => (el.textContent || '').trim());
-            assertTrue(sectionTitles.includes('Types'), 'Expected Types section in catalog tab.');
-            assertTrue(sectionTitles.includes('Catalog'), 'Expected Catalog section in catalog tab.');
+            assertTrue(sectionTitles.includes('Decorations'), 'Expected Decorations section in catalog tab.');
+            assertTrue(sectionTitles.includes('Cornice'), 'Expected Cornice section in catalog tab.');
             assertTrue(sectionTitles.includes('Facade Placement'), 'Expected merged placement section.');
-            assertTrue(sectionTitles.includes('Type Configuration'), 'Expected type-driven configuration section.');
+            assertTrue(sectionTitles.includes('Presets'), 'Expected preset section in configuration tab.');
+            assertTrue(sectionTitles.includes('Properties'), 'Expected properties section in configuration tab.');
 
             const labels = Array.from(ui.root.querySelectorAll('.options-row-label'))
                 .map((el) => (el.textContent || '').trim());
@@ -4409,9 +4426,6 @@ async function runTests() {
             const loadDecoratorButton = Array.from(ui.root.querySelectorAll('button'))
                 .find((el) => (el.textContent || '').trim() === 'Load selected decorator');
             assertFalse(!!loadDecoratorButton, 'Expected no separate load decorator button.');
-            const emptyCatalogHint = Array.from(ui.root.querySelectorAll('.options-note'))
-                .find((el) => (el.textContent || '').includes('No saved decoration presets yet.'));
-            assertTrue(!!emptyCatalogHint, 'Expected empty decoration preset catalog hint.');
             const emptyConfigurationHint = Array.from(ui.root.querySelectorAll('.options-note'))
                 .find((el) => (el.textContent || '').includes('Select a decoration type to edit configuration properties.'));
             assertTrue(!!emptyConfigurationHint, 'Expected configuration hint when no type is selected.');
@@ -4449,13 +4463,68 @@ async function runTests() {
             ui.setState({
                 ...getDefaultWallDecoratorDebuggerState({ decoratorId: WALL_DECORATOR_ID.SIMPLE_SKIRT })
             });
+            assertEqual(
+                String(ui.root.querySelector('.options-selected-type')?.textContent || '').trim(),
+                'Simple Skirt',
+                'Expected selected-type header to update when selecting a decorator type.'
+            );
             const configLabels = Array.from(ui.root.querySelectorAll('.wall-decoration-configuration-host .options-row-label'))
                 .map((el) => (el.textContent || '').trim());
-            assertTrue(configLabels.includes('Preset'), 'Expected size preset control in type metadata.');
-            assertTrue(configLabels.includes('Offset mode'), 'Expected offset mode control in type metadata.');
+            assertTrue(configLabels.includes('Height (m)'), 'Expected direct height slider in skirt properties.');
+            assertTrue(configLabels.includes('Offset scale'), 'Expected direct offset scale slider in skirt properties.');
             assertTrue(configLabels.includes('Near-edge offset (m)'), 'Expected near-edge float control in type metadata.');
-            assertFalse(configLabels.includes('Height (m)'), 'Expected direct height slider replaced by preset control.');
             assertFalse(configLabels.includes('Edge cap'), 'Expected legacy edge-cap controls removed.');
+            const presetRows = Array.from(ui.root.querySelectorAll('.wall-decoration-configuration-preset-host .options-row'));
+            const sizePresetRow = presetRows.find((row) => String(row.querySelector('.options-row-label')?.textContent || '').trim() === 'Size') ?? null;
+            const offsetPresetRow = presetRows.find((row) => String(row.querySelector('.options-row-label')?.textContent || '').trim() === 'Offset') ?? null;
+            assertTrue(!!sizePresetRow, 'Expected Size preset row for skirt.');
+            assertTrue(!!offsetPresetRow, 'Expected Offset preset row for skirt.');
+            assertEqual(
+                String(sizePresetRow?.querySelector('.wall-decoration-catalog-btn.is-active')?.textContent || '').trim(),
+                'Medium',
+                'Expected default skirt size preset match to Medium.'
+            );
+            assertEqual(
+                String(offsetPresetRow?.querySelector('.wall-decoration-catalog-btn.is-active')?.textContent || '').trim(),
+                'Normal',
+                'Expected default skirt offset preset match to Normal.'
+            );
+            const largePresetButton = Array.from(sizePresetRow?.querySelectorAll('.wall-decoration-catalog-btn') ?? [])
+                .find((btn) => String(btn.textContent || '').trim() === 'Large') ?? null;
+            const extraOffsetPresetButton = Array.from(offsetPresetRow?.querySelectorAll('.wall-decoration-catalog-btn') ?? [])
+                .find((btn) => String(btn.textContent || '').trim() === 'Extra') ?? null;
+            assertTrue(!!largePresetButton, 'Expected Large size preset button in skirt presets.');
+            assertTrue(!!extraOffsetPresetButton, 'Expected Extra offset preset button in skirt presets.');
+            largePresetButton.click();
+            extraOffsetPresetButton.click();
+            assertNear(Number(ui?._draft?.configuration?.heightMeters) || 0, 1.0, 1e-9, 'Expected size preset click to write raw height.');
+            assertNear(Number(ui?._draft?.configuration?.offsetScale) || 0, 2.0, 1e-9, 'Expected offset preset click to write raw offset scale.');
+            ui.setState({
+                ...getDefaultWallDecoratorDebuggerState({ decoratorId: WALL_DECORATOR_ID.SIMPLE_SKIRT }),
+                configuration: {
+                    heightMeters: 0.20,
+                    offsetScale: 1.0,
+                    nearEdgeOffsetMeters: 0.10
+                }
+            });
+            assertEqual(
+                String(
+                    Array.from(ui.root.querySelectorAll('.wall-decoration-configuration-preset-host .options-row'))
+                        .find((row) => String(row.querySelector('.options-row-label')?.textContent || '').trim() === 'Size')
+                        ?.querySelector('.wall-decoration-catalog-btn.is-active')?.textContent || ''
+                ).trim(),
+                'Small',
+                'Expected size preset auto-selection when properties match a preset.'
+            );
+            assertEqual(
+                String(
+                    Array.from(ui.root.querySelectorAll('.wall-decoration-configuration-preset-host .options-row'))
+                        .find((row) => String(row.querySelector('.options-row-label')?.textContent || '').trim() === 'Offset')
+                        ?.querySelector('.wall-decoration-catalog-btn.is-active')?.textContent || ''
+                ).trim(),
+                'Normal',
+                'Expected offset preset auto-selection when properties match a preset.'
+            );
 
             ui.setState({
                 ...getDefaultWallDecoratorDebuggerState({ decoratorId: WALL_DECORATOR_ID.RIBBON })
@@ -4476,7 +4545,90 @@ async function runTests() {
             assertTrue(edgeChainConfigLabels.includes('startY'), 'Expected startY range control for edge brick chain.');
             assertTrue(edgeChainConfigLabels.includes('endY'), 'Expected endY range control for edge brick chain.');
             assertTrue(edgeChainConfigLabels.includes('brickHeight'), 'Expected brickHeight control for edge brick chain.');
+            assertTrue(edgeChainConfigLabels.includes('Offset scale'), 'Expected offset scale control for edge brick chain.');
             assertTrue(edgeChainConfigLabels.includes('Snap to fit'), 'Expected snap toggle for edge brick chain.');
+            const edgePresetRows = Array.from(ui.root.querySelectorAll('.wall-decoration-configuration-preset-host .options-row'));
+            const edgeSizePresetRow = edgePresetRows
+                .find((row) => String(row.querySelector('.options-row-label')?.textContent || '').trim() === 'Size') ?? null;
+            const edgeOffsetPresetRow = edgePresetRows
+                .find((row) => String(row.querySelector('.options-row-label')?.textContent || '').trim() === 'Offset') ?? null;
+            assertTrue(!!edgeSizePresetRow, 'Expected edge-brick size presets.');
+            assertTrue(!!edgeOffsetPresetRow, 'Expected edge-brick offset presets.');
+            const edgeLargeSizeButton = Array.from(edgeSizePresetRow?.querySelectorAll('.wall-decoration-catalog-btn') ?? [])
+                .find((btn) => String(btn.textContent || '').trim() === 'Large') ?? null;
+            const edgeSmallOffsetButton = Array.from(edgeOffsetPresetRow?.querySelectorAll('.wall-decoration-catalog-btn') ?? [])
+                .find((btn) => String(btn.textContent || '').trim() === 'Small') ?? null;
+            assertTrue(!!edgeLargeSizeButton, 'Expected Large edge-brick size preset button.');
+            assertTrue(!!edgeSmallOffsetButton, 'Expected Small edge-brick offset preset button.');
+            edgeLargeSizeButton.click();
+            edgeSmallOffsetButton.click();
+            assertNear(Number(ui?._draft?.configuration?.brickHeight) || 0, 0.15, 1e-9, 'Expected edge-brick Large size = 15cm.');
+            assertNear(Number(ui?._draft?.configuration?.depthScaleMultiplier) || 0, 0.5, 1e-9, 'Expected edge-brick Small offset = 0.5x.');
+
+            ui.setState({
+                ...getDefaultWallDecoratorDebuggerState({ decoratorId: WALL_DECORATOR_ID.CORNICE_BASIC_BLOCK })
+            });
+            const corniceConfigLabels = Array.from(ui.root.querySelectorAll('.wall-decoration-configuration-host .options-row-label'))
+                .map((el) => (el.textContent || '').trim());
+            assertTrue(corniceConfigLabels.includes('Block size (m)'), 'Expected cornice block-size property control.');
+            assertTrue(corniceConfigLabels.includes('Spacing mode'), 'Expected cornice spacing-mode property control.');
+            assertTrue(corniceConfigLabels.includes('Spacing (m)'), 'Expected cornice spacing property control.');
+            assertTrue(corniceConfigLabels.includes('Front angle (x block)'), 'Expected cornice front-angle property control.');
+            assertTrue(corniceConfigLabels.includes('Snap to fit'), 'Expected cornice snap toggle property control.');
+            const cornicePresetRows = Array.from(ui.root.querySelectorAll('.wall-decoration-configuration-preset-host .options-row'));
+            const corniceSizeRow = cornicePresetRows
+                .find((row) => String(row.querySelector('.options-row-label')?.textContent || '').trim() === 'Block size') ?? null;
+            const corniceSpacingRow = cornicePresetRows
+                .find((row) => String(row.querySelector('.options-row-label')?.textContent || '').trim() === 'Spacing') ?? null;
+            const corniceAngleRow = cornicePresetRows
+                .find((row) => String(row.querySelector('.options-row-label')?.textContent || '').trim() === 'Angle') ?? null;
+            assertTrue(!!corniceSizeRow, 'Expected cornice block-size preset row.');
+            assertTrue(!!corniceSpacingRow, 'Expected cornice spacing preset row.');
+            assertTrue(!!corniceAngleRow, 'Expected cornice angle preset row.');
+            const corniceSmallSizeButton = Array.from(corniceSizeRow?.querySelectorAll('.wall-decoration-catalog-btn') ?? [])
+                .find((btn) => String(btn.textContent || '').trim() === 'Small') ?? null;
+            const corniceLargeSpacingButton = Array.from(corniceSpacingRow?.querySelectorAll('.wall-decoration-catalog-btn') ?? [])
+                .find((btn) => String(btn.textContent || '').trim() === 'Large') ?? null;
+            const corniceMatchBlockButton = Array.from(corniceSpacingRow?.querySelectorAll('.wall-decoration-catalog-btn') ?? [])
+                .find((btn) => String(btn.textContent || '').trim() === 'Match block') ?? null;
+            const corniceAngleButton = Array.from(corniceAngleRow?.querySelectorAll('.wall-decoration-catalog-btn') ?? [])
+                .find((btn) => String(btn.textContent || '').trim() === 'Angle') ?? null;
+            assertTrue(!!corniceSmallSizeButton, 'Expected Small cornice block-size preset button.');
+            assertTrue(!!corniceLargeSpacingButton, 'Expected Large cornice spacing preset button.');
+            assertTrue(!!corniceMatchBlockButton, 'Expected Match block cornice spacing preset button.');
+            assertTrue(!!corniceAngleButton, 'Expected Angle cornice face-angle preset button.');
+            corniceSmallSizeButton.click();
+            corniceLargeSpacingButton.click();
+            assertNear(
+                Number(ui?._draft?.configuration?.blockSizeMeters) || 0,
+                0.05,
+                1e-9,
+                'Expected cornice Small block-size preset to set 5cm block size.'
+            );
+            assertEqual(
+                String(ui?._draft?.configuration?.spacingMode ?? ''),
+                'fixed',
+                'Expected fixed spacing mode after fixed spacing preset.'
+            );
+            assertNear(
+                Number(ui?._draft?.configuration?.spacingMeters) || 0,
+                0.30,
+                1e-9,
+                'Expected cornice Large spacing preset to set 30cm center-to-center spacing.'
+            );
+            corniceMatchBlockButton.click();
+            assertEqual(
+                String(ui?._draft?.configuration?.spacingMode ?? ''),
+                'match_block',
+                'Expected match-block spacing preset to set match_block mode.'
+            );
+            corniceAngleButton.click();
+            assertNear(
+                Number(ui?._draft?.configuration?.frontBottomLiftScale) || 0,
+                0.5,
+                1e-9,
+                'Expected cornice angle preset to set half-block front-bottom lift.'
+            );
 
             const matchWallKindButton = Array.from(materialKindButtons)
                 .find((el) => String(el.textContent || '').trim() === 'Match wall');
@@ -4495,8 +4647,11 @@ async function runTests() {
             const angledConfigLabels = Array.from(ui.root.querySelectorAll('.wall-decoration-configuration-host .options-row-label'))
                 .map((el) => (el.textContent || '').trim());
             assertTrue(angledConfigLabels.includes('Offset (m)'), 'Expected angled support offset control.');
-            assertTrue(angledConfigLabels.includes('Shift (m)'), 'Expected angled support shift control.');
-            assertTrue(angledConfigLabels.includes('Return Height (m)'), 'Expected angled support returnHeight control.');
+            assertTrue(angledConfigLabels.includes('Height (m)'), 'Expected angled support height control.');
+            assertTrue(angledConfigLabels.includes('Top cap angle (deg)'), 'Expected angled support top-cap angle control.');
+            assertTrue(angledConfigLabels.includes('Bottom cap angle (deg)'), 'Expected angled support bottom-cap angle control.');
+            assertFalse(angledConfigLabels.includes('Shift (m)'), 'Expected no shift control for angled support profile.');
+            assertFalse(angledConfigLabels.includes('Return Height (m)'), 'Expected no return-height control for angled support profile.');
             assertFalse(angledConfigLabels.includes('Thickness (m)'), 'Expected no thickness control for angled support profile.');
             assertFalse(angledConfigLabels.includes('Preset'), 'Expected angled support not to inherit skirt preset controls.');
 
@@ -4588,6 +4743,66 @@ async function runTests() {
         }
     });
 
+    test('WallDecorationMeshDebuggerView: decorator texture mode borrows active wall tile size by default', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+        try {
+            mesh.userData.surfaceSizeMeters = { width: 4.0, height: 2.0 };
+            view._state = {
+                ...getDefaultWallDecoratorDebuggerState({ decoratorId: WALL_DECORATOR_ID.SIMPLE_SKIRT }),
+                materialSelection: { kind: 'texture', id: 'pbr.concrete' },
+                tiling: {
+                    enabled: false,
+                    tileMeters: 9.0,
+                    tileMetersU: 9.0,
+                    tileMetersV: 9.0,
+                    uvEnabled: false,
+                    offsetU: 0.0,
+                    offsetV: 0.0,
+                    rotationDegrees: 0.0
+                }
+            };
+
+            const albedo = new THREE.Texture();
+            const normal = new THREE.Texture();
+            const roughness = new THREE.Texture();
+            const metalness = new THREE.Texture();
+            const ao = new THREE.Texture();
+            view._pbrLoader = {
+                resolveMaterial: (id) => {
+                    if (id !== 'pbr.concrete') return null;
+                    return {
+                        textures: {
+                            baseColor: albedo,
+                            normal,
+                            roughness,
+                            metalness,
+                            ao
+                        },
+                        overrides: {
+                            effective: {
+                                normalStrength: 1.0,
+                                roughness: 0.8
+                            }
+                        }
+                    };
+                }
+            };
+
+            // Painted plaster wall preview enforces 2m tile size.
+            view._wallMaterialId = 'pbr.plastered_wall_02';
+            view._applyStateMaterialToMesh(mesh);
+
+            assertNear(albedo.repeat.x, 2.0, 1e-6, 'Expected decorator U repeat to use wall 2m tile sizing (4m / 2m).');
+            assertNear(albedo.repeat.y, 1.0, 1e-6, 'Expected decorator V repeat to use wall 2m tile sizing (2m / 2m).');
+        } finally {
+            mesh.geometry?.dispose?.();
+            mesh.material?.dispose?.();
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
     test('WallDecorationMeshDebuggerView: wall visibility toggle hides wall mesh while keeping decorators visible', () => {
         const view = new WallDecorationMeshDebuggerView();
         try {
@@ -4610,22 +4825,28 @@ async function runTests() {
         }
     });
 
-    test('WallDecorationMeshDebuggerView: dummy visibility toggle hides dummy context without affecting wall/decorators', () => {
+    test('WallDecorationMeshDebuggerView: dummy visibility toggle hides only dummy ball without affecting scenario/wall/decorators', () => {
         const view = new WallDecorationMeshDebuggerView();
         try {
             view.scene = new THREE.Scene();
             view._buildStaticScene();
             assertTrue(!!view._dummyGroup?.visible, 'Expected dummy context visible by default.');
+            assertTrue(!!view._dummyBall?.visible, 'Expected dummy ball visible by default.');
             assertTrue(!!view._wallMesh?.visible, 'Expected wall mesh visible by default.');
             assertTrue(!!view._decoratorGroup?.visible, 'Expected decorator group visible by default.');
+            assertTrue(!!view._ground?.visible, 'Expected scenario ground visible by default.');
+            assertTrue(!!view._grid?.visible, 'Expected scenario grid visible by default.');
 
             view._setDummyVisible(false);
-            assertFalse(!!view._dummyGroup?.visible, 'Expected dummy context hidden when Show dummy is disabled.');
-            assertTrue(!!view._wallMesh?.visible, 'Expected wall mesh to remain visible when dummy context is hidden.');
-            assertTrue(!!view._decoratorGroup?.visible, 'Expected decorator group to remain visible when dummy context is hidden.');
+            assertFalse(!!view._dummyBall?.visible, 'Expected dummy ball hidden when Show dummy is disabled.');
+            assertTrue(!!view._dummyGroup?.visible, 'Expected scenario context to remain visible when Show dummy is disabled.');
+            assertTrue(!!view._ground?.visible, 'Expected scenario ground to remain visible when Show dummy is disabled.');
+            assertTrue(!!view._grid?.visible, 'Expected scenario grid to remain visible when Show dummy is disabled.');
+            assertTrue(!!view._wallMesh?.visible, 'Expected wall mesh to remain visible when dummy ball is hidden.');
+            assertTrue(!!view._decoratorGroup?.visible, 'Expected decorator group to remain visible when dummy ball is hidden.');
 
             view._setDummyVisible(true);
-            assertTrue(!!view._dummyGroup?.visible, 'Expected dummy context visible when Show dummy is enabled.');
+            assertTrue(!!view._dummyBall?.visible, 'Expected dummy ball visible when Show dummy is enabled.');
         } finally {
             view._disposeSceneResources();
             view.scene = null;
@@ -4724,6 +4945,7 @@ async function runTests() {
                 WALL_DECORATOR_ID.SIMPLE_SKIRT,
                 WALL_DECORATOR_ID.RIBBON,
                 WALL_DECORATOR_ID.EDGE_BRICK_CHAIN,
+                WALL_DECORATOR_ID.CORNICE_BASIC_BLOCK,
                 WALL_DECORATOR_ID.HALF_DOME,
                 WALL_DECORATOR_ID.ANGLED_SUPPORT_PROFILE
             ];
@@ -4765,8 +4987,8 @@ async function runTests() {
                 ...getDefaultWallDecoratorDebuggerState({ decoratorId: WALL_DECORATOR_ID.RIBBON }),
                 materialSelection: { kind: 'color', id: 'belt.white' },
                 configuration: {
-                    sizePreset: 'medium',
-                    offsetMode: 'normal',
+                    heightMeters: 0.50,
+                    offsetScale: 1.0,
                     nearEdgeOffsetMeters: 0.1,
                     patternId: 'circle',
                     patternNormalIntensity: 1.8
@@ -4811,6 +5033,7 @@ async function runTests() {
                         role: 'curved_ring_front',
                         faceId: 'front',
                         geometryKind: 'curved_ring',
+                        longitudinalSegments: 96,
                         miterStart45: false,
                         miterEnd45: false,
                         centerU: 0.0,
@@ -4824,6 +5047,7 @@ async function runTests() {
                         role: 'curved_ring_front_miter',
                         faceId: 'front',
                         geometryKind: 'curved_ring',
+                        longitudinalSegments: 64,
                         miterStart45: false,
                         miterEnd45: true,
                         centerU: 4.5,
@@ -4843,6 +5067,7 @@ async function runTests() {
             assertTrue(!!frontRing, 'Expected front curved-ring mesh.');
             assertEqual(frontRing?.geometry?.type, 'BufferGeometry', 'Expected curved ring geometry from profile sweep.');
             assertEqual(String(frontRing?.userData?.geometryKind ?? ''), 'curved_ring', 'Expected geometry kind metadata on mesh.');
+            assertTrue(!!frontRing?.geometry?.index, 'Expected curved ring to keep indexed continuous topology for smooth shading.');
 
             const frontBox = new THREE.Box3().setFromObject(frontRing);
             const frontSize = frontBox.getSize(new THREE.Vector3());
@@ -4881,20 +5106,44 @@ async function runTests() {
             const miterRing = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'curved_ring_front_miter') ?? null;
             assertTrue(!!miterRing, 'Expected mitered curved-ring mesh.');
             const positions = miterRing?.geometry?.attributes?.position?.array ?? [];
-            let maxFrontX = Number.NEGATIVE_INFINITY;
+            let minZ = Number.POSITIVE_INFINITY;
+            let maxZ = Number.NEGATIVE_INFINITY;
+            for (let i = 0; i < positions.length; i += 3) {
+                const z = Number(positions[i + 2]) || 0.0;
+                minZ = Math.min(minZ, z);
+                maxZ = Math.max(maxZ, z);
+            }
+            const wallZThreshold = minZ + 0.03;
+            const outerZThreshold = maxZ - 0.03;
+            let maxWallX = Number.NEGATIVE_INFINITY;
+            let maxOuterX = Number.NEGATIVE_INFINITY;
             for (let i = 0; i < positions.length; i += 3) {
                 const x = Number(positions[i]) || 0.0;
                 const z = Number(positions[i + 2]) || 0.0;
-                if (z >= 0.24) maxFrontX = Math.max(maxFrontX, x);
+                if (z <= wallZThreshold) maxWallX = Math.max(maxWallX, x);
+                if (z >= outerZThreshold) maxOuterX = Math.max(maxOuterX, x);
             }
-            assertTrue(maxFrontX <= 0.12, 'Expected end-side 45-degree miter to trim the curved-ring front-right side.');
+            assertTrue(
+                maxOuterX > (maxWallX + 0.20),
+                'Expected end-side 45-degree miter to extend the curved-ring corner outward from wall edge to form edge.'
+            );
+            assertTrue(
+                maxWallX >= 0.45,
+                'Expected wall-side corner edge to stay aligned near the original wall span limit.'
+            );
+            assertNear(
+                maxOuterX - maxWallX,
+                0.5,
+                0.12,
+                'Expected curved-ring corner miter reach to follow depth-based 45-degree extension.'
+            );
         } finally {
             view._disposeSceneResources();
             view.scene = null;
         }
     });
 
-    test('WallDecorationMeshDebuggerView: angled support profile uses swept profile and 45deg segment miter', () => {
+    test('WallDecorationMeshDebuggerView: angled support uses skirt-style flat meshes and applies cap wall-edge Y offsets', () => {
         const view = new WallDecorationMeshDebuggerView();
         try {
             view.scene = new THREE.Scene();
@@ -4905,76 +5154,429 @@ async function runTests() {
                     {
                         role: 'angled_support_front',
                         faceId: 'front',
-                        geometryKind: 'angled_support_profile',
+                        geometryKind: 'flat_panel',
                         centerU: 0.0,
                         centerV: 0.0,
                         widthMeters: 2.0,
                         heightMeters: 0.25,
                         depthMeters: 0.12,
-                        profileOffsetMeters: 0.12,
-                        profileShiftMeters: -0.04,
-                        profileReturnHeightMeters: 0.22,
-                        miterStart45: false,
-                        miterEnd45: false
+                        outsetMeters: 0.12
                     },
                     {
-                        role: 'angled_support_front_miter',
+                        role: 'angled_support_front_cap_top',
                         faceId: 'front',
-                        geometryKind: 'angled_support_profile',
-                        centerU: 3.8,
-                        centerV: 0.0,
-                        widthMeters: 1.2,
-                        heightMeters: 0.25,
+                        geometryKind: 'flat_panel_cap',
+                        capSide: 'top',
+                        centerU: 0.0,
+                        centerV: 0.125,
+                        widthMeters: 2.0,
+                        heightMeters: 0.12,
                         depthMeters: 0.12,
-                        profileOffsetMeters: 0.12,
-                        profileShiftMeters: 0.03,
-                        profileReturnHeightMeters: 0.25,
-                        miterStart45: false,
-                        miterEnd45: true
+                        outsetMeters: 0.0,
+                        wallEdgeYOffsetMeters: -0.06
+                    },
+                    {
+                        role: 'angled_support_front_cap_bottom',
+                        faceId: 'front',
+                        geometryKind: 'flat_panel_cap',
+                        capSide: 'bottom',
+                        centerU: 0.0,
+                        centerV: -0.125,
+                        widthMeters: 2.0,
+                        heightMeters: 0.12,
+                        depthMeters: 0.12,
+                        outsetMeters: 0.0,
+                        wallEdgeYOffsetMeters: 0.03
                     }
                 ])
             };
 
             view._rebuildDecoratorMeshes();
-            assertEqual(view._decoratorMeshes.length, 2, 'Expected two angled-support meshes from catalog specs.');
+            assertEqual(view._decoratorMeshes.length, 3, 'Expected panel + top cap + bottom cap meshes.');
 
-            const straightMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'angled_support_front') ?? null;
-            assertTrue(!!straightMesh, 'Expected straight angled-support mesh.');
-            assertEqual(String(straightMesh?.userData?.geometryKind ?? ''), 'angled_support_profile', 'Expected angled support geometry metadata.');
+            const mainMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'angled_support_front') ?? null;
+            const topCapMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'angled_support_front_cap_top') ?? null;
+            const bottomCapMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'angled_support_front_cap_bottom') ?? null;
+            assertTrue(!!mainMesh, 'Expected angled-support main flat panel mesh.');
+            assertTrue(!!topCapMesh, 'Expected angled-support top cap mesh.');
+            assertTrue(!!bottomCapMesh, 'Expected angled-support bottom cap mesh.');
+            assertEqual(String(mainMesh?.userData?.geometryKind ?? ''), 'flat_panel', 'Expected angled-support main to use flat panel geometry.');
+            assertEqual(String(topCapMesh?.userData?.geometryKind ?? ''), 'flat_panel_cap', 'Expected angled-support top cap to use flat cap geometry.');
 
-            const straightBox = new THREE.Box3().setFromObject(straightMesh);
-            const straightSize = straightBox.getSize(new THREE.Vector3());
-            assertNear(straightSize.x, 2.0, 0.08, 'Expected swept profile length to follow spec width.');
-            assertNear(straightSize.z, 0.12, 0.04, 'Expected profile offset to define outward depth.');
-            assertTrue(straightSize.y > 0.20 && straightSize.y < 0.35, 'Expected signed shift + returnHeight to produce non-trivial profile height.');
-            const supportGeoForNormalCheck = straightMesh?.geometry?.index ? straightMesh.geometry.toNonIndexed() : straightMesh?.geometry ?? null;
-            const supportPos = supportGeoForNormalCheck?.attributes?.position?.array ?? [];
-            const supportNormals = supportGeoForNormalCheck?.attributes?.normal?.array ?? [];
-            let maxSupportZ = Number.NEGATIVE_INFINITY;
-            for (let i = 2; i < supportPos.length; i += 3) maxSupportZ = Math.max(maxSupportZ, Number(supportPos[i]) || 0.0);
-            let supportOuterCount = 0;
-            let supportOuterSum = 0.0;
-            for (let i = 0; i + 8 < supportPos.length && i + 8 < supportNormals.length; i += 3) {
-                const z = Number(supportPos[i + 2]) || 0.0;
-                if (z < maxSupportZ - 0.02) continue;
-                const nz = Number(supportNormals[i + 2]) || 0.0;
-                supportOuterCount += 1;
-                supportOuterSum += nz;
+            const calcWallMinusOuterYOffset = (mesh) => {
+                const pos = mesh?.geometry?.attributes?.position;
+                if (!pos) return NaN;
+                let wallSum = 0.0;
+                let wallCount = 0;
+                let outerSum = 0.0;
+                let outerCount = 0;
+                for (let i = 0; i < pos.count; i += 1) {
+                    const y = Number(pos.getY(i)) || 0.0;
+                    const z = Number(pos.getZ(i)) || 0.0;
+                    if (z < -1e-6) {
+                        wallSum += y;
+                        wallCount += 1;
+                    } else if (z > 1e-6) {
+                        outerSum += y;
+                        outerCount += 1;
+                    }
+                }
+                if (!wallCount || !outerCount) return NaN;
+                return (wallSum / wallCount) - (outerSum / outerCount);
+            };
+
+            const topDelta = calcWallMinusOuterYOffset(topCapMesh);
+            const bottomDelta = calcWallMinusOuterYOffset(bottomCapMesh);
+            assertNear(topDelta, -0.06, 1e-6, 'Expected top cap wall-edge vertices shifted downward relative to outer edge.');
+            assertNear(bottomDelta, 0.03, 1e-6, 'Expected bottom cap wall-edge vertices shifted upward relative to outer edge.');
+
+            const mainBox = new THREE.Box3().setFromObject(mainMesh);
+            const mainSize = mainBox.getSize(new THREE.Vector3());
+            assertNear(mainSize.x, 2.0, 1e-6, 'Expected angled-support main panel width from spec.');
+            assertNear(mainSize.y, 0.25, 1e-6, 'Expected angled-support main panel height from spec.');
+            assertNear(mainSize.z, 0.0, 1e-6, 'Expected main panel geometry to stay flat.');
+        } finally {
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: cornice block front-angle lift raises front-bottom edge', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        try {
+            view.scene = new THREE.Scene();
+            view._decoratorGroup = new THREE.Group();
+            view.scene.add(view._decoratorGroup);
+            view._catalogLoader = {
+                loadShapeSpecs: () => ([
+                    {
+                        role: 'cornice_flat',
+                        faceId: 'front',
+                        geometryKind: 'cornice_block',
+                        centerU: -0.3,
+                        centerV: 1.0,
+                        widthMeters: 0.10,
+                        heightMeters: 0.10,
+                        depthMeters: 0.10,
+                        outsetMeters: 0.0,
+                        corniceFrontBottomLiftMeters: 0.0
+                    },
+                    {
+                        role: 'cornice_angle',
+                        faceId: 'front',
+                        geometryKind: 'cornice_block',
+                        centerU: 0.3,
+                        centerV: 1.0,
+                        widthMeters: 0.10,
+                        heightMeters: 0.10,
+                        depthMeters: 0.10,
+                        outsetMeters: 0.0,
+                        corniceFrontBottomLiftMeters: 0.05
+                    }
+                ])
+            };
+
+            view._rebuildDecoratorMeshes();
+            assertEqual(view._decoratorMeshes.length, 2, 'Expected two cornice block meshes.');
+            const flatMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'cornice_flat') ?? null;
+            const angleMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'cornice_angle') ?? null;
+            assertTrue(!!flatMesh && !!angleMesh, 'Expected flat and angled cornice block meshes.');
+            assertEqual(String(flatMesh?.userData?.geometryKind ?? ''), 'cornice_block', 'Expected cornice geometry kind metadata.');
+
+            const findFrontBottomY = (mesh) => {
+                const pos = mesh?.geometry?.getAttribute?.('position') ?? null;
+                if (!pos) return NaN;
+                let maxZ = Number.NEGATIVE_INFINITY;
+                for (let i = 0; i < pos.count; i += 1) maxZ = Math.max(maxZ, Number(pos.getZ(i)) || 0.0);
+                let minFrontY = Number.POSITIVE_INFINITY;
+                for (let i = 0; i < pos.count; i += 1) {
+                    const z = Number(pos.getZ(i)) || 0.0;
+                    if (z < maxZ - 1e-5) continue;
+                    minFrontY = Math.min(minFrontY, Number(pos.getY(i)) || 0.0);
+                }
+                return minFrontY;
+            };
+
+            const flatFrontBottomY = findFrontBottomY(flatMesh);
+            const angleFrontBottomY = findFrontBottomY(angleMesh);
+            assertNear(flatFrontBottomY, -0.05, 1e-6, 'Expected flat cornice block front-bottom edge at base Y.');
+            assertNear(angleFrontBottomY, 0.0, 1e-6, 'Expected angled cornice block front-bottom edge raised by half block size.');
+        } finally {
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: cornice rounded block mesh uses reduced covers and curvature modes', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        try {
+            view.scene = new THREE.Scene();
+            view._decoratorGroup = new THREE.Group();
+            view.scene.add(view._decoratorGroup);
+            view._catalogLoader = {
+                loadShapeSpecs: () => ([
+                    {
+                        role: 'cornice_rounded_medium_convex',
+                        faceId: 'front',
+                        geometryKind: 'cornice_rounded_block',
+                        corniceRoundedCurvature: 'convex',
+                        centerU: 0.0,
+                        centerV: 1.0,
+                        widthMeters: 0.10,
+                        heightMeters: 0.10,
+                        depthMeters: 0.10,
+                        outsetMeters: 0.0
+                    },
+                    {
+                        role: 'cornice_rounded_medium_concave',
+                        faceId: 'front',
+                        geometryKind: 'cornice_rounded_block',
+                        corniceRoundedCurvature: 'concave',
+                        centerU: 0.15,
+                        centerV: 1.0,
+                        widthMeters: 0.10,
+                        heightMeters: 0.10,
+                        depthMeters: 0.10,
+                        outsetMeters: 0.0
+                    },
+                    {
+                        role: 'cornice_rounded_large_convex',
+                        faceId: 'front',
+                        geometryKind: 'cornice_rounded_block',
+                        corniceRoundedCurvature: 'convex',
+                        centerU: 0.3,
+                        centerV: 1.0,
+                        widthMeters: 0.15,
+                        heightMeters: 0.15,
+                        depthMeters: 0.15,
+                        outsetMeters: 0.0
+                    }
+                ])
+            };
+
+            view._rebuildDecoratorMeshes();
+            assertEqual(view._decoratorMeshes.length, 3, 'Expected three rounded cornice meshes.');
+            const mediumConvexMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'cornice_rounded_medium_convex') ?? null;
+            const mediumConcaveMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'cornice_rounded_medium_concave') ?? null;
+            const largeConvexMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'cornice_rounded_large_convex') ?? null;
+            assertTrue(!!mediumConvexMesh && !!mediumConcaveMesh && !!largeConvexMesh, 'Expected rounded medium convex/concave and large convex meshes.');
+            assertEqual(String(mediumConvexMesh?.userData?.geometryKind ?? ''), 'cornice_rounded_block', 'Expected rounded block geometry kind metadata.');
+
+            const findRangeAtDepth = (mesh, targetZ, eps = 1e-4) => {
+                const pos = mesh?.geometry?.getAttribute?.('position') ?? null;
+                if (!pos) return { minY: NaN, maxY: NaN };
+                let minY = Number.POSITIVE_INFINITY;
+                let maxY = Number.NEGATIVE_INFINITY;
+                for (let i = 0; i < pos.count; i += 1) {
+                    const z = Number(pos.getZ(i)) || 0.0;
+                    if (Math.abs(z - targetZ) > eps) continue;
+                    const y = Number(pos.getY(i)) || 0.0;
+                    minY = Math.min(minY, y);
+                    maxY = Math.max(maxY, y);
+                }
+                return { minY, maxY };
+            };
+
+            const mediumPos = mediumConvexMesh?.geometry?.getAttribute?.('position') ?? null;
+            assertTrue(!!mediumPos, 'Expected rounded medium position attribute.');
+            let mediumMinZ = Number.POSITIVE_INFINITY;
+            let mediumMaxZ = Number.NEGATIVE_INFINITY;
+            let mediumMinY = Number.POSITIVE_INFINITY;
+            for (let i = 0; i < mediumPos.count; i += 1) {
+                const z = Number(mediumPos.getZ(i)) || 0.0;
+                const y = Number(mediumPos.getY(i)) || 0.0;
+                mediumMinZ = Math.min(mediumMinZ, z);
+                mediumMaxZ = Math.max(mediumMaxZ, z);
+                mediumMinY = Math.min(mediumMinY, y);
             }
-            assertTrue(supportOuterCount > 0, 'Expected angled-support outer-face normal samples.');
-            assertTrue((supportOuterSum / supportOuterCount) > 0.15, 'Expected angled-support outer-face normals to point outward (+Z), not inward.');
-            if (supportGeoForNormalCheck !== straightMesh?.geometry) supportGeoForNormalCheck?.dispose?.();
 
-            const miterMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'angled_support_front_miter') ?? null;
-            assertTrue(!!miterMesh, 'Expected mitered angled-support mesh.');
-            const miterPositions = miterMesh?.geometry?.attributes?.position?.array ?? [];
-            let maxFrontX = Number.NEGATIVE_INFINITY;
-            for (let i = 0; i < miterPositions.length; i += 3) {
-                const x = Number(miterPositions[i]) || 0.0;
-                const z = Number(miterPositions[i + 2]) || 0.0;
-                if (z >= 0.06) maxFrontX = Math.max(maxFrontX, x);
+            const mediumFrontRange = findRangeAtDepth(mediumConvexMesh, mediumMaxZ, 1e-4);
+            assertNear(
+                mediumFrontRange.maxY - mediumFrontRange.minY,
+                0.01,
+                1e-6,
+                'Expected front reduced cover height = 10% of block size for 10cm block.'
+            );
+
+            const mediumBottomWallRange = (() => {
+                const pos = mediumConvexMesh?.geometry?.getAttribute?.('position') ?? null;
+                if (!pos) return { minZ: NaN, maxZ: NaN };
+                let minZ = Number.POSITIVE_INFINITY;
+                let maxZ = Number.NEGATIVE_INFINITY;
+                for (let i = 0; i < pos.count; i += 1) {
+                    const y = Number(pos.getY(i)) || 0.0;
+                    if (Math.abs(y - mediumMinY) > 1e-4) continue;
+                    const z = Number(pos.getZ(i)) || 0.0;
+                    minZ = Math.min(minZ, z);
+                    maxZ = Math.max(maxZ, z);
+                }
+                return { minZ, maxZ };
+            })();
+            assertNear(
+                mediumBottomWallRange.maxZ - mediumBottomWallRange.minZ,
+                0.01,
+                1e-6,
+                'Expected bottom reduced cover depth = 10% of block size for 10cm block.'
+            );
+
+            const largePos = largeConvexMesh?.geometry?.getAttribute?.('position') ?? null;
+            assertTrue(!!largePos, 'Expected rounded large position attribute.');
+            let largeFrontMinY = Number.POSITIVE_INFINITY;
+            let largeFrontMaxY = Number.NEGATIVE_INFINITY;
+            let largeMaxZ = Number.NEGATIVE_INFINITY;
+            for (let i = 0; i < largePos.count; i += 1) {
+                largeMaxZ = Math.max(largeMaxZ, Number(largePos.getZ(i)) || 0.0);
             }
-            assertTrue(maxFrontX < 0.52, 'Expected end-side miter to trim front edge at 45 degrees.');
+            for (let i = 0; i < largePos.count; i += 1) {
+                const z = Number(largePos.getZ(i)) || 0.0;
+                if (Math.abs(z - largeMaxZ) > 1e-4) continue;
+                const y = Number(largePos.getY(i)) || 0.0;
+                largeFrontMinY = Math.min(largeFrontMinY, y);
+                largeFrontMaxY = Math.max(largeFrontMaxY, y);
+            }
+            assertNear(
+                largeFrontMaxY - largeFrontMinY,
+                0.015,
+                1e-6,
+                'Expected 15cm rounded front reduced cover to scale to 1.5cm.'
+            );
+
+            const hasHalfStepY = (() => {
+                const pos = largePos;
+                if (!pos) return false;
+                const ySet = new Set();
+                for (let i = 0; i < pos.count; i += 1) ySet.add((Number(pos.getY(i)) || 0.0).toFixed(6));
+                const values = Array.from(ySet, (v) => Number(v)).sort((a, b) => a - b);
+                let smallestStep = Number.POSITIVE_INFINITY;
+                for (let i = 1; i < values.length; i += 1) {
+                    const step = values[i] - values[i - 1];
+                    if (step > 1e-6) smallestStep = Math.min(smallestStep, step);
+                }
+                return smallestStep <= 0.0076;
+            })();
+            assertTrue(
+                hasHalfStepY,
+                'Expected rounded large block circular arc segmentation to include <=7.5mm profile steps (8+ segments for 15cm blocks).'
+            );
+
+            const convexPos = mediumConvexMesh?.geometry?.getAttribute?.('position')?.array ?? [];
+            const concavePos = mediumConcaveMesh?.geometry?.getAttribute?.('position')?.array ?? [];
+            assertTrue(
+                convexPos.length === concavePos.length && convexPos.some((v, i) => Math.abs((Number(v) || 0.0) - (Number(concavePos[i]) || 0.0)) > 1e-6),
+                'Expected curvature mode toggle (convex/concave) to generate different rounded profile geometry.'
+            );
+            const averageZ = (arr) => {
+                if (!arr?.length) return NaN;
+                let sum = 0.0;
+                let count = 0;
+                for (let i = 2; i < arr.length; i += 3) {
+                    sum += Number(arr[i]) || 0.0;
+                    count += 1;
+                }
+                return count > 0 ? (sum / count) : NaN;
+            };
+            const convexAvgZ = averageZ(convexPos);
+            const concaveAvgZ = averageZ(concavePos);
+            assertTrue(
+                Number.isFinite(convexAvgZ) && Number.isFinite(concaveAvgZ) && concaveAvgZ < (convexAvgZ - 1e-5),
+                'Expected concave rounded profile to bend inward (lower average depth) versus convex.'
+            );
+        } finally {
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: flat side-cap normals face outward for front/right start/end orientations', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        try {
+            view.scene = new THREE.Scene();
+            view._decoratorGroup = new THREE.Group();
+            view.scene.add(view._decoratorGroup);
+            view._catalogLoader = {
+                loadShapeSpecs: () => ([
+                    {
+                        role: 'front_cap_side_start',
+                        faceId: 'front',
+                        geometryKind: 'flat_panel_side_cap',
+                        centerU: -4.0,
+                        centerV: -1.0,
+                        widthMeters: 0.08,
+                        heightMeters: 0.30,
+                        depthMeters: 0.08,
+                        outsetMeters: 0.04,
+                        yawDegrees: 180.0,
+                        wallEdgeFlip: true
+                    },
+                    {
+                        role: 'front_cap_side_end',
+                        faceId: 'front',
+                        geometryKind: 'flat_panel_side_cap',
+                        centerU: 4.0,
+                        centerV: -1.0,
+                        widthMeters: 0.08,
+                        heightMeters: 0.30,
+                        depthMeters: 0.08,
+                        outsetMeters: 0.04,
+                        yawDegrees: 0.0,
+                        wallEdgeFlip: false
+                    },
+                    {
+                        role: 'right_cap_side_start',
+                        faceId: 'right',
+                        geometryKind: 'flat_panel_side_cap',
+                        centerU: 1.0,
+                        centerV: -0.4,
+                        widthMeters: 0.08,
+                        heightMeters: 0.30,
+                        depthMeters: 0.08,
+                        outsetMeters: 0.04,
+                        yawDegrees: 180.0,
+                        wallEdgeFlip: true
+                    },
+                    {
+                        role: 'right_cap_side_end',
+                        faceId: 'right',
+                        geometryKind: 'flat_panel_side_cap',
+                        centerU: 4.0,
+                        centerV: -0.4,
+                        widthMeters: 0.08,
+                        heightMeters: 0.30,
+                        depthMeters: 0.08,
+                        outsetMeters: 0.04,
+                        yawDegrees: 0.0,
+                        wallEdgeFlip: false
+                    }
+                ])
+            };
+
+            view._rebuildDecoratorMeshes();
+            assertEqual(view._decoratorMeshes.length, 4, 'Expected four side-cap meshes.');
+            view.scene.updateMatrixWorld(true);
+
+            const getWorldNormal = (role) => {
+                const mesh = view._decoratorMeshes.find((item) => String(item?.userData?.role ?? '') === role) ?? null;
+                assertTrue(!!mesh, `Expected mesh for role ${role}.`);
+                const pos = mesh?.geometry?.getAttribute?.('position') ?? null;
+                assertTrue(!!pos && pos.count >= 3, `Expected triangle positions for ${role}.`);
+                const a = new THREE.Vector3(pos.getX(0), pos.getY(0), pos.getZ(0)).applyMatrix4(mesh.matrixWorld);
+                const b = new THREE.Vector3(pos.getX(1), pos.getY(1), pos.getZ(1)).applyMatrix4(mesh.matrixWorld);
+                const c = new THREE.Vector3(pos.getX(2), pos.getY(2), pos.getZ(2)).applyMatrix4(mesh.matrixWorld);
+                return new THREE.Vector3()
+                    .subVectors(b, a)
+                    .cross(new THREE.Vector3().subVectors(c, a))
+                    .normalize();
+            };
+
+            const nFrontStart = getWorldNormal('front_cap_side_start');
+            const nFrontEnd = getWorldNormal('front_cap_side_end');
+            const nRightStart = getWorldNormal('right_cap_side_start');
+            const nRightEnd = getWorldNormal('right_cap_side_end');
+
+            assertTrue(nFrontStart.x < -0.9, `Expected front start-side cap outward normal toward -X (got ${nFrontStart.x.toFixed(3)}).`);
+            assertTrue(nFrontEnd.x > 0.9, `Expected front end-side cap outward normal toward +X (got ${nFrontEnd.x.toFixed(3)}).`);
+            assertTrue(nRightStart.z > 0.9, `Expected right start-side cap outward normal toward +Z (got ${nRightStart.z.toFixed(3)}).`);
+            assertTrue(nRightEnd.z < -0.9, `Expected right end-side cap outward normal toward -Z (got ${nRightEnd.z.toFixed(3)}).`);
         } finally {
             view._disposeSceneResources();
             view.scene = null;
@@ -4999,6 +5601,9 @@ async function runTests() {
                         heightMeters: 0.30,
                         depthMeters: 0.08,
                         outsetMeters: 0.0,
+                        edgeChainRemoveTopFace: true,
+                        edgeChainRemoveBottomFace: true,
+                        edgeChainRemoveWallFace: true,
                         miterStart45: false,
                         miterEnd45: false
                     },
@@ -5012,30 +5617,113 @@ async function runTests() {
                         heightMeters: 0.30,
                         depthMeters: 0.08,
                         outsetMeters: 0.0,
+                        edgeChainRemoveTopFace: true,
+                        edgeChainRemoveBottomFace: true,
+                        edgeChainRemoveEndFace: true,
+                        edgeChainRemoveWallFace: true,
                         miterStart45: false,
                         miterEnd45: true
+                    },
+                    {
+                        role: 'right_corner_course_001',
+                        faceId: 'right',
+                        geometryKind: 'edge_brick_chain_course',
+                        centerU: 0.1,
+                        centerV: -1.0,
+                        widthMeters: 0.20,
+                        heightMeters: 0.30,
+                        depthMeters: 0.08,
+                        outsetMeters: 0.0,
+                        edgeChainRemoveTopFace: true,
+                        edgeChainRemoveBottomFace: true,
+                        edgeChainRemoveStartFace: true,
+                        edgeChainRemoveWallFace: true,
+                        miterStart45: true,
+                        miterEnd45: false
                     }
                 ])
             };
 
             view._rebuildDecoratorMeshes();
-            assertEqual(view._decoratorMeshes.length, 2, 'Expected two edge-brick chain course meshes.');
+            assertEqual(view._decoratorMeshes.length, 3, 'Expected edge-brick chain meshes for straight + front wedge + right continuation wedge.');
             const straightMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'front_right_course_000') ?? null;
             const miterMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'front_right_course_001') ?? null;
-            assertTrue(!!straightMesh && !!miterMesh, 'Expected straight and mitered edge-brick course meshes.');
+            const rightMiterMesh = view._decoratorMeshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'right_corner_course_001') ?? null;
+            assertTrue(!!straightMesh && !!miterMesh && !!rightMiterMesh, 'Expected straight + corner wedge pair edge-brick course meshes.');
             assertEqual(String(miterMesh?.userData?.geometryKind ?? ''), 'edge_brick_chain_course', 'Expected geometry kind metadata for edge-brick course.');
 
+            const triangleCount = (mesh) => {
+                const geo = mesh?.geometry ?? null;
+                const indexedCount = Number(geo?.index?.count);
+                if (Number.isFinite(indexedCount) && indexedCount > 0) return Math.round(indexedCount / 3);
+                const vertexCount = Number(geo?.attributes?.position?.count) || 0;
+                return Math.round(vertexCount / 3);
+            };
+            const countCapTriangles = (mesh) => {
+                const geo = mesh?.geometry ?? null;
+                if (!geo) return -1;
+                const work = geo.index ? geo.toNonIndexed() : geo;
+                const pos = work.getAttribute('position');
+                if (!pos || pos.count < 3) {
+                    if (work !== geo) work.dispose?.();
+                    return 0;
+                }
+                let minY = Number.POSITIVE_INFINITY;
+                let maxY = Number.NEGATIVE_INFINITY;
+                for (let i = 0; i < pos.count; i += 1) {
+                    const y = Number(pos.getY(i)) || 0.0;
+                    minY = Math.min(minY, y);
+                    maxY = Math.max(maxY, y);
+                }
+                const eps = 1e-5;
+                let capCount = 0;
+                for (let i = 0; i + 2 < pos.count; i += 3) {
+                    const y0 = Number(pos.getY(i)) || 0.0;
+                    const y1 = Number(pos.getY(i + 1)) || 0.0;
+                    const y2 = Number(pos.getY(i + 2)) || 0.0;
+                    const topTri = Math.abs(y0 - maxY) <= eps && Math.abs(y1 - maxY) <= eps && Math.abs(y2 - maxY) <= eps;
+                    const bottomTri = Math.abs(y0 - minY) <= eps && Math.abs(y1 - minY) <= eps && Math.abs(y2 - minY) <= eps;
+                    if (topTri || bottomTri) capCount += 1;
+                }
+                if (work !== geo) work.dispose?.();
+                return capCount;
+            };
+
+            assertEqual(triangleCount(straightMesh), 6, 'Expected edge-brick straight course to keep only outer face + side caps (no top/bottom/wall face).');
+            assertEqual(triangleCount(miterMesh), 4, 'Expected front mitered edge-brick course to remove wedge seam face and wall/top/bottom faces.');
+            assertEqual(rightMiterMesh ? triangleCount(rightMiterMesh) : -1, 4, 'Expected right continuation mitered course to remove wedge seam face and wall/top/bottom faces.');
+            assertEqual(countCapTriangles(miterMesh), 0, 'Expected no top/bottom cap triangles on mitered edge-brick course.');
+            assertEqual(countCapTriangles(rightMiterMesh), 0, 'Expected no top/bottom cap triangles on right continuation edge-brick course.');
+
             const miterPositions = miterMesh?.geometry?.attributes?.position?.array ?? [];
-            let maxFrontX = Number.NEGATIVE_INFINITY;
+            let minZ = Number.POSITIVE_INFINITY;
+            let maxZ = Number.NEGATIVE_INFINITY;
+            for (let i = 0; i < miterPositions.length; i += 3) {
+                const z = Number(miterPositions[i + 2]) || 0.0;
+                minZ = Math.min(minZ, z);
+                maxZ = Math.max(maxZ, z);
+            }
+            const wallZThreshold = minZ + 0.01;
+            const outerZThreshold = maxZ - 0.01;
             let maxWallX = Number.NEGATIVE_INFINITY;
+            let maxOuterX = Number.NEGATIVE_INFINITY;
             for (let i = 0; i < miterPositions.length; i += 3) {
                 const x = Number(miterPositions[i]) || 0.0;
                 const z = Number(miterPositions[i + 2]) || 0.0;
-                if (z >= 0.03) maxFrontX = Math.max(maxFrontX, x);
-                if (z <= -0.03) maxWallX = Math.max(maxWallX, x);
+                if (z <= wallZThreshold) maxWallX = Math.max(maxWallX, x);
+                if (z >= outerZThreshold) maxOuterX = Math.max(maxOuterX, x);
             }
-            assertTrue(maxFrontX < 0.06, 'Expected mitered edge-brick course to trim front-right side at 45 degrees.');
-            assertTrue(maxWallX >= 0.09, 'Expected mitered edge-brick course to keep full outer 90-degree corner reach at wall plane.');
+            assertTrue(
+                maxOuterX > (maxWallX + 0.03),
+                'Expected mitered edge-brick course to extend the corner edge outward at 45 degrees.'
+            );
+            assertTrue(maxWallX >= 0.09, 'Expected mitered edge-brick course to keep wall-side corner edge aligned to course width limit.');
+            assertNear(
+                maxOuterX - maxWallX,
+                0.08,
+                0.03,
+                'Expected edge-brick outward corner wedge reach to match course depth.'
+            );
         } finally {
             view._disposeSceneResources();
             view.scene = null;

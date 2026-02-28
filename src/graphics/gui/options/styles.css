@@ -90,6 +90,25 @@
     font-size: 14px;
 }
 
+.options-selected-type {
+    display: flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 6px 0;
+    line-height: 1.2;
+    font-size: 14px;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.9;
+}
+
+.options-selected-type.is-placeholder {
+    opacity: 0.58;
+}
+
 .options-subtitle {
     font-size: 12px;
     opacity: 0.75;
@@ -236,6 +255,21 @@
     border-radius: 10px;
     text-align: left;
     padding: 8px 10px;
+}
+
+#ui-wall-decoration-mesh-debugger .wall-decoration-configuration-preset-host .wall-decoration-catalog-grid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    grid-template-columns: none;
+}
+
+#ui-wall-decoration-mesh-debugger .wall-decoration-configuration-preset-host .wall-decoration-catalog-btn {
+    width: auto;
+    min-width: 84px;
+    min-height: 36px;
+    flex: 0 0 auto;
+    text-align: center;
 }
 
 .wall-decoration-wall-material-grid {
@@ -568,6 +602,7 @@
     font-size: 12px;
     min-width: 0;
     text-align: center;
+    margin-bottom: 4px;
 }
 
 .options-choice-btn-segmented {
@@ -576,6 +611,7 @@
     border-radius: 0;
     background: transparent;
     min-width: 56px;
+    margin-bottom: 0;
 }
 
 .options-choice-btn-segmented:last-child {

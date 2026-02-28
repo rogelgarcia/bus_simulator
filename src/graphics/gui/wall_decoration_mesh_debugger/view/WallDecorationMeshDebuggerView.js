@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { createToolCameraController } from '../../../engine3d/camera/ToolCameraPrefab.js';
 import { getOrCreateGpuFrameTimer } from '../../../engine3d/perf/GpuFrameTimer.js';
 import { createGradientSkyDome } from '../../../assets3d/generators/SkyGenerator.js';
+import { createProceduralMeshAsset, PROCEDURAL_MESH } from '../../../content3d/catalogs/ProceduralMeshCatalog.js';
 import { getPbrMaterialOptionsForBuildings, getPbrMaterialTileMeters } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
 import { PbrTextureLoaderService, applyResolvedPbrToStandardMaterial } from '../../../content3d/materials/PbrTexturePipeline.js';
 import { getBeltCourseColorOptions } from '../../../../app/buildings/BeltCourseColor.js';
@@ -176,16 +177,195 @@ function flipGeometryWinding(geometry) {
     }
 }
 
+function smoothNormalsBySharedPosition(geometry, {
+    epsilon = 1e-5,
+    maxSmoothingAngleDeg = 75.0,
+    keepIndexed = false
+} = {}) {
+    const src = geometry?.isBufferGeometry ? geometry : null;
+    if (!src) return src;
+    const cosThreshold = Math.cos(clamp(maxSmoothingAngleDeg, 0.0, 180.0, 75.0) * Math.PI / 180.0);
+    const invEps = 1.0 / Math.max(1e-8, Number(epsilon) || 1e-5);
+    const makeKey = (x, y, z) => `${Math.round(x * invEps)}|${Math.round(y * invEps)}|${Math.round(z * invEps)}`;
+    const a = new THREE.Vector3();
+    const b = new THREE.Vector3();
+    const c = new THREE.Vector3();
+    const edge1 = new THREE.Vector3();
+    const edge2 = new THREE.Vector3();
+    const n = new THREE.Vector3();
+
+    if (keepIndexed && src.getIndex()) {
+        const geo = src;
+        const pos = geo.getAttribute('position');
+        const index = geo.getIndex();
+        if (!pos || !index || pos.count < 3 || index.count < 3) return geo;
+
+        const vertexCount = pos.count;
+        const idx = index.array;
+        const groups = new Map();
+        for (let i = 0; i < vertexCount; i += 1) {
+            const key = makeKey(pos.getX(i), pos.getY(i), pos.getZ(i));
+            const list = groups.get(key);
+            if (list) list.push(i);
+            else groups.set(key, [i]);
+        }
+
+        const faceNormalsByVertex = Array.from({ length: vertexCount }, () => []);
+        for (let i = 0; i + 2 < idx.length; i += 3) {
+            const i0 = Number(idx[i]) || 0;
+            const i1 = Number(idx[i + 1]) || 0;
+            const i2 = Number(idx[i + 2]) || 0;
+            a.fromBufferAttribute(pos, i0);
+            b.fromBufferAttribute(pos, i1);
+            c.fromBufferAttribute(pos, i2);
+            edge1.subVectors(c, b);
+            edge2.subVectors(a, b);
+            n.crossVectors(edge1, edge2);
+            if (n.lengthSq() <= 1e-16) continue;
+            n.normalize();
+            const normal = [n.x, n.y, n.z];
+            faceNormalsByVertex[i0].push(normal);
+            faceNormalsByVertex[i1].push(normal);
+            faceNormalsByVertex[i2].push(normal);
+        }
+
+        const baseNormals = new Float32Array(vertexCount * 3);
+        for (let i = 0; i < vertexCount; i += 1) {
+            const normals = faceNormalsByVertex[i];
+            let sx = 0.0;
+            let sy = 0.0;
+            let sz = 0.0;
+            for (const fn of normals) {
+                sx += fn[0];
+                sy += fn[1];
+                sz += fn[2];
+            }
+            const len = Math.hypot(sx, sy, sz);
+            const base = i * 3;
+            if (len <= 1e-8) continue;
+            baseNormals[base] = sx / len;
+            baseNormals[base + 1] = sy / len;
+            baseNormals[base + 2] = sz / len;
+        }
+
+        const outNormals = new Float32Array(vertexCount * 3);
+        for (const members of groups.values()) {
+            for (const i of members) {
+                const base = i * 3;
+                const bx = baseNormals[base];
+                const by = baseNormals[base + 1];
+                const bz = baseNormals[base + 2];
+                let sx = 0.0;
+                let sy = 0.0;
+                let sz = 0.0;
+                for (const j of members) {
+                    for (const fn of faceNormalsByVertex[j]) {
+                        const nx = fn[0];
+                        const ny = fn[1];
+                        const nz = fn[2];
+                        const dot = bx * nx + by * ny + bz * nz;
+                        if (dot < cosThreshold) continue;
+                        sx += nx;
+                        sy += ny;
+                        sz += nz;
+                    }
+                }
+                const len = Math.hypot(sx, sy, sz);
+                if (len <= 1e-8) {
+                    outNormals[base] = bx;
+                    outNormals[base + 1] = by;
+                    outNormals[base + 2] = bz;
+                    continue;
+                }
+                outNormals[base] = sx / len;
+                outNormals[base + 1] = sy / len;
+                outNormals[base + 2] = sz / len;
+            }
+        }
+        geo.setAttribute('normal', new THREE.Float32BufferAttribute(outNormals, 3));
+        return geo;
+    }
+
+    let geo = src.getIndex() ? src.toNonIndexed() : src;
+    const pos = geo.getAttribute('position');
+    if (!pos || pos.count < 3) return geo;
+
+    const vertexCount = pos.count;
+    const faceNormals = new Float32Array(vertexCount * 3);
+    const groups = new Map();
+
+    for (let i = 0; i + 2 < vertexCount; i += 3) {
+        a.fromBufferAttribute(pos, i);
+        b.fromBufferAttribute(pos, i + 1);
+        c.fromBufferAttribute(pos, i + 2);
+        edge1.subVectors(c, b);
+        edge2.subVectors(a, b);
+        n.crossVectors(edge1, edge2);
+        if (n.lengthSq() <= 1e-16) continue;
+        n.normalize();
+        for (let k = 0; k < 3; k += 1) {
+            const idx = i + k;
+            const base = idx * 3;
+            faceNormals[base] = n.x;
+            faceNormals[base + 1] = n.y;
+            faceNormals[base + 2] = n.z;
+            const key = makeKey(pos.getX(idx), pos.getY(idx), pos.getZ(idx));
+            const list = groups.get(key);
+            if (list) list.push(idx);
+            else groups.set(key, [idx]);
+        }
+    }
+
+    const outNormals = new Float32Array(vertexCount * 3);
+    for (let i = 0; i < vertexCount; i += 1) {
+        const base = i * 3;
+        const bx = faceNormals[base];
+        const by = faceNormals[base + 1];
+        const bz = faceNormals[base + 2];
+        const key = makeKey(pos.getX(i), pos.getY(i), pos.getZ(i));
+        const members = groups.get(key) ?? [i];
+        let sx = 0.0;
+        let sy = 0.0;
+        let sz = 0.0;
+        for (const idx of members) {
+            const ib = idx * 3;
+            const nx = faceNormals[ib];
+            const ny = faceNormals[ib + 1];
+            const nz = faceNormals[ib + 2];
+            const dot = bx * nx + by * ny + bz * nz;
+            if (dot < cosThreshold) continue;
+            sx += nx;
+            sy += ny;
+            sz += nz;
+        }
+        const len = Math.hypot(sx, sy, sz);
+        if (len <= 1e-8) {
+            outNormals[base] = bx;
+            outNormals[base + 1] = by;
+            outNormals[base + 2] = bz;
+            continue;
+        }
+        outNormals[base] = sx / len;
+        outNormals[base + 1] = sy / len;
+        outNormals[base + 2] = sz / len;
+    }
+
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(outNormals, 3));
+    return geo;
+}
+
 function createCurvedRingGeometry({
     segmentWidthMeters = 1.0,
     diameterMeters = 1.0,
+    longitudinalSegments = 1,
     miterStart45 = false,
     miterEnd45 = false
 } = {}) {
     const segmentWidth = Math.max(0.01, Number(segmentWidthMeters) || 1.0);
     const diameter = Math.max(0.01, Number(diameterMeters) || 1.0);
     const radius = diameter * 0.5;
-    const arcSegments = 28;
+    const arcSegments = Math.max(24, Math.min(256, Math.ceil(diameter * 200)));
+    const sweepSteps = Math.max(1, Math.min(4096, Math.floor(Number(longitudinalSegments) || 1)));
 
     // Profile is a half-circle in side view (Y/Z), then swept along U (X).
     const profile = new THREE.Shape();
@@ -202,7 +382,7 @@ function createCurvedRingGeometry({
     let geo = new THREE.ExtrudeGeometry(profile, {
         depth: segmentWidth,
         bevelEnabled: false,
-        steps: 1,
+        steps: sweepSteps,
         curveSegments: arcSegments
     });
 
@@ -219,17 +399,20 @@ function createCurvedRingGeometry({
             const box = geo.boundingBox ? geo.boundingBox.clone() : null;
             const minX = Number(box?.min?.x);
             const maxX = Number(box?.max?.x);
-            if (Number.isFinite(minX) && Number.isFinite(maxX)) {
+            const minZ = Number(box?.min?.z);
+            if (Number.isFinite(minX) && Number.isFinite(maxX) && Number.isFinite(minZ)) {
+                const edgeEps = 1e-4;
                 for (let i = 0; i < arr.length; i += 3) {
                     let x = Number(arr[i]) || 0.0;
-                    const depthFromWall = Math.max(0.0, Number(arr[i + 2]) || 0.0);
+                    const z = Number(arr[i + 2]) || 0.0;
+                    const depthFromWall = Math.max(0.0, z - minZ);
                     if (miterStart45) {
-                        const cutMinX = minX + depthFromWall;
-                        if (x < cutMinX) x = cutMinX;
+                        const isStartEdge = x <= (minX + edgeEps);
+                        if (isStartEdge) x = minX - depthFromWall;
                     }
                     if (miterEnd45) {
-                        const cutMaxX = maxX - depthFromWall;
-                        if (x > cutMaxX) x = cutMaxX;
+                        const isEndEdge = x >= (maxX - edgeEps);
+                        if (isEndEdge) x = maxX + depthFromWall;
                     }
                     arr[i] = x;
                 }
@@ -238,46 +421,30 @@ function createCurvedRingGeometry({
         }
     }
 
-    // This profile does not need a wall-facing cap; remove triangles coplanar with the wall plane.
+    // Remove wall-facing cap triangles while preserving indexed topology for smooth shading.
     {
-        const source = geo.index ? geo.toNonIndexed() : geo.clone();
-        const pos = source.getAttribute('position');
-        const uv = source.getAttribute('uv');
-        if (pos?.count >= 3) {
-            const outPos = [];
-            const outUv = [];
+        const pos = geo.getAttribute('position');
+        const index = geo.getIndex();
+        if (pos?.count >= 3 && index?.array?.length >= 3) {
+            const idx = index.array;
+            const kept = [];
             const eps = 1e-6;
-            for (let i = 0; i + 2 < pos.count; i += 3) {
-                const z0 = Number(pos.getZ(i)) || 0.0;
-                const z1 = Number(pos.getZ(i + 1)) || 0.0;
-                const z2 = Number(pos.getZ(i + 2)) || 0.0;
+            for (let i = 0; i + 2 < idx.length; i += 3) {
+                const i0 = Number(idx[i]) || 0;
+                const i1 = Number(idx[i + 1]) || 0;
+                const i2 = Number(idx[i + 2]) || 0;
+                const z0 = Number(pos.getZ(i0)) || 0.0;
+                const z1 = Number(pos.getZ(i1)) || 0.0;
+                const z2 = Number(pos.getZ(i2)) || 0.0;
                 const isWallTri = Math.abs(z0) <= eps && Math.abs(z1) <= eps && Math.abs(z2) <= eps;
                 if (isWallTri) continue;
-                for (let v = 0; v < 3; v += 1) {
-                    const idx = i + v;
-                    outPos.push(
-                        Number(pos.getX(idx)) || 0.0,
-                        Number(pos.getY(idx)) || 0.0,
-                        Number(pos.getZ(idx)) || 0.0
-                    );
-                    if (uv) {
-                        outUv.push(
-                            Number(uv.getX(idx)) || 0.0,
-                            Number(uv.getY(idx)) || 0.0
-                        );
-                    }
-                }
+                kept.push(i0, i1, i2);
             }
-            const filtered = new THREE.BufferGeometry();
-            filtered.setAttribute('position', new THREE.Float32BufferAttribute(outPos, 3));
-            if (uv && outUv.length === (outPos.length / 3) * 2) {
-                filtered.setAttribute('uv', new THREE.Float32BufferAttribute(outUv, 2));
+            if (kept.length > 0) {
+                geo.setIndex(kept);
+                geo.clearGroups();
+                geo.addGroup(0, kept.length, 0);
             }
-            geo.dispose();
-            source.dispose();
-            geo = filtered;
-        } else {
-            source.dispose();
         }
     }
     flipGeometryWinding(geo);
@@ -285,9 +452,14 @@ function createCurvedRingGeometry({
     geo.computeBoundingBox();
     const box = geo.boundingBox ? geo.boundingBox.clone() : new THREE.Box3();
     const center = box.getCenter(new THREE.Vector3());
-    geo.translate(-center.x, -center.y, -center.z);
+    // Keep X anchored to the authored span center so corner miters remain aligned to wall-edge U limits.
+    geo.translate(0.0, -center.y, -center.z);
+    geo = smoothNormalsBySharedPosition(geo, {
+        epsilon: 1e-5,
+        maxSmoothingAngleDeg: 75.0,
+        keepIndexed: true
+    });
     geo.computeBoundingBox();
-    geo.computeVertexNormals();
 
     const finalBox = geo.boundingBox ?? new THREE.Box3().setFromBufferAttribute(geo.attributes.position);
     const size = finalBox.getSize(new THREE.Vector3());
@@ -304,6 +476,8 @@ function createAngledSupportProfileGeometry({
     offsetMeters = 0.10,
     shiftMeters = 0.0,
     returnHeightMeters = 0.20,
+    miterTopAngleDeg = 45.0,
+    miterBottomAngleDeg = 45.0,
     miterStart45 = false,
     miterEnd45 = false
 } = {}) {
@@ -336,15 +510,25 @@ function createAngledSupportProfileGeometry({
         const rawBox = new THREE.Box3().setFromBufferAttribute(pos);
         const minX = rawBox.min.x;
         const maxX = rawBox.max.x;
+        const minY = rawBox.min.y;
+        const maxY = rawBox.max.y;
+        const spanY = Math.max(1e-6, maxY - minY);
+        const topAngle = clamp(miterTopAngleDeg, 10.0, 80.0, 45.0) * Math.PI / 180.0;
+        const bottomAngle = clamp(miterBottomAngleDeg, 10.0, 80.0, 45.0) * Math.PI / 180.0;
         for (let i = 0; i < arr.length; i += 3) {
             let x = Number(arr[i]) || 0.0;
+            const y = Number(arr[i + 1]) || 0.0;
             const z = Number(arr[i + 2]) || 0.0;
+            const zDepth = Math.max(0.0, z);
+            const tY = Math.max(0.0, Math.min(1.0, (y - minY) / spanY));
+            const angle = bottomAngle + (topAngle - bottomAngle) * tY;
+            const miterScale = Math.tan(angle);
             if (miterStart45) {
-                const cutMinX = minX + Math.max(0.0, z);
+                const cutMinX = minX + zDepth * miterScale;
                 if (x < cutMinX) x = cutMinX;
             }
             if (miterEnd45) {
-                const cutMaxX = maxX - Math.max(0.0, z);
+                const cutMaxX = maxX - zDepth * miterScale;
                 if (x > cutMaxX) x = cutMaxX;
             }
             arr[i] = x;
@@ -374,6 +558,13 @@ function createMiteredBoxGeometry({
     widthMeters = 1.0,
     heightMeters = 1.0,
     depthMeters = 0.1,
+    miterStyle = 'inward',
+    removeTopFace = false,
+    removeBottomFace = false,
+    removeStartFace = false,
+    removeEndFace = false,
+    removeOuterFace = false,
+    removeWallFace = false,
     miterStart45 = false,
     miterEnd45 = false
 } = {}) {
@@ -385,20 +576,32 @@ function createMiteredBoxGeometry({
         const pos = geo.attributes?.position;
         const arr = pos?.array ?? null;
         if (arr) {
+            const style = String(miterStyle ?? 'inward').trim().toLowerCase() === 'outward' ? 'outward' : 'inward';
             const minX = -width * 0.5;
             const maxX = width * 0.5;
             const halfDepth = depth * 0.5;
+            const edgeEps = 1e-4;
             for (let i = 0; i < arr.length; i += 3) {
                 let x = Number(arr[i]) || 0.0;
                 const z = Number(arr[i + 2]) || 0.0;
                 const zDepth = Math.max(0.0, z + halfDepth);
                 if (miterStart45) {
-                    const cutMinX = minX + zDepth;
-                    if (x < cutMinX) x = cutMinX;
+                    if (style === 'outward') {
+                        const isStartEdge = x <= (minX + edgeEps);
+                        if (isStartEdge) x = minX - zDepth;
+                    } else {
+                        const cutMinX = minX + zDepth;
+                        if (x < cutMinX) x = cutMinX;
+                    }
                 }
                 if (miterEnd45) {
-                    const cutMaxX = maxX - zDepth;
-                    if (x > cutMaxX) x = cutMaxX;
+                    if (style === 'outward') {
+                        const isEndEdge = x >= (maxX - edgeEps);
+                        if (isEndEdge) x = maxX + zDepth;
+                    } else {
+                        const cutMaxX = maxX - zDepth;
+                        if (x > cutMaxX) x = cutMaxX;
+                    }
                 }
                 arr[i] = x;
             }
@@ -406,10 +609,42 @@ function createMiteredBoxGeometry({
         }
     }
 
+    {
+        const removeMaterialIndices = new Set();
+        if (removeEndFace) removeMaterialIndices.add(0); // +X
+        if (removeStartFace) removeMaterialIndices.add(1); // -X
+        if (removeTopFace) removeMaterialIndices.add(2); // +Y
+        if (removeBottomFace) removeMaterialIndices.add(3); // -Y
+        if (removeOuterFace) removeMaterialIndices.add(4); // +Z
+        if (removeWallFace) removeMaterialIndices.add(5); // -Z
+        const index = geo.getIndex();
+        const groups = Array.isArray(geo.groups) ? geo.groups : [];
+        if (removeMaterialIndices.size > 0 && index && groups.length > 0) {
+            const kept = [];
+            const arr = index.array;
+            for (const group of groups) {
+                const materialIndex = Number(group?.materialIndex) || 0;
+                if (removeMaterialIndices.has(materialIndex)) continue;
+                const start = Math.max(0, Number(group?.start) || 0);
+                const count = Math.max(0, Number(group?.count) || 0);
+                for (let i = start; i < start + count && i < arr.length; i += 1) {
+                    kept.push(Number(arr[i]) || 0);
+                }
+            }
+            if (kept.length > 0) {
+                geo.setIndex(kept);
+                geo.clearGroups();
+                geo.addGroup(0, kept.length, 0);
+            }
+        }
+    }
+
     geo.computeBoundingBox();
     const box = geo.boundingBox ? geo.boundingBox.clone() : new THREE.Box3();
     const center = box.getCenter(new THREE.Vector3());
-    geo.translate(-center.x, -center.y, -center.z);
+    const style = String(miterStyle ?? 'inward').trim().toLowerCase() === 'outward' ? 'outward' : 'inward';
+    // Keep X anchored for outward corner wedges so wall-edge alignment stays stable.
+    geo.translate(style === 'outward' ? 0.0 : -center.x, -center.y, -center.z);
     geo.computeBoundingBox();
     geo.computeVertexNormals();
 
@@ -420,6 +655,326 @@ function createMiteredBoxGeometry({
         widthMeters: Math.max(0.01, size.x),
         heightMeters: Math.max(0.01, size.y),
         depthMeters: Math.max(0.005, size.z)
+    };
+}
+
+function createCorniceBlockGeometry({
+    widthMeters = 0.10,
+    heightMeters = 0.10,
+    depthMeters = 0.10,
+    frontBottomLiftMeters = 0.0
+} = {}) {
+    const width = Math.max(0.01, Number(widthMeters) || 0.10);
+    const height = Math.max(0.01, Number(heightMeters) || 0.10);
+    const depth = Math.max(0.005, Number(depthMeters) || 0.10);
+    const lift = clamp(frontBottomLiftMeters, 0.0, height, 0.0);
+    const geo = new THREE.BoxGeometry(width, height, depth);
+
+    if (lift > 1e-6) {
+        const pos = geo.getAttribute('position');
+        const arr = pos?.array ?? null;
+        if (arr) {
+            const halfHeight = height * 0.5;
+            const halfDepth = depth * 0.5;
+            const eps = 1e-4;
+            for (let i = 0; i < arr.length; i += 3) {
+                const y = Number(arr[i + 1]) || 0.0;
+                const z = Number(arr[i + 2]) || 0.0;
+                const isBottom = y <= (-halfHeight + eps);
+                const isFront = z >= (halfDepth - eps);
+                if (!isBottom || !isFront) continue;
+                arr[i + 1] = Math.min(halfHeight, y + lift);
+            }
+            pos.needsUpdate = true;
+        }
+    }
+
+    geo.computeBoundingBox();
+    geo.computeVertexNormals();
+    const size = (geo.boundingBox ?? new THREE.Box3().setFromBufferAttribute(geo.getAttribute('position'))).getSize(new THREE.Vector3());
+    return {
+        geometry: geo,
+        widthMeters: Math.max(0.01, size.x),
+        heightMeters: Math.max(0.01, size.y),
+        depthMeters: Math.max(0.005, size.z)
+    };
+}
+
+function normalizeCorniceRoundedCurvature(value) {
+    const raw = String(value ?? '').trim().toLowerCase();
+    if (raw === 'concave') return 'concave';
+    return 'convex';
+}
+
+function buildCorniceRoundedArcPoints({
+    startZ = 0.0,
+    startY = 0.0,
+    endZ = 0.0,
+    endY = 0.0,
+    segments = 3,
+    curvature = 'convex'
+} = {}) {
+    const sx = Number(startZ) || 0.0;
+    const sy = Number(startY) || 0.0;
+    const ex = Number(endZ) || 0.0;
+    const ey = Number(endY) || 0.0;
+    const segCount = Math.max(1, Math.floor(Number(segments) || 1));
+    const dx = ex - sx;
+    const dy = ey - sy;
+    const chord = Math.hypot(dx, dy);
+    if (chord <= 1e-6) return [];
+
+    const radius = Math.max(Math.abs(dx), Math.abs(dy), chord * 0.5 + 1e-6);
+    const halfChord = chord * 0.5;
+    const centerOffset = Math.sqrt(Math.max(0.0, radius * radius - halfChord * halfChord));
+    const midX = (sx + ex) * 0.5;
+    const midY = (sy + ey) * 0.5;
+    const nx = -dy / chord;
+    const ny = dx / chord;
+    const candidates = [
+        { x: midX + nx * centerOffset, y: midY + ny * centerOffset },
+        { x: midX - nx * centerOffset, y: midY - ny * centerOffset }
+    ];
+
+    const sampleShortestArc = (center) => {
+        const cx = Number(center?.x) || 0.0;
+        const cy = Number(center?.y) || 0.0;
+        const startA = Math.atan2(sy - cy, sx - cx);
+        let endA = Math.atan2(ey - cy, ex - cx);
+        let delta = endA - startA;
+        while (delta > Math.PI) delta -= Math.PI * 2.0;
+        while (delta < -Math.PI) delta += Math.PI * 2.0;
+        endA = startA + delta;
+        const points = [];
+        for (let i = 1; i < segCount; i += 1) {
+            const t = i / segCount;
+            const a = startA + (endA - startA) * t;
+            points.push({
+                z: cx + Math.cos(a) * radius,
+                y: cy + Math.sin(a) * radius
+            });
+        }
+        return points;
+    };
+
+    const variants = candidates.map((center) => {
+        const points = sampleShortestArc(center);
+        let avgZ = 0.0;
+        for (const p of points) avgZ += Number(p?.z) || 0.0;
+        avgZ = points.length > 0 ? (avgZ / points.length) : ((sx + ex) * 0.5);
+        return { points, avgZ };
+    });
+    if (!variants.length) return [];
+    variants.sort((a, b) => (Number(a?.avgZ) || 0.0) - (Number(b?.avgZ) || 0.0));
+    const mode = normalizeCorniceRoundedCurvature(curvature);
+    return mode === 'concave'
+        ? (variants[0]?.points ?? [])
+        : (variants[variants.length - 1]?.points ?? []);
+}
+
+function createCorniceRoundedGeometry({
+    widthMeters = 0.10,
+    heightMeters = 0.10,
+    depthMeters = 0.10,
+    curvature = 'convex',
+    longitudinalSegments = 1
+} = {}) {
+    const width = Math.max(0.01, Number(widthMeters) || 0.10);
+    const height = Math.max(0.01, Number(heightMeters) || 0.10);
+    const depth = Math.max(0.005, Number(depthMeters) || 0.10);
+    const curveMode = normalizeCorniceRoundedCurvature(curvature);
+
+    const halfHeight = height * 0.5;
+    const halfDepth = depth * 0.5;
+    const reducedFrontHeight = Math.max(1e-4, height * 0.10);
+    const reducedBottomDepth = Math.max(1e-4, depth * 0.10);
+    const frontBottomY = halfHeight - reducedFrontHeight;
+    const bottomRightZ = -halfDepth + reducedBottomDepth;
+    const blockSizeCm = Math.max(0.01, Math.max(width, height, depth)) * 100.0;
+    // Keep side-cap curve visibly rounded even on small blocks.
+    const arcSegments = Math.max(8, Math.min(128, Math.ceil(blockSizeCm * 1.5)));
+    const sweepSteps = Math.max(1, Math.min(4096, Math.floor(Number(longitudinalSegments) || 1)));
+
+    const arcPoints = buildCorniceRoundedArcPoints({
+        startZ: halfDepth,
+        startY: frontBottomY,
+        endZ: bottomRightZ,
+        endY: -halfHeight,
+        segments: arcSegments,
+        curvature: curveMode
+    });
+
+    const profile = new THREE.Shape();
+    profile.moveTo(-halfDepth, halfHeight);
+    profile.lineTo(halfDepth, halfHeight);
+    profile.lineTo(halfDepth, frontBottomY);
+    for (const p of arcPoints) profile.lineTo(Number(p?.z) || 0.0, Number(p?.y) || 0.0);
+    profile.lineTo(bottomRightZ, -halfHeight);
+    profile.lineTo(-halfDepth, -halfHeight);
+    profile.closePath();
+
+    let geo = new THREE.ExtrudeGeometry(profile, {
+        depth: width,
+        bevelEnabled: false,
+        steps: sweepSteps,
+        curveSegments: Math.max(3, arcSegments)
+    });
+    geo.translate(0.0, 0.0, -width * 0.5);
+    geo.rotateY(Math.PI * 0.5);
+    geo.scale(1.0, 1.0, -1.0);
+
+    flipGeometryWinding(geo);
+    geo.computeBoundingBox();
+    const center = (geo.boundingBox ?? new THREE.Box3().setFromBufferAttribute(geo.getAttribute('position'))).getCenter(new THREE.Vector3());
+    geo.translate(-center.x, -center.y, -center.z);
+    geo = smoothNormalsBySharedPosition(geo, {
+        epsilon: 1e-5,
+        maxSmoothingAngleDeg: 75.0
+    });
+    geo.computeBoundingBox();
+
+    const size = (geo.boundingBox ?? new THREE.Box3().setFromBufferAttribute(geo.getAttribute('position'))).getSize(new THREE.Vector3());
+    return {
+        geometry: geo,
+        widthMeters: Math.max(0.01, size.x),
+        heightMeters: Math.max(0.01, size.y),
+        depthMeters: Math.max(0.005, size.z)
+    };
+}
+
+function createFlatCapGeometry({
+    spanWidthMeters = 1.0,
+    capDepthMeters = 0.05,
+    cornerBridgeStartMeters = 0.0,
+    cornerBridgeEndMeters = 0.0,
+    faceDown = false,
+    wallEdgeYOffsetMeters = 0.0
+} = {}) {
+    const width = Math.max(0.01, Number(spanWidthMeters) || 1.0);
+    const depth = Math.max(0.005, Number(capDepthMeters) || 0.05);
+    const bridgeStart = Math.max(0.0, Number(cornerBridgeStartMeters) || 0.0);
+    const bridgeEnd = Math.max(0.0, Number(cornerBridgeEndMeters) || 0.0);
+    const wallEdgeYOffset = Number(wallEdgeYOffsetMeters) || 0.0;
+    const halfWidth = width * 0.5;
+    const halfDepth = depth * 0.5;
+    const positions = [];
+    const invertWinding = !!faceDown;
+
+    const pushTri = (ax, az, bx, bz, cx, cz) => {
+        const ay = az <= 0.0 ? wallEdgeYOffset : 0.0;
+        const by = bz <= 0.0 ? wallEdgeYOffset : 0.0;
+        const cy = cz <= 0.0 ? wallEdgeYOffset : 0.0;
+        if (invertWinding) {
+            positions.push(ax, ay, az, cx, cy, cz, bx, by, bz);
+            return;
+        }
+        positions.push(ax, ay, az, bx, by, bz, cx, cy, cz);
+    };
+
+    // Base quad: wall-edge side at -depth/2, skirt-edge side at +depth/2.
+    pushTri(-halfWidth, -halfDepth, halfWidth, halfDepth, halfWidth, -halfDepth);
+    pushTri(-halfWidth, -halfDepth, -halfWidth, halfDepth, halfWidth, halfDepth);
+
+    if (bridgeEnd > 1e-6) {
+        const edgeX = halfWidth + bridgeEnd;
+        pushTri(halfWidth, -halfDepth, halfWidth, halfDepth, edgeX, halfDepth);
+    }
+    if (bridgeStart > 1e-6) {
+        const edgeX = -halfWidth - bridgeStart;
+        pushTri(-halfWidth, -halfDepth, edgeX, halfDepth, -halfWidth, halfDepth);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+    const pos = geo.getAttribute('position');
+    const box = new THREE.Box3().setFromBufferAttribute(pos);
+    const minX = Number(box.min.x) || 0.0;
+    const maxX = Number(box.max.x) || 0.0;
+    const minZ = Number(box.min.z) || 0.0;
+    const maxZ = Number(box.max.z) || 0.0;
+    const spanX = Math.max(1e-6, maxX - minX);
+    const spanZ = Math.max(1e-6, maxZ - minZ);
+    const uv = [];
+    for (let i = 0; i < pos.count; i += 1) {
+        const x = Number(pos.getX(i)) || 0.0;
+        const z = Number(pos.getZ(i)) || 0.0;
+        uv.push(
+            (x - minX) / spanX,
+            (z - minZ) / spanZ
+        );
+    }
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+
+    geo.computeBoundingBox();
+    geo.computeVertexNormals();
+
+    const size = (geo.boundingBox ?? new THREE.Box3().setFromBufferAttribute(pos)).getSize(new THREE.Vector3());
+    return {
+        geometry: geo,
+        widthMeters: Math.max(0.01, size.x),
+        heightMeters: Math.max(0.005, size.z),
+        depthMeters: depth
+    };
+}
+
+function createFlatSideCapGeometry({
+    spanDepthMeters = 0.05,
+    spanHeightMeters = 0.20,
+    wallEdgeTopYOffsetMeters = 0.0,
+    wallEdgeBottomYOffsetMeters = 0.0,
+    wallEdgeFlip = false
+} = {}) {
+    const depth = Math.max(0.005, Number(spanDepthMeters) || 0.05);
+    const height = Math.max(0.01, Number(spanHeightMeters) || 0.20);
+    const topYOffset = Number(wallEdgeTopYOffsetMeters) || 0.0;
+    const bottomYOffset = Number(wallEdgeBottomYOffsetMeters) || 0.0;
+    const wallAtPositive = !!wallEdgeFlip;
+    const halfDepth = depth * 0.5;
+    const halfHeight = height * 0.5;
+    const wallZ = wallAtPositive ? halfDepth : -halfDepth;
+    const outerZ = -wallZ;
+    const invertWinding = wallAtPositive;
+
+    // Quad in YZ plane at x=0: wall edge can be skewed vertically by top/bottom offsets.
+    const positions = [];
+    const pushTri = (ay, az, by, bz, cy, cz) => {
+        if (invertWinding) {
+            positions.push(0.0, ay, az, 0.0, cy, cz, 0.0, by, bz);
+            return;
+        }
+        positions.push(0.0, ay, az, 0.0, by, bz, 0.0, cy, cz);
+    };
+    pushTri(-halfHeight + bottomYOffset, wallZ, halfHeight + topYOffset, wallZ, halfHeight, outerZ);
+    pushTri(-halfHeight + bottomYOffset, wallZ, halfHeight, outerZ, -halfHeight, outerZ);
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+    const pos = geo.getAttribute('position');
+    const box = new THREE.Box3().setFromBufferAttribute(pos);
+    const minY = Number(box.min.y) || 0.0;
+    const maxY = Number(box.max.y) || 0.0;
+    const minZ = Number(box.min.z) || 0.0;
+    const maxZ = Number(box.max.z) || 0.0;
+    const spanY = Math.max(1e-6, maxY - minY);
+    const spanZ = Math.max(1e-6, maxZ - minZ);
+    const uv = [];
+    for (let i = 0; i < pos.count; i += 1) {
+        const y = Number(pos.getY(i)) || 0.0;
+        const z = Number(pos.getZ(i)) || 0.0;
+        uv.push((z - minZ) / spanZ, (y - minY) / spanY);
+    }
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+
+    geo.computeBoundingBox();
+    geo.computeVertexNormals();
+    const size = (geo.boundingBox ?? new THREE.Box3().setFromBufferAttribute(pos)).getSize(new THREE.Vector3());
+    return {
+        geometry: geo,
+        widthMeters: Math.max(0.005, size.z),
+        heightMeters: Math.max(0.01, size.y),
+        depthMeters: 0.0
     };
 }
 
@@ -449,6 +1004,7 @@ export class WallDecorationMeshDebuggerView {
         this._grid = null;
         this._sky = null;
         this._dummyGroup = null;
+        this._dummyBall = null;
         this._decoratorGroup = null;
         this._decoratorMeshes = [];
 
@@ -715,6 +1271,47 @@ export class WallDecorationMeshDebuggerView {
         this._syncDummyVisibility();
     }
 
+    _ensureDummyBall() {
+        if (this._dummyBall?.isObject3D) return this._dummyBall;
+        if (!this.scene) return null;
+
+        let mesh = null;
+        const asset = createProceduralMeshAsset(PROCEDURAL_MESH.BALL_V1);
+        if (asset?.mesh?.isObject3D) {
+            mesh = asset.mesh;
+        } else {
+            const geo = new THREE.SphereGeometry(0.45, 18, 12);
+            const mat = new THREE.MeshStandardMaterial({
+                color: 0x9fb6d8,
+                roughness: 0.42,
+                metalness: 0.05
+            });
+            mesh = new THREE.Mesh(geo, mat);
+        }
+        if (!mesh) return null;
+
+        mesh.name = 'wall_decorator_dummy_ball';
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.userData = mesh.userData ?? {};
+        mesh.userData.wallDecorationDummy = true;
+        mesh.raycast = () => {};
+        this.scene.add(mesh);
+        this._dummyBall = mesh;
+        this._setMeshWireframe(mesh, !!this._showWireframe);
+        return mesh;
+    }
+
+    _positionDummyBall() {
+        const dummy = this._dummyBall?.isObject3D ? this._dummyBall : null;
+        if (!dummy) return;
+        const wall = this._wallMesh?.isObject3D ? this._wallMesh : null;
+        if (!wall) return;
+        const box = new THREE.Box3().setFromObject(wall);
+        const padding = 1.25;
+        dummy.position.set(box.min.x - padding, box.min.y, box.max.z + padding);
+    }
+
     _buildWalls() {
         if (!this.scene) return;
         const w = WALL_SPEC.widthMeters;
@@ -788,11 +1385,41 @@ export class WallDecorationMeshDebuggerView {
             let surfaceHeightMeters = heightMeters;
             let placementDepthMeters = depthMeters;
 
-            if (geometryKind === 'curved_ring' || geometryKind === 'half_dome') {
+            if (geometryKind === 'flat_panel') {
+                geo = new THREE.PlaneGeometry(widthMeters, heightMeters);
+                placementDepthMeters = 0.0;
+            } else if (geometryKind === 'flat_panel_side_cap') {
+                const sideCap = createFlatSideCapGeometry({
+                    spanDepthMeters: widthMeters,
+                    spanHeightMeters: heightMeters,
+                    wallEdgeTopYOffsetMeters: clamp(spec?.wallEdgeTopYOffsetMeters, -4.0, 4.0, 0.0),
+                    wallEdgeBottomYOffsetMeters: clamp(spec?.wallEdgeBottomYOffsetMeters, -4.0, 4.0, 0.0),
+                    wallEdgeFlip: spec?.wallEdgeFlip === true
+                });
+                geo = sideCap.geometry;
+                surfaceWidthMeters = sideCap.widthMeters;
+                surfaceHeightMeters = sideCap.heightMeters;
+                placementDepthMeters = 0.0;
+            } else if (geometryKind === 'flat_panel_cap') {
+                const capSide = String(spec?.capSide ?? '').trim().toLowerCase();
+                const cap = createFlatCapGeometry({
+                    spanWidthMeters: widthMeters,
+                    capDepthMeters: depthMeters,
+                    cornerBridgeStartMeters: clamp(spec?.cornerBridgeStartMeters, 0.0, 10.0, 0.0),
+                    cornerBridgeEndMeters: clamp(spec?.cornerBridgeEndMeters, 0.0, 10.0, 0.0),
+                    faceDown: capSide === 'bottom',
+                    wallEdgeYOffsetMeters: clamp(spec?.wallEdgeYOffsetMeters, -4.0, 4.0, 0.0)
+                });
+                geo = cap.geometry;
+                surfaceWidthMeters = cap.widthMeters;
+                surfaceHeightMeters = cap.heightMeters;
+                placementDepthMeters = cap.depthMeters;
+            } else if (geometryKind === 'curved_ring' || geometryKind === 'half_dome') {
                 const legacyMiter = String(spec?.cornerMiter45 ?? '').trim().toLowerCase();
                 const ring = createCurvedRingGeometry({
                     segmentWidthMeters: widthMeters,
                     diameterMeters: heightMeters,
+                    longitudinalSegments: Math.max(1, Math.floor(Number(spec?.longitudinalSegments) || 1)),
                     miterStart45: spec?.miterStart45 === true || legacyMiter === 'negative_u',
                     miterEnd45: spec?.miterEnd45 === true || legacyMiter === 'positive_u'
                 });
@@ -805,6 +1432,13 @@ export class WallDecorationMeshDebuggerView {
                     widthMeters,
                     heightMeters,
                     depthMeters,
+                    miterStyle: 'outward',
+                    removeTopFace: spec?.edgeChainRemoveTopFace !== false,
+                    removeBottomFace: spec?.edgeChainRemoveBottomFace !== false,
+                    removeStartFace: spec?.edgeChainRemoveStartFace === true,
+                    removeEndFace: spec?.edgeChainRemoveEndFace === true,
+                    removeOuterFace: spec?.edgeChainRemoveOuterFace === true,
+                    removeWallFace: spec?.edgeChainRemoveWallFace === true,
                     miterStart45: spec?.miterStart45 === true,
                     miterEnd45: spec?.miterEnd45 === true
                 });
@@ -818,6 +1452,8 @@ export class WallDecorationMeshDebuggerView {
                     offsetMeters: clamp(spec?.profileOffsetMeters ?? depthMeters, 0.005, 10.0, depthMeters),
                     shiftMeters: clamp(spec?.profileShiftMeters, -10.0, 10.0, 0.0),
                     returnHeightMeters: clamp(spec?.profileReturnHeightMeters ?? heightMeters, 0.01, 10.0, heightMeters),
+                    miterTopAngleDeg: clamp(spec?.miterTopAngleDeg, 10.0, 80.0, 45.0),
+                    miterBottomAngleDeg: clamp(spec?.miterBottomAngleDeg, 10.0, 80.0, 45.0),
                     miterStart45: spec?.miterStart45 === true,
                     miterEnd45: spec?.miterEnd45 === true
                 });
@@ -825,6 +1461,29 @@ export class WallDecorationMeshDebuggerView {
                 surfaceWidthMeters = profile.widthMeters;
                 surfaceHeightMeters = profile.heightMeters;
                 placementDepthMeters = profile.depthMeters;
+            } else if (geometryKind === 'cornice_block') {
+                const corniceBlock = createCorniceBlockGeometry({
+                    widthMeters,
+                    heightMeters,
+                    depthMeters,
+                    frontBottomLiftMeters: clamp(spec?.corniceFrontBottomLiftMeters, 0.0, heightMeters, 0.0)
+                });
+                geo = corniceBlock.geometry;
+                surfaceWidthMeters = corniceBlock.widthMeters;
+                surfaceHeightMeters = corniceBlock.heightMeters;
+                placementDepthMeters = corniceBlock.depthMeters;
+            } else if (geometryKind === 'cornice_rounded_block') {
+                const corniceRounded = createCorniceRoundedGeometry({
+                    widthMeters,
+                    heightMeters,
+                    depthMeters,
+                    curvature: normalizeCorniceRoundedCurvature(spec?.corniceRoundedCurvature),
+                    longitudinalSegments: Math.max(1, Math.floor(Number(spec?.longitudinalSegments) || 1))
+                });
+                geo = corniceRounded.geometry;
+                surfaceWidthMeters = corniceRounded.widthMeters;
+                surfaceHeightMeters = corniceRounded.heightMeters;
+                placementDepthMeters = corniceRounded.depthMeters;
             } else {
                 const wantsGenericMiter = spec?.miterStart45 === true || spec?.miterEnd45 === true;
                 if (wantsGenericMiter) {
@@ -846,7 +1505,8 @@ export class WallDecorationMeshDebuggerView {
             const mat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 roughness: 0.85,
-                metalness: 0.0
+                metalness: 0.0,
+                side: THREE.FrontSide
             });
             const mesh = new THREE.Mesh(geo, mat);
             mesh.castShadow = true;
@@ -959,6 +1619,7 @@ export class WallDecorationMeshDebuggerView {
         const enabled = !!this._showWireframe;
         this._setMeshWireframe(this._ground, enabled);
         this._setMeshWireframe(this._wallMesh, enabled);
+        this._setMeshWireframe(this._dummyBall, enabled);
         for (const mesh of this._decoratorMeshes) this._setMeshWireframe(mesh, enabled);
     }
 
@@ -985,13 +1646,10 @@ export class WallDecorationMeshDebuggerView {
     }
 
     _syncDummyVisibility() {
-        if (this._dummyGroup) {
-            this._dummyGroup.visible = !!this._showDummy;
-            return;
-        }
-        if (this._sky) this._sky.visible = !!this._showDummy;
-        if (this._ground) this._ground.visible = !!this._showDummy;
-        if (this._grid) this._grid.visible = !!this._showDummy;
+        const dummy = this._ensureDummyBall();
+        if (!dummy) return;
+        this._positionDummyBall();
+        dummy.visible = !!this._showDummy;
     }
 
     _setDummyVisible(enabled) {
@@ -1004,12 +1662,32 @@ export class WallDecorationMeshDebuggerView {
         this._syncDummyVisibility();
     }
 
+    _resolveActiveWallTextureSizing() {
+        const materialId = String(this._wallMaterialId ?? WALL_MATERIAL_NONE_ID).trim() || WALL_MATERIAL_NONE_ID;
+        if (materialId === WALL_MATERIAL_NONE_ID) {
+            return {
+                materialId,
+                hasTexture: false,
+                tileMeters: 2.0,
+                rotationDegrees: 0.0
+            };
+        }
+        const isPlasterPreview = materialId === 'pbr.plastered_wall_02';
+        return {
+            materialId,
+            hasTexture: true,
+            tileMeters: isPlasterPreview ? 2.0 : clamp(getPbrMaterialTileMeters(materialId), 0.1, 100.0, 2.0),
+            rotationDegrees: isPlasterPreview ? 90.0 : 0.0
+        };
+    }
+
     _applyWallMaterialToWallMesh() {
         const wallMesh = this._wallMesh?.isMesh ? this._wallMesh : null;
         const mat = wallMesh?.material?.isMeshStandardMaterial ? wallMesh.material : null;
         if (!mat) return;
 
-        const materialId = String(this._wallMaterialId ?? WALL_MATERIAL_NONE_ID).trim() || WALL_MATERIAL_NONE_ID;
+        const wallTextureSizing = this._resolveActiveWallTextureSizing();
+        const materialId = wallTextureSizing.materialId;
         if (materialId === WALL_MATERIAL_NONE_ID) {
             disposeMaterialMaps(mat);
             mat.color.setHex(WALL_BASE_COLOR_HEX);
@@ -1025,11 +1703,10 @@ export class WallDecorationMeshDebuggerView {
         if (payload) applyResolvedPbrToStandardMaterial(mat, payload, { clearOnMissing: true });
         else disposeMaterialMaps(mat);
 
-        const isPlasterPreview = materialId === 'pbr.plastered_wall_02';
-        const tileMeters = isPlasterPreview ? 2.0 : clamp(getPbrMaterialTileMeters(materialId), 0.1, 100.0, 2.0);
+        const tileMeters = wallTextureSizing.tileMeters;
         const repeatU = WALL_SPEC.widthMeters / tileMeters;
         const repeatV = WALL_SPEC.heightMeters / tileMeters;
-        const rotationDegrees = isPlasterPreview ? 90.0 : 0.0;
+        const rotationDegrees = wallTextureSizing.rotationDegrees;
         applyTextureTransform(mat.map, { repeatU, repeatV, rotationDegrees });
         applyTextureTransform(mat.normalMap, { repeatU, repeatV, rotationDegrees });
         applyTextureTransform(mat.roughnessMap, { repeatU, repeatV, rotationDegrees });
@@ -1061,9 +1738,10 @@ export class WallDecorationMeshDebuggerView {
         const height = clamp(surface.height, 0.01, 100.0, 1.0);
         const ribbonRepeatU = Math.max(1.0, width / 0.35);
         const ribbonRepeatV = Math.max(1.0, height / 0.35);
+        const wallTextureSizing = this._resolveActiveWallTextureSizing();
 
         if (isMatchWall) {
-            const wallMaterialId = String(this._wallMaterialId ?? WALL_MATERIAL_NONE_ID).trim() || WALL_MATERIAL_NONE_ID;
+            const wallMaterialId = wallTextureSizing.materialId;
             if (wallMaterialId === WALL_MATERIAL_NONE_ID) {
                 disposeMaterialMaps(mat);
                 mat.color.setHex(WALL_BASE_COLOR_HEX);
@@ -1087,11 +1765,10 @@ export class WallDecorationMeshDebuggerView {
             if (payload) applyResolvedPbrToStandardMaterial(mat, payload, { clearOnMissing: true });
             else disposeMaterialMaps(mat);
 
-            const isPlasterPreview = wallMaterialId === 'pbr.plastered_wall_02';
-            const tileMeters = isPlasterPreview ? 2.0 : clamp(getPbrMaterialTileMeters(wallMaterialId), 0.1, 100.0, 2.0);
+            const tileMeters = wallTextureSizing.tileMeters;
             const repeatU = width / tileMeters;
             const repeatV = height / tileMeters;
-            const rotationDegrees = isPlasterPreview ? 90.0 : 0.0;
+            const rotationDegrees = wallTextureSizing.rotationDegrees;
             applyTextureTransform(mat.map, { repeatU, repeatV, rotationDegrees });
             applyTextureTransform(mat.normalMap, { repeatU, repeatV, rotationDegrees });
             applyTextureTransform(mat.roughnessMap, { repeatU, repeatV, rotationDegrees });
@@ -1134,7 +1811,10 @@ export class WallDecorationMeshDebuggerView {
         mat.roughness = roughness;
         if (mat.normalScale?.set) mat.normalScale.set(normalStrength, normalStrength);
 
-        const defaultTileMeters = clamp(getPbrMaterialTileMeters(materialId), 0.1, 100.0, 2.0);
+        const materialDefaultTileMeters = clamp(getPbrMaterialTileMeters(materialId), 0.1, 100.0, 2.0);
+        const defaultTileMeters = wallTextureSizing.hasTexture
+            ? wallTextureSizing.tileMeters
+            : materialDefaultTileMeters;
         const tileU = tiling.enabled ? clamp(tiling.tileMetersU, 0.1, 100.0, defaultTileMeters) : defaultTileMeters;
         const tileV = tiling.enabled ? clamp(tiling.tileMetersV, 0.1, 100.0, defaultTileMeters) : defaultTileMeters;
         const repeatU = width / tileU;
