@@ -153,6 +153,12 @@ function normalizeConfigurationPropertyPicker(value) {
     return '';
 }
 
+function normalizeConfigurationPropertyControl(value) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === 'combobox') return 'combobox';
+    return '';
+}
+
 function normalizeConfigurationPropertySpecs(specs) {
     const src = Array.isArray(specs) ? specs : [];
     return src
@@ -178,7 +184,8 @@ function normalizeConfigurationPropertySpecs(specs) {
                     label,
                     type,
                     options,
-                    picker: normalizeConfigurationPropertyPicker(item?.picker)
+                    picker: normalizeConfigurationPropertyPicker(item?.picker),
+                    control: normalizeConfigurationPropertyControl(item?.control)
                 };
             }
             if (type === WALL_DECORATOR_PROPERTY_TYPE.BOOL) {
@@ -1116,12 +1123,24 @@ export class WallDecorationMeshDebuggerUI {
             } else if (propertyType === WALL_DECORATOR_PROPERTY_TYPE.ENUM) {
                 const options = Array.isArray(spec?.options) ? spec.options : [];
                 const pickerMode = normalizeConfigurationPropertyPicker(spec?.picker);
+                const controlMode = normalizeConfigurationPropertyControl(spec?.control);
                 if (pickerMode === 'thumbnail') {
                     control = makeMaterialPickerRow({
                         label: spec?.label ?? propertyId,
                         onPick: () => this._openConfigurationEnumPicker({ propertyId, spec })
                     });
                     controlKind = 'enum_thumbnail';
+                } else if (controlMode === 'combobox') {
+                    control = makeSelectRow({
+                        label: spec?.label ?? propertyId,
+                        value: String(this._draft?.configuration?.[propertyId] ?? ''),
+                        options,
+                        onChange: (next) => {
+                            this._draft.configuration[propertyId] = String(next ?? '');
+                            this._emit();
+                        }
+                    });
+                    controlKind = 'enum_select';
                 } else {
                     control = makeChoiceRow({
                         label: spec?.label ?? propertyId,

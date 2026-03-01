@@ -12,6 +12,12 @@ import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/b
 import { BuildingWallTextureCache } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { createProceduralMeshAsset, PROCEDURAL_MESH } from '../../content3d/catalogs/ProceduralMeshCatalog.js';
 import { FirstPersonCameraController } from '../../engine3d/camera/FirstPersonCameraController.js';
+import {
+    buildWallDecoratorShapeSpecs,
+    sanitizeWallDecoratorDebuggerState
+} from '../../../app/buildings/wall_decorators/index.js';
+import { getBeltCourseColorOptions } from '../../../app/buildings/BeltCourseColor.js';
+import { resolveWallBaseTintHexFromWallBase } from '../../../app/buildings/WallBaseTintModel.js';
 
 const DOUBLE = 2;
 const EPS = 1e-6;
@@ -21,7 +27,6 @@ const FACE_HIGHLIGHT_LINEWIDTH = 6;
 const FACE_HIGHLIGHT_OPACITY = 0.85;
 const FACE_HIGHLIGHT_Y_LIFT = 0.08;
 const LAYER_HIGHLIGHT_COLOR = FACE_HIGHLIGHT_COLOR;
-const LAYER_HIGHLIGHT_LINEWIDTH = 3;
 const LAYER_HIGHLIGHT_OPACITY = 0.28;
 const BAY_HIGHLIGHT_COLOR = 0x49adff;
 const BAY_HIGHLIGHT_OPACITY = 0.28;
@@ -41,6 +46,21 @@ const LAYOUT_VERTEX_RING_TUBE = 0.06;
 const SUPPORT_SLAB_OVERHANG_M = 1.0;
 const SUPPORT_SLAB_THICKNESS_M = 0.5;
 const SUPPORT_SLAB_MATERIAL_ID = 'pbr.plastered_wall_02';
+const WALL_DECORATION_DEFAULT_WALL_DEPTH_M = 0.30;
+const WALL_DECORATION_THIN_PLANE_THICKNESS_M = 0.005;
+const AWNING_ROD_MATERIAL = Object.freeze({
+    colorHex: 0x454545,
+    roughness: 0.5,
+    metalness: 0.6,
+    envMapIntensity: 0.03
+});
+
+const FACE_NORMAL_BY_ID = Object.freeze({
+    A: Object.freeze({ x: 0, y: 0, z: 1 }),
+    B: Object.freeze({ x: 1, y: 0, z: 0 }),
+    C: Object.freeze({ x: 0, y: 0, z: -1 }),
+    D: Object.freeze({ x: -1, y: 0, z: 0 })
+});
 
 function isFaceId(faceId) {
     return faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D';
@@ -64,6 +84,238 @@ function clamp(value, min, max) {
     const num = Number(value);
     if (!Number.isFinite(num)) return min;
     return Math.max(min, Math.min(max, num));
+}
+
+function clampUnit(value, fallback = 0) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return clamp(fallback, 0, 1);
+    return clamp(num, 0, 1);
+}
+
+function normalizeDecorationBayRef(value) {
+    if (typeof value !== 'string') return '';
+    const raw = value.trim();
+    if (!raw) return '';
+    const idx = raw.indexOf(':');
+    if (idx <= 0 || idx >= raw.length - 1) return '';
+    const faceId = raw.slice(0, idx).trim().toUpperCase();
+    const bayId = raw.slice(idx + 1).trim();
+    if (!isFaceId(faceId) || !bayId) return '';
+    return `${faceId}:${bayId}`;
+}
+
+function parseDecorationBayRef(value) {
+    const normalized = normalizeDecorationBayRef(value);
+    if (!normalized) return null;
+    const idx = normalized.indexOf(':');
+    return {
+        faceId: normalized.slice(0, idx),
+        bayId: normalized.slice(idx + 1)
+    };
+}
+
+function getFaceNormalVector(faceId) {
+    const src = FACE_NORMAL_BY_ID[faceId];
+    if (!src) return null;
+    return new THREE.Vector3(src.x, src.y, src.z);
+}
+
+function createAwningSlantedPlaneGeometry({
+    spanWidthMeters = 1.0,
+    projectionMeters = 0.80,
+    slopeDropMeters = 0.20
+} = {}) {
+    const width = Math.max(0.01, Number(spanWidthMeters) || 1.0);
+    const projection = Math.max(0.05, Number(projectionMeters) || 0.80);
+    const drop = Math.max(0.0, Number(slopeDropMeters) || 0.0);
+    const halfWidth = width * 0.5;
+    const halfProjection = projection * 0.5;
+    const halfDrop = drop * 0.5;
+
+    const positions = [
+        -halfWidth, halfDrop, -halfProjection,
+        halfWidth, -halfDrop, halfProjection,
+        halfWidth, halfDrop, -halfProjection,
+        -halfWidth, halfDrop, -halfProjection,
+        -halfWidth, -halfDrop, halfProjection,
+        halfWidth, -halfDrop, halfProjection
+    ];
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+    const pos = geo.getAttribute('position');
+    const uv = [];
+    for (let i = 0; i < pos.count; i += 1) {
+        const x = Number(pos.getX(i)) || 0.0;
+        const z = Number(pos.getZ(i)) || 0.0;
+        const u = (x + halfWidth) / Math.max(1e-6, width);
+        const v = 1.0 - ((z + halfProjection) / Math.max(1e-6, projection));
+        uv.push(u, v);
+    }
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.computeBoundingBox();
+    geo.computeVertexNormals();
+    return {
+        geometry: geo,
+        placementDepthMeters: 0.0
+    };
+}
+
+function createAwningFrontQuadGeometry({
+    spanWidthMeters = 1.0,
+    faceHeightMeters = 0.30
+} = {}) {
+    const width = Math.max(0.01, Number(spanWidthMeters) || 1.0);
+    const height = Math.max(0.01, Number(faceHeightMeters) || 0.30);
+    const halfWidth = width * 0.5;
+    const halfHeight = height * 0.5;
+
+    const positions = [
+        -halfWidth, halfHeight, 0.0,
+        halfWidth, -halfHeight, 0.0,
+        halfWidth, halfHeight, 0.0,
+        -halfWidth, halfHeight, 0.0,
+        -halfWidth, -halfHeight, 0.0,
+        halfWidth, -halfHeight, 0.0
+    ];
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+    const pos = geo.getAttribute('position');
+    const uv = [];
+    for (let i = 0; i < pos.count; i += 1) {
+        const x = Number(pos.getX(i)) || 0.0;
+        const y = Number(pos.getY(i)) || 0.0;
+        const u = (x + halfWidth) / Math.max(1e-6, width);
+        const v = (y + halfHeight) / Math.max(1e-6, height);
+        uv.push(u, v);
+    }
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.computeBoundingBox();
+    geo.computeVertexNormals();
+    return {
+        geometry: geo,
+        placementDepthMeters: 0.0
+    };
+}
+
+function createAwningSupportRodGeometry({
+    startU = 0.0,
+    startV = 0.0,
+    startOutsetMeters = 0.0,
+    endU = 0.0,
+    endV = 0.0,
+    endOutsetMeters = 0.0,
+    radiusMeters = 0.015,
+    radialSegments = 10
+} = {}) {
+    const radius = Math.max(0.001, Number(radiusMeters) || 0.015);
+    const segments = Math.max(3, Math.min(32, Math.floor(Number(radialSegments) || 10)));
+    const start = new THREE.Vector3(
+        Number(startU) || 0.0,
+        Number(startV) || 0.0,
+        Number(startOutsetMeters) || 0.0
+    );
+    const end = new THREE.Vector3(
+        Number(endU) || 0.0,
+        Number(endV) || 0.0,
+        Number(endOutsetMeters) || 0.0
+    );
+    const axis = end.clone().sub(start);
+    const length = Math.max(1e-4, axis.length());
+    const geo = new THREE.CylinderGeometry(radius, radius, length, segments, 1, false);
+
+    const up = new THREE.Vector3(0, 1, 0);
+    if (axis.lengthSq() <= 1e-8) axis.copy(up);
+    axis.normalize();
+    const q = new THREE.Quaternion().setFromUnitVectors(up, axis);
+    const m = new THREE.Matrix4().makeRotationFromQuaternion(q);
+    const mid = start.clone().add(end).multiplyScalar(0.5);
+    m.setPosition(mid);
+    geo.applyMatrix4(m);
+    geo.computeBoundingBox();
+    geo.computeVertexNormals();
+
+    return {
+        geometry: geo,
+        placementDepthMeters: 0.0
+    };
+}
+
+function createWallDecorationGeometryFromSpec(spec) {
+    const geometryKind = String(spec?.geometryKind ?? '').trim().toLowerCase();
+    const widthMeters = Math.max(0.01, Number(spec?.widthMeters) || 1.0);
+    const heightMeters = Math.max(0.01, Number(spec?.heightMeters) || 0.2);
+    const depthMeters = Math.max(0.005, Number(spec?.depthMeters) || 0.08);
+
+    if (geometryKind === 'flat_panel') {
+        return {
+            geometry: new THREE.PlaneGeometry(widthMeters, heightMeters),
+            placementDepthMeters: 0.0
+        };
+    }
+
+    if (geometryKind === 'flat_panel_cap') {
+        const capDepth = Math.max(0.005, Number(spec?.depthMeters) || depthMeters);
+        return {
+            geometry: new THREE.BoxGeometry(widthMeters, WALL_DECORATION_THIN_PLANE_THICKNESS_M, capDepth),
+            placementDepthMeters: capDepth
+        };
+    }
+
+    if (geometryKind === 'flat_panel_side_cap') {
+        const sideDepth = Math.max(0.005, Number(spec?.widthMeters) || depthMeters);
+        return {
+            geometry: new THREE.BoxGeometry(WALL_DECORATION_THIN_PLANE_THICKNESS_M, heightMeters, sideDepth),
+            placementDepthMeters: sideDepth
+        };
+    }
+
+    if (geometryKind === 'awning_slanted_plane') {
+        return createAwningSlantedPlaneGeometry({
+            spanWidthMeters: widthMeters,
+            projectionMeters: Number(spec?.awningProjectionMeters) || depthMeters,
+            slopeDropMeters: Number(spec?.awningSlopeDropMeters) || 0.0
+        });
+    }
+
+    if (geometryKind === 'awning_front_quad') {
+        return createAwningFrontQuadGeometry({
+            spanWidthMeters: widthMeters,
+            faceHeightMeters: heightMeters
+        });
+    }
+
+    if (geometryKind === 'awning_support_rod') {
+        return createAwningSupportRodGeometry({
+            startU: Number(spec?.rodStartU) || 0.0,
+            startV: Number(spec?.rodStartV) || 0.0,
+            startOutsetMeters: Number(spec?.rodStartOutsetMeters) || 0.0,
+            endU: Number(spec?.rodEndU) || 0.0,
+            endV: Number(spec?.rodEndV) || 0.0,
+            endOutsetMeters: Number(spec?.rodEndOutsetMeters) || 0.0,
+            radiusMeters: Number(spec?.rodRadiusMeters) || 0.015,
+            radialSegments: 10
+        });
+    }
+
+    // Keep unsupported kinds visible in BF2 with a conservative fallback box.
+    return {
+        geometry: new THREE.BoxGeometry(widthMeters, heightMeters, depthMeters),
+        placementDepthMeters: depthMeters
+    };
+}
+
+function applyTextureTransform(tex, { repeatU = 1, repeatV = 1, offsetU = 0, offsetV = 0, rotationDegrees = 0 } = {}) {
+    const texture = tex?.isTexture ? tex : null;
+    if (!texture) return;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(Number(repeatU) || 1.0, Number(repeatV) || 1.0);
+    texture.offset.set(Number(offsetU) || 0.0, Number(offsetV) || 0.0);
+    texture.center.set(0.5, 0.5);
+    texture.rotation = (Number(rotationDegrees) || 0) * Math.PI / 180.0;
+    texture.needsUpdate = true;
 }
 
 function computeBuildingBaseAndSidewalk({ generatorConfig, floorHeight }) {
@@ -185,6 +437,8 @@ export class BuildingFabrication2Scene {
 
         this._wallTextures = new BuildingWallTextureCache({ renderer: this.engine?.renderer ?? null });
         this._building = null;
+        this._wallDecorationsGroup = null;
+        this._beltColorById = new Map(getBeltCourseColorOptions().map((opt) => [String(opt?.id ?? ''), Number(opt?.hex) || 0xffffff]));
 
         this._showWireframe = false;
         this._showFloorDivisions = false;
@@ -206,6 +460,7 @@ export class BuildingFabrication2Scene {
 
         this._backgroundColor = new THREE.Color(BACKGROUND_COLOR);
         this._prevSceneBackground = null;
+        this._renderSkyEnabled = true;
 
         this._showDummy = false;
         this._dummy = null;
@@ -237,7 +492,7 @@ export class BuildingFabrication2Scene {
     enter() {
         if (!this.scene) return;
         this._prevSceneBackground = this.scene.background ?? null;
-        this.scene.background = this._backgroundColor;
+        this._syncSceneBackground();
 
         this.root = new THREE.Group();
         this.root.name = 'building_fabrication2_root';
@@ -313,6 +568,13 @@ export class BuildingFabrication2Scene {
     setShowFloorplan(enabled) {
         this._showFloorplan = !!enabled;
         this._syncBuildingRenderMode();
+    }
+
+    setRenderSky(enabled) {
+        const next = !!enabled;
+        if (next === this._renderSkyEnabled) return;
+        this._renderSkyEnabled = next;
+        this._syncSceneBackground();
     }
 
     setDebugDisableSuspect1(enabled) {
@@ -625,6 +887,9 @@ export class BuildingFabrication2Scene {
         this._syncDummy();
 
         this._floorLayerYRangeById = this._computeFloorLayerYRangeById(layers);
+        this._rebuildWallDecorations({ config, layers });
+        this._syncBuildingRenderMode();
+        this._syncSceneWireframe();
         this._syncHoverHighlight();
         this._syncHoveredBayOverlay();
         this._syncFaceHighlight();
@@ -661,6 +926,479 @@ export class BuildingFabrication2Scene {
         if (b.wireGroup) b.wireGroup.visible = false;
         if (b.floorsGroup) b.floorsGroup.visible = !floorplan && this._showFloorDivisions;
         if (b.windowsGroup) b.windowsGroup.visible = !floorplan;
+        if (this._wallDecorationsGroup) this._wallDecorationsGroup.visible = !floorplan;
+    }
+
+    _clearWallDecorations() {
+        if (!this._wallDecorationsGroup) return;
+        this._wallDecorationsGroup.removeFromParent();
+        disposeObject3D(this._wallDecorationsGroup);
+        this._wallDecorationsGroup = null;
+        if (this._building && typeof this._building === 'object') this._building.decorationGroup = null;
+    }
+
+    _computeFloorLayerSegmentsById(layers) {
+        const list = Array.isArray(layers) ? layers : [];
+        const floorLayers = list.filter((l) => l?.type === 'floor');
+        const firstFloor = floorLayers[0] ?? null;
+        const firstFloorHeight = clamp(firstFloor?.floorHeight ?? 3.2, 1.0, 12.0);
+        const { baseY, extraFirstFloor } = computeBuildingBaseAndSidewalk({
+            generatorConfig: this.generatorConfig,
+            floorHeight: firstFloorHeight
+        });
+
+        const map = new Map();
+        let yCursor = baseY;
+        let firstFloorPendingExtra = extraFirstFloor;
+
+        for (const layer of floorLayers) {
+            const id = typeof layer?.id === 'string' ? layer.id : '';
+            if (!id) continue;
+
+            const segments = [];
+            const floors = clampInt(layer?.floors ?? 0, 0, 99);
+            const floorHeight = clamp(layer?.floorHeight ?? firstFloorHeight, 1.0, 12.0);
+            const beltEnabled = !!layer?.belt?.enabled;
+            const beltHeight = beltEnabled ? clamp(layer?.belt?.height ?? 0.12, 0.02, 1.2) : 0.0;
+
+            for (let floor = 0; floor < floors; floor += 1) {
+                const startY = yCursor;
+                const segHeight = floorHeight + (floor === 0 ? firstFloorPendingExtra : 0);
+                if (floor === 0) firstFloorPendingExtra = 0;
+                yCursor += Math.max(0, segHeight);
+                if (beltEnabled && beltHeight > EPS) yCursor += beltHeight;
+                const endY = yCursor;
+                segments.push({
+                    floorNumber: floor + 1,
+                    startY,
+                    endY,
+                    heightMeters: Math.max(0.0, endY - startY)
+                });
+            }
+            map.set(id, segments);
+        }
+
+        return map;
+    }
+
+    _resolveWallDecorationMaterial(
+        state,
+        {
+            layerMaterialSpec = null,
+            surfaceSizeMeters = null,
+            geometryKind = ''
+        } = {}
+    ) {
+        const safeState = sanitizeWallDecoratorDebuggerState(state);
+        const wallBase = safeState?.wallBase && typeof safeState.wallBase === 'object' ? safeState.wallBase : {};
+        const roughness = clamp(
+            Number.isFinite(Number(wallBase.roughness)) ? Number(wallBase.roughness) : 0.85,
+            0.0,
+            1.0
+        );
+        const normalStrength = clamp(
+            Number.isFinite(Number(wallBase.normalStrength)) ? Number(wallBase.normalStrength) : 0.9,
+            0.0,
+            2.0
+        );
+        const widthMeters = clamp(
+            Number.isFinite(Number(surfaceSizeMeters?.x)) ? Number(surfaceSizeMeters.x) : 1.0,
+            0.01,
+            256.0
+        );
+        const heightMeters = clamp(
+            Number.isFinite(Number(surfaceSizeMeters?.y)) ? Number(surfaceSizeMeters.y) : 0.2,
+            0.01,
+            256.0
+        );
+
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness,
+            metalness: 0.02,
+            side: THREE.FrontSide
+        });
+        if (mat.normalScale?.set) mat.normalScale.set(normalStrength, normalStrength);
+
+        const geometry = String(geometryKind ?? '').trim().toLowerCase();
+        if (geometry === 'awning_support_rod') {
+            mat.color.setHex(AWNING_ROD_MATERIAL.colorHex);
+            mat.roughness = AWNING_ROD_MATERIAL.roughness;
+            mat.metalness = AWNING_ROD_MATERIAL.metalness;
+            mat.envMapIntensity = AWNING_ROD_MATERIAL.envMapIntensity;
+            if (mat.normalScale?.set) mat.normalScale.set(1, 1);
+            return mat;
+        }
+
+        const materialSelection = safeState?.materialSelection && typeof safeState.materialSelection === 'object'
+            ? safeState.materialSelection
+            : {};
+        const materialKindRaw = typeof materialSelection.kind === 'string' ? materialSelection.kind.trim().toLowerCase() : '';
+        const isMatchWall = materialKindRaw === 'match_wall' || materialKindRaw === 'match wall' || materialKindRaw === 'matchwall';
+        const isColor = materialKindRaw === 'color';
+
+        if (isColor) {
+            const colorHex = this._beltColorById.get(String(materialSelection.id ?? '').trim()) ?? 0xffffff;
+            mat.color.setHex((Number(colorHex) >>> 0) & 0xffffff);
+            return mat;
+        }
+
+        let materialId = '';
+        if (isMatchWall) {
+            if (layerMaterialSpec?.kind === 'texture' && typeof layerMaterialSpec.id === 'string') {
+                materialId = layerMaterialSpec.id.trim();
+            }
+        } else if (typeof materialSelection.id === 'string') {
+            materialId = materialSelection.id.trim();
+        }
+
+        if (!materialId) {
+            if (isMatchWall && layerMaterialSpec?.kind === 'color') {
+                const colorHex = this._beltColorById.get(String(layerMaterialSpec.id ?? '').trim()) ?? 0xffffff;
+                mat.color.setHex((Number(colorHex) >>> 0) & 0xffffff);
+            } else {
+                mat.color.setHex(isMatchWall ? 0xf4f4f4 : 0xffffff);
+            }
+            return mat;
+        }
+
+        const payload = this._wallTextures?.resolveMaterial?.(materialId, {
+            cloneTextures: true,
+            uvSpace: 'unit',
+            surfaceSizeMeters: { x: widthMeters, y: heightMeters },
+            diagnosticsTag: 'BuildingFabrication2Scene.wall_decoration'
+        }) ?? null;
+        if (payload) this._wallTextures?.applyResolvedMaterial?.(mat, payload, { clearOnMissing: true });
+
+        if (isMatchWall) mat.color.setHex(0xffffff);
+        else mat.color.setHex(resolveWallBaseTintHexFromWallBase(wallBase));
+
+        const tiling = safeState?.tiling && typeof safeState.tiling === 'object' ? safeState.tiling : {};
+        const tilingEnabled = !!tiling.enabled;
+        const uvEnabled = !!tiling.uvEnabled;
+
+        const probeTexture = mat.map ?? mat.normalMap ?? mat.roughnessMap ?? mat.metalnessMap ?? mat.aoMap ?? null;
+        const baseRepeatU = Number(probeTexture?.repeat?.x);
+        const baseRepeatV = Number(probeTexture?.repeat?.y);
+
+        let repeatU = Number.isFinite(baseRepeatU) && Math.abs(baseRepeatU) > EPS ? baseRepeatU : 1.0;
+        let repeatV = Number.isFinite(baseRepeatV) && Math.abs(baseRepeatV) > EPS ? baseRepeatV : 1.0;
+        if (tilingEnabled) {
+            const tileU = clamp(
+                Number.isFinite(Number(tiling.tileMetersU)) ? Number(tiling.tileMetersU) : (widthMeters / Math.max(EPS, repeatU)),
+                0.1,
+                100.0
+            );
+            const tileV = clamp(
+                Number.isFinite(Number(tiling.tileMetersV)) ? Number(tiling.tileMetersV) : (heightMeters / Math.max(EPS, repeatV)),
+                0.1,
+                100.0
+            );
+            repeatU = widthMeters / tileU;
+            repeatV = heightMeters / tileV;
+        }
+
+        const offsetU = uvEnabled
+            ? clamp(Number.isFinite(Number(tiling.offsetU)) ? Number(tiling.offsetU) : 0.0, -10.0, 10.0)
+            : 0.0;
+        const offsetV = uvEnabled
+            ? clamp(Number.isFinite(Number(tiling.offsetV)) ? Number(tiling.offsetV) : 0.0, -10.0, 10.0)
+            : 0.0;
+        const rotationDegrees = uvEnabled
+            ? clamp(Number.isFinite(Number(tiling.rotationDegrees)) ? Number(tiling.rotationDegrees) : 0.0, -180.0, 180.0)
+            : 0.0;
+
+        applyTextureTransform(mat.map, { repeatU, repeatV, offsetU, offsetV, rotationDegrees });
+        applyTextureTransform(mat.normalMap, { repeatU, repeatV, offsetU, offsetV, rotationDegrees });
+        applyTextureTransform(mat.roughnessMap, { repeatU, repeatV, offsetU, offsetV, rotationDegrees });
+        applyTextureTransform(mat.metalnessMap, { repeatU, repeatV, offsetU, offsetV, rotationDegrees });
+        applyTextureTransform(mat.aoMap, { repeatU, repeatV, offsetU, offsetV, rotationDegrees });
+        return mat;
+    }
+
+    _rebuildWallDecorations({ config, layers } = {}) {
+        this._clearWallDecorations();
+        if (!this._building?.group) return;
+
+        const decorationRoot = config?.wallDecorations && typeof config.wallDecorations === 'object'
+            ? config.wallDecorations
+            : null;
+        const sets = Array.isArray(decorationRoot?.sets) ? decorationRoot.sets : [];
+        if (!sets.length) return;
+
+        const bayHighlightByLayer = this._bayHighlightDataByLayerId && typeof this._bayHighlightDataByLayerId === 'object'
+            ? this._bayHighlightDataByLayerId
+            : null;
+        if (!bayHighlightByLayer) return;
+
+        const bayEntriesByLayerId = new Map();
+        for (const [layerId, entriesRaw] of Object.entries(bayHighlightByLayer)) {
+            const entries = Array.isArray(entriesRaw) ? entriesRaw : [];
+            if (!entries.length) continue;
+
+            const byBayRef = new Map();
+            for (const entry of entries) {
+                const faceId = isFaceId(entry?.faceId) ? entry.faceId : null;
+                const bayId = typeof entry?.bayId === 'string' ? entry.bayId : '';
+                if (!faceId || !bayId) continue;
+                const x0 = Number(entry.x0);
+                const z0 = Number(entry.z0);
+                const x1 = Number(entry.x1);
+                const z1 = Number(entry.z1);
+                if (!Number.isFinite(x0) || !Number.isFinite(z0) || !Number.isFinite(x1) || !Number.isFinite(z1)) continue;
+                const bayRef = `${faceId}:${bayId}`;
+                const bucket = byBayRef.get(bayRef);
+                const normalized = { faceId, bayId, x0, z0, x1, z1 };
+                if (bucket) bucket.push(normalized);
+                else byBayRef.set(bayRef, [normalized]);
+            }
+
+            if (byBayRef.size) bayEntriesByLayerId.set(layerId, byBayRef);
+        }
+        if (!bayEntriesByLayerId.size) return;
+
+        const floorSegmentsByLayerId = this._computeFloorLayerSegmentsById(layers);
+        const floorLayerById = new Map();
+        const list = Array.isArray(layers) ? layers : [];
+        for (const layer of list) {
+            if (layer?.type !== 'floor') continue;
+            const id = typeof layer?.id === 'string' ? layer.id : '';
+            if (!id) continue;
+            if (!floorLayerById.has(id)) floorLayerById.set(id, layer);
+        }
+
+        const resolveFloorSegmentsForSet = (layerId, floorIntervalRaw) => {
+            const allSegments = Array.isArray(floorSegmentsByLayerId.get(layerId))
+                ? floorSegmentsByLayerId.get(layerId)
+                : [];
+            const count = allSegments.length;
+            if (!count) return [];
+            const interval = floorIntervalRaw && typeof floorIntervalRaw === 'object' ? floorIntervalRaw : {};
+            const start = clampInt(interval.start ?? 1, 1, count);
+            const every = clampInt(interval.every ?? 1, 1, 99);
+            const endRaw = Number(interval.end);
+            const end = Number.isFinite(endRaw) && endRaw > 0
+                ? clampInt(endRaw, start, count)
+                : count;
+            const out = [];
+            for (let floor = start; floor <= end; floor += every) {
+                const seg = allSegments[floor - 1] ?? null;
+                if (seg) out.push(seg);
+            }
+            return out;
+        };
+
+        const up = new THREE.Vector3(0, 1, 0);
+        const decorationGroup = new THREE.Group();
+        decorationGroup.name = 'bf2_wall_decorations';
+        decorationGroup.userData = decorationGroup.userData ?? {};
+        decorationGroup.userData.bf2WallDecorations = true;
+
+        for (const set of sets) {
+            const layerId = typeof set?.target?.layerId === 'string' ? set.target.layerId : '';
+            if (!layerId) continue;
+
+            const byBayRef = bayEntriesByLayerId.get(layerId) ?? null;
+            if (!byBayRef || !byBayRef.size) continue;
+
+            const allBayRefs = Array.from(byBayRef.keys());
+            const targetBayRefs = set?.target?.allBays === true
+                ? allBayRefs
+                : (Array.isArray(set?.target?.bayRefs)
+                    ? set.target.bayRefs
+                        .map((entry) => normalizeDecorationBayRef(entry))
+                        .filter((entry, idx, arr) => !!entry && arr.indexOf(entry) === idx && byBayRef.has(entry))
+                    : []);
+            if (!targetBayRefs.length) continue;
+
+            const floorSegments = resolveFloorSegmentsForSet(layerId, set?.floorInterval);
+            if (!floorSegments.length) continue;
+
+            const layer = floorLayerById.get(layerId) ?? null;
+            const layerMaterialSpec = normalizeMaterialSpec(layer?.material ?? config?.baseWallMaterial ?? null);
+            const decorations = Array.isArray(set?.decorations) ? set.decorations : [];
+
+            for (const decoration of decorations) {
+                if (!decoration || typeof decoration !== 'object') continue;
+
+                const safeState = sanitizeWallDecoratorDebuggerState(decoration?.state);
+                const span = decoration?.span && typeof decoration.span === 'object' ? decoration.span : {};
+                const spanStart = clampUnit(span.start, 0.0);
+                const spanEnd = clampUnit(span.end, 1.0);
+                const minSpan = Math.min(spanStart, spanEnd);
+                const maxSpan = Math.max(spanStart, spanEnd);
+                if (maxSpan - minSpan <= EPS) continue;
+
+                const autoCornerByBayRef = decoration?.autoCorner?.byBayRef && typeof decoration.autoCorner.byBayRef === 'object'
+                    ? decoration.autoCorner.byBayRef
+                    : null;
+
+                for (const bayRef of targetBayRefs) {
+                    const parsedBayRef = parseDecorationBayRef(bayRef);
+                    if (!parsedBayRef) continue;
+                    const bayEntries = byBayRef.get(bayRef) ?? [];
+                    if (!bayEntries.length) continue;
+
+                    const cornerMeta = autoCornerByBayRef && typeof autoCornerByBayRef[bayRef] === 'object'
+                        ? autoCornerByBayRef[bayRef]
+                        : null;
+                    const cornerStart = cornerMeta?.start === true;
+                    const cornerEnd = cornerMeta?.end === true;
+                    const useCornerMode = cornerStart || cornerEnd;
+                    const reverseForCornerStart = cornerStart && !cornerEnd;
+                    const continuationStartMeters = clamp(cornerMeta?.continuationStartMeters, 0.0, 32.0);
+                    const continuationEndMeters = clamp(cornerMeta?.continuationEndMeters, 0.0, 32.0);
+
+                    for (const bayEntry of bayEntries) {
+                        const p0 = new THREE.Vector3(Number(bayEntry.x0) || 0.0, 0.0, Number(bayEntry.z0) || 0.0);
+                        const p1 = new THREE.Vector3(Number(bayEntry.x1) || 0.0, 0.0, Number(bayEntry.z1) || 0.0);
+                        const bayLength = p1.distanceTo(p0);
+                        if (bayLength <= EPS) continue;
+
+                        const spanWorldStart = p0.clone().lerp(p1, minSpan);
+                        const spanWorldEnd = p0.clone().lerp(p1, maxSpan);
+                        if (spanWorldEnd.distanceTo(spanWorldStart) <= EPS) continue;
+
+                        let segmentStart = spanWorldStart;
+                        let segmentEnd = spanWorldEnd;
+                        if (reverseForCornerStart) {
+                            segmentStart = spanWorldEnd;
+                            segmentEnd = spanWorldStart;
+                        }
+
+                        const frontTangent = segmentEnd.clone().sub(segmentStart);
+                        const spanMeters = frontTangent.length();
+                        if (spanMeters <= EPS) continue;
+                        frontTangent.multiplyScalar(1 / spanMeters);
+
+                        let frontNormal = getFaceNormalVector(parsedBayRef.faceId);
+                        if (!frontNormal || frontNormal.lengthSq() <= EPS) {
+                            frontNormal = frontTangent.clone().cross(up);
+                        }
+                        frontNormal.y = 0.0;
+                        if (frontNormal.lengthSq() <= EPS) frontNormal.copy(frontTangent).cross(up);
+                        if (frontNormal.lengthSq() <= EPS) continue;
+                        frontNormal.normalize();
+
+                        const wallCenter = segmentStart.clone().add(segmentEnd).multiplyScalar(0.5);
+                        const wallCorner = segmentEnd.clone();
+
+                        const stateForBay = sanitizeWallDecoratorDebuggerState({
+                            ...safeState,
+                            mode: useCornerMode ? 'corner' : 'face'
+                        });
+
+                        for (const floorSeg of floorSegments) {
+                            const startY = Number(floorSeg?.startY);
+                            const endY = Number(floorSeg?.endY);
+                            if (!Number.isFinite(startY) || !Number.isFinite(endY)) continue;
+                            const wallHeight = Math.max(0.05, endY - startY);
+                            const wallCenterY = (startY + endY) * 0.5;
+                            const continuationMeters = reverseForCornerStart
+                                ? continuationStartMeters
+                                : continuationEndMeters;
+                            const wallDepth = clamp(
+                                WALL_DECORATION_DEFAULT_WALL_DEPTH_M + continuationMeters,
+                                0.05,
+                                32.0
+                            );
+                            const specs = buildWallDecoratorShapeSpecs(stateForBay, {
+                                widthMeters: spanMeters,
+                                heightMeters: wallHeight,
+                                depthMeters: wallDepth
+                            });
+                            if (!Array.isArray(specs) || !specs.length) continue;
+
+                            for (const spec of specs) {
+                                const built = createWallDecorationGeometryFromSpec(spec);
+                                const geometry = built?.geometry?.isBufferGeometry ? built.geometry : null;
+                                if (!geometry) continue;
+
+                                const specFace = String(spec?.faceId ?? '').trim().toLowerCase() === 'right' ? 'right' : 'front';
+                                const geometryKind = String(spec?.geometryKind ?? '').trim().toLowerCase();
+
+                                const frontUAxis = frontTangent.clone();
+                                const frontNAxis = frontNormal.clone();
+                                const rightUAxis = frontNormal.clone().multiplyScalar(-1.0);
+                                const rightNAxis = frontTangent.clone();
+
+                                const uAxis = specFace === 'right' ? rightUAxis : frontUAxis;
+                                const nAxis = specFace === 'right' ? rightNAxis : frontNAxis;
+                                if (uAxis.lengthSq() <= EPS || nAxis.lengthSq() <= EPS) {
+                                    geometry.dispose?.();
+                                    continue;
+                                }
+                                uAxis.normalize();
+                                nAxis.normalize();
+
+                                if (Math.abs(uAxis.dot(nAxis)) > 0.999) {
+                                    geometry.dispose?.();
+                                    continue;
+                                }
+
+                                const xAxis = uAxis;
+                                const yAxis = up.clone();
+                                const zAxis = nAxis;
+                                const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
+                                const quaternion = new THREE.Quaternion().setFromRotationMatrix(basis);
+                                const yawDegrees = clamp(
+                                    Number.isFinite(Number(spec?.yawDegrees)) ? Number(spec.yawDegrees) : 0.0,
+                                    -180.0,
+                                    180.0
+                                );
+                                const yawRadians = yawDegrees * Math.PI / 180.0;
+                                if (Math.abs(yawRadians) > 1e-8) {
+                                    const yaw = new THREE.Quaternion().setFromAxisAngle(up, yawRadians);
+                                    quaternion.multiply(yaw);
+                                }
+
+                                const centerU = Number(spec?.centerU) || 0.0;
+                                const centerV = Number(spec?.centerV) || 0.0;
+                                const outsetMeters = Math.max(0.0, Number(spec?.outsetMeters ?? spec?.surfaceOffsetMeters) || 0.0);
+                                const placementDepthMeters = Math.max(0.0, Number(built?.placementDepthMeters) || 0.0);
+                                const anchor = specFace === 'right' ? wallCorner : wallCenter;
+
+                                const surfaceWidthMeters = clamp(
+                                    Number.isFinite(Number(spec?.widthMeters)) ? Number(spec.widthMeters) : 1.0,
+                                    0.01,
+                                    256.0
+                                );
+                                const surfaceHeightMeters = clamp(
+                                    Number.isFinite(Number(spec?.heightMeters)) ? Number(spec.heightMeters) : 0.2,
+                                    0.01,
+                                    256.0
+                                );
+                                const material = this._resolveWallDecorationMaterial(stateForBay, {
+                                    layerMaterialSpec,
+                                    surfaceSizeMeters: { x: surfaceWidthMeters, y: surfaceHeightMeters },
+                                    geometryKind
+                                });
+                                const mesh = new THREE.Mesh(geometry, material);
+                                mesh.name = `bf2_wall_decoration_${String(spec?.role ?? geometryKind ?? 'mesh')}`;
+                                mesh.position.copy(anchor);
+                                mesh.position.addScaledVector(uAxis, centerU);
+                                mesh.position.addScaledVector(up, wallCenterY + centerV);
+                                mesh.position.addScaledVector(nAxis, outsetMeters + placementDepthMeters * 0.5);
+                                mesh.quaternion.copy(quaternion);
+                                mesh.castShadow = true;
+                                mesh.receiveShadow = true;
+                                decorationGroup.add(mesh);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!decorationGroup.children.length) {
+            disposeObject3D(decorationGroup);
+            return;
+        }
+
+        this._building.group.add(decorationGroup);
+        this._wallDecorationsGroup = decorationGroup;
+        this._building.decorationGroup = decorationGroup;
+        this._syncBuildingRenderMode();
     }
 
     _syncSceneWireframe() {
@@ -705,6 +1443,11 @@ export class BuildingFabrication2Scene {
         });
 
         if (!enabled) this._wireframeOriginalByMaterial = new WeakMap();
+    }
+
+    _syncSceneBackground() {
+        if (!this.scene) return;
+        this.scene.background = this._renderSkyEnabled ? this._backgroundColor : null;
     }
 
     _clearFaceHighlight() {
@@ -1007,48 +1750,55 @@ export class BuildingFabrication2Scene {
         const y1 = Number(range.endY) + 0.002;
         if (!(y1 > y0 + EPS)) return;
 
-        const positions = [
-            // Bottom
-            minX, y0, minZ, maxX, y0, minZ,
-            maxX, y0, minZ, maxX, y0, maxZ,
-            maxX, y0, maxZ, minX, y0, maxZ,
-            minX, y0, maxZ, minX, y0, minZ,
-            // Top
-            minX, y1, minZ, maxX, y1, minZ,
-            maxX, y1, minZ, maxX, y1, maxZ,
-            maxX, y1, maxZ, minX, y1, maxZ,
-            minX, y1, maxZ, minX, y1, minZ,
-            // Vertical edges
-            minX, y0, minZ, minX, y1, minZ,
-            maxX, y0, minZ, maxX, y1, minZ,
-            maxX, y0, maxZ, maxX, y1, maxZ,
-            minX, y0, maxZ, minX, y1, maxZ
-        ];
+        const positions = [];
+        const indices = [];
+        const pushQuad = (ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz) => {
+            const base = positions.length / 3;
+            positions.push(
+                ax, ay, az,
+                bx, by, bz,
+                cx, cy, cz,
+                dx, dy, dz
+            );
+            indices.push(
+                base, base + 1, base + 2,
+                base, base + 2, base + 3
+            );
+        };
 
-        const geo = new LineSegmentsGeometry();
-        geo.setPositions(positions);
+        // A (front +Z)
+        pushQuad(minX, y0, maxZ, maxX, y0, maxZ, maxX, y1, maxZ, minX, y1, maxZ);
+        // B (right +X)
+        pushQuad(maxX, y0, maxZ, maxX, y0, minZ, maxX, y1, minZ, maxX, y1, maxZ);
+        // C (back -Z)
+        pushQuad(maxX, y0, minZ, minX, y0, minZ, minX, y1, minZ, maxX, y1, minZ);
+        // D (left -X)
+        pushQuad(minX, y0, minZ, minX, y0, maxZ, minX, y1, maxZ, minX, y1, minZ);
 
-        const mat = new LineMaterial({
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+        geo.setIndex(indices);
+        geo.computeVertexNormals();
+
+        const mat = new THREE.MeshBasicMaterial({
             color: LAYER_HIGHLIGHT_COLOR,
-            linewidth: LAYER_HIGHLIGHT_LINEWIDTH,
-            worldUnits: false,
             transparent: true,
             opacity: LAYER_HIGHLIGHT_OPACITY,
-            depthTest: false,
-            depthWrite: false
+            depthTest: true,
+            depthWrite: false,
+            polygonOffset: true,
+            polygonOffsetFactor: -2,
+            polygonOffsetUnits: -2,
+            side: THREE.DoubleSide
         });
 
-        if (this.engine?.renderer) {
-            const size = this.engine.renderer.getSize(this._lineResolution);
-            mat.resolution.set(size.x, size.y);
-        }
-
-        const line = new LineSegments2(geo, mat);
-        line.name = `bf2_layer_${layerId}`;
-        line.renderOrder = 170;
-        line.frustumCulled = false;
-        this.root.add(line);
-        this._hoverHighlightLine = line;
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.name = `bf2_layer_${layerId}`;
+        mesh.renderOrder = 170;
+        mesh.frustumCulled = false;
+        mesh.raycast = () => {};
+        this.root.add(mesh);
+        this._hoverHighlightLine = mesh;
     }
 
     _syncHoveredBayOverlay() {
@@ -1270,6 +2020,7 @@ export class BuildingFabrication2Scene {
 
     _clearBuilding({ preserveHoveredBay = false } = {}) {
         if (!this._building) {
+            this._clearWallDecorations();
             this._clearLayoutOverlays();
             this._clearHoveredBayOverlay();
             this._clearSupportSlab();
@@ -1281,6 +2032,7 @@ export class BuildingFabrication2Scene {
             this._layoutWidthGuideFaceIds = null;
             return;
         }
+        this._clearWallDecorations();
         this._building.group?.removeFromParent?.();
         disposeObject3D(this._building.group);
         this._building = null;

@@ -30,6 +30,7 @@ Each PBR entry must be assigned to exactly one `classId` from this first-pass li
 - `concrete` — concrete walls/surfaces
 - `brick` — brick and brick-like masonry
 - `plaster_stucco` — plaster/stucco/painted plaster
+- `cloth` — textile/fabric/leather-like materials
 - `stone` — stone/rock walls and stone masonry
 - `metal` — corrugated/plates/shutters/cladding (metal-like)
 - `roof_tiles` — roof tile surfaces

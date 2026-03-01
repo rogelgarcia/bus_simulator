@@ -22,6 +22,17 @@ export const PARALLAX_INTERIOR_PRESET_ID = Object.freeze({
 
 export const DEFAULT_PARALLAX_INTERIOR_PRESET_ID = PARALLAX_INTERIOR_PRESET_ID.RESIDENTIAL;
 
+const PARALLAX_INTERIOR_DEFAULTS = Object.freeze({
+    uvZoom: 3.0,
+    parallaxDepthMeters: 15.0,
+    parallaxScale: Object.freeze({ x: 4.0, y: 4.0 }),
+    tintVariation: Object.freeze({
+        hueShiftDeg: Object.freeze({ min: 0.0, max: 0.0 }),
+        saturationMul: Object.freeze({ min: 0.8, max: 0.9 }),
+        brightnessMul: Object.freeze({ min: 0.8, max: 0.9 })
+    })
+});
+
 export const PARALLAX_INTERIOR_PRESET_CATALOG = Object.freeze([
     Object.freeze({
         id: PARALLAX_INTERIOR_PRESET_ID.RESIDENTIAL,
@@ -66,17 +77,33 @@ export function resolveParallaxInteriorPresetInteriorConfig(presetId) {
         cell: { col: 0, row: 0 },
         randomFlipX: true,
         uvPan: { x: 0.0, y: 0.0 },
-        uvZoom: clamp(1.6, 0.25, 20.0, 1.6),
+        uvZoom: clamp(PARALLAX_INTERIOR_DEFAULTS.uvZoom, 0.25, 20.0, PARALLAX_INTERIOR_DEFAULTS.uvZoom),
         imageAspect: 1.0,
-        parallaxDepthMeters: clamp(20.0, 0.0, 50.0, 20.0),
-        parallaxScale: { x: 1.0, y: 1.0 },
+        parallaxDepthMeters: clamp(
+            PARALLAX_INTERIOR_DEFAULTS.parallaxDepthMeters,
+            0.0,
+            50.0,
+            PARALLAX_INTERIOR_DEFAULTS.parallaxDepthMeters
+        ),
+        parallaxScale: {
+            x: PARALLAX_INTERIOR_DEFAULTS.parallaxScale.x,
+            y: PARALLAX_INTERIOR_DEFAULTS.parallaxScale.y
+        },
         zOffset: 0.0,
         emissiveIntensity: 0.0,
         tintVariation: {
-            hueShiftDeg: { min: -8.0, max: 8.0 },
-            saturationMul: { min: 0.92, max: 1.08 },
-            brightnessMul: { min: 0.9, max: 1.12 }
+            hueShiftDeg: {
+                min: PARALLAX_INTERIOR_DEFAULTS.tintVariation.hueShiftDeg.min,
+                max: PARALLAX_INTERIOR_DEFAULTS.tintVariation.hueShiftDeg.max
+            },
+            saturationMul: {
+                min: PARALLAX_INTERIOR_DEFAULTS.tintVariation.saturationMul.min,
+                max: PARALLAX_INTERIOR_DEFAULTS.tintVariation.saturationMul.max
+            },
+            brightnessMul: {
+                min: PARALLAX_INTERIOR_DEFAULTS.tintVariation.brightnessMul.min,
+                max: PARALLAX_INTERIOR_DEFAULTS.tintVariation.brightnessMul.max
+            }
         }
     };
 }
-

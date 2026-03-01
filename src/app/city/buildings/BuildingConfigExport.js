@@ -122,7 +122,8 @@ export function createCityBuildingConfigFromFabrication({
     materialVariationSeed = null,
     windowVisuals = null,
     facades = null,
-    windowDefinitions = null
+    windowDefinitions = null,
+    wallDecorations = null
 } = {}) {
     const safeId = sanitizeBuildingConfigId(id);
     const safeName = sanitizeBuildingConfigName(name, { fallback: buildingConfigIdToDisplayName(safeId) });
@@ -148,6 +149,7 @@ export function createCityBuildingConfigFromFabrication({
     if (windowVisuals && typeof windowVisuals === 'object') cfg.windowVisuals = normalizeBuildingWindowVisualsConfig(windowVisuals);
     if (facades && typeof facades === 'object') cfg.facades = facades;
     if (windowDefinitions && typeof windowDefinitions === 'object') cfg.windowDefinitions = windowDefinitions;
+    if (wallDecorations && typeof wallDecorations === 'object') cfg.wallDecorations = wallDecorations;
     return cfg;
 }
 
@@ -181,6 +183,7 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
     const windowVisuals = cfg.windowVisuals && typeof cfg.windowVisuals === 'object' ? cfg.windowVisuals : null;
     const facades = cfg.facades && typeof cfg.facades === 'object' ? cfg.facades : null;
     const windowDefinitions = cfg.windowDefinitions && typeof cfg.windowDefinitions === 'object' ? cfg.windowDefinitions : null;
+    const wallDecorations = cfg.wallDecorations && typeof cfg.wallDecorations === 'object' ? cfg.wallDecorations : null;
     const footprintLines = footprintLoops ? [
         '    footprintLoops: Object.freeze(',
         indentLines(JSON.stringify(footprintLoops, null, 4), 8),
@@ -199,6 +202,11 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
     const windowDefinitionsLines = windowDefinitions ? [
         '    windowDefinitions: Object.freeze(',
         indentLines(JSON.stringify(windowDefinitions, null, 4), 8),
+        '    ),'
+    ] : [];
+    const wallDecorationsLines = wallDecorations ? [
+        '    wallDecorations: Object.freeze(',
+        indentLines(JSON.stringify(wallDecorations, null, 4), 8),
         '    ),'
     ] : [];
 
@@ -220,6 +228,7 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
         ...windowsLines,
         ...facadesLines,
         ...windowDefinitionsLines,
+        ...wallDecorationsLines,
         ...windowVisualsLines,
         '});',
         '',

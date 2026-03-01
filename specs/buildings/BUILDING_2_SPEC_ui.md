@@ -150,6 +150,10 @@ When building configuration widgets are enabled, the core authoring unit is the 
 
 At the building level:
 - Provide a top-level actions row with `+ Floor`, `+ Roof`, and a right-aligned `Adjust Layout` toggle (visible text label `Adjust Layout`).
+- Provide an editor mode row with three buttons:
+  - `Building` (existing layer/face authoring flow),
+  - `Decoration` (wall decoration set authoring flow),
+  - `Wear` (placeholder mode with no authoring content yet).
 - `Adjust Layout` behavior:
   - enables direct silhouette editing in meters (tile-independent)
   - hover a face edge: highlight the edge and show an always-on-top wall overlay, then drag along the face normal
@@ -173,6 +177,34 @@ At the building level:
    - The building must always have **at least 1 floor layer**.
    - If there is only one floor layer, its delete button is disabled.
    - (If roof layers are supported, the building must always have **at least 1 roof layer** and the last roof layer delete is disabled.)
+
+### 7.2.1 Decoration mode workflow
+
+When `Decoration` mode is active:
+- The right panel switches from layer cards to a `Decoration Sets` editor.
+- Multiple `Decoration Set` entries can be added/removed.
+- Each set must define its target in this order:
+  1. `Layer` (floor layer target),
+  2. `Bays` (all bays, or an explicit subset of bay refs from the selected layer).
+- Each set includes floor-interval controls:
+  - `Every` (X floors),
+  - `Start` floor,
+  - `End` floor (`0`/empty interpreted as last floor),
+  - quick presets: `First`, `Last`, `All`, `Every 2`.
+- Each set supports multiple decoration entries.
+- Each decoration entry exposes tabbed controls aligned to the wall decoration catalog/debugger model:
+  - `Type`,
+  - `Placement`,
+  - `Configuration` (preset groups + raw properties),
+  - `Material`.
+- Placement controls must include along-wall range positioning (`Start U`, `End U` in `[0..1]`).
+
+When `Building` mode is active:
+- existing layer/face/bay workflow remains unchanged.
+
+When `Wear` mode is active:
+- the right panel switches to an empty placeholder state for future wear workflow expansion,
+- no additional authoring controls are shown yet.
 
 ### 7.3 Floor layer controls
 

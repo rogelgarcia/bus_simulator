@@ -21,6 +21,15 @@ import {
     normalizeWindowFabricationAssetType,
     WINDOW_FABRICATION_ASSET_TYPE
 } from '../../../app/buildings/window_mesh/index.js';
+import {
+    getDefaultWallDecoratorDebuggerState,
+    getWallDecoratorTypeEntries,
+    getWallDecoratorCatalogEntryById,
+    loadWallDecoratorCatalogEntry,
+    sanitizeWallDecoratorDebuggerState,
+    WALL_DECORATOR_MODE,
+    WALL_DECORATOR_WHERE_TO_APPLY
+} from '../../../app/buildings/wall_decorators/index.js';
 
 import { BuildingFabrication2Scene } from './BuildingFabrication2Scene.js';
 import { BuildingFabrication2ThumbnailRenderer } from './BuildingFabrication2ThumbnailRenderer.js';
@@ -49,6 +58,9 @@ function isTextEditingElement(target) {
 }
 
 const FACE_IDS = Object.freeze(['A', 'B', 'C', 'D']);
+const FACE_ORDER = Object.freeze({ A: 0, B: 1, C: 2, D: 3 });
+const FACE_NEXT_BY_FACE_ID = Object.freeze({ A: 'B', B: 'C', C: 'D', D: 'A' });
+const FACE_PREV_BY_FACE_ID = Object.freeze({ A: 'D', B: 'A', C: 'B', D: 'C' });
 const DEFAULT_FACE_LINKS = Object.freeze({ C: 'A', D: 'B' });
 const ADJACENT_FACE_IDS_BY_FACE_ID = Object.freeze({
     A: Object.freeze(['B', 'D']),
@@ -113,6 +125,17 @@ const GARAGE_FACADE_STATE = Object.freeze({
 const GARAGE_FACADE_ROTATION_DEGREES = Object.freeze({
     DEG_0: 0,
     DEG_90: 90
+});
+const BF2_EDITOR_MODE = Object.freeze({
+    BUILDING: 'building',
+    DECORATION: 'decoration',
+    WEAR: 'wear'
+});
+const DECORATION_FLOOR_INTERVAL_PRESET = Object.freeze({
+    FIRST: 'first',
+    LAST: 'last',
+    ALL: 'all',
+    EVERY_2: 'every_2'
 });
 
 function normalizeMaterialSpec(value) {
@@ -202,6 +225,17 @@ function normalizeGarageFacadeConfig(value, fallback = null) {
     };
 }
 
+function normalizeOpeningWallCutConfig(value, fallback = null) {
+    const src = value && typeof value === 'object' ? value : null;
+    const fb = fallback && typeof fallback === 'object' ? fallback : null;
+    const cutWidthRaw = Number(src?.cutWidthLerp ?? src?.cutX ?? fb?.cutWidthLerp ?? fb?.cutX ?? 0);
+    const cutHeightRaw = Number(src?.cutHeightLerp ?? src?.cutY ?? fb?.cutHeightLerp ?? fb?.cutY ?? 0);
+    return {
+        cutWidthLerp: Number.isFinite(cutWidthRaw) ? clamp(cutWidthRaw, -1.0, 1.0) : 0,
+        cutHeightLerp: Number.isFinite(cutHeightRaw) ? clamp(cutHeightRaw, -1.0, 1.0) : 0
+    };
+}
+
 function resolveBayLinkFromSpec(bay) {
     const spec = bay && typeof bay === 'object' ? bay : null;
     const link = typeof spec?.linkFromBayId === 'string' ? spec.linkFromBayId : '';
@@ -247,18 +281,39 @@ function normalizeFaceLinking(value) {
     const links = src?.links && typeof src.links === 'object' ? src.links : null;
     if (!links) return null;
 
-    const out = {};
+    const outLinks = {};
     for (const [slave, master] of Object.entries(links)) {
         if (!isFaceId(slave) || !isFaceId(master) || slave === master) continue;
-        out[slave] = master;
+        outLinks[slave] = master;
     }
 
-    return Object.keys(out).length ? { links: out } : null;
+    if (!Object.keys(outLinks).length) return null;
+
+    const reverseSrc = src?.reverseByFace && typeof src.reverseByFace === 'object'
+        ? src.reverseByFace
+        : null;
+    const outReverse = {};
+    if (reverseSrc) {
+        for (const [slave, master] of Object.entries(outLinks)) {
+            if (!isFaceId(slave) || !isFaceId(master)) continue;
+            if (!!reverseSrc[slave]) outReverse[slave] = true;
+        }
+    }
+
+    return Object.keys(outReverse).length
+        ? { links: outLinks, reverseByFace: outReverse }
+        : { links: outLinks };
 }
 
 function createEmptyFaceLockMap() {
     const out = new Map();
     for (const faceId of FACE_IDS) out.set(faceId, null);
+    return out;
+}
+
+function createEmptyFaceReverseMap() {
+    const out = new Map();
+    for (const faceId of FACE_IDS) out.set(faceId, false);
     return out;
 }
 
@@ -272,6 +327,35 @@ function createFaceLockMapFromConfigLayer(layer) {
         out.set(slave, master);
     }
     return out;
+}
+
+function createFaceLockReverseMapFromConfigLayer(layer) {
+    const out = createEmptyFaceReverseMap();
+    const linking = normalizeFaceLinking(layer?.faceLinking ?? null);
+    const reverseByFace = linking?.reverseByFace ?? null;
+    if (!reverseByFace) return out;
+    for (const [slave, enabled] of Object.entries(reverseByFace)) {
+        if (!isFaceId(slave)) continue;
+        out.set(slave, !!enabled);
+    }
+    return out;
+}
+
+function buildFaceLinkingFromFaceState(lockedToByFace, reverseByFace) {
+    const links = {};
+    const reverse = {};
+    const lockMap = lockedToByFace instanceof Map ? lockedToByFace : createEmptyFaceLockMap();
+    const reverseMap = reverseByFace instanceof Map ? reverseByFace : createEmptyFaceReverseMap();
+
+    for (const faceId of FACE_IDS) {
+        const master = lockMap.get(faceId) ?? null;
+        if (!isFaceId(master) || master === faceId) continue;
+        links[faceId] = master;
+        if (!!reverseMap.get(faceId)) reverse[faceId] = true;
+    }
+
+    if (!Object.keys(links).length) return null;
+    return Object.keys(reverse).length ? { links, reverseByFace: reverse } : { links };
 }
 
 function resolveDefaultLayerWallMaterial(layer) {
@@ -294,6 +378,44 @@ function clamp(value, min, max) {
     const num = Number(value);
     if (!Number.isFinite(num)) return min;
     return Math.max(min, Math.min(max, num));
+}
+
+function clampUnit(value, fallback = 0) {
+    const v = Number(value);
+    if (!Number.isFinite(v)) return clamp(fallback, 0, 1);
+    return clamp(v, 0, 1);
+}
+
+function normalizeBf2EditorMode(value) {
+    if (value === BF2_EDITOR_MODE.DECORATION) return BF2_EDITOR_MODE.DECORATION;
+    if (value === BF2_EDITOR_MODE.WEAR) return BF2_EDITOR_MODE.WEAR;
+    return BF2_EDITOR_MODE.BUILDING;
+}
+
+function normalizeDecorationBayRef(value) {
+    const raw = typeof value === 'string' ? value.trim() : '';
+    if (!raw) return '';
+    const idx = raw.indexOf(':');
+    if (idx <= 0 || idx >= raw.length - 1) return '';
+    const face = raw.slice(0, idx).trim().toUpperCase();
+    const bayId = raw.slice(idx + 1).trim();
+    if (!isFaceId(face) || !bayId) return '';
+    return `${face}:${bayId}`;
+}
+
+function stableStringify(value) {
+    if (Array.isArray(value)) {
+        return `[${value.map((entry) => stableStringify(entry)).join(',')}]`;
+    }
+    if (value && typeof value === 'object') {
+        const keys = Object.keys(value).sort();
+        const pairs = [];
+        for (const key of keys) {
+            pairs.push(`${JSON.stringify(key)}:${stableStringify(value[key])}`);
+        }
+        return `{${pairs.join(',')}}`;
+    }
+    return JSON.stringify(value);
 }
 
 function signedAreaXZ(loop) {
@@ -673,12 +795,12 @@ export class BuildingFabrication2View {
         this._pendingRebuildPreserveCamera = true;
         this._pendingRebuildEarliestAtMs = 0;
         this._lastRebuildAtMs = 0;
+        this._editorMode = BF2_EDITOR_MODE.BUILDING;
 
         this._hideFaceMarkEnabled = false;
+        this._renderSkyEnabled = true;
         this._showDummyEnabled = false;
         this._renderSlabEnabled = false;
-        this._debugDisableSuspect1Enabled = false;
-        this._debugDisableSuspect4Enabled = false;
         this._rulerEnabled = false;
         this._layoutAdjustEnabled = false;
         this._rulerPointA = null;
@@ -738,19 +860,17 @@ export class BuildingFabrication2View {
 
         // View toggles are non-persistent; reset to defaults whenever BF2 is entered.
         this._pointerInViewport = false;
+        this._setRenderSkyEnabled(true);
         this._setHideFaceMarkEnabled(false);
         this._setShowDummyEnabled(false);
-        this._setRenderSlabEnabled(false);
-        this._setDebugDisableSuspect1Enabled(false);
-        this._setDebugDisableSuspect4Enabled(false);
+        this._setRenderSlabEnabled(true);
         this._setRulerEnabled(false);
         this._setLayoutAdjustEnabled(false);
         this.ui.setViewToggles({
+            renderSkyEnabled: true,
             hideFaceMarkEnabled: false,
             showDummyEnabled: false,
-            renderSlabEnabled: false,
-            debugDisableSuspect1Enabled: false,
-            debugDisableSuspect4Enabled: false
+            renderSlabEnabled: true
         });
         this.ui.setRulerEnabled(false);
         this.ui.setLayoutAdjustEnabled(false);
@@ -765,6 +885,7 @@ export class BuildingFabrication2View {
         this._syncUiState();
 
         this.ui.onCreateBuilding = () => this._createBuilding();
+        this.ui.onApplyFootprintPreset = (sizeMeters) => this._applyFootprintPreset(sizeMeters);
         this.ui.onRequestLoad = () => this._openLoadBrowser();
         this.ui.onRequestExport = () => this._exportCurrentConfig();
         this.ui.onReset = () => this._reset();
@@ -774,11 +895,10 @@ export class BuildingFabrication2View {
         this.ui.onSetFloorLayerMaterial = (layerId, faceId, material) => this._setFloorLayerMaterial(layerId, faceId, material);
         this.ui.onRequestMaterialConfig = (layerId, faceId) => this._openMaterialConfigForLayer(layerId, faceId);
         this.ui.onViewModeChange = (mode) => this._applyViewMode(mode);
+        this.ui.onRenderSkyChange = (enabled) => this._setRenderSkyEnabled(enabled);
         this.ui.onHideFaceMarkChange = (enabled) => this._setHideFaceMarkEnabled(enabled);
         this.ui.onShowDummyChange = (enabled) => this._setShowDummyEnabled(enabled);
         this.ui.onRenderSlabChange = (enabled) => this._setRenderSlabEnabled(enabled);
-        this.ui.onDebugDisableSuspect1Change = (enabled) => this._setDebugDisableSuspect1Enabled(enabled);
-        this.ui.onDebugDisableSuspect4Change = (enabled) => this._setDebugDisableSuspect4Enabled(enabled);
         this.ui.onRulerToggle = (enabled) => this._setRulerEnabled(enabled);
         this.ui.onAdjustLayoutToggle = (enabled) => this._setLayoutAdjustEnabled(enabled);
         this.ui.onSelectCatalogEntry = (configId) => this._loadConfigFromCatalog(configId);
@@ -789,6 +909,9 @@ export class BuildingFabrication2View {
         this.ui.onDeleteLayer = (layerId) => this._deleteLayer(layerId);
         this.ui.onSelectFace = (layerId, faceId) => this._setSelectedFace(layerId, faceId);
         this.ui.onToggleFaceLock = (layerId, masterFaceId, targetFaceId) => this._toggleFaceLock(layerId, masterFaceId, targetFaceId);
+        this.ui.onSetFaceLockReverse = (layerId, masterFaceId, targetFaceId, enabled) => {
+            this._setFaceLockReverse(layerId, masterFaceId, targetFaceId, enabled);
+        };
         this.ui.onHoverLayer = (layerId) => this._setHoveredLayer(layerId);
         this.ui.onHoverLayerTitle = (layerId) => this._setHoveredLayerHighlight(layerId);
         this.ui.onHoverBay = (hover) => this._setHoveredBay(hover);
@@ -833,6 +956,43 @@ export class BuildingFabrication2View {
         this.ui.onSidePanelChange = () => this._syncUiState();
         this.ui.onMaterialConfigChange = () => this._requestRebuild({ preserveCamera: true });
         this.ui.onMaterialConfigRequestUiSync = () => this._syncUiState();
+        this.ui.onEditorModeChange = (mode) => this._setEditorMode(mode);
+        this.ui.onAddDecorationSet = () => this._addDecorationSet();
+        this.ui.onDeleteDecorationSet = (setId) => this._deleteDecorationSet(setId);
+        this.ui.onSetDecorationSetLayer = (setId, layerId) => this._setDecorationSetLayer(setId, layerId);
+        this.ui.onSetDecorationSetAllBays = (setId, enabled) => this._setDecorationSetAllBays(setId, enabled);
+        this.ui.onToggleDecorationSetBay = (setId, bayRef, enabled) => this._toggleDecorationSetBay(setId, bayRef, enabled);
+        this.ui.onSetDecorationSetFloorIntervalField = (setId, field, value) => this._setDecorationSetFloorIntervalField(setId, field, value);
+        this.ui.onApplyDecorationSetFloorIntervalPreset = (setId, presetId) => this._applyDecorationSetFloorIntervalPreset(setId, presetId);
+        this.ui.onAddDecorationEntry = (setId) => this._addDecorationEntry(setId);
+        this.ui.onDeleteDecorationEntry = (setId, decorationId) => this._deleteDecorationEntry(setId, decorationId);
+        this.ui.onSetDecorationEntrySpanField = (setId, decorationId, field, value) => {
+            this._setDecorationEntrySpanField(setId, decorationId, field, value);
+        };
+        this.ui.onSetDecorationEntryType = (setId, decorationId, decoratorId) => {
+            this._setDecorationEntryType(setId, decorationId, decoratorId);
+        };
+        this.ui.onSetDecorationEntryPlacementField = (setId, decorationId, field, value) => {
+            this._setDecorationEntryPlacementField(setId, decorationId, field, value);
+        };
+        this.ui.onApplyDecorationEntryPresetGroup = (setId, decorationId, groupId, presetId) => {
+            this._applyDecorationEntryPresetGroup(setId, decorationId, groupId, presetId);
+        };
+        this.ui.onSetDecorationEntryProperty = (setId, decorationId, propertyId, value) => {
+            this._setDecorationEntryProperty(setId, decorationId, propertyId, value);
+        };
+        this.ui.onSetDecorationEntryMaterialKind = (setId, decorationId, kind) => {
+            this._setDecorationEntryMaterialKind(setId, decorationId, kind);
+        };
+        this.ui.onSetDecorationEntryMaterialId = (setId, decorationId, materialId) => {
+            this._setDecorationEntryMaterialId(setId, decorationId, materialId);
+        };
+        this.ui.onSetDecorationEntryWallBaseField = (setId, decorationId, field, value) => {
+            this._setDecorationEntryWallBaseField(setId, decorationId, field, value);
+        };
+        this.ui.onSetDecorationEntryTilingField = (setId, decorationId, field, value) => {
+            this._setDecorationEntryTilingField(setId, decorationId, field, value);
+        };
 
         const canvas = this.engine?.canvas ?? null;
         canvas?.addEventListener?.('pointerenter', this._onCanvasPointerEnter, { passive: true });
@@ -861,11 +1021,10 @@ export class BuildingFabrication2View {
         window.removeEventListener('keyup', this._onKeyUp);
         this._clearKeys();
         this._pointerInViewport = false;
+        this._renderSkyEnabled = true;
         this._hideFaceMarkEnabled = false;
         this._showDummyEnabled = false;
         this._renderSlabEnabled = false;
-        this._debugDisableSuspect1Enabled = false;
-        this._debugDisableSuspect4Enabled = false;
         this._rulerEnabled = false;
         this._layoutAdjustEnabled = false;
         this._rulerPointA = null;
@@ -878,6 +1037,7 @@ export class BuildingFabrication2View {
         this._layoutMinWidthByFaceId = null;
         if (canvas) canvas.style.cursor = '';
         this.scene?.setFaceHighlightSuppressed?.(false);
+        this.scene?.setRenderSky?.(true);
         this.scene?.setShowDummy?.(false);
         this.scene?.setRenderSlab?.(false);
         this.scene?.setRulerSegment?.(null, null);
@@ -888,6 +1048,7 @@ export class BuildingFabrication2View {
 
         this._thumbJobId += 1;
         this.ui.onCreateBuilding = null;
+        this.ui.onApplyFootprintPreset = null;
         this.ui.onRequestLoad = null;
         this.ui.onRequestExport = null;
         this.ui.onReset = null;
@@ -897,11 +1058,10 @@ export class BuildingFabrication2View {
         this.ui.onSetFloorLayerMaterial = null;
         this.ui.onRequestMaterialConfig = null;
         this.ui.onViewModeChange = null;
+        this.ui.onRenderSkyChange = null;
         this.ui.onHideFaceMarkChange = null;
         this.ui.onShowDummyChange = null;
         this.ui.onRenderSlabChange = null;
-        this.ui.onDebugDisableSuspect1Change = null;
-        this.ui.onDebugDisableSuspect4Change = null;
         this.ui.onRulerToggle = null;
         this.ui.onAdjustLayoutToggle = null;
         this.ui.onSelectCatalogEntry = null;
@@ -911,6 +1071,7 @@ export class BuildingFabrication2View {
         this.ui.onDeleteLayer = null;
         this.ui.onSelectFace = null;
         this.ui.onToggleFaceLock = null;
+        this.ui.onSetFaceLockReverse = null;
         this.ui.onHoverLayer = null;
         this.ui.onHoverLayerTitle = null;
         this.ui.onHoverBay = null;
@@ -955,6 +1116,25 @@ export class BuildingFabrication2View {
         this.ui.onSidePanelChange = null;
         this.ui.onMaterialConfigChange = null;
         this.ui.onMaterialConfigRequestUiSync = null;
+        this.ui.onEditorModeChange = null;
+        this.ui.onAddDecorationSet = null;
+        this.ui.onDeleteDecorationSet = null;
+        this.ui.onSetDecorationSetLayer = null;
+        this.ui.onSetDecorationSetAllBays = null;
+        this.ui.onToggleDecorationSetBay = null;
+        this.ui.onSetDecorationSetFloorIntervalField = null;
+        this.ui.onApplyDecorationSetFloorIntervalPreset = null;
+        this.ui.onAddDecorationEntry = null;
+        this.ui.onDeleteDecorationEntry = null;
+        this.ui.onSetDecorationEntrySpanField = null;
+        this.ui.onSetDecorationEntryType = null;
+        this.ui.onSetDecorationEntryPlacementField = null;
+        this.ui.onApplyDecorationEntryPresetGroup = null;
+        this.ui.onSetDecorationEntryProperty = null;
+        this.ui.onSetDecorationEntryMaterialKind = null;
+        this.ui.onSetDecorationEntryMaterialId = null;
+        this.ui.onSetDecorationEntryWallBaseField = null;
+        this.ui.onSetDecorationEntryTilingField = null;
 
         this._windowPickerPopup?.close?.();
         this._windowFabricationPopup?.close?.();
@@ -1011,6 +1191,10 @@ export class BuildingFabrication2View {
             this.ui.closeGroupingPanel();
             return true;
         }
+        if (this.ui?.isDecorationLayerPickerOpen?.()) {
+            this.ui.closeDecorationLayerPicker();
+            return true;
+        }
         if (this.ui?.isSidePanelOpen?.()) {
             this.ui.closeSidePanel();
             return true;
@@ -1035,6 +1219,7 @@ export class BuildingFabrication2View {
 
     _syncUiState() {
         const has = this.scene.getHasBuilding();
+        if (!has) this._editorMode = BF2_EDITOR_MODE.BUILDING;
         const name = has ? (this._currentConfig?.name ?? '') : '';
         const layers = has ? (this._currentConfig?.layers ?? null) : null;
         const layerList = Array.isArray(layers) ? layers : [];
@@ -1043,6 +1228,12 @@ export class BuildingFabrication2View {
             hasBuilding: has,
             buildingName: typeof name === 'string' ? name : '',
             buildingType: 'business'
+        });
+        this.ui.setViewToggles({
+            renderSkyEnabled: this._renderSkyEnabled,
+            hideFaceMarkEnabled: this._hideFaceMarkEnabled,
+            showDummyEnabled: this._showDummyEnabled,
+            renderSlabEnabled: this._renderSlabEnabled
         });
 
         this.ui.setLayers(layerList);
@@ -1057,11 +1248,22 @@ export class BuildingFabrication2View {
 
         for (const layer of floorLayers) {
             const layerId = layer.id;
-            if (this._floorLayerFaceStateById.has(layerId)) continue;
-            this._floorLayerFaceStateById.set(layerId, {
-                selectedFaceId: null,
-                lockedToByFace: createFaceLockMapFromConfigLayer(layer)
-            });
+            const existing = this._floorLayerFaceStateById.get(layerId) ?? null;
+            if (!existing) {
+                this._floorLayerFaceStateById.set(layerId, {
+                    selectedFaceId: null,
+                    lockedToByFace: createFaceLockMapFromConfigLayer(layer),
+                    reverseByFace: createFaceLockReverseMapFromConfigLayer(layer)
+                });
+                continue;
+            }
+
+            if (!(existing.lockedToByFace instanceof Map)) {
+                existing.lockedToByFace = createFaceLockMapFromConfigLayer(layer);
+            }
+            if (!(existing.reverseByFace instanceof Map)) {
+                existing.reverseByFace = createFaceLockReverseMapFromConfigLayer(layer);
+            }
         }
 
         for (const layerId of Array.from(this._floorLayerFaceStateById.keys())) {
@@ -1077,7 +1279,10 @@ export class BuildingFabrication2View {
         this.ui.setMaterialConfigContext(this._buildMaterialConfigContext());
         this.ui.setWindowDefinitions(this._buildWindowDefinitionsUiModel());
         this.ui.setFacadesByLayerId(this._currentConfig?.facades ?? null);
+        this.ui.setEditorMode(this._editorMode);
+        this.ui.setDecorationEditorState(this._buildDecorationEditorUiState());
         this._syncLayoutSceneState();
+        this._syncFaceHighlightSuppression();
     }
 
     _buildMaterialConfigContext() {
@@ -1135,6 +1340,990 @@ export class BuildingFabrication2View {
         };
     }
 
+    _resolveDecorationLayerOptions() {
+        const cfg = this._currentConfig;
+        const layers = Array.isArray(cfg?.layers) ? cfg.layers : [];
+        const out = [];
+        let floorIndex = 0;
+        for (const layer of layers) {
+            if (layer?.type !== 'floor') continue;
+            const layerId = typeof layer?.id === 'string' ? layer.id : '';
+            if (!layerId) continue;
+            floorIndex += 1;
+            out.push({
+                id: layerId,
+                label: `Floor layer ${floorIndex}`
+            });
+        }
+        return out;
+    }
+
+    _collectDecorationBayOptionsForLayer(layerId) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        if (!id) return [];
+        const cfg = this._currentConfig;
+        const layerFacades = cfg?.facades?.[id] && typeof cfg.facades[id] === 'object'
+            ? cfg.facades[id]
+            : null;
+        if (!layerFacades) return [];
+
+        const out = [];
+        const seen = new Set();
+        for (const faceId of FACE_IDS) {
+            const facade = layerFacades?.[faceId] && typeof layerFacades[faceId] === 'object'
+                ? layerFacades[faceId]
+                : null;
+            const bays = Array.isArray(facade?.layout?.bays?.items) ? facade.layout.bays.items : [];
+            for (let i = 0; i < bays.length; i += 1) {
+                const bay = bays[i] && typeof bays[i] === 'object' ? bays[i] : null;
+                const bayId = typeof bay?.id === 'string' ? bay.id : '';
+                if (!bayId) continue;
+                const ref = `${faceId}:${bayId}`;
+                if (seen.has(ref)) continue;
+                seen.add(ref);
+                out.push({
+                    id: ref,
+                    label: `Face ${faceId} · Bay ${i + 1}`,
+                    faceId,
+                    bayId,
+                    bayIndex: i
+                });
+            }
+        }
+        return out;
+    }
+
+    _collectLinkedDecorationBayRefs(layerId, bayRef, { validBayRefs = null } = {}) {
+        const normalizedRef = normalizeDecorationBayRef(bayRef);
+        if (!normalizedRef) return [];
+        const sep = normalizedRef.indexOf(':');
+        if (sep <= 0 || sep >= normalizedRef.length - 1) return [];
+        const faceId = normalizedRef.slice(0, sep);
+        const bayId = normalizedRef.slice(sep + 1);
+        if (!isFaceId(faceId) || !bayId) return [];
+
+        const validSet = validBayRefs instanceof Set ? validBayRefs : null;
+        const cfg = this._currentConfig;
+        const layerFacades = cfg?.facades?.[layerId] && typeof cfg.facades[layerId] === 'object'
+            ? cfg.facades[layerId]
+            : null;
+        const facade = layerFacades?.[faceId] && typeof layerFacades[faceId] === 'object'
+            ? layerFacades[faceId]
+            : null;
+        const bays = Array.isArray(facade?.layout?.bays?.items) ? facade.layout.bays.items : [];
+        if (!bays.length) return validSet && !validSet.has(normalizedRef) ? [] : [normalizedRef];
+
+        const bayById = new Map();
+        for (const entry of bays) {
+            const bay = entry && typeof entry === 'object' ? entry : null;
+            const id = typeof bay?.id === 'string' ? bay.id : '';
+            if (!id || bayById.has(id)) continue;
+            bayById.set(id, bay);
+        }
+        if (!bayById.has(bayId)) return validSet?.has(normalizedRef) ? [normalizedRef] : [];
+
+        const resolveRootMasterId = (id) => {
+            const startId = typeof id === 'string' ? id : '';
+            if (!startId) return '';
+            let currentId = startId;
+            let current = bayById.get(currentId) ?? null;
+            if (!current) return '';
+            const visited = new Set([currentId]);
+            for (let i = 0; i < 64; i += 1) {
+                const nextId = typeof current?.linkFromBayId === 'string' ? current.linkFromBayId : '';
+                if (!nextId || visited.has(nextId)) return currentId;
+                visited.add(nextId);
+                const next = bayById.get(nextId) ?? null;
+                if (!next) return currentId;
+                current = next;
+                currentId = nextId;
+            }
+            return currentId;
+        };
+
+        const targetRootId = resolveRootMasterId(bayId);
+        if (!targetRootId) return validSet?.has(normalizedRef) ? [normalizedRef] : [];
+        const out = [];
+        const seen = new Set();
+        for (const entry of bays) {
+            const bay = entry && typeof entry === 'object' ? entry : null;
+            const id = typeof bay?.id === 'string' ? bay.id : '';
+            if (!id) continue;
+            if (resolveRootMasterId(id) !== targetRootId) continue;
+            const ref = `${faceId}:${id}`;
+            if (seen.has(ref)) continue;
+            if (validSet && !validSet.has(ref)) continue;
+            seen.add(ref);
+            out.push(ref);
+        }
+        if (!out.length && (!validSet || validSet.has(normalizedRef))) return [normalizedRef];
+        return out;
+    }
+
+    _ensureDecorationConfig() {
+        const cfg = this._currentConfig;
+        if (!cfg || typeof cfg !== 'object') return null;
+        cfg.wallDecorations ??= {};
+        const decorationRoot = cfg.wallDecorations;
+        const rawSets = Array.isArray(decorationRoot.sets) ? decorationRoot.sets : [];
+        const layerOptions = this._resolveDecorationLayerOptions();
+        const layerIdSet = new Set(layerOptions.map((entry) => entry.id));
+        const fallbackLayerId = layerOptions[0]?.id ?? '';
+
+        let nextSetIndex = clampInt(decorationRoot.nextSetIndex ?? 1, 1, 9999);
+        const sanitizedSets = [];
+
+        for (let i = 0; i < rawSets.length; i += 1) {
+            const rawSet = rawSets[i] && typeof rawSets[i] === 'object' ? rawSets[i] : null;
+            if (!rawSet) continue;
+            const rawId = typeof rawSet.id === 'string' ? rawSet.id.trim() : '';
+            const setId = rawId || `set_${nextSetIndex++}`;
+            const setIdMatch = /^set_(\d+)$/i.exec(setId);
+            if (setIdMatch) {
+                const parsed = Number(setIdMatch[1]);
+                if (Number.isFinite(parsed)) nextSetIndex = Math.max(nextSetIndex, clampInt(parsed + 1, 1, 9999));
+            }
+
+            const targetRaw = rawSet.target && typeof rawSet.target === 'object' ? rawSet.target : {};
+            const targetLayerId = layerIdSet.has(targetRaw.layerId) ? targetRaw.layerId : fallbackLayerId;
+            const bayOptions = this._collectDecorationBayOptionsForLayer(targetLayerId);
+            const bayRefSet = new Set(bayOptions.map((entry) => entry.id));
+            const normalizedBayRefs = Array.isArray(targetRaw.bayRefs)
+                ? targetRaw.bayRefs
+                    .map((entry) => normalizeDecorationBayRef(entry))
+                    .filter((entry, idx, arr) => !!entry && arr.indexOf(entry) === idx)
+                    .filter((entry) => bayRefSet.has(entry))
+                : [];
+            const hasExplicitAllBays = targetRaw.allBays !== undefined && targetRaw.allBays !== null;
+            const allBays = hasExplicitAllBays
+                ? !!targetRaw.allBays
+                : normalizedBayRefs.length === 0;
+            const bayRefs = allBays ? [] : normalizedBayRefs;
+
+            const intervalRaw = rawSet.floorInterval && typeof rawSet.floorInterval === 'object'
+                ? rawSet.floorInterval
+                : {};
+            const every = clampInt(intervalRaw.every ?? 1, 1, 99);
+            const start = clampInt(intervalRaw.start ?? 1, 1, 999);
+            const endRaw = Number(intervalRaw.end);
+            const end = Number.isFinite(endRaw) && endRaw > 0
+                ? clampInt(endRaw, start, 999)
+                : null;
+
+            const rawDecorations = Array.isArray(rawSet.decorations) ? rawSet.decorations : [];
+            let nextDecorationIndex = clampInt(rawSet.nextDecorationIndex ?? 1, 1, 9999);
+            const decorations = [];
+            for (let j = 0; j < rawDecorations.length; j += 1) {
+                const rawDecoration = rawDecorations[j] && typeof rawDecorations[j] === 'object'
+                    ? rawDecorations[j]
+                    : null;
+                if (!rawDecoration) continue;
+                const rawDecorationId = typeof rawDecoration.id === 'string' ? rawDecoration.id.trim() : '';
+                const decorationId = rawDecorationId || `decoration_${nextDecorationIndex++}`;
+                const decorationIdMatch = /^decoration_(\d+)$/i.exec(decorationId);
+                if (decorationIdMatch) {
+                    const parsed = Number(decorationIdMatch[1]);
+                    if (Number.isFinite(parsed)) nextDecorationIndex = Math.max(nextDecorationIndex, clampInt(parsed + 1, 1, 9999));
+                }
+                const stateRaw = rawDecoration.state && typeof rawDecoration.state === 'object'
+                    ? rawDecoration.state
+                    : rawDecoration;
+                const state = sanitizeWallDecoratorDebuggerState({
+                    ...sanitizeWallDecoratorDebuggerState(
+                        stateRaw && typeof stateRaw === 'object'
+                            ? stateRaw
+                            : getDefaultWallDecoratorDebuggerState()
+                    ),
+                    whereToApply: WALL_DECORATOR_WHERE_TO_APPLY.ENTIRE_FACADE,
+                    mode: WALL_DECORATOR_MODE.FACE
+                });
+                const spanRaw = rawDecoration.span && typeof rawDecoration.span === 'object' ? rawDecoration.span : {};
+                const startU = clampUnit(spanRaw.start ?? rawDecoration.startU, 0);
+                const endU = clampUnit(spanRaw.end ?? rawDecoration.endU, 1);
+                decorations.push({
+                    id: decorationId,
+                    span: {
+                        start: Math.min(startU, endU),
+                        end: Math.max(startU, endU)
+                    },
+                    state,
+                    ...(rawDecoration.autoCorner && typeof rawDecoration.autoCorner === 'object'
+                        ? { autoCorner: deepClone(rawDecoration.autoCorner) }
+                        : {})
+                });
+            }
+
+            sanitizedSets.push({
+                id: setId,
+                target: {
+                    layerId: targetLayerId,
+                    bayRefs,
+                    allBays
+                },
+                floorInterval: {
+                    every,
+                    start,
+                    end
+                },
+                decorations,
+                nextDecorationIndex
+            });
+        }
+
+        decorationRoot.sets = sanitizedSets;
+        decorationRoot.nextSetIndex = nextSetIndex;
+        return decorationRoot;
+    }
+
+    _buildDecorationEditorUiState() {
+        const layerOptions = this._resolveDecorationLayerOptions();
+        const bayOptionsByLayerId = {};
+        for (const layer of layerOptions) {
+            bayOptionsByLayerId[layer.id] = this._collectDecorationBayOptionsForLayer(layer.id);
+        }
+
+        if (!this._currentConfig) {
+            return {
+                sets: [],
+                layerOptions,
+                bayOptionsByLayerId
+            };
+        }
+
+        const decorationRoot = this._ensureDecorationConfig();
+        const sets = Array.isArray(decorationRoot?.sets) ? decorationRoot.sets : [];
+        return {
+            sets: deepClone(sets),
+            layerOptions,
+            bayOptionsByLayerId
+        };
+    }
+
+    _findDecorationSet(setId) {
+        const root = this._ensureDecorationConfig();
+        const sets = Array.isArray(root?.sets) ? root.sets : [];
+        const id = typeof setId === 'string' ? setId : '';
+        if (!id) return { root, sets, set: null, index: -1 };
+        const index = sets.findIndex((entry) => (entry && typeof entry === 'object' ? entry.id : '') === id);
+        const set = index >= 0 ? sets[index] : null;
+        return { root, sets, set, index };
+    }
+
+    _findDecorationEntry(setId, decorationId) {
+        const setCtx = this._findDecorationSet(setId);
+        const set = setCtx.set && typeof setCtx.set === 'object' ? setCtx.set : null;
+        const decorations = Array.isArray(set?.decorations) ? set.decorations : [];
+        const id = typeof decorationId === 'string' ? decorationId : '';
+        if (!id) return { ...setCtx, decorations, decoration: null, index: -1 };
+        const index = decorations.findIndex((entry) => (entry && typeof entry === 'object' ? entry.id : '') === id);
+        const decoration = index >= 0 ? decorations[index] : null;
+        return { ...setCtx, decorations, decoration, index };
+    }
+
+    _resolveFloorCountForDecorationLayer(layerId) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        if (!id) return 1;
+        const layers = Array.isArray(this._currentConfig?.layers) ? this._currentConfig.layers : [];
+        const layer = layers.find((entry) => entry?.type === 'floor' && entry?.id === id) ?? null;
+        return clampInt(layer?.floors ?? 1, 1, 999);
+    }
+
+    _resolveDecorationSignatureForAutoCorner(decoration) {
+        const entry = decoration && typeof decoration === 'object' ? decoration : null;
+        const span = entry?.span && typeof entry.span === 'object' ? entry.span : {};
+        const state = sanitizeWallDecoratorDebuggerState(
+            entry?.state && typeof entry.state === 'object'
+                ? entry.state
+                : getDefaultWallDecoratorDebuggerState()
+        );
+        return stableStringify({
+            span: {
+                start: clampUnit(span.start, 0.0),
+                end: clampUnit(span.end, 1.0)
+            },
+            state: {
+                decoratorId: state.decoratorId,
+                whereToApply: state.whereToApply,
+                mode: WALL_DECORATOR_MODE.FACE,
+                position: state.position,
+                configuration: state.configuration ?? {},
+                materialSelection: state.materialSelection ?? { kind: 'match_wall', id: 'match_wall' },
+                wallBase: state.wallBase ?? {},
+                tiling: state.tiling ?? {}
+            }
+        });
+    }
+
+    _resolveDecorationTargetBayRefs(set) {
+        const src = set && typeof set === 'object' ? set : null;
+        const layerId = typeof src?.target?.layerId === 'string' ? src.target.layerId : '';
+        if (!layerId) return [];
+        const allRefs = this._collectDecorationBayOptionsForLayer(layerId)
+            .map((entry) => normalizeDecorationBayRef(entry?.id))
+            .filter(Boolean);
+        if (!allRefs.length) return [];
+        if (src?.target?.allBays === true) return allRefs;
+        const explicitRefs = Array.isArray(src?.target?.bayRefs)
+            ? src.target.bayRefs.map((entry) => normalizeDecorationBayRef(entry)).filter(Boolean)
+            : [];
+        if (!explicitRefs.length) return [];
+        const allSet = new Set(allRefs);
+        const out = [];
+        const seen = new Set();
+        for (const ref of explicitRefs) {
+            if (!allSet.has(ref) || seen.has(ref)) continue;
+            seen.add(ref);
+            out.push(ref);
+        }
+        return out;
+    }
+
+    _resolveDecorationBayDepthEdges(bay) {
+        const src = bay && typeof bay === 'object' ? bay : null;
+        const depthSpec = src?.depth && typeof src.depth === 'object' ? src.depth : null;
+        if (depthSpec) {
+            const linked = (depthSpec.linked ?? true) !== false;
+            const leftRaw = Number(depthSpec.left);
+            const left = Number.isFinite(leftRaw) ? clamp(leftRaw, BAY_DEPTH_MIN_M, BAY_DEPTH_MAX_M) : 0.0;
+            const rightRaw = Number(depthSpec.right);
+            const right = Number.isFinite(rightRaw)
+                ? clamp(rightRaw, BAY_DEPTH_MIN_M, BAY_DEPTH_MAX_M)
+                : (linked ? left : 0.0);
+            return { left, right };
+        }
+        const depthOffsetRaw = Number(src?.depthOffset);
+        const depthOffset = Number.isFinite(depthOffsetRaw)
+            ? clamp(depthOffsetRaw, BAY_DEPTH_MIN_M, BAY_DEPTH_MAX_M)
+            : 0.0;
+        return { left: depthOffset, right: depthOffset };
+    }
+
+    _buildDecorationLayerBayContext(layerId) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        if (!id) return { byRef: new Map(), edgeByFace: new Map() };
+        const cfg = this._currentConfig;
+        const layerFacades = cfg?.facades?.[id] && typeof cfg.facades[id] === 'object'
+            ? cfg.facades[id]
+            : null;
+        if (!layerFacades) return { byRef: new Map(), edgeByFace: new Map() };
+
+        const byRef = new Map();
+        const edgeByFace = new Map();
+
+        for (const faceId of FACE_IDS) {
+            const facade = layerFacades?.[faceId] && typeof layerFacades[faceId] === 'object'
+                ? layerFacades[faceId]
+                : null;
+            const bays = Array.isArray(facade?.layout?.bays?.items) ? facade.layout.bays.items : [];
+            const bayById = new Map();
+            for (const entry of bays) {
+                const bay = entry && typeof entry === 'object' ? entry : null;
+                const bayId = typeof bay?.id === 'string' ? bay.id : '';
+                if (!bayId || bayById.has(bayId)) continue;
+                bayById.set(bayId, bay);
+            }
+
+            const resolveRootBay = (bayId) => {
+                const startId = typeof bayId === 'string' ? bayId : '';
+                if (!startId) return null;
+                const startBay = bayById.get(startId) ?? null;
+                if (!startBay) return null;
+                const visited = new Set([startId]);
+                let current = startBay;
+                for (let i = 0; i < 64; i += 1) {
+                    const linkId = typeof current?.linkFromBayId === 'string' ? current.linkFromBayId : '';
+                    if (!linkId || visited.has(linkId)) return current;
+                    visited.add(linkId);
+                    const next = bayById.get(linkId) ?? null;
+                    if (!next) return current;
+                    current = next;
+                }
+                return current;
+            };
+
+            const faceRefs = [];
+            for (let i = 0; i < bays.length; i += 1) {
+                const bay = bays[i] && typeof bays[i] === 'object' ? bays[i] : null;
+                const bayId = typeof bay?.id === 'string' ? bay.id : '';
+                if (!bayId) continue;
+                const ref = `${faceId}:${bayId}`;
+                if (byRef.has(ref)) continue;
+                const rootBay = resolveRootBay(bayId) ?? bay;
+                const depth = this._resolveDecorationBayDepthEdges(rootBay);
+                const ctx = {
+                    ref,
+                    faceId,
+                    bayId,
+                    bayIndex: i,
+                    bayCount: bays.length,
+                    isFaceStartBoundary: i === 0,
+                    isFaceEndBoundary: i === bays.length - 1,
+                    depthStartMeters: Number(depth.left) || 0.0,
+                    depthEndMeters: Number(depth.right) || 0.0
+                };
+                byRef.set(ref, ctx);
+                faceRefs.push(ref);
+            }
+
+            const startRef = faceRefs.length ? faceRefs[0] : null;
+            const endRef = faceRefs.length ? faceRefs[faceRefs.length - 1] : null;
+            edgeByFace.set(faceId, {
+                start: startRef ? (byRef.get(startRef) ?? null) : null,
+                end: endRef ? (byRef.get(endRef) ?? null) : null
+            });
+        }
+
+        return { byRef, edgeByFace };
+    }
+
+    _resolveOutmostDecorationCornerOwnerFace(a, b) {
+        const depthA = Number(a?.depthMeters) || 0.0;
+        const depthB = Number(b?.depthMeters) || 0.0;
+        const faceA = isFaceId(a?.faceId) ? a.faceId : null;
+        const faceB = isFaceId(b?.faceId) ? b.faceId : null;
+        if (!faceA && !faceB) return null;
+        if (!faceA) return faceB;
+        if (!faceB) return faceA;
+        if (depthA > depthB + 1e-6) return faceA;
+        if (depthB > depthA + 1e-6) return faceB;
+        const orderA = FACE_ORDER[faceA] ?? 0;
+        const orderB = FACE_ORDER[faceB] ?? 0;
+        return orderA <= orderB ? faceA : faceB;
+    }
+
+    _refreshDecorationAutoCornerMetadata() {
+        const root = this._ensureDecorationConfig();
+        const sets = Array.isArray(root?.sets) ? root.sets : [];
+        if (!sets.length) return;
+
+        for (const set of sets) {
+            const decorations = Array.isArray(set?.decorations) ? set.decorations : [];
+            for (const decoration of decorations) {
+                if (!decoration || typeof decoration !== 'object') continue;
+                delete decoration.autoCorner;
+            }
+        }
+
+        const layerContextById = new Map();
+        const getLayerContext = (layerId) => {
+            const id = typeof layerId === 'string' ? layerId : '';
+            if (!id) return { byRef: new Map(), edgeByFace: new Map() };
+            if (!layerContextById.has(id)) layerContextById.set(id, this._buildDecorationLayerBayContext(id));
+            return layerContextById.get(id);
+        };
+
+        const assignmentsByLayer = new Map();
+        const decorationByKey = new Map();
+
+        for (const set of sets) {
+            const setId = typeof set?.id === 'string' ? set.id : '';
+            const layerId = typeof set?.target?.layerId === 'string' ? set.target.layerId : '';
+            if (!setId || !layerId) continue;
+            const bayRefs = this._resolveDecorationTargetBayRefs(set);
+            if (!bayRefs.length) continue;
+            const decorations = Array.isArray(set?.decorations) ? set.decorations : [];
+            let byBayRef = assignmentsByLayer.get(layerId);
+            if (!byBayRef) {
+                byBayRef = new Map();
+                assignmentsByLayer.set(layerId, byBayRef);
+            }
+            for (const decoration of decorations) {
+                const decorationId = typeof decoration?.id === 'string' ? decoration.id : '';
+                if (!decorationId) continue;
+                const key = `${setId}:${decorationId}`;
+                const signature = this._resolveDecorationSignatureForAutoCorner(decoration);
+                decorationByKey.set(key, decoration);
+                for (const bayRef of bayRefs) {
+                    const ref = normalizeDecorationBayRef(bayRef);
+                    if (!ref) continue;
+                    const list = byBayRef.get(ref) ?? [];
+                    list.push({ setId, decorationId, key, signature, bayRef: ref });
+                    byBayRef.set(ref, list);
+                }
+            }
+        }
+
+        const byDecorationKey = new Map();
+        for (const [layerId, assignmentsByBayRef] of assignmentsByLayer.entries()) {
+            const layerCtx = getLayerContext(layerId);
+            for (const [bayRef, assignments] of assignmentsByBayRef.entries()) {
+                const bayCtx = layerCtx.byRef.get(bayRef) ?? null;
+                if (!bayCtx) continue;
+
+                const evaluateEdge = ({ assignment, edgeId, adjacentFaceId, adjacentEdgeId }) => {
+                    const adjacentEdgeCtx = layerCtx.edgeByFace.get(adjacentFaceId) ?? null;
+                    const adjacentBayCtx = adjacentEdgeCtx?.[adjacentEdgeId] ?? null;
+                    if (!adjacentBayCtx) return { enabled: false, continuationMeters: 0.0 };
+                    const adjacentAssignments = assignmentsByBayRef.get(adjacentBayCtx.ref) ?? [];
+                    const hasSameDecoration = adjacentAssignments.some((entry) => entry?.signature === assignment.signature);
+                    if (!hasSameDecoration) return { enabled: false, continuationMeters: 0.0 };
+
+                    const currentDepth = edgeId === 'start'
+                        ? (Number(bayCtx.depthStartMeters) || 0.0)
+                        : (Number(bayCtx.depthEndMeters) || 0.0);
+                    const adjacentDepth = adjacentEdgeId === 'start'
+                        ? (Number(adjacentBayCtx.depthStartMeters) || 0.0)
+                        : (Number(adjacentBayCtx.depthEndMeters) || 0.0);
+                    const ownerFaceId = this._resolveOutmostDecorationCornerOwnerFace(
+                        { faceId: bayCtx.faceId, depthMeters: currentDepth },
+                        { faceId: adjacentBayCtx.faceId, depthMeters: adjacentDepth }
+                    );
+                    const enabled = ownerFaceId === bayCtx.faceId;
+                    return {
+                        enabled,
+                        continuationMeters: enabled ? Math.max(0.0, Math.abs(currentDepth - adjacentDepth)) : 0.0
+                    };
+                };
+
+                for (const assignment of assignments) {
+                    const next = {
+                        start: false,
+                        end: false,
+                        continuationStartMeters: 0.0,
+                        continuationEndMeters: 0.0
+                    };
+
+                    if (bayCtx.isFaceStartBoundary) {
+                        const prevFaceId = FACE_PREV_BY_FACE_ID[bayCtx.faceId] ?? null;
+                        if (prevFaceId) {
+                            const resolved = evaluateEdge({
+                                assignment,
+                                edgeId: 'start',
+                                adjacentFaceId: prevFaceId,
+                                adjacentEdgeId: 'end'
+                            });
+                            next.start = !!resolved.enabled;
+                            next.continuationStartMeters = resolved.continuationMeters;
+                        }
+                    }
+                    if (bayCtx.isFaceEndBoundary) {
+                        const nextFaceId = FACE_NEXT_BY_FACE_ID[bayCtx.faceId] ?? null;
+                        if (nextFaceId) {
+                            const resolved = evaluateEdge({
+                                assignment,
+                                edgeId: 'end',
+                                adjacentFaceId: nextFaceId,
+                                adjacentEdgeId: 'start'
+                            });
+                            next.end = !!resolved.enabled;
+                            next.continuationEndMeters = resolved.continuationMeters;
+                        }
+                    }
+
+                    const hasCorner = !!next.start || !!next.end
+                        || next.continuationStartMeters > 1e-6
+                        || next.continuationEndMeters > 1e-6;
+                    if (!hasCorner) continue;
+
+                    let byRef = byDecorationKey.get(assignment.key);
+                    if (!byRef) {
+                        byRef = {};
+                        byDecorationKey.set(assignment.key, byRef);
+                    }
+                    byRef[assignment.bayRef] = next;
+                }
+            }
+        }
+
+        for (const [key, decoration] of decorationByKey.entries()) {
+            const byBayRef = byDecorationKey.get(key) ?? null;
+            if (byBayRef && Object.keys(byBayRef).length) {
+                decoration.autoCorner = {
+                    rule: 'outmost_depth',
+                    byBayRef
+                };
+            } else {
+                delete decoration.autoCorner;
+            }
+        }
+    }
+
+    _applyDecorationChange({ requestRebuild = true } = {}) {
+        this._refreshDecorationAutoCornerMetadata();
+        this._syncUiState();
+        if (requestRebuild) this._requestRebuild({ preserveCamera: true });
+    }
+
+    _setEditorMode(mode) {
+        const next = normalizeBf2EditorMode(mode);
+        if (next === this._editorMode) return;
+        this._editorMode = next;
+        this._syncUiState();
+        this._syncFaceHighlightSuppression();
+    }
+
+    _addDecorationSet() {
+        const root = this._ensureDecorationConfig();
+        if (!root) return;
+        const layerOptions = this._resolveDecorationLayerOptions();
+        const fallbackLayerId = layerOptions[0]?.id ?? '';
+        if (!fallbackLayerId) return;
+
+        const setId = `set_${clampInt(root.nextSetIndex ?? 1, 1, 9999)}`;
+        root.nextSetIndex = clampInt((root.nextSetIndex ?? 1) + 1, 1, 9999);
+        root.sets ??= [];
+        root.sets.push({
+            id: setId,
+            target: {
+                layerId: fallbackLayerId,
+                bayRefs: [],
+                allBays: false
+            },
+            floorInterval: {
+                every: 1,
+                start: 1,
+                end: null
+            },
+            decorations: [],
+            nextDecorationIndex: 1
+        });
+        this._applyDecorationChange();
+    }
+
+    _deleteDecorationSet(setId) {
+        const ctx = this._findDecorationSet(setId);
+        if (!ctx.set || ctx.index < 0) return;
+        ctx.sets.splice(ctx.index, 1);
+        this._applyDecorationChange();
+    }
+
+    _setDecorationSetLayer(setId, layerId) {
+        const ctx = this._findDecorationSet(setId);
+        if (!ctx.set) return;
+        const options = this._resolveDecorationLayerOptions();
+        const nextLayerId = options.some((entry) => entry.id === layerId) ? layerId : (options[0]?.id ?? '');
+        if (!nextLayerId) return;
+        ctx.set.target ??= {};
+        ctx.set.target.layerId = nextLayerId;
+        ctx.set.target.bayRefs = [];
+        ctx.set.target.allBays = false;
+        const floorCount = this._resolveFloorCountForDecorationLayer(nextLayerId);
+        ctx.set.floorInterval ??= { every: 1, start: 1, end: null };
+        ctx.set.floorInterval.start = clampInt(ctx.set.floorInterval.start ?? 1, 1, floorCount);
+        if (ctx.set.floorInterval.end !== null && ctx.set.floorInterval.end !== undefined) {
+            ctx.set.floorInterval.end = clampInt(ctx.set.floorInterval.end, ctx.set.floorInterval.start, floorCount);
+        }
+        this._applyDecorationChange();
+    }
+
+    _setDecorationSetAllBays(setId, enabled) {
+        const ctx = this._findDecorationSet(setId);
+        if (!ctx.set) return;
+        ctx.set.target ??= {};
+        ctx.set.target.allBays = !!enabled;
+        ctx.set.target.bayRefs = [];
+        this._applyDecorationChange();
+    }
+
+    _toggleDecorationSetBay(setId, bayRef, enabled) {
+        const ctx = this._findDecorationSet(setId);
+        if (!ctx.set) return;
+        ctx.set.target ??= {};
+        const layerId = typeof ctx.set.target.layerId === 'string' ? ctx.set.target.layerId : '';
+        const bayOptions = this._collectDecorationBayOptionsForLayer(layerId);
+        const validBayRefs = new Set(bayOptions.map((entry) => entry.id));
+        const ref = normalizeDecorationBayRef(bayRef);
+        if (!ref || !validBayRefs.has(ref)) return;
+        const linkedRefs = this._collectLinkedDecorationBayRefs(layerId, ref, { validBayRefs });
+        const allValidRefs = Array.from(validBayRefs);
+        const list = ctx.set.target.allBays === true
+            ? allValidRefs
+            : (Array.isArray(ctx.set.target.bayRefs)
+                ? ctx.set.target.bayRefs.map((entry) => normalizeDecorationBayRef(entry)).filter(Boolean)
+                : []);
+        const next = new Set(list.filter((entry) => validBayRefs.has(entry)));
+        const refsToToggle = linkedRefs.length ? linkedRefs : [ref];
+        if (enabled) {
+            for (const entry of refsToToggle) next.add(entry);
+        } else {
+            for (const entry of refsToToggle) next.delete(entry);
+        }
+        const hasAll = validBayRefs.size > 0 && next.size === validBayRefs.size;
+        ctx.set.target.allBays = hasAll;
+        ctx.set.target.bayRefs = hasAll ? [] : Array.from(next);
+        this._applyDecorationChange();
+    }
+
+    _setDecorationSetFloorIntervalField(setId, field, value) {
+        const ctx = this._findDecorationSet(setId);
+        if (!ctx.set) return;
+        const id = typeof field === 'string' ? field : '';
+        ctx.set.floorInterval ??= { every: 1, start: 1, end: null };
+        const interval = ctx.set.floorInterval;
+        const floorCount = this._resolveFloorCountForDecorationLayer(ctx.set?.target?.layerId);
+        if (id === 'every') {
+            interval.every = clampInt(value, 1, 99);
+        } else if (id === 'start') {
+            interval.start = clampInt(value, 1, floorCount);
+            if (interval.end !== null && interval.end !== undefined) {
+                interval.end = clampInt(interval.end, interval.start, floorCount);
+            }
+        } else if (id === 'end') {
+            const raw = Number(value);
+            if (!Number.isFinite(raw) || raw <= 0) interval.end = null;
+            else interval.end = clampInt(raw, clampInt(interval.start ?? 1, 1, floorCount), floorCount);
+        } else {
+            return;
+        }
+        this._applyDecorationChange();
+    }
+
+    _applyDecorationSetFloorIntervalPreset(setId, presetId) {
+        const ctx = this._findDecorationSet(setId);
+        if (!ctx.set) return;
+        const preset = typeof presetId === 'string' ? presetId : '';
+        const floorCount = this._resolveFloorCountForDecorationLayer(ctx.set?.target?.layerId);
+        ctx.set.floorInterval ??= { every: 1, start: 1, end: null };
+        if (preset === DECORATION_FLOOR_INTERVAL_PRESET.FIRST) {
+            ctx.set.floorInterval.every = 1;
+            ctx.set.floorInterval.start = 1;
+            ctx.set.floorInterval.end = 1;
+        } else if (preset === DECORATION_FLOOR_INTERVAL_PRESET.LAST) {
+            ctx.set.floorInterval.every = 1;
+            ctx.set.floorInterval.start = floorCount;
+            ctx.set.floorInterval.end = floorCount;
+        } else if (preset === DECORATION_FLOOR_INTERVAL_PRESET.ALL) {
+            ctx.set.floorInterval.every = 1;
+            ctx.set.floorInterval.start = 1;
+            ctx.set.floorInterval.end = floorCount;
+        } else if (preset === DECORATION_FLOOR_INTERVAL_PRESET.EVERY_2) {
+            ctx.set.floorInterval.every = 2;
+            ctx.set.floorInterval.start = 1;
+            ctx.set.floorInterval.end = floorCount;
+        } else {
+            return;
+        }
+        this._applyDecorationChange();
+    }
+
+    _addDecorationEntry(setId) {
+        const ctx = this._findDecorationSet(setId);
+        if (!ctx.set) return;
+        ctx.set.decorations ??= [];
+        ctx.set.nextDecorationIndex = clampInt(ctx.set.nextDecorationIndex ?? 1, 1, 9999);
+        const decorationId = `decoration_${ctx.set.nextDecorationIndex}`;
+        ctx.set.nextDecorationIndex = clampInt(ctx.set.nextDecorationIndex + 1, 1, 9999);
+        const defaultTypeId = (() => {
+            const entries = getWallDecoratorTypeEntries();
+            for (const entry of entries) {
+                const id = typeof entry?.id === 'string' ? entry.id : '';
+                if (id) return id;
+            }
+            return '';
+        })();
+        const defaultStateRaw = defaultTypeId
+            ? getDefaultWallDecoratorDebuggerState({ decoratorId: defaultTypeId })
+            : getDefaultWallDecoratorDebuggerState();
+        const defaultState = sanitizeWallDecoratorDebuggerState({
+            ...defaultStateRaw,
+            whereToApply: WALL_DECORATOR_WHERE_TO_APPLY.ENTIRE_FACADE,
+            mode: WALL_DECORATOR_MODE.FACE
+        });
+        ctx.set.decorations.push({
+            id: decorationId,
+            span: { start: 0, end: 1 },
+            state: defaultState
+        });
+        this._applyDecorationChange();
+    }
+
+    _deleteDecorationEntry(setId, decorationId) {
+        const ctx = this._findDecorationEntry(setId, decorationId);
+        if (!ctx.decoration || ctx.index < 0) return;
+        ctx.decorations.splice(ctx.index, 1);
+        this._applyDecorationChange();
+    }
+
+    _setDecorationEntrySpanField(setId, decorationId, field, value) {
+        const ctx = this._findDecorationEntry(setId, decorationId);
+        if (!ctx.decoration) return;
+        ctx.decoration.span ??= { start: 0, end: 1 };
+        const span = ctx.decoration.span;
+        const id = typeof field === 'string' ? field : '';
+        if (id === 'start') span.start = clampUnit(value, span.start ?? 0);
+        else if (id === 'end') span.end = clampUnit(value, span.end ?? 1);
+        else return;
+        if (span.start > span.end) {
+            if (id === 'start') span.end = span.start;
+            else span.start = span.end;
+        }
+        this._applyDecorationChange();
+    }
+
+    _setDecorationEntryType(setId, decorationId, decoratorId) {
+        const ctx = this._findDecorationEntry(setId, decorationId);
+        if (!ctx.decoration) return;
+        const currentState = ctx.decoration.state && typeof ctx.decoration.state === 'object'
+            ? ctx.decoration.state
+            : sanitizeWallDecoratorDebuggerState(getDefaultWallDecoratorDebuggerState());
+        const loadedState = loadWallDecoratorCatalogEntry(currentState, decoratorId);
+        ctx.decoration.state = sanitizeWallDecoratorDebuggerState({
+            ...loadedState,
+            whereToApply: WALL_DECORATOR_WHERE_TO_APPLY.ENTIRE_FACADE,
+            mode: WALL_DECORATOR_MODE.FACE
+        });
+        this._applyDecorationChange();
+    }
+
+    _setDecorationEntryPlacementField(setId, decorationId, field, value) {
+        const ctx = this._findDecorationEntry(setId, decorationId);
+        if (!ctx.decoration) return;
+        const id = typeof field === 'string' ? field : '';
+        if (id !== 'position') return;
+        const state = ctx.decoration.state && typeof ctx.decoration.state === 'object'
+            ? ctx.decoration.state
+            : sanitizeWallDecoratorDebuggerState(getDefaultWallDecoratorDebuggerState());
+        const nextState = {
+            ...state,
+            position: value,
+            whereToApply: WALL_DECORATOR_WHERE_TO_APPLY.ENTIRE_FACADE,
+            mode: WALL_DECORATOR_MODE.FACE
+        };
+        ctx.decoration.state = sanitizeWallDecoratorDebuggerState(nextState);
+        this._applyDecorationChange();
+    }
+
+    _applyDecorationEntryPresetGroup(setId, decorationId, groupId, presetId) {
+        const ctx = this._findDecorationEntry(setId, decorationId);
+        if (!ctx.decoration) return;
+        const state = ctx.decoration.state && typeof ctx.decoration.state === 'object'
+            ? ctx.decoration.state
+            : sanitizeWallDecoratorDebuggerState(getDefaultWallDecoratorDebuggerState());
+        const typeId = typeof state.decoratorId === 'string' ? state.decoratorId : '';
+        const typeEntry = getWallDecoratorCatalogEntryById(typeId);
+        const group = (Array.isArray(typeEntry?.presetGroups) ? typeEntry.presetGroups : [])
+            .find((entry) => String(entry?.id ?? '') === String(groupId ?? '')) ?? null;
+        const preset = (Array.isArray(group?.options) ? group.options : [])
+            .find((entry) => String(entry?.id ?? '') === String(presetId ?? '')) ?? null;
+        const configPatch = preset?.configuration && typeof preset.configuration === 'object'
+            ? preset.configuration
+            : null;
+        if (!configPatch) return;
+        const nextConfiguration = {
+            ...(state.configuration && typeof state.configuration === 'object' ? state.configuration : {}),
+            ...configPatch
+        };
+        ctx.decoration.state = sanitizeWallDecoratorDebuggerState({
+            ...state,
+            configuration: nextConfiguration
+        });
+        this._applyDecorationChange();
+    }
+
+    _setDecorationEntryProperty(setId, decorationId, propertyId, value) {
+        const ctx = this._findDecorationEntry(setId, decorationId);
+        if (!ctx.decoration) return;
+        const propId = typeof propertyId === 'string' ? propertyId : '';
+        if (!propId) return;
+        const state = ctx.decoration.state && typeof ctx.decoration.state === 'object'
+            ? ctx.decoration.state
+            : sanitizeWallDecoratorDebuggerState(getDefaultWallDecoratorDebuggerState());
+        const configuration = {
+            ...(state.configuration && typeof state.configuration === 'object' ? state.configuration : {}),
+            [propId]: value
+        };
+        ctx.decoration.state = sanitizeWallDecoratorDebuggerState({
+            ...state,
+            configuration
+        });
+        this._applyDecorationChange();
+    }
+
+    _setDecorationEntryMaterialKind(setId, decorationId, kind) {
+        const ctx = this._findDecorationEntry(setId, decorationId);
+        if (!ctx.decoration) return;
+        const state = ctx.decoration.state && typeof ctx.decoration.state === 'object'
+            ? ctx.decoration.state
+            : sanitizeWallDecoratorDebuggerState(getDefaultWallDecoratorDebuggerState());
+        const typed = typeof kind === 'string' ? kind : '';
+        let materialSelection = state.materialSelection && typeof state.materialSelection === 'object'
+            ? state.materialSelection
+            : { kind: 'match_wall', id: 'match_wall' };
+        if (typed === 'match_wall') {
+            materialSelection = { kind: 'match_wall', id: 'match_wall' };
+        } else if (typed === 'color') {
+            materialSelection = {
+                kind: 'color',
+                id: typeof materialSelection.id === 'string' && materialSelection.id ? materialSelection.id : 'belt.white'
+            };
+        } else if (typed === 'texture') {
+            materialSelection = {
+                kind: 'texture',
+                id: typeof materialSelection.id === 'string' && materialSelection.id ? materialSelection.id : 'pbr.brick_wall_11'
+            };
+        } else {
+            return;
+        }
+        ctx.decoration.state = sanitizeWallDecoratorDebuggerState({
+            ...state,
+            materialSelection
+        });
+        this._applyDecorationChange();
+    }
+
+    _setDecorationEntryMaterialId(setId, decorationId, materialId) {
+        const ctx = this._findDecorationEntry(setId, decorationId);
+        if (!ctx.decoration) return;
+        const id = typeof materialId === 'string' ? materialId : '';
+        if (!id) return;
+        const state = ctx.decoration.state && typeof ctx.decoration.state === 'object'
+            ? ctx.decoration.state
+            : sanitizeWallDecoratorDebuggerState(getDefaultWallDecoratorDebuggerState());
+        const kind = state.materialSelection?.kind === 'color' ? 'color'
+            : (state.materialSelection?.kind === 'texture' ? 'texture' : null);
+        if (!kind) return;
+        ctx.decoration.state = sanitizeWallDecoratorDebuggerState({
+            ...state,
+            materialSelection: { kind, id }
+        });
+        this._applyDecorationChange();
+    }
+
+    _setDecorationEntryWallBaseField(setId, decorationId, field, value) {
+        const ctx = this._findDecorationEntry(setId, decorationId);
+        if (!ctx.decoration) return;
+        const id = typeof field === 'string' ? field : '';
+        if (id !== 'roughness' && id !== 'normalStrength') return;
+        const state = ctx.decoration.state && typeof ctx.decoration.state === 'object'
+            ? ctx.decoration.state
+            : sanitizeWallDecoratorDebuggerState(getDefaultWallDecoratorDebuggerState());
+        const wallBase = {
+            ...(state.wallBase && typeof state.wallBase === 'object' ? state.wallBase : {})
+        };
+        if (id === 'roughness') wallBase.roughness = clamp(value, 0.0, 1.0);
+        else wallBase.normalStrength = clamp(value, 0.0, 2.0);
+        ctx.decoration.state = sanitizeWallDecoratorDebuggerState({
+            ...state,
+            wallBase
+        });
+        this._applyDecorationChange();
+    }
+
+    _setDecorationEntryTilingField(setId, decorationId, field, value) {
+        const ctx = this._findDecorationEntry(setId, decorationId);
+        if (!ctx.decoration) return;
+        const id = typeof field === 'string' ? field : '';
+        const state = ctx.decoration.state && typeof ctx.decoration.state === 'object'
+            ? ctx.decoration.state
+            : sanitizeWallDecoratorDebuggerState(getDefaultWallDecoratorDebuggerState());
+        const tiling = {
+            ...(state.tiling && typeof state.tiling === 'object' ? state.tiling : {})
+        };
+        if (id === 'enabled') tiling.enabled = !!value;
+        else if (id === 'tileMetersU') tiling.tileMetersU = clamp(value, 0.1, 20.0);
+        else if (id === 'tileMetersV') tiling.tileMetersV = clamp(value, 0.1, 20.0);
+        else if (id === 'uvEnabled') tiling.uvEnabled = !!value;
+        else if (id === 'offsetU') tiling.offsetU = clamp(value, -10.0, 10.0);
+        else if (id === 'offsetV') tiling.offsetV = clamp(value, -10.0, 10.0);
+        else if (id === 'rotationDegrees') tiling.rotationDegrees = clamp(value, -180.0, 180.0);
+        else return;
+        ctx.decoration.state = sanitizeWallDecoratorDebuggerState({
+            ...state,
+            tiling
+        });
+        this._applyDecorationChange();
+    }
+
     _buildWindowDefinitionsUiModel() {
         const items = [];
         const seen = new Set();
@@ -1150,7 +2339,8 @@ export class BuildingFabrication2View {
             const previewUrl = this._getWindowDefinitionPreviewUrl(id, settings);
             const assetType = normalizeOpeningAssetType(entry?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
             const garageFacade = normalizeGarageFacadeConfig(entry?.garageFacade ?? null, null);
-            items.push({ id, label, settings, garageFacade, previewUrl, assetType, source: 'catalog' });
+            const wall = normalizeOpeningWallCutConfig(entry?.wall ?? null, null);
+            items.push({ id, label, settings, garageFacade, wall, previewUrl, assetType, source: 'catalog' });
         }
 
         const lib = this._currentConfig?.windowDefinitions;
@@ -1163,6 +2353,7 @@ export class BuildingFabrication2View {
             const settings = sanitizeWindowMeshSettings(entry?.settings ?? null);
             const previewUrl = this._getWindowDefinitionPreviewUrl(id, settings);
             const garageFacade = normalizeGarageFacadeConfig(entry?.garageFacade ?? null, null);
+            const wall = normalizeOpeningWallCutConfig(entry?.wall ?? null, null);
             const assetType = normalizeOpeningAssetType(
                 entry?.assetType ?? entry?.openingType,
                 WINDOW_FABRICATION_ASSET_TYPE.WINDOW
@@ -1172,6 +2363,7 @@ export class BuildingFabrication2View {
                 label,
                 settings,
                 garageFacade,
+                wall,
                 previewUrl,
                 assetType,
                 source: 'legacy'
@@ -1201,11 +2393,12 @@ export class BuildingFabrication2View {
             const label = typeof entry?.label === 'string' && entry.label.trim() ? entry.label.trim() : id;
             const settings = sanitizeWindowMeshSettings(entry?.settings ?? null);
             const garageFacade = normalizeGarageFacadeConfig(entry?.garageFacade ?? null, null);
+            const wall = normalizeOpeningWallCutConfig(entry?.wall ?? null, null);
             const assetType = normalizeOpeningAssetType(
                 entry?.assetType ?? entry?.openingType,
                 WINDOW_FABRICATION_ASSET_TYPE.WINDOW
             );
-            items.push({ id, label, settings, garageFacade, assetType });
+            items.push({ id, label, settings, garageFacade, wall, assetType });
         }
 
         lib.items = items;
@@ -1227,6 +2420,7 @@ export class BuildingFabrication2View {
                 label,
                 settings: sanitizeWindowMeshSettings(catalog?.settings ?? null),
                 garageFacade: normalizeGarageFacadeConfig(catalog?.garageFacade ?? null, null),
+                wall: normalizeOpeningWallCutConfig(catalog?.wall ?? null, null),
                 assetType: normalizeOpeningAssetType(catalog?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW),
                 source: 'catalog'
             };
@@ -1246,6 +2440,7 @@ export class BuildingFabrication2View {
             label,
             settings: sanitizeWindowMeshSettings(legacy?.settings ?? null),
             garageFacade: normalizeGarageFacadeConfig(legacy?.garageFacade ?? null, null),
+            wall: normalizeOpeningWallCutConfig(legacy?.wall ?? null, null),
             assetType,
             source: 'legacy'
         };
@@ -1303,6 +2498,11 @@ export class BuildingFabrication2View {
         return normalizeGarageFacadeConfig(entry?.garageFacade ?? null, fallback);
     }
 
+    _resolveWindowDefinitionWallCut(windowDefId, fallback = null) {
+        const entry = this._findWindowDefinitionEntry(windowDefId);
+        return normalizeOpeningWallCutConfig(entry?.wall ?? null, fallback);
+    }
+
     _resolveBayWindowVisualDefaults(windowDefId) {
         return {
             disableShades: this._resolveWindowDefinitionShadesDisabled(windowDefId, false),
@@ -1326,6 +2526,54 @@ export class BuildingFabrication2View {
             }
         }
         return url;
+    }
+
+    _buildDefaultBayWindowConfigFromDefinition(entry, { enabled = true } = {}) {
+        const resolvedEntry = entry && typeof entry === 'object' ? entry : null;
+        const defId = typeof resolvedEntry?.id === 'string' ? resolvedEntry.id.trim() : '';
+        const assetType = normalizeOpeningAssetType(
+            resolvedEntry?.assetType,
+            WINDOW_FABRICATION_ASSET_TYPE.WINDOW
+        );
+        const defWidth = this._resolveWindowDefinitionWidthMeters(defId);
+        const defHeight = this._resolveWindowDefinitionHeightMeters(defId);
+        const defMuntinsEnabled = this._resolveWindowDefinitionMuntinsEnabled(defId, true);
+        const visualDefaults = this._resolveBayWindowVisualDefaults(defId);
+        return {
+            enabled: enabled !== false,
+            defId,
+            assetType,
+            size: {
+                widthMeters: defWidth,
+                heightMeters: defHeight
+            },
+            heightMode: WINDOW_OPENING_HEIGHT_MODE.FIXED,
+            verticalOffsetMeters: null,
+            width: { minMeters: defWidth, maxMeters: null },
+            padding: { leftMeters: 0, rightMeters: 0 },
+            repeat: { count: WINDOW_REPEAT_MIN },
+            muntins: {
+                bottomEnabled: defMuntinsEnabled,
+                topEnabled: defMuntinsEnabled
+            },
+            visual: {
+                disableShades: !!visualDefaults?.disableShades,
+                interior: normalizeBayWindowInteriorMode(
+                    visualDefaults?.interior,
+                    WINDOW_INTERIOR_MODE.RES
+                )
+            },
+            top: {
+                enabled: false,
+                assetType,
+                heightMode: WINDOW_OPENING_HEIGHT_MODE.FIXED,
+                heightMeters: defHeight,
+                verticalGapMeters: 0.1,
+                frameWidthMeters: null
+            },
+            garageFacade: normalizeGarageFacadeConfig(resolvedEntry?.garageFacade ?? null, null),
+            wall: normalizeOpeningWallCutConfig(resolvedEntry?.wall ?? null, null)
+        };
     }
 
     _ensureBayWindowConfig(bay, { create = false } = {}) {
@@ -1355,10 +2603,15 @@ export class BuildingFabrication2View {
                 },
                 top: {
                     enabled: false,
+                    assetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW,
                     heightMode: WINDOW_OPENING_HEIGHT_MODE.FIXED,
                     heightMeters: WINDOW_DEF_HEIGHT_FALLBACK_M,
                     verticalGapMeters: 0.1,
                     frameWidthMeters: null
+                },
+                wall: {
+                    cutWidthLerp: 0,
+                    cutHeightLerp: 0
                 }
             };
         } else if (bayObj.window !== existing) {
@@ -1481,6 +2734,16 @@ export class BuildingFabrication2View {
         windowCfg.garageFacade = normalizeGarageFacadeConfig(
             windowCfg.garageFacade,
             this._resolveWindowDefinitionGarageFacade(windowCfg.defId, null)
+        );
+        const legacyWall = windowCfg.wall && typeof windowCfg.wall === 'object'
+            ? windowCfg.wall
+            : {
+                cutWidthLerp: windowCfg.cutWidthLerp,
+                cutHeightLerp: windowCfg.cutHeightLerp
+            };
+        windowCfg.wall = normalizeOpeningWallCutConfig(
+            legacyWall,
+            this._resolveWindowDefinitionWallCut(windowCfg.defId, null)
         );
 
         return windowCfg;
@@ -1687,6 +2950,7 @@ export class BuildingFabrication2View {
         const cloneSource = cloneId ? (lib.items.find((entry) => entry?.id === cloneId) ?? null) : null;
         const settings = sanitizeWindowMeshSettings(cloneSource?.settings ?? getDefaultWindowMeshSettings());
         const garageFacade = normalizeGarageFacadeConfig(cloneSource?.garageFacade ?? null, null);
+        const wall = normalizeOpeningWallCutConfig(cloneSource?.wall ?? null, null);
         const assetType = normalizeOpeningAssetType(
             cloneSource?.assetType ?? cloneSource?.openingType,
             WINDOW_FABRICATION_ASSET_TYPE.WINDOW
@@ -1698,6 +2962,7 @@ export class BuildingFabrication2View {
             label: `Window ${index}`,
             settings,
             garageFacade,
+            wall,
             assetType
         });
         return id;
@@ -1785,29 +3050,7 @@ export class BuildingFabrication2View {
         ) {
             return;
         }
-        windowCfg.defId = nextDefId;
-        windowCfg.assetType = normalizeOpeningAssetType(entry.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
-
-        const defWidth = this._resolveWindowDefinitionWidthMeters(nextDefId);
-        const defHeight = this._resolveWindowDefinitionHeightMeters(nextDefId);
-        const defMuntinsEnabled = this._resolveWindowDefinitionMuntinsEnabled(nextDefId, true);
-        windowCfg.width = {
-            minMeters: defWidth,
-            maxMeters: null
-        };
-        windowCfg.size = {
-            widthMeters: defWidth,
-            heightMeters: defHeight
-        };
-        windowCfg.muntins = {
-            bottomEnabled: defMuntinsEnabled,
-            topEnabled: defMuntinsEnabled
-        };
-        windowCfg.visual = this._resolveBayWindowVisualDefaults(nextDefId);
-        windowCfg.garageFacade = this._resolveWindowDefinitionGarageFacade(nextDefId, null);
-        if (windowCfg.assetType !== WINDOW_FABRICATION_ASSET_TYPE.WINDOW) {
-            windowCfg.repeat = { count: WINDOW_REPEAT_MIN };
-        }
+        bay.window = this._buildDefaultBayWindowConfigFromDefinition(entry, { enabled: true });
         this._ensureBayWindowConfig(bay, { create: true });
         this._enforceBaySizeAgainstWindow(bay);
 
@@ -1829,37 +3072,17 @@ export class BuildingFabrication2View {
         const nextType = normalizeOpeningAssetType(assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
         const prevType = normalizeOpeningAssetType(windowCfg.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
         if (prevType === nextType) return;
-        windowCfg.assetType = nextType;
-
         const selectedEntry = this._findWindowDefinitionEntry(windowCfg.defId);
         const selectedType = normalizeOpeningAssetType(selectedEntry?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
-        if (!selectedEntry || selectedType !== nextType) {
+        let nextEntry = (selectedEntry && selectedType === nextType) ? selectedEntry : null;
+        if (!nextEntry) {
             const fallback = getDefaultWindowFabricationCatalogEntry(nextType)
                 ?? getDefaultWindowFabricationCatalogEntry(WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
-            if (fallback?.id) windowCfg.defId = String(fallback.id);
+            nextEntry = fallback?.id ? this._findWindowDefinitionEntry(String(fallback.id)) : null;
         }
+        if (!nextEntry) return;
 
-        const defWidth = this._resolveWindowDefinitionWidthMeters(windowCfg.defId);
-        const defHeight = this._resolveWindowDefinitionHeightMeters(windowCfg.defId);
-        const defMuntinsEnabled = this._resolveWindowDefinitionMuntinsEnabled(windowCfg.defId, true);
-        windowCfg.width = {
-            minMeters: defWidth,
-            maxMeters: null
-        };
-        windowCfg.size = {
-            widthMeters: defWidth,
-            heightMeters: defHeight
-        };
-        windowCfg.muntins = {
-            bottomEnabled: defMuntinsEnabled,
-            topEnabled: defMuntinsEnabled
-        };
-        windowCfg.visual = this._resolveBayWindowVisualDefaults(windowCfg.defId);
-        windowCfg.garageFacade = this._resolveWindowDefinitionGarageFacade(windowCfg.defId, null);
-        if (windowCfg.assetType !== WINDOW_FABRICATION_ASSET_TYPE.WINDOW) {
-            windowCfg.repeat = { count: WINDOW_REPEAT_MIN };
-        }
-
+        bay.window = this._buildDefaultBayWindowConfigFromDefinition(nextEntry, { enabled: true });
         this._ensureBayWindowConfig(bay, { create: true });
         this._enforceBaySizeAgainstWindow(bay);
         this._syncUiState();
@@ -2443,8 +3666,10 @@ export class BuildingFabrication2View {
         this._syncUiState();
     }
 
-    _createBuilding() {
+    _createBuilding({ widthMeters = null, depthMeters = null } = {}) {
         const tileSizeMeters = Math.max(0.5, Number(this.scene?.tileSize) || DEFAULT_FOOTPRINT_DEPTH_M);
+        const resolvedWidthMeters = Number.isFinite(widthMeters) && widthMeters > 0 ? widthMeters : tileSizeMeters;
+        const resolvedDepthMeters = Number.isFinite(depthMeters) && depthMeters > 0 ? depthMeters : tileSizeMeters;
         const faceLinking = { links: { ...DEFAULT_FACE_LINKS } };
         const floor = {
             id: createLayerId('floor'),
@@ -2458,9 +3683,13 @@ export class BuildingFabrication2View {
             id: 'bf2_building',
             name: 'Building',
             layers: [floor],
+            wallDecorations: {
+                sets: [],
+                nextSetIndex: 1
+            },
             footprintLoops: [createDefaultFootprintLoop({
-                widthMeters: tileSizeMeters,
-                depthMeters: tileSizeMeters
+                widthMeters: resolvedWidthMeters,
+                depthMeters: resolvedDepthMeters
             })]
         };
 
@@ -2473,10 +3702,12 @@ export class BuildingFabrication2View {
         this._layoutMinWidthByFaceId = null;
         const lockedToByFace = createEmptyFaceLockMap();
         for (const [slave, master] of Object.entries(faceLinking.links)) lockedToByFace.set(slave, master);
+        const reverseByFace = createEmptyFaceReverseMap();
         this._floorLayerFaceStateById = new Map();
         this._floorLayerFaceStateById.set(floor.id, {
             selectedFaceId: null,
-            lockedToByFace
+            lockedToByFace,
+            reverseByFace
         });
         this._activeFloorLayerId = floor.id;
         this.scene.setSelectedFaceId(null);
@@ -2490,6 +3721,39 @@ export class BuildingFabrication2View {
         this._windowPickerPopup.close();
         this._windowFabricationPopup.close();
         this._syncUiState();
+    }
+
+    _applyFootprintPreset(sizeMeters) {
+        const size = Number(sizeMeters);
+        if (!(size > 0)) return;
+
+        if (!this.scene.getHasBuilding() || !this._currentConfig) {
+            this._createBuilding({ widthMeters: size, depthMeters: size });
+            return;
+        }
+
+        const loop = this._ensureCurrentFootprintLoop();
+        if (!Array.isArray(loop) || loop.length !== 4) return;
+
+        let centerX = 0;
+        let centerZ = 0;
+        for (const point of loop) {
+            centerX += Number(point?.x) || 0;
+            centerZ += Number(point?.z) || 0;
+        }
+        centerX *= 0.25;
+        centerZ *= 0.25;
+
+        const nextLoop = createDefaultFootprintLoop({ widthMeters: size, depthMeters: size });
+        for (const point of nextLoop) {
+            point.x += centerX;
+            point.z += centerZ;
+        }
+
+        this._layoutHover = null;
+        this._layoutDrag = null;
+        this._layoutMinWidthByFaceId = null;
+        this._setCurrentFootprintLoop(nextLoop, { rateLimited: false });
     }
 
     _reset() {
@@ -2555,7 +3819,11 @@ export class BuildingFabrication2View {
         if (insertAt >= 0) layers.splice(insertAt, 0, layer);
         else layers.push(layer);
 
-        this._floorLayerFaceStateById.set(layer.id, { selectedFaceId: null, lockedToByFace: createFaceLockMapFromConfigLayer(layer) });
+        this._floorLayerFaceStateById.set(layer.id, {
+            selectedFaceId: null,
+            lockedToByFace: createFaceLockMapFromConfigLayer(layer),
+            reverseByFace: createFaceLockReverseMapFromConfigLayer(layer)
+        });
 
         this._syncUiState();
         this._requestRebuild({ preserveCamera: true });
@@ -3500,7 +4768,8 @@ export class BuildingFabrication2View {
         if (!state) return;
 
         const lockedToByFace = state.lockedToByFace;
-        if (!(lockedToByFace instanceof Map)) return;
+        const reverseByFace = state.reverseByFace;
+        if (!(lockedToByFace instanceof Map) || !(reverseByFace instanceof Map)) return;
 
         const cfg = this._currentConfig;
         const layers = Array.isArray(cfg?.layers) ? cfg.layers : [];
@@ -3526,6 +4795,7 @@ export class BuildingFabrication2View {
                 if (dstLayerFacades) dstLayerFacades[target] = deepClone(srcFacade);
             }
             lockedToByFace.set(target, null);
+            reverseByFace.set(target, false);
         } else {
             const targetParent = lockedToByFace.get(target) ?? target;
             const targetCfg = this._ensureFaceMaterialConfigForMaster(layer, targetParent);
@@ -3538,6 +4808,7 @@ export class BuildingFabrication2View {
             for (const faceId of FACE_IDS) {
                 if ((lockedToByFace.get(faceId) ?? null) !== target) continue;
                 lockedToByFace.set(faceId, null);
+                reverseByFace.set(faceId, false);
                 if (targetCfg) {
                     layer.faceMaterials ??= {};
                     const faceMaterials = layer.faceMaterials && typeof layer.faceMaterials === 'object' ? layer.faceMaterials : null;
@@ -3549,6 +4820,7 @@ export class BuildingFabrication2View {
                 }
             }
             lockedToByFace.set(target, master);
+            reverseByFace.set(target, false);
 
             const faceMaterials = layer.faceMaterials && typeof layer.faceMaterials === 'object' ? layer.faceMaterials : null;
             if (faceMaterials) {
@@ -3563,12 +4835,40 @@ export class BuildingFabrication2View {
             }
         }
 
-        const links = {};
-        for (const faceId of FACE_IDS) {
-            const to = lockedToByFace.get(faceId) ?? null;
-            if (to) links[faceId] = to;
-        }
-        const linking = Object.keys(links).length ? { links } : null;
+        const linking = buildFaceLinkingFromFaceState(lockedToByFace, reverseByFace);
+        if (linking) layer.faceLinking = linking;
+        else delete layer.faceLinking;
+
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
+    _setFaceLockReverse(layerId, masterFaceId, targetFaceId, enabled) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        if (!id) return;
+        const master = isFaceId(masterFaceId) ? masterFaceId : null;
+        const target = isFaceId(targetFaceId) ? targetFaceId : null;
+        if (!master || !target || master === target) return;
+
+        const state = this._floorLayerFaceStateById.get(id) ?? null;
+        if (!state) return;
+        const lockedToByFace = state.lockedToByFace;
+        const reverseByFace = state.reverseByFace;
+        if (!(lockedToByFace instanceof Map) || !(reverseByFace instanceof Map)) return;
+
+        const currentMaster = lockedToByFace.get(target) ?? null;
+        if (currentMaster !== master) return;
+
+        const next = !!enabled;
+        if ((reverseByFace.get(target) ?? false) === next) return;
+        reverseByFace.set(target, next);
+
+        const cfg = this._currentConfig;
+        const layers = Array.isArray(cfg?.layers) ? cfg.layers : [];
+        const layer = layers.find((l) => l?.type === 'floor' && l?.id === id) ?? null;
+        if (!layer) return;
+
+        const linking = buildFaceLinkingFromFaceState(lockedToByFace, reverseByFace);
         if (linking) layer.faceLinking = linking;
         else delete layer.faceLinking;
 
@@ -3623,6 +4923,13 @@ export class BuildingFabrication2View {
         this._syncFaceHighlightSuppression();
     }
 
+    _setRenderSkyEnabled(enabled) {
+        const next = !!enabled;
+        if (next === this._renderSkyEnabled) return;
+        this._renderSkyEnabled = next;
+        this.scene?.setRenderSky?.(next);
+    }
+
     _setShowDummyEnabled(enabled) {
         this._showDummyEnabled = !!enabled;
         this.scene?.setShowDummy?.(this._showDummyEnabled);
@@ -3633,21 +4940,6 @@ export class BuildingFabrication2View {
         if (next === this._renderSlabEnabled) return;
         this._renderSlabEnabled = next;
         this.scene?.setRenderSlab?.(next);
-    }
-
-    _setDebugDisableSuspect1Enabled(enabled) {
-        const next = !!enabled;
-        if (next === this._debugDisableSuspect1Enabled) return;
-        this._debugDisableSuspect1Enabled = next;
-        this.scene?.setDebugDisableSuspect1?.(next);
-    }
-
-    _setDebugDisableSuspect4Enabled(enabled) {
-        const next = !!enabled;
-        if (next === this._debugDisableSuspect4Enabled) return;
-        this._debugDisableSuspect4Enabled = next;
-        this.scene?.setDebugDisableSuspect4?.(next);
-        if (this._currentConfig) this._requestRebuild({ preserveCamera: true });
     }
 
     _setLayoutAdjustEnabled(enabled) {
@@ -4434,7 +5726,8 @@ export class BuildingFabrication2View {
     }
 
     _syncFaceHighlightSuppression() {
-        const suppressed = this._hideFaceMarkEnabled && this._pointerInViewport;
+        const decorationMode = normalizeBf2EditorMode(this._editorMode) === BF2_EDITOR_MODE.DECORATION;
+        const suppressed = decorationMode || (this._hideFaceMarkEnabled && this._pointerInViewport);
         this.scene.setFaceHighlightSuppressed?.(suppressed);
     }
 
@@ -4466,6 +5759,7 @@ export class BuildingFabrication2View {
         const materialVariationSeed = Number.isFinite(cfg.materialVariationSeed) ? cfg.materialVariationSeed : null;
         const footprintLoops = cfg?.footprintLoops ?? null;
         const windowVisuals = cfg?.windowVisuals ?? null;
+        const wallDecorations = cfg?.wallDecorations ?? null;
         const exported = createCityBuildingConfigFromFabrication({
             id: exportId,
             name,
@@ -4475,7 +5769,8 @@ export class BuildingFabrication2View {
             materialVariationSeed,
             windowVisuals,
             facades: cfg?.facades ?? null,
-            windowDefinitions: cfg?.windowDefinitions ?? null
+            windowDefinitions: cfg?.windowDefinitions ?? null,
+            wallDecorations
         });
 
         const fileBaseName = buildingConfigIdToFileBaseName(exported.id);

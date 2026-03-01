@@ -32,6 +32,26 @@ function normalizeCatalogNameKey(value) {
     return normalizeCatalogName(value, '').toLowerCase();
 }
 
+const CATALOG_WINDOW_SHADE_COLOR_HEX = 0x565851;
+
+function normalizeCatalogEntrySettings(entry) {
+    const settings = deepClone(entry?.settings ?? {});
+    const assetType = normalizeAssetType(entry?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
+    if (assetType !== WINDOW_FABRICATION_ASSET_TYPE.WINDOW) return settings;
+
+    const shade = settings.shade && typeof settings.shade === 'object' ? settings.shade : {};
+    settings.shade = {
+        ...shade,
+        colorHex: CATALOG_WINDOW_SHADE_COLOR_HEX
+    };
+
+    const interiorEnabled = settings?.interior && typeof settings.interior === 'object'
+        ? settings.interior.enabled !== false
+        : true;
+    settings.interior = { enabled: interiorEnabled };
+    return settings;
+}
+
 const WINDOW_DOOR_FABRICATION_CATALOG = Object.freeze([
     Object.freeze({
         // Embedded from downloads/window_fabrication_window_window_clear_modern.json
@@ -113,7 +133,7 @@ const WINDOW_DOOR_FABRICATION_CATALOG = Object.freeze([
                 coverage: WINDOW_SHADE_COVERAGE.PCT_20,
                 randomizeCoverage: true,
                 direction: 'top_to_bottom',
-                colorHex: 15987178,
+                colorHex: 0x565851,
                 fabric: {
                     scale: 7,
                     intensity: 0.18
@@ -121,46 +141,7 @@ const WINDOW_DOOR_FABRICATION_CATALOG = Object.freeze([
                 zOffset: -0.06
             },
             interior: {
-                enabled: true,
-                parallaxInteriorPresetId: null,
-                atlasId: 'window_interior_atlas.residential_4x4',
-                atlas: {
-                    cols: 4,
-                    rows: 4
-                },
-                randomizeCell: true,
-                cell: {
-                    col: 0,
-                    row: 0
-                },
-                randomFlipX: true,
-                uvPan: {
-                    x: 0,
-                    y: 0
-                },
-                uvZoom: 1,
-                imageAspect: 1,
-                parallaxDepthMeters: 3,
-                parallaxScale: {
-                    x: 1,
-                    y: 1
-                },
-                zOffset: 0,
-                emissiveIntensity: 0,
-                tintVariation: {
-                    hueShiftDeg: {
-                        min: -8,
-                        max: 8
-                    },
-                    saturationMul: {
-                        min: 0.92,
-                        max: 1.08
-                    },
-                    brightnessMul: {
-                        min: 0.9,
-                        max: 1.12
-                    }
-                }
+                enabled: true
             }
         },
         decoration: null,
@@ -283,7 +264,7 @@ const WINDOW_DOOR_FABRICATION_CATALOG = Object.freeze([
                 coverage: WINDOW_SHADE_COVERAGE.PCT_20,
                 randomizeCoverage: true,
                 direction: 'top_to_bottom',
-                colorHex: 15987178,
+                colorHex: 0x565851,
                 fabric: {
                     scale: 7,
                     intensity: 0.18
@@ -291,46 +272,7 @@ const WINDOW_DOOR_FABRICATION_CATALOG = Object.freeze([
                 zOffset: -0.06
             },
             interior: {
-                enabled: false,
-                parallaxInteriorPresetId: null,
-                atlasId: 'window_interior_atlas.residential_4x4',
-                atlas: {
-                    cols: 4,
-                    rows: 4
-                },
-                randomizeCell: true,
-                cell: {
-                    col: 0,
-                    row: 0
-                },
-                randomFlipX: true,
-                uvPan: {
-                    x: 0,
-                    y: 0
-                },
-                uvZoom: 1,
-                imageAspect: 1,
-                parallaxDepthMeters: 3,
-                parallaxScale: {
-                    x: 1,
-                    y: 1
-                },
-                zOffset: 0,
-                emissiveIntensity: 0,
-                tintVariation: {
-                    hueShiftDeg: {
-                        min: -8,
-                        max: 8
-                    },
-                    saturationMul: {
-                        min: 0.92,
-                        max: 1.08
-                    },
-                    brightnessMul: {
-                        min: 0.9,
-                        max: 1.12
-                    }
-                }
+                enabled: false
             }
         },
         garageFacade: {
@@ -459,7 +401,7 @@ const WINDOW_DOOR_FABRICATION_CATALOG = Object.freeze([
                 coverage: WINDOW_SHADE_COVERAGE.PCT_20,
                 randomizeCoverage: true,
                 direction: 'top_to_bottom',
-                colorHex: 15987178,
+                colorHex: 0x565851,
                 fabric: {
                     scale: 7,
                     intensity: 0.18
@@ -467,46 +409,7 @@ const WINDOW_DOOR_FABRICATION_CATALOG = Object.freeze([
                 zOffset: -0.06
             },
             interior: {
-                enabled: false,
-                parallaxInteriorPresetId: null,
-                atlasId: 'window_interior_atlas.residential_4x4',
-                atlas: {
-                    cols: 4,
-                    rows: 4
-                },
-                randomizeCell: true,
-                cell: {
-                    col: 0,
-                    row: 0
-                },
-                randomFlipX: true,
-                uvPan: {
-                    x: 0,
-                    y: 0
-                },
-                uvZoom: 1,
-                imageAspect: 1,
-                parallaxDepthMeters: 3,
-                parallaxScale: {
-                    x: 1,
-                    y: 1
-                },
-                zOffset: 0,
-                emissiveIntensity: 0,
-                tintVariation: {
-                    hueShiftDeg: {
-                        min: -8,
-                        max: 8
-                    },
-                    saturationMul: {
-                        min: 0.92,
-                        max: 1.08
-                    },
-                    brightnessMul: {
-                        min: 0.9,
-                        max: 1.12
-                    }
-                }
+                enabled: false
             }
         },
         garageFacade: {
@@ -896,7 +799,7 @@ function toCatalogResult(entry) {
         assetType: normalizeAssetType(entry?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW),
         name,
         label: name,
-        settings: deepClone(entry?.settings ?? {}),
+        settings: normalizeCatalogEntrySettings(entry),
         decoration: deepClone(entry?.decoration ?? null),
         garageFacade: deepClone(entry?.garageFacade ?? null),
         layers: deepClone(entry?.layers ?? null),

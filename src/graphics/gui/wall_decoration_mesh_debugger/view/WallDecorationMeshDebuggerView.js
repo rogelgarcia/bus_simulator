@@ -30,6 +30,13 @@ const WALL_SPEC = Object.freeze({
 });
 const WALL_MATERIAL_NONE_ID = 'none';
 const WALL_BASE_COLOR_HEX = 0x9196a0;
+const AWNING_ROD_MATERIAL_ID_DARK_METAL = 'metal_dark';
+const AWNING_ROD_MATERIAL_DARK_METAL = Object.freeze({
+    colorHex: 0x454545,
+    roughness: 0.5,
+    metalness: 0.6,
+    envMapIntensity: 0.03
+});
 
 function clamp(value, min, max, fallback = min) {
     const num = Number(value);
@@ -842,6 +849,134 @@ function createCorniceRoundedGeometry({
     };
 }
 
+function createAwningSlantedPlaneGeometry({
+    spanWidthMeters = 1.0,
+    projectionMeters = 0.80,
+    slopeDropMeters = 0.20
+} = {}) {
+    const width = Math.max(0.01, Number(spanWidthMeters) || 1.0);
+    const projection = Math.max(0.05, Number(projectionMeters) || 0.80);
+    const drop = Math.max(0.0, Number(slopeDropMeters) || 0.0);
+    const halfWidth = width * 0.5;
+    const halfProjection = projection * 0.5;
+    const halfDrop = drop * 0.5;
+
+    const positions = [
+        -halfWidth, halfDrop, -halfProjection,
+        halfWidth, -halfDrop, halfProjection,
+        halfWidth, halfDrop, -halfProjection,
+        -halfWidth, halfDrop, -halfProjection,
+        -halfWidth, -halfDrop, halfProjection,
+        halfWidth, -halfDrop, halfProjection
+    ];
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+    const pos = geo.getAttribute('position');
+    const uv = [];
+    for (let i = 0; i < pos.count; i += 1) {
+        const x = Number(pos.getX(i)) || 0.0;
+        const z = Number(pos.getZ(i)) || 0.0;
+        const u = (x + halfWidth) / Math.max(1e-6, width);
+        const v = 1.0 - ((z + halfProjection) / Math.max(1e-6, projection));
+        uv.push(u, v);
+    }
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.computeBoundingBox();
+    geo.computeVertexNormals();
+    return {
+        geometry: geo,
+        widthMeters: width,
+        heightMeters: Math.max(0.01, Math.hypot(projection, drop)),
+        depthMeters: 0.0
+    };
+}
+
+function createAwningFrontQuadGeometry({
+    spanWidthMeters = 1.0,
+    faceHeightMeters = 0.30
+} = {}) {
+    const width = Math.max(0.01, Number(spanWidthMeters) || 1.0);
+    const height = Math.max(0.01, Number(faceHeightMeters) || 0.30);
+    const halfWidth = width * 0.5;
+    const halfHeight = height * 0.5;
+
+    const positions = [
+        -halfWidth, halfHeight, 0.0,
+        halfWidth, -halfHeight, 0.0,
+        halfWidth, halfHeight, 0.0,
+        -halfWidth, halfHeight, 0.0,
+        -halfWidth, -halfHeight, 0.0,
+        halfWidth, -halfHeight, 0.0
+    ];
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+    const pos = geo.getAttribute('position');
+    const uv = [];
+    for (let i = 0; i < pos.count; i += 1) {
+        const x = Number(pos.getX(i)) || 0.0;
+        const y = Number(pos.getY(i)) || 0.0;
+        const u = (x + halfWidth) / Math.max(1e-6, width);
+        const v = (y + halfHeight) / Math.max(1e-6, height);
+        uv.push(u, v);
+    }
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.computeBoundingBox();
+    geo.computeVertexNormals();
+    return {
+        geometry: geo,
+        widthMeters: width,
+        heightMeters: height,
+        depthMeters: 0.0
+    };
+}
+
+function createAwningSupportRodGeometry({
+    startU = 0.0,
+    startV = 0.0,
+    startOutsetMeters = 0.0,
+    endU = 0.0,
+    endV = 0.0,
+    endOutsetMeters = 0.0,
+    radiusMeters = 0.015,
+    radialSegments = 10
+} = {}) {
+    const radius = Math.max(0.001, Number(radiusMeters) || 0.015);
+    const segments = Math.max(3, Math.min(32, Math.floor(Number(radialSegments) || 10)));
+    const start = new THREE.Vector3(
+        Number(startU) || 0.0,
+        Number(startV) || 0.0,
+        Number(startOutsetMeters) || 0.0
+    );
+    const end = new THREE.Vector3(
+        Number(endU) || 0.0,
+        Number(endV) || 0.0,
+        Number(endOutsetMeters) || 0.0
+    );
+    const axis = end.clone().sub(start);
+    const length = Math.max(1e-4, axis.length());
+    const geo = new THREE.CylinderGeometry(radius, radius, length, segments, 1, false);
+
+    const up = new THREE.Vector3(0, 1, 0);
+    if (axis.lengthSq() <= 1e-8) axis.copy(up);
+    axis.normalize();
+    const q = new THREE.Quaternion().setFromUnitVectors(up, axis);
+    const m = new THREE.Matrix4().makeRotationFromQuaternion(q);
+    const mid = start.clone().add(end).multiplyScalar(0.5);
+    m.setPosition(mid);
+    geo.applyMatrix4(m);
+    geo.computeBoundingBox();
+    geo.computeVertexNormals();
+
+    return {
+        geometry: geo,
+        widthMeters: Math.max(0.01, Math.PI * 2.0 * radius),
+        heightMeters: Math.max(0.01, length),
+        depthMeters: Math.max(0.005, radius * 2.0)
+    };
+}
+
 function createFlatCapGeometry({
     spanWidthMeters = 1.0,
     capDepthMeters = 0.05,
@@ -1484,6 +1619,50 @@ export class WallDecorationMeshDebuggerView {
                 surfaceWidthMeters = corniceRounded.widthMeters;
                 surfaceHeightMeters = corniceRounded.heightMeters;
                 placementDepthMeters = corniceRounded.depthMeters;
+            } else if (geometryKind === 'awning_slanted_plane') {
+                const awningSlanted = createAwningSlantedPlaneGeometry({
+                    spanWidthMeters: widthMeters,
+                    projectionMeters: clamp(spec?.awningProjectionMeters ?? depthMeters, 0.05, 10.0, depthMeters),
+                    slopeDropMeters: clamp(spec?.awningSlopeDropMeters, 0.0, 10.0, 0.0)
+                });
+                geo = awningSlanted.geometry;
+                surfaceWidthMeters = awningSlanted.widthMeters;
+                surfaceHeightMeters = awningSlanted.heightMeters;
+                placementDepthMeters = awningSlanted.depthMeters;
+            } else if (geometryKind === 'awning_front_quad') {
+                const awningFront = createAwningFrontQuadGeometry({
+                    spanWidthMeters: widthMeters,
+                    faceHeightMeters: heightMeters
+                });
+                geo = awningFront.geometry;
+                surfaceWidthMeters = awningFront.widthMeters;
+                surfaceHeightMeters = awningFront.heightMeters;
+                placementDepthMeters = awningFront.depthMeters;
+            } else if (geometryKind === 'awning_support_rod') {
+                const rodStartU = Number.isFinite(Number(spec?.rodStartU)) ? Number(spec.rodStartU) : centerU;
+                const rodStartV = Number.isFinite(Number(spec?.rodStartV)) ? Number(spec.rodStartV) : centerV;
+                const rodStartOutsetMeters = Number.isFinite(Number(spec?.rodStartOutsetMeters))
+                    ? Number(spec.rodStartOutsetMeters)
+                    : outsetMeters;
+                const rodEndU = Number.isFinite(Number(spec?.rodEndU)) ? Number(spec.rodEndU) : centerU;
+                const rodEndV = Number.isFinite(Number(spec?.rodEndV)) ? Number(spec.rodEndV) : centerV;
+                const rodEndOutsetMeters = Number.isFinite(Number(spec?.rodEndOutsetMeters))
+                    ? Number(spec.rodEndOutsetMeters)
+                    : outsetMeters;
+                const awningRod = createAwningSupportRodGeometry({
+                    startU: rodStartU - centerU,
+                    startV: rodStartV - centerV,
+                    startOutsetMeters: rodStartOutsetMeters - outsetMeters,
+                    endU: rodEndU - centerU,
+                    endV: rodEndV - centerV,
+                    endOutsetMeters: rodEndOutsetMeters - outsetMeters,
+                    radiusMeters: clamp(spec?.rodRadiusMeters, 0.001, 0.5, 0.015),
+                    radialSegments: 10
+                });
+                geo = awningRod.geometry;
+                surfaceWidthMeters = awningRod.widthMeters;
+                surfaceHeightMeters = awningRod.heightMeters;
+                placementDepthMeters = 0.0;
             } else {
                 const wantsGenericMiter = spec?.miterStart45 === true || spec?.miterEnd45 === true;
                 if (wantsGenericMiter) {
@@ -1535,6 +1714,13 @@ export class WallDecorationMeshDebuggerView {
             mesh.userData.faceId = faceId || 'front';
             mesh.userData.role = role || 'decorator';
             mesh.userData.geometryKind = geometryKind || 'box';
+
+            if (geometryKind.startsWith('awning_')) {
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                // Keep awning geometry single-sided for rasterization while allowing reliable shadow casting.
+                mat.shadowSide = THREE.DoubleSide;
+            }
 
             this._applyStateMaterialToMesh(mesh);
             this._decoratorGroup.add(mesh);
@@ -1722,6 +1908,25 @@ export class WallDecorationMeshDebuggerView {
         const mat = mesh?.material?.isMeshStandardMaterial ? mesh.material : null;
         if (!mat) return;
         disposeTrackedRibbonPatternNormalMap(mat);
+
+        const geometryKind = String(mesh?.userData?.geometryKind ?? '').trim().toLowerCase();
+        if (geometryKind === 'awning_support_rod') {
+            const rodMaterialId = String(this._state?.configuration?.rodMaterialId ?? AWNING_ROD_MATERIAL_ID_DARK_METAL)
+                .trim()
+                .toLowerCase();
+            const rodMaterial = rodMaterialId === AWNING_ROD_MATERIAL_ID_DARK_METAL
+                ? AWNING_ROD_MATERIAL_DARK_METAL
+                : AWNING_ROD_MATERIAL_DARK_METAL;
+            disposeMaterialMaps(mat);
+            mat.color.setHex(rodMaterial.colorHex);
+            mat.roughness = rodMaterial.roughness;
+            mat.metalness = rodMaterial.metalness;
+            mat.envMapIntensity = rodMaterial.envMapIntensity;
+            if (mat.normalScale?.set) mat.normalScale.set(1, 1);
+            mat.wireframe = !!this._showWireframe;
+            mat.needsUpdate = true;
+            return;
+        }
 
         const materialSelection = this._state.materialSelection ?? {};
         const materialKindRaw = typeof materialSelection?.kind === 'string' ? materialSelection.kind.trim().toLowerCase() : '';

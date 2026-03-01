@@ -18,6 +18,7 @@ export const WALL_DECORATOR_ID = Object.freeze({
     HALF_DOME: 'half_dome',
     ANGLED_SUPPORT_PROFILE: 'angled_support_profile',
     RIBBON: 'ribbon',
+    AWNING: 'awning',
     EDGE_BRICK_CHAIN: 'edge_brick_chain',
     CORNICE_BASIC_BLOCK: 'cornice_basic_block',
     CORNICE_ROUNDED: 'cornice_rounded'
@@ -56,6 +57,12 @@ const HALF_DOME_DIAMETER_METERS_DEFAULT = 0.10;
 const HALF_DOME_OUTSET_METERS_DEFAULT = 0.0;
 const ANGLED_SUPPORT_PROFILE_OFFSET_METERS_DEFAULT = 0.10;
 const ANGLED_SUPPORT_PROFILE_HEIGHT_METERS_DEFAULT = 0.20;
+const AWNING_PROJECTION_METERS_DEFAULT = 0.80;
+const AWNING_FRONT_HEIGHT_METERS_DEFAULT = 0.30;
+const AWNING_SLOPE_DEGREES_DEFAULT = 25.0;
+const AWNING_ROD_RADIUS_METERS_DEFAULT = 0.015;
+const AWNING_ROD_INSET_METERS_DEFAULT = 0.08;
+const AWNING_ROD_MATERIAL_ID_DEFAULT = 'metal_dark';
 const NEAR_EDGE_OFFSET_METERS_DEFAULT = 0.10;
 const FLAT_PANEL_THICKNESS_METERS = 0.005;
 const RIBBON_PATTERN_NORMAL_INTENSITY_DEFAULT = 1.4;
@@ -81,10 +88,12 @@ const EDGE_BRICK_CHAIN_WIDTH_LONG_SCALE = 1.35;
 const EDGE_BRICK_CHAIN_WIDTH_SHORT_SCALE = 0.70;
 const WALL_DECORATOR_CATALOG_SECTION = Object.freeze({
     DECORATIONS: 'decorations',
+    AWNING: 'awning',
     CORNICE: 'cornice'
 });
 const WALL_DECORATOR_CATALOG_SECTION_LABEL = Object.freeze({
     [WALL_DECORATOR_CATALOG_SECTION.DECORATIONS]: 'Decorations',
+    [WALL_DECORATOR_CATALOG_SECTION.AWNING]: 'Awning',
     [WALL_DECORATOR_CATALOG_SECTION.CORNICE]: 'Cornice'
 });
 const WALL_DECORATOR_MATCH_WALL_MATERIAL_SELECTION = Object.freeze({
@@ -109,6 +118,7 @@ function normalizeDecoratorId(value, { allowNone = false } = {}) {
     if (raw === WALL_DECORATOR_ID.HALF_DOME) return WALL_DECORATOR_ID.HALF_DOME;
     if (raw === WALL_DECORATOR_ID.ANGLED_SUPPORT_PROFILE) return WALL_DECORATOR_ID.ANGLED_SUPPORT_PROFILE;
     if (raw === WALL_DECORATOR_ID.RIBBON) return WALL_DECORATOR_ID.RIBBON;
+    if (raw === WALL_DECORATOR_ID.AWNING) return WALL_DECORATOR_ID.AWNING;
     if (raw === WALL_DECORATOR_ID.EDGE_BRICK_CHAIN) return WALL_DECORATOR_ID.EDGE_BRICK_CHAIN;
     if (raw === WALL_DECORATOR_ID.CORNICE_BASIC_BLOCK) return WALL_DECORATOR_ID.CORNICE_BASIC_BLOCK;
     if (raw === WALL_DECORATOR_ID.CORNICE_ROUNDED) return WALL_DECORATOR_ID.CORNICE_ROUNDED;
@@ -158,6 +168,12 @@ function normalizeCorniceRoundedCurvature(value) {
 function normalizeDecoratorPropertyPicker(value) {
     const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
     if (raw === 'thumbnail') return 'thumbnail';
+    return '';
+}
+
+function normalizeDecoratorPropertyControl(value) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === 'combobox') return 'combobox';
     return '';
 }
 
@@ -211,6 +227,7 @@ function normalizeTypePropertySpecs(value) {
         } else if (type === WALL_DECORATOR_PROPERTY_TYPE.ENUM) {
             spec.options = normalizeEnumOptions(item?.options);
             spec.picker = normalizeDecoratorPropertyPicker(item?.picker);
+            spec.control = normalizeDecoratorPropertyControl(item?.control);
         }
         out.push(Object.freeze(spec));
     }
@@ -1232,6 +1249,178 @@ const ANGLED_SUPPORT_PROFILE_PROPERTY_SPECS = normalizeTypePropertySpecs([
 const ANGLED_SUPPORT_PROFILE_CONFIGURATION_DEFAULTS = Object.freeze(
     buildDefaultConfigurationFromPropertySpecs(ANGLED_SUPPORT_PROFILE_PROPERTY_SPECS)
 );
+
+const AWNING_PROPERTY_SPECS = normalizeTypePropertySpecs([
+    {
+        id: 'projectionMeters',
+        label: 'Projection (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.05,
+        max: 3.0,
+        step: 0.01,
+        default: AWNING_PROJECTION_METERS_DEFAULT
+    },
+    {
+        id: 'frontHeightMeters',
+        label: 'Front height (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.05,
+        max: 2.0,
+        step: 0.01,
+        default: AWNING_FRONT_HEIGHT_METERS_DEFAULT
+    },
+    {
+        id: 'slopeDegrees',
+        label: 'Slope (deg)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.0,
+        max: 75.0,
+        step: 1.0,
+        default: AWNING_SLOPE_DEGREES_DEFAULT
+    },
+    {
+        id: 'rodRadiusMeters',
+        label: 'Support radius (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.005,
+        max: 0.10,
+        step: 0.001,
+        default: AWNING_ROD_RADIUS_METERS_DEFAULT
+    },
+    {
+        id: 'rodInsetMeters',
+        label: 'Support inset (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.0,
+        max: 1.0,
+        step: 0.01,
+        default: AWNING_ROD_INSET_METERS_DEFAULT
+    },
+    {
+        id: 'rodMaterialId',
+        label: 'Support material',
+        type: WALL_DECORATOR_PROPERTY_TYPE.ENUM,
+        default: AWNING_ROD_MATERIAL_ID_DEFAULT,
+        control: 'combobox',
+        options: [
+            { id: AWNING_ROD_MATERIAL_ID_DEFAULT, label: 'Dark Metal' }
+        ]
+    },
+    {
+        id: 'nearEdgeOffsetMeters',
+        label: 'Near-edge offset (m)',
+        type: WALL_DECORATOR_PROPERTY_TYPE.FLOAT,
+        min: 0.0,
+        max: 2.0,
+        step: 0.01,
+        default: NEAR_EDGE_OFFSET_METERS_DEFAULT
+    }
+]);
+
+const AWNING_CONFIGURATION_DEFAULTS = Object.freeze(
+    buildDefaultConfigurationFromPropertySpecs(AWNING_PROPERTY_SPECS)
+);
+
+function pushAwningSlantedPlaneSpec({
+    specs,
+    role,
+    faceId,
+    startU,
+    endU,
+    wallTopV,
+    frontTopV,
+    projectionMeters
+}) {
+    const out = Array.isArray(specs) ? specs : [];
+    const minU = Math.min(Number(startU) || 0.0, Number(endU) || 0.0);
+    const maxU = Math.max(Number(startU) || 0.0, Number(endU) || 0.0);
+    const widthMeters = Math.max(0.01, maxU - minU);
+    const wallEdgeV = Number(wallTopV) || 0.0;
+    const frontEdgeV = Number(frontTopV) || 0.0;
+    const projection = clamp(projectionMeters, 0.05, 3.0, AWNING_PROJECTION_METERS_DEFAULT);
+    const dropMeters = Math.max(0.0, wallEdgeV - frontEdgeV);
+    const slantedLength = Math.hypot(projection, dropMeters);
+    out.push({
+        role: String(role ?? 'awning_slanted').trim() || 'awning_slanted',
+        faceId: String(faceId ?? '').toLowerCase() === 'right' ? 'right' : 'front',
+        geometryKind: 'awning_slanted_plane',
+        centerU: minU + widthMeters * 0.5,
+        centerV: (wallEdgeV + frontEdgeV) * 0.5,
+        widthMeters,
+        heightMeters: Math.max(0.01, slantedLength),
+        depthMeters: projection,
+        outsetMeters: projection * 0.5,
+        awningProjectionMeters: projection,
+        awningSlopeDropMeters: dropMeters
+    });
+}
+
+function pushAwningFrontQuadSpec({
+    specs,
+    role,
+    faceId,
+    startU,
+    endU,
+    frontTopV,
+    frontBottomV,
+    projectionMeters
+}) {
+    const out = Array.isArray(specs) ? specs : [];
+    const minU = Math.min(Number(startU) || 0.0, Number(endU) || 0.0);
+    const maxU = Math.max(Number(startU) || 0.0, Number(endU) || 0.0);
+    const widthMeters = Math.max(0.01, maxU - minU);
+    const topV = Number(frontTopV) || 0.0;
+    const bottomV = Number(frontBottomV) || 0.0;
+    const frontHeightMeters = Math.max(0.01, topV - bottomV);
+    const projection = clamp(projectionMeters, 0.05, 3.0, AWNING_PROJECTION_METERS_DEFAULT);
+    out.push({
+        role: String(role ?? 'awning_front').trim() || 'awning_front',
+        faceId: String(faceId ?? '').toLowerCase() === 'right' ? 'right' : 'front',
+        geometryKind: 'awning_front_quad',
+        centerU: minU + widthMeters * 0.5,
+        centerV: (topV + bottomV) * 0.5,
+        widthMeters,
+        heightMeters: frontHeightMeters,
+        depthMeters: FLAT_PANEL_THICKNESS_METERS,
+        outsetMeters: projection
+    });
+}
+
+function pushAwningSupportRodSpec({
+    specs,
+    role,
+    faceId,
+    rodU,
+    wallAnchorV,
+    frontAnchorV,
+    projectionMeters,
+    rodRadiusMeters
+}) {
+    const out = Array.isArray(specs) ? specs : [];
+    const projection = clamp(projectionMeters, 0.05, 3.0, AWNING_PROJECTION_METERS_DEFAULT);
+    const startV = Number(wallAnchorV) || 0.0;
+    const endV = Number(frontAnchorV) || 0.0;
+    const centerV = (startV + endV) * 0.5;
+    const rodRadius = clamp(rodRadiusMeters, 0.005, 0.10, AWNING_ROD_RADIUS_METERS_DEFAULT);
+    out.push({
+        role: String(role ?? 'awning_rod').trim() || 'awning_rod',
+        faceId: String(faceId ?? '').toLowerCase() === 'right' ? 'right' : 'front',
+        geometryKind: 'awning_support_rod',
+        centerU: Number(rodU) || 0.0,
+        centerV,
+        widthMeters: rodRadius * 2.0,
+        heightMeters: Math.max(0.01, Math.abs(endV - startV)),
+        depthMeters: Math.max(0.005, projection),
+        outsetMeters: projection * 0.5,
+        rodRadiusMeters: rodRadius,
+        rodStartU: Number(rodU) || 0.0,
+        rodStartV: startV,
+        rodStartOutsetMeters: 0.0,
+        rodEndU: Number(rodU) || 0.0,
+        rodEndV: endV,
+        rodEndOutsetMeters: projection
+    });
+}
 
 function buildSimpleSkirtShapeSpecs({ state, wallSpec }) {
     const whereToApply = normalizeWhereToApply(state?.whereToApply);
@@ -2278,6 +2467,164 @@ function buildAngledSupportProfileShapeSpecs({ state, wallSpec }) {
     return specs;
 }
 
+function buildAwningShapeSpecs({ state, wallSpec }) {
+    const whereToApply = normalizeWhereToApply(state?.whereToApply);
+    const mode = normalizeMode(state?.mode);
+    const position = normalizePosition(state?.position);
+    const wall = normalizeWallSpec(wallSpec);
+    const configuration = normalizeDecoratorConfiguration(
+        state?.configuration,
+        AWNING_PROPERTY_SPECS,
+        AWNING_CONFIGURATION_DEFAULTS
+    );
+
+    const targetWidth = whereToApply === WALL_DECORATOR_WHERE_TO_APPLY.HALF
+        ? wall.widthMeters * 0.5
+        : wall.widthMeters;
+    if (targetWidth <= 0.01) return [];
+
+    const wallHalfWidth = wall.widthMeters * 0.5;
+    const startU = wallHalfWidth - targetWidth;
+    const endU = startU + targetWidth;
+
+    const projectionMeters = clamp(
+        configuration.projectionMeters,
+        0.05,
+        3.0,
+        AWNING_PROJECTION_METERS_DEFAULT
+    );
+    const frontHeightMeters = clamp(
+        configuration.frontHeightMeters,
+        0.05,
+        Math.min(wall.heightMeters, 2.0),
+        AWNING_FRONT_HEIGHT_METERS_DEFAULT
+    );
+    const slopeDegrees = clamp(
+        configuration.slopeDegrees,
+        0.0,
+        75.0,
+        AWNING_SLOPE_DEGREES_DEFAULT
+    );
+    const slopeDropMeters = projectionMeters * Math.tan(slopeDegrees * Math.PI / 180.0);
+    const decoratorHeightMeters = Math.max(0.05, frontHeightMeters + slopeDropMeters);
+    const centerV = resolveCenterYForPosition(
+        position,
+        wall.heightMeters,
+        decoratorHeightMeters,
+        configuration.nearEdgeOffsetMeters
+    );
+    const wallTopV = centerV + decoratorHeightMeters * 0.5;
+    const frontTopV = wallTopV - slopeDropMeters;
+    const frontBottomV = frontTopV - frontHeightMeters;
+    const rodRadiusMeters = clamp(
+        configuration.rodRadiusMeters,
+        0.005,
+        0.10,
+        AWNING_ROD_RADIUS_METERS_DEFAULT
+    );
+
+    const specs = [];
+    const addFaceAwning = ({
+        rolePrefix,
+        faceId,
+        segmentStartU,
+        segmentEndU,
+        addStartRod = false,
+        addEndRod = false
+    }) => {
+        const minU = Math.min(Number(segmentStartU) || 0.0, Number(segmentEndU) || 0.0);
+        const maxU = Math.max(Number(segmentStartU) || 0.0, Number(segmentEndU) || 0.0);
+        const segmentWidthMeters = Math.max(0.01, maxU - minU);
+        const rodInsetMeters = clamp(
+            configuration.rodInsetMeters,
+            0.0,
+            Math.max(0.0, segmentWidthMeters * 0.5 - 0.001),
+            AWNING_ROD_INSET_METERS_DEFAULT
+        );
+
+        pushAwningSlantedPlaneSpec({
+            specs,
+            role: `${rolePrefix}_slanted`,
+            faceId,
+            startU: minU,
+            endU: maxU,
+            wallTopV,
+            frontTopV,
+            projectionMeters
+        });
+        pushAwningFrontQuadSpec({
+            specs,
+            role: `${rolePrefix}_front`,
+            faceId,
+            startU: minU,
+            endU: maxU,
+            frontTopV,
+            frontBottomV,
+            projectionMeters
+        });
+
+        // Keep rod top tangent to the slanted/front junction: center sits at seam - radius.
+        const supportAnchorV = frontTopV - rodRadiusMeters;
+        const startRodU = minU + rodInsetMeters;
+        const endRodU = maxU - rodInsetMeters;
+
+        if (addStartRod) {
+            pushAwningSupportRodSpec({
+                specs,
+                role: `${rolePrefix}_rod_start`,
+                faceId,
+                rodU: startRodU,
+                wallAnchorV: supportAnchorV,
+                frontAnchorV: supportAnchorV,
+                projectionMeters,
+                rodRadiusMeters
+            });
+        }
+        if (addEndRod) {
+            pushAwningSupportRodSpec({
+                specs,
+                role: `${rolePrefix}_rod_end`,
+                faceId,
+                rodU: endRodU,
+                wallAnchorV: supportAnchorV,
+                frontAnchorV: supportAnchorV,
+                projectionMeters,
+                rodRadiusMeters
+            });
+        }
+    };
+
+    if (mode === WALL_DECORATOR_MODE.CORNER) {
+        addFaceAwning({
+            rolePrefix: 'awning_front',
+            faceId: 'front',
+            segmentStartU: startU,
+            segmentEndU: endU + projectionMeters,
+            addStartRod: true,
+            addEndRod: false
+        });
+        addFaceAwning({
+            rolePrefix: 'awning_right',
+            faceId: 'right',
+            segmentStartU: -projectionMeters,
+            segmentEndU: targetWidth,
+            addStartRod: false,
+            addEndRod: true
+        });
+    } else {
+        addFaceAwning({
+            rolePrefix: 'awning_front',
+            faceId: 'front',
+            segmentStartU: startU,
+            segmentEndU: endU,
+            addStartRod: true,
+            addEndRod: true
+        });
+    }
+
+    return specs;
+}
+
 const SIMPLE_SKIRT_DEFAULTS = Object.freeze({
     whereToApply: WALL_DECORATOR_WHERE_TO_APPLY.ENTIRE_FACADE,
     mode: WALL_DECORATOR_MODE.FACE,
@@ -2434,6 +2781,31 @@ const ANGLED_SUPPORT_PROFILE_DEFAULTS = Object.freeze({
     position: WALL_DECORATOR_POSITION.BOTTOM,
     configuration: Object.freeze({
         ...ANGLED_SUPPORT_PROFILE_CONFIGURATION_DEFAULTS
+    }),
+    materialSelection: WALL_DECORATOR_MATCH_WALL_MATERIAL_SELECTION,
+    wallBase: Object.freeze({
+        ...applyWallBaseTintStateToWallBase({}, WALL_BASE_TINT_STATE_DEFAULT),
+        roughness: 0.85,
+        normalStrength: 0.9
+    }),
+    tiling: Object.freeze({
+        enabled: false,
+        tileMeters: 2.0,
+        tileMetersU: 2.0,
+        tileMetersV: 2.0,
+        uvEnabled: false,
+        offsetU: 0.0,
+        offsetV: 0.0,
+        rotationDegrees: 0.0
+    })
+});
+
+const AWNING_DEFAULTS = Object.freeze({
+    whereToApply: WALL_DECORATOR_WHERE_TO_APPLY.ENTIRE_FACADE,
+    mode: WALL_DECORATOR_MODE.FACE,
+    position: WALL_DECORATOR_POSITION.NEAR_TOP,
+    configuration: Object.freeze({
+        ...AWNING_CONFIGURATION_DEFAULTS
     }),
     materialSelection: WALL_DECORATOR_MATCH_WALL_MATERIAL_SELECTION,
     wallBase: Object.freeze({
@@ -2891,6 +3263,105 @@ const ANGLED_SUPPORT_PROFILE_PRESETS = Object.freeze([
     })
 ]);
 
+const AWNING_PRESETS = Object.freeze([
+    Object.freeze({
+        id: 'small',
+        label: 'Small',
+        configuration: Object.freeze({
+            projectionMeters: 0.50,
+            frontHeightMeters: 0.20,
+            slopeDegrees: AWNING_SLOPE_DEGREES_DEFAULT,
+            rodRadiusMeters: 0.010,
+            rodInsetMeters: 0.05,
+            nearEdgeOffsetMeters: NEAR_EDGE_OFFSET_METERS_DEFAULT
+        })
+    }),
+    Object.freeze({
+        id: 'medium',
+        label: 'Medium',
+        configuration: Object.freeze({
+            projectionMeters: AWNING_PROJECTION_METERS_DEFAULT,
+            frontHeightMeters: AWNING_FRONT_HEIGHT_METERS_DEFAULT,
+            slopeDegrees: AWNING_SLOPE_DEGREES_DEFAULT,
+            rodRadiusMeters: AWNING_ROD_RADIUS_METERS_DEFAULT,
+            rodInsetMeters: AWNING_ROD_INSET_METERS_DEFAULT,
+            nearEdgeOffsetMeters: NEAR_EDGE_OFFSET_METERS_DEFAULT
+        })
+    }),
+    Object.freeze({
+        id: 'large',
+        label: 'Large',
+        configuration: Object.freeze({
+            projectionMeters: 1.20,
+            frontHeightMeters: 0.45,
+            slopeDegrees: AWNING_SLOPE_DEGREES_DEFAULT,
+            rodRadiusMeters: 0.020,
+            rodInsetMeters: 0.12,
+            nearEdgeOffsetMeters: NEAR_EDGE_OFFSET_METERS_DEFAULT
+        })
+    })
+]);
+
+const AWNING_PRESET_GROUPS = Object.freeze([
+    Object.freeze({
+        id: 'size',
+        label: 'Size',
+        options: Object.freeze([
+            Object.freeze({
+                id: 'small',
+                label: 'Small',
+                configuration: Object.freeze({
+                    projectionMeters: 0.50,
+                    frontHeightMeters: 0.20,
+                    rodRadiusMeters: 0.010,
+                    rodInsetMeters: 0.05
+                })
+            }),
+            Object.freeze({
+                id: 'medium',
+                label: 'Medium',
+                configuration: Object.freeze({
+                    projectionMeters: AWNING_PROJECTION_METERS_DEFAULT,
+                    frontHeightMeters: AWNING_FRONT_HEIGHT_METERS_DEFAULT,
+                    rodRadiusMeters: AWNING_ROD_RADIUS_METERS_DEFAULT,
+                    rodInsetMeters: AWNING_ROD_INSET_METERS_DEFAULT
+                })
+            }),
+            Object.freeze({
+                id: 'large',
+                label: 'Large',
+                configuration: Object.freeze({
+                    projectionMeters: 1.20,
+                    frontHeightMeters: 0.45,
+                    rodRadiusMeters: 0.020,
+                    rodInsetMeters: 0.12
+                })
+            })
+        ])
+    }),
+    Object.freeze({
+        id: 'slope',
+        label: 'Slope',
+        options: Object.freeze([
+            Object.freeze({
+                id: 'shallow',
+                label: 'Shallow',
+                configuration: Object.freeze({ slopeDegrees: 15.0 })
+            }),
+            Object.freeze({
+                id: 'standard',
+                label: 'Standard',
+                configuration: Object.freeze({ slopeDegrees: AWNING_SLOPE_DEGREES_DEFAULT })
+            }),
+            Object.freeze({
+                id: 'steep',
+                label: 'Steep',
+                configuration: Object.freeze({ slopeDegrees: 35.0 })
+            })
+        ])
+    })
+]);
+
 const WALL_DECORATOR_TYPE_CATALOG = Object.freeze([
     Object.freeze({
         id: WALL_DECORATOR_ID.SIMPLE_SKIRT,
@@ -2942,6 +3413,23 @@ const WALL_DECORATOR_TYPE_CATALOG = Object.freeze([
         presetGroups: EDGE_BRICK_CHAIN_PRESET_GROUPS,
         defaults: EDGE_BRICK_CHAIN_DEFAULTS,
         createShapeSpecs: ({ state, wallSpec }) => buildEdgeBrickChainShapeSpecs({ state, wallSpec })
+    }),
+    Object.freeze({
+        id: WALL_DECORATOR_ID.AWNING,
+        label: 'Awning',
+        description: 'Slanted canopy with front valance and side-edge support rods.',
+        catalogSectionId: WALL_DECORATOR_CATALOG_SECTION.AWNING,
+        catalogSectionLabel: WALL_DECORATOR_CATALOG_SECTION_LABEL[WALL_DECORATOR_CATALOG_SECTION.AWNING],
+        defaultPlacement: Object.freeze({
+            whereToApply: AWNING_DEFAULTS.whereToApply,
+            mode: AWNING_DEFAULTS.mode,
+            position: AWNING_DEFAULTS.position
+        }),
+        properties: AWNING_PROPERTY_SPECS,
+        presets: AWNING_PRESETS,
+        presetGroups: AWNING_PRESET_GROUPS,
+        defaults: AWNING_DEFAULTS,
+        createShapeSpecs: ({ state, wallSpec }) => buildAwningShapeSpecs({ state, wallSpec })
     }),
     Object.freeze({
         id: WALL_DECORATOR_ID.CORNICE_BASIC_BLOCK,

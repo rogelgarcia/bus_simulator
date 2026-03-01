@@ -105,6 +105,25 @@ function clampInt(value, min, max) {
     return Math.max(min, Math.min(max, rounded));
 }
 
+function isFaceId(faceId) {
+    return faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D';
+}
+
+function shouldReverseLinkedFaceBayOrder({ faceId, masterFaceId, reverseByFace }) {
+    if (!isFaceId(faceId) || !isFaceId(masterFaceId)) return false;
+    if (faceId === masterFaceId) return false;
+    const reverse = reverseByFace && typeof reverseByFace === 'object' ? reverseByFace : null;
+    return !!reverse?.[faceId];
+}
+
+function resolveLinkedFaceBaysForSolve({ bays, faceId, masterFaceId, reverseByFace }) {
+    const src = Array.isArray(bays) ? bays : null;
+    if (!src || !src.length) return src;
+    if (!shouldReverseLinkedFaceBayOrder({ faceId, masterFaceId, reverseByFace })) return src;
+    // Reverse assignment order only. Bay specs are reused as-is; geometry/content is not mirrored.
+    return src.slice().reverse();
+}
+
 function normalizeOpeningHeightMode(value, fallback = OPENING_HEIGHT_MODE.FIXED) {
     const typed = typeof value === 'string' ? value.trim().toLowerCase() : '';
     if (typed === OPENING_HEIGHT_MODE.FULL) return OPENING_HEIGHT_MODE.FULL;
@@ -248,6 +267,17 @@ function normalizeGarageFacadeConfig(value, fallback = null) {
             resolved?.rotationDegrees,
             normalizeGarageFacadeRotationDegrees(fb?.rotationDegrees, GARAGE_FACADE_ROTATION_DEGREES.DEG_0)
         )
+    };
+}
+
+function normalizeOpeningWallCutConfig(value, fallback = null) {
+    const src = value && typeof value === 'object' ? value : null;
+    const fb = fallback && typeof fallback === 'object' ? fallback : null;
+    const cutWidthRaw = Number(src?.cutWidthLerp ?? src?.cutX ?? fb?.cutWidthLerp ?? fb?.cutX ?? 0);
+    const cutHeightRaw = Number(src?.cutHeightLerp ?? src?.cutY ?? fb?.cutHeightLerp ?? fb?.cutY ?? 0);
+    return {
+        cutWidthLerp: Number.isFinite(cutWidthRaw) ? clamp(cutWidthRaw, -1.0, 1.0) : 0,
+        cutHeightLerp: Number.isFinite(cutHeightRaw) ? clamp(cutHeightRaw, -1.0, 1.0) : 0
     };
 }
 
@@ -1581,7 +1611,6 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                     const y0 = cy - halfH;
                     const y1 = cy + halfH;
 
-                    if (x0 <= EPS || x1 >= segLen - EPS) continue;
                     if (y1 <= sliceY0 + EPS || y0 >= sliceY1 - EPS) continue;
 
                     const sx0 = clamp(x0, 0.0, segLen);
@@ -1789,12 +1818,14 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                     const y0 = cut.y0;
                     const y1 = cut.y1;
                     if (!(x1 - x0 > minEdge) || !(y1 - y0 > minEdge)) continue;
+                    const touchesStart = x0 <= cutTol + EPS;
+                    const touchesEnd = x1 >= segLen - cutTol - EPS;
 
                     if (!cut.wantsArch || !(cut.archRise > EPS)) {
                         pushRevealQuad(x0, y0, x1, y0, depth);
-                        pushRevealQuad(x1, y0, x1, y1, depth);
+                        if (!touchesEnd) pushRevealQuad(x1, y0, x1, y1, depth);
                         pushRevealQuad(x1, y1, x0, y1, depth);
-                        pushRevealQuad(x0, y1, x0, y0, depth);
+                        if (!touchesStart) pushRevealQuad(x0, y1, x0, y0, depth);
                         continue;
                     }
 
@@ -1802,9 +1833,9 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                     const yChord = yTop - cut.archRise;
                     if (yChord <= y0 + EPS) {
                         pushRevealQuad(x0, y0, x1, y0, depth);
-                        pushRevealQuad(x1, y0, x1, y1, depth);
+                        if (!touchesEnd) pushRevealQuad(x1, y0, x1, y1, depth);
                         pushRevealQuad(x1, y1, x0, y1, depth);
-                        pushRevealQuad(x0, y1, x0, y0, depth);
+                        if (!touchesStart) pushRevealQuad(x0, y1, x0, y0, depth);
                         continue;
                     }
 
@@ -1822,7 +1853,7 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
 
                     const arcSegments = clampInt(curveSegments, 6, 64);
                     pushRevealQuad(x0, y0, x1, y0, depth);
-                    pushRevealQuad(x1, y0, x1, yChord, depth);
+                    if (!touchesEnd) pushRevealQuad(x1, y0, x1, yChord, depth);
                     let prevX = x1;
                     let prevY = yChord;
                     for (let s = 1; s < arcSegments; s++) {
@@ -1833,8 +1864,10 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                         prevX = x;
                         prevY = y;
                     }
-                    pushRevealQuad(prevX, prevY, x0, yChord, depth);
-                    pushRevealQuad(x0, yChord, x0, y0, depth);
+                    if (!touchesStart) {
+                        pushRevealQuad(prevX, prevY, x0, yChord, depth);
+                        pushRevealQuad(x0, yChord, x0, y0, depth);
+                    }
                 }
             }
 
@@ -3422,12 +3455,14 @@ export function buildBuildingFabricationVisualParts({
             fallbackAssetType
         );
         const garageFacade = normalizeGarageFacadeConfig(entry?.garageFacade ?? null, null);
+        const wall = normalizeOpeningWallCutConfig(entry?.wall ?? null, null);
         const decoration = deepClone(entry?.decoration ?? null);
         windowDefinitionById.set(id, {
             id,
             assetType,
             settings,
             garageFacade,
+            wall,
             decoration,
             widthMeters,
             heightMeters
@@ -3661,6 +3696,9 @@ export function buildBuildingFabricationVisualParts({
                 if (frames) {
                     const faceMaterials = layer?.faceMaterials && typeof layer.faceMaterials === 'object' ? layer.faceMaterials : null;
                     const links = layer?.faceLinking?.links && typeof layer.faceLinking.links === 'object' ? layer.faceLinking.links : null;
+                    const reverseByFace = layer?.faceLinking?.reverseByFace && typeof layer.faceLinking.reverseByFace === 'object'
+                        ? layer.faceLinking.reverseByFace
+                        : null;
                     const resolveMasterFaceId = (faceId) => {
                         const seen = new Set();
                         let cur = faceId;
@@ -3688,7 +3726,10 @@ export function buildBuildingFabricationVisualParts({
                         const bays = Array.isArray(srcLayout?.bays?.items) ? srcLayout.bays.items : null;
                         const groups = Array.isArray(srcLayout?.groups?.items) ? srcLayout.groups.items : null;
                         const hasBays = !!bays && bays.length > 0;
-                        const bayItems = hasBays ? solveFacadeBaysLayout({ bays, groups, faceLengthMeters: len, warnings }) : null;
+                        const baysForSolve = hasBays
+                            ? resolveLinkedFaceBaysForSolve({ bays, faceId, masterFaceId, reverseByFace })
+                            : null;
+                        const bayItems = hasBays ? solveFacadeBaysLayout({ bays: baysForSolve, groups, faceLengthMeters: len, warnings }) : null;
 
                         let solvedPatternItems = null;
                         if (!hasBays) {
@@ -4090,6 +4131,10 @@ export function buildBuildingFabricationVisualParts({
                         windowCfg?.garageFacade ?? null,
                         def?.garageFacade ?? null
                     );
+                    const wall = normalizeOpeningWallCutConfig(
+                        windowCfg?.wall ?? null,
+                        def?.wall ?? null
+                    );
 
                     bayWindowPlacements.push({
                         faceId,
@@ -4108,6 +4153,7 @@ export function buildBuildingFabricationVisualParts({
                         verticalOffsetMeters,
                         repeatCount,
                         visual,
+                        wall,
                         muntins: {
                             bottomEnabled: muntinsBottomEnabled,
                             topEnabled: muntinsTopEnabled
@@ -4493,8 +4539,12 @@ export function buildBuildingFabricationVisualParts({
                                     : null;
 
                                 // Bay openings carve facade cutouts only; they do not drive the legacy interior-shell pass.
-                                const appendCutoutsFromSettings = ({ settings, openingHeight, openingY }) => {
-                                    const cutMetrics = resolveOpeningCutMetrics(settings, { cutX: 1.0, cutY: 1.0 });
+                                const appendCutoutsFromSettings = ({ settings, openingHeight, openingY, wall }) => {
+                                    const resolvedWall = normalizeOpeningWallCutConfig(wall ?? null, null);
+                                    const cutMetrics = resolveOpeningCutMetrics(settings, {
+                                        cutX: resolvedWall.cutWidthLerp,
+                                        cutY: resolvedWall.cutHeightLerp
+                                    });
                                     const cutWidth = Number(cutMetrics?.cutWidth) || 0;
                                     const cutHeight = Number(cutMetrics?.cutHeight) || 0;
                                     if (!(cutWidth > 0.02) || !(cutHeight > 0.02)) return;
@@ -4534,13 +4584,15 @@ export function buildBuildingFabricationVisualParts({
                                 appendCutoutsFromSettings({
                                     settings: bottomSettings,
                                     openingHeight: bottomHeight,
-                                    openingY: bottomY
+                                    openingY: bottomY,
+                                    wall: placement?.wall ?? null
                                 });
                                 if (topSettings && topHeight > EPS) {
                                     appendCutoutsFromSettings({
                                         settings: topSettings,
                                         openingHeight: topHeight,
-                                        openingY: topY
+                                        openingY: topY,
+                                        wall: placement?.wall ?? null
                                     });
                                 }
                             }
@@ -4715,15 +4767,16 @@ export function buildBuildingFabricationVisualParts({
                                     const segmentYBottom = Number(seg?.yBottom) || 0;
                                     const segmentBaseY = layerStartY + segmentYBottom;
 
-                                    const interiorWallGeo = buildWallSidesGeometryFromLoopXZ(interiorShellLoop, {
+                                    // Interior walls should face into the interior room volume.
+                                    const interiorWallGeo = buildWallSidesGeometryFromLoopXZ(interiorShellLoop.slice().reverse(), {
                                         height: interiorHeight,
                                         uvBaseV: yOffset + segmentYBottom
                                     });
                                     if (interiorWallGeo) {
                                         const interiorWallMat = createInteriorMaterial();
                                         const interiorWallMesh = new THREE.Mesh(interiorWallGeo, interiorWallMat);
-                                        interiorWallMesh.castShadow = true;
-                                        interiorWallMesh.receiveShadow = true;
+                                        interiorWallMesh.castShadow = false;
+                                        interiorWallMesh.receiveShadow = false;
                                         interiorWallMesh.position.y = segmentBaseY;
                                         interiorWallMesh.userData = interiorWallMesh.userData ?? {};
                                         interiorWallMesh.userData.buildingFab2Role = 'interior';
@@ -5232,6 +5285,7 @@ export function buildBuildingFabricationVisualParts({
                         openingY,
                         openingHeight,
                         settings,
+                        wall,
                         nx,
                         nz,
                         yaw,
@@ -5241,7 +5295,11 @@ export function buildBuildingFabricationVisualParts({
                         const safeSettings = settings && typeof settings === 'object' ? settings : null;
                         if (!pointObj || !safeSettings) return;
 
-                        const metrics = resolveOpeningCutMetrics(safeSettings, { cutX: 1.0, cutY: 1.0 });
+                        const resolvedWall = normalizeOpeningWallCutConfig(wall ?? null, null);
+                        const metrics = resolveOpeningCutMetrics(safeSettings, {
+                            cutX: resolvedWall.cutWidthLerp,
+                            cutY: resolvedWall.cutHeightLerp
+                        });
                         const openingWidth = Number(metrics?.cutWidth) || 0;
                         const openingCutHeight = Number(metrics?.cutHeight) || 0;
                         if (!(openingWidth > EPS) || !(openingCutHeight > EPS)) return;
@@ -5434,6 +5492,7 @@ export function buildBuildingFabricationVisualParts({
                                         openingY: bottomY,
                                         openingHeight: bottomHeight,
                                         settings: bottomSettings,
+                                        wall: placement?.wall ?? null,
                                         nx,
                                         nz,
                                         yaw,
@@ -5654,6 +5713,10 @@ export function buildBuildingFabricationVisualParts({
                     const links = lastFloorLayer?.faceLinking?.links && typeof lastFloorLayer.faceLinking.links === 'object'
                         ? lastFloorLayer.faceLinking.links
                         : null;
+                    const reverseByFace = lastFloorLayer?.faceLinking?.reverseByFace
+                        && typeof lastFloorLayer.faceLinking.reverseByFace === 'object'
+                        ? lastFloorLayer.faceLinking.reverseByFace
+                        : null;
                     const resolveMasterFaceId = (faceId) => {
                         const seen = new Set();
                         let cur = faceId;
@@ -5682,7 +5745,10 @@ export function buildBuildingFabricationVisualParts({
                         const bays = Array.isArray(srcLayout?.bays?.items) ? srcLayout.bays.items : null;
                         const groups = Array.isArray(srcLayout?.groups?.items) ? srcLayout.groups.items : null;
                         const hasBays = !!bays && bays.length > 0;
-                        const bayItems = hasBays ? solveFacadeBaysLayout({ bays, groups, faceLengthMeters: len, warnings }) : null;
+                        const baysForSolve = hasBays
+                            ? resolveLinkedFaceBaysForSolve({ bays, faceId, masterFaceId, reverseByFace })
+                            : null;
+                        const bayItems = hasBays ? solveFacadeBaysLayout({ bays: baysForSolve, groups, faceLengthMeters: len, warnings }) : null;
 
                         let solvedPatternItems = null;
                         if (!hasBays) {
@@ -5850,6 +5916,10 @@ export function buildBuildingFabricationVisualParts({
                 const links = topFloorLayer?.faceLinking?.links && typeof topFloorLayer.faceLinking.links === 'object'
                     ? topFloorLayer.faceLinking.links
                     : null;
+                const reverseByFace = topFloorLayer?.faceLinking?.reverseByFace
+                    && typeof topFloorLayer.faceLinking.reverseByFace === 'object'
+                    ? topFloorLayer.faceLinking.reverseByFace
+                    : null;
                 const resolveMasterFaceId = (faceId) => {
                     const seen = new Set();
                     let cur = faceId;
@@ -5878,7 +5948,10 @@ export function buildBuildingFabricationVisualParts({
                     const bays = Array.isArray(srcLayout?.bays?.items) ? srcLayout.bays.items : null;
                     const groups = Array.isArray(srcLayout?.groups?.items) ? srcLayout.groups.items : null;
                     const hasBays = !!bays && bays.length > 0;
-                    const bayItems = hasBays ? solveFacadeBaysLayout({ bays, groups, faceLengthMeters: len, warnings }) : null;
+                    const baysForSolve = hasBays
+                        ? resolveLinkedFaceBaysForSolve({ bays, faceId, masterFaceId, reverseByFace })
+                        : null;
+                    const bayItems = hasBays ? solveFacadeBaysLayout({ bays: baysForSolve, groups, faceLengthMeters: len, warnings }) : null;
 
                     let solvedPatternItems = null;
                     if (!hasBays) {
@@ -6093,5 +6166,7 @@ export const __testOnly = Object.freeze({
     computeQuadFacadeFramesFromLoop,
     computeQuadFacadeSilhouette,
     buildWallSidesGeometryFromLoopDetailXZ,
-    resolveOpeningCutMetrics
+    resolveOpeningCutMetrics,
+    shouldReverseLinkedFaceBayOrder,
+    resolveLinkedFaceBaysForSolve
 });

@@ -234,12 +234,27 @@ function normalizeFaceLinkingConfig(value) {
     const links = src?.links && typeof src.links === 'object' ? src.links : null;
     if (!links) return null;
 
-    const out = {};
+    const outLinks = {};
     for (const [slave, master] of Object.entries(links)) {
         if (!isFaceId(slave) || !isFaceId(master) || slave === master) continue;
-        out[slave] = master;
+        outLinks[slave] = master;
     }
-    return Object.keys(out).length ? { links: out } : null;
+    if (!Object.keys(outLinks).length) return null;
+
+    const reverseSrc = src?.reverseByFace && typeof src.reverseByFace === 'object'
+        ? src.reverseByFace
+        : null;
+    const outReverse = {};
+    if (reverseSrc) {
+        for (const [slave, master] of Object.entries(outLinks)) {
+            if (!isFaceId(slave) || !isFaceId(master) || slave === master) continue;
+            if (!!reverseSrc[slave]) outReverse[slave] = true;
+        }
+    }
+
+    return Object.keys(outReverse).length
+        ? { links: outLinks, reverseByFace: outReverse }
+        : { links: outLinks };
 }
 
 function normalizeFaceMaterialConfigs(value, { layerDefaults, faceLinking }) {

@@ -7,6 +7,9 @@ import { DEFAULT_PARALLAX_INTERIOR_PRESET_ID, resolveParallaxInteriorPresetInter
 
 const VERSION = 1;
 const WARNED_UNKNOWN_PARALLAX_INTERIOR_PRESETS = new Set();
+const DEFAULT_PARALLAX_INTERIOR_CONFIG = Object.freeze(
+    resolveParallaxInteriorPresetInteriorConfig(DEFAULT_PARALLAX_INTERIOR_PRESET_ID) ?? {}
+);
 
 function clamp(value, min, max, fallback) {
     const num = Number(value);
@@ -539,31 +542,43 @@ export const WINDOW_MESH_DEFAULTS = Object.freeze({
         }),
         zOffset: -0.06
     }),
-	    interior: Object.freeze({
-	        enabled: true,
+    interior: Object.freeze({
+        enabled: true,
             parallaxInteriorPresetId: DEFAULT_PARALLAX_INTERIOR_PRESET_ID,
-	        atlasId: DEFAULT_WINDOW_INTERIOR_ATLAS_ID,
-	        atlas: Object.freeze({
-	            cols: 4,
-	            rows: 4
-	        }),
-	        randomizeCell: true,
-	        cell: Object.freeze({ col: 0, row: 0 }),
-	        randomFlipX: true,
-	        uvPan: Object.freeze({ x: 0.0, y: 0.0 }),
-	        uvZoom: 1.0,
-	        imageAspect: 1.0,
-	        parallaxDepthMeters: 3.0,
-	        parallaxScale: Object.freeze({ x: 1.0, y: 1.0 }),
-	        zOffset: 0.0,
-	        emissiveIntensity: 0.0,
-	        tintVariation: Object.freeze({
-	            hueShiftDeg: Object.freeze({ min: -8.0, max: 8.0 }),
-	            saturationMul: Object.freeze({ min: 0.92, max: 1.08 }),
-	            brightnessMul: Object.freeze({ min: 0.9, max: 1.12 })
-	        })
-	    })
-	});
+        atlasId: DEFAULT_PARALLAX_INTERIOR_CONFIG.atlasId ?? DEFAULT_WINDOW_INTERIOR_ATLAS_ID,
+        atlas: Object.freeze({
+            cols: Math.max(1, Number(DEFAULT_PARALLAX_INTERIOR_CONFIG?.atlas?.cols) || 4),
+            rows: Math.max(1, Number(DEFAULT_PARALLAX_INTERIOR_CONFIG?.atlas?.rows) || 4)
+        }),
+        randomizeCell: true,
+        cell: Object.freeze({ col: 0, row: 0 }),
+        randomFlipX: true,
+        uvPan: Object.freeze({ x: 0.0, y: 0.0 }),
+        uvZoom: Number(DEFAULT_PARALLAX_INTERIOR_CONFIG.uvZoom) || 3.0,
+        imageAspect: 1.0,
+        parallaxDepthMeters: Number(DEFAULT_PARALLAX_INTERIOR_CONFIG.parallaxDepthMeters) || 15.0,
+        parallaxScale: Object.freeze({
+            x: Number(DEFAULT_PARALLAX_INTERIOR_CONFIG?.parallaxScale?.x) || 4.0,
+            y: Number(DEFAULT_PARALLAX_INTERIOR_CONFIG?.parallaxScale?.y) || 4.0
+        }),
+        zOffset: 0.0,
+        emissiveIntensity: 0.0,
+        tintVariation: Object.freeze({
+            hueShiftDeg: Object.freeze({
+                min: Number(DEFAULT_PARALLAX_INTERIOR_CONFIG?.tintVariation?.hueShiftDeg?.min) || 0.0,
+                max: Number(DEFAULT_PARALLAX_INTERIOR_CONFIG?.tintVariation?.hueShiftDeg?.max) || 0.0
+            }),
+            saturationMul: Object.freeze({
+                min: Number(DEFAULT_PARALLAX_INTERIOR_CONFIG?.tintVariation?.saturationMul?.min) || 0.8,
+                max: Number(DEFAULT_PARALLAX_INTERIOR_CONFIG?.tintVariation?.saturationMul?.max) || 0.9
+            }),
+            brightnessMul: Object.freeze({
+                min: Number(DEFAULT_PARALLAX_INTERIOR_CONFIG?.tintVariation?.brightnessMul?.min) || 0.8,
+                max: Number(DEFAULT_PARALLAX_INTERIOR_CONFIG?.tintVariation?.brightnessMul?.max) || 0.9
+            })
+        })
+    })
+});
 
 export function sanitizeWindowMeshSettings(input) {
     const src = input && typeof input === 'object' ? input : {};
@@ -714,7 +729,9 @@ export function sanitizeWindowMeshSettings(input) {
 
     const interiorSrc = src.interior && typeof src.interior === 'object' ? src.interior : {};
     const interiorEnabled = interiorSrc.enabled !== undefined ? !!interiorSrc.enabled : WINDOW_MESH_DEFAULTS.interior.enabled;
-    const presetIdRaw = interiorSrc.parallaxInteriorPresetId ?? interiorSrc.parallaxInteriorId ?? null;
+    const presetIdRaw = interiorSrc.parallaxInteriorPresetId
+        ?? interiorSrc.parallaxInteriorId
+        ?? (interiorEnabled ? WINDOW_MESH_DEFAULTS.interior.parallaxInteriorPresetId : null);
     const presetIdCandidate = typeof presetIdRaw === 'string' ? presetIdRaw : '';
     const presetInterior = presetIdCandidate ? resolveParallaxInteriorPresetInteriorConfig(presetIdCandidate) : null;
     const presetId = presetInterior ? presetIdCandidate : null;
@@ -740,32 +757,62 @@ export function sanitizeWindowMeshSettings(input) {
         : (interiorSrc.uvOffset && typeof interiorSrc.uvOffset === 'object' ? interiorSrc.uvOffset : interiorSrc);
     const uvPanX = clamp(panSrc.x ?? panSrc.uvPanX, -2.0, 2.0, WINDOW_MESH_DEFAULTS.interior.uvPan.x);
     const uvPanY = clamp(panSrc.y ?? panSrc.uvPanY, -2.0, 2.0, WINDOW_MESH_DEFAULTS.interior.uvPan.y);
-	    const uvZoom = clamp(presetInterior?.uvZoom ?? interiorSrc.uvZoom ?? interiorSrc.zoom, 0.25, 20.0, WINDOW_MESH_DEFAULTS.interior.uvZoom);
-	    const imageAspect = clamp(interiorSrc.imageAspect ?? interiorSrc.aspect, 0.25, 4.0, WINDOW_MESH_DEFAULTS.interior.imageAspect);
-	    const parallaxDepthMeters = clamp(presetInterior?.parallaxDepthMeters ?? interiorSrc.parallaxDepthMeters ?? interiorSrc.depth, 0.0, 50.0, WINDOW_MESH_DEFAULTS.interior.parallaxDepthMeters);
-	    const parScaleSrc = interiorSrc.parallaxScale && typeof interiorSrc.parallaxScale === 'object' ? interiorSrc.parallaxScale : interiorSrc;
-	    const parallaxScaleX = clamp(parScaleSrc.x ?? parScaleSrc.parallaxScaleX, 0.0, 10.0, WINDOW_MESH_DEFAULTS.interior.parallaxScale.x);
-	    const parallaxScaleY = clamp(parScaleSrc.y ?? parScaleSrc.parallaxScaleY, 0.0, 10.0, WINDOW_MESH_DEFAULTS.interior.parallaxScale.y);
-	    const interiorZOffset = clamp(interiorSrc.zOffset, -1.0, 1.0, WINDOW_MESH_DEFAULTS.interior.zOffset);
-	    const emissiveIntensity = clamp(interiorSrc.emissiveIntensity, 0.0, 5.0, WINDOW_MESH_DEFAULTS.interior.emissiveIntensity);
-	    const tintSrc = interiorSrc.tintVariation && typeof interiorSrc.tintVariation === 'object' ? interiorSrc.tintVariation : {};
-	    const hueShiftDeg = normalizeRange2(tintSrc.hueShiftDeg, {
-	        min: -180.0,
+    const uvZoom = clamp(
+        presetInterior?.uvZoom ?? interiorSrc.uvZoom ?? interiorSrc.zoom,
+        0.25,
+        20.0,
+        WINDOW_MESH_DEFAULTS.interior.uvZoom
+    );
+    const imageAspect = clamp(
+        interiorSrc.imageAspect ?? interiorSrc.aspect,
+        0.25,
+        4.0,
+        WINDOW_MESH_DEFAULTS.interior.imageAspect
+    );
+    const parallaxDepthMeters = clamp(
+        presetInterior?.parallaxDepthMeters ?? interiorSrc.parallaxDepthMeters ?? interiorSrc.depth,
+        0.0,
+        50.0,
+        WINDOW_MESH_DEFAULTS.interior.parallaxDepthMeters
+    );
+    const parScaleSrc = interiorSrc.parallaxScale && typeof interiorSrc.parallaxScale === 'object'
+        ? interiorSrc.parallaxScale
+        : interiorSrc;
+    const parallaxScaleX = clamp(
+        parScaleSrc.x ?? parScaleSrc.parallaxScaleX ?? presetInterior?.parallaxScale?.x,
+        0.0,
+        10.0,
+        WINDOW_MESH_DEFAULTS.interior.parallaxScale.x
+    );
+    const parallaxScaleY = clamp(
+        parScaleSrc.y ?? parScaleSrc.parallaxScaleY ?? presetInterior?.parallaxScale?.y,
+        0.0,
+        10.0,
+        WINDOW_MESH_DEFAULTS.interior.parallaxScale.y
+    );
+    const interiorZOffset = clamp(interiorSrc.zOffset, -1.0, 1.0, WINDOW_MESH_DEFAULTS.interior.zOffset);
+    const emissiveIntensity = clamp(interiorSrc.emissiveIntensity, 0.0, 5.0, WINDOW_MESH_DEFAULTS.interior.emissiveIntensity);
+    const tintSrc = interiorSrc.tintVariation && typeof interiorSrc.tintVariation === 'object' ? interiorSrc.tintVariation : {};
+    const presetTint = presetInterior?.tintVariation && typeof presetInterior.tintVariation === 'object'
+        ? presetInterior.tintVariation
+        : null;
+    const hueShiftDeg = normalizeRange2(tintSrc.hueShiftDeg, {
+        min: -180.0,
         max: 180.0,
-        fallbackMin: WINDOW_MESH_DEFAULTS.interior.tintVariation.hueShiftDeg.min,
-        fallbackMax: WINDOW_MESH_DEFAULTS.interior.tintVariation.hueShiftDeg.max
+        fallbackMin: presetTint?.hueShiftDeg?.min ?? WINDOW_MESH_DEFAULTS.interior.tintVariation.hueShiftDeg.min,
+        fallbackMax: presetTint?.hueShiftDeg?.max ?? WINDOW_MESH_DEFAULTS.interior.tintVariation.hueShiftDeg.max
     });
     const saturationMul = normalizeRange2(tintSrc.saturationMul, {
         min: 0.0,
         max: 2.0,
-        fallbackMin: WINDOW_MESH_DEFAULTS.interior.tintVariation.saturationMul.min,
-        fallbackMax: WINDOW_MESH_DEFAULTS.interior.tintVariation.saturationMul.max
+        fallbackMin: presetTint?.saturationMul?.min ?? WINDOW_MESH_DEFAULTS.interior.tintVariation.saturationMul.min,
+        fallbackMax: presetTint?.saturationMul?.max ?? WINDOW_MESH_DEFAULTS.interior.tintVariation.saturationMul.max
     });
     const brightnessMul = normalizeRange2(tintSrc.brightnessMul, {
         min: 0.0,
         max: 3.0,
-        fallbackMin: WINDOW_MESH_DEFAULTS.interior.tintVariation.brightnessMul.min,
-        fallbackMax: WINDOW_MESH_DEFAULTS.interior.tintVariation.brightnessMul.max
+        fallbackMin: presetTint?.brightnessMul?.min ?? WINDOW_MESH_DEFAULTS.interior.tintVariation.brightnessMul.min,
+        fallbackMax: presetTint?.brightnessMul?.max ?? WINDOW_MESH_DEFAULTS.interior.tintVariation.brightnessMul.max
     });
 
     const wantsArch = archEnabled && archHeightRatio > 0.001;
@@ -848,25 +895,25 @@ export function sanitizeWindowMeshSettings(input) {
             fabric: { scale: fabricScale, intensity: fabricIntensity },
             zOffset: shadeZOffset
         },
-	        interior: {
-	            enabled: interiorEnabled,
+        interior: {
+            enabled: interiorEnabled,
                 parallaxInteriorPresetId: presetId,
-	            atlasId,
-	            atlas: { cols: atlasCols, rows: atlasRows },
-	            randomizeCell,
-	            cell: { col: cellCol, row: cellRow },
-	            randomFlipX,
-	            uvPan: { x: uvPanX, y: uvPanY },
-	            uvZoom,
-	            imageAspect,
-	            parallaxDepthMeters,
-	            parallaxScale: { x: parallaxScaleX, y: parallaxScaleY },
-	            zOffset: interiorZOffset,
-	            emissiveIntensity,
-	            tintVariation: { hueShiftDeg, saturationMul, brightnessMul }
-	        }
-	    };
-	}
+            atlasId,
+            atlas: { cols: atlasCols, rows: atlasRows },
+            randomizeCell,
+            cell: { col: cellCol, row: cellRow },
+            randomFlipX,
+            uvPan: { x: uvPanX, y: uvPanY },
+            uvZoom,
+            imageAspect,
+            parallaxDepthMeters,
+            parallaxScale: { x: parallaxScaleX, y: parallaxScaleY },
+            zOffset: interiorZOffset,
+            emissiveIntensity,
+            tintVariation: { hueShiftDeg, saturationMul, brightnessMul }
+        }
+    };
+}
 
 export function getDefaultWindowMeshSettings() {
     return sanitizeWindowMeshSettings(WINDOW_MESH_DEFAULTS);

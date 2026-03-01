@@ -238,8 +238,30 @@ test('WindowMeshSettings: parallax interior presets override atlas/depth/zoom', 
 
     assert.equal(s.interior.parallaxInteriorPresetId, PARALLAX_INTERIOR_PRESET_ID.OFFICE);
     assert.equal(s.interior.atlasId, WINDOW_INTERIOR_ATLAS_ID.OFFICE_4X4);
-    assert.equal(s.interior.uvZoom, 1.6);
-    assert.equal(s.interior.parallaxDepthMeters, 20.0);
+    assert.equal(s.interior.uvZoom, 3.0);
+    assert.equal(s.interior.parallaxDepthMeters, 15.0);
+    assert.equal(s.interior.parallaxScale.x, 4.0);
+    assert.equal(s.interior.parallaxScale.y, 4.0);
+    assert.equal(s.interior.tintVariation.hueShiftDeg.min, 0.0);
+    assert.equal(s.interior.tintVariation.hueShiftDeg.max, 0.0);
+    assert.equal(s.interior.tintVariation.saturationMul.min, 0.8);
+    assert.equal(s.interior.tintVariation.saturationMul.max, 0.9);
+    assert.equal(s.interior.tintVariation.brightnessMul.min, 0.8);
+    assert.equal(s.interior.tintVariation.brightnessMul.max, 0.9);
+});
+
+test('WindowMeshSettings: enabled interior without explicit preset uses default parallax preset defaults', () => {
+    const s = sanitizeWindowMeshSettings({
+        interior: {
+            enabled: true
+        }
+    });
+
+    assert.equal(s.interior.parallaxInteriorPresetId, PARALLAX_INTERIOR_PRESET_ID.RESIDENTIAL);
+    assert.equal(s.interior.uvZoom, 3.0);
+    assert.equal(s.interior.parallaxDepthMeters, 15.0);
+    assert.equal(s.interior.parallaxScale.x, 4.0);
+    assert.equal(s.interior.parallaxScale.y, 4.0);
 });
 
 test('WindowFabricationCatalog: returns mode-filtered entries with expected defaults', () => {
@@ -293,6 +315,19 @@ test('WindowFabricationCatalog: includes embedded downloaded street window black
     assert.equal(embedded?.settings?.interior?.enabled, false);
     assert.equal(embedded?.wall?.materialId, 'pbr.brick_wall_11');
     assert.equal(embedded?.thumbnail?.wallMaterialId, 'pbr.brick_wall_11');
+});
+
+test('WindowFabricationCatalog: window entries normalize shade color and strip per-window interior payload', () => {
+    const windows = getWindowFabricationCatalogEntries({ assetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW });
+    const blackSix = windows.find((entry) => entry.id === 'window_black_6_panels_tall') ?? null;
+    const street = windows.find((entry) => entry.id === 'window_street_black') ?? null;
+    assert.ok(blackSix);
+    assert.ok(street);
+
+    assert.equal(blackSix?.settings?.shade?.colorHex, 0x565851);
+    assert.equal(street?.settings?.shade?.colorHex, 0x565851);
+    assert.deepEqual(blackSix?.settings?.interior, { enabled: true });
+    assert.deepEqual(street?.settings?.interior, { enabled: false });
 });
 
 test('WindowFabricationCatalog: includes embedded downloaded door black tall entry with wall hint metadata', () => {

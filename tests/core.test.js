@@ -1846,6 +1846,22 @@ async function runTests() {
         assertEqual(defaults.normalStrength, WALL_BASE_MATERIAL_DEFAULT.normalStrength, 'Expected default normalStrength.');
     });
 
+    test('BuildingFabricationTypes: face linking preserves reverse flags for valid slave faces only', () => {
+        const layer = createDefaultFloorLayer({
+            faceLinking: {
+                links: { B: 'A', D: 'B', C: 'C' },
+                reverseByFace: { B: true, C: true, D: false }
+            }
+        });
+        const linking = layer?.faceLinking ?? null;
+        assertEqual(linking?.links?.B, 'A', 'Expected valid B->A face link.');
+        assertEqual(linking?.links?.D, 'B', 'Expected valid D->B face link.');
+        assertEqual(linking?.links?.C, undefined, 'Expected self-link C->C to be dropped.');
+        assertEqual(linking?.reverseByFace?.B, true, 'Expected reverse flag for valid slave B.');
+        assertEqual(linking?.reverseByFace?.C, undefined, 'Expected reverse flag for invalid slave C to be dropped.');
+        assertEqual(linking?.reverseByFace?.D, undefined, 'Expected false reverse flags to be omitted.');
+    });
+
     test('BuildingFabricationTypes: windows.windowVisuals defaults to inherit', () => {
         const floor = createDefaultFloorLayer();
         assertTrue(!!floor.windows, 'Expected windows config.');
@@ -2195,15 +2211,90 @@ async function runTests() {
         assertFalse(!!buildButton, 'Build button should not exist.');
     });
 
-    test('BuildingFabrication2UI: adjust layout button lives in right actions row', () => {
+    test('BuildingFabrication2UI: adjust layout button lives under footprint presets', () => {
         const ui = new BuildingFabrication2UI();
         ui.mount(document.body);
         try {
             ui.setBuildingState({ hasBuilding: true, buildingName: 'Test', buildingType: 'business' });
-            assertTrue(ui.rightActions.contains(ui.adjustLayoutBtn), 'Adjust Layout should be in right actions row.');
+            assertTrue(ui.fabPanel.contains(ui.adjustLayoutBtn), 'Adjust Layout should be in fabrication panel.');
+            assertFalse(ui.rightActions.contains(ui.adjustLayoutBtn), 'Adjust Layout should not be in right actions row.');
             assertFalse(ui.bottomToolsPanel.contains(ui.adjustLayoutBtn), 'Adjust Layout should not be in bottom tools panel.');
-            assertTrue(ui.adjustLayoutBtn.classList.contains('building-fab2-right-action-layout-btn'), 'Adjust Layout should use right-aligned action class.');
+            assertTrue(ui.adjustLayoutBtn.classList.contains('building-fab2-layout-adjust-btn'), 'Adjust Layout should use fabrication layout class.');
             assertTrue((ui.adjustLayoutBtn.textContent || '').includes('Adjust Layout'), 'Adjust Layout button should show a visible label.');
+        } finally {
+            ui.unmount();
+        }
+    });
+
+    test('BuildingFabrication2UI: footprint preset buttons expose expected sizes and callback payload', () => {
+        const ui = new BuildingFabrication2UI();
+        ui.mount(document.body);
+        try {
+            const presetButtons = Array.from(ui.root.querySelectorAll('.building-fab2-footprint-preset-btn'));
+            const labels = presetButtons.map((btn) => String(btn.textContent || '').trim()).filter(Boolean);
+            assertEqual(labels.join('|'), '10x10|16x16|20x20|25x25|30x30|36x36', 'Expected all footprint preset labels.');
+
+            let selectedSize = null;
+            ui.onApplyFootprintPreset = (sizeMeters) => { selectedSize = sizeMeters; };
+            const btn = presetButtons.find((entry) => String(entry.textContent || '').trim() === '25x25') ?? null;
+            assertTrue(!!btn, 'Expected 25x25 footprint preset button.');
+            btn.click();
+            assertEqual(selectedSize, 25, 'Expected 25x25 preset to emit 25 meters.');
+        } finally {
+            ui.unmount();
+        }
+    });
+
+    test('BuildingFabrication2UI: face link popup exposes per-face reverse checkbox and callback', () => {
+        const ui = new BuildingFabrication2UI();
+        ui.mount(document.body);
+        try {
+            ui.setBuildingState({ hasBuilding: true, buildingName: 'BF2', buildingType: 'business' });
+            ui.setLayers([{
+                id: 'floor_1',
+                type: 'floor',
+                floors: 1,
+                floorHeight: 3.2
+            }]);
+            ui.setFloorLayerFaceStates(new Map([[
+                'floor_1',
+                {
+                    selectedFaceId: 'A',
+                    lockedToByFace: new Map([
+                        ['A', null],
+                        ['B', 'A'],
+                        ['C', null],
+                        ['D', null]
+                    ]),
+                    reverseByFace: new Map([
+                        ['A', false],
+                        ['B', true],
+                        ['C', false],
+                        ['D', false]
+                    ])
+                }
+            ]]));
+
+            ui.openLinkPopup({ layerId: 'floor_1', masterFaceId: 'A' });
+            const reverseB = ui.linkBody.querySelector('input[data-action=\"face-link:reverse\"][data-face-id=\"B\"]');
+            const reverseC = ui.linkBody.querySelector('input[data-action=\"face-link:reverse\"][data-face-id=\"C\"]');
+            assertTrue(!!reverseB, 'Expected reverse checkbox for slave face B.');
+            assertTrue(!!reverseC, 'Expected reverse checkbox for non-linked face C.');
+            assertTrue(!!reverseB.checked, 'Expected reverse checkbox for B to reflect current state.');
+            assertFalse(!!reverseB.disabled, 'Expected reverse checkbox to be enabled for faces linked to the popup master.');
+            assertTrue(!!reverseC.disabled, 'Expected reverse checkbox to be disabled for faces not linked to the popup master.');
+
+            let payload = null;
+            ui.onSetFaceLockReverse = (layerId, masterFaceId, targetFaceId, enabled) => {
+                payload = { layerId, masterFaceId, targetFaceId, enabled };
+            };
+
+            reverseB.checked = false;
+            reverseB.dispatchEvent(new Event('change', { bubbles: true }));
+            assertEqual(payload?.layerId, 'floor_1', 'Expected reverse callback to include layer id.');
+            assertEqual(payload?.masterFaceId, 'A', 'Expected reverse callback to include master face id.');
+            assertEqual(payload?.targetFaceId, 'B', 'Expected reverse callback to include target face id.');
+            assertEqual(payload?.enabled, false, 'Expected reverse callback to include checkbox state.');
         } finally {
             ui.unmount();
         }
@@ -2229,20 +2320,72 @@ async function runTests() {
         }
     });
 
-    test('BuildingFabrication2UI: view panel exposes Render slab toggle and callback', () => {
+    test('BuildingFabrication2UI: editor mode switch toggles building and decoration panels', () => {
         const ui = new BuildingFabrication2UI();
         ui.mount(document.body);
         try {
             ui.setBuildingState({ hasBuilding: true, buildingName: 'Test', buildingType: 'business' });
-            assertTrue(!!ui.renderSlabToggleInput, 'Expected Render slab checkbox input.');
-            assertFalse(ui.renderSlabToggleInput.checked, 'Expected Render slab off by default.');
+            ui.setDecorationEditorState({
+                sets: [{
+                    id: 'set_1',
+                    target: { layerId: 'floor_1', bayRefs: [] },
+                    floorInterval: { every: 1, start: 1, end: null },
+                    decorations: []
+                }],
+                layerOptions: [{ id: 'floor_1', label: 'Floor layer 1' }],
+                bayOptionsByLayerId: { floor_1: [{ id: 'A:bay_1', label: 'Face A · Bay 1' }] }
+            });
 
-            let changed = null;
-            ui.onRenderSlabChange = (enabled) => { changed = enabled; };
-            ui.renderSlabToggleInput.checked = true;
+            assertTrue(!!ui.editorModeBuildingBtn, 'Expected Building editor mode button.');
+            assertTrue(!!ui.editorModeDecorationBtn, 'Expected Decoration editor mode button.');
+            assertTrue(!!ui.editorModeBuildingBtn.classList.contains('is-active'), 'Expected Building mode active by default.');
+            assertFalse(ui.rightActions.classList.contains('hidden'), 'Expected building actions visible in Building mode.');
+
+            let modePayload = null;
+            ui.onEditorModeChange = (mode) => { modePayload = mode; };
+            ui.editorModeDecorationBtn.click();
+            assertEqual(modePayload, 'decoration', 'Expected Decoration mode callback payload.');
+            assertTrue(ui.rightActions.classList.contains('hidden'), 'Expected building actions hidden in Decoration mode.');
+            assertFalse(ui.decorationPanel.classList.contains('hidden'), 'Expected decoration panel visible in Decoration mode.');
+            assertTrue((ui.decorationPanel.textContent || '').includes('Decoration Sets'), 'Expected decoration panel content.');
+
+            ui.editorModeBuildingBtn.click();
+            assertEqual(modePayload, 'building', 'Expected Building mode callback payload.');
+            assertFalse(ui.rightActions.classList.contains('hidden'), 'Expected building actions visible again.');
+            assertTrue(ui.decorationPanel.classList.contains('hidden'), 'Expected decoration panel hidden in Building mode.');
+        } finally {
+            ui.unmount();
+        }
+    });
+
+    test('BuildingFabrication2UI: view panel exposes Render sky and Render slab toggles with callbacks', () => {
+        const ui = new BuildingFabrication2UI();
+        ui.mount(document.body);
+        try {
+            ui.setBuildingState({ hasBuilding: true, buildingName: 'Test', buildingType: 'business' });
+            assertTrue(!!ui.renderSkyToggleInput, 'Expected Render sky checkbox input.');
+            assertTrue(ui.renderSkyToggleInput.checked, 'Expected Render sky on by default.');
+            assertTrue(!!ui.renderSlabToggleInput, 'Expected Render slab checkbox input.');
+            assertTrue(ui.renderSlabToggleInput.checked, 'Expected Render slab on by default.');
+
+            let changedSky = null;
+            let changedSlab = null;
+            ui.onRenderSkyChange = (enabled) => { changedSky = enabled; };
+            ui.onRenderSlabChange = (enabled) => { changedSlab = enabled; };
+
+            ui.renderSkyToggleInput.checked = false;
+            ui.renderSkyToggleInput.dispatchEvent(new Event('change'));
+            assertEqual(changedSky, false, 'Expected Render sky callback payload when toggled off.');
+
+            ui.renderSlabToggleInput.checked = false;
             ui.renderSlabToggleInput.dispatchEvent(new Event('change'));
 
-            assertEqual(changed, true, 'Expected Render slab callback payload when toggled on.');
+            assertEqual(changedSlab, false, 'Expected Render slab callback payload when toggled off.');
+
+            const toggleLabels = Array.from(ui.viewPanel.querySelectorAll('.building-fab2-toggle-switch span'))
+                .map((el) => String(el.textContent || '').trim().toLowerCase());
+            assertTrue(toggleLabels.some((label) => label === 'render sky'), 'Expected Render sky toggle label in view panel.');
+            assertFalse(toggleLabels.some((label) => label.includes('debug: disable suspect')), 'Expected suspect debug toggles removed from view panel.');
         } finally {
             ui.unmount();
         }
@@ -2831,6 +2974,143 @@ async function runTests() {
         assertNear(Number(bay?.size?.minMeters), 1.0, 1e-6, 'Expected bay minimum width to shrink with reduced opening padding.');
     });
 
+    test('BuildingFabrication2UI: bay selector overlays opening previews for master or non-linked bays only', () => {
+        const ui = new BuildingFabrication2UI();
+        ui.mount(document.body);
+        try {
+            ui.setBuildingState({ hasBuilding: true, buildingName: 'BF2', buildingType: 'business' });
+            ui._wallTextureDefById.set('test.wall', {
+                id: 'test.wall',
+                label: 'Test Wall',
+                wallTextureUrl: '/thumbs/wall_bg.png'
+            });
+            ui.setLayers([{
+                id: 'floor_1',
+                type: 'floor',
+                floors: 1,
+                floorHeight: 3.2,
+                style: 'test.wall',
+                material: { kind: 'texture', id: 'test.wall' },
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }]);
+            ui.setFloorLayerFaceStates(new Map([[
+                'floor_1',
+                {
+                    selectedFaceId: 'A',
+                    lockedToByFace: new Map([
+                        ['A', null],
+                        ['B', null],
+                        ['C', null],
+                        ['D', null]
+                    ])
+                }
+            ]]));
+            ui.setWindowDefinitions({
+                nextWindowIndex: 3,
+                items: [
+                    {
+                        id: 'win_1',
+                        label: 'Window 1',
+                        assetType: 'window',
+                        previewUrl: '/thumbs/window_preview_1.png',
+                        settings: { width: 1.2, height: 1.8, frame: { width: 0.08 } }
+                    },
+                    {
+                        id: 'door_1',
+                        label: 'Door 1',
+                        assetType: 'door',
+                        previewUrl: '/thumbs/door_preview_1.png',
+                        settings: { width: 1.1, height: 2.1, frame: { width: 0.08 } }
+                    }
+                ]
+            });
+            ui.setFacadesByLayerId({
+                floor_1: {
+                    A: {
+                        layout: {
+                            bays: {
+                                nextBayIndex: 5,
+                                items: [
+                                    {
+                                        id: 'bay_1',
+                                        size: { mode: 'range', minMeters: 4, maxMeters: null },
+                                        window: {
+                                            enabled: true,
+                                            defId: 'win_1',
+                                            assetType: 'window',
+                                            size: { widthMeters: 1.2, heightMeters: 1.8 }
+                                        }
+                                    },
+                                    {
+                                        id: 'bay_2',
+                                        linkFromBayId: 'bay_1',
+                                        size: { mode: 'range', minMeters: 4, maxMeters: null }
+                                    },
+                                    {
+                                        id: 'bay_3',
+                                        size: { mode: 'range', minMeters: 4, maxMeters: null },
+                                        window: {
+                                            enabled: true,
+                                            defId: 'door_1',
+                                            assetType: 'door',
+                                            size: { widthMeters: 1.1, heightMeters: 2.1 }
+                                        }
+                                    },
+                                    {
+                                        id: 'bay_4',
+                                        size: { mode: 'range', minMeters: 4, maxMeters: null }
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            });
+
+            const bayButtons = Array.from(ui.root.querySelectorAll('.building-fab2-bay-btn'));
+            const bay1Button = bayButtons.find((btn) => (
+                String(btn?.querySelector?.('.building-fab2-bay-btn-label')?.textContent || '').trim() === '1'
+            )) ?? null;
+            const bay3Button = bayButtons.find((btn) => (
+                String(btn?.querySelector?.('.building-fab2-bay-btn-label')?.textContent || '').trim() === '3'
+            )) ?? null;
+            const bay4Button = bayButtons.find((btn) => (
+                String(btn?.querySelector?.('.building-fab2-bay-btn-label')?.textContent || '').trim() === '4'
+            )) ?? null;
+            const slaveBayButton = bayButtons.find((btn) => btn?.classList?.contains('is-slave-preview')) ?? null;
+
+            assertTrue(!!bay1Button, 'Expected Bay 1 selector button.');
+            assertTrue(!!bay3Button, 'Expected Bay 3 selector button.');
+            assertTrue(!!bay4Button, 'Expected Bay 4 selector button.');
+            assertTrue(!!slaveBayButton, 'Expected slave bay selector button.');
+
+            const bay1Thumb = bay1Button?.querySelector('.building-fab2-bay-btn-thumb') ?? null;
+            const bay1WallThumbImg = bay1Thumb?.querySelector('.building-fab-material-thumb-img') ?? null;
+            const bay1OpeningThumbImg = bay1Thumb?.querySelector('.building-fab2-bay-opening-preview-img') ?? null;
+            assertTrue(!!bay1WallThumbImg, 'Expected wall texture image to remain in Bay 1 thumb.');
+            assertTrue(!!bay1OpeningThumbImg, 'Expected Bay 1 opening preview overlay.');
+            assertTrue(String(bay1OpeningThumbImg?.src || '').includes('/thumbs/window_preview_1.png'), 'Expected Bay 1 preview to use assigned window thumb.');
+
+            const bay3Thumb = bay3Button?.querySelector('.building-fab2-bay-btn-thumb') ?? null;
+            const bay3OpeningThumbImg = bay3Thumb?.querySelector('.building-fab2-bay-opening-preview-img') ?? null;
+            assertTrue(!!bay3OpeningThumbImg, 'Expected Bay 3 opening preview overlay.');
+            assertTrue(String(bay3OpeningThumbImg?.src || '').includes('/thumbs/door_preview_1.png'), 'Expected Bay 3 preview to use assigned door thumb.');
+
+            const bay4Thumb = bay4Button?.querySelector('.building-fab2-bay-btn-thumb') ?? null;
+            const bay4OpeningThumbImg = bay4Thumb?.querySelector('.building-fab2-bay-opening-preview-img') ?? null;
+            assertFalse(!!bay4OpeningThumbImg, 'Expected no opening preview for bays without assigned opening.');
+
+            const slaveOpeningThumbImg = slaveBayButton?.querySelector('.building-fab2-bay-opening-preview-img') ?? null;
+            assertFalse(!!slaveOpeningThumbImg, 'Expected linked-slave bay thumb behavior to remain unchanged.');
+
+            const allOpeningThumbs = Array.from(ui.root.querySelectorAll('.building-fab2-bay-opening-preview-img'));
+            assertEqual(allOpeningThumbs.length, 2, 'Expected opening previews only for eligible master/non-linked bays with openings.');
+        } finally {
+            ui.unmount();
+        }
+    });
+
     test('BuildingFabrication2View: top frame width mode toggle syncs UI state and preserves override editing', () => {
         const engine = {
             scene: new THREE.Scene(),
@@ -3011,6 +3291,156 @@ async function runTests() {
         }
     });
 
+    test('BuildingFabrication2View: selecting new window definition resets opening config to defaults + definition overrides', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        try {
+            view._syncUiState = () => {};
+            view._requestRebuild = () => {};
+            view._currentConfig = {
+                layers: [{ id: 'floor_1', type: 'floor', floors: 1, floorHeight: 3.2 }],
+                facades: {
+                    floor_1: {
+                        A: {
+                            layout: {
+                                bays: {
+                                    nextBayIndex: 2,
+                                    items: [{
+                                        id: 'bay_1',
+                                        size: { mode: 'range', minMeters: 3.0, maxMeters: null },
+                                        expandPreference: 'prefer_expand',
+                                        window: {
+                                            enabled: true,
+                                            defId: 'window_street_black',
+                                            assetType: 'window',
+                                            size: { widthMeters: 3.7, heightMeters: 3.9 },
+                                            heightMode: 'full',
+                                            verticalOffsetMeters: 1.25,
+                                            width: { minMeters: 3.7, maxMeters: 4.0 },
+                                            padding: { leftMeters: 0.35, rightMeters: 0.42, linked: false },
+                                            repeat: { count: 3 },
+                                            muntins: { bottomEnabled: false, topEnabled: false },
+                                            visual: { disableShades: false, interior: 'office' },
+                                            top: {
+                                                enabled: true,
+                                                heightMode: 'full',
+                                                heightMeters: 1.1,
+                                                verticalGapMeters: 0.7,
+                                                frameWidthMeters: 0.06
+                                            },
+                                            wall: { cutWidthLerp: 1, cutHeightLerp: 1 }
+                                        }
+                                    }]
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            const bayCtx = view._resolveBaySpec({ layerId: 'floor_1', faceId: 'A', bayId: 'bay_1' });
+            const bay = bayCtx?.bay ?? null;
+            assertTrue(!!bay, 'Expected bay config.');
+
+            view._setBayWindowDefinition('floor_1', 'A', 'bay_1', 'window_black_6_panels_tall');
+            const cfg = bay?.window ?? null;
+            assertTrue(!!cfg, 'Expected opening config after definition selection.');
+            assertEqual(cfg?.defId, 'window_black_6_panels_tall', 'Expected selected definition id.');
+            assertEqual(cfg?.assetType, 'window', 'Expected window asset type from selected definition.');
+            assertNear(Number(cfg?.size?.widthMeters), 2.0, 1e-6, 'Expected width reset to definition width.');
+            assertNear(Number(cfg?.size?.heightMeters), 1.7, 1e-6, 'Expected height reset to definition height.');
+            assertNear(Number(cfg?.width?.minMeters), 2.0, 1e-6, 'Expected min width reset to definition width.');
+            assertEqual(cfg?.width?.maxMeters ?? null, null, 'Expected max width reset to null.');
+            assertEqual(cfg?.heightMode, 'fixed', 'Expected height mode reset to fixed default.');
+            assertEqual(cfg?.verticalOffsetMeters ?? null, null, 'Expected vertical offset reset.');
+            assertNear(Number(cfg?.padding?.leftMeters), 0, 1e-6, 'Expected left padding reset.');
+            assertNear(Number(cfg?.padding?.rightMeters), 0, 1e-6, 'Expected right padding reset.');
+            assertEqual(cfg?.padding?.linked ?? true, true, 'Expected linked padding default.');
+            assertEqual(cfg?.repeat?.count, 1, 'Expected repeat reset to default.');
+            assertEqual(!!cfg?.muntins?.bottomEnabled, true, 'Expected bottom muntins from definition defaults.');
+            assertEqual(!!cfg?.muntins?.topEnabled, true, 'Expected top muntins from definition defaults.');
+            assertEqual(!!cfg?.top?.enabled, false, 'Expected top opening reset to disabled.');
+            assertEqual(cfg?.visual?.disableShades, false, 'Expected shade override reset from definition (enabled).');
+            assertEqual(cfg?.visual?.interior, 'res', 'Expected interior override reset from definition.');
+            assertNear(Number(cfg?.wall?.cutWidthLerp), 0, 1e-6, 'Expected wall cut width to follow definition wall config.');
+            assertNear(Number(cfg?.wall?.cutHeightLerp), 0, 1e-6, 'Expected wall cut height to follow definition wall config.');
+        } finally {
+            view.exit?.();
+        }
+    });
+
+    test('BuildingFabrication2View: window definition swaps are deterministic across repeated changes', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        try {
+            view._syncUiState = () => {};
+            view._requestRebuild = () => {};
+            view._currentConfig = {
+                layers: [{ id: 'floor_1', type: 'floor', floors: 1, floorHeight: 3.2 }],
+                facades: {
+                    floor_1: {
+                        A: {
+                            layout: {
+                                bays: {
+                                    nextBayIndex: 2,
+                                    items: [{
+                                        id: 'bay_1',
+                                        size: { mode: 'range', minMeters: 3.0, maxMeters: null },
+                                        expandPreference: 'prefer_expand'
+                                    }]
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            const bayCtx = view._resolveBaySpec({ layerId: 'floor_1', faceId: 'A', bayId: 'bay_1' });
+            const bay = bayCtx?.bay ?? null;
+            assertTrue(!!bay, 'Expected bay config.');
+
+            view._setBayWindowDefinition('floor_1', 'A', 'bay_1', 'window_black_6_panels_tall');
+            assertNear(Number(bay?.window?.size?.widthMeters), 2.0, 1e-6, 'Expected first selection width from black_6 definition.');
+            assertNear(Number(bay?.window?.size?.heightMeters), 1.7, 1e-6, 'Expected first selection height from black_6 definition.');
+            assertEqual(bay?.window?.visual?.disableShades, false, 'Expected black_6 shades default enabled.');
+            assertEqual(bay?.window?.visual?.interior, 'res', 'Expected black_6 interior default.');
+
+            bay.window.heightMode = 'full';
+            bay.window.verticalOffsetMeters = 0.9;
+            bay.window.padding = { leftMeters: 0.6, rightMeters: 0.2, linked: false };
+            bay.window.visual = { disableShades: false, interior: 'office' };
+
+            view._setBayWindowDefinition('floor_1', 'A', 'bay_1', 'window_street_black');
+            assertNear(Number(bay?.window?.size?.widthMeters), 1.7, 1e-6, 'Expected street_black width override.');
+            assertNear(Number(bay?.window?.size?.heightMeters), 2.5, 1e-6, 'Expected street_black height override.');
+            assertEqual(bay?.window?.heightMode, 'fixed', 'Expected street_black swap to reset height mode.');
+            assertEqual(bay?.window?.verticalOffsetMeters ?? null, null, 'Expected street_black swap to reset vertical offset.');
+            assertNear(Number(bay?.window?.padding?.leftMeters), 0, 1e-6, 'Expected street_black swap to reset left padding.');
+            assertNear(Number(bay?.window?.padding?.rightMeters), 0, 1e-6, 'Expected street_black swap to reset right padding.');
+            assertEqual(bay?.window?.visual?.disableShades, true, 'Expected street_black shades default disabled.');
+            assertEqual(bay?.window?.visual?.interior, 'none', 'Expected street_black interior default disabled.');
+
+            view._setBayWindowDefinition('floor_1', 'A', 'bay_1', 'window_black_6_panels_tall');
+            assertNear(Number(bay?.window?.size?.widthMeters), 2.0, 1e-6, 'Expected black_6 width after returning selection.');
+            assertNear(Number(bay?.window?.size?.heightMeters), 1.7, 1e-6, 'Expected black_6 height after returning selection.');
+            assertEqual(bay?.window?.heightMode, 'fixed', 'Expected return selection to keep deterministic defaults.');
+            assertEqual(bay?.window?.visual?.disableShades, false, 'Expected return selection shades from black_6 definition.');
+            assertEqual(bay?.window?.visual?.interior, 'res', 'Expected return selection interior from black_6 definition.');
+            assertNear(Number(bay?.window?.wall?.cutWidthLerp), 0, 1e-6, 'Expected return selection wall cut width from definition.');
+            assertNear(Number(bay?.window?.wall?.cutHeightLerp), 0, 1e-6, 'Expected return selection wall cut height from definition.');
+        } finally {
+            view.exit?.();
+        }
+    });
+
     test('BuildingFabrication2View: floor layer interior toggle updates config and rebuilds', () => {
         const engine = {
             scene: new THREE.Scene(),
@@ -3130,6 +3560,313 @@ async function runTests() {
         }
     });
 
+    test('BuildingFabrication2View: face-link reverse is stored per slave and cleared when unlinked', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        try {
+            view._syncUiState = () => {};
+            view._requestRebuild = () => {};
+            view._currentConfig = {
+                layers: [{
+                    id: 'floor_1',
+                    type: 'floor',
+                    floors: 1,
+                    floorHeight: 3.2,
+                    faceLinking: { links: { B: 'A' } }
+                }]
+            };
+
+            view._floorLayerFaceStateById = new Map([[
+                'floor_1',
+                {
+                    selectedFaceId: 'A',
+                    lockedToByFace: new Map([
+                        ['A', null],
+                        ['B', 'A'],
+                        ['C', null],
+                        ['D', null]
+                    ]),
+                    reverseByFace: new Map([
+                        ['A', false],
+                        ['B', false],
+                        ['C', false],
+                        ['D', false]
+                    ])
+                }
+            ]]);
+
+            view._setFaceLockReverse('floor_1', 'A', 'B', true);
+            let linking = view._currentConfig?.layers?.[0]?.faceLinking ?? null;
+            assertEqual(linking?.links?.B, 'A', 'Expected B to stay linked to A.');
+            assertEqual(linking?.reverseByFace?.B, true, 'Expected reverse flag to be stored for linked slave face.');
+
+            view._toggleFaceLock('floor_1', 'A', 'B');
+            linking = view._currentConfig?.layers?.[0]?.faceLinking ?? null;
+            assertEqual(linking, null, 'Expected unlink to remove face-linking config when no links remain.');
+
+            view._toggleFaceLock('floor_1', 'A', 'B');
+            linking = view._currentConfig?.layers?.[0]?.faceLinking ?? null;
+            assertEqual(linking?.links?.B, 'A', 'Expected B to link back to A.');
+            assertEqual(linking?.reverseByFace?.B, undefined, 'Expected reverse flag to reset when relinking.');
+        } finally {
+            view.exit?.();
+        }
+    });
+
+    test('BuildingFabricationGenerator: linked-face reverse helper flips bay assignment order only', () => {
+        const bays = [{ id: 'bay_1' }, { id: 'bay_2' }, { id: 'bay_3' }];
+        const reversed = buildingFabricationGeneratorTestOnly.resolveLinkedFaceBaysForSolve({
+            bays,
+            faceId: 'B',
+            masterFaceId: 'A',
+            reverseByFace: { B: true }
+        });
+        assertEqual(reversed.map((bay) => bay.id).join('|'), 'bay_3|bay_2|bay_1', 'Expected bay order reversal for linked slave face.');
+        assertEqual(bays.map((bay) => bay.id).join('|'), 'bay_1|bay_2|bay_3', 'Expected source bay array to remain unchanged.');
+        assertEqual(reversed[0], bays[2], 'Expected bay objects to be reused (assignment order only, no mirroring).');
+
+        const unchanged = buildingFabricationGeneratorTestOnly.resolveLinkedFaceBaysForSolve({
+            bays,
+            faceId: 'A',
+            masterFaceId: 'A',
+            reverseByFace: { A: true }
+        });
+        assertEqual(unchanged, bays, 'Expected master face to keep original bay assignment order.');
+    });
+
+    test('BuildingFabrication2View: decoration set actions update wallDecorations state', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        let syncCalls = 0;
+        let rebuildCalls = 0;
+        view._syncUiState = () => { syncCalls += 1; };
+        view._requestRebuild = () => { rebuildCalls += 1; };
+        view._currentConfig = {
+            layers: [{
+                id: 'floor_1',
+                type: 'floor',
+                floors: 4,
+                floorHeight: 3.2
+            }],
+            facades: {
+                floor_1: {
+                    A: {
+                        layout: {
+                            bays: {
+                                nextBayIndex: 2,
+                                items: [{ id: 'bay_1' }]
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        view._addDecorationSet();
+        let set = view._currentConfig?.wallDecorations?.sets?.[0] ?? null;
+        assertTrue(!!set, 'Expected decoration set to be created.');
+        assertEqual(set?.target?.layerId, 'floor_1', 'Expected new set to target first floor layer.');
+        assertEqual(!!set?.target?.allBays, false, 'Expected new set bay selection to start empty.');
+
+        const setId = set.id;
+        view._addDecorationEntry(setId);
+        set = view._currentConfig?.wallDecorations?.sets?.find((entry) => entry?.id === setId) ?? null;
+        const deco = set?.decorations?.[0] ?? null;
+        assertTrue(!!deco, 'Expected decoration entry to be created.');
+
+        let decoration = deco;
+        const decorationId = decoration.id;
+        view._setDecorationEntryType(setId, decorationId, 'simple_skirt');
+        set = view._currentConfig?.wallDecorations?.sets?.find((entry) => entry?.id === setId) ?? null;
+        decoration = set?.decorations?.find((entry) => entry?.id === decorationId) ?? null;
+        assertEqual(decoration?.state?.decoratorId, 'simple_skirt', 'Expected decoration type to update.');
+
+        view._setDecorationEntrySpanField(setId, decorationId, 'start', 0.25);
+        view._setDecorationEntrySpanField(setId, decorationId, 'end', 0.75);
+        set = view._currentConfig?.wallDecorations?.sets?.find((entry) => entry?.id === setId) ?? null;
+        decoration = set?.decorations?.find((entry) => entry?.id === decorationId) ?? null;
+        assertNear(Number(decoration?.span?.start) || 0, 0.25, 1e-6, 'Expected start span update.');
+        assertNear(Number(decoration?.span?.end) || 0, 0.75, 1e-6, 'Expected end span update.');
+
+        view._toggleDecorationSetBay(setId, 'A:bay_1', true);
+        set = view._currentConfig?.wallDecorations?.sets?.find((entry) => entry?.id === setId) ?? null;
+        assertEqual(Array.isArray(set?.target?.bayRefs) ? set.target.bayRefs.length : -1, 0, 'Expected all-bays selection to clear explicit bay refs.');
+        assertEqual(!!set?.target?.allBays, true, 'Expected single-bay layer selection to resolve as All bays.');
+
+        view._toggleDecorationSetBay(setId, 'A:bay_1', false);
+        set = view._currentConfig?.wallDecorations?.sets?.find((entry) => entry?.id === setId) ?? null;
+        assertEqual(set?.target?.allBays, false, 'Expected deselection to disable All bays mode.');
+        assertEqual(Array.isArray(set?.target?.bayRefs) ? set.target.bayRefs.length : -1, 0, 'Expected deselection to clear bay refs.');
+
+        view._applyDecorationSetFloorIntervalPreset(setId, 'every_2');
+        set = view._currentConfig?.wallDecorations?.sets?.find((entry) => entry?.id === setId) ?? null;
+        assertEqual(set?.floorInterval?.every ?? 0, 2, 'Expected Every 2 interval preset.');
+        assertEqual(set?.floorInterval?.start ?? 0, 1, 'Expected Every 2 preset start floor.');
+        assertEqual(set?.floorInterval?.end ?? 0, 4, 'Expected Every 2 preset end floor.');
+
+        assertTrue(syncCalls > 0, 'Expected UI sync on decoration edits.');
+        assertTrue(rebuildCalls > 0, 'Expected rebuild requests on decoration edits.');
+    });
+
+    test('BuildingFabrication2View: decoration bay toggle applies to linked bay set', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        view._syncUiState = () => {};
+        view._requestRebuild = () => {};
+        view._currentConfig = {
+            layers: [{
+                id: 'floor_1',
+                type: 'floor',
+                floors: 2,
+                floorHeight: 3.2
+            }],
+            facades: {
+                floor_1: {
+                    A: {
+                        layout: {
+                            bays: {
+                                nextBayIndex: 4,
+                                items: [
+                                    { id: 'bay_1' },
+                                    { id: 'bay_2', linkFromBayId: 'bay_1' },
+                                    { id: 'bay_3' }
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        view._addDecorationSet();
+        const setId = String(view._currentConfig?.wallDecorations?.sets?.[0]?.id ?? '');
+        assertTrue(!!setId, 'Expected decoration set id.');
+
+        view._toggleDecorationSetBay(setId, 'A:bay_2', true);
+        let set = view._currentConfig?.wallDecorations?.sets?.find((entry) => entry?.id === setId) ?? null;
+        const selectedRefs = Array.isArray(set?.target?.bayRefs) ? set.target.bayRefs.slice().sort() : [];
+        assertEqual(!!set?.target?.allBays, false, 'Expected linked-set selection to remain explicit while one bay stays unselected.');
+        assertEqual(selectedRefs.join(','), 'A:bay_1,A:bay_2', 'Expected linked bay toggle to select the whole linked set.');
+
+        view._toggleDecorationSetBay(setId, 'A:bay_1', false);
+        set = view._currentConfig?.wallDecorations?.sets?.find((entry) => entry?.id === setId) ?? null;
+        assertEqual(!!set?.target?.allBays, false, 'Expected deselection to keep All bays disabled.');
+        assertEqual(Array.isArray(set?.target?.bayRefs) ? set.target.bayRefs.length : -1, 0, 'Expected linked deselection to clear both linked refs.');
+    });
+
+    test('BuildingConfigExport: wallDecorations are included in serialized config modules', async () => {
+        const {
+            createCityBuildingConfigFromFabrication,
+            serializeCityBuildingConfigToEsModule
+        } = await import('/src/app/city/buildings/BuildingConfigExport.js');
+
+        const cfg = createCityBuildingConfigFromFabrication({
+            id: 'bf2_export_wall_decor',
+            name: 'BF2 Export Wall Decor',
+            layers: [createDefaultFloorLayer(), createDefaultRoofLayer()],
+            wallDecorations: {
+                sets: [{
+                    id: 'set_1',
+                    target: { layerId: 'floor_1', bayRefs: [] },
+                    floorInterval: { every: 1, start: 1, end: 1 },
+                    decorations: []
+                }],
+                nextSetIndex: 2
+            }
+        });
+        const source = serializeCityBuildingConfigToEsModule(cfg);
+        assertTrue(source.includes('wallDecorations'), 'Expected serialized module to include wallDecorations block.');
+    });
+
+    test('BuildingFabrication2View: decoration auto-corner metadata uses outmost adjacent bay depth ownership', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        try {
+            view._syncUiState = () => {};
+            view._requestRebuild = () => {};
+            view._currentConfig = {
+                layers: [{
+                    id: 'floor_1',
+                    type: 'floor',
+                    floors: 2,
+                    floorHeight: 3.2
+                }],
+                facades: {
+                    floor_1: {
+                        A: {
+                            layout: {
+                                bays: {
+                                    nextBayIndex: 2,
+                                    items: [{
+                                        id: 'bay_1',
+                                        depth: { linked: false, left: 0.0, right: 0.35 }
+                                    }]
+                                }
+                            }
+                        },
+                        B: {
+                            layout: {
+                                bays: {
+                                    nextBayIndex: 2,
+                                    items: [{
+                                        id: 'bay_1',
+                                        depth: { linked: false, left: 0.10, right: 0.0 }
+                                    }]
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            view._addDecorationSet();
+            const setId = String(view._currentConfig?.wallDecorations?.sets?.[0]?.id ?? '');
+            assertTrue(!!setId, 'Expected decoration set id.');
+            view._setDecorationSetAllBays(setId, true);
+            view._addDecorationEntry(setId);
+            let set = view._currentConfig?.wallDecorations?.sets?.find((entry) => entry?.id === setId) ?? null;
+            const decorationId = String(set?.decorations?.[0]?.id ?? '');
+            assertTrue(!!decorationId, 'Expected decoration entry id.');
+            view._setDecorationEntryType(setId, decorationId, 'simple_skirt');
+
+            set = view._currentConfig?.wallDecorations?.sets?.find((entry) => entry?.id === setId) ?? null;
+            const decoration = set?.decorations?.find((entry) => entry?.id === decorationId) ?? null;
+            const autoCorner = decoration?.autoCorner && typeof decoration.autoCorner === 'object'
+                ? decoration.autoCorner
+                : null;
+            const byBayRef = autoCorner?.byBayRef && typeof autoCorner.byBayRef === 'object'
+                ? autoCorner.byBayRef
+                : null;
+            const aRef = byBayRef?.['A:bay_1'] ?? null;
+            const bRef = byBayRef?.['B:bay_1'] ?? null;
+
+            assertEqual(autoCorner?.rule ?? '', 'outmost_depth', 'Expected outmost-depth corner ownership rule.');
+            assertTrue(!!aRef, 'Expected outmost edge bay to receive auto-corner metadata.');
+            assertEqual(!!aRef?.end, true, 'Expected A:end edge to become corner owner.');
+            assertEqual(!!aRef?.start, false, 'Expected A:start edge to remain non-corner.');
+            assertNear(Number(aRef?.continuationEndMeters) || 0, 0.25, 1e-6, 'Expected corner continuation to match bay depth difference.');
+            assertEqual(bRef, null, 'Expected non-owner adjacent bay edge to stay in face mode.');
+        } finally {
+            view.exit?.();
+        }
+    });
+
     test('BuildingFabrication2UI: garage openings expose garage state controls only', () => {
         const ui = new BuildingFabrication2UI();
         ui.mount(document.body);
@@ -3242,6 +3979,27 @@ async function runTests() {
         }
     });
 
+    test('BuildingFabrication2View: decoration mode suppresses selected-face mark', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        let suppressed = null;
+        view.scene.setFaceHighlightSuppressed = (next) => { suppressed = !!next; };
+
+        view._editorMode = 'building';
+        view._hideFaceMarkEnabled = false;
+        view._pointerInViewport = true;
+        view._syncFaceHighlightSuppression();
+        assertEqual(suppressed, false, 'Expected face mark visible in Building mode when Hide face mark is off.');
+
+        view._editorMode = 'decoration';
+        view._syncFaceHighlightSuppression();
+        assertEqual(suppressed, true, 'Expected face mark suppressed in Decoration mode.');
+    });
+
     test('BuildingFabrication2Scene: camera maps left-look, middle-pan, and right-orbit', () => {
         const engine = {
             scene: new THREE.Scene(),
@@ -3281,6 +4039,33 @@ async function runTests() {
         }
     });
 
+    test('BuildingFabrication2Scene: hovered floor uses filled facade overlay', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const scene = new BuildingFabrication2Scene(engine);
+        scene.root = new THREE.Group();
+        engine.scene.add(scene.root);
+        scene._building = { group: new THREE.Group() };
+        scene._focusBox = new THREE.Box3(
+            new THREE.Vector3(-4, 0.2, -3),
+            new THREE.Vector3(6, 8.6, 5)
+        );
+        scene._floorLayerYRangeById = new Map([
+            ['floor_1', { startY: 0.5, endY: 3.5 }]
+        ]);
+
+        scene.setHoveredFloorLayerId('floor_1');
+        const overlay = scene._hoverHighlightLine;
+        assertTrue(!!overlay && !!overlay.isMesh, 'Expected hovered floor highlight to render as a mesh overlay.');
+        assertEqual(overlay?.geometry?.getAttribute?.('position')?.count ?? 0, 16, 'Expected four facade quads in floor hover overlay.');
+
+        scene.setHoveredFloorLayerId(null);
+        assertFalse(!!scene._hoverHighlightLine, 'Expected floor hover overlay to clear when layer hover ends.');
+    });
+
     test('BuildingFabrication2Scene: render slab uses footprint extents and toggles cleanly', () => {
         const engine = {
             scene: new THREE.Scene(),
@@ -3306,6 +4091,26 @@ async function runTests() {
 
         scene.setRenderSlab(false);
         assertFalse(!!scene._supportSlabMesh, 'Expected slab mesh to be cleared when Render slab is disabled.');
+    });
+
+    test('BuildingFabrication2Scene: render sky toggle updates background visibility immediately', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const scene = new BuildingFabrication2Scene(engine);
+
+        scene.enter();
+        try {
+            assertTrue(!!engine.scene.background, 'Expected scene background enabled by default when entering BF2.');
+            scene.setRenderSky(false);
+            assertEqual(engine.scene.background, null, 'Expected scene background cleared when Render sky is disabled.');
+            scene.setRenderSky(true);
+            assertTrue(!!engine.scene.background, 'Expected scene background restored when Render sky is re-enabled.');
+        } finally {
+            scene.exit();
+        }
     });
 
     test('BuildingFabrication2View: ruler/layout modes disable camera mouse controls', () => {
@@ -6988,6 +7793,16 @@ async function runTests() {
         assertTrue(!!bottomSettings?.interior?.enabled, 'Expected main opening interior to remain enabled with preset override.');
         assertEqual(bottomSettings?.interior?.parallaxInteriorPresetId, 'parallax_interior.office', 'Expected main opening interior preset override.');
         assertEqual(topSettings?.interior?.parallaxInteriorPresetId, 'parallax_interior.office', 'Expected top opening to follow main interior preset override.');
+        assertNear(Number(bottomSettings?.interior?.uvZoom), 3.0, 1e-6, 'Expected office preset UV zoom default when BF2 parallax is enabled.');
+        assertNear(Number(bottomSettings?.interior?.parallaxDepthMeters), 15.0, 1e-6, 'Expected office preset depth default when BF2 parallax is enabled.');
+        assertNear(Number(bottomSettings?.interior?.parallaxScale?.x), 4.0, 1e-6, 'Expected office preset X scale default when BF2 parallax is enabled.');
+        assertNear(Number(bottomSettings?.interior?.parallaxScale?.y), 4.0, 1e-6, 'Expected office preset Y scale default when BF2 parallax is enabled.');
+        assertNear(Number(bottomSettings?.interior?.tintVariation?.hueShiftDeg?.min), 0.0, 1e-6, 'Expected office preset hueShift min default when BF2 parallax is enabled.');
+        assertNear(Number(bottomSettings?.interior?.tintVariation?.hueShiftDeg?.max), 0.0, 1e-6, 'Expected office preset hueShift max default when BF2 parallax is enabled.');
+        assertNear(Number(bottomSettings?.interior?.tintVariation?.saturationMul?.min), 0.8, 1e-6, 'Expected office preset saturation min default when BF2 parallax is enabled.');
+        assertNear(Number(bottomSettings?.interior?.tintVariation?.saturationMul?.max), 0.9, 1e-6, 'Expected office preset saturation max default when BF2 parallax is enabled.');
+        assertNear(Number(bottomSettings?.interior?.tintVariation?.brightnessMul?.min), 0.8, 1e-6, 'Expected office preset brightness min default when BF2 parallax is enabled.');
+        assertNear(Number(bottomSettings?.interior?.tintVariation?.brightnessMul?.max), 0.9, 1e-6, 'Expected office preset brightness max default when BF2 parallax is enabled.');
     });
 
     test('BuildingFabricationGenerator: top opening inherits door definition id', () => {

@@ -294,3 +294,32 @@ Generation/config contract:
 - arc segmentation rule:
   - `arcSegments = ceil(blockSizeCm / 2)`,
   - examples: `5cm -> 3`, `10cm -> 5`, `15cm -> 8`.
+
+## 14. Seed Entry: Awning
+
+Catalog id: `awning`
+
+Generation/config contract:
+- belongs to catalog section `Awning`.
+- emits, per active face segment:
+  - one slanted top plane (`awning_slanted_plane`) from wall edge to front edge,
+  - one front/valance quad (`awning_front_quad`) at the awning front edge,
+  - side-edge support rods (`awning_support_rod`) connecting wall anchors to the awning body.
+- support rod behavior:
+  - `face` mode: two rods on the front segment (`start` and `end` edges),
+  - `corner` mode: per-edge logic on non-corner edges only (front-start + right-end), yielding two rods total.
+- corner coverage behavior:
+  - front and right segments continue around the corner using projection-based extension (same continuity rationale used by flat-panel corner decorators).
+- properties:
+  - `projectionMeters`
+  - `frontHeightMeters`
+  - `slopeDegrees`
+  - `rodRadiusMeters`
+  - `rodInsetMeters`
+  - `nearEdgeOffsetMeters`
+- defaults:
+  - `whereToApply = entire_facade`
+  - `mode = face`
+  - `position = near_top`
+- presets:
+  - grouped presets include `Size` (`Small`, `Medium`, `Large`) and `Slope` (`Shallow`, `Standard`, `Steep`).
