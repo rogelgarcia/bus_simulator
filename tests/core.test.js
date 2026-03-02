@@ -3766,6 +3766,159 @@ async function runTests() {
         assertEqual(Array.isArray(set?.target?.bayRefs) ? set.target.bayRefs.length : -1, 0, 'Expected linked deselection to clear both linked refs.');
     });
 
+    test('BuildingFabrication2View: decoration targeting propagates across linked faces', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        try {
+            view._syncUiState = () => {};
+            view._requestRebuild = () => {};
+            view._currentConfig = {
+                layers: [{
+                    id: 'floor_1',
+                    type: 'floor',
+                    floors: 1,
+                    floorHeight: 3.2,
+                    faceLinking: {
+                        links: { B: 'A' }
+                    }
+                }],
+                facades: {
+                    floor_1: {
+                        A: {
+                            layout: {
+                                bays: {
+                                    nextBayIndex: 3,
+                                    items: [
+                                        { id: 'bay_1' },
+                                        { id: 'bay_2' }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            const options = view._collectDecorationBayOptionsForLayer('floor_1')
+                .map((entry) => String(entry?.id ?? ''))
+                .sort();
+            assertEqual(
+                options.join(','),
+                'A:bay_1,A:bay_2,B:bay_1,B:bay_2',
+                'Expected linked slave face bay options to mirror master face bays.'
+            );
+
+            view._addDecorationSet();
+            const setId = String(view._currentConfig?.wallDecorations?.sets?.[0]?.id ?? '');
+            assertTrue(!!setId, 'Expected decoration set id.');
+            view._toggleDecorationSetBay(setId, 'A:bay_2', true);
+            view._addDecorationEntry(setId);
+
+            let set = view._currentConfig?.wallDecorations?.sets?.find((entry) => entry?.id === setId) ?? null;
+            const selectedRefs = Array.isArray(set?.target?.bayRefs) ? set.target.bayRefs.slice().sort() : [];
+            assertEqual(
+                selectedRefs.join(','),
+                'A:bay_2,B:bay_2',
+                'Expected linked face bay selection to toggle both master and slave refs.'
+            );
+
+            const decorationId = String(set?.decorations?.[0]?.id ?? '');
+            assertTrue(!!decorationId, 'Expected decoration id.');
+            view._setDecorationEntryType(setId, decorationId, 'simple_skirt');
+            set = view._currentConfig?.wallDecorations?.sets?.find((entry) => entry?.id === setId) ?? null;
+            const decoration = set?.decorations?.find((entry) => entry?.id === decorationId) ?? null;
+            const resolvedRefs = Array.isArray(decoration?.autoCorner?.resolvedBayRefs)
+                ? decoration.autoCorner.resolvedBayRefs.slice().sort()
+                : [];
+            assertEqual(
+                resolvedRefs.join(','),
+                'A:bay_2,B:bay_2',
+                'Expected auto-corner metadata to preserve linked-face resolved target refs.'
+            );
+        } finally {
+            view.exit?.();
+        }
+    });
+
+    test('BuildingFabrication2View: decoration target inheritance adds adjacent owner-facing bay refs', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        try {
+            view._syncUiState = () => {};
+            view._requestRebuild = () => {};
+            view._currentConfig = {
+                layers: [{
+                    id: 'floor_1',
+                    type: 'floor',
+                    floors: 1,
+                    floorHeight: 3.2
+                }],
+                facades: {
+                    floor_1: {
+                        A: {
+                            layout: {
+                                bays: {
+                                    nextBayIndex: 2,
+                                    items: [{
+                                        id: 'bay_1',
+                                        depth: { linked: false, left: 0.0, right: 0.35 }
+                                    }]
+                                }
+                            }
+                        },
+                        B: {
+                            layout: {
+                                bays: {
+                                    nextBayIndex: 2,
+                                    items: [{
+                                        id: 'bay_1',
+                                        depth: { linked: false, left: 0.10, right: 0.0 }
+                                    }]
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            view._addDecorationSet();
+            const setId = String(view._currentConfig?.wallDecorations?.sets?.[0]?.id ?? '');
+            assertTrue(!!setId, 'Expected decoration set id.');
+            view._toggleDecorationSetBay(setId, 'A:bay_1', true);
+            view._addDecorationEntry(setId);
+            let set = view._currentConfig?.wallDecorations?.sets?.find((entry) => entry?.id === setId) ?? null;
+            const decorationId = String(set?.decorations?.[0]?.id ?? '');
+            assertTrue(!!decorationId, 'Expected decoration entry id.');
+            view._setDecorationEntryType(setId, decorationId, 'simple_skirt');
+
+            set = view._currentConfig?.wallDecorations?.sets?.find((entry) => entry?.id === setId) ?? null;
+            const decoration = set?.decorations?.find((entry) => entry?.id === decorationId) ?? null;
+            const resolvedRefs = Array.isArray(decoration?.autoCorner?.resolvedBayRefs)
+                ? decoration.autoCorner.resolvedBayRefs.slice().sort()
+                : [];
+            assertEqual(
+                resolvedRefs.join(','),
+                'A:bay_1,B:bay_1',
+                'Expected adjacent inherited bay ref to be added using outmost-depth ownership.'
+            );
+            const byBayRef = decoration?.autoCorner?.byBayRef && typeof decoration.autoCorner.byBayRef === 'object'
+                ? decoration.autoCorner.byBayRef
+                : null;
+            assertTrue(!!byBayRef?.['A:bay_1'], 'Expected owner bay corner metadata.');
+            assertEqual(byBayRef?.['B:bay_1'] ?? null, null, 'Expected inherited non-owner bay to remain in face mode.');
+        } finally {
+            view.exit?.();
+        }
+    });
+
     test('BuildingConfigExport: wallDecorations are included in serialized config modules', async () => {
         const {
             createCityBuildingConfigFromFabrication,
@@ -3865,6 +4018,497 @@ async function runTests() {
         } finally {
             view.exit?.();
         }
+    });
+
+    test('BuildingFabrication2View: same-face inset adjacency resolves interior corner metadata', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        try {
+            view._syncUiState = () => {};
+            view._requestRebuild = () => {};
+            view._currentConfig = {
+                layers: [{
+                    id: 'floor_1',
+                    type: 'floor',
+                    floors: 1,
+                    floorHeight: 3.2
+                }],
+                facades: {
+                    floor_1: {
+                        A: {
+                            layout: {
+                                bays: {
+                                    nextBayIndex: 3,
+                                    items: [
+                                        { id: 'bay_1', depth: { linked: false, left: 0.0, right: 0.0 } },
+                                        { id: 'bay_2', depth: { linked: false, left: -0.30, right: -0.30 } }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            view._addDecorationSet();
+            const setId = String(view._currentConfig?.wallDecorations?.sets?.[0]?.id ?? '');
+            assertTrue(!!setId, 'Expected decoration set id.');
+            view._setDecorationSetAllBays(setId, true);
+            view._addDecorationEntry(setId);
+            let set = view._currentConfig?.wallDecorations?.sets?.find((entry) => entry?.id === setId) ?? null;
+            const decorationId = String(set?.decorations?.[0]?.id ?? '');
+            assertTrue(!!decorationId, 'Expected decoration entry id.');
+            view._setDecorationEntryType(setId, decorationId, 'simple_skirt');
+
+            set = view._currentConfig?.wallDecorations?.sets?.find((entry) => entry?.id === setId) ?? null;
+            const decoration = set?.decorations?.find((entry) => entry?.id === decorationId) ?? null;
+            const byBayRef = decoration?.autoCorner?.byBayRef && typeof decoration.autoCorner.byBayRef === 'object'
+                ? decoration.autoCorner.byBayRef
+                : null;
+            const outerRef = byBayRef?.['A:bay_1'] ?? null;
+            const insetRef = byBayRef?.['A:bay_2'] ?? null;
+            assertTrue(!!outerRef, 'Expected outer bay to own the inset corner transition.');
+            assertEqual(!!outerRef?.end, true, 'Expected outer bay end edge to become corner.');
+            assertEqual(String(outerRef?.endCornerStyle ?? ''), 'interior', 'Expected inset transition to use interior corner style.');
+            assertNear(Number(outerRef?.continuationEndMeters) || 0.0, 0.30, 1e-6, 'Expected inset continuation to match depth difference.');
+            assertEqual(insetRef ?? null, null, 'Expected inset bay to remain non-owner for same-edge corner ownership.');
+        } finally {
+            view.exit?.();
+        }
+    });
+
+    test('BuildingFabrication2Scene: adjacent face-boundary bays avoid duplicate continuation meshes', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const scene = new BuildingFabrication2Scene(engine);
+        scene._building = { group: new THREE.Group() };
+        scene._wallTextures = { resolveMaterial: () => null, applyResolvedMaterial: () => {} };
+        scene._bayHighlightDataByLayerId = {
+            floor_1: [
+                { faceId: 'A', bayId: 'bay_1', x0: 0, z0: 0, x1: 4, z1: 0 },
+                { faceId: 'B', bayId: 'bay_1', x0: 4, z0: 0, x1: 4, z1: -4 }
+            ]
+        };
+
+        const config = {
+            wallDecorations: {
+                sets: [{
+                    id: 'set_1',
+                    target: {
+                        layerId: 'floor_1',
+                        bayRefs: ['A:bay_1', 'B:bay_1'],
+                        allBays: false
+                    },
+                    floorInterval: { every: 1, start: 1, end: 1 },
+                    decorations: [{
+                        id: 'decoration_1',
+                        state: {
+                            decoratorId: 'simple_skirt',
+                            whereToApply: 'full',
+                            mode: 'face',
+                            position: 'bottom'
+                        },
+                        span: { start: 0, end: 1 },
+                        autoCorner: {
+                            resolvedBayRefs: ['A:bay_1', 'B:bay_1'],
+                            byBayRef: {
+                                'A:bay_1': {
+                                    start: false,
+                                    end: true,
+                                    continuationStartMeters: 0.0,
+                                    continuationEndMeters: 0.0,
+                                    startCornerStyle: null,
+                                    endCornerStyle: 'exterior',
+                                    startCornerRelation: null,
+                                    endCornerRelation: 'face_boundary'
+                                },
+                                'B:bay_1': {
+                                    start: true,
+                                    end: false,
+                                    continuationStartMeters: 0.0,
+                                    continuationEndMeters: 0.0,
+                                    startCornerStyle: 'exterior',
+                                    endCornerStyle: null,
+                                    startCornerRelation: 'face_boundary',
+                                    endCornerRelation: null
+                                }
+                            }
+                        }
+                    }]
+                }]
+            }
+        };
+        const layers = [{ id: 'floor_1', type: 'floor', floors: 1, floorHeight: 3.2 }];
+
+        scene._rebuildWallDecorations({ config, layers });
+        const group = scene._wallDecorationsGroup;
+        assertTrue(!!group, 'Expected BF2 wall decoration group.');
+
+        const meshes = group.children.filter((child) => !!child?.isMesh);
+        const frontCount = meshes.filter((mesh) => String(mesh?.userData?.faceId ?? '') === 'front').length;
+        const rightCount = meshes.filter((mesh) => String(mesh?.userData?.faceId ?? '') === 'right').length;
+        assertEqual(meshes.length, 6, 'Expected two adjacent bays to produce six skirt meshes (no duplicate continuation).');
+        assertEqual(frontCount, 6, 'Expected all adjacent face-boundary meshes to remain on front faces.');
+        assertEqual(rightCount, 0, 'Expected no right-face continuation meshes for face-boundary adjacency.');
+    });
+
+    test('BuildingFabrication2Scene: adjacent compatible bays resolve edge caps via two-pass compatibility without auto-corner metadata', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const scene = new BuildingFabrication2Scene(engine);
+        scene._building = { group: new THREE.Group() };
+        scene._wallTextures = { resolveMaterial: () => null, applyResolvedMaterial: () => {} };
+        scene._bayHighlightDataByLayerId = {
+            floor_1: [
+                { faceId: 'A', bayId: 'bay_1', x0: 0, z0: 0, x1: 4, z1: 0 },
+                { faceId: 'B', bayId: 'bay_1', x0: 4, z0: 0, x1: 4, z1: -4 }
+            ]
+        };
+
+        const config = {
+            wallDecorations: {
+                sets: [{
+                    id: 'set_1',
+                    target: {
+                        layerId: 'floor_1',
+                        bayRefs: ['A:bay_1', 'B:bay_1'],
+                        allBays: false
+                    },
+                    floorInterval: { every: 1, start: 1, end: 1 },
+                    decorations: [{
+                        id: 'decoration_1',
+                        state: {
+                            decoratorId: 'simple_skirt',
+                            whereToApply: 'full',
+                            mode: 'face',
+                            position: 'bottom'
+                        },
+                        span: { start: 0, end: 1 }
+                    }]
+                }]
+            }
+        };
+        const layers = [{ id: 'floor_1', type: 'floor', floors: 1, floorHeight: 3.2 }];
+
+        scene._rebuildWallDecorations({ config, layers });
+        const meshes = (scene._wallDecorationsGroup?.children ?? []).filter((child) => !!child?.isMesh);
+        const sideCaps = meshes.filter((mesh) => String(mesh?.userData?.geometryKind ?? '') === 'flat_panel_side_cap').length;
+        const rightCount = meshes.filter((mesh) => String(mesh?.userData?.faceId ?? '') === 'right').length;
+        const decorationKeys = Array.from(new Set(meshes.map((mesh) => String(mesh?.userData?.decorationKey ?? '')).filter(Boolean)));
+
+        assertEqual(meshes.length, 6, 'Expected two adjacent bays to resolve six skirt meshes from compatibility pass.');
+        assertEqual(sideCaps, 2, 'Expected only outer side caps; no shared-edge duplicate cap between adjacent bays.');
+        assertEqual(rightCount, 0, 'Expected no right-face continuation meshes when only face-boundary adjacency is present.');
+        assertEqual(decorationKeys.length, 1, 'Expected exactly one decoration entry to own all generated meshes.');
+    });
+
+    test('BuildingFabrication2Scene: same-face step transition creates a single continuation set', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const scene = new BuildingFabrication2Scene(engine);
+        scene._building = { group: new THREE.Group() };
+        scene._wallTextures = { resolveMaterial: () => null, applyResolvedMaterial: () => {} };
+        scene._bayHighlightDataByLayerId = {
+            floor_1: [
+                { faceId: 'A', bayId: 'bay_1', x0: 0, z0: 0, x1: 4, z1: 0 },
+                { faceId: 'A', bayId: 'bay_2', x0: 4, z0: 0, x1: 8, z1: 0 }
+            ]
+        };
+
+        const config = {
+            wallDecorations: {
+                sets: [{
+                    id: 'set_1',
+                    target: {
+                        layerId: 'floor_1',
+                        bayRefs: ['A:bay_1'],
+                        allBays: false
+                    },
+                    floorInterval: { every: 1, start: 1, end: 1 },
+                    decorations: [{
+                        id: 'decoration_1',
+                        state: {
+                            decoratorId: 'simple_skirt',
+                            whereToApply: 'full',
+                            mode: 'face',
+                            position: 'bottom'
+                        },
+                        span: { start: 0, end: 1 },
+                        autoCorner: {
+                            resolvedBayRefs: ['A:bay_1', 'A:bay_2'],
+                            byBayRef: {
+                                'A:bay_1': {
+                                    start: false,
+                                    end: true,
+                                    continuationStartMeters: 0.0,
+                                    continuationEndMeters: 0.30,
+                                    startCornerStyle: null,
+                                    endCornerStyle: 'exterior',
+                                    startCornerRelation: null,
+                                    endCornerRelation: 'same_face'
+                                }
+                            }
+                        }
+                    }]
+                }]
+            }
+        };
+        const layers = [{ id: 'floor_1', type: 'floor', floors: 1, floorHeight: 3.2 }];
+
+        scene._rebuildWallDecorations({ config, layers });
+        const group = scene._wallDecorationsGroup;
+        assertTrue(!!group, 'Expected BF2 wall decoration group.');
+
+        const meshes = group.children.filter((child) => !!child?.isMesh);
+        const frontCount = meshes.filter((mesh) => String(mesh?.userData?.faceId ?? '') === 'front').length;
+        const rightCount = meshes.filter((mesh) => String(mesh?.userData?.faceId ?? '') === 'right').length;
+        assertEqual(meshes.length, 10, 'Expected owner bay + inherited bay with one same-face continuation set.');
+        assertEqual(frontCount, 7, 'Expected seven front-face skirt meshes across owner and inherited bays.');
+        assertEqual(rightCount, 3, 'Expected one right-face continuation set (main/top/side) on the owner bay only.');
+    });
+
+    test('BuildingFabrication2Scene: face-boundary depth ownership continues decoration over extruded interior wall', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const scene = new BuildingFabrication2Scene(engine);
+        scene._building = { group: new THREE.Group() };
+        scene._wallTextures = { resolveMaterial: () => null, applyResolvedMaterial: () => {} };
+        scene._bayHighlightDataByLayerId = {
+            floor_1: [
+                { faceId: 'A', bayId: 'bay_1', x0: 0, z0: 0, x1: 4, z1: 0 },
+                { faceId: 'B', bayId: 'bay_1', x0: 4, z0: 0, x1: 4, z1: -4 }
+            ]
+        };
+
+        const config = {
+            wallDecorations: {
+                sets: [{
+                    id: 'set_1',
+                    target: {
+                        layerId: 'floor_1',
+                        bayRefs: ['A:bay_1'],
+                        allBays: false
+                    },
+                    floorInterval: { every: 1, start: 1, end: 1 },
+                    decorations: [{
+                        id: 'decoration_1',
+                        state: {
+                            decoratorId: 'simple_skirt',
+                            whereToApply: 'full',
+                            mode: 'face',
+                            position: 'bottom'
+                        },
+                        span: { start: 0, end: 1 },
+                        autoCorner: {
+                            resolvedBayRefs: ['A:bay_1', 'B:bay_1'],
+                            byBayRef: {
+                                'A:bay_1': {
+                                    start: false,
+                                    end: true,
+                                    continuationStartMeters: 0.0,
+                                    continuationEndMeters: 0.25,
+                                    startCornerStyle: null,
+                                    endCornerStyle: 'exterior',
+                                    startCornerRelation: null,
+                                    endCornerRelation: 'face_boundary'
+                                }
+                            }
+                        }
+                    }]
+                }]
+            }
+        };
+        const layers = [{ id: 'floor_1', type: 'floor', floors: 1, floorHeight: 3.2 }];
+
+        scene._rebuildWallDecorations({ config, layers });
+        const group = scene._wallDecorationsGroup;
+        assertTrue(!!group, 'Expected BF2 wall decoration group.');
+
+        const meshes = group.children.filter((child) => !!child?.isMesh);
+        const rightCount = meshes.filter((mesh) => String(mesh?.userData?.faceId ?? '') === 'right').length;
+        const decorationKeys = Array.from(new Set(meshes.map((mesh) => String(mesh?.userData?.decorationKey ?? '')).filter(Boolean)));
+
+        assertEqual(meshes.length, 9, 'Expected owner + inherited face strips with one face-boundary continuation set.');
+        assertEqual(rightCount, 3, 'Expected one right-face continuation set on the outmost owner bay.');
+        assertEqual(decorationKeys.length, 1, 'Expected no duplicate decoration ownership when inheriting boundary continuation.');
+    });
+
+    test('BuildingFabrication2Scene: opening split builds separate decoration sections (not post-cut fragments)', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const scene = new BuildingFabrication2Scene(engine);
+        scene._building = { group: new THREE.Group() };
+        scene._wallTextures = { resolveMaterial: () => null, applyResolvedMaterial: () => {} };
+        scene._bayHighlightDataByLayerId = {
+            floor_1: [
+                { faceId: 'A', bayId: 'bay_1', x0: 0, z0: 0, x1: 4, z1: 0 }
+            ]
+        };
+
+        const config = {
+            facades: {
+                floor_1: {
+                    A: {
+                        layout: {
+                            bays: {
+                                items: [{
+                                    id: 'bay_1',
+                                    window: {
+                                        enabled: true,
+                                        assetType: 'window',
+                                        size: { widthMeters: 1.0, heightMeters: 1.2 },
+                                        heightMode: 'fixed',
+                                        verticalOffsetMeters: 0.0,
+                                        repeat: { count: 1 },
+                                        padding: { leftMeters: 0, rightMeters: 0 },
+                                        top: { enabled: false }
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            },
+            wallDecorations: {
+                sets: [{
+                    id: 'set_1',
+                    target: {
+                        layerId: 'floor_1',
+                        bayRefs: ['A:bay_1'],
+                        allBays: false
+                    },
+                    floorInterval: { every: 1, start: 1, end: 1 },
+                    decorations: [{
+                        id: 'decoration_1',
+                        state: {
+                            decoratorId: 'simple_skirt',
+                            whereToApply: 'full',
+                            mode: 'face',
+                            position: 'bottom'
+                        },
+                        span: { start: 0, end: 1 }
+                    }]
+                }]
+            }
+        };
+        const layers = [{ id: 'floor_1', type: 'floor', floors: 1, floorHeight: 3.2 }];
+
+        scene._rebuildWallDecorations({ config, layers });
+        const meshes = (scene._wallDecorationsGroup?.children ?? []).filter((child) => !!child?.isMesh);
+        const frontCount = meshes.filter((mesh) => String(mesh?.userData?.faceId ?? '') === 'front').length;
+        const rightCount = meshes.filter((mesh) => String(mesh?.userData?.faceId ?? '') === 'right').length;
+        const sideCaps = meshes.filter((mesh) => String(mesh?.userData?.geometryKind ?? '') === 'flat_panel_side_cap').length;
+        assertEqual(meshes.length, 8, 'Expected skirt to rebuild as two independent sections around opening.');
+        assertEqual(frontCount, 8, 'Expected split sections to remain on front face only.');
+        assertEqual(rightCount, 0, 'Expected no right-face continuation for plain face mode split.');
+        assertEqual(sideCaps, 4, 'Expected two side caps per section after opening split.');
+    });
+
+    test('BuildingFabrication2Scene: opening split keeps corner behavior per section edge ownership', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const scene = new BuildingFabrication2Scene(engine);
+        scene._building = { group: new THREE.Group() };
+        scene._wallTextures = { resolveMaterial: () => null, applyResolvedMaterial: () => {} };
+        scene._bayHighlightDataByLayerId = {
+            floor_1: [
+                { faceId: 'A', bayId: 'bay_1', x0: 0, z0: 0, x1: 4, z1: 0 }
+            ]
+        };
+
+        const config = {
+            facades: {
+                floor_1: {
+                    A: {
+                        layout: {
+                            bays: {
+                                items: [{
+                                    id: 'bay_1',
+                                    window: {
+                                        enabled: true,
+                                        assetType: 'window',
+                                        size: { widthMeters: 1.0, heightMeters: 1.2 },
+                                        heightMode: 'fixed',
+                                        verticalOffsetMeters: 0.0,
+                                        repeat: { count: 1 },
+                                        padding: { leftMeters: 0, rightMeters: 0 },
+                                        top: { enabled: false }
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            },
+            wallDecorations: {
+                sets: [{
+                    id: 'set_1',
+                    target: {
+                        layerId: 'floor_1',
+                        bayRefs: ['A:bay_1'],
+                        allBays: false
+                    },
+                    floorInterval: { every: 1, start: 1, end: 1 },
+                    decorations: [{
+                        id: 'decoration_1',
+                        state: {
+                            decoratorId: 'simple_skirt',
+                            whereToApply: 'full',
+                            mode: 'face',
+                            position: 'bottom'
+                        },
+                        span: { start: 0, end: 1 },
+                        autoCorner: {
+                            byBayRef: {
+                                'A:bay_1': {
+                                    start: false,
+                                    end: true,
+                                    continuationStartMeters: 0.0,
+                                    continuationEndMeters: 0.30,
+                                    startCornerStyle: null,
+                                    endCornerStyle: 'exterior',
+                                    startCornerRelation: null,
+                                    endCornerRelation: 'same_face'
+                                }
+                            }
+                        }
+                    }]
+                }]
+            }
+        };
+        const layers = [{ id: 'floor_1', type: 'floor', floors: 1, floorHeight: 3.2 }];
+
+        scene._rebuildWallDecorations({ config, layers });
+        const meshes = (scene._wallDecorationsGroup?.children ?? []).filter((child) => !!child?.isMesh);
+        const frontCount = meshes.filter((mesh) => String(mesh?.userData?.faceId ?? '') === 'front').length;
+        const rightCount = meshes.filter((mesh) => String(mesh?.userData?.faceId ?? '') === 'right').length;
+        const sideCaps = meshes.filter((mesh) => String(mesh?.userData?.geometryKind ?? '') === 'flat_panel_side_cap').length;
+        assertEqual(meshes.length, 10, 'Expected two opening sections plus one continuation set on the true wall edge section.');
+        assertEqual(frontCount, 7, 'Expected front-face meshes to match per-section edge ownership logic.');
+        assertEqual(rightCount, 3, 'Expected exactly one right-face continuation set on the wall-end section.');
+        assertEqual(sideCaps, 4, 'Expected three front side caps + one continuation side cap.');
     });
 
     test('BuildingFabrication2UI: garage openings expose garage state controls only', () => {
@@ -4601,6 +5245,11 @@ async function runTests() {
     } = await import('/src/app/buildings/wall_decorators/index.js');
     const { WallDecorationMeshDebuggerUI } = await import('/src/graphics/gui/wall_decoration_mesh_debugger/view/WallDecorationMeshDebuggerUI.js');
     const { WallDecorationMeshDebuggerView } = await import('/src/graphics/gui/wall_decoration_mesh_debugger/view/WallDecorationMeshDebuggerView.js');
+    const {
+        areWallDecoratorExplodedEntriesCorniceRoundedOnly,
+        separateWallDecoratorExplodedCorniceRoundedFaces,
+        separateWallDecoratorExplodedFacesIterative
+    } = await import('/src/graphics/gui/shared/wall_decorator/WallDecoratorExplodedView.js');
 
     test('WindowMeshMaterials: interior shader avoids mapTexelToLinear', () => {
         const mats = createWindowMeshMaterials(getDefaultWindowMeshSettings());
@@ -5467,7 +6116,7 @@ async function runTests() {
         }
     });
 
-    test('WallDecorationMeshDebuggerView: sample wall uses one corner mesh without overlap', () => {
+    test('WallDecorationMeshDebuggerView: sample wall uses axis-aligned N-pattern mesh with interior corner coverage', () => {
         const view = new WallDecorationMeshDebuggerView();
         try {
             view.scene = new THREE.Scene();
@@ -5476,14 +6125,14 @@ async function runTests() {
             const wallMeshes = Array.from(view.scene.children ?? [])
                 .filter((obj) => obj?.isMesh && String(obj?.name ?? '').startsWith('wall_'));
             assertEqual(wallMeshes.length, 1, 'Expected a single sample wall mesh.');
-            assertEqual(wallMeshes[0]?.name, 'wall_corner', 'Expected merged corner wall mesh name.');
+            assertEqual(wallMeshes[0]?.name, 'wall_n_pattern', 'Expected merged N-pattern wall mesh name.');
             assertTrue(!!view._wallMesh?.isMesh, 'Expected merged wall mesh handle.');
 
             const box = new THREE.Box3().setFromObject(wallMeshes[0]);
             const size = box.getSize(new THREE.Vector3());
             assertNear(size.x, 10.0, 1e-6, 'Expected wall corner to span full facade width on X.');
             assertNear(size.y, 3.5, 1e-6, 'Expected wall corner to match facade height.');
-            assertNear(size.z, 10.0, 1e-6, 'Expected wall corner to span both faces on Z.');
+            assertNear(size.z, 20.0, 1e-6, 'Expected N-pattern sample wall to include full-width added forward branch span on Z.');
 
             const positions = wallMeshes[0]?.geometry?.attributes?.position?.array ?? [];
             const hasVertexXZ = (x, z, eps = 1e-4) => {
@@ -5494,10 +6143,319 @@ async function runTests() {
                 }
                 return false;
             };
-            assertTrue(hasVertexXZ(5.0, 0.0), 'Expected exterior corner to remain a 90-degree edge.');
-            assertTrue(hasVertexXZ(4.7, -0.3), 'Expected inner offset intersection for the 45-degree internal wedge.');
-            assertFalse(hasVertexXZ(4.7, 0.0), 'Expected no outward-facing chamfer start on front edge.');
-            assertFalse(hasVertexXZ(5.0, -0.3), 'Expected no outward-facing chamfer end on right edge.');
+            assertTrue(hasVertexXZ(5.0, 0.0), 'Expected front-right outer corner.');
+            assertTrue(hasVertexXZ(4.7, -0.3), 'Expected front inner wall-thickness edge.');
+            assertTrue(hasVertexXZ(-5.0, 10.0), 'Expected added left branch outer endpoint after 180-degree rotation.');
+            assertTrue(hasVertexXZ(-4.7, 10.0), 'Expected added left branch inner endpoint after 180-degree rotation.');
+            assertTrue(hasVertexXZ(-4.7, 0.0), 'Expected rotated branch to connect at front run inner edge.');
+            assertFalse(hasVertexXZ(-0.7, -6.0), 'Expected no extra top-right-top connector branch in corrected layout.');
+            assertFalse(hasVertexXZ(-1.0, -10.0), 'Expected only one added branch segment (no extra deep connector).');
+        } finally {
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: third-wall toggle rebuilds N-branch without duplicating wall meshes', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        try {
+            view.scene = new THREE.Scene();
+            view._buildWalls();
+
+            const collectWallMeshes = () => Array.from(view.scene.children ?? [])
+                .filter((obj) => obj?.isMesh && String(obj?.name ?? '').startsWith('wall_'));
+            const hasVertexXZ = (mesh, x, z, eps = 1e-4) => {
+                const positions = mesh?.geometry?.attributes?.position?.array ?? [];
+                for (let i = 0; i < positions.length; i += 3) {
+                    const vx = Number(positions[i]) || 0.0;
+                    const vz = Number(positions[i + 2]) || 0.0;
+                    if (Math.abs(vx - x) <= eps && Math.abs(vz - z) <= eps) return true;
+                }
+                return false;
+            };
+
+            let walls = collectWallMeshes();
+            assertEqual(walls.length, 1, 'Expected one wall mesh before third-wall toggle.');
+            let box = new THREE.Box3().setFromObject(walls[0]);
+            let size = box.getSize(new THREE.Vector3());
+            assertNear(size.z, 20.0, 1e-6, 'Expected third wall enabled by default with full-width branch.');
+            assertTrue(hasVertexXZ(walls[0], -5.0, 10.0), 'Expected third-wall branch vertex when enabled.');
+
+            view._setThirdWallEnabled(false);
+            walls = collectWallMeshes();
+            assertEqual(walls.length, 1, 'Expected one rebuilt wall mesh after disabling third wall.');
+            box = new THREE.Box3().setFromObject(walls[0]);
+            size = box.getSize(new THREE.Vector3());
+            assertNear(size.z, 10.0, 1e-6, 'Expected branch removed from wall depth when third wall is disabled.');
+            assertFalse(hasVertexXZ(walls[0], -5.0, 10.0), 'Expected no third-wall branch vertex when disabled.');
+
+            view._setThirdWallEnabled(true);
+            walls = collectWallMeshes();
+            assertEqual(walls.length, 1, 'Expected one rebuilt wall mesh after re-enabling third wall.');
+            box = new THREE.Box3().setFromObject(walls[0]);
+            size = box.getSize(new THREE.Vector3());
+            assertNear(size.z, 20.0, 1e-6, 'Expected branch restored at full width when third wall is re-enabled.');
+            assertTrue(hasVertexXZ(walls[0], -5.0, 10.0), 'Expected third-wall branch vertex after re-enable.');
+        } finally {
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: placement third-wall clones front specs in face mode (overlap allowed)', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        try {
+            view.scene = new THREE.Scene();
+            view._decoratorGroup = new THREE.Group();
+            view.scene.add(view._decoratorGroup);
+            view._placementThirdWallEnabled = true;
+            view._showThirdWall = true;
+            view._state = {
+                ...getDefaultWallDecoratorDebuggerState({ decoratorId: WALL_DECORATOR_ID.SIMPLE_SKIRT }),
+                mode: WALL_DECORATOR_MODE.FACE
+            };
+            view._catalogLoader = {
+                loadShapeSpecs: () => ([
+                    {
+                        role: 'front_main',
+                        faceId: 'front',
+                        geometryKind: 'flat_panel',
+                        centerU: 1.0,
+                        centerV: -1.2,
+                        widthMeters: 2.0,
+                        heightMeters: 0.3,
+                        depthMeters: 0.08,
+                        outsetMeters: 0.05
+                    },
+                    {
+                        role: 'front_cap_side_end',
+                        faceId: 'front',
+                        geometryKind: 'flat_panel_side_cap',
+                        centerU: 2.0,
+                        centerV: -1.2,
+                        widthMeters: 0.08,
+                        heightMeters: 0.3,
+                        depthMeters: 0.08,
+                        outsetMeters: 0.05,
+                        yawDegrees: 0.0
+                    }
+                ])
+            };
+
+            view._rebuildDecoratorMeshes();
+
+            assertEqual(view._decoratorMeshes.length, 4, 'Expected front + cloned-left meshes in face mode.');
+            const leftMeshes = view._decoratorMeshes.filter((mesh) => String(mesh?.userData?.faceId ?? '') === 'left');
+            assertEqual(leftMeshes.length, 2, 'Expected cloned third-wall meshes on left face.');
+            const leftRoles = leftMeshes.map((mesh) => String(mesh?.userData?.role ?? '').toLowerCase());
+            assertTrue(leftRoles.includes('left_main'), 'Expected front main to clone as left main.');
+            assertTrue(leftRoles.includes('left_cap_side_end'), 'Expected side cap to remain in face mode clone.');
+            assertTrue(
+                leftMeshes.every((mesh) => {
+                    const x = Number(mesh?.position?.x) || 0.0;
+                    return x > -4.8 && x < -4.5;
+                }),
+                'Expected left-face placement on the branch side that corners with front face.'
+            );
+        } finally {
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: placement third-wall corner clone keeps far-edge cap and omits corner-start side cap', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        try {
+            view.scene = new THREE.Scene();
+            view._decoratorGroup = new THREE.Group();
+            view.scene.add(view._decoratorGroup);
+            view._placementThirdWallEnabled = true;
+            view._showThirdWall = true;
+            view._state = {
+                ...getDefaultWallDecoratorDebuggerState({ decoratorId: WALL_DECORATOR_ID.SIMPLE_SKIRT }),
+                mode: WALL_DECORATOR_MODE.CORNER
+            };
+            view._catalogLoader = {
+                loadShapeSpecs: () => ([
+                    {
+                        role: 'front_main',
+                        faceId: 'front',
+                        geometryKind: 'flat_panel',
+                        centerU: 0.0,
+                        centerV: -1.2,
+                        widthMeters: 5.0,
+                        heightMeters: 0.3,
+                        depthMeters: 0.08,
+                        outsetMeters: 0.05
+                    },
+                    {
+                        role: 'right_main',
+                        faceId: 'right',
+                        geometryKind: 'flat_panel',
+                        centerU: 2.5,
+                        centerV: -1.2,
+                        widthMeters: 5.0,
+                        heightMeters: 0.3,
+                        depthMeters: 0.08,
+                        outsetMeters: 0.05
+                    },
+                    {
+                        role: 'right_cap_top',
+                        faceId: 'right',
+                        geometryKind: 'flat_panel_cap',
+                        centerU: 2.5,
+                        centerV: -1.05,
+                        widthMeters: 5.0,
+                        heightMeters: 0.08,
+                        depthMeters: 0.08,
+                        outsetMeters: 0.0
+                    },
+                    {
+                        role: 'right_cap_side_end',
+                        faceId: 'right',
+                        geometryKind: 'flat_panel_side_cap',
+                        centerU: 5.0,
+                        centerV: -1.2,
+                        widthMeters: 0.08,
+                        heightMeters: 0.3,
+                        depthMeters: 0.08,
+                        outsetMeters: 0.05
+                    }
+                ])
+            };
+
+            view._rebuildDecoratorMeshes();
+
+            assertEqual(view._decoratorMeshes.length, 7, 'Expected right-face meshes to clone to left in corner mode while keeping far-edge side cap.');
+            const leftMeshes = view._decoratorMeshes.filter((mesh) => String(mesh?.userData?.faceId ?? '') === 'left');
+            assertEqual(leftMeshes.length, 3, 'Expected left clone to include main + top cap + far-edge side cap.');
+            const leftRoles = leftMeshes.map((mesh) => String(mesh?.userData?.role ?? '').toLowerCase());
+            assertTrue(leftRoles.includes('left_main'), 'Expected right main to clone as left main.');
+            assertTrue(leftRoles.includes('left_cap_top'), 'Expected right top cap to clone as left top cap.');
+            assertTrue(leftRoles.includes('left_cap_side_end'), 'Expected far-edge side cap to remain for third wall corner clone.');
+            assertFalse(leftRoles.includes('left_cap_side_start'), 'Expected corner-start side cap to be omitted in third-wall corner clone.');
+        } finally {
+            view._disposeSceneResources();
+            view.scene = null;
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: placement third-wall corner resolves front cap bridge from wall-end context', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        try {
+            view._placementThirdWallEnabled = true;
+            view._showThirdWall = true;
+            view._state = {
+                ...getDefaultWallDecoratorDebuggerState({ decoratorId: WALL_DECORATOR_ID.SIMPLE_SKIRT }),
+                mode: WALL_DECORATOR_MODE.CORNER
+            };
+
+            const sourceSpecs = [
+                {
+                    role: 'front_main',
+                    faceId: 'front',
+                    geometryKind: 'flat_panel',
+                    centerU: 0.0,
+                    centerV: -1.2,
+                    widthMeters: 10.0,
+                    heightMeters: 0.3,
+                    depthMeters: 0.08,
+                    outsetMeters: 0.05
+                },
+                {
+                    role: 'front_cap_top',
+                    faceId: 'front',
+                    geometryKind: 'flat_panel_cap',
+                    capSide: 'top',
+                    centerU: 0.0,
+                    centerV: -1.05,
+                    widthMeters: 10.0,
+                    heightMeters: 0.08,
+                    depthMeters: 0.08,
+                    outsetMeters: 0.0,
+                    cornerBridgeStartMeters: 0.0,
+                    cornerBridgeEndMeters: 0.08
+                },
+                {
+                    role: 'front_cap_side_start',
+                    faceId: 'front',
+                    geometryKind: 'flat_panel_side_cap',
+                    centerU: -5.0,
+                    centerV: -1.2,
+                    widthMeters: 0.08,
+                    heightMeters: 0.3,
+                    depthMeters: 0.08,
+                    outsetMeters: 0.05
+                },
+                {
+                    role: 'right_main',
+                    faceId: 'right',
+                    geometryKind: 'flat_panel',
+                    centerU: 2.5,
+                    centerV: -1.2,
+                    widthMeters: 5.16,
+                    heightMeters: 0.3,
+                    depthMeters: 0.08,
+                    outsetMeters: 0.05
+                },
+                {
+                    role: 'right_cap_top',
+                    faceId: 'right',
+                    geometryKind: 'flat_panel_cap',
+                    capSide: 'top',
+                    centerU: 2.5,
+                    centerV: -1.05,
+                    widthMeters: 5.0,
+                    heightMeters: 0.08,
+                    depthMeters: 0.08,
+                    outsetMeters: 0.0,
+                    cornerBridgeStartMeters: 0.08,
+                    cornerBridgeEndMeters: 0.0
+                },
+                {
+                    role: 'right_cap_side_start',
+                    faceId: 'right',
+                    geometryKind: 'flat_panel_side_cap',
+                    centerU: 0.0,
+                    centerV: -1.2,
+                    widthMeters: 0.08,
+                    heightMeters: 0.3,
+                    depthMeters: 0.08,
+                    outsetMeters: 0.05
+                },
+                {
+                    role: 'right_cap_side_end',
+                    faceId: 'right',
+                    geometryKind: 'flat_panel_side_cap',
+                    centerU: 5.0,
+                    centerV: -1.2,
+                    widthMeters: 0.08,
+                    heightMeters: 0.3,
+                    depthMeters: 0.08,
+                    outsetMeters: 0.05
+                }
+            ];
+
+            const expanded = view._expandSpecsForThirdWallPlacement(sourceSpecs);
+            const frontMain = expanded.find((spec) => String(spec?.role ?? '') === 'front_main') ?? null;
+            const frontCapTop = expanded.find((spec) => String(spec?.role ?? '') === 'front_cap_top') ?? null;
+            assertTrue(!!frontMain, 'Expected front main in expanded specs.');
+            assertTrue(!!frontCapTop, 'Expected front top cap in expanded specs.');
+            assertNear(Number(frontMain?.widthMeters) || 0.0, 10.08, 1e-6, 'Expected front width to extend by corner bridge from right wall-end.');
+            assertNear(Number(frontMain?.centerU) || 0.0, -0.04, 1e-6, 'Expected front centerU shift for start-edge corner bridge.');
+            assertNear(Number(frontCapTop?.cornerBridgeStartMeters) || 0.0, 0.08, 1e-6, 'Expected front top cap start bridge resolved from right wall-end context.');
+            assertFalse(
+                expanded.some((spec) => String(spec?.role ?? '').toLowerCase() === 'front_cap_side_start'),
+                'Expected front start side cap removed when third wall creates a closed-angle corner.'
+            );
+            assertTrue(
+                expanded.some((spec) => String(spec?.role ?? '').toLowerCase() === 'left_cap_side_end'),
+                'Expected left clone to keep far-edge side cap.'
+            );
+            assertFalse(
+                expanded.some((spec) => String(spec?.role ?? '').toLowerCase() === 'left_cap_side_start'),
+                'Expected left clone to omit corner-start side cap.'
+            );
         } finally {
             view._disposeSceneResources();
             view.scene = null;
@@ -5948,6 +6906,104 @@ async function runTests() {
         }
     });
 
+    test('WallDecoratorExplodedView: iterative explode only compares triangles inside the same source mesh', () => {
+        const makeEntry = ({ meshId, centroid }) => {
+            const center = centroid.clone();
+            return {
+                centroid: center,
+                normal: new THREE.Vector3(0, 0, 1),
+                worldVertices: [
+                    center.clone().add(new THREE.Vector3(-0.005, -0.005, 0.0)),
+                    center.clone().add(new THREE.Vector3(0.005, -0.005, 0.0)),
+                    center.clone().add(new THREE.Vector3(0.0, 0.005, 0.0))
+                ],
+                source: {
+                    meshId: String(meshId ?? ''),
+                    geometryKind: 'cornice_rounded_block',
+                    worldOrigin: new THREE.Vector3(0, 0, 0),
+                    worldAxisU: new THREE.Vector3(1, 0, 0),
+                    worldAxisN: new THREE.Vector3(0, 0, 1)
+                }
+            };
+        };
+
+        const crossA = makeEntry({ meshId: 'mesh_a', centroid: new THREE.Vector3(0, 0, 0) });
+        const crossB = makeEntry({ meshId: 'mesh_b', centroid: new THREE.Vector3(0, 0, 0) });
+        const crossBeforeA = crossA.centroid.clone();
+        const crossBeforeB = crossB.centroid.clone();
+        separateWallDecoratorExplodedFacesIterative([crossA, crossB], {
+            closeThresholdMeters: 0.02,
+            maxIterations: 8
+        });
+        assertNear(crossA.centroid.x, crossBeforeA.x, 1e-9, 'Expected cross-mesh pair to remain unchanged (A.x).');
+        assertNear(crossA.centroid.y, crossBeforeA.y, 1e-9, 'Expected cross-mesh pair to remain unchanged (A.y).');
+        assertNear(crossA.centroid.z, crossBeforeA.z, 1e-9, 'Expected cross-mesh pair to remain unchanged (A.z).');
+        assertNear(crossB.centroid.x, crossBeforeB.x, 1e-9, 'Expected cross-mesh pair to remain unchanged (B.x).');
+        assertNear(crossB.centroid.y, crossBeforeB.y, 1e-9, 'Expected cross-mesh pair to remain unchanged (B.y).');
+        assertNear(crossB.centroid.z, crossBeforeB.z, 1e-9, 'Expected cross-mesh pair to remain unchanged (B.z).');
+
+        const sameA = makeEntry({ meshId: 'mesh_same', centroid: new THREE.Vector3(0, 0, 0) });
+        const sameB = makeEntry({ meshId: 'mesh_same', centroid: new THREE.Vector3(0, 0, 0) });
+        separateWallDecoratorExplodedFacesIterative([sameA, sameB], {
+            closeThresholdMeters: 0.02,
+            maxIterations: 8
+        });
+        assertTrue(
+            sameA.centroid.length() > 1e-9 || sameB.centroid.length() > 1e-9,
+            'Expected same-mesh overlapping triangles to separate.'
+        );
+    });
+
+    test('WallDecoratorExplodedView: cornice rounded explode uses radial outward separation', () => {
+        const makeEntry = ({ centroid, normal }) => {
+            const center = centroid.clone();
+            return {
+                centroid: center,
+                normal: normal.clone().normalize(),
+                worldVertices: [
+                    center.clone().add(new THREE.Vector3(-0.004, -0.004, 0.0)),
+                    center.clone().add(new THREE.Vector3(0.004, -0.004, 0.0)),
+                    center.clone().add(new THREE.Vector3(0.0, 0.004, 0.0))
+                ],
+                source: {
+                    meshId: 'rounded_block_mesh',
+                    geometryKind: 'cornice_rounded_block',
+                    worldOrigin: new THREE.Vector3(0, 0, 0),
+                    worldAxisU: new THREE.Vector3(1, 0, 0),
+                    worldAxisN: new THREE.Vector3(0, 0, 1)
+                }
+            };
+        };
+        const radialDistance = (entry) => {
+            const rel = entry.centroid.clone().sub(entry.source.worldOrigin);
+            const axisU = entry.source.worldAxisU.clone().normalize();
+            const u = rel.dot(axisU);
+            const radial = rel.addScaledVector(axisU, -u);
+            return radial.length();
+        };
+
+        const entryA = makeEntry({
+            centroid: new THREE.Vector3(0.0, 0.0, 0.045),
+            normal: new THREE.Vector3(0.0, 0.1, 1.0)
+        });
+        const entryB = makeEntry({
+            centroid: new THREE.Vector3(0.0, -0.02, 0.060),
+            normal: new THREE.Vector3(0.0, 0.0, 1.0)
+        });
+
+        assertTrue(
+            areWallDecoratorExplodedEntriesCorniceRoundedOnly([entryA, entryB]),
+            'Expected rounded-only detector to pass for rounded entries.'
+        );
+        const beforeA = radialDistance(entryA);
+        const beforeB = radialDistance(entryB);
+        separateWallDecoratorExplodedCorniceRoundedFaces([entryA, entryB]);
+        const afterA = radialDistance(entryA);
+        const afterB = radialDistance(entryB);
+        assertTrue(afterA > beforeA + 1e-6, 'Expected rounded explode to move entry A outward from radial centerline.');
+        assertTrue(afterB > beforeB + 1e-6, 'Expected rounded explode to move entry B outward from radial centerline.');
+    });
+
     test('WallDecorationMeshDebuggerView: angled support uses skirt-style flat meshes and applies cap wall-edge Y offsets', () => {
         const view = new WallDecorationMeshDebuggerView();
         try {
@@ -6106,6 +7162,29 @@ async function runTests() {
             const angleFrontBottomY = findFrontBottomY(angleMesh);
             assertNear(flatFrontBottomY, -0.05, 1e-6, 'Expected flat cornice block front-bottom edge at base Y.');
             assertNear(angleFrontBottomY, 0.0, 1e-6, 'Expected angled cornice block front-bottom edge raised by half block size.');
+
+            const countWallFacingTriangles = (mesh) => {
+                const srcGeo = mesh?.geometry ?? null;
+                if (!srcGeo) return -1;
+                const workGeo = srcGeo.index ? srcGeo.toNonIndexed() : srcGeo;
+                const pos = workGeo?.attributes?.position?.array ?? [];
+                let minZ = Number.POSITIVE_INFINITY;
+                for (let i = 2; i < pos.length; i += 3) minZ = Math.min(minZ, Number(pos[i]) || 0.0);
+                let wallTriCount = 0;
+                for (let i = 0; i + 8 < pos.length; i += 9) {
+                    const z0 = Number(pos[i + 2]) || 0.0;
+                    const z1 = Number(pos[i + 5]) || 0.0;
+                    const z2 = Number(pos[i + 8]) || 0.0;
+                    if (Math.abs(z0 - minZ) <= 1e-6 && Math.abs(z1 - minZ) <= 1e-6 && Math.abs(z2 - minZ) <= 1e-6) {
+                        wallTriCount += 1;
+                    }
+                }
+                if (workGeo !== srcGeo) workGeo?.dispose?.();
+                return wallTriCount;
+            };
+
+            assertEqual(countWallFacingTriangles(flatMesh), 0, 'Expected flat cornice block to omit wall-facing back triangles.');
+            assertEqual(countWallFacingTriangles(angleMesh), 0, 'Expected angled cornice block to omit wall-facing back triangles.');
         } finally {
             view._disposeSceneResources();
             view.scene = null;
@@ -6194,6 +7273,22 @@ async function runTests() {
                 mediumMaxZ = Math.max(mediumMaxZ, z);
                 mediumMinY = Math.min(mediumMinY, y);
             }
+
+            const mediumGeoForWallFaceCheck = mediumConvexMesh?.geometry?.index
+                ? mediumConvexMesh.geometry.toNonIndexed()
+                : mediumConvexMesh?.geometry ?? null;
+            const mediumWallPos = mediumGeoForWallFaceCheck?.attributes?.position?.array ?? [];
+            let mediumWallTriCount = 0;
+            for (let i = 0; i + 8 < mediumWallPos.length; i += 9) {
+                const z0 = Number(mediumWallPos[i + 2]) || 0.0;
+                const z1 = Number(mediumWallPos[i + 5]) || 0.0;
+                const z2 = Number(mediumWallPos[i + 8]) || 0.0;
+                if (Math.abs(z0 - mediumMinZ) <= 1e-6 && Math.abs(z1 - mediumMinZ) <= 1e-6 && Math.abs(z2 - mediumMinZ) <= 1e-6) {
+                    mediumWallTriCount += 1;
+                }
+            }
+            assertEqual(mediumWallTriCount, 0, 'Expected rounded cornice geometry to omit wall-facing back triangles.');
+            if (mediumGeoForWallFaceCheck !== mediumConvexMesh?.geometry) mediumGeoForWallFaceCheck?.dispose?.();
 
             const mediumFrontRange = findRangeAtDepth(mediumConvexMesh, mediumMaxZ, 1e-4);
             assertNear(
@@ -7432,6 +8527,667 @@ async function runTests() {
             assertNear(Number(tiling.x) || 0, expectedTileScale, 1e-6, 'Expected 1m interior tile width override.');
             assertNear(Number(tiling.y) || 0, expectedTileScale, 1e-6, 'Expected 1m interior tile height override.');
         }
+    });
+
+    test('BuildingFabricationGenerator: interior ceiling remains inside interior shell for off-origin footprints', () => {
+        const tileSize = 10;
+        const worldCenter = { x: 120.0, z: 340.0 };
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: worldCenter.x, z: worldCenter.z })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight: 3.2,
+                interior: { enabled: true },
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const baseMat = layers[0]?.material ?? { kind: 'texture', id: 'pbr.brick_wall_11' };
+        const makePadding = (id) => ({
+            wallMaterial: baseMat,
+            depthOffset: 0.0,
+            layout: {
+                items: [{
+                    type: 'padding',
+                    id,
+                    widthFrac: 1.0,
+                    minWidthMeters: 0.5
+                }]
+            }
+        });
+        const facades = {
+            A: makePadding('pad_a'),
+            B: makePadding('pad_b'),
+            C: makePadding('pad_c'),
+            D: makePadding('pad_d')
+        };
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts, 'Expected visual parts.');
+
+        const interiorMeshes = (parts.solidMeshes ?? []).filter((m) => m?.userData?.buildingFab2Role === 'interior');
+        const interiorWall = interiorMeshes.find((m) => m?.userData?.buildingFab2InteriorKind === 'wall') ?? null;
+        const interiorCeiling = interiorMeshes.find((m) => m?.userData?.buildingFab2InteriorKind === 'ceiling') ?? null;
+        assertTrue(!!interiorWall, 'Expected interior wall mesh.');
+        assertTrue(!!interiorCeiling, 'Expected interior ceiling mesh.');
+
+        const wallBox = new THREE.Box3().setFromObject(interiorWall);
+        const ceilingBox = new THREE.Box3().setFromObject(interiorCeiling);
+        const eps = 1e-4;
+        assertTrue(ceilingBox.min.x >= wallBox.min.x - eps, 'Expected ceiling min.x to stay inside interior wall bounds.');
+        assertTrue(ceilingBox.max.x <= wallBox.max.x + eps, 'Expected ceiling max.x to stay inside interior wall bounds.');
+        assertTrue(ceilingBox.min.z >= wallBox.min.z - eps, 'Expected ceiling min.z to stay inside interior wall bounds.');
+        assertTrue(ceilingBox.max.z <= wallBox.max.z + eps, 'Expected ceiling max.z to stay inside interior wall bounds.');
+        assertNear(interiorCeiling.position.y, wallBox.max.y, 1e-6, 'Expected interior ceiling Y to align with interior wall top.');
+    });
+
+    test('BuildingFabricationGenerator: gameplay wall decorations render on targeted bays with stable world anchoring', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 96, z: 240 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight: 3.2,
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const layerId = String(layers?.[0]?.id ?? 'floor_1');
+        const baseMat = layers[0]?.material ?? { kind: 'texture', id: 'pbr.brick_wall_11' };
+        const makePadding = (id, widthFrac = 1.0) => ({ type: 'padding', id, widthFrac, minWidthMeters: 0.4 });
+        const makeBay = (id, widthFrac = 1.0) => ({
+            type: 'bay',
+            id,
+            widthFrac,
+            minWidthMeters: 1.0,
+            wallMaterialOverride: null,
+            depthOffset: 0.0,
+            wedgeAngleDeg: 0,
+            features: {}
+        });
+        const facades = {
+            A: { wallMaterial: baseMat, depthOffset: 0.0, layout: { items: [makeBay('bay_1', 1.0)] } },
+            B: { wallMaterial: baseMat, depthOffset: 0.0, layout: { items: [makeBay('bay_1', 1.0)] } },
+            C: { wallMaterial: baseMat, depthOffset: 0.0, layout: { items: [makePadding('pad_c', 1.0)] } },
+            D: { wallMaterial: baseMat, depthOffset: 0.0, layout: { items: [makePadding('pad_d', 1.0)] } }
+        };
+        const wallDecorations = {
+            sets: [{
+                id: 'set_1',
+                target: {
+                    layerId,
+                    bayRefs: ['A:bay_1', 'B:bay_1'],
+                    allBays: false
+                },
+                floorInterval: { every: 1, start: 1, end: 1 },
+                decorations: [{
+                    id: 'decoration_1',
+                    span: { start: 0, end: 1 },
+                    state: {
+                        decoratorId: 'simple_skirt',
+                        whereToApply: 'entire_facade',
+                        mode: 'face',
+                        position: 'bottom'
+                    }
+                }]
+            }]
+        };
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            wallDecorations,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts, 'Expected visual parts.');
+
+        const decorationMeshes = (parts.solidMeshes ?? []).filter((mesh) => mesh?.userData?.buildingFab2Role === 'wall_decoration');
+        assertTrue(decorationMeshes.length >= 4, 'Expected gameplay wall-decoration meshes for configured bays.');
+        const decorationKeys = Array.from(new Set(decorationMeshes
+            .map((mesh) => String(mesh?.userData?.decorationKey ?? ''))
+            .filter(Boolean)));
+        assertEqual(decorationKeys.length, 1, 'Expected one decoration entry key to own generated meshes.');
+
+        const bayRefs = Array.from(new Set(decorationMeshes
+            .map((mesh) => String(mesh?.userData?.bayRef ?? ''))
+            .filter(Boolean)))
+            .sort();
+        assertEqual(bayRefs.join(','), 'A:bay_1,B:bay_1', 'Expected decoration meshes for both targeted bay refs.');
+
+        const layerEntries = Array.isArray(parts?.bayHighlightDataByLayerId?.[layerId])
+            ? parts.bayHighlightDataByLayerId[layerId]
+            : [];
+        const segmentByBayRef = new Map();
+        for (const entry of layerEntries) {
+            const faceId = String(entry?.faceId ?? '');
+            const bayId = String(entry?.bayId ?? '');
+            if (!faceId || !bayId) continue;
+            const key = `${faceId}:${bayId}`;
+            if (key !== 'A:bay_1' && key !== 'B:bay_1') continue;
+            const x0 = Number(entry?.x0);
+            const z0 = Number(entry?.z0);
+            const x1 = Number(entry?.x1);
+            const z1 = Number(entry?.z1);
+            if (!Number.isFinite(x0) || !Number.isFinite(z0) || !Number.isFinite(x1) || !Number.isFinite(z1)) continue;
+            segmentByBayRef.set(key, { x0, z0, x1, z1 });
+        }
+        assertTrue(segmentByBayRef.size === 2, 'Expected target bay world segments for anchoring validation.');
+
+        const distToSegmentXZ = (px, pz, seg) => {
+            const ax = seg.x0;
+            const az = seg.z0;
+            const bx = seg.x1;
+            const bz = seg.z1;
+            const abx = bx - ax;
+            const abz = bz - az;
+            const apx = px - ax;
+            const apz = pz - az;
+            const denom = abx * abx + abz * abz;
+            if (!(denom > 1e-9)) return Math.hypot(apx, apz);
+            let t = (apx * abx + apz * abz) / denom;
+            if (t < 0) t = 0;
+            else if (t > 1) t = 1;
+            const cx = ax + abx * t;
+            const cz = az + abz * t;
+            return Math.hypot(px - cx, pz - cz);
+        };
+
+        for (const mesh of decorationMeshes) {
+            const bayRef = String(mesh?.userData?.bayRef ?? '');
+            const seg = segmentByBayRef.get(bayRef) ?? null;
+            assertTrue(!!seg, `Expected known bay segment for mesh bayRef: ${bayRef}.`);
+            const px = Number(mesh?.position?.x) || 0;
+            const pz = Number(mesh?.position?.z) || 0;
+            const d = distToSegmentXZ(px, pz, seg);
+            assertTrue(d <= 0.75, `Expected decoration mesh anchored near its wall span (distance=${d.toFixed(3)}m).`);
+        }
+    });
+
+    test('BuildingFabricationGenerator: gameplay wall-decoration orientation/offset matches BF2 for skirt, awning, and angled support', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 96, z: 240 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight: 3.2,
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const layerId = String(layers?.[0]?.id ?? 'floor_1');
+        const baseMat = layers[0]?.material ?? { kind: 'texture', id: 'pbr.brick_wall_11' };
+        const makePadding = (id) => ({ type: 'padding', id, widthFrac: 1.0, minWidthMeters: 0.4 });
+        const makeBay = (id) => ({
+            type: 'bay',
+            id,
+            widthFrac: 1.0,
+            minWidthMeters: 1.0,
+            wallMaterialOverride: null,
+            depthOffset: 0.0,
+            wedgeAngleDeg: 0,
+            features: {}
+        });
+        const facades = {
+            A: { wallMaterial: baseMat, depthOffset: 0.0, layout: { items: [makeBay('bay_1')] } },
+            B: { wallMaterial: baseMat, depthOffset: 0.0, layout: { items: [makePadding('pad_b')] } },
+            C: { wallMaterial: baseMat, depthOffset: 0.0, layout: { items: [makePadding('pad_c')] } },
+            D: { wallMaterial: baseMat, depthOffset: 0.0, layout: { items: [makePadding('pad_d')] } }
+        };
+
+        const resolveA1Segment = (parts) => {
+            const entries = Array.isArray(parts?.bayHighlightDataByLayerId?.[layerId])
+                ? parts.bayHighlightDataByLayerId[layerId]
+                : [];
+            for (const entry of entries) {
+                if (String(entry?.faceId ?? '') !== 'A' || String(entry?.bayId ?? '') !== 'bay_1') continue;
+                const x0 = Number(entry?.x0);
+                const z0 = Number(entry?.z0);
+                const x1 = Number(entry?.x1);
+                const z1 = Number(entry?.z1);
+                if (!Number.isFinite(x0) || !Number.isFinite(z0) || !Number.isFinite(x1) || !Number.isFinite(z1)) continue;
+                return { x0, z0, x1, z1 };
+            }
+            return null;
+        };
+
+        const outwardDepthFromSegment = (mesh, seg, normal) => {
+            const midX = (seg.x0 + seg.x1) * 0.5;
+            const midZ = (seg.z0 + seg.z1) * 0.5;
+            const dx = (Number(mesh?.position?.x) || 0.0) - midX;
+            const dz = (Number(mesh?.position?.z) || 0.0) - midZ;
+            return dx * normal.x + dz * normal.z;
+        };
+
+        const computeWorldFirstTriangleNormal = (mesh) => {
+            const geo = mesh?.geometry?.isBufferGeometry ? mesh.geometry : null;
+            const pos = geo?.getAttribute?.('position') ?? null;
+            if (!pos || pos.count < 3) return null;
+            const idx = geo?.getIndex?.() ?? null;
+            const i0 = Number(idx?.array?.[0] ?? 0);
+            const i1 = Number(idx?.array?.[1] ?? 1);
+            const i2 = Number(idx?.array?.[2] ?? 2);
+            mesh.updateMatrixWorld(true);
+            const v0 = new THREE.Vector3(pos.getX(i0), pos.getY(i0), pos.getZ(i0)).applyMatrix4(mesh.matrixWorld);
+            const v1 = new THREE.Vector3(pos.getX(i1), pos.getY(i1), pos.getZ(i1)).applyMatrix4(mesh.matrixWorld);
+            const v2 = new THREE.Vector3(pos.getX(i2), pos.getY(i2), pos.getZ(i2)).applyMatrix4(mesh.matrixWorld);
+            return new THREE.Vector3().subVectors(v1, v0).cross(new THREE.Vector3().subVectors(v2, v0)).normalize();
+        };
+
+        const buildDecorationMeshes = ({ decoratorId, position = 'bottom' }) => {
+            const wallDecorations = {
+                sets: [{
+                    id: `set_${decoratorId}`,
+                    target: {
+                        layerId,
+                        bayRefs: ['A:bay_1'],
+                        allBays: false
+                    },
+                    floorInterval: { every: 1, start: 1, end: 1 },
+                    decorations: [{
+                        id: `decoration_${decoratorId}`,
+                        span: { start: 0, end: 1 },
+                        state: {
+                            decoratorId,
+                            whereToApply: 'entire_facade',
+                            mode: 'face',
+                            position
+                        }
+                    }]
+                }]
+            };
+            const parts = buildBuildingFabricationVisualParts({
+                map,
+                tiles: [[0, 0]],
+                generatorConfig,
+                tileSize,
+                occupyRatio: 1.0,
+                layers,
+                facades,
+                wallDecorations,
+                overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+                walls: { inset: 0.0 }
+            });
+            assertTrue(!!parts, `Expected visual parts for decorator "${decoratorId}".`);
+            const seg = resolveA1Segment(parts);
+            assertTrue(!!seg, `Expected A:bay_1 segment for decorator "${decoratorId}".`);
+            const meshes = (parts.solidMeshes ?? []).filter((mesh) => mesh?.userData?.buildingFab2Role === 'wall_decoration');
+            assertTrue(meshes.length > 0, `Expected wall-decoration meshes for decorator "${decoratorId}".`);
+            return { meshes, seg };
+        };
+
+        const outwardNormalA = { x: 0.0, z: 1.0 };
+
+        {
+            const { meshes, seg } = buildDecorationMeshes({ decoratorId: 'simple_skirt', position: 'bottom' });
+            const frontMain = meshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'front_main') ?? null;
+            const frontCapTop = meshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'front_cap_top') ?? null;
+            const frontCapSideStart = meshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'front_cap_side_start') ?? null;
+            const frontCapSideEnd = meshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'front_cap_side_end') ?? null;
+            assertTrue(!!frontMain, 'Expected simple_skirt front_main mesh.');
+            assertTrue(!!frontCapTop, 'Expected simple_skirt front_cap_top mesh.');
+            assertTrue(!!frontCapSideStart, 'Expected simple_skirt front_cap_side_start mesh.');
+            assertTrue(!!frontCapSideEnd, 'Expected simple_skirt front_cap_side_end mesh.');
+            const frontNormal = computeWorldFirstTriangleNormal(frontMain);
+            assertTrue(!!frontNormal, 'Expected front_main normal.');
+            const outwardDot = (Number(frontNormal?.x) || 0.0) * outwardNormalA.x + (Number(frontNormal?.z) || 0.0) * outwardNormalA.z;
+            assertTrue(outwardDot > 0.5, `Expected skirt front normal to face outward (dot=${outwardDot.toFixed(3)}).`);
+            const depth = outwardDepthFromSegment(frontMain, seg, outwardNormalA);
+            assertTrue(depth > 0.02, `Expected skirt to be placed outward from wall (depth=${depth.toFixed(3)}m).`);
+
+            const topCapNormal = computeWorldFirstTriangleNormal(frontCapTop);
+            assertTrue(!!topCapNormal, 'Expected front_cap_top normal.');
+            assertTrue((Number(topCapNormal?.y) || 0.0) > 0.1, `Expected skirt top cap to face upward (ny=${Number(topCapNormal?.y).toFixed(3)}).`);
+
+            const tx = seg.x1 - seg.x0;
+            const tz = seg.z1 - seg.z0;
+            const tLen = Math.hypot(tx, tz);
+            assertTrue(tLen > 1e-6, 'Expected non-zero bay tangent for side-cap orientation checks.');
+            const tangentX = tx / tLen;
+            const tangentZ = tz / tLen;
+            const startNormal = computeWorldFirstTriangleNormal(frontCapSideStart);
+            const endNormal = computeWorldFirstTriangleNormal(frontCapSideEnd);
+            assertTrue(!!startNormal && !!endNormal, 'Expected side-cap normals.');
+            const startDotTangent = (Number(startNormal?.x) || 0.0) * tangentX + (Number(startNormal?.z) || 0.0) * tangentZ;
+            const endDotTangent = (Number(endNormal?.x) || 0.0) * tangentX + (Number(endNormal?.z) || 0.0) * tangentZ;
+            assertTrue(startDotTangent < -0.5, `Expected skirt start side-cap to face negative tangent (dot=${startDotTangent.toFixed(3)}).`);
+            assertTrue(endDotTangent > 0.5, `Expected skirt end side-cap to face positive tangent (dot=${endDotTangent.toFixed(3)}).`);
+
+            const frontMainColorHex = Number(frontMain?.material?.color?.getHex?.());
+            const topCapColorHex = Number(frontCapTop?.material?.color?.getHex?.());
+            assertEqual(frontMainColorHex, 0xffffff, 'Expected match-wall skirt front material to keep neutral tint.');
+            assertEqual(topCapColorHex, 0xffffff, 'Expected match-wall skirt cap material to keep neutral tint.');
+        }
+
+        {
+            const { meshes, seg } = buildDecorationMeshes({ decoratorId: 'awning', position: 'top' });
+            const awningFront = meshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'awning_front_front') ?? null;
+            const awningSlanted = meshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'awning_front_slanted') ?? null;
+            assertTrue(!!awningFront, 'Expected awning front quad mesh.');
+            assertTrue(!!awningSlanted, 'Expected awning slanted top mesh.');
+            const awningFrontNormal = computeWorldFirstTriangleNormal(awningFront);
+            assertTrue(!!awningFrontNormal, 'Expected awning front normal.');
+            const outwardDot = (Number(awningFrontNormal?.x) || 0.0) * outwardNormalA.x + (Number(awningFrontNormal?.z) || 0.0) * outwardNormalA.z;
+            assertTrue(outwardDot > 0.5, `Expected awning front normal to face outward (dot=${outwardDot.toFixed(3)}).`);
+            const slantedNormal = computeWorldFirstTriangleNormal(awningSlanted);
+            assertTrue(!!slantedNormal, 'Expected awning slanted normal.');
+            assertTrue((Number(slantedNormal?.y) || 0.0) > 0.1, `Expected awning top cover to face upward (ny=${Number(slantedNormal?.y).toFixed(3)}).`);
+            const slantedPos = awningSlanted?.geometry?.isBufferGeometry
+                ? awningSlanted.geometry.getAttribute('position')
+                : null;
+            assertTrue(!!slantedPos, 'Expected awning slanted position attribute.');
+            if (slantedPos) {
+                awningSlanted.updateMatrixWorld(true);
+                const midX = (seg.x0 + seg.x1) * 0.5;
+                const midZ = (seg.z0 + seg.z1) * 0.5;
+                let minDepth = Infinity;
+                let maxDepth = -Infinity;
+                const samples = [];
+                for (let i = 0; i < slantedPos.count; i += 1) {
+                    const world = new THREE.Vector3(
+                        slantedPos.getX(i),
+                        slantedPos.getY(i),
+                        slantedPos.getZ(i)
+                    ).applyMatrix4(awningSlanted.matrixWorld);
+                    const dx = world.x - midX;
+                    const dz = world.z - midZ;
+                    const depth = dx * outwardNormalA.x + dz * outwardNormalA.z;
+                    if (depth < minDepth) minDepth = depth;
+                    if (depth > maxDepth) maxDepth = depth;
+                    samples.push({ depth, y: world.y });
+                }
+                const epsDepth = 1e-4;
+                const nearEdge = samples.filter((s) => Math.abs(s.depth - minDepth) <= epsDepth);
+                const farEdge = samples.filter((s) => Math.abs(s.depth - maxDepth) <= epsDepth);
+                const nearY = nearEdge.reduce((sum, s) => sum + s.y, 0.0) / Math.max(1, nearEdge.length);
+                const farY = farEdge.reduce((sum, s) => sum + s.y, 0.0) / Math.max(1, farEdge.length);
+                assertTrue(
+                    nearY > farY + 1e-4,
+                    `Expected awning to slope down away from wall (nearY=${nearY.toFixed(3)}, farY=${farY.toFixed(3)}).`
+                );
+            }
+
+            const depths = meshes.map((mesh) => outwardDepthFromSegment(mesh, seg, outwardNormalA));
+            const maxDepth = Math.max(...depths);
+            assertTrue(maxDepth > 0.20, `Expected awning to protrude away from wall (maxDepth=${maxDepth.toFixed(3)}m).`);
+
+            const awningFrontColorHex = Number(awningFront?.material?.color?.getHex?.());
+            assertEqual(awningFrontColorHex, 0xffffff, 'Expected match-wall awning front material to keep neutral tint.');
+        }
+
+        {
+            const { meshes, seg } = buildDecorationMeshes({ decoratorId: 'angled_support_profile', position: 'bottom' });
+            const supportFront = meshes.find((mesh) => String(mesh?.userData?.role ?? '') === 'angled_support_front') ?? null;
+            assertTrue(!!supportFront, 'Expected angled support front mesh.');
+            const depth = outwardDepthFromSegment(supportFront, seg, outwardNormalA);
+            assertTrue(depth > 0.02, `Expected angled support to render outward from wall (depth=${depth.toFixed(3)}m).`);
+        }
+    });
+
+    test('BuildingFabricationGenerator: gameplay path with exported beige_1 config renders wall decorations near placed footprint', () => {
+        const cfg = createCityConfig({ size: 600, mapTileSize: 24, seed: 'ai-477-beige-runtime' });
+        const map = CityMap.fromSpec({
+            width: cfg.map.width,
+            height: cfg.map.height,
+            tileSize: cfg.map.tileSize,
+            origin: cfg.map.origin,
+            roads: [],
+            buildings: [{
+                id: 'beige_runtime_1',
+                configId: 'beige_1',
+                tiles: [[5, 13]]
+            }]
+        }, cfg);
+        const building = map?.buildings?.find((entry) => entry?.id === 'beige_runtime_1') ?? null;
+        assertTrue(!!building, 'Expected beige_1 runtime building from CityMap.');
+        assertTrue(Array.isArray(building?.layers) && building.layers.length > 0, 'Expected beige_1 layers.');
+        assertTrue(!!building?.wallDecorations, 'Expected beige_1 wall decorations in runtime building entry.');
+
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const buildAreaLoops = computeBuildingLoopsFromTiles({
+            map,
+            tiles: building.tiles,
+            generatorConfig,
+            tileSize: map.tileSize,
+            occupyRatio: 1.0
+        });
+        assertTrue(buildAreaLoops.length > 0, 'Expected city build-area loops for beige_1 placement.');
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: building.tiles,
+            footprintLoops: building.footprintLoops,
+            buildAreaLoops,
+            generatorConfig,
+            tileSize: map.tileSize,
+            occupyRatio: 1.0,
+            layers: building.layers,
+            facades: building.facades,
+            wallDecorations: building.wallDecorations,
+            windowDefinitions: building.windowDefinitions,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: building.wallInset ?? 0.0 }
+        });
+        assertTrue(!!parts, 'Expected visual parts for beige_1 gameplay render path.');
+
+        const decorationMeshes = (parts.solidMeshes ?? []).filter((mesh) => mesh?.userData?.buildingFab2Role === 'wall_decoration');
+        assertTrue(decorationMeshes.length > 0, 'Expected beige_1 gameplay render to emit wall decorations.');
+
+        const loops = Array.isArray(building?.footprintLoops) ? building.footprintLoops : [];
+        let minX = Infinity;
+        let minZ = Infinity;
+        let maxX = -Infinity;
+        let maxZ = -Infinity;
+        for (const loop of loops) {
+            const points = Array.isArray(loop) ? loop : [];
+            for (const point of points) {
+                const x = Number(point?.x);
+                const z = Number(point?.z);
+                if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+                minX = Math.min(minX, x);
+                maxX = Math.max(maxX, x);
+                minZ = Math.min(minZ, z);
+                maxZ = Math.max(maxZ, z);
+            }
+        }
+        assertTrue(Number.isFinite(minX) && Number.isFinite(minZ) && Number.isFinite(maxX) && Number.isFinite(maxZ), 'Expected beige_1 footprint bounds.');
+        const margin = 1.0;
+        for (const mesh of decorationMeshes) {
+            const x = Number(mesh?.position?.x);
+            const z = Number(mesh?.position?.z);
+            assertTrue(Number.isFinite(x) && Number.isFinite(z), 'Expected wall decoration mesh world position.');
+            assertTrue(x >= minX - margin && x <= maxX + margin, 'Expected decoration X near beige_1 footprint.');
+            assertTrue(z >= minZ - margin && z <= maxZ + margin, 'Expected decoration Z near beige_1 footprint.');
+        }
+    });
+
+    test('BuildingFabricationGenerator: explicit footprint is fit to city build area including outward bay reserve', () => {
+        const cfg = createCityConfig({ size: 192, mapTileSize: 24, seed: 'ai-478-boundary-fit' });
+        const map = CityMap.fromSpec({
+            width: cfg.map.width,
+            height: cfg.map.height,
+            tileSize: cfg.map.tileSize,
+            origin: cfg.map.origin,
+            roads: []
+        }, cfg);
+        const tiles = [[4, 4]];
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const buildAreaLoops = computeBuildingLoopsFromTiles({
+            map,
+            tiles,
+            generatorConfig,
+            tileSize: map.tileSize,
+            occupyRatio: 1.0
+        });
+        assertTrue(buildAreaLoops.length > 0, 'Expected build-area loops from city tiles.');
+
+        const computeBounds = (loops) => {
+            let minX = Infinity;
+            let maxX = -Infinity;
+            let minZ = Infinity;
+            let maxZ = -Infinity;
+            for (const loop of loops) {
+                const points = Array.isArray(loop) ? loop : [];
+                for (const point of points) {
+                    const x = Number(point?.x);
+                    const z = Number(point?.z);
+                    if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+                    minX = Math.min(minX, x);
+                    maxX = Math.max(maxX, x);
+                    minZ = Math.min(minZ, z);
+                    maxZ = Math.max(maxZ, z);
+                }
+            }
+            return { minX, maxX, minZ, maxZ };
+        };
+        const areaBounds = computeBounds(buildAreaLoops);
+        assertTrue(
+            Number.isFinite(areaBounds.minX) && Number.isFinite(areaBounds.maxX)
+            && Number.isFinite(areaBounds.minZ) && Number.isFinite(areaBounds.maxZ),
+            'Expected finite build-area bounds.'
+        );
+
+        const footprintLoops = [[
+            { x: areaBounds.minX, z: areaBounds.maxZ },
+            { x: areaBounds.maxX, z: areaBounds.maxZ },
+            { x: areaBounds.maxX, z: areaBounds.minZ },
+            { x: areaBounds.minX, z: areaBounds.minZ }
+        ]];
+        const layers = [
+            createDefaultFloorLayer({
+                id: 'floor_main',
+                floors: 1,
+                floorHeight: 3.2,
+                belt: { enabled: false, extrusion: 0.0 },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({
+                ring: { enabled: false }
+            })
+        ];
+        const faceFacade = () => ({
+            layout: {
+                bays: {
+                    items: [{
+                        id: 'bay_main',
+                        size: { mode: 'fixed', widthMeters: 2.4 },
+                        expandPreference: 'prefer_expand',
+                        depth: { left: 1.0, right: 1.0 }
+                    }]
+                }
+            }
+        });
+        const facades = {
+            A: faceFacade(),
+            B: faceFacade(),
+            C: faceFacade(),
+            D: faceFacade()
+        };
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles,
+            footprintLoops,
+            buildAreaLoops,
+            generatorConfig,
+            tileSize: map.tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts, 'Expected BF2 parts from explicit footprint + build area.');
+
+        const worldBounds = new THREE.Box3();
+        let hasSolid = false;
+        for (const mesh of parts?.solidMeshes ?? []) {
+            if (!mesh?.isMesh) continue;
+            mesh.updateMatrixWorld(true);
+            worldBounds.expandByObject(mesh);
+            hasSolid = true;
+        }
+        assertTrue(hasSolid, 'Expected solid meshes to validate bounds fit.');
+
+        const eps = 0.1;
+        assertTrue(worldBounds.min.x >= areaBounds.minX - eps, 'Expected fitted footprint geometry minX inside city build area.');
+        assertTrue(worldBounds.max.x <= areaBounds.maxX + eps, 'Expected fitted footprint geometry maxX inside city build area.');
+        assertTrue(worldBounds.min.z >= areaBounds.minZ - eps, 'Expected fitted footprint geometry minZ inside city build area.');
+        assertTrue(worldBounds.max.z <= areaBounds.maxZ + eps, 'Expected fitted footprint geometry maxZ inside city build area.');
     });
 
     test('BuildingFabricationGenerator: bay window size width/height directly controls opening placement size', () => {
@@ -9003,6 +10759,18 @@ async function runTests() {
                         enabled: true,
                         opacity: 0.6
                     }
+                },
+                wallDecorations: {
+                    sets: [{
+                        id: 'set_1',
+                        target: { layerId: 'floor_1', bayRefs: ['A:bay_1'], allBays: false },
+                        floorInterval: { every: 1, start: 1, end: 1 },
+                        decorations: [{
+                            id: 'decoration_1',
+                            span: { start: 0, end: 1 },
+                            state: { decoratorId: 'simple_skirt', whereToApply: 'entire_facade', mode: 'face', position: 'bottom' }
+                        }]
+                    }]
                 }
             }]
         }, cfg);
@@ -9012,11 +10780,46 @@ async function runTests() {
         assertTrue(Array.isArray(b?.footprintLoops), 'Expected footprint loop override to be preserved.');
         assertEqual(b.footprintLoops[0].length, 4, 'Expected quad footprint loop.');
         assertTrue(!!b.windowVisuals && typeof b.windowVisuals === 'object', 'Expected window visuals override.');
+        assertTrue(!!b.wallDecorations && typeof b.wallDecorations === 'object', 'Expected wall decorations override.');
         assertTrue(!!b.configId, 'Expected resolved config id.');
 
         const exported = map.exportSpec();
         assertTrue(Array.isArray(exported?.buildings?.[0]?.footprintLoops), 'Expected footprint loop override in exported spec.');
         assertTrue(!!exported?.buildings?.[0]?.windowVisuals, 'Expected window visuals override in exported spec.');
+        assertTrue(!!exported?.buildings?.[0]?.wallDecorations, 'Expected wall decorations override in exported spec.');
+    });
+
+    test('CityMap: translates config default footprint loops to placed tile centroid', () => {
+        const cfg = createCityConfig({ size: 600, mapTileSize: 24, seed: 'test-config-footprint-translation' });
+        const placedTile = [5, 13];
+        const map = CityMap.fromSpec({
+            width: cfg.map.width,
+            height: cfg.map.height,
+            tileSize: cfg.map.tileSize,
+            origin: cfg.map.origin,
+            roads: [],
+            buildings: [{
+                id: 'beige_config_translation',
+                configId: 'beige_1',
+                tiles: [placedTile]
+            }]
+        }, cfg);
+
+        const b = map.buildings.find((entry) => entry?.id === 'beige_config_translation');
+        assertTrue(!!b, 'Expected translated beige_1 building to exist.');
+        const loops = Array.isArray(b?.footprintLoops) ? b.footprintLoops : [];
+        assertTrue(loops.length > 0, 'Expected translated footprint loops.');
+
+        const beigeCfg = getBuildingConfigById('beige_1');
+        const localLoop0 = beigeCfg?.footprintLoops?.[0];
+        const localP0 = localLoop0?.[0];
+        const worldP0 = loops?.[0]?.[0];
+        assertTrue(Number.isFinite(localP0?.x) && Number.isFinite(localP0?.z), 'Expected beige_1 local loop vertex.');
+        assertTrue(Number.isFinite(worldP0?.x) && Number.isFinite(worldP0?.z), 'Expected translated world loop vertex.');
+
+        const placedCenter = map.tileToWorldCenter(placedTile[0], placedTile[1]);
+        assertNear(worldP0.x, placedCenter.x + localP0.x, 1e-6, 'Expected config loop x translated by tile center.');
+        assertNear(worldP0.z, placedCenter.z + localP0.z, 1e-6, 'Expected config loop z translated by tile center.');
     });
 
     test('CityMap: builds empty building list when missing', () => {

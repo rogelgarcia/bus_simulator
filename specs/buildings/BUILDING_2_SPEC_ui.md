@@ -71,6 +71,7 @@ The view panel contains:
     - slab footprint is a rectangle expanded by `1m` on every side relative to the current building silhouette bounds,
     - slab top aligns with the building base plane and slab thickness extends downward only,
     - slab uses `Painted plaster wall` material (`pbr.plastered_wall_02`).
+  - `Exploded decorations` (default off, non-persistent): hides building/wall/window meshes and renders wall decorations as separated exploded faces using the same explode behavior as the Wall Decoration Mesh Debugger.
 
 ### 4.3 Right panel (phase-based)
 
@@ -384,8 +385,11 @@ The side-handle collapse/expand control remains available for manual layout cont
 
 The Material Configuration panel contains exactly two top-level flat sections (non-collapsible, no boxed details containers):
 1) `Base material` — base wall material selection + fundamental wall inputs:
-   - shared tint picker (hue wheel + SV triangle workflow),
+   - shared tint picker (hue wheel + SV triangle workflow) with explicit numeric `Hue`, `Saturation`, and `Value` controls,
    - explicit tint `brightness` and `intensity` controls inside the picker,
+   - brightness behavior:
+     - `<= 1`: multiplicative darkening,
+     - `> 1`: controlled lift toward white,
    - live tint thumbnail/hex preview,
    - wall roughness and normal strength sliders.
 2) `Texture tiling` — UV scale/offset/rotation controls and “override tile meters” behavior.

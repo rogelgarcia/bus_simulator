@@ -62,6 +62,7 @@ const AWNING_FRONT_HEIGHT_METERS_DEFAULT = 0.30;
 const AWNING_SLOPE_DEGREES_DEFAULT = 25.0;
 const AWNING_ROD_RADIUS_METERS_DEFAULT = 0.015;
 const AWNING_ROD_INSET_METERS_DEFAULT = 0.08;
+const AWNING_ROD_FRONT_CLEARANCE_METERS = 0.005;
 const AWNING_ROD_MATERIAL_ID_DEFAULT = 'metal_dark';
 const NEAR_EDGE_OFFSET_METERS_DEFAULT = 0.10;
 const FLAT_PANEL_THICKNESS_METERS = 0.005;
@@ -855,6 +856,42 @@ function pushSimpleSkirtFlatPanelSpec({
     });
 }
 
+function pushAngledSupportProfileSpec({
+    specs,
+    role,
+    faceId,
+    startU,
+    endU,
+    centerV,
+    heightMeters,
+    offsetMeters,
+    topCapAngleDeg = 45.0,
+    bottomCapAngleDeg = 45.0
+}) {
+    const out = Array.isArray(specs) ? specs : [];
+    const minU = Math.min(Number(startU) || 0.0, Number(endU) || 0.0);
+    const maxU = Math.max(Number(startU) || 0.0, Number(endU) || 0.0);
+    const widthMeters = Math.max(0.01, maxU - minU);
+    const offset = clamp(offsetMeters, 0.005, 4.0, 0.05);
+    const profileHeight = clamp(heightMeters, 0.01, 100.0, 0.2);
+    out.push({
+        role: String(role ?? 'angled_support').trim() || 'angled_support',
+        faceId: String(faceId ?? '').toLowerCase() === 'right' ? 'right' : 'front',
+        geometryKind: 'angled_support_profile',
+        centerU: minU + widthMeters * 0.5,
+        centerV: Number(centerV) || 0.0,
+        widthMeters,
+        heightMeters: profileHeight,
+        depthMeters: offset,
+        outsetMeters: 0.0,
+        profileOffsetMeters: offset,
+        profileShiftMeters: 0.0,
+        profileReturnHeightMeters: profileHeight,
+        miterTopAngleDeg: clamp(topCapAngleDeg, 10.0, 80.0, 45.0),
+        miterBottomAngleDeg: clamp(bottomCapAngleDeg, 10.0, 80.0, 45.0)
+    });
+}
+
 function pushSimpleSkirtFlatCapSpec({
     specs,
     role,
@@ -1398,6 +1435,7 @@ function pushAwningSupportRodSpec({
 }) {
     const out = Array.isArray(specs) ? specs : [];
     const projection = clamp(projectionMeters, 0.05, 3.0, AWNING_PROJECTION_METERS_DEFAULT);
+    const rodFrontOutsetMeters = Math.max(0.0, projection - AWNING_ROD_FRONT_CLEARANCE_METERS);
     const startV = Number(wallAnchorV) || 0.0;
     const endV = Number(frontAnchorV) || 0.0;
     const centerV = (startV + endV) * 0.5;
@@ -1410,15 +1448,15 @@ function pushAwningSupportRodSpec({
         centerV,
         widthMeters: rodRadius * 2.0,
         heightMeters: Math.max(0.01, Math.abs(endV - startV)),
-        depthMeters: Math.max(0.005, projection),
-        outsetMeters: projection * 0.5,
+        depthMeters: Math.max(0.005, rodFrontOutsetMeters),
+        outsetMeters: rodFrontOutsetMeters * 0.5,
         rodRadiusMeters: rodRadius,
         rodStartU: Number(rodU) || 0.0,
         rodStartV: startV,
         rodStartOutsetMeters: 0.0,
         rodEndU: Number(rodU) || 0.0,
         rodEndV: endV,
-        rodEndOutsetMeters: projection
+        rodEndOutsetMeters: rodFrontOutsetMeters
     });
 }
 
@@ -2305,7 +2343,7 @@ function buildAngledSupportProfileShapeSpecs({ state, wallSpec }) {
 
     const specs = [];
     if (mode === WALL_DECORATOR_MODE.CORNER) {
-        pushSimpleSkirtFlatPanelSpec({
+        pushAngledSupportProfileSpec({
             specs,
             role: 'angled_support_front',
             faceId: 'front',
@@ -2313,9 +2351,11 @@ function buildAngledSupportProfileShapeSpecs({ state, wallSpec }) {
             endU: endU + offsetMeters,
             centerV,
             heightMeters,
-            offsetMeters
+            offsetMeters,
+            topCapAngleDeg,
+            bottomCapAngleDeg
         });
-        pushSimpleSkirtFlatPanelSpec({
+        pushAngledSupportProfileSpec({
             specs,
             role: 'angled_support_right',
             faceId: 'right',
@@ -2323,7 +2363,9 @@ function buildAngledSupportProfileShapeSpecs({ state, wallSpec }) {
             endU: targetWidth,
             centerV,
             heightMeters,
-            offsetMeters
+            offsetMeters,
+            topCapAngleDeg,
+            bottomCapAngleDeg
         });
         if (includeTopCap) {
             pushSimpleSkirtFlatCapSpec({
@@ -2402,7 +2444,7 @@ function buildAngledSupportProfileShapeSpecs({ state, wallSpec }) {
             wallEdgeBottomYOffsetMeters: bottomCapWallEdgeYOffsetMeters
         });
     } else {
-        pushSimpleSkirtFlatPanelSpec({
+        pushAngledSupportProfileSpec({
             specs,
             role: 'angled_support_front',
             faceId: 'front',
@@ -2410,7 +2452,9 @@ function buildAngledSupportProfileShapeSpecs({ state, wallSpec }) {
             endU,
             centerV,
             heightMeters,
-            offsetMeters
+            offsetMeters,
+            topCapAngleDeg,
+            bottomCapAngleDeg
         });
         if (includeTopCap) {
             pushSimpleSkirtFlatCapSpec({

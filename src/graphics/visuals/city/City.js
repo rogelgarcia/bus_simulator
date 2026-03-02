@@ -9,7 +9,7 @@ import { computeTrafficControlPlacements } from '../../../app/city/TrafficContro
 import { createCityWorld } from '../../assets3d/generators/TerrainGenerator.js';
 import { createGeneratorConfig } from '../../assets3d/generators/GeneratorParams.js';
 import { applyAtmosphereToSkyDome, createGradientSkyDome, shouldShowSkyDome } from '../../assets3d/generators/SkyGenerator.js';
-import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../assets3d/generators/buildings/BuildingGenerator.js';
+import { BuildingWallTextureCache, buildBuildingVisualParts, computeBuildingLoopsFromTiles } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js';
@@ -174,6 +174,15 @@ export class City {
                 const wallInset = Number.isFinite(entry?.wallInset) ? entry.wallInset : 0.0;
                 const hasLayers = Array.isArray(entry?.layers) && entry.layers.length;
                 const footprintLoops = Array.isArray(entry?.footprintLoops) ? entry.footprintLoops : null;
+                const buildAreaLoops = hasLayers
+                    ? computeBuildingLoopsFromTiles({
+                        map: this.map,
+                        tiles: entry.tiles,
+                        generatorConfig: this.generatorConfig,
+                        tileSize: this.map.tileSize,
+                        occupyRatio: 1.0
+                    })
+                    : null;
                 const windowsSpec = entry?.windows ?? null;
                 const windowsEnabled = !!windowsSpec && typeof windowsSpec === 'object';
                 const overrideWindowVisuals = entry?.windowVisuals ?? null;
@@ -184,6 +193,7 @@ export class City {
                         map: this.map,
                         tiles: entry.tiles,
                         footprintLoops,
+                        buildAreaLoops,
                         generatorConfig: this.generatorConfig,
                         tileSize: this.map.tileSize,
                         occupyRatio: 1.0,
@@ -194,6 +204,7 @@ export class City {
                         windowVisuals: resolvedWindowVisuals,
                         windowVisualsIsOverride,
                         facades: entry.facades ?? null,
+                        wallDecorations: entry.wallDecorations ?? null,
                         windowDefinitions: entry.windowDefinitions ?? null,
                         overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
                         walls: { inset: wallInset }

@@ -6,8 +6,10 @@ import {
     WALL_BASE_TINT_STATE_DEFAULT,
     applyWallBaseTintStateToWallBase,
     composeTintHexFromState,
+    composeTintRgb01FromState,
     resolveWallBaseTintHexFromWallBase,
-    resolveWallBaseTintStateFromWallBase
+    resolveWallBaseTintStateFromWallBase,
+    rgb01FromHex
 } from '../../../src/app/buildings/WallBaseTintModel.js';
 
 function assertNear(actual, expected, eps = 1e-9, msg = '') {
@@ -54,8 +56,70 @@ test('WallBaseTintModel: old tint-only configs remain supported', () => {
     assert.equal(typeof next.tintBrightness, 'number');
 });
 
-test('WallBaseTintModel: near-white legacy tint infers zero legacy intensity fallback', () => {
+test('WallBaseTintModel: legacy tint-only data defaults to full tint influence', () => {
     const resolved = resolveWallBaseTintStateFromWallBase({ tintHex: 0xffffff }, WALL_BASE_TINT_STATE_DEFAULT);
-    assert.equal(resolved.intensity, 0);
+    assert.equal(resolved.intensity, 1);
     assert.equal(resolved.brightness, 1);
+});
+
+test('WallBaseTintModel: brightness above 1 lifts tint toward white', () => {
+    const deepBlue = composeTintRgb01FromState({
+        hueDeg: 220,
+        saturation: 1,
+        value: 0.65,
+        intensity: 1,
+        brightness: 1
+    });
+    const lifted = composeTintRgb01FromState({
+        hueDeg: 220,
+        saturation: 1,
+        value: 0.65,
+        intensity: 1,
+        brightness: 2
+    });
+
+    assert.ok(lifted.r >= deepBlue.r, 'Expected red channel to increase toward white.');
+    assert.ok(lifted.g >= deepBlue.g, 'Expected green channel to increase toward white.');
+    assert.ok(lifted.b >= deepBlue.b, 'Expected blue channel to increase toward white.');
+    assertNear(lifted.r, 1, 1e-9, 'Expected brightness max to reach white red channel.');
+    assertNear(lifted.g, 1, 1e-9, 'Expected brightness max to reach white green channel.');
+    assertNear(lifted.b, 1, 1e-9, 'Expected brightness max to reach white blue channel.');
+});
+
+test('WallBaseTintModel: saturation can be reduced without lowering value', () => {
+    const saturated = composeTintRgb01FromState({
+        hueDeg: 35,
+        saturation: 1,
+        value: 0.8,
+        intensity: 1,
+        brightness: 1
+    });
+    const desaturated = composeTintRgb01FromState({
+        hueDeg: 35,
+        saturation: 0.2,
+        value: 0.8,
+        intensity: 1,
+        brightness: 1
+    });
+
+    const maxSat = Math.max(saturated.r, saturated.g, saturated.b);
+    const maxDesat = Math.max(desaturated.r, desaturated.g, desaturated.b);
+    const spanSat = Math.max(saturated.r, saturated.g, saturated.b) - Math.min(saturated.r, saturated.g, saturated.b);
+    const spanDesat = Math.max(desaturated.r, desaturated.g, desaturated.b) - Math.min(desaturated.r, desaturated.g, desaturated.b);
+    assertNear(maxDesat, maxSat, 1e-9, 'Expected max channel (value) to remain stable when lowering saturation.');
+    assert.ok(spanDesat < spanSat, 'Expected lower saturation to reduce channel spread.');
+});
+
+test('WallBaseTintModel: pure white tint state composes to white hex', () => {
+    const hex = composeTintHexFromState({
+        hueDeg: 124,
+        saturation: 0,
+        value: 1,
+        intensity: 1,
+        brightness: 1
+    });
+    const rgb = rgb01FromHex(hex, 0);
+    assertNear(rgb.r, 1, 1e-9);
+    assertNear(rgb.g, 1, 1e-9);
+    assertNear(rgb.b, 1, 1e-9);
 });

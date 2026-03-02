@@ -401,6 +401,91 @@ function makeSelectRow({ label, value = '', options = [], onChange = null }) {
     };
 }
 
+function makeThumbnailBlocksRow({ label, value = '', options = [], onChange = null }) {
+    const row = makeEl('div', 'options-row options-row-wide');
+    const left = makeEl('div', 'options-row-label', label);
+    const right = makeEl('div', 'options-row-control options-row-control-wide');
+    const wrap = makeEl('div', 'options-pattern-blocks-wrap');
+    const blocks = makeEl('div', 'options-pattern-blocks');
+    const selectedName = makeEl('div', 'options-pattern-selected-name');
+
+    const buttons = new Map();
+    let current = '';
+
+    const setActive = (id, { emit = false } = {}) => {
+        const next = String(id ?? '').trim();
+        if (!buttons.has(next)) return;
+        current = next;
+        for (const [key, entry] of buttons.entries()) {
+            entry?.btn?.classList?.toggle?.('is-active', key === next);
+        }
+        const active = buttons.get(next) ?? null;
+        selectedName.textContent = String(active?.label ?? '');
+        if (emit) onChange?.(next);
+    };
+
+    const setOptions = (nextOptions = [], nextValue = null) => {
+        const normalized = normalizeOptions(nextOptions);
+        const preferred = String(nextValue ?? current ?? value ?? '').trim();
+        blocks.textContent = '';
+        buttons.clear();
+
+        for (const opt of normalized) {
+            const optionId = String(opt?.id ?? '').trim();
+            if (!optionId) continue;
+
+            const btn = makeEl('button', 'options-pattern-block-btn');
+            btn.type = 'button';
+            btn.title = String(opt?.label ?? optionId);
+            btn.setAttribute('aria-label', String(opt?.label ?? optionId));
+
+            const img = document.createElement('img');
+            img.className = 'options-pattern-block-img';
+            img.alt = String(opt?.label ?? optionId);
+            img.loading = 'lazy';
+            img.src = typeof opt?.previewUrl === 'string' ? opt.previewUrl : '';
+            btn.appendChild(img);
+
+            btn.addEventListener('click', () => setActive(optionId, { emit: true }));
+            blocks.appendChild(btn);
+            buttons.set(optionId, { btn, label: String(opt?.label ?? optionId) });
+        }
+
+        if (!buttons.size) {
+            current = '';
+            selectedName.textContent = '';
+            return;
+        }
+        const firstId = buttons.keys().next().value ?? '';
+        setActive(buttons.has(preferred) ? preferred : firstId, { emit: false });
+    };
+
+    setOptions(options, value);
+
+    wrap.appendChild(blocks);
+    wrap.appendChild(selectedName);
+    right.appendChild(wrap);
+    row.appendChild(left);
+    row.appendChild(right);
+
+    return {
+        row,
+        setOptions,
+        setValue: (id) => {
+            const next = String(id ?? '').trim();
+            if (!buttons.has(next)) return;
+            setActive(next, { emit: false });
+        },
+        getValue: () => current,
+        setDisabled: (disabled) => {
+            const off = !!disabled;
+            for (const entry of buttons.values()) {
+                if (entry?.btn) entry.btn.disabled = off;
+            }
+        }
+    };
+}
+
 function setOptionsThumbToTexture(thumb, url, label) {
     if (!thumb) return;
     thumb.textContent = '';
@@ -590,16 +675,22 @@ export class WallDecorationMeshDebuggerUI {
         wallMaterialId = WALL_SURFACE_NONE_ID,
         textureOptions = null,
         colorOptions = null,
+        placementThirdWallEnabled = false,
         viewMode = 'mesh',
         wallMeshVisible = true,
+        thirdWallEnabled = true,
         dummyVisible = true,
+        explodedEnabled = false,
         onChange = null,
         onLoadTypeEntry = null,
         onLoadPresetEntry = null,
         onViewModeChange = null,
         onWallMaterialChange = null,
+        onPlacementThirdWallEnabledChange = null,
         onWallMeshVisibleChange = null,
-        onDummyVisibleChange = null
+        onThirdWallEnabledChange = null,
+        onDummyVisibleChange = null,
+        onExplodedChange = null
     } = {}) {
         this._draft = sanitizeWallDecoratorDebuggerState(initialState ?? getDefaultWallDecoratorDebuggerState());
         this._typeOptions = normalizeOptions(typeOptions, [{ id: WALL_DECORATOR_ID.SIMPLE_SKIRT, label: 'Simple Skirt' }]);
@@ -611,8 +702,11 @@ export class WallDecorationMeshDebuggerUI {
         if (!this._wallMaterialOptions.some((opt) => opt.id === this._wallMaterialId)) {
             this._wallMaterialId = this._wallMaterialOptions[0]?.id ?? WALL_SURFACE_NONE_ID;
         }
+        this._placementThirdWallEnabled = placementThirdWallEnabled === true;
         this._wallMeshVisible = wallMeshVisible !== false;
+        this._thirdWallEnabled = thirdWallEnabled !== false;
         this._dummyVisible = dummyVisible !== false;
+        this._explodedEnabled = explodedEnabled === true;
         this._textureOptions = normalizeOptions(textureOptions, [{ id: 'pbr.brick_wall_11', label: 'Brick Wall 11' }]);
         this._colorOptions = normalizeOptions(colorOptions, [{ id: 'belt.white', label: 'White' }]);
         this._viewMode = normalizeViewMode(viewMode);
@@ -621,8 +715,13 @@ export class WallDecorationMeshDebuggerUI {
         this._onLoadPresetEntry = typeof onLoadPresetEntry === 'function' ? onLoadPresetEntry : null;
         this._onViewModeChange = typeof onViewModeChange === 'function' ? onViewModeChange : null;
         this._onWallMaterialChange = typeof onWallMaterialChange === 'function' ? onWallMaterialChange : null;
+        this._onPlacementThirdWallEnabledChange = typeof onPlacementThirdWallEnabledChange === 'function'
+            ? onPlacementThirdWallEnabledChange
+            : null;
         this._onWallMeshVisibleChange = typeof onWallMeshVisibleChange === 'function' ? onWallMeshVisibleChange : null;
+        this._onThirdWallEnabledChange = typeof onThirdWallEnabledChange === 'function' ? onThirdWallEnabledChange : null;
         this._onDummyVisibleChange = typeof onDummyVisibleChange === 'function' ? onDummyVisibleChange : null;
+        this._onExplodedChange = typeof onExplodedChange === 'function' ? onExplodedChange : null;
         this._isSetting = false;
         this._activeTabId = 'catalog';
         this._tabs = new Map();
@@ -668,7 +767,9 @@ export class WallDecorationMeshDebuggerUI {
         this._setActiveTab(this._activeTabId);
         this._syncViewModeControl();
         this._syncWallMeshVisibilityControl();
+        this._syncThirdWallControl();
         this._syncDummyVisibilityControl();
+        this._syncExplodedControl();
         this._syncAllControlsFromDraft();
     }
 
@@ -702,6 +803,18 @@ export class WallDecorationMeshDebuggerUI {
             this._syncMaterialSelectOptions();
             this._syncMaterialRowsDisabled();
         }
+    }
+
+    setExplodedEnabled(nextEnabled) {
+        this._setExplodedEnabled(!!nextEnabled, { emit: false });
+    }
+
+    setThirdWallEnabled(nextEnabled) {
+        this._setThirdWallEnabled(!!nextEnabled, { emit: false });
+    }
+
+    setPlacementThirdWallEnabled(nextEnabled) {
+        this._setPlacementThirdWallEnabled(!!nextEnabled, { emit: false });
     }
 
     _buildTab(id, label) {
@@ -782,6 +895,13 @@ export class WallDecorationMeshDebuggerUI {
         });
         panel.appendChild(wallVisibility.row);
 
+        const thirdWallToggle = makeToggleRow({
+            label: 'Third wall',
+            value: this._thirdWallEnabled,
+            onChange: (next) => this._setThirdWallEnabled(!!next, { emit: true })
+        });
+        panel.appendChild(thirdWallToggle.row);
+
         const dummyVisibility = makeToggleRow({
             label: 'Show dummy',
             value: this._dummyVisible,
@@ -789,11 +909,20 @@ export class WallDecorationMeshDebuggerUI {
         });
         panel.appendChild(dummyVisibility.row);
 
+        const explodedToggle = makeToggleRow({
+            label: 'Exploded',
+            value: this._explodedEnabled,
+            onChange: (next) => this._setExplodedEnabled(!!next, { emit: true })
+        });
+        panel.appendChild(explodedToggle.row);
+
         this.leftStack.appendChild(panel);
 
         this._controls.viewMode = { panel, btnMesh, btnWire };
         this._controls.wallMeshVisibility = wallVisibility;
+        this._controls.thirdWallToggle = thirdWallToggle;
         this._controls.dummyVisibility = dummyVisibility;
+        this._controls.explodedToggle = explodedToggle;
     }
 
     _syncViewModeControl() {
@@ -832,6 +961,38 @@ export class WallDecorationMeshDebuggerUI {
         if (emit) this._onWallMeshVisibleChange?.(visible);
     }
 
+    _syncThirdWallControl() {
+        this._controls.thirdWallToggle?.setValue?.(!!this._thirdWallEnabled);
+    }
+
+    _setThirdWallEnabled(next, { emit = false } = {}) {
+        const enabled = !!next;
+        if (enabled === this._thirdWallEnabled) {
+            this._syncThirdWallControl();
+            if (emit) this._onThirdWallEnabledChange?.(enabled);
+            return;
+        }
+        this._thirdWallEnabled = enabled;
+        this._syncThirdWallControl();
+        if (emit) this._onThirdWallEnabledChange?.(enabled);
+    }
+
+    _syncPlacementThirdWallControl() {
+        this._controls.placementThirdWallToggle?.setValue?.(!!this._placementThirdWallEnabled);
+    }
+
+    _setPlacementThirdWallEnabled(next, { emit = false } = {}) {
+        const enabled = !!next;
+        if (enabled === this._placementThirdWallEnabled) {
+            this._syncPlacementThirdWallControl();
+            if (emit) this._onPlacementThirdWallEnabledChange?.(enabled);
+            return;
+        }
+        this._placementThirdWallEnabled = enabled;
+        this._syncPlacementThirdWallControl();
+        if (emit) this._onPlacementThirdWallEnabledChange?.(enabled);
+    }
+
     _syncDummyVisibilityControl() {
         this._controls.dummyVisibility?.setValue?.(!!this._dummyVisible);
     }
@@ -846,6 +1007,22 @@ export class WallDecorationMeshDebuggerUI {
         this._dummyVisible = visible;
         this._syncDummyVisibilityControl();
         if (emit) this._onDummyVisibleChange?.(visible);
+    }
+
+    _syncExplodedControl() {
+        this._controls.explodedToggle?.setValue?.(!!this._explodedEnabled);
+    }
+
+    _setExplodedEnabled(next, { emit = false } = {}) {
+        const enabled = !!next;
+        if (enabled === this._explodedEnabled) {
+            this._syncExplodedControl();
+            if (emit) this._onExplodedChange?.(enabled);
+            return;
+        }
+        this._explodedEnabled = enabled;
+        this._syncExplodedControl();
+        if (emit) this._onExplodedChange?.(enabled);
     }
 
     _buildLeftWallMaterialPanel() {
@@ -1013,6 +1190,13 @@ export class WallDecorationMeshDebuggerUI {
             }
         });
         sectionPlacement.appendChild(this._controls.position.row);
+
+        this._controls.placementThirdWallToggle = makeToggleRow({
+            label: 'Apply to third wall',
+            value: this._placementThirdWallEnabled,
+            onChange: (next) => this._setPlacementThirdWallEnabled(!!next, { emit: true })
+        });
+        sectionPlacement.appendChild(this._controls.placementThirdWallToggle.row);
     }
 
     _buildConfigurationTab() {
@@ -1124,7 +1308,20 @@ export class WallDecorationMeshDebuggerUI {
                 const options = Array.isArray(spec?.options) ? spec.options : [];
                 const pickerMode = normalizeConfigurationPropertyPicker(spec?.picker);
                 const controlMode = normalizeConfigurationPropertyControl(spec?.control);
-                if (pickerMode === 'thumbnail') {
+                const isRibbonPatternControl = typeEntry.id === WALL_DECORATOR_ID.RIBBON
+                    && propertyId === 'patternId';
+                if (isRibbonPatternControl) {
+                    control = makeThumbnailBlocksRow({
+                        label: spec?.label ?? propertyId,
+                        value: String(this._draft?.configuration?.[propertyId] ?? ''),
+                        options,
+                        onChange: (next) => {
+                            this._draft.configuration[propertyId] = String(next ?? '');
+                            this._emit();
+                        }
+                    });
+                    controlKind = 'enum_pattern_blocks';
+                } else if (pickerMode === 'thumbnail') {
                     control = makeMaterialPickerRow({
                         label: spec?.label ?? propertyId,
                         onPick: () => this._openConfigurationEnumPicker({ propertyId, spec })
@@ -1299,6 +1496,20 @@ export class WallDecorationMeshDebuggerUI {
         if (control?.thumb) setOptionsThumbToTexture(control.thumb, selected.previewUrl ?? '', String(selected.label ?? selected.id ?? ''));
     }
 
+    _syncConfigurationPatternBlocksEnumControl({ propertyId, spec, control }) {
+        const options = Array.isArray(spec?.options) ? spec.options : [];
+        const selectedId = String(this._draft?.configuration?.[propertyId] ?? '').trim();
+        const selected = options.find((opt) => String(opt?.id ?? '') === selectedId) ?? options[0] ?? null;
+        const nextId = String(selected?.id ?? '').trim();
+
+        control?.setOptions?.(options, nextId);
+        control?.setDisabled?.(!selected);
+        if (!selected) return;
+
+        this._draft.configuration[propertyId] = nextId;
+        control?.setValue?.(nextId);
+    }
+
     _openConfigurationEnumPicker({ propertyId, spec }) {
         const property = String(propertyId ?? '').trim();
         if (!property) return;
@@ -1367,6 +1578,8 @@ export class WallDecorationMeshDebuggerUI {
             if (propertyType === WALL_DECORATOR_PROPERTY_TYPE.ENUM) {
                 if (controlKind === 'enum_thumbnail') {
                     this._syncConfigurationThumbnailEnumControl({ propertyId, spec, control });
+                } else if (controlKind === 'enum_pattern_blocks') {
+                    this._syncConfigurationPatternBlocksEnumControl({ propertyId, spec, control });
                 } else {
                     control.setValue(String(nextValue ?? ''));
                 }
@@ -1699,6 +1912,7 @@ export class WallDecorationMeshDebuggerUI {
         this._controls.whereToApply.setValue(this._draft.whereToApply);
         this._controls.mode.setValue(this._draft.mode);
         this._controls.position.setValue(this._draft.position);
+        this._syncPlacementThirdWallControl();
         this._syncConfigurationControlsFromDraft();
 
         this._controls.materialKind.setValue(normalizeDecoratorMaterialKind(this._draft.materialSelection?.kind));

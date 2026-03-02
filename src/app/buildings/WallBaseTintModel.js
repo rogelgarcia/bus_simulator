@@ -11,7 +11,7 @@ export const WALL_BASE_TINT_STATE_DEFAULT = Object.freeze({
     hueDeg: 0,
     saturation: 0,
     value: 1,
-    intensity: 0,
+    intensity: 1,
     brightness: 1
 });
 
@@ -108,8 +108,10 @@ export function rgb01FromHsv({ hueDeg = 0, saturation = 0, value = 1 } = {}) {
 }
 
 function inferLegacyIntensityFromHexRgb(rgb) {
-    const nearWhite = rgb.r >= 0.999 && rgb.g >= 0.999 && rgb.b >= 0.999;
-    return nearWhite ? 0 : 1;
+    void rgb;
+    // Legacy tint-only data did not encode tint influence explicitly.
+    // Use full tint influence so hue/saturation/value controls remain immediately responsive.
+    return 1;
 }
 
 export function deriveWallBaseTintStateFromTintHex(tintHex) {
@@ -131,7 +133,7 @@ export function sanitizeWallBaseTintState(value, fallback = WALL_BASE_TINT_STATE
         hueDeg: normalizeHueDegrees(src.hueDeg ?? fb.hueDeg),
         saturation: clamp(src.saturation, 0, 1, clamp(fb.saturation, 0, 1, 0)),
         value: clamp(src.value, 0, 1, clamp(fb.value, 0, 1, 1)),
-        intensity: clamp(src.intensity, 0, 1, clamp(fb.intensity, 0, 1, 0)),
+        intensity: clamp(src.intensity, 0, 1, clamp(fb.intensity, 0, 1, 1)),
         brightness: clamp(
             src.brightness,
             WALL_BASE_TINT_BRIGHTNESS_MIN,
@@ -178,12 +180,31 @@ export function resolveWallBaseTintStateFromWallBase(value, fallbackState = WALL
 export function composeTintRgb01FromState(value) {
     const state = sanitizeWallBaseTintState(value, WALL_BASE_TINT_STATE_DEFAULT);
     const pure = rgb01FromHsv(state);
-    const mix = clamp(state.intensity, 0, 1, 0);
+    const mix = clamp(state.intensity, 0, 1, 1);
     const brightness = clamp(state.brightness, WALL_BASE_TINT_BRIGHTNESS_MIN, WALL_BASE_TINT_BRIGHTNESS_MAX, 1);
+    const tinted = {
+        r: clamp((1 - mix) + (pure.r * mix), 0, 1, 1),
+        g: clamp((1 - mix) + (pure.g * mix), 0, 1, 1),
+        b: clamp((1 - mix) + (pure.b * mix), 0, 1, 1)
+    };
+    if (brightness <= 1 + EPS) {
+        return {
+            r: clamp(tinted.r * brightness, 0, 1, 1),
+            g: clamp(tinted.g * brightness, 0, 1, 1),
+            b: clamp(tinted.b * brightness, 0, 1, 1)
+        };
+    }
+    // Brightness above 1 transitions toward white, rather than clipping channels.
+    const whiteLift = clamp(
+        (brightness - 1) / Math.max(EPS, WALL_BASE_TINT_BRIGHTNESS_MAX - 1),
+        0,
+        1,
+        0
+    );
     return {
-        r: clamp(((1 - mix) + (pure.r * mix)) * brightness, 0, 1, 1),
-        g: clamp(((1 - mix) + (pure.g * mix)) * brightness, 0, 1, 1),
-        b: clamp(((1 - mix) + (pure.b * mix)) * brightness, 0, 1, 1)
+        r: clamp(tinted.r + (1 - tinted.r) * whiteLift, 0, 1, 1),
+        g: clamp(tinted.g + (1 - tinted.g) * whiteLift, 0, 1, 1),
+        b: clamp(tinted.b + (1 - tinted.b) * whiteLift, 0, 1, 1)
     };
 }
 

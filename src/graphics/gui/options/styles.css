@@ -632,6 +632,58 @@
     cursor: default;
 }
 
+.options-pattern-blocks-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: min(320px, 100%);
+}
+
+.options-pattern-blocks {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.options-pattern-block-btn {
+    width: 56px;
+    height: 56px;
+    padding: 4px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.18);
+    cursor: pointer;
+}
+
+.options-pattern-block-btn:hover {
+    background: rgba(0,0,0,0.28);
+}
+
+.options-pattern-block-btn.is-active {
+    background: rgba(100, 210, 255, 0.18);
+    border-color: rgba(100, 210, 255, 0.38);
+}
+
+.options-pattern-block-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.options-pattern-block-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.options-pattern-selected-name {
+    min-height: 14px;
+    text-align: right;
+    font-size: 11px;
+    color: rgba(232, 244, 255, 0.74);
+}
+
 .options-footer {
     display: flex;
     justify-content: flex-end;

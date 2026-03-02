@@ -287,6 +287,12 @@
     background: rgba(0,0,0,0.28);
 }
 
+.building-fab2-btn.is-active {
+    background: rgba(100, 210, 255, 0.20);
+    border-color: rgba(100, 210, 255, 0.40);
+    box-shadow: 0 0 0 1px rgba(100, 210, 255, 0.22) inset;
+}
+
 .building-fab2-btn:disabled {
     cursor: default;
     opacity: 0.5;

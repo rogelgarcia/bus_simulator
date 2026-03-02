@@ -95,8 +95,10 @@ The `Materials` tab MUST expose direct controls (no external picker popup) equiv
   - `match_wall` is mandatory and behaviorally consistent for every decorator type (no type-specific opt-out)
 - Wall base:
   - shared tint picker (hue wheel + SV triangle interaction)
+  - explicit hue/saturation/value numeric controls
   - tint brightness
   - tint intensity
+  - brightness above `1` lifts toward white (instead of channel clipping)
   - tint thumbnail/hex preview
   - roughness
   - normal strength
@@ -173,7 +175,8 @@ Generation/material contract:
   - same near-edge placement control.
 - keeps ribbon presets/type configuration isolated from `Simple Skirt` metadata (no shared config object), but initial preset numeric values are identical.
 - adds ribbon-only pattern detail controls:
-  - `Pattern` enum rendered as a thumbnail picker,
+  - `Pattern` enum rendered as side-by-side square pattern blocks (no per-block labels),
+  - selected pattern name shown under the block row (right-aligned, small text),
   - seeded options: `Circle`, `Flat-base X`,
   - `Pattern normal` scalar controlling generated normal intensity.
 - ribbon pattern source is grayscale and converted to a normal map at runtime.

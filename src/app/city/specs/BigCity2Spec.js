@@ -1473,6 +1473,17 @@ export const BIG_CITY_2_SPEC_SOURCE = Object.freeze(
                     ]
                 ],
                 "rendered": true
+            },
+            {
+                "id": "building_55",
+                "configId": "beige_1",
+                "tiles": [
+                    [
+                        5,
+                        13
+                    ]
+                ],
+                "rendered": true
             }
         ]
     }

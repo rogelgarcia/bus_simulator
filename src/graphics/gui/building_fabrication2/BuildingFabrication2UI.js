@@ -533,11 +533,15 @@ export class BuildingFabrication2UI {
         const renderSlabToggle = makeViewToggle('Render slab');
         this.renderSlabToggle = renderSlabToggle.toggle;
         this.renderSlabToggleInput = renderSlabToggle.input;
+        const explodedDecorationsToggle = makeViewToggle('Exploded decorations');
+        this.explodedDecorationsToggle = explodedDecorationsToggle.toggle;
+        this.explodedDecorationsToggleInput = explodedDecorationsToggle.input;
 
         this.viewToggles.appendChild(this.renderSkyToggle);
         this.viewToggles.appendChild(this.hideFaceMarkToggle);
         this.viewToggles.appendChild(this.showDummyToggle);
         this.viewToggles.appendChild(this.renderSlabToggle);
+        this.viewToggles.appendChild(this.explodedDecorationsToggle);
 
         this.viewPanel.appendChild(this.viewTitle);
         this.viewPanel.appendChild(this.viewModes);
@@ -821,6 +825,7 @@ export class BuildingFabrication2UI {
         this._hideFaceMarkEnabled = false;
         this._showDummyEnabled = false;
         this._renderSlabEnabled = true;
+        this._explodedDecorationsEnabled = false;
         this._rulerEnabled = false;
         this._layoutAdjustEnabled = false;
         this._editorMode = BF2_EDITOR_MODE.BUILDING;
@@ -868,6 +873,7 @@ export class BuildingFabrication2UI {
         this.onHideFaceMarkChange = null;
         this.onShowDummyChange = null;
         this.onRenderSlabChange = null;
+        this.onExplodedDecorationsChange = null;
         this.onRulerToggle = null;
         this.onAdjustLayoutToggle = null;
         this.onSelectCatalogEntry = null;
@@ -979,6 +985,12 @@ export class BuildingFabrication2UI {
             this._syncRenderSlabToggle();
             this.onRenderSlabChange?.(this._renderSlabEnabled);
         };
+        this._onExplodedDecorationsToggleChange = () => {
+            if (this.explodedDecorationsToggleInput.disabled) return;
+            this._explodedDecorationsEnabled = !!this.explodedDecorationsToggleInput.checked;
+            this._syncExplodedDecorationsToggle();
+            this.onExplodedDecorationsChange?.(this._explodedDecorationsEnabled);
+        };
         this._onRulerClick = () => {
             if (this.rulerBtn.disabled) return;
             this._rulerEnabled = !this._rulerEnabled;
@@ -1056,12 +1068,14 @@ export class BuildingFabrication2UI {
         renderSkyEnabled = null,
         hideFaceMarkEnabled = null,
         showDummyEnabled = null,
-        renderSlabEnabled = null
+        renderSlabEnabled = null,
+        explodedDecorationsEnabled = null
     } = {}) {
         if (renderSkyEnabled !== null) this._renderSkyEnabled = !!renderSkyEnabled;
         if (hideFaceMarkEnabled !== null) this._hideFaceMarkEnabled = !!hideFaceMarkEnabled;
         if (showDummyEnabled !== null) this._showDummyEnabled = !!showDummyEnabled;
         if (renderSlabEnabled !== null) this._renderSlabEnabled = !!renderSlabEnabled;
+        if (explodedDecorationsEnabled !== null) this._explodedDecorationsEnabled = !!explodedDecorationsEnabled;
         this._syncViewButtons();
     }
 
@@ -1947,6 +1961,7 @@ export class BuildingFabrication2UI {
         this.hideFaceMarkToggleInput.addEventListener('change', this._onHideFaceMarkToggleChange);
         this.showDummyToggleInput.addEventListener('change', this._onShowDummyToggleChange);
         this.renderSlabToggleInput.addEventListener('change', this._onRenderSlabToggleChange);
+        this.explodedDecorationsToggleInput.addEventListener('change', this._onExplodedDecorationsToggleChange);
         this.adjustLayoutBtn.addEventListener('click', this._onAdjustLayoutClick);
         this.adjustModeCloseBtn.addEventListener('click', this._onAdjustModeCloseClick);
         this.rulerBtn.addEventListener('click', this._onRulerClick);
@@ -1992,6 +2007,7 @@ export class BuildingFabrication2UI {
         this.hideFaceMarkToggleInput.removeEventListener('change', this._onHideFaceMarkToggleChange);
         this.showDummyToggleInput.removeEventListener('change', this._onShowDummyToggleChange);
         this.renderSlabToggleInput.removeEventListener('change', this._onRenderSlabToggleChange);
+        this.explodedDecorationsToggleInput.removeEventListener('change', this._onExplodedDecorationsToggleChange);
         this.adjustLayoutBtn.removeEventListener('click', this._onAdjustLayoutClick);
         this.adjustModeCloseBtn.removeEventListener('click', this._onAdjustModeCloseClick);
         this.rulerBtn.removeEventListener('click', this._onRulerClick);
@@ -2031,6 +2047,7 @@ export class BuildingFabrication2UI {
         this.hideFaceMarkToggleInput.disabled = !allow;
         this.showDummyToggleInput.disabled = !allow || !hasBuilding;
         this.renderSlabToggleInput.disabled = !allow || !hasBuilding;
+        this.explodedDecorationsToggleInput.disabled = !allow || !hasBuilding;
         this.adjustLayoutBtn.disabled = !allow || !hasBuilding;
         this.adjustModeCloseBtn.disabled = !allow || !hasBuilding || !this._layoutAdjustEnabled;
         this.rulerBtn.disabled = !allow;
@@ -2058,6 +2075,7 @@ export class BuildingFabrication2UI {
         this._syncHideFaceMarkToggle();
         this._syncShowDummyToggle();
         this._syncRenderSlabToggle();
+        this._syncExplodedDecorationsToggle();
         this._syncAdjustLayoutButton();
         this._syncRulerButton();
     }
@@ -2083,6 +2101,10 @@ export class BuildingFabrication2UI {
 
     _syncRenderSlabToggle() {
         this.renderSlabToggleInput.checked = this._renderSlabEnabled;
+    }
+
+    _syncExplodedDecorationsToggle() {
+        this.explodedDecorationsToggleInput.checked = this._explodedDecorationsEnabled;
     }
 
     _syncRulerButton() {
@@ -2788,10 +2810,12 @@ export class BuildingFabrication2UI {
             };
             const emit = (raw) => {
                 const next = setInputs(raw);
-                onChange?.(next);
+                onChange?.(next, { live: true });
             };
             range.addEventListener('input', () => emit(Number(range.value)));
             numberInput.addEventListener('input', () => emit(Number(numberInput.value)));
+            range.addEventListener('change', () => onChange?.(setInputs(Number(range.value)), { live: false }));
+            numberInput.addEventListener('change', () => onChange?.(setInputs(Number(numberInput.value)), { live: false }));
 
             const isDisabled = !!disabled;
             range.disabled = isDisabled;
@@ -2875,7 +2899,7 @@ export class BuildingFabrication2UI {
                 step: 0.01,
                 value: clampUnit(span.start, 0.0),
                 disabled: !allowEdit,
-                onChange: (next) => this.onSetDecorationEntrySpanField?.(setId, entryId, 'start', next)
+                onChange: (next, options) => this.onSetDecorationEntrySpanField?.(setId, entryId, 'start', next, options)
             });
             appendNumberSliderRow({
                 label: 'End U',
@@ -2884,7 +2908,7 @@ export class BuildingFabrication2UI {
                 step: 0.01,
                 value: clampUnit(span.end, 1.0),
                 disabled: !allowEdit,
-                onChange: (next) => this.onSetDecorationEntrySpanField?.(setId, entryId, 'end', next)
+                onChange: (next, options) => this.onSetDecorationEntrySpanField?.(setId, entryId, 'end', next, options)
             });
 
             if (presetGroups.length) {
@@ -2986,7 +3010,7 @@ export class BuildingFabrication2UI {
                     value: nextValue,
                     isInt,
                     disabled: !allowEdit,
-                    onChange: (next) => this.onSetDecorationEntryProperty?.(setId, entryId, propertyId, next)
+                    onChange: (next, options) => this.onSetDecorationEntryProperty?.(setId, entryId, propertyId, next, options)
                 });
             }
             return;
@@ -3014,37 +3038,74 @@ export class BuildingFabrication2UI {
             disabled: !allowEdit
         });
 
-        const idRow = document.createElement('div');
-        idRow.className = 'building-fab2-row';
-        const idLabel = document.createElement('div');
-        idLabel.className = 'building-fab2-row-label';
-        idLabel.textContent = 'Material';
-        const idSelect = document.createElement('select');
-        idSelect.className = 'building-fab2-select';
-        const idOptions = materialKind === 'color'
-            ? this._baseWallColorPickerOptions.map((entry) => ({
+        const getTexOpt = (id) => this._wallTextureDefById?.get(normalizeWallTextureId(id)) ?? null;
+        const getColorOpt = (id) => (this._beltCourseColorOptions ?? []).find((o) => o?.id === id) ?? null;
+
+        if (isTexture) {
+            const picker = createMaterialPickerRowController({
+                label: 'Material',
+                disabled: !allowEdit || isMatchWall,
+                onPick: () => {
+                    if (!allowEdit || isMatchWall) return;
+                    const selectedId = `texture:${normalizeWallTextureId(materialSelection.id)}`;
+                    this._materialPickerPopup.open({
+                        title: 'Decoration texture',
+                        sections: this._baseWallTexturePickerSections,
+                        selectedId,
+                        onSelect: (opt) => {
+                            const next = parseMaterialPickerId(opt?.id);
+                            if (!next || next.kind !== 'texture') return;
+                            this.onSetDecorationEntryMaterialId?.(setId, entryId, normalizeWallTextureId(next.id));
+                        }
+                    });
+                }
+            });
+            const texId = normalizeWallTextureId(materialSelection.id);
+            const texOpt = getTexOpt(texId);
+            picker.text.textContent = texOpt?.label ?? texId;
+            setMaterialThumbToTexture(picker.thumb, texOpt?.wallTextureUrl ?? '', texOpt?.label ?? texId);
+            body.appendChild(picker.row);
+        } else if (materialKind === 'color') {
+            const idRow = document.createElement('div');
+            idRow.className = 'building-fab2-row';
+            const idLabel = document.createElement('div');
+            idLabel.className = 'building-fab2-row-label';
+            idLabel.textContent = 'Material';
+            const idSelect = document.createElement('select');
+            idSelect.className = 'building-fab2-select';
+            const idOptions = this._baseWallColorPickerOptions.map((entry) => ({
                 id: String(entry?.id ?? '').replace(/^color:/, ''),
                 label: String(entry?.label ?? entry?.id ?? '')
-            }))
-            : this._wallTextureDefs.map((entry) => ({
-                id: String(entry?.id ?? ''),
-                label: String(entry?.label ?? entry?.id ?? '')
             }));
-        for (const option of idOptions) {
-            const opt = document.createElement('option');
-            opt.value = option.id;
-            opt.textContent = option.label;
-            idSelect.appendChild(opt);
+            for (const option of idOptions) {
+                const opt = document.createElement('option');
+                opt.value = option.id;
+                opt.textContent = option.label;
+                idSelect.appendChild(opt);
+            }
+            idSelect.value = String(materialSelection.id ?? '');
+            idSelect.disabled = !allowEdit || isMatchWall;
+            idSelect.addEventListener('change', () => {
+                if (!allowEdit || isMatchWall) return;
+                this.onSetDecorationEntryMaterialId?.(setId, entryId, String(idSelect.value ?? ''));
+            });
+            idRow.appendChild(idLabel);
+            idRow.appendChild(idSelect);
+            body.appendChild(idRow);
+        } else {
+            const idRow = document.createElement('div');
+            idRow.className = 'building-fab2-row';
+            const idLabel = document.createElement('div');
+            idLabel.className = 'building-fab2-row-label';
+            idLabel.textContent = 'Material';
+            const idValue = document.createElement('div');
+            idValue.className = 'building-fab2-hint';
+            const linkedColor = getColorOpt(materialSelection.id);
+            idValue.textContent = linkedColor?.label ? `Match wall (${linkedColor.label})` : 'Match wall';
+            idRow.appendChild(idLabel);
+            idRow.appendChild(idValue);
+            body.appendChild(idRow);
         }
-        idSelect.value = String(materialSelection.id ?? '');
-        idSelect.disabled = !allowEdit || isMatchWall;
-        idSelect.addEventListener('change', () => {
-            if (!allowEdit || isMatchWall) return;
-            this.onSetDecorationEntryMaterialId?.(setId, entryId, String(idSelect.value ?? ''));
-        });
-        idRow.appendChild(idLabel);
-        idRow.appendChild(idSelect);
-        body.appendChild(idRow);
 
         const wallBase = state.wallBase && typeof state.wallBase === 'object' ? state.wallBase : {};
         appendNumberSliderRow({
@@ -3054,7 +3115,7 @@ export class BuildingFabrication2UI {
             step: 0.01,
             value: Number(wallBase.roughness) || 0.85,
             disabled: !allowEdit || isMatchWall,
-            onChange: (next) => this.onSetDecorationEntryWallBaseField?.(setId, entryId, 'roughness', next)
+            onChange: (next, options) => this.onSetDecorationEntryWallBaseField?.(setId, entryId, 'roughness', next, options)
         });
         appendNumberSliderRow({
             label: 'Normal',
@@ -3063,7 +3124,7 @@ export class BuildingFabrication2UI {
             step: 0.01,
             value: Number(wallBase.normalStrength) || 0.9,
             disabled: !allowEdit || isMatchWall,
-            onChange: (next) => this.onSetDecorationEntryWallBaseField?.(setId, entryId, 'normalStrength', next)
+            onChange: (next, options) => this.onSetDecorationEntryWallBaseField?.(setId, entryId, 'normalStrength', next, options)
         });
 
         const tiling = state.tiling && typeof state.tiling === 'object' ? state.tiling : {};
@@ -3093,7 +3154,7 @@ export class BuildingFabrication2UI {
             step: 0.01,
             value: Number(tiling.tileMetersU) || 2.0,
             disabled: !allowEdit || !isTexture || isMatchWall || !tilingEnabled,
-            onChange: (next) => this.onSetDecorationEntryTilingField?.(setId, entryId, 'tileMetersU', next)
+            onChange: (next, options) => this.onSetDecorationEntryTilingField?.(setId, entryId, 'tileMetersU', next, options)
         });
         appendNumberSliderRow({
             label: 'Tile V',
@@ -3102,7 +3163,7 @@ export class BuildingFabrication2UI {
             step: 0.01,
             value: Number(tiling.tileMetersV) || 2.0,
             disabled: !allowEdit || !isTexture || isMatchWall || !tilingEnabled,
-            onChange: (next) => this.onSetDecorationEntryTilingField?.(setId, entryId, 'tileMetersV', next)
+            onChange: (next, options) => this.onSetDecorationEntryTilingField?.(setId, entryId, 'tileMetersV', next, options)
         });
 
         const uvToggle = document.createElement('label');
@@ -3128,7 +3189,7 @@ export class BuildingFabrication2UI {
             step: 0.01,
             value: Number(tiling.offsetU) || 0.0,
             disabled: !allowEdit || !isTexture || isMatchWall || !uvEnabled,
-            onChange: (next) => this.onSetDecorationEntryTilingField?.(setId, entryId, 'offsetU', next)
+            onChange: (next, options) => this.onSetDecorationEntryTilingField?.(setId, entryId, 'offsetU', next, options)
         });
         appendNumberSliderRow({
             label: 'Offset V',
@@ -3137,7 +3198,7 @@ export class BuildingFabrication2UI {
             step: 0.01,
             value: Number(tiling.offsetV) || 0.0,
             disabled: !allowEdit || !isTexture || isMatchWall || !uvEnabled,
-            onChange: (next) => this.onSetDecorationEntryTilingField?.(setId, entryId, 'offsetV', next)
+            onChange: (next, options) => this.onSetDecorationEntryTilingField?.(setId, entryId, 'offsetV', next, options)
         });
         appendNumberSliderRow({
             label: 'UV Rotation',
@@ -3146,7 +3207,7 @@ export class BuildingFabrication2UI {
             step: 0.1,
             value: Number(tiling.rotationDegrees) || 0.0,
             disabled: !allowEdit || !isTexture || isMatchWall || !uvEnabled,
-            onChange: (next) => this.onSetDecorationEntryTilingField?.(setId, entryId, 'rotationDegrees', next)
+            onChange: (next, options) => this.onSetDecorationEntryTilingField?.(setId, entryId, 'rotationDegrees', next, options)
         });
     }
 

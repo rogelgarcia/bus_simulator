@@ -1,6 +1,7 @@
 // src/graphics/content3d/catalogs/BuildingConfigCatalog.js
 // Registry for city building configs.
 import { BLUE_BELT_TOWER_BUILDING_CONFIG } from '../buildings/configs/BlueBeltTower.js';
+import { BEIGE_1_BUILDING_CONFIG } from '../buildings/configs/Beige1.js';
 import { BRICK_MIDRISE_BUILDING_CONFIG } from '../buildings/configs/BrickMidrise.js';
 import { BRICK_MIDRISE_2_BUILDING_CONFIG } from '../buildings/configs/BrickMidrise2.js';
 import { GOV_CENTER_BUILDING_CONFIG } from '../buildings/configs/GovCenter.js';
@@ -8,6 +9,7 @@ import { STONE_LOWRISE_BUILDING_CONFIG } from '../buildings/configs/StoneLowrise
 import { STONE_SETBACK_TOWER_BUILDING_CONFIG } from '../buildings/configs/StoneSetbackTower.js';
 
 const BUILDING_CONFIGS = Object.freeze([
+    BEIGE_1_BUILDING_CONFIG,
     BRICK_MIDRISE_BUILDING_CONFIG,
     BRICK_MIDRISE_2_BUILDING_CONFIG,
     BLUE_BELT_TOWER_BUILDING_CONFIG,

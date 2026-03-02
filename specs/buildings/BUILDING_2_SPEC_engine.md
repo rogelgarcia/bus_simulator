@@ -144,6 +144,10 @@ Given a solved facade layout, geometry generation MUST:
   - `wallBase`:
     - tint state (`tintHueDeg`, `tintSaturation`, `tintValue`, `tintIntensity`, `tintBrightness`),
     - compatibility `tintHex` output,
+    - compose behavior:
+      - `tintIntensity` controls white-to-HSV tint mix,
+      - `tintBrightness <= 1` darkens multiplicatively,
+      - `tintBrightness > 1` lifts result toward white,
     - roughness / normal strength,
   - `tiling` (tile meters + UV transform),
   - `materialVariation` (wall material variation config).
@@ -198,6 +202,18 @@ Compatibility note (transitional):
   - slab thickness extends downward only from that top plane,
   - slab material uses `Painted plaster wall` (`pbr.plastered_wall_02`).
 - Toggling on/off and rebuilding within the same session MUST not leak helper meshes or leave stale geometry.
+
+### 6.4 BF2 exploded decorations mode (view helper)
+
+- Building Fabrication 2 MAY expose a non-persistent `Exploded decorations` view toggle.
+- When enabled:
+  - building render groups (including window meshes) are hidden from view,
+  - wall decorations are rendered as exploded triangle-face meshes,
+  - the exploded-face separation behavior MUST reuse the same shared explode logic used by Wall Decoration Mesh Debugger (not a duplicate implementation).
+- When disabled:
+  - exploded helper meshes are removed,
+  - normal BF2 mesh visibility state is restored according to the active view mode.
+- Toggling on/off and rebuilding within the same session MUST not leak exploded helper meshes or leave stale visibility state.
 
 ---
 

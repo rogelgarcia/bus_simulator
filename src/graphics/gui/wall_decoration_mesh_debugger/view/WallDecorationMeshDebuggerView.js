@@ -3,12 +3,22 @@
 // @ts-check
 
 import * as THREE from 'three';
-import { createToolCameraController } from '../../../engine3d/camera/ToolCameraPrefab.js';
+import { FirstPersonCameraController } from '../../../engine3d/camera/FirstPersonCameraController.js';
 import { getOrCreateGpuFrameTimer } from '../../../engine3d/perf/GpuFrameTimer.js';
 import { createGradientSkyDome } from '../../../assets3d/generators/SkyGenerator.js';
 import { createProceduralMeshAsset, PROCEDURAL_MESH } from '../../../content3d/catalogs/ProceduralMeshCatalog.js';
 import { getPbrMaterialOptionsForBuildings, getPbrMaterialTileMeters } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
 import { PbrTextureLoaderService, applyResolvedPbrToStandardMaterial } from '../../../content3d/materials/PbrTexturePipeline.js';
+import { createWallDecoratorGeometryFromSpec } from '../../shared/wall_decorator/WallDecoratorGeometryFactory.js';
+import {
+    areWallDecoratorExplodedEntriesCorniceRoundedOnly,
+    areWallDecoratorExplodedEntriesCurvedRingOnly,
+    buildWallDecoratorExplodedFaceEntries,
+    getWallDecoratorExplodedDebugColor,
+    separateWallDecoratorExplodedCorniceRoundedFaces,
+    separateWallDecoratorExplodedCurvedRingFaces,
+    separateWallDecoratorExplodedFacesIterative
+} from '../../shared/wall_decorator/WallDecoratorExplodedView.js';
 import { getBeltCourseColorOptions } from '../../../../app/buildings/BeltCourseColor.js';
 import { resolveWallBaseTintHexFromWallBase } from '../../../../app/buildings/WallBaseTintModel.js';
 import {
@@ -18,7 +28,8 @@ import {
     loadWallDecoratorPresetEntry,
     normalizeRibbonPatternId,
     sanitizeWallDecoratorDebuggerState,
-    WALL_DECORATOR_ID
+    WALL_DECORATOR_ID,
+    WALL_DECORATOR_MODE
 } from '../../../../app/buildings/wall_decorators/index.js';
 import { WallDecoratorCatalogLoader } from './WallDecoratorCatalogLoader.js';
 import { WallDecorationMeshDebuggerUI } from './WallDecorationMeshDebuggerUI.js';
@@ -428,29 +439,46 @@ function createCurvedRingGeometry({
         }
     }
 
-    // Remove wall-facing cap triangles while preserving indexed topology for smooth shading.
+    // Remove wall-facing triangles even when the source geometry is non-indexed.
     {
         const pos = geo.getAttribute('position');
-        const index = geo.getIndex();
-        if (pos?.count >= 3 && index?.array?.length >= 3) {
-            const idx = index.array;
-            const kept = [];
-            const eps = 1e-6;
-            for (let i = 0; i + 2 < idx.length; i += 3) {
-                const i0 = Number(idx[i]) || 0;
-                const i1 = Number(idx[i + 1]) || 0;
-                const i2 = Number(idx[i + 2]) || 0;
-                const z0 = Number(pos.getZ(i0)) || 0.0;
-                const z1 = Number(pos.getZ(i1)) || 0.0;
-                const z2 = Number(pos.getZ(i2)) || 0.0;
-                const isWallTri = Math.abs(z0) <= eps && Math.abs(z1) <= eps && Math.abs(z2) <= eps;
-                if (isWallTri) continue;
-                kept.push(i0, i1, i2);
-            }
-            if (kept.length > 0) {
-                geo.setIndex(kept);
-                geo.clearGroups();
-                geo.addGroup(0, kept.length, 0);
+        if (pos?.count >= 3) {
+            geo.computeBoundingBox();
+            const wallPlaneZ = Number(geo.boundingBox?.min?.z);
+            if (Number.isFinite(wallPlaneZ)) {
+                if (!geo.getIndex()) {
+                    const seq = [];
+                    for (let i = 0; i < pos.count; i += 1) seq.push(i);
+                    geo.setIndex(seq);
+                }
+                const index = geo.getIndex();
+                const idx = index?.array ?? null;
+                if (idx?.length >= 3) {
+                    const kept = [];
+                    let removed = 0;
+                    const eps = 1e-6;
+                    for (let i = 0; i + 2 < idx.length; i += 3) {
+                        const i0 = Number(idx[i]) || 0;
+                        const i1 = Number(idx[i + 1]) || 0;
+                        const i2 = Number(idx[i + 2]) || 0;
+                        const z0 = Number(pos.getZ(i0)) || 0.0;
+                        const z1 = Number(pos.getZ(i1)) || 0.0;
+                        const z2 = Number(pos.getZ(i2)) || 0.0;
+                        const isWallTri = Math.abs(z0 - wallPlaneZ) <= eps
+                            && Math.abs(z1 - wallPlaneZ) <= eps
+                            && Math.abs(z2 - wallPlaneZ) <= eps;
+                        if (isWallTri) {
+                            removed += 1;
+                            continue;
+                        }
+                        kept.push(i0, i1, i2);
+                    }
+                    if (removed > 0) {
+                        geo.setIndex(kept);
+                        geo.clearGroups();
+                        if (kept.length > 0) geo.addGroup(0, kept.length, 0);
+                    }
+                }
             }
         }
     }
@@ -693,6 +721,30 @@ function createCorniceBlockGeometry({
                 arr[i + 1] = Math.min(halfHeight, y + lift);
             }
             pos.needsUpdate = true;
+        }
+    }
+
+    // Wall-facing back face is hidden against facade and can be removed.
+    {
+        const index = geo.getIndex();
+        const groups = Array.isArray(geo.groups) ? geo.groups : [];
+        if (index && groups.length > 0) {
+            const kept = [];
+            const arr = index.array;
+            for (const group of groups) {
+                const materialIndex = Number(group?.materialIndex) || 0;
+                if (materialIndex === 5) continue; // -Z face in BoxGeometry
+                const start = Math.max(0, Number(group?.start) || 0);
+                const count = Math.max(0, Number(group?.count) || 0);
+                for (let i = start; i < start + count && i < arr.length; i += 1) {
+                    kept.push(Number(arr[i]) || 0);
+                }
+            }
+            if (kept.length > 0) {
+                geo.setIndex(kept);
+                geo.clearGroups();
+                geo.addGroup(0, kept.length, 0);
+            }
         }
     }
 
@@ -1130,7 +1182,10 @@ export class WallDecorationMeshDebuggerView {
         this._state = sanitizeWallDecoratorDebuggerState(getDefaultWallDecoratorDebuggerState());
         this._showWireframe = false;
         this._showWallMesh = true;
+        this._showThirdWall = true;
+        this._placementThirdWallEnabled = false;
         this._showDummy = true;
+        this._explodedEnabled = false;
         this._wallMaterialId = WALL_MATERIAL_NONE_ID;
         this._beltColorById = new Map(getBeltCourseColorOptions().map((opt) => [String(opt?.id ?? ''), Number(opt?.hex) || 0xffffff]));
 
@@ -1142,6 +1197,8 @@ export class WallDecorationMeshDebuggerView {
         this._dummyBall = null;
         this._decoratorGroup = null;
         this._decoratorMeshes = [];
+        this._explodedGroup = null;
+        this._explodedFaceMeshes = [];
 
         this._raf = 0;
         this._lastT = 0;
@@ -1179,25 +1236,25 @@ export class WallDecorationMeshDebuggerView {
         this._buildStaticScene();
         this._createUi();
 
-        this.controls = createToolCameraController(this.camera, this.canvas, {
+        this.controls = new FirstPersonCameraController(this.camera, this.canvas, {
             uiRoot: this._ui?.root ?? null,
-            minDistance: 0.5,
-            maxDistance: 120.0,
-            rotateSpeed: 0.95,
+            lookSpeed: 0.95,
             panSpeed: 0.95,
             zoomSpeed: 1.15,
-            orbitMouseButtons: [0, 2],
-            minPolarAngle: 0.05,
-            maxPolarAngle: Math.PI / 2.01,
+            minPitchDeg: -89,
+            maxPitchDeg: 89,
             getFocusTarget: () => ({
                 center: { x: 0, y: WALL_SPEC.heightMeters * 0.5, z: -WALL_SPEC.widthMeters * 0.5 },
                 radius: 9.0
-            }),
-            initialPose: {
-                position: { x: 8.5, y: 4.0, z: 8.0 },
-                target: { x: 0, y: 1.6, z: -2.8 }
-            }
+            })
         });
+        this.controls.minDistance = 0.5;
+        this.controls.maxDistance = 120.0;
+        this.controls.setLookAt({
+            position: { x: 8.5, y: 4.0, z: 8.0 },
+            target: { x: 0, y: 1.6, z: -2.8 }
+        });
+        this.controls.setHomeFromCurrent();
 
         this._rebuildDecoratorMeshes();
         this._resize();
@@ -1296,9 +1353,12 @@ export class WallDecorationMeshDebuggerView {
             wallMaterialId: this._wallMaterialId,
             textureOptions,
             colorOptions,
+            placementThirdWallEnabled: this._placementThirdWallEnabled,
             viewMode: this._showWireframe ? 'wireframe' : 'mesh',
             wallMeshVisible: this._showWallMesh,
+            thirdWallEnabled: this._showThirdWall,
             dummyVisible: this._showDummy,
+            explodedEnabled: this._explodedEnabled,
             onChange: (nextState) => this._applyState(nextState, { syncUi: false }),
             onLoadTypeEntry: (decoratorId) => {
                 const next = loadWallDecoratorCatalogEntry(this._state, decoratorId);
@@ -1312,7 +1372,10 @@ export class WallDecorationMeshDebuggerView {
             },
             onViewModeChange: (mode) => this._setWireframeEnabled(mode === 'wireframe'),
             onWallMeshVisibleChange: (visible) => this._setWallMeshVisible(visible),
+            onThirdWallEnabledChange: (enabled) => this._setThirdWallEnabled(enabled),
+            onPlacementThirdWallEnabledChange: (enabled) => this._setPlacementThirdWallEnabled(enabled),
             onDummyVisibleChange: (visible) => this._setDummyVisible(visible),
+            onExplodedChange: (enabled) => this._setExplodedEnabled(enabled),
             onWallMaterialChange: (materialId) => {
                 this._wallMaterialId = String(materialId ?? WALL_MATERIAL_NONE_ID);
                 this._applyWallMaterialToWallMesh();
@@ -1449,23 +1512,47 @@ export class WallDecorationMeshDebuggerView {
 
     _buildWalls() {
         if (!this.scene) return;
+        const oldWall = this._wallMesh?.isMesh ? this._wallMesh : null;
+        if (oldWall) {
+            if (oldWall.parent) oldWall.parent.remove(oldWall);
+            oldWall.geometry?.dispose?.();
+            const mat = oldWall.material;
+            if (Array.isArray(mat)) {
+                for (const m of mat) {
+                    disposeMaterialMaps(m);
+                    m?.dispose?.();
+                }
+            } else if (mat) {
+                disposeMaterialMaps(mat);
+                mat.dispose?.();
+            }
+            this._wallMesh = null;
+        }
+
         const w = WALL_SPEC.widthMeters;
-        const h = WALL_SPEC.heightMeters;
         const d = WALL_SPEC.depthMeters;
+        const h = WALL_SPEC.heightMeters;
         const halfW = w * 0.5;
-        const innerX = halfW - d;
-        const frontZ = 0.0;
-        const innerZ = -d;
+        const leftInnerX = -halfW + d;
+        const rightInnerX = halfW - d;
+        const frontInnerZ = -d;
+        const leftBranchForwardZ = w;
         const backZ = -w;
 
         const shape = new THREE.Shape();
-        // Keep the outside corner at 90deg; the 45deg wedge is the internal join from corner to offset intersection.
-        shape.moveTo(-halfW, -frontZ);
-        shape.lineTo(halfW, -frontZ);
+        // Axis-aligned N-like footprint: legacy front+right branch plus optional added left branch.
+        if (this._showThirdWall) {
+            shape.moveTo(-halfW, -leftBranchForwardZ);
+            shape.lineTo(leftInnerX, -leftBranchForwardZ);
+            shape.lineTo(leftInnerX, 0.0);
+        } else {
+            shape.moveTo(-halfW, 0.0);
+        }
+        shape.lineTo(halfW, 0.0);
         shape.lineTo(halfW, -backZ);
-        shape.lineTo(innerX, -backZ);
-        shape.lineTo(innerX, -innerZ);
-        shape.lineTo(-halfW, -innerZ);
+        shape.lineTo(rightInnerX, -backZ);
+        shape.lineTo(rightInnerX, -frontInnerZ);
+        shape.lineTo(-halfW, -frontInnerZ);
         shape.closePath();
 
         const wallGeo = new THREE.ExtrudeGeometry(shape, {
@@ -1485,7 +1572,7 @@ export class WallDecorationMeshDebuggerView {
         const wallMesh = new THREE.Mesh(wallGeo, wallMat);
         wallMesh.castShadow = true;
         wallMesh.receiveShadow = true;
-        wallMesh.name = 'wall_corner';
+        wallMesh.name = 'wall_n_pattern';
         this.scene.add(wallMesh);
         this._wallMesh = wallMesh;
 
@@ -1502,9 +1589,10 @@ export class WallDecorationMeshDebuggerView {
             state: this._state,
             wallSpec: WALL_SPEC
         });
-        if (!Array.isArray(specs) || !specs.length) return;
+        const expandedSpecs = this._expandSpecsForThirdWallPlacement(specs);
+        if (!Array.isArray(expandedSpecs) || !expandedSpecs.length) return;
 
-        for (const spec of specs) {
+        for (const spec of expandedSpecs) {
             const faceId = String(spec?.faceId ?? '').toLowerCase();
             const role = String(spec?.role ?? '').toLowerCase();
             const widthMeters = clamp(spec?.widthMeters, 0.01, 100.0, 1.0);
@@ -1514,173 +1602,13 @@ export class WallDecorationMeshDebuggerView {
             const centerV = Number(spec?.centerV) || 0.0;
             const outsetMeters = clamp(spec?.outsetMeters ?? spec?.surfaceOffsetMeters, 0.0, 10.0, 0.0);
             const yawRadians = clamp(spec?.yawDegrees, -180.0, 180.0, 0.0) * Math.PI / 180.0;
-            const geometryKind = String(spec?.geometryKind ?? '').trim().toLowerCase();
-            let geo = null;
-            let surfaceWidthMeters = widthMeters;
-            let surfaceHeightMeters = heightMeters;
-            let placementDepthMeters = depthMeters;
-
-            if (geometryKind === 'flat_panel') {
-                geo = new THREE.PlaneGeometry(widthMeters, heightMeters);
-                placementDepthMeters = 0.0;
-            } else if (geometryKind === 'flat_panel_side_cap') {
-                const sideCap = createFlatSideCapGeometry({
-                    spanDepthMeters: widthMeters,
-                    spanHeightMeters: heightMeters,
-                    wallEdgeTopYOffsetMeters: clamp(spec?.wallEdgeTopYOffsetMeters, -4.0, 4.0, 0.0),
-                    wallEdgeBottomYOffsetMeters: clamp(spec?.wallEdgeBottomYOffsetMeters, -4.0, 4.0, 0.0),
-                    wallEdgeFlip: spec?.wallEdgeFlip === true
-                });
-                geo = sideCap.geometry;
-                surfaceWidthMeters = sideCap.widthMeters;
-                surfaceHeightMeters = sideCap.heightMeters;
-                placementDepthMeters = 0.0;
-            } else if (geometryKind === 'flat_panel_cap') {
-                const capSide = String(spec?.capSide ?? '').trim().toLowerCase();
-                const cap = createFlatCapGeometry({
-                    spanWidthMeters: widthMeters,
-                    capDepthMeters: depthMeters,
-                    cornerBridgeStartMeters: clamp(spec?.cornerBridgeStartMeters, 0.0, 10.0, 0.0),
-                    cornerBridgeEndMeters: clamp(spec?.cornerBridgeEndMeters, 0.0, 10.0, 0.0),
-                    faceDown: capSide === 'bottom',
-                    wallEdgeYOffsetMeters: clamp(spec?.wallEdgeYOffsetMeters, -4.0, 4.0, 0.0)
-                });
-                geo = cap.geometry;
-                surfaceWidthMeters = cap.widthMeters;
-                surfaceHeightMeters = cap.heightMeters;
-                placementDepthMeters = cap.depthMeters;
-            } else if (geometryKind === 'curved_ring' || geometryKind === 'half_dome') {
-                const legacyMiter = String(spec?.cornerMiter45 ?? '').trim().toLowerCase();
-                const ring = createCurvedRingGeometry({
-                    segmentWidthMeters: widthMeters,
-                    diameterMeters: heightMeters,
-                    longitudinalSegments: Math.max(1, Math.floor(Number(spec?.longitudinalSegments) || 1)),
-                    miterStart45: spec?.miterStart45 === true || legacyMiter === 'negative_u',
-                    miterEnd45: spec?.miterEnd45 === true || legacyMiter === 'positive_u'
-                });
-                geo = ring.geometry;
-                surfaceWidthMeters = ring.widthMeters;
-                surfaceHeightMeters = ring.heightMeters;
-                placementDepthMeters = ring.depthMeters;
-            } else if (geometryKind === 'edge_brick_chain_course') {
-                const mitered = createMiteredBoxGeometry({
-                    widthMeters,
-                    heightMeters,
-                    depthMeters,
-                    miterStyle: 'outward',
-                    removeTopFace: spec?.edgeChainRemoveTopFace !== false,
-                    removeBottomFace: spec?.edgeChainRemoveBottomFace !== false,
-                    removeStartFace: spec?.edgeChainRemoveStartFace === true,
-                    removeEndFace: spec?.edgeChainRemoveEndFace === true,
-                    removeOuterFace: spec?.edgeChainRemoveOuterFace === true,
-                    removeWallFace: spec?.edgeChainRemoveWallFace === true,
-                    miterStart45: spec?.miterStart45 === true,
-                    miterEnd45: spec?.miterEnd45 === true
-                });
-                geo = mitered.geometry;
-                surfaceWidthMeters = mitered.widthMeters;
-                surfaceHeightMeters = mitered.heightMeters;
-                placementDepthMeters = mitered.depthMeters;
-            } else if (geometryKind === 'angled_support_profile') {
-                const profile = createAngledSupportProfileGeometry({
-                    segmentWidthMeters: widthMeters,
-                    offsetMeters: clamp(spec?.profileOffsetMeters ?? depthMeters, 0.005, 10.0, depthMeters),
-                    shiftMeters: clamp(spec?.profileShiftMeters, -10.0, 10.0, 0.0),
-                    returnHeightMeters: clamp(spec?.profileReturnHeightMeters ?? heightMeters, 0.01, 10.0, heightMeters),
-                    miterTopAngleDeg: clamp(spec?.miterTopAngleDeg, 10.0, 80.0, 45.0),
-                    miterBottomAngleDeg: clamp(spec?.miterBottomAngleDeg, 10.0, 80.0, 45.0),
-                    miterStart45: spec?.miterStart45 === true,
-                    miterEnd45: spec?.miterEnd45 === true
-                });
-                geo = profile.geometry;
-                surfaceWidthMeters = profile.widthMeters;
-                surfaceHeightMeters = profile.heightMeters;
-                placementDepthMeters = profile.depthMeters;
-            } else if (geometryKind === 'cornice_block') {
-                const corniceBlock = createCorniceBlockGeometry({
-                    widthMeters,
-                    heightMeters,
-                    depthMeters,
-                    frontBottomLiftMeters: clamp(spec?.corniceFrontBottomLiftMeters, 0.0, heightMeters, 0.0)
-                });
-                geo = corniceBlock.geometry;
-                surfaceWidthMeters = corniceBlock.widthMeters;
-                surfaceHeightMeters = corniceBlock.heightMeters;
-                placementDepthMeters = corniceBlock.depthMeters;
-            } else if (geometryKind === 'cornice_rounded_block') {
-                const corniceRounded = createCorniceRoundedGeometry({
-                    widthMeters,
-                    heightMeters,
-                    depthMeters,
-                    curvature: normalizeCorniceRoundedCurvature(spec?.corniceRoundedCurvature),
-                    longitudinalSegments: Math.max(1, Math.floor(Number(spec?.longitudinalSegments) || 1))
-                });
-                geo = corniceRounded.geometry;
-                surfaceWidthMeters = corniceRounded.widthMeters;
-                surfaceHeightMeters = corniceRounded.heightMeters;
-                placementDepthMeters = corniceRounded.depthMeters;
-            } else if (geometryKind === 'awning_slanted_plane') {
-                const awningSlanted = createAwningSlantedPlaneGeometry({
-                    spanWidthMeters: widthMeters,
-                    projectionMeters: clamp(spec?.awningProjectionMeters ?? depthMeters, 0.05, 10.0, depthMeters),
-                    slopeDropMeters: clamp(spec?.awningSlopeDropMeters, 0.0, 10.0, 0.0)
-                });
-                geo = awningSlanted.geometry;
-                surfaceWidthMeters = awningSlanted.widthMeters;
-                surfaceHeightMeters = awningSlanted.heightMeters;
-                placementDepthMeters = awningSlanted.depthMeters;
-            } else if (geometryKind === 'awning_front_quad') {
-                const awningFront = createAwningFrontQuadGeometry({
-                    spanWidthMeters: widthMeters,
-                    faceHeightMeters: heightMeters
-                });
-                geo = awningFront.geometry;
-                surfaceWidthMeters = awningFront.widthMeters;
-                surfaceHeightMeters = awningFront.heightMeters;
-                placementDepthMeters = awningFront.depthMeters;
-            } else if (geometryKind === 'awning_support_rod') {
-                const rodStartU = Number.isFinite(Number(spec?.rodStartU)) ? Number(spec.rodStartU) : centerU;
-                const rodStartV = Number.isFinite(Number(spec?.rodStartV)) ? Number(spec.rodStartV) : centerV;
-                const rodStartOutsetMeters = Number.isFinite(Number(spec?.rodStartOutsetMeters))
-                    ? Number(spec.rodStartOutsetMeters)
-                    : outsetMeters;
-                const rodEndU = Number.isFinite(Number(spec?.rodEndU)) ? Number(spec.rodEndU) : centerU;
-                const rodEndV = Number.isFinite(Number(spec?.rodEndV)) ? Number(spec.rodEndV) : centerV;
-                const rodEndOutsetMeters = Number.isFinite(Number(spec?.rodEndOutsetMeters))
-                    ? Number(spec.rodEndOutsetMeters)
-                    : outsetMeters;
-                const awningRod = createAwningSupportRodGeometry({
-                    startU: rodStartU - centerU,
-                    startV: rodStartV - centerV,
-                    startOutsetMeters: rodStartOutsetMeters - outsetMeters,
-                    endU: rodEndU - centerU,
-                    endV: rodEndV - centerV,
-                    endOutsetMeters: rodEndOutsetMeters - outsetMeters,
-                    radiusMeters: clamp(spec?.rodRadiusMeters, 0.001, 0.5, 0.015),
-                    radialSegments: 10
-                });
-                geo = awningRod.geometry;
-                surfaceWidthMeters = awningRod.widthMeters;
-                surfaceHeightMeters = awningRod.heightMeters;
-                placementDepthMeters = 0.0;
-            } else {
-                const wantsGenericMiter = spec?.miterStart45 === true || spec?.miterEnd45 === true;
-                if (wantsGenericMiter) {
-                    const mitered = createMiteredBoxGeometry({
-                        widthMeters,
-                        heightMeters,
-                        depthMeters,
-                        miterStart45: spec?.miterStart45 === true,
-                        miterEnd45: spec?.miterEnd45 === true
-                    });
-                    geo = mitered.geometry;
-                    surfaceWidthMeters = mitered.widthMeters;
-                    surfaceHeightMeters = mitered.heightMeters;
-                    placementDepthMeters = mitered.depthMeters;
-                } else {
-                    geo = new THREE.BoxGeometry(widthMeters, heightMeters, depthMeters);
-                }
-            }
+            const built = createWallDecoratorGeometryFromSpec(spec, { fallbackToBox: true });
+            const geometryKind = String(built?.geometryKind ?? spec?.geometryKind ?? '').trim().toLowerCase();
+            const geo = built?.geometry?.isBufferGeometry ? built.geometry : null;
+            let surfaceWidthMeters = clamp(built?.surfaceWidthMeters, 0.01, 100.0, widthMeters);
+            let surfaceHeightMeters = clamp(built?.surfaceHeightMeters, 0.01, 100.0, heightMeters);
+            let placementDepthMeters = clamp(built?.placementDepthMeters, 0.0, 10.0, depthMeters);
+            if (!geo) continue;
             const mat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 roughness: 0.85,
@@ -1697,6 +1625,13 @@ export class WallDecorationMeshDebuggerView {
                     WALL_SPEC.widthMeters * 0.5 + outsetMeters + placementDepthMeters * 0.5,
                     centerV + WALL_SPEC.heightMeters * 0.5,
                     -centerU
+                );
+            } else if (faceId === 'left') {
+                mesh.rotation.y = Math.PI * 0.5 + yawRadians;
+                mesh.position.set(
+                    -WALL_SPEC.widthMeters * 0.5 + WALL_SPEC.depthMeters + outsetMeters + placementDepthMeters * 0.5,
+                    centerV + WALL_SPEC.heightMeters * 0.5,
+                    centerU
                 );
             } else {
                 mesh.rotation.y = yawRadians;
@@ -1726,9 +1661,146 @@ export class WallDecorationMeshDebuggerView {
             this._decoratorGroup.add(mesh);
             this._decoratorMeshes.push(mesh);
         }
+        this._syncDecoratorMeshesVisibility();
+        this._rebuildExplodedFaces();
+        this._syncWireframeVisuals();
+    }
+
+    _expandSpecsForThirdWallPlacement(specs) {
+        const source = Array.isArray(specs) ? specs : [];
+        if (!source.length) return source;
+        if (!this._placementThirdWallEnabled || !this._showThirdWall) return source;
+
+        const modeRaw = String(this._state?.mode ?? '').trim().toLowerCase();
+        const isCornerMode = modeRaw === String(WALL_DECORATOR_MODE.CORNER).trim().toLowerCase();
+        const resolvedSource = isCornerMode
+            ? this._resolveClosedAngleCornerSourceSpecs(source)
+            : source;
+        const sourceFaceId = isCornerMode ? 'right' : 'front';
+        const sourceFaceSpecs = resolvedSource.filter((spec) => String(spec?.faceId ?? '').trim().toLowerCase() === sourceFaceId);
+        const faceUShift = isCornerMode ? 0.0 : this._resolveThirdWallFaceUShift(sourceFaceSpecs);
+        const out = resolvedSource.slice();
+
+        for (const spec of sourceFaceSpecs) {
+            if (isCornerMode && this._isThirdWallCornerSideWallSpec(spec)) continue;
+            const clone = { ...spec };
+            clone.faceId = 'left';
+            clone.role = this._remapRoleForLeftFace(spec?.role, sourceFaceId);
+            if (!isCornerMode) {
+                clone.centerU = (Number(spec?.centerU) || 0.0) + faceUShift;
+            }
+            out.push(clone);
+        }
+        return out;
+    }
+
+    _resolveClosedAngleCornerSourceSpecs(specs) {
+        const source = Array.isArray(specs) ? specs : [];
+        if (!source.length) return source;
+
+        const cornerBridgeMeters = this._resolveCornerBridgeMetersFromFaceSpecs(source, 'right');
+        if (cornerBridgeMeters <= 1e-6) return source;
+
+        const out = [];
+        for (const spec of source) {
+            const faceId = String(spec?.faceId ?? '').trim().toLowerCase();
+            if (faceId !== 'front') {
+                out.push(spec);
+                continue;
+            }
+
+            const role = String(spec?.role ?? '').trim().toLowerCase();
+            const geometryKind = String(spec?.geometryKind ?? '').trim().toLowerCase();
+            if (role.includes('_cap_side_')) continue;
+
+            const patched = { ...spec };
+            if (geometryKind === 'flat_panel' || geometryKind === 'angled_support_profile') {
+                const widthMeters = clamp(spec?.widthMeters, 0.01, 100.0, 0.01);
+                const centerU = Number(spec?.centerU) || 0.0;
+                patched.widthMeters = widthMeters + cornerBridgeMeters;
+                patched.centerU = centerU - cornerBridgeMeters * 0.5;
+            } else if (geometryKind === 'flat_panel_cap') {
+                patched.cornerBridgeStartMeters = Math.max(
+                    clamp(spec?.cornerBridgeStartMeters, 0.0, 10.0, 0.0),
+                    cornerBridgeMeters
+                );
+            } else if (geometryKind === 'curved_ring' || geometryKind === 'half_dome') {
+                patched.miterStart45 = true;
+            }
+            out.push(patched);
+        }
+        return out;
+    }
+
+    _resolveCornerBridgeMetersFromFaceSpecs(specs, faceId = 'right') {
+        const source = Array.isArray(specs) ? specs : [];
+        const targetFace = String(faceId ?? '').trim().toLowerCase();
+        let bridgeMeters = 0.0;
+        for (const spec of source) {
+            const specFaceId = String(spec?.faceId ?? '').trim().toLowerCase();
+            if (specFaceId !== targetFace) continue;
+            const geometryKind = String(spec?.geometryKind ?? '').trim().toLowerCase();
+            if (geometryKind === 'flat_panel' || geometryKind === 'angled_support_profile') {
+                const widthMeters = clamp(spec?.widthMeters, 0.0, 100.0, 0.0);
+                const centerU = Number(spec?.centerU) || 0.0;
+                const minU = centerU - widthMeters * 0.5;
+                bridgeMeters = Math.max(bridgeMeters, Math.max(0.0, -minU));
+            } else if (geometryKind === 'flat_panel_cap') {
+                bridgeMeters = Math.max(
+                    bridgeMeters,
+                    clamp(spec?.cornerBridgeStartMeters, 0.0, 10.0, 0.0)
+                );
+            } else if (geometryKind === 'curved_ring' || geometryKind === 'half_dome') {
+                if (spec?.miterStart45 === true) {
+                    const depthMeters = clamp(spec?.depthMeters, 0.0, 10.0, 0.0);
+                    bridgeMeters = Math.max(bridgeMeters, depthMeters);
+                }
+            }
+        }
+        return bridgeMeters;
+    }
+
+    _resolveThirdWallFaceUShift(sourceFaceSpecs) {
+        const list = Array.isArray(sourceFaceSpecs) ? sourceFaceSpecs : [];
+        if (!list.length) return 0.0;
+        let minU = Number.POSITIVE_INFINITY;
+        let hasValue = false;
+        for (const spec of list) {
+            const role = String(spec?.role ?? '').trim().toLowerCase();
+            const geometryKind = String(spec?.geometryKind ?? '').trim().toLowerCase();
+            const isSideCap = geometryKind === 'flat_panel_side_cap'
+                || role.includes('_cap_side_')
+                || role.endsWith('_closure_start')
+                || role.endsWith('_closure_end');
+            if (isSideCap) continue;
+            const widthMeters = clamp(spec?.widthMeters, 0.0, 1000.0, 0.0);
+            const centerU = Number(spec?.centerU) || 0.0;
+            minU = Math.min(minU, centerU - widthMeters * 0.5);
+            hasValue = true;
+        }
+        if (!hasValue) return 0.0;
+        return -minU;
+    }
+
+    _isThirdWallCornerSideWallSpec(spec) {
+        const role = String(spec?.role ?? '').trim().toLowerCase();
+        if (role.includes('_cap_side_start')) return true;
+        if (role.endsWith('_closure_start')) return true;
+        return false;
+    }
+
+    _remapRoleForLeftFace(role, sourceFaceId) {
+        const raw = String(role ?? '').trim();
+        if (!raw) return 'left_decorator';
+        const token = sourceFaceId === 'right' ? 'right' : 'front';
+        const re = new RegExp(`(^|_)${token}(?=_|$)`, 'g');
+        const replaced = raw.replace(re, '$1left');
+        if (replaced !== raw) return replaced;
+        return `left_${raw}`;
     }
 
     _destroyDecoratorMeshes() {
+        this._destroyExplodedFaces();
         for (const mesh of this._decoratorMeshes) {
             if (mesh?.parent) mesh.parent.remove(mesh);
             mesh?.geometry?.dispose?.();
@@ -1748,6 +1820,125 @@ export class WallDecorationMeshDebuggerView {
 
     _reapplyDecoratorMaterials() {
         for (const mesh of this._decoratorMeshes) this._applyStateMaterialToMesh(mesh);
+    }
+
+    _syncDecoratorMeshesVisibility() {
+        const visible = !this._explodedEnabled;
+        for (const mesh of this._decoratorMeshes) {
+            if (!mesh?.isMesh) continue;
+            mesh.visible = visible;
+        }
+    }
+
+    _setExplodedEnabled(enabled) {
+        const next = !!enabled;
+        this._ui?.setExplodedEnabled?.(next);
+        if (next === this._explodedEnabled) {
+            this._syncWallMeshVisibility();
+            this._syncDecoratorMeshesVisibility();
+            if (next) this._rebuildExplodedFaces();
+            else this._destroyExplodedFaces();
+            return;
+        }
+        this._explodedEnabled = next;
+        this._syncWallMeshVisibility();
+        this._syncDecoratorMeshesVisibility();
+        if (next) this._rebuildExplodedFaces();
+        else this._destroyExplodedFaces();
+        this._syncWireframeVisuals();
+    }
+
+    _destroyExplodedFaces() {
+        if (Array.isArray(this._explodedFaceMeshes)) {
+            for (const mesh of this._explodedFaceMeshes) {
+                if (mesh?.parent) mesh.parent.remove(mesh);
+                mesh?.geometry?.dispose?.();
+                const mat = mesh?.material;
+                if (Array.isArray(mat)) {
+                    for (const m of mat) {
+                        disposeMaterialMaps(m);
+                        m?.dispose?.();
+                    }
+                } else if (mat) {
+                    disposeMaterialMaps(mat);
+                    mat.dispose?.();
+                }
+            }
+            this._explodedFaceMeshes.length = 0;
+        }
+        if (this._explodedGroup?.parent) this._explodedGroup.parent.remove(this._explodedGroup);
+        this._explodedGroup = null;
+    }
+
+    _buildExplodedFaceEntries() {
+        return buildWallDecoratorExplodedFaceEntries(this._decoratorMeshes, {
+            wireframe: !!this._showWireframe,
+            colorResolver: getWallDecoratorExplodedDebugColor
+        });
+    }
+
+    _isCurvedRingDecoratorActive() {
+        return String(this._state?.decoratorId ?? '').trim().toLowerCase() === WALL_DECORATOR_ID.HALF_DOME;
+    }
+
+    _isCorniceRoundedDecoratorActive() {
+        return String(this._state?.decoratorId ?? '').trim().toLowerCase() === WALL_DECORATOR_ID.CORNICE_ROUNDED;
+    }
+
+    _shouldUseCurvedRingExplode(entries) {
+        const list = Array.isArray(entries) ? entries : [];
+        if (!list.length || !this._isCurvedRingDecoratorActive()) return false;
+        return areWallDecoratorExplodedEntriesCurvedRingOnly(list);
+    }
+
+    _shouldUseCorniceRoundedExplode(entries) {
+        const list = Array.isArray(entries) ? entries : [];
+        if (!list.length || !this._isCorniceRoundedDecoratorActive()) return false;
+        return areWallDecoratorExplodedEntriesCorniceRoundedOnly(list);
+    }
+
+    _separateExplodedCurvedRingFaces(entries) {
+        separateWallDecoratorExplodedCurvedRingFaces(entries);
+    }
+
+    _separateExplodedCorniceRoundedFaces(entries) {
+        separateWallDecoratorExplodedCorniceRoundedFaces(entries);
+    }
+
+    _separateExplodedFacesIterative(entries) {
+        separateWallDecoratorExplodedFacesIterative(entries);
+    }
+
+    _rebuildExplodedFaces() {
+        this._destroyExplodedFaces();
+        if (!this._explodedEnabled || !this.scene) return;
+        const entries = this._buildExplodedFaceEntries();
+        if (!entries.length) return;
+
+        if (this._shouldUseCurvedRingExplode(entries)) {
+            this._separateExplodedCurvedRingFaces(entries);
+        } else if (this._shouldUseCorniceRoundedExplode(entries)) {
+            this._separateExplodedCorniceRoundedFaces(entries);
+        } else {
+            this._separateExplodedFacesIterative(entries);
+        }
+
+        const group = new THREE.Group();
+        group.name = 'wall_decorator_exploded_faces';
+        for (const entry of entries) {
+            const mesh = entry?.mesh?.isMesh ? entry.mesh : null;
+            if (!mesh) continue;
+            mesh.position.copy(entry.centroid);
+            group.add(mesh);
+            this._explodedFaceMeshes.push(mesh);
+        }
+        if (!group.children.length) {
+            group.removeFromParent();
+            this._explodedFaceMeshes.length = 0;
+            return;
+        }
+        this.scene.add(group);
+        this._explodedGroup = group;
     }
 
     _isRibbonDecoratorActive() {
@@ -1807,6 +1998,7 @@ export class WallDecorationMeshDebuggerView {
         this._setMeshWireframe(this._wallMesh, enabled);
         this._setMeshWireframe(this._dummyBall, enabled);
         for (const mesh of this._decoratorMeshes) this._setMeshWireframe(mesh, enabled);
+        for (const mesh of this._explodedFaceMeshes) this._setMeshWireframe(mesh, enabled);
     }
 
     _setWireframeEnabled(enabled) {
@@ -1818,7 +2010,7 @@ export class WallDecorationMeshDebuggerView {
 
     _syncWallMeshVisibility() {
         if (!this._wallMesh) return;
-        this._wallMesh.visible = !!this._showWallMesh;
+        this._wallMesh.visible = !!this._showWallMesh && !this._explodedEnabled;
     }
 
     _setWallMeshVisible(enabled) {
@@ -1829,6 +2021,24 @@ export class WallDecorationMeshDebuggerView {
         }
         this._showWallMesh = next;
         this._syncWallMeshVisibility();
+    }
+
+    _setThirdWallEnabled(enabled) {
+        const next = !!enabled;
+        this._ui?.setThirdWallEnabled?.(next);
+        if (next === this._showThirdWall) return;
+        this._showThirdWall = next;
+        this._buildWalls();
+        this._positionDummyBall();
+        this._rebuildDecoratorMeshes();
+    }
+
+    _setPlacementThirdWallEnabled(enabled) {
+        const next = !!enabled;
+        this._ui?.setPlacementThirdWallEnabled?.(next);
+        if (next === this._placementThirdWallEnabled) return;
+        this._placementThirdWallEnabled = next;
+        this._rebuildDecoratorMeshes();
     }
 
     _syncDummyVisibility() {

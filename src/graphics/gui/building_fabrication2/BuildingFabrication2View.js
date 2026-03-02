@@ -801,6 +801,7 @@ export class BuildingFabrication2View {
         this._renderSkyEnabled = true;
         this._showDummyEnabled = false;
         this._renderSlabEnabled = false;
+        this._explodedDecorationsEnabled = false;
         this._rulerEnabled = false;
         this._layoutAdjustEnabled = false;
         this._rulerPointA = null;
@@ -864,13 +865,15 @@ export class BuildingFabrication2View {
         this._setHideFaceMarkEnabled(false);
         this._setShowDummyEnabled(false);
         this._setRenderSlabEnabled(true);
+        this._setExplodedDecorationsEnabled(false);
         this._setRulerEnabled(false);
         this._setLayoutAdjustEnabled(false);
         this.ui.setViewToggles({
             renderSkyEnabled: true,
             hideFaceMarkEnabled: false,
             showDummyEnabled: false,
-            renderSlabEnabled: true
+            renderSlabEnabled: true,
+            explodedDecorationsEnabled: false
         });
         this.ui.setRulerEnabled(false);
         this.ui.setLayoutAdjustEnabled(false);
@@ -899,6 +902,7 @@ export class BuildingFabrication2View {
         this.ui.onHideFaceMarkChange = (enabled) => this._setHideFaceMarkEnabled(enabled);
         this.ui.onShowDummyChange = (enabled) => this._setShowDummyEnabled(enabled);
         this.ui.onRenderSlabChange = (enabled) => this._setRenderSlabEnabled(enabled);
+        this.ui.onExplodedDecorationsChange = (enabled) => this._setExplodedDecorationsEnabled(enabled);
         this.ui.onRulerToggle = (enabled) => this._setRulerEnabled(enabled);
         this.ui.onAdjustLayoutToggle = (enabled) => this._setLayoutAdjustEnabled(enabled);
         this.ui.onSelectCatalogEntry = (configId) => this._loadConfigFromCatalog(configId);
@@ -966,8 +970,8 @@ export class BuildingFabrication2View {
         this.ui.onApplyDecorationSetFloorIntervalPreset = (setId, presetId) => this._applyDecorationSetFloorIntervalPreset(setId, presetId);
         this.ui.onAddDecorationEntry = (setId) => this._addDecorationEntry(setId);
         this.ui.onDeleteDecorationEntry = (setId, decorationId) => this._deleteDecorationEntry(setId, decorationId);
-        this.ui.onSetDecorationEntrySpanField = (setId, decorationId, field, value) => {
-            this._setDecorationEntrySpanField(setId, decorationId, field, value);
+        this.ui.onSetDecorationEntrySpanField = (setId, decorationId, field, value, options = null) => {
+            this._setDecorationEntrySpanField(setId, decorationId, field, value, options);
         };
         this.ui.onSetDecorationEntryType = (setId, decorationId, decoratorId) => {
             this._setDecorationEntryType(setId, decorationId, decoratorId);
@@ -978,8 +982,8 @@ export class BuildingFabrication2View {
         this.ui.onApplyDecorationEntryPresetGroup = (setId, decorationId, groupId, presetId) => {
             this._applyDecorationEntryPresetGroup(setId, decorationId, groupId, presetId);
         };
-        this.ui.onSetDecorationEntryProperty = (setId, decorationId, propertyId, value) => {
-            this._setDecorationEntryProperty(setId, decorationId, propertyId, value);
+        this.ui.onSetDecorationEntryProperty = (setId, decorationId, propertyId, value, options = null) => {
+            this._setDecorationEntryProperty(setId, decorationId, propertyId, value, options);
         };
         this.ui.onSetDecorationEntryMaterialKind = (setId, decorationId, kind) => {
             this._setDecorationEntryMaterialKind(setId, decorationId, kind);
@@ -987,11 +991,11 @@ export class BuildingFabrication2View {
         this.ui.onSetDecorationEntryMaterialId = (setId, decorationId, materialId) => {
             this._setDecorationEntryMaterialId(setId, decorationId, materialId);
         };
-        this.ui.onSetDecorationEntryWallBaseField = (setId, decorationId, field, value) => {
-            this._setDecorationEntryWallBaseField(setId, decorationId, field, value);
+        this.ui.onSetDecorationEntryWallBaseField = (setId, decorationId, field, value, options = null) => {
+            this._setDecorationEntryWallBaseField(setId, decorationId, field, value, options);
         };
-        this.ui.onSetDecorationEntryTilingField = (setId, decorationId, field, value) => {
-            this._setDecorationEntryTilingField(setId, decorationId, field, value);
+        this.ui.onSetDecorationEntryTilingField = (setId, decorationId, field, value, options = null) => {
+            this._setDecorationEntryTilingField(setId, decorationId, field, value, options);
         };
 
         const canvas = this.engine?.canvas ?? null;
@@ -1025,6 +1029,7 @@ export class BuildingFabrication2View {
         this._hideFaceMarkEnabled = false;
         this._showDummyEnabled = false;
         this._renderSlabEnabled = false;
+        this._explodedDecorationsEnabled = false;
         this._rulerEnabled = false;
         this._layoutAdjustEnabled = false;
         this._rulerPointA = null;
@@ -1040,6 +1045,7 @@ export class BuildingFabrication2View {
         this.scene?.setRenderSky?.(true);
         this.scene?.setShowDummy?.(false);
         this.scene?.setRenderSlab?.(false);
+        this.scene?.setExplodedDecorationsEnabled?.(false);
         this.scene?.setRulerSegment?.(null, null);
         this.scene?.setLayoutEditState?.({ enabled: false, loop: null, hoverFaceId: null, hoverVertexIndex: null });
         this.scene?.clearHoveredBay?.();
@@ -1062,6 +1068,7 @@ export class BuildingFabrication2View {
         this.ui.onHideFaceMarkChange = null;
         this.ui.onShowDummyChange = null;
         this.ui.onRenderSlabChange = null;
+        this.ui.onExplodedDecorationsChange = null;
         this.ui.onRulerToggle = null;
         this.ui.onAdjustLayoutToggle = null;
         this.ui.onSelectCatalogEntry = null;
@@ -1154,6 +1161,7 @@ export class BuildingFabrication2View {
                 this._pendingRebuildPreserveCamera = true;
                 this._pendingRebuildEarliestAtMs = 0;
                 if (this._currentConfig) {
+                    this._refreshDecorationAutoCornerMetadata();
                     const loaded = this.scene.loadBuildingConfig(this._currentConfig, { preserveCamera });
                     if (loaded) this._perfBar?.requestUpdate?.();
                 }
@@ -1233,7 +1241,8 @@ export class BuildingFabrication2View {
             renderSkyEnabled: this._renderSkyEnabled,
             hideFaceMarkEnabled: this._hideFaceMarkEnabled,
             showDummyEnabled: this._showDummyEnabled,
-            renderSlabEnabled: this._renderSlabEnabled
+            renderSlabEnabled: this._renderSlabEnabled,
+            explodedDecorationsEnabled: this._explodedDecorationsEnabled
         });
 
         this.ui.setLayers(layerList);
@@ -1358,22 +1367,134 @@ export class BuildingFabrication2View {
         return out;
     }
 
-    _collectDecorationBayOptionsForLayer(layerId) {
+    _resolveDecorationLayerFaceTopology(layerId) {
         const id = typeof layerId === 'string' ? layerId : '';
-        if (!id) return [];
         const cfg = this._currentConfig;
+        const layers = Array.isArray(cfg?.layers) ? cfg.layers : [];
+        const layer = layers.find((entry) => entry?.type === 'floor' && entry?.id === id) ?? null;
         const layerFacades = cfg?.facades?.[id] && typeof cfg.facades[id] === 'object'
             ? cfg.facades[id]
             : null;
-        if (!layerFacades) return [];
+        const linking = normalizeFaceLinking(layer?.faceLinking ?? null);
+        const links = linking?.links ?? null;
+        const reverseByFace = linking?.reverseByFace ?? null;
+
+        const resolveMasterFaceId = (faceId) => {
+            if (!isFaceId(faceId)) return null;
+            const visited = new Set();
+            let cur = faceId;
+            for (let i = 0; i < 8; i += 1) {
+                if (visited.has(cur)) break;
+                visited.add(cur);
+                const next = links?.[cur] ?? null;
+                if (!isFaceId(next) || next === cur) break;
+                cur = next;
+            }
+            return cur;
+        };
+
+        const masterByFace = new Map();
+        const facesByMasterFace = new Map();
+        for (const faceId of FACE_IDS) {
+            const masterFaceId = resolveMasterFaceId(faceId) ?? faceId;
+            masterByFace.set(faceId, masterFaceId);
+            const list = facesByMasterFace.get(masterFaceId) ?? [];
+            list.push(faceId);
+            facesByMasterFace.set(masterFaceId, list);
+        }
+
+        const baysByMasterFace = new Map();
+        const ensureBaysForMasterFace = (masterFaceId) => {
+            if (!isFaceId(masterFaceId)) return { bays: [], bayById: new Map() };
+            if (baysByMasterFace.has(masterFaceId)) return baysByMasterFace.get(masterFaceId);
+            const facade = layerFacades?.[masterFaceId] && typeof layerFacades[masterFaceId] === 'object'
+                ? layerFacades[masterFaceId]
+                : null;
+            const rawBays = Array.isArray(facade?.layout?.bays?.items) ? facade.layout.bays.items : [];
+            const bays = [];
+            const bayById = new Map();
+            for (const entry of rawBays) {
+                const bay = entry && typeof entry === 'object' ? entry : null;
+                const bayId = typeof bay?.id === 'string' ? bay.id : '';
+                if (!bayId || bayById.has(bayId)) continue;
+                bays.push(bay);
+                bayById.set(bayId, bay);
+            }
+            const resolved = { bays, bayById };
+            baysByMasterFace.set(masterFaceId, resolved);
+            return resolved;
+        };
+
+        const rootBayIdByMasterFaceAndBayId = new Map();
+        const resolveRootBayId = (faceId, bayId) => {
+            const localFaceId = isFaceId(faceId) ? faceId : null;
+            const sourceBayId = typeof bayId === 'string' ? bayId : '';
+            if (!localFaceId || !sourceBayId) return '';
+            const masterFaceId = masterByFace.get(localFaceId) ?? localFaceId;
+            const key = `${masterFaceId}:${sourceBayId}`;
+            if (rootBayIdByMasterFaceAndBayId.has(key)) return rootBayIdByMasterFaceAndBayId.get(key);
+            const byMaster = ensureBaysForMasterFace(masterFaceId);
+            let currentId = sourceBayId;
+            let current = byMaster.bayById.get(currentId) ?? null;
+            if (!current) {
+                rootBayIdByMasterFaceAndBayId.set(key, '');
+                return '';
+            }
+            const visited = new Set([currentId]);
+            for (let i = 0; i < 64; i += 1) {
+                const nextId = typeof current?.linkFromBayId === 'string' ? current.linkFromBayId : '';
+                if (!nextId || visited.has(nextId)) break;
+                const next = byMaster.bayById.get(nextId) ?? null;
+                if (!next) break;
+                visited.add(nextId);
+                current = next;
+                currentId = nextId;
+            }
+            rootBayIdByMasterFaceAndBayId.set(key, currentId);
+            return currentId;
+        };
+
+        const resolveRootBay = (faceId, bayId) => {
+            const localFaceId = isFaceId(faceId) ? faceId : null;
+            const rootBayId = resolveRootBayId(localFaceId, bayId);
+            if (!localFaceId || !rootBayId) return null;
+            const masterFaceId = masterByFace.get(localFaceId) ?? localFaceId;
+            const byMaster = ensureBaysForMasterFace(masterFaceId);
+            return byMaster.bayById.get(rootBayId) ?? null;
+        };
+
+        const resolveFaceBays = (faceId) => {
+            const localFaceId = isFaceId(faceId) ? faceId : null;
+            if (!localFaceId) return [];
+            const masterFaceId = masterByFace.get(localFaceId) ?? localFaceId;
+            const byMaster = ensureBaysForMasterFace(masterFaceId);
+            const bays = Array.isArray(byMaster?.bays) ? byMaster.bays : [];
+            if (!bays.length) return [];
+            const shouldReverse = localFaceId !== masterFaceId && !!reverseByFace?.[localFaceId];
+            return shouldReverse ? bays.slice().reverse() : bays;
+        };
+
+        for (const masterFaceId of facesByMasterFace.keys()) ensureBaysForMasterFace(masterFaceId);
+
+        return {
+            layerFacades,
+            masterByFace,
+            facesByMasterFace,
+            resolveFaceBays,
+            resolveRootBayId,
+            resolveRootBay
+        };
+    }
+
+    _collectDecorationBayOptionsForLayer(layerId) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        if (!id) return [];
+        const topology = this._resolveDecorationLayerFaceTopology(id);
 
         const out = [];
         const seen = new Set();
         for (const faceId of FACE_IDS) {
-            const facade = layerFacades?.[faceId] && typeof layerFacades[faceId] === 'object'
-                ? layerFacades[faceId]
-                : null;
-            const bays = Array.isArray(facade?.layout?.bays?.items) ? facade.layout.bays.items : [];
+            const bays = topology.resolveFaceBays(faceId);
             for (let i = 0; i < bays.length; i += 1) {
                 const bay = bays[i] && typeof bays[i] === 'object' ? bays[i] : null;
                 const bayId = typeof bay?.id === 'string' ? bay.id : '';
@@ -1403,58 +1524,30 @@ export class BuildingFabrication2View {
         if (!isFaceId(faceId) || !bayId) return [];
 
         const validSet = validBayRefs instanceof Set ? validBayRefs : null;
-        const cfg = this._currentConfig;
-        const layerFacades = cfg?.facades?.[layerId] && typeof cfg.facades[layerId] === 'object'
-            ? cfg.facades[layerId]
-            : null;
-        const facade = layerFacades?.[faceId] && typeof layerFacades[faceId] === 'object'
-            ? layerFacades[faceId]
-            : null;
-        const bays = Array.isArray(facade?.layout?.bays?.items) ? facade.layout.bays.items : [];
-        if (!bays.length) return validSet && !validSet.has(normalizedRef) ? [] : [normalizedRef];
+        const topology = this._resolveDecorationLayerFaceTopology(layerId);
+        const targetRootBayId = topology.resolveRootBayId(faceId, bayId);
+        if (!targetRootBayId) return validSet?.has(normalizedRef) ? [normalizedRef] : [];
+        const targetMasterFaceId = topology.masterByFace.get(faceId) ?? faceId;
+        const candidateFaces = Array.isArray(topology.facesByMasterFace.get(targetMasterFaceId))
+            ? topology.facesByMasterFace.get(targetMasterFaceId)
+            : [faceId];
 
-        const bayById = new Map();
-        for (const entry of bays) {
-            const bay = entry && typeof entry === 'object' ? entry : null;
-            const id = typeof bay?.id === 'string' ? bay.id : '';
-            if (!id || bayById.has(id)) continue;
-            bayById.set(id, bay);
-        }
-        if (!bayById.has(bayId)) return validSet?.has(normalizedRef) ? [normalizedRef] : [];
-
-        const resolveRootMasterId = (id) => {
-            const startId = typeof id === 'string' ? id : '';
-            if (!startId) return '';
-            let currentId = startId;
-            let current = bayById.get(currentId) ?? null;
-            if (!current) return '';
-            const visited = new Set([currentId]);
-            for (let i = 0; i < 64; i += 1) {
-                const nextId = typeof current?.linkFromBayId === 'string' ? current.linkFromBayId : '';
-                if (!nextId || visited.has(nextId)) return currentId;
-                visited.add(nextId);
-                const next = bayById.get(nextId) ?? null;
-                if (!next) return currentId;
-                current = next;
-                currentId = nextId;
-            }
-            return currentId;
-        };
-
-        const targetRootId = resolveRootMasterId(bayId);
-        if (!targetRootId) return validSet?.has(normalizedRef) ? [normalizedRef] : [];
         const out = [];
         const seen = new Set();
-        for (const entry of bays) {
-            const bay = entry && typeof entry === 'object' ? entry : null;
-            const id = typeof bay?.id === 'string' ? bay.id : '';
-            if (!id) continue;
-            if (resolveRootMasterId(id) !== targetRootId) continue;
-            const ref = `${faceId}:${id}`;
-            if (seen.has(ref)) continue;
-            if (validSet && !validSet.has(ref)) continue;
-            seen.add(ref);
-            out.push(ref);
+        for (const candidateFaceId of candidateFaces) {
+            if (!isFaceId(candidateFaceId)) continue;
+            const bays = topology.resolveFaceBays(candidateFaceId);
+            for (const entry of bays) {
+                const bay = entry && typeof entry === 'object' ? entry : null;
+                const id = typeof bay?.id === 'string' ? bay.id : '';
+                if (!id) continue;
+                if (topology.resolveRootBayId(candidateFaceId, id) !== targetRootBayId) continue;
+                const ref = `${candidateFaceId}:${id}`;
+                if (seen.has(ref)) continue;
+                if (validSet && !validSet.has(ref)) continue;
+                seen.add(ref);
+                out.push(ref);
+            }
         }
         if (!out.length && (!validSet || validSet.has(normalizedRef))) return [normalizedRef];
         return out;
@@ -1654,6 +1747,97 @@ export class BuildingFabrication2View {
         });
     }
 
+    _expandDecorationTargetBayRefsByInheritedCornerOwnership(layerId, refs, { validBayRefs = null } = {}) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        if (!id) return [];
+        const source = Array.isArray(refs)
+            ? refs.map((entry) => normalizeDecorationBayRef(entry)).filter(Boolean)
+            : [];
+        if (!source.length) return [];
+
+        const validSet = validBayRefs instanceof Set ? validBayRefs : null;
+        const out = new Set();
+        for (const ref of source) {
+            if (validSet && !validSet.has(ref)) continue;
+            out.add(ref);
+        }
+        if (!out.size) return [];
+
+        const layerCtx = this._buildDecorationLayerBayContext(id);
+        if (!(layerCtx?.byRef instanceof Map) || !layerCtx.byRef.size) return Array.from(out);
+
+        const tryAdd = (ref) => {
+            const normalized = normalizeDecorationBayRef(ref);
+            if (!normalized) return false;
+            if (validSet && !validSet.has(normalized)) return false;
+            if (out.has(normalized)) return false;
+            out.add(normalized);
+            return true;
+        };
+
+        for (let pass = 0; pass < 8; pass += 1) {
+            let changed = false;
+            const snapshot = Array.from(out);
+            for (const ref of snapshot) {
+                const bayCtx = layerCtx.byRef.get(ref) ?? null;
+                if (!bayCtx) continue;
+
+                const evaluateBoundaryEdge = ({ edgeId, adjacentFaceId, adjacentEdgeId }) => {
+                    const adjacentEdgeCtx = layerCtx.edgeByFace.get(adjacentFaceId) ?? null;
+                    const adjacentBayCtx = adjacentEdgeCtx?.[adjacentEdgeId] ?? null;
+                    if (!adjacentBayCtx) return false;
+                    const currentDepth = edgeId === 'start'
+                        ? (Number(bayCtx.depthStartMeters) || 0.0)
+                        : (Number(bayCtx.depthEndMeters) || 0.0);
+                    const adjacentDepth = adjacentEdgeId === 'start'
+                        ? (Number(adjacentBayCtx.depthStartMeters) || 0.0)
+                        : (Number(adjacentBayCtx.depthEndMeters) || 0.0);
+                    if (Math.abs(currentDepth - adjacentDepth) <= 1e-6) return false;
+                    const owner = this._resolveOutmostDecorationCornerOwnerContext(
+                        {
+                            ref: bayCtx.ref,
+                            faceId: bayCtx.faceId,
+                            bayIndex: bayCtx.bayIndex,
+                            depthMeters: currentDepth
+                        },
+                        {
+                            ref: adjacentBayCtx.ref,
+                            faceId: adjacentBayCtx.faceId,
+                            bayIndex: adjacentBayCtx.bayIndex,
+                            depthMeters: adjacentDepth
+                        }
+                    );
+                    if (!owner || owner.ref !== bayCtx.ref) return false;
+                    return tryAdd(adjacentBayCtx.ref);
+                };
+
+                if (bayCtx.isFaceStartBoundary) {
+                    const prevFaceId = FACE_PREV_BY_FACE_ID[bayCtx.faceId] ?? null;
+                    if (prevFaceId) {
+                        changed = evaluateBoundaryEdge({
+                            edgeId: 'start',
+                            adjacentFaceId: prevFaceId,
+                            adjacentEdgeId: 'end'
+                        }) || changed;
+                    }
+                }
+                if (bayCtx.isFaceEndBoundary) {
+                    const nextFaceId = FACE_NEXT_BY_FACE_ID[bayCtx.faceId] ?? null;
+                    if (nextFaceId) {
+                        changed = evaluateBoundaryEdge({
+                            edgeId: 'end',
+                            adjacentFaceId: nextFaceId,
+                            adjacentEdgeId: 'start'
+                        }) || changed;
+                    }
+                }
+            }
+            if (!changed) break;
+        }
+
+        return Array.from(out);
+    }
+
     _resolveDecorationTargetBayRefs(set) {
         const src = set && typeof set === 'object' ? set : null;
         const layerId = typeof src?.target?.layerId === 'string' ? src.target.layerId : '';
@@ -1662,20 +1846,32 @@ export class BuildingFabrication2View {
             .map((entry) => normalizeDecorationBayRef(entry?.id))
             .filter(Boolean);
         if (!allRefs.length) return [];
-        if (src?.target?.allBays === true) return allRefs;
-        const explicitRefs = Array.isArray(src?.target?.bayRefs)
-            ? src.target.bayRefs.map((entry) => normalizeDecorationBayRef(entry)).filter(Boolean)
-            : [];
-        if (!explicitRefs.length) return [];
         const allSet = new Set(allRefs);
-        const out = [];
-        const seen = new Set();
-        for (const ref of explicitRefs) {
-            if (!allSet.has(ref) || seen.has(ref)) continue;
-            seen.add(ref);
-            out.push(ref);
+        const seedRefs = src?.target?.allBays === true
+            ? allRefs
+            : (Array.isArray(src?.target?.bayRefs)
+            ? src.target.bayRefs.map((entry) => normalizeDecorationBayRef(entry)).filter(Boolean)
+            : []);
+        if (!seedRefs.length) return [];
+
+        const linkedExpanded = [];
+        const linkedSeen = new Set();
+        for (const seedRef of seedRefs) {
+            if (!allSet.has(seedRef)) continue;
+            const linkedRefs = this._collectLinkedDecorationBayRefs(layerId, seedRef, { validBayRefs: allSet });
+            const refs = linkedRefs.length ? linkedRefs : [seedRef];
+            for (const ref of refs) {
+                if (!allSet.has(ref) || linkedSeen.has(ref)) continue;
+                linkedSeen.add(ref);
+                linkedExpanded.push(ref);
+            }
         }
-        return out;
+
+        return this._expandDecorationTargetBayRefsByInheritedCornerOwnership(
+            layerId,
+            linkedExpanded,
+            { validBayRefs: allSet }
+        );
     }
 
     _resolveDecorationBayDepthEdges(bay) {
@@ -1701,46 +1897,13 @@ export class BuildingFabrication2View {
     _buildDecorationLayerBayContext(layerId) {
         const id = typeof layerId === 'string' ? layerId : '';
         if (!id) return { byRef: new Map(), edgeByFace: new Map() };
-        const cfg = this._currentConfig;
-        const layerFacades = cfg?.facades?.[id] && typeof cfg.facades[id] === 'object'
-            ? cfg.facades[id]
-            : null;
-        if (!layerFacades) return { byRef: new Map(), edgeByFace: new Map() };
+        const topology = this._resolveDecorationLayerFaceTopology(id);
 
         const byRef = new Map();
         const edgeByFace = new Map();
 
         for (const faceId of FACE_IDS) {
-            const facade = layerFacades?.[faceId] && typeof layerFacades[faceId] === 'object'
-                ? layerFacades[faceId]
-                : null;
-            const bays = Array.isArray(facade?.layout?.bays?.items) ? facade.layout.bays.items : [];
-            const bayById = new Map();
-            for (const entry of bays) {
-                const bay = entry && typeof entry === 'object' ? entry : null;
-                const bayId = typeof bay?.id === 'string' ? bay.id : '';
-                if (!bayId || bayById.has(bayId)) continue;
-                bayById.set(bayId, bay);
-            }
-
-            const resolveRootBay = (bayId) => {
-                const startId = typeof bayId === 'string' ? bayId : '';
-                if (!startId) return null;
-                const startBay = bayById.get(startId) ?? null;
-                if (!startBay) return null;
-                const visited = new Set([startId]);
-                let current = startBay;
-                for (let i = 0; i < 64; i += 1) {
-                    const linkId = typeof current?.linkFromBayId === 'string' ? current.linkFromBayId : '';
-                    if (!linkId || visited.has(linkId)) return current;
-                    visited.add(linkId);
-                    const next = bayById.get(linkId) ?? null;
-                    if (!next) return current;
-                    current = next;
-                }
-                return current;
-            };
-
+            const bays = topology.resolveFaceBays(faceId);
             const faceRefs = [];
             for (let i = 0; i < bays.length; i += 1) {
                 const bay = bays[i] && typeof bays[i] === 'object' ? bays[i] : null;
@@ -1748,7 +1911,7 @@ export class BuildingFabrication2View {
                 if (!bayId) continue;
                 const ref = `${faceId}:${bayId}`;
                 if (byRef.has(ref)) continue;
-                const rootBay = resolveRootBay(bayId) ?? bay;
+                const rootBay = topology.resolveRootBay(faceId, bayId) ?? bay;
                 const depth = this._resolveDecorationBayDepthEdges(rootBay);
                 const ctx = {
                     ref,
@@ -1758,11 +1921,21 @@ export class BuildingFabrication2View {
                     bayCount: bays.length,
                     isFaceStartBoundary: i === 0,
                     isFaceEndBoundary: i === bays.length - 1,
+                    prevRef: null,
+                    nextRef: null,
                     depthStartMeters: Number(depth.left) || 0.0,
                     depthEndMeters: Number(depth.right) || 0.0
                 };
                 byRef.set(ref, ctx);
                 faceRefs.push(ref);
+            }
+
+            for (let i = 0; i < faceRefs.length; i += 1) {
+                const ref = faceRefs[i];
+                const ctx = byRef.get(ref) ?? null;
+                if (!ctx) continue;
+                ctx.prevRef = i > 0 ? faceRefs[i - 1] : null;
+                ctx.nextRef = i < faceRefs.length - 1 ? faceRefs[i + 1] : null;
             }
 
             const startRef = faceRefs.length ? faceRefs[0] : null;
@@ -1776,19 +1949,38 @@ export class BuildingFabrication2View {
         return { byRef, edgeByFace };
     }
 
+    _resolveOutmostDecorationCornerOwnerContext(a, b) {
+        const entryA = a && typeof a === 'object' ? a : {};
+        const entryB = b && typeof b === 'object' ? b : {};
+        const depthA = Number(entryA.depthMeters) || 0.0;
+        const depthB = Number(entryB.depthMeters) || 0.0;
+        if (depthA > depthB + 1e-6) return entryA;
+        if (depthB > depthA + 1e-6) return entryB;
+
+        const faceA = isFaceId(entryA.faceId) ? entryA.faceId : null;
+        const faceB = isFaceId(entryB.faceId) ? entryB.faceId : null;
+        if (faceA && faceB && faceA !== faceB) {
+            const orderA = FACE_ORDER[faceA] ?? 0;
+            const orderB = FACE_ORDER[faceB] ?? 0;
+            return orderA <= orderB ? entryA : entryB;
+        }
+        if (faceA && !faceB) return entryA;
+        if (!faceA && faceB) return entryB;
+
+        const bayIndexA = Number.isFinite(Number(entryA.bayIndex)) ? Number(entryA.bayIndex) : 0;
+        const bayIndexB = Number.isFinite(Number(entryB.bayIndex)) ? Number(entryB.bayIndex) : 0;
+        if (bayIndexA !== bayIndexB) return bayIndexA <= bayIndexB ? entryA : entryB;
+
+        const refA = normalizeDecorationBayRef(entryA.ref);
+        const refB = normalizeDecorationBayRef(entryB.ref);
+        if (refA && refB && refA !== refB) return refA <= refB ? entryA : entryB;
+        return refA ? entryA : entryB;
+    }
+
     _resolveOutmostDecorationCornerOwnerFace(a, b) {
-        const depthA = Number(a?.depthMeters) || 0.0;
-        const depthB = Number(b?.depthMeters) || 0.0;
-        const faceA = isFaceId(a?.faceId) ? a.faceId : null;
-        const faceB = isFaceId(b?.faceId) ? b.faceId : null;
-        if (!faceA && !faceB) return null;
-        if (!faceA) return faceB;
-        if (!faceB) return faceA;
-        if (depthA > depthB + 1e-6) return faceA;
-        if (depthB > depthA + 1e-6) return faceB;
-        const orderA = FACE_ORDER[faceA] ?? 0;
-        const orderB = FACE_ORDER[faceB] ?? 0;
-        return orderA <= orderB ? faceA : faceB;
+        const owner = this._resolveOutmostDecorationCornerOwnerContext(a, b);
+        const ownerFaceId = isFaceId(owner?.faceId) ? owner.faceId : null;
+        return ownerFaceId;
     }
 
     _refreshDecorationAutoCornerMetadata() {
@@ -1814,6 +2006,7 @@ export class BuildingFabrication2View {
 
         const assignmentsByLayer = new Map();
         const decorationByKey = new Map();
+        const resolvedBayRefsByDecorationKey = new Map();
 
         for (const set of sets) {
             const setId = typeof set?.id === 'string' ? set.id : '';
@@ -1833,12 +2026,18 @@ export class BuildingFabrication2View {
                 const key = `${setId}:${decorationId}`;
                 const signature = this._resolveDecorationSignatureForAutoCorner(decoration);
                 decorationByKey.set(key, decoration);
+                let resolvedBayRefs = resolvedBayRefsByDecorationKey.get(key);
+                if (!resolvedBayRefs) {
+                    resolvedBayRefs = new Set();
+                    resolvedBayRefsByDecorationKey.set(key, resolvedBayRefs);
+                }
                 for (const bayRef of bayRefs) {
                     const ref = normalizeDecorationBayRef(bayRef);
                     if (!ref) continue;
                     const list = byBayRef.get(ref) ?? [];
                     list.push({ setId, decorationId, key, signature, bayRef: ref });
                     byBayRef.set(ref, list);
+                    resolvedBayRefs.add(ref);
                 }
             }
         }
@@ -1850,13 +2049,27 @@ export class BuildingFabrication2View {
                 const bayCtx = layerCtx.byRef.get(bayRef) ?? null;
                 if (!bayCtx) continue;
 
-                const evaluateEdge = ({ assignment, edgeId, adjacentFaceId, adjacentEdgeId }) => {
-                    const adjacentEdgeCtx = layerCtx.edgeByFace.get(adjacentFaceId) ?? null;
-                    const adjacentBayCtx = adjacentEdgeCtx?.[adjacentEdgeId] ?? null;
-                    if (!adjacentBayCtx) return { enabled: false, continuationMeters: 0.0 };
+                const evaluateEdge = ({
+                    assignment,
+                    edgeId,
+                    adjacentBayCtx,
+                    adjacentEdgeId,
+                    edgeRelation = 'face_boundary'
+                }) => {
+                    if (!adjacentBayCtx) return {
+                        enabled: false,
+                        continuationMeters: 0.0,
+                        cornerStyle: null,
+                        cornerRelation: null
+                    };
                     const adjacentAssignments = assignmentsByBayRef.get(adjacentBayCtx.ref) ?? [];
                     const hasSameDecoration = adjacentAssignments.some((entry) => entry?.signature === assignment.signature);
-                    if (!hasSameDecoration) return { enabled: false, continuationMeters: 0.0 };
+                    if (!hasSameDecoration) return {
+                        enabled: false,
+                        continuationMeters: 0.0,
+                        cornerStyle: null,
+                        cornerRelation: null
+                    };
 
                     const currentDepth = edgeId === 'start'
                         ? (Number(bayCtx.depthStartMeters) || 0.0)
@@ -1864,14 +2077,37 @@ export class BuildingFabrication2View {
                     const adjacentDepth = adjacentEdgeId === 'start'
                         ? (Number(adjacentBayCtx.depthStartMeters) || 0.0)
                         : (Number(adjacentBayCtx.depthEndMeters) || 0.0);
-                    const ownerFaceId = this._resolveOutmostDecorationCornerOwnerFace(
-                        { faceId: bayCtx.faceId, depthMeters: currentDepth },
-                        { faceId: adjacentBayCtx.faceId, depthMeters: adjacentDepth }
+                    const depthDelta = Math.abs(currentDepth - adjacentDepth);
+                    if (edgeRelation === 'same_face' && depthDelta <= 1e-6) {
+                        return {
+                            enabled: false,
+                            continuationMeters: 0.0,
+                            cornerStyle: null,
+                            cornerRelation: null
+                        };
+                    }
+                    const owner = this._resolveOutmostDecorationCornerOwnerContext(
+                        {
+                            ref: bayCtx.ref,
+                            faceId: bayCtx.faceId,
+                            bayIndex: bayCtx.bayIndex,
+                            depthMeters: currentDepth
+                        },
+                        {
+                            ref: adjacentBayCtx.ref,
+                            faceId: adjacentBayCtx.faceId,
+                            bayIndex: adjacentBayCtx.bayIndex,
+                            depthMeters: adjacentDepth
+                        }
                     );
-                    const enabled = ownerFaceId === bayCtx.faceId;
+                    const enabled = owner?.ref === bayCtx.ref;
+                    const isInteriorInset = edgeRelation === 'same_face'
+                        && ((currentDepth < -1e-6) || (adjacentDepth < -1e-6));
                     return {
                         enabled,
-                        continuationMeters: enabled ? Math.max(0.0, Math.abs(currentDepth - adjacentDepth)) : 0.0
+                        continuationMeters: enabled ? Math.max(0.0, depthDelta) : 0.0,
+                        cornerStyle: enabled ? (isInteriorInset ? 'interior' : 'exterior') : null,
+                        cornerRelation: enabled ? edgeRelation : null
                     };
                 };
 
@@ -1880,35 +2116,99 @@ export class BuildingFabrication2View {
                         start: false,
                         end: false,
                         continuationStartMeters: 0.0,
-                        continuationEndMeters: 0.0
+                        continuationEndMeters: 0.0,
+                        startCornerStyle: null,
+                        endCornerStyle: null,
+                        startCornerRelation: null,
+                        endCornerRelation: null
                     };
+
+                    const applyEdgeResult = (edgeId, result) => {
+                        const resolved = result && typeof result === 'object' ? result : null;
+                        if (!resolved?.enabled) return;
+                        if (edgeId === 'start') {
+                            next.start = true;
+                            next.continuationStartMeters = Math.max(
+                                Number(next.continuationStartMeters) || 0.0,
+                                Number(resolved.continuationMeters) || 0.0
+                            );
+                            if (resolved.cornerStyle === 'interior' || !next.startCornerStyle) {
+                                next.startCornerStyle = resolved.cornerStyle || 'exterior';
+                            }
+                            if (resolved.cornerStyle === 'interior' || !next.startCornerRelation) {
+                                next.startCornerRelation = resolved.cornerRelation || 'face_boundary';
+                            }
+                        } else if (edgeId === 'end') {
+                            next.end = true;
+                            next.continuationEndMeters = Math.max(
+                                Number(next.continuationEndMeters) || 0.0,
+                                Number(resolved.continuationMeters) || 0.0
+                            );
+                            if (resolved.cornerStyle === 'interior' || !next.endCornerStyle) {
+                                next.endCornerStyle = resolved.cornerStyle || 'exterior';
+                            }
+                            if (resolved.cornerStyle === 'interior' || !next.endCornerRelation) {
+                                next.endCornerRelation = resolved.cornerRelation || 'face_boundary';
+                            }
+                        }
+                    };
+
+                    const prevRef = normalizeDecorationBayRef(bayCtx.prevRef);
+                    if (prevRef) {
+                        const prevBayCtx = layerCtx.byRef.get(prevRef) ?? null;
+                        applyEdgeResult('start', evaluateEdge({
+                            assignment,
+                            edgeId: 'start',
+                            adjacentBayCtx: prevBayCtx,
+                            adjacentEdgeId: 'end',
+                            edgeRelation: 'same_face'
+                        }));
+                    }
+                    const nextRef = normalizeDecorationBayRef(bayCtx.nextRef);
+                    if (nextRef) {
+                        const nextBayCtx = layerCtx.byRef.get(nextRef) ?? null;
+                        applyEdgeResult('end', evaluateEdge({
+                            assignment,
+                            edgeId: 'end',
+                            adjacentBayCtx: nextBayCtx,
+                            adjacentEdgeId: 'start',
+                            edgeRelation: 'same_face'
+                        }));
+                    }
 
                     if (bayCtx.isFaceStartBoundary) {
                         const prevFaceId = FACE_PREV_BY_FACE_ID[bayCtx.faceId] ?? null;
                         if (prevFaceId) {
+                            const adjacentEdgeCtx = layerCtx.edgeByFace.get(prevFaceId) ?? null;
                             const resolved = evaluateEdge({
                                 assignment,
                                 edgeId: 'start',
-                                adjacentFaceId: prevFaceId,
-                                adjacentEdgeId: 'end'
+                                adjacentBayCtx: adjacentEdgeCtx?.end ?? null,
+                                adjacentEdgeId: 'end',
+                                edgeRelation: 'face_boundary'
                             });
-                            next.start = !!resolved.enabled;
-                            next.continuationStartMeters = resolved.continuationMeters;
+                            applyEdgeResult('start', resolved);
                         }
                     }
                     if (bayCtx.isFaceEndBoundary) {
                         const nextFaceId = FACE_NEXT_BY_FACE_ID[bayCtx.faceId] ?? null;
                         if (nextFaceId) {
+                            const adjacentEdgeCtx = layerCtx.edgeByFace.get(nextFaceId) ?? null;
                             const resolved = evaluateEdge({
                                 assignment,
                                 edgeId: 'end',
-                                adjacentFaceId: nextFaceId,
-                                adjacentEdgeId: 'start'
+                                adjacentBayCtx: adjacentEdgeCtx?.start ?? null,
+                                adjacentEdgeId: 'start',
+                                edgeRelation: 'face_boundary'
                             });
-                            next.end = !!resolved.enabled;
-                            next.continuationEndMeters = resolved.continuationMeters;
+                            applyEdgeResult('end', resolved);
                         }
                     }
+
+                    if (next.start && !next.startCornerStyle) next.startCornerStyle = 'exterior';
+                    if (next.end && !next.endCornerStyle) next.endCornerStyle = 'exterior';
+                    if (next.start && !next.startCornerRelation) next.startCornerRelation = 'face_boundary';
+                    if (next.end && !next.endCornerRelation) next.endCornerRelation = 'face_boundary';
 
                     const hasCorner = !!next.start || !!next.end
                         || next.continuationStartMeters > 1e-6
@@ -1927,10 +2227,17 @@ export class BuildingFabrication2View {
 
         for (const [key, decoration] of decorationByKey.entries()) {
             const byBayRef = byDecorationKey.get(key) ?? null;
-            if (byBayRef && Object.keys(byBayRef).length) {
+            const resolvedBayRefs = Array.from(resolvedBayRefsByDecorationKey.get(key) ?? [])
+                .map((entry) => normalizeDecorationBayRef(entry))
+                .filter(Boolean);
+            if ((byBayRef && Object.keys(byBayRef).length) || resolvedBayRefs.length) {
+                const autoCorner = {
+                    rule: 'outmost_depth'
+                };
+                if (resolvedBayRefs.length) autoCorner.resolvedBayRefs = resolvedBayRefs;
+                if (byBayRef && Object.keys(byBayRef).length) autoCorner.byBayRef = byBayRef;
                 decoration.autoCorner = {
-                    rule: 'outmost_depth',
-                    byBayRef
+                    ...autoCorner
                 };
             } else {
                 delete decoration.autoCorner;
@@ -1938,9 +2245,9 @@ export class BuildingFabrication2View {
         }
     }
 
-    _applyDecorationChange({ requestRebuild = true } = {}) {
+    _applyDecorationChange({ requestRebuild = true, syncUi = true } = {}) {
         this._refreshDecorationAutoCornerMetadata();
-        this._syncUiState();
+        if (syncUi) this._syncUiState();
         if (requestRebuild) this._requestRebuild({ preserveCamera: true });
     }
 
@@ -2134,7 +2441,7 @@ export class BuildingFabrication2View {
         this._applyDecorationChange();
     }
 
-    _setDecorationEntrySpanField(setId, decorationId, field, value) {
+    _setDecorationEntrySpanField(setId, decorationId, field, value, options = null) {
         const ctx = this._findDecorationEntry(setId, decorationId);
         if (!ctx.decoration) return;
         ctx.decoration.span ??= { start: 0, end: 1 };
@@ -2147,7 +2454,8 @@ export class BuildingFabrication2View {
             if (id === 'start') span.end = span.start;
             else span.start = span.end;
         }
-        this._applyDecorationChange();
+        const live = options?.live === true;
+        this._applyDecorationChange({ syncUi: !live });
     }
 
     _setDecorationEntryType(setId, decorationId, decoratorId) {
@@ -2210,7 +2518,7 @@ export class BuildingFabrication2View {
         this._applyDecorationChange();
     }
 
-    _setDecorationEntryProperty(setId, decorationId, propertyId, value) {
+    _setDecorationEntryProperty(setId, decorationId, propertyId, value, options = null) {
         const ctx = this._findDecorationEntry(setId, decorationId);
         if (!ctx.decoration) return;
         const propId = typeof propertyId === 'string' ? propertyId : '';
@@ -2226,7 +2534,8 @@ export class BuildingFabrication2View {
             ...state,
             configuration
         });
-        this._applyDecorationChange();
+        const live = options?.live === true;
+        this._applyDecorationChange({ syncUi: !live });
     }
 
     _setDecorationEntryMaterialKind(setId, decorationId, kind) {
@@ -2279,7 +2588,7 @@ export class BuildingFabrication2View {
         this._applyDecorationChange();
     }
 
-    _setDecorationEntryWallBaseField(setId, decorationId, field, value) {
+    _setDecorationEntryWallBaseField(setId, decorationId, field, value, options = null) {
         const ctx = this._findDecorationEntry(setId, decorationId);
         if (!ctx.decoration) return;
         const id = typeof field === 'string' ? field : '';
@@ -2296,10 +2605,11 @@ export class BuildingFabrication2View {
             ...state,
             wallBase
         });
-        this._applyDecorationChange();
+        const live = options?.live === true;
+        this._applyDecorationChange({ syncUi: !live });
     }
 
-    _setDecorationEntryTilingField(setId, decorationId, field, value) {
+    _setDecorationEntryTilingField(setId, decorationId, field, value, options = null) {
         const ctx = this._findDecorationEntry(setId, decorationId);
         if (!ctx.decoration) return;
         const id = typeof field === 'string' ? field : '';
@@ -2321,7 +2631,8 @@ export class BuildingFabrication2View {
             ...state,
             tiling
         });
-        this._applyDecorationChange();
+        const live = options?.live === true;
+        this._applyDecorationChange({ syncUi: !live });
     }
 
     _buildWindowDefinitionsUiModel() {
@@ -4942,6 +5253,19 @@ export class BuildingFabrication2View {
         this.scene?.setRenderSlab?.(next);
     }
 
+    _setExplodedDecorationsEnabled(enabled) {
+        const next = !!enabled;
+        if (next === this._explodedDecorationsEnabled) {
+            this.scene?.setExplodedDecorationsEnabled?.(next);
+            this._syncFaceHighlightSuppression();
+            return;
+        }
+        this._explodedDecorationsEnabled = next;
+        this.scene?.setExplodedDecorationsEnabled?.(next);
+        this._syncFaceHighlightSuppression();
+        this._perfBar?.requestUpdate?.();
+    }
+
     _setLayoutAdjustEnabled(enabled) {
         const next = !!enabled;
         if (next === this._layoutAdjustEnabled) {
@@ -5727,7 +6051,9 @@ export class BuildingFabrication2View {
 
     _syncFaceHighlightSuppression() {
         const decorationMode = normalizeBf2EditorMode(this._editorMode) === BF2_EDITOR_MODE.DECORATION;
-        const suppressed = decorationMode || (this._hideFaceMarkEnabled && this._pointerInViewport);
+        const suppressed = this._explodedDecorationsEnabled
+            || decorationMode
+            || (this._hideFaceMarkEnabled && this._pointerInViewport);
         this.scene.setFaceHighlightSuppressed?.(suppressed);
     }
 

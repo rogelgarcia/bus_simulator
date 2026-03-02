@@ -16,6 +16,15 @@ import {
     buildWallDecoratorShapeSpecs,
     sanitizeWallDecoratorDebuggerState
 } from '../../../app/buildings/wall_decorators/index.js';
+import { createWallDecoratorGeometryFromSpec as createSharedWallDecoratorGeometryFromSpec } from '../shared/wall_decorator/WallDecoratorGeometryFactory.js';
+import {
+    areWallDecoratorExplodedEntriesCorniceRoundedOnly,
+    areWallDecoratorExplodedEntriesCurvedRingOnly,
+    buildWallDecoratorExplodedFaceEntries,
+    separateWallDecoratorExplodedCorniceRoundedFaces,
+    separateWallDecoratorExplodedCurvedRingFaces,
+    separateWallDecoratorExplodedFacesIterative
+} from '../shared/wall_decorator/WallDecoratorExplodedView.js';
 import { getBeltCourseColorOptions } from '../../../app/buildings/BeltCourseColor.js';
 import { resolveWallBaseTintHexFromWallBase } from '../../../app/buildings/WallBaseTintModel.js';
 
@@ -47,13 +56,19 @@ const SUPPORT_SLAB_OVERHANG_M = 1.0;
 const SUPPORT_SLAB_THICKNESS_M = 0.5;
 const SUPPORT_SLAB_MATERIAL_ID = 'pbr.plastered_wall_02';
 const WALL_DECORATION_DEFAULT_WALL_DEPTH_M = 0.30;
-const WALL_DECORATION_THIN_PLANE_THICKNESS_M = 0.005;
 const AWNING_ROD_MATERIAL = Object.freeze({
     colorHex: 0x454545,
     roughness: 0.5,
     metalness: 0.6,
     envMapIntensity: 0.03
 });
+const OPENING_HEIGHT_MODE = Object.freeze({
+    FIXED: 'fixed',
+    FULL: 'full'
+});
+const OPENING_REPEAT_MIN = 1;
+const OPENING_REPEAT_MAX = 5;
+const WINDOW_ASSET_TYPE_WINDOW = 'window';
 
 const FACE_NORMAL_BY_ID = Object.freeze({
     A: Object.freeze({ x: 0, y: 0, z: 1 }),
@@ -92,6 +107,586 @@ function clampUnit(value, fallback = 0) {
     return clamp(num, 0, 1);
 }
 
+function normalizeOpeningHeightMode(value, fallback = OPENING_HEIGHT_MODE.FIXED) {
+    const typed = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (typed === OPENING_HEIGHT_MODE.FULL) return OPENING_HEIGHT_MODE.FULL;
+    if (typed === OPENING_HEIGHT_MODE.FIXED) return OPENING_HEIGHT_MODE.FIXED;
+    return fallback;
+}
+
+function normalizeOpeningRepeatCount(value, fallback = OPENING_REPEAT_MIN) {
+    const raw = Number(value);
+    if (!Number.isFinite(raw)) return clampInt(fallback, OPENING_REPEAT_MIN, OPENING_REPEAT_MAX);
+    return clampInt(raw, OPENING_REPEAT_MIN, OPENING_REPEAT_MAX);
+}
+
+function normalizeOpeningAssetType(value, fallback = WINDOW_ASSET_TYPE_WINDOW) {
+    const typed = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (typed === 'door') return 'door';
+    if (typed === 'garage') return 'garage';
+    if (typed === WINDOW_ASSET_TYPE_WINDOW) return WINDOW_ASSET_TYPE_WINDOW;
+    return fallback;
+}
+
+function resolveBayWindowFromSpec(bay) {
+    const spec = bay && typeof bay === 'object' ? bay : null;
+    if (!spec) return null;
+    if (spec.window && typeof spec.window === 'object') return spec.window;
+    const legacyFeatures = spec.features && typeof spec.features === 'object' ? spec.features : null;
+    if (legacyFeatures?.window && typeof legacyFeatures.window === 'object') return legacyFeatures.window;
+    return null;
+}
+
+function resolveBayOpeningPlacementInSegment({
+    segmentHeight,
+    requestedHeight,
+    heightMode,
+    verticalOffsetMeters,
+    top = null
+}) {
+    const hSeg = Math.max(0.1, Number(segmentHeight) || 0.1);
+    const reqBottom = clamp(Number(requestedHeight) || 0.1, 0.1, 9999);
+    const mode = normalizeOpeningHeightMode(heightMode, OPENING_HEIGHT_MODE.FIXED);
+    const offsetRaw = Number(verticalOffsetMeters);
+    const hasOffset = Number.isFinite(offsetRaw);
+
+    const topCfg = top && typeof top === 'object' ? top : null;
+    const topEnabled = !!topCfg?.enabled;
+    const topGap = topEnabled && Number.isFinite(Number(topCfg?.gap))
+        ? clamp(topCfg.gap, 0.0, 9999)
+        : 0.0;
+    const topMode = normalizeOpeningHeightMode(topCfg?.heightMode, OPENING_HEIGHT_MODE.FIXED);
+    const topRequestedHeight = Number.isFinite(Number(topCfg?.height))
+        ? clamp(topCfg.height, 0.1, 9999)
+        : reqBottom;
+    const topMinHeight = topEnabled
+        ? (topMode === OPENING_HEIGHT_MODE.FULL ? 0.1 : topRequestedHeight)
+        : 0.0;
+
+    let yBottom = hasOffset
+        ? clamp(offsetRaw, 0.0, hSeg)
+        : (mode === OPENING_HEIGHT_MODE.FULL ? 0.0 : Math.max(0, (hSeg - reqBottom) * 0.5));
+    const reservedTop = topEnabled ? (topGap + topMinHeight) : 0.0;
+    const maxBottomY = Math.max(0, hSeg - reservedTop - 0.1);
+    yBottom = clamp(yBottom, 0.0, maxBottomY);
+
+    const availableBottom = Math.max(0.1, hSeg - yBottom - reservedTop);
+    const bottomHeight = mode === OPENING_HEIGHT_MODE.FULL
+        ? availableBottom
+        : Math.min(reqBottom, availableBottom);
+
+    const topStart = yBottom + bottomHeight + topGap;
+    const availableTop = topEnabled ? Math.max(0.0, hSeg - topStart) : 0.0;
+    const topHeight = (topEnabled && availableTop > EPS)
+        ? (topMode === OPENING_HEIGHT_MODE.FULL ? availableTop : Math.min(topRequestedHeight, availableTop))
+        : 0.0;
+
+    return {
+        bottom: { yBottom, height: bottomHeight },
+        top: {
+            enabled: topEnabled && topHeight > EPS,
+            yBottom: topStart,
+            height: topHeight
+        }
+    };
+}
+
+function isWallDecorationSpecOccludableByOpening(geometryKind) {
+    const id = String(geometryKind ?? '').trim().toLowerCase();
+    return id === 'flat_panel'
+        || id === 'angled_support_profile'
+        || id === 'curved_ring'
+        || id === 'half_dome'
+        || id === 'edge_brick_chain_course'
+        || id === 'cornice_block'
+        || id === 'cornice_rounded_block';
+}
+
+function buildBayOpeningOccludersForDecorationSegment({
+    windowConfig = null,
+    bayLengthMeters,
+    segmentCanonicalStartMeters,
+    segmentCanonicalEndMeters,
+    segmentSpanMeters,
+    reverseSegment = false,
+    floorStartY,
+    floorEndY
+} = {}) {
+    const windowCfg = windowConfig && typeof windowConfig === 'object' ? windowConfig : null;
+    if (!windowCfg || windowCfg.enabled === false) return [];
+
+    const span = Math.max(0.01, Number(bayLengthMeters) || 0.0);
+    if (!(span > EPS)) return [];
+
+    const padding = windowCfg?.padding && typeof windowCfg.padding === 'object' ? windowCfg.padding : null;
+    const leftPad = clamp(padding?.leftMeters ?? 0.0, 0.0, 9999.0);
+    const rightPad = clamp(padding?.rightMeters ?? 0.0, 0.0, 9999.0);
+    const usable = span - leftPad - rightPad;
+    if (!(usable > EPS)) return [];
+
+    const assetType = normalizeOpeningAssetType(
+        windowCfg?.assetType ?? windowCfg?.openingType,
+        WINDOW_ASSET_TYPE_WINDOW
+    );
+    let repeatCount = normalizeOpeningRepeatCount(
+        windowCfg?.repeat?.count ?? windowCfg?.repeatCount,
+        OPENING_REPEAT_MIN
+    );
+    if (assetType !== WINDOW_ASSET_TYPE_WINDOW) repeatCount = OPENING_REPEAT_MIN;
+    const slotWidth = usable / Math.max(OPENING_REPEAT_MIN, repeatCount);
+    if (!(slotWidth > EPS)) return [];
+
+    const sizeSpec = windowCfg?.size && typeof windowCfg.size === 'object' ? windowCfg.size : null;
+    const requestedWidthRaw = Number(sizeSpec?.widthMeters ?? windowCfg?.widthMeters);
+    let widthMeters = null;
+    if (Number.isFinite(requestedWidthRaw)) {
+        widthMeters = clamp(requestedWidthRaw, 0.1, 9999.0);
+    } else {
+        const widthSpec = windowCfg?.width && typeof windowCfg.width === 'object' ? windowCfg.width : null;
+        const minWidthRaw = Number(widthSpec?.minMeters);
+        const minWidth = Number.isFinite(minWidthRaw) ? clamp(minWidthRaw, 0.1, 9999.0) : 0.1;
+        const maxRaw = widthSpec?.maxMeters;
+        const maxWidth = (maxRaw === null || maxRaw === undefined) ? Infinity : clamp(maxRaw, minWidth, 9999.0);
+        if (slotWidth + 1e-6 < minWidth) return [];
+        widthMeters = clamp(minWidth, minWidth, Number.isFinite(maxWidth) ? maxWidth : 9999.0);
+    }
+    widthMeters = Math.min(widthMeters, slotWidth);
+    if (!(widthMeters > EPS)) return [];
+
+    const requestedHeightRaw = Number(sizeSpec?.heightMeters ?? windowCfg?.heightMeters);
+    const requestedHeightMeters = Number.isFinite(requestedHeightRaw)
+        ? clamp(requestedHeightRaw, 0.1, 9999.0)
+        : 1.6;
+    const heightMode = normalizeOpeningHeightMode(windowCfg?.heightMode, OPENING_HEIGHT_MODE.FIXED);
+    const verticalOffsetRaw = Number(windowCfg?.verticalOffsetMeters ?? windowCfg?.yOffsetMeters ?? windowCfg?.offsetFromFloorMeters);
+    const verticalOffsetMeters = Number.isFinite(verticalOffsetRaw)
+        ? clamp(verticalOffsetRaw, 0.0, 9999.0)
+        : null;
+
+    const topSrc = windowCfg?.top && typeof windowCfg.top === 'object' ? windowCfg.top : null;
+    const topEnabledRaw = topSrc?.enabled ?? windowCfg?.topEnabled ?? windowCfg?.secondEnabled ?? windowCfg?.topWindowEnabled;
+    const topHeightMode = normalizeOpeningHeightMode(
+        topSrc?.heightMode ?? topSrc?.mode ?? windowCfg?.topHeightMode,
+        OPENING_HEIGHT_MODE.FIXED
+    );
+    const topHeightRaw = Number(topSrc?.heightMeters ?? topSrc?.height ?? windowCfg?.topHeightMeters);
+    const topHeightMeters = Number.isFinite(topHeightRaw)
+        ? clamp(topHeightRaw, 0.1, 9999.0)
+        : requestedHeightMeters;
+    const topGapRaw = Number(topSrc?.verticalGapMeters ?? topSrc?.gapMeters ?? windowCfg?.topGapMeters);
+    const topGapMeters = Number.isFinite(topGapRaw)
+        ? clamp(topGapRaw, 0.0, 9999.0)
+        : 0.1;
+    const topEnabled = !!topEnabledRaw && assetType !== 'garage';
+
+    const floorMinY = Number(floorStartY);
+    const floorMaxY = Number(floorEndY);
+    if (!Number.isFinite(floorMinY) || !Number.isFinite(floorMaxY) || !(floorMaxY > floorMinY + EPS)) return [];
+    const placement = resolveBayOpeningPlacementInSegment({
+        segmentHeight: floorMaxY - floorMinY,
+        requestedHeight: requestedHeightMeters,
+        heightMode,
+        verticalOffsetMeters,
+        top: {
+            enabled: topEnabled,
+            heightMode: topHeightMode,
+            height: topHeightMeters,
+            gap: topGapMeters
+        }
+    });
+
+    const canonicalStart = Math.min(
+        Number(segmentCanonicalStartMeters) || 0.0,
+        Number(segmentCanonicalEndMeters) || 0.0
+    );
+    const canonicalEnd = Math.max(
+        Number(segmentCanonicalStartMeters) || 0.0,
+        Number(segmentCanonicalEndMeters) || 0.0
+    );
+    const localSpan = Math.max(0.01, Number(segmentSpanMeters) || Math.abs(canonicalEnd - canonicalStart));
+    const toLocalDistance = (canonicalDistance) => {
+        const d = Number(canonicalDistance) || 0.0;
+        return reverseSegment
+            ? ((Number(segmentCanonicalEndMeters) || 0.0) - d)
+            : (d - (Number(segmentCanonicalStartMeters) || 0.0));
+    };
+
+    const centers = [];
+    const usableStart = leftPad;
+    for (let i = 0; i < repeatCount; i += 1) {
+        centers.push(usableStart + slotWidth * (i + 0.5));
+    }
+
+    const out = [];
+    const appendOccluder = (openMinY, openMaxY) => {
+        if (!(openMaxY > openMinY + EPS)) return;
+        for (const center of centers) {
+            const fullStart = center - widthMeters * 0.5;
+            const fullEnd = center + widthMeters * 0.5;
+            const segStart = Math.max(canonicalStart, fullStart);
+            const segEnd = Math.min(canonicalEnd, fullEnd);
+            if (!(segEnd > segStart + EPS)) continue;
+            const localStart = toLocalDistance(segStart);
+            const localEnd = toLocalDistance(segEnd);
+            const localMin = Math.min(localStart, localEnd);
+            const localMax = Math.max(localStart, localEnd);
+            const uMin = localMin - localSpan * 0.5;
+            const uMax = localMax - localSpan * 0.5;
+            out.push({
+                uMin: Math.min(uMin, uMax),
+                uMax: Math.max(uMin, uMax),
+                yMin: openMinY,
+                yMax: openMaxY
+            });
+        }
+    };
+
+    const bottomYMin = floorMinY + (Number(placement?.bottom?.yBottom) || 0.0);
+    const bottomYMax = bottomYMin + (Number(placement?.bottom?.height) || 0.0);
+    appendOccluder(bottomYMin, bottomYMax);
+
+    const topEnabledResolved = placement?.top?.enabled === true;
+    if (topEnabledResolved) {
+        const topYMin = floorMinY + (Number(placement?.top?.yBottom) || 0.0);
+        const topYMax = topYMin + (Number(placement?.top?.height) || 0.0);
+        appendOccluder(topYMin, topYMax);
+    }
+
+    return out;
+}
+
+function splitWallDecorationSpecByOpeningOccluders(spec, { openingOccluders = null, wallCenterY = 0.0 } = {}) {
+    const src = spec && typeof spec === 'object' ? spec : null;
+    if (!src) return [];
+    const geometryKind = String(src.geometryKind ?? '').trim().toLowerCase();
+    if (!isWallDecorationSpecOccludableByOpening(geometryKind)) return [src];
+    const faceId = String(src.faceId ?? '').trim().toLowerCase();
+    if (faceId !== 'front') return [src];
+
+    const widthMeters = Math.max(0.01, Number(src.widthMeters) || 0.0);
+    const centerU = Number(src.centerU) || 0.0;
+    const minU = centerU - widthMeters * 0.5;
+    const maxU = centerU + widthMeters * 0.5;
+    if (!(maxU > minU + EPS)) return [src];
+
+    const centerV = Number(src.centerV) || 0.0;
+    const heightMeters = Math.max(0.01, Number(src.heightMeters) || 0.0);
+    const wallY = Number(wallCenterY) || 0.0;
+    const specMinY = wallY + centerV - heightMeters * 0.5;
+    const specMaxY = wallY + centerV + heightMeters * 0.5;
+
+    const occluders = Array.isArray(openingOccluders) ? openingOccluders : [];
+    const intervals = [];
+    for (const occluder of occluders) {
+        const openMinY = Number(occluder?.yMin);
+        const openMaxY = Number(occluder?.yMax);
+        if (!Number.isFinite(openMinY) || !Number.isFinite(openMaxY)) continue;
+        if (!(openMaxY > specMinY + EPS && openMinY < specMaxY - EPS)) continue;
+        const blockMin = Math.max(minU, Number(occluder?.uMin) || 0.0);
+        const blockMax = Math.min(maxU, Number(occluder?.uMax) || 0.0);
+        if (!(blockMax > blockMin + 1e-6)) continue;
+        intervals.push({ minU: blockMin, maxU: blockMax });
+    }
+    if (!intervals.length) return [src];
+
+    intervals.sort((a, b) => (a.minU - b.minU) || (a.maxU - b.maxU));
+    const merged = [];
+    for (const interval of intervals) {
+        const current = interval && typeof interval === 'object' ? interval : null;
+        if (!current) continue;
+        const prev = merged[merged.length - 1] ?? null;
+        if (!prev || current.minU > prev.maxU + 1e-6) {
+            merged.push({ minU: current.minU, maxU: current.maxU });
+        } else {
+            prev.maxU = Math.max(prev.maxU, current.maxU);
+        }
+    }
+
+    const pieces = [];
+    let cursor = minU;
+    for (const interval of merged) {
+        if (interval.minU > cursor + 0.01) {
+            pieces.push({ minU: cursor, maxU: interval.minU });
+        }
+        cursor = Math.max(cursor, interval.maxU);
+    }
+    if (maxU > cursor + 0.01) pieces.push({ minU: cursor, maxU });
+    if (!pieces.length) return [];
+
+    if (pieces.length === 1 && Math.abs(pieces[0].minU - minU) <= 1e-6 && Math.abs(pieces[0].maxU - maxU) <= 1e-6) {
+        return [src];
+    }
+
+    return pieces.map((piece, index) => {
+        const partWidth = Math.max(0.01, piece.maxU - piece.minU);
+        return {
+            ...src,
+            centerU: (piece.minU + piece.maxU) * 0.5,
+            widthMeters: partWidth,
+            role: `${String(src.role ?? 'decorator')}_part_${String(index + 1).padStart(2, '0')}`
+        };
+    });
+}
+
+function hasFlatCapFamilyFrontSpecs(specs) {
+    const list = Array.isArray(specs) ? specs : [];
+    if (!list.length) return false;
+    let hasMain = false;
+    let hasCap = false;
+    for (const spec of list) {
+        const src = spec && typeof spec === 'object' ? spec : null;
+        if (!src) continue;
+        const faceId = String(src.faceId ?? '').trim().toLowerCase();
+        if (faceId !== 'front') continue;
+        const geometryKind = String(src.geometryKind ?? '').trim().toLowerCase();
+        if (geometryKind === 'flat_panel' || geometryKind === 'angled_support_profile') hasMain = true;
+        if (geometryKind === 'flat_panel_cap' || geometryKind === 'flat_panel_side_cap') hasCap = true;
+    }
+    return hasMain && hasCap;
+}
+
+function resolveFlatCapFamilyFrontOffsetMeters(specs, fallback = 0.05) {
+    const list = Array.isArray(specs) ? specs : [];
+    for (const spec of list) {
+        const src = spec && typeof spec === 'object' ? spec : null;
+        if (!src) continue;
+        const faceId = String(src.faceId ?? '').trim().toLowerCase();
+        if (faceId !== 'front') continue;
+        const geometryKind = String(src.geometryKind ?? '').trim().toLowerCase();
+        if (geometryKind !== 'flat_panel' && geometryKind !== 'angled_support_profile') continue;
+        const outset = Number(src.outsetMeters);
+        if (Number.isFinite(outset) && outset > EPS) return clamp(outset, 0.005, 4.0);
+        const depth = Number(src.depthMeters);
+        if (Number.isFinite(depth) && depth > EPS) return clamp(depth, 0.005, 4.0);
+    }
+    return clamp(fallback, 0.005, 4.0);
+}
+
+function adjustFlatCapFamilyFrontSpecsForEdges(
+    specs,
+    {
+        offsetMeters = 0.05,
+        extendStart = false,
+        extendEnd = false,
+        hideStartCap = false,
+        hideEndCap = false
+    } = {}
+) {
+    const list = Array.isArray(specs) ? specs : [];
+    const out = [];
+    const edgeOffset = clamp(offsetMeters, 0.005, 4.0, 0.05);
+    const extraStart = extendStart ? edgeOffset : 0.0;
+    const extraEnd = extendEnd ? edgeOffset : 0.0;
+
+    for (const spec of list) {
+        const src = spec && typeof spec === 'object' ? spec : null;
+        if (!src) continue;
+        const next = { ...src };
+        const faceId = String(next.faceId ?? '').trim().toLowerCase();
+        const geometryKind = String(next.geometryKind ?? '').trim().toLowerCase();
+
+        if (faceId === 'front' && (geometryKind === 'flat_panel' || geometryKind === 'angled_support_profile')) {
+            const width = Math.max(0.01, Number(next.widthMeters) || 0.01);
+            const centerU = Number(next.centerU) || 0.0;
+            const minU = centerU - width * 0.5 - extraStart;
+            const maxU = centerU + width * 0.5 + extraEnd;
+            next.widthMeters = Math.max(0.01, maxU - minU);
+            next.centerU = (minU + maxU) * 0.5;
+        }
+
+        if (faceId === 'front' && geometryKind === 'flat_panel_cap') {
+            const bridgeStart = clamp(next.cornerBridgeStartMeters, 0.0, 4.0, 0.0);
+            const bridgeEnd = clamp(next.cornerBridgeEndMeters, 0.0, 4.0, 0.0);
+            next.cornerBridgeStartMeters = extendStart ? Math.max(bridgeStart, edgeOffset) : bridgeStart;
+            next.cornerBridgeEndMeters = extendEnd ? Math.max(bridgeEnd, edgeOffset) : bridgeEnd;
+        }
+
+        if (faceId === 'front' && geometryKind === 'flat_panel_side_cap') {
+            const yawDegrees = clamp(next.yawDegrees, -180.0, 180.0, 0.0);
+            const isStartCap = Math.abs(Math.abs(yawDegrees) - 180.0) <= 1e-4;
+            const isEndCap = !isStartCap;
+            if ((hideStartCap && isStartCap) || (hideEndCap && isEndCap)) continue;
+        }
+
+        out.push(next);
+    }
+
+    return out;
+}
+
+function buildFlatCapFamilySameFaceContinuationSpecs(
+    cornerSpecs,
+    {
+        continuationMeters = 0.0,
+        edge = 'end',
+        cornerStyle = 'exterior'
+    } = {}
+) {
+    const list = Array.isArray(cornerSpecs) ? cornerSpecs : [];
+    if (!list.length) return [];
+    const continuation = clamp(continuationMeters, 0.0, 32.0, 0.0);
+    if (!(continuation > 1e-6)) return [];
+
+    const edgeTag = String(edge ?? '').trim().toLowerCase() === 'start' ? 'start' : 'end';
+    const styleTag = String(cornerStyle ?? '').trim().toLowerCase() === 'interior' ? 'interior' : 'exterior';
+    const out = [];
+
+    for (const spec of list) {
+        const src = spec && typeof spec === 'object' ? spec : null;
+        if (!src) continue;
+        const faceId = String(src.faceId ?? '').trim().toLowerCase();
+        if (faceId !== 'right') continue;
+        const geometryKind = String(src.geometryKind ?? '').trim().toLowerCase();
+
+        let next = {
+            ...src,
+            __bf2CornerEdge: edgeTag,
+            __bf2CornerStyle: styleTag
+        };
+
+        const widthOld = Math.max(0.01, Number(next.widthMeters) || 0.01);
+        const centerUOld = Number(next.centerU) || 0.0;
+        const minUOld = centerUOld - widthOld * 0.5;
+        const widthNew = clamp(continuation, 0.01, 32.0);
+        const minUNew = minUOld;
+        const maxUNew = minUNew + widthNew;
+        if (geometryKind === 'flat_panel_side_cap') {
+            next.centerU = maxUNew;
+        } else {
+            next.widthMeters = widthNew;
+            next.centerU = (minUNew + maxUNew) * 0.5;
+        }
+
+        if (geometryKind === 'flat_panel_cap') {
+            const bridgeStart = clamp(next.cornerBridgeStartMeters, 0.0, 32.0);
+            const bridgeEnd = clamp(next.cornerBridgeEndMeters, 0.0, 32.0);
+            if (bridgeStart > widthNew + 1e-6 || bridgeEnd > widthNew + 1e-6) {
+                next.cornerBridgeStartMeters = Math.min(bridgeStart, widthNew);
+                next.cornerBridgeEndMeters = Math.min(bridgeEnd, widthNew);
+            }
+        }
+
+        out.push(next);
+    }
+
+    return out;
+}
+
+function resolveFlatCapFamilyFrontMainSpec(specs) {
+    const list = Array.isArray(specs) ? specs : [];
+    for (const spec of list) {
+        const src = spec && typeof spec === 'object' ? spec : null;
+        if (!src) continue;
+        const faceId = String(src.faceId ?? '').trim().toLowerCase();
+        if (faceId !== 'front') continue;
+        const geometryKind = String(src.geometryKind ?? '').trim().toLowerCase();
+        if (geometryKind === 'flat_panel' || geometryKind === 'angled_support_profile') return src;
+    }
+    return null;
+}
+
+function computeFrontDecorationDrawSections(
+    {
+        uMin = 0.0,
+        uMax = 0.0,
+        yMin = 0.0,
+        yMax = 0.0,
+        openingOccluders = null,
+        minSectionWidthMeters = 0.01
+    } = {}
+) {
+    const start = Math.min(Number(uMin) || 0.0, Number(uMax) || 0.0);
+    const end = Math.max(Number(uMin) || 0.0, Number(uMax) || 0.0);
+    if (!(end > start + 1e-6)) return [];
+
+    const blockIntervals = [];
+    const occluders = Array.isArray(openingOccluders) ? openingOccluders : [];
+    const areaMinY = Math.min(Number(yMin) || 0.0, Number(yMax) || 0.0);
+    const areaMaxY = Math.max(Number(yMin) || 0.0, Number(yMax) || 0.0);
+    for (const occluder of occluders) {
+        const openMinY = Number(occluder?.yMin);
+        const openMaxY = Number(occluder?.yMax);
+        if (!Number.isFinite(openMinY) || !Number.isFinite(openMaxY)) continue;
+        if (!(openMaxY > areaMinY + EPS && openMinY < areaMaxY - EPS)) continue;
+        const blockMin = Math.max(start, Number(occluder?.uMin) || 0.0);
+        const blockMax = Math.min(end, Number(occluder?.uMax) || 0.0);
+        if (!(blockMax > blockMin + 1e-6)) continue;
+        blockIntervals.push({ minU: blockMin, maxU: blockMax });
+    }
+    if (!blockIntervals.length) return [{ minU: start, maxU: end }];
+
+    blockIntervals.sort((a, b) => (a.minU - b.minU) || (a.maxU - b.maxU));
+    const mergedBlocks = [];
+    for (const interval of blockIntervals) {
+        const prev = mergedBlocks[mergedBlocks.length - 1] ?? null;
+        if (!prev || interval.minU > prev.maxU + 1e-6) {
+            mergedBlocks.push({ minU: interval.minU, maxU: interval.maxU });
+        } else {
+            prev.maxU = Math.max(prev.maxU, interval.maxU);
+        }
+    }
+
+    const minSectionWidth = Math.max(0.001, Number(minSectionWidthMeters) || 0.01);
+    const sections = [];
+    let cursor = start;
+    for (const block of mergedBlocks) {
+        if (block.minU > cursor + minSectionWidth) {
+            sections.push({ minU: cursor, maxU: block.minU });
+        }
+        cursor = Math.max(cursor, block.maxU);
+    }
+    if (end > cursor + minSectionWidth) sections.push({ minU: cursor, maxU: end });
+    return sections;
+}
+
+function buildFlatCapFamilyFrontSectionSpecs(
+    faceSpecs,
+    {
+        sectionMinU = 0.0,
+        sectionMaxU = 0.0,
+        sectionIndex = 0
+    } = {}
+) {
+    const list = Array.isArray(faceSpecs) ? faceSpecs : [];
+    const minU = Math.min(Number(sectionMinU) || 0.0, Number(sectionMaxU) || 0.0);
+    const maxU = Math.max(Number(sectionMinU) || 0.0, Number(sectionMaxU) || 0.0);
+    const sectionWidth = Math.max(0.01, maxU - minU);
+    const sectionCenter = (minU + maxU) * 0.5;
+    const suffix = `_section_${String(Math.max(0, Number(sectionIndex) || 0) + 1).padStart(2, '0')}`;
+    const out = [];
+
+    for (const spec of list) {
+        const src = spec && typeof spec === 'object' ? spec : null;
+        if (!src) continue;
+        const faceId = String(src.faceId ?? '').trim().toLowerCase();
+        if (faceId !== 'front') continue;
+        const geometryKind = String(src.geometryKind ?? '').trim().toLowerCase();
+        const next = {
+            ...src,
+            role: `${String(src.role ?? 'decorator')}${suffix}`
+        };
+
+        if (geometryKind === 'flat_panel' || geometryKind === 'angled_support_profile' || geometryKind === 'flat_panel_cap') {
+            next.centerU = sectionCenter;
+            next.widthMeters = sectionWidth;
+            out.push(next);
+            continue;
+        }
+
+        if (geometryKind === 'flat_panel_side_cap') {
+            const yawDegrees = clamp(next.yawDegrees, -180.0, 180.0, 0.0);
+            const isStartCap = Math.abs(Math.abs(yawDegrees) - 180.0) <= 1e-4;
+            next.centerU = isStartCap ? minU : maxU;
+            out.push(next);
+            continue;
+        }
+
+        out.push(next);
+    }
+
+    return out;
+}
+
 function normalizeDecorationBayRef(value) {
     if (typeof value !== 'string') return '';
     const raw = value.trim();
@@ -102,6 +697,48 @@ function normalizeDecorationBayRef(value) {
     const bayId = raw.slice(idx + 1).trim();
     if (!isFaceId(faceId) || !bayId) return '';
     return `${faceId}:${bayId}`;
+}
+
+function stableStringify(value) {
+    if (Array.isArray(value)) {
+        return `[${value.map((entry) => stableStringify(entry)).join(',')}]`;
+    }
+    if (value && typeof value === 'object') {
+        const keys = Object.keys(value).sort();
+        const pairs = [];
+        for (const key of keys) pairs.push(`${JSON.stringify(key)}:${stableStringify(value[key])}`);
+        return `{${pairs.join(',')}}`;
+    }
+    return JSON.stringify(value);
+}
+
+function buildWallDecorationCompatibilityId({ safeState, spanStart = 0.0, spanEnd = 1.0 } = {}) {
+    const state = sanitizeWallDecoratorDebuggerState(safeState);
+    const minSpan = clampUnit(Math.min(Number(spanStart) || 0.0, Number(spanEnd) || 0.0), 0.0);
+    const maxSpan = clampUnit(Math.max(Number(spanStart) || 0.0, Number(spanEnd) || 0.0), 1.0);
+    return stableStringify({
+        span: {
+            start: minSpan,
+            end: maxSpan
+        },
+        state: {
+            decoratorId: state.decoratorId,
+            whereToApply: state.whereToApply,
+            mode: 'face',
+            position: state.position,
+            configuration: state.configuration ?? {},
+            materialSelection: state.materialSelection ?? { kind: 'match_wall', id: 'match_wall' },
+            wallBase: state.wallBase ?? {},
+            tiling: state.tiling ?? {}
+        }
+    });
+}
+
+function buildWallDecorationEndpointKey(x, z) {
+    const scale = 100000.0;
+    const px = Math.round((Number(x) || 0.0) * scale);
+    const pz = Math.round((Number(z) || 0.0) * scale);
+    return `${px},${pz}`;
 }
 
 function parseDecorationBayRef(value) {
@@ -120,189 +757,14 @@ function getFaceNormalVector(faceId) {
     return new THREE.Vector3(src.x, src.y, src.z);
 }
 
-function createAwningSlantedPlaneGeometry({
-    spanWidthMeters = 1.0,
-    projectionMeters = 0.80,
-    slopeDropMeters = 0.20
-} = {}) {
-    const width = Math.max(0.01, Number(spanWidthMeters) || 1.0);
-    const projection = Math.max(0.05, Number(projectionMeters) || 0.80);
-    const drop = Math.max(0.0, Number(slopeDropMeters) || 0.0);
-    const halfWidth = width * 0.5;
-    const halfProjection = projection * 0.5;
-    const halfDrop = drop * 0.5;
-
-    const positions = [
-        -halfWidth, halfDrop, -halfProjection,
-        halfWidth, -halfDrop, halfProjection,
-        halfWidth, halfDrop, -halfProjection,
-        -halfWidth, halfDrop, -halfProjection,
-        -halfWidth, -halfDrop, halfProjection,
-        halfWidth, -halfDrop, halfProjection
-    ];
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-
-    const pos = geo.getAttribute('position');
-    const uv = [];
-    for (let i = 0; i < pos.count; i += 1) {
-        const x = Number(pos.getX(i)) || 0.0;
-        const z = Number(pos.getZ(i)) || 0.0;
-        const u = (x + halfWidth) / Math.max(1e-6, width);
-        const v = 1.0 - ((z + halfProjection) / Math.max(1e-6, projection));
-        uv.push(u, v);
-    }
-    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    geo.computeBoundingBox();
-    geo.computeVertexNormals();
-    return {
-        geometry: geo,
-        placementDepthMeters: 0.0
-    };
-}
-
-function createAwningFrontQuadGeometry({
-    spanWidthMeters = 1.0,
-    faceHeightMeters = 0.30
-} = {}) {
-    const width = Math.max(0.01, Number(spanWidthMeters) || 1.0);
-    const height = Math.max(0.01, Number(faceHeightMeters) || 0.30);
-    const halfWidth = width * 0.5;
-    const halfHeight = height * 0.5;
-
-    const positions = [
-        -halfWidth, halfHeight, 0.0,
-        halfWidth, -halfHeight, 0.0,
-        halfWidth, halfHeight, 0.0,
-        -halfWidth, halfHeight, 0.0,
-        -halfWidth, -halfHeight, 0.0,
-        halfWidth, -halfHeight, 0.0
-    ];
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-
-    const pos = geo.getAttribute('position');
-    const uv = [];
-    for (let i = 0; i < pos.count; i += 1) {
-        const x = Number(pos.getX(i)) || 0.0;
-        const y = Number(pos.getY(i)) || 0.0;
-        const u = (x + halfWidth) / Math.max(1e-6, width);
-        const v = (y + halfHeight) / Math.max(1e-6, height);
-        uv.push(u, v);
-    }
-    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    geo.computeBoundingBox();
-    geo.computeVertexNormals();
-    return {
-        geometry: geo,
-        placementDepthMeters: 0.0
-    };
-}
-
-function createAwningSupportRodGeometry({
-    startU = 0.0,
-    startV = 0.0,
-    startOutsetMeters = 0.0,
-    endU = 0.0,
-    endV = 0.0,
-    endOutsetMeters = 0.0,
-    radiusMeters = 0.015,
-    radialSegments = 10
-} = {}) {
-    const radius = Math.max(0.001, Number(radiusMeters) || 0.015);
-    const segments = Math.max(3, Math.min(32, Math.floor(Number(radialSegments) || 10)));
-    const start = new THREE.Vector3(
-        Number(startU) || 0.0,
-        Number(startV) || 0.0,
-        Number(startOutsetMeters) || 0.0
-    );
-    const end = new THREE.Vector3(
-        Number(endU) || 0.0,
-        Number(endV) || 0.0,
-        Number(endOutsetMeters) || 0.0
-    );
-    const axis = end.clone().sub(start);
-    const length = Math.max(1e-4, axis.length());
-    const geo = new THREE.CylinderGeometry(radius, radius, length, segments, 1, false);
-
-    const up = new THREE.Vector3(0, 1, 0);
-    if (axis.lengthSq() <= 1e-8) axis.copy(up);
-    axis.normalize();
-    const q = new THREE.Quaternion().setFromUnitVectors(up, axis);
-    const m = new THREE.Matrix4().makeRotationFromQuaternion(q);
-    const mid = start.clone().add(end).multiplyScalar(0.5);
-    m.setPosition(mid);
-    geo.applyMatrix4(m);
-    geo.computeBoundingBox();
-    geo.computeVertexNormals();
-
-    return {
-        geometry: geo,
-        placementDepthMeters: 0.0
-    };
-}
-
 function createWallDecorationGeometryFromSpec(spec) {
-    const geometryKind = String(spec?.geometryKind ?? '').trim().toLowerCase();
-    const widthMeters = Math.max(0.01, Number(spec?.widthMeters) || 1.0);
-    const heightMeters = Math.max(0.01, Number(spec?.heightMeters) || 0.2);
-    const depthMeters = Math.max(0.005, Number(spec?.depthMeters) || 0.08);
-
-    if (geometryKind === 'flat_panel') {
-        return {
-            geometry: new THREE.PlaneGeometry(widthMeters, heightMeters),
-            placementDepthMeters: 0.0
-        };
-    }
-
-    if (geometryKind === 'flat_panel_cap') {
-        const capDepth = Math.max(0.005, Number(spec?.depthMeters) || depthMeters);
-        return {
-            geometry: new THREE.BoxGeometry(widthMeters, WALL_DECORATION_THIN_PLANE_THICKNESS_M, capDepth),
-            placementDepthMeters: capDepth
-        };
-    }
-
-    if (geometryKind === 'flat_panel_side_cap') {
-        const sideDepth = Math.max(0.005, Number(spec?.widthMeters) || depthMeters);
-        return {
-            geometry: new THREE.BoxGeometry(WALL_DECORATION_THIN_PLANE_THICKNESS_M, heightMeters, sideDepth),
-            placementDepthMeters: sideDepth
-        };
-    }
-
-    if (geometryKind === 'awning_slanted_plane') {
-        return createAwningSlantedPlaneGeometry({
-            spanWidthMeters: widthMeters,
-            projectionMeters: Number(spec?.awningProjectionMeters) || depthMeters,
-            slopeDropMeters: Number(spec?.awningSlopeDropMeters) || 0.0
-        });
-    }
-
-    if (geometryKind === 'awning_front_quad') {
-        return createAwningFrontQuadGeometry({
-            spanWidthMeters: widthMeters,
-            faceHeightMeters: heightMeters
-        });
-    }
-
-    if (geometryKind === 'awning_support_rod') {
-        return createAwningSupportRodGeometry({
-            startU: Number(spec?.rodStartU) || 0.0,
-            startV: Number(spec?.rodStartV) || 0.0,
-            startOutsetMeters: Number(spec?.rodStartOutsetMeters) || 0.0,
-            endU: Number(spec?.rodEndU) || 0.0,
-            endV: Number(spec?.rodEndV) || 0.0,
-            endOutsetMeters: Number(spec?.rodEndOutsetMeters) || 0.0,
-            radiusMeters: Number(spec?.rodRadiusMeters) || 0.015,
-            radialSegments: 10
-        });
-    }
-
-    // Keep unsupported kinds visible in BF2 with a conservative fallback box.
+    const built = createSharedWallDecoratorGeometryFromSpec(spec, { fallbackToBox: true });
     return {
-        geometry: new THREE.BoxGeometry(widthMeters, heightMeters, depthMeters),
-        placementDepthMeters: depthMeters
+        geometry: built?.geometry?.isBufferGeometry ? built.geometry : null,
+        placementDepthMeters: Math.max(0.0, Number(built?.placementDepthMeters) || 0.0),
+        surfaceWidthMeters: Math.max(0.01, Number(built?.surfaceWidthMeters) || (Number(spec?.widthMeters) || 1.0)),
+        surfaceHeightMeters: Math.max(0.01, Number(built?.surfaceHeightMeters) || (Number(spec?.heightMeters) || 0.2)),
+        geometryKind: String(built?.geometryKind ?? spec?.geometryKind ?? '').trim().toLowerCase()
     };
 }
 
@@ -438,6 +900,8 @@ export class BuildingFabrication2Scene {
         this._wallTextures = new BuildingWallTextureCache({ renderer: this.engine?.renderer ?? null });
         this._building = null;
         this._wallDecorationsGroup = null;
+        this._wallDecorationsExplodedGroup = null;
+        this._explodedDecorationsEnabled = false;
         this._beltColorById = new Map(getBeltCourseColorOptions().map((opt) => [String(opt?.id ?? ''), Number(opt?.hex) || 0xffffff]));
 
         this._showWireframe = false;
@@ -540,6 +1004,8 @@ export class BuildingFabrication2Scene {
         this._layoutHoverFaceId = null;
         this._layoutHoverVertexIndex = null;
         this._sun = null;
+        this._wallDecorationsExplodedGroup = null;
+        this._explodedDecorationsEnabled = false;
         this._debugDisableSuspect1 = false;
         this._debugDisableSuspect4 = false;
     }
@@ -655,6 +1121,16 @@ export class BuildingFabrication2Scene {
         if (next === this._renderSlab) return;
         this._renderSlab = next;
         this._syncSupportSlab();
+    }
+
+    setExplodedDecorationsEnabled(enabled) {
+        const next = !!enabled;
+        if (next === this._explodedDecorationsEnabled) {
+            this._syncExplodedDecorationsState();
+            return;
+        }
+        this._explodedDecorationsEnabled = next;
+        this._syncExplodedDecorationsState();
     }
 
     getLayoutEditPlaneY() {
@@ -919,6 +1395,14 @@ export class BuildingFabrication2Scene {
         const b = this._building;
         if (!b) return;
 
+        if (this._explodedDecorationsEnabled) {
+            if (b.group) b.group.visible = false;
+            if (this._wallDecorationsGroup) this._wallDecorationsGroup.visible = false;
+            if (!this._wallDecorationsExplodedGroup) this._rebuildExplodedWallDecorations();
+            return;
+        }
+
+        if (b.group) b.group.visible = true;
         const floorplan = this._showFloorplan;
         if (b.planGroup) b.planGroup.visible = floorplan;
         if (b.solidGroup) b.solidGroup.visible = !floorplan;
@@ -927,9 +1411,74 @@ export class BuildingFabrication2Scene {
         if (b.floorsGroup) b.floorsGroup.visible = !floorplan && this._showFloorDivisions;
         if (b.windowsGroup) b.windowsGroup.visible = !floorplan;
         if (this._wallDecorationsGroup) this._wallDecorationsGroup.visible = !floorplan;
+        this._clearWallDecorationsExploded();
+    }
+
+    _clearWallDecorationsExploded() {
+        if (!this._wallDecorationsExplodedGroup) return;
+        this._wallDecorationsExplodedGroup.removeFromParent();
+        disposeObject3D(this._wallDecorationsExplodedGroup);
+        this._wallDecorationsExplodedGroup = null;
+        if (this._building && typeof this._building === 'object') this._building.decorationExplodedGroup = null;
+    }
+
+    _collectWallDecorationMeshes() {
+        const out = [];
+        const root = this._wallDecorationsGroup;
+        if (!root) return out;
+        root.traverse((obj) => {
+            if (obj?.isMesh) out.push(obj);
+        });
+        return out;
+    }
+
+    _rebuildExplodedWallDecorations() {
+        this._clearWallDecorationsExploded();
+        if (!this.root || !this._explodedDecorationsEnabled) return;
+        const sourceMeshes = this._collectWallDecorationMeshes();
+        if (!sourceMeshes.length) return;
+
+        const entries = buildWallDecoratorExplodedFaceEntries(sourceMeshes, {
+            wireframe: !!this._showWireframe
+        });
+        if (!entries.length) return;
+
+        if (areWallDecoratorExplodedEntriesCurvedRingOnly(entries)) {
+            separateWallDecoratorExplodedCurvedRingFaces(entries);
+        } else if (areWallDecoratorExplodedEntriesCorniceRoundedOnly(entries)) {
+            separateWallDecoratorExplodedCorniceRoundedFaces(entries);
+        } else {
+            separateWallDecoratorExplodedFacesIterative(entries);
+        }
+
+        const group = new THREE.Group();
+        group.name = 'bf2_wall_decorations_exploded';
+        for (const entry of entries) {
+            const mesh = entry?.mesh?.isMesh ? entry.mesh : null;
+            if (!mesh) continue;
+            mesh.position.copy(entry.centroid);
+            group.add(mesh);
+        }
+        if (!group.children.length) {
+            disposeObject3D(group);
+            return;
+        }
+
+        this.root.add(group);
+        this._wallDecorationsExplodedGroup = group;
+        if (this._building && typeof this._building === 'object') this._building.decorationExplodedGroup = group;
+    }
+
+    _syncExplodedDecorationsState() {
+        if (!this._building?.group) {
+            this._clearWallDecorationsExploded();
+            return;
+        }
+        this._syncBuildingRenderMode();
     }
 
     _clearWallDecorations() {
+        this._clearWallDecorationsExploded();
         if (!this._wallDecorationsGroup) return;
         this._wallDecorationsGroup.removeFromParent();
         disposeObject3D(this._wallDecorationsGroup);
@@ -1137,6 +1686,7 @@ export class BuildingFabrication2Scene {
             if (!entries.length) continue;
 
             const byBayRef = new Map();
+            const seenSegmentKeysByBayRef = new Map();
             for (const entry of entries) {
                 const faceId = isFaceId(entry?.faceId) ? entry.faceId : null;
                 const bayId = typeof entry?.bayId === 'string' ? entry.bayId : '';
@@ -1145,10 +1695,32 @@ export class BuildingFabrication2Scene {
                 const z0 = Number(entry.z0);
                 const x1 = Number(entry.x1);
                 const z1 = Number(entry.z1);
+                const nx = Number(entry?.nx);
+                const nz = Number(entry?.nz);
                 if (!Number.isFinite(x0) || !Number.isFinite(z0) || !Number.isFinite(x1) || !Number.isFinite(z1)) continue;
                 const bayRef = `${faceId}:${bayId}`;
+                const scale = 100000.0;
+                const pA = `${Math.round(x0 * scale)},${Math.round(z0 * scale)}`;
+                const pB = `${Math.round(x1 * scale)},${Math.round(z1 * scale)}`;
+                const segmentKey = pA <= pB ? `${pA}|${pB}` : `${pB}|${pA}`;
+                let seenSegmentKeys = seenSegmentKeysByBayRef.get(bayRef);
+                if (!seenSegmentKeys) {
+                    seenSegmentKeys = new Set();
+                    seenSegmentKeysByBayRef.set(bayRef, seenSegmentKeys);
+                }
+                if (seenSegmentKeys.has(segmentKey)) continue;
+                seenSegmentKeys.add(segmentKey);
                 const bucket = byBayRef.get(bayRef);
-                const normalized = { faceId, bayId, x0, z0, x1, z1 };
+                const normalized = {
+                    faceId,
+                    bayId,
+                    x0,
+                    z0,
+                    x1,
+                    z1,
+                    ...(Number.isFinite(nx) ? { nx } : {}),
+                    ...(Number.isFinite(nz) ? { nz } : {})
+                };
                 if (bucket) bucket.push(normalized);
                 else byBayRef.set(bayRef, [normalized]);
             }
@@ -1166,6 +1738,130 @@ export class BuildingFabrication2Scene {
             if (!id) continue;
             if (!floorLayerById.has(id)) floorLayerById.set(id, layer);
         }
+        const facadesByLayerId = config?.facades && typeof config.facades === 'object'
+            ? config.facades
+            : null;
+
+        const resolveMasterFaceIdForLayer = (layer, faceId) => {
+            const targetFaceId = isFaceId(faceId) ? faceId : null;
+            if (!targetFaceId) return null;
+            const links = layer?.faceLinking?.links && typeof layer.faceLinking.links === 'object'
+                ? layer.faceLinking.links
+                : null;
+            if (!links) return targetFaceId;
+            const seen = new Set();
+            let cur = targetFaceId;
+            for (let i = 0; i < 8; i += 1) {
+                if (seen.has(cur)) break;
+                seen.add(cur);
+                const next = links?.[cur] ?? null;
+                if (!isFaceId(next) || next === cur) break;
+                cur = next;
+            }
+            return cur;
+        };
+
+        const resolveFaceMaterialSpec = (layer, faceId) => {
+            const masterFaceId = resolveMasterFaceIdForLayer(layer, faceId);
+            if (masterFaceId) {
+                const faceMaterials = layer?.faceMaterials && typeof layer.faceMaterials === 'object'
+                    ? layer.faceMaterials
+                    : null;
+                const faceCfg = faceMaterials?.[masterFaceId] && typeof faceMaterials[masterFaceId] === 'object'
+                    ? faceMaterials[masterFaceId]
+                    : null;
+                const faceMaterial = normalizeMaterialSpec(faceCfg?.material ?? null);
+                if (faceMaterial) return faceMaterial;
+            }
+            return normalizeMaterialSpec(layer?.material ?? config?.baseWallMaterial ?? null);
+        };
+
+        const resolveLinkedBaySource = (baysById, bayId) => {
+            const byId = baysById instanceof Map ? baysById : null;
+            const startId = typeof bayId === 'string' ? bayId : '';
+            if (!byId || !startId) return null;
+            const visited = new Set();
+            let curId = startId;
+            let current = byId.get(curId) ?? null;
+            for (let i = 0; i < 32; i += 1) {
+                if (!current || typeof current !== 'object') break;
+                if (visited.has(curId)) break;
+                visited.add(curId);
+                const nextLink = typeof current.materialLinkFromBayId === 'string' && current.materialLinkFromBayId
+                    ? current.materialLinkFromBayId
+                    : (typeof current.linkFromBayId === 'string' ? current.linkFromBayId : '');
+                if (!nextLink || nextLink === curId) break;
+                const next = byId.get(nextLink) ?? null;
+                if (!next || typeof next !== 'object') break;
+                curId = nextLink;
+                current = next;
+            }
+            return current;
+        };
+
+        const resolveLinkedBayWindowSource = (baysById, bayId) => {
+            const byId = baysById instanceof Map ? baysById : null;
+            const startId = typeof bayId === 'string' ? bayId : '';
+            if (!byId || !startId) return null;
+            const visited = new Set();
+            let curId = startId;
+            let current = byId.get(curId) ?? null;
+            for (let i = 0; i < 32; i += 1) {
+                if (!current || typeof current !== 'object') break;
+                if (visited.has(curId)) break;
+                visited.add(curId);
+                const nextLink = typeof current.linkFromBayId === 'string' && current.linkFromBayId
+                    ? current.linkFromBayId
+                    : (typeof current.materialLinkFromBayId === 'string' ? current.materialLinkFromBayId : '');
+                if (!nextLink || nextLink === curId) break;
+                const next = byId.get(nextLink) ?? null;
+                if (!next || typeof next !== 'object') break;
+                curId = nextLink;
+                current = next;
+            }
+            return current;
+        };
+
+        const resolveActiveWallMaterialSpec = ({ layerId, layer, faceId, bayId }) => {
+            const baseFaceMaterial = resolveFaceMaterialSpec(layer, faceId);
+            const layerFacades = facadesByLayerId?.[layerId] && typeof facadesByLayerId[layerId] === 'object'
+                ? facadesByLayerId[layerId]
+                : null;
+            const facade = layerFacades?.[faceId] && typeof layerFacades[faceId] === 'object'
+                ? layerFacades[faceId]
+                : null;
+            const bays = Array.isArray(facade?.layout?.bays?.items) ? facade.layout.bays.items : [];
+            if (!bays.length) return baseFaceMaterial;
+            const byId = new Map();
+            for (const entry of bays) {
+                const id = typeof entry?.id === 'string' ? entry.id : '';
+                if (!id || byId.has(id)) continue;
+                byId.set(id, entry);
+            }
+            const sourceBay = resolveLinkedBaySource(byId, bayId);
+            const bayMaterial = normalizeMaterialSpec(sourceBay?.wallMaterialOverride ?? null);
+            return bayMaterial ?? baseFaceMaterial;
+        };
+
+        const resolveActiveBayWindowConfig = ({ layerId, faceId, bayId }) => {
+            const layerFacades = facadesByLayerId?.[layerId] && typeof facadesByLayerId[layerId] === 'object'
+                ? facadesByLayerId[layerId]
+                : null;
+            const facade = layerFacades?.[faceId] && typeof layerFacades[faceId] === 'object'
+                ? layerFacades[faceId]
+                : null;
+            const bays = Array.isArray(facade?.layout?.bays?.items) ? facade.layout.bays.items : [];
+            if (!bays.length) return null;
+            const byId = new Map();
+            for (const entry of bays) {
+                const id = typeof entry?.id === 'string' ? entry.id : '';
+                if (!id || byId.has(id)) continue;
+                byId.set(id, entry);
+            }
+            const sourceBay = resolveLinkedBayWindowSource(byId, bayId);
+            const windowCfg = resolveBayWindowFromSpec(sourceBay);
+            return windowCfg && typeof windowCfg === 'object' ? windowCfg : null;
+        };
 
         const resolveFloorSegmentsForSet = (layerId, floorIntervalRaw) => {
             const allSegments = Array.isArray(floorSegmentsByLayerId.get(layerId))
@@ -1215,11 +1911,14 @@ export class BuildingFabrication2Scene {
             if (!floorSegments.length) continue;
 
             const layer = floorLayerById.get(layerId) ?? null;
-            const layerMaterialSpec = normalizeMaterialSpec(layer?.material ?? config?.baseWallMaterial ?? null);
             const decorations = Array.isArray(set?.decorations) ? set.decorations : [];
 
+            const setId = typeof set?.id === 'string' ? set.id : '';
             for (const decoration of decorations) {
                 if (!decoration || typeof decoration !== 'object') continue;
+                const decorationId = typeof decoration?.id === 'string' ? decoration.id : '';
+                if (!decorationId) continue;
+                const decorationKey = `${setId}:${decorationId}`;
 
                 const safeState = sanitizeWallDecoratorDebuggerState(decoration?.state);
                 const span = decoration?.span && typeof decoration.span === 'object' ? decoration.span : {};
@@ -1228,28 +1927,175 @@ export class BuildingFabrication2Scene {
                 const minSpan = Math.min(spanStart, spanEnd);
                 const maxSpan = Math.max(spanStart, spanEnd);
                 if (maxSpan - minSpan <= EPS) continue;
+                const compatibilityId = buildWallDecorationCompatibilityId({
+                    safeState,
+                    spanStart: minSpan,
+                    spanEnd: maxSpan
+                });
 
                 const autoCornerByBayRef = decoration?.autoCorner?.byBayRef && typeof decoration.autoCorner.byBayRef === 'object'
                     ? decoration.autoCorner.byBayRef
                     : null;
+                const resolvedAutoTargetBayRefs = Array.isArray(decoration?.autoCorner?.resolvedBayRefs)
+                    ? decoration.autoCorner.resolvedBayRefs
+                        .map((entry) => normalizeDecorationBayRef(entry))
+                        .filter((entry, idx, arr) => !!entry && arr.indexOf(entry) === idx && byBayRef.has(entry))
+                    : [];
+                const resolvedTargetBayRefSet = new Set(targetBayRefs);
+                for (const ref of resolvedAutoTargetBayRefs) resolvedTargetBayRefSet.add(ref);
+                const resolvedTargetBayRefs = Array.from(resolvedTargetBayRefSet);
+                if (!resolvedTargetBayRefs.length) continue;
 
-                for (const bayRef of targetBayRefs) {
+                const resolvedBayRenderItems = [];
+                for (const bayRef of resolvedTargetBayRefs) {
                     const parsedBayRef = parseDecorationBayRef(bayRef);
                     if (!parsedBayRef) continue;
                     const bayEntries = byBayRef.get(bayRef) ?? [];
                     if (!bayEntries.length) continue;
+                    const layerMaterialSpec = resolveActiveWallMaterialSpec({
+                        layerId,
+                        layer,
+                        faceId: parsedBayRef.faceId,
+                        bayId: parsedBayRef.bayId
+                    });
+                    const windowConfig = resolveActiveBayWindowConfig({
+                        layerId,
+                        faceId: parsedBayRef.faceId,
+                        bayId: parsedBayRef.bayId
+                    });
+                    resolvedBayRenderItems.push({
+                        bayRef,
+                        parsedBayRef,
+                        bayEntries,
+                        layerMaterialSpec,
+                        windowConfig
+                    });
+                }
+                if (!resolvedBayRenderItems.length) continue;
+
+                // Pass 1: resolve all targeted bay segments + compatibility id.
+                const endpointAssignmentsByKey = new Map();
+                const pushEndpointAssignment = ({ endpointKey, bayRef, faceId, segmentIndex, edge }) => {
+                    if (!endpointKey) return;
+                    const bucket = endpointAssignmentsByKey.get(endpointKey) ?? [];
+                    bucket.push({
+                        compatibilityId,
+                        bayRef,
+                        faceId,
+                        segmentIndex: Math.max(0, Math.floor(Number(segmentIndex) || 0)),
+                        edge: edge === 'start' ? 'start' : 'end'
+                    });
+                    endpointAssignmentsByKey.set(endpointKey, bucket);
+                };
+                for (const item of resolvedBayRenderItems) {
+                    const faceId = item?.parsedBayRef?.faceId;
+                    const bayRef = item?.bayRef;
+                    const bayEntries = Array.isArray(item?.bayEntries) ? item.bayEntries : [];
+                    for (let segmentIndex = 0; segmentIndex < bayEntries.length; segmentIndex += 1) {
+                        const bayEntry = bayEntries[segmentIndex] ?? null;
+                        if (!bayEntry) continue;
+                        const startKey = buildWallDecorationEndpointKey(bayEntry.x0, bayEntry.z0);
+                        const endKey = buildWallDecorationEndpointKey(bayEntry.x1, bayEntry.z1);
+                        pushEndpointAssignment({ endpointKey: startKey, bayRef, faceId, segmentIndex, edge: 'start' });
+                        pushEndpointAssignment({ endpointKey: endKey, bayRef, faceId, segmentIndex, edge: 'end' });
+                    }
+                }
+                const resolveEdgeCompatibility = ({ bayRef, faceId, segmentIndex, endpointKey }) => {
+                    const out = { any: false, corner: false, sameFace: false };
+                    const candidates = Array.isArray(endpointAssignmentsByKey.get(endpointKey))
+                        ? endpointAssignmentsByKey.get(endpointKey)
+                        : [];
+                    for (const candidate of candidates) {
+                        if (!candidate || candidate.compatibilityId !== compatibilityId) continue;
+                        const sameSegment = candidate.bayRef === bayRef
+                            && Number(candidate.segmentIndex) === Number(segmentIndex);
+                        if (sameSegment) continue;
+                        out.any = true;
+                        if (candidate.faceId === faceId) out.sameFace = true;
+                        else out.corner = true;
+                        if (out.corner && out.sameFace) break;
+                    }
+                    return out;
+                };
+
+                // Pass 2: render each segment using per-edge compatibility (corner/flat/cap ownership).
+                for (const bayRenderItem of resolvedBayRenderItems) {
+                    const bayRef = bayRenderItem.bayRef;
+                    const parsedBayRef = bayRenderItem.parsedBayRef;
+                    const layerMaterialSpec = bayRenderItem.layerMaterialSpec;
+                    const windowConfig = bayRenderItem.windowConfig;
+                    const bayEntries = bayRenderItem.bayEntries;
 
                     const cornerMeta = autoCornerByBayRef && typeof autoCornerByBayRef[bayRef] === 'object'
                         ? autoCornerByBayRef[bayRef]
                         : null;
-                    const cornerStart = cornerMeta?.start === true;
-                    const cornerEnd = cornerMeta?.end === true;
-                    const useCornerMode = cornerStart || cornerEnd;
-                    const reverseForCornerStart = cornerStart && !cornerEnd;
+                    const cornerStartMeta = cornerMeta?.start === true;
+                    const cornerEndMeta = cornerMeta?.end === true;
+                    const cornerStartStyle = String(cornerMeta?.startCornerStyle ?? '').trim().toLowerCase() === 'interior'
+                        ? 'interior'
+                        : 'exterior';
+                    const cornerEndStyle = String(cornerMeta?.endCornerStyle ?? '').trim().toLowerCase() === 'interior'
+                        ? 'interior'
+                        : 'exterior';
+                    const cornerStartRelation = String(cornerMeta?.startCornerRelation ?? '').trim().toLowerCase() === 'same_face'
+                        ? 'same_face'
+                        : 'face_boundary';
+                    const cornerEndRelation = String(cornerMeta?.endCornerRelation ?? '').trim().toLowerCase() === 'same_face'
+                        ? 'same_face'
+                        : 'face_boundary';
                     const continuationStartMeters = clamp(cornerMeta?.continuationStartMeters, 0.0, 32.0);
                     const continuationEndMeters = clamp(cornerMeta?.continuationEndMeters, 0.0, 32.0);
 
-                    for (const bayEntry of bayEntries) {
+                    for (let bayEntryIndex = 0; bayEntryIndex < bayEntries.length; bayEntryIndex += 1) {
+                        const bayEntry = bayEntries[bayEntryIndex];
+                        if (!bayEntry || typeof bayEntry !== 'object') continue;
+                        const startKey = buildWallDecorationEndpointKey(bayEntry.x0, bayEntry.z0);
+                        const endKey = buildWallDecorationEndpointKey(bayEntry.x1, bayEntry.z1);
+                        const startEdgeCompatibility = resolveEdgeCompatibility({
+                            bayRef,
+                            faceId: parsedBayRef.faceId,
+                            segmentIndex: bayEntryIndex,
+                            endpointKey: startKey
+                        });
+                        const endEdgeCompatibility = resolveEdgeCompatibility({
+                            bayRef,
+                            faceId: parsedBayRef.faceId,
+                            segmentIndex: bayEntryIndex,
+                            endpointKey: endKey
+                        });
+                        const cornerStart = startEdgeCompatibility.corner || cornerStartMeta;
+                        const cornerEnd = endEdgeCompatibility.corner || cornerEndMeta;
+                        const useCornerMode = cornerStart || cornerEnd;
+                        const reverseForCornerStart = cornerStart && !cornerEnd;
+                        const activeCornerStyle = useCornerMode
+                            ? ((cornerStart && cornerStartStyle === 'interior') || (cornerEnd && cornerEndStyle === 'interior')
+                                ? 'interior'
+                                : (reverseForCornerStart ? cornerStartStyle : cornerEndStyle))
+                            : 'exterior';
+                        const activeCornerRelation = useCornerMode
+                            ? (reverseForCornerStart ? cornerStartRelation : cornerEndRelation)
+                            : 'face_boundary';
+                        const isInteriorCorner = useCornerMode && activeCornerStyle === 'interior';
+                        const hasSameFaceStartTransition = cornerStartMeta
+                            && cornerStartRelation === 'same_face'
+                            && continuationStartMeters > 1e-6
+                            && (startEdgeCompatibility.sameFace || !startEdgeCompatibility.any);
+                        const hasSameFaceEndTransition = cornerEndMeta
+                            && cornerEndRelation === 'same_face'
+                            && continuationEndMeters > 1e-6
+                            && (endEdgeCompatibility.sameFace || !endEdgeCompatibility.any);
+                        const hasBoundaryStartTransition = cornerStartMeta
+                            && cornerStartRelation === 'face_boundary'
+                            && continuationStartMeters > 1e-6
+                            && (startEdgeCompatibility.corner || !startEdgeCompatibility.any);
+                        const hasBoundaryEndTransition = cornerEndMeta
+                            && cornerEndRelation === 'face_boundary'
+                            && continuationEndMeters > 1e-6
+                            && (endEdgeCompatibility.corner || !endEdgeCompatibility.any);
+                        const hasContinuationStartTransition = hasSameFaceStartTransition || hasBoundaryStartTransition;
+                        const hasContinuationEndTransition = hasSameFaceEndTransition || hasBoundaryEndTransition;
+                        const hasCompatibleStartCornerEdge = startEdgeCompatibility.corner;
+                        const hasCompatibleEndCornerEdge = endEdgeCompatibility.corner;
                         const p0 = new THREE.Vector3(Number(bayEntry.x0) || 0.0, 0.0, Number(bayEntry.z0) || 0.0);
                         const p1 = new THREE.Vector3(Number(bayEntry.x1) || 0.0, 0.0, Number(bayEntry.z1) || 0.0);
                         const bayLength = p1.distanceTo(p0);
@@ -1259,33 +2105,45 @@ export class BuildingFabrication2Scene {
                         const spanWorldEnd = p0.clone().lerp(p1, maxSpan);
                         if (spanWorldEnd.distanceTo(spanWorldStart) <= EPS) continue;
 
-                        let segmentStart = spanWorldStart;
-                        let segmentEnd = spanWorldEnd;
+                        const segmentStartCanonical = spanWorldStart;
+                        const segmentEndCanonical = spanWorldEnd;
+                        let segmentStartOriented = segmentStartCanonical;
+                        let segmentEndOriented = segmentEndCanonical;
                         if (reverseForCornerStart) {
-                            segmentStart = spanWorldEnd;
-                            segmentEnd = spanWorldStart;
+                            segmentStartOriented = segmentEndCanonical;
+                            segmentEndOriented = segmentStartCanonical;
                         }
 
-                        const frontTangent = segmentEnd.clone().sub(segmentStart);
+                        const frontTangent = segmentEndOriented.clone().sub(segmentStartOriented);
                         const spanMeters = frontTangent.length();
                         if (spanMeters <= EPS) continue;
                         frontTangent.multiplyScalar(1 / spanMeters);
+                        const frontTangentCanonical = segmentEndCanonical.clone().sub(segmentStartCanonical);
+                        if (frontTangentCanonical.lengthSq() <= EPS) continue;
+                        frontTangentCanonical.normalize();
 
-                        let frontNormal = getFaceNormalVector(parsedBayRef.faceId);
-                        if (!frontNormal || frontNormal.lengthSq() <= EPS) {
-                            frontNormal = frontTangent.clone().cross(up);
+                        const frontNormal = new THREE.Vector3(Number(bayEntry?.nx) || 0.0, 0.0, Number(bayEntry?.nz) || 0.0);
+                        if (frontNormal.lengthSq() <= EPS) {
+                            const faceNormal = getFaceNormalVector(parsedBayRef.faceId);
+                            if (!faceNormal || faceNormal.lengthSq() <= EPS) continue;
+                            frontNormal.copy(faceNormal);
                         }
-                        frontNormal.y = 0.0;
-                        if (frontNormal.lengthSq() <= EPS) frontNormal.copy(frontTangent).cross(up);
-                        if (frontNormal.lengthSq() <= EPS) continue;
                         frontNormal.normalize();
 
-                        const wallCenter = segmentStart.clone().add(segmentEnd).multiplyScalar(0.5);
-                        const wallCorner = segmentEnd.clone();
+                        const segmentCanonicalStartMeters = bayLength * minSpan;
+                        const segmentCanonicalEndMeters = bayLength * maxSpan;
 
                         const stateForBay = sanitizeWallDecoratorDebuggerState({
                             ...safeState,
                             mode: useCornerMode ? 'corner' : 'face'
+                        });
+                        const stateForFace = sanitizeWallDecoratorDebuggerState({
+                            ...safeState,
+                            mode: 'face'
+                        });
+                        const stateForCorner = sanitizeWallDecoratorDebuggerState({
+                            ...safeState,
+                            mode: 'corner'
                         });
 
                         for (const floorSeg of floorSegments) {
@@ -1297,92 +2155,280 @@ export class BuildingFabrication2Scene {
                             const continuationMeters = reverseForCornerStart
                                 ? continuationStartMeters
                                 : continuationEndMeters;
+                            const hasCornerContinuationTransition = useCornerMode
+                                && continuationMeters > 1e-6
+                                && (activeCornerRelation === 'same_face' || activeCornerRelation === 'face_boundary');
                             const wallDepth = clamp(
                                 WALL_DECORATION_DEFAULT_WALL_DEPTH_M + continuationMeters,
                                 0.05,
                                 32.0
                             );
-                            const specs = buildWallDecoratorShapeSpecs(stateForBay, {
+                            let renderSegmentStart = segmentStartOriented;
+                            let renderSegmentEnd = segmentEndOriented;
+                            let renderFrontTangent = frontTangent;
+                            let reverseSegmentForOccluders = reverseForCornerStart;
+                            let usingFlatCapFamilyPipeline = false;
+                            let openingSplitByAreas = false;
+
+                            const faceSpecs = buildWallDecoratorShapeSpecs(stateForFace, {
                                 widthMeters: spanMeters,
                                 heightMeters: wallHeight,
                                 depthMeters: wallDepth
                             });
+                            const canUseFlatCapFamily = hasFlatCapFamilyFrontSpecs(faceSpecs);
+                            if (canUseFlatCapFamily) {
+                                usingFlatCapFamilyPipeline = true;
+                                renderSegmentStart = segmentStartCanonical;
+                                renderSegmentEnd = segmentEndCanonical;
+                                renderFrontTangent = frontTangentCanonical;
+                                reverseSegmentForOccluders = false;
+                            }
+
+                            const openingOccluders = buildBayOpeningOccludersForDecorationSegment({
+                                windowConfig,
+                                bayLengthMeters: bayLength,
+                                segmentCanonicalStartMeters,
+                                segmentCanonicalEndMeters,
+                                segmentSpanMeters: spanMeters,
+                                reverseSegment: reverseSegmentForOccluders,
+                                floorStartY: startY,
+                                floorEndY: endY
+                            });
+                            let specs = null;
+                            if (canUseFlatCapFamily) {
+                                const referenceMain = resolveFlatCapFamilyFrontMainSpec(faceSpecs);
+                                if (referenceMain) {
+                                    openingSplitByAreas = true;
+                                    const refWidth = Math.max(0.01, Number(referenceMain.widthMeters) || 0.01);
+                                    const refCenter = Number(referenceMain.centerU) || 0.0;
+                                    const drawMinU = refCenter - refWidth * 0.5;
+                                    const drawMaxU = refCenter + refWidth * 0.5;
+                                    const refHeight = Math.max(0.01, Number(referenceMain.heightMeters) || 0.01);
+                                    const refCenterV = Number(referenceMain.centerV) || 0.0;
+                                    const drawMinY = wallCenterY + refCenterV - refHeight * 0.5;
+                                    const drawMaxY = wallCenterY + refCenterV + refHeight * 0.5;
+                                    const sections = computeFrontDecorationDrawSections({
+                                        uMin: drawMinU,
+                                        uMax: drawMaxU,
+                                        yMin: drawMinY,
+                                        yMax: drawMaxY,
+                                        openingOccluders,
+                                        minSectionWidthMeters: 0.01
+                                    });
+                                    const edgeOffsetMeters = resolveFlatCapFamilyFrontOffsetMeters(faceSpecs, 0.05);
+                                    const cornerSpecs = (hasContinuationStartTransition || hasContinuationEndTransition)
+                                        ? buildWallDecoratorShapeSpecs(stateForCorner, {
+                                            widthMeters: spanMeters,
+                                            heightMeters: wallHeight,
+                                            depthMeters: wallDepth
+                                        })
+                                        : [];
+                                    specs = [];
+                                    const boundaryEps = 1e-4;
+                                    for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex += 1) {
+                                        const section = sections[sectionIndex];
+                                        if (!section || !(section.maxU > section.minU + 0.01)) continue;
+                                        const touchesWallStart = Math.abs(section.minU - drawMinU) <= boundaryEps;
+                                        const touchesWallEnd = Math.abs(section.maxU - drawMaxU) <= boundaryEps;
+                                        const sectionSpecs = buildFlatCapFamilyFrontSectionSpecs(faceSpecs, {
+                                            sectionMinU: section.minU,
+                                            sectionMaxU: section.maxU,
+                                            sectionIndex
+                                        });
+                                        const sectionWithEdges = adjustFlatCapFamilyFrontSpecsForEdges(sectionSpecs, {
+                                            offsetMeters: edgeOffsetMeters,
+                                            extendStart: hasCompatibleStartCornerEdge && touchesWallStart,
+                                            extendEnd: hasCompatibleEndCornerEdge && touchesWallEnd,
+                                            hideStartCap: (
+                                                (hasCompatibleStartCornerEdge || cornerStartMeta)
+                                                && touchesWallStart
+                                            ),
+                                            hideEndCap: (
+                                                (hasCompatibleEndCornerEdge || cornerEndMeta)
+                                                && touchesWallEnd
+                                            )
+                                        });
+                                        specs.push(...sectionWithEdges);
+
+                                        const sectionSuffix = `_section_${String(sectionIndex + 1).padStart(2, '0')}`;
+                                        if (hasContinuationStartTransition && touchesWallStart) {
+                                            const startContinuation = buildFlatCapFamilySameFaceContinuationSpecs(cornerSpecs, {
+                                                continuationMeters: continuationStartMeters,
+                                                edge: 'start',
+                                                cornerStyle: cornerStartStyle
+                                            }).map((entry) => ({
+                                                ...entry,
+                                                role: `${String(entry.role ?? 'decorator')}${sectionSuffix}_start`
+                                            }));
+                                            specs.push(...startContinuation);
+                                        }
+                                        if (hasContinuationEndTransition && touchesWallEnd) {
+                                            const endContinuation = buildFlatCapFamilySameFaceContinuationSpecs(cornerSpecs, {
+                                                continuationMeters: continuationEndMeters,
+                                                edge: 'end',
+                                                cornerStyle: cornerEndStyle
+                                            }).map((entry) => ({
+                                                ...entry,
+                                                role: `${String(entry.role ?? 'decorator')}${sectionSuffix}_end`
+                                            }));
+                                            specs.push(...endContinuation);
+                                        }
+                                    }
+                                }
+                            }
+                            if (!Array.isArray(specs)) {
+                                specs = buildWallDecoratorShapeSpecs(stateForBay, {
+                                    widthMeters: spanMeters,
+                                    heightMeters: wallHeight,
+                                    depthMeters: wallDepth
+                                });
+                            }
                             if (!Array.isArray(specs) || !specs.length) continue;
 
+                            const wallStart = renderSegmentStart.clone();
+                            const wallEnd = renderSegmentEnd.clone();
+                            const wallCenter = wallStart.clone().add(wallEnd).multiplyScalar(0.5);
+
                             for (const spec of specs) {
-                                const built = createWallDecorationGeometryFromSpec(spec);
-                                const geometry = built?.geometry?.isBufferGeometry ? built.geometry : null;
-                                if (!geometry) continue;
+                                const specGeometryKind = String(spec?.geometryKind ?? '').trim().toLowerCase();
+                                let specForMesh = isInteriorCorner
+                                    ? ((specGeometryKind === 'curved_ring' || specGeometryKind === 'half_dome' || specGeometryKind === 'edge_brick_chain_course')
+                                        ? { ...spec, miterStyle: 'inward' }
+                                        : spec)
+                                    : spec;
 
-                                const specFace = String(spec?.faceId ?? '').trim().toLowerCase() === 'right' ? 'right' : 'front';
-                                const geometryKind = String(spec?.geometryKind ?? '').trim().toLowerCase();
-
-                                const frontUAxis = frontTangent.clone();
-                                const frontNAxis = frontNormal.clone();
-                                const rightUAxis = frontNormal.clone().multiplyScalar(-1.0);
-                                const rightNAxis = frontTangent.clone();
-
-                                const uAxis = specFace === 'right' ? rightUAxis : frontUAxis;
-                                const nAxis = specFace === 'right' ? rightNAxis : frontNAxis;
-                                if (uAxis.lengthSq() <= EPS || nAxis.lengthSq() <= EPS) {
-                                    geometry.dispose?.();
-                                    continue;
+                                if (!usingFlatCapFamilyPipeline
+                                    && hasCornerContinuationTransition
+                                    && String(specForMesh?.faceId ?? '').trim().toLowerCase() === 'right') {
+                                    const widthOld = Math.max(0.01, Number(specForMesh?.widthMeters) || 0.01);
+                                    const centerUOld = Number(specForMesh?.centerU) || 0.0;
+                                    const minUOld = centerUOld - widthOld * 0.5;
+                                    const widthNew = clamp(continuationMeters, 0.01, 32.0);
+                                    const minUNew = minUOld;
+                                    const maxUNew = minUNew + widthNew;
+                                    specForMesh = {
+                                        ...specForMesh,
+                                        ...(specGeometryKind === 'flat_panel_side_cap'
+                                            ? { centerU: maxUNew }
+                                            : {
+                                                widthMeters: widthNew,
+                                                centerU: (minUNew + maxUNew) * 0.5
+                                            }),
+                                        ...(specGeometryKind === 'flat_panel_cap'
+                                            ? {
+                                                cornerBridgeStartMeters: clamp(specForMesh?.cornerBridgeStartMeters, 0.0, 32.0),
+                                                cornerBridgeEndMeters: clamp(specForMesh?.cornerBridgeEndMeters, 0.0, 32.0)
+                                            }
+                                            : {})
+                                    };
+                                    // Keep cap bridge on the non-corner edge limited to the trimmed span.
+                                    if (specGeometryKind === 'flat_panel_cap') {
+                                        const bridgeStart = clamp(specForMesh?.cornerBridgeStartMeters, 0.0, 32.0);
+                                        const bridgeEnd = clamp(specForMesh?.cornerBridgeEndMeters, 0.0, 32.0);
+                                        if (bridgeStart > widthNew + 1e-6 || bridgeEnd > widthNew + 1e-6) {
+                                            specForMesh.cornerBridgeStartMeters = Math.min(bridgeStart, widthNew);
+                                            specForMesh.cornerBridgeEndMeters = Math.min(bridgeEnd, widthNew);
+                                        }
+                                    }
                                 }
-                                uAxis.normalize();
-                                nAxis.normalize();
+                                const clippedSpecs = openingSplitByAreas
+                                    ? [specForMesh]
+                                    : splitWallDecorationSpecByOpeningOccluders(specForMesh, {
+                                        openingOccluders,
+                                        wallCenterY
+                                    });
+                                for (const clippedSpec of clippedSpecs) {
+                                    const built = createWallDecorationGeometryFromSpec(clippedSpec);
+                                    const geometry = built?.geometry?.isBufferGeometry ? built.geometry : null;
+                                    if (!geometry) continue;
 
-                                if (Math.abs(uAxis.dot(nAxis)) > 0.999) {
-                                    geometry.dispose?.();
-                                    continue;
+                                    const specFace = String(clippedSpec?.faceId ?? '').trim().toLowerCase() === 'right' ? 'right' : 'front';
+                                    const geometryKind = String(built?.geometryKind ?? clippedSpec?.geometryKind ?? '').trim().toLowerCase();
+                                    const rightCornerEdge = String(clippedSpec?.__bf2CornerEdge ?? '').trim().toLowerCase() === 'start'
+                                        ? 'start'
+                                        : 'end';
+                                    const rightCornerStyle = String(clippedSpec?.__bf2CornerStyle ?? '').trim().toLowerCase() === 'interior'
+                                        ? 'interior'
+                                        : (isInteriorCorner ? 'interior' : 'exterior');
+
+                                    const frontUAxis = renderFrontTangent.clone();
+                                    const frontNAxis = frontNormal.clone();
+                                    const rightUAxis = frontNormal.clone().multiplyScalar(-1.0);
+                                    const rightNAxisBase = renderFrontTangent.clone().multiplyScalar(rightCornerStyle === 'interior' ? -1.0 : 1.0);
+                                    const rightNAxis = rightCornerEdge === 'start'
+                                        ? rightNAxisBase.clone().multiplyScalar(-1.0)
+                                        : rightNAxisBase;
+
+                                    const uAxis = specFace === 'right' ? rightUAxis : frontUAxis;
+                                    const nAxis = specFace === 'right' ? rightNAxis : frontNAxis;
+                                    if (uAxis.lengthSq() <= EPS || nAxis.lengthSq() <= EPS) {
+                                        geometry.dispose?.();
+                                        continue;
+                                    }
+                                    uAxis.normalize();
+                                    nAxis.normalize();
+
+                                    if (Math.abs(uAxis.dot(nAxis)) > 0.999) {
+                                        geometry.dispose?.();
+                                        continue;
+                                    }
+
+                                    const xAxis = uAxis;
+                                    const yAxis = up.clone();
+                                    const zAxis = nAxis;
+                                    const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
+                                    const quaternion = new THREE.Quaternion().setFromRotationMatrix(basis);
+                                    const yawDegrees = clamp(
+                                        Number.isFinite(Number(clippedSpec?.yawDegrees)) ? Number(clippedSpec.yawDegrees) : 0.0,
+                                        -180.0,
+                                        180.0
+                                    );
+                                    const yawRadians = yawDegrees * Math.PI / 180.0;
+                                    if (Math.abs(yawRadians) > 1e-8) {
+                                        const yaw = new THREE.Quaternion().setFromAxisAngle(up, yawRadians);
+                                        quaternion.multiply(yaw);
+                                    }
+
+                                    const centerU = Number(clippedSpec?.centerU) || 0.0;
+                                    const centerV = Number(clippedSpec?.centerV) || 0.0;
+                                    const outsetMeters = Math.max(0.0, Number(clippedSpec?.outsetMeters ?? clippedSpec?.surfaceOffsetMeters) || 0.0);
+                                    const placementDepthMeters = Math.max(0.0, Number(built?.placementDepthMeters) || 0.0);
+                                    const anchor = specFace === 'right'
+                                        ? (rightCornerEdge === 'start' ? wallStart : wallEnd)
+                                        : wallCenter;
+
+                                    const surfaceWidthMeters = clamp(
+                                        Number.isFinite(Number(built?.surfaceWidthMeters)) ? Number(built.surfaceWidthMeters) : (Number(clippedSpec?.widthMeters) || 1.0),
+                                        0.01,
+                                        256.0
+                                    );
+                                    const surfaceHeightMeters = clamp(
+                                        Number.isFinite(Number(built?.surfaceHeightMeters)) ? Number(built.surfaceHeightMeters) : (Number(clippedSpec?.heightMeters) || 0.2),
+                                        0.01,
+                                        256.0
+                                    );
+                                    const material = this._resolveWallDecorationMaterial(stateForBay, {
+                                        layerMaterialSpec,
+                                        surfaceSizeMeters: { x: surfaceWidthMeters, y: surfaceHeightMeters },
+                                        geometryKind
+                                    });
+                                    const mesh = new THREE.Mesh(geometry, material);
+                                    mesh.name = `bf2_wall_decoration_${String(clippedSpec?.role ?? geometryKind ?? 'mesh')}`;
+                                    mesh.position.copy(anchor);
+                                    mesh.position.addScaledVector(uAxis, centerU);
+                                    mesh.position.addScaledVector(up, wallCenterY + centerV);
+                                    mesh.position.addScaledVector(nAxis, outsetMeters + placementDepthMeters * 0.5);
+                                    mesh.quaternion.copy(quaternion);
+                                    mesh.castShadow = true;
+                                    mesh.receiveShadow = true;
+                                    mesh.userData = mesh.userData ?? {};
+                                    mesh.userData.decorationKey = decorationKey;
+                                    mesh.userData.decorationCompatibilityId = compatibilityId;
+                                    mesh.userData.faceId = specFace;
+                                    mesh.userData.role = String(clippedSpec?.role ?? 'decorator');
+                                    mesh.userData.geometryKind = geometryKind || 'unknown';
+                                    decorationGroup.add(mesh);
                                 }
-
-                                const xAxis = uAxis;
-                                const yAxis = up.clone();
-                                const zAxis = nAxis;
-                                const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
-                                const quaternion = new THREE.Quaternion().setFromRotationMatrix(basis);
-                                const yawDegrees = clamp(
-                                    Number.isFinite(Number(spec?.yawDegrees)) ? Number(spec.yawDegrees) : 0.0,
-                                    -180.0,
-                                    180.0
-                                );
-                                const yawRadians = yawDegrees * Math.PI / 180.0;
-                                if (Math.abs(yawRadians) > 1e-8) {
-                                    const yaw = new THREE.Quaternion().setFromAxisAngle(up, yawRadians);
-                                    quaternion.multiply(yaw);
-                                }
-
-                                const centerU = Number(spec?.centerU) || 0.0;
-                                const centerV = Number(spec?.centerV) || 0.0;
-                                const outsetMeters = Math.max(0.0, Number(spec?.outsetMeters ?? spec?.surfaceOffsetMeters) || 0.0);
-                                const placementDepthMeters = Math.max(0.0, Number(built?.placementDepthMeters) || 0.0);
-                                const anchor = specFace === 'right' ? wallCorner : wallCenter;
-
-                                const surfaceWidthMeters = clamp(
-                                    Number.isFinite(Number(spec?.widthMeters)) ? Number(spec.widthMeters) : 1.0,
-                                    0.01,
-                                    256.0
-                                );
-                                const surfaceHeightMeters = clamp(
-                                    Number.isFinite(Number(spec?.heightMeters)) ? Number(spec.heightMeters) : 0.2,
-                                    0.01,
-                                    256.0
-                                );
-                                const material = this._resolveWallDecorationMaterial(stateForBay, {
-                                    layerMaterialSpec,
-                                    surfaceSizeMeters: { x: surfaceWidthMeters, y: surfaceHeightMeters },
-                                    geometryKind
-                                });
-                                const mesh = new THREE.Mesh(geometry, material);
-                                mesh.name = `bf2_wall_decoration_${String(spec?.role ?? geometryKind ?? 'mesh')}`;
-                                mesh.position.copy(anchor);
-                                mesh.position.addScaledVector(uAxis, centerU);
-                                mesh.position.addScaledVector(up, wallCenterY + centerV);
-                                mesh.position.addScaledVector(nAxis, outsetMeters + placementDepthMeters * 0.5);
-                                mesh.quaternion.copy(quaternion);
-                                mesh.castShadow = true;
-                                mesh.receiveShadow = true;
-                                decorationGroup.add(mesh);
                             }
                         }
                     }

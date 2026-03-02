@@ -81,6 +81,44 @@ function normalizeFootprintLoopsInput(footprintLoops) {
     return out.length ? out : null;
 }
 
+function computeTilesWorldCentroid(tiles, map) {
+    const list = Array.isArray(tiles) ? tiles : [];
+    if (!list.length || !map?.tileToWorldCenter) return null;
+
+    let sumX = 0;
+    let sumZ = 0;
+    let count = 0;
+
+    for (const tile of list) {
+        const tx = Array.isArray(tile) ? tile[0] : tile?.x;
+        const ty = Array.isArray(tile) ? tile[1] : tile?.y;
+        if (!Number.isFinite(tx) || !Number.isFinite(ty)) continue;
+        const p = map.tileToWorldCenter(tx | 0, ty | 0);
+        if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
+        sumX += p.x;
+        sumZ += p.z;
+        count += 1;
+    }
+
+    if (!count) return null;
+    return { x: sumX / count, z: sumZ / count };
+}
+
+function translateFootprintLoops(footprintLoops, offset) {
+    const src = Array.isArray(footprintLoops) ? footprintLoops : [];
+    const ox = Number(offset?.x);
+    const oz = Number(offset?.z);
+    if (!Number.isFinite(ox) || !Number.isFinite(oz) || !src.length) return src;
+
+    return src.map((loop) => {
+        const points = Array.isArray(loop) ? loop : [];
+        return points.map((point) => ({
+            x: (Number(point?.x) || 0) + ox,
+            z: (Number(point?.z) || 0) + oz
+        }));
+    });
+}
+
 function bitCount4(m) {
     m = m & 0x0f;
     m = (m & 0x05) + ((m >> 1) & 0x05);
@@ -624,6 +662,7 @@ export class CityMap {
             if (building?.windowVisuals && typeof building.windowVisuals === 'object') record.windowVisuals = deepClone(building.windowVisuals);
             if (building?.facades && typeof building.facades === 'object') record.facades = deepClone(building.facades);
             if (building?.windowDefinitions && typeof building.windowDefinitions === 'object') record.windowDefinitions = deepClone(building.windowDefinitions);
+            if (building?.wallDecorations && typeof building.wallDecorations === 'object') record.wallDecorations = deepClone(building.wallDecorations);
 
             if (!record.configId) {
                 if (Array.isArray(building?.layers) && building.layers.length) record.layers = building.layers;
@@ -790,10 +829,17 @@ export class CityMap {
                 ? clampLocal(windowsRaw.y, 0.0, Math.max(0.0, floorHeight - (windowHeight ?? 0.3)))
                 : null;
 
-            const footprintLoops = normalizeFootprintLoopsInput(overrideOrBase('footprintLoops'));
+            const rawFootprintLoops = normalizeFootprintLoopsInput(raw?.footprintLoops);
+            const configFootprintLoops = normalizeFootprintLoopsInput(config?.footprintLoops);
+            const placementCentroid = computeTilesWorldCentroid(accepted, map);
+            const footprintLoops = rawFootprintLoops
+                ?? (configFootprintLoops
+                    ? translateFootprintLoops(configFootprintLoops, placementCentroid)
+                    : null);
             const facades = overrideOrBase('facades');
             const windowDefinitions = overrideOrBase('windowDefinitions');
             const windowVisuals = overrideOrBase('windowVisuals');
+            const wallDecorations = overrideOrBase('wallDecorations');
 
             out.push({
                 id,
@@ -811,7 +857,8 @@ export class CityMap {
                 windows: windowsEnabled ? { width: windowWidth, gap: windowGap, height: windowHeight, y: windowY } : null,
                 facades: (facades && typeof facades === 'object') ? deepClone(facades) : null,
                 windowDefinitions: (windowDefinitions && typeof windowDefinitions === 'object') ? deepClone(windowDefinitions) : null,
-                windowVisuals: (windowVisuals && typeof windowVisuals === 'object') ? deepClone(windowVisuals) : null
+                windowVisuals: (windowVisuals && typeof windowVisuals === 'object') ? deepClone(windowVisuals) : null,
+                wallDecorations: (wallDecorations && typeof wallDecorations === 'object') ? deepClone(wallDecorations) : null
             });
         }
 

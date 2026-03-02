@@ -5,6 +5,7 @@ import {
     WALL_BASE_TINT_BRIGHTNESS_MAX,
     WALL_BASE_TINT_BRIGHTNESS_MIN,
     composeTintHexFromState,
+    normalizeHueDegrees,
     rgb01FromHsv,
     sanitizeWallBaseTintState
 } from '../../../../app/buildings/WallBaseTintModel.js';
@@ -57,6 +58,39 @@ function clampBarycentric({ wa = 0, wb = 0, wc = 0 } = {}) {
 function isPointInTriangle(point, a, b, c) {
     const bary = toBarycentric(point, a, b, c);
     return bary.wa >= -1e-6 && bary.wb >= -1e-6 && bary.wc >= -1e-6;
+}
+
+function distanceSq(a, b) {
+    const dx = (Number(a?.x) || 0) - (Number(b?.x) || 0);
+    const dy = (Number(a?.y) || 0) - (Number(b?.y) || 0);
+    return dx * dx + dy * dy;
+}
+
+function closestPointOnSegment(point, a, b) {
+    const abx = (Number(b?.x) || 0) - (Number(a?.x) || 0);
+    const aby = (Number(b?.y) || 0) - (Number(a?.y) || 0);
+    const apx = (Number(point?.x) || 0) - (Number(a?.x) || 0);
+    const apy = (Number(point?.y) || 0) - (Number(a?.y) || 0);
+    const abLenSq = abx * abx + aby * aby;
+    if (abLenSq <= EPS) return { x: Number(a?.x) || 0, y: Number(a?.y) || 0 };
+    const t = clamp((apx * abx + apy * aby) / abLenSq, 0, 1, 0);
+    return {
+        x: (Number(a?.x) || 0) + abx * t,
+        y: (Number(a?.y) || 0) + aby * t
+    };
+}
+
+function projectPointToTriangle(point, a, b, c) {
+    if (isPointInTriangle(point, a, b, c)) return { x: point.x, y: point.y };
+    const pAB = closestPointOnSegment(point, a, b);
+    const pBC = closestPointOnSegment(point, b, c);
+    const pCA = closestPointOnSegment(point, c, a);
+    const dAB = distanceSq(point, pAB);
+    const dBC = distanceSq(point, pBC);
+    const dCA = distanceSq(point, pCA);
+    if (dAB <= dBC && dAB <= dCA) return pAB;
+    if (dBC <= dCA) return pBC;
+    return pCA;
 }
 
 function createSliderRow({ label, min, max, step, digits, onInput }) {
@@ -161,6 +195,48 @@ export class SharedHsvbTintPicker {
         top.appendChild(this._preview);
         this.element.appendChild(top);
 
+        this._hueRow = createSliderRow({
+            label: 'Hue',
+            min: 0,
+            max: 360,
+            step: 1,
+            digits: 0,
+            onInput: (next) => {
+                this._state = sanitizeWallBaseTintState({ ...this._state, hueDeg: normalizeHueDegrees(next) });
+                this._syncUi();
+                this._emitChange();
+            }
+        });
+        this.element.appendChild(this._hueRow.row);
+
+        this._saturationRow = createSliderRow({
+            label: 'Saturation',
+            min: 0,
+            max: 1,
+            step: 0.01,
+            digits: 2,
+            onInput: (next) => {
+                this._state = sanitizeWallBaseTintState({ ...this._state, saturation: next });
+                this._syncUi();
+                this._emitChange();
+            }
+        });
+        this.element.appendChild(this._saturationRow.row);
+
+        this._valueRow = createSliderRow({
+            label: 'Value',
+            min: 0,
+            max: 1,
+            step: 0.01,
+            digits: 2,
+            onInput: (next) => {
+                this._state = sanitizeWallBaseTintState({ ...this._state, value: next });
+                this._syncUi();
+                this._emitChange();
+            }
+        });
+        this.element.appendChild(this._valueRow.row);
+
         this._brightnessRow = createSliderRow({
             label: 'Brightness',
             min: WALL_BASE_TINT_BRIGHTNESS_MIN,
@@ -215,6 +291,9 @@ export class SharedHsvbTintPicker {
         this._disabled = !!disabled;
         this.element.classList.toggle('is-disabled', this._disabled);
         this._canvas.classList.toggle('is-disabled', this._disabled);
+        this._hueRow.setDisabled(this._disabled);
+        this._saturationRow.setDisabled(this._disabled);
+        this._valueRow.setDisabled(this._disabled);
         this._brightnessRow.setDisabled(this._disabled);
         this._intensityRow.setDisabled(this._disabled);
     }
@@ -231,6 +310,9 @@ export class SharedHsvbTintPicker {
     }
 
     _syncUi() {
+        this._hueRow.setValue(this._state.hueDeg);
+        this._saturationRow.setValue(this._state.saturation);
+        this._valueRow.setValue(this._state.value);
         this._brightnessRow.setValue(this._state.brightness);
         this._intensityRow.setValue(this._state.intensity);
         const tintHex = composeTintHexFromState(this._state);
@@ -239,7 +321,9 @@ export class SharedHsvbTintPicker {
         this._readout.textContent = [
             `H ${Math.round(this._state.hueDeg)}`,
             `S ${Math.round(this._state.saturation * 100)}%`,
-            `V ${Math.round(this._state.value * 100)}%`
+            `V ${Math.round(this._state.value * 100)}%`,
+            `B ${this._state.brightness.toFixed(2)}`,
+            `T ${this._state.intensity.toFixed(2)}`
         ].join(' · ');
         this._drawCanvas();
     }
@@ -294,7 +378,8 @@ export class SharedHsvbTintPicker {
     }
 
     _setSvFromPoint(point, geo) {
-        const bary = clampBarycentric(toBarycentric(point, geo.colorV, geo.whiteV, geo.blackV));
+        const projected = projectPointToTriangle(point, geo.colorV, geo.whiteV, geo.blackV);
+        const bary = clampBarycentric(toBarycentric(projected, geo.colorV, geo.whiteV, geo.blackV));
         const value = clamp(bary.wa + bary.wb, 0, 1, 1);
         const saturation = value <= EPS ? 0 : clamp(bary.wa / value, 0, 1, 0);
         this._state = sanitizeWallBaseTintState({ ...this._state, saturation, value });

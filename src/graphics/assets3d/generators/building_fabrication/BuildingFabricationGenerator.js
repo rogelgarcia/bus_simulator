@@ -10,6 +10,10 @@ import { resolveBeltCourseColorHex } from '../../../../app/buildings/BeltCourseC
 import { BUILDING_STYLE } from '../../../../app/buildings/BuildingStyle.js';
 import { resolveWallBaseTintHexFromWallBase } from '../../../../app/buildings/WallBaseTintModel.js';
 import {
+    buildWallDecoratorShapeSpecs,
+    sanitizeWallDecoratorDebuggerState
+} from '../../../../app/buildings/wall_decorators/index.js';
+import {
     getWindowFabricationCatalogEntries,
     normalizeWindowFabricationAssetType,
     PARALLAX_INTERIOR_PRESET_ID,
@@ -38,6 +42,7 @@ import { getPbrMaterialTileMeters, isPbrMaterialId, tryGetPbrMaterialIdFromUrl }
 import { solveFacadeLayoutFillPattern } from './FacadeLayoutFillSolver.js';
 import { solveFacadeBaysLayout } from './FacadeBaysSolver.js';
 import { resolveRectFacadeCornerStrategy } from './FacadeCornerResolutionStrategies.js';
+import { createWallDecoratorGeometryFromSpec as createSharedWallDecoratorGeometryFromSpec } from '../../../gui/shared/wall_decorator/WallDecoratorGeometryFactory.js';
 
 const EPS = 1e-6;
 const QUANT = 1000;
@@ -48,6 +53,19 @@ const FACADE_DEPTH_MAX_M = 2.0;
 const FLOOR_INTERIOR_MATERIAL_SPEC = Object.freeze({ kind: 'texture', id: 'pbr.painted_plaster_wall' });
 const FLOOR_INTERIOR_TILE_METERS = 1.0;
 const FLOOR_INTERIOR_SHELL_INSET_METERS = 0.01;
+const WALL_DECORATION_DEFAULT_WALL_DEPTH_M = 0.30;
+const FACE_NORMAL_BY_ID = Object.freeze({
+    A: Object.freeze({ x: 0, y: 0, z: 1 }),
+    B: Object.freeze({ x: 1, y: 0, z: 0 }),
+    C: Object.freeze({ x: 0, y: 0, z: -1 }),
+    D: Object.freeze({ x: -1, y: 0, z: 0 })
+});
+const AWNING_ROD_MATERIAL = Object.freeze({
+    colorHex: 0x454545,
+    roughness: 0.5,
+    metalness: 0.6,
+    envMapIntensity: 0.03
+});
 const OPENING_HEIGHT_MODE = Object.freeze({
     FIXED: 'fixed',
     FULL: 'full'
@@ -513,6 +531,217 @@ function normalizeFootprintLoopsInput(footprintLoops) {
     }
 
     return out;
+}
+
+function computeLoopsBoundsXZ(loops) {
+    const list = Array.isArray(loops) ? loops : [];
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const loop of list) {
+        const points = Array.isArray(loop) ? loop : [];
+        for (const point of points) {
+            const x = Number(point?.x);
+            const z = Number(point?.z);
+            if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (z < minZ) minZ = z;
+            if (z > maxZ) maxZ = z;
+        }
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minZ) || !Number.isFinite(maxZ)) return null;
+    return { minX, maxX, minZ, maxZ };
+}
+
+function transformLoopsXZ(loops, { scale = 1.0, pivotX = 0.0, pivotZ = 0.0, translateX = 0.0, translateZ = 0.0 } = {}) {
+    const s = Number.isFinite(scale) ? scale : 1.0;
+    const px = Number.isFinite(pivotX) ? pivotX : 0.0;
+    const pz = Number.isFinite(pivotZ) ? pivotZ : 0.0;
+    const tx = Number.isFinite(translateX) ? translateX : 0.0;
+    const tz = Number.isFinite(translateZ) ? translateZ : 0.0;
+    const out = [];
+    const list = Array.isArray(loops) ? loops : [];
+    for (const rawLoop of list) {
+        const src = Array.isArray(rawLoop) ? rawLoop : [];
+        const loop = [];
+        for (const point of src) {
+            const x = Number(point?.x);
+            const z = Number(point?.z);
+            if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+            loop.push({
+                x: qf(px + (x - px) * s + tx),
+                z: qf(pz + (z - pz) * s + tz)
+            });
+        }
+        if (loop.length >= 3) out.push(loop);
+    }
+    return out;
+}
+
+function extractPositiveDepthMeters(value) {
+    let maxDepth = 0.0;
+    const read = (entry) => {
+        const num = Number(entry);
+        if (Number.isFinite(num) && num > maxDepth) maxDepth = num;
+    };
+    const visit = (entry, depth = 0) => {
+        if (depth > 4 || entry === null || entry === undefined) return;
+        if (Array.isArray(entry)) {
+            for (const item of entry) visit(item, depth + 1);
+            return;
+        }
+        if (typeof entry === 'number') {
+            read(entry);
+            return;
+        }
+        if (typeof entry !== 'object') return;
+        const keys = ['depth', 'left', 'right', 'start', 'end', 'value', 'meters', 'depth0', 'depth1', 'outward', 'offset'];
+        for (const key of keys) visit(entry?.[key], depth + 1);
+    };
+    visit(value, 0);
+    return maxDepth;
+}
+
+function estimateLayoutOutwardDepthMeters(layout) {
+    const src = layout && typeof layout === 'object' ? layout : null;
+    if (!src) return 0.0;
+
+    let maxDepth = 0.0;
+    const ingestItem = (item) => {
+        const entry = item && typeof item === 'object' ? item : null;
+        if (!entry) return;
+        maxDepth = Math.max(
+            maxDepth,
+            extractPositiveDepthMeters(entry?.depth),
+            extractPositiveDepthMeters(entry?.depthLeft),
+            extractPositiveDepthMeters(entry?.depthRight),
+            extractPositiveDepthMeters(entry?.depth0),
+            extractPositiveDepthMeters(entry?.depth1)
+        );
+    };
+
+    const bays = Array.isArray(src?.bays?.items) ? src.bays.items : [];
+    for (const bay of bays) ingestItem(bay);
+    const items = Array.isArray(src?.items) ? src.items : [];
+    for (const item of items) ingestItem(item);
+
+    return maxDepth;
+}
+
+function estimateFacadesOutwardDepthMeters(facades) {
+    const src = facades && typeof facades === 'object' ? facades : null;
+    if (!src) return 0.0;
+
+    let maxDepth = 0.0;
+    const stack = [src];
+    while (stack.length) {
+        const node = stack.pop();
+        if (!node || typeof node !== 'object') continue;
+
+        let hasFaceEntries = false;
+        for (const faceId of ['A', 'B', 'C', 'D']) {
+            const face = node?.[faceId];
+            if (!face || typeof face !== 'object') continue;
+            hasFaceEntries = true;
+            maxDepth = Math.max(
+                maxDepth,
+                extractPositiveDepthMeters(face?.depthOffset),
+                estimateLayoutOutwardDepthMeters(face?.layout)
+            );
+        }
+        if (hasFaceEntries) continue;
+
+        for (const value of Object.values(node)) {
+            if (value && typeof value === 'object') stack.push(value);
+        }
+    }
+
+    return maxDepth;
+}
+
+function estimateBf2OutwardFootprintReserveMeters({ layers, facades } = {}) {
+    let reserve = 0.0;
+    const safeLayers = Array.isArray(layers) ? layers : [];
+    for (const layer of safeLayers) {
+        if (!layer || typeof layer !== 'object') continue;
+        if (layer?.type !== LAYER_TYPE.FLOOR) continue;
+        const planOffset = Number(layer?.planOffset);
+        if (Number.isFinite(planOffset) && planOffset < 0) reserve = Math.max(reserve, Math.abs(planOffset));
+        const beltExtrusion = Number(layer?.belt?.enabled ? layer?.belt?.extrusion : 0.0);
+        if (Number.isFinite(beltExtrusion) && beltExtrusion > 0) reserve = Math.max(reserve, beltExtrusion);
+    }
+    reserve = Math.max(reserve, estimateFacadesOutwardDepthMeters(facades));
+    return reserve;
+}
+
+function fitFootprintLoopsToBuildArea({
+    footprintLoops,
+    buildAreaLoops,
+    reserveInsetMeters = 0.0
+} = {}) {
+    const sourceLoops = normalizeFootprintLoopsInput(footprintLoops);
+    const areaLoops = normalizeFootprintLoopsInput(buildAreaLoops);
+    if (!sourceLoops.length || !areaLoops.length) return sourceLoops;
+
+    const reserve = clamp(reserveInsetMeters, 0.0, 12.0);
+    let effectiveAreaLoops = areaLoops;
+    if (reserve > EPS) {
+        const split = splitLoops(areaLoops);
+        const outer = split.outer
+            .map((loop) => offsetOrthogonalLoopXZ(loop, reserve))
+            .filter((loop) => Array.isArray(loop) && loop.length >= 3);
+        const holes = split.holes
+            .map((loop) => offsetOrthogonalLoopXZ(loop, -reserve))
+            .filter((loop) => Array.isArray(loop) && loop.length >= 3);
+        const inset = normalizeFootprintLoopsInput([...outer, ...holes]);
+        if (inset.length) effectiveAreaLoops = inset;
+    }
+
+    const sourceBounds = computeLoopsBoundsXZ(sourceLoops);
+    const targetBounds = computeLoopsBoundsXZ(effectiveAreaLoops);
+    if (!sourceBounds || !targetBounds) return sourceLoops;
+
+    const sourceW = sourceBounds.maxX - sourceBounds.minX;
+    const sourceD = sourceBounds.maxZ - sourceBounds.minZ;
+    const targetW = targetBounds.maxX - targetBounds.minX;
+    const targetD = targetBounds.maxZ - targetBounds.minZ;
+    if (!(sourceW > EPS) || !(sourceD > EPS) || !(targetW > EPS) || !(targetD > EPS)) return sourceLoops;
+
+    const sx = targetW / sourceW;
+    const sz = targetD / sourceD;
+    const scale = Math.min(1.0, sx, sz);
+    if (!(scale > EPS) || !Number.isFinite(scale)) return sourceLoops;
+
+    const sourceCenterX = (sourceBounds.minX + sourceBounds.maxX) * 0.5;
+    const sourceCenterZ = (sourceBounds.minZ + sourceBounds.maxZ) * 0.5;
+    const targetCenterX = (targetBounds.minX + targetBounds.maxX) * 0.5;
+    const targetCenterZ = (targetBounds.minZ + targetBounds.maxZ) * 0.5;
+
+    let fitted = transformLoopsXZ(sourceLoops, {
+        scale,
+        pivotX: sourceCenterX,
+        pivotZ: sourceCenterZ,
+        translateX: targetCenterX - sourceCenterX,
+        translateZ: targetCenterZ - sourceCenterZ
+    });
+
+    const fittedBounds = computeLoopsBoundsXZ(fitted);
+    if (!fittedBounds) return sourceLoops;
+
+    let shiftX = 0.0;
+    let shiftZ = 0.0;
+    if (fittedBounds.minX < targetBounds.minX) shiftX += targetBounds.minX - fittedBounds.minX;
+    if (fittedBounds.maxX > targetBounds.maxX) shiftX += targetBounds.maxX - fittedBounds.maxX;
+    if (fittedBounds.minZ < targetBounds.minZ) shiftZ += targetBounds.minZ - fittedBounds.minZ;
+    if (fittedBounds.maxZ > targetBounds.maxZ) shiftZ += targetBounds.maxZ - fittedBounds.maxZ;
+    if (Math.abs(shiftX) > EPS || Math.abs(shiftZ) > EPS) {
+        fitted = transformLoopsXZ(fitted, { translateX: shiftX, translateZ: shiftZ });
+    }
+
+    const normalized = normalizeFootprintLoopsInput(fitted);
+    return normalized.length ? normalized : sourceLoops;
 }
 
 function computeMaterialVariationSeedFromFootprintLoops(loops, { salt = 'building' } = {}) {
@@ -2529,6 +2758,969 @@ function buildShapeFromLoops({ outerLoop, holeLoops }) {
     return shape;
 }
 
+function clampUnit(value, fallback = 0) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return clamp(fallback, 0, 1);
+    return clamp(num, 0, 1);
+}
+
+function normalizeMaterialSpec(value) {
+    const kind = value?.kind;
+    const id = typeof value?.id === 'string' ? value.id : '';
+    if ((kind === 'texture' || kind === 'color') && id) return { kind, id };
+    return null;
+}
+
+function normalizeDecorationBayRef(value) {
+    if (typeof value !== 'string') return '';
+    const raw = value.trim();
+    if (!raw) return '';
+    const idx = raw.indexOf(':');
+    if (idx <= 0 || idx >= raw.length - 1) return '';
+    const faceId = raw.slice(0, idx).trim().toUpperCase();
+    const bayId = raw.slice(idx + 1).trim();
+    if (!isFaceId(faceId) || !bayId) return '';
+    return `${faceId}:${bayId}`;
+}
+
+function parseDecorationBayRef(value) {
+    const normalized = normalizeDecorationBayRef(value);
+    if (!normalized) return null;
+    const idx = normalized.indexOf(':');
+    return {
+        faceId: normalized.slice(0, idx),
+        bayId: normalized.slice(idx + 1)
+    };
+}
+
+function stableStringify(value) {
+    if (Array.isArray(value)) {
+        return `[${value.map((entry) => stableStringify(entry)).join(',')}]`;
+    }
+    if (value && typeof value === 'object') {
+        const keys = Object.keys(value).sort();
+        const pairs = [];
+        for (const key of keys) pairs.push(`${JSON.stringify(key)}:${stableStringify(value[key])}`);
+        return `{${pairs.join(',')}}`;
+    }
+    return JSON.stringify(value);
+}
+
+function buildWallDecorationCompatibilityId({ safeState, spanStart = 0.0, spanEnd = 1.0 } = {}) {
+    const state = sanitizeWallDecoratorDebuggerState(safeState);
+    const minSpan = clampUnit(Math.min(Number(spanStart) || 0.0, Number(spanEnd) || 0.0), 0.0);
+    const maxSpan = clampUnit(Math.max(Number(spanStart) || 0.0, Number(spanEnd) || 0.0), 1.0);
+    return stableStringify({
+        span: {
+            start: minSpan,
+            end: maxSpan
+        },
+        state: {
+            decoratorId: state.decoratorId,
+            whereToApply: state.whereToApply,
+            mode: 'face',
+            position: state.position,
+            configuration: state.configuration ?? {},
+            materialSelection: state.materialSelection ?? { kind: 'match_wall', id: 'match_wall' },
+            wallBase: state.wallBase ?? {},
+            tiling: state.tiling ?? {}
+        }
+    });
+}
+
+function buildWallDecorationEndpointKey(x, z) {
+    const scale = 100000.0;
+    const px = Math.round((Number(x) || 0.0) * scale);
+    const pz = Math.round((Number(z) || 0.0) * scale);
+    return `${px},${pz}`;
+}
+
+function createWallDecorationGeometryFromSpec(spec) {
+    const built = createSharedWallDecoratorGeometryFromSpec(spec, { fallbackToBox: true });
+    return {
+        geometry: built?.geometry?.isBufferGeometry ? built.geometry : null,
+        placementDepthMeters: Math.max(0.0, Number(built?.placementDepthMeters) || 0.0),
+        surfaceWidthMeters: Math.max(0.01, Number(built?.surfaceWidthMeters) || (Number(spec?.widthMeters) || 1.0)),
+        surfaceHeightMeters: Math.max(0.01, Number(built?.surfaceHeightMeters) || (Number(spec?.heightMeters) || 0.2)),
+        geometryKind: String(built?.geometryKind ?? spec?.geometryKind ?? '').trim().toLowerCase()
+    };
+}
+
+function getFaceNormalVector(faceId) {
+    const src = FACE_NORMAL_BY_ID[faceId];
+    if (!src) return null;
+    return new THREE.Vector3(src.x, src.y, src.z);
+}
+
+function flipGeometryWinding(geometry) {
+    const geo = geometry?.isBufferGeometry ? geometry : null;
+    if (!geo) return;
+    let flipped = false;
+    const index = geo.getIndex?.() ?? null;
+    if (index?.array && index.array.length >= 3) {
+        const arr = index.array;
+        for (let i = 0; i + 2 < arr.length; i += 3) {
+            const t = arr[i + 1];
+            arr[i + 1] = arr[i + 2];
+            arr[i + 2] = t;
+        }
+        index.needsUpdate = true;
+        flipped = true;
+    } else {
+        const pos = geo.getAttribute?.('position');
+        if (!pos?.array || pos.itemSize !== 3) return;
+        const attrNames = Object.keys(geo.attributes ?? {});
+        for (const name of attrNames) {
+            const attr = geo.getAttribute(name);
+            const itemSize = Number(attr?.itemSize) || 0;
+            const arr = attr?.array;
+            if (!arr || !(itemSize > 0)) continue;
+            const stride = itemSize * 3;
+            for (let i = 0; i + stride - 1 < arr.length; i += stride) {
+                for (let k = 0; k < itemSize; k += 1) {
+                    const t = arr[i + itemSize + k];
+                    arr[i + itemSize + k] = arr[i + itemSize * 2 + k];
+                    arr[i + itemSize * 2 + k] = t;
+                }
+            }
+            attr.needsUpdate = true;
+        }
+        flipped = true;
+    }
+
+    if (!flipped) return;
+    const normal = geo.getAttribute?.('normal');
+    if (!normal?.array || normal.itemSize < 3) return;
+    const normals = normal.array;
+    for (let i = 0; i + 2 < normals.length; i += normal.itemSize) {
+        normals[i] = -normals[i];
+        normals[i + 1] = -normals[i + 1];
+        normals[i + 2] = -normals[i + 2];
+    }
+    normal.needsUpdate = true;
+}
+
+function computeGeometryFirstTriangleNormalDotAxis(geometry, quaternion, axis) {
+    const geo = geometry?.isBufferGeometry ? geometry : null;
+    const q = quaternion?.isQuaternion ? quaternion : null;
+    const target = axis?.isVector3 ? axis : null;
+    if (!geo || !q || !target) return 1.0;
+    const pos = geo.getAttribute?.('position');
+    if (!pos || pos.count < 3) return 1.0;
+
+    let i0 = 0;
+    let i1 = 1;
+    let i2 = 2;
+    const index = geo.getIndex?.() ?? null;
+    if (index?.array && index.array.length >= 3) {
+        i0 = Number(index.array[0]) || 0;
+        i1 = Number(index.array[1]) || 1;
+        i2 = Number(index.array[2]) || 2;
+    }
+    if (i0 >= pos.count || i1 >= pos.count || i2 >= pos.count) return 1.0;
+
+    const v0 = new THREE.Vector3(pos.getX(i0), pos.getY(i0), pos.getZ(i0)).applyQuaternion(q);
+    const v1 = new THREE.Vector3(pos.getX(i1), pos.getY(i1), pos.getZ(i1)).applyQuaternion(q);
+    const v2 = new THREE.Vector3(pos.getX(i2), pos.getY(i2), pos.getZ(i2)).applyQuaternion(q);
+    const n = new THREE.Vector3().subVectors(v1, v0).cross(new THREE.Vector3().subVectors(v2, v0));
+    const len = n.length();
+    if (!(len > EPS)) return 1.0;
+    n.multiplyScalar(1.0 / len);
+    return n.dot(target);
+}
+
+function hasFlatCapFamilyFrontSpecs(specs) {
+    const list = Array.isArray(specs) ? specs : [];
+    if (!list.length) return false;
+    let hasMain = false;
+    let hasCap = false;
+    for (const spec of list) {
+        const src = spec && typeof spec === 'object' ? spec : null;
+        if (!src) continue;
+        const faceId = String(src.faceId ?? '').trim().toLowerCase();
+        if (faceId !== 'front') continue;
+        const geometryKind = String(src.geometryKind ?? '').trim().toLowerCase();
+        if (geometryKind === 'flat_panel' || geometryKind === 'angled_support_profile') hasMain = true;
+        if (geometryKind === 'flat_panel_cap' || geometryKind === 'flat_panel_side_cap') hasCap = true;
+    }
+    return hasMain && hasCap;
+}
+
+function resolveFlatCapFamilyFrontOffsetMeters(specs, fallback = 0.05) {
+    const list = Array.isArray(specs) ? specs : [];
+    for (const spec of list) {
+        const src = spec && typeof spec === 'object' ? spec : null;
+        if (!src) continue;
+        const faceId = String(src.faceId ?? '').trim().toLowerCase();
+        if (faceId !== 'front') continue;
+        const geometryKind = String(src.geometryKind ?? '').trim().toLowerCase();
+        if (geometryKind !== 'flat_panel' && geometryKind !== 'angled_support_profile') continue;
+        const outset = Number(src.outsetMeters);
+        if (Number.isFinite(outset) && outset > EPS) return clamp(outset, 0.005, 4.0);
+        const depth = Number(src.depthMeters);
+        if (Number.isFinite(depth) && depth > EPS) return clamp(depth, 0.005, 4.0);
+    }
+    return clamp(fallback, 0.005, 4.0);
+}
+
+function adjustFlatCapFamilyFrontSpecsForEdges(
+    specs,
+    {
+        offsetMeters = 0.05,
+        extendStart = false,
+        extendEnd = false,
+        hideStartCap = false,
+        hideEndCap = false
+    } = {}
+) {
+    const list = Array.isArray(specs) ? specs : [];
+    const out = [];
+    const edgeOffset = clamp(offsetMeters, 0.005, 4.0, 0.05);
+    const extraStart = extendStart ? edgeOffset : 0.0;
+    const extraEnd = extendEnd ? edgeOffset : 0.0;
+
+    for (const spec of list) {
+        const src = spec && typeof spec === 'object' ? spec : null;
+        if (!src) continue;
+        const next = { ...src };
+        const faceId = String(next.faceId ?? '').trim().toLowerCase();
+        const geometryKind = String(next.geometryKind ?? '').trim().toLowerCase();
+
+        if (faceId === 'front' && (geometryKind === 'flat_panel' || geometryKind === 'angled_support_profile')) {
+            const width = Math.max(0.01, Number(next.widthMeters) || 0.01);
+            const centerU = Number(next.centerU) || 0.0;
+            const minU = centerU - width * 0.5 - extraStart;
+            const maxU = centerU + width * 0.5 + extraEnd;
+            next.widthMeters = Math.max(0.01, maxU - minU);
+            next.centerU = (minU + maxU) * 0.5;
+        }
+
+        if (faceId === 'front' && geometryKind === 'flat_panel_cap') {
+            const bridgeStart = clamp(next.cornerBridgeStartMeters, 0.0, 4.0, 0.0);
+            const bridgeEnd = clamp(next.cornerBridgeEndMeters, 0.0, 4.0, 0.0);
+            next.cornerBridgeStartMeters = extendStart ? Math.max(bridgeStart, edgeOffset) : bridgeStart;
+            next.cornerBridgeEndMeters = extendEnd ? Math.max(bridgeEnd, edgeOffset) : bridgeEnd;
+        }
+
+        if (faceId === 'front' && geometryKind === 'flat_panel_side_cap') {
+            const yawDegrees = clamp(next.yawDegrees, -180.0, 180.0, 0.0);
+            const isStartCap = Math.abs(Math.abs(yawDegrees) - 180.0) <= 1e-4;
+            const isEndCap = !isStartCap;
+            if ((hideStartCap && isStartCap) || (hideEndCap && isEndCap)) continue;
+        }
+
+        out.push(next);
+    }
+
+    return out;
+}
+
+function buildGameplayWallDecorationMeshes({
+    wallDecorations = null,
+    bayHighlightDataByLayerId = null,
+    floorSegmentsByLayerId = null,
+    floorLayerById = null,
+    facadesByLayerId = null,
+    globalFacadeSpec = null,
+    baseColorHex = 0xffffff,
+    textureCache = null
+} = {}) {
+    const decorationRoot = wallDecorations && typeof wallDecorations === 'object'
+        ? wallDecorations
+        : null;
+    const sets = Array.isArray(decorationRoot?.sets) ? decorationRoot.sets : [];
+    if (!sets.length) return [];
+
+    const bayEntriesByLayerId = new Map();
+    const sourceByLayer = bayHighlightDataByLayerId && typeof bayHighlightDataByLayerId === 'object'
+        ? bayHighlightDataByLayerId
+        : {};
+    for (const [layerId, entriesRaw] of Object.entries(sourceByLayer)) {
+        const entries = Array.isArray(entriesRaw) ? entriesRaw : [];
+        if (!entries.length) continue;
+        const byBayRef = new Map();
+        const seenByBayRef = new Map();
+        for (const entry of entries) {
+            const faceId = isFaceId(entry?.faceId) ? entry.faceId : null;
+            const bayId = typeof entry?.bayId === 'string' ? entry.bayId : '';
+            if (!faceId || !bayId) continue;
+            const x0 = Number(entry?.x0);
+            const z0 = Number(entry?.z0);
+            const x1 = Number(entry?.x1);
+            const z1 = Number(entry?.z1);
+            if (!Number.isFinite(x0) || !Number.isFinite(z0) || !Number.isFinite(x1) || !Number.isFinite(z1)) continue;
+            const nx = Number(entry?.nx);
+            const nz = Number(entry?.nz);
+            const bayRef = `${faceId}:${bayId}`;
+            const pA = buildWallDecorationEndpointKey(x0, z0);
+            const pB = buildWallDecorationEndpointKey(x1, z1);
+            const segKey = pA <= pB ? `${pA}|${pB}` : `${pB}|${pA}`;
+            let seen = seenByBayRef.get(bayRef);
+            if (!seen) {
+                seen = new Set();
+                seenByBayRef.set(bayRef, seen);
+            }
+            if (seen.has(segKey)) continue;
+            seen.add(segKey);
+            const normalized = {
+                faceId,
+                bayId,
+                x0,
+                z0,
+                x1,
+                z1,
+                ...(Number.isFinite(nx) ? { nx } : {}),
+                ...(Number.isFinite(nz) ? { nz } : {})
+            };
+            const bucket = byBayRef.get(bayRef);
+            if (bucket) bucket.push(normalized);
+            else byBayRef.set(bayRef, [normalized]);
+        }
+        if (byBayRef.size) bayEntriesByLayerId.set(layerId, byBayRef);
+    }
+    if (!bayEntriesByLayerId.size) return [];
+
+    const floorSegsByLayer = floorSegmentsByLayerId instanceof Map ? floorSegmentsByLayerId : new Map();
+    const floorLayersById = floorLayerById instanceof Map ? floorLayerById : new Map();
+    const up = new THREE.Vector3(0, 1, 0);
+
+    const resolveMasterFaceIdForLayer = (layer, faceId) => {
+        const targetFaceId = isFaceId(faceId) ? faceId : null;
+        if (!targetFaceId) return null;
+        const links = layer?.faceLinking?.links && typeof layer.faceLinking.links === 'object'
+            ? layer.faceLinking.links
+            : null;
+        if (!links) return targetFaceId;
+        const seen = new Set();
+        let cur = targetFaceId;
+        for (let i = 0; i < 8; i += 1) {
+            if (seen.has(cur)) break;
+            seen.add(cur);
+            const next = links?.[cur] ?? null;
+            if (!isFaceId(next) || next === cur) break;
+            cur = next;
+        }
+        return cur;
+    };
+
+    const resolveFaceMaterialSpec = (layer, faceId) => {
+        const masterFaceId = resolveMasterFaceIdForLayer(layer, faceId);
+        if (masterFaceId) {
+            const faceMaterials = layer?.faceMaterials && typeof layer.faceMaterials === 'object'
+                ? layer.faceMaterials
+                : null;
+            const faceCfg = faceMaterials?.[masterFaceId] && typeof faceMaterials[masterFaceId] === 'object'
+                ? faceMaterials[masterFaceId]
+                : null;
+            const faceMaterial = normalizeMaterialSpec(faceCfg?.material ?? null);
+            if (faceMaterial) return faceMaterial;
+        }
+        return normalizeMaterialSpec(layer?.material ?? null);
+    };
+
+    const resolveLinkedBaySource = (baysById, bayId) => {
+        const byId = baysById instanceof Map ? baysById : null;
+        const startId = typeof bayId === 'string' ? bayId : '';
+        if (!byId || !startId) return null;
+        const visited = new Set();
+        let curId = startId;
+        let current = byId.get(curId) ?? null;
+        for (let i = 0; i < 32; i += 1) {
+            if (!current || typeof current !== 'object') break;
+            if (visited.has(curId)) break;
+            visited.add(curId);
+            const nextLink = typeof current.materialLinkFromBayId === 'string' && current.materialLinkFromBayId
+                ? current.materialLinkFromBayId
+                : (typeof current.linkFromBayId === 'string' ? current.linkFromBayId : '');
+            if (!nextLink || nextLink === curId) break;
+            const next = byId.get(nextLink) ?? null;
+            if (!next || typeof next !== 'object') break;
+            curId = nextLink;
+            current = next;
+        }
+        return current;
+    };
+
+    const resolveActiveWallMaterialSpec = ({ layerId, layer, faceId, bayId }) => {
+        const baseFaceMaterial = resolveFaceMaterialSpec(layer, faceId);
+        const layerFacades = globalFacadeSpec && typeof globalFacadeSpec === 'object'
+            ? globalFacadeSpec
+            : ((facadesByLayerId?.[layerId] && typeof facadesByLayerId[layerId] === 'object') ? facadesByLayerId[layerId] : null);
+        const facade = layerFacades?.[faceId] && typeof layerFacades[faceId] === 'object'
+            ? layerFacades[faceId]
+            : null;
+        const bays = Array.isArray(facade?.layout?.bays?.items) ? facade.layout.bays.items : [];
+        if (!bays.length) return baseFaceMaterial;
+        const byId = new Map();
+        for (const entry of bays) {
+            const id = typeof entry?.id === 'string' ? entry.id : '';
+            if (!id || byId.has(id)) continue;
+            byId.set(id, entry);
+        }
+        const sourceBay = resolveLinkedBaySource(byId, bayId);
+        const bayMaterial = normalizeMaterialSpec(sourceBay?.wallMaterialOverride ?? null);
+        return bayMaterial ?? baseFaceMaterial;
+    };
+
+    const resolveFloorSegmentsForSet = (layerId, floorIntervalRaw) => {
+        const allSegments = Array.isArray(floorSegsByLayer.get(layerId))
+            ? floorSegsByLayer.get(layerId)
+            : [];
+        const count = allSegments.length;
+        if (!count) return [];
+        const interval = floorIntervalRaw && typeof floorIntervalRaw === 'object' ? floorIntervalRaw : {};
+        const start = clampInt(interval.start ?? 1, 1, count);
+        const every = clampInt(interval.every ?? 1, 1, 99);
+        const endRaw = Number(interval.end);
+        const end = Number.isFinite(endRaw) && endRaw > 0
+            ? clampInt(endRaw, start, count)
+            : count;
+        const out = [];
+        for (let floor = start; floor <= end; floor += every) {
+            const seg = allSegments[floor - 1] ?? null;
+            if (seg) out.push(seg);
+        }
+        return out;
+    };
+
+    const materialCache = new Map();
+    const resolveWallDecorationMaterial = ({
+        safeState,
+        layerMaterialSpec,
+        surfaceSizeMeters = null,
+        geometryKind = ''
+    }) => {
+        const state = sanitizeWallDecoratorDebuggerState(safeState);
+        const wallBase = state?.wallBase && typeof state.wallBase === 'object' ? state.wallBase : {};
+        const roughness = clamp(
+            Number.isFinite(Number(wallBase.roughness)) ? Number(wallBase.roughness) : 0.85,
+            0.0,
+            1.0
+        );
+        const normalStrength = clamp(
+            Number.isFinite(Number(wallBase.normalStrength)) ? Number(wallBase.normalStrength) : 0.9,
+            0.0,
+            2.0
+        );
+        const widthMeters = clamp(
+            Number.isFinite(Number(surfaceSizeMeters?.x)) ? Number(surfaceSizeMeters.x) : 1.0,
+            0.01,
+            256.0
+        );
+        const heightMeters = clamp(
+            Number.isFinite(Number(surfaceSizeMeters?.y)) ? Number(surfaceSizeMeters.y) : 0.2,
+            0.01,
+            256.0
+        );
+        const geomKind = String(geometryKind ?? '').trim().toLowerCase();
+        const materialSelection = state?.materialSelection && typeof state.materialSelection === 'object'
+            ? state.materialSelection
+            : {};
+        const materialKindRaw = typeof materialSelection.kind === 'string'
+            ? materialSelection.kind.trim().toLowerCase()
+            : '';
+        const isMatchWall = materialKindRaw === 'match_wall' || materialKindRaw === 'match wall' || materialKindRaw === 'matchwall';
+        const isColor = materialKindRaw === 'color';
+
+        let materialId = '';
+        if (isMatchWall) {
+            if (layerMaterialSpec?.kind === 'texture' && typeof layerMaterialSpec.id === 'string') {
+                materialId = layerMaterialSpec.id.trim();
+            }
+        } else if (materialKindRaw === 'texture' && typeof materialSelection.id === 'string') {
+            materialId = materialSelection.id.trim();
+        }
+        const colorId = isColor && typeof materialSelection.id === 'string'
+            ? materialSelection.id.trim()
+            : '';
+        const key = stableStringify({
+            geomKind,
+            roughness,
+            normalStrength,
+            widthMeters,
+            heightMeters,
+            isMatchWall,
+            colorId,
+            materialId,
+            layerColorId: layerMaterialSpec?.kind === 'color' ? String(layerMaterialSpec?.id ?? '') : '',
+            wallBase: wallBase ?? {},
+            tiling: state?.tiling ?? {}
+        });
+        const cached = materialCache.get(key);
+        if (cached) return cached;
+
+        const material = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness,
+            metalness: 0.02,
+            side: THREE.FrontSide
+        });
+        if (material.normalScale?.set) material.normalScale.set(normalStrength, normalStrength);
+
+        if (geomKind === 'awning_support_rod') {
+            material.color.setHex(AWNING_ROD_MATERIAL.colorHex);
+            material.roughness = AWNING_ROD_MATERIAL.roughness;
+            material.metalness = AWNING_ROD_MATERIAL.metalness;
+            material.envMapIntensity = AWNING_ROD_MATERIAL.envMapIntensity;
+            if (material.normalScale?.set) material.normalScale.set(1, 1);
+            materialCache.set(key, material);
+            return material;
+        }
+
+        if (isColor) {
+            material.color.setHex(resolveBeltCourseColorHex(colorId));
+            materialCache.set(key, material);
+            return material;
+        }
+
+        if (!materialId) {
+            if (isMatchWall && layerMaterialSpec?.kind === 'color') {
+                material.color.setHex(resolveBeltCourseColorHex(String(layerMaterialSpec?.id ?? '').trim()));
+            } else {
+                material.color.setHex(isMatchWall ? 0xf4f4f4 : 0xffffff);
+            }
+            materialCache.set(key, material);
+            return material;
+        }
+
+        const payload = textureCache?.resolveMaterial?.(materialId, {
+            cloneTextures: true,
+            uvSpace: 'unit',
+            surfaceSizeMeters: { x: widthMeters, y: heightMeters },
+            diagnosticsTag: 'BuildingFabricationGenerator.wall_decoration'
+        }) ?? null;
+        if (payload) textureCache?.applyResolvedMaterial?.(material, payload, { clearOnMissing: true });
+
+        if (isMatchWall) material.color.setHex(0xffffff);
+        else material.color.setHex(resolveWallBaseTintHexFromWallBase(wallBase));
+
+        const tiling = state?.tiling && typeof state.tiling === 'object' ? state.tiling : {};
+        const tilingEnabled = !!tiling.enabled;
+        const uvEnabled = !!tiling.uvEnabled;
+
+        const probeTexture = material.map ?? material.normalMap ?? material.roughnessMap ?? material.metalnessMap ?? material.aoMap ?? null;
+        const baseRepeatU = Number(probeTexture?.repeat?.x);
+        const baseRepeatV = Number(probeTexture?.repeat?.y);
+        let repeatU = Number.isFinite(baseRepeatU) && Math.abs(baseRepeatU) > EPS ? baseRepeatU : 1.0;
+        let repeatV = Number.isFinite(baseRepeatV) && Math.abs(baseRepeatV) > EPS ? baseRepeatV : 1.0;
+
+        if (tilingEnabled) {
+            const tileU = clamp(
+                Number.isFinite(Number(tiling.tileMetersU)) ? Number(tiling.tileMetersU) : (widthMeters / Math.max(EPS, repeatU)),
+                0.1,
+                100.0
+            );
+            const tileV = clamp(
+                Number.isFinite(Number(tiling.tileMetersV)) ? Number(tiling.tileMetersV) : (heightMeters / Math.max(EPS, repeatV)),
+                0.1,
+                100.0
+            );
+            repeatU = widthMeters / tileU;
+            repeatV = heightMeters / tileV;
+        }
+
+        const offsetU = uvEnabled ? clamp(Number(tiling.offsetU) || 0.0, -10.0, 10.0) : 0.0;
+        const offsetV = uvEnabled ? clamp(Number(tiling.offsetV) || 0.0, -10.0, 10.0) : 0.0;
+        const rotationDegrees = uvEnabled ? clamp(Number(tiling.rotationDegrees) || 0.0, -180.0, 180.0) : 0.0;
+        const applyTexXform = (tex) => {
+            if (!tex) return;
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(repeatU, repeatV);
+            tex.offset.set(offsetU, offsetV);
+            tex.rotation = rotationDegrees * Math.PI / 180.0;
+            tex.needsUpdate = true;
+        };
+        applyTexXform(material.map);
+        applyTexXform(material.normalMap);
+        applyTexXform(material.roughnessMap);
+        applyTexXform(material.metalnessMap);
+        applyTexXform(material.aoMap);
+
+        materialCache.set(key, material);
+        return material;
+    };
+
+    const createdMeshes = [];
+    for (const set of sets) {
+        const layerId = typeof set?.target?.layerId === 'string' ? set.target.layerId : '';
+        if (!layerId) continue;
+        const byBayRef = bayEntriesByLayerId.get(layerId) ?? null;
+        if (!byBayRef || !byBayRef.size) continue;
+
+        const allBayRefs = Array.from(byBayRef.keys());
+        const targetBayRefs = set?.target?.allBays === true
+            ? allBayRefs
+            : (Array.isArray(set?.target?.bayRefs)
+                ? set.target.bayRefs
+                    .map((entry) => normalizeDecorationBayRef(entry))
+                    .filter((entry, idx, arr) => !!entry && arr.indexOf(entry) === idx && byBayRef.has(entry))
+                : []);
+        if (!targetBayRefs.length) continue;
+
+        const floorSegments = resolveFloorSegmentsForSet(layerId, set?.floorInterval);
+        if (!floorSegments.length) continue;
+
+        const layer = floorLayersById.get(layerId) ?? null;
+        const decorations = Array.isArray(set?.decorations) ? set.decorations : [];
+        const setId = typeof set?.id === 'string' ? set.id : '';
+        for (const decoration of decorations) {
+            if (!decoration || typeof decoration !== 'object') continue;
+            const decorationId = typeof decoration?.id === 'string' ? decoration.id : '';
+            if (!decorationId) continue;
+            const decorationKey = `${setId}:${decorationId}`;
+            const safeState = sanitizeWallDecoratorDebuggerState(decoration?.state);
+            const span = decoration?.span && typeof decoration.span === 'object' ? decoration.span : {};
+            const minSpan = Math.min(clampUnit(span.start, 0.0), clampUnit(span.end, 1.0));
+            const maxSpan = Math.max(clampUnit(span.start, 0.0), clampUnit(span.end, 1.0));
+            if (maxSpan - minSpan <= EPS) continue;
+            const compatibilityId = buildWallDecorationCompatibilityId({
+                safeState,
+                spanStart: minSpan,
+                spanEnd: maxSpan
+            });
+
+            const autoCornerByBayRef = decoration?.autoCorner?.byBayRef && typeof decoration.autoCorner.byBayRef === 'object'
+                ? decoration.autoCorner.byBayRef
+                : null;
+            const resolvedAutoTargetBayRefs = Array.isArray(decoration?.autoCorner?.resolvedBayRefs)
+                ? decoration.autoCorner.resolvedBayRefs
+                    .map((entry) => normalizeDecorationBayRef(entry))
+                    .filter((entry, idx, arr) => !!entry && arr.indexOf(entry) === idx && byBayRef.has(entry))
+                : [];
+            const targetSet = new Set(targetBayRefs);
+            for (const ref of resolvedAutoTargetBayRefs) targetSet.add(ref);
+            const resolvedTargetBayRefs = Array.from(targetSet);
+            if (!resolvedTargetBayRefs.length) continue;
+
+            const resolvedBayRenderItems = [];
+            for (const bayRef of resolvedTargetBayRefs) {
+                const parsedBayRef = parseDecorationBayRef(bayRef);
+                if (!parsedBayRef) continue;
+                const bayEntries = byBayRef.get(bayRef) ?? [];
+                if (!bayEntries.length) continue;
+                const layerMaterialSpec = resolveActiveWallMaterialSpec({
+                    layerId,
+                    layer,
+                    faceId: parsedBayRef.faceId,
+                    bayId: parsedBayRef.bayId
+                });
+                resolvedBayRenderItems.push({
+                    bayRef,
+                    parsedBayRef,
+                    bayEntries,
+                    layerMaterialSpec
+                });
+            }
+            if (!resolvedBayRenderItems.length) continue;
+
+            const endpointAssignmentsByKey = new Map();
+            const pushEndpointAssignment = ({ endpointKey, bayRef, faceId, segmentIndex }) => {
+                if (!endpointKey) return;
+                const bucket = endpointAssignmentsByKey.get(endpointKey) ?? [];
+                bucket.push({
+                    compatibilityId,
+                    bayRef,
+                    faceId,
+                    segmentIndex: Math.max(0, Math.floor(Number(segmentIndex) || 0))
+                });
+                endpointAssignmentsByKey.set(endpointKey, bucket);
+            };
+            for (const item of resolvedBayRenderItems) {
+                const faceId = item?.parsedBayRef?.faceId;
+                const bayRef = item?.bayRef;
+                const bayEntries = Array.isArray(item?.bayEntries) ? item.bayEntries : [];
+                for (let segmentIndex = 0; segmentIndex < bayEntries.length; segmentIndex += 1) {
+                    const bayEntry = bayEntries[segmentIndex] ?? null;
+                    if (!bayEntry) continue;
+                    const startKey = buildWallDecorationEndpointKey(bayEntry.x0, bayEntry.z0);
+                    const endKey = buildWallDecorationEndpointKey(bayEntry.x1, bayEntry.z1);
+                    pushEndpointAssignment({ endpointKey: startKey, bayRef, faceId, segmentIndex });
+                    pushEndpointAssignment({ endpointKey: endKey, bayRef, faceId, segmentIndex });
+                }
+            }
+            const resolveEdgeCompatibility = ({ bayRef, faceId, segmentIndex, endpointKey }) => {
+                const out = { any: false, corner: false, sameFace: false };
+                const candidates = Array.isArray(endpointAssignmentsByKey.get(endpointKey))
+                    ? endpointAssignmentsByKey.get(endpointKey)
+                    : [];
+                for (const candidate of candidates) {
+                    if (!candidate || candidate.compatibilityId !== compatibilityId) continue;
+                    const sameSegment = candidate.bayRef === bayRef && Number(candidate.segmentIndex) === Number(segmentIndex);
+                    if (sameSegment) continue;
+                    out.any = true;
+                    if (candidate.faceId === faceId) out.sameFace = true;
+                    else out.corner = true;
+                    if (out.corner && out.sameFace) break;
+                }
+                return out;
+            };
+
+            for (const bayRenderItem of resolvedBayRenderItems) {
+                const bayRef = bayRenderItem.bayRef;
+                const parsedBayRef = bayRenderItem.parsedBayRef;
+                const layerMaterialSpec = bayRenderItem.layerMaterialSpec;
+                const bayEntries = bayRenderItem.bayEntries;
+
+                const cornerMeta = autoCornerByBayRef && typeof autoCornerByBayRef[bayRef] === 'object'
+                    ? autoCornerByBayRef[bayRef]
+                    : null;
+                const cornerStartMeta = cornerMeta?.start === true;
+                const cornerEndMeta = cornerMeta?.end === true;
+                const cornerStartStyle = String(cornerMeta?.startCornerStyle ?? '').trim().toLowerCase() === 'interior'
+                    ? 'interior'
+                    : 'exterior';
+                const cornerEndStyle = String(cornerMeta?.endCornerStyle ?? '').trim().toLowerCase() === 'interior'
+                    ? 'interior'
+                    : 'exterior';
+
+                for (let bayEntryIndex = 0; bayEntryIndex < bayEntries.length; bayEntryIndex += 1) {
+                    const bayEntry = bayEntries[bayEntryIndex];
+                    if (!bayEntry || typeof bayEntry !== 'object') continue;
+                    const startKey = buildWallDecorationEndpointKey(bayEntry.x0, bayEntry.z0);
+                    const endKey = buildWallDecorationEndpointKey(bayEntry.x1, bayEntry.z1);
+                    const startEdgeCompatibility = resolveEdgeCompatibility({
+                        bayRef,
+                        faceId: parsedBayRef.faceId,
+                        segmentIndex: bayEntryIndex,
+                        endpointKey: startKey
+                    });
+                    const endEdgeCompatibility = resolveEdgeCompatibility({
+                        bayRef,
+                        faceId: parsedBayRef.faceId,
+                        segmentIndex: bayEntryIndex,
+                        endpointKey: endKey
+                    });
+                    const cornerStart = startEdgeCompatibility.corner || cornerStartMeta;
+                    const cornerEnd = endEdgeCompatibility.corner || cornerEndMeta;
+                    const hasAnyStart = startEdgeCompatibility.any || cornerStartMeta;
+                    const hasAnyEnd = endEdgeCompatibility.any || cornerEndMeta;
+                    const useCornerMode = cornerStart || cornerEnd;
+                    const reverseForCornerStart = cornerStart && !cornerEnd;
+                    const activeCornerStyle = useCornerMode
+                        ? ((cornerStart && cornerStartStyle === 'interior') || (cornerEnd && cornerEndStyle === 'interior')
+                            ? 'interior'
+                            : (reverseForCornerStart ? cornerStartStyle : cornerEndStyle))
+                        : 'exterior';
+                    const isInteriorCorner = useCornerMode && activeCornerStyle === 'interior';
+
+                    const wallStartCanonical = new THREE.Vector3(Number(bayEntry.x0) || 0.0, 0.0, Number(bayEntry.z0) || 0.0);
+                    const wallEndCanonical = new THREE.Vector3(Number(bayEntry.x1) || 0.0, 0.0, Number(bayEntry.z1) || 0.0);
+                    const frontTangentCanonical = wallEndCanonical.clone().sub(wallStartCanonical);
+                    const bayLength = frontTangentCanonical.length();
+                    if (!(bayLength > EPS)) continue;
+                    frontTangentCanonical.multiplyScalar(1.0 / bayLength);
+                    const spanStartMeters = bayLength * minSpan;
+                    const spanEndMeters = bayLength * maxSpan;
+                    if (!(spanEndMeters > spanStartMeters + EPS)) continue;
+                    const spanMeters = spanEndMeters - spanStartMeters;
+                    const segmentStartCanonical = wallStartCanonical.clone().addScaledVector(frontTangentCanonical, spanStartMeters);
+                    const segmentEndCanonical = wallStartCanonical.clone().addScaledVector(frontTangentCanonical, spanEndMeters);
+
+                    let renderSegmentStart = segmentStartCanonical;
+                    let renderSegmentEnd = segmentEndCanonical;
+                    let renderFrontTangent = frontTangentCanonical;
+                    if (reverseForCornerStart) {
+                        renderSegmentStart = segmentEndCanonical;
+                        renderSegmentEnd = segmentStartCanonical;
+                        renderFrontTangent = frontTangentCanonical.clone().multiplyScalar(-1.0);
+                    }
+                    // Use the resolved bay segment normal from facade frame data.
+                    // This is the same deterministic outward normal used to place wall runs,
+                    // and avoids face-id assumptions that can flip orientation on transformed/derived segments.
+                    const frontNormal = new THREE.Vector3(Number(bayEntry?.nx) || 0.0, 0.0, Number(bayEntry?.nz) || 0.0);
+                    if (frontNormal.lengthSq() <= EPS) {
+                        const faceNormal = getFaceNormalVector(parsedBayRef.faceId);
+                        if (!faceNormal || faceNormal.lengthSq() <= EPS) continue;
+                        frontNormal.copy(faceNormal);
+                    }
+                    frontNormal.normalize();
+
+                    const capConnectedStart = reverseForCornerStart ? hasAnyEnd : hasAnyStart;
+                    const capConnectedEnd = reverseForCornerStart ? hasAnyStart : hasAnyEnd;
+
+                    for (const floorSeg of floorSegments) {
+                        const startY = Number(floorSeg?.startY);
+                        const endY = Number(floorSeg?.endY);
+                        if (!Number.isFinite(startY) || !Number.isFinite(endY) || !(endY > startY + EPS)) continue;
+                        const wallHeight = endY - startY;
+                        const wallCenterY = (startY + endY) * 0.5;
+                        const wallDepth = WALL_DECORATION_DEFAULT_WALL_DEPTH_M;
+                        const stateForBay = sanitizeWallDecoratorDebuggerState({
+                            ...safeState,
+                            mode: useCornerMode ? 'corner' : 'face'
+                        });
+                        const stateForFace = sanitizeWallDecoratorDebuggerState({
+                            ...safeState,
+                            mode: 'face'
+                        });
+                        const wallSpecForDecorator = {
+                            widthMeters: spanMeters,
+                            heightMeters: wallHeight,
+                            depthMeters: wallDepth
+                        };
+                        const faceSpecs = buildWallDecoratorShapeSpecs(stateForFace, wallSpecForDecorator);
+                        const canUseFlatCapFamily = hasFlatCapFamilyFrontSpecs(faceSpecs);
+                        const specsRaw = canUseFlatCapFamily
+                            ? adjustFlatCapFamilyFrontSpecsForEdges(faceSpecs, {
+                                offsetMeters: resolveFlatCapFamilyFrontOffsetMeters(faceSpecs, 0.05),
+                                extendStart: cornerStart,
+                                extendEnd: cornerEnd,
+                                hideStartCap: capConnectedStart,
+                                hideEndCap: capConnectedEnd
+                            })
+                            : buildWallDecoratorShapeSpecs(stateForBay, wallSpecForDecorator);
+                        if (!Array.isArray(specsRaw) || !specsRaw.length) continue;
+
+                        const specs = [];
+                        for (const spec of specsRaw) {
+                            if (!canUseFlatCapFamily) {
+                                const specFace = String(spec?.faceId ?? '').trim().toLowerCase();
+                                const geometryKind = String(spec?.geometryKind ?? '').trim().toLowerCase();
+                                if (specFace === 'front' && geometryKind === 'flat_panel_side_cap') {
+                                    const yawDegrees = clamp(
+                                        Number.isFinite(Number(spec?.yawDegrees)) ? Number(spec.yawDegrees) : 0.0,
+                                        -180.0,
+                                        180.0
+                                    );
+                                    const isStartCap = Math.abs(Math.abs(yawDegrees) - 180.0) <= 1e-4;
+                                    if ((isStartCap && capConnectedStart) || (!isStartCap && capConnectedEnd)) continue;
+                                }
+                            }
+                            specs.push(spec);
+                        }
+                        if (!specs.length) continue;
+
+                        const wallStart = renderSegmentStart.clone();
+                        const wallEnd = renderSegmentEnd.clone();
+                        const wallCenter = wallStart.clone().add(wallEnd).multiplyScalar(0.5);
+                        for (const spec of specs) {
+                            const built = createWallDecorationGeometryFromSpec(spec);
+                            const geometry = built?.geometry?.isBufferGeometry ? built.geometry : null;
+                            if (!geometry) continue;
+
+                            const specFace = String(spec?.faceId ?? '').trim().toLowerCase() === 'right' ? 'right' : 'front';
+                            const geometryKind = String(built?.geometryKind ?? spec?.geometryKind ?? '').trim().toLowerCase();
+                            const rightCornerEdge = String(spec?.__bf2CornerEdge ?? '').trim().toLowerCase() === 'start'
+                                ? 'start'
+                                : 'end';
+                            const rightCornerStyle = String(spec?.__bf2CornerStyle ?? '').trim().toLowerCase() === 'interior'
+                                ? 'interior'
+                                : (isInteriorCorner ? 'interior' : 'exterior');
+                            const frontUAxis = renderFrontTangent.clone();
+                            const frontNAxis = frontNormal.clone();
+                            const rightUAxis = frontNormal.clone().multiplyScalar(-1.0);
+                            const rightNAxisBase = renderFrontTangent.clone().multiplyScalar(rightCornerStyle === 'interior' ? -1.0 : 1.0);
+                            const rightNAxis = rightCornerEdge === 'start'
+                                ? rightNAxisBase.clone().multiplyScalar(-1.0)
+                                : rightNAxisBase;
+                            const logicalUAxis = specFace === 'right' ? rightUAxis : frontUAxis;
+                            let nAxis = specFace === 'right' ? rightNAxis : frontNAxis;
+                            if (logicalUAxis.lengthSq() <= EPS || nAxis.lengthSq() <= EPS) {
+                                geometry.dispose?.();
+                                continue;
+                            }
+                            logicalUAxis.normalize();
+                            nAxis.normalize();
+                            if (Math.abs(logicalUAxis.dot(nAxis)) > 0.999) {
+                                geometry.dispose?.();
+                                continue;
+                            }
+
+                            const basis = new THREE.Matrix4().makeBasis(logicalUAxis, up, nAxis);
+                            const quaternion = new THREE.Quaternion().setFromRotationMatrix(basis);
+                            const yawDegrees = clamp(
+                                Number.isFinite(Number(spec?.yawDegrees)) ? Number(spec.yawDegrees) : 0.0,
+                                -180.0,
+                                180.0
+                            );
+                            const yawRadians = yawDegrees * Math.PI / 180.0;
+                            if (Math.abs(yawRadians) > 1e-8) {
+                                const yaw = new THREE.Quaternion().setFromAxisAngle(up, yawRadians);
+                                quaternion.multiply(yaw);
+                            }
+
+                            const enforceFrontOutward = specFace === 'front'
+                                && (geometryKind === 'flat_panel' || geometryKind === 'angled_support_profile' || geometryKind === 'awning_front_quad');
+                            if (enforceFrontOutward) {
+                                const normalDot = computeGeometryFirstTriangleNormalDotAxis(geometry, quaternion, nAxis);
+                                if (normalDot < 0.0) flipGeometryWinding(geometry);
+                            }
+                            if (geometryKind === 'awning_slanted_plane') {
+                                const normalDotUp = computeGeometryFirstTriangleNormalDotAxis(geometry, quaternion, up);
+                                if (normalDotUp < 0.0) flipGeometryWinding(geometry);
+                            }
+                            if (geometryKind === 'flat_panel_side_cap') {
+                                const yawDegrees = clamp(
+                                    Number.isFinite(Number(spec?.yawDegrees)) ? Number(spec.yawDegrees) : 0.0,
+                                    -180.0,
+                                    180.0
+                                );
+                                const isStartCap = Math.abs(Math.abs(yawDegrees) - 180.0) <= 1e-4;
+                                const expectedU = isStartCap ? -1.0 : 1.0;
+                                const normalDotU = computeGeometryFirstTriangleNormalDotAxis(geometry, quaternion, logicalUAxis);
+                                if ((normalDotU * expectedU) < 0.0) flipGeometryWinding(geometry);
+                            }
+                            if (geometryKind === 'flat_panel_cap') {
+                                const capSide = String(spec?.capSide ?? '').trim().toLowerCase() === 'bottom' ? 'bottom' : 'top';
+                                const expectedUp = capSide === 'bottom' ? -1.0 : 1.0;
+                                const normalDotUp = computeGeometryFirstTriangleNormalDotAxis(geometry, quaternion, up);
+                                if ((normalDotUp * expectedUp) < 0.0) flipGeometryWinding(geometry);
+                            }
+
+                            const centerU = Number(spec?.centerU) || 0.0;
+                            const centerV = Number(spec?.centerV) || 0.0;
+                            const outsetMeters = Math.max(0.0, Number(spec?.outsetMeters ?? spec?.surfaceOffsetMeters) || 0.0);
+                            const placementDepthMeters = Math.max(0.0, Number(built?.placementDepthMeters) || 0.0);
+                            const anchor = specFace === 'right'
+                                ? (rightCornerEdge === 'start' ? wallStart : wallEnd)
+                                : wallCenter;
+
+                            const material = resolveWallDecorationMaterial({
+                                safeState: stateForBay,
+                                layerMaterialSpec,
+                                surfaceSizeMeters: {
+                                    x: clamp(
+                                        Number.isFinite(Number(built?.surfaceWidthMeters)) ? Number(built.surfaceWidthMeters) : (Number(spec?.widthMeters) || 1.0),
+                                        0.01,
+                                        256.0
+                                    ),
+                                    y: clamp(
+                                        Number.isFinite(Number(built?.surfaceHeightMeters)) ? Number(built.surfaceHeightMeters) : (Number(spec?.heightMeters) || 0.2),
+                                        0.01,
+                                        256.0
+                                    )
+                                },
+                                geometryKind
+                            });
+                            const mesh = new THREE.Mesh(geometry, material);
+                            mesh.name = `building_wall_decoration_${String(spec?.role ?? 'mesh')}`;
+                            mesh.position.copy(anchor);
+                            mesh.position.addScaledVector(logicalUAxis, centerU);
+                            mesh.position.addScaledVector(up, wallCenterY + centerV);
+                            mesh.position.addScaledVector(nAxis, outsetMeters + placementDepthMeters * 0.5);
+                            mesh.quaternion.copy(quaternion);
+                            mesh.castShadow = true;
+                            mesh.receiveShadow = true;
+                            mesh.userData = mesh.userData ?? {};
+                            mesh.userData.buildingFab2Role = 'wall_decoration';
+                            mesh.userData.decorationKey = decorationKey;
+                            mesh.userData.decorationCompatibilityId = compatibilityId;
+                            mesh.userData.faceId = specFace;
+                            mesh.userData.role = String(spec?.role ?? 'decorator');
+                            mesh.userData.geometryKind = geometryKind || 'unknown';
+                            mesh.userData.layerId = layerId;
+                            mesh.userData.bayRef = bayRef;
+                            createdMeshes.push(mesh);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return createdMeshes;
+}
+
 function appendLoopLinePositions(dst, loops, y) {
     for (const loop of loops ?? []) {
         if (!loop || loop.length < 2) continue;
@@ -3377,6 +4569,7 @@ export function buildBuildingFabricationVisualParts({
     map,
     tiles,
     footprintLoops = null,
+    buildAreaLoops = null,
     generatorConfig = null,
     tileSize = null,
     occupyRatio = 1.0,
@@ -3387,6 +4580,7 @@ export function buildBuildingFabricationVisualParts({
     windowVisuals = null,
     windowVisualsIsOverride = false,
     facades = null,
+    wallDecorations = null,
     facadeCornerStrategy = null,
     facadeCornerStrategyId = null,
     facadeCornerDebug = false,
@@ -3397,12 +4591,20 @@ export function buildBuildingFabricationVisualParts({
     debug = null
 } = {}) {
     const explicitFootprintLoops = normalizeFootprintLoopsInput(footprintLoops);
-    const sourceFootprintLoops = explicitFootprintLoops.length
-        ? explicitFootprintLoops
+    const explicitBuildAreaLoops = normalizeFootprintLoopsInput(buildAreaLoops);
+    const safeLayers = normalizeBuildingLayers(layers);
+    const fittedExplicitFootprintLoops = (explicitFootprintLoops.length && explicitBuildAreaLoops.length)
+        ? fitFootprintLoopsToBuildArea({
+            footprintLoops: explicitFootprintLoops,
+            buildAreaLoops: explicitBuildAreaLoops,
+            reserveInsetMeters: estimateBf2OutwardFootprintReserveMeters({ layers: safeLayers, facades })
+        })
+        : explicitFootprintLoops;
+    const sourceFootprintLoops = fittedExplicitFootprintLoops.length
+        ? fittedExplicitFootprintLoops
         : computeBuildingLoopsFromTiles({ map, tiles, generatorConfig, tileSize, occupyRatio });
     if (!sourceFootprintLoops.length) return null;
 
-    const safeLayers = normalizeBuildingLayers(layers);
     const tileCount = Array.isArray(tiles) ? tiles.length : 0;
     const baseColorHex = makeDeterministicColor(tileCount * 97 + safeLayers.length * 31).getHex();
     const matVarSeed = Number.isFinite(materialVariationSeed)
@@ -3591,6 +4793,8 @@ export function buildBuildingFabricationVisualParts({
 
     const facadePatternTopologyByFaceId = new Map();
     const bayHighlightDataByLayerId = {};
+    const floorSegmentsByLayerId = new Map();
+    const floorLayerById = new Map();
     if (wantsFacadePatterns) {
         const minFaceLengthByFaceId = { A: Infinity, B: Infinity, C: Infinity, D: Infinity };
         let probeLoops = sourceFootprintLoops;
@@ -3685,6 +4889,7 @@ export function buildBuildingFabricationVisualParts({
             }
 
             const layerId = typeof layer?.id === 'string' ? layer.id : '';
+            if (layerId && !floorLayerById.has(layerId)) floorLayerById.set(layerId, layer);
             const layerFacadeSpec = globalFacadeSpec
                 ? globalFacadeSpec
                 : ((layerId && facadesByLayerId?.[layerId] && typeof facadesByLayerId[layerId] === 'object') ? facadesByLayerId[layerId] : null);
@@ -3865,7 +5070,9 @@ export function buildBuildingFabricationVisualParts({
                         x0: Number(a.x) || 0,
                         z0: Number(a.z) || 0,
                         x1: Number(b.x) || 0,
-                        z1: Number(b.z) || 0
+                        z1: Number(b.z) || 0,
+                        nx: Number(frame?.n?.x) || 0,
+                        nz: Number(frame?.n?.z) || 0
                     });
                 }
                 if (entries.length) bayHighlightDataByLayerId[layerId] = entries;
@@ -4245,6 +5452,18 @@ export function buildBuildingFabricationVisualParts({
                     floorCursorY += segHeight;
                     if (beltEnabled && beltHeight > EPS) totalWallHeight += beltHeight;
                     if (beltEnabled && beltHeight > EPS) floorCursorY += beltHeight;
+                }
+                if (layerId) {
+                    floorSegmentsByLayerId.set(layerId, floorSegments.map((seg) => {
+                        const yBottom = Number(seg?.yBottom) || 0;
+                        const height = Math.max(0, Number(seg?.height) || 0);
+                        return {
+                            yBottom,
+                            height,
+                            startY: layerStartY + yBottom,
+                            endY: layerStartY + yBottom + height
+                        };
+                    }));
                 }
 
                 if (totalWallHeight > EPS) {
@@ -4746,7 +5965,19 @@ export function buildBuildingFabricationVisualParts({
                                 const interiorShellLoop = (Array.isArray(insetLoopSimplified) && insetLoopSimplified.length >= 3 && insetArea > EPS)
                                     ? insetLoopSimplified
                                     : interiorLoopCcw;
-                                const interiorShape = buildShapeFromLoops({ outerLoop: interiorShellLoop, holeLoops: [] });
+                                let interiorAnchorX = 0;
+                                let interiorAnchorZ = 0;
+                                for (const point of interiorShellLoop) {
+                                    interiorAnchorX += Number(point?.x) || 0;
+                                    interiorAnchorZ += Number(point?.z) || 0;
+                                }
+                                interiorAnchorX /= interiorShellLoop.length;
+                                interiorAnchorZ /= interiorShellLoop.length;
+                                const interiorShellLoopLocal = interiorShellLoop.map((point) => ({
+                                    x: (Number(point?.x) || 0) - interiorAnchorX,
+                                    z: (Number(point?.z) || 0) - interiorAnchorZ
+                                }));
+                                const interiorShape = buildShapeFromLoops({ outerLoop: interiorShellLoopLocal, holeLoops: [] });
                                 const createInteriorMaterial = () => {
                                     const mat = makeWallMaterialFromSpec({
                                         material: FLOOR_INTERIOR_MATERIAL_SPEC,
@@ -4797,7 +6028,7 @@ export function buildBuildingFabricationVisualParts({
                                     const interiorFloorMesh = new THREE.Mesh(interiorFloorGeo, interiorFloorMat);
                                     interiorFloorMesh.castShadow = true;
                                     interiorFloorMesh.receiveShadow = true;
-                                    interiorFloorMesh.position.y = segmentBaseY;
+                                    interiorFloorMesh.position.set(interiorAnchorX, segmentBaseY, interiorAnchorZ);
                                     interiorFloorMesh.userData = interiorFloorMesh.userData ?? {};
                                     interiorFloorMesh.userData.buildingFab2Role = 'interior';
                                     interiorFloorMesh.userData.buildingFab2InteriorKind = 'floor';
@@ -4805,18 +6036,20 @@ export function buildBuildingFabricationVisualParts({
 
                                     if (showWire) {
                                         const edgeGeo = new THREE.EdgesGeometry(interiorFloorGeo, 1);
-                                        appendWirePositions(wirePositions, edgeGeo, segmentBaseY);
+                                        interiorFloorMesh.updateMatrix();
+                                        appendWirePositionsTransformed(wirePositions, edgeGeo, interiorFloorMesh.matrix);
                                         edgeGeo.dispose();
                                     }
 
                                     const interiorCeilingGeo = new THREE.ShapeGeometry(interiorShape);
-                                    interiorCeilingGeo.rotateX(Math.PI / 2);
+                                    interiorCeilingGeo.rotateX(-Math.PI / 2);
+                                    flipGeometryWinding(interiorCeilingGeo);
                                     interiorCeilingGeo.computeVertexNormals();
                                     const interiorCeilingMat = createInteriorMaterial();
                                     const interiorCeilingMesh = new THREE.Mesh(interiorCeilingGeo, interiorCeilingMat);
                                     interiorCeilingMesh.castShadow = true;
                                     interiorCeilingMesh.receiveShadow = true;
-                                    interiorCeilingMesh.position.y = segmentBaseY + interiorHeight;
+                                    interiorCeilingMesh.position.set(interiorAnchorX, segmentBaseY + interiorHeight, interiorAnchorZ);
                                     interiorCeilingMesh.userData = interiorCeilingMesh.userData ?? {};
                                     interiorCeilingMesh.userData.buildingFab2Role = 'interior';
                                     interiorCeilingMesh.userData.buildingFab2InteriorKind = 'ceiling';
@@ -4824,7 +6057,8 @@ export function buildBuildingFabricationVisualParts({
 
                                     if (showWire) {
                                         const edgeGeo = new THREE.EdgesGeometry(interiorCeilingGeo, 1);
-                                        appendWirePositions(wirePositions, edgeGeo, segmentBaseY + interiorHeight);
+                                        interiorCeilingMesh.updateMatrix();
+                                        appendWirePositionsTransformed(wirePositions, edgeGeo, interiorCeilingMesh.matrix);
                                         edgeGeo.dispose();
                                     }
                                 }
@@ -6025,6 +7259,18 @@ export function buildBuildingFabricationVisualParts({
             }
         }
     }
+
+    const wallDecorationMeshes = buildGameplayWallDecorationMeshes({
+        wallDecorations,
+        bayHighlightDataByLayerId,
+        floorSegmentsByLayerId,
+        floorLayerById,
+        facadesByLayerId,
+        globalFacadeSpec,
+        baseColorHex,
+        textureCache
+    });
+    for (const mesh of wallDecorationMeshes) solidMeshes.push(mesh);
 
     if (instancedBuckets.size) {
         const dummy = new THREE.Object3D();

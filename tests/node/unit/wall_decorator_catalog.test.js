@@ -992,6 +992,51 @@ test('WallDecoratorCatalog: Curved Ring specs sweep half-circle profile across f
     assertNear(rightCorner.outsetMeters, 0.02, 1e-9, 'Expected right corner outward offset.');
 });
 
+test('WallDecoratorCatalog: Awning support rods keep wall anchoring and trim front endpoint by 0.5cm', () => {
+    const wall = { widthMeters: 10, heightMeters: 3.5, depthMeters: 0.3 };
+    const projectionMeters = 0.80;
+    const state = sanitizeWallDecoratorDebuggerState({
+        decoratorId: WALL_DECORATOR_ID.AWNING,
+        whereToApply: WALL_DECORATOR_WHERE_TO_APPLY.ENTIRE_FACADE,
+        mode: WALL_DECORATOR_MODE.FACE,
+        position: WALL_DECORATOR_POSITION.TOP,
+        configuration: {
+            projectionMeters,
+            frontHeightMeters: 0.30,
+            slopeDegrees: 25.0,
+            rodInsetMeters: 0.08,
+            rodRadiusMeters: 0.015
+        }
+    });
+
+    const specs = buildWallDecoratorShapeSpecs(state, wall);
+    const rods = specs.filter((spec) => spec?.geometryKind === 'awning_support_rod');
+    assert.equal(rods.length, 2, 'Expected both side support rods on awning face mode.');
+    for (const rod of rods) {
+        assertNear(
+            rod?.rodStartOutsetMeters,
+            0.0,
+            1e-9,
+            'Expected rod wall-side anchor to remain unchanged at wall plane.'
+        );
+        assertNear(
+            rod?.rodEndOutsetMeters,
+            projectionMeters - 0.005,
+            1e-9,
+            'Expected rod front endpoint shortened by 0.5cm to avoid front-cover overlap.'
+        );
+    }
+
+    const frontQuad = specs.find((spec) => spec?.geometryKind === 'awning_front_quad') ?? null;
+    assert.ok(frontQuad, 'Expected front cover quad to be present.');
+    assertNear(
+        frontQuad?.outsetMeters,
+        projectionMeters,
+        1e-9,
+        'Expected front cover projection/silhouette to remain unchanged.'
+    );
+});
+
 test('WallDecoratorCatalog: Angled Support Profile specs follow skirt face/cap logic with angled cap wall-edge offsets', () => {
     const wall = { widthMeters: 10, heightMeters: 3.5, depthMeters: 0.3 };
 

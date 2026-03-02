@@ -1,0 +1,40 @@
+/* src/graphics/gui/coloring_debugger/styles.css */
+
+#ui-coloring-debugger .options-section {
+    border: 0;
+    background: transparent;
+    border-radius: 0;
+    padding: 0;
+    gap: 8px;
+}
+
+#ui-coloring-debugger .options-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#ui-coloring-debugger .options-section-title::after {
+    content: '';
+    flex: 1 1 auto;
+    min-width: 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.2);
+}
+
+#ui-coloring-debugger .coloring-debugger-material-row {
+    margin-top: 0;
+}
+
+#ui-coloring-debugger .coloring-debugger-material-id {
+    font-size: 11px;
+    opacity: 0.72;
+    line-height: 1.3;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    overflow-wrap: anywhere;
+}
+
+#ui-coloring-debugger .coloring-debugger-hint {
+    font-size: 11px;
+    opacity: 0.72;
+    line-height: 1.35;
+}

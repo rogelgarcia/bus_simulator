@@ -56,6 +56,10 @@ At a conceptual level, a Building v2 model includes:
   - A building-level **base wall material** default exists.
   - Material configuration is authored per **floor-layer face**, and respects face master/slave inheritance (slaves do not duplicate config).
   - Wall-base tint uses a shared persisted state contract (`tintHueDeg`, `tintSaturation`, `tintValue`, `tintIntensity`, `tintBrightness`) plus compatibility `tintHex`.
+  - Tint compose model:
+    - `tintIntensity` mixes between neutral white (`0`) and HSV tint color (`1`),
+    - `tintBrightness <= 1` darkens multiplicatively,
+    - `tintBrightness > 1` lifts channels toward white (not channel clipping), enabling controlled whitening.
 - **Bay content** definitions (openings/windows, columns, wall segments), with constraints and omission rules.
 - **Reusable definitions** owned by the building (e.g., window definitions reused across bays).
 - **Bay window configuration** authored per floor-layer face bay, including:
@@ -91,3 +95,19 @@ Concrete schema definitions belong in dedicated specs:
 - Loading an exported v2 config should reproduce the same building (modulo deterministic solver reflow when face lengths change).
 - Importing a v1 config MUST convert to v2 and then render via v2.
 - City placement/runtime MAY override a config’s default footprint loops (and related facade-driven dimensions) per placed building without mutating the source config.
+- When city runtime uses a config’s default footprint loops (no per-instance override), those loops MUST be treated as building-local and translated to the placed building footprint centroid.
+
+---
+
+## 6. Wall decoration targeting and corner-resolution metadata
+
+- `wallDecorations.sets[*].target` is authored as `layerId + allBays|bayRefs`, but runtime resolution expands these refs deterministically to preserve continuity rules:
+  - linked faces inherit target refs using the same per-layer face master/slave + reverse-order rules used by facade/material solving;
+  - face-boundary ownership expansion applies when adjacent edge depths differ, so the outmost-depth owner also applies decoration to the inherited adjacent edge wall.
+- Runtime corner resolution is decoration-signature driven (`type + placement + relevant configuration/material fields`) and computed per bay edge.
+- The derived `decoration.autoCorner` metadata may include:
+  - `resolvedBayRefs`: effective bay refs after link/inheritance expansion;
+  - `byBayRef[ref]`: edge flags (`start`/`end`), continuation meters (`continuationStartMeters`/`continuationEndMeters`), and edge style (`startCornerStyle`/`endCornerStyle`).
+- Corner style rules:
+  - adjacent-face continuity uses `exterior` style;
+  - same-face inset/intrusion continuity uses `interior` style when an inset depth participates in the edge transition.

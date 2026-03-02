@@ -45,6 +45,13 @@ export const DEBUG_TOOL_REGISTRY = Object.freeze([
         href: 'debug_tools/wall_decoration_mesh_debug.html'
     }),
     Object.freeze({
+        id: 'coloring_debug',
+        key: 'C',
+        label: 'Coloring',
+        description: 'BF2/decorator wall material + color widget validation scene',
+        href: 'debug_tools/coloring_debugger.html'
+    }),
+    Object.freeze({
         id: 'terrain_debug',
         key: 'E',
         label: 'Terrain',
