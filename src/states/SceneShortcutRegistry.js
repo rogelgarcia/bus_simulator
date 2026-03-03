@@ -78,6 +78,14 @@ export const SCENE_SHORTCUT_REGISTRY = Object.freeze([
         description: 'Current bay/facade building fabrication flow',
         qGroup: Q_MENU_GROUP.fabrication,
         href: 'screens/building_fabrication2.html'
+    }),
+    Object.freeze({
+        id: 'mesh_fabrication',
+        label: 'Mesh Fabrication',
+        key: '7',
+        description: 'Interactive mesh fabrication workspace',
+        qGroup: Q_MENU_GROUP.fabrication,
+        href: 'screens/mesh_fabrication.html'
     })
 ]);
 

@@ -48,6 +48,13 @@ Any AI prompt or change that modifies a specification/model MUST update one or m
 - Completion is not enough to move a prompt; move only when explicitly requested by the user.
 - Interactive prompt mode is triggered by `start ai` and uses `AI_i_...` naming (see `AI_PROMPT_INSTRUCTIONS.md`).
 
+**Mesh Fabrication JSON prompts:**
+- For mesh-generation/editing requests for the mesh fabrication editor, follow:
+  - `specs/graphics/mesh_fabrication_live_mesh_handoff.md`
+  - `specs/graphics/mesh_fabrication_ai_workflow.md`
+- Treat `create mesh` and `edit mesh` as triggers to generate/update mesh JSON for the mesh fabrication editor.
+- If intent is ambiguous, ask whether the prompt is to generate mesh JSON for the mesh fabrication editor before proceeding.
+
 **Tasks:**
 These are the ones from AI prompt files.
 - Building Fabrication 1 is deprecated. Any prompt related to building fabrication must target Building Fabrication 2 by default, unless the user explicitly requests otherwise.

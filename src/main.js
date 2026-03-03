@@ -15,6 +15,7 @@ import { BuildingFabrication2State } from './states/BuildingFabrication2State.js
 import { InspectorRoomState } from './states/InspectorRoomState.js';
 import { MaterialCalibrationState } from './states/MaterialCalibrationState.js';
 import { RoadDebuggerState } from './states/RoadDebuggerState.js';
+import { MeshFabricationState } from './states/MeshFabricationState.js';
 import { OptionsState } from './states/OptionsState.js';
 import {
     prehideWelcomeForDirectLaunch,
@@ -57,6 +58,7 @@ sm.register('building_fabrication2', new BuildingFabrication2State(engine, sm));
 sm.register('inspector_room', new InspectorRoomState(engine, sm));
 sm.register('material_calibration', new MaterialCalibrationState(engine, sm));
 sm.register('road_debugger', new RoadDebuggerState(engine, sm));
+sm.register('mesh_fabrication', new MeshFabricationState(engine, sm));
 sm.register('options', new OptionsState(engine, sm));
 
 const rawGo = sm.go.bind(sm);
