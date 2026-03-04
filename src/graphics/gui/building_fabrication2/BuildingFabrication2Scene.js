@@ -2486,6 +2486,7 @@ export class BuildingFabrication2Scene {
         this.root.traverse((obj) => {
             if (!obj?.isMesh && !obj?.isInstancedMesh) return;
             if (obj === floor || obj === tiles) return;
+            if (obj === this._sky || obj?.name === 'bf2_sky_dome') return;
 
             const mat = obj.material ?? null;
             if (Array.isArray(mat)) {
@@ -2509,7 +2510,7 @@ export class BuildingFabrication2Scene {
         const sky = createGradientSkyDome({
             radius: 480,
             sunDir: new THREE.Vector3(0.58, 0.78, 0.23).normalize(),
-            sunIntensity: 0.35,
+            sunIntensity: 0.12,
             atmosphere: {
                 sky: {
                     horizonColor: '#7FB3FF',
@@ -2534,10 +2535,10 @@ export class BuildingFabrication2Scene {
                 },
                 disc: {
                     enabled: true,
-                    intensity: 6.5,
-                    sigmaDeg: 0.012,
-                    coreIntensity: 4.5,
-                    coreSigmaDeg: 0.003
+                    intensity: 2.2,
+                    sigmaDeg: 0.006,
+                    coreIntensity: 2.8,
+                    coreSigmaDeg: 0.0015
                 }
             }
         });
@@ -3065,10 +3066,10 @@ export class BuildingFabrication2Scene {
 
     _buildLights() {
         if (!this.root) return;
-        const hemi = new THREE.HemisphereLight(0xe5eeff, 0x463a2a, 0.82);
+        const hemi = new THREE.HemisphereLight(0xe5eeff, 0x463a2a, 0.76);
         hemi.name = 'bf2_hemi';
 
-        const sun = new THREE.DirectionalLight(0xffffff, 1.42);
+        const sun = new THREE.DirectionalLight(0xffffff, 1.28);
         sun.name = 'bf2_sun';
         sun.position.set(60, 75, 40);
         sun.castShadow = true;
@@ -3083,7 +3084,7 @@ export class BuildingFabrication2Scene {
         this._sun = sun;
         this._applySuspect1ShadowDebugState();
 
-        const fill = new THREE.DirectionalLight(0xc8deff, 0.38);
+        const fill = new THREE.DirectionalLight(0xc8deff, 0.30);
         fill.name = 'bf2_fill';
         fill.position.set(-55, 50, -60);
 

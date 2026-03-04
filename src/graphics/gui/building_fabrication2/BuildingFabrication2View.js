@@ -137,6 +137,12 @@ const DECORATION_FLOOR_INTERVAL_PRESET = Object.freeze({
     ALL: 'all',
     EVERY_2: 'every_2'
 });
+const THUMB_PRELOAD_WAIT_MS = 3000;
+
+function wait(ms) {
+    const safe = Math.max(0, Number(ms) || 0);
+    return new Promise((resolve) => setTimeout(resolve, safe));
+}
 
 function normalizeMaterialSpec(value) {
     const kind = value?.kind;
@@ -3927,19 +3933,35 @@ export class BuildingFabrication2View {
     async _renderAllThumbnails() {
         const jobId = (this._thumbJobId += 1);
         const entries = this._catalogEntries.slice();
+        const pending = [];
         for (const entry of entries) {
             if (!entry?.id) continue;
             if (this._thumbCache.has(entry.id)) continue;
-            if (jobId !== this._thumbJobId) return;
-
             const cfg = getBuildingConfigById(entry.id);
             if (!cfg) continue;
+            pending.push({ entry, cfg });
+        }
+        if (!pending.length) return;
 
-            const url = await this._thumbRenderer.renderConfigToDataUrl(cfg);
+        // Stage 1: trigger texture requests for the full batch.
+        for (const item of pending) {
+            if (jobId !== this._thumbJobId) return;
+            this._thumbRenderer.primeTextureCacheForConfig(item.cfg);
+            await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+        }
+
+        // Stage 2: single global wait for async texture decode/upload.
+        await wait(THUMB_PRELOAD_WAIT_MS);
+        if (jobId !== this._thumbJobId) return;
+
+        // Stage 3: render thumbnails without per-item delay.
+        for (const item of pending) {
+            if (jobId !== this._thumbJobId) return;
+            const url = await this._thumbRenderer.renderConfigToDataUrl(item.cfg);
             if (jobId !== this._thumbJobId) return;
             if (typeof url === 'string' && url) {
-                this._thumbCache.set(entry.id, url);
-                this.ui.setCatalogThumbnail(entry.id, url);
+                this._thumbCache.set(item.entry.id, url);
+                this.ui.setCatalogThumbnail(item.entry.id, url);
             }
 
             await new Promise((resolve) => requestAnimationFrame(() => resolve()));

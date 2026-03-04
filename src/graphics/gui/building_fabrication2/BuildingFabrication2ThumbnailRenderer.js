@@ -9,9 +9,9 @@ import { BuildingWallTextureCache } from '../../assets3d/generators/buildings/Bu
 import { computeFrameDistanceForSphere } from '../../engine3d/camera/ToolCameraController.js';
 
 const DEFAULT_BG = 0x243447;
-const THUMB_LUT_GAMMA = 0.82;
-const THUMB_LUT_GAIN = 1.42;
-const THUMB_LUT_BLACK_LIFT = 0.018;
+const THUMB_LUT_GAMMA = 0.90;
+const THUMB_LUT_GAIN = 1.08;
+const THUMB_LUT_BLACK_LIFT = 0.006;
 
 function clampInt(value, min, max) {
     const num = Number(value);
@@ -25,6 +25,18 @@ function normalizeMaterialSpec(value) {
     const id = typeof value?.id === 'string' ? value.id : '';
     if ((kind === 'texture' || kind === 'color') && id) return { kind, id };
     return null;
+}
+
+function resolveRenderableLayers(cfg) {
+    const rawLayers = Array.isArray(cfg?.layers) ? cfg.layers : null;
+    if (!Array.isArray(rawLayers) || !rawLayers.length) return null;
+    const baseWallMaterial = normalizeMaterialSpec(cfg?.baseWallMaterial ?? null);
+    if (!baseWallMaterial) return rawLayers;
+    return rawLayers.map((layer) => {
+        if (layer?.type !== 'floor') return layer;
+        const has = !!normalizeMaterialSpec(layer?.material ?? null);
+        return has ? layer : { ...layer, material: baseWallMaterial };
+    });
 }
 
 function disposeTextureProps(mat, disposedTextures) {
@@ -153,22 +165,69 @@ export class BuildingFabrication2ThumbnailRenderer {
         this._wallTextures = null;
     }
 
+    primeTextureCacheForConfig(config) {
+        const cfg = config && typeof config === 'object' ? config : null;
+        const renderer = this.renderer;
+        if (!cfg || !renderer) return false;
+        const layers = resolveRenderableLayers(cfg);
+        if (!layers) return false;
+
+        const map = makeCenteredMap({ width: 2, height: 1, tileSize: this.tileSize });
+        const tiles = [
+            [0, 0],
+            [1, 0]
+        ];
+
+        const wallInset = Number.isFinite(cfg.wallInset) ? cfg.wallInset : 0.0;
+        const footprintLoops = Array.isArray(cfg?.footprintLoops) ? cfg.footprintLoops : null;
+        const materialVariationSeed = Number.isFinite(cfg.materialVariationSeed) ? cfg.materialVariationSeed : null;
+        const windowVisuals = cfg?.windowVisuals && typeof cfg.windowVisuals === 'object' ? cfg.windowVisuals : null;
+        const windowVisualsIsOverride = !!windowVisuals;
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles,
+            footprintLoops,
+            generatorConfig: this.generatorConfig,
+            tileSize: this.tileSize,
+            occupyRatio: this.occupyRatio,
+            layers,
+            materialVariationSeed,
+            textureCache: this._wallTextures,
+            renderer,
+            windowVisuals,
+            windowVisualsIsOverride,
+            facades: cfg?.facades ?? null,
+            windowDefinitions: cfg?.windowDefinitions ?? null,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: wallInset }
+        });
+
+        if (!parts) {
+            map.dispose?.();
+            return false;
+        }
+
+        const scratch = new THREE.Group();
+        for (const mesh of parts.solidMeshes ?? []) scratch.add(mesh);
+        if (parts.beltCourse) scratch.add(parts.beltCourse);
+        if (parts.topBelt) scratch.add(parts.topBelt);
+        if (parts.windows) scratch.add(parts.windows);
+        scratch.updateMatrixWorld(true);
+
+        map.dispose?.();
+        disposeObject3D(scratch);
+        return true;
+    }
+
     async renderConfigToDataUrl(config) {
         const cfg = config && typeof config === 'object' ? config : null;
         const renderer = this.renderer;
         const rt = this._rt;
         if (!cfg || !renderer || !rt) return null;
 
-        const rawLayers = Array.isArray(cfg.layers) ? cfg.layers : null;
-        if (!Array.isArray(rawLayers) || !rawLayers.length) return null;
-        const baseWallMaterial = normalizeMaterialSpec(cfg?.baseWallMaterial ?? null);
-        const layers = baseWallMaterial
-            ? rawLayers.map((layer) => {
-                if (layer?.type !== 'floor') return layer;
-                const has = !!normalizeMaterialSpec(layer?.material ?? null);
-                return has ? layer : { ...layer, material: baseWallMaterial };
-            })
-            : rawLayers;
+        const layers = resolveRenderableLayers(cfg);
+        if (!layers) return null;
 
         const size = this.size;
         const map = makeCenteredMap({ width: 2, height: 1, tileSize: this.tileSize });
@@ -179,22 +238,29 @@ export class BuildingFabrication2ThumbnailRenderer {
 
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(DEFAULT_BG);
+        const sharedEnv = this.engine?.scene?.environment ?? null;
+        if (sharedEnv?.isTexture) scene.environment = sharedEnv;
 
-        const hemi = new THREE.HemisphereLight(0xe8f1ff, 0x5d564c, 1.85);
+        const hemi = new THREE.HemisphereLight(0xe8f1ff, 0x5d564c, 0.95);
         hemi.name = 'thumb_hemi';
         scene.add(hemi);
 
-        const sun = new THREE.DirectionalLight(0xffffff, 3.4);
+        const sun = new THREE.DirectionalLight(0xffffff, 2.1);
         sun.name = 'thumb_sun';
-        sun.position.set(42, 55, 36);
+        sun.position.set(58, 64, 16);
         scene.add(sun);
 
-        const fill = new THREE.DirectionalLight(0xd6e7ff, 1.4);
+        const fill = new THREE.DirectionalLight(0xd6e7ff, 0.45);
         fill.name = 'thumb_fill';
-        fill.position.set(-40, 36, -34);
+        fill.position.set(-14, 18, 42);
         scene.add(fill);
 
-        const ambient = new THREE.AmbientLight(0xffffff, 0.95);
+        const rim = new THREE.DirectionalLight(0xbfd6ff, 0.28);
+        rim.name = 'thumb_rim';
+        rim.position.set(30, 18, -52);
+        scene.add(rim);
+
+        const ambient = new THREE.AmbientLight(0xffffff, 0.12);
         ambient.name = 'thumb_ambient';
         scene.add(ambient);
 
@@ -278,7 +344,7 @@ export class BuildingFabrication2ThumbnailRenderer {
 
         renderer.autoClear = true;
         renderer.toneMapping = THREE.NeutralToneMapping ?? prevToneMapping;
-        if (hasPrevExposure) renderer.toneMappingExposure = Math.max(prevExposure, 2.4);
+        if (hasPrevExposure) renderer.toneMappingExposure = Math.max(prevExposure, 1.55);
         renderer.setClearColor(DEFAULT_BG, 1);
 
         let url = null;
