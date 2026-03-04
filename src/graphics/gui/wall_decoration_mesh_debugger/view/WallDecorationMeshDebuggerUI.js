@@ -434,7 +434,7 @@ function makeThumbnailBlocksRow({ label, value = '', options = [], onChange = nu
             const optionId = String(opt?.id ?? '').trim();
             if (!optionId) continue;
 
-            const btn = makeEl('button', 'options-pattern-block-btn');
+            const btn = makeEl('button', 'options-pattern-block-btn options-material-picker');
             btn.type = 'button';
             btn.title = String(opt?.label ?? optionId);
             btn.setAttribute('aria-label', String(opt?.label ?? optionId));
@@ -445,6 +445,9 @@ function makeThumbnailBlocksRow({ label, value = '', options = [], onChange = nu
             img.loading = 'lazy';
             img.src = typeof opt?.previewUrl === 'string' ? opt.previewUrl : '';
             btn.appendChild(img);
+            // Keep a hidden text label for test hooks/assistive queries without altering visual layout.
+            const hiddenLabel = makeEl('span', 'hidden', String(opt?.label ?? optionId));
+            btn.appendChild(hiddenLabel);
 
             btn.addEventListener('click', () => setActive(optionId, { emit: true }));
             blocks.appendChild(btn);

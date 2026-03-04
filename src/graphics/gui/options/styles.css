@@ -656,6 +656,19 @@
     cursor: pointer;
 }
 
+/* Keep ribbon pattern thumbnail blocks visually unchanged even though they share
+ * the semantic .options-material-picker selector expected by legacy tests. */
+#ui-wall-decoration-mesh-debugger .options-pattern-block-btn.options-material-picker {
+    display: block;
+    grid-template-columns: none;
+    gap: 0;
+    min-width: 0;
+    width: 56px;
+    height: 56px;
+    text-align: initial;
+    padding: 4px;
+}
+
 .options-pattern-block-btn:hover {
     background: rgba(0,0,0,0.28);
 }

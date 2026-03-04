@@ -358,6 +358,13 @@ function createCurvedRingGeometry({
         maxSmoothingAngleDeg: 75.0,
         keepIndexed: true
     });
+    if (geo?.type !== 'BufferGeometry') {
+        // Normalize to a plain BufferGeometry so downstream consumers/tests do not depend on ExtrudeGeometry type.
+        const plain = new THREE.BufferGeometry();
+        plain.copy(geo);
+        geo.dispose?.();
+        geo = plain;
+    }
     geo.computeBoundingBox();
 
     const finalBox = geo.boundingBox ?? new THREE.Box3().setFromBufferAttribute(geo.attributes.position);

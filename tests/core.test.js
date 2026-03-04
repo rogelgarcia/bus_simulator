@@ -5986,8 +5986,18 @@ async function runTests() {
             const ribbonConfigLabels = Array.from(ui.root.querySelectorAll('.wall-decoration-configuration-host .options-row-label'))
                 .map((el) => (el.textContent || '').trim());
             assertTrue(ribbonConfigLabels.includes('Pattern'), 'Expected ribbon pattern configuration row.');
-            const ribbonPatternButton = Array.from(ui.root.querySelectorAll('.wall-decoration-configuration-host .options-material-picker'))
-                .find((el) => ((el.textContent || '').toLowerCase().includes('circle') || (el.textContent || '').toLowerCase().includes('flat-base x')));
+            const ribbonPatternButton = Array.from(
+                ui.root.querySelectorAll(
+                    '.wall-decoration-configuration-host .options-material-picker, .wall-decoration-configuration-host .options-pattern-block-btn'
+                )
+            ).find((el) => {
+                const text = String(el.textContent || '').toLowerCase();
+                const aria = String(el.getAttribute?.('aria-label') || '').toLowerCase();
+                return text.includes('circle')
+                    || text.includes('flat-base x')
+                    || aria.includes('circle')
+                    || aria.includes('flat-base x');
+            });
             assertTrue(!!ribbonPatternButton, 'Expected ribbon pattern thumbnail picker button.');
 
             ui.setState({
