@@ -26,7 +26,7 @@ export class BuildingFabrication2State {
             ? JSON.parse(JSON.stringify(lighting))
             : null;
         const prevExposure = Number(this._prevLightingSettings?.exposure);
-        const bf2Exposure = Number.isFinite(prevExposure) ? Math.max(prevExposure, 1.1) : 1.1;
+        const bf2Exposure = Number.isFinite(prevExposure) ? Math.max(prevExposure, 1.02) : 1.02;
         this.engine?.setLightingSettings?.({
             ...(this._prevLightingSettings ?? {}),
             exposure: bf2Exposure,

@@ -3066,10 +3066,10 @@ export class BuildingFabrication2Scene {
 
     _buildLights() {
         if (!this.root) return;
-        const hemi = new THREE.HemisphereLight(0xe5eeff, 0x463a2a, 0.76);
+        const hemi = new THREE.HemisphereLight(0xe5eeff, 0x463a2a, 0.42);
         hemi.name = 'bf2_hemi';
 
-        const sun = new THREE.DirectionalLight(0xffffff, 1.28);
+        const sun = new THREE.DirectionalLight(0xffffff, 1.75);
         sun.name = 'bf2_sun';
         sun.position.set(60, 75, 40);
         sun.castShadow = true;
@@ -3084,7 +3084,7 @@ export class BuildingFabrication2Scene {
         this._sun = sun;
         this._applySuspect1ShadowDebugState();
 
-        const fill = new THREE.DirectionalLight(0xc8deff, 0.30);
+        const fill = new THREE.DirectionalLight(0xc8deff, 0.24);
         fill.name = 'bf2_fill';
         fill.position.set(-55, 50, -60);
 
