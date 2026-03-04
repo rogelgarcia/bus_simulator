@@ -11,11 +11,11 @@ export const BUILDING_WINDOW_VISUALS_DEFAULTS = Object.freeze({
         enabled: true,
         glass: Object.freeze({
             colorHex: 0xffffff,
-            metalness: 0.95,
-            roughness: 0.07,
-            transmission: 0.0,
-            ior: 1.88,
-            envMapIntensity: 2.57
+            metalness: 1,
+            roughness: 0.09,
+            transmission: 0,
+            ior: 2.5,
+            envMapIntensity: 0.75
         })
     })
 });

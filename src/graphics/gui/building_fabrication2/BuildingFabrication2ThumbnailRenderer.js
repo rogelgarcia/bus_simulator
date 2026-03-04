@@ -8,7 +8,10 @@ import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/b
 import { BuildingWallTextureCache } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { computeFrameDistanceForSphere } from '../../engine3d/camera/ToolCameraController.js';
 
-const DEFAULT_BG = 0x0b0e14;
+const DEFAULT_BG = 0x243447;
+const THUMB_LUT_GAMMA = 0.82;
+const THUMB_LUT_GAIN = 1.42;
+const THUMB_LUT_BLACK_LIFT = 0.018;
 
 function clampInt(value, min, max) {
     const num = Number(value);
@@ -95,11 +98,24 @@ function makeDataUrlFromRgbaPixels({ pixels, width, height }) {
 
     const imageData = ctx.createImageData(w, h);
     const dst = imageData.data;
+    const lut = new Uint8ClampedArray(256);
+    for (let i = 0; i < 256; i += 1) {
+        const src = i / 255;
+        const boosted = Math.pow(src, THUMB_LUT_GAMMA) * THUMB_LUT_GAIN + THUMB_LUT_BLACK_LIFT;
+        lut[i] = Math.max(0, Math.min(255, Math.round(boosted * 255)));
+    }
     for (let y = 0; y < h; y++) {
         const srcY = h - 1 - y;
         const srcRow = srcY * w * 4;
         const dstRow = y * w * 4;
-        dst.set(pixels.subarray(srcRow, srcRow + w * 4), dstRow);
+        for (let x = 0; x < w; x += 1) {
+            const srcI = srcRow + x * 4;
+            const dstI = dstRow + x * 4;
+            dst[dstI] = lut[pixels[srcI]];
+            dst[dstI + 1] = lut[pixels[srcI + 1]];
+            dst[dstI + 2] = lut[pixels[srcI + 2]];
+            dst[dstI + 3] = pixels[srcI + 3];
+        }
     }
 
     ctx.putImageData(imageData, 0, 0);
@@ -164,19 +180,28 @@ export class BuildingFabrication2ThumbnailRenderer {
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(DEFAULT_BG);
 
-        const hemi = new THREE.HemisphereLight(0xe9f2ff, 0x1c1c1e, 0.85);
+        const hemi = new THREE.HemisphereLight(0xe8f1ff, 0x5d564c, 1.85);
         hemi.name = 'thumb_hemi';
         scene.add(hemi);
 
-        const sun = new THREE.DirectionalLight(0xffffff, 1.35);
+        const sun = new THREE.DirectionalLight(0xffffff, 3.4);
         sun.name = 'thumb_sun';
         sun.position.set(42, 55, 36);
         scene.add(sun);
 
+        const fill = new THREE.DirectionalLight(0xd6e7ff, 1.4);
+        fill.name = 'thumb_fill';
+        fill.position.set(-40, 36, -34);
+        scene.add(fill);
+
+        const ambient = new THREE.AmbientLight(0xffffff, 0.95);
+        ambient.name = 'thumb_ambient';
+        scene.add(ambient);
+
         const floor = new THREE.Mesh(
             new THREE.PlaneGeometry(this.tileSize * 3, this.tileSize * 3),
             new THREE.MeshStandardMaterial({
-                color: 0x0f1720,
+                color: 0x4a5f79,
                 roughness: 1.0,
                 metalness: 0.0
             })
@@ -247,8 +272,13 @@ export class BuildingFabrication2ThumbnailRenderer {
         renderer.getClearColor(prevClearColor);
         const prevClearAlpha = renderer.getClearAlpha();
         const prevAutoClear = renderer.autoClear;
+        const prevToneMapping = renderer.toneMapping;
+        const prevExposure = Number(renderer.toneMappingExposure);
+        const hasPrevExposure = Number.isFinite(prevExposure);
 
         renderer.autoClear = true;
+        renderer.toneMapping = THREE.NeutralToneMapping ?? prevToneMapping;
+        if (hasPrevExposure) renderer.toneMappingExposure = Math.max(prevExposure, 2.4);
         renderer.setClearColor(DEFAULT_BG, 1);
 
         let url = null;
@@ -264,6 +294,8 @@ export class BuildingFabrication2ThumbnailRenderer {
             renderer.setRenderTarget(prevRenderTarget);
             renderer.setClearColor(prevClearColor, prevClearAlpha);
             renderer.autoClear = prevAutoClear;
+            renderer.toneMapping = prevToneMapping;
+            if (hasPrevExposure) renderer.toneMappingExposure = prevExposure;
 
             map.dispose?.();
             disposeObject3D(scene);

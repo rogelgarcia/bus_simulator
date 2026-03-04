@@ -2,7 +2,7 @@
 // HDR loader + sun direction estimator for the Atmosphere Debug tool.
 
 import * as THREE from 'three';
-import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
 const GIT_LFS_POINTER_PREFIX = 'version https://git-lfs.github.com/spec/v1';
 
@@ -141,7 +141,7 @@ export async function loadHdriEnvironment(renderer, hdrUrl) {
         throw new Error(`HDRI at ${url} is a Git LFS pointer. Run git lfs pull to download assets.`);
     }
 
-    const loader = new RGBELoader();
+    const loader = new HDRLoader();
     if (THREE.HalfFloatType) loader.setDataType(THREE.HalfFloatType);
     const parsed = loader.parse(buffer);
     const hdr = parsed?.isTexture ? parsed : createDataTextureFromParsed(parsed);

@@ -1,7 +1,7 @@
 // src/graphics/engine3d/lighting/IBL.js
 // Shared HDR IBL loader and scene applier.
 import * as THREE from 'three';
-import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 const DEFAULT_ENV_MAP_INTENSITY = 0.25;
 const _cacheByRenderer = new WeakMap();
@@ -97,7 +97,7 @@ export async function loadIBLBackgroundTexture(hdrUrl) {
         throw new Error(`HDRI at ${url} is a Git LFS pointer. Run git lfs pull to download assets.`);
     }
 
-    const loader = new RGBELoader();
+    const loader = new HDRLoader();
     if (THREE.HalfFloatType) loader.setDataType(THREE.HalfFloatType);
     const parsed = loader.parse(buffer);
     const hdr = parsed?.isTexture ? parsed : createDataTextureFromParsed(parsed);

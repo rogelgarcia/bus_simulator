@@ -70,7 +70,7 @@ test('AmbientOcclusionSettings: sanitize clamps and normalizes', () => {
     assert.equal(s.busContactShadow.maxDistance, 0);
     assert.equal(s.ssao.intensity, 0);
     assert.equal(s.ssao.radius, 0.1);
-    assert.equal(s.ssao.quality, 'medium');
+    assert.equal(s.ssao.quality, 'high');
     assert.equal(s.gtao.intensity, 2);
     assert.equal(s.gtao.radius, 0.05);
     assert.equal(s.gtao.quality, 'low');

@@ -6,6 +6,7 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 
 import { CityMap } from '../../../app/city/CityMap.js';
+import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { createGeneratorConfig } from '../../assets3d/generators/GeneratorParams.js';
 import { createCityWorld } from '../../assets3d/generators/TerrainGenerator.js';
 import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
@@ -30,7 +31,7 @@ import { resolveWallBaseTintHexFromWallBase } from '../../../app/buildings/WallB
 
 const DOUBLE = 2;
 const EPS = 1e-6;
-const BACKGROUND_COLOR = 0xeaf9ff;
+const BACKGROUND_COLOR = 0x101620;
 const FACE_HIGHLIGHT_COLOR = 0x64d2ff;
 const FACE_HIGHLIGHT_LINEWIDTH = 6;
 const FACE_HIGHLIGHT_OPACITY = 0.85;
@@ -928,6 +929,7 @@ export class BuildingFabrication2Scene {
 
         this._showDummy = false;
         this._dummy = null;
+        this._sky = null;
         this._renderSlab = false;
         this._supportSlabMesh = null;
         this._sun = null;
@@ -962,6 +964,7 @@ export class BuildingFabrication2Scene {
         this.root.name = 'building_fabrication2_root';
         this.scene.add(this.root);
 
+        this._buildSky();
         this._buildMap();
         this._buildWorld();
         this._buildLights();
@@ -1004,6 +1007,7 @@ export class BuildingFabrication2Scene {
         this._layoutHoverFaceId = null;
         this._layoutHoverVertexIndex = null;
         this._sun = null;
+        this._sky = null;
         this._wallDecorationsExplodedGroup = null;
         this._explodedDecorationsEnabled = false;
         this._debugDisableSuspect1 = false;
@@ -1012,6 +1016,9 @@ export class BuildingFabrication2Scene {
 
     update(dt) {
         this.controls?.update?.(dt);
+        if (this._sky && this.camera) {
+            this._sky.position.copy(this.camera.position);
+        }
     }
 
     setUiRoot(uiRoot) {
@@ -2494,6 +2501,51 @@ export class BuildingFabrication2Scene {
     _syncSceneBackground() {
         if (!this.scene) return;
         this.scene.background = this._renderSkyEnabled ? this._backgroundColor : null;
+        if (this._sky) this._sky.visible = !!this._renderSkyEnabled;
+    }
+
+    _buildSky() {
+        if (!this.root) return;
+        const sky = createGradientSkyDome({
+            radius: 480,
+            sunDir: new THREE.Vector3(0.58, 0.78, 0.23).normalize(),
+            sunIntensity: 0.35,
+            atmosphere: {
+                sky: {
+                    horizonColor: '#7FB3FF',
+                    zenithColor: '#3F80EA',
+                    groundColor: '#6FA2E8',
+                    curve: 0.6,
+                    exposure: 1.0
+                },
+                haze: {
+                    enabled: false,
+                    intensity: 0.1,
+                    thickness: 0.24,
+                    curve: 1.3,
+                    tintColor: '#9BC0EF',
+                    tintStrength: 0.12
+                },
+                glare: {
+                    enabled: false,
+                    intensity: 0.2,
+                    sigmaDeg: 1.0,
+                    power: 1.5
+                },
+                disc: {
+                    enabled: true,
+                    intensity: 6.5,
+                    sigmaDeg: 0.012,
+                    coreIntensity: 4.5,
+                    coreSigmaDeg: 0.003
+                }
+            }
+        });
+        sky.name = 'bf2_sky_dome';
+        sky.visible = !!this._renderSkyEnabled;
+        if (this.camera) sky.position.copy(this.camera.position);
+        this.root.add(sky);
+        this._sky = sky;
     }
 
     _clearFaceHighlight() {
@@ -3013,12 +3065,12 @@ export class BuildingFabrication2Scene {
 
     _buildLights() {
         if (!this.root) return;
-        const hemi = new THREE.HemisphereLight(0xe9f2ff, 0x1c1c1e, 0.65);
+        const hemi = new THREE.HemisphereLight(0xe5eeff, 0x463a2a, 0.82);
         hemi.name = 'bf2_hemi';
 
-        const sun = new THREE.DirectionalLight(0xffffff, 1.35);
+        const sun = new THREE.DirectionalLight(0xffffff, 1.42);
         sun.name = 'bf2_sun';
-        sun.position.set(60, 70, 45);
+        sun.position.set(60, 75, 40);
         sun.castShadow = true;
         sun.shadow.bias = -0.0001;
         sun.shadow.mapSize.set(2048, 2048);
@@ -3031,9 +3083,14 @@ export class BuildingFabrication2Scene {
         this._sun = sun;
         this._applySuspect1ShadowDebugState();
 
+        const fill = new THREE.DirectionalLight(0xc8deff, 0.38);
+        fill.name = 'bf2_fill';
+        fill.position.set(-55, 50, -60);
+
         this.root.add(hemi);
         this.root.add(sun);
         this.root.add(sun.target);
+        this.root.add(fill);
     }
 
     _applySuspect1ShadowDebugState() {

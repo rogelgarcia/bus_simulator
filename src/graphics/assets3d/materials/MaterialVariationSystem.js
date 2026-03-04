@@ -5,6 +5,54 @@ import * as THREE from 'three';
 const MATVAR_SHADER_VERSION = 17;
 const MATVAR_MACRO_LAYERS_MAX = 4;
 const MATVAR_ANTI_LAYERS_MAX = 4;
+const MATVAR_UNIFORM_KEYS = Object.freeze([
+    'config0',
+    'config1',
+    'global1',
+    'normalMap',
+    'texBlend0',
+    'texBlend1',
+    'texUv',
+    'varIntensityNF',
+    'macro0',
+    'macro0b',
+    'macro1',
+    'macro1b',
+    'macro2',
+    'macro2b',
+    'macro3',
+    'macro3b',
+    'streaks',
+    'streakDir',
+    'streaks2',
+    'exposure0',
+    'exposure1',
+    'brick0',
+    'brick1',
+    'brick2',
+    'brick3',
+    'brickLayout',
+    'brickTiles2',
+    'wearTop',
+    'wearTop2',
+    'wearBottom',
+    'wearBottom2',
+    'wearSide',
+    'wearSide2',
+    'cracks',
+    'cracks2',
+    'anti',
+    'anti2',
+    'antiL1',
+    'antiL1b',
+    'antiL2',
+    'antiL2b',
+    'antiL3',
+    'antiL3b',
+    'stair',
+    'stair2'
+]);
+const MATVAR_DEBUG_UNIFORM_KEYS = Object.freeze(['debug0', 'debug1', 'debug2']);
 
 const EPS = 1e-6;
 
@@ -968,6 +1016,29 @@ function buildDebugUniformBundle(debugConfig) {
     };
 }
 
+function cloneUniformValue(value) {
+    if (value && typeof value.clone === 'function') return value.clone();
+    if (Array.isArray(value)) return value.slice();
+    if (value && typeof value === 'object') return { ...value };
+    return value;
+}
+
+function syncUniformField(targetUniforms, sourceUniforms, key) {
+    if (!targetUniforms || !sourceUniforms) return;
+    const nextValue = sourceUniforms[key];
+    const currentValue = targetUniforms[key];
+    if (currentValue && typeof currentValue.copy === 'function' && nextValue !== undefined && nextValue !== null) {
+        currentValue.copy(nextValue);
+        return;
+    }
+    targetUniforms[key] = cloneUniformValue(nextValue);
+}
+
+function syncUniformBundle(targetUniforms, sourceUniforms, keys) {
+    if (!targetUniforms || !sourceUniforms || !Array.isArray(keys)) return;
+    for (const key of keys) syncUniformField(targetUniforms, sourceUniforms, key);
+}
+
 function injectMatVarShader(material, shader) {
     const cfg = material?.userData?.materialVariationConfig ?? null;
     if (!cfg) return;
@@ -1795,66 +1866,8 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
         material.needsUpdate = true;
     }
 
-    cfg.uniforms.config0.copy(uniforms.config0);
-    cfg.uniforms.config1.copy(uniforms.config1);
-    cfg.uniforms.global1.copy(uniforms.global1);
-    if (cfg.uniforms.normalMap?.copy) cfg.uniforms.normalMap.copy(uniforms.normalMap);
-    else cfg.uniforms.normalMap = uniforms.normalMap;
-    if (cfg.uniforms.texBlend0?.copy) cfg.uniforms.texBlend0.copy(uniforms.texBlend0);
-    else cfg.uniforms.texBlend0 = uniforms.texBlend0;
-    if (cfg.uniforms.texBlend1?.copy) cfg.uniforms.texBlend1.copy(uniforms.texBlend1);
-    else cfg.uniforms.texBlend1 = uniforms.texBlend1;
-    if (cfg.uniforms.texUv?.copy) cfg.uniforms.texUv.copy(uniforms.texUv);
-    else cfg.uniforms.texUv = uniforms.texUv;
-    if (cfg.uniforms.varIntensityNF?.copy) cfg.uniforms.varIntensityNF.copy(uniforms.varIntensityNF);
-    else cfg.uniforms.varIntensityNF = uniforms.varIntensityNF;
-    cfg.uniforms.macro0.copy(uniforms.macro0);
-    cfg.uniforms.macro0b.copy(uniforms.macro0b);
-    cfg.uniforms.macro1.copy(uniforms.macro1);
-    cfg.uniforms.macro1b.copy(uniforms.macro1b);
-    cfg.uniforms.macro2.copy(uniforms.macro2);
-    cfg.uniforms.macro2b.copy(uniforms.macro2b);
-    cfg.uniforms.macro3.copy(uniforms.macro3);
-    cfg.uniforms.macro3b.copy(uniforms.macro3b);
-    cfg.uniforms.streaks.copy(uniforms.streaks);
-    cfg.uniforms.streakDir.copy(uniforms.streakDir);
-    cfg.uniforms.streaks2.copy(uniforms.streaks2);
-    cfg.uniforms.exposure0.copy(uniforms.exposure0);
-    cfg.uniforms.exposure1.copy(uniforms.exposure1);
-    cfg.uniforms.brick0.copy(uniforms.brick0);
-    cfg.uniforms.brick1.copy(uniforms.brick1);
-    cfg.uniforms.brick2.copy(uniforms.brick2);
-    cfg.uniforms.brick3.copy(uniforms.brick3);
-    if (cfg.uniforms.brickLayout?.copy) cfg.uniforms.brickLayout.copy(uniforms.brickLayout);
-    else cfg.uniforms.brickLayout = uniforms.brickLayout;
-    if (cfg.uniforms.brickTiles2?.copy) cfg.uniforms.brickTiles2.copy(uniforms.brickTiles2);
-    else cfg.uniforms.brickTiles2 = uniforms.brickTiles2;
-    cfg.uniforms.wearTop.copy(uniforms.wearTop);
-    cfg.uniforms.wearTop2.copy(uniforms.wearTop2);
-    cfg.uniforms.wearBottom.copy(uniforms.wearBottom);
-    cfg.uniforms.wearBottom2.copy(uniforms.wearBottom2);
-    cfg.uniforms.wearSide.copy(uniforms.wearSide);
-    cfg.uniforms.wearSide2.copy(uniforms.wearSide2);
-    cfg.uniforms.cracks.copy(uniforms.cracks);
-    cfg.uniforms.cracks2.copy(uniforms.cracks2);
-    cfg.uniforms.anti.copy(uniforms.anti);
-    cfg.uniforms.anti2.copy(uniforms.anti2);
-    if (cfg.uniforms.antiL1?.copy) cfg.uniforms.antiL1.copy(uniforms.antiL1);
-    else cfg.uniforms.antiL1 = uniforms.antiL1;
-    if (cfg.uniforms.antiL1b?.copy) cfg.uniforms.antiL1b.copy(uniforms.antiL1b);
-    else cfg.uniforms.antiL1b = uniforms.antiL1b;
-    if (cfg.uniforms.antiL2?.copy) cfg.uniforms.antiL2.copy(uniforms.antiL2);
-    else cfg.uniforms.antiL2 = uniforms.antiL2;
-    if (cfg.uniforms.antiL2b?.copy) cfg.uniforms.antiL2b.copy(uniforms.antiL2b);
-    else cfg.uniforms.antiL2b = uniforms.antiL2b;
-    if (cfg.uniforms.antiL3?.copy) cfg.uniforms.antiL3.copy(uniforms.antiL3);
-    else cfg.uniforms.antiL3 = uniforms.antiL3;
-    if (cfg.uniforms.antiL3b?.copy) cfg.uniforms.antiL3b.copy(uniforms.antiL3b);
-    else cfg.uniforms.antiL3b = uniforms.antiL3b;
-    if (cfg.uniforms.stair?.copy) cfg.uniforms.stair.copy(uniforms.stair);
-    else cfg.uniforms.stair = uniforms.stair;
-    if (cfg.uniforms.stair2?.copy) cfg.uniforms.stair2.copy(uniforms.stair2);
-    else cfg.uniforms.stair2 = uniforms.stair2;
+    cfg.uniforms = cfg.uniforms ?? {};
+    syncUniformBundle(cfg.uniforms, uniforms, MATVAR_UNIFORM_KEYS);
 
     const shaderUniforms = cfg.shaderUniforms;
     if (shaderUniforms?.uMatVarConfig0?.value) shaderUniforms.uMatVarConfig0.value = cfg.uniforms.config0;
@@ -1904,9 +1917,8 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     if (shaderUniforms?.uMatVarStair2?.value) shaderUniforms.uMatVarStair2.value = cfg.uniforms.stair2;
     if (nextDebugUniforms) {
         cfg.debug = nextDebug;
-        cfg.debugUniforms.debug0.copy(nextDebugUniforms.debug0);
-        cfg.debugUniforms.debug1.copy(nextDebugUniforms.debug1);
-        cfg.debugUniforms.debug2.copy(nextDebugUniforms.debug2);
+        cfg.debugUniforms = cfg.debugUniforms ?? {};
+        syncUniformBundle(cfg.debugUniforms, nextDebugUniforms, MATVAR_DEBUG_UNIFORM_KEYS);
         if (shaderUniforms?.uMatVarDebug0?.value) shaderUniforms.uMatVarDebug0.value = cfg.debugUniforms.debug0;
         if (shaderUniforms?.uMatVarDebug1?.value) shaderUniforms.uMatVarDebug1.value = cfg.debugUniforms.debug1;
         if (shaderUniforms?.uMatVarDebug2?.value) shaderUniforms.uMatVarDebug2.value = cfg.debugUniforms.debug2;
@@ -1936,10 +1948,8 @@ export function updateMaterialVariationDebugOnMeshStandardMaterial(material, deb
     const nextUniforms = buildDebugUniformBundle(nextDebug);
 
     cfg.debug = nextDebug;
-    cfg.debugUniforms = cfg.debugUniforms ?? nextUniforms;
-    cfg.debugUniforms.debug0.copy(nextUniforms.debug0);
-    cfg.debugUniforms.debug1.copy(nextUniforms.debug1);
-    cfg.debugUniforms.debug2.copy(nextUniforms.debug2);
+    cfg.debugUniforms = cfg.debugUniforms ?? {};
+    syncUniformBundle(cfg.debugUniforms, nextUniforms, MATVAR_DEBUG_UNIFORM_KEYS);
 
     const shaderUniforms = cfg.shaderUniforms;
     if (shaderUniforms?.uMatVarDebug0?.value) shaderUniforms.uMatVarDebug0.value = cfg.debugUniforms.debug0;

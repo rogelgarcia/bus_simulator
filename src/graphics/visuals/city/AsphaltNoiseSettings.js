@@ -82,11 +82,11 @@ export const ASPHALT_NOISE_DEFAULTS = Object.freeze({
         albedo: true,
         roughness: false,
         normal: true,
-        scale: 0.4,
-        colorStrength: 0.23,
-        dirtyStrength: 0.49,
-        roughnessStrength: 0.29,
-        normalStrength: 0.32
+        scale: 0.6,
+        colorStrength: 0.28,
+        dirtyStrength: 0.17,
+        roughnessStrength: 0.15,
+        normalStrength: 0.67
     }),
     markings: Object.freeze({
         enabled: true,
@@ -95,9 +95,9 @@ export const ASPHALT_NOISE_DEFAULTS = Object.freeze({
         debug: false
     }),
     color: Object.freeze({
-        value: 0.0,
-        warmCool: 0.0,
-        saturation: 0.0
+        value: -0.06,
+        warmCool: 0,
+        saturation: 0
     }),
     livedIn: Object.freeze({
         edgeDirt: Object.freeze({
@@ -121,15 +121,15 @@ export const ASPHALT_NOISE_DEFAULTS = Object.freeze({
             scale: 3.2
         }),
         patches: Object.freeze({
-            enabled: true,
-            strength: 0.1,
-            scale: 4.0,
+            enabled: false,
+            strength: 0,
+            scale: 1.1,
             coverage: 0.84
         }),
         tireWear: Object.freeze({
             enabled: true,
-            strength: 0.1,
-            scale: 1.6
+            strength: 0.06,
+            scale: 0.1
         })
     })
 });

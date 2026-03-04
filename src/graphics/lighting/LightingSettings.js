@@ -26,15 +26,20 @@ const LEGACY_LIGHTING_DEFAULTS_V0 = Object.freeze({
 });
 
 export const LIGHTING_DEFAULTS = Object.freeze({
-    exposure: 0.91,
+    exposure: 0.59,
     toneMapping: 'aces',
-    hemiIntensity: 0.8,
-    sunIntensity: 1.69,
+    hemiIntensity: 4.26,
+    sunIntensity: 10,
     ibl: {
         enabled: true,
-        envMapIntensity: 0.24,
+        envMapIntensity: 0.59,
         setBackground: false
     }
+});
+
+export const LIGHTING_LIMITS = Object.freeze({
+    hemiIntensityMax: 30,
+    sunIntensityMax: 200
 });
 
 export const LIGHTING_TONE_MAPPING_MODES = Object.freeze(['aces', 'agx', 'neutral']);
@@ -79,8 +84,8 @@ export function sanitizeLightingSettings(input) {
     return {
         exposure: clamp(src.exposure ?? LIGHTING_DEFAULTS.exposure, 0.1, 5),
         toneMapping: sanitizeToneMappingMode(src.toneMapping, LIGHTING_DEFAULTS.toneMapping),
-        hemiIntensity: clamp(src.hemiIntensity ?? LIGHTING_DEFAULTS.hemiIntensity, 0, 5),
-        sunIntensity: clamp(src.sunIntensity ?? LIGHTING_DEFAULTS.sunIntensity, 0, 10),
+        hemiIntensity: clamp(src.hemiIntensity ?? LIGHTING_DEFAULTS.hemiIntensity, 0, LIGHTING_LIMITS.hemiIntensityMax),
+        sunIntensity: clamp(src.sunIntensity ?? LIGHTING_DEFAULTS.sunIntensity, 0, LIGHTING_LIMITS.sunIntensityMax),
         ibl: {
             enabled: ibl.enabled !== undefined ? !!ibl.enabled : LIGHTING_DEFAULTS.ibl.enabled,
             envMapIntensity: clamp(ibl.envMapIntensity ?? LIGHTING_DEFAULTS.ibl.envMapIntensity, 0, 5),
@@ -196,8 +201,8 @@ export function getResolvedLightingSettings({
         const params = new URLSearchParams(window.location.search);
         exposure = readUrlParamNumber(params, 'exposure', exposure, { min: 0.1, max: 5 });
         toneMapping = sanitizeToneMappingMode(params.get('toneMapping'), toneMapping);
-        hemiIntensity = readUrlParamNumber(params, 'hemiIntensity', hemiIntensity, { min: 0, max: 5 });
-        sunIntensity = readUrlParamNumber(params, 'sunIntensity', sunIntensity, { min: 0, max: 10 });
+        hemiIntensity = readUrlParamNumber(params, 'hemiIntensity', hemiIntensity, { min: 0, max: LIGHTING_LIMITS.hemiIntensityMax });
+        sunIntensity = readUrlParamNumber(params, 'sunIntensity', sunIntensity, { min: 0, max: LIGHTING_LIMITS.sunIntensityMax });
 
         const legacyBg = readUrlParamBool(params, 'iblBackground', merged.ibl.setBackground);
         merged.ibl.setBackground = legacyBg;

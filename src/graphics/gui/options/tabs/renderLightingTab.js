@@ -1,5 +1,6 @@
 import { getColorGradingPresetOptions } from '../../../visuals/postprocessing/ColorGradingPresets.js';
 import { getSunFlarePresetById, getSunFlarePresetOptions } from '../../../visuals/sun/SunFlarePresets.js';
+import { LIGHTING_LIMITS } from '../../../lighting/LightingSettings.js';
 import { makeChoiceRow, makeColorRow, makeEl, makeNumberSliderRow, makeToggleRow, makeValueRow } from '../OptionsUiControls.js';
 
 export function renderLightingTab() {
@@ -65,7 +66,7 @@ export function renderLightingTab() {
             label: 'Hemisphere intensity',
             value: d.hemiIntensity,
             min: 0,
-            max: 5,
+            max: LIGHTING_LIMITS.hemiIntensityMax,
             step: 0.01,
             digits: 2,
             onChange: (v) => { d.hemiIntensity = v; emit(); }
@@ -74,7 +75,7 @@ export function renderLightingTab() {
             label: 'Sun intensity',
             value: d.sunIntensity,
             min: 0,
-            max: 10,
+            max: LIGHTING_LIMITS.sunIntensityMax,
             step: 0.01,
             digits: 2,
             onChange: (v) => { d.sunIntensity = v; emit(); }

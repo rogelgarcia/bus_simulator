@@ -7,25 +7,25 @@ const STORAGE_KEY = 'bus_sim.sunBloom.v1';
 export const SUN_BLOOM_DEFAULTS = Object.freeze({
     enabled: true,
     mode: 'occlusion', // 'occlusion' | 'selective'
-    strength: 1.5,
-    radius: 0.32,
-    threshold: 1.53,
+    strength: 2.02,
+    radius: 0.18,
+    threshold: 1.27,
     brightnessOnly: true,
-    discRadiusDeg: 1.97,
-    discIntensity: 112.6,
-    discFalloff: 0.97,
+    discRadiusDeg: 1.95,
+    discIntensity: 55.2,
+    discFalloff: 0.5,
     raysEnabled: true,
-    raysIntensity: 0.94,
-    raysSizePx: 887,
-    raysCount: 23,
-    raysLength: 0.21,
-    raysLengthJitter: 0.38,
-    raysBaseWidthDeg: 0.48,
-    raysTipWidthDeg: 0,
+    raysIntensity: 1.27,
+    raysSizePx: 277,
+    raysCount: 15,
+    raysLength: 0.33,
+    raysLengthJitter: 0.15,
+    raysBaseWidthDeg: 2.02,
+    raysTipWidthDeg: 1.15,
     raysSoftnessDeg: 2.19,
-    raysCoreGlow: 0.41,
-    raysOuterGlow: 0.18,
-    raysRotationDeg: 0
+    raysCoreGlow: 0.66,
+    raysOuterGlow: 0.41,
+    raysRotationDeg: -13
 });
 
 function clamp(value, min, max, fallback) {

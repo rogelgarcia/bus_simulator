@@ -928,8 +928,13 @@ async function runTests() {
         assertEqual(manager.count, 2, 'Should have 2 vehicles.');
     });
 
-	    // ========== Material Variation Tests ==========
-	    const { applyMaterialVariationToMeshStandardMaterial, normalizeMaterialVariationConfig: normalizeMatVarConfig, MATERIAL_VARIATION_ROOT } = await import('/src/graphics/assets3d/materials/MaterialVariationSystem.js');
+    // ========== Material Variation Tests ==========
+    const {
+        applyMaterialVariationToMeshStandardMaterial,
+        updateMaterialVariationOnMeshStandardMaterial,
+        normalizeMaterialVariationConfig: normalizeMatVarConfig,
+        MATERIAL_VARIATION_ROOT
+    } = await import('/src/graphics/assets3d/materials/MaterialVariationSystem.js');
 
     test('MaterialVariationSystem: normal map shader supports mat-var debug toggles', () => {
         const mat = new THREE.MeshStandardMaterial();
@@ -1040,6 +1045,52 @@ async function runTests() {
         assertTrue(shader.fragmentShader.includes('float r = mvHash12(cell + vec2'), 'Expected per-brick randomization to hash stable cell IDs.');
         assertTrue(shader.fragmentShader.includes('brickFade = 1.0 - smoothstep'), 'Expected per-brick variation to fade at distance to reduce flicker.');
         assertFalse(shader.fragmentShader.includes('mvHash12(buv'), 'Expected per-brick hash input to avoid unstable raw UVs.');
+    });
+
+    test('MaterialVariationSystem: update rehydrates JSON-serialized uniforms without throwing', () => {
+        const mat = new THREE.MeshStandardMaterial();
+        applyMaterialVariationToMeshStandardMaterial(mat, {
+            seed: 123,
+            seedOffset: 0,
+            heightMin: 0,
+            heightMax: 1,
+            config: { enabled: true },
+            root: MATERIAL_VARIATION_ROOT.SURFACE
+        });
+
+        const cfg = mat.userData?.materialVariationConfig;
+        assertTrue(!!cfg, 'Expected material variation config.');
+
+        const serializedUniforms = {};
+        for (const [key, value] of Object.entries(cfg.uniforms ?? {})) {
+            serializedUniforms[key] = value && typeof value.toArray === 'function' ? value.toArray() : value;
+        }
+        cfg.uniforms = serializedUniforms;
+        cfg.debugUniforms = {
+            debug0: [1, 0, 1, 0],
+            debug1: [1, 1, 1, 1],
+            debug2: [1, 0, 0, 0]
+        };
+
+        let thrown = null;
+        try {
+            updateMaterialVariationOnMeshStandardMaterial(mat, {
+                seed: 321,
+                seedOffset: 2,
+                heightMin: -2,
+                heightMax: 3,
+                config: { enabled: true },
+                root: MATERIAL_VARIATION_ROOT.SURFACE,
+                debug: { useMatVarDefine: true, contribColor: true, contribRoughness: true, useOrm: true }
+            });
+        } catch (err) {
+            thrown = err;
+        }
+
+        assertTrue(!thrown, `Expected update to handle serialized uniforms. ${thrown ? String(thrown.message || thrown) : ''}`);
+        assertTrue(cfg.uniforms?.config0?.isVector4 === true, 'Expected config0 to be rehydrated as Vector4.');
+        assertTrue(cfg.uniforms?.varIntensityNF?.isVector2 === true, 'Expected varIntensityNF to be rehydrated as Vector2.');
+        assertTrue(cfg.debugUniforms?.debug0?.isVector4 === true, 'Expected debug0 to be rehydrated as Vector4.');
     });
 
     // ========== Bus Catalog Tests ==========
@@ -1593,18 +1644,27 @@ async function runTests() {
     try {
         const { createVehicleFromBus } = await import('/src/app/vehicle/createVehicle.js');
         const THREE = await import('three');
+        const withMutedWarn = (fn) => {
+            const originalWarn = console.warn;
+            console.warn = () => {};
+            try {
+                return fn();
+            } finally {
+                console.warn = originalWarn;
+            }
+        };
 
         test('createVehicleFromBus: function exists', () => {
             assertTrue(typeof createVehicleFromBus === 'function', 'createVehicleFromBus should be a function.');
         });
 
         test('createVehicleFromBus: returns null for null input', () => {
-            const result = createVehicleFromBus(null);
+            const result = withMutedWarn(() => createVehicleFromBus(null));
             assertEqual(result, null, 'Should return null for null input.');
         });
 
         test('createVehicleFromBus: returns null for undefined input', () => {
-            const result = createVehicleFromBus(undefined);
+            const result = withMutedWarn(() => createVehicleFromBus(undefined));
             assertEqual(result, null, 'Should return null for undefined input.');
         });
 
@@ -1630,7 +1690,11 @@ async function runTests() {
 
         test('createVehicleFromBus: uses custom ID when provided', () => {
             const mockBus = new THREE.Group();
-            mockBus.userData = {};
+            mockBus.userData = {
+                api: {
+                    wheelRig: { wheelRadius: 0.55 }
+                }
+            };
 
             const vehicle = createVehicleFromBus(mockBus, { id: 'custom_id' });
             assertTrue(vehicle !== null, 'Should create vehicle.');
@@ -1641,7 +1705,11 @@ async function runTests() {
             const parent = new THREE.Group();
             const mockBus = new THREE.Group();
             parent.add(mockBus);
-            mockBus.userData = {};
+            mockBus.userData = {
+                api: {
+                    wheelRig: { wheelRadius: 0.55 }
+                }
+            };
 
             assertEqual(mockBus.parent, parent, 'Bus should have parent before.');
             const vehicle = createVehicleFromBus(mockBus);
@@ -1652,7 +1720,10 @@ async function runTests() {
             const mockBus = new THREE.Group();
             mockBus.name = 'city_bus';
             mockBus.userData = {
-                suspensionTuning: { stiffness: 500 }
+                suspensionTuning: { stiffness: 500 },
+                api: {
+                    wheelRig: { wheelRadius: 0.55 }
+                }
             };
 
             // Add a child mesh to give it size

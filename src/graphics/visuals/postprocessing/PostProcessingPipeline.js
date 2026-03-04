@@ -214,6 +214,39 @@ function applySmaaDefines(pass, { threshold, maxSearchSteps, maxSearchStepsDiag,
     }
 }
 
+function cloneUniformValue(value) {
+    if (value === null || value === undefined) return value;
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') return value;
+    if (Array.isArray(value)) return value.map((entry) => cloneUniformValue(entry));
+    if (ArrayBuffer.isView(value)) return value.slice ? value.slice() : value;
+
+    if (typeof value === 'object') {
+        // Render-target textures are not safely cloneable via UniformsUtils.clone().
+        // Keep them by reference and clone regular textures/objects when possible.
+        if (value.isTexture && value.isRenderTargetTexture) return value;
+        if (typeof value.clone === 'function') return value.clone();
+        return { ...value };
+    }
+
+    return value;
+}
+
+function cloneShaderUniforms(uniforms) {
+    const src = uniforms && typeof uniforms === 'object' ? uniforms : {};
+    const out = {};
+    for (const [name, uniform] of Object.entries(src)) {
+        if (uniform && typeof uniform === 'object' && Object.prototype.hasOwnProperty.call(uniform, 'value')) {
+            out[name] = {
+                ...uniform,
+                value: cloneUniformValue(uniform.value)
+            };
+        } else {
+            out[name] = { value: cloneUniformValue(uniform) };
+        }
+    }
+    return out;
+}
+
 function sanitizeGlobalBloomRuntimeSettings(settings) {
     const src = settings && typeof settings === 'object' ? settings : {};
     const enabled = src.enabled !== undefined ? !!src.enabled : false;
@@ -250,7 +283,7 @@ function makeCompositePass({ globalBloomTexture, sunBloomTexture } = {}) {
         }
     });
     const mat = new THREE.ShaderMaterial({
-        uniforms: THREE.UniformsUtils.clone(payload.uniforms),
+        uniforms: cloneShaderUniforms(payload.uniforms),
         vertexShader: payload.vertexSource,
         fragmentShader: payload.fragmentSource,
         depthWrite: false,
@@ -265,7 +298,7 @@ function makeCompositePass({ globalBloomTexture, sunBloomTexture } = {}) {
 function makeOutputPass() {
     const payload = createPostProcessingOutputShaderPayload();
     const mat = new THREE.ShaderMaterial({
-        uniforms: THREE.UniformsUtils.clone(payload.uniforms),
+        uniforms: cloneShaderUniforms(payload.uniforms),
         vertexShader: payload.vertexSource,
         fragmentShader: payload.fragmentSource
     });
@@ -681,7 +714,7 @@ export class PostProcessingPipeline {
                 }
             });
             blendPass = new ShaderPass({
-                uniforms: THREE.UniformsUtils.clone(blendPayload.uniforms),
+                uniforms: cloneShaderUniforms(blendPayload.uniforms),
                 vertexShader: blendPayload.vertexSource,
                 fragmentShader: blendPayload.fragmentSource
             });

@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { SimulationContext } from './SimulationContext.js';
 import { applyIBLIntensity, applyIBLToScene, getIBLBackgroundTexture, loadIBLBackgroundTexture, loadIBLTexture } from '../../graphics/lighting/IBL.js';
-import { getResolvedLightingSettings, sanitizeToneMappingMode } from '../../graphics/lighting/LightingSettings.js';
+import { getResolvedLightingSettings, LIGHTING_LIMITS, sanitizeToneMappingMode } from '../../graphics/lighting/LightingSettings.js';
 import { getResolvedShadowSettings, getShadowQualityPreset, sanitizeShadowSettings } from '../../graphics/lighting/ShadowSettings.js';
 import { getResolvedAtmosphereSettings, sanitizeAtmosphereSettings } from '../../graphics/visuals/atmosphere/AtmosphereSettings.js';
 import { getResolvedAntiAliasingSettings, sanitizeAntiAliasingSettings } from '../../graphics/visuals/postprocessing/AntiAliasingSettings.js';
@@ -214,8 +214,8 @@ export class GameEngine {
         const next = {
             exposure: clamp(src?.exposure ?? prev.exposure, 0.1, 5, prev.exposure),
             toneMapping: sanitizeToneMappingMode(src?.toneMapping ?? prev.toneMapping, prev.toneMapping ?? 'aces'),
-            hemiIntensity: clamp(src?.hemiIntensity ?? prev.hemiIntensity, 0, 5, prev.hemiIntensity),
-            sunIntensity: clamp(src?.sunIntensity ?? prev.sunIntensity, 0, 10, prev.sunIntensity),
+            hemiIntensity: clamp(src?.hemiIntensity ?? prev.hemiIntensity, 0, LIGHTING_LIMITS.hemiIntensityMax, prev.hemiIntensity),
+            sunIntensity: clamp(src?.sunIntensity ?? prev.sunIntensity, 0, LIGHTING_LIMITS.sunIntensityMax, prev.sunIntensity),
             ibl: {
                 ...(prev.ibl ?? {}),
                 enabled: src?.ibl?.enabled !== undefined ? !!src.ibl.enabled : !!prev.ibl?.enabled,

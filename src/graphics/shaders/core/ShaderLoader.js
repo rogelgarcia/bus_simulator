@@ -15,18 +15,40 @@ function normalizeRelativePath(path) {
         .replace(/\/+/g, '/');
 }
 
-function stableStringify(value) {
-    if (value === null || value === undefined) return String(value);
-    if (typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') return JSON.stringify(value);
+function stableStringify(value, stack = new WeakSet()) {
+    if (value === null) return 'null';
+    if (value === undefined) return 'undefined';
+
+    const kind = typeof value;
+    if (kind === 'boolean' || kind === 'number' || kind === 'string') return JSON.stringify(value);
+    if (kind === 'function') return JSON.stringify('[Function]');
+    if (kind === 'symbol') return JSON.stringify(String(value));
+
     if (Array.isArray(value)) {
-        return `[${value.map((entry) => stableStringify(entry)).join(',')}]`;
+        return `[${value.map((entry) => stableStringify(entry, stack)).join(',')}]`;
     }
+
+    if (ArrayBuffer.isView(value)) {
+        return `[${Array.from(value).map((entry) => stableStringify(entry, stack)).join(',')}]`;
+    }
+
     const obj = value;
     if (typeof obj === 'object') {
+        // Three.js runtime objects frequently carry cyclic references. For shader variant
+        // hashing we only need stable identity for these object uniforms.
+        if (typeof obj.uuid === 'string' && (obj.isTexture || obj.isWebGLRenderTarget || obj.isMaterial || obj.isBufferGeometry || obj.isObject3D)) {
+            return `{${JSON.stringify('$type')}:${JSON.stringify(obj.type || 'ThreeRef')},${JSON.stringify('uuid')}:${JSON.stringify(obj.uuid)}}`;
+        }
+
+        if (stack.has(obj)) return JSON.stringify('[Circular]');
+        stack.add(obj);
         const keys = Object.keys(obj).sort();
-        return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(obj[key])}`).join(',')}}`;
+        const rendered = `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(obj[key], stack)}`).join(',')}}`;
+        stack.delete(obj);
+        return rendered;
     }
-    return JSON.stringify(value);
+
+    return JSON.stringify(String(value));
 }
 
 function hash32Hex(input) {
