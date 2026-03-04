@@ -222,18 +222,18 @@ test('SemanticMeshCompiler: tube adapter compiles deterministic outer/inner/ring
 
     assert.ok(object.vertexIds.includes('part.parametric.sample.vertex.outer.u000.v000'));
     assert.ok(object.vertexIds.includes('part.parametric.sample.vertex.inner.u009.v002'));
-    assert.ok(object.faceIds.includes('part.parametric.sample.face.outer.u000.v000'));
-    assert.ok(object.faceIds.includes('part.parametric.sample.face.inner.u000.v000'));
-    assert.ok(object.faceIds.includes('part.parametric.sample.face.top_ring.u000'));
-    assert.ok(object.faceIds.includes('part.parametric.sample.face.bottom_ring.u000'));
+    assert.ok(object.faceIds.includes('part.parametric.sample.face.outer.v000.s000'));
+    assert.ok(object.faceIds.includes('part.parametric.sample.face.inner.v000.s000'));
+    assert.ok(object.faceIds.includes('part.parametric.sample.face.top_ring.s000'));
+    assert.ok(object.faceIds.includes('part.parametric.sample.face.bottom_ring.s000'));
     assert.ok(object.faceCanonicalLabels.includes('outer.v000.s000'));
     assert.ok(object.faceCanonicalLabels.includes('inner.v000.s000'));
     assert.ok(object.faceCanonicalLabels.includes('top_ring.s000'));
     assert.ok(object.faceCanonicalLabels.includes('bottom_ring.s000'));
-    assert.equal(object.seedFaceIds.outerStart, 'part.parametric.sample.face.outer.u000.v000');
-    assert.equal(object.seedFaceIds.innerStart, 'part.parametric.sample.face.inner.u000.v000');
-    assert.equal(object.seedFaceIds.topRingStart, 'part.parametric.sample.face.top_ring.u000');
-    assert.equal(object.seedFaceIds.bottomRingStart, 'part.parametric.sample.face.bottom_ring.u000');
+    assert.equal(object.seedFaceIds.outerStart, 'part.parametric.sample.face.outer.v000.s000');
+    assert.equal(object.seedFaceIds.innerStart, 'part.parametric.sample.face.inner.v000.s000');
+    assert.equal(object.seedFaceIds.topRingStart, 'part.parametric.sample.face.top_ring.s000');
+    assert.equal(object.seedFaceIds.bottomRingStart, 'part.parametric.sample.face.bottom_ring.s000');
 
     const topRingIndex = object.faceCanonicalLabels.indexOf('top_ring.s000');
     assert.ok(topRingIndex >= 0);
@@ -320,12 +320,12 @@ test('SemanticMeshCompiler: tube u/v IDs remain stable for overlapping index ran
             const uLabel = String(u).padStart(3, '0');
             const vLabel = String(v).padStart(3, '0');
             assert.ok(
-                denseFaceIds.has(`part.parametric.sample.face.outer.u${uLabel}.v${vLabel}`),
-                `missing preserved outer face id u${uLabel}.v${vLabel}`
+                denseFaceIds.has(`part.parametric.sample.face.outer.v${vLabel}.s${uLabel}`),
+                `missing preserved outer face id v${vLabel}.s${uLabel}`
             );
             assert.ok(
-                denseFaceIds.has(`part.parametric.sample.face.inner.u${uLabel}.v${vLabel}`),
-                `missing preserved inner face id u${uLabel}.v${vLabel}`
+                denseFaceIds.has(`part.parametric.sample.face.inner.v${vLabel}.s${uLabel}`),
+                `missing preserved inner face id v${vLabel}.s${uLabel}`
             );
         }
     }
@@ -333,19 +333,19 @@ test('SemanticMeshCompiler: tube u/v IDs remain stable for overlapping index ran
     for (let u = 0; u < 8; u++) {
         const uLabel = String(u).padStart(3, '0');
         assert.ok(
-            denseFaceIds.has(`part.parametric.sample.face.top_ring.u${uLabel}`),
-            `missing preserved top ring face id u${uLabel}`
+            denseFaceIds.has(`part.parametric.sample.face.top_ring.s${uLabel}`),
+            `missing preserved top ring face id s${uLabel}`
         );
         assert.ok(
-            denseFaceIds.has(`part.parametric.sample.face.bottom_ring.u${uLabel}`),
-            `missing preserved bottom ring face id u${uLabel}`
+            denseFaceIds.has(`part.parametric.sample.face.bottom_ring.s${uLabel}`),
+            `missing preserved bottom ring face id s${uLabel}`
         );
     }
 
-    assert.equal(coarse.seedFaceIds.outerStart, 'part.parametric.sample.face.outer.u000.v000');
-    assert.equal(coarse.seedFaceIds.innerStart, 'part.parametric.sample.face.inner.u000.v000');
-    assert.equal(coarse.seedFaceIds.topRingStart, 'part.parametric.sample.face.top_ring.u000');
-    assert.equal(coarse.seedFaceIds.bottomRingStart, 'part.parametric.sample.face.bottom_ring.u000');
+    assert.equal(coarse.seedFaceIds.outerStart, 'part.parametric.sample.face.outer.v000.s000');
+    assert.equal(coarse.seedFaceIds.innerStart, 'part.parametric.sample.face.inner.v000.s000');
+    assert.equal(coarse.seedFaceIds.topRingStart, 'part.parametric.sample.face.top_ring.s000');
+    assert.equal(coarse.seedFaceIds.bottomRingStart, 'part.parametric.sample.face.bottom_ring.s000');
 });
 
 test('SemanticMeshCompiler: tube operations resolve canonical and authored alias face targets', () => {
@@ -398,8 +398,8 @@ test('SemanticMeshCompiler: tube operations resolve canonical and authored alias
 
     const object = compiled.objects[0];
     assert.equal(object.operationLineage.length, 2);
-    assert.equal(object.operationLineage[0].targetFaceId, 'part.parametric.sample.face.outer.u000.v000');
-    assert.equal(object.operationLineage[1].targetFaceId, 'part.parametric.sample.face.top_ring.u000');
+    assert.equal(object.operationLineage[0].targetFaceId, 'part.parametric.sample.face.outer.s000');
+    assert.equal(object.operationLineage[1].targetFaceId, 'part.parametric.sample.face.top_ring.s000');
     assert.ok(object.faceIds.some((faceId) => faceId.startsWith('part.parametric.sample.face.op.ext_outer.cap.r0')));
     assert.ok(object.faceIds.some((faceId) => faceId.startsWith('part.parametric.sample.face.op.ext_rim.cap.r0')));
 });

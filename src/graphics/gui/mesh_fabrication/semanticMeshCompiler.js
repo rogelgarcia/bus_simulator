@@ -725,8 +725,14 @@ function composeTubeEdgeId(componentPath, surface, ua, va, ub, vb) {
     return `${componentPath}.edge.${surface}.u${pad3(ua)}.v${pad3(va)}.to.u${pad3(ub)}.v${pad3(vb)}`;
 }
 
-function composeTubeFaceId(componentPath, surface, u, v) {
-    return `${componentPath}.face.${surface}.u${pad3(u)}.v${pad3(v)}`;
+function composeTubeFaceId(componentPath, surface, u, v, vSegments = 1) {
+    if (surface === 'outer' || surface === 'inner') {
+        if (vSegments === 1) {
+            return `${componentPath}.face.${surface}.s${pad3(u)}`;
+        }
+        return `${componentPath}.face.${surface}.v${pad3(v)}.s${pad3(u)}`;
+    }
+    return `${componentPath}.face.${surface}.s${pad3(u)}`;
 }
 
 function composeTubeBridgeEdgeId(componentPath, ring, u) {
@@ -734,7 +740,7 @@ function composeTubeBridgeEdgeId(componentPath, ring, u) {
 }
 
 function composeTubeRingFaceId(componentPath, ring, u) {
-    return `${componentPath}.face.${ring}.u${pad3(u)}`;
+    return `${componentPath}.face.${ring}.s${pad3(u)}`;
 }
 
 function createCylinderSeedState(componentPath, primitive, {
@@ -1088,7 +1094,7 @@ function createTubeSeedState(componentPath, primitive, {
                 ? `outer.s${pad3(u)}`
                 : `outer.v${pad3(v)}.s${pad3(u)}`;
             addFace(state, {
-                id: composeTubeFaceId(componentPath, 'outer', u, v),
+                id: composeTubeFaceId(componentPath, 'outer', u, v, vSegments),
                 label: resolveFaceLabel(faceAliasesByCanonical, outerCanonical),
                 canonicalLabel: outerCanonical,
                 vertexIds: [
@@ -1103,7 +1109,7 @@ function createTubeSeedState(componentPath, primitive, {
                 ? `inner.s${pad3(u)}`
                 : `inner.v${pad3(v)}.s${pad3(u)}`;
             addFace(state, {
-                id: composeTubeFaceId(componentPath, 'inner', u, v),
+                id: composeTubeFaceId(componentPath, 'inner', u, v, vSegments),
                 label: resolveFaceLabel(faceAliasesByCanonical, innerCanonical),
                 canonicalLabel: innerCanonical,
                 vertexIds: [
@@ -1191,8 +1197,8 @@ function createTubeSeedState(componentPath, primitive, {
     });
 
     state.seedFaceIds = Object.freeze({
-        outerStart: composeTubeFaceId(componentPath, 'outer', 0, 0),
-        innerStart: composeTubeFaceId(componentPath, 'inner', 0, 0),
+        outerStart: composeTubeFaceId(componentPath, 'outer', 0, 0, vSegments),
+        innerStart: composeTubeFaceId(componentPath, 'inner', 0, 0, vSegments),
         topRingStart: composeTubeRingFaceId(componentPath, 'top_ring', 0),
         bottomRingStart: composeTubeRingFaceId(componentPath, 'bottom_ring', 0)
     });
