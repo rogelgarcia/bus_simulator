@@ -1,5 +1,14 @@
 // src/graphics/gui/mesh_fabrication/meshBooleanEngine.js
 // Deterministic mesh boolean engine for mesh-fabrication canonical runtime objects.
+import { executeManifoldBooleanAdapter } from './meshBooleanKernelAdapterManifold.js';
+import { buildDeterministicSharedEdgeConvexQuadLoop } from './meshBooleanDeterministicQuadMerge.js';
+import {
+    runBooleanDeterministicRemapStage,
+    runBooleanInputConversionStage,
+    runBooleanKernelInvocationStage,
+    runBooleanRegroupingStage,
+    runBooleanTopologyValidationStage
+} from './operations/boolean/stages/index.js';
 
 const EPSILON = 1e-5;
 const KEY_DECIMALS = 6;
@@ -14,6 +23,7 @@ const OUTPUT_POLICY = Object.freeze({
     REPLACE_TARGET: 'replace_target',
     NEW_OBJECT: 'new_object'
 });
+const FACE_ASSEMBLY_STAGE_STAGE2_NORMALIZATION = 'stage2_face_assembly_normalization';
 
 function assertString(value, label) {
     if (typeof value !== 'string' || value.trim() === '') {
@@ -465,6 +475,175 @@ function makePointRingSignature(points) {
     return makeCanonicalRingTokenKey(points.map((point) => vectorKey(point)));
 }
 
+function formatWeldNumber(value, decimals = 5) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '0';
+    return num.toFixed(decimals);
+}
+
+function buildDeterministicSharedEdgeConvexQuadLoopStage2Relaxed({
+    triangleA,
+    triangleB,
+    vertices,
+    referenceNormal,
+    weldDecimals = 5
+}) {
+    const triA = Array.isArray(triangleA) ? triangleA.map((value) => Number(value)) : [];
+    const triB = Array.isArray(triangleB) ? triangleB.map((value) => Number(value)) : [];
+    if (triA.length !== 3 || triB.length !== 3) return null;
+
+    const allIndices = [...triA, ...triB];
+    const keyByIndex = new Map();
+    const representativeByKey = new Map();
+    for (const index of allIndices) {
+        if (!Number.isInteger(index)) return null;
+        const point = vertices[index];
+        if (!isFiniteVec3(point)) return null;
+        const key = `${formatWeldNumber(point[0], weldDecimals)}|${formatWeldNumber(point[1], weldDecimals)}|${formatWeldNumber(point[2], weldDecimals)}`;
+        keyByIndex.set(index, key);
+        const existing = representativeByKey.get(key);
+        if (!Number.isInteger(existing) || index < existing) representativeByKey.set(key, index);
+    }
+
+    const weldedA = triA.map((index) => representativeByKey.get(keyByIndex.get(index)));
+    const weldedB = triB.map((index) => representativeByKey.get(keyByIndex.get(index)));
+    if (new Set(weldedA).size !== 3 || new Set(weldedB).size !== 3) return null;
+
+    return buildDeterministicSharedEdgeConvexQuadLoop({
+        triangleA: weldedA,
+        triangleB: weldedB,
+        vertices,
+        referenceNormal
+    });
+}
+
+function mergeDeterministicToolTriangleFacePlansStage2(facePlans, vertices) {
+    if (!Array.isArray(facePlans) || facePlans.length < 2) return facePlans;
+
+    const bySourceFaceKey = new Map();
+    for (let i = 0; i < facePlans.length; i++) {
+        const plan = facePlans[i];
+        if (!plan || plan.sourceRole !== 'tool') continue;
+        if (!plan.sourceFaceId || plan.ringInfo.length !== 3) continue;
+        const key = `${plan.sourceRole}|${plan.sourceFaceId}`;
+        const list = bySourceFaceKey.get(key) ?? [];
+        list.push(i);
+        bySourceFaceKey.set(key, list);
+    }
+
+    if (bySourceFaceKey.size < 1) return facePlans;
+
+    const consumed = new Set();
+    const replacements = new Map();
+
+    const groups = [...bySourceFaceKey.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    for (const [, planIndices] of groups) {
+        if (planIndices.length < 2) continue;
+        const candidates = [];
+        const sortedIndices = [...planIndices].sort((a, b) => a - b);
+        for (let i = 0; i < sortedIndices.length; i++) {
+            const ia = sortedIndices[i];
+            const planA = facePlans[ia];
+            const triA = planA?.ringInfo?.map((entry) => Number(entry.index)) ?? [];
+            if (triA.length !== 3) continue;
+            const refA = vertices[triA[0]];
+            const refB = vertices[triA[1]];
+            const refC = vertices[triA[2]];
+            if (!isFiniteVec3(refA) || !isFiniteVec3(refB) || !isFiniteVec3(refC)) continue;
+            const referenceNormal = crossVec(subVec(refB, refA), subVec(refC, refA));
+
+            for (let j = i + 1; j < sortedIndices.length; j++) {
+                const ib = sortedIndices[j];
+                const planB = facePlans[ib];
+                const triB = planB?.ringInfo?.map((entry) => Number(entry.index)) ?? [];
+                if (triB.length !== 3) continue;
+                let orientedLoop = buildDeterministicSharedEdgeConvexQuadLoop({
+                    triangleA: triA,
+                    triangleB: triB,
+                    vertices,
+                    referenceNormal
+                });
+                if (!orientedLoop) {
+                    orientedLoop = buildDeterministicSharedEdgeConvexQuadLoopStage2Relaxed({
+                        triangleA: triA,
+                        triangleB: triB,
+                        vertices,
+                        referenceNormal,
+                        weldDecimals: 5
+                    });
+                }
+                if (!orientedLoop) continue;
+
+                const signature = makeCanonicalRingTokenKey(orientedLoop.map((value) => String(value)));
+                candidates.push({
+                    ia,
+                    ib,
+                    orientedLoop,
+                    sortKey: `${signature}|${String(ia).padStart(8, '0')}|${String(ib).padStart(8, '0')}`
+                });
+            }
+        }
+
+        candidates.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+        for (const candidate of candidates) {
+            if (consumed.has(candidate.ia) || consumed.has(candidate.ib)) continue;
+            const planA = facePlans[candidate.ia];
+            const planB = facePlans[candidate.ib];
+            if (!planA || !planB) continue;
+
+            const ringInfoByIndex = new Map();
+            for (const entry of planA.ringInfo) ringInfoByIndex.set(entry.index, entry);
+            for (const entry of planB.ringInfo) ringInfoByIndex.set(entry.index, entry);
+            const mergedRingInfo = candidate.orientedLoop.map((index) => ringInfoByIndex.get(index)).filter(Boolean);
+            if (mergedRingInfo.length !== 4) continue;
+            const mergedVertexIdRing = mergedRingInfo.map((entry) => entry.vertexId);
+            const mergedSignature = makeRingSignature(mergedVertexIdRing);
+            const mergedTriangles = Object.freeze([
+                Object.freeze([
+                    candidate.orientedLoop[0],
+                    candidate.orientedLoop[1],
+                    candidate.orientedLoop[2]
+                ]),
+                Object.freeze([
+                    candidate.orientedLoop[0],
+                    candidate.orientedLoop[2],
+                    candidate.orientedLoop[3]
+                ])
+            ]);
+
+            const primaryIndex = Math.min(candidate.ia, candidate.ib);
+            replacements.set(primaryIndex, {
+                sourceRole: planA.sourceRole,
+                sourceFaceId: planA.sourceFaceId,
+                sourceTag: planA.sourceTag,
+                targetTag: planA.targetTag,
+                toolTag: planA.toolTag,
+                mergeStage: FACE_ASSEMBLY_STAGE_STAGE2_NORMALIZATION,
+                ringInfo: Object.freeze(mergedRingInfo),
+                vertexIdRing: Object.freeze(mergedVertexIdRing),
+                signature: mergedSignature,
+                triangleIndexRecords: mergedTriangles
+            });
+            consumed.add(candidate.ia);
+            consumed.add(candidate.ib);
+        }
+    }
+
+    if (replacements.size < 1) return facePlans;
+
+    const merged = [];
+    for (let i = 0; i < facePlans.length; i++) {
+        const replacement = replacements.get(i);
+        if (replacement) {
+            merged.push(replacement);
+            continue;
+        }
+        if (consumed.has(i)) continue;
+        merged.push(facePlans[i]);
+    }
+    return merged;
+}
+
 function buildTargetReuseLookup(targetObject) {
     const targetVertexIdByKey = new Map();
     const targetEdgeIdByPair = new Map();
@@ -587,19 +766,44 @@ function buildFacesFromPolygons({
 
     const facePlans = [];
     for (const polygon of polygons) {
-        const points = polygon.vertices.map((v) => v.pos);
+        const polygonPoints = Array.isArray(polygon?.points)
+            ? polygon.points
+            : (Array.isArray(polygon?.vertices)
+                ? polygon.vertices.map((v) => (Array.isArray(v) ? v : v?.pos))
+                : []);
+        const points = polygonPoints
+            .filter((point) => isFiniteVec3(point))
+            .map((point) => [Number(point[0]), Number(point[1]), Number(point[2])]);
         if (points.length < 3) continue;
         if (polygonAreaEstimate(points) <= EPSILON) continue;
         const ringInfo = points.map((point) => getVertexInfo(point));
         if (ringInfo.length < 3) continue;
 
-        const sourceRole = String(polygon.shared?.sourceRole ?? 'target');
-        const sourceFaceId = String(polygon.shared?.sourceFaceId ?? '').trim();
+        const shared = polygon?.shared && typeof polygon.shared === 'object'
+            ? polygon.shared
+            : {};
+        const sourceRole = String(shared.sourceRole ?? 'target');
+        const sourceFaceId = String(shared.sourceFaceId ?? '').trim();
         const vertexIdRing = ringInfo.map((entry) => entry.vertexId);
         const signature = makeRingSignature(vertexIdRing);
-        const sourceTag = extractFaceSuffix(sourceFaceId);
+        const sourceTag = sourceFaceId ? extractFaceSuffix(sourceFaceId) : 'face';
         const targetTag = sanitizeToken(sourceTag.replace(/\./g, '_'), 'face');
-        const toolTag = deriveToolFaceTag(toolObjectId, sourceFaceId);
+        const toolTag = deriveToolFaceTag(toolObjectId, sourceFaceId || sourceTag);
+
+        const triangleIndexRecords = [];
+        const polygonTriangles = Array.isArray(polygon?.triangles) ? polygon.triangles : [];
+        for (const tri of polygonTriangles) {
+            if (!Array.isArray(tri) || tri.length !== 3) continue;
+            const aPoint = Array.isArray(tri[0]) ? tri[0] : tri[0]?.pos;
+            const bPoint = Array.isArray(tri[1]) ? tri[1] : tri[1]?.pos;
+            const cPoint = Array.isArray(tri[2]) ? tri[2] : tri[2]?.pos;
+            if (!isFiniteVec3(aPoint) || !isFiniteVec3(bPoint) || !isFiniteVec3(cPoint)) continue;
+            const aInfo = getVertexInfo(aPoint);
+            const bInfo = getVertexInfo(bPoint);
+            const cInfo = getVertexInfo(cPoint);
+            if (aInfo.index === bInfo.index || bInfo.index === cInfo.index || cInfo.index === aInfo.index) continue;
+            triangleIndexRecords.push(Object.freeze([aInfo.index, bInfo.index, cInfo.index]));
+        }
 
         facePlans.push({
             sourceRole,
@@ -609,13 +813,17 @@ function buildFacesFromPolygons({
             toolTag,
             ringInfo,
             vertexIdRing,
-            signature
+            signature,
+            triangleIndexRecords: Object.freeze(triangleIndexRecords)
         });
     }
 
+    // Stage 2: face-assembly normalization before canonical ID emission.
+    const normalizedFacePlans = mergeDeterministicToolTriangleFacePlansStage2(facePlans, vertices);
+
     const toolCounts = new Map();
     const targetCounts = new Map();
-    for (const plan of facePlans) {
+    for (const plan of normalizedFacePlans) {
         if (plan.sourceRole === 'tool') {
             toolCounts.set(plan.toolTag, (toolCounts.get(plan.toolTag) ?? 0) + 1);
         } else {
@@ -650,7 +858,8 @@ function buildFacesFromPolygons({
     };
 
     const faces = [];
-    for (const plan of facePlans) {
+    const faceTriangleRecords = [];
+    for (const plan of normalizedFacePlans) {
         const edgeIds = [];
         const vertexIndices = plan.ringInfo.map((entry) => entry.index);
         for (let i = 0; i < plan.ringInfo.length; i++) {
@@ -713,10 +922,35 @@ function buildFacesFromPolygons({
             label: label || undefined,
             canonicalLabel: canonicalLabel || undefined
         }));
+        faceTriangleRecords.push(plan.triangleIndexRecords ?? Object.freeze([]));
     }
 
     const renderTriangles = [];
-    for (const face of faces) {
+    for (let faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+        const face = faces[faceIndex];
+        const explicitTriangles = Array.isArray(faceTriangleRecords[faceIndex])
+            ? faceTriangleRecords[faceIndex]
+            : [];
+
+        if (explicitTriangles.length > 0) {
+            let localIndex = 0;
+            for (const triIndices of explicitTriangles) {
+                const ai = Number(triIndices?.[0]);
+                const bi = Number(triIndices?.[1]);
+                const ci = Number(triIndices?.[2]);
+                if (!Number.isInteger(ai) || !Number.isInteger(bi) || !Number.isInteger(ci)) continue;
+                if (ai === bi || bi === ci || ci === ai) continue;
+                renderTriangles.push(Object.freeze({
+                    id: `${face.id}.triangle.t${pad3(localIndex)}`,
+                    faceId: face.id,
+                    localIndex,
+                    indices: Object.freeze([ai, bi, ci])
+                }));
+                localIndex += 1;
+            }
+            if (localIndex > 0) continue;
+        }
+
         const ring = face.vertexIndices;
         for (let i = 1; i < ring.length - 1; i++) {
             renderTriangles.push(Object.freeze({
@@ -737,7 +971,7 @@ function buildFacesFromPolygons({
         faces: Object.freeze(faces),
         renderTriangles: Object.freeze(renderTriangles),
         triangles: Object.freeze(renderTriangles.map((tri) => tri.indices)),
-        topologySource: 'ai-boolean'
+        topologySource: 'manifold-boolean'
     });
 }
 
@@ -917,87 +1151,127 @@ export function executeBooleanOperation({
     subtractMode = 'subtract_through',
     keepTool = false
 }) {
-    const booleanType = assertBooleanType(type);
-    const policy = assertOutputPolicy(outputPolicy);
-    const mode = assertSubtractMode(subtractMode);
-    const target = assertParsedObjectShape(targetObject, 'targetObject');
-    const tool = assertParsedObjectShape(toolObject, 'toolObject');
-    const opToken = sanitizeToken(opId, 'bool001');
+    const stage0 = runBooleanInputConversionStage({
+        type,
+        opId,
+        outputPolicy,
+        resultObjectId,
+        subtractMode,
+        keepTool,
+        targetObject,
+        toolObject,
+        convert: (input) => {
+            const booleanType = assertBooleanType(input.type);
+            const policy = assertOutputPolicy(input.outputPolicy);
+            const mode = assertSubtractMode(input.subtractMode);
+            const target = assertParsedObjectShape(input.targetObject, 'targetObject');
+            const tool = assertParsedObjectShape(input.toolObject, 'toolObject');
+            const opToken = sanitizeToken(input.opId, 'bool001');
+            const keepToolFlag = !!input.keepTool;
 
-    if (target.id === tool.id) {
-        throw new Error('[MeshBooleanEngine] targetObject and toolObject must be different objects.');
-    }
-    if (!isSameTransform(target, tool)) {
-        throw new Error('[MeshBooleanEngine] Boolean requires matching target/tool transforms in this pass.');
-    }
+            if (target.id === tool.id) {
+                throw new Error('[MeshBooleanEngine] targetObject and toolObject must be different objects.');
+            }
+            if (!isSameTransform(target, tool)) {
+                throw new Error('[MeshBooleanEngine] Boolean requires matching target/tool transforms in this pass.');
+            }
+            if (booleanType === BOOLEAN_TYPE.SUBTRACT && mode === 'subtract_clamped') {
+                const targetBounds = buildBounds(collectAllObjectVertices(target));
+                const toolBounds = buildBounds(collectAllObjectVertices(tool));
+                if (!boundsContained(toolBounds, targetBounds, 1e-4)) {
+                    throw new Error('[MeshBooleanEngine] subtract_clamped requires tool bounds to be fully contained inside target bounds.');
+                }
+            }
 
-    if (booleanType === BOOLEAN_TYPE.SUBTRACT && mode === 'subtract_clamped') {
-        const targetBounds = buildBounds(collectAllObjectVertices(target));
-        const toolBounds = buildBounds(collectAllObjectVertices(tool));
-        if (!boundsContained(toolBounds, targetBounds, 1e-4)) {
-            throw new Error('[MeshBooleanEngine] subtract_clamped requires tool bounds to be fully contained inside target bounds.');
+            return Object.freeze({
+                booleanType,
+                policy,
+                mode,
+                target,
+                tool,
+                opToken,
+                keepTool: keepToolFlag,
+                resultObjectId: String(input.resultObjectId ?? '')
+            });
         }
-    }
-
-    const targetPolygons = objectToPolygons(target, 'target');
-    const toolPolygons = objectToPolygons(tool, 'tool');
-    if (targetPolygons.length < 1 || toolPolygons.length < 1) {
-        throw new Error('[MeshBooleanEngine] Boolean operands must contain polygon faces.');
-    }
-
-    let resultPolygons = [];
-    if (booleanType === BOOLEAN_TYPE.UNION) {
-        resultPolygons = csgUnion(targetPolygons, toolPolygons);
-    } else if (booleanType === BOOLEAN_TYPE.SUBTRACT) {
-        resultPolygons = csgSubtract(targetPolygons, toolPolygons);
-    } else {
-        resultPolygons = csgIntersect(targetPolygons, toolPolygons);
-    }
-
-    const sorted = sortPolygonsDeterministically(resultPolygons);
-    const outputId = policy === OUTPUT_POLICY.NEW_OBJECT
-        ? assertString(resultObjectId || `${target.id}.bool.${opToken}`, 'resultObjectId')
-        : target.id;
-    const built = buildFacesFromPolygons({
-        polygons: sorted,
-        targetId: outputId,
-        toolObjectId: tool.id,
-        opId: opToken,
-        targetObject: target,
-        targetMaterialId: target.materialId
     });
-    validateBooleanResultTopology(built);
+
+    const stage1Kernel = runBooleanKernelInvocationStage({
+        invocation: Object.freeze({
+            type: stage0.booleanType,
+            targetObject: stage0.target,
+            toolObject: stage0.tool
+        }),
+        invokeKernel: (invocation) => executeManifoldBooleanAdapter(invocation)
+    });
+
+    const stage2Regrouped = runBooleanRegroupingStage({
+        kernelResult: stage1Kernel,
+        regroup: (kernelResult) => kernelResult
+    });
+
+    const stage3Remapped = runBooleanDeterministicRemapStage({
+        regroupedResult: stage2Regrouped,
+        remap: (regroupedResult) => {
+            const outputId = stage0.policy === OUTPUT_POLICY.NEW_OBJECT
+                ? assertString(stage0.resultObjectId || `${stage0.target.id}.bool.${stage0.opToken}`, 'resultObjectId')
+                : stage0.target.id;
+            return buildFacesFromPolygons({
+                polygons: regroupedResult.polygons,
+                targetId: outputId,
+                toolObjectId: stage0.tool.id,
+                opId: stage0.opToken,
+                targetObject: stage0.target,
+                targetMaterialId: stage0.target.materialId
+            });
+        }
+    });
+
+    const built = runBooleanTopologyValidationStage({
+        remappedResult: stage3Remapped,
+        validate: (result) => validateBooleanResultTopology(result)
+    });
 
     const result = Object.freeze({
         ...built,
-        position: Object.freeze([...target.position]),
-        rotation: Object.freeze([...target.rotation]),
-        scale: Object.freeze([...target.scale])
+        position: Object.freeze([...stage0.target.position]),
+        rotation: Object.freeze([...stage0.target.rotation]),
+        scale: Object.freeze([...stage0.target.scale])
     });
 
     const removedObjectIds = [];
-    if (policy === OUTPUT_POLICY.REPLACE_TARGET) removedObjectIds.push(target.id);
-    if (!keepTool && booleanType !== BOOLEAN_TYPE.INTERSECT) {
-        removedObjectIds.push(tool.id);
+    if (stage0.policy === OUTPUT_POLICY.REPLACE_TARGET) removedObjectIds.push(stage0.target.id);
+    if (!stage0.keepTool && stage0.booleanType !== BOOLEAN_TYPE.INTERSECT) {
+        removedObjectIds.push(stage0.tool.id);
     }
 
     return Object.freeze({
         resultObject: result,
-        outputPolicy: policy,
+        outputPolicy: stage0.policy,
         removedObjectIds: Object.freeze([...new Set(removedObjectIds)]),
         stats: Object.freeze({
-            polygonCount: sorted.length,
+            polygonCount: stage2Regrouped.polygons.length,
             vertexCount: result.vertexIds.length,
             edgeCount: result.edges.length,
             faceCount: result.faces.length
+        }),
+        metadata: Object.freeze({
+            booleanKernel: 'manifold-3d',
+            regrouping: stage2Regrouped.regrouping,
+            provenance: stage2Regrouped.provenance,
+            singleRingFacePolicy: stage2Regrouped.singleRingFacePolicy,
+            adapterVersion: stage2Regrouped.adapterVersion
         })
     });
 }
 
 export const BOOLEAN_ENGINE_CONTRACT = Object.freeze({
-    version: 'mesh-boolean-engine.v1',
+    version: 'mesh-boolean-engine.v2',
     supportedTypes: Object.freeze([BOOLEAN_TYPE.UNION, BOOLEAN_TYPE.SUBTRACT, BOOLEAN_TYPE.INTERSECT]),
     supportedSubtractModes: Object.freeze(['subtract_through', 'subtract_clamped']),
     outputPolicies: Object.freeze([OUTPUT_POLICY.REPLACE_TARGET, OUTPUT_POLICY.NEW_OBJECT]),
-    transformConstraint: 'target_and_tool_transforms_must_match'
+    transformConstraint: 'target_and_tool_transforms_must_match',
+    runtimeBooleanKernel: 'manifold-3d',
+    runtimeFallbackPolicy: 'none',
+    singleRingFacePolicy: 'split_openings_into_single_ring_faces'
 });

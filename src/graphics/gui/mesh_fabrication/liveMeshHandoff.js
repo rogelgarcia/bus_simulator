@@ -3,6 +3,13 @@
 import * as THREE from 'three';
 import { runMeshCommandPipeline } from './meshCommandPipeline.js';
 import {
+    DISPLAY_SMOOTHING_MODE,
+    DISPLAY_WIRE_SOURCE,
+    deriveDisplayTriangulation,
+    getRenderTriangleRecords,
+    normalizeDisplayMeshBuildConfig
+} from './displayMeshDerivation.js';
+import {
     AMBIGUOUS_LOOP_ID_FALLBACK,
     compileSemanticAuthoringDocument,
     EXTRUSION_CAP_ID_POLICY,
@@ -16,6 +23,7 @@ export const LIVE_MESH_DEFAULT_API_PATH = '/api/mesh/current';
 export const LIVE_MESH_DEFAULT_FILE_PATH = '/assets/public/mesh_fabrication/handoff/mesh.live.v1.json';
 export const LIVE_MESH_DEFAULT_FILE_RELATIVE_PATH = '../assets/public/mesh_fabrication/handoff/mesh.live.v1.json';
 export const LIVE_MESH_POLL_INTERVAL_MS = 1000;
+export { DISPLAY_LOD_POLICY, DISPLAY_LOD_TRIANGLE_BUDGETS, DISPLAY_SMOOTHING_MODE, DISPLAY_WIRE_SOURCE, normalizeDisplayMeshBuildConfig } from './displayMeshDerivation.js';
 
 function createFaceCenterDiscTexture() {
     if (typeof document === 'undefined') return null;
@@ -416,17 +424,35 @@ function normalizeCompiledPayload(rawValue) {
             `[LiveMeshHandoff] compiled.idPolicy.ambiguousLoopFallback must be "${AMBIGUOUS_LOOP_ID_FALLBACK}".`
         );
     }
+    const parametricGridContract = typeof idPolicy.parametricGridContract === 'string' && idPolicy.parametricGridContract.trim()
+        ? idPolicy.parametricGridContract.trim()
+        : null;
+    const parametricCanonicalDerivation = typeof idPolicy.parametricCanonicalDerivation === 'string' && idPolicy.parametricCanonicalDerivation.trim()
+        ? idPolicy.parametricCanonicalDerivation.trim()
+        : null;
+    const parametricIndexSpace = typeof idPolicy.parametricIndexSpace === 'string' && idPolicy.parametricIndexSpace.trim()
+        ? idPolicy.parametricIndexSpace.trim()
+        : null;
+    const retessellationPolicy = typeof idPolicy.retessellationPolicy === 'string' && idPolicy.retessellationPolicy.trim()
+        ? idPolicy.retessellationPolicy.trim()
+        : null;
     if (!Array.isArray(compiled.objects)) {
         throw new Error('[LiveMeshHandoff] compiled.objects must be an array.');
     }
 
+    const normalizedIdPolicy = {
+        topologyChangePolicy,
+        extrusionCapIdentity,
+        ambiguousLoopFallback
+    };
+    if (parametricGridContract) normalizedIdPolicy.parametricGridContract = parametricGridContract;
+    if (parametricCanonicalDerivation) normalizedIdPolicy.parametricCanonicalDerivation = parametricCanonicalDerivation;
+    if (parametricIndexSpace) normalizedIdPolicy.parametricIndexSpace = parametricIndexSpace;
+    if (retessellationPolicy) normalizedIdPolicy.retessellationPolicy = retessellationPolicy;
+
     return Object.freeze({
         version,
-        idPolicy: Object.freeze({
-            topologyChangePolicy,
-            extrusionCapIdentity,
-            ambiguousLoopFallback
-        }),
+        idPolicy: Object.freeze(normalizedIdPolicy),
         objects: Object.freeze([...compiled.objects]),
         source: compiled.source && typeof compiled.source === 'object'
             ? Object.freeze({ ...compiled.source })
@@ -690,6 +716,83 @@ function getRenderTriangleIndices(objectDef) {
     return [];
 }
 
+function buildGeometryFromDisplayTriangulation(triangulation) {
+    const vertices = Array.isArray(triangulation?.vertices) ? triangulation.vertices : [];
+    const triangles = Array.isArray(triangulation?.triangles) ? triangulation.triangles : [];
+    const maxIndex = vertices.length - 1;
+    const IndexArray = maxIndex > 65535 ? Uint32Array : Uint16Array;
+    const positionArray = new Float32Array(vertices.length * 3);
+    const indexArray = new IndexArray(triangles.length * 3);
+    const triangleFaceIds = new Array(triangles.length);
+
+    for (let i = 0; i < vertices.length; i++) {
+        const base = i * 3;
+        const vertex = vertices[i] ?? [0, 0, 0];
+        positionArray[base] = Number(vertex[0]) || 0;
+        positionArray[base + 1] = Number(vertex[1]) || 0;
+        positionArray[base + 2] = Number(vertex[2]) || 0;
+    }
+    for (let i = 0; i < triangles.length; i++) {
+        const base = i * 3;
+        const tri = triangles[i];
+        indexArray[base] = tri.a;
+        indexArray[base + 1] = tri.b;
+        indexArray[base + 2] = tri.c;
+        triangleFaceIds[i] = String(tri.faceId ?? '');
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positionArray, 3));
+    geometry.setIndex(new THREE.BufferAttribute(indexArray, 1));
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+    return Object.freeze({
+        geometry,
+        triangleFaceIds: Object.freeze(triangleFaceIds),
+        triangles,
+        vertices
+    });
+}
+
+function appendDisplayWireSegments({
+    displayVertices,
+    displayTriangles,
+    matrix,
+    targetPositionArray,
+    targetFaceIdArray,
+    edgeA,
+    edgeB
+}) {
+    const edgeMap = new Map();
+    const addEdge = (ai, bi, faceId) => {
+        const a = Math.min(ai, bi);
+        const b = Math.max(ai, bi);
+        const key = `${a}|${b}|${faceId}`;
+        if (edgeMap.has(key)) return;
+        edgeMap.set(key, Object.freeze({
+            a,
+            b,
+            faceId
+        }));
+    };
+
+    for (const tri of displayTriangles) {
+        const faceId = String(tri.faceId ?? '');
+        addEdge(tri.a, tri.b, faceId);
+        addEdge(tri.b, tri.c, faceId);
+        addEdge(tri.c, tri.a, faceId);
+    }
+
+    for (const edge of edgeMap.values()) {
+        const av = displayVertices[edge.a] ?? [0, 0, 0];
+        const bv = displayVertices[edge.b] ?? [0, 0, 0];
+        edgeA.set(Number(av[0]) || 0, Number(av[1]) || 0, Number(av[2]) || 0).applyMatrix4(matrix);
+        edgeB.set(Number(bv[0]) || 0, Number(bv[1]) || 0, Number(bv[2]) || 0).applyMatrix4(matrix);
+        targetPositionArray.push(edgeA.x, edgeA.y, edgeA.z, edgeB.x, edgeB.y, edgeB.z);
+        targetFaceIdArray.push(edge.faceId);
+    }
+}
+
 function normalizeAuthoringOperationPath(value, label) {
     return assertHierarchicalId(
         value,
@@ -841,21 +944,26 @@ export function parseLiveMeshDocument(rawValue) {
         topologyIndex: finalizeTopologyIndex(topologyIndex),
         faceToTriangleIds: freezeFaceTriangleMap(faceTriangleMap),
         aiCommandPlan: commandRuntime.commandPlan,
+        booleanKernel: commandRuntime.commandPlan?.booleanKernel ?? 'manifold-3d',
         aiOperationLog: commandRuntime.operationLog,
         aiObjectOverrides: commandRuntime.objectOverrides
     });
 }
 
-export function buildThreeGroupFromLiveMesh(parsedDocument) {
+export function buildThreeGroupFromLiveMesh(parsedDocument, options = null) {
+    const displayConfig = normalizeDisplayMeshBuildConfig(options?.displayMesh ?? options);
     const group = new THREE.Group();
     group.name = `live-mesh:${parsedDocument.meshId}`;
 
     const materialById = new Map();
     const usedMaterials = [];
     const usedGeometries = [];
+    const canonicalSurfaceMeshes = [];
     const surfaceMeshes = [];
-    const edgePosition = [];
-    const edgeTopologyIds = [];
+    const canonicalEdgePosition = [];
+    const canonicalEdgeTopologyIds = [];
+    const displayEdgePosition = [];
+    const displayEdgeFaceIds = [];
     const vertexPosition = [];
     const vertexTopologyIds = [];
     const faceCenterPosition = [];
@@ -870,13 +978,28 @@ export function buildThreeGroupFromLiveMesh(parsedDocument) {
     const position = new THREE.Vector3();
     const matrix = new THREE.Matrix4();
 
-    for (const materialDef of parsedDocument.materials.values()) {
+    const surfaceMaterialCache = new Map();
+    const resolveSurfaceMaterial = (materialId) => {
+        const flatShading = displayConfig.smoothingMode === DISPLAY_SMOOTHING_MODE.FLAT;
+        const cacheKey = `${materialId}|${flatShading ? 'flat' : 'smooth'}`;
+        const cached = surfaceMaterialCache.get(cacheKey);
+        if (cached) return cached;
+        const materialDef = parsedDocument.materials.get(materialId) ?? parsedDocument.materials.values().next().value;
         const mat = new THREE.MeshLambertMaterial({
-            color: materialDef.color,
-            flatShading: true
+            color: materialDef?.color ?? '#98a6ba',
+            flatShading
         });
-        materialById.set(materialDef.id, mat);
+        surfaceMaterialCache.set(cacheKey, mat);
         usedMaterials.push(mat);
+        return mat;
+    };
+
+    let totalCanonicalTriangleCount = 0;
+    let totalDisplayTriangleCount = 0;
+    let maxAppliedSubdivisionLevel = 0;
+
+    for (const materialDef of parsedDocument.materials.values()) {
+        materialById.set(materialDef.id, materialDef);
     }
 
     for (const objectDef of parsedDocument.objects) {
@@ -886,49 +1009,91 @@ export function buildThreeGroupFromLiveMesh(parsedDocument) {
         const objectRotation = objectOverride?.rotation ?? objectDef.rotation;
         const objectScale = objectOverride?.scale ?? objectDef.scale;
 
-        const positionArray = new Float32Array(objectDef.vertices.length * 3);
+        const canonicalTriangleRecords = getRenderTriangleRecords(objectDef);
+        totalCanonicalTriangleCount += canonicalTriangleRecords.length;
+
+        const canonicalPositionArray = new Float32Array(objectDef.vertices.length * 3);
         for (let i = 0; i < objectDef.vertices.length; i++) {
             const base = i * 3;
-            const v = objectDef.vertices[i];
-            positionArray[base] = v[0];
-            positionArray[base + 1] = v[1];
-            positionArray[base + 2] = v[2];
+            const v = objectDef.vertices[i] ?? [0, 0, 0];
+            canonicalPositionArray[base] = Number(v[0]) || 0;
+            canonicalPositionArray[base + 1] = Number(v[1]) || 0;
+            canonicalPositionArray[base + 2] = Number(v[2]) || 0;
         }
-
-        const renderTriangles = getRenderTriangleIndices(objectDef);
-        const maxIndex = objectDef.vertices.length - 1;
-        const IndexArray = maxIndex > 65535 ? Uint32Array : Uint16Array;
-        const indexArray = new IndexArray(renderTriangles.length * 3);
-        for (let i = 0; i < renderTriangles.length; i++) {
+        const canonicalMaxIndex = objectDef.vertices.length - 1;
+        const CanonicalIndexArray = canonicalMaxIndex > 65535 ? Uint32Array : Uint16Array;
+        const canonicalIndexArray = new CanonicalIndexArray(canonicalTriangleRecords.length * 3);
+        const canonicalTriangleFaceIds = new Array(canonicalTriangleRecords.length);
+        for (let i = 0; i < canonicalTriangleRecords.length; i++) {
             const base = i * 3;
-            const tri = renderTriangles[i];
-            indexArray[base] = tri[0];
-            indexArray[base + 1] = tri[1];
-            indexArray[base + 2] = tri[2];
+            const tri = canonicalTriangleRecords[i];
+            canonicalIndexArray[base] = tri.indices[0];
+            canonicalIndexArray[base + 1] = tri.indices[1];
+            canonicalIndexArray[base + 2] = tri.indices[2];
+            canonicalTriangleFaceIds[i] = tri.faceId;
         }
+        const canonicalGeometry = new THREE.BufferGeometry();
+        canonicalGeometry.setAttribute('position', new THREE.BufferAttribute(canonicalPositionArray, 3));
+        canonicalGeometry.setIndex(new THREE.BufferAttribute(canonicalIndexArray, 1));
+        canonicalGeometry.computeVertexNormals();
+        canonicalGeometry.computeBoundingSphere();
+        usedGeometries.push(canonicalGeometry);
 
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(positionArray, 3));
-        geometry.setIndex(new THREE.BufferAttribute(indexArray, 1));
-        geometry.computeVertexNormals();
-        geometry.computeBoundingSphere();
+        const triangulation = deriveDisplayTriangulation(
+            objectDef,
+            displayConfig.resolvedSubdivisionLevel,
+            displayConfig.triangleBudget
+        );
+        maxAppliedSubdivisionLevel = Math.max(maxAppliedSubdivisionLevel, triangulation.appliedSubdivisionLevel);
+        const displayGeometryData = buildGeometryFromDisplayTriangulation(triangulation);
+        totalDisplayTriangleCount += displayGeometryData.triangleFaceIds.length;
+
+        const geometry = displayGeometryData.geometry;
         usedGeometries.push(geometry);
 
-        const material = materialById.get(objectMaterialId) ?? materialById.get(objectDef.materialId);
+        const resolvedMaterial = materialById.has(objectMaterialId) ? objectMaterialId : objectDef.materialId;
+        const material = resolveSurfaceMaterial(resolvedMaterial);
+        const canonicalMesh = new THREE.Mesh(canonicalGeometry, material);
+        canonicalMesh.name = `${objectDef.id}:canonical`;
+        canonicalMesh.position.set(objectPosition[0], objectPosition[1], objectPosition[2]);
+        canonicalMesh.rotation.set(objectRotation[0], objectRotation[1], objectRotation[2]);
+        canonicalMesh.scale.set(objectScale[0], objectScale[1], objectScale[2]);
+        canonicalMesh.visible = false;
+        canonicalMesh.userData.meshFabCanonicalControlCage = true;
+        canonicalMesh.userData.topology = {
+            source: 'canonical-control-cage',
+            vertexIds: objectDef.vertexIds,
+            edgeIds: objectDef.edges.map((edge) => edge.id),
+            faceIds: objectDef.faces.map((face) => face.id),
+            triangleIds: canonicalTriangleRecords.map((tri) => tri.id),
+            triangleFaceIds: Object.freeze([...canonicalTriangleFaceIds]),
+            faceToTriangleIds: parsedDocument.faceToTriangleIds
+        };
+        group.add(canonicalMesh);
+        canonicalSurfaceMeshes.push(canonicalMesh);
+
         const mesh = new THREE.Mesh(geometry, material);
         mesh.name = objectDef.id;
         mesh.position.set(objectPosition[0], objectPosition[1], objectPosition[2]);
         mesh.rotation.set(objectRotation[0], objectRotation[1], objectRotation[2]);
         mesh.scale.set(objectScale[0], objectScale[1], objectScale[2]);
         mesh.userData.topology = {
-            source: objectDef.topologySource,
+            source: 'display-derived',
             vertexIds: objectDef.vertexIds,
             edgeIds: objectDef.edges.map((edge) => edge.id),
             faceIds: objectDef.faces.map((face) => face.id),
-            triangleIds: objectDef.renderTriangles.map((tri) => tri.id),
-            triangleFaceIds: objectDef.renderTriangles.map((tri) => tri.faceId),
+            triangleIds: displayGeometryData.triangleFaceIds.map(
+                (faceId, triIndex) => `${faceId}.display.t${String(triIndex).padStart(3, '0')}`
+            ),
+            triangleFaceIds: displayGeometryData.triangleFaceIds,
             faceToTriangleIds: parsedDocument.faceToTriangleIds
         };
+        mesh.userData.meshFabDisplay = Object.freeze({
+            smoothingMode: displayConfig.smoothingMode,
+            subdivisionLevel: triangulation.appliedSubdivisionLevel,
+            lodPolicy: displayConfig.lodPolicy
+        });
+        mesh.userData.booleanKernel = parsedDocument.booleanKernel ?? 'manifold-3d';
         mesh.userData.aiCommandPlan = parsedDocument.aiCommandPlan;
         mesh.userData.aiOperationLog = parsedDocument.aiOperationLog;
         group.add(mesh);
@@ -945,8 +1110,8 @@ export function buildThreeGroupFromLiveMesh(parsedDocument) {
             const bi = edge.vertexIndices[1];
             edgeA.fromArray(objectDef.vertices[ai]).applyMatrix4(matrix);
             edgeB.fromArray(objectDef.vertices[bi]).applyMatrix4(matrix);
-            edgePosition.push(edgeA.x, edgeA.y, edgeA.z, edgeB.x, edgeB.y, edgeB.z);
-            edgeTopologyIds.push(edge.id);
+            canonicalEdgePosition.push(edgeA.x, edgeA.y, edgeA.z, edgeB.x, edgeB.y, edgeB.z);
+            canonicalEdgeTopologyIds.push(edge.id);
         }
         for (let i = 0; i < objectDef.vertices.length; i++) {
             point.fromArray(objectDef.vertices[i]).applyMatrix4(matrix);
@@ -964,12 +1129,22 @@ export function buildThreeGroupFromLiveMesh(parsedDocument) {
             faceCenterPosition.push(faceCenter.x, faceCenter.y, faceCenter.z);
             faceCenterTopologyIds.push(face.id);
         }
+
+        appendDisplayWireSegments({
+            displayVertices: triangulation.vertices,
+            displayTriangles: triangulation.triangles,
+            matrix,
+            targetPositionArray: displayEdgePosition,
+            targetFaceIdArray: displayEdgeFaceIds,
+            edgeA,
+            edgeB
+        });
     }
 
-    let polygonWire = null;
-    if (edgePosition.length >= 6) {
+    let polygonWireCanonical = null;
+    if (canonicalEdgePosition.length >= 6) {
         const edgeGeometry = new THREE.BufferGeometry();
-        edgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(edgePosition, 3));
+        edgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(canonicalEdgePosition, 3));
         edgeGeometry.computeBoundingSphere();
         const edgeMaterial = new THREE.LineBasicMaterial({
             color: 0xd7ecff,
@@ -978,13 +1153,38 @@ export function buildThreeGroupFromLiveMesh(parsedDocument) {
             depthTest: true,
             depthWrite: false
         });
-        polygonWire = new THREE.LineSegments(edgeGeometry, edgeMaterial);
-        polygonWire.name = 'mesh-fab-polygon-wire';
-        polygonWire.renderOrder = 4;
-        polygonWire.userData.topology = Object.freeze({
-            edgeIds: Object.freeze([...edgeTopologyIds])
+        polygonWireCanonical = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+        polygonWireCanonical.name = 'mesh-fab-polygon-wire-canonical';
+        polygonWireCanonical.renderOrder = 4;
+        polygonWireCanonical.userData.topology = Object.freeze({
+            source: DISPLAY_WIRE_SOURCE.CANONICAL,
+            edgeIds: Object.freeze([...canonicalEdgeTopologyIds])
         });
-        group.add(polygonWire);
+        group.add(polygonWireCanonical);
+        usedGeometries.push(edgeGeometry);
+        usedMaterials.push(edgeMaterial);
+    }
+
+    let polygonWireDisplay = null;
+    if (displayEdgePosition.length >= 6) {
+        const edgeGeometry = new THREE.BufferGeometry();
+        edgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(displayEdgePosition, 3));
+        edgeGeometry.computeBoundingSphere();
+        const edgeMaterial = new THREE.LineBasicMaterial({
+            color: 0xc8e5ff,
+            transparent: true,
+            opacity: 0.82,
+            depthTest: true,
+            depthWrite: false
+        });
+        polygonWireDisplay = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+        polygonWireDisplay.name = 'mesh-fab-polygon-wire-display';
+        polygonWireDisplay.renderOrder = 4;
+        polygonWireDisplay.userData.topology = Object.freeze({
+            source: DISPLAY_WIRE_SOURCE.DISPLAY,
+            faceIds: Object.freeze([...displayEdgeFaceIds])
+        });
+        group.add(polygonWireDisplay);
         usedGeometries.push(edgeGeometry);
         usedMaterials.push(edgeMaterial);
     }
@@ -1042,12 +1242,30 @@ export function buildThreeGroupFromLiveMesh(parsedDocument) {
     }
 
     const bounds = new THREE.Box3().setFromObject(group);
+    const polygonWire = displayConfig.wireSource === DISPLAY_WIRE_SOURCE.DISPLAY
+        ? (polygonWireDisplay ?? polygonWireCanonical)
+        : (polygonWireCanonical ?? polygonWireDisplay);
     return {
         group,
+        canonicalSurfaceMeshes: Object.freeze(canonicalSurfaceMeshes),
         surfaceMeshes: Object.freeze(surfaceMeshes),
+        polygonWireCanonical,
+        polygonWireDisplay,
         polygonWire,
         vertexOverlay,
         faceCenterOverlay,
+        displayContract: Object.freeze({
+            dualMesh: true,
+            canonicalTopologyAuthoritative: true,
+            smoothingMode: displayConfig.smoothingMode,
+            requestedSubdivisionLevel: displayConfig.subdivisionLevel,
+            appliedSubdivisionLevel: maxAppliedSubdivisionLevel,
+            wireSource: displayConfig.wireSource,
+            lodPolicy: displayConfig.lodPolicy,
+            triangleBudget: displayConfig.triangleBudget,
+            canonicalTriangleCount: totalCanonicalTriangleCount,
+            displayTriangleCount: totalDisplayTriangleCount
+        }),
         materials: usedMaterials,
         geometries: usedGeometries,
         bounds
@@ -1061,11 +1279,18 @@ function formatObjNumber(value) {
     return String(rounded);
 }
 
-export function buildObjTextFromLiveMesh(parsedDocument) {
+export function buildObjTextFromLiveMesh(parsedDocument, options = null) {
+    const meshKind = String(options?.meshKind ?? 'canonical').trim().toLowerCase() === 'display'
+        ? 'display'
+        : 'canonical';
+    const displayConfig = meshKind === 'display'
+        ? normalizeDisplayMeshBuildConfig(options?.displayMesh ?? options)
+        : null;
     const lines = [];
     lines.push(`# mesh-handoff ${parsedDocument.format}`);
     lines.push(`# meshId ${parsedDocument.meshId}`);
     lines.push(`# revision ${parsedDocument.revision}`);
+    lines.push(`# meshKind ${meshKind}`);
     lines.push(`# topology.version ${parsedDocument.topology?.version ?? '-'}`);
     lines.push(`o ${parsedDocument.meshId}`);
 
@@ -1085,20 +1310,31 @@ export function buildObjTextFromLiveMesh(parsedDocument) {
         position.set(objectDef.position[0], objectDef.position[1], objectDef.position[2]);
         matrix.compose(position, quat, scale);
 
-        for (const src of objectDef.vertices) {
+        let sourceVertices = objectDef.vertices;
+        let sourceTriangles = getRenderTriangleIndices(objectDef);
+        if (meshKind === 'display' && displayConfig) {
+            const triangulation = deriveDisplayTriangulation(
+                objectDef,
+                displayConfig.resolvedSubdivisionLevel,
+                displayConfig.triangleBudget
+            );
+            sourceVertices = triangulation.vertices;
+            sourceTriangles = triangulation.triangles.map((tri) => [tri.a, tri.b, tri.c]);
+        }
+
+        for (const src of sourceVertices) {
             vertex.set(src[0], src[1], src[2]).applyMatrix4(matrix);
             lines.push(`v ${formatObjNumber(vertex.x)} ${formatObjNumber(vertex.y)} ${formatObjNumber(vertex.z)}`);
         }
 
-        const renderTriangles = getRenderTriangleIndices(objectDef);
-        for (const tri of renderTriangles) {
+        for (const tri of sourceTriangles) {
             const a = tri[0] + 1 + vertexOffset;
             const b = tri[1] + 1 + vertexOffset;
             const c = tri[2] + 1 + vertexOffset;
             lines.push(`f ${a} ${b} ${c}`);
         }
 
-        vertexOffset += objectDef.vertices.length;
+        vertexOffset += sourceVertices.length;
     }
 
     lines.push('');

@@ -1,0 +1,165 @@
+.mesh-fab-overlay-options-wrap {
+    position: relative;
+}
+
+.mesh-fab-overlay-options-icon {
+    --ui-icon-size: 22px;
+    opacity: 0.94;
+}
+
+.mesh-fab-overlay-options-main {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mesh-fab-overlay-options-popup {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    min-width: 210px;
+    padding: 8px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: linear-gradient(180deg, rgba(17, 22, 30, 0.98), rgba(13, 18, 26, 0.98));
+    box-shadow: 0 14px 28px rgba(0, 0, 0, 0.48);
+    display: none;
+    z-index: 33;
+    pointer-events: auto;
+}
+
+.mesh-fab-overlay-options-popup.is-open {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+}
+
+.mesh-fab-overlay-option-row {
+    width: 100%;
+    min-height: 34px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 9px;
+    background: rgba(20, 28, 38, 0.82);
+    color: rgba(239, 245, 253, 0.95);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 9px;
+    cursor: pointer;
+    text-align: left;
+}
+
+.mesh-fab-overlay-option-row:hover {
+    border-color: rgba(132, 216, 255, 0.62);
+}
+
+.mesh-fab-overlay-option-row.is-enabled {
+    border-color: rgba(102, 206, 255, 0.88);
+    box-shadow: 0 0 0 1px rgba(102, 206, 255, 0.22) inset;
+}
+
+.mesh-fab-overlay-option-label {
+    font-size: 12px;
+    line-height: 1.2;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.mesh-fab-overlay-option-switch {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    border-radius: 999px;
+    background: rgba(94, 106, 123, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    transition: background 120ms ease, border-color 120ms ease;
+}
+
+.mesh-fab-overlay-option-switch-thumb {
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: rgba(237, 243, 251, 0.96);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    transition: transform 120ms ease;
+}
+
+.mesh-fab-overlay-option-row.is-enabled .mesh-fab-overlay-option-switch {
+    background: rgba(72, 163, 109, 0.86);
+    border-color: rgba(123, 236, 174, 0.86);
+}
+
+.mesh-fab-overlay-option-row.is-enabled .mesh-fab-overlay-option-switch-thumb {
+    transform: translateX(16px);
+}
+
+.mesh-fab-overlay-option-row.is-disabled,
+.mesh-fab-overlay-option-row:disabled {
+    opacity: 0.48;
+    cursor: default;
+    border-color: rgba(255, 255, 255, 0.1);
+    background: rgba(18, 24, 33, 0.72);
+    box-shadow: none;
+}
+
+.mesh-fab-overlay-option-row.is-disabled:hover,
+.mesh-fab-overlay-option-row:disabled:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.mesh-fab-overlay-option-row.is-disabled .mesh-fab-overlay-option-switch,
+.mesh-fab-overlay-option-row:disabled .mesh-fab-overlay-option-switch {
+    background: rgba(94, 106, 123, 0.58);
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+.mesh-fab-context-menu {
+    position: absolute;
+    top: 0;
+    left: 0;
+    min-width: 128px;
+    padding: 6px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: linear-gradient(180deg, rgba(17, 22, 30, 0.98), rgba(13, 18, 26, 0.98));
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.48);
+    display: none;
+    z-index: 40;
+    pointer-events: auto;
+}
+
+.mesh-fab-context-menu.is-open {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+}
+
+.mesh-fab-context-menu-item {
+    width: 100%;
+    min-height: 28px;
+    padding: 5px 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(20, 28, 38, 0.82);
+    color: rgba(239, 245, 253, 0.95);
+    font-size: 11px;
+    line-height: 1.2;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-align: left;
+    cursor: pointer;
+}
+
+.mesh-fab-context-menu-item:hover:not(:disabled) {
+    border-color: rgba(132, 216, 255, 0.62);
+}
+
+.mesh-fab-context-menu-item:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+

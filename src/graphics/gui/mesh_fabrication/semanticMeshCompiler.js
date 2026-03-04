@@ -1,11 +1,69 @@
 // src/graphics/gui/mesh_fabrication/semanticMeshCompiler.js
 // Deterministic semantic-authoring compiler for compact compiled topology payloads.
+import {
+    compileBoxPrimitiveSeedState,
+    compileCylinderPrimitiveSeedState,
+    compileTubePrimitiveSeedState,
+    createPrimitiveCompilerRegistry
+} from './primitives/index.js';
 
 export const MESH_SEMANTIC_AUTHORING_VERSION = 'mesh-semantic-authoring.v1';
 export const MESH_COMPILED_TOPOLOGY_VERSION = 'mesh-fabrication-compiled.v1';
 export const TOPOLOGY_CHANGE_POLICY = 'preserve_unaffected_create_new_never_recycle';
 export const EXTRUSION_CAP_ID_POLICY = 'always_new_derived_cap_id';
 export const AMBIGUOUS_LOOP_ID_FALLBACK = 'ring_ordinal';
+export const MESH_PARAMETRIC_GRID_CONTRACT_VERSION = 'mesh-parametric-grid.v1';
+export const PARAMETRIC_CANONICAL_ID_DERIVATION = 'uv_index_path';
+export const PARAMETRIC_INDEX_SPACE = 'u_ccw_from_seam__v_top_to_bottom';
+export const PARAMETRIC_RETESSELLATION_POLICY = TOPOLOGY_CHANGE_POLICY;
+export const PARAMETRIC_FAMILY_ADAPTERS = Object.freeze({
+    cylinder: Object.freeze({
+        family: 'cylinder',
+        executable: true,
+        uSegmentsAlias: Object.freeze(['uSegments', 'radialSegments', 'segments']),
+        vSegmentsAlias: Object.freeze(['vSegments', 'axialSegments']),
+        uSeamAlias: Object.freeze(['uSeam', 'seamAngle']),
+        defaults: Object.freeze({
+            uClosed: true,
+            vClosed: false
+        }),
+        extensions: Object.freeze([
+            'capRings',
+            'syncOppositeCap',
+            'topCapRings',
+            'bottomCapRings',
+            'capCenterFill',
+            'topCapCenterFill',
+            'bottomCapCenterFill'
+        ])
+    }),
+    tube: Object.freeze({
+        family: 'tube',
+        executable: true,
+        uSegmentsAlias: Object.freeze(['uSegments', 'radialSegments', 'segments']),
+        vSegmentsAlias: Object.freeze(['vSegments', 'axialSegments']),
+        uSeamAlias: Object.freeze(['uSeam', 'seamAngle']),
+        defaults: Object.freeze({
+            uClosed: true,
+            vClosed: false
+        }),
+        extensions: Object.freeze([])
+    }),
+    revolve: Object.freeze({
+        family: 'revolve',
+        executable: false,
+        uSegmentsAlias: Object.freeze(['uSegments', 'radialSegments']),
+        vSegmentsAlias: Object.freeze(['vSegments', 'profileSegments']),
+        uSeamAlias: Object.freeze(['uSeam', 'seamAngle'])
+    }),
+    sweep: Object.freeze({
+        family: 'sweep',
+        executable: false,
+        uSegmentsAlias: Object.freeze(['uSegments', 'pathSegments']),
+        vSegmentsAlias: Object.freeze(['vSegments', 'profileSegments']),
+        uSeamAlias: Object.freeze(['uSeam'])
+    })
+});
 
 const DEFAULT_CENTER = Object.freeze([0, 0, 0]);
 const DEFAULT_SIZE = Object.freeze([2, 1, 2]);
@@ -14,7 +72,16 @@ const DEFAULT_ROTATION = Object.freeze([0, 0, 0]);
 const DEFAULT_SCALE = Object.freeze([1, 1, 1]);
 const DEFAULT_CYLINDER_RADIUS = 1;
 const DEFAULT_CYLINDER_HEIGHT = 2;
-const DEFAULT_CYLINDER_SEGMENTS = 24;
+const DEFAULT_CYLINDER_U_SEGMENTS = 24;
+const DEFAULT_CYLINDER_V_SEGMENTS = 1;
+const DEFAULT_TUBE_INNER_RADIUS_RATIO = 0.5;
+const DEFAULT_GRID_U_SEAM = 0;
+const DEFAULT_CAP_RINGS = 0;
+const CYLINDER_CAP_CENTER_FILL = Object.freeze({
+    NGON: 'ngon',
+    TRI_FAN: 'tri_fan'
+});
+const DEFAULT_CAP_CENTER_FILL = CYLINDER_CAP_CENTER_FILL.NGON;
 
 const BOX_VERTEX_LAYOUT = Object.freeze([
     Object.freeze({ key: 'lbb', sign: Object.freeze([-1, -1, -1]) }),
@@ -38,6 +105,27 @@ const BOX_FACES = Object.freeze([
 
 const OPERATION_TYPE = Object.freeze({
     EXTRUDE_FACE: 'extrude_face'
+});
+
+const PRIMITIVE_COMPILER_REGISTRY = createPrimitiveCompilerRegistry({
+    box: ({ componentPath, primitive, faceAliasesByCanonical }) => compileBoxPrimitiveSeedState({
+        componentPath,
+        primitive,
+        faceAliasesByCanonical,
+        compileSeedState: createBoxSeedState
+    }),
+    cylinder: ({ componentPath, primitive, faceAliasesByCanonical }) => compileCylinderPrimitiveSeedState({
+        componentPath,
+        primitive,
+        faceAliasesByCanonical,
+        compileSeedState: createCylinderSeedState
+    }),
+    tube: ({ componentPath, primitive, faceAliasesByCanonical }) => compileTubePrimitiveSeedState({
+        componentPath,
+        primitive,
+        faceAliasesByCanonical,
+        compileSeedState: createTubeSeedState
+    })
 });
 
 function assertObject(value, label) {
@@ -76,6 +164,13 @@ function assertIntegerInRange(value, label, min, max) {
         throw new Error(`[SemanticMeshCompiler] ${label} must be an integer in [${min}, ${max}].`);
     }
     return num;
+}
+
+function assertBoolean(value, label) {
+    if (typeof value !== 'boolean') {
+        throw new Error(`[SemanticMeshCompiler] ${label} must be boolean.`);
+    }
+    return value;
 }
 
 function splitHierarchyPath(id) {
@@ -122,6 +217,44 @@ function pairKey(a, b) {
     return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
+function normalizeSeamAngle(value, label) {
+    const angle = assertFiniteNumber(value, label);
+    const tau = Math.PI * 2;
+    if (!Number.isFinite(angle)) return 0;
+    let normalized = angle % tau;
+    if (normalized < 0) normalized += tau;
+    return normalized;
+}
+
+function normalizeCylinderCapCenterFill(value, label) {
+    const normalized = assertString(value, label).toLowerCase();
+    if (normalized === CYLINDER_CAP_CENTER_FILL.NGON || normalized === CYLINDER_CAP_CENTER_FILL.TRI_FAN) {
+        return normalized;
+    }
+    throw new Error(
+        `[SemanticMeshCompiler] ${label} must be "${CYLINDER_CAP_CENTER_FILL.NGON}" or "${CYLINDER_CAP_CENTER_FILL.TRI_FAN}".`
+    );
+}
+
+function createSeedState(componentPath) {
+    return {
+        componentPath,
+        vertices: [],
+        edges: [],
+        faces: [],
+        vertexById: new Map(),
+        vertexNameById: new Map(),
+        edgeByPair: new Map(),
+        faceById: new Map(),
+        faceLabelById: new Map(),
+        faceByLabel: new Map(),
+        usedIds: new Set(),
+        fallbackEdgeSerial: 0,
+        opLog: [],
+        parametric: null
+    };
+}
+
 function resolveBoxPrimitiveCenter(primitive, size) {
     if (primitive?.center === undefined || primitive?.center === null) {
         return [0, size[1] * 0.5, 0];
@@ -130,6 +263,13 @@ function resolveBoxPrimitiveCenter(primitive, size) {
 }
 
 function resolveCylinderPrimitiveCenter(primitive, height) {
+    if (primitive?.center === undefined || primitive?.center === null) {
+        return [0, height * 0.5, 0];
+    }
+    return sanitizeVec3(primitive.center, 'component.primitive.center', DEFAULT_CENTER);
+}
+
+function resolveTubePrimitiveCenter(primitive, height) {
     if (primitive?.center === undefined || primitive?.center === null) {
         return [0, height * 0.5, 0];
     }
@@ -292,21 +432,7 @@ function createBoxSeedState(componentPath, primitive, {
     const center = resolveBoxPrimitiveCenter(primitive, size);
     const half = [size[0] * 0.5, size[1] * 0.5, size[2] * 0.5];
 
-    const state = {
-        componentPath,
-        vertices: [],
-        edges: [],
-        faces: [],
-        vertexById: new Map(),
-        vertexNameById: new Map(),
-        edgeByPair: new Map(),
-        faceById: new Map(),
-        faceLabelById: new Map(),
-        faceByLabel: new Map(),
-        usedIds: new Set(),
-        fallbackEdgeSerial: 0,
-        opLog: []
-    };
+    const state = createSeedState(componentPath);
 
     const vertexIdByName = new Map();
     for (const layout of BOX_VERTEX_LAYOUT) {
@@ -356,6 +482,261 @@ function createBoxSeedState(componentPath, primitive, {
     return state;
 }
 
+function getFirstDefined(source, keys) {
+    if (!source || typeof source !== 'object') return undefined;
+    for (const key of keys) {
+        if (Object.prototype.hasOwnProperty.call(source, key) && source[key] !== undefined && source[key] !== null) {
+            return source[key];
+        }
+    }
+    return undefined;
+}
+
+function resolveCylinderParametricSpec(primitive) {
+    const adapter = PARAMETRIC_FAMILY_ADAPTERS.cylinder;
+    const uSegments = assertIntegerInRange(
+        getFirstDefined(primitive, adapter.uSegmentsAlias) ?? DEFAULT_CYLINDER_U_SEGMENTS,
+        'component.primitive.uSegments',
+        3,
+        256
+    );
+    const vSegments = assertIntegerInRange(
+        getFirstDefined(primitive, adapter.vSegmentsAlias) ?? DEFAULT_CYLINDER_V_SEGMENTS,
+        'component.primitive.vSegments',
+        1,
+        128
+    );
+
+    const uClosed = primitive.uClosed === undefined
+        ? adapter.defaults.uClosed
+        : assertBoolean(primitive.uClosed, 'component.primitive.uClosed');
+    const vClosed = primitive.vClosed === undefined
+        ? adapter.defaults.vClosed
+        : assertBoolean(primitive.vClosed, 'component.primitive.vClosed');
+    if (!uClosed) {
+        throw new Error('[SemanticMeshCompiler] component.primitive.uClosed=false is not supported for cylinder in v1.');
+    }
+    if (vClosed) {
+        throw new Error('[SemanticMeshCompiler] component.primitive.vClosed=true is not supported for cylinder in v1.');
+    }
+
+    const uSeam = normalizeSeamAngle(
+        getFirstDefined(primitive, adapter.uSeamAlias) ?? DEFAULT_GRID_U_SEAM,
+        'component.primitive.uSeam'
+    );
+
+    const capRings = assertIntegerInRange(
+        primitive.capRings ?? DEFAULT_CAP_RINGS,
+        'component.primitive.capRings',
+        0,
+        64
+    );
+    const syncOppositeCap = primitive.syncOppositeCap === undefined
+        ? true
+        : assertBoolean(primitive.syncOppositeCap, 'component.primitive.syncOppositeCap');
+    let topCapRings = assertIntegerInRange(
+        primitive.topCapRings ?? capRings,
+        'component.primitive.topCapRings',
+        0,
+        64
+    );
+    let bottomCapRings = assertIntegerInRange(
+        primitive.bottomCapRings ?? (syncOppositeCap ? topCapRings : capRings),
+        'component.primitive.bottomCapRings',
+        0,
+        64
+    );
+    if (syncOppositeCap) {
+        if (bottomCapRings !== topCapRings) {
+            throw new Error('[SemanticMeshCompiler] syncOppositeCap=true requires topCapRings and bottomCapRings to match.');
+        }
+        bottomCapRings = topCapRings;
+    }
+    const capCenterFill = normalizeCylinderCapCenterFill(
+        primitive.capCenterFill ?? DEFAULT_CAP_CENTER_FILL,
+        'component.primitive.capCenterFill'
+    );
+    const topCapCenterFill = normalizeCylinderCapCenterFill(
+        primitive.topCapCenterFill ?? capCenterFill,
+        'component.primitive.topCapCenterFill'
+    );
+    let bottomCapCenterFill = normalizeCylinderCapCenterFill(
+        primitive.bottomCapCenterFill ?? (syncOppositeCap ? topCapCenterFill : capCenterFill),
+        'component.primitive.bottomCapCenterFill'
+    );
+    if (syncOppositeCap) {
+        if (bottomCapCenterFill !== topCapCenterFill) {
+            throw new Error(
+                '[SemanticMeshCompiler] syncOppositeCap=true requires topCapCenterFill and bottomCapCenterFill to match.'
+            );
+        }
+        bottomCapCenterFill = topCapCenterFill;
+    }
+
+    return Object.freeze({
+        uSegments,
+        vSegments,
+        uClosed,
+        vClosed,
+        uSeam,
+        capRings,
+        syncOppositeCap,
+        topCapRings,
+        bottomCapRings,
+        capCenterFill,
+        topCapCenterFill,
+        bottomCapCenterFill,
+        indexing: Object.freeze({
+            uOrder: 'ascending',
+            vOrder: 'top_to_bottom',
+            seamOrdering: 'u0_at_uSeam'
+        })
+    });
+}
+
+function resolveTubeParametricSpec(primitive) {
+    const adapter = PARAMETRIC_FAMILY_ADAPTERS.tube;
+    const uSegments = assertIntegerInRange(
+        getFirstDefined(primitive, adapter.uSegmentsAlias) ?? DEFAULT_CYLINDER_U_SEGMENTS,
+        'component.primitive.uSegments',
+        3,
+        256
+    );
+    const vSegments = assertIntegerInRange(
+        getFirstDefined(primitive, adapter.vSegmentsAlias) ?? DEFAULT_CYLINDER_V_SEGMENTS,
+        'component.primitive.vSegments',
+        1,
+        128
+    );
+
+    const uClosed = primitive.uClosed === undefined
+        ? adapter.defaults.uClosed
+        : assertBoolean(primitive.uClosed, 'component.primitive.uClosed');
+    const vClosed = primitive.vClosed === undefined
+        ? adapter.defaults.vClosed
+        : assertBoolean(primitive.vClosed, 'component.primitive.vClosed');
+    if (!uClosed) {
+        throw new Error('[SemanticMeshCompiler] component.primitive.uClosed=false is not supported for tube in v1.');
+    }
+    if (vClosed) {
+        throw new Error('[SemanticMeshCompiler] component.primitive.vClosed=true is not supported for tube in v1.');
+    }
+
+    const uSeam = normalizeSeamAngle(
+        getFirstDefined(primitive, adapter.uSeamAlias) ?? DEFAULT_GRID_U_SEAM,
+        'component.primitive.uSeam'
+    );
+
+    return Object.freeze({
+        uSegments,
+        vSegments,
+        uClosed,
+        vClosed,
+        uSeam,
+        indexing: Object.freeze({
+            uOrder: 'ascending',
+            vOrder: 'top_to_bottom',
+            seamOrdering: 'u0_at_uSeam'
+        })
+    });
+}
+
+function resolveTubePrimitiveRadii(primitive) {
+    const outerRadiusUniform = assertPositiveNumber(
+        primitive.outerRadius ?? DEFAULT_CYLINDER_RADIUS,
+        'component.primitive.outerRadius'
+    );
+    const outerRadiusTop = assertPositiveNumber(
+        primitive.outerRadiusTop ?? outerRadiusUniform,
+        'component.primitive.outerRadiusTop'
+    );
+    const outerRadiusBottom = assertPositiveNumber(
+        primitive.outerRadiusBottom ?? outerRadiusUniform,
+        'component.primitive.outerRadiusBottom'
+    );
+    const innerRadiusUniformRaw = primitive.innerRadius;
+    const innerRadiusTop = assertPositiveNumber(
+        primitive.innerRadiusTop ?? innerRadiusUniformRaw ?? (outerRadiusTop * DEFAULT_TUBE_INNER_RADIUS_RATIO),
+        'component.primitive.innerRadiusTop'
+    );
+    const innerRadiusBottom = assertPositiveNumber(
+        primitive.innerRadiusBottom ?? innerRadiusUniformRaw ?? (outerRadiusBottom * DEFAULT_TUBE_INNER_RADIUS_RATIO),
+        'component.primitive.innerRadiusBottom'
+    );
+    if (innerRadiusTop >= outerRadiusTop) {
+        throw new Error('[SemanticMeshCompiler] component.primitive.innerRadiusTop must be < component.primitive.outerRadiusTop.');
+    }
+    if (innerRadiusBottom >= outerRadiusBottom) {
+        throw new Error('[SemanticMeshCompiler] component.primitive.innerRadiusBottom must be < component.primitive.outerRadiusBottom.');
+    }
+    return Object.freeze({
+        outerRadiusTop,
+        outerRadiusBottom,
+        innerRadiusTop,
+        innerRadiusBottom
+    });
+}
+
+function composeUvVertexId(componentPath, u, v) {
+    return `${componentPath}.vertex.u${pad3(u)}.v${pad3(v)}`;
+}
+
+function composeUvEdgeId(componentPath, ua, va, ub, vb) {
+    return `${componentPath}.edge.u${pad3(ua)}.v${pad3(va)}.to.u${pad3(ub)}.v${pad3(vb)}`;
+}
+
+function composeUvFaceId(componentPath, u, v) {
+    return `${componentPath}.face.u${pad3(u)}.v${pad3(v)}`;
+}
+
+function composeCapVertexId(componentPath, side, ring, u) {
+    return `${componentPath}.vertex.cap.${side}.r${pad3(ring)}.u${pad3(u)}`;
+}
+
+function composeCapRingEdgeId(componentPath, side, ring, u, nextU) {
+    return `${componentPath}.edge.cap.${side}.r${pad3(ring)}.u${pad3(u)}.to.u${pad3(nextU)}`;
+}
+
+function composeCapRadialEdgeId(componentPath, side, outerRing, innerRing, u) {
+    return `${componentPath}.edge.cap.${side}.r${pad3(outerRing)}.u${pad3(u)}.to.r${pad3(innerRing)}.u${pad3(u)}`;
+}
+
+function composeCapFaceId(componentPath, side, ring, u) {
+    return `${componentPath}.face.cap.${side}.r${pad3(ring)}.u${pad3(u)}`;
+}
+
+function composeCapCenterVertexId(componentPath, side) {
+    return `${componentPath}.vertex.cap.${side}.center`;
+}
+
+function composeCapCenterEdgeId(componentPath, side, u) {
+    return `${componentPath}.edge.cap.${side}.center.u${pad3(u)}`;
+}
+
+function composeCapCenterFaceId(componentPath, side, u) {
+    return `${componentPath}.face.cap.${side}.center.u${pad3(u)}`;
+}
+
+function composeTubeVertexId(componentPath, surface, u, v) {
+    return `${componentPath}.vertex.${surface}.u${pad3(u)}.v${pad3(v)}`;
+}
+
+function composeTubeEdgeId(componentPath, surface, ua, va, ub, vb) {
+    return `${componentPath}.edge.${surface}.u${pad3(ua)}.v${pad3(va)}.to.u${pad3(ub)}.v${pad3(vb)}`;
+}
+
+function composeTubeFaceId(componentPath, surface, u, v) {
+    return `${componentPath}.face.${surface}.u${pad3(u)}.v${pad3(v)}`;
+}
+
+function composeTubeBridgeEdgeId(componentPath, ring, u) {
+    return `${componentPath}.edge.${ring}.u${pad3(u)}.bridge`;
+}
+
+function composeTubeRingFaceId(componentPath, ring, u) {
+    return `${componentPath}.face.${ring}.u${pad3(u)}`;
+}
+
 function createCylinderSeedState(componentPath, primitive, {
     faceAliasesByCanonical = new Map()
 } = {}) {
@@ -368,114 +749,452 @@ function createCylinderSeedState(componentPath, primitive, {
         primitive.height ?? primitive.size?.[1] ?? DEFAULT_CYLINDER_HEIGHT,
         'component.primitive.height'
     );
-    const radialSegments = assertIntegerInRange(
-        primitive.radialSegments ?? primitive.segments ?? DEFAULT_CYLINDER_SEGMENTS,
-        'component.primitive.radialSegments',
-        3,
-        256
-    );
+    const grid = resolveCylinderParametricSpec(primitive);
+    const uSegments = grid.uSegments;
+    const vSegments = grid.vSegments;
     const center = resolveCylinderPrimitiveCenter(primitive, height);
     const halfY = height * 0.5;
     const tau = Math.PI * 2;
 
-    const state = {
-        componentPath,
-        vertices: [],
-        edges: [],
-        faces: [],
-        vertexById: new Map(),
-        vertexNameById: new Map(),
-        edgeByPair: new Map(),
-        faceById: new Map(),
-        faceLabelById: new Map(),
-        faceByLabel: new Map(),
-        usedIds: new Set(),
-        fallbackEdgeSerial: 0,
-        opLog: []
+    const state = createSeedState(componentPath);
+
+    // Core parametric contract: u wraps around circumference; v goes from top (0) to bottom (vSegments).
+    const sideGrid = new Array(vSegments + 1);
+    for (let v = 0; v <= vSegments; v++) {
+        const vT = vSegments <= 0 ? 0 : (v / vSegments);
+        const y = center[1] + halfY - (vT * height);
+        const radius = radiusTop + ((radiusBottom - radiusTop) * vT);
+        const ring = new Array(uSegments);
+        for (let u = 0; u < uSegments; u++) {
+            const t = grid.uSeam + ((u / uSegments) * tau);
+            const c = Math.cos(t);
+            const s = Math.sin(t);
+            ring[u] = addVertex(state, {
+                id: composeUvVertexId(componentPath, u, v),
+                position: [
+                    center[0] + (c * radius),
+                    y,
+                    center[2] + (s * radius)
+                ],
+                name: `u${pad3(u)}.v${pad3(v)}`
+            }).id;
+        }
+        sideGrid[v] = ring;
+    }
+
+    for (let v = 0; v <= vSegments; v++) {
+        const ring = sideGrid[v];
+        for (let u = 0; u < uSegments; u++) {
+            const nextU = (u + 1) % uSegments;
+            ensureEdge(
+                state,
+                ring[u],
+                ring[nextU],
+                composeUvEdgeId(componentPath, u, v, nextU, v)
+            );
+            if (v < vSegments) {
+                ensureEdge(
+                    state,
+                    sideGrid[v][u],
+                    sideGrid[v + 1][u],
+                    composeUvEdgeId(componentPath, u, v, u, v + 1)
+                );
+            }
+        }
+    }
+
+    const firstSideFaceId = vSegments > 0 ? composeUvFaceId(componentPath, 0, 0) : '';
+    for (let v = 0; v < vSegments; v++) {
+        for (let u = 0; u < uSegments; u++) {
+            const nextU = (u + 1) % uSegments;
+            const canonical = vSegments === 1
+                ? `side.s${pad3(u)}`
+                : `side.v${pad3(v)}.s${pad3(u)}`;
+            addFace(state, {
+                id: composeUvFaceId(componentPath, u, v),
+                label: resolveFaceLabel(faceAliasesByCanonical, canonical),
+                canonicalLabel: canonical,
+                vertexIds: [
+                    sideGrid[v + 1][u],
+                    sideGrid[v][u],
+                    sideGrid[v][nextU],
+                    sideGrid[v + 1][nextU]
+                ]
+            });
+        }
+    }
+
+    const createCapInnerRings = (side, ringCount, y, radiusOuter) => {
+        const out = [];
+        for (let ring = 1; ring <= ringCount; ring++) {
+            const scale = (ringCount + 1 - ring) / (ringCount + 1);
+            const radius = radiusOuter * scale;
+            const ids = new Array(uSegments);
+            for (let u = 0; u < uSegments; u++) {
+                const t = grid.uSeam + ((u / uSegments) * tau);
+                const c = Math.cos(t);
+                const s = Math.sin(t);
+                ids[u] = addVertex(state, {
+                    id: composeCapVertexId(componentPath, side, ring, u),
+                    position: [
+                        center[0] + (c * radius),
+                        y,
+                        center[2] + (s * radius)
+                    ],
+                    name: `cap.${side}.r${pad3(ring)}.u${pad3(u)}`
+                }).id;
+            }
+            out.push(ids);
+        }
+        return out;
     };
 
-    const topIds = new Array(radialSegments);
-    const bottomIds = new Array(radialSegments);
-    for (let i = 0; i < radialSegments; i++) {
-        const t = (i / radialSegments) * tau;
-        const c = Math.cos(t);
-        const s = Math.sin(t);
+    const topRings = [sideGrid[0], ...createCapInnerRings('top', grid.topCapRings, center[1] + halfY, radiusTop)];
+    const bottomRings = [sideGrid[vSegments], ...createCapInnerRings('bottom', grid.bottomCapRings, center[1] - halfY, radiusBottom)];
 
-        const topName = `top.s${pad3(i)}`;
-        const bottomName = `bottom.s${pad3(i)}`;
-        const topId = composeVertexId(componentPath, topName);
-        const bottomId = composeVertexId(componentPath, bottomName);
+    const ensureCapEdges = (side, rings) => {
+        for (let ring = 0; ring < rings.length; ring++) {
+            const ringIds = rings[ring];
+            for (let u = 0; u < uSegments; u++) {
+                const nextU = (u + 1) % uSegments;
+                ensureEdge(
+                    state,
+                    ringIds[u],
+                    ringIds[nextU],
+                    composeCapRingEdgeId(componentPath, side, ring, u, nextU)
+                );
+                if (ring < rings.length - 1) {
+                    ensureEdge(
+                        state,
+                        rings[ring][u],
+                        rings[ring + 1][u],
+                        composeCapRadialEdgeId(componentPath, side, ring, ring + 1, u)
+                    );
+                }
+            }
+        }
+    };
 
-        addVertex(state, {
-            id: topId,
-            position: [
-                center[0] + (c * radiusTop),
-                center[1] + halfY,
-                center[2] + (s * radiusTop)
-            ],
-            name: topName
-        });
-        addVertex(state, {
-            id: bottomId,
-            position: [
-                center[0] + (c * radiusBottom),
-                center[1] - halfY,
-                center[2] + (s * radiusBottom)
-            ],
-            name: bottomName
-        });
+    ensureCapEdges('top', topRings);
+    ensureCapEdges('bottom', bottomRings);
 
-        topIds[i] = topId;
-        bottomIds[i] = bottomId;
+    for (let ring = 0; ring < topRings.length - 1; ring++) {
+        const outer = topRings[ring];
+        const inner = topRings[ring + 1];
+        for (let u = 0; u < uSegments; u++) {
+            const nextU = (u + 1) % uSegments;
+            const canonical = `top.r${pad3(ring)}.s${pad3(u)}`;
+            addFace(state, {
+                id: composeCapFaceId(componentPath, 'top', ring, u),
+                label: resolveFaceLabel(faceAliasesByCanonical, canonical),
+                canonicalLabel: canonical,
+                vertexIds: [outer[nextU], outer[u], inner[u], inner[nextU]]
+            });
+        }
     }
 
-    for (let i = 0; i < radialSegments; i++) {
-        const next = (i + 1) % radialSegments;
-        ensureEdge(
-            state,
-            topIds[i],
-            topIds[next],
-            `${componentPath}.edge.seed.ring_top.s${pad3(i)}`
-        );
-        ensureEdge(
-            state,
-            bottomIds[i],
-            bottomIds[next],
-            `${componentPath}.edge.seed.ring_bottom.s${pad3(i)}`
-        );
-        ensureEdge(
-            state,
-            topIds[i],
-            bottomIds[i],
-            `${componentPath}.edge.seed.column.s${pad3(i)}`
-        );
-
-        const sideCanonical = `side.s${pad3(i)}`;
-        addFace(state, {
-            id: composeFaceId(componentPath, sideCanonical),
-            label: resolveFaceLabel(faceAliasesByCanonical, sideCanonical),
-            canonicalLabel: sideCanonical,
-            vertexIds: [bottomIds[i], topIds[i], topIds[next], bottomIds[next]]
-        });
+    for (let ring = 0; ring < bottomRings.length - 1; ring++) {
+        const outer = bottomRings[ring];
+        const inner = bottomRings[ring + 1];
+        for (let u = 0; u < uSegments; u++) {
+            const nextU = (u + 1) % uSegments;
+            const canonical = `bottom.r${pad3(ring)}.s${pad3(u)}`;
+            addFace(state, {
+                id: composeCapFaceId(componentPath, 'bottom', ring, u),
+                label: resolveFaceLabel(faceAliasesByCanonical, canonical),
+                canonicalLabel: canonical,
+                vertexIds: [outer[u], outer[nextU], inner[nextU], inner[u]]
+            });
+        }
     }
 
-    addFace(state, {
-        id: composeFaceId(componentPath, 'top'),
-        label: resolveFaceLabel(faceAliasesByCanonical, 'top'),
-        canonicalLabel: 'top',
-        vertexIds: [...topIds].reverse()
-    });
-    addFace(state, {
-        id: composeFaceId(componentPath, 'bottom'),
-        label: resolveFaceLabel(faceAliasesByCanonical, 'bottom'),
-        canonicalLabel: 'bottom',
-        vertexIds: bottomIds
+    const closeCapCenter = (side, rings, fillMode, y) => {
+        const innerRing = rings[rings.length - 1];
+        if (fillMode === CYLINDER_CAP_CENTER_FILL.NGON) {
+            const faceId = composeFaceId(componentPath, side);
+            addFace(state, {
+                id: faceId,
+                label: resolveFaceLabel(faceAliasesByCanonical, side),
+                canonicalLabel: side,
+                vertexIds: side === 'top' ? [...innerRing].reverse() : [...innerRing]
+            });
+            return faceId;
+        }
+
+        const centerVertexId = addVertex(state, {
+            id: composeCapCenterVertexId(componentPath, side),
+            position: [center[0], y, center[2]],
+            name: `cap.${side}.center`
+        }).id;
+        const triIds = [];
+        for (let u = 0; u < uSegments; u++) {
+            const nextU = (u + 1) % uSegments;
+            const canonical = `${side}.center.s${pad3(u)}`;
+            const currentVertexId = innerRing[u];
+            ensureEdge(
+                state,
+                centerVertexId,
+                currentVertexId,
+                composeCapCenterEdgeId(componentPath, side, u)
+            );
+            triIds.push(addFace(state, {
+                id: composeCapCenterFaceId(componentPath, side, u),
+                label: resolveFaceLabel(faceAliasesByCanonical, canonical),
+                canonicalLabel: canonical,
+                vertexIds: side === 'top'
+                    ? [innerRing[nextU], innerRing[u], centerVertexId]
+                    : [innerRing[u], innerRing[nextU], centerVertexId]
+            }).id);
+        }
+        return triIds[0] ?? '';
+    };
+
+    const topFaceId = closeCapCenter(
+        'top',
+        topRings,
+        grid.topCapCenterFill,
+        center[1] + halfY
+    );
+    const bottomFaceId = closeCapCenter(
+        'bottom',
+        bottomRings,
+        grid.bottomCapCenterFill,
+        center[1] - halfY
+    );
+
+    state.parametric = Object.freeze({
+        contractVersion: MESH_PARAMETRIC_GRID_CONTRACT_VERSION,
+        family: 'cylinder',
+        adapter: Object.freeze({
+            name: 'cylinder',
+            aliases: Object.freeze({
+                radialSegments: 'uSegments',
+                axialSegments: 'vSegments',
+                seamAngle: 'uSeam'
+            })
+        }),
+        grid: Object.freeze({
+            uSegments: grid.uSegments,
+            vSegments: grid.vSegments,
+            uClosed: grid.uClosed,
+            vClosed: grid.vClosed,
+            uSeam: grid.uSeam,
+            indexSpace: PARAMETRIC_INDEX_SPACE
+        }),
+        extensions: Object.freeze({
+            capRings: grid.capRings,
+            syncOppositeCap: grid.syncOppositeCap,
+            topCapRings: grid.topCapRings,
+            bottomCapRings: grid.bottomCapRings,
+            capCenterFill: grid.capCenterFill,
+            topCapCenterFill: grid.topCapCenterFill,
+            bottomCapCenterFill: grid.bottomCapCenterFill
+        }),
+        idRules: Object.freeze({
+            canonicalDerivation: PARAMETRIC_CANONICAL_ID_DERIVATION,
+            retessellationPolicy: PARAMETRIC_RETESSELLATION_POLICY
+        })
     });
 
     state.seedFaceIds = Object.freeze({
-        sideStart: composeFaceId(componentPath, 'side.s000'),
-        top: composeFaceId(componentPath, 'top'),
-        bottom: composeFaceId(componentPath, 'bottom')
+        sideStart: firstSideFaceId,
+        top: topFaceId,
+        bottom: bottomFaceId
+    });
+    return state;
+}
+
+function createTubeSeedState(componentPath, primitive, {
+    faceAliasesByCanonical = new Map()
+} = {}) {
+    const radii = resolveTubePrimitiveRadii(primitive);
+    const height = assertPositiveNumber(
+        primitive.height ?? primitive.size?.[1] ?? DEFAULT_CYLINDER_HEIGHT,
+        'component.primitive.height'
+    );
+    const grid = resolveTubeParametricSpec(primitive);
+    const uSegments = grid.uSegments;
+    const vSegments = grid.vSegments;
+    const center = resolveTubePrimitiveCenter(primitive, height);
+    const halfY = height * 0.5;
+    const tau = Math.PI * 2;
+
+    const state = createSeedState(componentPath);
+    const outerGrid = new Array(vSegments + 1);
+    const innerGrid = new Array(vSegments + 1);
+    for (let v = 0; v <= vSegments; v++) {
+        const vT = vSegments <= 0 ? 0 : (v / vSegments);
+        const y = center[1] + halfY - (vT * height);
+        const outerRadius = radii.outerRadiusTop + ((radii.outerRadiusBottom - radii.outerRadiusTop) * vT);
+        const innerRadius = radii.innerRadiusTop + ((radii.innerRadiusBottom - radii.innerRadiusTop) * vT);
+        const outerRing = new Array(uSegments);
+        const innerRing = new Array(uSegments);
+        for (let u = 0; u < uSegments; u++) {
+            const t = grid.uSeam + ((u / uSegments) * tau);
+            const c = Math.cos(t);
+            const s = Math.sin(t);
+            outerRing[u] = addVertex(state, {
+                id: composeTubeVertexId(componentPath, 'outer', u, v),
+                position: [
+                    center[0] + (c * outerRadius),
+                    y,
+                    center[2] + (s * outerRadius)
+                ],
+                name: `outer.u${pad3(u)}.v${pad3(v)}`
+            }).id;
+            innerRing[u] = addVertex(state, {
+                id: composeTubeVertexId(componentPath, 'inner', u, v),
+                position: [
+                    center[0] + (c * innerRadius),
+                    y,
+                    center[2] + (s * innerRadius)
+                ],
+                name: `inner.u${pad3(u)}.v${pad3(v)}`
+            }).id;
+        }
+        outerGrid[v] = outerRing;
+        innerGrid[v] = innerRing;
+    }
+
+    const ensureSurfaceEdges = (surface, surfaceGrid) => {
+        for (let v = 0; v <= vSegments; v++) {
+            for (let u = 0; u < uSegments; u++) {
+                const nextU = (u + 1) % uSegments;
+                ensureEdge(
+                    state,
+                    surfaceGrid[v][u],
+                    surfaceGrid[v][nextU],
+                    composeTubeEdgeId(componentPath, surface, u, v, nextU, v)
+                );
+                if (v < vSegments) {
+                    ensureEdge(
+                        state,
+                        surfaceGrid[v][u],
+                        surfaceGrid[v + 1][u],
+                        composeTubeEdgeId(componentPath, surface, u, v, u, v + 1)
+                    );
+                }
+            }
+        }
+    };
+
+    ensureSurfaceEdges('outer', outerGrid);
+    ensureSurfaceEdges('inner', innerGrid);
+
+    for (let v = 0; v < vSegments; v++) {
+        for (let u = 0; u < uSegments; u++) {
+            const nextU = (u + 1) % uSegments;
+            const outerCanonical = vSegments === 1
+                ? `outer.s${pad3(u)}`
+                : `outer.v${pad3(v)}.s${pad3(u)}`;
+            addFace(state, {
+                id: composeTubeFaceId(componentPath, 'outer', u, v),
+                label: resolveFaceLabel(faceAliasesByCanonical, outerCanonical),
+                canonicalLabel: outerCanonical,
+                vertexIds: [
+                    outerGrid[v + 1][u],
+                    outerGrid[v][u],
+                    outerGrid[v][nextU],
+                    outerGrid[v + 1][nextU]
+                ]
+            });
+
+            const innerCanonical = vSegments === 1
+                ? `inner.s${pad3(u)}`
+                : `inner.v${pad3(v)}.s${pad3(u)}`;
+            addFace(state, {
+                id: composeTubeFaceId(componentPath, 'inner', u, v),
+                label: resolveFaceLabel(faceAliasesByCanonical, innerCanonical),
+                canonicalLabel: innerCanonical,
+                vertexIds: [
+                    innerGrid[v + 1][nextU],
+                    innerGrid[v][nextU],
+                    innerGrid[v][u],
+                    innerGrid[v + 1][u]
+                ]
+            });
+        }
+    }
+
+    for (let u = 0; u < uSegments; u++) {
+        const nextU = (u + 1) % uSegments;
+        ensureEdge(
+            state,
+            outerGrid[0][u],
+            innerGrid[0][u],
+            composeTubeBridgeEdgeId(componentPath, 'top_ring', u)
+        );
+        ensureEdge(
+            state,
+            outerGrid[vSegments][u],
+            innerGrid[vSegments][u],
+            composeTubeBridgeEdgeId(componentPath, 'bottom_ring', u)
+        );
+
+        const topCanonical = `top_ring.s${pad3(u)}`;
+        addFace(state, {
+            id: composeTubeRingFaceId(componentPath, 'top_ring', u),
+            label: resolveFaceLabel(faceAliasesByCanonical, topCanonical),
+            canonicalLabel: topCanonical,
+            vertexIds: [
+                outerGrid[0][nextU],
+                outerGrid[0][u],
+                innerGrid[0][u],
+                innerGrid[0][nextU]
+            ]
+        });
+
+        const bottomCanonical = `bottom_ring.s${pad3(u)}`;
+        addFace(state, {
+            id: composeTubeRingFaceId(componentPath, 'bottom_ring', u),
+            label: resolveFaceLabel(faceAliasesByCanonical, bottomCanonical),
+            canonicalLabel: bottomCanonical,
+            vertexIds: [
+                outerGrid[vSegments][u],
+                outerGrid[vSegments][nextU],
+                innerGrid[vSegments][nextU],
+                innerGrid[vSegments][u]
+            ]
+        });
+    }
+
+    state.parametric = Object.freeze({
+        contractVersion: MESH_PARAMETRIC_GRID_CONTRACT_VERSION,
+        family: 'tube',
+        adapter: Object.freeze({
+            name: 'tube',
+            aliases: Object.freeze({
+                radialSegments: 'uSegments',
+                axialSegments: 'vSegments',
+                seamAngle: 'uSeam'
+            })
+        }),
+        grid: Object.freeze({
+            uSegments: grid.uSegments,
+            vSegments: grid.vSegments,
+            uClosed: grid.uClosed,
+            vClosed: grid.vClosed,
+            uSeam: grid.uSeam,
+            indexSpace: PARAMETRIC_INDEX_SPACE
+        }),
+        dimensions: Object.freeze({
+            outerRadiusTop: radii.outerRadiusTop,
+            outerRadiusBottom: radii.outerRadiusBottom,
+            innerRadiusTop: radii.innerRadiusTop,
+            innerRadiusBottom: radii.innerRadiusBottom,
+            height
+        }),
+        idRules: Object.freeze({
+            canonicalDerivation: PARAMETRIC_CANONICAL_ID_DERIVATION,
+            retessellationPolicy: PARAMETRIC_RETESSELLATION_POLICY
+        })
+    });
+
+    state.seedFaceIds = Object.freeze({
+        outerStart: composeTubeFaceId(componentPath, 'outer', 0, 0),
+        innerStart: composeTubeFaceId(componentPath, 'inner', 0, 0),
+        topRingStart: composeTubeRingFaceId(componentPath, 'top_ring', 0),
+        bottomRingStart: composeTubeRingFaceId(componentPath, 'bottom_ring', 0)
     });
     return state;
 }
@@ -648,6 +1367,7 @@ function buildCompiledObject(state, {
             rotation: freezeVec3(transform.rotation),
             scale: freezeVec3(transform.scale)
         }),
+        ...(state.parametric ? { parametric: state.parametric } : {}),
         seedFaceIds: state.seedFaceIds ?? Object.freeze({}),
         operationLineage: Object.freeze([...state.opLog])
     });
@@ -679,7 +1399,13 @@ function parseComponent(rawComponent, componentIndex, materialsById) {
         primitive.type,
         `authoring.components[${componentIndex}].primitive.type`
     );
-    if (primitiveType !== 'box' && primitiveType !== 'cylinder') {
+    const familyAdapter = PARAMETRIC_FAMILY_ADAPTERS[primitiveType] ?? null;
+    if (familyAdapter && !familyAdapter.executable) {
+        throw new Error(
+            `[SemanticMeshCompiler] Primitive type "${primitiveType}" has a declared parametric adapter but is not executable in this pass.`
+        );
+    }
+    if (!PRIMITIVE_COMPILER_REGISTRY.has(primitiveType)) {
         throw new Error(`[SemanticMeshCompiler] Unsupported primitive type "${primitiveType}".`);
     }
     const transformRaw = assertObject(
@@ -692,9 +1418,15 @@ function parseComponent(rawComponent, componentIndex, materialsById) {
         scale: sanitizeVec3(transformRaw.scale, `authoring.components[${componentIndex}].transform.scale`, DEFAULT_SCALE, { strictlyPositive: true })
     });
 
-    const state = primitiveType === 'box'
-        ? createBoxSeedState(componentPath, primitive, { faceAliasesByCanonical })
-        : createCylinderSeedState(componentPath, primitive, { faceAliasesByCanonical });
+    const compilePrimitive = PRIMITIVE_COMPILER_REGISTRY.get(primitiveType);
+    if (typeof compilePrimitive !== 'function') {
+        throw new Error(`[SemanticMeshCompiler] Missing primitive compiler for "${primitiveType}".`);
+    }
+    const state = compilePrimitive({
+        componentPath,
+        primitive,
+        faceAliasesByCanonical
+    });
     applyOperations(state, component.operations ?? []);
 
     return buildCompiledObject(state, {
@@ -729,7 +1461,11 @@ export function compileSemanticAuthoringDocument(rawAuthoring, {
         idPolicy: Object.freeze({
             topologyChangePolicy: TOPOLOGY_CHANGE_POLICY,
             extrusionCapIdentity: EXTRUSION_CAP_ID_POLICY,
-            ambiguousLoopFallback: AMBIGUOUS_LOOP_ID_FALLBACK
+            ambiguousLoopFallback: AMBIGUOUS_LOOP_ID_FALLBACK,
+            parametricGridContract: MESH_PARAMETRIC_GRID_CONTRACT_VERSION,
+            parametricCanonicalDerivation: PARAMETRIC_CANONICAL_ID_DERIVATION,
+            parametricIndexSpace: PARAMETRIC_INDEX_SPACE,
+            retessellationPolicy: PARAMETRIC_RETESSELLATION_POLICY
         }),
         objects: Object.freeze(objects)
     });

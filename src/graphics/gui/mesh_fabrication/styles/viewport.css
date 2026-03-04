@@ -1,0 +1,291 @@
+.mesh-fab-viewport-shell {
+    position: relative;
+    min-height: 0;
+    pointer-events: auto;
+    background:
+        radial-gradient(120% 100% at 50% 0%, rgba(184, 189, 197, 0.2), rgba(94, 101, 114, 0.2) 54%, rgba(58, 64, 74, 0.2) 100%),
+        linear-gradient(180deg, #5d636f 0%, #4f5662 38%, #3e454f 100%);
+}
+
+.mesh-fab-viewport-stage {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: auto;
+}
+
+.mesh-fab-viewport-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.mesh-fab-view-frame {
+    position: absolute;
+    --mesh-fab-ruler-left: 24px;
+    --mesh-fab-ruler-bottom: 24px;
+    box-sizing: border-box;
+    border: 2px solid rgba(229, 236, 245, 0.28);
+    border-radius: 8px;
+    transition: border-color 110ms ease, box-shadow 110ms ease;
+}
+
+.mesh-fab-view-frame.is-hovered {
+    border-color: rgba(87, 205, 255, 0.96);
+    box-shadow: 0 0 0 1px rgba(87, 205, 255, 0.4) inset;
+}
+
+.mesh-fab-view-label {
+    position: absolute;
+    left: 8px;
+    top: 8px;
+    padding: 3px 7px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: rgba(242, 245, 251, 0.94);
+    background: rgba(13, 17, 24, 0.56);
+}
+
+.mesh-fab-view-frame.has-rulers .mesh-fab-view-label {
+    left: calc(8px + var(--mesh-fab-ruler-left));
+}
+
+.mesh-fab-view-status {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    padding: 4px 7px;
+    border-radius: 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+    background: rgba(13, 17, 24, 0.6);
+}
+
+.mesh-fab-view-frame.has-rulers .mesh-fab-view-status {
+    left: calc(8px + var(--mesh-fab-ruler-left));
+    bottom: calc(8px + var(--mesh-fab-ruler-bottom));
+}
+
+.mesh-fab-view-frame.is-orthographic .mesh-fab-view-status {
+    left: min(calc(8px + var(--mesh-fab-ruler-left) + 92px), 45%);
+}
+
+.mesh-fab-view-status-canonical,
+.mesh-fab-view-status-authored {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mesh-fab-view-status-canonical {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    color: rgba(198, 227, 255, 0.97);
+}
+
+.mesh-fab-view-status-authored {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: rgba(240, 246, 255, 0.92);
+}
+
+.mesh-fab-view-ruler {
+    position: absolute;
+    display: none;
+    pointer-events: none;
+    border-radius: 4px;
+    border: 1px solid rgba(214, 228, 246, 0.14);
+    background: rgba(12, 17, 24, 0.66);
+    overflow: hidden;
+}
+
+.mesh-fab-view-ruler.is-visible {
+    display: block;
+}
+
+.mesh-fab-view-ruler-bottom {
+    left: var(--mesh-fab-ruler-left);
+    right: 0;
+    bottom: 0;
+    height: var(--mesh-fab-ruler-bottom);
+    background:
+        repeating-linear-gradient(
+            90deg,
+            rgba(211, 225, 245, 0.26) 0px,
+            rgba(211, 225, 245, 0.26) 1px,
+            rgba(12, 17, 24, 0) 1px,
+            rgba(12, 17, 24, 0) 12px
+        ),
+        rgba(12, 17, 24, 0.66);
+}
+
+.mesh-fab-view-ruler-left {
+    left: 0;
+    top: 0;
+    bottom: var(--mesh-fab-ruler-bottom);
+    width: var(--mesh-fab-ruler-left);
+    background:
+        repeating-linear-gradient(
+            180deg,
+            rgba(211, 225, 245, 0.26) 0px,
+            rgba(211, 225, 245, 0.26) 1px,
+            rgba(12, 17, 24, 0) 1px,
+            rgba(12, 17, 24, 0) 12px
+        ),
+        rgba(12, 17, 24, 0.66);
+}
+
+.mesh-fab-view-ruler-axis {
+    position: absolute;
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    color: rgba(187, 220, 255, 0.96);
+}
+
+.mesh-fab-view-ruler-bottom .mesh-fab-view-ruler-axis {
+    left: 50%;
+    top: 2px;
+    transform: translateX(-50%);
+}
+
+.mesh-fab-view-ruler-left .mesh-fab-view-ruler-axis {
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%) rotate(-90deg);
+}
+
+.mesh-fab-view-ruler-bound {
+    position: absolute;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    color: rgba(237, 244, 253, 0.86);
+    opacity: 0.82;
+    letter-spacing: 0.02em;
+    pointer-events: none;
+}
+
+.mesh-fab-view-ruler-bottom .mesh-fab-view-ruler-bound-start {
+    left: 3px;
+    bottom: 2px;
+}
+
+.mesh-fab-view-ruler-bottom .mesh-fab-view-ruler-bound-end {
+    right: 3px;
+    bottom: 2px;
+}
+
+.mesh-fab-view-ruler-left .mesh-fab-view-ruler-bound {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+}
+
+.mesh-fab-view-ruler-left .mesh-fab-view-ruler-bound-start {
+    right: 2px;
+    top: 3px;
+}
+
+.mesh-fab-view-ruler-left .mesh-fab-view-ruler-bound-end {
+    right: 2px;
+    bottom: 3px;
+}
+
+.mesh-fab-view-ruler-origin {
+    position: absolute;
+    display: none;
+    color: rgba(255, 231, 136, 0.96);
+    font-size: 8px;
+    font-weight: 800;
+    line-height: 1;
+    pointer-events: none;
+    overflow: visible;
+    white-space: nowrap;
+}
+
+.mesh-fab-view-ruler-origin.is-visible {
+    display: inline-block;
+}
+
+.mesh-fab-view-ruler-bottom .mesh-fab-view-ruler-origin {
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    border-left: 1px solid rgba(255, 214, 92, 0.96);
+    transform: translateX(-0.5px);
+    padding-left: 3px;
+    padding-top: 12px;
+}
+
+.mesh-fab-view-ruler-left .mesh-fab-view-ruler-origin {
+    left: 0;
+    right: 0;
+    height: 1px;
+    border-top: 1px solid rgba(255, 214, 92, 0.96);
+    transform: translateY(-0.5px);
+    padding-left: 2px;
+    padding-top: 2px;
+}
+
+.mesh-fab-view-ruler-bottom .mesh-fab-view-ruler-origin,
+.mesh-fab-view-ruler-left .mesh-fab-view-ruler-origin {
+    background: transparent;
+}
+
+.mesh-fab-view-ruler-guide {
+    position: absolute;
+    display: none;
+    pointer-events: none;
+    z-index: 3;
+    background: rgba(122, 211, 255, 0.92);
+    box-shadow: 0 0 0 1px rgba(8, 13, 19, 0.4);
+}
+
+.mesh-fab-view-ruler-guide.is-visible {
+    display: block;
+}
+
+.mesh-fab-view-ruler-guide-vertical {
+    top: 0;
+    bottom: var(--mesh-fab-ruler-bottom);
+    width: 1px;
+    transform: translateX(-0.5px);
+}
+
+.mesh-fab-view-ruler-guide-horizontal {
+    left: var(--mesh-fab-ruler-left);
+    right: 0;
+    height: 1px;
+    transform: translateY(-0.5px);
+}
+
+.mesh-fab-view-ruler-readout {
+    position: absolute;
+    display: none;
+    z-index: 4;
+    pointer-events: none;
+    padding: 2px 6px;
+    border-radius: 6px;
+    border: 1px solid rgba(129, 214, 255, 0.52);
+    background: rgba(8, 12, 18, 0.84);
+    color: rgba(228, 242, 255, 0.96);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.mesh-fab-view-ruler-readout.is-visible {
+    display: inline-block;
+}
+

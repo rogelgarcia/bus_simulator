@@ -1,0 +1,43 @@
+{
+  "objectId": "part.box",
+  "vertexIds": [
+    "part.box.vertex.seed.lbb",
+    "part.box.vertex.seed.rbb",
+    "part.box.vertex.seed.rtb",
+    "part.box.vertex.seed.ltb",
+    "part.box.vertex.seed.lbf",
+    "part.box.vertex.seed.rbf",
+    "part.box.vertex.seed.rtf",
+    "part.box.vertex.seed.ltf"
+  ],
+  "edgeIds": [
+    "part.box.edge.seed.lbf_rbf",
+    "part.box.edge.seed.rbf_rtf",
+    "part.box.edge.seed.ltf_rtf",
+    "part.box.edge.seed.lbf_ltf",
+    "part.box.edge.seed.lbb_rbb",
+    "part.box.edge.seed.lbb_ltb",
+    "part.box.edge.seed.ltb_rtb",
+    "part.box.edge.seed.rbb_rtb",
+    "part.box.edge.seed.lbb_lbf",
+    "part.box.edge.seed.ltb_ltf",
+    "part.box.edge.seed.rtb_rtf",
+    "part.box.edge.seed.rbb_rbf"
+  ],
+  "faceIds": [
+    "part.box.face.seed.front",
+    "part.box.face.seed.back",
+    "part.box.face.seed.left",
+    "part.box.face.seed.right",
+    "part.box.face.seed.top",
+    "part.box.face.seed.bottom"
+  ],
+  "canonicalFaceLabels": [
+    "front",
+    "back",
+    "left",
+    "right",
+    "top",
+    "bottom"
+  ]
+}

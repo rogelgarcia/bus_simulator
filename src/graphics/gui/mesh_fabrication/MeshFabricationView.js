@@ -2,14 +2,40 @@
 // Mesh fabrication workspace view: UI shell, multi-camera viewport presets, and camera interactions.
 import * as THREE from 'three';
 import { createMaterialSymbolIcon, setIconOnlyButtonLabel } from '../shared/materialSymbols.js';
+import { createToolbarGroup } from './ui/toolbarGroup.js';
+import { createOrbitModeButton } from './ui/controls/orbitModeButton.js';
+import { createSelectModeButton } from './ui/controls/selectModeButton.js';
+import { createAutoOrbitButton } from './ui/controls/autoOrbitButton.js';
+import { createDisplayModeControl } from './ui/controls/displayModeControl.js';
+import { createTessellationControl } from './ui/controls/tessellationControl.js';
+import { createViewsComboControl } from './ui/controls/viewsComboControl.js';
+import { createOverlaysComboControl } from './ui/controls/overlaysComboControl.js';
+import { createLiveToggleControl } from './ui/controls/liveToggleControl.js';
 import {
+    DISPLAY_LOD_POLICY,
+    DISPLAY_LOD_TRIANGLE_BUDGETS,
+    DISPLAY_SMOOTHING_MODE,
+    DISPLAY_WIRE_SOURCE,
     LIVE_MESH_POLL_INTERVAL_MS,
     buildObjTextFromLiveMesh,
     buildThreeGroupFromLiveMesh,
+    normalizeDisplayMeshBuildConfig,
     parseLiveMeshDocument,
     resolveLiveMeshEndpoint,
     resolveLiveMeshStaticFileUrl
 } from './liveMeshHandoff.js';
+import { createLiveMeshFileLoader } from './file_loader/index.js';
+import { createMeshRuntimeStateStore } from './mesh_state/meshRuntimeStateStore.js';
+import { createViewInteractionStateStore } from './view_state/viewInteractionStateStore.js';
+import { configureRaycasterThresholds, pickTileFromFrames, rankTopologyHits } from './picking/index.js';
+import {
+    applyPerspectiveOrbitToCamera,
+    configureOrthoCameraToBounds,
+    panPerspectiveOrbitTarget
+} from './services/cameraController.js';
+import { buildTopologyHoverStatus } from './services/contextMenuStatusService.js';
+import { createOverlayRenderManager } from './services/overlayRenderManager.js';
+import { resolveTileViewportCssPixels } from './services/viewportLayoutManager.js';
 import {
     MESH_AI_INTERACTION_VERSION,
     MESH_AI_OPERATION_SCOPE_V1,
@@ -30,7 +56,37 @@ const AI_SCOPE_LABEL = 'V1 active: transform/material/boolean. Hooks: creation, 
 const AXIS_GIZMO_MAIN_SIZE = 126;
 const AXIS_GIZMO_AUX_SIZE = 94;
 const AXIS_GIZMO_MARGIN = 10;
+const ORTHO_RULER_LEFT_PX = 24;
+const ORTHO_RULER_BOTTOM_PX = 24;
+const ORTHO_RULER_EPSILON = 1e-4;
 const TOPOLOGY_HOVER_ORANGE = 0xff9a2f;
+const MIN_PERSPECTIVE_ORBIT_RADIUS = 0.75;
+const MAX_PERSPECTIVE_ORBIT_RADIUS = 90;
+const MIN_AUX_ZOOM = 0.35;
+const MAX_AUX_ZOOM = 24;
+const MIN_TESSELLATION_U_SEGMENTS = 3;
+const MAX_TESSELLATION_U_SEGMENTS = 256;
+const MIN_TESSELLATION_V_SEGMENTS = 1;
+const MAX_TESSELLATION_V_SEGMENTS = 128;
+const DEFAULT_TESSELLATION_FALLBACK_U_SEGMENTS = 24;
+const DEFAULT_TESSELLATION_FALLBACK_V_SEGMENTS = 1;
+const MIN_TESSELLATION_MULTIPLIER = 0.1;
+const MAX_TESSELLATION_MULTIPLIER = 8;
+const TESSELLATION_MULTIPLIER_STEP = 0.1;
+const DEFAULT_TESSELLATION_U_MULTIPLIER = 1;
+const DEFAULT_TESSELLATION_V_MULTIPLIER = 1;
+const TESSELLATION_HINT_TOOLTIP = 'Prefer authoring each mesh with the intended tessellation in source; use these controls for preview/adjustments.';
+const TESSELLATION_SECTION_14_LABEL = 'Section 14 - Authoring';
+const TESSELLATION_SECTION_15_LABEL = 'Section 15 - Display';
+const TESSELLATION_SECTION_15_TOOLTIP = 'Display-only controls (section 15). These do not change canonical topology.';
+const DISPLAY_ADAPTIVE_MIN_ERROR_PX = 4;
+const DISPLAY_ADAPTIVE_MAX_ERROR_PX = 64;
+const DISPLAY_ADAPTIVE_ERROR_STEP = 1;
+const DISPLAY_LOD_TOOLTIP = Object.freeze({
+    [DISPLAY_LOD_POLICY.NEAR]: `High detail budget (${DISPLAY_LOD_TRIANGLE_BUDGETS[DISPLAY_LOD_POLICY.NEAR]} tris)`,
+    [DISPLAY_LOD_POLICY.MEDIUM]: `Balanced detail budget (${DISPLAY_LOD_TRIANGLE_BUDGETS[DISPLAY_LOD_POLICY.MEDIUM]} tris)`,
+    [DISPLAY_LOD_POLICY.FAR]: `Lower detail budget (${DISPLAY_LOD_TRIANGLE_BUDGETS[DISPLAY_LOD_POLICY.FAR]} tris)`
+});
 
 const VIEW_LAYOUT_PRESETS = Object.freeze([
     Object.freeze({
@@ -121,6 +177,36 @@ function clamp(value, min, max) {
     const num = Number(value);
     if (!Number.isFinite(num)) return min;
     return Math.max(min, Math.min(max, num));
+}
+
+function clampInt(value, min, max) {
+    const num = Math.round(Number(value));
+    if (!Number.isFinite(num)) return min;
+    return Math.max(min, Math.min(max, num));
+}
+
+function snapClosedCylinderUSegments(value, min, max) {
+    let snapped = clampInt(value, min, max);
+    if ((snapped % 2) === 0) return snapped;
+    if (snapped + 1 <= max) return snapped + 1;
+    if (snapped - 1 >= min) return snapped - 1;
+    return snapped;
+}
+
+function normalizeTessellationMultiplier(value) {
+    const raw = Number(value);
+    if (!Number.isFinite(raw)) return DEFAULT_TESSELLATION_U_MULTIPLIER;
+    const bounded = clamp(raw, MIN_TESSELLATION_MULTIPLIER, MAX_TESSELLATION_MULTIPLIER);
+    const snapped = Math.round(bounded / TESSELLATION_MULTIPLIER_STEP) * TESSELLATION_MULTIPLIER_STEP;
+    return Number(snapped.toFixed(2));
+}
+
+function formatTessellationMultiplier(value) {
+    const normalized = normalizeTessellationMultiplier(value);
+    if (Math.abs(normalized - Math.round(normalized)) <= 0.000001) {
+        return String(Math.round(normalized));
+    }
+    return String(normalized);
 }
 
 function getPresetById(presetId) {
@@ -238,6 +324,19 @@ function getRecentOperationLines(operationLog) {
     });
 }
 
+function getLatestBooleanKernelError(operationLog) {
+    const operations = Array.isArray(operationLog?.operations) ? operationLog.operations : [];
+    for (let i = operations.length - 1; i >= 0; i--) {
+        const op = operations[i];
+        const type = String(op?.command?.type ?? '').trim();
+        const status = String(op?.status ?? '').trim();
+        if (status !== 'error') continue;
+        if (type !== 'boolean_union' && type !== 'boolean_subtract' && type !== 'boolean_intersect') continue;
+        return op;
+    }
+    return null;
+}
+
 function cloneJsonValue(value) {
     if (typeof structuredClone === 'function') return structuredClone(value);
     return JSON.parse(JSON.stringify(value));
@@ -249,6 +348,13 @@ function formatVector3Label(value) {
     const z = Number(value?.z);
     const formatAxis = (num) => (Number.isFinite(num) ? num.toFixed(3) : '0.000');
     return `${formatAxis(x)}, ${formatAxis(y)}, ${formatAxis(z)}`;
+}
+
+function formatMetersLabel(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '0 m';
+    const snapped = Math.round(num * 1000) / 1000;
+    return `${snapped.toFixed(3)} m`;
 }
 
 function createPivotCheckerTexture() {
@@ -354,6 +460,10 @@ export class MeshFabricationView {
         this._orthoBaseSpan = 16;
         this._orthoDistance = 18;
         this._orthoCameras = new Map();
+        this._modelBounds = new THREE.Box3(
+            new THREE.Vector3(-2, 0, -2),
+            new THREE.Vector3(2, 3, 2)
+        );
         this._modelSize = new THREE.Vector3(4, 4, 4);
         this._modelCenter = new THREE.Vector3(0, 0, 0);
 
@@ -362,7 +472,7 @@ export class MeshFabricationView {
         this._orbitPitch = 0.55;
         this._orbitRadius = 16;
         this._autoOrbitEnabled = false;
-        this._autoOrbitSpeedRadPerSec = 0.36;
+        this._autoOrbitSpeedRadPerSec = 0.2016;
         this._autoOrbitReturnState = null;
         this._drag = null;
         this._pivotPosition = new THREE.Vector3(0, 0, 0);
@@ -379,6 +489,9 @@ export class MeshFabricationView {
         this._tileStatusById = new Map();
         this._tileStatusElementById = new Map();
         this._tileHoverHitById = new Map();
+        this._tileRulerElementById = new Map();
+        this._tileRulerMetricsById = new Map();
+        this._activeRulerHover = null;
         this._topologyCanonicalById = new Map();
         this._topologyAuthoredById = new Map();
         this._topologyWorldVertexById = new Map();
@@ -399,6 +512,34 @@ export class MeshFabricationView {
         this._displayModeComboPopup = null;
         this._displayModeComboPreviewHost = null;
         this._displayModeComboOpen = false;
+        this._tessellationControlsRoot = null;
+        this._tessellationControlsButton = null;
+        this._tessellationControlsPopup = null;
+        this._tessellationControlsToggleRow = null;
+        this._tessellationControlsUMultiplierInput = null;
+        this._tessellationControlsVMultiplierInput = null;
+        this._tessellationControlsStatus = null;
+        this._tessellationControlsDisplayModeSelect = null;
+        this._tessellationControlsSubdivisionInput = null;
+        this._tessellationControlsAdaptiveRow = null;
+        this._tessellationControlsAdaptiveErrorInput = null;
+        this._tessellationControlsWireSourceSelect = null;
+        this._tessellationControlsLodSelect = null;
+        this._tessellationControlsDisplayStatus = null;
+        this._tessellationControlsOpen = false;
+        this._tessellationAdjustEnabled = false;
+        this._tessellationUMultiplier = DEFAULT_TESSELLATION_U_MULTIPLIER;
+        this._tessellationVMultiplier = DEFAULT_TESSELLATION_V_MULTIPLIER;
+        this._tessellationSourceHasTargets = false;
+        this._tessellationSourceSummary = 'No parametric authoring targets';
+        this._displaySmoothingMode = DISPLAY_SMOOTHING_MODE.FLAT;
+        this._displaySubdivisionLevel = 0;
+        this._displayWireSource = DISPLAY_WIRE_SOURCE.CANONICAL;
+        this._displayLodPolicy = DISPLAY_LOD_POLICY.MEDIUM;
+        this._displayAdaptiveSubdivisionEnabled = false;
+        this._displayAdaptiveErrorBudgetPx = 16;
+        this._displayAdaptiveResolvedSubdivisionLevel = 0;
+        this._displayDerivedContract = null;
         this._layoutComboRoot = null;
         this._layoutComboButton = null;
         this._layoutComboPopup = null;
@@ -413,8 +554,10 @@ export class MeshFabricationView {
         this._overlayOptionsFaceCentersRow = null;
         this._overlayOptionsOccludedFaceCentersRow = null;
         this._overlayOptionsOccludedWiresRow = null;
+        this._overlayOptionsRulersRow = null;
         this._overlayOptionsOpen = false;
         this._axisArrowsEnabled = true;
+        this._rulersEnabled = false;
         this._pivotOverlayEnabled = false;
         this._topologyHoverHighlightEnabled = true;
         this._wireFaceCentersEnabled = true;
@@ -476,6 +619,15 @@ export class MeshFabricationView {
         this._meshSyncAbortController = null;
         this._meshStaticBootstrapTried = false;
         this._liveMeshParsedDocument = null;
+        this._liveMeshLoader = null;
+        this._meshRuntimeState = createMeshRuntimeStateStore();
+        this._viewInteractionState = createViewInteractionStateStore({
+            layoutPresetId: this._layoutPresetId,
+            displayMode: this._displayMode,
+            userMode: this._userMode
+        });
+
+        this._overlayRenderManager = createOverlayRenderManager();
 
         this._aiBatchSerial = 0;
         this._aiAcceptedBatches = [];
@@ -493,7 +645,10 @@ export class MeshFabricationView {
         ].join('\n');
 
         this._surfaceMeshes = [];
+        this._canonicalSurfaceMeshes = [];
         this._polygonWireOverlay = null;
+        this._polygonWireCanonicalOverlay = null;
+        this._polygonWireDisplayOverlay = null;
         this._vertexOverlay = null;
         this._faceCenterOverlay = null;
         this._ownedGeometries = [];
@@ -506,6 +661,7 @@ export class MeshFabricationView {
 
         this._onFrame = (frame) => {
             this._updateAutoOrbit(frame?.dt ?? 0);
+            this._updateAdaptiveDisplaySubdivisionFromCamera();
             this._renderMultiView();
         };
         this._onWindowResize = () => this._applyViewportSize();
@@ -525,8 +681,19 @@ export class MeshFabricationView {
         this._onDownloadObjClick = () => this._downloadCurrentMeshObj();
         this._onLiveStatusToggle = () => this._toggleLiveMeshSync();
         this._onAutoOrbitToggle = () => this._toggleAutoOrbitCamera();
+        this._onTessellationControlsToggle = () => this._setTessellationControlsOpen(!this._tessellationControlsOpen);
+        this._onTessellationAdjustToggle = () => this._toggleTessellationAdjust();
+        this._onTessellationUMultiplierInput = (e) => this._handleTessellationUMultiplierInput(e);
+        this._onTessellationVMultiplierInput = (e) => this._handleTessellationVMultiplierInput(e);
+        this._onDisplaySmoothingModeChange = (e) => this._handleDisplaySmoothingModeChange(e);
+        this._onDisplaySubdivisionInput = (e) => this._handleDisplaySubdivisionInput(e);
+        this._onDisplayAdaptiveToggle = () => this._toggleDisplayAdaptiveSubdivision();
+        this._onDisplayAdaptiveErrorInput = (e) => this._handleDisplayAdaptiveErrorInput(e);
+        this._onDisplayWireSourceChange = (e) => this._handleDisplayWireSourceChange(e);
+        this._onDisplayLodPolicyChange = (e) => this._handleDisplayLodPolicyChange(e);
         this._onOverlayOptionsToggle = () => this._setOverlayOptionsOpen(!this._overlayOptionsOpen);
         this._onAxisArrowsToggle = () => this._toggleAxisArrows();
+        this._onRulersToggle = () => this._toggleRulers();
         this._onPivotOverlayToggle = () => this._togglePivotOverlay();
         this._onHoverHighlightToggle = () => this._toggleHoverHighlight();
         this._onWireFaceCentersToggle = () => this._toggleWireFaceCenters();
@@ -585,25 +752,10 @@ export class MeshFabricationView {
         const topBar = document.createElement('div');
         topBar.className = 'mesh-fab-topbar';
 
-        const userGroup = this._createToolbarGroup('User');
-        const orbitBtn = this._createIconButton({
-            label: 'Orbit camera mode',
-            icon: '3d_rotation',
-            caption: 'Orbit',
-            onClick: () => this._setUserMode('orbit')
-        });
-        const selectBtn = this._createIconButton({
-            label: 'Select mode',
-            icon: 'ads_click',
-            caption: 'Select',
-            onClick: () => this._setUserMode('select')
-        });
-        const autoOrbitBtn = this._createIconButton({
-            label: 'Toggle orbit camera',
-            icon: 'autorenew',
-            caption: 'OrbitCam',
-            onClick: this._onAutoOrbitToggle
-        });
+        const userGroup = createToolbarGroup('User');
+        const orbitBtn = createOrbitModeButton(this);
+        const selectBtn = createSelectModeButton(this);
+        const autoOrbitBtn = createAutoOrbitButton(this);
         this._buttonByUserMode.set('orbit', orbitBtn);
         this._buttonByUserMode.set('select', selectBtn);
         userGroup.buttons.appendChild(orbitBtn);
@@ -613,44 +765,30 @@ export class MeshFabricationView {
         this._refreshAutoOrbitButtonState();
         topBar.appendChild(userGroup.root);
 
-        const displayGroup = this._createToolbarGroup('Display');
-        displayGroup.buttons.appendChild(this._createDisplayModeCombo());
+        const displayGroup = createToolbarGroup('Display');
+        displayGroup.buttons.appendChild(createDisplayModeControl(this));
         topBar.appendChild(displayGroup.root);
 
-        const layoutGroup = this._createToolbarGroup('Views');
-        layoutGroup.buttons.appendChild(this._createLayoutCombo());
+        const tessellationGroup = createToolbarGroup('Tessellation');
+        tessellationGroup.buttons.appendChild(createTessellationControl(this));
+        topBar.appendChild(tessellationGroup.root);
+
+        const layoutGroup = createToolbarGroup('Views');
+        layoutGroup.buttons.appendChild(createViewsComboControl(this));
         topBar.appendChild(layoutGroup.root);
 
-        const overlayGroup = this._createToolbarGroup('Overlay');
-        overlayGroup.buttons.appendChild(this._createOverlayOptionsMenu());
+        const overlayGroup = createToolbarGroup('Overlay');
+        overlayGroup.buttons.appendChild(createOverlaysComboControl(this));
         topBar.appendChild(overlayGroup.root);
 
-        const liveGroup = this._createToolbarGroup('Live');
-        const liveStatusWrap = document.createElement('div');
-        liveStatusWrap.className = 'mesh-fab-live-status-wrap';
-        const liveStatusBtn = document.createElement('button');
-        liveStatusBtn.type = 'button';
-        liveStatusBtn.className = 'mesh-fab-live-status-btn';
-        liveStatusBtn.setAttribute('aria-label', 'Live mesh sync');
-        liveStatusBtn.setAttribute('aria-pressed', 'true');
-        liveStatusBtn.addEventListener('click', this._onLiveStatusToggle);
-        const liveStatusIcon = createMaterialSymbolIcon('sync', { size: 'sm' });
-        liveStatusIcon.classList.add('mesh-fab-live-status-icon');
-        const liveStatusMode = document.createElement('span');
-        liveStatusMode.className = 'mesh-fab-live-status-mode';
-        liveStatusMode.textContent = 'OFF';
-        const liveStatusDot = document.createElement('span');
-        liveStatusDot.className = 'mesh-fab-live-status-dot is-idle';
-        liveStatusDot.setAttribute('aria-hidden', 'true');
-        liveStatusBtn.appendChild(liveStatusIcon);
-        liveStatusBtn.appendChild(liveStatusMode);
-        liveStatusBtn.appendChild(liveStatusDot);
-        const liveStatusOutput = document.createElement('div');
-        liveStatusOutput.className = 'mesh-fab-live-status-output';
-        liveStatusOutput.textContent = 'Status: Idle';
-        liveStatusWrap.appendChild(liveStatusBtn);
-        liveStatusWrap.appendChild(liveStatusOutput);
-        liveGroup.buttons.appendChild(liveStatusWrap);
+        const liveGroup = createToolbarGroup('Live');
+        const liveControl = createLiveToggleControl(this);
+        const liveStatusWrap = liveControl.root;
+        const liveStatusBtn = liveControl.button;
+        const liveStatusMode = liveControl.mode;
+        const liveStatusDot = liveControl.dot;
+        const liveStatusOutput = liveControl.output;
+        liveGroup.buttons.appendChild(liveControl.root);
         topBar.appendChild(liveGroup.root);
 
         const viewportShell = document.createElement('div');
@@ -778,6 +916,23 @@ export class MeshFabricationView {
         this._displayModeComboPopup = null;
         this._displayModeComboPreviewHost = null;
         this._displayModeComboOpen = false;
+        this._tessellationControlsRoot = null;
+        this._tessellationControlsButton = null;
+        this._tessellationControlsPopup = null;
+        this._tessellationControlsToggleRow = null;
+        this._tessellationControlsUMultiplierInput = null;
+        this._tessellationControlsVMultiplierInput = null;
+        this._tessellationControlsStatus = null;
+        this._tessellationControlsDisplayModeSelect = null;
+        this._tessellationControlsSubdivisionInput = null;
+        this._tessellationControlsAdaptiveRow = null;
+        this._tessellationControlsAdaptiveErrorInput = null;
+        this._tessellationControlsWireSourceSelect = null;
+        this._tessellationControlsLodSelect = null;
+        this._tessellationControlsDisplayStatus = null;
+        this._tessellationControlsOpen = false;
+        this._displayAdaptiveResolvedSubdivisionLevel = 0;
+        this._displayDerivedContract = null;
         this._layoutComboRoot = null;
         this._layoutComboButton = null;
         this._layoutComboPopup = null;
@@ -792,11 +947,16 @@ export class MeshFabricationView {
         this._overlayOptionsFaceCentersRow = null;
         this._overlayOptionsOccludedFaceCentersRow = null;
         this._overlayOptionsOccludedWiresRow = null;
+        this._overlayOptionsRulersRow = null;
         this._overlayOptionsOpen = false;
+        this._rulersEnabled = false;
         this._tileFrameById.clear();
         this._tileStatusById.clear();
         this._tileStatusElementById.clear();
         this._tileHoverHitById.clear();
+        this._tileRulerElementById.clear();
+        this._tileRulerMetricsById.clear();
+        this._activeRulerHover = null;
         this._topologyCanonicalById.clear();
         this._topologyAuthoredById.clear();
         this._topologyWorldVertexById.clear();
@@ -810,6 +970,7 @@ export class MeshFabricationView {
         this._pivotOverlayTexture = null;
         this._tiles = [];
         this._hoverTileId = '';
+        this._liveMeshLoader = null;
         document.body.classList.remove('mesh-fab-active');
     }
 
@@ -852,6 +1013,7 @@ export class MeshFabricationView {
         setIconOnlyButtonLabel(button, 'Select display mode');
         button.addEventListener('click', () => {
             this._setLayoutPopupOpen(false);
+            this._setTessellationControlsOpen(false);
             this._setOverlayOptionsOpen(false);
             this._setDisplayModePopupOpen(!this._displayModeComboOpen);
         });
@@ -934,10 +1096,651 @@ export class MeshFabricationView {
         const next = !!open;
         if (next === this._displayModeComboOpen) return;
         this._displayModeComboOpen = next;
+        this._viewInteractionState.set({ displayModeComboOpen: this._displayModeComboOpen });
         if (this._displayModeComboButton) {
             this._displayModeComboButton.setAttribute('aria-expanded', next ? 'true' : 'false');
         }
         this._displayModeComboPopup?.classList.toggle('is-open', next);
+    }
+
+    _createTessellationNumericRow({ label, min, max, step = 1, value, onInput }) {
+        const row = document.createElement('div');
+        row.className = 'mesh-fab-tessellation-row';
+        const text = document.createElement('span');
+        text.className = 'mesh-fab-tessellation-row-label';
+        text.textContent = label;
+        const input = document.createElement('input');
+        input.className = 'mesh-fab-tessellation-number';
+        input.type = 'number';
+        input.step = String(step);
+        input.min = String(min);
+        input.max = String(max);
+        input.value = String(value);
+        input.addEventListener('input', onInput);
+        input.addEventListener('change', onInput);
+        row.appendChild(text);
+        row.appendChild(input);
+        return { row, input };
+    }
+
+    _createTessellationSelectRow({ label, value, options, onChange, title = '' }) {
+        const row = document.createElement('div');
+        row.className = 'mesh-fab-tessellation-row mesh-fab-tessellation-row-wide';
+        if (title) row.title = title;
+        const text = document.createElement('span');
+        text.className = 'mesh-fab-tessellation-row-label';
+        text.textContent = label;
+        const select = document.createElement('select');
+        select.className = 'mesh-fab-tessellation-select';
+        if (title) select.title = title;
+        for (const option of options) {
+            const opt = document.createElement('option');
+            opt.value = String(option?.value ?? '');
+            opt.textContent = String(option?.label ?? option?.value ?? '');
+            if (option?.title) opt.title = String(option.title);
+            select.appendChild(opt);
+        }
+        select.value = String(value ?? '');
+        select.addEventListener('input', onChange);
+        select.addEventListener('change', onChange);
+        row.appendChild(text);
+        row.appendChild(select);
+        return { row, select };
+    }
+
+    _createTessellationSectionTitle(label) {
+        const title = document.createElement('div');
+        title.className = 'mesh-fab-tessellation-section-title';
+        title.textContent = label;
+        return title;
+    }
+
+    _createTessellationControlsMenu() {
+        const wrap = document.createElement('div');
+        wrap.className = 'mesh-fab-tessellation-wrap';
+        wrap.setAttribute('title', TESSELLATION_HINT_TOOLTIP);
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'mesh-fab-toolbar-btn mesh-fab-layout-combo-btn mesh-fab-tessellation-btn';
+        button.setAttribute('aria-haspopup', 'menu');
+        button.setAttribute('aria-expanded', 'false');
+        setIconOnlyButtonLabel(button, 'Open tessellation controls');
+        button.addEventListener('click', () => {
+            this._setDisplayModePopupOpen(false);
+            this._setLayoutPopupOpen(false);
+            this._setOverlayOptionsOpen(false);
+            this._onTessellationControlsToggle();
+        });
+
+        const icon = createMaterialSymbolIcon('grid_on', { size: 'lg' });
+        icon.classList.add('mesh-fab-tessellation-icon');
+        const main = document.createElement('span');
+        main.className = 'mesh-fab-layout-combo-main mesh-fab-tessellation-main';
+        main.appendChild(icon);
+
+        const separator = document.createElement('span');
+        separator.className = 'mesh-fab-layout-combo-separator mesh-fab-tessellation-separator';
+        separator.setAttribute('aria-hidden', 'true');
+
+        const arrow = createMaterialSymbolIcon('expand_more', { size: 'sm' });
+        arrow.classList.add('mesh-fab-layout-combo-arrow');
+        arrow.classList.add('mesh-fab-tessellation-arrow');
+        arrow.setAttribute('aria-hidden', 'true');
+
+        button.appendChild(main);
+        button.appendChild(separator);
+        button.appendChild(arrow);
+        button.setAttribute('title', TESSELLATION_HINT_TOOLTIP);
+
+        const popup = document.createElement('div');
+        popup.className = 'mesh-fab-tessellation-popup';
+        popup.setAttribute('role', 'menu');
+
+        popup.appendChild(this._createTessellationSectionTitle(TESSELLATION_SECTION_14_LABEL));
+
+        const toggleRow = document.createElement('button');
+        toggleRow.type = 'button';
+        toggleRow.className = 'mesh-fab-overlay-option-row';
+        toggleRow.setAttribute('role', 'menuitemcheckbox');
+        toggleRow.addEventListener('click', this._onTessellationAdjustToggle);
+        const toggleLabel = document.createElement('span');
+        toggleLabel.className = 'mesh-fab-overlay-option-label';
+        toggleLabel.textContent = 'Adjust Tessellation';
+        const toggleSwitch = document.createElement('span');
+        toggleSwitch.className = 'mesh-fab-overlay-option-switch';
+        toggleSwitch.setAttribute('aria-hidden', 'true');
+        const toggleThumb = document.createElement('span');
+        toggleThumb.className = 'mesh-fab-overlay-option-switch-thumb';
+        toggleSwitch.appendChild(toggleThumb);
+        toggleRow.appendChild(toggleLabel);
+        toggleRow.appendChild(toggleSwitch);
+        popup.appendChild(toggleRow);
+
+        const { row: uRow, input: uInput } = this._createTessellationNumericRow({
+            label: 'U Multiplier',
+            min: MIN_TESSELLATION_MULTIPLIER,
+            max: MAX_TESSELLATION_MULTIPLIER,
+            step: TESSELLATION_MULTIPLIER_STEP,
+            value: formatTessellationMultiplier(this._tessellationUMultiplier),
+            onInput: this._onTessellationUMultiplierInput
+        });
+        popup.appendChild(uRow);
+
+        const { row: vRow, input: vInput } = this._createTessellationNumericRow({
+            label: 'V Multiplier',
+            min: MIN_TESSELLATION_MULTIPLIER,
+            max: MAX_TESSELLATION_MULTIPLIER,
+            step: TESSELLATION_MULTIPLIER_STEP,
+            value: formatTessellationMultiplier(this._tessellationVMultiplier),
+            onInput: this._onTessellationVMultiplierInput
+        });
+        popup.appendChild(vRow);
+
+        const status = document.createElement('div');
+        status.className = 'mesh-fab-tessellation-status';
+        status.textContent = '-';
+        popup.appendChild(status);
+
+        const divider = document.createElement('div');
+        divider.className = 'mesh-fab-tessellation-divider';
+        divider.setAttribute('role', 'separator');
+        divider.setAttribute('aria-hidden', 'true');
+        popup.appendChild(divider);
+
+        popup.appendChild(this._createTessellationSectionTitle(TESSELLATION_SECTION_15_LABEL));
+
+        const { row: displayModeRow, select: displayModeSelect } = this._createTessellationSelectRow({
+            label: 'Smoothing Mode',
+            value: this._displaySmoothingMode,
+            options: [
+                { value: DISPLAY_SMOOTHING_MODE.FLAT, label: 'Flat' },
+                { value: DISPLAY_SMOOTHING_MODE.SMOOTH_NORMALS, label: 'Smooth Normals' },
+                { value: DISPLAY_SMOOTHING_MODE.SUBDIVISION_PREVIEW, label: 'Subdivision Preview' }
+            ],
+            onChange: this._onDisplaySmoothingModeChange,
+            title: TESSELLATION_SECTION_15_TOOLTIP
+        });
+        popup.appendChild(displayModeRow);
+
+        const { row: subdivisionRow, input: subdivisionInput } = this._createTessellationNumericRow({
+            label: 'Subdivision',
+            min: 0,
+            max: 2,
+            step: 1,
+            value: String(this._displaySubdivisionLevel),
+            onInput: this._onDisplaySubdivisionInput
+        });
+        subdivisionRow.title = TESSELLATION_SECTION_15_TOOLTIP;
+        popup.appendChild(subdivisionRow);
+
+        const adaptiveRow = document.createElement('button');
+        adaptiveRow.type = 'button';
+        adaptiveRow.className = 'mesh-fab-overlay-option-row mesh-fab-tessellation-toggle-row';
+        adaptiveRow.setAttribute('role', 'menuitemcheckbox');
+        adaptiveRow.addEventListener('click', this._onDisplayAdaptiveToggle);
+        const adaptiveLabel = document.createElement('span');
+        adaptiveLabel.className = 'mesh-fab-overlay-option-label';
+        adaptiveLabel.textContent = 'Adaptive Subdivision';
+        const adaptiveSwitch = document.createElement('span');
+        adaptiveSwitch.className = 'mesh-fab-overlay-option-switch';
+        adaptiveSwitch.setAttribute('aria-hidden', 'true');
+        const adaptiveThumb = document.createElement('span');
+        adaptiveThumb.className = 'mesh-fab-overlay-option-switch-thumb';
+        adaptiveSwitch.appendChild(adaptiveThumb);
+        adaptiveRow.appendChild(adaptiveLabel);
+        adaptiveRow.appendChild(adaptiveSwitch);
+        adaptiveRow.title = TESSELLATION_SECTION_15_TOOLTIP;
+        popup.appendChild(adaptiveRow);
+
+        const { row: adaptiveErrorRow, input: adaptiveErrorInput } = this._createTessellationNumericRow({
+            label: 'Error Budget (px)',
+            min: DISPLAY_ADAPTIVE_MIN_ERROR_PX,
+            max: DISPLAY_ADAPTIVE_MAX_ERROR_PX,
+            step: DISPLAY_ADAPTIVE_ERROR_STEP,
+            value: String(this._displayAdaptiveErrorBudgetPx),
+            onInput: this._onDisplayAdaptiveErrorInput
+        });
+        adaptiveErrorRow.title = 'Lower budget increases display tessellation when adaptive mode is enabled.';
+        popup.appendChild(adaptiveErrorRow);
+
+        const { row: wireSourceRow, select: wireSourceSelect } = this._createTessellationSelectRow({
+            label: 'Wire Source',
+            value: this._displayWireSource,
+            options: [
+                { value: DISPLAY_WIRE_SOURCE.CANONICAL, label: 'Canonical Wire' },
+                { value: DISPLAY_WIRE_SOURCE.DISPLAY, label: 'Display Wire' }
+            ],
+            onChange: this._onDisplayWireSourceChange
+        });
+        popup.appendChild(wireSourceRow);
+
+        const { row: lodPolicyRow, select: lodPolicySelect } = this._createTessellationSelectRow({
+            label: 'Display LOD',
+            value: this._displayLodPolicy,
+            options: [
+                {
+                    value: DISPLAY_LOD_POLICY.NEAR,
+                    label: 'Near',
+                    title: DISPLAY_LOD_TOOLTIP[DISPLAY_LOD_POLICY.NEAR]
+                },
+                {
+                    value: DISPLAY_LOD_POLICY.MEDIUM,
+                    label: 'Medium',
+                    title: DISPLAY_LOD_TOOLTIP[DISPLAY_LOD_POLICY.MEDIUM]
+                },
+                {
+                    value: DISPLAY_LOD_POLICY.FAR,
+                    label: 'Far',
+                    title: DISPLAY_LOD_TOOLTIP[DISPLAY_LOD_POLICY.FAR]
+                }
+            ],
+            onChange: this._onDisplayLodPolicyChange
+        });
+        lodPolicyRow.title = DISPLAY_LOD_TOOLTIP[this._displayLodPolicy] ?? '';
+        popup.appendChild(lodPolicyRow);
+
+        const displayStatus = document.createElement('div');
+        displayStatus.className = 'mesh-fab-tessellation-status mesh-fab-tessellation-status-secondary';
+        displayStatus.textContent = '-';
+        popup.appendChild(displayStatus);
+
+        wrap.appendChild(button);
+        wrap.appendChild(popup);
+
+        this._tessellationControlsRoot = wrap;
+        this._tessellationControlsButton = button;
+        this._tessellationControlsPopup = popup;
+        this._tessellationControlsToggleRow = toggleRow;
+        this._tessellationControlsUMultiplierInput = uInput;
+        this._tessellationControlsVMultiplierInput = vInput;
+        this._tessellationControlsStatus = status;
+        this._tessellationControlsDisplayModeSelect = displayModeSelect;
+        this._tessellationControlsSubdivisionInput = subdivisionInput;
+        this._tessellationControlsAdaptiveRow = adaptiveRow;
+        this._tessellationControlsAdaptiveErrorInput = adaptiveErrorInput;
+        this._tessellationControlsWireSourceSelect = wireSourceSelect;
+        this._tessellationControlsLodSelect = lodPolicySelect;
+        this._tessellationControlsDisplayStatus = displayStatus;
+        this._setTessellationControlsOpen(false);
+        this._refreshTessellationControlsUi();
+        return wrap;
+    }
+
+    _setTessellationControlsOpen(open) {
+        const next = !!open;
+        if (next === this._tessellationControlsOpen) return;
+        this._tessellationControlsOpen = next;
+        this._viewInteractionState.set({ tessellationControlsOpen: this._tessellationControlsOpen });
+        if (this._tessellationControlsButton) {
+            this._tessellationControlsButton.setAttribute('aria-expanded', next ? 'true' : 'false');
+        }
+        this._tessellationControlsPopup?.classList.toggle('is-open', next);
+    }
+
+    _rerenderAfterTessellationChange() {
+        try {
+            this._renderEffectiveMeshDocument();
+            this._liveMeshHasError = false;
+        } catch (err) {
+            this._liveMeshSyncLabel = `Error: ${err?.message ?? String(err)}`;
+            this._liveMeshHasError = true;
+            console.warn('[MeshFabricationView] Tessellation preview update failed.', err);
+        }
+        this._updateReadouts();
+    }
+
+    _toggleTessellationAdjust() {
+        if (!this._tessellationSourceHasTargets) return;
+        this._tessellationAdjustEnabled = !this._tessellationAdjustEnabled;
+        this._refreshTessellationControlsUi();
+        this._rerenderAfterTessellationChange();
+    }
+
+    _setTessellationMultiplierValue(axis, rawValue) {
+        if (axis !== 'u' && axis !== 'v') return;
+        const isU = axis === 'u';
+        const next = normalizeTessellationMultiplier(rawValue);
+        const prev = isU ? this._tessellationUMultiplier : this._tessellationVMultiplier;
+        if (next === prev) {
+            this._refreshTessellationControlsUi();
+            return;
+        }
+        if (isU) this._tessellationUMultiplier = next;
+        else this._tessellationVMultiplier = next;
+        this._refreshTessellationControlsUi();
+        if (this._tessellationAdjustEnabled) {
+            this._rerenderAfterTessellationChange();
+        }
+    }
+
+    _handleTessellationUMultiplierInput(event) {
+        this._setTessellationMultiplierValue('u', event?.target?.value);
+    }
+
+    _handleTessellationVMultiplierInput(event) {
+        this._setTessellationMultiplierValue('v', event?.target?.value);
+    }
+
+    _normalizeDisplayAdaptiveError(value) {
+        return clampInt(
+            value,
+            DISPLAY_ADAPTIVE_MIN_ERROR_PX,
+            DISPLAY_ADAPTIVE_MAX_ERROR_PX,
+            this._displayAdaptiveErrorBudgetPx
+        );
+    }
+
+    _resolveAdaptiveDisplaySubdivisionLevel() {
+        if (!this._displayAdaptiveSubdivisionEnabled) return this._displaySubdivisionLevel;
+        if (this._displaySmoothingMode !== DISPLAY_SMOOTHING_MODE.SUBDIVISION_PREVIEW) return 0;
+
+        const stageHeight = Math.max(1, this._viewportStage?.clientHeight || this.canvas?.clientHeight || 1);
+        const radius = Math.max(0.01, this._modelSize.length() * 0.35);
+        const fovDeg = Number(this.camera?.fov);
+        const fovRad = Number.isFinite(fovDeg) ? THREE.MathUtils.degToRad(fovDeg) : THREE.MathUtils.degToRad(55);
+        const distance = Math.max(0.1, this.camera.position.distanceTo(this._orbitTarget));
+        const projectedRadiusPx = (radius / distance) * (stageHeight / Math.max(0.001, 2 * Math.tan(fovRad * 0.5)));
+        const budgetPx = Math.max(DISPLAY_ADAPTIVE_MIN_ERROR_PX, this._displayAdaptiveErrorBudgetPx);
+        const ratio = projectedRadiusPx / budgetPx;
+
+        let level = 0;
+        if (ratio >= 1.2) level = 1;
+        if (ratio >= 2.6) level = 2;
+        if (this._displayLodPolicy === DISPLAY_LOD_POLICY.FAR) level = Math.max(0, level - 1);
+        return clampInt(level, 0, 2, 0);
+    }
+
+    _buildDisplayMeshBuildConfig() {
+        const adaptiveResolved = this._resolveAdaptiveDisplaySubdivisionLevel();
+        this._displayAdaptiveResolvedSubdivisionLevel = adaptiveResolved;
+        return normalizeDisplayMeshBuildConfig({
+            smoothingMode: this._displaySmoothingMode,
+            subdivisionLevel: this._displaySubdivisionLevel,
+            resolvedSubdivisionLevel: adaptiveResolved,
+            adaptiveSubdivisionEnabled: this._displayAdaptiveSubdivisionEnabled,
+            adaptiveErrorBudgetPx: this._displayAdaptiveErrorBudgetPx,
+            wireSource: this._displayWireSource,
+            lodPolicy: this._displayLodPolicy
+        });
+    }
+
+    _rerenderAfterDisplayMeshConfigChange() {
+        try {
+            this._renderEffectiveMeshDocument();
+            this._liveMeshHasError = false;
+        } catch (err) {
+            this._liveMeshSyncLabel = `Error: ${err?.message ?? String(err)}`;
+            this._liveMeshHasError = true;
+            console.warn('[MeshFabricationView] Display mesh update failed.', err);
+        }
+        this._updateReadouts();
+    }
+
+    _handleDisplaySmoothingModeChange(event) {
+        const raw = String(event?.target?.value ?? '').trim().toLowerCase();
+        let next = DISPLAY_SMOOTHING_MODE.FLAT;
+        if (
+            raw === DISPLAY_SMOOTHING_MODE.SMOOTH_NORMALS
+            || raw === DISPLAY_SMOOTHING_MODE.SUBDIVISION_PREVIEW
+            || raw === DISPLAY_SMOOTHING_MODE.FLAT
+        ) {
+            next = raw;
+        }
+        if (next === this._displaySmoothingMode) {
+            this._refreshTessellationControlsUi();
+            return;
+        }
+        this._displaySmoothingMode = next;
+        if (next !== DISPLAY_SMOOTHING_MODE.SUBDIVISION_PREVIEW) {
+            this._displayAdaptiveSubdivisionEnabled = false;
+        }
+        this._refreshTessellationControlsUi();
+        this._rerenderAfterDisplayMeshConfigChange();
+    }
+
+    _handleDisplaySubdivisionInput(event) {
+        const next = clampInt(event?.target?.value, 0, 2, this._displaySubdivisionLevel);
+        if (next === this._displaySubdivisionLevel) {
+            this._refreshTessellationControlsUi();
+            return;
+        }
+        this._displaySubdivisionLevel = next;
+        this._refreshTessellationControlsUi();
+        this._rerenderAfterDisplayMeshConfigChange();
+    }
+
+    _toggleDisplayAdaptiveSubdivision() {
+        if (this._displaySmoothingMode !== DISPLAY_SMOOTHING_MODE.SUBDIVISION_PREVIEW) return;
+        this._displayAdaptiveSubdivisionEnabled = !this._displayAdaptiveSubdivisionEnabled;
+        this._refreshTessellationControlsUi();
+        this._rerenderAfterDisplayMeshConfigChange();
+    }
+
+    _handleDisplayAdaptiveErrorInput(event) {
+        const next = this._normalizeDisplayAdaptiveError(event?.target?.value);
+        if (next === this._displayAdaptiveErrorBudgetPx) {
+            this._refreshTessellationControlsUi();
+            return;
+        }
+        this._displayAdaptiveErrorBudgetPx = next;
+        this._refreshTessellationControlsUi();
+        this._rerenderAfterDisplayMeshConfigChange();
+    }
+
+    _handleDisplayWireSourceChange(event) {
+        const raw = String(event?.target?.value ?? '').trim().toLowerCase();
+        const next = raw === DISPLAY_WIRE_SOURCE.DISPLAY ? DISPLAY_WIRE_SOURCE.DISPLAY : DISPLAY_WIRE_SOURCE.CANONICAL;
+        if (next === this._displayWireSource) {
+            this._refreshTessellationControlsUi();
+            return;
+        }
+        this._displayWireSource = next;
+        this._refreshTessellationControlsUi();
+        this._applyDisplayModeToScene();
+    }
+
+    _handleDisplayLodPolicyChange(event) {
+        const raw = String(event?.target?.value ?? '').trim().toLowerCase();
+        let next = DISPLAY_LOD_POLICY.MEDIUM;
+        if (raw === DISPLAY_LOD_POLICY.NEAR || raw === DISPLAY_LOD_POLICY.MEDIUM || raw === DISPLAY_LOD_POLICY.FAR) {
+            next = raw;
+        }
+        if (next === this._displayLodPolicy) {
+            this._refreshTessellationControlsUi();
+            return;
+        }
+        this._displayLodPolicy = next;
+        this._refreshTessellationControlsUi();
+        this._rerenderAfterDisplayMeshConfigChange();
+    }
+
+    _updateAdaptiveDisplaySubdivisionFromCamera() {
+        if (!this._displayAdaptiveSubdivisionEnabled) return;
+        if (this._displaySmoothingMode !== DISPLAY_SMOOTHING_MODE.SUBDIVISION_PREVIEW) return;
+        const next = this._resolveAdaptiveDisplaySubdivisionLevel();
+        if (next === this._displayAdaptiveResolvedSubdivisionLevel) return;
+        this._displayAdaptiveResolvedSubdivisionLevel = next;
+        this._refreshTessellationControlsUi();
+        this._rerenderAfterDisplayMeshConfigChange();
+    }
+
+    _extractTessellationSourceDefaults(sourceDocument) {
+        const authoring = sourceDocument?.authoring;
+        const components = Array.isArray(authoring?.components) ? authoring.components : [];
+        let targetCount = 0;
+
+        for (const rawComponent of components) {
+            const primitive = rawComponent?.primitive;
+            if (!primitive || typeof primitive !== 'object') continue;
+            const type = String(primitive.type ?? '').trim().toLowerCase();
+            if (type !== 'cylinder' && type !== 'tube') continue;
+            targetCount += 1;
+        }
+
+        if (targetCount < 1) return null;
+        return Object.freeze({
+            targetCount
+        });
+    }
+
+    _syncTessellationStateFromSourceDocument(sourceDocument) {
+        const defaults = this._extractTessellationSourceDefaults(sourceDocument);
+        if (!defaults) {
+            this._tessellationSourceHasTargets = false;
+            this._tessellationSourceSummary = 'No parametric authoring targets';
+            this._tessellationAdjustEnabled = false;
+            this._refreshTessellationControlsUi();
+            return;
+        }
+        this._tessellationSourceHasTargets = true;
+        this._tessellationSourceSummary = `${defaults.targetCount} parametric component${defaults.targetCount === 1 ? '' : 's'} with executable tessellation`;
+        this._refreshTessellationControlsUi();
+    }
+
+    _applyTessellationPreviewToDocument(documentRoot) {
+        if (!this._tessellationAdjustEnabled) return 0;
+        const authoring = documentRoot?.authoring;
+        const components = Array.isArray(authoring?.components) ? authoring.components : [];
+        let adjusted = 0;
+        for (const component of components) {
+            const primitive = component?.primitive;
+            if (!primitive || typeof primitive !== 'object') continue;
+            const type = String(primitive.type ?? '').trim().toLowerCase();
+            if (type === 'cylinder' || type === 'tube') {
+                const authoredU = primitive.uSegments ?? primitive.radialSegments ?? primitive.pathSegments ?? primitive.segments;
+                const authoredV = primitive.vSegments ?? primitive.axialSegments ?? primitive.profileSegments;
+                const isUClosed = primitive.uClosed === undefined ? true : !!primitive.uClosed;
+                const baseUSegments = clampInt(
+                    authoredU ?? DEFAULT_TESSELLATION_FALLBACK_U_SEGMENTS,
+                    MIN_TESSELLATION_U_SEGMENTS,
+                    MAX_TESSELLATION_U_SEGMENTS
+                );
+                const baseVSegments = clampInt(
+                    authoredV ?? DEFAULT_TESSELLATION_FALLBACK_V_SEGMENTS,
+                    MIN_TESSELLATION_V_SEGMENTS,
+                    MAX_TESSELLATION_V_SEGMENTS
+                );
+                const rawScaledUSegments = baseUSegments * this._tessellationUMultiplier;
+                const scaledUSegments = isUClosed
+                    ? snapClosedCylinderUSegments(
+                        rawScaledUSegments,
+                        MIN_TESSELLATION_U_SEGMENTS,
+                        MAX_TESSELLATION_U_SEGMENTS
+                    )
+                    : clampInt(
+                        rawScaledUSegments,
+                        MIN_TESSELLATION_U_SEGMENTS,
+                        MAX_TESSELLATION_U_SEGMENTS
+                    );
+                const scaledVSegments = clampInt(
+                    baseVSegments * this._tessellationVMultiplier,
+                    MIN_TESSELLATION_V_SEGMENTS,
+                    MAX_TESSELLATION_V_SEGMENTS
+                );
+                primitive.uSegments = scaledUSegments;
+                primitive.vSegments = scaledVSegments;
+                primitive.radialSegments = scaledUSegments;
+                primitive.axialSegments = scaledVSegments;
+                if (primitive.uClosed === undefined) primitive.uClosed = true;
+                if (primitive.vClosed === undefined) primitive.vClosed = false;
+                if (type === 'cylinder') {
+                    if (primitive.capRings === undefined) primitive.capRings = 0;
+                    if (primitive.syncOppositeCap === undefined) primitive.syncOppositeCap = true;
+                }
+                adjusted += 1;
+            }
+        }
+        return adjusted;
+    }
+
+    _refreshTessellationControlsUi() {
+        const hasTargets = !!this._tessellationSourceHasTargets;
+        const canAdjust = hasTargets && this._tessellationAdjustEnabled;
+        const isSubdivisionMode = this._displaySmoothingMode === DISPLAY_SMOOTHING_MODE.SUBDIVISION_PREVIEW;
+        const adaptiveEnabled = isSubdivisionMode && this._displayAdaptiveSubdivisionEnabled;
+        const subdivisionEditable = isSubdivisionMode && !adaptiveEnabled;
+        const activeLodBudget = DISPLAY_LOD_TRIANGLE_BUDGETS[this._displayLodPolicy]
+            ?? DISPLAY_LOD_TRIANGLE_BUDGETS[DISPLAY_LOD_POLICY.MEDIUM];
+        const toggleRow = this._tessellationControlsToggleRow;
+        if (toggleRow) {
+            toggleRow.setAttribute('aria-checked', canAdjust ? 'true' : 'false');
+            toggleRow.classList.toggle('is-enabled', canAdjust);
+            toggleRow.disabled = !hasTargets;
+            toggleRow.classList.toggle('is-disabled', !hasTargets);
+            toggleRow.setAttribute('aria-disabled', hasTargets ? 'false' : 'true');
+        }
+
+        if (this._tessellationControlsUMultiplierInput) {
+            this._tessellationControlsUMultiplierInput.value = formatTessellationMultiplier(this._tessellationUMultiplier);
+            this._tessellationControlsUMultiplierInput.disabled = !canAdjust;
+        }
+        if (this._tessellationControlsVMultiplierInput) {
+            this._tessellationControlsVMultiplierInput.value = formatTessellationMultiplier(this._tessellationVMultiplier);
+            this._tessellationControlsVMultiplierInput.disabled = !canAdjust;
+        }
+        if (this._tessellationControlsDisplayModeSelect) {
+            this._tessellationControlsDisplayModeSelect.value = this._displaySmoothingMode;
+        }
+        if (this._tessellationControlsSubdivisionInput) {
+            this._tessellationControlsSubdivisionInput.value = String(this._displaySubdivisionLevel);
+            this._tessellationControlsSubdivisionInput.disabled = !subdivisionEditable;
+        }
+        if (this._tessellationControlsAdaptiveRow) {
+            const row = this._tessellationControlsAdaptiveRow;
+            row.setAttribute('aria-checked', adaptiveEnabled ? 'true' : 'false');
+            row.classList.toggle('is-enabled', adaptiveEnabled);
+            const adaptiveAllowed = isSubdivisionMode;
+            row.disabled = !adaptiveAllowed;
+            row.classList.toggle('is-disabled', !adaptiveAllowed);
+            row.setAttribute('aria-disabled', adaptiveAllowed ? 'false' : 'true');
+        }
+        if (this._tessellationControlsAdaptiveErrorInput) {
+            this._tessellationControlsAdaptiveErrorInput.value = String(this._displayAdaptiveErrorBudgetPx);
+            this._tessellationControlsAdaptiveErrorInput.disabled = !adaptiveEnabled;
+        }
+        if (this._tessellationControlsWireSourceSelect) {
+            this._tessellationControlsWireSourceSelect.value = this._displayWireSource;
+        }
+        if (this._tessellationControlsLodSelect) {
+            this._tessellationControlsLodSelect.value = this._displayLodPolicy;
+            this._tessellationControlsLodSelect.title = DISPLAY_LOD_TOOLTIP[this._displayLodPolicy] ?? '';
+        }
+        if (this._tessellationControlsButton) {
+            const mode = this._tessellationAdjustEnabled ? 'on' : 'off';
+            setIconOnlyButtonLabel(
+                this._tessellationControlsButton,
+                `Tessellation controls (${mode}): ${this._tessellationSourceSummary}. ${TESSELLATION_HINT_TOOLTIP}`
+            );
+            this._tessellationControlsButton.setAttribute('title', TESSELLATION_HINT_TOOLTIP);
+            this._tessellationControlsButton.disabled = false;
+            this._tessellationControlsButton.classList.toggle('is-active', canAdjust);
+        }
+        this._tessellationControlsRoot?.setAttribute('title', TESSELLATION_HINT_TOOLTIP);
+        if (this._tessellationControlsStatus) {
+            const mode = this._tessellationAdjustEnabled ? 'ON' : 'OFF';
+            this._tessellationControlsStatus.textContent = hasTargets
+                ? `Mode: ${mode} | Ux: ${formatTessellationMultiplier(this._tessellationUMultiplier)}x | Vx: ${formatTessellationMultiplier(this._tessellationVMultiplier)}x`
+                : 'No semantic authoring primitives available for tessellation preview';
+        }
+        if (this._tessellationControlsDisplayStatus) {
+            const modeLabel = this._displaySmoothingMode === DISPLAY_SMOOTHING_MODE.FLAT
+                ? 'Flat'
+                : this._displaySmoothingMode === DISPLAY_SMOOTHING_MODE.SMOOTH_NORMALS
+                    ? 'Smooth Normals'
+                    : 'Subdivision Preview';
+            const resolvedLevel = this._displayAdaptiveSubdivisionEnabled
+                ? this._displayAdaptiveResolvedSubdivisionLevel
+                : this._displaySubdivisionLevel;
+            const appliedLevelRaw = Number(this._displayDerivedContract?.appliedSubdivisionLevel);
+            const appliedLevel = Number.isFinite(appliedLevelRaw) ? clampInt(appliedLevelRaw, 0, 2, resolvedLevel) : resolvedLevel;
+            const triangles = Number(this._displayDerivedContract?.displayTriangleCount) || 0;
+            const triangleLabel = triangles > 0 ? `${triangles} tris` : 'no display mesh';
+            this._tessellationControlsDisplayStatus.textContent = [
+                `Mode: ${modeLabel} | Subdiv: ${resolvedLevel}${appliedLevel !== resolvedLevel ? ` -> ${appliedLevel}` : ''} | Adaptive: ${adaptiveEnabled ? 'ON' : 'OFF'}`,
+                `Wire: ${this._displayWireSource === DISPLAY_WIRE_SOURCE.DISPLAY ? 'Display' : 'Canonical'} | LOD: ${this._displayLodPolicy} (${activeLodBudget}) | ${triangleLabel}`
+            ].join('\n');
+        }
     }
 
     _createLayoutCombo() {
@@ -952,6 +1755,7 @@ export class MeshFabricationView {
         setIconOnlyButtonLabel(button, 'Select viewport layout');
         button.addEventListener('click', () => {
             this._setDisplayModePopupOpen(false);
+            this._setTessellationControlsOpen(false);
             this._setOverlayOptionsOpen(false);
             this._setLayoutPopupOpen(!this._layoutComboOpen);
         });
@@ -1032,6 +1836,7 @@ export class MeshFabricationView {
         const next = !!open;
         if (next === this._layoutComboOpen) return;
         this._layoutComboOpen = next;
+        this._viewInteractionState.set({ layoutComboOpen: this._layoutComboOpen });
         if (this._layoutComboButton) {
             this._layoutComboButton.setAttribute('aria-expanded', next ? 'true' : 'false');
         }
@@ -1051,6 +1856,7 @@ export class MeshFabricationView {
         button.addEventListener('click', () => {
             this._setDisplayModePopupOpen(false);
             this._setLayoutPopupOpen(false);
+            this._setTessellationControlsOpen(false);
             this._onOverlayOptionsToggle();
         });
 
@@ -1092,6 +1898,24 @@ export class MeshFabricationView {
         axisRow.appendChild(axisLabel);
         axisRow.appendChild(axisSwitch);
         popup.appendChild(axisRow);
+
+        const rulersRow = document.createElement('button');
+        rulersRow.type = 'button';
+        rulersRow.className = 'mesh-fab-overlay-option-row';
+        rulersRow.setAttribute('role', 'menuitemcheckbox');
+        rulersRow.addEventListener('click', this._onRulersToggle);
+        const rulersLabel = document.createElement('span');
+        rulersLabel.className = 'mesh-fab-overlay-option-label';
+        rulersLabel.textContent = 'Rulers';
+        const rulersSwitch = document.createElement('span');
+        rulersSwitch.className = 'mesh-fab-overlay-option-switch';
+        rulersSwitch.setAttribute('aria-hidden', 'true');
+        const rulersThumb = document.createElement('span');
+        rulersThumb.className = 'mesh-fab-overlay-option-switch-thumb';
+        rulersSwitch.appendChild(rulersThumb);
+        rulersRow.appendChild(rulersLabel);
+        rulersRow.appendChild(rulersSwitch);
+        popup.appendChild(rulersRow);
 
         const hoverHighlightRow = document.createElement('button');
         hoverHighlightRow.type = 'button';
@@ -1195,6 +2019,7 @@ export class MeshFabricationView {
         this._overlayOptionsFaceCentersRow = faceCentersRow;
         this._overlayOptionsOccludedFaceCentersRow = occludedFaceCentersRow;
         this._overlayOptionsOccludedWiresRow = occludedWiresRow;
+        this._overlayOptionsRulersRow = rulersRow;
         this._setOverlayOptionsOpen(false);
         this._refreshOverlayOptionsUi();
         return wrap;
@@ -1204,6 +2029,7 @@ export class MeshFabricationView {
         const next = !!open;
         if (next === this._overlayOptionsOpen) return;
         this._overlayOptionsOpen = next;
+        this._viewInteractionState.set({ overlayOptionsOpen: this._overlayOptionsOpen });
         if (this._overlayOptionsButton) {
             this._overlayOptionsButton.setAttribute('aria-expanded', next ? 'true' : 'false');
         }
@@ -1213,6 +2039,15 @@ export class MeshFabricationView {
     _toggleAxisArrows() {
         this._axisArrowsEnabled = !this._axisArrowsEnabled;
         this._refreshOverlayOptionsUi();
+    }
+
+    _toggleRulers() {
+        this._rulersEnabled = !this._rulersEnabled;
+        if (!this._rulersEnabled) {
+            this._clearRulerHover();
+        }
+        this._refreshOverlayOptionsUi();
+        this._refreshRulerOverlays();
     }
 
     _togglePivotOverlay() {
@@ -1283,6 +2118,7 @@ export class MeshFabricationView {
 
     _refreshOverlayOptionsUi() {
         this._setOverlayToggleState(this._overlayOptionsAxisRow, !!this._axisArrowsEnabled);
+        this._setOverlayToggleState(this._overlayOptionsRulersRow, !!this._rulersEnabled);
         this._setOverlayToggleState(this._overlayOptionsPivotRow, !!this._pivotOverlayEnabled);
         this._setOverlayToggleState(this._overlayOptionsHoverHighlightRow, !!this._topologyHoverHighlightEnabled);
         this._setOverlayToggleState(this._overlayOptionsFaceCentersRow, !!this._wireFaceCentersEnabled);
@@ -1383,6 +2219,11 @@ export class MeshFabricationView {
             return;
         }
 
+        if (this._updateRulerHover(event.clientX, event.clientY, tile)) {
+            this._setContextMenuOpen(false);
+            return;
+        }
+
         this._updateHoverTopologyStatus(event.clientX, event.clientY, tile);
         const hoveredHit = this._tileHoverHitById.get(tile.id) ?? null;
         const path = String(hoveredHit?.id ?? '').trim();
@@ -1407,6 +2248,9 @@ export class MeshFabricationView {
         if (this._layoutComboOpen && !this._layoutComboRoot?.contains(target)) {
             this._setLayoutPopupOpen(false);
         }
+        if (this._tessellationControlsOpen && !this._tessellationControlsRoot?.contains(target)) {
+            this._setTessellationControlsOpen(false);
+        }
         if (this._overlayOptionsOpen && !this._overlayOptionsRoot?.contains(target)) {
             this._setOverlayOptionsOpen(false);
         }
@@ -1416,7 +2260,7 @@ export class MeshFabricationView {
     }
 
     _handleDocumentKeyDown(event) {
-        if (!this._displayModeComboOpen && !this._layoutComboOpen && !this._overlayOptionsOpen && !this._contextMenuOpen) return;
+        if (!this._displayModeComboOpen && !this._layoutComboOpen && !this._tessellationControlsOpen && !this._overlayOptionsOpen && !this._contextMenuOpen) return;
         const code = event?.code;
         const key = event?.key;
         if (code !== 'Escape' && key !== 'Escape') return;
@@ -1424,6 +2268,7 @@ export class MeshFabricationView {
         event.stopPropagation();
         this._setDisplayModePopupOpen(false);
         this._setLayoutPopupOpen(false);
+        this._setTessellationControlsOpen(false);
         this._setOverlayOptionsOpen(false);
         this._setContextMenuOpen(false);
     }
@@ -1552,7 +2397,10 @@ export class MeshFabricationView {
         this._ownedGeometries.length = 0;
         this._ownedMaterials.length = 0;
         this._surfaceMeshes.length = 0;
+        this._canonicalSurfaceMeshes.length = 0;
         this._polygonWireOverlay = null;
+        this._polygonWireCanonicalOverlay = null;
+        this._polygonWireDisplayOverlay = null;
         this._vertexOverlay = null;
         this._faceCenterOverlay = null;
         this._liveMeshHostGroup = null;
@@ -1588,9 +2436,13 @@ export class MeshFabricationView {
         this._ownedGeometries.length = 0;
         this._ownedMaterials.length = 0;
         this._surfaceMeshes.length = 0;
+        this._canonicalSurfaceMeshes.length = 0;
         this._polygonWireOverlay = null;
+        this._polygonWireCanonicalOverlay = null;
+        this._polygonWireDisplayOverlay = null;
         this._vertexOverlay = null;
         this._faceCenterOverlay = null;
+        this._displayDerivedContract = null;
         this._surfaceMaterialDefaults = new WeakMap();
         this._topologyCanonicalById.clear();
         this._topologyAuthoredById.clear();
@@ -1932,14 +2784,14 @@ export class MeshFabricationView {
         }
     }
 
-    _resolveScenePivotPosition(surfaceMeshes) {
-        if (Array.isArray(surfaceMeshes) && surfaceMeshes.length > 0) {
-            const first = surfaceMeshes[0];
-            if (first?.isObject3D) {
-                const pivot = first.getWorldPosition(new THREE.Vector3());
-                if (Number.isFinite(pivot.x) && Number.isFinite(pivot.y) && Number.isFinite(pivot.z)) {
-                    return pivot;
-                }
+    _resolveScenePivotPosition(workflowDocument = null) {
+        const authoredPivot = workflowDocument?.authoring?.pivot;
+        if (Array.isArray(authoredPivot) && authoredPivot.length === 3) {
+            const x = Number(authoredPivot[0]);
+            const y = Number(authoredPivot[1]);
+            const z = Number(authoredPivot[2]);
+            if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+                return new THREE.Vector3(x, y, z);
             }
         }
         return new THREE.Vector3(0, 0, 0);
@@ -1954,6 +2806,7 @@ export class MeshFabricationView {
             );
         const center = safeBounds.getCenter(new THREE.Vector3());
         const size = safeBounds.getSize(new THREE.Vector3());
+        this._modelBounds.copy(safeBounds);
 
         this._modelSize.copy(size);
         this._modelCenter.copy(center);
@@ -1963,6 +2816,7 @@ export class MeshFabricationView {
             && Number.isFinite(pivotPosition.z);
         this._pivotPosition.copy(hasPivot ? pivotPosition : center);
         if (this._pivotOverlay) this._pivotOverlay.position.copy(this._pivotPosition);
+        this._refreshRulerOverlays();
         return { center, size };
     }
 
@@ -1979,6 +2833,8 @@ export class MeshFabricationView {
 
     _applyLiveMeshDocument(rawDocument) {
         this._liveMeshSourceDocument = cloneJsonValue(rawDocument);
+        this._meshRuntimeState.set({ sourceDocument: this._liveMeshSourceDocument });
+        this._syncTessellationStateFromSourceDocument(this._liveMeshSourceDocument);
         this._renderEffectiveMeshDocument();
     }
 
@@ -1986,10 +2842,18 @@ export class MeshFabricationView {
         if (!this._liveMeshSourceDocument) {
             throw new Error('[MeshFabricationView] Live mesh source document is not available.');
         }
-        return buildAiWorkflowDocument(this._liveMeshSourceDocument, {
+        const workflowDoc = buildAiWorkflowDocument(this._liveMeshSourceDocument, {
             acceptedBatches: this._aiAcceptedBatches,
             previewBatch: this._aiPreviewBatch
         });
+        if (this._tessellationAdjustEnabled) {
+            const adjusted = this._applyTessellationPreviewToDocument(workflowDoc.document);
+            if (adjusted < 1) {
+                this._tessellationAdjustEnabled = false;
+                this._refreshTessellationControlsUi();
+            }
+        }
+        return workflowDoc;
     }
 
     _renderEffectiveMeshDocument() {
@@ -1997,14 +2861,27 @@ export class MeshFabricationView {
         const hasPreviousMesh = !!this._liveMeshParsedDocument;
         const workflowDoc = this._buildCurrentAiWorkflowDocument();
         const parsed = parseLiveMeshDocument(workflowDoc.document);
-        const built = buildThreeGroupFromLiveMesh(parsed);
+        const displayBuildConfig = this._buildDisplayMeshBuildConfig();
+        const built = buildThreeGroupFromLiveMesh(parsed, {
+            displayMesh: displayBuildConfig
+        });
 
         this._clearLiveMeshScene();
         this._rebuildTopologyCanonicalIndex(parsed);
         this._rebuildTopologyHoverLookup(parsed);
         this._liveMeshGroup = built.group;
         this._liveMeshParsedDocument = parsed;
+        this._displayDerivedContract = built.displayContract ?? null;
+        this._meshRuntimeState.set({
+            parsedDocument: this._liveMeshParsedDocument,
+            displayContract: this._displayDerivedContract
+        });
         this._surfaceMeshes.push(...built.surfaceMeshes);
+        if (Array.isArray(built.canonicalSurfaceMeshes)) {
+            this._canonicalSurfaceMeshes.push(...built.canonicalSurfaceMeshes);
+        }
+        this._polygonWireCanonicalOverlay = built.polygonWireCanonical ?? null;
+        this._polygonWireDisplayOverlay = built.polygonWireDisplay ?? null;
         this._polygonWireOverlay = built.polygonWire ?? null;
         this._vertexOverlay = built.vertexOverlay ?? null;
         this._faceCenterOverlay = built.faceCenterOverlay ?? null;
@@ -2017,143 +2894,133 @@ export class MeshFabricationView {
         this._applyDisplayModeToScene();
 
         this._liveMeshRevision = parsed.revision;
-        const pivotPosition = this._resolveScenePivotPosition(built.surfaceMeshes);
+        this._meshRuntimeState.set({ revision: this._liveMeshRevision });
+        const latestBooleanError = getLatestBooleanKernelError(parsed.aiOperationLog);
+        if (latestBooleanError) {
+            this._liveMeshSyncLabel = `Boolean error: ${String(latestBooleanError.message ?? 'kernel execution failed')}`;
+            this._liveMeshHasError = true;
+        } else {
+            if (this._liveMeshSyncLabel.startsWith('Boolean error:')) {
+                this._liveMeshSyncLabel = 'Loaded';
+            }
+            this._liveMeshHasError = false;
+        }
+        this._meshRuntimeState.set({
+            syncLabel: this._liveMeshSyncLabel,
+            hasError: this._liveMeshHasError
+        });
+        const pivotPosition = this._resolveScenePivotPosition(workflowDoc.document);
         if (!hasPreviousMesh) {
             this._fitCamerasToMeshBounds(built.bounds, pivotPosition);
         } else {
             this._updateMeshBoundsState(built.bounds, pivotPosition);
         }
         this._aiPreviewWindow = workflowDoc.window;
+        this._refreshTessellationControlsUi();
         return { parsed, workflowWindow: workflowDoc.window };
     }
 
-    _startMeshSync() {
-        this._liveMeshEnabled = true;
-        this._stopMeshSync();
-        this._liveMeshSyncLabel = 'Connecting';
-        this._liveMeshHasError = false;
-        this._updateReadouts();
-
-        if (!this._meshStaticBootstrapTried) {
-            void this._loadBootstrapMeshFromStaticFile();
+    _syncLiveMeshRuntimeStateFromLoaderSnapshot(snapshot) {
+        const state = snapshot && typeof snapshot === 'object' ? snapshot : null;
+        if (!state) return;
+        this._liveMeshEnabled = !!state.enabled;
+        this._meshSyncInFlight = !!state.inFlight;
+        this._liveMeshEtag = String(state.etag ?? this._liveMeshEtag);
+        this._liveMeshLastModified = String(state.lastModified ?? this._liveMeshLastModified);
+        this._liveMeshLastCheckMs = Number.isFinite(state.lastCheckMs) ? state.lastCheckMs : this._liveMeshLastCheckMs;
+        this._liveMeshSyncLabel = String(state.label ?? this._liveMeshSyncLabel);
+        this._liveMeshHasError = !!state.hasError;
+        this._meshStaticBootstrapTried = !!state.bootstrapTried;
+        if (Number.isFinite(state.updatePulseUntilMs)) {
+            this._liveMeshUpdatePulseUntilMs = Math.max(this._liveMeshUpdatePulseUntilMs, state.updatePulseUntilMs);
         }
-        void this._pollLiveMesh({ force: true });
-        this._meshSyncIntervalId = window.setInterval(() => {
-            void this._pollLiveMesh();
-        }, LIVE_MESH_POLL_INTERVAL_MS);
+        this._meshRuntimeState.set({
+            etag: this._liveMeshEtag,
+            lastModified: this._liveMeshLastModified,
+            lastCheckMs: this._liveMeshLastCheckMs,
+            syncLabel: this._liveMeshSyncLabel,
+            hasError: this._liveMeshHasError
+        });
+    }
+
+    _ensureLiveMeshLoader() {
+        if (this._liveMeshLoader) return this._liveMeshLoader;
+        this._liveMeshLoader = createLiveMeshFileLoader({
+            endpoint: this._meshEndpoint,
+            staticFileUrl: this._meshStaticFileUrl,
+            pollIntervalMs: LIVE_MESH_POLL_INTERVAL_MS,
+            updatePulseMs: LIVE_MESH_UPDATE_PULSE_MS,
+            parseDocument: parseLiveMeshDocument,
+            onDocument: async (payload) => {
+                this._applyLiveMeshDocument(payload);
+                this._meshRuntimeState.set({
+                    sourceDocument: this._liveMeshSourceDocument,
+                    parsedDocument: this._liveMeshParsedDocument,
+                    displayContract: this._displayDerivedContract,
+                    revision: this._liveMeshRevision
+                });
+            },
+            onStateChange: (snapshot) => {
+                this._syncLiveMeshRuntimeStateFromLoaderSnapshot(snapshot);
+                this._updateReadouts();
+            }
+        });
+        return this._liveMeshLoader;
+    }
+
+    _startMeshSync() {
+        this._stopMeshSync();
+        const loader = this._ensureLiveMeshLoader();
+        loader.setEndpoint(this._meshEndpoint);
+        loader.setStaticFileUrl(this._meshStaticFileUrl);
+        loader.start();
         this._updateReadouts();
     }
 
     _stopMeshSync() {
-        if (this._meshSyncIntervalId !== null) {
-            window.clearInterval(this._meshSyncIntervalId);
-            this._meshSyncIntervalId = null;
-        }
-        this._meshSyncAbortController?.abort();
+        const loader = this._liveMeshLoader;
+        if (loader) loader.stop();
+        this._meshSyncIntervalId = null;
         this._meshSyncAbortController = null;
         this._meshSyncInFlight = false;
         this._updateReadouts();
     }
 
     _toggleLiveMeshSync() {
-        if (this._liveMeshEnabled) {
-            this._liveMeshEnabled = false;
-            this._stopMeshSync();
-            this._liveMeshSyncLabel = 'Polling paused';
-            this._liveMeshHasError = false;
-            this._updateReadouts();
-            return;
-        }
-        this._startMeshSync();
+        const loader = this._ensureLiveMeshLoader();
+        loader.setEndpoint(this._meshEndpoint);
+        loader.setStaticFileUrl(this._meshStaticFileUrl);
+        loader.toggleEnabled();
+        this._updateReadouts();
     }
 
     async _pollLiveMesh({ force = false } = {}) {
-        if (!this._liveMeshEnabled) return;
-        if (this._meshSyncInFlight) return;
-        this._meshSyncInFlight = true;
-        this._liveMeshLastCheckMs = Date.now();
-
-        const controller = new AbortController();
-        this._meshSyncAbortController = controller;
-
+        const loader = this._ensureLiveMeshLoader();
+        loader.setEndpoint(this._meshEndpoint);
         try {
-            const headers = new Headers({ Accept: 'application/json' });
-            if (!force && this._liveMeshEtag) headers.set('If-None-Match', this._liveMeshEtag);
-            if (!force && this._liveMeshLastModified) headers.set('If-Modified-Since', this._liveMeshLastModified);
-
-            const response = await fetch(this._meshEndpoint, {
-                method: 'GET',
-                cache: 'no-store',
-                headers,
-                signal: controller.signal
-            });
-
-            if (response.status === 304) {
-                this._liveMeshSyncLabel = 'Not modified';
-                this._liveMeshHasError = false;
-                return;
-            }
-            if (!response.ok) {
-                if (response.status === 404) {
-                    throw new Error(`HTTP 404 (mesh API not routed at ${this._meshEndpoint})`);
-                }
-                throw new Error(`HTTP ${response.status}`);
-            }
-
-            const etag = response.headers.get('ETag');
-            const lastModified = response.headers.get('Last-Modified');
-            if (etag) this._liveMeshEtag = etag;
-            if (lastModified) this._liveMeshLastModified = lastModified;
-
-            const payload = await response.json();
-            this._applyLiveMeshDocument(payload);
-            this._liveMeshSyncLabel = 'Updated';
-            this._liveMeshUpdatePulseUntilMs = Date.now() + LIVE_MESH_UPDATE_PULSE_MS;
-            this._liveMeshHasError = false;
+            await loader.poll({ force });
         } catch (err) {
-            if (controller.signal.aborted) return;
-            this._liveMeshSyncLabel = `Error: ${err?.message ?? String(err)}`;
-            this._liveMeshHasError = true;
             console.warn('[MeshFabricationView] Live mesh polling failed.', err);
             if (!this._liveMeshParsedDocument) {
                 void this._loadBootstrapMeshFromStaticFile();
             }
-        } finally {
-            this._meshSyncInFlight = false;
-            if (this._meshSyncAbortController === controller) {
-                this._meshSyncAbortController = null;
-            }
-            this._liveMeshLastCheckMs = Date.now();
-            this._updateReadouts();
         }
+        this._updateReadouts();
     }
 
     async _loadBootstrapMeshFromStaticFile() {
-        if (this._meshStaticBootstrapTried) return;
-        this._meshStaticBootstrapTried = true;
-
+        const loader = this._ensureLiveMeshLoader();
+        loader.setStaticFileUrl(this._meshStaticFileUrl);
         try {
-            const response = await fetch(this._meshStaticFileUrl, {
-                method: 'GET',
-                cache: 'no-store',
-                headers: { Accept: 'application/json' }
-            });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const payload = await response.json();
-            this._applyLiveMeshDocument(payload);
-            if (this._liveMeshSyncLabel.startsWith('Error') || this._liveMeshSyncLabel === 'Connecting') {
-                this._liveMeshSyncLabel = 'Loaded default mesh';
-            }
-            this._liveMeshUpdatePulseUntilMs = Date.now() + LIVE_MESH_UPDATE_PULSE_MS;
-            this._liveMeshHasError = false;
-            this._updateReadouts();
+            await loader.loadBootstrap();
         } catch (err) {
             this._liveMeshHasError = true;
             console.warn('[MeshFabricationView] Failed to load bootstrap mesh file.', err);
         }
+        this._updateReadouts();
     }
 
-    _downloadCurrentMeshObj() {
+    _downloadCurrentMeshObj({ meshKind = 'canonical' } = {}) {
         if (!this._liveMeshParsedDocument) {
             this._liveMeshSyncLabel = 'Error: no mesh loaded';
             this._liveMeshHasError = true;
@@ -2161,10 +3028,18 @@ export class MeshFabricationView {
             return;
         }
 
-        const objText = buildObjTextFromLiveMesh(this._liveMeshParsedDocument);
+        const normalizedMeshKind = String(meshKind ?? '').trim().toLowerCase() === 'display'
+            ? 'display'
+            : 'canonical';
+        const objText = buildObjTextFromLiveMesh(this._liveMeshParsedDocument, {
+            meshKind: normalizedMeshKind,
+            displayMesh: this._buildDisplayMeshBuildConfig()
+        });
         const meshId = sanitizeFileToken(this._liveMeshParsedDocument.meshId, 'mesh');
         const revision = sanitizeFileToken(this._liveMeshParsedDocument.revision, 'rev');
-        const filename = `${meshId}.${revision}.obj`;
+        const filename = normalizedMeshKind === 'display'
+            ? `${meshId}.${revision}.display.obj`
+            : `${meshId}.${revision}.obj`;
 
         const blob = new Blob([objText], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
@@ -2177,7 +3052,9 @@ export class MeshFabricationView {
         anchor.remove();
         URL.revokeObjectURL(url);
 
-        this._liveMeshSyncLabel = `Downloaded ${filename}`;
+        this._liveMeshSyncLabel = normalizedMeshKind === 'display'
+            ? `Downloaded ${filename} (display mesh)`
+            : `Downloaded ${filename}`;
         this._liveMeshHasError = false;
         this._updateReadouts();
     }
@@ -2477,8 +3354,10 @@ export class MeshFabricationView {
         }
         this._setDisplayModePopupOpen(false);
         this._setLayoutPopupOpen(false);
+        this._setTessellationControlsOpen(false);
         this._setOverlayOptionsOpen(false);
         this._setContextMenuOpen(false);
+        this._clearRulerHover();
         this._clearTopologyHoverHighlights();
         this._drag = null;
     }
@@ -2486,6 +3365,7 @@ export class MeshFabricationView {
     _setLayoutPreset(presetId) {
         const preset = getPresetById(presetId);
         this._layoutPresetId = preset.id;
+        this._viewInteractionState.set({ layoutPresetId: this._layoutPresetId });
 
         for (const [id, button] of this._buttonByPresetId.entries()) {
             const selected = id === preset.id;
@@ -2496,6 +3376,7 @@ export class MeshFabricationView {
         this._refreshLayoutComboSummary();
         this._rebuildTiles();
         this._setHoveredTile('');
+        this._clearRulerHover();
         this._setContextMenuOpen(false);
         this._clearTopologyHoverHighlights();
         this._updateReadouts();
@@ -2512,6 +3393,7 @@ export class MeshFabricationView {
         const option = getDisplayModeOptionById(normalized);
         const next = option.id;
         this._displayMode = next;
+        this._viewInteractionState.set({ displayMode: this._displayMode });
         this._applyDisplayModeToScene();
 
         for (const [id, button] of this._buttonByDisplayMode.entries()) {
@@ -2548,9 +3430,6 @@ export class MeshFabricationView {
     }
 
     _applyWireOcclusionSetting() {
-        const overlay = this._polygonWireOverlay ?? null;
-        const material = overlay?.material ?? null;
-        if (!material) return;
         const depthTest = !!this._hideOccludedWiresEnabled;
         const applyMaterialState = (mat) => {
             if (!mat || typeof mat !== 'object') return;
@@ -2563,11 +3442,29 @@ export class MeshFabricationView {
                 mat.needsUpdate = true;
             }
         };
-        if (Array.isArray(material)) {
-            for (const item of material) applyMaterialState(item);
-            return;
+        const overlays = [
+            this._polygonWireCanonicalOverlay,
+            this._polygonWireDisplayOverlay
+        ].filter(Boolean);
+        for (const overlay of overlays) {
+            const material = overlay?.material ?? null;
+            if (!material) continue;
+            if (Array.isArray(material)) {
+                for (const item of material) applyMaterialState(item);
+                continue;
+            }
+            applyMaterialState(material);
         }
-        applyMaterialState(material);
+    }
+
+    _resolveActiveWireOverlay() {
+        const source = this._displayWireSource === DISPLAY_WIRE_SOURCE.DISPLAY
+            ? DISPLAY_WIRE_SOURCE.DISPLAY
+            : DISPLAY_WIRE_SOURCE.CANONICAL;
+        if (source === DISPLAY_WIRE_SOURCE.DISPLAY) {
+            return this._polygonWireDisplayOverlay ?? this._polygonWireCanonicalOverlay ?? null;
+        }
+        return this._polygonWireCanonicalOverlay ?? this._polygonWireDisplayOverlay ?? null;
     }
 
     _getSurfaceMaterialDefaults(material) {
@@ -2635,8 +3532,15 @@ export class MeshFabricationView {
                 depthOnly: depthOnlyOccluder
             });
         }
-        if (this._polygonWireOverlay) {
-            this._polygonWireOverlay.visible = showWire;
+        const activeWire = this._resolveActiveWireOverlay();
+        this._polygonWireOverlay = activeWire;
+        if (this._polygonWireCanonicalOverlay) {
+            this._polygonWireCanonicalOverlay.visible = !!showWire && this._polygonWireCanonicalOverlay === activeWire;
+        }
+        if (this._polygonWireDisplayOverlay) {
+            this._polygonWireDisplayOverlay.visible = !!showWire && this._polygonWireDisplayOverlay === activeWire;
+        }
+        if (activeWire) {
             this._applyWireOcclusionSetting();
         }
         if (this._vertexOverlay) {
@@ -2653,6 +3557,7 @@ export class MeshFabricationView {
     _setUserMode(mode) {
         const next = mode === 'select' ? 'select' : 'orbit';
         this._userMode = next;
+        this._viewInteractionState.set({ userMode: this._userMode });
         for (const [id, button] of this._buttonByUserMode.entries()) {
             button.classList.toggle('is-active', id === next);
         }
@@ -2771,10 +3676,16 @@ export class MeshFabricationView {
         this._tileStatusById.clear();
         this._tileStatusElementById.clear();
         this._tileHoverHitById.clear();
+        this._tileRulerElementById.clear();
+        this._tileRulerMetricsById.clear();
+        this._activeRulerHover = null;
 
         for (const tile of this._tiles) {
             const frame = document.createElement('div');
             frame.className = 'mesh-fab-view-frame';
+            if (tile.kind === 'orthographic') {
+                frame.classList.add('is-orthographic');
+            }
             frame.style.left = `${tile.x}px`;
             frame.style.top = `${tile.y}px`;
             frame.style.width = `${tile.width}px`;
@@ -2798,6 +3709,80 @@ export class MeshFabricationView {
             status.appendChild(statusAuthored);
             frame.appendChild(status);
 
+            if (tile.kind === 'orthographic') {
+                frame.classList.add('has-rulers');
+
+                const bottomRuler = document.createElement('div');
+                bottomRuler.className = 'mesh-fab-view-ruler mesh-fab-view-ruler-bottom';
+                const bottomAxis = document.createElement('span');
+                bottomAxis.className = 'mesh-fab-view-ruler-axis';
+                bottomAxis.textContent = 'X';
+                const bottomStart = document.createElement('span');
+                bottomStart.className = 'mesh-fab-view-ruler-bound mesh-fab-view-ruler-bound-start';
+                bottomStart.textContent = '0.000 m';
+                const bottomEnd = document.createElement('span');
+                bottomEnd.className = 'mesh-fab-view-ruler-bound mesh-fab-view-ruler-bound-end';
+                bottomEnd.textContent = '0.000 m';
+                const bottomOrigin = document.createElement('span');
+                bottomOrigin.className = 'mesh-fab-view-ruler-origin';
+                bottomOrigin.textContent = '0';
+                bottomRuler.appendChild(bottomAxis);
+                bottomRuler.appendChild(bottomStart);
+                bottomRuler.appendChild(bottomEnd);
+                bottomRuler.appendChild(bottomOrigin);
+                frame.appendChild(bottomRuler);
+
+                const leftRuler = document.createElement('div');
+                leftRuler.className = 'mesh-fab-view-ruler mesh-fab-view-ruler-left';
+                const leftAxis = document.createElement('span');
+                leftAxis.className = 'mesh-fab-view-ruler-axis';
+                leftAxis.textContent = 'Y';
+                const leftStart = document.createElement('span');
+                leftStart.className = 'mesh-fab-view-ruler-bound mesh-fab-view-ruler-bound-start';
+                leftStart.textContent = '0.000 m';
+                const leftEnd = document.createElement('span');
+                leftEnd.className = 'mesh-fab-view-ruler-bound mesh-fab-view-ruler-bound-end';
+                leftEnd.textContent = '0.000 m';
+                const leftOrigin = document.createElement('span');
+                leftOrigin.className = 'mesh-fab-view-ruler-origin';
+                leftOrigin.textContent = '0';
+                leftRuler.appendChild(leftAxis);
+                leftRuler.appendChild(leftStart);
+                leftRuler.appendChild(leftEnd);
+                leftRuler.appendChild(leftOrigin);
+                frame.appendChild(leftRuler);
+
+                const guideVertical = document.createElement('span');
+                guideVertical.className = 'mesh-fab-view-ruler-guide mesh-fab-view-ruler-guide-vertical';
+                frame.appendChild(guideVertical);
+
+                const guideHorizontal = document.createElement('span');
+                guideHorizontal.className = 'mesh-fab-view-ruler-guide mesh-fab-view-ruler-guide-horizontal';
+                frame.appendChild(guideHorizontal);
+
+                const guideReadout = document.createElement('span');
+                guideReadout.className = 'mesh-fab-view-ruler-readout';
+                guideReadout.textContent = '-';
+                frame.appendChild(guideReadout);
+
+                this._tileRulerElementById.set(tile.id, {
+                    frame,
+                    bottom: bottomRuler,
+                    left: leftRuler,
+                    bottomAxis,
+                    leftAxis,
+                    bottomStart,
+                    bottomEnd,
+                    leftStart,
+                    leftEnd,
+                    bottomOrigin,
+                    leftOrigin,
+                    guideVertical,
+                    guideHorizontal,
+                    guideReadout
+                });
+            }
+
             overlay.appendChild(frame);
             this._tileFrameById.set(tile.id, frame);
             this._tileStatusById.set(tile.id, Object.freeze({ canonical: '-', authored: '-' }));
@@ -2806,6 +3791,7 @@ export class MeshFabricationView {
                 authored: statusAuthored
             });
         }
+        this._refreshRulerOverlays();
     }
 
     _setHoveredTile(tileId) {
@@ -2874,6 +3860,234 @@ export class MeshFabricationView {
             canonicalId,
             ...(coords ? { coords } : {})
         }));
+    }
+
+    _resolveDominantAxis(vector) {
+        const x = Number(vector?.x) || 0;
+        const y = Number(vector?.y) || 0;
+        const z = Number(vector?.z) || 0;
+        const ax = Math.abs(x);
+        const ay = Math.abs(y);
+        const az = Math.abs(z);
+        if (ax >= ay && ax >= az) {
+            return { index: 0, name: 'X', sign: x < 0 ? -1 : 1 };
+        }
+        if (ay >= ax && ay >= az) {
+            return { index: 1, name: 'Y', sign: y < 0 ? -1 : 1 };
+        }
+        return { index: 2, name: 'Z', sign: z < 0 ? -1 : 1 };
+    }
+
+    _getObjectAxisExtent(axisIndex) {
+        const index = clampInt(axisIndex, 0, 2);
+        let min = Number(this._modelBounds?.min?.getComponent?.(index));
+        let max = Number(this._modelBounds?.max?.getComponent?.(index));
+        if (!Number.isFinite(min) || !Number.isFinite(max)) {
+            const center = Number(this._modelCenter?.getComponent?.(index)) || 0;
+            min = center - 0.5;
+            max = center + 0.5;
+        }
+        if (max < min) {
+            const tmp = min;
+            min = max;
+            max = tmp;
+        }
+        if ((max - min) < ORTHO_RULER_EPSILON) {
+            const center = (min + max) * 0.5;
+            min = center - 0.5;
+            max = center + 0.5;
+        }
+        return { min, max };
+    }
+
+    _updateOrthoRulerMetricsForTile(tile, camera) {
+        if (!tile || tile.kind !== 'orthographic' || !camera) return;
+        const rightDir = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+        const upDir = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+        const horizontalAxis = this._resolveDominantAxis(rightDir);
+        const verticalAxis = this._resolveDominantAxis(upDir);
+        const hExtent = this._getObjectAxisExtent(horizontalAxis.index);
+        const vExtent = this._getObjectAxisExtent(verticalAxis.index);
+        this._tileRulerMetricsById.set(tile.id, Object.freeze({
+            horizontalAxis: Object.freeze(horizontalAxis),
+            verticalAxis: Object.freeze(verticalAxis),
+            horizontalExtent: Object.freeze(hExtent),
+            verticalExtent: Object.freeze(vExtent)
+        }));
+    }
+
+    _hideRulerGuides(tileId) {
+        const refs = this._tileRulerElementById.get(tileId);
+        if (!refs) return;
+        refs.guideVertical?.classList.remove('is-visible');
+        refs.guideHorizontal?.classList.remove('is-visible');
+        refs.guideReadout?.classList.remove('is-visible');
+    }
+
+    _clearRulerHover() {
+        this._activeRulerHover = null;
+        for (const tileId of this._tileRulerElementById.keys()) {
+            this._hideRulerGuides(tileId);
+        }
+    }
+
+    _refreshRulerOverlays() {
+        for (const [tileId, refs] of this._tileRulerElementById.entries()) {
+            const metric = this._tileRulerMetricsById.get(tileId) ?? null;
+            const frame = refs?.frame ?? null;
+            if (!frame) continue;
+            frame.classList.toggle('has-rulers', !!this._rulersEnabled);
+            frame.classList.toggle('rulers-hidden', !this._rulersEnabled);
+            if (!this._rulersEnabled || !metric) {
+                refs.bottom?.classList.remove('is-visible');
+                refs.left?.classList.remove('is-visible');
+                this._hideRulerGuides(tileId);
+                continue;
+            }
+            refs.bottom?.classList.add('is-visible');
+            refs.left?.classList.add('is-visible');
+
+            const hAxis = metric.horizontalAxis;
+            const vAxis = metric.verticalAxis;
+            const hMin = Number(metric.horizontalExtent?.min) || 0;
+            const hMax = Number(metric.horizontalExtent?.max) || 0;
+            const vMin = Number(metric.verticalExtent?.min) || 0;
+            const vMax = Number(metric.verticalExtent?.max) || 0;
+            const hSpan = Math.max(ORTHO_RULER_EPSILON, hMax - hMin);
+            const vSpan = Math.max(ORTHO_RULER_EPSILON, vMax - vMin);
+
+            const horizontalStart = hAxis.sign >= 0 ? hMin : hMax;
+            const horizontalEnd = hAxis.sign >= 0 ? hMax : hMin;
+            const verticalDownSign = -vAxis.sign;
+            const verticalStart = verticalDownSign >= 0 ? vMin : vMax;
+            const verticalEnd = verticalDownSign >= 0 ? vMax : vMin;
+
+            if (refs.bottomAxis) refs.bottomAxis.textContent = hAxis.name;
+            if (refs.leftAxis) refs.leftAxis.textContent = vAxis.name;
+            if (refs.bottomStart) refs.bottomStart.textContent = formatMetersLabel(horizontalStart);
+            if (refs.bottomEnd) refs.bottomEnd.textContent = formatMetersLabel(horizontalEnd);
+            if (refs.leftStart) refs.leftStart.textContent = formatMetersLabel(verticalStart);
+            if (refs.leftEnd) refs.leftEnd.textContent = formatMetersLabel(verticalEnd);
+
+            const usableWidth = Math.max(1, (frame.clientWidth || 1) - ORTHO_RULER_LEFT_PX);
+            const usableHeight = Math.max(1, (frame.clientHeight || 1) - ORTHO_RULER_BOTTOM_PX);
+
+            const hOriginRatio = hAxis.sign >= 0
+                ? (0 - hMin) / hSpan
+                : (hMax - 0) / hSpan;
+            const vOriginRatio = verticalDownSign >= 0
+                ? (0 - vMin) / vSpan
+                : (vMax - 0) / vSpan;
+
+            if (refs.bottomOrigin) {
+                const visible = hOriginRatio >= 0 && hOriginRatio <= 1;
+                refs.bottomOrigin.classList.toggle('is-visible', visible);
+                refs.bottomOrigin.style.left = `${clamp(hOriginRatio, 0, 1) * usableWidth}px`;
+            }
+            if (refs.leftOrigin) {
+                const visible = vOriginRatio >= 0 && vOriginRatio <= 1;
+                refs.leftOrigin.classList.toggle('is-visible', visible);
+                refs.leftOrigin.style.top = `${clamp(vOriginRatio, 0, 1) * usableHeight}px`;
+            }
+        }
+    }
+
+    _updateRulerHover(clientX, clientY, tile) {
+        if (!this._rulersEnabled || !tile || tile.kind !== 'orthographic') return false;
+        const refs = this._tileRulerElementById.get(tile.id) ?? null;
+        const metric = this._tileRulerMetricsById.get(tile.id) ?? null;
+        if (!refs || !metric) return false;
+
+        const rect = this._viewportStage?.getBoundingClientRect?.() ?? this.canvas?.getBoundingClientRect?.();
+        if (!rect) return false;
+        const localX = (clientX - rect.left) - tile.x;
+        const localY = (clientY - rect.top) - tile.y;
+
+        const width = Math.max(1, Number(tile.width) || 1);
+        const height = Math.max(1, Number(tile.height) || 1);
+        const usableWidth = Math.max(1, width - ORTHO_RULER_LEFT_PX);
+        const usableHeight = Math.max(1, height - ORTHO_RULER_BOTTOM_PX);
+
+        const onBottomRuler = localX >= ORTHO_RULER_LEFT_PX && localX <= width && localY >= usableHeight && localY <= height;
+        const onLeftRuler = localX >= 0 && localX <= ORTHO_RULER_LEFT_PX && localY >= 0 && localY <= usableHeight;
+        if (!onBottomRuler && !onLeftRuler) {
+            if (this._activeRulerHover) {
+                this._clearRulerHover();
+            }
+            return false;
+        }
+
+        for (const tileId of this._tileRulerElementById.keys()) {
+            if (tileId !== tile.id) this._hideRulerGuides(tileId);
+        }
+
+        const hAxis = metric.horizontalAxis;
+        const hMin = Number(metric.horizontalExtent?.min) || 0;
+        const hMax = Number(metric.horizontalExtent?.max) || 0;
+        const hSpan = Math.max(ORTHO_RULER_EPSILON, hMax - hMin);
+        const vAxis = metric.verticalAxis;
+        const vMin = Number(metric.verticalExtent?.min) || 0;
+        const vMax = Number(metric.verticalExtent?.max) || 0;
+        const vSpan = Math.max(ORTHO_RULER_EPSILON, vMax - vMin);
+
+        let axisName = '';
+        let axisValue = 0;
+        if (onBottomRuler) {
+            const ratio = clamp((localX - ORTHO_RULER_LEFT_PX) / usableWidth, 0, 1);
+            axisValue = hAxis.sign >= 0
+                ? hMin + (ratio * hSpan)
+                : hMax - (ratio * hSpan);
+            axisName = hAxis.name;
+
+            refs.guideHorizontal?.classList.remove('is-visible');
+            if (refs.guideVertical) {
+                refs.guideVertical.style.left = `${ORTHO_RULER_LEFT_PX + (ratio * usableWidth)}px`;
+                refs.guideVertical.classList.add('is-visible');
+            }
+        } else {
+            const ratio = clamp(localY / usableHeight, 0, 1);
+            const verticalDownSign = -vAxis.sign;
+            axisValue = verticalDownSign >= 0
+                ? vMin + (ratio * vSpan)
+                : vMax - (ratio * vSpan);
+            axisName = vAxis.name;
+
+            refs.guideVertical?.classList.remove('is-visible');
+            if (refs.guideHorizontal) {
+                refs.guideHorizontal.style.top = `${ratio * usableHeight}px`;
+                refs.guideHorizontal.classList.add('is-visible');
+            }
+        }
+
+        const measurementText = `${axisName}: ${formatMetersLabel(axisValue)}`;
+        if (refs.guideReadout) {
+            refs.guideReadout.textContent = measurementText;
+            if (onBottomRuler) {
+                const ratio = clamp((localX - ORTHO_RULER_LEFT_PX) / usableWidth, 0, 1);
+                const x = ORTHO_RULER_LEFT_PX + (ratio * usableWidth);
+                refs.guideReadout.style.left = `${clamp(x + 6, ORTHO_RULER_LEFT_PX + 4, width - 96)}px`;
+                refs.guideReadout.style.top = '6px';
+            } else {
+                const ratio = clamp(localY / usableHeight, 0, 1);
+                const y = ratio * usableHeight;
+                refs.guideReadout.style.left = `${ORTHO_RULER_LEFT_PX + 6}px`;
+                refs.guideReadout.style.top = `${clamp(y - 11, 4, usableHeight - 18)}px`;
+            }
+            refs.guideReadout.classList.add('is-visible');
+        }
+
+        this._activeRulerHover = {
+            tileId: tile.id,
+            axisName,
+            axisValue
+        };
+        this._setTileHoverHit(tile.id, null);
+        this._setTileStatus(tile.id, {
+            canonical: `Ruler ${axisName}`,
+            authored: measurementText
+        });
+        this._clearTopologyHoverHighlights();
+        return true;
     }
 
     _updateReadouts() {
@@ -2949,11 +4163,14 @@ export class MeshFabricationView {
         const x = clientX - rect.left;
         const y = clientY - rect.top;
         if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
-        return this._tiles.find((tile) => {
-            const x1 = tile.x + tile.width;
-            const y1 = tile.y + tile.height;
-            return x >= tile.x && x <= x1 && y >= tile.y && y <= y1;
-        }) ?? null;
+        const screenTiles = this._tiles.map((tile) => Object.freeze({
+            ...tile,
+            screenX: Number(tile.x) || 0,
+            screenY: Number(tile.y) || 0,
+            screenW: Number(tile.width) || 0,
+            screenH: Number(tile.height) || 0
+        }));
+        return pickTileFromFrames(screenTiles, x, y);
     }
 
     _pickSelectableInPerspectiveTile(clientX, clientY, tile) {
@@ -3074,30 +4291,13 @@ export class MeshFabricationView {
     }
 
     _formatTopologyHoverStatus(hit) {
-        if (!hit || typeof hit !== 'object') {
-            return { canonical: '-', authored: '-' };
-        }
-        if (String(hit.kind ?? '').trim().toLowerCase() === 'pivot') {
-            const coords = Array.isArray(hit.coords) && hit.coords.length >= 3
-                ? {
-                    x: Number(hit.coords[0]) || 0,
-                    y: Number(hit.coords[1]) || 0,
-                    z: Number(hit.coords[2]) || 0
-                }
-                : this._pivotPosition;
-            return {
-                canonical: 'scene.pivot',
-                authored: `Pivot @ (${formatVector3Label(coords)})`
-            };
-        }
-        const authored = this._formatTopologyHoverLabel(hit);
-        const canonicalRaw = typeof hit.canonicalId === 'string' && hit.canonicalId.trim()
-            ? hit.canonicalId.trim()
-            : this._resolveCanonicalTopologyId(hit.id);
-        return {
-            canonical: canonicalRaw || '-',
-            authored: authored || '-'
-        };
+        return buildTopologyHoverStatus({
+            hit,
+            pivotPosition: this._pivotPosition,
+            formatVector3: (coords) => formatVector3Label(coords),
+            formatAuthored: (entry) => this._formatTopologyHoverLabel(entry),
+            resolveCanonical: (id) => this._resolveCanonicalTopologyId(id)
+        });
     }
 
     _resolveRaycastCameraForTile(tile, width, height) {
@@ -3125,10 +4325,7 @@ export class MeshFabricationView {
             const viewHeight = 2 * Math.tan(fovRad * 0.5) * distance;
             worldPerPixel = Math.max(0.0001, viewHeight / safeH);
         }
-        if (!this._raycaster.params.Line) this._raycaster.params.Line = {};
-        if (!this._raycaster.params.Points) this._raycaster.params.Points = {};
-        this._raycaster.params.Line.threshold = Math.max(0.0006, worldPerPixel * 4.0);
-        this._raycaster.params.Points.threshold = Math.max(0.001, worldPerPixel * 9.0);
+        configureRaycasterThresholds(this._raycaster, worldPerPixel);
     }
 
     _pickTopologyElementInTile(clientX, clientY, tile) {
@@ -3158,6 +4355,7 @@ export class MeshFabricationView {
             }
         }
 
+        const rankedHits = [];
         const occluderMeshes = this._surfaceMeshes.filter((mesh) => !!mesh && mesh.visible !== false);
         let nearestSurfaceDistance = Number.POSITIVE_INFINITY;
         if (occluderMeshes.length > 0) {
@@ -3181,7 +4379,10 @@ export class MeshFabricationView {
             const hitIndex = Number(hit?.index);
             const ids = this._vertexOverlay?.userData?.topology?.vertexIds;
             if (Number.isInteger(hitIndex) && Array.isArray(ids) && hitIndex >= 0 && hitIndex < ids.length) {
-                return this._createTopologyHit('vertex', ids[hitIndex]);
+                rankedHits.push({
+                    ...this._createTopologyHit('vertex', ids[hitIndex]),
+                    distance: Number(hit?.distance)
+                });
             }
         }
 
@@ -3192,20 +4393,41 @@ export class MeshFabricationView {
             } else {
             const rawIndex = Number(hit?.index);
             const ids = this._polygonWireOverlay?.userData?.topology?.edgeIds;
-            if (Array.isArray(ids) && Number.isInteger(rawIndex) && rawIndex >= 0) {
-                let edgeIndex = rawIndex;
+            const faceIds = this._polygonWireOverlay?.userData?.topology?.faceIds;
+            if (Number.isInteger(rawIndex) && rawIndex >= 0) {
                 const positionCount = Number(
                     this._polygonWireOverlay?.geometry?.getAttribute?.('position')?.count
                 ) || 0;
-                const nonIndexedPairEncoded = positionCount === (ids.length * 2);
-                if (nonIndexedPairEncoded) {
-                    // For non-indexed LineSegments, raycast index points to segment vertex slot (0,2,4,...).
-                    edgeIndex = Math.floor(edgeIndex * 0.5);
-                } else if (edgeIndex >= ids.length) {
-                    edgeIndex = Math.floor(edgeIndex * 0.5);
+                if (Array.isArray(ids) && ids.length > 0) {
+                    let edgeIndex = rawIndex;
+                    const nonIndexedPairEncoded = positionCount === (ids.length * 2);
+                    if (nonIndexedPairEncoded) {
+                        // For non-indexed LineSegments, raycast index points to segment vertex slot (0,2,4,...).
+                        edgeIndex = Math.floor(edgeIndex * 0.5);
+                    } else if (edgeIndex >= ids.length) {
+                        edgeIndex = Math.floor(edgeIndex * 0.5);
+                    }
+                    if (edgeIndex >= 0 && edgeIndex < ids.length) {
+                        rankedHits.push({
+                            ...this._createTopologyHit('edge', ids[edgeIndex]),
+                            distance: Number(hit?.distance)
+                        });
+                    }
                 }
-                if (edgeIndex >= 0 && edgeIndex < ids.length) {
-                    return this._createTopologyHit('edge', ids[edgeIndex]);
+                if (Array.isArray(faceIds) && faceIds.length > 0) {
+                    let faceIndex = rawIndex;
+                    const nonIndexedPairEncoded = positionCount === (faceIds.length * 2);
+                    if (nonIndexedPairEncoded) {
+                        faceIndex = Math.floor(faceIndex * 0.5);
+                    } else if (faceIndex >= faceIds.length) {
+                        faceIndex = Math.floor(faceIndex * 0.5);
+                    }
+                    if (faceIndex >= 0 && faceIndex < faceIds.length) {
+                        rankedHits.push({
+                            ...this._createTopologyHit('face', faceIds[faceIndex]),
+                            distance: Number(hit?.distance)
+                        });
+                    }
                 }
             }
             }
@@ -3219,20 +4441,27 @@ export class MeshFabricationView {
             const hitIndex = Number(hit?.index);
             const ids = this._faceCenterOverlay?.userData?.topology?.faceIds;
             if (Number.isInteger(hitIndex) && Array.isArray(ids) && hitIndex >= 0 && hitIndex < ids.length) {
-                return this._createTopologyHit('face', ids[hitIndex]);
+                rankedHits.push({
+                    ...this._createTopologyHit('face', ids[hitIndex]),
+                    distance: Number(hit?.distance)
+                });
             }
             }
         }
 
         const candidates = occluderMeshes;
-        if (candidates.length < 1) return null;
-        const hit = this._raycaster.intersectObjects(candidates, false)[0] ?? null;
-        const faceIndex = Number(hit?.faceIndex);
-        const triangleFaceIds = hit?.object?.userData?.topology?.triangleFaceIds;
-        if (Number.isInteger(faceIndex) && Array.isArray(triangleFaceIds) && faceIndex >= 0 && faceIndex < triangleFaceIds.length) {
-            return this._createTopologyHit('face', triangleFaceIds[faceIndex]);
+        if (candidates.length > 0) {
+            const hit = this._raycaster.intersectObjects(candidates, false)[0] ?? null;
+            const faceIndex = Number(hit?.faceIndex);
+            const triangleFaceIds = hit?.object?.userData?.topology?.triangleFaceIds;
+            if (Number.isInteger(faceIndex) && Array.isArray(triangleFaceIds) && faceIndex >= 0 && faceIndex < triangleFaceIds.length) {
+                rankedHits.push({
+                    ...this._createTopologyHit('face', triangleFaceIds[faceIndex]),
+                    distance: Number(hit?.distance)
+                });
+            }
         }
-        return null;
+        return rankTopologyHits(rankedHits);
     }
 
     _updateHoverTopologyStatus(clientX, clientY, tile) {
@@ -3250,6 +4479,9 @@ export class MeshFabricationView {
         const tile = this._pickTile(event.clientX, event.clientY);
         this._setHoveredTile(tile?.id ?? '');
         if (!tile) return;
+        if (tile.kind !== 'orthographic') {
+            this._clearRulerHover();
+        }
         if (tile.kind !== 'perspective') return;
 
         if (button === 0 && this._userMode !== 'orbit') {
@@ -3274,6 +4506,7 @@ export class MeshFabricationView {
         const tile = this._pickTile(event.clientX, event.clientY);
         this._setHoveredTile(tile?.id ?? '');
         if (!tile) {
+            this._clearRulerHover();
             if (this._contextMenuOpen) return;
             if (prevHoverTileId) {
                 this._setTileHoverHit(prevHoverTileId, null);
@@ -3281,10 +4514,13 @@ export class MeshFabricationView {
             }
             this._clearTopologyHoverHighlights();
         } else if (!this._drag) {
-            this._updateHoverTopologyStatus(event.clientX, event.clientY, tile);
+            if (!this._updateRulerHover(event.clientX, event.clientY, tile)) {
+                this._updateHoverTopologyStatus(event.clientX, event.clientY, tile);
+            }
         }
 
         if (!this._drag || event.pointerId !== this._drag.pointerId) return;
+        this._clearRulerHover();
 
         const dx = event.clientX - this._drag.x;
         const dy = event.clientY - this._drag.y;
@@ -3294,8 +4530,8 @@ export class MeshFabricationView {
         if (this._drag.mode === 'pan') {
             this._panMainCamera(dx, dy);
         } else {
-            this._orbitYaw -= dx * 0.008;
-            this._orbitPitch = clamp(this._orbitPitch + dy * 0.0075, -1.45, 1.45);
+            this._orbitYaw -= dx * 0.00448;
+            this._orbitPitch = clamp(this._orbitPitch + dy * 0.0042, -1.45, 1.45);
             this._updateMainCameraOrbit();
         }
         event.preventDefault();
@@ -3309,6 +4545,7 @@ export class MeshFabricationView {
 
     _handlePointerLeave() {
         if (!this._drag) {
+            this._clearRulerHover();
             if (this._contextMenuOpen) return;
             if (this._hoverTileId) {
                 this._setTileHoverHit(this._hoverTileId, null);
@@ -3324,43 +4561,40 @@ export class MeshFabricationView {
         if (!tile) return;
 
         if (tile.kind === 'orthographic') {
-            this._auxZoom = clamp(this._auxZoom * Math.exp(-event.deltaY * 0.0015), 0.35, 6);
+            this._auxZoom = clamp(this._auxZoom * Math.exp(-event.deltaY * 0.0015), MIN_AUX_ZOOM, MAX_AUX_ZOOM);
             event.preventDefault();
             return;
         }
 
         if (tile.kind === 'perspective') {
-            this._orbitRadius = clamp(this._orbitRadius * Math.exp(event.deltaY * 0.0012), 3.5, 90);
+            this._orbitRadius = clamp(
+                this._orbitRadius * Math.exp(event.deltaY * 0.0012),
+                MIN_PERSPECTIVE_ORBIT_RADIUS,
+                MAX_PERSPECTIVE_ORBIT_RADIUS
+            );
             this._updateMainCameraOrbit();
             event.preventDefault();
         }
     }
 
     _updateMainCameraOrbit() {
-        const radius = this._orbitRadius;
-        const pitchCos = Math.cos(this._orbitPitch);
-        const x = this._orbitTarget.x + Math.sin(this._orbitYaw) * pitchCos * radius;
-        const y = this._orbitTarget.y + Math.sin(this._orbitPitch) * radius;
-        const z = this._orbitTarget.z + Math.cos(this._orbitYaw) * pitchCos * radius;
-        this.camera.position.set(x, y, z);
-        this.camera.lookAt(this._orbitTarget);
-        this.camera.updateProjectionMatrix();
+        applyPerspectiveOrbitToCamera({
+            camera: this.camera,
+            orbitTarget: this._orbitTarget,
+            orbitYaw: this._orbitYaw,
+            orbitPitch: this._orbitPitch,
+            orbitRadius: this._orbitRadius
+        });
     }
 
     _panMainCamera(dx, dy) {
-        const forward = new THREE.Vector3().subVectors(this._orbitTarget, this.camera.position);
-        if (forward.lengthSq() <= 1e-8) return;
-        forward.normalize();
-
-        const up = this.camera.up.clone().normalize();
-        const right = new THREE.Vector3().crossVectors(forward, up).normalize();
-        if (right.lengthSq() <= 1e-8) return;
-
-        const panScale = this._orbitRadius * 0.0022;
-        const tx = -dx * panScale;
-        const ty = dy * panScale;
-        this._orbitTarget.addScaledVector(right, tx);
-        this._orbitTarget.addScaledVector(up, ty);
+        panPerspectiveOrbitTarget({
+            camera: this.camera,
+            orbitTarget: this._orbitTarget,
+            orbitRadius: this._orbitRadius,
+            dx,
+            dy
+        });
         this._updateMainCameraOrbit();
     }
 
@@ -3374,78 +4608,15 @@ export class MeshFabricationView {
     }
 
     _configureOrthoCamera(cam, viewType, aspect) {
-        const safeAspect = Math.max(0.0001, Number.isFinite(aspect) ? aspect : 1);
-        const size = this._modelSize;
-        const halfX = Math.max(0.001, size.x * 0.5);
-        const halfY = Math.max(0.001, size.y * 0.5);
-        const halfZ = Math.max(0.001, size.z * 0.5);
-        const padding = 1.6;
-
-        let modelHalfW = halfX;
-        let modelHalfH = halfY;
-        switch (viewType) {
-            case 'left':
-            case 'right':
-                modelHalfW = halfZ;
-                modelHalfH = halfY;
-                break;
-            case 'top':
-            case 'bottom':
-                modelHalfW = halfX;
-                modelHalfH = halfZ;
-                break;
-            case 'front':
-            case 'back':
-            default:
-                modelHalfW = halfX;
-                modelHalfH = halfY;
-                break;
-        }
-
-        const fitHalf = Math.max(modelHalfH * padding, (modelHalfW * padding) / safeAspect);
-        const zoomHalf = fitHalf / Math.max(0.001, this._auxZoom);
-        cam.left = -zoomHalf * safeAspect;
-        cam.right = zoomHalf * safeAspect;
-        cam.top = zoomHalf;
-        cam.bottom = -zoomHalf;
-
-        const target = this._modelCenter;
-        const dist = this._orthoDistance;
-        const y = target.y;
-        cam.up.set(0, 1, 0);
-
-        switch (viewType) {
-            case 'left':
-                cam.position.set(target.x - dist, y, target.z);
-                break;
-            case 'right':
-                cam.position.set(target.x + dist, y, target.z);
-                break;
-            case 'front':
-                cam.position.set(target.x, y, target.z + dist);
-                break;
-            case 'back':
-                cam.position.set(target.x, y, target.z - dist);
-                break;
-            case 'top':
-                cam.position.set(target.x, target.y + dist, target.z);
-                cam.up.set(0, 0, -1);
-                break;
-            case 'bottom':
-                cam.position.set(target.x, target.y - dist, target.z);
-                cam.up.set(0, 0, 1);
-                break;
-            default:
-                cam.position.set(target.x, y, target.z + dist);
-                break;
-        }
-
-        const near = Math.max(0.01, dist - (size.length() + 8));
-        const far = dist + size.length() + 30;
-        cam.near = near;
-        cam.far = far;
-        cam.lookAt(target);
-        cam.updateProjectionMatrix();
+        configureOrthoCameraToBounds({
+            camera: cam,
+            viewType,
+            aspect,
+            modelCenter: this._modelCenter,
+            modelSize: this._modelSize,
+            auxZoom: this._auxZoom,
+            orthoDistance: this._orthoDistance
+        });
     }
 
     _renderMultiView() {
@@ -3479,17 +4650,7 @@ export class MeshFabricationView {
         renderer.clear(true, true, true);
 
         const resolveTileViewport = (tile) => {
-            const leftCss = clamp(Math.round(Number(tile.x) || 0), 0, stageCssW);
-            const topCss = clamp(Math.round(Number(tile.y) || 0), 0, stageCssH);
-            const rightCss = clamp(Math.round(leftCss + Math.max(1, Number(tile.width) || 1)), 0, stageCssW);
-            const bottomCss = clamp(Math.round(topCss + Math.max(1, Number(tile.height) || 1)), 0, stageCssH);
-
-            // Three.js expects CSS pixel viewport/scissor values and applies pixel ratio internally.
-            const x = leftCss;
-            const y = stageCssH - bottomCss;
-            const w = Math.max(1, rightCss - leftCss);
-            const h = Math.max(1, bottomCss - topCss);
-            return { x, y, w, h };
+            return resolveTileViewportCssPixels(tile, stageCssW, stageCssH, clamp);
         };
 
         const drawTile = (tile) => {
@@ -3510,15 +4671,27 @@ export class MeshFabricationView {
             if (tile.kind === 'perspective') {
                 this.camera.aspect = w / h;
                 this.camera.updateProjectionMatrix();
-                renderer.render(this.scene, this.camera);
-                this._renderAxisGizmoInTile(renderer, tile, x, y, w, h, this.camera);
+                this._overlayRenderManager.renderTile({
+                    view: this,
+                    renderer,
+                    scene: this.scene,
+                    camera: this.camera,
+                    tile,
+                    viewport: vp
+                });
                 return;
             }
 
             const ortho = this._getOrthoCamera(tile.viewType);
             this._configureOrthoCamera(ortho, tile.viewType, w / h);
-            renderer.render(this.scene, ortho);
-            this._renderAxisGizmoInTile(renderer, tile, x, y, w, h, ortho);
+            this._overlayRenderManager.renderTile({
+                view: this,
+                renderer,
+                scene: this.scene,
+                camera: ortho,
+                tile,
+                viewport: vp
+            });
         };
 
         for (const tile of this._tiles) {
@@ -3529,6 +4702,8 @@ export class MeshFabricationView {
             if (tile.kind !== 'perspective') continue;
             drawTile(tile);
         }
+
+        this._refreshRulerOverlays();
 
         renderer.setScissorTest(false);
         renderer.setViewport(0, 0, stageCssW, stageCssH);

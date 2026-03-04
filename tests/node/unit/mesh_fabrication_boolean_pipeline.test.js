@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildDeterministicCommandPlan, runMeshCommandPipeline } from '../../../src/graphics/gui/mesh_fabrication/meshCommandPipeline.js';
+import { compileSemanticAuthoringDocument } from '../../../src/graphics/gui/mesh_fabrication/semanticMeshCompiler.js';
 
 function pad3(value) {
     return String(value).padStart(3, '0');
@@ -172,6 +173,64 @@ function snapshotObjectTopology(objectDef) {
     };
 }
 
+function buildParsedObjectFromCompiledObject(compiledObject) {
+    const objectId = compiledObject.objectId;
+    const materialId = compiledObject.material;
+    const vertexIds = [...compiledObject.vertexIds];
+    const vertices = compiledObject.vertices.map((row) => Object.freeze([...row]));
+    const edges = compiledObject.edges.map((edgePair, i) => Object.freeze({
+        id: compiledObject.edgeIds[i],
+        vertexIds: Object.freeze([
+            vertexIds[edgePair[0]],
+            vertexIds[edgePair[1]]
+        ]),
+        vertexIndices: Object.freeze([edgePair[0], edgePair[1]])
+    }));
+    const faces = compiledObject.faces.map((ring, i) => {
+        const vertexIndices = [...ring];
+        const vertexIdRing = vertexIndices.map((vertexIndex) => vertexIds[vertexIndex]);
+        const edgeIds = Array.isArray(compiledObject.faceEdgeIndices?.[i])
+            ? compiledObject.faceEdgeIndices[i].map((edgeIndex) => compiledObject.edgeIds[edgeIndex])
+            : [];
+        return Object.freeze({
+            id: compiledObject.faceIds[i],
+            vertexIds: Object.freeze(vertexIdRing),
+            vertexIndices: Object.freeze(vertexIndices),
+            edgeIds: Object.freeze(edgeIds),
+            label: compiledObject.faceLabels?.[i] ?? undefined,
+            canonicalLabel: compiledObject.faceCanonicalLabels?.[i] ?? undefined
+        });
+    });
+
+    const renderTriangles = [];
+    for (const face of faces) {
+        const ring = face.vertexIndices;
+        for (let i = 1; i < ring.length - 1; i++) {
+            renderTriangles.push(Object.freeze({
+                id: `${face.id}.triangle.t${pad3(i - 1)}`,
+                faceId: face.id,
+                localIndex: i - 1,
+                indices: Object.freeze([ring[0], ring[i], ring[i + 1]])
+            }));
+        }
+    }
+
+    return Object.freeze({
+        id: objectId,
+        materialId,
+        vertices: Object.freeze(vertices),
+        vertexIds: Object.freeze(vertexIds),
+        edges: Object.freeze(edges),
+        faces: Object.freeze(faces),
+        renderTriangles: Object.freeze(renderTriangles),
+        triangles: Object.freeze(renderTriangles.map((tri) => tri.indices)),
+        position: Object.freeze([...(compiledObject.transform?.position ?? [0, 0, 0])]),
+        rotation: Object.freeze([...(compiledObject.transform?.rotation ?? [0, 0, 0])]),
+        scale: Object.freeze([...(compiledObject.transform?.scale ?? [1, 1, 1])]),
+        topologySource: 'test-compiled'
+    });
+}
+
 test('MeshBooleanPipeline: normalizes boolean raw command args', () => {
     const plan = buildDeterministicCommandPlan({
         commands: [
@@ -230,6 +289,10 @@ test('MeshBooleanPipeline: subtract through replaces target and removes tool wit
     assert.equal(runtime.objects[0].id, 'part.tire.outer');
     assert.ok(runtime.objects[0].faces.some((face) => face.id.includes('.face.bool.sub001.inner.s')));
     assert.ok(runtime.objects[0].faces.some((face) => face.id === 'part.tire.outer.face.seed.side.s000'));
+    assert.equal(
+        runtime.objects[0].faces.some((face) => face.id.includes('.face.bool.sub001.inner.s') && /\.f\d+$/.test(face.id)),
+        false
+    );
 });
 
 test('MeshBooleanPipeline: subtract clamped rejects non-contained tool', () => {
@@ -444,4 +507,429 @@ test('MeshBooleanPipeline: boolean result preserves face->triangle traceability 
         const triIds = triangleIdsByFace.get(face.id);
         assert.ok(Array.isArray(triIds) && triIds.length >= 1);
     }
+
+    const edgeIdSet = new Set();
+    for (const edge of objectDef.edges) {
+        assert.equal(edgeIdSet.has(edge.id), false);
+        edgeIdSet.add(edge.id);
+    }
+});
+
+test('MeshBooleanPipeline: command plan pins booleanKernel to manifold-3d by default', () => {
+    const plan = buildDeterministicCommandPlan({
+        commands: [
+            {
+                type: 'boolean_union',
+                args: {
+                    targetObjectId: 'part.a',
+                    toolObjectId: 'part.b'
+                }
+            }
+        ]
+    });
+    assert.equal(plan.booleanKernel, 'manifold-3d');
+});
+
+test('MeshBooleanPipeline: unsupported booleanKernel is rejected at plan-build time', () => {
+    assert.throws(() => buildDeterministicCommandPlan({
+        booleanKernel: 'legacy-local-kernel',
+        commands: [
+            {
+                type: 'boolean_union',
+                args: {
+                    targetObjectId: 'part.a',
+                    toolObjectId: 'part.b'
+                }
+            }
+        ]
+    }), /booleanKernel/i);
+});
+
+test('MeshBooleanPipeline: boolean operation log records manifold kernel metadata + markers', () => {
+    const outer = makeBoxObject('part.meta.outer', 1.0, 'mat_outer');
+    const inner = makeBoxObject('part.meta.inner', 0.35, 'mat_inner');
+    const runtime = runMeshCommandPipeline(
+        {
+            commands: [
+                {
+                    type: 'boolean_subtract',
+                    args: {
+                        targetObjectId: outer.id,
+                        toolObjectId: inner.id,
+                        outputPolicy: 'replace_target'
+                    }
+                }
+            ]
+        },
+        {
+            objects: [outer, inner],
+            materials: new Map([
+                ['mat_outer', {}],
+                ['mat_inner', {}]
+            ])
+        }
+    );
+
+    const operation = runtime.operationLog.operations[0];
+    assert.equal(operation.status, 'applied');
+    assert.ok(Array.isArray(operation.markers));
+    assert.ok(operation.markers.includes('boolean_kernel_applied'));
+    assert.equal(operation.metadata?.booleanKernel, 'manifold-3d');
+    assert.equal(runtime.operationLog.booleanKernel, 'manifold-3d');
+    assert.equal(runtime.operationLog.fallbackPolicy, 'none');
+});
+
+test('MeshBooleanPipeline: boolean kernel failures emit explicit no-fallback markers', () => {
+    const target = makeBoxObject('part.error.target', 1.0, 'mat_target');
+    const tool = makeBoxObject('part.error.tool', 0.25, 'mat_tool');
+    const runtime = runMeshCommandPipeline(
+        {
+            commands: [
+                {
+                    type: 'boolean_subtract',
+                    args: {
+                        targetObjectId: target.id,
+                        toolObjectId: tool.id,
+                        outputPolicy: 'replace_target'
+                    }
+                }
+            ]
+        },
+        {
+            objects: [
+                target,
+                Object.freeze({
+                    ...tool,
+                    position: Object.freeze([0.2, 0.1, 0.3]) // Transform mismatch forces boolean hard-failure.
+                })
+            ],
+            materials: new Map([
+                ['mat_target', {}],
+                ['mat_tool', {}]
+            ])
+        }
+    );
+    const op = runtime.operationLog.operations[0];
+    assert.equal(op.status, 'error');
+    assert.ok(op.markers.includes('boolean_kernel_error'));
+    assert.ok(op.markers.includes('no_fallback'));
+    assert.equal(op.metadata?.fallbackPolicy, 'none');
+    assert.equal(op.metadata?.errorKind, 'boolean_kernel_failure');
+});
+
+test('MeshBooleanPipeline: boolean subtract provenance metadata includes target + tool lineage', () => {
+    const outer = makeCylinderObject('part.prov.outer', 1.2, 0.8, 20, 'mat_outer');
+    const inner = makeCylinderObject('part.prov.inner', 0.55, 1.0, 20, 'mat_inner');
+    const runtime = runMeshCommandPipeline(
+        {
+            commands: [
+                {
+                    type: 'boolean_subtract',
+                    args: {
+                        targetObjectId: outer.id,
+                        toolObjectId: inner.id,
+                        outputPolicy: 'replace_target',
+                        opId: 'prov001'
+                    }
+                }
+            ]
+        },
+        {
+            objects: [outer, inner],
+            materials: new Map([
+                ['mat_outer', {}],
+                ['mat_inner', {}]
+            ])
+        }
+    );
+    const op = runtime.operationLog.operations[0];
+    assert.equal(op.status, 'applied');
+    const histogram = op.metadata?.provenance?.sourceFaceTriangleHistogram ?? {};
+    const keys = Object.keys(histogram);
+    assert.ok(keys.some((key) => key.includes('target|part.prov.outer')));
+    assert.ok(keys.some((key) => key.includes('tool|part.prov.inner')));
+});
+
+test('MeshBooleanPipeline: coplanar and near-tangent operations remain deterministic', () => {
+    const baseA = makeBoxObject('part.edge.a', 1.0, 'mat_a');
+    const baseB = makeBoxObject('part.edge.b', 1.0, 'mat_b');
+    const nearTangent = Object.freeze({
+        ...baseB,
+        vertices: Object.freeze(baseB.vertices.map((point) => Object.freeze([
+            point[0] + 1.9999,
+            point[1],
+            point[2]
+        ])))
+    });
+
+    const payload = {
+        commands: [
+            {
+                type: 'boolean_union',
+                args: {
+                    targetObjectId: baseA.id,
+                    toolObjectId: nearTangent.id,
+                    outputPolicy: 'new_object',
+                    resultObjectId: 'part.edge.out'
+                }
+            }
+        ]
+    };
+    const resources = {
+        objects: [baseA, nearTangent],
+        materials: new Map([
+            ['mat_a', {}],
+            ['mat_b', {}]
+        ])
+    };
+
+    const first = runMeshCommandPipeline(payload, resources);
+    const second = runMeshCommandPipeline(payload, resources);
+    assert.equal(first.operationLog.operations[0].status, 'applied');
+    assert.equal(second.operationLog.operations[0].status, 'applied');
+    const outA = first.objects.find((obj) => obj.id === 'part.edge.out');
+    const outB = second.objects.find((obj) => obj.id === 'part.edge.out');
+    assert.ok(outA);
+    assert.ok(outB);
+    assert.deepEqual(snapshotObjectTopology(outA), snapshotObjectTopology(outB));
+});
+
+test('MeshBooleanPipeline: small-feature subtraction keeps stable hover/wire topology artifacts', () => {
+    const outer = makeBoxObject('part.small.outer', 1.5, 'mat_outer');
+    const tinyTool = makeBoxObject('part.small.tool', 0.05, 'mat_tool');
+    const runtime = runMeshCommandPipeline(
+        {
+            commands: [
+                {
+                    type: 'boolean_subtract',
+                    args: {
+                        targetObjectId: outer.id,
+                        toolObjectId: tinyTool.id,
+                        outputPolicy: 'replace_target'
+                    }
+                }
+            ]
+        },
+        {
+            objects: [outer, tinyTool],
+            materials: new Map([
+                ['mat_outer', {}],
+                ['mat_tool', {}]
+            ])
+        }
+    );
+    const op = runtime.operationLog.operations[0];
+    assert.equal(op.status, 'applied');
+    const result = runtime.objects[0];
+    const validFaceIds = new Set(result.faces.map((face) => face.id));
+    assert.ok(result.renderTriangles.length >= result.faces.length);
+    for (const tri of result.renderTriangles) {
+        assert.ok(validFaceIds.has(tri.faceId));
+    }
+});
+
+test('MeshBooleanPipeline: repeated manifold runs remain stable across live-edit style sessions', () => {
+    const outer = makeCylinderObject('part.loop.outer', 1.2, 0.6, 16, 'mat_outer');
+    const inner = makeCylinderObject('part.loop.inner', 0.65, 0.8, 16, 'mat_inner');
+    const payload = {
+        commands: [
+            {
+                type: 'boolean_subtract',
+                args: {
+                    targetObjectId: outer.id,
+                    toolObjectId: inner.id,
+                    outputPolicy: 'replace_target'
+                }
+            }
+        ]
+    };
+    const resources = {
+        objects: [outer, inner],
+        materials: new Map([
+            ['mat_outer', {}],
+            ['mat_inner', {}]
+        ])
+    };
+
+    let previous = null;
+    for (let i = 0; i < 6; i++) {
+        const runtime = runMeshCommandPipeline(payload, resources);
+        assert.equal(runtime.operationLog.operations[0].status, 'applied');
+        if (previous) {
+            assert.deepEqual(snapshotObjectTopology(runtime.objects[0]), previous);
+        }
+        previous = snapshotObjectTopology(runtime.objects[0]);
+    }
+});
+
+test('MeshBooleanPipeline: tool-side same-source triangle pairs are merged into inner quads', () => {
+    const materials = new Map([
+        ['mat_tire', {}],
+        ['mat_void', {}]
+    ]);
+    const compiled = compileSemanticAuthoringDocument({
+        version: 'mesh-semantic-authoring.v1',
+        components: [
+            {
+                path: 'part.tire.outer',
+                material: 'mat_tire',
+                primitive: {
+                    type: 'cylinder',
+                    radiusTop: 1.18,
+                    radiusBottom: 1.18,
+                    height: 0.46,
+                    uSegments: 48,
+                    vSegments: 2,
+                    uClosed: true,
+                    vClosed: false,
+                    uSeam: 0,
+                    capRings: 2,
+                    syncOppositeCap: true
+                },
+                transform: {
+                    position: [0, 1.18, 0],
+                    rotation: [0, 0, 1.57079632679],
+                    scale: [1, 1, 1]
+                }
+            },
+            {
+                path: 'part.tire.inner',
+                material: 'mat_void',
+                primitive: {
+                    type: 'cylinder',
+                    radiusTop: 0.58,
+                    radiusBottom: 0.58,
+                    height: 0.62,
+                    uSegments: 48,
+                    vSegments: 2,
+                    uClosed: true,
+                    vClosed: false,
+                    uSeam: 0,
+                    capRings: 1,
+                    syncOppositeCap: true
+                },
+                transform: {
+                    position: [0, 1.18, 0],
+                    rotation: [0, 0, 1.57079632679],
+                    scale: [1, 1, 1]
+                }
+            }
+        ],
+        operations: []
+    }, {
+        materialsById: materials
+    });
+    const runtime = runMeshCommandPipeline(
+        {
+            commands: [
+                {
+                    type: 'boolean_subtract',
+                    args: {
+                        opId: 'sub001',
+                        targetObjectId: 'part.tire.outer',
+                        toolObjectId: 'part.tire.inner',
+                        subtractMode: 'subtract_through',
+                        outputPolicy: 'replace_target'
+                    }
+                }
+            ]
+        },
+        {
+            objects: compiled.objects.map((obj) => buildParsedObjectFromCompiledObject(obj)),
+            materials
+        }
+    );
+
+    const result = runtime.objects.find((obj) => obj.id === 'part.tire.outer');
+    assert.ok(result);
+    const innerFaces = result.faces.filter((face) => face.id.includes('.face.bool.sub001.inner.'));
+    assert.ok(innerFaces.length > 0);
+    assert.equal(innerFaces.some((face) => face.vertexIndices.length === 3), false);
+    assert.equal(innerFaces.some((face) => /\.f\d+$/.test(face.id)), false);
+});
+
+test('MeshBooleanPipeline: high radial-segment subtract (u=150) remains all inner quads', () => {
+    const materials = new Map([
+        ['mat_tire', {}],
+        ['mat_void', {}]
+    ]);
+    const compiled = compileSemanticAuthoringDocument({
+        version: 'mesh-semantic-authoring.v1',
+        components: [
+            {
+                path: 'part.tire.outer',
+                material: 'mat_tire',
+                primitive: {
+                    type: 'cylinder',
+                    radiusTop: 1.18,
+                    radiusBottom: 1.18,
+                    height: 0.46,
+                    uSegments: 150,
+                    vSegments: 2,
+                    uClosed: true,
+                    vClosed: false,
+                    uSeam: 11,
+                    capRings: 2,
+                    syncOppositeCap: true
+                },
+                transform: {
+                    position: [0, 1.18, 0],
+                    rotation: [0, 0, 1.57079632679],
+                    scale: [1, 1, 1]
+                }
+            },
+            {
+                path: 'part.tire.inner',
+                material: 'mat_void',
+                primitive: {
+                    type: 'cylinder',
+                    radiusTop: 0.58,
+                    radiusBottom: 0.58,
+                    height: 0.62,
+                    uSegments: 150,
+                    vSegments: 2,
+                    uClosed: true,
+                    vClosed: false,
+                    uSeam: 11,
+                    capRings: 1,
+                    syncOppositeCap: true
+                },
+                transform: {
+                    position: [0, 1.18, 0],
+                    rotation: [0, 0, 1.57079632679],
+                    scale: [1, 1, 1]
+                }
+            }
+        ],
+        operations: []
+    }, {
+        materialsById: materials
+    });
+    const runtime = runMeshCommandPipeline(
+        {
+            commands: [
+                {
+                    type: 'boolean_subtract',
+                    args: {
+                        opId: 'sub001',
+                        targetObjectId: 'part.tire.outer',
+                        toolObjectId: 'part.tire.inner',
+                        subtractMode: 'subtract_through',
+                        outputPolicy: 'replace_target'
+                    }
+                }
+            ]
+        },
+        {
+            objects: compiled.objects.map((obj) => buildParsedObjectFromCompiledObject(obj)),
+            materials
+        }
+    );
+
+    const result = runtime.objects.find((obj) => obj.id === 'part.tire.outer');
+    assert.ok(result);
+    const innerFaces = result.faces.filter((face) => face.id.includes('.face.bool.sub001.inner.'));
+    assert.ok(innerFaces.length > 0);
+    assert.equal(innerFaces.some((face) => face.vertexIndices.length === 3), false);
+    assert.equal(innerFaces.some((face) => /\.f\d+$/.test(face.id)), false);
 });

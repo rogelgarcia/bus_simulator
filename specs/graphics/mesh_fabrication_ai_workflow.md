@@ -49,6 +49,13 @@ Interaction version: `mesh-ai-interaction.v1`
 - Feedback:
   - Workflow readout shows state (`Idle`, `Preview ready`, `Applied`, etc.).
   - Output panel shows scope/operation summaries and recent operation lines.
+- Tessellation preview controls:
+  - Top-bar `Tessellation` group exposes sectioned controls:
+    - Section 14 (authoring): `Adjust Tessellation` (`On/Off`) with `U Multiplier` + `V Multiplier` for non-destructive authoring-preview retessellation.
+    - Section 15 (display): `Smoothing Mode`, `Subdivision`, `Adaptive Subdivision`, `Error Budget`, `Wire Source`, and `Display LOD` for derived display-mesh rendering only.
+  - Section 14 controls apply non-destructive preview overrides to semantic authoring input before runtime compilation/render.
+  - Section 15 controls never mutate canonical topology IDs/connectivity and only affect derived display mesh rendering.
+  - Source handoff JSON remains unchanged until explicitly authored/exported.
 
 ## 4) Architecture Boundaries
 
@@ -61,19 +68,27 @@ Boundary version: `mesh-ai-architecture-boundaries.v1`
   - `src/graphics/gui/mesh_fabrication/meshCommandPipeline.js`
   - Responsibility: execute supported commands and emit operation log/object overrides/object topology outputs.
 - Boolean execution backend:
+  - `src/graphics/gui/mesh_fabrication/meshBooleanKernelManifold.js`
+  - `src/graphics/gui/mesh_fabrication/meshBooleanKernelAdapterManifold.js`
   - `src/graphics/gui/mesh_fabrication/meshBooleanEngine.js`
-  - Responsibility: deterministic volumetric boolean execution (`union/subtract/intersect`) with deterministic topology reconstruction and cutter-face lineage naming on generated faces.
+  - Responsibility: authoritative `manifold-3d` volumetric booleans (`union/subtract/intersect`) with deterministic adapter regrouping, provenance propagation, and canonical topology ID lifecycle reconstruction.
 - Semantic topology compilation:
   - `src/graphics/gui/mesh_fabrication/semanticMeshCompiler.js`
   - Responsibility: compile compact semantic authoring (`mesh-semantic-authoring.v1`) into deterministic compiled topology (`mesh-fabrication-compiled.v1`) with stable lineage IDs.
-  - Supported seed primitives include `box` and `cylinder` (deterministic seeded face/edge/vertex IDs).
+  - Supported executable seed primitives include `box`, `cylinder`, and `tube` (deterministic seeded face/edge/vertex IDs).
+  - Section 14 parametric contract: `mesh-parametric-grid.v1` (`u/v` grid axes, deterministic index space, canonical `uv_index_path` ID derivation, retessellation ID lifecycle policy).
+  - Family adapter map declared for `cylinder` and `tube` (executable), `revolve` (declared/non-executable), and `sweep` (declared/non-executable).
+  - Cylinder adapter mapping: `radialSegments -> uSegments`, `axialSegments -> vSegments`, `seamAngle -> uSeam`, with capped extensions (`capRings`, `syncOppositeCap`, `topCapRings`, `bottomCapRings`).
+  - Tube adapter mapping: `radialSegments -> uSegments`, `axialSegments -> vSegments`, `seamAngle -> uSeam`, with deterministic side-specific radius expansion (`outerRadiusTop/Bottom`, `innerRadiusTop/Bottom`) and validation (`innerRadiusSide < outerRadiusSide`).
   - Supports authored face aliases (`faceAliases`) that map stable canonical seed face names to user-facing labels without changing canonical IDs.
 - Validation and guardrails:
   - `src/graphics/gui/mesh_fabrication/meshAiWorkflow.js`
   - Responsibility: draft constraints, scope classification, preview acceptance constraints.
 - Scene integration:
   - `src/graphics/gui/mesh_fabrication/MeshFabricationView.js`
-  - Responsibility: preview/apply/reject/undo/redo orchestration and render updates.
+  - `src/graphics/gui/mesh_fabrication/liveMeshHandoff.js`
+  - `src/graphics/gui/mesh_fabrication/displayMeshDerivation.js`
+  - Responsibility: preview/apply/reject/undo/redo orchestration, canonical/runtime parsing, and section-15 derived display mesh generation (smoothing/subdivision/LOD/wire-source) while preserving canonical topology authority.
 
 ## 5) Quality and Safety Constraints
 
@@ -92,30 +107,48 @@ Constraint version: `mesh-ai-quality-constraints.v1`
   - boolean operations require matching target/tool transforms in this pass.
   - `subtract_clamped` requires tool bounds fully contained inside target bounds.
   - topology-only cut operations remain non-executable hooks in this pass (`imprint_topology`, `slice_topology`).
+  - runtime boolean kernel is selected by `ai.booleanKernel` and currently only accepts `manifold-3d` (default).
+  - runtime fallback policy is strict `none`; boolean kernel failures are explicit operation errors (no local-kernel fallback).
 - Mesh-generation pivot convention: default local pivot is bottom-centered at `0,0,0` (for example default `box` seed places bottom on `Y=0`).
 - Derived-topology policy locks:
   - `topologyChangePolicy = preserve_unaffected_create_new_never_recycle`
   - `extrusionCapIdentity = always_new_derived_cap_id`
   - `ambiguousLoopFallback = ring_ordinal`
+- Section-15 display contract lock:
+  - smoothing/subdivision/adaptive/LOD/wire-source controls are display-only and must not mutate canonical topology IDs or canonical topology connectivity.
 
 ## 6) Boolean Runtime Contract (Section 13)
 
 - Execution families:
   - active volumetric booleans: `boolean_union`, `boolean_subtract`, `boolean_intersect`
   - hook-only topology cuts: `imprint_topology`, `slice_topology`
-- Geometry processing model:
-  - booleans run through geometry-agnostic polygon clipping/reconstruction (not primitive-specific).
-  - face splitting/partitioning is derived from clipped polygon regions and deterministic polygon ordering.
-  - compiled-v1 face output remains single-ring only; no polygon inner-loop records are emitted.
+- Runtime kernel policy:
+  - authoritative kernel: `manifold-3d`.
+  - local custom boolean logic remains in-repo but is disconnected from runtime execution/fallback paths.
+  - `ai.booleanKernel` contract:
+    - allowed values: `manifold-3d`
+    - default: `manifold-3d`
+    - any other value is rejected before command execution.
+- Adapter processing model:
+  - canonical topology is converted to manifold `Mesh` buffers (`vertProperties`, `triVerts`, `faceID`, `runIndex`, `runOriginalID`).
+  - manifold output triangles are converted back through deterministic regrouping: provenance bucket -> coplanar bucket -> connectivity components.
+  - regrouping attempts single-ring polygon reconstruction per component; ambiguous/multi-loop components deterministically split into single-ring faces.
+  - second deterministic pass merges eligible fallback triangle pairs into convex quads when provenance/plane/shared-edge checks pass.
+  - compiled-v1 face output remains single-ring only; opening regions are represented by deterministic face splits until hole-loop face records are introduced.
 - Subtract execution modes:
   - `subtract_through`: unrestricted volumetric subtract (can produce full cut-through results).
   - `subtract_clamped`: requires tool bounds strictly contained inside target bounds.
-- Deterministic ID + naming policy:
+- Deterministic ID + naming/provenance policy:
   - preserve unchanged target face IDs when reconstructed ring signature is unchanged.
   - created/split target faces use `...face.bool.<opId>.target.<seed>[.fNNN]`.
   - cutter-derived faces use `...face.bool.<opId>.<toolFaceTag>[.fNNN]` (for example `part.tire.outer.face.bool.sub001.inner.s005`).
   - fragment suffixes (`.f000`, `.f001`, ...) are assigned from deterministic sorted polygon order.
+  - adapter carries deterministic source-face provenance (`sourceRole`, `sourceObjectId`, `sourceFaceId`) into operation metadata.
 - Post-boolean topology guardrails:
   - reject duplicate/empty IDs, unknown references, degenerate faces/triangles, and non-manifold edge fan-out (`>2` face uses per edge).
   - enforce winding consistency on edges shared by exactly two faces.
-  - operation failures are surfaced as `error` entries in `mesh-operation-log.v1`.
+  - operation failures are surfaced as `error` entries in `mesh-operation-log.v1` with explicit markers (`boolean_kernel_error`, `no_fallback`).
+  - successful manifold executions emit kernel markers (`boolean_kernel_applied`) and provenance/regrouping metadata.
+- Rollout / rollback thresholds:
+  - preview acceptance threshold: any boolean operation `error` blocks `Accept`.
+  - runtime rollback threshold: any manifold adapter failure aborts that operation immediately (no kernel fallback path).

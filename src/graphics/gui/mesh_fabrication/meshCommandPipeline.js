@@ -1,9 +1,21 @@
 // src/graphics/gui/mesh_fabrication/meshCommandPipeline.js
 // Deterministic AI instruction normalization + command execution + operation logging.
 import { executeBooleanOperation } from './meshBooleanEngine.js';
+import {
+    ensureManifoldBooleanKernelReady,
+    getManifoldBooleanKernelStatus
+} from './meshBooleanKernelManifold.js';
+import { makeStableOperationId } from './id_policy/canonicalIdPolicy.js';
+import {
+    runCommandAuditLogStage,
+    runCommandExecuteStage,
+    runCommandNormalizeStage,
+    runCommandParseStage
+} from './command_pipeline/stages/index.js';
 
 export const MESH_COMMAND_SCHEMA_VERSION = 'mesh-command.v1';
 export const MESH_OPERATION_LOG_SCHEMA_VERSION = 'mesh-operation-log.v1';
+export const MESH_BOOLEAN_RUNTIME_CONTRACT_VERSION = 'mesh-boolean-runtime.v1';
 
 const COMMAND_TYPE = Object.freeze({
     TRANSLATE_OBJECT: 'translate_object',
@@ -22,6 +34,10 @@ const BOOLEAN_COMMAND_TYPES = new Set([
     COMMAND_TYPE.BOOLEAN_SUBTRACT,
     COMMAND_TYPE.BOOLEAN_INTERSECT
 ]);
+
+const BOOLEAN_KERNEL = Object.freeze({
+    MANIFOLD: 'manifold-3d'
+});
 
 function assertObject(value, label) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -87,6 +103,19 @@ function normalizeSubtractMode(value, label) {
     return mode;
 }
 
+function normalizeBooleanKernel(value, label = 'ai.booleanKernel') {
+    if (value === undefined || value === null || String(value).trim() === '') {
+        return BOOLEAN_KERNEL.MANIFOLD;
+    }
+    const kernelId = assertString(value, label);
+    if (kernelId !== BOOLEAN_KERNEL.MANIFOLD) {
+        throw new Error(
+            `[MeshCommandPipeline] ${label} \"${kernelId}\" is unsupported. Runtime boolean kernel must be \"${BOOLEAN_KERNEL.MANIFOLD}\".`
+        );
+    }
+    return kernelId;
+}
+
 function normalizeBooleanArgs(args, label, type, commandId) {
     const targetObjectId = assertString(
         args.targetObjectId ?? args.targetId ?? args.objectId,
@@ -116,7 +145,7 @@ function normalizeBooleanArgs(args, label, type, commandId) {
 }
 
 function makeStableId(prefix, index) {
-    return `${prefix}_${String(index + 1).padStart(6, '0')}`;
+    return makeStableOperationId(index, prefix);
 }
 
 function freezeCommand(command) {
@@ -124,6 +153,48 @@ function freezeCommand(command) {
         ...command,
         args: Object.freeze({ ...(command.args ?? {}) }),
         source: Object.freeze({ ...(command.source ?? {}) })
+    });
+}
+
+export function ensureBooleanKernelReady() {
+    return ensureManifoldBooleanKernelReady();
+}
+
+export function getBooleanKernelStatus() {
+    return getManifoldBooleanKernelStatus();
+}
+
+function parseRawAiInput(rawAi = null) {
+    const ai = rawAi && typeof rawAi === 'object' ? rawAi : {};
+    return Object.freeze({
+        instructions: Object.freeze(Array.isArray(ai.instructions) ? [...ai.instructions] : []),
+        commands: Object.freeze(Array.isArray(ai.commands) ? [...ai.commands] : []),
+        booleanKernel: normalizeBooleanKernel(
+            ai.booleanKernel ?? ai.workflow?.booleanKernel,
+            'ai.booleanKernel'
+        )
+    });
+}
+
+function normalizeParsedPlanToCommandPlan({
+    instructions,
+    commands,
+    booleanKernel
+}) {
+    const out = [];
+    let serial = 0;
+    for (let i = 0; i < instructions.length; i++) {
+        const commandId = makeStableId('cmd', serial++);
+        out.push(instructionToCommand(instructions[i], commandId, i));
+    }
+    for (let i = 0; i < commands.length; i++) {
+        const commandId = makeStableId('cmd', serial++);
+        out.push(normalizeRawCommand(commands[i], commandId, i));
+    }
+    return Object.freeze({
+        version: MESH_COMMAND_SCHEMA_VERSION,
+        booleanKernel,
+        commands: Object.freeze(out)
     });
 }
 
@@ -457,7 +528,12 @@ function applyOverrideToObject(baseObject, override) {
     });
 }
 
-function executeNormalizedCommands(normalizedCommands, { objectsById, materialsById, now }) {
+function executeNormalizedCommands(normalizedCommands, {
+    objectsById,
+    materialsById,
+    now,
+    booleanKernel
+}) {
     const operations = [];
     const overridesMutable = new Map();
     const mutableObjects = new Map(objectsById);
@@ -470,6 +546,8 @@ function executeNormalizedCommands(normalizedCommands, { objectsById, materialsB
         let message = '';
         let targetIds = [];
         let outputIds = [];
+        let metadata = null;
+        let markers = [];
 
         try {
             if (command.type === COMMAND_TYPE.NEEDS_CLARIFICATION) {
@@ -547,6 +625,12 @@ function executeNormalizedCommands(normalizedCommands, { objectsById, materialsB
                     status = 'rejected';
                     message = `Unknown tool object "${toolObjectId}".`;
                 } else {
+                    if (booleanKernel !== BOOLEAN_KERNEL.MANIFOLD) {
+                        throw new Error(
+                            `[MeshCommandPipeline] Runtime boolean kernel "${booleanKernel}" is unsupported.`
+                        );
+                    }
+                    ensureBooleanKernelReady();
                     const targetEffective = applyOverrideToObject(targetObjectBase, overridesMutable.get(targetObjectId));
                     const toolEffective = applyOverrideToObject(toolObjectBase, overridesMutable.get(toolObjectId));
                     const subtractMode = command.type === COMMAND_TYPE.BOOLEAN_SUBTRACT
@@ -584,6 +668,13 @@ function executeNormalizedCommands(normalizedCommands, { objectsById, materialsB
 
                     outputIds = [boolResult.resultObject.id];
                     message = `Boolean ${command.type} applied (${boolResult.stats.faceCount} faces, ${boolResult.stats.vertexCount} vertices).`;
+                    metadata = Object.freeze({
+                        booleanKernel: BOOLEAN_KERNEL.MANIFOLD,
+                        runtimeContractVersion: MESH_BOOLEAN_RUNTIME_CONTRACT_VERSION,
+                        fallbackPolicy: 'none',
+                        ...assertObject(boolResult.metadata ?? {}, 'boolResult.metadata')
+                    });
+                    markers = Object.freeze(['boolean_kernel_applied']);
                 }
             } else if (command.type === COMMAND_TYPE.TOPOLOGY_IMPRINT || command.type === COMMAND_TYPE.TOPOLOGY_SLICE) {
                 status = 'needs_clarification';
@@ -595,6 +686,15 @@ function executeNormalizedCommands(normalizedCommands, { objectsById, materialsB
         } catch (err) {
             status = 'error';
             message = err?.message ?? String(err);
+            if (BOOLEAN_COMMAND_TYPES.has(command.type)) {
+                markers = Object.freeze(['boolean_kernel_error', 'no_fallback']);
+                metadata = Object.freeze({
+                    booleanKernel,
+                    runtimeContractVersion: MESH_BOOLEAN_RUNTIME_CONTRACT_VERSION,
+                    fallbackPolicy: 'none',
+                    errorKind: 'boolean_kernel_failure'
+                });
+            }
         }
 
         operations.push(Object.freeze({
@@ -608,7 +708,9 @@ function executeNormalizedCommands(normalizedCommands, { objectsById, materialsB
             targetIds: Object.freeze([...targetIds]),
             outputIds: Object.freeze([...outputIds]),
             status,
-            message
+            message,
+            markers: Array.isArray(markers) ? Object.freeze([...markers]) : Object.freeze([]),
+            metadata: metadata ?? undefined
         }));
     }
 
@@ -617,48 +719,56 @@ function executeNormalizedCommands(normalizedCommands, { objectsById, materialsB
         objects: freezeObjectList([...mutableObjects.values()]),
         operationLog: Object.freeze({
             version: MESH_OPERATION_LOG_SCHEMA_VERSION,
+            booleanKernel,
+            booleanRuntimeContractVersion: MESH_BOOLEAN_RUNTIME_CONTRACT_VERSION,
+            fallbackPolicy: 'none',
             operations: Object.freeze(operations)
         })
     });
 }
 
 export function buildDeterministicCommandPlan(rawAi = null) {
-    const ai = rawAi && typeof rawAi === 'object' ? rawAi : {};
-    const instructions = Array.isArray(ai.instructions) ? ai.instructions : [];
-    const commands = Array.isArray(ai.commands) ? ai.commands : [];
-    const out = [];
+    const parsedPlan = runCommandParseStage({
+        rawAi,
+        parse: (value) => parseRawAiInput(value)
+    });
 
-    let serial = 0;
-    for (let i = 0; i < instructions.length; i++) {
-        const commandId = makeStableId('cmd', serial++);
-        out.push(instructionToCommand(instructions[i], commandId, i));
-    }
-    for (let i = 0; i < commands.length; i++) {
-        const commandId = makeStableId('cmd', serial++);
-        out.push(normalizeRawCommand(commands[i], commandId, i));
-    }
-
-    return Object.freeze({
-        version: MESH_COMMAND_SCHEMA_VERSION,
-        commands: Object.freeze(out)
+    return runCommandNormalizeStage({
+        parsedPlan,
+        normalize: normalizeParsedPlanToCommandPlan
     });
 }
 
 export function runMeshCommandPipeline(rawAi, { objects, materials }, { now = () => Date.now() } = {}) {
-    const objectMap = new Map((Array.isArray(objects) ? objects : []).map((obj) => [obj.id, obj]));
-    const materialMap = materials instanceof Map ? materials : new Map();
-    const commandPlan = buildDeterministicCommandPlan(rawAi);
-    const executed = executeNormalizedCommands(commandPlan.commands, {
-        objectsById: objectMap,
-        materialsById: materialMap,
-        now
+    const parsedPlan = runCommandParseStage({
+        rawAi,
+        parse: (value) => parseRawAiInput(value)
+    });
+    const commandPlan = runCommandNormalizeStage({
+        parsedPlan,
+        normalize: normalizeParsedPlanToCommandPlan
+    });
+    const executed = runCommandExecuteStage({
+        normalizedPlan: commandPlan,
+        execute: (plan) => {
+            const objectMap = new Map((Array.isArray(objects) ? objects : []).map((obj) => [obj.id, obj]));
+            const materialMap = materials instanceof Map ? materials : new Map();
+            return executeNormalizedCommands(plan.commands, {
+                objectsById: objectMap,
+                materialsById: materialMap,
+                now,
+                booleanKernel: plan.booleanKernel
+            });
+        }
     });
 
-    return Object.freeze({
-        commandPlan,
-        operationLog: executed.operationLog,
-        objectOverrides: executed.objectOverrides,
-        objects: executed.objects
+    return runCommandAuditLogStage({
+        executionResult: Object.freeze({ commandPlan, executed }),
+        buildAuditLog: ({ commandPlan: plan, executed: execution }) => Object.freeze({
+            commandPlan: plan,
+            operationLog: execution.operationLog,
+            objectOverrides: execution.objectOverrides,
+            objects: execution.objects
+        })
     });
 }
-

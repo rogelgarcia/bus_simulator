@@ -50,3 +50,38 @@ Check-only mode:
 ```bash
 node tools/mesh_fabrication_live_server/format_handoff_json.mjs --check
 ```
+
+## Bus tire topology exporter
+
+Extract representative tire meshes from:
+- City bus OBJ (`assets/city_bus/obj/Obj/Bus.obj`)
+- Coach bus GLB (`assets/coach_bus/coach_bus.glb`)
+
+and write a mesh-fabrication handoff file (compiled topology) so topology can be inspected in the fabrication screen.
+
+```bash
+node tools/mesh_fabrication_live_server/export_bus_tires_to_handoff.mjs
+```
+
+Optional output path:
+
+```bash
+node tools/mesh_fabrication_live_server/export_bus_tires_to_handoff.mjs --out assets/public/mesh_fabrication/handoff/mesh.bus_tires.v1.json
+```
+
+## Double-decker tire topology exporter
+
+Extract a representative tire mesh from:
+- Double-decker bus GLB (`assets/double_decker_bus/dd_bus.glb`)
+
+and write a mesh-fabrication handoff file (compiled topology), including a backup file.
+
+```bash
+node tools/mesh_fabrication_live_server/export_double_decker_tire_to_handoff.mjs
+```
+
+Optional paths:
+
+```bash
+node tools/mesh_fabrication_live_server/export_double_decker_tire_to_handoff.mjs --out assets/public/mesh_fabrication/handoff/mesh.live.v1.json --backup assets/public/mesh_fabrication/handoff/mesh.double_decker_bus_tire.backup.v1.json
+```
