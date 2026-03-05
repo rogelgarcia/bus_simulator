@@ -58,8 +58,11 @@ export const MESH_AI_OPERATION_SCOPE_V1 = Object.freeze({
         }),
         Object.freeze({
             familyId: 'topology_cut',
-            mode: 'hook',
+            mode: 'active',
             commands: Object.freeze([
+                'cut_face_slot',
+            ]),
+            hooks: Object.freeze([
                 'imprint_topology',
                 'slice_topology'
             ])

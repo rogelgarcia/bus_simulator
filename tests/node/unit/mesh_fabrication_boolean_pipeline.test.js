@@ -231,6 +231,47 @@ function buildParsedObjectFromCompiledObject(compiledObject) {
     });
 }
 
+function makeTubeParsedObject({
+    path = 'part.tire',
+    materialId = 'mat_tire',
+    uSegments = 12,
+    vSegments = 1,
+    faceAliases = null
+} = {}) {
+    const authoringComponent = {
+        path,
+        material: materialId,
+        primitive: {
+            type: 'tube',
+            outerRadiusTop: 1.2,
+            outerRadiusBottom: 1.2,
+            innerRadiusTop: 0.8,
+            innerRadiusBottom: 0.8,
+            height: 0.5,
+            uSegments,
+            vSegments,
+            uClosed: true,
+            vClosed: false,
+            uSeam: 0
+        },
+        transform: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1]
+        }
+    };
+    if (faceAliases && typeof faceAliases === 'object') {
+        authoringComponent.faceAliases = faceAliases;
+    }
+    const compiled = compileSemanticAuthoringDocument({
+        version: 'mesh-semantic-authoring.v1',
+        components: [authoringComponent]
+    }, {
+        materialsById: new Map([[materialId, {}]])
+    });
+    return buildParsedObjectFromCompiledObject(compiled.objects[0]);
+}
+
 test('MeshBooleanPipeline: normalizes boolean raw command args', () => {
     const plan = buildDeterministicCommandPlan({
         commands: [
@@ -255,6 +296,160 @@ test('MeshBooleanPipeline: normalizes boolean raw command args', () => {
     assert.equal(plan.commands[0].args.outputPolicy, 'new_object');
     assert.equal(plan.commands[0].args.resultObjectId, 'part.target.out');
     assert.equal(plan.commands[0].args.keepTool, true);
+});
+
+test('MeshBooleanPipeline: normalizes cut_face_slot command args', () => {
+    const plan = buildDeterministicCommandPlan({
+        commands: [
+            {
+                type: 'cut_face_slot',
+                args: {
+                    targetObjectId: 'part.tire',
+                    targetFace: 'top_ring.s003',
+                    center: { u: 0.02, v: -0.03 },
+                    width: 0.04,
+                    depth: 0.2,
+                    extent: 0.18,
+                    orientation: 'tangential',
+                    cutMode: 'subtract_clamped',
+                    oppositeFaceMode: 'paired_mirrored_index',
+                    opId: 'slot:001'
+                }
+            }
+        ]
+    });
+    assert.equal(plan.commands.length, 1);
+    assert.equal(plan.commands[0].type, 'cut_face_slot');
+    assert.equal(plan.commands[0].args.targetObjectId, 'part.tire');
+    assert.equal(plan.commands[0].args.targetFace, 'top_ring.s003');
+    assert.deepEqual(plan.commands[0].args.center, [0.02, -0.03]);
+    assert.equal(plan.commands[0].args.width, 0.04);
+    assert.equal(plan.commands[0].args.depth, 0.2);
+    assert.equal(plan.commands[0].args.span, 0.18);
+    assert.equal(plan.commands[0].args.orientation, 'circumferential');
+    assert.equal(plan.commands[0].args.cutMode, 'clamped');
+    assert.equal(plan.commands[0].args.oppositeFaceMode, 'paired_mirrored_index');
+    assert.equal(plan.commands[0].args.opId, 'slot_001');
+});
+
+test('MeshBooleanPipeline: cut_face_slot resolves target face via authored alias', () => {
+    const tire = makeTubeParsedObject({
+        path: 'part.tire',
+        faceAliases: {
+            'top_ring.s003': 'rim_anchor'
+        }
+    });
+    const runtime = runMeshCommandPipeline(
+        {
+            commands: [
+                {
+                    type: 'cut_face_slot',
+                    args: {
+                        targetObjectId: 'part.tire',
+                        targetFace: 'rim_anchor',
+                        center: [0, 0],
+                        width: 0.05,
+                        depth: 0.25,
+                        orientation: 'radial',
+                        cutMode: 'through',
+                        oppositeFaceMode: 'none',
+                        opId: 'slot_alias'
+                    }
+                }
+            ]
+        },
+        {
+            objects: [tire],
+            materials: new Map([['mat_tire', {}]])
+        }
+    );
+    const op = runtime.operationLog.operations[0];
+    assert.equal(op.status, 'applied');
+    assert.equal(op.metadata?.cuts?.length, 1);
+    assert.equal(op.metadata?.cuts?.[0]?.targetFaceCanonicalLabel, 'top_ring.s003');
+    assert.equal(op.metadata?.cuts?.[0]?.targetFaceResolution, 'authored_alias');
+});
+
+test('MeshBooleanPipeline: cut_face_slot propagates top_ring to bottom_ring same-index in one group', () => {
+    const tire = makeTubeParsedObject({
+        path: 'part.tire',
+        uSegments: 16
+    });
+    const runtime = runMeshCommandPipeline(
+        {
+            commands: [
+                {
+                    type: 'cut_face_slot',
+                    args: {
+                        targetObjectId: 'part.tire',
+                        targetFace: 'top_ring.s005',
+                        center: [0, 0],
+                        width: 0.04,
+                        depth: 0.22,
+                        span: 0.14,
+                        orientation: 'radial',
+                        cutMode: 'through',
+                        oppositeFaceMode: 'paired_same_index',
+                        opId: 'slot_pair_same'
+                    }
+                }
+            ]
+        },
+        {
+            objects: [tire],
+            materials: new Map([['mat_tire', {}]])
+        }
+    );
+    const op = runtime.operationLog.operations[0];
+    assert.equal(op.status, 'applied');
+    assert.ok(op.markers.includes('topology_cut_applied'));
+    assert.ok(op.markers.includes('opposite_face_propagated'));
+    assert.equal(op.metadata?.cuts?.length, 2);
+    assert.equal(op.metadata?.cuts?.[0]?.targetFaceCanonicalLabel, 'top_ring.s005');
+    assert.equal(op.metadata?.cuts?.[1]?.targetFaceCanonicalLabel, 'bottom_ring.s005');
+});
+
+test('MeshBooleanPipeline: cut_face_slot propagates outer to inner mirrored-index deterministically', () => {
+    const tire = makeTubeParsedObject({
+        path: 'part.tire',
+        uSegments: 12
+    });
+    const payload = {
+        commands: [
+            {
+                type: 'cut_face_slot',
+                args: {
+                    targetObjectId: 'part.tire',
+                    targetFace: 'outer.s003',
+                    center: [0, 0],
+                    width: 0.04,
+                    depth: 0.25,
+                    span: 0.12,
+                    orientation: 'circumferential',
+                    cutMode: 'through',
+                    oppositeFaceMode: 'paired_mirrored_index',
+                    opId: 'slot_pair_mirror'
+                }
+            }
+        ]
+    };
+    const resources = {
+        objects: [tire],
+        materials: new Map([['mat_tire', {}]])
+    };
+
+    const first = runMeshCommandPipeline(payload, resources);
+    const second = runMeshCommandPipeline(payload, resources);
+
+    const opA = first.operationLog.operations[0];
+    const opB = second.operationLog.operations[0];
+    assert.equal(opA.status, 'applied');
+    assert.equal(opB.status, 'applied');
+    assert.equal(opA.metadata?.cuts?.length, 2);
+    assert.equal(opA.metadata?.cuts?.[0]?.targetFaceCanonicalLabel, 'outer.s003');
+    assert.equal(opA.metadata?.cuts?.[1]?.targetFaceCanonicalLabel, 'inner.s008');
+    assert.deepEqual(opA.metadata?.cuts, opB.metadata?.cuts);
+    assert.deepEqual(snapshotObjectTopology(first.objects[0]), snapshotObjectTopology(second.objects[0]));
 });
 
 test('MeshBooleanPipeline: subtract through replaces target and removes tool with cutter lineage ids', () => {

@@ -52,7 +52,7 @@ import {
 const PRESET_TOP_HEIGHT = 0.62;
 const LIVE_MESH_UPDATE_PULSE_MS = 5000;
 const AI_OUTPUT_RECENT_OP_LIMIT = 6;
-const AI_SCOPE_LABEL = 'V1 active: transform/material/boolean. Hooks: creation, extrusion/bevel, topology-cut, UV.';
+const AI_SCOPE_LABEL = 'V1 active: transform/material/boolean/cut-face-slot. Hooks: creation, extrusion/bevel, topology-cut (imprint/slice), UV.';
 const AXIS_GIZMO_MAIN_SIZE = 126;
 const AXIS_GIZMO_AUX_SIZE = 94;
 const AXIS_GIZMO_MARGIN = 10;
