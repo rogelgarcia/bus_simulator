@@ -22,6 +22,12 @@ test('MeshFileLoader: source resolver resolves API and static URLs with override
     assert.equal(resolver.resolveStaticFileUrl(), 'http://localhost:8001/assets/public/mesh_fabrication/handoff/mesh.live.v1.json');
 });
 
+test('MeshFileLoader: source resolver falls back to relative paths without location context', () => {
+    const resolver = createMeshSourceResolver(null);
+    assert.equal(resolver.resolveApiEndpoint(), '/api/mesh/current');
+    assert.equal(resolver.resolveStaticFileUrl(), '../assets/public/mesh_fabrication/handoff/mesh.live.v1.json');
+});
+
 test('MeshFileLoader: fetch transport returns not_modified and updated states deterministically', async () => {
     const responses = [
         {

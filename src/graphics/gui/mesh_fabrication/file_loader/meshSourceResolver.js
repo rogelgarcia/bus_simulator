@@ -8,15 +8,19 @@ const LIVE_MESH_DEFAULT_API_PATH = '/api/mesh/current';
 const LIVE_MESH_DEFAULT_FILE_PATH = '/assets/public/mesh_fabrication/handoff/mesh.live.v1.json';
 const LIVE_MESH_DEFAULT_FILE_RELATIVE_PATH = '../assets/public/mesh_fabrication/handoff/mesh.live.v1.json';
 
-function resolveLiveMeshEndpointLocal(locationLike = null) {
-    const fallbackHref = (typeof window !== 'undefined' && window.location?.href)
-        ? String(window.location.href)
-        : 'http://127.0.0.1:8765/screens/mesh_fabrication.html';
+function resolvePageUrl(locationLike = null) {
     const locationRef = locationLike ?? (typeof window !== 'undefined' ? window.location : null);
-    const href = typeof locationRef?.href === 'string' ? locationRef.href : fallbackHref;
-    const pageUrl = new URL(href);
-    const endpointOverride = pageUrl.searchParams.get('meshEndpoint');
+    if (typeof locationRef?.href !== 'string' || locationRef.href.trim() === '') {
+        return null;
+    }
+    return new URL(locationRef.href);
+}
+
+function resolveLiveMeshEndpointLocal(locationLike = null) {
+    const pageUrl = resolvePageUrl(locationLike);
+    const endpointOverride = pageUrl?.searchParams.get('meshEndpoint');
     if (endpointOverride) return endpointOverride;
+    if (!pageUrl) return LIVE_MESH_DEFAULT_API_PATH;
     if (pageUrl.protocol === 'http:' || pageUrl.protocol === 'https:') {
         return new URL(LIVE_MESH_DEFAULT_API_PATH, pageUrl.origin).toString();
     }
@@ -24,12 +28,8 @@ function resolveLiveMeshEndpointLocal(locationLike = null) {
 }
 
 function resolveLiveMeshStaticFileUrlLocal(locationLike = null) {
-    const fallbackHref = (typeof window !== 'undefined' && window.location?.href)
-        ? String(window.location.href)
-        : 'http://127.0.0.1:8765/screens/mesh_fabrication.html';
-    const locationRef = locationLike ?? (typeof window !== 'undefined' ? window.location : null);
-    const href = typeof locationRef?.href === 'string' ? locationRef.href : fallbackHref;
-    const pageUrl = new URL(href);
+    const pageUrl = resolvePageUrl(locationLike);
+    if (!pageUrl) return LIVE_MESH_DEFAULT_FILE_RELATIVE_PATH;
     if (pageUrl.protocol === 'http:' || pageUrl.protocol === 'https:') {
         return new URL(LIVE_MESH_DEFAULT_FILE_PATH, pageUrl.origin).toString();
     }

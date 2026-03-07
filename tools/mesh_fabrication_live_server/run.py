@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 DEFAULT_MESH_PATH = Path("assets/public/mesh_fabrication/handoff/mesh.live.v1.json")
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 8765
+DEFAULT_PORT = 8001
 MESH_ENDPOINT = "/api/mesh/current"
 
 

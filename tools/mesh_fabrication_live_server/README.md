@@ -8,15 +8,21 @@ Serve the mesh fabrication screen and expose a conditional mesh endpoint with `E
 python3 tools/mesh_fabrication_live_server/run.py
 ```
 
+From the repo root, you can also use:
+
+```bash
+./tools/start
+```
+
 Defaults:
 - Host: `127.0.0.1`
-- Port: `8765`
+- Port: `8001`
 - Static root: repo root
 - Mesh file: `assets/public/mesh_fabrication/handoff/mesh.live.v1.json`
 
 Useful URLs:
-- Screen: `http://127.0.0.1:8765/screens/mesh_fabrication.html`
-- Mesh API: `http://127.0.0.1:8765/api/mesh/current`
+- Screen: `http://127.0.0.1:8001/screens/mesh_fabrication.html`
+- Mesh API: `http://127.0.0.1:8001/api/mesh/current`
 
 ## Endpoint contract
 

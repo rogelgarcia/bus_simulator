@@ -25,6 +25,14 @@ export const LIVE_MESH_DEFAULT_FILE_RELATIVE_PATH = '../assets/public/mesh_fabri
 export const LIVE_MESH_POLL_INTERVAL_MS = 1000;
 export { DISPLAY_LOD_POLICY, DISPLAY_LOD_TRIANGLE_BUDGETS, DISPLAY_SMOOTHING_MODE, DISPLAY_WIRE_SOURCE, normalizeDisplayMeshBuildConfig } from './displayMeshDerivation.js';
 
+function resolvePageUrl(locationLike = null) {
+    const locationRef = locationLike ?? (typeof window !== 'undefined' ? window.location : null);
+    if (typeof locationRef?.href !== 'string' || locationRef.href.trim() === '') {
+        return null;
+    }
+    return new URL(locationRef.href);
+}
+
 function createFaceCenterDiscTexture() {
     if (typeof document === 'undefined') return null;
     const canvas = document.createElement('canvas');
@@ -1342,14 +1350,10 @@ export function buildObjTextFromLiveMesh(parsedDocument, options = null) {
 }
 
 export function resolveLiveMeshEndpoint(locationLike = null) {
-    const fallbackHref = (typeof window !== 'undefined' && window.location?.href)
-        ? String(window.location.href)
-        : 'http://127.0.0.1:8765/screens/mesh_fabrication.html';
-    const locationRef = locationLike ?? (typeof window !== 'undefined' ? window.location : null);
-    const href = typeof locationRef?.href === 'string' ? locationRef.href : fallbackHref;
-    const pageUrl = new URL(href);
-    const endpointOverride = pageUrl.searchParams.get('meshEndpoint');
+    const pageUrl = resolvePageUrl(locationLike);
+    const endpointOverride = pageUrl?.searchParams.get('meshEndpoint');
     if (endpointOverride) return endpointOverride;
+    if (!pageUrl) return LIVE_MESH_DEFAULT_API_PATH;
 
     if (pageUrl.protocol === 'http:' || pageUrl.protocol === 'https:') {
         return new URL(LIVE_MESH_DEFAULT_API_PATH, pageUrl.origin).toString();
@@ -1358,12 +1362,8 @@ export function resolveLiveMeshEndpoint(locationLike = null) {
 }
 
 export function resolveLiveMeshStaticFileUrl(locationLike = null) {
-    const fallbackHref = (typeof window !== 'undefined' && window.location?.href)
-        ? String(window.location.href)
-        : 'http://127.0.0.1:8765/screens/mesh_fabrication.html';
-    const locationRef = locationLike ?? (typeof window !== 'undefined' ? window.location : null);
-    const href = typeof locationRef?.href === 'string' ? locationRef.href : fallbackHref;
-    const pageUrl = new URL(href);
+    const pageUrl = resolvePageUrl(locationLike);
+    if (!pageUrl) return LIVE_MESH_DEFAULT_FILE_RELATIVE_PATH;
 
     if (pageUrl.protocol === 'http:' || pageUrl.protocol === 'https:') {
         return new URL(LIVE_MESH_DEFAULT_FILE_PATH, pageUrl.origin).toString();
