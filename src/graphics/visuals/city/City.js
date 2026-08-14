@@ -66,9 +66,9 @@ export class City {
         this.config = {
             size,
             tileMeters,
-            fogColor: '#EAF9FF',
-            fogNear: 120,
-            fogFar: 1200,
+            fogColor: '#5AAAD3',
+            fogNear: 280,
+            fogFar: 1800,
             cameraNear: 0.5,
             cameraFar: 1800
         };
@@ -140,31 +140,48 @@ export class City {
         const spec = mapSpec ?? CityMap.demoSpec(this.genConfig);
         this.map = CityMap.fromSpec(spec, this.genConfig);
 
+        this.materials = getCityMaterials();
+        this.roads = createRoadEngineRoads({ map: this.map, config: this.generatorConfig, materials: this.materials });
+        const trafficControlPlacements = computeTrafficControlPlacements({
+            map: this.map,
+            generatorConfig: this.generatorConfig
+        });
+        const buildingsList = Array.isArray(this.map.buildings) ? this.map.buildings : [];
+        const roadPolygons = (this.roads.debug?.derived?.primitives ?? [])
+            .filter((primitive) => primitive?.type === 'polygon' && (primitive.kind === 'asphalt_piece' || primitive.kind === 'junction_surface'))
+            .map((primitive) => primitive.points);
+        const buildingFootprints = buildingsList.map((entry) => {
+            const explicit = Array.isArray(entry?.footprintLoops) ? entry.footprintLoops : null;
+            if (Array.isArray(entry?.layers) && entry.layers.length && explicit) return explicit;
+            return computeBuildingLoopsFromTiles({
+                map: this.map,
+                tiles: entry.tiles,
+                generatorConfig: this.generatorConfig,
+                tileSize: this.map.tileSize,
+                occupyRatio: 1.0
+            });
+        }).filter((loops) => loops.length > 0);
+        const roadHardscapeMargin = Math.max(0, this.generatorConfig.road?.curb?.thickness ?? 0)
+            + Math.max(0, this.generatorConfig.road?.sidewalk?.extraWidth ?? 0);
+
         this.world = createCityWorld({
             size,
             tileMeters,
             map: this.map,
             config: this.generatorConfig,
-            rng: this.rng
+            rng: this.rng,
+            treeExclusions: { roadPolygons, roadHardscapeMargin, buildingFootprints, trafficControls: trafficControlPlacements }
         });
         this.group.add(this.world.group);
-
-        this.materials = getCityMaterials();
-        this.roads = createRoadEngineRoads({ map: this.map, config: this.generatorConfig, materials: this.materials });
         this.group.add(this.roads.group);
 
         this.trafficControls = null;
-        const trafficControlPlacements = computeTrafficControlPlacements({
-            map: this.map,
-            generatorConfig: this.generatorConfig
-        });
         if (trafficControlPlacements.length) {
             this.trafficControls = createTrafficControlProps({ placements: trafficControlPlacements });
             this.group.add(this.trafficControls.group);
         }
 
         this.buildings = null;
-        const buildingsList = Array.isArray(this.map.buildings) ? this.map.buildings : [];
         if (buildingsList.length) {
             const buildingsGroup = new THREE.Group();
             buildingsGroup.name = 'Buildings';

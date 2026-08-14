@@ -68,7 +68,8 @@ export function createCityWorld({
     map = null,
     config = null,
     groundY = null,
-    rng = null
+    rng = null,
+    treeExclusions = null
 } = {}) {
     const group = new THREE.Group();
     group.name = 'CityWorld';
@@ -151,7 +152,7 @@ export function createCityWorld({
     let trees = null;
     const treesEnabled = config?.render?.treesEnabled;
     if (map && rng && treesEnabled !== false) {
-        trees = createTreeField({ map, rng, groundY: computedGroundY, config });
+        trees = createTreeField({ map, rng, groundY: computedGroundY, config, exclusions: treeExclusions });
         group.add(trees.group);
     }
 

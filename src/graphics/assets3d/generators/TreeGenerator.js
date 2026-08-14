@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { TGALoader } from 'three/addons/loaders/TGALoader.js';
 import { TILE } from '../../../app/city/CityMap.js';
+import { createTreePlacementExclusion } from '../../../app/city/TreePlacementExclusion.js';
 import { TREE_CONFIG } from './TreeConfig.js';
 
 const TAU = Math.PI * 2;
@@ -24,7 +25,9 @@ const TREE_DEFAULTS = {
     cornerPower: 1.4,
     cornerRadius: 0.45,
     roadRadius: 1,
-    roadBoost: 0.25
+    roadBoost: 0.25,
+    trunkRadius: 0.45,
+    trafficControlClearanceFactor: 0.55
 };
 
 const TEXTURE_BASE_URL = new URL('../../../../assets/trees/Textures/', import.meta.url);
@@ -603,7 +606,7 @@ function isNearRoad(map, tx, ty, radiusTiles) {
     return false;
 }
 
-function buildPlacements({ map, rng, groundY, params, modelCount }) {
+function buildPlacements({ map, rng, groundY, params, modelCount, exclusions, targetHeight }) {
     const placements = [];
     const tileSize = map.tileSize;
     const tileHalf = tileSize * 0.5;
@@ -632,6 +635,15 @@ function buildPlacements({ map, rng, groundY, params, modelCount }) {
     const density = Math.min(params.density, totalTiles / Math.max(1, emptyTiles));
     const clearance = Math.max(0, params.clearance);
     const clearanceSq = clearance * clearance;
+    const trunkRadius = Math.max(0, params.trunkRadius);
+    const placementExclusion = createTreePlacementExclusion({
+        roadPolygons: exclusions?.roadPolygons,
+        roadMargin: Math.max(clearance, (exclusions?.roadHardscapeMargin ?? 0) + trunkRadius),
+        buildingFootprints: exclusions?.buildingFootprints,
+        buildingMargin: trunkRadius,
+        trafficControls: exclusions?.trafficControls,
+        trafficControlClearance: Math.max(trunkRadius, targetHeight * Math.max(0, params.trafficControlClearanceFactor))
+    });
     const radiusTiles = Math.ceil((clearance + tileHalf) / tileSize);
     const maxAttempts = Math.max(1, params.maxAttempts | 0);
     const scaleMin = Math.min(params.scaleMin, params.scaleMax);
@@ -678,7 +690,10 @@ function buildPlacements({ map, rng, groundY, params, modelCount }) {
             for (let attempt = 0; attempt < maxAttempts; attempt++) {
                 const px = center.x + rng.range(-offsetRange, offsetRange);
                 const pz = center.z + rng.range(-offsetRange, offsetRange);
-                if (clearanceSq > 0 && !isClearOfRoad(map, px, pz, x, y, tileHalf, radiusTiles, clearanceSq)) {
+                if (!placementExclusion.hasRoadPolygons && clearanceSq > 0 && !isClearOfRoad(map, px, pz, x, y, tileHalf, radiusTiles, clearanceSq)) {
+                    continue;
+                }
+                if (!placementExclusion.allowsTrunk(px, pz)) {
                     continue;
                 }
                 placements.push({
@@ -707,7 +722,7 @@ export function loadTreeTemplates(quality = 'auto') {
     return loadTreeAssets(q, entries);
 }
 
-export function createTreeField({ map = null, rng = null, groundY = 0, config = null } = {}) {
+export function createTreeField({ map = null, rng = null, groundY = 0, config = null, exclusions = null } = {}) {
     const group = new THREE.Group();
     group.name = 'Trees';
 
@@ -722,17 +737,18 @@ export function createTreeField({ map = null, rng = null, groundY = 0, config = 
     const quality = getResolvedTreeQuality({ quality: params.quality });
     const entries = getTreeEntries(quality);
     if (!entries.length) return { group, placements: [] };
+    const targetHeight = (Number.isFinite(params.height) && params.height > 0)
+        ? params.height
+        : Math.max(4, map.tileSize * 0.4);
     const placements = buildPlacements({
         map,
         rng,
         groundY: groundY - sink,
         params,
-        modelCount: entries.length
+        modelCount: entries.length,
+        exclusions,
+        targetHeight
     });
-
-    const targetHeight = (Number.isFinite(params.height) && params.height > 0)
-        ? params.height
-        : Math.max(4, map.tileSize * 0.4);
 
     loadTreeAssets(quality, entries).then((assets) => {
         if (!assets) return;
