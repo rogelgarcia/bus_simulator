@@ -1,1 +1,12 @@
+# Normalize all text files to LF in the index and the working tree,
+# regardless of local core.autocrlf settings.
+* text=auto eol=lf
+
+# Binary files (never normalized or diffed as text)
+*.png -text
+*.jpg -text
+*.jpeg -text
+*.ico -text
+*.zip -text
+
 assets/public/** filter=lfs diff=lfs merge=lfs -text

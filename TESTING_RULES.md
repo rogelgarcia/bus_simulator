@@ -42,6 +42,7 @@ Common targets:
 ## Artifacts and baselines
 
 - Generated outputs (screenshots, traces, logs, reports) go under `tests/artifacts/` and must be gitignored.
+- Ad-hoc debug captures (one-off Playwright screenshots, before/after comparisons, diff images) go under `tests/artifacts/screens/<topic>/`. Never write them into `screens/` (source: tracked HTML entry points) or anywhere else alongside source code.
 - Baselines/fixtures/budgets/specs are committed under their respective `tests/**` folders (never under `tests/artifacts/`).
 - Baseline updates must be explicit (command/flag), never automatic.
 
