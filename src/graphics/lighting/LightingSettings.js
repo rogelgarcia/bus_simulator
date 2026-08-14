@@ -25,7 +25,7 @@ const LEGACY_LIGHTING_DEFAULTS_V0 = Object.freeze({
     }
 });
 
-export const LIGHTING_DEFAULTS = Object.freeze({
+const LEGACY_LIGHTING_DEFAULTS_V2 = Object.freeze({
     exposure: 0.59,
     toneMapping: 'aces',
     hemiIntensity: 4.26,
@@ -33,6 +33,30 @@ export const LIGHTING_DEFAULTS = Object.freeze({
     ibl: {
         enabled: true,
         envMapIntensity: 0.59,
+        setBackground: false
+    }
+});
+
+const LEGACY_LIGHTING_DEFAULTS_V3 = Object.freeze({
+    exposure: 0.86,
+    toneMapping: 'agx',
+    hemiIntensity: 1.15,
+    sunIntensity: 5.25,
+    ibl: {
+        enabled: true,
+        envMapIntensity: 0.28,
+        setBackground: false
+    }
+});
+
+export const LIGHTING_DEFAULTS = Object.freeze({
+    exposure: 1.02,
+    toneMapping: 'aces',
+    hemiIntensity: 0.9,
+    sunIntensity: 7,
+    ibl: {
+        enabled: true,
+        envMapIntensity: 0.28,
         setBackground: false
     }
 });
@@ -122,7 +146,19 @@ export function loadSavedLightingSettings() {
     if (!raw) return null;
     try {
         const saved = sanitizeLightingSettings(JSON.parse(raw));
-        const isLegacyDefault = (saved.exposure === LEGACY_LIGHTING_DEFAULTS_V1.exposure
+        const isLegacyDefault = (saved.exposure === LEGACY_LIGHTING_DEFAULTS_V3.exposure
+            && saved.hemiIntensity === LEGACY_LIGHTING_DEFAULTS_V3.hemiIntensity
+            && saved.sunIntensity === LEGACY_LIGHTING_DEFAULTS_V3.sunIntensity
+            && saved.ibl.enabled === LEGACY_LIGHTING_DEFAULTS_V3.ibl.enabled
+            && saved.ibl.envMapIntensity === LEGACY_LIGHTING_DEFAULTS_V3.ibl.envMapIntensity
+            && saved.ibl.setBackground === LEGACY_LIGHTING_DEFAULTS_V3.ibl.setBackground)
+            || (saved.exposure === LEGACY_LIGHTING_DEFAULTS_V2.exposure
+            && saved.hemiIntensity === LEGACY_LIGHTING_DEFAULTS_V2.hemiIntensity
+            && saved.sunIntensity === LEGACY_LIGHTING_DEFAULTS_V2.sunIntensity
+            && saved.ibl.enabled === LEGACY_LIGHTING_DEFAULTS_V2.ibl.enabled
+            && saved.ibl.envMapIntensity === LEGACY_LIGHTING_DEFAULTS_V2.ibl.envMapIntensity
+            && saved.ibl.setBackground === LEGACY_LIGHTING_DEFAULTS_V2.ibl.setBackground)
+            || (saved.exposure === LEGACY_LIGHTING_DEFAULTS_V1.exposure
             && saved.hemiIntensity === LEGACY_LIGHTING_DEFAULTS_V1.hemiIntensity
             && saved.sunIntensity === LEGACY_LIGHTING_DEFAULTS_V1.sunIntensity
             && saved.ibl.enabled === LEGACY_LIGHTING_DEFAULTS_V1.ibl.enabled

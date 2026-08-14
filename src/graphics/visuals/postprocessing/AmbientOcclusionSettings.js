@@ -7,7 +7,7 @@ const STORAGE_KEY = 'bus_sim.ambientOcclusion.v1';
 export const AMBIENT_OCCLUSION_DEFAULTS = Object.freeze({
     mode: 'ssao',
     alpha: {
-        handling: 'alpha_test',
+        handling: 'exclude',
         threshold: 0.36
     },
     staticAo: {

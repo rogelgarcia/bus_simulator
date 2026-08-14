@@ -9,9 +9,14 @@ const LEGACY_COLOR_GRADING_DEFAULTS_V1 = Object.freeze({
     intensity: 1.0
 });
 
-export const COLOR_GRADING_DEFAULTS = Object.freeze({
+const LEGACY_COLOR_GRADING_DEFAULTS_V2 = Object.freeze({
     preset: 'off',
     intensity: 0.5
+});
+
+export const COLOR_GRADING_DEFAULTS = Object.freeze({
+    preset: 'vivid',
+    intensity: 0.65
 });
 
 function clamp(value, min, max, fallback) {
@@ -56,8 +61,10 @@ export function loadSavedColorGradingSettings() {
     if (!raw) return null;
     try {
         const saved = sanitizeColorGradingSettings(JSON.parse(raw));
-        const isLegacyDefault = saved.preset === LEGACY_COLOR_GRADING_DEFAULTS_V1.preset
-            && saved.intensity === LEGACY_COLOR_GRADING_DEFAULTS_V1.intensity;
+        const isLegacyDefault = (saved.preset === LEGACY_COLOR_GRADING_DEFAULTS_V1.preset
+            && saved.intensity === LEGACY_COLOR_GRADING_DEFAULTS_V1.intensity)
+            || (saved.preset === LEGACY_COLOR_GRADING_DEFAULTS_V2.preset
+                && saved.intensity === LEGACY_COLOR_GRADING_DEFAULTS_V2.intensity);
         if (!isLegacyDefault) return saved;
 
         const migrated = sanitizeColorGradingSettings(COLOR_GRADING_DEFAULTS);

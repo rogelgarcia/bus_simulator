@@ -10,33 +10,33 @@ export const ATMOSPHERE_DEFAULTS = Object.freeze({
         elevationDeg: 35
     }),
     sky: Object.freeze({
-        horizonColor: '#EAF9FF',
-        zenithColor: '#7BCFFF',
-        groundColor: '#EAF9FF',
-        curve: 1.0,
+        horizonColor: '#A8D2EE',
+        zenithColor: '#1F6FC8',
+        groundColor: '#78949A',
+        curve: 0.5,
         exposure: 1.0,
         ditherStrength: 0.85,
         iblBackgroundMode: 'ibl'
     }),
     haze: Object.freeze({
         enabled: true,
-        intensity: 0.22,
-        thickness: 0.22,
+        intensity: 0.55,
+        thickness: 0.09,
         curve: 1.6,
         tintColor: '#FFFFFF',
         tintStrength: 0.0
     }),
     glare: Object.freeze({
         enabled: true,
-        intensity: 0.95,
-        sigmaDeg: 10,
+        intensity: 0.36,
+        sigmaDeg: 7,
         power: 1.0
     }),
     disc: Object.freeze({
         enabled: true,
-        intensity: 4.0,
+        intensity: 2.2,
         sigmaDeg: 0.22,
-        coreIntensity: 2.5,
+        coreIntensity: 1.25,
         coreSigmaDeg: 0.06
     }),
     debug: Object.freeze({
@@ -231,4 +231,3 @@ export function getResolvedAtmosphereSettings({ includeUrlOverrides = true } = {
 export function getDefaultResolvedAtmosphereSettings() {
     return sanitizeAtmosphereSettings(ATMOSPHERE_DEFAULTS);
 }
-

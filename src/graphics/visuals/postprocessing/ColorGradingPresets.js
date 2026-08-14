@@ -4,9 +4,15 @@
 
 export const COLOR_GRADING_PRESET_ID = Object.freeze({
     OFF: 'off',
+    VIVID: 'vivid',
     WARM: 'warm',
     COOL: 'cool'
 });
+
+const LUT_VIVID_URL = new URL(
+    '../../../../assets/public/luts/vivid.cube',
+    import.meta.url
+).toString();
 
 const LUT_WARM_URL = new URL(
     '../../../../assets/public/luts/warm.cube',
@@ -23,6 +29,11 @@ export const COLOR_GRADING_PRESETS = Object.freeze([
         id: COLOR_GRADING_PRESET_ID.OFF,
         label: 'Off',
         cubeUrl: null
+    }),
+    Object.freeze({
+        id: COLOR_GRADING_PRESET_ID.VIVID,
+        label: 'Vivid',
+        cubeUrl: LUT_VIVID_URL
     }),
     Object.freeze({
         id: COLOR_GRADING_PRESET_ID.WARM,
