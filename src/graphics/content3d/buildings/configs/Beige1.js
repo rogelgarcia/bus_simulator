@@ -157,7 +157,7 @@ export const BEIGE_1_BUILDING_CONFIG = Object.freeze({
                     "B": {
                         "material": {
                             "kind": "texture",
-                            "id": "default"
+                            "id": "pbr.plastered_wall_02"
                         },
                         "wallBase": {
                             "roughness": 0.85,
@@ -170,14 +170,14 @@ export const BEIGE_1_BUILDING_CONFIG = Object.freeze({
                             "tintHex": 16777215
                         },
                         "tiling": {
-                            "enabled": false,
+                            "enabled": true,
                             "tileMeters": 2,
                             "tileMetersU": 2,
                             "tileMetersV": 2,
-                            "uvEnabled": false,
+                            "uvEnabled": true,
                             "offsetU": 0,
                             "offsetV": 0,
-                            "rotationDegrees": 0
+                            "rotationDegrees": 90
                         },
                         "materialVariation": {
                             "enabled": false,
@@ -187,7 +187,7 @@ export const BEIGE_1_BUILDING_CONFIG = Object.freeze({
                     "C": {
                         "material": {
                             "kind": "texture",
-                            "id": "default"
+                            "id": "pbr.plastered_wall_02"
                         },
                         "wallBase": {
                             "roughness": 0.85,
@@ -200,14 +200,14 @@ export const BEIGE_1_BUILDING_CONFIG = Object.freeze({
                             "tintHex": 16777215
                         },
                         "tiling": {
-                            "enabled": false,
+                            "enabled": true,
                             "tileMeters": 2,
                             "tileMetersU": 2,
                             "tileMetersV": 2,
-                            "uvEnabled": false,
+                            "uvEnabled": true,
                             "offsetU": 0,
                             "offsetV": 0,
-                            "rotationDegrees": 0
+                            "rotationDegrees": 90
                         },
                         "materialVariation": {
                             "enabled": false,
