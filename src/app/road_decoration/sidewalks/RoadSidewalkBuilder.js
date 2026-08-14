@@ -277,6 +277,47 @@ function pushQuad(positions, a, b, c, d) {
     pushTri(positions, a, c, d);
 }
 
+function collectRoadSurfacePolygons(primitives) {
+    const prims = Array.isArray(primitives) ? primitives : [];
+    const polygons = [];
+    for (const prim of prims) {
+        if (!prim || prim.type !== 'polygon') continue;
+        const kind = prim.kind ?? null;
+        if (kind !== 'asphalt_piece' && kind !== 'junction_surface') continue;
+        const pts = Array.isArray(prim.points) ? prim.points : [];
+        if (pts.length < 3) continue;
+        polygons.push(pts);
+    }
+    return polygons;
+}
+
+/**
+ * Returns the sidewalk outer boundary loops (the exact polylines the sidewalk
+ * mesh ends at, mitered corners included) so other systems, like building
+ * foundation slabs, can meet the sidewalk with a matching cut.
+ */
+export function buildRoadSidewalkOuterBoundaryLoopsFromRoadEnginePrimitives(primitives, {
+    curbThickness = 0.48,
+    sidewalkWidth = 1.875,
+    startFromCurb = true,
+    boundaryEpsilon = 1e-4,
+    miterLimit = 4
+} = {}) {
+    const polygons = collectRoadSurfacePolygons(primitives);
+    const loops = buildBoundaryLoops(polygons, { epsilon: boundaryEpsilon });
+    const innerOffset = startFromCurb === false ? 0 : Math.max(0, clampNumber(curbThickness, 0.48));
+    const outerOffset = innerOffset + Math.max(0, clampNumber(sidewalkWidth, 1.875));
+
+    const out = [];
+    for (const loop of loops) {
+        const pts = normalizePointList(loop, { epsilon: boundaryEpsilon, forceCcw: false });
+        if (pts.length < 3) continue;
+        const outer = offsetLoop(pts, outerOffset, { miterLimit, epsilon: boundaryEpsilon });
+        if (outer.length === pts.length) out.push(outer);
+    }
+    return out;
+}
+
 export function buildRoadSidewalkMeshDataFromRoadEnginePrimitives(primitives, {
     surfaceY = 0,
     curbThickness = 0.48,
@@ -288,17 +329,7 @@ export function buildRoadSidewalkMeshDataFromRoadEnginePrimitives(primitives, {
     boundaryEpsilon = 1e-4,
     miterLimit = 4
 } = {}) {
-    const prims = Array.isArray(primitives) ? primitives : [];
-    const polygons = [];
-    for (const prim of prims) {
-        if (!prim || prim.type !== 'polygon') continue;
-        const kind = prim.kind ?? null;
-        if (kind !== 'asphalt_piece' && kind !== 'junction_surface') continue;
-        const pts = Array.isArray(prim.points) ? prim.points : [];
-        if (pts.length < 3) continue;
-        polygons.push(pts);
-    }
-
+    const polygons = collectRoadSurfacePolygons(primitives);
     const loops = buildBoundaryLoops(polygons, { epsilon: boundaryEpsilon });
     const baseY = clampNumber(surfaceY, 0);
     const curbH = Math.max(0, clampNumber(curbHeight, 0.17)) + Math.max(0, clampNumber(curbExtraHeight, 0));

@@ -722,7 +722,7 @@ function insetLoopsXZ(loops, inset) {
         .filter((loop) => Array.isArray(loop) && loop.length >= 3);
 }
 
-function computeBuildingBaseAndSidewalk({ generatorConfig, floorHeight }) {
+export function computeBuildingBaseAndSidewalk({ generatorConfig, floorHeight }) {
     const roadCfg = generatorConfig?.road ?? {};
     const baseRoadY = Number.isFinite(roadCfg.surfaceY) ? roadCfg.surfaceY : 0;
     const curbHeight = Number.isFinite(roadCfg?.curb?.height) ? roadCfg.curb.height : 0;
@@ -746,7 +746,7 @@ function computeBuildingBaseAndSidewalk({ generatorConfig, floorHeight }) {
     const planBase = (hasSidewalk && Number.isFinite(sidewalkSurfaceY)) ? sidewalkSurfaceY : (Number.isFinite(baseRoadY) ? baseRoadY : (Number.isFinite(groundY) ? groundY : 0));
     const planY = planBase + 0.07;
 
-    return { baseY, extraFirstFloor: extra, planY };
+    return { baseY, extraFirstFloor: extra, planY, sidewalkSurfaceY };
 }
 
 function normalizeTileList(tiles) {
@@ -2108,6 +2108,7 @@ export function buildBuildingVisualParts({
     return {
         baseColorHex,
         solidMeshes,
+        placedFootprintLoops: footprintLoops,
         wire,
         plan,
         border,

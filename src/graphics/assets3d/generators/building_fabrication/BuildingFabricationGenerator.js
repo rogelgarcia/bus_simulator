@@ -7562,6 +7562,7 @@ export function buildBuildingFabricationVisualParts({
     return {
         baseColorHex,
         solidMeshes,
+        placedFootprintLoops: sourceFootprintLoops,
         warnings: warnings.length ? warnings.slice() : null,
         facadeSolverDebug: Object.keys(facadeSolverDebug).length ? facadeSolverDebug : null,
         facadeCornerDebug: facadeCornerDebugByLayerId && Object.keys(facadeCornerDebugByLayerId).length ? facadeCornerDebugByLayerId : null,

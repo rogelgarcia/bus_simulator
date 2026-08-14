@@ -9,7 +9,9 @@ import { computeTrafficControlPlacements } from '../../../app/city/TrafficContro
 import { createCityWorld } from '../../assets3d/generators/TerrainGenerator.js';
 import { createGeneratorConfig } from '../../assets3d/generators/GeneratorParams.js';
 import { applyAtmosphereToSkyDome, createGradientSkyDome, shouldShowSkyDome } from '../../assets3d/generators/SkyGenerator.js';
-import { BuildingWallTextureCache, buildBuildingVisualParts, computeBuildingLoopsFromTiles } from '../../assets3d/generators/buildings/BuildingGenerator.js';
+import { BuildingWallTextureCache, buildBuildingVisualParts, computeBuildingBaseAndSidewalk, computeBuildingLoopsFromTiles } from '../../assets3d/generators/buildings/BuildingGenerator.js';
+import { createBuildingSlabMeshes } from '../../assets3d/generators/buildings/BuildingSlabGenerator.js';
+import { buildRoadSidewalkOuterBoundaryLoopsFromRoadEnginePrimitives } from '../../../app/road_decoration/sidewalks/RoadSidewalkBuilder.js';
 import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js';
@@ -186,6 +188,10 @@ export class City {
             const buildingsGroup = new THREE.Group();
             buildingsGroup.name = 'Buildings';
 
+            // Collected across all buildings so overlapping foundation slabs
+            // can merge into shared geometry.
+            const slabFootprintLoops = [];
+
             const textures = new BuildingWallTextureCache();
             for (const entry of buildingsList) {
                 const wallInset = Number.isFinite(entry?.wallInset) ? entry.wallInset : 0.0;
@@ -263,6 +269,48 @@ export class City {
                 if (parts.beltCourse) buildingGroup.add(parts.beltCourse);
                 if (parts.topBelt) buildingGroup.add(parts.topBelt);
                 buildingsGroup.add(buildingGroup);
+
+                const placedLoops = Array.isArray(parts.placedFootprintLoops) && parts.placedFootprintLoops.length
+                    ? parts.placedFootprintLoops
+                    : (buildAreaLoops ?? footprintLoops ?? []);
+                for (const loop of placedLoops) {
+                    if (Array.isArray(loop) && loop.length >= 3) slabFootprintLoops.push(loop);
+                }
+            }
+
+            // Foundation slabs: planned across all buildings at once so slabs
+            // within reach of each other merge (slab-to-slab only), then cut
+            // exactly against the sidewalk outer boundary geometry.
+            if (slabFootprintLoops.length) {
+                const { sidewalkSurfaceY } = computeBuildingBaseAndSidewalk({
+                    generatorConfig: this.generatorConfig,
+                    floorHeight: 3.2
+                });
+                const slabGroundY = this.generatorConfig?.ground?.surfaceY
+                    ?? this.generatorConfig?.road?.surfaceY
+                    ?? 0;
+                const roadCfg = this.generatorConfig?.road ?? {};
+                const sidewalkBoundaries = buildRoadSidewalkOuterBoundaryLoopsFromRoadEnginePrimitives(
+                    this.roads.debug?.derived?.primitives ?? [],
+                    {
+                        curbThickness: roadCfg.curb?.thickness,
+                        sidewalkWidth: roadCfg.sidewalk?.extraWidth
+                    }
+                );
+                const slabsGroup = new THREE.Group();
+                slabsGroup.name = 'BuildingSlabs';
+                slabsGroup.userData.slabDebug = { sidewalkBoundaries, footprintLoops: slabFootprintLoops };
+                const slabMeshes = createBuildingSlabMeshes({
+                    footprintLoops: slabFootprintLoops,
+                    sidewalkBoundaries,
+                    topY: Number.isFinite(sidewalkSurfaceY)
+                        ? sidewalkSurfaceY
+                        : (slabGroundY + 0.17),
+                    groundY: slabGroundY,
+                    material: this.materials.sidewalk
+                });
+                for (const slab of slabMeshes) slabsGroup.add(slab);
+                buildingsGroup.add(slabsGroup);
             }
 
             this.buildings = { group: buildingsGroup, textures };
