@@ -11326,6 +11326,32 @@ async function runTests() {
         }
     });
 
+    test('TreeGenerator: applies exact trunk exclusions for city geometry and traffic controls', () => {
+        const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'test-tree-exclusions' });
+        const map = CityMap.fromSpec({ roads: [], buildings: [] }, cfg);
+        const center = map.tileToWorldCenter(1, 1);
+        const half = 3;
+        const roadPolygon = [
+            { x: center.x - half, z: center.z - half },
+            { x: center.x + half, z: center.z - half },
+            { x: center.x + half, z: center.z + half },
+            { x: center.x - half, z: center.z + half }
+        ];
+
+        const { placements } = createTreeField({
+            map,
+            rng: new CityRNG('tree-exclusion-test'),
+            groundY: 0,
+            config: { trees: { density: 1, jitter: 0, clearance: 0, maxAttempts: 1, roadBoost: 0 } },
+            exclusions: { roadPolygons: [roadPolygon], roadHardscapeMargin: 2 }
+        });
+
+        assertFalse(
+            (placements ?? []).some((placement) => Math.abs(placement.x - center.x) < 1e-6 && Math.abs(placement.z - center.z) < 1e-6),
+            'Placement should reject a trunk inside an exact road polygon.'
+        );
+    });
+
     // ========== Procedural Mesh Tests (added in Task 30) ==========
     let proceduralMeshes = null;
     try {

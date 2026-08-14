@@ -24,6 +24,9 @@ import {
 } from './states/LaunchScreenParam.js';
 import { ensureGlobalPerfBar } from './graphics/gui/perf_bar/PerfBar.js';
 import { installViewportContextMenuBlocker } from './graphics/gui/shared/utils/viewportContextMenuBlocker.js';
+import { readGameplayPoseFromSearch } from './app/gameplay/GameplayPose.js';
+import { getBusSpec } from './app/vehicle/buses/BusCatalog.js';
+import { createBus } from './graphics/assets3d/factories/BusFactory.js';
 
 function isEditableTarget(target) {
     const el = target && typeof target === 'object' ? target : null;
@@ -67,7 +70,16 @@ sm.go = (name, params = {}) => {
     syncLaunchScreenParam(name);
 };
 
-const launchStateName = readLaunchScreenFromLocation();
+const launchPose = readGameplayPoseFromSearch(window.location.search);
+if (launchPose) {
+    const busId = launchPose.bus?.modelId ?? 'city';
+    const busSpec = getBusSpec(busId);
+    if (!busSpec) throw new Error(`[main] Gameplay pose references unavailable bus '${busId}'.`);
+    engine.context.selectedBusId = busSpec.id;
+    engine.context.selectedBus = createBus(busSpec);
+}
+
+const launchStateName = launchPose ? 'game_mode' : readLaunchScreenFromLocation();
 prehideWelcomeForDirectLaunch(launchStateName);
 
 engine.setStateMachine(sm);

@@ -807,6 +807,10 @@ export class RapierVehicleSim {
             .setAdditionalMass(tuning.mass ?? 0);
 
         const body = this._world.createRigidBody(bodyDesc);
+        const startYaw = Number(entry.state?.locomotion?.yaw) || 0;
+        TMP_EULER.set(0, startYaw, 0, 'YXZ');
+        TMP_QUAT.setFromEuler(TMP_EULER);
+        body.setRotation(TMP_QUAT, true);
 
         const colliderDesc = this._rapier.ColliderDesc.cuboid(
             safeSize.x * 0.5,

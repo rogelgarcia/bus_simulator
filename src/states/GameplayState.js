@@ -25,6 +25,11 @@ import { VehicleMotionDebugOverlay } from '../graphics/gui/debug/VehicleMotionDe
 import { Q_MENU_GROUP } from './SceneShortcutRegistry.js';
 import { SetupUIController } from '../graphics/gui/setup/SetupUIController.js';
 import {
+    normalizeGameplayCityId,
+    readGameplayPoseFromSearch,
+    resolveGameplayPoseCamera
+} from '../app/gameplay/GameplayPose.js';
+import {
     getQMenuGroupMenuItems,
     getQMenuQuickShortcutByKey,
     getQMenuScreenMenuItemsByGroup
@@ -46,7 +51,7 @@ const CAMERA_DRAG = {
     tiltSpeed: 0.0035,
     minPhi: 0.28,
     maxPhi: Math.PI - 0.28,
-    idleReturnSec: 10,
+    idleReturnSec: 12,
     returnDurationSec: 2,
     returnEaseSec: 0.5
 };
@@ -56,21 +61,11 @@ const CAMERA_DRAG = {
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
-function normalizeCityParam(value) {
-    if (typeof value !== 'string') return '';
-    return value.trim().toLowerCase().replaceAll('_', '').replaceAll('-', '');
-}
-
 function resolveCityIdFromUrl() {
     if (typeof window === 'undefined') return null;
 
     const params = new URLSearchParams(window.location.search);
-    const key = normalizeCityParam(params.get('city') ?? params.get('citySpec') ?? params.get('citySpecId'));
-    if (!key) return null;
-
-    if (key === 'bigcity' || key === 'city1' || key === '1') return 'bigcity';
-    if (key === 'bigcity2' || key === 'bigcitytwo' || key === 'city2' || key === '2') return 'bigcity2';
-    return null;
+    return normalizeGameplayCityId(params.get('city') ?? params.get('citySpec') ?? params.get('citySpecId'));
 }
 
 function isValidGameplayCitySpec(spec) {
@@ -80,8 +75,8 @@ function isValidGameplayCitySpec(spec) {
     return true;
 }
 
-export function getGameplayCityOptions() {
-    const requestedCityId = resolveCityIdFromUrl();
+export function getGameplayCityOptions(gameplayPose = null) {
+    const requestedCityId = gameplayPose?.city ?? resolveCityIdFromUrl();
     const cityId = requestedCityId === 'bigcity' ? 'bigcity' : 'bigcity2';
 
     let mapSpec = null;
@@ -182,6 +177,8 @@ export class GameplayState {
         this._busCenterBox = new THREE.Box3();
         this._busCenter = new THREE.Vector3();
         this._cameraTour = null;
+        this._gameplayPose = null;
+        this._poseCamera = null;
         this._dragSpherical = new THREE.Spherical();
         this._cameraDrag = {
             active: false,
@@ -253,6 +250,8 @@ export class GameplayState {
 
         // Get simulation context
         const sim = this.engine.simulation;
+        const params = new URLSearchParams(window.location.search);
+        this._gameplayPose = readGameplayPoseFromSearch(window.location.search);
 
         // Create game loop (pass engine for world updates)
         this.gameLoop = new GameLoop(sim, { engine: this.engine });
@@ -263,7 +262,7 @@ export class GameplayState {
         this.gameLoop.setInputManager(this.inputManager);
 
         // Setup city
-        this.city = getSharedCity(this.engine, getGameplayCityOptions());
+        this.city = getSharedCity(this.engine, getGameplayCityOptions(this._gameplayPose));
         this.city.attach(this.engine);
         this.gameLoop.setWorld(this.city);
 
@@ -275,7 +274,6 @@ export class GameplayState {
         this._vehicleMotionDebugOverlay = new VehicleMotionDebugOverlay();
         this._vehicleMotionDebugOverlay.attach(document.body);
 
-        const params = new URLSearchParams(window.location.search);
         this._debugEnabled = params.get('debug') === 'true';
         if (this._debugEnabled) {
             this._debugPanel = new GameplayDebugPanel({ events: sim.events });
@@ -312,9 +310,12 @@ export class GameplayState {
 
         // Position anchor on road
         const roadY = this.city?.generatorConfig?.ground?.surfaceY ?? this.city?.generatorConfig?.road?.surfaceY ?? 0;
-        this.busAnchor.position.set(0, roadY, 0);
-        this.busAnchor.rotation.set(0, 0, 0);
-        snapToGroundY(this.busAnchor, roadY);
+        const busPose = this._gameplayPose?.bus ?? null;
+        const busPosition = busPose?.position ?? null;
+        const poseGroundY = busPosition?.y ?? roadY;
+        this.busAnchor.position.set(busPosition?.x ?? 0, poseGroundY, busPosition?.z ?? 0);
+        this.busAnchor.rotation.set(0, THREE.MathUtils.degToRad(busPose?.yawDeg ?? 0), 0);
+        snapToGroundY(this.busAnchor, poseGroundY);
         this.engine.scene.add(this.busAnchor);
 
         const probeGeo = new THREE.SphereGeometry(1, 64, 32);
@@ -347,6 +348,7 @@ export class GameplayState {
             engine: this.engine,
             getTarget: () => this._getBusCenter()
         });
+        this._configureGameplayPoseCamera();
 
         // ✅ Ensure physics systems have the real anchor/api so locomotion can use rear-axle kinematics.
         sim.physics?.setEnvironment?.(this.city);
@@ -358,6 +360,7 @@ export class GameplayState {
         this.vehicleController = new VehicleController(this.vehicle.id, sim.physics, sim.events);
         this.vehicleController.setVehicleApi(this.vehicle.api, this.vehicle.anchor);
         this.gameLoop.addVehicleController(this.vehicleController);
+        this._applyGameplayPoseSettings();
 
         const readyPromise = this.busModel?.userData?.readyPromise;
         readyPromise?.then?.(() => {
@@ -367,6 +370,7 @@ export class GameplayState {
             sim.physics?.removeVehicle?.(this.vehicle.id);
             sim.physics?.addVehicle?.(this.vehicle.id, this.vehicle.config, this.busAnchor, this.vehicle.api);
             this.vehicleController?.setVehicleApi?.(this.vehicle.api, this.busAnchor);
+            this._applyGameplayPoseVehicleVisuals();
             this._debugPanel?.setContext?.({
                 vehicleId: this.vehicle.id,
                 physics: sim.physics,
@@ -451,6 +455,8 @@ export class GameplayState {
         this.busApi = null;
         this._cameraTour?.stop(true);
         this._cameraTour = null;
+        this._poseCamera = null;
+        this._gameplayPose = null;
 
         // Detach city
         this.city?.detach(this.engine);
@@ -521,16 +527,21 @@ export class GameplayState {
         // Update chase camera
         let cameraMode = freezeCamera ? 'frozen' : 'none';
         if (!freezeCamera) {
-            const touring = this._cameraTour?.update(dt) ?? false;
-            if (touring) {
-                cameraMode = 'tour';
+            if (this._poseCamera?.locked) {
+                this._applyGameplayPoseCamera();
+                cameraMode = 'pose';
             } else {
-                const manual = this._updateManualCamera(dt);
-                if (manual) {
-                    cameraMode = 'manual';
+                const touring = this._cameraTour?.update(dt) ?? false;
+                if (touring) {
+                    cameraMode = 'tour';
                 } else {
-                    cameraMode = 'chase';
-                    this._updateChaseCamera(dt);
+                    const manual = this._updateManualCamera(dt);
+                    if (manual) {
+                        cameraMode = 'manual';
+                    } else {
+                        cameraMode = 'chase';
+                        this._updateChaseCamera(dt);
+                    }
                 }
             }
         }
@@ -598,6 +609,75 @@ export class GameplayState {
             viewport: { width: vpW, height: vpH },
             settings: debugSettings
         });
+    }
+
+    _configureGameplayPoseCamera() {
+        const pose = this._gameplayPose;
+        if (!pose?.camera) {
+            this._poseCamera = null;
+            return;
+        }
+
+        const busTarget = this._getBusCenter();
+        const fallbackTarget = busTarget
+            ? { x: busTarget.x, y: busTarget.y, z: busTarget.z }
+            : {
+                x: this.busAnchor?.position?.x ?? 0,
+                y: (this.busAnchor?.position?.y ?? 0) + this._chase.lookY,
+                z: this.busAnchor?.position?.z ?? 0
+            };
+        const resolved = resolveGameplayPoseCamera(pose, fallbackTarget);
+        if (!resolved) {
+            this._poseCamera = null;
+            return;
+        }
+
+        this._poseCamera = {
+            position: new THREE.Vector3(resolved.position.x, resolved.position.y, resolved.position.z),
+            target: new THREE.Vector3(resolved.target.x, resolved.target.y, resolved.target.z),
+            fovDeg: resolved.fovDeg,
+            locked: resolved.locked
+        };
+        this._applyGameplayPoseCamera();
+    }
+
+    _applyGameplayPoseCamera() {
+        const poseCamera = this._poseCamera;
+        const camera = this.engine?.camera;
+        if (!poseCamera || !camera) return;
+        camera.position.copy(poseCamera.position);
+        camera.lookAt(poseCamera.target);
+        if (poseCamera.fovDeg !== undefined && camera.fov !== poseCamera.fovDeg) {
+            camera.fov = poseCamera.fovDeg;
+            camera.updateProjectionMatrix?.();
+        }
+    }
+
+    _applyGameplayPoseVehicleVisuals() {
+        const busPose = this._gameplayPose?.bus;
+        if (!busPose) return;
+
+        if (busPose.steeringWheelDeg !== undefined) {
+            const steering = busPose.steeringWheelDeg / 270;
+            const maxSteerDeg = this.vehicle?.config?.maxSteerDeg ?? 35;
+            const visualSteerRad = -steering * THREE.MathUtils.degToRad(maxSteerDeg);
+            this.vehicleController?.setSteering?.(steering);
+            this.busApi?.setSteerAngle?.(visualSteerRad);
+            if (this.hud?.steer) this.hud.steer.value = steering;
+            this.hud?.wheelWidget?.setSteerNorm?.(steering);
+        }
+
+        if (busPose.wheelSpinDeg !== undefined) {
+            this.busApi?.setWheelSpin?.(THREE.MathUtils.degToRad(busPose.wheelSpinDeg));
+        }
+    }
+
+    _applyGameplayPoseSettings() {
+        const pose = this._gameplayPose;
+        if (!pose) return;
+        this._applyGameplayPoseVehicleVisuals();
+        if (pose.simulation?.paused === true) this.gameLoop?.pause?.();
+        if (pose.hud?.visible === false) this.hud?.hide?.();
     }
 
     _updateTelemetry() {
