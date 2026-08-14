@@ -159,6 +159,7 @@ export function createGradientSkyDome({
 
     const mesh = new THREE.Mesh(geom, mat);
     mesh.name = 'CitySkyDome';
+    mesh.userData.excludeFromAmbientOcclusion = true;
     mesh.frustumCulled = false;
     mesh.renderOrder = -1000;
     return mesh;

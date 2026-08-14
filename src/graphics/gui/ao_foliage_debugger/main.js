@@ -16,16 +16,18 @@ document.body.classList.add('options-dock-open');
 const perfBar = ensureGlobalPerfBar();
 
 const view = new AOFoliageDebuggerView({ canvas });
+window.__aoFoliageDebugHooks = {
+    version: 1,
+    isReady: () => !!view.renderer && !!view.scene && !!view.camera && !!view._pipeline,
+    setAmbientOcclusion: (settings) => view.setAmbientOcclusionForTest(settings),
+    getAmbientOcclusion: () => view.getAmbientOcclusionForTest(),
+    getAoExclusionMaskDataUrl: () => view.getAoExclusionMaskDataUrlForTest(),
+    getReproInfo: () => view.getReproInfoForTest(),
+    getAoOverrideDebugInfo: () => view.getAoOverrideDebugInfoForTest()
+};
 view.start().then(() => {
     if (view.renderer) perfBar.setRenderer(view.renderer);
     view.onFrame = (frame) => perfBar.onFrame(frame);
-    window.__aoFoliageDebugHooks = {
-        version: 1,
-        setAmbientOcclusion: (settings) => view.setAmbientOcclusionForTest(settings),
-        getAmbientOcclusion: () => view.getAmbientOcclusionForTest(),
-        getReproInfo: () => view.getReproInfoForTest(),
-        getAoOverrideDebugInfo: () => view.getAoOverrideDebugInfoForTest()
-    };
 }).catch((err) => {
     console.error('[AO] Failed to start', err);
 });

@@ -74,6 +74,7 @@ export class SunFlareRig {
         this.light = light;
         this.group = new THREE.Group();
         this.group.name = 'SunFlareRig';
+        this.group.userData.excludeFromAmbientOcclusion = true;
         this.group.frustumCulled = false;
 
         this._textures = getOrCreateSunFlareTextures();

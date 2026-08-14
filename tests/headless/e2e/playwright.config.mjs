@@ -9,6 +9,7 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const baseURL = process.env.E2E_BASE_URL || 'http://127.0.0.1:4173';
 const headless = process.env.HEADLESS === '0' ? false : true;
 const isFileBaseUrl = baseURL.startsWith('file:');
+const executablePath = String(process.env.PLAYWRIGHT_EXECUTABLE_PATH || '').trim();
 
 export default {
     testDir: __dirname,
@@ -22,6 +23,7 @@ export default {
         baseURL,
         headless,
         launchOptions: {
+            ...(executablePath ? { executablePath } : {}),
             args: isFileBaseUrl ? [
                 '--allow-file-access-from-files',
                 '--disable-web-security'

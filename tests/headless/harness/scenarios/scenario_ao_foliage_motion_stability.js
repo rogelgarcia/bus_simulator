@@ -120,6 +120,16 @@ export const scenarioAoFoliageMotionStability = {
         card.position.set(0, 1.35, -2.45);
         root.add(card);
 
+        // Keep opaque tree geometry behind the cutout card. In `exclude` mode
+        // the trunk remains a valid AO source, but visible leaf pixels in front
+        // of it must still be protected by the receiver mask.
+        const trunkMat = new THREE.MeshBasicMaterial({ color: 0x6b4a2f });
+        const trunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 2.35, 12);
+        const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+        trunk.position.set(-0.42, 1.17, -2.68);
+        trunk.rotation.z = -0.08;
+        root.add(trunk);
+
         const groundMat = new THREE.MeshBasicMaterial({ color: 0x6f7785 });
         const groundGeo = new THREE.PlaneGeometry(8.5, 8.5);
         const ground = new THREE.Mesh(groundGeo, groundMat);
@@ -135,8 +145,10 @@ export const scenarioAoFoliageMotionStability = {
 
         const samplePointsWorld = {
             foliageOpaque: new THREE.Vector3(-0.42, 1.35, -2.45),
+            foliageOverTrunk: new THREE.Vector3(-0.42, 1.35, -2.45),
             foliageTransparent: new THREE.Vector3(0.42, 1.35, -3.2),
             foliageReference: new THREE.Vector3(1.45, 1.35, -3.2),
+            trunkVisible: new THREE.Vector3(-0.42, 0.22, -2.68),
             contactNear: new THREE.Vector3(-1.1, 0.01, -1.7),
             contactFar: new THREE.Vector3(0.2, 0.01, -1.7)
         };
@@ -180,6 +192,8 @@ export const scenarioAoFoliageMotionStability = {
                 foliageMat.dispose?.();
                 cutoutTex.dispose?.();
                 cutoutAoAlphaMap?.dispose?.();
+                trunkGeo.dispose?.();
+                trunkMat.dispose?.();
                 groundGeo.dispose?.();
                 groundMat.dispose?.();
                 contactOccluderGeo.dispose?.();

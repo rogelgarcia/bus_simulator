@@ -83,6 +83,8 @@ Setting: `ambientOcclusion.alpha`
   - `exclude`: Exclude alpha-cutout/foliage geometry from AO depth/normal.
 - `threshold` (only for `alpha_test`): Alpha-test cutoff in `[0.01, 0.99]` (default `0.5`).
 
+The selected handling mode is authoritative for foliage and other alpha-cutout materials. `alpha_test` uses the source cutout silhouette (including a dedicated `material.userData.aoAlphaMap` when supplied). `exclude` removes the cutout geometry from AO depth/normal passes and masks those visible pixels out of final SSAO/GTAO composition, so the material neither contributes to nor receives screen-space AO. Normal lighting and shadow-map rendering are unaffected by this AO-only setting.
+
 ## Material tagging (foliage)
 
 To ensure alpha-blended foliage participates in AO alpha handling, tag foliage materials:
@@ -90,3 +92,9 @@ To ensure alpha-blended foliage participates in AO alpha handling, tag foliage m
 - `material.userData.isFoliage = true`
 
 Alpha-tested materials (`material.alphaTest > 0`) are automatically treated as alpha-cutout for AO, even without tagging.
+
+## Visual-only scene geometry
+
+Meshes that exist only to draw the environment or a screen-facing visual effect must not enter AO depth/normal buffers. Tag them with `object.userData.excludeFromAmbientOcclusion = true`. The sky dome, sun bloom, sun rays, and lens flare rigs use this tag so their sphere/billboard geometry cannot create polygon or card-shaped AO artifacts.
+
+The AO foliage debugger uses the production `PostProcessingPipeline` with the resolved gameplay bloom, sun bloom, anti-aliasing, lighting, sky, and sun-visual rigs. `?sunAligned=1` provides the deterministic sun-behind-foliage regression view.

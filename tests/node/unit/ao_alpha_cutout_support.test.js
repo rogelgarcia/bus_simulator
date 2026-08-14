@@ -56,6 +56,16 @@ test('AoAlphaCutoutSupport: opaque material with no alpha-test intent is not tre
     assert.equal(shouldApplyAoAlphaCutout(src, null), false);
 });
 
+test('AoAlphaCutoutSupport: mixed-mesh object foliage tag does not classify an opaque trunk group', () => {
+    const trunk = makeMaterial({
+        map: makeTexture('trunk'),
+        transparent: false,
+        depthWrite: true,
+        alphaTest: 0
+    });
+    assert.equal(shouldApplyAoAlphaCutout(trunk, { userData: { isFoliage: true } }), false);
+});
+
 test('AoAlphaCutoutSupport: resolveAoOverrideMaterial falls back to active scene override material', () => {
     const drawMaterial = makeMaterial({ name: 'scene_mat' });
     const sceneOverride = makeMaterial({ name: 'ao_override' });
@@ -109,12 +119,13 @@ test('AoAlphaCutoutSupport: alpha_test mode uses source cutout textures and thre
         whiteTexture: white
     });
 
-    assert.equal(override.map, white);
+    assert.equal(override.map, sourceMap);
     assert.equal(override.alphaMap, sourceAlphaMap);
     assert.equal(override.alphaTest, 0.42);
+    assert.equal(override.needsUpdate, true);
 });
 
-test('AoAlphaCutoutSupport: foliage cutouts force AO exclusion for stability', () => {
+test('AoAlphaCutoutSupport: alpha_test mode remains authoritative for foliage', () => {
     const white = makeTexture('white');
     const sourceMap = makeTexture('leaf_map');
     const src = makeMaterial({
@@ -133,9 +144,36 @@ test('AoAlphaCutoutSupport: foliage cutouts force AO exclusion for stability', (
         whiteTexture: white
     });
 
-    assert.equal(override.map, white);
+    assert.equal(override.map, sourceMap);
     assert.equal(override.alphaMap, white);
-    assert.equal(override.alphaTest, 1.1);
+    assert.equal(override.alphaTest, 0.45);
+    assert.equal(override.needsUpdate, true);
+});
+
+test('AoAlphaCutoutSupport: alpha_test mode prefers the dedicated AO alpha map', () => {
+    const white = makeTexture('white');
+    const sourceMap = makeTexture('leaf_map');
+    const aoAlphaMap = makeTexture('leaf_ao_alpha');
+    const src = makeMaterial({
+        map: sourceMap,
+        alphaTest: 0.45,
+        userData: { isFoliage: true, aoAlphaMap }
+    });
+    const override = makeMaterial({ map: white, alphaMap: white, alphaTest: 0.0001 });
+
+    applyAoAlphaHandlingToMaterial({
+        overrideMaterial: override,
+        sourceMaterial: src,
+        object: null,
+        handling: 'alpha_test',
+        threshold: 0.4,
+        whiteTexture: white
+    });
+
+    assert.equal(override.map, white);
+    assert.equal(override.alphaMap, aoAlphaMap);
+    assert.equal(override.alphaTest, 0.45);
+    assert.equal(override.needsUpdate, true);
 });
 
 test('AoAlphaCutoutSupport: exclude mode removes cutout caster contribution', () => {
@@ -151,6 +189,26 @@ test('AoAlphaCutoutSupport: exclude mode removes cutout caster contribution', ()
         overrideMaterial: override,
         sourceMaterial: src,
         object: null,
+        handling: 'exclude',
+        threshold: 0.5,
+        whiteTexture: white
+    });
+
+    assert.equal(override.map, white);
+    assert.equal(override.alphaMap, white);
+    assert.equal(override.alphaTest, 1.1);
+    assert.equal(override.needsUpdate, true);
+});
+
+test('AoAlphaCutoutSupport: exclude mode removes opaque groups from a mixed foliage mesh', () => {
+    const white = makeTexture('white');
+    const trunk = makeMaterial({ map: makeTexture('trunk') });
+    const override = makeMaterial({ map: white, alphaMap: white, alphaTest: 0.0001 });
+
+    applyAoAlphaHandlingToMaterial({
+        overrideMaterial: override,
+        sourceMaterial: trunk,
+        object: { userData: { isFoliage: true } },
         handling: 'exclude',
         threshold: 0.5,
         whiteTexture: white

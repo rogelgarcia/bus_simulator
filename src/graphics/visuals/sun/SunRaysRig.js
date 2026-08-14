@@ -63,6 +63,7 @@ export class SunRaysRig {
 
         this.group = new THREE.Group();
         this.group.name = 'SunRaysRig';
+        this.group.userData.excludeFromAmbientOcclusion = true;
         this.group.frustumCulled = false;
 
         this._mesh = createSunRaysStarburstMesh();

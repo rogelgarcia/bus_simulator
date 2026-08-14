@@ -11,7 +11,26 @@ function isLikelyFoliageName(name) {
 function hasAlphaTexture(material) {
     const mat = material && typeof material === 'object' ? material : null;
     if (!mat) return false;
-    return !!(mat.alphaMap || mat.map);
+    return !!(mat.alphaMap || mat.map || mat.userData?.aoAlphaMap);
+}
+
+function setAoOverrideState(material, { map, alphaMap, alphaTest }) {
+    const mat = material && typeof material === 'object' ? material : null;
+    if (!mat?.isMaterial) return;
+
+    const nextAlphaTest = Number(alphaTest) || 0;
+    const changed = mat.map !== map
+        || mat.alphaMap !== alphaMap
+        || (Number(mat.alphaTest) || 0) !== nextAlphaTest;
+
+    mat.map = map;
+    mat.alphaMap = alphaMap;
+    mat.alphaTest = nextAlphaTest;
+
+    // AO passes reuse one override material for many scene objects. Force Three.js
+    // to refresh that material's uniforms whenever the per-object cutout state
+    // changes; otherwise the previous object's map/threshold can remain bound.
+    if (changed) mat.needsUpdate = true;
 }
 
 export function getMaterialForAoGroup(object, group) {
@@ -31,7 +50,9 @@ export function shouldApplyAoAlphaCutout(material, object) {
     const alphaTest = Number(mat.alphaTest) || 0;
     if (alphaTest > 1e-6) return true;
 
-    const tagged = mat.userData?.isFoliage === true || object?.userData?.isFoliage === true;
+    // Material tags are group-specific. Object tags can describe a mixed
+    // trunk/leaf mesh and would incorrectly classify its opaque trunk groups.
+    const tagged = mat.userData?.isFoliage === true;
     if (tagged) return true;
 
     if (isLikelyFoliageName(mat.name) || isLikelyFoliageName(object?.name)) return true;
@@ -92,25 +113,36 @@ export function applyAoAlphaHandlingToMaterial({
     if (!mat?.isMaterial) return;
 
     const src = sourceMaterial && typeof sourceMaterial === 'object' ? sourceMaterial : null;
+    const aoAlphaMap = src?.userData?.aoAlphaMap?.isTexture ? src.userData.aoAlphaMap : null;
     const mode = String(handling ?? 'alpha_test').toLowerCase();
     const t = Number.isFinite(Number(threshold))
         ? Math.max(0.01, Math.min(0.99, Number(threshold)))
         : 0.5;
 
-    mat.map = whiteTexture;
-    mat.alphaMap = whiteTexture;
-    mat.alphaTest = 0.0001;
-
-    if (!shouldApplyAoAlphaCutout(src, object)) return;
+    const excludeWholeObject = mode === 'exclude' && object?.userData?.isFoliage === true;
+    if (!shouldApplyAoAlphaCutout(src, object) && !excludeWholeObject) {
+        setAoOverrideState(mat, {
+            map: whiteTexture,
+            alphaMap: whiteTexture,
+            alphaTest: 0.0001
+        });
+        return;
+    }
 
     if (mode === 'exclude') {
-        mat.alphaTest = 1.1;
+        setAoOverrideState(mat, {
+            map: whiteTexture,
+            alphaMap: whiteTexture,
+            alphaTest: 1.1
+        });
         return;
     }
 
     const sourceAlphaTest = Number(src?.alphaTest) || 0;
     const effectiveThreshold = sourceAlphaTest > 0 ? Math.max(t, sourceAlphaTest) : t;
-    mat.map = src?.map ?? whiteTexture;
-    mat.alphaMap = src?.alphaMap ?? whiteTexture;
-    mat.alphaTest = effectiveThreshold;
+    setAoOverrideState(mat, {
+        map: aoAlphaMap ? whiteTexture : (src?.map ?? whiteTexture),
+        alphaMap: aoAlphaMap ?? src?.alphaMap ?? whiteTexture,
+        alphaTest: effectiveThreshold
+    });
 }

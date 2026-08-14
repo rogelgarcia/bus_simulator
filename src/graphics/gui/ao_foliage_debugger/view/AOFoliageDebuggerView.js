@@ -1,5 +1,5 @@
 // src/graphics/gui/ao_foliage_debugger/view/AOFoliageDebuggerView.js
-// Standalone AO debug scene (independent from gameplay post-processing pipeline).
+// Standalone foliage repro using the gameplay post-processing and sun-visual pipeline.
 // @ts-check
 
 import * as THREE from 'three';
@@ -11,6 +11,13 @@ import { azimuthElevationDegToDir } from '../../../visuals/atmosphere/SunDirecti
 import { getResolvedLightingSettings, sanitizeLightingSettings, sanitizeToneMappingMode } from '../../../lighting/LightingSettings.js';
 import { applyIBLIntensity, applyIBLToScene, loadIBLTexture } from '../../../lighting/IBL.js';
 import { getResolvedAmbientOcclusionSettings } from '../../../visuals/postprocessing/AmbientOcclusionSettings.js';
+import { getResolvedAntiAliasingSettings } from '../../../visuals/postprocessing/AntiAliasingSettings.js';
+import { getResolvedBloomSettings } from '../../../visuals/postprocessing/BloomSettings.js';
+import { getResolvedSunBloomSettings } from '../../../visuals/postprocessing/SunBloomSettings.js';
+import { SunBloomRig } from '../../../visuals/sun/SunBloomRig.js';
+import { SunRaysRig } from '../../../visuals/sun/SunRaysRig.js';
+import { SunFlareRig } from '../../../visuals/sun/SunFlareRig.js';
+import { getResolvedSunFlareSettings } from '../../../visuals/sun/SunFlareSettings.js';
 import { makeChoiceRow, makeNumberSliderRow, makeToggleRow } from '../../options/OptionsUiControls.js';
 import { AODebugPipeline } from './AODebugPipeline.js';
 
@@ -119,10 +126,14 @@ export class AOFoliageDebuggerView {
         this._atmosphere = null;
         this._ambientOcclusionTemplate = null;
         this._toneMappingMode = 'aces';
+        this._sunAlignedRepro = false;
 
         this._hemi = null;
         this._sun = null;
         this._sky = null;
+        this._sunBloomRig = null;
+        this._sunRaysRig = null;
+        this._sunFlareRig = null;
 
         this._iblLoadSeq = 0;
         this._disposed = false;
@@ -157,7 +168,8 @@ export class AOFoliageDebuggerView {
 
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         this.renderer.setClearColor(0x0b0f14, 1);
-        this.renderer.shadowMap.enabled = true;
+        const shadowParam = new URLSearchParams(window.location.search).get('shadows');
+        this.renderer.shadowMap.enabled = shadowParam !== '0' && shadowParam !== 'off';
         this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
         this.scene = new THREE.Scene();
@@ -167,6 +179,7 @@ export class AOFoliageDebuggerView {
 
         this._lighting = sanitizeLightingSettings(getResolvedLightingSettings({ includeUrlOverrides: true }));
         this._atmosphere = sanitizeAtmosphereSettings(getResolvedAtmosphereSettings({ includeUrlOverrides: true }));
+        this._sunAlignedRepro = new URLSearchParams(window.location.search).get('sunAligned') === '1';
 
         const resolvedAo = getResolvedAmbientOcclusionSettings({ includeUrlOverrides: true });
         this._ambientOcclusionTemplate = resolvedAo && typeof resolvedAo === 'object' ? deepClone(resolvedAo) : {};
@@ -179,10 +192,16 @@ export class AOFoliageDebuggerView {
         await this._loadEnvironmentFromSettings();
 
         const initialAo = this._buildAmbientOcclusionForMode(initialAoMode);
+        const gameplayBloom = getResolvedBloomSettings({ includeUrlOverrides: true });
+        const gameplaySunBloom = getResolvedSunBloomSettings({ includeUrlOverrides: true });
+        const gameplayAntiAliasing = getResolvedAntiAliasingSettings({ includeUrlOverrides: true });
         this._pipeline = new AODebugPipeline({
             renderer: this.renderer,
             scene: this.scene,
             camera: this.camera,
+            bloom: gameplayBloom,
+            sunBloom: gameplaySunBloom,
+            antiAliasing: gameplayAntiAliasing,
             ambientOcclusion: initialAo,
             msaaSamples: 8
         });
@@ -196,6 +215,11 @@ export class AOFoliageDebuggerView {
             ambientOcclusion: initialAo
         });
 
+        const sunAligned = this._sunAlignedRepro;
+        const focusCenter = new THREE.Vector3(0, sunAligned ? 4.8 : 1.8, -3.8);
+        const initialPosition = sunAligned
+            ? focusCenter.clone().addScaledVector(this._sun.position.clone().normalize(), -7.5)
+            : new THREE.Vector3(0.2, 2.2, 5.8);
         this.controls = createToolCameraController(this.camera, canvas, {
             uiRoot: this._ui?.layer ?? null,
             enabled: true,
@@ -208,10 +232,10 @@ export class AOFoliageDebuggerView {
             maxDistance: 180,
             minPolarAngle: 0.001,
             maxPolarAngle: Math.PI - 0.001,
-            getFocusTarget: () => ({ center: new THREE.Vector3(0, 1.8, -3.2), radius: 8 }),
+            getFocusTarget: () => ({ center: focusCenter.clone(), radius: 8 }),
             initialPose: {
-                position: new THREE.Vector3(0.2, 2.2, 5.8),
-                target: new THREE.Vector3(0, 1.9, -3.8)
+                position: initialPosition,
+                target: focusCenter
             }
         });
 
@@ -229,6 +253,13 @@ export class AOFoliageDebuggerView {
 
         this.controls?.dispose?.();
         this.controls = null;
+
+        this._sunFlareRig?.dispose?.();
+        this._sunBloomRig?.dispose?.();
+        this._sunRaysRig?.dispose?.();
+        this._sunFlareRig = null;
+        this._sunBloomRig = null;
+        this._sunRaysRig = null;
 
         this._unmountOptionsPanel();
 
@@ -287,6 +318,10 @@ export class AOFoliageDebuggerView {
         this._lastT = now;
 
         this.controls?.update?.(dt);
+        const gameplayContext = { camera: this.camera, renderer: this.renderer };
+        this._sunFlareRig?.update?.(gameplayContext);
+        this._sunBloomRig?.update?.(gameplayContext);
+        this._sunRaysRig?.update?.(gameplayContext);
         pipeline.render(dt);
 
         const onFrame = this.onFrame;
@@ -731,7 +766,7 @@ export class AOFoliageDebuggerView {
 
         const sun = new THREE.DirectionalLight(0xffffff, clamp(this._lighting?.sunIntensity, 0, 10, 1.64));
         sun.position.copy(sunDir).multiplyScalar(120);
-        sun.castShadow = true;
+        sun.castShadow = this.renderer?.shadowMap?.enabled === true;
         sun.shadow.mapSize.set(4096, 4096);
         sun.shadow.radius = 1;
         sun.shadow.bias = -0.0002;
@@ -755,6 +790,13 @@ export class AOFoliageDebuggerView {
         scene.add(sky);
         this._sky = sky;
 
+        const sunFlareSettings = getResolvedSunFlareSettings({ includeUrlOverrides: true });
+        const sunBloomSettings = getResolvedSunBloomSettings({ includeUrlOverrides: true });
+        this._sunFlareRig = new SunFlareRig({ light: sun, settings: sunFlareSettings });
+        this._sunBloomRig = new SunBloomRig({ light: sun, sky, settings: sunBloomSettings });
+        this._sunRaysRig = new SunRaysRig({ light: sun, sky, settings: sunBloomSettings });
+        scene.add(this._sunFlareRig.group, this._sunBloomRig.group, this._sunRaysRig.group);
+
         const ground = new THREE.Mesh(
             new THREE.PlaneGeometry(28, 28),
             new THREE.MeshStandardMaterial({ color: 0x2b3138, roughness: 1.0, metalness: 0.0 })
@@ -771,6 +813,7 @@ export class AOFoliageDebuggerView {
         backBox.position.set(0, 2.2, -4.5);
         backBox.castShadow = true;
         backBox.receiveShadow = true;
+        backBox.visible = !this._sunAlignedRepro;
         scene.add(backBox);
 
         const square = new THREE.Mesh(
@@ -781,6 +824,7 @@ export class AOFoliageDebuggerView {
         square.rotation.y = Math.PI * 0.15;
         square.castShadow = true;
         square.receiveShadow = true;
+        square.visible = !this._sunAlignedRepro;
         scene.add(square);
 
         const ball = new THREE.Mesh(
@@ -790,6 +834,7 @@ export class AOFoliageDebuggerView {
         ball.position.set(2.1, 0.63, -2.0);
         ball.castShadow = true;
         ball.receiveShadow = true;
+        ball.visible = !this._sunAlignedRepro;
         scene.add(ball);
 
         await this._addGameplayTreeFoliage();
@@ -902,8 +947,6 @@ export class AOFoliageDebuggerView {
                 mat.transparent = false;
                 mat.depthWrite = true;
                 mat.alphaTest = Math.max(0.5, Number(mat.alphaTest) || 0);
-                mat.side = THREE.DoubleSide;
-                mat.shadowSide = THREE.DoubleSide;
                 if ('alphaToCoverage' in mat) mat.alphaToCoverage = true;
                 return mat;
             });
@@ -928,9 +971,43 @@ export class AOFoliageDebuggerView {
         return this._pipeline?.getAmbientOcclusion?.() ?? null;
     }
 
+    getAoExclusionMaskDataUrlForTest() {
+        return this._pipeline?.getAoExclusionMaskDataUrlForTest?.() ?? null;
+    }
+
     getReproInfoForTest() {
         const points = this._reproState?.samplePointsWorld ?? null;
         const projected = {};
+        const leafMaterials = [];
+        const treeMeshes = [];
+        const seenLeafMaterials = new Set();
+        const sideLabel = (side) => {
+            if (side === THREE.FrontSide) return 'front';
+            if (side === THREE.BackSide) return 'back';
+            if (side === THREE.DoubleSide) return 'double';
+            return 'unknown';
+        };
+        this.scene?.getObjectByName?.('AoGameplayTrees')?.traverse?.((obj) => {
+            if (!obj?.isMesh) return;
+            const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+            treeMeshes.push({
+                name: obj.name || '(unnamed)',
+                materialRoles: materials.map((material) => material?.userData?.isFoliage === true ? 'leaf' : 'trunk')
+            });
+            for (const material of materials) {
+                if (material?.userData?.isFoliage !== true || seenLeafMaterials.has(material)) continue;
+                seenLeafMaterials.add(material);
+                leafMaterials.push({
+                    type: material.type ?? null,
+                    allowOverride: material.allowOverride !== false,
+                    alphaTest: Number(material.alphaTest) || 0,
+                    alphaToCoverage: material.alphaToCoverage === true,
+                    hasAoAlphaMap: material.userData?.aoAlphaMap?.isTexture === true,
+                    side: sideLabel(material.side),
+                    shadowSide: sideLabel(material.shadowSide)
+                });
+            }
+        });
         if (points && this.camera) {
             for (const [id, p] of Object.entries(points)) {
                 const v = p.clone().project(this.camera);
@@ -945,6 +1022,20 @@ export class AOFoliageDebuggerView {
         }
         return {
             leafTexture: this._reproState?.leafTexture ?? null,
+            leafMaterials,
+            treeMeshes,
+            pipeline: this._pipeline?.getDebugInfo?.() ?? null,
+            sunVisuals: {
+                flare: this._sunFlareRig?.group?.visible === true,
+                bloom: this._sunBloomRig?.group?.visible === true,
+                rays: this._sunRaysRig?.group?.visible === true
+            },
+            visualOnlyAoExclusions: {
+                sky: this._sky?.userData?.excludeFromAmbientOcclusion === true,
+                flare: this._sunFlareRig?.group?.userData?.excludeFromAmbientOcclusion === true,
+                bloom: this._sunBloomRig?.group?.userData?.excludeFromAmbientOcclusion === true,
+                rays: this._sunRaysRig?.group?.userData?.excludeFromAmbientOcclusion === true
+            },
             samplePoints: projected
         };
     }

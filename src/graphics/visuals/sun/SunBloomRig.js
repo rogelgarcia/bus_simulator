@@ -58,6 +58,7 @@ export class SunBloomRig {
         this.sky = sky;
         this.group = new THREE.Group();
         this.group.name = 'SunBloomRig';
+        this.group.userData.excludeFromAmbientOcclusion = true;
         this.group.frustumCulled = false;
 
         this._sunWorldPos = new THREE.Vector3();

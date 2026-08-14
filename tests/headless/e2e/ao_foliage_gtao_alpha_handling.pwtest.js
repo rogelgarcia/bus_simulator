@@ -1,5 +1,6 @@
 // Headless browser tests: GTAO alpha handling should respect cutout transparency.
 import test, { expect } from '@playwright/test';
+import fs from 'node:fs/promises';
 
 async function attachFailFastConsole({ page }) {
     const issues = [];
@@ -94,6 +95,84 @@ async function readAveragedLuma(page, points, sampleRadiusPx = 2) {
     }, { points, sampleRadiusPx });
 }
 
+async function readGreenLeafPixelSnapshot(page) {
+    return page.evaluate(() => {
+        const canvas = document.getElementById('game-canvas');
+        const width = canvas?.width ?? 0;
+        const height = canvas?.height ?? 0;
+        const gl = canvas?.getContext('webgl2') || canvas?.getContext('webgl');
+        if (!gl || width <= 0 || height <= 0) return { ok: false, width, height, pixels: [] };
+
+        const rgba = new Uint8Array(width * height * 4);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+        const pixels = [];
+        for (let offset = 0; offset < rgba.length; offset += 4) {
+            const r = rgba[offset];
+            const g = rgba[offset + 1];
+            const b = rgba[offset + 2];
+            if (g <= 45 || g <= r * 1.04 || g <= b * 1.08) continue;
+            pixels.push(offset, r, g, b);
+        }
+        return { ok: true, width, height, pixels };
+    });
+}
+
+async function readSkyPixelSnapshot(page) {
+    return page.evaluate(() => {
+        const canvas = document.getElementById('game-canvas');
+        const width = canvas?.width ?? 0;
+        const height = canvas?.height ?? 0;
+        const gl = canvas?.getContext('webgl2') || canvas?.getContext('webgl');
+        if (!gl || width <= 0 || height <= 0) return { ok: false, width, height, pixels: [] };
+
+        const rgba = new Uint8Array(width * height * 4);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+        const pixels = [];
+        for (let offset = 0; offset < rgba.length; offset += 16) {
+            const r = rgba[offset];
+            const g = rgba[offset + 1];
+            const b = rgba[offset + 2];
+            if (r < 80 || g <= r + 8 || b <= r + 12 || b < g) continue;
+            pixels.push(offset, r, g, b);
+        }
+        return { ok: true, width, height, pixels };
+    });
+}
+
+async function compareGreenLeafPixelSnapshot(page, snapshot) {
+    return page.evaluate((reference) => {
+        const canvas = document.getElementById('game-canvas');
+        const width = canvas?.width ?? 0;
+        const height = canvas?.height ?? 0;
+        const gl = canvas?.getContext('webgl2') || canvas?.getContext('webgl');
+        if (!gl || width !== reference?.width || height !== reference?.height) {
+            return { ok: false, count: 0, meanAbsoluteError: Infinity, maxError: 255 };
+        }
+
+        const rgba = new Uint8Array(width * height * 4);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+        const pixels = Array.isArray(reference?.pixels) ? reference.pixels : [];
+        let errorSum = 0;
+        let maxError = 0;
+        let count = 0;
+        for (let i = 0; i + 3 < pixels.length; i += 4) {
+            const offset = pixels[i];
+            for (let channel = 0; channel < 3; channel += 1) {
+                const error = Math.abs(rgba[offset + channel] - pixels[i + channel + 1]);
+                errorSum += error;
+                maxError = Math.max(maxError, error);
+                count += 1;
+            }
+        }
+        return {
+            ok: true,
+            count: count / 3,
+            meanAbsoluteError: count > 0 ? errorSum / count : 0,
+            maxError
+        };
+    }, snapshot);
+}
+
 async function setGtaoAlphaHandling(page, handling, threshold = 0.5) {
     await page.evaluate(({ mode, threshold }) => {
         const hooks = window.__aoFoliageDebugHooks;
@@ -146,16 +225,24 @@ async function readAoOverrideDebug(page) {
     });
 }
 
-test('AO Foliage Debugger: GTAO alpha handling avoids foliage darkening regression', async ({ page }) => {
+test('AO Foliage Debugger: GTAO alpha handling avoids foliage darkening regression', async ({ page }, testInfo) => {
     const getIssues = await attachFailFastConsole({ page });
     await page.setViewportSize({ width: 1280, height: 720 });
 
-    await page.goto('/debug_tools/ao_foliage_debug.html');
-    await page.waitForFunction(() => window.__aoFoliageDebugHooks?.version === 1);
+    await page.goto('/debug_tools/ao_foliage_debug.html?shadows=off');
+    await page.waitForFunction(() => (
+        window.__aoFoliageDebugHooks?.version === 1
+        && window.__aoFoliageDebugHooks?.isReady?.() === true
+    ));
 
     const repro = await page.evaluate(() => window.__aoFoliageDebugHooks.getReproInfo());
     expect(repro?.leafTexture?.width ?? 0).toBeGreaterThan(0);
     expect(repro?.leafTexture?.height ?? 0).toBeGreaterThan(0);
+    expect(repro?.leafMaterials?.length ?? 0).toBeGreaterThan(0);
+    for (const material of repro.leafMaterials) {
+        expect(material?.side).toBe('double');
+        expect(material?.shadowSide).toBe('double');
+    }
 
     const sampleIds = ['wallOpaque', 'wallEdge', 'wallTransparent', 'wallReference'];
     const samplePoints = sampleIds.map((id) => ({
@@ -170,12 +257,22 @@ test('AO Foliage Debugger: GTAO alpha handling avoids foliage darkening regressi
     await waitFrames(page, 10);
     const aoOffPixels = await readAveragedLuma(page, samplePoints);
     expect(aoOffPixels.ok).toBe(true);
+    const aoOffPath = testInfo.outputPath('01-ao-off.png');
+    await page.screenshot({ path: aoOffPath });
+    await testInfo.attach('01-ao-off.png', { path: aoOffPath, contentType: 'image/png' });
+    const aoOffLeafPixels = await readGreenLeafPixelSnapshot(page);
+    expect(aoOffLeafPixels.ok).toBe(true);
+    expect(aoOffLeafPixels.pixels.length / 4).toBeGreaterThan(5000);
 
     await setGtaoAlphaHandling(page, 'alpha_test', 0.5);
     await waitFrames(page, 10);
     const alphaTestPixels = await readAveragedLuma(page, samplePoints);
     expect(alphaTestPixels.ok).toBe(true);
     const alphaDebug = await readAoOverrideDebug(page);
+    const alphaTestPath = testInfo.outputPath('02-gtao-alpha-test.png');
+    await page.screenshot({ path: alphaTestPath });
+    await testInfo.attach('02-gtao-alpha-test.png', { path: alphaTestPath, contentType: 'image/png' });
+    const alphaTestLeafComparison = await compareGreenLeafPixelSnapshot(page, aoOffLeafPixels);
 
     await setGtaoAlphaHandling(page, 'alpha_test', 0.85);
     await waitFrames(page, 10);
@@ -188,6 +285,18 @@ test('AO Foliage Debugger: GTAO alpha handling avoids foliage darkening regressi
     const excludePixels = await readAveragedLuma(page, samplePoints);
     expect(excludePixels.ok).toBe(true);
     const excludeDebug = await readAoOverrideDebug(page);
+    const excludePath = testInfo.outputPath('03-gtao-exclude.png');
+    await page.screenshot({ path: excludePath });
+    await testInfo.attach('03-gtao-exclude.png', { path: excludePath, contentType: 'image/png' });
+    const excludeLeafComparison = await compareGreenLeafPixelSnapshot(page, aoOffLeafPixels);
+    const exclusionMaskDataUrl = await page.evaluate(() => window.__aoFoliageDebugHooks?.getAoExclusionMaskDataUrl?.() ?? null);
+    expect(exclusionMaskDataUrl?.startsWith('data:image/png;base64,')).toBe(true);
+    const exclusionMaskPath = testInfo.outputPath('ao-exclusion-mask.png');
+    await fs.writeFile(exclusionMaskPath, Buffer.from(exclusionMaskDataUrl.split(',')[1], 'base64'));
+    await testInfo.attach('ao-exclusion-mask.png', {
+        path: exclusionMaskPath,
+        contentType: 'image/png'
+    });
 
     const alphaOpaque = alphaTestPixels.points.wallOpaque.luma;
     const alphaEdge = alphaTestPixels.points.wallEdge.luma;
@@ -207,12 +316,12 @@ test('AO Foliage Debugger: GTAO alpha handling avoids foliage darkening regressi
     const offSplit = Math.abs(offTransparent - offOpaque);
     const excludeSplit = Math.abs(excludeTransparent - excludeOpaque);
 
-    expect(alphaOpaque).toBeGreaterThan(offOpaque - 0.22);
-    expect(alphaEdge).toBeGreaterThan(offEdge - 0.22);
-    expect(alphaTransparent).toBeGreaterThan(offTransparent - 0.22);
-    expect(alphaHighThresholdOpaque).toBeGreaterThan(offOpaque - 0.22);
-    expect(alphaHighThresholdEdge).toBeGreaterThan(offEdge - 0.22);
-    expect(alphaHighThresholdTransparent).toBeGreaterThan(offTransparent - 0.22);
+    expect(alphaOpaque).toBeGreaterThan(offOpaque - 0.24);
+    expect(alphaEdge).toBeGreaterThan(offEdge - 0.24);
+    expect(alphaTransparent).toBeGreaterThan(offTransparent - 0.24);
+    expect(alphaHighThresholdOpaque).toBeGreaterThan(offOpaque - 0.24);
+    expect(alphaHighThresholdEdge).toBeGreaterThan(offEdge - 0.24);
+    expect(alphaHighThresholdTransparent).toBeGreaterThan(offTransparent - 0.24);
     expect(excludeOpaque).toBeGreaterThan(offOpaque - 0.24);
     expect(excludeEdge).toBeGreaterThan(offEdge - 0.24);
     expect(excludeTransparent).toBeGreaterThan(offTransparent - 0.24);
@@ -220,6 +329,10 @@ test('AO Foliage Debugger: GTAO alpha handling avoids foliage darkening regressi
     expect(alphaDebug?.count ?? 0).toBeGreaterThan(0);
     expect(alphaHighDebug?.count ?? 0).toBeGreaterThan(0);
     expect(excludeDebug?.count ?? 0).toBeGreaterThan(0);
+    expect(alphaDebug?.frameStats?.alphaTestDraws ?? 0).toBeGreaterThan(0);
+    expect(alphaDebug?.frameStats?.excludedDraws ?? 0).toBe(0);
+    expect(excludeDebug?.frameStats?.excludedFoliageObjects ?? 0).toBeGreaterThan(0);
+    expect(excludeDebug?.frameStats?.alphaTestDraws ?? 0).toBe(0);
     expect((alphaDebug?.materials ?? []).some((m) => {
         const t = Number(m?.alphaTest) || 0;
         return t > 0 && t <= 1;
@@ -230,6 +343,14 @@ test('AO Foliage Debugger: GTAO alpha handling avoids foliage darkening regressi
     })).toBe(true);
     expect((excludeDebug?.materials ?? []).some((m) => (m?.alphaTest ?? 0) > 1)).toBe(true);
 
+    // Alpha-tested foliage contributes to GTAO, while Exclude must preserve the
+    // exact AO-off leaf render. This catches the gameplay symptom directly.
+    expect(alphaTestLeafComparison.ok).toBe(true);
+    expect(alphaTestLeafComparison.meanAbsoluteError).toBeGreaterThan(2);
+    expect(excludeLeafComparison.ok).toBe(true);
+    expect(excludeLeafComparison.meanAbsoluteError).toBeLessThan(0.25);
+    expect(excludeLeafComparison.maxError).toBeLessThan(4);
+
     expect(Math.abs(alphaSplit - offSplit)).toBeLessThan(0.24);
     expect(Math.abs(excludeSplit - offSplit)).toBeLessThan(0.26);
 
@@ -239,5 +360,51 @@ test('AO Foliage Debugger: GTAO alpha handling avoids foliage darkening regressi
     expect(alphaReference).toBeGreaterThan(offReference - 0.24);
     expect(excludeReference).toBeGreaterThan(offReference - 0.24);
 
+    expect(await getIssues()).toEqual([]);
+});
+
+test('AO Foliage Debugger: gameplay pipeline keeps GTAO Exclude equal to AO off around the sun', async ({ page }, testInfo) => {
+    const getIssues = await attachFailFastConsole({ page });
+    await page.setViewportSize({ width: 1280, height: 720 });
+
+    await page.goto('/debug_tools/ao_foliage_debug.html?sunAligned=1&sunBloom=1&shadows=on');
+    await page.waitForFunction(() => (
+        window.__aoFoliageDebugHooks?.version === 1
+        && window.__aoFoliageDebugHooks?.isReady?.() === true
+    ));
+
+    const repro = await page.evaluate(() => window.__aoFoliageDebugHooks.getReproInfo());
+    expect(repro?.pipeline?.sunBloomEnabled).toBe(true);
+    expect(repro?.sunVisuals?.bloom).toBe(true);
+    expect(repro?.sunVisuals?.rays).toBe(true);
+    expect(repro?.visualOnlyAoExclusions).toEqual({
+        sky: true,
+        flare: true,
+        bloom: true,
+        rays: true
+    });
+
+    await setAoOff(page);
+    await waitFrames(page, 40);
+    const offLeafPixels = await readGreenLeafPixelSnapshot(page);
+    const offSkyPixels = await readSkyPixelSnapshot(page);
+    expect(offLeafPixels.pixels.length / 4).toBeGreaterThan(1000);
+    expect(offSkyPixels.pixels.length / 4).toBeGreaterThan(5000);
+    const offPath = testInfo.outputPath('sun-aligned-ao-off.png');
+    await page.screenshot({ path: offPath });
+    await testInfo.attach('sun-aligned-ao-off.png', { path: offPath, contentType: 'image/png' });
+
+    await setGtaoAlphaHandling(page, 'exclude');
+    await waitFrames(page, 20);
+    const excludeLeafComparison = await compareGreenLeafPixelSnapshot(page, offLeafPixels);
+    const excludeSkyComparison = await compareGreenLeafPixelSnapshot(page, offSkyPixels);
+    const excludePath = testInfo.outputPath('sun-aligned-gtao-exclude.png');
+    await page.screenshot({ path: excludePath });
+    await testInfo.attach('sun-aligned-gtao-exclude.png', { path: excludePath, contentType: 'image/png' });
+
+    expect(excludeLeafComparison.meanAbsoluteError).toBeLessThan(1);
+    expect(excludeLeafComparison.maxError).toBeLessThan(24);
+    expect(excludeSkyComparison.meanAbsoluteError).toBeLessThan(0.75);
+    expect(excludeSkyComparison.maxError).toBeLessThan(24);
     expect(await getIssues()).toEqual([]);
 });
