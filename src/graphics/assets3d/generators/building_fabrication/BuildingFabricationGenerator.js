@@ -53,6 +53,8 @@ const FACADE_DEPTH_MAX_M = 2.0;
 const FLOOR_INTERIOR_MATERIAL_SPEC = Object.freeze({ kind: 'texture', id: 'pbr.painted_plaster_wall' });
 const FLOOR_INTERIOR_TILE_METERS = 1.0;
 const FLOOR_INTERIOR_SHELL_INSET_METERS = 0.01;
+// Keeps interior floors/ceilings off the coplanar layer cap slabs (z-fighting).
+const FLOOR_INTERIOR_SURFACE_NUDGE_METERS = 0.01;
 const WALL_DECORATION_DEFAULT_WALL_DEPTH_M = 0.30;
 const FACE_NORMAL_BY_ID = Object.freeze({
     A: Object.freeze({ x: 0, y: 0, z: 1 }),
@@ -4781,6 +4783,18 @@ export function buildBuildingFabricationVisualParts({
     });
     disableIblOnMaterial(roofMatTemplate);
 
+    // Slabs between stacked layers are floors, not roofs: they share the
+    // interior floor material so interior and exposed slab areas always match.
+    const floorSlabMatTemplate = makeWallMaterialFromSpec({
+        material: FLOOR_INTERIOR_MATERIAL_SPEC,
+        baseColorHex,
+        textureCache
+    });
+    applyFixedTileMetersToMaterial(floorSlabMatTemplate, {
+        materialSpec: FLOOR_INTERIOR_MATERIAL_SPEC,
+        tileMeters: FLOOR_INTERIOR_TILE_METERS
+    });
+
     let currentLoops = sourceFootprintLoops;
     let yCursor = baseY;
     let firstFloorPendingExtra = extraFirstFloor;
@@ -6028,7 +6042,11 @@ export function buildBuildingFabricationVisualParts({
                                     const interiorFloorMesh = new THREE.Mesh(interiorFloorGeo, interiorFloorMat);
                                     interiorFloorMesh.castShadow = true;
                                     interiorFloorMesh.receiveShadow = true;
-                                    interiorFloorMesh.position.set(interiorAnchorX, segmentBaseY, interiorAnchorZ);
+                                    interiorFloorMesh.position.set(
+                                        interiorAnchorX,
+                                        segmentBaseY + FLOOR_INTERIOR_SURFACE_NUDGE_METERS,
+                                        interiorAnchorZ
+                                    );
                                     interiorFloorMesh.userData = interiorFloorMesh.userData ?? {};
                                     interiorFloorMesh.userData.buildingFab2Role = 'interior';
                                     interiorFloorMesh.userData.buildingFab2InteriorKind = 'floor';
@@ -6049,7 +6067,11 @@ export function buildBuildingFabricationVisualParts({
                                     const interiorCeilingMesh = new THREE.Mesh(interiorCeilingGeo, interiorCeilingMat);
                                     interiorCeilingMesh.castShadow = true;
                                     interiorCeilingMesh.receiveShadow = true;
-                                    interiorCeilingMesh.position.set(interiorAnchorX, segmentBaseY + interiorHeight, interiorAnchorZ);
+                                    interiorCeilingMesh.position.set(
+                                        interiorAnchorX,
+                                        segmentBaseY + interiorHeight - FLOOR_INTERIOR_SURFACE_NUDGE_METERS,
+                                        interiorAnchorZ
+                                    );
                                     interiorCeilingMesh.userData = interiorCeilingMesh.userData ?? {};
                                     interiorCeilingMesh.userData.buildingFab2Role = 'interior';
                                     interiorCeilingMesh.userData.buildingFab2InteriorKind = 'ceiling';
@@ -6089,7 +6111,38 @@ export function buildBuildingFabricationVisualParts({
                             return { x: Number(p.x) || 0, y: 0, z: Number(p.z) || 0 };
                         };
 
+                        // Same resolution at depth 0: the nominal footprint line the
+                        // next layer stands on. Recessed bays sit inward of it, and the
+                        // strip between them needs a soffit so the overhang is closed.
+                        const zeroJoinByCornerId = (frames && depthMins) ? {
+                            AB: cornerJoinPointWithDepths(frames.A, 0, frames.B, 0, frames.A.end),
+                            BC: cornerJoinPointWithDepths(frames.B, 0, frames.C, 0, frames.B.end),
+                            CD: cornerJoinPointWithDepths(frames.C, 0, frames.D, 0, frames.C.end),
+                            DA: cornerJoinPointWithDepths(frames.D, 0, frames.A, 0, frames.D.end)
+                        } : null;
+
+                        const zeroPointForFacade = (p) => {
+                            if (!p || typeof p !== 'object') return { x: 0, y: 0, z: 0 };
+                            const cornerId = typeof p.cornerId === 'string' ? p.cornerId : '';
+                            if (cornerId) {
+                                const join = zeroJoinByCornerId?.[cornerId] ?? null;
+                                if (join) return join;
+                            }
+                            const faceId = p.faceId;
+                            if ((faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D') && frames) {
+                                const frame = frames[faceId] ?? null;
+                                const u = Number(p.u) || 0;
+                                return pointOnFacadeFrame({ frame, u, depth: 0 });
+                            }
+                            return { x: Number(p.x) || 0, y: 0, z: Number(p.z) || 0 };
+                        };
+
                         const capY = layerStartY + totalWallHeight;
+                        // A cap with another layer stacked above it is a floor slab
+                        // (soffit from below, sill ledge from outside); only the
+                        // topmost layer's cap belongs to the roof family.
+                        const capHasLayerAbove = layerIndex < safeLayers.length - 1;
+                        const capMatTemplate = capHasLayerAbove ? floorSlabMatTemplate : roofMatTemplate;
                         const outerDetail = Array.isArray(facadeLoopDetail) ? facadeLoopDetail : null;
                         const baseLoopCore = baseJoinByCornerId ? [
                             baseJoinByCornerId.AB,
@@ -6110,7 +6163,9 @@ export function buildBuildingFabricationVisualParts({
                             baseGeo.rotateX(-Math.PI / 2);
                             baseGeo.computeVertexNormals();
 
-                            const baseMat = roofMatTemplate.clone();
+                            const baseMat = capMatTemplate.clone();
+                            // Visible from below when a recessed layer sits under this cap.
+                            baseMat.side = THREE.DoubleSide;
                             const baseMesh = new THREE.Mesh(baseGeo, baseMat);
                             baseMesh.castShadow = true;
                             baseMesh.receiveShadow = true;
@@ -6208,7 +6263,9 @@ export function buildBuildingFabricationVisualParts({
                                 ringGeo.setIndex(ringIndices);
                                 ringGeo.computeVertexNormals();
 
-                                const ringMat = roofMatTemplate.clone();
+                                const ringMat = capMatTemplate.clone();
+                                // The ring doubles as the soffit over recessed bays below it.
+                                ringMat.side = THREE.DoubleSide;
                                 const ringMesh = new THREE.Mesh(ringGeo, ringMat);
                                 ringMesh.castShadow = true;
                                 ringMesh.receiveShadow = true;
@@ -6223,6 +6280,117 @@ export function buildBuildingFabricationVisualParts({
                                     appendWirePositions(wirePositions, edgeGeo, ringMesh.position.y);
                                     edgeGeo.dispose();
                                 }
+                            }
+
+                            // Signed distance of an outline point from the nominal
+                            // zero-depth footprint line: negative = recessed inward,
+                            // positive = bulging outward past the footprint.
+                            const outwardSignForDetailPoint = (p, zeroPoint) => {
+                                const faceId = p?.faceId;
+                                if (!(faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D') || !frames) return null;
+                                const frame = frames[faceId] ?? null;
+                                if (!frame) return null;
+                                const u = Number(p.u) || 0;
+                                const probe = pointOnFacadeFrame({ frame, u, depth: 1 });
+                                const ox = probe.x - zeroPoint.x;
+                                const oz = probe.z - zeroPoint.z;
+                                const len = Math.hypot(ox, oz);
+                                if (!(len > 1e-6)) return null;
+                                const px = (Number(p.x) || 0) - zeroPoint.x;
+                                const pz = (Number(p.z) || 0) - zeroPoint.z;
+                                return (px * ox + pz * oz) / len;
+                            };
+
+                            // Bands that close each layer against the nominal footprint
+                            // line the neighboring layers meet it at:
+                            // - top band (at capY): covers strips where this layer's
+                            //   outline recesses inward (the overhang above the recess).
+                            // - bottom band (at layerStartY): covers the underside of
+                            //   strips where this layer bulges outward past the layer
+                            //   below. Skipped on the ground layer.
+                            const buildFootprintClosureBand = ({ wantSign, y, kind }) => {
+                                const bandPositions = [];
+                                const bandUvs = [];
+                                const bandIndices = [];
+                                let bandCursor = 0;
+                                const bandMinEdge = 1e-5;
+                                const bandEps = 1e-5;
+
+                                for (let i = 0; i < outerDetail.length; i++) {
+                                    const oa = outerDetail[i];
+                                    const ob = outerDetail[(i + 1) % outerDetail.length];
+                                    if (!oa || !ob) continue;
+                                    const ax = Number(oa.x) || 0;
+                                    const az = Number(oa.z) || 0;
+                                    const bx = Number(ob.x) || 0;
+                                    const bz = Number(ob.z) || 0;
+                                    const segLen = Math.hypot(bx - ax, bz - az);
+                                    if (!(segLen > bandMinEdge)) continue;
+
+                                    const za = zeroPointForFacade(oa);
+                                    const zb = zeroPointForFacade(ob);
+                                    const da = Math.hypot(ax - za.x, az - za.z);
+                                    const db = Math.hypot(bx - zb.x, bz - zb.z);
+                                    if (!(da > bandEps) && !(db > bandEps)) continue;
+
+                                    const sa = outwardSignForDetailPoint(oa, za);
+                                    const sb = outwardSignForDetailPoint(ob, zb);
+                                    const sign = sa ?? sb;
+                                    if (sign === null) continue;
+                                    if (wantSign < 0 ? !(sign < -bandEps) : !(sign > bandEps)) continue;
+
+                                    const addUv = (p) => {
+                                        bandUvs.push(Number(p.x) || 0, Number(p.z) || 0);
+                                    };
+
+                                    bandPositions.push(
+                                        ax, 0, az,
+                                        bx, 0, bz,
+                                        zb.x, 0, zb.z,
+                                        za.x, 0, za.z
+                                    );
+                                    addUv(oa);
+                                    addUv(ob);
+                                    addUv(zb);
+                                    addUv(za);
+                                    bandIndices.push(
+                                        bandCursor, bandCursor + 1, bandCursor + 2,
+                                        bandCursor, bandCursor + 2, bandCursor + 3
+                                    );
+                                    bandCursor += 4;
+                                }
+
+                                if (!bandPositions.length || !bandIndices.length) return;
+
+                                const bandGeo = new THREE.BufferGeometry();
+                                bandGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(bandPositions), 3));
+                                bandGeo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(bandUvs), 2));
+                                bandGeo.setIndex(bandIndices);
+                                bandGeo.computeVertexNormals();
+
+                                const bandMat = floorSlabMatTemplate.clone();
+                                bandMat.side = THREE.DoubleSide;
+                                const bandMesh = new THREE.Mesh(bandGeo, bandMat);
+                                bandMesh.castShadow = true;
+                                bandMesh.receiveShadow = true;
+                                bandMesh.position.y = y;
+                                bandMesh.userData = bandMesh.userData ?? {};
+                                bandMesh.userData.buildingFab2Role = 'roof';
+                                bandMesh.userData.buildingFab2RoofKind = kind;
+                                solidMeshes.push(bandMesh);
+
+                                if (showWire) {
+                                    const edgeGeo = new THREE.EdgesGeometry(bandGeo, 1);
+                                    appendWirePositions(wirePositions, edgeGeo, bandMesh.position.y);
+                                    edgeGeo.dispose();
+                                }
+                            };
+
+                            if (capHasLayerAbove) {
+                                buildFootprintClosureBand({ wantSign: -1, y: capY, kind: 'soffit_band' });
+                            }
+                            if (layerIndex > 0) {
+                                buildFootprintClosureBand({ wantSign: 1, y: layerStartY, kind: 'underside_band' });
                             }
                         }
                     } else {
