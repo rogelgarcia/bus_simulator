@@ -4939,6 +4939,15 @@ function buildFacadeFaceProfile({
     return { profile, startDepth, endDepth, strips, faceLength };
 }
 
+// Pier/spandrel grids (AI_487, refs 7/6/m1) are a RECIPE over this facade
+// silhouette system — no dedicated feature is needed for the planes:
+//   - pier: a narrow wall bay with an outward depth offset (proud strip),
+//   - spandrel: the window bay recessed inward with its OWN per-bay material —
+//     the recessed strip between stacked windows IS the spandrel panel,
+//   - glass: the window inset further via face-relative inset / frame depth.
+// The silhouette emits the return walls at every depth step, so the reveal
+// edges are correct by construction. Global facades repeat the same bay
+// layout on every layer, which keeps pier bays aligned vertically.
 function computeQuadFacadeSilhouette({
     wallOuter,
     facades,
@@ -5995,6 +6004,10 @@ export function buildBuildingFabricationVisualParts({
                 windowHeight: materialWindowHeight
             }), reflectiveCfg, { isOverride: glassIsOverride }) : null;
 
+            // DEPRECATED (engine 1): fixed-spacing window placement
+            // (layer.windows + spaceColumns) — kept only so existing configs
+            // render. New buildings and features use engine 2: facades/bays +
+            // window definitions. Do not extend this path.
             const windowRuns = [];
             if (winEnabled && windowMat && wallOuterFacade.length) {
                 for (const loop of wallOuterFacade) {

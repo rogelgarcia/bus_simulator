@@ -21,6 +21,10 @@ Tasks:
 - Showcase: enable on one or two existing tower configs; validate in `tests/headless/harness/scenarios/scenario_building_showcase.js`.
 - Tests: placement determinism (same seed → same layout), bounds test (all props inside roof footprint minus margin), schema round-trip.
 
+## Delivery requirements
+- Engine 2 only: target the facade/bay building engine (facades/bays + window definitions). Do not extend engine 1 (the fixed-spacing `layer.windows`/`spaceColumns` path or the old `BuildingGenerator.js`); it is deprecated and frozen.
+- Finish with a screenshot showing the feature in a rendered building — a before/after pair when the change improves something that already renders — and additionally a close-up version of the feature.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:

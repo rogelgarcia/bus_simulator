@@ -19,6 +19,10 @@ Tasks:
 - Preserve backward compatibility: buildings without explicit wear configuration should continue rendering with existing/default behavior.
 - Add/update tests for at least configuration validation, export/import roundtrip consistency, and runtime application of imported wear settings.
 
+## Delivery requirements
+- Engine 2 only: target the facade/bay building engine (facades/bays + window definitions). Do not extend engine 1 (the fixed-spacing `layer.windows`/`spaceColumns` path or the old `BuildingGenerator.js`); it is deprecated and frozen.
+- Finish with a screenshot showing the feature in a rendered building — a before/after pair when the change improves something that already renders — and additionally a close-up version of the feature.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:

@@ -485,6 +485,10 @@ export function isLayerType(value) {
     return value === LAYER_TYPE.FLOOR || value === LAYER_TYPE.ROOF;
 }
 
+// DEPRECATED (engine 1): `layer.windows` is the fixed-spacing window path,
+// including `spaceColumns`. New buildings and new features target engine 2
+// only — facades/bays + window definitions. This block remains so existing
+// configs keep rendering; do not extend it.
 export function createDefaultWindowSpec({
     typeId = WINDOW_TYPE.STYLE_DEFAULT,
     params = null,

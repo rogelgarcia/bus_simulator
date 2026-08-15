@@ -1,5 +1,11 @@
 // src/graphics/assets3d/generators/buildings/BuildingGenerator.js
 // Generates building meshes from city building footprints
+//
+// DEPRECATED: this is the old building generator (fixed window spacing, no
+// facades). New buildings and new features must target the fabrication
+// generator (`BuildingFabricationGenerator.js` — layers + facades/bays +
+// window definitions). This file remains only for legacy configs without
+// layers and shared loop utilities; do not extend it.
 import * as THREE from 'three';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
@@ -1248,6 +1254,8 @@ export function applyBuildingStyleToGroup({
     });
 }
 
+// DEPRECATED: legacy path for configs without layers. Use
+// buildBuildingFabricationVisualParts (facades/bays) for anything new.
 export function buildBuildingVisualParts({
     map,
     tiles,

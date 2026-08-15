@@ -24,6 +24,10 @@ Tasks:
 - Validate in gameplay-like conditions and the showcase scenario (`tests/headless/harness/scenarios/scenario_building_showcase.js`): camera at street level looking through the corner glazing (no through-view), and into an interior-backed opening (no blank wall behind glass).
 - Tests: a generator/scene test asserting the ground floor of the showcase storefront config produces occluding geometry between opposite glazed faces; a test asserting openings on interior-backed walls emit parallax/opening geometry rather than solid wall behind the glass.
 
+## Delivery requirements
+- Engine 2 only: target the facade/bay building engine (facades/bays + window definitions). Do not extend engine 1 (the fixed-spacing `layer.windows`/`spaceColumns` path or the old `BuildingGenerator.js`); it is deprecated and frozen.
+- Finish with a screenshot showing the feature in a rendered building — a before/after pair when the change improves something that already renders — and additionally a close-up version of the feature.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:

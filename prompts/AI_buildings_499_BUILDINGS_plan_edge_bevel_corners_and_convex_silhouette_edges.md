@@ -17,6 +17,10 @@ Tasks:
 - Showcase: a beveled-corner variant of an existing config (and `all_convex_edges` on a config with projecting bays); validate in `tests/headless/harness/scenarios/scenario_building_showcase.js`.
 - Tests: schema normalization round-trip; silhouette test for the main-corner bevel math (adjacent faces shorten correctly; the connector run is excluded from face lengths); generator-level test asserting bay-step edges are beveled under `all_convex_edges` and openings keep their clearance.
 
+## Delivery requirements
+- Engine 2 only: target the facade/bay building engine (facades/bays + window definitions). Do not extend engine 1 (the fixed-spacing `layer.windows`/`spaceColumns` path or the old `BuildingGenerator.js`); it is deprecated and frozen.
+- Finish with a screenshot showing the feature in a rendered building — a before/after pair when the change improves something that already renders — and additionally a close-up version of the feature.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:

@@ -21,6 +21,10 @@ Tasks:
 - Showcase: rebuild one facade of `mainstreet_block` (or a new config) using real storefront assets + a portal entrance; validate in `tests/headless/harness/scenarios/scenario_building_showcase.js`.
 - Tests: catalog normalization round-trip for the new asset type; generator-level test asserting zone geometry (bulkhead, glazing, transom, fascia) is emitted with correct stacking heights.
 
+## Delivery requirements
+- Engine 2 only: target the facade/bay building engine (facades/bays + window definitions). Do not extend engine 1 (the fixed-spacing `layer.windows`/`spaceColumns` path or the old `BuildingGenerator.js`); it is deprecated and frozen.
+- Finish with a screenshot showing the feature in a rendered building — a before/after pair when the change improves something that already renders — and additionally a close-up version of the feature.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:

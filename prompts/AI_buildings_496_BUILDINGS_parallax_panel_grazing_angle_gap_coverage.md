@@ -19,6 +19,10 @@ Tasks:
 - Validate at grazing angles in the showcase scenario (`tests/headless/harness/scenarios/scenario_building_showcase.js`) and in gameplay-like camera positions; before/after screenshots.
 - Tests: a unit test for the overscan math (depth/angle → per-side extension, clamped by spacing); a generator-level test asserting panel dimensions exceed the opening by the expected overscan for a configured fake depth.
 
+## Delivery requirements
+- Engine 2 only: target the facade/bay building engine (facades/bays + window definitions). Do not extend engine 1 (the fixed-spacing `layer.windows`/`spaceColumns` path or the old `BuildingGenerator.js`); it is deprecated and frozen.
+- Finish with a screenshot showing the feature in a rendered building — a before/after pair when the change improves something that already renders — and additionally a close-up version of the feature.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:
