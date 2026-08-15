@@ -656,22 +656,29 @@ export const BIG_CITY_2_SPEC_SOURCE = Object.freeze(
             },
             {
                 "id": "building_7",
-                "configId": "brick_midrise",
+                "configId": "mainstreet_block",
                 "tiles": [
-                    [
-                        14,
-                        13
-                    ],
                     [
                         13,
                         13
                     ],
                     [
                         14,
+                        13
+                    ]
+                ],
+                "rendered": true
+            },
+            {
+                "id": "building_7_b",
+                "configId": "mainstreet_block",
+                "tiles": [
+                    [
+                        13,
                         12
                     ],
                     [
-                        13,
+                        14,
                         12
                     ]
                 ],
@@ -679,22 +686,29 @@ export const BIG_CITY_2_SPEC_SOURCE = Object.freeze(
             },
             {
                 "id": "building_8",
-                "configId": "brick_midrise",
+                "configId": "mainstreet_block",
                 "tiles": [
                     [
-                        13,
-                        10
-                    ],
-                    [
-                        12,
+                        10,
                         10
                     ],
                     [
                         11,
                         10
+                    ]
+                ],
+                "rendered": true
+            },
+            {
+                "id": "building_8_b",
+                "configId": "mainstreet_block",
+                "tiles": [
+                    [
+                        12,
+                        10
                     ],
                     [
-                        10,
+                        13,
                         10
                     ]
                 ],
@@ -702,7 +716,7 @@ export const BIG_CITY_2_SPEC_SOURCE = Object.freeze(
             },
             {
                 "id": "building_9",
-                "configId": "gov_center",
+                "configId": "gov_center_2",
                 "tiles": [
                     [
                         11,

@@ -584,6 +584,134 @@ const WINDOW_DOOR_FABRICATION_CATALOG = Object.freeze([
         }
     }),
     Object.freeze({
+        id: 'window_arch_civic',
+        assetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW,
+        name: 'Civic Arched Tall',
+        settings: {
+            version: 1,
+            width: 1.8,
+            height: 3,
+            arch: {
+                enabled: true,
+                heightRatio: 0.18,
+                meetsRectangleFrame: true,
+                topPieceMode: 'frame',
+                clipVerticalMuntinsToRectWhenNoTopPiece: true
+            },
+            frame: {
+                width: 0.08,
+                depth: 0.1,
+                inset: 0.05,
+                openBottom: false,
+                colorHex: 0xe6e0d2,
+                bevel: {
+                    size: 0.3,
+                    roundness: 0.65
+                },
+                material: {
+                    roughness: 0.55,
+                    metalness: 0,
+                    envMapIntensity: 0.18,
+                    normalStrength: 0.6
+                }
+            },
+            muntins: {
+                enabled: true,
+                columns: 2,
+                rows: 3,
+                verticalWidth: 0.05,
+                horizontalWidth: 0.05,
+                depth: 0.05,
+                inset: 0.012,
+                uvOffset: {
+                    x: 0,
+                    y: 0
+                },
+                colorHex: 0xe6e0d2,
+                bevel: {
+                    inherit: true,
+                    bevel: {
+                        size: 0.3,
+                        roundness: 0.65
+                    }
+                },
+                material: {
+                    inheritFromFrame: true,
+                    pbr: {
+                        roughness: 0.55,
+                        metalness: 0,
+                        envMapIntensity: 0.18,
+                        normalStrength: 0.6
+                    }
+                }
+            },
+            glass: {
+                opacity: 0.85,
+                tintHex: 1842209,
+                reflection: {
+                    metalness: 0,
+                    roughness: 0.02,
+                    transmission: 0,
+                    ior: 1.5,
+                    envMapIntensity: 2.5
+                },
+                zOffset: -0.07
+            },
+            shade: {
+                enabled: false,
+                coverage: WINDOW_SHADE_COVERAGE.PCT_20,
+                randomizeCoverage: true,
+                direction: 'top_to_bottom',
+                colorHex: 0x565851,
+                fabric: {
+                    scale: 7,
+                    intensity: 0.18
+                },
+                zOffset: -0.05
+            },
+            interior: {
+                enabled: false
+            }
+        },
+        decoration: {
+            sill: {
+                enabled: true,
+                type: 'bottom_cover',
+                widthMode: 'match_window',
+                depthMeters: 0.1,
+                material: {
+                    mode: 'match_frame'
+                }
+            }
+        },
+        layers: {
+            frame: true,
+            muntins: true,
+            glass: true,
+            shade: false,
+            interior: false
+        },
+        wall: {
+            materialId: 'pbr.painted_plaster_wall',
+            roughness: 0.85,
+            normalIntensity: 1,
+            cutWidthLerp: 0,
+            cutHeightLerp: 0,
+            floorDistanceMeters: 0
+        },
+        ibl: {
+            enabled: true,
+            envMapIntensity: 0.25,
+            iblId: 'ibl.hdri.german_town_street_2k',
+            setBackground: true
+        },
+        seed: 'window-debug',
+        thumbnail: {
+            dataUrl: null,
+            wallMaterialId: 'pbr.painted_plaster_wall'
+        }
+    }),
+    Object.freeze({
         id: 'window_white_bathroom_narrow',
         assetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW,
         name: 'White Narrow Bathroom',
