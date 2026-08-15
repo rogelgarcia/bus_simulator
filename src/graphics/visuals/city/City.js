@@ -29,6 +29,10 @@ import { createTrafficControlProps } from './TrafficControlProps.js';
 
 const MATERIAL_SHADOW_SIDE_ORIGINAL = new WeakMap();
 
+const ZERO_VEC = new THREE.Vector3(0, 0, 0);
+const UP_DEFAULT = new THREE.Vector3(0, 1, 0);
+const UP_ALT = new THREE.Vector3(0, 0, 1);
+
 function applyShadowSideToObject(root, shadowSide) {
     if (!root?.traverse) return;
 
@@ -67,7 +71,12 @@ export class City {
             // Authoring tools that need per-mesh picking on fabricated buildings
             // (bay/decoration selection) can opt out.
             mergeBuildingGeometry = true,
-            mergeDedupeMaterials = true
+            mergeDedupeMaterials = true,
+            // Sun shadows are fitted to a region around the active camera instead
+            // of the whole map: fewer casters per frame, and the same shadow map
+            // resolution spread over a much smaller area (sharper edges).
+            sunShadowFocusEnabled = true,
+            sunShadowRadiusMeters = 110
         } = options;
 
         this.config = {
@@ -110,6 +119,23 @@ export class City {
         this.sun.shadow.camera.bottom = -half;
         this.sun.shadow.camera.updateProjectionMatrix();
         this.group.add(this.sun);
+        // The target must live in the scene graph for its world matrix (and thus
+        // the light direction) to update when we move the shadow focus.
+        this.group.add(this.sun.target);
+
+        this._sunShadowFocus = {
+            enabled: sunShadowFocusEnabled !== false,
+            radiusMeters: Math.max(20, Number(sunShadowRadiusMeters) || 110),
+            // Keep the authored direction and distance stable while the light
+            // itself is moved around to follow the camera.
+            direction: this.sun.position.clone().normalize(),
+            nominalDistance: this.sun.position.length() || 200,
+            fullExtent: half,
+            focus: new THREE.Vector3(),
+            _rot: new THREE.Matrix4(),
+            _tmp: new THREE.Vector3(),
+            _forward: new THREE.Vector3()
+        };
 
         this.sky = createGradientSkyDome({
             sunDir: this.sun.position.clone().normalize(),
@@ -427,11 +453,72 @@ export class City {
 
     update(engine) {
         this._applyAtmosphere(engine);
+        this._updateSunShadowFocus(engine);
         this.sky.position.copy(engine.camera.position);
         this._syncSkyVisibility(engine);
         this.sunFlare?.update?.(engine);
         this.sunBloom?.update?.(engine);
         this.sunRays?.update?.(engine);
+    }
+
+    /**
+     * Fit the sun's shadow camera to a region around the active camera.
+     *
+     * The shadow map is a fixed pixel budget: spreading it over the whole map
+     * wastes almost all of it on geometry nowhere near the view, which both
+     * costs a draw call per caster and leaves very few texels per meter (jagged
+     * edges). Following the camera keeps every caster dynamic — nothing is
+     * frozen, so moving objects such as the bus shadow correctly.
+     */
+    _updateSunShadowFocus(engine) {
+        const state = this._sunShadowFocus ?? null;
+        if (!state?.enabled || !this.sun?.castShadow) return;
+        const camera = engine?.camera ?? null;
+        if (!camera) return;
+
+        const radius = state.radiusMeters;
+        const shadow = this.sun.shadow;
+        const mapSize = Math.max(256, shadow?.mapSize?.width ?? 2048);
+        const groundY = this.generatorConfig?.ground?.surfaceY
+            ?? this.generatorConfig?.road?.surfaceY
+            ?? 0;
+
+        // Bias the focus ahead of the camera so coverage favours what is on
+        // screen rather than what is behind it.
+        state._forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
+        state._forward.y = 0;
+        if (state._forward.lengthSq() < 1e-6) state._forward.set(0, 0, -1);
+        state._forward.normalize();
+        const focus = state.focus.copy(camera.position).addScaledVector(state._forward, radius * 0.45);
+        focus.y = groundY;
+
+        // Snap the focus to whole shadow-map texels in light space, otherwise the
+        // shadow edges crawl and shimmer as the camera moves.
+        const dirToLight = state.direction;
+        const up = Math.abs(dirToLight.y) > 0.99 ? UP_ALT : UP_DEFAULT;
+        state._rot.lookAt(dirToLight, ZERO_VEC, up);
+        const texelWorldSize = (radius * 2) / mapSize;
+        const lightSpace = state._tmp.copy(focus).applyMatrix4(state._rot.clone().invert());
+        lightSpace.x = Math.round(lightSpace.x / texelWorldSize) * texelWorldSize;
+        lightSpace.y = Math.round(lightSpace.y / texelWorldSize) * texelWorldSize;
+        focus.copy(lightSpace).applyMatrix4(state._rot);
+
+        const backDistance = Math.max(state.nominalDistance, radius * 2 + 80);
+        this.sun.target.position.copy(focus);
+        this.sun.target.updateMatrixWorld?.();
+        this.sun.position.copy(focus).addScaledVector(dirToLight, backDistance);
+        this.sun.updateMatrixWorld?.();
+
+        const cam = shadow.camera;
+        if (cam.left !== -radius || cam.right !== radius || cam.top !== radius || cam.bottom !== -radius) {
+            cam.left = -radius;
+            cam.right = radius;
+            cam.top = radius;
+            cam.bottom = -radius;
+        }
+        cam.near = 1;
+        cam.far = backDistance + radius * 2;
+        cam.updateProjectionMatrix();
     }
 
     _applyAtmosphere(engine) {
@@ -442,7 +529,10 @@ export class City {
         const elevationDeg = atmo?.sun?.elevationDeg ?? null;
         if (this.sun && Number.isFinite(azimuthDeg) && Number.isFinite(elevationDeg)) {
             const dir = azimuthElevationDegToDir(azimuthDeg, elevationDeg);
-            const dist = this.sun.position.length() > 1e-6 ? this.sun.position.length() : 200;
+            // Use the stored nominal distance: the light itself gets moved around
+            // by the shadow focus, so its current position is not a stable radius.
+            const dist = this._sunShadowFocus?.nominalDistance ?? 200;
+            if (this._sunShadowFocus) this._sunShadowFocus.direction.copy(dir).normalize();
             this.sun.position.copy(dir).multiplyScalar(dist);
             this.sun.target.position.set(0, 0, 0);
             this.sun.target.updateMatrixWorld?.();

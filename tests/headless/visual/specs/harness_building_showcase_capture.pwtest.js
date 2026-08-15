@@ -41,6 +41,22 @@ test('Capture: building showcase (textures ready before screenshot)', async ({ p
     const viewport = { width: Math.round(1280 * scale), height: Math.round(720 * scale) };
     await page.setViewportSize(viewport);
 
+    // Warm-up build: a scenario's first build in a fresh page renders differently
+    // from later builds (cold caches). Builds 2+ are pixel-identical, so discard
+    // one build up front to make captures reproducible across runs.
+    await page.evaluate(async (args) => {
+        window.__testHooks.setViewport(args.viewport.width, args.viewport.height);
+        await window.__testHooks.loadScenario('building_showcase', { seed: 'showcase', buildingId: args.buildingId });
+        window.__testHooks.setFixedDt(1 / 60);
+        window.__testHooks.step(5, { render: true });
+    }, { buildingId: ids[0], viewport });
+    await page.waitForFunction(() => {
+        const scenario = window.__testHooks.getMetrics()?.scenario ?? null;
+        const textures = scenario?.textures ?? null;
+        if (!textures || textures.total <= 0) return false;
+        return textures.ready >= textures.total;
+    }, null, { timeout: 60_000, polling: 250 });
+
     for (const buildingId of ids) {
         await page.evaluate(async (args) => {
             window.__testHooks.setViewport(args.viewport.width, args.viewport.height);
