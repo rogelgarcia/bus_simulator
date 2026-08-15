@@ -223,6 +223,103 @@ function normalizeMaterialSpec(
     return safeFallback;
 }
 
+export const CORNICE_PROFILE = Object.freeze({
+    FLAT_BAND: 'flat_band',
+    STEPPED: 'stepped',
+    CROWN_MOLDING: 'crown_molding',
+    CORBELLED_BRICK: 'corbelled_brick'
+});
+
+export function isCorniceProfile(value) {
+    return value === CORNICE_PROFILE.FLAT_BAND
+        || value === CORNICE_PROFILE.STEPPED
+        || value === CORNICE_PROFILE.CROWN_MOLDING
+        || value === CORNICE_PROFILE.CORBELLED_BRICK;
+}
+
+export const CORNICE_ORNAMENT = Object.freeze({
+    NONE: 'none',
+    DENTILS: 'dentils',
+    BRACKETS: 'brackets'
+});
+
+export function isCorniceOrnament(value) {
+    return value === CORNICE_ORNAMENT.NONE
+        || value === CORNICE_ORNAMENT.DENTILS
+        || value === CORNICE_ORNAMENT.BRACKETS;
+}
+
+export const CORNICE_PARAPET_STEPPED_MODE = Object.freeze({
+    CORNERS: 'corners',
+    CORNERS_AND_CENTERS: 'corners_and_centers'
+});
+
+export function isCorniceParapetSteppedMode(value) {
+    return value === CORNICE_PARAPET_STEPPED_MODE.CORNERS
+        || value === CORNICE_PARAPET_STEPPED_MODE.CORNERS_AND_CENTERS;
+}
+
+// Cornice parts accept `match_wall` in addition to explicit color/texture specs,
+// mirroring the window surround material modes.
+function normalizeCorniceMaterialSpec(value, { fallback = { kind: 'color', id: BELT_COURSE_COLOR.OFFWHITE } } = {}) {
+    const kindRaw = typeof value?.kind === 'string' ? value.kind.trim().toLowerCase() : '';
+    const idRaw = typeof value?.id === 'string' ? value.id.trim().toLowerCase() : '';
+    if (kindRaw === 'match_wall' || (!kindRaw && idRaw === 'match_wall') || value === 'match_wall') {
+        return { kind: 'match_wall', id: 'match_wall' };
+    }
+    return normalizeMaterialSpec(value, {
+        fallback,
+        allowColorId: isBeltCourseColor,
+        allowTextureId: (id) => isBuildingStyle(id) || isPbrBuildingWallMaterialId(id),
+        stringKind: 'color'
+    });
+}
+
+export function normalizeCorniceConfig(value, { isRoof = false } = {}) {
+    const src = value && typeof value === 'object' ? value : {};
+    const orn = src.ornament && typeof src.ornament === 'object' ? src.ornament : {};
+    const material = normalizeCorniceMaterialSpec(src.material);
+
+    const out = {
+        enabled: !!src.enabled,
+        profile: isCorniceProfile(src.profile) ? src.profile : CORNICE_PROFILE.FLAT_BAND,
+        height: clamp(src.height ?? 0.5, 0.05, 2.0),
+        projection: clamp(src.projection ?? 0.25, 0.02, 1.5),
+        material,
+        tiling: normalizeTilingConfig(src.tiling, { defaultTileMeters: 2.0 }),
+        ornament: {
+            type: isCorniceOrnament(orn.type) ? orn.type : CORNICE_ORNAMENT.NONE,
+            width: clamp(orn.width ?? 0.18, 0.02, 2.0),
+            depth: clamp(orn.depth ?? 0.14, 0.02, 1.5),
+            spacing: clamp(orn.spacing ?? 0.22, 0.0, 4.0),
+            height: clamp(orn.height ?? 0.22, 0.02, 1.5),
+            material: normalizeCorniceMaterialSpec(orn.material, { fallback: material })
+        }
+    };
+
+    if (isRoof) {
+        const parapet = src.parapet && typeof src.parapet === 'object' ? src.parapet : {};
+        const coping = parapet.coping && typeof parapet.coping === 'object' ? parapet.coping : {};
+        const stepped = parapet.stepped && typeof parapet.stepped === 'object' ? parapet.stepped : {};
+        out.parapet = {
+            coping: {
+                enabled: !!coping.enabled,
+                height: clamp(coping.height ?? 0.12, 0.02, 0.5),
+                overhang: clamp(coping.overhang ?? 0.05, 0.0, 0.4),
+                material: normalizeCorniceMaterialSpec(coping.material, { fallback: material })
+            },
+            stepped: {
+                enabled: !!stepped.enabled,
+                mode: isCorniceParapetSteppedMode(stepped.mode) ? stepped.mode : CORNICE_PARAPET_STEPPED_MODE.CORNERS,
+                blockWidth: clamp(stepped.blockWidth ?? 0.9, 0.2, 4.0),
+                raise: clamp(stepped.raise ?? 0.45, 0.05, 2.0)
+            }
+        };
+    }
+
+    return out;
+}
+
 const FACE_IDS = Object.freeze(['A', 'B', 'C', 'D']);
 
 function isFaceId(faceId) {
@@ -374,6 +471,7 @@ export function createDefaultFloorLayer({
     material = null,
     wallBase = null,
     belt = null,
+    cornice = null,
     windows = null,
     interior = null,
     interiorEnabled = undefined,
@@ -430,6 +528,7 @@ export function createDefaultFloorLayer({
             }),
             tiling: normalizeTilingConfig(b?.tiling, { defaultTileMeters: 2.0 })
         },
+        cornice: normalizeCorniceConfig(cornice, { isRoof: false }),
         windows: windows ? createDefaultWindowSpec(windows) : createDefaultWindowSpec()
     };
 
@@ -441,7 +540,8 @@ export function createDefaultFloorLayer({
 export function createDefaultRoofLayer({
     id = null,
     ring = null,
-    roof = null
+    roof = null,
+    cornice = null
 } = {}) {
     const r = ring ?? {};
     const rf = roof ?? {};
@@ -482,6 +582,7 @@ export function createDefaultRoofLayer({
             material: ringMaterial,
             tiling: normalizeTilingConfig(r?.tiling, { defaultTileMeters: 2.0 })
         },
+        cornice: normalizeCorniceConfig(cornice, { isRoof: true }),
         roof: {
             type: typeof rf.type === 'string' && rf.type ? rf.type : 'Asphalt',
             material: roofMaterial,
@@ -568,6 +669,7 @@ export function cloneBuildingLayers(layers) {
             const belt = layer?.belt ?? {};
             const beltMaterial = belt?.material ?? null;
             const beltTiling = belt?.tiling ?? null;
+            const cornice = layer?.cornice ?? null;
             const windows = layer?.windows ?? {};
             const interior = layer?.interior ?? null;
             const windowVisuals = windows?.windowVisuals ?? null;
@@ -597,6 +699,7 @@ export function cloneBuildingLayers(layers) {
                     material: beltMaterial ? { ...beltMaterial } : beltMaterial,
                     tiling: beltTiling ? deepClone(beltTiling) : beltTiling
                 },
+                cornice: cornice ? deepClone(cornice) : cornice,
                 windows: {
                     ...windows,
                     params: { ...(windows?.params ?? {}) },
@@ -617,6 +720,7 @@ export function cloneBuildingLayers(layers) {
             const ring = layer?.ring ?? {};
             const ringMaterial = ring?.material ?? null;
             const ringTiling = ring?.tiling ?? null;
+            const cornice = layer?.cornice ?? null;
             const roof = layer?.roof ?? {};
             const roofTiling = roof?.tiling ?? null;
             const roofMaterialVariation = roof?.materialVariation ?? null;
@@ -628,6 +732,7 @@ export function cloneBuildingLayers(layers) {
                     material: ringMaterial ? { ...ringMaterial } : ringMaterial,
                     tiling: ringTiling ? deepClone(ringTiling) : ringTiling
                 },
+                cornice: cornice ? deepClone(cornice) : cornice,
                 roof: {
                     ...(roof?.material ? { ...roof, material: { ...roof.material } } : { ...roof }),
                     tiling: roofTiling ? deepClone(roofTiling) : roofTiling,

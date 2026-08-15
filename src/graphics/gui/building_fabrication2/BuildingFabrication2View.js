@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 
 import { getBuildingConfigById, getBuildingConfigs } from '../../content3d/catalogs/BuildingConfigCatalog.js';
-import { createLayerId } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
+import { createLayerId, normalizeCorniceConfig } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
 import {
     buildingConfigIdToFileBaseName,
     createCityBuildingConfigFromFabrication,
@@ -901,6 +901,7 @@ export class BuildingFabrication2View {
         this.ui.onSetFloorLayerFloors = (layerId, floors) => this._setFloorLayerFloors(layerId, floors);
         this.ui.onSetFloorLayerFloorHeight = (layerId, height) => this._setFloorLayerFloorHeight(layerId, height);
         this.ui.onSetFloorLayerInteriorEnabled = (layerId, enabled) => this._setFloorLayerInteriorEnabled(layerId, enabled);
+        this.ui.onSetLayerCornice = (layerId, patch) => this._setLayerCornice(layerId, patch);
         this.ui.onSetFloorLayerMaterial = (layerId, faceId, material) => this._setFloorLayerMaterial(layerId, faceId, material);
         this.ui.onRequestMaterialConfig = (layerId, faceId) => this._openMaterialConfigForLayer(layerId, faceId);
         this.ui.onViewModeChange = (mode) => this._applyViewMode(mode);
@@ -1067,6 +1068,7 @@ export class BuildingFabrication2View {
         this.ui.onSetFloorLayerFloors = null;
         this.ui.onSetFloorLayerFloorHeight = null;
         this.ui.onSetFloorLayerInteriorEnabled = null;
+        this.ui.onSetLayerCornice = null;
         this.ui.onSetFloorLayerMaterial = null;
         this.ui.onRequestMaterialConfig = null;
         this.ui.onViewModeChange = null;
@@ -4265,6 +4267,32 @@ export class BuildingFabrication2View {
 
         if (Math.abs(next - (Number(layer?.floorHeight) || 0)) < 1e-6) return;
         layer.floorHeight = next;
+        this._requestRebuild({ preserveCamera: true });
+    }
+
+    _setLayerCornice(layerId, patch) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        if (!id || !patch || typeof patch !== 'object') return;
+        const cfg = this._currentConfig;
+        if (!cfg || !Array.isArray(cfg.layers)) return;
+
+        const layer = cfg.layers.find((l) => l?.id === id && (l?.type === 'floor' || l?.type === 'roof')) ?? null;
+        if (!layer) return;
+
+        const prev = layer.cornice && typeof layer.cornice === 'object' ? layer.cornice : {};
+        const merged = {
+            ...prev,
+            ...patch,
+            ornament: { ...(prev.ornament ?? {}), ...(patch.ornament ?? {}) },
+            parapet: {
+                ...(prev.parapet ?? {}),
+                ...(patch.parapet ?? {}),
+                coping: { ...(prev.parapet?.coping ?? {}), ...(patch.parapet?.coping ?? {}) },
+                stepped: { ...(prev.parapet?.stepped ?? {}), ...(patch.parapet?.stepped ?? {}) }
+            }
+        };
+        layer.cornice = normalizeCorniceConfig(merged, { isRoof: layer.type === 'roof' });
+        this._syncUiState();
         this._requestRebuild({ preserveCamera: true });
     }
 

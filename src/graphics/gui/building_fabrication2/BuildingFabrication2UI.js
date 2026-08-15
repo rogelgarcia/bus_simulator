@@ -882,6 +882,7 @@ export class BuildingFabrication2UI {
         this.onAddRoofLayer = null;
         this.onMoveLayer = null;
         this.onDeleteLayer = null;
+        this.onSetLayerCornice = null;
         this.onSelectFace = null;
         this.onToggleFaceLock = null;
         this.onSetFaceLockReverse = null;
@@ -3487,6 +3488,8 @@ export class BuildingFabrication2UI {
                 interiorRow.appendChild(interiorControls);
                 body.appendChild(interiorRow);
 
+                this._appendCorniceSection(body, { layer, layerId, allowEdit, isRoof: false });
+
                 const normalizeWallTextureId = (texId) => {
                     const id = typeof texId === 'string' ? texId : '';
                     return resolveBuildingStylePbrMaterialId(id) ?? id;
@@ -5374,9 +5377,11 @@ export class BuildingFabrication2UI {
 
                 body.appendChild(dynamicArea);
             } else {
+                this._appendCorniceSection(body, { layer, layerId, allowEdit, isRoof: true });
+
                 const hint = document.createElement('div');
                 hint.className = 'building-fab2-hint';
-                hint.textContent = 'Roof controls coming later.';
+                hint.textContent = 'More roof controls coming later.';
                 body.appendChild(hint);
             }
 
@@ -5385,6 +5390,261 @@ export class BuildingFabrication2UI {
 	            this.layersList.appendChild(group);
 	        }
 	    }
+
+    _appendCorniceSection(body, { layer, layerId, allowEdit, isRoof }) {
+        const cornice = layer?.cornice && typeof layer.cornice === 'object' ? layer.cornice : {};
+        const enabled = !!cornice.enabled;
+        const emitPatch = (patch) => this.onSetLayerCornice?.(layerId, patch);
+
+        const title = document.createElement('div');
+        title.className = 'building-fab2-subtitle';
+        title.textContent = 'Cornice';
+        body.appendChild(title);
+
+        const makeToggleRow = (label, value, onSet) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab-row building-fab-row-wide building-fab2-bay-window-mode-row';
+            const rowLabel = document.createElement('div');
+            rowLabel.className = 'building-fab-row-label';
+            rowLabel.textContent = label;
+            const controls = document.createElement('div');
+            controls.className = 'building-fab2-bay-row-controls';
+            const toggle = document.createElement('div');
+            toggle.className = 'building-fab2-width-mode-toggle building-fab2-bay-window-mode-toggle';
+            const addBtn = (state, text) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'building-fab2-width-mode-btn';
+                btn.textContent = text;
+                btn.disabled = !allowEdit;
+                btn.classList.toggle('is-active', value === state);
+                btn.addEventListener('click', () => {
+                    if (!allowEdit || value === state) return;
+                    onSet(state);
+                });
+                toggle.appendChild(btn);
+            };
+            addBtn(false, 'Off');
+            addBtn(true, 'On');
+            controls.appendChild(toggle);
+            row.appendChild(rowLabel);
+            row.appendChild(controls);
+            body.appendChild(row);
+        };
+
+        const makeRangeRow = (label, { min, max, step, value, disabled = false, onChange }) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab2-layer-row';
+            const rowLabel = document.createElement('div');
+            rowLabel.className = 'building-fab2-row-label';
+            rowLabel.textContent = label;
+            const range = document.createElement('input');
+            range.type = 'range';
+            range.className = 'building-fab2-layer-range';
+            const number = document.createElement('input');
+            number.type = 'number';
+            number.className = 'building-fab2-layer-number';
+            for (const input of [range, number]) {
+                input.min = String(min);
+                input.max = String(max);
+                input.step = String(step);
+                input.disabled = !allowEdit || disabled;
+            }
+            const safeValue = clamp(value, min, max);
+            range.value = String(safeValue);
+            number.value = String(safeValue);
+            const handle = (raw) => {
+                const v = clamp(raw, min, max);
+                range.value = String(v);
+                number.value = String(v);
+                onChange(v);
+            };
+            range.addEventListener('input', () => handle(range.value));
+            number.addEventListener('input', () => handle(number.value));
+            row.appendChild(rowLabel);
+            row.appendChild(range);
+            row.appendChild(number);
+            body.appendChild(row);
+        };
+
+        const makeSelectRow = (label, { options, value, disabled = false, onChange }) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab2-layer-row';
+            const rowLabel = document.createElement('div');
+            rowLabel.className = 'building-fab2-row-label';
+            rowLabel.textContent = label;
+            const select = document.createElement('select');
+            select.className = 'building-fab2-select';
+            for (const option of options) {
+                const opt = document.createElement('option');
+                opt.value = String(option.id);
+                opt.textContent = String(option.label);
+                select.appendChild(opt);
+            }
+            select.value = String(value);
+            select.disabled = !allowEdit || disabled;
+            select.addEventListener('change', () => onChange(select.value));
+            row.appendChild(rowLabel);
+            row.appendChild(select);
+            body.appendChild(row);
+        };
+
+        makeToggleRow('Cornice', enabled, (next) => emitPatch({ enabled: next }));
+        if (!enabled) return;
+
+        makeSelectRow('Profile', {
+            options: [
+                { id: 'flat_band', label: 'Flat band' },
+                { id: 'stepped', label: 'Stepped' },
+                { id: 'crown_molding', label: 'Crown molding' },
+                { id: 'corbelled_brick', label: 'Corbelled brick' }
+            ],
+            value: typeof cornice.profile === 'string' ? cornice.profile : 'flat_band',
+            onChange: (profile) => emitPatch({ profile })
+        });
+        makeRangeRow('Height (m)', {
+            min: 0.05,
+            max: 2.0,
+            step: 0.01,
+            value: cornice.height ?? 0.5,
+            onChange: (height) => emitPatch({ height })
+        });
+        makeRangeRow('Projection (m)', {
+            min: 0.02,
+            max: 1.5,
+            step: 0.01,
+            value: cornice.projection ?? 0.25,
+            onChange: (projection) => emitPatch({ projection })
+        });
+
+        const materialToValue = (material) => {
+            if (material?.kind === 'match_wall') return 'match_wall';
+            if (material?.kind === 'texture' && material?.id) return `texture:${material.id}`;
+            if (material?.kind === 'color' && material?.id) return `color:${material.id}`;
+            return 'color:offwhite';
+        };
+        const valueToMaterial = (value) => {
+            if (value === 'match_wall') return { kind: 'match_wall', id: 'match_wall' };
+            if (value.startsWith('texture:')) return { kind: 'texture', id: value.slice('texture:'.length) };
+            return { kind: 'color', id: value.replace(/^color:/, '') };
+        };
+        const buildMaterialOptions = (material) => {
+            const options = [{ id: 'match_wall', label: 'Match wall' }];
+            for (const opt of this._beltCourseColorOptions ?? []) {
+                const id = String(opt?.id ?? '');
+                if (!id) continue;
+                options.push({ id: `color:${id}`, label: String(opt?.label ?? id) });
+            }
+            if (material?.kind === 'texture' && material?.id) {
+                options.push({ id: `texture:${material.id}`, label: `Texture: ${material.id}` });
+            }
+            return options;
+        };
+
+        makeSelectRow('Material', {
+            options: buildMaterialOptions(cornice.material),
+            value: materialToValue(cornice.material),
+            onChange: (value) => emitPatch({ material: valueToMaterial(value) })
+        });
+
+        const ornament = cornice.ornament && typeof cornice.ornament === 'object' ? cornice.ornament : {};
+        const ornamentType = typeof ornament.type === 'string' ? ornament.type : 'none';
+        makeSelectRow('Ornament', {
+            options: [
+                { id: 'none', label: 'None' },
+                { id: 'dentils', label: 'Dentils' },
+                { id: 'brackets', label: 'Brackets' }
+            ],
+            value: ornamentType,
+            onChange: (type) => emitPatch({ ornament: { type } })
+        });
+
+        if (ornamentType !== 'none') {
+            makeRangeRow('Module width (m)', {
+                min: 0.02,
+                max: 2.0,
+                step: 0.01,
+                value: ornament.width ?? 0.18,
+                onChange: (width) => emitPatch({ ornament: { width } })
+            });
+            makeRangeRow('Module depth (m)', {
+                min: 0.02,
+                max: 1.5,
+                step: 0.01,
+                value: ornament.depth ?? 0.14,
+                onChange: (depth) => emitPatch({ ornament: { depth } })
+            });
+            makeRangeRow('Module spacing (m)', {
+                min: 0.0,
+                max: 4.0,
+                step: 0.01,
+                value: ornament.spacing ?? 0.22,
+                onChange: (spacing) => emitPatch({ ornament: { spacing } })
+            });
+            makeRangeRow('Module height (m)', {
+                min: 0.02,
+                max: 1.5,
+                step: 0.01,
+                value: ornament.height ?? 0.22,
+                onChange: (height) => emitPatch({ ornament: { height } })
+            });
+            makeSelectRow('Ornament material', {
+                options: buildMaterialOptions(ornament.material),
+                value: materialToValue(ornament.material),
+                onChange: (value) => emitPatch({ ornament: { material: valueToMaterial(value) } })
+            });
+        }
+
+        if (isRoof) {
+            const parapet = cornice.parapet && typeof cornice.parapet === 'object' ? cornice.parapet : {};
+            const coping = parapet.coping && typeof parapet.coping === 'object' ? parapet.coping : {};
+            const stepped = parapet.stepped && typeof parapet.stepped === 'object' ? parapet.stepped : {};
+
+            makeToggleRow('Coping cap', !!coping.enabled, (next) => emitPatch({ parapet: { coping: { enabled: next } } }));
+            if (coping.enabled) {
+                makeRangeRow('Coping height (m)', {
+                    min: 0.02,
+                    max: 0.5,
+                    step: 0.01,
+                    value: coping.height ?? 0.12,
+                    onChange: (height) => emitPatch({ parapet: { coping: { height } } })
+                });
+                makeRangeRow('Coping overhang (m)', {
+                    min: 0.0,
+                    max: 0.4,
+                    step: 0.01,
+                    value: coping.overhang ?? 0.05,
+                    onChange: (overhang) => emitPatch({ parapet: { coping: { overhang } } })
+                });
+            }
+
+            makeToggleRow('Stepped parapet', !!stepped.enabled, (next) => emitPatch({ parapet: { stepped: { enabled: next } } }));
+            if (stepped.enabled) {
+                makeSelectRow('Step placement', {
+                    options: [
+                        { id: 'corners', label: 'Corners' },
+                        { id: 'corners_and_centers', label: 'Corners + centers' }
+                    ],
+                    value: typeof stepped.mode === 'string' ? stepped.mode : 'corners',
+                    onChange: (mode) => emitPatch({ parapet: { stepped: { mode } } })
+                });
+                makeRangeRow('Step block width (m)', {
+                    min: 0.2,
+                    max: 4.0,
+                    step: 0.05,
+                    value: stepped.blockWidth ?? 0.9,
+                    onChange: (blockWidth) => emitPatch({ parapet: { stepped: { blockWidth } } })
+                });
+                makeRangeRow('Step raise (m)', {
+                    min: 0.05,
+                    max: 2.0,
+                    step: 0.01,
+                    value: stepped.raise ?? 0.45,
+                    onChange: (raise) => emitPatch({ parapet: { stepped: { raise } } })
+                });
+            }
+        }
+    }
 
     _getFloorLayerFaceState(layerId) {
         const id = typeof layerId === 'string' ? layerId : '';

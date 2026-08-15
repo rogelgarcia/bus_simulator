@@ -272,6 +272,27 @@ export const STONE_LOWRISE_2_BUILDING_CONFIG = Object.freeze({
                         "rotationDegrees": 0
                     }
                 },
+                "cornice": {
+                    "enabled": true,
+                    "profile": "crown_molding",
+                    "height": 0.42,
+                    "projection": 0.24,
+                    "material": {
+                        "kind": "match_wall",
+                        "id": "match_wall"
+                    },
+                    "ornament": {
+                        "type": "dentils",
+                        "width": 0.14,
+                        "depth": 0.11,
+                        "spacing": 0.15,
+                        "height": 0.15,
+                        "material": {
+                            "kind": "match_wall",
+                            "id": "match_wall"
+                        }
+                    }
+                },
                 "windows": {
                     "enabled": false,
                     "typeId": "window.style.default",
@@ -683,6 +704,44 @@ export const STONE_LOWRISE_2_BUILDING_CONFIG = Object.freeze({
                         "offsetU": 0,
                         "offsetV": 0,
                         "rotationDegrees": 0
+                    }
+                },
+                "cornice": {
+                    "enabled": true,
+                    "profile": "stepped",
+                    "height": 0.55,
+                    "projection": 0.28,
+                    "material": {
+                        "kind": "match_wall",
+                        "id": "match_wall"
+                    },
+                    "ornament": {
+                        "type": "brackets",
+                        "width": 0.16,
+                        "depth": 0.2,
+                        "spacing": 0.5,
+                        "height": 0.26,
+                        "material": {
+                            "kind": "match_wall",
+                            "id": "match_wall"
+                        }
+                    },
+                    "parapet": {
+                        "coping": {
+                            "enabled": true,
+                            "height": 0.1,
+                            "overhang": 0.06,
+                            "material": {
+                                "kind": "match_wall",
+                                "id": "match_wall"
+                            }
+                        },
+                        "stepped": {
+                            "enabled": false,
+                            "mode": "corners",
+                            "blockWidth": 0.9,
+                            "raise": 0.45
+                        }
                     }
                 },
                 "roof": {
@@ -1658,134 +1717,6 @@ export const STONE_LOWRISE_2_BUILDING_CONFIG = Object.freeze({
                     ],
                     "nextDecorationIndex": 2
                 },
-                {
-                    "id": "set_4",
-                    "target": {
-                        "layerId": "floor_204",
-                        "bayRefs": [
-                            "A:bay_1",
-                            "B:bay_1",
-                            "C:bay_1",
-                            "D:bay_1"
-                        ],
-                        "allBays": false
-                    },
-                    "floorInterval": {
-                        "every": 1,
-                        "start": 1,
-                        "end": null
-                    },
-                    "decorations": [
-                        {
-                            "id": "decoration_1",
-                            "span": {
-                                "start": 0,
-                                "end": 1
-                            },
-                            "state": {
-                                "version": 1,
-                                "decoratorId": "cornice_basic_block",
-                                "whereToApply": "entire_facade",
-                                "mode": "face",
-                                "position": "bottom",
-                                "configuration": {
-                                    "blockSizeMeters": 0.16,
-                                    "spacingMode": "fixed",
-                                    "spacingMeters": 0.34,
-                                    "frontBottomLiftScale": 0.35,
-                                    "snapToFit": true
-                                },
-                                "materialSelection": {
-                                    "kind": "match_wall",
-                                    "id": "match_wall"
-                                },
-                                "wallBase": {
-                                    "roughness": 0.85,
-                                    "normalStrength": 0.9,
-                                    "tintHueDeg": 0,
-                                    "tintSaturation": 0,
-                                    "tintValue": 1,
-                                    "tintIntensity": 1,
-                                    "tintBrightness": 1,
-                                    "tintHex": 16777215
-                                },
-                                "tiling": {
-                                    "enabled": false,
-                                    "tileMeters": 2,
-                                    "tileMetersU": 2,
-                                    "tileMetersV": 2,
-                                    "uvEnabled": false,
-                                    "offsetU": 0,
-                                    "offsetV": 0,
-                                    "rotationDegrees": 0
-                                }
-                            },
-                            "autoCorner": {
-                                "rule": "outmost_depth",
-                                "resolvedBayRefs": [
-                                    "A:bay_1",
-                                    "B:bay_1",
-                                    "C:bay_1",
-                                    "D:bay_1"
-                                ]
-                            }
-                        },
-                        {
-                            "id": "decoration_2",
-                            "span": {
-                                "start": 0,
-                                "end": 1
-                            },
-                            "state": {
-                                "version": 1,
-                                "decoratorId": "angled_support_profile",
-                                "whereToApply": "entire_facade",
-                                "mode": "face",
-                                "position": "top",
-                                "configuration": {
-                                    "offset": 0.07,
-                                    "height": 0.16,
-                                    "topCapAngleDeg": 45,
-                                    "bottomCapAngleDeg": 45
-                                },
-                                "materialSelection": {
-                                    "kind": "match_wall",
-                                    "id": "match_wall"
-                                },
-                                "wallBase": {
-                                    "roughness": 0.85,
-                                    "normalStrength": 0.9,
-                                    "tintHueDeg": 0,
-                                    "tintSaturation": 0,
-                                    "tintValue": 1,
-                                    "tintIntensity": 1,
-                                    "tintBrightness": 1,
-                                    "tintHex": 16777215
-                                },
-                                "tiling": {
-                                    "enabled": false,
-                                    "tileMeters": 2,
-                                    "tileMetersU": 2,
-                                    "tileMetersV": 2,
-                                    "uvEnabled": false,
-                                    "offsetU": 0,
-                                    "offsetV": 0,
-                                    "rotationDegrees": 0
-                                }
-                            },
-                            "autoCorner": {
-                                "rule": "outmost_depth",
-                                "resolvedBayRefs": [
-                                    "A:bay_1",
-                                    "B:bay_1",
-                                    "C:bay_1",
-                                    "D:bay_1"
-                                ]
-                            }
-                        }
-                    ],
-                    "nextDecorationIndex": 3
-                }
             ],
             "nextSetIndex": 5
         }

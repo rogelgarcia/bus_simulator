@@ -669,16 +669,39 @@ function estimateFacadesOutwardDepthMeters(facades) {
     return maxDepth;
 }
 
+function estimateCorniceOutwardReserveMeters(layer) {
+    const cornice = layer?.cornice ?? null;
+    if (!cornice?.enabled) return 0.0;
+    const projection = clamp(cornice.projection, 0.02, 1.5);
+    const ornamentDepth = cornice?.ornament?.type && cornice.ornament.type !== 'none'
+        ? clamp(cornice.ornament.depth, 0.02, 1.5)
+        : 0.0;
+    let outward = Math.max(projection, ornamentDepth);
+    if (layer?.type === LAYER_TYPE.ROOF) {
+        const ring = layer?.ring ?? {};
+        const ringOuter = ring?.enabled ? clamp(ring.outerRadius, 0.0, 8.0) : 0.0;
+        const coping = cornice?.parapet?.coping ?? null;
+        const copingOverhang = coping?.enabled ? clamp(coping.overhang, 0.0, 0.4) : 0.0;
+        outward = ringOuter + Math.max(outward, copingOverhang);
+    }
+    return outward;
+}
+
 function estimateBf2OutwardFootprintReserveMeters({ layers, facades } = {}) {
     let reserve = 0.0;
     const safeLayers = Array.isArray(layers) ? layers : [];
     for (const layer of safeLayers) {
         if (!layer || typeof layer !== 'object') continue;
+        if (layer?.type === LAYER_TYPE.ROOF) {
+            reserve = Math.max(reserve, estimateCorniceOutwardReserveMeters(layer));
+            continue;
+        }
         if (layer?.type !== LAYER_TYPE.FLOOR) continue;
         const planOffset = Number(layer?.planOffset);
         if (Number.isFinite(planOffset) && planOffset < 0) reserve = Math.max(reserve, Math.abs(planOffset));
         const beltExtrusion = Number(layer?.belt?.enabled ? layer?.belt?.extrusion : 0.0);
         if (Number.isFinite(beltExtrusion) && beltExtrusion > 0) reserve = Math.max(reserve, beltExtrusion);
+        reserve = Math.max(reserve, estimateCorniceOutwardReserveMeters(layer));
     }
     reserve = Math.max(reserve, estimateFacadesOutwardDepthMeters(facades));
     return reserve;
@@ -2232,17 +2255,14 @@ function estimateFabricationHeightMax({ baseY, extraFirstFloor, layers } = {}) {
                 yCursor += segHeight;
                 if (beltEnabled && beltHeight > EPS) yCursor += beltHeight;
             }
+            yCursor += resolveCorniceHeights(layer?.cornice).total;
             continue;
         }
 
         if (type === LAYER_TYPE.ROOF) {
-            const ring = layer?.ring ?? {};
-            const ringEnabled = !!ring.enabled;
-            const ringHeight = ringEnabled ? clamp(ring.height, 0.02, 2.0) : 0.0;
-
             const nextLayer = safeLayers[layerIndex + 1] ?? null;
             const hasFloorsAboveRoof = nextLayer?.type === LAYER_TYPE.FLOOR;
-            if (!hasFloorsAboveRoof) yCursor += ringHeight;
+            if (!hasFloorsAboveRoof) yCursor += resolveRoofLayerTopExtraHeight(layer);
         }
     }
 
@@ -2980,6 +3000,320 @@ function buildShapeFromLoops({ outerLoop, holeLoops }) {
     }
 
     return shape;
+}
+
+const CORNICE_BURIAL_METERS = 0.02;
+const CORNICE_ORNAMENT_BACK_BURIAL_METERS = 0.01;
+const CORNICE_ORNAMENT_CORNER_CLEARANCE_METERS = 0.05;
+
+// Fractional (o = outward projection 0..1, y = height 0..1) profile polylines,
+// bottom to top. Every profile ends at full projection so the top shelf is the
+// widest point, as on real cornices.
+function resolveCorniceProfileFractions(profile) {
+    if (profile === 'stepped') {
+        return [
+            { o: 0.45, y: 0.0 }, { o: 0.45, y: 0.34 },
+            { o: 0.72, y: 0.34 }, { o: 0.72, y: 0.67 },
+            { o: 1.0, y: 0.67 }, { o: 1.0, y: 1.0 }
+        ];
+    }
+    if (profile === 'crown_molding') {
+        return [
+            { o: 0.32, y: 0.0 }, { o: 0.32, y: 0.18 },
+            { o: 0.42, y: 0.34 }, { o: 0.62, y: 0.5 },
+            { o: 0.82, y: 0.64 }, { o: 0.95, y: 0.78 },
+            { o: 1.0, y: 0.86 }, { o: 1.0, y: 1.0 }
+        ];
+    }
+    if (profile === 'corbelled_brick') {
+        const out = [];
+        const steps = 5;
+        for (let i = 0; i < steps; i++) {
+            const o = (i + 1) / steps;
+            out.push({ o, y: i / steps });
+            out.push({ o, y: (i + 1) / steps });
+        }
+        return out;
+    }
+    return [{ o: 1.0, y: 0.0 }, { o: 1.0, y: 1.0 }];
+}
+
+// Closed cross-section swept around the layer loop. Offsets are outward from
+// the loop plane; the inner return is buried so it cannot z-fight the wall or
+// parapet body behind it.
+function resolveCorniceCrossSection({ profile, heightMeters, projectionMeters, baseOutset = 0.0 }) {
+    const h = Math.max(0.02, Number(heightMeters) || 0);
+    const p = Math.max(0.01, Number(projectionMeters) || 0);
+    const base = Number(baseOutset) || 0;
+    const inner = base - CORNICE_BURIAL_METERS;
+    const section = [{ o: inner, y: 0 }];
+    for (const f of resolveCorniceProfileFractions(profile)) {
+        section.push({ o: base + f.o * p, y: f.y * h });
+    }
+    section.push({ o: inner, y: h });
+    return section;
+}
+
+// Lofts a closed cross-section around a footprint loop with mitered corners.
+// offsetOrthogonalLoopXZ preserves vertex count/order, so ring k vertex j always
+// pairs with ring k+1 vertex j and corners stay watertight.
+function buildCorniceLoftGeometryFromLoop({ loop, crossSection, yBase }) {
+    const pts = Array.isArray(loop) ? loop : [];
+    const n = pts.length;
+    const m = Array.isArray(crossSection) ? crossSection.length : 0;
+    if (n < 3 || m < 2) return null;
+
+    const rings = crossSection.map((cs) => {
+        const off = Number(cs?.o) || 0;
+        return Math.abs(off) > EPS ? offsetOrthogonalLoopXZ(pts, -off) : pts;
+    });
+
+    const uAt = new Array(n + 1);
+    uAt[0] = 0;
+    for (let j = 0; j < n; j++) {
+        const a = pts[j];
+        const b = pts[(j + 1) % n];
+        uAt[j + 1] = uAt[j] + Math.hypot(b.x - a.x, b.z - a.z);
+    }
+
+    const vAt = new Array(m + 1);
+    vAt[0] = 0;
+    for (let k = 0; k < m; k++) {
+        const a = crossSection[k];
+        const b = crossSection[(k + 1) % m];
+        vAt[k + 1] = vAt[k] + Math.hypot((Number(b.o) || 0) - (Number(a.o) || 0), (Number(b.y) || 0) - (Number(a.y) || 0));
+    }
+
+    const positions = [];
+    const uvs = [];
+    const y0Base = Number(yBase) || 0;
+
+    for (let k = 0; k < m; k++) {
+        const k1 = (k + 1) % m;
+        const csA = crossSection[k];
+        const csB = crossSection[k1];
+        const segLen = vAt[k + 1] - vAt[k];
+        if (!(segLen > EPS)) continue;
+        const ringA = rings[k];
+        const ringB = rings[k1];
+        const yA = y0Base + (Number(csA.y) || 0);
+        const yB = y0Base + (Number(csB.y) || 0);
+        const v0 = vAt[k];
+        const v1 = vAt[k + 1];
+
+        for (let j = 0; j < n; j++) {
+            const j1 = (j + 1) % n;
+            if (!(uAt[j + 1] - uAt[j] > EPS)) continue;
+            const u0 = uAt[j];
+            const u1 = uAt[j + 1];
+            const p00 = ringA[j];
+            const p10 = ringA[j1];
+            const p01 = ringB[j];
+            const p11 = ringB[j1];
+            if (!p00 || !p10 || !p01 || !p11) continue;
+
+            // Outward-facing winding for CCW outer loops: (P00, P01, P11), (P00, P11, P10)
+            positions.push(
+                p00.x, yA, p00.z, p01.x, yB, p01.z, p11.x, yB, p11.z,
+                p00.x, yA, p00.z, p11.x, yB, p11.z, p10.x, yA, p10.z
+            );
+            uvs.push(
+                u0, v0, u0, v1, u1, v1,
+                u0, v0, u1, v1, u1, v0
+            );
+        }
+    }
+
+    if (!positions.length) return null;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
+    geo.computeVertexNormals();
+    return geo;
+}
+
+// Repeating dentil/bracket modules along each straight face run, snap-to-fit and
+// centered so both sides of every corner keep the same end margin. All modules
+// share one BufferGeometry: a single mesh, never per-module draw calls.
+function buildCorniceOrnamentGeometryFromLoop({ loop, ornament, baseOutset, yBase }) {
+    const pts = Array.isArray(loop) ? loop : [];
+    if (pts.length < 3 || !ornament || ornament.type === 'none') return null;
+
+    const w = clamp(ornament.width, 0.02, 2.0);
+    const d = clamp(ornament.depth, 0.02, 1.5);
+    const gap = clamp(ornament.spacing, 0.0, 4.0);
+    const h = clamp(ornament.height, 0.02, 1.5);
+    const base = Number(baseOutset) || 0;
+    const oBack = base - CORNICE_ORNAMENT_BACK_BURIAL_METERS;
+    const oFront = base + d;
+    const margin = Math.max(0.0, base) + d + CORNICE_ORNAMENT_CORNER_CLEARANCE_METERS;
+    const isBracket = ornament.type === 'brackets';
+    const y0 = Number(yBase) || 0;
+    const y1 = y0 + h;
+
+    const positions = [];
+    const uvs = [];
+
+    const pushQuad = (A, B, C, D, wantNx, wantNy, wantNz) => {
+        const abx = B[0] - A[0];
+        const aby = B[1] - A[1];
+        const abz = B[2] - A[2];
+        const acx = C[0] - A[0];
+        const acy = C[1] - A[1];
+        const acz = C[2] - A[2];
+        const cx = aby * acz - abz * acy;
+        const cy = abz * acx - abx * acz;
+        const cz = abx * acy - aby * acx;
+        const flip = (cx * wantNx + cy * wantNy + cz * wantNz) < 0;
+        const b = flip ? D : B;
+        const dd = flip ? B : D;
+        positions.push(
+            A[0], A[1], A[2], b[0], b[1], b[2], C[0], C[1], C[2],
+            A[0], A[1], A[2], C[0], C[1], C[2], dd[0], dd[1], dd[2]
+        );
+        uvs.push(
+            0, 0, 1, 0, 1, 1,
+            0, 0, 1, 1, 0, 1
+        );
+    };
+
+    const runs = buildExteriorRunsFromLoop(pts);
+    for (const run of runs) {
+        const L = Number(run?.length) || 0;
+        const usable = L - margin * 2;
+        if (!(usable >= w)) continue;
+
+        const pitch = w + Math.max(0.02, gap);
+        const count = Math.max(1, Math.floor((usable - w) / pitch) + 1);
+        const step = count > 1 ? (usable - w) / (count - 1) : 0;
+
+        const tx = run.dir.x;
+        const tz = run.dir.z;
+        const nx = tz;
+        const nz = -tx;
+        const P = (u, o, y) => [run.a.x + tx * u + nx * o, y, run.a.z + tz * u + nz * o];
+
+        for (let i = 0; i < count; i++) {
+            const uc = count > 1 ? (margin + w * 0.5 + i * step) : (L * 0.5);
+            const u0 = uc - w * 0.5;
+            const u1 = uc + w * 0.5;
+
+            if (isBracket) {
+                const oBmid = oBack + (oFront - oBack) * 0.35;
+                // slanted front
+                pushQuad(P(u0, oBmid, y0), P(u1, oBmid, y0), P(u1, oFront, y1), P(u0, oFront, y1), nx, 0, nz);
+                // top / bottom
+                pushQuad(P(u0, oBack, y1), P(u1, oBack, y1), P(u1, oFront, y1), P(u0, oFront, y1), 0, 1, 0);
+                pushQuad(P(u0, oBack, y0), P(u1, oBack, y0), P(u1, oBmid, y0), P(u0, oBmid, y0), 0, -1, 0);
+                // sides
+                pushQuad(P(u0, oBack, y0), P(u0, oBack, y1), P(u0, oFront, y1), P(u0, oBmid, y0), -tx, 0, -tz);
+                pushQuad(P(u1, oBack, y0), P(u1, oBack, y1), P(u1, oFront, y1), P(u1, oBmid, y0), tx, 0, tz);
+            } else {
+                // dentil box (back face buried in the wall is skipped)
+                pushQuad(P(u0, oFront, y0), P(u1, oFront, y0), P(u1, oFront, y1), P(u0, oFront, y1), nx, 0, nz);
+                pushQuad(P(u0, oBack, y1), P(u1, oBack, y1), P(u1, oFront, y1), P(u0, oFront, y1), 0, 1, 0);
+                pushQuad(P(u0, oBack, y0), P(u1, oBack, y0), P(u1, oFront, y0), P(u0, oFront, y0), 0, -1, 0);
+                pushQuad(P(u0, oBack, y0), P(u0, oBack, y1), P(u0, oFront, y1), P(u0, oFront, y0), -tx, 0, -tz);
+                pushQuad(P(u1, oBack, y0), P(u1, oBack, y1), P(u1, oFront, y1), P(u1, oFront, y0), tx, 0, tz);
+            }
+        }
+    }
+
+    if (!positions.length) return null;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
+    geo.computeVertexNormals();
+    return geo;
+}
+
+function makeCorniceMaterialFromSpec({
+    material,
+    tiling,
+    layerMaterial,
+    layerWallBase,
+    layerTiling,
+    baseColorHex,
+    textureCache
+}) {
+    if (material?.kind === 'match_wall') {
+        const mat = makeWallMaterialFromSpec({
+            material: layerMaterial ?? null,
+            baseColorHex,
+            textureCache,
+            wallBase: layerWallBase ?? null
+        });
+        const styleId = layerMaterial?.kind === 'texture' ? layerMaterial.id : null;
+        if (styleId) {
+            const urls = resolveBuildingStyleWallMaterialUrls(styleId);
+            const uvCfg = computeUvTilingParams({ tiling: layerTiling ?? null, urls, styleId });
+            if (uvCfg.apply) {
+                applyUvTilingToMeshStandardMaterial(mat, {
+                    scaleU: uvCfg.scaleU,
+                    scaleV: uvCfg.scaleV,
+                    offsetU: uvCfg.offsetU,
+                    offsetV: uvCfg.offsetV,
+                    rotationDegrees: uvCfg.rotationDegrees
+                });
+            }
+        }
+        return mat;
+    }
+
+    const mat = makeBeltLikeMaterialFromSpec({ material, baseColorHex, textureCache });
+    const styleId = material?.kind === 'texture' ? material.id : null;
+    if (styleId) {
+        const urls = resolveBuildingStyleWallMaterialUrls(styleId);
+        const uvCfg = computeUvTilingParams({ tiling: tiling ?? null, urls, styleId });
+        if (uvCfg.apply) {
+            applyUvTilingToMeshStandardMaterial(mat, {
+                scaleU: uvCfg.scaleU,
+                scaleV: uvCfg.scaleV,
+                offsetU: uvCfg.offsetU,
+                offsetV: uvCfg.offsetV,
+                rotationDegrees: uvCfg.rotationDegrees
+            });
+        }
+    }
+    return mat;
+}
+
+// Total vertical extent a layer's cornice block adds on top of its walls.
+function resolveCorniceHeights(cornice) {
+    if (!cornice?.enabled) return { total: 0.0, ornament: 0.0, profile: 0.0 };
+    const total = clamp(cornice.height, 0.05, 2.0);
+    const hasOrnament = cornice?.ornament?.type && cornice.ornament.type !== 'none';
+    const ornament = hasOrnament ? Math.min(clamp(cornice.ornament.height, 0.02, 1.5), total * 0.6) : 0.0;
+    return { total, ornament, profile: Math.max(0.02, total - ornament) };
+}
+
+// Vertical extent the roof layer adds above the roofline: parapet ring, crown
+// cornice, stepped parapet blocks and coping cap all wrap the same range, so
+// the building top is their max.
+function resolveRoofLayerTopExtraHeight(layer) {
+    const ring = layer?.ring ?? {};
+    const ringEnabled = !!ring.enabled;
+    const ringHeight = ringEnabled ? clamp(ring.height, 0.02, 2.0) : 0.0;
+    let top = ringHeight;
+
+    const cornice = layer?.cornice ?? null;
+    if (cornice?.enabled) {
+        const { total } = resolveCorniceHeights(cornice);
+        top = Math.max(top, total);
+
+        const hasParapetRing = ringEnabled && ringHeight > EPS;
+        const coping = cornice?.parapet?.coping ?? null;
+        const stepped = cornice?.parapet?.stepped ?? null;
+        const copingHeight = coping?.enabled ? clamp(coping.height, 0.02, 0.5) : 0.0;
+        if (stepped?.enabled && hasParapetRing) {
+            top = Math.max(top, ringHeight + clamp(stepped.raise, 0.05, 2.0) + copingHeight);
+        }
+        if (coping?.enabled) {
+            top = Math.max(top, (hasParapetRing ? ringHeight : total) + copingHeight);
+        }
+    }
+
+    return top;
 }
 
 function clampUnit(value, fallback = 0) {
@@ -7297,6 +7631,85 @@ export function buildBuildingFabricationVisualParts({
                 }
             }
 
+            const corniceCfg = layer.cornice ?? null;
+            if (corniceCfg?.enabled) {
+                const corniceHeights = resolveCorniceHeights(corniceCfg);
+                const corniceProjection = clamp(corniceCfg.projection, 0.02, 1.5);
+                const corniceMat = makeCorniceMaterialFromSpec({
+                    material: corniceCfg.material,
+                    tiling: corniceCfg.tiling ?? null,
+                    layerMaterial: layer.material ?? null,
+                    layerWallBase: layer.wallBase ?? null,
+                    layerTiling: layer.tiling ?? null,
+                    baseColorHex,
+                    textureCache
+                });
+                const corniceOrnamentType = corniceCfg?.ornament?.type ?? 'none';
+                const corniceOrnamentMat = (corniceOrnamentType !== 'none' && corniceHeights.ornament > EPS)
+                    ? makeCorniceMaterialFromSpec({
+                        material: corniceCfg.ornament?.material ?? corniceCfg.material,
+                        tiling: corniceCfg.tiling ?? null,
+                        layerMaterial: layer.material ?? null,
+                        layerWallBase: layer.wallBase ?? null,
+                        layerTiling: layer.tiling ?? null,
+                        baseColorHex,
+                        textureCache
+                    })
+                    : null;
+                const corniceCrossSection = resolveCorniceCrossSection({
+                    profile: corniceCfg.profile,
+                    heightMeters: corniceHeights.profile,
+                    projectionMeters: corniceProjection,
+                    baseOutset: 0.0
+                });
+
+                for (const rawLoop of wallOuterFacade) {
+                    if (!rawLoop || rawLoop.length < 3) continue;
+                    const outerLoop = signedArea(rawLoop) < 0 ? rawLoop.slice().reverse() : rawLoop;
+
+                    const profileGeo = buildCorniceLoftGeometryFromLoop({
+                        loop: outerLoop,
+                        crossSection: corniceCrossSection,
+                        yBase: yCursor + corniceHeights.ornament
+                    });
+                    if (profileGeo) {
+                        const mesh = new THREE.Mesh(profileGeo, corniceMat);
+                        mesh.castShadow = true;
+                        mesh.receiveShadow = true;
+                        mesh.userData = mesh.userData ?? {};
+                        mesh.userData.buildingFab2Role = 'cornice';
+                        mesh.userData.corniceProfile = corniceCfg.profile;
+                        beltsGroup.add(mesh);
+
+                        if (showWire) {
+                            const edgeGeo = new THREE.EdgesGeometry(profileGeo, 1);
+                            appendWirePositions(wirePositions, edgeGeo, 0);
+                            edgeGeo.dispose();
+                        }
+                    }
+
+                    if (corniceOrnamentMat) {
+                        const ornamentGeo = buildCorniceOrnamentGeometryFromLoop({
+                            loop: outerLoop,
+                            ornament: { ...corniceCfg.ornament, height: corniceHeights.ornament },
+                            baseOutset: 0.0,
+                            yBase: yCursor
+                        });
+                        if (ornamentGeo) {
+                            const mesh = new THREE.Mesh(ornamentGeo, corniceOrnamentMat);
+                            mesh.castShadow = true;
+                            mesh.receiveShadow = true;
+                            mesh.userData = mesh.userData ?? {};
+                            mesh.userData.buildingFab2Role = 'cornice_ornament';
+                            mesh.userData.corniceOrnament = corniceOrnamentType;
+                            beltsGroup.add(mesh);
+                        }
+                    }
+                }
+
+                yCursor += corniceHeights.total;
+            }
+
             currentLoops = planLoops.length ? planLoops : currentLoops;
             continue;
         }
@@ -7521,9 +7934,254 @@ export function buildBuildingFabricationVisualParts({
                 }
             }
 
+            const corniceCfg = layer.cornice ?? null;
+            if (corniceCfg?.enabled) {
+                const corniceHeights = resolveCorniceHeights(corniceCfg);
+                const corniceProjection = clamp(corniceCfg.projection, 0.02, 1.5);
+                const hasParapetRing = ringEnabled && ringHeight > EPS;
+                // The crown wraps the parapet body, so its profile projects from the
+                // ring's outer face, not from the wall plane behind it.
+                const corniceBaseOutset = hasParapetRing ? outerRadius : 0.0;
+                const corniceLayerMaterial = lastFloorLayer?.material ?? null;
+                const corniceLayerWallBase = lastFloorLayer?.wallBase ?? null;
+                const corniceLayerTiling = lastFloorLayer?.tiling ?? null;
+                const corniceMat = makeCorniceMaterialFromSpec({
+                    material: corniceCfg.material,
+                    tiling: corniceCfg.tiling ?? null,
+                    layerMaterial: corniceLayerMaterial,
+                    layerWallBase: corniceLayerWallBase,
+                    layerTiling: corniceLayerTiling,
+                    baseColorHex,
+                    textureCache
+                });
+                const corniceOrnamentType = corniceCfg?.ornament?.type ?? 'none';
+                const corniceOrnamentMat = (corniceOrnamentType !== 'none' && corniceHeights.ornament > EPS)
+                    ? makeCorniceMaterialFromSpec({
+                        material: corniceCfg.ornament?.material ?? corniceCfg.material,
+                        tiling: corniceCfg.tiling ?? null,
+                        layerMaterial: corniceLayerMaterial,
+                        layerWallBase: corniceLayerWallBase,
+                        layerTiling: corniceLayerTiling,
+                        baseColorHex,
+                        textureCache
+                    })
+                    : null;
+                const corniceCrossSection = resolveCorniceCrossSection({
+                    profile: corniceCfg.profile,
+                    heightMeters: corniceHeights.profile,
+                    projectionMeters: corniceProjection,
+                    baseOutset: corniceBaseOutset
+                });
+
+                const copingCfg = corniceCfg?.parapet?.coping ?? null;
+                const steppedCfg = corniceCfg?.parapet?.stepped ?? null;
+                const copingEnabled = !!copingCfg?.enabled;
+                const copingHeight = copingEnabled ? clamp(copingCfg.height, 0.02, 0.5) : 0.0;
+                const copingOverhang = copingEnabled ? clamp(copingCfg.overhang, 0.0, 0.4) : 0.0;
+                const copingMat = copingEnabled ? makeCorniceMaterialFromSpec({
+                    material: copingCfg?.material ?? corniceCfg.material,
+                    tiling: corniceCfg.tiling ?? null,
+                    layerMaterial: corniceLayerMaterial,
+                    layerWallBase: corniceLayerWallBase,
+                    layerTiling: corniceLayerTiling,
+                    baseColorHex,
+                    textureCache
+                }) : null;
+                const steppedEnabled = !!steppedCfg?.enabled && hasParapetRing;
+                const steppedRaise = steppedEnabled ? clamp(steppedCfg.raise, 0.05, 2.0) : 0.0;
+                const steppedBlockWidth = steppedEnabled ? clamp(steppedCfg.blockWidth, 0.2, 4.0) : 0.0;
+                const parapetBlockMat = steppedEnabled ? makeCorniceMaterialFromSpec({
+                    material: ring?.material ?? null,
+                    tiling: ring?.tiling ?? null,
+                    layerMaterial: corniceLayerMaterial,
+                    layerWallBase: corniceLayerWallBase,
+                    layerTiling: corniceLayerTiling,
+                    baseColorHex,
+                    textureCache
+                }) : null;
+
+                for (const rawLoop of roofOuter) {
+                    if (!rawLoop || rawLoop.length < 3) continue;
+                    const outerLoop = signedArea(rawLoop) < 0 ? rawLoop.slice().reverse() : rawLoop;
+
+                    const profileGeo = buildCorniceLoftGeometryFromLoop({
+                        loop: outerLoop,
+                        crossSection: corniceCrossSection,
+                        yBase: yCursor + corniceHeights.ornament
+                    });
+                    if (profileGeo) {
+                        const mesh = new THREE.Mesh(profileGeo, corniceMat);
+                        mesh.castShadow = true;
+                        mesh.receiveShadow = true;
+                        mesh.userData = mesh.userData ?? {};
+                        mesh.userData.buildingFab2Role = 'cornice';
+                        mesh.userData.corniceProfile = corniceCfg.profile;
+                        roofRingGroup.add(mesh);
+
+                        if (showWire) {
+                            const edgeGeo = new THREE.EdgesGeometry(profileGeo, 1);
+                            appendWirePositions(wirePositions, edgeGeo, 0);
+                            edgeGeo.dispose();
+                        }
+                    }
+
+                    if (corniceOrnamentMat) {
+                        const ornamentGeo = buildCorniceOrnamentGeometryFromLoop({
+                            loop: outerLoop,
+                            ornament: { ...corniceCfg.ornament, height: corniceHeights.ornament },
+                            baseOutset: corniceBaseOutset,
+                            yBase: yCursor
+                        });
+                        if (ornamentGeo) {
+                            const mesh = new THREE.Mesh(ornamentGeo, corniceOrnamentMat);
+                            mesh.castShadow = true;
+                            mesh.receiveShadow = true;
+                            mesh.userData = mesh.userData ?? {};
+                            mesh.userData.buildingFab2Role = 'cornice_ornament';
+                            mesh.userData.corniceOrnament = corniceOrnamentType;
+                            roofRingGroup.add(mesh);
+                        }
+                    }
+
+                    if (steppedEnabled) {
+                        const parapetThickness = outerRadius + innerRadius;
+                        const cornerSize = Math.max(steppedBlockWidth, parapetThickness + 0.12);
+                        const centerDepth = parapetThickness + 0.12;
+                        const blockHeight = ringHeight + steppedRaise;
+                        const centerOffset = (outerRadius - innerRadius) * 0.5;
+                        const centeredLoop = Math.abs(centerOffset) > EPS
+                            ? offsetOrthogonalLoopXZ(outerLoop, -centerOffset)
+                            : outerLoop;
+                        const runs = buildExteriorRunsFromLoop(centeredLoop);
+
+                        const pushParapetBlock = ({ cx, cz, tx, tz, alongMeters, acrossMeters }) => {
+                            const nx = tz;
+                            const nz = -tx;
+                            const halfW = alongMeters * 0.5;
+                            const halfD = acrossMeters * 0.5;
+                            const corners = [
+                                { x: cx + tx * halfW + nx * halfD, z: cz + tz * halfW + nz * halfD },
+                                { x: cx - tx * halfW + nx * halfD, z: cz - tz * halfW + nz * halfD },
+                                { x: cx - tx * halfW - nx * halfD, z: cz - tz * halfW - nz * halfD },
+                                { x: cx + tx * halfW - nx * halfD, z: cz + tz * halfW - nz * halfD }
+                            ];
+                            const planLoop = signedArea(corners) < 0 ? corners.slice().reverse() : corners;
+
+                            const emitBox = ({ loop, height, y, material, role }) => {
+                                const shape = buildShapeFromLoops({ outerLoop: loop, holeLoops: [] });
+                                const geo = new THREE.ExtrudeGeometry(shape, {
+                                    depth: height,
+                                    bevelEnabled: false,
+                                    steps: 1
+                                });
+                                geo.rotateX(-Math.PI / 2);
+                                geo.computeVertexNormals();
+                                const mesh = new THREE.Mesh(geo, material);
+                                mesh.castShadow = true;
+                                mesh.receiveShadow = true;
+                                mesh.position.y = y;
+                                mesh.userData = mesh.userData ?? {};
+                                mesh.userData.buildingFab2Role = role;
+                                roofRingGroup.add(mesh);
+
+                                if (showWire) {
+                                    const edgeGeo = new THREE.EdgesGeometry(geo, 1);
+                                    appendWirePositions(wirePositions, edgeGeo, y);
+                                    edgeGeo.dispose();
+                                }
+                            };
+
+                            emitBox({
+                                loop: planLoop,
+                                height: blockHeight,
+                                y: yCursor,
+                                material: parapetBlockMat,
+                                role: 'parapet_block'
+                            });
+
+                            if (copingEnabled && copingMat) {
+                                const capCorners = [
+                                    { x: cx + tx * (halfW + copingOverhang) + nx * (halfD + copingOverhang), z: cz + tz * (halfW + copingOverhang) + nz * (halfD + copingOverhang) },
+                                    { x: cx - tx * (halfW + copingOverhang) + nx * (halfD + copingOverhang), z: cz - tz * (halfW + copingOverhang) + nz * (halfD + copingOverhang) },
+                                    { x: cx - tx * (halfW + copingOverhang) - nx * (halfD + copingOverhang), z: cz - tz * (halfW + copingOverhang) - nz * (halfD + copingOverhang) },
+                                    { x: cx + tx * (halfW + copingOverhang) - nx * (halfD + copingOverhang), z: cz + tz * (halfW + copingOverhang) - nz * (halfD + copingOverhang) }
+                                ];
+                                const capLoop = signedArea(capCorners) < 0 ? capCorners.slice().reverse() : capCorners;
+                                emitBox({
+                                    loop: capLoop,
+                                    height: copingHeight,
+                                    y: yCursor + blockHeight,
+                                    material: copingMat,
+                                    role: 'parapet_block_coping'
+                                });
+                            }
+                        };
+
+                        for (const run of runs) {
+                            const runLength = Number(run?.length) || 0;
+                            if (!(runLength > EPS)) continue;
+                            pushParapetBlock({
+                                cx: run.a.x,
+                                cz: run.a.z,
+                                tx: run.dir.x,
+                                tz: run.dir.z,
+                                alongMeters: cornerSize,
+                                acrossMeters: cornerSize
+                            });
+
+                            if (steppedCfg?.mode === 'corners_and_centers' && runLength > steppedBlockWidth + cornerSize * 2) {
+                                pushParapetBlock({
+                                    cx: run.a.x + run.dir.x * runLength * 0.5,
+                                    cz: run.a.z + run.dir.z * runLength * 0.5,
+                                    tx: run.dir.x,
+                                    tz: run.dir.z,
+                                    alongMeters: steppedBlockWidth,
+                                    acrossMeters: centerDepth
+                                });
+                            }
+                        }
+                    }
+
+                    if (copingEnabled && copingMat) {
+                        const copingTopBase = hasParapetRing ? ringHeight : corniceHeights.total;
+                        const copingOuterOffset = hasParapetRing
+                            ? outerRadius + copingOverhang
+                            : corniceProjection + copingOverhang;
+                        const copingInnerInset = hasParapetRing
+                            ? innerRadius + copingOverhang
+                            : CORNICE_BURIAL_METERS + copingOverhang;
+                        const copingOuterLoop = offsetOrthogonalLoopXZ(outerLoop, -copingOuterOffset);
+                        const copingInnerLoop = offsetOrthogonalLoopXZ(outerLoop, copingInnerInset);
+                        if (copingOuterLoop?.length >= 3 && copingInnerLoop?.length >= 3) {
+                            const shape = buildShapeFromLoops({ outerLoop: copingOuterLoop, holeLoops: [copingInnerLoop] });
+                            const geo = new THREE.ExtrudeGeometry(shape, {
+                                depth: copingHeight,
+                                bevelEnabled: false,
+                                steps: 1
+                            });
+                            geo.rotateX(-Math.PI / 2);
+                            geo.computeVertexNormals();
+                            const mesh = new THREE.Mesh(geo, copingMat);
+                            mesh.castShadow = true;
+                            mesh.receiveShadow = true;
+                            mesh.position.y = yCursor + copingTopBase;
+                            mesh.userData = mesh.userData ?? {};
+                            mesh.userData.buildingFab2Role = 'parapet_coping';
+                            roofRingGroup.add(mesh);
+
+                            if (showWire) {
+                                const edgeGeo = new THREE.EdgesGeometry(geo, 1);
+                                appendWirePositions(wirePositions, edgeGeo, mesh.position.y);
+                                edgeGeo.dispose();
+                            }
+                        }
+                    }
+                }
+            }
+
             const nextLayer = safeLayers[layerIndex + 1] ?? null;
             const hasFloorsAboveRoof = nextLayer?.type === LAYER_TYPE.FLOOR;
-            if (!hasFloorsAboveRoof) yCursor += ringHeight;
+            if (!hasFloorsAboveRoof) yCursor += resolveRoofLayerTopExtraHeight(layer);
         }
     }
 

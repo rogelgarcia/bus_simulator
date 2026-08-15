@@ -1,4 +1,6 @@
-﻿#Problem
+﻿DONE
+
+#Problem
 
 Fabricated buildings end in a bare parapet: the roof layer supports only a plain ring, and floor-layer tops have only the flat `belt` band. Every masonry building in the reference set crowns with a projecting cornice â€” often with repeating dentils or corbel brackets underneath â€” and many also carry an intermediate cornice above the ground-floor base. The missing crown is the strongest "unfinished" tell on current buildings when seen from street level.
 
@@ -27,3 +29,12 @@ Tasks:
 - Do not move to `prompts/archive/` automatically.
 - Completion is not enough to move a prompt; move to `prompts/archive/` only when explicitly requested by the user.
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change)
+
+## Summary of changes
+- Added a `cornice` block to the layer schema (sibling of `belt`, floor + roof layers) with profile modes (`flat_band`, `stepped`, `crown_molding`, `corbelled_brick`), height, projection, `match_wall`/color/texture material, ornament module (`none|dentils|brackets` with width/depth/spacing/height/material), and roof-only parapet options (coping cap, stepped silhouette) — with normalization, round-trip, and deep-clone support (`BuildingFabricationTypes.js`).
+- Generator emits the cornice as a closed cross-section lofted around the layer's silhouette loop with mitered corners (per-vertex miter offsets keep corners watertight), buried inner return against the wall/parapet to avoid z-fighting; ornament rows are emitted as ONE merged BufferGeometry per layer (snap-to-fit, centered per face run so corner margins stay symmetric), flowing through the existing `beltCourse`/`topBelt` groups into `BuildingGeometryMerger` (`BuildingFabricationGenerator.js`).
+- Roof-layer cornice is the crown wrapping the parapet ring's outer face; coping cap ring (with overhang, works with or without a ring) and stepped parapet corner/center blocks (extruded plan shapes with per-block coping caps) implemented as parapet options of the same feature.
+- Height accounting (fabrication height estimate, roof top-extra) and outward footprint reserve include cornice projection/ornament depth/coping overhang; BF2 scene layer Y-walks account for cornice heights.
+- `BuildingFabrication2` GUI: cornice section on floor and roof layer inspectors (profile/height/projection/material/ornament + roof parapet controls) wired through a normalized patch path; thumbnails preview automatically via the shared generator.
+- `stone_lowrise_2` showcase: crown_molding + dentils intermediate cornice above the storefront signband, stepped + brackets crown with coping on the roof layer; superseded hand-made corbel-block decoration set removed; validated via `scenario_building_showcase` capture.
+- Tests: schema normalization round-trip + clone-isolation tests and a generator-level test asserting cornice/ornament meshes are emitted, merged (single ornament mesh), stacked correctly, and parapet coping/blocks are present (`tests/core.test.js`).

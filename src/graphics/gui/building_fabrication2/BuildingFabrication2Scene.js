@@ -1531,6 +1531,7 @@ export class BuildingFabrication2Scene {
                     heightMeters: Math.max(0.0, endY - startY)
                 });
             }
+            if (layer?.cornice?.enabled) yCursor += clamp(layer.cornice.height ?? 0.5, 0.05, 2.0);
             map.set(id, segments);
         }
 
@@ -3007,6 +3008,7 @@ export class BuildingFabrication2Scene {
                 yCursor += Math.max(0, segHeight);
                 if (beltEnabled && beltHeight > EPS) yCursor += beltHeight;
             }
+            if (layer?.cornice?.enabled) yCursor += clamp(layer.cornice.height ?? 0.5, 0.05, 2.0);
 
             const endY = yCursor;
             map.set(id, { startY, endY });

@@ -1874,7 +1874,14 @@ async function runTests() {
         buildBuildingFabricationVisualParts,
         __testOnly: buildingFabricationGeneratorTestOnly
     } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js');
-    const { WALL_BASE_MATERIAL_DEFAULT, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingWindowVisualsConfig } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
+    const {
+        WALL_BASE_MATERIAL_DEFAULT,
+        createDefaultFloorLayer,
+        createDefaultRoofLayer,
+        normalizeBuildingWindowVisualsConfig,
+        normalizeBuildingLayers,
+        normalizeCorniceConfig
+    } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
     const {
         WINDOW_TYPE,
         getWindowNormalMapTexture,
@@ -1937,6 +1944,69 @@ async function runTests() {
         const floor = createDefaultFloorLayer();
         assertTrue(!!floor.windows, 'Expected windows config.');
         assertEqual(floor.windows.windowVisuals, null, 'Expected windows.windowVisuals to default to null (inherit).');
+    });
+
+    test('BuildingFabricationTypes: cornice block normalization round-trip', () => {
+        const defaults = createDefaultFloorLayer().cornice;
+        assertTrue(!!defaults, 'Expected floor layers to always carry a cornice block.');
+        assertEqual(defaults.enabled, false, 'Expected cornice disabled by default.');
+        assertEqual(defaults.profile, 'flat_band', 'Expected flat_band default profile.');
+        assertEqual(defaults.ornament.type, 'none', 'Expected no ornament by default.');
+        assertEqual(defaults.parapet, undefined, 'Expected no parapet options on floor layers.');
+
+        const floor = createDefaultFloorLayer({
+            cornice: {
+                enabled: true,
+                profile: 'corbelled_brick',
+                height: 99,
+                projection: -3,
+                material: { kind: 'match_wall' },
+                ornament: {
+                    type: 'dentils',
+                    width: 0.2,
+                    depth: 0.15,
+                    spacing: 0.25,
+                    height: 0.2,
+                    material: 'offwhite'
+                }
+            }
+        });
+        assertEqual(floor.cornice.enabled, true, 'Expected cornice enabled.');
+        assertEqual(floor.cornice.profile, 'corbelled_brick', 'Expected corbelled_brick profile preserved.');
+        assertNear(floor.cornice.height, 2.0, 1e-6, 'Expected height clamped to max.');
+        assertNear(floor.cornice.projection, 0.02, 1e-6, 'Expected projection clamped to min.');
+        assertEqual(floor.cornice.material.kind, 'match_wall', 'Expected match_wall material mode.');
+        assertEqual(floor.cornice.ornament.type, 'dentils', 'Expected dentils ornament preserved.');
+        assertEqual(floor.cornice.ornament.material.kind, 'color', 'Expected string ornament material resolved as color.');
+        assertEqual(floor.cornice.ornament.material.id, 'offwhite', 'Expected offwhite ornament color id.');
+
+        const bogus = normalizeCorniceConfig({ enabled: true, profile: 'zigzag', ornament: { type: 'gargoyles' } });
+        assertEqual(bogus.profile, 'flat_band', 'Expected unknown profile to fall back to flat_band.');
+        assertEqual(bogus.ornament.type, 'none', 'Expected unknown ornament type to fall back to none.');
+
+        const roof = createDefaultRoofLayer({
+            cornice: {
+                enabled: true,
+                profile: 'stepped',
+                height: 0.55,
+                projection: 0.28,
+                material: { kind: 'match_wall' },
+                ornament: { type: 'brackets', width: 0.16, depth: 0.2, spacing: 0.5, height: 0.26 },
+                parapet: {
+                    coping: { enabled: true, height: 9, overhang: -1 },
+                    stepped: { enabled: true, mode: 'corners_and_centers', blockWidth: 0.8, raise: 0.4 }
+                }
+            }
+        });
+        assertTrue(!!roof.cornice.parapet, 'Expected parapet options on roof layers.');
+        assertNear(roof.cornice.parapet.coping.height, 0.5, 1e-6, 'Expected coping height clamped to max.');
+        assertNear(roof.cornice.parapet.coping.overhang, 0.0, 1e-6, 'Expected coping overhang clamped to min.');
+        assertEqual(roof.cornice.parapet.stepped.mode, 'corners_and_centers', 'Expected stepped mode preserved.');
+
+        const roundTripped = normalizeBuildingLayers([floor, roof]);
+        assertEqual(roundTripped[0].cornice.profile, 'corbelled_brick', 'Expected floor cornice profile to survive normalization round-trip.');
+        assertEqual(roundTripped[0].cornice.ornament.type, 'dentils', 'Expected floor ornament to survive round-trip.');
+        assertEqual(roundTripped[1].cornice.parapet.stepped.mode, 'corners_and_centers', 'Expected roof parapet options to survive round-trip.');
     });
 
     test('BuildingFabricationTypes: windowVisuals normalization defaults/clamping', () => {
@@ -8418,6 +8488,137 @@ async function runTests() {
         jambMatrix.decompose(new THREE.Vector3(), new THREE.Quaternion(), jambScale);
         assertTrue(Math.abs(jambScale.y - floorHeight) < 1e-3,
             `Full-bay jambs should span the floor height (got ${jambScale.y}, expected ${floorHeight}).`);
+    });
+
+    test('BuildingFabricationGenerator: cornice profile and ornament meshes are emitted and merged', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const floorCorniceHeight = 0.5;
+        const floorOrnamentHeight = 0.18;
+        const roofCorniceHeight = 0.45;
+        const ringHeight = 0.6;
+        const copingHeight = 0.1;
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight: 4.0,
+                belt: { enabled: false },
+                windows: { enabled: false },
+                cornice: {
+                    enabled: true,
+                    profile: 'crown_molding',
+                    height: floorCorniceHeight,
+                    projection: 0.25,
+                    material: { kind: 'color', id: 'offwhite' },
+                    ornament: {
+                        type: 'dentils',
+                        width: 0.15,
+                        depth: 0.1,
+                        spacing: 0.2,
+                        height: floorOrnamentHeight,
+                        material: { kind: 'color', id: 'offwhite' }
+                    }
+                }
+            }),
+            createDefaultRoofLayer({
+                ring: { enabled: true, innerRadius: 0.1, outerRadius: 0.15, height: ringHeight },
+                cornice: {
+                    enabled: true,
+                    profile: 'stepped',
+                    height: roofCorniceHeight,
+                    projection: 0.2,
+                    material: { kind: 'color', id: 'offwhite' },
+                    ornament: { type: 'brackets', width: 0.15, depth: 0.18, spacing: 0.4, height: 0.2 },
+                    parapet: {
+                        coping: { enabled: true, height: copingHeight, overhang: 0.05 },
+                        stepped: { enabled: true, mode: 'corners_and_centers', blockWidth: 0.8, raise: 0.4 }
+                    }
+                }
+            })
+        ];
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+
+        const boxOf = (mesh) => {
+            mesh.geometry.computeBoundingBox();
+            const box = mesh.geometry.boundingBox.clone();
+            box.min.y += mesh.position.y;
+            box.max.y += mesh.position.y;
+            return box;
+        };
+
+        const beltKids = parts.beltCourse?.children ?? [];
+        const floorCornices = beltKids.filter((m) => m?.userData?.buildingFab2Role === 'cornice');
+        const floorOrnaments = beltKids.filter((m) => m?.userData?.buildingFab2Role === 'cornice_ornament');
+        assertEqual(floorCornices.length, 1, 'Expected one floor cornice profile mesh.');
+        assertEqual(floorOrnaments.length, 1, 'Expected one merged ornament mesh for the floor layer, not per-module meshes.');
+
+        const singleDentilVertexBudget = 5 * 6;
+        const floorOrnamentPositions = floorOrnaments[0].geometry.getAttribute('position').count;
+        assertTrue(floorOrnamentPositions >= singleDentilVertexBudget * 8,
+            `Expected many dentil modules merged into one geometry (got ${floorOrnamentPositions} vertices).`);
+
+        const floorProfileBox = boxOf(floorCornices[0]);
+        const floorOrnamentBox = boxOf(floorOrnaments[0]);
+        assertNear(floorProfileBox.max.y - floorOrnamentBox.min.y, floorCorniceHeight, 0.01,
+            'Expected floor cornice assembly (ornament + profile) to span the configured total height.');
+        assertNear(floorProfileBox.min.y - floorOrnamentBox.min.y, floorOrnamentHeight, 0.01,
+            'Expected the profile band to sit on top of the ornament row.');
+        assertTrue(floorProfileBox.max.x > floorOrnamentBox.max.x + 0.1,
+            'Expected the profile to project further out than the dentil row.');
+
+        const topKids = parts.topBelt?.children ?? [];
+        const roofCornices = topKids.filter((m) => m?.userData?.buildingFab2Role === 'cornice');
+        const roofOrnaments = topKids.filter((m) => m?.userData?.buildingFab2Role === 'cornice_ornament');
+        const copings = topKids.filter((m) => m?.userData?.buildingFab2Role === 'parapet_coping');
+        const blocks = topKids.filter((m) => m?.userData?.buildingFab2Role === 'parapet_block');
+        const blockCopings = topKids.filter((m) => m?.userData?.buildingFab2Role === 'parapet_block_coping');
+        assertEqual(roofCornices.length, 1, 'Expected one roof crown cornice mesh.');
+        assertEqual(roofOrnaments.length, 1, 'Expected one merged bracket mesh for the roof crown.');
+        assertEqual(copings.length, 1, 'Expected one parapet coping ring.');
+        assertEqual(blocks.length, 8, 'Expected 4 corner + 4 center stepped parapet blocks on a square footprint.');
+        assertEqual(blockCopings.length, 8, 'Expected a coping cap on each stepped parapet block.');
+
+        const roofOrnamentBox = boxOf(roofOrnaments[0]);
+        const roofProfileBox = boxOf(roofCornices[0]);
+        assertNear(roofOrnamentBox.min.y - floorProfileBox.max.y, 0.0, 0.01,
+            'Expected the roof crown to start exactly at the top of the floor cornice (roofline).');
+        assertNear(roofProfileBox.max.y - roofOrnamentBox.min.y, roofCorniceHeight, 0.01,
+            'Expected roof crown assembly to span its configured height.');
+
+        const copingBox = boxOf(copings[0]);
+        assertNear(copingBox.min.y - roofOrnamentBox.min.y, ringHeight, 0.01,
+            'Expected coping to cap the parapet ring.');
+        assertNear(copingBox.max.y - copingBox.min.y, copingHeight, 0.01,
+            'Expected coping band height.');
+
+        let blockTopMax = -Infinity;
+        for (const block of blocks) blockTopMax = Math.max(blockTopMax, boxOf(block).max.y);
+        assertNear(blockTopMax - roofOrnamentBox.min.y, ringHeight + 0.4, 0.01,
+            'Expected stepped blocks to rise above the parapet by the configured raise.');
     });
 
     test('BuildingFabricationGenerator: garage facade copies closed material + rotation and supports open override', () => {
@@ -16553,6 +16754,30 @@ async function runTests() {
     const {
         cloneBuildingLayers
     } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
+
+    test('BuildingFabricationTypes: cloneBuildingLayers deep clones cornice blocks', () => {
+        const floor = createDefaultFloorLayer({
+            cornice: {
+                enabled: true,
+                profile: 'corbelled_brick',
+                ornament: { type: 'dentils' }
+            }
+        });
+        const roof = createDefaultRoofLayer({
+            cornice: {
+                enabled: true,
+                parapet: { coping: { enabled: true } }
+            }
+        });
+
+        const clones = cloneBuildingLayers([floor, roof]);
+        clones[0].cornice.profile = 'flat_band';
+        clones[0].cornice.ornament.type = 'none';
+        clones[1].cornice.parapet.coping.enabled = false;
+        assertEqual(floor.cornice.profile, 'corbelled_brick', 'Expected clone mutation not to leak into source profile.');
+        assertEqual(floor.cornice.ornament.type, 'dentils', 'Expected clone mutation not to leak into source ornament.');
+        assertEqual(roof.cornice.parapet.coping.enabled, true, 'Expected clone mutation not to leak into source parapet.');
+    });
 
     test('BuildingFabricationTypes: default layers include mat-var and tiling sections', () => {
         const floor = createDefaultFloorLayer();
