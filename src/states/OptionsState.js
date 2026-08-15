@@ -328,7 +328,8 @@ export class OptionsState {
         const city = this.engine?.context?.city ?? null;
         if (lighting && city) {
             if (city?.hemi) city.hemi.intensity = lighting.hemiIntensity;
-            if (city?.sun) city.sun.intensity = lighting.sunIntensity;
+            if (city?.setSunIntensity) city.setSunIntensity(lighting.sunIntensity);
+            else if (city?.sun) city.sun.intensity = lighting.sunIntensity;
         }
         if (city?.applyShadowSettings) city.applyShadowSettings(this.engine);
         if (sunFlare && city?.sunFlare?.setSettings) {

@@ -52,9 +52,12 @@ function createSunDiscEmitter() {
 }
 
 export class SunBloomRig {
-    constructor({ light, sky = null, settings = null } = {}) {
-        if (!light) throw new Error('[SunBloomRig] light is required');
+    constructor({ light = null, sun = null, sky = null, settings = null } = {}) {
+        if (!light && !sun) throw new Error('[SunBloomRig] light or sun reference is required');
         this.light = light;
+        // Preferred source: a sun reference ({ direction: Vector3 }) that stays
+        // valid regardless of which light object renders shadows.
+        this.sunRef = sun;
         this.sky = sky;
         this.group = new THREE.Group();
         this.group.name = 'SunBloomRig';
@@ -90,7 +93,9 @@ export class SunBloomRig {
         const skyRadius = getSkyRadius(this.sky);
         const dist = Math.max(60, Math.min(far * 0.92, (skyRadius ?? far) * 0.92));
 
-        const sunDir = this._tmpV3.copy(this.light.position).normalize();
+        const sunDir = this.sunRef?.direction?.isVector3
+            ? this._tmpV3.copy(this.sunRef.direction).normalize()
+            : this._tmpV3.copy(this.light.position).normalize();
         this._sunWorldPos.copy(camera.position).addScaledVector(sunDir, dist);
 
         const rDeg = clamp(this._settings.discRadiusDeg, 0.05, 6, 0.55);

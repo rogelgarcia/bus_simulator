@@ -5,15 +5,19 @@
 const STORAGE_KEY = 'bus_sim.shadows.v1';
 
 export const SHADOW_DEFAULTS = Object.freeze({
-    quality: 'high'
+    quality: 'high',
+    cascades: 3
 });
 
+// `cascades` marks a preset as cascaded shadow maps (N camera-fitted maps by
+// depth range) instead of the single fitted map; mapSize is then per cascade.
 export const SHADOW_QUALITY_PRESETS = Object.freeze({
     off: Object.freeze({ enabled: false, shadowMapType: 'pcf_soft', mapSize: 0, radius: 1, bias: 0, normalBias: 0, twoSidedCasting: false }),
     low: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 1024, radius: 2, bias: -0.0001, normalBias: 0.01, twoSidedCasting: false }),
     medium: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 2048, radius: 1.5, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true }),
     high: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 4096, radius: 1.25, bias: -0.0002, normalBias: 0.03, twoSidedCasting: true }),
-    ultra: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 1, bias: -0.0002, normalBias: 0.035, twoSidedCasting: true })
+    ultra: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 1, bias: -0.0002, normalBias: 0.035, twoSidedCasting: true }),
+    cascaded: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 2048, radius: 1.5, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true, cascades: 3 })
 });
 
 function sanitizeQuality(value) {
@@ -23,12 +27,22 @@ function sanitizeQuality(value) {
     if (raw === '2' || raw === 'medium' || raw === 'med' || raw === 'm') return 'medium';
     if (raw === '3' || raw === 'high' || raw === 'h') return 'high';
     if (raw === '4' || raw === 'ultra' || raw === 'u' || raw === 'max') return 'ultra';
+    if (raw === '5' || raw === 'cascaded' || raw === 'cascade' || raw === 'csm') return 'cascaded';
     return SHADOW_DEFAULTS.quality;
+}
+
+function sanitizeCascades(value) {
+    const num = Math.round(Number(value));
+    if (!Number.isFinite(num)) return SHADOW_DEFAULTS.cascades;
+    return Math.max(2, Math.min(4, num));
 }
 
 export function sanitizeShadowSettings(input) {
     const src = input && typeof input === 'object' ? input : {};
-    return { quality: sanitizeQuality(src.quality ?? SHADOW_DEFAULTS.quality) };
+    return {
+        quality: sanitizeQuality(src.quality ?? SHADOW_DEFAULTS.quality),
+        cascades: sanitizeCascades(src.cascades ?? SHADOW_DEFAULTS.cascades)
+    };
 }
 
 export function getShadowQualityPreset(quality) {
@@ -82,6 +96,7 @@ export function getResolvedShadowSettings({ includeUrlOverrides = true } = {}) {
         const params = new URLSearchParams(window.location.search);
         if (params.has('shadowQuality')) merged.quality = sanitizeQuality(params.get('shadowQuality'));
         if (params.has('shadows')) merged.quality = sanitizeQuality(params.get('shadows'));
+        if (params.has('shadowCascades')) merged.cascades = sanitizeCascades(params.get('shadowCascades'));
     }
 
     return merged;

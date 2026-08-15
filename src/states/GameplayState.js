@@ -317,6 +317,9 @@ export class GameplayState {
         this.busAnchor.rotation.set(0, THREE.MathUtils.degToRad(busPose?.yawDeg ?? 0), 0);
         snapToGroundY(this.busAnchor, poseGroundY);
         this.engine.scene.add(this.busAnchor);
+        // Bus materials must receive scene sun shadows (no-op unless cascaded
+        // shadow maps are active).
+        this.city?.registerShadowReceivers?.(this.busAnchor);
 
         const probeGeo = new THREE.SphereGeometry(1, 64, 32);
         const probeMat = new THREE.MeshStandardMaterial({

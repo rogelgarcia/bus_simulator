@@ -1,3 +1,5 @@
+DONE (2026-08-15)
+
 #Problem
 
 Sun shadows use a single directional light with a single shadow map, so shadow
@@ -173,6 +175,21 @@ Three traps that cost real time on 2026-08-15 — do not fall into them again:
   today's fitted map and the old whole-map behaviour, but it must be measured,
   not assumed.
 - Shadow acne/peter-panning tuning is per-cascade work, not a single bias value.
+
+## Completion summary (2026-08-15)
+
+- Stage 1: `City.sunRef` (direction/intensity/color) is the single sun source; flare/bloom/rays rigs, atmosphere, shadow focus, and the OptionsState intensity poke all read it (rigs keep `light` fallback for debugger scenes). Verified pixel-identical to pre-refactor baseline: diff vs HEAD == same-code noise floor on all 3 poses, draw calls exactly equal.
+- Stage 2: `SceneShadowMaterials.js` choke point — global registry, hard no-op when no system is active; registration is post-merge (BuildingGeometryMerger dedup preserved) at `City.attach`, plus `city.registerShadowReceivers(busAnchor)` from GameplayState.
+- Stage 3: `CityCascadedShadows.js` wraps the three CSM addon with chained (not overwritten) `onBeforeCompile`, custom teardown (stock `csm.dispose()` would delete chained wrappers), fade on, custom splits 30/90/300 m, per-cascade normalBias scaled by texel density; `cascaded` quality in ShadowSettings (+`cascades` field, `?shadowCascades=`), options UI row, per-frame `updateFrame` from `City.update`.
+- Setting threading deviation: the mode rides `engine.shadowSettings` through `applyShadowSettings(engine)` (same channel as other shadow knobs) rather than `getSharedCity` construction options — works for Gameplay + MapDebugger, and makes the mode live-switchable (verified cascaded->high->cascaded: lights, defines, and materials restore cleanly).
+- Latent bug fixed by Stage 1: SunBloomRig/SunRaysRig derived direction from `light.position.normalize()`, which drifts once the shadow focus moves the light off-origin; they now read the stable sunRef direction.
+- Measured (1280x720, RTX 3060, burst renders with gl.finish, 3 rounds x 40 frames, warm-up discarded; poses: bus_level/raised/street_far):
+  - m/texel per cascade 0.033 / 0.097 / 0.325 (vs 0.054 single fitted, 0.161 old whole-map); VRAM 48 MB (3x2048^2) vs 67 MB (4096^2).
+  - Whole-frame draw calls high->cascaded: 6094->14450 / 2653->8041 / 4649->11673 (shadow passes re-render the city up to 3x; scene pass unchanged).
+  - Shadow-pass burst cost: high ~3.5-4.2 ms, cascaded ~15-23 ms — ABOVE the predicted "between fitted and whole-map" ceiling because every cascade box overlaps the city core. Candidate mitigations if it matters in play: per-cascade caster culling, staggered far-cascade updates, maxFar 200, or 2 cascades (`?shadowCascades=2`).
+  - Quality: near shadows crisp in both; fallback's shadow cutoff at the 110 m focus edge visible in `raised` pose; cascaded carries the same shadow fully across. No seam/pop crossing 90 m and 30 m splits during a simulated drive. Sun flare/bloom/rays pixel-identical between modes. Zero console/page errors.
+  - Artifacts: `tests/artifacts/screens/csm/` (paired per-pose PNGs, motion keyframes, sun-gaze pair, per-mode report JSONs).
+- Tests: `tests/node/unit/shadow_settings_cascaded.test.js` (8) — settings sanitization + choke-point contract. Full node suite: only pre-existing failures (wall decorator catalog, options preset promotion gap, assets pipeline, markings AA registry, texture correction — all fail on clean HEAD too).
 
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line

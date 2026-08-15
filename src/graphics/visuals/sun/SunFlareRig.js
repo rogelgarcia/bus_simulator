@@ -68,10 +68,13 @@ function getDirectionalSunDir(light, out) {
 }
 
 export class SunFlareRig {
-    constructor({ light, settings = null } = {}) {
-        if (!light) throw new Error('[SunFlareRig] light is required');
+    constructor({ light = null, sun = null, settings = null } = {}) {
+        if (!light && !sun) throw new Error('[SunFlareRig] light or sun reference is required');
 
         this.light = light;
+        // Preferred source: a sun reference ({ direction: Vector3 }) that stays
+        // valid regardless of which light object renders shadows.
+        this.sunRef = sun;
         this.group = new THREE.Group();
         this.group.name = 'SunFlareRig';
         this.group.userData.excludeFromAmbientOcclusion = true;
@@ -188,7 +191,8 @@ export class SunFlareRig {
         this.group.visible = !!this._enabled;
         if (!this._enabled) return;
 
-        getDirectionalSunDir(this.light, this._sunDir);
+        if (this.sunRef?.direction?.isVector3) this._sunDir.copy(this.sunRef.direction).normalize();
+        else getDirectionalSunDir(this.light, this._sunDir);
         const far = Number.isFinite(camera.far) ? camera.far : 2000;
         const dist = Math.max(50, far * 0.92);
 

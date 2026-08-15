@@ -17,6 +17,8 @@ import { mergeBuildingGroupGeometry } from '../../assets3d/generators/building_f
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js';
 import { getResolvedShadowSettings, getShadowQualityPreset } from '../../lighting/ShadowSettings.js';
+import { registerObjectForSceneShadows, setActiveSceneShadowSystem, getActiveSceneShadowSystem } from '../../lighting/SceneShadowMaterials.js';
+import { CityCascadedShadows } from './CityCascadedShadows.js';
 import { azimuthElevationDegToDir } from '../atmosphere/SunDirection.js';
 import { getResolvedBuildingWindowVisualsSettings } from '../buildings/BuildingWindowVisualsSettings.js';
 import { getResolvedSunFlareSettings } from '../sun/SunFlareSettings.js';
@@ -104,7 +106,16 @@ export class City {
         this.hemi.position.set(0, 100, 0);
         this.group.add(this.hemi);
 
-        this.sun = new THREE.DirectionalLight(0xffffff, lighting.sunIntensity);
+        // Single source of truth for the sun independent of whichever light
+        // object renders shadows (one fitted light today, N cascade lights under
+        // CSM). Rigs and the sky read this; lights are positioned from it.
+        this.sunRef = {
+            direction: new THREE.Vector3(80, 140, 60).normalize(),
+            intensity: lighting.sunIntensity,
+            color: new THREE.Color(0xffffff)
+        };
+
+        this.sun = new THREE.DirectionalLight(this.sunRef.color.getHex(), this.sunRef.intensity);
         this.sun.position.set(80, 140, 60);
         this.sun.castShadow = true;
         this.sun.shadow.mapSize.set(2048, 2048);
@@ -126,9 +137,8 @@ export class City {
         this._sunShadowFocus = {
             enabled: sunShadowFocusEnabled !== false,
             radiusMeters: Math.max(20, Number(sunShadowRadiusMeters) || 110),
-            // Keep the authored direction and distance stable while the light
-            // itself is moved around to follow the camera.
-            direction: this.sun.position.clone().normalize(),
+            // Keep the authored distance stable while the light itself is moved
+            // around to follow the camera. Direction lives on sunRef.
             nominalDistance: this.sun.position.length() || 200,
             fullExtent: half,
             focus: new THREE.Vector3(),
@@ -138,7 +148,7 @@ export class City {
         };
 
         this.sky = createGradientSkyDome({
-            sunDir: this.sun.position.clone().normalize(),
+            sunDir: this.sunRef.direction,
             sunIntensity: 0.28
         });
         this.group.add(this.sky);
@@ -146,21 +156,21 @@ export class City {
         this.sunFlare = null;
         if (typeof window !== 'undefined') {
             const sunFlareSettings = getResolvedSunFlareSettings();
-            this.sunFlare = new SunFlareRig({ light: this.sun, settings: sunFlareSettings });
+            this.sunFlare = new SunFlareRig({ sun: this.sunRef, settings: sunFlareSettings });
             this.group.add(this.sunFlare.group);
         }
 
         this.sunBloom = null;
         if (typeof window !== 'undefined') {
             const sunBloomSettings = getResolvedSunBloomSettings();
-            this.sunBloom = new SunBloomRig({ light: this.sun, sky: this.sky, settings: sunBloomSettings });
+            this.sunBloom = new SunBloomRig({ sun: this.sunRef, sky: this.sky, settings: sunBloomSettings });
             this.group.add(this.sunBloom.group);
         }
 
         this.sunRays = null;
         if (typeof window !== 'undefined') {
             const sunBloomSettings = getResolvedSunBloomSettings();
-            this.sunRays = new SunRaysRig({ light: this.sun, sky: this.sky, settings: sunBloomSettings });
+            this.sunRays = new SunRaysRig({ sun: this.sunRef, sky: this.sky, settings: sunBloomSettings });
             this.group.add(this.sunRays.group);
         }
 
@@ -374,6 +384,12 @@ export class City {
 
         this._attached = false;
         this._restore = null;
+
+        // Cascaded shadow maps (activated by the `cascaded` shadow quality).
+        this._csm = null;
+        // Roots outside this.group whose materials must receive scene shadows
+        // (the bus). Remembered so a later mode switch can re-register them.
+        this._extraShadowRoots = new Set();
     }
 
     attach(engine) {
@@ -406,6 +422,7 @@ export class City {
     detach(engine) {
         if (!this._attached) return;
 
+        this._deactivateCascadedShadows();
         engine.scene.remove(this.group);
         applyShadowSideToObject(this.group, null);
 
@@ -421,23 +438,45 @@ export class City {
         this._attached = false;
     }
 
+    /**
+     * Route sun intensity through the sun reference so it reaches whichever
+     * light object(s) currently render the sun (single light or CSM cascades).
+     */
+    setSunIntensity(intensity) {
+        const value = Number(intensity);
+        if (!Number.isFinite(value)) return;
+        this.sunRef.intensity = value;
+        if (this.sun) this.sun.intensity = value;
+        this._csm?.setIntensity?.(value);
+    }
+
     applyShadowSettings(engine) {
         const renderer = engine?.renderer ?? null;
         const settings = engine?.shadowSettings ?? getResolvedShadowSettings();
         const preset = getShadowQualityPreset(settings?.quality);
         const enabled = !!preset.enabled;
+        const wantsCsm = enabled
+            && Number.isFinite(preset.cascades)
+            && !!engine?.camera
+            && typeof window !== 'undefined';
+
+        if (wantsCsm) {
+            this._activateCascadedShadows(engine, preset, settings);
+        } else {
+            this._deactivateCascadedShadows();
+        }
 
         if (this.sun) {
-            this.sun.castShadow = enabled;
+            // Under CSM the single sun light neither lights nor shadows: the
+            // cascade lights carry the full sun (one per fragment).
+            this.sun.visible = !wantsCsm;
+            this.sun.castShadow = enabled && !wantsCsm;
             this.sun.shadow.bias = preset.bias;
             if ('normalBias' in this.sun.shadow) this.sun.shadow.normalBias = preset.normalBias;
             if ('radius' in this.sun.shadow) this.sun.shadow.radius = preset.radius;
 
-            if (enabled && preset.mapSize > 0) {
-                const capsMax = Number.isFinite(renderer?.capabilities?.maxTextureSize)
-                    ? Math.max(256, Math.floor(renderer.capabilities.maxTextureSize))
-                    : preset.mapSize;
-                const size = Math.max(256, Math.min(preset.mapSize, 4096, capsMax));
+            if (!wantsCsm && enabled && preset.mapSize > 0) {
+                const size = Math.max(256, Math.min(preset.mapSize, 4096, this._maxShadowTextureSize(renderer, preset.mapSize)));
                 const current = this.sun.shadow.mapSize;
                 if (current?.x !== size || current?.y !== size) {
                     this.sun.shadow.mapSize.set(size, size);
@@ -451,9 +490,56 @@ export class City {
         applyShadowSideToObject(this.group, wantsTwoSided ? THREE.DoubleSide : null);
     }
 
+    _maxShadowTextureSize(renderer, fallback) {
+        return Number.isFinite(renderer?.capabilities?.maxTextureSize)
+            ? Math.max(256, Math.floor(renderer.capabilities.maxTextureSize))
+            : fallback;
+    }
+
+    _activateCascadedShadows(engine, preset, settings) {
+        const cascades = Math.max(2, Math.min(4, Math.round(settings?.cascades ?? preset.cascades) || preset.cascades));
+        const mapSize = Math.max(256, Math.min(preset.mapSize, 4096, this._maxShadowTextureSize(engine?.renderer ?? null, preset.mapSize)));
+
+        if (this._csm && (this._csm.cascades !== cascades || this._csm.mapSize !== mapSize)) {
+            this._deactivateCascadedShadows();
+        }
+        if (this._csm) return;
+
+        this._csm = new CityCascadedShadows({
+            camera: engine.camera,
+            parent: this.group,
+            sunRef: this.sunRef,
+            preset,
+            cascades,
+            mapSize
+        });
+        setActiveSceneShadowSystem(this._csm);
+        registerObjectForSceneShadows(this.group);
+        for (const root of this._extraShadowRoots) registerObjectForSceneShadows(root);
+    }
+
+    _deactivateCascadedShadows() {
+        if (!this._csm) return;
+        if (getActiveSceneShadowSystem() === this._csm) setActiveSceneShadowSystem(null);
+        this._csm.dispose();
+        this._csm = null;
+    }
+
+    /**
+     * Declare a subtree outside the city group (the bus) whose materials must
+     * receive scene sun shadows. No-op unless cascaded shadows are active, and
+     * remembered so mode switches re-register it.
+     */
+    registerShadowReceivers(root) {
+        if (!root) return;
+        this._extraShadowRoots.add(root);
+        if (this._csm) registerObjectForSceneShadows(root);
+    }
+
     update(engine) {
         this._applyAtmosphere(engine);
-        this._updateSunShadowFocus(engine);
+        if (this._csm) this._csm.updateFrame(engine);
+        else this._updateSunShadowFocus(engine);
         this.sky.position.copy(engine.camera.position);
         this._syncSkyVisibility(engine);
         this.sunFlare?.update?.(engine);
@@ -494,7 +580,7 @@ export class City {
 
         // Snap the focus to whole shadow-map texels in light space, otherwise the
         // shadow edges crawl and shimmer as the camera moves.
-        const dirToLight = state.direction;
+        const dirToLight = this.sunRef.direction;
         const up = Math.abs(dirToLight.y) > 0.99 ? UP_ALT : UP_DEFAULT;
         state._rot.lookAt(dirToLight, ZERO_VEC, up);
         const texelWorldSize = (radius * 2) / mapSize;
@@ -527,18 +613,21 @@ export class City {
 
         const azimuthDeg = atmo?.sun?.azimuthDeg ?? null;
         const elevationDeg = atmo?.sun?.elevationDeg ?? null;
-        if (this.sun && Number.isFinite(azimuthDeg) && Number.isFinite(elevationDeg)) {
+        if (Number.isFinite(azimuthDeg) && Number.isFinite(elevationDeg)) {
             const dir = azimuthElevationDegToDir(azimuthDeg, elevationDeg);
-            // Use the stored nominal distance: the light itself gets moved around
-            // by the shadow focus, so its current position is not a stable radius.
-            const dist = this._sunShadowFocus?.nominalDistance ?? 200;
-            if (this._sunShadowFocus) this._sunShadowFocus.direction.copy(dir).normalize();
-            this.sun.position.copy(dir).multiplyScalar(dist);
-            this.sun.target.position.set(0, 0, 0);
-            this.sun.target.updateMatrixWorld?.();
+            this.sunRef.direction.copy(dir).normalize();
+            if (this.sun) {
+                // Use the stored nominal distance: the light itself gets moved
+                // around by the shadow focus, so its current position is not a
+                // stable radius.
+                const dist = this._sunShadowFocus?.nominalDistance ?? 200;
+                this.sun.position.copy(dir).multiplyScalar(dist);
+                this.sun.target.position.set(0, 0, 0);
+                this.sun.target.updateMatrixWorld?.();
+            }
         }
 
-        applyAtmosphereToSkyDome(this.sky, atmo, { sunDir: this.sun?.position ?? null });
+        applyAtmosphereToSkyDome(this.sky, atmo, { sunDir: this.sunRef.direction });
 
         const fogColor = atmo?.sky?.horizonColor ?? null;
         if (typeof fogColor === 'string' && fogColor) this.config.fogColor = fogColor;

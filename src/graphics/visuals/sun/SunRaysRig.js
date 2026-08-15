@@ -56,9 +56,12 @@ function createSunRaysStarburstMesh() {
 }
 
 export class SunRaysRig {
-    constructor({ light, sky = null, settings = null } = {}) {
-        if (!light) throw new Error('[SunRaysRig] light is required');
+    constructor({ light = null, sun = null, sky = null, settings = null } = {}) {
+        if (!light && !sun) throw new Error('[SunRaysRig] light or sun reference is required');
         this.light = light;
+        // Preferred source: a sun reference ({ direction: Vector3 }) that stays
+        // valid regardless of which light object renders shadows.
+        this.sunRef = sun;
         this.sky = sky;
 
         this.group = new THREE.Group();
@@ -115,7 +118,9 @@ export class SunRaysRig {
         const skyRadius = getSkyRadius(this.sky);
         const dist = Math.max(50, Math.min(far * 0.92, (skyRadius ?? far) * 0.92));
 
-        const sunDir = this._tmpV3.copy(this.light.position).normalize();
+        const sunDir = this.sunRef?.direction?.isVector3
+            ? this._tmpV3.copy(this.sunRef.direction).normalize()
+            : this._tmpV3.copy(this.light.position).normalize();
         this._sunWorldPos.copy(camera.position).addScaledVector(sunDir, dist);
 
         this._ndc.copy(this._sunWorldPos).project(camera);

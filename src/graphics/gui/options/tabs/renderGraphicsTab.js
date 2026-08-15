@@ -464,7 +464,8 @@ export function renderGraphicsTab() {
             { id: 'low', label: 'Low' },
             { id: 'medium', label: 'Medium' },
             { id: 'high', label: 'High' },
-            { id: 'ultra', label: 'Ultra' }
+            { id: 'ultra', label: 'Ultra' },
+            { id: 'cascaded', label: 'Cascaded' }
         ],
         onChange: (v) => {
             shadows.quality = v;
@@ -473,7 +474,7 @@ export function renderGraphicsTab() {
     });
 
     const shadowNote = makeEl('div', 'options-note');
-    shadowNote.textContent = 'Applied immediately. Higher presets increase GPU cost and VRAM usage.';
+    shadowNote.textContent = 'Applied immediately. Higher presets increase GPU cost and VRAM usage. Cascaded uses multiple camera-fitted maps: sharp shadows near the bus and coverage out to the skyline.';
 
     sectionShadows.appendChild(shadowQuality.row);
     sectionShadows.appendChild(shadowNote);
