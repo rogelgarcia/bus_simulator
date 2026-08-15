@@ -53,6 +53,41 @@ Both were taken on the same machine (RTX 3060, 1280x720, WebGL2) on
    than ~15%, something else was using the GPU and the run is void. Both saved
    runs pass this check (0.0% and 1.6% drift).
 
+## Noise floor, and the half-rate AO trap
+
+**GTAO defaults to `half_rate`, so the AO pass fires on every other frame.** In
+a completely frozen scene (fixed camera, culler parked, caster count verified
+identical) draw calls alternate in a strict two-frame cycle — measured
+3,132 / 4,099 / 3,132 / 4,099. Consequences:
+
+- `renderer.info.render.calls` read after a burst is **phase-dependent**. Two
+  readings of the same config can differ by 60% purely on which frame landed
+  last. Read it across an even number of frames, or accept it as a range.
+- Any burst must span an **even** frame count so the AO phase balances out.
+- For measuring something small, switch AO off for the duration
+  (`setAmbientOcclusionSettings({ mode: 'off' })`) rather than trying to
+  average the oscillation away.
+
+## Never compare configs across page loads
+
+**A fresh browser warms up over its first several page loads, and the trend is
+big enough to invert results.** Measured in one run: `off` at 19.15 ms on the
+first page and 4.42 ms on the last — 77% drift, same config. Whichever config
+is measured last looks fastest, which silently manufactures conclusions. One
+earlier finding here ("shadow cost rises at smaller viewports") was an artifact
+of exactly this and had to be withdrawn.
+
+The reliable shape is **one page, configs switched at runtime, visited
+round-robin** so residual drift hits every config equally, comparing medians.
+`engine.setShadowSettings(...)` + `city.applyShadowSettings(engine)` switches
+quality live; allow ~250 frames plus a few seconds afterwards, because changing
+shadow mode recompiles thousands of materials. Done this way, per-config spread
+drops to 2-8% and the numbers reproduce.
+
+With that method (AO off, scene frozen, culler parked, GPU idle) the harness
+resolves a few milliseconds. Anything under ~2 ms still cannot be separated
+from noise — report it as bounded ("under 1 ms"), not as a value.
+
 ## Reading the numbers
 
 `perPose.busLevel.msPerFrame` is a synchronous burst average, not real frame

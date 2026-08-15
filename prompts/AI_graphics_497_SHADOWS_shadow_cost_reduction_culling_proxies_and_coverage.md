@@ -186,6 +186,61 @@ texels at once:
   option either way: x4 at 0.55 costs about the same as x2 while being ~4x
   sharper near the bus.
 
+## Where the remaining shadow cost is NOT (2026-08-15)
+
+After Options 3 and 4 landed, each remaining lever was measured with the GPU
+idle and the scene frozen. **None of them dominates**, which is why the merge
+felt like ~1 ms in live play despite halving draw calls:
+
+| lever | effect | note |
+| --- | --- | --- |
+| draw calls (the merge) | ~1 ms live, ~5 ms in bursts | CPU submission cost; the frame is not CPU-bound. `gl.finish()` bursts serialise CPU and GPU and so flatter it |
+| shadow map resolution | **0 ms** | 8192/8192/8192/4096 vs 2048/2048/2048/1024 — 16x fewer texels, 26.31 vs 26.78 ms |
+| tree shadows | 0.1-0.7 ms | ~310 draw calls over 4 cascades, 22-30 casters, none alpha-tested |
+| `CSM_FADE` | under 1 ms, unresolvable | medians 13.77 vs 13.15 ms, but per-state spread 23-40% — samples overlap |
+| cascade count | flat | x2 / x3 / x4 within noise of each other post-culling |
+
+Two conclusions worth carrying forward:
+
+- **Resolution is free in time, so spend texels.** The 832 MiB buys sharpness
+  at no frame cost. It is only worth trimming if a target machine is short of
+  VRAM, and that trade is pure quality-for-memory, not quality-for-speed.
+- **Keep `fade` on.** It costs under a millisecond and buys the smooth cascade
+  transition that the 45 m boundary needed.
+
+### What the cost actually is: geometry throughput
+
+A per-pixel receiver hypothesis was proposed here and **tested and rejected** —
+shrinking the viewport did not reduce the shadow delta. The answer came from
+measuring configs round-robin inside one warm page (see the methodology note
+below) and reading triangle counts alongside time:
+
+| config | median | vs off | triangles/frame |
+| --- | --- | --- | --- |
+| off | 8.36 ms | — | 1.46M |
+| high (single fitted map) | 10.56 ms | +2.20 ms | 2.36M |
+| cascade x2 | 13.89 ms | +5.53 ms | 5.46M |
+| cascade x4 | 16.82 ms | +8.46 ms | 7.75M |
+
+Cost per extra million triangles: 2.44 / 1.38 / 1.34 ms — near-linear. **The
+shadow cost is vertex/geometry throughput**: the city's triangles are
+transformed once per cascade, so x4 pushes ~6.3M extra triangles per frame,
+about 4.3x the scene's own 1.46M. That single fact explains every earlier
+result: resolution is free (not fill-bound), the caster merge bought ~1 ms
+(not submission-bound), and per-pixel work is irrelevant (not raster-bound).
+
+**So the remaining lever is triangles, not draws.** Concretely:
+
+- Shadow-caster geometry LOD: a decimated version of each building for the far
+  cascades. This is the box-proxy idea resurrected for the right reason — but
+  it must preserve the silhouette and roof line, so decimation rather than
+  replacement. Every triangle removed from cascade 2 and 3 is removed 1-2x per
+  frame.
+- Cascade count is a direct multiplier and already exposed: x2 costs 5.53 ms
+  against x4's 8.46 ms.
+- Do NOT spend more effort on draw calls or map resolution. Both are measured
+  and near-free.
+
 # Verification
 
 - Re-run `tests/benchmarks/` methodology and compare against the saved

@@ -1,0 +1,34 @@
+{
+  "date": "2026-08-15",
+  "commit": "post-2d00138 (culling + merged casters active)",
+  "machine": "RTX 3060, 1280x720, WebGL2",
+  "method": {
+    "shape": "one warm page, configs switched at runtime, visited round-robin over 3 passes, medians compared",
+    "controls": [
+      "GTAO forced off (its half_rate schedule alternates frame cost and draw calls on a 2-frame cycle)",
+      "camera fixed, chase camera neutralised",
+      "shadow caster culler parked so the caster set cannot drift",
+      "400-frame burn-in before sampling; 250 frames + 3.5s settle after each config switch (material recompiles)",
+      "40-frame bursts terminated by gl.finish()"
+    ],
+    "why": "per-page comparison is invalid: a fresh browser warms up across loads (off measured 19.15ms first, 4.42ms last in one run)"
+  },
+  "results": [
+    { "config": "off", "medianMs": 8.36, "spreadPct": 2.5, "vsOffMs": 0, "trianglesPerFrame": 1460000 },
+    { "config": "high (single fitted map)", "medianMs": 10.56, "spreadPct": 46.3, "vsOffMs": 2.20, "trianglesPerFrame": 2360000 },
+    { "config": "cascade_ultra x2", "medianMs": 13.89, "spreadPct": 8.1, "vsOffMs": 5.53, "trianglesPerFrame": 5460000 },
+    { "config": "cascade_ultra x4", "medianMs": 16.82, "spreadPct": 2.2, "vsOffMs": 8.46, "trianglesPerFrame": 7750000 }
+  ],
+  "conclusion": {
+    "bottleneck": "vertex/geometry throughput - the city's triangles are transformed once per cascade",
+    "msPerExtraMillionTriangles": [2.44, 1.38, 1.34],
+    "ruledOut": {
+      "shadowMapResolution": "0 ms across a 16x texel change (8192/8192/8192/4096 vs 2048/2048/2048/1024)",
+      "drawCallSubmission": "~1 ms live for a 44% draw call cut (the caster merge)",
+      "perPixelReceiverWork": "rejected: shadow delta did not fall with viewport area",
+      "treeShadows": "0.1-0.7 ms, ~310 draw calls, inside the noise floor",
+      "CSM_FADE": "under 1 ms, not resolvable above per-state spread"
+    },
+    "remainingLever": "reduce triangles submitted to the far cascades (shadow-caster geometry LOD), or reduce cascade count"
+  }
+}
