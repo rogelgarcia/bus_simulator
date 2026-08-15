@@ -230,6 +230,37 @@ at identical camera/sun, with magnified crops):
   margin) can exceed it. No visible artifact at 28 deg (far=2000 A/B showed no
   difference); revisit only if sub-20-deg sun angles become a real use case.
 
+## Shadow-coverage proof and the opt-in gotcha (2026-08-15)
+
+Follow-up report of "still not resolved" from live play: the mode is **opt-in
+and not applied automatically**. A plain load (no `?shadows=`) resolves to
+`quality: 'high'` with `csmActive: false` — i.e. the 110 m fitted map, whose
+signature (near shadows only, distant ones filling in on approach) is exactly
+what was reported. Enable via Options -> Graphics -> Shadow quality ->
+Cascaded (persisted by `OptionsState._save` -> `saveShadowSettings`), or
+`?shadows=cascaded`.
+
+Coverage measured properly (mask = shadow-on vs shadow-disabled per mode at an
+identical camera/sun, default atmosphere):
+
+| view | fallback `high` | `cascaded` | only fallback | only cascaded |
+| --- | --- | --- | --- | --- |
+| raised | 4.21% | 10.51% | 0.04% | 6.34% |
+| bus level | 4.24% | 9.62% | 0.08% | 5.46% |
+
+Cascaded is a near-strict superset: it keeps ~99% of the fallback's shadowed
+pixels and roughly doubles total shadowed screen area (added coverage is
+distant building facades and self-shadowing that the fitted map never reached).
+Artifact: `tests/artifacts/screens/csm/maskoverlay_*.png` (green = cascaded
+only, yellow = both, red = fallback only).
+
+**Correction to this doc's Verification section:** `renderer.shadowMap.enabled
+= false` is valid for isolating shadow-pass COST (passes are skipped, draw
+calls and time drop) but NOT for visual isolation — materials keep sampling the
+stale populated maps, so the image is byte-identical. Use
+`light.shadow.intensity = 0` (uniform only, no recompile) for visual shadow
+isolation.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:
