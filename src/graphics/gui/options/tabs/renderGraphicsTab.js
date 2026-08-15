@@ -465,7 +465,7 @@ export function renderGraphicsTab() {
             { id: 'medium', label: 'Medium' },
             { id: 'high', label: 'High' },
             { id: 'ultra', label: 'Ultra' },
-            { id: 'cascaded', label: 'Cascaded' }
+            { id: 'cascade_ultra', label: 'Cascade Ultra' }
         ],
         onChange: (v) => {
             shadows.quality = v;

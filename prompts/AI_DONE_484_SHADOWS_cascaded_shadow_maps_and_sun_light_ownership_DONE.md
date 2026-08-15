@@ -239,8 +239,10 @@ and not applied automatically**. A plain load (no `?shadows=`) resolves to
 `quality: 'high'` with `csmActive: false` — i.e. the 110 m fitted map, whose
 signature (near shadows only, distant ones filling in on approach) is exactly
 what was reported. Enable via Options -> Graphics -> Shadow quality ->
-Cascaded (persisted by `OptionsState._save` -> `saveShadowSettings`), or
-`?shadows=cascaded`.
+**Cascade Ultra** (persisted by `OptionsState._save` -> `saveShadowSettings`),
+or `?shadows=cascade_ultra`. The preset id was `cascaded` when this was
+written; that spelling still resolves, so saved settings and older URLs keep
+working.
 
 Coverage measured properly (mask = shadow-on vs shadow-disabled per mode at an
 identical camera/sun, default atmosphere):

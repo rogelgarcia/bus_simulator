@@ -81,16 +81,26 @@ export class CityCascadedShadows {
         this.mapSize = Math.max(256, mapSize | 0);
         this._preset = preset ?? null;
 
+        // A cascade preset may carry its own layout. The by-count tables below
+        // remain the fallback, and are also what a `?shadowCascades=` override
+        // falls back to, since a preset's arrays only fit the count it declares.
+        const fromPreset = (value) => (Array.isArray(value) && value.length === this.cascades ? value : null);
+
         const sizeCap = Number.isFinite(maxTextureSize) && maxTextureSize >= 256
             ? Math.min(MAX_CASCADE_MAP_SIZE, Math.floor(maxTextureSize))
             : MAX_CASCADE_MAP_SIZE;
-        const scales = MAP_SIZE_SCALE_BY_CASCADES[this.cascades] ?? MAP_SIZE_SCALE_BY_CASCADES[4];
+        const scales = fromPreset(preset?.mapSizeScales)
+            ?? MAP_SIZE_SCALE_BY_CASCADES[this.cascades]
+            ?? MAP_SIZE_SCALE_BY_CASCADES[4];
         this.mapSizes = scales.map((s) => Math.max(256, Math.min(sizeCap, Math.round(this.mapSize * s))));
         const scale = Number.isFinite(splitScale) && splitScale > 0
             ? Math.max(0.5, Math.min(2.5, splitScale))
             : 1;
         this.splitScale = scale;
-        const splits = (SPLITS_BY_CASCADES[this.cascades] ?? SPLITS_BY_CASCADES[3]).map((d) => d * scale);
+        const baseSplits = fromPreset(preset?.splits)
+            ?? SPLITS_BY_CASCADES[this.cascades]
+            ?? SPLITS_BY_CASCADES[3];
+        const splits = baseSplits.map((d) => d * scale);
         this.splits = splits;
         this.maxFar = splits[splits.length - 1];
 

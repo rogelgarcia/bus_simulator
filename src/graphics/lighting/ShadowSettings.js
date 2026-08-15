@@ -35,11 +35,30 @@ export const SHADOW_QUALITY_PRESETS = Object.freeze({
     medium: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 2048, radius: 1.5, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true }),
     high: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 1.25, bias: -0.0002, normalBias: 0.03, twoSidedCasting: true }),
     ultra: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 1, bias: -0.0002, normalBias: 0.035, twoSidedCasting: true }),
-    // 4 cascades at 4096: a shadow-map box is ~2.2x its split distance, so one
-    // wide near cascade cannot be both sharp and long-range. Splitting the near
-    // range instead keeps everything inside ~90 m at or below the single fitted
-    // map's 0.054 m/texel while still reaching the skyline.
-    cascaded: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 1.5, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true, cascades: 4 })
+    // Cascade Ultra — the top cascaded preset. A shadow-map box is ~2.2x its
+    // split distance, so one wide near cascade cannot be both sharp and
+    // long-range; splitting the near range instead keeps everything inside
+    // ~190 m at or below the single fitted map's 0.054 m/texel while still
+    // reaching the skyline. Yields 0.012 / 0.024 / 0.051 / 0.185 m per texel.
+    //
+    // A cascade preset is self-describing: `splits` are metres from the camera
+    // (the last one is also the shadow horizon) and `mapSizeScales` multiply
+    // `mapSize` per cascade. Both must have `cascades` entries, and the scales
+    // must be powers of two — the texel-snapping grid needs every cascade's
+    // texel size to be a whole multiple of the smallest. Sibling presets
+    // (lighter cascade tiers) should be added here as data, not as new code.
+    cascade_ultra: Object.freeze({
+        enabled: true,
+        shadowMapType: 'pcf',
+        mapSize: 4096,
+        radius: 1.5,
+        bias: -0.00015,
+        normalBias: 0.02,
+        twoSidedCasting: true,
+        cascades: 4,
+        splits: Object.freeze([45, 90, 190, 340]),
+        mapSizeScales: Object.freeze([2, 2, 2, 1])
+    })
 });
 
 function sanitizeQuality(value) {
@@ -49,7 +68,10 @@ function sanitizeQuality(value) {
     if (raw === '2' || raw === 'medium' || raw === 'med' || raw === 'm') return 'medium';
     if (raw === '3' || raw === 'high' || raw === 'h') return 'high';
     if (raw === '4' || raw === 'ultra' || raw === 'u' || raw === 'max') return 'ultra';
-    if (raw === '5' || raw === 'cascaded' || raw === 'cascade' || raw === 'csm') return 'cascaded';
+    // 'cascaded' was the id before the cascade tiers were named; keep it (and
+    // the other spellings) resolving so saved settings and URLs still work.
+    if (raw === '5' || raw === 'cascade_ultra' || raw === 'cascade ultra' || raw === 'cascadeultra'
+        || raw === 'cascaded' || raw === 'cascade' || raw === 'csm') return 'cascade_ultra';
     return SHADOW_DEFAULTS.quality;
 }
 
