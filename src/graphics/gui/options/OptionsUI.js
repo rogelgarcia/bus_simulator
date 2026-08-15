@@ -1197,7 +1197,12 @@ export class OptionsUI {
                 }
             },
             atmosphere: JSON.parse(JSON.stringify(atmo)),
+            // Pass the whole draft through rather than picking fields: this
+            // used to emit `quality` alone, which silently dropped every other
+            // shadow setting (cascade count, split scale, caster merge) the
+            // moment the options UI emitted a change.
             shadows: {
+                ...(shadows && typeof shadows === 'object' ? JSON.parse(JSON.stringify(shadows)) : {}),
                 quality: String(shadows?.quality ?? 'medium')
             },
             antiAliasing: {
