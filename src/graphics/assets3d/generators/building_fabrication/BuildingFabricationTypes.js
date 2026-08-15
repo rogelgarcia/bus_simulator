@@ -320,6 +320,78 @@ export function normalizeCorniceConfig(value, { isRoof = false } = {}) {
     return out;
 }
 
+export const CORNER_TREATMENT_MODE = Object.freeze({
+    QUOIN_BLOCKS: 'quoin_blocks',
+    STRIP: 'strip'
+});
+
+export function isCornerTreatmentMode(value) {
+    return value === CORNER_TREATMENT_MODE.QUOIN_BLOCKS || value === CORNER_TREATMENT_MODE.STRIP;
+}
+
+// Corner ids pair the quad faces: A = maxZ, B = maxX, C = minZ, D = minX.
+export const CORNER_TREATMENT_CORNER_IDS = Object.freeze(['AB', 'BC', 'CD', 'DA']);
+
+export const CORNER_TREATMENT_RHYTHM = Object.freeze({
+    EVERY_COURSE: 'every_course',
+    FLOOR_ZONE: 'floor_zone'
+});
+
+export function isCornerTreatmentRhythm(value) {
+    return value === CORNER_TREATMENT_RHYTHM.EVERY_COURSE || value === CORNER_TREATMENT_RHYTHM.FLOOR_ZONE;
+}
+
+// `matched`: both walls show the same width at each course, alternating
+// wide/narrow by course (the ref 11/13/15 brick-tower look). `interlocked`:
+// a long face on one wall pairs with a short header on the other, flipping
+// each course (European stone bond).
+export const CORNER_TREATMENT_BOND = Object.freeze({
+    MATCHED: 'matched',
+    INTERLOCKED: 'interlocked'
+});
+
+export function isCornerTreatmentBond(value) {
+    return value === CORNER_TREATMENT_BOND.MATCHED || value === CORNER_TREATMENT_BOND.INTERLOCKED;
+}
+
+export function normalizeCornerTreatmentConfig(value) {
+    const src = value && typeof value === 'object' ? value : {};
+    const rhythm = src.rhythm && typeof src.rhythm === 'object' ? src.rhythm : {};
+
+    const corners = {};
+    for (const cornerId of CORNER_TREATMENT_CORNER_IDS) {
+        const c = src.corners?.[cornerId];
+        corners[cornerId] = { enabled: c?.enabled === undefined ? true : !!c.enabled };
+    }
+
+    const layerIdsRaw = Array.isArray(src.layerIds)
+        ? src.layerIds.filter((id) => typeof id === 'string' && id)
+        : null;
+
+    return {
+        enabled: !!src.enabled,
+        mode: isCornerTreatmentMode(src.mode) ? src.mode : CORNER_TREATMENT_MODE.QUOIN_BLOCKS,
+        bond: isCornerTreatmentBond(src.bond) ? src.bond : CORNER_TREATMENT_BOND.MATCHED,
+        blockHeight: clamp(src.blockHeight ?? 0.35, 0.05, 2.0),
+        longWidth: clamp(src.longWidth ?? 0.45, 0.05, 2.0),
+        shortWidth: clamp(src.shortWidth ?? 0.25, 0.05, 2.0),
+        stripWidth: clamp(src.stripWidth ?? 0.35, 0.05, 2.0),
+        projection: clamp(src.projection ?? 0.04, 0.005, 0.5),
+        // The short/narrow element's projection as a fraction of `projection`
+        // (the reference towers extrude the wider course further; 1 = flat).
+        shortProjectionScale: clamp(src.shortProjectionScale ?? 0.55, 0.1, 1.0),
+        rhythm: {
+            mode: isCornerTreatmentRhythm(rhythm.mode) ? rhythm.mode : CORNER_TREATMENT_RHYTHM.EVERY_COURSE,
+            zoneCourses: clampInt(rhythm.zoneCourses ?? 2, 1, 12),
+            everyFloors: clampInt(rhythm.everyFloors ?? 1, 1, 12)
+        },
+        material: normalizeCorniceMaterialSpec(src.material),
+        tiling: normalizeTilingConfig(src.tiling, { defaultTileMeters: 2.0 }),
+        corners,
+        layerIds: layerIdsRaw && layerIdsRaw.length ? layerIdsRaw : null
+    };
+}
+
 const FACE_IDS = Object.freeze(['A', 'B', 'C', 'D']);
 
 function isFaceId(faceId) {

@@ -883,6 +883,8 @@ export class BuildingFabrication2UI {
         this.onMoveLayer = null;
         this.onDeleteLayer = null;
         this.onSetLayerCornice = null;
+        this.onSetCornerTreatment = null;
+        this._cornerTreatment = null;
         this.onSelectFace = null;
         this.onToggleFaceLock = null;
         this.onSetFaceLockReverse = null;
@@ -1180,6 +1182,11 @@ export class BuildingFabrication2UI {
             : {};
         this._renderDecorationPanel();
         if (this.isDecorationLayerPickerOpen()) this._renderDecorationLayerPicker();
+    }
+
+    setCornerTreatment(value) {
+        this._cornerTreatment = value && typeof value === 'object' ? value : null;
+        this._renderLayers();
     }
 
     setLayers(layers) {
@@ -3263,6 +3270,7 @@ export class BuildingFabrication2UI {
         }
 
         const allowEdit = this._enabled && this._hasBuilding;
+        this._appendCornerTreatmentSection(this.layersList, { allowEdit });
         let globalSelectedFaceId = null;
         for (const faceState of this._floorLayerFaceStateById.values()) {
             const faceId = isFaceId(faceState?.selectedFaceId) ? faceState.selectedFaceId : null;
@@ -5390,6 +5398,321 @@ export class BuildingFabrication2UI {
 	            this.layersList.appendChild(group);
 	        }
 	    }
+
+    _appendCornerTreatmentSection(container, { allowEdit }) {
+        const cfg = this._cornerTreatment && typeof this._cornerTreatment === 'object' ? this._cornerTreatment : {};
+        const enabled = !!cfg.enabled;
+        const emitPatch = (patch) => this.onSetCornerTreatment?.(patch);
+
+        const group = document.createElement('div');
+        group.className = 'building-fab2-layer-group is-floor';
+        const isOpen = this._layerOpenById.get('__corner_treatment__') ?? false;
+
+        const header = document.createElement('div');
+        header.className = 'building-fab2-layer-summary';
+        header.tabIndex = 0;
+        header.setAttribute('role', 'button');
+        header.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        const title = document.createElement('div');
+        title.className = 'building-fab2-layer-title';
+        title.textContent = enabled ? 'Corners (on)' : 'Corners';
+        header.appendChild(title);
+
+        const body = document.createElement('div');
+        body.className = 'building-fab2-layer-body';
+        body.classList.toggle('hidden', !isOpen);
+
+        const setOpen = (open) => {
+            const next = !!open;
+            this._layerOpenById.set('__corner_treatment__', next);
+            body.classList.toggle('hidden', !next);
+            header.setAttribute('aria-expanded', next ? 'true' : 'false');
+        };
+        header.addEventListener('click', () => setOpen(!(this._layerOpenById.get('__corner_treatment__') ?? false)));
+        header.addEventListener('keydown', (ev) => {
+            if (ev?.key !== 'Enter' && ev?.key !== ' ') return;
+            ev.preventDefault();
+            setOpen(!(this._layerOpenById.get('__corner_treatment__') ?? false));
+        });
+
+        const makeToggleRow = (label, value, onSet) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab-row building-fab-row-wide building-fab2-bay-window-mode-row';
+            const rowLabel = document.createElement('div');
+            rowLabel.className = 'building-fab-row-label';
+            rowLabel.textContent = label;
+            const controls = document.createElement('div');
+            controls.className = 'building-fab2-bay-row-controls';
+            const toggle = document.createElement('div');
+            toggle.className = 'building-fab2-width-mode-toggle building-fab2-bay-window-mode-toggle';
+            const addBtn = (state, text) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'building-fab2-width-mode-btn';
+                btn.textContent = text;
+                btn.disabled = !allowEdit;
+                btn.classList.toggle('is-active', value === state);
+                btn.addEventListener('click', () => {
+                    if (!allowEdit || value === state) return;
+                    onSet(state);
+                });
+                toggle.appendChild(btn);
+            };
+            addBtn(false, 'Off');
+            addBtn(true, 'On');
+            controls.appendChild(toggle);
+            row.appendChild(rowLabel);
+            row.appendChild(controls);
+            body.appendChild(row);
+        };
+
+        const makeRangeRow = (label, { min, max, step, value, onChange }) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab2-layer-row';
+            const rowLabel = document.createElement('div');
+            rowLabel.className = 'building-fab2-row-label';
+            rowLabel.textContent = label;
+            const range = document.createElement('input');
+            range.type = 'range';
+            range.className = 'building-fab2-layer-range';
+            const number = document.createElement('input');
+            number.type = 'number';
+            number.className = 'building-fab2-layer-number';
+            for (const input of [range, number]) {
+                input.min = String(min);
+                input.max = String(max);
+                input.step = String(step);
+                input.disabled = !allowEdit;
+            }
+            const safeValue = clamp(value, min, max);
+            range.value = String(safeValue);
+            number.value = String(safeValue);
+            const handle = (raw) => {
+                const v = clamp(raw, min, max);
+                range.value = String(v);
+                number.value = String(v);
+                onChange(v);
+            };
+            range.addEventListener('input', () => handle(range.value));
+            number.addEventListener('input', () => handle(number.value));
+            row.appendChild(rowLabel);
+            row.appendChild(range);
+            row.appendChild(number);
+            body.appendChild(row);
+        };
+
+        const makeSelectRow = (label, { options, value, onChange }) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab2-layer-row';
+            const rowLabel = document.createElement('div');
+            rowLabel.className = 'building-fab2-row-label';
+            rowLabel.textContent = label;
+            const select = document.createElement('select');
+            select.className = 'building-fab2-select';
+            for (const option of options) {
+                const opt = document.createElement('option');
+                opt.value = String(option.id);
+                opt.textContent = String(option.label);
+                select.appendChild(opt);
+            }
+            select.value = String(value);
+            select.disabled = !allowEdit;
+            select.addEventListener('change', () => onChange(select.value));
+            row.appendChild(rowLabel);
+            row.appendChild(select);
+            body.appendChild(row);
+        };
+
+        makeToggleRow('Corner treatment', enabled, (next) => emitPatch({ enabled: next }));
+
+        if (enabled) {
+            const mode = typeof cfg.mode === 'string' ? cfg.mode : 'quoin_blocks';
+            makeSelectRow('Mode', {
+                options: [
+                    { id: 'quoin_blocks', label: 'Quoin blocks' },
+                    { id: 'strip', label: 'Strip' }
+                ],
+                value: mode,
+                onChange: (next) => emitPatch({ mode: next })
+            });
+
+            if (mode === 'strip') {
+                makeRangeRow('Strip width (m)', {
+                    min: 0.05,
+                    max: 2.0,
+                    step: 0.01,
+                    value: cfg.stripWidth ?? 0.35,
+                    onChange: (stripWidth) => emitPatch({ stripWidth })
+                });
+            } else {
+                makeSelectRow('Bond', {
+                    options: [
+                        { id: 'matched', label: 'Matched (same both walls)' },
+                        { id: 'interlocked', label: 'Interlocked (alternating)' }
+                    ],
+                    value: typeof cfg.bond === 'string' ? cfg.bond : 'matched',
+                    onChange: (bond) => emitPatch({ bond })
+                });
+                makeRangeRow('Block height (m)', {
+                    min: 0.05,
+                    max: 2.0,
+                    step: 0.01,
+                    value: cfg.blockHeight ?? 0.35,
+                    onChange: (blockHeight) => emitPatch({ blockHeight })
+                });
+                makeRangeRow('Long width (m)', {
+                    min: 0.05,
+                    max: 2.0,
+                    step: 0.01,
+                    value: cfg.longWidth ?? 0.45,
+                    onChange: (longWidth) => emitPatch({ longWidth })
+                });
+                makeRangeRow('Short width (m)', {
+                    min: 0.05,
+                    max: 2.0,
+                    step: 0.01,
+                    value: cfg.shortWidth ?? 0.25,
+                    onChange: (shortWidth) => emitPatch({ shortWidth })
+                });
+            }
+
+            makeRangeRow('Projection (m)', {
+                min: 0.005,
+                max: 0.5,
+                step: 0.005,
+                value: cfg.projection ?? 0.04,
+                onChange: (projection) => emitPatch({ projection })
+            });
+            if (mode !== 'strip') {
+                makeRangeRow('Short depth scale', {
+                    min: 0.1,
+                    max: 1.0,
+                    step: 0.05,
+                    value: cfg.shortProjectionScale ?? 0.55,
+                    onChange: (shortProjectionScale) => emitPatch({ shortProjectionScale })
+                });
+            }
+
+            if (mode !== 'strip') {
+                const rhythm = cfg.rhythm && typeof cfg.rhythm === 'object' ? cfg.rhythm : {};
+                const rhythmMode = typeof rhythm.mode === 'string' ? rhythm.mode : 'every_course';
+                makeSelectRow('Rhythm', {
+                    options: [
+                        { id: 'every_course', label: 'Every course' },
+                        { id: 'floor_zone', label: 'Floor zones' }
+                    ],
+                    value: rhythmMode,
+                    onChange: (next) => emitPatch({ rhythm: { mode: next } })
+                });
+                if (rhythmMode === 'floor_zone') {
+                    makeRangeRow('Zone courses', {
+                        min: 1,
+                        max: 12,
+                        step: 1,
+                        value: rhythm.zoneCourses ?? 2,
+                        onChange: (zoneCourses) => emitPatch({ rhythm: { zoneCourses } })
+                    });
+                    makeRangeRow('Every N floors', {
+                        min: 1,
+                        max: 12,
+                        step: 1,
+                        value: rhythm.everyFloors ?? 1,
+                        onChange: (everyFloors) => emitPatch({ rhythm: { everyFloors } })
+                    });
+                }
+            }
+
+            const materialToValue = (material) => {
+                if (material?.kind === 'match_wall') return 'match_wall';
+                if (material?.kind === 'texture' && material?.id) return `texture:${material.id}`;
+                if (material?.kind === 'color' && material?.id) return `color:${material.id}`;
+                return 'color:offwhite';
+            };
+            const valueToMaterial = (value) => {
+                if (value === 'match_wall') return { kind: 'match_wall', id: 'match_wall' };
+                if (value.startsWith('texture:')) return { kind: 'texture', id: value.slice('texture:'.length) };
+                return { kind: 'color', id: value.replace(/^color:/, '') };
+            };
+            const materialOptions = [{ id: 'match_wall', label: 'Match wall' }];
+            for (const opt of this._beltCourseColorOptions ?? []) {
+                const id = String(opt?.id ?? '');
+                if (!id) continue;
+                materialOptions.push({ id: `color:${id}`, label: String(opt?.label ?? id) });
+            }
+            if (cfg.material?.kind === 'texture' && cfg.material?.id) {
+                materialOptions.push({ id: `texture:${cfg.material.id}`, label: `Texture: ${cfg.material.id}` });
+            }
+            makeSelectRow('Material', {
+                options: materialOptions,
+                value: materialToValue(cfg.material),
+                onChange: (value) => emitPatch({ material: valueToMaterial(value) })
+            });
+
+            const cornersRow = document.createElement('div');
+            cornersRow.className = 'building-fab2-face-buttons';
+            for (const cornerId of ['AB', 'BC', 'CD', 'DA']) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'building-fab2-face-btn';
+                btn.textContent = cornerId;
+                btn.disabled = !allowEdit;
+                const cornerEnabled = cfg.corners?.[cornerId]?.enabled !== false;
+                btn.classList.toggle('is-active', cornerEnabled);
+                btn.addEventListener('click', () => {
+                    if (!allowEdit) return;
+                    emitPatch({ corners: { [cornerId]: { enabled: !cornerEnabled } } });
+                });
+                cornersRow.appendChild(btn);
+            }
+            const cornersLabel = document.createElement('div');
+            cornersLabel.className = 'building-fab2-subtitle';
+            cornersLabel.textContent = 'Corners enabled';
+            body.appendChild(cornersLabel);
+            body.appendChild(cornersRow);
+
+            const floorLayers = (this._layers ?? []).filter((l) => l?.type === 'floor');
+            const layerIds = Array.isArray(cfg.layerIds) && cfg.layerIds.length ? cfg.layerIds : null;
+            const layersLabel = document.createElement('div');
+            layersLabel.className = 'building-fab2-subtitle';
+            layersLabel.textContent = 'Layers';
+            body.appendChild(layersLabel);
+            const layersRow = document.createElement('div');
+            layersRow.className = 'building-fab2-face-buttons';
+            const allBtn = document.createElement('button');
+            allBtn.type = 'button';
+            allBtn.className = 'building-fab2-face-btn';
+            allBtn.textContent = 'All';
+            allBtn.disabled = !allowEdit;
+            allBtn.classList.toggle('is-active', layerIds === null);
+            allBtn.addEventListener('click', () => {
+                if (!allowEdit || layerIds === null) return;
+                emitPatch({ layerIds: null });
+            });
+            layersRow.appendChild(allBtn);
+            floorLayers.forEach((layer, idx) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'building-fab2-face-btn';
+                btn.textContent = `L${idx + 1}`;
+                btn.title = String(layer?.id ?? '');
+                btn.disabled = !allowEdit;
+                const isActive = layerIds !== null && layerIds.includes(layer.id);
+                btn.classList.toggle('is-active', isActive);
+                btn.addEventListener('click', () => {
+                    if (!allowEdit) return;
+                    const current = layerIds ? layerIds.slice() : [];
+                    const next = isActive ? current.filter((id) => id !== layer.id) : [...current, layer.id];
+                    emitPatch({ layerIds: next.length ? next : null });
+                });
+                layersRow.appendChild(btn);
+            });
+            body.appendChild(layersRow);
+        }
+
+        group.appendChild(header);
+        group.appendChild(body);
+        container.appendChild(group);
+    }
 
     _appendCorniceSection(body, { layer, layerId, allowEdit, isRoof }) {
         const cornice = layer?.cornice && typeof layer.cornice === 'object' ? layer.cornice : {};

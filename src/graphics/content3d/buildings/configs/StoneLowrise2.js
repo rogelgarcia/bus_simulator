@@ -791,6 +791,34 @@ export const STONE_LOWRISE_2_BUILDING_CONFIG = Object.freeze({
             ]
         ]
     ),
+    cornerTreatment: Object.freeze(
+        {
+            "enabled": true,
+            "mode": "quoin_blocks",
+            "bond": "matched",
+            "blockHeight": 0.32,
+            "longWidth": 0.42,
+            "shortWidth": 0.26,
+            "projection": 0.07,
+            "shortProjectionScale": 0.55,
+            "rhythm": {
+                "mode": "every_course",
+                "zoneCourses": 2,
+                "everyFloors": 1
+            },
+            "material": {
+                "kind": "texture",
+                "id": "pbr.seaworn_sandstone_brick"
+            },
+            "corners": {
+                "AB": { "enabled": true },
+                "BC": { "enabled": true },
+                "CD": { "enabled": true },
+                "DA": { "enabled": true }
+            },
+            "layerIds": ["floor_203"]
+        }
+    ),
     floors: 5,
     floorHeight: 3,
     style: "default",
@@ -1564,158 +1592,6 @@ export const STONE_LOWRISE_2_BUILDING_CONFIG = Object.freeze({
                         }
                     ],
                     "nextDecorationIndex": 3
-                },
-                {
-                    "id": "set_2",
-                    "target": {
-                        "layerId": "floor_203",
-                        "bayRefs": [
-                            "A:bay_1",
-                            "B:bay_1",
-                            "C:bay_1",
-                            "D:bay_1"
-                        ],
-                        "allBays": false
-                    },
-                    "floorInterval": {
-                        "every": 1,
-                        "start": 1,
-                        "end": null
-                    },
-                    "decorations": [
-                        {
-                            "id": "decoration_1",
-                            "span": {
-                                "start": 0,
-                                "end": 1
-                            },
-                            "state": {
-                                "version": 1,
-                                "decoratorId": "edge_brick_chain",
-                                "whereToApply": "entire_facade",
-                                "mode": "face",
-                                "position": "bottom",
-                                "configuration": {
-                                    "edgeTarget": "left",
-                                    "startY": 0,
-                                    "endY": 3.05,
-                                    "brickHeight": 0.32,
-                                    "depthScaleMultiplier": 1,
-                                    "snapToFit": true
-                                },
-                                "materialSelection": {
-                                    "kind": "texture",
-                                    "id": "pbr.seaworn_sandstone_brick"
-                                },
-                                "wallBase": {
-                                    "roughness": 0.85,
-                                    "normalStrength": 0.9,
-                                    "tintHueDeg": 0,
-                                    "tintSaturation": 0,
-                                    "tintValue": 1,
-                                    "tintIntensity": 1,
-                                    "tintBrightness": 1,
-                                    "tintHex": 16777215
-                                },
-                                "tiling": {
-                                    "enabled": true,
-                                    "tileMeters": 2.5,
-                                    "tileMetersU": 2.5,
-                                    "tileMetersV": 2.5,
-                                    "uvEnabled": true,
-                                    "offsetU": 0,
-                                    "offsetV": 0,
-                                    "rotationDegrees": 0
-                                }
-                            },
-                            "autoCorner": {
-                                "rule": "outmost_depth",
-                                "resolvedBayRefs": [
-                                    "A:bay_1",
-                                    "B:bay_1",
-                                    "C:bay_1",
-                                    "D:bay_1"
-                                ]
-                            }
-                        }
-                    ],
-                    "nextDecorationIndex": 2
-                },
-                {
-                    "id": "set_3",
-                    "target": {
-                        "layerId": "floor_203",
-                        "bayRefs": [
-                            "A:bay_7",
-                            "B:bay_7",
-                            "C:bay_7",
-                            "D:bay_7"
-                        ],
-                        "allBays": false
-                    },
-                    "floorInterval": {
-                        "every": 1,
-                        "start": 1,
-                        "end": null
-                    },
-                    "decorations": [
-                        {
-                            "id": "decoration_1",
-                            "span": {
-                                "start": 0,
-                                "end": 1
-                            },
-                            "state": {
-                                "version": 1,
-                                "decoratorId": "edge_brick_chain",
-                                "whereToApply": "entire_facade",
-                                "mode": "face",
-                                "position": "bottom",
-                                "configuration": {
-                                    "edgeTarget": "right",
-                                    "startY": 0,
-                                    "endY": 3.05,
-                                    "brickHeight": 0.32,
-                                    "depthScaleMultiplier": 1,
-                                    "snapToFit": true
-                                },
-                                "materialSelection": {
-                                    "kind": "texture",
-                                    "id": "pbr.seaworn_sandstone_brick"
-                                },
-                                "wallBase": {
-                                    "roughness": 0.85,
-                                    "normalStrength": 0.9,
-                                    "tintHueDeg": 0,
-                                    "tintSaturation": 0,
-                                    "tintValue": 1,
-                                    "tintIntensity": 1,
-                                    "tintBrightness": 1,
-                                    "tintHex": 16777215
-                                },
-                                "tiling": {
-                                    "enabled": true,
-                                    "tileMeters": 2.5,
-                                    "tileMetersU": 2.5,
-                                    "tileMetersV": 2.5,
-                                    "uvEnabled": true,
-                                    "offsetU": 0,
-                                    "offsetV": 0,
-                                    "rotationDegrees": 0
-                                }
-                            },
-                            "autoCorner": {
-                                "rule": "outmost_depth",
-                                "resolvedBayRefs": [
-                                    "A:bay_7",
-                                    "B:bay_7",
-                                    "C:bay_7",
-                                    "D:bay_7"
-                                ]
-                            }
-                        }
-                    ],
-                    "nextDecorationIndex": 2
                 },
             ],
             "nextSetIndex": 5

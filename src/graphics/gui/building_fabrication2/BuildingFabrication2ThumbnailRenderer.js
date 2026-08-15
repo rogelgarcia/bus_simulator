@@ -198,6 +198,7 @@ export class BuildingFabrication2ThumbnailRenderer {
             windowVisuals,
             windowVisualsIsOverride,
             facades: cfg?.facades ?? null,
+            cornerTreatment: cfg?.cornerTreatment ?? null,
             windowDefinitions: cfg?.windowDefinitions ?? null,
             overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
             walls: { inset: wallInset }
@@ -300,6 +301,7 @@ export class BuildingFabrication2ThumbnailRenderer {
             windowVisuals,
             windowVisualsIsOverride,
             facades: cfg?.facades ?? null,
+            cornerTreatment: cfg?.cornerTreatment ?? null,
             windowDefinitions: cfg?.windowDefinitions ?? null,
             overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
             walls: { inset: wallInset }

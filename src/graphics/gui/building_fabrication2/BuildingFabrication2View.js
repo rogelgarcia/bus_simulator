@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 
 import { getBuildingConfigById, getBuildingConfigs } from '../../content3d/catalogs/BuildingConfigCatalog.js';
-import { createLayerId, normalizeCorniceConfig } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
+import { createLayerId, normalizeCorniceConfig, normalizeCornerTreatmentConfig } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
 import {
     buildingConfigIdToFileBaseName,
     createCityBuildingConfigFromFabrication,
@@ -902,6 +902,7 @@ export class BuildingFabrication2View {
         this.ui.onSetFloorLayerFloorHeight = (layerId, height) => this._setFloorLayerFloorHeight(layerId, height);
         this.ui.onSetFloorLayerInteriorEnabled = (layerId, enabled) => this._setFloorLayerInteriorEnabled(layerId, enabled);
         this.ui.onSetLayerCornice = (layerId, patch) => this._setLayerCornice(layerId, patch);
+        this.ui.onSetCornerTreatment = (patch) => this._setCornerTreatment(patch);
         this.ui.onSetFloorLayerMaterial = (layerId, faceId, material) => this._setFloorLayerMaterial(layerId, faceId, material);
         this.ui.onRequestMaterialConfig = (layerId, faceId) => this._openMaterialConfigForLayer(layerId, faceId);
         this.ui.onViewModeChange = (mode) => this._applyViewMode(mode);
@@ -1069,6 +1070,7 @@ export class BuildingFabrication2View {
         this.ui.onSetFloorLayerFloorHeight = null;
         this.ui.onSetFloorLayerInteriorEnabled = null;
         this.ui.onSetLayerCornice = null;
+        this.ui.onSetCornerTreatment = null;
         this.ui.onSetFloorLayerMaterial = null;
         this.ui.onRequestMaterialConfig = null;
         this.ui.onViewModeChange = null;
@@ -1253,6 +1255,7 @@ export class BuildingFabrication2View {
             explodedDecorationsEnabled: this._explodedDecorationsEnabled
         });
 
+        this.ui.setCornerTreatment?.(this._currentConfig?.cornerTreatment ?? null);
         this.ui.setLayers(layerList);
         if (!(this.ui?.isSidePanelOpen?.() ?? false)) {
             this._materialConfigLayerId = null;
@@ -4270,6 +4273,24 @@ export class BuildingFabrication2View {
         this._requestRebuild({ preserveCamera: true });
     }
 
+    _setCornerTreatment(patch) {
+        if (!patch || typeof patch !== 'object') return;
+        const cfg = this._currentConfig;
+        if (!cfg) return;
+
+        const prev = cfg.cornerTreatment && typeof cfg.cornerTreatment === 'object' ? cfg.cornerTreatment : {};
+        const merged = {
+            ...prev,
+            ...patch,
+            rhythm: { ...(prev.rhythm ?? {}), ...(patch.rhythm ?? {}) },
+            corners: { ...(prev.corners ?? {}), ...(patch.corners ?? {}) }
+        };
+        if ('layerIds' in patch) merged.layerIds = patch.layerIds;
+        cfg.cornerTreatment = normalizeCornerTreatmentConfig(merged);
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
     _setLayerCornice(layerId, patch) {
         const id = typeof layerId === 'string' ? layerId : '';
         if (!id || !patch || typeof patch !== 'object') return;
@@ -6146,7 +6167,8 @@ export class BuildingFabrication2View {
             windowVisuals,
             facades: cfg?.facades ?? null,
             windowDefinitions: cfg?.windowDefinitions ?? null,
-            wallDecorations
+            wallDecorations,
+            cornerTreatment: cfg?.cornerTreatment ?? null
         });
 
         const fileBaseName = buildingConfigIdToFileBaseName(exported.id);

@@ -1880,7 +1880,8 @@ async function runTests() {
         createDefaultRoofLayer,
         normalizeBuildingWindowVisualsConfig,
         normalizeBuildingLayers,
-        normalizeCorniceConfig
+        normalizeCorniceConfig,
+        normalizeCornerTreatmentConfig
     } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
     const {
         WINDOW_TYPE,
@@ -2007,6 +2008,55 @@ async function runTests() {
         assertEqual(roundTripped[0].cornice.profile, 'corbelled_brick', 'Expected floor cornice profile to survive normalization round-trip.');
         assertEqual(roundTripped[0].cornice.ornament.type, 'dentils', 'Expected floor ornament to survive round-trip.');
         assertEqual(roundTripped[1].cornice.parapet.stepped.mode, 'corners_and_centers', 'Expected roof parapet options to survive round-trip.');
+    });
+
+    test('BuildingFabricationTypes: cornerTreatment normalization round-trip', () => {
+        const defaults = normalizeCornerTreatmentConfig(null);
+        assertEqual(defaults.enabled, false, 'Expected corner treatment disabled by default.');
+        assertEqual(defaults.mode, 'quoin_blocks', 'Expected quoin_blocks default mode.');
+        assertEqual(defaults.layerIds, null, 'Expected all layers by default.');
+        for (const cornerId of ['AB', 'BC', 'CD', 'DA']) {
+            assertEqual(defaults.corners[cornerId].enabled, true, `Expected corner ${cornerId} enabled by default.`);
+        }
+
+        assertEqual(defaults.bond ?? normalizeCornerTreatmentConfig({}).bond, 'matched', 'Expected matched bond by default (ref 11/13/15 look).');
+
+        const cfg = normalizeCornerTreatmentConfig({
+            enabled: true,
+            mode: 'strip',
+            bond: 'interlocked',
+            blockHeight: 99,
+            longWidth: -5,
+            shortWidth: 0.3,
+            stripWidth: 0.4,
+            projection: 9,
+            rhythm: { mode: 'floor_zone', zoneCourses: 99, everyFloors: 0 },
+            material: { kind: 'match_wall' },
+            corners: { BC: { enabled: false } },
+            layerIds: ['floor_1', '', 42, 'floor_2']
+        });
+        assertEqual(cfg.mode, 'strip', 'Expected strip mode preserved.');
+        assertEqual(cfg.bond, 'interlocked', 'Expected interlocked bond preserved.');
+        assertNear(cfg.shortProjectionScale, 0.55, 1e-6, 'Expected default short projection scale.');
+        assertNear(normalizeCornerTreatmentConfig({ shortProjectionScale: 9 }).shortProjectionScale, 1.0, 1e-6,
+            'Expected shortProjectionScale clamped to max.');
+        assertNear(cfg.blockHeight, 2.0, 1e-6, 'Expected blockHeight clamped to max.');
+        assertNear(cfg.longWidth, 0.05, 1e-6, 'Expected longWidth clamped to min.');
+        assertNear(cfg.projection, 0.5, 1e-6, 'Expected projection clamped to max.');
+        assertEqual(cfg.rhythm.mode, 'floor_zone', 'Expected floor_zone rhythm preserved.');
+        assertEqual(cfg.rhythm.zoneCourses, 12, 'Expected zoneCourses clamped to max.');
+        assertEqual(cfg.rhythm.everyFloors, 1, 'Expected everyFloors clamped to min.');
+        assertEqual(cfg.material.kind, 'match_wall', 'Expected match_wall material mode.');
+        assertEqual(cfg.corners.BC.enabled, false, 'Expected per-corner disable preserved.');
+        assertEqual(cfg.corners.AB.enabled, true, 'Expected untouched corners to stay enabled.');
+        assertEqual(cfg.layerIds.length, 2, 'Expected invalid layer ids filtered.');
+
+        const again = normalizeCornerTreatmentConfig(cfg);
+        assertEqual(JSON.stringify(again), JSON.stringify(cfg), 'Expected normalization to be idempotent.');
+
+        const bogus = normalizeCornerTreatmentConfig({ enabled: true, mode: 'zigzag', rhythm: { mode: 'wave' } });
+        assertEqual(bogus.mode, 'quoin_blocks', 'Expected unknown mode to fall back to quoin_blocks.');
+        assertEqual(bogus.rhythm.mode, 'every_course', 'Expected unknown rhythm to fall back to every_course.');
     });
 
     test('BuildingFabricationTypes: windowVisuals normalization defaults/clamping', () => {
@@ -8619,6 +8669,174 @@ async function runTests() {
         for (const block of blocks) blockTopMax = Math.max(blockTopMax, boxOf(block).max.y);
         assertNear(blockTopMax - roofOrnamentBox.min.y, ringHeight + 0.4, 0.01,
             'Expected stepped blocks to rise above the parapet by the configured raise.');
+    });
+
+    test('BuildingFabricationGenerator: corner treatment emits interlocked quoins as one merged mesh', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const blockHeight = 0.5;
+        const longWidth = 0.5;
+        const shortWidth = 0.25;
+        const projection = 0.05;
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 2,
+                floorHeight: 3.0,
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+
+        const buildParts = (cornerTreatment) => buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            cornerTreatment,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+
+        const quoinParts = buildParts({
+            enabled: true,
+            mode: 'quoin_blocks',
+            bond: 'interlocked',
+            blockHeight,
+            longWidth,
+            shortWidth,
+            projection,
+            material: { kind: 'color', id: 'offwhite' },
+            corners: { DA: { enabled: false } }
+        });
+        const quoinMeshes = (quoinParts.beltCourse?.children ?? [])
+            .filter((m) => m?.userData?.buildingFab2Role === 'corner_treatment');
+        assertEqual(quoinMeshes.length, 1, 'Expected ONE merged corner treatment mesh, not per-block meshes.');
+        const quoinMesh = quoinMeshes[0];
+        assertEqual(quoinMesh.userData.cornerTreatmentMode, 'quoin_blocks', 'Expected quoin mode tagged.');
+        assertEqual(quoinMesh.userData.cornerTreatmentCorners, 3, 'Expected the disabled DA corner to be skipped.');
+        assertEqual(quoinMesh.userData.cornerTreatmentCourses, 12, 'Expected span/blockHeight courses (6m / 0.5m).');
+
+        quoinMesh.geometry.computeBoundingBox();
+        const box = quoinMesh.geometry.boundingBox;
+        assertNear(box.max.y - box.min.y, 6.0, 0.01, 'Expected quoins to span the full layer wall height.');
+
+        // Interlock: at a corner, consecutive courses swap their long/short leg
+        // between the two faces, so course k's plan extents are course k+1's
+        // extents with the axes exchanged.
+        const pos = quoinMesh.geometry.getAttribute('position');
+        const cornerX = box.max.x - projection;
+        const cornerZ = box.max.z - projection;
+        // All box vertices sit exactly on course boundaries, so courses are
+        // classified by triangle centroid (side-face centroids are mid-band).
+        const measureCourse = (courseIndex) => {
+            const y0 = box.min.y + courseIndex * blockHeight + 1e-3;
+            const y1 = box.min.y + (courseIndex + 1) * blockHeight - 1e-3;
+            let minX = Infinity;
+            let minZ = Infinity;
+            let found = false;
+            for (let i = 0; i + 2 < pos.count; i += 3) {
+                const cy = (pos.getY(i) + pos.getY(i + 1) + pos.getY(i + 2)) / 3;
+                if (cy < y0 || cy > y1) continue;
+                const cx = (pos.getX(i) + pos.getX(i + 1) + pos.getX(i + 2)) / 3;
+                const cz = (pos.getZ(i) + pos.getZ(i + 1) + pos.getZ(i + 2)) / 3;
+                if (cx < cornerX - 1.5 || cz < cornerZ - 1.5) continue;
+                found = true;
+                for (let k = 0; k < 3; k++) {
+                    const x = pos.getX(i + k);
+                    const z = pos.getZ(i + k);
+                    if (x < minX) minX = x;
+                    if (z < minZ) minZ = z;
+                }
+            }
+            return found ? { alongA: cornerX - minX, alongB: cornerZ - minZ } : null;
+        };
+
+        const c0 = measureCourse(0);
+        const c1 = measureCourse(1);
+        assertTrue(!!c0 && !!c1, 'Expected quoin geometry in the first two courses at the AB corner.');
+        assertTrue(Math.abs(c0.alongA - c0.alongB) > (longWidth - shortWidth) * 0.5,
+            'Expected asymmetric long/short legs within one interlocked course.');
+        assertNear(c0.alongA, c1.alongB, 0.02, 'Expected course 1 to swap face extents vs course 0 (interlock).');
+        assertNear(c0.alongB, c1.alongA, 0.02, 'Expected course 1 to swap face extents vs course 0 (interlock).');
+
+        const matchedParts = buildParts({
+            enabled: true,
+            mode: 'quoin_blocks',
+            bond: 'matched',
+            blockHeight,
+            longWidth,
+            shortWidth,
+            projection,
+            material: { kind: 'color', id: 'offwhite' }
+        });
+        const matchedMeshes = (matchedParts.beltCourse?.children ?? [])
+            .filter((m) => m?.userData?.buildingFab2Role === 'corner_treatment');
+        assertEqual(matchedMeshes.length, 1, 'Expected one merged matched-bond mesh.');
+        const matchedMesh = matchedMeshes[0];
+        matchedMesh.geometry.computeBoundingBox();
+        const mBox = matchedMesh.geometry.boundingBox;
+        const mPos = matchedMesh.geometry.getAttribute('position');
+        const mCornerX = mBox.max.x - projection;
+        const mCornerZ = mBox.max.z - projection;
+        const measureMatchedCourse = (courseIndex) => {
+            const y0 = mBox.min.y + courseIndex * blockHeight + 1e-3;
+            const y1 = mBox.min.y + (courseIndex + 1) * blockHeight - 1e-3;
+            let minX = Infinity;
+            let minZ = Infinity;
+            let found = false;
+            for (let i = 0; i + 2 < mPos.count; i += 3) {
+                const cy = (mPos.getY(i) + mPos.getY(i + 1) + mPos.getY(i + 2)) / 3;
+                if (cy < y0 || cy > y1) continue;
+                const cx = (mPos.getX(i) + mPos.getX(i + 1) + mPos.getX(i + 2)) / 3;
+                const cz = (mPos.getZ(i) + mPos.getZ(i + 1) + mPos.getZ(i + 2)) / 3;
+                if (cx < mCornerX - 1.5 || cz < mCornerZ - 1.5) continue;
+                found = true;
+                for (let k = 0; k < 3; k++) {
+                    minX = Math.min(minX, mPos.getX(i + k));
+                    minZ = Math.min(minZ, mPos.getZ(i + k));
+                }
+            }
+            return found ? { alongA: mCornerX - minX, alongB: mCornerZ - minZ } : null;
+        };
+        const m0 = measureMatchedCourse(0);
+        const m1 = measureMatchedCourse(1);
+        assertTrue(!!m0 && !!m1, 'Expected matched-bond geometry in the first two courses.');
+        assertNear(m0.alongA, m0.alongB, 0.02, 'Expected matched bond: same width on both walls at the same course.');
+        assertNear(m1.alongA, m1.alongB, 0.02, 'Expected matched bond: same width on both walls at the same course.');
+        assertNear(m0.alongA - m1.alongA, longWidth - shortWidth, 0.03,
+            'Expected matched bond to alternate wide/narrow between courses.');
+
+        const stripParts = buildParts({
+            enabled: true,
+            mode: 'strip',
+            stripWidth: 0.4,
+            projection,
+            material: { kind: 'color', id: 'offwhite' }
+        });
+        const stripMeshes = (stripParts.beltCourse?.children ?? [])
+            .filter((m) => m?.userData?.buildingFab2Role === 'corner_treatment');
+        assertEqual(stripMeshes.length, 1, 'Expected one merged strip mesh.');
+        assertEqual(stripMeshes[0].userData.cornerTreatmentCourses, 1, 'Expected a single full-height strip course.');
+        stripMeshes[0].geometry.computeBoundingBox();
+        const stripBox = stripMeshes[0].geometry.boundingBox;
+        assertNear(stripBox.max.y - stripBox.min.y, 6.0, 0.01, 'Expected strip to span the full layer wall height.');
     });
 
     test('BuildingFabricationGenerator: garage facade copies closed material + rotation and supports open override', () => {

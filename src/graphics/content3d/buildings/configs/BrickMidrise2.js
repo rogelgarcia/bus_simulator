@@ -320,6 +320,34 @@ export const BRICK_MIDRISE_2_BUILDING_CONFIG = Object.freeze({
             }
         ]
     ),
+    cornerTreatment: Object.freeze(
+        {
+            "enabled": true,
+            "mode": "quoin_blocks",
+            "bond": "matched",
+            "blockHeight": 0.45,
+            "longWidth": 0.5,
+            "shortWidth": 0.28,
+            "projection": 0.03,
+            "shortProjectionScale": 0.55,
+            "rhythm": {
+                "mode": "every_course",
+                "zoneCourses": 2,
+                "everyFloors": 1
+            },
+            "material": {
+                "kind": "color",
+                "id": "offwhite"
+            },
+            "corners": {
+                "AB": { "enabled": true },
+                "BC": { "enabled": true },
+                "CD": { "enabled": true },
+                "DA": { "enabled": true }
+            },
+            "layerIds": null
+        }
+    ),
     floors: 5,
     floorHeight: 3,
     style: "default",

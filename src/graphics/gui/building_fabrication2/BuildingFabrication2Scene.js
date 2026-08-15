@@ -1333,6 +1333,7 @@ export class BuildingFabrication2Scene {
             windowVisuals,
             windowVisualsIsOverride,
             facades: config?.facades ?? null,
+            cornerTreatment: config?.cornerTreatment ?? null,
             facadeCornerStrategyId: this._facadeCornerStrategyId,
             facadeCornerDebug: this._facadeCornerDebug,
             windowDefinitions: config?.windowDefinitions ?? null,

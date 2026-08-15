@@ -41,7 +41,14 @@ import {
 } from '../buildings/WindowTextureGenerator.js';
 import { WindowMeshGenerator } from '../buildings/WindowMeshGenerator.js';
 import { computeBuildingLoopsFromTiles, offsetOrthogonalLoopXZ, resolveBuildingStyleWallMaterialUrls } from '../buildings/BuildingGenerator.js';
-import { LAYER_TYPE, normalizeBuildingLayers } from './BuildingFabricationTypes.js';
+import {
+    LAYER_TYPE,
+    normalizeBuildingLayers,
+    normalizeCornerTreatmentConfig,
+    CORNER_TREATMENT_MODE,
+    CORNER_TREATMENT_RHYTHM,
+    CORNER_TREATMENT_CORNER_IDS
+} from './BuildingFabricationTypes.js';
 import { applyMaterialVariationToMeshStandardMaterial, computeMaterialVariationSeedFromTiles, MATERIAL_VARIATION_ROOT } from '../../materials/MaterialVariationSystem.js';
 import { applyUvTilingToMeshStandardMaterial } from '../../materials/MaterialUvTilingSystem.js';
 import { getPbrMaterialTileMeters, isPbrMaterialId, tryGetPbrMaterialIdFromUrl } from '../../materials/PbrMaterialCatalog.js';
@@ -687,8 +694,11 @@ function estimateCorniceOutwardReserveMeters(layer) {
     return outward;
 }
 
-function estimateBf2OutwardFootprintReserveMeters({ layers, facades } = {}) {
+function estimateBf2OutwardFootprintReserveMeters({ layers, facades, cornerTreatment = null } = {}) {
     let reserve = 0.0;
+    if (cornerTreatment?.enabled) {
+        reserve = Math.max(reserve, clamp(cornerTreatment.projection, 0.005, 0.5));
+    }
     const safeLayers = Array.isArray(layers) ? layers : [];
     for (const layer of safeLayers) {
         if (!layer || typeof layer !== 'object') continue;
@@ -3234,7 +3244,8 @@ function makeCorniceMaterialFromSpec({
     layerWallBase,
     layerTiling,
     baseColorHex,
-    textureCache
+    textureCache,
+    applyUvTiling = true
 }) {
     if (material?.kind === 'match_wall') {
         const mat = makeWallMaterialFromSpec({
@@ -3244,7 +3255,7 @@ function makeCorniceMaterialFromSpec({
             wallBase: layerWallBase ?? null
         });
         const styleId = layerMaterial?.kind === 'texture' ? layerMaterial.id : null;
-        if (styleId) {
+        if (styleId && applyUvTiling) {
             const urls = resolveBuildingStyleWallMaterialUrls(styleId);
             const uvCfg = computeUvTilingParams({ tiling: layerTiling ?? null, urls, styleId });
             if (uvCfg.apply) {
@@ -3262,7 +3273,7 @@ function makeCorniceMaterialFromSpec({
 
     const mat = makeBeltLikeMaterialFromSpec({ material, baseColorHex, textureCache });
     const styleId = material?.kind === 'texture' ? material.id : null;
-    if (styleId) {
+    if (styleId && applyUvTiling) {
         const urls = resolveBuildingStyleWallMaterialUrls(styleId);
         const uvCfg = computeUvTilingParams({ tiling: tiling ?? null, urls, styleId });
         if (uvCfg.apply) {
@@ -3314,6 +3325,279 @@ function resolveRoofLayerTopExtraHeight(layer) {
     }
 
     return top;
+}
+
+const CORNER_TREATMENT_BURIAL_METERS = 0.02;
+const CORNER_TREATMENT_CORNER_SNAP_TOLERANCE_METERS = 2.0;
+
+// Resolves the four rect corners (AB/BC/CD/DA pairing faces A=maxZ, B=maxX,
+// C=minZ, D=minX) on the layer's resolved silhouette loop. Uses the nominal
+// bounding-box corner as the anchor and snaps to the nearest convex loop
+// vertex, so corners shifted by facade depth offsets still get their frames.
+function resolveCornerTreatmentCornerFrames({ rectLoop, resolvedLoop, corners, warnings }) {
+    const rect = Array.isArray(rectLoop) ? rectLoop : [];
+    if (rect.length < 3) return [];
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const p of rect) {
+        const x = Number(p?.x);
+        const z = Number(p?.z);
+        if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (z < minZ) minZ = z;
+        if (z > maxZ) maxZ = z;
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minZ) || !Number.isFinite(maxZ)) return [];
+
+    const nominalByCornerId = {
+        AB: { x: maxX, z: maxZ },
+        BC: { x: maxX, z: minZ },
+        CD: { x: minX, z: minZ },
+        DA: { x: minX, z: maxZ }
+    };
+
+    const loopRaw = Array.isArray(resolvedLoop) && resolvedLoop.length >= 3 ? resolvedLoop : rect;
+    const loop = signedArea(loopRaw) < 0 ? loopRaw.slice().reverse() : loopRaw;
+    const n = loop.length;
+
+    const frames = [];
+    for (const cornerId of CORNER_TREATMENT_CORNER_IDS) {
+        if (corners?.[cornerId]?.enabled === false) continue;
+        const nominal = nominalByCornerId[cornerId];
+
+        let bestIndex = -1;
+        let bestDist = CORNER_TREATMENT_CORNER_SNAP_TOLERANCE_METERS;
+        for (let i = 0; i < n; i++) {
+            const v = loop[i];
+            const d = Math.hypot((Number(v?.x) || 0) - nominal.x, (Number(v?.z) || 0) - nominal.z);
+            if (d < bestDist) {
+                bestDist = d;
+                bestIndex = i;
+            }
+        }
+        if (bestIndex < 0) {
+            warnings?.push(`Corner treatment: no silhouette vertex near corner ${cornerId}; skipped.`);
+            continue;
+        }
+
+        const v = loop[bestIndex];
+        const prev = loop[(bestIndex - 1 + n) % n];
+        const next = loop[(bestIndex + 1) % n];
+        const inLen = Math.hypot(v.x - prev.x, v.z - prev.z);
+        const outLen = Math.hypot(next.x - v.x, next.z - v.z);
+        if (!(inLen > EPS) || !(outLen > EPS)) continue;
+        const dirIn = { x: (v.x - prev.x) / inLen, z: (v.z - prev.z) / inLen };
+        const dirOut = { x: (next.x - v.x) / outLen, z: (next.z - v.z) / outLen };
+        const cross = dirIn.x * dirOut.z - dirIn.z * dirOut.x;
+        if (!(cross > 0.3)) {
+            warnings?.push(`Corner treatment: corner ${cornerId} is not convex enough; skipped.`);
+            continue;
+        }
+
+        frames.push({
+            cornerId,
+            p: { x: v.x, z: v.z },
+            tX: { x: -dirIn.x, z: -dirIn.z },
+            nX: { x: dirIn.z, z: -dirIn.x },
+            tY: { x: dirOut.x, z: dirOut.z },
+            nY: { x: dirOut.z, z: -dirOut.x }
+        });
+    }
+    return frames;
+}
+
+function resolveCornerTreatmentCourses({ cfg, spanStartY, spanEndY, floorSegmentStartYs }) {
+    const span = Math.max(0, spanEndY - spanStartY);
+    if (!(span > EPS)) return [];
+
+    if (cfg.mode === CORNER_TREATMENT_MODE.STRIP) {
+        return [{ y0: spanStartY, y1: spanEndY, phase: 0, strip: true }];
+    }
+
+    const blockHeight = clamp(cfg.blockHeight, 0.05, 2.0);
+    const courses = [];
+
+    if (cfg.rhythm?.mode === CORNER_TREATMENT_RHYTHM.FLOOR_ZONE) {
+        const segStarts = Array.isArray(floorSegmentStartYs) && floorSegmentStartYs.length
+            ? floorSegmentStartYs
+            : [spanStartY];
+        const everyFloors = clampInt(cfg.rhythm.everyFloors, 1, 12);
+        const zoneCourses = clampInt(cfg.rhythm.zoneCourses, 1, 12);
+        for (let f = 0; f < segStarts.length; f += everyFloors) {
+            const base = Number(segStarts[f]);
+            if (!Number.isFinite(base)) continue;
+            for (let c = 0; c < zoneCourses; c++) {
+                const y0 = base + c * blockHeight;
+                const y1 = y0 + blockHeight;
+                if (y1 > spanEndY + EPS) break;
+                courses.push({ y0, y1, phase: c % 2, strip: false });
+            }
+        }
+        return courses;
+    }
+
+    const count = Math.max(1, Math.round(span / blockHeight));
+    const h = span / count;
+    for (let k = 0; k < count; k++) {
+        courses.push({ y0: spanStartY + k * h, y1: spanStartY + (k + 1) * h, phase: k % 2, strip: false });
+    }
+    return courses;
+}
+
+// Interlocked corner blocks: per course, the wrapping leg lies on one face,
+// extends `projection` past the arris (its end face is the return the other
+// face sees), and the tucked leg continues the header on the other face.
+// The wrapping face alternates each course, so a long block on one face pairs
+// with a short header on the other — true quoin bond, not symmetric teeth.
+function buildCornerTreatmentGeometry({ cornerFrames, courses, cfg }) {
+    const frames = Array.isArray(cornerFrames) ? cornerFrames : [];
+    const list = Array.isArray(courses) ? courses : [];
+    if (!frames.length || !list.length) return null;
+
+    const projection = clamp(cfg.projection, 0.005, 0.5);
+    const burial = CORNER_TREATMENT_BURIAL_METERS;
+    const longWidth = clamp(cfg.longWidth, 0.05, 2.0);
+    const shortWidth = clamp(cfg.shortWidth, 0.05, 2.0);
+    const stripWidth = clamp(cfg.stripWidth, 0.05, 2.0);
+
+    const positions = [];
+    const uvs = [];
+
+    const pushQuad = (A, B, C, D, uvA, uvB, uvC, uvD, wantNx, wantNy, wantNz) => {
+        const abx = B[0] - A[0];
+        const aby = B[1] - A[1];
+        const abz = B[2] - A[2];
+        const acx = C[0] - A[0];
+        const acy = C[1] - A[1];
+        const acz = C[2] - A[2];
+        const cx = aby * acz - abz * acy;
+        const cy = abz * acx - abx * acz;
+        const cz = abx * acy - aby * acx;
+        const flip = (cx * wantNx + cy * wantNy + cz * wantNz) < 0;
+        const b = flip ? D : B;
+        const d = flip ? B : D;
+        const uvB2 = flip ? uvD : uvB;
+        const uvD2 = flip ? uvB : uvD;
+        positions.push(
+            A[0], A[1], A[2], b[0], b[1], b[2], C[0], C[1], C[2],
+            A[0], A[1], A[2], C[0], C[1], C[2], d[0], d[1], d[2]
+        );
+        uvs.push(
+            uvA[0], uvA[1], uvB2[0], uvB2[1], uvC[0], uvC[1],
+            uvA[0], uvA[1], uvC[0], uvC[1], uvD2[0], uvD2[1]
+        );
+    };
+
+    // Each block maps its faces into roughly one texture tile with a
+    // per-block offset — cut-stone blocks read as individual stones instead of
+    // continuing the wall's texture flow (which made them visually vanish).
+    const QUOIN_UV_BLOCK_METERS = 0.45;
+    const emitLeg = ({ origin, t, n, u0, u1, y0, y1, seed, proj = projection }) => {
+        if (!(u1 > u0 + EPS) || !(y1 > y0 + EPS)) return;
+        const W = (u, v, y) => [origin.x + t.x * u + n.x * v, y, origin.z + t.z * u + n.z * v];
+        const vIn = -burial;
+        const vOut = proj;
+        const s = Number(seed) || 0;
+        const uOff = (s * 0.618034) % 1;
+        const vOff = (s * 0.381966) % 1;
+        const bu = (u) => uOff + (u - u0) / QUOIN_UV_BLOCK_METERS;
+        const bv = (y) => vOff + (y - y0) / QUOIN_UV_BLOCK_METERS;
+
+        // front (proud of the wall)
+        pushQuad(
+            W(u0, vOut, y0), W(u1, vOut, y0), W(u1, vOut, y1), W(u0, vOut, y1),
+            [bu(u0), bv(y0)], [bu(u1), bv(y0)], [bu(u1), bv(y1)], [bu(u0), bv(y1)],
+            n.x, 0, n.z
+        );
+        // top / bottom
+        pushQuad(
+            W(u0, vIn, y1), W(u1, vIn, y1), W(u1, vOut, y1), W(u0, vOut, y1),
+            [bu(u0), vOff], [bu(u1), vOff], [bu(u1), vOff + 0.2], [bu(u0), vOff + 0.2],
+            0, 1, 0
+        );
+        pushQuad(
+            W(u0, vIn, y0), W(u1, vIn, y0), W(u1, vOut, y0), W(u0, vOut, y0),
+            [bu(u0), vOff], [bu(u1), vOff], [bu(u1), vOff + 0.2], [bu(u0), vOff + 0.2],
+            0, -1, 0
+        );
+        // ends (the near end of the wrapping leg is the visible return)
+        pushQuad(
+            W(u1, vIn, y0), W(u1, vOut, y0), W(u1, vOut, y1), W(u1, vIn, y1),
+            [uOff, bv(y0)], [uOff + 0.25, bv(y0)], [uOff + 0.25, bv(y1)], [uOff, bv(y1)],
+            t.x, 0, t.z
+        );
+        pushQuad(
+            W(u0, vIn, y0), W(u0, vOut, y0), W(u0, vOut, y1), W(u0, vIn, y1),
+            [uOff, bv(y0)], [uOff + 0.25, bv(y0)], [uOff + 0.25, bv(y1)], [uOff, bv(y1)],
+            -t.x, 0, -t.z
+        );
+    };
+
+    let frameIndex = 0;
+    for (const frame of frames) {
+        let courseIndex = 0;
+        for (const course of list) {
+            const baseSeed = frameIndex * 131 + courseIndex * 2;
+            if (course.strip) {
+                emitLeg({ origin: frame.p, t: frame.tX, n: frame.nX, u0: -projection, u1: stripWidth, y0: course.y0, y1: course.y1, seed: baseSeed });
+                emitLeg({ origin: frame.p, t: frame.tY, n: frame.nY, u0: burial, u1: stripWidth, y0: course.y0, y1: course.y1, seed: baseSeed + 1 });
+                courseIndex += 1;
+                continue;
+            }
+
+            // Depth steps with width (as in the reference towers: the wider
+            // element also projects further from the wall), giving the zig-zag
+            // shadow. Matched bond scales per course; interlocked scales per
+            // leg (the long stone wraps proud, the short header sits shallower).
+            const xWraps = course.phase === 0;
+            const matchedBond = cfg.bond !== 'interlocked';
+            const shortProj = projection * clamp(cfg.shortProjectionScale ?? 0.55, 0.1, 1.0);
+            const courseLen = course.phase === 0 ? longWidth : shortWidth;
+            const xLen = matchedBond ? courseLen : (xWraps ? longWidth : shortWidth);
+            const yLen = matchedBond ? courseLen : (xWraps ? shortWidth : longWidth);
+            const xProj = matchedBond
+                ? (course.phase === 0 ? projection : shortProj)
+                : (xLen === longWidth ? projection : shortProj);
+            const yProj = matchedBond
+                ? (course.phase === 0 ? projection : shortProj)
+                : (yLen === longWidth ? projection : shortProj);
+            emitLeg({
+                origin: frame.p,
+                t: frame.tX,
+                n: frame.nX,
+                u0: xWraps ? -xProj : burial,
+                u1: xLen,
+                y0: course.y0,
+                y1: course.y1,
+                seed: baseSeed,
+                proj: xProj
+            });
+            emitLeg({
+                origin: frame.p,
+                t: frame.tY,
+                n: frame.nY,
+                u0: xWraps ? burial : -yProj,
+                u1: yLen,
+                y0: course.y0,
+                y1: course.y1,
+                seed: baseSeed + 1,
+                proj: yProj
+            });
+            courseIndex += 1;
+        }
+        frameIndex += 1;
+    }
+
+    if (!positions.length) return null;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
+    geo.computeVertexNormals();
+    return geo;
 }
 
 function clampUnit(value, fallback = 0) {
@@ -5139,6 +5423,7 @@ export function buildBuildingFabricationVisualParts({
     windowVisualsIsOverride = false,
     facades = null,
     wallDecorations = null,
+    cornerTreatment = null,
     facadeCornerStrategy = null,
     facadeCornerStrategyId = null,
     facadeCornerDebug = false,
@@ -5151,11 +5436,12 @@ export function buildBuildingFabricationVisualParts({
     const explicitFootprintLoops = normalizeFootprintLoopsInput(footprintLoops);
     const explicitBuildAreaLoops = normalizeFootprintLoopsInput(buildAreaLoops);
     const safeLayers = normalizeBuildingLayers(layers);
+    const cornerTreatmentCfg = normalizeCornerTreatmentConfig(cornerTreatment);
     const fittedExplicitFootprintLoops = (explicitFootprintLoops.length && explicitBuildAreaLoops.length)
         ? fitFootprintLoopsToBuildArea({
             footprintLoops: explicitFootprintLoops,
             buildAreaLoops: explicitBuildAreaLoops,
-            reserveInsetMeters: estimateBf2OutwardFootprintReserveMeters({ layers: safeLayers, facades })
+            reserveInsetMeters: estimateBf2OutwardFootprintReserveMeters({ layers: safeLayers, facades, cornerTreatment: cornerTreatmentCfg })
         })
         : explicitFootprintLoops;
     const sourceFootprintLoops = fittedExplicitFootprintLoops.length
@@ -7125,7 +7411,9 @@ export function buildBuildingFabricationVisualParts({
                 }
             }
 
+            const floorSegmentStartYs = [];
             for (let floor = 0; floor < floors; floor++) {
+                floorSegmentStartYs.push(yCursor);
                 if (showFloors && (hadSolidMeshesBeforeLayer || floor > 0 || Math.abs(yCursor - baseY) > EPS)) {
                     appendLoopLinePositions(floorPositions, planLoops, yCursor);
                 }
@@ -7627,6 +7915,57 @@ export function buildBuildingFabricationVisualParts({
                         mesh.castShadow = true;
                         mesh.receiveShadow = true;
                         windowsGroup.add(mesh);
+                    }
+                }
+            }
+
+            const cornerTreatmentAppliesToLayer = cornerTreatmentCfg?.enabled
+                && (cornerTreatmentCfg.layerIds === null || cornerTreatmentCfg.layerIds.includes(layer.id));
+            if (cornerTreatmentAppliesToLayer && layerEndY - layerStartY > EPS) {
+                const cornerFrames = resolveCornerTreatmentCornerFrames({
+                    rectLoop: wallOuter[0] ?? null,
+                    resolvedLoop: wallOuterFacade[0] ?? null,
+                    corners: cornerTreatmentCfg.corners,
+                    warnings
+                });
+                const cornerCourses = resolveCornerTreatmentCourses({
+                    cfg: cornerTreatmentCfg,
+                    spanStartY: layerStartY,
+                    spanEndY: layerEndY,
+                    floorSegmentStartYs
+                });
+                const cornerGeo = buildCornerTreatmentGeometry({
+                    cornerFrames,
+                    courses: cornerCourses,
+                    cfg: cornerTreatmentCfg
+                });
+                if (cornerGeo) {
+                    // Per-block UVs already map roughly one texture tile per
+                    // stone, so the wall's UV tiling scale must not stack on top.
+                    const cornerMat = makeCorniceMaterialFromSpec({
+                        material: cornerTreatmentCfg.material,
+                        tiling: cornerTreatmentCfg.tiling ?? null,
+                        layerMaterial: layer.material ?? null,
+                        layerWallBase: layer.wallBase ?? null,
+                        layerTiling: layer.tiling ?? null,
+                        baseColorHex,
+                        textureCache,
+                        applyUvTiling: false
+                    });
+                    const mesh = new THREE.Mesh(cornerGeo, cornerMat);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    mesh.userData = mesh.userData ?? {};
+                    mesh.userData.buildingFab2Role = 'corner_treatment';
+                    mesh.userData.cornerTreatmentMode = cornerTreatmentCfg.mode;
+                    mesh.userData.cornerTreatmentCorners = cornerFrames.length;
+                    mesh.userData.cornerTreatmentCourses = cornerCourses.length;
+                    beltsGroup.add(mesh);
+
+                    if (showWire) {
+                        const edgeGeo = new THREE.EdgesGeometry(cornerGeo, 1);
+                        appendWirePositions(wirePositions, edgeGeo, 0);
+                        edgeGeo.dispose();
                     }
                 }
             }

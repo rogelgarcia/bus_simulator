@@ -291,6 +291,7 @@ export class City {
                         windowVisualsIsOverride,
                         facades: entry.facades ?? null,
                         wallDecorations: entry.wallDecorations ?? null,
+                        cornerTreatment: entry.cornerTreatment ?? null,
                         windowDefinitions: entry.windowDefinitions ?? null,
                         overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
                         walls: { inset: wallInset }
