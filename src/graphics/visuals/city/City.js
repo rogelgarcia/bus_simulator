@@ -499,8 +499,13 @@ export class City {
     _activateCascadedShadows(engine, preset, settings) {
         const cascades = Math.max(2, Math.min(4, Math.round(settings?.cascades ?? preset.cascades) || preset.cascades));
         const mapSize = Math.max(256, Math.min(preset.mapSize, 4096, this._maxShadowTextureSize(engine?.renderer ?? null, preset.mapSize)));
+        const splitScale = Number.isFinite(settings?.splitScale) && settings.splitScale > 0
+            ? Math.max(0.5, Math.min(2.5, settings.splitScale))
+            : 1;
 
-        if (this._csm && (this._csm.cascades !== cascades || this._csm.mapSize !== mapSize)) {
+        if (this._csm && (this._csm.cascades !== cascades
+            || this._csm.mapSize !== mapSize
+            || this._csm.splitScale !== splitScale)) {
             this._deactivateCascadedShadows();
         }
         if (this._csm) return;
@@ -511,7 +516,8 @@ export class City {
             sunRef: this.sunRef,
             preset,
             cascades,
-            mapSize
+            mapSize,
+            splitScale
         });
         setActiveSceneShadowSystem(this._csm);
         registerObjectForSceneShadows(this.group);

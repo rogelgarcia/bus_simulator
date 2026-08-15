@@ -220,8 +220,10 @@ at identical camera/sun, with magnified crops):
   designed shadow horizon (fade band starts ~260 m), and at 0.33 m/texel they
   are soft; magnify before declaring them missing. The fallback's darker
   version of the same shadow cuts off abruptly at its 110 m box edge instead.
-- The bus has never cast a sun shadow in this game (no `castShadow` on bus
-  meshes; grounding comes from BusContactShadowRig) — pre-existing, not CSM.
+- ~~The bus has never cast a sun shadow in this game~~ **WRONG, corrected
+  2026-08-15**: `CityBus.js:34` sets `castShadow = true` on every bus mesh, and
+  the bus shadow is plainly visible in both modes. BusContactShadowRig is an
+  additional grounding cue, not a replacement.
 - Dense-city grazing sun legitimately shadows most streets; visible facades
   away from the sun are shadow-sides. A pose-level 28 deg frame reads
   near-black and that is largely physical.
@@ -260,6 +262,45 @@ calls and time drop) but NOT for visual isolation — materials keep sampling th
 stale populated maps, so the image is byte-identical. Use
 `light.shadow.intensity = 0` (uniform only, no recompile) for visual shadow
 isolation.
+
+## Cascade layout retune (2026-08-15)
+
+Live feedback: "the threshold from high to low res is too close to the camera",
+with the sharp region wanted out to roughly the far kerb / second tree row
+(~90 m). The old layout stepped down at 30 m — inside the near ground a driver
+looks at.
+
+Key measurement that shaped the fix: **a cascade's shadow-map box is ~2.2x its
+split distance** (not the ~1.5x first assumed — the box bounds the whole
+frustum slice, so it grows with the slice's near plane too). Widening one near
+cascade to 90 m therefore gives a 198 m box = 0.048 m/texel at 4096, i.e. the
+single fitted map's sharpness. Sharp *and* far requires more cascades over the
+near range, not a wider first cascade.
+
+New default: **4 cascades at 4096**, splits 45 / 90 / 190 / 340 m.
+
+| distance from camera | cascade | m/texel | vs old cascaded | vs fitted map |
+| --- | --- | --- | --- | --- |
+| 0-45 m | 0 | 0.024 | 0.022 (was 0-30 m) | 0.054 |
+| 45-90 m | 1 | 0.048 | 0.066 | 0.054 |
+| 90-190 m | 2 | 0.102 | 0.222 | none past 110 m |
+| 190-340 m | 3 | 0.185 | none past 300 m | none |
+
+Everything inside the requested ~90 m is now at or below the fitted map's
+0.054 m/texel, the first step-down moved 30 m -> 45 m, and its density ratio
+dropped 3.0x -> 2.0x (a gentler, less visible transition that `CSM_FADE` then
+blends). Shadow horizon extended 300 -> 340 m.
+
+Cost on the RTX 3060 test rig (burst-rendered, gl.finish-bounded): 37 ms/frame
+and 16.7k whole-frame draw calls, versus 41 ms / 14.5k for the *previous*
+cascaded layout — more cascades but tighter boxes roughly cancel out. VRAM
+48 MB -> 256 MB (4 x 4096^2), the real price of this retune.
+
+Also added `splitScale` (settings + `?shadowSplitScale=`, clamped 0.5-2.5) to
+scale the whole layout without a code change: >1 pushes the step-downs further
+out and trades texel density for range, <1 the reverse. And `lightFar` is now
+`max(600, maxFar * 3 + 200)` instead of a hardcoded 600, which retires the
+clipping watch item noted above (the far cascade's box is now ~757 m).
 
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line

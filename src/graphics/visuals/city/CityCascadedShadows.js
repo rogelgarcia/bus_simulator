@@ -24,17 +24,24 @@ import { isLitMaterial } from '../../lighting/SceneShadowMaterials.js';
 // Each cascade's normalBias is scaled by its own density relative to this.
 const REFERENCE_TEXEL_METERS = 220 / 4096;
 
-// Cascade split distances in meters from the camera, tuned for a bus-level
-// camera: crisp near the bus, mid range for the street, far out to the
-// skyline. The last split equals maxFar.
+// Cascade split distances in meters from the camera. The last split equals
+// maxFar (the shadow horizon).
+//
+// The first split is where sharpness visibly steps down, so it is placed well
+// past the near ground a driver actually looks at (~90 m: the far kerb and
+// second tree row from a bus-level camera) rather than at the edge of the
+// bonnet. A cascade's shadow-map box is ~1.5x its split distance, so pushing
+// the first split out costs texel density unless the map grows with it --
+// hence the `cascaded` preset's 4096 maps. Scale the whole layout with
+// `splitScale` (settings / ?shadowSplitScale=) to trade range against density.
 const SPLITS_BY_CASCADES = Object.freeze({
-    2: Object.freeze([45, 300]),
-    3: Object.freeze([30, 90, 300]),
-    4: Object.freeze([20, 55, 130, 300])
+    2: Object.freeze([110, 340]),
+    3: Object.freeze([55, 150, 340]),
+    4: Object.freeze([45, 90, 190, 340])
 });
 
 export class CityCascadedShadows {
-    constructor({ camera, parent, sunRef, preset, cascades = 3, mapSize = 2048 }) {
+    constructor({ camera, parent, sunRef, preset, cascades = 3, mapSize = 2048, splitScale = 1 }) {
         if (!camera) throw new Error('[CityCascadedShadows] camera is required');
         if (!parent) throw new Error('[CityCascadedShadows] parent is required');
         if (!sunRef?.direction?.isVector3) throw new Error('[CityCascadedShadows] sunRef is required');
@@ -43,7 +50,12 @@ export class CityCascadedShadows {
         this.cascades = Math.max(2, Math.min(4, Math.round(cascades) || 3));
         this.mapSize = Math.max(256, mapSize | 0);
         this._preset = preset ?? null;
-        const splits = SPLITS_BY_CASCADES[this.cascades] ?? SPLITS_BY_CASCADES[3];
+        const scale = Number.isFinite(splitScale) && splitScale > 0
+            ? Math.max(0.5, Math.min(2.5, splitScale))
+            : 1;
+        this.splitScale = scale;
+        const splits = (SPLITS_BY_CASCADES[this.cascades] ?? SPLITS_BY_CASCADES[3]).map((d) => d * scale);
+        this.splits = splits;
         this.maxFar = splits[splits.length - 1];
 
         // CSM mutates lightDirection's referenced vector never replaces it, so
@@ -67,7 +79,11 @@ export class CityCascadedShadows {
             lightDirection: this._lightDirection,
             lightIntensity: Number.isFinite(sunRef.intensity) ? sunRef.intensity : 1,
             lightNear: 1,
-            lightFar: 600,
+            // Must clear the far cascade's light-space depth extent (its box is
+            // ~1.5x maxFar) plus the margin the light sits back by, at any sun
+            // elevation; a receiver past this plane samples outside the map and
+            // renders unshadowed.
+            lightFar: Math.max(600, this.maxFar * 3 + 200),
             lightMargin: 160
         });
         // Blend neighbouring cascades across the split instead of hard-switching

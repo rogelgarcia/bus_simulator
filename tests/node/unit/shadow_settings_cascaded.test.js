@@ -24,19 +24,29 @@ test('ShadowSettings: cascaded quality sanitizes from aliases', () => {
 test('ShadowSettings: cascaded preset carries a cascade count, others do not', () => {
     const preset = getShadowQualityPreset('cascaded');
     assert.equal(preset.enabled, true);
-    assert.equal(preset.cascades, 3);
+    assert.equal(preset.cascades, 4);
     assert.ok(preset.mapSize >= 1024);
     for (const id of ['off', 'low', 'medium', 'high', 'ultra']) {
         assert.equal(SHADOW_QUALITY_PRESETS[id].cascades, undefined, `preset '${id}'`);
     }
 });
 
-test('ShadowSettings: cascades field clamps to 2..4 and defaults to 3', () => {
-    assert.equal(sanitizeShadowSettings({}).cascades, 3);
+test('ShadowSettings: cascades field clamps to 2..4 and defaults to 4', () => {
+    assert.equal(sanitizeShadowSettings({}).cascades, 4);
     assert.equal(sanitizeShadowSettings({ cascades: 1 }).cascades, 2);
     assert.equal(sanitizeShadowSettings({ cascades: 9 }).cascades, 4);
     assert.equal(sanitizeShadowSettings({ cascades: '2' }).cascades, 2);
-    assert.equal(sanitizeShadowSettings({ cascades: 'garbage' }).cascades, 3);
+    assert.equal(sanitizeShadowSettings({ cascades: 'garbage' }).cascades, 4);
+});
+
+test('ShadowSettings: splitScale clamps to 0.5..2.5 and defaults to 1', () => {
+    assert.equal(sanitizeShadowSettings({}).splitScale, 1);
+    assert.equal(sanitizeShadowSettings({ splitScale: 0.1 }).splitScale, 0.5);
+    assert.equal(sanitizeShadowSettings({ splitScale: 99 }).splitScale, 2.5);
+    assert.equal(sanitizeShadowSettings({ splitScale: '1.5' }).splitScale, 1.5);
+    assert.equal(sanitizeShadowSettings({ splitScale: 0 }).splitScale, 1);
+    assert.equal(sanitizeShadowSettings({ splitScale: -2 }).splitScale, 1);
+    assert.equal(sanitizeShadowSettings({ splitScale: 'garbage' }).splitScale, 1);
 });
 
 test('ShadowSettings: unknown quality still falls back to default', () => {

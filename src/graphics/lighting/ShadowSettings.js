@@ -6,7 +6,10 @@ const STORAGE_KEY = 'bus_sim.shadows.v1';
 
 export const SHADOW_DEFAULTS = Object.freeze({
     quality: 'high',
-    cascades: 3
+    cascades: 4,
+    // Scales every cascade split distance: >1 pushes the sharpness step-down
+    // further from the camera at the cost of texel density, <1 the reverse.
+    splitScale: 1
 });
 
 // `cascades` marks a preset as cascaded shadow maps (N camera-fitted maps by
@@ -17,7 +20,11 @@ export const SHADOW_QUALITY_PRESETS = Object.freeze({
     medium: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 2048, radius: 1.5, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true }),
     high: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 4096, radius: 1.25, bias: -0.0002, normalBias: 0.03, twoSidedCasting: true }),
     ultra: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 1, bias: -0.0002, normalBias: 0.035, twoSidedCasting: true }),
-    cascaded: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 2048, radius: 1.5, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true, cascades: 3 })
+    // 4 cascades at 4096: a shadow-map box is ~2.2x its split distance, so one
+    // wide near cascade cannot be both sharp and long-range. Splitting the near
+    // range instead keeps everything inside ~90 m at or below the single fitted
+    // map's 0.054 m/texel while still reaching the skyline.
+    cascaded: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 4096, radius: 1.5, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true, cascades: 4 })
 });
 
 function sanitizeQuality(value) {
@@ -37,11 +44,18 @@ function sanitizeCascades(value) {
     return Math.max(2, Math.min(4, num));
 }
 
+function sanitizeSplitScale(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num) || num <= 0) return SHADOW_DEFAULTS.splitScale;
+    return Math.max(0.5, Math.min(2.5, num));
+}
+
 export function sanitizeShadowSettings(input) {
     const src = input && typeof input === 'object' ? input : {};
     return {
         quality: sanitizeQuality(src.quality ?? SHADOW_DEFAULTS.quality),
-        cascades: sanitizeCascades(src.cascades ?? SHADOW_DEFAULTS.cascades)
+        cascades: sanitizeCascades(src.cascades ?? SHADOW_DEFAULTS.cascades),
+        splitScale: sanitizeSplitScale(src.splitScale ?? SHADOW_DEFAULTS.splitScale)
     };
 }
 
@@ -97,6 +111,7 @@ export function getResolvedShadowSettings({ includeUrlOverrides = true } = {}) {
         if (params.has('shadowQuality')) merged.quality = sanitizeQuality(params.get('shadowQuality'));
         if (params.has('shadows')) merged.quality = sanitizeQuality(params.get('shadows'));
         if (params.has('shadowCascades')) merged.cascades = sanitizeCascades(params.get('shadowCascades'));
+        if (params.has('shadowSplitScale')) merged.splitScale = sanitizeSplitScale(params.get('shadowSplitScale'));
     }
 
     return merged;
