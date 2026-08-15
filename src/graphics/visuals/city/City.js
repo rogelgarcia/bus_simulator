@@ -13,6 +13,7 @@ import { BuildingWallTextureCache, buildBuildingVisualParts, computeBuildingBase
 import { createBuildingSlabMeshes } from '../../assets3d/generators/buildings/BuildingSlabGenerator.js';
 import { buildRoadSidewalkOuterBoundaryLoopsFromRoadEnginePrimitives } from '../../../app/road_decoration/sidewalks/RoadSidewalkBuilder.js';
 import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
+import { mergeBuildingGroupGeometry } from '../../assets3d/generators/building_fabrication/BuildingGeometryMerger.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js';
 import { getResolvedShadowSettings, getShadowQualityPreset } from '../../lighting/ShadowSettings.js';
@@ -62,7 +63,11 @@ export class City {
             mapTileSize = 24,
             seed = 'demo-001',
             mapSpec = null,
-            generatorConfig = null
+            generatorConfig = null,
+            // Authoring tools that need per-mesh picking on fabricated buildings
+            // (bay/decoration selection) can opt out.
+            mergeBuildingGeometry = true,
+            mergeDedupeMaterials = true
         } = options;
 
         this.config = {
@@ -193,6 +198,12 @@ export class City {
             const slabFootprintLoops = [];
 
             const textures = new BuildingWallTextureCache();
+            // Fabricated buildings emit one mesh per decoration segment/cap and per
+            // window part; merging them by material at build time turns hundreds of
+            // ~8-triangle draw calls per building into a handful. Shared across
+            // buildings so identical materials collapse city-wide.
+            const mergedMaterialCache = mergeBuildingGeometry ? new Map() : null;
+            const mergeTotals = { sourceMeshes: 0, resultMeshes: 0, failedBuckets: 0 };
             for (const entry of buildingsList) {
                 const wallInset = Number.isFinite(entry?.wallInset) ? entry.wallInset : 0.0;
                 const hasLayers = Array.isArray(entry?.layers) && entry.layers.length;
@@ -268,6 +279,17 @@ export class City {
                 if (parts.windows) buildingGroup.add(parts.windows);
                 if (parts.beltCourse) buildingGroup.add(parts.beltCourse);
                 if (parts.topBelt) buildingGroup.add(parts.topBelt);
+
+                if (mergeBuildingGeometry) {
+                    const stats = mergeBuildingGroupGeometry(buildingGroup, {
+                        materialCache: mergedMaterialCache,
+                        dedupeMaterials: mergeDedupeMaterials
+                    });
+                    mergeTotals.sourceMeshes += stats.sourceMeshes;
+                    mergeTotals.resultMeshes += stats.resultMeshes;
+                    mergeTotals.failedBuckets += stats.failedBuckets;
+                }
+
                 buildingsGroup.add(buildingGroup);
 
                 const placedLoops = Array.isArray(parts.placedFootprintLoops) && parts.placedFootprintLoops.length
@@ -275,6 +297,13 @@ export class City {
                     : (buildAreaLoops ?? footprintLoops ?? []);
                 for (const loop of placedLoops) {
                     if (Array.isArray(loop) && loop.length >= 3) slabFootprintLoops.push(loop);
+                }
+            }
+
+            if (mergeBuildingGeometry && mergeTotals.sourceMeshes > 0) {
+                this.buildingMergeStats = { ...mergeTotals };
+                if (mergeTotals.failedBuckets > 0) {
+                    console.warn(`[City] Building geometry merge: ${mergeTotals.failedBuckets} bucket(s) could not merge; left unmerged.`);
                 }
             }
 

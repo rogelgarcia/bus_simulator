@@ -129,7 +129,10 @@ export const scenarioBuildingShowcase = {
             mapTileSize,
             seed,
             mapSpec,
-            generatorConfig: { render: { treesEnabled: false } }
+            generatorConfig: { render: { treesEnabled: false } },
+            // A/B hook: lets a capture compare merged vs unmerged building geometry.
+            mergeBuildingGeometry: options?.mergeBuildingGeometry !== false,
+            mergeDedupeMaterials: options?.mergeDedupeMaterials !== false
         });
 
         engine.context.city = city;
