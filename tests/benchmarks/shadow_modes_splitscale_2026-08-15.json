@@ -1,0 +1,231 @@
+[
+  {
+    "id": "REF high (first)",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 11.13,
+        "drawCalls": 3028
+      },
+      "raised": {
+        "msPerFrame": 9.33,
+        "drawCalls": 2308
+      }
+    },
+    "shadow": {
+      "kind": "single fitted",
+      "coverageMeters": 110,
+      "metersPerTexel": [
+        0.0537
+      ],
+      "vramMiB": 64
+    }
+  },
+  {
+    "id": "off",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 7.1,
+        "drawCalls": 1549
+      },
+      "raised": {
+        "msPerFrame": 5.81,
+        "drawCalls": 1177
+      }
+    },
+    "shadow": {
+      "kind": "none",
+      "metersPerTexel": [],
+      "vramMiB": 0
+    }
+  },
+  {
+    "id": "high",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 10.97,
+        "drawCalls": 4033
+      },
+      "raised": {
+        "msPerFrame": 9.22,
+        "drawCalls": 3073
+      }
+    },
+    "shadow": {
+      "kind": "single fitted",
+      "coverageMeters": 110,
+      "metersPerTexel": [
+        0.0537
+      ],
+      "vramMiB": 64
+    }
+  },
+  {
+    "id": "cascaded x4",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 24.18,
+        "drawCalls": 9862
+      },
+      "raised": {
+        "msPerFrame": 20.69,
+        "drawCalls": 8368
+      }
+    },
+    "shadow": {
+      "kind": "cascaded",
+      "splits": [
+        45,
+        90,
+        190,
+        340
+      ],
+      "metersPerTexel": [
+        0.0121,
+        0.0242,
+        0.0512,
+        0.1848
+      ],
+      "vramMiB": 832
+    }
+  },
+  {
+    "id": "cascaded x4 scale .75",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 20.9,
+        "drawCalls": 8170
+      },
+      "raised": {
+        "msPerFrame": 19.33,
+        "drawCalls": 7699
+      }
+    },
+    "shadow": {
+      "kind": "cascaded",
+      "splits": [
+        34,
+        68,
+        143,
+        255
+      ],
+      "metersPerTexel": [
+        0.0091,
+        0.0181,
+        0.0383,
+        0.1379
+      ],
+      "vramMiB": 832
+    }
+  },
+  {
+    "id": "cascaded x4 scale .55",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 19.62,
+        "drawCalls": 7291
+      },
+      "raised": {
+        "msPerFrame": 16.85,
+        "drawCalls": 6058
+      }
+    },
+    "shadow": {
+      "kind": "cascaded",
+      "splits": [
+        25,
+        50,
+        105,
+        187
+      ],
+      "metersPerTexel": [
+        0.0067,
+        0.0133,
+        0.028,
+        0.1007
+      ],
+      "vramMiB": 832
+    }
+  },
+  {
+    "id": "cascaded x3",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 21.33,
+        "drawCalls": 8098
+      },
+      "raised": {
+        "msPerFrame": 19.39,
+        "drawCalls": 7447
+      }
+    },
+    "shadow": {
+      "kind": "cascaded",
+      "splits": [
+        55,
+        150,
+        340
+      ],
+      "metersPerTexel": [
+        0.0148,
+        0.0404,
+        0.1848
+      ],
+      "vramMiB": 576
+    }
+  },
+  {
+    "id": "cascaded x2",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 18.45,
+        "drawCalls": 6907
+      },
+      "raised": {
+        "msPerFrame": 16.54,
+        "drawCalls": 6247
+      }
+    },
+    "shadow": {
+      "kind": "cascaded",
+      "splits": [
+        110,
+        340
+      ],
+      "metersPerTexel": [
+        0.0296,
+        0.1848
+      ],
+      "vramMiB": 320
+    }
+  },
+  {
+    "id": "REF high (last)",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 11.31,
+        "drawCalls": 4033
+      },
+      "raised": {
+        "msPerFrame": 9.44,
+        "drawCalls": 3073
+      }
+    },
+    "shadow": {
+      "kind": "single fitted",
+      "coverageMeters": 110,
+      "metersPerTexel": [
+        0.0537
+      ],
+      "vramMiB": 64
+    }
+  }
+]

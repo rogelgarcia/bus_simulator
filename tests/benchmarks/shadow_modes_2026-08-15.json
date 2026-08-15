@@ -1,0 +1,354 @@
+[
+  {
+    "id": "high (first)",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 11.17,
+        "msBoth": [
+          11.17,
+          11.23
+        ],
+        "drawCalls": 3028
+      },
+      "raised": {
+        "msPerFrame": 8.87,
+        "msBoth": [
+          8.87,
+          8.97
+        ],
+        "drawCalls": 2308
+      }
+    },
+    "shadow": {
+      "kind": "single fitted",
+      "mapSizes": [
+        4096
+      ],
+      "metersPerTexel": [
+        0.0537
+      ],
+      "coverageMeters": 110,
+      "vramMiB": 64
+    }
+  },
+  {
+    "id": "off",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 7.75,
+        "msBoth": [
+          7.75,
+          8.36
+        ],
+        "drawCalls": 1549
+      },
+      "raised": {
+        "msPerFrame": 6.08,
+        "msBoth": [
+          6.14,
+          6.08
+        ],
+        "drawCalls": 1177
+      }
+    },
+    "shadow": {
+      "kind": "none",
+      "mapSizes": [],
+      "metersPerTexel": [],
+      "vramMiB": 0
+    }
+  },
+  {
+    "id": "low",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 11.26,
+        "msBoth": [
+          11.26,
+          11.31
+        ],
+        "drawCalls": 4033
+      },
+      "raised": {
+        "msPerFrame": 9.31,
+        "msBoth": [
+          9.31,
+          9.42
+        ],
+        "drawCalls": 3073
+      }
+    },
+    "shadow": {
+      "kind": "single fitted",
+      "mapSizes": [
+        1024
+      ],
+      "metersPerTexel": [
+        0.2148
+      ],
+      "coverageMeters": 110,
+      "vramMiB": 4
+    }
+  },
+  {
+    "id": "medium",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 11.75,
+        "msBoth": [
+          11.88,
+          11.75
+        ],
+        "drawCalls": 4037
+      },
+      "raised": {
+        "msPerFrame": 9.18,
+        "msBoth": [
+          9.18,
+          9.37
+        ],
+        "drawCalls": 3073
+      }
+    },
+    "shadow": {
+      "kind": "single fitted",
+      "mapSizes": [
+        2048
+      ],
+      "metersPerTexel": [
+        0.1074
+      ],
+      "coverageMeters": 110,
+      "vramMiB": 16
+    }
+  },
+  {
+    "id": "high",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 11.71,
+        "msBoth": [
+          13.13,
+          11.71
+        ],
+        "drawCalls": 4033
+      },
+      "raised": {
+        "msPerFrame": 9.36,
+        "msBoth": [
+          9.36,
+          9.38
+        ],
+        "drawCalls": 3073
+      }
+    },
+    "shadow": {
+      "kind": "single fitted",
+      "mapSizes": [
+        4096
+      ],
+      "metersPerTexel": [
+        0.0537
+      ],
+      "coverageMeters": 110,
+      "vramMiB": 64
+    }
+  },
+  {
+    "id": "ultra",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 11.58,
+        "msBoth": [
+          11.97,
+          11.58
+        ],
+        "drawCalls": 3028
+      },
+      "raised": {
+        "msPerFrame": 9.24,
+        "msBoth": [
+          9.24,
+          9.51
+        ],
+        "drawCalls": 2308
+      }
+    },
+    "shadow": {
+      "kind": "single fitted",
+      "mapSizes": [
+        4096
+      ],
+      "metersPerTexel": [
+        0.0537
+      ],
+      "coverageMeters": 110,
+      "vramMiB": 64
+    }
+  },
+  {
+    "id": "cascaded x2",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 19.65,
+        "msBoth": [
+          20.37,
+          19.65
+        ],
+        "drawCalls": 6907
+      },
+      "raised": {
+        "msPerFrame": 17.52,
+        "msBoth": [
+          17.93,
+          17.52
+        ],
+        "drawCalls": 6247
+      }
+    },
+    "shadow": {
+      "kind": "cascaded",
+      "cascades": 2,
+      "mapSizes": [
+        8192,
+        4096
+      ],
+      "metersPerTexel": [
+        0.0296,
+        0.1848
+      ],
+      "splits": [
+        110,
+        340
+      ],
+      "vramMiB": 320
+    }
+  },
+  {
+    "id": "cascaded x3",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 20.65,
+        "msBoth": [
+          20.65,
+          20.91
+        ],
+        "drawCalls": 8098
+      },
+      "raised": {
+        "msPerFrame": 19.21,
+        "msBoth": [
+          19.41,
+          19.21
+        ],
+        "drawCalls": 7447
+      }
+    },
+    "shadow": {
+      "kind": "cascaded",
+      "cascades": 3,
+      "mapSizes": [
+        8192,
+        8192,
+        4096
+      ],
+      "metersPerTexel": [
+        0.0148,
+        0.0404,
+        0.1848
+      ],
+      "splits": [
+        55,
+        150,
+        340
+      ],
+      "vramMiB": 576
+    }
+  },
+  {
+    "id": "cascaded x4",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 24.23,
+        "msBoth": [
+          24.23,
+          25.03
+        ],
+        "drawCalls": 9862
+      },
+      "raised": {
+        "msPerFrame": 21.39,
+        "msBoth": [
+          21.39,
+          22.55
+        ],
+        "drawCalls": 8368
+      }
+    },
+    "shadow": {
+      "kind": "cascaded",
+      "cascades": 4,
+      "mapSizes": [
+        8192,
+        8192,
+        8192,
+        4096
+      ],
+      "metersPerTexel": [
+        0.0121,
+        0.0242,
+        0.0512,
+        0.1848
+      ],
+      "splits": [
+        45,
+        90,
+        190,
+        340
+      ],
+      "vramMiB": 832
+    }
+  },
+  {
+    "id": "high (last)",
+    "errors": 0,
+    "perPose": {
+      "busLevel": {
+        "msPerFrame": 11.17,
+        "msBoth": [
+          11.17,
+          11.6
+        ],
+        "drawCalls": 4033
+      },
+      "raised": {
+        "msPerFrame": 9.09,
+        "msBoth": [
+          9.09,
+          9.09
+        ],
+        "drawCalls": 3073
+      }
+    },
+    "shadow": {
+      "kind": "single fitted",
+      "mapSizes": [
+        4096
+      ],
+      "metersPerTexel": [
+        0.0537
+      ],
+      "coverageMeters": 110,
+      "vramMiB": 64
+    }
+  }
+]

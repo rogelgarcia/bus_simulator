@@ -19,6 +19,7 @@ import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js'
 import { getResolvedShadowSettings, getShadowQualityPreset } from '../../lighting/ShadowSettings.js';
 import { registerObjectForSceneShadows, setActiveSceneShadowSystem, getActiveSceneShadowSystem } from '../../lighting/SceneShadowMaterials.js';
 import { CityCascadedShadows } from './CityCascadedShadows.js';
+import { ShadowCasterCuller } from '../../lighting/ShadowCasterCulling.js';
 import { azimuthElevationDegToDir } from '../atmosphere/SunDirection.js';
 import { getResolvedBuildingWindowVisualsSettings } from '../buildings/BuildingWindowVisualsSettings.js';
 import { getResolvedSunFlareSettings } from '../sun/SunFlareSettings.js';
@@ -387,6 +388,10 @@ export class City {
 
         // Cascaded shadow maps (activated by the `cascaded` shadow quality).
         this._csm = null;
+        // Skips casters that cannot cast into the view. Only worthwhile under
+        // CSM: the single fitted map's box is already small enough that three's
+        // own culling against it does the same job.
+        this._shadowCuller = null;
         // Roots outside this.group whose materials must receive scene shadows
         // (the bus). Remembered so a later mode switch can re-register them.
         this._extraShadowRoots = new Set();
@@ -525,9 +530,19 @@ export class City {
         setActiveSceneShadowSystem(this._csm);
         registerObjectForSceneShadows(this.group);
         for (const root of this._extraShadowRoots) registerObjectForSceneShadows(root);
+
+        // Index the static city only. The bus and anything else registered as a
+        // dynamic root keeps casting unconditionally: its bounding sphere would
+        // have to be recomputed every frame, and it is a handful of meshes.
+        this._shadowCuller = new ShadowCasterCuller();
+        this._shadowCuller.addRoot(this.group);
     }
 
     _deactivateCascadedShadows() {
+        if (this._shadowCuller) {
+            this._shadowCuller.clear();
+            this._shadowCuller = null;
+        }
         if (!this._csm) return;
         if (getActiveSceneShadowSystem() === this._csm) setActiveSceneShadowSystem(null);
         this._csm.dispose();
@@ -547,8 +562,14 @@ export class City {
 
     update(engine) {
         this._applyAtmosphere(engine);
-        if (this._csm) this._csm.updateFrame(engine);
-        else this._updateSunShadowFocus(engine);
+        if (this._csm) {
+            // Cull before the cascades fit: castShadow flags are read during
+            // the renderer's shadow pass, which happens after this returns.
+            this._shadowCuller?.update(engine?.camera, this.sunRef.direction, this._csm.maxFar);
+            this._csm.updateFrame(engine);
+        } else {
+            this._updateSunShadowFocus(engine);
+        }
         this.sky.position.copy(engine.camera.position);
         this._syncSkyVisibility(engine);
         this.sunFlare?.update?.(engine);

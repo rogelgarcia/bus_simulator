@@ -1,0 +1,66 @@
+[
+  {
+    "scene": "busLevel_defaultSun",
+    "on": {
+      "ms": 16.37,
+      "calls": 8129
+    },
+    "off": {
+      "ms": 23.31,
+      "calls": 13145
+    },
+    "casters": {
+      "total": 2051,
+      "kept": 392,
+      "culled": 1659
+    }
+  },
+  {
+    "scene": "raised_defaultSun",
+    "on": {
+      "ms": 13.82,
+      "calls": 6661
+    },
+    "off": {
+      "ms": 20.56,
+      "calls": 11153
+    },
+    "casters": {
+      "total": 2051,
+      "kept": 326,
+      "culled": 1725
+    }
+  },
+  {
+    "scene": "busLevel_lowSun",
+    "on": {
+      "ms": 15.02,
+      "calls": 7281
+    },
+    "off": {
+      "ms": 30.27,
+      "calls": 19553
+    },
+    "casters": {
+      "total": 2051,
+      "kept": 309,
+      "culled": 1742
+    }
+  },
+  {
+    "scene": "raised_lowSun",
+    "on": {
+      "ms": 13.04,
+      "calls": 6161
+    },
+    "off": {
+      "ms": 28.62,
+      "calls": 18149
+    },
+    "casters": {
+      "total": 2051,
+      "kept": 254,
+      "culled": 1797
+    }
+  }
+]
