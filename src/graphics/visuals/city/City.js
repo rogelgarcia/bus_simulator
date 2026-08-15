@@ -497,7 +497,8 @@ export class City {
             if ('radius' in this.sun.shadow) this.sun.shadow.radius = preset.radius;
 
             if (!wantsCsm && enabled && preset.mapSize > 0) {
-                const size = Math.max(256, Math.min(preset.mapSize, 4096, this._maxShadowTextureSize(renderer, preset.mapSize)));
+                // Only the hardware limit caps this; the tiers decide the size.
+                const size = Math.max(256, Math.min(preset.mapSize, this._maxShadowTextureSize(renderer, preset.mapSize)));
                 const current = this.sun.shadow.mapSize;
                 if (current?.x !== size || current?.y !== size) {
                     this.sun.shadow.mapSize.set(size, size);
@@ -535,6 +536,9 @@ export class City {
 
     _activateCascadedShadows(engine, preset, settings) {
         const cascades = Math.max(2, Math.min(4, Math.round(settings?.cascades ?? preset.cascades) || preset.cascades));
+        // Cascades multiply this by their own scales, so keep the base at or
+        // below 4096: the ladder tops out at 8192 per cascade, and four 16384
+        // maps would be 4 GiB.
         const mapSize = Math.max(256, Math.min(preset.mapSize, 4096, this._maxShadowTextureSize(engine?.renderer ?? null, preset.mapSize)));
         const splitScale = Number.isFinite(settings?.splitScale) && settings.splitScale > 0
             ? Math.max(0.5, Math.min(2.5, settings.splitScale))

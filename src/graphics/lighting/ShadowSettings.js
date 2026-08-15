@@ -32,12 +32,23 @@ export const SHADOW_DEFAULTS = Object.freeze({
 // that is ~1.25-1.5 texels. Larger values were tried to hide edge stepping and
 // read as wrong -- a midday sun makes hard shadows, and a blurred edge looks
 // like an overcast sky. Sharpen edges with resolution, not with radius.
+// Single-map tiers, each one step up from where they used to sit, with `ultra`
+// at the hardware ceiling (16384 verified allocating and casting on a 3060;
+// `_maxShadowTextureSize` clamps it down on cards that report less).
+// The fitted box is 220 m across, so density is 220 / mapSize:
+//   low 0.107, medium 0.054, high 0.027, ultra 0.013 m/texel.
+//
+// `normalBias` offsets the receiving surface along its normal to hide acne, so
+// it has to scale WITH the texel size — a value tuned for a coarse map
+// detaches the shadow (peter-panning) on a fine one. Anchored on the old
+// high tier: 0.03 at 0.054 m/texel, scaled proportionally from there. The
+// previous ladder had this backwards, growing the offset as maps got finer.
 export const SHADOW_QUALITY_PRESETS = Object.freeze({
     off: Object.freeze({ enabled: false, shadowMapType: 'pcf', mapSize: 0, radius: 1, bias: 0, normalBias: 0, twoSidedCasting: false }),
-    low: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 1024, radius: 2, bias: -0.0001, normalBias: 0.01, twoSidedCasting: false }),
-    medium: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 2048, radius: 1.5, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true }),
-    high: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 1.25, bias: -0.0002, normalBias: 0.03, twoSidedCasting: true }),
-    ultra: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 1, bias: -0.0002, normalBias: 0.035, twoSidedCasting: true }),
+    low: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 2048, radius: 2, bias: -0.0001, normalBias: 0.06, twoSidedCasting: false }),
+    medium: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 1.5, bias: -0.00015, normalBias: 0.03, twoSidedCasting: true }),
+    high: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 8192, radius: 1.25, bias: -0.0002, normalBias: 0.015, twoSidedCasting: true }),
+    ultra: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 16384, radius: 1, bias: -0.0002, normalBias: 0.008, twoSidedCasting: true }),
     // Cascade Ultra — the top cascaded preset. A shadow-map box is ~2.2x its
     // split distance, so one wide near cascade cannot be both sharp and
     // long-range; splitting the near range instead keeps everything inside
