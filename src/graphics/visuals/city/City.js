@@ -567,6 +567,19 @@ export class City {
         registerObjectForSceneShadows(this.group);
         for (const root of this._extraShadowRoots) registerObjectForSceneShadows(root);
 
+        // Force the new defines to become real programs before anything
+        // renders. CSM_CASCADES is baked into each material, while the
+        // CSM_cascades uniform array is resized to the live cascade count every
+        // frame — so a material still holding a program from a different count
+        // gets an array of the wrong length and three crashes inside
+        // flatten() ("cannot read properties of undefined (reading
+        // 'toArray')"). Reproduced by changing the cascade count at runtime.
+        try {
+            engine?.renderer?.compile?.(engine.scene, engine.camera);
+        } catch {
+            // A failed pre-compile only costs us the guarantee, not correctness.
+        }
+
         // Index the static city only. The bus and anything else registered as a
         // dynamic root keeps casting unconditionally: its bounding sphere would
         // have to be recomputed every frame, and it is a handful of meshes.
