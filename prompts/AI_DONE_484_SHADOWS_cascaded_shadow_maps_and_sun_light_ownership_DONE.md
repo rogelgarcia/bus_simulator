@@ -318,23 +318,34 @@ buildings dominate casting (2,014 casters / 407k triangles), so that saving is
 small. Trees are also streamed (the `Trees` group is empty right after load),
 which adds churn a tree-specific map would have to handle.
 
-Did instead: **per-cascade shadow-map sizes**, spending the fixed texel budget
-where detail is actually visible. Multipliers on the preset base size, 4
-cascades: `[0.5, 1, 2, 1]` -> 2048 / 4096 / 8192 / 4096.
+Did instead: **per-cascade shadow-map sizes**, spending texels where detail is
+actually visible. Multipliers on the preset base size, 4 cascades:
+`[1, 1, 2, 1]` -> 4096 / 4096 / 8192 / 4096.
 
 | band | before | after |
 | --- | --- | --- |
-| 0-45 m | 0.024 | 0.049 |
+| 0-45 m | 0.024 | 0.024 |
 | 45-90 m | 0.048 | 0.048 |
 | 90-190 m | 0.102 | **0.051** |
 | 190-340 m | 0.185 | 0.185 |
 
-Density is now flat at ~0.05 m/texel across everything within 190 m (the near
-cascade was finer than the eye can use at 45 m; the third band was where
-foliage detail died). Measured cost is unchanged — 37 ms/frame and 16,682 draw
-calls, identical before and after — because the shadow passes are draw-call
-bound, not fill bound, so the larger map is effectively free in time. VRAM is
-the price: 256 -> 400 MiB.
+**Near cascade: do not shrink it.** First attempt used `[0.5, 1, 2, 1]`,
+halving the near cascade on the reasoning that 2.4 cm texels are finer than the
+eye resolves at 45 m. That reasoning is wrong for this game: the bus sits a few
+metres from the camera and fills much of the screen, so its shadow is the one
+surface whose texels are always under scrutiny, and the degradation was
+reported immediately from live play. Restored to full size; the thin
+traffic-light pole shadow is a good regression probe (it goes blobby first).
+
+Measured cost is unchanged by any of this — 37-38 ms/frame at 4096 near vs
+37-42 ms at 2048, overlapping ranges, with draw calls identical at 16,682 —
+because the shadow passes are draw-call bound, not fill bound. VRAM is the only
+real price: 256 -> 448 MiB.
+
+Benchmark note: an earlier reading of this same comparison showed 57-64 ms and
+an inverted result (fewer texels measuring *slower*). Cause was the user's game
+running on the same GPU. Any burst benchmark here is only trustworthy with the
+game closed, and back-to-back within one session.
 
 **Texel-snapping constraint (important):** `CSM.update()` derives its snapping
 grid from the single `shadowMapSize`, and a grid *finer* than a cascade's real

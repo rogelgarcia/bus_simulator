@@ -42,17 +42,22 @@ const SPLITS_BY_CASCADES = Object.freeze({
 
 // Per-cascade shadow-map size, as a multiplier on the preset's base size.
 // A uniform size spends texels badly: a cascade's box grows ~2.2x with its
-// split distance, so the nearest cascade ends up finer than the eye can use at
-// 45 m while the third band -- where foliage detail actually dies -- is four
-// times coarser. Shifting one step down from the near cascade and two up on
-// the third evens the density out across everything within ~190 m.
+// split distance, so the third band -- where foliage detail actually dies --
+// ends up four times coarser than the nearest one. Stepping the third band up
+// evens density out across everything within ~190 m.
+//
+// The near cascade stays at full size. It was tried at half (the eye "should
+// not" resolve 2.4 cm texels at 45 m) and the bus shadow visibly degraded:
+// it sits a few metres from the camera and fills much of the screen, so it is
+// the one shadow whose texels are always under scrutiny. Distance-based
+// reasoning does not apply to a caster that close.
 //
 // Multipliers must stay powers of two: the texel-snapping grid below relies on
 // every cascade's texel size being a whole multiple of the smallest one.
 const MAP_SIZE_SCALE_BY_CASCADES = Object.freeze({
     2: Object.freeze([1, 2]),
-    3: Object.freeze([0.5, 1, 2]),
-    4: Object.freeze([0.5, 1, 2, 1])
+    3: Object.freeze([1, 1, 2]),
+    4: Object.freeze([1, 1, 2, 1])
 });
 
 const MAX_CASCADE_MAP_SIZE = 8192;
