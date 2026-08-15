@@ -30,7 +30,9 @@ const CONFIG_OVERRIDE_KEYS = Object.freeze([
     'floorHeight',
     'style',
     'wallInset',
-    'materialVariationSeed'
+    'materialVariationSeed',
+    'cornerTreatment',
+    'materialSlots'
 ]);
 
 function collectPbrMaterialIds(config) {
@@ -166,8 +168,14 @@ export const scenarioBuildingShowcase = {
             Number(cameraDir.y) || 0,
             Number(cameraDir.z) || 0
         ).normalize();
-        engine.camera.position.copy(sphere.center).addScaledVector(dir, dist);
-        engine.camera.lookAt(sphere.center);
+        // Optional close-up aim: 0 = building bottom, 1 = top (default center).
+        const target = sphere.center.clone();
+        if (Number.isFinite(options?.cameraTargetYFrac)) {
+            const frac = Math.max(0, Math.min(1, Number(options.cameraTargetYFrac)));
+            target.y = box.min.y + (box.max.y - box.min.y) * frac;
+        }
+        engine.camera.position.copy(target).addScaledVector(dir, dist);
+        engine.camera.lookAt(target);
         engine.camera.updateProjectionMatrix();
 
         const iblExpected = getResolvedLightingSettings()?.ibl?.enabled === true;

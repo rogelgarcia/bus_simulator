@@ -124,7 +124,8 @@ export function createCityBuildingConfigFromFabrication({
     facades = null,
     windowDefinitions = null,
     wallDecorations = null,
-    cornerTreatment = null
+    cornerTreatment = null,
+    materialSlots = null
 } = {}) {
     const safeId = sanitizeBuildingConfigId(id);
     const safeName = sanitizeBuildingConfigName(name, { fallback: buildingConfigIdToDisplayName(safeId) });
@@ -152,6 +153,7 @@ export function createCityBuildingConfigFromFabrication({
     if (windowDefinitions && typeof windowDefinitions === 'object') cfg.windowDefinitions = windowDefinitions;
     if (wallDecorations && typeof wallDecorations === 'object') cfg.wallDecorations = wallDecorations;
     if (cornerTreatment && typeof cornerTreatment === 'object') cfg.cornerTreatment = cornerTreatment;
+    if (materialSlots && typeof materialSlots === 'object') cfg.materialSlots = materialSlots;
     return cfg;
 }
 
@@ -217,6 +219,12 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
         indentLines(JSON.stringify(cornerTreatment, null, 4), 8),
         '    ),'
     ] : [];
+    const materialSlots = cfg.materialSlots && typeof cfg.materialSlots === 'object' ? cfg.materialSlots : null;
+    const materialSlotsLines = materialSlots ? [
+        '    materialSlots: Object.freeze(',
+        indentLines(JSON.stringify(materialSlots, null, 4), 8),
+        '    ),'
+    ] : [];
 
     const lines = [
         `// src/graphics/content3d/buildings/configs/${baseName}.js`,
@@ -238,6 +246,7 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
         ...windowDefinitionsLines,
         ...wallDecorationsLines,
         ...cornerTreatmentLines,
+        ...materialSlotsLines,
         ...windowVisualsLines,
         '});',
         '',

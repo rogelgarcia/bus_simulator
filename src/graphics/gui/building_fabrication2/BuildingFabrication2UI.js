@@ -2,6 +2,8 @@
 // Builds the HUD controls for Building Fabrication 2.
 
 import { getBeltCourseColorOptions } from '../../../app/buildings/BeltCourseColor.js';
+import { getBrickPresetOptions } from '../../../app/buildings/BrickPresetCatalog.js';
+import { BUILDING_MATERIAL_SLOT_IDS, getMaterialSlotNames, normalizeBuildingMaterialSlotsConfig } from '../../../app/buildings/BuildingMaterialSlots.js';
 import {
     WALL_BASE_TINT_STATE_DEFAULT,
     applyWallBaseTintStateToWallBase,
@@ -883,8 +885,13 @@ export class BuildingFabrication2UI {
         this.onMoveLayer = null;
         this.onDeleteLayer = null;
         this.onSetLayerCornice = null;
+        this.onSetLayerBanding = null;
+        this.onSetLayerMaterialRef = null;
         this.onSetCornerTreatment = null;
         this._cornerTreatment = null;
+        this.onSetMaterialSlots = null;
+        this._materialSlots = null;
+        this._brickPresetOptions = getBrickPresetOptions();
         this.onSelectFace = null;
         this.onToggleFaceLock = null;
         this.onSetFaceLockReverse = null;
@@ -1186,6 +1193,11 @@ export class BuildingFabrication2UI {
 
     setCornerTreatment(value) {
         this._cornerTreatment = value && typeof value === 'object' ? value : null;
+        this._renderLayers();
+    }
+
+    setMaterialSlots(value) {
+        this._materialSlots = value && typeof value === 'object' ? value : null;
         this._renderLayers();
     }
 
@@ -3270,6 +3282,7 @@ export class BuildingFabrication2UI {
         }
 
         const allowEdit = this._enabled && this._hasBuilding;
+        this._appendMaterialSlotsSection(this.layersList, { allowEdit });
         this._appendCornerTreatmentSection(this.layersList, { allowEdit });
         let globalSelectedFaceId = null;
         for (const faceState of this._floorLayerFaceStateById.values()) {
@@ -3497,6 +3510,8 @@ export class BuildingFabrication2UI {
                 body.appendChild(interiorRow);
 
                 this._appendCorniceSection(body, { layer, layerId, allowEdit, isRoof: false });
+                this._appendBrickPresetRow(body, { layer, layerId, allowEdit });
+                this._appendBandingSection(body, { layer, layerId, allowEdit });
 
                 const normalizeWallTextureId = (texId) => {
                     const id = typeof texId === 'string' ? texId : '';
@@ -5399,13 +5414,161 @@ export class BuildingFabrication2UI {
 	        }
 	    }
 
+    // Building-level material slot editor (AI 491): named slots that trim
+    // features reference via `slot:<name>` so one change recolors all of them.
+    _appendMaterialSlotsSection(container, { allowEdit }) {
+        const normalized = normalizeBuildingMaterialSlotsConfig(this._materialSlots);
+        const slots = normalized.slots ?? {};
+        const slotNames = Array.from(new Set([...BUILDING_MATERIAL_SLOT_IDS, ...Object.keys(slots)]));
+        const assignedCount = Object.keys(slots).length;
+        const emitPatch = (patch) => this.onSetMaterialSlots?.(patch);
+
+        const group = document.createElement('div');
+        group.className = 'building-fab2-layer-group is-building';
+        const isOpen = this._layerOpenById.get('__material_slots__') ?? false;
+
+        const header = document.createElement('div');
+        header.className = 'building-fab2-layer-summary';
+        header.tabIndex = 0;
+        header.setAttribute('role', 'button');
+        header.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        const title = document.createElement('div');
+        title.className = 'building-fab2-layer-title';
+        title.textContent = assignedCount ? `Material slots (${assignedCount})` : 'Material slots';
+        header.appendChild(title);
+
+        const body = document.createElement('div');
+        body.className = 'building-fab2-layer-body';
+        body.classList.toggle('hidden', !isOpen);
+
+        const setOpen = (open) => {
+            const next = !!open;
+            this._layerOpenById.set('__material_slots__', next);
+            body.classList.toggle('hidden', !next);
+            header.setAttribute('aria-expanded', next ? 'true' : 'false');
+        };
+        header.addEventListener('click', () => setOpen(!(this._layerOpenById.get('__material_slots__') ?? false)));
+        header.addEventListener('keydown', (ev) => {
+            if (ev?.key !== 'Enter' && ev?.key !== ' ') return;
+            ev.preventDefault();
+            setOpen(!(this._layerOpenById.get('__material_slots__') ?? false));
+        });
+
+        const slotValueOf = (entry) => {
+            const material = entry?.material ?? null;
+            if (material?.kind === 'preset' && material?.id) return `preset:${material.id}`;
+            if (material?.kind === 'texture' && material?.id) return `texture:${material.id}`;
+            if (material?.kind === 'color' && material?.id) return `color:${material.id}`;
+            return '';
+        };
+
+        const buildOptions = () => {
+            const options = [{ id: '', label: '(unset)' }];
+            for (const preset of this._brickPresetOptions ?? []) {
+                options.push({ id: `preset:${preset.id}`, label: `Brick preset: ${preset.label}` });
+            }
+            for (const opt of this._wallTextureDefs ?? []) {
+                options.push({ id: `texture:${opt.id}`, label: `Texture: ${opt.label}` });
+            }
+            for (const opt of this._beltCourseColorOptions ?? []) {
+                const id = String(opt?.id ?? '');
+                if (!id) continue;
+                options.push({ id: `color:${id}`, label: `Color: ${String(opt?.label ?? id)}` });
+            }
+            return options;
+        };
+        const options = buildOptions();
+
+        for (const name of slotNames) {
+            const entry = slots[name] ?? null;
+            const row = document.createElement('div');
+            row.className = 'building-fab2-layer-row';
+            const rowLabel = document.createElement('div');
+            rowLabel.className = 'building-fab2-row-label';
+            rowLabel.textContent = name;
+            const select = document.createElement('select');
+            select.className = 'building-fab2-select';
+            for (const option of options) {
+                const opt = document.createElement('option');
+                opt.value = option.id;
+                opt.textContent = option.label;
+                select.appendChild(opt);
+            }
+            select.value = slotValueOf(entry);
+            select.disabled = !allowEdit;
+            select.addEventListener('change', () => {
+                const value = select.value;
+                if (!value) {
+                    emitPatch({ [name]: null });
+                    return;
+                }
+                const idx = value.indexOf(':');
+                const kind = value.slice(0, idx);
+                const id = value.slice(idx + 1);
+                const prevJitter = entry?.material?.kind === 'preset' ? (entry.material.jitter ?? false) : false;
+                const material = kind === 'preset' && prevJitter
+                    ? { kind, id, jitter: true }
+                    : { kind, id };
+                emitPatch({ [name]: { material } });
+            });
+            row.appendChild(rowLabel);
+            row.appendChild(select);
+            body.appendChild(row);
+
+            if (entry?.material?.kind === 'preset') {
+                const jitterRow = document.createElement('div');
+                jitterRow.className = 'building-fab-row building-fab-row-wide building-fab2-bay-window-mode-row';
+                const jitterLabel = document.createElement('div');
+                jitterLabel.className = 'building-fab-row-label';
+                jitterLabel.textContent = 'Tint jitter (per building)';
+                const controls = document.createElement('div');
+                controls.className = 'building-fab2-bay-row-controls';
+                const toggle = document.createElement('div');
+                toggle.className = 'building-fab2-width-mode-toggle building-fab2-bay-window-mode-toggle';
+                const jitterOn = !!entry.material.jitter;
+                const addBtn = (state, text) => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'building-fab2-width-mode-btn';
+                    btn.textContent = text;
+                    btn.disabled = !allowEdit;
+                    btn.classList.toggle('is-active', jitterOn === state);
+                    btn.addEventListener('click', () => {
+                        if (!allowEdit || jitterOn === state) return;
+                        const material = { kind: 'preset', id: entry.material.id };
+                        if (state) material.jitter = true;
+                        emitPatch({ [name]: { material } });
+                    });
+                    toggle.appendChild(btn);
+                };
+                addBtn(false, 'Off');
+                addBtn(true, 'On');
+                controls.appendChild(toggle);
+                jitterRow.appendChild(jitterLabel);
+                jitterRow.appendChild(controls);
+                body.appendChild(jitterRow);
+            }
+        }
+
+        const hint = document.createElement('div');
+        hint.className = 'building-fab2-hint';
+        hint.textContent = 'Features pick these via "Slot: <name>" in their material selectors.';
+        body.appendChild(hint);
+
+        group.appendChild(header);
+        group.appendChild(body);
+        container.appendChild(group);
+    }
+
     _appendCornerTreatmentSection(container, { allowEdit }) {
         const cfg = this._cornerTreatment && typeof this._cornerTreatment === 'object' ? this._cornerTreatment : {};
         const enabled = !!cfg.enabled;
         const emitPatch = (patch) => this.onSetCornerTreatment?.(patch);
 
         const group = document.createElement('div');
-        group.className = 'building-fab2-layer-group is-floor';
+        // `is-building`: building-level section — must not match the
+        // `.is-floor` layer groups that tests and face pickers target.
+        group.className = 'building-fab2-layer-group is-building';
         const isOpen = this._layerOpenById.get('__corner_treatment__') ?? false;
 
         const header = document.createElement('div');
@@ -5624,16 +5787,23 @@ export class BuildingFabrication2UI {
 
             const materialToValue = (material) => {
                 if (material?.kind === 'match_wall') return 'match_wall';
+                if (material?.kind === 'slot' && material?.id) return `slot:${material.id}`;
                 if (material?.kind === 'texture' && material?.id) return `texture:${material.id}`;
                 if (material?.kind === 'color' && material?.id) return `color:${material.id}`;
                 return 'color:offwhite';
             };
             const valueToMaterial = (value) => {
                 if (value === 'match_wall') return { kind: 'match_wall', id: 'match_wall' };
+                if (value.startsWith('slot:')) return { kind: 'slot', id: value.slice('slot:'.length) };
                 if (value.startsWith('texture:')) return { kind: 'texture', id: value.slice('texture:'.length) };
                 return { kind: 'color', id: value.replace(/^color:/, '') };
             };
             const materialOptions = [{ id: 'match_wall', label: 'Match wall' }];
+            const slotNamesForCorners = Array.from(new Set([
+                ...getMaterialSlotNames(normalizeBuildingMaterialSlotsConfig(this._materialSlots)),
+                ...BUILDING_MATERIAL_SLOT_IDS
+            ]));
+            for (const name of slotNamesForCorners) materialOptions.push({ id: `slot:${name}`, label: `Slot: ${name}` });
             for (const opt of this._beltCourseColorOptions ?? []) {
                 const id = String(opt?.id ?? '');
                 if (!id) continue;
@@ -5712,6 +5882,274 @@ export class BuildingFabrication2UI {
         group.appendChild(header);
         group.appendChild(body);
         container.appendChild(group);
+    }
+
+    // Layer wall material as a brick preset or slot reference (AI 491).
+    _appendBrickPresetRow(body, { layer, layerId, allowEdit }) {
+        const material = layer?.material && typeof layer.material === 'object' ? layer.material : null;
+        const currentValue = material?.kind === 'preset' && material?.id
+            ? `preset:${material.id}`
+            : (material?.kind === 'slot' && material?.id ? `slot:${material.id}` : '');
+
+        const title = document.createElement('div');
+        title.className = 'building-fab2-subtitle';
+        title.textContent = 'Wall preset';
+        body.appendChild(title);
+
+        const row = document.createElement('div');
+        row.className = 'building-fab2-layer-row';
+        const rowLabel = document.createElement('div');
+        rowLabel.className = 'building-fab2-row-label';
+        rowLabel.textContent = 'Brick preset';
+        const select = document.createElement('select');
+        select.className = 'building-fab2-select';
+
+        const slotNames = Array.from(new Set([
+            ...getMaterialSlotNames(normalizeBuildingMaterialSlotsConfig(this._materialSlots)),
+            ...BUILDING_MATERIAL_SLOT_IDS
+        ]));
+        const options = [{ id: '', label: '(custom material)' }];
+        for (const preset of this._brickPresetOptions ?? []) {
+            options.push({ id: `preset:${preset.id}`, label: preset.label });
+        }
+        for (const name of slotNames) {
+            options.push({ id: `slot:${name}`, label: `Slot: ${name}` });
+        }
+        for (const option of options) {
+            const opt = document.createElement('option');
+            opt.value = option.id;
+            opt.textContent = option.label;
+            select.appendChild(opt);
+        }
+        select.value = currentValue;
+        select.disabled = !allowEdit;
+        select.addEventListener('change', () => {
+            const value = select.value;
+            if (!value) {
+                this.onSetLayerMaterialRef?.(layerId, null);
+                return;
+            }
+            const idx = value.indexOf(':');
+            const kind = value.slice(0, idx);
+            const id = value.slice(idx + 1);
+            const jitter = material?.kind === 'preset' ? (material.jitter ?? false) : false;
+            const spec = kind === 'preset' && jitter ? { kind, id, jitter: true } : { kind, id };
+            this.onSetLayerMaterialRef?.(layerId, spec);
+        });
+        row.appendChild(rowLabel);
+        row.appendChild(select);
+        body.appendChild(row);
+
+        if (material?.kind === 'preset') {
+            const jitterRow = document.createElement('div');
+            jitterRow.className = 'building-fab-row building-fab-row-wide building-fab2-bay-window-mode-row';
+            const jitterLabel = document.createElement('div');
+            jitterLabel.className = 'building-fab-row-label';
+            jitterLabel.textContent = 'Tint jitter (per building)';
+            const controls = document.createElement('div');
+            controls.className = 'building-fab2-bay-row-controls';
+            const toggle = document.createElement('div');
+            toggle.className = 'building-fab2-width-mode-toggle building-fab2-bay-window-mode-toggle';
+            const jitterOn = !!material.jitter;
+            const addBtn = (state, text) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'building-fab2-width-mode-btn';
+                btn.textContent = text;
+                btn.disabled = !allowEdit;
+                btn.classList.toggle('is-active', jitterOn === state);
+                btn.addEventListener('click', () => {
+                    if (!allowEdit || jitterOn === state) return;
+                    const spec = { kind: 'preset', id: material.id };
+                    if (state) spec.jitter = true;
+                    this.onSetLayerMaterialRef?.(layerId, spec);
+                });
+                toggle.appendChild(btn);
+            };
+            addBtn(false, 'Off');
+            addBtn(true, 'On');
+            controls.appendChild(toggle);
+            jitterRow.appendChild(jitterLabel);
+            jitterRow.appendChild(controls);
+            body.appendChild(jitterRow);
+        }
+    }
+
+    // Facade banding controls (AI 491): alternate the wall with a secondary
+    // material in horizontal bands.
+    _appendBandingSection(body, { layer, layerId, allowEdit }) {
+        const banding = layer?.banding && typeof layer.banding === 'object' ? layer.banding : {};
+        const enabled = !!banding.enabled;
+        const emitPatch = (patch) => this.onSetLayerBanding?.(layerId, patch);
+
+        const title = document.createElement('div');
+        title.className = 'building-fab2-subtitle';
+        title.textContent = 'Banding';
+        body.appendChild(title);
+
+        const makeToggleRow = (label, value, onSet) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab-row building-fab-row-wide building-fab2-bay-window-mode-row';
+            const rowLabel = document.createElement('div');
+            rowLabel.className = 'building-fab-row-label';
+            rowLabel.textContent = label;
+            const controls = document.createElement('div');
+            controls.className = 'building-fab2-bay-row-controls';
+            const toggle = document.createElement('div');
+            toggle.className = 'building-fab2-width-mode-toggle building-fab2-bay-window-mode-toggle';
+            const addBtn = (state, text) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'building-fab2-width-mode-btn';
+                btn.textContent = text;
+                btn.disabled = !allowEdit;
+                btn.classList.toggle('is-active', value === state);
+                btn.addEventListener('click', () => {
+                    if (!allowEdit || value === state) return;
+                    onSet(state);
+                });
+                toggle.appendChild(btn);
+            };
+            addBtn(false, 'Off');
+            addBtn(true, 'On');
+            controls.appendChild(toggle);
+            row.appendChild(rowLabel);
+            row.appendChild(controls);
+            body.appendChild(row);
+        };
+
+        const makeRangeRow = (label, { min, max, step, value, onChange }) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab2-layer-row';
+            const rowLabel = document.createElement('div');
+            rowLabel.className = 'building-fab2-row-label';
+            rowLabel.textContent = label;
+            const range = document.createElement('input');
+            range.type = 'range';
+            range.className = 'building-fab2-layer-range';
+            const number = document.createElement('input');
+            number.type = 'number';
+            number.className = 'building-fab2-layer-number';
+            for (const input of [range, number]) {
+                input.min = String(min);
+                input.max = String(max);
+                input.step = String(step);
+                input.disabled = !allowEdit;
+            }
+            const safeValue = clamp(value, min, max);
+            range.value = String(safeValue);
+            number.value = String(safeValue);
+            const handle = (raw) => {
+                const v = clamp(raw, min, max);
+                range.value = String(v);
+                number.value = String(v);
+                onChange(v);
+            };
+            range.addEventListener('input', () => handle(range.value));
+            number.addEventListener('input', () => handle(number.value));
+            row.appendChild(rowLabel);
+            row.appendChild(range);
+            row.appendChild(number);
+            body.appendChild(row);
+        };
+
+        const makeSelectRow = (label, { options, value, onChange }) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab2-layer-row';
+            const rowLabel = document.createElement('div');
+            rowLabel.className = 'building-fab2-row-label';
+            rowLabel.textContent = label;
+            const select = document.createElement('select');
+            select.className = 'building-fab2-select';
+            for (const option of options) {
+                const opt = document.createElement('option');
+                opt.value = String(option.id);
+                opt.textContent = String(option.label);
+                select.appendChild(opt);
+            }
+            select.value = String(value);
+            select.disabled = !allowEdit;
+            select.addEventListener('change', () => onChange(select.value));
+            row.appendChild(rowLabel);
+            row.appendChild(select);
+            body.appendChild(row);
+        };
+
+        makeToggleRow('Banding', enabled, (next) => emitPatch({ enabled: next }));
+        if (!enabled) return;
+
+        const unit = banding.unit === 'courses' ? 'courses' : 'meters';
+        makeSelectRow('Unit', {
+            options: [
+                { id: 'meters', label: 'Meters' },
+                { id: 'courses', label: 'Brick courses' }
+            ],
+            value: unit,
+            onChange: (next) => emitPatch({ unit: next })
+        });
+
+        const heightMax = unit === 'courses' ? 24 : 8;
+        const heightStep = unit === 'courses' ? 1 : 0.05;
+        makeRangeRow(`Wall band (${unit})`, {
+            min: 0.05,
+            max: heightMax,
+            step: heightStep,
+            value: banding.primaryHeight ?? (unit === 'courses' ? 6 : 1.8),
+            onChange: (primaryHeight) => emitPatch({ primaryHeight })
+        });
+        makeRangeRow(`Accent band (${unit})`, {
+            min: 0.05,
+            max: heightMax,
+            step: heightStep,
+            value: banding.secondaryHeight ?? (unit === 'courses' ? 2 : 0.6),
+            onChange: (secondaryHeight) => emitPatch({ secondaryHeight })
+        });
+        makeRangeRow(`Offset (${unit})`, {
+            min: -heightMax,
+            max: heightMax,
+            step: heightStep,
+            value: banding.offset ?? 0,
+            onChange: (offset) => emitPatch({ offset })
+        });
+
+        const materialToValue = (material) => {
+            if (material?.kind === 'slot' && material?.id) return `slot:${material.id}`;
+            if (material?.kind === 'preset' && material?.id) return `preset:${material.id}`;
+            if (material?.kind === 'texture' && material?.id) return `texture:${material.id}`;
+            if (material?.kind === 'color' && material?.id) return `color:${material.id}`;
+            return 'color:offwhite';
+        };
+        const buildMaterialOptions = (material) => {
+            const options = [];
+            const slotNames = Array.from(new Set([
+                ...getMaterialSlotNames(normalizeBuildingMaterialSlotsConfig(this._materialSlots)),
+                ...BUILDING_MATERIAL_SLOT_IDS
+            ]));
+            for (const name of slotNames) options.push({ id: `slot:${name}`, label: `Slot: ${name}` });
+            for (const preset of this._brickPresetOptions ?? []) {
+                options.push({ id: `preset:${preset.id}`, label: `Brick preset: ${preset.label}` });
+            }
+            for (const opt of this._beltCourseColorOptions ?? []) {
+                const id = String(opt?.id ?? '');
+                if (!id) continue;
+                options.push({ id: `color:${id}`, label: String(opt?.label ?? id) });
+            }
+            for (const opt of this._wallTextureDefs ?? []) {
+                options.push({ id: `texture:${opt.id}`, label: `Texture: ${opt.label}` });
+            }
+            const current = materialToValue(material);
+            if (!options.some((o) => o.id === current)) options.unshift({ id: current, label: current });
+            return options;
+        };
+        makeSelectRow('Band material', {
+            options: buildMaterialOptions(banding.material),
+            value: materialToValue(banding.material),
+            onChange: (value) => {
+                const idx = value.indexOf(':');
+                if (idx <= 0) return;
+                emitPatch({ material: { kind: value.slice(0, idx), id: value.slice(idx + 1) } });
+            }
+        });
     }
 
     _appendCorniceSection(body, { layer, layerId, allowEdit, isRoof }) {
@@ -5842,17 +6280,24 @@ export class BuildingFabrication2UI {
 
         const materialToValue = (material) => {
             if (material?.kind === 'match_wall') return 'match_wall';
+            if (material?.kind === 'slot' && material?.id) return `slot:${material.id}`;
             if (material?.kind === 'texture' && material?.id) return `texture:${material.id}`;
             if (material?.kind === 'color' && material?.id) return `color:${material.id}`;
             return 'color:offwhite';
         };
         const valueToMaterial = (value) => {
             if (value === 'match_wall') return { kind: 'match_wall', id: 'match_wall' };
+            if (value.startsWith('slot:')) return { kind: 'slot', id: value.slice('slot:'.length) };
             if (value.startsWith('texture:')) return { kind: 'texture', id: value.slice('texture:'.length) };
             return { kind: 'color', id: value.replace(/^color:/, '') };
         };
         const buildMaterialOptions = (material) => {
             const options = [{ id: 'match_wall', label: 'Match wall' }];
+            const slotNames = Array.from(new Set([
+                ...getMaterialSlotNames(normalizeBuildingMaterialSlotsConfig(this._materialSlots)),
+                ...BUILDING_MATERIAL_SLOT_IDS
+            ]));
+            for (const name of slotNames) options.push({ id: `slot:${name}`, label: `Slot: ${name}` });
             for (const opt of this._beltCourseColorOptions ?? []) {
                 const id = String(opt?.id ?? '');
                 if (!id) continue;

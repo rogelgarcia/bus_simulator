@@ -664,6 +664,7 @@ export class CityMap {
             if (building?.windowDefinitions && typeof building.windowDefinitions === 'object') record.windowDefinitions = deepClone(building.windowDefinitions);
             if (building?.wallDecorations && typeof building.wallDecorations === 'object') record.wallDecorations = deepClone(building.wallDecorations);
             if (building?.cornerTreatment && typeof building.cornerTreatment === 'object') record.cornerTreatment = deepClone(building.cornerTreatment);
+            if (building?.materialSlots && typeof building.materialSlots === 'object') record.materialSlots = deepClone(building.materialSlots);
 
             if (!record.configId) {
                 if (Array.isArray(building?.layers) && building.layers.length) record.layers = building.layers;
@@ -842,6 +843,7 @@ export class CityMap {
             const windowVisuals = overrideOrBase('windowVisuals');
             const wallDecorations = overrideOrBase('wallDecorations');
             const cornerTreatment = overrideOrBase('cornerTreatment');
+            const materialSlots = overrideOrBase('materialSlots');
 
             out.push({
                 id,
@@ -861,7 +863,8 @@ export class CityMap {
                 windowDefinitions: (windowDefinitions && typeof windowDefinitions === 'object') ? deepClone(windowDefinitions) : null,
                 windowVisuals: (windowVisuals && typeof windowVisuals === 'object') ? deepClone(windowVisuals) : null,
                 wallDecorations: (wallDecorations && typeof wallDecorations === 'object') ? deepClone(wallDecorations) : null,
-                cornerTreatment: (cornerTreatment && typeof cornerTreatment === 'object') ? deepClone(cornerTreatment) : null
+                cornerTreatment: (cornerTreatment && typeof cornerTreatment === 'object') ? deepClone(cornerTreatment) : null,
+                materialSlots: (materialSlots && typeof materialSlots === 'object') ? deepClone(materialSlots) : null
             });
         }
 

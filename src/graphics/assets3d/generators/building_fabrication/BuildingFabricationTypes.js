@@ -10,6 +10,7 @@ import {
     resolveWallBaseTintStateFromWallBase
 } from '../../../../app/buildings/WallBaseTintModel.js';
 import { WINDOW_TYPE, getDefaultWindowParams, isWindowTypeId } from '../buildings/WindowTextureGenerator.js';
+import { isValidMaterialSlotName, parseMaterialSpecShorthand } from '../../../../app/buildings/BuildingMaterialSlots.js';
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -176,6 +177,21 @@ function normalizeFloorLayerInteriorConfig(value, { fallbackEnabled = false } = 
     return { enabled: !!enabledRaw };
 }
 
+// Slot / brick preset references (AI 491) survive normalization untouched;
+// they are resolved to explicit specs by the config pre-pass in
+// BuildingMaterialSlots.resolveBuildingConfigMaterials before rendering.
+function normalizeSlotOrPresetMaterialSpec(value) {
+    const spec = typeof value === 'string' ? parseMaterialSpecShorthand(value) : value;
+    if (!spec || typeof spec !== 'object') return null;
+    if (spec.kind === 'slot' && isValidMaterialSlotName(spec.id)) return { kind: 'slot', id: spec.id };
+    if (spec.kind === 'preset' && typeof spec.id === 'string' && spec.id) {
+        const out = { kind: 'preset', id: spec.id };
+        if (spec.jitter !== undefined && spec.jitter !== null && spec.jitter !== false) out.jitter = deepClone(spec.jitter);
+        return out;
+    }
+    return null;
+}
+
 function normalizeMaterialSpec(
     value,
     {
@@ -189,6 +205,9 @@ function normalizeMaterialSpec(
         kind: fallback?.kind === 'texture' ? 'texture' : 'color',
         id: typeof fallback?.id === 'string' ? fallback.id : ''
     };
+
+    const slotOrPreset = normalizeSlotOrPresetMaterialSpec(value);
+    if (slotOrPreset) return slotOrPreset;
 
     const canColor = typeof allowColorId === 'function' ? allowColorId : () => false;
     const canTexture = typeof allowTextureId === 'function' ? allowTextureId : () => false;
@@ -260,13 +279,16 @@ export function isCorniceParapetSteppedMode(value) {
 }
 
 // Cornice parts accept `match_wall` in addition to explicit color/texture specs,
-// mirroring the window surround material modes.
+// mirroring the window surround material modes. Slot / preset references are
+// also preserved (resolution order: explicit > slot > match_*).
 function normalizeCorniceMaterialSpec(value, { fallback = { kind: 'color', id: BELT_COURSE_COLOR.OFFWHITE } } = {}) {
     const kindRaw = typeof value?.kind === 'string' ? value.kind.trim().toLowerCase() : '';
     const idRaw = typeof value?.id === 'string' ? value.id.trim().toLowerCase() : '';
     if (kindRaw === 'match_wall' || (!kindRaw && idRaw === 'match_wall') || value === 'match_wall') {
         return { kind: 'match_wall', id: 'match_wall' };
     }
+    const slotOrPreset = normalizeSlotOrPresetMaterialSpec(value);
+    if (slotOrPreset) return slotOrPreset;
     return normalizeMaterialSpec(value, {
         fallback,
         allowColorId: isBeltCourseColor,
@@ -390,6 +412,53 @@ export function normalizeCornerTreatmentConfig(value) {
         corners,
         layerIds: layerIdsRaw && layerIdsRaw.length ? layerIdsRaw : null
     };
+}
+
+// Facade banding (AI 491): alternates the layer's wall material with a
+// secondary material in horizontal bands (the ref-16 striped look). Heights
+// are authored in meters or brick courses; `offset` shifts the pattern down.
+export const FACADE_BANDING_UNIT = Object.freeze({
+    METERS: 'meters',
+    COURSES: 'courses'
+});
+
+export function isFacadeBandingUnit(value) {
+    return value === FACADE_BANDING_UNIT.METERS || value === FACADE_BANDING_UNIT.COURSES;
+}
+
+export function normalizeFacadeBandingConfig(value) {
+    const src = value && typeof value === 'object' ? value : {};
+    const unit = isFacadeBandingUnit(src.unit) ? src.unit : FACADE_BANDING_UNIT.METERS;
+    const isCourses = unit === FACADE_BANDING_UNIT.COURSES;
+    const heightMax = isCourses ? 99 : 30;
+    const primaryDefault = isCourses ? 6 : 1.8;
+    const secondaryDefault = isCourses ? 2 : 0.6;
+
+    const courseHeightRaw = Number(src.courseHeightMeters);
+    const wallBase = src.wallBase && typeof src.wallBase === 'object'
+        ? normalizeWallBaseMaterialConfig(src.wallBase)
+        : null;
+
+    const out = {
+        enabled: !!src.enabled,
+        unit,
+        primaryHeight: clamp(src.primaryHeight ?? src.bandAHeight ?? primaryDefault, 0.05, heightMax),
+        secondaryHeight: clamp(src.secondaryHeight ?? src.bandBHeight ?? secondaryDefault, 0.05, heightMax),
+        offset: clamp(src.offset ?? 0.0, -heightMax, heightMax),
+        // null = derive a course height from the layer's brick layout.
+        courseHeightMeters: (Number.isFinite(courseHeightRaw) && courseHeightRaw > 0)
+            ? clamp(courseHeightRaw, 0.02, 2.0)
+            : null,
+        material: normalizeMaterialSpec(src.material, {
+            fallback: { kind: 'color', id: BELT_COURSE_COLOR.OFFWHITE },
+            allowColorId: isBeltCourseColor,
+            allowTextureId: (id) => isBuildingStyle(id) || isPbrBuildingWallMaterialId(id),
+            stringKind: 'texture'
+        }),
+        wallBase,
+        tiling: src.tiling !== undefined && src.tiling !== null ? normalizeTilingConfig(src.tiling, { defaultTileMeters: 2.0 }) : null
+    };
+    return out;
 }
 
 const FACE_IDS = Object.freeze(['A', 'B', 'C', 'D']);
@@ -554,7 +623,8 @@ export function createDefaultFloorLayer({
     tiling = null,
     materialVariation = null,
     faceLinking = null,
-    faceMaterials = null
+    faceMaterials = null,
+    banding = null
 } = {}) {
     const b = belt ?? {};
     const styleId = typeof style === 'string' ? style : '';
@@ -605,6 +675,7 @@ export function createDefaultFloorLayer({
             tiling: normalizeTilingConfig(b?.tiling, { defaultTileMeters: 2.0 })
         },
         cornice: normalizeCorniceConfig(cornice, { isRoof: false }),
+        banding: normalizeFacadeBandingConfig(banding),
         windows: windows ? createDefaultWindowSpec(windows) : createDefaultWindowSpec()
     };
 
@@ -760,11 +831,13 @@ export function cloneBuildingLayers(layers) {
             const materialVariation = layer?.materialVariation ?? null;
             const faceLinking = layer?.faceLinking ?? null;
             const faceMaterials = layer?.faceMaterials ?? null;
+            const banding = layer?.banding ?? null;
 
             out.push({
                 ...layer,
                 faceLinking: faceLinking ? deepClone(faceLinking) : faceLinking,
                 faceMaterials: faceMaterials ? deepClone(faceMaterials) : faceMaterials,
+                banding: banding ? deepClone(banding) : banding,
                 material: material ? { ...material } : material,
                 wallBase: wallBase ? deepClone(wallBase) : wallBase,
                 tiling: tiling ? deepClone(tiling) : tiling,

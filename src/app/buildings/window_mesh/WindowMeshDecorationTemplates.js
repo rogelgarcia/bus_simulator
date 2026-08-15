@@ -49,7 +49,10 @@ export const WINDOW_DECORATION_WIDTH_MODE = Object.freeze({
 export const WINDOW_DECORATION_MATERIAL_MODE = Object.freeze({
     MATCH_WALL: 'match_wall',
     MATCH_FRAME: 'match_frame',
-    PBR: 'pbr'
+    PBR: 'pbr',
+    // Building material slot reference (AI 491); resolved to a pbr material
+    // by the building-config pre-pass, falls back to match_wall unresolved.
+    SLOT: 'slot'
 });
 
 export const WINDOW_DECORATION_DEPTH_OPTIONS_METERS = Object.freeze([0.08, 0.02, 0.12]);
@@ -312,6 +315,7 @@ export function normalizeWindowDecorationMaterialMode(value, fallback = WINDOW_D
     if (raw === WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL) return WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL;
     if (raw === WINDOW_DECORATION_MATERIAL_MODE.MATCH_FRAME) return WINDOW_DECORATION_MATERIAL_MODE.MATCH_FRAME;
     if (raw === WINDOW_DECORATION_MATERIAL_MODE.PBR || raw === 'solid') return WINDOW_DECORATION_MATERIAL_MODE.PBR;
+    if (raw === WINDOW_DECORATION_MATERIAL_MODE.SLOT) return WINDOW_DECORATION_MATERIAL_MODE.SLOT;
     return fallback;
 }
 
@@ -493,6 +497,8 @@ function sanitizeDecorationPartState(partId, input, { wallMaterialId = '' } = {}
         materialSrc.materialId ?? src.materialId,
         defaults.material.materialId
     );
+    const materialSlotIdRaw = materialSrc.slotId ?? src.materialSlotId;
+    const materialSlotId = typeof materialSlotIdRaw === 'string' ? materialSlotIdRaw.trim() : '';
     const earsMeters = normalizeWindowDecorationEarsMeters(
         src.earsMeters ?? src.ears ?? src.overhangMeters,
         defaults.earsMeters
@@ -512,7 +518,8 @@ function sanitizeDecorationPartState(partId, input, { wallMaterialId = '' } = {}
         runMode,
         material: {
             mode: materialMode,
-            materialId
+            materialId,
+            ...(materialMode === WINDOW_DECORATION_MATERIAL_MODE.SLOT && materialSlotId ? { slotId: materialSlotId } : {})
         },
         template: {
             height: clamp(templateDefaults.height, 0.001, 10.0, 0.08),

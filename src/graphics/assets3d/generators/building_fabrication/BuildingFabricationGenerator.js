@@ -6,7 +6,7 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 
 import { ROOF_COLOR, resolveRoofColorHex } from '../../../../app/buildings/RoofColor.js';
-import { resolveBeltCourseColorHex } from '../../../../app/buildings/BeltCourseColor.js';
+import { BELT_COURSE_COLOR, resolveBeltCourseColorHex } from '../../../../app/buildings/BeltCourseColor.js';
 import { BUILDING_STYLE } from '../../../../app/buildings/BuildingStyle.js';
 import { resolveWallBaseTintHexFromWallBase } from '../../../../app/buildings/WallBaseTintModel.js';
 import {
@@ -50,6 +50,7 @@ import {
     CORNER_TREATMENT_CORNER_IDS
 } from './BuildingFabricationTypes.js';
 import { applyMaterialVariationToMeshStandardMaterial, computeMaterialVariationSeedFromTiles, MATERIAL_VARIATION_ROOT } from '../../materials/MaterialVariationSystem.js';
+import { resolveBuildingConfigMaterials } from '../../../../app/buildings/BuildingMaterialSlots.js';
 import { applyUvTilingToMeshStandardMaterial } from '../../materials/MaterialUvTilingSystem.js';
 import { getPbrMaterialTileMeters, isPbrMaterialId, tryGetPbrMaterialIdFromUrl } from '../../materials/PbrMaterialCatalog.js';
 import { solveFacadeLayoutFillPattern } from './FacadeLayoutFillSolver.js';
@@ -1675,6 +1676,7 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
     segmentOverrides = null,
     cutouts = null,
     ySlices = null,
+    yBands = null,
     cutoutTol = 0.02,
     cutoutCurveSegments = 18
 } = {}) {
@@ -1740,6 +1742,35 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
         return out.length ? out : null;
     })();
 
+    // Facade banding (AI 491): horizontal ranges that override the base wall
+    // material (segments already carrying a facade override keep it).
+    const normalizedYBands = (() => {
+        const list = Array.isArray(yBands) ? yBands : null;
+        if (!list?.length) return null;
+        const out = [];
+        for (const entry of list) {
+            const y0 = Number(entry?.y0);
+            const y1 = Number(entry?.y1);
+            const materialIndex = Number(entry?.materialIndex);
+            if (!Number.isFinite(y0) || !Number.isFinite(y1) || !Number.isInteger(materialIndex)) continue;
+            const a = clamp(Math.min(y0, y1), 0.0, h);
+            const b = clamp(Math.max(y0, y1), 0.0, h);
+            if (!(b - a > EPS)) continue;
+            out.push({ y0: a, y1: b, materialIndex });
+        }
+        if (!out.length) return null;
+        out.sort((a, b) => a.y0 - b.y0);
+        return out;
+    })();
+
+    const resolveBandMaterialIndex = (baseIndex, y) => {
+        if (!normalizedYBands || baseIndex !== 0) return baseIndex;
+        for (const band of normalizedYBands) {
+            if (y > band.y0 && y < band.y1) return band.materialIndex;
+        }
+        return baseIndex;
+    };
+
     const v0 = Number(uvBaseV) || 0;
     const v1 = v0 + h;
     const positions = [];
@@ -1755,6 +1786,14 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
         if (curGroupMatIndex === null) return;
         if (curGroupCount <= 0) return;
         groups.push({ start: curGroupStart, count: curGroupCount, materialIndex: curGroupMatIndex });
+    };
+
+    const setActiveMaterialIndex = (idx) => {
+        if (curGroupMatIndex === idx) return;
+        flushGroup();
+        curGroupMatIndex = idx;
+        curGroupStart = Math.floor(positions.length / 3);
+        curGroupCount = 0;
     };
 
     for (let i = 0; i < n; i++) {
@@ -1824,19 +1863,10 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
             }
         }
 
-        if (curGroupMatIndex === null) {
-            curGroupMatIndex = matIndex;
-            curGroupStart = Math.floor(positions.length / 3);
-            curGroupCount = 0;
-        } else if (matIndex !== curGroupMatIndex) {
-            flushGroup();
-            curGroupMatIndex = matIndex;
-            curGroupStart = Math.floor(positions.length / 3);
-            curGroupCount = 0;
-        }
+        setActiveMaterialIndex(matIndex);
 
         const slices = normalizedYSlices ?? null;
-        const wantsYCutlines = !!slices;
+        const wantsYCutlines = !!slices || !!normalizedYBands;
 
         const segCuts = [];
         const wantsSegmentCutouts = !!cutoutsByFaceId && a.kind === 'profile' && b.kind === 'profile' && faceId && faceId === b.faceId;
@@ -1868,6 +1898,13 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                 const xCuts = [0.0, segLen];
                 const yCuts = [sliceY0, sliceY1];
                 const sliceCuts = [];
+
+                if (normalizedYBands) {
+                    for (const band of normalizedYBands) {
+                        if (band.y0 > sliceY0 + EPS && band.y0 < sliceY1 - EPS) yCuts.push(band.y0);
+                        if (band.y1 > sliceY0 + EPS && band.y1 < sliceY1 - EPS) yCuts.push(band.y1);
+                    }
+                }
 
                 for (const cut of segCuts) {
                     const cx = Number(cut.localX) || 0;
@@ -1941,6 +1978,8 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                                 v0 + ly
                             );
                         };
+
+                        if (normalizedYBands) setActiveMaterialIndex(resolveBandMaterialIndex(matIndex, (y0 + y1) * 0.5));
 
                         pushVertex(x0, y0);
                         pushVertex(x1, y1);
@@ -2040,6 +2079,7 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                         geo.dispose();
                     };
 
+                    if (normalizedYBands) setActiveMaterialIndex(resolveBandMaterialIndex(matIndex, (yChord + yTop) * 0.5));
                     addSpandrel('left');
                     addSpandrel('right');
                 }
@@ -2066,6 +2106,7 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                 const pushRevealQuad = (x0, y0, x1, y1, depth) => {
                     if (!(depth > EPS)) return;
                     if (!(Math.hypot(x1 - x0, y1 - y0) > minEdge)) return;
+                    if (normalizedYBands) setActiveMaterialIndex(resolveBandMaterialIndex(matIndex, (y0 + y1) * 0.5));
                     const addDepthToV = Math.abs(y1 - y0) <= 1e-6;
 
                     pushRevealVertex(x0, y0, 0.0, addDepthToV);
@@ -2172,12 +2213,51 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
     }
 
     if (!positions.length) return null;
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
-    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
-    geo.clearGroups();
     flushGroup();
-    for (const group of groups) geo.addGroup(group.start, group.count, group.materialIndex);
+
+    let finalPositions = positions;
+    let finalUvs = uvs;
+    let finalGroups = groups;
+    if (normalizedYBands && groups.length > 1) {
+        // Banding interleaves materials cell by cell; regroup the triangles
+        // by material so the mesh keeps one draw range per material instead
+        // of hundreds of tiny groups.
+        const byMaterial = new Map();
+        for (const group of groups) {
+            const bucket = byMaterial.get(group.materialIndex);
+            if (bucket) bucket.push(group);
+            else byMaterial.set(group.materialIndex, [group]);
+        }
+        const orderedIndices = Array.from(byMaterial.keys()).sort((a, b) => a - b);
+        finalPositions = new Array(positions.length);
+        finalUvs = new Array(uvs.length);
+        finalGroups = [];
+        let vertexCursor = 0;
+        for (const materialIndex of orderedIndices) {
+            const start = vertexCursor;
+            for (const group of byMaterial.get(materialIndex)) {
+                const srcV = group.start;
+                const count = group.count;
+                for (let i = 0; i < count; i++) {
+                    const src = srcV + i;
+                    const dst = vertexCursor + i;
+                    finalPositions[dst * 3] = positions[src * 3];
+                    finalPositions[dst * 3 + 1] = positions[src * 3 + 1];
+                    finalPositions[dst * 3 + 2] = positions[src * 3 + 2];
+                    finalUvs[dst * 2] = uvs[src * 2];
+                    finalUvs[dst * 2 + 1] = uvs[src * 2 + 1];
+                }
+                vertexCursor += count;
+            }
+            finalGroups.push({ start, count: vertexCursor - start, materialIndex });
+        }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(finalPositions), 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(finalUvs), 2));
+    geo.clearGroups();
+    for (const group of finalGroups) geo.addGroup(group.start, group.count, group.materialIndex);
     geo.computeVertexNormals();
     return geo;
 }
@@ -2450,7 +2530,10 @@ function makeWindowDecorationPartMaterial({
         : '';
 
     let mat = null;
-    if (materialMode === WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL) {
+    if (materialMode === WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL
+        || materialMode === WINDOW_DECORATION_MATERIAL_MODE.SLOT) {
+        // 'slot' only reaches this point unresolved (missing slot); fall back
+        // to the legacy match_wall behavior.
         mat = makeWallMaterialFromSpec({
             material: layerMaterial ?? null,
             baseColorHex,
@@ -5433,6 +5516,7 @@ export function buildBuildingFabricationVisualParts({
     facades = null,
     wallDecorations = null,
     cornerTreatment = null,
+    materialSlots = null,
     facadeCornerStrategy = null,
     facadeCornerStrategyId = null,
     facadeCornerDebug = false,
@@ -5444,13 +5528,16 @@ export function buildBuildingFabricationVisualParts({
 } = {}) {
     const explicitFootprintLoops = normalizeFootprintLoopsInput(footprintLoops);
     const explicitBuildAreaLoops = normalizeFootprintLoopsInput(buildAreaLoops);
-    const safeLayers = normalizeBuildingLayers(layers);
-    const cornerTreatmentCfg = normalizeCornerTreatmentConfig(cornerTreatment);
+    // Slot / brick preset resolution needs the per-building seed (tint
+    // jitter); footprint fitting only reads dimensional fields, so it runs on
+    // the unresolved layers first.
+    const safeLayersForFit = normalizeBuildingLayers(layers);
+    const cornerTreatmentCfgForFit = normalizeCornerTreatmentConfig(cornerTreatment);
     const fittedExplicitFootprintLoops = (explicitFootprintLoops.length && explicitBuildAreaLoops.length)
         ? fitFootprintLoopsToBuildArea({
             footprintLoops: explicitFootprintLoops,
             buildAreaLoops: explicitBuildAreaLoops,
-            reserveInsetMeters: estimateBf2OutwardFootprintReserveMeters({ layers: safeLayers, facades, cornerTreatment: cornerTreatmentCfg })
+            reserveInsetMeters: estimateBf2OutwardFootprintReserveMeters({ layers: safeLayersForFit, facades, cornerTreatment: cornerTreatmentCfgForFit })
         })
         : explicitFootprintLoops;
     const sourceFootprintLoops = fittedExplicitFootprintLoops.length
@@ -5459,12 +5546,32 @@ export function buildBuildingFabricationVisualParts({
     if (!sourceFootprintLoops.length) return null;
 
     const tileCount = Array.isArray(tiles) ? tiles.length : 0;
-    const baseColorHex = makeDeterministicColor(tileCount * 97 + safeLayers.length * 31).getHex();
+    const baseColorHex = makeDeterministicColor(tileCount * 97 + safeLayersForFit.length * 31).getHex();
     const matVarSeed = Number.isFinite(materialVariationSeed)
         ? (Number(materialVariationSeed) >>> 0)
         : ((tileCount > 0)
             ? computeMaterialVariationSeedFromTiles(tiles, { salt: 'building' })
             : computeMaterialVariationSeedFromFootprintLoops(sourceFootprintLoops, { salt: 'building' }));
+
+    // Config pre-pass (AI 491): resolve building-level material slot and
+    // brick preset references into explicit specs. Resolution order per
+    // feature: explicit material > slot reference > legacy match_* modes.
+    const warnings = [];
+    const materialResolution = resolveBuildingConfigMaterials({
+        layers,
+        facades,
+        wallDecorations,
+        cornerTreatment,
+        windowDefinitions,
+        materialSlots,
+        seed: matVarSeed,
+        warnings
+    });
+    const safeLayers = normalizeBuildingLayers(materialResolution.layers);
+    const cornerTreatmentCfg = normalizeCornerTreatmentConfig(materialResolution.cornerTreatment);
+    const resolvedFacades = materialResolution.facades;
+    const resolvedWallDecorations = materialResolution.wallDecorations;
+    const resolvedWindowDefinitions = materialResolution.windowDefinitions;
 
     const firstFloorLayer = safeLayers.find((layer) => layer?.type === LAYER_TYPE.FLOOR) ?? null;
     const firstFloorHeight = clamp(firstFloorLayer?.floorHeight ?? 3.2, 1.0, 12.0);
@@ -5487,7 +5594,6 @@ export function buildBuildingFabricationVisualParts({
     const solidMeshes = [];
     const wirePositions = [];
     const floorPositions = [];
-    const warnings = [];
     const facadeSolverDebug = {};
     const facadeCornerDebugByLayerId = facadeCornerDebug ? {} : null;
 
@@ -5527,7 +5633,7 @@ export function buildBuildingFabricationVisualParts({
     for (const entry of catalogDefinitions) {
         registerWindowDefinition(entry, { fallbackAssetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW });
     }
-    const windowDefinitionItems = Array.isArray(windowDefinitions?.items) ? windowDefinitions.items : [];
+    const windowDefinitionItems = Array.isArray(resolvedWindowDefinitions?.items) ? resolvedWindowDefinitions.items : [];
     for (const entry of windowDefinitionItems) {
         registerWindowDefinition(entry, { fallbackAssetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW });
     }
@@ -5650,7 +5756,7 @@ export function buildBuildingFabricationVisualParts({
     let yCursor = baseY;
     let firstFloorPendingExtra = extraFirstFloor;
 
-    const facadesRaw = facades && typeof facades === 'object' ? facades : null;
+    const facadesRaw = resolvedFacades && typeof resolvedFacades === 'object' ? resolvedFacades : null;
     const facadesAreGlobal = !!facadesRaw && ['A', 'B', 'C', 'D'].some((id) => !!facadesRaw?.[id]);
     const globalFacadeSpec = facadesAreGlobal ? facadesRaw : null;
     const facadesByLayerId = facadesAreGlobal ? null : facadesRaw;
@@ -6777,13 +6883,99 @@ export function buildBuildingFabricationVisualParts({
                         }
                     }
 
+                    // Facade banding (AI 491): alternate the base wall material
+                    // with a secondary one in horizontal bands. The secondary
+                    // material shares the layer's material variation config, so
+                    // world-space wear/streaks stay continuous across bands.
+                    let facadeWallYBands = null;
+                    const bandingCfg = layer?.banding && typeof layer.banding === 'object' ? layer.banding : null;
+                    if (bandingCfg?.enabled) {
+                        if (!wantsFacadeWall) {
+                            warnings.push(`Layer ${layerId || layerIndex}: facade banding needs the facade wall path (facades on this layer); banding skipped.`);
+                        } else {
+                            const bandSpec = (bandingCfg.material?.kind === 'texture' || bandingCfg.material?.kind === 'color')
+                                ? bandingCfg.material
+                                : { kind: 'color', id: BELT_COURSE_COLOR.OFFWHITE };
+                            const bandWallBase = bandingCfg.wallBase && typeof bandingCfg.wallBase === 'object'
+                                ? bandingCfg.wallBase
+                                : (layer?.wallBase ?? null);
+                            const bandMat = makeWallMaterialFromSpec({
+                                material: bandSpec,
+                                baseColorHex,
+                                textureCache,
+                                wallBase: bandWallBase
+                            });
+                            const bandStyleId = bandSpec.kind === 'texture' ? bandSpec.id : null;
+                            if (bandStyleId) {
+                                const bandUrls = resolveBuildingStyleWallMaterialUrls(bandStyleId);
+                                const bandTiling = bandingCfg.tiling && typeof bandingCfg.tiling === 'object' ? bandingCfg.tiling : wallTiling;
+                                const bandUvCfg = computeUvTilingParams({ tiling: bandTiling, urls: bandUrls, styleId: bandStyleId });
+                                if (bandUvCfg.apply) {
+                                    applyUvTilingToMeshStandardMaterial(bandMat, {
+                                        scaleU: bandUvCfg.scaleU,
+                                        scaleV: bandUvCfg.scaleV,
+                                        offsetU: bandUvCfg.offsetU,
+                                        offsetV: bandUvCfg.offsetV,
+                                        rotationDegrees: bandUvCfg.rotationDegrees
+                                    });
+                                }
+                            }
+                            if (wallMatVar?.enabled) {
+                                applyMaterialVariationToMeshStandardMaterial(bandMat, {
+                                    seed: matVarSeed,
+                                    seedOffset: clampInt(wallMatVar?.seedOffset ?? 0, -9999, 9999),
+                                    heightMin: baseY,
+                                    heightMax: matVarHeightMax,
+                                    config: wallMatVar,
+                                    root: MATERIAL_VARIATION_ROOT.WALL,
+                                    cornerDist: true
+                                });
+                            }
+                            facadeWallMaterials.push(bandMat);
+                            const bandMaterialIndex = facadeWallMaterials.length - 1;
+
+                            // Unit size: meters directly, or brick courses derived
+                            // from the layer's per-brick layout (explicit override
+                            // wins, 0.1m fallback).
+                            let unitMeters = 1.0;
+                            if (bandingCfg.unit === 'courses') {
+                                let course = Number(bandingCfg.courseHeightMeters);
+                                if (!(Number.isFinite(course) && course > 0)) {
+                                    const bricksY = Number(wallMatVar?.brick?.perBrick?.layout?.bricksPerTileY);
+                                    const tileVRaw = (wallTiling?.enabled ? Number(wallTiling?.tileMetersV) : NaN);
+                                    const tileV = Number.isFinite(tileVRaw) && tileVRaw > 0
+                                        ? tileVRaw
+                                        : (resolvePbrTileMetersFromUrls(wallUrls, wallStyleId) ?? 2.0);
+                                    course = (Number.isFinite(bricksY) && bricksY > 0) ? (tileV / bricksY) : NaN;
+                                }
+                                unitMeters = (Number.isFinite(course) && course > 0) ? course : 0.1;
+                            }
+
+                            const bandPrimary = Math.max(0.02, (Number(bandingCfg.primaryHeight) || 0) * unitMeters);
+                            const bandSecondary = Math.max(0.02, (Number(bandingCfg.secondaryHeight) || 0) * unitMeters);
+                            const period = bandPrimary + bandSecondary;
+                            const offsetMeters = (Number(bandingCfg.offset) || 0) * unitMeters;
+                            const startShift = ((offsetMeters % period) + period) % period;
+
+                            facadeWallYBands = [];
+                            for (let y = -startShift - period; y < totalWallHeight + period; y += period) {
+                                const b0 = y + bandPrimary;
+                                const b1 = y + period;
+                                if (b1 <= EPS || b0 >= totalWallHeight - EPS) continue;
+                                facadeWallYBands.push({ y0: b0, y1: b1, materialIndex: bandMaterialIndex });
+                            }
+                            if (!facadeWallYBands.length) facadeWallYBands = null;
+                        }
+                    }
+
                     const facadeGeo = wantsFacadeWall
                         ? buildWallSidesGeometryFromLoopDetailXZ(facadeLoopDetail, {
                             height: totalWallHeight,
                             uvBaseV: yOffset,
                             segmentOverrides: facadeWallSegmentOverrides,
                             cutouts: facadeWallCutouts,
-                            ySlices: facadeWallYSlices
+                            ySlices: facadeWallYSlices,
+                            yBands: facadeWallYBands
                         })
                         : null;
 
@@ -8678,7 +8870,7 @@ export function buildBuildingFabricationVisualParts({
     }
 
     const wallDecorationMeshes = buildGameplayWallDecorationMeshes({
-        wallDecorations,
+        wallDecorations: resolvedWallDecorations,
         bayHighlightDataByLayerId,
         floorSegmentsByLayerId,
         floorLayerById,

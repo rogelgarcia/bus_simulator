@@ -3,7 +3,8 @@
 import * as THREE from 'three';
 
 import { getBuildingConfigById, getBuildingConfigs } from '../../content3d/catalogs/BuildingConfigCatalog.js';
-import { createLayerId, normalizeCorniceConfig, normalizeCornerTreatmentConfig } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
+import { createLayerId, normalizeCorniceConfig, normalizeCornerTreatmentConfig, normalizeFacadeBandingConfig } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
+import { normalizeBuildingMaterialSlotsConfig } from '../../../app/buildings/BuildingMaterialSlots.js';
 import {
     buildingConfigIdToFileBaseName,
     createCityBuildingConfigFromFabrication,
@@ -902,7 +903,10 @@ export class BuildingFabrication2View {
         this.ui.onSetFloorLayerFloorHeight = (layerId, height) => this._setFloorLayerFloorHeight(layerId, height);
         this.ui.onSetFloorLayerInteriorEnabled = (layerId, enabled) => this._setFloorLayerInteriorEnabled(layerId, enabled);
         this.ui.onSetLayerCornice = (layerId, patch) => this._setLayerCornice(layerId, patch);
+        this.ui.onSetLayerBanding = (layerId, patch) => this._setLayerBanding(layerId, patch);
+        this.ui.onSetLayerMaterialRef = (layerId, spec) => this._setLayerMaterialRef(layerId, spec);
         this.ui.onSetCornerTreatment = (patch) => this._setCornerTreatment(patch);
+        this.ui.onSetMaterialSlots = (patch) => this._setMaterialSlots(patch);
         this.ui.onSetFloorLayerMaterial = (layerId, faceId, material) => this._setFloorLayerMaterial(layerId, faceId, material);
         this.ui.onRequestMaterialConfig = (layerId, faceId) => this._openMaterialConfigForLayer(layerId, faceId);
         this.ui.onViewModeChange = (mode) => this._applyViewMode(mode);
@@ -1070,7 +1074,10 @@ export class BuildingFabrication2View {
         this.ui.onSetFloorLayerFloorHeight = null;
         this.ui.onSetFloorLayerInteriorEnabled = null;
         this.ui.onSetLayerCornice = null;
+        this.ui.onSetLayerBanding = null;
+        this.ui.onSetLayerMaterialRef = null;
         this.ui.onSetCornerTreatment = null;
+        this.ui.onSetMaterialSlots = null;
         this.ui.onSetFloorLayerMaterial = null;
         this.ui.onRequestMaterialConfig = null;
         this.ui.onViewModeChange = null;
@@ -1256,6 +1263,7 @@ export class BuildingFabrication2View {
         });
 
         this.ui.setCornerTreatment?.(this._currentConfig?.cornerTreatment ?? null);
+        this.ui.setMaterialSlots?.(this._currentConfig?.materialSlots ?? null);
         this.ui.setLayers(layerList);
         if (!(this.ui?.isSidePanelOpen?.() ?? false)) {
             this._materialConfigLayerId = null;
@@ -4291,6 +4299,61 @@ export class BuildingFabrication2View {
         this._requestRebuild({ preserveCamera: true });
     }
 
+    _setMaterialSlots(patch) {
+        if (!patch || typeof patch !== 'object') return;
+        const cfg = this._currentConfig;
+        if (!cfg) return;
+
+        const prev = normalizeBuildingMaterialSlotsConfig(cfg.materialSlots);
+        const slots = { ...prev.slots };
+        for (const [name, entry] of Object.entries(patch)) {
+            if (entry === null || entry === undefined) delete slots[name];
+            else slots[name] = entry;
+        }
+        const next = normalizeBuildingMaterialSlotsConfig({ slots });
+        cfg.materialSlots = Object.keys(next.slots).length ? next : null;
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
+    _setLayerBanding(layerId, patch) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        if (!id || !patch || typeof patch !== 'object') return;
+        const cfg = this._currentConfig;
+        if (!cfg || !Array.isArray(cfg.layers)) return;
+
+        const layer = cfg.layers.find((l) => l?.type === 'floor' && l?.id === id) ?? null;
+        if (!layer) return;
+
+        const prev = layer.banding && typeof layer.banding === 'object' ? layer.banding : {};
+        layer.banding = normalizeFacadeBandingConfig({ ...prev, ...patch });
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
+    // Sets the layer wall material to a brick preset / slot reference, or
+    // restores a plain texture when spec is null.
+    _setLayerMaterialRef(layerId, spec) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        if (!id) return;
+        const cfg = this._currentConfig;
+        if (!cfg || !Array.isArray(cfg.layers)) return;
+
+        const layer = cfg.layers.find((l) => l?.type === 'floor' && l?.id === id) ?? null;
+        if (!layer) return;
+
+        if (!spec || typeof spec !== 'object' || (spec.kind !== 'preset' && spec.kind !== 'slot')) {
+            const styleId = typeof layer.style === 'string' && layer.style ? layer.style : 'default';
+            layer.material = { kind: 'texture', id: styleId };
+        } else {
+            const next = { kind: spec.kind, id: spec.id };
+            if (spec.kind === 'preset' && spec.jitter) next.jitter = spec.jitter === true ? true : spec.jitter;
+            layer.material = next;
+        }
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
     _setLayerCornice(layerId, patch) {
         const id = typeof layerId === 'string' ? layerId : '';
         if (!id || !patch || typeof patch !== 'object') return;
@@ -6168,7 +6231,8 @@ export class BuildingFabrication2View {
             facades: cfg?.facades ?? null,
             windowDefinitions: cfg?.windowDefinitions ?? null,
             wallDecorations,
-            cornerTreatment: cfg?.cornerTreatment ?? null
+            cornerTreatment: cfg?.cornerTreatment ?? null,
+            materialSlots: cfg?.materialSlots ?? null
         });
 
         const fileBaseName = buildingConfigIdToFileBaseName(exported.id);

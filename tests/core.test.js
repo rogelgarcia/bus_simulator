@@ -1881,7 +1881,9 @@ async function runTests() {
         normalizeBuildingWindowVisualsConfig,
         normalizeBuildingLayers,
         normalizeCorniceConfig,
-        normalizeCornerTreatmentConfig
+        normalizeCornerTreatmentConfig,
+        normalizeFacadeBandingConfig,
+        cloneBuildingLayers
     } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
     const {
         WINDOW_TYPE,
@@ -8837,6 +8839,302 @@ async function runTests() {
         stripMeshes[0].geometry.computeBoundingBox();
         const stripBox = stripMeshes[0].geometry.boundingBox;
         assertNear(stripBox.max.y - stripBox.min.y, 6.0, 0.01, 'Expected strip to span the full layer wall height.');
+    });
+
+    test('BuildingFabricationTypes: facade banding schema round-trips through layer normalization', () => {
+        const banding = normalizeFacadeBandingConfig({
+            enabled: true,
+            unit: 'courses',
+            primaryHeight: 8,
+            secondaryHeight: 3,
+            offset: -2,
+            courseHeightMeters: 0.12,
+            material: { kind: 'slot', id: 'wallAccent' },
+            tiling: { enabled: true, tileMeters: 2.5 }
+        });
+        assertEqual(banding.enabled, true, 'Banding enabled flag.');
+        assertEqual(banding.unit, 'courses', 'Banding unit.');
+        assertNear(banding.primaryHeight, 8, 1e-9, 'Primary band height.');
+        assertNear(banding.secondaryHeight, 3, 1e-9, 'Secondary band height.');
+        assertNear(banding.offset, -2, 1e-9, 'Banding offset.');
+        assertNear(banding.courseHeightMeters, 0.12, 1e-9, 'Course height override.');
+        assertEqual(banding.material.kind, 'slot', 'Banding secondary material keeps the slot reference.');
+        assertEqual(banding.material.id, 'wallAccent', 'Banding slot id.');
+
+        const layer = createDefaultFloorLayer({ banding });
+        const [cloned] = cloneBuildingLayers([layer]);
+        const [normalized] = normalizeBuildingLayers([cloned]);
+        assertEqual(JSON.stringify(normalized.banding), JSON.stringify(banding),
+            'Banding must survive clone + normalize round-trip unchanged.');
+
+        const defaults = createDefaultFloorLayer({});
+        assertEqual(defaults.banding.enabled, false, 'Banding defaults disabled.');
+        assertEqual(defaults.banding.unit, 'meters', 'Banding defaults to meters.');
+        assertEqual(defaults.banding.courseHeightMeters, null, 'Course height defaults to auto.');
+    });
+
+    test('BuildingFabricationTypes: slot and brick preset material specs survive normalization', () => {
+        const layer = createDefaultFloorLayer({
+            material: { kind: 'preset', id: 'brick.red_standard', jitter: true },
+            belt: { enabled: true, material: 'slot:trim' },
+            cornice: { enabled: true, material: { kind: 'slot', id: 'trim' } }
+        });
+        assertEqual(layer.material.kind, 'preset', 'Layer material keeps preset kind.');
+        assertEqual(layer.material.id, 'brick.red_standard', 'Layer material keeps preset id.');
+        assertEqual(layer.material.jitter, true, 'Preset jitter flag survives.');
+        assertEqual(layer.belt.material.kind, 'slot', 'Belt accepts the slot:<name> shorthand.');
+        assertEqual(layer.belt.material.id, 'trim', 'Belt slot id.');
+        assertEqual(layer.cornice.material.kind, 'slot', 'Cornice material keeps the slot reference.');
+
+        const [roundTripped] = normalizeBuildingLayers(cloneBuildingLayers([layer]));
+        assertEqual(roundTripped.material.kind, 'preset', 'Preset kind survives clone+normalize.');
+        assertEqual(roundTripped.material.jitter, true, 'Preset jitter survives clone+normalize.');
+        assertEqual(roundTripped.cornice.material.kind, 'slot', 'Cornice slot survives clone+normalize.');
+    });
+
+    test('BuildingFabricationGenerator: facade banding alternates two wall materials in horizontal bands', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const primaryHeight = 1.2;
+        const secondaryHeight = 0.6;
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 2,
+                floorHeight: 3.0,
+                material: { kind: 'texture', id: 'pbr.red_brick' },
+                belt: { enabled: false },
+                windows: { enabled: false },
+                banding: {
+                    enabled: true,
+                    unit: 'meters',
+                    primaryHeight,
+                    secondaryHeight,
+                    offset: 0,
+                    material: { kind: 'color', id: 'offwhite' }
+                }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const facades = {
+            [layers[0].id]: {
+                A: {
+                    layout: {
+                        bays: {
+                            items: [
+                                {
+                                    id: 'bay_1',
+                                    size: { mode: 'range', minMeters: 1.0, maxMeters: null },
+                                    expandPreference: 'prefer_expand',
+                                    wallMaterialOverride: null
+                                },
+                                {
+                                    id: 'bay_2',
+                                    size: { mode: 'fixed', widthMeters: 2.0 },
+                                    expandPreference: 'prefer_expand',
+                                    wallMaterialOverride: { kind: 'color', id: 'brown' }
+                                },
+                                {
+                                    id: 'bay_3',
+                                    size: { mode: 'range', minMeters: 1.0, maxMeters: null },
+                                    expandPreference: 'prefer_expand',
+                                    wallMaterialOverride: null
+                                }
+                            ],
+                            nextBayIndex: 4
+                        }
+                    }
+                }
+            }
+        };
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts, 'Expected banded building parts.');
+        const bandingWarnings = (parts.warnings ?? []).filter((w) => String(w).includes('banding'));
+        assertEqual(bandingWarnings.length, 0, `Unexpected banding warnings: ${bandingWarnings.join(' | ')}`);
+
+        const wallMesh = (parts.solidMeshes ?? []).find((m) => m?.userData?.buildingFab2WallKind === 'facade') ?? null;
+        assertTrue(!!wallMesh, 'Expected the facade wall mesh.');
+        assertTrue(Array.isArray(wallMesh.material), 'Expected a multi-material facade wall.');
+        assertEqual(wallMesh.material.length, 3, 'Expected base wall + bay override + band material.');
+
+        const groups = wallMesh.geometry.groups ?? [];
+        const materialIndices = new Set(groups.map((g) => g.materialIndex));
+        assertTrue(materialIndices.has(0), 'Expected base-material triangles.');
+        assertTrue(materialIndices.has(2), 'Expected band-material triangles (index 2 = band).');
+
+        // The banding pattern is period 1.8m starting with 1.2m of primary:
+        // band-B ranges are [1.2, 1.8], [3.0, 3.6], [4.8, 5.4].
+        const period = primaryHeight + secondaryHeight;
+        const inBand = (y) => {
+            const local = ((y % period) + period) % period;
+            return local > primaryHeight + 1e-4 && local < period - 1e-4;
+        };
+        const pos = wallMesh.geometry.getAttribute('position');
+        let bandTris = 0;
+        let baseTris = 0;
+        for (const group of groups) {
+            for (let i = group.start; i + 2 < group.start + group.count; i += 3) {
+                const cy = (pos.getY(i) + pos.getY(i + 1) + pos.getY(i + 2)) / 3;
+                if (group.materialIndex === 2) {
+                    bandTris += 1;
+                    assertTrue(inBand(cy), `Band triangle at y=${cy.toFixed(3)} must lie inside a band range.`);
+                } else if (group.materialIndex === 0) {
+                    baseTris += 1;
+                    assertTrue(!inBand(cy), `Base triangle at y=${cy.toFixed(3)} must lie outside band ranges.`);
+                }
+            }
+        }
+        assertTrue(bandTris >= 6, 'Expected several band triangles.');
+        assertTrue(baseTris >= 6, 'Expected several base triangles.');
+
+        // Bay overrides win over banding: the override group must span across
+        // band boundaries unbanded (full layer height).
+        const overrideGroup = groups.find((g) => g.materialIndex === 1) ?? null;
+        assertTrue(!!overrideGroup, 'Expected the bay override group.');
+        let overrideMinY = Infinity;
+        let overrideMaxY = -Infinity;
+        for (let i = overrideGroup.start; i < overrideGroup.start + overrideGroup.count; i++) {
+            const y = pos.getY(i);
+            overrideMinY = Math.min(overrideMinY, y);
+            overrideMaxY = Math.max(overrideMaxY, y);
+        }
+        assertTrue(overrideMaxY - overrideMinY > period, 'Expected the bay override to span band boundaries unbanded.');
+    });
+
+    test('BuildingFabricationGenerator: material slots recolor trim features end-to-end', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 2,
+                floorHeight: 3.0,
+                material: { kind: 'slot', id: 'wallPrimary' },
+                belt: { enabled: true, height: 0.2, material: { kind: 'slot', id: 'trim' } },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const materialSlots = {
+            slots: {
+                wallPrimary: { material: { kind: 'preset', id: 'brick.red_standard', jitter: true } },
+                trim: { material: { kind: 'texture', id: 'pbr.limestone_smooth' } }
+            }
+        };
+
+        const resolvedMaterialIds = [];
+        const textureCache = {
+            resolveMaterial: (id) => {
+                resolvedMaterialIds.push(String(id ?? ''));
+                return { id };
+            },
+            applyResolvedMaterial: () => {},
+            trackMaterial: () => null
+        };
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            materialVariationSeed: 4242,
+            materialSlots,
+            cornerTreatment: {
+                enabled: true,
+                mode: 'quoin_blocks',
+                material: { kind: 'slot', id: 'trim' }
+            },
+            textureCache,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts, 'Expected building parts with material slots.');
+        const slotWarnings = (parts.warnings ?? []).filter((w) => String(w).includes('slot'));
+        assertEqual(slotWarnings.length, 0, `Unexpected slot warnings: ${slotWarnings.join(' | ')}`);
+
+        assertTrue(resolvedMaterialIds.includes('pbr.red_brick'),
+            'Expected the wall to resolve the brick preset base texture.');
+        assertTrue(resolvedMaterialIds.includes('pbr.limestone_smooth'),
+            'Expected trim features (belt/quoins) to resolve the trim slot texture.');
+
+        // Same slots but with the trim slot changed: every trim feature must
+        // pick up the new material without touching the features themselves.
+        const resolvedAfterChange = [];
+        const textureCache2 = {
+            resolveMaterial: (id) => {
+                resolvedAfterChange.push(String(id ?? ''));
+                return { id };
+            },
+            applyResolvedMaterial: () => {},
+            trackMaterial: () => null
+        };
+        const parts2 = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            materialVariationSeed: 4242,
+            materialSlots: {
+                slots: {
+                    wallPrimary: { material: { kind: 'preset', id: 'brick.red_standard' } },
+                    trim: { material: { kind: 'texture', id: 'pbr.brownstone' } }
+                }
+            },
+            cornerTreatment: {
+                enabled: true,
+                mode: 'quoin_blocks',
+                material: { kind: 'slot', id: 'trim' }
+            },
+            textureCache: textureCache2,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts2, 'Expected rebuilt parts after slot change.');
+        assertTrue(resolvedAfterChange.includes('pbr.brownstone'),
+            'Expected one slot change to recolor the trim features.');
+        assertFalse(resolvedAfterChange.includes('pbr.limestone_smooth'),
+            'Expected the old trim texture to be gone after the slot change.');
     });
 
     test('BuildingFabricationGenerator: garage facade copies closed material + rotation and supports open override', () => {
@@ -16969,9 +17267,7 @@ async function runTests() {
     });
 
     // ========== Building Fabrication Layer Schema Tests ==========
-    const {
-        cloneBuildingLayers
-    } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
+    // (cloneBuildingLayers is imported with the other fabrication types above.)
 
     test('BuildingFabricationTypes: cloneBuildingLayers deep clones cornice blocks', () => {
         const floor = createDefaultFloorLayer({
