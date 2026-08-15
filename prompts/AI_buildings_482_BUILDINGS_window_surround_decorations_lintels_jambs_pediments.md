@@ -6,9 +6,12 @@ Fabricated windows and doors currently support only a bottom sill decoration (`d
 
 Extend the window/door fabrication decoration schema from "sill only" to a full opening surround, so every catalog window/door can opt into lintels, jambs, and pediment-style headers.
 
+Reference images: `downloads/buildings_references/` — 8 (full stone frames on brick), 11/13/15 (splayed lintels + sills on brick), m1–m4 (clay renders showing the target trim geometry density).
+
 Tasks:
 - Extend the window definition `decoration` schema with `header` (lintel above the opening) and `jambs` (vertical trim at both sides), keeping `sill` as-is for backward compatibility.
-- Header options: profile style (`flat_band`, `angled_keystone`, `pediment_triangle`, `arched_band` for arch-enabled assets), height, projection depth, and horizontal overhang beyond the opening width (ears).
+- Header options: profile style (`flat_band`, `splayed_lintel`, `angled_keystone`, `pediment_triangle`, `arched_band` for arch-enabled assets), height, projection depth, and horizontal overhang beyond the opening width (ears).
+- `splayed_lintel` is the priority profile: a trapezoid flaring outward toward the top, with optional stepped "ears" at both ends — the most common window head in the reference photos (refs 11, 13, 15, m1–m4).
 - Jamb options: width, projection depth, and whether they run sill-to-header or full bay height.
 - Material modes matching the sill's pattern: `match_frame`, `match_wall`, or an explicit material/color selection, so stone surrounds can contrast plaster walls (e.g. `pbr.seaworn_sandstone_brick` surrounds on `pbr.painted_plaster_wall`).
 - Generate surround geometry in the same pass that builds the sill cover so it inherits bay recession (`depth.left/right`), repeat counts, and facade linking/mirroring for free.

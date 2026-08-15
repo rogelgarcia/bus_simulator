@@ -1,3 +1,20 @@
+**DONE** (2026-08-15)
+
+## Summary of changes
+- Added `BuildingGeometryMerger` that merges a fabricated building's meshes by material at city build time, baking transforms into building-local space.
+- Material deduplication is conservative: materials injecting custom shader code (UV tiling / material variation) are never shared across instances.
+- Buckets key on material, geometry attribute signature, shadow/render flags, and the mesh flags the post-processing AO exclusion pass reads.
+- Groups carrying `userData` (e.g. the windows group) are preserved as their own merge scopes; anonymous decoration groups are flattened.
+- Wired into `City` behind `mergeBuildingGeometry` / `mergeDedupeMaterials` so authoring tools keep per-mesh picking; the showcase scenario can A/B it.
+- Replaced the whole-map sun shadow camera with one fitted to the active view (110 m half extent, texel snapped, centred ahead of the camera), keeping every caster dynamic.
+- Added a headless test asserting merging preserves triangle/vertex counts, world-space centroid, normals and bounds, custom-shader material count, and userData groups.
+- Capture spec now discards one warm-up build, because a scenario's first build in a fresh page renders differently from later builds.
+
+Results in BigCity2: city meshes 18,622 -> 2,775; scene render 8,604 -> 1,515 draw calls; camera-at-sky 5,471 -> ~1,200; shadow resolution 0.161 -> 0.054 m/texel (3x sharper).
+
+Follow-up work (multi-resolution shadows, cascades) is tracked in
+`prompts/AI_graphics_484_SHADOWS_cascaded_shadow_maps_and_sun_light_ownership.md`.
+
 #Problem
 
 City rendering became dramatically slower after the fabrication-engine buildings (`stone_lowrise_2`, `gov_center_2`, `mainstreet_block`) were added to Big City 2. Measured in gameplay (BigCity2, `?pose=civic_center_curve_front`):
