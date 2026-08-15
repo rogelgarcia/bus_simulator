@@ -274,7 +274,6 @@ export class CityCascadedShadows {
         this._disposed = true;
 
         for (const [material, entry] of this._registered) {
-            const shader = this.csm.shaders.get(material) ?? null;
             if (entry.hadOwnOnBeforeCompile) material.onBeforeCompile = entry.prevOnBeforeCompile;
             else delete material.onBeforeCompile;
             if (material.defines) {
@@ -282,11 +281,16 @@ export class CityCascadedShadows {
                 delete material.defines.CSM_CASCADES;
                 delete material.defines.CSM_FADE;
             }
-            if (shader?.uniforms) {
-                delete shader.uniforms.CSM_cascades;
-                delete shader.uniforms.cameraNear;
-                delete shader.uniforms.shadowFar;
-            }
+            // Deliberately NOT deleting shader.uniforms.CSM_cascades and
+            // friends, which is what three's own CSM.dispose() does. The
+            // compiled program still declares those uniforms until the
+            // recompile that `needsUpdate` schedules actually happens, and
+            // WebGLUniforms.upload dereferences every declared uniform by
+            // name — a deleted entry crashes it with "cannot read properties
+            // of undefined (reading 'needsUpdate')". Leaving the values in
+            // place is harmless: the next program simply stops asking for
+            // them. Reproduced by changing splitScale at runtime, which
+            // disposes and rebuilds the whole cascade set mid-frame.
             material.needsUpdate = true;
         }
         this._registered.clear();

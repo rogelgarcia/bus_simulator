@@ -473,6 +473,37 @@ export function renderGraphicsTab() {
         }
     });
 
+    // splitScale scales every cascade split and the shadow horizon together,
+    // so a shorter distance is also a sharper one: the same texels cover less
+    // ground. Cost barely moves (~1.3 ms across this whole range), which makes
+    // this a look preference rather than a performance dial.
+    const SHADOW_DISTANCE_STEPS = [
+        { id: 'max', label: 'Max', scale: 1 },
+        { id: 'long', label: 'Long', scale: 0.85 },
+        { id: 'medium', label: 'Medium', scale: 0.75 },
+        { id: 'short', label: 'Short', scale: 0.6 }
+    ];
+    const nearestDistanceId = (scale) => {
+        const s = Number.isFinite(scale) ? scale : 1;
+        let best = SHADOW_DISTANCE_STEPS[0];
+        for (const step of SHADOW_DISTANCE_STEPS) {
+            if (Math.abs(step.scale - s) < Math.abs(best.scale - s)) best = step;
+        }
+        return best.id;
+    };
+
+    const shadowDistance = makeChoiceRow({
+        label: 'Shadow distance',
+        value: nearestDistanceId(shadows?.splitScale),
+        options: SHADOW_DISTANCE_STEPS.map(({ id, label }) => ({ id, label })),
+        onChange: (v) => {
+            const step = SHADOW_DISTANCE_STEPS.find((s) => s.id === v);
+            if (!step) return;
+            shadows.splitScale = step.scale;
+            emit();
+        }
+    });
+
     const shadowMergeCasters = makeChoiceRow({
         label: 'Merged shadow casters',
         value: shadows?.mergeCasters === false ? 'off' : 'on',
@@ -487,9 +518,10 @@ export function renderGraphicsTab() {
     });
 
     const shadowNote = makeEl('div', 'options-note');
-    shadowNote.textContent = 'Applied immediately. Higher presets increase GPU cost and VRAM usage. Cascade Ultra uses multiple camera-fitted maps: sharp shadows near the bus and coverage out to the skyline. Merged shadow casters draw each building’s shadow from one mesh instead of one per material — same shadows, fewer draw calls.';
+    shadowNote.textContent = 'Applied immediately. Higher presets increase GPU cost and VRAM usage. Cascade Ultra uses multiple camera-fitted maps: sharp shadows near the bus and coverage out to the skyline. Shadow distance only applies to Cascade Ultra: shorter reach makes the same texels cover less ground, so shadows get sharper as the horizon pulls in (Max 340 m, Short 205 m) — frame cost barely changes either way. Merged shadow casters draw each building’s shadow from one mesh instead of one per material — same shadows, fewer draw calls.';
 
     sectionShadows.appendChild(shadowQuality.row);
+    sectionShadows.appendChild(shadowDistance.row);
     sectionShadows.appendChild(shadowMergeCasters.row);
     sectionShadows.appendChild(shadowNote);
 

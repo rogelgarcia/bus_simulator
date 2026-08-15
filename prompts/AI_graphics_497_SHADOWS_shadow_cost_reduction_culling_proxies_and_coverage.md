@@ -1,3 +1,54 @@
+# Current state (read this first — 2026-08-15)
+
+Shipped preset **Cascade Ultra**: 4 cascades, splits 45 / 90 / 190 / 340 m,
+per-cascade maps 8192/8192/8192/4096, PCF radius 1.5, fade on, 832 MiB.
+Texel density by band: **0.012 / 0.024 / 0.051 / 0.185 m**. For comparison the
+single-map `high` preset is 0.054 everywhere and stops at 110 m.
+
+Landed and verified pixel-identical (on vs off):
+- **Option 3, visible-region caster culling** — skips casters whose shadow
+  cannot reach the view; 250-400 of 2,051 survive a frame.
+- **Option 4, merged shadow casters** — one shadow mesh per building instead of
+  one per material split; 66 buildings, 1,602 draws collapse to 66.
+
+Cost, measured with the round-robin method below:
+
+| config | frame | vs off | triangles/frame |
+| --- | --- | --- | --- |
+| off | 8.36 ms | — | 1.46M |
+| high (single map) | 10.56 ms | +2.20 ms | 2.36M |
+| cascade x2 | 13.89 ms | +5.53 ms | 5.46M |
+| cascade x4 | 16.82 ms | +8.46 ms | 7.75M |
+
+**The bottleneck is geometry throughput**, 1.3-2.4 ms per extra million
+triangles: the city is transformed once per cascade. Ruled out by measurement,
+do not re-investigate: map resolution (0 ms over a 16x texel change),
+draw-call submission (~1 ms for a 44% cut), per-pixel receiver work (rejected —
+the shadow delta did not fall with viewport area), tree shadows (0.1-0.7 ms),
+`CSM_FADE` (under 1 ms).
+
+Dials available with no code: cascade count (`?shadowCascades=`), `splitScale`
+(`?shadowSplitScale=`), caster merge (Options -> Graphics -> Shadows, or
+`?shadowMergeCasters=0`).
+
+Ranked ideas still open:
+1. **Shadow-caster geometry LOD** — decimated buildings for cascades 2 and 3.
+   The only remaining large lever, because it attacks triangles. Must decimate
+   rather than replace: a box proxy destroys roof-line and bulkhead
+   self-shadowing, which is the detail cascaded shadows were bought for.
+2. **`splitScale` default** — Option 1 below.
+3. **More cascade preset tiers.** The preset is self-describing (`splits`,
+   `mapSizeScales` live in `ShadowSettings`), so a lighter tier is data only.
+4. Per-cascade triangle/size threshold for far cascades — cheaper than LOD,
+   smaller payoff.
+
+Bugs fixed in passing, all pre-existing: the options UI discarded every shadow
+setting except `quality` (so the caster-merge toggle looked dead, and
+`cascades` / `splitScale` were silently dropped whenever the overlay emitted);
+the FPS counter could never read below 20 (it used the clamped simulation
+delta); every preset requested `PCFSoftShadowMap`, which three 0.183 deprecates
+and silently coerces to `PCFShadowMap`.
+
 #Problem
 
 Cascaded shadows (AI_484) cost roughly 4x what the old single fitted map cost,
@@ -177,14 +228,39 @@ texels at once:
 | 0.75 | 20.90 ms | 8,170 | 255 m | 0.009 / 0.018 / 0.038 / 0.138 |
 | 0.55 | 19.62 ms | 7,291 | 187 m | 0.007 / 0.013 / 0.028 / 0.101 |
 
-- Decide whether the shipped default should stay 1.0 or move to ~0.75, once
-  Options 3/4 have changed the cost picture. Re-measure before deciding; the
-  right default after culling is probably *higher*, not lower, since range
-  becomes affordable again.
-- Surface it in the options UI only if it still earns its place as a user-facing
-  trade after 3 and 4 land. Cascade *count* should be retired as a performance
-  option either way: x4 at 0.55 costs about the same as x2 while being ~4x
-  sharper near the bus.
+### Resolved 2026-08-15 — surfaced as a look setting, default stays 1.0
+
+Re-measured after Options 3 and 4 landed, round-robin in one warm page:
+
+| scale | reach | median | triangles | m/texel |
+| --- | --- | --- | --- | --- |
+| 1.0 | 340 m | 14.83 ms | 6.71M | 0.0121 / 0.0242 / 0.0512 / 0.185 |
+| 0.85 | 289 m | 14.28 ms | 6.09M | 0.0103 / 0.0206 / 0.0435 / 0.157 |
+| 0.75 | 255 m | 14.06 ms | 5.67M | 0.0091 / 0.0181 / 0.0383 / 0.138 |
+| 0.6 | 204 m | 13.56 ms | 4.85M | 0.0073 / 0.0145 / 0.0306 / 0.110 |
+
+**Cost spans only 1.27 ms across the whole range**, much of it inside the
+per-config spread, so this is not a performance dial — it is a look preference
+between reach and sharpness. Default therefore stays at 1.0 (reach was the
+point of cascaded shadows over the 110 m fitted map), and the trade is exposed
+instead as **Options -> Graphics -> Shadows -> Shadow distance**
+(Max / Long / Medium / Short = 1.0 / 0.85 / 0.75 / 0.6).
+
+Cascade *count* is retired as a performance option, as planned: it costs
+quality with no compensating benefit that `splitScale` does not give more
+cheaply.
+
+**Crash found and fixed while doing this.** Changing `splitScale` at runtime
+disposes and rebuilds the cascade set, and `CityCascadedShadows.dispose()` was
+deleting `CSM_cascades` / `cameraNear` / `shadowFar` from the captured shader
+objects — which is what three's own `CSM.dispose()` does. The compiled program
+still declares those uniforms until the `needsUpdate` recompile actually
+happens, and `WebGLUniforms.upload` dereferences every declared uniform by
+name, so the next frame threw "cannot read properties of undefined (reading
+'needsUpdate')" and killed the renderer. The defines are still removed; the
+uniform values are now simply left in place, which is harmless because the next
+program stops asking for them. Regression covered by clicking every Shadow
+distance step in sequence.
 
 ## Where the remaining shadow cost is NOT (2026-08-15)
 
