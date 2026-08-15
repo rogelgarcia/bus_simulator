@@ -473,10 +473,24 @@ export function renderGraphicsTab() {
         }
     });
 
+    const shadowMergeCasters = makeChoiceRow({
+        label: 'Merged shadow casters',
+        value: shadows?.mergeCasters === false ? 'off' : 'on',
+        options: [
+            { id: 'on', label: 'On' },
+            { id: 'off', label: 'Off' }
+        ],
+        onChange: (v) => {
+            shadows.mergeCasters = v === 'on';
+            emit();
+        }
+    });
+
     const shadowNote = makeEl('div', 'options-note');
-    shadowNote.textContent = 'Applied immediately. Higher presets increase GPU cost and VRAM usage. Cascaded uses multiple camera-fitted maps: sharp shadows near the bus and coverage out to the skyline.';
+    shadowNote.textContent = 'Applied immediately. Higher presets increase GPU cost and VRAM usage. Cascade Ultra uses multiple camera-fitted maps: sharp shadows near the bus and coverage out to the skyline. Merged shadow casters draw each building’s shadow from one mesh instead of one per material — same shadows, fewer draw calls.';
 
     sectionShadows.appendChild(shadowQuality.row);
+    sectionShadows.appendChild(shadowMergeCasters.row);
     sectionShadows.appendChild(shadowNote);
 
     const sectionAo = makeEl('div', 'options-section');

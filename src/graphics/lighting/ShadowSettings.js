@@ -9,7 +9,10 @@ export const SHADOW_DEFAULTS = Object.freeze({
     cascades: 4,
     // Scales every cascade split distance: >1 pushes the sharpness step-down
     // further from the camera at the cost of texel density, <1 the reverse.
-    splitScale: 1
+    splitScale: 1,
+    // Cast each building's shadow from one merged mesh instead of one per
+    // material. Lossless (same triangles), purely a draw-call saving.
+    mergeCasters: true
 });
 
 // `cascades` marks a preset as cascaded shadow maps (N camera-fitted maps by
@@ -87,12 +90,24 @@ function sanitizeSplitScale(value) {
     return Math.max(0.5, Math.min(2.5, num));
 }
 
+function sanitizeBool(value, fallback) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') {
+        const raw = value.trim().toLowerCase();
+        if (raw === '1' || raw === 'true' || raw === 'on' || raw === 'yes') return true;
+        if (raw === '0' || raw === 'false' || raw === 'off' || raw === 'no') return false;
+    }
+    return fallback;
+}
+
 export function sanitizeShadowSettings(input) {
     const src = input && typeof input === 'object' ? input : {};
     return {
         quality: sanitizeQuality(src.quality ?? SHADOW_DEFAULTS.quality),
         cascades: sanitizeCascades(src.cascades ?? SHADOW_DEFAULTS.cascades),
-        splitScale: sanitizeSplitScale(src.splitScale ?? SHADOW_DEFAULTS.splitScale)
+        splitScale: sanitizeSplitScale(src.splitScale ?? SHADOW_DEFAULTS.splitScale),
+        mergeCasters: sanitizeBool(src.mergeCasters, SHADOW_DEFAULTS.mergeCasters)
     };
 }
 
@@ -149,6 +164,7 @@ export function getResolvedShadowSettings({ includeUrlOverrides = true } = {}) {
         if (params.has('shadows')) merged.quality = sanitizeQuality(params.get('shadows'));
         if (params.has('shadowCascades')) merged.cascades = sanitizeCascades(params.get('shadowCascades'));
         if (params.has('shadowSplitScale')) merged.splitScale = sanitizeSplitScale(params.get('shadowSplitScale'));
+        if (params.has('shadowMergeCasters')) merged.mergeCasters = sanitizeBool(params.get('shadowMergeCasters'), merged.mergeCasters);
     }
 
     return merged;

@@ -1,0 +1,66 @@
+[
+  {
+    "scene": "busLevel",
+    "merged": {
+      "ms": 42.3,
+      "calls": 4618
+    },
+    "unmerged": {
+      "ms": 45.78,
+      "calls": 8183
+    },
+    "mergeStats": {
+      "buildings": 66,
+      "sourceMeshes": 1490,
+      "sourceDraws": 1602
+    }
+  },
+  {
+    "scene": "raised",
+    "merged": {
+      "ms": 35.54,
+      "calls": 3948
+    },
+    "unmerged": {
+      "ms": 41.77,
+      "calls": 6697
+    },
+    "mergeStats": {
+      "buildings": 66,
+      "sourceMeshes": 1490,
+      "sourceDraws": 1602
+    }
+  },
+  {
+    "scene": "rooftops",
+    "merged": {
+      "ms": 38.51,
+      "calls": 3810
+    },
+    "unmerged": {
+      "ms": 39.58,
+      "calls": 6697
+    },
+    "mergeStats": {
+      "buildings": 66,
+      "sourceMeshes": 1490,
+      "sourceDraws": 1602
+    }
+  },
+  {
+    "scene": "rooftops_lowSun",
+    "merged": {
+      "ms": 30.97,
+      "calls": 3436
+    },
+    "unmerged": {
+      "ms": 30.66,
+      "calls": 5557
+    },
+    "mergeStats": {
+      "buildings": 66,
+      "sourceMeshes": 1490,
+      "sourceDraws": 1602
+    }
+  }
+]

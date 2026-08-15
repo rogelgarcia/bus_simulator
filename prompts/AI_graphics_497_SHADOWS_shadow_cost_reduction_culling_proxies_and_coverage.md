@@ -112,24 +112,57 @@ Cheapest to build, no new geometry, helps all four cascades at once.
 - Restore every `castShadow` flag on teardown and when the mode is switched
   off.
 
-## Option 4 — Per-building shadow proxies
+## Option 4 — Merged shadow casters (silhouette merge) — DONE 2026-08-15
 
-Highest ceiling, most work. At 0.185 m/texel a building's ledges and window
-frames contribute nothing to its shadow, so a coarse box is indistinguishable
-from the real facade.
+Implemented in `src/graphics/lighting/ShadowCasterMerge.js`, built once per
+city in `City`, switched by the `mergeCasters` shadow setting (Options ->
+Graphics -> Shadows -> Merged shadow casters, or `?shadowMergeCasters=0`).
 
-- Build one coarse proxy per building (extruded footprint, or the merged
-  bounding box) and substitute it for that building's ~20 merged material
-  chunks beyond ~90 m.
-- Proxies must sit inside the real geometry so they never poke out, and are
-  slightly inset to avoid z-fighting.
-- Note the layer finding above: a proxy that casts shadows is also drawn in the
-  main pass. That is acceptable (it is occluded, ~100 extra calls) but must be
-  measured, not assumed.
-- The per-cascade version — proxies for far cascades only, detail for near — is
-  the bigger win, and needs the manual `shadowMap.render` path above.
-- Savings multiply against Option 3 on the remainder, not on top of it: a
-  building already culled gains nothing from having a proxy.
+**Earlier drafts of this section proposed coarse box proxies. That was wrong
+and has been replaced.** A box deletes geometry, so rooftop bulkheads, plant
+rooms and cornice lines stop casting — and since the proxy has to be inset, the
+facade renders lit exactly where its roof shadow belongs. Those details are
+what cascaded shadows were bought for; the mask overlay from AI_484 shows them
+as the bulk of what cascaded added over the fitted map.
+
+The real cost was never geometry, it was **material splits**. A building is
+drawn as several meshes, and meshes carry multiple material groups, each of
+which is its own draw — in the shadow pass too. The shadow pass is depth-only
+and ignores materials entirely, so all of a building's opaque geometry can cast
+from one mesh holding the same triangles. Same silhouette, same self-shadowing,
+fewer draws. Lossless.
+
+Measured (bus-level, cascaded x4, with Option 3 also active):
+
+| scene | merge off | merge on |
+| --- | --- | --- |
+| bus level | 8,183 calls | **4,618** |
+| raised | 6,697 | **3,948** |
+| rooftop level | 6,697 | **3,810** |
+| rooftop level, low sun | 5,557 | **3,436** |
+
+66 buildings merged, collapsing 1,602 source draws to 66. **Pixel-identical
+with the merge on and off** across all four scenes, including a rooftop-level
+camera framing exactly the bulkhead and cornice self-shadowing this had to
+preserve.
+
+Constraints found while building it:
+
+- **Not merged: `InstancedMesh`.** Its instances would need expanding into real
+  geometry (31k+ city-wide) and it already draws in one call.
+- **Not merged: alpha-tested or transparent casters.** Their silhouette comes
+  from a texture an untextured merged mesh cannot reproduce.
+- **`mergeGeometries` returns null — silently — when some inputs are indexed
+  and others are not.** Buildings hit this every time (indexed wall mesh with
+  material groups, non-indexed roof mesh), so the merge produced nothing at all
+  until every part was given an index. There is no exception to catch; the only
+  symptom is an empty result.
+- **The culler (Option 3) owns `castShadow` at runtime.** It captures its caster
+  list once, so toggling the merge has to release the culler, switch the caster
+  set, then let it re-capture — otherwise the culler restores the flags it
+  remembered and the toggle appears to do nothing on some cameras.
+- The merged mesh must stay visible to the camera (see the layer finding
+  above); `colorWrite: false` + `depthWrite: false` make it draw nothing.
 
 ## Option 1 — Coverage tuning defaults
 
