@@ -362,6 +362,8 @@ init();
 
 window.__testHooks = {
     version: 1,
+    // Debug-only escape hatch for probing engine/scene state from automation.
+    getEngine: () => state.engine,
     listScenarios: () => listScenarioIds().slice(),
     loadScenario,
     unloadScenario,

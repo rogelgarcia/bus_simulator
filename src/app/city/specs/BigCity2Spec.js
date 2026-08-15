@@ -1184,7 +1184,7 @@ export const BIG_CITY_2_SPEC_SOURCE = Object.freeze(
             },
             {
                 "id": "building_35",
-                "configId": "stone_lowrise",
+                "configId": "stone_lowrise_2",
                 "tiles": [
                     [
                         14,
@@ -1262,7 +1262,7 @@ export const BIG_CITY_2_SPEC_SOURCE = Object.freeze(
             },
             {
                 "id": "building_41",
-                "configId": "stone_lowrise",
+                "configId": "stone_lowrise_2",
                 "tiles": [
                     [
                         0,
@@ -1328,20 +1328,41 @@ export const BIG_CITY_2_SPEC_SOURCE = Object.freeze(
             },
             {
                 "id": "building_47",
-                "configId": "stone_lowrise",
+                "configId": "stone_lowrise_2",
                 "tiles": [
                     [
                         19,
                         23
-                    ],
+                    ]
+                ],
+                "rendered": true
+            },
+            {
+                "id": "building_47_b",
+                "configId": "stone_lowrise_2",
+                "tiles": [
                     [
                         20,
                         23
-                    ],
+                    ]
+                ],
+                "rendered": true
+            },
+            {
+                "id": "building_47_c",
+                "configId": "stone_lowrise_2",
+                "tiles": [
                     [
                         19,
                         22
-                    ],
+                    ]
+                ],
+                "rendered": true
+            },
+            {
+                "id": "building_47_d",
+                "configId": "stone_lowrise_2",
+                "tiles": [
                     [
                         20,
                         22
@@ -1351,20 +1372,41 @@ export const BIG_CITY_2_SPEC_SOURCE = Object.freeze(
             },
             {
                 "id": "building_48",
-                "configId": "stone_lowrise",
+                "configId": "stone_lowrise_2",
                 "tiles": [
                     [
                         19,
                         20
-                    ],
+                    ]
+                ],
+                "rendered": true
+            },
+            {
+                "id": "building_48_b",
+                "configId": "stone_lowrise_2",
+                "tiles": [
                     [
                         20,
                         20
-                    ],
+                    ]
+                ],
+                "rendered": true
+            },
+            {
+                "id": "building_48_c",
+                "configId": "stone_lowrise_2",
+                "tiles": [
                     [
                         19,
                         19
-                    ],
+                    ]
+                ],
+                "rendered": true
+            },
+            {
+                "id": "building_48_d",
+                "configId": "stone_lowrise_2",
+                "tiles": [
                     [
                         20,
                         19
@@ -1374,20 +1416,41 @@ export const BIG_CITY_2_SPEC_SOURCE = Object.freeze(
             },
             {
                 "id": "building_49",
-                "configId": "stone_lowrise",
+                "configId": "stone_lowrise_2",
                 "tiles": [
                     [
                         17,
                         22
-                    ],
+                    ]
+                ],
+                "rendered": true
+            },
+            {
+                "id": "building_49_b",
+                "configId": "stone_lowrise_2",
+                "tiles": [
                     [
                         17,
                         21
-                    ],
+                    ]
+                ],
+                "rendered": true
+            },
+            {
+                "id": "building_49_c",
+                "configId": "stone_lowrise_2",
+                "tiles": [
                     [
                         17,
                         20
-                    ],
+                    ]
+                ],
+                "rendered": true
+            },
+            {
+                "id": "building_49_d",
+                "configId": "stone_lowrise_2",
+                "tiles": [
                     [
                         17,
                         19
@@ -1454,7 +1517,7 @@ export const BIG_CITY_2_SPEC_SOURCE = Object.freeze(
             },
             {
                 "id": "building_53",
-                "configId": "stone_lowrise",
+                "configId": "stone_lowrise_2",
                 "tiles": [
                     [
                         2,
@@ -1465,7 +1528,7 @@ export const BIG_CITY_2_SPEC_SOURCE = Object.freeze(
             },
             {
                 "id": "building_54",
-                "configId": "stone_lowrise",
+                "configId": "stone_lowrise_2",
                 "tiles": [
                     [
                         4,

@@ -5,7 +5,7 @@
 const STORAGE_KEY = 'bus_sim.ambientOcclusion.v1';
 
 export const AMBIENT_OCCLUSION_DEFAULTS = Object.freeze({
-    mode: 'ssao',
+    mode: 'gtao',
     alpha: {
         handling: 'exclude',
         threshold: 0.36
@@ -36,7 +36,7 @@ export const AMBIENT_OCCLUSION_DEFAULTS = Object.freeze({
         quality: 'high',
         denoise: false,
         debugView: false,
-        updateMode: 'every_frame',
+        updateMode: 'half_rate',
         motionThreshold: {
             positionMeters: 0.02,
             rotationDeg: 0.15,

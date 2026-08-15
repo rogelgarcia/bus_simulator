@@ -14,6 +14,7 @@ import { scenarioVehicleMotionFlickerProbe } from './scenario_vehicle_motion_fli
 import { scenarioSunBloomFoliageOcclusion } from './scenario_sun_bloom_foliage_occlusion.js';
 import { scenarioAoFoliageMotionStability } from './scenario_ao_foliage_motion_stability.js';
 import { scenarioMaterialCalibrationCapture } from './scenario_material_calibration_capture.js';
+import { scenarioBuildingShowcase } from './scenario_building_showcase.js';
 
 const REGISTRY = new Map([
     [scenarioEmpty.id, scenarioEmpty],
@@ -30,7 +31,8 @@ const REGISTRY = new Map([
     [scenarioVehicleMotionFlickerProbe.id, scenarioVehicleMotionFlickerProbe],
     [scenarioSunBloomFoliageOcclusion.id, scenarioSunBloomFoliageOcclusion],
     [scenarioAoFoliageMotionStability.id, scenarioAoFoliageMotionStability],
-    [scenarioMaterialCalibrationCapture.id, scenarioMaterialCalibrationCapture]
+    [scenarioMaterialCalibrationCapture.id, scenarioMaterialCalibrationCapture],
+    [scenarioBuildingShowcase.id, scenarioBuildingShowcase]
 ]);
 
 export function listScenarioIds() {

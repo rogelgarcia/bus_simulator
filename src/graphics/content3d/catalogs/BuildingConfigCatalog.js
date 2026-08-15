@@ -6,6 +6,7 @@ import { BRICK_MIDRISE_BUILDING_CONFIG } from '../buildings/configs/BrickMidrise
 import { BRICK_MIDRISE_2_BUILDING_CONFIG } from '../buildings/configs/BrickMidrise2.js';
 import { GOV_CENTER_BUILDING_CONFIG } from '../buildings/configs/GovCenter.js';
 import { STONE_LOWRISE_BUILDING_CONFIG } from '../buildings/configs/StoneLowrise.js';
+import { STONE_LOWRISE_2_BUILDING_CONFIG } from '../buildings/configs/StoneLowrise2.js';
 import { STONE_SETBACK_TOWER_BUILDING_CONFIG } from '../buildings/configs/StoneSetbackTower.js';
 
 const BUILDING_CONFIGS = Object.freeze([
@@ -15,7 +16,8 @@ const BUILDING_CONFIGS = Object.freeze([
     BLUE_BELT_TOWER_BUILDING_CONFIG,
     GOV_CENTER_BUILDING_CONFIG,
     STONE_SETBACK_TOWER_BUILDING_CONFIG,
-    STONE_LOWRISE_BUILDING_CONFIG
+    STONE_LOWRISE_BUILDING_CONFIG,
+    STONE_LOWRISE_2_BUILDING_CONFIG
 ]);
 
 export function getBuildingConfigById(id) {

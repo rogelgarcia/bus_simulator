@@ -110,8 +110,8 @@ export const ASPHALT_NOISE_DEFAULTS = Object.freeze({
             enabled: true,
             width: 0.65,
             opacity: 0.45,
-            roughness: 1.0,
-            metalness: 0.0,
+            roughness: 1,
+            metalness: 0,
             colorHex: 0x4d473c,
             fadePower: 1.6
         }),

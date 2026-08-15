@@ -8,6 +8,7 @@ const repoRoot = path.resolve(__dirname, '../../..');
 
 const baseURL = process.env.VISUAL_BASE_URL || 'http://127.0.0.1:4173';
 const headless = process.env.HEADLESS === '0' ? false : true;
+const executablePath = String(process.env.PLAYWRIGHT_EXECUTABLE_PATH || '').trim();
 
 export default {
     testDir: path.resolve(__dirname, 'specs'),
@@ -27,6 +28,7 @@ export default {
         screenshot: 'only-on-failure',
         video: 'retain-on-failure',
         launchOptions: {
+            ...(executablePath ? { executablePath } : {}),
             args: [
                 '--disable-dev-shm-usage',
                 '--hide-scrollbars',

@@ -40,7 +40,7 @@ function formatBool(value) {
 
 function formatString(value) {
     const s = typeof value === 'string' ? value : '';
-    return JSON.stringify(s);
+    return `'${s.replace(/\\/g, '\\\\').replace(/'/g, '\\\'')}'`;
 }
 
 function formatHexColor(value) {
@@ -62,6 +62,7 @@ function buildLightingDefaults(settings) {
     const ibl = s.ibl ?? {};
     return buildDefaultsBlock('LIGHTING_DEFAULTS', [
         `    exposure: ${formatNumber(s.exposure)},`,
+        `    toneMapping: ${formatString(s.toneMapping)},`,
         `    hemiIntensity: ${formatNumber(s.hemiIntensity)},`,
         `    sunIntensity: ${formatNumber(s.sunIntensity)},`,
         '    ibl: {',
@@ -133,6 +134,7 @@ function buildAsphaltNoiseDefaults(settings) {
     const color = s.color ?? {};
     const livedIn = s.livedIn ?? {};
     const edgeDirt = livedIn.edgeDirt ?? {};
+    const sidewalkGrassEdgeStrip = livedIn.sidewalkGrassEdgeStrip ?? {};
     const cracks = livedIn.cracks ?? {};
     const patches = livedIn.patches ?? {};
     const tireWear = livedIn.tireWear ?? {};
@@ -174,6 +176,15 @@ function buildAsphaltNoiseDefaults(settings) {
     lines.push(`            width: ${formatNumber(edgeDirt.width)},`);
     lines.push(`            scale: ${formatNumber(edgeDirt.scale)}`);
     lines.push('        }),');
+    lines.push('        sidewalkGrassEdgeStrip: Object.freeze({');
+    lines.push(`            enabled: ${formatBool(sidewalkGrassEdgeStrip.enabled)},`);
+    lines.push(`            width: ${formatNumber(sidewalkGrassEdgeStrip.width)},`);
+    lines.push(`            opacity: ${formatNumber(sidewalkGrassEdgeStrip.opacity)},`);
+    lines.push(`            roughness: ${formatNumber(sidewalkGrassEdgeStrip.roughness)},`);
+    lines.push(`            metalness: ${formatNumber(sidewalkGrassEdgeStrip.metalness)},`);
+    lines.push(`            colorHex: ${formatHexColor(sidewalkGrassEdgeStrip.colorHex)},`);
+    lines.push(`            fadePower: ${formatNumber(sidewalkGrassEdgeStrip.fadePower)}`);
+    lines.push('        }),');
     lines.push('        cracks: Object.freeze({');
     lines.push(`            enabled: ${formatBool(cracks.enabled)},`);
     lines.push(`            strength: ${formatNumber(cracks.strength)},`);
@@ -214,7 +225,7 @@ function findFrozenConstRange(source, constName) {
                 escaped = false;
                 continue;
             }
-            if (ch === '\\\\') {
+            if (ch === '\\') {
                 escaped = true;
                 continue;
             }

@@ -456,6 +456,262 @@ const WINDOW_DOOR_FABRICATION_CATALOG = Object.freeze([
         }
     }),
     Object.freeze({
+        id: 'window_white_sash_2x2',
+        assetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW,
+        name: 'White Sash 2 over 2',
+        settings: {
+            version: 1,
+            width: 1.5,
+            height: 1.8,
+            arch: {
+                enabled: false,
+                heightRatio: 0.25,
+                meetsRectangleFrame: true,
+                topPieceMode: 'frame',
+                clipVerticalMuntinsToRectWhenNoTopPiece: true
+            },
+            frame: {
+                width: 0.075,
+                depth: 0.09,
+                inset: 0.06,
+                openBottom: false,
+                colorHex: 0xe8e3d5,
+                bevel: {
+                    size: 0.3,
+                    roundness: 0.65
+                },
+                material: {
+                    roughness: 0.6,
+                    metalness: 0,
+                    envMapIntensity: 0.15,
+                    normalStrength: 0.6
+                }
+            },
+            muntins: {
+                enabled: true,
+                columns: 2,
+                rows: 2,
+                verticalWidth: 0.045,
+                horizontalWidth: 0.06,
+                depth: 0.05,
+                inset: 0.012,
+                uvOffset: {
+                    x: 0,
+                    y: 0
+                },
+                colorHex: 0xe8e3d5,
+                bevel: {
+                    inherit: true,
+                    bevel: {
+                        size: 0.3,
+                        roundness: 0.65
+                    }
+                },
+                material: {
+                    inheritFromFrame: true,
+                    pbr: {
+                        roughness: 0.6,
+                        metalness: 0,
+                        envMapIntensity: 0.15,
+                        normalStrength: 0.6
+                    }
+                }
+            },
+            glass: {
+                opacity: 0.85,
+                tintHex: 1842209,
+                reflection: {
+                    metalness: 0,
+                    roughness: 0.02,
+                    transmission: 0,
+                    ior: 1.5,
+                    envMapIntensity: 2.5
+                },
+                zOffset: -0.07
+            },
+            shade: {
+                enabled: true,
+                coverage: WINDOW_SHADE_COVERAGE.PCT_20,
+                randomizeCoverage: true,
+                direction: 'top_to_bottom',
+                colorHex: 0x565851,
+                fabric: {
+                    scale: 7,
+                    intensity: 0.18
+                },
+                zOffset: -0.05
+            },
+            interior: {
+                enabled: true
+            }
+        },
+        decoration: {
+            sill: {
+                enabled: true,
+                type: 'bottom_cover',
+                widthMode: 'match_window',
+                depthMeters: 0.09,
+                material: {
+                    mode: 'match_frame'
+                }
+            }
+        },
+        layers: {
+            frame: true,
+            muntins: true,
+            glass: true,
+            shade: true,
+            interior: true
+        },
+        wall: {
+            materialId: 'pbr.painted_plaster_wall',
+            roughness: 0.85,
+            normalIntensity: 1,
+            cutWidthLerp: 0,
+            cutHeightLerp: 0,
+            floorDistanceMeters: 0
+        },
+        ibl: {
+            enabled: true,
+            envMapIntensity: 0.25,
+            iblId: 'ibl.hdri.german_town_street_2k',
+            setBackground: true
+        },
+        seed: 'window-debug',
+        thumbnail: {
+            dataUrl: null,
+            wallMaterialId: 'pbr.painted_plaster_wall'
+        }
+    }),
+    Object.freeze({
+        id: 'window_white_bathroom_narrow',
+        assetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW,
+        name: 'White Narrow Bathroom',
+        settings: {
+            version: 1,
+            width: 0.7,
+            height: 1.1,
+            arch: {
+                enabled: false,
+                heightRatio: 0.25,
+                meetsRectangleFrame: true,
+                topPieceMode: 'frame',
+                clipVerticalMuntinsToRectWhenNoTopPiece: true
+            },
+            frame: {
+                width: 0.07,
+                depth: 0.09,
+                inset: 0.06,
+                openBottom: false,
+                colorHex: 0xe8e3d5,
+                bevel: {
+                    size: 0.3,
+                    roundness: 0.65
+                },
+                material: {
+                    roughness: 0.6,
+                    metalness: 0,
+                    envMapIntensity: 0.15,
+                    normalStrength: 0.6
+                }
+            },
+            muntins: {
+                enabled: true,
+                columns: 1,
+                rows: 2,
+                verticalWidth: 0.045,
+                horizontalWidth: 0.05,
+                depth: 0.05,
+                inset: 0.012,
+                uvOffset: {
+                    x: 0,
+                    y: 0
+                },
+                colorHex: 0xe8e3d5,
+                bevel: {
+                    inherit: true,
+                    bevel: {
+                        size: 0.3,
+                        roundness: 0.65
+                    }
+                },
+                material: {
+                    inheritFromFrame: true,
+                    pbr: {
+                        roughness: 0.6,
+                        metalness: 0,
+                        envMapIntensity: 0.15,
+                        normalStrength: 0.6
+                    }
+                }
+            },
+            glass: {
+                opacity: 0.92,
+                tintHex: 0x8f959c,
+                reflection: {
+                    metalness: 0,
+                    roughness: 0.18,
+                    transmission: 0,
+                    ior: 1.5,
+                    envMapIntensity: 1.6
+                },
+                zOffset: -0.07
+            },
+            shade: {
+                enabled: false,
+                coverage: WINDOW_SHADE_COVERAGE.PCT_20,
+                randomizeCoverage: true,
+                direction: 'top_to_bottom',
+                colorHex: 0x565851,
+                fabric: {
+                    scale: 7,
+                    intensity: 0.18
+                },
+                zOffset: -0.05
+            },
+            interior: {
+                enabled: false
+            }
+        },
+        decoration: {
+            sill: {
+                enabled: true,
+                type: 'bottom_cover',
+                widthMode: 'match_window',
+                depthMeters: 0.07,
+                material: {
+                    mode: 'match_frame'
+                }
+            }
+        },
+        layers: {
+            frame: true,
+            muntins: true,
+            glass: true,
+            shade: false,
+            interior: false
+        },
+        wall: {
+            materialId: 'pbr.painted_plaster_wall',
+            roughness: 0.85,
+            normalIntensity: 1,
+            cutWidthLerp: 0,
+            cutHeightLerp: 0,
+            floorDistanceMeters: 0
+        },
+        ibl: {
+            enabled: true,
+            envMapIntensity: 0.25,
+            iblId: 'ibl.hdri.german_town_street_2k',
+            setBackground: true
+        },
+        seed: 'window-debug',
+        thumbnail: {
+            dataUrl: null,
+            wallMaterialId: 'pbr.painted_plaster_wall'
+        }
+    }),
+    Object.freeze({
         id: 'door_black_single_modern',
         assetType: WINDOW_FABRICATION_ASSET_TYPE.DOOR,
         name: 'Black Single Door Modern',
@@ -706,6 +962,133 @@ const WINDOW_DOOR_FABRICATION_CATALOG = Object.freeze([
         thumbnail: {
             dataUrl: null,
             wallMaterialId: 'pbr.brick_wall_11'
+        }
+    }),
+    Object.freeze({
+        id: 'door_wood_arch',
+        assetType: WINDOW_FABRICATION_ASSET_TYPE.DOOR,
+        name: 'Wood Arched Entry Door',
+        settings: {
+            version: 1,
+            width: 1.6,
+            height: 2.6,
+            arch: {
+                enabled: true,
+                heightRatio: 0.22,
+                meetsRectangleFrame: true,
+                topPieceMode: 'frame',
+                clipVerticalMuntinsToRectWhenNoTopPiece: true
+            },
+            frame: {
+                width: 0.09,
+                verticalWidth: 0.09,
+                horizontalWidth: 0.09,
+                depth: 0.11,
+                inset: 0.02,
+                openBottom: true,
+                addHandles: true,
+                handleMaterialMode: 'match',
+                doorStyle: 'double',
+                doorBottomFrame: {
+                    enabled: true,
+                    mode: 'match'
+                },
+                doorCenterFrame: {
+                    leftMode: 'match',
+                    rightMode: 'match'
+                },
+                colorHex: 0x54382a,
+                bevel: {
+                    size: 0.3,
+                    roundness: 0.65
+                },
+                material: {
+                    roughness: 0.62,
+                    metalness: 0.05,
+                    envMapIntensity: 0.2,
+                    normalStrength: 0.6
+                }
+            },
+            muntins: {
+                enabled: true,
+                columns: 2,
+                rows: 3,
+                verticalWidth: 0.05,
+                horizontalWidth: 0.05,
+                depth: 0.05,
+                inset: 0.012,
+                uvOffset: {
+                    x: 0,
+                    y: 0
+                },
+                colorHex: 0x54382a,
+                bevel: {
+                    inherit: true,
+                    bevel: {
+                        size: 0.3,
+                        roundness: 0.65
+                    }
+                },
+                material: {
+                    inheritFromFrame: true,
+                    pbr: {
+                        roughness: 0.62,
+                        metalness: 0.05,
+                        envMapIntensity: 0.2,
+                        normalStrength: 0.6
+                    }
+                }
+            },
+            glass: {
+                opacity: 0.7,
+                tintHex: 0x20262b,
+                reflection: {
+                    metalness: 0,
+                    roughness: 0.05,
+                    transmission: 0,
+                    ior: 1.5,
+                    envMapIntensity: 2
+                },
+                zOffset: -0.06
+            },
+            shade: {
+                enabled: false
+            },
+            interior: {
+                enabled: false
+            }
+        },
+        garageFacade: {
+            state: 'closed',
+            closedMaterialId: 'pbr.corrugated_iron_02',
+            rotationDegrees: 0
+        },
+        decoration: null,
+        layers: {
+            frame: true,
+            muntins: true,
+            glass: true,
+            shade: false,
+            interior: false
+        },
+        wall: {
+            materialId: 'pbr.seaworn_sandstone_brick',
+            roughness: 0.85,
+            normalIntensity: 1,
+            cutWidthLerp: 0,
+            cutHeightLerp: 0,
+            floorDistanceMeters: 0
+        },
+        ibl: {
+            enabled: true,
+            envMapIntensity: 0.25,
+            iblId: 'ibl.hdri.german_town_street_2k',
+            setBackground: true
+        },
+        seed: 'door-debug',
+        thumbnail: {
+            dataUrl: null,
+            wallMaterialId: 'pbr.seaworn_sandstone_brick'
         }
     }),
     Object.freeze({
