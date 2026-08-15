@@ -517,7 +517,10 @@ export class City {
             preset,
             cascades,
             mapSize,
-            splitScale
+            splitScale,
+            // Cascades scale off the base size, so the hardware cap is enforced
+            // there rather than by the base-size clamp above.
+            maxTextureSize: engine?.renderer?.capabilities?.maxTextureSize ?? 0
         });
         setActiveSceneShadowSystem(this._csm);
         registerObjectForSceneShadows(this.group);

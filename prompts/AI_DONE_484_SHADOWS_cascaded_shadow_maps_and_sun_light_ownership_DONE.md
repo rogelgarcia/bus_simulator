@@ -302,6 +302,50 @@ out and trades texel density for range, <1 the reverse. And `lightFar` is now
 `max(600, maxFar * 3 + 200)` instead of a hardcoded 600, which retires the
 clipping watch item noted above (the far cascade's box is now ~757 m).
 
+## Per-cascade map sizes (2026-08-15)
+
+Follow-up ask: sharper shadows further out, ideally without paying for the
+near range that already looked fine. Considered and rejected a foliage-only
+detail shadow map (trees at higher density than everything else): three
+multiplies each light's contribution by that light's own shadow lookup, so a
+second tree-only light either double-lights the scene or contributes nothing —
+combining two lookups needs `min()` inside a forked `lights_fragment_begin`,
+i.e. maintaining a patched three internal across upgrades. And it saves no
+VRAM: the same texels/metre over the same box are needed whichever objects
+render into it, so a detail map is *additional* to the cascade map, not
+instead of it. Its only real saving is draw calls in the detail pass, and
+buildings dominate casting (2,014 casters / 407k triangles), so that saving is
+small. Trees are also streamed (the `Trees` group is empty right after load),
+which adds churn a tree-specific map would have to handle.
+
+Did instead: **per-cascade shadow-map sizes**, spending the fixed texel budget
+where detail is actually visible. Multipliers on the preset base size, 4
+cascades: `[0.5, 1, 2, 1]` -> 2048 / 4096 / 8192 / 4096.
+
+| band | before | after |
+| --- | --- | --- |
+| 0-45 m | 0.024 | 0.049 |
+| 45-90 m | 0.048 | 0.048 |
+| 90-190 m | 0.102 | **0.051** |
+| 190-340 m | 0.185 | 0.185 |
+
+Density is now flat at ~0.05 m/texel across everything within 190 m (the near
+cascade was finer than the eye can use at 45 m; the third band was where
+foliage detail died). Measured cost is unchanged — 37 ms/frame and 16,682 draw
+calls, identical before and after — because the shadow passes are draw-call
+bound, not fill bound, so the larger map is effectively free in time. VRAM is
+the price: 256 -> 400 MiB.
+
+**Texel-snapping constraint (important):** `CSM.update()` derives its snapping
+grid from the single `shadowMapSize`, and a grid *finer* than a cascade's real
+texels lets its centre land mid-texel — reintroducing exactly the edge crawl
+snapping prevents. Fix is to set `csm.shadowMapSize` to the **smallest**
+per-cascade size: every other cascade's texel size divides it (all sizes stay
+power-of-two related, which is why the multipliers must be powers of two), so
+all cascades stay snapped, just quantised more coarsely than strictly needed.
+Verified at runtime: every cascade's light position, transformed into light
+space, sits at fractional texel offset 0.000 on both axes.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:

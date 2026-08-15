@@ -40,8 +40,25 @@ const SPLITS_BY_CASCADES = Object.freeze({
     4: Object.freeze([45, 90, 190, 340])
 });
 
+// Per-cascade shadow-map size, as a multiplier on the preset's base size.
+// A uniform size spends texels badly: a cascade's box grows ~2.2x with its
+// split distance, so the nearest cascade ends up finer than the eye can use at
+// 45 m while the third band -- where foliage detail actually dies -- is four
+// times coarser. Shifting one step down from the near cascade and two up on
+// the third evens the density out across everything within ~190 m.
+//
+// Multipliers must stay powers of two: the texel-snapping grid below relies on
+// every cascade's texel size being a whole multiple of the smallest one.
+const MAP_SIZE_SCALE_BY_CASCADES = Object.freeze({
+    2: Object.freeze([1, 2]),
+    3: Object.freeze([0.5, 1, 2]),
+    4: Object.freeze([0.5, 1, 2, 1])
+});
+
+const MAX_CASCADE_MAP_SIZE = 8192;
+
 export class CityCascadedShadows {
-    constructor({ camera, parent, sunRef, preset, cascades = 3, mapSize = 2048, splitScale = 1 }) {
+    constructor({ camera, parent, sunRef, preset, cascades = 3, mapSize = 2048, splitScale = 1, maxTextureSize = 0 }) {
         if (!camera) throw new Error('[CityCascadedShadows] camera is required');
         if (!parent) throw new Error('[CityCascadedShadows] parent is required');
         if (!sunRef?.direction?.isVector3) throw new Error('[CityCascadedShadows] sunRef is required');
@@ -50,6 +67,12 @@ export class CityCascadedShadows {
         this.cascades = Math.max(2, Math.min(4, Math.round(cascades) || 3));
         this.mapSize = Math.max(256, mapSize | 0);
         this._preset = preset ?? null;
+
+        const sizeCap = Number.isFinite(maxTextureSize) && maxTextureSize >= 256
+            ? Math.min(MAX_CASCADE_MAP_SIZE, Math.floor(maxTextureSize))
+            : MAX_CASCADE_MAP_SIZE;
+        const scales = MAP_SIZE_SCALE_BY_CASCADES[this.cascades] ?? MAP_SIZE_SCALE_BY_CASCADES[4];
+        this.mapSizes = scales.map((s) => Math.max(256, Math.min(sizeCap, Math.round(this.mapSize * s))));
         const scale = Number.isFinite(splitScale) && splitScale > 0
             ? Math.max(0.5, Math.min(2.5, splitScale))
             : 1;
@@ -86,6 +109,21 @@ export class CityCascadedShadows {
             lightFar: Math.max(600, this.maxFar * 3 + 200),
             lightMargin: 160
         });
+        // CSM sizes every cascade map from its single `shadowMapSize`; give each
+        // light its own. Done before the first render, so nothing is allocated
+        // at the constructor size.
+        this.csm.lights.forEach((light, i) => {
+            const size = this.mapSizes[i];
+            light.shadow.mapSize.set(size, size);
+        });
+        // CSM.update() snaps each cascade's centre to a texel grid derived from
+        // this one value, and a grid finer than a cascade's real texels lets its
+        // centre land mid-texel, which is exactly the edge crawl the snapping
+        // exists to prevent. The smallest size is the safe grid: every other
+        // cascade's texel size divides it (all sizes are power-of-two related),
+        // so they stay snapped too, just quantised more coarsely than required.
+        this.csm.shadowMapSize = Math.min(...this.mapSizes);
+
         // Blend neighbouring cascades across the split instead of hard-switching
         // (decided at construction; toggling later forces shader recompiles).
         this.csm.fade = true;
@@ -103,10 +141,10 @@ export class CityCascadedShadows {
         const preset = this._preset ?? {};
         const normalBias = Number.isFinite(preset.normalBias) ? preset.normalBias : 0.02;
         const radius = Number.isFinite(preset.radius) ? preset.radius : 1;
-        for (const light of this.csm.lights) {
+        this.csm.lights.forEach((light, i) => {
             const cam = light.shadow.camera;
             const extent = Math.max(1e-3, cam.right - cam.left);
-            const texel = extent / this.mapSize;
+            const texel = extent / (this.mapSizes[i] ?? this.mapSize);
             // Bias tuned for a 220 m map is wrong for a 40 m one: scale the
             // world-space normal offset with each cascade's texel size.
             if ('normalBias' in light.shadow) {
@@ -114,7 +152,7 @@ export class CityCascadedShadows {
             }
             if ('radius' in light.shadow) light.shadow.radius = radius;
             light.color.copy(this.sunRef.color ?? light.color);
-        }
+        });
     }
 
     /**
@@ -187,18 +225,21 @@ export class CityCascadedShadows {
     /** m/texel and VRAM numbers for the perf report. */
     getMetrics() {
         const cascades = [];
+        let vramBytes = 0;
         for (let i = 0; i < this.csm.lights.length; i++) {
             const cam = this.csm.lights[i].shadow.camera;
             const extent = cam.right - cam.left;
+            const size = this.mapSizes[i] ?? this.mapSize;
             cascades.push({
                 extentMeters: extent,
-                metersPerTexel: extent / this.mapSize,
+                mapSize: size,
+                metersPerTexel: extent / size,
                 breakEnd: this.csm.breaks[i] ?? null
             });
+            // 4 bytes/texel depth per map.
+            vramBytes += size * size * 4;
         }
-        // 4 bytes/texel depth per map.
-        const vramBytes = this.csm.lights.length * this.mapSize * this.mapSize * 4;
-        return { mapSize: this.mapSize, maxFar: this.maxFar, cascades, vramBytes };
+        return { mapSize: this.mapSize, mapSizes: this.mapSizes.slice(), maxFar: this.maxFar, cascades, vramBytes };
     }
 
     /**
