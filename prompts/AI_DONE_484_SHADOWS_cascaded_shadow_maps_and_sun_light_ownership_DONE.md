@@ -357,6 +357,39 @@ all cascades stay snapped, just quantised more coarsely than strictly needed.
 Verified at runtime: every cascade's light position, transformed into light
 space, sits at fractional texel offset 0.000 on both axes.
 
+## Jagged shadow edges: a filtering bug, not a resolution one (2026-08-15)
+
+Report: the bus shadow edge looked jagged even after the near cascade was
+restored to 0.024 m/texel — the same density as the original implementation
+the user remembered as sharp. Correctly diagnosed as **penumbra width, not
+texel count**, and the cause was two things in three 0.183.2:
+
+1. **`PCFSoftShadowMap` is deprecated and silently coerced.**
+   `WebGLShadowMap.render()` does `if (this.type === PCFSoftShadowMap) { warn(
+   'PCFSoftShadowMap has been deprecated. Using PCFShadowMap instead.');
+   this.type = PCFShadowMap; }`. Confirmed live: the console carried that
+   warning and `renderer.shadowMap.type` read back as `1` (PCF) despite the
+   presets asking for `pcf_soft`. Every preset except `ultra` was requesting a
+   filter that no longer exists. (A first hypothesis — that it fell through to
+   `SHADOWMAP_TYPE_BASIC`, single-tap — was **wrong**; `shadowMapTypeDefines`
+   lacks a PCF_SOFT entry, but the coercion happens before that lookup.)
+2. **`radius` was far too small for the filter that actually runs.**
+   `SHADOWMAP_TYPE_PCF` is a 5-tap Vogel disk scaled by `shadowRadius`, and
+   radius is expressed in **texels**: 1.5 texels on the near cascade is a ~3.6
+   cm penumbra, which at bus level is 2-3 screen pixels — i.e. a hard edge that
+   shows its texel staircase on big flat surfaces.
+
+Fixes: every preset now names `'pcf'` directly (behaviour-identical, but the
+deprecation warning is gone — verified absent after, present before), and the
+radii are raised — cascaded 1.5 -> 4, high 1.25 -> 2.5, ultra 1 -> 3, medium
+1.5 -> 2. Because radius is in texels, the world-space penumbra scales with
+each cascade's texel size automatically, so one value stays sane across all
+four cascades. Costs nothing: the tap count is fixed at 5 regardless of radius.
+
+Also considered and rejected: a bespoke high-resolution mask/render target just
+for the bus shadow. Feasible, but it would have solved the wrong problem — the
+edge was never resolution-starved, and `radius` fixed it with a preset value.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:

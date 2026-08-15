@@ -14,17 +14,27 @@ export const SHADOW_DEFAULTS = Object.freeze({
 
 // `cascades` marks a preset as cascaded shadow maps (N camera-fitted maps by
 // depth range) instead of the single fitted map; mapSize is then per cascade.
+//
+// shadowMapType is 'pcf' everywhere: three 0.183 deprecated PCFSoftShadowMap
+// and silently coerces it to PCFShadowMap at render time (with a console
+// warning), so 'pcf_soft' was never a distinct filter -- naming it directly
+// keeps the console clean and makes `radius` obviously the softness dial.
+//
+// `radius` is the PCF sampling disk in TEXELS (5-tap Vogel disk), so its
+// world-space penumbra scales with each cascade's texel size automatically.
+// Values near 1 leave a ~3 cm penumbra on the near cascade, which reads as a
+// hard stair-stepped edge on large flat surfaces at bus level.
 export const SHADOW_QUALITY_PRESETS = Object.freeze({
-    off: Object.freeze({ enabled: false, shadowMapType: 'pcf_soft', mapSize: 0, radius: 1, bias: 0, normalBias: 0, twoSidedCasting: false }),
-    low: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 1024, radius: 2, bias: -0.0001, normalBias: 0.01, twoSidedCasting: false }),
-    medium: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 2048, radius: 1.5, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true }),
-    high: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 4096, radius: 1.25, bias: -0.0002, normalBias: 0.03, twoSidedCasting: true }),
-    ultra: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 1, bias: -0.0002, normalBias: 0.035, twoSidedCasting: true }),
+    off: Object.freeze({ enabled: false, shadowMapType: 'pcf', mapSize: 0, radius: 1, bias: 0, normalBias: 0, twoSidedCasting: false }),
+    low: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 1024, radius: 2, bias: -0.0001, normalBias: 0.01, twoSidedCasting: false }),
+    medium: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 2048, radius: 2, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true }),
+    high: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 2.5, bias: -0.0002, normalBias: 0.03, twoSidedCasting: true }),
+    ultra: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 3, bias: -0.0002, normalBias: 0.035, twoSidedCasting: true }),
     // 4 cascades at 4096: a shadow-map box is ~2.2x its split distance, so one
     // wide near cascade cannot be both sharp and long-range. Splitting the near
     // range instead keeps everything inside ~90 m at or below the single fitted
     // map's 0.054 m/texel while still reaching the skyline.
-    cascaded: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 4096, radius: 1.5, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true, cascades: 4 })
+    cascaded: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 4, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true, cascades: 4 })
 });
 
 function sanitizeQuality(value) {
