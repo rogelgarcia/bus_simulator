@@ -293,12 +293,18 @@ export class PerfBar {
         this._renderStatic();
     }
 
-    onFrame({ dt, nowMs, renderer } = {}) {
+    onFrame({ dt, rawDt, nowMs, renderer } = {}) {
         const now = Number.isFinite(nowMs) ? nowMs : performance.now();
         if (renderer) this.setRenderer(renderer);
 
+        // Prefer the unclamped delta. `dt` is clamped for the simulation (a
+        // long frame must not advance physics by a huge step), and that ceiling
+        // is 50 ms — reading FPS from it pins the display at exactly 20 and
+        // hides every slowdown worse than that.
+        const displayDt = Number.isFinite(rawDt) ? rawDt : dt;
+
         let frameMs = 0;
-        if (Number.isFinite(dt)) frameMs = Math.max(0, dt * 1000);
+        if (Number.isFinite(displayDt)) frameMs = Math.max(0, displayDt * 1000);
         else if (this._frame.lastNowMs) frameMs = Math.max(0, now - this._frame.lastNowMs);
 
         this._frame.lastNowMs = now;

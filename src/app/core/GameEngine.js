@@ -1099,9 +1099,12 @@ export class GameEngine {
         applyIBLIntensity(this.scene, this._ibl.config, { force: !!force });
     }
 
-    updateFrame(dt, { render = true, nowMs = null } = {}) {
+    updateFrame(dt, { render = true, nowMs = null, rawDt = null } = {}) {
         const stepDt = Number.isFinite(dt) ? dt : 0;
         const now = Number.isFinite(nowMs) ? nowMs : performance.now();
+        // Real elapsed time, before the simulation clamp. Only for measurement:
+        // never step anything with this.
+        const measuredDt = Number.isFinite(rawDt) ? rawDt : stepDt;
 
         const timing = this._frameTiming;
         if (timing) {
@@ -1150,7 +1153,7 @@ export class GameEngine {
         if (!this._frameListeners.size) return;
         for (const fn of this._frameListeners) {
             try {
-                fn({ dt: stepDt, nowMs: now, renderer: this.renderer, engine: this });
+                fn({ dt: stepDt, rawDt: measuredDt, nowMs: now, renderer: this.renderer, engine: this });
             } catch (err) {
                 console.warn('[GameEngine] Frame listener error:', err);
                 this._frameListeners.delete(fn);
@@ -1290,7 +1293,7 @@ export class GameEngine {
             this._frameTiming.fps = dt > 1e-9 ? 1 / dt : 0;
             this._frameTiming.synthetic = syntheticInfo;
         }
-        this.updateFrame(dt, { render: true, nowMs: t });
+        this.updateFrame(dt, { render: true, nowMs: t, rawDt });
 
         requestAnimationFrame((tt) => this._tick(tt));
     }
