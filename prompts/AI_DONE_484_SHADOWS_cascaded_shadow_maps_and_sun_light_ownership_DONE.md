@@ -191,6 +191,45 @@ Three traps that cost real time on 2026-08-15 — do not fall into them again:
   - Artifacts: `tests/artifacts/screens/csm/` (paired per-pose PNGs, motion keyframes, sun-gaze pair, per-mode report JSONs).
 - Tests: `tests/node/unit/shadow_settings_cascaded.test.js` (8) — settings sanitization + choke-point contract. Full node suite: only pre-existing failures (wall decorator catalog, options preset promotion gap, assets pipeline, markings AA registry, texture correction — all fail on clean HEAD too).
 
+## Post-completion incident and low-sun forensics (2026-08-15, same day)
+
+The user reported "only hi-res close shadows; low-res never shows, fills in as I
+approach" from live play. Root cause after a long forensic session: **a stale
+static server**. The `node tests/headless/e2e/static_server.mjs` process on
+:4173 had been replaced mid-session by one whose working directory was an old
+checkout — `ROOT` resolves relative to the script, so it served pre-CSM code.
+`?shadows=cascaded` sanitized to `high` there, and the reported symptom was
+exactly the fallback's 110 m focus cutoff (this prompt's original Problem
+statement). Server replaced with one rooted in the repo; **always verify
+served == disk before A/B** (`curl the file and grep for a marker string`).
+
+The stale window also silently tainted the first Stage 1 A/B (baseline and new
+captures were both served identical stale code, making the diff trivially equal
+to the noise floor). Re-run on verified serving: draw calls still exactly equal
+per pose; noise floor 0.001-0.006% of pixels >16 levels; refactor diff
+0.14-0.64% >16 — the residual is confined (per diff heatmap) to the bus's
+bright trim, i.e. the sun-bloom visibility coupling of the documented
+bloom/rays drift fix. Geometry, shadows, and sky are unchanged.
+
+Low-sun findings that look like bugs but are not (verified against the fallback
+at identical camera/sun, with magnified crops):
+
+- At sun elevation ~28 deg with azimuth behind the camera view, most building
+  shadows fall away from the camera and are hidden by the buildings themselves.
+- Shadows near/beyond `maxFar` (300 m) fade out smoothly — that is `CSM_FADE`'s
+  designed shadow horizon (fade band starts ~260 m), and at 0.33 m/texel they
+  are soft; magnify before declaring them missing. The fallback's darker
+  version of the same shadow cuts off abruptly at its 110 m box edge instead.
+- The bus has never cast a sun shadow in this game (no `castShadow` on bus
+  meshes; grounding comes from BusContactShadowRig) — pre-existing, not CSM.
+- Dense-city grazing sun legitimately shadows most streets; visible facades
+  away from the sun are shadow-sides. A pose-level 28 deg frame reads
+  near-black and that is largely physical.
+- Watch item: cascade shadow cameras use `lightFar: 600`; at elevations well
+  below ~28 deg the far cascade's light-space depth extent (~620 m + 160
+  margin) can exceed it. No visible artifact at 28 deg (far=2000 A/B showed no
+  difference); revisit only if sub-20-deg sun angles become a real use case.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:
