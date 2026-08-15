@@ -430,6 +430,51 @@ caster pass per cascade. Resolution is therefore nearly free and cascade
 *count* is the price: x4 is ~4x the shadow cost of `high` and ~2.1x total
 frame time, buying 4.4x the near texel density plus coverage to 340 m.
 
+Second independent clean run (1.6% reference drift) reproduced this closely —
+`high` 11.13 vs 11.17 ms, `cascaded x4` 24.18 vs 24.23 ms — and added the
+coverage dial:
+
+| mode | bus level | draw calls | reach | m/texel |
+| --- | --- | --- | --- | --- |
+| high | 10.97 ms | 4,033 | 110 m | 0.054 |
+| cascaded x2 | 18.45 ms | 6,907 | 340 m | 0.030 / 0.185 |
+| cascaded x3 | 21.33 ms | 8,098 | 340 m | 0.015 / 0.040 / 0.185 |
+| cascaded x4 | 24.18 ms | 9,862 | 340 m | 0.012 / 0.024 / 0.051 / 0.185 |
+| x4 `splitScale=0.75` | 20.90 ms | 8,170 | 255 m | 0.009 / 0.018 / 0.038 / 0.138 |
+| x4 `splitScale=0.55` | 19.62 ms | 7,291 | 187 m | 0.007 / 0.013 / 0.028 / 0.101 |
+
+**`splitScale` beats cascade count as a performance dial.** Shrinking the
+boxes cuts casters *and* tightens texels at the same time, so x4 at 0.55 costs
+about the same as x2 (19.6 vs 18.5 ms) while being ~4x sharper near the bus
+(0.007 vs 0.030) — it only gives up reach. Reducing cascade count instead
+sacrifices density with no such compensation.
+
+### Where the draw calls actually are
+
+Per-cascade isolation at bus level, minus the 1,549-call base scene: cascade 0
+~1,356, cascade 1 ~1,593, cascade 2 ~4,144, cascade 3 ~3,363. **The two far
+cascades are ~65% of the shadow cost**, because their 420 m and 757 m boxes
+contain the whole city including everything behind the camera, and three culls
+only against the shadow box.
+
+Two optimisations that look obvious but are not available:
+
+- **Small-caster culling is pointless here.** Median caster radius is 8.7 m and
+  only 86 of 2,065 casters are sub-4-texel even in the coarsest cascade — the
+  geometry merge already removed the small stuff.
+- **Per-cascade caster selection is not natively expressible.** The shadow pass
+  tests `object.layers` against the **scene camera's** layers
+  (`WebGLShadowMap.js`, `renderObject`), not the shadow camera's, so layers
+  cannot feed different casters to different cascades. And `autoUpdate` /
+  `needsUpdate` live on the shadow map globally, not per light, so far cascades
+  cannot be refreshed at a lower rate; toggling `castShadow` per cascade would
+  re-index three's shadow arrays and break the cascade-to-map mapping.
+
+Remaining levers, in order of value: cull casters that cannot reach the visible
+region (helps all cascades, no new geometry), then coarse per-building shadow
+proxies beyond ~90 m (at 0.185 m/texel a box is indistinguishable from the real
+facade).
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:
