@@ -97,12 +97,35 @@ Tasks:
   `sunShadowFocusEnabled` / `sunShadowRadiusMeters`.
 - Drive `csm.update(camera)` per frame from `City.update(engine)` and keep the
   cascade light direction synced with the atmosphere sun direction.
-- Apply texel snapping per cascade (the current single map already snaps; without
-  it edges crawl while driving).
+- Verify texel snapping per cascade (stock CSM.js already snaps — see the
+  verified fixes below; without it edges crawl while driving).
 - Tune split distances for a bus-level camera; verify no visible seam where
   cascades meet, and that shadow bias works at every cascade scale (bias tuned
   for a 220 m map is usually wrong for a 40 m one).
 - Dynamic casters (the bus) must stay correct across cascade boundaries.
+
+### Verified fixes for the two visible failure modes (2026-08-15 — do not re-derive)
+
+Checked against the pinned `three@0.183.2` `examples/jsm/csm/CSM.js` on the CDN:
+
+- **Edge crawl while driving.** Cascades re-fit to the camera every frame, so
+  edges would shimmer as the boxes move — but stock `CSM.update()` already
+  snaps each cascade centre to whole shadow-map texels in light space
+  (`_center.x = Math.floor(_center.x / texelWidth) * texelWidth`), the same
+  technique as `City._updateSunShadowFocus`. The fix is built in; the Stage 3
+  task is to verify it holds in gameplay, not to reimplement it. Two limits:
+  snapping only helps while the light *direction* is stable — a changing
+  atmosphere sun re-shimmers edges for a frame (already true today) — and
+  `shadowMapSize` is a single constructor value shared by all cascades.
+- **Pop when an object crosses a cascade boundary.** The resolution step at a
+  split is hidden with `csm.fade = true` — a public property set after
+  construction, not a constructor option. It expands each cascade's bounds by
+  a fade margin and sets the `CSM_FADE` shader define so neighbouring cascades
+  blend across the split instead of hard-switching. Two costs: the margin
+  slightly worsens m/texel per cascade, and toggling `fade` at runtime changes
+  material defines and forces shader recompiles — so it interacts with the
+  Stage 2 chaining choke point. Decide fade on/off at construction and treat
+  it as fixed; default it on.
 
 ## Verification
 
@@ -110,6 +133,22 @@ Measure and report before/after: scene render draw calls, shadow pass cost
 (render with `renderer.shadowMap.enabled = false` to isolate it), m/texel per
 cascade, and shadow-map VRAM. Capture gameplay at bus level and from a raised
 view to check near sharpness and distant coverage together.
+
+Compare fallback vs CSM at multiple camera poses, not just one:
+
+- **Performance per pose:** measure the metrics above at several `?pose=`
+  captures (bus level, raised view, dense downtown, sparse edge). Render each
+  pose several times and discard the warm-up build (trap 2 below) so the
+  numbers are verified stable, not noise; report a per-pose before/after table.
+- **Quality per pose:** paired screenshots at identical poses, fallback vs CSM.
+  The expected trade at distance: the fallback shows *no* shadows beyond the
+  ~110 m focus radius, CSM shows lower-resolution shadows there — capture both
+  so the trade is visible, plus a near-detail crop to confirm the near cascade
+  is sharper than today's single map.
+- **Motion check:** capture a short drive toward a distant building and confirm
+  its shadow sharpens smoothly as it crosses cascade boundaries — no pop at the
+  seam, no edge crawl while moving (cascades re-fit to the camera every frame,
+  so texel snapping is what keeps edges stable).
 
 Three traps that cost real time on 2026-08-15 — do not fall into them again:
 
