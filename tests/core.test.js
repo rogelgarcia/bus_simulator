@@ -1874,6 +1874,7 @@ async function runTests() {
         buildBuildingFabricationVisualParts,
         __testOnly: buildingFabricationGeneratorTestOnly
     } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js');
+    const { solveFacadeBaysLayout } = await import('/src/graphics/assets3d/generators/building_fabrication/FacadeBaysSolver.js');
     const {
         WALL_BASE_MATERIAL_DEFAULT,
         createDefaultFloorLayer,
@@ -8839,6 +8840,204 @@ async function runTests() {
         stripMeshes[0].geometry.computeBoundingBox();
         const stripBox = stripMeshes[0].geometry.boundingBox;
         assertNear(stripBox.max.y - stripBox.min.y, 6.0, 0.01, 'Expected strip to span the full layer wall height.');
+    });
+
+    test('FacadeBaysSolver: bay capital options normalize and survive solving', () => {
+        const items = solveFacadeBaysLayout({
+            bays: [
+                {
+                    id: 'pier_1',
+                    size: { mode: 'range', minMeters: 0.8, maxMeters: 1.4 },
+                    expandPreference: 'prefer_expand',
+                    capital: {
+                        top: { enabled: true, profile: 'zigzag', height: 99, overhang: -1, projection: 9 },
+                        bottom: { enabled: false, profile: 'flat', height: 0.3 }
+                    }
+                },
+                { id: 'mid_2', size: { mode: 'range', minMeters: 2.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+            ],
+            groups: null,
+            faceLengthMeters: 10,
+            warnings: []
+        });
+        const pier = items.find((it) => it?.id === 'pier_1');
+        assertTrue(!!pier?.capital?.top, 'Expected top capital to survive solving.');
+        assertEqual(pier.capital.top.profile, 'stepped', 'Expected unknown capital profile to fall back to stepped.');
+        assertNear(pier.capital.top.height, 1.5, 1e-6, 'Expected capital height clamped to max.');
+        assertNear(pier.capital.top.overhang, 0.0, 1e-6, 'Expected capital overhang clamped to min.');
+        assertNear(pier.capital.top.projection, 0.6, 1e-6, 'Expected capital projection clamped to max.');
+        assertEqual(pier.capital.bottom, undefined, 'Expected disabled bottom end to be dropped.');
+        const mid = items.find((it) => it?.id === 'mid_2');
+        assertEqual(mid?.capital, undefined, 'Expected bays without capitals to stay clean.');
+    });
+
+    test('BuildingFabricationGenerator: pier capitals are run-aware across stacked layers', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const pierCapital = {
+            top: { enabled: true, profile: 'stepped', height: 0.3, overhang: 0.06, projection: 0.08, material: { kind: 'color', id: 'offwhite' } },
+            bottom: { enabled: true, profile: 'flat', height: 0.25, overhang: 0.05, projection: 0.06, material: { kind: 'color', id: 'offwhite' } }
+        };
+        const facades = {
+            A: {
+                layout: {
+                    bays: {
+                        items: [
+                            { id: 'pier_1', size: { mode: 'range', minMeters: 0.9, maxMeters: 1.4 }, expandPreference: 'prefer_expand', capital: pierCapital },
+                            { id: 'mid_2', size: { mode: 'range', minMeters: 2.0, maxMeters: null }, expandPreference: 'prefer_expand' },
+                            { id: 'pier_3', size: { mode: 'range', minMeters: 0.9, maxMeters: 1.4 }, expandPreference: 'prefer_expand', capital: pierCapital }
+                        ]
+                    }
+                }
+            }
+        };
+        const layers = [
+            createDefaultFloorLayer({ id: 'floor_a', floors: 2, floorHeight: 3.0, belt: { enabled: false }, windows: { enabled: false } }),
+            createDefaultFloorLayer({ id: 'floor_b', floors: 2, floorHeight: 3.0, belt: { enabled: false }, windows: { enabled: false } }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+
+        const capMeshes = (parts.beltCourse?.children ?? [])
+            .filter((m) => m?.userData?.buildingFab2Role === 'bay_capital');
+        const tops = capMeshes.filter((m) => m.userData.capitalEnd === 'top');
+        const bottoms = capMeshes.filter((m) => m.userData.capitalEnd === 'bottom');
+        // 2 piers x stepped top (2 steps) on the TOP layer only; 2 piers x flat
+        // base on the BOTTOM layer only. A capital at the mid seam would add
+        // 6 more meshes and fail these exact counts.
+        assertEqual(tops.length, 4, 'Expected stepped top capitals only at the top of the pier run.');
+        assertEqual(bottoms.length, 2, 'Expected flat bases only at the bottom of the pier run.');
+
+        const yOf = (mesh) => {
+            mesh.geometry.computeBoundingBox();
+            return {
+                min: mesh.geometry.boundingBox.min.y + mesh.position.y,
+                max: mesh.geometry.boundingBox.max.y + mesh.position.y
+            };
+        };
+        const topMinY = Math.min(...tops.map((m) => yOf(m).min));
+        const bottomMaxY = Math.max(...bottoms.map((m) => yOf(m).max));
+        assertTrue(topMinY > bottomMaxY + 10.0,
+            `Expected capitals at the run ends only (top starts at ${topMinY.toFixed(2)}, bases end at ${bottomMaxY.toFixed(2)}).`);
+
+        // Cross-layer pier alignment under the global facade: the same bay must
+        // resolve to the same plan segment on both stacked layers.
+        const hl = parts.bayHighlightDataByLayerId ?? {};
+        const pierA = (hl.floor_a ?? []).find((e) => e.bayId === 'pier_1');
+        const pierB = (hl.floor_b ?? []).find((e) => e.bayId === 'pier_1');
+        assertTrue(!!pierA && !!pierB, 'Expected pier_1 highlight data on both stacked layers.');
+        assertNear(pierA.x0, pierB.x0, 1e-3, 'Expected pier bays to align across stacked layers (x0).');
+        assertNear(pierA.z0, pierB.z0, 1e-3, 'Expected pier bays to align across stacked layers (z0).');
+        assertNear(pierA.x1, pierB.x1, 1e-3, 'Expected pier bays to align across stacked layers (x1).');
+        assertNear(pierA.z1, pierB.z1, 1e-3, 'Expected pier bays to align across stacked layers (z1).');
+    });
+
+    test('BuildingFabricationGenerator: surround depth clamps to bay recession', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const windowDefinitions = {
+            items: [{
+                id: 'deep_surround_window',
+                assetType: 'window',
+                settings: {
+                    width: 1.4,
+                    height: 1.6,
+                    frame: { width: 0.08, depth: 0.1, inset: 0.02 }
+                },
+                decoration: {
+                    header: {
+                        enabled: true,
+                        type: 'splayed_lintel',
+                        widthMode: 'match_window',
+                        depthMeters: 0.5,
+                        earsMeters: 0.05,
+                        material: { mode: 'match_wall' }
+                    }
+                }
+            }]
+        };
+        const bayWindow = {
+            enabled: true,
+            assetType: 'window',
+            defId: 'deep_surround_window',
+            size: { widthMeters: 1.4, heightMeters: 1.6 },
+            repeat: { count: 1 },
+            padding: { leftMeters: 0.2, rightMeters: 0.2 }
+        };
+        const facades = {
+            A: {
+                layout: {
+                    bays: {
+                        items: [{
+                            id: 'bay_recessed',
+                            size: { mode: 'range', minMeters: 4.0, maxMeters: null },
+                            expandPreference: 'prefer_expand',
+                            depth: { left: 0.3, right: 0.3, linked: true },
+                            window: bayWindow
+                        }]
+                    }
+                }
+            }
+        };
+        const layers = [
+            createDefaultFloorLayer({ floors: 1, floorHeight: 4.0, belt: { enabled: false }, windows: { enabled: false } }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            windowDefinitions,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        const clampWarnings = (parts.warnings ?? []).filter((line) => /surround|clamped to/i.test(line) && /header/.test(line));
+        assertTrue(clampWarnings.length >= 1,
+            `Expected a deterministic clamp warning for the 0.5m header in a 0.3m-recessed bay (warnings: ${(parts.warnings ?? []).join(' | ')}).`);
     });
 
     test('BuildingFabricationTypes: facade banding schema round-trips through layer normalization', () => {

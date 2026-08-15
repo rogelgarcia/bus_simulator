@@ -909,6 +909,7 @@ export class BuildingFabrication2UI {
         this.onSetBayWallMaterialOverride = null;
         this.onSetBayTextureFlow = null;
         this.onSetBayDepthEdge = null;
+        this.onSetBayCapital = null;
         this.onToggleBayDepthLink = null;
         this.onSetBayLink = null;
         this.onCreateBayGroup = null;
@@ -4541,6 +4542,80 @@ export class BuildingFabrication2UI {
 		                    depthSection.appendChild(depthLinkRow);
 		                    depthSection.appendChild(rightDepthRow.row);
 		                    bayBodyContent.appendChild(depthSection);
+
+		                    // AI 487: pilaster terminations on the bay strip.
+		                    const capitalCfg = editorBay?.capital && typeof editorBay.capital === 'object' ? editorBay.capital : {};
+		                    const appendCapitalEndRow = (endKey, label) => {
+		                        const endCfg = capitalCfg?.[endKey] && typeof capitalCfg[endKey] === 'object' ? capitalCfg[endKey] : null;
+		                        const enabled = !!endCfg && endCfg.enabled !== false;
+
+		                        const row = document.createElement('div');
+		                        row.className = 'building-fab-row building-fab-row-wide building-fab2-bay-window-mode-row';
+		                        const rowLabel = document.createElement('div');
+		                        rowLabel.className = 'building-fab-row-label';
+		                        rowLabel.textContent = label;
+		                        const controls = document.createElement('div');
+		                        controls.className = 'building-fab2-bay-row-controls';
+
+		                        const toggle = document.createElement('div');
+		                        toggle.className = 'building-fab2-width-mode-toggle building-fab2-bay-window-mode-toggle';
+		                        const addBtn = (state, text) => {
+		                            const btn = document.createElement('button');
+		                            btn.type = 'button';
+		                            btn.className = 'building-fab2-width-mode-btn';
+		                            btn.textContent = text;
+		                            btn.disabled = !allowBayConfigEdit;
+		                            btn.classList.toggle('is-active', enabled === state);
+		                            btn.addEventListener('click', () => {
+		                                if (!allowBayConfigEdit || enabled === state) return;
+		                                this.onSetBayCapital?.(layerId, configFaceId, bayId, endKey, { enabled: state });
+		                            });
+		                            toggle.appendChild(btn);
+		                        };
+		                        addBtn(false, 'Off');
+		                        addBtn(true, 'On');
+		                        controls.appendChild(toggle);
+
+		                        if (enabled) {
+		                            const profileSelect = document.createElement('select');
+		                            profileSelect.className = 'building-fab-select building-fab2-bay-expand-select';
+		                            profileSelect.disabled = !allowBayConfigEdit;
+		                            profileSelect.setAttribute('aria-label', `${label} profile`);
+		                            for (const [value, text] of [['stepped', 'Stepped'], ['flat', 'Flat']]) {
+		                                const opt = document.createElement('option');
+		                                opt.value = value;
+		                                opt.textContent = text;
+		                                profileSelect.appendChild(opt);
+		                            }
+		                            profileSelect.value = endCfg?.profile === 'flat' ? 'flat' : 'stepped';
+		                            profileSelect.addEventListener('change', () => {
+		                                this.onSetBayCapital?.(layerId, configFaceId, bayId, endKey, { profile: profileSelect.value });
+		                            });
+		                            controls.appendChild(profileSelect);
+
+		                            const heightInput = document.createElement('input');
+		                            heightInput.type = 'number';
+		                            heightInput.className = 'building-fab2-layer-number';
+		                            heightInput.min = '0.06';
+		                            heightInput.max = '1.5';
+		                            heightInput.step = '0.02';
+		                            heightInput.value = String(clamp(endCfg?.height ?? 0.32, 0.06, 1.5));
+		                            heightInput.disabled = !allowBayConfigEdit;
+		                            heightInput.setAttribute('aria-label', `${label} height (m)`);
+		                            heightInput.addEventListener('input', () => {
+		                                const v = clamp(heightInput.value, 0.06, 1.5);
+		                                heightInput.value = String(v);
+		                                this.onSetBayCapital?.(layerId, configFaceId, bayId, endKey, { height: v });
+		                            });
+		                            controls.appendChild(heightInput);
+		                        }
+
+		                        row.appendChild(rowLabel);
+		                        row.appendChild(controls);
+		                        bayBodyContent.appendChild(row);
+		                    };
+		                    appendCapitalEndRow('top', 'Capital (top)');
+		                    appendCapitalEndRow('bottom', 'Base (bottom)');
 
 		                    const prefRow = document.createElement('div');
 		                    prefRow.className = 'building-fab-row building-fab-row-wide';

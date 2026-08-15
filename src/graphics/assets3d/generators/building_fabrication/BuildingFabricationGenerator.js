@@ -3683,6 +3683,25 @@ function buildCornerTreatmentGeometry({ cornerFrames, courses, cfg }) {
     return geo;
 }
 
+// AI 487: window surrounds on a recessed bay must stay inside the reveal —
+// a surround deeper than the bay recession would poke past the pier plane.
+// Deterministic rule: clamp the offending part depths and warn.
+function clampWindowDecorationDepthsToBayRecession(decoration, { recessionMeters, warnings = null, contextLabel = '' } = {}) {
+    if (!decoration || typeof decoration !== 'object') return decoration;
+    const recession = Number(recessionMeters) || 0;
+    if (!(recession > EPS)) return decoration;
+    for (const part of ['sill', 'header', 'jambs']) {
+        const cfg = decoration[part];
+        if (!cfg || typeof cfg !== 'object' || cfg.enabled === false) continue;
+        const depthRaw = Number(cfg.depthMeters);
+        if (Number.isFinite(depthRaw) && depthRaw > recession + 1e-6) {
+            cfg.depthMeters = recession;
+            warnings?.push(`${contextLabel}: window ${part} depth ${depthRaw.toFixed(3)}m exceeds bay recession; clamped to ${recession.toFixed(3)}m.`);
+        }
+    }
+    return decoration;
+}
+
 function clampUnit(value, fallback = 0) {
     const num = Number(value);
     if (!Number.isFinite(num)) return clamp(fallback, 0, 1);
@@ -4984,6 +5003,7 @@ function buildFacadeFaceProfile({
         const tiling = isBay && it?.tiling && typeof it.tiling === 'object' ? it.tiling : null;
         const materialVariation = isBay && it?.materialVariation && typeof it.materialVariation === 'object' ? it.materialVariation : null;
         const window = isBay && it?.window && typeof it.window === 'object' ? deepClone(it.window) : null;
+        const capital = isBay && it?.capital && typeof it.capital === 'object' ? deepClone(it.capital) : null;
         strips.push({
             faceId,
             id,
@@ -4994,6 +5014,7 @@ function buildFacadeFaceProfile({
             ...(tiling ? { tiling } : {}),
             ...(materialVariation ? { materialVariation } : {}),
             ...(window ? { window } : {}),
+            ...(capital ? { capital } : {}),
             u0,
             u1,
             frontU0,
@@ -5760,6 +5781,46 @@ export function buildBuildingFabricationVisualParts({
     const facadesAreGlobal = !!facadesRaw && ['A', 'B', 'C', 'D'].some((id) => !!facadesRaw?.[id]);
     const globalFacadeSpec = facadesAreGlobal ? facadesRaw : null;
     const facadesByLayerId = facadesAreGlobal ? null : facadesRaw;
+
+    // AI 487: pier capitals are run-aware. A capital/base only lands where the
+    // pier run actually ends, so a bay repeated across stacked floor layers
+    // keeps one unbroken pier with a single capital at the very top and a
+    // single base at the very bottom.
+    const capitalBayKeysByLayerId = new Map();
+    for (const layer of safeLayers) {
+        if (layer?.type !== LAYER_TYPE.FLOOR) continue;
+        const layerFacades = globalFacadeSpec
+            ?? ((facadesByLayerId?.[layer.id] && typeof facadesByLayerId[layer.id] === 'object') ? facadesByLayerId[layer.id] : null);
+        const keys = new Set();
+        if (layerFacades && typeof layerFacades === 'object') {
+            const links = layer?.faceLinking?.links && typeof layer.faceLinking.links === 'object'
+                ? layer.faceLinking.links
+                : null;
+            const resolveMaster = (faceId) => {
+                const seen = new Set();
+                let cur = faceId;
+                for (let i = 0; i < 8; i++) {
+                    if (seen.has(cur)) break;
+                    seen.add(cur);
+                    const next = links?.[cur] ?? null;
+                    if (next === null || next === undefined || next === cur) return cur;
+                    cur = next;
+                }
+                return faceId;
+            };
+            for (const faceId of ['A', 'B', 'C', 'D']) {
+                const facade = layerFacades?.[resolveMaster(faceId)];
+                const bays = facade?.layout?.bays?.items;
+                if (!Array.isArray(bays)) continue;
+                for (const bay of bays) {
+                    if (bay?.capital && typeof bay.capital === 'object' && typeof bay?.id === 'string' && bay.id) {
+                        keys.add(`${faceId}:${bay.id}`);
+                    }
+                }
+            }
+        }
+        capitalBayKeysByLayerId.set(layer.id, keys);
+    }
     const wantsFacadePatterns = !!globalFacadeSpec && ['A', 'B', 'C', 'D'].some((id) => !!globalFacadeSpec?.[id]?.layout?.pattern);
 
     const facadePatternTopologyByFaceId = new Map();
@@ -6318,13 +6379,21 @@ export function buildBuildingFabricationVisualParts({
                         def?.wall ?? null
                     );
 
+                    const stripDepthForClamp = Number(strip?.depth);
+                    const bayRecessionMeters = Math.max(0, Number.isFinite(stripDepthForClamp) ? stripDepthForClamp : 0);
+                    const clampLabel = `Bay ${strip?.id ?? ''} (${faceId})`;
+
                     bayWindowPlacements.push({
                         faceId,
                         bayId: typeof strip?.id === 'string' ? strip.id : '',
                         defId,
                         assetType,
                         settings: def.settings,
-                        decoration: deepClone(def?.decoration ?? null),
+                        decoration: clampWindowDecorationDepthsToBayRecession(deepClone(def?.decoration ?? null), {
+                            recessionMeters: bayRecessionMeters,
+                            warnings,
+                            contextLabel: clampLabel
+                        }),
                         points,
                         yaw,
                         nx,
@@ -6345,7 +6414,11 @@ export function buildBuildingFabricationVisualParts({
                             assetType,
                             defId: topDefId,
                             settings: topDefSettings,
-                            decoration: deepClone(topDefDecoration ?? null),
+                            decoration: clampWindowDecorationDepthsToBayRecession(deepClone(topDefDecoration ?? null), {
+                                recessionMeters: bayRecessionMeters,
+                                warnings,
+                                contextLabel: clampLabel
+                            }),
                             heightMode: topHeightMode,
                             height: topHeight,
                             gap: topGap,
@@ -8121,6 +8194,128 @@ export function buildBuildingFabricationVisualParts({
                         mesh.receiveShadow = true;
                         windowsGroup.add(mesh);
                     }
+                }
+            }
+
+            const capitalStrips = (Array.isArray(facadeStrips) && facadeFrames)
+                ? facadeStrips.filter((s) => s?.type === 'bay' && s?.capital && typeof s.capital === 'object')
+                : [];
+            if (capitalStrips.length && layerEndY - layerStartY > EPS) {
+                let prevFloorLayer = null;
+                for (let i = layerIndex - 1; i >= 0; i--) {
+                    if (safeLayers[i]?.type === LAYER_TYPE.FLOOR) { prevFloorLayer = safeLayers[i]; break; }
+                }
+                let nextFloorLayer = null;
+                for (let i = layerIndex + 1; i < safeLayers.length; i++) {
+                    if (safeLayers[i]?.type === LAYER_TYPE.FLOOR) { nextFloorLayer = safeLayers[i]; break; }
+                }
+                const prevKeys = prevFloorLayer ? (capitalBayKeysByLayerId.get(prevFloorLayer.id) ?? new Set()) : new Set();
+                const nextKeys = nextFloorLayer ? (capitalBayKeysByLayerId.get(nextFloorLayer.id) ?? new Set()) : new Set();
+
+                const capitalMatCache = new Map();
+                const getCapitalMaterial = (spec) => {
+                    const key = stableStringify(spec ?? null);
+                    let mat = capitalMatCache.get(key);
+                    if (!mat) {
+                        mat = makeCorniceMaterialFromSpec({
+                            material: (spec && typeof spec === 'object') ? spec : { kind: 'match_wall', id: 'match_wall' },
+                            tiling: null,
+                            layerMaterial: layer.material ?? null,
+                            layerWallBase: layer.wallBase ?? null,
+                            layerTiling: layer.tiling ?? null,
+                            baseColorHex,
+                            textureCache
+                        });
+                        capitalMatCache.set(key, mat);
+                    }
+                    return mat;
+                };
+
+                const emitCapitalStep = ({ frame, u0, u1, planeDepth, overhang, projection, y, height, material, role, end, bayId }) => {
+                    if (!(u1 > u0 + EPS) || !(height > EPS)) return;
+                    const dOut = planeDepth - projection;
+                    const dIn = planeDepth + 0.04;
+                    const corners = [
+                        pointOnFacadeFrame({ frame, u: u0 - overhang, depth: dOut }),
+                        pointOnFacadeFrame({ frame, u: u1 + overhang, depth: dOut }),
+                        pointOnFacadeFrame({ frame, u: u1 + overhang, depth: dIn }),
+                        pointOnFacadeFrame({ frame, u: u0 - overhang, depth: dIn })
+                    ].map((p) => ({ x: p.x, z: p.z }));
+                    const planLoop = signedArea(corners) < 0 ? corners.slice().reverse() : corners;
+                    const shape = buildShapeFromLoops({ outerLoop: planLoop, holeLoops: [] });
+                    const geo = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false, steps: 1 });
+                    geo.rotateX(-Math.PI / 2);
+                    geo.computeVertexNormals();
+                    const mesh = new THREE.Mesh(geo, material);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    mesh.position.y = y;
+                    mesh.userData = mesh.userData ?? {};
+                    mesh.userData.buildingFab2Role = role;
+                    mesh.userData.capitalEnd = end;
+                    mesh.userData.capitalBayId = bayId;
+                    beltsGroup.add(mesh);
+
+                    if (showWire) {
+                        const edgeGeo = new THREE.EdgesGeometry(geo, 1);
+                        appendWirePositions(wirePositions, edgeGeo, y);
+                        edgeGeo.dispose();
+                    }
+                };
+
+                for (const strip of capitalStrips) {
+                    const frame = facadeFrames?.[strip.faceId] ?? null;
+                    if (!frame) continue;
+                    const runKey = `${strip.faceId}:${typeof strip.sourceBayId === 'string' && strip.sourceBayId ? strip.sourceBayId : strip.id}`;
+                    const rawU0 = Number(strip.frontU0);
+                    const rawU1 = Number(strip.frontU1);
+                    const u0 = Number.isFinite(rawU0) ? rawU0 : (Number(strip.u0) || 0);
+                    const u1 = Number.isFinite(rawU1) ? rawU1 : (Number(strip.u1) || 0);
+                    if (!(u1 > u0 + EPS)) continue;
+                    const planeDepth = Number(strip.depth) || 0;
+                    const bayId = typeof strip.id === 'string' ? strip.id : '';
+
+                    const emitEnd = (spec, end) => {
+                        if (!spec) return;
+                        const h = clamp(spec.height, 0.06, 1.5);
+                        const overhang = clamp(spec.overhang, 0.0, 0.5);
+                        const projection = clamp(spec.projection, 0.01, 0.6);
+                        const material = getCapitalMaterial(spec.material);
+                        const baseY = end === 'top' ? layerEndY - h : layerStartY;
+                        const role = 'bay_capital';
+
+                        if (spec.profile === 'flat') {
+                            emitCapitalStep({
+                                frame, u0, u1, planeDepth, overhang, projection,
+                                y: baseY, height: h, material, role, end, bayId
+                            });
+                            return;
+                        }
+
+                        // stepped: the capital widens toward the top, the base
+                        // widens toward the bottom.
+                        const bigFirst = end === 'bottom';
+                        const smallH = h * 0.55;
+                        const bigH = h - smallH;
+                        const small = { overhang: overhang * 0.45, projection: projection * 0.6 };
+                        const steps = bigFirst
+                            ? [{ h: bigH, g: { overhang, projection } }, { h: smallH, g: small }]
+                            : [{ h: smallH, g: small }, { h: bigH, g: { overhang, projection } }];
+                        let yCursorStep = baseY;
+                        for (const step of steps) {
+                            emitCapitalStep({
+                                frame, u0, u1, planeDepth,
+                                overhang: step.g.overhang,
+                                projection: step.g.projection,
+                                y: yCursorStep, height: step.h, material, role, end, bayId
+                            });
+                            yCursorStep += step.h;
+                        }
+                    };
+
+                    const cap = strip.capital;
+                    if (cap.top && !nextKeys.has(runKey)) emitEnd(cap.top, 'top');
+                    if (cap.bottom && !prevKeys.has(runKey)) emitEnd(cap.bottom, 'bottom');
                 }
             }
 

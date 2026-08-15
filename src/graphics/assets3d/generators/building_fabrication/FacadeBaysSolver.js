@@ -221,6 +221,36 @@ function normalizeBayEdgeDepthSpec(value) {
     return { left, right };
 }
 
+const BAY_CAPITAL_PROFILES = new Set(['flat', 'stepped']);
+
+function normalizeBayCapitalEndSpec(value) {
+    const src = value && typeof value === 'object' ? value : null;
+    if (!src || src.enabled === false) return null;
+    const profileRaw = typeof src.profile === 'string' ? src.profile.trim().toLowerCase() : '';
+    return {
+        enabled: true,
+        profile: BAY_CAPITAL_PROFILES.has(profileRaw) ? profileRaw : 'stepped',
+        height: clamp(src.height, 0.06, 1.5, 0.32),
+        overhang: clamp(src.overhang, 0.0, 0.5, 0.07),
+        projection: clamp(src.projection, 0.01, 0.6, 0.09),
+        material: src.material && typeof src.material === 'object' ? deepClone(src.material) : null
+    };
+}
+
+// Pilaster terminations (AI 487): profiled blocks capping a wall bay's
+// vertical strip. `top` is the capital, `bottom` the base.
+function normalizeBayCapitalSpec(value) {
+    const src = value && typeof value === 'object' ? value : null;
+    if (!src) return null;
+    const top = normalizeBayCapitalEndSpec(src.top ?? null);
+    const bottom = normalizeBayCapitalEndSpec(src.bottom ?? null);
+    if (!top && !bottom) return null;
+    const out = {};
+    if (top) out.top = top;
+    if (bottom) out.bottom = bottom;
+    return out;
+}
+
 function normalizeBayWindowSpec(value) {
     const src = value && typeof value === 'object' ? value : null;
     if (!src) return null;
@@ -468,6 +498,7 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             minWidth,
             maxWidth,
             depth: normalizeBayEdgeDepthSpec(entry?.depth ?? null),
+            capital: normalizeBayCapitalSpec(entry?.capital ?? null),
             wallMaterialOverride: normalizeMaterialSpec(entry?.wallMaterialOverride ?? null),
             wallBase: normalizeWallBase(entry?.wallBase ?? null),
             tiling: normalizeTiling(entry?.tiling ?? null),
@@ -697,6 +728,7 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             maxWidthMeters: Number.isFinite(source.maxWidth) ? source.maxWidth : null,
             maxWidth: source.maxWidth,
             depth: source.depth ? { left: source.depth.left, right: source.depth.right } : null,
+            capital: source.capital ? deepClone(source.capital) : null,
             wallMaterialOverride: source.wallMaterialOverride,
             wallBase: source.wallBase,
             tiling: source.tiling,
@@ -716,6 +748,7 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             minWidthMeters: it.minWidthMeters,
             maxWidthMeters: it.maxWidthMeters ?? null,
             ...(it.depth ? { depth: it.depth } : {}),
+            ...(it.capital ? { capital: it.capital } : {}),
             ...(it.wallMaterialOverride ? { wallMaterialOverride: it.wallMaterialOverride } : {}),
             ...(it.wallBase ? { wallBase: it.wallBase } : {}),
             ...(it.tiling ? { tiling: it.tiling } : {}),
@@ -740,6 +773,7 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             minWidthMeters: it.minWidthMeters,
             maxWidthMeters: it.maxWidthMeters ?? null,
             ...(it.depth ? { depth: it.depth } : {}),
+            ...(it.capital ? { capital: it.capital } : {}),
             ...(it.wallMaterialOverride ? { wallMaterialOverride: it.wallMaterialOverride } : {}),
             ...(it.wallBase ? { wallBase: it.wallBase } : {}),
             ...(it.tiling ? { tiling: it.tiling } : {}),
@@ -824,6 +858,7 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
         minWidthMeters: it.minWidthMeters,
         maxWidthMeters: it.maxWidthMeters ?? null,
         ...(it.depth ? { depth: it.depth } : {}),
+        ...(it.capital ? { capital: it.capital } : {}),
         ...(it.wallMaterialOverride ? { wallMaterialOverride: it.wallMaterialOverride } : {}),
         ...(it.wallBase ? { wallBase: it.wallBase } : {}),
         ...(it.tiling ? { tiling: it.tiling } : {}),

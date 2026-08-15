@@ -942,6 +942,7 @@ export class BuildingFabrication2View {
         this.ui.onSetBayWallMaterialOverride = (layerId, faceId, bayId, material) => this._setBayWallMaterialOverride(layerId, faceId, bayId, material);
         this.ui.onSetBayTextureFlow = (layerId, faceId, bayId, mode) => this._setBayTextureFlow(layerId, faceId, bayId, mode);
         this.ui.onSetBayDepthEdge = (layerId, faceId, bayId, edge, depth) => this._setBayDepthEdge(layerId, faceId, bayId, edge, depth);
+        this.ui.onSetBayCapital = (layerId, faceId, bayId, end, patch) => this._setBayCapital(layerId, faceId, bayId, end, patch);
         this.ui.onToggleBayDepthLink = (layerId, faceId, bayId) => this._toggleBayDepthLink(layerId, faceId, bayId);
         this.ui.onSetBayLink = (layerId, faceId, bayId, masterBayId) => this._setBayLink(layerId, faceId, bayId, masterBayId);
         this.ui.onCreateBayGroup = (layerId, faceId, bayIds) => this._createBayGroup(layerId, faceId, bayIds);
@@ -1110,6 +1111,7 @@ export class BuildingFabrication2View {
         this.ui.onSetBayWallMaterialOverride = null;
         this.ui.onSetBayTextureFlow = null;
         this.ui.onSetBayDepthEdge = null;
+        this.ui.onSetBayCapital = null;
         this.ui.onToggleBayDepthLink = null;
         this.ui.onSetBayLink = null;
         this.ui.onCreateBayGroup = null;
@@ -4898,6 +4900,37 @@ export class BuildingFabrication2View {
         if (next === 'restart') delete bay.textureFlow;
         else bay.textureFlow = next;
 
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
+    _setBayCapital(layerId, faceId, bayId, end, patch) {
+        const ctx = this._findBaySpec({ layerId, faceId, bayId });
+        const bay = ctx?.bay && typeof ctx.bay === 'object' ? ctx.bay : null;
+        if (!bay || !patch || typeof patch !== 'object') return;
+        if (resolveBayLinkFromSpec(bay)) return;
+
+        const endKey = end === 'bottom' ? 'bottom' : 'top';
+        const capital = bay.capital && typeof bay.capital === 'object' ? bay.capital : {};
+
+        if (patch.enabled === false) {
+            if (capital[endKey]) delete capital[endKey];
+            if (!capital.top && !capital.bottom) delete bay.capital;
+            else bay.capital = capital;
+        } else {
+            const prev = capital[endKey] && typeof capital[endKey] === 'object' ? capital[endKey] : {};
+            capital[endKey] = {
+                enabled: true,
+                profile: 'stepped',
+                height: 0.32,
+                overhang: 0.07,
+                projection: 0.09,
+                material: { kind: 'match_wall', id: 'match_wall' },
+                ...prev,
+                ...patch
+            };
+            bay.capital = capital;
+        }
         this._syncUiState();
         this._requestRebuild({ preserveCamera: true });
     }

@@ -1,3 +1,5 @@
+DONE
+
 #Problem
 
 The reference buildings with vertical expression read as a pier/spandrel grid: proud piers running up the facade, recessed window strips with spandrel panels between the windows of consecutive floors, and — on the grander ones — capitals terminating the pier runs. Most of this is already expressible with existing features and needs a verified recipe rather than new geometry; what is genuinely missing is the pier terminations and confidence in the recipe's seams.
@@ -37,3 +39,12 @@ Tasks:
 - Do not move to `prompts/archive/` automatically.
 - Completion is not enough to move a prompt; move to `prompts/archive/` only when explicitly requested by the user.
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change)
+
+## Summary of changes
+- Validated the pier/spandrel recipe end-to-end with a new engine-2 showcase (`pier_grid_tower_2`): proud gray-brick pier bays, window bays recessed 0.22 m carrying the limestone `wallAccent` slot as the spandrel plane, windows inset further — rendered correctly on the first pass with no silhouette/material/return fixes needed (the recipe comment at `computeQuadFacadeSilhouette` holds).
+- Added the genuinely new geometry: bay `capital` options (`top`/`bottom`, `flat`/`stepped` profiles, height/overhang/projection, trim-convention material incl. `slot:<name>`) normalized in `FacadeBaysSolver`, carried through solving and silhouette strips, and emitted as plan-shape extrusions at the strip position (`BuildingFabricationGenerator.js`).
+- Capitals are run-aware: a capital/base only lands where the pier run ends across stacked floor layers (presence precompute per layer + prev/next comparison), so global facades keep one unbroken pier with a single capital at the top and base at the bottom.
+- Surround-in-recess clamp: window surround part depths are deterministically clamped to the bay recession with a warning at placement time, so surrounds never poke past the pier plane.
+- Slots integration: `bay.capital.*.material` resolves through the AI 491 config pre-pass (`resolveFacadeFaceMaterials`).
+- BuildingFabrication2 GUI: per-bay Capital (top) / Base (bottom) rows — enable, profile, height — next to the bay depth controls; thumbnails preview via the shared generator.
+- Tests: solver capital normalization round-trip; generator test asserting run-aware capital counts and cross-layer pier alignment under a global facade (via bay highlight data); clamp-warning test for a 0.5 m header in a 0.3 m-recessed bay (`tests/core.test.js`).

@@ -234,12 +234,23 @@ function resolveFacadeFaceMaterials(facade, ctx, contextLabel) {
     if (Array.isArray(bays)) {
         for (const bay of bays) {
             if (!bay || typeof bay !== 'object') continue;
-            if (bay.wallMaterialOverride === null || bay.wallMaterialOverride === undefined) continue;
-            resolveSpecInPlace(bay, 'wallMaterialOverride', ctx, {
-                wallBaseKey: 'wallBase',
-                tilingKey: 'tiling',
-                context: `${contextLabel} bay ${bay?.id ?? ''}`
-            });
+            if (bay.wallMaterialOverride !== null && bay.wallMaterialOverride !== undefined) {
+                resolveSpecInPlace(bay, 'wallMaterialOverride', ctx, {
+                    wallBaseKey: 'wallBase',
+                    tilingKey: 'tiling',
+                    context: `${contextLabel} bay ${bay?.id ?? ''}`
+                });
+            }
+            const capital = bay.capital;
+            if (capital && typeof capital === 'object') {
+                for (const end of ['top', 'bottom']) {
+                    const spec = capital[end];
+                    if (!spec || typeof spec !== 'object' || spec.material === null || spec.material === undefined) continue;
+                    resolveSpecInPlace(spec, 'material', ctx, {
+                        context: `${contextLabel} bay ${bay?.id ?? ''} capital ${end}`
+                    });
+                }
+            }
         }
     }
 }
