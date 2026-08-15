@@ -8,9 +8,12 @@ import {
     sanitizeWindowDecorationState,
     resolveWindowDecorationState,
     WINDOW_DECORATION_PART,
+    WINDOW_DECORATION_PART_IDS,
     WINDOW_DECORATION_STYLE,
     WINDOW_DECORATION_WIDTH_MODE,
-    WINDOW_DECORATION_MATERIAL_MODE
+    WINDOW_DECORATION_MATERIAL_MODE,
+    WINDOW_DECORATION_HEADER_PROFILE_STYLES,
+    WINDOW_DECORATION_JAMBS_RUN_MODE
 } from '../../../src/app/buildings/window_mesh/index.js';
 
 test('WindowDecorationTemplates: defaults use template baseline and required modes', () => {
@@ -109,6 +112,68 @@ test('WindowDecorationTemplates: sill bottom cover applies suggestion defaults a
     });
     assert.equal(resolved.sill.template.depth, 0.02);
     assert.equal(resolved.sill.template.offset.z, -0.02);
+});
+
+test('WindowDecorationTemplates: jambs part exists with run mode round-trip', () => {
+    assert.ok(WINDOW_DECORATION_PART_IDS.includes(WINDOW_DECORATION_PART.JAMBS), 'Expected jambs part id.');
+
+    const state = sanitizeWindowDecorationState({
+        jambs: {
+            enabled: true,
+            depthMeters: 0.02,
+            runMode: 'full_bay'
+        }
+    }, {
+        wallMaterialId: 'pbr.brick_wall_11'
+    });
+
+    assert.equal(state.jambs.enabled, true);
+    assert.equal(state.jambs.type, WINDOW_DECORATION_STYLE.SIMPLE);
+    assert.equal(state.jambs.runMode, WINDOW_DECORATION_JAMBS_RUN_MODE.FULL_BAY);
+    assert.equal(state.jambs.depthMeters, 0.02);
+    assert.equal(state.jambs.template.height, 0.1, 'Jamb width comes from the template height field.');
+
+    const again = sanitizeWindowDecorationState(state, { wallMaterialId: 'pbr.brick_wall_11' });
+    assert.deepEqual(again.jambs, state.jambs, 'Jambs state should be stable through repeated sanitize.');
+
+    const defaultRun = sanitizeWindowDecorationState({ jambs: { enabled: true } }, {});
+    assert.equal(defaultRun.jambs.runMode, WINDOW_DECORATION_JAMBS_RUN_MODE.SILL_TO_HEADER);
+});
+
+test('WindowDecorationTemplates: header profile styles round-trip with ears', () => {
+    for (const styleId of WINDOW_DECORATION_HEADER_PROFILE_STYLES) {
+        const state = sanitizeWindowDecorationState({
+            header: {
+                enabled: true,
+                type: styleId,
+                earsMeters: 0.05
+            }
+        }, {
+            wallMaterialId: 'pbr.brick_wall_11'
+        });
+
+        assert.equal(state.header.type, styleId, `Header style ${styleId} should survive sanitize.`);
+        assert.equal(state.header.earsMeters, 0.05, `Header ears should survive sanitize for ${styleId}.`);
+
+        const meta = getWindowDecorationTypeMetadata(WINDOW_DECORATION_PART.HEADER, styleId);
+        assert.ok(meta, `Expected metadata for header style ${styleId}.`);
+        assert.ok(Number(meta?.template?.height) > 0, `Expected template height for ${styleId}.`);
+
+        const again = sanitizeWindowDecorationState(state, { wallMaterialId: 'pbr.brick_wall_11' });
+        assert.deepEqual(again.header, state.header, `Header ${styleId} should be stable through repeated sanitize.`);
+    }
+
+    const options = getWindowDecorationTypeOptions(WINDOW_DECORATION_PART.HEADER).map((opt) => opt.id);
+    for (const styleId of WINDOW_DECORATION_HEADER_PROFILE_STYLES) {
+        assert.ok(options.includes(styleId), `Header type options should include ${styleId}.`);
+    }
+    assert.ok(!getWindowDecorationTypeOptions(WINDOW_DECORATION_PART.SILL).some((opt) => opt.id === WINDOW_DECORATION_STYLE.SPLAYED_LINTEL),
+        'Sill should not expose header profile styles.');
+
+    const ears = sanitizeWindowDecorationState({
+        header: { enabled: true, type: 'splayed_lintel', earsMeters: 9 }
+    }, {});
+    assert.equal(ears.header.earsMeters, 0.6, 'Ears should clamp to the max.');
 });
 
 test('WindowDecorationTemplates: resolved width semantics are deterministic', () => {

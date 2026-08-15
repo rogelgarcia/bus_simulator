@@ -5,19 +5,41 @@
 export const WINDOW_DECORATION_PART = Object.freeze({
     SILL: 'sill',
     HEADER: 'header',
+    JAMBS: 'jambs',
     TRIM: 'trim'
 });
 
 export const WINDOW_DECORATION_PART_IDS = Object.freeze([
     WINDOW_DECORATION_PART.SILL,
     WINDOW_DECORATION_PART.HEADER,
+    WINDOW_DECORATION_PART.JAMBS,
     WINDOW_DECORATION_PART.TRIM
 ]);
 
 export const WINDOW_DECORATION_STYLE = Object.freeze({
     SIMPLE: 'simple',
-    BOTTOM_COVER: 'bottom_cover'
+    BOTTOM_COVER: 'bottom_cover',
+    FLAT_BAND: 'flat_band',
+    SPLAYED_LINTEL: 'splayed_lintel',
+    ANGLED_KEYSTONE: 'angled_keystone',
+    PEDIMENT_TRIANGLE: 'pediment_triangle',
+    ARCHED_BAND: 'arched_band'
 });
+
+export const WINDOW_DECORATION_HEADER_PROFILE_STYLES = Object.freeze([
+    WINDOW_DECORATION_STYLE.FLAT_BAND,
+    WINDOW_DECORATION_STYLE.SPLAYED_LINTEL,
+    WINDOW_DECORATION_STYLE.ANGLED_KEYSTONE,
+    WINDOW_DECORATION_STYLE.PEDIMENT_TRIANGLE,
+    WINDOW_DECORATION_STYLE.ARCHED_BAND
+]);
+
+export const WINDOW_DECORATION_JAMBS_RUN_MODE = Object.freeze({
+    SILL_TO_HEADER: 'sill_to_header',
+    FULL_BAY: 'full_bay'
+});
+
+export const WINDOW_DECORATION_EARS_MAX_METERS = 0.6;
 
 export const WINDOW_DECORATION_WIDTH_MODE = Object.freeze({
     MATCH_WINDOW: 'match_window',
@@ -30,7 +52,7 @@ export const WINDOW_DECORATION_MATERIAL_MODE = Object.freeze({
     PBR: 'pbr'
 });
 
-export const WINDOW_DECORATION_DEPTH_OPTIONS_METERS = Object.freeze([0.08, 0.02]);
+export const WINDOW_DECORATION_DEPTH_OPTIONS_METERS = Object.freeze([0.08, 0.02, 0.12]);
 
 const DEFAULT_TEMPLATE_BY_PART = Object.freeze({
     [WINDOW_DECORATION_PART.SILL]: Object.freeze({
@@ -41,6 +63,12 @@ const DEFAULT_TEMPLATE_BY_PART = Object.freeze({
     }),
     [WINDOW_DECORATION_PART.HEADER]: Object.freeze({
         height: 0.08,
+        depth: 0.08,
+        gap: 0.0,
+        offset: Object.freeze({ x: 0.0, y: 0.0, z: 0.0 })
+    }),
+    [WINDOW_DECORATION_PART.JAMBS]: Object.freeze({
+        height: 0.1,
         depth: 0.08,
         gap: 0.0,
         offset: Object.freeze({ x: 0.0, y: 0.0, z: 0.0 })
@@ -56,6 +84,7 @@ const DEFAULT_TEMPLATE_BY_PART = Object.freeze({
 const DEFAULT_TYPE_BY_PART = Object.freeze({
     [WINDOW_DECORATION_PART.SILL]: WINDOW_DECORATION_STYLE.SIMPLE,
     [WINDOW_DECORATION_PART.HEADER]: WINDOW_DECORATION_STYLE.SIMPLE,
+    [WINDOW_DECORATION_PART.JAMBS]: WINDOW_DECORATION_STYLE.SIMPLE,
     [WINDOW_DECORATION_PART.TRIM]: WINDOW_DECORATION_STYLE.SIMPLE
 });
 
@@ -104,6 +133,92 @@ const WINDOW_DECORATION_TYPE_METADATA_BY_PART = Object.freeze({
                 offset: Object.freeze({ x: 0.0, y: 0.0, z: 0.0 }),
                 offsetZFromDepthScale: 0.0
             })
+        }),
+        [WINDOW_DECORATION_STYLE.FLAT_BAND]: Object.freeze({
+            label: 'flat band',
+            suggestions: Object.freeze({
+                widthMode: WINDOW_DECORATION_WIDTH_MODE.MATCH_WINDOW,
+                depthMeters: 0.08,
+                materialMode: WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL
+            }),
+            template: Object.freeze({
+                height: 0.15,
+                gap: 0.0,
+                offset: Object.freeze({ x: 0.0, y: 0.0, z: 0.0 }),
+                offsetZFromDepthScale: 0.0
+            })
+        }),
+        [WINDOW_DECORATION_STYLE.SPLAYED_LINTEL]: Object.freeze({
+            label: 'splayed lintel',
+            suggestions: Object.freeze({
+                widthMode: WINDOW_DECORATION_WIDTH_MODE.MATCH_WINDOW,
+                depthMeters: 0.08,
+                materialMode: WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL
+            }),
+            template: Object.freeze({
+                height: 0.22,
+                gap: 0.0,
+                offset: Object.freeze({ x: 0.0, y: 0.0, z: 0.0 }),
+                offsetZFromDepthScale: 0.0
+            })
+        }),
+        [WINDOW_DECORATION_STYLE.ANGLED_KEYSTONE]: Object.freeze({
+            label: 'angled keystone',
+            suggestions: Object.freeze({
+                widthMode: WINDOW_DECORATION_WIDTH_MODE.MATCH_WINDOW,
+                depthMeters: 0.08,
+                materialMode: WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL
+            }),
+            template: Object.freeze({
+                height: 0.2,
+                gap: 0.0,
+                offset: Object.freeze({ x: 0.0, y: 0.0, z: 0.0 }),
+                offsetZFromDepthScale: 0.0
+            })
+        }),
+        [WINDOW_DECORATION_STYLE.PEDIMENT_TRIANGLE]: Object.freeze({
+            label: 'pediment',
+            suggestions: Object.freeze({
+                widthMode: WINDOW_DECORATION_WIDTH_MODE.PCT_15,
+                depthMeters: 0.08,
+                materialMode: WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL
+            }),
+            template: Object.freeze({
+                height: 0.32,
+                gap: 0.0,
+                offset: Object.freeze({ x: 0.0, y: 0.0, z: 0.0 }),
+                offsetZFromDepthScale: 0.0
+            })
+        }),
+        [WINDOW_DECORATION_STYLE.ARCHED_BAND]: Object.freeze({
+            label: 'arched band',
+            suggestions: Object.freeze({
+                widthMode: WINDOW_DECORATION_WIDTH_MODE.MATCH_WINDOW,
+                depthMeters: 0.08,
+                materialMode: WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL
+            }),
+            template: Object.freeze({
+                height: 0.14,
+                gap: 0.0,
+                offset: Object.freeze({ x: 0.0, y: 0.0, z: 0.0 }),
+                offsetZFromDepthScale: 0.0
+            })
+        })
+    }),
+    [WINDOW_DECORATION_PART.JAMBS]: Object.freeze({
+        [WINDOW_DECORATION_STYLE.SIMPLE]: Object.freeze({
+            label: 'simple',
+            suggestions: Object.freeze({
+                widthMode: WINDOW_DECORATION_WIDTH_MODE.MATCH_WINDOW,
+                depthMeters: 0.02,
+                materialMode: WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL
+            }),
+            template: Object.freeze({
+                height: 0.1,
+                gap: 0.0,
+                offset: Object.freeze({ x: 0.0, y: 0.0, z: 0.0 }),
+                offsetZFromDepthScale: 0.0
+            })
         })
     }),
     [WINDOW_DECORATION_PART.TRIM]: Object.freeze({
@@ -139,6 +254,7 @@ function normalizePartId(value, fallback = WINDOW_DECORATION_PART.SILL) {
     const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
     if (raw === WINDOW_DECORATION_PART.SILL) return WINDOW_DECORATION_PART.SILL;
     if (raw === WINDOW_DECORATION_PART.HEADER) return WINDOW_DECORATION_PART.HEADER;
+    if (raw === WINDOW_DECORATION_PART.JAMBS) return WINDOW_DECORATION_PART.JAMBS;
     if (raw === WINDOW_DECORATION_PART.TRIM) return WINDOW_DECORATION_PART.TRIM;
     return fallback;
 }
@@ -153,6 +269,24 @@ export function normalizeWindowDecorationStyle(value, fallback = WINDOW_DECORATI
     const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
     if (raw === WINDOW_DECORATION_STYLE.SIMPLE) return WINDOW_DECORATION_STYLE.SIMPLE;
     if (raw === WINDOW_DECORATION_STYLE.BOTTOM_COVER) return WINDOW_DECORATION_STYLE.BOTTOM_COVER;
+    if (raw === WINDOW_DECORATION_STYLE.FLAT_BAND) return WINDOW_DECORATION_STYLE.FLAT_BAND;
+    if (raw === WINDOW_DECORATION_STYLE.SPLAYED_LINTEL) return WINDOW_DECORATION_STYLE.SPLAYED_LINTEL;
+    if (raw === WINDOW_DECORATION_STYLE.ANGLED_KEYSTONE) return WINDOW_DECORATION_STYLE.ANGLED_KEYSTONE;
+    if (raw === WINDOW_DECORATION_STYLE.PEDIMENT_TRIANGLE) return WINDOW_DECORATION_STYLE.PEDIMENT_TRIANGLE;
+    if (raw === WINDOW_DECORATION_STYLE.ARCHED_BAND) return WINDOW_DECORATION_STYLE.ARCHED_BAND;
+    return fallback;
+}
+
+export function normalizeWindowDecorationEarsMeters(value, fallback = 0.0) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return clamp(fallback, 0.0, WINDOW_DECORATION_EARS_MAX_METERS, 0.0);
+    return clamp(num, 0.0, WINDOW_DECORATION_EARS_MAX_METERS, 0.0);
+}
+
+export function normalizeWindowDecorationJambsRunMode(value, fallback = WINDOW_DECORATION_JAMBS_RUN_MODE.SILL_TO_HEADER) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === WINDOW_DECORATION_JAMBS_RUN_MODE.SILL_TO_HEADER) return WINDOW_DECORATION_JAMBS_RUN_MODE.SILL_TO_HEADER;
+    if (raw === WINDOW_DECORATION_JAMBS_RUN_MODE.FULL_BAY) return WINDOW_DECORATION_JAMBS_RUN_MODE.FULL_BAY;
     return fallback;
 }
 
@@ -299,6 +433,8 @@ function createDefaultDecorationPartState(partId, { wallMaterialId = '' } = {}) 
         type: defaultStyle,
         widthMode,
         depthMeters: templateDefaults.depth,
+        earsMeters: 0.0,
+        runMode: WINDOW_DECORATION_JAMBS_RUN_MODE.SILL_TO_HEADER,
         material: {
             mode: materialMode,
             materialId
@@ -357,6 +493,14 @@ function sanitizeDecorationPartState(partId, input, { wallMaterialId = '' } = {}
         materialSrc.materialId ?? src.materialId,
         defaults.material.materialId
     );
+    const earsMeters = normalizeWindowDecorationEarsMeters(
+        src.earsMeters ?? src.ears ?? src.overhangMeters,
+        defaults.earsMeters
+    );
+    const runMode = normalizeWindowDecorationJambsRunMode(
+        src.runMode ?? src.run_mode,
+        defaults.runMode
+    );
     const templateDefaults = getTemplateDefaults(part, type, depthMeters);
 
     return {
@@ -364,6 +508,8 @@ function sanitizeDecorationPartState(partId, input, { wallMaterialId = '' } = {}
         type,
         widthMode,
         depthMeters,
+        earsMeters,
+        runMode,
         material: {
             mode: materialMode,
             materialId
@@ -382,11 +528,11 @@ function sanitizeDecorationPartState(partId, input, { wallMaterialId = '' } = {}
 }
 
 export function getDefaultWindowDecorationState({ wallMaterialId = '' } = {}) {
-    return {
-        [WINDOW_DECORATION_PART.SILL]: createDefaultDecorationPartState(WINDOW_DECORATION_PART.SILL, { wallMaterialId }),
-        [WINDOW_DECORATION_PART.HEADER]: createDefaultDecorationPartState(WINDOW_DECORATION_PART.HEADER, { wallMaterialId }),
-        [WINDOW_DECORATION_PART.TRIM]: createDefaultDecorationPartState(WINDOW_DECORATION_PART.TRIM, { wallMaterialId })
-    };
+    const out = {};
+    for (const part of WINDOW_DECORATION_PART_IDS) {
+        out[part] = createDefaultDecorationPartState(part, { wallMaterialId });
+    }
+    return out;
 }
 
 export function sanitizeWindowDecorationState(input, { wallMaterialId = '' } = {}) {
@@ -414,9 +560,9 @@ export function resolveWindowDecorationPartState(partId, value, { wallMaterialId
 
 export function resolveWindowDecorationState(input, { wallMaterialId = '' } = {}) {
     const sanitized = sanitizeWindowDecorationState(input, { wallMaterialId });
-    return {
-        [WINDOW_DECORATION_PART.SILL]: resolveWindowDecorationPartState(WINDOW_DECORATION_PART.SILL, sanitized[WINDOW_DECORATION_PART.SILL], { wallMaterialId }),
-        [WINDOW_DECORATION_PART.HEADER]: resolveWindowDecorationPartState(WINDOW_DECORATION_PART.HEADER, sanitized[WINDOW_DECORATION_PART.HEADER], { wallMaterialId }),
-        [WINDOW_DECORATION_PART.TRIM]: resolveWindowDecorationPartState(WINDOW_DECORATION_PART.TRIM, sanitized[WINDOW_DECORATION_PART.TRIM], { wallMaterialId })
-    };
+    const out = {};
+    for (const part of WINDOW_DECORATION_PART_IDS) {
+        out[part] = resolveWindowDecorationPartState(part, sanitized[part], { wallMaterialId });
+    }
+    return out;
 }

@@ -8291,6 +8291,135 @@ async function runTests() {
         }
     });
 
+    test('BuildingFabricationGenerator: window surround decorations emit header and jamb meshes', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const floorHeight = 4.0;
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight,
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const baseMat = layers[0]?.material ?? { kind: 'texture', id: 'pbr.brick_wall_11' };
+        const windowDefinitions = {
+            items: [{
+                id: 'surround_window',
+                assetType: 'window',
+                settings: {
+                    width: 1.4,
+                    height: 1.6,
+                    frame: { width: 0.08, depth: 0.1, inset: 0.02 }
+                },
+                decoration: {
+                    sill: {
+                        enabled: true,
+                        type: 'simple',
+                        widthMode: 'pct_15',
+                        depthMeters: 0.08,
+                        material: { mode: 'match_wall' }
+                    },
+                    header: {
+                        enabled: true,
+                        type: 'splayed_lintel',
+                        widthMode: 'match_window',
+                        depthMeters: 0.08,
+                        earsMeters: 0.05,
+                        material: { mode: 'match_wall' }
+                    },
+                    jambs: {
+                        enabled: true,
+                        type: 'simple',
+                        widthMode: 'match_window',
+                        depthMeters: 0.02,
+                        runMode: 'full_bay',
+                        material: { mode: 'match_wall' }
+                    }
+                }
+            }]
+        };
+        const facades = {
+            A: {
+                wallMaterial: baseMat,
+                depthOffset: 0.0,
+                layout: {
+                    bays: {
+                        nextBayIndex: 2,
+                        items: [{
+                            id: 'bay_surround',
+                            size: { mode: 'range', minMeters: 4.0, maxMeters: null },
+                            expandPreference: 'prefer_expand',
+                            window: {
+                                enabled: true,
+                                assetType: 'window',
+                                defId: 'surround_window',
+                                size: { widthMeters: 1.4, heightMeters: 1.6 },
+                                repeat: { count: 2 },
+                                padding: { leftMeters: 0.2, rightMeters: 0.2 }
+                            }
+                        }]
+                    }
+                }
+            }
+        };
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            windowDefinitions,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts && !!parts.windows, 'Expected windows group.');
+
+        const decorationMeshes = (parts.windows?.children ?? [])
+            .filter((m) => m?.userData?.buildingWindowSource === 'bf2_window_decoration'
+                && m?.userData?.windowDefinitionId === 'surround_window');
+        const byPart = new Map(decorationMeshes.map((m) => [m.userData.windowDecorationPart, m]));
+
+        const sillMesh = byPart.get('sill');
+        assertTrue(!!sillMesh, 'Expected sill decoration mesh.');
+
+        const headerMesh = byPart.get('header');
+        assertTrue(!!headerMesh, 'Expected header decoration mesh.');
+        assertEqual(headerMesh.userData.windowDecorationStyle, 'splayed_lintel', 'Expected splayed lintel header style.');
+        assertTrue(headerMesh.count >= 2, 'Expected header instances for each repeated window.');
+
+        const jambsMesh = byPart.get('jambs');
+        assertTrue(!!jambsMesh, 'Expected jambs decoration mesh.');
+        assertEqual(jambsMesh.userData.windowDecorationRunMode, 'full_bay', 'Expected full-bay jamb run mode.');
+        assertTrue(jambsMesh.count >= 2, 'Expected jamb instances for each repeated window.');
+
+        const jambMatrix = new THREE.Matrix4();
+        jambsMesh.getMatrixAt(0, jambMatrix);
+        const jambScale = new THREE.Vector3();
+        jambMatrix.decompose(new THREE.Vector3(), new THREE.Quaternion(), jambScale);
+        assertTrue(Math.abs(jambScale.y - floorHeight) < 1e-3,
+            `Full-bay jambs should span the floor height (got ${jambScale.y}, expected ${floorHeight}).`);
+    });
+
     test('BuildingFabricationGenerator: garage facade copies closed material + rotation and supports open override', () => {
         const tileSize = 10;
         const map = {

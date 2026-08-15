@@ -584,6 +584,157 @@ const WINDOW_DOOR_FABRICATION_CATALOG = Object.freeze([
         }
     }),
     Object.freeze({
+        id: 'window_white_sash_2x2_stone_surround',
+        assetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW,
+        name: 'White Sash 2x2 Stone Surround',
+        settings: {
+            version: 1,
+            width: 1.5,
+            height: 1.8,
+            arch: {
+                enabled: false,
+                heightRatio: 0.25,
+                meetsRectangleFrame: true,
+                topPieceMode: 'frame',
+                clipVerticalMuntinsToRectWhenNoTopPiece: true
+            },
+            frame: {
+                width: 0.075,
+                depth: 0.09,
+                inset: 0.06,
+                openBottom: false,
+                colorHex: 0xe8e3d5,
+                bevel: {
+                    size: 0.3,
+                    roundness: 0.65
+                },
+                material: {
+                    roughness: 0.6,
+                    metalness: 0,
+                    envMapIntensity: 0.15,
+                    normalStrength: 0.6
+                }
+            },
+            muntins: {
+                enabled: true,
+                columns: 2,
+                rows: 2,
+                verticalWidth: 0.045,
+                horizontalWidth: 0.06,
+                depth: 0.05,
+                inset: 0.012,
+                uvOffset: {
+                    x: 0,
+                    y: 0
+                },
+                colorHex: 0xe8e3d5,
+                bevel: {
+                    inherit: true,
+                    bevel: {
+                        size: 0.3,
+                        roundness: 0.65
+                    }
+                },
+                material: {
+                    inheritFromFrame: true,
+                    pbr: {
+                        roughness: 0.6,
+                        metalness: 0,
+                        envMapIntensity: 0.15,
+                        normalStrength: 0.6
+                    }
+                }
+            },
+            glass: {
+                opacity: 0.85,
+                tintHex: 1842209,
+                reflection: {
+                    metalness: 0,
+                    roughness: 0.02,
+                    transmission: 0,
+                    ior: 1.5,
+                    envMapIntensity: 2.5
+                },
+                zOffset: -0.07
+            },
+            shade: {
+                enabled: true,
+                coverage: WINDOW_SHADE_COVERAGE.PCT_20,
+                randomizeCoverage: true,
+                direction: 'top_to_bottom',
+                colorHex: 0x565851,
+                fabric: {
+                    scale: 7,
+                    intensity: 0.18
+                },
+                zOffset: -0.05
+            },
+            interior: {
+                enabled: true
+            }
+        },
+        decoration: {
+            sill: {
+                enabled: true,
+                type: 'simple',
+                widthMode: 'pct_15',
+                depthMeters: 0.08,
+                material: {
+                    mode: 'pbr',
+                    materialId: 'pbr.seaworn_sandstone_brick'
+                }
+            },
+            header: {
+                enabled: true,
+                type: 'splayed_lintel',
+                widthMode: 'match_window',
+                depthMeters: 0.08,
+                earsMeters: 0.05,
+                material: {
+                    mode: 'pbr',
+                    materialId: 'pbr.seaworn_sandstone_brick'
+                }
+            },
+            jambs: {
+                enabled: true,
+                type: 'simple',
+                widthMode: 'match_window',
+                depthMeters: 0.02,
+                runMode: 'sill_to_header',
+                material: {
+                    mode: 'pbr',
+                    materialId: 'pbr.seaworn_sandstone_brick'
+                }
+            }
+        },
+        layers: {
+            frame: true,
+            muntins: true,
+            glass: true,
+            shade: true,
+            interior: true
+        },
+        wall: {
+            materialId: 'pbr.painted_plaster_wall',
+            roughness: 0.85,
+            normalIntensity: 1,
+            cutWidthLerp: 0,
+            cutHeightLerp: 0,
+            floorDistanceMeters: 0
+        },
+        ibl: {
+            enabled: true,
+            envMapIntensity: 0.25,
+            iblId: 'ibl.hdri.german_town_street_2k',
+            setBackground: true
+        },
+        seed: 'window-debug',
+        thumbnail: {
+            dataUrl: null,
+            wallMaterialId: 'pbr.painted_plaster_wall'
+        }
+    }),
+    Object.freeze({
         id: 'window_arch_civic',
         assetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW,
         name: 'Civic Arched Tall',

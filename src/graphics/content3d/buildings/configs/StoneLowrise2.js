@@ -1128,7 +1128,7 @@ export const STONE_LOWRISE_2_BUILDING_CONFIG = Object.freeze({
                                     "wallMaterialOverride": null,
                                     "window": {
                                         "enabled": true,
-                                        "defId": "window_white_sash_2x2",
+                                        "defId": "window_white_sash_2x2_stone_surround",
                                         "assetType": "window",
                                         "size": {
                                             "widthMeters": 1.5,
@@ -1190,7 +1190,7 @@ export const STONE_LOWRISE_2_BUILDING_CONFIG = Object.freeze({
                                     "wallMaterialOverride": null,
                                     "window": {
                                         "enabled": true,
-                                        "defId": "window_white_sash_2x2",
+                                        "defId": "window_white_sash_2x2_stone_surround",
                                         "assetType": "window",
                                         "size": {
                                             "widthMeters": 1.5,

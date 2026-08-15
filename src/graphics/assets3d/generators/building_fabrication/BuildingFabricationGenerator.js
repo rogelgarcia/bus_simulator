@@ -19,11 +19,17 @@ import {
     PARALLAX_INTERIOR_PRESET_ID,
     resolveWindowDecorationState,
     sanitizeWindowMeshSettings,
+    WINDOW_DECORATION_JAMBS_RUN_MODE,
     WINDOW_DECORATION_MATERIAL_MODE,
     WINDOW_DECORATION_PART,
     WINDOW_DECORATION_STYLE,
     WINDOW_FABRICATION_ASSET_TYPE
 } from '../../../../app/buildings/window_mesh/index.js';
+import {
+    buildWindowHeaderSurroundGeometry,
+    buildWindowJambsSurroundGeometry,
+    isWindowHeaderProfileStyle
+} from '../../../engine3d/buildings/window_mesh/WindowDecorationSurroundGeometry.js';
 import {
     WINDOW_TYPE,
     getDefaultWindowParams,
@@ -2399,6 +2405,58 @@ function makeBeltLikeMaterialFromSpec({ material, baseColorHex, textureCache }) 
     return mat;
 }
 
+function makeWindowDecorationPartMaterial({
+    part,
+    fallbackMode = WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL,
+    settings,
+    layerMaterial,
+    layerWallBase,
+    baseColorHex,
+    textureCache
+} = {}) {
+    const materialMode = String(part?.material?.mode ?? fallbackMode);
+    const decorationMaterialId = typeof part?.material?.materialId === 'string'
+        ? part.material.materialId.trim()
+        : '';
+
+    let mat = null;
+    if (materialMode === WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL) {
+        mat = makeWallMaterialFromSpec({
+            material: layerMaterial ?? null,
+            baseColorHex,
+            textureCache,
+            wallBase: layerWallBase ?? null
+        });
+    } else if (materialMode === WINDOW_DECORATION_MATERIAL_MODE.PBR && decorationMaterialId) {
+        mat = makeBeltLikeMaterialFromSpec({
+            material: { kind: 'texture', id: decorationMaterialId },
+            baseColorHex,
+            textureCache
+        });
+    }
+
+    if (!mat) {
+        const frame = settings?.frame && typeof settings.frame === 'object' ? settings.frame : {};
+        const frameMat = frame?.material && typeof frame.material === 'object' ? frame.material : {};
+        const frameColor = normalizeHexColor(frame?.colorHex, 0xffffff);
+        const frameRoughness = Number.isFinite(Number(frameMat?.roughness)) ? clamp(frameMat.roughness, 0.0, 1.0) : 0.72;
+        const frameMetalness = Number.isFinite(Number(frameMat?.metalness)) ? clamp(frameMat.metalness, 0.0, 1.0) : 0.0;
+        const frameEnvMapIntensity = Number.isFinite(Number(frameMat?.envMapIntensity)) ? clamp(frameMat.envMapIntensity, 0.0, 8.0) : 0.0;
+        const frameNormalStrength = Number.isFinite(Number(frameMat?.normalStrength)) ? clamp(frameMat.normalStrength, 0.0, 5.0) : 1.0;
+        mat = new THREE.MeshStandardMaterial({
+            color: frameColor,
+            roughness: frameRoughness,
+            metalness: frameMetalness
+        });
+        mat.envMapIntensity = frameEnvMapIntensity;
+        if (mat.normalScale) {
+            mat.normalScale.set(frameNormalStrength, frameNormalStrength);
+        }
+    }
+
+    return mat;
+}
+
 function createCustomOpeningSillDecorationMesh({
     bucket,
     layerMaterial,
@@ -2447,45 +2505,15 @@ function createCustomOpeningSillDecorationMesh({
     geo.translate(0, 0, depth * 0.5);
     geo.computeVertexNormals();
 
-    const materialMode = String(sill?.material?.mode ?? WINDOW_DECORATION_MATERIAL_MODE.MATCH_FRAME);
-    const decorationMaterialId = typeof sill?.material?.materialId === 'string'
-        ? sill.material.materialId.trim()
-        : '';
-
-    let mat = null;
-    if (materialMode === WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL) {
-        mat = makeWallMaterialFromSpec({
-            material: layerMaterial ?? null,
-            baseColorHex,
-            textureCache,
-            wallBase: layerWallBase ?? null
-        });
-    } else if (materialMode === WINDOW_DECORATION_MATERIAL_MODE.PBR && decorationMaterialId) {
-        mat = makeBeltLikeMaterialFromSpec({
-            material: { kind: 'texture', id: decorationMaterialId },
-            baseColorHex,
-            textureCache
-        });
-    }
-
-    if (!mat) {
-        const frame = settings?.frame && typeof settings.frame === 'object' ? settings.frame : {};
-        const frameMat = frame?.material && typeof frame.material === 'object' ? frame.material : {};
-        const frameColor = normalizeHexColor(frame?.colorHex, 0xffffff);
-        const frameRoughness = Number.isFinite(Number(frameMat?.roughness)) ? clamp(frameMat.roughness, 0.0, 1.0) : 0.72;
-        const frameMetalness = Number.isFinite(Number(frameMat?.metalness)) ? clamp(frameMat.metalness, 0.0, 1.0) : 0.0;
-        const frameEnvMapIntensity = Number.isFinite(Number(frameMat?.envMapIntensity)) ? clamp(frameMat.envMapIntensity, 0.0, 8.0) : 0.0;
-        const frameNormalStrength = Number.isFinite(Number(frameMat?.normalStrength)) ? clamp(frameMat.normalStrength, 0.0, 5.0) : 1.0;
-        mat = new THREE.MeshStandardMaterial({
-            color: frameColor,
-            roughness: frameRoughness,
-            metalness: frameMetalness
-        });
-        mat.envMapIntensity = frameEnvMapIntensity;
-        if (mat.normalScale) {
-            mat.normalScale.set(frameNormalStrength, frameNormalStrength);
-        }
-    }
+    const mat = makeWindowDecorationPartMaterial({
+        part: sill,
+        fallbackMode: WINDOW_DECORATION_MATERIAL_MODE.MATCH_FRAME,
+        settings,
+        layerMaterial,
+        layerWallBase,
+        baseColorHex,
+        textureCache
+    });
 
     const mesh = new THREE.InstancedMesh(geo, mat, instances.length);
     mesh.name = 'bf2_window_decoration_sill';
@@ -2528,6 +2556,200 @@ function createCustomOpeningSillDecorationMesh({
     mesh.userData.windowDecorationStyle = style;
 
     return mesh;
+}
+
+function createWindowDecorationInstancedMesh({
+    geometry,
+    material,
+    instances,
+    frameDepth,
+    template,
+    placeInstance
+}) {
+    const offset = template?.offset && typeof template.offset === 'object' ? template.offset : {};
+    const offsetX = Number(offset?.x) || 0.0;
+    const offsetY = Number(offset?.y) || 0.0;
+    const offsetZ = Number(offset?.z) || 0.0;
+
+    const mesh = new THREE.InstancedMesh(geometry, material, instances.length);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+    const dummy = new THREE.Object3D();
+    for (let i = 0; i < instances.length; i++) {
+        const instance = instances[i] && typeof instances[i] === 'object' ? instances[i] : {};
+        const p = instance?.position && typeof instance.position === 'object' ? instance.position : instance;
+        const px = Number(p?.x) || 0.0;
+        const py = Number(p?.y) || 0.0;
+        const pz = Number(p?.z) || 0.0;
+        const yaw = Number(instance?.yaw) || 0.0;
+        const sinYaw = Math.sin(yaw);
+        const cosYaw = Math.cos(yaw);
+        const rightX = cosYaw;
+        const rightZ = -sinYaw;
+        const forwardX = sinYaw;
+        const forwardZ = cosYaw;
+        const forwardOffset = frameDepth + offsetZ;
+
+        const local = placeInstance({ instance, windowCenterY: py });
+        dummy.position.set(
+            px + rightX * (offsetX + (local?.x ?? 0)) + forwardX * forwardOffset,
+            (local?.absoluteY ?? (py + (local?.y ?? 0))) + offsetY,
+            pz + rightZ * (offsetX + (local?.x ?? 0)) + forwardZ * forwardOffset
+        );
+        dummy.rotation.set(0, yaw, 0);
+        dummy.scale.set(1, Math.max(EPS, Number(local?.scaleY) || 1), 1);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    return mesh;
+}
+
+function createCustomOpeningSurroundDecorationMeshes({
+    bucket,
+    layerMaterial,
+    layerWallBase,
+    baseColorHex,
+    textureCache
+} = {}) {
+    const src = bucket && typeof bucket === 'object' ? bucket : null;
+    if (!src) return [];
+
+    const assetType = normalizeWindowFabricationAssetType(src?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
+    if (assetType === WINDOW_FABRICATION_ASSET_TYPE.GARAGE) return [];
+
+    const instances = Array.isArray(src?.instances) ? src.instances : [];
+    if (!instances.length) return [];
+
+    const settings = sanitizeWindowMeshSettings(src?.settings ?? null);
+    const wallMaterialId = layerMaterial?.kind === 'texture' && typeof layerMaterial?.id === 'string'
+        ? layerMaterial.id
+        : '';
+    const resolvedDecoration = resolveWindowDecorationState(src?.decoration ?? null, { wallMaterialId });
+    const meshes = [];
+
+    const windowWidth = Math.max(0.01, Number(settings?.width) || 1.0);
+    const windowHeight = Math.max(0.01, Number(settings?.height) || 1.0);
+    const frameDepth = Math.max(0.0, Number(settings?.frame?.depth) || 0.0);
+    const archEnabled = !!settings?.arch?.enabled;
+    const archHeightRatio = Number(settings?.arch?.heightRatio) || 0.0;
+    const defId = typeof src?.defId === 'string' ? src.defId : null;
+
+    const header = resolvedDecoration?.[WINDOW_DECORATION_PART.HEADER] ?? null;
+    const headerStyle = String(header?.type ?? '').toLowerCase();
+    const headerTemplate = header?.template && typeof header.template === 'object' ? header.template : {};
+    const headerHeight = Math.max(0.005, Number(headerTemplate?.height) || 0.08);
+    const headerGap = Number.isFinite(Number(headerTemplate?.gap)) ? Number(headerTemplate.gap) : 0.0;
+    if (header?.enabled && (isWindowHeaderProfileStyle(headerStyle) || headerStyle === WINDOW_DECORATION_STYLE.SIMPLE)) {
+        const isProfile = isWindowHeaderProfileStyle(headerStyle);
+        const geometry = isProfile
+            ? buildWindowHeaderSurroundGeometry({
+                style: headerStyle,
+                openingWidth: windowWidth,
+                widthScale: Number(header?.widthScale) || 1.0,
+                height: headerHeight,
+                depth: Math.max(0.001, Number(headerTemplate?.depth) || 0.08),
+                earsMeters: Number(header?.earsMeters) || 0.0,
+                archEnabled,
+                archHeightRatio,
+                windowHeight,
+                curveSegments: 24
+            })
+            : (() => {
+                const width = windowWidth * Math.max(0.01, Number(header?.widthScale) || 1.0);
+                const depth = Math.max(0.001, Number(headerTemplate?.depth) || 0.08);
+                const geo = new THREE.BoxGeometry(width, headerHeight, depth);
+                geo.translate(0, 0, depth * 0.5);
+                geo.computeVertexNormals();
+                return geo;
+            })();
+        const material = makeWindowDecorationPartMaterial({
+            part: header,
+            fallbackMode: WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL,
+            settings,
+            layerMaterial,
+            layerWallBase,
+            baseColorHex,
+            textureCache
+        });
+        const mesh = createWindowDecorationInstancedMesh({
+            geometry,
+            material,
+            instances,
+            frameDepth,
+            template: headerTemplate,
+            placeInstance: () => (isProfile
+                // Profile geometries anchor y=0 at the header bottom.
+                ? { y: windowHeight * 0.5 + headerGap }
+                : { y: windowHeight * 0.5 + headerGap + headerHeight * 0.5 })
+        });
+        mesh.name = 'bf2_window_decoration_header';
+        mesh.userData = mesh.userData ?? {};
+        mesh.userData.buildingWindowSource = 'bf2_window_decoration';
+        mesh.userData.windowDefinitionId = defId;
+        mesh.userData.windowAssetType = assetType;
+        mesh.userData.windowDecorationPart = WINDOW_DECORATION_PART.HEADER;
+        mesh.userData.windowDecorationStyle = headerStyle;
+        meshes.push(mesh);
+    }
+
+    const jambs = resolvedDecoration?.[WINDOW_DECORATION_PART.JAMBS] ?? null;
+    if (jambs?.enabled) {
+        const jambsTemplate = jambs?.template && typeof jambs.template === 'object' ? jambs.template : {};
+        const jambWidth = Math.max(0.01, Number(jambsTemplate?.height) || 0.1);
+        const jambDepth = Math.max(0.001, Number(jambsTemplate?.depth) || 0.08);
+        const runMode = String(jambs?.runMode ?? WINDOW_DECORATION_JAMBS_RUN_MODE.SILL_TO_HEADER);
+        const fullBay = runMode === WINDOW_DECORATION_JAMBS_RUN_MODE.FULL_BAY;
+
+        const geometry = buildWindowJambsSurroundGeometry({
+            openingWidth: windowWidth,
+            jambWidth,
+            runHeight: fullBay ? 1.0 : windowHeight,
+            depth: jambDepth
+        });
+        const material = makeWindowDecorationPartMaterial({
+            part: jambs,
+            fallbackMode: WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL,
+            settings,
+            layerMaterial,
+            layerWallBase,
+            baseColorHex,
+            textureCache
+        });
+        const mesh = createWindowDecorationInstancedMesh({
+            geometry,
+            material,
+            instances,
+            frameDepth,
+            template: jambsTemplate,
+            placeInstance: ({ instance, windowCenterY }) => {
+                if (!fullBay) return { y: 0 };
+                const baseY = Number(instance?.floorBaseY);
+                const topY = Number(instance?.floorTopY);
+                if (!Number.isFinite(baseY) || !Number.isFinite(topY) || !(topY - baseY > EPS)) {
+                    // Missing floor bounds: fall back to the opening run.
+                    return { y: 0, scaleY: Math.max(EPS, windowHeight) };
+                }
+                return {
+                    absoluteY: (baseY + topY) * 0.5,
+                    scaleY: topY - baseY
+                };
+            }
+        });
+        mesh.name = 'bf2_window_decoration_jambs';
+        mesh.userData = mesh.userData ?? {};
+        mesh.userData.buildingWindowSource = 'bf2_window_decoration';
+        mesh.userData.windowDefinitionId = defId;
+        mesh.userData.windowAssetType = assetType;
+        mesh.userData.windowDecorationPart = WINDOW_DECORATION_PART.JAMBS;
+        mesh.userData.windowDecorationStyle = String(jambs?.type ?? WINDOW_DECORATION_STYLE.SIMPLE);
+        mesh.userData.windowDecorationRunMode = runMode;
+        meshes.push(mesh);
+    }
+
+    return meshes;
 }
 
 function makeRoofSurfaceMaterialFromSpec({ material, baseColorHex, textureCache }) {
@@ -6655,7 +6877,7 @@ export function buildBuildingFabricationVisualParts({
 
                 if (bayWindowPlacements.length) {
                     const customBuckets = new Map();
-                    const addCustomInstance = ({ defId, assetType, settings, decoration, x, y, z, yaw, instanceId }) => {
+                    const addCustomInstance = ({ defId, assetType, settings, decoration, x, y, z, yaw, instanceId, floorBaseY, floorTopY }) => {
                         const safeAssetType = normalizeWindowFabricationAssetType(assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
                         const safeSettings = sanitizeWindowMeshSettings(settings ?? null);
                         const safeDecoration = deepClone(decoration ?? null);
@@ -6679,7 +6901,9 @@ export function buildBuildingFabricationVisualParts({
                         bucket.instances.push({
                             id: instanceId,
                             position: { x, y, z },
-                            yaw
+                            yaw,
+                            floorBaseY: Number.isFinite(Number(floorBaseY)) ? Number(floorBaseY) : null,
+                            floorTopY: Number.isFinite(Number(floorTopY)) ? Number(floorTopY) : null
                         });
                     };
                     const addGarageFacadeGeometry = ({
@@ -6886,7 +7110,9 @@ export function buildBuildingFabricationVisualParts({
                                     yaw,
                                     instanceId: (topSettings && topHeight > EPS)
                                         ? `${baseInstanceId}:bottom`
-                                        : baseInstanceId
+                                        : baseInstanceId,
+                                    floorBaseY: yCursor,
+                                    floorTopY: yCursor + segHeight
                                 });
                                 if (placementAssetType === WINDOW_FABRICATION_ASSET_TYPE.GARAGE) {
                                     addGarageFacadeGeometry({
@@ -6911,7 +7137,9 @@ export function buildBuildingFabricationVisualParts({
                                         y: topY,
                                         z: z + nz * (windowOffset - topPlacementInset),
                                         yaw,
-                                        instanceId: `${baseInstanceId}:top`
+                                        instanceId: `${baseInstanceId}:top`,
+                                        floorBaseY: yCursor,
+                                        floorTopY: yCursor + segHeight
                                     });
                                 }
                             }
@@ -6990,6 +7218,17 @@ export function buildBuildingFabricationVisualParts({
                         });
                         if (sillDecoration) {
                             windowsGroup.add(sillDecoration);
+                        }
+
+                        const surroundDecorations = createCustomOpeningSurroundDecorationMeshes({
+                            bucket,
+                            layerMaterial: layer?.material ?? null,
+                            layerWallBase: layer?.wallBase ?? null,
+                            baseColorHex,
+                            textureCache
+                        });
+                        for (const surroundMesh of surroundDecorations) {
+                            windowsGroup.add(surroundMesh);
                         }
                     }
                 }

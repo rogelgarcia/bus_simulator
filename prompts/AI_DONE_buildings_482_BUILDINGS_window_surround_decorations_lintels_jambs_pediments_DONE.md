@@ -1,3 +1,5 @@
+DONE
+
 #Problem
 
 Fabricated windows and doors currently support only a bottom sill decoration (`decoration.sill`, type `bottom_cover`, in `src/app/buildings/window_mesh/WindowFabricationCatalog.js`, consumed by `BuildingFabricationGenerator`). Everything above and beside an opening is bare wall. Real facades — especially stone, plaster, and brick buildings — frame their openings with surrounds: a lintel or header above, jamb trim on the sides, and sometimes a pediment or a projecting hood. The absence of these is the single biggest visual gap noticed while recreating the legacy stone lowrise as `stone_lowrise_2`: sash windows with white sills still read as stickers on a flat wall, because no header or jamb geometry catches light or casts a shadow line over the opening.
@@ -19,6 +21,15 @@ Tasks:
 - Update `BuildingFabrication2` GUI so surround options are editable and preview correctly in the thumbnail renderer.
 - Add at least one catalog entry showcasing surrounds (e.g. a `window_white_sash_2x2` variant with stone header and jambs) and use it in `stone_lowrise_2` to validate in the showcase scenario (`tests/headless/harness/scenarios/scenario_building_showcase.js`).
 - Add/update tests: schema normalization round-trip for the new decoration fields, and a generator-level test asserting surround meshes are emitted for a bay window with header+jambs enabled.
+
+## Summary of changes (2026-08-15)
+- Extended the window decoration schema with a `jambs` part and header profile styles (`flat_band`, `splayed_lintel`, `angled_keystone`, `pediment_triangle`, `arched_band`), plus `earsMeters` (header overhang) and jambs `runMode` (`sill_to_header` | `full_bay`) fields with normalization round-trip (`WindowMeshDecorationTemplates.js`).
+- Added shared surround geometry builders used by both the building generator and the debugger preview (`engine3d/buildings/window_mesh/WindowDecorationSurroundGeometry.js`).
+- `BuildingFabricationGenerator` now emits header and jamb instanced meshes in the same pass as the sill cover (bay recession, repeats, linking inherited via instance transforms; full-bay jambs stretch to the floor band via per-instance floor bounds; shared material helper for match_wall/match_frame/pbr modes).
+- Window Mesh Debugger GUI: Jambs section, header Ears control, jambs Run control; decorations rig renders all new styles via the plugin registry (BF2 scene + thumbnails render surrounds through the generator automatically).
+- New catalog entry `window_white_sash_2x2_stone_surround` (splayed-lintel header + jambs + stone sill in `pbr.seaworn_sandstone_brick` on plaster) used by `stone_lowrise_2`'s plaster floors.
+- Tests: template schema round-trips (node unit) and a generator-level test asserting header/jamb emission and full-bay jamb scaling (core suite; 423 passing, 3 failures pre-existing on main).
+- Validated in the building showcase scenario; screenshots captured at 2x (`tests/artifacts/screens/buildings/stone_lowrise_2.png`).
 
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line

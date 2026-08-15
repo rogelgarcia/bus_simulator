@@ -11,6 +11,10 @@ import {
     resolveWindowDecorationState
 } from '../../../../app/buildings/window_mesh/index.js';
 import { WINDOW_MESH_DOUBLE_DOOR_CENTER_GAP_METERS } from '../../../engine3d/buildings/window_mesh/WindowMeshGeometry.js';
+import {
+    buildWindowHeaderSurroundGeometry,
+    buildWindowJambsSurroundGeometry
+} from '../../../engine3d/buildings/window_mesh/WindowDecorationSurroundGeometry.js';
 import { PbrTextureLoaderService } from '../../../content3d/materials/PbrTexturePipeline.js';
 
 const EPS = 1e-6;
@@ -211,8 +215,9 @@ function getPartFromValue(value) {
 
 function getStyleFromValue(value) {
     const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
-    if (raw === WINDOW_DECORATION_STYLE.SIMPLE) return WINDOW_DECORATION_STYLE.SIMPLE;
-    if (raw === WINDOW_DECORATION_STYLE.BOTTOM_COVER) return WINDOW_DECORATION_STYLE.BOTTOM_COVER;
+    for (const styleId of Object.values(WINDOW_DECORATION_STYLE)) {
+        if (raw === styleId) return styleId;
+    }
     return null;
 }
 
@@ -290,6 +295,55 @@ function registerDefaultWindowMeshDecorationStylePlugins() {
         }
     });
 
+    const registerHeaderProfilePlugin = (styleId) => {
+        registerWindowMeshDecorationStylePlugin(WINDOW_DECORATION_PART.HEADER, styleId, {
+            buildGeometryKey: ({ windowWidth, windowHeight, archEnabled, archHeightRatio, curveSegments, resolved }) => {
+                const height = Number(resolved?.template?.height) || 0.08;
+                const depth = Number(resolved?.template?.depth) || 0.08;
+                const ears = Number(resolved?.earsMeters) || 0;
+                const scale = Number(resolved?.widthScale) || 1;
+                return `hdr_${styleId}|w:${q(windowWidth)}|ws:${q(scale)}|h:${q(height)}|d:${q(depth)}|e:${q(ears)}|wh:${q(windowHeight)}|arch:${archEnabled ? 1 : 0}|ahr:${q(archHeightRatio)}|cs:${curveSegments | 0}`;
+            },
+            buildGeometry: ({ windowWidth, windowHeight, archEnabled, archHeightRatio, curveSegments, resolved }) => (
+                buildWindowHeaderSurroundGeometry({
+                    style: styleId,
+                    openingWidth: windowWidth,
+                    widthScale: Number(resolved?.widthScale) || 1,
+                    height: Number(resolved?.template?.height) || 0.08,
+                    depth: Number(resolved?.template?.depth) || 0.08,
+                    earsMeters: Number(resolved?.earsMeters) || 0,
+                    archEnabled,
+                    archHeightRatio,
+                    windowHeight,
+                    curveSegments
+                })
+            )
+        });
+    };
+    registerHeaderProfilePlugin(WINDOW_DECORATION_STYLE.FLAT_BAND);
+    registerHeaderProfilePlugin(WINDOW_DECORATION_STYLE.SPLAYED_LINTEL);
+    registerHeaderProfilePlugin(WINDOW_DECORATION_STYLE.ANGLED_KEYSTONE);
+    registerHeaderProfilePlugin(WINDOW_DECORATION_STYLE.PEDIMENT_TRIANGLE);
+    registerHeaderProfilePlugin(WINDOW_DECORATION_STYLE.ARCHED_BAND);
+
+    registerWindowMeshDecorationStylePlugin(WINDOW_DECORATION_PART.JAMBS, WINDOW_DECORATION_STYLE.SIMPLE, {
+        // The debugger previews full-bay jambs with the opening run; the building
+        // generator stretches them to the real floor band via instance scaling.
+        buildGeometryKey: ({ windowWidth, windowHeight, resolved }) => {
+            const jambWidth = Number(resolved?.template?.height) || 0.1;
+            const depth = Number(resolved?.template?.depth) || 0.08;
+            return `jambs_simple|w:${q(windowWidth)}|jw:${q(jambWidth)}|rh:${q(windowHeight)}|d:${q(depth)}`;
+        },
+        buildGeometry: ({ windowWidth, windowHeight, resolved }) => (
+            buildWindowJambsSurroundGeometry({
+                openingWidth: windowWidth,
+                jambWidth: Number(resolved?.template?.height) || 0.1,
+                runHeight: windowHeight,
+                depth: Number(resolved?.template?.depth) || 0.08
+            })
+        )
+    });
+
     registerWindowMeshDecorationStylePlugin(WINDOW_DECORATION_PART.TRIM, WINDOW_DECORATION_STYLE.SIMPLE, {
         buildGeometryKey: ({ windowWidth, windowHeight, archEnabled, archHeightRatio, curveSegments, resolved }) => {
             const width = Math.max(0.01, Number(windowWidth) || 1) * (Number(resolved?.widthScale) || 1);
@@ -334,7 +388,13 @@ function computeDecorationPlacement(partId, resolved, windowHeight, wallFrontZ) 
             ? (-windowHeight * 0.5 + gap + height * 0.5)
             : (-windowHeight * 0.5 - gap - height * 0.5);
     } else if (partId === WINDOW_DECORATION_PART.HEADER) {
-        yBase = windowHeight * 0.5 + gap + height * 0.5;
+        // Surround profile geometries anchor y=0 at the header bottom; the legacy
+        // simple box stays center-anchored.
+        yBase = style === WINDOW_DECORATION_STYLE.SIMPLE
+            ? (windowHeight * 0.5 + gap + height * 0.5)
+            : (windowHeight * 0.5 + gap);
+    } else if (partId === WINDOW_DECORATION_PART.JAMBS) {
+        yBase = 0;
     }
 
     return {
@@ -403,33 +463,20 @@ export class WindowMeshDecorationsRig {
         this.group.name = 'window_decorations';
 
         this._dummy = new THREE.Object3D();
-        this._geometryKeys = {
-            [WINDOW_DECORATION_PART.SILL]: '',
-            [WINDOW_DECORATION_PART.HEADER]: '',
-            [WINDOW_DECORATION_PART.TRIM]: ''
-        };
-        this._materialKeys = {
-            [WINDOW_DECORATION_PART.SILL]: '',
-            [WINDOW_DECORATION_PART.HEADER]: '',
-            [WINDOW_DECORATION_PART.TRIM]: ''
-        };
+        this._geometryKeys = {};
+        this._materialKeys = {};
         this._renderMode = 'solid';
 
-        this._meshes = {
-            [WINDOW_DECORATION_PART.SILL]: null,
-            [WINDOW_DECORATION_PART.HEADER]: null,
-            [WINDOW_DECORATION_PART.TRIM]: null
-        };
-        this._materials = {
-            [WINDOW_DECORATION_PART.SILL]: null,
-            [WINDOW_DECORATION_PART.HEADER]: null,
-            [WINDOW_DECORATION_PART.TRIM]: null
-        };
-        this._savedMaterialsForNormals = {
-            [WINDOW_DECORATION_PART.SILL]: null,
-            [WINDOW_DECORATION_PART.HEADER]: null,
-            [WINDOW_DECORATION_PART.TRIM]: null
-        };
+        this._meshes = {};
+        this._materials = {};
+        this._savedMaterialsForNormals = {};
+        for (const partId of WINDOW_DECORATION_PART_IDS) {
+            this._geometryKeys[partId] = '';
+            this._materialKeys[partId] = '';
+            this._meshes[partId] = null;
+            this._materials[partId] = null;
+            this._savedMaterialsForNormals[partId] = null;
+        }
     }
 
     dispose() {

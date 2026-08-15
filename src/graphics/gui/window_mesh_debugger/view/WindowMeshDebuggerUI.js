@@ -10,10 +10,12 @@ import {
     getWindowDecorationTypeOptions,
     getWindowDecorationTypeMetadata,
     WINDOW_DECORATION_PART,
+    WINDOW_DECORATION_PART_IDS,
     WINDOW_DECORATION_STYLE,
     WINDOW_DECORATION_WIDTH_MODE,
     WINDOW_DECORATION_MATERIAL_MODE,
     WINDOW_DECORATION_DEPTH_OPTIONS_METERS,
+    WINDOW_DECORATION_JAMBS_RUN_MODE,
     WINDOW_SHADE_COVERAGE,
     WINDOW_SHADE_DIRECTION,
     detectWindowGlassPresetId,
@@ -1022,7 +1024,7 @@ export class WindowMeshDebuggerUI {
             wallMaterialId: String(this._state.wallMaterialId ?? '')
         });
         const next = { ...disabled };
-        for (const partId of [WINDOW_DECORATION_PART.SILL, WINDOW_DECORATION_PART.HEADER, WINDOW_DECORATION_PART.TRIM]) {
+        for (const partId of WINDOW_DECORATION_PART_IDS) {
             const part = next?.[partId];
             if (!part || typeof part !== 'object') continue;
             next[partId] = { ...part, enabled: false };
@@ -3108,6 +3110,39 @@ export class WindowMeshDebuggerUI {
             });
             section.appendChild(materialRow.row);
 
+            let earsRow = null;
+            if (partId === WINDOW_DECORATION_PART.HEADER) {
+                earsRow = makeChoiceRow({
+                    label: 'Header Ears',
+                    value: String(Number(part.earsMeters) || 0),
+                    options: [
+                        { id: '0', label: 'None' },
+                        { id: '0.05', label: '0.05' },
+                        { id: '0.1', label: '0.10' },
+                        { id: '0.15', label: '0.15' }
+                    ],
+                    onChange: (earsId) => {
+                        const parsed = Number(earsId);
+                        updatePart(partId, (next) => ({ ...next, earsMeters: Number.isFinite(parsed) ? parsed : 0 }));
+                    }
+                });
+                section.appendChild(earsRow.row);
+            }
+
+            let runModeRow = null;
+            if (partId === WINDOW_DECORATION_PART.JAMBS) {
+                runModeRow = makeChoiceRow({
+                    label: 'Jambs Run',
+                    value: String(part.runMode ?? WINDOW_DECORATION_JAMBS_RUN_MODE.SILL_TO_HEADER),
+                    options: [
+                        { id: WINDOW_DECORATION_JAMBS_RUN_MODE.SILL_TO_HEADER, label: 'Sill to header' },
+                        { id: WINDOW_DECORATION_JAMBS_RUN_MODE.FULL_BAY, label: 'Full bay' }
+                    ],
+                    onChange: (runMode) => updatePart(partId, (next) => ({ ...next, runMode }))
+                });
+                section.appendChild(runModeRow.row);
+            }
+
             const syncPartControls = (partState) => {
                 const next = partState && typeof partState === 'object' ? partState : {};
                 const typeValue = String(next.type ?? fallbackTypeId);
@@ -3119,6 +3154,8 @@ export class WindowMeshDebuggerUI {
                 const depthValue = Number.isFinite(nextDepth) ? String(nextDepth) : String(defaultDepth);
                 depthRow.setValue(depthValue);
                 materialRow.setValue(String(next.material?.mode ?? WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL));
+                earsRow?.setValue?.(String(Number(next.earsMeters) || 0));
+                runModeRow?.setValue?.(String(next.runMode ?? WINDOW_DECORATION_JAMBS_RUN_MODE.SILL_TO_HEADER));
             };
 
             syncPartControls(part);
@@ -3126,6 +3163,7 @@ export class WindowMeshDebuggerUI {
 
         addPartControls({ title: 'Sill', partId: WINDOW_DECORATION_PART.SILL });
         addPartControls({ title: 'Header', partId: WINDOW_DECORATION_PART.HEADER });
+        addPartControls({ title: 'Jambs', partId: WINDOW_DECORATION_PART.JAMBS });
         addPartControls({ title: 'Trim', partId: WINDOW_DECORATION_PART.TRIM });
 
         section.appendChild(makeEl(
