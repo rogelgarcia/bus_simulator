@@ -320,11 +320,11 @@ which adds churn a tree-specific map would have to handle.
 
 Did instead: **per-cascade shadow-map sizes**, spending texels where detail is
 actually visible. Multipliers on the preset base size, 4 cascades:
-`[1, 1, 2, 1]` -> 4096 / 4096 / 8192 / 4096.
+`[2, 1, 2, 1]` -> 8192 / 4096 / 8192 / 4096.
 
 | band | before | after |
 | --- | --- | --- |
-| 0-45 m | 0.024 | 0.024 |
+| 0-45 m | 0.024 | **0.012** |
 | 45-90 m | 0.048 | 0.048 |
 | 90-190 m | 0.102 | **0.051** |
 | 190-340 m | 0.185 | 0.185 |
@@ -337,10 +337,11 @@ surface whose texels are always under scrutiny, and the degradation was
 reported immediately from live play. Restored to full size; the thin
 traffic-light pole shadow is a good regression probe (it goes blobby first).
 
-Measured cost is unchanged by any of this — 37-38 ms/frame at 4096 near vs
-37-42 ms at 2048, overlapping ranges, with draw calls identical at 16,682 —
-because the shadow passes are draw-call bound, not fill bound. VRAM is the only
-real price: 256 -> 448 MiB.
+Measured cost is unchanged by any of this — 36.7-38 ms/frame across every
+ladder tried (2048, 4096 and 8192 near cascade), draw calls identical at
+16,682 — because the shadow passes are draw-call bound, not fill bound. VRAM
+is the only real price: 256 -> 640 MiB. Dial back with `?shadowCascades=3`
+or `2` if that is too much on a given card.
 
 Benchmark note: an earlier reading of this same comparison showed 57-64 ms and
 an inverted result (fewer texels measuring *slower*). Cause was the user's game
@@ -379,16 +380,28 @@ texel count**, and the cause was two things in three 0.183.2:
    cm penumbra, which at bus level is 2-3 screen pixels — i.e. a hard edge that
    shows its texel staircase on big flat surfaces.
 
-Fixes: every preset now names `'pcf'` directly (behaviour-identical, but the
-deprecation warning is gone — verified absent after, present before), and the
-radii are raised — cascaded 1.5 -> 4, high 1.25 -> 2.5, ultra 1 -> 3, medium
-1.5 -> 2. Because radius is in texels, the world-space penumbra scales with
-each cascade's texel size automatically, so one value stays sane across all
-four cascades. Costs nothing: the tap count is fixed at 5 regardless of radius.
+Fix kept: every preset now names `'pcf'` directly — behaviour-identical, but
+the deprecation warning is gone (verified absent after, present before).
+
+**Fix reverted — do not widen `radius` to hide stepping.** Radii were raised
+(cascaded 1.5 -> 4) and that read as *worse*: a blurred edge under a midday sun
+looks overcast. The physics settles it — the sun subtends ~0.53 deg, so an
+honest penumbra is ~0.0093 x caster-to-receiver distance: ~3 cm under a bus
+roof 3.2 m up, near zero at contact points. On the near cascade that is
+~1.25-1.5 texels, i.e. the original values were already right. All radii are
+back to where they started.
+
+**The cure for a stepped edge is resolution.** With radius held at 1.5, the
+near cascade went 4096 -> 8192 (0.024 -> 0.012 m/texel), halving the staircase
+while keeping the shadow hard. Frame cost identical (36.7 vs 36.8 ms).
+
+Note the ladder now steps 4x in density at the 45 m boundary (0.012 -> 0.048),
+the largest jump in the set; `CSM_FADE` blends it and it has not been reported,
+but that is the first place to look if a transition becomes visible again.
 
 Also considered and rejected: a bespoke high-resolution mask/render target just
-for the bus shadow. Feasible, but it would have solved the wrong problem — the
-edge was never resolution-starved, and `radius` fixed it with a preset value.
+for the bus shadow. Feasible, but unnecessary — the same sharpening came from
+one map-size multiplier, with no custom shader to maintain.
 
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line

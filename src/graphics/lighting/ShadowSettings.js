@@ -22,19 +22,24 @@ export const SHADOW_DEFAULTS = Object.freeze({
 //
 // `radius` is the PCF sampling disk in TEXELS (5-tap Vogel disk), so its
 // world-space penumbra scales with each cascade's texel size automatically.
-// Values near 1 leave a ~3 cm penumbra on the near cascade, which reads as a
-// hard stair-stepped edge on large flat surfaces at bus level.
+//
+// Keep it small. The sun subtends ~0.53 deg, so a physically honest penumbra
+// is ~0.0093 x the caster-to-receiver distance: ~3 cm under a bus roof 3.2 m
+// up, and near zero at contact points. On the near cascade (0.024 m/texel)
+// that is ~1.25-1.5 texels. Larger values were tried to hide edge stepping and
+// read as wrong -- a midday sun makes hard shadows, and a blurred edge looks
+// like an overcast sky. Sharpen edges with resolution, not with radius.
 export const SHADOW_QUALITY_PRESETS = Object.freeze({
     off: Object.freeze({ enabled: false, shadowMapType: 'pcf', mapSize: 0, radius: 1, bias: 0, normalBias: 0, twoSidedCasting: false }),
     low: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 1024, radius: 2, bias: -0.0001, normalBias: 0.01, twoSidedCasting: false }),
-    medium: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 2048, radius: 2, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true }),
-    high: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 2.5, bias: -0.0002, normalBias: 0.03, twoSidedCasting: true }),
-    ultra: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 3, bias: -0.0002, normalBias: 0.035, twoSidedCasting: true }),
+    medium: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 2048, radius: 1.5, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true }),
+    high: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 1.25, bias: -0.0002, normalBias: 0.03, twoSidedCasting: true }),
+    ultra: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 1, bias: -0.0002, normalBias: 0.035, twoSidedCasting: true }),
     // 4 cascades at 4096: a shadow-map box is ~2.2x its split distance, so one
     // wide near cascade cannot be both sharp and long-range. Splitting the near
     // range instead keeps everything inside ~90 m at or below the single fitted
     // map's 0.054 m/texel while still reaching the skyline.
-    cascaded: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 4, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true, cascades: 4 })
+    cascaded: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 1.5, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true, cascades: 4 })
 });
 
 function sanitizeQuality(value) {
