@@ -403,6 +403,33 @@ Also considered and rejected: a bespoke high-resolution mask/render target just
 for the bus shadow. Feasible, but unnecessary — the same sharpening came from
 one map-size multiplier, with no custom shader to maintain.
 
+## Final benchmark, all modes back-to-back (2026-08-15)
+
+RTX 3060, 1280x720, burst-rendered with `gl.finish()`, warm-up discarded, best
+of two 30-frame rounds, fresh page per mode, in one session. `high` measured
+first and last as a contamination check: 11.17 ms both times (0.0% drift), so
+the run is self-consistent — see the benchmark note above for why that check
+matters.
+
+| mode | bus level | raised | draw calls (bus) | VRAM | m/texel |
+| --- | --- | --- | --- | --- | --- |
+| off | 7.75 ms | 6.08 ms | 1,549 | 0 | — |
+| low | 11.26 ms | 9.31 ms | 4,033 | 4 MiB | 0.215 |
+| medium | 11.75 ms | 9.18 ms | 4,037 | 16 MiB | 0.107 |
+| high | 11.17-11.71 ms | 9.09-9.36 ms | 4,033 | 64 MiB | 0.054 |
+| ultra | 11.58 ms | 9.24 ms | 3,028 | 64 MiB | 0.054 |
+| cascaded x2 | 19.65 ms | 17.52 ms | 6,907 | 320 MiB | 0.030 / 0.185 |
+| cascaded x3 | 20.65 ms | 19.21 ms | 8,098 | 576 MiB | 0.015 / 0.040 / 0.185 |
+| cascaded x4 | 24.23 ms | 21.39 ms | 9,862 | 832 MiB | 0.012 / 0.024 / 0.051 / 0.185 |
+
+Isolated shadow cost (mode minus `off`) at bus level: every single-map preset
+lands at 3.4-4.0 ms regardless of resolution — 1024 and 4096 cost the same,
+confirming the pass is **draw-call bound, not fill bound**. Cascaded costs
+11.9 / 12.9 / 16.5 ms for 2 / 3 / 4 cascades, i.e. roughly one extra full
+caster pass per cascade. Resolution is therefore nearly free and cascade
+*count* is the price: x4 is ~4x the shadow cost of `high` and ~2.1x total
+frame time, buying 4.4x the near texel density plus coverage to 340 m.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:
