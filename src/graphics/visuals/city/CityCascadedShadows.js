@@ -56,10 +56,16 @@ const SPLITS_BY_CASCADES = Object.freeze({
 //
 // Multipliers must stay powers of two: the texel-snapping grid below relies on
 // every cascade's texel size being a whole multiple of the smallest one.
+// Neighbouring cascades must also stay CLOSE to each other, not just be dense
+// individually: a 4x density step at a split is visible as a line across the
+// ground where detail collapses (reported at the 45 m boundary once the near
+// cascade alone was doubled). Keeping every in-view cascade at 2x holds each
+// step to ~2x, which the fade blends invisibly. Only the last cascade, whose
+// band starts at 190 m, stays at base size.
 const MAP_SIZE_SCALE_BY_CASCADES = Object.freeze({
-    2: Object.freeze([2, 2]),
-    3: Object.freeze([2, 1, 2]),
-    4: Object.freeze([2, 1, 2, 1])
+    2: Object.freeze([2, 1]),
+    3: Object.freeze([2, 2, 1]),
+    4: Object.freeze([2, 2, 2, 1])
 });
 
 const MAX_CASCADE_MAP_SIZE = 8192;
