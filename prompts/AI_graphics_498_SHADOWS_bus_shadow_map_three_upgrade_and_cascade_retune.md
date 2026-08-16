@@ -84,13 +84,23 @@ AO was already switched from `half_rate` to `every_frame` in
 
 ## Phase 3 — re-tune the cascade tier VALUES
 
-**The `type` + `quality` settings model is `AI_graphics_499`, not this
+**The `type` + `quality` settings model is `AI_DONE_499` (landed), not this
 document.** It is independent of the bus map and should land first. This phase
 only re-tunes the numbers behind its tiers, because once the bus is served by
 its own map the near cascade no longer has to be sharp — which changes which
 layout wins.
 
-Cascade candidates, all measured this session (cost is over `off` = 8.45 ms):
+Cascade candidates, all measured this session (cost is over `off` = 8.45 ms).
+
+> **Re-measure every absolute number below before acting on it.** The sweep that
+> produced this table set `city._shadowCuller = null` immediately after
+> `_deactivateCascadedShadows()` had restored every `castShadow` flag, so it
+> measured cascades with visible-region caster culling switched off — a
+> configuration the game never ships. Re-measuring the three shipped tiers
+> through the real settings path put them 1.7-3.0 ms lower
+> (`tests/benchmarks/ai499_type_quality_2026-08-15.json`). The *ranking* of
+> these rows against each other should survive, since they all carry the same
+> error; their absolute costs do not.
 
 | id | layout | maps | vs off | near | VRAM |
 | --- | --- | --- | --- | --- | --- |

@@ -1,3 +1,5 @@
+**DONE** — implemented and measured 2026-08-15. See the summary at the bottom.
+
 #Problem
 
 Shadow settings are one flat list — `off / low / medium / high / ultra /
@@ -31,11 +33,16 @@ One fitted map, one geometry pass. Box is 2x the radius, so density is
 `2 * radius / mapSize`. The ladder holds density roughly constant and spends
 each step on **reach**:
 
-| quality | map | radius | box | m/texel | VRAM | frame |
+| quality | map | radius | box | m/texel | VRAM | vs off |
 | --- | --- | --- | --- | --- | --- | --- |
-| low | 4096 | 110 m | 220 m | 0.054 | 64 MiB | 10.05 ms (measured) |
-| med | 8192 | 200 m | 400 m | 0.049 | 256 MiB | ~12.5 ms (estimated) |
-| high | 16384 | 340 m | 680 m | 0.042 | 1024 MiB | 13.24 ms (measured) |
+| low | 4096 | 110 m | 220 m | 0.054 | 64 MiB | +2.91 ms |
+| med | 8192 | 200 m | 400 m | 0.049 | 256 MiB | +5.22 ms |
+| high | 16384 | 340 m | 680 m | 0.042 | 1024 MiB | +5.93 ms |
+
+All cells re-measured against `off` = 10.89 ms after implementation
+(`tests/benchmarks/ai499_type_quality_2026-08-15.json`); the estimate for `med`
+is gone. Note how little the top step buys in frame time (+0.71 ms) for 4x the
+VRAM — `high` is a memory decision far more than a speed one.
 
 **Known consequence: "short and very sharp" is no longer expressible.** Today's
 shipped `high` is 8192 at 110 m = 0.027 m/texel, sharper than any cell above,
@@ -54,23 +61,35 @@ N maps, one geometry pass each. A cascade box is **~2.2x its split distance**
 (it bounds a slanted frustum slice, unlike the single map's camera-centred
 box). Costs measured this session against `off` = 8.45 ms:
 
-| quality | cascades | splits | boxes | maps | m/texel | VRAM | frame |
+| quality | cascades | splits | boxes | maps | m/texel | VRAM | vs off |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| low | 2 | 60 / 340 | 132 / 757 | 8192 / 4096 | 0.016 / 0.185 | 320 MiB | +6.33 ms |
-| med | 3 | 45 / 150 / 340 | 99 / 331 / 757 | 8192 / 8192 / 4096 | 0.012 / 0.040 / 0.185 | 576 MiB | +8.27 ms |
-| high | 4 | 45 / 90 / 190 / 340 | 99 / 198 / 420 / 757 | 8192 / 8192 / 8192 / 4096 | 0.012 / 0.024 / 0.051 / 0.185 | 832 MiB | +10.23 ms |
+| low | 2 | 60 / 340 | 132 / 757 | 8192 / 4096 | 0.016 / 0.185 | 320 MiB | +4.63 ms |
+| med | 3 | 45 / 150 / 340 | 99 / 331 / 757 | 8192 / 8192 / 4096 | 0.012 / 0.040 / 0.185 | 576 MiB | +5.56 ms |
+| high | 4 | 45 / 90 / 190 / 340 | 99 / 198 / 420 / 757 | 8192 / 8192 / 8192 / 4096 | 0.012 / 0.024 / 0.051 / 0.185 | 832 MiB | +7.24 ms |
+
+**The +6.33 / +8.27 / +10.23 figures this table originally carried were
+wrong.** The sweep that produced them set `city._shadowCuller = null`
+immediately after `_deactivateCascadedShadows()` had restored every
+`castShadow` flag, so it measured cascades with visible-region caster culling
+switched off — a configuration the game never ships. Cascade cost was
+overstated by 1.7-3.0 ms, which mattered: it made cascade look strictly more
+expensive than single at matching tiers, and it is not. **`cascade/low` costs
+less than `single/med` (+4.63 vs +5.22) while resolving 3.3x finer near the
+bus**; it only gives that up past 60 m, where its second lane is coarse.
 
 `high` is today's shipping layout, already visually validated. `med` keeps the
 same near sharpness and gives up only mid-field detail. `low` has a **11.5x
 density step** at its single 60 m boundary — verify that seam in motion before
 shipping it; the 4x step at 45 m was reported as visible within minutes.
 
-**Candidate upgrade for `high`, pending a visual check:** 4 cascades at
-20/60/160/340 measured **+8.78 ms with 0.0055 near** — cheaper *and* 2.2x
-sharper than the row above, same VRAM. It moves the first seam from 45 m to
-20 m, where it occupies more screen space and steps 2.9x rather than 2.0x. If
-that seam does not read in motion, adopt it for `high`; the measurement is
-solid, only the appearance is unverified.
+**Candidate upgrade for `high`, still open:** 4 cascades at 20/60/160/340
+measured +8.78 ms with 0.0055 m/texel near — cheaper *and* 2.2x sharper than
+the shipped row. It moves the first seam from 45 m to 20 m, where it occupies
+more screen space and steps 2.9x rather than 2.0x. Two things must happen
+before adopting it: the seam has to be checked in motion, and the number has to
+be **re-measured**, because it came from the same culler-disabled sweep as the
+figures corrected above. Its *relative* standing against the other sweep rows
+is still meaningful; its absolute cost is not.
 
 ## Options UI
 
@@ -171,6 +190,39 @@ Each click emits once, with both fields set.
   so shadows stretch across the boundary.
 - Confirm VRAM per cell matches the table; `single/high` at 1 GiB is the one
   worth stating in the UI note.
+
+## Outcome (2026-08-15)
+
+- `ShadowSettings` rebuilt around `type` + `quality`; presets keyed
+  `<type>_<quality>` so `City` consumes them unchanged.
+- Every legacy flat id still resolves (`off`, `low`, `medium`, `high`, `ultra`,
+  `cascaded`, `cascade_ultra`, `csm`, `0`-`5`); legacy records additionally get
+  their stale `cascades` / `splitScale` reset, since neither was ever a
+  deliberate choice and a stale count would hand a 2-cascade tier a 4-cascade
+  split array.
+- Single tiers now carry `radiusMeters`, so reach comes from the quality tier
+  rather than a City constructor option.
+- `makeExclusiveChoiceRows` added to the options control layer: N labelled rows
+  over one shared selection, with "no button active in this row" as a real
+  state. `makeChoiceRow` was left alone.
+- Shadows panel is now Off / Single / Cascade with one active button across all
+  three rows; the Shadow distance row is gone.
+- `cascades` / `splitScale` retired as player-facing; still available as
+  `?shadowCascades=` / `?shadowSplitScale=`, plus new `?shadowType=` and
+  `?shadowTier=`.
+- Fixed alongside: the Lab scene's shadow toggle wrote `quality: 'off'`, which
+  under the new model sanitizes back to a tier and leaves shadows on.
+- 7 unit tests added (`shadow_settings_type_quality.test.js`); node unit suite
+  282 passing, same 4 pre-existing failures as HEAD.
+- Verified by driving the real options UI: all 7 cells, exactly one active
+  button after each click, engine state following, one-click cross-row
+  transitions, Off preserving the tier, save/reopen round-trip, and a planted
+  legacy `cascade_ultra` record migrating on load. 38 mode switches across
+  benchmark and capture runs produced zero page errors.
+
+**Still open:** the seam check in motion at `cascade/low` (11.5x density step at
+60 m) — static captures cannot settle it. The candidate `high` layout needs
+re-measuring before adoption.
 
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line

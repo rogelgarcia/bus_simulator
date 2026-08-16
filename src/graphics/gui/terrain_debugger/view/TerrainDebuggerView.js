@@ -2812,7 +2812,7 @@ export class TerrainDebuggerView {
         if ('useLegacyLights' in renderer) renderer.useLegacyLights = true;
 
         const shadowSettings = getResolvedShadowSettings({ includeUrlOverrides: true });
-        const preset = getShadowQualityPreset(shadowSettings?.quality);
+        const preset = getShadowQualityPreset(shadowSettings);
         const shadowsEnabled = !!preset.enabled;
         const shadowMapType = preset.shadowMapType === 'pcf' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 
@@ -5024,7 +5024,7 @@ export class TerrainDebuggerView {
             }
 
             const shadowSettings = getResolvedShadowSettings({ includeUrlOverrides: true });
-            const shadowPreset = getShadowQualityPreset(shadowSettings?.quality);
+            const shadowPreset = getShadowQualityPreset(shadowSettings);
             const rendererShadowsEnabled = shadowsEnabled && !!shadowPreset.enabled;
             const shadowMapType = shadowPreset.shadowMapType === 'pcf' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
             if (force || renderer.shadowMap.enabled !== rendererShadowsEnabled) {

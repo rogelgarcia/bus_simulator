@@ -470,7 +470,7 @@ export class City {
     applyShadowSettings(engine) {
         const renderer = engine?.renderer ?? null;
         const settings = engine?.shadowSettings ?? getResolvedShadowSettings();
-        const preset = getShadowQualityPreset(settings?.quality);
+        const preset = getShadowQualityPreset(settings);
         const enabled = !!preset.enabled;
         const wantsCsm = enabled
             && Number.isFinite(preset.cascades)
@@ -485,6 +485,13 @@ export class City {
             this._activateCascadedShadows(engine, preset, settings);
         } else {
             this._deactivateCascadedShadows();
+        }
+
+        // Reach is part of the quality tier, so the fitted map's half-extent
+        // comes from the preset rather than the constructor option (which now
+        // only supplies the fallback for tools that build a City directly).
+        if (this._sunShadowFocus && Number.isFinite(preset.radiusMeters)) {
+            this._sunShadowFocus.radiusMeters = Math.max(20, preset.radiusMeters);
         }
 
         if (this.sun) {

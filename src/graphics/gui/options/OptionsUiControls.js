@@ -112,6 +112,74 @@ function makeChoiceRow({ label, value = '', options = [], onChange }) {
     };
 }
 
+/**
+ * Several labelled rows of buttons sharing ONE active selection.
+ *
+ * makeChoiceRow keeps its selection private and guarantees exactly one active
+ * button per row, so stacking rows to build a matrix lights one button in each.
+ * This builds N rows over a single active id: picking any button clears every
+ * other row, so a two-axis choice (row = mode, button = tier) stays one click
+ * from any cell to any other.
+ *
+ * Unlike makeChoiceRow this never force-activates a first button, and
+ * `setValue` with an unknown id deliberately clears the whole block rather than
+ * no-opping -- "nothing selected in this row" is a real state here, and it is
+ * what every row shows when the selection lives in a different one.
+ *
+ * `rows`: [{ label, options: [{ id, label }] }]. Ids must be unique across the
+ * whole block; duplicates after the first are dropped.
+ */
+function makeExclusiveChoiceRows({ value = '', rows = [], onChange }) {
+    const buttons = new Map();
+    const rowEls = [];
+    let current = '';
+
+    const setValue = (id) => {
+        const next = String(id ?? '');
+        current = buttons.has(next) ? next : '';
+        for (const [key, btn] of buttons.entries()) btn.classList.toggle('is-active', key === current);
+    };
+
+    for (const spec of Array.isArray(rows) ? rows : []) {
+        const row = makeEl('div', 'options-row options-row-wide');
+        const left = makeEl('div', 'options-row-label', String(spec?.label ?? ''));
+        const right = makeEl('div', 'options-row-control options-row-control-wide');
+        const group = makeEl('div', 'options-choice-group');
+
+        for (const opt of Array.isArray(spec?.options) ? spec.options : []) {
+            const id = String(opt?.id ?? '');
+            if (!id || buttons.has(id)) continue;
+            const btn = makeEl('button', 'options-choice-btn', String(opt?.label ?? id));
+            btn.type = 'button';
+            btn.addEventListener('click', () => {
+                setValue(id);
+                onChange?.(id);
+            });
+            group.appendChild(btn);
+            buttons.set(id, btn);
+        }
+
+        right.appendChild(group);
+        row.appendChild(left);
+        row.appendChild(right);
+        rowEls.push(row);
+    }
+
+    setValue(value);
+
+    return {
+        rows: rowEls,
+        buttons: Array.from(buttons.values()),
+        getButton: (id) => buttons.get(String(id ?? '')) ?? null,
+        getValue: () => current,
+        setValue,
+        setDisabled: (disabled) => {
+            const off = !!disabled;
+            for (const btn of buttons.values()) btn.disabled = off;
+        }
+    };
+}
+
 function makeNumberSliderRow({ label, value = 0, min = 0, max = 1, step = 0.01, digits = 2, onChange }) {
     const row = makeEl('div', 'options-row options-row-wide');
     const left = makeEl('div', 'options-row-label', label);
@@ -217,6 +285,7 @@ export {
     makeToggleRow,
     makeSelectRow,
     makeChoiceRow,
+    makeExclusiveChoiceRows,
     makeNumberSliderRow,
     makeColorRow,
     makeValueRow

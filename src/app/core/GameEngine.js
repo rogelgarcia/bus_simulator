@@ -636,7 +636,7 @@ export class GameEngine {
         const next = sanitizeShadowSettings(settings);
         this._shadows.settings = next;
 
-        const preset = getShadowQualityPreset(next.quality);
+        const preset = getShadowQualityPreset(next);
         const enabled = !!preset.enabled;
         const type = preset.shadowMapType === 'pcf' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 

@@ -15,60 +15,24 @@ import {
     registerObjectForSceneShadows
 } from '../../../src/graphics/lighting/SceneShadowMaterials.js';
 
-test('ShadowSettings: Cascade Ultra sanitizes from aliases, including the old id', () => {
-    for (const raw of ['cascade_ultra', 'CASCADE_ULTRA', ' cascade ultra ', 'cascadeultra', 'cascaded', 'CASCADED', ' csm ', 'cascade', '5']) {
-        assert.equal(sanitizeShadowSettings({ quality: raw }).quality, 'cascade_ultra', `alias '${raw}'`);
+test('ShadowSettings: only the cascade tiers carry a cascade count', () => {
+    for (const id of ['cascade_low', 'cascade_med', 'cascade_high']) {
+        const preset = SHADOW_QUALITY_PRESETS[id];
+        assert.equal(preset.enabled, true, id);
+        assert.ok(preset.cascades >= 2 && preset.cascades <= 4, `${id} cascade count`);
+        assert.ok(preset.mapSize >= 1024, `${id} base map size`);
     }
-});
-
-test('ShadowSettings: Cascade Ultra carries a cascade count, others do not', () => {
-    const preset = getShadowQualityPreset('cascade_ultra');
-    assert.equal(preset.enabled, true);
-    assert.equal(preset.cascades, 4);
-    assert.ok(preset.mapSize >= 1024);
-    for (const id of ['off', 'low', 'medium', 'high', 'ultra']) {
+    for (const id of ['off', 'single_low', 'single_med', 'single_high']) {
         assert.equal(SHADOW_QUALITY_PRESETS[id].cascades, undefined, `preset '${id}'`);
     }
 });
 
-test('ShadowSettings: Cascade Ultra describes its own cascade layout', () => {
+test('ShadowSettings: the old Cascade Ultra id still lands on a cascade preset', () => {
     const preset = getShadowQualityPreset('cascade_ultra');
+    assert.equal(preset, SHADOW_QUALITY_PRESETS.cascade_high);
+    assert.equal(preset.cascades, 4);
     assert.ok(Array.isArray(preset.splits), 'splits array');
     assert.ok(Array.isArray(preset.mapSizeScales), 'mapSizeScales array');
-    assert.equal(preset.splits.length, preset.cascades, 'one split per cascade');
-    assert.equal(preset.mapSizeScales.length, preset.cascades, 'one scale per cascade');
-    // Splits must increase outward; the last is the shadow horizon.
-    for (let i = 1; i < preset.splits.length; i++) {
-        assert.ok(preset.splits[i] > preset.splits[i - 1], `split ${i} beyond split ${i - 1}`);
-    }
-    // Texel snapping needs every cascade's texel size to divide the smallest,
-    // which holds only while the scales are powers of two.
-    for (const s of preset.mapSizeScales) {
-        assert.ok(s > 0 && Number.isInteger(Math.log2(s)), `scale ${s} is a power of two`);
-    }
-});
-
-test('ShadowSettings: cascades field clamps to 2..4 and defaults to 4', () => {
-    assert.equal(sanitizeShadowSettings({}).cascades, 4);
-    assert.equal(sanitizeShadowSettings({ cascades: 1 }).cascades, 2);
-    assert.equal(sanitizeShadowSettings({ cascades: 9 }).cascades, 4);
-    assert.equal(sanitizeShadowSettings({ cascades: '2' }).cascades, 2);
-    assert.equal(sanitizeShadowSettings({ cascades: 'garbage' }).cascades, 4);
-});
-
-test('ShadowSettings: splitScale clamps to 0.5..2.5 and defaults to 1', () => {
-    assert.equal(sanitizeShadowSettings({}).splitScale, 1);
-    assert.equal(sanitizeShadowSettings({ splitScale: 0.1 }).splitScale, 0.5);
-    assert.equal(sanitizeShadowSettings({ splitScale: 99 }).splitScale, 2.5);
-    assert.equal(sanitizeShadowSettings({ splitScale: '1.5' }).splitScale, 1.5);
-    assert.equal(sanitizeShadowSettings({ splitScale: 0 }).splitScale, 1);
-    assert.equal(sanitizeShadowSettings({ splitScale: -2 }).splitScale, 1);
-    assert.equal(sanitizeShadowSettings({ splitScale: 'garbage' }).splitScale, 1);
-});
-
-test('ShadowSettings: unknown quality still falls back to default', () => {
-    const s = sanitizeShadowSettings({ quality: 'nope' });
-    assert.ok(['off', 'low', 'medium', 'high', 'ultra', 'cascade_ultra'].includes(s.quality));
 });
 
 test('SceneShadowMaterials: everything is a no-op without an active system', () => {

@@ -1203,7 +1203,11 @@ export class OptionsUI {
             // moment the options UI emitted a change.
             shadows: {
                 ...(shadows && typeof shadows === 'object' ? JSON.parse(JSON.stringify(shadows)) : {}),
-                quality: String(shadows?.quality ?? 'medium')
+                // `type` must ride along: without it sanitisation reads the
+                // record as pre-split and re-derives the type from `quality`
+                // alone, which pins every tier to the single-map technique.
+                type: String(shadows?.type ?? 'single'),
+                quality: String(shadows?.quality ?? 'high')
             },
             antiAliasing: {
                 mode: String(antiAliasing?.mode ?? 'off'),

@@ -1,4 +1,4 @@
-import { makeChoiceRow, makeEl, makeNumberSliderRow, makeSelectRow, makeToggleRow, makeValueRow } from '../OptionsUiControls.js';
+import { makeChoiceRow, makeEl, makeExclusiveChoiceRows, makeNumberSliderRow, makeSelectRow, makeToggleRow, makeValueRow } from '../OptionsUiControls.js';
 
 export function renderGraphicsTab() {
     this._ensureDraftLighting();
@@ -456,50 +456,37 @@ export function renderGraphicsTab() {
     const sectionShadows = makeEl('div', 'options-section');
     sectionShadows.appendChild(makeEl('div', 'options-section-title', 'Shadows'));
 
-    const shadowQuality = makeChoiceRow({
-        label: 'Shadow quality',
-        value: String(shadows?.quality ?? 'medium'),
-        options: [
-            { id: 'off', label: 'Off' },
-            { id: 'low', label: 'Low' },
-            { id: 'medium', label: 'Medium' },
-            { id: 'high', label: 'High' },
-            { id: 'ultra', label: 'Ultra' },
-            { id: 'cascade_ultra', label: 'Cascade Ultra' }
-        ],
-        onChange: (v) => {
-            shadows.quality = v;
-            emit();
-        }
-    });
-
-    // splitScale scales every cascade split and the shadow horizon together,
-    // so a shorter distance is also a sharper one: the same texels cover less
-    // ground. Cost barely moves (~1.3 ms across this whole range), which makes
-    // this a look preference rather than a performance dial.
-    const SHADOW_DISTANCE_STEPS = [
-        { id: 'max', label: 'Max', scale: 1 },
-        { id: 'long', label: 'Long', scale: 0.85 },
-        { id: 'medium', label: 'Medium', scale: 0.75 },
-        { id: 'short', label: 'Short', scale: 0.6 }
+    // Type (row) x quality (button) as ONE exclusive block, so any cell is a
+    // single click from any other -- cascade/med to single/low is one press.
+    // Quality governs resolution and reach together, which is why there is no
+    // separate distance row: reach and density trade against each other, and a
+    // 16384 map at 110 m measured SLOWER than the same map at 340 m, so a
+    // distance dial would have made things worse as you turned it down.
+    const SHADOW_TIERS = [
+        { id: 'low', label: 'Low' },
+        { id: 'med', label: 'Med' },
+        { id: 'high', label: 'High' }
     ];
-    const nearestDistanceId = (scale) => {
-        const s = Number.isFinite(scale) ? scale : 1;
-        let best = SHADOW_DISTANCE_STEPS[0];
-        for (const step of SHADOW_DISTANCE_STEPS) {
-            if (Math.abs(step.scale - s) < Math.abs(best.scale - s)) best = step;
-        }
-        return best.id;
-    };
+    const tierOptions = (type) => SHADOW_TIERS.map(({ id, label }) => ({ id: `${type}:${id}`, label }));
+    const shadowCellId = (s) => (String(s?.type ?? 'single') === 'off' ? 'off' : `${s?.type ?? 'single'}:${s?.quality ?? 'high'}`);
 
-    const shadowDistance = makeChoiceRow({
-        label: 'Shadow distance',
-        value: nearestDistanceId(shadows?.splitScale),
-        options: SHADOW_DISTANCE_STEPS.map(({ id, label }) => ({ id, label })),
-        onChange: (v) => {
-            const step = SHADOW_DISTANCE_STEPS.find((s) => s.id === v);
-            if (!step) return;
-            shadows.splitScale = step.scale;
+    const shadowMode = makeExclusiveChoiceRows({
+        value: shadowCellId(shadows),
+        rows: [
+            { label: 'Shadows', options: [{ id: 'off', label: 'Off' }] },
+            { label: 'Single', options: tierOptions('single') },
+            { label: 'Cascade', options: tierOptions('cascade') }
+        ],
+        onChange: (id) => {
+            if (id === 'off') {
+                // Leave `quality` alone: turning shadows back on should return
+                // to the tier you left, not to a default.
+                shadows.type = 'off';
+            } else {
+                const [type, quality] = id.split(':');
+                shadows.type = type;
+                shadows.quality = quality;
+            }
             emit();
         }
     });
@@ -518,10 +505,9 @@ export function renderGraphicsTab() {
     });
 
     const shadowNote = makeEl('div', 'options-note');
-    shadowNote.textContent = 'Applied immediately. Higher presets increase GPU cost and VRAM usage. Cascade Ultra uses multiple camera-fitted maps: sharp shadows near the bus and coverage out to the skyline. Shadow distance only applies to Cascade Ultra: shorter reach makes the same texels cover less ground, so shadows get sharper as the horizon pulls in (Max 340 m, Short 205 m) — frame cost barely changes either way. Merged shadow casters draw each building’s shadow from one mesh instead of one per material — same shadows, fewer draw calls.';
+    shadowNote.textContent = 'Applied immediately. Single uses one camera-fitted map (reach 110 / 200 / 340 m; High allocates 1 GiB of VRAM). Cascade splits the view into 2 / 3 / 4 maps by distance: much sharper near the bus for the same reach, at a higher frame cost. Quality sets resolution and reach together, so every step down is cheaper. Merged shadow casters draw each building’s shadow from one mesh instead of one per material — same shadows, fewer draw calls.';
 
-    sectionShadows.appendChild(shadowQuality.row);
-    sectionShadows.appendChild(shadowDistance.row);
+    for (const row of shadowMode.rows) sectionShadows.appendChild(row);
     sectionShadows.appendChild(shadowMergeCasters.row);
     sectionShadows.appendChild(shadowNote);
 

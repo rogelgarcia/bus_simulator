@@ -847,7 +847,10 @@ export class LabSceneView {
 
         const shadowsEnabled = !!controls.shadowsEnabled?.checked;
         if (draft.shadows && typeof draft.shadows === 'object') {
-            draft.shadows.quality = shadowsEnabled ? 'high' : 'off';
+            // On/off is `type`, not `quality` — quality now only names a tier,
+            // so writing 'off' into it would sanitize straight back to a tier
+            // and leave the shadows on.
+            draft.shadows.type = shadowsEnabled ? 'single' : 'off';
         }
 
         if (draft.bloom && typeof draft.bloom === 'object') {
@@ -916,7 +919,7 @@ export class LabSceneView {
         const toneMappingRaw = String(draft?.lighting?.toneMapping ?? '').toLowerCase();
         const toneMapping = toneMappingRaw === 'agx' ? 'agx' : toneMappingRaw === 'neutral' ? 'neutral' : 'aces';
 
-        if (controls.shadowsEnabled) controls.shadowsEnabled.checked = String(draft?.shadows?.quality ?? 'off').toLowerCase() !== 'off';
+        if (controls.shadowsEnabled) controls.shadowsEnabled.checked = String(draft?.shadows?.type ?? 'off').toLowerCase() !== 'off';
         if (controls.bloomEnabled) controls.bloomEnabled.checked = !!draft?.bloom?.enabled;
         if (controls.sunBloomEnabled) controls.sunBloomEnabled.checked = !!draft?.sunBloom?.enabled;
         if (controls.sunFlareEnabled) controls.sunFlareEnabled.checked = !!draft?.sunFlare?.enabled;

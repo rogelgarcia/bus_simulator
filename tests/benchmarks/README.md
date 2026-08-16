@@ -14,6 +14,27 @@ to be copied here.
 | `shadow_culling_correctness_2026-08-15.json` | Culling on/off draw calls and surviving caster counts at four camera/sun combinations |
 | `shadow_modes_culling_and_merge_2026-08-15.json` | Same set again, after merged shadow casters landed — the current state |
 | `shadow_merge_correctness_2026-08-15.json` | Merge on/off draw calls at four cameras, including a rooftop-level view |
+| `ai499_type_quality_2026-08-15.json` | Every cell of the `type` x `quality` model (AI_499): off, single low/med/high, cascade low/med/high |
+
+### The type x quality ladder (AI_499, measured)
+
+Deltas against `off` = 10.89 ms, 3 of 5 passes accepted by the drift gate:
+
+| cell | vs off | draw calls | VRAM | m/texel |
+| --- | --- | --- | --- | --- |
+| single/low | +2.91 ms | 2,643 | 64 MiB | 0.054 |
+| single/med | +5.22 ms | 3,635 | 256 MiB | 0.049 |
+| single/high | +5.93 ms | 4,003 | 1024 MiB | 0.042 |
+| cascade/low | +4.63 ms | 2,899 | 320 MiB | 0.016 / 0.185 |
+| cascade/med | +5.56 ms | 3,481 | 576 MiB | 0.012 / 0.040 / 0.185 |
+| cascade/high | +7.24 ms | 3,987 | 832 MiB | 0.012 / 0.024 / 0.051 / 0.185 |
+
+**The earlier cascade figures (+6.33 / +8.27 / +10.23) were wrong** — the sweep
+script that produced them set `city._shadowCuller = null` right after
+`_deactivateCascadedShadows()` had restored every `castShadow` flag, so those
+runs measured cascades with visible-region caster culling switched off.
+Cascade cost was overstated by 1.7-3.0 ms. Anything that nulls the culler is
+measuring a configuration the game never ships.
 
 Cumulative effect on cascaded x4 at bus level, each stage measured with a
 passing contamination check:
