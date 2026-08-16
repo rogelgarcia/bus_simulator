@@ -23,17 +23,32 @@ in the real PNG afterwards. The diagonal bands are that placeholder. Note the ke
 scheme: an empty URL takes the pure-procedural branch (`proc|c:..|r:..`) that
 never loads an image at all.
 
-Therefore the shop atlas URL is almost certainly resolving to empty at runtime:
-`getWindowInteriorAtlasById(s.interior.atlasId)?.url ?? ''`. Residential/office
-windows render real photos through the identical code path, so the loader itself
-works — the difference is the SHOP atlas id lookup.
+### Also RULED OUT: atlas resolution and loading
 
-Confirm before fixing (one probe): in a built scene, log
-`getWindowInteriorAtlasById('window_interior_atlas.shop_wide_6x4_01')` and the
-resolved `url` actually handed to the texture loader, and whether the swap-in
-callback ever runs for a shop atlas. The PNGs themselves are fine: both
-`parallax_interior_atlas_residential.png` and
-`parallax_interior_atlas_wide_6x4_01.png` return HTTP 200 from the dev server.
+An in-browser probe resolved and loaded both atlases successfully:
+- `window_interior_atlas.residential_4x4` -> `.../parallax_interior_atlas_residential.png`, loads OK 1024x1024
+- `window_interior_atlas.shop_wide_6x4_01` -> `.../parallax_interior_atlas_wide_6x4_01.png`, loads OK 1536x1024, cols/rows 3x3
+
+So the id lookup, the URL, and the download all work for shop atlases. The
+placeholder is displayed even though the real texture is available, which means
+the failure is in the **swap-in or material binding**, not in resolution:
+`getOrCreateInteriorAtlasTexture` mutates `tex.image` on the cached placeholder
+after `loader.load` resolves. Suspects, in order:
+- the storefront's interior material is created from a DIFFERENT texture instance
+  (or a clone) than the cached one that gets mutated, so the swap never reaches it;
+- the material/texture is uploaded and never re-uploaded (`needsUpdate` lost, or
+  the texture is copied into an atlas/merge path that snapshots the image);
+- the geometry merger (`BuildingGeometryMerger`) dedupes storefront materials and
+  keeps a different instance than the one the loader patches.
+
+Next probe: in a built scene, compare the identity of
+`getOrCreateInteriorAtlasTexture(shopUrl)` against the actual
+`interiorMesh.material.map` on a storefront instance (`===`), and log
+`material.map.image.width` a second after load. If they differ, that is the bug.
+
+Note: `uvZoom` is NOT the cause either — dropping the shop preset from 2.4 to 1.0
+shows MORE repetitions of the same band pattern, which is procedural-placeholder
+behaviour, not a photo.
 
 RULED OUT (do not re-test): load timing. Capturing after a 12s wait shows the
 same placeholder, while upper-floor residential windows in the same frame show
