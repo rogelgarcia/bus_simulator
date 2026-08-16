@@ -72,6 +72,52 @@ sharper than the row above, same VRAM. It moves the first seam from 45 m to
 that seam does not read in motion, adopt it for `high`; the measurement is
 solid, only the appearance is unverified.
 
+## Options UI
+
+Two switches, but **one** control: seven buttons, exactly one active at a time
+across the whole block. Type is the row label, quality is the button, so every
+cell is reachable in a single click — cascade/med to single/low is one press,
+not two.
+
+```
+Shadows
+              [ Off ]
+  Single      [ Low ] [ Med ] [ High ]
+  Cascade     [ Low ] [ Med ] [ High ]
+
+  Merged shadow casters   [ On ] [ Off ]
+```
+
+`Off` sits above the two ladders on its own row and is the same kind of button
+as the rest — it lights up when selected and clears whichever ladder cell was
+active. The Single and Cascade rows line up column-for-column (the button group
+is right-aligned, `styles.css:580`, and both rows carry the same three labels),
+which is the point: the two techniques read as parallel ladders at matching
+budget, not as one flat list of six tiers.
+
+**`makeChoiceRow` cannot express this as-is** (`OptionsUiControls.js:65`). Each
+row owns a private `current` and guarantees exactly one active button *in that
+row*, so three stacked rows light three buttons. Two specific blockers:
+
+- `setActive()` returns early when the id is not in that row, so a row cannot be
+  cleared from outside — `setValue('')` is a silent no-op, not a deselect.
+- The constructor force-activates the first button whenever `current` is not
+  found, so each row highlights itself on build no matter what.
+
+Add a control that owns one active id across N labelled rows and returns them
+(a shared selection group, or `makeChoiceRow` taking an optional external
+selection object). Either shape works, but "no button active in this row" must
+be a representable state. Keep it generic — no shadow-specific logic in the
+control layer. The existing classes (`options-row options-row-wide`,
+`options-choice-group`, `options-choice-btn`, `.is-active`) are sufficient; a
+segmented variant already exists if the ladders should read as one unit.
+
+Because `type` and `quality` are separate fields, passing through `Off` must
+**preserve** the quality tier: Off then back returns to the cell you left, not
+to a default. Today's flat `quality: 'off'` loses that.
+
+Each click emits once, with both fields set.
+
 ## Tasks
 
 - Add `type` and `quality` to `ShadowSettings`, deriving the existing internals
@@ -82,9 +128,11 @@ solid, only the appearance is unverified.
   keep working: `off`->off; `low`->single/low; `medium`->single/med;
   `high`,`ultra`->single/high; `cascaded`,`cascade_ultra`,`csm`,`5`->cascade/high.
   Sanitisation already accepts these aliases; keep every one of them resolving.
-- Options UI: replace the Shadow quality row with **Type** and **Quality** rows,
-  and remove the Shadow distance row (folded into quality). Keep the **Merged
-  shadow casters** toggle — it is orthogonal and lossless.
+- Options UI: replace the Shadow quality row with the Off / Single / Cascade
+  block described above, and remove the Shadow distance row (folded into
+  quality). Keep the **Merged shadow casters** toggle — it is orthogonal and
+  lossless. Rewrite the section note: drop the distance paragraph, and state
+  that `single/high` costs 1 GiB of VRAM.
 - Retire `cascades` and `splitScale` as player-facing settings; keep them as
   dev URL overrides (`?shadowCascades=`, `?shadowSplitScale=`) so tuning and
   benchmarking still work, and so "short and sharp" stays reachable.
@@ -98,8 +146,18 @@ solid, only the appearance is unverified.
 
 - **Drive the real options UI, not just the URL or the settings API.** The UI
   previously emitted only `shadows.quality` and silently dropped every other
-  field, which made a toggle look dead while the URL path worked fine. Click
-  every Type x Quality combination and confirm the engine state follows.
+  field, which made a toggle look dead while the URL path worked fine. Click all
+  seven buttons and confirm the engine state follows.
+- After every click, assert **exactly one** `.is-active` button in the shadow
+  section — a count of two or three is the failure mode the current row control
+  produces by default, and it is easy to miss by eye when the rows are adjacent.
+- Click cascade/med then single/low and confirm it takes **one** click, changes
+  both fields, and triggers one rebuild.
+- Reopen the panel after each change and confirm the active button matches the
+  live engine state — the draft round-trip through `getDraft()` is where the
+  field-dropping bug lived (`OptionsUI.js:1200`).
+- Off must preserve the tier: single/high, Off, then click Single again returns
+  to `high`.
 - Switching type or quality rebuilds the cascade set: confirm no renderer crash
   across every transition, including cascade->single->cascade and changes of
   cascade count. Two crashes were fixed here already (uniform deletion in
