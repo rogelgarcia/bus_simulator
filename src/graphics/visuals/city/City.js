@@ -225,10 +225,19 @@ export class City {
         this.group.add(this.world.group);
         this.group.add(this.roads.group);
 
+        // Containers whose children should each cast their shadow from one
+        // merged mesh. Anything prop-shaped belongs here, not just buildings:
+        // a stop sign is 56 triangles split across 4 material groups, and the
+        // shadow pass ignores materials entirely, so those 4 draws (times every
+        // cascade it touches) collapse to 1. Measured before this: 14 traffic
+        // signs produced 73% of all shadow-pass draws.
+        this._shadowMergeRoots = [];
+
         this.trafficControls = null;
         if (trafficControlPlacements.length) {
             this.trafficControls = createTrafficControlProps({ placements: trafficControlPlacements });
             this.group.add(this.trafficControls.group);
+            this._shadowMergeRoots.push(this.trafficControls.group);
         }
 
         this.buildings = null;
@@ -387,16 +396,22 @@ export class City {
 
             this.buildings = { group: buildingsGroup, textures };
             this.group.add(buildingsGroup);
-
-            // One shadow-casting mesh per building, built once and switched on
-            // or off by the setting. Costs a position-only copy of the
-            // geometry; saves a draw call per material split, per cascade.
-            this._shadowMerge = buildMergedShadowCasters(buildingsGroup);
-            this.shadowMergeStats = summarizeMergedShadowCasters(this._shadowMerge);
-            // Instanced facade detail is not part of the merge, so it is
-            // switched as its own set.
-            this._instancedCasters = collectInstancedShadowCasters(buildingsGroup);
+            this._shadowMergeRoots.push(buildingsGroup);
         }
+
+        // One shadow-casting mesh per building and per prop, built once and
+        // switched on or off by the setting. Costs a position-only copy of the
+        // geometry; saves a draw call per material split, per cascade.
+        this._shadowMerge = [];
+        this._instancedCasters = [];
+        for (const root of this._shadowMergeRoots) {
+            this._shadowMerge.push(...buildMergedShadowCasters(root));
+            // Instanced detail is never part of a merge (expanding its
+            // instances into real geometry would cost far more memory than the
+            // draws are worth), so it is switched as its own set.
+            this._instancedCasters.push(...collectInstancedShadowCasters(root));
+        }
+        this.shadowMergeStats = summarizeMergedShadowCasters(this._shadowMerge);
 
         this._attached = false;
         this._restore = null;
@@ -641,6 +656,30 @@ export class City {
         if (getActiveSceneShadowSystem() === this._csm) setActiveSceneShadowSystem(null);
         this._csm.dispose();
         this._csm = null;
+    }
+
+    /**
+     * Declare a container whose children should each cast their shadow from one
+     * merged mesh, for content added after construction. Idempotent.
+     *
+     * The merge is per CHILD of `root`, so pass the container (the props group),
+     * not an individual prop — each child becomes one caster.
+     *
+     * @returns {number} merged casters created.
+     */
+    registerShadowCasterMergeRoot(root) {
+        if (!root?.traverse || this._shadowMergeRoots.includes(root)) return 0;
+        this._shadowMergeRoots.push(root);
+        const merged = buildMergedShadowCasters(root);
+        const instanced = collectInstancedShadowCasters(root);
+        this._shadowMerge.push(...merged);
+        this._instancedCasters.push(...instanced);
+        this.shadowMergeStats = summarizeMergedShadowCasters(this._shadowMerge);
+        // New entries start in whatever state the live settings ask for; the
+        // `null` forces the appliers past their no-change short circuit.
+        this._shadowMergeEnabled = null;
+        this._instancedCastersEnabled = null;
+        return merged.length;
     }
 
     /**

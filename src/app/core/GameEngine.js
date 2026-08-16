@@ -1211,6 +1211,26 @@ export class GameEngine {
     }
 
     renderFrame() {
+        // Shadow maps only need rasterising once per frame, but the
+        // post-processing chain renders the scene more than once — the
+        // sun-bloom occlusion pass is a second RenderPass — and three rebuilds
+        // every shadow map for each of those. Measured: 2 light-bearing shadow
+        // renders per frame and 472 shadow draws where 236 would do, doubling
+        // the whole shadow pass.
+        //
+        // Manual control fixes it: with autoUpdate off and needsUpdate set,
+        // WebGLShadowMap builds the maps on the first render and clears the
+        // flag, so every later render in this frame reuses them. autoUpdate is
+        // restored afterwards so anything that renders the scene outside the
+        // frame loop (debug views, IBL capture) keeps its own fresh maps.
+        // NOT YET ENABLED. Manual control halves the shadow draws (226 -> 113)
+        // and measured 0.72 ms, but it also changes the image: 0.68% of pixels
+        // beyond 16 levels, max delta 104, after settling 90 frames. Likely
+        // cause is which render builds the maps — three tests object.layers
+        // against the render camera during the shadow pass, so if the
+        // sun-bloom occlusion RenderPass runs first, the maps are built for its
+        // camera and the main pass reuses them. Needs the maps pinned to the
+        // main pass before this can ship.
         if (this._post?.pipeline) this._post.pipeline.render();
         else this.renderer.render(this.scene, this.camera);
     }
