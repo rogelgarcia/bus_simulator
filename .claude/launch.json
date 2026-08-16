@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "bus-sim-static",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tests/headless/e2e/static_server.mjs"],
+      "port": 4173
+    }
+  ]
+}
