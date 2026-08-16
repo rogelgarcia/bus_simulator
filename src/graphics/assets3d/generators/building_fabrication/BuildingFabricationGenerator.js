@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 import { ROOF_COLOR, resolveRoofColorHex } from '../../../../app/buildings/RoofColor.js';
 import { BELT_COURSE_COLOR, resolveBeltCourseColorHex } from '../../../../app/buildings/BeltCourseColor.js';
@@ -54,6 +55,15 @@ import {
 } from './BuildingFabricationTypes.js';
 import { applyMaterialVariationToMeshStandardMaterial, computeMaterialVariationSeedFromTiles, MATERIAL_VARIATION_ROOT } from '../../materials/MaterialVariationSystem.js';
 import { resolveBuildingConfigMaterials } from '../../../../app/buildings/BuildingMaterialSlots.js';
+import {
+    BALCONY_PLACEMENT,
+    BALCONY_RAILING_INFILL,
+    BALCONY_GRID_PATTERN,
+    BALCONY_PLATFORM_WIDTH_MODE,
+    BALCONY_SUPPORT_MODE,
+    normalizeBalconyConfig,
+    resolveBalconySideCoverage
+} from '../../../../app/buildings/BayBalconyModel.js';
 import { applyUvTilingToMeshStandardMaterial } from '../../materials/MaterialUvTilingSystem.js';
 import { getPbrMaterialTileMeters, isPbrMaterialId, tryGetPbrMaterialIdFromUrl } from '../../materials/PbrMaterialCatalog.js';
 import { solveFacadeLayoutFillPattern } from './FacadeLayoutFillSolver.js';
@@ -824,12 +834,55 @@ function estimatePortalAndStorefrontOutwardReserveMeters({ windowDefinitions, fa
     return reserve;
 }
 
+// AI 489: projecting balconies extend past the facade plane; their platform
+// depth must count toward the outward footprint reserve like portal steps.
+function estimateBalconyOutwardReserveMeters(facades) {
+    let reserve = 0.0;
+    const facadeGroups = facades && typeof facades === 'object' ? Object.values(facades) : [];
+    for (const group of facadeGroups) {
+        if (!group || typeof group !== 'object') continue;
+        const faceEntries = ('layout' in group) ? [group] : Object.values(group);
+        for (const face of faceEntries) {
+            const bays = face?.layout?.bays?.items;
+            if (!Array.isArray(bays)) continue;
+            for (const bay of bays) {
+                const cfg = normalizeBalconyConfig(bay?.balcony ?? null);
+                if (!cfg || cfg.placement !== BALCONY_PLACEMENT.PROJECTING) continue;
+                const depth = Number.isFinite(cfg.platform.depthMeters) ? cfg.platform.depthMeters : 1.4;
+                reserve = Math.max(reserve, depth + 0.1);
+            }
+        }
+    }
+    return reserve;
+}
+
+// AI 489: right-triangle prism for corbel/knee-brace balcony supports.
+// Local space: x spans [-width/2, width/2], the top face spans z in
+// [0, depth] at y=0, and the underside slopes back to the wall at y=-height.
+function makeBalconyBracketGeometry({ widthMeters, depthMeters, heightMeters }) {
+    const w = Math.max(0.02, Number(widthMeters) || 0.08);
+    const d = Math.max(0.05, Number(depthMeters) || 0.4);
+    const h = Math.max(0.05, Number(heightMeters) || 0.35);
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    shape.lineTo(d, 0);
+    shape.lineTo(0, -h);
+    shape.closePath();
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: w, bevelEnabled: false, steps: 1 });
+    // Shape X (outward) -> local +Z, extrusion axis -> local X, then center X.
+    geo.rotateY(-Math.PI / 2);
+    geo.translate(w * 0.5, 0, 0);
+    geo.computeVertexNormals();
+    return geo;
+}
+
 function estimateBf2OutwardFootprintReserveMeters({ layers, facades, cornerTreatment = null, windowDefinitions = null } = {}) {
     let reserve = 0.0;
     if (cornerTreatment?.enabled) {
         reserve = Math.max(reserve, clamp(cornerTreatment.projection, 0.005, 0.5));
     }
     reserve = Math.max(reserve, estimatePortalAndStorefrontOutwardReserveMeters({ windowDefinitions, facades }));
+    reserve = Math.max(reserve, estimateBalconyOutwardReserveMeters(facades));
     const safeLayers = Array.isArray(layers) ? layers : [];
     for (const layer of safeLayers) {
         if (!layer || typeof layer !== 'object') continue;
@@ -5134,6 +5187,7 @@ function buildFacadeFaceProfile({
         const materialVariation = isBay && it?.materialVariation && typeof it.materialVariation === 'object' ? it.materialVariation : null;
         const window = isBay && it?.window && typeof it.window === 'object' ? deepClone(it.window) : null;
         const capital = isBay && it?.capital && typeof it.capital === 'object' ? deepClone(it.capital) : null;
+        const balcony = isBay && it?.balcony && typeof it.balcony === 'object' ? deepClone(it.balcony) : null;
         strips.push({
             faceId,
             id,
@@ -5145,6 +5199,7 @@ function buildFacadeFaceProfile({
             ...(materialVariation ? { materialVariation } : {}),
             ...(window ? { window } : {}),
             ...(capital ? { capital } : {}),
+            ...(balcony ? { balcony } : {}),
             u0,
             u1,
             frontU0,
@@ -8735,6 +8790,416 @@ export function buildBuildingFabricationVisualParts({
                 }
             }
 
+            // AI 489: balconies. ONE feature with modes — `projecting` hangs a
+            // platform + railing kit off the facade plane, `recessed` furnishes
+            // the bay's own notch (negative bay depth) with the notch floor
+            // slab, a front railing near the nominal plane and the notch
+            // soffit. Side covers are adjacency-driven: sides that abut wall
+            // get no infill, air-facing sides get the configured infill.
+            const balconyStrips = (Array.isArray(facadeStrips) && facadeFrames)
+                ? facadeStrips.filter((s) => s?.type === 'bay' && s?.balcony && typeof s.balcony === 'object')
+                : [];
+            if (balconyStrips.length && layerEndY - layerStartY > EPS && floorSegmentStartYs.length) {
+                const balconyStripsByFaceId = { A: [], B: [], C: [], D: [] };
+                for (const s of facadeStrips) {
+                    const fid = s?.faceId;
+                    if (!balconyStripsByFaceId[fid]) continue;
+                    balconyStripsByFaceId[fid].push({
+                        u0: Number(s.u0) || 0,
+                        u1: Number(s.u1) || 0,
+                        depth: Number(s.depth) || 0
+                    });
+                }
+                for (const fid of ['A', 'B', 'C', 'D']) balconyStripsByFaceId[fid].sort((a, b) => a.u0 - b.u0);
+
+                const balconyMatCache = new Map();
+                const balconyWallMaterial = (spec) => {
+                    const key = 'wall|' + stableStringify(spec ?? null);
+                    let mat = balconyMatCache.get(key);
+                    if (!mat) {
+                        mat = makeCorniceMaterialFromSpec({
+                            material: (spec && typeof spec === 'object') ? spec : { kind: 'match_wall', id: 'match_wall' },
+                            tiling: null,
+                            layerMaterial: layer.material ?? null,
+                            layerWallBase: layer.wallBase ?? null,
+                            layerTiling: layer.tiling ?? null,
+                            baseColorHex,
+                            textureCache
+                        });
+                        balconyMatCache.set(key, mat);
+                    }
+                    return mat;
+                };
+                const balconyMetalMaterial = ({ colorHex, roughness, metalness }) => {
+                    const key = `metal|${colorHex}|${roughness}|${metalness}`;
+                    let mat = balconyMatCache.get(key);
+                    if (!mat) {
+                        mat = new THREE.MeshStandardMaterial({
+                            color: (Number(colorHex) >>> 0) & 0xffffff,
+                            roughness: clamp(roughness, 0.0, 1.0),
+                            metalness: clamp(metalness, 0.0, 1.0)
+                        });
+                        balconyMatCache.set(key, mat);
+                    }
+                    return mat;
+                };
+                // Same material family as window glass so the transparency
+                // pass and the geometry merger treat balcony glass like glass.
+                const balconyGlassMaterial = ({ tintHex, opacity }) => {
+                    const key = `glass|${tintHex}|${opacity}`;
+                    let mat = balconyMatCache.get(key);
+                    if (!mat) {
+                        mat = new THREE.MeshPhysicalMaterial({
+                            color: (Number(tintHex) >>> 0) & 0xffffff,
+                            metalness: 0.05,
+                            roughness: 0.06,
+                            transmission: 0.5,
+                            ior: 1.5,
+                            thickness: 0.01,
+                            opacity: clamp(opacity, 0.05, 0.9),
+                            transparent: true
+                        });
+                        mat.side = THREE.DoubleSide;
+                        mat.depthWrite = false;
+                        mat.polygonOffset = true;
+                        mat.polygonOffsetFactor = -1;
+                        mat.polygonOffsetUnits = -1;
+                        mat.userData = mat.userData ?? {};
+                        mat.userData.iblEnvMapIntensityScale = 1.0;
+                        mat.userData.windowGlass = true;
+                        balconyMatCache.set(key, mat);
+                    }
+                    return mat;
+                };
+
+                const emitBalconyMergedMesh = ({ geos, material, role, strip, cfg, floorNumber, baseX, baseY, baseZ, yaw, glass = false }) => {
+                    const list = Array.isArray(geos) ? geos.filter((g) => !!g) : [];
+                    if (!list.length) return;
+                    const merged = list.length === 1 ? list[0] : mergeGeometries(list, false);
+                    if (!merged) return;
+                    if (list.length > 1) for (const g of list) g.dispose();
+                    const mesh = new THREE.Mesh(merged, material);
+                    mesh.position.set(baseX, baseY, baseZ);
+                    mesh.rotation.set(0, yaw, 0);
+                    mesh.castShadow = !glass;
+                    mesh.receiveShadow = !glass;
+                    if (glass) mesh.renderOrder = 2;
+                    mesh.userData = mesh.userData ?? {};
+                    mesh.userData.buildingFab2Role = role;
+                    mesh.userData.balconyBayId = typeof strip.id === 'string' ? strip.id : '';
+                    mesh.userData.balconyPlacement = cfg.placement;
+                    mesh.userData.balconyFloor = floorNumber;
+                    (glass ? windowsGroup : beltsGroup).add(mesh);
+                    if (showWire && !glass) {
+                        mesh.updateMatrix();
+                        const edgeGeo = new THREE.EdgesGeometry(merged, 1);
+                        appendWirePositionsTransformed(wirePositions, edgeGeo, mesh.matrix);
+                        edgeGeo.dispose();
+                    }
+                };
+
+                for (const strip of balconyStrips) {
+                    const frame = facadeFrames?.[strip.faceId] ?? null;
+                    if (!frame) continue;
+                    const cfg = normalizeBalconyConfig(strip.balcony);
+                    if (!cfg) continue;
+
+                    const rawU0 = Number(strip.frontU0);
+                    const rawU1 = Number(strip.frontU1);
+                    const u0 = Number.isFinite(rawU0) ? rawU0 : (Number(strip.u0) || 0);
+                    const u1 = Number.isFinite(rawU1) ? rawU1 : (Number(strip.u1) || 0);
+                    const bayWidth = u1 - u0;
+                    if (!(bayWidth > 0.3)) continue;
+
+                    const stripDepth = Number(strip.depth) || 0;
+                    const notchDepth = Math.max(0, -stripDepth);
+                    const isRecessed = cfg.placement === BALCONY_PLACEMENT.RECESSED;
+                    if (isRecessed && notchDepth < 0.25) {
+                        warnings.push(`Bay ${strip.id ?? ''} (${strip.faceId}): recessed balcony needs a recessed bay (depth <= -0.25m); skipping.`);
+                        continue;
+                    }
+                    // Raw check: depthMeters null is the "auto" sentinel
+                    // (Number(null) would read as a finite 0).
+                    const platDepth = Number.isFinite(cfg.platform.depthMeters)
+                        ? cfg.platform.depthMeters
+                        : (isRecessed ? notchDepth : 1.4);
+                    const coverage = resolveBalconySideCoverage({
+                        faceId: strip.faceId,
+                        u0: Number(strip.u0) || 0,
+                        u1: Number(strip.u1) || 0,
+                        platformFrontDepth: stripDepth + platDepth,
+                        stripsByFaceId: balconyStripsByFaceId,
+                        sides: cfg.sides
+                    });
+
+                    // Spans: the whole bay, or one per opening repeat slot
+                    // (juliet balconets ride each window).
+                    const spans = [];
+                    const margin = cfg.platform.sideMarginMeters;
+                    if (cfg.platform.widthMode === BALCONY_PLATFORM_WIDTH_MODE.OPENING && strip.window && strip.window.enabled !== false) {
+                        const winCfg = strip.window;
+                        const leftPad = clamp(winCfg?.padding?.leftMeters ?? 0, 0, 9999);
+                        const rightPad = clamp(winCfg?.padding?.rightMeters ?? 0, 0, 9999);
+                        const usable = bayWidth - leftPad - rightPad;
+                        const repeatCount = Math.max(1, Math.round(Number(winCfg?.repeat?.count) || 1));
+                        const slotWidth = usable / repeatCount;
+                        const openingWidth = clamp(
+                            winCfg?.size?.widthMeters ?? winCfg?.width?.minMeters ?? 1.2,
+                            0.3,
+                            Math.max(0.3, slotWidth)
+                        );
+                        const winHeight = clamp(winCfg?.size?.heightMeters ?? 1.6, 0.1, 9999);
+                        const vOffRaw = Number(winCfg?.verticalOffsetMeters);
+                        if (slotWidth > 0.3) {
+                            for (let r = 0; r < repeatCount; r++) {
+                                const centerU = u0 + leftPad + slotWidth * (r + 0.5);
+                                const half = openingWidth * 0.5 + margin;
+                                spans.push({
+                                    uA: centerU - half,
+                                    uB: centerU + half,
+                                    sill: { height: winHeight, verticalOffset: Number.isFinite(vOffRaw) ? vOffRaw : null, heightMode: winCfg?.heightMode }
+                                });
+                            }
+                        }
+                    }
+                    if (!spans.length) {
+                        spans.push({ uA: u0 + margin, uB: u1 - margin, sill: null });
+                    }
+
+                    const segCount = floorSegmentStartYs.length;
+                    const floorsEnd = cfg.floors.end > 0 ? Math.min(cfg.floors.end, segCount) : segCount;
+                    const selectedFloors = new Set();
+                    for (let f = cfg.floors.start; f <= floorsEnd; f += cfg.floors.every) selectedFloors.add(f);
+
+                    const railH = cfg.railing.heightMeters;
+                    const inset = cfg.railing.insetMeters;
+                    const trCfg = cfg.railing.topRail;
+                    const postsCfg = cfg.railing.posts;
+                    const thickness = cfg.platform.thicknessMeters;
+                    const metalMat = balconyMetalMaterial(cfg.railing);
+
+                    for (let floorIdx = 0; floorIdx < segCount; floorIdx++) {
+                        const floorNumber = floorIdx + 1;
+                        if (!selectedFloors.has(floorNumber)) continue;
+                        const segStart = floorSegmentStartYs[floorIdx];
+                        const segEnd = floorIdx + 1 < segCount ? floorSegmentStartYs[floorIdx + 1] : layerEndY;
+                        const segH = segEnd - segStart;
+                        if (!(segH > 0.5)) continue;
+
+                        for (const span of spans) {
+                            const w = span.uB - span.uA;
+                            if (!(w > 0.25)) continue;
+                            const uMid = (span.uA + span.uB) * 0.5;
+
+                            let sillY = 0;
+                            if (span.sill) {
+                                const mode = typeof span.sill.heightMode === 'string' ? span.sill.heightMode : 'fixed';
+                                sillY = Number.isFinite(Number(span.sill.verticalOffset))
+                                    ? clamp(span.sill.verticalOffset, 0, segH)
+                                    : (mode === 'full' ? 0 : Math.max(0, (segH - span.sill.height) * 0.5));
+                            }
+                            const platformTopY = segStart + sillY + cfg.platform.elevationMeters;
+
+                            const base = pointOnFacadeFrame({ frame, u: uMid, depth: stripDepth });
+                            const yaw = Math.atan2(Number(frame?.n?.x) || 0, Number(frame?.n?.z) || 0);
+
+                            const platformGeos = [];
+                            const metalGeos = [];
+                            const glassGeos = [];
+                            const solidGeos = [];
+                            const supportGeos = [];
+
+                            // Platform slab (embedded 0.04m into the wall so
+                            // the seam never shows).
+                            {
+                                const slabD = platDepth + 0.04;
+                                const g = new THREE.BoxGeometry(w, thickness, slabD);
+                                g.translate(0, -thickness * 0.5, slabD * 0.5 - 0.04);
+                                platformGeos.push(g);
+                            }
+
+                            // Railing footprint (local): front line along X at
+                            // zRail, side lines along Z at +-xRail.
+                            const zRail = Math.max(0.06, platDepth - inset);
+                            const xRailL = -w * 0.5 + inset;
+                            const xRailR = w * 0.5 - inset;
+                            const zWallEnd = 0.02;
+                            const postW = postsCfg.widthMeters;
+                            const infillTopY = railH - (trCfg.enabled ? trCfg.heightMeters + 0.01 : 0.0);
+                            const infillBottomY = 0.06;
+
+                            const postKeys = new Set();
+                            const addPost = (px, pz) => {
+                                if (!postsCfg.enabled) return;
+                                const key = `${px.toFixed(2)}|${pz.toFixed(2)}`;
+                                if (postKeys.has(key)) return;
+                                postKeys.add(key);
+                                const g = new THREE.BoxGeometry(postW, railH, postW);
+                                g.translate(px, railH * 0.5, pz);
+                                metalGeos.push(g);
+                            };
+
+                            const emitSide = ({ axis, fixed, from, to, anchoredStart }) => {
+                                const len = to - from;
+                                if (!(len > 0.08)) return;
+                                const mid = (from + to) * 0.5;
+
+                                // Corner/end posts (skip wall-anchored ends).
+                                if (!anchoredStart) addPost(axis === 'x' ? from : fixed, axis === 'x' ? fixed : from);
+                                addPost(axis === 'x' ? to : fixed, axis === 'x' ? fixed : to);
+                                // Intermediate posts.
+                                if (postsCfg.enabled) {
+                                    const nPosts = Math.max(0, Math.ceil(len / postsCfg.maxSpacingMeters) - 1);
+                                    for (let p = 1; p <= nPosts; p++) {
+                                        const t = from + (len * p) / (nPosts + 1);
+                                        addPost(axis === 'x' ? t : fixed, axis === 'x' ? fixed : t);
+                                    }
+                                }
+
+                                // Top rail cap.
+                                if (trCfg.enabled) {
+                                    const capLen = len + postW;
+                                    const g = axis === 'x'
+                                        ? new THREE.BoxGeometry(capLen, trCfg.heightMeters, trCfg.widthMeters)
+                                        : new THREE.BoxGeometry(trCfg.widthMeters, trCfg.heightMeters, capLen);
+                                    g.translate(
+                                        axis === 'x' ? mid : fixed,
+                                        railH - trCfg.heightMeters * 0.5,
+                                        axis === 'x' ? fixed : mid
+                                    );
+                                    metalGeos.push(g);
+                                }
+
+                                const infillH = infillTopY - infillBottomY;
+                                if (cfg.railing.infill === BALCONY_RAILING_INFILL.GLASS_PANEL && infillH > 0.05) {
+                                    const panelLen = len - 2 * (postW + 0.01);
+                                    if (panelLen > 0.05) {
+                                        const g = axis === 'x'
+                                            ? new THREE.BoxGeometry(panelLen, infillH, 0.012)
+                                            : new THREE.BoxGeometry(0.012, infillH, panelLen);
+                                        g.translate(
+                                            axis === 'x' ? mid : fixed,
+                                            infillBottomY + infillH * 0.5,
+                                            axis === 'x' ? fixed : mid
+                                        );
+                                        glassGeos.push(g);
+                                    }
+                                } else if (cfg.railing.infill === BALCONY_RAILING_INFILL.SOLID_WALL) {
+                                    const solidH = railH - (trCfg.enabled ? trCfg.heightMeters : 0.0);
+                                    const th = cfg.railing.solid.thicknessMeters;
+                                    const g = axis === 'x'
+                                        ? new THREE.BoxGeometry(len, solidH, th)
+                                        : new THREE.BoxGeometry(th, solidH, len);
+                                    g.translate(axis === 'x' ? mid : fixed, solidH * 0.5, axis === 'x' ? fixed : mid);
+                                    solidGeos.push(g);
+                                } else if (cfg.railing.infill === BALCONY_RAILING_INFILL.GRID && infillH > 0.05) {
+                                    const grid = cfg.railing.grid;
+                                    const innerLen = len - 2 * postW;
+                                    if (innerLen > grid.spacingMeters) {
+                                        if (grid.pattern === BALCONY_GRID_PATTERN.HORIZONTAL_BARS) {
+                                            const nBars = Math.max(1, Math.floor(infillH / grid.spacingMeters));
+                                            for (let b = 0; b < nBars; b++) {
+                                                const by = infillBottomY + (infillH * (b + 0.5)) / nBars;
+                                                const g = axis === 'x'
+                                                    ? new THREE.BoxGeometry(innerLen, grid.barWidthMeters, grid.barWidthMeters)
+                                                    : new THREE.BoxGeometry(grid.barWidthMeters, grid.barWidthMeters, innerLen);
+                                                g.translate(axis === 'x' ? mid : fixed, by, axis === 'x' ? fixed : mid);
+                                                metalGeos.push(g);
+                                            }
+                                        } else {
+                                            const nBars = Math.max(1, Math.floor(innerLen / grid.spacingMeters));
+                                            const step = innerLen / (nBars + 1);
+                                            for (let b = 1; b <= nBars; b++) {
+                                                const t = from + postW + step * b;
+                                                const g = new THREE.BoxGeometry(grid.barWidthMeters, infillH, grid.barWidthMeters);
+                                                g.translate(axis === 'x' ? t : fixed, infillBottomY + infillH * 0.5, axis === 'x' ? fixed : t);
+                                                metalGeos.push(g);
+                                            }
+                                            // Bottom rail ties the bars.
+                                            const g = axis === 'x'
+                                                ? new THREE.BoxGeometry(innerLen, 0.03, 0.03)
+                                                : new THREE.BoxGeometry(0.03, 0.03, innerLen);
+                                            g.translate(axis === 'x' ? mid : fixed, infillBottomY - 0.015, axis === 'x' ? fixed : mid);
+                                            metalGeos.push(g);
+                                        }
+                                    }
+                                }
+                            };
+
+                            if (coverage.front) {
+                                emitSide({
+                                    axis: 'x',
+                                    fixed: zRail,
+                                    from: xRailL,
+                                    to: xRailR,
+                                    anchoredStart: false
+                                });
+                            }
+                            if (coverage.left) {
+                                emitSide({ axis: 'z', fixed: xRailL, from: zWallEnd, to: zRail, anchoredStart: true });
+                            }
+                            if (coverage.right) {
+                                emitSide({ axis: 'z', fixed: xRailR, from: zWallEnd, to: zRail, anchoredStart: true });
+                            }
+
+                            // Supports (projecting only).
+                            if (!isRecessed && cfg.support.mode === BALCONY_SUPPORT_MODE.CORBEL_BRACKETS) {
+                                const count = Math.max(2, 1 + Math.floor((w - 0.3) / 2.5));
+                                for (let b = 0; b < count; b++) {
+                                    const t = count === 1 ? 0 : -w * 0.5 + 0.15 + ((w - 0.3) * b) / (count - 1);
+                                    const g = makeBalconyBracketGeometry({
+                                        widthMeters: 0.08,
+                                        depthMeters: platDepth * 0.82,
+                                        heightMeters: cfg.support.bracketHeightMeters
+                                    });
+                                    g.translate(t, -thickness, 0.0);
+                                    supportGeos.push(g);
+                                }
+                            } else if (!isRecessed && cfg.support.mode === BALCONY_SUPPORT_MODE.POSTS_TO_BELOW) {
+                                let postLen = 0;
+                                if (floorIdx > 0 && selectedFloors.has(floorIdx)) {
+                                    postLen = segStart - floorSegmentStartYs[floorIdx - 1] - thickness;
+                                } else if (floorIdx === 0 && Math.abs(segStart - layerStartY) < EPS) {
+                                    postLen = Math.max(0, sillY + cfg.platform.elevationMeters - thickness);
+                                }
+                                if (postLen > 0.15) {
+                                    const ps = cfg.support.postSizeMeters;
+                                    for (const px of [xRailL + ps * 0.5, xRailR - ps * 0.5]) {
+                                        const g = new THREE.BoxGeometry(ps, postLen, ps);
+                                        g.translate(px, -thickness - postLen * 0.5, zRail - ps * 0.5);
+                                        supportGeos.push(g);
+                                    }
+                                }
+                            }
+
+                            // Recessed notch soffit for floors whose ceiling
+                            // is not the next balcony's platform (the layer
+                            // top is closed by the roof/cap ring already).
+                            if (isRecessed && floorIdx + 1 < segCount && !selectedFloors.has(floorNumber + 1)) {
+                                const g = new THREE.BoxGeometry(w, 0.05, platDepth);
+                                g.translate(0, segEnd - platformTopY - 0.025, platDepth * 0.5);
+                                platformGeos.push(g);
+                            }
+
+                            const meshArgs = {
+                                strip,
+                                cfg,
+                                floorNumber,
+                                baseX: base.x,
+                                baseY: platformTopY,
+                                baseZ: base.z,
+                                yaw
+                            };
+                            emitBalconyMergedMesh({ ...meshArgs, geos: platformGeos, material: balconyWallMaterial(cfg.platform.material), role: 'balcony_platform' });
+                            emitBalconyMergedMesh({ ...meshArgs, geos: metalGeos, material: metalMat, role: 'balcony_railing' });
+                            emitBalconyMergedMesh({ ...meshArgs, geos: solidGeos, material: balconyWallMaterial(cfg.railing.solid.material), role: 'balcony_infill_solid' });
+                            emitBalconyMergedMesh({ ...meshArgs, geos: supportGeos, material: balconyWallMaterial(cfg.support.material), role: 'balcony_support' });
+                            emitBalconyMergedMesh({ ...meshArgs, geos: glassGeos, material: balconyGlassMaterial(cfg.railing.glass), role: 'balcony_infill_glass', glass: true });
+                        }
+                    }
+                }
+            }
+
             const cornerTreatmentAppliesToLayer = cornerTreatmentCfg?.enabled
                 && (cornerTreatmentCfg.layerIds === null || cornerTreatmentCfg.layerIds.includes(layer.id));
             if (cornerTreatmentAppliesToLayer && layerEndY - layerStartY > EPS) {
@@ -9638,5 +10103,7 @@ export const __testOnly = Object.freeze({
     resolveLinkedFaceBaysForSolve,
     resolveStorefrontZoneLayout,
     makeStorefrontZoneSettings,
-    estimatePortalAndStorefrontOutwardReserveMeters
+    estimatePortalAndStorefrontOutwardReserveMeters,
+    estimateBalconyOutwardReserveMeters,
+    makeBalconyBracketGeometry
 });

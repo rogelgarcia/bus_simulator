@@ -1,3 +1,17 @@
+# DONE
+
+## Summary of changes
+- `BayBalconyModel.js` (new): ONE balcony feature with modes — placement projecting|recessed, adjacency-driven side covers (`resolveBalconySideCoverage`), platform/railing/support kit, presets (`modern_glass_projecting`, `modern_recessed`, `juliet_iron`), preset preview configs; shared normalizer used by solver, generator and BF2 GUI.
+- FacadeBaysSolver: `bay.balcony` normalized and carried through all output paths (repeat/group/linking apply for free).
+- BuildingFabricationGenerator: balcony emission block (platform slab + soffit, per-side railing with open|solid_wall|glass_panel|grid infill, posts + top rail, cantilever/corbel-bracket/posts-to-below supports, recessed notch furnishing, juliet per-opening spans at sill height); glass panels on the window-glass material family; projecting depth added to the outward footprint reserve.
+- WindowFabricationCatalog: `door_balcony_glide` full-height glazed balcony slider.
+- BuildingMaterialSlots: slot resolution for balcony platform/support/solid-infill materials.
+- BF2 GUI: bay Balcony section (on/off, preset picker with rendered thumbnails, placement, support+depth, railing infill+height, per-side overrides); `_setBayBalcony` auto-notches the bay when switching to recessed.
+- Showcases: new `modern_residential_2` (ref-4 recipe: projecting glass + recessed corner-notch balconies, full-height sliders); `stone_lowrise_2` upper sashes carry juliet iron balconets (ref 5).
+- Spec `WINDOWS_BALCONY_SPEC.md` rewritten to the implemented feature (placement modes + adjacency policy).
+- Tests: 12 node unit tests (normalization round-trip incl. re-normalization stability, presets, all adjacency scenarios), 5 browser tests (solver survival in repeated groups, projecting/recessed/juliet emission, outward reserve).
+- Out of scope as specified: corner-wrap balconies that turn the building corner (per-face generator; noted as future extension).
+
 #Problem
 
 The fabrication system has no balconies. The references need three looks: modern glass/metal balconies both projecting from and recessed into the facade (ref 4), and flat wrought-iron balconets in front of tall windows (ref 5). A draft spec exists at `specs/windows/WINDOWS_BALCONY_SPEC.md` (platform slab + per-side railing kit) but nothing is implemented.

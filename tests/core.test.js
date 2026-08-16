@@ -18088,6 +18088,268 @@ async function runTests() {
         assertNear(planarShift, 0.4, 0.08, 'Expected the door recessed into the wall by the portal recess.');
     });
 
+    // ========== AI 489: bay balconies ==========
+    const {
+        BALCONY_PRESET_ID: balconyPresetId
+    } = await import('/src/app/buildings/BayBalconyModel.js');
+
+    const makeBalconyTestMap = () => {
+        const tileSize = 10;
+        return {
+            tileSize,
+            map: {
+                tileSize,
+                kind: new Uint8Array([0]),
+                inBounds: (x, y) => x === 0 && y === 0,
+                index: () => 0,
+                tileToWorldCenter: () => ({ x: 0, z: 0 })
+            },
+            generatorConfig: {
+                road: {
+                    surfaceY: 0,
+                    curb: { height: 0, extraHeight: 0, thickness: 0 },
+                    sidewalk: { extraWidth: 0, lift: 0 }
+                },
+                ground: { surfaceY: 0 }
+            }
+        };
+    };
+
+    const buildBalconyParts = ({ facades, floors = 2, floorHeight = 3.0 }) => {
+        const { map, generatorConfig, tileSize } = makeBalconyTestMap();
+        const layers = [
+            createDefaultFloorLayer({ id: 'floor_balcony', floors, floorHeight, belt: { enabled: false }, windows: { enabled: false } }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        return buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+    };
+
+    const balconyMeshesByRole = (parts, role) => {
+        const out = [];
+        for (const group of [parts.beltCourse, parts.windows]) {
+            for (const mesh of group?.children ?? []) {
+                if (mesh?.userData?.buildingFab2Role === role) out.push(mesh);
+            }
+        }
+        return out;
+    };
+
+    const meshWorldBand = (mesh, axis) => {
+        mesh.geometry.computeBoundingBox();
+        const bb = mesh.geometry.boundingBox;
+        return { min: bb.min[axis] + mesh.position[axis], max: bb.max[axis] + mesh.position[axis] };
+    };
+
+    test('FacadeBaysSolver: balcony feature survives solving inside repeated groups', () => {
+        const items = solveFacadeBaysLayout({
+            bays: [
+                {
+                    id: 'balcony_1',
+                    size: { mode: 'fixed', widthMeters: 3.0 },
+                    expandPreference: 'prefer_expand',
+                    balcony: { enabled: true, presetId: balconyPresetId.MODERN_GLASS_PROJECTING }
+                },
+                { id: 'gap_2', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+            ],
+            groups: [{ id: 'group_1', bayIds: ['balcony_1', 'gap_2'], repeat: { minRepeats: 1, maxRepeats: 'auto' } }],
+            faceLengthMeters: 16,
+            warnings: []
+        });
+        const balconyItems = items.filter((it) => it?.sourceBayId === 'balcony_1');
+        assertTrue(balconyItems.length >= 2, 'Expected the balcony bay to repeat with its group.');
+        for (const it of balconyItems) {
+            assertTrue(!!it.balcony, 'Expected the balcony config to survive the solver (three-normalizer regression class).');
+            assertEqual(it.balcony.presetId, balconyPresetId.MODERN_GLASS_PROJECTING, 'Expected the preset reference to survive.');
+            assertEqual(it.balcony.placement, 'projecting', 'Expected the solver to store the normalized balcony.');
+        }
+    });
+
+    test('BuildingFabricationGenerator: projecting balcony emits platform/railing/glass/supports per floor', () => {
+        const parts = buildBalconyParts({
+            facades: {
+                A: {
+                    layout: {
+                        bays: {
+                            items: [
+                                { id: 'lead_1', size: { mode: 'range', minMeters: 2.0, maxMeters: null }, expandPreference: 'prefer_expand' },
+                                {
+                                    id: 'balcony_2',
+                                    size: { mode: 'fixed', widthMeters: 3.6 },
+                                    expandPreference: 'prefer_expand',
+                                    balcony: {
+                                        enabled: true,
+                                        presetId: balconyPresetId.MODERN_GLASS_PROJECTING,
+                                        support: { mode: 'corbel_brackets' }
+                                    }
+                                },
+                                { id: 'tail_3', size: { mode: 'range', minMeters: 2.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+                            ]
+                        }
+                    }
+                }
+            },
+            floors: 2,
+            floorHeight: 3.0
+        });
+
+        const platforms = balconyMeshesByRole(parts, 'balcony_platform');
+        const railings = balconyMeshesByRole(parts, 'balcony_railing');
+        const glass = balconyMeshesByRole(parts, 'balcony_infill_glass');
+        const supports = balconyMeshesByRole(parts, 'balcony_support');
+        assertEqual(platforms.length, 2, 'Expected one platform per floor.');
+        assertEqual(railings.length, 2, 'Expected one merged railing mesh per floor.');
+        assertEqual(glass.length, 2, 'Expected one merged glass mesh per floor.');
+        assertEqual(supports.length, 2, 'Expected corbel bracket supports per floor.');
+
+        const platformYs = platforms.map((m) => m.position.y).sort((a, b) => a - b);
+        assertNear(platformYs[1] - platformYs[0], 3.0, 1e-2, 'Expected platforms one floor apart.');
+
+        // Adjacency at geometry level: a projecting balcony covers all three
+        // sides, so the merged railing spans the platform depth (side rails).
+        const railZ = meshWorldBand(railings[0], 'z');
+        assertTrue(railZ.max - railZ.min > 1.0, 'Expected side railings along the projecting platform depth.');
+        const railY = meshWorldBand(railings[0], 'y');
+        assertNear(railY.max - railY.min, 1.05, 0.05, 'Expected the railing height from the preset.');
+        const glassMat = glass[0].material;
+        assertTrue(!!glassMat?.transparent && glassMat?.userData?.windowGlass === true, 'Expected balcony glass on the window-glass material family.');
+        assertTrue(glass[0].castShadow === false, 'Expected glass panels not to cast shadows.');
+    });
+
+    test('BuildingFabricationGenerator: recessed balcony furnishes the notch without side rails', () => {
+        const parts = buildBalconyParts({
+            facades: {
+                A: {
+                    layout: {
+                        bays: {
+                            items: [
+                                { id: 'lead_1', size: { mode: 'range', minMeters: 2.0, maxMeters: null }, expandPreference: 'prefer_expand' },
+                                {
+                                    id: 'notch_2',
+                                    size: { mode: 'fixed', widthMeters: 3.6 },
+                                    expandPreference: 'prefer_expand',
+                                    depth: { left: -1.4, right: -1.4, linked: true },
+                                    balcony: { enabled: true, presetId: balconyPresetId.MODERN_RECESSED }
+                                },
+                                { id: 'tail_3', size: { mode: 'range', minMeters: 2.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+                            ]
+                        }
+                    }
+                }
+            },
+            floors: 2,
+            floorHeight: 3.0
+        });
+
+        const platforms = balconyMeshesByRole(parts, 'balcony_platform');
+        const railings = balconyMeshesByRole(parts, 'balcony_railing');
+        assertEqual(platforms.length, 2, 'Expected the notch floor slab per floor.');
+        assertEqual(railings.length, 2, 'Expected the front railing per floor.');
+
+        // Mid-facade recessed: both sides abut the notch return walls, so the
+        // merged railing is only the front run (thin along the depth axis).
+        const railZ = meshWorldBand(railings[0], 'z');
+        assertTrue(railZ.max - railZ.min < 0.4, 'Expected no side railings on a mid-facade recessed balcony.');
+        const railX = meshWorldBand(railings[0], 'x');
+        assertTrue(railX.max - railX.min > 3.0, 'Expected the front railing to span the bay width.');
+
+        // The platform fills the notch: its depth extent matches the recession.
+        const platZ = meshWorldBand(platforms[0], 'z');
+        assertNear(platZ.max - platZ.min, 1.44, 0.05, 'Expected the notch slab to fill the bay recession (+wall embed).');
+    });
+
+    test('BuildingFabricationGenerator: juliet balconets ride each opening repeat at sill height', () => {
+        const parts = buildBalconyParts({
+            facades: {
+                A: {
+                    layout: {
+                        bays: {
+                            items: [
+                                { id: 'lead_1', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' },
+                                {
+                                    id: 'sash_2',
+                                    size: { mode: 'fixed', widthMeters: 5.0 },
+                                    expandPreference: 'prefer_expand',
+                                    window: {
+                                        enabled: true,
+                                        defId: 'window_white_sash_2x2',
+                                        assetType: 'window',
+                                        size: { widthMeters: 1.5, heightMeters: 1.8 },
+                                        heightMode: 'fixed',
+                                        verticalOffsetMeters: 0.85,
+                                        repeat: { count: 2 },
+                                        padding: { leftMeters: 0.2, rightMeters: 0.2 }
+                                    },
+                                    balcony: { enabled: true, presetId: balconyPresetId.JULIET_IRON }
+                                },
+                                { id: 'tail_3', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+                            ]
+                        }
+                    }
+                }
+            },
+            floors: 1,
+            floorHeight: 3.0
+        });
+
+        const platforms = balconyMeshesByRole(parts, 'balcony_platform');
+        const railings = balconyMeshesByRole(parts, 'balcony_railing');
+        assertEqual(platforms.length, 2, 'Expected one balconet per opening repeat slot.');
+        assertEqual(railings.length, 2, 'Expected one railing grid per balconet.');
+
+        const platX = meshWorldBand(platforms[0], 'x');
+        assertNear(platX.max - platX.min, 1.7, 0.1, 'Expected the balconet to span opening width + side margins.');
+        assertNear(platforms[0].position.y, 0.85, 0.05, 'Expected the balconet platform at the window sill.');
+
+        // Grid infill: the merged railing carries many vertical bars.
+        let railVertices = 0;
+        for (const mesh of railings) {
+            const pos = mesh.geometry.getAttribute('position');
+            railVertices += pos ? pos.count : 0;
+        }
+        assertTrue(railVertices > 300, 'Expected grid bars in the balconet railing.');
+    });
+
+    test('BuildingFabricationGenerator: projecting balcony depth counts toward the outward reserve', () => {
+        const projecting = buildingFabricationGeneratorTestOnly.estimateBalconyOutwardReserveMeters({
+            A: {
+                layout: {
+                    bays: {
+                        items: [{
+                            id: 'b1',
+                            balcony: { enabled: true, presetId: balconyPresetId.MODERN_GLASS_PROJECTING }
+                        }]
+                    }
+                }
+            }
+        });
+        assertNear(projecting, 1.6, 1e-6, 'Expected preset depth 1.5m + margin.');
+
+        const recessedOnly = buildingFabricationGeneratorTestOnly.estimateBalconyOutwardReserveMeters({
+            A: {
+                layout: {
+                    bays: {
+                        items: [{
+                            id: 'b1',
+                            depth: { left: -1.4, right: -1.4 },
+                            balcony: { enabled: true, presetId: balconyPresetId.MODERN_RECESSED }
+                        }]
+                    }
+                }
+            }
+        });
+        assertNear(recessedOnly, 0.0, 1e-6, 'Expected recessed balconies to need no outward reserve.');
+    });
+
     // ========== Summary ==========
     console.log('\n' + '='.repeat(50));
     if (errors.length === 0) {

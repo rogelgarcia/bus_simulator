@@ -7,6 +7,7 @@ import {
     applyWallBaseTintStateToWallBase,
     resolveWallBaseTintStateFromWallBase
 } from '../../../../app/buildings/WallBaseTintModel.js';
+import { normalizeBalconyConfig } from '../../../../app/buildings/BayBalconyModel.js';
 
 const EPS = 1e-6;
 const BAY_MIN_WIDTH_M = 0.1;
@@ -511,6 +512,9 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             maxWidth,
             depth: normalizeBayEdgeDepthSpec(entry?.depth ?? null),
             capital: normalizeBayCapitalSpec(entry?.capital ?? null),
+            // AI 489: balcony rides the bay like capital/window so repeat,
+            // group-repeat and face linking apply to it for free.
+            balcony: normalizeBalconyConfig(entry?.balcony ?? null),
             wallMaterialOverride: normalizeMaterialSpec(entry?.wallMaterialOverride ?? null),
             wallBase: normalizeWallBase(entry?.wallBase ?? null),
             tiling: normalizeTiling(entry?.tiling ?? null),
@@ -741,6 +745,7 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             maxWidth: source.maxWidth,
             depth: source.depth ? { left: source.depth.left, right: source.depth.right } : null,
             capital: source.capital ? deepClone(source.capital) : null,
+            balcony: source.balcony ? deepClone(source.balcony) : null,
             wallMaterialOverride: source.wallMaterialOverride,
             wallBase: source.wallBase,
             tiling: source.tiling,
@@ -761,6 +766,7 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             maxWidthMeters: it.maxWidthMeters ?? null,
             ...(it.depth ? { depth: it.depth } : {}),
             ...(it.capital ? { capital: it.capital } : {}),
+            ...(it.balcony ? { balcony: deepClone(it.balcony) } : {}),
             ...(it.wallMaterialOverride ? { wallMaterialOverride: it.wallMaterialOverride } : {}),
             ...(it.wallBase ? { wallBase: it.wallBase } : {}),
             ...(it.tiling ? { tiling: it.tiling } : {}),
@@ -786,6 +792,7 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             maxWidthMeters: it.maxWidthMeters ?? null,
             ...(it.depth ? { depth: it.depth } : {}),
             ...(it.capital ? { capital: it.capital } : {}),
+            ...(it.balcony ? { balcony: deepClone(it.balcony) } : {}),
             ...(it.wallMaterialOverride ? { wallMaterialOverride: it.wallMaterialOverride } : {}),
             ...(it.wallBase ? { wallBase: it.wallBase } : {}),
             ...(it.tiling ? { tiling: it.tiling } : {}),
@@ -871,6 +878,7 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
         maxWidthMeters: it.maxWidthMeters ?? null,
         ...(it.depth ? { depth: it.depth } : {}),
         ...(it.capital ? { capital: it.capital } : {}),
+        ...(it.balcony ? { balcony: deepClone(it.balcony) } : {}),
         ...(it.wallMaterialOverride ? { wallMaterialOverride: it.wallMaterialOverride } : {}),
         ...(it.wallBase ? { wallBase: it.wallBase } : {}),
         ...(it.tiling ? { tiling: it.tiling } : {}),

@@ -1349,6 +1349,183 @@ const WINDOW_DOOR_FABRICATION_CATALOG = Object.freeze([
         }
     }),
     Object.freeze({
+        // AI 489: full-height glazed balcony slider — refs pair balconies with
+        // floor-height glazing, so this door is mostly glass in a thin frame.
+        id: 'door_balcony_glide',
+        assetType: WINDOW_FABRICATION_ASSET_TYPE.DOOR,
+        name: 'Balcony Glass Slider',
+        settings: {
+            version: 1,
+            width: 2.2,
+            height: 2.5,
+            arch: {
+                enabled: false,
+                heightRatio: 0.25,
+                meetsRectangleFrame: true,
+                topPieceMode: 'frame',
+                clipVerticalMuntinsToRectWhenNoTopPiece: true
+            },
+            frame: {
+                width: 0.05,
+                verticalWidth: 0.05,
+                horizontalWidth: 0.05,
+                depth: 0.09,
+                inset: 0,
+                openBottom: true,
+                addHandles: true,
+                handleMaterialMode: 'match',
+                doorStyle: 'double',
+                doorBottomFrame: {
+                    enabled: true,
+                    mode: 'match'
+                },
+                doorCenterFrame: {
+                    leftMode: 'match',
+                    rightMode: 'match'
+                },
+                colorHex: 0x2a2d31,
+                bevel: {
+                    size: 0.25,
+                    roundness: 0.6
+                },
+                material: {
+                    roughness: 0.45,
+                    metalness: 0.4,
+                    envMapIntensity: 0.4,
+                    normalStrength: 0.6
+                }
+            },
+            muntins: {
+                enabled: false,
+                columns: 1,
+                rows: 1,
+                verticalWidth: 0.03,
+                horizontalWidth: 0.03,
+                depth: 0.06,
+                inset: 0.012,
+                uvOffset: {
+                    x: 0,
+                    y: 0
+                },
+                colorHex: null,
+                bevel: {
+                    inherit: true,
+                    bevel: {
+                        size: 0.3,
+                        roundness: 0.65
+                    }
+                },
+                material: {
+                    inheritFromFrame: true,
+                    pbr: {
+                        roughness: 0.72,
+                        metalness: 0,
+                        envMapIntensity: 0,
+                        normalStrength: 0.55
+                    }
+                }
+            },
+            glass: {
+                opacity: 0.55,
+                tintHex: 0x2c3138,
+                reflection: {
+                    metalness: 0,
+                    roughness: 0.03,
+                    transmission: 0,
+                    ior: 1.5,
+                    envMapIntensity: 1.6
+                },
+                zOffset: -0.04
+            },
+            shade: {
+                enabled: false,
+                coverage: 0,
+                randomizeCoverage: true,
+                direction: 'top_to_bottom',
+                colorHex: 15987178,
+                fabric: {
+                    scale: 7,
+                    intensity: 0.18
+                },
+                zOffset: -0.06
+            },
+            interior: {
+                enabled: true,
+                parallaxInteriorPresetId: 'parallax_interior.residential',
+                atlasId: 'window_interior_atlas.residential_4x4',
+                atlas: {
+                    cols: 4,
+                    rows: 4
+                },
+                randomizeCell: true,
+                cell: {
+                    col: 0,
+                    row: 0
+                },
+                randomFlipX: true,
+                uvPan: {
+                    x: 0,
+                    y: 0
+                },
+                uvZoom: 1.6,
+                imageAspect: 1,
+                parallaxDepthMeters: 0,
+                parallaxScale: {
+                    x: 0,
+                    y: 0
+                },
+                zOffset: 0,
+                emissiveIntensity: 0,
+                tintVariation: {
+                    hueShiftDeg: {
+                        min: -8,
+                        max: 8
+                    },
+                    saturationMul: {
+                        min: 0.92,
+                        max: 1.08
+                    },
+                    brightnessMul: {
+                        min: 0.9,
+                        max: 1.12
+                    }
+                }
+            }
+        },
+        garageFacade: {
+            state: 'closed',
+            closedMaterialId: 'pbr.corrugated_iron_02',
+            rotationDegrees: 0
+        },
+        decoration: null,
+        layers: {
+            frame: true,
+            muntins: true,
+            glass: true,
+            shade: false,
+            interior: true
+        },
+        wall: {
+            materialId: 'pbr.brick_wall_11',
+            roughness: 0.85,
+            normalIntensity: 1,
+            cutWidthLerp: 0,
+            cutHeightLerp: 0,
+            floorDistanceMeters: 0
+        },
+        ibl: {
+            enabled: true,
+            envMapIntensity: 0.25,
+            iblId: 'ibl.hdri.german_town_street_2k',
+            setBackground: true
+        },
+        seed: 'window-debug',
+        thumbnail: {
+            dataUrl: null,
+            wallMaterialId: 'pbr.brick_wall_11'
+        }
+    }),
+    Object.freeze({
         id: 'door_wood_arch',
         assetType: WINDOW_FABRICATION_ASSET_TYPE.DOOR,
         name: 'Wood Arched Entry Door',

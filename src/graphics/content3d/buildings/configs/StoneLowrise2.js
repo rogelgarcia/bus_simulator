@@ -1213,6 +1213,10 @@ export const STONE_LOWRISE_2_BUILDING_CONFIG = Object.freeze({
                                     },
                                     "expandPreference": "prefer_expand",
                                     "wallMaterialOverride": null,
+                                    "balcony": {
+                                        "enabled": true,
+                                        "presetId": "balcony.juliet_iron"
+                                    },
                                     "window": {
                                         "enabled": true,
                                         "defId": "window_white_sash_2x2_stone_surround",
@@ -1275,6 +1279,10 @@ export const STONE_LOWRISE_2_BUILDING_CONFIG = Object.freeze({
                                     },
                                     "expandPreference": "prefer_expand",
                                     "wallMaterialOverride": null,
+                                    "balcony": {
+                                        "enabled": true,
+                                        "presetId": "balcony.juliet_iron"
+                                    },
                                     "window": {
                                         "enabled": true,
                                         "defId": "window_white_sash_2x2_stone_surround",

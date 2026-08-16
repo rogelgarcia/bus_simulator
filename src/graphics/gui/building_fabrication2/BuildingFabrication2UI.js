@@ -4,6 +4,7 @@
 import { getBeltCourseColorOptions } from '../../../app/buildings/BeltCourseColor.js';
 import { getBrickPresetOptions } from '../../../app/buildings/BrickPresetCatalog.js';
 import { BUILDING_MATERIAL_SLOT_IDS, getMaterialSlotNames, normalizeBuildingMaterialSlotsConfig } from '../../../app/buildings/BuildingMaterialSlots.js';
+import { BALCONY_PRESET_OPTIONS } from '../../../app/buildings/BayBalconyModel.js';
 import {
     WALL_BASE_TINT_STATE_DEFAULT,
     applyWallBaseTintStateToWallBase,
@@ -849,6 +850,7 @@ export class BuildingFabrication2UI {
 
         this._catalogEntries = [];
         this._thumbById = new Map();
+        this._balconyPresetThumbById = new Map();
         this._page = 0;
         this._activeSidePanel = null;
         this._buildingPanelExpanded = true;
@@ -917,6 +919,8 @@ export class BuildingFabrication2UI {
         this.onSetBayTextureFlow = null;
         this.onSetBayDepthEdge = null;
         this.onSetBayCapital = null;
+        this.onSetBayBalcony = null;
+        this.onRequestBalconyPresetThumbnails = null;
         this.onToggleBayDepthLink = null;
         this.onSetBayLink = null;
         this.onCreateBayGroup = null;
@@ -1283,6 +1287,14 @@ export class BuildingFabrication2UI {
         if (!id || !u) return;
         this._thumbById.set(id, u);
         if (this.isLoadBrowserOpen()) this._renderLoadGrid();
+    }
+
+    setBalconyPresetThumbnail(presetId, url) {
+        const id = typeof presetId === 'string' ? presetId : '';
+        const u = typeof url === 'string' ? url : '';
+        if (!id || !u) return;
+        this._balconyPresetThumbById.set(id, u);
+        this._renderLayers();
     }
 
     isLoadBrowserOpen() {
@@ -4630,6 +4642,240 @@ export class BuildingFabrication2UI {
 		                    };
 		                    appendCapitalEndRow('top', 'Capital (top)');
 		                    appendCapitalEndRow('bottom', 'Base (bottom)');
+
+		                    // AI 489: balcony feature on the bay (projecting or
+		                    // recessed; the juliet balconet is a preset of the
+		                    // same feature).
+		                    {
+		                        const balconyCfg = editorBay?.balcony && typeof editorBay.balcony === 'object' && editorBay.balcony.enabled !== false
+		                            ? editorBay.balcony
+		                            : null;
+		                        const balconyEnabled = !!balconyCfg;
+
+		                        const balconyRow = document.createElement('div');
+		                        balconyRow.className = 'building-fab-row building-fab-row-wide building-fab2-bay-window-mode-row';
+		                        const balconyLabel = document.createElement('div');
+		                        balconyLabel.className = 'building-fab-row-label';
+		                        balconyLabel.textContent = 'Balcony';
+		                        const balconyControls = document.createElement('div');
+		                        balconyControls.className = 'building-fab2-bay-row-controls';
+		                        const balconyToggle = document.createElement('div');
+		                        balconyToggle.className = 'building-fab2-width-mode-toggle building-fab2-bay-window-mode-toggle';
+		                        const addBalconyStateBtn = (state, text) => {
+		                            const btn = document.createElement('button');
+		                            btn.type = 'button';
+		                            btn.className = 'building-fab2-width-mode-btn';
+		                            btn.textContent = text;
+		                            btn.disabled = !allowBayConfigEdit;
+		                            btn.classList.toggle('is-active', balconyEnabled === state);
+		                            btn.addEventListener('click', () => {
+		                                if (!allowBayConfigEdit || balconyEnabled === state) return;
+		                                this.onSetBayBalcony?.(layerId, configFaceId, bayId, state
+		                                    ? { enabled: true, presetId: 'balcony.modern_glass_projecting' }
+		                                    : null);
+		                            });
+		                            balconyToggle.appendChild(btn);
+		                        };
+		                        addBalconyStateBtn(false, 'Off');
+		                        addBalconyStateBtn(true, 'On');
+		                        balconyControls.appendChild(balconyToggle);
+		                        balconyRow.appendChild(balconyLabel);
+		                        balconyRow.appendChild(balconyControls);
+		                        bayBodyContent.appendChild(balconyRow);
+
+		                        if (balconyEnabled) {
+		                            // Preset picker with rendered thumbnails.
+		                            if (!this._balconyPresetThumbById.size) this.onRequestBalconyPresetThumbnails?.();
+		                            const presetRow = document.createElement('div');
+		                            presetRow.className = 'building-fab-row building-fab-row-wide';
+		                            const presetControls = document.createElement('div');
+		                            presetControls.className = 'building-fab2-bay-row-controls';
+		                            presetControls.style.flexWrap = 'wrap';
+		                            const activePresetId = typeof balconyCfg?.presetId === 'string' ? balconyCfg.presetId : '';
+		                            for (const preset of BALCONY_PRESET_OPTIONS) {
+		                                const btn = document.createElement('button');
+		                                btn.type = 'button';
+		                                btn.className = 'building-fab2-width-mode-btn';
+		                                btn.disabled = !allowBayConfigEdit;
+		                                btn.classList.toggle('is-active', activePresetId === preset.id);
+		                                btn.title = preset.label;
+		                                btn.style.display = 'flex';
+		                                btn.style.flexDirection = 'column';
+		                                btn.style.alignItems = 'center';
+		                                btn.style.gap = '2px';
+		                                const thumbUrl = this._balconyPresetThumbById.get(preset.id) ?? '';
+		                                if (thumbUrl) {
+		                                    const img = document.createElement('img');
+		                                    img.src = thumbUrl;
+		                                    img.alt = preset.label;
+		                                    img.style.width = '64px';
+		                                    img.style.height = '40px';
+		                                    img.style.objectFit = 'cover';
+		                                    img.style.borderRadius = '3px';
+		                                    btn.appendChild(img);
+		                                }
+		                                const caption = document.createElement('span');
+		                                caption.textContent = preset.label;
+		                                btn.appendChild(caption);
+		                                btn.addEventListener('click', () => {
+		                                    if (!allowBayConfigEdit || activePresetId === preset.id) return;
+		                                    this.onSetBayBalcony?.(layerId, configFaceId, bayId, { presetId: preset.id, resetToPreset: true });
+		                                });
+		                                presetControls.appendChild(btn);
+		                            }
+		                            presetRow.appendChild(presetControls);
+		                            bayBodyContent.appendChild(presetRow);
+
+		                            // Placement toggle.
+		                            const placement = balconyCfg?.placement === 'recessed' ? 'recessed' : 'projecting';
+		                            const placementRow = document.createElement('div');
+		                            placementRow.className = 'building-fab-row building-fab-row-wide';
+		                            const placementLabel = document.createElement('div');
+		                            placementLabel.className = 'building-fab-row-label';
+		                            placementLabel.textContent = 'Placement';
+		                            const placementControls = document.createElement('div');
+		                            placementControls.className = 'building-fab2-bay-row-controls';
+		                            const placementToggle = document.createElement('div');
+		                            placementToggle.className = 'building-fab2-width-mode-toggle building-fab2-bay-window-mode-toggle';
+		                            for (const [value, text] of [['projecting', 'Projecting'], ['recessed', 'Recessed']]) {
+		                                const btn = document.createElement('button');
+		                                btn.type = 'button';
+		                                btn.className = 'building-fab2-width-mode-btn';
+		                                btn.textContent = text;
+		                                btn.disabled = !allowBayConfigEdit;
+		                                btn.classList.toggle('is-active', placement === value);
+		                                btn.addEventListener('click', () => {
+		                                    if (!allowBayConfigEdit || placement === value) return;
+		                                    this.onSetBayBalcony?.(layerId, configFaceId, bayId, { placement: value });
+		                                });
+		                                placementToggle.appendChild(btn);
+		                            }
+		                            placementControls.appendChild(placementToggle);
+		                            placementRow.appendChild(placementLabel);
+		                            placementRow.appendChild(placementControls);
+		                            bayBodyContent.appendChild(placementRow);
+
+		                            // Support mode + platform depth (projecting only).
+		                            if (placement === 'projecting') {
+		                                const supportRow = document.createElement('div');
+		                                supportRow.className = 'building-fab-row building-fab-row-wide';
+		                                const supportLabel = document.createElement('div');
+		                                supportLabel.className = 'building-fab-row-label';
+		                                supportLabel.textContent = 'Support';
+		                                const supportControls = document.createElement('div');
+		                                supportControls.className = 'building-fab2-bay-row-controls';
+		                                const supportSelect = document.createElement('select');
+		                                supportSelect.className = 'building-fab-select building-fab2-bay-expand-select';
+		                                supportSelect.disabled = !allowBayConfigEdit;
+		                                supportSelect.setAttribute('aria-label', 'Balcony support mode');
+		                                for (const [value, text] of [['cantilever', 'Cantilever'], ['corbel_brackets', 'Corbel Brackets'], ['posts_to_below', 'Posts Below']]) {
+		                                    const opt = document.createElement('option');
+		                                    opt.value = value;
+		                                    opt.textContent = text;
+		                                    supportSelect.appendChild(opt);
+		                                }
+		                                const supportMode = typeof balconyCfg?.support?.mode === 'string' ? balconyCfg.support.mode : 'cantilever';
+		                                supportSelect.value = ['cantilever', 'corbel_brackets', 'posts_to_below'].includes(supportMode) ? supportMode : 'cantilever';
+		                                supportSelect.addEventListener('change', () => {
+		                                    this.onSetBayBalcony?.(layerId, configFaceId, bayId, { support: { mode: supportSelect.value } });
+		                                });
+		                                supportControls.appendChild(supportSelect);
+
+		                                const depthInput = document.createElement('input');
+		                                depthInput.type = 'number';
+		                                depthInput.className = 'building-fab2-layer-number';
+		                                depthInput.min = '0.05';
+		                                depthInput.max = '2.5';
+		                                depthInput.step = '0.05';
+		                                depthInput.value = String(clamp(balconyCfg?.platform?.depthMeters ?? 1.4, 0.05, 2.5));
+		                                depthInput.disabled = !allowBayConfigEdit;
+		                                depthInput.setAttribute('aria-label', 'Balcony depth (m)');
+		                                depthInput.addEventListener('input', () => {
+		                                    const v = clamp(depthInput.value, 0.05, 2.5);
+		                                    depthInput.value = String(v);
+		                                    this.onSetBayBalcony?.(layerId, configFaceId, bayId, { platform: { depthMeters: v } });
+		                                });
+		                                supportControls.appendChild(depthInput);
+		                                supportRow.appendChild(supportLabel);
+		                                supportRow.appendChild(supportControls);
+		                                bayBodyContent.appendChild(supportRow);
+		                            }
+
+		                            // Railing: infill + height.
+		                            const railRow = document.createElement('div');
+		                            railRow.className = 'building-fab-row building-fab-row-wide';
+		                            const railLabel = document.createElement('div');
+		                            railLabel.className = 'building-fab-row-label';
+		                            railLabel.textContent = 'Railing';
+		                            const railControls = document.createElement('div');
+		                            railControls.className = 'building-fab2-bay-row-controls';
+		                            const infillSelect = document.createElement('select');
+		                            infillSelect.className = 'building-fab-select building-fab2-bay-expand-select';
+		                            infillSelect.disabled = !allowBayConfigEdit;
+		                            infillSelect.setAttribute('aria-label', 'Balcony railing infill');
+		                            for (const [value, text] of [['glass_panel', 'Glass'], ['grid', 'Grid Bars'], ['solid_wall', 'Solid'], ['open', 'Open']]) {
+		                                const opt = document.createElement('option');
+		                                opt.value = value;
+		                                opt.textContent = text;
+		                                infillSelect.appendChild(opt);
+		                            }
+		                            const infill = typeof balconyCfg?.railing?.infill === 'string' ? balconyCfg.railing.infill : 'glass_panel';
+		                            infillSelect.value = ['glass_panel', 'grid', 'solid_wall', 'open'].includes(infill) ? infill : 'glass_panel';
+		                            infillSelect.addEventListener('change', () => {
+		                                this.onSetBayBalcony?.(layerId, configFaceId, bayId, { railing: { infill: infillSelect.value } });
+		                            });
+		                            railControls.appendChild(infillSelect);
+
+		                            const railHeightInput = document.createElement('input');
+		                            railHeightInput.type = 'number';
+		                            railHeightInput.className = 'building-fab2-layer-number';
+		                            railHeightInput.min = '0.3';
+		                            railHeightInput.max = '1.8';
+		                            railHeightInput.step = '0.05';
+		                            railHeightInput.value = String(clamp(balconyCfg?.railing?.heightMeters ?? 1.05, 0.3, 1.8));
+		                            railHeightInput.disabled = !allowBayConfigEdit;
+		                            railHeightInput.setAttribute('aria-label', 'Railing height (m)');
+		                            railHeightInput.addEventListener('input', () => {
+		                                const v = clamp(railHeightInput.value, 0.3, 1.8);
+		                                railHeightInput.value = String(v);
+		                                this.onSetBayBalcony?.(layerId, configFaceId, bayId, { railing: { heightMeters: v } });
+		                            });
+		                            railControls.appendChild(railHeightInput);
+		                            railRow.appendChild(railLabel);
+		                            railRow.appendChild(railControls);
+		                            bayBodyContent.appendChild(railRow);
+
+		                            // Per-side coverage overrides (auto | always | never).
+		                            const sidesRow = document.createElement('div');
+		                            sidesRow.className = 'building-fab-row building-fab-row-wide';
+		                            const sidesLabel = document.createElement('div');
+		                            sidesLabel.className = 'building-fab-row-label';
+		                            sidesLabel.textContent = 'Sides';
+		                            const sidesControls = document.createElement('div');
+		                            sidesControls.className = 'building-fab2-bay-row-controls';
+		                            for (const [sideKey, sideText] of [['left', 'L'], ['front', 'F'], ['right', 'R']]) {
+		                                const sideSelect = document.createElement('select');
+		                                sideSelect.className = 'building-fab-select building-fab2-bay-expand-select';
+		                                sideSelect.disabled = !allowBayConfigEdit;
+		                                sideSelect.setAttribute('aria-label', `Balcony side ${sideKey}`);
+		                                for (const [value, text] of [['auto', `${sideText}: Auto`], ['always', `${sideText}: Always`], ['never', `${sideText}: Never`]]) {
+		                                    const opt = document.createElement('option');
+		                                    opt.value = value;
+		                                    opt.textContent = text;
+		                                    sideSelect.appendChild(opt);
+		                                }
+		                                const sideValue = typeof balconyCfg?.sides?.[sideKey] === 'string' ? balconyCfg.sides[sideKey] : 'auto';
+		                                sideSelect.value = ['auto', 'always', 'never'].includes(sideValue) ? sideValue : 'auto';
+		                                sideSelect.addEventListener('change', () => {
+		                                    this.onSetBayBalcony?.(layerId, configFaceId, bayId, { sides: { [sideKey]: sideSelect.value } });
+		                                });
+		                                sidesControls.appendChild(sideSelect);
+		                            }
+		                            sidesRow.appendChild(sidesLabel);
+		                            sidesRow.appendChild(sidesControls);
+		                            bayBodyContent.appendChild(sidesRow);
+		                        }
+		                    }
 
 		                    const prefRow = document.createElement('div');
 		                    prefRow.className = 'building-fab-row building-fab-row-wide';

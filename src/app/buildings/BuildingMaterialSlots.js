@@ -251,6 +251,22 @@ function resolveFacadeFaceMaterials(facade, ctx, contextLabel) {
                     });
                 }
             }
+            // AI 489: balcony materials use the same wall-material spec
+            // dialect as capitals (platform slab, solid infill, supports).
+            const balcony = bay.balcony;
+            if (balcony && typeof balcony === 'object') {
+                const balconyLabel = `${contextLabel} bay ${bay?.id ?? ''} balcony`;
+                if (balcony.platform && typeof balcony.platform === 'object' && balcony.platform.material) {
+                    resolveSpecInPlace(balcony.platform, 'material', ctx, { context: `${balconyLabel} platform` });
+                }
+                if (balcony.support && typeof balcony.support === 'object' && balcony.support.material) {
+                    resolveSpecInPlace(balcony.support, 'material', ctx, { context: `${balconyLabel} support` });
+                }
+                const solid = balcony.railing?.solid;
+                if (solid && typeof solid === 'object' && solid.material) {
+                    resolveSpecInPlace(solid, 'material', ctx, { context: `${balconyLabel} solid infill` });
+                }
+            }
         }
     }
 }

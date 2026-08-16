@@ -25,6 +25,10 @@ import {
     WINDOW_FABRICATION_ASSET_TYPE
 } from '../../../app/buildings/window_mesh/index.js';
 import {
+    getBalconyPresetPreviewConfigs,
+    normalizeBalconyConfig
+} from '../../../app/buildings/BayBalconyModel.js';
+import {
     getDefaultWallDecoratorDebuggerState,
     getWallDecoratorTypeEntries,
     getWallDecoratorCatalogEntryById,
@@ -948,6 +952,8 @@ export class BuildingFabrication2View {
         this.ui.onSetBayTextureFlow = (layerId, faceId, bayId, mode) => this._setBayTextureFlow(layerId, faceId, bayId, mode);
         this.ui.onSetBayDepthEdge = (layerId, faceId, bayId, edge, depth) => this._setBayDepthEdge(layerId, faceId, bayId, edge, depth);
         this.ui.onSetBayCapital = (layerId, faceId, bayId, end, patch) => this._setBayCapital(layerId, faceId, bayId, end, patch);
+        this.ui.onSetBayBalcony = (layerId, faceId, bayId, patch) => this._setBayBalcony(layerId, faceId, bayId, patch);
+        this.ui.onRequestBalconyPresetThumbnails = () => this._renderBalconyPresetThumbnails();
         this.ui.onSetBayWindowPortal = (layerId, faceId, bayId, patch) => this._setBayWindowPortal(layerId, faceId, bayId, patch);
         this.ui.onSetWindowDefinitionStorefrontZone = (windowDefId, patch) => this._setWindowDefinitionStorefrontZone(windowDefId, patch);
         this.ui.onToggleBayDepthLink = (layerId, faceId, bayId) => this._toggleBayDepthLink(layerId, faceId, bayId);
@@ -1119,6 +1125,8 @@ export class BuildingFabrication2View {
         this.ui.onSetBayTextureFlow = null;
         this.ui.onSetBayDepthEdge = null;
         this.ui.onSetBayCapital = null;
+        this.ui.onSetBayBalcony = null;
+        this.ui.onRequestBalconyPresetThumbnails = null;
         this.ui.onSetBayWindowPortal = null;
         this.ui.onSetWindowDefinitionStorefrontZone = null;
         this.ui.onToggleBayDepthLink = null;
@@ -4984,6 +4992,73 @@ export class BuildingFabrication2View {
         this._requestRebuild({ preserveCamera: true });
     }
 
+
+    // AI 489: balcony feature on the bay. Passing null clears it; a patch with
+    // `resetToPreset` replaces the config with a bare preset reference (so the
+    // authored state stays tiny and tracks preset improvements); any other
+    // patch deep-merges over the existing config. Switching placement to
+    // `recessed` on a flat bay also gives the bay its notch (negative depth),
+    // since the recessed balcony rides the existing bay recession.
+    _setBayBalcony(layerId, faceId, bayId, patch) {
+        const ctx = this._findBaySpec({ layerId, faceId, bayId });
+        const bay = ctx?.bay && typeof ctx.bay === 'object' ? ctx.bay : null;
+        if (!bay) return;
+        if (resolveBayLinkFromSpec(bay)) return;
+
+        if (patch === null || patch === undefined) {
+            if ('balcony' in bay) delete bay.balcony;
+        } else if (typeof patch === 'object') {
+            if (patch.resetToPreset) {
+                bay.balcony = { enabled: true, presetId: patch.presetId };
+            } else {
+                const base = bay.balcony && typeof bay.balcony === 'object' ? bay.balcony : { enabled: true };
+                const mergeInto = (target, src) => {
+                    for (const [k, v] of Object.entries(src)) {
+                        if (k === 'resetToPreset') continue;
+                        if (v && typeof v === 'object' && !Array.isArray(v)
+                            && target[k] && typeof target[k] === 'object' && !Array.isArray(target[k])) {
+                            mergeInto(target[k], v);
+                        } else {
+                            target[k] = v;
+                        }
+                    }
+                };
+                const next = JSON.parse(JSON.stringify(base));
+                mergeInto(next, patch);
+                next.enabled = true;
+                bay.balcony = next;
+            }
+            if (!normalizeBalconyConfig(bay.balcony)) delete bay.balcony;
+
+            if (patch.placement === 'recessed') {
+                const depth = bay.depth && typeof bay.depth === 'object' ? bay.depth : null;
+                const left = Number(depth?.left) || 0;
+                const right = Number(depth?.right) || 0;
+                if (left > -0.25 && right > -0.25) {
+                    bay.depth = { left: -1.4, right: -1.4, linked: true };
+                }
+            }
+        }
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
+    async _renderBalconyPresetThumbnails() {
+        if (this._balconyThumbsRendering) return;
+        this._balconyThumbsRendering = true;
+        try {
+            for (const cfg of getBalconyPresetPreviewConfigs()) {
+                const presetId = cfg?.facades?.A?.layout?.bays?.items?.[0]?.balcony?.presetId ?? '';
+                if (!presetId) continue;
+                this._thumbRenderer.primeTextureCacheForConfig(cfg);
+                await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+                const url = await this._thumbRenderer.renderConfigToDataUrl(cfg);
+                if (typeof url === 'string' && url) this.ui.setBalconyPresetThumbnail(presetId, url);
+            }
+        } finally {
+            this._balconyThumbsRendering = false;
+        }
+    }
 
     // AI 488: bay-level portal override on door openings. Passing null clears
     // the override so the definition's own portal (if any) applies again.

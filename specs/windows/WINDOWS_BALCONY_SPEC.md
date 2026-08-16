@@ -1,249 +1,154 @@
-# Windows — Balcony Spec
+# Buildings — Balcony Spec
 
-Status: **Proposed (draft)**  
-Scope: Window system balcony feature (geometry, sizing/positioning, materials/UV, first-pass railing types).  
-Non-goals: Final art mesh assets, complex railing profiles, physics/collisions, or advanced parametric patterns beyond first-pass bars.
+Status: **Implemented (AI 489)**
+Scope: The bay balcony feature of the facade/bay building engine (engine 2): placement modes, adjacency-driven side covers, platform/railing/support kit, materials, presets.
+Non-goals: Corner-wrap balconies that turn the building corner (the generator is per-face; future extension), custom railing panel meshes, physics/collision.
 
-This spec defines a first-pass balcony model that is:
-- composed of a **platform slab** and a **3-sided perimeter system**
-- configurable per-side (left/front/right) for infill type (open/solid/glass/grid)
-- capable of adding **corner posts** and optional extra posts
-- compatible with per-face materials and per-face UV adjustments for the platform
-
-Related specs:
-- Builder tabs and control reuse: `specs/windows/WINDOWS_BUILDER_TABS_AND_CONTROL_REUSE_SPEC.md`
-- Sizes and positioning: `specs/windows/WINDOWS_SIZE_AND_POSITIONING_SPEC.md`
-- Materials and finish: `specs/windows/WINDOWS_MATERIALS_AND_FINISH_SPEC.md`
-- Feature parameters: `specs/windows/WINDOWS_FEATURE_PARAMETERS_SPEC.md`
+Implementation:
+- Model + normalization + adjacency: `src/app/buildings/BayBalconyModel.js`
+- Geometry: `BuildingFabricationGenerator.js` (balcony block after bay capitals)
+- GUI: `BuildingFabrication2` bay editor (Balcony section, preset thumbnails)
+- Showcases: `modern_residential_2` (projecting + recessed, ref 4), `stone_lowrise_2` (juliet balconets, ref 5)
 
 ---
 
-## 1. Coordinate, Attachment, and Naming
-
-Balcony is authored in the window’s local space:
-- +X: window local right
-- +Y: up
-- +Z: outward from wall (window local normal)
-
-Balcony attachment:
-- Balcony is attached to the window plane (same local space as frame/glass).
-- Balcony platform is assumed to be **flush to the wall at the back edge** (no “back” face exposed), unless a future option adds a back face.
-
----
-
-## 2. High-level Decomposition (first pass)
-
-Balcony consists of:
-1) **Platform slab** (ground block)
-2) **Perimeter railing system** made of:
-   - three sides: `left`, `front`, `right`
-   - optional **posts**
-   - optional **top rail** (“lean on” cap)
-   - an **infill** per side (`open | solidWall | glassPanel | grid`)
-
----
-
-## 3. Platform Slab
-
-### 3.1 Platform size
-
-Parameters:
-- `balconyWidth` (meters): size along +X
-- `balconyDepth` (meters): size along +Z (outward)
-- `balconyPlatformThickness` (meters): size along +Y (slab thickness)
-
-Optional placement:
-- `balconyElevation` (meters, default 0): vertical offset applied to the entire balcony assembly.
-  - Positive moves balcony upward.
-  - Negative moves balcony downward.
-
-### 3.2 Platform faces (5 faces)
-
-The platform is treated as a slab attached to the wall, exposing 5 faces:
-- `top`
-- `bottom`
-- `front`
-- `left`
-- `right`
-
-The `back` face is not exposed by default (attached to wall).
-
-Face order (normative, used for “first face” rules):
-- `top`, `bottom`, `front`, `left`, `right`
-
----
-
-## 4. Perimeter Railing System
-
-### 4.1 Side enablement
-
-Per side:
-- `balconyRailing.sides.left.enabled` (bool)
-- `balconyRailing.sides.front.enabled` (bool)
-- `balconyRailing.sides.right.enabled` (bool)
-
-Default:
-- All three enabled.
-
-### 4.2 Side infill type (per side)
-
-Per side:
-- `balconyRailing.sides.<side>.infillType` (enum):
-  - `open`
-  - `solidWall`
-  - `glassPanel`
-  - `grid`
-
-Rules:
-- When `infillType = open`, the side produces no infill geometry, but posts/top rail may still exist if enabled.
-
-### 4.3 Railing global dimensions
-
-Parameters:
-- `balconyRailingHeight` (meters): height of the side system above the platform top surface.
-- `balconyRailingThickness` (meters): base thickness used for “solidWall” infill and for framing baselines.
-- `balconyRailingInsetFromEdge` (meters, default 0): inset of the railing footprint from the platform outer edge.
-
----
-
-## 5. Posts (supports)
-
-Posts are vertical supports for railing corners and optionally additional supports along sides.
-
-### 5.1 Enablement and profile
-
-Parameters:
-- `balconyRailingPosts.enabled` (bool, default true when any side is enabled)
-- `balconyRailingPosts.profile` (enum): `box` (first pass)
-- `balconyRailingPosts.width` (meters)
-- `balconyRailingPosts.depth` (meters)
-
-### 5.2 Placement mode
-
-Parameters:
-- `balconyRailingPosts.mode` (enum):
-  - `cornersOnly`
-  - `maxSpacing`
-  - `explicitPerSide`
-
-Rules:
-- Corner posts MUST exist when:
-  - `balconyRailingPosts.enabled = true`, and
-  - at least one of the adjacent sides is enabled.
-
-Additional post placement:
-- If `mode = maxSpacing`:
-  - `balconyRailingPosts.maxSpacing` (meters) controls the maximum distance between posts.
-- If `mode = explicitPerSide`:
-  - `balconyRailingPosts.explicitCount.left` (int, >= 0)
-  - `balconyRailingPosts.explicitCount.front` (int, >= 0)
-  - `balconyRailingPosts.explicitCount.right` (int, >= 0)
-  - Counts represent additional posts *between corners*.
-
----
-
-## 6. Top Rail (cap)
-
-Top rail is a horizontal piece along enabled sides at the top of the railing, intended as the “lean on” surface.
-
-Parameters:
-- `balconyTopRail.enabled` (bool, default true when any side is enabled)
-- `balconyTopRail.width` (meters): cap width (perpendicular to side direction)
-- `balconyTopRail.height` (meters): cap height (vertical thickness)
-- `balconyTopRail.overhang` (meters, default 0): how far the cap overhangs outward beyond the infill footprint
-- `balconyTopRail.cornerJoinMode` (enum): `butt | miter` (first pass default `butt`)
-
----
-
-## 7. Infill Types (first pass behavior)
-
-### 7.1 Solid wall infill
-
-When `infillType = solidWall`, generate a simple wall strip per enabled side:
-- height = `balconyRailingHeight`
-- thickness = `balconyRailingThickness`
-
-### 7.2 Glass panel infill
-
-When `infillType = glassPanel`, generate one panel per enabled side.
-
-Parameters:
-- `balconyRailingGlass.thickness` (meters, default 0): if 0, render as a plane; otherwise as a thin slab.
-- `balconyRailingGlass.gapFromPosts` (meters, default small value): horizontal inset so the panel does not intersect posts.
-
-### 7.3 Grid infill (procedural bars)
-
-First pass: grid infill is generated procedurally using repeated small box “bars” (no custom mesh required).
-
-Parameters:
-- `balconyRailingGrid.pattern` (enum): `verticalBars | verticalAndHorizontal` (first pass default `verticalBars`)
-- `balconyRailingGrid.barWidth` (meters)
-- `balconyRailingGrid.barDepth` (meters)
-- `balconyRailingGrid.mode` (enum): `spacing | count`
-  - if `spacing`: `balconyRailingGrid.barSpacing` (meters)
-  - if `count`: `balconyRailingGrid.barCount` (int, >= 0)
-- `balconyRailingGrid.gapFromPosts` (meters, default small value)
-
-Future extension (out of scope):
-- `balconyRailingGrid.panelMeshId` (string) to select a custom railing panel mesh asset.
-
----
-
-## 8. Materials and UV Adjustments (balcony)
-
-Balcony has multiple material groups, some of which support per-face overrides.
-
-### 8.1 Platform materials (per-face)
-
-Slots:
-- `balconyPlatformMaterial` (default)
-- `balconyPlatformFaceMaterials[face]` (optional per-face overrides, face set in §3.2)
-
-Linking rule when not all faces specify materials (normative):
-1) Let `Overrides` be the set of faces with an override.
-2) If `Overrides` is empty, all faces use `balconyPlatformMaterial`.
-3) Otherwise, pick `anchorFace` as the first face in the platform face order that has an override.
-4) Any face without an override uses the `anchorFace` override material.
-
-UV adjustments:
-- `balconyPlatformUvAdjustments.default` (uv)
-- `balconyPlatformUvAdjustments.faces[face]` (optional per-face uv overrides)
-
-Rule:
-- UV adjustments remain independently adjustable per face even when materials are linked via the rule above.
-
-### 8.2 Railing materials
-
-Slots (first pass):
-- `balconyRailingPostMaterial`
-- `balconyTopRailMaterial`
-- Infill materials:
-  - `balconyRailingWallMaterial` (for `solidWall`)
-  - `balconyRailingGlassMaterial` (for `glassPanel`)
-  - `balconyRailingGridMaterial` (for `grid`)
-
-UV adjustments (first pass):
-- `balconyRailingPostUvAdjustments` (uv)
-- `balconyTopRailUvAdjustments` (uv)
-- `balconyRailingInfillUvAdjustments` (uv) (applies to wall/grid; glass may ignore UV adjustments depending on shader)
-
----
-
-## 9. Validation / Clamps (minimums)
-
-Implementation MUST clamp deterministically to avoid degenerate geometry:
-- `balconyWidth > 0`
-- `balconyDepth > 0`
-- `balconyPlatformThickness >= 0`
-- `balconyRailingHeight >= 0`
-- Thickness/width values >= 0, and must not exceed a safe fraction of balcony dimensions (implementation-defined).
-
----
-
-## 10. Open Questions (explicitly deferred)
-
-- Balcony “back” face options (if balcony is not always flush to wall)
-- Railings with complex profiles or curved/ornamental meshes
-- Per-face materials/UVs for all railing components (posts/top rail/infill) if needed
-- Balcony collision/physics rules
-
+## 1. One feature with modes
+
+Balcony is a **per-bay facade feature** (`bay.balcony`, next to `bay.window` /
+`bay.capital` / `bay.depth`), not a set of sibling balcony types. It rides the
+bay through the solver, so repeat, group-repeat, face linking and mirroring
+apply to it for free. Behavior varies by:
+
+- `placement: 'projecting' | 'recessed'`
+  - **projecting**: platform slab + railing kit outside the facade plane, plus
+    a support mode.
+  - **recessed**: the notch comes from the bay's own recession — the bay
+    authors **negative depth** (facade depth sign convention: positive bulges
+    outward, negative recesses inward). The balcony contributes the notch
+    floor slab, the front railing near the nominal facade plane, and the notch
+    ceiling soffit (for floors whose ceiling is not the next balcony's
+    platform; the layer top is closed by the existing cap/ring band). The
+    window/door and its interior parallax sit on the recessed plane via the
+    normal bay-depth path.
+- adjacency context (side covers, §3) rather than authored per-type variants.
+
+The **juliet balconet** is a preset of the same feature: tiny depth,
+opening-width platform, `grid` infill, front side forced on.
+
+## 2. Config schema (normalized by `normalizeBalconyConfig`)
+
+```js
+balcony: {
+  enabled: true,
+  presetId: 'balcony.modern_glass_projecting' | 'balcony.modern_recessed' | 'balcony.juliet_iron' | null,
+  placement: 'projecting' | 'recessed',
+  platform: {
+    depthMeters: number | null,     // null = auto (projecting 1.4, recessed = notch depth)
+    thicknessMeters: 0.03..0.6,     // default 0.16
+    widthMode: 'bay' | 'opening',   // whole bay, or one platform per opening repeat slot
+    sideMarginMeters: 0..2,         // bay: inset from bay edges; opening: outset past opening
+    elevationMeters: -1..1,         // vertical offset from floor level (opening mode: from sill)
+    material: { kind: 'match_wall'|'texture'|'color'|'slot', id }
+  },
+  support: {                        // projecting only
+    mode: 'cantilever' | 'corbel_brackets' | 'posts_to_below',
+    bracketHeightMeters: 0.08..1.2,
+    postSizeMeters: 0.04..0.4,
+    material: { kind, id }
+  },
+  railing: {
+    heightMeters: 0.3..1.8,         // default 1.05
+    insetMeters: 0..0.5,            // railing footprint inset from platform edge
+    infill: 'open' | 'solid_wall' | 'glass_panel' | 'grid',
+    colorHex, roughness, metalness, // railing metal (frame/posts/top rail/bars)
+    topRail: { enabled, widthMeters, heightMeters },
+    posts: { enabled, widthMeters, maxSpacingMeters },
+    grid: { pattern: 'vertical_bars'|'horizontal_bars', barWidthMeters, spacingMeters },
+    solid: { thicknessMeters, material: { kind, id } },
+    glass: { opacity, tintHex }
+  },
+  sides: { left: 'auto'|'always'|'never', front: ..., right: ... },
+  floors: { start: 1, every: 1, end: 0 }   // 1-based floor selection; end 0 = all
+}
+```
+
+- `presetId` provides the base config; explicit fields deep-merge on top, so
+  authored configs stay tiny (`{ enabled: true, presetId: '...' }`).
+- Wall-material specs use the **capital dialect** (`{kind, id}`); `slot` refs
+  are rewritten by the material-slots pre-pass
+  (`resolveBuildingConfigMaterials` walks `platform.material`,
+  `support.material`, `railing.solid.material`).
+- Railing metal is a direct color/roughness/metalness material (painted
+  steel), not a wall material.
+- Glass panels use the window-glass material family (`MeshPhysicalMaterial`,
+  `depthWrite:false`, polygon offset, `userData.windowGlass`), so transparency
+  sorting and geometry merging treat them like window glass.
+
+## 3. Adjacency-driven side covers (`resolveBalconySideCoverage`)
+
+For each side (`left` = lower-u, `front`, `right` = higher-u): the side gets
+railing/infill only when it faces **open air**; a side that abuts wall gets
+nothing (the wall does the job). Overrides `always`/`never` win.
+
+Rule: a side abuts wall when the neighbor's front plane sits at (or in front
+of) the balcony's **platform front plane** (`strip.depth + platformDepth` on
+the facade depth axis). Neighbors are the adjacent strip on the same face; at
+a face end, the corner strip of the adjacent face in loop order (A→B→C→D→A);
+no facade/strips = plain wall at depth 0.
+
+Consequences (the modes fall out of one rule):
+- mid-facade recessed balcony → both sides abut the notch's return walls → no
+  side covers;
+- recessed balcony at a corner where the adjacent face also recesses (the
+  ref-4 massing notch) → the corner side faces the open notch → exactly one
+  side cover;
+- projecting balcony → all sides face air → all covered;
+- a projecting balcony beside a deeper proud bay → that side abuts the proud
+  wall → no cover there.
+
+## 4. Geometry kit
+
+- **Platform slab**: bay-width (minus `sideMarginMeters`) × `depthMeters`,
+  embedded 0.04 m into the wall; top at floor level + `elevationMeters`
+  (opening mode: at the opening sill). Soffit is the slab underside.
+- **Railing frame** (metal): corner/end posts (skipped at wall-anchored ends)
+  + intermediates by `maxSpacingMeters`; top rail cap along each covered side.
+- **Infill** per covered side: `glass_panel` (thin panel between posts),
+  `solid_wall` (masonry strip, own material), `grid` (vertical bars + bottom
+  tie rail, or horizontal bars), `open` (nothing).
+- **Supports** (projecting): `cantilever` (clean slab), `corbel_brackets`
+  (right-triangle knee braces under the slab, count scales with width),
+  `posts_to_below` (front-corner posts dropping to the balcony below when the
+  floor below is selected, or to grade on the first floor).
+- **Recessed soffit**: notch ceiling panel emitted when the floor above is not
+  selected (otherwise the platform above is the ceiling).
+- Projecting platform depth counts toward the outward footprint reserve
+  (`estimateBalconyOutwardReserveMeters`).
+- All parts are per-balcony merged (one mesh per role) and roles are tagged in
+  `userData.buildingFab2Role`: `balcony_platform`, `balcony_railing`,
+  `balcony_infill_glass`, `balcony_infill_solid`, `balcony_support`.
+
+## 5. Presets
+
+- `balcony.modern_glass_projecting` — projecting 1.5 m cantilever slab, glass
+  panels, dark aluminum frame (ref 4 projecting units).
+- `balcony.modern_recessed` — recessed, platform fills the notch, glass front
+  rail near the nominal plane (ref 4 notch units).
+- `balcony.juliet_iron` — projecting 0.12 m shelf, opening-width platform
+  (one balconet per opening repeat), wrought-iron vertical-bar grid, front
+  forced on (ref 5 balconets on every window).
+
+## 6. Balcony door
+
+`door_balcony_glide` (windows catalog): full-height glazed slider — thin dark
+metal frame, double-door glazing, residential parallax interior. Pair with
+`heightMode: 'full'` for the floor-to-ceiling glazing the references show.
+
+## 7. Open questions / future extensions
+
+- Corner-wrap balconies turning the building corner (per-face generator today).
+- Custom railing panel meshes (`grid.panelMeshId`) and ornamental profiles
+  (classical balustrade infill would slot into `railing.infill`).
+- Cable/X-pattern grid variants (additional `grid.pattern` values).
+- Continuous multi-bay balcony bands sharing one slab (today: one balcony per
+  bay; a full-width recessed bay approximates the loggia band).
