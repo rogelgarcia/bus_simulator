@@ -1,0 +1,19 @@
+{
+  "draws": {
+    "fixed": 113,
+    "legacy": 113
+  },
+  "mapsOnce": {
+    "beforeMin": 11.28,
+    "afterMin": 11.38
+  },
+  "casterMerge": {
+    "offMin": 12.04,
+    "onMin": 10.33
+  },
+  "visual": {
+    "changedPct": 0,
+    "strongPct": 0,
+    "maxDelta": 0
+  }
+}

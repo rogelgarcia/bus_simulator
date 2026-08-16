@@ -1636,6 +1636,26 @@ export class PostProcessingPipeline {
             this.camera.updateProjectionMatrix();
         }
 
+        // Shadow maps only need rasterising once per frame, but three rebuilds
+        // every one of them on every renderer.render() — and this method issues
+        // several over the scene (bloom, sun-bloom occlusion, AO mask) before
+        // the pass that produces the visible image. Measured 2 light-bearing
+        // shadow renders and 226 shadow draws where 113 would do.
+        //
+        // The order matters, and getting it wrong changes the picture: the
+        // sun-bloom occlusion pass swaps in dark/occluder materials, so shadow
+        // maps built during it use the wrong materials (alpha-tested foliage
+        // silhouettes in particular). Letting the FIRST render win cost 0.68%
+        // of pixels. So the helper passes reuse the previous frame's maps, and
+        // the main composer pass — real materials, real camera — builds them,
+        // exactly as it already does today when every pass rebuilds.
+        const shadowMap = this.renderer?.shadowMap ?? null;
+        const prevShadowAutoUpdate = shadowMap ? shadowMap.autoUpdate : null;
+        if (shadowMap && wantsPipeline) {
+            shadowMap.autoUpdate = false;
+            shadowMap.needsUpdate = false;
+        }
+
         try {
             if (!wantsPipeline) {
                 this.renderer.render(this.scene, this.camera);
@@ -1654,8 +1674,12 @@ export class PostProcessingPipeline {
             if (mat?.uniforms?.uGlobalBloomTexture) mat.uniforms.uGlobalBloomTexture.value = globalBloomOn ? (this._globalBloomComposer.renderTarget2?.texture ?? this._blackTex) : this._blackTex;
             if (mat?.uniforms?.uSunBloomTexture) mat.uniforms.uSunBloomTexture.value = sunBloomOn ? (this._sunBloomComposer.renderTarget2?.texture ?? this._blackTex) : this._blackTex;
 
+            // The visible pass builds the maps; the ShaderPasses after it carry
+            // no lights, so WebGLShadowMap early-outs on them.
+            if (shadowMap) shadowMap.needsUpdate = true;
             this.composer.render(deltaTime);
         } finally {
+            if (shadowMap) shadowMap.autoUpdate = prevShadowAutoUpdate;
             if (aoMode === 'gtao') this._finalizeGtaoFrameRuntime();
             if (jitterApplied) restoreCameraView(this.camera, prevView);
             if (aaMode === 'taa') this._taaJitterIndex += 1;

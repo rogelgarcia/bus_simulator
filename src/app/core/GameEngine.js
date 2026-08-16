@@ -1223,14 +1223,9 @@ export class GameEngine {
         // flag, so every later render in this frame reuses them. autoUpdate is
         // restored afterwards so anything that renders the scene outside the
         // frame loop (debug views, IBL capture) keeps its own fresh maps.
-        // NOT YET ENABLED. Manual control halves the shadow draws (226 -> 113)
-        // and measured 0.72 ms, but it also changes the image: 0.68% of pixels
-        // beyond 16 levels, max delta 104, after settling 90 frames. Likely
-        // cause is which render builds the maps — three tests object.layers
-        // against the render camera during the shadow pass, so if the
-        // sun-bloom occlusion RenderPass runs first, the maps are built for its
-        // camera and the main pass reuses them. Needs the maps pinned to the
-        // main pass before this can ship.
+        // Shadow maps are built once per frame, pinned to the visible pass —
+        // see PostProcessingPipeline.render(), which owns that because it is
+        // what issues the several scene renders per frame.
         if (this._post?.pipeline) this._post.pipeline.render();
         else this.renderer.render(this.scene, this.camera);
     }

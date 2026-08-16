@@ -29,6 +29,40 @@ Deltas against `off` = 10.89 ms, 3 of 5 passes accepted by the drift gate:
 | cascade/med | +5.56 ms | 3,481 | 576 MiB | 0.012 / 0.040 / 0.185 |
 | cascade/high | +7.24 ms | 3,987 | 832 MiB | 0.012 / 0.024 / 0.051 / 0.185 |
 
+### Shadow optimisations, 2026-08-16
+
+Each measured as a within-run A/B with minimum-of-many-samples. They come from
+different runs, so the deltas are individually valid but should not be summed
+against one absolute baseline.
+
+| change | saving | evidence |
+| --- | --- | --- |
+| instanced facade detail stops casting | **3.99 ms** | cascade/high +6.59 -> +2.60 ms over `off`; 938 draw calls; 0.81 Mtri |
+| shadow maps built once per frame | **0.63 ms** | 2 map rebuilds -> 1; 226 -> 113 shadow draws; **pixel-identical** |
+| caster merge, buildings + props | **1.71 ms** | 1,557 -> 113 shadow draws (the buildings half predates today) |
+
+Shadow-pass draws at cascade/high, directly instrumented by wrapping
+`shadowMap.render` and `renderBufferDirect`:
+
+| state | draws |
+| --- | --- |
+| no caster merge | 1,557 |
+| buildings merged only (before 2026-08-16) | 472 |
+| + props merged | 226 |
+| + maps built once per frame | **113** |
+
+Two things worth keeping in mind for the next round:
+
+- **A geometry's material groups each cost a draw in the shadow pass**, where
+  materials are irrelevant. Before the prop merge, 14 traffic signs produced 73%
+  of all shadow draws — a 56-triangle stop sign cost 16-24 draws through 4
+  material groups times the cascades it touched.
+- **Pin shadow-map construction to the pass that produces the visible image.**
+  The pipeline renders the scene several times per frame, and the sun-bloom
+  occlusion pass swaps in dark materials; building the maps during it changed
+  0.68% of pixels. Building them for the main composer pass instead is
+  pixel-identical, because that pass was already the last to rebuild them.
+
 ### The cost model, re-derived 2026-08-16
 
 `shadow_cost_model_2026-08-16.json`, `shadow_instanced_casters_ab_2026-08-16.json`
