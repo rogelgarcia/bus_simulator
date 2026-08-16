@@ -239,6 +239,48 @@ export class CityCascadedShadows {
         material.needsUpdate = true;
     }
 
+    /**
+     * Re-assert USE_CSM / CSM_CASCADES over a subtree, and report how many were
+     * wrong.
+     *
+     * The CSM fragment loop runs over NUM_DIR_LIGHTS — the scene's directional
+     * light count — but only index CSM_CASCADES-1 acts as the catch-all last
+     * cascade. So a material whose define is BELOW the live light count keeps
+     * iterating past its own cascades and applies those surplus lights again,
+     * and a lit material with no USE_CSM at all sees every cascade light as a
+     * plain full-intensity sun. Either way the scene brightens with the cascade
+     * count: measured +81 luma (nearly double) at 3 and 4 cascades, and exactly
+     * zero at 2, where there is nothing above the floor to over-apply.
+     *
+     * That is the mirror of the crash padCascadeUniforms guards: a define ABOVE
+     * the live count reads past the uniform array, a define BELOW it silently
+     * doubles the light.
+     */
+    reconcileMaterials(root) {
+        if (this._disposed || !root?.traverse) return 0;
+        const live = this.csm.cascades;
+        let repaired = 0;
+        root.traverse((o) => {
+            const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+            for (const material of mats) {
+                if (!isLitMaterial(material)) continue;
+                if (!this._registered.has(material)) {
+                    this.registerMaterial(material);
+                    repaired++;
+                    continue;
+                }
+                // Registered but carrying the wrong count — someone rewrote the
+                // defines, or it was registered against a previous cascade set.
+                if (material.defines && material.defines.CSM_CASCADES !== live) {
+                    material.defines.CSM_CASCADES = live;
+                    material.needsUpdate = true;
+                    repaired++;
+                }
+            }
+        });
+        return repaired;
+    }
+
     /** Sun intensity changed (options slider); mirror it onto every cascade light. */
     setIntensity(value) {
         if (!Number.isFinite(value)) return;

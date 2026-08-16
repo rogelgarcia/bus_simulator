@@ -250,6 +250,38 @@ across every transition"; a fixed sweep is not every transition. Regression test
 added at `tests/headless/e2e/shadow_cascade_count_switching.pwtest.js`, covering
 every downward step plus a forced program/uniform mismatch.
 
+### Follow-up fix: cascade med/high sometimes doubled the sun
+
+Reported alongside the crash: at `cascade/med` and `cascade/high` the scene
+sometimes goes over-lit — high worse than med, `low` never, `single` never — and
+it clears by itself.
+
+Same root cause as the crash, opposite direction. The CSM fragment loop runs
+over `NUM_DIR_LIGHTS` (the scene's directional light count) but only index
+`CSM_CASCADES - 1` acts as the catch-all last cascade. A material whose define
+sits BELOW the live light count therefore keeps iterating past its own cascades
+and applies the surplus lights again; a lit material with no `USE_CSM` at all
+sees every cascade light as a plain full-intensity sun. Measured by forcing the
+state: **+81 luma, near double, at 3 and 4 cascades — and exactly 0 at 2**,
+because nothing can sit below the floor of two. That is precisely the reported
+signature, and why it self-clears: the next mode switch re-registers everything.
+
+So a stale cascade count is dangerous in both directions — above the live count
+it reads past the uniform array and crashes, below it silently doubles the light.
+
+Fixed by (a) registering from `engine.scene` rather than just the city group and
+its extra roots, so no lit material is missed, and (b) a slow repair pass
+(`reconcileMaterials`, every 120 frames) that re-registers anything unregistered
+and corrects any wrong `CSM_CASCADES`. Verified end to end: breaking all 2,632
+materials to a count of 2 drives luma 88.8 -> 172.2, and the repair returns it to
+88.8 exactly.
+
+The repair pass is a safety net, not a root-cause fix: the original trigger never
+reproduced here across a full 7x7 transition matrix, 44 randomized UI clicks, and
+whole-scene censuses, all of which showed a consistent light/define state.
+`city.shadowReconcileRepairs` counts repairs — if it is ever non-zero in normal
+play, something upstream is skipping the registration choke point.
+
 **Still open:** the seam check in motion at `cascade/low` (11.5x density step at
 60 m) — static captures cannot settle it. The candidate `high` layout needs
 re-measuring before adoption.

@@ -33,6 +33,11 @@ import { createTrafficControlProps } from './TrafficControlProps.js';
 
 const MATERIAL_SHADOW_SIDE_ORIGINAL = new WeakMap();
 
+// How often the cascaded-shadow material repair pass runs, in frames. ~2 s at
+// 60 fps: often enough that a wrong cascade count self-corrects before it is
+// worth reporting, rare enough that a full-scene traverse costs nothing.
+const SHADOW_RECONCILE_FRAMES = 120;
+
 const ZERO_VEC = new THREE.Vector3(0, 0, 0);
 const UP_DEFAULT = new THREE.Vector3(0, 1, 0);
 const UP_ALT = new THREE.Vector3(0, 0, 1);
@@ -571,6 +576,12 @@ export class City {
             maxTextureSize: engine?.renderer?.capabilities?.maxTextureSize ?? 0
         });
         setActiveSceneShadowSystem(this._csm);
+        // Walk the whole scene, not just the city: any lit material the walk
+        // misses keeps no USE_CSM branch and then reads every cascade light as
+        // a separate full-intensity sun, which brightens the scene in step with
+        // the cascade count. engine.scene is a superset of the roots below,
+        // which stay for anything registered later.
+        registerObjectForSceneShadows(engine?.scene ?? this.group);
         registerObjectForSceneShadows(this.group);
         for (const root of this._extraShadowRoots) registerObjectForSceneShadows(root);
 
@@ -628,6 +639,18 @@ export class City {
             // the renderer's shadow pass, which happens after this returns.
             this._shadowCuller?.update(engine?.camera, this.sunRef.direction, this._csm.maxFar);
             this._csm.updateFrame(engine);
+            // Repair pass for materials that appear after the registration walk
+            // or otherwise end up with the wrong cascade count — they double
+            // the sun (see reconcileMaterials). A full-scene traverse is far too
+            // expensive per frame, but this is a repair, not a hot path, so run
+            // it on a slow cadence. It is a safety net: if it ever reports a
+            // repair in normal play, something upstream skipped the choke point.
+            this._shadowReconcileIn = (this._shadowReconcileIn ?? 0) - 1;
+            if (this._shadowReconcileIn <= 0) {
+                this._shadowReconcileIn = SHADOW_RECONCILE_FRAMES;
+                const repaired = this._csm.reconcileMaterials(engine?.scene ?? this.group);
+                if (repaired > 0) this.shadowReconcileRepairs = (this.shadowReconcileRepairs ?? 0) + repaired;
+            }
         } else {
             this._updateSunShadowFocus(engine);
         }

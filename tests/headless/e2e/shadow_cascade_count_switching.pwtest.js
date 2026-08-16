@@ -75,6 +75,68 @@ test('Shadows: every type x quality transition survives, including cascade downs
     expect(errors, 'no page errors across the switch sequence').toEqual([]);
 });
 
+test('Shadows: a cascade count below the live light count self-repairs instead of doubling the sun', async ({ page }) => {
+    test.setTimeout(180_000);
+    const errors = await bootPose(page);
+
+    // The CSM fragment loop runs over NUM_DIR_LIGHTS but only treats index
+    // CSM_CASCADES-1 as the catch-all cascade, so a material whose define sits
+    // BELOW the live light count applies the surplus lights again — measured as
+    // near-double scene luma at 3 and 4 cascades, and exactly zero at 2, where
+    // nothing can sit above the floor.
+    const result = await page.evaluate(() => {
+        const { engine } = window.__busSim;
+        const city = engine.context.city;
+        const luma = () => {
+            city.update(engine); engine.renderFrame();
+            const W = 320, H = 180;
+            const c = document.createElement('canvas');
+            c.width = W; c.height = H;
+            const ctx = c.getContext('2d', { willReadFrequently: true });
+            // drawImage in the same synchronous task as the render: readPixels
+            // on the default framebuffer comes back black after post-processing.
+            ctx.drawImage(engine.renderer.domElement, 0, 0, W, H);
+            const px = ctx.getImageData(0, 0, W, H).data;
+            let s = 0; let n = 0;
+            for (let i = 0; i < px.length; i += 4) { s += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]; n += 1; }
+            return s / n;
+        };
+
+        engine.setShadowSettings({ ...engine.shadowSettings, type: 'cascade', quality: 'high' });
+        city.applyShadowSettings(engine);
+        for (let i = 0; i < 40; i += 1) { city.update(engine); engine.renderFrame(); }
+        const healthy = luma();
+
+        let broken = 0;
+        const seen = new Set();
+        engine.scene.traverse((o) => {
+            const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+            for (const m of mats) {
+                if (!m || seen.has(m) || !m.defines?.USE_CSM) continue;
+                seen.add(m);
+                m.defines.CSM_CASCADES = 2;
+                m.needsUpdate = true;
+                broken += 1;
+            }
+        });
+        for (let i = 0; i < 20; i += 1) { city.update(engine); engine.renderFrame(); }
+        const bright = luma();
+
+        // Repair runs on a slow cadence; give it more than one window.
+        for (let i = 0; i < 200; i += 1) { city.update(engine); engine.renderFrame(); }
+        const healed = luma();
+
+        return { healthy, bright, healed, broken };
+    });
+
+    expect(result.broken, 'materials were actually broken').toBeGreaterThan(100);
+    // Guards the measurement itself: if breaking the define stopped mattering,
+    // this test would pass vacuously.
+    expect(result.bright, 'a low cascade count must visibly over-light').toBeGreaterThan(result.healthy + 20);
+    expect(Math.abs(result.healed - result.healthy), 'repair restores the original exposure').toBeLessThan(3);
+    expect(errors, 'no page errors').toEqual([]);
+});
+
 test('Shadows: a program declaring more cascades than the live count still uploads', async ({ page }) => {
     const errors = await bootPose(page);
 
