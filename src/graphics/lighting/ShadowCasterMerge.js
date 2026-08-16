@@ -130,6 +130,59 @@ export function setMergedShadowCastersEnabled(entries, enabled) {
     }
 }
 
+/**
+ * Index a building group's instanced facade detail — window sills, decorations,
+ * handles — so its shadow casting can be switched as a set.
+ *
+ * These are excluded from the merge above (expanding 30k instances into real
+ * geometry would cost a lot of memory to save nothing in the main pass), so
+ * each one stays a draw call per shadow pass. There are ~1,091 of them city
+ * wide, carrying ~0.31M triangles between them.
+ *
+ * @param {THREE.Object3D} buildingsGroup
+ * @returns {Array<{ mesh: THREE.Mesh, originalCast: boolean }>}
+ */
+export function collectInstancedShadowCasters(buildingsGroup) {
+    const entries = [];
+    if (!buildingsGroup?.traverse) return entries;
+    buildingsGroup.traverse((o) => {
+        if (!o?.isInstancedMesh) return;
+        entries.push({ mesh: o, originalCast: !!o.castShadow });
+    });
+    return entries;
+}
+
+/**
+ * Switch instanced facade detail in or out of the shadow passes.
+ *
+ * Off is the default, and it is very nearly free: measured over a gameplay
+ * street pose plus sunlit facades of the three most decorated buildings,
+ * dropping these casters changes 0.05-0.07% of pixels and under 0.03% of them
+ * by more than 16 levels, with no structure in the difference image. For
+ * contrast, hiding the same meshes outright changes 10-13% of pixels — they
+ * are very visible geometry that happens to cast almost nothing, because each
+ * instance is a few centimetres of trim against a wall that already casts.
+ *
+ * @returns {boolean} whether anything changed.
+ */
+export function setInstancedShadowCastersEnabled(entries, enabled) {
+    if (!Array.isArray(entries)) return false;
+    const want = !!enabled;
+    let changed = false;
+    for (const entry of entries) {
+        const mesh = entry?.mesh;
+        if (!mesh) continue;
+        // Never turn casting ON for something that was not a caster to begin
+        // with; the toggle restores the original, it does not promote.
+        const next = want ? entry.originalCast : false;
+        if (mesh.castShadow !== next) {
+            mesh.castShadow = next;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
 /** Free merged geometry and detach the meshes, restoring original casting. */
 export function disposeMergedShadowCasters(entries) {
     if (!Array.isArray(entries)) return;

@@ -110,6 +110,20 @@ test('ShadowSettings: cascades clamps to 0 (auto) or 2..4; splitScale to 0.5..2.
     assert.equal(at({ splitScale: 'garbage' }).splitScale, 1);
 });
 
+test('ShadowSettings: instanced facade detail does not cast by default', () => {
+    assert.equal(sanitizeShadowSettings({}).instancedCasters, false);
+    assert.equal(sanitizeShadowSettings({ quality: 'cascade_ultra' }).instancedCasters, false,
+        'legacy records must not silently opt in');
+    for (const raw of [true, 'true', 'on', '1', 1]) {
+        assert.equal(sanitizeShadowSettings({ instancedCasters: raw }).instancedCasters, true, `truthy '${raw}'`);
+    }
+    for (const raw of [false, 'false', 'off', '0', 0]) {
+        assert.equal(sanitizeShadowSettings({ instancedCasters: raw }).instancedCasters, false, `falsy '${raw}'`);
+    }
+    // Unparseable input falls back to the default rather than flipping it on.
+    assert.equal(sanitizeShadowSettings({ instancedCasters: 'garbage' }).instancedCasters, false);
+});
+
 test('ShadowSettings: the single ladder spends every step on reach', () => {
     const presets = TIERS.map((t) => SHADOW_QUALITY_PRESETS[`single_${t}`]);
     for (const p of presets) {

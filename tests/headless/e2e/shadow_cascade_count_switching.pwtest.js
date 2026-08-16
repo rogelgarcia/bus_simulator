@@ -75,6 +75,40 @@ test('Shadows: every type x quality transition survives, including cascade downs
     expect(errors, 'no page errors across the switch sequence').toEqual([]);
 });
 
+test('Shadows: instanced facade detail is out of the shadow passes by default', async ({ page }) => {
+    test.setTimeout(180_000);
+    const errors = await bootPose(page);
+
+    const result = await page.evaluate(() => {
+        const { engine } = window.__busSim;
+        const city = engine.context.city;
+        const count = () => {
+            let total = 0; let casting = 0;
+            city.buildings.group.traverse((o) => {
+                if (!o.isInstancedMesh) return;
+                total += 1;
+                if (o.castShadow) casting += 1;
+            });
+            return { total, casting, calls: engine.renderer.info.render.calls };
+        };
+        const run = (instancedCasters) => {
+            engine.setShadowSettings({ ...engine.shadowSettings, type: 'cascade', quality: 'high', instancedCasters });
+            city.applyShadowSettings(engine);
+            for (let i = 0; i < 40; i += 1) { city.update(engine); engine.renderFrame(); }
+            return count();
+        };
+        return { off: run(false), on: run(true), backOff: run(false) };
+    });
+
+    expect(result.off.total, 'the city has instanced facade detail to test').toBeGreaterThan(100);
+    expect(result.off.casting, 'default: none of it casts').toBe(0);
+    expect(result.on.casting, 'enabling puts it back in the shadow passes').toBeGreaterThan(0);
+    expect(result.backOff.casting, 'and the toggle is reversible').toBe(0);
+    // The whole point of the default: fewer draw calls.
+    expect(result.off.calls).toBeLessThan(result.on.calls);
+    expect(errors, 'no page errors').toEqual([]);
+});
+
 test('Shadows: a cascade count below the live light count self-repairs instead of doubling the sun', async ({ page }) => {
     test.setTimeout(180_000);
     const errors = await bootPose(page);

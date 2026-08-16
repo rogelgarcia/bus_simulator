@@ -20,7 +20,7 @@ import { getResolvedShadowSettings, getShadowQualityPreset } from '../../lightin
 import { registerObjectForSceneShadows, setActiveSceneShadowSystem, getActiveSceneShadowSystem } from '../../lighting/SceneShadowMaterials.js';
 import { CityCascadedShadows } from './CityCascadedShadows.js';
 import { ShadowCasterCuller } from '../../lighting/ShadowCasterCulling.js';
-import { buildMergedShadowCasters, setMergedShadowCastersEnabled, summarizeMergedShadowCasters } from '../../lighting/ShadowCasterMerge.js';
+import { buildMergedShadowCasters, collectInstancedShadowCasters, setInstancedShadowCastersEnabled, setMergedShadowCastersEnabled, summarizeMergedShadowCasters } from '../../lighting/ShadowCasterMerge.js';
 import { azimuthElevationDegToDir } from '../atmosphere/SunDirection.js';
 import { getResolvedBuildingWindowVisualsSettings } from '../buildings/BuildingWindowVisualsSettings.js';
 import { getResolvedSunFlareSettings } from '../sun/SunFlareSettings.js';
@@ -393,6 +393,9 @@ export class City {
             // geometry; saves a draw call per material split, per cascade.
             this._shadowMerge = buildMergedShadowCasters(buildingsGroup);
             this.shadowMergeStats = summarizeMergedShadowCasters(this._shadowMerge);
+            // Instanced facade detail is not part of the merge, so it is
+            // switched as its own set.
+            this._instancedCasters = collectInstancedShadowCasters(buildingsGroup);
         }
 
         this._attached = false;
@@ -405,6 +408,8 @@ export class City {
         // culler, whose caster list is captured once.
         this._shadowMerge ??= [];
         this._shadowMergeEnabled = null;
+        this._instancedCasters ??= [];
+        this._instancedCastersEnabled = null;
         // Skips casters that cannot cast into the view. Only worthwhile under
         // CSM: the single fitted map's box is already small enough that three's
         // own culling against it does the same job.
@@ -482,9 +487,10 @@ export class City {
             && !!engine?.camera
             && typeof window !== 'undefined';
 
-        // Must run before the culler is built: it captures the caster list
-        // once, and the merge decides which meshes are casters.
+        // Both must run before the culler is built: it captures the caster list
+        // once, and these decide which meshes are casters at all.
         this._applyShadowCasterMerge(settings);
+        this._applyInstancedShadowCasters(settings);
 
         if (wantsCsm) {
             this._activateCascadedShadows(engine, preset, settings);
@@ -536,6 +542,22 @@ export class City {
         this._shadowCuller?.clear();
         setMergedShadowCastersEnabled(this._shadowMerge, wanted);
         this._shadowMergeEnabled = wanted;
+        this._shadowCuller?.addRoot(this.group);
+        return true;
+    }
+
+    /** @returns {boolean} whether the active caster set changed. */
+    _applyInstancedShadowCasters(settings) {
+        if (!this._instancedCasters?.length) return false;
+        const wanted = settings?.instancedCasters === true;
+        if (this._instancedCastersEnabled === wanted) return false;
+
+        // Same reason as the merge: the culler drives `castShadow` every frame
+        // over a list it captured once, so release its hold before changing the
+        // caster set and let it re-capture afterwards.
+        this._shadowCuller?.clear();
+        setInstancedShadowCastersEnabled(this._instancedCasters, wanted);
+        this._instancedCastersEnabled = wanted;
         this._shadowCuller?.addRoot(this.group);
         return true;
     }

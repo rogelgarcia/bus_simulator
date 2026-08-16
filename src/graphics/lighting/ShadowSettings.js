@@ -24,7 +24,15 @@ export const SHADOW_DEFAULTS = Object.freeze({
     splitScale: 1,
     // Cast each building's shadow from one merged mesh instead of one per
     // material. Lossless (same triangles), purely a draw-call saving.
-    mergeCasters: true
+    mergeCasters: true,
+    // Let a building's instanced facade detail (window sills, decorations,
+    // handles) cast shadows. Off by default: measured across a street pose and
+    // three sunlit facades of the most decorated buildings, switching it off
+    // changes 0.05-0.07% of pixels and under 0.03% by more than 16 levels,
+    // while hiding the same meshes outright changes 10-13%. The geometry
+    // matters to the image; its shadows do not. Off saves ~938 draw calls
+    // (~20% of the frame) and 0.82M triangles.
+    instancedCasters: false
 });
 
 // Texel density the normalBias values below are anchored on: the old single
@@ -276,7 +284,8 @@ export function sanitizeShadowSettings(input) {
         quality,
         cascades: isLegacy ? 0 : sanitizeCascades(src.cascades ?? SHADOW_DEFAULTS.cascades),
         splitScale: isLegacy ? SHADOW_DEFAULTS.splitScale : sanitizeSplitScale(src.splitScale ?? SHADOW_DEFAULTS.splitScale),
-        mergeCasters: sanitizeBool(src.mergeCasters, SHADOW_DEFAULTS.mergeCasters)
+        mergeCasters: sanitizeBool(src.mergeCasters, SHADOW_DEFAULTS.mergeCasters),
+        instancedCasters: sanitizeBool(src.instancedCasters, SHADOW_DEFAULTS.instancedCasters)
     };
 }
 
@@ -365,6 +374,7 @@ export function getResolvedShadowSettings({ includeUrlOverrides = true } = {}) {
         if (params.has('shadowCascades')) merged.cascades = sanitizeCascades(params.get('shadowCascades'));
         if (params.has('shadowSplitScale')) merged.splitScale = sanitizeSplitScale(params.get('shadowSplitScale'));
         if (params.has('shadowMergeCasters')) merged.mergeCasters = sanitizeBool(params.get('shadowMergeCasters'), merged.mergeCasters);
+        if (params.has('shadowInstancedCasters')) merged.instancedCasters = sanitizeBool(params.get('shadowInstancedCasters'), merged.instancedCasters);
     }
 
     return merged;

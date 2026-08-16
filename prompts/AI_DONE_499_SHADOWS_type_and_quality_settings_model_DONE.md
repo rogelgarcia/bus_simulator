@@ -282,6 +282,33 @@ whole-scene censuses, all of which showed a consistent light/define state.
 `city.shadowReconcileRepairs` counts repairs — if it is ever non-zero in normal
 play, something upstream is skipping the registration choke point.
 
+### Follow-up: instanced facade detail no longer casts shadows
+
+A building's shadow comes from one merged caster, but its instanced facade trim
+— window sills, decorations, handles — is excluded from that merge (expanding
+~30k instances into real geometry would cost a lot of memory to save nothing in
+the main pass). There are 1,091 such meshes city-wide carrying ~0.31M triangles,
+and each is a draw call per shadow pass.
+
+Measured over a gameplay street pose plus sunlit facades of the three most
+decorated buildings, dropping them from the shadow passes changes **0.05-0.07%
+of pixels, under 0.03% by more than 16 levels**, with no structure in the
+difference image. Hiding the same meshes outright changes **10-13%** — they are
+very visible geometry that casts almost nothing, because each instance is a few
+centimetres of trim on a wall that already casts.
+
+Now a `Shadows` panel toggle, **Instanced detail shadows, default Off**
+(`instancedCasters`, plus `?shadowInstancedCasters=`). Saving scales with how
+much city is in view: 938 draw calls at the tested street pose, 3,864 at a wider
+gameplay view.
+
+**Caveat, measured after the fact:** at a low raking sun the difference is
+roughly 10-20x larger than at the default sun — 0.13% / 0.57% / 0.73% of pixels
+at 10 / 16 / 24 degrees elevation, and 0.03% / 0.25% / 0.40% beyond 16 levels,
+max delta ~110. Still under 1% and not visible to me in a side-by-side, but no
+longer negligible-by-inspection. Captures in
+`tests/artifacts/screens/ai499_instanced_removal/`.
+
 **Still open:** the seam check in motion at `cascade/low` (11.5x density step at
 60 m) — static captures cannot settle it. The candidate `high` layout needs
 re-measuring before adoption.
