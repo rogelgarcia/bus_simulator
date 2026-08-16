@@ -1,0 +1,51 @@
+{
+  "date": "2026-08-16T04:34:55.125Z",
+  "method": "min of 8x6 bursts of 12 frames, round-robin",
+  "rows": [
+    {
+      "id": "off",
+      "min": 8.77,
+      "median": 10.55,
+      "n": 48,
+      "calls": 2035,
+      "mtri": 1.46,
+      "casting": 0
+    },
+    {
+      "id": "cascade/high, instanced ON",
+      "min": 15.36,
+      "median": 17.67,
+      "n": 48,
+      "calls": 3987,
+      "mtri": 4.16,
+      "casting": 152
+    },
+    {
+      "id": "cascade/high, instanced OFF",
+      "min": 11.37,
+      "median": 14.32,
+      "n": 48,
+      "calls": 3049,
+      "mtri": 3.35,
+      "casting": 0
+    },
+    {
+      "id": "cascade/low, instanced OFF",
+      "min": 10.08,
+      "median": 13.45,
+      "n": 48,
+      "calls": 2519,
+      "mtri": 2.37,
+      "casting": 0
+    },
+    {
+      "id": "single/high, instanced OFF",
+      "min": 10.57,
+      "median": 13.47,
+      "n": 48,
+      "calls": 3023,
+      "mtri": 4.06,
+      "casting": 0
+    }
+  ]
+}

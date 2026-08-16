@@ -29,6 +29,52 @@ Deltas against `off` = 10.89 ms, 3 of 5 passes accepted by the drift gate:
 | cascade/med | +5.56 ms | 3,481 | 576 MiB | 0.012 / 0.040 / 0.185 |
 | cascade/high | +7.24 ms | 3,987 | 832 MiB | 0.012 / 0.024 / 0.051 / 0.185 |
 
+### The cost model, re-derived 2026-08-16
+
+`shadow_cost_model_2026-08-16.json`, `shadow_instanced_casters_ab_2026-08-16.json`
+
+The AI_484 conclusion — "shadow cost is geometry throughput" — **no longer
+holds**. It was measured before caster culling, merged casters and dropping
+instanced facade detail; those cut caster geometry to ~0.27M triangles, which
+at 1.3-2.4 ms/Mtri cannot account for the cost that remains. Re-measured from
+scratch, with `off` = 8.77 ms and instanced casters off (the shipped default):
+
+| config | vs off | draw calls | Mtri |
+| --- | --- | --- | --- |
+| cascade/low | +1.31 ms | 2,519 | 2.37 |
+| single/high | +1.80 ms | 3,023 | 4.06 |
+| cascade/high | +2.60 ms | 3,049 | 3.35 |
+| cascade/high, instanced casters ON | +6.59 ms | 3,987 | 4.16 |
+
+What the cost is **not**:
+
+- **Not per-lit-pixel.** At a quarter of the screen area the shadow delta was
+  unchanged: single/high 2.44 -> 2.41 ms (1.01x), cascade/high 3.60 -> 4.10 ms.
+  The CSM receiver shader is not the bottleneck.
+- **Not map resolution, below 16384.** At a fixed 200 m reach: 2048 +1.90 ms,
+  4096 +1.79, 8192 +1.75 — 16x the texels for nothing. But **16384 jumps to
+  +4.34 ms**, a cliff rather than a slope, at the point the map becomes a 1 GiB
+  allocation.
+- **Not triangles, at this scale.** 0.81M triangles separate instanced-on from
+  instanced-off, but they cost 3.99 ms — roughly 5 ms/Mtri, against the 1.3-2.4
+  measured when geometry really was the bottleneck.
+
+What it tracks is **draw calls in the shadow passes**, at very roughly 2-3 us
+each: the 938 calls that instanced casters add cost 3.99 ms. So the lever is
+fewer shadow-pass draws, not fewer triangles — box-proxy casters were measured
+and rejected on exactly this basis (all 66 merged building casters together hold
+162k triangles, median 282 per building; removing every one of them saves
+0.27 Mtri and under 0.3 ms, inside the noise).
+
+**Method note — benchmarking a machine in intermittent use.** Contamination only
+ever makes a sample slower, so take the **minimum** over many short interleaved
+bursts rather than a median: configs round-robin, 8 rounds x 6 bursts of 12
+frames, report min with median alongside as a noise signal. The previous
+attempt at this measurement used medians with a pass-level drift gate, got 1/5
+passes accepted, and produced a physically impossible negative shadow cost. With
+minima the same machine gave noise ratios of 1.11-1.34x and reproducible
+numbers.
+
 **The earlier cascade figures (+6.33 / +8.27 / +10.23) were wrong** — the sweep
 script that produced them set `city._shadowCuller = null` right after
 `_deactivateCascadedShadows()` had restored every `castShadow` flag, so those

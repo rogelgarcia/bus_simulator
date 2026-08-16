@@ -302,6 +302,12 @@ Now a `Shadows` panel toggle, **Instanced detail shadows, default Off**
 much city is in view: 938 draw calls at the tested street pose, 3,864 at a wider
 gameplay view.
 
+**The saving is 3.99 ms, not the ~1-2 ms first reported.** Re-measured with
+minimum-of-many-samples (see `tests/benchmarks/README.md`): cascade/high sits at
++6.59 ms over `off` with instanced casters on and **+2.60 ms** with them off,
+alongside 938 draw calls and 0.81M triangles. The earlier estimate came from
+runs whose baseline drifted 3x mid-measurement.
+
 **Caveat, measured after the fact:** at a low raking sun the difference is
 roughly 10-20x larger than at the default sun — 0.13% / 0.57% / 0.73% of pixels
 at 10 / 16 / 24 degrees elevation, and 0.03% / 0.25% / 0.40% beyond 16 levels,

@@ -1,0 +1,122 @@
+{
+  "date": "2026-08-16T04:30:53.036Z",
+  "method": "min of 8x6 bursts of 12 frames, round-robin",
+  "phase1": {
+    "full 1280x720": [
+      {
+        "id": "off",
+        "min": 7.94,
+        "median": 10.08,
+        "n": 48,
+        "calls": 1883,
+        "mtri": 0.75,
+        "px": 890880,
+        "counterStable": false
+      },
+      {
+        "id": "single/high",
+        "min": 10.38,
+        "median": 13.22,
+        "n": 48,
+        "calls": 2403,
+        "mtri": 1.14,
+        "px": 890880,
+        "counterStable": false
+      },
+      {
+        "id": "cascade/high",
+        "min": 11.54,
+        "median": 14.14,
+        "n": 48,
+        "calls": 2609,
+        "mtri": 1.3,
+        "px": 890880,
+        "counterStable": false
+      }
+    ],
+    "quarter 640x360": [
+      {
+        "id": "off",
+        "min": 8.47,
+        "median": 11.13,
+        "n": 48,
+        "calls": 2069,
+        "mtri": 1.48,
+        "px": 215040,
+        "counterStable": true
+      },
+      {
+        "id": "single/high",
+        "min": 10.88,
+        "median": 14.34,
+        "n": 48,
+        "calls": 3057,
+        "mtri": 4.09,
+        "px": 215040,
+        "counterStable": true
+      },
+      {
+        "id": "cascade/high",
+        "min": 12.57,
+        "median": 16.84,
+        "n": 48,
+        "calls": 3103,
+        "mtri": 3.43,
+        "px": 215040,
+        "counterStable": true
+      }
+    ]
+  },
+  "phase2": [
+    {
+      "id": "off",
+      "min": 8.71,
+      "median": 9.8,
+      "n": 48,
+      "calls": 2035,
+      "mtri": 1.46,
+      "px": 890880,
+      "counterStable": true
+    },
+    {
+      "id": "2048",
+      "min": 10.61,
+      "median": 11.76,
+      "n": 48,
+      "calls": 2777,
+      "mtri": 3.28,
+      "px": 890880,
+      "counterStable": true
+    },
+    {
+      "id": "4096",
+      "min": 10.5,
+      "median": 11.76,
+      "n": 48,
+      "calls": 2777,
+      "mtri": 3.28,
+      "px": 890880,
+      "counterStable": true
+    },
+    {
+      "id": "8192",
+      "min": 10.46,
+      "median": 12.05,
+      "n": 48,
+      "calls": 2777,
+      "mtri": 3.28,
+      "px": 890880,
+      "counterStable": true
+    },
+    {
+      "id": "16384",
+      "min": 13.05,
+      "median": 15.97,
+      "n": 48,
+      "calls": 2777,
+      "mtri": 3.28,
+      "px": 890880,
+      "counterStable": true
+    }
+  ]
+}
