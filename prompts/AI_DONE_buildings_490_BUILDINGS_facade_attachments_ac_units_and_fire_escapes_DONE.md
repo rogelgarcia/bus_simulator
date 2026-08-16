@@ -1,3 +1,15 @@
+# DONE
+
+## Summary of changes
+- `FacadeAttachmentsModel.js` (new): ONE attachments feature with types as modes (`ac_unit`, `fire_escape`), shared normalizer + deterministic FNV-based scatter hash (`shouldPlaceAcUnit`), three-free for solver/GUI/node reuse.
+- Generator: `ac_unit` scatter in the engine-2 instance pass — box+grille geometry at the opening bottom with slight downward tilt, seeded per building seed + stable instance key (same city always renders identically), per-layer/asset/min-floor eligibility, merged into one mesh per item.
+- Generator: `fire_escape` runs — railed landings per floor (grid bars + posts + top rail via a shared railing-run helper in the AI 489 balcony kit language), alternating angled stair flights (stringers + treads + handrails), drop ladder below the lowest landing (auto-skipped when the landing is grade-adjacent); one merged dark-metal mesh per run, shadows verified in renders.
+- Attachments plumbed end-to-end: generator param, CityMap records/overrides, City build, BF2 scene + thumbnail renderer, config export/import, showcase scenario override keys.
+- BF2 GUI: building-level Attachments section (add/remove items; AC probability/seed/layer/min-floor; fire escape layer/face/bay pickers, floors range, platform depth).
+- Showcases: AC scatter on `storefront_row_2` upper brick floors (ref 13/15), fire escape + light AC scatter on `mainstreet_block` (ref 2/3 Bradbury style).
+- Tests: 6 node unit tests (round-trip, determinism, hash distribution), 3 browser generator tests (deterministic scatter incl. identical geometry across rebuilds, landings/flights/ladder counts per floors range, eligibility rules).
+- Skipped per prompt's "if cheap" clause: the drip-streak materialVariation tie-in (would couple the scatter to the wall shader pass).
+
 #Problem
 
 Fabricated facades read too clean. Two attachment types dominate the references' lived-in look: window AC units scattered across residential facades, and zigzag fire escapes running down street faces. Neither exists in the system.

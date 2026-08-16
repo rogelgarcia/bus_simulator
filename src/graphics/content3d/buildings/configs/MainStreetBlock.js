@@ -1365,6 +1365,26 @@ export const MAIN_STREET_BLOCK_BUILDING_CONFIG = Object.freeze({
             }
         }
     ),
+    // AI 490: Bradbury-style fire escape down the face-A sash column, plus a
+    // light AC scatter over the shaft windows.
+    attachments: Object.freeze({
+        items: [
+            {
+                id: 'attachment_1',
+                type: 'fire_escape',
+                target: { layerId: 'floor_403', faceId: 'A', bayId: 'bay_2' },
+                floors: { start: 1, end: 0 },
+                platform: { widthMeters: 2.6, depthMeters: 0.95 }
+            },
+            {
+                id: 'attachment_2',
+                type: 'ac_unit',
+                probability: 0.22,
+                seedOffset: 5,
+                eligibility: { layerIds: ['floor_403'], assetTypes: ['window'], minFloor: 1 }
+            }
+        ]
+    }),
     wallDecorations: Object.freeze(
         {
             "sets": [

@@ -291,6 +291,7 @@ export class City {
                         windowVisualsIsOverride,
                         facades: entry.facades ?? null,
                         wallDecorations: entry.wallDecorations ?? null,
+                        attachments: entry.attachments ?? null,
                         cornerTreatment: entry.cornerTreatment ?? null,
                         materialSlots: entry.materialSlots ?? null,
                         windowDefinitions: entry.windowDefinitions ?? null,

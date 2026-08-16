@@ -23,6 +23,7 @@ const CONFIG_OVERRIDE_KEYS = Object.freeze([
     'layers',
     'facades',
     'wallDecorations',
+    'attachments',
     'windowDefinitions',
     'windowVisuals',
     'windows',

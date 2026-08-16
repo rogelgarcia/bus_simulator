@@ -897,7 +897,9 @@ export class BuildingFabrication2UI {
         this.onSetLayerBanding = null;
         this.onSetLayerMaterialRef = null;
         this.onSetCornerTreatment = null;
+        this.onSetAttachments = null;
         this._cornerTreatment = null;
+        this._attachments = null;
         this.onSetMaterialSlots = null;
         this._materialSlots = null;
         this._brickPresetOptions = getBrickPresetOptions();
@@ -1207,6 +1209,11 @@ export class BuildingFabrication2UI {
 
     setCornerTreatment(value) {
         this._cornerTreatment = value && typeof value === 'object' ? value : null;
+        this._renderLayers();
+    }
+
+    setAttachments(value) {
+        this._attachments = value && typeof value === 'object' ? value : null;
         this._renderLayers();
     }
 
@@ -3306,6 +3313,7 @@ export class BuildingFabrication2UI {
         const allowEdit = this._enabled && this._hasBuilding;
         this._appendMaterialSlotsSection(this.layersList, { allowEdit });
         this._appendCornerTreatmentSection(this.layersList, { allowEdit });
+        this._appendAttachmentsSection(this.layersList, { allowEdit });
         let globalSelectedFaceId = null;
         for (const faceState of this._floorLayerFaceStateById.values()) {
             const faceId = isFaceId(faceState?.selectedFaceId) ? faceState.selectedFaceId : null;
@@ -6081,6 +6089,257 @@ export class BuildingFabrication2UI {
         hint.className = 'building-fab2-hint';
         hint.textContent = 'Features pick these via "Slot: <name>" in their material selectors.';
         body.appendChild(hint);
+
+        group.appendChild(header);
+        group.appendChild(body);
+        container.appendChild(group);
+    }
+
+    // AI 490: building-level facade attachments (ac_unit scatter +
+    // fire_escape runs). The UI edits a plain items array; the View owns
+    // normalization and the rebuild.
+    _appendAttachmentsSection(container, { allowEdit }) {
+        const cfg = this._attachments && typeof this._attachments === 'object' ? this._attachments : null;
+        const items = Array.isArray(cfg?.items) ? cfg.items : [];
+        const emitItems = (nextItems) => this.onSetAttachments?.(nextItems);
+        const floorLayerOptions = (this._decorationLayerOptions ?? []).filter((opt) => opt && opt.id);
+
+        const group = document.createElement('div');
+        group.className = 'building-fab2-layer-group is-building';
+        const isOpen = this._layerOpenById.get('__attachments__') ?? false;
+
+        const header = document.createElement('div');
+        header.className = 'building-fab2-layer-summary';
+        header.tabIndex = 0;
+        header.setAttribute('role', 'button');
+        header.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        const title = document.createElement('div');
+        title.className = 'building-fab2-layer-title';
+        title.textContent = items.length ? `Attachments (${items.length})` : 'Attachments';
+        header.appendChild(title);
+
+        const body = document.createElement('div');
+        body.className = 'building-fab2-layer-body';
+        body.classList.toggle('hidden', !isOpen);
+        const setOpen = (open) => {
+            const next = !!open;
+            this._layerOpenById.set('__attachments__', next);
+            body.classList.toggle('hidden', !next);
+            header.setAttribute('aria-expanded', next ? 'true' : 'false');
+        };
+        header.addEventListener('click', () => setOpen(!(this._layerOpenById.get('__attachments__') ?? false)));
+        header.addEventListener('keydown', (ev) => {
+            if (ev?.key !== 'Enter' && ev?.key !== ' ') return;
+            ev.preventDefault();
+            setOpen(!(this._layerOpenById.get('__attachments__') ?? false));
+        });
+
+        const cloneItems = () => JSON.parse(JSON.stringify(items));
+        const patchItem = (index, patch) => {
+            if (!allowEdit) return;
+            const next = cloneItems();
+            const target = next[index];
+            if (!target) return;
+            for (const [k, v] of Object.entries(patch)) {
+                if (v && typeof v === 'object' && !Array.isArray(v) && target[k] && typeof target[k] === 'object') {
+                    target[k] = { ...target[k], ...v };
+                } else {
+                    target[k] = v;
+                }
+            }
+            emitItems(next);
+        };
+
+        const makeNumberRow = (parent, label, { min, max, step, value, onChange }) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab-row building-fab-row-wide';
+            const rowLabel = document.createElement('div');
+            rowLabel.className = 'building-fab-row-label';
+            rowLabel.textContent = label;
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.className = 'building-fab2-layer-number';
+            input.min = String(min);
+            input.max = String(max);
+            input.step = String(step);
+            input.value = String(value);
+            input.disabled = !allowEdit;
+            input.setAttribute('aria-label', label);
+            input.addEventListener('input', () => {
+                const v = clamp(input.value, min, max);
+                input.value = String(v);
+                onChange(v);
+            });
+            row.appendChild(rowLabel);
+            row.appendChild(input);
+            parent.appendChild(row);
+        };
+
+        const makeSelectRowIn = (parent, label, { options, value, onChange }) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab-row building-fab-row-wide';
+            const rowLabel = document.createElement('div');
+            rowLabel.className = 'building-fab-row-label';
+            rowLabel.textContent = label;
+            const select = document.createElement('select');
+            select.className = 'building-fab-select';
+            for (const option of options) {
+                const opt = document.createElement('option');
+                opt.value = String(option.id);
+                opt.textContent = String(option.label);
+                select.appendChild(opt);
+            }
+            select.value = String(value);
+            select.disabled = !allowEdit;
+            select.setAttribute('aria-label', label);
+            select.addEventListener('change', () => onChange(select.value));
+            row.appendChild(rowLabel);
+            row.appendChild(select);
+            parent.appendChild(row);
+        };
+
+        items.forEach((item, index) => {
+            const isAc = item?.type === 'ac_unit';
+            const itemBox = document.createElement('div');
+            itemBox.className = 'building-fab2-layer-body';
+            itemBox.style.borderTop = '1px solid rgba(255,255,255,0.12)';
+            itemBox.style.paddingTop = '4px';
+
+            const head = document.createElement('div');
+            head.className = 'building-fab-row building-fab-row-wide';
+            const headLabel = document.createElement('div');
+            headLabel.className = 'building-fab-row-label';
+            headLabel.textContent = isAc ? `AC units (${item?.id ?? ''})` : `Fire escape (${item?.id ?? ''})`;
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'building-fab2-width-mode-btn';
+            removeBtn.textContent = 'Remove';
+            removeBtn.disabled = !allowEdit;
+            removeBtn.addEventListener('click', () => {
+                if (!allowEdit) return;
+                const next = cloneItems();
+                next.splice(index, 1);
+                emitItems(next.length ? next : null);
+            });
+            head.appendChild(headLabel);
+            head.appendChild(removeBtn);
+            itemBox.appendChild(head);
+
+            if (isAc) {
+                makeNumberRow(itemBox, 'Probability', {
+                    min: 0,
+                    max: 1,
+                    step: 0.02,
+                    value: Number(item?.probability ?? 0.3),
+                    onChange: (v) => patchItem(index, { probability: v })
+                });
+                makeNumberRow(itemBox, 'Seed offset', {
+                    min: -999,
+                    max: 999,
+                    step: 1,
+                    value: Number(item?.seedOffset ?? 0),
+                    onChange: (v) => patchItem(index, { seedOffset: Math.round(v) })
+                });
+                const layerValue = Array.isArray(item?.eligibility?.layerIds) && item.eligibility.layerIds.length
+                    ? item.eligibility.layerIds[0]
+                    : '';
+                makeSelectRowIn(itemBox, 'Layer', {
+                    options: [{ id: '', label: 'All floor layers' }, ...floorLayerOptions],
+                    value: layerValue,
+                    onChange: (v) => patchItem(index, { eligibility: { ...(item?.eligibility ?? {}), layerIds: v ? [v] : null } })
+                });
+                makeNumberRow(itemBox, 'Min floor', {
+                    min: 1,
+                    max: 30,
+                    step: 1,
+                    value: Number(item?.eligibility?.minFloor ?? 1),
+                    onChange: (v) => patchItem(index, { eligibility: { ...(item?.eligibility ?? {}), minFloor: Math.round(v) } })
+                });
+            } else {
+                const targetLayerId = typeof item?.target?.layerId === 'string' ? item.target.layerId : '';
+                makeSelectRowIn(itemBox, 'Layer', {
+                    options: floorLayerOptions.length ? floorLayerOptions : [{ id: targetLayerId, label: targetLayerId || '(none)' }],
+                    value: targetLayerId,
+                    onChange: (v) => patchItem(index, { target: { ...(item?.target ?? {}), layerId: v } })
+                });
+                makeSelectRowIn(itemBox, 'Face', {
+                    options: FACE_IDS.map((id) => ({ id, label: id })),
+                    value: typeof item?.target?.faceId === 'string' ? item.target.faceId : 'A',
+                    onChange: (v) => patchItem(index, { target: { ...(item?.target ?? {}), faceId: v } })
+                });
+                const bayOptions = (this._decorationBayOptionsByLayerId?.[targetLayerId] ?? [])
+                    .filter((opt) => opt && opt.id);
+                const bayValue = typeof item?.target?.bayId === 'string' ? item.target.bayId : '';
+                makeSelectRowIn(itemBox, 'Bay', {
+                    options: bayOptions.length
+                        ? bayOptions
+                        : [{ id: bayValue, label: bayValue || '(pick layer first)' }],
+                    value: bayValue,
+                    onChange: (v) => patchItem(index, { target: { ...(item?.target ?? {}), bayId: v } })
+                });
+                makeNumberRow(itemBox, 'Floors start', {
+                    min: 1,
+                    max: 30,
+                    step: 1,
+                    value: Number(item?.floors?.start ?? 1),
+                    onChange: (v) => patchItem(index, { floors: { ...(item?.floors ?? {}), start: Math.round(v) } })
+                });
+                makeNumberRow(itemBox, 'Floors end (0=all)', {
+                    min: 0,
+                    max: 30,
+                    step: 1,
+                    value: Number(item?.floors?.end ?? 0),
+                    onChange: (v) => patchItem(index, { floors: { ...(item?.floors ?? {}), end: Math.round(v) } })
+                });
+                makeNumberRow(itemBox, 'Platform depth', {
+                    min: 0.5,
+                    max: 1.6,
+                    step: 0.05,
+                    value: Number(item?.platform?.depthMeters ?? 0.95),
+                    onChange: (v) => patchItem(index, { platform: { ...(item?.platform ?? {}), depthMeters: v } })
+                });
+            }
+            body.appendChild(itemBox);
+        });
+
+        const addRow = document.createElement('div');
+        addRow.className = 'building-fab-row building-fab-row-wide';
+        const addControls = document.createElement('div');
+        addControls.className = 'building-fab2-bay-row-controls';
+        const makeAddButton = (label, factory) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'building-fab2-width-mode-btn';
+            btn.textContent = label;
+            btn.disabled = !allowEdit;
+            btn.addEventListener('click', () => {
+                if (!allowEdit) return;
+                const next = cloneItems();
+                next.push(factory());
+                emitItems(next);
+                setOpen(true);
+            });
+            addControls.appendChild(btn);
+        };
+        makeAddButton('+ AC units', () => ({
+            id: `attachment_${items.length + 1}`,
+            type: 'ac_unit',
+            probability: 0.3,
+            seedOffset: 0,
+            eligibility: { layerIds: null, assetTypes: ['window'], minFloor: 1 }
+        }));
+        makeAddButton('+ Fire escape', () => ({
+            id: `attachment_${items.length + 1}`,
+            type: 'fire_escape',
+            target: {
+                layerId: floorLayerOptions[0]?.id ?? '',
+                faceId: 'A',
+                bayId: (this._decorationBayOptionsByLayerId?.[floorLayerOptions[0]?.id]?.[0]?.id) ?? ''
+            },
+            floors: { start: 1, end: 0 }
+        }));
+        addRow.appendChild(addControls);
+        body.appendChild(addRow);
 
         group.appendChild(header);
         group.appendChild(body);

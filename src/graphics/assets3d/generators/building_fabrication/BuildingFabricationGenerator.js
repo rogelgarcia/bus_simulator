@@ -64,6 +64,11 @@ import {
     normalizeBalconyConfig,
     resolveBalconySideCoverage
 } from '../../../../app/buildings/BayBalconyModel.js';
+import {
+    FACADE_ATTACHMENT_TYPE,
+    normalizeFacadeAttachmentsConfig,
+    shouldPlaceAcUnit
+} from '../../../../app/buildings/FacadeAttachmentsModel.js';
 import { applyUvTilingToMeshStandardMaterial } from '../../materials/MaterialUvTilingSystem.js';
 import { getPbrMaterialTileMeters, isPbrMaterialId, tryGetPbrMaterialIdFromUrl } from '../../materials/PbrMaterialCatalog.js';
 import { solveFacadeLayoutFillPattern } from './FacadeLayoutFillSolver.js';
@@ -874,6 +879,101 @@ function makeBalconyBracketGeometry({ widthMeters, depthMeters, heightMeters }) 
     geo.translate(w * 0.5, 0, 0);
     geo.computeVertexNormals();
     return geo;
+}
+
+// AI 490: window AC unit — body box + front grille fins, origin at the
+// bottom-center of the body so a slight forward tilt drops the front edge
+// below the sill like the references.
+const _acUnitGeometryCache = new Map();
+function makeAcUnitGeometryTemplate({ widthMeters, heightMeters, depthMeters }) {
+    const w = Math.max(0.2, Number(widthMeters) || 0.66);
+    const h = Math.max(0.15, Number(heightMeters) || 0.42);
+    const d = Math.max(0.15, Number(depthMeters) || 0.52);
+    const key = `${w.toFixed(3)}|${h.toFixed(3)}|${d.toFixed(3)}`;
+    let template = _acUnitGeometryCache.get(key);
+    if (!template) {
+        const boxes = [];
+        const body = new THREE.BoxGeometry(w, h, d);
+        body.translate(0, h * 0.5, 0);
+        boxes.push(body);
+        const finCount = 5;
+        for (let i = 0; i < finCount; i++) {
+            const fin = new THREE.BoxGeometry(w * 0.82, 0.02, 0.016);
+            fin.translate(0, h * (0.28 + (0.5 * i) / (finCount - 1)), d * 0.5 + 0.008);
+            boxes.push(fin);
+        }
+        const lip = new THREE.BoxGeometry(w * 0.9, 0.025, 0.03);
+        lip.translate(0, 0.05, d * 0.5 + 0.012);
+        boxes.push(lip);
+        template = mergeGeometries(boxes, false);
+        for (const g of boxes) g.dispose();
+        _acUnitGeometryCache.set(key, template);
+    }
+    return template.clone();
+}
+
+// AI 490: straight railing run in the AI 489 balcony-kit language (corner and
+// spaced posts, top rail cap, vertical grid bars) — the fire escape landings
+// reuse this look 1:1.
+function appendMetalRailingRunGeometries({
+    geos,
+    axis,
+    fixed,
+    from,
+    to,
+    baseY,
+    railingHeightMeters = 1.0,
+    postWidthMeters = 0.04,
+    postMaxSpacingMeters = 1.1,
+    topRailWidthMeters = 0.05,
+    topRailHeightMeters = 0.04,
+    barWidthMeters = 0.016,
+    barSpacingMeters = 0.14,
+    anchoredStart = false,
+    anchoredEnd = false,
+    postKeys = null
+} = {}) {
+    const len = to - from;
+    if (!(len > 0.08) || !Array.isArray(geos)) return;
+    const railH = Math.max(0.3, railingHeightMeters);
+    const postW = Math.max(0.02, postWidthMeters);
+    const keys = postKeys instanceof Set ? postKeys : new Set();
+
+    const addPost = (t) => {
+        const px = axis === 'x' ? t : fixed;
+        const pz = axis === 'x' ? fixed : t;
+        const key = `${px.toFixed(2)}|${pz.toFixed(2)}`;
+        if (keys.has(key)) return;
+        keys.add(key);
+        const g = new THREE.BoxGeometry(postW, railH, postW);
+        g.translate(px, baseY + railH * 0.5, pz);
+        geos.push(g);
+    };
+
+    if (!anchoredStart) addPost(from);
+    if (!anchoredEnd) addPost(to);
+    const nPosts = Math.max(0, Math.ceil(len / Math.max(0.3, postMaxSpacingMeters)) - 1);
+    for (let p = 1; p <= nPosts; p++) addPost(from + (len * p) / (nPosts + 1));
+
+    const mid = (from + to) * 0.5;
+    const cap = axis === 'x'
+        ? new THREE.BoxGeometry(len + postW, topRailHeightMeters, topRailWidthMeters)
+        : new THREE.BoxGeometry(topRailWidthMeters, topRailHeightMeters, len + postW);
+    cap.translate(axis === 'x' ? mid : fixed, baseY + railH - topRailHeightMeters * 0.5, axis === 'x' ? fixed : mid);
+    geos.push(cap);
+
+    const innerLen = len - 2 * postW;
+    const barH = railH - topRailHeightMeters - 0.05;
+    if (innerLen > barSpacingMeters && barH > 0.1) {
+        const nBars = Math.max(1, Math.floor(innerLen / Math.max(0.05, barSpacingMeters)));
+        const step = innerLen / (nBars + 1);
+        for (let b = 1; b <= nBars; b++) {
+            const t = from + postW + step * b;
+            const g = new THREE.BoxGeometry(barWidthMeters, barH, barWidthMeters);
+            g.translate(axis === 'x' ? t : fixed, baseY + 0.04 + barH * 0.5, axis === 'x' ? fixed : t);
+            geos.push(g);
+        }
+    }
 }
 
 function estimateBf2OutwardFootprintReserveMeters({ layers, facades, cornerTreatment = null, windowDefinitions = null } = {}) {
@@ -5721,6 +5821,7 @@ export function buildBuildingFabricationVisualParts({
     windowVisualsIsOverride = false,
     facades = null,
     wallDecorations = null,
+    attachments = null,
     cornerTreatment = null,
     materialSlots = null,
     facadeCornerStrategy = null,
@@ -5777,6 +5878,18 @@ export function buildBuildingFabricationVisualParts({
     const cornerTreatmentCfg = normalizeCornerTreatmentConfig(materialResolution.cornerTreatment);
     const resolvedFacades = materialResolution.facades;
     const resolvedWallDecorations = materialResolution.wallDecorations;
+
+    // AI 490: facade attachments — ONE feature with types as modes. AC units
+    // scatter over eligible opening instances (deterministic per building
+    // seed); fire escapes run down a targeted window column.
+    const attachmentsCfg = normalizeFacadeAttachmentsConfig(attachments);
+    const acAttachmentItems = attachmentsCfg
+        ? attachmentsCfg.items.filter((it) => it.type === FACADE_ATTACHMENT_TYPE.AC_UNIT)
+        : [];
+    const fireEscapeAttachmentItems = attachmentsCfg
+        ? attachmentsCfg.items.filter((it) => it.type === FACADE_ATTACHMENT_TYPE.FIRE_ESCAPE)
+        : [];
+    const acUnitGeosByItemIndex = new Map();
     const resolvedWindowDefinitions = materialResolution.windowDefinitions;
 
     const firstFloorLayer = safeLayers.find((layer) => layer?.type === LAYER_TYPE.FLOOR) ?? null;
@@ -8443,6 +8556,51 @@ export function buildBuildingFabricationVisualParts({
                                     floorBaseY: yCursor,
                                     floorTopY: yCursor + segHeight
                                 });
+                                // AI 490: window AC unit scatter. Deterministic
+                                // per building seed + instance key, so the same
+                                // city always renders the same AC placement.
+                                for (let acItemIndex = 0; acItemIndex < acAttachmentItems.length; acItemIndex++) {
+                                    const acItem = acAttachmentItems[acItemIndex];
+                                    if (!acItem.eligibility.assetTypes.includes(placementAssetType)) continue;
+                                    if (acItem.eligibility.layerIds && !acItem.eligibility.layerIds.includes(layerId)) continue;
+                                    if (floor + 1 < acItem.eligibility.minFloor) continue;
+                                    if (!shouldPlaceAcUnit({
+                                        seed: matVarSeed,
+                                        instanceKey: `${acItem.id}|${baseInstanceId}`,
+                                        probability: acItem.probability,
+                                        seedOffset: acItem.seedOffset
+                                    })) continue;
+                                    const acMetrics = resolveOpeningCutMetrics(bottomSettings, {
+                                        cutX: Number(placement?.wall?.cutWidthLerp) || 0,
+                                        cutY: Number(placement?.wall?.cutHeightLerp) || 0
+                                    });
+                                    const acOpeningWidth = Math.max(0.3, Number(acMetrics?.cutWidth) || width);
+                                    const acGeo = makeAcUnitGeometryTemplate({
+                                        widthMeters: Math.min(acItem.unit.widthMeters, acOpeningWidth * 0.72),
+                                        heightMeters: acItem.unit.heightMeters,
+                                        depthMeters: acItem.unit.depthMeters
+                                    });
+                                    const acOut = windowOffset + acItem.unit.depthMeters * 0.5 - 0.2;
+                                    const acMatrix = new THREE.Matrix4().compose(
+                                        new THREE.Vector3(
+                                            x + nx * acOut,
+                                            yCursor + bottomYBottom + 0.03,
+                                            z + nz * acOut
+                                        ),
+                                        new THREE.Quaternion().setFromEuler(
+                                            new THREE.Euler(acItem.unit.tiltDegrees * (Math.PI / 180), yaw, 0, 'YXZ')
+                                        ),
+                                        new THREE.Vector3(1, 1, 1)
+                                    );
+                                    acGeo.applyMatrix4(acMatrix);
+                                    let acList = acUnitGeosByItemIndex.get(acItemIndex);
+                                    if (!acList) {
+                                        acList = [];
+                                        acUnitGeosByItemIndex.set(acItemIndex, acList);
+                                    }
+                                    acList.push(acGeo);
+                                    break;
+                                }
                                 if (placementAssetType === WINDOW_FABRICATION_ASSET_TYPE.GARAGE) {
                                     addGarageFacadeGeometry({
                                         point,
@@ -9196,6 +9354,193 @@ export function buildBuildingFabricationVisualParts({
                             emitBalconyMergedMesh({ ...meshArgs, geos: supportGeos, material: balconyWallMaterial(cfg.support.material), role: 'balcony_support' });
                             emitBalconyMergedMesh({ ...meshArgs, geos: glassGeos, material: balconyGlassMaterial(cfg.railing.glass), role: 'balcony_infill_glass', glass: true });
                         }
+                    }
+                }
+            }
+
+            // AI 490: fire escapes — per-facade vertical runs anchored to a
+            // window column: railed landings per floor (balcony railing kit),
+            // alternating angled stair flights, and a drop ladder at the
+            // bottom. Everything is thin painted metal merged into one mesh.
+            const fireEscapesForLayer = fireEscapeAttachmentItems.filter((it) => it.target.layerId === layerId);
+            if (fireEscapesForLayer.length && facadeFrames && Array.isArray(facadeStrips) && floorSegmentStartYs.length) {
+                for (const fe of fireEscapesForLayer) {
+                    const strip = facadeStrips.find((sEntry) => sEntry?.type === 'bay'
+                        && sEntry?.faceId === fe.target.faceId
+                        && (sEntry?.sourceBayId === fe.target.bayId || sEntry?.id === fe.target.bayId));
+                    if (!strip) {
+                        warnings.push(`Fire escape ${fe.id}: bay "${fe.target.bayId}" not found on face ${fe.target.faceId}.`);
+                        continue;
+                    }
+                    const frame = facadeFrames?.[fe.target.faceId] ?? null;
+                    if (!frame) continue;
+
+                    const rawU0 = Number(strip.frontU0);
+                    const rawU1 = Number(strip.frontU1);
+                    const u0 = Number.isFinite(rawU0) ? rawU0 : (Number(strip.u0) || 0);
+                    const u1 = Number.isFinite(rawU1) ? rawU1 : (Number(strip.u1) || 0);
+                    const uCenter = (u0 + u1) * 0.5 + fe.sideOffsetMeters;
+                    const stripDepth = Number(strip.depth) || 0;
+                    const base = pointOnFacadeFrame({ frame, u: uCenter, depth: stripDepth });
+                    const yaw = Math.atan2(Number(frame?.n?.x) || 0, Number(frame?.n?.z) || 0);
+
+                    const segCount = floorSegmentStartYs.length;
+                    const floorsEnd = fe.floors.end > 0 ? Math.min(fe.floors.end, segCount) : segCount;
+                    const selectedFloors = [];
+                    for (let f = fe.floors.start; f <= floorsEnd; f++) selectedFloors.push(f - 1);
+                    if (!selectedFloors.length) {
+                        warnings.push(`Fire escape ${fe.id}: floors range selects nothing.`);
+                        continue;
+                    }
+
+                    const W = fe.platform.widthMeters;
+                    const D = fe.platform.depthMeters;
+                    const stairW = fe.stairWidthMeters;
+                    const railH = fe.railingHeightMeters;
+                    const winVRaw = Number(strip?.window?.verticalOffsetMeters);
+                    const sillOffset = Number.isFinite(winVRaw) ? clamp(winVRaw, 0.2, 1.4) : 0.85;
+                    const landingY = (floorIdx) => floorSegmentStartYs[floorIdx] + sillOffset;
+                    const wellSignOf = (orderIndex) => ((orderIndex % 2) === 0 ? 1 : -1);
+
+                    const geos = [];
+                    const postKeys = new Set();
+
+                    for (let si = 0; si < selectedFloors.length; si++) {
+                        const y = landingY(selectedFloors[si]);
+                        const wellSign = wellSignOf(si);
+
+                        // Platform grate: full-width walkway strip against the
+                        // wall + a half-width outer strip; the other outer
+                        // half stays open as the stair well.
+                        const walkDepth = D * 0.45 - 0.02;
+                        const walk = new THREE.BoxGeometry(W, 0.06, walkDepth);
+                        walk.translate(0, y - 0.03, 0.02 + walkDepth * 0.5);
+                        geos.push(walk);
+                        const outerDepth = D - 0.45 * D - 0.05;
+                        const outer = new THREE.BoxGeometry(W * 0.5, 0.06, outerDepth);
+                        outer.translate(-wellSign * W * 0.25, y - 0.03, D * 0.45 + outerDepth * 0.5);
+                        geos.push(outer);
+
+                        // Landing railings (balcony kit look).
+                        appendMetalRailingRunGeometries({
+                            geos,
+                            axis: 'x',
+                            fixed: D - 0.06,
+                            from: -W * 0.5 + 0.03,
+                            to: W * 0.5 - 0.03,
+                            baseY: y,
+                            railingHeightMeters: railH,
+                            postKeys
+                        });
+                        for (const sideSign of [-1, 1]) {
+                            appendMetalRailingRunGeometries({
+                                geos,
+                                axis: 'z',
+                                fixed: sideSign * (W * 0.5 - 0.03),
+                                from: 0.04,
+                                to: D - 0.06,
+                                baseY: y,
+                                railingHeightMeters: railH,
+                                anchoredStart: true,
+                                postKeys
+                            });
+                        }
+
+                        // Flight up to the next landing (alternating direction),
+                        // descending through this well line.
+                        if (si + 1 < selectedFloors.length) {
+                            const yTop = landingY(selectedFloors[si + 1]);
+                            const rise = yTop - y;
+                            const flightSign = wellSignOf(si + 1);
+                            const xTop = flightSign * (W * 0.5 - stairW * 0.5);
+                            const xBottom = -flightSign * (W * 0.5 - stairW * 0.5);
+                            const dx = xTop - xBottom;
+                            const runLen = Math.abs(dx);
+                            const flightLen = Math.hypot(rise, runLen);
+                            const angle = Math.atan2(rise, runLen) * Math.sign(dx);
+                            const zStair = D * 0.62;
+                            const xMid = (xTop + xBottom) * 0.5;
+                            const yMid = (y + yTop) * 0.5;
+
+                            for (const edgeSign of [-1, 1]) {
+                                const stringer = new THREE.BoxGeometry(flightLen, 0.15, 0.035);
+                                stringer.rotateZ(angle);
+                                stringer.translate(xMid, yMid, zStair + edgeSign * (stairW * 0.5 - 0.02));
+                                geos.push(stringer);
+                                const rail = new THREE.BoxGeometry(flightLen, 0.03, 0.03);
+                                rail.rotateZ(angle);
+                                rail.translate(xMid, yMid + railH * 0.82, zStair + edgeSign * (stairW * 0.5 - 0.02));
+                                geos.push(rail);
+                                for (const tPost of [0.22, 0.78]) {
+                                    const post = new THREE.BoxGeometry(0.025, railH * 0.82, 0.025);
+                                    post.translate(
+                                        xBottom + dx * tPost,
+                                        y + rise * tPost + railH * 0.41,
+                                        zStair + edgeSign * (stairW * 0.5 - 0.02)
+                                    );
+                                    geos.push(post);
+                                }
+                            }
+                            const stepCount = Math.max(3, Math.round(rise / 0.24));
+                            for (let stepIdx = 1; stepIdx <= stepCount; stepIdx++) {
+                                const t = stepIdx / (stepCount + 1);
+                                const step = new THREE.BoxGeometry(0.26, 0.03, stairW - 0.08);
+                                step.translate(xBottom + dx * t, y + rise * t, zStair);
+                                geos.push(step);
+                            }
+                        }
+                    }
+
+                    // Drop ladder below the lowest landing.
+                    let hasLadder = false;
+                    if (fe.dropLadder.enabled) {
+                        const topY = landingY(selectedFloors[0]) - 0.03;
+                        const bottomY = baseY + fe.dropLadder.bottomClearanceMeters;
+                        const ladderLen = topY - bottomY;
+                        if (ladderLen > 0.6) {
+                            hasLadder = true;
+                            const xLadder = wellSignOf(0) * (W * 0.5 - stairW * 0.5);
+                            const zLadder = D - 0.18;
+                            for (const railSign of [-1, 1]) {
+                                const rail = new THREE.BoxGeometry(0.035, ladderLen, 0.035);
+                                rail.translate(xLadder + railSign * 0.22, bottomY + ladderLen * 0.5, zLadder);
+                                geos.push(rail);
+                            }
+                            const rungCount = Math.max(2, Math.floor(ladderLen / 0.3));
+                            for (let r = 0; r < rungCount; r++) {
+                                const rung = new THREE.BoxGeometry(0.44, 0.025, 0.025);
+                                rung.translate(xLadder, bottomY + 0.15 + r * 0.3, zLadder);
+                                geos.push(rung);
+                            }
+                        }
+                    }
+
+                    if (!geos.length) continue;
+                    const merged = mergeGeometries(geos, false);
+                    for (const g of geos) g.dispose();
+                    if (!merged) continue;
+                    const mat = new THREE.MeshStandardMaterial({
+                        color: fe.colorHex,
+                        roughness: fe.roughness,
+                        metalness: fe.metalness
+                    });
+                    const mesh = new THREE.Mesh(merged, mat);
+                    mesh.position.set(base.x, 0, base.z);
+                    mesh.rotation.set(0, yaw, 0);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    mesh.userData = mesh.userData ?? {};
+                    mesh.userData.buildingFab2Role = 'attachment_fire_escape';
+                    mesh.userData.fireEscapeId = fe.id;
+                    mesh.userData.fireEscapeLandingCount = selectedFloors.length;
+                    mesh.userData.fireEscapeFlightCount = Math.max(0, selectedFloors.length - 1);
+                    mesh.userData.fireEscapeHasLadder = hasLadder;
+                    beltsGroup.add(mesh);
+                    if (showWire) {
+                        mesh.updateMatrix();
+                        const edgeGeo = new THREE.EdgesGeometry(merged, 1);
+                        appendWirePositionsTransformed(wirePositions, edgeGeo, mesh.matrix);
+                        edgeGeo.dispose();
                     }
                 }
             }
@@ -10074,6 +10419,28 @@ export function buildBuildingFabricationVisualParts({
         floorDivisions = new LineSegments2(floorsGeo, floorsMat);
         floorDivisions.renderOrder = 130;
         floorDivisions.frustumCulled = false;
+    }
+
+    // AI 490: merge the scattered AC units — one mesh per attachment item so
+    // the geometry merger sees a single material bucket.
+    for (const [acItemIndex, acGeos] of acUnitGeosByItemIndex) {
+        if (!acGeos.length) continue;
+        const acItem = acAttachmentItems[acItemIndex];
+        const merged = acGeos.length === 1 ? acGeos[0] : mergeGeometries(acGeos, false);
+        if (acGeos.length > 1) for (const g of acGeos) g.dispose();
+        if (!merged || !acItem) continue;
+        const mesh = new THREE.Mesh(merged, new THREE.MeshStandardMaterial({
+            color: acItem.colorHex,
+            roughness: acItem.roughness,
+            metalness: acItem.metalness
+        }));
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.userData = mesh.userData ?? {};
+        mesh.userData.buildingFab2Role = 'attachment_ac_unit';
+        mesh.userData.acAttachmentId = acItem.id;
+        mesh.userData.acUnitCount = acGeos.length;
+        beltsGroup.add(mesh);
     }
 
     return {

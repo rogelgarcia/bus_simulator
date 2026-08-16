@@ -28,6 +28,7 @@ import {
     getBalconyPresetPreviewConfigs,
     normalizeBalconyConfig
 } from '../../../app/buildings/BayBalconyModel.js';
+import { normalizeFacadeAttachmentsConfig } from '../../../app/buildings/FacadeAttachmentsModel.js';
 import {
     getDefaultWallDecoratorDebuggerState,
     getWallDecoratorTypeEntries,
@@ -915,6 +916,7 @@ export class BuildingFabrication2View {
         this.ui.onSetLayerBanding = (layerId, patch) => this._setLayerBanding(layerId, patch);
         this.ui.onSetLayerMaterialRef = (layerId, spec) => this._setLayerMaterialRef(layerId, spec);
         this.ui.onSetCornerTreatment = (patch) => this._setCornerTreatment(patch);
+        this.ui.onSetAttachments = (items) => this._setAttachments(items);
         this.ui.onSetMaterialSlots = (patch) => this._setMaterialSlots(patch);
         this.ui.onSetFloorLayerMaterial = (layerId, faceId, material) => this._setFloorLayerMaterial(layerId, faceId, material);
         this.ui.onRequestMaterialConfig = (layerId, faceId) => this._openMaterialConfigForLayer(layerId, faceId);
@@ -1091,6 +1093,7 @@ export class BuildingFabrication2View {
         this.ui.onSetLayerBanding = null;
         this.ui.onSetLayerMaterialRef = null;
         this.ui.onSetCornerTreatment = null;
+        this.ui.onSetAttachments = null;
         this.ui.onSetMaterialSlots = null;
         this.ui.onSetFloorLayerMaterial = null;
         this.ui.onRequestMaterialConfig = null;
@@ -1282,6 +1285,7 @@ export class BuildingFabrication2View {
         });
 
         this.ui.setCornerTreatment?.(this._currentConfig?.cornerTreatment ?? null);
+        this.ui.setAttachments?.(this._currentConfig?.attachments ?? null);
         this.ui.setMaterialSlots?.(this._currentConfig?.materialSlots ?? null);
         this.ui.setLayers(layerList);
         if (!(this.ui?.isSidePanelOpen?.() ?? false)) {
@@ -4340,6 +4344,18 @@ export class BuildingFabrication2View {
         this._requestRebuild({ preserveCamera: true });
     }
 
+    // AI 490: the attachments section hands back the full items array; the
+    // model normalizer decides what survives.
+    _setAttachments(items) {
+        const cfg = this._currentConfig;
+        if (!cfg) return;
+        const normalized = normalizeFacadeAttachmentsConfig(items === null || items === undefined ? null : { items });
+        if (normalized) cfg.attachments = normalized;
+        else if ('attachments' in cfg) delete cfg.attachments;
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
     _setCornerTreatment(patch) {
         if (!patch || typeof patch !== 'object') return;
         const cfg = this._currentConfig;
@@ -6460,6 +6476,7 @@ export class BuildingFabrication2View {
             facades: cfg?.facades ?? null,
             windowDefinitions: cfg?.windowDefinitions ?? null,
             wallDecorations,
+            attachments: cfg?.attachments ?? null,
             cornerTreatment: cfg?.cornerTreatment ?? null,
             materialSlots: cfg?.materialSlots ?? null
         });

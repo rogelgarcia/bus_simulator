@@ -18350,6 +18350,161 @@ async function runTests() {
         assertNear(recessedOnly, 0.0, 1e-6, 'Expected recessed balconies to need no outward reserve.');
     });
 
+    // ========== AI 490: facade attachments ==========
+    const buildAttachmentParts = ({ attachments, floors = 2, bayCount = 4, floorHeight = 3.0 }) => {
+        const { map, generatorConfig, tileSize } = makeBalconyTestMap();
+        const items = [
+            { id: 'lead_pad', size: { mode: 'range', minMeters: 0.6, maxMeters: null }, expandPreference: 'prefer_expand' }
+        ];
+        for (let b = 1; b <= bayCount; b++) {
+            items.push({
+                id: `bay_${b}`,
+                size: { mode: 'fixed', widthMeters: 2.2 },
+                expandPreference: 'prefer_expand',
+                window: {
+                    enabled: true,
+                    defId: 'window_white_sash_2x2',
+                    assetType: 'window',
+                    size: { widthMeters: 1.5, heightMeters: 1.8 },
+                    heightMode: 'fixed',
+                    verticalOffsetMeters: 0.85,
+                    repeat: { count: 1 },
+                    padding: { leftMeters: 0.1, rightMeters: 0.1 }
+                }
+            });
+        }
+        items.push({ id: 'tail_pad', size: { mode: 'range', minMeters: 0.6, maxMeters: null }, expandPreference: 'prefer_expand' });
+        const layers = [
+            createDefaultFloorLayer({ id: 'floor_att', floors, floorHeight, belt: { enabled: false }, windows: { enabled: false } }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        return buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades: { A: { layout: { bays: { items } } } },
+            attachments,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+    };
+
+    test('BuildingFabricationGenerator: AC scatter is deterministic and tracks probability', () => {
+        const full = buildAttachmentParts({
+            attachments: { items: [{ id: 'ac_1', type: 'ac_unit', probability: 1.0 }] },
+            floors: 2,
+            bayCount: 4
+        });
+        const fullMeshes = balconyMeshesByRole(full, 'attachment_ac_unit');
+        assertEqual(fullMeshes.length, 1, 'Expected one merged AC mesh per attachment item.');
+        assertEqual(fullMeshes[0].userData.acUnitCount, 8, 'Probability 1 should place an AC on every eligible window (4 bays x 2 floors).');
+
+        const none = buildAttachmentParts({
+            attachments: { items: [{ id: 'ac_1', type: 'ac_unit', probability: 0.0 }] },
+            floors: 2,
+            bayCount: 4
+        });
+        assertEqual(balconyMeshesByRole(none, 'attachment_ac_unit').length, 0, 'Probability 0 should place nothing.');
+
+        const buildHalf = () => buildAttachmentParts({
+            attachments: { items: [{ id: 'ac_1', type: 'ac_unit', probability: 0.5, seedOffset: 3 }] },
+            floors: 4,
+            bayCount: 6
+        });
+        const halfA = balconyMeshesByRole(buildHalf(), 'attachment_ac_unit');
+        const halfB = balconyMeshesByRole(buildHalf(), 'attachment_ac_unit');
+        assertEqual(halfA.length, 1, 'Expected a merged AC mesh for the scatter build.');
+        const countA = halfA[0].userData.acUnitCount;
+        const countB = halfB[0].userData.acUnitCount;
+        assertEqual(countA, countB, 'Same building + seed must scatter identically across rebuilds.');
+        assertTrue(countA > 0 && countA < 24, `Scatter should pick a strict subset (got ${countA}/24).`);
+        halfA[0].geometry.computeBoundingBox();
+        halfB[0].geometry.computeBoundingBox();
+        assertNear(halfA[0].geometry.boundingBox.min.x, halfB[0].geometry.boundingBox.min.x, 1e-6, 'Deterministic scatter must produce identical geometry.');
+        assertNear(halfA[0].geometry.boundingBox.max.y, halfB[0].geometry.boundingBox.max.y, 1e-6, 'Deterministic scatter must produce identical geometry.');
+    });
+
+    test('BuildingFabricationGenerator: fire escape emits landings, flights and drop ladder', () => {
+        const parts = buildAttachmentParts({
+            attachments: {
+                items: [{
+                    id: 'fe_1',
+                    type: 'fire_escape',
+                    target: { layerId: 'floor_att', faceId: 'A', bayId: 'bay_2' },
+                    floors: { start: 1, end: 0 }
+                }]
+            },
+            floors: 3,
+            bayCount: 3
+        });
+        const meshes = balconyMeshesByRole(parts, 'attachment_fire_escape');
+        assertEqual(meshes.length, 1, 'Expected one merged fire escape mesh.');
+        const mesh = meshes[0];
+        assertEqual(mesh.userData.fireEscapeLandingCount, 3, 'Expected a landing per floor.');
+        assertEqual(mesh.userData.fireEscapeFlightCount, 2, 'Expected flights between consecutive landings.');
+        // The lowest landing sits ~0.85m above grade here, inside the ladder's
+        // bottom clearance — a drop ladder would be pointless, so none emits.
+        assertEqual(mesh.userData.fireEscapeHasLadder, false, 'Expected no drop ladder for a grade-adjacent landing.');
+        assertTrue(mesh.castShadow === true, 'Fire escape should cast shadows.');
+        mesh.geometry.computeBoundingBox();
+        const bb = mesh.geometry.boundingBox;
+        assertTrue(bb.max.y - bb.min.y > 6.0, 'Fire escape should span the floors range plus the ladder drop.');
+        assertTrue(bb.max.z > 0.5, 'Fire escape should project outward from the facade.');
+
+        const upper = buildAttachmentParts({
+            attachments: {
+                items: [{
+                    id: 'fe_1',
+                    type: 'fire_escape',
+                    target: { layerId: 'floor_att', faceId: 'A', bayId: 'bay_2' },
+                    floors: { start: 2, end: 3 }
+                }]
+            },
+            floors: 3,
+            bayCount: 3
+        });
+        const upperMesh = balconyMeshesByRole(upper, 'attachment_fire_escape')[0];
+        assertTrue(!!upperMesh, 'Expected the ranged fire escape mesh.');
+        assertEqual(upperMesh.userData.fireEscapeLandingCount, 2, 'Expected landings only for the configured floors range.');
+        assertEqual(upperMesh.userData.fireEscapeFlightCount, 1, 'Expected one flight for two landings.');
+        assertEqual(upperMesh.userData.fireEscapeHasLadder, true, 'Expected the drop ladder once the lowest landing is a floor up.');
+    });
+
+    test('BuildingFabricationGenerator: AC eligibility respects layers and asset types', () => {
+        const restricted = buildAttachmentParts({
+            attachments: {
+                items: [{
+                    id: 'ac_1',
+                    type: 'ac_unit',
+                    probability: 1.0,
+                    eligibility: { layerIds: ['some_other_layer'], assetTypes: ['window'], minFloor: 1 }
+                }]
+            },
+            floors: 2,
+            bayCount: 3
+        });
+        assertEqual(balconyMeshesByRole(restricted, 'attachment_ac_unit').length, 0, 'Layer restriction should exclude every window.');
+
+        const minFloor = buildAttachmentParts({
+            attachments: {
+                items: [{
+                    id: 'ac_1',
+                    type: 'ac_unit',
+                    probability: 1.0,
+                    eligibility: { layerIds: null, assetTypes: ['window'], minFloor: 2 }
+                }]
+            },
+            floors: 3,
+            bayCount: 3
+        });
+        const minFloorMesh = balconyMeshesByRole(minFloor, 'attachment_ac_unit')[0];
+        assertTrue(!!minFloorMesh, 'Expected AC mesh for the min-floor build.');
+        assertEqual(minFloorMesh.userData.acUnitCount, 6, 'minFloor 2 should skip the first floor (3 bays x 2 floors).');
+    });
+
     // ========== Summary ==========
     console.log('\n' + '='.repeat(50));
     if (errors.length === 0) {

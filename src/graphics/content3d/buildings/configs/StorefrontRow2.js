@@ -376,6 +376,19 @@ export const STOREFRONT_ROW_2_BUILDING_CONFIG = Object.freeze({
             }
         ]
     }),
+    // AI 490: lived-in scatter — window AC units on the upper brick floors
+    // (deterministic per building seed; ground storefronts stay clean).
+    attachments: Object.freeze({
+        items: [
+            {
+                id: 'attachment_1',
+                type: 'ac_unit',
+                probability: 0.32,
+                seedOffset: 2,
+                eligibility: { layerIds: ['floor_602'], assetTypes: ['window'], minFloor: 1 }
+            }
+        ]
+    }),
     windowDefinitions: Object.freeze({
         items: [
             {

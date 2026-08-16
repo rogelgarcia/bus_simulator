@@ -663,6 +663,7 @@ export class CityMap {
             if (building?.facades && typeof building.facades === 'object') record.facades = deepClone(building.facades);
             if (building?.windowDefinitions && typeof building.windowDefinitions === 'object') record.windowDefinitions = deepClone(building.windowDefinitions);
             if (building?.wallDecorations && typeof building.wallDecorations === 'object') record.wallDecorations = deepClone(building.wallDecorations);
+            if (building?.attachments && typeof building.attachments === 'object') record.attachments = deepClone(building.attachments);
             if (building?.cornerTreatment && typeof building.cornerTreatment === 'object') record.cornerTreatment = deepClone(building.cornerTreatment);
             if (building?.materialSlots && typeof building.materialSlots === 'object') record.materialSlots = deepClone(building.materialSlots);
 
@@ -842,6 +843,7 @@ export class CityMap {
             const windowDefinitions = overrideOrBase('windowDefinitions');
             const windowVisuals = overrideOrBase('windowVisuals');
             const wallDecorations = overrideOrBase('wallDecorations');
+            const attachments = overrideOrBase('attachments');
             const cornerTreatment = overrideOrBase('cornerTreatment');
             const materialSlots = overrideOrBase('materialSlots');
 
@@ -863,6 +865,7 @@ export class CityMap {
                 windowDefinitions: (windowDefinitions && typeof windowDefinitions === 'object') ? deepClone(windowDefinitions) : null,
                 windowVisuals: (windowVisuals && typeof windowVisuals === 'object') ? deepClone(windowVisuals) : null,
                 wallDecorations: (wallDecorations && typeof wallDecorations === 'object') ? deepClone(wallDecorations) : null,
+                attachments: (attachments && typeof attachments === 'object') ? deepClone(attachments) : null,
                 cornerTreatment: (cornerTreatment && typeof cornerTreatment === 'object') ? deepClone(cornerTreatment) : null,
                 materialSlots: (materialSlots && typeof materialSlots === 'object') ? deepClone(materialSlots) : null
             });
