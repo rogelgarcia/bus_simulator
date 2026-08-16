@@ -82,24 +82,13 @@ AO was already switched from `half_rate` to `every_frame` in
   texel size will show at the join. The bus map needs its own bias tuned for
   its much finer texels.
 
-## Phase 3 — re-tune cascade tiers, implement type + quality
+## Phase 3 — re-tune the cascade tier VALUES
 
-Once the bus is independent, collapse the settings to two controls, because
-splitting quality and distance produced nonsense combinations (16K at 110 m
-measured *slower* than 16K at 340 m — a distance dial that makes things worse
-is a broken control).
-
-**type:** off | single | cascade   **quality:** low | med | high
-(quality governs resolution *and* distance together, so every step down is
-cheaper)
-
-Single map, one geometry pass:
-
-| quality | map | reach | m/texel | VRAM | frame |
-| --- | --- | --- | --- | --- | --- |
-| low | 2048 | 110 m | 0.107 | 16 MiB | 9.80 ms (measured) |
-| med | 8192 | 220 m | 0.054 | 256 MiB | ~12 ms |
-| high | 16384 | 340 m | 0.042 | 1024 MiB | 13.24 ms (measured) |
+**The `type` + `quality` settings model is `AI_graphics_499`, not this
+document.** It is independent of the bus map and should land first. This phase
+only re-tunes the numbers behind its tiers, because once the bus is served by
+its own map the near cascade no longer has to be sharp — which changes which
+layout wins.
 
 Cascade candidates, all measured this session (cost is over `off` = 8.45 ms):
 
