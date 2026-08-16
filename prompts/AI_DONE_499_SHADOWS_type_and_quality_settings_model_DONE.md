@@ -220,6 +220,36 @@ Each click emits once, with both fields set.
   legacy `cascade_ultra` record migrating on load. 38 mode switches across
   benchmark and capture runs produced zero page errors.
 
+### Follow-up fix: cascade downshift crashed the renderer
+
+Reported after the first pass: `cascade/med -> cascade/low` died with "cannot
+read properties of undefined (reading 'toArray')" in `flatten()`.
+
+Three's CSM keeps ONE Vector2 array per material and truncates it to the live
+cascade count on every update (`_getExtendedBreaks` ends with
+`target.length = this.breaks.length`). Uniform upload, though, is driven by
+whichever PROGRAM a mesh holds, and one material can hold several — instanced
+vs not, different light hashes, variants that were not visible when the set was
+rebuilt. Any program still declaring a larger `CSM_CASCADES` reads past the end
+of the array. **Only lowering the count can do this**, which is why single tiers
+and upward cascade steps were always safe. The pre-existing `renderer.compile()`
+guard narrows the window but cannot close it: it only reaches material variants
+that are visible and in the scene at that instant.
+
+Fixed by holding every `CSM_cascades` array at the 4-cascade maximum, both where
+it is born (our `onBeforeCompile`) and after every `csm.update()`. Padding
+repeats the last real break, so a stale program samples a saturated range rather
+than zeros for the one frame before it recompiles. Padding only appends entries
+beyond `CSM_CASCADES`, which no correctly-matched program can read, so it cannot
+change rendered output.
+
+**How the original verification missed it:** the benchmark and capture runs both
+walked a fixed order — off, single low/med/high, cascade low/med/high — which
+never once *decreased* the cascade count. The doc asked for "no renderer crash
+across every transition"; a fixed sweep is not every transition. Regression test
+added at `tests/headless/e2e/shadow_cascade_count_switching.pwtest.js`, covering
+every downward step plus a forced program/uniform mismatch.
+
 **Still open:** the seam check in motion at `cascade/low` (11.5x density step at
 60 m) — static captures cannot settle it. The candidate `high` layout needs
 re-measuring before adoption.

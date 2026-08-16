@@ -70,6 +70,31 @@ const MAP_SIZE_SCALE_BY_CASCADES = Object.freeze({
 
 const MAX_CASCADE_MAP_SIZE = 8192;
 
+// The most cascades any preset or override can ask for (the constructor clamps
+// to this). Every CSM_cascades uniform array is held at this length — see
+// _padCascadeUniforms.
+const MAX_SUPPORTED_CASCADES = 4;
+
+/**
+ * Grow a CSM_cascades uniform array to MAX_SUPPORTED_CASCADES, repeating the
+ * last real break. Must be applied both where the array is BORN (our
+ * onBeforeCompile, which asks CSM for an array sized to the live count) and
+ * after every csm.update() (which truncates it back). Missing either place
+ * leaves the window open — the first version of this fix only did the latter,
+ * and the very compile that creates a mismatched program also creates a fresh
+ * short array, after that frame's padding has already run.
+ */
+function padBreaks(arr) {
+    if (!Array.isArray(arr) || arr.length >= MAX_SUPPORTED_CASCADES) return arr;
+    const last = arr[arr.length - 1] ?? null;
+    while (arr.length < MAX_SUPPORTED_CASCADES) {
+        const v = new THREE.Vector2();
+        if (last) v.copy(last);
+        arr.push(v);
+    }
+    return arr;
+}
+
 export class CityCascadedShadows {
     constructor({ camera, parent, sunRef, preset, cascades = 3, mapSize = 2048, splitScale = 1, maxTextureSize = 0 }) {
         if (!camera) throw new Error('[CityCascadedShadows] camera is required');
@@ -201,7 +226,9 @@ export class CityCascadedShadows {
             const far = Math.min(csm.camera.far, csm.maxFar);
             const breaksVec2 = [];
             csm._getExtendedBreaks(breaksVec2);
-            shader.uniforms.CSM_cascades = { value: breaksVec2 };
+            // Born at full length: this compile may be producing a program that
+            // declares MORE cascades than the live count (see padCascadeUniforms).
+            shader.uniforms.CSM_cascades = { value: padBreaks(breaksVec2) };
             shader.uniforms.cameraNear = { value: csm.camera.near };
             shader.uniforms.shadowFar = { value: far };
             csm.shaders.set(material, shader);
@@ -243,6 +270,39 @@ export class CityCascadedShadows {
             this.setIntensity(intensity);
         }
         csm.update();
+        // csm.update() re-truncates every array to the live cascade count, so
+        // this has to run after it, every frame.
+        this.padCascadeUniforms();
+    }
+
+    /**
+     * Hold every CSM_cascades uniform array at MAX_SUPPORTED_CASCADES entries.
+     *
+     * Three's CSM keeps ONE Vector2 array per material and truncates it to the
+     * live cascade count on every update (`_getExtendedBreaks` ends with
+     * `target.length = this.breaks.length`). Uniform upload, however, is driven
+     * by whichever PROGRAM a mesh currently holds, and one material can hold
+     * several — instanced vs not, different light hashes, variants that were
+     * not visible when the cascade set was rebuilt. If any of those still
+     * declares a LARGER CSM_CASCADES than the live count, three walks off the
+     * end of the array and dies in flatten(): "cannot read properties of
+     * undefined (reading 'toArray')".
+     *
+     * Only LOWERING the count can do this — raising it merely leaves entries
+     * unread — which is why single tiers and upward cascade steps are always
+     * safe while cascade med -> low crashed. Rebuilding programs eagerly
+     * (renderer.compile) narrows the window but cannot close it, because it
+     * only reaches material variants that are visible and in the scene at that
+     * instant. Padding closes it outright: the upload is in range whichever
+     * program wins the race.
+     *
+     * Padding repeats the last real break so a stale program samples a
+     * saturated range rather than zeros for the one frame before it recompiles.
+     */
+    padCascadeUniforms() {
+        this.csm.shaders.forEach((shader) => {
+            padBreaks(shader?.uniforms?.CSM_cascades?.value);
+        });
     }
 
     /** m/texel and VRAM numbers for the perf report. */

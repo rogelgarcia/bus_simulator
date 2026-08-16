@@ -586,6 +586,11 @@ export class City {
         } catch {
             // A failed pre-compile only costs us the guarantee, not correctness.
         }
+        // compile() only reaches visible in-scene variants, so some materials
+        // can still hold a program from the previous cascade count. Pad the
+        // uniform arrays now rather than waiting for the first updateFrame, so
+        // even a render that beats the next city.update() is safe.
+        this._csm.padCascadeUniforms();
 
         // Index the static city only. The bus and anything else registered as a
         // dynamic root keeps casting unconditionally: its bounding sphere would
