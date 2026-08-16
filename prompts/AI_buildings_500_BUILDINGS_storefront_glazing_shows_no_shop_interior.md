@@ -35,6 +35,13 @@ callback ever runs for a shop atlas. The PNGs themselves are fine: both
 `parallax_interior_atlas_residential.png` and
 `parallax_interior_atlas_wide_6x4_01.png` return HTTP 200 from the dev server.
 
+RULED OUT (do not re-test): load timing. Capturing after a 12s wait shows the
+same placeholder, while upper-floor residential windows in the same frame show
+real photos. Both PNGs are comparable in size (~2.4 MB) and both return HTTP 200.
+So the shop atlas image swap never happens at all — the suspect remains the URL
+handed to `getOrCreateInteriorAtlasTexture` resolving empty for SHOP_* ids
+(taking the pure-procedural branch), NOT a slow or failed download.
+
 Also worth checking while in there: the capture harness gates on "textures
 ready", yet a placeholder-only atlas apparently satisfies that gate — so the
 readiness metric does not count interior atlases. Make a never-loaded interior
