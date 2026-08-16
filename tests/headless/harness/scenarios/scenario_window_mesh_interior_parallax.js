@@ -131,7 +131,12 @@ export const scenarioWindowMeshInteriorParallax = {
             const width = Number(img?.naturalWidth ?? img?.videoWidth ?? img?.width) || 0;
             const height = Number(img?.naturalHeight ?? img?.videoHeight ?? img?.height) || 0;
             const complete = img && 'complete' in img ? !!img.complete : null;
-            return { tag, width, height, complete };
+            // `pending` is true while the procedural placeholder is still what
+            // the GPU holds; `tag`/`width` alone cannot tell the two apart once
+            // the image object has been swapped in (AI 500).
+            const pending = !!tex?.userData?.windowInteriorAtlasPending;
+            const failed = !!tex?.userData?.windowInteriorAtlasFailed;
+            return { tag, width, height, complete, pending, failed };
         };
 
         const interiorMesh = layers?.interior?.children?.find((m) => !!m && m.isInstancedMesh) ?? null;

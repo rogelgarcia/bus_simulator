@@ -44,6 +44,10 @@ function collectPbrMaterialIds(config) {
 }
 
 function isTextureImageLoaded(texture) {
+    // A window interior atlas starts life as a procedural placeholder canvas
+    // that already "has an image", so without this check the readiness gate is
+    // satisfied while the real atlas is still missing (AI 500).
+    if (texture?.userData?.windowInteriorAtlasPending) return false;
     const img = texture?.source?.data ?? texture?.image ?? null;
     if (!img) return false;
     if (img.complete === false) return false;

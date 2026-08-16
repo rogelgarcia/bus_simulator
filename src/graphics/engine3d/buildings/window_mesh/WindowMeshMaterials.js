@@ -245,6 +245,10 @@ function getOrCreateInteriorAtlasTexture({ url, cols, rows } = {}) {
     tex.needsUpdate = true;
     tex.userData = tex.userData ?? {};
     tex.userData.windowInteriorAtlas = true;
+    // Until the real image is uploaded this texture shows the procedural
+    // placeholder; readiness gates must not treat it as a loaded atlas.
+    tex.userData.windowInteriorAtlasPending = !!safeUrl;
+    tex.userData.windowInteriorAtlasUrl = safeUrl;
 
     const entry = { texture: tex, promise: null };
     _atlasCache.set(key, entry);
@@ -259,11 +263,24 @@ function getOrCreateInteriorAtlasTexture({ url, cols, rows } = {}) {
                 () => resolve(null)
             );
         }).then((loaded) => {
-            if (!loaded || !loaded.image) return;
+            if (!loaded || !loaded.image) {
+                tex.userData.windowInteriorAtlasFailed = true;
+                tex.userData.windowInteriorAtlasPending = false;
+                console.warn(`[WindowMeshMaterials] Interior atlas failed to load, keeping placeholder: ${safeUrl}`);
+                return;
+            }
+            // The placeholder canvas and the real atlas rarely share pixel
+            // dimensions, and three.js allocates immutable GPU storage
+            // (texStorage2D) the first time a texture Source is uploaded.
+            // Mutating tex.image keeps that Source, so a differently sized
+            // atlas is silently rejected by the follow-up texSubImage2D and the
+            // placeholder stays on screen. Release the placeholder allocation
+            // and adopt the loaded Source so the next upload reallocates.
+            tex.dispose();
             tex.flipY = loaded.flipY;
-            tex.image = loaded.image;
+            tex.source = loaded.source;
             tex.needsUpdate = true;
-            loaded.dispose?.();
+            tex.userData.windowInteriorAtlasPending = false;
         });
     }
 

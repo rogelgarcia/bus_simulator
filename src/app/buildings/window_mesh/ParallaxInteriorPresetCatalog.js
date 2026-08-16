@@ -5,6 +5,7 @@
 import {
     DEFAULT_WINDOW_INTERIOR_ATLAS_ID,
     WINDOW_INTERIOR_ATLAS_ID,
+    getWindowInteriorAtlasCellAspect,
     getWindowInteriorAtlasLayoutById
 } from './WindowInteriorAtlasLayoutCatalog.js';
 
@@ -49,13 +50,16 @@ export const PARALLAX_INTERIOR_PRESET_CATALOG = Object.freeze([
         id: PARALLAX_INTERIOR_PRESET_ID.SHOP,
         label: 'Shop',
         atlasId: WINDOW_INTERIOR_ATLAS_ID.SHOP_WIDE_6X4_01,
-        // Storefront display glazing is large and viewed from close up: show
-        // more of the shop room than a small window would, but keep enough
-        // atlas-cell margin that the parallax shift never samples the clamped
-        // cell edge (which reads as diagonal streaks at steep view angles).
+        // Storefront display glazing is large and viewed from close up, so it
+        // shows much more of the room than an upper-floor window: a low zoom
+        // keeps the shop photo sharp and readable at pedestrian range. The
+        // heavier AI 488 detune (zoom 2.4, depth 5.0) was chosen against the
+        // procedural placeholder that used to render here, not against a photo.
+        // Zoom still leaves ~17% of the cell as margin on each side so the
+        // parallax shift never reaches the clamped cell edge at grazing angles.
         defaults: Object.freeze({
-            uvZoom: 2.4,
-            parallaxDepthMeters: 5.0,
+            uvZoom: 1.5,
+            parallaxDepthMeters: 7.5,
             parallaxScale: Object.freeze({ x: 0.7, y: 0.7 }),
             tintVariation: Object.freeze({
                 hueShiftDeg: Object.freeze({ min: 0.0, max: 0.0 }),
@@ -106,7 +110,9 @@ export function resolveParallaxInteriorPresetInteriorConfig(presetId) {
         randomFlipX: true,
         uvPan: { x: 0.0, y: 0.0 },
         uvZoom: clamp(defaults.uvZoom, 0.25, 20.0, defaults.uvZoom),
-        imageAspect: 1.0,
+        // Cover-fit needs the CELL aspect, not a fixed 1.0: the shop atlases
+        // hold 3:2 photos, so a hardcoded square would stretch them vertically.
+        imageAspect: clamp(getWindowInteriorAtlasCellAspect(atlasId), 0.25, 4.0, 1.0),
         parallaxDepthMeters: clamp(
             defaults.parallaxDepthMeters,
             0.0,

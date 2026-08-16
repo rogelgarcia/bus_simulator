@@ -102,6 +102,25 @@ An atlas texture contains multiple interior images arranged in a grid. Each wind
 
 - **Atlas path**: Path to the atlas texture
 - **Grid layout**: Number of columns and rows in the atlas
+- **Image size**: Pixel dimensions of the atlas image
+
+Rules for registering an atlas:
+
+- The grid and the pixel size are properties of the **image**, never of its file
+  name. Read them off the PNG; a grid that does not match the image makes the
+  shader sample a sliver across neighbouring photos instead of one interior.
+- The declared grid is validated against the decoded image in tests: every
+  declared cell boundary must fall on a real seam in the atlas.
+- **Cell aspect** (cell width / cell height) drives the cover fit of the image
+  into the opening. A preset derives the interior `imageAspect` from its atlas
+  cell, so non-square atlases are not stretched.
+
+An atlas texture starts as a procedural placeholder and adopts the downloaded
+image when it arrives. The swap must replace the texture's image **source**, not
+just its image: GPU storage is allocated once per source from whatever image it
+held first, so a real atlas of a different size would otherwise never reach the
+screen. Until the swap happens the texture is marked pending, so
+"textures ready" gates do not accept a placeholder as a loaded atlas.
 
 ### Parallax
 

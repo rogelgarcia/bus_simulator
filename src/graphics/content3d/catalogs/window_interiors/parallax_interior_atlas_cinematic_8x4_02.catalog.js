@@ -16,7 +16,10 @@ const atlas = createWindowInteriorAtlasEntry({
         'pharmacy'
     ],
     image: { widthPx: 1456, heightPx: 720, hasAlpha: true },
-    grid: { cols: 8, rows: 4 },
+    // Grid read off the actual PNG; the FILENAME says 8x4 but the
+    // image is 4x2. A wrong grid makes the parallax shader sample a
+    // sliver across neighbouring photos instead of one interior.
+    grid: { cols: 4, rows: 2 },
     borders: {
         edgeInsetPx: { x: 6, y: 4 },
         gutterPx: { x: 3, y: 3 }

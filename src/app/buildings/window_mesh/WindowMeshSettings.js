@@ -765,7 +765,7 @@ export function sanitizeWindowMeshSettings(input) {
         WINDOW_MESH_DEFAULTS.interior.uvZoom
     );
     const imageAspect = clamp(
-        interiorSrc.imageAspect ?? interiorSrc.aspect,
+        interiorSrc.imageAspect ?? interiorSrc.aspect ?? presetInterior?.imageAspect,
         0.25,
         4.0,
         WINDOW_MESH_DEFAULTS.interior.imageAspect

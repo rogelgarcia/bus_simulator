@@ -1,3 +1,5 @@
+DONE
+
 #Problem
 
 Ground-floor storefront display glazing (AI 488 `storefront` asset type) does not show its shop parallax interior. From street level the glass reads as a flat fake sheet: diagonal light-gray bands over a mauve field, with no recognizable shop behind it. Upper-floor windows on the same building show their residential parallax interiors correctly, so the parallax system as a whole works — the failure is specific to storefront glazing.
@@ -96,3 +98,37 @@ Tasks:
 - Do not move to `prompts/archive/` automatically.
 - Completion is not enough to move a prompt; move to `prompts/archive/` only when explicitly requested by the user.
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change)
+
+# Diagnosis (what it actually was)
+
+Isolation renders plus a GPU read-back settled it, and it was **not** the URL
+resolution suspected above. Evidence, in order:
+
+1. A scene probe showed the storefront interior material bound to the real
+   `parallax_interior_atlas_wide_6x4_01.png` (1536x1024 `IMG`), with correct
+   3x3 instance UV offsets/scales. So the CPU side was already right.
+2. Hiding the panel removed the bands (27.8k px of the frame), so the bands were
+   the parallax panel, not the glass and not occlusion.
+3. Rendering the atlas texture verbatim on a quad in front of the camera showed
+   the **procedural placeholder** for the shop atlas and the real photos for the
+   residential atlas — i.e. the GPU held different pixels than `texture.image`.
+
+Root cause: `getOrCreateInteriorAtlasTexture` swapped the downloaded image into
+the live texture with `tex.image = loaded.image`. three.js allocates *immutable*
+GPU storage (`texStorage2D`) the first time a texture `Source` is uploaded,
+sized from the image it held then — the 1024x1024 placeholder canvas. Keeping
+that `Source` means the follow-up upload is only a `texSubImage2D`, which a
+1536x1024 atlas cannot fit, so it was silently rejected and the placeholder
+stayed on screen. Residential worked purely by coincidence: its atlas is
+1024x1024, the same size as the placeholder.
+
+# Summary of changes
+
+- Interior atlas swap now disposes the placeholder allocation and adopts the loaded texture `Source`, so a differently sized atlas actually reaches the GPU.
+- Interior atlas textures carry a `pending`/`failed` flag; the harness "textures ready" gate no longer accepts a placeholder-only atlas, and a failed load warns.
+- Corrected 5 more mis-declared atlas grids read off the images (`wide_6x4_02` 3x3, `square_4x4_02/03` 2x4, `square_4x4_04` 4x3, `cinematic_8x4_02` 4x2) in both declaration sites.
+- Atlas layout catalog now records each atlas' pixel size, and presets derive interior `imageAspect` from the real cell aspect instead of a hardcoded 1.0 (shop photos are 3:2, they were being stretched).
+- Retuned the shop preset now that a photo renders (`uvZoom` 2.4 -> 1.5, `parallaxDepthMeters` 5.0 -> 7.5); the AI 488 detune was chosen against the placeholder artifact, and the grazing-angle capture confirms the cell edge still never clamps.
+- New guard test decodes the atlas PNGs and asserts every declared cell boundary lands on a real seam (and that a finer grid is rejected), so a filename can never be the source of truth again.
+- New browser regression test reads the interior atlas back off the GPU and correlates it against the decoded image; it fails on the pre-fix code and passes after.
+- Added `ai500_storefront_interior_capture` visual capture (street / close-up / grazing) and documented the atlas + swap rules in `specs/window_mesh_specification.md`.
