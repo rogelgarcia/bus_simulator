@@ -17,6 +17,8 @@ import {
     getWindowFabricationCatalogEntries,
     getWindowFabricationCatalogEntryById,
     getDefaultWindowMeshSettings,
+    normalizePortalConfig,
+    normalizeStorefrontConfig,
     PARALLAX_INTERIOR_PRESET_ID,
     sanitizeWindowMeshSettings,
     normalizeWindowFabricationAssetType,
@@ -195,6 +197,9 @@ function normalizeBayWindowInteriorMode(value, fallback = WINDOW_INTERIOR_MODE.R
 }
 
 function normalizeOpeningAssetType(value, fallback = WINDOW_FABRICATION_ASSET_TYPE.WINDOW) {
+    if (typeof value === 'string' && value.trim().toLowerCase() === WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT) {
+        return WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT;
+    }
     return normalizeWindowFabricationAssetType(value, fallback);
 }
 
@@ -943,6 +948,8 @@ export class BuildingFabrication2View {
         this.ui.onSetBayTextureFlow = (layerId, faceId, bayId, mode) => this._setBayTextureFlow(layerId, faceId, bayId, mode);
         this.ui.onSetBayDepthEdge = (layerId, faceId, bayId, edge, depth) => this._setBayDepthEdge(layerId, faceId, bayId, edge, depth);
         this.ui.onSetBayCapital = (layerId, faceId, bayId, end, patch) => this._setBayCapital(layerId, faceId, bayId, end, patch);
+        this.ui.onSetBayWindowPortal = (layerId, faceId, bayId, patch) => this._setBayWindowPortal(layerId, faceId, bayId, patch);
+        this.ui.onSetWindowDefinitionStorefrontZone = (windowDefId, patch) => this._setWindowDefinitionStorefrontZone(windowDefId, patch);
         this.ui.onToggleBayDepthLink = (layerId, faceId, bayId) => this._toggleBayDepthLink(layerId, faceId, bayId);
         this.ui.onSetBayLink = (layerId, faceId, bayId, masterBayId) => this._setBayLink(layerId, faceId, bayId, masterBayId);
         this.ui.onCreateBayGroup = (layerId, faceId, bayIds) => this._createBayGroup(layerId, faceId, bayIds);
@@ -1112,6 +1119,8 @@ export class BuildingFabrication2View {
         this.ui.onSetBayTextureFlow = null;
         this.ui.onSetBayDepthEdge = null;
         this.ui.onSetBayCapital = null;
+        this.ui.onSetBayWindowPortal = null;
+        this.ui.onSetWindowDefinitionStorefrontZone = null;
         this.ui.onToggleBayDepthLink = null;
         this.ui.onSetBayLink = null;
         this.ui.onCreateBayGroup = null;
@@ -2672,7 +2681,12 @@ export class BuildingFabrication2View {
             const assetType = normalizeOpeningAssetType(entry?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
             const garageFacade = normalizeGarageFacadeConfig(entry?.garageFacade ?? null, null);
             const wall = normalizeOpeningWallCutConfig(entry?.wall ?? null, null);
-            items.push({ id, label, settings, garageFacade, wall, previewUrl, assetType, source: 'catalog' });
+            const decoration = entry?.decoration ? JSON.parse(JSON.stringify(entry.decoration)) : null;
+            const storefront = assetType === WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT
+                ? normalizeStorefrontConfig(entry?.storefront ?? null)
+                : null;
+            const portal = normalizePortalConfig(entry?.portal ?? null);
+            items.push({ id, label, settings, garageFacade, wall, decoration, storefront, portal, previewUrl, assetType, source: 'catalog' });
         }
 
         const lib = this._currentConfig?.windowDefinitions;
@@ -2696,6 +2710,11 @@ export class BuildingFabrication2View {
                 settings,
                 garageFacade,
                 wall,
+                decoration: entry?.decoration ? JSON.parse(JSON.stringify(entry.decoration)) : null,
+                storefront: assetType === WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT
+                    ? normalizeStorefrontConfig(entry?.storefront ?? null)
+                    : null,
+                portal: normalizePortalConfig(entry?.portal ?? null),
                 previewUrl,
                 assetType,
                 source: 'legacy'
@@ -2730,7 +2749,20 @@ export class BuildingFabrication2View {
                 entry?.assetType ?? entry?.openingType,
                 WINDOW_FABRICATION_ASSET_TYPE.WINDOW
             );
-            items.push({ id, label, settings, garageFacade, wall, assetType });
+            items.push({
+                id,
+                label,
+                settings,
+                garageFacade,
+                wall,
+                assetType,
+                // AI 488: authored extras survive the library rebuild.
+                ...(entry?.decoration ? { decoration: JSON.parse(JSON.stringify(entry.decoration)) } : {}),
+                ...(assetType === WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT
+                    ? { storefront: normalizeStorefrontConfig(entry?.storefront ?? null) }
+                    : {}),
+                ...(entry?.portal ? { portal: normalizePortalConfig(entry.portal) ?? undefined } : {})
+            });
         }
 
         lib.items = items;
@@ -2747,13 +2779,18 @@ export class BuildingFabrication2View {
             const label = typeof catalog?.name === 'string' && catalog.name.trim()
                 ? catalog.name.trim()
                 : (typeof catalog?.label === 'string' && catalog.label.trim() ? catalog.label.trim() : id);
+            const catalogAssetType = normalizeOpeningAssetType(catalog?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
             return {
                 id,
                 label,
                 settings: sanitizeWindowMeshSettings(catalog?.settings ?? null),
                 garageFacade: normalizeGarageFacadeConfig(catalog?.garageFacade ?? null, null),
                 wall: normalizeOpeningWallCutConfig(catalog?.wall ?? null, null),
-                assetType: normalizeOpeningAssetType(catalog?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW),
+                storefront: catalogAssetType === WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT
+                    ? normalizeStorefrontConfig(catalog?.storefront ?? null)
+                    : null,
+                portal: normalizePortalConfig(catalog?.portal ?? null),
+                assetType: catalogAssetType,
                 source: 'catalog'
             };
         }
@@ -2773,6 +2810,10 @@ export class BuildingFabrication2View {
             settings: sanitizeWindowMeshSettings(legacy?.settings ?? null),
             garageFacade: normalizeGarageFacadeConfig(legacy?.garageFacade ?? null, null),
             wall: normalizeOpeningWallCutConfig(legacy?.wall ?? null, null),
+            storefront: assetType === WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT
+                ? normalizeStorefrontConfig(legacy?.storefront ?? null)
+                : null,
+            portal: normalizePortalConfig(legacy?.portal ?? null),
             assetType,
             source: 'legacy'
         };
@@ -3007,7 +3048,8 @@ export class BuildingFabrication2View {
 
         const repeatSrc = windowCfg.repeat && typeof windowCfg.repeat === 'object' ? windowCfg.repeat : {};
         let repeatCount = normalizeOpeningRepeatCount(repeatSrc.count ?? windowCfg.repeatCount, WINDOW_REPEAT_MIN);
-        if (windowCfg.assetType !== WINDOW_FABRICATION_ASSET_TYPE.WINDOW) repeatCount = WINDOW_REPEAT_MIN;
+        if (windowCfg.assetType !== WINDOW_FABRICATION_ASSET_TYPE.WINDOW
+            && windowCfg.assetType !== WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT) repeatCount = WINDOW_REPEAT_MIN;
         windowCfg.repeat = { count: repeatCount };
 
         const muntinsSrc = windowCfg.muntins && typeof windowCfg.muntins === 'object' ? windowCfg.muntins : {};
@@ -3041,7 +3083,9 @@ export class BuildingFabrication2View {
         const topFrameWidthMeters = Number.isFinite(topFrameWidthRaw)
             ? clamp(topFrameWidthRaw, 0.002, 3.0)
             : null;
-        const topEnabled = !!topEnabledRaw && windowCfg.assetType !== WINDOW_FABRICATION_ASSET_TYPE.GARAGE;
+        const topEnabled = !!topEnabledRaw
+            && windowCfg.assetType !== WINDOW_FABRICATION_ASSET_TYPE.GARAGE
+            && windowCfg.assetType !== WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT;
         windowCfg.top = {
             enabled: topEnabled,
             assetType: windowCfg.assetType,
@@ -3125,7 +3169,8 @@ export class BuildingFabrication2View {
     _resolveBayWindowRepeatCount(windowCfg) {
         const cfg = windowCfg && typeof windowCfg === 'object' ? windowCfg : {};
         const type = this._resolveBayWindowAssetType(cfg);
-        if (type !== WINDOW_FABRICATION_ASSET_TYPE.WINDOW) return WINDOW_REPEAT_MIN;
+        if (type !== WINDOW_FABRICATION_ASSET_TYPE.WINDOW
+            && type !== WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT) return WINDOW_REPEAT_MIN;
         const repeat = cfg.repeat && typeof cfg.repeat === 'object' ? cfg.repeat : null;
         return normalizeOpeningRepeatCount(repeat?.count ?? cfg.repeatCount, WINDOW_REPEAT_MIN);
     }
@@ -3466,7 +3511,9 @@ export class BuildingFabrication2View {
 
         const windowCfg = this._ensureBayWindowConfig(bay, { create: false });
         if (!windowCfg || windowCfg.enabled === false) return;
-        if (this._resolveBayWindowAssetType(windowCfg) !== WINDOW_FABRICATION_ASSET_TYPE.WINDOW) {
+        const repeatSetterAssetType = this._resolveBayWindowAssetType(windowCfg);
+        if (repeatSetterAssetType !== WINDOW_FABRICATION_ASSET_TYPE.WINDOW
+            && repeatSetterAssetType !== WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT) {
             if ((windowCfg.repeat?.count ?? WINDOW_REPEAT_MIN) === WINDOW_REPEAT_MIN) return;
             windowCfg.repeat = { count: WINDOW_REPEAT_MIN };
             this._enforceBaySizeAgainstWindow(bay);
@@ -3853,12 +3900,14 @@ export class BuildingFabrication2View {
         const assetTypes = [
             WINDOW_FABRICATION_ASSET_TYPE.WINDOW,
             WINDOW_FABRICATION_ASSET_TYPE.DOOR,
-            WINDOW_FABRICATION_ASSET_TYPE.GARAGE
+            WINDOW_FABRICATION_ASSET_TYPE.GARAGE,
+            WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT
         ];
         const labelByType = {
             [WINDOW_FABRICATION_ASSET_TYPE.WINDOW]: 'Window',
             [WINDOW_FABRICATION_ASSET_TYPE.DOOR]: 'Door',
-            [WINDOW_FABRICATION_ASSET_TYPE.GARAGE]: 'Garage'
+            [WINDOW_FABRICATION_ASSET_TYPE.GARAGE]: 'Garage',
+            [WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT]: 'Storefront'
         };
         const sections = assetTypes.map((assetType) => {
             const entries = getWindowFabricationCatalogEntries({ assetType });
@@ -4931,6 +4980,78 @@ export class BuildingFabrication2View {
             };
             bay.capital = capital;
         }
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
+
+    // AI 488: bay-level portal override on door openings. Passing null clears
+    // the override so the definition's own portal (if any) applies again.
+    _setBayWindowPortal(layerId, faceId, bayId, patch) {
+        const ctx = this._findBaySpec({ layerId, faceId, bayId });
+        const bay = ctx?.bay && typeof ctx.bay === 'object' ? ctx.bay : null;
+        if (!bay) return;
+        if (resolveBayLinkFromSpec(bay)) return;
+        const windowCfg = this._ensureBayWindowConfig(bay, { create: false });
+        if (!windowCfg || windowCfg.enabled === false) return;
+
+        if (patch === null || patch === undefined) {
+            if ('portal' in windowCfg) delete windowCfg.portal;
+        } else if (typeof patch === 'object') {
+            const defEntry = this._findWindowDefinitionEntry(windowCfg.defId);
+            const base = (windowCfg.portal && typeof windowCfg.portal === 'object')
+                ? windowCfg.portal
+                : (defEntry?.portal && typeof defEntry.portal === 'object' ? defEntry.portal : {});
+            const merged = {
+                ...JSON.parse(JSON.stringify(base)),
+                ...patch,
+                enabled: true,
+                steps: {
+                    ...(base?.steps && typeof base.steps === 'object' ? JSON.parse(JSON.stringify(base.steps)) : {}),
+                    ...(patch?.steps && typeof patch.steps === 'object' ? patch.steps : {})
+                }
+            };
+            windowCfg.portal = normalizePortalConfig(merged) ?? undefined;
+            if (!windowCfg.portal) delete windowCfg.portal;
+        }
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
+    // AI 488: storefront zones live on the window definition; editing them
+    // clones a catalog definition into the config library first when needed.
+    _setWindowDefinitionStorefrontZone(windowDefId, patch) {
+        const id = typeof windowDefId === 'string' ? windowDefId.trim() : '';
+        if (!id || !patch || typeof patch !== 'object') return;
+
+        const lib = this._ensureWindowDefinitionsLibrary();
+        if (!lib) return;
+        let entry = lib.items.find((item) => item?.id === id) ?? null;
+        if (!entry) {
+            const catalog = getWindowFabricationCatalogEntryById(id);
+            if (!catalog) return;
+            entry = {
+                id,
+                label: typeof catalog?.name === 'string' && catalog.name.trim() ? catalog.name.trim() : id,
+                settings: sanitizeWindowMeshSettings(catalog?.settings ?? null),
+                garageFacade: normalizeGarageFacadeConfig(catalog?.garageFacade ?? null, null),
+                wall: normalizeOpeningWallCutConfig(catalog?.wall ?? null, null),
+                assetType: normalizeOpeningAssetType(catalog?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW),
+                ...(catalog?.decoration ? { decoration: JSON.parse(JSON.stringify(catalog.decoration)) } : {}),
+                ...(catalog?.storefront ? { storefront: JSON.parse(JSON.stringify(catalog.storefront)) } : {}),
+                ...(catalog?.portal ? { portal: JSON.parse(JSON.stringify(catalog.portal)) } : {})
+            };
+            lib.items.push(entry);
+        }
+        if (normalizeOpeningAssetType(entry.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW) !== WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT) return;
+
+        const base = entry.storefront && typeof entry.storefront === 'object' ? entry.storefront : {};
+        const merged = JSON.parse(JSON.stringify(base));
+        for (const [zoneKey, zonePatch] of Object.entries(patch)) {
+            if (!zonePatch || typeof zonePatch !== 'object') continue;
+            merged[zoneKey] = { ...(merged[zoneKey] ?? {}), ...zonePatch };
+        }
+        entry.storefront = normalizeStorefrontConfig(merged);
         this._syncUiState();
         this._requestRebuild({ preserveCamera: true });
     }

@@ -7,7 +7,8 @@ import { WINDOW_SHADE_COVERAGE } from './WindowMeshSettings.js';
 export const WINDOW_FABRICATION_ASSET_TYPE = Object.freeze({
     WINDOW: 'window',
     DOOR: 'door',
-    GARAGE: 'garage'
+    GARAGE: 'garage',
+    STOREFRONT: 'storefront'
 });
 
 function deepClone(obj) {
@@ -18,6 +19,7 @@ function normalizeAssetType(value, fallback = WINDOW_FABRICATION_ASSET_TYPE.WIND
     const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
     if (raw === WINDOW_FABRICATION_ASSET_TYPE.GARAGE) return WINDOW_FABRICATION_ASSET_TYPE.GARAGE;
     if (raw === WINDOW_FABRICATION_ASSET_TYPE.DOOR) return WINDOW_FABRICATION_ASSET_TYPE.DOOR;
+    if (raw === WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT) return WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT;
     if (raw === WINDOW_FABRICATION_ASSET_TYPE.WINDOW) return WINDOW_FABRICATION_ASSET_TYPE.WINDOW;
     return fallback;
 }
@@ -33,6 +35,109 @@ function normalizeCatalogNameKey(value) {
 }
 
 const CATALOG_WINDOW_SHADE_COLOR_HEX = 0x565851;
+
+// AI 488: storefront assets stack four zones inside one opening, bottom to top:
+// bulkhead (solid base) -> display glazing (the window settings themselves) ->
+// transom band -> sign fascia. ONE feature with per-zone options, not sibling
+// features per zone. Glazing takes whatever height the fixed zones leave over.
+export const STOREFRONT_TRANSOM_MODE = Object.freeze({
+    GLAZED: 'glazed',
+    BACKLIT: 'backlit',
+    NONE: 'none'
+});
+
+const STOREFRONT_ZONE_MATERIAL_MODES = Object.freeze(['match_wall', 'match_frame', 'pbr', 'slot']);
+
+function clampNumber(value, min, max, fallback) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return fallback;
+    return Math.max(min, Math.min(max, num));
+}
+
+function normalizeStorefrontTransomMode(value, fallback = STOREFRONT_TRANSOM_MODE.GLAZED) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === STOREFRONT_TRANSOM_MODE.GLAZED) return STOREFRONT_TRANSOM_MODE.GLAZED;
+    if (raw === STOREFRONT_TRANSOM_MODE.BACKLIT) return STOREFRONT_TRANSOM_MODE.BACKLIT;
+    if (raw === STOREFRONT_TRANSOM_MODE.NONE || raw === 'off' || raw === 'disabled') return STOREFRONT_TRANSOM_MODE.NONE;
+    return fallback;
+}
+
+function normalizeStorefrontZoneMaterial(value, fallbackMode = 'match_frame') {
+    const src = value && typeof value === 'object' ? value : {};
+    const modeRaw = typeof src.mode === 'string' ? src.mode.trim().toLowerCase() : '';
+    const mode = STOREFRONT_ZONE_MATERIAL_MODES.includes(modeRaw) ? modeRaw : fallbackMode;
+    const out = { mode };
+    if (mode === 'pbr') {
+        const materialId = typeof src.materialId === 'string' ? src.materialId.trim() : '';
+        if (materialId) out.materialId = materialId;
+        else out.mode = fallbackMode;
+    } else if (mode === 'slot') {
+        const slotId = typeof src.slotId === 'string' ? src.slotId.trim() : '';
+        if (slotId) out.slotId = slotId;
+        else out.mode = fallbackMode;
+    }
+    return out;
+}
+
+function normalizeHexColorValue(value, fallback) {
+    const num = Number(value);
+    if (Number.isFinite(num)) return (num >>> 0) & 0xffffff;
+    return fallback;
+}
+
+export function normalizeStorefrontConfig(value) {
+    const src = value && typeof value === 'object' ? value : {};
+
+    const bulkheadSrc = src.bulkhead && typeof src.bulkhead === 'object' ? src.bulkhead : {};
+    const transomSrc = src.transom && typeof src.transom === 'object' ? src.transom : {};
+    const fasciaSrc = src.fascia && typeof src.fascia === 'object' ? src.fascia : {};
+
+    return {
+        bulkhead: {
+            enabled: bulkheadSrc.enabled !== false,
+            heightMeters: clampNumber(bulkheadSrc.heightMeters, 0.0, 2.0, 0.55),
+            projectionMeters: clampNumber(bulkheadSrc.projectionMeters, 0.0, 0.4, 0.04),
+            material: normalizeStorefrontZoneMaterial(bulkheadSrc.material, 'match_frame')
+        },
+        transom: {
+            mode: normalizeStorefrontTransomMode(transomSrc.mode),
+            heightMeters: clampNumber(transomSrc.heightMeters, 0.0, 2.0, 0.45),
+            columns: Math.max(1, Math.min(12, Math.round(Number(transomSrc.columns) || 4))),
+            emissiveColorHex: normalizeHexColorValue(transomSrc.emissiveColorHex, 0xfff3e0),
+            emissiveIntensity: clampNumber(transomSrc.emissiveIntensity, 0.0, 5.0, 1.2)
+        },
+        fascia: {
+            enabled: fasciaSrc.enabled !== false,
+            heightMeters: clampNumber(fasciaSrc.heightMeters, 0.0, 2.0, 0.5),
+            projectionMeters: clampNumber(fasciaSrc.projectionMeters, 0.0, 0.4, 0.03),
+            material: normalizeStorefrontZoneMaterial(fasciaSrc.material, 'match_frame')
+        },
+        minGlazingHeightMeters: clampNumber(src.minGlazingHeightMeters, 0.3, 3.0, 0.6)
+    };
+}
+
+// AI 488: entrance portal options on door assets. The surround itself reuses
+// the AI 482 decoration machinery (header arched_band / flat_band + jambs) at
+// larger scale; this block adds what surrounds cannot express: a recessed
+// entry (extra frame inset with wall reveal) and an entry steps block that
+// raises the door threshold and climbs from grade in front of the opening.
+export function normalizePortalConfig(value) {
+    if (!value || typeof value !== 'object') return null;
+    if (value.enabled === false) return null;
+
+    const stepsSrc = value.steps && typeof value.steps === 'object' ? value.steps : {};
+    return {
+        enabled: true,
+        recessMeters: clampNumber(value.recessMeters, 0.0, 1.5, 0.35),
+        steps: {
+            count: Math.max(0, Math.min(8, Math.round(Number(stepsSrc.count) || 0))),
+            riseMeters: clampNumber(stepsSrc.riseMeters, 0.05, 0.3, 0.15),
+            treadDepthMeters: clampNumber(stepsSrc.treadDepthMeters, 0.15, 0.6, 0.32),
+            widthPaddingMeters: clampNumber(stepsSrc.widthPaddingMeters, 0.0, 1.0, 0.25),
+            material: normalizeStorefrontZoneMaterial(stepsSrc.material, 'match_wall')
+        }
+    };
+}
 
 function normalizeCatalogEntrySettings(entry) {
     const settings = deepClone(entry?.settings ?? {});
@@ -1451,19 +1556,310 @@ const WINDOW_DOOR_FABRICATION_CATALOG = Object.freeze([
             dataUrl: null,
             wallMaterialId: 'pbr.brick_wall_11'
         }
+    }),
+    Object.freeze({
+        id: 'storefront_black_backlit',
+        assetType: WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT,
+        name: 'Black Storefront Backlit Transom',
+        settings: {
+            version: 1,
+            width: 3.2,
+            height: 3.8,
+            arch: {
+                enabled: false,
+                heightRatio: 0.25,
+                meetsRectangleFrame: true,
+                topPieceMode: 'frame',
+                clipVerticalMuntinsToRectWhenNoTopPiece: true
+            },
+            frame: {
+                width: 0.055,
+                verticalWidth: 0.055,
+                horizontalWidth: 0.055,
+                depth: 0.12,
+                inset: 0,
+                openBottom: false,
+                addHandles: false,
+                colorHex: 3487286,
+                bevel: {
+                    size: 0.3,
+                    roundness: 0.65
+                },
+                material: {
+                    roughness: 0.54,
+                    metalness: 0.07,
+                    envMapIntensity: 0.33,
+                    normalStrength: 0.6
+                }
+            },
+            muntins: {
+                enabled: true,
+                columns: 2,
+                rows: 1,
+                verticalWidth: 0.055,
+                horizontalWidth: 0.045,
+                depth: 0.07,
+                inset: 0.012,
+                uvOffset: {
+                    x: 0,
+                    y: 0
+                },
+                colorHex: 3487286,
+                bevel: {
+                    inherit: true,
+                    bevel: {
+                        size: 0.3,
+                        roundness: 0.65
+                    }
+                },
+                material: {
+                    inheritFromFrame: true,
+                    pbr: {
+                        roughness: 0.54,
+                        metalness: 0.07,
+                        envMapIntensity: 0.33,
+                        normalStrength: 0.6
+                    }
+                }
+            },
+            glass: {
+                opacity: 0.24,
+                tintHex: 0x9aa3ab,
+                reflection: {
+                    metalness: 0,
+                    roughness: 0.03,
+                    transmission: 0,
+                    ior: 1.5,
+                    envMapIntensity: 1.0
+                },
+                zOffset: -0.03
+            },
+            shade: {
+                enabled: false,
+                coverage: WINDOW_SHADE_COVERAGE.PCT_20,
+                randomizeCoverage: false,
+                direction: 'top_to_bottom',
+                colorHex: 0x565851,
+                fabric: {
+                    scale: 7,
+                    intensity: 0.18
+                },
+                zOffset: -0.06
+            },
+            interior: {
+                enabled: true,
+                parallaxInteriorPresetId: 'parallax_interior.shop'
+            }
+        },
+        storefront: {
+            bulkhead: {
+                enabled: true,
+                heightMeters: 0.55,
+                projectionMeters: 0.04,
+                material: { mode: 'match_frame' }
+            },
+            transom: {
+                mode: 'backlit',
+                heightMeters: 0.45,
+                columns: 4,
+                emissiveColorHex: 0xfff3e0,
+                emissiveIntensity: 1.3
+            },
+            fascia: {
+                enabled: true,
+                heightMeters: 0.55,
+                projectionMeters: 0.03,
+                material: { mode: 'match_frame' }
+            }
+        },
+        decoration: null,
+        layers: {
+            frame: true,
+            muntins: true,
+            glass: true,
+            shade: false,
+            interior: true
+        },
+        wall: {
+            materialId: 'pbr.brick_wall_11',
+            roughness: 0.85,
+            normalIntensity: 1,
+            cutWidthLerp: 0,
+            cutHeightLerp: 0,
+            floorDistanceMeters: 0
+        },
+        ibl: {
+            enabled: true,
+            envMapIntensity: 0.25,
+            iblId: 'ibl.hdri.german_town_street_2k',
+            setBackground: true
+        },
+        seed: 'storefront-debug',
+        thumbnail: {
+            dataUrl: null,
+            wallMaterialId: 'pbr.brick_wall_11'
+        }
+    }),
+    Object.freeze({
+        id: 'storefront_bronze_glazed',
+        assetType: WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT,
+        name: 'Bronze Storefront Glazed Transom',
+        settings: {
+            version: 1,
+            width: 3.2,
+            height: 3.8,
+            arch: {
+                enabled: false,
+                heightRatio: 0.25,
+                meetsRectangleFrame: true,
+                topPieceMode: 'frame',
+                clipVerticalMuntinsToRectWhenNoTopPiece: true
+            },
+            frame: {
+                width: 0.06,
+                verticalWidth: 0.06,
+                horizontalWidth: 0.06,
+                depth: 0.11,
+                inset: 0,
+                openBottom: false,
+                addHandles: false,
+                colorHex: 0x4c3d27,
+                bevel: {
+                    size: 0.3,
+                    roundness: 0.65
+                },
+                material: {
+                    roughness: 0.42,
+                    metalness: 0.55,
+                    envMapIntensity: 0.4,
+                    normalStrength: 0.6
+                }
+            },
+            muntins: {
+                enabled: true,
+                columns: 3,
+                rows: 1,
+                verticalWidth: 0.05,
+                horizontalWidth: 0.045,
+                depth: 0.07,
+                inset: 0.012,
+                uvOffset: {
+                    x: 0,
+                    y: 0
+                },
+                colorHex: 0x4c3d27,
+                bevel: {
+                    inherit: true,
+                    bevel: {
+                        size: 0.3,
+                        roundness: 0.65
+                    }
+                },
+                material: {
+                    inheritFromFrame: true,
+                    pbr: {
+                        roughness: 0.42,
+                        metalness: 0.55,
+                        envMapIntensity: 0.4,
+                        normalStrength: 0.6
+                    }
+                }
+            },
+            glass: {
+                opacity: 0.24,
+                tintHex: 0x9aa3ab,
+                reflection: {
+                    metalness: 0,
+                    roughness: 0.03,
+                    transmission: 0,
+                    ior: 1.5,
+                    envMapIntensity: 1.0
+                },
+                zOffset: -0.03
+            },
+            shade: {
+                enabled: false,
+                coverage: WINDOW_SHADE_COVERAGE.PCT_20,
+                randomizeCoverage: false,
+                direction: 'top_to_bottom',
+                colorHex: 0x565851,
+                fabric: {
+                    scale: 7,
+                    intensity: 0.18
+                },
+                zOffset: -0.06
+            },
+            interior: {
+                enabled: true,
+                parallaxInteriorPresetId: 'parallax_interior.shop'
+            }
+        },
+        storefront: {
+            bulkhead: {
+                enabled: true,
+                heightMeters: 0.6,
+                projectionMeters: 0.05,
+                material: { mode: 'pbr', materialId: 'pbr.limestone_smooth' }
+            },
+            transom: {
+                mode: 'glazed',
+                heightMeters: 0.5,
+                columns: 6,
+                emissiveColorHex: 0xfff3e0,
+                emissiveIntensity: 1.2
+            },
+            fascia: {
+                enabled: true,
+                heightMeters: 0.45,
+                projectionMeters: 0.03,
+                material: { mode: 'match_frame' }
+            }
+        },
+        decoration: null,
+        layers: {
+            frame: true,
+            muntins: true,
+            glass: true,
+            shade: false,
+            interior: true
+        },
+        wall: {
+            materialId: 'pbr.brick_wall_11',
+            roughness: 0.85,
+            normalIntensity: 1,
+            cutWidthLerp: 0,
+            cutHeightLerp: 0,
+            floorDistanceMeters: 0
+        },
+        ibl: {
+            enabled: true,
+            envMapIntensity: 0.25,
+            iblId: 'ibl.hdri.german_town_street_2k',
+            setBackground: true
+        },
+        seed: 'storefront-debug',
+        thumbnail: {
+            dataUrl: null,
+            wallMaterialId: 'pbr.brick_wall_11'
+        }
     })
 ]);
 
 function toCatalogResult(entry) {
     const name = normalizeCatalogName(entry?.name ?? entry?.label ?? entry?.id, 'Catalog Entry');
+    const assetType = normalizeAssetType(entry?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
     return {
         id: String(entry?.id ?? ''),
-        assetType: normalizeAssetType(entry?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW),
+        assetType,
         name,
         label: name,
         settings: normalizeCatalogEntrySettings(entry),
         decoration: deepClone(entry?.decoration ?? null),
         garageFacade: deepClone(entry?.garageFacade ?? null),
+        storefront: assetType === WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT
+            ? normalizeStorefrontConfig(entry?.storefront ?? null)
+            : null,
+        portal: normalizePortalConfig(entry?.portal ?? null),
         layers: deepClone(entry?.layers ?? null),
         wall: deepClone(entry?.wall ?? null),
         ibl: deepClone(entry?.ibl ?? null),
@@ -1484,7 +1880,8 @@ export function getWindowFabricationAssetTypeOptions() {
     return Object.freeze([
         Object.freeze({ id: WINDOW_FABRICATION_ASSET_TYPE.WINDOW, label: 'Window' }),
         Object.freeze({ id: WINDOW_FABRICATION_ASSET_TYPE.DOOR, label: 'Door' }),
-        Object.freeze({ id: WINDOW_FABRICATION_ASSET_TYPE.GARAGE, label: 'Garage' })
+        Object.freeze({ id: WINDOW_FABRICATION_ASSET_TYPE.GARAGE, label: 'Garage' }),
+        Object.freeze({ id: WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT, label: 'Storefront' })
     ]);
 }
 

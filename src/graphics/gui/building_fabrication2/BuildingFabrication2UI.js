@@ -43,8 +43,10 @@ const BAY_DEPTH_STEP_M = 0.05;
 const OPENING_ASSET_TYPE = Object.freeze({
     WINDOW: 'window',
     DOOR: 'door',
-    GARAGE: 'garage'
+    GARAGE: 'garage',
+    STOREFRONT: 'storefront'
 });
+const STOREFRONT_TRANSOM_MODES = Object.freeze(['glazed', 'backlit', 'none']);
 const OPENING_HEIGHT_MODE = Object.freeze({
     FIXED: 'fixed',
     FULL: 'full'
@@ -54,7 +56,8 @@ const OPENING_REPEAT_MAX = 5;
 const OPENING_INTERIOR_MODE = Object.freeze({
     NONE: 'none',
     RES: 'res',
-    OFFICE: 'office'
+    OFFICE: 'office',
+    SHOP: 'shop'
 });
 const GARAGE_FACADE_STATE = Object.freeze({
     OPEN: 'open',
@@ -184,6 +187,7 @@ function normalizeOpeningAssetType(value, fallback = OPENING_ASSET_TYPE.WINDOW) 
     if (typed === OPENING_ASSET_TYPE.WINDOW) return OPENING_ASSET_TYPE.WINDOW;
     if (typed === OPENING_ASSET_TYPE.DOOR) return OPENING_ASSET_TYPE.DOOR;
     if (typed === OPENING_ASSET_TYPE.GARAGE) return OPENING_ASSET_TYPE.GARAGE;
+    if (typed === OPENING_ASSET_TYPE.STOREFRONT) return OPENING_ASSET_TYPE.STOREFRONT;
     return fallback;
 }
 
@@ -205,6 +209,7 @@ function normalizeOpeningInteriorMode(value, fallback = OPENING_INTERIOR_MODE.RE
     if (!typed) return fallback;
     if (typed === OPENING_INTERIOR_MODE.NONE || typed === 'off' || typed === 'disabled') return OPENING_INTERIOR_MODE.NONE;
     if (typed === OPENING_INTERIOR_MODE.OFFICE) return OPENING_INTERIOR_MODE.OFFICE;
+    if (typed === OPENING_INTERIOR_MODE.SHOP || typed === 'business' || typed === 'store') return OPENING_INTERIOR_MODE.SHOP;
     if (typed === OPENING_INTERIOR_MODE.RES || typed === 'residential') return OPENING_INTERIOR_MODE.RES;
     return fallback;
 }
@@ -218,10 +223,12 @@ function resolveOpeningInteriorModeFromSettings(settings, fallback = OPENING_INT
         ? interior.parallaxInteriorPresetId.toLowerCase()
         : '';
     if (presetId.includes('office')) return OPENING_INTERIOR_MODE.OFFICE;
+    if (presetId.includes('shop')) return OPENING_INTERIOR_MODE.SHOP;
     if (presetId.includes('residential')) return OPENING_INTERIOR_MODE.RES;
 
     const atlasId = typeof interior.atlasId === 'string' ? interior.atlasId.toLowerCase() : '';
     if (atlasId.includes('office')) return OPENING_INTERIOR_MODE.OFFICE;
+    if (atlasId.includes('shop')) return OPENING_INTERIOR_MODE.SHOP;
     if (atlasId.includes('residential')) return OPENING_INTERIOR_MODE.RES;
 
     return interior.enabled === false ? OPENING_INTERIOR_MODE.NONE : OPENING_INTERIOR_MODE.RES;
@@ -925,6 +932,8 @@ export class BuildingFabrication2UI {
         this.onSetBayWindowMuntinsEnabled = null;
         this.onSetBayWindowShadesDisabled = null;
         this.onSetBayWindowInteriorPreset = null;
+        this.onSetBayWindowPortal = null;
+        this.onSetWindowDefinitionStorefrontZone = null;
         this.onSetBayGarageFacadeState = null;
         this.onSetBayTopWindowEnabled = null;
         this.onSetBayTopWindowHeightMode = null;
@@ -4113,7 +4122,9 @@ export class BuildingFabrication2UI {
                     : OPENING_ASSET_TYPE.WINDOW;
                 const openingAssetTypeLabel = openingAssetType === OPENING_ASSET_TYPE.DOOR
                     ? 'Door'
-                    : (openingAssetType === OPENING_ASSET_TYPE.GARAGE ? 'Garage' : 'Window');
+                    : (openingAssetType === OPENING_ASSET_TYPE.GARAGE
+                        ? 'Garage'
+                        : (openingAssetType === OPENING_ASSET_TYPE.STOREFRONT ? 'Storefront' : 'Window'));
                 const openingAssetTypeLower = openingAssetTypeLabel.toLowerCase();
                 const openingPickerLabel = hasBayOpening ? openingAssetTypeLabel : 'Window';
                 const openingWidthLabel = `${openingAssetTypeLabel} width`;
@@ -4148,7 +4159,8 @@ export class BuildingFabrication2UI {
                 const openingPaddingLinked = (openingPadding?.linked ?? true) !== false;
                 const openingPaddingLeft = Math.max(0, Number(openingPadding?.leftMeters) || 0);
                 const openingPaddingRight = Math.max(0, Number(openingPadding?.rightMeters) || (openingPaddingLinked ? openingPaddingLeft : 0));
-                const openingRepeatAllowed = openingAssetType === OPENING_ASSET_TYPE.WINDOW;
+                const openingRepeatAllowed = openingAssetType === OPENING_ASSET_TYPE.WINDOW
+                    || openingAssetType === OPENING_ASSET_TYPE.STOREFRONT;
                 const openingRepeatCountRaw = normalizeOpeningRepeatCount(
                     openingCfg?.repeat?.count ?? openingCfg?.repeatCount,
                     OPENING_REPEAT_MIN
@@ -4180,7 +4192,9 @@ export class BuildingFabrication2UI {
                     : null;
                 const openingGarageFacadeState = normalizeGarageFacadeState(openingGarageFacade?.state);
                 const topCfg = openingCfg?.top && typeof openingCfg.top === 'object' ? openingCfg.top : null;
-                const allowTopOpening = hasBayOpening && openingAssetType !== OPENING_ASSET_TYPE.GARAGE;
+                const allowTopOpening = hasBayOpening
+                    && openingAssetType !== OPENING_ASSET_TYPE.GARAGE
+                    && openingAssetType !== OPENING_ASSET_TYPE.STOREFRONT;
                 const topOpeningEnabled = allowTopOpening && !!topCfg?.enabled;
                 const topOpeningHeightMode = normalizeOpeningHeightMode(topCfg?.heightMode, OPENING_HEIGHT_MODE.FIXED);
                 const topOpeningHeightRaw = Number(topCfg?.heightMeters);
@@ -5152,6 +5166,7 @@ export class BuildingFabrication2UI {
                             addInteriorModeButton(OPENING_INTERIOR_MODE.NONE, 'None');
                             addInteriorModeButton(OPENING_INTERIOR_MODE.RES, 'Res');
                             addInteriorModeButton(OPENING_INTERIOR_MODE.OFFICE, 'Office');
+                            addInteriorModeButton(OPENING_INTERIOR_MODE.SHOP, 'Shop');
                             openingInteriorControls.appendChild(openingInteriorToggle);
                             openingInteriorRow.appendChild(openingInteriorLabel);
                             openingInteriorRow.appendChild(openingInteriorControls);
@@ -5186,6 +5201,197 @@ export class BuildingFabrication2UI {
                                 garageStateRow.appendChild(garageStateLabel);
                                 garageStateRow.appendChild(garageStateControls);
                                 mainOpeningSection.appendChild(garageStateRow);
+                            }
+
+                            // AI 488: storefront zone editor. Zones live on the
+                            // window definition, so edits apply to every bay
+                            // using this storefront asset.
+                            if (openingAssetType === OPENING_ASSET_TYPE.STOREFRONT) {
+                                const defStorefront = selectedOpeningDef?.storefront && typeof selectedOpeningDef.storefront === 'object'
+                                    ? selectedOpeningDef.storefront
+                                    : null;
+                                const zonesDisabled = openingControlsDisabled || !openingDefId;
+                                const zoneNumberRow = (labelText, value, onCommit) => {
+                                    const row = createRangeRow(labelText);
+                                    row.row.classList.add('building-fab2-bay-window-range-row');
+                                    row.range.min = '0';
+                                    row.range.max = '2';
+                                    row.range.step = '0.05';
+                                    row.number.min = '0';
+                                    row.number.step = '0.05';
+                                    row.range.disabled = zonesDisabled;
+                                    row.number.disabled = zonesDisabled;
+                                    const sync = (raw) => {
+                                        const next = Math.max(0, Number(raw) || 0);
+                                        row.range.value = String(Math.min(2, next));
+                                        row.number.value = next.toFixed(2);
+                                        return next;
+                                    };
+                                    sync(value);
+                                    row.range.addEventListener('input', () => {
+                                        if (zonesDisabled) return;
+                                        onCommit(sync(row.range.value));
+                                    });
+                                    row.number.addEventListener('input', () => {
+                                        if (zonesDisabled) return;
+                                        const raw = Number(row.number.value);
+                                        if (!Number.isFinite(raw)) return;
+                                        onCommit(sync(raw));
+                                    });
+                                    return row.row;
+                                };
+
+                                mainOpeningSection.appendChild(zoneNumberRow(
+                                    'Bulkhead height',
+                                    Number(defStorefront?.bulkhead?.heightMeters ?? 0.55),
+                                    (next) => this.onSetWindowDefinitionStorefrontZone?.(openingDefId, { bulkhead: { heightMeters: next } })
+                                ));
+
+                                const transomModeRaw = typeof defStorefront?.transom?.mode === 'string'
+                                    ? defStorefront.transom.mode.toLowerCase()
+                                    : 'glazed';
+                                const transomMode = STOREFRONT_TRANSOM_MODES.includes(transomModeRaw) ? transomModeRaw : 'glazed';
+                                const transomModeRow = document.createElement('div');
+                                transomModeRow.className = 'building-fab-row building-fab-row-wide';
+                                const transomModeLabel = document.createElement('div');
+                                transomModeLabel.className = 'building-fab-row-label';
+                                transomModeLabel.textContent = 'Transom';
+                                const transomModeControls = document.createElement('div');
+                                transomModeControls.className = 'building-fab2-bay-row-controls';
+                                const transomModeToggle = document.createElement('div');
+                                transomModeToggle.className = 'building-fab2-width-mode-toggle building-fab2-bay-window-mode-toggle';
+                                const addTransomModeButton = (mode, label) => {
+                                    const btn = document.createElement('button');
+                                    btn.type = 'button';
+                                    btn.className = 'building-fab2-width-mode-btn';
+                                    btn.textContent = label;
+                                    btn.disabled = zonesDisabled;
+                                    btn.classList.toggle('is-active', transomMode === mode);
+                                    btn.addEventListener('click', () => {
+                                        if (zonesDisabled || transomMode === mode) return;
+                                        this.onSetWindowDefinitionStorefrontZone?.(openingDefId, { transom: { mode } });
+                                    });
+                                    transomModeToggle.appendChild(btn);
+                                };
+                                addTransomModeButton('glazed', 'Glazed');
+                                addTransomModeButton('backlit', 'Backlit');
+                                addTransomModeButton('none', 'None');
+                                transomModeControls.appendChild(transomModeToggle);
+                                transomModeRow.appendChild(transomModeLabel);
+                                transomModeRow.appendChild(transomModeControls);
+                                mainOpeningSection.appendChild(transomModeRow);
+
+                                if (transomMode !== 'none') {
+                                    mainOpeningSection.appendChild(zoneNumberRow(
+                                        'Transom height',
+                                        Number(defStorefront?.transom?.heightMeters ?? 0.45),
+                                        (next) => this.onSetWindowDefinitionStorefrontZone?.(openingDefId, { transom: { heightMeters: next } })
+                                    ));
+                                }
+                                mainOpeningSection.appendChild(zoneNumberRow(
+                                    'Fascia height',
+                                    Number(defStorefront?.fascia?.heightMeters ?? 0.5),
+                                    (next) => this.onSetWindowDefinitionStorefrontZone?.(openingDefId, { fascia: { heightMeters: next } })
+                                ));
+                            }
+
+                            // AI 488: entrance portal options on door openings
+                            // (bay-level override over the definition's portal).
+                            if (openingAssetType === OPENING_ASSET_TYPE.DOOR) {
+                                const bayPortal = openingCfg?.portal && typeof openingCfg.portal === 'object' ? openingCfg.portal : null;
+                                const defPortal = selectedOpeningDef?.portal && typeof selectedOpeningDef.portal === 'object' ? selectedOpeningDef.portal : null;
+                                const effectivePortal = bayPortal ?? defPortal;
+                                const portalEnabled = !!effectivePortal && effectivePortal.enabled !== false;
+                                const portalDisabled = openingControlsDisabled;
+
+                                const portalRow = document.createElement('div');
+                                portalRow.className = 'building-fab-row building-fab-row-wide';
+                                const portalLabel = document.createElement('div');
+                                portalLabel.className = 'building-fab-row-label';
+                                portalLabel.textContent = 'Portal';
+                                const portalControls = document.createElement('div');
+                                portalControls.className = 'building-fab2-bay-row-controls';
+                                const portalToggle = document.createElement('div');
+                                portalToggle.className = 'building-fab2-width-mode-toggle building-fab2-bay-window-mode-toggle';
+                                const portalOffBtn = document.createElement('button');
+                                portalOffBtn.type = 'button';
+                                portalOffBtn.className = 'building-fab2-width-mode-btn';
+                                portalOffBtn.textContent = 'Off';
+                                portalOffBtn.disabled = portalDisabled;
+                                portalOffBtn.classList.toggle('is-active', !portalEnabled);
+                                portalOffBtn.addEventListener('click', () => {
+                                    if (portalDisabled || !portalEnabled) return;
+                                    this.onSetBayWindowPortal?.(layerId, configFaceId, bayId, null);
+                                });
+                                portalToggle.appendChild(portalOffBtn);
+                                const portalOnBtn = document.createElement('button');
+                                portalOnBtn.type = 'button';
+                                portalOnBtn.className = 'building-fab2-width-mode-btn';
+                                portalOnBtn.textContent = 'On';
+                                portalOnBtn.disabled = portalDisabled;
+                                portalOnBtn.classList.toggle('is-active', portalEnabled);
+                                portalOnBtn.addEventListener('click', () => {
+                                    if (portalDisabled || portalEnabled) return;
+                                    this.onSetBayWindowPortal?.(layerId, configFaceId, bayId, { enabled: true, steps: { count: 3 } });
+                                });
+                                portalToggle.appendChild(portalOnBtn);
+                                portalControls.appendChild(portalToggle);
+                                portalRow.appendChild(portalLabel);
+                                portalRow.appendChild(portalControls);
+                                mainOpeningSection.appendChild(portalRow);
+
+                                if (portalEnabled) {
+                                    const portalNumberRow = (labelText, value, max, step, onCommit) => {
+                                        const row = createRangeRow(labelText);
+                                        row.row.classList.add('building-fab2-bay-window-range-row');
+                                        row.range.min = '0';
+                                        row.range.max = String(max);
+                                        row.range.step = String(step);
+                                        row.number.min = '0';
+                                        row.number.step = String(step);
+                                        row.range.disabled = portalDisabled;
+                                        row.number.disabled = portalDisabled;
+                                        const sync = (raw) => {
+                                            const next = Math.max(0, Number(raw) || 0);
+                                            row.range.value = String(Math.min(max, next));
+                                            row.number.value = step >= 1 ? String(Math.round(next)) : next.toFixed(2);
+                                            return next;
+                                        };
+                                        sync(value);
+                                        row.range.addEventListener('input', () => {
+                                            if (portalDisabled) return;
+                                            onCommit(sync(row.range.value));
+                                        });
+                                        row.number.addEventListener('input', () => {
+                                            if (portalDisabled) return;
+                                            const raw = Number(row.number.value);
+                                            if (!Number.isFinite(raw)) return;
+                                            onCommit(sync(raw));
+                                        });
+                                        return row.row;
+                                    };
+                                    mainOpeningSection.appendChild(portalNumberRow(
+                                        'Entry recess',
+                                        Number(effectivePortal?.recessMeters ?? 0.35),
+                                        1.5,
+                                        0.05,
+                                        (next) => this.onSetBayWindowPortal?.(layerId, configFaceId, bayId, { recessMeters: next })
+                                    ));
+                                    mainOpeningSection.appendChild(portalNumberRow(
+                                        'Steps',
+                                        Math.max(0, Math.round(Number(effectivePortal?.steps?.count ?? 0))),
+                                        8,
+                                        1,
+                                        (next) => this.onSetBayWindowPortal?.(layerId, configFaceId, bayId, { steps: { count: Math.round(next) } })
+                                    ));
+                                    mainOpeningSection.appendChild(portalNumberRow(
+                                        'Step rise',
+                                        Number(effectivePortal?.steps?.riseMeters ?? 0.15),
+                                        0.3,
+                                        0.01,
+                                        (next) => this.onSetBayWindowPortal?.(layerId, configFaceId, bayId, { steps: { riseMeters: next } })
+                                    ));
+                                }
                             }
 
                             if (allowTopOpening) {

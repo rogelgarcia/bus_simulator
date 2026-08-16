@@ -282,13 +282,14 @@ test('WindowFabricationCatalog: returns mode-filtered entries with expected defa
     assert.ok(defaultGarageId);
 });
 
-test('WindowFabricationCatalog: asset type options include garage mode', () => {
+test('WindowFabricationCatalog: asset type options include garage and storefront modes', () => {
     const options = getWindowFabricationAssetTypeOptions();
     const ids = options.map((item) => item.id);
     assert.deepEqual(ids, [
         WINDOW_FABRICATION_ASSET_TYPE.WINDOW,
         WINDOW_FABRICATION_ASSET_TYPE.DOOR,
-        WINDOW_FABRICATION_ASSET_TYPE.GARAGE
+        WINDOW_FABRICATION_ASSET_TYPE.GARAGE,
+        WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT
     ]);
 });
 

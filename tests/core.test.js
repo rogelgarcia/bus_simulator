@@ -17747,6 +17747,347 @@ async function runTests() {
         }
     });
 
+    // ========== AI 488: storefront + entrance portal ==========
+    const {
+        normalizeStorefrontConfig,
+        normalizePortalConfig,
+        STOREFRONT_TRANSOM_MODE,
+        getWindowFabricationCatalogEntryById: getWindowCatalogEntryByIdForStorefront
+    } = await import('/src/app/buildings/window_mesh/index.js');
+
+    test('WindowFabricationCatalog: storefront + portal configs normalize round-trip', () => {
+        const sf = normalizeStorefrontConfig({
+            bulkhead: { heightMeters: 99, projectionMeters: -3, material: { mode: 'pbr', materialId: 'pbr.limestone_smooth' } },
+            transom: { mode: 'weird', heightMeters: -1, columns: 55, emissiveIntensity: 99 },
+            fascia: { enabled: false, material: { mode: 'slot', slotId: 'trim' } }
+        });
+        assertNear(sf.bulkhead.heightMeters, 2.0, 1e-6, 'Expected bulkhead height clamped to max.');
+        assertNear(sf.bulkhead.projectionMeters, 0.0, 1e-6, 'Expected bulkhead projection clamped to min.');
+        assertEqual(sf.bulkhead.material.mode, 'pbr', 'Expected pbr bulkhead material to survive.');
+        assertEqual(sf.transom.mode, STOREFRONT_TRANSOM_MODE.GLAZED, 'Expected unknown transom mode to fall back to glazed.');
+        assertNear(sf.transom.heightMeters, 0.0, 1e-6, 'Expected transom height clamped to min.');
+        assertEqual(sf.transom.columns, 12, 'Expected transom columns clamped to max.');
+        assertNear(sf.transom.emissiveIntensity, 5.0, 1e-6, 'Expected emissive intensity clamped to max.');
+        assertEqual(sf.fascia.enabled, false, 'Expected fascia disable to survive.');
+        assertEqual(sf.fascia.material.mode, 'slot', 'Expected slot fascia material mode to survive.');
+        assertEqual(sf.fascia.material.slotId, 'trim', 'Expected fascia slotId to survive.');
+
+        assertEqual(normalizePortalConfig(null), null, 'Expected missing portal to normalize to null.');
+        assertEqual(normalizePortalConfig({ enabled: false, steps: { count: 3 } }), null, 'Expected disabled portal to normalize to null.');
+        const portal = normalizePortalConfig({ recessMeters: 99, steps: { count: 99, riseMeters: 0, treadDepthMeters: 99 } });
+        assertNear(portal.recessMeters, 1.5, 1e-6, 'Expected recess clamped to max.');
+        assertEqual(portal.steps.count, 8, 'Expected step count clamped to max.');
+        assertNear(portal.steps.riseMeters, 0.05, 1e-6, 'Expected step rise clamped to min.');
+        assertNear(portal.steps.treadDepthMeters, 0.6, 1e-6, 'Expected tread depth clamped to max.');
+
+        const catalogSf = getWindowCatalogEntryByIdForStorefront('storefront_black_backlit');
+        assertTrue(!!catalogSf, 'Expected storefront catalog entry to exist.');
+        assertEqual(catalogSf.assetType, 'storefront', 'Expected storefront asset type on catalog entry.');
+        assertEqual(catalogSf.storefront?.transom?.mode, STOREFRONT_TRANSOM_MODE.BACKLIT, 'Expected backlit transom on the catalog entry.');
+        assertEqual(catalogSf.settings?.interior?.parallaxInteriorPresetId, 'parallax_interior.shop', 'Expected shop parallax preset on storefront glazing.');
+    });
+
+    test('BuildingFabricationGenerator: storefront zone layout stacks and clamps', () => {
+        const layout = buildingFabricationGeneratorTestOnly.resolveStorefrontZoneLayout({
+            storefront: {
+                bulkhead: { heightMeters: 0.5 },
+                transom: { mode: 'backlit', heightMeters: 0.4 },
+                fascia: { heightMeters: 0.5 }
+            },
+            totalHeightMeters: 4.0
+        });
+        assertNear(layout.bulkhead.height, 0.5, 1e-6, 'Expected bulkhead height preserved.');
+        assertNear(layout.glazing.height, 2.6, 1e-6, 'Expected glazing to absorb the remaining height.');
+        assertNear(layout.glazing.yBottom, 0.5, 1e-6, 'Expected glazing to sit on the bulkhead.');
+        assertNear(layout.transom.yBottom, 3.1, 1e-6, 'Expected transom above the glazing.');
+        assertNear(layout.fascia.yBottom, 3.5, 1e-6, 'Expected fascia above the transom.');
+        assertNear(layout.fascia.yBottom + layout.fascia.height, 4.0, 1e-6, 'Expected zones to close the opening height.');
+
+        // Opening too short for the fixed zones: they shrink proportionally so
+        // glazing keeps its minimum height.
+        const tight = buildingFabricationGeneratorTestOnly.resolveStorefrontZoneLayout({
+            storefront: {
+                bulkhead: { heightMeters: 1.0 },
+                transom: { mode: 'glazed', heightMeters: 1.0 },
+                fascia: { heightMeters: 1.0 },
+                minGlazingHeightMeters: 0.8
+            },
+            totalHeightMeters: 2.0
+        });
+        const fixedSum = tight.bulkhead.height + tight.transom.height + tight.fascia.height;
+        assertNear(fixedSum, 1.2, 1e-6, 'Expected fixed zones to shrink to the available height.');
+        assertNear(tight.glazing.height, 0.8, 1e-6, 'Expected glazing to keep its minimum height.');
+        assertNear(tight.bulkhead.height, tight.transom.height, 1e-6, 'Expected proportional shrink across equal zones.');
+    });
+
+    test('FacadeBaysSolver: storefront openings survive solving with repeats', () => {
+        const items = solveFacadeBaysLayout({
+            bays: [
+                {
+                    id: 'shop_1',
+                    size: { mode: 'fixed', widthMeters: 8.0 },
+                    window: {
+                        enabled: true,
+                        defId: 'storefront_black_backlit',
+                        assetType: 'storefront',
+                        heightMode: 'full',
+                        repeat: { count: 2 },
+                        top: { enabled: true, heightMeters: 1.0 }
+                    }
+                },
+                { id: 'mid_2', size: { mode: 'range', minMeters: 2.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+            ],
+            groups: null,
+            faceLengthMeters: 12,
+            warnings: []
+        });
+        const shop = items.find((it) => it?.id === 'shop_1');
+        assertTrue(!!shop?.window, 'Expected storefront window spec to survive solving.');
+        assertEqual(shop.window.assetType, 'storefront', 'Expected storefront asset type to survive the solver (regression: it used to fall back to window).');
+        assertEqual(shop.window.repeat.count, 2, 'Expected storefront repeat to survive like windows.');
+        assertEqual(shop.window.top.enabled, false, 'Expected secondary top opening forced off for storefronts.');
+    });
+
+    test('BuildingFabricationGenerator: storefront emits stacked zones with correct heights', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const windowDefinitions = {
+            items: [{
+                id: 'sf_test',
+                assetType: 'storefront',
+                settings: {
+                    width: 3.0,
+                    height: 4.0,
+                    frame: { width: 0.05, depth: 0.1, inset: 0 },
+                    muntins: { enabled: true, columns: 2, rows: 1 },
+                    interior: { enabled: true, parallaxInteriorPresetId: 'parallax_interior.shop' }
+                },
+                storefront: {
+                    bulkhead: { heightMeters: 0.5, projectionMeters: 0.05, material: { mode: 'match_frame' } },
+                    transom: { mode: 'backlit', heightMeters: 0.4, emissiveIntensity: 1.0 },
+                    fascia: { heightMeters: 0.5, projectionMeters: 0.03, material: { mode: 'match_frame' } }
+                }
+            }]
+        };
+        const facades = {
+            A: {
+                layout: {
+                    bays: {
+                        items: [
+                            { id: 'lead_1', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' },
+                            {
+                                id: 'shop_2',
+                                size: { mode: 'fixed', widthMeters: 4.0 },
+                                window: {
+                                    enabled: true,
+                                    defId: 'sf_test',
+                                    assetType: 'storefront',
+                                    size: { widthMeters: 3.4, heightMeters: 4.0 },
+                                    heightMode: 'fixed',
+                                    repeat: { count: 1 },
+                                    padding: { leftMeters: 0.1, rightMeters: 0.1 }
+                                }
+                            },
+                            { id: 'tail_3', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+                        ]
+                    }
+                }
+            }
+        };
+        const layers = [
+            createDefaultFloorLayer({ id: 'floor_sf', floors: 1, floorHeight: 4.6, belt: { enabled: false }, windows: { enabled: false } }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            windowDefinitions,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+
+        const windowChildren = parts.windows?.children ?? [];
+        const byRole = (role) => windowChildren.filter((m) => m?.userData?.buildingFab2Role === role);
+        const bulkheads = byRole('storefront_bulkhead');
+        const fascias = byRole('storefront_fascia');
+        const panels = byRole('storefront_backlit_panel');
+        assertEqual(bulkheads.length, 1, 'Expected one bulkhead slab.');
+        assertEqual(fascias.length, 1, 'Expected one fascia slab.');
+        assertEqual(panels.length, 1, 'Expected one backlit transom panel.');
+
+        const sfGroups = windowChildren.filter((g) => g?.userData?.windowDefinitionId === 'sf_test'
+            && g?.userData?.buildingWindowSource === 'bf2_window_definition');
+        assertEqual(sfGroups.length, 2, 'Expected glazing + transom window groups for the storefront definition.');
+
+        const yBandOf = (mesh) => {
+            mesh.geometry.computeBoundingBox();
+            return {
+                min: mesh.geometry.boundingBox.min.y + mesh.position.y,
+                max: mesh.geometry.boundingBox.max.y + mesh.position.y
+            };
+        };
+        const bulkheadBand = yBandOf(bulkheads[0]);
+        const fasciaBand = yBandOf(fascias[0]);
+        const panelBand = yBandOf(panels[0]);
+        assertNear(bulkheadBand.max - bulkheadBand.min, 0.5, 1e-3, 'Expected bulkhead slab height 0.5m.');
+        assertNear(fasciaBand.max - fasciaBand.min, 0.5, 1e-3, 'Expected fascia slab height 0.5m.');
+        // Stacking: bulkhead [0..0.5], glazing [0.5..3.1], transom [3.1..3.5],
+        // fascia [3.5..4.0] relative to the opening bottom.
+        assertNear(fasciaBand.min - bulkheadBand.min, 3.5, 0.02, 'Expected fascia to start above bulkhead + glazing + transom.');
+        const panelCenter = (panelBand.min + panelBand.max) * 0.5;
+        assertNear(panelCenter - bulkheadBand.min, 3.3, 0.08, 'Expected the backlit panel centered in the transom band.');
+        assertTrue(panelBand.max - panelBand.min < 0.45, 'Expected the backlit panel to fit inside the transom band.');
+        const panelMat = panels[0].material;
+        assertTrue((panelMat?.emissiveIntensity ?? 0) > 0.5, 'Expected the backlit panel material to be emissive.');
+    });
+
+    test('BuildingFabricationGenerator: portal raises door onto climbing entry steps', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const makeDefs = (withPortal) => ({
+            items: [{
+                id: 'portal_test_door',
+                assetType: 'door',
+                settings: {
+                    width: 2.0,
+                    height: 3.0,
+                    frame: { width: 0.06, depth: 0.1, inset: 0.02, openBottom: true, doorStyle: 'double' }
+                },
+                ...(withPortal ? {
+                    portal: {
+                        enabled: true,
+                        recessMeters: 0.4,
+                        steps: { count: 3, riseMeters: 0.15, treadDepthMeters: 0.3, widthPaddingMeters: 0.2, material: { mode: 'match_wall' } }
+                    }
+                } : {})
+            }]
+        });
+        const facades = {
+            A: {
+                layout: {
+                    bays: {
+                        items: [
+                            { id: 'lead_1', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' },
+                            {
+                                id: 'door_2',
+                                size: { mode: 'fixed', widthMeters: 3.0 },
+                                window: {
+                                    enabled: true,
+                                    defId: 'portal_test_door',
+                                    assetType: 'door',
+                                    size: { widthMeters: 2.0, heightMeters: 3.0 },
+                                    heightMode: 'fixed',
+                                    repeat: { count: 1 }
+                                }
+                            },
+                            { id: 'tail_3', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+                        ]
+                    }
+                }
+            }
+        };
+        const layers = [
+            createDefaultFloorLayer({ id: 'floor_door', floors: 1, floorHeight: 4.4, belt: { enabled: false }, windows: { enabled: false } }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const build = (withPortal) => buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            windowDefinitions: makeDefs(withPortal),
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+
+        const portalParts = build(true);
+        const steps = (portalParts.windows?.children ?? [])
+            .filter((m) => m?.userData?.buildingFab2Role === 'portal_steps');
+        assertEqual(steps.length, 3, 'Expected 3 portal step meshes.');
+
+        const yBandOf = (mesh) => {
+            mesh.geometry.computeBoundingBox();
+            return {
+                min: mesh.geometry.boundingBox.min.y + mesh.position.y,
+                max: mesh.geometry.boundingBox.max.y + mesh.position.y
+            };
+        };
+        const stepBands = steps.map(yBandOf).sort((a, b) => a.min - b.min);
+        assertNear(stepBands[0].max - stepBands[0].min, 0.15, 1e-3, 'Expected each step to be one rise tall.');
+        const totalRise = Math.max(...stepBands.map((b) => b.max)) - Math.min(...stepBands.map((b) => b.min));
+        assertNear(totalRise, 0.45, 1e-2, 'Expected the stair to climb count * rise.');
+
+        // Depth footprint: lower steps reach further out from the facade. The
+        // step geometry is authored with the tread depth along local Z (yaw is
+        // applied on the mesh), so the local Z extent is the tread reach.
+        const depthOf = (mesh) => {
+            mesh.geometry.computeBoundingBox();
+            const bb = mesh.geometry.boundingBox;
+            return bb.max.z - bb.min.z;
+        };
+        const depths = steps.map(depthOf).sort((a, b) => a - b);
+        assertTrue(depths[0] < depths[2] - 0.5, 'Expected the bottom tread to reach further out than the top tread.');
+
+        // Raised threshold + recessed entry: compare the door instance transform
+        // against a build without the portal block.
+        const plainParts = build(false);
+        const doorInstanceXYZ = (parts) => {
+            const group = (parts.windows?.children ?? []).find((g) => g?.userData?.windowDefinitionId === 'portal_test_door'
+                && g?.userData?.buildingWindowSource === 'bf2_window_definition');
+            assertTrue(!!group, 'Expected the door window group.');
+            let instanced = null;
+            group.traverse((obj) => {
+                if (!instanced && obj.isInstancedMesh) instanced = obj;
+            });
+            assertTrue(!!instanced, 'Expected an instanced mesh inside the door group.');
+            const m = new THREE.Matrix4();
+            instanced.getMatrixAt(0, m);
+            return { x: m.elements[12], y: m.elements[13], z: m.elements[14] };
+        };
+        const portalDoor = doorInstanceXYZ(portalParts);
+        const plainDoor = doorInstanceXYZ(plainParts);
+        assertNear(portalDoor.y - plainDoor.y, 0.45, 1e-2, 'Expected the door raised by the total steps rise.');
+        const planarShift = Math.hypot(portalDoor.x - plainDoor.x, portalDoor.z - plainDoor.z);
+        assertNear(planarShift, 0.4, 0.08, 'Expected the door recessed into the wall by the portal recess.');
+    });
+
     // ========== Summary ==========
     console.log('\n' + '='.repeat(50));
     if (errors.length === 0) {

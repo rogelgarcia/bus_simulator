@@ -19,7 +19,8 @@ const BAY_SIZE_MODE = Object.freeze({
 const OPENING_ASSET_TYPE = Object.freeze({
     WINDOW: 'window',
     DOOR: 'door',
-    GARAGE: 'garage'
+    GARAGE: 'garage',
+    STOREFRONT: 'storefront'
 });
 const OPENING_HEIGHT_MODE = Object.freeze({
     FIXED: 'fixed',
@@ -153,6 +154,7 @@ function normalizeOpeningAssetType(value, fallback = OPENING_ASSET_TYPE.WINDOW) 
     if (typed === OPENING_ASSET_TYPE.WINDOW) return OPENING_ASSET_TYPE.WINDOW;
     if (typed === OPENING_ASSET_TYPE.DOOR) return OPENING_ASSET_TYPE.DOOR;
     if (typed === OPENING_ASSET_TYPE.GARAGE) return OPENING_ASSET_TYPE.GARAGE;
+    if (typed === OPENING_ASSET_TYPE.STOREFRONT) return OPENING_ASSET_TYPE.STOREFRONT;
     return fallback;
 }
 
@@ -294,7 +296,10 @@ function normalizeBayWindowSpec(value) {
     const rightMeters = clamp(Number.isFinite(rightRaw) ? rightRaw : (linked ? leftMeters : 0), 0, 9999);
 
     let repeatCount = normalizeOpeningRepeatCount(src?.repeat?.count ?? src?.repeatCount, OPENING_REPEAT_MIN);
-    if (assetType !== OPENING_ASSET_TYPE.WINDOW) repeatCount = OPENING_REPEAT_MIN;
+    // Storefronts repeat like windows (one shop per slot between piers).
+    if (assetType !== OPENING_ASSET_TYPE.WINDOW && assetType !== OPENING_ASSET_TYPE.STOREFRONT) {
+        repeatCount = OPENING_REPEAT_MIN;
+    }
 
     const muntinsSrc = src.muntins && typeof src.muntins === 'object' ? src.muntins : null;
     const bottomMuntinsEnabled = muntinsSrc?.bottomEnabled !== undefined
@@ -322,7 +327,11 @@ function normalizeBayWindowSpec(value) {
     const topFrameWidthMeters = Number.isFinite(topFrameWidthRaw)
         ? clamp(topFrameWidthRaw, 0.002, 3.0)
         : null;
-    const topEnabled = !!topEnabledRaw && assetType !== OPENING_ASSET_TYPE.GARAGE;
+    // Storefronts own their vertical band composition (transom/fascia), so the
+    // secondary `top` opening stays off for them (as for garages).
+    const topEnabled = !!topEnabledRaw
+        && assetType !== OPENING_ASSET_TYPE.GARAGE
+        && assetType !== OPENING_ASSET_TYPE.STOREFRONT;
     const visualSrc = src.visual && typeof src.visual === 'object' ? src.visual : null;
     const visualDisableShadesRaw = visualSrc?.disableShades ?? src.disableShades ?? src.shadesDisabled;
     const visualInteriorRaw = visualSrc?.interior ?? visualSrc?.interiorMode ?? src.interiorPreset ?? src.interiorMode;
@@ -365,6 +374,9 @@ function normalizeBayWindowSpec(value) {
         },
         ...(visual ? { visual } : {}),
         ...(garageFacade ? { garageFacade } : {}),
+        // AI 488: bay-level portal override passes through untouched; the
+        // generator normalizes it against the definition's portal config.
+        ...(src.portal && typeof src.portal === 'object' ? { portal: deepClone(src.portal) } : {}),
         padding: linked
             ? { leftMeters, rightMeters }
             : { leftMeters, rightMeters, linked: false }

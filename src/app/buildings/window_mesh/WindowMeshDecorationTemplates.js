@@ -508,6 +508,12 @@ function sanitizeDecorationPartState(partId, input, { wallMaterialId = '' } = {}
         defaults.runMode
     );
     const templateDefaults = getTemplateDefaults(part, type, depthMeters);
+    // AI 488: portals reuse these surrounds at larger scale, so the band
+    // height is overridable per decoration instead of fixed per type.
+    const heightOverride = Number(src.heightMeters ?? src.template?.height);
+    const templateHeight = Number.isFinite(heightOverride) && heightOverride > 0
+        ? heightOverride
+        : templateDefaults.height;
 
     return {
         enabled: !!src.enabled,
@@ -522,7 +528,7 @@ function sanitizeDecorationPartState(partId, input, { wallMaterialId = '' } = {}
             ...(materialMode === WINDOW_DECORATION_MATERIAL_MODE.SLOT && materialSlotId ? { slotId: materialSlotId } : {})
         },
         template: {
-            height: clamp(templateDefaults.height, 0.001, 10.0, 0.08),
+            height: clamp(templateHeight, 0.001, 10.0, 0.08),
             depth: depthMeters,
             gap: clamp(templateDefaults.gap, -2.0, 2.0, 0.0),
             offset: {

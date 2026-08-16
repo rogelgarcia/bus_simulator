@@ -397,6 +397,14 @@ export function resolveBuildingConfigMaterials({
             if (item.decoration && typeof item.decoration === 'object') {
                 resolveWindowDecorationMaterials(item.decoration, ctx, `Window definition ${item?.id ?? ''}`);
             }
+            // AI 488: storefront zone materials and portal step materials use
+            // the same decoration material shape, so the same slot walk applies.
+            if (item.storefront && typeof item.storefront === 'object') {
+                resolveWindowDecorationMaterials(item.storefront, ctx, `Storefront definition ${item?.id ?? ''}`);
+            }
+            if (item.portal && typeof item.portal === 'object') {
+                resolveWindowDecorationMaterials(item.portal, ctx, `Portal definition ${item?.id ?? ''}`);
+            }
         }
     }
 

@@ -17,6 +17,7 @@ function clamp(value, min, max, fallback) {
 export const PARALLAX_INTERIOR_PRESET_ID = Object.freeze({
     RESIDENTIAL: 'parallax_interior.residential',
     OFFICE: 'parallax_interior.office',
+    SHOP: 'parallax_interior.shop',
     PROCEDURAL: 'parallax_interior.procedural'
 });
 
@@ -45,6 +46,25 @@ export const PARALLAX_INTERIOR_PRESET_CATALOG = Object.freeze([
         atlasId: WINDOW_INTERIOR_ATLAS_ID.OFFICE_4X4
     }),
     Object.freeze({
+        id: PARALLAX_INTERIOR_PRESET_ID.SHOP,
+        label: 'Shop',
+        atlasId: WINDOW_INTERIOR_ATLAS_ID.SHOP_WIDE_6X4_01,
+        // Storefront display glazing is large and viewed from close up: show
+        // more of the shop room than a small window would, but keep enough
+        // atlas-cell margin that the parallax shift never samples the clamped
+        // cell edge (which reads as diagonal streaks at steep view angles).
+        defaults: Object.freeze({
+            uvZoom: 2.4,
+            parallaxDepthMeters: 5.0,
+            parallaxScale: Object.freeze({ x: 0.7, y: 0.7 }),
+            tintVariation: Object.freeze({
+                hueShiftDeg: Object.freeze({ min: 0.0, max: 0.0 }),
+                saturationMul: Object.freeze({ min: 0.92, max: 1.0 }),
+                brightnessMul: Object.freeze({ min: 0.9, max: 1.0 })
+            })
+        })
+    }),
+    Object.freeze({
         id: PARALLAX_INTERIOR_PRESET_ID.PROCEDURAL,
         label: 'Procedural',
         atlasId: WINDOW_INTERIOR_ATLAS_ID.PROCEDURAL
@@ -69,6 +89,14 @@ export function resolveParallaxInteriorPresetInteriorConfig(presetId) {
     const cols = Math.max(1, atlasLayout?.cols | 0);
     const rows = Math.max(1, atlasLayout?.rows | 0);
 
+    const presetDefaults = preset?.defaults && typeof preset.defaults === 'object' ? preset.defaults : {};
+    const defaults = {
+        ...PARALLAX_INTERIOR_DEFAULTS,
+        ...presetDefaults,
+        parallaxScale: presetDefaults.parallaxScale ?? PARALLAX_INTERIOR_DEFAULTS.parallaxScale,
+        tintVariation: presetDefaults.tintVariation ?? PARALLAX_INTERIOR_DEFAULTS.tintVariation
+    };
+
     return {
         enabled: true,
         atlasId,
@@ -77,32 +105,32 @@ export function resolveParallaxInteriorPresetInteriorConfig(presetId) {
         cell: { col: 0, row: 0 },
         randomFlipX: true,
         uvPan: { x: 0.0, y: 0.0 },
-        uvZoom: clamp(PARALLAX_INTERIOR_DEFAULTS.uvZoom, 0.25, 20.0, PARALLAX_INTERIOR_DEFAULTS.uvZoom),
+        uvZoom: clamp(defaults.uvZoom, 0.25, 20.0, defaults.uvZoom),
         imageAspect: 1.0,
         parallaxDepthMeters: clamp(
-            PARALLAX_INTERIOR_DEFAULTS.parallaxDepthMeters,
+            defaults.parallaxDepthMeters,
             0.0,
             50.0,
-            PARALLAX_INTERIOR_DEFAULTS.parallaxDepthMeters
+            defaults.parallaxDepthMeters
         ),
         parallaxScale: {
-            x: PARALLAX_INTERIOR_DEFAULTS.parallaxScale.x,
-            y: PARALLAX_INTERIOR_DEFAULTS.parallaxScale.y
+            x: defaults.parallaxScale.x,
+            y: defaults.parallaxScale.y
         },
         zOffset: 0.0,
         emissiveIntensity: 0.0,
         tintVariation: {
             hueShiftDeg: {
-                min: PARALLAX_INTERIOR_DEFAULTS.tintVariation.hueShiftDeg.min,
-                max: PARALLAX_INTERIOR_DEFAULTS.tintVariation.hueShiftDeg.max
+                min: defaults.tintVariation.hueShiftDeg.min,
+                max: defaults.tintVariation.hueShiftDeg.max
             },
             saturationMul: {
-                min: PARALLAX_INTERIOR_DEFAULTS.tintVariation.saturationMul.min,
-                max: PARALLAX_INTERIOR_DEFAULTS.tintVariation.saturationMul.max
+                min: defaults.tintVariation.saturationMul.min,
+                max: defaults.tintVariation.saturationMul.max
             },
             brightnessMul: {
-                min: PARALLAX_INTERIOR_DEFAULTS.tintVariation.brightnessMul.min,
-                max: PARALLAX_INTERIOR_DEFAULTS.tintVariation.brightnessMul.max
+                min: defaults.tintVariation.brightnessMul.min,
+                max: defaults.tintVariation.brightnessMul.max
             }
         }
     };

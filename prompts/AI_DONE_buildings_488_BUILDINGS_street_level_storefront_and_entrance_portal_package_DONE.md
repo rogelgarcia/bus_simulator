@@ -1,3 +1,5 @@
+# DONE
+
 #Problem
 
 Ground floors are currently hand-composed from garage/door/window assets plus the awning decorator (see `MainStreetBlock`). The references show a consistent storefront anatomy the composition approach can't reach cleanly: a solid bulkhead base under large display glazing, a transom band above (often backlit white), and a sign fascia — repeated per shop between piers. Entrances are also underpowered: refs have multi-floor door surrounds, arched ornamental portals, steps, and recessed lobbies.
@@ -33,3 +35,13 @@ Tasks:
 - Do not move to `prompts/archive/` automatically.
 - Completion is not enough to move a prompt; move to `prompts/archive/` only when explicitly requested by the user.
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change)
+
+## Summary of changes
+- Added `storefront` asset type to `WindowFabricationCatalog` with stacked zones (bulkhead / display glazing / transom `glazed|backlit|none` / sign fascia) and two curated entries; ONE feature with per-zone options.
+- Generator decomposes storefront placements: glazed zones ride the normal window-instance path (mullions, glass, wall cuts, parallax), bulkhead/fascia are solid slabs over the wall, backlit transom adds an emissive panel; fascia carries a `storefront_fascia` role for a future signage system.
+- Registered the 8 shop/business parallax atlases (wide 6x4, square 4x4, cinematic 8x4) in the runtime atlas catalogs, added the `parallax_interior.shop` preset with storefront-tuned parallax, and a `shop` interior mode across generator + BF2 GUI; storefront glazing defaults to it.
+- Entrance portal on door assets: `portal` block with recessed entry (rides the frame-inset wall reveal) and entry steps that raise the threshold and climb from grade; surround reuses AI 482 machinery (`arched_band`/`flat_band` + jambs) with a new per-decoration `heightMeters` override for portal scale.
+- Fixed `FacadeBaysSolver` opening normalization to accept the storefront asset type (it silently fell back to `window`), allow storefront repeats, force the secondary `top` opening off, and pass bay-level `portal` through.
+- Storefront/portal/steps materials accept slots via the config pre-pass; portal steps and storefront projections feed the outward footprint reserve; merger now keys on `emissiveIntensity` so the backlit panel never merges with non-emissive materials.
+- BF2 GUI: Storefront asset type in the opening picker, storefront zone editor (bulkhead/transom mode+height/fascia, definition-level), portal rows (Off/On, recess, steps, rise, bay-level override), Shop interior preset button; def-library rebuilds no longer strip decoration/storefront/portal.
+- New engine-2 showcase `storefront_row_2` (shop row between rusticated piers + arched portal + awnings on the side windows) registered in the catalog; browser tests for catalog round-trip, zone stacking, solver survival, generator zone emission and portal steps; node test cross-checking shop atlas registration.

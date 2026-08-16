@@ -30,6 +30,7 @@ const TEXTURE_SLOTS = Object.freeze([
 const NUMERIC_PROPS = Object.freeze([
     'roughness',
     'metalness',
+    'emissiveIntensity',
     'opacity',
     'alphaTest',
     'side',

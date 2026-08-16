@@ -15,10 +15,13 @@ import {
 } from '../../../../app/buildings/wall_decorators/index.js';
 import {
     getWindowFabricationCatalogEntries,
+    normalizePortalConfig,
+    normalizeStorefrontConfig,
     normalizeWindowFabricationAssetType,
     PARALLAX_INTERIOR_PRESET_ID,
     resolveWindowDecorationState,
     sanitizeWindowMeshSettings,
+    STOREFRONT_TRANSOM_MODE,
     WINDOW_DECORATION_JAMBS_RUN_MODE,
     WINDOW_DECORATION_MATERIAL_MODE,
     WINDOW_DECORATION_PART,
@@ -91,7 +94,8 @@ const OPENING_REPEAT_MAX = 5;
 const OPENING_INTERIOR_MODE = Object.freeze({
     NONE: 'none',
     RES: 'res',
-    OFFICE: 'office'
+    OFFICE: 'office',
+    SHOP: 'shop'
 });
 const GARAGE_INTERIOR_MATERIAL_ID = 'pbr.concrete_layers_02';
 const GARAGE_FACADE_STATE = Object.freeze({
@@ -183,6 +187,7 @@ function normalizeOpeningInteriorMode(value, fallback = OPENING_INTERIOR_MODE.RE
     if (!typed) return fallback;
     if (typed === OPENING_INTERIOR_MODE.NONE || typed === 'off' || typed === 'disabled') return OPENING_INTERIOR_MODE.NONE;
     if (typed === OPENING_INTERIOR_MODE.OFFICE) return OPENING_INTERIOR_MODE.OFFICE;
+    if (typed === OPENING_INTERIOR_MODE.SHOP || typed === 'business' || typed === 'store') return OPENING_INTERIOR_MODE.SHOP;
     if (typed === OPENING_INTERIOR_MODE.RES || typed === 'residential') return OPENING_INTERIOR_MODE.RES;
     return fallback;
 }
@@ -196,10 +201,12 @@ function resolveOpeningInteriorModeFromSettings(settings, fallback = OPENING_INT
         ? interior.parallaxInteriorPresetId.toLowerCase()
         : '';
     if (presetId.includes('office')) return OPENING_INTERIOR_MODE.OFFICE;
+    if (presetId.includes('shop')) return OPENING_INTERIOR_MODE.SHOP;
     if (presetId.includes('residential')) return OPENING_INTERIOR_MODE.RES;
 
     const atlasId = typeof interior.atlasId === 'string' ? interior.atlasId.toLowerCase() : '';
     if (atlasId.includes('office')) return OPENING_INTERIOR_MODE.OFFICE;
+    if (atlasId.includes('shop')) return OPENING_INTERIOR_MODE.SHOP;
     if (atlasId.includes('residential')) return OPENING_INTERIOR_MODE.RES;
 
     return interior.enabled === false ? OPENING_INTERIOR_MODE.NONE : OPENING_INTERIOR_MODE.RES;
@@ -258,7 +265,9 @@ function applyOpeningVisualOverridesToSettings(settings, visual) {
     } else {
         const presetId = interiorMode === OPENING_INTERIOR_MODE.OFFICE
             ? PARALLAX_INTERIOR_PRESET_ID.OFFICE
-            : PARALLAX_INTERIOR_PRESET_ID.RESIDENTIAL;
+            : (interiorMode === OPENING_INTERIOR_MODE.SHOP
+                ? PARALLAX_INTERIOR_PRESET_ID.SHOP
+                : PARALLAX_INTERIOR_PRESET_ID.RESIDENTIAL);
         next = {
             ...next,
             interior: {
@@ -364,6 +373,91 @@ function resolveOpeningCutMetrics(settings, { cutX = 0, cutY = 0 } = {}) {
         cutX: xRatio,
         cutY: yRatio
     };
+}
+
+// AI 488: storefront zone layout. Zones stack inside one opening bottom to
+// top: bulkhead -> display glazing -> transom -> sign fascia. Glazing absorbs
+// whatever height the fixed zones leave over; when the opening is too short
+// the fixed zones shrink proportionally so glazing keeps its minimum height.
+// Heights are relative to the opening bottom (yBottom 0 = opening bottom).
+function resolveStorefrontZoneLayout({ storefront, totalHeightMeters } = {}) {
+    const cfg = normalizeStorefrontConfig(storefront);
+    const totalH = Math.max(0.2, Number(totalHeightMeters) || 0.2);
+
+    let bulkheadH = cfg.bulkhead.enabled ? cfg.bulkhead.heightMeters : 0;
+    let transomH = cfg.transom.mode === STOREFRONT_TRANSOM_MODE.NONE ? 0 : cfg.transom.heightMeters;
+    let fasciaH = cfg.fascia.enabled ? cfg.fascia.heightMeters : 0;
+
+    const minGlazing = Math.min(cfg.minGlazingHeightMeters, totalH);
+    const fixedH = bulkheadH + transomH + fasciaH;
+    const available = totalH - minGlazing;
+    if (fixedH > available && fixedH > EPS) {
+        const scale = Math.max(0, available) / fixedH;
+        bulkheadH *= scale;
+        transomH *= scale;
+        fasciaH *= scale;
+    }
+    const glazingH = Math.max(0.1, totalH - bulkheadH - transomH - fasciaH);
+
+    return {
+        config: cfg,
+        totalHeight: totalH,
+        bulkhead: { height: bulkheadH, yBottom: 0 },
+        glazing: { height: glazingH, yBottom: bulkheadH },
+        transom: { height: transomH, yBottom: bulkheadH + glazingH, mode: cfg.transom.mode },
+        fascia: { height: fasciaH, yBottom: bulkheadH + glazingH + transomH }
+    };
+}
+
+// AI 488: per-zone window settings derived from the storefront's base settings.
+// The glazing zone IS the base window (mullion grid, glass, shop parallax
+// interior); the transom reuses the frame look with its own muntin columns.
+// Both zones are rectangular regardless of the base arch flag.
+function makeStorefrontZoneSettings({ baseSettings, width, layout } = {}) {
+    const base = baseSettings && typeof baseSettings === 'object' ? baseSettings : {};
+    const rectArch = { ...(base.arch ?? {}), enabled: false };
+
+    const glazing = sanitizeWindowMeshSettings({
+        ...base,
+        width,
+        height: layout.glazing.height,
+        arch: rectArch
+    });
+
+    let transom = null;
+    if (layout.transom.mode !== STOREFRONT_TRANSOM_MODE.NONE && layout.transom.height > 0.05) {
+        transom = sanitizeWindowMeshSettings({
+            ...base,
+            width,
+            height: layout.transom.height,
+            arch: rectArch,
+            frame: {
+                ...(base.frame ?? {}),
+                openBottom: false,
+                addHandles: false,
+                doorStyle: 'single'
+            },
+            muntins: {
+                ...(base.muntins ?? {}),
+                enabled: layout.transom.mode === STOREFRONT_TRANSOM_MODE.GLAZED,
+                columns: layout.config.transom.columns,
+                rows: 1
+            },
+            shade: {
+                ...(base.shade ?? {}),
+                enabled: false
+            },
+            // Transom glass is a narrow band: the shop parallax room would
+            // read as a squashed repeat, so the band stays plain glass and the
+            // backlit mode adds its own emissive panel behind it.
+            interior: {
+                ...(base.interior ?? {}),
+                enabled: false
+            }
+        });
+    }
+
+    return { glazing, transom };
 }
 
 function clampFacadeDepthMeters(value) {
@@ -695,11 +789,47 @@ function estimateCorniceOutwardReserveMeters(layer) {
     return outward;
 }
 
-function estimateBf2OutwardFootprintReserveMeters({ layers, facades, cornerTreatment = null } = {}) {
+function estimatePortalAndStorefrontOutwardReserveMeters({ windowDefinitions, facades } = {}) {
+    let reserve = 0.0;
+    const considerPortal = (portalRaw) => {
+        const portal = normalizePortalConfig(portalRaw);
+        if (!portal) return;
+        reserve = Math.max(reserve, portal.steps.count * portal.steps.treadDepthMeters);
+    };
+    const considerStorefront = (storefrontRaw) => {
+        if (!storefrontRaw || typeof storefrontRaw !== 'object') return;
+        const cfg = normalizeStorefrontConfig(storefrontRaw);
+        reserve = Math.max(reserve, cfg.bulkhead.projectionMeters, cfg.fascia.projectionMeters);
+    };
+    const items = Array.isArray(windowDefinitions?.items) ? windowDefinitions.items : [];
+    for (const item of items) {
+        if (!item || typeof item !== 'object') continue;
+        considerPortal(item.portal ?? null);
+        if (item.storefront) considerStorefront(item.storefront);
+    }
+    const facadeGroups = facades && typeof facades === 'object' ? Object.values(facades) : [];
+    for (const group of facadeGroups) {
+        if (!group || typeof group !== 'object') continue;
+        // Global facades keyed A-D hold the facade directly; per-layer maps
+        // hold another level of face ids.
+        const faceEntries = ('layout' in group) ? [group] : Object.values(group);
+        for (const face of faceEntries) {
+            const bays = face?.layout?.bays?.items;
+            if (!Array.isArray(bays)) continue;
+            for (const bay of bays) {
+                considerPortal(bay?.window?.portal ?? null);
+            }
+        }
+    }
+    return reserve;
+}
+
+function estimateBf2OutwardFootprintReserveMeters({ layers, facades, cornerTreatment = null, windowDefinitions = null } = {}) {
     let reserve = 0.0;
     if (cornerTreatment?.enabled) {
         reserve = Math.max(reserve, clamp(cornerTreatment.projection, 0.005, 0.5));
     }
+    reserve = Math.max(reserve, estimatePortalAndStorefrontOutwardReserveMeters({ windowDefinitions, facades }));
     const safeLayers = Array.isArray(layers) ? layers : [];
     for (const layer of safeLayers) {
         if (!layer || typeof layer !== 'object') continue;
@@ -5558,7 +5688,7 @@ export function buildBuildingFabricationVisualParts({
         ? fitFootprintLoopsToBuildArea({
             footprintLoops: explicitFootprintLoops,
             buildAreaLoops: explicitBuildAreaLoops,
-            reserveInsetMeters: estimateBf2OutwardFootprintReserveMeters({ layers: safeLayersForFit, facades, cornerTreatment: cornerTreatmentCfgForFit })
+            reserveInsetMeters: estimateBf2OutwardFootprintReserveMeters({ layers: safeLayersForFit, facades, cornerTreatment: cornerTreatmentCfgForFit, windowDefinitions })
         })
         : explicitFootprintLoops;
     const sourceFootprintLoops = fittedExplicitFootprintLoops.length
@@ -5639,6 +5769,10 @@ export function buildBuildingFabricationVisualParts({
         const garageFacade = normalizeGarageFacadeConfig(entry?.garageFacade ?? null, null);
         const wall = normalizeOpeningWallCutConfig(entry?.wall ?? null, null);
         const decoration = deepClone(entry?.decoration ?? null);
+        const storefront = assetType === WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT
+            ? normalizeStorefrontConfig(entry?.storefront ?? null)
+            : null;
+        const portal = normalizePortalConfig(entry?.portal ?? null);
         windowDefinitionById.set(id, {
             id,
             assetType,
@@ -5646,6 +5780,8 @@ export function buildBuildingFabricationVisualParts({
             garageFacade,
             wall,
             decoration,
+            storefront,
+            portal,
             widthMeters,
             heightMeters
         });
@@ -6281,7 +6417,11 @@ export function buildBuildingFabricationVisualParts({
                     const topDefSettings = def.settings;
                     const topDefDecoration = def.decoration;
                     let repeatCount = normalizeOpeningRepeatCount(windowCfg?.repeat?.count ?? windowCfg?.repeatCount, OPENING_REPEAT_MIN);
-                    if (assetType !== WINDOW_FABRICATION_ASSET_TYPE.WINDOW) repeatCount = OPENING_REPEAT_MIN;
+                    // Storefronts repeat like windows (one shop per slot between piers).
+                    if (assetType !== WINDOW_FABRICATION_ASSET_TYPE.WINDOW
+                        && assetType !== WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT) {
+                        repeatCount = OPENING_REPEAT_MIN;
+                    }
                     const slotWidth = usable / Math.max(OPENING_REPEAT_MIN, repeatCount);
                     if (!(slotWidth > EPS)) {
                         warnings.push(`${faceId}:${strip?.id || 'bay'}: opening repeat leaves no usable slot width.`);
@@ -6368,7 +6508,11 @@ export function buildBuildingFabricationVisualParts({
                     const topFrameWidth = Number.isFinite(topFrameWidthRaw)
                         ? clamp(topFrameWidthRaw, 0.002, 3.0)
                         : null;
-                    const topEnabled = !!topEnabledRaw && assetType !== WINDOW_FABRICATION_ASSET_TYPE.GARAGE;
+                    // Storefronts own their vertical band composition (transom/fascia),
+                    // so the secondary `top` opening stays off for them.
+                    const topEnabled = !!topEnabledRaw
+                        && assetType !== WINDOW_FABRICATION_ASSET_TYPE.GARAGE
+                        && assetType !== WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT;
                     const visual = resolveOpeningVisualConfig(windowCfg, def.settings);
                     const garageFacade = normalizeGarageFacadeConfig(
                         windowCfg?.garageFacade ?? null,
@@ -6383,12 +6527,41 @@ export function buildBuildingFabricationVisualParts({
                     const bayRecessionMeters = Math.max(0, Number.isFinite(stripDepthForClamp) ? stripDepthForClamp : 0);
                     const clampLabel = `Bay ${strip?.id ?? ''} (${faceId})`;
 
+                    // AI 488: entrance portal. The recessed entry rides the frame
+                    // inset (which also drives the wall reveal), and the steps
+                    // raise the door threshold by their total rise so the stair
+                    // climbs from grade to the door.
+                    const portalCfg = assetType === WINDOW_FABRICATION_ASSET_TYPE.DOOR
+                        ? (normalizePortalConfig(windowCfg?.portal ?? null) ?? def?.portal ?? null)
+                        : null;
+                    let placementSettings = def.settings;
+                    let placementVerticalOffset = verticalOffsetMeters;
+                    if (portalCfg) {
+                        const stepsRise = portalCfg.steps.count * portalCfg.steps.riseMeters;
+                        if (stepsRise > EPS) {
+                            placementVerticalOffset = (Number.isFinite(Number(placementVerticalOffset)) ? Number(placementVerticalOffset) : 0) + stepsRise;
+                        }
+                        if (portalCfg.recessMeters > EPS) {
+                            placementSettings = {
+                                ...def.settings,
+                                frame: {
+                                    ...(def.settings?.frame ?? {}),
+                                    inset: (Number(def.settings?.frame?.inset) || 0) + portalCfg.recessMeters
+                                }
+                            };
+                        }
+                    }
+
                     bayWindowPlacements.push({
                         faceId,
                         bayId: typeof strip?.id === 'string' ? strip.id : '',
                         defId,
                         assetType,
-                        settings: def.settings,
+                        settings: placementSettings,
+                        storefront: assetType === WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT
+                            ? (def?.storefront ?? normalizeStorefrontConfig(null))
+                            : null,
+                        portal: portalCfg,
                         decoration: clampWindowDecorationDepthsToBayRecession(deepClone(def?.decoration ?? null), {
                             recessionMeters: bayRecessionMeters,
                             warnings,
@@ -6401,7 +6574,7 @@ export function buildBuildingFabricationVisualParts({
                         width,
                         height,
                         heightMode,
-                        verticalOffsetMeters,
+                        verticalOffsetMeters: placementVerticalOffset,
                         repeatCount,
                         visual,
                         wall,
@@ -6847,6 +7020,37 @@ export function buildBuildingFabricationVisualParts({
                                         facadeWallCutouts.push(cutout);
                                     }
                                 };
+
+                                // AI 488: storefronts cut the wall per glazed zone only
+                                // (display glazing + transom band); bulkhead and fascia
+                                // sit proud of solid wall.
+                                if (placementAssetType === WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT && placement?.storefront) {
+                                    const layout = resolveStorefrontZoneLayout({
+                                        storefront: placement.storefront,
+                                        totalHeightMeters: bottomHeight
+                                    });
+                                    const zoneSettings = makeStorefrontZoneSettings({
+                                        baseSettings: bottomSettings,
+                                        width,
+                                        layout
+                                    });
+                                    const openingBottomLocal = yCursorLocal + bottomYBottom;
+                                    appendCutoutsFromSettings({
+                                        settings: zoneSettings.glazing,
+                                        openingHeight: layout.glazing.height,
+                                        openingY: openingBottomLocal + layout.glazing.yBottom + layout.glazing.height * 0.5,
+                                        wall: placement?.wall ?? null
+                                    });
+                                    if (zoneSettings.transom) {
+                                        appendCutoutsFromSettings({
+                                            settings: zoneSettings.transom,
+                                            openingHeight: layout.transom.height,
+                                            openingY: openingBottomLocal + layout.transom.yBottom + layout.transom.height * 0.5,
+                                            wall: placement?.wall ?? null
+                                        });
+                                    }
+                                    continue;
+                                }
 
                                 appendCutoutsFromSettings({
                                     settings: bottomSettings,
@@ -7777,6 +7981,9 @@ export function buildBuildingFabricationVisualParts({
 
                 if (bayWindowPlacements.length) {
                     const customBuckets = new Map();
+                    // AI 488: storefront zone slabs / portal steps share materials
+                    // within a floor segment (layer material is fixed here).
+                    const storefrontZoneMaterialCache = new Map();
                     const addCustomInstance = ({ defId, assetType, settings, decoration, x, y, z, yaw, instanceId, floorBaseY, floorTopY }) => {
                         const safeAssetType = normalizeWindowFabricationAssetType(assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
                         const safeSettings = sanitizeWindowMeshSettings(settings ?? null);
@@ -7992,6 +8199,173 @@ export function buildBuildingFabricationVisualParts({
                             const bottomFrameInset = Math.max(0, bottomFrameDepth - 0.001);
                             const topPlacementInset = bottomFrameInset;
 
+                            const zoneMaterialFor = (materialSpec, fallbackMode) => {
+                                const frameKey = `${bottomSettings?.frame?.colorHex ?? ''}:${bottomSettings?.frame?.material?.roughness ?? ''}`;
+                                const key = `${JSON.stringify(materialSpec ?? null)}|${fallbackMode}|${frameKey}`;
+                                let mat = storefrontZoneMaterialCache.get(key);
+                                if (!mat) {
+                                    mat = makeWindowDecorationPartMaterial({
+                                        part: { material: materialSpec ?? null },
+                                        fallbackMode,
+                                        settings: bottomSettings,
+                                        layerMaterial: layer?.material ?? null,
+                                        layerWallBase: layer?.wallBase ?? null,
+                                        baseColorHex,
+                                        textureCache
+                                    });
+                                    storefrontZoneMaterialCache.set(key, mat);
+                                }
+                                return mat;
+                            };
+
+                            // AI 488: storefront placements decompose into stacked
+                            // zones. Glazed zones ride the normal window-instance
+                            // path (frame/mullions/glass/parallax + wall cuts);
+                            // bulkhead, fascia and the backlit panel are solid
+                            // meshes over/inside the wall.
+                            if (placementAssetType === WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT && placement?.storefront) {
+                                const layout = resolveStorefrontZoneLayout({
+                                    storefront: placement.storefront,
+                                    totalHeightMeters: bottomHeight
+                                });
+                                const zoneSettings = makeStorefrontZoneSettings({
+                                    baseSettings: bottomSettings,
+                                    width,
+                                    layout
+                                });
+                                const cfg = layout.config;
+                                const openingBottomY = yCursor + bottomYBottom;
+                                const glazingFrameDepth = Math.max(0, Number(zoneSettings.glazing?.frame?.depth) || 0);
+                                const glazingInset = Math.max(0, glazingFrameDepth - 0.001);
+                                const transomFrameDepth = Math.max(0, Number(zoneSettings.transom?.frame?.depth) || 0);
+                                const transomInset = Math.max(0, transomFrameDepth - 0.001);
+                                const wallCutX = Number(placement?.wall?.cutWidthLerp) || 0;
+                                const wallCutY = Number(placement?.wall?.cutHeightLerp) || 0;
+
+                                for (let pointIndex = 0; pointIndex < points.length; pointIndex++) {
+                                    const point = points[pointIndex] && typeof points[pointIndex] === 'object' ? points[pointIndex] : null;
+                                    const px = Number(point?.x) || 0;
+                                    const pz = Number(point?.z) || 0;
+                                    const baseInstanceId = points.length > 1
+                                        ? `${layerId || 'layer'}:${floor}:${i}:${defId || 'opening'}:${pointIndex}`
+                                        : `${layerId || 'layer'}:${floor}:${i}:${defId || 'opening'}`;
+
+                                    const glazingY = openingBottomY + layout.glazing.yBottom + layout.glazing.height * 0.5;
+                                    addCustomInstance({
+                                        defId,
+                                        assetType: placementAssetType,
+                                        settings: zoneSettings.glazing,
+                                        decoration: placement?.decoration ?? null,
+                                        x: px + nx * (windowOffset - glazingInset),
+                                        y: glazingY,
+                                        z: pz + nz * (windowOffset - glazingInset),
+                                        yaw,
+                                        instanceId: `${baseInstanceId}:glazing`,
+                                        floorBaseY: yCursor,
+                                        floorTopY: yCursor + segHeight
+                                    });
+
+                                    if (zoneSettings.transom) {
+                                        const transomY = openingBottomY + layout.transom.yBottom + layout.transom.height * 0.5;
+                                        addCustomInstance({
+                                            defId,
+                                            assetType: placementAssetType,
+                                            settings: zoneSettings.transom,
+                                            decoration: null,
+                                            x: px + nx * (windowOffset - transomInset),
+                                            y: transomY,
+                                            z: pz + nz * (windowOffset - transomInset),
+                                            yaw,
+                                            instanceId: `${baseInstanceId}:transom`,
+                                            floorBaseY: yCursor,
+                                            floorTopY: yCursor + segHeight
+                                        });
+
+                                        if (layout.transom.mode === STOREFRONT_TRANSOM_MODE.BACKLIT) {
+                                            const transomMetrics = resolveOpeningCutMetrics(zoneSettings.transom, {
+                                                cutX: wallCutX,
+                                                cutY: wallCutY
+                                            });
+                                            const panelWidth = Math.max(0.05, Number(transomMetrics?.cutWidth) || 0.05);
+                                            const panelHeight = Math.max(0.05, Number(transomMetrics?.cutHeight) || 0.05);
+                                            const panelInset = Math.max(0.01, transomInset + 0.01);
+                                            const emissiveColor = (Number(cfg.transom.emissiveColorHex) >>> 0) & 0xffffff;
+                                            const panelMatKey = `backlit|${emissiveColor}|${cfg.transom.emissiveIntensity}`;
+                                            let panelMat = storefrontZoneMaterialCache.get(panelMatKey);
+                                            if (!panelMat) {
+                                                panelMat = new THREE.MeshStandardMaterial({
+                                                    color: emissiveColor,
+                                                    roughness: 0.55,
+                                                    metalness: 0.0,
+                                                    emissive: new THREE.Color(emissiveColor),
+                                                    emissiveIntensity: clamp(cfg.transom.emissiveIntensity, 0.0, 5.0)
+                                                });
+                                                disableIblOnMaterial(panelMat);
+                                                storefrontZoneMaterialCache.set(panelMatKey, panelMat);
+                                            }
+                                            const panelMesh = new THREE.Mesh(
+                                                getPlaneGeometry(panelWidth, panelHeight),
+                                                panelMat
+                                            );
+                                            panelMesh.position.set(
+                                                px + nx * (windowOffset - panelInset),
+                                                transomY + (Number(transomMetrics?.cutCenterYOffset) || 0),
+                                                pz + nz * (windowOffset - panelInset)
+                                            );
+                                            panelMesh.rotation.set(0, yaw, 0);
+                                            panelMesh.castShadow = false;
+                                            panelMesh.receiveShadow = false;
+                                            panelMesh.userData = panelMesh.userData ?? {};
+                                            panelMesh.userData.buildingWindowSource = 'bf2_storefront';
+                                            panelMesh.userData.buildingFab2Role = 'storefront_backlit_panel';
+                                            panelMesh.userData.windowDefinitionId = defId || null;
+                                            windowsGroup.add(panelMesh);
+                                        }
+                                    }
+
+                                    const emitZoneSlab = ({ zoneHeight, zoneYBottom, projection, materialSpec, role }) => {
+                                        if (!(zoneHeight > 0.02)) return;
+                                        const slabDepth = Math.max(0.02, projection) + 0.08;
+                                        const geo = new THREE.BoxGeometry(width, zoneHeight, slabDepth);
+                                        const mesh = new THREE.Mesh(geo, zoneMaterialFor(materialSpec, WINDOW_DECORATION_MATERIAL_MODE.MATCH_FRAME));
+                                        const outCenter = windowOffset + Math.max(0.02, projection) - slabDepth * 0.5;
+                                        mesh.position.set(
+                                            px + nx * outCenter,
+                                            openingBottomY + zoneYBottom + zoneHeight * 0.5,
+                                            pz + nz * outCenter
+                                        );
+                                        mesh.rotation.set(0, yaw, 0);
+                                        mesh.castShadow = true;
+                                        mesh.receiveShadow = true;
+                                        mesh.userData = mesh.userData ?? {};
+                                        mesh.userData.buildingWindowSource = 'bf2_storefront';
+                                        mesh.userData.buildingFab2Role = role;
+                                        mesh.userData.windowDefinitionId = defId || null;
+                                        windowsGroup.add(mesh);
+                                    };
+
+                                    if (cfg.bulkhead.enabled) {
+                                        emitZoneSlab({
+                                            zoneHeight: layout.bulkhead.height,
+                                            zoneYBottom: layout.bulkhead.yBottom,
+                                            projection: cfg.bulkhead.projectionMeters,
+                                            materialSpec: cfg.bulkhead.material,
+                                            role: 'storefront_bulkhead'
+                                        });
+                                    }
+                                    if (cfg.fascia.enabled) {
+                                        emitZoneSlab({
+                                            zoneHeight: layout.fascia.height,
+                                            zoneYBottom: layout.fascia.yBottom,
+                                            projection: cfg.fascia.projectionMeters,
+                                            materialSpec: cfg.fascia.material,
+                                            role: 'storefront_fascia'
+                                        });
+                                    }
+                                }
+                                continue;
+                            }
+
                             for (let pointIndex = 0; pointIndex < points.length; pointIndex++) {
                                 const point = points[pointIndex] && typeof points[pointIndex] === 'object' ? points[pointIndex] : null;
                                 const x = Number(point?.x) || 0;
@@ -8026,6 +8400,48 @@ export function buildBuildingFabricationVisualParts({
                                         yaw,
                                         garageFacade: placement?.garageFacade ?? null
                                     });
+                                }
+                                // AI 488: portal entry steps climb from grade to the
+                                // raised door threshold, each lower tread reaching one
+                                // treadDepth further out from the facade.
+                                if (placement?.portal && placement.portal.steps.count > 0
+                                    && floor === 0
+                                    && safeLayers.findIndex((l) => l?.type === LAYER_TYPE.FLOOR) === layerIndex) {
+                                    const portalCfg = placement.portal;
+                                    const stepsCount = portalCfg.steps.count;
+                                    const stepRise = portalCfg.steps.riseMeters;
+                                    const stepTread = portalCfg.steps.treadDepthMeters;
+                                    const thresholdY = yCursor + bottomYBottom;
+                                    const stepsBaseY = thresholdY - stepsCount * stepRise;
+                                    const doorMetrics = resolveOpeningCutMetrics(bottomSettings, {
+                                        cutX: Number(placement?.wall?.cutWidthLerp) || 0,
+                                        cutY: Number(placement?.wall?.cutHeightLerp) || 0
+                                    });
+                                    const stepWidth = Math.max(0.3, (Number(doorMetrics?.cutWidth) || width))
+                                        + portalCfg.steps.widthPaddingMeters * 2;
+                                    const stepMat = zoneMaterialFor(
+                                        portalCfg.steps.material,
+                                        WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL
+                                    );
+                                    for (let s = 0; s < stepsCount; s++) {
+                                        const outLen = stepTread * (stepsCount - s) + 0.02;
+                                        const stepGeo = new THREE.BoxGeometry(stepWidth, stepRise, outLen);
+                                        const stepMesh = new THREE.Mesh(stepGeo, stepMat);
+                                        const outCenter = windowOffset + stepTread * (stepsCount - s) - outLen * 0.5;
+                                        stepMesh.position.set(
+                                            x + nx * outCenter,
+                                            stepsBaseY + s * stepRise + stepRise * 0.5,
+                                            z + nz * outCenter
+                                        );
+                                        stepMesh.rotation.set(0, yaw, 0);
+                                        stepMesh.castShadow = true;
+                                        stepMesh.receiveShadow = true;
+                                        stepMesh.userData = stepMesh.userData ?? {};
+                                        stepMesh.userData.buildingWindowSource = 'bf2_portal';
+                                        stepMesh.userData.buildingFab2Role = 'portal_steps';
+                                        stepMesh.userData.windowDefinitionId = defId || null;
+                                        windowsGroup.add(stepMesh);
+                                    }
                                 }
                                 if (topSettings && topHeight > EPS) {
                                     addCustomInstance({
@@ -9219,5 +9635,8 @@ export const __testOnly = Object.freeze({
     buildWallSidesGeometryFromLoopDetailXZ,
     resolveOpeningCutMetrics,
     shouldReverseLinkedFaceBayOrder,
-    resolveLinkedFaceBaysForSolve
+    resolveLinkedFaceBaysForSolve,
+    resolveStorefrontZoneLayout,
+    makeStorefrontZoneSettings,
+    estimatePortalAndStorefrontOutwardReserveMeters
 });

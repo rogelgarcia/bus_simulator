@@ -10,6 +10,7 @@ import { GOV_CENTER_BUILDING_CONFIG } from '../buildings/configs/GovCenter.js';
 import { GOV_CENTER_2_BUILDING_CONFIG } from '../buildings/configs/GovCenter2.js';
 import { MAIN_STREET_BLOCK_BUILDING_CONFIG } from '../buildings/configs/MainStreetBlock.js';
 import { PIER_GRID_TOWER_2_BUILDING_CONFIG } from '../buildings/configs/PierGridTower2.js';
+import { STOREFRONT_ROW_2_BUILDING_CONFIG } from '../buildings/configs/StorefrontRow2.js';
 import { STONE_LOWRISE_BUILDING_CONFIG } from '../buildings/configs/StoneLowrise.js';
 import { STONE_LOWRISE_2_BUILDING_CONFIG } from '../buildings/configs/StoneLowrise2.js';
 import { STONE_SETBACK_TOWER_BUILDING_CONFIG } from '../buildings/configs/StoneSetbackTower.js';
@@ -25,6 +26,7 @@ const BUILDING_CONFIGS = Object.freeze([
     GOV_CENTER_2_BUILDING_CONFIG,
     MAIN_STREET_BLOCK_BUILDING_CONFIG,
     PIER_GRID_TOWER_2_BUILDING_CONFIG,
+    STOREFRONT_ROW_2_BUILDING_CONFIG,
     STONE_SETBACK_TOWER_BUILDING_CONFIG,
     STONE_LOWRISE_BUILDING_CONFIG,
     STONE_LOWRISE_2_BUILDING_CONFIG
