@@ -6702,7 +6702,28 @@ export function buildBuildingFabricationVisualParts({
                     const portalCfg = assetType === WINDOW_FABRICATION_ASSET_TYPE.DOOR
                         ? (normalizePortalConfig(windowCfg?.portal ?? null) ?? def?.portal ?? null)
                         : null;
-                    let placementSettings = def.settings;
+                    // AI 496: the parallax interior panel is oversized so grazing
+                    // sightlines cannot slip past its edge. Tell the window mesh
+                    // how much wall it may hide behind, so an oversized panel
+                    // never reaches into the neighbouring opening: within a bay
+                    // the neighbour is the next repeat slot, and at the bay edge
+                    // it is (at least) half the slack plus this bay's padding.
+                    // Quantized so near-identical bays still share one geometry
+                    // bucket instead of fragmenting the instancing.
+                    const openingSlackMeters = Math.max(0, slotWidth - width);
+                    const gapToBayEdgeMeters = openingSlackMeters * 0.5 + Math.min(leftPad, rightPad);
+                    const neighborGapMeters = repeatCount > 1
+                        ? Math.min(openingSlackMeters, gapToBayEdgeMeters)
+                        : gapToBayEdgeMeters;
+                    const overscanClampMeters = Math.round(Math.max(0, neighborGapMeters) * 20) / 20;
+
+                    let placementSettings = {
+                        ...def.settings,
+                        interior: {
+                            ...(def.settings?.interior ?? {}),
+                            overscanClampMeters
+                        }
+                    };
                     let placementVerticalOffset = verticalOffsetMeters;
                     if (portalCfg) {
                         const stepsRise = portalCfg.steps.count * portalCfg.steps.riseMeters;
@@ -6711,7 +6732,7 @@ export function buildBuildingFabricationVisualParts({
                         }
                         if (portalCfg.recessMeters > EPS) {
                             placementSettings = {
-                                ...def.settings,
+                                ...placementSettings,
                                 frame: {
                                     ...(def.settings?.frame ?? {}),
                                     inset: (Number(def.settings?.frame?.inset) || 0) + portalCfg.recessMeters

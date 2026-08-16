@@ -10316,6 +10316,26 @@ async function runTests() {
         assertTrue(worldBounds.max.z <= areaBounds.maxZ + eps, 'Expected fitted footprint geometry maxZ inside city build area.');
     });
 
+    // AI 496: the parallax interior panel is intentionally oversized (it must
+    // cover grazing sightlines through the reveal) and hides behind the wall,
+    // so opening-size assertions measure everything EXCEPT the interior layer.
+    const openingBoxOfWindowGroup = (root) => {
+        const box = new THREE.Box3();
+        root.updateMatrixWorld?.(true);
+        root.traverse?.((obj) => {
+            if (!obj?.isMesh && !obj?.isInstancedMesh) return;
+            let node = obj;
+            let inInterior = false;
+            while (node && node !== root) {
+                if (node.name === 'interior') { inInterior = true; break; }
+                node = node.parent;
+            }
+            if (inInterior) return;
+            box.expandByObject(obj);
+        });
+        return box;
+    };
+
     test('BuildingFabricationGenerator: bay window size width/height directly controls opening placement size', () => {
         const tileSize = 10;
         const map = {
@@ -10396,7 +10416,7 @@ async function runTests() {
             .filter((entry) => entry?.userData?.buildingWindowSource === 'bf2_window_definition');
         assertTrue(customGroups.length > 0, 'Expected at least one custom bay window group.');
 
-        const box = new THREE.Box3().setFromObject(customGroups[0]);
+        const box = openingBoxOfWindowGroup(customGroups[0]);
         const size = box.getSize(new THREE.Vector3());
         assertNear(size.x, 1.7, 0.2, 'Expected bay opening width to follow window.size.widthMeters.');
         assertNear(size.y, 2.5, 0.2, 'Expected bay opening height to follow window.size.heightMeters.');
@@ -10486,7 +10506,7 @@ async function runTests() {
         assertEqual(instanceCount, 4, 'Expected 2 bottom + 2 top opening instances.');
 
         const allBox = new THREE.Box3();
-        for (const group of customGroups) allBox.union(new THREE.Box3().setFromObject(group));
+        for (const group of customGroups) allBox.union(openingBoxOfWindowGroup(group));
         assertTrue(allBox.min.y >= 0.1, 'Expected vertical offset from floor bottom to raise opening start.');
     });
 
@@ -10562,7 +10582,7 @@ async function runTests() {
             .filter((entry) => entry?.userData?.buildingWindowSource === 'bf2_window_definition');
         assertTrue(customGroups.length > 0, 'Expected full-height opening group.');
 
-        const box = new THREE.Box3().setFromObject(customGroups[0]);
+        const box = openingBoxOfWindowGroup(customGroups[0]);
         const size = box.getSize(new THREE.Vector3());
         assertNear(size.y, floorHeight - 0.3, 0.3, 'Expected full mode to use segment height minus vertical offset.');
     });
@@ -10656,8 +10676,8 @@ async function runTests() {
         assertTrue(!!bottomGroup, 'Expected full-height bottom opening instances.');
         assertTrue(!!topGroup, 'Expected top opening instances.');
 
-        const bottomBox = new THREE.Box3().setFromObject(bottomGroup);
-        const topBox = new THREE.Box3().setFromObject(topGroup);
+        const bottomBox = openingBoxOfWindowGroup(bottomGroup);
+        const topBox = openingBoxOfWindowGroup(topGroup);
         const bottomSize = bottomBox.getSize(new THREE.Vector3());
         const topSize = topBox.getSize(new THREE.Vector3());
         const bottomCenter = bottomBox.getCenter(new THREE.Vector3());
@@ -18503,6 +18523,171 @@ async function runTests() {
         const minFloorMesh = balconyMeshesByRole(minFloor, 'attachment_ac_unit')[0];
         assertTrue(!!minFloorMesh, 'Expected AC mesh for the min-floor build.');
         assertEqual(minFloorMesh.userData.acUnitCount, 6, 'minFloor 2 should skip the first floor (3 bays x 2 floors).');
+    });
+
+    // ========== AI 496: parallax panel grazing-angle coverage ==========
+    const {
+        PARALLAX_PANEL_MAX_GRAZING_ANGLE_DEG: parallaxMaxGrazingDeg,
+        resolveParallaxPanelOverscanMeters: resolveParallaxOverscan
+    } = await import('/src/app/buildings/window_mesh/ParallaxPanelOverscan.js');
+
+    const makeParallaxTestSettings = ({ interiorZOffset = 0, overscanClampMeters = null, interiorEnabled = true } = {}) => ({
+        width: 1.6,
+        height: 1.9,
+        frame: { width: 0.05, depth: 0.1, inset: 0 },
+        muntins: { enabled: false },
+        shade: { enabled: false },
+        interior: {
+            enabled: interiorEnabled,
+            zOffset: interiorZOffset,
+            overscanClampMeters
+        }
+    });
+
+    const bboxSizeOf = (geo) => {
+        geo.computeBoundingBox();
+        const bb = geo.boundingBox;
+        return { width: bb.max.x - bb.min.x, height: bb.max.y - bb.min.y };
+    };
+
+    test('WindowMeshGeometry: parallax panel oversizes the opening by the grazing-angle overscan', () => {
+        const settings = makeParallaxTestSettings({ interiorZOffset: -0.06 });
+        const bundle = buildWindowMeshGeometryBundle(settings);
+        assertTrue(!!bundle.interiorPanel, 'Expected an oversized interior panel geometry.');
+
+        const opening = bboxSizeOf(bundle.opening);
+        const panel = bboxSizeOf(bundle.interiorPanel);
+
+        // Panel sits 0.08m behind the glass (0.02 base + 0.06 zOffset), so each
+        // side extends by depth * tan(maxGrazingAngle).
+        const expected = 0.08 * Math.tan(parallaxMaxGrazingDeg * (Math.PI / 180));
+        assertNear(resolveParallaxOverscan(sanitizeWindowMeshSettings(settings)), expected, 1e-6, 'Expected the overscan math to drive the panel.');
+        assertNear(panel.width - opening.width, expected * 2, 1e-3, 'Expected the panel wider than the opening on both sides.');
+        assertNear(panel.height - opening.height, expected * 2, 1e-3, 'Expected the panel taller than the opening on both sides.');
+        assertTrue(panel.width > opening.width, 'Panel must exceed the opening (regression: it used to reuse the opening geometry).');
+    });
+
+    test('WindowMeshGeometry: panel overscan scales with depth and respects the neighbour clamp', () => {
+        const shallow = buildWindowMeshGeometryBundle(makeParallaxTestSettings({ interiorZOffset: -0.02 }));
+        const deep = buildWindowMeshGeometryBundle(makeParallaxTestSettings({ interiorZOffset: -0.14 }));
+        const shallowExtra = bboxSizeOf(shallow.interiorPanel).width - bboxSizeOf(shallow.opening).width;
+        const deepExtra = bboxSizeOf(deep.interiorPanel).width - bboxSizeOf(deep.opening).width;
+        assertTrue(deepExtra > shallowExtra * 3, 'Expected a deeper panel to grow proportionally.');
+
+        // A tight wall gap clamps the extension so panels cannot reach a
+        // neighbouring opening.
+        const clamped = buildWindowMeshGeometryBundle(makeParallaxTestSettings({
+            interiorZOffset: -0.14,
+            overscanClampMeters: 0.05
+        }));
+        const clampedExtra = bboxSizeOf(clamped.interiorPanel).width - bboxSizeOf(clamped.opening).width;
+        assertNear(clampedExtra, 0.045 * 2, 1e-3, 'Expected the neighbour clamp (with safety factor) to win.');
+
+        // Zero clamp and a disabled interior both mean "no panel of our own".
+        const noGap = buildWindowMeshGeometryBundle(makeParallaxTestSettings({ interiorZOffset: -0.14, overscanClampMeters: 0 }));
+        assertEqual(noGap.interiorPanel, null, 'Expected no oversized panel when the wall gap is zero.');
+        const off = buildWindowMeshGeometryBundle(makeParallaxTestSettings({ interiorZOffset: -0.14, interiorEnabled: false }));
+        assertEqual(off.interiorPanel, null, 'Expected no oversized panel when the interior is disabled.');
+    });
+
+    test('WindowMeshGeometry: panel UVs stay pinned to the opening rect', () => {
+        const settings = makeParallaxTestSettings({ interiorZOffset: -0.06 });
+        const bundle = buildWindowMeshGeometryBundle(settings);
+        const panel = bundle.interiorPanel;
+        const pos = panel.getAttribute('position');
+        const uv = panel.getAttribute('uv');
+        assertTrue(!!pos && !!uv, 'Expected position and uv attributes on the panel.');
+
+        bundle.opening.computeBoundingBox();
+        const ob = bundle.opening.boundingBox;
+        const openWidth = ob.max.x - ob.min.x;
+        const openHeight = ob.max.y - ob.min.y;
+
+        // The overscan runs OUTSIDE 0..1 so the opening-sized region still maps
+        // to exactly 0..1 — the visible interior is unchanged head-on.
+        let minU = Infinity;
+        let maxU = -Infinity;
+        for (let i = 0; i < uv.count; i++) {
+            minU = Math.min(minU, uv.getX(i));
+            maxU = Math.max(maxU, uv.getX(i));
+            // Every vertex must satisfy u = (x - openingMinX) / openingWidth.
+            const expectedU = (pos.getX(i) - ob.min.x) / openWidth;
+            const expectedV = (pos.getY(i) - ob.min.y) / openHeight;
+            assertNear(uv.getX(i), expectedU, 1e-5, 'Expected u pinned to the opening rect.');
+            assertNear(uv.getY(i), expectedV, 1e-5, 'Expected v pinned to the opening rect.');
+        }
+        assertTrue(minU < 0, 'Expected the overscan to extend below u=0.');
+        assertTrue(maxU > 1, 'Expected the overscan to extend past u=1.');
+    });
+
+    test('BuildingFabricationGenerator: bay openings pass a neighbour-gap overscan clamp', () => {
+        const { map, generatorConfig, tileSize } = makeBalconyTestMap();
+        const layers = [
+            createDefaultFloorLayer({ id: 'floor_par', floors: 1, floorHeight: 3.2, belt: { enabled: false }, windows: { enabled: false } }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades: {
+                A: {
+                    layout: {
+                        bays: {
+                            items: [
+                                { id: 'lead_1', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' },
+                                {
+                                    id: 'win_2',
+                                    size: { mode: 'fixed', widthMeters: 2.4 },
+                                    window: {
+                                        enabled: true,
+                                        defId: 'window_white_sash_2x2',
+                                        assetType: 'window',
+                                        size: { widthMeters: 1.5, heightMeters: 1.8 },
+                                        heightMode: 'fixed',
+                                        verticalOffsetMeters: 0.85,
+                                        repeat: { count: 1 },
+                                        padding: { leftMeters: 0.2, rightMeters: 0.2 },
+                                        visual: { interior: 'res' }
+                                    }
+                                },
+                                { id: 'tail_3', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+                            ]
+                        }
+                    }
+                }
+            },
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+
+        // The interior panel must be a DIFFERENT (larger) geometry than the
+        // glass, which still uses the opening shape.
+        let interiorGeo = null;
+        let glassGeo = null;
+        for (const group of parts.windows?.children ?? []) {
+            group.traverse?.((obj) => {
+                if (!obj.isInstancedMesh) return;
+                const layerName = obj.parent?.name ?? '';
+                if (layerName === 'interior' && !interiorGeo) interiorGeo = obj.geometry;
+                if (layerName === 'glass' && !glassGeo) glassGeo = obj.geometry;
+            });
+        }
+        assertTrue(!!interiorGeo, 'Expected an interior parallax mesh in the built facade.');
+        assertTrue(!!glassGeo, 'Expected a glass mesh in the built facade.');
+        const interiorSize = bboxSizeOf(interiorGeo);
+        const glassSize = bboxSizeOf(glassGeo);
+        assertTrue(
+            interiorSize.width > glassSize.width + 1e-4,
+            'Expected the parallax panel wider than the glass so grazing sightlines stay covered.'
+        );
+        assertTrue(
+            interiorSize.height > glassSize.height + 1e-4,
+            'Expected the parallax panel taller than the glass.'
+        );
     });
 
     // ========== Summary ==========

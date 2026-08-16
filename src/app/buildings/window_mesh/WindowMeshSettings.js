@@ -562,6 +562,7 @@ export const WINDOW_MESH_DEFAULTS = Object.freeze({
             y: Number(DEFAULT_PARALLAX_INTERIOR_CONFIG?.parallaxScale?.y) || 4.0
         }),
         zOffset: 0.0,
+        overscanClampMeters: null,
         emissiveIntensity: 0.0,
         tintVariation: Object.freeze({
             hueShiftDeg: Object.freeze({
@@ -791,6 +792,12 @@ export function sanitizeWindowMeshSettings(input) {
         WINDOW_MESH_DEFAULTS.interior.parallaxScale.y
     );
     const interiorZOffset = clamp(interiorSrc.zOffset, -1.0, 1.0, WINDOW_MESH_DEFAULTS.interior.zOffset);
+    // AI 496: per-placement clamp on the parallax panel overscan (wall gap to
+    // the neighbouring opening). null = unconstrained; explicit 0 = no overscan.
+    const overscanClampRaw = interiorSrc.overscanClampMeters;
+    const overscanClampMeters = (overscanClampRaw === null || overscanClampRaw === undefined || !Number.isFinite(Number(overscanClampRaw)))
+        ? null
+        : Math.max(0.0, Math.min(4.0, Number(overscanClampRaw)));
     const emissiveIntensity = clamp(interiorSrc.emissiveIntensity, 0.0, 5.0, WINDOW_MESH_DEFAULTS.interior.emissiveIntensity);
     const tintSrc = interiorSrc.tintVariation && typeof interiorSrc.tintVariation === 'object' ? interiorSrc.tintVariation : {};
     const presetTint = presetInterior?.tintVariation && typeof presetInterior.tintVariation === 'object'
@@ -909,6 +916,7 @@ export function sanitizeWindowMeshSettings(input) {
             parallaxDepthMeters,
             parallaxScale: { x: parallaxScaleX, y: parallaxScaleY },
             zOffset: interiorZOffset,
+            overscanClampMeters,
             emissiveIntensity,
             tintVariation: { hueShiftDeg, saturationMul, brightnessMul }
         }

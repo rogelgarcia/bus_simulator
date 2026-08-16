@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { sanitizeWindowMeshSettings } from '../../../../app/buildings/window_mesh/WindowMeshSettings.js';
+import { resolveParallaxPanelOverscanMeters } from '../../../../app/buildings/window_mesh/ParallaxPanelOverscan.js';
 
 const EPS = 1e-6;
 const QUANT = 10000;
@@ -888,8 +889,73 @@ export function getWindowMeshGeometryKey(settings, { curveSegments = 24 } = {}) 
         `mi:${q(m.inset)}`,
         `mox:${q(m.uvOffset.x)}`,
         `moy:${q(m.uvOffset.y)}`,
-        `cs:${curveSegments | 0}`
+        `cs:${curveSegments | 0}`,
+        // AI 496: the interior panel is part of the bundle, so its overscan
+        // (interior depth + per-placement clamp) belongs in the cache key.
+        `ios:${q(resolveParallaxPanelOverscanMeters(s))}`
     ].join('|');
+}
+
+// AI 496: the parallax interior panel is an OVERSIZED quad, not the opening
+// shape. It sits a short distance behind the glass, so at grazing angles an
+// opening-sized panel lets the sightline slip past its edge and exposes a
+// bright sliver along the reveal. Extending the panel by
+// `depth * tan(maxGrazingAngle)` on every side keeps it in front of every
+// plausible sightline; the extra area hides behind the wall at normal angles.
+//
+// UVs stay pinned to the OPENING rect (the panel's original bounding box), so
+// 0..1 still spans exactly what it spanned before and the visible interior is
+// pixel-identical head-on. The overscan area runs outside 0..1, where the
+// interior shader's existing clamp continues the image's edge outward.
+function buildInteriorPanelGeometry({ settings, openingGeometry }) {
+    const geo = openingGeometry?.isBufferGeometry ? openingGeometry : null;
+    if (!geo) return null;
+    const s = sanitizeWindowMeshSettings(settings);
+    const overscan = resolveParallaxPanelOverscanMeters(s);
+
+    geo.computeBoundingBox();
+    const box = geo.boundingBox;
+    if (!box) return null;
+    const minX = Number(box.min.x) || 0;
+    const maxX = Number(box.max.x) || 0;
+    const minY = Number(box.min.y) || 0;
+    const maxY = Number(box.max.y) || 0;
+    const openWidth = Math.max(EPS, maxX - minX);
+    const openHeight = Math.max(EPS, maxY - minY);
+
+    // No overscan (interior off, or panel flush with the glass): keep the
+    // opening geometry itself so nothing about the current look changes.
+    if (!(overscan > 1e-6)) return null;
+
+    const x0 = minX - overscan;
+    const x1 = maxX + overscan;
+    const y0 = minY - overscan;
+    const y1 = maxY + overscan;
+
+    const positions = new Float32Array([
+        x0, y0, 0,
+        x1, y0, 0,
+        x1, y1, 0,
+        x0, y1, 0
+    ]);
+    const uvs = new Float32Array([
+        (x0 - minX) / openWidth, (y0 - minY) / openHeight,
+        (x1 - minX) / openWidth, (y0 - minY) / openHeight,
+        (x1 - minX) / openWidth, (y1 - minY) / openHeight,
+        (x0 - minX) / openWidth, (y1 - minY) / openHeight
+    ]);
+
+    const panel = new THREE.BufferGeometry();
+    panel.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    panel.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    panel.setAttribute('uv2', new THREE.BufferAttribute(uvs.slice(0), 2));
+    panel.setIndex([0, 1, 2, 0, 2, 3]);
+    panel.computeVertexNormals();
+    panel.computeBoundingBox();
+    panel.userData = panel.userData ?? {};
+    panel.userData.parallaxPanelOverscanMeters = overscan;
+    panel.userData.parallaxPanelOpeningSize = { width: openWidth, height: openHeight };
+    return panel;
 }
 
 export function buildWindowMeshGeometryBundle(settings, { curveSegments = 24 } = {}) {
@@ -899,6 +965,8 @@ export function buildWindowMeshGeometryBundle(settings, { curveSegments = 24 } =
     const joinBar = buildArchMeetRectJoinGeometry({ settings });
     const handles = buildDoorHandlesGeometry({ settings });
 
+    const interiorPanel = buildInteriorPanelGeometry({ settings, openingGeometry: opening });
+
     const joinBarLayer = joinBar?.userData?.windowJoinBarLayer === 'muntins' ? 'muntins' : (joinBar ? 'frame' : null);
-    return { frame, opening, muntins, joinBar, joinBarLayer, handles };
+    return { frame, opening, interiorPanel, muntins, joinBar, joinBarLayer, handles };
 }

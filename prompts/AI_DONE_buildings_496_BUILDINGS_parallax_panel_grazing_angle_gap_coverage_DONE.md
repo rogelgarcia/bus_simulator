@@ -1,3 +1,20 @@
+# DONE
+
+## Summary of changes
+- `ParallaxPanelOverscan.js` (new): overscan math — panel depth behind the glass (derived from the glass/shade/interior z-offsets) x tan(72 deg max grazing angle), clamped by an absolute cap and by the wall gap to the neighbouring opening; zero depth = zero overscan (unchanged panels).
+- `WindowMeshGeometry`: the interior parallax panel is now its own oversized quad instead of reusing the opening geometry, with UVs pinned to the OPENING rect so 0..1 still spans exactly what it spanned before (visible interior is pixel-identical head-on; the overscan runs outside 0..1 where the shader's existing clamp continues the image outward). Panel overscan added to the geometry cache key.
+- `WindowMeshGenerator`: the interior mesh uses the oversized panel (falling back to the opening geometry when no overscan is needed), and the interior instance attributes are bound to whichever geometry it uses.
+- `WindowMeshSettings`: new `interior.overscanClampMeters` (null = unconstrained) carrying the per-placement neighbour-gap clamp.
+- `BuildingFabricationGenerator`: computes each opening's neighbour gap from the bay slot (next repeat slot, or half the slack plus bay padding at the bay edge), quantized to 5 cm so near-identical bays still share one geometry bucket, and passes it on the placement settings.
+- Capture harness: `CAMERA_DIR` / `CAMERA_PADDING` / `CAMERA_TARGET_Y_FRAC` / `CAPTURE_SUFFIX` env overrides for street-level and grazing-angle inspection shots.
+- Tests: 8 node unit tests for the overscan math (depth/angle -> extension, absolute cap, neighbour clamp, null-gap regression, depth derivation) and 4 browser tests (panel exceeds the opening by the expected overscan, scales with depth, respects the clamp, UVs pinned to the opening rect, generator passes the clamp end-to-end).
+- Pre-existing opening-size tests now measure the opening layers explicitly (the parallax panel is deliberately larger and hidden behind the wall), keeping their original intent.
+- Validated by before/after grazing captures on `storefront_row_2`: changed pixels sit exactly on the window reveals and are ~48% darker (bright hole -> interior content).
+
+## Findings / follow-ups
+- The reveal gap and the shop-preset "streak" artifact are two different failure modes. This work fixes the GEOMETRIC gap. Re-strengthening the AI 488 shop parallax preset (uvZoom 1.6 / depth 9 / scale 1.5) was tested and still produces the diagonal UV-clamp streaks on storefront glazing, so the preset stays at its AI 488 values. Closing that one needs the shader's `uvLocal` clamp reworked (e.g. atlas cells with a bleed margin, or a boxed reveal), which is not in this prompt's scope.
+- The optional boxed-reveal fallback was not needed: no showcase opening hit a clamp tight enough to leave the sliver exposed.
+
 #Problem
 
 The window parallax interior panel sits at a depth offset behind the glass plane, sized to the opening. At grazing view angles the offset exposes the gap: a bright sliver of "hole" is visible along the window reveal between the glass edge and the panel edge (observed in gameplay along the left and bottom edges of windows viewed at a shallow angle — the panel visibly does not cover the line of sight through the opening's edge).

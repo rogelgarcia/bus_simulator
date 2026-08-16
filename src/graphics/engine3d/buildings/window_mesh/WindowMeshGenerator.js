@@ -92,7 +92,11 @@ export class WindowMeshGenerator {
         if (!count) return group;
 
         const openingGeo = bundle.opening.clone();
-        group.userData.ownedGeometries = Object.freeze([openingGeo]);
+        // AI 496: the parallax panel is oversized so grazing sightlines cannot
+        // slip past its edge; it falls back to the opening geometry when the
+        // panel needs no overscan (interior off / flush with the glass).
+        const interiorGeo = bundle.interiorPanel?.isBufferGeometry ? bundle.interiorPanel.clone() : null;
+        group.userData.ownedGeometries = Object.freeze(interiorGeo ? [openingGeo, interiorGeo] : [openingGeo]);
         const shadeCoverage = new Float32Array(count);
         const shadeFlipX = new Float32Array(count);
         const interiorUvOffset = new Float32Array(count * 2);
@@ -145,10 +149,12 @@ export class WindowMeshGenerator {
 
         openingGeo.setAttribute('instanceShadeCoverage', new THREE.InstancedBufferAttribute(shadeCoverage, 1));
         openingGeo.setAttribute('instanceShadeFlipX', new THREE.InstancedBufferAttribute(shadeFlipX, 1));
-        openingGeo.setAttribute('instanceInteriorUvOffset', new THREE.InstancedBufferAttribute(interiorUvOffset, 2));
-        openingGeo.setAttribute('instanceInteriorUvScale', new THREE.InstancedBufferAttribute(interiorUvScale, 2));
-        openingGeo.setAttribute('instanceInteriorFlipX', new THREE.InstancedBufferAttribute(interiorFlipX, 1));
-        openingGeo.setAttribute('instanceInteriorTint', new THREE.InstancedBufferAttribute(interiorTint, 3));
+        for (const geo of interiorGeo ? [openingGeo, interiorGeo] : [openingGeo]) {
+            geo.setAttribute('instanceInteriorUvOffset', new THREE.InstancedBufferAttribute(interiorUvOffset, 2));
+            geo.setAttribute('instanceInteriorUvScale', new THREE.InstancedBufferAttribute(interiorUvScale, 2));
+            geo.setAttribute('instanceInteriorFlipX', new THREE.InstancedBufferAttribute(interiorFlipX, 1));
+            geo.setAttribute('instanceInteriorTint', new THREE.InstancedBufferAttribute(interiorTint, 3));
+        }
 
         const dummy = new THREE.Object3D();
 
@@ -197,7 +203,7 @@ export class WindowMeshGenerator {
         if (s.interior.enabled) {
             interiorLayer = new THREE.Group();
             interiorLayer.name = 'interior';
-            interiorMesh = new THREE.InstancedMesh(openingGeo, mats.interiorMat, count);
+            interiorMesh = new THREE.InstancedMesh(interiorGeo ?? openingGeo, mats.interiorMat, count);
             interiorMesh.castShadow = false;
             interiorMesh.receiveShadow = false;
             interiorMesh.renderOrder = 0;

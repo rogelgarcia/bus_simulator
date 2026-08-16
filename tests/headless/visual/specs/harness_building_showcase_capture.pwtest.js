@@ -36,6 +36,31 @@ test('Capture: building showcase (textures ready before screenshot)', async ({ p
     expect(ids.length).toBeGreaterThan(0);
 
     await fs.mkdir(OUT_DIR, { recursive: true });
+
+    // Optional camera overrides, for street-level / grazing-angle inspection
+    // shots next to the default three-quarter catalog view:
+    //   CAMERA_DIR="x,y,z"      view direction (e.g. "-0.2,0.06,1" = near head-on,
+    //                           "-1,0.05,0.25" = grazing along the facade)
+    //   CAMERA_PADDING=0.55     framing distance multiplier (smaller = closer)
+    //   CAMERA_TARGET_Y_FRAC    0..1 height of the look-at point on the building
+    //   CAPTURE_SUFFIX=grazing  writes <id>_<suffix>.png instead of <id>.png
+    const parseCameraDir = (raw) => {
+        const parts = String(raw ?? '').split(',').map((p) => Number(p.trim()));
+        if (parts.length !== 3 || parts.some((p) => !Number.isFinite(p))) return null;
+        return { x: parts[0], y: parts[1], z: parts[2] };
+    };
+    const cameraDir = parseCameraDir(process.env.CAMERA_DIR);
+    const cameraPaddingRaw = Number(process.env.CAMERA_PADDING);
+    const cameraPadding = Number.isFinite(cameraPaddingRaw) ? cameraPaddingRaw : null;
+    const cameraTargetYFracRaw = Number(process.env.CAMERA_TARGET_Y_FRAC);
+    const cameraTargetYFrac = Number.isFinite(cameraTargetYFracRaw) ? cameraTargetYFracRaw : null;
+    const captureSuffix = String(process.env.CAPTURE_SUFFIX ?? '').trim();
+    const scenarioOptions = {
+        ...(cameraDir ? { cameraDir } : {}),
+        ...(cameraPadding !== null ? { cameraPadding } : {}),
+        ...(cameraTargetYFrac !== null ? { cameraTargetYFrac } : {})
+    };
+
     const scaleRaw = Number(process.env.CAPTURE_SCALE ?? '1');
     const scale = Number.isFinite(scaleRaw) && scaleRaw > 0 ? Math.min(scaleRaw, 4) : 1;
     const viewport = { width: Math.round(1280 * scale), height: Math.round(720 * scale) };
@@ -46,10 +71,10 @@ test('Capture: building showcase (textures ready before screenshot)', async ({ p
     // one build up front to make captures reproducible across runs.
     await page.evaluate(async (args) => {
         window.__testHooks.setViewport(args.viewport.width, args.viewport.height);
-        await window.__testHooks.loadScenario('building_showcase', { seed: 'showcase', buildingId: args.buildingId });
+        await window.__testHooks.loadScenario('building_showcase', { seed: 'showcase', buildingId: args.buildingId, ...args.scenarioOptions });
         window.__testHooks.setFixedDt(1 / 60);
         window.__testHooks.step(5, { render: true });
-    }, { buildingId: ids[0], viewport });
+    }, { buildingId: ids[0], viewport, scenarioOptions });
     await page.waitForFunction(() => {
         const scenario = window.__testHooks.getMetrics()?.scenario ?? null;
         const textures = scenario?.textures ?? null;
@@ -60,10 +85,10 @@ test('Capture: building showcase (textures ready before screenshot)', async ({ p
     for (const buildingId of ids) {
         await page.evaluate(async (args) => {
             window.__testHooks.setViewport(args.viewport.width, args.viewport.height);
-            await window.__testHooks.loadScenario('building_showcase', { seed: 'showcase', buildingId: args.buildingId });
+            await window.__testHooks.loadScenario('building_showcase', { seed: 'showcase', buildingId: args.buildingId, ...args.scenarioOptions });
             window.__testHooks.setFixedDt(1 / 60);
             window.__testHooks.step(5, { render: true });
-        }, { buildingId, viewport });
+        }, { buildingId, viewport, scenarioOptions });
 
         // Texture readiness gate: capture only once every texture is decoded.
         await page.waitForFunction(() => {
@@ -93,6 +118,7 @@ test('Capture: building showcase (textures ready before screenshot)', async ({ p
         });
         const canvas = page.locator('#harness-canvas');
         await expect(canvas).toBeVisible();
-        await canvas.screenshot({ path: path.join(OUT_DIR, `${buildingId}.png`) });
+        const outName = captureSuffix ? `${buildingId}_${captureSuffix}.png` : `${buildingId}.png`;
+        await canvas.screenshot({ path: path.join(OUT_DIR, outName) });
     }
 });
