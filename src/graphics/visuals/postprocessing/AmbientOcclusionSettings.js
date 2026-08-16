@@ -36,7 +36,13 @@ export const AMBIENT_OCCLUSION_DEFAULTS = Object.freeze({
         quality: 'high',
         denoise: false,
         debugView: false,
-        updateMode: 'half_rate',
+        // Every frame, not half rate: a skipped AO pass makes frame cost and
+        // draw calls alternate on a two-frame cycle (measured 3,132 / 4,099
+        // calls in a frozen scene), so any measurement lands on a phase and
+        // two readings of one config can differ by 60%. Determinism is worth
+        // more than the saved pass, and `when_camera_moves` remains available
+        // for anyone who wants the saving back.
+        updateMode: 'every_frame',
         motionThreshold: {
             positionMeters: 0.02,
             rotationDeg: 0.15,
