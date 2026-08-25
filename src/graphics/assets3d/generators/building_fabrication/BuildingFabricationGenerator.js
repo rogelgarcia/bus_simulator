@@ -75,6 +75,7 @@ import { solveFacadeLayoutFillPattern } from './FacadeLayoutFillSolver.js';
 import { solveFacadeBaysLayout } from './FacadeBaysSolver.js';
 import { resolveRectFacadeCornerStrategy } from './FacadeCornerResolutionStrategies.js';
 import { createWallDecoratorGeometryFromSpec as createSharedWallDecoratorGeometryFromSpec } from '../../../gui/shared/wall_decorator/WallDecoratorGeometryFactory.js';
+import { resolveWallDecoratorSurfacePlacement } from '../../../gui/shared/wall_decorator/WallDecoratorPlacement.js';
 
 const EPS = 1e-6;
 const QUANT = 1000;
@@ -4242,9 +4243,106 @@ function adjustFlatCapFamilyFrontSpecsForEdges(
     return out;
 }
 
+/**
+ * Whether a decoration follows a bay recession onto its derived surfaces.
+ * Defaults to true, matching the SHOULD in
+ * `BUILDING_2_FLOORPLAN_TOPOLOGY_SPEC` §5.2.
+ * @param {object} decoration
+ */
+function resolveDecorationInheritOnDerivedSurfaces(decoration) {
+    return decoration?.inheritOnDerivedSurfaces !== false;
+}
+
+/**
+ * Extend a decoration onto the **connector walls** a bay recession generates.
+ *
+ * When bay B sits at a different depth from its neighbours A and C, the
+ * silhouette extrudes a connector wall at each boundary. Those walls are
+ * derived geometry (BUILDING_2_FLOORPLAN_TOPOLOGY_SPEC §5.2) — they have no bay
+ * id, so no decoration set can ever target them, which is exactly why they
+ * inherit. Neighbouring bay fronts are authorable and are never claimed here.
+ *
+ * Ownership is by depth: the **proud** side of the step owns the connector,
+ * because the connector is the side wall of that bay's own mass. Inset B takes
+ * its band from A and C; extruded B wraps its own band onto both connectors.
+ * Two bays can never claim the same connector — equal depths produce no
+ * connector at all.
+ *
+ * Both sides of the joint are marked so the panels butt with their end caps
+ * dropped, turning the corner as an L instead of overlapping. The connector band
+ * is built to the connector's true width; a decorator that clamps a decorated
+ * surface up to some minimum makes it overhang the corner instead.
+ *
+ * @param {Array<object>} renderItems bay items, appended to in place
+ * @param {object} options
+ * @param {boolean} options.inheritOnDerivedSurfaces
+ * @param {boolean} options.isBandFamily band-shaped decorators only
+ * @param {Record<string, Array<object>> | null} options.surfaceRunsByFaceId
+ */
+function appendDerivedSurfaceRenderItems(renderItems, {
+    inheritOnDerivedSurfaces,
+    isBandFamily,
+    surfaceRunsByFaceId
+}) {
+    const items = Array.isArray(renderItems) ? renderItems : [];
+    if (!items.length || !surfaceRunsByFaceId) return;
+    if (!inheritOnDerivedSurfaces || !isBandFamily) return;
+
+    const frontDepthOf = (element) => Math.max(Number(element?.depth0) || 0, Number(element?.depth1) || 0);
+
+    // Snapshot: only the bay items can claim a connector, and the loop appends.
+    for (const item of items.slice()) {
+        if (!(item.runIndex >= 0)) continue;
+        const run = surfaceRunsByFaceId[item.faceId];
+        if (!Array.isArray(run)) continue;
+        const source = run[item.runIndex] ?? null;
+        if (source?.kind !== 'face') continue;
+        const sourceDepth = frontDepthOf(source);
+
+        for (const direction of [-1, 1]) {
+            // A partial span stops short of the bay edge, so there is no joint
+            // to turn at on that side.
+            if (direction < 0 && item.spanStart > EPS) continue;
+            if (direction > 0 && item.spanEnd < 1.0 - EPS) continue;
+
+            const connectorIndex = item.runIndex + direction;
+            const connector = run[connectorIndex] ?? null;
+            if (connector?.kind !== 'return') continue;
+            // Only the proud side of the step owns the connector.
+            const opposite = run[connectorIndex + direction] ?? null;
+            if (opposite?.kind === 'face' && frontDepthOf(opposite) > sourceDepth + 1e-4) continue;
+
+            if (direction < 0) item.joinStart = true;
+            else item.joinEnd = true;
+
+            items.push({
+                bayRef: item.bayRef,
+                faceId: item.faceId,
+                layerMaterialSpec: item.layerMaterialSpec,
+                segment: connector,
+                spanStart: 0.0,
+                spanEnd: 1.0,
+                cornerStart: false,
+                cornerEnd: false,
+                hasAnyStart: false,
+                hasAnyEnd: false,
+                cornerStartStyle: 'exterior',
+                cornerEndStyle: 'exterior',
+                derivedSurface: 'return',
+                runIndex: connectorIndex,
+                // A run element's segment always starts on the `index - 1` side,
+                // so the joint with the owning bay is whichever end faces it.
+                joinStart: direction > 0,
+                joinEnd: direction < 0
+            });
+        }
+    }
+}
+
 function buildGameplayWallDecorationMeshes({
     wallDecorations = null,
     bayHighlightDataByLayerId = null,
+    facadeSurfaceRunsByLayerId = null,
     floorSegmentsByLayerId = null,
     floorLayerById = null,
     facadesByLayerId = null,
@@ -4259,6 +4357,9 @@ function buildGameplayWallDecorationMeshes({
     if (!sets.length) return [];
 
     const bayEntriesByLayerId = new Map();
+    const surfaceRunsByLayerId = facadeSurfaceRunsByLayerId && typeof facadeSurfaceRunsByLayerId === 'object'
+        ? facadeSurfaceRunsByLayerId
+        : null;
     const sourceByLayer = bayHighlightDataByLayerId && typeof bayHighlightDataByLayerId === 'object'
         ? bayHighlightDataByLayerId
         : {};
@@ -4589,6 +4690,23 @@ function buildGameplayWallDecorationMeshes({
         if (!floorSegments.length) continue;
 
         const layer = floorLayersById.get(layerId) ?? null;
+        const surfaceRunsByFaceId = surfaceRunsByLayerId?.[layerId] ?? null;
+        // Bay segments and face run elements are both built from the same
+        // (u, depth) frame points, so a bay is located in its run by endpoints.
+        const surfaceRunIndexByKey = new Map();
+        for (const [faceId, run] of Object.entries(surfaceRunsByFaceId ?? {})) {
+            if (!Array.isArray(run)) continue;
+            for (let index = 0; index < run.length; index += 1) {
+                const element = run[index];
+                if (element?.kind !== 'face') continue;
+                const key = `${faceId}|${buildWallDecorationEndpointKey(element.x0, element.z0)}|${buildWallDecorationEndpointKey(element.x1, element.z1)}`;
+                if (!surfaceRunIndexByKey.has(key)) surfaceRunIndexByKey.set(key, index);
+            }
+        }
+        const resolveSurfaceRunIndex = (faceId, startKey, endKey) => {
+            const index = surfaceRunIndexByKey.get(`${faceId}|${startKey}|${endKey}`);
+            return Number.isFinite(index) ? index : -1;
+        };
         const decorations = Array.isArray(set?.decorations) ? set.decorations : [];
         const setId = typeof set?.id === 'string' ? set.id : '';
         for (const decoration of decorations) {
@@ -4606,6 +4724,21 @@ function buildGameplayWallDecorationMeshes({
                 spanStart: minSpan,
                 spanEnd: maxSpan
             });
+
+            // AI 494: bands turn onto the connector walls a bay recession
+            // generates. Only band-shaped decorators (a flat course plus its
+            // caps) can do that meaningfully — a projecting awning or a dentil
+            // cornice has no sensible reading on a 0.3m return — so the flag is
+            // a no-op for the rest.
+            const inheritOnDerivedSurfaces = resolveDecorationInheritOnDerivedSurfaces(decoration);
+            const decorationIsBandFamily = hasFlatCapFamilyFrontSpecs(buildWallDecoratorShapeSpecs(
+                sanitizeWallDecoratorDebuggerState({ ...safeState, mode: 'face' }),
+                {
+                    widthMeters: 1.0,
+                    heightMeters: 3.0,
+                    depthMeters: WALL_DECORATION_DEFAULT_WALL_DEPTH_M
+                }
+            ));
 
             const autoCornerByBayRef = decoration?.autoCorner?.byBayRef && typeof decoration.autoCorner.byBayRef === 'object'
                 ? decoration.autoCorner.byBayRef
@@ -4683,6 +4816,7 @@ function buildGameplayWallDecorationMeshes({
                 return out;
             };
 
+            const renderItems = [];
             for (const bayRenderItem of resolvedBayRenderItems) {
                 const bayRef = bayRenderItem.bayRef;
                 const parsedBayRef = bayRenderItem.parsedBayRef;
@@ -4718,228 +4852,258 @@ function buildGameplayWallDecorationMeshes({
                         segmentIndex: bayEntryIndex,
                         endpointKey: endKey
                     });
-                    const cornerStart = startEdgeCompatibility.corner || cornerStartMeta;
-                    const cornerEnd = endEdgeCompatibility.corner || cornerEndMeta;
-                    const hasAnyStart = startEdgeCompatibility.any || cornerStartMeta;
-                    const hasAnyEnd = endEdgeCompatibility.any || cornerEndMeta;
-                    const useCornerMode = cornerStart || cornerEnd;
-                    const reverseForCornerStart = cornerStart && !cornerEnd;
-                    const activeCornerStyle = useCornerMode
-                        ? ((cornerStart && cornerStartStyle === 'interior') || (cornerEnd && cornerEndStyle === 'interior')
-                            ? 'interior'
-                            : (reverseForCornerStart ? cornerStartStyle : cornerEndStyle))
-                        : 'exterior';
-                    const isInteriorCorner = useCornerMode && activeCornerStyle === 'interior';
+                    renderItems.push({
+                        bayRef,
+                        faceId: parsedBayRef.faceId,
+                        layerMaterialSpec,
+                        segment: bayEntry,
+                        spanStart: minSpan,
+                        spanEnd: maxSpan,
+                        cornerStart: startEdgeCompatibility.corner || cornerStartMeta,
+                        cornerEnd: endEdgeCompatibility.corner || cornerEndMeta,
+                        hasAnyStart: startEdgeCompatibility.any || cornerStartMeta,
+                        hasAnyEnd: endEdgeCompatibility.any || cornerEndMeta,
+                        cornerStartStyle,
+                        cornerEndStyle,
+                        derivedSurface: null,
+                        runIndex: resolveSurfaceRunIndex(parsedBayRef.faceId, startKey, endKey)
+                    });
+                }
+            }
 
-                    const wallStartCanonical = new THREE.Vector3(Number(bayEntry.x0) || 0.0, 0.0, Number(bayEntry.z0) || 0.0);
-                    const wallEndCanonical = new THREE.Vector3(Number(bayEntry.x1) || 0.0, 0.0, Number(bayEntry.z1) || 0.0);
-                    const frontTangentCanonical = wallEndCanonical.clone().sub(wallStartCanonical);
-                    const bayLength = frontTangentCanonical.length();
-                    if (!(bayLength > EPS)) continue;
-                    frontTangentCanonical.multiplyScalar(1.0 / bayLength);
-                    const spanStartMeters = bayLength * minSpan;
-                    const spanEndMeters = bayLength * maxSpan;
-                    if (!(spanEndMeters > spanStartMeters + EPS)) continue;
-                    const spanMeters = spanEndMeters - spanStartMeters;
-                    const segmentStartCanonical = wallStartCanonical.clone().addScaledVector(frontTangentCanonical, spanStartMeters);
-                    const segmentEndCanonical = wallStartCanonical.clone().addScaledVector(frontTangentCanonical, spanEndMeters);
+            appendDerivedSurfaceRenderItems(renderItems, {
+                inheritOnDerivedSurfaces,
+                isBandFamily: decorationIsBandFamily,
+                surfaceRunsByFaceId
+            });
 
-                    let renderSegmentStart = segmentStartCanonical;
-                    let renderSegmentEnd = segmentEndCanonical;
-                    let renderFrontTangent = frontTangentCanonical;
-                    if (reverseForCornerStart) {
-                        renderSegmentStart = segmentEndCanonical;
-                        renderSegmentEnd = segmentStartCanonical;
-                        renderFrontTangent = frontTangentCanonical.clone().multiplyScalar(-1.0);
-                    }
-                    // Use the resolved bay segment normal from facade frame data.
-                    // This is the same deterministic outward normal used to place wall runs,
-                    // and avoids face-id assumptions that can flip orientation on transformed/derived segments.
-                    const frontNormal = new THREE.Vector3(Number(bayEntry?.nx) || 0.0, 0.0, Number(bayEntry?.nz) || 0.0);
-                    if (frontNormal.lengthSq() <= EPS) {
-                        const faceNormal = getFaceNormalVector(parsedBayRef.faceId);
-                        if (!faceNormal || faceNormal.lengthSq() <= EPS) continue;
-                        frontNormal.copy(faceNormal);
-                    }
-                    frontNormal.normalize();
+            for (const renderItem of renderItems) {
+                const bayRef = renderItem.bayRef;
+                const layerMaterialSpec = renderItem.layerMaterialSpec;
+                const bayEntry = renderItem.segment;
+                const itemSpanStart = renderItem.spanStart;
+                const itemSpanEnd = renderItem.spanEnd;
+                const cornerStartStyle = renderItem.cornerStartStyle;
+                const cornerEndStyle = renderItem.cornerEndStyle;
+                const cornerStart = renderItem.cornerStart;
+                const cornerEnd = renderItem.cornerEnd;
+                // A derived joint (recess return meeting a front plane) butts
+                // like an exterior corner — extend and drop the cap — but it
+                // must not switch the decorator into corner mode, which would
+                // emit a second, competing return.
+                const joinStart = renderItem.joinStart === true;
+                const joinEnd = renderItem.joinEnd === true;
+                const extendStart = cornerStart || joinStart;
+                const extendEnd = cornerEnd || joinEnd;
+                const hasAnyStart = renderItem.hasAnyStart || joinStart;
+                const hasAnyEnd = renderItem.hasAnyEnd || joinEnd;
+                const useCornerMode = cornerStart || cornerEnd;
+                const reverseForCornerStart = cornerStart && !cornerEnd;
+                const activeCornerStyle = useCornerMode
+                    ? ((cornerStart && cornerStartStyle === 'interior') || (cornerEnd && cornerEndStyle === 'interior')
+                        ? 'interior'
+                        : (reverseForCornerStart ? cornerStartStyle : cornerEndStyle))
+                    : 'exterior';
+                const isInteriorCorner = useCornerMode && activeCornerStyle === 'interior';
 
-                    const capConnectedStart = reverseForCornerStart ? hasAnyEnd : hasAnyStart;
-                    const capConnectedEnd = reverseForCornerStart ? hasAnyStart : hasAnyEnd;
+                const wallStartCanonical = new THREE.Vector3(Number(bayEntry.x0) || 0.0, 0.0, Number(bayEntry.z0) || 0.0);
+                const wallEndCanonical = new THREE.Vector3(Number(bayEntry.x1) || 0.0, 0.0, Number(bayEntry.z1) || 0.0);
+                const frontTangentCanonical = wallEndCanonical.clone().sub(wallStartCanonical);
+                const bayLength = frontTangentCanonical.length();
+                if (!(bayLength > EPS)) continue;
+                frontTangentCanonical.multiplyScalar(1.0 / bayLength);
+                const spanStartMeters = bayLength * itemSpanStart;
+                const spanEndMeters = bayLength * itemSpanEnd;
+                if (!(spanEndMeters > spanStartMeters + EPS)) continue;
+                const spanMeters = spanEndMeters - spanStartMeters;
+                const segmentStartCanonical = wallStartCanonical.clone().addScaledVector(frontTangentCanonical, spanStartMeters);
+                const segmentEndCanonical = wallStartCanonical.clone().addScaledVector(frontTangentCanonical, spanEndMeters);
 
-                    for (const floorSeg of floorSegments) {
-                        const startY = Number(floorSeg?.startY);
-                        const endY = Number(floorSeg?.endY);
-                        if (!Number.isFinite(startY) || !Number.isFinite(endY) || !(endY > startY + EPS)) continue;
-                        const wallHeight = endY - startY;
-                        const wallCenterY = (startY + endY) * 0.5;
-                        const wallDepth = WALL_DECORATION_DEFAULT_WALL_DEPTH_M;
-                        const stateForBay = sanitizeWallDecoratorDebuggerState({
-                            ...safeState,
-                            mode: useCornerMode ? 'corner' : 'face'
-                        });
-                        const stateForFace = sanitizeWallDecoratorDebuggerState({
-                            ...safeState,
-                            mode: 'face'
-                        });
-                        const wallSpecForDecorator = {
-                            widthMeters: spanMeters,
-                            heightMeters: wallHeight,
-                            depthMeters: wallDepth
-                        };
-                        const faceSpecs = buildWallDecoratorShapeSpecs(stateForFace, wallSpecForDecorator);
-                        const canUseFlatCapFamily = hasFlatCapFamilyFrontSpecs(faceSpecs);
-                        const specsRaw = canUseFlatCapFamily
-                            ? adjustFlatCapFamilyFrontSpecsForEdges(faceSpecs, {
-                                offsetMeters: resolveFlatCapFamilyFrontOffsetMeters(faceSpecs, 0.05),
-                                extendStart: cornerStart,
-                                extendEnd: cornerEnd,
-                                hideStartCap: capConnectedStart,
-                                hideEndCap: capConnectedEnd
-                            })
-                            : buildWallDecoratorShapeSpecs(stateForBay, wallSpecForDecorator);
-                        if (!Array.isArray(specsRaw) || !specsRaw.length) continue;
+                // Use the resolved bay segment normal from facade frame data.
+                // This is the same deterministic outward normal used to place wall runs,
+                // and avoids face-id assumptions that can flip orientation on transformed/derived segments.
+                const frontNormal = new THREE.Vector3(Number(bayEntry?.nx) || 0.0, 0.0, Number(bayEntry?.nz) || 0.0);
+                if (frontNormal.lengthSq() <= EPS) {
+                    const faceNormal = getFaceNormalVector(renderItem.faceId);
+                    if (!faceNormal || faceNormal.lengthSq() <= EPS) continue;
+                    frontNormal.copy(faceNormal);
+                }
+                frontNormal.normalize();
 
-                        const specs = [];
-                        for (const spec of specsRaw) {
-                            if (!canUseFlatCapFamily) {
-                                const specFace = String(spec?.faceId ?? '').trim().toLowerCase();
-                                const geometryKind = String(spec?.geometryKind ?? '').trim().toLowerCase();
-                                if (specFace === 'front' && geometryKind === 'flat_panel_side_cap') {
-                                    const yawDegrees = clamp(
-                                        Number.isFinite(Number(spec?.yawDegrees)) ? Number(spec.yawDegrees) : 0.0,
-                                        -180.0,
-                                        180.0
-                                    );
-                                    const isStartCap = Math.abs(Math.abs(yawDegrees) - 180.0) <= 1e-4;
-                                    if ((isStartCap && capConnectedStart) || (!isStartCap && capConnectedEnd)) continue;
-                                }
-                            }
-                            specs.push(spec);
-                        }
-                        if (!specs.length) continue;
+                const capConnectedStart = reverseForCornerStart ? hasAnyEnd : hasAnyStart;
+                const capConnectedEnd = reverseForCornerStart ? hasAnyStart : hasAnyEnd;
 
-                        const wallStart = renderSegmentStart.clone();
-                        const wallEnd = renderSegmentEnd.clone();
-                        const wallCenter = wallStart.clone().add(wallEnd).multiplyScalar(0.5);
-                        for (const spec of specs) {
-                            const built = createWallDecorationGeometryFromSpec(spec);
-                            const geometry = built?.geometry?.isBufferGeometry ? built.geometry : null;
-                            if (!geometry) continue;
+                for (const floorSeg of floorSegments) {
+                    const startY = Number(floorSeg?.startY);
+                    const endY = Number(floorSeg?.endY);
+                    if (!Number.isFinite(startY) || !Number.isFinite(endY) || !(endY > startY + EPS)) continue;
+                    const wallHeight = endY - startY;
+                    const wallCenterY = (startY + endY) * 0.5;
+                    const wallDepth = WALL_DECORATION_DEFAULT_WALL_DEPTH_M;
+                    const stateForBay = sanitizeWallDecoratorDebuggerState({
+                        ...safeState,
+                        mode: useCornerMode ? 'corner' : 'face'
+                    });
+                    const stateForFace = sanitizeWallDecoratorDebuggerState({
+                        ...safeState,
+                        mode: 'face'
+                    });
+                    const wallSpecForDecorator = {
+                        widthMeters: spanMeters,
+                        heightMeters: wallHeight,
+                        depthMeters: wallDepth
+                    };
+                    const faceSpecs = buildWallDecoratorShapeSpecs(stateForFace, wallSpecForDecorator);
+                    const canUseFlatCapFamily = hasFlatCapFamilyFrontSpecs(faceSpecs);
+                    // The flat-cap family bridges a corner by extending the
+                    // band and dropping its cap, so it never needs the
+                    // segment reversed to put the corner at the local end —
+                    // it renders canonically, exactly as the authoring path
+                    // (BuildingFabrication2Scene) does.
+                    const reverseSegment = reverseForCornerStart && !canUseFlatCapFamily;
+                    const renderSegmentStart = reverseSegment ? segmentEndCanonical : segmentStartCanonical;
+                    const renderSegmentEnd = reverseSegment ? segmentStartCanonical : segmentEndCanonical;
+                    const renderFrontTangent = reverseSegment
+                        ? frontTangentCanonical.clone().multiplyScalar(-1.0)
+                        : frontTangentCanonical;
+                    const specsRaw = canUseFlatCapFamily
+                        ? adjustFlatCapFamilyFrontSpecsForEdges(faceSpecs, {
+                            offsetMeters: resolveFlatCapFamilyFrontOffsetMeters(faceSpecs, 0.05),
+                            extendStart,
+                            extendEnd,
+                            hideStartCap: hasAnyStart,
+                            hideEndCap: hasAnyEnd
+                        })
+                        : buildWallDecoratorShapeSpecs(stateForBay, wallSpecForDecorator);
+                    if (!Array.isArray(specsRaw) || !specsRaw.length) continue;
 
-                            const specFace = String(spec?.faceId ?? '').trim().toLowerCase() === 'right' ? 'right' : 'front';
-                            const geometryKind = String(built?.geometryKind ?? spec?.geometryKind ?? '').trim().toLowerCase();
-                            const rightCornerEdge = String(spec?.__bf2CornerEdge ?? '').trim().toLowerCase() === 'start'
-                                ? 'start'
-                                : 'end';
-                            const rightCornerStyle = String(spec?.__bf2CornerStyle ?? '').trim().toLowerCase() === 'interior'
-                                ? 'interior'
-                                : (isInteriorCorner ? 'interior' : 'exterior');
-                            const frontUAxis = renderFrontTangent.clone();
-                            const frontNAxis = frontNormal.clone();
-                            const rightUAxis = frontNormal.clone().multiplyScalar(-1.0);
-                            const rightNAxisBase = renderFrontTangent.clone().multiplyScalar(rightCornerStyle === 'interior' ? -1.0 : 1.0);
-                            const rightNAxis = rightCornerEdge === 'start'
-                                ? rightNAxisBase.clone().multiplyScalar(-1.0)
-                                : rightNAxisBase;
-                            const logicalUAxis = specFace === 'right' ? rightUAxis : frontUAxis;
-                            let nAxis = specFace === 'right' ? rightNAxis : frontNAxis;
-                            if (logicalUAxis.lengthSq() <= EPS || nAxis.lengthSq() <= EPS) {
-                                geometry.dispose?.();
-                                continue;
-                            }
-                            logicalUAxis.normalize();
-                            nAxis.normalize();
-                            if (Math.abs(logicalUAxis.dot(nAxis)) > 0.999) {
-                                geometry.dispose?.();
-                                continue;
-                            }
-
-                            const basis = new THREE.Matrix4().makeBasis(logicalUAxis, up, nAxis);
-                            const quaternion = new THREE.Quaternion().setFromRotationMatrix(basis);
-                            const yawDegrees = clamp(
-                                Number.isFinite(Number(spec?.yawDegrees)) ? Number(spec.yawDegrees) : 0.0,
-                                -180.0,
-                                180.0
-                            );
-                            const yawRadians = yawDegrees * Math.PI / 180.0;
-                            if (Math.abs(yawRadians) > 1e-8) {
-                                const yaw = new THREE.Quaternion().setFromAxisAngle(up, yawRadians);
-                                quaternion.multiply(yaw);
-                            }
-
-                            const enforceFrontOutward = specFace === 'front'
-                                && (geometryKind === 'flat_panel' || geometryKind === 'angled_support_profile' || geometryKind === 'awning_front_quad');
-                            if (enforceFrontOutward) {
-                                const normalDot = computeGeometryFirstTriangleNormalDotAxis(geometry, quaternion, nAxis);
-                                if (normalDot < 0.0) flipGeometryWinding(geometry);
-                            }
-                            if (geometryKind === 'awning_slanted_plane') {
-                                const normalDotUp = computeGeometryFirstTriangleNormalDotAxis(geometry, quaternion, up);
-                                if (normalDotUp < 0.0) flipGeometryWinding(geometry);
-                            }
-                            if (geometryKind === 'flat_panel_side_cap') {
+                    const specs = [];
+                    for (const spec of specsRaw) {
+                        if (!canUseFlatCapFamily) {
+                            const specFace = String(spec?.faceId ?? '').trim().toLowerCase();
+                            const geometryKind = String(spec?.geometryKind ?? '').trim().toLowerCase();
+                            if (specFace === 'front' && geometryKind === 'flat_panel_side_cap') {
                                 const yawDegrees = clamp(
                                     Number.isFinite(Number(spec?.yawDegrees)) ? Number(spec.yawDegrees) : 0.0,
                                     -180.0,
                                     180.0
                                 );
                                 const isStartCap = Math.abs(Math.abs(yawDegrees) - 180.0) <= 1e-4;
-                                const expectedU = isStartCap ? -1.0 : 1.0;
-                                const normalDotU = computeGeometryFirstTriangleNormalDotAxis(geometry, quaternion, logicalUAxis);
-                                if ((normalDotU * expectedU) < 0.0) flipGeometryWinding(geometry);
+                                if ((isStartCap && capConnectedStart) || (!isStartCap && capConnectedEnd)) continue;
                             }
-                            if (geometryKind === 'flat_panel_cap') {
-                                const capSide = String(spec?.capSide ?? '').trim().toLowerCase() === 'bottom' ? 'bottom' : 'top';
-                                const expectedUp = capSide === 'bottom' ? -1.0 : 1.0;
-                                const normalDotUp = computeGeometryFirstTriangleNormalDotAxis(geometry, quaternion, up);
-                                if ((normalDotUp * expectedUp) < 0.0) flipGeometryWinding(geometry);
-                            }
-
-                            const centerU = Number(spec?.centerU) || 0.0;
-                            const centerV = Number(spec?.centerV) || 0.0;
-                            const outsetMeters = Math.max(0.0, Number(spec?.outsetMeters ?? spec?.surfaceOffsetMeters) || 0.0);
-                            const placementDepthMeters = Math.max(0.0, Number(built?.placementDepthMeters) || 0.0);
-                            const anchor = specFace === 'right'
-                                ? (rightCornerEdge === 'start' ? wallStart : wallEnd)
-                                : wallCenter;
-
-                            const material = resolveWallDecorationMaterial({
-                                safeState: stateForBay,
-                                layerMaterialSpec,
-                                surfaceSizeMeters: {
-                                    x: clamp(
-                                        Number.isFinite(Number(built?.surfaceWidthMeters)) ? Number(built.surfaceWidthMeters) : (Number(spec?.widthMeters) || 1.0),
-                                        0.01,
-                                        256.0
-                                    ),
-                                    y: clamp(
-                                        Number.isFinite(Number(built?.surfaceHeightMeters)) ? Number(built.surfaceHeightMeters) : (Number(spec?.heightMeters) || 0.2),
-                                        0.01,
-                                        256.0
-                                    )
-                                },
-                                geometryKind
-                            });
-                            const mesh = new THREE.Mesh(geometry, material);
-                            mesh.name = `building_wall_decoration_${String(spec?.role ?? 'mesh')}`;
-                            mesh.position.copy(anchor);
-                            mesh.position.addScaledVector(logicalUAxis, centerU);
-                            mesh.position.addScaledVector(up, wallCenterY + centerV);
-                            mesh.position.addScaledVector(nAxis, outsetMeters + placementDepthMeters * 0.5);
-                            mesh.quaternion.copy(quaternion);
-                            mesh.castShadow = true;
-                            mesh.receiveShadow = true;
-                            mesh.userData = mesh.userData ?? {};
-                            mesh.userData.buildingFab2Role = 'wall_decoration';
-                            mesh.userData.decorationKey = decorationKey;
-                            mesh.userData.decorationCompatibilityId = compatibilityId;
-                            mesh.userData.faceId = specFace;
-                            mesh.userData.role = String(spec?.role ?? 'decorator');
-                            mesh.userData.geometryKind = geometryKind || 'unknown';
-                            mesh.userData.layerId = layerId;
-                            mesh.userData.bayRef = bayRef;
-                            createdMeshes.push(mesh);
                         }
+                        specs.push(spec);
+                    }
+                    if (!specs.length) continue;
+
+                    const wallStart = renderSegmentStart.clone();
+                    const wallEnd = renderSegmentEnd.clone();
+                    const wallCenter = wallStart.clone().add(wallEnd).multiplyScalar(0.5);
+                    for (const specRaw of specs) {
+                        const specFace = String(specRaw?.faceId ?? '').trim().toLowerCase() === 'right' ? 'right' : 'front';
+                        const rightCornerEdge = String(specRaw?.__bf2CornerEdge ?? '').trim().toLowerCase() === 'start'
+                            ? 'start'
+                            : 'end';
+                        const rightCornerStyle = String(specRaw?.__bf2CornerStyle ?? '').trim().toLowerCase() === 'interior'
+                            ? 'interior'
+                            : (isInteriorCorner ? 'interior' : 'exterior');
+                        const frontUAxis = renderFrontTangent.clone();
+                        const frontNAxis = frontNormal.clone();
+                        const rightUAxis = frontNormal.clone().multiplyScalar(-1.0);
+                        const rightNAxisBase = renderFrontTangent.clone().multiplyScalar(rightCornerStyle === 'interior' ? -1.0 : 1.0);
+                        const rightNAxis = rightCornerEdge === 'start'
+                            ? rightNAxisBase.clone().multiplyScalar(-1.0)
+                            : rightNAxisBase;
+                        // A reversed segment asks for a U axis that would make
+                        // (U, up, N) a reflection; the shared placement mirrors
+                        // the spec instead so the rotation stays proper.
+                        const placement = resolveWallDecoratorSurfacePlacement({
+                            spec: specRaw,
+                            uAxis: specFace === 'right' ? rightUAxis : frontUAxis,
+                            nAxis: specFace === 'right' ? rightNAxis : frontNAxis,
+                            up
+                        });
+                        if (!placement) continue;
+                        const { quaternion, uAxis: logicalUAxis, nAxis, spec } = placement;
+
+                        const built = createWallDecorationGeometryFromSpec(spec);
+                        const geometry = built?.geometry?.isBufferGeometry ? built.geometry : null;
+                        if (!geometry) continue;
+                        const geometryKind = String(built?.geometryKind ?? spec?.geometryKind ?? '').trim().toLowerCase();
+
+                        const enforceFrontOutward = specFace === 'front'
+                            && (geometryKind === 'flat_panel' || geometryKind === 'angled_support_profile' || geometryKind === 'awning_front_quad');
+                        if (enforceFrontOutward) {
+                            const normalDot = computeGeometryFirstTriangleNormalDotAxis(geometry, quaternion, nAxis);
+                            if (normalDot < 0.0) flipGeometryWinding(geometry);
+                        }
+                        if (geometryKind === 'awning_slanted_plane') {
+                            const normalDotUp = computeGeometryFirstTriangleNormalDotAxis(geometry, quaternion, up);
+                            if (normalDotUp < 0.0) flipGeometryWinding(geometry);
+                        }
+                        if (geometryKind === 'flat_panel_side_cap') {
+                            const yawDegrees = clamp(
+                                Number.isFinite(Number(spec?.yawDegrees)) ? Number(spec.yawDegrees) : 0.0,
+                                -180.0,
+                                180.0
+                            );
+                            const isStartCap = Math.abs(Math.abs(yawDegrees) - 180.0) <= 1e-4;
+                            const expectedU = isStartCap ? -1.0 : 1.0;
+                            const normalDotU = computeGeometryFirstTriangleNormalDotAxis(geometry, quaternion, logicalUAxis);
+                            if ((normalDotU * expectedU) < 0.0) flipGeometryWinding(geometry);
+                        }
+                        if (geometryKind === 'flat_panel_cap') {
+                            const capSide = String(spec?.capSide ?? '').trim().toLowerCase() === 'bottom' ? 'bottom' : 'top';
+                            const expectedUp = capSide === 'bottom' ? -1.0 : 1.0;
+                            const normalDotUp = computeGeometryFirstTriangleNormalDotAxis(geometry, quaternion, up);
+                            if ((normalDotUp * expectedUp) < 0.0) flipGeometryWinding(geometry);
+                        }
+
+                        const centerU = Number(spec?.centerU) || 0.0;
+                        const centerV = Number(spec?.centerV) || 0.0;
+                        const outsetMeters = Math.max(0.0, Number(spec?.outsetMeters ?? spec?.surfaceOffsetMeters) || 0.0);
+                        const placementDepthMeters = Math.max(0.0, Number(built?.placementDepthMeters) || 0.0);
+                        const anchor = specFace === 'right'
+                            ? (rightCornerEdge === 'start' ? wallStart : wallEnd)
+                            : wallCenter;
+
+                        const material = resolveWallDecorationMaterial({
+                            safeState: stateForBay,
+                            layerMaterialSpec,
+                            surfaceSizeMeters: {
+                                x: clamp(
+                                    Number.isFinite(Number(built?.surfaceWidthMeters)) ? Number(built.surfaceWidthMeters) : (Number(spec?.widthMeters) || 1.0),
+                                    0.01,
+                                    256.0
+                                ),
+                                y: clamp(
+                                    Number.isFinite(Number(built?.surfaceHeightMeters)) ? Number(built.surfaceHeightMeters) : (Number(spec?.heightMeters) || 0.2),
+                                    0.01,
+                                    256.0
+                                )
+                            },
+                            geometryKind
+                        });
+                        const mesh = new THREE.Mesh(geometry, material);
+                        mesh.name = `building_wall_decoration_${String(spec?.role ?? 'mesh')}`;
+                        mesh.position.copy(anchor);
+                        mesh.position.addScaledVector(logicalUAxis, centerU);
+                        mesh.position.addScaledVector(up, wallCenterY + centerV);
+                        mesh.position.addScaledVector(nAxis, outsetMeters + placementDepthMeters * 0.5);
+                        mesh.quaternion.copy(quaternion);
+                        mesh.castShadow = true;
+                        mesh.receiveShadow = true;
+                        mesh.userData = mesh.userData ?? {};
+                        mesh.userData.buildingFab2Role = 'wall_decoration';
+                        mesh.userData.decorationKey = decorationKey;
+                        mesh.userData.decorationCompatibilityId = compatibilityId;
+                        mesh.userData.faceId = specFace;
+                        mesh.userData.role = String(spec?.role ?? 'decorator');
+                        mesh.userData.geometryKind = geometryKind || 'unknown';
+                        mesh.userData.layerId = layerId;
+                        mesh.userData.bayRef = bayRef;
+                        if (renderItem.derivedSurface) mesh.userData.derivedSurface = renderItem.derivedSurface;
+                        createdMeshes.push(mesh);
                     }
                 }
             }
@@ -5117,6 +5281,103 @@ function pointOnFacadeFrame({ frame, u, depth }) {
     const x = (Number(f.start?.x) || 0) + (Number(f.t?.x) || 0) * t + (Number(f.n?.x) || 0) * d;
     const z = (Number(f.start?.z) || 0) + (Number(f.t?.z) || 0) * t + (Number(f.n?.z) || 0) * d;
     return { x: qf(x), y: 0, z: qf(z) };
+}
+
+/**
+ * Ordered wall surfaces of each facade face, in plan.
+ *
+ * A face is a run of `bay`/`padding` fronts joined by the `return` walls the
+ * silhouette extrudes wherever two neighbours sit at different depths. Returns
+ * are derived geometry (BUILDING_2_FLOORPLAN_TOPOLOGY_SPEC §5.2), so they carry
+ * no face id of their own; decorations follow them to stay continuous across a
+ * recessed bay (AI 494).
+ *
+ * Wedge strips are skipped as joint partners: their slanted front already
+ * bridges the depth change, so there is no return wall to decorate.
+ *
+ * @param {object} params
+ * @param {Array<object>} params.facadeStrips strips from `computeQuadFacadeSilhouette`
+ * @param {object} params.facadeFrames per-face `{start, t, n, length}` frames
+ * @returns {Record<string, Array<object>> | null}
+ */
+function buildFacadeSurfaceRunsByFaceId({ facadeStrips, facadeFrames }) {
+    const strips = Array.isArray(facadeStrips) ? facadeStrips : [];
+    if (!strips.length || !facadeFrames) return null;
+
+    const byFaceId = {};
+    for (const faceId of ['A', 'B', 'C', 'D']) {
+        const frame = facadeFrames?.[faceId] ?? null;
+        if (!frame) continue;
+        const tx = Number(frame?.t?.x) || 0;
+        const tz = Number(frame?.t?.z) || 0;
+
+        const fronts = [];
+        for (const strip of strips) {
+            if (strip?.faceId !== faceId) continue;
+            const u0 = Number(strip?.u0) || 0;
+            const u1 = Number(strip?.u1) || 0;
+            const frontU0 = Number.isFinite(Number(strip?.frontU0)) ? Number(strip.frontU0) : u0;
+            const frontU1 = Number.isFinite(Number(strip?.frontU1)) ? Number(strip.frontU1) : u1;
+            if (!(frontU1 > frontU0 + EPS)) continue;
+            const depthFallback = Number.isFinite(Number(strip?.depth)) ? Number(strip.depth) : 0;
+            const depth0 = Number.isFinite(Number(strip?.depth0)) ? Number(strip.depth0) : depthFallback;
+            const depth1 = Number.isFinite(Number(strip?.depth1)) ? Number(strip.depth1) : depthFallback;
+            const a = pointOnFacadeFrame({ frame, u: frontU0, depth: depth0 });
+            const b = pointOnFacadeFrame({ frame, u: frontU1, depth: depth1 });
+            fronts.push({
+                kind: 'face',
+                faceId,
+                bayId: (typeof strip?.sourceBayId === 'string' && strip.sourceBayId)
+                    ? strip.sourceBayId
+                    : (typeof strip?.id === 'string' ? strip.id : ''),
+                isBay: strip?.type === 'bay',
+                isWedge: (frontU0 > u0 + EPS) || (frontU1 < u1 - EPS),
+                u0: frontU0,
+                u1: frontU1,
+                depth0,
+                depth1,
+                x0: Number(a.x) || 0,
+                z0: Number(a.z) || 0,
+                x1: Number(b.x) || 0,
+                z1: Number(b.z) || 0,
+                nx: Number(frame?.n?.x) || 0,
+                nz: Number(frame?.n?.z) || 0
+            });
+        }
+        if (!fronts.length) continue;
+
+        const run = [];
+        for (let i = 0; i < fronts.length; i += 1) {
+            const front = fronts[i];
+            if (i > 0) {
+                const prev = fronts[i - 1];
+                const step = front.depth0 - prev.depth1;
+                if (!prev.isWedge && !front.isWedge && Math.abs(step) > 1e-4) {
+                    // The return runs from the previous front's depth to the
+                    // next one's, at the shared u. Deeper-along-+t means the
+                    // return looks back down the tangent.
+                    const sign = step < 0 ? 1.0 : -1.0;
+                    run.push({
+                        kind: 'return',
+                        faceId,
+                        bayId: '',
+                        depth0: prev.depth1,
+                        depth1: front.depth0,
+                        x0: prev.x1,
+                        z0: prev.z1,
+                        x1: front.x0,
+                        z1: front.z0,
+                        nx: tx * sign,
+                        nz: tz * sign
+                    });
+                }
+            }
+            run.push(front);
+        }
+        byFaceId[faceId] = run;
+    }
+
+    return Object.keys(byFaceId).length ? byFaceId : null;
 }
 
 function cornerJoinPointWithDepths(aFrame, aDepth, bFrame, bDepth, corner) {
@@ -6129,6 +6390,7 @@ export function buildBuildingFabricationVisualParts({
 
     const facadePatternTopologyByFaceId = new Map();
     const bayHighlightDataByLayerId = {};
+    const facadeSurfaceRunsByLayerId = {};
     const floorSegmentsByLayerId = new Map();
     const floorLayerById = new Map();
     if (wantsFacadePatterns) {
@@ -6372,6 +6634,7 @@ export function buildBuildingFabricationVisualParts({
             });
             if (layerId && facadeFrames && Array.isArray(facadeStrips) && facadeStrips.length) {
                 const entries = [];
+                const surfaceRuns = buildFacadeSurfaceRunsByFaceId({ facadeStrips, facadeFrames });
                 for (const strip of facadeStrips) {
                     const type = typeof strip?.type === 'string' ? strip.type : '';
                     if (type !== 'bay') continue;
@@ -6412,6 +6675,7 @@ export function buildBuildingFabricationVisualParts({
                     });
                 }
                 if (entries.length) bayHighlightDataByLayerId[layerId] = entries;
+                if (surfaceRuns) facadeSurfaceRunsByLayerId[layerId] = surfaceRuns;
             }
             const winWidth = clamp(winCfg?.width, 0.3, 12.0);
             const winSpacing = clamp(winCfg?.spacing, 0.0, 24.0);
@@ -10314,6 +10578,7 @@ export function buildBuildingFabricationVisualParts({
     const wallDecorationMeshes = buildGameplayWallDecorationMeshes({
         wallDecorations: resolvedWallDecorations,
         bayHighlightDataByLayerId,
+        facadeSurfaceRunsByLayerId,
         floorSegmentsByLayerId,
         floorLayerById,
         facadesByLayerId,

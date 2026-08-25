@@ -1,3 +1,5 @@
+DONE
+
 #Problem
 
 Two issues observed in gameplay on the storefront building (mainstreet_block-style, tan banded stone with recessed entrance):
@@ -35,3 +37,67 @@ Tasks:
 - Do not move to `prompts/archive/` automatically.
 - Completion is not enough to move a prompt; move to `prompts/archive/` only when explicitly requested by the user.
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change)
+
+## Outcome
+
+### Root cause of the corner rotation regression
+
+Not the geometry merge. `buildGameplayWallDecorationMeshes` reversed the
+along-wall axis at a corner-start (`reverseForCornerStart`) without reversing
+the outward normal, so `makeBasis(U, up, N)` became a **reflection**.
+`Quaternion.setFromRotationMatrix` assumes a proper rotation and silently
+returns garbage for reflections — for these axis-aligned facades, the identity.
+The band on the corner bay of faces B/C/D therefore rendered with the world
+basis instead of its own face's: a panel sticking straight out of the wall.
+Face A never showed it because the identity *is* A's basis. The authoring path
+(`BuildingFabrication2Scene`) already renders the flat-cap band family from the
+canonical, un-reversed segment; the gameplay emitter never got that reset.
+
+### Changes
+
+- Add `WallDecoratorPlacement`: one shared placement that keeps the (U, up, N)
+  basis right-handed and mirrors the spec along U instead of reflecting the
+  basis, so a reversed along-wall axis can never collapse the rotation.
+- Use it from both the gameplay generator and the BF2 authoring scene, and
+  render the flat-cap band family from the canonical segment in gameplay,
+  matching authoring — fixes the rotated corner band.
+- Emit per-face wall **surface runs** (bay fronts plus the connector walls the
+  silhouette extrudes at every depth step) alongside the bay highlight data.
+- Bands now turn onto those **connector walls** so the course turns the corner
+  as an L instead of stopping dead. Ownership is by depth: the proud side of the
+  step owns the connector (inset bay → its neighbours' bands wrap in; extruded
+  bay → its own band wraps out), which is the same outmost-depth rule the corner
+  resolution already uses. Neighbouring bay fronts are never claimed — they have
+  a bay id, so they are authorable — which also means a band never runs over the
+  next bay's door or window. Both sides of each joint extend by the band's own
+  offset and drop their end caps, so the corner closes cleanly.
+- Fix `normalizeWallSpec`'s 0.5m minimum decorated-surface width. A connector is
+  only as wide as the recession is deep, so a 0.30m connector was built as a
+  0.50m band and overhung the corner by 0.10m at each end.
+- Add `inheritOnDerivedSurfaces` (default `true`) per decoration: normalized and
+  round-tripped in the BF2 config, exposed as the `Follow recesses` toggle in the
+  decoration Configuration tab.
+- Render wall decorations in BF2 thumbnails (they were skipped entirely), so a
+  band that turns a recess reads the same in the picker as on the building.
+- Showcase scenario takes `configOverrides`, letting a test render a catalog
+  design with its decorations or facades swapped.
+- Document connector-wall inheritance and its ownership rule in
+  `BUILDING_2_FLOORPLAN_TOPOLOGY_SPEC` §5.2/§5.2.1 and the model/UI specs.
+- Tests: `building_wall_decoration_band_surface_alignment` (band panels backed by
+  wall, square to their surface, connector bands perpendicular and no longer than
+  their recession, only the proud side claims a connector, the mirror invariant,
+  the flag on/off) and `building_fabrication2_decoration_follow_recesses_toggle`
+  (GUI round-trip). The orientation tests fail on 7 of 8 cases before the fix.
+- Captures: `tests/artifacts/screens/buildings/ai494_*_{before,after}.png`.
+
+### Known gap
+
+The gameplay decoration path has no opening clipping (the authoring scene's
+`splitWallDecorationSpecByOpeningOccluders` was never ported to it). Restricting
+inheritance to connector walls removes every case this produced, since a
+connector is a reveal and carries no openings; a band can still cross an opening
+on a bay an author targeted explicitly, which no catalog config does today.
+
+The BF2 **live viewport** still renders decorations through the authoring
+emitter, which does not walk connector walls; the flag's effect shows in the
+thumbnails, the showcase and gameplay.

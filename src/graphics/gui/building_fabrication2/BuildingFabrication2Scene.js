@@ -18,6 +18,7 @@ import {
     sanitizeWallDecoratorDebuggerState
 } from '../../../app/buildings/wall_decorators/index.js';
 import { createWallDecoratorGeometryFromSpec as createSharedWallDecoratorGeometryFromSpec } from '../shared/wall_decorator/WallDecoratorGeometryFactory.js';
+import { resolveWallDecoratorSurfacePlacement } from '../shared/wall_decorator/WallDecoratorPlacement.js';
 import {
     areWallDecoratorExplodedEntriesCorniceRoundedOnly,
     areWallDecoratorExplodedEntriesCurvedRingOnly,
@@ -2348,17 +2349,12 @@ export class BuildingFabrication2Scene {
                                         openingOccluders,
                                         wallCenterY
                                     });
-                                for (const clippedSpec of clippedSpecs) {
-                                    const built = createWallDecorationGeometryFromSpec(clippedSpec);
-                                    const geometry = built?.geometry?.isBufferGeometry ? built.geometry : null;
-                                    if (!geometry) continue;
-
-                                    const specFace = String(clippedSpec?.faceId ?? '').trim().toLowerCase() === 'right' ? 'right' : 'front';
-                                    const geometryKind = String(built?.geometryKind ?? clippedSpec?.geometryKind ?? '').trim().toLowerCase();
-                                    const rightCornerEdge = String(clippedSpec?.__bf2CornerEdge ?? '').trim().toLowerCase() === 'start'
+                                for (const clippedSpecRaw of clippedSpecs) {
+                                    const specFace = String(clippedSpecRaw?.faceId ?? '').trim().toLowerCase() === 'right' ? 'right' : 'front';
+                                    const rightCornerEdge = String(clippedSpecRaw?.__bf2CornerEdge ?? '').trim().toLowerCase() === 'start'
                                         ? 'start'
                                         : 'end';
-                                    const rightCornerStyle = String(clippedSpec?.__bf2CornerStyle ?? '').trim().toLowerCase() === 'interior'
+                                    const rightCornerStyle = String(clippedSpecRaw?.__bf2CornerStyle ?? '').trim().toLowerCase() === 'interior'
                                         ? 'interior'
                                         : (isInteriorCorner ? 'interior' : 'exterior');
 
@@ -2370,35 +2366,23 @@ export class BuildingFabrication2Scene {
                                         ? rightNAxisBase.clone().multiplyScalar(-1.0)
                                         : rightNAxisBase;
 
-                                    const uAxis = specFace === 'right' ? rightUAxis : frontUAxis;
-                                    const nAxis = specFace === 'right' ? rightNAxis : frontNAxis;
-                                    if (uAxis.lengthSq() <= EPS || nAxis.lengthSq() <= EPS) {
-                                        geometry.dispose?.();
-                                        continue;
-                                    }
-                                    uAxis.normalize();
-                                    nAxis.normalize();
+                                    // A reversed segment asks for a U axis that would
+                                    // make (U, up, N) a reflection; the shared
+                                    // placement mirrors the spec instead so the
+                                    // rotation stays proper (AI 494).
+                                    const placement = resolveWallDecoratorSurfacePlacement({
+                                        spec: clippedSpecRaw,
+                                        uAxis: specFace === 'right' ? rightUAxis : frontUAxis,
+                                        nAxis: specFace === 'right' ? rightNAxis : frontNAxis,
+                                        up
+                                    });
+                                    if (!placement) continue;
+                                    const { quaternion, uAxis, nAxis, spec: clippedSpec } = placement;
 
-                                    if (Math.abs(uAxis.dot(nAxis)) > 0.999) {
-                                        geometry.dispose?.();
-                                        continue;
-                                    }
-
-                                    const xAxis = uAxis;
-                                    const yAxis = up.clone();
-                                    const zAxis = nAxis;
-                                    const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
-                                    const quaternion = new THREE.Quaternion().setFromRotationMatrix(basis);
-                                    const yawDegrees = clamp(
-                                        Number.isFinite(Number(clippedSpec?.yawDegrees)) ? Number(clippedSpec.yawDegrees) : 0.0,
-                                        -180.0,
-                                        180.0
-                                    );
-                                    const yawRadians = yawDegrees * Math.PI / 180.0;
-                                    if (Math.abs(yawRadians) > 1e-8) {
-                                        const yaw = new THREE.Quaternion().setFromAxisAngle(up, yawRadians);
-                                        quaternion.multiply(yaw);
-                                    }
+                                    const built = createWallDecorationGeometryFromSpec(clippedSpec);
+                                    const geometry = built?.geometry?.isBufferGeometry ? built.geometry : null;
+                                    if (!geometry) continue;
+                                    const geometryKind = String(built?.geometryKind ?? clippedSpec?.geometryKind ?? '').trim().toLowerCase();
 
                                     const centerU = Number(clippedSpec?.centerU) || 0.0;
                                     const centerV = Number(clippedSpec?.centerV) || 0.0;

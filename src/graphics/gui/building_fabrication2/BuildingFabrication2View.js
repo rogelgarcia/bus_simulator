@@ -1001,6 +1001,9 @@ export class BuildingFabrication2View {
         this.ui.onSetDecorationEntrySpanField = (setId, decorationId, field, value, options = null) => {
             this._setDecorationEntrySpanField(setId, decorationId, field, value, options);
         };
+        this.ui.onSetDecorationEntryInheritOnDerivedSurfaces = (setId, decorationId, enabled) => {
+            this._setDecorationEntryInheritOnDerivedSurfaces(setId, decorationId, enabled);
+        };
         this.ui.onSetDecorationEntryType = (setId, decorationId, decoratorId) => {
             this._setDecorationEntryType(setId, decorationId, decoratorId);
         };
@@ -1173,6 +1176,7 @@ export class BuildingFabrication2View {
         this.ui.onAddDecorationEntry = null;
         this.ui.onDeleteDecorationEntry = null;
         this.ui.onSetDecorationEntrySpanField = null;
+        this.ui.onSetDecorationEntryInheritOnDerivedSurfaces = null;
         this.ui.onSetDecorationEntryType = null;
         this.ui.onSetDecorationEntryPlacementField = null;
         this.ui.onApplyDecorationEntryPresetGroup = null;
@@ -1681,6 +1685,10 @@ export class BuildingFabrication2View {
                         start: Math.min(startU, endU),
                         end: Math.max(startU, endU)
                     },
+                    // The connector walls a bay recession generates inherit the
+                    // decoration by default, matching the SHOULD in
+                    // BUILDING_2_FLOORPLAN_TOPOLOGY_SPEC §5.2.
+                    inheritOnDerivedSurfaces: rawDecoration.inheritOnDerivedSurfaces !== false,
                     state,
                     ...(rawDecoration.autoCorner && typeof rawDecoration.autoCorner === 'object'
                         ? { autoCorner: deepClone(rawDecoration.autoCorner) }
@@ -2498,6 +2506,15 @@ export class BuildingFabrication2View {
         }
         const live = options?.live === true;
         this._applyDecorationChange({ syncUi: !live });
+    }
+
+    _setDecorationEntryInheritOnDerivedSurfaces(setId, decorationId, enabled) {
+        const ctx = this._findDecorationEntry(setId, decorationId);
+        if (!ctx.decoration) return;
+        const next = enabled !== false;
+        if ((ctx.decoration.inheritOnDerivedSurfaces !== false) === next) return;
+        ctx.decoration.inheritOnDerivedSurfaces = next;
+        this._applyDecorationChange();
     }
 
     _setDecorationEntryType(setId, decorationId, decoratorId) {

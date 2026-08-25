@@ -335,10 +335,16 @@ function normalizeTiling(value, fallback) {
     };
 }
 
+// A decorated surface can legitimately be much narrower than a bay: the return
+// walls a bay recession generates are only as wide as the recession is deep
+// (AI 494). Clamping those up to a half-metre built the band for a wall that
+// isn't there, so it overhung the corner instead of turning it.
+const WALL_SPEC_MIN_WIDTH_METERS = 0.05;
+
 function normalizeWallSpec(value) {
     const src = value && typeof value === 'object' ? value : null;
     return {
-        widthMeters: clamp(src?.widthMeters ?? src?.width, 0.5, 128.0, 10.0),
+        widthMeters: clamp(src?.widthMeters ?? src?.width, WALL_SPEC_MIN_WIDTH_METERS, 128.0, 10.0),
         heightMeters: clamp(src?.heightMeters ?? src?.height, 0.5, 128.0, 3.5),
         depthMeters: clamp(src?.depthMeters ?? src?.depth, 0.05, 32.0, 0.30)
     };

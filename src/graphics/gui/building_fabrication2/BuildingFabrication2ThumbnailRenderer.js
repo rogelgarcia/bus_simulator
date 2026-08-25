@@ -198,6 +198,9 @@ export class BuildingFabrication2ThumbnailRenderer {
             windowVisuals,
             windowVisualsIsOverride,
             facades: cfg?.facades ?? null,
+            // Thumbnails render decorations too, so a band that follows a
+            // recess reads the same in the picker as on the building.
+            wallDecorations: cfg?.wallDecorations ?? null,
             attachments: cfg?.attachments ?? null,
             cornerTreatment: cfg?.cornerTreatment ?? null,
             materialSlots: cfg?.materialSlots ?? null,
@@ -303,6 +306,9 @@ export class BuildingFabrication2ThumbnailRenderer {
             windowVisuals,
             windowVisualsIsOverride,
             facades: cfg?.facades ?? null,
+            // Thumbnails render decorations too, so a band that follows a
+            // recess reads the same in the picker as on the building.
+            wallDecorations: cfg?.wallDecorations ?? null,
             attachments: cfg?.attachments ?? null,
             cornerTreatment: cfg?.cornerTreatment ?? null,
             materialSlots: cfg?.materialSlots ?? null,

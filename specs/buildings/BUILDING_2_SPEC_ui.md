@@ -198,7 +198,7 @@ When `Decoration` mode is active:
   - `Placement`,
   - `Configuration` (preset groups + raw properties),
   - `Material`.
-- Placement controls must include along-wall range positioning (`Start U`, `End U` in `[0..1]`).
+- Placement controls must include along-wall range positioning (`Start U`, `End U` in `[0..1]`) and a `Follow recesses` On/Off toggle for `inheritOnDerivedSurfaces` (default `On`).
 
 When `Building` mode is active:
 - existing layer/face/bay workflow remains unchanged.

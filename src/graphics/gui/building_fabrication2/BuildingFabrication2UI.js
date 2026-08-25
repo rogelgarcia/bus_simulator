@@ -963,6 +963,7 @@ export class BuildingFabrication2UI {
         this.onAddDecorationEntry = null;
         this.onDeleteDecorationEntry = null;
         this.onSetDecorationEntrySpanField = null;
+        this.onSetDecorationEntryInheritOnDerivedSurfaces = null;
         this.onSetDecorationEntryType = null;
         this.onSetDecorationEntryPlacementField = null;
         this.onApplyDecorationEntryPresetGroup = null;
@@ -2959,6 +2960,13 @@ export class BuildingFabrication2UI {
                 disabled: !allowEdit,
                 onChange: (next, options) => this.onSetDecorationEntrySpanField?.(setId, entryId, 'end', next, options)
             });
+            appendChoiceRow(
+                'Follow recesses',
+                entry.inheritOnDerivedSurfaces === false ? 'off' : 'on',
+                [{ id: 'on', label: 'On' }, { id: 'off', label: 'Off' }],
+                (next) => this.onSetDecorationEntryInheritOnDerivedSurfaces?.(setId, entryId, next === 'on'),
+                { disabled: !allowEdit }
+            );
 
             if (presetGroups.length) {
                 const presetTitle = document.createElement('div');

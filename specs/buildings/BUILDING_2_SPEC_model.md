@@ -111,3 +111,4 @@ Concrete schema definitions belong in dedicated specs:
 - Corner style rules:
   - adjacent-face continuity uses `exterior` style;
   - same-face inset/intrusion continuity uses `interior` style when an inset depth participates in the edge transition.
+- `wallDecorations.sets[*].decorations[*].inheritOnDerivedSurfaces` (boolean, default `true`) controls whether a band decoration turns onto the connector walls a bay recession generates. Ownership is by depth (the proud side of the step owns the connector) and a neighbouring bay front is never claimed. It normalizes and round-trips like the rest of the decoration entry; see `BUILDING_2_FLOORPLAN_TOPOLOGY_SPEC` §5.2.1 for the behaviour.

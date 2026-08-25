@@ -115,6 +115,15 @@ export const scenarioBuildingShowcase = {
             const value = config[key];
             if (value !== undefined && value !== null) entry[key] = value;
         }
+        // Lets a test render the catalog design with one part swapped out (a
+        // facade, a decoration set) without adding a config to the catalog.
+        const configOverrides = options?.configOverrides && typeof options.configOverrides === 'object'
+            ? options.configOverrides
+            : null;
+        for (const key of CONFIG_OVERRIDE_KEYS) {
+            const value = configOverrides?.[key];
+            if (value !== undefined && value !== null) entry[key] = value;
+        }
         if (Array.isArray(config.footprintLoops) && config.footprintLoops.length) {
             entry.footprintLoops = config.footprintLoops.map((loop) => loop.map((point) => ({
                 x: (Number(point?.x) || 0) + centroid.x,

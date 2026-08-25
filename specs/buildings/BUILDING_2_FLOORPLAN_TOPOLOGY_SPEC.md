@@ -82,8 +82,27 @@ These surfaces:
 - MUST be treated as **derived geometry**, not new logical faces.
 - MUST NOT create new face ids or change face topology.
 - SHOULD inherit materials/depth defaults from their originating face/bay unless explicitly overridden by future “return treatment” authoring.
+- SHOULD inherit **band/belt wall decorations** from their originating face/bay: a band that reaches a bay edge turns onto the connector wall at that edge, so the course turns the corner as an L instead of stopping dead.
 
 Rationale: allowing facade features to create “fake faces” couples facade authoring to topology and makes face ids unstable under routine edits (e.g., toggling a wedge angle). It also complicates corner ownership, repeat solving, belt/roof alignment, and cross-layer continuity.
+
+#### 5.2.1 Decoration inheritance on connector walls
+
+Inheritance exists **because derived surfaces have no authoring identity**: a connector wall carries no bay id, so no decoration set can ever target it. It therefore inherits from a neighbour. A neighbouring bay front *does* have a bay id, so it is authorable and MUST NOT be claimed by inheritance — a decoration never spills onto the next bay, and never over that bay's doors or windows.
+
+Ownership of a connector wall is by depth:
+
+- The **proud** side of the depth step owns the connector, because the connector is the side wall of that bay's own mass. This is the same outmost-depth ownership used for face-boundary corner resolution (`BUILDING_2_SPEC_model` §6).
+- Inset bay B between A and C: both connectors are owned by A and C respectively.
+- Extruded bay B between A and C: both connectors are owned by B.
+- Two bays can never claim the same connector, because equal depths generate no connector at all.
+
+Each wall decoration carries `inheritOnDerivedSurfaces: boolean` (default `true`, matching the SHOULD above). Set it to `false` to stop the decoration at the bay edge instead.
+
+- The flag only affects **band-shaped** decorators — those whose face specs are a flat course plus its caps (`simple_skirt`, `ribbon`, `angled_support_profile`). A projecting awning or a dentil cornice has no meaningful reading on a 0.3m return, so the flag is a no-op for them.
+- A connector segment inherits the **originating bay's** material selection, so `match_wall` resolves the same on the connector as on the bay it came from.
+- At the joint, both sides extend by the band's own surface offset and drop their end caps, so the corner closes as an L instead of leaving a gap or overlapping visibly. A connector band is built to the connector's true width — decorators MUST NOT clamp a decorated surface up to a minimum width, or the band overhangs the corner it is supposed to turn.
+- A partial `span` that stops short of a bay edge produces no joint on that side, and therefore no continuation.
 
 ---
 
