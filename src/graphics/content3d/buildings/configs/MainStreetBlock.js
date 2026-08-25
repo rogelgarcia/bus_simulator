@@ -792,7 +792,7 @@ export const MAIN_STREET_BLOCK_BUILDING_CONFIG = Object.freeze({
                                         },
                                         "visual": {
                                             "disableShades": true,
-                                            "interior": "shop"
+                                            "interior": "none"
                                         },
                                         "top": {
                                             "enabled": true,
@@ -862,7 +862,7 @@ export const MAIN_STREET_BLOCK_BUILDING_CONFIG = Object.freeze({
                                         },
                                         "visual": {
                                             "disableShades": true,
-                                            "interior": "shop"
+                                            "interior": "none"
                                         },
                                         "top": {
                                             "enabled": true,
@@ -967,7 +967,7 @@ export const MAIN_STREET_BLOCK_BUILDING_CONFIG = Object.freeze({
                                         },
                                         "visual": {
                                             "disableShades": true,
-                                            "interior": "shop"
+                                            "interior": "none"
                                         },
                                         "top": {
                                             "enabled": true,
@@ -1037,7 +1037,7 @@ export const MAIN_STREET_BLOCK_BUILDING_CONFIG = Object.freeze({
                                         },
                                         "visual": {
                                             "disableShades": true,
-                                            "interior": "shop"
+                                            "interior": "none"
                                         },
                                         "top": {
                                             "enabled": true,

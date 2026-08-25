@@ -89,8 +89,11 @@ const FLOOR_INTERIOR_SHELL_INSET_METERS = 0.01;
 // Keeps interior floors/ceilings off the coplanar layer cap slabs (z-fighting).
 const FLOOR_INTERIOR_SURFACE_NUDGE_METERS = 0.01;
 const WALL_DECORATION_DEFAULT_WALL_DEPTH_M = 0.30;
-// How much shell is left around an opening cut into the interior shell (AI 495).
-const INTERIOR_SHELL_CUT_MARGIN_METERS = 0.12;
+// The room's lining stops a little short of the structural opening — which is
+// what a reveal is. It also keeps the shell opaque where a window mesh does not
+// quite fill its wall cutout, a gap grazing sightlines would otherwise slip
+// through now that every opening is cut (AI 495).
+const INTERIOR_SHELL_REVEAL_METERS = 0.08;
 const FACE_NORMAL_BY_ID = Object.freeze({
     A: Object.freeze({ x: 0, y: 0, z: 1 }),
     B: Object.freeze({ x: 1, y: 0, z: 0 }),
@@ -5390,18 +5393,20 @@ function buildFacadeSurfaceRunsByFaceId({ facadeStrips, facadeFrames }) {
  * match. Sliding it along the face normal to the shell's depth keeps the same
  * opening, in the same place along the wall (AI 495).
  *
- * Returns `null` for an opening with nothing behind its glass: the shell is the
- * only thing closing that sightline, so cutting it would reopen the view
- * straight through the building.
+ * Every opening is cut, whether or not it has a parallax panel behind its glass.
+ * A window is a hole: looking through one you see the room, and if the far wall
+ * has an opening on the same line you see out the other side. What must never
+ * happen is seeing *through solid wall*, and that is the shell's own opacity to
+ * enforce, not something to fake by leaving holes uncut.
  *
- * @param {object} cutout facade cutout (`{faceId, x, y, z, width, height, backed}`)
+ * @param {object} cutout facade cutout (`{faceId, x, y, z, width, height}`)
  * @param {object} params
  * @param {object} params.frames per-face `{start, t, n}` frames
  * @param {(faceId: string) => number} params.shellDepthOf shell depth per face
  */
 function projectFacadeCutoutOntoShell(cutout, { frames, shellDepthOf }) {
     const faceId = typeof cutout?.faceId === 'string' ? cutout.faceId : '';
-    if (!isFaceId(faceId) || !cutout?.backed) return null;
+    if (!isFaceId(faceId)) return null;
     const frame = frames?.[faceId] ?? null;
     if (!frame) return null;
     const sx = Number(frame.start?.x) || 0;
@@ -5410,12 +5415,9 @@ function projectFacadeCutoutOntoShell(cutout, { frames, shellDepthOf }) {
     const tz = Number(frame.t?.z) || 0;
     const u = (Number(cutout.x) - sx) * tx + (Number(cutout.z) - sz) * tz;
     const point = pointOnFacadeFrame({ frame, u, depth: shellDepthOf(faceId) });
-    // Leave a lip of shell around the hole. The parallax panel covers the whole
-    // opening head-on, but a grazing sightline can slip past its edge; the lip
-    // sits behind the panel (so it is never seen) and catches those rays.
-    const width = Math.max(0.05, (Number(cutout.width) || 0) - INTERIOR_SHELL_CUT_MARGIN_METERS * 2);
-    const height = Math.max(0.05, (Number(cutout.height) || 0) - INTERIOR_SHELL_CUT_MARGIN_METERS * 2);
-    // The reveal belongs to the facade's thickness, not to the shell.
+    const width = Math.max(0.05, (Number(cutout.width) || 0) - INTERIOR_SHELL_REVEAL_METERS * 2);
+    const height = Math.max(0.05, (Number(cutout.height) || 0) - INTERIOR_SHELL_REVEAL_METERS * 2);
+    // The facade owns the reveal faces; the shell just needs the hole.
     return { ...cutout, x: point.x, z: point.z, width, height, revealDepth: 0 };
 }
 
@@ -7778,18 +7780,17 @@ export function buildBuildingFabricationVisualParts({
                             ? facadeDepthMinsByFaceId
                             : null;
 
-                        // AI 495: a floor whose glazing has nothing behind it reads
-                        // as a hollow glass tube — the facade wall's inner side is
-                        // back-facing, so the sightline leaves through the far
-                        // glazing. The interior shell is the occluder that already
-                        // exists, so turn it on rather than inventing a second one.
+                        // AI 495: an opening with no parallax panel behind its
+                        // glass is one you can see into, so there has to be an
+                        // inside to see. Without a shell the floor is a hollow box
+                        // and the view runs straight out the far side.
                         const unbackedOpenings = Array.isArray(facadeWallCutouts)
                             ? facadeWallCutouts.filter((cut) => !cut?.backed)
                             : [];
                         const wantsOcclusionShell = !isFloorLayerInteriorEnabled(layer) && unbackedOpenings.length > 0;
                         if (wantsOcclusionShell) {
                             const faces = Array.from(new Set(unbackedOpenings.map((cut) => cut.faceId))).sort().join('/');
-                            warnings.push(`Layer ${layerId || layerIndex}: ${unbackedOpenings.length} opening(s) on face(s) ${faces} have no interior behind the glass and the layer has interior disabled; the interior shell was enabled so the floor is not see-through.`);
+                            warnings.push(`Layer ${layerId || layerIndex}: ${unbackedOpenings.length} opening(s) on face(s) ${faces} have no parallax interior behind the glass and the layer has interior disabled; the interior shell was enabled so there is a room to see.`);
                         }
 
                         if ((isFloorLayerInteriorEnabled(layer) || wantsOcclusionShell) && frames && depthMins && floorSegments.length) {
@@ -7860,6 +7861,13 @@ export function buildBuildingFabricationVisualParts({
                                         materialSpec: FLOOR_INTERIOR_MATERIAL_SPEC,
                                         tileMeters: FLOOR_INTERIOR_TILE_METERS
                                     });
+                                    // AI 495: the shell is wound to face the room, so a
+                                    // single-sided material makes it vanish when seen
+                                    // from the other side — a sightline through a glazed
+                                    // opening then leaves the building through what
+                                    // should be solid wall. A wall is opaque from both
+                                    // sides.
+                                    mat.side = THREE.DoubleSide;
                                     return mat;
                                 };
 

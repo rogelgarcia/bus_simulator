@@ -792,7 +792,7 @@ export const GOV_CENTER_2_BUILDING_CONFIG = Object.freeze({
                                         },
                                         "visual": {
                                             "disableShades": true,
-                                            "interior": "office"
+                                            "interior": "none"
                                         },
                                         "top": {
                                             "enabled": false,
@@ -858,7 +858,7 @@ export const GOV_CENTER_2_BUILDING_CONFIG = Object.freeze({
                                         },
                                         "visual": {
                                             "disableShades": true,
-                                            "interior": "office"
+                                            "interior": "none"
                                         },
                                         "top": {
                                             "enabled": false,
@@ -924,7 +924,7 @@ export const GOV_CENTER_2_BUILDING_CONFIG = Object.freeze({
                                         },
                                         "visual": {
                                             "disableShades": true,
-                                            "interior": "office"
+                                            "interior": "none"
                                         },
                                         "top": {
                                             "enabled": false,
@@ -994,7 +994,7 @@ export const GOV_CENTER_2_BUILDING_CONFIG = Object.freeze({
                                         },
                                         "visual": {
                                             "disableShades": true,
-                                            "interior": "office"
+                                            "interior": "none"
                                         },
                                         "top": {
                                             "enabled": false,
@@ -1116,7 +1116,7 @@ export const GOV_CENTER_2_BUILDING_CONFIG = Object.freeze({
                                         },
                                         "visual": {
                                             "disableShades": true,
-                                            "interior": "office"
+                                            "interior": "none"
                                         },
                                         "top": {
                                             "enabled": false,
@@ -1182,7 +1182,7 @@ export const GOV_CENTER_2_BUILDING_CONFIG = Object.freeze({
                                         },
                                         "visual": {
                                             "disableShades": true,
-                                            "interior": "office"
+                                            "interior": "none"
                                         },
                                         "top": {
                                             "enabled": false,
@@ -1306,7 +1306,7 @@ export const GOV_CENTER_2_BUILDING_CONFIG = Object.freeze({
                                         },
                                         "visual": {
                                             "disableShades": true,
-                                            "interior": "office"
+                                            "interior": "none"
                                         },
                                         "top": {
                                             "enabled": false,
@@ -1368,7 +1368,7 @@ export const GOV_CENTER_2_BUILDING_CONFIG = Object.freeze({
                                         },
                                         "visual": {
                                             "disableShades": true,
-                                            "interior": "office"
+                                            "interior": "none"
                                         },
                                         "top": {
                                             "enabled": false,

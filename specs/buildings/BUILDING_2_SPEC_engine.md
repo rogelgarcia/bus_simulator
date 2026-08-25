@@ -194,13 +194,14 @@ Compatibility note (transitional):
 
 ### 6.2.1 Behind the glass (occlusion contract)
 
-Every glazed opening MUST have something plausible behind it, and a building MUST NOT read as a hollow glass tube.
+The rule is about **walls**, not about sightlines. A viewer may see *into* a building through a glazed opening, and straight *through* it when openings on opposite walls line up — that is a hole, and holes are see-through. What must never happen is seeing through **solid wall**.
 
 - A glazed opening is **backed** when it carries a parallax interior panel (`visual.interior` resolves to anything other than `none`). A window shade does NOT back an opening: its shader discards every fragment once the blind is raised, which is exactly what `visual.disableShades` produces.
-- A floor layer carrying **unbacked** openings MUST emit the interior shell even when `interior.enabled` is false, and the engine MUST warn, naming the layer and the faces. Without it the facade's inner side is back-facing, so a street-level sightline passes through the building and leaves by the far glazing.
-- The interior shell MUST be cut at every **backed** opening, so the room's wall is not pressed against the glass — from inside the room the opening shows its parallax interior rather than a blank pane. Unbacked openings MUST NOT be cut: the shell is the only thing closing that sightline.
-- A shell cut MUST leave a small lip of shell around the opening (~`0.12m` per side). A parallax panel covers its opening head-on but a grazing sightline can slip past its edge; the lip sits behind the panel, so it is never seen, and catches those rays.
-- Openings that are deliberately obscured (frosted bathroom sashes) MAY stay unbacked: shell behind their glass reads correctly.
+- An **unbacked** opening is one you can see into, so there has to be an inside to see. A floor layer carrying unbacked openings MUST emit the interior shell even when `interior.enabled` is false, and the engine MUST warn, naming the layer and the faces. Without a shell the floor is a hollow box and the view runs straight out the far side.
+- Interior shell surfaces MUST be opaque from **both** sides. The shell is wound to face the room, so a single-sided material makes it vanish when seen from the other side: a sightline entering an opening then leaves the building through what should be solid wall, and the room reads as empty space. This is the defect the shell most often had.
+- The interior shell MUST be cut at **every** opening, backed or not. A window is a hole: from inside the room it shows the outside, and from the street it shows the room. Leaving unbacked openings uncut to block sightlines is not a substitute for an opaque shell — it makes windows read as blank panes.
+- A shell cut SHOULD stop a little short of the structural opening (~`0.08m` per side), which is what a reveal is. It also keeps the shell opaque where a window mesh does not quite fill its wall cutout, a gap grazing sightlines would otherwise slip through.
+- Openings that are deliberately obscured (frosted bathroom sashes) MAY stay unbacked: the room behind their glass reads correctly.
 
 ### 6.3 BF2 support slab (view helper)
 
