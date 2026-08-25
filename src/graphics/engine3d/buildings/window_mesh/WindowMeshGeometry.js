@@ -3,7 +3,7 @@
 // @ts-check
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { sanitizeWindowMeshSettings } from '../../../../app/buildings/window_mesh/WindowMeshSettings.js';
 import { resolveParallaxPanelOverscanMeters } from '../../../../app/buildings/window_mesh/ParallaxPanelOverscan.js';
 
@@ -188,7 +188,8 @@ function buildRectLeafFrameGeometry({
     rightFrameWidth,
     topFrameWidth,
     bottomFrameWidth,
-    centerX = 0
+    centerX = 0,
+    centerY = 0
 }) {
     const profile = computeRectLeafProfile({
         width,
@@ -205,24 +206,24 @@ function buildRectLeafFrameGeometry({
 
     if (profile.left > EPS) {
         const left = new THREE.BoxGeometry(profile.left, profile.height, d);
-        left.translate(centerX - profile.width * 0.5 + profile.left * 0.5, 0, d * 0.5);
+        left.translate(centerX - profile.width * 0.5 + profile.left * 0.5, centerY, d * 0.5);
         parts.push(left);
     }
     if (profile.right > EPS) {
         const right = new THREE.BoxGeometry(profile.right, profile.height, d);
-        right.translate(centerX + profile.width * 0.5 - profile.right * 0.5, 0, d * 0.5);
+        right.translate(centerX + profile.width * 0.5 - profile.right * 0.5, centerY, d * 0.5);
         parts.push(right);
     }
 
     const topSpan = Math.max(EPS, profile.width - profile.left - profile.right);
     if (profile.top > EPS) {
         const top = new THREE.BoxGeometry(topSpan, profile.top, d);
-        top.translate(centerX + profile.centerX, profile.height * 0.5 - profile.top * 0.5, d * 0.5);
+        top.translate(centerX + profile.centerX, centerY + profile.height * 0.5 - profile.top * 0.5, d * 0.5);
         parts.push(top);
     }
     if (profile.bottom > EPS) {
         const bottom = new THREE.BoxGeometry(topSpan, profile.bottom, d);
-        bottom.translate(centerX + profile.centerX, -profile.height * 0.5 + profile.bottom * 0.5, d * 0.5);
+        bottom.translate(centerX + profile.centerX, centerY - profile.height * 0.5 + profile.bottom * 0.5, d * 0.5);
         parts.push(bottom);
     }
 
@@ -241,7 +242,8 @@ function buildRectLeafOpeningGeometry({
     rightFrameWidth,
     topFrameWidth,
     bottomFrameWidth,
-    centerX = 0
+    centerX = 0,
+    centerY = 0
 }) {
     const profile = computeRectLeafProfile({
         width,
@@ -255,8 +257,8 @@ function buildRectLeafOpeningGeometry({
     buildRectOutline(shape, {
         x0: centerX + profile.centerX - profile.innerWidth * 0.5,
         x1: centerX + profile.centerX + profile.innerWidth * 0.5,
-        y0: profile.centerY - profile.innerHeight * 0.5,
-        y1: profile.centerY + profile.innerHeight * 0.5,
+        y0: centerY + profile.centerY - profile.innerHeight * 0.5,
+        y1: centerY + profile.centerY + profile.innerHeight * 0.5,
         reverse: false
     });
     const geo = new THREE.ShapeGeometry(shape, 1);
@@ -275,7 +277,8 @@ function buildRectLeafMuntinsGeometry({
     topFrameWidth,
     bottomFrameWidth,
     muntins,
-    centerX = 0
+    centerX = 0,
+    centerY = 0
 }) {
     const profile = computeRectLeafProfile({
         width,
@@ -300,8 +303,8 @@ function buildRectLeafMuntinsGeometry({
     const centerZ = frontZ - md * 0.5;
     const x0 = centerX + profile.centerX - profile.innerWidth * 0.5;
     const x1 = centerX + profile.centerX + profile.innerWidth * 0.5;
-    const y0 = profile.centerY - profile.innerHeight * 0.5;
-    const y1 = profile.centerY + profile.innerHeight * 0.5;
+    const y0 = centerY + profile.centerY - profile.innerHeight * 0.5;
+    const y1 = centerY + profile.centerY + profile.innerHeight * 0.5;
 
     /** @type {THREE.BufferGeometry[]} */
     const parts = [];
@@ -311,7 +314,7 @@ function buildRectLeafMuntinsGeometry({
         if (x <= x0 + mwV * 0.5 + EPS || x >= x1 - mwV * 0.5 - EPS) continue;
         const heightMeters = Math.max(EPS, profile.innerHeight);
         const geo = new THREE.BoxGeometry(mwV, heightMeters, md);
-        geo.translate(x, profile.centerY, centerZ);
+        geo.translate(x, centerY + profile.centerY, centerZ);
         parts.push(geo);
     }
 
@@ -332,6 +335,144 @@ function buildRectLeafMuntinsGeometry({
     return merged;
 }
 
+/**
+ * Where a double door's leaves stop, and what is left above them.
+ *
+ * An arched door is not a rectangular door in an arched hole: the leaves are
+ * rectangular and terminate at the springing line, and the lunette above is a
+ * glazed fanlight in its own frame (AI 497). Without this the leaves ran the
+ * full height of the opening and the glass continued straight up into the arch.
+ *
+ * `archRise` matches the outer arch the frame and wall cut are built from, so
+ * the springing line is the same line for every layer.
+ *
+ * @param {object} s sanitized window mesh settings
+ */
+function computeDoubleDoorArchProfile(s) {
+    const h = s.height;
+    const yTop = h * 0.5;
+    const archRise = s.arch.enabled ? (s.arch.heightRatio * s.width) : 0.0;
+    const { horizontal: frameHorizontalWidth } = getFrameWidths(s.frame);
+    // Leave at least a rail's worth of leaf below the springing line.
+    const maxRise = Math.max(0, h - frameHorizontalWidth * 3);
+    const rise = Math.min(archRise, maxRise);
+    if (!(rise > EPS)) {
+        return {
+            wantsArch: false,
+            archRise: 0.0,
+            yTop,
+            yChord: yTop,
+            leafHeight: h,
+            leafCenterY: 0.0,
+            leafTopFrameWidth: frameHorizontalWidth
+        };
+    }
+    const yChord = yTop - rise;
+    // With `meetsRectangleFrame` the transom bar spans both leaves and the gap
+    // between them, so it *is* their top rail: giving the leaves one as well
+    // would put two rails in the same place and z-fight.
+    const hasTransom = !!s.arch.meetsRectangleFrame;
+    const leafTopY = hasTransom ? (yChord - frameHorizontalWidth) : yChord;
+    return {
+        wantsArch: true,
+        archRise: rise,
+        yTop,
+        yChord,
+        hasTransom,
+        leafHeight: Math.max(EPS, leafTopY + yTop),
+        leafCenterY: (leafTopY - yTop) * 0.5,
+        leafTopFrameWidth: hasTransom ? 0 : frameHorizontalWidth
+    };
+}
+
+/**
+ * The arched head above a double door's leaves: a frame ring when
+ * `topPieceMode` is `frame`, so the lunette reads as a framed fanlight.
+ */
+function buildDoorFanlightFrameGeometry({ settings, curveSegments }) {
+    const s = sanitizeWindowMeshSettings(settings);
+    if (!isDoorDoubleStyle(s)) return null;
+    const arch = computeDoubleDoorArchProfile(s);
+    if (!arch.wantsArch) return null;
+
+    const { vertical: frameVerticalWidth, horizontal: frameHorizontalWidth } = getFrameWidths(s.frame);
+    const depth = s.frame.depth;
+
+    // The arc is vertical where it springs, so a ring that starts exactly at the
+    // springing line pinches to nothing there and leaves a notch at each corner.
+    // Carrying it down past the transom gives the jambs something to meet.
+    const skirt = arch.hasTransom ? frameHorizontalWidth : 0;
+    const yBase = arch.yChord - skirt;
+
+    const outer = new THREE.Shape();
+    buildWindowOutline(outer, {
+        centerY: yBase + (arch.archRise + skirt) * 0.5,
+        width: s.width,
+        height: arch.archRise + skirt,
+        wantsArch: true,
+        archRise: arch.archRise,
+        curveSegments,
+        reverse: false
+    });
+
+    const innerWidth = Math.max(EPS, s.width - frameVerticalWidth * 2);
+    const innerRise = Math.max(0, arch.archRise - frameHorizontalWidth);
+    if (innerRise > EPS) {
+        // The hole carries the same skirt, so the ring stays a constant-width
+        // frame and the transom bar has that band to itself.
+        const hole = new THREE.Path();
+        buildWindowOutline(hole, {
+            centerY: yBase + (innerRise + skirt) * 0.5,
+            width: innerWidth,
+            height: innerRise + skirt,
+            wantsArch: true,
+            archRise: innerRise,
+            curveSegments,
+            reverse: true
+        });
+        outer.holes.push(hole);
+    }
+
+    const geo = new THREE.ExtrudeGeometry(outer, {
+        depth: Math.max(EPS, depth),
+        bevelEnabled: false,
+        curveSegments: Math.max(6, curveSegments | 0)
+    });
+    geo.computeVertexNormals();
+    geo.computeBoundingBox();
+    return geo;
+}
+
+/** The glazed lunette inside the fanlight frame. */
+function buildDoorFanlightOpeningGeometry({ settings, curveSegments }) {
+    const s = sanitizeWindowMeshSettings(settings);
+    if (!isDoorDoubleStyle(s)) return null;
+    const arch = computeDoubleDoorArchProfile(s);
+    if (!arch.wantsArch) return null;
+
+    const { vertical: frameVerticalWidth, horizontal: frameHorizontalWidth } = getFrameWidths(s.frame);
+    const innerWidth = Math.max(EPS, s.width - frameVerticalWidth * 2);
+    const innerRise = Math.max(0, arch.archRise - frameHorizontalWidth);
+    if (!(innerRise > EPS)) return null;
+
+    const shape = new THREE.Shape();
+    buildWindowOutline(shape, {
+        centerY: arch.yChord + innerRise * 0.5,
+        width: innerWidth,
+        height: innerRise,
+        wantsArch: true,
+        archRise: innerRise,
+        curveSegments,
+        reverse: false
+    });
+    const geo = new THREE.ShapeGeometry(shape, Math.max(6, curveSegments | 0));
+    // Matches the leaf glass, which the fanlight is merged with.
+    applyPlanarUv01(geo);
+    geo.computeVertexNormals();
+    geo.computeBoundingBox();
+    return geo;
+}
+
 function buildFrameGeometry({ settings, curveSegments }) {
     const s = sanitizeWindowMeshSettings(settings);
 
@@ -349,31 +490,42 @@ function buildFrameGeometry({ settings, curveSegments }) {
         const rightCenterMode = resolveDoorCenterFrameSideMode(s.frame, 'right');
         const centerLeftWidth = leftCenterMode === 'none' ? 0 : frameVerticalWidth;
         const centerRightWidth = rightCenterMode === 'none' ? 0 : frameVerticalWidth;
+        // Leaves stop at the springing line; the lunette is the fanlight's.
+        const arch = computeDoubleDoorArchProfile(s);
 
         const leftLeaf = buildRectLeafFrameGeometry({
             width: leafWidth,
-            height: h,
+            height: arch.leafHeight,
             depth,
             leftFrameWidth: frameVerticalWidth,
             rightFrameWidth: centerLeftWidth,
-            topFrameWidth: frameHorizontalWidth,
+            topFrameWidth: arch.leafTopFrameWidth,
             bottomFrameWidth,
-            centerX: -leafOffset
+            centerX: -leafOffset,
+            centerY: arch.leafCenterY
         });
         const rightLeaf = buildRectLeafFrameGeometry({
             width: leafWidth,
-            height: h,
+            height: arch.leafHeight,
             depth,
             leftFrameWidth: centerRightWidth,
             rightFrameWidth: frameVerticalWidth,
-            topFrameWidth: frameHorizontalWidth,
+            topFrameWidth: arch.leafTopFrameWidth,
             bottomFrameWidth,
-            centerX: leafOffset
+            centerX: leafOffset,
+            centerY: arch.leafCenterY
         });
-        const parts = [leftLeaf, rightLeaf].filter(Boolean);
-        if (!parts.length) return null;
+        const fanlight = buildDoorFanlightFrameGeometry({ settings: s, curveSegments });
+        const raw = [leftLeaf, rightLeaf, fanlight].filter(Boolean);
+        if (!raw.length) return null;
+        // Box leaves are indexed and the extruded fanlight is not; mergeGeometries
+        // needs one or the other. Index the odd one out rather than dropping the
+        // rest, so the result keeps the same attribute signature as every other
+        // window frame and still shares their merge bucket at city build.
+        const parts = raw.map((g) => (g.index ? g : mergeVertices(g)));
         const merged = mergeGeometries(parts, false);
         for (const part of parts) part?.dispose?.();
+        for (const part of raw) if (!parts.includes(part)) part?.dispose?.();
         merged.computeVertexNormals();
         merged.computeBoundingBox();
         return merged;
@@ -473,25 +625,29 @@ function buildOpeningGeometry({ settings, curveSegments }) {
         const centerLeftWidth = leftCenterMode === 'none' ? 0 : frameVerticalWidth;
         const centerRightWidth = rightCenterMode === 'none' ? 0 : frameVerticalWidth;
 
+        const arch = computeDoubleDoorArchProfile(s);
         const leftLeaf = buildRectLeafOpeningGeometry({
             width: leafWidth,
-            height: s.height,
+            height: arch.leafHeight,
             leftFrameWidth: frameVerticalWidth,
             rightFrameWidth: centerLeftWidth,
-            topFrameWidth: frameHorizontalWidth,
+            topFrameWidth: arch.leafTopFrameWidth,
             bottomFrameWidth,
-            centerX: -leafOffset
+            centerX: -leafOffset,
+            centerY: arch.leafCenterY
         });
         const rightLeaf = buildRectLeafOpeningGeometry({
             width: leafWidth,
-            height: s.height,
+            height: arch.leafHeight,
             leftFrameWidth: centerRightWidth,
             rightFrameWidth: frameVerticalWidth,
-            topFrameWidth: frameHorizontalWidth,
+            topFrameWidth: arch.leafTopFrameWidth,
             bottomFrameWidth,
-            centerX: leafOffset
+            centerX: leafOffset,
+            centerY: arch.leafCenterY
         });
-        const parts = [leftLeaf, rightLeaf].filter(Boolean);
+        const fanlight = buildDoorFanlightOpeningGeometry({ settings: s, curveSegments });
+        const parts = [leftLeaf, rightLeaf, fanlight].filter(Boolean);
         if (!parts.length) return null;
         const merged = mergeGeometries(parts, false);
         for (const part of parts) part?.dispose?.();
@@ -543,27 +699,30 @@ function buildMuntinsGeometry({ settings, curveSegments }) {
         const centerLeftWidth = leftCenterMode === 'none' ? 0 : frameVerticalWidth;
         const centerRightWidth = rightCenterMode === 'none' ? 0 : frameVerticalWidth;
 
+        const arch = computeDoubleDoorArchProfile(s);
         const leftLeaf = buildRectLeafMuntinsGeometry({
             width: leafWidth,
-            height: s.height,
+            height: arch.leafHeight,
             frameDepth,
             leftFrameWidth: frameVerticalWidth,
             rightFrameWidth: centerLeftWidth,
-            topFrameWidth: frameHorizontalWidth,
+            topFrameWidth: arch.leafTopFrameWidth,
             bottomFrameWidth,
             muntins: s.muntins,
-            centerX: -leafOffset
+            centerX: -leafOffset,
+            centerY: arch.leafCenterY
         });
         const rightLeaf = buildRectLeafMuntinsGeometry({
             width: leafWidth,
-            height: s.height,
+            height: arch.leafHeight,
             frameDepth,
             leftFrameWidth: centerRightWidth,
             rightFrameWidth: frameVerticalWidth,
-            topFrameWidth: frameHorizontalWidth,
+            topFrameWidth: arch.leafTopFrameWidth,
             bottomFrameWidth,
             muntins: s.muntins,
-            centerX: leafOffset
+            centerX: leafOffset,
+            centerY: arch.leafCenterY
         });
         const parts = [leftLeaf, rightLeaf].filter(Boolean);
         if (!parts.length) return null;
@@ -659,10 +818,9 @@ function buildMuntinsGeometry({ settings, curveSegments }) {
 function buildArchMeetRectJoinGeometry({ settings }) {
     const s = sanitizeWindowMeshSettings(settings);
     if (!s.arch.enabled || !s.arch.meetsRectangleFrame) return null;
-    if (isDoorDoubleStyle(s)) return null;
     const { vertical: frameVerticalWidth, horizontal: frameHorizontalWidth } = getFrameWidths(s.frame);
 
-    if (s.arch.topPieceMode === 'muntin') {
+    if (s.arch.topPieceMode === 'muntin' && !isDoorDoubleStyle(s)) {
         const w = s.width;
         const h = s.height;
         const fw = frameVerticalWidth;
@@ -700,11 +858,12 @@ function buildArchMeetRectJoinGeometry({ settings }) {
     const fw = frameVerticalWidth;
     const depth = s.frame.depth;
 
-    const archRise = s.arch.heightRatio * w;
+    const doorArch = isDoorDoubleStyle(s) ? computeDoubleDoorArchProfile(s) : null;
+    const archRise = doorArch ? doorArch.archRise : (s.arch.heightRatio * w);
     if (!(archRise > EPS)) return null;
 
     const yTop = h * 0.5;
-    const yChord = yTop - archRise;
+    const yChord = doorArch ? doorArch.yChord : (yTop - archRise);
 
     const innerWidth = Math.max(EPS, w - fw * 2);
     const geo = new THREE.BoxGeometry(innerWidth, Math.max(EPS, frameHorizontalWidth), Math.max(EPS, depth));
@@ -763,22 +922,21 @@ function buildDoorHandlesGeometry({ settings }) {
         const centerLeftWidth = leftCenterMode === 'none' ? 0 : frameVerticalWidth;
         const centerRightWidth = rightCenterMode === 'none' ? 0 : frameVerticalWidth;
 
-        const leftProfile = computeRectLeafProfile({
-            width: leafWidth,
-            height: s.height,
-            leftFrameWidth: frameVerticalWidth,
-            rightFrameWidth: centerLeftWidth,
-            topFrameWidth: frameHorizontalWidth,
-            bottomFrameWidth
-        });
-        const rightProfile = computeRectLeafProfile({
-            width: leafWidth,
-            height: s.height,
-            leftFrameWidth: centerRightWidth,
-            rightFrameWidth: frameVerticalWidth,
-            topFrameWidth: frameHorizontalWidth,
-            bottomFrameWidth
-        });
+        const arch = computeDoubleDoorArchProfile(s);
+        const leafProfileOf = (leftWidth, rightWidth) => {
+            const profile = computeRectLeafProfile({
+                width: leafWidth,
+                height: arch.leafHeight,
+                leftFrameWidth: leftWidth,
+                rightFrameWidth: rightWidth,
+                topFrameWidth: arch.leafTopFrameWidth,
+                bottomFrameWidth
+            });
+            // The leaf sits below the springing line, so the handle does too.
+            return { ...profile, centerY: profile.centerY + arch.leafCenterY };
+        };
+        const leftProfile = leafProfileOf(frameVerticalWidth, centerLeftWidth);
+        const rightProfile = leafProfileOf(centerRightWidth, frameVerticalWidth);
 
         const leftEdge = -leafOffset + leftProfile.centerX + leftProfile.innerWidth * 0.5;
         const leftMinX = -leafOffset + leftProfile.centerX - leftProfile.innerWidth * 0.5 + HANDLE_RADIUS;

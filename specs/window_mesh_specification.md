@@ -17,6 +17,16 @@ The window has a width and height in meters. These define the outer bounds of th
 
 When an arch is enabled, it adds a curved top portion above the rectangular area. The arch height is specified as a ratio of the window width (e.g., 0.25 means the arch rises by 25% of the width). A flag controls whether a straight horizontal frame piece appears where the arch meets the rectangular portion.
 
+### Arched doors
+
+A door is not a window with an arched hole: its leaves are rectangular and stop at the springing line, and the lunette above belongs to a separate glazed fanlight. An arch-enabled door therefore composes as:
+
+- **Leaves** — rectangular, terminating at the springing line. Their glass, muntins, centre stile and handles all stay below it; nothing reaches into the lunette.
+- **Transom bar** — a horizontal bar on the springing line when the arch meets the rectangular frame, spanning the full glazed width including the gap between a double door's leaves. Because it spans both leaves, it *is* their top rail: the leaves must not also carry one, or the two coincide and z-fight.
+- **Fanlight** — an arched frame ring above the springing line with the lunette glazed inside it. The ring carries a short straight skirt down past the transom, because the arc is vertical where it springs and a ring starting exactly on that line pinches to nothing and leaves a notch at each corner.
+
+Doors without an arch are unaffected, and windows keep their own composition: with no leaves, a window's glazing fills the lunette directly below its arched frame.
+
 ## Frame
 
 The frame consists of the outer border and optionally an internal grid of muntins (the bars that divide the glass into panes).
