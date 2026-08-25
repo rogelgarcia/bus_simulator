@@ -89,6 +89,8 @@ const FLOOR_INTERIOR_SHELL_INSET_METERS = 0.01;
 // Keeps interior floors/ceilings off the coplanar layer cap slabs (z-fighting).
 const FLOOR_INTERIOR_SURFACE_NUDGE_METERS = 0.01;
 const WALL_DECORATION_DEFAULT_WALL_DEPTH_M = 0.30;
+// How much shell is left around an opening cut into the interior shell (AI 495).
+const INTERIOR_SHELL_CUT_MARGIN_METERS = 0.12;
 const FACE_NORMAL_BY_ID = Object.freeze({
     A: Object.freeze({ x: 0, y: 0, z: 1 }),
     B: Object.freeze({ x: 1, y: 0, z: 0 }),
@@ -5380,6 +5382,43 @@ function buildFacadeSurfaceRunsByFaceId({ facadeStrips, facadeFrames }) {
     return Object.keys(byFaceId).length ? byFaceId : null;
 }
 
+/**
+ * Move a facade opening cutout onto the interior shell plane of its face.
+ *
+ * The shell is a separate loop set back from the facade, so a cutout authored on
+ * the facade plane is too far off it for the wall builder's segment test to
+ * match. Sliding it along the face normal to the shell's depth keeps the same
+ * opening, in the same place along the wall (AI 495).
+ *
+ * Returns `null` for an opening with nothing behind its glass: the shell is the
+ * only thing closing that sightline, so cutting it would reopen the view
+ * straight through the building.
+ *
+ * @param {object} cutout facade cutout (`{faceId, x, y, z, width, height, backed}`)
+ * @param {object} params
+ * @param {object} params.frames per-face `{start, t, n}` frames
+ * @param {(faceId: string) => number} params.shellDepthOf shell depth per face
+ */
+function projectFacadeCutoutOntoShell(cutout, { frames, shellDepthOf }) {
+    const faceId = typeof cutout?.faceId === 'string' ? cutout.faceId : '';
+    if (!isFaceId(faceId) || !cutout?.backed) return null;
+    const frame = frames?.[faceId] ?? null;
+    if (!frame) return null;
+    const sx = Number(frame.start?.x) || 0;
+    const sz = Number(frame.start?.z) || 0;
+    const tx = Number(frame.t?.x) || 0;
+    const tz = Number(frame.t?.z) || 0;
+    const u = (Number(cutout.x) - sx) * tx + (Number(cutout.z) - sz) * tz;
+    const point = pointOnFacadeFrame({ frame, u, depth: shellDepthOf(faceId) });
+    // Leave a lip of shell around the hole. The parallax panel covers the whole
+    // opening head-on, but a grazing sightline can slip past its edge; the lip
+    // sits behind the panel (so it is never seen) and catches those rays.
+    const width = Math.max(0.05, (Number(cutout.width) || 0) - INTERIOR_SHELL_CUT_MARGIN_METERS * 2);
+    const height = Math.max(0.05, (Number(cutout.height) || 0) - INTERIOR_SHELL_CUT_MARGIN_METERS * 2);
+    // The reveal belongs to the facade's thickness, not to the shell.
+    return { ...cutout, x: point.x, z: point.z, width, height, revealDepth: 0 };
+}
+
 function cornerJoinPointWithDepths(aFrame, aDepth, bFrame, bDepth, corner) {
     const da = Number(aDepth) || 0;
     const db = Number(bDepth) || 0;
@@ -7468,7 +7507,13 @@ export function buildBuildingFabricationVisualParts({
                                             height: cutHeight,
                                             wantsArch: cutWantsArch,
                                             archRise,
-                                            revealDepth: frameInset
+                                            revealDepth: frameInset,
+                                            // AI 495: whether this opening has a parallax
+                                            // interior panel behind its glass. A shade does
+                                            // not count — its shader discards every fragment
+                                            // when the blind is up, which is what
+                                            // `disableShades` produces.
+                                            backed: !!settings?.interior?.enabled
                                         };
                                         facadeWallCutouts.push(cutout);
                                     }
@@ -7733,12 +7778,32 @@ export function buildBuildingFabricationVisualParts({
                             ? facadeDepthMinsByFaceId
                             : null;
 
-                        if (isFloorLayerInteriorEnabled(layer) && frames && depthMins && floorSegments.length) {
+                        // AI 495: a floor whose glazing has nothing behind it reads
+                        // as a hollow glass tube — the facade wall's inner side is
+                        // back-facing, so the sightline leaves through the far
+                        // glazing. The interior shell is the occluder that already
+                        // exists, so turn it on rather than inventing a second one.
+                        const unbackedOpenings = Array.isArray(facadeWallCutouts)
+                            ? facadeWallCutouts.filter((cut) => !cut?.backed)
+                            : [];
+                        const wantsOcclusionShell = !isFloorLayerInteriorEnabled(layer) && unbackedOpenings.length > 0;
+                        if (wantsOcclusionShell) {
+                            const faces = Array.from(new Set(unbackedOpenings.map((cut) => cut.faceId))).sort().join('/');
+                            warnings.push(`Layer ${layerId || layerIndex}: ${unbackedOpenings.length} opening(s) on face(s) ${faces} have no interior behind the glass and the layer has interior disabled; the interior shell was enabled so the floor is not see-through.`);
+                        }
+
+                        if ((isFloorLayerInteriorEnabled(layer) || wantsOcclusionShell) && frames && depthMins && floorSegments.length) {
+                            // Built corner-join by corner-join at the shell's own
+                            // depth rather than by offsetting a finished loop, so
+                            // every point stays tagged with the face it belongs to —
+                            // which is what lets the facade's opening cutouts be
+                            // projected onto it.
+                            const shellDepthOf = (faceId) => (Number(depthMins[faceId]) || 0) - FLOOR_INTERIOR_SHELL_INSET_METERS;
                             const interiorJoinByCornerId = {
-                                AB: cornerJoinPointWithDepths(frames.A, depthMins.A ?? 0, frames.B, depthMins.B ?? 0, frames.A.end),
-                                BC: cornerJoinPointWithDepths(frames.B, depthMins.B ?? 0, frames.C, depthMins.C ?? 0, frames.B.end),
-                                CD: cornerJoinPointWithDepths(frames.C, depthMins.C ?? 0, frames.D, depthMins.D ?? 0, frames.C.end),
-                                DA: cornerJoinPointWithDepths(frames.D, depthMins.D ?? 0, frames.A, depthMins.A ?? 0, frames.D.end)
+                                AB: cornerJoinPointWithDepths(frames.A, shellDepthOf('A'), frames.B, shellDepthOf('B'), frames.A.end),
+                                BC: cornerJoinPointWithDepths(frames.B, shellDepthOf('B'), frames.C, shellDepthOf('C'), frames.B.end),
+                                CD: cornerJoinPointWithDepths(frames.C, shellDepthOf('C'), frames.D, shellDepthOf('D'), frames.C.end),
+                                DA: cornerJoinPointWithDepths(frames.D, shellDepthOf('D'), frames.A, shellDepthOf('A'), frames.D.end)
                             };
                             const interiorLoopRaw = [
                                 interiorJoinByCornerId.AB,
@@ -7749,13 +7814,29 @@ export function buildBuildingFabricationVisualParts({
                             const interiorLoop = simplifyLoopConsecutiveCollinearXZ(interiorLoopRaw, { tol: 1e-4, minEdge: 1e-3 });
                             if (interiorLoop && interiorLoop.length >= 3) {
                                 const interiorArea = signedArea(interiorLoop);
-                                const interiorLoopCcw = interiorArea < 0 ? interiorLoop.slice().reverse() : interiorLoop;
-                                const insetLoopRaw = offsetOrthogonalLoopXZ(interiorLoopCcw, FLOOR_INTERIOR_SHELL_INSET_METERS);
-                                const insetLoopSimplified = simplifyLoopConsecutiveCollinearXZ(insetLoopRaw, { tol: 1e-4, minEdge: 1e-3 });
-                                const insetArea = Array.isArray(insetLoopSimplified) ? Math.abs(signedArea(insetLoopSimplified)) : 0;
-                                const interiorShellLoop = (Array.isArray(insetLoopSimplified) && insetLoopSimplified.length >= 3 && insetArea > EPS)
-                                    ? insetLoopSimplified
-                                    : interiorLoopCcw;
+                                const interiorShellLoop = interiorArea < 0 ? interiorLoop.slice().reverse() : interiorLoop;
+                                // One wall run per face, start join to end join, so a
+                                // segment's endpoints always share a face id. The
+                                // zero-length hops between runs fall under the
+                                // builder's minimum edge length and are dropped.
+                                const interiorShellLoopDetailRaw = [
+                                    { ...interiorJoinByCornerId.DA, kind: 'profile', faceId: 'A' },
+                                    { ...interiorJoinByCornerId.AB, kind: 'profile', faceId: 'A' },
+                                    { ...interiorJoinByCornerId.AB, kind: 'profile', faceId: 'B' },
+                                    { ...interiorJoinByCornerId.BC, kind: 'profile', faceId: 'B' },
+                                    { ...interiorJoinByCornerId.BC, kind: 'profile', faceId: 'C' },
+                                    { ...interiorJoinByCornerId.CD, kind: 'profile', faceId: 'C' },
+                                    { ...interiorJoinByCornerId.CD, kind: 'profile', faceId: 'D' },
+                                    { ...interiorJoinByCornerId.DA, kind: 'profile', faceId: 'D' }
+                                ];
+                                // Negative signed area is the winding that points the
+                                // builder's wall faces inward, at the room.
+                                const interiorShellLoopDetail = signedArea(interiorShellLoopDetailRaw) > 0
+                                    ? interiorShellLoopDetailRaw.slice().reverse()
+                                    : interiorShellLoopDetailRaw;
+                                const interiorCutouts = (Array.isArray(facadeWallCutouts) ? facadeWallCutouts : [])
+                                    .map((cut) => projectFacadeCutoutOntoShell(cut, { frames, shellDepthOf }))
+                                    .filter((cut) => !!cut);
                                 let interiorAnchorX = 0;
                                 let interiorAnchorZ = 0;
                                 for (const point of interiorShellLoop) {
@@ -7790,9 +7871,18 @@ export function buildBuildingFabricationVisualParts({
                                     const segmentBaseY = layerStartY + segmentYBottom;
 
                                     // Interior walls should face into the interior room volume.
-                                    const interiorWallGeo = buildWallSidesGeometryFromLoopXZ(interiorShellLoop.slice().reverse(), {
+                                    // Cutouts are authored in layer-local Y; this run
+                                    // starts at the segment, so rebase and clip them.
+                                    const segmentCutouts = interiorCutouts
+                                        .map((cut) => ({ ...cut, y: Number(cut.y) - segmentYBottom }))
+                                        .filter((cut) => {
+                                            const half = Math.max(0, Number(cut.height) || 0) * 0.5;
+                                            return cut.y + half > EPS && cut.y - half < interiorHeight - EPS;
+                                        });
+                                    const interiorWallGeo = buildWallSidesGeometryFromLoopDetailXZ(interiorShellLoopDetail, {
                                         height: interiorHeight,
-                                        uvBaseV: yOffset + segmentYBottom
+                                        uvBaseV: yOffset + segmentYBottom,
+                                        cutouts: segmentCutouts.length ? segmentCutouts : null
                                     });
                                     if (interiorWallGeo) {
                                         const interiorWallMat = createInteriorMaterial();

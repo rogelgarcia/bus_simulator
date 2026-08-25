@@ -192,6 +192,16 @@ Compatibility note (transitional):
 - Bay opening reveals remain local to the opening cutout depth and do not derive/emit an interior room shell.
 - Non-street-floor behavior remains unchanged unless explicitly defined by this pass.
 
+### 6.2.1 Behind the glass (occlusion contract)
+
+Every glazed opening MUST have something plausible behind it, and a building MUST NOT read as a hollow glass tube.
+
+- A glazed opening is **backed** when it carries a parallax interior panel (`visual.interior` resolves to anything other than `none`). A window shade does NOT back an opening: its shader discards every fragment once the blind is raised, which is exactly what `visual.disableShades` produces.
+- A floor layer carrying **unbacked** openings MUST emit the interior shell even when `interior.enabled` is false, and the engine MUST warn, naming the layer and the faces. Without it the facade's inner side is back-facing, so a street-level sightline passes through the building and leaves by the far glazing.
+- The interior shell MUST be cut at every **backed** opening, so the room's wall is not pressed against the glass — from inside the room the opening shows its parallax interior rather than a blank pane. Unbacked openings MUST NOT be cut: the shell is the only thing closing that sightline.
+- A shell cut MUST leave a small lip of shell around the opening (~`0.12m` per side). A parallax panel covers its opening head-on but a grazing sightline can slip past its edge; the lip sits behind the panel, so it is never seen, and catches those rays.
+- Openings that are deliberately obscured (frosted bathroom sashes) MAY stay unbacked: shell behind their glass reads correctly.
+
 ### 6.3 BF2 support slab (view helper)
 
 - Building Fabrication 2 MAY render an optional support slab helper under the building for viewport-only gap masking.

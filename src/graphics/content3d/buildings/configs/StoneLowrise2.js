@@ -879,7 +879,7 @@ export const STONE_LOWRISE_2_BUILDING_CONFIG = Object.freeze({
                                         },
                                         "visual": {
                                             "disableShades": true,
-                                            "interior": "none"
+                                            "interior": "res"
                                         },
                                         "top": {
                                             "enabled": false,
