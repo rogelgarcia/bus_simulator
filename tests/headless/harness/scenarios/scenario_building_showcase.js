@@ -37,9 +37,9 @@ const CONFIG_OVERRIDE_KEYS = Object.freeze([
     'materialSlots'
 ]);
 
-function collectPbrMaterialIds(config) {
+function collectPbrMaterialIds(config, configOverrides = null) {
     const ids = new Set(['pbr.grass_004']);
-    const json = JSON.stringify(config);
+    const json = JSON.stringify(config) + (configOverrides ? JSON.stringify(configOverrides) : '');
     for (const match of json.matchAll(/"(pbr\.[a-z0-9_]+)"/g)) ids.add(match[1]);
     return Array.from(ids);
 }
@@ -91,8 +91,11 @@ export const scenarioBuildingShowcase = {
         // Warm the shared PBR calibration cache before the city resolves its
         // materials; a cold start would otherwise render uncorrected textures
         // (the running game has this cache warm long before a city builds).
+        const overridesForPreload = options?.configOverrides && typeof options.configOverrides === 'object'
+            ? options.configOverrides
+            : null;
         const calibrationLoader = new PbrTextureLoaderService({ renderer: engine.renderer });
-        await calibrationLoader.preloadCalibrationForMaterialIds(collectPbrMaterialIds(config));
+        await calibrationLoader.preloadCalibrationForMaterialIds(collectPbrMaterialIds(config, overridesForPreload));
 
         const size = Number.isFinite(options?.size) ? options.size : DEFAULT_SIZE;
         const mapTileSize = Number.isFinite(options?.mapTileSize) ? options.mapTileSize : DEFAULT_MAP_TILE_SIZE;
@@ -125,8 +128,13 @@ export const scenarioBuildingShowcase = {
             const value = configOverrides?.[key];
             if (value !== undefined && value !== null) entry[key] = value;
         }
-        if (Array.isArray(config.footprintLoops) && config.footprintLoops.length) {
-            entry.footprintLoops = config.footprintLoops.map((loop) => loop.map((point) => ({
+        // A footprint override wins over the catalog's; both are authored
+        // around the origin and translated onto the build site here.
+        const footprintLoops = Array.isArray(configOverrides?.footprintLoops) && configOverrides.footprintLoops.length
+            ? configOverrides.footprintLoops
+            : config.footprintLoops;
+        if (Array.isArray(footprintLoops) && footprintLoops.length) {
+            entry.footprintLoops = footprintLoops.map((loop) => loop.map((point) => ({
                 x: (Number(point?.x) || 0) + centroid.x,
                 z: (Number(point?.z) || 0) + centroid.z
             })));
