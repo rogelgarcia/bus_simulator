@@ -142,11 +142,29 @@ Building Fabrication 2 currently stores a pragmatic subset of the conceptual `Fa
 **FacadeBayGroupSpec**
 - `id: string` (stable per face)
 - `bayIds: string[]` (must reference `bays.items[*].id`)
-- `repeat?: { minRepeats?: number, maxRepeats?: number | 'auto' }` (UI does not expose this yet; defaults to repeat-if-fits)
+- `repeat?: { minRepeats?: number, maxRepeats?: number | 'auto' }` (defaults to repeat-if-fits; editable in the BF2 group popup since AI 493)
+- `arcade?: ArcadeSpec` (AI 493) — the arcade MODE of this group
 
 Constraints:
 - `bayIds` MUST be **contiguous** in `bays.items` order.
 - Groups MUST NOT overlap (a bay may belong to at most one group).
+
+**ArcadeSpec** (AI 493)
+- `enabled: boolean`
+- `springing: { mode: 'auto' | 'fixed', offsetMeters: number | null }` — the
+  shared springing height above the floor line; `auto` picks the highest
+  natural springing in the run.
+- `impost: { enabled: boolean, heightMeters, projectionMeters, overhangMeters, material }`
+  — the band on the run's pier bays whose top edge sits on the springing line.
+  `enabled` is always serialized so a stored "no band" round-trips.
+
+**FacadeStackingSpec** (AI 493, on `facade.layout.stacking`)
+- `mode: 'lock_columns' | 'per_layer'` (default `lock_columns`)
+
+A rhythm needs no schema of its own: a bay group IS the repeating unit, and
+in-group vs between-group spacing is just two pier bays of different widths
+inside it. See §5.6 of `BUILDING_2_SPEC_engine.md` for the stacking lock and
+§7.1 for the arcade.
 
 ---
 

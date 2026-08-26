@@ -8,6 +8,10 @@ import {
     resolveWallBaseTintStateFromWallBase
 } from '../../../../app/buildings/WallBaseTintModel.js';
 import { normalizeBalconyConfig } from '../../../../app/buildings/BayBalconyModel.js';
+import {
+    normalizeArcadeConfig,
+    normalizeFacadeBayGroupRepeat
+} from '../../../../app/buildings/FacadeBayGroupModel.js';
 
 const EPS = 1e-6;
 const BAY_MIN_WIDTH_M = 0.1;
@@ -205,11 +209,11 @@ function normalizeGarageFacadeConfig(value, fallback = null) {
 }
 
 function normalizeGroupRepeatSpec(value) {
-    const src = value && typeof value === 'object' ? value : null;
-    const minRepeats = clampInt(src?.minRepeats ?? 1, 1, 9999);
-    const maxRaw = src?.maxRepeats;
-    if (maxRaw === 'auto' || maxRaw === null || maxRaw === undefined) return { minRepeats, maxRepeats: Infinity };
-    return { minRepeats, maxRepeats: clampInt(maxRaw, minRepeats, 9999) };
+    const repeat = normalizeFacadeBayGroupRepeat(value);
+    return {
+        minRepeats: repeat.minRepeats,
+        maxRepeats: repeat.maxRepeats === 'auto' ? Infinity : repeat.maxRepeats
+    };
 }
 
 function normalizeBayEdgeDepthSpec(value) {
@@ -413,6 +417,16 @@ function normalizeBayWindowSpec(value) {
  * @property {string} id
  * @property {string[]} bayIds
  * @property {{minRepeats?: number, maxRepeats?: number|'auto'} | null} [repeat]
+ * @property {object | null} [arcade]
+ *
+ * AI 493: the repeat topology (how many times each group and each repeatable
+ * bay expands) can be resolved once per face and replayed on every layer, so
+ * columns stack instead of re-fitting to each layer's own face length.
+ *
+ * @typedef {Object} FacadeBaysTopology
+ * @property {Array<{id:string, count:number}>} groupRepeats
+ * @property {Array<{id:string, count:number}>} bayRepeats
+ * @property {Array<{id:string, widthMeters:number}>} bayWidths the locked pitch
  *
  * @typedef {Object} FacadeResolvedLayoutItem
  * @property {'bay'} type
@@ -428,6 +442,7 @@ function normalizeBayWindowSpec(value) {
  * @property {{enabled:boolean, tileMeters:number, tileMetersU:number, tileMetersV:number, uvEnabled:boolean, offsetU:number, offsetV:number, rotationDegrees:number} | null} [tiling]
  * @property {object | null} [materialVariation]
  * @property {{enabled:true, defId:string, width:{minMeters:number, maxMeters:number|null}, padding:{leftMeters:number, rightMeters:number, linked?:boolean}} | null} [window]
+ * @property {object | null} [arcade]
  */
 
 function normalizeFracs(fracs) {
@@ -439,14 +454,41 @@ function normalizeFracs(fracs) {
 }
 
 /**
+ * Resolve one face's bay layout.
+ *
+ * @param {object} options
+ * @param {FacadeBaySpec[]} options.bays
+ * @param {FacadeBayGroupSpec[] | null} [options.groups]
+ * @param {number} options.faceLengthMeters
+ * @param {FacadeBaysTopology | null} [options.topology] locked repeat counts to replay
+ * @param {string[] | null} [options.warnings]
+ * @returns {FacadeResolvedLayoutItem[]}
+ */
+export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, topology = null, warnings = null } = {}) {
+    return solveFacadeBays({ bays, groups, faceLengthMeters, topology, warnings }).items;
+}
+
+/**
+ * Resolve ONLY the repeat topology for a face, to be replayed on every layer of
+ * that face (AI 493 column stacking lock). Solve it at the shortest applicable
+ * face length so it fits everywhere.
+ *
  * @param {object} options
  * @param {FacadeBaySpec[]} options.bays
  * @param {FacadeBayGroupSpec[] | null} [options.groups]
  * @param {number} options.faceLengthMeters
  * @param {string[] | null} [options.warnings]
- * @returns {FacadeResolvedLayoutItem[]}
+ * @returns {FacadeBaysTopology}
  */
-export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, warnings = null } = {}) {
+export function computeFacadeBaysTopology({ bays, groups = null, faceLengthMeters, warnings = null } = {}) {
+    return solveFacadeBays({ bays, groups, faceLengthMeters, topology: null, warnings }).topology;
+}
+
+/**
+ * @param {object} options
+ * @returns {{items: FacadeResolvedLayoutItem[], topology: FacadeBaysTopology}}
+ */
+function solveFacadeBays({ bays, groups = null, faceLengthMeters, topology = null, warnings = null } = {}) {
     const w = Array.isArray(warnings) ? warnings : null;
     const src = Array.isArray(bays) ? bays : [];
     const groupSrc = Array.isArray(groups) ? groups : [];
@@ -524,7 +566,7 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
         });
     }
 
-    if (!normalizedBase.length) return [];
+    if (!normalizedBase.length) return { items: [], topology: { groupRepeats: [], bayRepeats: [] } };
 
     const baseById = new Map(normalizedBase.map((it) => [it.id, it]));
     const resolveBaySource = (bayId) => {
@@ -598,14 +640,16 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
         }
 
         const repeat = normalizeGroupRepeatSpec(entry?.repeat ?? null);
-        const minWidthSum = indices.reduce((sum, idx) => sum + (effectiveByIndex[idx]?.minWidth ?? BAY_MIN_WIDTH_M), 0);
         groupCandidates.push({
             id: groupId,
             startIndex: indices[0],
             indices,
-            minWidthSum,
             minRepeats: repeat.minRepeats,
-            maxRepeats: repeat.maxRepeats
+            maxRepeats: repeat.maxRepeats,
+            // AI 493: the arcade is a MODE of the group. Every bay of every
+            // repeat carries it, piers included — the impost band lands on the
+            // piers between the arches.
+            arcade: normalizeArcadeConfig(entry?.arcade ?? null)
         });
     }
 
@@ -637,8 +681,50 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
         normalizedGroups.push(group);
     }
 
-    let totalMin = effectiveByIndex.reduce((sum, b) => sum + (b?.minWidth ?? BAY_MIN_WIDTH_M), 0);
+    // AI 493 column stacking lock: a locked topology carries the reference
+    // face's ABSOLUTE bay widths, not just its repeat counts. Replaying those
+    // widths is what makes windows stack — a shorter layer drops whole repeats
+    // instead of squeezing every column inwards, and the leftover goes to the
+    // bays outside the repeating groups so the rhythm stays centred. Locking
+    // counts instead would be pointless: a count that fits a shorter face is
+    // exactly the count that face would have picked on its own.
+    let lockedWidthByIndex = null;
+    if (topology && typeof topology === 'object') {
+        const lockedWidths = new Map(
+            (Array.isArray(topology.bayWidths) ? topology.bayWidths : [])
+                .filter((entry) => typeof entry?.id === 'string' && Number.isFinite(Number(entry.widthMeters)))
+                .map((entry) => [entry.id, clamp(entry.widthMeters, BAY_MIN_WIDTH_M, 9999)])
+        );
+        if (lockedWidths.size) {
+            const candidate = normalizedBase.map((base, idx) => {
+                const locked = lockedWidths.get(base.id);
+                const min = effectiveByIndex[idx]?.minWidth ?? BAY_MIN_WIDTH_M;
+                return Number.isFinite(locked) ? Math.max(locked, min) : min;
+            });
+            const onePassSum = candidate.reduce((sum, wm) => sum + wm, 0);
+            if (!(L > EPS) || onePassSum <= L + 1e-6) {
+                lockedWidthByIndex = candidate;
+            } else if (w) {
+                w.push(`Facade bays: locked column widths need ${onePassSum.toFixed(2)}m but the face is ${L.toFixed(2)}m (solving this layer on its own).`);
+            }
+        }
+    }
+    const usedLockedTopology = !!lockedWidthByIndex;
+    const fitWidthOf = (idx) => (lockedWidthByIndex
+        ? (lockedWidthByIndex[idx] ?? BAY_MIN_WIDTH_M)
+        : (effectiveByIndex[idx]?.minWidth ?? BAY_MIN_WIDTH_M));
+
+    let totalMin = normalizedBase.reduce((sum, _base, idx) => sum + fitWidthOf(idx), 0);
     let expandedCount = normalizedBase.length;
+    for (const group of normalizedGroups) {
+        group.fitWidthSum = group.indices.reduce((sum, idx) => sum + fitWidthOf(idx), 0);
+    }
+
+    const bayRepeats = new Array(normalizedBase.length).fill(1);
+    const repeatableUngroupedIndices = effectiveByIndex
+        .map((b, idx) => ({ idx, pref: b?.expandPreference ?? null }))
+        .filter((b) => b.pref === 'prefer_repeat' && !claimedByGroup[b.idx])
+        .map((b) => b.idx);
 
     if (L > EPS) {
         for (const group of groupsByStartIndex.values()) {
@@ -646,7 +732,7 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             if (minRepeats <= 1) continue;
             const extraRepeats = minRepeats - 1;
             const extraCount = group.indices.length * extraRepeats;
-            const extraMin = group.minWidthSum * extraRepeats;
+            const extraMin = group.fitWidthSum * extraRepeats;
             if (expandedCount + extraCount > MAX_EXPANDED_BAYS || totalMin + extraMin > L + 1e-6) {
                 if (w) w.push(`Facade bays: group "${group.id}" minRepeats does not fit (clamping to 1).`);
                 group.minRepeats = 1;
@@ -670,9 +756,9 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
                 const max = Number.isFinite(group.maxRepeats) ? group.maxRepeats : Infinity;
                 if (repeatCount >= max) continue;
                 if (expandedCount + group.indices.length > MAX_EXPANDED_BAYS) continue;
-                if (totalMin + group.minWidthSum > L + 1e-6) continue;
+                if (totalMin + group.fitWidthSum > L + 1e-6) continue;
                 group.repeatCount = repeatCount + 1;
-                totalMin += group.minWidthSum;
+                totalMin += group.fitWidthSum;
                 expandedCount += group.indices.length;
                 changed = true;
             }
@@ -680,25 +766,47 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
         }
     }
 
-    const bayRepeats = new Array(normalizedBase.length).fill(1);
-    const repeatableUngroupedIndices = effectiveByIndex
-        .map((b, idx) => ({ idx, pref: b?.expandPreference ?? null }))
-        .filter((b) => b.pref === 'prefer_repeat' && !claimedByGroup[b.idx])
-        .map((b) => b.idx);
-
     if (repeatableUngroupedIndices.length && L > EPS) {
-        const passMin = repeatableUngroupedIndices.reduce((sum, idx) => sum + (effectiveByIndex[idx]?.minWidth ?? BAY_MIN_WIDTH_M), 0);
+        const passMin = repeatableUngroupedIndices.reduce((sum, idx) => sum + fitWidthOf(idx), 0);
         for (let guard = 0; guard < 5000; guard++) {
             if (!(passMin > EPS)) break;
             if (expandedCount + repeatableUngroupedIndices.length > MAX_EXPANDED_BAYS) break;
             if (totalMin + passMin > L + 1e-6) break;
             for (const idx of repeatableUngroupedIndices) {
                 bayRepeats[idx] += 1;
-                totalMin += effectiveByIndex[idx]?.minWidth ?? BAY_MIN_WIDTH_M;
+                totalMin += fitWidthOf(idx);
                 expandedCount += 1;
             }
         }
     }
+
+    const withTopology = (items) => {
+        const widthAccByBayId = new Map();
+        for (const item of items) {
+            const id = typeof item?.sourceBayId === 'string' ? item.sourceBayId : '';
+            if (!id) continue;
+            const acc = widthAccByBayId.get(id) ?? { sum: 0, count: 0 };
+            acc.sum += (Number(item.widthFrac) || 0) * L;
+            acc.count += 1;
+            widthAccByBayId.set(id, acc);
+        }
+        return {
+            items,
+            topology: {
+                groupRepeats: normalizedGroups.map((group) => ({
+                    id: group.id,
+                    count: clampInt(group.repeatCount ?? 1, 1, 9999)
+                })),
+                bayRepeats: normalizedBase
+                    .map((base, idx) => ({ id: base.id, count: clampInt(bayRepeats[idx] ?? 1, 1, 9999) }))
+                    .filter((entry, idx) => !claimedByGroup[idx]),
+                bayWidths: Array.from(widthAccByBayId.entries()).map(([id, acc]) => ({
+                    id,
+                    widthMeters: acc.count > 0 ? acc.sum / acc.count : 0
+                }))
+            }
+        };
+    };
 
     const expandedRefs = [];
     for (let i = 0; i < normalizedBase.length; i++) {
@@ -706,17 +814,17 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
         if (group) {
             const count = clampInt(group.repeatCount ?? 1, 1, 9999);
             for (let gi = 0; gi < count; gi++) {
-                for (const bayIndex of group.indices) expandedRefs.push(bayIndex);
+                for (const bayIndex of group.indices) expandedRefs.push({ idx: bayIndex, group });
             }
             i += group.indices.length - 1;
             continue;
         }
         const count = clampInt(bayRepeats[i] ?? 1, 1, 9999);
-        for (let ri = 0; ri < count; ri++) expandedRefs.push(i);
+        for (let ri = 0; ri < count; ri++) expandedRefs.push({ idx: i, group: null });
     }
 
     const totalCountByBayId = new Map();
-    for (const idx of expandedRefs) {
+    for (const { idx } of expandedRefs) {
         const base = normalizedBase[idx] ?? null;
         const bid = typeof base?.id === 'string' ? base.id : '';
         if (!bid) continue;
@@ -725,7 +833,7 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
 
     const nextInstanceByBayId = new Map();
     const expanded = [];
-    for (const idx of expandedRefs) {
+    for (const { idx, group } of expandedRefs) {
         const base = normalizedBase[idx] ?? null;
         if (!base) continue;
         const source = effectiveByIndex[idx] ?? base;
@@ -750,13 +858,16 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             wallBase: source.wallBase,
             tiling: source.tiling,
             materialVariation: source.materialVariation,
-            window: source.window ? deepClone(source.window) : null
+            grouped: !!group,
+            lockedWidthMeters: fitWidthOf(idx),
+            window: source.window ? deepClone(source.window) : null,
+            arcade: group?.arcade ? { ...deepClone(group.arcade), groupId: group.id } : null
         });
     }
 
     const n = expanded.length;
     if (!(L > EPS) || n <= 0) {
-        return expanded.map((it) => ({
+        return withTopology(expanded.map((it) => ({
             type: 'bay',
             id: it.id,
             sourceBayId: it.sourceBayId,
@@ -771,18 +882,19 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             ...(it.wallBase ? { wallBase: it.wallBase } : {}),
             ...(it.tiling ? { tiling: it.tiling } : {}),
             ...(it.materialVariation ? { materialVariation: it.materialVariation } : {}),
-            ...(it.window ? { window: deepClone(it.window) } : {})
-        }));
+            ...(it.window ? { window: deepClone(it.window) } : {}),
+            ...(it.arcade ? { arcade: deepClone(it.arcade) } : {})
+        })));
     }
 
-    const widths = expanded.map((it) => it.minWidthMeters);
+    const widths = expanded.map((it) => (usedLockedTopology ? it.lockedWidthMeters : it.minWidthMeters));
     const expandedMin = widths.reduce((sum, wm) => sum + (Number(wm) || 0), 0);
     if (expandedMin > L + 1e-6) {
         if (w) w.push(`Facade bays: min width ${expandedMin.toFixed(3)}m exceeds face length ${L.toFixed(3)}m (scaling down).`);
         const scale = L / expandedMin;
         const fracs = widths.map((mw) => (mw * scale) / L);
         const norm = normalizeFracs(fracs);
-        return expanded.map((it, idx) => ({
+        return withTopology(expanded.map((it, idx) => ({
             type: 'bay',
             id: it.id,
             sourceBayId: it.sourceBayId,
@@ -797,8 +909,9 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             ...(it.wallBase ? { wallBase: it.wallBase } : {}),
             ...(it.tiling ? { tiling: it.tiling } : {}),
             ...(it.materialVariation ? { materialVariation: it.materialVariation } : {}),
-            ...(it.window ? { window: deepClone(it.window) } : {})
-        }));
+            ...(it.window ? { window: deepClone(it.window) } : {}),
+            ...(it.arcade ? { arcade: deepClone(it.arcade) } : {})
+        })));
     }
 
     let leftover = L - expandedMin;
@@ -848,27 +961,53 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
         }
     };
 
-    const preferExpandIndices = [];
-    const noRepeatIndices = [];
-    const preferRepeatIndices = [];
-    for (let i = 0; i < expanded.length; i++) {
-        const pref = expanded[i]?.expandPreference ?? null;
-        if (pref === 'prefer_expand') preferExpandIndices.push(i);
-        else if (pref === 'no_repeat') noRepeatIndices.push(i);
-        else preferRepeatIndices.push(i);
-    }
+    if (usedLockedTopology) {
+        // Hand the slack to the bays outside the groups (the end fillers), so
+        // every grouped bay keeps the reference pitch and the run stays centred.
+        const ungrouped = [];
+        for (let i = 0; i < expanded.length; i++) if (!expanded[i]?.grouped) ungrouped.push(i);
+        // A bay carrying an opening is part of the rhythm even when no group
+        // owns it, so the slack goes to solid filler bays first.
+        const fillers = ungrouped.filter((idx) => !expanded[idx]?.window);
+        const preferred = fillers.filter((idx) => expanded[idx]?.expandPreference === 'prefer_expand');
+        const targets = preferred.length ? preferred : (fillers.length ? fillers : ungrouped);
 
-    distributeLeftoverAcross(preferExpandIndices);
-    distributeLeftoverAcross(noRepeatIndices);
-    distributeLeftoverAcross(preferRepeatIndices);
+        if (leftover > 1e-6 && targets.length) {
+            const share = leftover / targets.length;
+            for (const idx of targets) widths[idx] += share;
+            leftover = 0;
+        }
+        if (leftover > 1e-6) {
+            // Nothing outside the groups to absorb it: stretch the whole rhythm
+            // rather than dumping the slack into one bay.
+            const covered = L - leftover;
+            const scale = covered > EPS ? (L / covered) : 1;
+            for (let i = 0; i < widths.length; i++) widths[i] *= scale;
+            leftover = 0;
+        }
+    } else {
+        const preferExpandIndices = [];
+        const noRepeatIndices = [];
+        const preferRepeatIndices = [];
+        for (let i = 0; i < expanded.length; i++) {
+            const pref = expanded[i]?.expandPreference ?? null;
+            if (pref === 'prefer_expand') preferExpandIndices.push(i);
+            else if (pref === 'no_repeat') noRepeatIndices.push(i);
+            else preferRepeatIndices.push(i);
+        }
 
-    if (leftover > 1e-3) {
-        if (w) w.push(`Facade bays: leftover ${leftover.toFixed(3)}m could not be distributed within max widths.`);
-        widths[widths.length - 1] += leftover;
+        distributeLeftoverAcross(preferExpandIndices);
+        distributeLeftoverAcross(noRepeatIndices);
+        distributeLeftoverAcross(preferRepeatIndices);
+
+        if (leftover > 1e-3) {
+            if (w) w.push(`Facade bays: leftover ${leftover.toFixed(3)}m could not be distributed within max widths.`);
+            widths[widths.length - 1] += leftover;
+        }
     }
 
     const fracs = normalizeFracs(widths.map((wm) => wm / L));
-    return expanded.map((it, idx) => ({
+    return withTopology(expanded.map((it, idx) => ({
         type: 'bay',
         id: it.id,
         sourceBayId: it.sourceBayId,
@@ -883,6 +1022,7 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
         ...(it.wallBase ? { wallBase: it.wallBase } : {}),
         ...(it.tiling ? { tiling: it.tiling } : {}),
         ...(it.materialVariation ? { materialVariation: it.materialVariation } : {}),
-        ...(it.window ? { window: deepClone(it.window) } : {})
-    }));
+        ...(it.window ? { window: deepClone(it.window) } : {}),
+        ...(it.arcade ? { arcade: deepClone(it.arcade) } : {})
+    })));
 }

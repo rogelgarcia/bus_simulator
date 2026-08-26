@@ -30,6 +30,22 @@ import {
 } from '../../../app/buildings/BayBalconyModel.js';
 import { normalizeFacadeAttachmentsConfig } from '../../../app/buildings/FacadeAttachmentsModel.js';
 import {
+    EDGE_BEVEL_DEFAULT_WIDTH_METERS,
+    normalizeEdgeBevelConfig
+} from '../../../app/buildings/EdgeBevelModel.js';
+import {
+    FACADE_BAY_STACKING_MODE,
+    normalizeArcadeConfig,
+    normalizeFacadeBayGroupRepeat,
+    normalizeFacadeStackingSpec
+} from '../../../app/buildings/FacadeBayGroupModel.js';
+import {
+    getRooftopPropPreviewConfigs,
+    normalizeRooftopPropsConfig,
+    ROOFTOP_PROPS_DEFAULTS,
+    ROOFTOP_PROP_TYPE_IDS
+} from '../../../app/buildings/RooftopPropsModel.js';
+import {
     getDefaultWallDecoratorDebuggerState,
     getWallDecoratorTypeEntries,
     getWallDecoratorCatalogEntryById,
@@ -259,17 +275,6 @@ function resolveBayLinkFromSpec(bay) {
     if (link) return link;
     const legacy = typeof spec?.materialLinkFromBayId === 'string' ? spec.materialLinkFromBayId : '';
     return legacy || null;
-}
-
-function normalizeFacadeBayGroupRepeat(value) {
-    const src = value && typeof value === 'object' ? value : null;
-    if (!src) return { minRepeats: 1, maxRepeats: 'auto' };
-    const minRepeats = clampInt(src.minRepeats ?? 1, 1, 9999);
-    const maxRaw = src.maxRepeats;
-    if (maxRaw === 'auto') return { minRepeats, maxRepeats: 'auto' };
-    if (maxRaw === null || maxRaw === undefined) return { minRepeats, maxRepeats: 'auto' };
-    const maxRepeats = clampInt(maxRaw, minRepeats, 9999);
-    return { minRepeats, maxRepeats };
 }
 
 function applyBaseWallMaterialFallbackToFloorLayers(config) {
@@ -916,7 +921,10 @@ export class BuildingFabrication2View {
         this.ui.onSetLayerBanding = (layerId, patch) => this._setLayerBanding(layerId, patch);
         this.ui.onSetLayerMaterialRef = (layerId, spec) => this._setLayerMaterialRef(layerId, spec);
         this.ui.onSetCornerTreatment = (patch) => this._setCornerTreatment(patch);
+        this.ui.onSetEdgeBevel = (patch) => this._setEdgeBevel(patch);
         this.ui.onSetAttachments = (items) => this._setAttachments(items);
+        this.ui.onSetRoofProps = (layerId, patch) => this._setRoofProps(layerId, patch);
+        this.ui.onRequestRooftopPropThumbnails = () => this._renderRooftopPropThumbnails();
         this.ui.onSetMaterialSlots = (patch) => this._setMaterialSlots(patch);
         this.ui.onSetFloorLayerMaterial = (layerId, faceId, material) => this._setFloorLayerMaterial(layerId, faceId, material);
         this.ui.onRequestMaterialConfig = (layerId, faceId) => this._openMaterialConfigForLayer(layerId, faceId);
@@ -962,6 +970,8 @@ export class BuildingFabrication2View {
         this.ui.onSetBayLink = (layerId, faceId, bayId, masterBayId) => this._setBayLink(layerId, faceId, bayId, masterBayId);
         this.ui.onCreateBayGroup = (layerId, faceId, bayIds) => this._createBayGroup(layerId, faceId, bayIds);
         this.ui.onRemoveBayGroup = (layerId, faceId, groupId) => this._removeBayGroup(layerId, faceId, groupId);
+        this.ui.onUpdateBayGroup = (layerId, faceId, groupId, patch) => this._updateBayGroup(layerId, faceId, groupId, patch);
+        this.ui.onSetFacadeStackingMode = (layerId, faceId, mode) => this._setFacadeStackingMode(layerId, faceId, mode);
         this.ui.onDuplicateBay = (layerId, faceId, bayId) => this._duplicateBay(layerId, faceId, bayId);
         this.ui.onRequestBayMaterialConfig = (layerId, faceId, bayId) => this._openMaterialConfigForBay(layerId, faceId, bayId);
         this.ui.onSetBayWindowEnabled = (layerId, faceId, bayId, enabled) => this._setBayWindowEnabled(layerId, faceId, bayId, enabled);
@@ -1096,7 +1106,10 @@ export class BuildingFabrication2View {
         this.ui.onSetLayerBanding = null;
         this.ui.onSetLayerMaterialRef = null;
         this.ui.onSetCornerTreatment = null;
+        this.ui.onSetEdgeBevel = null;
         this.ui.onSetAttachments = null;
+        this.ui.onSetRoofProps = null;
+        this.ui.onRequestRooftopPropThumbnails = null;
         this.ui.onSetMaterialSlots = null;
         this.ui.onSetFloorLayerMaterial = null;
         this.ui.onRequestMaterialConfig = null;
@@ -1139,6 +1152,8 @@ export class BuildingFabrication2View {
         this.ui.onSetBayLink = null;
         this.ui.onCreateBayGroup = null;
         this.ui.onRemoveBayGroup = null;
+        this.ui.onUpdateBayGroup = null;
+        this.ui.onSetFacadeStackingMode = null;
         this.ui.onDuplicateBay = null;
         this.ui.onRequestBayMaterialConfig = null;
         this.ui.onSetBayWindowEnabled = null;
@@ -1289,6 +1304,7 @@ export class BuildingFabrication2View {
         });
 
         this.ui.setCornerTreatment?.(this._currentConfig?.cornerTreatment ?? null);
+        this.ui.setEdgeBevel?.(this._currentConfig?.edgeBevel ?? null);
         this.ui.setAttachments?.(this._currentConfig?.attachments ?? null);
         this.ui.setMaterialSlots?.(this._currentConfig?.materialSlots ?? null);
         this.ui.setLayers(layerList);
@@ -4391,6 +4407,27 @@ export class BuildingFabrication2View {
         this._requestRebuild({ preserveCamera: true });
     }
 
+    _setEdgeBevel(patch) {
+        if (!patch || typeof patch !== 'object') return;
+        const cfg = this._currentConfig;
+        if (!cfg) return;
+
+        const prev = cfg.edgeBevel && typeof cfg.edgeBevel === 'object' ? cfg.edgeBevel : {};
+        const merged = {
+            enabled: true,
+            widthMeters: EDGE_BEVEL_DEFAULT_WIDTH_METERS,
+            ...prev,
+            ...patch,
+            corners: { ...(prev.corners ?? {}), ...(patch.corners ?? {}) }
+        };
+        const next = patch.enabled === false ? null : normalizeEdgeBevelConfig(merged);
+        if (next) cfg.edgeBevel = next;
+        else delete cfg.edgeBevel;
+
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
     _setMaterialSlots(patch) {
         if (!patch || typeof patch !== 'object') return;
         const cfg = this._currentConfig;
@@ -4470,6 +4507,50 @@ export class BuildingFabrication2View {
         layer.cornice = normalizeCorniceConfig(merged, { isRoof: layer.type === 'roof' });
         this._syncUiState();
         this._requestRebuild({ preserveCamera: true });
+    }
+
+    // AI 492: rooftop props live on the roof layer. Enabling seeds the default
+    // prop set so the toggle alone dresses a roof; disabling drops the block so
+    // the config round-trips back to a bare roof.
+    _setRoofProps(layerId, patch) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        if (!id || !patch || typeof patch !== 'object') return;
+        const cfg = this._currentConfig;
+        if (!cfg || !Array.isArray(cfg.layers)) return;
+
+        const layer = cfg.layers.find((l) => l?.id === id && l?.type === 'roof') ?? null;
+        if (!layer) return;
+
+        const prev = layer.props && typeof layer.props === 'object' ? layer.props : null;
+        const merged = {
+            ...ROOFTOP_PROPS_DEFAULTS,
+            types: ROOFTOP_PROP_TYPE_IDS.slice(),
+            ...(prev ?? {}),
+            ...patch
+        };
+        const normalized = normalizeRooftopPropsConfig(merged);
+        if (normalized) layer.props = normalized;
+        else delete layer.props;
+
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
+    async _renderRooftopPropThumbnails() {
+        if (this._rooftopPropThumbsRendering) return;
+        this._rooftopPropThumbsRendering = true;
+        try {
+            for (const previewCfg of getRooftopPropPreviewConfigs()) {
+                const propType = previewCfg?.layers?.[1]?.props?.types?.[0] ?? '';
+                if (!propType) continue;
+                this._thumbRenderer.primeTextureCacheForConfig(previewCfg);
+                await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+                const url = await this._thumbRenderer.renderConfigToDataUrl(previewCfg);
+                if (typeof url === 'string' && url) this.ui.setRooftopPropThumbnail(propType, url);
+            }
+        } finally {
+            this._rooftopPropThumbsRendering = false;
+        }
     }
 
     _setFloorLayerInteriorEnabled(layerId, enabled) {
@@ -4692,6 +4773,51 @@ export class BuildingFabrication2View {
         this._syncUiState();
         this._requestRebuild({ preserveCamera: true });
         return groupId;
+    }
+
+    // AI 493: repeat bounds and the arcade mode are properties OF the group —
+    // one rhythm feature, not a sibling "arcade bay" type.
+    _updateBayGroup(layerId, faceId, groupId, patch) {
+        const ctx = this._ensureFacadeBayGroupsForMaster(layerId, faceId);
+        if (!ctx) return;
+
+        const gid = typeof groupId === 'string' ? groupId : '';
+        if (!gid) return;
+
+        const groups = Array.isArray(ctx.groups?.items) ? ctx.groups.items : [];
+        const group = groups.find((g) => (g && typeof g === 'object' ? g.id : '') === gid) ?? null;
+        if (!group) return;
+
+        const src = patch && typeof patch === 'object' ? patch : {};
+        if (src.repeat !== undefined) {
+            group.repeat = normalizeFacadeBayGroupRepeat({
+                ...normalizeFacadeBayGroupRepeat(group.repeat ?? null),
+                ...(src.repeat && typeof src.repeat === 'object' ? src.repeat : {})
+            });
+        }
+        if (src.arcade !== undefined) {
+            const arcade = normalizeArcadeConfig(src.arcade);
+            if (arcade) group.arcade = arcade;
+            else delete group.arcade;
+        }
+
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
+    _setFacadeStackingMode(layerId, faceId, mode) {
+        const ctx = this._ensureFacadeBaysForMaster(layerId, faceId);
+        if (!ctx) return;
+
+        const layout = ctx.facade?.layout;
+        if (!layout || typeof layout !== 'object') return;
+
+        const next = normalizeFacadeStackingSpec({ mode });
+        if (next.mode === FACADE_BAY_STACKING_MODE.LOCK_COLUMNS) delete layout.stacking;
+        else layout.stacking = next;
+
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
     }
 
     _removeBayGroup(layerId, faceId, groupId) {

@@ -1874,7 +1874,10 @@ async function runTests() {
         buildBuildingFabricationVisualParts,
         __testOnly: buildingFabricationGeneratorTestOnly
     } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js');
-    const { solveFacadeBaysLayout } = await import('/src/graphics/assets3d/generators/building_fabrication/FacadeBaysSolver.js');
+    const {
+        computeFacadeBaysTopology,
+        solveFacadeBaysLayout
+    } = await import('/src/graphics/assets3d/generators/building_fabrication/FacadeBaysSolver.js');
     const {
         WALL_BASE_MATERIAL_DEFAULT,
         createDefaultFloorLayer,
@@ -2011,6 +2014,41 @@ async function runTests() {
         assertEqual(roundTripped[0].cornice.profile, 'corbelled_brick', 'Expected floor cornice profile to survive normalization round-trip.');
         assertEqual(roundTripped[0].cornice.ornament.type, 'dentils', 'Expected floor ornament to survive round-trip.');
         assertEqual(roundTripped[1].cornice.parapet.stepped.mode, 'corners_and_centers', 'Expected roof parapet options to survive round-trip.');
+    });
+
+    test('BuildingFabricationTypes: roof props block normalization round-trip', () => {
+        assertEqual(createDefaultRoofLayer().props, undefined, 'Expected no props block when the feature is off.');
+        assertEqual(
+            createDefaultRoofLayer({ props: { enabled: false, types: ['water_tower'] } }).props,
+            undefined,
+            'Expected a disabled props block to be dropped.'
+        );
+
+        const roof = createDefaultRoofLayer({
+            props: {
+                enabled: true,
+                density: 9,
+                edgeMarginMeters: 1.6,
+                types: ['MECH_BOX', 'water_tower', 'unicycle'],
+                placements: [{ id: 'hero', type: 'water_tower', variantId: 'large', x: 2, z: 3 }],
+                materials: { bulkhead: 'slot:wallPrimary' }
+            }
+        });
+        assertEqual(roof.props.enabled, true, 'Expected props enabled.');
+        assertNear(roof.props.density, 3.0, 1e-6, 'Expected density clamped to max.');
+        assertNear(roof.props.edgeMarginMeters, 1.6, 1e-6, 'Expected edge margin preserved.');
+        assertEqual(roof.props.types.join(','), 'mech_box,water_tower', 'Expected unknown prop types dropped and ids lowercased.');
+        assertEqual(roof.props.placements.length, 1, 'Expected the explicit hero placement kept.');
+        assertEqual(roof.props.materials.bulkhead, 'slot:wallPrimary', 'Expected slot shorthand preserved for the pre-pass.');
+
+        const roundTripped = normalizeBuildingLayers([createDefaultFloorLayer(), roof]);
+        assertEqual(roundTripped[1].props.types.join(','), 'mech_box,water_tower', 'Expected props to survive normalization round-trip.');
+        assertEqual(roundTripped[1].props.placements[0].id, 'hero', 'Expected explicit placements to survive round-trip.');
+
+        const cloned = cloneBuildingLayers([roof]);
+        assertEqual(cloned[0].props.types.join(','), 'mech_box,water_tower', 'Expected props to survive cloning.');
+        cloned[0].props.types.push('vent_pipe');
+        assertEqual(roof.props.types.length, 2, 'Expected cloned props to be a deep copy.');
     });
 
     test('BuildingFabricationTypes: cornerTreatment normalization round-trip', () => {
@@ -18192,6 +18230,457 @@ async function runTests() {
             assertEqual(it.balcony.presetId, balconyPresetId.MODERN_GLASS_PROJECTING, 'Expected the preset reference to survive.');
             assertEqual(it.balcony.placement, 'projecting', 'Expected the solver to store the normalized balcony.');
         }
+    });
+
+
+
+    // ===== AI 499: plan edge bevels =====
+
+    const bevelFrames = buildingFabricationGeneratorTestOnly?.computeQuadFacadeFramesFromLoop ?? null;
+    const bevelSilhouette = buildingFabricationGeneratorTestOnly?.computeQuadFacadeSilhouette ?? null;
+
+    // 20m x 12m wall loop, corner AB (+x/+z) cut back 1m along each face.
+    const BEVEL_CUT = 1.0;
+    const makeBeveledRectLoop = (cut = BEVEL_CUT) => ([
+        { x: -10, y: 0, z: 6 },
+        { x: 10 - cut, y: 0, z: 6 },
+        { x: 10, y: 0, z: 6 - cut },
+        { x: 10, y: 0, z: -6 },
+        { x: -10, y: 0, z: -6 }
+    ]);
+
+    test('EdgeBevel: a beveled plan still resolves A-D, shortened to the fold lines', () => {
+        assertTrue(!!bevelFrames, 'Expected computeQuadFacadeFramesFromLoop to be exported for tests.');
+        const sharp = bevelFrames([
+            { x: -10, y: 0, z: 6 }, { x: 10, y: 0, z: 6 }, { x: 10, y: 0, z: -6 }, { x: -10, y: 0, z: -6 }
+        ], { warnings: [] });
+        assertTrue(!!sharp, 'Expected the sharp rect to resolve.');
+        assertTrue(Math.abs(sharp.A.length - 20) < 1e-6, 'Expected the sharp A face to span the full 20m.');
+
+        const warnings = [];
+        const frames = bevelFrames(makeBeveledRectLoop(), { warnings });
+        assertTrue(!!frames, 'Expected a beveled plan to resolve its four faces.');
+        assertEqual(warnings.length, 0, 'Expected no corner-mismatch warning for a resolved facet.');
+        assertTrue(Math.abs(frames.A.length - (20 - BEVEL_CUT)) < 1e-6, 'Expected face A to shorten by the cut-back.');
+        assertTrue(Math.abs(frames.B.length - (12 - BEVEL_CUT)) < 1e-6, 'Expected face B to shorten by the cut-back.');
+        assertTrue(Math.abs(frames.C.length - 20) < 1e-6, 'Expected the untouched face C to keep its length.');
+        assertTrue(Math.abs(frames.D.length - 12) < 1e-6, 'Expected the untouched face D to keep its length.');
+
+        const facet = frames.cornerFacets?.AB ?? null;
+        assertTrue(!!facet, 'Expected a corner facet at AB.');
+        assertEqual(facet.faces.join(''), 'AB', 'Expected the facet to name the faces it folds.');
+        assertTrue(Math.abs(facet.length - BEVEL_CUT * Math.SQRT2) < 2e-3, 'Expected the facet width to be the 45-degree chord.');
+        assertTrue(facet.n.x > 0.7 && facet.n.z > 0.7, 'Expected the facet to look out between +x and +z.');
+        assertTrue(!frames.cornerFacets?.BC && !frames.cornerFacets?.CD, 'Expected untouched corners to have no facet.');
+    });
+
+    // A 7m x 6m wall loop: face A is exactly the 3+1+3 bay run below, so the
+    // solver has no leftover to dump and the opening spans are predictable.
+    const BEVEL_TEST_RECT_7M = [
+        { x: -3.5, y: 0, z: 3 }, { x: 3.5, y: 0, z: 3 }, { x: 3.5, y: 0, z: -3 }, { x: -3.5, y: 0, z: -3 }
+    ];
+    const BEVEL_FACE = (bays) => ({ layout: { bays: { items: bays } } });
+    const bevelWindow = (widthMeters, padding = 0.2) => ({
+        enabled: true,
+        defId: 'window_arch_civic',
+        assetType: 'window',
+        size: { widthMeters, heightMeters: 2.0 },
+        heightMode: 'fixed',
+        verticalOffsetMeters: 0.9,
+        padding: { leftMeters: padding, rightMeters: padding },
+        repeat: { count: 1 }
+    });
+
+    test('EdgeBevel: the silhouette folds a beveled corner instead of mitring it', () => {
+        assertTrue(!!bevelSilhouette, 'Expected computeQuadFacadeSilhouette to be exported for tests.');
+        const res = bevelSilhouette({
+            wallOuter: [makeBeveledRectLoop()],
+            facades: {},
+            layerMaterial: null,
+            warnings: []
+        });
+        assertTrue(!!res?.loop?.length, 'Expected a resolved silhouette.');
+        assertTrue(!!res.cornerFacets?.AB, 'Expected the facet to be reported out of the silhouette.');
+
+        const near = (p, x, z) => Math.hypot(p.x - x, p.z - z) < 1e-3;
+        assertTrue(res.loop.some((p) => near(p, 10 - BEVEL_CUT, 6)), 'Expected the A-side fold vertex.');
+        assertTrue(res.loop.some((p) => near(p, 10, 6 - BEVEL_CUT)), 'Expected the B-side fold vertex.');
+        assertTrue(!res.loop.some((p) => near(p, 10, 6)), 'Expected no mitre point at the cut corner.');
+    });
+
+    // Recessed window bays flanking a proud pier: the pier's two plan corners
+    // (at the wall plane) are the convex arrises the wider scope cuts.
+    const makeBevelReliefBays = (windowWidth, padding) => ([
+        { id: 'win_1', size: { mode: 'fixed', widthMeters: 3.0 }, expandPreference: 'no_repeat', depth: { left: -0.25, right: -0.25 }, window: bevelWindow(windowWidth, padding) },
+        { id: 'pier_1', size: { mode: 'fixed', widthMeters: 1.0 }, expandPreference: 'no_repeat' },
+        { id: 'win_2', size: { mode: 'fixed', widthMeters: 3.0 }, expandPreference: 'no_repeat', depth: { left: -0.25, right: -0.25 }, window: bevelWindow(windowWidth, padding) }
+    ]);
+
+    test('EdgeBevel: all_convex_edges cuts the bay-relief arrises', () => {
+        const solved = solveFacadeBaysLayout({ bays: makeBevelReliefBays(2.0, 0.2), faceLengthMeters: 7, warnings: [] });
+        const facades = { A: { layout: { items: solved } } };
+
+        const sharpRes = bevelSilhouette({ wallOuter: [BEVEL_TEST_RECT_7M], facades, layerMaterial: null, warnings: [] });
+        const warnings = [];
+        const bevelRes = bevelSilhouette({
+            wallOuter: [BEVEL_TEST_RECT_7M],
+            facades,
+            layerMaterial: null,
+            warnings,
+            edgeBevel: { enabled: true, scope: 'all_convex_edges', widthMeters: 0.2 }
+        });
+        assertTrue(!!sharpRes?.loop?.length && !!bevelRes?.loop?.length, 'Expected both silhouettes to resolve.');
+        // The pier fronts the wall plane at u 3..4 on face A, so its two plan
+        // corners sit at (-0.5, 3) and (0.5, 3). Each convex arris becomes two
+        // facet vertices; width 0.2m wants a 0.141m cut-back, clamped to 0.4x
+        // the 0.25m return, i.e. 0.1m along each edge.
+        assertEqual(bevelRes.loop.length, sharpRes.loop.length + 2, 'Expected each convex arris to gain one vertex net.');
+        const near = (p, x, z) => Math.hypot(p.x - x, p.z - z) < 1e-3;
+        assertTrue(sharpRes.loop.some((p) => near(p, -0.5, 3)), 'Expected the sharp pier corner in the unbeveled loop.');
+        assertTrue(!bevelRes.loop.some((p) => near(p, -0.5, 3)), 'Expected the pier corner vertex to be cut.');
+        assertTrue(!bevelRes.loop.some((p) => near(p, 0.5, 3)), 'Expected the other pier corner vertex to be cut.');
+        assertTrue(bevelRes.loop.some((p) => near(p, -0.5, 2.9)), 'Expected the facet vertex down the return.');
+        assertTrue(bevelRes.loop.some((p) => near(p, -0.4, 3)), 'Expected the facet vertex along the pier front.');
+        assertTrue(bevelRes.loop.some((p) => near(p, 0.4, 3)), 'Expected the mirrored facet vertex along the pier front.');
+        assertTrue(bevelRes.loop.some((p) => near(p, 0.5, 2.9)), 'Expected the mirrored facet vertex down the return.');
+        assertEqual(warnings.length, 0, 'Expected no refusals with generous opening clearance.');
+    });
+
+    test('EdgeBevel: a cut is refused when an opening leaves it no clearance', () => {
+        // A 2.9m window in a 3.0m bay leaves 0.05m to the relief corner — less
+        // than the reveal allowance — so the arris must stay sharp rather than
+        // let the chamfer eat into the opening's reveal.
+        const solved = solveFacadeBaysLayout({ bays: makeBevelReliefBays(2.9, 0.0), faceLengthMeters: 7, warnings: [] });
+        const facades = { A: { layout: { items: solved } } };
+
+        const sharpRes = bevelSilhouette({ wallOuter: [BEVEL_TEST_RECT_7M], facades, layerMaterial: null, warnings: [] });
+        const warnings = [];
+        const bevelRes = bevelSilhouette({
+            wallOuter: [BEVEL_TEST_RECT_7M],
+            facades,
+            layerMaterial: null,
+            warnings,
+            edgeBevel: { enabled: true, scope: 'all_convex_edges', widthMeters: 0.2 }
+        });
+        assertTrue(!!sharpRes?.loop?.length && !!bevelRes?.loop?.length, 'Expected both silhouettes to resolve.');
+        assertEqual(bevelRes.loop.length, sharpRes.loop.length, 'Expected both pier arrises to be refused.');
+        const near = (p, x, z) => Math.hypot(p.x - x, p.z - z) < 1e-3;
+        assertTrue(bevelRes.loop.some((p) => near(p, -0.5, 3)), 'Expected the pier corner to stay sharp.');
+        assertTrue(bevelRes.loop.some((p) => near(p, 0.5, 3)), 'Expected the other pier corner to stay sharp.');
+        assertTrue(
+            warnings.some((w) => String(w).includes('no room for a facet')),
+            'Expected the refusal to be reported.'
+        );
+    });
+
+    test('EdgeBevel: the interior shell keeps a hole per opening with all_convex_edges on', () => {
+        // The AI 501 regression: beveling the plan corners collapsed the shell's
+        // mitre joins onto the fold points, tilting every shell run off its face
+        // line — and the projected opening cutouts then missed their wall
+        // segments, so glazing showed a blank shell instead of a room.
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const makeLayers = () => ([
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight: 4.0,
+                interior: { enabled: true },
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ]);
+        const windowBays = [
+            { id: 'pad_1', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' },
+            { id: 'win_1', size: { mode: 'fixed', widthMeters: 3.0 }, expandPreference: 'no_repeat', depth: { left: -0.6, right: -0.6 }, window: bevelWindow(2.0) },
+            { id: 'pad_2', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+        ];
+        const solidBays = windowBays.map(({ window: _win, ...bay }) => bay);
+        const facadesFor = (bays) => ({
+            A: { layout: { items: solveFacadeBaysLayout({ bays, faceLengthMeters: 10, warnings: [] }) } }
+        });
+
+        const shellWallTris = (facades, edgeBevel) => {
+            const parts = buildBuildingFabricationVisualParts({
+                map,
+                tiles: [[0, 0]],
+                generatorConfig,
+                tileSize,
+                occupyRatio: 1.0,
+                layers: makeLayers(),
+                facades,
+                edgeBevel,
+                overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+                walls: { inset: 0.0 }
+            });
+            const wall = (parts?.solidMeshes ?? []).find((m) => (
+                m?.userData?.buildingFab2Role === 'interior' && m?.userData?.buildingFab2InteriorKind === 'wall'
+            )) ?? null;
+            assertTrue(!!wall, 'Expected an interior shell wall mesh.');
+            return (wall.geometry.getAttribute('position')?.count ?? 0) / 3;
+        };
+
+        const bevelCfg = { enabled: true, scope: 'all_convex_edges', widthMeters: 0.08 };
+        // The opening's holes are what the windowed build adds over the solid
+        // one; the facet bridge segments cancel out of the difference.
+        const holeTrisSharp = shellWallTris(facadesFor(windowBays), null) - shellWallTris(facadesFor(solidBays), null);
+        const holeTrisBeveled = shellWallTris(facadesFor(windowBays), bevelCfg) - shellWallTris(facadesFor(solidBays), bevelCfg);
+        assertTrue(holeTrisSharp > 0, 'Expected the opening to cut the shell without the bevel.');
+        assertEqual(holeTrisBeveled, holeTrisSharp, 'Expected the shell to keep a hole per opening with the scope on.');
+    });
+
+    // ===== AI 493: rhythm topology lock + arcade grouping =====
+
+    const RHYTHM_BAYS = [
+        { id: 'win_1', size: { mode: 'range', minMeters: 1.8, maxMeters: null }, expandPreference: 'prefer_expand' },
+        { id: 'pier_2', size: { mode: 'fixed', widthMeters: 0.7 }, expandPreference: 'no_repeat' }
+    ];
+    const RHYTHM_GROUPS = [{ id: 'group_1', bayIds: ['win_1', 'pier_2'], repeat: { minRepeats: 1, maxRepeats: 'auto' } }];
+
+    // A pier/window grid with solid filler bays at both ends: the fillers are
+    // what absorb a shorter layer's slack while the grid keeps its pitch.
+    const STACK_WINDOW = { enabled: true, defId: 'window_arch_civic', assetType: 'window', size: { widthMeters: 2.0, heightMeters: 2.0 } };
+    const STACK_BAYS = [
+        { id: 'end_1', size: { mode: 'range', minMeters: 0.9, maxMeters: 1.4 }, expandPreference: 'prefer_expand' },
+        { id: 'win_1', size: { mode: 'fixed', widthMeters: 2.4 }, expandPreference: 'prefer_expand', window: STACK_WINDOW },
+        { id: 'pier_1', size: { mode: 'range', minMeters: 0.8, maxMeters: 1.3 }, expandPreference: 'prefer_expand' },
+        { id: 'win_2', size: { mode: 'fixed', widthMeters: 2.4 }, expandPreference: 'prefer_expand', window: STACK_WINDOW },
+        { id: 'end_2', size: { mode: 'range', minMeters: 0.9, maxMeters: 1.4 }, expandPreference: 'prefer_expand' }
+    ];
+    const STACK_GROUPS = [{ id: 'group_1', bayIds: ['pier_1', 'win_2'], repeat: { minRepeats: 1, maxRepeats: 'auto' } }];
+
+    // Window column centres along the face, in meters from the face start.
+    const windowCentersOf = (items, faceLengthMeters) => {
+        const out = [];
+        let u = 0;
+        for (const it of items) {
+            const width = (Number(it.widthFrac) || 0) * faceLengthMeters;
+            if (String(it.sourceBayId ?? '').startsWith('win_')) out.push(u + width * 0.5);
+            u += width;
+        }
+        return out;
+    };
+
+    test('FacadeBaysSolver: a locked topology holds the column pitch on a shorter face', () => {
+        // The base face sets the rhythm; the setback face is 4m shorter, so it
+        // is inset 2m at each end.
+        const topology = computeFacadeBaysTopology({ bays: STACK_BAYS, groups: STACK_GROUPS, faceLengthMeters: 20, warnings: [] });
+        assertTrue(Array.isArray(topology.bayWidths) && topology.bayWidths.length > 0, 'Expected the topology to carry the locked pitch.');
+
+        const base = windowCentersOf(
+            solveFacadeBaysLayout({ bays: STACK_BAYS, groups: STACK_GROUPS, faceLengthMeters: 20, topology, warnings: [] }),
+            20
+        );
+        const locked = windowCentersOf(
+            solveFacadeBaysLayout({ bays: STACK_BAYS, groups: STACK_GROUPS, faceLengthMeters: 16, topology, warnings: [] }),
+            16
+        ).map((u) => u + 2);
+        assertTrue(locked.length < base.length, 'Expected the shorter face to drop columns, not squeeze them.');
+        for (const center of locked) {
+            assertTrue(
+                base.some((b) => Math.abs(b - center) < 1e-6),
+                `Expected every locked column to land on a base column, ${center.toFixed(3)} did not.`
+            );
+        }
+
+        const loose = windowCentersOf(
+            solveFacadeBaysLayout({ bays: STACK_BAYS, groups: STACK_GROUPS, faceLengthMeters: 16, warnings: [] }),
+            16
+        ).map((u) => u + 2);
+        assertTrue(
+            loose.every((center) => base.every((b) => Math.abs(b - center) > 1e-3)),
+            'Expected an unlocked shorter face to stack with nothing (that is the bug this locks).'
+        );
+    });
+
+    test('FacadeBaysSolver: replaying a face own topology changes nothing', () => {
+        const topology = computeFacadeBaysTopology({ bays: STACK_BAYS, groups: STACK_GROUPS, faceLengthMeters: 20, warnings: [] });
+        const direct = solveFacadeBaysLayout({ bays: STACK_BAYS, groups: STACK_GROUPS, faceLengthMeters: 20, warnings: [] });
+        const replayed = solveFacadeBaysLayout({ bays: STACK_BAYS, groups: STACK_GROUPS, faceLengthMeters: 20, topology, warnings: [] });
+        assertEqual(replayed.length, direct.length, 'Expected the reference face to be unchanged by its own topology.');
+        for (let i = 0; i < direct.length; i++) {
+            assertTrue(Math.abs(replayed[i].widthFrac - direct[i].widthFrac) < 1e-9, 'Expected identical bay widths on replay.');
+        }
+    });
+
+    test('FacadeBaysSolver: a face too short for the locked pitch solves on its own', () => {
+        const topology = computeFacadeBaysTopology({ bays: STACK_BAYS, groups: STACK_GROUPS, faceLengthMeters: 20, warnings: [] });
+        const warnings = [];
+        const items = solveFacadeBaysLayout({ bays: STACK_BAYS, groups: STACK_GROUPS, faceLengthMeters: 8, topology, warnings });
+        const local = solveFacadeBaysLayout({ bays: STACK_BAYS, groups: STACK_GROUPS, faceLengthMeters: 8, warnings: [] });
+        assertEqual(items.length, local.length, 'Expected the short face to solve on its own.');
+        assertTrue(
+            warnings.some((wm) => String(wm).includes('locked column widths')),
+            'Expected a warning naming the locked-pitch fallback.'
+        );
+        let sum = 0;
+        for (const it of items) {
+            sum += it.widthFrac * 8;
+            assertTrue(it.widthFrac * 8 >= it.minWidthMeters - 1e-6, 'Expected the fallback to respect bay minimum widths.');
+        }
+        assertTrue(Math.abs(sum - 8) < 1e-6, 'Expected the fallback bays to cover the face.');
+    });
+
+    test('FacadeBaysSolver: group repeat bounds clamp the rhythm', () => {
+        const capped = solveFacadeBaysLayout({
+            bays: RHYTHM_BAYS,
+            groups: [{ id: 'group_1', bayIds: ['win_1', 'pier_2'], repeat: { minRepeats: 1, maxRepeats: 2 } }],
+            faceLengthMeters: 40,
+            warnings: []
+        });
+        assertEqual(capped.length, 4, 'Expected maxRepeats to cap the group at two copies.');
+
+        const forced = solveFacadeBaysLayout({
+            bays: RHYTHM_BAYS,
+            groups: [{ id: 'group_1', bayIds: ['win_1', 'pier_2'], repeat: { minRepeats: 3, maxRepeats: 3 } }],
+            faceLengthMeters: 40,
+            warnings: []
+        });
+        assertEqual(forced.length, 6, 'Expected minRepeats to force three copies.');
+
+        const tooTight = [];
+        const clamped = solveFacadeBaysLayout({
+            bays: RHYTHM_BAYS,
+            groups: [{ id: 'group_1', bayIds: ['win_1', 'pier_2'], repeat: { minRepeats: 5, maxRepeats: 5 } }],
+            faceLengthMeters: 6,
+            warnings: tooTight
+        });
+        // The clamp drops the FLOOR to one copy; repeat-if-fits then grows it
+        // back to what the face can actually hold (2 x 2.5m inside 6m).
+        assertEqual(clamped.length, 4, 'Expected an impossible minRepeats to clamp, then refit.');
+        assertTrue(tooTight.some((w) => String(w).includes('minRepeats')), 'Expected a warning about the clamped minRepeats.');
+    });
+
+    test('FacadeBaysSolver: the arcade mode rides every bay of every repeat', () => {
+        const items = solveFacadeBaysLayout({
+            bays: RHYTHM_BAYS,
+            groups: [{
+                id: 'group_1',
+                bayIds: ['win_1', 'pier_2'],
+                repeat: { minRepeats: 1, maxRepeats: 'auto' },
+                arcade: { enabled: true }
+            }],
+            faceLengthMeters: 20,
+            warnings: []
+        });
+        assertTrue(items.length >= 4, 'Expected the arcade group to repeat.');
+        for (const it of items) {
+            assertTrue(!!it.arcade, 'Expected the arcade config to survive the solver (three-normalizer regression class).');
+            assertEqual(it.arcade.groupId, 'group_1', 'Expected the arcade tag to name its run.');
+            assertTrue(it.arcade.impost?.enabled === true, 'Expected the default impost band.');
+        }
+
+        const off = solveFacadeBaysLayout({ bays: RHYTHM_BAYS, groups: RHYTHM_GROUPS, faceLengthMeters: 20, warnings: [] });
+        assertTrue(off.every((it) => !it.arcade), 'Expected no arcade tag on a plain group.');
+    });
+
+    const ARCADE_WINDOW = (widthMeters) => ({
+        enabled: true,
+        defId: 'window_arch_civic',
+        assetType: 'window',
+        size: { widthMeters, heightMeters: 2.2 },
+        heightMode: 'fixed',
+        verticalOffsetMeters: 0.6,
+        width: { minMeters: widthMeters, maxMeters: null },
+        padding: { leftMeters: 0.1, rightMeters: 0.1 },
+        repeat: { count: 1 }
+    });
+
+    const buildArcadeParts = ({ arcade, wideWindowMeters = 2.6 }) => buildBalconyParts({
+        floors: 2,
+        floorHeight: 3.6,
+        facades: {
+            A: {
+                layout: {
+                    bays: {
+                        items: [
+                            { id: 'pier_1', size: { mode: 'fixed', widthMeters: 0.8 }, expandPreference: 'no_repeat' },
+                            {
+                                id: 'wide_2',
+                                size: { mode: 'fixed', widthMeters: 2.8 },
+                                expandPreference: 'no_repeat',
+                                window: ARCADE_WINDOW(wideWindowMeters)
+                            },
+                            { id: 'pier_3', size: { mode: 'fixed', widthMeters: 0.8 }, expandPreference: 'no_repeat' },
+                            {
+                                id: 'narrow_4',
+                                size: { mode: 'fixed', widthMeters: 1.6 },
+                                expandPreference: 'no_repeat',
+                                window: ARCADE_WINDOW(1.4)
+                            }
+                        ]
+                    },
+                    groups: {
+                        items: [{
+                            id: 'group_1',
+                            bayIds: ['pier_1', 'wide_2', 'pier_3', 'narrow_4'],
+                            repeat: { minRepeats: 1, maxRepeats: 'auto' },
+                            ...(arcade ? { arcade } : {})
+                        }]
+                    }
+                }
+            }
+        }
+    });
+
+    const impostLineYs = (parts) => Array.from(new Set(
+        balconyMeshesByRole(parts, 'bay_arcade_impost').map((m) => Math.round(m.position.y * 1000) / 1000)
+    )).sort((a, b) => a - b);
+
+    test('BuildingFabricationGenerator: an arcade run bands its piers at one springing line per floor', () => {
+        const off = buildArcadeParts({ arcade: null });
+        assertEqual(balconyMeshesByRole(off, 'bay_arcade_impost').length, 0, 'Expected no impost band without the arcade mode.');
+
+        const on = buildArcadeParts({ arcade: { enabled: true } });
+        assertTrue(balconyMeshesByRole(on, 'bay_arcade_impost').length >= 4, 'Expected an impost band on each pier bay of each floor.');
+
+        const ys = impostLineYs(on);
+        assertEqual(ys.length, 2, 'Expected exactly one springing line per floor.');
+        assertTrue(Math.abs((ys[1] - ys[0]) - 3.6) < 1e-3, 'Expected the two springing lines to be one floor apart.');
+
+        // The narrowest arch owns the highest natural springing, so widening
+        // the OTHER opening of the run must not move the line: that is the
+        // rule that keeps a mixed-width arcade from stilting an arch.
+        const uniform = buildArcadeParts({ arcade: { enabled: true }, wideWindowMeters: 1.4 });
+        const uniformYs = impostLineYs(uniform);
+        assertEqual(uniformYs.length, ys.length, 'Expected the same number of springing lines.');
+        for (let i = 0; i < ys.length; i++) {
+            assertTrue(Math.abs(ys[i] - uniformYs[i]) < 1e-3, 'Expected the wide arch to flatten to the narrow arch springing line.');
+        }
+    });
+
+    test('BuildingFabricationGenerator: arcade imposts skip the opening bays', () => {
+        const on = buildArcadeParts({ arcade: { enabled: true } });
+        const imposts = balconyMeshesByRole(on, 'bay_arcade_impost');
+        assertTrue(imposts.length > 0, 'Expected impost bands.');
+        for (const mesh of imposts) {
+            const bayId = String(mesh?.userData?.arcadeBayId ?? '');
+            assertTrue(bayId.startsWith('pier_'), `Expected only pier bays to carry an impost, got "${bayId}".`);
+            assertEqual(mesh?.userData?.arcadeGroupId, 'group_1', 'Expected the impost to name its arcade run.');
+        }
+    });
+
+    test('BuildingFabricationGenerator: the arcade impost band can be turned off on its own', () => {
+        const on = buildArcadeParts({ arcade: { enabled: true, impost: { enabled: false } } });
+        assertEqual(
+            balconyMeshesByRole(on, 'bay_arcade_impost').length,
+            0,
+            'Expected no band when the impost is disabled but the springing lock stays on.'
+        );
     });
 
     test('BuildingFabricationGenerator: projecting balcony emits platform/railing/glass/supports per floor', () => {

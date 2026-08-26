@@ -126,6 +126,7 @@ export function createCityBuildingConfigFromFabrication({
     wallDecorations = null,
     attachments = null,
     cornerTreatment = null,
+    edgeBevel = null,
     materialSlots = null
 } = {}) {
     const safeId = sanitizeBuildingConfigId(id);
@@ -155,6 +156,7 @@ export function createCityBuildingConfigFromFabrication({
     if (wallDecorations && typeof wallDecorations === 'object') cfg.wallDecorations = wallDecorations;
     if (attachments && typeof attachments === 'object') cfg.attachments = attachments;
     if (cornerTreatment && typeof cornerTreatment === 'object') cfg.cornerTreatment = cornerTreatment;
+    if (edgeBevel && typeof edgeBevel === 'object') cfg.edgeBevel = edgeBevel;
     if (materialSlots && typeof materialSlots === 'object') cfg.materialSlots = materialSlots;
     return cfg;
 }
@@ -222,6 +224,12 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
         '    ),'
     ] : [];
     const cornerTreatment = cfg.cornerTreatment && typeof cfg.cornerTreatment === 'object' ? cfg.cornerTreatment : null;
+    const edgeBevel = cfg.edgeBevel && typeof cfg.edgeBevel === 'object' ? cfg.edgeBevel : null;
+    const edgeBevelLines = edgeBevel ? [
+        '    edgeBevel: Object.freeze(',
+        indentLines(JSON.stringify(edgeBevel, null, 4), 8),
+        '    ),'
+    ] : [];
     const cornerTreatmentLines = cornerTreatment ? [
         '    cornerTreatment: Object.freeze(',
         indentLines(JSON.stringify(cornerTreatment, null, 4), 8),
@@ -255,6 +263,7 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
         ...wallDecorationsLines,
         ...attachmentsLines,
         ...cornerTreatmentLines,
+        ...edgeBevelLines,
         ...materialSlotsLines,
         ...windowVisualsLines,
         '});',

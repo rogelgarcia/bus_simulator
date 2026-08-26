@@ -1,3 +1,17 @@
+# DONE
+
+## Summary of changes
+- `src/app/buildings/RooftopPropsModel.js` (new): ONE rooftop feature with a prop set as modes (`water_tower`, `roof_bulkhead`, `mech_box`, `vent_pipe`) — three-free normalizer, prop/variant catalog with area-scaled scatter rules, seeded deterministic placement solver, and GUI preview configs.
+- Placement solver: dart-throwing over the roof polygon with the parapet inner face as the region boundary, `edgeMarginMeters` + per-prop footprint radius clearance, `minSpacingMeters` between props, courtyard holes and the mass above a setback as keep-outs, and boxy props yawed onto the nearest roof edge.
+- `RooftopPropGeometry.js` (new): procedural low-poly parts per prop kind (splayed leg frame + hooped wooden tank + conical cap; bulkhead with door face and flashing cap; mech box with curb, fan housings and louvres; hooded vent pipe) emitted under four shared material roles.
+- Generator: roof-layer integration — solves placements per roof loop, merges parts per material role into at most four shadow-casting meshes that ride the existing `BuildingGeometryMerger` path (~2k triangles for a fully dressed large roof).
+- Schema: roof layers gained a `props` block (`BuildingFabricationTypes`) that normalizes, clones and round-trips; absent when the feature is off so bare roofs are unchanged.
+- Materials: one shared palette (`tank`, `frame`, `bulkhead`, `mech`) wired into the AI 491 slot pre-pass (`resolveBuildingConfigMaterials`), with the bulkhead defaulting to the wall material below it.
+- BF2 GUI: roof layers gained a Rooftop props section — enable toggle, per-prop-type buttons with rendered thumbnails, density / edge margin / min spacing / seed offset (replacing the "more roof controls coming later" placeholder).
+- Showcase: props enabled on `brick_midrise_2` (full set) and `stone_setback_tower` (setback terrace mechanicals, exercising the keep-out rule).
+- Tests: node unit suite for schema round-trip, determinism, roof bounds, spacing/holes, area scaling and explicit hero placements; core-suite roof-layer schema round-trip; BF2 GUI e2e driving the section end to end; capture spec producing before/after pairs and roof close-ups.
+- Specs: rooftop props documented in `BUILDING_2_SPEC_model` (§4 schema, §6 placement rules), `BUILDING_2_SPEC_engine` (§6.2.2) and `BUILDING_2_SPEC_ui` (§7.2.2).
+
 #Problem
 
 Fabricated roofs are empty slabs. From bus height the skyline constantly shows rooflines, and the references dress them with a small recurring set: wooden water towers on steel legs, roof access bulkheads, and mechanical/HVAC boxes. Their absence makes upper stories read as unfinished the same way bare walls did before decorations.

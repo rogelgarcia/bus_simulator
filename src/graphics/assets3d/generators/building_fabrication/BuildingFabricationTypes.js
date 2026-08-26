@@ -11,6 +11,7 @@ import {
 } from '../../../../app/buildings/WallBaseTintModel.js';
 import { WINDOW_TYPE, getDefaultWindowParams, isWindowTypeId } from '../buildings/WindowTextureGenerator.js';
 import { isValidMaterialSlotName, parseMaterialSpecShorthand } from '../../../../app/buildings/BuildingMaterialSlots.js';
+import { normalizeRooftopPropsConfig } from '../../../../app/buildings/RooftopPropsModel.js';
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -688,7 +689,8 @@ export function createDefaultRoofLayer({
     id = null,
     ring = null,
     roof = null,
-    cornice = null
+    cornice = null,
+    props = null
 } = {}) {
     const r = ring ?? {};
     const rf = roof ?? {};
@@ -718,6 +720,7 @@ export function createDefaultRoofLayer({
     const roofColorId = roofMaterial.kind === 'color' && isRoofColor(roofMaterial.id)
         ? roofMaterial.id
         : (isRoofColor(legacyRoofColor) ? legacyRoofColor : ROOF_COLOR.DEFAULT);
+    const propsCfg = normalizeRooftopPropsConfig(props);
     return {
         id: typeof id === 'string' && id ? id : createLayerId('roof'),
         type: LAYER_TYPE.ROOF,
@@ -730,6 +733,9 @@ export function createDefaultRoofLayer({
             tiling: normalizeTilingConfig(r?.tiling, { defaultTileMeters: 2.0 })
         },
         cornice: normalizeCorniceConfig(cornice, { isRoof: true }),
+        // AI 492: rooftop props (water towers, bulkheads, mechanicals). Absent
+        // when the feature is off so existing roof configs round-trip unchanged.
+        ...(propsCfg ? { props: propsCfg } : {}),
         roof: {
             type: typeof rf.type === 'string' && rf.type ? rf.type : 'Asphalt',
             material: roofMaterial,
@@ -873,6 +879,7 @@ export function cloneBuildingLayers(layers) {
             const roof = layer?.roof ?? {};
             const roofTiling = roof?.tiling ?? null;
             const roofMaterialVariation = roof?.materialVariation ?? null;
+            const props = layer?.props ?? null;
 
             out.push({
                 ...layer,
@@ -882,6 +889,7 @@ export function cloneBuildingLayers(layers) {
                     tiling: ringTiling ? deepClone(ringTiling) : ringTiling
                 },
                 cornice: cornice ? deepClone(cornice) : cornice,
+                props: props ? deepClone(props) : props,
                 roof: {
                     ...(roof?.material ? { ...roof, material: { ...roof.material } } : { ...roof }),
                     tiling: roofTiling ? deepClone(roofTiling) : roofTiling,

@@ -1336,6 +1336,7 @@ export class BuildingFabrication2Scene {
             facades: config?.facades ?? null,
             attachments: config?.attachments ?? null,
             cornerTreatment: config?.cornerTreatment ?? null,
+            edgeBevel: config?.edgeBevel ?? null,
             materialSlots: config?.materialSlots ?? null,
             facadeCornerStrategyId: this._facadeCornerStrategyId,
             facadeCornerDebug: this._facadeCornerDebug,

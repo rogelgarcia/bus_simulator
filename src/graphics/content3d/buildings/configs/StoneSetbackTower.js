@@ -130,6 +130,25 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
             {
                 "id": "roof_35",
                 "type": "roof",
+                "props": {
+                    "enabled": true,
+                    "density": 1,
+                    "edgeMarginMeters": 0.9,
+                    "minSpacingMeters": 0.8,
+                    "seedOffset": 11,
+                    "types": [
+                        "roof_bulkhead",
+                        "mech_box",
+                        "vent_pipe"
+                    ],
+                    "placements": [],
+                    "materials": {
+                        "tank": null,
+                        "frame": null,
+                        "bulkhead": null,
+                        "mech": null
+                    }
+                },
                 "ring": {
                     "enabled": true,
                     "innerRadius": 1.5,

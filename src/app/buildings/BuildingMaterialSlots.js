@@ -269,6 +269,20 @@ function resolveFacadeFaceMaterials(facade, ctx, contextLabel) {
             }
         }
     }
+
+    // AI 493: the arcade impost band is a group-level feature and uses the same
+    // wall-material spec dialect as capitals.
+    const groups = facade.layout?.groups?.items;
+    if (Array.isArray(groups)) {
+        for (const group of groups) {
+            if (!group || typeof group !== 'object') continue;
+            const impost = group.arcade?.impost;
+            if (!impost || typeof impost !== 'object' || !impost.material) continue;
+            resolveSpecInPlace(impost, 'material', ctx, {
+                context: `${contextLabel} group ${group?.id ?? ''} arcade impost`
+            });
+        }
+    }
 }
 
 function resolveWindowDecorationMaterials(node, ctx, contextLabel) {
@@ -328,6 +342,15 @@ export function resolveBuildingConfigMaterials({
                     resolveSpecInPlace(layer.roof, 'material', ctx, { tilingKey: 'tiling', context: `${label} roof` });
                 }
                 resolveCorniceMaterials(layer.cornice, ctx, label);
+                // AI 492: rooftop props share one material palette across the
+                // whole prop set, so a slot swap recolors every prop at once.
+                const propMaterials = layer.props?.materials;
+                if (propMaterials && typeof propMaterials === 'object') {
+                    for (const role of Object.keys(propMaterials)) {
+                        if (propMaterials[role] === null || propMaterials[role] === undefined) continue;
+                        resolveSpecInPlace(propMaterials, role, ctx, { context: `${label} rooftop prop ${role}` });
+                    }
+                }
                 continue;
             }
 

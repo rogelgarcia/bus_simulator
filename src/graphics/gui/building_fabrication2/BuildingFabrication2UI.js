@@ -5,6 +5,21 @@ import { getBeltCourseColorOptions } from '../../../app/buildings/BeltCourseColo
 import { getBrickPresetOptions } from '../../../app/buildings/BrickPresetCatalog.js';
 import { BUILDING_MATERIAL_SLOT_IDS, getMaterialSlotNames, normalizeBuildingMaterialSlotsConfig } from '../../../app/buildings/BuildingMaterialSlots.js';
 import { BALCONY_PRESET_OPTIONS } from '../../../app/buildings/BayBalconyModel.js';
+import { ROOFTOP_PROPS_DEFAULTS, ROOFTOP_PROP_OPTIONS } from '../../../app/buildings/RooftopPropsModel.js';
+import {
+    EDGE_BEVEL_CORNER_IDS,
+    EDGE_BEVEL_DEFAULT_WIDTH_METERS,
+    EDGE_BEVEL_SCOPE,
+    EDGE_BEVEL_WIDTH_MAX_METERS,
+    EDGE_BEVEL_WIDTH_MIN_METERS,
+    normalizeEdgeBevelConfig
+} from '../../../app/buildings/EdgeBevelModel.js';
+import {
+    FACADE_BAY_STACKING_MODE,
+    normalizeArcadeConfig,
+    normalizeFacadeBayGroupRepeat,
+    normalizeFacadeStackingSpec
+} from '../../../app/buildings/FacadeBayGroupModel.js';
 import {
     WALL_BASE_TINT_STATE_DEFAULT,
     applyWallBaseTintStateToWallBase,
@@ -851,6 +866,7 @@ export class BuildingFabrication2UI {
         this._catalogEntries = [];
         this._thumbById = new Map();
         this._balconyPresetThumbById = new Map();
+        this._rooftopPropThumbById = new Map();
         this._page = 0;
         this._activeSidePanel = null;
         this._buildingPanelExpanded = true;
@@ -897,8 +913,12 @@ export class BuildingFabrication2UI {
         this.onSetLayerBanding = null;
         this.onSetLayerMaterialRef = null;
         this.onSetCornerTreatment = null;
+        this.onSetEdgeBevel = null;
         this.onSetAttachments = null;
+        this.onSetRoofProps = null;
+        this.onRequestRooftopPropThumbnails = null;
         this._cornerTreatment = null;
+        this._edgeBevel = null;
         this._attachments = null;
         this.onSetMaterialSlots = null;
         this._materialSlots = null;
@@ -927,6 +947,8 @@ export class BuildingFabrication2UI {
         this.onSetBayLink = null;
         this.onCreateBayGroup = null;
         this.onRemoveBayGroup = null;
+        this.onUpdateBayGroup = null;
+        this.onSetFacadeStackingMode = null;
         this.onDuplicateBay = null;
         this.onRequestBayMaterialConfig = null;
         this.onSetBayWindowEnabled = null;
@@ -1213,6 +1235,11 @@ export class BuildingFabrication2UI {
         this._renderLayers();
     }
 
+    setEdgeBevel(value) {
+        this._edgeBevel = value && typeof value === 'object' ? value : null;
+        this._renderLayers();
+    }
+
     setAttachments(value) {
         this._attachments = value && typeof value === 'object' ? value : null;
         this._renderLayers();
@@ -1302,6 +1329,14 @@ export class BuildingFabrication2UI {
         const u = typeof url === 'string' ? url : '';
         if (!id || !u) return;
         this._balconyPresetThumbById.set(id, u);
+        this._renderLayers();
+    }
+
+    setRooftopPropThumbnail(propType, url) {
+        const id = typeof propType === 'string' ? propType : '';
+        const u = typeof url === 'string' ? url : '';
+        if (!id || !u) return;
+        this._rooftopPropThumbById.set(id, u);
         this._renderLayers();
     }
 
@@ -3321,6 +3356,7 @@ export class BuildingFabrication2UI {
         const allowEdit = this._enabled && this._hasBuilding;
         this._appendMaterialSlotsSection(this.layersList, { allowEdit });
         this._appendCornerTreatmentSection(this.layersList, { allowEdit });
+        this._appendEdgeBevelSection(this.layersList, { allowEdit });
         this._appendAttachmentsSection(this.layersList, { allowEdit });
         let globalSelectedFaceId = null;
         for (const faceState of this._floorLayerFaceStateById.values()) {
@@ -5944,11 +5980,7 @@ export class BuildingFabrication2UI {
                 body.appendChild(dynamicArea);
             } else {
                 this._appendCorniceSection(body, { layer, layerId, allowEdit, isRoof: true });
-
-                const hint = document.createElement('div');
-                hint.className = 'building-fab2-hint';
-                hint.textContent = 'More roof controls coming later.';
-                body.appendChild(hint);
+                this._appendRooftopPropsSection(body, { layer, layerId, allowEdit });
             }
 
 	            group.appendChild(header);
@@ -6348,6 +6380,177 @@ export class BuildingFabrication2UI {
         }));
         addRow.appendChild(addControls);
         body.appendChild(addRow);
+
+        group.appendChild(header);
+        group.appendChild(body);
+        container.appendChild(group);
+    }
+
+    // AI 499: plan edge bevel. Building-level like corner treatment, but a
+    // silhouette mutation rather than an overlay — the two never share a corner.
+    _appendEdgeBevelSection(container, { allowEdit }) {
+        const cfg = normalizeEdgeBevelConfig(this._edgeBevel);
+        const enabled = !!cfg;
+        const emitPatch = (patch) => this.onSetEdgeBevel?.(patch);
+
+        const group = document.createElement('div');
+        group.className = 'building-fab2-layer-group is-building';
+        const openKey = '__edge_bevel__';
+        const isOpen = this._layerOpenById.get(openKey) ?? false;
+
+        const header = document.createElement('div');
+        header.className = 'building-fab2-layer-summary';
+        header.tabIndex = 0;
+        header.setAttribute('role', 'button');
+        header.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        const title = document.createElement('div');
+        title.className = 'building-fab2-layer-title';
+        title.textContent = enabled ? 'Edge bevel (on)' : 'Edge bevel';
+        header.appendChild(title);
+
+        const body = document.createElement('div');
+        body.className = 'building-fab2-layer-body';
+        body.classList.toggle('hidden', !isOpen);
+
+        const setOpen = (open) => {
+            const next = !!open;
+            this._layerOpenById.set(openKey, next);
+            body.classList.toggle('hidden', !next);
+            header.setAttribute('aria-expanded', next ? 'true' : 'false');
+        };
+        header.addEventListener('click', () => setOpen(!(this._layerOpenById.get(openKey) ?? false)));
+        header.addEventListener('keydown', (ev) => {
+            if (ev?.key !== 'Enter' && ev?.key !== ' ') return;
+            ev.preventDefault();
+            setOpen(!(this._layerOpenById.get(openKey) ?? false));
+        });
+
+        const addToggleRow = (label, value, onSet, { role = null } = {}) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab-row building-fab-row-wide building-fab2-bay-window-mode-row';
+            const rowLabel = document.createElement('div');
+            rowLabel.className = 'building-fab-row-label';
+            rowLabel.textContent = label;
+            const controls = document.createElement('div');
+            controls.className = 'building-fab2-bay-row-controls';
+            const toggle = document.createElement('div');
+            toggle.className = 'building-fab2-width-mode-toggle building-fab2-bay-window-mode-toggle';
+            for (const [state, text] of [[false, 'Off'], [true, 'On']]) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'building-fab2-width-mode-btn';
+                btn.textContent = text;
+                btn.disabled = !allowEdit;
+                btn.classList.toggle('is-active', value === state);
+                if (role) {
+                    btn.dataset.role = role;
+                    btn.dataset.state = state ? 'on' : 'off';
+                }
+                btn.addEventListener('click', () => {
+                    if (!allowEdit || value === state) return;
+                    onSet(state);
+                });
+                toggle.appendChild(btn);
+            }
+            controls.appendChild(toggle);
+            row.appendChild(rowLabel);
+            row.appendChild(controls);
+            body.appendChild(row);
+        };
+
+        const addWidthRow = (label, { value, onChange, role = null }) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab2-layer-row';
+            const rowLabel = document.createElement('div');
+            rowLabel.className = 'building-fab2-row-label';
+            rowLabel.textContent = label;
+            const range = document.createElement('input');
+            range.type = 'range';
+            range.className = 'building-fab2-layer-range';
+            const number = document.createElement('input');
+            number.type = 'number';
+            number.className = 'building-fab2-layer-number';
+            for (const input of [range, number]) {
+                input.min = String(EDGE_BEVEL_WIDTH_MIN_METERS);
+                input.max = String(EDGE_BEVEL_WIDTH_MAX_METERS);
+                input.step = '0.01';
+                input.disabled = !allowEdit;
+            }
+            if (role) number.dataset.role = role;
+            const safe = clamp(value, EDGE_BEVEL_WIDTH_MIN_METERS, EDGE_BEVEL_WIDTH_MAX_METERS);
+            range.value = String(safe);
+            number.value = String(safe);
+            const handle = (raw) => {
+                const v = clamp(raw, EDGE_BEVEL_WIDTH_MIN_METERS, EDGE_BEVEL_WIDTH_MAX_METERS);
+                range.value = String(v);
+                number.value = String(v);
+                onChange(v);
+            };
+            range.addEventListener('input', () => handle(range.value));
+            number.addEventListener('input', () => handle(number.value));
+            row.appendChild(rowLabel);
+            row.appendChild(range);
+            row.appendChild(number);
+            body.appendChild(row);
+        };
+
+        addToggleRow('Edge bevel', enabled, (next) => emitPatch({ enabled: next }), { role: 'edgeBevel:enabled' });
+
+        if (cfg) {
+            const scopeRow = document.createElement('div');
+            scopeRow.className = 'building-fab2-layer-row';
+            const scopeLabel = document.createElement('div');
+            scopeLabel.className = 'building-fab2-row-label';
+            scopeLabel.textContent = 'Scope';
+            const scopeSelect = document.createElement('select');
+            scopeSelect.className = 'building-fab2-select';
+            scopeSelect.dataset.role = 'edgeBevel:scope';
+            for (const [id, label] of [
+                [EDGE_BEVEL_SCOPE.MAIN_CORNERS, 'Main corners'],
+                [EDGE_BEVEL_SCOPE.ALL_CONVEX_EDGES, 'All convex edges']
+            ]) {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = label;
+                scopeSelect.appendChild(opt);
+            }
+            scopeSelect.value = cfg.scope;
+            scopeSelect.disabled = !allowEdit;
+            scopeSelect.addEventListener('change', () => emitPatch({ scope: scopeSelect.value }));
+            scopeRow.appendChild(scopeLabel);
+            scopeRow.appendChild(scopeSelect);
+            body.appendChild(scopeRow);
+
+            addWidthRow('Facet width (m)', {
+                value: cfg.widthMeters,
+                onChange: (widthMeters) => emitPatch({ widthMeters }),
+                role: 'edgeBevel:width'
+            });
+
+            const hint = createHint('Facet width, not cut-back: a square corner loses width / √2 off each face.');
+            body.appendChild(hint);
+
+            for (const cornerId of EDGE_BEVEL_CORNER_IDS) {
+                const corner = cfg.corners[cornerId];
+                addToggleRow('Corner ' + cornerId, corner.enabled, (next) => emitPatch({
+                    corners: { [cornerId]: { ...corner, enabled: next } }
+                }), { role: 'edgeBevel:corner:' + cornerId });
+                if (!corner.enabled) continue;
+                addWidthRow('Corner ' + cornerId + ' width (m)', {
+                    value: corner.widthMeters ?? cfg.widthMeters,
+                    onChange: (widthMeters) => emitPatch({
+                        corners: { [cornerId]: { ...corner, widthMeters } }
+                    }),
+                    role: 'edgeBevel:cornerWidth:' + cornerId
+                });
+            }
+
+            if (cfg.scope === EDGE_BEVEL_SCOPE.ALL_CONVEX_EDGES) {
+                addToggleRow('Cut inner (concave) arrises', cfg.includeConcave, (next) => emitPatch({ includeConcave: next }), {
+                    role: 'edgeBevel:includeConcave'
+                });
+            }
+        }
 
         group.appendChild(header);
         group.appendChild(body);
@@ -6944,6 +7147,115 @@ export class BuildingFabrication2UI {
                 emitPatch({ material: { kind: value.slice(0, idx), id: value.slice(idx + 1) } });
             }
         });
+    }
+
+    // AI 492: rooftop props — one roof feature with a prop set. The UI edits a
+    // plain patch object; the View owns normalization and the rebuild.
+    _appendRooftopPropsSection(body, { layer, layerId, allowEdit }) {
+        const cfg = layer?.props && typeof layer.props === 'object' ? layer.props : null;
+        const enabled = !!cfg?.enabled;
+        const emitPatch = (patch) => this.onSetRoofProps?.(layerId, patch);
+
+        const section = document.createElement('div');
+        section.className = 'building-fab2-layer-body';
+        section.style.borderTop = '1px solid rgba(255,255,255,0.12)';
+        section.style.paddingTop = '4px';
+
+        const enabledToggle = document.createElement('label');
+        enabledToggle.className = 'building-fab-toggle building-fab-toggle-wide';
+        const enabledInput = document.createElement('input');
+        enabledInput.type = 'checkbox';
+        enabledInput.checked = enabled;
+        enabledInput.disabled = !allowEdit;
+        enabledInput.addEventListener('change', () => emitPatch({ enabled: enabledInput.checked }));
+        const enabledText = document.createElement('span');
+        enabledText.textContent = 'Rooftop props';
+        enabledToggle.appendChild(enabledInput);
+        enabledToggle.appendChild(enabledText);
+        section.appendChild(enabledToggle);
+
+        if (enabled) {
+            const activeTypes = Array.isArray(cfg?.types) ? cfg.types : ROOFTOP_PROP_OPTIONS.map((o) => o.id);
+            if (!this._rooftopPropThumbById.size) this.onRequestRooftopPropThumbnails?.();
+
+            const propRow = document.createElement('div');
+            propRow.className = 'building-fab-row building-fab-row-wide';
+            const propControls = document.createElement('div');
+            propControls.className = 'building-fab2-bay-row-controls';
+            propControls.style.flexWrap = 'wrap';
+            for (const option of ROOFTOP_PROP_OPTIONS) {
+                const isOn = activeTypes.includes(option.id);
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'building-fab2-width-mode-btn';
+                btn.disabled = !allowEdit;
+                btn.classList.toggle('is-active', isOn);
+                btn.title = option.label;
+                btn.style.display = 'flex';
+                btn.style.flexDirection = 'column';
+                btn.style.alignItems = 'center';
+                btn.style.gap = '2px';
+                const thumbUrl = this._rooftopPropThumbById.get(option.id) ?? '';
+                if (thumbUrl) {
+                    const img = document.createElement('img');
+                    img.src = thumbUrl;
+                    img.alt = option.label;
+                    img.style.width = '64px';
+                    img.style.height = '48px';
+                    img.style.objectFit = 'cover';
+                    img.style.borderRadius = '3px';
+                    img.style.opacity = isOn ? '1' : '0.4';
+                    btn.appendChild(img);
+                }
+                const caption = document.createElement('span');
+                caption.textContent = option.label;
+                btn.appendChild(caption);
+                btn.addEventListener('click', () => {
+                    if (!allowEdit) return;
+                    const next = isOn ? activeTypes.filter((id) => id !== option.id) : [...activeTypes, option.id];
+                    if (!next.length) return;
+                    emitPatch({ types: next });
+                });
+                propControls.appendChild(btn);
+            }
+            propRow.appendChild(propControls);
+            section.appendChild(propRow);
+
+            const numberRows = [
+                { label: 'Density', key: 'density', min: 0, max: 3, step: 0.1, fallback: ROOFTOP_PROPS_DEFAULTS.density },
+                { label: 'Edge margin', key: 'edgeMarginMeters', min: 0, max: 8, step: 0.1, fallback: ROOFTOP_PROPS_DEFAULTS.edgeMarginMeters },
+                { label: 'Min spacing', key: 'minSpacingMeters', min: 0, max: 8, step: 0.1, fallback: ROOFTOP_PROPS_DEFAULTS.minSpacingMeters },
+                { label: 'Seed offset', key: 'seedOffset', min: -999, max: 999, step: 1, fallback: ROOFTOP_PROPS_DEFAULTS.seedOffset }
+            ];
+            for (const spec of numberRows) {
+                const row = document.createElement('div');
+                row.className = 'building-fab-row building-fab-row-wide';
+                const rowLabel = document.createElement('div');
+                rowLabel.className = 'building-fab-row-label';
+                rowLabel.textContent = spec.label;
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.className = 'building-fab2-layer-number';
+                input.min = String(spec.min);
+                input.max = String(spec.max);
+                input.step = String(spec.step);
+                input.value = String(Number(cfg?.[spec.key] ?? spec.fallback));
+                input.disabled = !allowEdit;
+                input.setAttribute('aria-label', `Rooftop props ${spec.label}`);
+                input.addEventListener('input', () => {
+                    const raw = Number(input.value);
+                    if (!Number.isFinite(raw)) return;
+                    emitPatch({ [spec.key]: Math.max(spec.min, Math.min(spec.max, raw)) });
+                });
+                row.appendChild(rowLabel);
+                row.appendChild(input);
+                section.appendChild(row);
+            }
+
+            section.appendChild(createHint('Props scatter deterministically over the roof slab, clear of the parapet and of any mass above.'));
+        }
+
+        body.appendChild(section);
     }
 
     _appendCorniceSection(body, { layer, layerId, allowEdit, isRoof }) {
@@ -7633,6 +7945,36 @@ export class BuildingFabrication2UI {
             for (const bid of ids) if (typeof bid === 'string' && bid) groupBayIds.add(bid);
         }
 
+        // AI 493: the stacking lock belongs to the face's bay LAYOUT, so it
+        // lives with the rhythm controls rather than in the per-bay editor.
+        const stackingMode = normalizeFacadeStackingSpec(facade?.layout?.stacking ?? null).mode;
+        const stackingToggle = document.createElement('label');
+        stackingToggle.className = 'building-fab2-toggle-switch building-fab2-group-stacking';
+        const stackingInput = document.createElement('input');
+        stackingInput.type = 'checkbox';
+        stackingInput.checked = stackingMode === FACADE_BAY_STACKING_MODE.LOCK_COLUMNS;
+        stackingInput.disabled = !this._enabled || !this._hasBuilding || !bays.length;
+        stackingInput.setAttribute('aria-label', 'Lock columns across layers');
+        stackingInput.dataset.role = 'group:stacking';
+        const stackingText = document.createElement('span');
+        stackingText.textContent = 'Lock columns across layers';
+        stackingToggle.appendChild(stackingInput);
+        stackingToggle.appendChild(stackingText);
+        stackingInput.addEventListener('change', () => {
+            this.onSetFacadeStackingMode?.(
+                layerId,
+                faceId,
+                stackingInput.checked ? FACADE_BAY_STACKING_MODE.LOCK_COLUMNS : FACADE_BAY_STACKING_MODE.PER_LAYER
+            );
+            this._renderGroupingPanel();
+        });
+        this.groupBody.appendChild(stackingToggle);
+
+        const stackingHint = document.createElement('div');
+        stackingHint.className = 'building-fab2-hint';
+        stackingHint.textContent = 'Every layer with this bay layout repeats the same number of times, so windows stack.';
+        this.groupBody.appendChild(stackingHint);
+
         const baysTitle = document.createElement('div');
         baysTitle.className = 'building-fab2-subtitle';
         baysTitle.textContent = 'Bays';
@@ -7718,6 +8060,108 @@ export class BuildingFabrication2UI {
                 row.appendChild(meta);
                 row.appendChild(removeBtn);
                 groupList.appendChild(row);
+
+                const controls = document.createElement('div');
+                controls.className = 'building-fab2-group-row-controls';
+                groupList.appendChild(controls);
+
+                const disabled = !this._enabled || !this._hasBuilding;
+                const repeat = normalizeFacadeBayGroupRepeat(group?.repeat ?? null);
+
+                const repeatLabel = document.createElement('span');
+                repeatLabel.className = 'building-fab2-group-control-label';
+                repeatLabel.textContent = 'Repeat';
+                controls.appendChild(repeatLabel);
+
+                const minInput = document.createElement('input');
+                minInput.type = 'number';
+                minInput.className = 'building-fab2-layer-number';
+                minInput.min = '1';
+                minInput.max = '99';
+                minInput.step = '1';
+                minInput.value = String(repeat.minRepeats);
+                minInput.disabled = disabled;
+                minInput.dataset.role = 'group:minRepeats';
+                minInput.dataset.groupId = gid;
+                minInput.setAttribute('aria-label', `Group ${gid} minimum repeats`);
+                minInput.addEventListener('change', () => {
+                    this.onUpdateBayGroup?.(layerId, faceId, gid, {
+                        repeat: { minRepeats: Number(minInput.value) }
+                    });
+                    this._renderGroupingPanel();
+                });
+                controls.appendChild(minInput);
+
+                const dash = document.createElement('span');
+                dash.className = 'building-fab2-group-control-label';
+                dash.textContent = '–';
+                controls.appendChild(dash);
+
+                const maxInput = document.createElement('input');
+                maxInput.type = 'number';
+                maxInput.className = 'building-fab2-layer-number';
+                maxInput.min = '1';
+                maxInput.max = '99';
+                maxInput.step = '1';
+                maxInput.placeholder = 'auto';
+                maxInput.value = repeat.maxRepeats === 'auto' ? '' : String(repeat.maxRepeats);
+                maxInput.disabled = disabled;
+                maxInput.dataset.role = 'group:maxRepeats';
+                maxInput.dataset.groupId = gid;
+                maxInput.setAttribute('aria-label', `Group ${gid} maximum repeats`);
+                maxInput.addEventListener('change', () => {
+                    const raw = maxInput.value.trim();
+                    this.onUpdateBayGroup?.(layerId, faceId, gid, {
+                        repeat: { maxRepeats: raw === '' ? 'auto' : Number(raw) }
+                    });
+                    this._renderGroupingPanel();
+                });
+                controls.appendChild(maxInput);
+
+                const arcade = normalizeArcadeConfig(group?.arcade ?? null);
+                const arcadeToggle = document.createElement('label');
+                arcadeToggle.className = 'building-fab2-toggle-switch';
+                const arcadeInput = document.createElement('input');
+                arcadeInput.type = 'checkbox';
+                arcadeInput.checked = !!arcade;
+                arcadeInput.disabled = disabled;
+                arcadeInput.dataset.role = 'group:arcade';
+                arcadeInput.dataset.groupId = gid;
+                arcadeInput.setAttribute('aria-label', `Group ${gid} arcade`);
+                const arcadeText = document.createElement('span');
+                arcadeText.textContent = 'Arcade';
+                arcadeToggle.appendChild(arcadeInput);
+                arcadeToggle.appendChild(arcadeText);
+                arcadeInput.addEventListener('change', () => {
+                    this.onUpdateBayGroup?.(layerId, faceId, gid, {
+                        arcade: arcadeInput.checked ? { enabled: true } : null
+                    });
+                    this._renderGroupingPanel();
+                });
+                controls.appendChild(arcadeToggle);
+
+                if (arcade) {
+                    const impostToggle = document.createElement('label');
+                    impostToggle.className = 'building-fab2-toggle-switch';
+                    const impostInput = document.createElement('input');
+                    impostInput.type = 'checkbox';
+                    impostInput.checked = arcade.impost?.enabled !== false;
+                    impostInput.disabled = disabled;
+                    impostInput.dataset.role = 'group:arcadeImpost';
+                    impostInput.dataset.groupId = gid;
+                    impostInput.setAttribute('aria-label', `Group ${gid} arcade impost`);
+                    const impostText = document.createElement('span');
+                    impostText.textContent = 'Impost';
+                    impostToggle.appendChild(impostInput);
+                    impostToggle.appendChild(impostText);
+                    impostInput.addEventListener('change', () => {
+                        this.onUpdateBayGroup?.(layerId, faceId, gid, {
+                            arcade: { ...arcade, impost: { ...(arcade.impost ?? {}), enabled: impostInput.checked } }
+                        });
+                        this._renderGroupingPanel();
+                    });
+                    controls.appendChild(impostToggle);
+                }
             }
         }
 

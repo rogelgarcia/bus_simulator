@@ -204,6 +204,26 @@ export const BRICK_MIDRISE_2_BUILDING_CONFIG = Object.freeze({
             {
                 "id": "roof_2",
                 "type": "roof",
+                "props": {
+                    "enabled": true,
+                    "density": 1,
+                    "edgeMarginMeters": 1.2,
+                    "minSpacingMeters": 0.8,
+                    "seedOffset": 0,
+                    "types": [
+                        "water_tower",
+                        "roof_bulkhead",
+                        "mech_box",
+                        "vent_pipe"
+                    ],
+                    "placements": [],
+                    "materials": {
+                        "tank": null,
+                        "frame": null,
+                        "bulkhead": null,
+                        "mech": null
+                    }
+                },
                 "ring": {
                     "enabled": true,
                     "innerRadius": 0,

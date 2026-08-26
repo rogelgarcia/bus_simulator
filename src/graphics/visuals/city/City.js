@@ -293,6 +293,7 @@ export class City {
                         wallDecorations: entry.wallDecorations ?? null,
                         attachments: entry.attachments ?? null,
                         cornerTreatment: entry.cornerTreatment ?? null,
+                        edgeBevel: entry.edgeBevel ?? null,
                         materialSlots: entry.materialSlots ?? null,
                         windowDefinitions: entry.windowDefinitions ?? null,
                         overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },

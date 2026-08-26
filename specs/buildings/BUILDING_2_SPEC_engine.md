@@ -117,6 +117,29 @@ To keep topology stable across layers:
 - the resolved **bay id/order/count per face** MUST be identical across applicable layers.
 - repeat counts MUST be shared across applicable layers for the face (the “most restrictive layer” determines repeat feasibility).
 
+### 5.6 Column stacking lock (AI 493)
+
+Faces of different lengths (a `planOffset` setback) previously re-fitted their
+own repeat counts per layer, so the columns of a setback layer landed between
+the columns below. The lock resolves the rhythm **once per face** and replays it:
+
+- `facade.layout.stacking.mode` — `lock_columns` (default) or `per_layer`.
+- The lock groups layers by **face id + bay layout signature** (bays + groups),
+  so layers that deliberately author a different layout stay independent, and
+  per-layer facades (the only shape the BF2 editor writes) are covered too.
+- The reference is the **longest** face using that layout. Its solved
+  **absolute bay widths** become the locked pitch (`topology.bayWidths`);
+  locking repeat *counts* would be a no-op, because a count that fits a shorter
+  face is exactly the count that face would have chosen for itself.
+- Replaying the pitch on a shorter face drops whole repeats from the run and
+  gives the slack to the bays outside the groups that carry no opening, so the
+  remaining columns keep their absolute positions and the run stays centred.
+- A face too short for even one pass of the locked widths MUST fall back to
+  solving on its own, with a warning naming the shortfall.
+
+The solver exposes this as `computeFacadeBaysTopology()` (reference solve) plus
+the `topology` input of `solveFacadeBaysLayout()`.
+
 ---
 
 ## 6. Geometry generation requirements
@@ -203,6 +226,76 @@ The rule is about **walls**, not about sightlines. A viewer may see *into* a bui
 - A shell cut SHOULD stop a little short of the structural opening (~`0.08m` per side), which is what a reveal is. It also keeps the shell opaque where a window mesh does not quite fill its wall cutout, a gap grazing sightlines would otherwise slip through.
 - Openings that are deliberately obscured (frosted bathroom sashes) MAY stay unbacked: the room behind their glass reads correctly.
 
+### 6.2.2 Rooftop props (AI 492)
+
+- A roof layer's `props` block MUST be solved into placements by the shared
+  three-free solver (`src/app/buildings/RooftopPropsModel.js`), so the engine,
+  the BF2 GUI and unit tests agree on one layout; placement rules are in
+  `BUILDING_2_SPEC_model` §6.
+- Prop geometry is procedural, not an imported asset: parts are boxes and
+  low-segment cylinders, and the whole prop set uses a shared four-role material
+  palette (`tank`, `frame`, `bulkhead`, `mech`).
+- All parts of a role MUST be merged into one mesh per roof, so a fully dressed
+  roof costs at most four draw calls and stays inside a low triangle budget
+  (~2k triangles for a fully dressed large roof).
+- Prop meshes join the building's solid meshes (tagged
+  `userData.buildingFab2Role = 'rooftop_prop'`), so they merge through
+  `BuildingGeometryMerger` and cast/receive sun shadows like the rest of the
+  building.
+
+### 6.2.3 Plan edge bevels (AI 499)
+
+Every vertical arris is razor-sharp by default. `edgeBevel` cuts them at 45°.
+It is ONE feature with two scopes, and it is a **silhouette mutation** — quite
+unlike the overlay `cornerTreatment` (AI 486), which the two never share a
+corner with.
+
+- `scope: 'main_corners'` — the four plan corners are cut on the wall-outer
+  loop **before facade solving**, so the adjacent faces shorten to the fold
+  lines and lay their bays out on the shortened length. `widthMeters` is the
+  width of the FACET; the cut-back along each face is `w / (2·sin(θ/2))`
+  (`w / √2` at a square corner).
+- `scope: 'all_convex_edges'` (AI 501) — additionally cuts every remaining
+  convex arris of the RESOLVED silhouette (bay-relief steps, pier edges) in a
+  vertex pass after layout; `includeConcave` opts the re-entrant arrises in.
+  Corner facets and face joins are already resolved by then, so the pass only
+  touches vertices interior to one face.
+
+Rules:
+- `computeQuadFacadeFramesFromLoop` MUST accept the beveled plan: the four
+  axis-aligned runs are still A–D (a bevel shortens a face, it does not move
+  its plane) and each diagonal run is a **corner facet** belonging to no face.
+  Facets are reported as `frames.cornerFacets[cornerId]` with origin,
+  direction, outward normal and width.
+- A beveled corner has no shared mitre point: each face ends on its own fold
+  line, and its join `u` comes from the frame length rather than from the
+  virtual sharp corner the two face planes still intersect at.
+- Loops DERIVED at other depths (the interior shell, the roof core surface)
+  MUST follow the facet at a beveled corner — two fold points offset along
+  their own face normals — never a mitre: a mitre join pokes through the
+  chamfer, and anchoring it on the fold point tilts the face run off its face
+  line, which is what silently rejected the shell's projected opening cutouts
+  (AI 501).
+- A cut may never eat more than `EDGE_BEVEL_MAX_EDGE_FRACTION` of either edge
+  it sits between, and never reaches closer to an opening than its glass span
+  plus `EDGE_BEVEL_OPENING_REVEAL_ALLOWANCE_METERS` — the hole a window carves
+  is wider than its glass. The cut is clamped, or refused with a warning when
+  what is left is below `EDGE_BEVEL_MIN_FACET_METERS`.
+- A chamfer is a masonry detail: the default facet is
+  `EDGE_BEVEL_DEFAULT_WIDTH_METERS` (6cm), and a facet wide enough to read as a
+  fifth facade has to be asked for explicitly.
+- Facets are geometry only: no bays, window definitions or decorations are
+  placed on them, and they take the wall material (a facet spans two faces, so
+  no per-bay override can claim it).
+- A corner cutout authored on a beveled corner is ignored, with a warning.
+- Beveled corners carry no quoins/strip: the corner treatment skips them.
+- Loop-driven systems (walls, belts, cornices, roof bands, the support slab)
+  need no changes — they offset the silhouette loop, and the miter offsetter
+  already handles the 135° vertices a facet introduces.
+- The generator reports main-corner facets as `edgeBevelCornerFacets` so the
+  facade-angle model (AI 498) can later attach layout semantics to a wide
+  corner facet without re-deriving the geometry. Micro edge bevels emit none.
+
 ### 6.3 BF2 support slab (view helper)
 
 - Building Fabrication 2 MAY render an optional support slab helper under the building for viewport-only gap masking.
@@ -268,6 +361,28 @@ Building v2 moves from face-wide window spacing to **bay-driven content**:
   - when both legacy width range and `window.size.widthMeters` exist, `window.size.widthMeters` takes precedence.
 - Face slaves do not own independent bay/window copies; they inherit the master face facade/bay/window config.
 - Bay slaves (`linkFromBayId`) inherit the master bay window configuration by reference (no deep copy).
+
+### 7.1 Arcade grouping (AI 493)
+
+An arcade is a **mode of a bay group**, not a separate feature: `group.arcade`.
+Because `archRise = arch.heightRatio * width`, arched openings of different
+widths spring from different heights; the arcade makes the run share one line.
+
+- `arcade.springing.mode` — `auto` (default) or `fixed` + `offsetMeters`.
+- The auto line is the **highest natural springing** in the run, so every other
+  arch flattens toward segmental and none is stilted past its own semicircle
+  into a horseshoe.
+- Each member's `arch.heightRatio` is re-derived from the shared line. An
+  opening whose head sits at or below the line, or that would flatten below
+  `ARCADE_MIN_RISE_RATIO`, keeps its own rise and MUST be warned about.
+- The line is resolved **per floor** (segment height decides where the opening
+  head lands) and MUST be the same answer for the rendered window mesh and for
+  the facade wall cutout.
+- `arcade.impost` (on by default, `enabled: false` to remove) bands the run's
+  pier bays — the bays of the group that carry no opening — with their top edge
+  on the springing line, so the piers read as arcade columns. Role:
+  `bay_arcade_impost`; material uses the capital wall-material dialect
+  (slot refs resolved by the material-slots pre-pass).
 
 The detailed content model is described in `specs/buildings/BUILDING_2_FACADE_LAYOUT_SPEC.md`.
 

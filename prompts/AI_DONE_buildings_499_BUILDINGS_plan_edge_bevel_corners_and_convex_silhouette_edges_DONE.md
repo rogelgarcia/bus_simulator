@@ -1,3 +1,5 @@
+# DONE
+
 #Problem
 
 Every vertical arris on a fabricated building is razor-sharp: the four plan corners, and every convex edge the facade silhouette creates (projecting bay steps, pier edges). Sharp plan edges are a strong CG tell at street level — real masonry softens them with small chamfers, and beveled corners catch light along the cut. There is no plan-edge treatment in the fabrication schema today.
@@ -20,6 +22,33 @@ Tasks:
 ## Delivery requirements
 - Engine 2 only: target the facade/bay building engine (facades/bays + window definitions). Do not extend engine 1 (the fixed-spacing `layer.windows`/`spaceColumns` path or the old `BuildingGenerator.js`); it is deprecated and frozen.
 - Finish with a screenshot showing the feature in a rendered building — a before/after pair when the change improves something that already renders — and additionally a close-up version of the feature.
+
+
+## Summary of changes
+
+- New `src/app/buildings/EdgeBevelModel.js` — one three-free model shared by generator, GUI and tests: schema normalization, the facet-width vs cut-back math, the convex-vertex chamfer pass and the rect main-corner cut.
+- `computeQuadFacadeFramesFromLoop` accepts a beveled plan (up to 8 runs): the four axis-aligned runs stay A–D at their shortened lengths and each diagonal becomes a reported corner facet.
+- Connectors are matched in LOOP ORDER. Matching them by point equality compared qf-quantized frame endpoints against raw loop points, which silently failed on every non-round footprint, so the silhouette re-mitred the corner it had just cut — the visible "deformed edges" artefact.
+- A loop that is not a plan (a resolved silhouette with bay relief) is refused exactly as it always was, rather than half-classified.
+- `computeQuadFacadeSilhouette`: a beveled corner drops its shared mitre point — each face ends on its own fold line and takes its join `u` from the frame — and a corner cutout authored on a beveled corner is ignored with a warning.
+- Generator: `edgeBevel` applied to every wall-outer loop (floor layers, the AI 493 reference probe, roof bands) before facade solving, so bays lay out on the shortened faces.
+- Corner treatment skips beveled corners; belts, cornices, roof bands and the support slab flow around the facets unchanged.
+- `edgeBevelCornerFacets` reported out of the generator as the forward-compat seam for the facade-angle model (AI 498).
+- Config plumbed end to end: CityMap spec/entry, City, BF2 scene, thumbnail preview, config export, showcase override keys.
+- BF2 GUI: an `Edge bevel` building-level section — on/off, scope, facet width, per-corner enable + width override.
+- The default facet is 6cm: a chamfer is a masonry detail, not a cut corner.
+- Specs updated: engine §6.2.3 (the feature contract), model (`edgeBevel` authoring), UI (the new section).
+- Tests: 10 node unit tests, 4 core-suite silhouette/frame tests, a BF2 GUI e2e test, and a before/after + close-up capture spec.
+
+## Carried over to AI 501
+
+The second scope, `all_convex_edges`, is implemented in the model and the
+silhouette but is refused by the generator: chamfering the resolved loop costs
+the interior shell its opening cuts on relief facades and glazing renders as a
+blank panel. The diagnosis and the remaining work moved to
+`prompts/AI_buildings_501_BUILDINGS_edge_bevel_all_convex_edges_scope_and_interior_shell_cuts.md`.
+The scope stays in the schema, is not offered in the BF2 scope picker, and warns
+when a config asks for it.
 
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line

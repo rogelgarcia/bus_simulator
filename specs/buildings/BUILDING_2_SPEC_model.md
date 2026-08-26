@@ -73,6 +73,24 @@ At a conceptual level, a Building v2 model includes:
   - per-side minimum padding (`left`/`right`, linked by default).
   - per-opening muntin toggles (`muntins.bottomEnabled`, `muntins.topEnabled`),
   - optional stacked top opening config (`top.enabled`, `top.heightMode`, `top.heightMeters`, `top.verticalGapMeters`, `top.frameWidthMeters`).
+- **Rooftop props** authored on a roof layer as `props` (AI 492) — ONE feature with a prop set, not one feature per prop kind:
+  - `enabled` (absent/`false` drops the whole block so bare roofs round-trip unchanged),
+  - `types`: allowed prop kinds from `water_tower` | `roof_bulkhead` | `mech_box` | `vent_pipe`,
+  - `density` (count multiplier), `edgeMarginMeters`, `minSpacingMeters`, `seedOffset`,
+  - `placements[]`: optional explicit hero placements (`type`, `variantId`, `x`, `z`, `rotationDegrees`) in roof-loop coordinates,
+  - `materials`: one shared palette for the whole set (`tank`, `frame`, `bulkhead`, `mech`), each a material spec that accepts `slot:<name>` and resolves in the config pre-pass; `bulkhead` defaults to the wall material below.
+- **Bay group rhythm** authored on `facade.layout.groups.items[*]` (AI 493) — the group IS the repeating rhythm unit, so a paired-window / wide-narrow rhythm needs no schema of its own:
+  - `repeat.minRepeats` / `repeat.maxRepeats` (`'auto'` = repeat-if-fits),
+  - `arcade`: the arcade MODE of that group — `springing.mode` (`auto` | `fixed` + `offsetMeters`) and `impost` (`enabled`, `heightMeters`, `projectionMeters`, `overhangMeters`, `material` accepting `slot:<name>`); `impost.enabled` is always serialized so "no band" round-trips.
+- **Facade column stacking** authored on `facade.layout.stacking` (AI 493):
+  - `mode: 'lock_columns'` (default, omitted when authored) | `'per_layer'`,
+  - locked faces share one resolved bay pitch across every layer that authors the same bay layout, so windows stack across a setback.
+- **Plan edge bevel** authored building-level as `edgeBevel` (AI 499) — ONE feature with scopes, not one feature per edge kind:
+  - `enabled` (absent/`false` drops the whole block so a sharp building round-trips unchanged),
+  - `scope`: `main_corners` (default) | `all_convex_edges` (AI 501 — see engine §6.2.3),
+  - `widthMeters`: the width of the chamfer FACET (0.05–1.5m), not the cut-back,
+  - `includeConcave`: opt-in for re-entrant arrises under `all_convex_edges`,
+  - `corners`: per-main-corner `{ enabled, widthMeters | null }` overrides keyed `AB`/`BC`/`CD`/`DA` (null width = the building width).
 - **Inheritance rules** for bay windows:
   - face slaves inherit facade/bay/window config from their master face (no duplicated per-slave copy),
   - bay linking is one-master/many-slaves per face (`linkFromBayId` on each slave),
@@ -100,7 +118,30 @@ Concrete schema definitions belong in dedicated specs:
 
 ---
 
-## 6. Wall decoration targeting and corner-resolution metadata
+## 6. Rooftop prop placement rules (derived, not authored)
+
+Placement is solved from the model rather than authored per prop, so the same
+config renders identically everywhere:
+
+- The placement region is the roof surface loop **inset by the parapet ring's
+  `innerRadius`** — props stand on the slab the parapet encloses, not on the
+  parapet — minus `edgeMarginMeters` and minus each prop's footprint radius.
+- Courtyard holes are keep-out regions, and a roof carrying floor layers above
+  it treats the mass above as a keep-out too: a setback roof is only a rooftop
+  where the setback exposes it.
+- Counts scale with usable roof area per prop kind (`ROOFTOP_PROP_CATALOG`
+  `scatter`), multiplied by `density` and clamped to the kind's min/max.
+- The scatter is seeded from the building's material-variation seed plus
+  `seedOffset`: the same seed always yields the same layout.
+- Explicit `placements` are placed first and count toward the scatter target; an
+  explicit placement that violates the margin is rejected with a warning rather
+  than hung over the street.
+- Boxy props take the yaw of the nearest roof edge, so a scatter squares up to
+  the parapet instead of reading as spill.
+
+---
+
+## 7. Wall decoration targeting and corner-resolution metadata
 
 - `wallDecorations.sets[*].target` is authored as `layerId + allBays|bayRefs`, but runtime resolution expands these refs deterministically to preserve continuity rules:
   - linked faces inherit target refs using the same per-layer face master/slave + reverse-order rules used by facade/material solving;

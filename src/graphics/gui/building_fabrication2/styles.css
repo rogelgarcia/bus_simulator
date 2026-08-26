@@ -2187,6 +2187,28 @@
     opacity: 0.85;
 }
 
+/* AI 493: repeat bounds + arcade mode sit under their group row. */
+.building-fab2-group-row-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: -4px 0 2px 10px;
+}
+
+.building-fab2-group-control-label {
+    font-size: 11px;
+    opacity: 0.85;
+}
+
+.building-fab2-group-row-controls .building-fab2-layer-number {
+    width: 56px;
+}
+
+.building-fab2-group-stacking {
+    margin-bottom: 2px;
+}
+
 .building-fab2-group-actions {
     display: flex;
     flex-direction: column;

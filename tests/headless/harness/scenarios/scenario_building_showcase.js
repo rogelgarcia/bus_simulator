@@ -33,6 +33,7 @@ const CONFIG_OVERRIDE_KEYS = Object.freeze([
     'wallInset',
     'materialVariationSeed',
     'cornerTreatment',
+    'edgeBevel',
     'materialSlots'
 ]);
 

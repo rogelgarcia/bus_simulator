@@ -207,6 +207,26 @@ When `Wear` mode is active:
 - the right panel switches to an empty placeholder state for future wear workflow expansion,
 - no additional authoring controls are shown yet.
 
+### 7.2.2 Roof layer controls — Rooftop props (AI 492)
+
+Inside each `Roof layer` group, after the `Cornice` section, the UI MUST expose
+a `Rooftop props` section for the layer's `props` block:
+
+- a `Rooftop props` checkbox that enables/disables the feature; enabling seeds
+  the full default prop set so a single click dresses the roof, disabling drops
+  the block from the model.
+- when enabled, a prop-type picker: one toggle button per prop kind
+  (`Water tower`, `Bulkhead`, `Mech box`, `Vent pipe`), each showing a rendered
+  thumbnail of that prop and dimmed when the kind is off. At least one kind must
+  stay selected.
+- when enabled, numeric rows for `Density`, `Edge margin`, `Min spacing` and
+  `Seed offset`.
+- thumbnails are rendered lazily by the view through the shared config thumbnail
+  renderer (one minimal preview building per prop kind), the same way the
+  balcony preset picker works.
+
+---
+
 ### 7.3 Floor layer controls
 
 Inside each `Floor layer` group, the UI order MUST be:
@@ -248,7 +268,23 @@ Inside each `Floor layer` group, the UI order MUST be:
        - selection must not overlap existing groups
        - clicking `Done` creates the group
      - groups can be removed
+     - each group row carries its rhythm controls (AI 493):
+       - `Repeat` min / max spinners (max empty = auto, i.e. repeat-if-fits)
+       - `Arcade` toggle — the arcade MODE of that group (one shared springing
+         line for its arched openings)
+       - `Impost` toggle — shown only while `Arcade` is on; the band that lands
+         on the run's pier bays at the springing line
+     - a face-level `Lock columns across layers` toggle sits above the bay list
+       (on by default; off writes `facade.layout.stacking.mode = 'per_layer'`)
      - the panel has a global `Done` button to close it
+   - an `Edge bevel` building-level section (AI 499), beside `Corners`:
+     - `Edge bevel` on/off (off removes the block entirely)
+     - `Scope`: `Main corners` | `All convex edges` (AI 501)
+     - `Facet width (m)` with a hint that it is the facet, not the cut-back
+     - per-corner `Corner AB`…`Corner DA` on/off plus a width override each
+     - `Cut inner (concave) arrises` toggle, shown only under `All convex
+       edges` (writes `includeConcave`)
+     - the BF2 thumbnail preview renders the beveled silhouette
    - a **single bay configuration panel** (stable size) that edits the currently selected bay:
      - if there are no bays yet, the panel area remains reserved and shows a simple guidance overlay (e.g., “Add a bay to start configuring”)
    - the selected bay exposes a width mode:
