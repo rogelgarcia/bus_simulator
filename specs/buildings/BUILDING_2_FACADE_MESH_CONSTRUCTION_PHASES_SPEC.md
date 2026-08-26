@@ -270,6 +270,7 @@ For each face `F`, generate its wall mesh using deterministic topology:
      - choose a single owner region using forward depth (the region closer to the observer in face-local front view wins),
      - apply that owner region’s wall material to the side face,
      - and keep the result independent from UV range ordering, winding, or incidental segment iteration order.
+   - A return’s texture U MUST continue the owner region’s front texture: anchored at the shared arris (the endpoint at the owner’s depth) and advancing along depth in the owner’s texture direction along the loop. It MUST NOT follow the sign of the depth delta — that flips between the two returns of one pier and mirrors the courses into a chevron at the arris (AI 502). The mapping is a property of the wall, so it is identical in either loop winding.
 
 **Invariant:** Generic polygon triangulation SHOULD NOT be used for primary face surfaces; the topology MUST be driven by explicit breakpoints and per-segment quads/triangles.
 **Invariant:** For any non-roof surface group (face walls, returns, bay caps, corner patches), triangles MUST NOT connect vertices belonging to non-adjacent faces. “Adjacency” here means:

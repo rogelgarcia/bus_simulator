@@ -2220,13 +2220,50 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                     && Math.abs(depthB - depthA) > sideTol;
 
                 if (isBoundarySideSegment) {
-                    // Boundary side face: map U along depth so side textures do not collapse/stretch.
+                    // Boundary side face (a relief step's return): map U along
+                    // depth so side textures do not collapse or stretch. The
+                    // override resolver picked the prouder neighbour — the wall
+                    // the return steps off — so its texture continues through
+                    // the shared arris onto the return, and U keeps marching in
+                    // that texture's direction along the loop. It must NOT
+                    // follow the sign of the depth delta: that flips between
+                    // the two returns of one pier and mirrored the courses
+                    // into a chevron (AI 502).
                     const boundaryU = (uA + uB) * 0.5;
-                    const anchorU = (faceId === 'B' || faceId === 'D')
+                    const reversedFaceU = faceId === 'B' || faceId === 'D';
+                    const anchorU = reversedFaceU
                         ? (uvStart + (u1 - boundaryU))
                         : (uvStart + (boundaryU - u0));
-                    uAtA = anchorU;
-                    uAtB = anchorU + (depthB - depthA);
+
+                    // March direction in face u, read off a neighbouring front
+                    // point (the return itself has no u extent).
+                    const prevPt = pts[(i - 1 + n) % n];
+                    const nextPt = pts[(i + 2) % n];
+                    let uMarch = 0;
+                    if (prevPt?.faceId === faceId && Number.isFinite(Number(prevPt.u))) {
+                        uMarch = Math.sign(uA - Number(prevPt.u)) || 0;
+                    }
+                    if (!uMarch && nextPt?.faceId === faceId && Number.isFinite(Number(nextPt.u))) {
+                        uMarch = Math.sign(Number(nextPt.u) - uB) || 0;
+                    }
+                    if (!uMarch) uMarch = 1;
+                    const texDir = reversedFaceU ? -uMarch : uMarch;
+
+                    // The endpoint at the anchor strip's own depth is the
+                    // shared arris; the strip's front ends there, so the
+                    // texture runs off it onto the return.
+                    const stepMeters = Math.abs(depthB - depthA);
+                    const ovrDepthAtBoundary = Number.isFinite(Number(ovr.depthAtBoundary))
+                        ? Number(ovr.depthAtBoundary)
+                        : sampleFacadeRangeDepthAtU(ovr, boundaryU);
+                    const arrisAtA = Math.abs(depthA - ovrDepthAtBoundary) <= Math.abs(depthB - ovrDepthAtBoundary);
+                    if (arrisAtA) {
+                        uAtA = anchorU;
+                        uAtB = anchorU + texDir * stepMeters;
+                    } else {
+                        uAtB = anchorU;
+                        uAtA = anchorU - texDir * stepMeters;
+                    }
                 } else if (faceId === 'B' || faceId === 'D') {
                     uAtA = uvStart + (u1 - uA);
                     uAtB = uvStart + (u1 - uB);

@@ -1,3 +1,5 @@
+# DONE
+
 #Problem
 
 Wherever a bay steps in or out — a proud pier beside a recessed spandrel, any
@@ -71,3 +73,14 @@ Tasks:
 - Do not move to `prompts/archive/` automatically.
 - Completion is not enough to move a prompt; move to `prompts/archive/` only when explicitly requested by the user.
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change)
+
+## Summary of changes (2026-08-25)
+
+- Confirmed the mechanism with a close grazing capture of one pier on `pier_grid_tower_2` (recesses deepened to −0.6): the pre-fix return reads as a diagonal chevron weave against the horizontal courses of the fronts.
+- Fixed the `isBoundarySideSegment` branch in `buildWallSidesGeometryFromLoopDetailXZ`: a return's U is now anchored at the shared arris (the endpoint at the owner strip's own depth — the resolver already picks the prouder neighbour, the wall the return steps off) and advances along depth in that strip's texture direction along the loop (march direction read off a neighbouring front point, negated for faces B/D's reversed face U) — never with the sign of the depth delta, which flipped between the two returns of one pier.
+- The mapping is winding-invariant: the same wall maps identically whichever way the loop reaches the builder.
+- Wedge (diagonal) bay edges are untouched: they never enter the side branch (they have u extent) and already map monotonically by u, so they cannot mirror.
+- Override resolution untouched: exact segment keys, the `__ranges__:<faceId>` fallback and `uvStart` continuity across a face are unchanged.
+- Core test: `a pier's two returns continue the wall texture in one direction (AI 502)` builds the wall for a proud pier between two recessed bays and asserts, in both loop windings, arris continuity with the pier front and that the left/right returns carry the 0.25m before/after the pier's texture span.
+- New capture spec `ai502_return_uv_capture.pwtest.js`: the report's grazing pier view, stock and deepened −0.6, with the before shots generated against the pre-fix generator (`AI502_TAG=before`).
+- Documented the rule in `BUILDING_2_FACADE_MESH_CONSTRUCTION_PHASES_SPEC.md` §Phase-4 openings/reveals.

@@ -11206,6 +11206,84 @@ async function runTests() {
         assertTrue(uvA.uSpan > 0.15 && uvB.uSpan > 0.15, 'Expected side-face UV U span along depth in both ordering variants.');
     });
 
+    // ===== AI 502: relief-step returns must not mirror the wall texture =====
+
+    // A proud pier (depth 0) between two recessed bays (depth -0.25) on face A.
+    // The two short side walls at u=3 and u=4 are the pier's returns.
+    const AI502_PIER_LOOP_DETAIL = [
+        { x: 0, y: 0, z: -0.25, kind: 'profile', faceId: 'A', u: 0, depth: -0.25 },
+        { x: 3, y: 0, z: -0.25, kind: 'profile', faceId: 'A', u: 3, depth: -0.25 },
+        { x: 3, y: 0, z: 0, kind: 'profile', faceId: 'A', u: 3, depth: 0 },
+        { x: 4, y: 0, z: 0, kind: 'profile', faceId: 'A', u: 4, depth: 0 },
+        { x: 4, y: 0, z: -0.25, kind: 'profile', faceId: 'A', u: 4, depth: -0.25 },
+        { x: 7, y: 0, z: -0.25, kind: 'profile', faceId: 'A', u: 7, depth: -0.25 },
+        { x: 7, y: 0, z: -3 },
+        { x: 0, y: 0, z: -3 }
+    ];
+
+    const makeAi502PierOverrides = () => {
+        const overrides = new Map();
+        overrides.set('__ranges__:A', [
+            { faceId: 'A', materialIndex: 0, u0: 0, u1: 3, depth0: -0.25, depth1: -0.25, uvStart: 0 },
+            { faceId: 'A', materialIndex: 0, u0: 3, u1: 4, depth0: 0, depth1: 0, uvStart: 3 },
+            { faceId: 'A', materialIndex: 0, u0: 4, u1: 7, depth0: -0.25, depth1: -0.25, uvStart: 4 }
+        ]);
+        return overrides;
+    };
+
+    // Texture U per z on a return plane (triangles whose vertices ALL sit at x).
+    const ai502ReturnUvByZ = (geo, x) => {
+        const pos = geo.getAttribute('position');
+        const uv = geo.getAttribute('uv');
+        const map = new Map();
+        const zKey = (z) => (Math.abs(z) < 1e-6 ? 0 : z).toFixed(4);
+        const triCount = Math.floor(pos.count / 3);
+        for (let t = 0; t < triCount; t++) {
+            const vi = t * 3;
+            if (Math.abs(pos.getX(vi) - x) > 1e-4) continue;
+            if (Math.abs(pos.getX(vi + 1) - x) > 1e-4) continue;
+            if (Math.abs(pos.getX(vi + 2) - x) > 1e-4) continue;
+            for (let i = 0; i < 3; i++) map.set(zKey(pos.getZ(vi + i)), uv.getX(vi + i));
+        }
+        return map;
+    };
+
+    test('BuildingFabricationGenerator: a pier\'s two returns continue the wall texture in one direction (AI 502)', () => {
+        const buildWall = buildingFabricationGeneratorTestOnly?.buildWallSidesGeometryFromLoopDetailXZ ?? null;
+        assertTrue(typeof buildWall === 'function', 'Expected buildWallSidesGeometryFromLoopDetailXZ test helper.');
+
+        const check = (loop, label) => {
+            const geo = buildWall(loop, {
+                height: 3.0,
+                uvBaseV: 0.0,
+                segmentOverrides: makeAi502PierOverrides()
+            });
+            assertTrue(!!geo, `Expected geometry (${label}).`);
+
+            // Both returns anchor into the pier (the wall they step off): at
+            // the shared arris the return's U equals the pier front's U there,
+            // so the courses turn the corner instead of jumping.
+            const r1 = ai502ReturnUvByZ(geo, 3);
+            const r2 = ai502ReturnUvByZ(geo, 4);
+            assertTrue(r1.size >= 2 && r2.size >= 2, `Expected UV samples on both returns (${label}).`);
+            assertNear(r1.get('0.0000'), 3.0, 1e-4, `Left return must be continuous with the pier front at its arris (${label}).`);
+            assertNear(r2.get('0.0000'), 4.0, 1e-4, `Right return must be continuous with the pier front at its arris (${label}).`);
+
+            // The texture keeps marching the same way through both returns:
+            // the left return carries the 0.25m BEFORE the pier's span and the
+            // right return the 0.25m AFTER it. The old mapping followed the
+            // sign of the depth delta, which mirrored one return into the
+            // pier's own last course (a chevron at the arris).
+            assertNear(r1.get('-0.2500'), 2.75, 1e-4, `Left return must extend the run backward off the pier (${label}).`);
+            assertNear(r2.get('-0.2500'), 4.25, 1e-4, `Right return must extend the run forward off the pier (${label}).`);
+        };
+
+        check(AI502_PIER_LOOP_DETAIL, 'forward loop');
+        // The facade detail loop reaches the builder in either winding; the
+        // mapping is a property of the wall, not of the traversal.
+        check(AI502_PIER_LOOP_DETAIL.slice().reverse(), 'reversed loop');
+    });
+
     test('BuildingFabricationScene: trims building tiles when road overlaps', () => {
         const engine = {
             scene: new THREE.Scene(),
