@@ -2,6 +2,7 @@
 // Registry for city building configs.
 import { BLUE_BELT_TOWER_BUILDING_CONFIG } from '../buildings/configs/BlueBeltTower.js';
 import { BANDED_LOFT_2_BUILDING_CONFIG } from '../buildings/configs/BandedLoft2.js';
+import { BRADBURY_BLOCK_BUILDING_CONFIG } from '../buildings/configs/BradburyBlock.js';
 import { BEIGE_1_BUILDING_CONFIG } from '../buildings/configs/Beige1.js';
 import { BRICK_BANK_2_BUILDING_CONFIG } from '../buildings/configs/BrickBank2.js';
 import { BRICK_MIDRISE_BUILDING_CONFIG } from '../buildings/configs/BrickMidrise.js';
@@ -19,6 +20,7 @@ import { STONE_SETBACK_TOWER_BUILDING_CONFIG } from '../buildings/configs/StoneS
 const BUILDING_CONFIGS = Object.freeze([
     BANDED_LOFT_2_BUILDING_CONFIG,
     BEIGE_1_BUILDING_CONFIG,
+    BRADBURY_BLOCK_BUILDING_CONFIG,
     BRICK_BANK_2_BUILDING_CONFIG,
     BRICK_MIDRISE_BUILDING_CONFIG,
     BRICK_MIDRISE_2_BUILDING_CONFIG,

@@ -156,7 +156,8 @@ Given a solved facade layout, geometry generation MUST:
   - belts extrude/inset relative to the updated wall surface,
   - roof rings/edges align to the updated outer silhouette where applicable.
 - Treat corner handling as a first-class requirement (reserved corner zones / caps / ownership) to avoid cracks; see `specs/buildings/BUILDING_2_FACADE_LAYOUT_SPEC.md`.
-- Support deterministic wall material UV continuity across bay boundaries using authored per-bay intent (e.g., `textureFlow`), so repeated bays or adjacent bays using the same resolved wall material can optionally share a continuous mapping.
+- Wall material UV continuity (AI 506): consecutive strips that resolve to the SAME wall material continue one accumulated texture run along the face — the pattern never resets at a strip boundary (whether a reset was visible used to depend on strip width vs texture period). A material change starts a fresh run. The old per-bay `textureFlow` gates (`repeats`/`overflow_*`) are subsumed by this rule; the field survives in the model for compatibility.
+- Wall material variation MUST NOT displace the texture lookup by default (AI 504): the wall preset's anti-tiling (per-cell UV offset+rotation) is opt-in — it shears crisp coursing (ashlar) into diagonal dashes and exposes wall-segment seams. Wear/grime/streak layers modulate tint/roughness only.
 
 ### 6.1 Bay wall material overrides + bay-to-bay linking (full spec)
 
@@ -224,6 +225,7 @@ The rule is about **walls**, not about sightlines. A viewer may see *into* a bui
 - Interior shell surfaces MUST be opaque from **both** sides. The shell is wound to face the room, so a single-sided material makes it vanish when seen from the other side: a sightline entering an opening then leaves the building through what should be solid wall, and the room reads as empty space. This is the defect the shell most often had.
 - The interior shell MUST be cut at **every** opening, backed or not. A window is a hole: from inside the room it shows the outside, and from the street it shows the room. Leaving unbacked openings uncut to block sightlines is not a substitute for an opaque shell — it makes windows read as blank panes.
 - A shell cut SHOULD stop a little short of the structural opening (~`0.08m` per side), which is what a reveal is. It also keeps the shell opaque where a window mesh does not quite fill its wall cutout, a gap grazing sightlines would otherwise slip through.
+- That shrink only applies while the opening's frame plane sits clearly in FRONT of the shell, where the ring reads as the room's window return behind the glass. A frame inset to or past the shell plane (a deep-set sash, a recessed portal, a storefront glazed to interior depth) MUST get a shell cut that clears the whole wall cut instead (grown slightly past it), or the ring floats in front of the recessed frame as a pale surround (AI 507). The visible reveal for such openings is the facade wall's own reveal geometry (`revealDepth` = frame inset, wall material), which runs from the wall front to the frame plane and hides the grown hole's edge.
 - Openings that are deliberately obscured (frosted bathroom sashes) MAY stay unbacked: the room behind their glass reads correctly.
 
 ### 6.2.2 Rooftop props (AI 492)
@@ -383,6 +385,10 @@ widths spring from different heights; the arcade makes the run share one line.
   on the springing line, so the piers read as arcade columns. Role:
   `bay_arcade_impost`; material uses the capital wall-material dialect
   (slot refs resolved by the material-slots pre-pass).
+- Band projection convention (AI 503): facade-frame depth is outward-positive,
+  so an impost's `projectionMeters` — and a bay capital's `projection` — stands
+  the band proud of the bay's own plane, with a fixed 4cm embed back into the
+  wall. `planeDepth - projection` is the buried-band bug, not the convention.
 
 The detailed content model is described in `specs/buildings/BUILDING_2_FACADE_LAYOUT_SPEC.md`.
 

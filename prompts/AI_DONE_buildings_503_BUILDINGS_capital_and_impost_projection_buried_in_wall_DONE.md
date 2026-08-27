@@ -1,3 +1,5 @@
+# DONE
+
 # Problem
 
 Bay capital and arcade impost bands project INTO the wall instead of out of it.
@@ -45,3 +47,30 @@ authors originally asked for.
 ## Delivery requirements
 - Engine 2 only.
 - Before/after screenshots of an arcade impost run and a pier capital.
+
+## Summary of changes (2026-08-26)
+
+- Flipped the plan footprint of both band emitters in
+  `BuildingFabricationGenerator.js` to the outward-positive depth convention:
+  `dOut = planeDepth + projection`, `dIn = planeDepth - 0.04` — in
+  `emitCapitalStep` (bay capitals, AI 487) and the AI 493 arcade-impost
+  emitter. Authored projection now renders proud of the bay plane; the 4cm
+  constant is the wall embed, not the visible relief.
+- Audited every other `projection` consumer (cornice cross-sections, quoins,
+  storefront bulkhead/fascia slabs, corner treatment): none shares the
+  inverted pattern; no other change needed.
+- Core tests: `bay capitals project out of the wall, not into it (AI 503)` and
+  `arcade imposts project out of the pier, not into it (AI 503)` — a 0.5m
+  projection must reach 0.5m outside the 10m test tile's wall plane on the
+  band's depth axis and embed only 4cm, which the inverted sign fails.
+- New capture spec `ai503_capital_impost_capture.pwtest.js`: grazing close-ups
+  of the arcade_hall impost run and the setback_tower pier capitals (scenario
+  loaded with `mergeBuildingGeometry: false` so the role-tagged band meshes
+  can be located by scene traverse); before shots taken against the pre-fix
+  generator (`AI503_TAG=before`). Evidence pairs in
+  `tests/artifacts/screens/buildings/ai503_*`.
+- Re-baselined the visuals that show the affected bands: showcase views of
+  arcade_hall and setback_tower, the AI 493 arcade captures, the AI 502 pier
+  reference shots, and the `pier_grid_tower_2` catalog showcase shot.
+- Documented the outward-positive band projection convention in
+  `BUILDING_2_SPEC_engine.md` §arcade impost.

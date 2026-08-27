@@ -1002,6 +1002,51 @@ async function runTests() {
         assertNear(normalized.brick.mortar.layout.offsetY, 0.0, 1e-6, 'Expected mortar.layout.offsetY default to 0.');
     });
 
+    test('MaterialVariationSystem: wall anti-tiling is opt-in, not a preset default (AI 504)', () => {
+        // The standard wear recipe (world space + wearTop/Bottom/Side, no
+        // antiTiling authored) must not inherit the UV-perturbing anti-tiling
+        // layer: per-cell offset+rotation shears crisp masonry patterns into
+        // diagonal dashes and breaks at wall-segment seams.
+        const wearOnly = normalizeMatVarConfig(
+            {
+                enabled: true,
+                space: 'world',
+                worldSpaceScale: 0.16,
+                wearTop: { enabled: true, intensity: 0.22 },
+                wearBottom: { enabled: true, intensity: 0.28 },
+                wearSide: { enabled: true, intensity: 0.45 }
+            },
+            { root: MATERIAL_VARIATION_ROOT.WALL }
+        );
+        assertEqual(wearOnly.antiTiling.enabled, false, 'Expected wall anti-tiling off unless authored.');
+
+        const optIn = normalizeMatVarConfig(
+            { enabled: true, antiTiling: { enabled: true, strength: 0.5 } },
+            { root: MATERIAL_VARIATION_ROOT.WALL }
+        );
+        assertEqual(optIn.antiTiling.enabled, true, 'Expected authored anti-tiling to survive.');
+        assertNear(optIn.antiTiling.strength, 0.5, 1e-6, 'Expected authored anti-tiling strength.');
+
+        // The uniform actually gates the shader: strength 0 disables the layer.
+        const mat = new THREE.MeshStandardMaterial();
+        mat.map = new THREE.Texture();
+        applyMaterialVariationToMeshStandardMaterial(mat, {
+            seed: 1,
+            seedOffset: 0,
+            heightMin: 0,
+            heightMax: 1,
+            config: { enabled: true, wearTop: { enabled: true, intensity: 0.2 } },
+            root: MATERIAL_VARIATION_ROOT.WALL
+        });
+        const uniforms = mat.userData.materialVariationConfig.uniforms;
+        assertNear(uniforms.anti.x, 0.0, 1e-6, 'Expected the anti-tiling uniform strength to be 0 by default.');
+
+        // Surfaces (roads) keep their default: asphalt has no coursing to
+        // corrupt and relies on anti-tiling to hide repeats.
+        const surface = normalizeMatVarConfig({ enabled: true }, { root: MATERIAL_VARIATION_ROOT.SURFACE });
+        assertEqual(surface.antiTiling.enabled, true, 'Expected surface anti-tiling default unchanged.');
+    });
+
     test('MaterialVariationSystem: brick layout offsets flow into uniforms and shader uses stable hash inputs', () => {
         const mat = new THREE.MeshStandardMaterial();
         mat.map = new THREE.Texture();
@@ -11284,6 +11329,311 @@ async function runTests() {
         check(AI502_PIER_LOOP_DETAIL.slice().reverse(), 'reversed loop');
     });
 
+    // ===== AI 506: wall texture U must run continuously along a face =====
+
+    test('BuildingFabricationGenerator: single-material face maps one continuous texture run (AI 506)', () => {
+        // A single-material face solved as [flex, opening, flex]: the wall
+        // texture U must advance monotonically across the WHOLE face — no
+        // per-strip resets (whether a reset was visible used to depend on the
+        // strip width being a multiple of the texture period) and no
+        // zero-span panels.
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig: {
+                road: { surfaceY: 0, curb: { height: 0, extraHeight: 0, thickness: 0 }, sidewalk: { extraWidth: 0, lift: 0 } },
+                ground: { surfaceY: 0 }
+            },
+            tileSize,
+            occupyRatio: 1.0,
+            layers: [
+                createDefaultFloorLayer({ id: 'floor_uv506', floors: 1, floorHeight: 3.2, belt: { enabled: false }, windows: { enabled: false } }),
+                createDefaultRoofLayer({ ring: { enabled: false } })
+            ],
+            facades: {
+                A: {
+                    layout: {
+                        bays: {
+                            items: [
+                                { id: 'flex_1', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' },
+                                {
+                                    id: 'open_2',
+                                    size: { mode: 'fixed', widthMeters: 3.0 },
+                                    expandPreference: 'no_repeat',
+                                    window: {
+                                        enabled: true,
+                                        defId: 'window_black_6_panels_tall',
+                                        assetType: 'window',
+                                        size: { widthMeters: 1.6, heightMeters: 1.6 },
+                                        heightMode: 'fixed',
+                                        verticalOffsetMeters: 0.9,
+                                        width: { minMeters: 1.6, maxMeters: null },
+                                        padding: { leftMeters: 0.2, rightMeters: 0.2 },
+                                        repeat: { count: 1 }
+                                    }
+                                },
+                                { id: 'flex_3', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+                            ]
+                        }
+                    }
+                }
+            },
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+
+        // Collect (tangent, textureU) samples on each of the four front wall
+        // planes (|x| or |z| == 5). Away from the face corners so end caps do
+        // not contribute off-plane mappings.
+        const half = tileSize / 2;
+        const planes = [
+            { axis: 'x', plane: half }, { axis: 'x', plane: -half },
+            { axis: 'z', plane: half }, { axis: 'z', plane: -half }
+        ];
+        // Only the solved face carries interior vertices (strip boundaries and
+        // cutout corners); the plain faces are single quads with corner
+        // vertices only, which the end-cap guard excludes.
+        let checkedPlanes = 0;
+        for (const { axis, plane } of planes) {
+            const samples = new Map();
+            for (const mesh of parts.solidMeshes ?? []) {
+                if (mesh?.userData?.buildingFab2Role !== 'wall') continue;
+                const pos = mesh.geometry.getAttribute('position');
+                const uv = mesh.geometry.getAttribute('uv');
+                if (!pos || !uv) continue;
+                for (let i = 0; i < pos.count; i++) {
+                    const x = pos.getX(i);
+                    const z = pos.getZ(i);
+                    const planeCoord = axis === 'x' ? x : z;
+                    const t = axis === 'x' ? z : x;
+                    if (Math.abs(planeCoord - plane) > 1e-3) continue;
+                    if (Math.abs(t) > half - 0.1) continue;
+                    const tKey = t.toFixed(3);
+                    const u = uv.getX(i);
+                    const prev = samples.get(tKey);
+                    if (prev === undefined) {
+                        samples.set(tKey, u);
+                    } else {
+                        assertNear(prev, u, 1e-3,
+                            `Face plane ${axis}=${plane}: two texture U values at ${axis === 'x' ? 'z' : 'x'}=${tKey} (${prev.toFixed(3)} vs ${u.toFixed(3)}) — a per-strip reset.`);
+                    }
+                }
+            }
+            const entries = Array.from(samples.entries())
+                .map(([k, u]) => ({ t: Number(k), u }))
+                .sort((a, b) => a.t - b.t);
+            if (entries.length < 4) continue;
+            checkedPlanes += 1;
+            // Affine with |slope| 1: texture meters advance 1:1 with the wall.
+            const first = entries[0];
+            const last = entries[entries.length - 1];
+            const slope = (last.u - first.u) / (last.t - first.t);
+            assertNear(Math.abs(slope), 1.0, 1e-3, `Face plane ${axis}=${plane}: texture must advance 1:1 with the wall.`);
+            for (const e of entries) {
+                assertNear(e.u, first.u + slope * (e.t - first.t), 1e-3,
+                    `Face plane ${axis}=${plane}: texture U at ${e.t.toFixed(3)} must continue the face run (no reset, no zero-span).`);
+            }
+        }
+        assertTrue(checkedPlanes >= 1, 'Expected the solved face to yield interior wall UV samples.');
+    });
+
+    // ===== AI 507: a deep-set frame must not show the shell reveal ring in front of it =====
+
+    test('BuildingFabricationGenerator: shell hole shrinks behind a flush frame, clears the cut for a deep-set one (AI 507)', () => {
+        const project = buildingFabricationGeneratorTestOnly?.projectFacadeCutoutOntoShell ?? null;
+        assertTrue(typeof project === 'function', 'Expected projectFacadeCutoutOntoShell test helper.');
+
+        // Flat face A along +x with outward normal +z; shell 1cm behind the wall front.
+        const frames = { A: { start: { x: 0, z: 0 }, end: { x: 10, z: 0 }, t: { x: 1, z: 0 }, n: { x: 0, z: 1 } } };
+        const shellDepthOf = () => -0.01;
+        const cut = { faceId: 'A', x: 5, y: 1.7, z: 0, width: 1.6, height: 1.6, wantsArch: false, archRise: 0, revealDepth: 0 };
+
+        const flush = project({ ...cut, revealDepth: 0.0 }, { frames, shellDepthOf });
+        assertTrue(!!flush, 'Expected a projected shell cutout for the flush frame.');
+        assertNear(flush.width, 1.6 - 0.16, 1e-6, 'Flush frame: the shell keeps its interior reveal ring behind the glass.');
+        assertNear(flush.height, 1.6 - 0.16, 1e-6, 'Flush frame: the shell keeps its interior reveal ring behind the glass.');
+        assertNear(flush.z, -0.01, 1e-6, 'Projected cutout must sit on the shell plane.');
+        assertNear(flush.revealDepth, 0, 1e-9, 'The shell owns no reveal geometry.');
+
+        const inset = project({ ...cut, revealDepth: 0.09 }, { frames, shellDepthOf });
+        assertTrue(!!inset, 'Expected a projected shell cutout for the deep-set frame.');
+        assertTrue(inset.width > 1.6 + 1e-6 && inset.height > 1.6 + 1e-6,
+            'Deep-set frame: the shell hole must clear the whole wall cut (no ring in front of the frame).');
+        assertNear(inset.z, -0.01, 1e-6, 'Projected cutout must sit on the shell plane.');
+
+        // Same 9cm inset on a bay front proud of the shell by more than the
+        // inset: the frame stays in front of the shell, so the ring stays.
+        const proudFrames = { A: { start: { x: 0, z: 0 }, end: { x: 10, z: 0 }, t: { x: 1, z: 0 }, n: { x: 0, z: 1 } } };
+        const proud = project(
+            { ...cut, z: 0.25, revealDepth: 0.09 },
+            { frames: proudFrames, shellDepthOf: () => -0.01 }
+        );
+        assertTrue(!!proud, 'Expected a projected shell cutout for the proud-bay frame.');
+        assertNear(proud.width, 1.6 - 0.16, 1e-6, 'A frame still in front of the shell keeps the reveal ring.');
+    });
+
+    test('BuildingFabricationGenerator: no shell geometry inside a deep-set opening cut; reveal faces carry wall material (AI 507)', () => {
+        // One window with frame.inset 0.094 (window_black_6_panels_tall) on a
+        // flat face: the frame plane sits 8.4cm BEHIND the interior shell, so
+        // the shell hole must clear the whole wall cut — the pale plaster ring
+        // must not float in front of the recessed sashes — while the facade's
+        // own reveal walls (wall material) line the cut from the wall front to
+        // the frame plane.
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const frameInset = 0.094;
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig: {
+                road: { surfaceY: 0, curb: { height: 0, extraHeight: 0, thickness: 0 }, sidewalk: { extraWidth: 0, lift: 0 } },
+                ground: { surfaceY: 0 }
+            },
+            tileSize,
+            occupyRatio: 1.0,
+            layers: [
+                createDefaultFloorLayer({
+                    id: 'floor_shell507',
+                    floors: 1,
+                    floorHeight: 3.2,
+                    belt: { enabled: false },
+                    windows: { enabled: false },
+                    interior: { enabled: true }
+                }),
+                createDefaultRoofLayer({ ring: { enabled: false } })
+            ],
+            facades: {
+                A: {
+                    layout: {
+                        bays: {
+                            items: [
+                                { id: 'flex_1', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' },
+                                {
+                                    id: 'open_2',
+                                    size: { mode: 'fixed', widthMeters: 3.0 },
+                                    expandPreference: 'no_repeat',
+                                    window: {
+                                        enabled: true,
+                                        defId: 'window_black_6_panels_tall',
+                                        assetType: 'window',
+                                        size: { widthMeters: 1.6, heightMeters: 1.6 },
+                                        heightMode: 'fixed',
+                                        verticalOffsetMeters: 0.9,
+                                        width: { minMeters: 1.6, maxMeters: null },
+                                        padding: { leftMeters: 0.2, rightMeters: 0.2 },
+                                        repeat: { count: 1 }
+                                    }
+                                },
+                                { id: 'flex_3', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+                            ]
+                        }
+                    }
+                }
+            },
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+
+        const half = tileSize / 2;
+        const sides = [
+            { axis: 'z', plane: half }, { axis: 'z', plane: -half },
+            { axis: 'x', plane: half }, { axis: 'x', plane: -half }
+        ];
+        const facadeMeshes = (parts.solidMeshes ?? []).filter((m) => m?.userData?.buildingFab2WallKind === 'facade');
+        const interiorWallMeshes = (parts.solidMeshes ?? []).filter(
+            (m) => m?.userData?.buildingFab2Role === 'interior' && m?.userData?.buildingFab2InteriorKind === 'wall'
+        );
+        assertTrue(facadeMeshes.length > 0, 'Expected a facade wall mesh.');
+        assertTrue(interiorWallMeshes.length > 0, 'Expected interior shell wall meshes.');
+
+        // Find the window's face by its reveal walls: facade-mesh vertices
+        // strictly behind the wall front (the reveal box runs to the frame
+        // plane). Also check every reveal triangle carries the base wall
+        // material, not some other group.
+        let opening = null;
+        for (const { axis, plane } of sides) {
+            const sign = Math.sign(plane);
+            let minT = Infinity;
+            let maxT = -Infinity;
+            let minY = Infinity;
+            let maxY = -Infinity;
+            let minDepthCoord = Infinity;
+            let sampleCount = 0;
+            for (const mesh of facadeMeshes) {
+                const pos = mesh.geometry.getAttribute('position');
+                if (!pos) continue;
+                const baseMatIndex = Number(mesh.userData?.buildingFab2WallBaseMaterialIndex) || 0;
+                const groups = mesh.geometry.groups ?? [];
+                for (let i = 0; i < pos.count; i++) {
+                    const x = pos.getX(i);
+                    const z = pos.getZ(i);
+                    const planeCoord = axis === 'z' ? z : x;
+                    const t = axis === 'z' ? x : z;
+                    const behind = half - sign * planeCoord;
+                    if (!(behind > 0.05 && behind < 0.15)) continue;
+                    if (Math.abs(t) > half - 0.5) continue;
+                    const y = pos.getY(i) + mesh.position.y;
+                    sampleCount += 1;
+                    if (t < minT) minT = t;
+                    if (t > maxT) maxT = t;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                    if (sign * planeCoord < minDepthCoord) minDepthCoord = sign * planeCoord;
+                    const group = groups.find((g) => i >= g.start && i < g.start + g.count) ?? null;
+                    assertTrue(!!group, 'Expected every reveal vertex to belong to a material group.');
+                    assertEqual(group.materialIndex, baseMatIndex, 'Reveal faces must carry the base wall material.');
+                }
+            }
+            if (!sampleCount) continue;
+            assertTrue(opening === null, 'Expected reveal walls on exactly one face.');
+            opening = { axis, plane, sign, minT, maxT, minY, maxY, minDepthCoord, sampleCount };
+        }
+        assertTrue(!!opening, 'Expected the deep-set opening to build reveal walls into the facade mesh.');
+        assertNear(half - opening.minDepthCoord, frameInset, 1e-3, 'Reveal walls must run from the wall front to the frame plane.');
+        assertNear(opening.maxT - opening.minT, 1.6, 1e-2, 'Reveal box must span the wall cut width.');
+        assertNear(opening.maxY - opening.minY, 1.6, 1e-2, 'Reveal box must span the wall cut height.');
+
+        // The shell (1cm behind the wall front) must have NO geometry inside
+        // the cut: everything on that face in front of the frame plane and
+        // within the cut rect is the AI 507 ring.
+        const tol = 1e-3;
+        let shellVertsOnFace = 0;
+        for (const mesh of interiorWallMeshes) {
+            const pos = mesh.geometry.getAttribute('position');
+            if (!pos) continue;
+            for (let i = 0; i < pos.count; i++) {
+                const x = pos.getX(i);
+                const z = pos.getZ(i);
+                const planeCoord = opening.axis === 'z' ? z : x;
+                const t = opening.axis === 'z' ? x : z;
+                const behind = half - opening.sign * planeCoord;
+                if (!(behind > -tol && behind < frameInset - tol)) continue;
+                if (Math.abs(t) > half - 0.5) continue;
+                shellVertsOnFace += 1;
+                const y = pos.getY(i) + mesh.position.y;
+                const insideCut = t > opening.minT + tol && t < opening.maxT - tol
+                    && y > opening.minY + tol && y < opening.maxY - tol;
+                assertTrue(!insideCut,
+                    `Shell geometry at (${t.toFixed(3)}, ${y.toFixed(3)}) sits inside the cut in front of the frame plane (ring, AI 507).`);
+            }
+        }
+        assertTrue(shellVertsOnFace > 0, 'Expected the interior shell to still line the window face around the cut.');
+    });
+
     test('BuildingFabricationScene: trims building tiles when road overlaps', () => {
         const engine = {
             scene: new THREE.Scene(),
@@ -18759,6 +19109,63 @@ async function runTests() {
             0,
             'Expected no band when the impost is disabled but the springing lock stays on.'
         );
+    });
+
+    // ===== AI 503: capital/impost projection must stand OUT of the wall =====
+
+    // The 10m test tile puts every wall plane at |x| or |z| = 5. A band
+    // authored with projection 0.5 must reach 5.5 on its face's depth axis and
+    // embed only 4cm behind the plane. The inverted sign buried the 0.5 inside
+    // the wall and left the hardcoded 4cm as the whole visible relief.
+    const assertBandProjectsOutward = (mesh, label) => {
+        const half = 5.0;
+        const bands = { x: meshWorldBand(mesh, 'x'), z: meshWorldBand(mesh, 'z') };
+        const outerOf = (b) => Math.max(Math.abs(b.min), Math.abs(b.max));
+        const innerOf = (b) => Math.min(Math.abs(b.min), Math.abs(b.max));
+        const depthAxis = outerOf(bands.x) > half + 0.3 ? 'x'
+            : (outerOf(bands.z) > half + 0.3 ? 'z' : null);
+        assertTrue(!!depthAxis, `${label}: expected the band to stand proud of the wall plane, got x [${bands.x.min.toFixed(3)}, ${bands.x.max.toFixed(3)}] z [${bands.z.min.toFixed(3)}, ${bands.z.max.toFixed(3)}].`);
+        assertNear(outerOf(bands[depthAxis]), half + 0.5, 0.02, `${label}: outer face must sit the authored projection out of the wall.`);
+        assertNear(innerOf(bands[depthAxis]), half - 0.04, 0.02, `${label}: band must embed 4cm into the wall, not bury the projection.`);
+    };
+
+    test('BuildingFabricationGenerator: bay capitals project out of the wall, not into it (AI 503)', () => {
+        const parts = buildBalconyParts({
+            floors: 1,
+            floorHeight: 3.5,
+            facades: {
+                A: {
+                    layout: {
+                        bays: {
+                            items: [
+                                { id: 'gap_1', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' },
+                                {
+                                    id: 'pier_2',
+                                    size: { mode: 'fixed', widthMeters: 1.2 },
+                                    expandPreference: 'no_repeat',
+                                    capital: {
+                                        top: { enabled: true, profile: 'flat', height: 0.3, overhang: 0.0, projection: 0.5, material: { kind: 'color', id: 'offwhite' } }
+                                    }
+                                },
+                                { id: 'gap_3', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+                            ]
+                        }
+                    }
+                }
+            }
+        });
+        const caps = balconyMeshesByRole(parts, 'bay_capital');
+        assertTrue(caps.length >= 1, 'Expected the pier capital mesh.');
+        for (const mesh of caps) assertBandProjectsOutward(mesh, 'capital');
+    });
+
+    test('BuildingFabricationGenerator: arcade imposts project out of the pier, not into it (AI 503)', () => {
+        const parts = buildArcadeParts({
+            arcade: { enabled: true, impost: { enabled: true, heightMeters: 0.2, projectionMeters: 0.5, overhangMeters: 0.0 } }
+        });
+        const imposts = balconyMeshesByRole(parts, 'bay_arcade_impost');
+        assertTrue(imposts.length >= 2, 'Expected impost bands on the pier bays.');
+        for (const mesh of imposts) assertBandProjectsOutward(mesh, 'impost');
     });
 
     test('BuildingFabricationGenerator: projecting balcony emits platform/railing/glass/supports per floor', () => {

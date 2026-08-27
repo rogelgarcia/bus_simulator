@@ -423,7 +423,11 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
         moss: { enabled: false, strength: 0.0, scale: 0.9, heightBand: { min: 0.0, max: 0.55 }, tint: { r: 0.22, g: 0.42, b: 0.2 } },
         soot: { enabled: true, strength: 0.18, scale: 0.7, heightBand: { min: 0.0, max: 0.28 } },
         efflorescence: { enabled: false, strength: 0.0, scale: 0.9 },
-        antiTiling: { enabled: true, strength: 0.65, mode: 'fast', cellSize: 2.0, blendWidth: 0.2, offsetU: 0.18, offsetV: 0.28, rotationDegrees: 22.0 },
+        // Anti-tiling perturbs the texture LOOKUP (per-cell UV offset+rotation).
+        // On crisp patterned walls (ashlar block courses) that shears the
+        // masonry into diagonal dashes and breaks at wall-segment seams, so it
+        // is opt-in for walls (AI 504) — every tuned config authored it off.
+        antiTiling: { enabled: false, strength: 0.65, mode: 'fast', cellSize: 2.0, blendWidth: 0.2, offsetU: 0.18, offsetV: 0.28, rotationDegrees: 22.0 },
         stairShift: { enabled: false, strength: 0.0, mode: 'stair', direction: 'horizontal', stepSize: 1.0, shift: 0.1, blendWidth: 0.0, patternA: 0.4, patternB: 0.8 },
         detail: { enabled: true, strength: 0.1, scale: 3.0, hueDegrees: 0.0 },
         cracks: { enabled: false, strength: 0.25, scale: 3.2 },

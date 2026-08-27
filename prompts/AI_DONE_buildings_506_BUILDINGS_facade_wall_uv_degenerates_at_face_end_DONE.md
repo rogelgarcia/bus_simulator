@@ -1,3 +1,5 @@
+# DONE
+
 # Problem
 
 On the facade wall, the wall texture's U mapping is anchored PER BAY STRIP and
@@ -61,3 +63,36 @@ material overrides, so this is the plain single-material wall path.
 ## Delivery requirements
 - Engine 2 only.
 - Before/after of the Garden Court garage face corner (the two probe framings).
+
+## Summary of changes (2026-08-26)
+
+- Symptom 1 (per-strip U reset) root cause: the facade wall UV pass in
+  `BuildingFabricationGenerator.js` only carried `uvStart` forward for the
+  explicit `textureFlow` gates (`repeats` with matching sourceBayId,
+  `overflow_*`); every other strip — the unauthored default on every plain
+  face — restarted at 0, and the solver/GUI collapse "unauthored" into
+  `restart`, so single-material faces could never opt out. UV dump of the
+  garage face reproduced the report exactly (garage 3.2→0, windows 2→0).
+- Fix: consecutive strips sharing a resolved wall material now CONTINUE one
+  accumulated texture run (uvStart += previous width; negative accumulation on
+  the reversed-U faces B/D). A material change starts a fresh run. The old
+  flow gates are subsumed — they were same-material continuations with this
+  exact accumulation — and the `textureFlow` field stays in the model for
+  compatibility.
+- Symptom 2 (trailing-end smear) turned out NOT to be a UV defect: triangle-
+  and UV-level probes of the trailing stretch show a sound quad (u 1.55→0
+  into the BC corner) both pre- and post-fix. A/B renders pin the flat smeared
+  strip on AI 504's default anti-tiling lookup warp — with that fix in, the
+  strip renders crisp blocks to the arris in the same framing (the report's
+  "novar" attribution did not reproduce; the warp was the whole smear).
+- Core test: `single-material face maps one continuous texture run (AI 506)` —
+  a solved `[flex, opening, flex]` face must map texture U as one affine
+  1:1 run across the whole face (any per-strip reset yields two U values at a
+  boundary coordinate and fails).
+- Capture spec `ai506_wall_uv_capture.pwtest.js`: the two report framings
+  (garage face straight-on, BC-corner close-up). Before/after pairs in
+  `tests/artifacts/screens/buildings/ai506_*` — before: bond pattern jumps at
+  every strip boundary; after: one continuous running bond across the face.
+- AI 502's return anchoring consumes the accumulated `uvStart` unchanged (its
+  test encodes accumulated starts and stays green).
+- Documented the continuity rule in `BUILDING_2_SPEC_engine.md` §6.

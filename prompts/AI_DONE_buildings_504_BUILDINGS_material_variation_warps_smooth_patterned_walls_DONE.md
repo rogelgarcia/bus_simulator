@@ -1,3 +1,5 @@
+# DONE
+
 # Problem
 
 World-space material variation visually WARPS smooth, brightly patterned wall
@@ -62,3 +64,31 @@ a straight-on camera, variation on vs off.
 ## Delivery requirements
 - Engine 2 only.
 - Before/after screenshots on `pbr.rusticated_ashlar` with the standard wear recipe.
+
+## Summary of changes (2026-08-26)
+
+- Root cause: the WALL preset in `MaterialVariationSystem.js` shipped
+  `antiTiling.enabled: true` (per-2m-cell UV offset up to 0.28 + rotation up
+  to 22°, plus an fbm warp in quality mode) — every texture lookup goes
+  through `mvMatVarUv`, so any recipe that did not explicitly author
+  `antiTiling` inherited the perturbation. On busy brick it reads as grime; on
+  crisp ashlar it shears the coursing into diagonal dashes, and because the
+  cells live in texture-UV space the displaced pattern breaks at every
+  wall-segment seam (which AI 506's per-strip U reset supplied in quantity).
+- Fix: the wall preset's anti-tiling is now OPT-IN (`enabled: false` default).
+  Every tuned engine-2 config (`BrickMidrise2`, `GovCenter2`, `StoneLowrise2`,
+  `MainStreetBlock`) already authored it off; authored `antiTiling` configs
+  keep working. The SURFACE preset (roads) keeps its default — asphalt has no
+  coursing to corrupt and relies on it to hide repeats.
+- Core test: `wall anti-tiling is opt-in, not a preset default (AI 504)` —
+  wear-only recipes normalize with anti-tiling off and a zero `anti` uniform,
+  explicit opt-in survives, surface default unchanged.
+- Capture spec `ai504_variation_ashlar_capture.pwtest.js`: Garden Court ashlar
+  ground floor straight-on, variation on vs off, plus an in-scene guard that
+  no wall material carries an active anti-tiling uniform. Before/after pairs
+  in `tests/artifacts/screens/buildings/ai504_*` (before = pre-fix shader:
+  pattern scrambled; after = clean coursing with wear shading intact).
+- Also resolved the review's "first-floor seams" (02/21) and the flat smeared
+  strip near the BC corner (filed under AI 506): both were this lookup warp —
+  A/B re-render with the fix shows crisp continuous blocks in those framings.
+- Documented the rule in `BUILDING_2_SPEC_engine.md` §6.

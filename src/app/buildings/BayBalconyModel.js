@@ -242,10 +242,17 @@ export function normalizeBalconyConfig(value) {
  * `left` = the lower-u side of the bay on its face, `right` = the higher-u
  * side, matching the facade frame tangent direction.
  *
- * Neighbors: the adjacent strip on the same face; at a face end, the corner
- * strip of the adjacent face in loop order (A→B→C→D→A). A side abuts wall
- * when the neighbor's front plane sits at (or in front of) the balcony's
- * platform front plane — the neighbor wall covers the side, so no infill.
+ * Neighbors: the adjacent strip on the same face. A side abuts wall when the
+ * neighbor's front plane sits at (or in front of) the balcony's platform
+ * front plane — the neighbor wall covers the side, so no infill.
+ *
+ * At a face END there is no covering wall at all (AI 505): the corner mitre
+ * intersects the two faces' offset lines, so a recessed corner bay cuts the
+ * corner mass through and the adjacent face's wall starts at the recessed
+ * mitre point — never spanning the notch side. The side faces air and gets
+ * the configured infill. Two notches pairing around a corner
+ * (`ModernResidential2`) resolve the same way: each keeps exactly its
+ * corner-side cover, railed but open to the other.
  *
  * @param {object} options
  * @param {'A'|'B'|'C'|'D'} options.faceId
@@ -269,7 +276,6 @@ export function resolveBalconySideCoverage({
     sides = null,
     epsilonMeters = 0.05
 } = {}) {
-    const faceOrder = ['A', 'B', 'C', 'D'];
     const eps = Math.max(1e-4, Number(epsilonMeters) || 0.05);
     const front = Number(platformFrontDepth) || 0;
     const policy = normalizeSides(sides);
@@ -283,11 +289,8 @@ export function resolveBalconySideCoverage({
     };
     const stripDepth = (strip) => (Number(strip?.depth) || 0);
 
-    const faceIdx = faceOrder.indexOf(faceId);
-    const prevFaceId = faceOrder[(faceIdx + 3) % 4];
-    const nextFaceId = faceOrder[(faceIdx + 1) % 4];
-
-    // Depth of whatever the bay edge touches. Plain wall (no strips) = 0.
+    // Depth of whatever the bay edge touches. Plain wall (no strips) = 0;
+    // `null` = the edge sits on a face end, where no wall abuts (AI 505).
     const neighborDepthAt = (edgeU, direction) => {
         const list = stripsOf(faceId);
         const tol = 1e-3;
@@ -296,22 +299,14 @@ export function resolveBalconySideCoverage({
             for (const strip of list) {
                 if (Math.abs((Number(strip?.u1) || 0) - edgeU) <= tol) return stripDepth(strip);
             }
-            if (edgeU <= tol && faceIdx >= 0) {
-                const prevList = stripsOf(prevFaceId);
-                const last = prevList[prevList.length - 1] ?? null;
-                if (last) return stripDepth(last);
-            }
+            if (edgeU <= tol) return null;
         } else {
             // Right edge: same-face strip starting at edgeU.
             for (const strip of list) {
                 if (Math.abs((Number(strip?.u0) || 0) - edgeU) <= tol) return stripDepth(strip);
             }
             const faceLen = faceLengthOf(faceId);
-            if (faceLen > 0 && Math.abs(edgeU - faceLen) <= tol && faceIdx >= 0) {
-                const nextList = stripsOf(nextFaceId);
-                const first = nextList[0] ?? null;
-                if (first) return stripDepth(first);
-            }
+            if (faceLen > 0 && Math.abs(edgeU - faceLen) <= tol) return null;
         }
         return 0;
     };
@@ -321,6 +316,7 @@ export function resolveBalconySideCoverage({
         if (sidePolicy === BALCONY_SIDE_POLICY.NEVER) return false;
         if (isFront) return true;
         const neighborDepth = neighborDepthAt(edgeU, direction);
+        if (neighborDepth === null) return true;
         return neighborDepth < front - eps;
     };
 

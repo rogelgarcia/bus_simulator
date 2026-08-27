@@ -150,7 +150,11 @@ test('adjacency: recessed balcony at a wrapping corner gets exactly one side cov
     assert.equal(cov.right, true, 'corner side faces the open notch');
 });
 
-test('adjacency: recessed balcony at a closed corner stays uncovered', () => {
+test('adjacency: recessed balcony at a face end faces air, not wall (AI 505)', () => {
+    // The corner mitre intersects the two faces' offset lines, so a recessed
+    // corner bay cuts the corner mass through: the adjacent face's wall starts
+    // at the recessed mitre point and never spans the notch side. Treating
+    // "no same-face neighbour" as wall left the notch open to the side street.
     const cov = resolveBalconySideCoverage({
         faceId: 'A',
         u0: 8,
@@ -164,7 +168,25 @@ test('adjacency: recessed balcony at a closed corner stays uncovered', () => {
             B: [{ u0: 0, u1: 10, depth: 0 }]
         }
     });
-    assert.equal(cov.right, false, 'the adjacent face wall closes the notch side');
+    assert.equal(cov.right, true, 'the face-end notch side faces air and needs its infill');
+    assert.equal(cov.left, false, 'interior side still abuts the notch return wall');
+
+    // Symmetric case at a face START.
+    const covStart = resolveBalconySideCoverage({
+        faceId: 'B',
+        u0: 0,
+        u1: 4,
+        platformFrontDepth: 0,
+        stripsByFaceId: {
+            A: [{ u0: 0, u1: 12, depth: 0 }],
+            B: [
+                { u0: 0, u1: 4, depth: -1.4 },
+                { u0: 4, u1: 10, depth: 0 }
+            ]
+        }
+    });
+    assert.equal(covStart.left, true, 'the face-start notch side faces air and needs its infill');
+    assert.equal(covStart.right, false, 'interior side still abuts the notch return wall');
 });
 
 test('adjacency: projecting balcony covers all air-facing sides', () => {

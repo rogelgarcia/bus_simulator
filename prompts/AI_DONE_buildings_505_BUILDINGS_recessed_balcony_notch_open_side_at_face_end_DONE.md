@@ -1,3 +1,5 @@
+# DONE
+
 # Problem
 
 A recessed balcony bay (negative depth + `balcony.placement: 'recessed'`)
@@ -54,3 +56,31 @@ a corner still leave their shared side open to each other).
 - Engine 2 only.
 - Before/after screenshots of a corner notch from the side street, plus the
   around-the-corner paired case as a no-regression shot.
+
+## Summary of changes (2026-08-26)
+
+- Root cause confirmed in `cornerJoinPointWithDepths`: the corner mitre
+  INTERSECTS the two faces' offset lines, so a recessed corner bay pulls the
+  mitre to its recessed depth and the adjacent face's wall starts there — the
+  corner mass is cut through and no wall ever spans the notch side at a face
+  end. `resolveBalconySideCoverage`'s corner branch instead read the adjacent
+  face's strip depth (plain wall = 0 ≥ platform front) and wrongly called the
+  side wall-abutting.
+- Fix in `BayBalconyModel.js`: `neighborDepthAt` returns `null` (no wall) at a
+  face start/end; `resolveSide` treats that as air, so the configured side
+  infill (glass/railing) is emitted. Same-face adjacency and per-side
+  overrides unchanged.
+- `ModernResidential2`'s around-the-corner pairing keeps its behavior (its
+  paired case already resolved to "one side cover each"; pixel-diff of its
+  corner before/after is at the render noise floor).
+- Node tests (`bay_balcony_model.test.js`): the stale "closed corner stays
+  uncovered" case now asserts the face-end side faces air, with the symmetric
+  face-start case; the wrapping-corner and override cases unchanged. 12/12.
+- Capture spec `ai505_notch_side_capture.pwtest.js`: Garden Court AB corner
+  from the B side street (wide + tight close-up of the floor-2 notch) and the
+  ModernResidential2 paired corner. Before/after pairs in
+  `tests/artifacts/screens/buildings/ai505_*` — before shows the open notch
+  column (slider and reveal seen edge-on through the missing side), after
+  closes it with the glass side panel; pixel-diff localizes exactly to the
+  notch side region.
+- Documented the face-end rule in `WINDOWS_BALCONY_SPEC.md` §3.

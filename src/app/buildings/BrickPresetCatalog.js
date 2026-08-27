@@ -143,6 +143,19 @@ const BRICK_PRESETS = Object.freeze([
         tintJitter: DEFAULT_TINT_JITTER
     }),
     Object.freeze({
+        // Salmon Roman brick — the Bradbury Block colorway: light orange-rose
+        // brick in long/low Roman coursing (downloads/buildings_references/2.png).
+        id: 'brick.salmon_roman',
+        label: 'Salmon brick — roman',
+        colorway: BRICK_PRESET_COLORWAY.ORANGE,
+        format: BRICK_PRESET_FORMAT.ROMAN,
+        material: Object.freeze({ kind: 'texture', id: 'pbr.red_brick' }),
+        wallBase: Object.freeze(makeWallBase({ hueDeg: 22, saturation: 0.22, value: 1.0, intensity: 0.62, brightness: 1.14 })),
+        tiling: Object.freeze(makeTiling(ROMAN_TILING)),
+        brick: Object.freeze(makeBrickVariation(RED_BRICK_GRID)),
+        tintJitter: DEFAULT_TINT_JITTER
+    }),
+    Object.freeze({
         id: 'brick.brown_standard',
         label: 'Brown brick',
         colorway: BRICK_PRESET_COLORWAY.BROWN,

@@ -116,6 +116,10 @@ const WALL_DECORATION_DEFAULT_WALL_DEPTH_M = 0.30;
 // quite fill its wall cutout, a gap grazing sightlines would otherwise slip
 // through now that every opening is cut (AI 495).
 const INTERIOR_SHELL_REVEAL_METERS = 0.08;
+// When an opening's frame sits at or behind the shell plane, the shell hole is
+// grown past the wall cut instead, so its edge hides behind the facade's own
+// reveal walls rather than meeting them edge-on (AI 507).
+const INTERIOR_SHELL_CLEARANCE_METERS = 0.02;
 const FACE_NORMAL_BY_ID = Object.freeze({
     A: Object.freeze({ x: 0, y: 0, z: 1 }),
     B: Object.freeze({ x: 1, y: 0, z: 0 }),
@@ -5524,7 +5528,15 @@ function buildFacadeSurfaceRunsByFaceId({ facadeStrips, facadeFrames }) {
  * happen is seeing *through solid wall*, and that is the shell's own opacity to
  * enforce, not something to fake by leaving holes uncut.
  *
- * @param {object} cutout facade cutout (`{faceId, x, y, z, width, height}`)
+ * The hole's size depends on where the opening's frame plane sits (AI 507). A
+ * near-flush frame is in front of the shell, so the hole shrinks by the reveal
+ * margin and the ring reads as the room's plastered window return behind the
+ * glass. A frame inset to or past the shell plane would show that ring IN FRONT
+ * of the frame as a pale surround; there the hole grows past the wall cut
+ * instead, and the facade's reveal walls (wall material, `revealDepth` on the
+ * facade cutout) are what read as the reveal.
+ *
+ * @param {object} cutout facade cutout (`{faceId, x, y, z, width, height, revealDepth}`)
  * @param {object} params
  * @param {object} params.frames per-face `{start, t, n}` frames
  * @param {(faceId: string) => number} params.shellDepthOf shell depth per face
@@ -5539,9 +5551,15 @@ function projectFacadeCutoutOntoShell(cutout, { frames, shellDepthOf }) {
     const tx = Number(frame.t?.x) || 0;
     const tz = Number(frame.t?.z) || 0;
     const u = (Number(cutout.x) - sx) * tx + (Number(cutout.z) - sz) * tz;
-    const point = pointOnFacadeFrame({ frame, u, depth: shellDepthOf(faceId) });
-    const width = Math.max(0.05, (Number(cutout.width) || 0) - INTERIOR_SHELL_REVEAL_METERS * 2);
-    const height = Math.max(0.05, (Number(cutout.height) || 0) - INTERIOR_SHELL_REVEAL_METERS * 2);
+    const shellDepth = shellDepthOf(faceId);
+    const point = pointOnFacadeFrame({ frame, u, depth: shellDepth });
+    const outerDepth = (Number(cutout.x) - sx) * (Number(frame.n?.x) || 0)
+        + (Number(cutout.z) - sz) * (Number(frame.n?.z) || 0);
+    const framePlaneDepth = outerDepth - Math.max(0, Number(cutout.revealDepth) || 0);
+    const frameClearsShell = framePlaneDepth - shellDepth >= FLOOR_INTERIOR_SHELL_INSET_METERS * 0.5;
+    const marginPerSide = frameClearsShell ? INTERIOR_SHELL_REVEAL_METERS : -INTERIOR_SHELL_CLEARANCE_METERS;
+    const width = Math.max(0.05, (Number(cutout.width) || 0) - marginPerSide * 2);
+    const height = Math.max(0.05, (Number(cutout.height) || 0) - marginPerSide * 2);
     // The facade owns the reveal faces; the shell just needs the hole.
     return { ...cutout, x: point.x, z: point.z, width, height, revealDepth: 0 };
 }
@@ -7906,17 +7924,8 @@ export function buildBuildingFabricationVisualParts({
                             return idx;
                         };
 
-                        const normalizeTextureFlow = (value) => {
-                            const typed = typeof value === 'string' ? value : '';
-                            if (typed === 'repeats' || typed === 'overflow_left' || typed === 'overflow_right') return typed;
-                            return 'restart';
-                        };
-
                         let prevFaceIdForUv = null;
-                        let prevIsBayForUv = false;
                         let prevMaterialKeyForUv = '';
-                        let prevTextureFlowForUv = 'restart';
-                        let prevSourceBayIdForUv = '';
                         let prevUvStartForUv = 0;
                         let prevWidthForUv = 0;
 
@@ -7955,32 +7964,25 @@ export function buildBuildingFabricationVisualParts({
 
                             if (faceId !== prevFaceIdForUv) {
                                 prevFaceIdForUv = faceId ?? null;
-                                prevIsBayForUv = false;
                                 prevMaterialKeyForUv = '';
-                                prevTextureFlowForUv = 'restart';
-                                prevSourceBayIdForUv = '';
                                 prevUvStartForUv = 0;
                                 prevWidthForUv = 0;
                             }
 
-                            const textureFlow = isBayStrip ? normalizeTextureFlow(strip?.textureFlow ?? null) : 'restart';
-                            const sourceBayId = isBayStrip && typeof strip?.sourceBayId === 'string' ? strip.sourceBayId : '';
                             const matKey = materialKey(resolvedSpec);
 
+                            // AI 506: consecutive strips sharing a resolved wall
+                            // material CONTINUE the face's texture run — uvStart
+                            // carries the accumulated width so the pattern never
+                            // resets mid-wall (whether a reset was VISIBLE used
+                            // to depend on strip width vs texture period). The
+                            // old `textureFlow` gates ('repeats'/'overflow_*')
+                            // are subsumed: they were same-material continuations
+                            // with this exact accumulation. A material change
+                            // starts a fresh run.
                             const sameMaterial = !!matKey && prevMaterialKeyForUv === matKey;
-                            const repeats = sameMaterial
-                                && prevIsBayForUv
-                                && isBayStrip
-                                && prevTextureFlowForUv === 'repeats'
-                                && !!prevSourceBayIdForUv
-                                && prevSourceBayIdForUv === sourceBayId;
-                            const overflow = sameMaterial
-                                && prevIsBayForUv
-                                && isBayStrip
-                                && (prevTextureFlowForUv === 'overflow_right' || textureFlow === 'overflow_left');
-
                             const continueOffset = (faceId === 'B' || faceId === 'D') ? -w : prevWidthForUv;
-                            const uvStart = (repeats || overflow) ? (prevUvStartForUv + continueOffset) : 0;
+                            const uvStart = sameMaterial ? (prevUvStartForUv + continueOffset) : 0;
 
                             if (w > 1e-5) {
                                 const materialIndex = getFacadeMaterialIndex({ materialSpec: resolvedSpec, wallBase, tiling, materialVariation });
@@ -7999,10 +8001,7 @@ export function buildBuildingFabricationVisualParts({
                                 }
                             }
 
-                            prevIsBayForUv = isBayStrip;
                             prevMaterialKeyForUv = matKey;
-                            prevTextureFlowForUv = textureFlow;
-                            prevSourceBayIdForUv = sourceBayId;
                             prevUvStartForUv = uvStart;
                             prevWidthForUv = w;
                         }
@@ -9884,8 +9883,10 @@ export function buildBuildingFabricationVisualParts({
 
                 const emitCapitalStep = ({ frame, u0, u1, planeDepth, overhang, projection, y, height, material, role, end, bayId }) => {
                     if (!(u1 > u0 + EPS) || !(height > EPS)) return;
-                    const dOut = planeDepth - projection;
-                    const dIn = planeDepth + 0.04;
+                    // Facade-frame depth is OUTWARD-positive (AI 503): the band
+                    // projects proud of the bay plane and embeds 4cm back in.
+                    const dOut = planeDepth + projection;
+                    const dIn = planeDepth - 0.04;
                     const corners = [
                         pointOnFacadeFrame({ frame, u: u0 - overhang, depth: dOut }),
                         pointOnFacadeFrame({ frame, u: u1 + overhang, depth: dOut }),
@@ -10030,8 +10031,10 @@ export function buildBuildingFabricationVisualParts({
                         if (!(y > segStart - EPS) || !(y + height < segEnd + EPS)) continue;
 
                         const planeDepth = Number(strip.depth) || 0;
-                        const dOut = planeDepth - projection;
-                        const dIn = planeDepth + 0.04;
+                        // Outward-positive depth (AI 503): band proud of the
+                        // pier plane, embedded 4cm into it.
+                        const dOut = planeDepth + projection;
+                        const dIn = planeDepth - 0.04;
                         const corners = [
                             pointOnFacadeFrame({ frame, u: u0 - overhang, depth: dOut }),
                             pointOnFacadeFrame({ frame, u: u1 + overhang, depth: dOut }),
@@ -11634,6 +11637,7 @@ export const __testOnly = Object.freeze({
     computeQuadFacadeFramesFromLoop,
     computeQuadFacadeSilhouette,
     buildWallSidesGeometryFromLoopDetailXZ,
+    projectFacadeCutoutOntoShell,
     resolveOpeningCutMetrics,
     shouldReverseLinkedFaceBayOrder,
     resolveLinkedFaceBaysForSolve,

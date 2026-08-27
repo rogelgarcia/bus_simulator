@@ -90,18 +90,24 @@ For each side (`left` = lower-u, `front`, `right` = higher-u): the side gets
 railing/infill only when it faces **open air**; a side that abuts wall gets
 nothing (the wall does the job). Overrides `always`/`never` win.
 
-Rule: a side abuts wall when the neighbor's front plane sits at (or in front
-of) the balcony's **platform front plane** (`strip.depth + platformDepth` on
-the facade depth axis). Neighbors are the adjacent strip on the same face; at
-a face end, the corner strip of the adjacent face in loop order (A→B→C→D→A);
-no facade/strips = plain wall at depth 0.
+Rule: a side abuts wall when the same-face neighbor strip's front plane sits
+at (or in front of) the balcony's **platform front plane**
+(`strip.depth + platformDepth` on the facade depth axis); no strip at the
+edge = plain wall at depth 0.
+
+At a face END no wall ever abuts (AI 505): the corner mitre intersects the two
+faces' offset lines, so a recessed corner bay cuts the corner mass through and
+the adjacent face's wall starts at the recessed mitre point — it never spans
+the notch side. A face-end side therefore always faces air and gets its
+configured infill.
 
 Consequences (the modes fall out of one rule):
 - mid-facade recessed balcony → both sides abut the notch's return walls → no
   side covers;
-- recessed balcony at a corner where the adjacent face also recesses (the
-  ref-4 massing notch) → the corner side faces the open notch → exactly one
-  side cover;
+- recessed balcony at a face end → the corner side faces air (the side street)
+  → it carries the side infill; two notches pairing around a corner (the
+  ref-4 massing notch) resolve identically — each keeps exactly its
+  corner-side cover, railed but open to the other;
 - projecting balcony → all sides face air → all covered;
 - a projecting balcony beside a deeper proud bay → that side abuts the proud
   wall → no cover there.
