@@ -228,7 +228,7 @@ function normalizeBayEdgeDepthSpec(value) {
     return { left, right };
 }
 
-const BAY_CAPITAL_PROFILES = new Set(['flat', 'stepped']);
+const BAY_CAPITAL_PROFILES = new Set(['flat', 'stepped', 'molded']);
 
 function normalizeBayCapitalEndSpec(value) {
     const src = value && typeof value === 'object' ? value : null;

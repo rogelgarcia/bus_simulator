@@ -97,28 +97,42 @@ function buildPedimentTriangleShape({ halfWidth, height }) {
     return shape;
 }
 
-function buildArchedBandShape({ openingHalfWidth, bandHeight, archRise }) {
-    const w = openingHalfWidth * 2;
+// One annular archivolt ring between radii [rInner, rOuter] around the
+// opening arch. Both arcs terminate on the HORIZONTAL springing line (the
+// chord through the arch's spring points), the classical impost cut — a
+// radial cut used to leave angled stubs ("ears") poking sideways past the
+// shoulders on wide arches (AI 509).
+function buildArchedBandShape({ archRise, circleRadius, rInner, rOuter }) {
     const r = Math.max(EPS, archRise);
-    const R = (w * w) / (8 * r) + r / 2;
-    const cy = -R;
+    const cy = -circleRadius;
     const chordY = -r;
-    const aR = Math.atan2(chordY - cy, openingHalfWidth);
-    const aL = Math.atan2(chordY - cy, -openingHalfWidth);
-    const R2 = R + bandHeight;
+    // Angle of a circle of radius `rad` where it crosses the springing line.
+    const springAngle = (rad) => {
+        const dy = chordY - cy;
+        const dx = Math.sqrt(Math.max(EPS * EPS, rad * rad - dy * dy));
+        return Math.atan2(dy, dx);
+    };
+    const aInR = springAngle(rInner);
+    const aInL = Math.PI - aInR;
+    const aOutR = springAngle(rOuter);
+    const aOutL = Math.PI - aOutR;
 
     const shape = new THREE.Shape();
-    shape.moveTo(Math.cos(aR) * R, cy + Math.sin(aR) * R);
-    shape.lineTo(Math.cos(aR) * R2, cy + Math.sin(aR) * R2);
-    shape.absarc(0, cy, R2, aR, aL, false);
-    shape.lineTo(Math.cos(aL) * R, cy + Math.sin(aL) * R);
-    shape.absarc(0, cy, R, aL, aR, true);
+    shape.moveTo(Math.cos(aInR) * rInner, cy + Math.sin(aInR) * rInner);
+    shape.lineTo(Math.cos(aOutR) * rOuter, chordY);
+    shape.absarc(0, cy, rOuter, aOutR, aOutL, false);
+    shape.lineTo(Math.cos(aInL) * rInner, chordY);
+    shape.absarc(0, cy, rInner, aInL, aInR, true);
     return shape;
 }
 
 /**
  * Builds header (lintel) geometry for a surround profile style.
  * y=0 sits at the header bottom (the window top edge + gap); arched bands dip below.
+ *
+ * Arched bands support `bands: N` (AI 509): the radial height splits into N
+ * nested archivolt rings, each ring stepped back in depth toward the opening
+ * by `bandStepMeters` — the outermost ring keeps the full `depth`.
  */
 export function buildWindowHeaderSurroundGeometry({
     style,
@@ -130,6 +144,8 @@ export function buildWindowHeaderSurroundGeometry({
     archEnabled = false,
     archHeightRatio = 0.0,
     windowHeight = 0.0,
+    bands = 1,
+    bandStepMeters = 0.05,
     curveSegments = 12
 } = {}) {
     const w = clampPositive(openingWidth, 1.0) * clampPositive(widthScale, 1.0);
@@ -145,12 +161,29 @@ export function buildWindowHeaderSurroundGeometry({
         const riseCandidate = ratio * w;
         const archRise = wh > EPS ? Math.min(riseCandidate, Math.max(0, wh - 0.05)) : riseCandidate;
         if (archEnabled && archRise > EPS) {
-            const shape = buildArchedBandShape({
-                openingHalfWidth: w * 0.5,
-                bandHeight: h,
-                archRise
-            });
-            return extrudeProfile(shape, d, curveSegments);
+            const bandCount = Math.max(1, Math.min(4, Math.round(Number(bands) || 1)));
+            const step = Math.max(0, Number(bandStepMeters) || 0);
+            const circleRadius = (w * w) / (8 * archRise) + archRise / 2;
+            const ringHeight = h / bandCount;
+            const geos = [];
+            for (let i = 0; i < bandCount; i += 1) {
+                const shape = buildArchedBandShape({
+                    archRise,
+                    circleRadius,
+                    rInner: circleRadius + ringHeight * i,
+                    rOuter: circleRadius + ringHeight * (i + 1)
+                });
+                // Innermost ring recedes the most (classical orders step back
+                // toward the opening); keep every ring at least 20mm proud.
+                const ringDepth = Math.max(0.02, d - step * (bandCount - 1 - i));
+                geos.push(extrudeProfile(shape, ringDepth, curveSegments));
+            }
+            if (geos.length === 1) return geos[0];
+            const merged = mergeGeometries(geos, false);
+            for (const geo of geos) geo.dispose();
+            merged.computeVertexNormals();
+            merged.computeBoundingBox();
+            return merged;
         }
         // Arch disabled/degenerate: fall back to a flat band so the asset still reads framed.
         return extrudeProfile(buildFlatBandShape({ halfWidth, height: h }), d, curveSegments);

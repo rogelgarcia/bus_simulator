@@ -135,6 +135,9 @@ export function normalizeArcadeConfig(value) {
     // dropping the band to `null` would read back as "absent" = default on.
     const impost = {
         enabled: impostSrc?.enabled !== false,
+        // AI 509: continuous mode also bands the jamb strips inside opening
+        // bays, so the run reads as ONE band broken only by the arches.
+        continuous: impostSrc?.continuous === true,
         heightMeters: clamp(impostSrc?.heightMeters, 0.03, 0.8, ARCADE_IMPOST_DEFAULTS.heightMeters),
         projectionMeters: clamp(impostSrc?.projectionMeters, 0.01, 0.6, ARCADE_IMPOST_DEFAULTS.projectionMeters),
         overhangMeters: clamp(impostSrc?.overhangMeters, 0.0, 0.5, ARCADE_IMPOST_DEFAULTS.overhangMeters),

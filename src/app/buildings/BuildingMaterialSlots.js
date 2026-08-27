@@ -291,17 +291,20 @@ function resolveWindowDecorationMaterials(node, ctx, contextLabel) {
         for (const entry of node) resolveWindowDecorationMaterials(entry, ctx, contextLabel);
         return;
     }
-    const material = node.material;
-    if (material && typeof material === 'object' && material.mode === 'slot') {
+    // `material` on decoration parts / storefront zones / portal parts;
+    // `recessMaterial` is the portal reveal hook (AI 509) — same dialect.
+    for (const key of ['material', 'recessMaterial']) {
+        const material = node[key];
+        if (!material || typeof material !== 'object' || material.mode !== 'slot') continue;
         const slotId = typeof material.slotId === 'string' ? material.slotId : '';
         const bundle = resolveMaterialSpecBundle({ kind: 'slot', id: slotId }, { ...ctx, context: contextLabel });
         if (bundle?.material?.kind === 'texture') {
-            node.material = { ...material, mode: 'pbr', materialId: bundle.material.id };
-            delete node.material.slotId;
+            node[key] = { ...material, mode: 'pbr', materialId: bundle.material.id };
+            delete node[key].slotId;
         } else {
             if (bundle && ctx.warnings) ctx.warnings.push(`${contextLabel}: slot "${slotId}" is not a texture; using match_wall.`);
-            node.material = { ...material, mode: 'match_wall' };
-            delete node.material.slotId;
+            node[key] = { ...material, mode: 'match_wall' };
+            delete node[key].slotId;
         }
     }
     for (const value of Object.values(node)) {
@@ -421,6 +424,13 @@ export function resolveBuildingConfigMaterials({
                     context: `Wall decoration ${decoration?.id ?? ''}`
                 });
             }
+        }
+    }
+    // AI 508: facade lettering signs use the capital wall-material dialect.
+    if (outWallDecorations && typeof outWallDecorations === 'object' && Array.isArray(outWallDecorations.lettering)) {
+        for (const item of outWallDecorations.lettering) {
+            if (!item || typeof item !== 'object' || item.material === null || item.material === undefined) continue;
+            resolveSpecInPlace(item, 'material', ctx, { context: `Lettering ${item?.id ?? ''}` });
         }
     }
 

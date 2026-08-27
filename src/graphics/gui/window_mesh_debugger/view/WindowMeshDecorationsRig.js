@@ -302,7 +302,9 @@ function registerDefaultWindowMeshDecorationStylePlugins() {
                 const depth = Number(resolved?.template?.depth) || 0.08;
                 const ears = Number(resolved?.earsMeters) || 0;
                 const scale = Number(resolved?.widthScale) || 1;
-                return `hdr_${styleId}|w:${q(windowWidth)}|ws:${q(scale)}|h:${q(height)}|d:${q(depth)}|e:${q(ears)}|wh:${q(windowHeight)}|arch:${archEnabled ? 1 : 0}|ahr:${q(archHeightRatio)}|cs:${curveSegments | 0}`;
+                const bands = Number(resolved?.bands) || 1;
+                const bandStep = Number(resolved?.bandStepMeters) || 0;
+                return `hdr_${styleId}|w:${q(windowWidth)}|ws:${q(scale)}|h:${q(height)}|d:${q(depth)}|e:${q(ears)}|wh:${q(windowHeight)}|arch:${archEnabled ? 1 : 0}|ahr:${q(archHeightRatio)}|b:${bands}|bs:${q(bandStep)}|cs:${curveSegments | 0}`;
             },
             buildGeometry: ({ windowWidth, windowHeight, archEnabled, archHeightRatio, curveSegments, resolved }) => (
                 buildWindowHeaderSurroundGeometry({
@@ -315,6 +317,8 @@ function registerDefaultWindowMeshDecorationStylePlugins() {
                     archEnabled,
                     archHeightRatio,
                     windowHeight,
+                    bands: resolved?.bands,
+                    bandStepMeters: resolved?.bandStepMeters,
                     curveSegments
                 })
             )

@@ -1924,6 +1924,13 @@ async function runTests() {
         solveFacadeBaysLayout
     } = await import('/src/graphics/assets3d/generators/building_fabrication/FacadeBaysSolver.js');
     const {
+        layoutFacadeLetteringText,
+        buildFacadeLetteringGeometry
+    } = await import('/src/graphics/assets3d/generators/building_fabrication/FacadeLetteringGeometry.js');
+    const {
+        buildWindowHeaderSurroundGeometry
+    } = await import('/src/graphics/engine3d/buildings/window_mesh/WindowDecorationSurroundGeometry.js');
+    const {
         WALL_BASE_MATERIAL_DEFAULT,
         createDefaultFloorLayer,
         createDefaultRoofLayer,
@@ -11634,6 +11641,180 @@ async function runTests() {
         assertTrue(shellVertsOnFace > 0, 'Expected the interior shell to still line the window face around the cut.');
     });
 
+    // ===== AI 508: facade signage lettering =====
+
+    test('FacadeLetteringGeometry: deterministic layout and merged sign geometry (AI 508)', () => {
+        const a = layoutFacadeLetteringText('BRADBURY');
+        const b = layoutFacadeLetteringText('BRADBURY');
+        assertTrue(a.widthUnits > 5.0, `Expected a plausible advance width for BRADBURY, got ${a.widthUnits}.`);
+        assertNear(a.widthUnits, b.widthUnits, 1e-12, 'Layout must be deterministic.');
+        assertEqual(a.unsupported.length, 0, 'All BRADBURY glyphs are in the built-in set.');
+
+        const odd = layoutFacadeLetteringText('B@X');
+        assertTrue(odd.unsupported.includes('@'), 'Unsupported characters must be reported.');
+        assertTrue(odd.widthUnits > 1.0, 'Unsupported characters still take a space advance.');
+
+        const built = buildFacadeLetteringGeometry({ text: 'BRADBURY', heightMeters: 0.4, depthMeters: 0.05 });
+        assertTrue(!!built.geometry && !!built.inkMeters, 'Expected sign geometry with ink bounds.');
+        assertNear(built.widthMeters, a.widthUnits * 0.4, 1e-6, 'Sign advance width must be the layout width at cap height.');
+        built.geometry.computeBoundingBox();
+        const box = built.geometry.boundingBox;
+        // The reported ink bounds ARE the rendered bounds — placement and
+        // band clamping rely on that.
+        assertNear(box.min.x, built.inkMeters.minX, 1e-5, 'Ink minX must match the rendered strokes.');
+        assertNear(box.max.x, built.inkMeters.maxX, 1e-5, 'Ink maxX must match the rendered strokes.');
+        assertNear(box.min.y, built.inkMeters.minY, 1e-5, 'Ink minY must match the rendered strokes.');
+        assertNear(box.max.y, built.inkMeters.maxY, 1e-5, 'Ink maxY must match the rendered strokes.');
+        // Diagonal butt ends may overshoot the em box by at most half a stroke.
+        const overshootPad = 0.08 * 0.4 + 1e-6;
+        assertTrue(box.min.y > -overshootPad && box.max.y < 0.4 + overshootPad, 'Glyph ink stays within half a stroke of the em box.');
+        assertNear(box.max.z, 0.05, 1e-6, 'Relief must extend depthMeters out of the wall plane.');
+        assertTrue(box.min.z < 0, 'Relief must embed behind the wall plane so the seam stays closed.');
+    });
+
+    const buildAi508LetteringParts = ({ text, heightMeters, letteringExtra = null }) => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        return buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig: {
+                road: { surfaceY: 0, curb: { height: 0, extraHeight: 0, thickness: 0 }, sidewalk: { extraWidth: 0, lift: 0 } },
+                ground: { surfaceY: 0 }
+            },
+            tileSize,
+            occupyRatio: 1.0,
+            layers: [
+                createDefaultFloorLayer({
+                    id: 'floor_sign508',
+                    floors: 1,
+                    floorHeight: 3.2,
+                    belt: { enabled: false },
+                    windows: { enabled: false },
+                    interior: { enabled: true }
+                }),
+                createDefaultRoofLayer({ ring: { enabled: false } })
+            ],
+            facades: {
+                A: {
+                    layout: {
+                        bays: {
+                            items: [
+                                { id: 'flex_1', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' },
+                                {
+                                    id: 'open_2',
+                                    size: { mode: 'fixed', widthMeters: 3.0 },
+                                    expandPreference: 'no_repeat',
+                                    window: {
+                                        enabled: true,
+                                        defId: 'window_black_6_panels_tall',
+                                        assetType: 'window',
+                                        size: { widthMeters: 1.6, heightMeters: 1.6 },
+                                        heightMode: 'fixed',
+                                        verticalOffsetMeters: 0.9,
+                                        width: { minMeters: 1.6, maxMeters: null },
+                                        padding: { leftMeters: 0.2, rightMeters: 0.2 },
+                                        repeat: { count: 1 }
+                                    }
+                                },
+                                { id: 'flex_3', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+                            ]
+                        }
+                    }
+                }
+            },
+            wallDecorations: {
+                lettering: [
+                    {
+                        id: 'sign_1',
+                        text,
+                        target: { layerId: 'floor_sign508', bayRef: 'A:open_2', zone: 'opening_header', floor: 1 },
+                        heightMeters,
+                        depthMeters: 0.05,
+                        ...(letteringExtra ?? {})
+                    }
+                ]
+            },
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+    };
+
+    const collectAi508LetteringMeshes = (parts) => {
+        const out = [];
+        for (const mesh of parts.beltCourse?.children ?? []) {
+            if (mesh?.userData?.buildingFab2Role === 'facade_lettering') out.push(mesh);
+        }
+        return out;
+    };
+
+    test('BuildingFabricationGenerator: lettering emits one role-tagged mesh centered on its target span (AI 508)', () => {
+        const parts = buildAi508LetteringParts({ text: 'BRADBURY', heightMeters: 0.3 });
+        const signs = collectAi508LetteringMeshes(parts);
+        assertEqual(signs.length, 1, 'Expected exactly one facade_lettering mesh for one lettering item.');
+        const sign = signs[0];
+        assertEqual(sign.userData.letteringText, 'BRADBURY', 'Sign mesh must carry its text tag.');
+        assertTrue(sign.castShadow === true && sign.receiveShadow === true, 'Sign must be in the shadow set.');
+
+        const box = new THREE.Box3().setFromObject(sign);
+        const center = box.getCenter(new THREE.Vector3());
+        // The single window bay is solved to the middle of face A (the +z
+        // face), so the sign centers at x=0 on the z=+5 wall plane.
+        assertNear(center.x, 0.0, 0.03, 'Sign must be centered on the target bay span.');
+        assertTrue(center.z > 4.9 && center.z < 5.15, `Sign must sit on the bay front plane, got z=${center.z.toFixed(3)}.`);
+        assertTrue(box.max.z > 5.0 + 1e-3, 'Raised letters must stand proud of the wall plane.');
+        const widthMeters = box.max.x - box.min.x;
+        assertTrue(widthMeters > 1.5 && widthMeters < 2.9, `Expected BRADBURY at 0.3m within the 3m bay, got ${widthMeters.toFixed(2)}m.`);
+
+        // opening_header zone: between the opening top (0.9 + 1.6 above the
+        // floor base) and the floor top (3.2).
+        const facadeMesh = (parts.solidMeshes ?? []).find((m) => m?.userData?.buildingFab2WallKind === 'facade') ?? null;
+        assertTrue(!!facadeMesh, 'Expected the facade wall mesh.');
+        const layerStartY = facadeMesh.position.y;
+        assertTrue(box.min.y > layerStartY + 2.5 - 1e-3, 'Sign must sit above the opening top (frieze band).');
+        assertTrue(box.max.y < layerStartY + 3.2 + 1e-3, 'Sign must stay below the floor top.');
+
+        const clampWarnings = (parts.warnings ?? []).filter((w) => typeof w === 'string' && w.startsWith('Lettering sign_1'));
+        assertEqual(clampWarnings.length, 0, `Fitting text must not warn, got: ${clampWarnings.join(' | ')}`);
+    });
+
+    test('BuildingFabricationGenerator: overflowing lettering warns and clamps to the band (AI 508)', () => {
+        const parts = buildAi508LetteringParts({ text: 'BRADBURY BUILDING COMPANY', heightMeters: 0.5 });
+        const signs = collectAi508LetteringMeshes(parts);
+        assertEqual(signs.length, 1, 'Expected the clamped sign to still be emitted.');
+        const box = new THREE.Box3().setFromObject(signs[0]);
+        const widthMeters = box.max.x - box.min.x;
+        assertTrue(widthMeters <= 2.9 + 1e-3, `Clamped sign must not overflow the 3m bay, got ${widthMeters.toFixed(2)}m.`);
+        const warning = (parts.warnings ?? []).find((w) => typeof w === 'string' && w.startsWith('Lettering sign_1') && w.includes('does not fit'));
+        assertTrue(!!warning, `Expected an overflow warning, got: ${(parts.warnings ?? []).join(' | ')}`);
+    });
+
+    test('BuildingFabricationGenerator: lettering config normalization guards targets (AI 508)', () => {
+        const normalize = buildingFabricationGeneratorTestOnly?.normalizeFacadeLetteringItems ?? null;
+        assertTrue(typeof normalize === 'function', 'Expected normalizeFacadeLetteringItems test helper.');
+        const warnings = [];
+        const items = normalize({
+            lettering: [
+                { id: 'ok', text: 'HOTEL', target: { layerId: 'floor_1', bayRef: 'A:bay_2', zone: 'opening_header' } },
+                { id: 'no_target', text: 'X' },
+                { id: 'bad_zone', text: 'Y', target: { layerId: 'floor_1', bayRef: 'B:bay_9', zone: 'roofline' } },
+                { id: 'empty', text: '   ', target: { layerId: 'floor_1', bayRef: 'A:bay_2' } }
+            ]
+        }, warnings);
+        assertEqual(items.length, 2, 'Expected the two well-formed items to survive.');
+        assertEqual(items[0].zone, 'opening_header', 'Expected the zone to pass through.');
+        assertEqual(items[1].zone, 'bay', 'Unknown zones must fall back to "bay".');
+        assertTrue(warnings.some((w) => w.startsWith('Lettering no_target')), 'Missing target must warn.');
+        assertTrue(warnings.some((w) => w.startsWith('Lettering bad_zone') && w.includes('roofline')), 'Unknown zone must warn.');
+        assertTrue(warnings.some((w) => w.startsWith('Lettering empty')), 'Empty text must warn.');
+    });
+
     test('BuildingFabricationScene: trims building tiles when road overlaps', () => {
         const engine = {
             scene: new THREE.Scene(),
@@ -19109,6 +19290,326 @@ async function runTests() {
             0,
             'Expected no band when the impost is disabled but the springing lock stays on.'
         );
+    });
+
+    // ===== AI 509: classical ornament kit =====
+
+    test('WindowDecorationSurroundGeometry: arched band terminates on the springing line with a smooth curve (AI 509)', () => {
+        const w = 2.6;
+        const rise = 0.26 * w;
+        const h = 0.52;
+        const R = (w * w) / (8 * rise) + rise / 2;
+        const cy = -R;
+        const chordY = -rise;
+
+        const profilePoints = (geo) => {
+            geo.computeBoundingBox();
+            const zFront = geo.boundingBox.max.z;
+            const pos = geo.getAttribute('position');
+            const pts = new Map();
+            for (let i = 0; i < pos.count; i++) {
+                if (Math.abs(pos.getZ(i) - zFront) > 1e-6) continue;
+                pts.set(`${pos.getX(i).toFixed(5)},${pos.getY(i).toFixed(5)}`, { x: pos.getX(i), y: pos.getY(i) });
+            }
+            return Array.from(pts.values());
+        };
+
+        const single = buildWindowHeaderSurroundGeometry({
+            style: 'arched_band',
+            openingWidth: w,
+            height: h,
+            depth: 0.24,
+            archEnabled: true,
+            archHeightRatio: 0.26,
+            windowHeight: 3.9,
+            curveSegments: 24
+        });
+        const pts = profilePoints(single);
+        assertTrue(pts.length > 40, 'Expected a dense arched profile.');
+        const ringOf = (rad) => pts.filter((p) => Math.abs(Math.hypot(p.x, p.y - cy) - rad) < 0.01);
+        const inner = ringOf(R);
+        const outer = ringOf(R + h);
+        assertTrue(inner.length > 15 && outer.length > 15, 'Expected inner and outer archivolt arcs.');
+        // No kinks: every arc vertex sits exactly on its circle.
+        for (const p of [...inner, ...outer]) {
+            const rad = Math.hypot(p.x, p.y - cy);
+            const target = Math.abs(rad - R) < 0.01 ? R : R + h;
+            assertNear(rad, target, 1e-4, `Arc vertex off its circle at (${p.x.toFixed(3)}, ${p.y.toFixed(3)}).`);
+        }
+        // Classical springing cut: BOTH arcs run down to the horizontal chord
+        // line — the outer arc used to stop at the inner springing angle,
+        // leaving a radial stub ("ear") poking sideways past the shoulder.
+        const outerMinY = Math.min(...outer.map((p) => p.y));
+        const innerMinY = Math.min(...inner.map((p) => p.y));
+        assertNear(outerMinY, chordY, 2e-3, 'Outer arc must terminate on the springing line (no radial ear).');
+        assertNear(innerMinY, chordY, 2e-3, 'Inner arc must terminate on the springing line.');
+        for (const p of pts) {
+            assertTrue(p.y > chordY - 1e-4, 'No band geometry below the springing line.');
+        }
+
+        // bands: 3 nested rings split the radial height and step in depth.
+        const multi = buildWindowHeaderSurroundGeometry({
+            style: 'arched_band',
+            openingWidth: w,
+            height: h,
+            depth: 0.24,
+            archEnabled: true,
+            archHeightRatio: 0.26,
+            windowHeight: 3.9,
+            bands: 3,
+            bandStepMeters: 0.05,
+            curveSegments: 24
+        });
+        const mpos = multi.getAttribute('position');
+        const zSet = new Set();
+        for (let i = 0; i < mpos.count; i++) {
+            const z = mpos.getZ(i);
+            if (z > 1e-6) zSet.add(Math.round(z * 1000) / 1000);
+        }
+        for (const depth of [0.24, 0.19, 0.14]) {
+            assertTrue(zSet.has(depth), `Expected a ring extruded to ${depth}m, got depths ${Array.from(zSet).join(', ')}.`);
+        }
+        const mBox = new THREE.Box3().setFromBufferAttribute(mpos);
+        // The inner arc apex sits at the header origin (the window top); the
+        // rings stack outward to the full radial height above it.
+        assertNear(mBox.max.y, h, 1e-3, 'Nested bands span the same radial height as one band.');
+        assertTrue(mpos.count > single.getAttribute('position').count * 2, 'Expected three rings of geometry.');
+    });
+
+    test('BuildingFabricationGenerator: molded capital profile emits its course stack (AI 509)', () => {
+        const capitalFacade = (profile) => ({
+            A: {
+                layout: {
+                    bays: {
+                        items: [
+                            { id: 'flex_1', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' },
+                            {
+                                id: 'pier_2',
+                                size: { mode: 'fixed', widthMeters: 1.2 },
+                                expandPreference: 'no_repeat',
+                                capital: { top: { enabled: true, profile, height: 0.5, overhang: 0.12, projection: 0.16 } }
+                            },
+                            { id: 'flex_3', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+                        ]
+                    }
+                }
+            }
+        });
+        const molded = buildBalconyParts({ facades: capitalFacade('molded'), floors: 1 });
+        const moldedSteps = balconyMeshesByRole(molded, 'bay_capital');
+        assertEqual(moldedSteps.length, 4, 'Expected the molded capital to emit four courses.');
+        // Face A is the +z wall at z=5: the silhouette must widen upward
+        // (neck -> echinus -> abacus), i.e. outward extent grows with course y.
+        const byY = moldedSteps.slice().sort((a, b) => a.position.y - b.position.y);
+        let prevOuter = -Infinity;
+        for (const mesh of byY) {
+            const outer = meshWorldBand(mesh, 'z').max;
+            assertTrue(outer >= prevOuter - 1e-6, 'Molded courses must widen toward the abacus.');
+            prevOuter = outer;
+        }
+        const outermost = meshWorldBand(byY[byY.length - 1], 'z').max;
+        assertNear(outermost, 5.16, 1e-3, 'Top course must project the full authored 0.16m out of the wall.');
+
+        const stepped = buildBalconyParts({ facades: capitalFacade('stepped'), floors: 1 });
+        assertEqual(balconyMeshesByRole(stepped, 'bay_capital').length, 2, 'Stepped profile keeps its two-course stack.');
+    });
+
+    test('BuildingFabricationGenerator: continuous arcade impost bands the jamb strips of opening bays (AI 509)', () => {
+        // A flex tail absorbs the face's leftover width so the arcade bays
+        // keep their authored (fixed) widths and the jamb strips stay narrow.
+        const buildContinuousParts = (impost) => buildBalconyParts({
+            floors: 2,
+            floorHeight: 3.6,
+            facades: {
+                A: {
+                    layout: {
+                        bays: {
+                            items: [
+                                { id: 'pier_1', size: { mode: 'fixed', widthMeters: 0.8 }, expandPreference: 'no_repeat' },
+                                { id: 'wide_2', size: { mode: 'fixed', widthMeters: 2.8 }, expandPreference: 'no_repeat', window: ARCADE_WINDOW(2.6) },
+                                { id: 'pier_3', size: { mode: 'fixed', widthMeters: 0.8 }, expandPreference: 'no_repeat' },
+                                { id: 'narrow_4', size: { mode: 'fixed', widthMeters: 1.6 }, expandPreference: 'no_repeat', window: ARCADE_WINDOW(1.4) },
+                                { id: 'flex_5', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+                            ]
+                        },
+                        groups: {
+                            items: [{
+                                id: 'group_1',
+                                bayIds: ['pier_1', 'wide_2', 'pier_3', 'narrow_4'],
+                                repeat: { minRepeats: 1, maxRepeats: 1 },
+                                arcade: { enabled: true, ...(impost ? { impost } : {}) }
+                            }]
+                        }
+                    }
+                }
+            }
+        });
+
+        const on = buildContinuousParts({ continuous: true });
+        const imposts = balconyMeshesByRole(on, 'bay_arcade_impost');
+        const openingBands = imposts.filter((m) => String(m.userData?.arcadeBayId ?? '').startsWith('wide_')
+            || String(m.userData?.arcadeBayId ?? '').startsWith('narrow_'));
+        const pierBands = imposts.filter((m) => String(m.userData?.arcadeBayId ?? '').startsWith('pier_'));
+        assertTrue(pierBands.length >= 4, 'Continuous mode keeps the pier bands.');
+        assertTrue(openingBands.length >= 8, 'Continuous mode must band both jamb strips of every opening bay.');
+        // The jamb sub-bands stay clear of the arches: each is a narrow strip
+        // (bay padding + overhang), never the full opening-bay span.
+        for (const mesh of openingBands) {
+            const band = meshWorldBand(mesh, 'x');
+            const widthMeters = band.max - band.min;
+            assertTrue(widthMeters < 0.6, `Opening-bay impost must band only the jamb strip, got ${widthMeters.toFixed(2)}m.`);
+        }
+
+        const off = buildContinuousParts(null);
+        const offOpening = balconyMeshesByRole(off, 'bay_arcade_impost')
+            .filter((m) => !String(m.userData?.arcadeBayId ?? '').startsWith('pier_'));
+        assertEqual(offOpening.length, 0, 'Default impost keeps skipping opening bays.');
+    });
+
+    const AI509_PORTAL_DOOR_DEF = (portal) => ({
+        id: 'door_ai509_portal',
+        assetType: 'door',
+        name: 'AI509 Portal Door',
+        settings: {
+            version: 1,
+            width: 2.2,
+            height: 3.0,
+            arch: { enabled: false, heightRatio: 0.2, meetsRectangleFrame: true, topPieceMode: 'frame', clipVerticalMuntinsToRectWhenNoTopPiece: true },
+            frame: { width: 0.08, depth: 0.1, inset: 0.02, openBottom: true, addHandles: false, doorStyle: 'double', colorHex: 0x222222 },
+            muntins: { enabled: false, columns: 1, rows: 1, verticalWidth: 0.05, horizontalWidth: 0.05, depth: 0.04, inset: 0.01 },
+            glass: { opacity: 0.9, tintHex: 0x111111 },
+            shade: { enabled: false },
+            interior: { enabled: false }
+        },
+        portal
+    });
+
+    const buildAi509PortalParts = (portal) => {
+        const { map, generatorConfig, tileSize } = makeBalconyTestMap();
+        return buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers: [
+                createDefaultFloorLayer({ id: 'floor_509p', floors: 1, floorHeight: 4.6, belt: { enabled: false }, windows: { enabled: false }, interior: { enabled: true } }),
+                createDefaultRoofLayer({ ring: { enabled: false } })
+            ],
+            windowDefinitions: { items: [AI509_PORTAL_DOOR_DEF(portal)] },
+            facades: {
+                A: {
+                    layout: {
+                        bays: {
+                            items: [
+                                { id: 'flex_1', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' },
+                                {
+                                    id: 'entry_2',
+                                    size: { mode: 'fixed', widthMeters: 3.2 },
+                                    expandPreference: 'no_repeat',
+                                    window: {
+                                        enabled: true,
+                                        defId: 'door_ai509_portal',
+                                        assetType: 'door',
+                                        size: { widthMeters: 2.2, heightMeters: 3.0 },
+                                        heightMode: 'fixed',
+                                        verticalOffsetMeters: null,
+                                        width: { minMeters: 2.2, maxMeters: null },
+                                        padding: { leftMeters: 0.3, rightMeters: 0.3 },
+                                        repeat: { count: 1 },
+                                        visual: { disableShades: true, interior: 'none' }
+                                    }
+                                },
+                                { id: 'flex_3', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+                            ]
+                        }
+                    }
+                }
+            },
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+    };
+
+    test('BuildingFabricationGenerator: portal recess material routes the reveal walls to their own group (AI 509)', () => {
+        const revealVertGroups = (parts) => {
+            const facade = (parts.solidMeshes ?? []).find((m) => m?.userData?.buildingFab2WallKind === 'facade') ?? null;
+            assertTrue(!!facade, 'Expected the facade wall mesh.');
+            const pos = facade.geometry.getAttribute('position');
+            const groups = facade.geometry.groups ?? [];
+            const found = new Set();
+            let revealVerts = 0;
+            for (let i = 0; i < pos.count; i++) {
+                const z = pos.getZ(i);
+                // Reveal region on face A (+z): strictly behind the wall front,
+                // inside the 0.62m recess (frame inset 0.02 + recess 0.6).
+                if (!(z < 5.0 - 0.05 && z > 5.0 - 0.7)) continue;
+                if (Math.abs(pos.getX(i)) > 2.0) continue;
+                const y = pos.getY(i);
+                if (!(y > 0.05 && y < 3.4)) continue;
+                revealVerts += 1;
+                const group = groups.find((g) => i >= g.start && i < g.start + g.count) ?? null;
+                if (group) found.add(group.materialIndex);
+            }
+            return { revealVerts, indices: Array.from(found).sort(), materialCount: Array.isArray(facade.material) ? facade.material.length : 1 };
+        };
+
+        const hooked = buildAi509PortalParts({
+            enabled: true,
+            recessMeters: 0.6,
+            recessMaterial: { mode: 'pbr', materialId: 'pbr.red_sandstone_block' },
+            steps: { count: 0 }
+        });
+        const withHook = revealVertGroups(hooked);
+        assertTrue(withHook.revealVerts > 0, 'Expected reveal geometry inside the portal recess.');
+        assertTrue(withHook.materialCount >= 2, 'Expected the recess material to add a facade material.');
+        assertTrue(withHook.indices.every((idx) => idx >= 1), `Recess reveal must use its own material group, got indices [${withHook.indices.join(', ')}].`);
+
+        const plain = buildAi509PortalParts({ enabled: true, recessMeters: 0.6, steps: { count: 0 } });
+        const noHook = revealVertGroups(plain);
+        assertTrue(noHook.revealVerts > 0, 'Expected reveal geometry without the hook too.');
+        assertTrue(noHook.indices.every((idx) => idx === 0), 'Without the hook the reveal stays on the wall material.');
+    });
+
+    test('BuildingFabricationGenerator: portal colonettes and frieze emit role-tagged surround meshes (AI 509)', () => {
+        const cfg = normalizePortalConfig({
+            enabled: true,
+            recessMeters: 0.4,
+            steps: { count: 1, riseMeters: 0.12 },
+            colonettes: { enabled: true, countPerSide: 2, radiusMeters: 0.08, gapMeters: 0.06 },
+            frieze: { enabled: true, heightMeters: 0.5, depthMeters: 0.1, widthPaddingMeters: 0.3, yOffsetMeters: 0.1 }
+        });
+        assertTrue(!!cfg?.colonettes && cfg.colonettes.countPerSide === 2, 'Expected colonettes to normalize.');
+        assertTrue(!!cfg?.frieze && Math.abs(cfg.frieze.heightMeters - 0.5) < 1e-9, 'Expected the frieze to normalize.');
+        assertEqual(normalizePortalConfig({ enabled: true })?.colonettes, null, 'Colonettes default off.');
+        assertEqual(normalizePortalConfig({ enabled: true })?.recessMaterial, null, 'Recess material defaults to the wall.');
+
+        const parts = buildAi509PortalParts({
+            enabled: true,
+            recessMeters: 0.4,
+            steps: { count: 1, riseMeters: 0.12 },
+            colonettes: { enabled: true, countPerSide: 2, radiusMeters: 0.08, gapMeters: 0.06 },
+            frieze: { enabled: true, heightMeters: 0.5, depthMeters: 0.1, widthPaddingMeters: 0.3, yOffsetMeters: 0.1 }
+        });
+        const colonettes = balconyMeshesByRole(parts, 'portal_colonette');
+        const friezes = balconyMeshesByRole(parts, 'portal_frieze');
+        assertEqual(colonettes.length, 1, 'Expected one merged colonette mesh per portal.');
+        assertEqual(friezes.length, 1, 'Expected one frieze panel per portal.');
+
+        const colBand = meshWorldBand(colonettes[0], 'x');
+        assertTrue(colBand.max - colBand.min > 2.2, 'Coupled colonettes must flank the opening on both sides.');
+        colonettes[0].geometry.computeBoundingBox();
+        const colHeight = colonettes[0].geometry.boundingBox.max.y - colonettes[0].geometry.boundingBox.min.y;
+        assertTrue(colHeight > 2.0, `Colonettes must rise along the jambs, got ${colHeight.toFixed(2)}m.`);
+
+        const friezeBand = meshWorldBand(friezes[0], 'x');
+        assertNear(friezeBand.max - friezeBand.min, 2.2 + 0.6, 0.05, 'Frieze panel spans the cut plus its padding.');
+        friezes[0].geometry.computeBoundingBox();
+        const friezeBottom = friezes[0].position.y + friezes[0].geometry.boundingBox.min.y;
+        const facadeMesh = (parts.solidMeshes ?? []).find((m) => m?.userData?.buildingFab2WallKind === 'facade') ?? null;
+        assertTrue(!!facadeMesh, 'Expected the facade wall mesh.');
+        const doorTopWorld = facadeMesh.position.y + 0.12 + 3.0;
+        assertTrue(friezeBottom > doorTopWorld - 1e-3, 'Frieze sits above the opening head.');
     });
 
     // ===== AI 503: capital/impost projection must stand OUT of the wall =====

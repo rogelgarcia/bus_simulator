@@ -126,16 +126,43 @@ export function normalizePortalConfig(value) {
     if (value.enabled === false) return null;
 
     const stepsSrc = value.steps && typeof value.steps === 'object' ? value.steps : {};
+    // AI 509: recess reveal material, colonettes, frieze panel — all in the
+    // storefront-zone material dialect (match_wall | match_frame | pbr | slot).
+    const recessMaterialSrc = value.recessMaterial ?? (value.recess && typeof value.recess === 'object' ? value.recess.material : null);
+    const colonettesSrc = value.colonettes && typeof value.colonettes === 'object' ? value.colonettes : null;
+    const friezeSrc = value.frieze && typeof value.frieze === 'object' ? value.frieze : null;
     return {
         enabled: true,
         recessMeters: clampNumber(value.recessMeters, 0.0, 1.5, 0.35),
+        recessMaterial: recessMaterialSrc && typeof recessMaterialSrc === 'object'
+            ? normalizeStorefrontZoneMaterial(recessMaterialSrc, 'match_wall')
+            : null,
         steps: {
             count: Math.max(0, Math.min(8, Math.round(Number(stepsSrc.count) || 0))),
             riseMeters: clampNumber(stepsSrc.riseMeters, 0.05, 0.3, 0.15),
             treadDepthMeters: clampNumber(stepsSrc.treadDepthMeters, 0.15, 0.6, 0.32),
             widthPaddingMeters: clampNumber(stepsSrc.widthPaddingMeters, 0.0, 1.0, 0.25),
             material: normalizeStorefrontZoneMaterial(stepsSrc.material, 'match_wall')
-        }
+        },
+        colonettes: (colonettesSrc && colonettesSrc.enabled === true)
+            ? {
+                enabled: true,
+                countPerSide: Math.max(1, Math.min(2, Math.round(Number(colonettesSrc.countPerSide) || 1))),
+                radiusMeters: clampNumber(colonettesSrc.radiusMeters, 0.03, 0.3, 0.09),
+                gapMeters: clampNumber(colonettesSrc.gapMeters, 0.0, 0.6, 0.05),
+                material: normalizeStorefrontZoneMaterial(colonettesSrc.material, 'match_wall')
+            }
+            : null,
+        frieze: (friezeSrc && friezeSrc.enabled === true)
+            ? {
+                enabled: true,
+                heightMeters: clampNumber(friezeSrc.heightMeters, 0.1, 1.5, 0.5),
+                depthMeters: clampNumber(friezeSrc.depthMeters, 0.02, 0.5, 0.08),
+                widthPaddingMeters: clampNumber(friezeSrc.widthPaddingMeters, 0.0, 1.5, 0.3),
+                yOffsetMeters: clampNumber(friezeSrc.yOffsetMeters, -2.0, 3.0, 0.0),
+                material: normalizeStorefrontZoneMaterial(friezeSrc.material, 'match_wall')
+            }
+            : null
     };
 }
 

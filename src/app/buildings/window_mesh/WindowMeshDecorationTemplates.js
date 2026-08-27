@@ -55,7 +55,9 @@ export const WINDOW_DECORATION_MATERIAL_MODE = Object.freeze({
     SLOT: 'slot'
 });
 
-export const WINDOW_DECORATION_DEPTH_OPTIONS_METERS = Object.freeze([0.08, 0.02, 0.12]);
+// First entry stays the default; the deeper options exist for portal-scale
+// surrounds (AI 509 — 0.24m archivolts used to silently snap down to 0.12).
+export const WINDOW_DECORATION_DEPTH_OPTIONS_METERS = Object.freeze([0.08, 0.02, 0.12, 0.16, 0.2, 0.24, 0.3]);
 
 const DEFAULT_TEMPLATE_BY_PART = Object.freeze({
     [WINDOW_DECORATION_PART.SILL]: Object.freeze({
@@ -514,6 +516,11 @@ function sanitizeDecorationPartState(partId, input, { wallMaterialId = '' } = {}
     const templateHeight = Number.isFinite(heightOverride) && heightOverride > 0
         ? heightOverride
         : templateDefaults.height;
+    // AI 509: nested archivolt rings on arched-band headers.
+    const bandsRaw = Number(src.bands);
+    const bands = Number.isFinite(bandsRaw) ? Math.max(1, Math.min(4, Math.round(bandsRaw))) : 1;
+    const bandStepRaw = Number(src.bandStepMeters);
+    const bandStepMeters = Number.isFinite(bandStepRaw) ? Math.max(0, Math.min(0.2, bandStepRaw)) : 0.05;
 
     return {
         enabled: !!src.enabled,
@@ -522,6 +529,8 @@ function sanitizeDecorationPartState(partId, input, { wallMaterialId = '' } = {}
         depthMeters,
         earsMeters,
         runMode,
+        bands,
+        bandStepMeters,
         material: {
             mode: materialMode,
             materialId,

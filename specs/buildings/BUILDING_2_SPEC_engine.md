@@ -298,6 +298,70 @@ Rules:
   facade-angle model (AI 498) can later attach layout semantics to a wide
   corner facet without re-deriving the geometry. Micro edge bevels emit none.
 
+### 6.2.4 Facade lettering (AI 508)
+
+- Building name signage is authored per building as items on the wall
+  decorations root: `wallDecorations.lettering[]` — `{ id, text, target,
+  heightMeters, depthMeters?, letterSpacingRatio?, style?, material? }`. The
+  root object travels opaquely through CityMap/City/export, so the list needs
+  no per-field plumbing.
+- `target` is `{ layerId, bayRef: "<face>:<bay>", zone?, floor?,
+  yOffsetMeters? }`. `zone: 'bay'` (default) centers the sign in the floor's
+  wall band; `zone: 'opening_header'` centers it in the frieze band between
+  the bay opening's head (top opening included, portal step rise included) and
+  the floor top. A rhythm-expanded bay resolves to the strip instance nearest
+  the face middle.
+- Letterforms come from a built-in stroke font (caps, digits, hyphen, period;
+  extruded quad prisms, perpendicular butt ends) — no font-file pipeline.
+  Unsupported characters render as spaces and warn. `style` has one mode,
+  `raised_block`.
+- One sign = ONE merged mesh, role `buildingFab2Role: 'facade_lettering'`, in
+  the belts group (building merge + shadow set), standing on the bay's front
+  plane (slightly embedded so the seam stays closed).
+- Placement is deterministic and clamped by INK bounds (diagonal strokes
+  overshoot the em box like type overshoot): the sign is centered on the
+  target span, `yOffsetMeters` nudges it within its band but never out of it,
+  and text that cannot fit at the authored height is scaled down uniformly
+  with a warning. Unresolvable targets (missing bay/floor, header zone with
+  no opening) warn and skip.
+- `material` uses the capital wall-material dialect (explicit texture/color,
+  `slot:<name>`, default `match_wall`), resolved in the AI 491 config
+  pre-pass.
+
+### 6.2.5 Classical ornament kit (AI 509)
+
+- **Arched-band springing**: the `arched_band` header surround terminates BOTH
+  arcs on the horizontal springing line (the classical impost cut). A radial
+  end cut is a defect — on wide arches it left angled stubs ("ears") poking
+  sideways past the shoulders.
+- **Archivolt bands**: the `arched_band` header accepts `bands: N` (1..4) and
+  `bandStepMeters`. The radial height splits into N nested rings; each ring
+  steps back in depth toward the opening (outermost keeps the authored depth,
+  every ring stays at least 20mm proud). Surround `depthMeters` snaps to the
+  option list, which reaches 0.3m for portal-scale surrounds (0.24m archivolts
+  used to silently snap down to 0.12m).
+- **Molded capital profile**: `capital.profile: 'molded'` emits a four-course
+  neck -> echinus -> cove -> abacus stack (mirrored for a base), keeping the
+  AI 503 outward-positive projection convention. Profiles: `flat`, `stepped`,
+  `molded`.
+- **Continuous arcade impost**: `arcade.impost.continuous: true` also bands
+  the jamb strips inside the run's opening bays (bay edge -> opening edge,
+  between repeats), so the run reads as ONE band broken only by the arches.
+  Opening spans come from the solved placements; the default still bands pier
+  bays only.
+- **Portal surround**: `portal.colonettes` ({countPerSide 1..2, radiusMeters,
+  gapMeters, material}) emits engaged columns (plinth + shaft + cap) flanking
+  the entry, rising from the threshold to the arch springing;
+  `portal.frieze` ({heightMeters, depthMeters, widthPaddingMeters,
+  yOffsetMeters, material}) emits a panel band above the opening head. Roles:
+  `portal_colonette`, `portal_frieze`.
+- **Portal recess material**: `portal.recessMaterial` (zone material dialect,
+  `slot` supported via the pre-pass) routes the recess reveal walls to a
+  dedicated facade material group so a recessed entry can read as shadowed
+  masonry; absent, the reveal keeps the wall run's material. All portal-part
+  materials use the storefront-zone dialect and resolve slots in the AI 491
+  pre-pass (windowDefinitions items).
+
 ### 6.3 BF2 support slab (view helper)
 
 - Building Fabrication 2 MAY render an optional support slab helper under the building for viewport-only gap masking.

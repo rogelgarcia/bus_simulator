@@ -98,6 +98,11 @@ import {
 import { resolveRectFacadeCornerStrategy } from './FacadeCornerResolutionStrategies.js';
 import { createWallDecoratorGeometryFromSpec as createSharedWallDecoratorGeometryFromSpec } from '../../../gui/shared/wall_decorator/WallDecoratorGeometryFactory.js';
 import { resolveWallDecoratorSurfacePlacement } from '../../../gui/shared/wall_decorator/WallDecoratorPlacement.js';
+import {
+    FACADE_LETTERING_DEFAULT_SPACING_RATIO,
+    buildFacadeLetteringGeometry,
+    layoutFacadeLetteringText
+} from './FacadeLetteringGeometry.js';
 
 const EPS = 1e-6;
 const QUANT = 1000;
@@ -2082,10 +2087,11 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
             const wantsArch = !!entry?.wantsArch;
             const archRise = Number(entry?.archRise) || 0;
             const revealDepth = Math.max(0, Number(entry?.revealDepth) || 0);
+            const revealMaterialIndex = Number.isInteger(entry?.revealMaterialIndex) ? entry.revealMaterialIndex : null;
             if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
             if (!Number.isFinite(width) || !Number.isFinite(height) || !(width > EPS) || !(height > EPS)) continue;
             const list = map.get(faceId);
-            const item = { faceId, x, y, z, width, height, wantsArch, archRise: wantsArch ? archRise : 0.0, revealDepth };
+            const item = { faceId, x, y, z, width, height, wantsArch, archRise: wantsArch ? archRise : 0.0, revealDepth, revealMaterialIndex };
             if (list) list.push(item);
             else map.set(faceId, [item]);
         }
@@ -2350,7 +2356,8 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                         y1: sy1,
                         wantsArch: !!cut.wantsArch,
                         archRise: Math.max(0, Number(cut.archRise) || 0),
-                        revealDepth: Math.max(0, Number(cut.revealDepth) || 0)
+                        revealDepth: Math.max(0, Number(cut.revealDepth) || 0),
+                        revealMaterialIndex: Number.isInteger(cut.revealMaterialIndex) ? cut.revealMaterialIndex : null
                     });
                 }
 
@@ -2518,10 +2525,14 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                     uvs.push(u, v);
                 };
 
+                // AI 509: a cut may route its reveal walls to a dedicated
+                // material (the portal recess hook) instead of the wall run's.
+                let activeRevealMaterialOverride = null;
                 const pushRevealQuad = (x0, y0, x1, y1, depth) => {
                     if (!(depth > EPS)) return;
                     if (!(Math.hypot(x1 - x0, y1 - y0) > minEdge)) return;
-                    if (normalizedYBands) setActiveMaterialIndex(resolveBandMaterialIndex(matIndex, (y0 + y1) * 0.5));
+                    if (activeRevealMaterialOverride !== null) setActiveMaterialIndex(activeRevealMaterialOverride);
+                    else if (normalizedYBands) setActiveMaterialIndex(resolveBandMaterialIndex(matIndex, (y0 + y1) * 0.5));
                     const addDepthToV = Math.abs(y1 - y0) <= 1e-6;
 
                     pushRevealVertex(x0, y0, 0.0, addDepthToV);
@@ -2535,9 +2546,12 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                     curGroupCount += 6;
                 };
 
+                let revealOverrideWasUsed = false;
                 for (const cut of sliceCuts) {
                     const depth = Number(cut.revealDepth) || 0;
                     if (!(depth > EPS)) continue;
+                    activeRevealMaterialOverride = Number.isInteger(cut.revealMaterialIndex) ? cut.revealMaterialIndex : null;
+                    if (activeRevealMaterialOverride !== null) revealOverrideWasUsed = true;
 
                     const x0 = cut.x0;
                     const x1 = cut.x1;
@@ -2594,6 +2608,12 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                         pushRevealQuad(prevX, prevY, x0, yChord, depth);
                         pushRevealQuad(x0, yChord, x0, y0, depth);
                     }
+                }
+                if (revealOverrideWasUsed) {
+                    // Hand the group back to the wall run's material so the
+                    // next slice's face cells do not inherit the reveal's.
+                    activeRevealMaterialOverride = null;
+                    setActiveMaterialIndex(matIndex);
                 }
             }
 
@@ -3183,6 +3203,8 @@ function createCustomOpeningSurroundDecorationMeshes({
                 archEnabled,
                 archHeightRatio,
                 windowHeight,
+                bands: header?.bands,
+                bandStepMeters: header?.bandStepMeters,
                 curveSegments: 24
             })
             : (() => {
@@ -4153,6 +4175,55 @@ function parseDecorationBayRef(value) {
         faceId: normalized.slice(0, idx),
         bayId: normalized.slice(idx + 1)
     };
+}
+
+// AI 508: facade lettering items live on the wallDecorations root
+// (`wallDecorations.lettering`), so they ride the existing config plumbing
+// (CityMap/City/export treat the root opaquely). One item = one sign.
+const FACADE_LETTERING_ZONES = Object.freeze(['bay', 'opening_header']);
+
+function normalizeFacadeLetteringItems(wallDecorations, warnings = null) {
+    const list = Array.isArray(wallDecorations?.lettering) ? wallDecorations.lettering : [];
+    const out = [];
+    for (let i = 0; i < list.length; i += 1) {
+        const raw = list[i] && typeof list[i] === 'object' ? list[i] : null;
+        if (!raw) continue;
+        const id = (typeof raw.id === 'string' && raw.id.trim()) ? raw.id.trim() : `lettering_${i + 1}`;
+        const text = typeof raw.text === 'string' ? raw.text.trim().slice(0, 64) : '';
+        if (!text) {
+            warnings?.push(`Lettering ${id}: empty text; skipped.`);
+            continue;
+        }
+        const target = raw.target && typeof raw.target === 'object' ? raw.target : {};
+        const layerId = typeof target.layerId === 'string' ? target.layerId.trim() : '';
+        const bayRef = parseDecorationBayRef(target.bayRef);
+        if (!layerId || !bayRef) {
+            warnings?.push(`Lettering ${id}: target needs layerId and bayRef "<face>:<bay>"; skipped.`);
+            continue;
+        }
+        const zoneRaw = typeof target.zone === 'string' ? target.zone.trim().toLowerCase() : '';
+        const zone = FACADE_LETTERING_ZONES.includes(zoneRaw) ? zoneRaw : 'bay';
+        if (zoneRaw && zone !== zoneRaw) warnings?.push(`Lettering ${id}: unknown zone "${zoneRaw}"; using "bay".`);
+        const styleRaw = typeof raw.style === 'string' ? raw.style.trim().toLowerCase() : '';
+        if (styleRaw && styleRaw !== 'raised_block') warnings?.push(`Lettering ${id}: unknown style "${styleRaw}"; using "raised_block".`);
+        const yOffsetRaw = Number(target.yOffsetMeters);
+        out.push({
+            id,
+            text,
+            layerId,
+            faceId: bayRef.faceId,
+            bayId: bayRef.bayId,
+            zone,
+            floor: clampInt(target.floor ?? 1, 1, 200),
+            yOffsetMeters: Number.isFinite(yOffsetRaw) ? clamp(yOffsetRaw, -30.0, 30.0) : 0.0,
+            heightMeters: clamp(raw.heightMeters ?? 0.4, 0.05, 3.0),
+            depthMeters: clamp(raw.depthMeters ?? 0.04, 0.005, 0.3),
+            letterSpacingRatio: clamp(raw.letterSpacingRatio ?? FACADE_LETTERING_DEFAULT_SPACING_RATIO, 0.0, 2.0),
+            style: 'raised_block',
+            material: raw.material && typeof raw.material === 'object' ? raw.material : null
+        });
+    }
+    return out;
 }
 
 function stableStringify(value) {
@@ -6667,6 +6738,9 @@ export function buildBuildingFabricationVisualParts({
     const fireEscapeAttachmentItems = attachmentsCfg
         ? attachmentsCfg.items.filter((it) => it.type === FACADE_ATTACHMENT_TYPE.FIRE_ESCAPE)
         : [];
+    // AI 508: facade lettering signs (slot refs already resolved by the
+    // material pre-pass above).
+    const facadeLetteringItems = normalizeFacadeLetteringItems(resolvedWallDecorations, warnings);
     const acUnitGeosByItemIndex = new Map();
     const resolvedWindowDefinitions = materialResolution.windowDefinitions;
 
@@ -8026,6 +8100,39 @@ export function buildBuildingFabricationVisualParts({
                             D: Number(facadeDepthMinsByFaceId?.D)
                         };
 
+                        // AI 509: `portal.recessMaterial` routes the recess
+                        // reveal walls to their own facade material index so a
+                        // recessed entry can read as shadowed masonry instead
+                        // of the wall run's material.
+                        const recessRevealIndexCache = new Map();
+                        const getRecessRevealMaterialIndex = (materialCfg) => {
+                            const mode = typeof materialCfg?.mode === 'string' ? materialCfg.mode : '';
+                            const materialId = typeof materialCfg?.materialId === 'string' ? materialCfg.materialId.trim() : '';
+                            if (mode !== 'pbr' || !materialId) return null;
+                            const cached = recessRevealIndexCache.get(materialId);
+                            if (Number.isInteger(cached)) return cached;
+                            const mat = makeWallMaterialFromSpec({
+                                material: { kind: 'texture', id: materialId },
+                                baseColorHex,
+                                textureCache
+                            });
+                            const urls = resolveBuildingStyleWallMaterialUrls(materialId);
+                            const uvCfg = computeUvTilingParams({ tiling: null, urls, styleId: materialId });
+                            if (uvCfg.apply) {
+                                applyUvTilingToMeshStandardMaterial(mat, {
+                                    scaleU: uvCfg.scaleU,
+                                    scaleV: uvCfg.scaleV,
+                                    offsetU: uvCfg.offsetU,
+                                    offsetV: uvCfg.offsetV,
+                                    rotationDegrees: uvCfg.rotationDegrees
+                                });
+                            }
+                            facadeWallMaterials.push(mat);
+                            const idx = facadeWallMaterials.length - 1;
+                            recessRevealIndexCache.set(materialId, idx);
+                            return idx;
+                        };
+
                         for (let floor = 0; floor < floorSegments.length; floor++) {
                             const seg = floorSegments[floor];
                             const segHeight = Number(seg?.height) || 0;
@@ -8102,6 +8209,9 @@ export function buildBuildingFabricationVisualParts({
                                     : null;
 
                                 // Bay openings carve facade cutouts only; they do not drive the legacy interior-shell pass.
+                                const portalRecessRevealIndex = placement?.portal
+                                    ? getRecessRevealMaterialIndex(placement.portal.recessMaterial)
+                                    : null;
                                 const appendCutoutsFromSettings = ({ settings, openingHeight, openingY, wall }) => {
                                     const resolvedWall = normalizeOpeningWallCutConfig(wall ?? null, null);
                                     const cutMetrics = resolveOpeningCutMetrics(settings, {
@@ -8139,6 +8249,7 @@ export function buildBuildingFabricationVisualParts({
                                             wantsArch: cutWantsArch,
                                             archRise,
                                             revealDepth: frameInset,
+                                            ...(portalRecessRevealIndex !== null ? { revealMaterialIndex: portalRecessRevealIndex } : {}),
                                             // AI 495: whether this opening has a parallax
                                             // interior panel behind its glass. A shade does
                                             // not count — its shader discards every fragment
@@ -9677,6 +9788,98 @@ export function buildBuildingFabricationVisualParts({
                                         windowsGroup.add(stepMesh);
                                     }
                                 }
+                                // AI 509: portal surround — colonettes flanking
+                                // the entry (base + shaft + capital, rising to
+                                // the arch springing) and a frieze panel band
+                                // above the arch, both in the zone material
+                                // dialect.
+                                if (placement?.portal && (placement.portal.colonettes || placement.portal.frieze)
+                                    && floor === 0
+                                    && safeLayers.findIndex((l) => l?.type === LAYER_TYPE.FLOOR) === layerIndex) {
+                                    const surroundPortal = placement.portal;
+                                    const surroundMetrics = resolveOpeningCutMetrics(bottomSettings, {
+                                        cutX: Number(placement?.wall?.cutWidthLerp) || 0,
+                                        cutY: Number(placement?.wall?.cutHeightLerp) || 0
+                                    });
+                                    const surroundCutWidth = Math.max(0.3, Number(surroundMetrics?.cutWidth) || width);
+                                    const doorBottomY = yCursor + bottomYBottom;
+                                    const doorTopY = doorBottomY + bottomHeight;
+                                    const surroundArchRise = bottomSettings?.arch?.enabled
+                                        ? Math.min(
+                                            Math.max(0, (Number(bottomSettings?.arch?.heightRatio) || 0) * width),
+                                            bottomHeight * 0.8
+                                        )
+                                        : 0;
+                                    const springLineY = doorTopY - surroundArchRise;
+
+                                    if (surroundPortal.colonettes) {
+                                        const col = surroundPortal.colonettes;
+                                        const r = col.radiusMeters;
+                                        const totalH = Math.max(0.4, springLineY - doorBottomY);
+                                        const plinthH = Math.min(0.16, totalH * 0.12);
+                                        const capH = Math.min(0.18, totalH * 0.14);
+                                        const shaftH = Math.max(0.1, totalH - plinthH - capH);
+                                        const offsets = [];
+                                        for (const sideSign of [-1, 1]) {
+                                            for (let k = 0; k < col.countPerSide; k++) {
+                                                offsets.push(sideSign * (surroundCutWidth * 0.5 + r + 0.03 + k * (r * 2 + col.gapMeters)));
+                                            }
+                                        }
+                                        const colGeos = [];
+                                        for (const off of offsets) {
+                                            const plinth = new THREE.BoxGeometry(r * 2.4, plinthH, r * 2.4);
+                                            plinth.translate(off, plinthH * 0.5, 0);
+                                            const shaft = new THREE.CylinderGeometry(r, r * 1.06, shaftH, 14);
+                                            shaft.translate(off, plinthH + shaftH * 0.5, 0);
+                                            const cap = new THREE.BoxGeometry(r * 2.6, capH, r * 2.6);
+                                            cap.translate(off, plinthH + shaftH + capH * 0.5, 0);
+                                            colGeos.push(plinth, shaft, cap);
+                                        }
+                                        const colGeo = mergeGeometries(colGeos, false);
+                                        for (const g of colGeos) g.dispose();
+                                        colGeo.computeVertexNormals();
+                                        const colMesh = new THREE.Mesh(colGeo, zoneMaterialFor(
+                                            col.material,
+                                            WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL
+                                        ));
+                                        // Engaged-column stance: ~80% of the shaft
+                                        // proud of the wall, the back engaged in it.
+                                        const colOut = windowOffset + r * 0.8;
+                                        colMesh.position.set(x + nx * colOut, doorBottomY, z + nz * colOut);
+                                        colMesh.rotation.set(0, yaw, 0);
+                                        colMesh.castShadow = true;
+                                        colMesh.receiveShadow = true;
+                                        colMesh.userData = colMesh.userData ?? {};
+                                        colMesh.userData.buildingWindowSource = 'bf2_portal';
+                                        colMesh.userData.buildingFab2Role = 'portal_colonette';
+                                        colMesh.userData.windowDefinitionId = defId || null;
+                                        windowsGroup.add(colMesh);
+                                    }
+
+                                    if (surroundPortal.frieze) {
+                                        const frieze = surroundPortal.frieze;
+                                        const friezeWidth = surroundCutWidth + frieze.widthPaddingMeters * 2;
+                                        const friezeGeo = new THREE.BoxGeometry(friezeWidth, frieze.heightMeters, frieze.depthMeters);
+                                        const friezeMesh = new THREE.Mesh(friezeGeo, zoneMaterialFor(
+                                            frieze.material,
+                                            WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL
+                                        ));
+                                        const friezeOut = windowOffset + frieze.depthMeters * 0.5 - 0.02;
+                                        friezeMesh.position.set(
+                                            x + nx * friezeOut,
+                                            doorTopY + frieze.yOffsetMeters + frieze.heightMeters * 0.5,
+                                            z + nz * friezeOut
+                                        );
+                                        friezeMesh.rotation.set(0, yaw, 0);
+                                        friezeMesh.castShadow = true;
+                                        friezeMesh.receiveShadow = true;
+                                        friezeMesh.userData = friezeMesh.userData ?? {};
+                                        friezeMesh.userData.buildingWindowSource = 'bf2_portal';
+                                        friezeMesh.userData.buildingFab2Role = 'portal_frieze';
+                                        friezeMesh.userData.windowDefinitionId = defId || null;
+                                        windowsGroup.add(friezeMesh);
+                                    }
+                                }
                                 if (topSettings && topHeight > EPS) {
                                     addCustomInstance({
                                         defId: topDefId,
@@ -9944,6 +10147,31 @@ export function buildBuildingFabricationVisualParts({
                             return;
                         }
 
+                        // molded (AI 509): a stack of prismatic courses whose
+                        // overhang/projection fractions trace a neck -> echinus
+                        // flare -> abacus silhouette (mirrored for a base), the
+                        // closest the extrusion kit gets to a foliate capital.
+                        if (spec.profile === 'molded') {
+                            const courses = [
+                                { h: 0.3, f: 0.12 },
+                                { h: 0.26, f: 0.5 },
+                                { h: 0.22, f: 0.8 },
+                                { h: 0.22, f: 1.0 }
+                            ];
+                            const ordered = end === 'top' ? courses : courses.slice().reverse();
+                            let yCursorStep = baseY;
+                            for (const course of ordered) {
+                                emitCapitalStep({
+                                    frame, u0, u1, planeDepth,
+                                    overhang: overhang * course.f,
+                                    projection: Math.max(0.01, projection * (0.3 + 0.7 * course.f)),
+                                    y: yCursorStep, height: h * course.h, material, role, end, bayId
+                                });
+                                yCursorStep += h * course.h;
+                            }
+                            return;
+                        }
+
                         // stepped: the capital widens toward the top, the base
                         // widens toward the bottom.
                         const bigFirst = end === 'bottom';
@@ -9974,12 +10202,17 @@ export function buildBuildingFabricationVisualParts({
             // AI 493: arcade imposts. The pier bays inside an arcade run carry
             // a band whose TOP edge sits on the run's springing line, so the
             // arches read as springing from a column instead of from flat wall.
+            // AI 509 `impost.continuous`: opening bays in the run band their
+            // jamb strips too, so the run reads as ONE band broken only by
+            // the arched openings themselves.
+            const hasImpost = (strip) => strip?.type === 'bay'
+                && strip?.arcade && typeof strip.arcade === 'object'
+                && strip.arcade.impost && typeof strip.arcade.impost === 'object'
+                && strip.arcade.impost.enabled !== false;
+            const stripHasWindow = (strip) => !!(strip?.window && strip.window.enabled !== false);
             const arcadeImpostStrips = (Array.isArray(facadeStrips) && facadeFrames)
-                ? facadeStrips.filter((strip) => strip?.type === 'bay'
-                    && strip?.arcade && typeof strip.arcade === 'object'
-                    && strip.arcade.impost && typeof strip.arcade.impost === 'object'
-                    && strip.arcade.impost.enabled !== false
-                    && !(strip.window && strip.window.enabled !== false))
+                ? facadeStrips.filter((strip) => hasImpost(strip)
+                    && (!stripHasWindow(strip) || strip.arcade.impost.continuous === true))
                 : [];
             if (arcadeImpostStrips.length && floorSegmentStartYs.length) {
                 const impostMatCache = new Map();
@@ -10030,36 +10263,65 @@ export function buildBuildingFabricationVisualParts({
                         const y = segStart + springing - height;
                         if (!(y > segStart - EPS) || !(y + height < segEnd + EPS)) continue;
 
+                        // Continuous mode: subtract the opening spans, banding
+                        // only the jamb strips between/beside the arches. The
+                        // outer ends keep the overhang (joining the neighbour
+                        // bays' bands); edges meeting an opening cut flush.
+                        const spans = [];
+                        if (stripHasWindow(strip)) {
+                            const placement = bayWindowPlacements.find((p) => p?.faceId === strip.faceId && p?.bayId === strip.id) ?? null;
+                            const openings = [];
+                            if (placement) {
+                                const halfW = Math.max(0.05, Number(placement.width) || 0.1) * 0.5;
+                                for (const point of placement.points ?? []) {
+                                    const u = Number(projectPointToFacadeFrame({ frame, x: point?.x, z: point?.z })?.u);
+                                    if (Number.isFinite(u)) openings.push({ left: u - halfW, right: u + halfW });
+                                }
+                                openings.sort((a, b) => a.left - b.left);
+                            }
+                            let cursor = u0 - overhang;
+                            for (const opening of openings) {
+                                if (opening.left > cursor + EPS) spans.push({ uA: cursor, uB: opening.left });
+                                cursor = Math.max(cursor, opening.right);
+                            }
+                            if (u1 + overhang > cursor + EPS) spans.push({ uA: cursor, uB: u1 + overhang });
+                        } else {
+                            spans.push({ uA: u0 - overhang, uB: u1 + overhang });
+                        }
+
                         const planeDepth = Number(strip.depth) || 0;
                         // Outward-positive depth (AI 503): band proud of the
                         // pier plane, embedded 4cm into it.
                         const dOut = planeDepth + projection;
                         const dIn = planeDepth - 0.04;
-                        const corners = [
-                            pointOnFacadeFrame({ frame, u: u0 - overhang, depth: dOut }),
-                            pointOnFacadeFrame({ frame, u: u1 + overhang, depth: dOut }),
-                            pointOnFacadeFrame({ frame, u: u1 + overhang, depth: dIn }),
-                            pointOnFacadeFrame({ frame, u: u0 - overhang, depth: dIn })
-                        ].map((p) => ({ x: p.x, z: p.z }));
-                        const planLoop = signedArea(corners) < 0 ? corners.slice().reverse() : corners;
-                        const shape = buildShapeFromLoops({ outerLoop: planLoop, holeLoops: [] });
-                        const geo = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false, steps: 1 });
-                        geo.rotateX(-Math.PI / 2);
-                        geo.computeVertexNormals();
-                        const mesh = new THREE.Mesh(geo, getImpostMaterial(impost.material));
-                        mesh.castShadow = true;
-                        mesh.receiveShadow = true;
-                        mesh.position.y = y;
-                        mesh.userData = mesh.userData ?? {};
-                        mesh.userData.buildingFab2Role = 'bay_arcade_impost';
-                        mesh.userData.arcadeGroupId = groupId;
-                        mesh.userData.arcadeBayId = typeof strip.id === 'string' ? strip.id : '';
-                        beltsGroup.add(mesh);
+                        for (const span of spans) {
+                            if (!(span.uB > span.uA + 0.01)) continue;
+                            const corners = [
+                                pointOnFacadeFrame({ frame, u: span.uA, depth: dOut }),
+                                pointOnFacadeFrame({ frame, u: span.uB, depth: dOut }),
+                                pointOnFacadeFrame({ frame, u: span.uB, depth: dIn }),
+                                pointOnFacadeFrame({ frame, u: span.uA, depth: dIn })
+                            ].map((p) => ({ x: p.x, z: p.z }));
+                            const planLoop = signedArea(corners) < 0 ? corners.slice().reverse() : corners;
+                            const shape = buildShapeFromLoops({ outerLoop: planLoop, holeLoops: [] });
+                            const geo = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false, steps: 1 });
+                            geo.rotateX(-Math.PI / 2);
+                            geo.computeVertexNormals();
+                            const mesh = new THREE.Mesh(geo, getImpostMaterial(impost.material));
+                            mesh.castShadow = true;
+                            mesh.receiveShadow = true;
+                            mesh.position.y = y;
+                            mesh.userData = mesh.userData ?? {};
+                            mesh.userData.buildingFab2Role = 'bay_arcade_impost';
+                            mesh.userData.arcadeGroupId = groupId;
+                            mesh.userData.arcadeBayId = typeof strip.id === 'string' ? strip.id : '';
+                            beltsGroup.add(mesh);
 
-                        if (showWire) {
-                            const edgeGeo = new THREE.EdgesGeometry(geo, 1);
-                            appendWirePositions(wirePositions, edgeGeo, y);
-                            edgeGeo.dispose();
+                            if (showWire) {
+                                const edgeGeo = new THREE.EdgesGeometry(geo, 1);
+                                appendWirePositions(wirePositions, edgeGeo, y);
+                                edgeGeo.dispose();
+                            }
                         }
                     }
                 }
@@ -10656,6 +10918,172 @@ export function buildBuildingFabricationVisualParts({
                     if (showWire) {
                         mesh.updateMatrix();
                         const edgeGeo = new THREE.EdgesGeometry(merged, 1);
+                        appendWirePositionsTransformed(wirePositions, edgeGeo, mesh.matrix);
+                        edgeGeo.dispose();
+                    }
+                }
+            }
+
+            // AI 508: facade lettering — extruded block glyphs centered on a
+            // target bay span, standing on the bay's front plane. One merged
+            // mesh per sign, role tagged, in the building merge/shadow set.
+            const letteringForLayer = facadeLetteringItems.filter((it) => it.layerId === layerId);
+            if (letteringForLayer.length && facadeFrames && Array.isArray(facadeStrips)) {
+                const wallSegments = floorSegmentsByLayerId.get(layerId) ?? [];
+                const letteringMatCache = new Map();
+                const getLetteringMaterial = (spec) => {
+                    const key = stableStringify(spec ?? null);
+                    let mat = letteringMatCache.get(key);
+                    if (!mat) {
+                        mat = makeCorniceMaterialFromSpec({
+                            material: (spec && typeof spec === 'object') ? spec : { kind: 'match_wall', id: 'match_wall' },
+                            tiling: null,
+                            layerMaterial: layer.material ?? null,
+                            layerWallBase: layer.wallBase ?? null,
+                            layerTiling: layer.tiling ?? null,
+                            baseColorHex,
+                            textureCache
+                        });
+                        letteringMatCache.set(key, mat);
+                    }
+                    return mat;
+                };
+
+                for (const item of letteringForLayer) {
+                    const label = `Lettering ${item.id}`;
+                    const stripCandidates = facadeStrips.filter((sEntry) => sEntry?.type === 'bay'
+                        && sEntry?.faceId === item.faceId
+                        && (sEntry?.sourceBayId === item.bayId || sEntry?.id === item.bayId));
+                    const frame = facadeFrames?.[item.faceId] ?? null;
+                    if (!stripCandidates.length || !frame) {
+                        warnings.push(`${label}: bay "${item.bayId}" not found on face ${item.faceId}.`);
+                        continue;
+                    }
+                    // A rhythm-expanded bay solves into several strips sharing
+                    // one source id; the sign goes on the instance nearest the
+                    // face middle (deterministic).
+                    const faceMidU = (Number(frame.length) || 0) * 0.5;
+                    let strip = stripCandidates[0];
+                    let bestDist = Infinity;
+                    for (const cand of stripCandidates) {
+                        const cu0 = Number.isFinite(Number(cand.frontU0)) ? Number(cand.frontU0) : (Number(cand.u0) || 0);
+                        const cu1 = Number.isFinite(Number(cand.frontU1)) ? Number(cand.frontU1) : (Number(cand.u1) || 0);
+                        const dist = Math.abs((cu0 + cu1) * 0.5 - faceMidU);
+                        if (dist < bestDist) {
+                            bestDist = dist;
+                            strip = cand;
+                        }
+                    }
+
+                    const rawU0 = Number(strip.frontU0);
+                    const rawU1 = Number(strip.frontU1);
+                    const u0 = Number.isFinite(rawU0) ? rawU0 : (Number(strip.u0) || 0);
+                    const u1 = Number.isFinite(rawU1) ? rawU1 : (Number(strip.u1) || 0);
+                    const bayWidth = u1 - u0;
+                    if (!(bayWidth > 0.1)) {
+                        warnings.push(`${label}: bay "${item.bayId}" span is too narrow for lettering.`);
+                        continue;
+                    }
+                    const stripDepth0 = Number.isFinite(Number(strip.depth0)) ? Number(strip.depth0) : (Number(strip.depth) || 0);
+                    const stripDepth1 = Number.isFinite(Number(strip.depth1)) ? Number(strip.depth1) : (Number(strip.depth) || 0);
+                    if (Math.abs(stripDepth1 - stripDepth0) > 1e-4) {
+                        warnings.push(`${label}: bay "${item.bayId}" has a slanted (wedge) front; lettering sits at its mid depth.`);
+                    }
+
+                    const wallSeg = wallSegments[item.floor - 1] ?? null;
+                    if (!wallSeg) {
+                        warnings.push(`${label}: floor ${item.floor} is outside layer "${layerId}" (${wallSegments.length} floor(s)).`);
+                        continue;
+                    }
+                    let bandBottomY = wallSeg.startY;
+                    const bandTopY = wallSeg.endY;
+
+                    if (item.zone === 'opening_header') {
+                        const placement = bayWindowPlacements.find((p) => p?.faceId === item.faceId && p?.bayId === strip.id) ?? null;
+                        if (!placement) {
+                            warnings.push(`${label}: zone "opening_header" needs an opening in bay "${item.bayId}"; skipped.`);
+                            continue;
+                        }
+                        const resolvedPlacement = resolveBayOpeningPlacementInSegment({
+                            segmentHeight: wallSeg.height,
+                            requestedHeight: Number(placement?.height) || 0.1,
+                            heightMode: placement?.heightMode,
+                            verticalOffsetMeters: placement?.verticalOffsetMeters,
+                            top: placement?.top
+                        });
+                        const headTop = resolvedPlacement?.top?.enabled
+                            ? (Number(resolvedPlacement.top.yBottom) || 0) + (Number(resolvedPlacement.top.height) || 0)
+                            : (Number(resolvedPlacement?.bottom?.yBottom) || 0) + (Number(resolvedPlacement?.bottom?.height) || 0);
+                        bandBottomY = wallSeg.startY + Math.min(headTop, wallSeg.height);
+                    }
+
+                    // Clamp so the sign never overflows the band it sits on:
+                    // scale down uniformly to the band's free width/height.
+                    const H_MARGIN = 0.05;
+                    const V_MARGIN = 0.03;
+                    const maxWidth = bayWidth - H_MARGIN * 2;
+                    const maxHeight = (bandTopY - bandBottomY) - V_MARGIN * 2;
+                    if (!(maxWidth > 0.02) || !(maxHeight > 0.02)) {
+                        warnings.push(`${label}: no room in the "${item.zone}" band (${(bandTopY - bandBottomY).toFixed(2)}m tall); skipped.`);
+                        continue;
+                    }
+
+                    const layoutProbe = layoutFacadeLetteringText(item.text, { letterSpacingRatio: item.letterSpacingRatio });
+                    if (layoutProbe.unsupported.length) {
+                        warnings.push(`${label}: unsupported character(s) ${layoutProbe.unsupported.map((c) => `"${c}"`).join(', ')}; rendered as spaces.`);
+                    }
+                    if (!layoutProbe.ink) {
+                        warnings.push(`${label}: text "${item.text}" has no drawable glyphs; skipped.`);
+                        continue;
+                    }
+                    // Fit by INK bounds, not advance width: diagonal butt ends
+                    // overshoot the em box slightly (type overshoot), and the
+                    // clamp guarantee is about what actually renders.
+                    const inkWidthUnits = layoutProbe.ink.maxX - layoutProbe.ink.minX;
+                    const inkHeightUnits = layoutProbe.ink.maxY - layoutProbe.ink.minY;
+                    const scale = Math.min(
+                        1.0,
+                        maxWidth / (inkWidthUnits * item.heightMeters),
+                        maxHeight / (inkHeightUnits * item.heightMeters)
+                    );
+                    if (scale < 1.0 - 1e-6) {
+                        warnings.push(`${label}: "${item.text}" does not fit its ${item.zone} band at ${item.heightMeters.toFixed(2)}m; clamped to ${(item.heightMeters * scale).toFixed(2)}m.`);
+                    }
+                    const capHeight = item.heightMeters * scale;
+                    const built = buildFacadeLetteringGeometry({
+                        text: item.text,
+                        heightMeters: capHeight,
+                        depthMeters: item.depthMeters,
+                        letterSpacingRatio: item.letterSpacingRatio
+                    });
+                    if (!built.geometry || !built.inkMeters) continue;
+
+                    // Centered on the target span; the y offset nudges within
+                    // the band but never out of it.
+                    const ink = built.inkMeters;
+                    const bandCenterY = (bandBottomY + bandTopY) * 0.5;
+                    const baselineY = clamp(
+                        bandCenterY - (ink.minY + ink.maxY) * 0.5 + item.yOffsetMeters,
+                        bandBottomY + V_MARGIN - ink.minY,
+                        Math.max(bandBottomY + V_MARGIN - ink.minY, bandTopY - V_MARGIN - ink.maxY)
+                    );
+                    const uStart = (u0 + u1) * 0.5 - (ink.minX + ink.maxX) * 0.5;
+                    const base = pointOnFacadeFrame({ frame, u: uStart, depth: (stripDepth0 + stripDepth1) * 0.5 });
+                    const yaw = Math.atan2(Number(frame?.n?.x) || 0, Number(frame?.n?.z) || 0);
+
+                    const mesh = new THREE.Mesh(built.geometry, getLetteringMaterial(item.material));
+                    mesh.position.set(base.x, baselineY, base.z);
+                    mesh.rotation.set(0, yaw, 0);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    mesh.userData = mesh.userData ?? {};
+                    mesh.userData.buildingFab2Role = 'facade_lettering';
+                    mesh.userData.letteringId = item.id;
+                    mesh.userData.letteringText = item.text;
+                    beltsGroup.add(mesh);
+                    if (showWire) {
+                        mesh.updateMatrix();
+                        const edgeGeo = new THREE.EdgesGeometry(built.geometry, 1);
                         appendWirePositionsTransformed(wirePositions, edgeGeo, mesh.matrix);
                         edgeGeo.dispose();
                     }
@@ -11638,6 +12066,7 @@ export const __testOnly = Object.freeze({
     computeQuadFacadeSilhouette,
     buildWallSidesGeometryFromLoopDetailXZ,
     projectFacadeCutoutOntoShell,
+    normalizeFacadeLetteringItems,
     resolveOpeningCutMetrics,
     shouldReverseLinkedFaceBayOrder,
     resolveLinkedFaceBaysForSolve,

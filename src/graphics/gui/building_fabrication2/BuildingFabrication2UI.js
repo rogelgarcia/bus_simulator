@@ -4659,13 +4659,13 @@ export class BuildingFabrication2UI {
 		                            profileSelect.className = 'building-fab-select building-fab2-bay-expand-select';
 		                            profileSelect.disabled = !allowBayConfigEdit;
 		                            profileSelect.setAttribute('aria-label', `${label} profile`);
-		                            for (const [value, text] of [['stepped', 'Stepped'], ['flat', 'Flat']]) {
+		                            for (const [value, text] of [['stepped', 'Stepped'], ['flat', 'Flat'], ['molded', 'Molded']]) {
 		                                const opt = document.createElement('option');
 		                                opt.value = value;
 		                                opt.textContent = text;
 		                                profileSelect.appendChild(opt);
 		                            }
-		                            profileSelect.value = endCfg?.profile === 'flat' ? 'flat' : 'stepped';
+		                            profileSelect.value = (endCfg?.profile === 'flat' || endCfg?.profile === 'molded') ? endCfg.profile : 'stepped';
 		                            profileSelect.addEventListener('change', () => {
 		                                this.onSetBayCapital?.(layerId, configFaceId, bayId, endKey, { profile: profileSelect.value });
 		                            });
