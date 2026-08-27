@@ -1931,6 +1931,13 @@ async function runTests() {
         buildWindowHeaderSurroundGeometry
     } = await import('/src/graphics/engine3d/buildings/window_mesh/WindowDecorationSurroundGeometry.js');
     const {
+        __portalOrnamentTestOnly
+    } = await import('/src/graphics/assets3d/generators/building_fabrication/PortalOrnamentParts.js');
+    const {
+        normalizePortalFabricationDef,
+        getPortalFabricationCatalogEntryById
+    } = await import('/src/app/buildings/PortalFabricationCatalog.js');
+    const {
         WALL_BASE_MATERIAL_DEFAULT,
         createDefaultFloorLayer,
         createDefaultRoofLayer,
@@ -19610,6 +19617,410 @@ async function runTests() {
         assertTrue(!!facadeMesh, 'Expected the facade wall mesh.');
         const doorTopWorld = facadeMesh.position.y + 0.12 + 3.0;
         assertTrue(friezeBottom > doorTopWorld - 1e-3, 'Frieze sits above the opening head.');
+    });
+
+    // ===== AI 510: portal fabrication framework =====
+
+    test('BuildingFabricationGenerator: portal level geometry telescopes concentric holes into the box (AI 510)', () => {
+        const resolveLevels = buildingFabricationGeneratorTestOnly?.resolvePortalLevelGeometry ?? null;
+        assertTrue(typeof resolveLevels === 'function', 'Expected resolvePortalLevelGeometry test helper.');
+
+        const cutWidth = 2.6;
+        const cutHeight = 3.9;
+        // A true semicircular arch: rise = half the chord, so the circle
+        // center sits exactly on the springing line (R = rise).
+        const rise = cutWidth * 0.5;
+        const geo = resolveLevels({
+            cutWidth,
+            cutHeight,
+            archRise: rise,
+            def: {
+                box: { sideMarginMeters: 0.8, topMarginMeters: 0.4, projectionMeters: 0.15 },
+                levels: [
+                    { frameWidthMeters: 0.3, depthMeters: 0.25, arch: true },
+                    { frameWidthMeters: 0.2, depthMeters: 0.5, arch: true }
+                ]
+            }
+        });
+        assertNear(geo.circleRadius, rise, 1e-9, 'A semicircular arch has R = rise.');
+        assertNear(geo.circleCenterY, cutHeight - rise, 1e-9, 'Semicircle center sits on the springing line.');
+        assertEqual(geo.levels.length, 2, 'Both levels resolve.');
+        // Holes accumulate outward from the door cut: the outermost hole
+        // wraps the door by the sum of all frame widths, concentric.
+        assertNear(geo.totalFrameWidth, 0.5, 1e-9, 'Frame widths accumulate.');
+        assertNear(geo.levels[0].outerHalfWidth, 1.3 + 0.5, 1e-9, 'Outermost hole = door + both frames.');
+        assertNear(geo.levels[0].innerHalfWidth, 1.3 + 0.2, 1e-9, 'Level 1 face ring spans down to hole 2.');
+        assertNear(geo.levels[1].innerHalfWidth, 1.3, 1e-9, 'Innermost level hugs the door cut.');
+        assertNear(geo.levels[0].holeApexY, geo.circleCenterY + rise + 0.5, 1e-9, 'Hole apex rides the concentric circle.');
+        // Face planes step inward from the box face; the door mounts behind
+        // the wall by the level depths minus the box projection.
+        assertNear(geo.levels[0].frontZ, 0.15 - 0.25, 1e-9, 'Level 1 face steps behind the box face.');
+        assertNear(geo.levels[1].frontZ, 0.15 - 0.75, 1e-9, 'Level 2 face steps deeper.');
+        assertNear(geo.doorPlaneZ, -0.6, 1e-9, 'Door plane = projection - total depth.');
+        assertNear(geo.depthBehindWall, 0.6, 1e-9, 'Frame inset gains the depth behind the wall.');
+        // The facade opens to the box rectangle: hole + margins, rectangular.
+        assertNear(geo.boxHalfWidth, 1.3 + 0.5 + 0.8, 1e-9, 'Box adds the pier margins.');
+        assertNear(geo.boxTopY, geo.levels[0].holeApexY + 0.4, 1e-9, 'Box top adds the top margin over the hole crown.');
+        assertNear(geo.boxCut.width, geo.boxHalfWidth * 2, 1e-9, 'The wall cut takes the box rectangle.');
+
+        // A level with arch: false keeps a rectangular hole over an arched
+        // door ("follows the rectangular wall").
+        const mixed = resolveLevels({
+            cutWidth,
+            cutHeight,
+            archRise: rise,
+            def: {
+                box: { sideMarginMeters: 0.5, topMarginMeters: 0.3, projectionMeters: 0.1 },
+                levels: [
+                    { frameWidthMeters: 0.25, depthMeters: 0.2, arch: false },
+                    { frameWidthMeters: 0.15, depthMeters: 0.3, arch: true }
+                ]
+            }
+        });
+        assertTrue(!mixed.levels[0].holeArched, 'A rect level hole stays rectangular.');
+        assertTrue(mixed.levels[1].holeArched, 'The inner arched level follows the arch.');
+        assertTrue(mixed.levels[0].innerArched, 'Level 1 sees its arched inner neighbor.');
+        assertNear(mixed.levels[0].holeApexY, cutHeight + 0.4, 1e-9, 'A rect hole grows like the rectangle.');
+        assertTrue(!mixed.boxHoleArched, 'The box hole follows the outermost level topology.');
+    });
+
+    const AI510_TEST_PORTAL_DEF = {
+        id: 'portal_test_510',
+        box: { sideMarginMeters: 0.7, topMarginMeters: 0.4, projectionMeters: 0.12 },
+        levels: [
+            {
+                frameWidthMeters: 0.22,
+                depthMeters: 0.3,
+                arch: true,
+                ring: { widthMeters: 0.14, projectionMeters: 0.06, profile: 'band', jambs: 'stop' }
+            },
+            { frameWidthMeters: 0.16, depthMeters: 0.4, arch: true }
+        ],
+        impost: { heightMeters: 0.14, projectionMeters: 0.05, profile: 'stepped' },
+        panels: [
+            { xMeters: 1.95, yMeters: 0.4, widthMeters: 0.36, heightMeters: 1.6, depthMeters: 0.05 }
+        ],
+        base: { heightMeters: 0.2, projectionMeters: 0.05, profile: 'stepped' },
+        steps: { count: 0 },
+        custom: [
+            { part: 'foliate_capital', anchor: 'face', scaleMeters: 0.4, offsetMeters: { x: 1.95, y: 3.35, out: 0.02 } }
+        ],
+        palette: {
+            box: { mode: 'pbr', materialId: 'pbr.red_sandstone_block' },
+            level: { mode: 'pbr', materialId: 'pbr.red_sandstone_block' },
+            ring: { mode: 'pbr', materialId: 'pbr.red_sandstone_block' },
+            impost: { mode: 'pbr', materialId: 'pbr.red_sandstone_block' },
+            recess: { mode: 'pbr', materialId: 'pbr.brownstone' }
+        }
+    };
+
+    const AI510_ARCHED_DOOR_DEF = (portal) => ({
+        id: 'door_ai510_portal',
+        assetType: 'door',
+        name: 'AI510 Portal Door',
+        settings: {
+            version: 1,
+            width: 2.4,
+            height: 3.2,
+            arch: { enabled: true, heightRatio: 0.24, meetsRectangleFrame: true, topPieceMode: 'frame', clipVerticalMuntinsToRectWhenNoTopPiece: true },
+            // An open-bottom door only keeps its arch when the door bottom
+            // frame closes the rectangle (sanitize gate).
+            frame: { width: 0.08, depth: 0.1, inset: 0.02, openBottom: true, addHandles: false, doorStyle: 'double', doorBottomFrame: { enabled: true, mode: 'match' }, colorHex: 0x222222 },
+            muntins: { enabled: false, columns: 1, rows: 1, verticalWidth: 0.05, horizontalWidth: 0.05, depth: 0.04, inset: 0.01 },
+            glass: { opacity: 0.9, tintHex: 0x111111 },
+            shade: { enabled: false },
+            interior: { enabled: false }
+        },
+        portal
+    });
+
+    const buildAi510PortalParts = ({ portal, portalDefinitions = null }) => {
+        const { map, generatorConfig, tileSize } = makeBalconyTestMap();
+        return buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers: [
+                createDefaultFloorLayer({ id: 'floor_510p', floors: 1, floorHeight: 4.8, belt: { enabled: false }, windows: { enabled: false }, interior: { enabled: true } }),
+                createDefaultRoofLayer({ ring: { enabled: false } })
+            ],
+            windowDefinitions: { items: [AI510_ARCHED_DOOR_DEF(portal)] },
+            portalDefinitions,
+            facades: {
+                A: {
+                    layout: {
+                        bays: {
+                            items: [
+                                { id: 'flex_1', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' },
+                                {
+                                    id: 'entry_2',
+                                    // Wide enough to hold the portal BOX (hole
+                                    // + pier margins) without the bay clamp.
+                                    size: { mode: 'fixed', widthMeters: 5.2 },
+                                    expandPreference: 'no_repeat',
+                                    window: {
+                                        enabled: true,
+                                        defId: 'door_ai510_portal',
+                                        assetType: 'door',
+                                        size: { widthMeters: 2.4, heightMeters: 3.2 },
+                                        heightMode: 'fixed',
+                                        verticalOffsetMeters: null,
+                                        width: { minMeters: 2.4, maxMeters: null },
+                                        padding: { leftMeters: 0.3, rightMeters: 0.3 },
+                                        repeat: { count: 1 },
+                                        visual: { disableShades: true, interior: 'none' }
+                                    }
+                                },
+                                { id: 'flex_3', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+                            ]
+                        }
+                    }
+                }
+            },
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+    };
+
+    test('BuildingFabricationGenerator: a portal def emits the box, levels, rings, imposts, panels and ornaments (AI 510)', () => {
+        // Inject a stand-in ornament template so the sync build has the part
+        // without loading the GLB (the loader path is exercised in-page by the
+        // capture spec).
+        const dummy = new THREE.Group();
+        const dummyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.517, 0.4), new THREE.MeshStandardMaterial());
+        dummyMesh.geometry.translate(0, 0.2585, 0);
+        dummy.add(dummyMesh);
+        __portalOrnamentTestOnly._injectTemplateForTests('foliate_capital', dummy);
+
+        const parts = buildAi510PortalParts({
+            portal: { enabled: true, defId: 'portal_test_510' },
+            portalDefinitions: { items: [AI510_TEST_PORTAL_DEF] }
+        });
+        const boxes = balconyMeshesByRole(parts, 'portal_box');
+        const levels = balconyMeshesByRole(parts, 'portal_level');
+        const rings = balconyMeshesByRole(parts, 'portal_order');
+        const imposts = balconyMeshesByRole(parts, 'portal_impost');
+        const panels = balconyMeshesByRole(parts, 'portal_panel');
+        const bases = balconyMeshesByRole(parts, 'portal_base');
+        const ornaments = balconyMeshesByRole(parts, 'portal_ornament');
+        assertEqual(boxes.length, 1, 'One box mass per portal.');
+        assertEqual(levels.length, 2, 'One face ring per level.');
+        assertEqual(rings.length, 1, 'One ring moulding for the level that has one.');
+        assertEqual(imposts.length, 2, 'The stop ring lands on a swept impost section per side.');
+        assertEqual(panels.length, 2, 'The blind panel inset emits mirrored back plates.');
+        assertEqual(bases.length, 2, 'The base foot wraps both piers.');
+        assertEqual(ornaments.length, 2, 'The face-anchored ornament emits mirrored.');
+
+        // The box face stands proud of the wall plane (z = 5) by its
+        // projection, spans the piers, and its legs run to the threshold.
+        boxes[0].geometry.computeBoundingBox();
+        const boxBB = boxes[0].geometry.boundingBox;
+        assertNear(boxes[0].position.z + boxBB.max.z, 5.0 + 0.12, 0.02, 'Box face proud by its projection.');
+        assertTrue(boxBB.max.x - boxBB.min.x > 4.3, 'Box spans hole + both pier margins.');
+        assertTrue(boxBB.min.y < 0.02, 'Box legs run to the threshold.');
+
+        // Levels telescope inward: each face plane steps deeper, the
+        // innermost landing on the door plane.
+        const levelFront = (idx) => {
+            const mesh = levels.find((m) => m.userData.portalLevelIndex === idx);
+            mesh.geometry.computeBoundingBox();
+            return mesh.position.z + mesh.geometry.boundingBox.max.z - 5.0;
+        };
+        assertNear(levelFront(0), 0.12 - 0.3, 0.02, 'Level 1 face steps behind the box face.');
+        assertNear(levelFront(1), 0.12 - 0.7, 0.02, 'Level 2 face lands on the door plane.');
+
+        // The ring moulding contours the outermost hole on the box face,
+        // proud of it; 'stop' cuts it on the springing line.
+        rings[0].geometry.computeBoundingBox();
+        const ringBB = rings[0].geometry.boundingBox;
+        assertNear(rings[0].position.z + ringBB.max.z - 5.0, 0.12 + 0.06, 0.02, 'Ring stands proud of the box face.');
+        assertTrue(ringBB.min.y > 1.4, 'A stop ring is arch-only (no legs to the floor).');
+        assertTrue(ringBB.min.x < -1.4 && ringBB.max.x > 1.4, 'Ring spans the arch.');
+
+        // Impost courses sit under the springing, beside the hole.
+        for (const impost of imposts) {
+            assertTrue(Math.abs(impost.position.x) > 1.3, 'Imposts flank the hole.');
+            assertTrue(impost.position.y > 1.2 && impost.position.y < 3.2, 'Imposts land at the springing zone.');
+        }
+
+        // Panel back plates recess behind the box face at the authored spots.
+        for (const plate of panels) {
+            assertNear(Math.abs(plate.position.x), 1.95, 0.05, 'Panel centers at its authored offset.');
+            assertTrue(plate.position.z - 5.0 < 0.12 - 0.04, 'Panel field sits behind the box face.');
+        }
+
+        // Ornaments ride the box face, mirrored.
+        const ornXs = ornaments.map((o) => o.position.x).sort((a, b) => a - b);
+        assertNear(ornXs[0], -1.95, 0.05, 'Left face ornament at its authored x.');
+        assertNear(ornXs[1], 1.95, 0.05, 'Right face ornament at its authored x.');
+
+        // Own materials, not the wall's.
+        const facadeMesh = (parts.solidMeshes ?? []).find((m) => m?.userData?.buildingFab2WallKind === 'facade') ?? null;
+        assertTrue(!!facadeMesh, 'Expected the facade wall mesh.');
+        const wallMaterials = Array.isArray(facadeMesh.material) ? facadeMesh.material : [facadeMesh.material];
+        for (const mesh of [...boxes, ...levels, ...rings, ...imposts]) {
+            assertTrue(!wallMaterials.includes(mesh.material), 'Portal parts must not reuse the wall material instance.');
+        }
+
+        // The facade opens to the box rectangle: the wall's (token) reveal
+        // spans the box width, not just the door cut.
+        const pos = facadeMesh.geometry.getAttribute('position');
+        let cutMinX = Infinity;
+        let cutMaxX = -Infinity;
+        for (let i = 0; i < pos.count; i++) {
+            const z = pos.getZ(i);
+            const behind = 5.0 - z;
+            if (!(behind > 0.004 && behind < 0.05)) continue;
+            if (Math.abs(pos.getX(i)) > 3.0) continue;
+            const y = pos.getY(i);
+            if (!(y > 0.05 && y < 4.4)) continue;
+            cutMinX = Math.min(cutMinX, pos.getX(i));
+            cutMaxX = Math.max(cutMaxX, pos.getX(i));
+        }
+        assertTrue(cutMaxX - cutMinX > 4.3, `Wall must open to the box rectangle, got span ${(cutMaxX - cutMinX).toFixed(2)}m.`);
+
+        // AI 507 shell rule with the deep door: no interior shell geometry
+        // inside the box opening in front of the door plane.
+        const doorPlaneBehind = 0.02 + 0.58; // frame inset + level depth behind the wall
+        const interiorWalls = (parts.solidMeshes ?? []).filter(
+            (m) => m?.userData?.buildingFab2Role === 'interior' && m?.userData?.buildingFab2InteriorKind === 'wall'
+        );
+        assertTrue(interiorWalls.length > 0, 'Expected the interior shell.');
+        for (const mesh of interiorWalls) {
+            const spos = mesh.geometry.getAttribute('position');
+            for (let i = 0; i < spos.count; i++) {
+                const behind = 5.0 - spos.getZ(i);
+                if (!(behind > -1e-3 && behind < doorPlaneBehind - 1e-3)) continue;
+                const sx = spos.getX(i);
+                const sy = spos.getY(i) + mesh.position.y - facadeMesh.position.y;
+                const insideCut = Math.abs(sx) < 2.0 && sy > 0.05 && sy < 3.4;
+                assertTrue(!insideCut, `Shell geometry at (${sx.toFixed(2)}, ${sy.toFixed(2)}) sits inside the portal box in front of the door (AI 507/510).`);
+            }
+        }
+
+        // Unknown def warns and falls back to the inline config.
+        const missing = buildAi510PortalParts({ portal: { enabled: true, defId: 'portal_nope' } });
+        assertTrue((missing.warnings ?? []).some((w) => String(w).includes('portal_nope')), 'Expected a def-not-found warning.');
+        assertEqual(balconyMeshesByRole(missing, 'portal_box').length, 0, 'No box without a resolved def.');
+    });
+
+    test('BuildingFabricationGenerator: pilaster shafts with a capital anchor crown the piers (AI 510)', () => {
+        const dummy = new THREE.Group();
+        const dummyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.517, 0.4), new THREE.MeshStandardMaterial());
+        dummyMesh.geometry.translate(0, 0.2585, 0);
+        dummy.add(dummyMesh);
+        __portalOrnamentTestOnly._injectTemplateForTests('foliate_capital', dummy);
+
+        const parts = buildAi510PortalParts({
+            portal: { enabled: true, defId: 'portal_pilaster_510' },
+            portalDefinitions: {
+                items: [{
+                    id: 'portal_pilaster_510',
+                    box: { sideMarginMeters: 0.2, topMarginMeters: 0.2, projectionMeters: 0.1 },
+                    levels: [
+                        {
+                            frameWidthMeters: 0.3,
+                            depthMeters: 0.4,
+                            arch: true,
+                            ring: { widthMeters: 0.2, projectionMeters: 0.08, profile: 'band', jambs: 'stop' }
+                        }
+                    ],
+                    impost: { heightMeters: 0.14, projectionMeters: 0.05, profile: 'flat' },
+                    colonettes: { enabled: true, shape: 'pilaster', countPerSide: 1, widthMeters: 0.6, projectionMeters: 0.16, top: 'arch_crown' },
+                    steps: { count: 0 },
+                    custom: [{ part: 'foliate_capital', anchor: 'capital', scaleMeters: 0.5, offsetMeters: { x: 0, y: 0, out: 0 } }],
+                    palette: { box: { mode: 'pbr', materialId: 'pbr.limestone_smooth' } }
+                }]
+            }
+        });
+        const ornaments = balconyMeshesByRole(parts, 'portal_ornament');
+        const colonettes = balconyMeshesByRole(parts, 'portal_colonette');
+        const rings = balconyMeshesByRole(parts, 'portal_order');
+        assertEqual(ornaments.length, 2, 'One capital per pilaster.');
+        assertEqual(colonettes.length, 1, 'One merged pilaster mesh.');
+
+        // The shafts shorten to leave room: capital base = shaft top, and the
+        // capital crown reaches the hole's crown line (top: arch_crown). The
+        // ring moulding tops out ringWidth above the hole apex.
+        colonettes[0].geometry.computeBoundingBox();
+        const colBox = colonettes[0].geometry.boundingBox;
+        const shaftTopY = colonettes[0].position.y + colBox.max.y;
+        assertEqual(rings.length, 1, 'Expected the stop ring moulding.');
+        rings[0].geometry.computeBoundingBox();
+        const apexWorldY = rings[0].position.y + rings[0].geometry.boundingBox.max.y - 0.2;
+        // Pilaster shafts are boxes: depth = projection 0.16 + 0.12 embed
+        // (+0.06 plinth lip), face proud of the wall plane at z = 5.
+        assertNear(colBox.max.z - colBox.min.z, 0.34, 0.02, 'Pilaster boxes carry the projection + embed depth.');
+        assertTrue(colonettes[0].position.z + colBox.max.z > 5.0 + 0.1, 'Pilaster face must stand proud of the wall.');
+        const expectedCapitalX = colBox.max.x - (0.6 + 0.1) * 0.5;
+        for (const orn of ornaments) {
+            assertNear(orn.position.y, shaftTopY, 0.03, 'The capital base sits on the shaft top.');
+            assertNear(orn.position.y + 0.5, apexWorldY + 0.02, 0.05, 'The capital crown reaches the arch crown line.');
+            assertNear(Math.abs(orn.position.x), expectedCapitalX, 0.06, 'The capital centers over its pier.');
+            assertNear(orn.position.z, colonettes[0].position.z, 1e-6, 'The capital rides at the shaft stance.');
+        }
+    });
+
+    test('PortalFabricationCatalog: defs normalize and the stock catalog resolves (AI 510)', () => {
+        const stock = getPortalFabricationCatalogEntryById('portal_classical_orders');
+        assertTrue(!!stock, 'Expected the stock classical orders def.');
+        assertEqual(stock.levels.length, 2, 'Stock def carries two inset levels.');
+        assertTrue(!!stock.levels[0].ring && stock.levels[0].ring.jambs === 'stop', 'Stock outer level rings onto imposts.');
+        assertTrue(!!stock.palette.box && stock.palette.box.mode === 'pbr', 'Stock palette must not fall back to the wall.');
+        assertTrue(stock.custom.some((c) => c.part === 'foliate_capital'), 'Stock def references the foliate capital ornament.');
+
+        const normalized = normalizePortalFabricationDef({
+            id: 'p_x',
+            box: { sideMarginMeters: 99, topMarginMeters: 99, projectionMeters: 99 },
+            levels: [{ frameWidthMeters: 99, depthMeters: 99, ring: { widthMeters: 99, profile: 'weird', jambs: 'nope' } }],
+            panels: [{ xMeters: 99, widthMeters: 99, depthMeters: 99 }],
+            custom: [{ part: '', anchor: 'crown' }, { part: 'foliate_capital', anchor: 'weird', scaleMeters: 99 }]
+        });
+        assertNear(normalized.box.sideMarginMeters, 1.5, 1e-9, 'Box side margin clamps.');
+        assertNear(normalized.box.projectionMeters, 0.4, 1e-9, 'Box projection clamps.');
+        assertNear(normalized.levels[0].frameWidthMeters, 0.9, 1e-9, 'Level frame width clamps.');
+        assertNear(normalized.levels[0].depthMeters, 1.2, 1e-9, 'Level depth clamps.');
+        assertEqual(normalized.levels[0].arch, true, 'Levels follow the arch by default.');
+        assertNear(normalized.levels[0].ring.widthMeters, 0.45, 1e-9, 'Ring width clamps.');
+        assertEqual(normalized.levels[0].ring.profile, 'band', 'Unknown profiles fall back to band.');
+        assertEqual(normalized.levels[0].ring.jambs, 'run', 'Unknown jamb modes fall back to run.');
+        assertNear(normalized.panels[0].xMeters, 4.0, 1e-9, 'Panel offset clamps.');
+        assertNear(normalized.panels[0].depthMeters, 0.12, 1e-9, 'Panel depth clamps.');
+        assertEqual(normalized.custom.length, 1, 'Partless custom entries drop.');
+        assertEqual(normalized.custom[0].anchor, 'springing', 'Unknown anchors fall back to springing.');
+        assertNear(normalized.custom[0].scaleMeters, 2.0, 1e-9, 'Ornament scale clamps.');
+        assertTrue(!!normalized.palette.box, 'Palette fills its defaults.');
+        assertEqual(normalized.impost.profile, 'wedge', 'Impost defaults to the wedge section.');
+        assertEqual(normalized.impost.walls, 'outer', 'Impost walls default to outer.');
+        assertEqual(normalizePortalFabricationDef({ levels: [] }), null, 'A def without an id is rejected.');
+
+        const wallsDef = normalizePortalFabricationDef({
+            id: 'p_walls',
+            impost: { walls: 'both' },
+            base: { heightMeters: 0.3, walls: 'inner' },
+            custom: [
+                { part: 'foliate_capital', anchor: 'face' },
+                { part: 'foliate_capital', anchor: 'capital' }
+            ]
+        });
+        assertEqual(wallsDef.impost.walls, 'both', 'Impost wall targeting survives.');
+        assertEqual(wallsDef.base.walls, 'inner', 'Base wall targeting survives.');
+        assertEqual(wallsDef.base.profile, 'skirt', 'Base defaults to the skirt section.');
+        assertEqual(wallsDef.custom[0].mount, 'relief', 'Face-anchored parts default to the relief (decal) mount.');
+        assertEqual(wallsDef.custom[1].mount, 'proud', 'Shaft capitals stay free-standing by default.');
+
+        const pilasterDef = normalizePortalFabricationDef({
+            id: 'p_pil',
+            colonettes: { enabled: true, shape: 'pilaster', widthMeters: 99, projectionMeters: 99, top: 'arch_crown' },
+            custom: [{ part: 'foliate_capital', anchor: 'capital', scaleMeters: 0.4 }]
+        });
+        assertEqual(pilasterDef.colonettes.shape, 'pilaster', 'Pilaster shape survives normalization.');
+        assertNear(pilasterDef.colonettes.widthMeters, 1.2, 1e-9, 'Pilaster width clamps.');
+        assertNear(pilasterDef.colonettes.projectionMeters, 0.5, 1e-9, 'Pilaster projection clamps.');
+        assertEqual(pilasterDef.colonettes.top, 'arch_crown', 'The arch_crown top mode survives.');
+        assertEqual(pilasterDef.custom[0].anchor, 'capital', 'The capital anchor is a valid ornament anchor.');
     });
 
     // ===== AI 503: capital/impost projection must stand OUT of the wall =====

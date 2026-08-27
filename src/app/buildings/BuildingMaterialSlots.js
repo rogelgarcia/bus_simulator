@@ -293,6 +293,24 @@ function resolveWindowDecorationMaterials(node, ctx, contextLabel) {
     }
     // `material` on decoration parts / storefront zones / portal parts;
     // `recessMaterial` is the portal reveal hook (AI 509) — same dialect.
+    // A portal def's `palette` (AI 510) is a map of named part materials in
+    // the same dialect, so each entry resolves like a `material` node.
+    if (node.palette && typeof node.palette === 'object') {
+        for (const paletteKey of Object.keys(node.palette)) {
+            const entry = node.palette[paletteKey];
+            if (!entry || typeof entry !== 'object' || entry.mode !== 'slot') continue;
+            const slotId = typeof entry.slotId === 'string' ? entry.slotId : '';
+            const bundle = resolveMaterialSpecBundle({ kind: 'slot', id: slotId }, { ...ctx, context: `${contextLabel} palette.${paletteKey}` });
+            if (bundle?.material?.kind === 'texture') {
+                node.palette[paletteKey] = { ...entry, mode: 'pbr', materialId: bundle.material.id };
+                delete node.palette[paletteKey].slotId;
+            } else {
+                if (bundle && ctx.warnings) ctx.warnings.push(`${contextLabel}: slot "${slotId}" is not a texture; using match_wall.`);
+                node.palette[paletteKey] = { ...entry, mode: 'match_wall' };
+                delete node.palette[paletteKey].slotId;
+            }
+        }
+    }
     for (const key of ['material', 'recessMaterial']) {
         const material = node[key];
         if (!material || typeof material !== 'object' || material.mode !== 'slot') continue;
@@ -324,6 +342,7 @@ export function resolveBuildingConfigMaterials({
     wallDecorations = null,
     cornerTreatment = null,
     windowDefinitions = null,
+    portalDefinitions = null,
     materialSlots = null,
     seed = 0,
     warnings = null
@@ -457,12 +476,23 @@ export function resolveBuildingConfigMaterials({
         }
     }
 
+    // AI 510: portal fabrication defs — palettes and part materials share the
+    // decoration material dialect, so the same walker resolves their slots.
+    const outPortalDefinitions = portalDefinitions ? deepClone(portalDefinitions) : portalDefinitions;
+    if (outPortalDefinitions && typeof outPortalDefinitions === 'object' && Array.isArray(outPortalDefinitions.items)) {
+        for (const item of outPortalDefinitions.items) {
+            if (!item || typeof item !== 'object') continue;
+            resolveWindowDecorationMaterials(item, ctx, `Portal definition ${item?.id ?? ''}`);
+        }
+    }
+
     return {
         layers: outLayers,
         facades: outFacades,
         wallDecorations: outWallDecorations,
         cornerTreatment: outCornerTreatment,
         windowDefinitions: outWindowDefinitions,
+        portalDefinitions: outPortalDefinitions,
         materialSlots: slotsCfg
     };
 }

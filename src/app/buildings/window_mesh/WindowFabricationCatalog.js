@@ -62,7 +62,7 @@ function normalizeStorefrontTransomMode(value, fallback = STOREFRONT_TRANSOM_MOD
     return fallback;
 }
 
-function normalizeStorefrontZoneMaterial(value, fallbackMode = 'match_frame') {
+export function normalizeStorefrontZoneMaterial(value, fallbackMode = 'match_frame') {
     const src = value && typeof value === 'object' ? value : {};
     const modeRaw = typeof src.mode === 'string' ? src.mode.trim().toLowerCase() : '';
     const mode = STOREFRONT_ZONE_MATERIAL_MODES.includes(modeRaw) ? modeRaw : fallbackMode;
@@ -131,8 +131,16 @@ export function normalizePortalConfig(value) {
     const recessMaterialSrc = value.recessMaterial ?? (value.recess && typeof value.recess === 'object' ? value.recess.material : null);
     const colonettesSrc = value.colonettes && typeof value.colonettes === 'object' ? value.colonettes : null;
     const friezeSrc = value.frieze && typeof value.frieze === 'object' ? value.frieze : null;
+    // AI 510: a portal may reference a portal fabrication def; the def owns
+    // orders/surround anatomy and this config's parts act as overrides.
+    const defId = typeof value.defId === 'string' ? value.defId.trim() : '';
     return {
         enabled: true,
+        ...(defId ? { defId } : {}),
+        // Lets the def merge know which fields THIS config actually authored
+        // (normalization otherwise bakes defaults in).
+        authoredRecess: Number.isFinite(Number(value.recessMeters)),
+        authoredSteps: !!(value.steps && typeof value.steps === 'object'),
         recessMeters: clampNumber(value.recessMeters, 0.0, 1.5, 0.35),
         recessMaterial: recessMaterialSrc && typeof recessMaterialSrc === 'object'
             ? normalizeStorefrontZoneMaterial(recessMaterialSrc, 'match_wall')
@@ -147,9 +155,15 @@ export function normalizePortalConfig(value) {
         colonettes: (colonettesSrc && colonettesSrc.enabled === true)
             ? {
                 enabled: true,
+                // AI 510: 'round' engaged colonettes or broad 'pilaster' piers;
+                // `top` picks the line the shaft assembly tops out at.
+                shape: colonettesSrc.shape === 'pilaster' ? 'pilaster' : 'round',
                 countPerSide: Math.max(1, Math.min(2, Math.round(Number(colonettesSrc.countPerSide) || 1))),
                 radiusMeters: clampNumber(colonettesSrc.radiusMeters, 0.03, 0.3, 0.09),
+                widthMeters: clampNumber(colonettesSrc.widthMeters, 0.2, 1.2, 0.6),
+                projectionMeters: clampNumber(colonettesSrc.projectionMeters, 0.05, 0.5, 0.16),
                 gapMeters: clampNumber(colonettesSrc.gapMeters, 0.0, 0.6, 0.05),
+                top: colonettesSrc.top === 'arch_crown' ? 'arch_crown' : 'springing',
                 material: normalizeStorefrontZoneMaterial(colonettesSrc.material, 'match_wall')
             }
             : null,

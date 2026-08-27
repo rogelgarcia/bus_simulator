@@ -1341,6 +1341,7 @@ export class BuildingFabrication2Scene {
             facadeCornerStrategyId: this._facadeCornerStrategyId,
             facadeCornerDebug: this._facadeCornerDebug,
             windowDefinitions: config?.windowDefinitions ?? null,
+            portalDefinitions: config?.portalDefinitions ?? null,
             overlays: { wire: true, floorplan: true, border: false, floorDivisions: true },
             walls: { inset: wallInset },
             debug: {

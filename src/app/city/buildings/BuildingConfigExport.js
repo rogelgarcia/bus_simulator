@@ -123,6 +123,7 @@ export function createCityBuildingConfigFromFabrication({
     windowVisuals = null,
     facades = null,
     windowDefinitions = null,
+    portalDefinitions = null,
     wallDecorations = null,
     attachments = null,
     cornerTreatment = null,
@@ -153,6 +154,7 @@ export function createCityBuildingConfigFromFabrication({
     if (windowVisuals && typeof windowVisuals === 'object') cfg.windowVisuals = normalizeBuildingWindowVisualsConfig(windowVisuals);
     if (facades && typeof facades === 'object') cfg.facades = facades;
     if (windowDefinitions && typeof windowDefinitions === 'object') cfg.windowDefinitions = windowDefinitions;
+    if (portalDefinitions && typeof portalDefinitions === 'object') cfg.portalDefinitions = portalDefinitions;
     if (wallDecorations && typeof wallDecorations === 'object') cfg.wallDecorations = wallDecorations;
     if (attachments && typeof attachments === 'object') cfg.attachments = attachments;
     if (cornerTreatment && typeof cornerTreatment === 'object') cfg.cornerTreatment = cornerTreatment;
@@ -191,6 +193,7 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
     const windowVisuals = cfg.windowVisuals && typeof cfg.windowVisuals === 'object' ? cfg.windowVisuals : null;
     const facades = cfg.facades && typeof cfg.facades === 'object' ? cfg.facades : null;
     const windowDefinitions = cfg.windowDefinitions && typeof cfg.windowDefinitions === 'object' ? cfg.windowDefinitions : null;
+    const portalDefinitions = cfg.portalDefinitions && typeof cfg.portalDefinitions === 'object' ? cfg.portalDefinitions : null;
     const wallDecorations = cfg.wallDecorations && typeof cfg.wallDecorations === 'object' ? cfg.wallDecorations : null;
     const footprintLines = footprintLoops ? [
         '    footprintLoops: Object.freeze(',
@@ -210,6 +213,11 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
     const windowDefinitionsLines = windowDefinitions ? [
         '    windowDefinitions: Object.freeze(',
         indentLines(JSON.stringify(windowDefinitions, null, 4), 8),
+        '    ),'
+    ] : [];
+    const portalDefinitionsLines = portalDefinitions ? [
+        '    portalDefinitions: Object.freeze(',
+        indentLines(JSON.stringify(portalDefinitions, null, 4), 8),
         '    ),'
     ] : [];
     const wallDecorationsLines = wallDecorations ? [
@@ -260,6 +268,7 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
         ...windowsLines,
         ...facadesLines,
         ...windowDefinitionsLines,
+        ...portalDefinitionsLines,
         ...wallDecorationsLines,
         ...attachmentsLines,
         ...cornerTreatmentLines,

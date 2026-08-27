@@ -103,6 +103,15 @@ import {
     buildFacadeLetteringGeometry,
     layoutFacadeLetteringText
 } from './FacadeLetteringGeometry.js';
+import {
+    getPortalFabricationCatalogEntries,
+    normalizePortalFabricationDef
+} from '../../../../app/buildings/PortalFabricationCatalog.js';
+import {
+    getPortalOrnamentPartDef,
+    getPortalOrnamentTemplate,
+    instantiatePortalOrnamentPart
+} from './PortalOrnamentParts.js';
 
 const EPS = 1e-6;
 const QUANT = 1000;
@@ -424,6 +433,97 @@ function resolveOpeningCutMetrics(settings, { cutX = 0, cutY = 0 } = {}) {
         cutHeight,
         cutX: xRatio,
         cutY: yRatio
+    };
+}
+
+// AI 510 (rework): portal LEVEL geometry. A portal is a box inserted into
+// the facade; nested inset levels telescope inward (each level cuts a
+// smaller hole into the previous face and steps `depthMeters` deeper) until
+// the innermost hole is the door cut. Levels are authored OUTERMOST first.
+// Arch math matches the wall builder's: for a rise r over chord w the circle
+// has R = w^2/8r + r/2 and its center sits at apex - R, so every level hole
+// (and every ring moulding contouring it) is CONCENTRIC with the door arch.
+// A level with `arch: false` keeps a rectangular hole ("follows the
+// rectangular wall") even over an arched door.
+function resolvePortalLevelGeometry({ cutWidth, cutHeight, archRise = 0, def = null, maxHalfWidth = Infinity } = {}) {
+    const w = Math.max(0.1, Number(cutWidth) || 0);
+    const h = Math.max(0.1, Number(cutHeight) || 0);
+    const rise = Math.max(0, Number(archRise) || 0);
+    const hasArch = rise > EPS;
+    const R = hasArch ? ((w * w) / (8 * rise) + rise / 2) : 0;
+    const centerY = hasArch ? (h - R) : 0;
+    const boxCfg = def?.box && typeof def.box === 'object' ? def.box : {};
+    const sideMargin = clamp(boxCfg.sideMarginMeters, 0.15, 1.5);
+    const topMargin = clamp(boxCfg.topMarginMeters, 0.1, 1.5);
+    const projection = clamp(boxCfg.projectionMeters, 0.0, 0.4);
+
+    const junctionY = (halfWidth, radius) => {
+        const inner = Math.max(0, radius * radius - halfWidth * halfWidth);
+        return centerY + Math.sqrt(inner);
+    };
+    // Top of a hole grown `offset` outward from the door cut, per topology.
+    const holeTopAt = (offset, arched) => (arched ? centerY + R + offset : h + offset);
+
+    const srcLevels = Array.isArray(def?.levels) ? def.levels : [];
+    const totalFrameWidth = srcLevels.reduce((acc, lvl) => acc + clamp(lvl?.frameWidthMeters, 0.05, 0.9), 0);
+
+    const levels = [];
+    let outerOffset = totalFrameWidth;
+    let frontZ = projection;
+    let sumDepth = 0;
+    for (let i = 0; i < srcLevels.length; i++) {
+        const lvl = srcLevels[i];
+        const frameWidth = clamp(lvl?.frameWidthMeters, 0.05, 0.9);
+        const depth = clamp(lvl?.depthMeters, 0.05, 1.2);
+        frontZ -= depth;
+        sumDepth += depth;
+        const innerOffset = outerOffset - frameWidth;
+        const holeArched = hasArch && lvl?.arch !== false;
+        const next = srcLevels[i + 1] ?? null;
+        const innerArched = next ? (hasArch && next.arch !== false) : hasArch;
+        levels.push({
+            frameWidthMeters: frameWidth,
+            depthMeters: depth,
+            ring: lvl?.ring ?? null,
+            innerOffset,
+            outerOffset,
+            innerHalfWidth: w * 0.5 + innerOffset,
+            outerHalfWidth: w * 0.5 + outerOffset,
+            frontZ,
+            // topology of this level's own hole and of the hole inside it
+            holeArched,
+            innerArched,
+            holeJunctionY: holeArched ? junctionY(w * 0.5 + outerOffset, R + outerOffset) : holeTopAt(outerOffset, false),
+            holeApexY: holeTopAt(outerOffset, holeArched)
+        });
+        outerOffset = innerOffset;
+    }
+
+    const boxHoleArched = levels.length ? levels[0].holeArched : hasArch;
+    const boxTopY = holeTopAt(totalFrameWidth, boxHoleArched) + topMargin;
+    // The box lives inside its bay strip: a wider box would cut into the
+    // neighbouring bays' wall runs, so the pier margin gives way first.
+    const boxMaxHW = Number.isFinite(maxHalfWidth) ? maxHalfWidth : Infinity;
+    const boxHalfWidth = Math.max(
+        w * 0.5 + totalFrameWidth + 0.05,
+        Math.min(w * 0.5 + totalFrameWidth + sideMargin, boxMaxHW)
+    );
+
+    return {
+        hasArch,
+        circleRadius: R,
+        circleCenterY: centerY,
+        springY: hasArch ? (h - rise) : h,
+        levels,
+        totalFrameWidth,
+        projection,
+        depthBehindWall: Math.max(0, sumDepth - projection),
+        doorPlaneZ: projection - sumDepth,
+        boxHalfWidth,
+        boxTopY,
+        boxHoleArched,
+        // The facade opens to the box's rectangle; the box mass fills it.
+        boxCut: { width: boxHalfWidth * 2, height: boxTopY }
     };
 }
 
@@ -5626,7 +5726,13 @@ function projectFacadeCutoutOntoShell(cutout, { frames, shellDepthOf }) {
     const point = pointOnFacadeFrame({ frame, u, depth: shellDepth });
     const outerDepth = (Number(cutout.x) - sx) * (Number(frame.n?.x) || 0)
         + (Number(cutout.z) - sz) * (Number(frame.n?.z) || 0);
-    const framePlaneDepth = outerDepth - Math.max(0, Number(cutout.revealDepth) || 0);
+    // AI 510: a portal's visible reveal box may stop at its outermost carved
+    // order while the door sits deeper; `shellRevealDepth` carries the true
+    // frame-plane depth for the shell decision when the two differ.
+    const shellDepthBehindFront = Number.isFinite(Number(cutout.shellRevealDepth))
+        ? Math.max(0, Number(cutout.shellRevealDepth))
+        : Math.max(0, Number(cutout.revealDepth) || 0);
+    const framePlaneDepth = outerDepth - shellDepthBehindFront;
     const frameClearsShell = framePlaneDepth - shellDepth >= FLOOR_INTERIOR_SHELL_INSET_METERS * 0.5;
     const marginPerSide = frameClearsShell ? INTERIOR_SHELL_REVEAL_METERS : -INTERIOR_SHELL_CLEARANCE_METERS;
     const width = Math.max(0.05, (Number(cutout.width) || 0) - marginPerSide * 2);
@@ -6659,6 +6765,7 @@ export function buildBuildingFabricationVisualParts({
     facadeCornerStrategyId = null,
     facadeCornerDebug = false,
     windowDefinitions = null,
+    portalDefinitions = null,
     colors = null,
     overlays = null,
     walls = null,
@@ -6719,6 +6826,7 @@ export function buildBuildingFabricationVisualParts({
         wallDecorations,
         cornerTreatment,
         windowDefinitions,
+        portalDefinitions,
         materialSlots,
         seed: matVarSeed,
         warnings
@@ -6813,6 +6921,16 @@ export function buildBuildingFabricationVisualParts({
     const windowDefinitionItems = Array.isArray(resolvedWindowDefinitions?.items) ? resolvedWindowDefinitions.items : [];
     for (const entry of windowDefinitionItems) {
         registerWindowDefinition(entry, { fallbackAssetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW });
+    }
+
+    // AI 510: portal fabrication defs — catalog entries plus building-level
+    // overrides (slot refs already resolved by the material pre-pass).
+    const resolvedPortalDefinitions = materialResolution.portalDefinitions;
+    const portalDefById = new Map();
+    for (const entry of getPortalFabricationCatalogEntries()) portalDefById.set(entry.id, entry);
+    for (const entry of (Array.isArray(resolvedPortalDefinitions?.items) ? resolvedPortalDefinitions.items : [])) {
+        const def = normalizePortalFabricationDef(entry);
+        if (def) portalDefById.set(def.id, def);
     }
     const defaultWindowDefinitionByAssetType = new Map();
     for (const entry of windowDefinitionById.values()) {
@@ -7632,9 +7750,51 @@ export function buildBuildingFabricationVisualParts({
                     // inset (which also drives the wall reveal), and the steps
                     // raise the door threshold by their total rise so the stair
                     // climbs from grade to the door.
-                    const portalCfg = assetType === WINDOW_FABRICATION_ASSET_TYPE.DOOR
+                    const portalCfgRaw = assetType === WINDOW_FABRICATION_ASSET_TYPE.DOOR
                         ? (normalizePortalConfig(windowCfg?.portal ?? null) ?? def?.portal ?? null)
                         : null;
+                    // AI 510: resolve the referenced portal fabrication def and
+                    // merge — parts the config explicitly authored override the
+                    // def's; unset part materials fall back to the def palette,
+                    // never silently to the wall texture.
+                    let portalDef = null;
+                    if (portalCfgRaw?.defId) {
+                        portalDef = portalDefById.get(portalCfgRaw.defId) ?? null;
+                        if (!portalDef) {
+                            warnings.push(`Portal def "${portalCfgRaw.defId}" not found; using the inline portal config only.`);
+                        }
+                    }
+                    let portalCfg = portalCfgRaw;
+                    let portalCarvedDepth = 0;
+                    let portalOrderExtraHalfWidth = 0;
+                    if (portalDef) {
+                        const palette = portalDef.palette ?? {};
+                        const withPalette = (part, key) => (part ? { ...part, material: part.material ?? palette[key] ?? null } : null);
+                        const defSteps = portalDef.steps
+                            ? { ...portalDef.steps, material: portalDef.steps.material ?? palette.steps ?? null }
+                            : portalCfgRaw.steps;
+                        portalCfg = {
+                            enabled: true,
+                            defId: portalDef.id,
+                            // With a def, the door's depth comes from the
+                            // level stack; authored inline recess adds only
+                            // when the author explicitly wrote it.
+                            recessMeters: portalCfgRaw.authoredRecess ? portalCfgRaw.recessMeters : 0,
+                            steps: portalCfgRaw.authoredSteps ? portalCfgRaw.steps : defSteps,
+                            colonettes: withPalette(portalCfgRaw.colonettes ?? portalDef.colonettes, 'colonettes'),
+                            frieze: withPalette(portalCfgRaw.frieze ?? portalDef.frieze, 'frieze'),
+                            recessMaterial: portalCfgRaw.recessMaterial ?? palette.recess ?? null
+                        };
+                        // Levels step the door inward; the box face stands
+                        // `projectionMeters` of that in front of the wall.
+                        const levelDepthSum = (portalDef.levels ?? []).reduce(
+                            (acc, lvl) => acc + clamp(lvl?.depthMeters, 0.05, 1.2), 0
+                        );
+                        portalCarvedDepth = Math.max(0, levelDepthSum - clamp(portalDef.box?.projectionMeters, 0.0, 0.4));
+                        for (const lvl of portalDef.levels ?? []) {
+                            portalOrderExtraHalfWidth += clamp(lvl?.frameWidthMeters, 0.05, 0.9);
+                        }
+                    }
                     // AI 496: the parallax interior panel is oversized so grazing
                     // sightlines cannot slip past its edge. Tell the window mesh
                     // how much wall it may hide behind, so an oversized panel
@@ -7663,12 +7823,15 @@ export function buildBuildingFabricationVisualParts({
                         if (stepsRise > EPS) {
                             placementVerticalOffset = (Number.isFinite(Number(placementVerticalOffset)) ? Number(placementVerticalOffset) : 0) + stepsRise;
                         }
-                        if (portalCfg.recessMeters > EPS) {
+                        // The door mounts at the portal's innermost plane: the
+                        // authored recess plus whatever the carved orders sink.
+                        const effectiveRecess = portalCfg.recessMeters + portalCarvedDepth;
+                        if (effectiveRecess > EPS) {
                             placementSettings = {
                                 ...placementSettings,
                                 frame: {
                                     ...(def.settings?.frame ?? {}),
-                                    inset: (Number(def.settings?.frame?.inset) || 0) + portalCfg.recessMeters
+                                    inset: (Number(def.settings?.frame?.inset) || 0) + effectiveRecess
                                 }
                             };
                         }
@@ -7685,6 +7848,12 @@ export function buildBuildingFabricationVisualParts({
                             ? (def?.storefront ?? normalizeStorefrontConfig(null))
                             : null,
                         portal: portalCfg,
+                        portalDef,
+                        portalCarvedDepth,
+                        portalOrderExtraHalfWidth,
+                        // The portal box may not cut past its bay strip (the
+                        // full bay: slot plus the opening paddings).
+                        portalBoxMaxHalfWidth: Math.max(0.3, slotWidth * 0.5 + Math.min(leftPad, rightPad) - 0.02),
                         decoration: clampWindowDecorationDepthsToBayRecession(deepClone(def?.decoration ?? null), {
                             recessionMeters: bayRecessionMeters,
                             warnings,
@@ -8212,7 +8381,7 @@ export function buildBuildingFabricationVisualParts({
                                 const portalRecessRevealIndex = placement?.portal
                                     ? getRecessRevealMaterialIndex(placement.portal.recessMaterial)
                                     : null;
-                                const appendCutoutsFromSettings = ({ settings, openingHeight, openingY, wall }) => {
+                                const appendCutoutsFromSettings = ({ settings, openingHeight, openingY, wall, applyPortalOrders = false }) => {
                                     const resolvedWall = normalizeOpeningWallCutConfig(wall ?? null, null);
                                     const cutMetrics = resolveOpeningCutMetrics(settings, {
                                         cutX: resolvedWall.cutWidthLerp,
@@ -8235,6 +8404,35 @@ export function buildBuildingFabricationVisualParts({
                                     const frameInset = Math.max(0, Number(settings?.frame?.inset) || 0);
                                     const cutCenterY = openingY + (Number(cutMetrics?.cutCenterYOffset) || 0);
 
+                                    // AI 510 (rework): a portal def opens the facade to the
+                                    // BOX's rectangle — the box mass replaces the wall there
+                                    // and its own level stack forms the deep reveal, so the
+                                    // wall's visible reveal is a token sliver hidden behind
+                                    // the box flange. The shell keeps the full door depth
+                                    // (AI 507) via shellRevealDepth.
+                                    let outWidth = cutWidth;
+                                    let outHeight = cutHeight;
+                                    let outCenterY = cutCenterY;
+                                    let outWantsArch = cutWantsArch;
+                                    let outArchRise = archRise;
+                                    let revealDepth = frameInset;
+                                    if (applyPortalOrders && placement?.portalDef) {
+                                        const levelGeo = resolvePortalLevelGeometry({
+                                            cutWidth,
+                                            cutHeight,
+                                            archRise: cutWantsArch ? archRise : 0,
+                                            def: placement.portalDef,
+                                            maxHalfWidth: Number(placement?.portalBoxMaxHalfWidth) || Infinity
+                                        });
+                                        const cutBottom = cutCenterY - cutHeight * 0.5;
+                                        outWidth = levelGeo.boxCut.width;
+                                        outHeight = levelGeo.boxCut.height;
+                                        outCenterY = cutBottom + levelGeo.boxCut.height * 0.5;
+                                        outWantsArch = false;
+                                        outArchRise = 0;
+                                        revealDepth = 0.02;
+                                    }
+
                                     for (let pointIndex = 0; pointIndex < points.length; pointIndex++) {
                                         const point = points[pointIndex] && typeof points[pointIndex] === 'object' ? points[pointIndex] : null;
                                         const px = Number(point?.x) || 0;
@@ -8242,13 +8440,14 @@ export function buildBuildingFabricationVisualParts({
                                         const cutout = {
                                             faceId,
                                             x: px,
-                                            y: cutCenterY,
+                                            y: outCenterY,
                                             z: pz,
-                                            width: cutWidth,
-                                            height: cutHeight,
-                                            wantsArch: cutWantsArch,
-                                            archRise,
-                                            revealDepth: frameInset,
+                                            width: outWidth,
+                                            height: outHeight,
+                                            wantsArch: outWantsArch,
+                                            archRise: outWantsArch ? outArchRise : 0,
+                                            revealDepth,
+                                            shellRevealDepth: frameInset,
                                             ...(portalRecessRevealIndex !== null ? { revealMaterialIndex: portalRecessRevealIndex } : {}),
                                             // AI 495: whether this opening has a parallax
                                             // interior panel behind its glass. A shade does
@@ -8296,7 +8495,8 @@ export function buildBuildingFabricationVisualParts({
                                     settings: bottomSettings,
                                     openingHeight: bottomHeight,
                                     openingY: bottomY,
-                                    wall: placement?.wall ?? null
+                                    wall: placement?.wall ?? null,
+                                    applyPortalOrders: true
                                 });
                                 if (topSettings && topHeight > EPS) {
                                     appendCutoutsFromSettings({
@@ -9788,12 +9988,12 @@ export function buildBuildingFabricationVisualParts({
                                         windowsGroup.add(stepMesh);
                                     }
                                 }
-                                // AI 509: portal surround — colonettes flanking
-                                // the entry (base + shaft + capital, rising to
-                                // the arch springing) and a frieze panel band
-                                // above the arch, both in the zone material
-                                // dialect.
-                                if (placement?.portal && (placement.portal.colonettes || placement.portal.frieze)
+                                // AI 509/510: portal surround — arch orders,
+                                // impost blocks and custom ornament parts from
+                                // the portal def, plus colonettes flanking the
+                                // entry and a frieze panel band, all in the
+                                // zone material dialect.
+                                if (placement?.portal && (placement.portal.colonettes || placement.portal.frieze || placement.portalDef)
                                     && floor === 0
                                     && safeLayers.findIndex((l) => l?.type === LAYER_TYPE.FLOOR) === layerIndex) {
                                     const surroundPortal = placement.portal;
@@ -9802,8 +10002,12 @@ export function buildBuildingFabricationVisualParts({
                                         cutY: Number(placement?.wall?.cutHeightLerp) || 0
                                     });
                                     const surroundCutWidth = Math.max(0.3, Number(surroundMetrics?.cutWidth) || width);
+                                    const surroundCutHeight = Math.max(0.3, Number(surroundMetrics?.cutHeight) || bottomHeight);
                                     const doorBottomY = yCursor + bottomYBottom;
                                     const doorTopY = doorBottomY + bottomHeight;
+                                    const surroundCutBottomY = doorBottomY + bottomHeight * 0.5
+                                        + (Number(surroundMetrics?.cutCenterYOffset) || 0) - surroundCutHeight * 0.5;
+                                    const surroundOrderExtra = Math.max(0, Number(placement?.portalOrderExtraHalfWidth) || 0);
                                     const surroundArchRise = bottomSettings?.arch?.enabled
                                         ? Math.min(
                                             Math.max(0, (Number(bottomSettings?.arch?.heightRatio) || 0) * width),
@@ -9812,28 +10016,579 @@ export function buildBuildingFabricationVisualParts({
                                         : 0;
                                     const springLineY = doorTopY - surroundArchRise;
 
+                                    const portalPalette = placement.portalDef?.palette ?? {};
+                                    // ---- AI 510 (rework): the portal is a BOX inserted
+                                    // into the facade, with nested inset LEVELS telescoping
+                                    // inward to the door hole. ----
+                                    let levelGeoResolved = null;
+                                    if (placement.portalDef) {
+                                        const cutArchRise = bottomSettings?.arch?.enabled
+                                            ? Math.min(
+                                                Math.max(0, (Number(bottomSettings?.arch?.heightRatio) || 0) * surroundCutWidth),
+                                                Math.max(0, surroundCutHeight - Math.max(0, Number(surroundMetrics?.frameHorizontalWidth) || 0))
+                                            )
+                                            : 0;
+                                        levelGeoResolved = resolvePortalLevelGeometry({
+                                            cutWidth: surroundCutWidth,
+                                            cutHeight: surroundCutHeight,
+                                            archRise: cutArchRise,
+                                            def: placement.portalDef,
+                                            maxHalfWidth: Number(placement?.portalBoxMaxHalfWidth) || Infinity
+                                        });
+                                    }
+
+                                    // Colonette/pilaster layout, computed up front because the
+                                    // 'capital' ornament anchor crowns these shafts: the shafts
+                                    // shorten to leave room and the part sits on top of them.
+                                    let colLayout = null;
                                     if (surroundPortal.colonettes) {
                                         const col = surroundPortal.colonettes;
-                                        const r = col.radiusMeters;
-                                        const totalH = Math.max(0.4, springLineY - doorBottomY);
-                                        const plinthH = Math.min(0.16, totalH * 0.12);
-                                        const capH = Math.min(0.18, totalH * 0.14);
-                                        const shaftH = Math.max(0.1, totalH - plinthH - capH);
+                                        const pilaster = col.shape === 'pilaster';
+                                        const pilasterW = clamp(col.widthMeters, 0.2, 1.2);
+                                        const halfW = pilaster ? pilasterW * 0.5 : col.radiusMeters;
+                                        const pitch = pilaster ? pilasterW + col.gapMeters : col.radiusMeters * 2 + col.gapMeters;
                                         const offsets = [];
                                         for (const sideSign of [-1, 1]) {
                                             for (let k = 0; k < col.countPerSide; k++) {
-                                                offsets.push(sideSign * (surroundCutWidth * 0.5 + r + 0.03 + k * (r * 2 + col.gapMeters)));
+                                                // Orders widen the surround: shafts flank OUTSIDE
+                                                // the outermost order (AI 510).
+                                                offsets.push(sideSign * (surroundCutWidth * 0.5 + surroundOrderExtra + halfW + 0.03 + k * pitch));
                                             }
                                         }
+                                        const capitalSpec = (placement.portalDef?.custom ?? []).find(
+                                            (p) => p?.anchor === 'capital' && getPortalOrnamentTemplate(p.part)
+                                        ) ?? null;
+                                        const capitalH = capitalSpec ? clamp(capitalSpec.scaleMeters, 0.05, 2.0) : 0;
+                                        // Crown line = the outermost level hole's apex.
+                                        const outerApexWorldY = levelGeoResolved
+                                            ? surroundCutBottomY + (levelGeoResolved.levels[0]?.holeApexY
+                                                ?? (levelGeoResolved.hasArch
+                                                    ? levelGeoResolved.circleCenterY + levelGeoResolved.circleRadius
+                                                    : surroundCutHeight))
+                                            : doorTopY;
+                                        const topLineY = col.top === 'arch_crown' ? outerApexWorldY + 0.02 : springLineY;
+                                        const assemblyH = Math.max(0.4, topLineY - doorBottomY);
+                                        const plinthH = pilaster ? Math.min(0.22, assemblyH * 0.08) : Math.min(0.16, assemblyH * 0.12);
+                                        const capH = capitalSpec ? 0 : (pilaster ? Math.min(0.1, assemblyH * 0.06) : Math.min(0.18, assemblyH * 0.14));
+                                        const shaftH = Math.max(0.1, assemblyH - plinthH - capH - capitalH);
+                                        const proj = clamp(col.projectionMeters, 0.05, 0.5);
+                                        const shaftDepth = proj + 0.12;
+                                        // Engaged stance: a pilaster face sits at windowOffset +
+                                        // projection with its back embedded; round colonettes
+                                        // keep ~80% of the shaft proud of the wall.
+                                        const centerOut = pilaster
+                                            ? windowOffset + proj - shaftDepth * 0.5
+                                            : windowOffset + col.radiusMeters * 0.8;
+                                        colLayout = {
+                                            col,
+                                            pilaster,
+                                            pilasterW,
+                                            offsets,
+                                            plinthH,
+                                            capH,
+                                            shaftH,
+                                            shaftDepth,
+                                            centerOut,
+                                            shaftTopY: doorBottomY + plinthH + shaftH + capH
+                                        };
+                                    }
+
+                                    if (levelGeoResolved) {
+                                        const geoP = levelGeoResolved;
+                                        const hasArch = geoP.hasArch;
+                                        const circleY = geoP.circleCenterY;
+                                        // The inline config may author extra recess on top of
+                                        // the level stack; the innermost level's return must
+                                        // still reach the door plane.
+                                        const extraRecess = Math.max(0, Number(surroundPortal?.recessMeters) || 0);
+
+                                        // Contour sampler at a radial offset from the door
+                                        // cut edge; `arched` picks this hole's topology
+                                        // (concentric arc vs grown rectangle).
+                                        const contourAt = (offset, arched) => {
+                                            const hw = surroundCutWidth * 0.5 + offset;
+                                            const radius = geoP.circleRadius + offset;
+                                            const useArch = !!arched && hasArch;
+                                            const jY = useArch
+                                                ? circleY + Math.sqrt(Math.max(0, radius * radius - hw * hw))
+                                                : surroundCutHeight + offset;
+                                            const topY = useArch ? (circleY + radius) : (surroundCutHeight + offset);
+                                            return { hw, radius, jY, topY, arched: useArch };
+                                        };
+
+                                        // One closed ring outline (legs + head) between two
+                                        // boundaries, each with its own topology (arched or
+                                        // rectangular); `bottomY` is the leg cut (0 for full
+                                        // runs, the springing line for 'stop' rings). Extra
+                                        // `holes` (panel insets) punch through the face.
+                                        const buildRingShape = (innerC, outerC, bottomY, holes = null) => {
+                                            const shape = new THREE.Shape();
+                                            shape.moveTo(-outerC.hw, bottomY);
+                                            if (outerC.arched) {
+                                                const aOutL = Math.atan2(outerC.jY - circleY, -outerC.hw);
+                                                const aOutR = Math.atan2(outerC.jY - circleY, outerC.hw);
+                                                if (outerC.jY > bottomY + EPS) shape.lineTo(-outerC.hw, outerC.jY);
+                                                shape.absarc(0, circleY, outerC.radius, aOutL, aOutR, true);
+                                                if (outerC.jY > bottomY + EPS) shape.lineTo(outerC.hw, bottomY);
+                                            } else {
+                                                shape.lineTo(-outerC.hw, outerC.topY);
+                                                shape.lineTo(outerC.hw, outerC.topY);
+                                                shape.lineTo(outerC.hw, bottomY);
+                                            }
+                                            shape.lineTo(innerC.hw, bottomY);
+                                            if (innerC.arched) {
+                                                const aInL = Math.atan2(innerC.jY - circleY, -innerC.hw);
+                                                const aInR = Math.atan2(innerC.jY - circleY, innerC.hw);
+                                                if (innerC.jY > bottomY + EPS) shape.lineTo(innerC.hw, innerC.jY);
+                                                shape.absarc(0, circleY, innerC.radius, aInR, aInL, false);
+                                                if (innerC.jY > bottomY + EPS) shape.lineTo(-innerC.hw, bottomY);
+                                            } else {
+                                                shape.lineTo(innerC.hw, innerC.topY);
+                                                shape.lineTo(-innerC.hw, innerC.topY);
+                                                shape.lineTo(-innerC.hw, bottomY);
+                                            }
+                                            shape.closePath();
+                                            if (Array.isArray(holes)) for (const hole of holes) shape.holes.push(hole);
+                                            return shape;
+                                        };
+
+                                        // Prismatic profile approximation: radial sub-bands
+                                        // with a relief factor (1 = the ring's full front).
+                                        const PROFILE_BANDS = {
+                                            band: [[0.0, 1.0, 1.0]],
+                                            roll: [[0.0, 0.25, 0.45], [0.25, 0.75, 1.0], [0.75, 1.0, 0.45]],
+                                            cavetto: [[0.0, 0.4, 0.35], [0.4, 0.75, 0.7], [0.75, 1.0, 1.0]]
+                                        };
+                                        // Band cross-sections borrowed from the facade
+                                        // decorators (the cornice profile kit), plus the two
+                                        // portal-specific sections from the reference: the
+                                        // impost 'wedge' (projecting cap whose underside
+                                        // slopes back into the wall) and the plinth 'skirt'
+                                        // (tall face, sloped top returning to the wall).
+                                        const portalBandFractions = (profile) => {
+                                            if (profile === 'skirt') return [{ o: 1.0, y: 0.0 }, { o: 1.0, y: 0.75 }, { o: 0.1, y: 1.0 }];
+                                            if (profile === 'wedge' || profile === 'molded') return resolveCorniceProfileFractions('crown_molding');
+                                            if (profile === 'stepped') return resolveCorniceProfileFractions('stepped');
+                                            return resolveCorniceProfileFractions('flat_band');
+                                        };
+                                        // Profile section in (out, height), swept `length`
+                                        // meters; origin at (wall plane, band bottom, length
+                                        // centered). `flipY` mirrors the section vertically
+                                        // (a cornice section is widest at the top; a base
+                                        // must be widest at the bottom).
+                                        const buildBandSectionGeo = ({ profile, heightMeters, projectionMeters, lengthMeters, flipY = false }) => {
+                                            const h = Math.max(0.03, heightMeters);
+                                            const p = Math.max(0.02, projectionMeters);
+                                            let pts = portalBandFractions(profile).map((f) => ({
+                                                o: Math.max(0.015, f.o * p),
+                                                y: (flipY ? 1 - f.y : f.y) * h
+                                            }));
+                                            if (flipY) pts = pts.slice().reverse();
+                                            const shape = new THREE.Shape();
+                                            shape.moveTo(-0.06, 0);
+                                            for (const pt of pts) shape.lineTo(pt.o, pt.y);
+                                            shape.lineTo(-0.06, h);
+                                            shape.closePath();
+                                            const geo = new THREE.ExtrudeGeometry(shape, {
+                                                depth: Math.max(0.05, lengthMeters),
+                                                bevelEnabled: false,
+                                                steps: 1
+                                            });
+                                            geo.translate(0, 0, -Math.max(0.05, lengthMeters) * 0.5);
+                                            return geo;
+                                        };
+
+                                        const addPortalPart = ({ geometry, materialCfg, role, out = windowOffset, localX = 0, y = surroundCutBottomY, extra = null }) => {
+                                            geometry.computeVertexNormals();
+                                            const mesh = new THREE.Mesh(geometry, zoneMaterialFor(
+                                                materialCfg ?? null,
+                                                WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL
+                                            ));
+                                            mesh.position.set(x + nx * out + nz * localX, y, z + nz * out - nx * localX);
+                                            mesh.rotation.set(0, yaw, 0);
+                                            mesh.castShadow = true;
+                                            mesh.receiveShadow = true;
+                                            mesh.userData = mesh.userData ?? {};
+                                            mesh.userData.buildingWindowSource = 'bf2_portal';
+                                            mesh.userData.buildingFab2Role = role;
+                                            mesh.userData.windowDefinitionId = defId || null;
+                                            if (extra) Object.assign(mesh.userData, extra);
+                                            windowsGroup.add(mesh);
+                                            return mesh;
+                                        };
+
+                                        // ---- the BOX: one mass filling the facade opening,
+                                        // its face proud of the wall, with the outermost hole
+                                        // (and any blind panel insets) punched through it ----
+                                        const panelPlates = [];
+                                        const panelHoles = [];
+                                        for (const panel of placement.portalDef.panels ?? []) {
+                                            const sides = panel.xMeters > EPS ? [-1, 1] : [1];
+                                            for (const sideSign of sides) {
+                                                const cx = sideSign * panel.xMeters;
+                                                const x0 = cx - panel.widthMeters * 0.5;
+                                                const x1 = cx + panel.widthMeters * 0.5;
+                                                const y0 = panel.yMeters;
+                                                const y1 = panel.yMeters + panel.heightMeters;
+                                                // stay strictly inside the box face
+                                                if (x0 < -geoP.boxHalfWidth + 0.02 || x1 > geoP.boxHalfWidth - 0.02 || y1 > geoP.boxTopY - 0.02) continue;
+                                                const hole = new THREE.Path();
+                                                hole.moveTo(x0, y0);
+                                                hole.lineTo(x1, y0);
+                                                hole.lineTo(x1, y1);
+                                                hole.lineTo(x0, y1);
+                                                hole.closePath();
+                                                panelHoles.push(hole);
+                                                panelPlates.push({ cx, y0, w: panel.widthMeters, h: panel.heightMeters, depth: panel.depthMeters });
+                                            }
+                                        }
+                                        // Flange: the box outer boundary overlaps the wall
+                                        // cut by ~1cm so the cut's own reveal stays hidden
+                                        // inside the box mass (no coplanar side faces).
+                                        const boxOuter = {
+                                            hw: geoP.boxHalfWidth + 0.012,
+                                            topY: geoP.boxTopY + 0.012,
+                                            jY: geoP.boxTopY + 0.012,
+                                            arched: false
+                                        };
+                                        const boxInner = contourAt(geoP.totalFrameWidth, geoP.boxHoleArched);
+                                        const boxFront = geoP.projection;
+                                        const firstDepth = geoP.levels.length ? geoP.levels[0].depthMeters : 0.15;
+                                        const boxBack = Math.min(boxFront - firstDepth, -0.08);
+                                        const boxShape = buildRingShape(boxInner, boxOuter, 0, panelHoles);
+                                        const boxGeo = new THREE.ExtrudeGeometry(boxShape, {
+                                            depth: boxFront - boxBack,
+                                            bevelEnabled: false,
+                                            steps: 1,
+                                            curveSegments: 28
+                                        });
+                                        boxGeo.translate(0, 0, boxBack);
+                                        addPortalPart({ geometry: boxGeo, materialCfg: portalPalette.box, role: 'portal_box' });
+                                        for (const plate of panelPlates) {
+                                            addPortalPart({
+                                                geometry: new THREE.BoxGeometry(plate.w + 0.06, plate.h + 0.06, 0.03),
+                                                materialCfg: portalPalette.panel ?? portalPalette.box,
+                                                role: 'portal_panel',
+                                                out: windowOffset + boxFront - plate.depth - 0.015,
+                                                localX: plate.cx,
+                                                y: surroundCutBottomY + plate.y0 + plate.h * 0.5
+                                            });
+                                        }
+
+                                        // ---- the LEVELS: telescoping face rings; each
+                                        // ring's inner side wall is the return down to the
+                                        // next face (the innermost reaches the door plane) ----
+                                        for (let levelIdx = 0; levelIdx < geoP.levels.length; levelIdx++) {
+                                            const lvl = geoP.levels[levelIdx];
+                                            const next = geoP.levels[levelIdx + 1] ?? null;
+                                            const innerC = contourAt(lvl.innerOffset, lvl.innerArched);
+                                            // tucked slightly under the previous ring's return
+                                            const outerC = contourAt(lvl.outerOffset - 0.004, lvl.holeArched);
+                                            const front = lvl.frontZ;
+                                            const back = next ? next.frontZ : (geoP.doorPlaneZ - extraRecess - 0.05);
+                                            const thickness = front - back;
+                                            if (!(thickness > EPS)) continue;
+                                            const lvlShape = buildRingShape(innerC, outerC, 0);
+                                            const lvlGeo = new THREE.ExtrudeGeometry(lvlShape, {
+                                                depth: thickness,
+                                                bevelEnabled: false,
+                                                steps: 1,
+                                                curveSegments: 28
+                                            });
+                                            lvlGeo.translate(0, 0, back);
+                                            addPortalPart({
+                                                geometry: lvlGeo,
+                                                materialCfg: portalPalette.level ?? portalPalette.box,
+                                                role: 'portal_level',
+                                                extra: { portalLevelIndex: levelIdx }
+                                            });
+                                        }
+
+                                        // ---- ring mouldings contouring a level's hole (the
+                                        // archivolt: semicircular rings over an arch, a
+                                        // rectangular frame otherwise), sitting on the face
+                                        // OUTSIDE the hole; 'stop' rings land on impost
+                                        // courses borrowed from the facade decorators ----
+                                        for (let levelIdx = 0; levelIdx < geoP.levels.length; levelIdx++) {
+                                            const lvl = geoP.levels[levelIdx];
+                                            const ring = lvl.ring;
+                                            if (!ring) continue;
+                                            const facePlane = levelIdx === 0 ? geoP.projection : geoP.levels[levelIdx - 1].frontZ;
+                                            const arched = lvl.holeArched;
+                                            const stops = ring.jambs === 'stop' && arched;
+                                            const legBottomY = stops ? contourAt(lvl.outerOffset, true).jY : 0.0;
+                                            const ringWidth = clamp(ring.widthMeters, 0.03, 0.45);
+                                            const ringProj = clamp(ring.projectionMeters, 0.02, 0.3);
+                                            const amp = Math.min(0.045, ringWidth * 0.45);
+                                            const bandGeos = [];
+                                            for (const [f0, f1, factor] of PROFILE_BANDS[ring.profile] ?? PROFILE_BANDS.band) {
+                                                const bandInner = contourAt(lvl.outerOffset - 0.01 + (ringWidth + 0.01) * f0, arched);
+                                                const bandOuter = contourAt(lvl.outerOffset - 0.01 + (ringWidth + 0.01) * f1, arched);
+                                                const front = facePlane + ringProj - amp * (1.0 - factor);
+                                                const back = facePlane - 0.02;
+                                                const thickness = front - back;
+                                                if (!(thickness > EPS)) continue;
+                                                const shape = buildRingShape(bandInner, bandOuter, legBottomY);
+                                                const geo = new THREE.ExtrudeGeometry(shape, {
+                                                    depth: thickness,
+                                                    bevelEnabled: false,
+                                                    steps: 1,
+                                                    curveSegments: 28
+                                                });
+                                                geo.translate(0, 0, back);
+                                                bandGeos.push(geo);
+                                            }
+                                            if (bandGeos.length) {
+                                                const merged = bandGeos.length === 1 ? bandGeos[0] : mergeGeometries(bandGeos, false);
+                                                if (bandGeos.length > 1) for (const g of bandGeos) g.dispose();
+                                                addPortalPart({
+                                                    geometry: merged,
+                                                    materialCfg: ring.material ?? portalPalette.ring ?? portalPalette.order,
+                                                    role: 'portal_order',
+                                                    extra: { portalOrderIndex: levelIdx }
+                                                });
+                                            }
+
+                                            if (stops && (placement.portalDef.impost?.walls ?? 'outer') !== 'inner') {
+                                                const impostCfg = placement.portalDef.impost ?? {};
+                                                const impostH = clamp(impostCfg.heightMeters, 0.05, 0.5);
+                                                const impostProud = ringProj + clamp(impostCfg.projectionMeters, 0.0, 0.4);
+                                                for (const sideSign of [-1, 1]) {
+                                                    const impostGeo = buildBandSectionGeo({
+                                                        profile: impostCfg.profile,
+                                                        heightMeters: impostH,
+                                                        projectionMeters: impostProud,
+                                                        lengthMeters: ringWidth + 0.14
+                                                    });
+                                                    impostGeo.rotateY(-Math.PI / 2);
+                                                    addPortalPart({
+                                                        geometry: impostGeo,
+                                                        materialCfg: impostCfg.material ?? portalPalette.impost ?? null,
+                                                        role: 'portal_impost',
+                                                        out: windowOffset + facePlane,
+                                                        localX: sideSign * (surroundCutWidth * 0.5 + lvl.outerOffset + ringWidth * 0.5),
+                                                        y: surroundCutBottomY + legBottomY - impostH
+                                                    });
+                                                }
+                                            }
+                                        }
+
+                                        // ---- inner-wall decorations: the deep reveal's jamb
+                                        // walls can carry their own impost band at the
+                                        // springing and base courses at the threshold
+                                        // (walls: 'inner' | 'both' — the reference bands
+                                        // that live INSIDE the void) ----
+                                        const innerJambOffset = geoP.levels.length
+                                            ? geoP.levels[geoP.levels.length - 1].outerOffset
+                                            : geoP.totalFrameWidth;
+                                        const innerJambHW = surroundCutWidth * 0.5 + innerJambOffset;
+                                        const innerZFront = geoP.levels.length > 1
+                                            ? geoP.levels[geoP.levels.length - 2].frontZ
+                                            : geoP.projection;
+                                        const innerZBack = geoP.doorPlaneZ - extraRecess;
+                                        const innerSpan = innerZFront - innerZBack;
+                                        const emitInnerBand = ({ cfg, bottomY, flipY, role, fallbackKey }) => {
+                                            if (!(innerSpan > 0.1)) return;
+                                            const bandH = clamp(cfg.heightMeters, 0.05, 0.8);
+                                            for (const sideSign of [-1, 1]) {
+                                                const bandGeo = buildBandSectionGeo({
+                                                    profile: cfg.profile,
+                                                    heightMeters: bandH,
+                                                    projectionMeters: clamp(cfg.projectionMeters, 0.0, 0.4) + 0.02,
+                                                    lengthMeters: innerSpan - 0.02,
+                                                    flipY
+                                                });
+                                                // section o points toward the portal center
+                                                if (sideSign > 0) bandGeo.rotateY(Math.PI);
+                                                addPortalPart({
+                                                    geometry: bandGeo,
+                                                    materialCfg: cfg.material ?? portalPalette[fallbackKey] ?? null,
+                                                    role,
+                                                    out: windowOffset + innerZBack + innerSpan * 0.5,
+                                                    localX: sideSign * innerJambHW,
+                                                    y: surroundCutBottomY + bottomY
+                                                });
+                                            }
+                                        };
+                                        const impostWalls = placement.portalDef.impost?.walls ?? 'outer';
+                                        if (hasArch && (impostWalls === 'inner' || impostWalls === 'both')) {
+                                            emitInnerBand({
+                                                cfg: placement.portalDef.impost,
+                                                bottomY: geoP.springY - clamp(placement.portalDef.impost.heightMeters, 0.05, 0.5),
+                                                flipY: false,
+                                                role: 'portal_impost',
+                                                fallbackKey: 'impost'
+                                            });
+                                        }
+                                        const baseWalls = placement.portalDef.base?.walls ?? 'outer';
+                                        if (placement.portalDef.base && (baseWalls === 'inner' || baseWalls === 'both')) {
+                                            emitInnerBand({
+                                                cfg: placement.portalDef.base,
+                                                bottomY: 0,
+                                                flipY: placement.portalDef.base.profile !== 'skirt',
+                                                role: 'portal_base',
+                                                fallbackKey: 'base'
+                                            });
+                                        }
+
+                                        // ---- base: the plinth foot wrapping the box piers
+                                        // (the 'skirt' section from the reference: tall
+                                        // face, sloped top returning to the wall) ----
+                                        if (placement.portalDef.base && (placement.portalDef.base.walls ?? 'outer') !== 'inner') {
+                                            const base = placement.portalDef.base;
+                                            const pierInnerHW = surroundCutWidth * 0.5 + geoP.totalFrameWidth;
+                                            const pierW = Math.max(0.05, geoP.boxHalfWidth - pierInnerHW);
+                                            for (const sideSign of [-1, 1]) {
+                                                const baseGeo = buildBandSectionGeo({
+                                                    profile: base.profile,
+                                                    heightMeters: base.heightMeters,
+                                                    projectionMeters: base.projectionMeters,
+                                                    lengthMeters: pierW + 0.04,
+                                                    flipY: base.profile !== 'skirt'
+                                                });
+                                                baseGeo.rotateY(-Math.PI / 2);
+                                                addPortalPart({
+                                                    geometry: baseGeo,
+                                                    materialCfg: base.material ?? portalPalette.base ?? portalPalette.box,
+                                                    role: 'portal_base',
+                                                    out: windowOffset + geoP.projection,
+                                                    localX: sideSign * (pierInnerHW + pierW * 0.5),
+                                                    y: surroundCutBottomY
+                                                });
+                                            }
+                                        }
+                                    }
+
+                                    // ---- AI 510: registered custom mesh parts ----
+                                    if (placement.portalDef?.custom?.length) {
+                                        const totalOrderW = levelGeoResolved?.totalFrameWidth ?? 0;
+                                        for (const partSpec of placement.portalDef.custom) {
+                                            const partDef = getPortalOrnamentPartDef(partSpec.part);
+                                            if (!partDef) {
+                                                warnings.push(`Portal ${placement.portalDef.id}: unknown ornament part "${partSpec.part}".`);
+                                                continue;
+                                            }
+                                            if (!getPortalOrnamentTemplate(partSpec.part)) {
+                                                warnings.push(`Portal ${placement.portalDef.id}: ornament part "${partSpec.part}" is not preloaded (preloadPortalOrnamentParts); skipped.`);
+                                                continue;
+                                            }
+                                            const partMaterialCfg = partSpec.material ?? portalPalette.custom ?? null;
+                                            const partMaterial = partMaterialCfg
+                                                ? zoneMaterialFor(partMaterialCfg, WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL)
+                                                : null;
+                                            const partScale = clamp(partSpec.scaleMeters, 0.05, 2.0) / Math.max(0.05, partDef.heightMeters);
+                                            const outerHW = surroundCutWidth * 0.5 + totalOrderW;
+                                            const anchors = [];
+                                            if (partSpec.anchor === 'crown') {
+                                                const apexY = levelGeoResolved?.levels?.length
+                                                    ? levelGeoResolved.levels[0].holeApexY
+                                                    : surroundCutHeight;
+                                                anchors.push({ localX: partSpec.offsetMeters.x, baseY: apexY + 0.02 + partSpec.offsetMeters.y });
+                                            } else if (partSpec.anchor === 'face') {
+                                                // Anywhere on the box face: offsetMeters.x is
+                                                // the distance from the portal center
+                                                // (mirrored on both sides), offsetMeters.y
+                                                // the part's base above the threshold.
+                                                const faceOut = windowOffset
+                                                    + (levelGeoResolved?.projection ?? 0)
+                                                    + partSpec.offsetMeters.out;
+                                                const sides = partSpec.offsetMeters.x > EPS ? [-1, 1] : [1];
+                                                for (const sideSign of sides) {
+                                                    anchors.push({
+                                                        localX: sideSign * partSpec.offsetMeters.x,
+                                                        baseY: partSpec.offsetMeters.y,
+                                                        out: faceOut
+                                                    });
+                                                }
+                                            } else if (partSpec.anchor === 'capital' && colLayout) {
+                                                // Crown each shaft cluster: base at the shaft
+                                                // top, centered on the cluster, riding at the
+                                                // shaft's own out-of-wall stance.
+                                                for (const sideSign of [-1, 1]) {
+                                                    const sideOffsets = colLayout.offsets.filter((o) => (o < 0 ? -1 : 1) === sideSign);
+                                                    if (!sideOffsets.length) continue;
+                                                    const centerX = sideOffsets.reduce((a, b) => a + b, 0) / sideOffsets.length;
+                                                    anchors.push({
+                                                        localX: centerX + sideSign * partSpec.offsetMeters.x,
+                                                        baseY: colLayout.shaftTopY - surroundCutBottomY + partSpec.offsetMeters.y,
+                                                        out: colLayout.centerOut + partSpec.offsetMeters.out
+                                                    });
+                                                }
+                                            } else {
+                                                if (partSpec.anchor === 'capital') {
+                                                    warnings.push(`Portal ${placement.portalDef.id}: the 'capital' anchor needs colonettes enabled; falling back to springing.`);
+                                                }
+                                                const scaledH = clamp(partSpec.scaleMeters, 0.05, 2.0);
+                                                const springYLocal = levelGeoResolved?.springY ?? (springLineY - surroundCutBottomY);
+                                                const baseY = partSpec.anchor === 'jamb_base'
+                                                    ? partSpec.offsetMeters.y
+                                                    : (springYLocal - scaledH + partSpec.offsetMeters.y);
+                                                for (const sideSign of [-1, 1]) {
+                                                    anchors.push({ localX: sideSign * (outerHW + 0.02 + partSpec.offsetMeters.x), baseY });
+                                                }
+                                            }
+                                            for (const anchor of anchors) {
+                                                const clone = instantiatePortalOrnamentPart(partSpec.part, { material: partMaterial });
+                                                if (!clone) continue;
+                                                clone.scale.setScalar(partScale);
+                                                // 'relief' mounts the part like a 3D decal ON
+                                                // the wall: its back half embeds in the face,
+                                                // only the sculpted front projects.
+                                                let mountEmbed = 0;
+                                                if (partSpec.mount === 'relief') {
+                                                    clone.updateMatrixWorld(true);
+                                                    const reliefBox = new THREE.Box3().setFromObject(clone);
+                                                    // decal stance: ~40% of the part's depth
+                                                    // projects from the mount plane, the rest
+                                                    // embeds in the wall
+                                                    const reliefDepth = Math.max(0.01, reliefBox.max.z - reliefBox.min.z);
+                                                    mountEmbed = reliefBox.max.z - reliefDepth * 0.4;
+                                                }
+                                                const outC = (anchor.out ?? (windowOffset + partSpec.offsetMeters.out)) - mountEmbed;
+                                                clone.position.set(
+                                                    x + nx * outC + nz * anchor.localX,
+                                                    surroundCutBottomY + anchor.baseY,
+                                                    z + nz * outC - nx * anchor.localX
+                                                );
+                                                clone.rotation.set(0, yaw, 0);
+                                                clone.userData = clone.userData ?? {};
+                                                clone.userData.buildingWindowSource = 'bf2_portal';
+                                                clone.userData.buildingFab2Role = 'portal_ornament';
+                                                clone.userData.portalOrnamentPart = partSpec.part;
+                                                clone.userData.windowDefinitionId = defId || null;
+                                                windowsGroup.add(clone);
+                                            }
+                                        }
+                                    }
+
+                                    if (colLayout) {
+                                        const { col, pilaster, pilasterW, plinthH, capH, shaftH, shaftDepth } = colLayout;
+                                        const r = col.radiusMeters;
                                         const colGeos = [];
-                                        for (const off of offsets) {
-                                            const plinth = new THREE.BoxGeometry(r * 2.4, plinthH, r * 2.4);
-                                            plinth.translate(off, plinthH * 0.5, 0);
-                                            const shaft = new THREE.CylinderGeometry(r, r * 1.06, shaftH, 14);
-                                            shaft.translate(off, plinthH + shaftH * 0.5, 0);
-                                            const cap = new THREE.BoxGeometry(r * 2.6, capH, r * 2.6);
-                                            cap.translate(off, plinthH + shaftH + capH * 0.5, 0);
-                                            colGeos.push(plinth, shaft, cap);
+                                        for (const off of colLayout.offsets) {
+                                            if (pilaster) {
+                                                const plinth = new THREE.BoxGeometry(pilasterW + 0.1, plinthH, shaftDepth + 0.06);
+                                                plinth.translate(off, plinthH * 0.5, 0);
+                                                const shaft = new THREE.BoxGeometry(pilasterW, shaftH, shaftDepth);
+                                                shaft.translate(off, plinthH + shaftH * 0.5, 0);
+                                                colGeos.push(plinth, shaft);
+                                                if (capH > EPS) {
+                                                    const cap = new THREE.BoxGeometry(pilasterW + 0.08, capH, shaftDepth + 0.05);
+                                                    cap.translate(off, plinthH + shaftH + capH * 0.5, 0);
+                                                    colGeos.push(cap);
+                                                }
+                                            } else {
+                                                const plinth = new THREE.BoxGeometry(r * 2.4, plinthH, r * 2.4);
+                                                plinth.translate(off, plinthH * 0.5, 0);
+                                                const shaft = new THREE.CylinderGeometry(r, r * 1.06, shaftH, 14);
+                                                shaft.translate(off, plinthH + shaftH * 0.5, 0);
+                                                colGeos.push(plinth, shaft);
+                                                if (capH > EPS) {
+                                                    const cap = new THREE.BoxGeometry(r * 2.6, capH, r * 2.6);
+                                                    cap.translate(off, plinthH + shaftH + capH * 0.5, 0);
+                                                    colGeos.push(cap);
+                                                }
+                                            }
                                         }
                                         const colGeo = mergeGeometries(colGeos, false);
                                         for (const g of colGeos) g.dispose();
@@ -9842,10 +10597,7 @@ export function buildBuildingFabricationVisualParts({
                                             col.material,
                                             WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL
                                         ));
-                                        // Engaged-column stance: ~80% of the shaft
-                                        // proud of the wall, the back engaged in it.
-                                        const colOut = windowOffset + r * 0.8;
-                                        colMesh.position.set(x + nx * colOut, doorBottomY, z + nz * colOut);
+                                        colMesh.position.set(x + nx * colLayout.centerOut, doorBottomY, z + nz * colLayout.centerOut);
                                         colMesh.rotation.set(0, yaw, 0);
                                         colMesh.castShadow = true;
                                         colMesh.receiveShadow = true;
@@ -9858,7 +10610,7 @@ export function buildBuildingFabricationVisualParts({
 
                                     if (surroundPortal.frieze) {
                                         const frieze = surroundPortal.frieze;
-                                        const friezeWidth = surroundCutWidth + frieze.widthPaddingMeters * 2;
+                                        const friezeWidth = surroundCutWidth + surroundOrderExtra * 2 + frieze.widthPaddingMeters * 2;
                                         const friezeGeo = new THREE.BoxGeometry(friezeWidth, frieze.heightMeters, frieze.depthMeters);
                                         const friezeMesh = new THREE.Mesh(friezeGeo, zoneMaterialFor(
                                             frieze.material,
@@ -12067,6 +12819,7 @@ export const __testOnly = Object.freeze({
     buildWallSidesGeometryFromLoopDetailXZ,
     projectFacadeCutoutOntoShell,
     normalizeFacadeLetteringItems,
+    resolvePortalLevelGeometry,
     resolveOpeningCutMetrics,
     shouldReverseLinkedFaceBayOrder,
     resolveLinkedFaceBaysForSolve,

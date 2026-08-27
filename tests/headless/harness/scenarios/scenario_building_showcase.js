@@ -7,6 +7,7 @@ import { getBuildingConfigById, getBuildingConfigs } from '/src/graphics/content
 import { getResolvedLightingSettings } from '/src/graphics/lighting/LightingSettings.js';
 import { computeFrameDistanceForSphere } from '/src/graphics/engine3d/camera/ToolCameraController.js';
 import { PbrTextureLoaderService } from '/src/graphics/content3d/materials/PbrTexturePipeline.js';
+import { preloadPortalOrnamentParts } from '/src/graphics/assets3d/generators/building_fabrication/PortalOrnamentParts.js';
 import { createHarnessCitySpec } from './ScenarioCitySpec.js';
 
 const DEFAULT_SIZE = 240;
@@ -25,6 +26,7 @@ const CONFIG_OVERRIDE_KEYS = Object.freeze([
     'wallDecorations',
     'attachments',
     'windowDefinitions',
+    'portalDefinitions',
     'windowVisuals',
     'windows',
     'floors',
@@ -96,6 +98,9 @@ export const scenarioBuildingShowcase = {
             : null;
         const calibrationLoader = new PbrTextureLoaderService({ renderer: engine.renderer });
         await calibrationLoader.preloadCalibrationForMaterialIds(collectPbrMaterialIds(config, overridesForPreload));
+        // AI 510: portal ornament GLBs follow the same cold-start contract —
+        // the sync building generator can only use preloaded templates.
+        await preloadPortalOrnamentParts();
 
         const size = Number.isFinite(options?.size) ? options.size : DEFAULT_SIZE;
         const mapTileSize = Number.isFinite(options?.mapTileSize) ? options.mapTileSize : DEFAULT_MAP_TILE_SIZE;

@@ -349,9 +349,12 @@ Rules:
   between repeats), so the run reads as ONE band broken only by the arches.
   Opening spans come from the solved placements; the default still bands pier
   bays only.
-- **Portal surround**: `portal.colonettes` ({countPerSide 1..2, radiusMeters,
-  gapMeters, material}) emits engaged columns (plinth + shaft + cap) flanking
-  the entry, rising from the threshold to the arch springing;
+- **Portal surround**: `portal.colonettes` ({shape `round | pilaster`,
+  countPerSide 1..2, radiusMeters, widthMeters, projectionMeters, gapMeters,
+  top `springing | arch_crown`, material}) emits engaged shafts flanking the
+  entry — `round` = cylindrical colonettes (plinth + shaft + cap), `pilaster`
+  = broad rectangular piers (the Bradbury reference) — rising from the
+  threshold to the springing line or to the outermost order's crown;
   `portal.frieze` ({heightMeters, depthMeters, widthPaddingMeters,
   yOffsetMeters, material}) emits a panel band above the opening head. Roles:
   `portal_colonette`, `portal_frieze`.
@@ -361,6 +364,78 @@ Rules:
   masonry; absent, the reveal keeps the wall run's material. All portal-part
   materials use the storefront-zone dialect and resolve slots in the AI 491
   pre-pass (windowDefinitions items).
+
+### 6.2.6 Portal fabrication framework (AI 510, box + levels model)
+
+- Entry portals are authored as **portal defs** in `PortalFabricationCatalog`
+  (`src/app/buildings/`), referenced from a door opening as `portal.defId`;
+  building-level `portalDefinitions.items` overrides/extends the catalog like
+  `windowDefinitions` (plumbed through CityMap, City, config export, the BF2
+  scene/thumbnail paths and the showcase scenario override keys).
+- **The portal is a BOX inserted into the facade**: the facade opens to the
+  box's rectangle (a plain rect cut; `revealDepth` is a token sliver hidden
+  behind the box's 1cm flange) and the box's own mass forms the walls around
+  the entry — face proud of the facade by `box.projectionMeters`, pier
+  margins `box.sideMarginMeters` beside the outermost hole, face rising
+  `box.topMarginMeters` over its crown. The box may not cut past its bay
+  strip (clamped to slot + paddings; the pier margin gives way first). Role
+  `portal_box`.
+- **Nested inset LEVELS** (`levels[]`, outermost first, ≤4) telescope inward:
+  each cuts a smaller hole into the previous face (`frameWidthMeters` of
+  visible face ring) and steps `depthMeters` deeper, until the innermost
+  hole IS the door cut — the door def mounts at the last face plane (its
+  frame inset gains Σdepth − projection). Each level ring is ONE extrusion
+  whose inner side wall is the return down to the next face. `arch: false`
+  keeps that level's hole rectangular over an arched door; arched holes are
+  EXACTLY concentric with the door's cut circle (R = w²/8r + r/2 — a true
+  semicircular arch is `heightRatio: 0.5`, center on the springing line).
+  The cutout's `shellRevealDepth` carries the true door plane so the AI 507
+  shell rule still clears the frame. Role `portal_level`.
+- **Ring mouldings** (`levels[i].ring`): a contour moulding on the face
+  OUTSIDE that level's hole — semicircular rings over an arch, a
+  rectangular frame otherwise — with `widthMeters`, `projectionMeters`,
+  `profile` (`band | roll | cavetto` prismatic sub-bands) and `jambs`
+  (`run | stop`); a `stop` ring is cut on the springing line and lands on
+  impost sections. Role `portal_order`.
+- **Imposts and base borrow the facade decorator sections** (the cornice
+  profile kit): profiles `wedge` (projecting cap whose underside slopes
+  back into the wall — the impost console), `skirt` (tall plinth face with
+  a sloped top return — the foot), plus `flat | stepped | molded`. Both
+  carry `walls: 'outer' | 'inner' | 'both'` — outer runs on the box face
+  (imposts under stop-ring springings, base along the pier feet), inner
+  runs on the reveal walls INSIDE the void (the impost band at the
+  springing, the base at the threshold); 'both' circulates the entire
+  structure. Roles `portal_impost`, `portal_base`.
+- **Blind panel insets** (`panels[]`, ≤6, mirrored ±`xMeters`): rectangular
+  holes punched through the box face with a recessed field plate behind
+  (`depthMeters`) — the pier panels of the reference. Panels outside the
+  box face are skipped. Role `portal_panel`.
+- **Custom mesh parts**: `custom[]` entries reference registered ornament
+  parts (`PortalOrnamentParts.js` — GLB assets under `assets/ornaments/`,
+  loaded like the bus models; `foliate_capital` ships as the first part)
+  with `anchor` (`springing | crown | jamb_base | capital | face`),
+  `mount` (`relief` = a 3D decal ON the wall, ~40% of its depth projecting
+  from the mount plane — the default for `face`; `proud` = free-standing),
+  `scaleMeters` (target height) and offsets; role `portal_ornament`. The
+  `face` anchor places the part anywhere on the box face (offset x from the
+  portal center, mirrored; y above the threshold). The `capital` anchor
+  crowns each colonette/pilaster cluster (shafts shorten to leave room;
+  needs colonettes, else warns and falls back to springing). The building
+  generator is synchronous, so parts MUST be preloaded
+  (`preloadPortalOrnamentParts()`) before a deterministic scene builds —
+  the PBR-calibration cold-start contract; City kicks the preload
+  fire-and-forget, the showcase scenario awaits it. An un-preloaded part
+  warns and skips.
+- **Palette**: `palette` names part materials (box/level/ring/impost/panel/
+  base/colonettes/frieze/recess/steps/custom) in the zone dialect with
+  `slot` support (resolved in the AI 491 pre-pass). Unset part materials
+  fall back to the palette — which itself defaults to a trim-like set,
+  NEVER silently to the wall texture; `match_wall` is an explicit choice.
+- **Migration**: the inline AI 488/509 `portal` config keeps working
+  (steps/recess/colonettes/frieze/recessMaterial); with a def, inline parts
+  the author explicitly wrote override the def's (def-path recess comes
+  from the level depths), and colonette/frieze offsets account for the
+  levels' added frame width. All portal roles are in the merge/shadow set.
 
 ### 6.3 BF2 support slab (view helper)
 

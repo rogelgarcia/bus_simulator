@@ -662,6 +662,7 @@ export class CityMap {
             if (building?.windowVisuals && typeof building.windowVisuals === 'object') record.windowVisuals = deepClone(building.windowVisuals);
             if (building?.facades && typeof building.facades === 'object') record.facades = deepClone(building.facades);
             if (building?.windowDefinitions && typeof building.windowDefinitions === 'object') record.windowDefinitions = deepClone(building.windowDefinitions);
+            if (building?.portalDefinitions && typeof building.portalDefinitions === 'object') record.portalDefinitions = deepClone(building.portalDefinitions);
             if (building?.wallDecorations && typeof building.wallDecorations === 'object') record.wallDecorations = deepClone(building.wallDecorations);
             if (building?.attachments && typeof building.attachments === 'object') record.attachments = deepClone(building.attachments);
             if (building?.cornerTreatment && typeof building.cornerTreatment === 'object') record.cornerTreatment = deepClone(building.cornerTreatment);
@@ -842,6 +843,7 @@ export class CityMap {
                     : null);
             const facades = overrideOrBase('facades');
             const windowDefinitions = overrideOrBase('windowDefinitions');
+            const portalDefinitions = overrideOrBase('portalDefinitions');
             const windowVisuals = overrideOrBase('windowVisuals');
             const wallDecorations = overrideOrBase('wallDecorations');
             const attachments = overrideOrBase('attachments');
@@ -865,6 +867,7 @@ export class CityMap {
                 windows: windowsEnabled ? { width: windowWidth, gap: windowGap, height: windowHeight, y: windowY } : null,
                 facades: (facades && typeof facades === 'object') ? deepClone(facades) : null,
                 windowDefinitions: (windowDefinitions && typeof windowDefinitions === 'object') ? deepClone(windowDefinitions) : null,
+                portalDefinitions: (portalDefinitions && typeof portalDefinitions === 'object') ? deepClone(portalDefinitions) : null,
                 windowVisuals: (windowVisuals && typeof windowVisuals === 'object') ? deepClone(windowVisuals) : null,
                 wallDecorations: (wallDecorations && typeof wallDecorations === 'object') ? deepClone(wallDecorations) : null,
                 attachments: (attachments && typeof attachments === 'object') ? deepClone(attachments) : null,

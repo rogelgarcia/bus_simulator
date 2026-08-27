@@ -14,6 +14,7 @@ import { createBuildingSlabMeshes } from '../../assets3d/generators/buildings/Bu
 import { buildRoadSidewalkOuterBoundaryLoopsFromRoadEnginePrimitives } from '../../../app/road_decoration/sidewalks/RoadSidewalkBuilder.js';
 import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
 import { mergeBuildingGroupGeometry } from '../../assets3d/generators/building_fabrication/BuildingGeometryMerger.js';
+import { preloadPortalOrnamentParts } from '../../assets3d/generators/building_fabrication/PortalOrnamentParts.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js';
 import { getResolvedShadowSettings, getShadowQualityPreset } from '../../lighting/ShadowSettings.js';
@@ -242,6 +243,12 @@ export class City {
 
         this.buildings = null;
         if (buildingsList.length) {
+            // AI 510: portal ornament GLBs load async while the builder is
+            // sync. Kick the preload so later rebuilds have the parts; a
+            // deterministic scene (harness scenario, capture) must await
+            // preloadPortalOrnamentParts() BEFORE constructing the City, the
+            // same contract PBR calibration follows.
+            preloadPortalOrnamentParts();
             const buildingsGroup = new THREE.Group();
             buildingsGroup.name = 'Buildings';
 
@@ -296,6 +303,7 @@ export class City {
                         edgeBevel: entry.edgeBevel ?? null,
                         materialSlots: entry.materialSlots ?? null,
                         windowDefinitions: entry.windowDefinitions ?? null,
+                        portalDefinitions: entry.portalDefinitions ?? null,
                         overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
                         walls: { inset: wallInset }
                     })

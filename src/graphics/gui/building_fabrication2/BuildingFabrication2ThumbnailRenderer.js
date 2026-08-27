@@ -206,6 +206,7 @@ export class BuildingFabrication2ThumbnailRenderer {
             edgeBevel: cfg?.edgeBevel ?? null,
             materialSlots: cfg?.materialSlots ?? null,
             windowDefinitions: cfg?.windowDefinitions ?? null,
+            portalDefinitions: cfg?.portalDefinitions ?? null,
             overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
             walls: { inset: wallInset }
         });
@@ -315,6 +316,7 @@ export class BuildingFabrication2ThumbnailRenderer {
             edgeBevel: cfg?.edgeBevel ?? null,
             materialSlots: cfg?.materialSlots ?? null,
             windowDefinitions: cfg?.windowDefinitions ?? null,
+            portalDefinitions: cfg?.portalDefinitions ?? null,
             overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
             walls: { inset: wallInset }
         });
