@@ -18425,6 +18425,7 @@ async function runTests() {
     const {
         normalizeStorefrontConfig,
         normalizePortalConfig,
+        normalizeOpeningInsetsConfig,
         STOREFRONT_TRANSOM_MODE,
         getWindowFabricationCatalogEntryById: getWindowCatalogEntryByIdForStorefront
     } = await import('/src/app/buildings/window_mesh/index.js');
@@ -20021,6 +20022,543 @@ async function runTests() {
         assertNear(pilasterDef.colonettes.projectionMeters, 0.5, 1e-9, 'Pilaster projection clamps.');
         assertEqual(pilasterDef.colonettes.top, 'arch_crown', 'The arch_crown top mode survives.');
         assertEqual(pilasterDef.custom[0].anchor, 'capital', 'The capital anchor is a valid ornament anchor.');
+    });
+
+    // ===== AI 511: nested wall insets =====
+
+    test('BuildingFabricationGenerator: nested inset contours stay concentric with the opening arch (AI 511)', () => {
+        const resolveContours = buildingFabricationGeneratorTestOnly?.resolveOpeningInsetContours ?? null;
+        assertTrue(typeof resolveContours === 'function', 'Expected resolveOpeningInsetContours test helper.');
+        const radiusOf = (w, r) => (w * w) / (8 * r) + r / 2;
+
+        // A semicircular opening (rise = half the chord) keeps every contour
+        // a true semicircle: radial growth = the width padding, and the top
+        // rises by exactly that padding (topPaddingMeters is ignored on arch
+        // heads).
+        const semi = resolveContours({
+            cutWidth: 1.2,
+            cutHeight: 2.4,
+            cutCenterY: 2.0,
+            archRise: 0.6,
+            steps: [
+                { widthPaddingMeters: 0.18, topPaddingMeters: 0.5, bottomPaddingMeters: 0.0, depthMeters: 0.1 },
+                { widthPaddingMeters: 0.12, topPaddingMeters: 0.5, bottomPaddingMeters: 0.0, depthMeters: 0.08 }
+            ]
+        });
+        assertEqual(semi.length, 3, 'Two steps + the opening itself.');
+        const [semiOuter, semiMid, semiOpening] = semi;
+        assertNear(semiOpening.width, 1.2, 1e-9, 'Innermost contour is the opening cut.');
+        assertNear(semiOpening.top, 3.2, 1e-9, 'Opening top.');
+        assertNear(semiOpening.bottom, 0.8, 1e-9, 'Opening bottom.');
+        assertNear(semiMid.width, 1.44, 1e-9, 'Middle contour grows by 2x its width padding.');
+        assertNear(semiMid.top, 3.32, 1e-9, 'Arch head rises by the width padding, not topPadding.');
+        assertNear(semiMid.archRise, 0.72, 1e-9, 'A semicircle stays semicircular (rise = half chord).');
+        assertNear(semiOuter.width, 1.8, 1e-9, 'Outer contour accumulates both paddings.');
+        assertNear(semiOuter.top, 3.5, 1e-9, 'Outer arch apex accumulates both radial growths.');
+        assertNear(semiOuter.archRise, 0.9, 1e-9, 'Outer semicircle rise.');
+        assertNear(semiOuter.bottom, 0.8, 1e-9, 'Zero bottom padding keeps the sill line.');
+        assertTrue(semiOuter.wantsArch && semiMid.wantsArch, 'Arched opening keeps every step arch-topped.');
+
+        // A segmental arch stays on the concentric circle: recomputing each
+        // contour's circle radius from (w, rise) lands on R0 + width padding.
+        const seg = resolveContours({
+            cutWidth: 0.95,
+            cutHeight: 2.7,
+            cutCenterY: 2.0,
+            archRise: 0.171,
+            steps: [{ widthPaddingMeters: 0.14, topPaddingMeters: 0.0, bottomPaddingMeters: 0.2, depthMeters: 0.08 }]
+        });
+        const segR0 = radiusOf(0.95, 0.171);
+        assertNear(radiusOf(seg[0].width, seg[0].archRise), segR0 + 0.14, 1e-6, 'Step arch rides the concentric grown circle.');
+        assertNear(seg[0].top, seg[1].top + 0.14, 1e-9, 'Segmental head still rises by the width padding.');
+        assertNear(seg[0].bottom, seg[1].bottom - 0.2, 1e-9, 'Bottom padding grows downward.');
+
+        // A rectangular opening keeps rectangular steps and honours the
+        // top/bottom paddings.
+        const rect = resolveContours({
+            cutWidth: 1.1,
+            cutHeight: 2.3,
+            cutCenterY: 1.95,
+            archRise: 0,
+            steps: [{ widthPaddingMeters: 0.2, topPaddingMeters: 0.15, bottomPaddingMeters: 0.3, depthMeters: 0.06 }]
+        });
+        assertTrue(!rect[0].wantsArch && !rect[1].wantsArch, 'Rect opening keeps rectangular steps.');
+        assertNear(rect[0].width, 1.5, 1e-9, 'Rect step width.');
+        assertNear(rect[0].top, rect[1].top + 0.15, 1e-9, 'Rect step top honours topPadding.');
+        assertNear(rect[0].bottom, rect[1].bottom - 0.3, 1e-9, 'Rect step bottom honours bottomPadding.');
+    });
+
+    const AI511_WINDOW_DEF = (insets) => ({
+        id: 'window_ai511_insets',
+        assetType: 'window',
+        name: 'AI511 Inset Window',
+        settings: {
+            version: 1,
+            width: 1.2,
+            height: 2.4,
+            // A true semicircular arch so the concentric identity is exact.
+            arch: { enabled: true, heightRatio: 0.5, meetsRectangleFrame: true, topPieceMode: 'frame', clipVerticalMuntinsToRectWhenNoTopPiece: true },
+            frame: { width: 0.06, depth: 0.08, inset: 0.05, openBottom: false, colorHex: 0x27352c },
+            muntins: { enabled: false, columns: 1, rows: 1, verticalWidth: 0.04, horizontalWidth: 0.04, depth: 0.04, inset: 0.01 },
+            glass: { opacity: 0.85, tintHex: 0x33424d },
+            shade: { enabled: false },
+            interior: { enabled: false }
+        },
+        ...(insets !== undefined ? { insets } : {})
+    });
+
+    const buildAi511Parts = ({ insets }) => {
+        const { map, generatorConfig, tileSize } = makeBalconyTestMap();
+        return buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers: [
+                createDefaultFloorLayer({ id: 'floor_511', floors: 1, floorHeight: 4.8, belt: { enabled: false }, windows: { enabled: false }, interior: { enabled: true } }),
+                createDefaultRoofLayer({ ring: { enabled: false } })
+            ],
+            windowDefinitions: { items: [AI511_WINDOW_DEF(insets)] },
+            facades: {
+                A: {
+                    layout: {
+                        bays: {
+                            items: [
+                                { id: 'flex_1', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' },
+                                {
+                                    id: 'win_2',
+                                    size: { mode: 'fixed', widthMeters: 3.2 },
+                                    expandPreference: 'no_repeat',
+                                    window: {
+                                        enabled: true,
+                                        defId: 'window_ai511_insets',
+                                        size: { widthMeters: 1.2, heightMeters: 2.4 },
+                                        heightMode: 'fixed',
+                                        verticalOffsetMeters: 0.8,
+                                        width: { minMeters: 1.2, maxMeters: null },
+                                        padding: { leftMeters: 0.3, rightMeters: 0.3 },
+                                        repeat: { count: 1 },
+                                        visual: { disableShades: true, interior: 'none' }
+                                    }
+                                },
+                                { id: 'flex_3', size: { mode: 'range', minMeters: 1.0, maxMeters: null }, expandPreference: 'prefer_expand' }
+                            ]
+                        }
+                    }
+                }
+            },
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+    };
+
+    const ai511FacadeMesh = (parts) => {
+        const mesh = (parts.solidMeshes ?? []).find((m) => m?.userData?.buildingFab2WallKind === 'facade') ?? null;
+        assertTrue(!!mesh, 'Expected the facade wall mesh.');
+        return mesh;
+    };
+
+    test('BuildingFabricationGenerator: a two-step inset carves two reveal depths with shoulder rings between them (AI 511)', () => {
+        // Steps (outermost first): 0.18/0.10m then 0.12/0.08m; the opening's
+        // own frame inset (0.05) continues from the innermost plane (0.18).
+        const parts = buildAi511Parts({
+            insets: [
+                { widthPaddingMeters: 0.18, bottomPaddingMeters: 0.0, depthMeters: 0.1, material: { mode: 'pbr', materialId: 'pbr.limestone_smooth' } },
+                { widthPaddingMeters: 0.12, bottomPaddingMeters: 0.0, depthMeters: 0.08 }
+            ]
+        });
+        const facadeMesh = ai511FacadeMesh(parts);
+        const pos = facadeMesh.geometry.getAttribute('position');
+
+        // Collect facade-A vertices near the opening, bucketed by depth
+        // behind the wall plane (z = 5).
+        const near = { face: 0, d1: 0, d2: 0, back: 0 };
+        let ring1MaxAbsX = 0;
+        let ring1HasInnerEdge = false;
+        let ring1CrownVert = false;
+        let faceInsideOuterHole = 0;
+        for (let i = 0; i < pos.count; i++) {
+            const x = pos.getX(i);
+            const y = pos.getY(i);
+            const behind = 5.0 - pos.getZ(i);
+            if (Math.abs(x) > 1.2 || y < 0.4 || y > 3.9) continue;
+            if (Math.abs(behind) < 0.002) {
+                near.face++;
+                // The wall face must open to the OUTERMOST contour: nothing
+                // at the wall plane strictly inside it (below the springing).
+                if (Math.abs(x) < 0.85 && y > 0.85 && y < 2.55) faceInsideOuterHole++;
+            } else if (Math.abs(behind - 0.1) < 0.005) {
+                near.d1++;
+                ring1MaxAbsX = Math.max(ring1MaxAbsX, Math.abs(x));
+                if (Math.abs(x) < 0.73 && Math.abs(x) > 0.65) ring1HasInnerEdge = true;
+                if (Math.abs(x) < 0.3 && y > 3.25) ring1CrownVert = true;
+            } else if (Math.abs(behind - 0.18) < 0.005) {
+                near.d2++;
+            } else if (Math.abs(behind - 0.23) < 0.005) {
+                near.back++;
+            }
+        }
+        assertTrue(near.d1 > 0, 'Expected geometry at the first step plane (0.10m).');
+        assertTrue(near.d2 > 0, 'Expected geometry at the second step plane (0.18m).');
+        assertTrue(near.back > 0, 'Expected the opening reveal to continue to the frame plane (0.23m).');
+        assertEqual(faceInsideOuterHole, 0, 'The wall face must open to the outermost step contour.');
+        assertNear(ring1MaxAbsX, 0.9, 0.02, 'The first shoulder ring reaches the outer contour jamb.');
+        assertTrue(ring1HasInnerEdge, 'The first shoulder ring stops at the middle contour jamb.');
+        assertTrue(ring1CrownVert, 'The shoulder ring follows the arch over the crown (no flat lintel).');
+
+        // The per-step material override adds exactly one facade material.
+        const plain = buildAi511Parts({
+            insets: [
+                { widthPaddingMeters: 0.18, bottomPaddingMeters: 0.0, depthMeters: 0.1 },
+                { widthPaddingMeters: 0.12, bottomPaddingMeters: 0.0, depthMeters: 0.08 }
+            ]
+        });
+        const matsWith = Array.isArray(facadeMesh.material) ? facadeMesh.material : [facadeMesh.material];
+        const plainMesh = ai511FacadeMesh(plain);
+        const matsPlain = Array.isArray(plainMesh.material) ? plainMesh.material : [plainMesh.material];
+        assertEqual(matsWith.length, matsPlain.length + 1, 'A pbr step override registers one dedicated facade material.');
+
+        // AI 507 extended: the interior shell must clear the INNERMOST frame
+        // plane (0.18m steps + 0.05m frame inset); the step faces between are
+        // facade-owned, never shell.
+        const innermostBehind = 0.23;
+        const interiorWalls = (parts.solidMeshes ?? []).filter(
+            (m) => m?.userData?.buildingFab2Role === 'interior' && m?.userData?.buildingFab2InteriorKind === 'wall'
+        );
+        assertTrue(interiorWalls.length > 0, 'Expected the interior shell.');
+        for (const mesh of interiorWalls) {
+            const spos = mesh.geometry.getAttribute('position');
+            for (let i = 0; i < spos.count; i++) {
+                const behind = 5.0 - spos.getZ(i);
+                if (!(behind > -1e-3 && behind < innermostBehind - 1e-3)) continue;
+                const sx = spos.getX(i);
+                const sy = spos.getY(i) + mesh.position.y - facadeMesh.position.y;
+                // The whole OUTER contour region must be shell-free in front
+                // of the frame plane — a leaked inset stack re-emitted on the
+                // shell shows up here (it did once: white plaster rings over
+                // the brick steps).
+                const insideCut = Math.abs(sx) < 0.85 && sy > 1.0 && sy < 3.0;
+                assertTrue(!insideCut, `Shell geometry at (${sx.toFixed(2)}, ${sy.toFixed(2)}) sits inside the inset stack in front of the frame plane (AI 507/511).`);
+            }
+        }
+    });
+
+    test('BuildingFabricationGenerator: an opening without insets builds byte-identical wall geometry (AI 511)', () => {
+        const bare = buildAi511Parts({ insets: undefined });
+        const empty = buildAi511Parts({ insets: [] });
+        const meshA = ai511FacadeMesh(bare);
+        const meshB = ai511FacadeMesh(empty);
+        const posA = meshA.geometry.getAttribute('position').array;
+        const posB = meshB.geometry.getAttribute('position').array;
+        const uvA = meshA.geometry.getAttribute('uv').array;
+        const uvB = meshB.geometry.getAttribute('uv').array;
+        assertEqual(posA.length, posB.length, 'Same facade vertex count without insets.');
+        for (let i = 0; i < posA.length; i++) {
+            if (posA[i] !== posB[i]) {
+                assertTrue(false, `Facade position [${i}] diverged: ${posA[i]} vs ${posB[i]}.`);
+            }
+        }
+        assertEqual(uvA.length, uvB.length, 'Same facade uv count without insets.');
+        for (let i = 0; i < uvA.length; i++) {
+            if (uvA[i] !== uvB[i]) {
+                assertTrue(false, `Facade uv [${i}] diverged: ${uvA[i]} vs ${uvB[i]}.`);
+            }
+        }
+        const groupsA = meshA.geometry.groups.map((g) => `${g.start}/${g.count}/${g.materialIndex}`).join('|');
+        const groupsB = meshB.geometry.groups.map((g) => `${g.start}/${g.count}/${g.materialIndex}`).join('|');
+        assertEqual(groupsA, groupsB, 'Same facade material groups without insets.');
+
+        // Sanity: adding insets does change the wall (the guard above is not
+        // vacuously comparing two inset builds).
+        const withInsets = buildAi511Parts({ insets: [{ widthPaddingMeters: 0.15, depthMeters: 0.08 }] });
+        const posC = ai511FacadeMesh(withInsets).geometry.getAttribute('position').array;
+        assertTrue(posC.length !== posA.length, 'Insets must add step geometry to the facade wall.');
+    });
+
+    test('WindowFabricationCatalog: opening insets normalize (AI 511)', () => {
+        assertEqual(normalizeOpeningInsetsConfig(null), null, 'Missing insets normalize to null.');
+        assertEqual(normalizeOpeningInsetsConfig([]), null, 'Empty insets normalize to null.');
+        const steps = normalizeOpeningInsetsConfig([
+            { marginMeters: 0.2, depthMeters: 99 },
+            { widthPaddingMeters: 99, topPaddingMeters: -5, bottomPaddingMeters: 99, depthMeters: 0.001, material: { mode: 'pbr', materialId: 'pbr.limestone_smooth' } },
+            { enabled: false, marginMeters: 0.5 },
+            { marginMeters: 0.1 },
+            { marginMeters: 0.1 }
+        ]);
+        assertEqual(steps.length, 3, 'Disabled steps drop; the stack caps at 3.');
+        assertNear(steps[0].widthPaddingMeters, 0.2, 1e-9, 'marginMeters seeds the width padding.');
+        assertNear(steps[0].topPaddingMeters, 0.2, 1e-9, 'marginMeters seeds the top padding.');
+        assertNear(steps[0].bottomPaddingMeters, 0.2, 1e-9, 'marginMeters seeds the bottom padding.');
+        assertNear(steps[0].depthMeters, 0.6, 1e-9, 'Step depth clamps to max.');
+        assertEqual(steps[0].material, null, 'No authored material stays null (wall).');
+        assertNear(steps[1].widthPaddingMeters, 0.6, 1e-9, 'Width padding clamps to max.');
+        assertNear(steps[1].topPaddingMeters, 0.0, 1e-9, 'Top padding clamps to min.');
+        assertNear(steps[1].bottomPaddingMeters, 1.5, 1e-9, 'Bottom padding clamps to max.');
+        assertNear(steps[1].depthMeters, 0.02, 1e-9, 'Step depth clamps to min.');
+        assertEqual(steps[1].material?.mode, 'pbr', 'The pbr step material survives.');
+        assertEqual(steps[1].material?.materialId, 'pbr.limestone_smooth', 'The step material id survives.');
+        assertNear(steps[2].widthPaddingMeters, 0.1, 1e-9, 'Third surviving step keeps its margin.');
+
+        const wrapped = normalizeOpeningInsetsConfig({ steps: [{ marginMeters: 0.15, depthMeters: 0.1 }] });
+        assertEqual(wrapped?.length, 1, 'The {steps: []} wrapper form is accepted.');
+        assertNear(wrapped[0].depthMeters, 0.1, 1e-9, 'Wrapped step depth survives.');
+    });
+
+    // ===== AI 512: N-face facade model =====
+
+    const AI512_L_LOOP = [
+        { x: -15, z: 12 },
+        { x: 15, z: 12 },
+        { x: 15, z: -12 },
+        { x: 1, z: -12 },
+        { x: 1, z: -2 },
+        { x: -15, z: -2 }
+    ];
+    const AI512_HEX_LOOP = (() => {
+        const E = 14;
+        const H = E * Math.sin(Math.PI / 3);
+        return [
+            { x: -E / 2, z: H },
+            { x: E / 2, z: H },
+            { x: E, z: 0 },
+            { x: E / 2, z: -H },
+            { x: -E / 2, z: -H },
+            { x: -E, z: 0 }
+        ];
+    })();
+
+    test('BuildingFabricationGenerator: rect footprints keep resolving to the same A–D frames (AI 512)', () => {
+        const resolveN = buildingFabricationGeneratorTestOnly?.computeFacadeFramesFromLoop ?? null;
+        const resolveQuad = buildingFabricationGeneratorTestOnly?.computeQuadFacadeFramesFromLoop ?? null;
+        assertTrue(typeof resolveN === 'function' && typeof resolveQuad === 'function', 'Expected frame resolvers.');
+        const rect = [
+            { x: -21, z: 11 },
+            { x: 21, z: 11 },
+            { x: 21, z: -11 },
+            { x: -21, z: -11 }
+        ];
+        const a = resolveN(rect, {});
+        const b = resolveQuad(rect, {});
+        assertTrue(!!a && !!b, 'Both resolvers accept the rect.');
+        assertEqual(a.order.join(''), 'ABCD', 'Rects keep the A–D order.');
+        for (const faceId of ['A', 'B', 'C', 'D']) {
+            assertNear(a[faceId].start.x, b[faceId].start.x, 1e-9, `Face ${faceId} start x unchanged.`);
+            assertNear(a[faceId].start.z, b[faceId].start.z, 1e-9, `Face ${faceId} start z unchanged.`);
+            assertNear(a[faceId].end.x, b[faceId].end.x, 1e-9, `Face ${faceId} end x unchanged.`);
+            assertNear(a[faceId].n.x, b[faceId].n.x, 1e-9, `Face ${faceId} normal unchanged.`);
+            assertNear(a[faceId].length, b[faceId].length, 1e-9, `Face ${faceId} length unchanged.`);
+        }
+        assertNear(a.A.n.z, 1, 1e-9, 'A still faces +z.');
+        assertNear(a.B.n.x, 1, 1e-9, 'B still faces +x.');
+    });
+
+    test('BuildingFabricationGenerator: L and hexagon footprints derive N loop-chained faces (AI 512)', () => {
+        const resolveN = buildingFabricationGeneratorTestOnly?.computeFacadeFramesFromLoop ?? null;
+        const warnings = [];
+        const L = resolveN(AI512_L_LOOP, { warnings });
+        assertTrue(!!L, 'The L footprint resolves.');
+        assertEqual(L.order.join(''), 'ABCDEF', 'The L derives six faces in loop order.');
+        assertNear(L.A.n.z, 1, 1e-9, 'L face A is the street front (+z).');
+        assertNear(L.A.length, 30, 1e-6, 'L face A spans the full front.');
+        assertNear(L.D.n.x, -1, 1e-9, 'L face D is the notch side (-x).');
+        assertNear(L.D.length, 10, 1e-6, 'L face D length.');
+        assertNear(L.E.n.z, -1, 1e-9, 'L face E is the notch back (-z).');
+        assertNear(L.E.length, 16, 1e-6, 'L face E length.');
+        for (let i = 0; i < L.order.length; i++) {
+            const aId = L.order[i];
+            const bId = L.order[(i + 1) % L.order.length];
+            assertNear(L[aId].end.x, L[bId].start.x, 1e-6, `L faces chain ${aId}→${bId} (x).`);
+            assertNear(L[aId].end.z, L[bId].start.z, 1e-6, `L faces chain ${aId}→${bId} (z).`);
+        }
+        assertTrue(!warnings.some((w) => String(w).includes('not a simple 4-face loop')), 'No quad fallback warning for the L.');
+
+        const hex = resolveN(AI512_HEX_LOOP, {});
+        assertTrue(!!hex, 'The hexagon resolves.');
+        assertEqual(hex.order.join(''), 'ABCDEF', 'The hexagon derives six faces.');
+        for (const faceId of hex.order) {
+            assertNear(hex[faceId].length, 14, 1e-6, `Hex face ${faceId} keeps its 14m run.`);
+        }
+        // Every corner is a 120° meeting: consecutive tangents rotate by 60°.
+        for (let i = 0; i < hex.order.length; i++) {
+            const t0 = hex[hex.order[i]].t;
+            const t1 = hex[hex.order[(i + 1) % 6]].t;
+            const dot = t0.x * t1.x + t0.z * t1.z;
+            assertNear(dot, 0.5, 1e-6, 'Hex tangents turn 60° per corner.');
+        }
+    });
+
+    test('BuildingFabricationGenerator: acute corners cap the mitre with a bevel pair (AI 512)', () => {
+        const pair = buildingFabricationGeneratorTestOnly?.cornerJoinPairWithDepths ?? null;
+        assertTrue(typeof pair === 'function', 'Expected cornerJoinPairWithDepths helper.');
+        // A 90° corner mitres to ONE shared join.
+        const aSq = { end: { x: 0, z: 0 }, t: { x: 1, z: 0 }, n: { x: 0, z: 1 } };
+        const bSq = { start: { x: 0, z: 0 }, t: { x: 0, z: -1 }, n: { x: 1, z: 0 } };
+        const sq = pair(aSq, 0.4, bSq, 0.4, null);
+        assertNear(sq.aEnd.x, sq.bStart.x, 1e-9, 'Square corner mitres to one point (x).');
+        assertNear(sq.aEnd.z, sq.bStart.z, 1e-9, 'Square corner mitres to one point (z).');
+        assertNear(sq.aEnd.x, 0.4, 1e-6, 'Square mitre offsets by both depths.');
+        assertNear(sq.aEnd.z, 0.4, 1e-6, 'Square mitre offsets by both depths (z).');
+
+        // A 20° wedge pointing +x: the offset mitre would run d/sin(10°) ≈
+        // 2.9m past the corner — over the limit, so each face ends on its own
+        // offset corner instead (the synthetic bevel pair).
+        const phi = (10 * Math.PI) / 180;
+        const aAcute = { end: { x: 0, z: 0 }, t: { x: Math.cos(phi), z: -Math.sin(phi) }, n: { x: Math.sin(phi), z: Math.cos(phi) } };
+        const bAcute = { start: { x: 0, z: 0 }, t: { x: -Math.cos(phi), z: -Math.sin(phi) }, n: { x: Math.sin(phi), z: -Math.cos(phi) } };
+        const acute = pair(aAcute, 0.5, bAcute, 0.5, null);
+        const spread = Math.hypot(acute.aEnd.x - acute.bStart.x, acute.aEnd.z - acute.bStart.z);
+        assertTrue(spread > 1e-3, 'Acute corner falls back to a bevel pair (two points).');
+        // The pair quantizes to the geometry grid (qf): compare at mm scale.
+        assertNear(acute.aEnd.x, aAcute.n.x * 0.5, 2e-3, 'Bevel pair aEnd sits on face a\'s own offset corner.');
+        assertNear(acute.bStart.x, bAcute.n.x * 0.5, 2e-3, 'Bevel pair bStart sits on face b\'s own offset corner.');
+        const spike = Math.hypot(acute.aEnd.x, acute.aEnd.z);
+        assertTrue(spike < 1.0, 'Neither bevel point spikes past the corner.');
+    });
+
+    const buildAi512Parts = ({ footprintLoops, layers, facades, attachments = null }) => {
+        const { map, generatorConfig, tileSize } = makeBalconyTestMap();
+        return buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            footprintLoops,
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            attachments,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+    };
+
+    const ai512WindowBay = (id, widthMeters, repeat) => ({
+        id,
+        size: { mode: 'range', minMeters: 2.0, maxMeters: null },
+        expandPreference: 'prefer_expand',
+        window: {
+            enabled: true,
+            defId: 'window_white_sash_2x2',
+            assetType: 'window',
+            size: { widthMeters, heightMeters: 1.9 },
+            heightMode: 'fixed',
+            verticalOffsetMeters: 0.7,
+            width: { minMeters: widthMeters, maxMeters: null },
+            padding: { leftMeters: 0.2, rightMeters: 0.2 },
+            repeat: { count: repeat },
+            visual: { disableShades: true, interior: 'none' }
+        }
+    });
+    const ai512FaceLayout = (prefix, widthMeters, repeat) => ({
+        layout: {
+            bays: {
+                items: [
+                    { id: `${prefix}_p1`, size: { mode: 'fixed', widthMeters: 0.7 }, expandPreference: 'no_repeat' },
+                    ai512WindowBay(`${prefix}_w2`, widthMeters, repeat),
+                    { id: `${prefix}_p3`, size: { mode: 'fixed', widthMeters: 0.7 }, expandPreference: 'no_repeat' }
+                ]
+            }
+        }
+    });
+
+    const ai512CountWindowsByFace = (parts, loop) => {
+        const resolveN = buildingFabricationGeneratorTestOnly.computeFacadeFramesFromLoop;
+        const frames = resolveN(loop, {});
+        const counts = {};
+        for (const faceId of frames.order) counts[faceId] = 0;
+        const group = parts?.windows ?? null;
+        assertTrue(!!group, 'Expected the windows group.');
+        const dummies = [];
+        group.traverse((o) => {
+            if (!o?.isInstancedMesh) return;
+            if (o.userData?.buildingWindowSource === 'bf2_window_decoration') return;
+            const m = new THREE.Matrix4();
+            const p = new THREE.Vector3();
+            for (let i = 0; i < o.count; i++) {
+                o.getMatrixAt(i, m);
+                p.setFromMatrixPosition(m);
+                dummies.push({ x: p.x, z: p.z });
+            }
+        });
+        for (const p of dummies) {
+            let best = null;
+            let bestAbsDepth = Infinity;
+            for (const faceId of frames.order) {
+                const f = frames[faceId];
+                const dx = p.x - f.start.x;
+                const dz = p.z - f.start.z;
+                const u = dx * f.t.x + dz * f.t.z;
+                const depth = dx * f.n.x + dz * f.n.z;
+                if (u < -0.5 || u > f.length + 0.5) continue;
+                if (Math.abs(depth) < bestAbsDepth) {
+                    bestAbsDepth = Math.abs(depth);
+                    best = faceId;
+                }
+            }
+            if (best && bestAbsDepth < 1.0) counts[best] += 1;
+        }
+        return counts;
+    };
+
+    test('BuildingFabricationGenerator: an L solves bays and windows on every face (AI 512)', () => {
+        const facades = {
+            A: ai512FaceLayout('a', 1.4, 3),
+            B: ai512FaceLayout('b', 1.4, 3),
+            C: ai512FaceLayout('c', 1.4, 2),
+            D: ai512FaceLayout('d', 1.2, 2),
+            E: ai512FaceLayout('e', 1.4, 3),
+            F: ai512FaceLayout('f', 1.4, 2)
+        };
+        const parts = buildAi512Parts({
+            footprintLoops: [AI512_L_LOOP],
+            layers: [
+                createDefaultFloorLayer({ id: 'floor_512L', floors: 2, floorHeight: 3.2, belt: { enabled: false }, windows: { enabled: false }, interior: { enabled: true } }),
+                createDefaultRoofLayer({ ring: { enabled: false } })
+            ],
+            facades
+        });
+        assertTrue(!(parts.warnings ?? []).some((w) => String(w).includes('not a simple 4-face loop')), 'The L never falls back to the quad refusal.');
+        const counts = ai512CountWindowsByFace(parts, AI512_L_LOOP);
+        for (const faceId of ['A', 'B', 'C', 'D', 'E', 'F']) {
+            assertTrue(counts[faceId] > 0, `L face ${faceId} must place windows, got ${counts[faceId]}.`);
+        }
+        const facadeMeshes = (parts.solidMeshes ?? []).filter((m) => m?.userData?.buildingFab2WallKind === 'facade');
+        assertTrue(facadeMeshes.length > 0, 'The L builds facade wall meshes.');
+    });
+
+    test('BuildingFabricationGenerator: a hexagon solves bays and windows on every face (AI 512)', () => {
+        const facades = {
+            A: ai512FaceLayout('a', 1.4, 3),
+            B: ai512FaceLayout('b', 1.4, 3),
+            C: ai512FaceLayout('c', 1.4, 3),
+            D: ai512FaceLayout('d', 1.4, 3),
+            E: ai512FaceLayout('e', 1.4, 3),
+            F: ai512FaceLayout('f', 1.4, 3)
+        };
+        const parts = buildAi512Parts({
+            footprintLoops: [AI512_HEX_LOOP],
+            layers: [
+                createDefaultFloorLayer({ id: 'floor_512H', floors: 2, floorHeight: 3.2, belt: { enabled: false }, windows: { enabled: false }, interior: { enabled: true } }),
+                createDefaultRoofLayer({ ring: { enabled: false } })
+            ],
+            facades
+        });
+        const counts = ai512CountWindowsByFace(parts, AI512_HEX_LOOP);
+        for (const faceId of ['A', 'B', 'C', 'D', 'E', 'F']) {
+            assertTrue(counts[faceId] > 0, `Hex face ${faceId} must place windows, got ${counts[faceId]}.`);
+        }
+        // The wall loop's silhouette must stay near the footprint: no mitre
+        // spike may throw a vertex far outside the hex bounds.
+        const facadeMeshes = (parts.solidMeshes ?? []).filter((m) => m?.userData?.buildingFab2WallKind === 'facade');
+        assertTrue(facadeMeshes.length > 0, 'The hexagon builds facade wall meshes.');
+        for (const mesh of facadeMeshes) {
+            const pos = mesh.geometry.getAttribute('position');
+            for (let i = 0; i < pos.count; i++) {
+                const r = Math.hypot(pos.getX(i), pos.getZ(i));
+                assertTrue(r < 16.5, `Hex wall vertex at radius ${r.toFixed(2)} spikes past the footprint.`);
+            }
+        }
     });
 
     // ===== AI 503: capital/impost projection must stand OUT of the wall =====

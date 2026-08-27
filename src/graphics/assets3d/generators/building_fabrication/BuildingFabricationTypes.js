@@ -462,10 +462,15 @@ export function normalizeFacadeBandingConfig(value) {
     return out;
 }
 
-const FACE_IDS = Object.freeze(['A', 'B', 'C', 'D']);
-
+// AI 512: N-face model — a face id is any single letter A-Z (rects keep
+// resolving to A-D; N-gon footprints generate E, F, ... in loop order).
 function isFaceId(faceId) {
-    return faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D';
+    return typeof faceId === 'string' && faceId.length === 1 && faceId >= 'A' && faceId <= 'Z';
+}
+
+function faceIdKeysOf(spec) {
+    if (!spec || typeof spec !== 'object') return [];
+    return Object.keys(spec).filter(isFaceId);
 }
 
 function normalizeFaceLinkingConfig(value) {
@@ -513,7 +518,7 @@ function normalizeFaceMaterialConfigs(value, { layerDefaults, faceLinking }) {
     }
 
     const out = {};
-    for (const faceId of FACE_IDS) {
+    for (const faceId of faceIdKeysOf(src)) {
         if (slaveFaces.has(faceId)) continue;
 
         const cfg = src?.[faceId];

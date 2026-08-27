@@ -95,7 +95,14 @@ const DECORATION_FLOOR_INTERVAL_PRESET = Object.freeze({
 const FOOTPRINT_PRESET_SIZES_M = Object.freeze([10, 16, 20, 25, 30, 36]);
 
 function isFaceId(faceId) {
-    return faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D';
+    // AI 512: N-face model — any single letter A-Z.
+    return typeof faceId === 'string' && faceId.length === 1 && faceId >= 'A' && faceId <= 'Z';
+}
+
+// AI 512: the face keys a facade spec object actually authors.
+function facadeSpecFaceKeys(spec) {
+    if (!spec || typeof spec !== 'object') return [];
+    return Object.keys(spec).filter(isFaceId);
 }
 
 function resolveBayLinkFromSpec(bay) {
@@ -878,6 +885,8 @@ export class BuildingFabrication2UI {
         this._decorationSets = [];
         this._decorationLayerOptions = [];
         this._decorationBayOptionsByLayerId = {};
+        // AI 512: current footprint's resolved faces (ids + plan-view edges).
+        this._facadeFacePlan = null;
         this._decorationSetOpenById = new Map();
         this._decorationEntryTabByKey = new Map();
         this._decorationLayerPicker = null;
@@ -1228,6 +1237,143 @@ export class BuildingFabrication2UI {
             : {};
         this._renderDecorationPanel();
         if (this.isDecorationLayerPickerOpen()) this._renderDecorationLayerPicker();
+    }
+
+    // AI 512: the resolved N-face plan ({faceIds, segments:[{faceId,a,b}]})
+    // drives the face buttons and the plan-view picker; null falls back to
+    // the static A-D rect model.
+    setFacadeFacePlan(plan) {
+        this._facadeFacePlan = plan && typeof plan === 'object' && Array.isArray(plan.faceIds) && plan.faceIds.length
+            ? plan
+            : null;
+        this._renderLayers();
+    }
+
+    _faceIds() {
+        return this._facadeFacePlan?.faceIds ?? FACE_IDS;
+    }
+
+    // AI 512: plan-view face picker — the letter buttons do not scale to N
+    // faces, so the footprint polygon itself becomes the picker: each edge is
+    // a clickable face, labelled with its id, the selection highlighted.
+    // Renders only when a resolved face plan is present (footprint authored).
+    _appendFacePlanPicker(doc, parent, { selectedFaceId = null, allowEdit = true, onSelect = null } = {}) {
+        const plan = this._facadeFacePlan;
+        const segments = Array.isArray(plan?.segments) ? plan.segments.filter((s) => s?.a && s?.b && isFaceId(s?.faceId)) : [];
+        if (segments.length < 3) return;
+
+        const width = 232;
+        const height = 150;
+        const pad = 18;
+        const canvas = doc.createElement('canvas');
+        canvas.className = 'building-fab2-face-plan';
+        canvas.width = width * 2;
+        canvas.height = height * 2;
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+        canvas.style.display = 'block';
+        canvas.style.margin = '2px auto 6px';
+        canvas.style.cursor = allowEdit ? 'pointer' : 'default';
+
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minZ = Infinity;
+        let maxZ = -Infinity;
+        for (const seg of segments) {
+            for (const p of [seg.a, seg.b]) {
+                const x = Number(p.x) || 0;
+                const z = Number(p.z) || 0;
+                minX = Math.min(minX, x);
+                maxX = Math.max(maxX, x);
+                minZ = Math.min(minZ, z);
+                maxZ = Math.max(maxZ, z);
+            }
+        }
+        const spanX = Math.max(1e-6, maxX - minX);
+        const spanZ = Math.max(1e-6, maxZ - minZ);
+        const scale = Math.min((width - pad * 2) / spanX, (height - pad * 2) / spanZ);
+        const cx = (minX + maxX) * 0.5;
+        const cz = (minZ + maxZ) * 0.5;
+        // Plan view with the front (+z, face A) toward the viewer: +z maps down.
+        const toScreen = (p) => ({
+            x: width * 0.5 + ((Number(p.x) || 0) - cx) * scale,
+            y: height * 0.5 + ((Number(p.z) || 0) - cz) * scale
+        });
+
+        const draw = (hoverFaceId = null) => {
+            const ctx = canvas.getContext('2d');
+            ctx.setTransform(2, 0, 0, 2, 0, 0);
+            ctx.clearRect(0, 0, width, height);
+            ctx.lineCap = 'round';
+            for (const seg of segments) {
+                const a = toScreen(seg.a);
+                const b = toScreen(seg.b);
+                const isSelected = seg.faceId === selectedFaceId;
+                const isHover = seg.faceId === hoverFaceId;
+                ctx.beginPath();
+                ctx.moveTo(a.x, a.y);
+                ctx.lineTo(b.x, b.y);
+                ctx.strokeStyle = isSelected ? '#4da3ff' : (isHover ? '#9fc7f2' : '#6b7078');
+                ctx.lineWidth = isSelected ? 4 : (isHover ? 3.5 : 2.5);
+                ctx.stroke();
+
+                // Label outside the edge midpoint (outward = away from center).
+                const mx = (a.x + b.x) * 0.5;
+                const my = (a.y + b.y) * 0.5;
+                let nx = -(b.y - a.y);
+                let ny = b.x - a.x;
+                const nLen = Math.hypot(nx, ny) || 1;
+                nx /= nLen;
+                ny /= nLen;
+                const toCenterX = width * 0.5 - mx;
+                const toCenterY = height * 0.5 - my;
+                if (nx * toCenterX + ny * toCenterY > 0) {
+                    nx = -nx;
+                    ny = -ny;
+                }
+                ctx.font = isSelected ? 'bold 11px sans-serif' : '10px sans-serif';
+                ctx.fillStyle = isSelected ? '#4da3ff' : '#c9ced6';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(seg.faceId, mx + nx * 11, my + ny * 11);
+            }
+        };
+        draw();
+
+        const pickFaceAt = (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const px = event.clientX - rect.left;
+            const py = event.clientY - rect.top;
+            let best = null;
+            let bestDist = 12;
+            for (const seg of segments) {
+                const a = toScreen(seg.a);
+                const b = toScreen(seg.b);
+                const abx = b.x - a.x;
+                const aby = b.y - a.y;
+                const len2 = abx * abx + aby * aby;
+                const t = len2 > 1e-9 ? Math.max(0, Math.min(1, ((px - a.x) * abx + (py - a.y) * aby) / len2)) : 0;
+                const dx = px - (a.x + abx * t);
+                const dy = py - (a.y + aby * t);
+                const d = Math.hypot(dx, dy);
+                if (d < bestDist) {
+                    bestDist = d;
+                    best = seg.faceId;
+                }
+            }
+            return best;
+        };
+
+        if (allowEdit) {
+            canvas.addEventListener('click', (event) => {
+                const faceId = pickFaceAt(event);
+                if (faceId) onSelect?.(faceId);
+            });
+            canvas.addEventListener('mousemove', (event) => draw(pickFaceAt(event)));
+            canvas.addEventListener('mouseleave', () => draw());
+        }
+
+        parent.appendChild(canvas);
     }
 
     setCornerTreatment(value) {
@@ -2279,7 +2425,7 @@ export class BuildingFabrication2UI {
             ? this._facadesByLayerId[id]
             : null;
         if (!layerFacades) return out;
-        for (const faceId of FACE_IDS) {
+        for (const faceId of facadeSpecFaceKeys(layerFacades)) {
             const facade = layerFacades?.[faceId] && typeof layerFacades[faceId] === 'object'
                 ? layerFacades[faceId]
                 : null;
@@ -2534,7 +2680,7 @@ export class BuildingFabrication2UI {
                 hint.textContent = 'Selected layer has no bays yet.';
                 setBody.appendChild(hint);
             } else {
-                const byFace = new Map(FACE_IDS.map((faceId) => [faceId, []]));
+                const byFace = new Map(this._faceIds().map((faceId) => [faceId, []]));
                 for (const bay of bayOptions) {
                     const faceId = isFaceId(bay?.faceId) ? bay.faceId : null;
                     if (!faceId) continue;
@@ -2544,7 +2690,7 @@ export class BuildingFabrication2UI {
                 baySelector.className = 'building-fab2-decoration-bay-selector';
                 setBody.appendChild(baySelector);
 
-                for (const faceId of FACE_IDS) {
+                for (const faceId of this._faceIds()) {
                     const faceBays = byFace.get(faceId) ?? [];
                     if (!faceBays.length) continue;
                     const row = document.createElement('div');
@@ -3637,8 +3783,17 @@ export class BuildingFabrication2UI {
                 const faceButtonsRow = document.createElement('div');
                 faceButtonsRow.className = 'building-fab2-face-buttons';
 
+                this._appendFacePlanPicker(faceButtonsRow.ownerDocument, body, {
+                    selectedFaceId,
+                    allowEdit,
+                    onSelect: (faceId) => {
+                        this.closeLinkPopup();
+                        const next = faceId === selectedFaceId ? null : faceId;
+                        this.onSelectFace?.(layerId, next);
+                    }
+                });
                 const relatedFaces = this._getRelatedFacesForLayer({ selectedFaceId, lockedToByFace });
-                for (const faceId of FACE_IDS) {
+                for (const faceId of this._faceIds()) {
                     const btn = document.createElement('button');
                     btn.type = 'button';
                     btn.className = 'building-fab2-face-btn';
@@ -6303,7 +6458,7 @@ export class BuildingFabrication2UI {
                     onChange: (v) => patchItem(index, { target: { ...(item?.target ?? {}), layerId: v } })
                 });
                 makeSelectRowIn(itemBox, 'Face', {
-                    options: FACE_IDS.map((id) => ({ id, label: id })),
+                    options: this._faceIds().map((id) => ({ id, label: id })),
                     value: typeof item?.target?.faceId === 'string' ? item.target.faceId : 'A',
                     onChange: (v) => patchItem(index, { target: { ...(item?.target ?? {}), faceId: v } })
                 });
@@ -7538,7 +7693,7 @@ export class BuildingFabrication2UI {
         const lockedTo = lockedToByFace.get(selected) ?? null;
         const master = lockedTo ?? selected;
 
-        for (const faceId of FACE_IDS) {
+        for (const faceId of this._faceIds()) {
             if (faceId === master) out.add(faceId);
             if ((lockedToByFace.get(faceId) ?? null) === master) out.add(faceId);
         }
@@ -7728,7 +7883,7 @@ export class BuildingFabrication2UI {
         const grid = document.createElement('div');
         grid.className = 'building-fab2-link-grid';
 
-        for (const faceId of FACE_IDS) {
+        for (const faceId of this._faceIds()) {
             const card = document.createElement('div');
             card.className = 'building-fab2-link-face-card';
 

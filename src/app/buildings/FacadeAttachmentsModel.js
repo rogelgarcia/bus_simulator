@@ -17,7 +17,8 @@ export const FACADE_ATTACHMENT_TYPE = Object.freeze({
     FIRE_ESCAPE: 'fire_escape'
 });
 
-const FACE_IDS = Object.freeze(['A', 'B', 'C', 'D']);
+// AI 512: N-face model — a face id is any single letter A-Z.
+const isFaceId = (id) => typeof id === 'string' && id.length === 1 && id >= 'A' && id <= 'Z';
 const OPENING_ASSET_TYPES = Object.freeze(['window', 'door', 'garage', 'storefront']);
 
 function clamp(value, min, max, fallback = min) {
@@ -111,7 +112,7 @@ function normalizeFireEscapeItem(src, index) {
         type: FACADE_ATTACHMENT_TYPE.FIRE_ESCAPE,
         target: {
             layerId: typeof targetSrc.layerId === 'string' && targetSrc.layerId ? targetSrc.layerId : null,
-            faceId: FACE_IDS.includes(faceIdRaw) ? faceIdRaw : 'A',
+            faceId: isFaceId(faceIdRaw) ? faceIdRaw : 'A',
             bayId: typeof targetSrc.bayId === 'string' ? targetSrc.bayId : ''
         },
         floors: {

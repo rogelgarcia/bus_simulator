@@ -4,6 +4,7 @@ import * as THREE from 'three';
 
 import { getBuildingConfigById, getBuildingConfigs } from '../../content3d/catalogs/BuildingConfigCatalog.js';
 import { createLayerId, normalizeCorniceConfig, normalizeCornerTreatmentConfig, normalizeFacadeBandingConfig } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
+import { computeFacadeFramesFromLoop } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
 import { normalizeBuildingMaterialSlotsConfig } from '../../../app/buildings/BuildingMaterialSlots.js';
 import {
     buildingConfigIdToFileBaseName,
@@ -17,6 +18,7 @@ import {
     getWindowFabricationCatalogEntries,
     getWindowFabricationCatalogEntryById,
     getDefaultWindowMeshSettings,
+    normalizeOpeningInsetsConfig,
     normalizePortalConfig,
     normalizeStorefrontConfig,
     PARALLAX_INTERIOR_PRESET_ID,
@@ -295,7 +297,8 @@ function applyBaseWallMaterialFallbackToFloorLayers(config) {
 }
 
 function isFaceId(faceId) {
-    return faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D';
+    // AI 512: N-face model — any single letter A-Z.
+    return typeof faceId === 'string' && faceId.length === 1 && faceId >= 'A' && faceId <= 'Z';
 }
 
 function normalizeFaceLinking(value) {
@@ -346,6 +349,7 @@ function createFaceLockMapFromConfigLayer(layer) {
     if (!links) return out;
     for (const [slave, master] of Object.entries(links)) {
         if (!isFaceId(slave) || !isFaceId(master)) continue;
+        // AI 512: N-face links (E, F, ...) extend the seeded A-D map.
         out.set(slave, master);
     }
     return out;
@@ -1283,6 +1287,24 @@ export class BuildingFabrication2View {
             .filter((e) => !!e.id);
     }
 
+    // AI 512: resolve the current footprint's N faces for the UI's plan-view
+    // face picker. Null (no footprint / unresolvable) keeps the A-D fallback.
+    _buildFacadeFacePlanUiState() {
+        const loop = Array.isArray(this._currentConfig?.footprintLoops) ? this._currentConfig.footprintLoops[0] : null;
+        if (!Array.isArray(loop) || loop.length < 3) return null;
+        const frames = computeFacadeFramesFromLoop(loop, { warnings: null });
+        if (!frames) return null;
+        const faceIds = Array.isArray(frames.order) ? frames.order : ['A', 'B', 'C', 'D'];
+        return {
+            faceIds,
+            segments: faceIds.map((faceId) => ({
+                faceId,
+                a: { x: Number(frames[faceId]?.start?.x) || 0, z: Number(frames[faceId]?.start?.z) || 0 },
+                b: { x: Number(frames[faceId]?.end?.x) || 0, z: Number(frames[faceId]?.end?.z) || 0 }
+            }))
+        };
+    }
+
     _syncUiState() {
         const has = this.scene.getHasBuilding();
         if (!has) this._editorMode = BF2_EDITOR_MODE.BUILDING;
@@ -1350,6 +1372,7 @@ export class BuildingFabrication2View {
         this.ui.setMaterialConfigContext(this._buildMaterialConfigContext());
         this.ui.setWindowDefinitions(this._buildWindowDefinitionsUiModel());
         this.ui.setFacadesByLayerId(this._currentConfig?.facades ?? null);
+        this.ui.setFacadeFacePlan?.(this._buildFacadeFacePlanUiState());
         this.ui.setEditorMode(this._editorMode);
         this.ui.setDecorationEditorState(this._buildDecorationEditorUiState());
         this._syncLayoutSceneState();
@@ -2760,6 +2783,7 @@ export class BuildingFabrication2View {
                     ? normalizeStorefrontConfig(entry?.storefront ?? null)
                     : null,
                 portal: normalizePortalConfig(entry?.portal ?? null),
+                insets: normalizeOpeningInsetsConfig(entry?.insets ?? null),
                 previewUrl,
                 assetType,
                 source: 'legacy'
@@ -2806,7 +2830,8 @@ export class BuildingFabrication2View {
                 ...(assetType === WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT
                     ? { storefront: normalizeStorefrontConfig(entry?.storefront ?? null) }
                     : {}),
-                ...(entry?.portal ? { portal: normalizePortalConfig(entry.portal) ?? undefined } : {})
+                ...(entry?.portal ? { portal: normalizePortalConfig(entry.portal) ?? undefined } : {}),
+                ...(entry?.insets ? { insets: normalizeOpeningInsetsConfig(entry.insets) ?? undefined } : {})
             });
         }
 
@@ -2835,6 +2860,7 @@ export class BuildingFabrication2View {
                     ? normalizeStorefrontConfig(catalog?.storefront ?? null)
                     : null,
                 portal: normalizePortalConfig(catalog?.portal ?? null),
+                insets: normalizeOpeningInsetsConfig(catalog?.insets ?? null),
                 assetType: catalogAssetType,
                 source: 'catalog'
             };
@@ -2859,6 +2885,7 @@ export class BuildingFabrication2View {
                 ? normalizeStorefrontConfig(legacy?.storefront ?? null)
                 : null,
             portal: normalizePortalConfig(legacy?.portal ?? null),
+            insets: normalizeOpeningInsetsConfig(legacy?.insets ?? null),
             assetType,
             source: 'legacy'
         };
@@ -5273,7 +5300,8 @@ export class BuildingFabrication2View {
                 assetType: normalizeOpeningAssetType(catalog?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW),
                 ...(catalog?.decoration ? { decoration: JSON.parse(JSON.stringify(catalog.decoration)) } : {}),
                 ...(catalog?.storefront ? { storefront: JSON.parse(JSON.stringify(catalog.storefront)) } : {}),
-                ...(catalog?.portal ? { portal: JSON.parse(JSON.stringify(catalog.portal)) } : {})
+                ...(catalog?.portal ? { portal: JSON.parse(JSON.stringify(catalog.portal)) } : {}),
+                ...(catalog?.insets ? { insets: JSON.parse(JSON.stringify(catalog.insets)) } : {})
             };
             lib.items.push(entry);
         }

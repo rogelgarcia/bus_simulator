@@ -414,17 +414,18 @@ export function resolveBuildingConfigMaterials({
 
     const outFacades = facades ? deepClone(facades) : facades;
     if (outFacades && typeof outFacades === 'object') {
-        const faceIds = new Set(['A', 'B', 'C', 'D']);
-        const isGlobal = Object.keys(outFacades).some((key) => faceIds.has(key));
+        // AI 512: N-face model — a face key is any single letter A–Z.
+        const isFaceKey = (key) => typeof key === 'string' && key.length === 1 && key >= 'A' && key <= 'Z';
+        const isGlobal = Object.keys(outFacades).some(isFaceKey);
         if (isGlobal) {
             for (const [faceId, facade] of Object.entries(outFacades)) {
-                if (faceIds.has(faceId)) resolveFacadeFaceMaterials(facade, ctx, `Facade ${faceId}`);
+                if (isFaceKey(faceId)) resolveFacadeFaceMaterials(facade, ctx, `Facade ${faceId}`);
             }
         } else {
             for (const [layerId, byFace] of Object.entries(outFacades)) {
                 if (!byFace || typeof byFace !== 'object') continue;
                 for (const [faceId, facade] of Object.entries(byFace)) {
-                    if (faceIds.has(faceId)) resolveFacadeFaceMaterials(facade, ctx, `Facade ${layerId}/${faceId}`);
+                    if (isFaceKey(faceId)) resolveFacadeFaceMaterials(facade, ctx, `Facade ${layerId}/${faceId}`);
                 }
             }
         }
@@ -472,6 +473,11 @@ export function resolveBuildingConfigMaterials({
             }
             if (item.portal && typeof item.portal === 'object') {
                 resolveWindowDecorationMaterials(item.portal, ctx, `Portal definition ${item?.id ?? ''}`);
+            }
+            // AI 511: nested inset steps carry per-step reveal materials in
+            // the same dialect.
+            if (Array.isArray(item.insets)) {
+                resolveWindowDecorationMaterials(item.insets, ctx, `Window insets ${item?.id ?? ''}`);
             }
         }
     }

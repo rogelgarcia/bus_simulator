@@ -180,6 +180,37 @@ export function normalizePortalConfig(value) {
     };
 }
 
+// AI 511: nested wall insets around an opening — REAL carved steps, not
+// appliqué bands. A list of 1..3 steps, OUTERMOST first (the portal-level
+// dialect): each step grows the hole around the next-inner contour by its
+// paddings and recesses `depthMeters` deeper than the plane before it. The
+// opening's frame mounts at the innermost plane. Arch-topped openings grow
+// their steps radially by the width padding (concentric arches), so
+// `topPaddingMeters` only applies to rectangular heads. `material` overrides
+// the wall material on the step's reveal walls and shoulder face (pbr/slot;
+// match_wall keeps the wall run's material).
+export function normalizeOpeningInsetsConfig(value) {
+    const list = Array.isArray(value) ? value : (Array.isArray(value?.steps) ? value.steps : null);
+    if (!list?.length) return null;
+    const steps = [];
+    for (const raw of list) {
+        if (!raw || typeof raw !== 'object') continue;
+        if (raw.enabled === false) continue;
+        const margin = clampNumber(raw.marginMeters, 0.0, 0.6, 0.12);
+        steps.push({
+            widthPaddingMeters: clampNumber(raw.widthPaddingMeters, 0.03, 0.6, Math.max(0.03, margin)),
+            topPaddingMeters: clampNumber(raw.topPaddingMeters, 0.0, 0.6, margin),
+            bottomPaddingMeters: clampNumber(raw.bottomPaddingMeters, 0.0, 1.5, margin),
+            depthMeters: clampNumber(raw.depthMeters, 0.02, 0.6, 0.06),
+            material: raw.material && typeof raw.material === 'object'
+                ? normalizeStorefrontZoneMaterial(raw.material, 'match_wall')
+                : null
+        });
+        if (steps.length >= 3) break;
+    }
+    return steps.length ? steps : null;
+}
+
 function normalizeCatalogEntrySettings(entry) {
     const settings = deepClone(entry?.settings ?? {});
     const assetType = normalizeAssetType(entry?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
@@ -2078,6 +2109,7 @@ function toCatalogResult(entry) {
             ? normalizeStorefrontConfig(entry?.storefront ?? null)
             : null,
         portal: normalizePortalConfig(entry?.portal ?? null),
+        insets: normalizeOpeningInsetsConfig(entry?.insets ?? null),
         layers: deepClone(entry?.layers ?? null),
         wall: deepClone(entry?.wall ?? null),
         ibl: deepClone(entry?.ibl ?? null),

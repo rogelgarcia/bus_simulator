@@ -16,6 +16,7 @@ import {
 } from '../../../../app/buildings/wall_decorators/index.js';
 import {
     getWindowFabricationCatalogEntries,
+    normalizeOpeningInsetsConfig,
     normalizePortalConfig,
     normalizeStorefrontConfig,
     normalizeWindowFabricationAssetType,
@@ -204,8 +205,36 @@ function clampInt(value, min, max) {
     return Math.max(min, Math.min(max, rounded));
 }
 
+// AI 512: N-face model — a face id is any single letter A–Z. Rect footprints
+// keep resolving to A–D; N-gon footprints generate E, F, … in loop order.
 function isFaceId(faceId) {
-    return faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D';
+    return typeof faceId === 'string' && faceId.length === 1 && faceId >= 'A' && faceId <= 'Z';
+}
+
+const FACADE_MAX_FACES = 26;
+// A quad-path connector run wider than this cannot stay an anonymous corner
+// facet: the footprint re-resolves through the N-face path and the chamfer
+// becomes a real face (the AI 499 bevel default stays centimetres, so all
+// existing beveled rects keep their facets).
+const FACADE_QUAD_FACET_MAX_RUN_METERS = 1.55;
+// N-face path: runs shorter than this bridge as corner facets, not faces.
+const FACADE_NFACE_FACET_MAX_RUN_METERS = 0.6;
+
+// The face ids of a resolved frames object, in loop-chain order (each face's
+// end meets the next face's start, possibly across a corner facet).
+function facadeFaceIdsOf(frames) {
+    const order = Array.isArray(frames?.order) ? frames.order : null;
+    return order && order.length ? order : ['A', 'B', 'C', 'D'];
+}
+
+// The face ids a facade/faceMaterials-style config object actually authors.
+function facadeSpecFaceIds(spec) {
+    if (!spec || typeof spec !== 'object') return [];
+    return Object.keys(spec).filter(isFaceId);
+}
+
+function facadeFaceIdAt(index) {
+    return String.fromCharCode(65 + clampInt(index, 0, FACADE_MAX_FACES - 1));
 }
 
 function shouldReverseLinkedFaceBayOrder({ faceId, masterFaceId, reverseByFace }) {
@@ -434,6 +463,64 @@ function resolveOpeningCutMetrics(settings, { cutX = 0, cutY = 0 } = {}) {
         cutX: xRatio,
         cutY: yRatio
     };
+}
+
+// AI 511: nested wall insets — resolve the CONTOUR STACK around an opening
+// cut. Steps are authored OUTERMOST first (the portal-level dialect); their
+// paddings accumulate outward from the opening, so contours[0] is the hole
+// actually carved into the wall face and contours[last] is the opening
+// itself. An arched opening keeps every contour CONCENTRIC with its arch
+// circle: a step grows the radius by its width padding, the top edge rises
+// by exactly that padding, and the step's own rise follows from the chord
+// identity (w'^2/8r' + r'/2 reproduces the grown circle). Rectangular heads
+// grow by the top padding instead.
+function resolveOpeningInsetContours({ cutWidth, cutHeight, cutCenterY, archRise = 0, steps = null } = {}) {
+    const list = Array.isArray(steps) ? steps : [];
+    const w0 = Math.max(EPS, Number(cutWidth) || 0);
+    const h0 = Math.max(EPS, Number(cutHeight) || 0);
+    const cy = Number(cutCenterY) || 0;
+    const rise0 = Math.max(0, Number(archRise) || 0);
+    const wantsArch = rise0 > EPS;
+    let contour = {
+        width: w0,
+        top: cy + h0 * 0.5,
+        bottom: cy - h0 * 0.5,
+        wantsArch,
+        archRise: wantsArch ? rise0 : 0
+    };
+    const contours = [contour];
+    let R = wantsArch ? ((w0 * w0) / (8 * rise0) + rise0 / 2) : 0;
+    // Walk the authored list INNER→OUTER so each step wraps the contour
+    // built so far.
+    for (let i = list.length - 1; i >= 0; i--) {
+        const step = list[i];
+        const wp = clamp(step?.widthPaddingMeters, 0.03, 0.6);
+        const tp = clamp(step?.topPaddingMeters, 0.0, 0.6);
+        const bp = clamp(step?.bottomPaddingMeters, 0.0, 1.5);
+        const width = contour.width + wp * 2;
+        let top;
+        let rise = 0;
+        if (wantsArch) {
+            const grown = R + wp;
+            const halfW = width * 0.5;
+            rise = grown - Math.sqrt(Math.max(0, grown * grown - halfW * halfW));
+            top = contour.top + wp;
+            R = grown;
+        } else {
+            top = contour.top + tp;
+        }
+        const bottom = contour.bottom - bp;
+        contour = {
+            width,
+            top,
+            bottom,
+            wantsArch,
+            archRise: wantsArch ? Math.min(rise, Math.max(0, top - bottom - 0.02)) : 0
+        };
+        contours.push(contour);
+    }
+    contours.reverse();
+    return contours;
 }
 
 // AI 510 (rework): portal LEVEL geometry. A portal is a box inserted into
@@ -903,7 +990,7 @@ function estimateFacadesOutwardDepthMeters(facades) {
         if (!node || typeof node !== 'object') continue;
 
         let hasFaceEntries = false;
-        for (const faceId of ['A', 'B', 'C', 'D']) {
+        for (const faceId of facadeSpecFaceIds(node)) {
             const face = node?.[faceId];
             if (!face || typeof face !== 'object') continue;
             hasFaceEntries = true;
@@ -1391,12 +1478,14 @@ function computeQuadFacadeFramesFromLoop(loop, { warnings = null, tol = 1e-4 } =
         const runByFaceId = {};
         const runIndexByFaceId = {};
         let connectorCount = 0;
+        let maxConnectorLength = 0;
         let mappingOk = true;
         for (let runIndex = 0; runIndex < runs.length; runIndex++) {
             const run = runs[runIndex];
             const faceId = classifyRun(run);
             if (!faceId) {
                 connectorCount += 1;
+                maxConnectorLength = Math.max(maxConnectorLength, Number(run?.length) || 0);
                 continue;
             }
             if (runByFaceId[faceId]) {
@@ -1407,7 +1496,11 @@ function computeQuadFacadeFramesFromLoop(loop, { warnings = null, tol = 1e-4 } =
             runIndexByFaceId[faceId] = runIndex;
         }
 
-        if (mappingOk && runByFaceId.A && runByFaceId.B && runByFaceId.C && runByFaceId.D && connectorCount <= 4) {
+        // AI 512: a connector wide enough to read as a facade is not a corner
+        // facet — refuse the quad mapping so the N-face path promotes it to a
+        // real face.
+        if (mappingOk && runByFaceId.A && runByFaceId.B && runByFaceId.C && runByFaceId.D && connectorCount <= 4
+            && maxConnectorLength <= FACADE_QUAD_FACET_MAX_RUN_METERS) {
             const faceIds = ['A', 'B', 'C', 'D'];
             const normals = Object.freeze({
                 A: { x: 0, z: 1 },
@@ -1511,6 +1604,7 @@ function computeQuadFacadeFramesFromLoop(loop, { warnings = null, tol = 1e-4 } =
                 };
             }
             frames.cornerFacets = cornerFacets;
+            frames.order = ['A', 'B', 'C', 'D'];
 
             return frames;
         }
@@ -1669,6 +1763,160 @@ function computeQuadFacadeFramesFromLoop(loop, { warnings = null, tol = 1e-4 } =
         if (!pointsEqualXZ(a.end, b.start, tol) && w) w.push(`Facade silhouette: corner mismatch at ${faceIds[i]}→${faceIds[(i + 1) % 4]}.`);
     }
 
+    frames.order = ['A', 'B', 'C', 'D'];
+    return frames;
+}
+
+// AI 512: N-face frames. Rect(ish) footprints keep resolving through the quad
+// path above — identical A–D layouts as ever. Anything else (L/V/W wings,
+// hexagons, chamfered corners wider than a facet, arbitrary simple polygons)
+// derives ONE first-class face per exterior run: ids are assigned in loop
+// order starting from the most street-facing run (max outward +z, ties to the
+// longest), which gets 'A'; traversal runs toward the neighbour that leans
+// +x, so a rect-like N-gon still reads A=front, B=right. Runs shorter than
+// FACADE_NFACE_FACET_MAX_RUN_METERS become corner facets between their
+// neighbouring faces, exactly like the AI 499 bevel facets.
+// Exported: the BF2 plan-view face picker resolves the same frames.
+export function computeFacadeFramesFromLoop(loop, { warnings = null, tol = 1e-4 } = {}) {
+    const w = Array.isArray(warnings) ? warnings : null;
+    const quadWarnings = [];
+    const quad = computeQuadFacadeFramesFromLoop(loop, { warnings: quadWarnings, tol });
+    if (quad) {
+        if (w) w.push(...quadWarnings);
+        return quad;
+    }
+
+    const runsRaw = buildExteriorRunsFromLoop(loop);
+    if (runsRaw.length < 3) {
+        if (w) w.push('Facade silhouette: footprint has fewer than 3 exterior runs.');
+        return null;
+    }
+
+    const area = signedArea(loop);
+    const orientRuns = [];
+    for (const run of runsRaw) {
+        const a = run?.a ?? null;
+        const b = run?.b ?? null;
+        if (!a || !b) continue;
+        const t = normalize2({ x: (Number(b.x) || 0) - (Number(a.x) || 0), z: (Number(b.z) || 0) - (Number(a.z) || 0) });
+        if (!(t.len > EPS)) continue;
+        const nRaw = area >= 0 ? rightNormal2(t) : leftNormal2(t);
+        orientRuns.push({
+            a: { x: Number(a.x) || 0, z: Number(a.z) || 0 },
+            b: { x: Number(b.x) || 0, z: Number(b.z) || 0 },
+            t: { x: t.x, z: t.z },
+            n: { x: nRaw.x, z: nRaw.z },
+            length: Number(run?.length) || t.len,
+            isFace: (Number(run?.length) || t.len) >= FACADE_NFACE_FACET_MAX_RUN_METERS
+        });
+    }
+
+    const faceCount = orientRuns.filter((r) => r.isFace).length;
+    if (faceCount < 3) {
+        if (w) w.push('Facade silhouette: footprint has fewer than 3 face-length runs.');
+        return null;
+    }
+    if (faceCount > FACADE_MAX_FACES) {
+        if (w) w.push(`Facade silhouette: footprint has more than ${FACADE_MAX_FACES} faces.`);
+        return null;
+    }
+
+    // Pick the 'A' run: most street-facing (max outward z), ties to length.
+    let startIdx = -1;
+    let bestScore = -Infinity;
+    for (let i = 0; i < orientRuns.length; i++) {
+        const r = orientRuns[i];
+        if (!r.isFace) continue;
+        const score = r.n.z * 1000 + r.length;
+        if (score > bestScore + 1e-9) {
+            bestScore = score;
+            startIdx = i;
+        }
+    }
+    if (startIdx < 0) return null;
+
+    // Traverse toward the neighbouring face that leans +x (so B sits to the
+    // right of the front, like the quad mapping). Reversing the traversal
+    // flips every run's direction but keeps its outward normal.
+    const m = orientRuns.length;
+    const faceAfter = (idx, step) => {
+        for (let k = 1; k <= m; k++) {
+            const r = orientRuns[(idx + step * k + m * k) % m];
+            if (r.isFace) return r;
+        }
+        return null;
+    };
+    const nextFace = faceAfter(startIdx, 1);
+    const prevFace = faceAfter(startIdx, -1);
+    const forward = (Number(nextFace?.n?.x) || 0) >= (Number(prevFace?.n?.x) || 0);
+    const ordered = [];
+    for (let k = 0; k < m; k++) {
+        const idx = forward ? (startIdx + k) % m : (startIdx - k + m * 2) % m;
+        const src = orientRuns[idx];
+        ordered.push(forward ? src : { ...src, a: src.b, b: src.a, t: { x: -src.t.x, z: -src.t.z } });
+    }
+
+    const frames = {};
+    const order = [];
+    const facetRunsBefore = new Map();
+    let pendingFacets = [];
+    for (const run of ordered) {
+        if (!run.isFace) {
+            pendingFacets.push(run);
+            continue;
+        }
+        const faceId = facadeFaceIdAt(order.length);
+        frames[faceId] = {
+            faceId,
+            start: { x: qf(run.a.x), z: qf(run.a.z) },
+            end: { x: qf(run.b.x), z: qf(run.b.z) },
+            t: { x: run.t.x, z: run.t.z },
+            n: { x: run.n.x, z: run.n.z },
+            length: run.length
+        };
+        if (pendingFacets.length) facetRunsBefore.set(faceId, pendingFacets);
+        pendingFacets = [];
+        order.push(faceId);
+    }
+    // Facets between the last face and the first wrap around.
+    if (pendingFacets.length && order.length) {
+        const firstId = order[0];
+        facetRunsBefore.set(firstId, [...(facetRunsBefore.get(firstId) ?? []), ...pendingFacets]);
+    }
+
+    const cornerFacets = {};
+    for (let i = 0; i < order.length; i++) {
+        const aId = order[i];
+        const bId = order[(i + 1) % order.length];
+        const a = frames[aId];
+        const b = frames[bId];
+        const facetRuns = facetRunsBefore.get(bId) ?? null;
+        if (!facetRuns || !facetRuns.length) {
+            if (!pointsEqualXZ(a.end, b.start, tol) && w) {
+                w.push(`Facade silhouette: corner mismatch at ${aId}→${bId}.`);
+            }
+            continue;
+        }
+        if (facetRuns.length > 1 && w) {
+            w.push(`Facade silhouette: merged ${facetRuns.length} short runs into corner facet ${aId}${bId}.`);
+        }
+        const cornerId = `${aId}${bId}`;
+        const t = normalize2({ x: b.start.x - a.end.x, z: b.start.z - a.end.z });
+        if (!(t.len > EPS)) continue;
+        const n = normalize2({ x: a.n.x + b.n.x, z: a.n.z + b.n.z });
+        cornerFacets[cornerId] = {
+            cornerId,
+            faces: [aId, bId],
+            start: { x: qf(a.end.x), z: qf(a.end.z) },
+            end: { x: qf(b.start.x), z: qf(b.start.z) },
+            t: { x: t.x, z: t.z },
+            n: n.len > EPS ? { x: n.x, z: n.z } : { x: t.z, z: -t.x },
+            length: qf(t.len)
+        };
+    }
+
+    frames.cornerFacets = cornerFacets;
+    frames.order = order;
     return frames;
 }
 
@@ -2178,7 +2426,7 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
         const map = new Map();
         for (const entry of cutList) {
             const faceId = typeof entry?.faceId === 'string' ? entry.faceId : '';
-            if (faceId !== 'A' && faceId !== 'B' && faceId !== 'C' && faceId !== 'D') continue;
+            if (!isFaceId(faceId)) continue;
             const x = Number(entry?.x);
             const y = Number(entry?.y);
             const z = Number(entry?.z);
@@ -2190,8 +2438,38 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
             const revealMaterialIndex = Number.isInteger(entry?.revealMaterialIndex) ? entry.revealMaterialIndex : null;
             if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
             if (!Number.isFinite(width) || !Number.isFinite(height) || !(width > EPS) || !(height > EPS)) continue;
+            // AI 511: nested inset stack — inner contours (outer→inner) with
+            // their reveal depth spans and per-step material overrides. Any
+            // malformed entry drops the whole stack (the outer cut still
+            // carves normally).
+            const insetSteps = (() => {
+                const raw = Array.isArray(entry?.insetSteps) ? entry.insetSteps : null;
+                if (!raw?.length) return null;
+                const out = [];
+                for (const s of raw) {
+                    const w = Number(s?.width);
+                    const h = Number(s?.height);
+                    const cy = Number(s?.y);
+                    const frontDepth = Number(s?.frontDepth);
+                    const backDepth = Number(s?.backDepth);
+                    if (!Number.isFinite(w) || !(w > EPS) || !Number.isFinite(h) || !(h > EPS)) return null;
+                    if (!Number.isFinite(cy) || !Number.isFinite(frontDepth) || !Number.isFinite(backDepth)) return null;
+                    out.push({
+                        width: w,
+                        height: h,
+                        y: cy,
+                        wantsArch: !!s?.wantsArch,
+                        archRise: s?.wantsArch ? Math.max(0, Number(s?.archRise) || 0) : 0,
+                        frontDepth: Math.max(0, frontDepth),
+                        backDepth: Math.max(0, backDepth),
+                        ringMaterialIndex: Number.isInteger(s?.ringMaterialIndex) ? s.ringMaterialIndex : null,
+                        revealMaterialIndex: Number.isInteger(s?.revealMaterialIndex) ? s.revealMaterialIndex : null
+                    });
+                }
+                return out.length ? out : null;
+            })();
             const list = map.get(faceId);
-            const item = { faceId, x, y, z, width, height, wantsArch, archRise: wantsArch ? archRise : 0.0, revealDepth, revealMaterialIndex };
+            const item = { faceId, x, y, z, width, height, wantsArch, archRise: wantsArch ? archRise : 0.0, revealDepth, revealMaterialIndex, insetSteps };
             if (list) list.push(item);
             else map.set(faceId, [item]);
         }
@@ -2457,7 +2735,14 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                         wantsArch: !!cut.wantsArch,
                         archRise: Math.max(0, Number(cut.archRise) || 0),
                         revealDepth: Math.max(0, Number(cut.revealDepth) || 0),
-                        revealMaterialIndex: Number.isInteger(cut.revealMaterialIndex) ? cut.revealMaterialIndex : null
+                        revealMaterialIndex: Number.isInteger(cut.revealMaterialIndex) ? cut.revealMaterialIndex : null,
+                        // AI 511: the inset stack only makes sense when the
+                        // slice holds the whole outer contour un-clamped.
+                        insetSteps: (cut.insetSteps
+                            && Math.abs(sx0 - x0) <= EPS && Math.abs(sx1 - x1) <= EPS
+                            && Math.abs(sy0 - y0) <= EPS && Math.abs(sy1 - y1) <= EPS)
+                            ? cut.insetSteps
+                            : null
                     });
                 }
 
@@ -2627,24 +2912,27 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
 
                 // AI 509: a cut may route its reveal walls to a dedicated
                 // material (the portal recess hook) instead of the wall run's.
+                // AI 511: nested insets need reveal walls spanning an arbitrary
+                // depth range, not just [0, depth] off the wall face.
                 let activeRevealMaterialOverride = null;
-                const pushRevealQuad = (x0, y0, x1, y1, depth) => {
-                    if (!(depth > EPS)) return;
+                const pushRevealQuadRange = (x0, y0, x1, y1, d0, d1) => {
+                    if (!(d1 - d0 > EPS)) return;
                     if (!(Math.hypot(x1 - x0, y1 - y0) > minEdge)) return;
                     if (activeRevealMaterialOverride !== null) setActiveMaterialIndex(activeRevealMaterialOverride);
                     else if (normalizedYBands) setActiveMaterialIndex(resolveBandMaterialIndex(matIndex, (y0 + y1) * 0.5));
                     const addDepthToV = Math.abs(y1 - y0) <= 1e-6;
 
-                    pushRevealVertex(x0, y0, 0.0, addDepthToV);
-                    pushRevealVertex(x0, y0, depth, addDepthToV);
-                    pushRevealVertex(x1, y1, depth, addDepthToV);
+                    pushRevealVertex(x0, y0, d0, addDepthToV);
+                    pushRevealVertex(x0, y0, d1, addDepthToV);
+                    pushRevealVertex(x1, y1, d1, addDepthToV);
 
-                    pushRevealVertex(x0, y0, 0.0, addDepthToV);
-                    pushRevealVertex(x1, y1, depth, addDepthToV);
-                    pushRevealVertex(x1, y1, 0.0, addDepthToV);
+                    pushRevealVertex(x0, y0, d0, addDepthToV);
+                    pushRevealVertex(x1, y1, d1, addDepthToV);
+                    pushRevealVertex(x1, y1, d0, addDepthToV);
 
                     curGroupCount += 6;
                 };
+                const pushRevealQuad = (x0, y0, x1, y1, depth) => pushRevealQuadRange(x0, y0, x1, y1, 0.0, depth);
 
                 let revealOverrideWasUsed = false;
                 for (const cut of sliceCuts) {
@@ -2715,6 +3003,161 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                     activeRevealMaterialOverride = null;
                     setActiveMaterialIndex(matIndex);
                 }
+
+                // AI 511: nested inset stacks. The loop above carved the wall
+                // hole to the OUTERMOST contour and walled its reveal down to
+                // the first step plane; here each inner contour adds its
+                // shoulder ring (the visible recessed face between two
+                // contours, parallel to the wall) and its own reveal walls
+                // stepping to the next plane. Ring paths and reveal walks
+                // share one arc sampling so their edges meet exactly.
+                let insetStackWasEmitted = false;
+                for (const cut of sliceCuts) {
+                    const stack = cut.insetSteps;
+                    if (!stack?.length) continue;
+                    insetStackWasEmitted = true;
+                    const centerX = (cut.x0 + cut.x1) * 0.5;
+                    const arcSegments = clampInt(curveSegments, 6, 64);
+                    const localContour = (width, yBottom, yTop, wantsArch, archRise) => {
+                        const halfW = Math.max(EPS, width * 0.5);
+                        const c = {
+                            x0: centerX - halfW,
+                            x1: centerX + halfW,
+                            y0: yBottom,
+                            y1: yTop,
+                            wantsArch: !!wantsArch && archRise > EPS,
+                            archRise: Math.max(0, archRise)
+                        };
+                        if (c.wantsArch && !(c.y1 - c.archRise > c.y0 + EPS)) c.wantsArch = false;
+                        return c;
+                    };
+                    const contourArcYAt = (c) => {
+                        const w = Math.abs(c.x1 - c.x0);
+                        const R = (w * w) / (8 * c.archRise) + c.archRise / 2;
+                        const cx = (c.x0 + c.x1) * 0.5;
+                        const yChord = c.y1 - c.archRise;
+                        const circleY = c.y1 - R;
+                        return (xp) => {
+                            const dxp = xp - cx;
+                            const inner = R * R - dxp * dxp;
+                            if (!(inner > 0)) return yChord;
+                            return circleY + Math.sqrt(inner);
+                        };
+                    };
+                    const addContourPath = (path, c) => {
+                        path.moveTo(c.x0, c.y0);
+                        path.lineTo(c.x1, c.y0);
+                        if (c.wantsArch) {
+                            const yChord = c.y1 - c.archRise;
+                            path.lineTo(c.x1, yChord);
+                            const arcYAt = contourArcYAt(c);
+                            for (let s = 1; s < arcSegments; s++) {
+                                const x = c.x1 + (c.x0 - c.x1) * (s / arcSegments);
+                                path.lineTo(x, arcYAt(x));
+                            }
+                            path.lineTo(c.x0, yChord);
+                        } else {
+                            path.lineTo(c.x1, c.y1);
+                            path.lineTo(c.x0, c.y1);
+                        }
+                        path.closePath();
+                    };
+                    const emitRingFace = (outerC, innerC, depth, materialIndex) => {
+                        // A hole edge flush with the shape edge (zero bottom or
+                        // top padding) breaks the triangulation: pull it 1mm
+                        // inside — the sliver hides behind the reveal arris.
+                        let hc = innerC;
+                        if (hc.y0 <= outerC.y0 + 1e-4) hc = { ...hc, y0: outerC.y0 + 0.001 };
+                        if (!hc.wantsArch && hc.y1 >= outerC.y1 - 1e-4) hc = { ...hc, y1: outerC.y1 - 0.001 };
+                        if (!(hc.y1 - hc.y0 > EPS)) return;
+                        const shape = new THREE.Shape();
+                        addContourPath(shape, outerC);
+                        const hole = new THREE.Path();
+                        addContourPath(hole, hc);
+                        shape.holes.push(hole);
+                        const indexed = new THREE.ShapeGeometry(shape, 1);
+                        const geo = indexed.index ? indexed.toNonIndexed() : indexed;
+                        if (geo !== indexed) indexed.dispose();
+                        const pos = geo.getAttribute('position');
+                        const count = pos?.count ?? 0;
+                        let wantsWindingFlip = false;
+                        for (let k = 0; k + 2 < count; k += 3) {
+                            const ax = pos.getX(k);
+                            const ay = pos.getY(k);
+                            const bx = pos.getX(k + 1);
+                            const by = pos.getY(k + 1);
+                            const cx2 = pos.getX(k + 2);
+                            const cy2 = pos.getY(k + 2);
+                            const triZ = (bx - ax) * (cy2 - ay) - (by - ay) * (cx2 - ax);
+                            if (!(Math.abs(triZ) > 1e-8)) continue;
+                            wantsWindingFlip = triZ > 0;
+                            break;
+                        }
+                        if (materialIndex !== null) setActiveMaterialIndex(materialIndex);
+                        else if (normalizedYBands) setActiveMaterialIndex(resolveBandMaterialIndex(matIndex, (outerC.y0 + outerC.y1) * 0.5));
+                        else setActiveMaterialIndex(matIndex);
+                        for (let k = 0; k + 2 < count; k += 3) {
+                            const order = wantsWindingFlip ? [k, k + 2, k + 1] : [k, k + 1, k + 2];
+                            for (const idx of order) {
+                                const lx = pos.getX(idx);
+                                const ly = pos.getY(idx);
+                                const tU = segLen > EPS ? clamp(lx / segLen, 0, 1) : 0;
+                                positions.push(
+                                    a.x + tx * lx + inwardX * depth,
+                                    ly,
+                                    a.z + tz * lx + inwardZ * depth
+                                );
+                                uvs.push(uAtA + du * tU, v0 + ly);
+                            }
+                        }
+                        curGroupCount += count;
+                        geo.dispose();
+                    };
+                    const emitContourReveal = (c, d0, d1) => {
+                        if (!(d1 - d0 > EPS)) return;
+                        pushRevealQuadRange(c.x0, c.y0, c.x1, c.y0, d0, d1);
+                        if (!c.wantsArch) {
+                            pushRevealQuadRange(c.x1, c.y0, c.x1, c.y1, d0, d1);
+                            pushRevealQuadRange(c.x1, c.y1, c.x0, c.y1, d0, d1);
+                            pushRevealQuadRange(c.x0, c.y1, c.x0, c.y0, d0, d1);
+                            return;
+                        }
+                        const yChord = c.y1 - c.archRise;
+                        const arcYAt = contourArcYAt(c);
+                        pushRevealQuadRange(c.x1, c.y0, c.x1, yChord, d0, d1);
+                        let prevX = c.x1;
+                        let prevY = yChord;
+                        for (let s = 1; s < arcSegments; s++) {
+                            const x = c.x1 + (c.x0 - c.x1) * (s / arcSegments);
+                            const y = arcYAt(x);
+                            pushRevealQuadRange(prevX, prevY, x, y, d0, d1);
+                            prevX = x;
+                            prevY = y;
+                        }
+                        pushRevealQuadRange(prevX, prevY, c.x0, yChord, d0, d1);
+                        pushRevealQuadRange(c.x0, yChord, c.x0, c.y0, d0, d1);
+                    };
+
+                    let prevContour = localContour(cut.x1 - cut.x0, cut.y0, cut.y1, cut.wantsArch, cut.archRise);
+                    for (const entry of stack) {
+                        const c = localContour(
+                            entry.width,
+                            entry.y - entry.height * 0.5,
+                            entry.y + entry.height * 0.5,
+                            entry.wantsArch,
+                            entry.archRise
+                        );
+                        emitRingFace(prevContour, c, entry.frontDepth, entry.ringMaterialIndex);
+                        activeRevealMaterialOverride = entry.revealMaterialIndex;
+                        // A ring override may have switched the group; a
+                        // no-override reveal must not silently join it.
+                        if (entry.revealMaterialIndex === null && !normalizedYBands) setActiveMaterialIndex(matIndex);
+                        emitContourReveal(c, entry.frontDepth, entry.backDepth);
+                        prevContour = c;
+                    }
+                    activeRevealMaterialOverride = null;
+                }
+                if (insetStackWasEmitted) setActiveMaterialIndex(matIndex);
             }
 
             continue;
@@ -5610,7 +6053,7 @@ function buildFacadeSurfaceRunsByFaceId({ facadeStrips, facadeFrames }) {
     if (!strips.length || !facadeFrames) return null;
 
     const byFaceId = {};
-    for (const faceId of ['A', 'B', 'C', 'D']) {
+    for (const faceId of facadeFaceIdsOf(facadeFrames)) {
         const frame = facadeFrames?.[faceId] ?? null;
         if (!frame) continue;
         const tx = Number(frame?.t?.x) || 0;
@@ -5737,8 +6180,9 @@ function projectFacadeCutoutOntoShell(cutout, { frames, shellDepthOf }) {
     const marginPerSide = frameClearsShell ? INTERIOR_SHELL_REVEAL_METERS : -INTERIOR_SHELL_CLEARANCE_METERS;
     const width = Math.max(0.05, (Number(cutout.width) || 0) - marginPerSide * 2);
     const height = Math.max(0.05, (Number(cutout.height) || 0) - marginPerSide * 2);
-    // The facade owns the reveal faces; the shell just needs the hole.
-    return { ...cutout, x: point.x, z: point.z, width, height, revealDepth: 0 };
+    // The facade owns the reveal faces; the shell just needs the hole — an
+    // inset stack (AI 511) must NOT re-emit its step rings on the shell.
+    return { ...cutout, x: point.x, z: point.z, width, height, revealDepth: 0, insetSteps: null };
 }
 
 function cornerJoinPointWithDepths(aFrame, aDepth, bFrame, bDepth, corner) {
@@ -5776,7 +6220,17 @@ function cornerJoinPointWithDepths(aFrame, aDepth, bFrame, bDepth, corner) {
 function cornerJoinPairWithDepths(aFrame, aDepth, bFrame, bDepth, facet) {
     if (!facet) {
         const join = cornerJoinPointWithDepths(aFrame, aDepth, bFrame, bDepth, aFrame?.end ?? null);
-        return { aEnd: join, bStart: join };
+        // AI 512: arbitrary-angle corners cap the mitre. Past the spike limit
+        // (an acute meeting with a real offset) the corner falls back to a
+        // bevel pair: each face ends on its own offset corner and the short
+        // chamfer bridges them, exactly like an authored facet.
+        const cx = Number(aFrame?.end?.x) || 0;
+        const cz = Number(aFrame?.end?.z) || 0;
+        const maxDepth = Math.max(Math.abs(Number(aDepth) || 0), Math.abs(Number(bDepth) || 0));
+        const spikeLimit = Math.max(1.5, maxDepth * 3);
+        if (Math.hypot(join.x - cx, join.z - cz) <= spikeLimit) {
+            return { aEnd: join, bStart: join };
+        }
     }
     const da = Number(aDepth) || 0;
     const db = Number(bDepth) || 0;
@@ -5800,12 +6254,15 @@ function cornerJoinPairWithDepths(aFrame, aDepth, bFrame, bDepth, facet) {
  * the zero-length hops at mitred corners dropped.
  */
 function buildCornerJoinLoopWithDepths({ frames, depthOf }) {
-    const pairs = [
-        cornerJoinPairWithDepths(frames.A, depthOf('A'), frames.B, depthOf('B'), frames?.cornerFacets?.AB ?? null),
-        cornerJoinPairWithDepths(frames.B, depthOf('B'), frames.C, depthOf('C'), frames?.cornerFacets?.BC ?? null),
-        cornerJoinPairWithDepths(frames.C, depthOf('C'), frames.D, depthOf('D'), frames?.cornerFacets?.CD ?? null),
-        cornerJoinPairWithDepths(frames.D, depthOf('D'), frames.A, depthOf('A'), frames?.cornerFacets?.DA ?? null)
-    ];
+    const order = facadeFaceIdsOf(frames);
+    const pairs = order.map((aId, i) => {
+        const bId = order[(i + 1) % order.length];
+        return cornerJoinPairWithDepths(
+            frames[aId], depthOf(aId),
+            frames[bId], depthOf(bId),
+            frames?.cornerFacets?.[`${aId}${bId}`] ?? null
+        );
+    });
     const raw = [];
     for (const pair of pairs) {
         raw.push(pair.aEnd, pair.bStart);
@@ -5854,7 +6311,7 @@ function resolveFacadeFaceIdForExteriorRun({ a, tx, tz, nx, nz, length, frames }
 
     const midX = (Number(a.x) || 0) + tanX * (runLen * 0.5);
     const midZ = (Number(a.z) || 0) + tanZ * (runLen * 0.5);
-    const faceIds = ['A', 'B', 'C', 'D'];
+    const faceIds = facadeFaceIdsOf(frames);
 
     let bestFaceId = null;
     let bestScore = -Infinity;
@@ -6045,14 +6502,20 @@ function computeQuadFacadeSilhouette({
     const main = outerList[0] ?? null;
     if (!main || main.length < 3) return null;
 
-    const frames = computeQuadFacadeFramesFromLoop(main, { warnings });
+    const frames = computeFacadeFramesFromLoop(main, { warnings });
     if (!frames) return null;
+    const faceOrder = facadeFaceIdsOf(frames);
+    const faceCount = faceOrder.length;
+    const cornerIdAt = (i) => `${faceOrder[i % faceCount]}${faceOrder[(i + 1) % faceCount]}`;
 
     // AI 499: corners the plan-edge bevel already cut arrive here as facets
     // between two faces, so those faces end on their own fold line instead of
-    // sharing one mitred corner point.
+    // sharing one mitred corner point. AI 512 adds a second source: an acute
+    // corner whose offset mitre would spike past the limit falls back to the
+    // same fold-line treatment (a synthetic zero-facet bevel).
     const cornerFacets = frames.cornerFacets && typeof frames.cornerFacets === 'object' ? frames.cornerFacets : null;
-    const isBeveledCorner = (cornerId) => !!cornerFacets?.[cornerId];
+    const spikyCorners = new Set();
+    const isBeveledCorner = (cornerId) => !!cornerFacets?.[cornerId] || spikyCorners.has(cornerId);
 
     const pointTol = 1e-4;
     const minEdge = 1e-3;
@@ -6064,44 +6527,40 @@ function computeQuadFacadeSilhouette({
     const fac = facades && typeof facades === 'object' ? facades : null;
     const getFacade = (id) => (fac?.[id] && typeof fac[id] === 'object') ? fac[id] : null;
 
-    const A = buildFacadeFaceProfile({
-        faceId: 'A',
-        frame: frames.A,
-        facade: getFacade('A'),
-        layerMaterial,
-        warnings
-    });
-    const B = buildFacadeFaceProfile({
-        faceId: 'B',
-        frame: frames.B,
-        facade: getFacade('B'),
-        layerMaterial,
-        warnings
-    });
-    const C = buildFacadeFaceProfile({
-        faceId: 'C',
-        frame: frames.C,
-        facade: getFacade('C'),
-        layerMaterial,
-        warnings
-    });
-    const D = buildFacadeFaceProfile({
-        faceId: 'D',
-        frame: frames.D,
-        facade: getFacade('D'),
-        layerMaterial,
-        warnings
-    });
-
-    if (!A.profile.length || !B.profile.length || !C.profile.length || !D.profile.length) {
-        if (warnings) warnings.push('Facade silhouette: missing face profiles.');
-        return null;
+    const profByFaceId = {};
+    for (const faceId of faceOrder) {
+        const prof = buildFacadeFaceProfile({
+            faceId,
+            frame: frames[faceId],
+            facade: getFacade(faceId),
+            layerMaterial,
+            warnings
+        });
+        if (!prof?.profile?.length) {
+            if (warnings) warnings.push('Facade silhouette: missing face profiles.');
+            return null;
+        }
+        profByFaceId[faceId] = prof;
     }
 
-    const joinAB = cornerJoinPointWithDepths(frames.A, A.endDepth, frames.B, B.startDepth, frames.A.end);
-    const joinBC = cornerJoinPointWithDepths(frames.B, B.endDepth, frames.C, C.startDepth, frames.B.end);
-    const joinCD = cornerJoinPointWithDepths(frames.C, C.endDepth, frames.D, D.startDepth, frames.C.end);
-    const joinDA = cornerJoinPointWithDepths(frames.D, D.endDepth, frames.A, A.startDepth, frames.D.end);
+    const joinByCornerId = {};
+    for (let i = 0; i < faceCount; i++) {
+        const aId = faceOrder[i];
+        const bId = faceOrder[(i + 1) % faceCount];
+        const cornerId = `${aId}${bId}`;
+        const aProf = profByFaceId[aId];
+        const bProf = profByFaceId[bId];
+        const join = cornerJoinPointWithDepths(frames[aId], aProf.endDepth, frames[bId], bProf.startDepth, frames[aId].end);
+        joinByCornerId[cornerId] = join;
+        if (!cornerFacets?.[cornerId]) {
+            // AI 512: acute-mitre limit — same rule as cornerJoinPairWithDepths.
+            const cx = Number(frames[aId]?.end?.x) || 0;
+            const cz = Number(frames[aId]?.end?.z) || 0;
+            const maxDepth = Math.max(Math.abs(Number(aProf.endDepth) || 0), Math.abs(Number(bProf.startDepth) || 0));
+            const spikeLimit = Math.max(1.5, maxDepth * 3);
+            if (Math.hypot(join.x - cx, join.z - cz) > spikeLimit) spikyCorners.add(cornerId);
+        }
+    }
 
     const getUAtJoin = (frame, depth, p) => {
         const f = frame && typeof frame === 'object' ? frame : null;
@@ -6208,25 +6667,25 @@ function computeQuadFacadeSilhouette({
         return Math.max(0, segW - minCornerCutBayWidth);
     };
 
-    const facadeA = getFacade('A');
-    const facadeB = getFacade('B');
-    const facadeC = getFacade('C');
-    const facadeD = getFacade('D');
-    const cutWantsByFaceId = {
-        A: resolveCornerCutWants(facadeA),
-        B: resolveCornerCutWants(facadeB),
-        C: resolveCornerCutWants(facadeC),
-        D: resolveCornerCutWants(facadeD)
-    };
+    const cutWantsByFaceId = {};
+    const faceInfoByFaceId = {};
+    for (let i = 0; i < faceCount; i++) {
+        const faceId = faceOrder[i];
+        cutWantsByFaceId[faceId] = resolveCornerCutWants(getFacade(faceId));
+        const startCornerId = cornerIdAt(i - 1 + faceCount);
+        const endCornerId = cornerIdAt(i);
+        faceInfoByFaceId[faceId] = {
+            faceId,
+            frame: frames[faceId],
+            prof: profByFaceId[faceId],
+            startJoin: joinByCornerId[startCornerId],
+            endJoin: joinByCornerId[endCornerId],
+            startCornerId,
+            endCornerId
+        };
+    }
 
-    const faceInfoByFaceId = {
-        A: { faceId: 'A', frame: frames.A, prof: A, startJoin: joinDA, endJoin: joinAB, startCornerId: 'DA', endCornerId: 'AB' },
-        B: { faceId: 'B', frame: frames.B, prof: B, startJoin: joinAB, endJoin: joinBC, startCornerId: 'AB', endCornerId: 'BC' },
-        C: { faceId: 'C', frame: frames.C, prof: C, startJoin: joinBC, endJoin: joinCD, startCornerId: 'BC', endCornerId: 'CD' },
-        D: { faceId: 'D', frame: frames.D, prof: D, startJoin: joinCD, endJoin: joinDA, startCornerId: 'CD', endCornerId: 'DA' }
-    };
-
-    for (const faceId of ['A', 'B', 'C', 'D']) {
+    for (const faceId of faceOrder) {
         const info = faceInfoByFaceId[faceId];
         const f = info?.frame ?? null;
         const prof = info?.prof ?? null;
@@ -6302,25 +6761,19 @@ function computeQuadFacadeSilhouette({
         return { cutPrev, cutNext, q };
     };
 
-    const cornerCuts = {
-        AB: resolveCornerCut('AB', 'A', 'B'),
-        BC: resolveCornerCut('BC', 'B', 'C'),
-        CD: resolveCornerCut('CD', 'C', 'D'),
-        DA: resolveCornerCut('DA', 'D', 'A')
-    };
-
-    const cutStartByFaceId = {
-        A: qf(Number(cornerCuts.DA.cutNext) || 0),
-        B: qf(Number(cornerCuts.AB.cutNext) || 0),
-        C: qf(Number(cornerCuts.BC.cutNext) || 0),
-        D: qf(Number(cornerCuts.CD.cutNext) || 0)
-    };
-    const cutEndByFaceId = {
-        A: qf(Number(cornerCuts.AB.cutPrev) || 0),
-        B: qf(Number(cornerCuts.BC.cutPrev) || 0),
-        C: qf(Number(cornerCuts.CD.cutPrev) || 0),
-        D: qf(Number(cornerCuts.DA.cutPrev) || 0)
-    };
+    const cornerCuts = {};
+    const cutStartByFaceId = {};
+    const cutEndByFaceId = {};
+    for (let i = 0; i < faceCount; i++) {
+        const aId = faceOrder[i];
+        const bId = faceOrder[(i + 1) % faceCount];
+        cornerCuts[`${aId}${bId}`] = resolveCornerCut(`${aId}${bId}`, aId, bId);
+    }
+    for (let i = 0; i < faceCount; i++) {
+        const faceId = faceOrder[i];
+        cutStartByFaceId[faceId] = qf(Number(cornerCuts[cornerIdAt(i - 1 + faceCount)]?.cutNext) || 0);
+        cutEndByFaceId[faceId] = qf(Number(cornerCuts[cornerIdAt(i)]?.cutPrev) || 0);
+    }
 
     const buildTrimmedFaceWorldPoints = ({
         faceId,
@@ -6403,76 +6856,42 @@ function computeQuadFacadeSilhouette({
         return pts;
     };
 
-    const Apts = buildTrimmedFaceWorldPoints({
-        faceId: 'A',
-        profile: A,
-        frame: frames.A,
-        startCornerId: 'DA',
-        endCornerId: 'AB',
-        startJoin: joinDA,
-        endJoin: joinAB,
-        uStartJoin: faceInfoByFaceId.A.uStartJoin,
-        uEndJoin: faceInfoByFaceId.A.uEndJoin,
-        cutStartMeters: cutStartByFaceId.A,
-        cutEndMeters: cutEndByFaceId.A,
-        bevelStart: isBeveledCorner('DA'),
-        bevelEnd: isBeveledCorner('AB')
-    });
-    const Bpts = buildTrimmedFaceWorldPoints({
-        faceId: 'B',
-        profile: B,
-        frame: frames.B,
-        startCornerId: 'AB',
-        endCornerId: 'BC',
-        startJoin: joinAB,
-        endJoin: joinBC,
-        uStartJoin: faceInfoByFaceId.B.uStartJoin,
-        uEndJoin: faceInfoByFaceId.B.uEndJoin,
-        cutStartMeters: cutStartByFaceId.B,
-        cutEndMeters: cutEndByFaceId.B,
-        bevelStart: isBeveledCorner('AB'),
-        bevelEnd: isBeveledCorner('BC')
-    });
-    const Cpts = buildTrimmedFaceWorldPoints({
-        faceId: 'C',
-        profile: C,
-        frame: frames.C,
-        startCornerId: 'BC',
-        endCornerId: 'CD',
-        startJoin: joinBC,
-        endJoin: joinCD,
-        uStartJoin: faceInfoByFaceId.C.uStartJoin,
-        uEndJoin: faceInfoByFaceId.C.uEndJoin,
-        cutStartMeters: cutStartByFaceId.C,
-        cutEndMeters: cutEndByFaceId.C,
-        bevelStart: isBeveledCorner('BC'),
-        bevelEnd: isBeveledCorner('CD')
-    });
-    const Dpts = buildTrimmedFaceWorldPoints({
-        faceId: 'D',
-        profile: D,
-        frame: frames.D,
-        startCornerId: 'CD',
-        endCornerId: 'DA',
-        startJoin: joinCD,
-        endJoin: joinDA,
-        uStartJoin: faceInfoByFaceId.D.uStartJoin,
-        uEndJoin: faceInfoByFaceId.D.uEndJoin,
-        cutStartMeters: cutStartByFaceId.D,
-        cutEndMeters: cutEndByFaceId.D,
-        bevelStart: isBeveledCorner('CD'),
-        bevelEnd: isBeveledCorner('DA')
-    });
-
-    if (!Apts || !Bpts || !Cpts || !Dpts) return null;
+    const ptsByFaceId = {};
+    for (const faceId of faceOrder) {
+        const info = faceInfoByFaceId[faceId];
+        const pts = buildTrimmedFaceWorldPoints({
+            faceId,
+            profile: info.prof,
+            frame: info.frame,
+            startCornerId: info.startCornerId,
+            endCornerId: info.endCornerId,
+            startJoin: info.startJoin,
+            endJoin: info.endJoin,
+            uStartJoin: info.uStartJoin,
+            uEndJoin: info.uEndJoin,
+            cutStartMeters: cutStartByFaceId[faceId],
+            cutEndMeters: cutEndByFaceId[faceId],
+            bevelStart: isBeveledCorner(info.startCornerId),
+            bevelEnd: isBeveledCorner(info.endCornerId)
+        });
+        if (!pts) return null;
+        ptsByFaceId[faceId] = pts;
+    }
 
     if (cornerDebugList) {
-        const corners = [
-            { cornerId: 'AB', a: { faceId: 'A', end: 'end', depth: Number(A.endDepth) || 0 }, b: { faceId: 'B', end: 'start', depth: Number(B.startDepth) || 0 }, join: joinAB, frameCorner: frames.A.end },
-            { cornerId: 'BC', a: { faceId: 'B', end: 'end', depth: Number(B.endDepth) || 0 }, b: { faceId: 'C', end: 'start', depth: Number(C.startDepth) || 0 }, join: joinBC, frameCorner: frames.B.end },
-            { cornerId: 'CD', a: { faceId: 'C', end: 'end', depth: Number(C.endDepth) || 0 }, b: { faceId: 'D', end: 'start', depth: Number(D.startDepth) || 0 }, join: joinCD, frameCorner: frames.C.end },
-            { cornerId: 'DA', a: { faceId: 'D', end: 'end', depth: Number(D.endDepth) || 0 }, b: { faceId: 'A', end: 'start', depth: Number(A.startDepth) || 0 }, join: joinDA, frameCorner: frames.D.end }
-        ];
+        const corners = [];
+        for (let i = 0; i < faceCount; i++) {
+            const aId = faceOrder[i];
+            const bId = faceOrder[(i + 1) % faceCount];
+            const cornerId = `${aId}${bId}`;
+            corners.push({
+                cornerId,
+                a: { faceId: aId, end: 'end', depth: Number(profByFaceId[aId].endDepth) || 0 },
+                b: { faceId: bId, end: 'start', depth: Number(profByFaceId[bId].startDepth) || 0 },
+                join: joinByCornerId[cornerId],
+                frameCorner: frames[aId].end
+            });
+        }
         for (const c of corners) {
             const res = resolvedCornerStrategy.resolve(c.a, c.b, { cornerId: c.cornerId });
             const winnerFaceId = res?.winnerFaceId === c.a.faceId || res?.winnerFaceId === c.b.faceId ? res.winnerFaceId : c.a.faceId;
@@ -6491,8 +6910,9 @@ function computeQuadFacadeSilhouette({
     // Opening spans per face, in face u. A bevel cut may approach one of these
     // but never enter it, so a chamfer can never clip a window reveal.
     const openingSpansByFaceId = (() => {
-        const byFace = { A: [], B: [], C: [], D: [] };
-        for (const strip of [...A.strips, ...B.strips, ...C.strips, ...D.strips]) {
+        const byFace = {};
+        for (const faceId of faceOrder) byFace[faceId] = [];
+        for (const strip of faceOrder.flatMap((faceId) => profByFaceId[faceId].strips)) {
             if (strip?.type !== 'bay') continue;
             const faceId = strip?.faceId;
             if (!byFace[faceId]) continue;
@@ -6543,21 +6963,13 @@ function computeQuadFacadeSilhouette({
         return { x: qf(p.x), y: 0, z: qf(p.z), kind: 'corner_cut' };
     };
 
-    const cutAB = cutPoint('AB');
-    const cutBC = cutPoint('BC');
-    const cutCD = cutPoint('CD');
-    const cutDA = cutPoint('DA');
-
-    const loopDetail = [
-        ...Apts,
-        ...(cutAB ? [cutAB] : []),
-        ...Bpts,
-        ...(cutBC ? [cutBC] : []),
-        ...Cpts,
-        ...(cutCD ? [cutCD] : []),
-        ...Dpts,
-        ...(cutDA ? [cutDA] : [])
-    ];
+    const loopDetail = [];
+    for (let i = 0; i < faceCount; i++) {
+        const faceId = faceOrder[i];
+        loopDetail.push(...ptsByFaceId[faceId]);
+        const cut = cutPoint(cornerIdAt(i));
+        if (cut) loopDetail.push(cut);
+    }
 
     // AI 499 `all_convex_edges`: cut the arrises the bay relief itself creates
     // (relief steps, pier edges). This runs on the RESOLVED loop, after layout,
@@ -6609,18 +7021,16 @@ function computeQuadFacadeSilhouette({
     const finalLoop = area < 0 ? simplified.slice().reverse() : simplified;
     const finalDetail = area < 0 ? beveledDetail.slice().reverse() : beveledDetail;
 
-    const depthMinsByFaceId = {
-        A: qf(Math.min(...A.profile.map((p) => Number(p?.depth) || 0))),
-        B: qf(Math.min(...B.profile.map((p) => Number(p?.depth) || 0))),
-        C: qf(Math.min(...C.profile.map((p) => Number(p?.depth) || 0))),
-        D: qf(Math.min(...D.profile.map((p) => Number(p?.depth) || 0)))
-    };
+    const depthMinsByFaceId = {};
+    for (const faceId of faceOrder) {
+        depthMinsByFaceId[faceId] = qf(Math.min(...profByFaceId[faceId].profile.map((p) => Number(p?.depth) || 0)));
+    }
     return {
         frames,
         cornerFacets,
         loop: finalLoop,
         loopDetail: finalDetail,
-        strips: [...A.strips, ...B.strips, ...C.strips, ...D.strips],
+        strips: faceOrder.flatMap((faceId) => profByFaceId[faceId].strips),
         depthMinsByFaceId
     };
 }
@@ -6901,6 +7311,7 @@ export function buildBuildingFabricationVisualParts({
             ? normalizeStorefrontConfig(entry?.storefront ?? null)
             : null;
         const portal = normalizePortalConfig(entry?.portal ?? null);
+        const insets = normalizeOpeningInsetsConfig(entry?.insets ?? null);
         windowDefinitionById.set(id, {
             id,
             assetType,
@@ -6910,6 +7321,7 @@ export function buildBuildingFabricationVisualParts({
             decoration,
             storefront,
             portal,
+            insets,
             widthMeters,
             heightMeters
         });
@@ -7052,7 +7464,7 @@ export function buildBuildingFabricationVisualParts({
     let firstFloorPendingExtra = extraFirstFloor;
 
     const facadesRaw = resolvedFacades && typeof resolvedFacades === 'object' ? resolvedFacades : null;
-    const facadesAreGlobal = !!facadesRaw && ['A', 'B', 'C', 'D'].some((id) => !!facadesRaw?.[id]);
+    const facadesAreGlobal = !!facadesRaw && facadeSpecFaceIds(facadesRaw).length > 0;
     const globalFacadeSpec = facadesAreGlobal ? facadesRaw : null;
     const facadesByLayerId = facadesAreGlobal ? null : facadesRaw;
 
@@ -7082,7 +7494,7 @@ export function buildBuildingFabricationVisualParts({
                 }
                 return faceId;
             };
-            for (const faceId of ['A', 'B', 'C', 'D']) {
+            for (const faceId of facadeSpecFaceIds(layerFacades)) {
                 const facade = layerFacades?.[resolveMaster(faceId)];
                 const bays = facade?.layout?.bays?.items;
                 if (!Array.isArray(bays)) continue;
@@ -7095,7 +7507,7 @@ export function buildBuildingFabricationVisualParts({
         }
         capitalBayKeysByLayerId.set(layer.id, keys);
     }
-    const wantsFacadePatterns = !!globalFacadeSpec && ['A', 'B', 'C', 'D'].some((id) => !!globalFacadeSpec?.[id]?.layout?.pattern);
+    const wantsFacadePatterns = !!globalFacadeSpec && facadeSpecFaceIds(globalFacadeSpec).some((id) => !!globalFacadeSpec?.[id]?.layout?.pattern);
 
     // AI 493: bay repeat topology is resolved ONCE per face and replayed on
     // every layer that authors the SAME bay layout, so a setback layer keeps
@@ -7120,7 +7532,7 @@ export function buildBuildingFabricationVisualParts({
     const wantsFacadeBayLock = safeLayers.some((layer) => {
         if (layer?.type !== LAYER_TYPE.FLOOR) return false;
         const spec = facadeSpecForLayer(layer);
-        return ['A', 'B', 'C', 'D'].some((id) => facadeBayLockWanted(spec?.[id]?.layout ?? null));
+        return facadeSpecFaceIds(spec).some((id) => facadeBayLockWanted(spec?.[id]?.layout ?? null));
     });
 
 
@@ -7131,7 +7543,7 @@ export function buildBuildingFabricationVisualParts({
     const floorSegmentsByLayerId = new Map();
     const floorLayerById = new Map();
     if (wantsFacadePatterns || wantsFacadeBayLock) {
-        const minFaceLengthByFaceId = { A: Infinity, B: Infinity, C: Infinity, D: Infinity };
+        const minFaceLengthByFaceId = {};
         const bayLockProbeByKey = new Map();
         let probeLoops = sourceFootprintLoops;
 
@@ -7142,7 +7554,7 @@ export function buildBuildingFabricationVisualParts({
             const { outer: wallOuterRaw } = applyWallInset({ loops: planLoops, inset: wallInset });
             const wallOuter = applyEdgeBevelToOuterLoops(wallOuterRaw);
             const main = Array.isArray(wallOuter) ? wallOuter[0] : null;
-            const frames = main ? computeQuadFacadeFramesFromLoop(main, { warnings: null }) : null;
+            const frames = main ? computeFacadeFramesFromLoop(main, { warnings: null }) : null;
             if (frames) {
                 const links = layer?.faceLinking?.links && typeof layer.faceLinking.links === 'object'
                     ? layer.faceLinking.links
@@ -7160,10 +7572,10 @@ export function buildBuildingFabricationVisualParts({
                     return faceId;
                 };
                 const layerFacadeSpec = facadeSpecForLayer(layer);
-                for (const faceId of ['A', 'B', 'C', 'D']) {
+                for (const faceId of facadeFaceIdsOf(frames)) {
                     const L = Number(frames?.[faceId]?.length) || 0;
                     if (!(L > EPS)) continue;
-                    minFaceLengthByFaceId[faceId] = Math.min(minFaceLengthByFaceId[faceId], L);
+                    minFaceLengthByFaceId[faceId] = Math.min(minFaceLengthByFaceId[faceId] ?? Infinity, L);
 
                     if (!wantsFacadeBayLock) continue;
                     const layout = layerFacadeSpec?.[resolveMaster(faceId)]?.layout ?? null;
@@ -7190,7 +7602,7 @@ export function buildBuildingFabricationVisualParts({
             }));
         }
 
-        for (const faceId of ['A', 'B', 'C', 'D']) {
+        for (const faceId of facadeSpecFaceIds(globalFacadeSpec)) {
             if (!wantsFacadePatterns) break;
             const facade = globalFacadeSpec?.[faceId] ?? null;
             const pattern = facade?.layout?.pattern ?? null;
@@ -7269,11 +7681,11 @@ export function buildBuildingFabricationVisualParts({
             const layerFacadeSpec = globalFacadeSpec
                 ? globalFacadeSpec
                 : ((layerId && facadesByLayerId?.[layerId] && typeof facadesByLayerId[layerId] === 'object') ? facadesByLayerId[layerId] : null);
-            const wantsFacadeSilhouette = !!layerFacadeSpec && ['A', 'B', 'C', 'D'].some((id) => !!layerFacadeSpec?.[id]);
+            const wantsFacadeSilhouette = !!layerFacadeSpec && facadeSpecFaceIds(layerFacadeSpec).length > 0;
 
             if (wantsFacadeSilhouette && wallOuter.length) {
                 const main = wallOuter[0] ?? null;
-                const frames = main ? computeQuadFacadeFramesFromLoop(main, { warnings }) : null;
+                const frames = main ? computeFacadeFramesFromLoop(main, { warnings }) : null;
                 if (frames) {
                     const faceMaterials = layer?.faceMaterials && typeof layer.faceMaterials === 'object' ? layer.faceMaterials : null;
                     const links = layer?.faceLinking?.links && typeof layer.faceLinking.links === 'object' ? layer.faceLinking.links : null;
@@ -7295,7 +7707,7 @@ export function buildBuildingFabricationVisualParts({
                     };
 
                     const next = {};
-                    for (const faceId of ['A', 'B', 'C', 'D']) {
+                    for (const faceId of facadeFaceIdsOf(frames)) {
                         const masterFaceId = resolveMasterFaceId(faceId);
                         const srcFacade = (layerFacadeSpec?.[masterFaceId] && typeof layerFacadeSpec[masterFaceId] === 'object')
                             ? layerFacadeSpec[masterFaceId]
@@ -7426,7 +7838,7 @@ export function buildBuildingFabricationVisualParts({
                     const type = typeof strip?.type === 'string' ? strip.type : '';
                     if (type !== 'bay') continue;
                     const faceId = strip?.faceId;
-                    if (faceId !== 'A' && faceId !== 'B' && faceId !== 'C' && faceId !== 'D') continue;
+                    if (!isFaceId(faceId)) continue;
                     const frame = facadeFrames?.[faceId] ?? null;
                     if (!frame) continue;
                     const bayId = (typeof strip?.sourceBayId === 'string' && strip.sourceBayId)
@@ -7593,7 +8005,7 @@ export function buildBuildingFabricationVisualParts({
                     if (!windowCfg || windowCfg.enabled === false) continue;
 
                     const faceId = strip?.faceId;
-                    if (faceId !== 'A' && faceId !== 'B' && faceId !== 'C' && faceId !== 'D') continue;
+                    if (!isFaceId(faceId)) continue;
                     const frame = facadeFrames?.[faceId] ?? null;
                     if (!frame) continue;
 
@@ -7795,6 +8207,45 @@ export function buildBuildingFabricationVisualParts({
                             portalOrderExtraHalfWidth += clamp(lvl?.frameWidthMeters, 0.05, 0.9);
                         }
                     }
+                    // AI 511: nested wall insets — the bay-level override wins
+                    // over the definition's. A portal def owns the whole facade
+                    // opening (its box replaces the wall there), so insets do
+                    // not combine with one.
+                    let insetSteps = (assetType === WINDOW_FABRICATION_ASSET_TYPE.WINDOW
+                        || assetType === WINDOW_FABRICATION_ASSET_TYPE.DOOR)
+                        ? (normalizeOpeningInsetsConfig(windowCfg?.insets ?? null) ?? def?.insets ?? null)
+                        : null;
+                    if (insetSteps && portalDef) {
+                        warnings.push(`Bay ${strip?.id ?? ''} (${faceId}): opening insets are ignored when a portal def opens the facade.`);
+                        insetSteps = null;
+                    }
+                    let insetCarvedDepth = 0;
+                    if (insetSteps) {
+                        // The outermost contour may not cut past its slot: with
+                        // repeats the neighbouring opening sits one slot over
+                        // (their contours may just touch, like an arcade's
+                        // springing points), and a single opening owns the bay
+                        // strip (slot plus the opening paddings). Shrink the
+                        // width paddings proportionally, or drop the stack when
+                        // there is no room at all.
+                        const insetMaxHalfWidth = repeatCount > 1
+                            ? Math.max(0.3, slotWidth * 0.5 - 0.01)
+                            : Math.max(0.3, slotWidth * 0.5 + Math.min(leftPad, rightPad) - 0.02);
+                        const growth = insetSteps.reduce((acc, s) => acc + s.widthPaddingMeters, 0);
+                        const room = insetMaxHalfWidth - width * 0.5;
+                        if (growth > room - EPS) {
+                            const scale = Math.max(0, room - 0.01) / growth;
+                            const scaled = insetSteps.map((s) => ({ ...s, widthPaddingMeters: s.widthPaddingMeters * scale }));
+                            if (scaled.some((s) => s.widthPaddingMeters < 0.02)) {
+                                warnings.push(`Bay ${strip?.id ?? ''} (${faceId}): no room for opening insets in the bay strip; insets skipped.`);
+                                insetSteps = null;
+                            } else {
+                                warnings.push(`Bay ${strip?.id ?? ''} (${faceId}): opening insets clamped to the bay strip.`);
+                                insetSteps = scaled;
+                            }
+                        }
+                        if (insetSteps) insetCarvedDepth = insetSteps.reduce((acc, s) => acc + s.depthMeters, 0);
+                    }
                     // AI 496: the parallax interior panel is oversized so grazing
                     // sightlines cannot slip past its edge. Tell the window mesh
                     // how much wall it may hide behind, so an oversized panel
@@ -7836,6 +8287,19 @@ export function buildBuildingFabricationVisualParts({
                             };
                         }
                     }
+                    // AI 511: the frame mounts at the innermost inset plane —
+                    // its `inset` measures from there, so the mesh placement
+                    // gains the carved step depth (the portal recess pattern).
+                    // Chained AFTER any inline-portal bump so both stack.
+                    if (insetCarvedDepth > EPS) {
+                        placementSettings = {
+                            ...placementSettings,
+                            frame: {
+                                ...(placementSettings.frame ?? {}),
+                                inset: (Number(placementSettings.frame?.inset) || 0) + insetCarvedDepth
+                            }
+                        };
+                    }
 
                     bayWindowPlacements.push({
                         faceId,
@@ -7851,6 +8315,8 @@ export function buildBuildingFabricationVisualParts({
                         portalDef,
                         portalCarvedDepth,
                         portalOrderExtraHalfWidth,
+                        insets: insetSteps,
+                        insetCarvedDepth,
                         // The portal box may not cut past its bay strip (the
                         // full bay: slot plus the opening paddings).
                         portalBoxMaxHalfWidth: Math.max(0.3, slotWidth * 0.5 + Math.min(leftPad, rightPad) - 0.02),
@@ -8174,7 +8640,7 @@ export function buildBuildingFabricationVisualParts({
 
                         for (const strip of facadeStrips) {
                             const faceId = strip?.faceId;
-                            if (faceId !== 'A' && faceId !== 'B' && faceId !== 'C' && faceId !== 'D') continue;
+                            if (!isFaceId(faceId)) continue;
                             const masterFaceId = faceId ? resolveMasterFaceId(faceId) : null;
                             const faceCfg = masterFaceId && faceMaterials?.[masterFaceId] && typeof faceMaterials[masterFaceId] === 'object'
                                 ? faceMaterials[masterFaceId]
@@ -8255,19 +8721,14 @@ export function buildBuildingFabricationVisualParts({
                     if (wantsFacadeWall && facadeFrames && (bayWindowPlacements.length || windowRuns.length)) {
                         facadeWallCutouts = [];
                         facadeWallYSlices = [];
-                        const streetFloorOpeningsByFaceId = {
-                            A: [],
-                            B: [],
-                            C: [],
-                            D: []
-                        };
+                        const facadeWallFaceIds = facadeFaceIdsOf(facadeFrames);
+                        const streetFloorOpeningsByFaceId = {};
+                        const depthFallbackByFaceId = {};
+                        for (const faceId of facadeWallFaceIds) {
+                            streetFloorOpeningsByFaceId[faceId] = [];
+                            depthFallbackByFaceId[faceId] = Number(facadeDepthMinsByFaceId?.[faceId]);
+                        }
                         const streetFloorCutoutEntries = [];
-                        const depthFallbackByFaceId = {
-                            A: Number(facadeDepthMinsByFaceId?.A),
-                            B: Number(facadeDepthMinsByFaceId?.B),
-                            C: Number(facadeDepthMinsByFaceId?.C),
-                            D: Number(facadeDepthMinsByFaceId?.D)
-                        };
 
                         // AI 509: `portal.recessMaterial` routes the recess
                         // reveal walls to their own facade material index so a
@@ -8312,7 +8773,7 @@ export function buildBuildingFabricationVisualParts({
                             for (let i = 0; i < bayWindowPlacements.length; i++) {
                                 const placement = bayWindowPlacements[i];
                                 const faceId = placement?.faceId;
-                                if (faceId !== 'A' && faceId !== 'B' && faceId !== 'C' && faceId !== 'D') continue;
+                                if (!isFaceId(faceId)) continue;
                                 const frame = facadeFrames?.[faceId] ?? null;
                                 if (!frame) continue;
                                 const placementAssetType = normalizeWindowFabricationAssetType(
@@ -8381,7 +8842,7 @@ export function buildBuildingFabricationVisualParts({
                                 const portalRecessRevealIndex = placement?.portal
                                     ? getRecessRevealMaterialIndex(placement.portal.recessMaterial)
                                     : null;
-                                const appendCutoutsFromSettings = ({ settings, openingHeight, openingY, wall, applyPortalOrders = false }) => {
+                                const appendCutoutsFromSettings = ({ settings, openingHeight, openingY, wall, applyPortalOrders = false, applyInsets = false }) => {
                                     const resolvedWall = normalizeOpeningWallCutConfig(wall ?? null, null);
                                     const cutMetrics = resolveOpeningCutMetrics(settings, {
                                         cutX: resolvedWall.cutWidthLerp,
@@ -8433,6 +8894,63 @@ export function buildBuildingFabricationVisualParts({
                                         revealDepth = 0.02;
                                     }
 
+                                    // AI 511: nested wall insets — the wall opens to the
+                                    // OUTERMOST step contour; the stack carves shoulder
+                                    // rings and stepped reveals down to the innermost
+                                    // plane where the frame mounts. `frameInset` is
+                                    // already the TOTAL depth (placement bumped it by the
+                                    // carved sum), so the AI 507 shell rule keeps
+                                    // clearing the true frame plane via shellRevealDepth.
+                                    let insetStack = null;
+                                    let insetRevealMaterialIndex = null;
+                                    if (applyInsets && Array.isArray(placement?.insets) && placement.insets.length
+                                        && !(applyPortalOrders && placement?.portalDef)) {
+                                        const steps = placement.insets;
+                                        const contours = resolveOpeningInsetContours({
+                                            cutWidth,
+                                            cutHeight,
+                                            cutCenterY,
+                                            archRise: cutWantsArch ? archRise : 0,
+                                            steps
+                                        });
+                                        if (contours.length === steps.length + 1) {
+                                            const outer = contours[0];
+                                            outWidth = outer.width;
+                                            outHeight = outer.top - outer.bottom;
+                                            outCenterY = (outer.top + outer.bottom) * 0.5;
+                                            outWantsArch = outer.wantsArch && outer.archRise > EPS;
+                                            outArchRise = outer.archRise;
+                                            revealDepth = steps[0].depthMeters;
+                                            insetRevealMaterialIndex = getRecessRevealMaterialIndex(steps[0].material);
+                                            let planeDepth = 0;
+                                            insetStack = [];
+                                            for (let j = 1; j < contours.length; j++) {
+                                                const c = contours[j];
+                                                const stepBefore = steps[j - 1];
+                                                const stepAfter = j < contours.length - 1 ? steps[j] : null;
+                                                planeDepth += stepBefore.depthMeters;
+                                                insetStack.push({
+                                                    width: c.width,
+                                                    height: c.top - c.bottom,
+                                                    y: (c.top + c.bottom) * 0.5,
+                                                    wantsArch: c.wantsArch && c.archRise > EPS,
+                                                    archRise: c.archRise,
+                                                    frontDepth: planeDepth,
+                                                    backDepth: stepAfter ? planeDepth + stepAfter.depthMeters : frameInset,
+                                                    ringMaterialIndex: getRecessRevealMaterialIndex(stepBefore.material),
+                                                    // The innermost contour is the opening;
+                                                    // its own reveal keeps the wall material
+                                                    // unless an inline portal routed it to a
+                                                    // recess material (AI 509).
+                                                    revealMaterialIndex: stepAfter
+                                                        ? getRecessRevealMaterialIndex(stepAfter.material)
+                                                        : portalRecessRevealIndex
+                                                });
+                                            }
+                                        }
+                                    }
+                                    const cutRevealMaterialIndex = insetStack ? insetRevealMaterialIndex : portalRecessRevealIndex;
+
                                     for (let pointIndex = 0; pointIndex < points.length; pointIndex++) {
                                         const point = points[pointIndex] && typeof points[pointIndex] === 'object' ? points[pointIndex] : null;
                                         const px = Number(point?.x) || 0;
@@ -8448,7 +8966,8 @@ export function buildBuildingFabricationVisualParts({
                                             archRise: outWantsArch ? outArchRise : 0,
                                             revealDepth,
                                             shellRevealDepth: frameInset,
-                                            ...(portalRecessRevealIndex !== null ? { revealMaterialIndex: portalRecessRevealIndex } : {}),
+                                            ...(cutRevealMaterialIndex !== null ? { revealMaterialIndex: cutRevealMaterialIndex } : {}),
+                                            ...(insetStack ? { insetSteps: insetStack } : {}),
                                             // AI 495: whether this opening has a parallax
                                             // interior panel behind its glass. A shade does
                                             // not count — its shader discards every fragment
@@ -8496,7 +9015,8 @@ export function buildBuildingFabricationVisualParts({
                                     openingHeight: bottomHeight,
                                     openingY: bottomY,
                                     wall: placement?.wall ?? null,
-                                    applyPortalOrders: true
+                                    applyPortalOrders: true,
+                                    applyInsets: true
                                 });
                                 if (topSettings && topHeight > EPS) {
                                     appendCutoutsFromSettings({
@@ -8515,7 +9035,7 @@ export function buildBuildingFabricationVisualParts({
 
                                 for (const run of windowRuns) {
                                     const faceId = run?.faceId;
-                                    if (faceId !== 'A' && faceId !== 'B' && faceId !== 'C' && faceId !== 'D') continue;
+                                    if (!isFaceId(faceId)) continue;
                                     const frame = facadeFrames?.[faceId] ?? null;
                                     if (!frame) continue;
 
@@ -8551,7 +9071,7 @@ export function buildBuildingFabricationVisualParts({
                                                 revealDepth: 0.0
                                             };
                                             facadeWallCutouts.push(cutout);
-                                            streetFloorOpeningsByFaceId[faceId].push(outerDepth);
+                                            (streetFloorOpeningsByFaceId[faceId] ??= []).push(outerDepth);
                                             streetFloorCutoutEntries.push({ cutout, faceId, outerDepth });
                                         }
                                     }
@@ -8565,7 +9085,7 @@ export function buildBuildingFabricationVisualParts({
                         }
 
                         if (streetFloorCutoutEntries.length) {
-                            const faceIds = ['A', 'B', 'C', 'D'];
+                            const faceIds = facadeWallFaceIds;
                             let globalMinOpeningDepth = Infinity;
                             const interiorDepthByFaceId = {};
                             for (const faceId of faceIds) {
@@ -8587,7 +9107,7 @@ export function buildBuildingFabricationVisualParts({
                             for (const entry of streetFloorCutoutEntries) {
                                 const cutout = entry?.cutout ?? null;
                                 const faceId = entry?.faceId;
-                                if (!cutout || (faceId !== 'A' && faceId !== 'B' && faceId !== 'C' && faceId !== 'D')) continue;
+                                if (!cutout || !isFaceId(faceId)) continue;
                                 const targetDepth = Number(interiorDepthByFaceId[faceId]) || 0;
                                 const outerDepth = Number(entry?.outerDepth) || 0;
                                 cutout.revealDepth = Math.max(0, outerDepth - targetDepth);
@@ -8750,12 +9270,13 @@ export function buildBuildingFabricationVisualParts({
                                 frames[bId], shellDepthOf(bId),
                                 frames?.cornerFacets?.[`${aId}${bId}`] ?? null
                             );
-                            const interiorPairByCornerId = {
-                                AB: shellCornerPair('A', 'B'),
-                                BC: shellCornerPair('B', 'C'),
-                                CD: shellCornerPair('C', 'D'),
-                                DA: shellCornerPair('D', 'A')
-                            };
+                            const shellFaceOrder = facadeFaceIdsOf(frames);
+                            const interiorPairByCornerId = {};
+                            for (let ci = 0; ci < shellFaceOrder.length; ci++) {
+                                const aId = shellFaceOrder[ci];
+                                const bId = shellFaceOrder[(ci + 1) % shellFaceOrder.length];
+                                interiorPairByCornerId[`${aId}${bId}`] = shellCornerPair(aId, bId);
+                            }
                             const interiorLoopRaw = buildCornerJoinLoopWithDepths({ frames, depthOf: shellDepthOf });
                             const interiorLoop = simplifyLoopConsecutiveCollinearXZ(interiorLoopRaw, { tol: 1e-4, minEdge: 1e-3 });
                             if (interiorLoop && interiorLoop.length >= 3) {
@@ -8767,16 +9288,16 @@ export function buildBuildingFabricationVisualParts({
                                 // and dropped by the builder's minimum edge; at a
                                 // beveled corner it is the chamfer facet, rendered
                                 // as plain shell wall.
-                                const interiorShellLoopDetailRaw = [
-                                    { ...interiorPairByCornerId.DA.bStart, kind: 'profile', faceId: 'A' },
-                                    { ...interiorPairByCornerId.AB.aEnd, kind: 'profile', faceId: 'A' },
-                                    { ...interiorPairByCornerId.AB.bStart, kind: 'profile', faceId: 'B' },
-                                    { ...interiorPairByCornerId.BC.aEnd, kind: 'profile', faceId: 'B' },
-                                    { ...interiorPairByCornerId.BC.bStart, kind: 'profile', faceId: 'C' },
-                                    { ...interiorPairByCornerId.CD.aEnd, kind: 'profile', faceId: 'C' },
-                                    { ...interiorPairByCornerId.CD.bStart, kind: 'profile', faceId: 'D' },
-                                    { ...interiorPairByCornerId.DA.aEnd, kind: 'profile', faceId: 'D' }
-                                ];
+                                const interiorShellLoopDetailRaw = [];
+                                for (let fi = 0; fi < shellFaceOrder.length; fi++) {
+                                    const faceId = shellFaceOrder[fi];
+                                    const prevId = shellFaceOrder[(fi - 1 + shellFaceOrder.length) % shellFaceOrder.length];
+                                    const nextId = shellFaceOrder[(fi + 1) % shellFaceOrder.length];
+                                    interiorShellLoopDetailRaw.push(
+                                        { ...interiorPairByCornerId[`${prevId}${faceId}`].bStart, kind: 'profile', faceId },
+                                        { ...interiorPairByCornerId[`${faceId}${nextId}`].aEnd, kind: 'profile', faceId }
+                                    );
+                                }
                                 // Negative signed area is the winding that points the
                                 // builder's wall faces inward, at the room.
                                 const interiorShellLoopDetail = signedArea(interiorShellLoopDetailRaw) > 0
@@ -8909,12 +9430,22 @@ export function buildBuildingFabricationVisualParts({
                             }
                         }
 
-                        const baseJoinByCornerId = (frames && depthMins) ? {
-                            AB: cornerJoinPointWithDepths(frames.A, depthMins.A ?? 0, frames.B, depthMins.B ?? 0, frames.A.end),
-                            BC: cornerJoinPointWithDepths(frames.B, depthMins.B ?? 0, frames.C, depthMins.C ?? 0, frames.B.end),
-                            CD: cornerJoinPointWithDepths(frames.C, depthMins.C ?? 0, frames.D, depthMins.D ?? 0, frames.C.end),
-                            DA: cornerJoinPointWithDepths(frames.D, depthMins.D ?? 0, frames.A, depthMins.A ?? 0, frames.D.end)
-                        } : null;
+                        const capFaceOrder = frames ? facadeFaceIdsOf(frames) : null;
+                        const joinMapAtDepths = (depthOf) => {
+                            if (!frames || !capFaceOrder) return null;
+                            const map = {};
+                            for (let ci = 0; ci < capFaceOrder.length; ci++) {
+                                const aId = capFaceOrder[ci];
+                                const bId = capFaceOrder[(ci + 1) % capFaceOrder.length];
+                                map[`${aId}${bId}`] = cornerJoinPointWithDepths(
+                                    frames[aId], depthOf(aId), frames[bId], depthOf(bId), frames[aId].end
+                                );
+                            }
+                            return map;
+                        };
+                        const baseJoinByCornerId = (frames && depthMins)
+                            ? joinMapAtDepths((id) => depthMins[id] ?? 0)
+                            : null;
 
                         const basePointForFacade = (p) => {
                             if (!p || typeof p !== 'object') return { x: 0, y: 0, z: 0 };
@@ -8924,7 +9455,7 @@ export function buildBuildingFabricationVisualParts({
                                 if (join) return join;
                             }
                             const faceId = p.faceId;
-                            if ((faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D') && frames && depthMins) {
+                            if (isFaceId(faceId) && frames && depthMins) {
                                 const frame = frames[faceId] ?? null;
                                 const u = Number(p.u) || 0;
                                 const d = Number(depthMins[faceId]) || 0;
@@ -8936,12 +9467,9 @@ export function buildBuildingFabricationVisualParts({
                         // Same resolution at depth 0: the nominal footprint line the
                         // next layer stands on. Recessed bays sit inward of it, and the
                         // strip between them needs a soffit so the overhang is closed.
-                        const zeroJoinByCornerId = (frames && depthMins) ? {
-                            AB: cornerJoinPointWithDepths(frames.A, 0, frames.B, 0, frames.A.end),
-                            BC: cornerJoinPointWithDepths(frames.B, 0, frames.C, 0, frames.B.end),
-                            CD: cornerJoinPointWithDepths(frames.C, 0, frames.D, 0, frames.C.end),
-                            DA: cornerJoinPointWithDepths(frames.D, 0, frames.A, 0, frames.D.end)
-                        } : null;
+                        const zeroJoinByCornerId = (frames && depthMins)
+                            ? joinMapAtDepths(() => 0)
+                            : null;
 
                         const zeroPointForFacade = (p) => {
                             if (!p || typeof p !== 'object') return { x: 0, y: 0, z: 0 };
@@ -8951,7 +9479,7 @@ export function buildBuildingFabricationVisualParts({
                                 if (join) return join;
                             }
                             const faceId = p.faceId;
-                            if ((faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D') && frames) {
+                            if (isFaceId(faceId) && frames) {
                                 const frame = frames[faceId] ?? null;
                                 const u = Number(p.u) || 0;
                                 return pointOnFacadeFrame({ frame, u, depth: 0 });
@@ -8966,12 +9494,9 @@ export function buildBuildingFabricationVisualParts({
                         const capHasLayerAbove = layerIndex < safeLayers.length - 1;
                         const capMatTemplate = capHasLayerAbove ? floorSlabMatTemplate : roofMatTemplate;
                         const outerDetail = Array.isArray(facadeLoopDetail) ? facadeLoopDetail : null;
-                        const baseLoopCore = baseJoinByCornerId ? [
-                            baseJoinByCornerId.AB,
-                            baseJoinByCornerId.BC,
-                            baseJoinByCornerId.CD,
-                            baseJoinByCornerId.DA
-                        ] : null;
+                        const baseLoopCore = (frames && depthMins)
+                            ? buildCornerJoinLoopWithDepths({ frames, depthOf: (id) => depthMins[id] ?? 0 })
+                            : null;
                         const baseDetail = outerDetail ? outerDetail.map(basePointForFacade) : null;
                         const baseLoop = baseLoopCore
                             ? baseLoopCore
@@ -9109,7 +9634,7 @@ export function buildBuildingFabricationVisualParts({
                             // positive = bulging outward past the footprint.
                             const outwardSignForDetailPoint = (p, zeroPoint) => {
                                 const faceId = p?.faceId;
-                                if (!(faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D') || !frames) return null;
+                                if (!isFaceId(faceId) || !frames) return null;
                                 const frame = frames[faceId] ?? null;
                                 if (!frame) return null;
                                 const u = Number(p.u) || 0;
@@ -9253,7 +9778,7 @@ export function buildBuildingFabricationVisualParts({
                     const faceMaterials = layer?.faceMaterials && typeof layer.faceMaterials === 'object' ? layer.faceMaterials : null;
                     if (faceMaterials && !usingFacadeStrips && !debugDisableSuspect4FaceOverrideOverlay) {
                         const mainLoop = wallOuterFacade[0] ?? null;
-                        const frames = mainLoop ? computeQuadFacadeFramesFromLoop(mainLoop, { warnings }) : null;
+                        const frames = mainLoop ? computeFacadeFramesFromLoop(mainLoop, { warnings }) : null;
                         if (frames) {
 
                             const baseKey = JSON.stringify({
@@ -9326,7 +9851,7 @@ export function buildBuildingFabricationVisualParts({
                             const yOffset = layerStartY - baseY;
                             const lift = 0.0;
                             let didOffsetWallMatForFacePlanes = false;
-                            const faceIds = ['A', 'B', 'C', 'D'];
+                            const faceIds = facadeFaceIdsOf(frames);
 
                             for (const faceId of faceIds) {
                                 const masterFaceId = resolveMasterFaceId(faceId);
@@ -11089,7 +11614,8 @@ export function buildBuildingFabricationVisualParts({
                 ? facadeStrips.filter((s) => s?.type === 'bay' && s?.balcony && typeof s.balcony === 'object')
                 : [];
             if (balconyStrips.length && layerEndY - layerStartY > EPS && floorSegmentStartYs.length) {
-                const balconyStripsByFaceId = { A: [], B: [], C: [], D: [] };
+                const balconyStripsByFaceId = {};
+                for (const fid of facadeFaceIdsOf(facadeFrames)) balconyStripsByFaceId[fid] = [];
                 for (const s of facadeStrips) {
                     const fid = s?.faceId;
                     if (!balconyStripsByFaceId[fid]) continue;
@@ -11099,7 +11625,7 @@ export function buildBuildingFabricationVisualParts({
                         depth: Number(s.depth) || 0
                     });
                 }
-                for (const fid of ['A', 'B', 'C', 'D']) balconyStripsByFaceId[fid].sort((a, b) => a.u0 - b.u0);
+                for (const fid of Object.keys(balconyStripsByFaceId)) balconyStripsByFaceId[fid].sort((a, b) => a.u0 - b.u0);
 
                 const balconyMatCache = new Map();
                 const balconyWallMaterial = (spec) => {
@@ -12026,11 +12552,11 @@ export function buildBuildingFabricationVisualParts({
                 : ((roofSourceLayerId && facadesByLayerId?.[roofSourceLayerId] && typeof facadesByLayerId[roofSourceLayerId] === 'object')
                     ? facadesByLayerId[roofSourceLayerId]
                     : null);
-            const wantsRoofFacadeSilhouette = !!roofFacadeSpec && ['A', 'B', 'C', 'D'].some((id) => !!roofFacadeSpec?.[id]);
+            const wantsRoofFacadeSilhouette = !!roofFacadeSpec && facadeSpecFaceIds(roofFacadeSpec).length > 0;
 
             if (wantsRoofFacadeSilhouette && roofWallOuter.length) {
                 const main = roofWallOuter[0] ?? null;
-                const frames = main ? computeQuadFacadeFramesFromLoop(main, { warnings }) : null;
+                const frames = main ? computeFacadeFramesFromLoop(main, { warnings }) : null;
                 if (frames) {
                     const links = lastFloorLayer?.faceLinking?.links && typeof lastFloorLayer.faceLinking.links === 'object'
                         ? lastFloorLayer.faceLinking.links
@@ -12054,7 +12580,7 @@ export function buildBuildingFabricationVisualParts({
                     };
 
                     const next = {};
-                    for (const faceId of ['A', 'B', 'C', 'D']) {
+                    for (const faceId of facadeFaceIdsOf(frames)) {
                         const masterFaceId = resolveMasterFaceId(faceId);
                         const srcFacade = (roofFacadeSpec?.[masterFaceId] && typeof roofFacadeSpec[masterFaceId] === 'object')
                             ? roofFacadeSpec[masterFaceId]
@@ -12510,11 +13036,11 @@ export function buildBuildingFabricationVisualParts({
             : ((roofSourceLayerId && facadesByLayerId?.[roofSourceLayerId] && typeof facadesByLayerId[roofSourceLayerId] === 'object')
                 ? facadesByLayerId[roofSourceLayerId]
                 : null);
-        const wantsRoofFacadeSilhouette = !!roofFacadeSpec && ['A', 'B', 'C', 'D'].some((id) => !!roofFacadeSpec?.[id]);
+        const wantsRoofFacadeSilhouette = !!roofFacadeSpec && facadeSpecFaceIds(roofFacadeSpec).length > 0;
 
         if (wantsRoofFacadeSilhouette && roofWallOuter.length) {
             const main = roofWallOuter[0] ?? null;
-            const frames = main ? computeQuadFacadeFramesFromLoop(main, { warnings }) : null;
+            const frames = main ? computeFacadeFramesFromLoop(main, { warnings }) : null;
             if (frames) {
                 const links = topFloorLayer?.faceLinking?.links && typeof topFloorLayer.faceLinking.links === 'object'
                     ? topFloorLayer.faceLinking.links
@@ -12538,7 +13064,7 @@ export function buildBuildingFabricationVisualParts({
                 };
 
                 const next = {};
-                for (const faceId of ['A', 'B', 'C', 'D']) {
+                for (const faceId of facadeFaceIdsOf(frames)) {
                     const masterFaceId = resolveMasterFaceId(faceId);
                     const srcFacade = (roofFacadeSpec?.[masterFaceId] && typeof roofFacadeSpec[masterFaceId] === 'object')
                         ? roofFacadeSpec[masterFaceId]
@@ -12815,11 +13341,14 @@ export function buildBuildingFabricationVisualParts({
 
 export const __testOnly = Object.freeze({
     computeQuadFacadeFramesFromLoop,
+    computeFacadeFramesFromLoop,
+    cornerJoinPairWithDepths,
     computeQuadFacadeSilhouette,
     buildWallSidesGeometryFromLoopDetailXZ,
     projectFacadeCutoutOntoShell,
     normalizeFacadeLetteringItems,
     resolvePortalLevelGeometry,
+    resolveOpeningInsetContours,
     resolveOpeningCutMetrics,
     shouldReverseLinkedFaceBayOrder,
     resolveLinkedFaceBaysForSolve,

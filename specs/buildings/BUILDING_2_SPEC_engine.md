@@ -71,6 +71,44 @@ Building v2 defines **logical faces** from the building footprint edges.
 Authoring and continuity across layers requires topology invariants; see:
 - `specs/buildings/BUILDING_2_FLOORPLAN_TOPOLOGY_SPEC.md`
 
+### 4.1 N-face model (AI 512)
+
+- A face id is any single letter `A`–`Z` (`computeFacadeFramesFromLoop`).
+  Rect(ish) footprints — axis-aligned rects, including AI 499 beveled
+  corners with facets up to ~1.5m — keep resolving through the quad path to
+  the SAME A–D layouts as ever (regression-guarded). Every other simple
+  polygon (L/V/W wings, hexagons, chamfered corners wider than a facet,
+  arbitrary convex or concave plans) derives ONE first-class face per
+  exterior run.
+- Generated ids are deterministic: the most street-facing run (max outward
+  +z, ties to the longest) is `A`; traversal walks the loop toward the
+  neighbour whose outward leans +x (so a rect-like N-gon still reads
+  A=front, B=right) and labels faces in that order. `frames.order` carries
+  the loop-chain order; corners are consecutive pairs (`AB`, `BC`, …,
+  wrapping).
+- Runs shorter than ~0.6m become **corner facets** between their
+  neighbouring faces (the AI 499 bevel-facet treatment); a quad-path
+  connector wider than ~1.5m is refused so the N-face path promotes the
+  chamfer to a real face (the bevel width max is raised to 4m so such
+  chamfers are authorable via `edgeBevel` on main corners).
+- Every face carries the full facade feature set: bay layouts and fill
+  patterns, window definitions, `faceMaterials`, `faceLinking` (any face
+  may link to any other), decoration targets and attachments; the solver
+  runs per face on the face's run length, angle-agnostic.
+- **Arbitrary-angle corners**: mitres intersect the two faces' offset lines
+  (`cornerJoinPointWithDepths`) at any angle. An acute corner whose offset
+  mitre would spike past `max(1.5m, 3×depth)` falls back to a **bevel
+  pair** — each face ends on its own offset corner and the short chamfer
+  bridges them — in the silhouette, the interior shell, and every
+  corner-join loop (caps, roof surfaces).
+- Loop-driven subsystems (interior shell, belts, cornices, roof rings,
+  parapet, coping, caps) follow the N-gon loop; nothing may assume four
+  corners. The BF2 GUI renders a plan-view face picker (the footprint
+  polygon with clickable, labelled edges) fed from the same resolver.
+- Showcases: `l_warehouse` (six faces incl. two courtyard faces, per-face
+  material override, C→B linking, fire escape on face E) and `hex_pavilion`
+  (six 14m faces, 120° corners, D→A linking).
+
 ---
 
 ## 5. Facade layout solving (deterministic)
@@ -436,6 +474,46 @@ Rules:
   the author explicitly wrote override the def's (def-path recess comes
   from the level depths), and colonette/frieze offsets account for the
   levels' added frame width. All portal roles are in the merge/shadow set.
+
+### 6.2.7 Nested wall insets (AI 511)
+
+- Any window/door opening MAY carry `insets`: a list of 1..3 steps,
+  OUTERMOST first (the portal-level dialect), carved as REAL geometry into
+  the facade wall — never appliqué. Each step grows the hole around the
+  next-inner contour (`marginMeters` uniform, or explicit
+  `widthPaddingMeters` / `topPaddingMeters` / `bottomPaddingMeters`, each
+  per side) and recesses `depthMeters` deeper than the plane before it.
+  The wall face opens to the OUTERMOST contour; between two contours the
+  visible shoulder ring (a wall-parallel recessed face with the wall's
+  planar UVs, so masonry coursing continues into the recess) sits at that
+  step's plane, and each contour's reveal walls span its own depth range.
+- **The opening's frame mounts at the innermost plane**: its `frame.inset`
+  measures from there (placement bumps the inset by Σ step depths — the
+  portal recess pattern), so openings without `insets` build byte-identical
+  wall geometry. The opening's own reveal continues from the innermost
+  plane to the frame; `shellRevealDepth` carries the total, so the AI 507
+  shell rule clears the INNERMOST frame plane; step faces are facade-owned
+  geometry, never shell.
+- **Arch follows the opening**: steps are arch-topped iff the opening is
+  arched. Arched contours stay EXACTLY concentric with the opening's cut
+  circle: a step grows the radius by its width padding, the head rises by
+  exactly that padding (`topPaddingMeters` applies to rectangular heads
+  only), and the step's own rise follows from the chord identity — a
+  semicircular opening keeps every contour semicircular. Ring paths and
+  reveal walks share one arc sampling so their edges meet exactly.
+- **Materials**: reveal walls and shoulder faces default to the wall
+  material (banding-aware); each step MAY override both with `material`
+  in the zone dialect (`pbr`/`slot`; resolved in the AI 491 pre-pass;
+  routed through the AI 509 `revealMaterialIndex` mechanism — one dedicated
+  facade material per distinct id).
+- **Authoring surface**: `insets` lives on the window definition item
+  (sibling of `settings`/`decoration`/`portal`) and per-bay
+  `window.insets` overrides it (solver passthrough). A portal def owns the
+  whole facade opening, so insets are ignored (with a warning) when one is
+  active; the outermost contour is clamped to the bay strip (paddings
+  shrink proportionally, or the stack drops with a warning). `bands: N` on
+  `arched_band` headers stays for genuine appliqué archivolts; the
+  bradbury arcade/brick windows move to insets in the AI 513 adoption.
 
 ### 6.3 BF2 support slab (view helper)
 

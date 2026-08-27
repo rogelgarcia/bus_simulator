@@ -382,6 +382,8 @@ function normalizeBayWindowSpec(value) {
         // AI 488: bay-level portal override passes through untouched; the
         // generator normalizes it against the definition's portal config.
         ...(src.portal && typeof src.portal === 'object' ? { portal: deepClone(src.portal) } : {}),
+        // AI 511: bay-level nested-inset override passes through the same way.
+        ...(Array.isArray(src.insets) ? { insets: deepClone(src.insets) } : {}),
         padding: linked
             ? { leftMeters, rightMeters }
             : { leftMeters, rightMeters, linked: false }
