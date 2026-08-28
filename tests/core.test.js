@@ -10684,6 +10684,150 @@ async function runTests() {
         assertNear(size.y, floorHeight - 0.3, 0.3, 'Expected full mode to use segment height minus vertical offset.');
     });
 
+    test('BuildingFabricationGenerator: stacked full-height openings leave the storey line clear', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+
+        const floorHeight = 3.2;
+        const layers = [
+            createDefaultFloorLayer({ floors: 1, floorHeight, belt: { enabled: false }, windows: { enabled: false } }),
+            createDefaultFloorLayer({ floors: 1, floorHeight, belt: { enabled: false }, windows: { enabled: false } }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const facades = {
+            A: {
+                wallMaterial: layers[0]?.material ?? { kind: 'texture', id: 'pbr.brick_wall_11' },
+                depthOffset: 0.0,
+                layout: {
+                    bays: {
+                        nextBayIndex: 2,
+                        items: [{
+                            id: 'bay_1',
+                            size: { mode: 'window_fixed', widthMeters: 3.2 },
+                            expandPreference: 'prefer_expand',
+                            // Recessed, so the cut carries reveal walls.
+                            depth: { left: -0.3, right: -0.3, linked: true },
+                            window: {
+                                enabled: true,
+                                defId: 'window_black_6_panels_tall',
+                                assetType: 'window',
+                                size: { widthMeters: 1.0, heightMeters: 1.0 },
+                                heightMode: 'full',
+                                verticalOffsetMeters: 0,
+                                repeat: { count: 1 },
+                                padding: { leftMeters: 0.2, rightMeters: 0.2 }
+                            }
+                        }]
+                    }
+                }
+            }
+        };
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts, 'Expected visual parts.');
+
+        const solids = parts.solidMeshes ?? [];
+        const wallMeshes = solids.filter((m) => m?.userData?.buildingFab2Role === 'wall');
+        assertTrue(wallMeshes.length >= 2, 'Expected a wall mesh per floor layer.');
+
+        // The two floors' openings meet on one plane. Neither may leave a
+        // horizontal reveal face there: the lower storey's head and the upper
+        // storey's sill would be coplanar, and coplanar horizontal faces on a
+        // storey line stripe the reveal ledge under the sun.
+        const storeyLine = wallMeshes[1].position.y;
+        const a = new THREE.Vector3();
+        const b = new THREE.Vector3();
+        const c = new THREE.Vector3();
+        const ab = new THREE.Vector3();
+        const ac = new THREE.Vector3();
+        const nrm = new THREE.Vector3();
+        let horizontalOnLine = 0;
+        for (const mesh of wallMeshes) {
+            const pos = mesh.geometry?.attributes?.position;
+            if (!pos) continue;
+            const index = mesh.geometry.index;
+            const count = index ? index.count : pos.count;
+            for (let i = 0; i < count; i += 3) {
+                const i0 = index ? index.getX(i) : i;
+                const i1 = index ? index.getX(i + 1) : i + 1;
+                const i2 = index ? index.getX(i + 2) : i + 2;
+                a.fromBufferAttribute(pos, i0);
+                b.fromBufferAttribute(pos, i1);
+                c.fromBufferAttribute(pos, i2);
+                ab.subVectors(b, a);
+                ac.subVectors(c, a);
+                nrm.crossVectors(ab, ac).normalize();
+                if (Math.abs(nrm.y) < 0.9) continue;
+                if (Math.abs((a.y + mesh.position.y) - storeyLine) > 1e-3) continue;
+                horizontalOnLine += 1;
+            }
+        }
+        assertEqual(horizontalOnLine, 0, 'Expected no horizontal reveal faces on the shared storey line.');
+
+        // A cap with another layer stacked on it is an interior floor slab;
+        // letting it cast puts a shadow plane exactly on the storey line.
+        const caps = solids.filter((m) => m?.userData?.buildingFab2RoofKind === 'core');
+        assertTrue(caps.length >= 2, 'Expected a cap per stacked layer.');
+        for (const cap of caps) {
+            assertEqual(cap.castShadow, false, `Expected mid-stack cap at y=${cap.position.y} not to cast.`);
+        }
+
+        // And it must stop BEHIND the glazing: the two storeys' openings are one
+        // continuous glazed run, so a slab edge reaching the opening mouth shows
+        // through the glass as a lit shelf on the storey line.
+        wallMeshes[0].geometry.computeBoundingBox();
+        const wallFaceZ = wallMeshes[0].geometry.boundingBox.max.z;
+        for (const cap of caps) {
+            cap.geometry.computeBoundingBox();
+            const capFaceZ = cap.geometry.boundingBox.max.z;
+            assertTrue(
+                capFaceZ < wallFaceZ - 0.01,
+                `Expected the cap to stop behind the glazed face (cap ${capFaceZ} vs wall ${wallFaceZ}).`
+            );
+        }
+
+        // The topmost cap IS the roof and still casts.
+        const cappedParts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers: layers.slice(0, 2),
+            facades,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        const topCaps = (cappedParts?.solidMeshes ?? []).filter((m) => m?.userData?.buildingFab2RoofKind === 'core');
+        assertTrue(topCaps.length >= 1, 'Expected a cap on the top floor layer.');
+        const highest = topCaps.reduce((best, m) => (m.position.y > best.position.y ? m : best), topCaps[0]);
+        assertEqual(highest.castShadow, true, 'Expected the topmost cap (the roof) to keep casting.');
+    });
+
     test('BuildingFabricationGenerator: full-height bottom opening reserves configured top opening space', () => {
         const tileSize = 10;
         const map = {
@@ -11143,6 +11287,96 @@ async function runTests() {
         archRise: wantsArch ? 0.22 : 0.0,
         revealDepth: 0.22
     }];
+
+    test('BuildingFabricationGenerator: boundary jamb meets the cut edge without a hairline gap', () => {
+        const buildWall = buildingFabricationGeneratorTestOnly?.buildWallSidesGeometryFromLoopDetailXZ ?? null;
+        assertTrue(typeof buildWall === 'function', 'Expected buildWallSidesGeometryFromLoopDetailXZ test helper.');
+
+        const geo = buildWall([
+            { x: 0, y: 0, z: 0, kind: 'profile', faceId: 'A', u: 0, depth: 0 },
+            { x: 4, y: 0, z: 0, kind: 'profile', faceId: 'A', u: 4, depth: 0 },
+            { x: 4, y: 0, z: -2, kind: 'corner_cut' },
+            { x: 0, y: 0, z: -2, kind: 'corner_cut' }
+        ], {
+            height: 3,
+            cutouts: [{
+                faceId: 'A',
+                x: 1,
+                y: 1.5,
+                z: 0,
+                width: 2,
+                height: 1,
+                revealDepth: 0.2
+            }],
+            revealDirectionSign: -1
+        });
+
+        const pos = geo?.getAttribute?.('position') ?? null;
+        assertTrue(!!pos, 'Expected wall geometry with a boundary reveal.');
+        let minJambX = Infinity;
+        let jambSamples = 0;
+        for (let i = 0; i < pos.count; i++) {
+            const y = pos.getY(i);
+            const z = pos.getZ(i);
+            if (!(y > 1.05 && y < 1.95 && z < -0.01 && z > -0.19)) continue;
+            minJambX = Math.min(minJambX, pos.getX(i));
+            jambSamples += 1;
+        }
+        assertTrue(jambSamples > 0, 'Expected vertices along the boundary jamb depth.');
+        assertNear(minJambX, 0, 1e-6, 'The jamb must meet the exact cut edge; an inset leaves a visible seam.');
+    });
+
+    test('BuildingFabricationGenerator: adjacent full-height floor cuts share an open storey edge', () => {
+        const buildWall = buildingFabricationGeneratorTestOnly?.buildWallSidesGeometryFromLoopDetailXZ ?? null;
+        assertTrue(typeof buildWall === 'function', 'Expected buildWallSidesGeometryFromLoopDetailXZ test helper.');
+
+        const geo = buildWall([
+            { x: 0, y: 0, z: 0, kind: 'profile', faceId: 'A', u: 0, depth: 0 },
+            { x: 4, y: 0, z: 0, kind: 'profile', faceId: 'A', u: 4, depth: 0 },
+            { x: 4, y: 0, z: -2, kind: 'corner_cut' },
+            { x: 0, y: 0, z: -2, kind: 'corner_cut' }
+        ], {
+            height: 6,
+            ySlices: [{ y0: 0, y1: 3 }, { y0: 3, y1: 6 }],
+            cutouts: [
+                { faceId: 'A', x: 2, y: 1.5, z: 0, width: 2, height: 3, revealDepth: 0.2 },
+                { faceId: 'A', x: 2, y: 4.5, z: 0, width: 2, height: 3, revealDepth: 0.2 }
+            ],
+            revealDirectionSign: -1
+        });
+
+        const pos = geo?.getAttribute?.('position') ?? null;
+        assertTrue(!!pos, 'Expected wall geometry with stacked opening cuts.');
+        let horizontalTriangles = 0;
+        for (let i = 0; i + 2 < pos.count; i += 3) {
+            const onStoreyLine = Math.abs(pos.getY(i) - 3) < 1e-6
+                && Math.abs(pos.getY(i + 1) - 3) < 1e-6
+                && Math.abs(pos.getY(i + 2) - 3) < 1e-6;
+            if (!onStoreyLine) continue;
+            const zSpan = Math.max(pos.getZ(i), pos.getZ(i + 1), pos.getZ(i + 2))
+                - Math.min(pos.getZ(i), pos.getZ(i + 1), pos.getZ(i + 2));
+            if (zSpan > 0.1) horizontalTriangles += 1;
+        }
+        assertEqual(horizontalTriangles, 0, 'Continuous stacked cuts must not emit coincident head/sill reveals.');
+    });
+
+    test('BuildingFabricationGenerator: slab closure detects any overlap with a full-height opening', () => {
+        const overlaps = buildingFabricationGeneratorTestOnly?.segmentOverOpeningRange ?? null;
+        assertTrue(typeof overlaps === 'function', 'Expected segmentOverOpeningRange test helper.');
+        const segment = [{ faceId: 'A', u: 0 }, { faceId: 'A', u: 10 }];
+        assertTrue(
+            overlaps(segment[0], segment[1], [{ faceId: 'A', u0: 8, u1: 9 }]),
+            'An opening near one end still overlaps the closure segment even when its midpoint does not.'
+        );
+        assertFalse(
+            overlaps(segment[0], segment[1], [{ faceId: 'A', u0: 10.1, u1: 11 }]),
+            'A disjoint opening must not suppress the closure segment.'
+        );
+        assertFalse(
+            overlaps(segment[0], { faceId: 'A', u: 8 }, [{ faceId: 'A', u0: 8, u1: 9 }]),
+            'A segment that only touches the opening boundary must remain closed.'
+        );
+    });
 
     test('BuildingFabricationGenerator: opening side face uses forward-owner material (left-forward rectangular)', () => {
         const buildWall = buildingFabricationGeneratorTestOnly?.buildWallSidesGeometryFromLoopDetailXZ ?? null;

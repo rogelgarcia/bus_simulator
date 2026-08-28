@@ -2472,6 +2472,31 @@ function resolveFacadeRangeOverrideForSegment(ranges, { uA, uB, depthA, depthB, 
     return best;
 }
 
+// How close a cut's top/bottom edge has to be to the wall's own floor/ceiling
+// line to count as REACHING it (a full-height opening the storey above or
+// below continues). Tight on purpose: a real sill sits centimetres up, so
+// 0.1 mm only catches edges that are meant to coincide.
+const REVEAL_OPEN_EDGE_TOL = 1e-4;
+
+function segmentOverOpeningRange(oa, ob, openings) {
+    if (!Array.isArray(openings) || !openings.length) return false;
+    const faceId = oa?.faceId ?? ob?.faceId;
+    if (!isFaceId(faceId)) return false;
+    const ua = Number(oa?.u);
+    const ub = Number(ob?.u);
+    if (!Number.isFinite(ua) && !Number.isFinite(ub)) return false;
+    const u0 = Number.isFinite(ua) && Number.isFinite(ub) ? Math.min(ua, ub) : (Number.isFinite(ua) ? ua : ub);
+    const u1 = Number.isFinite(ua) && Number.isFinite(ub) ? Math.max(ua, ub) : (Number.isFinite(ua) ? ua : ub);
+    const tol = 1e-3;
+    return openings.some((opening) => {
+        if (opening?.faceId !== faceId) return false;
+        const openingU0 = Number(opening.u0);
+        const openingU1 = Number(opening.u1);
+        if (u1 - u0 <= tol) return u0 >= openingU0 - tol && u0 <= openingU1 + tol;
+        return u1 > openingU0 + tol && u0 < openingU1 - tol;
+    });
+}
+
 function buildWallSidesGeometryFromLoopDetailXZ(loop, {
     height,
     uvBaseV = 0.0,
@@ -2784,6 +2809,23 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                     }
                 }
 
+                const continuesAtVerticalEdge = (cut, edgeY, above) => {
+                    const cutHalfW = Math.max(EPS, Number(cut.width) || 0) * 0.5;
+                    const cutX0 = (Number(cut.localX) || 0) - cutHalfW;
+                    const cutX1 = (Number(cut.localX) || 0) + cutHalfW;
+                    return segCuts.some((other) => {
+                        if (other === cut) return false;
+                        const otherHalfW = Math.max(EPS, Number(other.width) || 0) * 0.5;
+                        const otherX0 = (Number(other.localX) || 0) - otherHalfW;
+                        const otherX1 = (Number(other.localX) || 0) + otherHalfW;
+                        const otherHalfH = Math.max(EPS, Number(other.height) || 0) * 0.5;
+                        const otherY = (Number(other.y) || 0) + (above ? -otherHalfH : otherHalfH);
+                        return Math.abs(otherY - edgeY) <= REVEAL_OPEN_EDGE_TOL
+                            && otherX0 <= cutX0 + REVEAL_OPEN_EDGE_TOL
+                            && otherX1 >= cutX1 - REVEAL_OPEN_EDGE_TOL;
+                    });
+                };
+
                 for (const cut of segCuts) {
                     const cx = Number(cut.localX) || 0;
                     const cy = Number(cut.y) || 0;
@@ -2815,6 +2857,18 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                         // clamped): its side there is mid-opening, no jamb.
                         openStart: x0 < -cutTol,
                         openEnd: x1 > segLen + cutTol,
+                        // Same rule on the vertical axis: a cut that reaches
+                        // this wall's own floor/ceiling line, or that spills
+                        // into another y-slice, has no sill or head THERE.
+                        // Emitting one drops a horizontal face exactly on the
+                        // storey line, where the floor-slab cap, the closure
+                        // band and the next storey's matching reveal already
+                        // sit — coplanar surfaces that shadow one another and
+                        // stripe the reveal ledge.
+                        openBottom: y0 <= REVEAL_OPEN_EDGE_TOL || y0 < sliceY0 - EPS
+                            || continuesAtVerticalEdge(cut, y0, false),
+                        openTop: y1 >= h - REVEAL_OPEN_EDGE_TOL || y1 > sliceY1 + EPS
+                            || continuesAtVerticalEdge(cut, y1, true),
                         wantsArch: !!cut.wantsArch,
                         archRise: Math.max(0, Number(cut.archRise) || 0),
                         revealDepth: Math.max(0, Number(cut.revealDepth) || 0),
@@ -3033,19 +3087,17 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                     // width derives from the opening with zero padding — still
                     // needs its jamb, or the recess flank opens (the
                     // interior lining shows as a pale strip, and a deeper
-                    // opening depth turns it into a real hole). Boundary jambs
-                    // sit a hair inside the edge so they never z-fight a
-                    // neighbouring strip's own depth-return wall.
-                    const touchesStart = cut.x0 <= cutTol + EPS;
-                    const touchesEnd = cut.x1 >= segLen - cutTol - EPS;
-                    const jambNudge = Math.min(0.004, Math.max(0, (cut.x1 - cut.x0) * 0.5 - EPS));
-                    const x0 = cut.x0 + (touchesStart && !cut.openStart ? jambNudge : 0);
-                    const x1 = cut.x1 - (touchesEnd && !cut.openEnd ? jambNudge : 0);
+                    // opening depth turns it into a real hole). The jamb and a
+                    // neighbouring strip's depth return meet only along their
+                    // shared edge, so moving the jamb inward creates a visible
+                    // hairline hole instead of preventing overlap.
+                    const x0 = cut.x0;
+                    const x1 = cut.x1;
 
                     if (!cut.wantsArch || !(cut.archRise > EPS)) {
-                        pushRevealQuad(x0, y0, x1, y0, depth);
+                        if (!cut.openBottom) pushRevealQuad(x0, y0, x1, y0, depth);
                         if (!cut.openEnd) pushRevealQuad(x1, y0, x1, y1, depth);
-                        pushRevealQuad(x1, y1, x0, y1, depth);
+                        if (!cut.openTop) pushRevealQuad(x1, y1, x0, y1, depth);
                         if (!cut.openStart) pushRevealQuad(x0, y1, x0, y0, depth);
                         continue;
                     }
@@ -3053,9 +3105,9 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                     const yTop = y1;
                     const yChord = yTop - cut.archRise;
                     if (yChord <= y0 + EPS) {
-                        pushRevealQuad(x0, y0, x1, y0, depth);
+                        if (!cut.openBottom) pushRevealQuad(x0, y0, x1, y0, depth);
                         if (!cut.openEnd) pushRevealQuad(x1, y0, x1, y1, depth);
-                        pushRevealQuad(x1, y1, x0, y1, depth);
+                        if (!cut.openTop) pushRevealQuad(x1, y1, x0, y1, depth);
                         if (!cut.openStart) pushRevealQuad(x0, y1, x0, y0, depth);
                         continue;
                     }
@@ -3073,7 +3125,7 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                     };
 
                     const arcSegments = clampInt(curveSegments, 6, 64);
-                    pushRevealQuad(x0, y0, x1, y0, depth);
+                    if (!cut.openBottom) pushRevealQuad(x0, y0, x1, y0, depth);
                     if (!cut.openEnd) pushRevealQuad(x1, y0, x1, yChord, depth);
                     let prevX = x1;
                     let prevY = yChord;
@@ -9691,6 +9743,40 @@ export function buildBuildingFabricationVisualParts({
                             }
                         }
 
+                        // An opening that runs the FULL height of its layer continues
+                        // into the storey above or below: the two glazed runs are one
+                        // continuous screen, and the floor slab between them is not a
+                        // ledge anyone should see through the glass. Collect those
+                        // openings so the cap and its closure bands stop short of the
+                        // opening mouth instead of shelving across it.
+                        const collectFullHeightOpenings = (atTop) => {
+                            const out = [];
+                            const cuts = Array.isArray(facadeWallCutouts) ? facadeWallCutouts : [];
+                            for (const cut of cuts) {
+                                const faceId = cut?.faceId;
+                                if (!isFaceId(faceId) || !frames?.[faceId]) continue;
+                                const reveal = Math.max(0, Number(cut?.revealDepth) || 0);
+                                if (!(reveal > EPS)) continue;
+                                const halfH = Math.max(0, Number(cut?.height) || 0) * 0.5;
+                                const cy = Number(cut?.y) || 0;
+                                const reaches = atTop
+                                    ? (cy + halfH >= totalWallHeight - REVEAL_OPEN_EDGE_TOL)
+                                    : (cy - halfH <= REVEAL_OPEN_EDGE_TOL);
+                                if (!reaches) continue;
+                                const frame = frames[faceId];
+                                const u = ((Number(cut.x) || 0) - (Number(frame.start?.x) || 0)) * (Number(frame.t?.x) || 0)
+                                    + ((Number(cut.z) || 0) - (Number(frame.start?.z) || 0)) * (Number(frame.t?.z) || 0);
+                                const halfW = Math.max(0, Number(cut?.width) || 0) * 0.5;
+                                out.push({ faceId, u0: u - halfW, u1: u + halfW, revealDepth: reveal });
+                            }
+                            return out;
+                        };
+                        const capTopOpenings = collectFullHeightOpenings(true);
+                        const capBottomOpenings = collectFullHeightOpenings(false);
+                        const capPullbackByFace = {};
+                        for (const o of capTopOpenings) {
+                            capPullbackByFace[o.faceId] = Math.max(capPullbackByFace[o.faceId] ?? 0, o.revealDepth);
+                        }
                         const capFaceOrder = frames ? facadeFaceIdsOf(frames) : null;
                         const joinMapAtDepths = (depthOf) => {
                             if (!frames || !capFaceOrder) return null;
@@ -9782,8 +9868,14 @@ export function buildBuildingFabricationVisualParts({
                             return m;
                         })();
                         const outerDetail = Array.isArray(facadeLoopDetail) ? facadeLoopDetail : null;
+                        // The plate stops BEHIND the glazing on faces whose openings
+                        // run the full storey, so a continuous glazed run shows glass
+                        // across the storey line instead of a lit slab edge.
                         const baseLoopCore = (frames && depthMins)
-                            ? buildCornerJoinLoopWithDepths({ frames, depthOf: (id) => depthMins[id] ?? 0 })
+                            ? buildCornerJoinLoopWithDepths({
+                                frames,
+                                depthOf: (id) => (depthMins[id] ?? 0) - (capPullbackByFace[id] ?? 0)
+                            })
                             : null;
                         const baseDetail = outerDetail ? outerDetail.map(basePointForFacade) : null;
                         const baseLoop = baseLoopCore
@@ -9802,7 +9894,17 @@ export function buildBuildingFabricationVisualParts({
                             // Visible from below when a recessed layer sits under this cap.
                             baseMat.side = THREE.DoubleSide;
                             const baseMesh = new THREE.Mesh(baseGeo, baseMat);
-                            baseMesh.castShadow = true;
+                            // A mid-stack cap is an INTERIOR floor slab: the
+                            // wall it meets, and the cornices that project past
+                            // that wall, are what shape the sun there. Letting
+                            // it cast only puts a shadow plane exactly on the
+                            // storey line, where the reveal, the frame rails
+                            // and the next storey's wall all meet — a hard edge
+                            // sampled at ~4 cm shadow texels, which reads as a
+                            // striped ledge across every reveal at grazing
+                            // angles. The topmost cap IS the roof and still
+                            // casts.
+                            baseMesh.castShadow = !capHasLayerAbove;
                             baseMesh.receiveShadow = true;
                             baseMesh.position.y = capY;
                             baseMesh.userData = baseMesh.userData ?? {};
@@ -9835,6 +9937,8 @@ export function buildBuildingFabricationVisualParts({
                                 const bz = Number(ob.z) || 0;
                                 const segLen = Math.hypot(bx - ax, bz - az);
                                 if (!(segLen > ringMinEdge)) continue;
+
+                                if (segmentOverOpeningRange(oa, ob, capTopOpenings)) continue;
 
                                 const ba = basePointForFacade(oa);
                                 const bb = basePointForFacade(ob);
@@ -9904,7 +10008,8 @@ export function buildBuildingFabricationVisualParts({
                                 const ringMat = capHasLayerAbove ? closureBandWallMat : capMatTemplate.clone();
                                 ringMat.side = THREE.DoubleSide;
                                 const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-                                ringMesh.castShadow = true;
+                                // Same rule as the cap it rings (see above).
+                                ringMesh.castShadow = !capHasLayerAbove;
                                 ringMesh.receiveShadow = true;
                                 ringMesh.position.y = capY;
                                 ringMesh.userData = ringMesh.userData ?? {};
@@ -9945,7 +10050,7 @@ export function buildBuildingFabricationVisualParts({
                             // - bottom band (at layerStartY): covers the underside of
                             //   strips where this layer bulges outward past the layer
                             //   below. Skipped on the ground layer.
-                            const buildFootprintClosureBand = ({ wantSign, y, kind }) => {
+                            const buildFootprintClosureBand = ({ wantSign, y, kind, skipOverOpenings = null }) => {
                                 const bandPositions = [];
                                 const bandUvs = [];
                                 const bandIndices = [];
@@ -9963,6 +10068,8 @@ export function buildBuildingFabricationVisualParts({
                                     const bz = Number(ob.z) || 0;
                                     const segLen = Math.hypot(bx - ax, bz - az);
                                     if (!(segLen > bandMinEdge)) continue;
+
+                                    if (skipOverOpenings && segmentOverOpeningRange(oa, ob, skipOverOpenings)) continue;
 
                                     const za = zeroPointForFacade(oa);
                                     const zb = zeroPointForFacade(ob);
@@ -10006,7 +10113,9 @@ export function buildBuildingFabricationVisualParts({
                                 bandGeo.computeVertexNormals();
 
                                 const bandMesh = new THREE.Mesh(bandGeo, closureBandWallMat);
-                                bandMesh.castShadow = true;
+                                // Closure bands only exist mid-stack, on the
+                                // storey line: same rule as the cap.
+                                bandMesh.castShadow = false;
                                 bandMesh.receiveShadow = true;
                                 bandMesh.position.y = y;
                                 bandMesh.userData = bandMesh.userData ?? {};
@@ -10022,10 +10131,10 @@ export function buildBuildingFabricationVisualParts({
                             };
 
                             if (capHasLayerAbove) {
-                                buildFootprintClosureBand({ wantSign: -1, y: capY, kind: 'soffit_band' });
+                                buildFootprintClosureBand({ wantSign: -1, y: capY, kind: 'soffit_band', skipOverOpenings: capTopOpenings });
                             }
                             if (layerIndex > 0) {
-                                buildFootprintClosureBand({ wantSign: 1, y: layerStartY, kind: 'underside_band' });
+                                buildFootprintClosureBand({ wantSign: 1, y: layerStartY, kind: 'underside_band', skipOverOpenings: capBottomOpenings });
                             }
                         }
                     } else {
@@ -13712,6 +13821,7 @@ export const __testOnly = Object.freeze({
     cornerJoinPairWithDepths,
     computeQuadFacadeSilhouette,
     buildWallSidesGeometryFromLoopDetailXZ,
+    segmentOverOpeningRange,
     projectFacadeCutoutOntoShell,
     normalizeFacadeLetteringItems,
     resolvePortalLevelGeometry,

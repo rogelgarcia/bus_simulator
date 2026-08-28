@@ -197,6 +197,38 @@ Given a solved facade layout, geometry generation MUST:
 - Wall material UV continuity (AI 506): consecutive strips that resolve to the SAME wall material continue one accumulated texture run along the face — the pattern never resets at a strip boundary (whether a reset was visible used to depend on strip width vs texture period). A material change starts a fresh run. The old per-bay `textureFlow` gates (`repeats`/`overflow_*`) are subsumed by this rule; the field survives in the model for compatibility.
 - Wall material variation MUST NOT displace the texture lookup by default (AI 504): the wall preset's anti-tiling (per-cell UV offset+rotation) is opt-in — it shears crisp coursing (ashlar) into diagonal dashes and exposes wall-segment seams. Wear/grime/streak layers modulate tint/roughness only.
 
+### 6.0.1 The storey line MUST stay clear
+
+Layers are extruded one at a time, so every joint between two stacked layers is
+a plane several pieces of geometry independently want to close. Coplanar faces
+there fight in the depth buffer, and — because they also go into the shadow
+caster — they stripe the reveal ledge with self-shadow at grazing sun angles.
+Three rules keep that plane clear:
+
+- An opening cut that REACHES the wall's own floor/ceiling line (a full-height
+  opening the storey above or below continues), or that spills into another
+  y-slice, MUST NOT emit a sill or head reveal quad there. It is the same rule
+  the `openStart`/`openEnd` jambs already follow on the horizontal axis: a cut
+  that continues has no return on that side. The floor-slab cap and the closure
+  bands already cover the strip.
+- Where a full-height opening runs through the storey line, the floor-slab cap
+  and the closure rings/bands MUST NOT reach the opening mouth. The two storeys'
+  openings are ONE continuous glazed run, so the slab between them is that run's
+  floor and ceiling, not a ledge: an edge reaching the mouth shows through the
+  glass as a lit shelf. The cap's boundary is pulled back behind the glazing by
+  the opening's reveal depth on those faces, and closure segments sitting over
+  such an opening are skipped.
+- A floor-slab cap and its closure rings/bands that have another layer stacked
+  ABOVE them MUST NOT cast shadows. Mid-stack they are interior floor slabs —
+  the wall they meet, and the cornices that project past that wall, are what
+  shape the sun. Letting them cast only puts a shadow plane exactly on the
+  storey line, sampled at the shadow map's texel size (~4 cm), which reads as a
+  striped ledge across every reveal. The topmost cap IS the roof and still
+  casts.
+
+Regression: `tests/core.test.js` -> "BuildingFabricationGenerator: stacked
+full-height openings leave the storey line clear".
+
 ### 6.1 Bay wall material overrides + bay-to-bay linking (full spec)
 
 - A face’s effective wall material configuration MUST respect face master/slave rules:
