@@ -40,8 +40,8 @@ const LEGACY_LIGHTING_DEFAULTS_V2 = Object.freeze({
 export const LIGHTING_DEFAULTS = Object.freeze({
     exposure: 0.86,
     toneMapping: 'agx',
-    hemiIntensity: 1.15,
-    sunIntensity: 5.25,
+    hemiIntensity: 1.46,
+    sunIntensity: 5.75,
     ibl: {
         enabled: true,
         envMapIntensity: 0.28,

@@ -1,4 +1,4 @@
-// Node unit tests: preset promotion (8_14_2026) matches code defaults.
+// Node unit tests: preset promotion (sunny) matches code defaults.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -20,16 +20,16 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../../..');
 
 function readPreset() {
-    const filePath = path.resolve(repoRoot, 'downloads/bus_sim_options_preset_8_14_2026.json');
+    const filePath = path.resolve(repoRoot, 'downloads/bus_sim_options_preset_sunny.json');
     const raw = fs.readFileSync(filePath, 'utf8');
     return JSON.parse(raw);
 }
 
-test('Options defaults: promoted 8_14_2026 preset matches code defaults', () => {
+test('Options defaults: promoted sunny preset matches code defaults', () => {
     const preset = readPreset();
     assert.equal(preset.schema, 'bus_sim.options_preset');
     assert.equal(preset.version, 1);
-    assert.equal(preset.name, '_8_14_2026');
+    assert.equal(preset.name, 'sunny');
     assert.ok(preset.settings);
 
     const s = preset.settings;
