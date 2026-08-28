@@ -831,6 +831,7 @@ export class BuildingFabrication2View {
         this._showDummyEnabled = false;
         this._renderSlabEnabled = false;
         this._explodedDecorationsEnabled = false;
+        this._compiledPreviewEnabled = false;
         this._rulerEnabled = false;
         this._layoutAdjustEnabled = false;
         this._rulerPointA = null;
@@ -948,6 +949,7 @@ export class BuildingFabrication2View {
         this.ui.onShowDummyChange = (enabled) => this._setShowDummyEnabled(enabled);
         this.ui.onRenderSlabChange = (enabled) => this._setRenderSlabEnabled(enabled);
         this.ui.onExplodedDecorationsChange = (enabled) => this._setExplodedDecorationsEnabled(enabled);
+        this.ui.onCompiledPreviewChange = (enabled) => this._setCompiledPreviewEnabled(enabled);
         this.ui.onRulerToggle = (enabled) => this._setRulerEnabled(enabled);
         this.ui.onAdjustLayoutToggle = (enabled) => this._setLayoutAdjustEnabled(enabled);
         this.ui.onSelectCatalogEntry = (configId) => this._loadConfigFromCatalog(configId);
@@ -1086,6 +1088,7 @@ export class BuildingFabrication2View {
         this._showDummyEnabled = false;
         this._renderSlabEnabled = false;
         this._explodedDecorationsEnabled = false;
+        this._compiledPreviewEnabled = false;
         this._rulerEnabled = false;
         this._layoutAdjustEnabled = false;
         this._rulerPointA = null;
@@ -1237,6 +1240,7 @@ export class BuildingFabrication2View {
                     this._refreshDecorationAutoCornerMetadata();
                     const loaded = this.scene.loadBuildingConfig(this._currentConfig, { preserveCamera });
                     if (loaded) this._perfBar?.requestUpdate?.();
+                    this._syncCompiledStatsUi();
                 }
                 this._lastRebuildAtMs = now;
             }
@@ -5859,6 +5863,25 @@ export class BuildingFabrication2View {
         if (next === this._renderSkyEnabled) return;
         this._renderSkyEnabled = next;
         this.scene?.setRenderSky?.(next);
+    }
+
+    // Compiled preview: rebuild through the game's geometry merger (on) or
+    // back to the per-part authoring meshes (off). The header's Calls/Tris
+    // then read as the in-game cost; the merge summary shows under the
+    // view toggles.
+    _setCompiledPreviewEnabled(enabled) {
+        const next = !!enabled;
+        if (next === this._compiledPreviewEnabled) return;
+        this._compiledPreviewEnabled = next;
+        this.scene?.setCompiledPreview?.(next);
+        if (this.scene?.getHasBuilding?.() && this._currentConfig) {
+            this.scene.loadBuildingConfig(this._currentConfig, { preserveCamera: true });
+        }
+        this._syncCompiledStatsUi();
+    }
+
+    _syncCompiledStatsUi() {
+        this.ui?.setCompiledStats?.(this.scene?.getCompiledStats?.() ?? null);
     }
 
     _setShowDummyEnabled(enabled) {

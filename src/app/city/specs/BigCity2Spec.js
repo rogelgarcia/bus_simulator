@@ -2,6 +2,86 @@
 // Big City 2 layout spec (source of truth: this JS module; JSON export is generated).
 // @ts-check
 
+import { BRADBURY_BLOCK_BUILDING_CONFIG } from '../../../graphics/content3d/buildings/configs/BradburyBlock.js';
+
+// Bradbury Block on the avenue corner parcel (replaces the gov center slab).
+// The config is authored with its chamfer at the (+x,+z) corner; this parcel's
+// street junction is at (min x, max z) — the 6-lane avenue at z=48 to the
+// south, the diagonal side street to the west — so the footprint rotates 90°
+// CCW ((x,z) → (−z,x)) and the per-face designs re-key to the letters the
+// ROTATED geometry derives (face ids are geometric): A = avenue front ← the
+// portal design (config C), B = east ← the full-length side design (config
+// D), C = back ← the full-length entry design (config E), D = west street ←
+// the side design (config A), E = the chamfer (config B). All faces solve
+// EXACTLY: the config's bays are fixed and its footprint derives from them.
+// Per the user: fire escapes ride the BACK face, the BRADBURY lettering
+// follows the portal onto face A, and the placement is ANCHORED — authored
+// world coordinates, front flush with the avenue sidewalk (the tile-derived
+// build area would otherwise re-center it into the lawn and squeeze it, the
+// road tile row being excluded from that area).
+function createBradburyCornerEntry() {
+    const src = BRADBURY_BLOCK_BUILDING_CONFIG;
+    const clone = (value) => JSON.parse(JSON.stringify(value));
+
+    // Rotate 90° CCW, then translate: west edge just inside the parcel,
+    // front edge at the avenue sidewalk line (centerline z=48 minus 3 lanes
+    // × 4.8 + shoulder 0.525 + sidewalk 1.875 ≈ 16.8).
+    const rotated = (src.footprintLoops?.[0] ?? []).map((p) => ({ x: -p.z, z: p.x }));
+    const minX = Math.min(...rotated.map((p) => p.x));
+    const maxZ = Math.max(...rotated.map((p) => p.z));
+    const WEST_EDGE = -92;
+    const FRONT_EDGE = 31.1;
+    const loop = rotated.map((p) => ({ x: p.x - minX + WEST_EDGE, z: p.z - maxZ + FRONT_EDGE }));
+
+    const facades = {};
+    for (const [layerId, faces] of Object.entries(src.facades ?? {})) {
+        facades[layerId] = {
+            A: clone(faces.C),
+            B: clone(faces.D),
+            C: clone(faces.E),
+            D: clone(faces.A),
+            E: clone(faces.B)
+        };
+    }
+
+    // Back face (C) carries the full-length entry layout; the escapes ride
+    // its field pairs and the raised end pavilion.
+    const escapeBays = ['f3_w1', 'f3_w3', 'ep_w'];
+    const attachments = {
+        items: clone(src.attachments?.items ?? []).map((item, index) => ({
+            ...item,
+            target: {
+                ...item.target,
+                faceId: 'C',
+                bayId: escapeBays[index] ?? item.target.bayId
+            }
+        }))
+    };
+
+    const wallDecorations = {
+        lettering: clone(src.wallDecorations?.lettering ?? []).map((sign) => ({
+            ...sign,
+            target: { ...sign.target, bayRef: 'A:entry_8' }
+        }))
+    };
+
+    return {
+        id: 'building_9',
+        configId: 'bradbury_block',
+        tiles: [
+            [8, 13], [9, 13], [10, 13],
+            [8, 12], [9, 12], [10, 12],
+            [8, 11], [9, 11], [10, 11]
+        ],
+        footprintLoops: [loop],
+        footprintPlacement: 'anchor',
+        facades,
+        attachments,
+        wallDecorations,
+        rendered: true
+    };
+}
+
 function tileToWorldPoint(tile, origin, tileSize) {
     const x = tile?.[0] | 0;
     const y = tile?.[1] | 0;
@@ -714,53 +794,7 @@ export const BIG_CITY_2_SPEC_SOURCE = Object.freeze(
                 ],
                 "rendered": true
             },
-            {
-                "id": "building_9",
-                "configId": "gov_center_2",
-                "tiles": [
-                    [
-                        11,
-                        13
-                    ],
-                    [
-                        10,
-                        13
-                    ],
-                    [
-                        11,
-                        12
-                    ],
-                    [
-                        9,
-                        13
-                    ],
-                    [
-                        10,
-                        12
-                    ],
-                    [
-                        11,
-                        11
-                    ],
-                    [
-                        8,
-                        13
-                    ],
-                    [
-                        9,
-                        12
-                    ],
-                    [
-                        10,
-                        11
-                    ],
-                    [
-                        9,
-                        11
-                    ]
-                ],
-                "rendered": true
-            },
+            createBradburyCornerEntry(),
             {
                 "id": "building_10",
                 "configId": "brick_midrise",

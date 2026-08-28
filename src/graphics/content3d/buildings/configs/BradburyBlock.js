@@ -72,14 +72,18 @@ const ARCH_WINDOW = (widthMeters, repeatCount) => Object.freeze({
     wall: { cutWidthLerp: 0, cutHeightLerp: 0 }
 });
 
+// The window's authored size.widthMeters feeds the SOLVER's bay minimum
+// (size + paddings must fit the fixed bay, or every ground face scales
+// down and the doors squeeze): stores are sized to fill their fixed bays
+// exactly.
 const STOREFRONT = Object.freeze({
     enabled: true,
     defId: 'storefront_bradbury',
     assetType: 'storefront',
-    size: { widthMeters: 3.4, heightMeters: 3.91 },
+    size: { widthMeters: 2.86, heightMeters: 3.91 },
     heightMode: 'fixed',
     verticalOffsetMeters: 0,
-    width: { minMeters: 3.0, maxMeters: null },
+    width: { minMeters: 2.6, maxMeters: null },
     padding: { leftMeters: 0.12, rightMeters: 0.12 },
     repeat: { count: 1 },
     muntins: { bottomEnabled: true, topEnabled: true },
@@ -193,8 +197,8 @@ function windowBay(id, window) {
 function cornerWindowBay(id, window) {
     return {
         id,
-        size: { mode: 'range', minMeters: 2.4, maxMeters: 3.6 },
-        expandPreference: 'prefer_expand',
+        size: { mode: 'fixed', widthMeters: CHAMFER_FACE_W - 0.9 },
+        expandPreference: 'no_repeat',
         wallMaterialOverride: null,
         window
     };
@@ -257,18 +261,27 @@ const MATVAR = (seedOffset) => ({
 const FIELD_INSET = -0.08;
 const SAW_RECESS = -0.12;
 const STORE_RECESS = -0.18;
-const FIELD_PIER_W = 0.7;
+const FIELD_PIER_W = 0.6;
 const PAV_MARGIN_W = 0.5;
 const END_MARGIN_W = 0.9;
 const CHAMFER_MARGIN_W = 0.6;
-const PAIR_RANGE = Object.freeze({ mode: 'range', minMeters: 2.6, maxMeters: 3.6 });
-const TRIPLE_RANGE = Object.freeze({ mode: 'range', minMeters: 3.6, maxMeters: 4.8 });
+// Every bay is FIXED width (2026-08-28, user): a placement can never squeeze
+// the doors or windows, because the FOOTPRINT is derived from the layout
+// totals below — each face's run always equals its layout exactly. The back
+// faces get their own full-length layout variants (the chamfer shortens the
+// front faces by CHAMFER_AXIS_M), replacing the old faceLinking clones.
+const PAIR_BAY_W = 3.1;
+const TRIPLE_BAY_W = 4.3;
+const PAIR_BAY = Object.freeze({ mode: 'fixed', widthMeters: PAIR_BAY_W });
+const TRIPLE_BAY = Object.freeze({ mode: 'fixed', widthMeters: TRIPLE_BAY_W });
+const CHAMFER_FACE_W = 3.9;
+const CHAMFER_AXIS_M = CHAMFER_FACE_W / Math.SQRT2;
 
 // 3-pane storefront glass for the wide (triple-window) bays.
 const STOREFRONT_3 = Object.freeze({
     ...STOREFRONT,
     defId: 'storefront_bradbury_3',
-    size: { widthMeters: 4.2, heightMeters: 3.91 },
+    size: { widthMeters: 4.06, heightMeters: 3.91 },
     width: { minMeters: 3.4, maxMeters: null }
 });
 
@@ -320,7 +333,7 @@ function segWin(id, sizeSpec, depth, window) {
     return {
         id,
         size: sizeSpec,
-        expandPreference: 'prefer_expand',
+        expandPreference: 'no_repeat',
         ...(Math.abs(depth) > 1e-9 ? { depth: { left: depth, right: depth, linked: true } } : {}),
         wallMaterialOverride: null,
         window
@@ -336,7 +349,7 @@ function pavilionSeg(kind, prefix, { leftW = PAV_MARGIN_W, rightW = PAV_MARGIN_W
     const K = SEG_KIND[kind];
     return [
         segPier(`${prefix}_a`, leftW, 0, K.capitals),
-        segWin(`${prefix}_w`, PAIR_RANGE, kind === 'ground' ? STORE_RECESS : 0, K.pair()),
+        segWin(`${prefix}_w`, PAIR_BAY, kind === 'ground' ? STORE_RECESS : 0, K.pair()),
         segPier(`${prefix}_b`, rightW, 0, K.capitals)
     ];
 }
@@ -361,9 +374,9 @@ function fieldSeg(kind, prefix, pattern) {
                 }
                 : segWin(`${prefix}_wP`, { mode: 'fixed', widthMeters: 5.6 }, FIELD_INSET + K.winDepth, K.pair()));
         } else if (cell === '3') {
-            items.push(segWin(`${prefix}_w${idx}`, TRIPLE_RANGE, FIELD_INSET + K.winDepth, K.triple()));
+            items.push(segWin(`${prefix}_w${idx}`, TRIPLE_BAY, FIELD_INSET + K.winDepth, K.triple()));
         } else {
-            items.push(segWin(`${prefix}_w${idx}`, PAIR_RANGE, FIELD_INSET + K.winDepth, K.pair()));
+            items.push(segWin(`${prefix}_w${idx}`, PAIR_BAY, FIELD_INSET + K.winDepth, K.pair()));
         }
         items.push(segPier(`${prefix}_p${wi}`, FIELD_PIER_W, FIELD_INSET, K.capitals));
     }
@@ -396,8 +409,12 @@ function cornerStackBay(kind, id) {
 }
 
 // Side street face (A): bays run back(start) → chamfer corner(end).
-function sideStreetFaceItems(kind) {
+// `fullLength` = the back-face variant (D): same design, but the run is not
+// shortened by the chamfer, so the corner-side margin pier grows by the
+// chamfer's axis projection and the totals stay exact.
+function sideStreetFaceItems(kind, { fullLength = false } = {}) {
     const K = SEG_KIND[kind];
+    const cornerPierW = CHAMFER_MARGIN_W + (fullLength ? CHAMFER_AXIS_M : 0);
     return [
         ...pavilionSeg(kind, 'bp', { leftW: END_MARGIN_W }),
         ...fieldSeg(kind, 'f3', ['3', '2', '2', '2', '3']),
@@ -405,15 +422,16 @@ function sideStreetFaceItems(kind) {
         ...fieldSeg(kind, 'f2', ['2', '2', '2']),
         segPier('cn_a', PAV_MARGIN_W, 0, K.capitals),
         cornerStackBay(kind, kind === 'ground' ? 'door_left' : 'cn_w'),
-        segPier('cn_b', CHAMFER_MARGIN_W, 0, K.capitals)
+        segPier('cn_b', cornerPierW, 0, K.capitals)
     ];
 }
 
 // Entry face (C): bays run chamfer corner(start) → far end.
-function entryFaceItems(kind) {
+function entryFaceItems(kind, { fullLength = false } = {}) {
     const K = SEG_KIND[kind];
+    const cornerPierW = CHAMFER_MARGIN_W + (fullLength ? CHAMFER_AXIS_M : 0);
     return [
-        segPier('cn_a', CHAMFER_MARGIN_W, 0, K.capitals),
+        segPier('cn_a', cornerPierW, 0, K.capitals),
         cornerStackBay(kind, kind === 'ground' ? 'door_front' : 'cn_w'),
         segPier('cn_b', PAV_MARGIN_W, 0, K.capitals),
         ...fieldSeg(kind, 'f3', ['3', '2', 'P', '2', '3']),
@@ -423,6 +441,17 @@ function entryFaceItems(kind) {
 
 const SIDE_ARCADE_ITEMS = sideStreetFaceItems('arcade');
 const ENTRY_ARCADE_ITEMS = entryFaceItems('arcade');
+const SIDE_BACK_ARCADE_ITEMS = sideStreetFaceItems('arcade', { fullLength: true });
+const ENTRY_BACK_ARCADE_ITEMS = entryFaceItems('arcade', { fullLength: true });
+
+// The footprint DERIVES from the layouts: each face's run equals its fixed
+// layout total, the chamfer bridging the two street faces. All-fixed bays +
+// derived extents = the design can never be squeezed or stretched.
+const layoutRunMeters = (items) => items.reduce((sum, bay) => sum + (Number(bay?.size?.widthMeters) || 0), 0);
+const SIDE_RUN_M = layoutRunMeters(sideStreetFaceItems('ground'));
+const ENTRY_RUN_M = layoutRunMeters(entryFaceItems('ground'));
+const HALF_X_M = (SIDE_RUN_M + CHAMFER_AXIS_M) / 2;
+const HALF_Z_M = (ENTRY_RUN_M + CHAMFER_AXIS_M) / 2;
 
 export const BRADBURY_BLOCK_BUILDING_CONFIG = Object.freeze({
     id: 'bradbury_block',
@@ -487,7 +516,7 @@ export const BRADBURY_BLOCK_BUILDING_CONFIG = Object.freeze({
                 material: { kind: 'texture', id: 'pbr.red_sandstone_noise' }
             },
             windows: { enabled: false },
-            faceLinking: { links: { D: 'A', E: 'C' } }
+            faceLinking: { links: {} }
         },
         {
             // Thin transition strip: plain stone between the two moldings,
@@ -512,7 +541,7 @@ export const BRADBURY_BLOCK_BUILDING_CONFIG = Object.freeze({
                 material: { kind: 'texture', id: 'pbr.red_sandstone_noise' }
             },
             windows: { enabled: false },
-            faceLinking: { links: { D: 'A', E: 'C' } }
+            faceLinking: { links: {} }
         },
         {
             id: 'floor_bb2',
@@ -543,7 +572,7 @@ export const BRADBURY_BLOCK_BUILDING_CONFIG = Object.freeze({
                 }
             },
             windows: { enabled: false },
-            faceLinking: { links: { D: 'A', E: 'C' } }
+            faceLinking: { links: {} }
         },
         {
             id: 'floor_bb3',
@@ -557,7 +586,7 @@ export const BRADBURY_BLOCK_BUILDING_CONFIG = Object.freeze({
             materialVariation: MATVAR(19),
             belt: { enabled: false },
             windows: { enabled: false },
-            faceLinking: { links: { D: 'A', E: 'C' } }
+            faceLinking: { links: {} }
         },
         {
             id: 'roof_bb4',
@@ -612,13 +641,16 @@ export const BRADBURY_BLOCK_BUILDING_CONFIG = Object.freeze({
     // the corner window is ~28% of the face and the corner entry assembly
     // ~3m, so the face is ~4.2m; the earlier 3m read was too narrow). The
     // other corners stay square.
+    // Derived from the fixed layouts (see the segment kit): side run +
+    // chamfer along x, entry run + chamfer along z — a longer, reference-like
+    // rectangle (the 46x38 authored box read too square in the city).
     footprintLoops: Object.freeze([
         [
-            { x: -23, z: 19 },
-            { x: 20.24, z: 19 },
-            { x: 23, z: 16.24 },
-            { x: 23, z: -19 },
-            { x: -23, z: -19 }
+            { x: -HALF_X_M, z: HALF_Z_M },
+            { x: HALF_X_M - CHAMFER_AXIS_M, z: HALF_Z_M },
+            { x: HALF_X_M, z: HALF_Z_M - CHAMFER_AXIS_M },
+            { x: HALF_X_M, z: -HALF_Z_M },
+            { x: -HALF_X_M, z: -HALF_Z_M }
         ]
     ]),
     floors: 5,
@@ -649,15 +681,15 @@ export const BRADBURY_BLOCK_BUILDING_CONFIG = Object.freeze({
                         items: [
                             {
                                 id: 'door_corner',
-                                size: { mode: 'range', minMeters: 3.7, maxMeters: 4.2 },
-                                expandPreference: 'prefer_expand',
+                                size: { mode: 'fixed', widthMeters: CHAMFER_FACE_W },
+                                expandPreference: 'no_repeat',
                                 depth: { left: -0.05, right: -0.05, linked: true },
                                 wallMaterialOverride: null,
                                 window: {
                                     enabled: true,
                                     defId: 'door_corner_bradbury_chamfer',
                                     assetType: 'storefront',
-                                    size: { widthMeters: 2.1, heightMeters: 3.75 },
+                                    size: { widthMeters: 2.1, heightMeters: 3.91 },
                                     heightMode: 'fixed',
                                     verticalOffsetMeters: 0,
                                     width: { minMeters: 2.0, maxMeters: null },
@@ -689,6 +721,27 @@ export const BRADBURY_BLOCK_BUILDING_CONFIG = Object.freeze({
                 layout: {
                     bays: {
                         items: entryFaceItems('ground'),
+                        nextBayIndex: 40
+                    },
+                    groups: { items: [], nextGroupIndex: 1 }
+                }
+            },
+            // Back faces: full-length variants of the street designs (the
+            // run is not shortened by the chamfer) — explicit, not linked,
+            // so their totals stay exact under the all-fixed solve.
+            D: {
+                layout: {
+                    bays: {
+                        items: sideStreetFaceItems('ground', { fullLength: true }),
+                        nextBayIndex: 40
+                    },
+                    groups: { items: [], nextGroupIndex: 1 }
+                }
+            },
+            E: {
+                layout: {
+                    bays: {
+                        items: entryFaceItems('ground', { fullLength: true }),
                         nextBayIndex: 40
                     },
                     groups: { items: [], nextGroupIndex: 1 }
@@ -731,6 +784,24 @@ export const BRADBURY_BLOCK_BUILDING_CONFIG = Object.freeze({
                     },
                     groups: { items: [], nextGroupIndex: 1 }
                 }
+            },
+            D: {
+                layout: {
+                    bays: {
+                        items: sideStreetFaceItems('middle', { fullLength: true }),
+                        nextBayIndex: 40
+                    },
+                    groups: { items: [], nextGroupIndex: 1 }
+                }
+            },
+            E: {
+                layout: {
+                    bays: {
+                        items: entryFaceItems('middle', { fullLength: true }),
+                        nextBayIndex: 40
+                    },
+                    groups: { items: [], nextGroupIndex: 1 }
+                }
             }
         },
         floor_bb3: {
@@ -768,6 +839,24 @@ export const BRADBURY_BLOCK_BUILDING_CONFIG = Object.freeze({
                         nextBayIndex: 40
                     },
                     groups: arcadeGroup(ENTRY_ARCADE_ITEMS.map((bay) => bay.id))
+                }
+            },
+            D: {
+                layout: {
+                    bays: {
+                        items: SIDE_BACK_ARCADE_ITEMS,
+                        nextBayIndex: 40
+                    },
+                    groups: arcadeGroup(SIDE_BACK_ARCADE_ITEMS.map((bay) => bay.id))
+                }
+            },
+            E: {
+                layout: {
+                    bays: {
+                        items: ENTRY_BACK_ARCADE_ITEMS,
+                        nextBayIndex: 40
+                    },
+                    groups: arcadeGroup(ENTRY_BACK_ARCADE_ITEMS.map((bay) => bay.id))
                 }
             }
         }
@@ -1106,7 +1195,7 @@ export const BRADBURY_BLOCK_BUILDING_CONFIG = Object.freeze({
                         columns: 1,
                         emissiveColorHex: 0xffffff,
                         emissiveIntensity: 1.9,
-                        material: { mode: 'color', colorHex: 0xd9c9a6, roughness: 0.85 },
+                        material: { mode: 'color', colorHex: 0xa2947a, roughness: 0.95 },
                         insetMeters: 0.06
                     },
                     fascia: {
@@ -1185,7 +1274,7 @@ export const BRADBURY_BLOCK_BUILDING_CONFIG = Object.freeze({
                         columns: 1,
                         emissiveColorHex: 0xffffff,
                         emissiveIntensity: 1.9,
-                        material: { mode: 'color', colorHex: 0xd9c9a6, roughness: 0.85 },
+                        material: { mode: 'color', colorHex: 0xa2947a, roughness: 0.95 },
                         insetMeters: 0.06
                     },
                     fascia: {
@@ -1281,7 +1370,7 @@ export const BRADBURY_BLOCK_BUILDING_CONFIG = Object.freeze({
                         columns: 1,
                         emissiveColorHex: 0xffffff,
                         emissiveIntensity: 1.9,
-                        material: { mode: 'color', colorHex: 0xd9c9a6, roughness: 0.85 },
+                        material: { mode: 'color', colorHex: 0xa2947a, roughness: 0.95 },
                         insetMeters: 0.06
                     },
                     fascia: {
@@ -1311,7 +1400,7 @@ export const BRADBURY_BLOCK_BUILDING_CONFIG = Object.freeze({
                 settings: {
                     version: 1,
                     width: 2.1,
-                    height: 3.75,
+                    height: 3.91,
                     arch: {
                         enabled: false,
                         heightRatio: 0.25,
@@ -1376,16 +1465,16 @@ export const BRADBURY_BLOCK_BUILDING_CONFIG = Object.freeze({
                     // a bit behind it, the door deepest.
                     transom: {
                         mode: 'solid',
-                        heightMeters: 0.68,
+                        heightMeters: 0.86,
                         columns: 1,
                         emissiveColorHex: 0xffffff,
                         emissiveIntensity: 1.9,
-                        material: { mode: 'color', colorHex: 0xd9c9a6, roughness: 0.85 },
+                        material: { mode: 'color', colorHex: 0xa2947a, roughness: 0.95 },
                         insetMeters: 0.06
                     },
                     fascia: {
                         enabled: true,
-                        heightMeters: 0.47,
+                        heightMeters: 0.45,
                         projectionMeters: -0.12,
                         // The frame is cream, so the dark band is an explicit
                         // color (match_frame would go cream too).

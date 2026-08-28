@@ -10,6 +10,8 @@ import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js
 import { createGeneratorConfig } from '../../assets3d/generators/GeneratorParams.js';
 import { createCityWorld } from '../../assets3d/generators/TerrainGenerator.js';
 import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
+import { mergeBuildingGroupGeometry } from '../../assets3d/generators/building_fabrication/BuildingGeometryMerger.js';
+import { buildMergedShadowCasters, disposeMergedShadowCasters, setMergedShadowCastersEnabled } from '../../lighting/ShadowCasterMerge.js';
 import { BuildingWallTextureCache } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { createProceduralMeshAsset, PROCEDURAL_MESH } from '../../content3d/catalogs/ProceduralMeshCatalog.js';
 import { FirstPersonCameraController } from '../../engine3d/camera/FirstPersonCameraController.js';
@@ -909,6 +911,11 @@ export class BuildingFabrication2Scene {
         this._wallDecorationsGroup = null;
         this._wallDecorationsExplodedGroup = null;
         this._explodedDecorationsEnabled = false;
+        // Compiled preview: run the game's building geometry merger on the
+        // built parts so the editor renders (and costs) what the game will.
+        this._compiledPreview = false;
+        this._compiledStats = null;
+        this._shadowMergeEntries = null;
         this._beltColorById = new Map(getBeltCourseColorOptions().map((opt) => [String(opt?.id ?? ''), Number(opt?.hex) || 0xffffff]));
 
         this._showWireframe = false;
@@ -1407,6 +1414,8 @@ export class BuildingFabrication2Scene {
         this._applyEditorEnvBoost(group);
         this._applyEditorEnvBoost(this._wallDecorationsGroup);
 
+        this._applyBuildOptimizations();
+
         if (keepCamera && cameraPos && cameraTarget) {
             this.controls.setLookAt({ position: cameraPos, target: cameraTarget });
         } else {
@@ -1433,6 +1442,77 @@ export class BuildingFabrication2Scene {
                 if (!userData.iblNoAutoEnvMapIntensity) userData.iblEnvMapIntensity = EDITOR_ENV_MAP_INTENSITY;
             }
         });
+    }
+
+    // Editor rendering cost control:
+    // - Always: ONE merged shadow caster per built building (plus one for the
+    //   decorations group). The shadow cascades otherwise re-render every part
+    //   mesh (~1k of them) per cascade, which is where most of the editor's
+    //   draw calls live. Lossless — the caster holds the same triangles.
+    // - Compiled preview (the "Compiled" view toggle): additionally run the
+    //   game's building geometry merger (material dedup + merge by material)
+    //   over the built part groups — the same pass City applies to every
+    //   fabricated building on load — so the editor renders the building at
+    //   the cost the game will pay. Editing stays possible (face/bay tools
+    //   work off computed data, not meshes); the exploded-decorations debug
+    //   view is the one tool that needs the unmerged parts.
+    _applyBuildOptimizations() {
+        // Rebuilds re-enter here: retire the previous casters first so they are
+        // neither duplicated nor swallowed by the geometry merger below.
+        disposeMergedShadowCasters(this._shadowMergeEntries);
+        this._shadowMergeEntries = null;
+        this._compiledStats = null;
+
+        const building = this._building ?? null;
+        const group = building?.group ?? null;
+        if (!group) return;
+
+        if (this._compiledPreview) {
+            const totals = { sourceMeshes: 0, resultMeshes: 0, materialsBefore: 0, materialsAfter: 0, failedBuckets: 0 };
+            const materialCache = new Map();
+            // Per sub-group so the view-mode visibility toggles (mesh/floors/
+            // plan hide whole sub-groups) keep working on the merged output.
+            const targets = [building.solidGroup, building.windowsGroup, building.featuresGroup, this._wallDecorationsGroup];
+            for (const target of targets) {
+                if (!target) continue;
+                const stats = mergeBuildingGroupGeometry(target, { materialCache });
+                totals.sourceMeshes += stats.sourceMeshes;
+                totals.resultMeshes += stats.resultMeshes;
+                totals.materialsBefore += stats.materialsBefore;
+                totals.materialsAfter += stats.materialsAfter;
+                totals.failedBuckets += stats.failedBuckets;
+            }
+            this._compiledStats = totals;
+        }
+
+        const casterRoots = [group, this._wallDecorationsGroup].filter(Boolean);
+        const casterParent = {
+            children: casterRoots,
+            updateMatrixWorld() {
+                for (const child of this.children) child.updateMatrixWorld(true);
+            }
+        };
+        this._shadowMergeEntries = buildMergedShadowCasters(casterParent);
+        setMergedShadowCastersEnabled(this._shadowMergeEntries, true);
+        // The building's caster follows the solid meshes' visibility so the
+        // floors/plan view modes do not keep shadows of a hidden building.
+        for (const entry of this._shadowMergeEntries) {
+            if (entry.group === group && building.solidGroup) {
+                building.solidGroup.add(entry.merged);
+            }
+        }
+    }
+
+    setCompiledPreview(enabled) {
+        this._compiledPreview = !!enabled;
+    }
+
+    getCompiledPreview() {
+        return this._compiledPreview;
+    }
+
+    getCompiledStats() {
+        return this._compiledStats ? { ...this._compiledStats } : null;
     }
 
     resetCamera() {

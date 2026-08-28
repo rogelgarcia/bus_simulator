@@ -657,6 +657,7 @@ export class CityMap {
 
             const footprintLoops = normalizeFootprintLoopsInput(building?.footprintLoops);
             if (footprintLoops) record.footprintLoops = footprintLoops;
+            if (typeof building?.footprintPlacement === 'string') record.footprintPlacement = building.footprintPlacement;
             if (Number.isFinite(building?.wallInset)) record.wallInset = building.wallInset;
             if (Number.isFinite(building?.materialVariationSeed)) record.materialVariationSeed = building.materialVariationSeed;
             if (building?.windowVisuals && typeof building.windowVisuals === 'object') record.windowVisuals = deepClone(building.windowVisuals);
@@ -841,6 +842,12 @@ export class CityMap {
                 ?? (configFootprintLoops
                     ? translateFootprintLoops(configFootprintLoops, placementCentroid)
                     : null);
+            // Spec-authored world loops are a deliberate placement: default
+            // them to 'anchor' so the generator keeps them instead of
+            // re-centering (and possibly squeezing) into the tile area.
+            const footprintPlacement = typeof raw?.footprintPlacement === 'string'
+                ? raw.footprintPlacement
+                : (rawFootprintLoops ? 'anchor' : null);
             const facades = overrideOrBase('facades');
             const windowDefinitions = overrideOrBase('windowDefinitions');
             const portalDefinitions = overrideOrBase('portalDefinitions');
@@ -857,6 +864,7 @@ export class CityMap {
                 tiles: accepted,
                 layers: hasLayers ? deepClone(designLayers) : null,
                 footprintLoops,
+                footprintPlacement,
                 wallInset: clampFiniteLocal(overrideOrBase('wallInset'), 0.0, 4.0, 0.0),
                 materialVariationSeed: Number.isFinite(overrideOrBase('materialVariationSeed'))
                     ? clampIntLocal(overrideOrBase('materialVariationSeed'), 0, 4294967295)

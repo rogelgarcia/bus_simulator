@@ -1258,11 +1258,29 @@ function estimateBf2OutwardFootprintReserveMeters({ layers, facades, cornerTreat
 function fitFootprintLoopsToBuildArea({
     footprintLoops,
     buildAreaLoops,
-    reserveInsetMeters = 0.0
+    reserveInsetMeters = 0.0,
+    mode = 'center',
+    warnings = null
 } = {}) {
     const sourceLoops = normalizeFootprintLoopsInput(footprintLoops);
     const areaLoops = normalizeFootprintLoopsInput(buildAreaLoops);
     if (!sourceLoops.length || !areaLoops.length) return sourceLoops;
+
+    // 'anchor': the loops are an authored world placement — keep them exactly.
+    // The tile-derived build area skips road tiles and insets road edges, so
+    // centering/clamping into it drags an authored building off its lot line
+    // (and scaling silently squeezes fixed bays and doors). Warn instead of
+    // moving when the placement leaves the claimed area.
+    if (mode === 'anchor') {
+        const src = computeLoopsBoundsXZ(sourceLoops);
+        const area = computeLoopsBoundsXZ(areaLoops);
+        if (warnings && src && area) {
+            const out = src.minX < area.minX - 0.01 || src.maxX > area.maxX + 0.01
+                || src.minZ < area.minZ - 0.01 || src.maxZ > area.maxZ + 0.01;
+            if (out) warnings.push('Anchored footprint extends outside the claimed tile area (authored placement kept).');
+        }
+        return sourceLoops;
+    }
 
     const reserve = clamp(reserveInsetMeters, 0.0, 12.0);
     let effectiveAreaLoops = areaLoops;
@@ -4190,21 +4208,46 @@ function resolveCorniceProfileFractions(profile) {
 // consumes its own elevation — nothing stands behind it — and a buried
 // underside ring would lie exactly in the capY closure-band plane (z-fight),
 // so it starts flush at the loop line instead.
-function resolveCorniceCrossSection({ profile, heightMeters, projectionMeters, baseOutset = 0.0, buryInner = true }) {
+function resolveCorniceCrossSection({ profile, heightMeters, projectionMeters, baseOutset = 0.0, buryInner = true, innerTopExtendMeters = 0.0 }) {
     const h = Math.max(0.02, Number(heightMeters) || 0);
     const p = Math.max(0.01, Number(projectionMeters) || 0);
     const base = Number(baseOutset) || 0;
     // The TOP inner point is always buried: the shelf tucks under the wall
     // standing above it, hiding the mesh-to-mesh T-junction that otherwise
-    // rasterizes as a bright crack line along the shelf's back edge.
-    const innerTop = base - CORNICE_BURIAL_METERS;
-    const innerBottom = buryInner ? innerTop : base;
+    // rasterizes as a bright crack line along the shelf's back edge. A layer
+    // cornice CONSUMES elevation, so its top shelf is the GROUND the next
+    // floor stands on — `innerTopExtendMeters` widens it inward to reach
+    // under the next layer's recessed strips (a shelf stopping at the wall
+    // plane leaves those walls starting in the air: the "floating brick"
+    // gap, user report 2026-08-28).
+    const innerTop = base - CORNICE_BURIAL_METERS - Math.max(0, Number(innerTopExtendMeters) || 0);
+    const innerBottom = buryInner ? base - CORNICE_BURIAL_METERS : base;
     const section = [{ o: innerBottom, y: 0 }];
     for (const f of resolveCorniceProfileFractions(profile)) {
         section.push({ o: base + f.o * p, y: f.y * h });
     }
     section.push({ o: innerTop, y: h });
     return section;
+}
+
+// Deepest recessed strip a facade spec authors (bay edge depths; negative =
+// recessed behind the face plane). Zero when nothing recesses.
+function minFacadeBayDepthMeters(layerFacades) {
+    let min = 0;
+    if (!layerFacades || typeof layerFacades !== 'object') return min;
+    for (const faceId of facadeSpecFaceIds(layerFacades)) {
+        const items = layerFacades[faceId]?.layout?.bays?.items;
+        if (!Array.isArray(items)) continue;
+        for (const bay of items) {
+            const depth = bay?.depth;
+            if (!depth || typeof depth !== 'object') continue;
+            const left = Number(depth.left);
+            const right = Number(depth.right);
+            if (Number.isFinite(left)) min = Math.min(min, left);
+            if (Number.isFinite(right)) min = Math.min(min, right);
+        }
+    }
+    return min;
 }
 
 // Lofts a closed cross-section around a footprint loop with mitered corners.
@@ -7294,6 +7337,7 @@ export function buildBuildingFabricationVisualParts({
     tiles,
     footprintLoops = null,
     buildAreaLoops = null,
+    footprintPlacement = null,
     generatorConfig = null,
     tileSize = null,
     occupyRatio = 1.0,
@@ -7337,6 +7381,7 @@ export function buildBuildingFabricationVisualParts({
             return res.loop;
         });
     };
+    const warnings = [];
     const explicitFootprintLoops = normalizeFootprintLoopsInput(footprintLoops);
     const explicitBuildAreaLoops = normalizeFootprintLoopsInput(buildAreaLoops);
     // Slot / brick preset resolution needs the per-building seed (tint
@@ -7348,7 +7393,9 @@ export function buildBuildingFabricationVisualParts({
         ? fitFootprintLoopsToBuildArea({
             footprintLoops: explicitFootprintLoops,
             buildAreaLoops: explicitBuildAreaLoops,
-            reserveInsetMeters: estimateBf2OutwardFootprintReserveMeters({ layers: safeLayersForFit, facades, cornerTreatment: cornerTreatmentCfgForFit, windowDefinitions })
+            reserveInsetMeters: estimateBf2OutwardFootprintReserveMeters({ layers: safeLayersForFit, facades, cornerTreatment: cornerTreatmentCfgForFit, windowDefinitions }),
+            mode: footprintPlacement === 'anchor' ? 'anchor' : 'center',
+            warnings
         })
         : explicitFootprintLoops;
     const sourceFootprintLoops = fittedExplicitFootprintLoops.length
@@ -7367,7 +7414,6 @@ export function buildBuildingFabricationVisualParts({
     // Config pre-pass (AI 491): resolve building-level material slot and
     // brick preset references into explicit specs. Resolution order per
     // feature: explicit material > slot reference > legacy match_* modes.
-    const warnings = [];
     const materialResolution = resolveBuildingConfigMaterials({
         layers,
         facades,
@@ -12715,6 +12761,14 @@ export function buildBuildingFabricationVisualParts({
                         textureCache
                     })
                     : null;
+                // The next floor stands ON this cornice: widen its top shelf
+                // inward to reach under that layer's recessed strips.
+                const nextLayer = safeLayers[layerIndex + 1] ?? null;
+                const nextLayerFacades = (nextLayer && nextLayer.type === LAYER_TYPE.FLOOR)
+                    ? (globalFacadeSpec
+                        ?? ((facadesByLayerId?.[nextLayer.id] && typeof facadesByLayerId[nextLayer.id] === 'object') ? facadesByLayerId[nextLayer.id] : null))
+                    : null;
+                const nextLayerMinDepth = minFacadeBayDepthMeters(nextLayerFacades);
                 const corniceCrossSection = resolveCorniceCrossSection({
                     profile: corniceCfg.profile,
                     heightMeters: corniceHeights.profile,
@@ -12723,7 +12777,8 @@ export function buildBuildingFabricationVisualParts({
                     // A layer cornice consumes its own elevation range — no
                     // wall stands behind it to bury into, and the buried
                     // underside was coplanar with the capY closure bands.
-                    buryInner: false
+                    buryInner: false,
+                    innerTopExtendMeters: nextLayerMinDepth < 0 ? -nextLayerMinDepth : 0
                 });
 
                 // The ring rides the layer's nominal zero-depth line (the

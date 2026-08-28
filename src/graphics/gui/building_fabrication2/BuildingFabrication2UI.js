@@ -568,16 +568,27 @@ export class BuildingFabrication2UI {
         const explodedDecorationsToggle = makeViewToggle('Exploded decorations');
         this.explodedDecorationsToggle = explodedDecorationsToggle.toggle;
         this.explodedDecorationsToggleInput = explodedDecorationsToggle.input;
+        // Compiled preview: render through the game's building geometry
+        // merger, so the header's Calls/Tris show the in-game cost.
+        const compiledPreviewToggle = makeViewToggle('Compile (game preview)');
+        this.compiledPreviewToggle = compiledPreviewToggle.toggle;
+        this.compiledPreviewToggleInput = compiledPreviewToggle.input;
 
         this.viewToggles.appendChild(this.renderSkyToggle);
         this.viewToggles.appendChild(this.hideFaceMarkToggle);
         this.viewToggles.appendChild(this.showDummyToggle);
         this.viewToggles.appendChild(this.renderSlabToggle);
         this.viewToggles.appendChild(this.explodedDecorationsToggle);
+        this.viewToggles.appendChild(this.compiledPreviewToggle);
+
+        this.compiledStatsLine = document.createElement('div');
+        this.compiledStatsLine.className = 'building-fab2-hint';
+        this.compiledStatsLine.style.display = 'none';
 
         this.viewPanel.appendChild(this.viewTitle);
         this.viewPanel.appendChild(this.viewModes);
         this.viewPanel.appendChild(this.viewToggles);
+        this.viewPanel.appendChild(this.compiledStatsLine);
 
         this.rightEmptyHint = document.createElement('div');
         this.rightEmptyHint.className = 'building-fab2-hint building-fab2-right-hint';
@@ -858,6 +869,7 @@ export class BuildingFabrication2UI {
         this._showDummyEnabled = false;
         this._renderSlabEnabled = true;
         this._explodedDecorationsEnabled = false;
+        this._compiledPreviewEnabled = false;
         this._rulerEnabled = false;
         this._layoutAdjustEnabled = false;
         this._editorMode = BF2_EDITOR_MODE.BUILDING;
@@ -1049,6 +1061,12 @@ export class BuildingFabrication2UI {
             this._explodedDecorationsEnabled = !!this.explodedDecorationsToggleInput.checked;
             this._syncExplodedDecorationsToggle();
             this.onExplodedDecorationsChange?.(this._explodedDecorationsEnabled);
+        };
+        this._onCompiledPreviewToggleChange = () => {
+            if (this.compiledPreviewToggleInput.disabled) return;
+            this._compiledPreviewEnabled = !!this.compiledPreviewToggleInput.checked;
+            this._syncCompiledPreviewToggle();
+            this.onCompiledPreviewChange?.(this._compiledPreviewEnabled);
         };
         this._onRulerClick = () => {
             if (this.rulerBtn.disabled) return;
@@ -2194,6 +2212,7 @@ export class BuildingFabrication2UI {
         this.showDummyToggleInput.addEventListener('change', this._onShowDummyToggleChange);
         this.renderSlabToggleInput.addEventListener('change', this._onRenderSlabToggleChange);
         this.explodedDecorationsToggleInput.addEventListener('change', this._onExplodedDecorationsToggleChange);
+        this.compiledPreviewToggleInput.addEventListener('change', this._onCompiledPreviewToggleChange);
         this.adjustLayoutBtn.addEventListener('click', this._onAdjustLayoutClick);
         this.adjustModeCloseBtn.addEventListener('click', this._onAdjustModeCloseClick);
         this.rulerBtn.addEventListener('click', this._onRulerClick);
@@ -2240,6 +2259,7 @@ export class BuildingFabrication2UI {
         this.showDummyToggleInput.removeEventListener('change', this._onShowDummyToggleChange);
         this.renderSlabToggleInput.removeEventListener('change', this._onRenderSlabToggleChange);
         this.explodedDecorationsToggleInput.removeEventListener('change', this._onExplodedDecorationsToggleChange);
+        this.compiledPreviewToggleInput.removeEventListener('change', this._onCompiledPreviewToggleChange);
         this.adjustLayoutBtn.removeEventListener('click', this._onAdjustLayoutClick);
         this.adjustModeCloseBtn.removeEventListener('click', this._onAdjustModeCloseClick);
         this.rulerBtn.removeEventListener('click', this._onRulerClick);
@@ -2308,6 +2328,7 @@ export class BuildingFabrication2UI {
         this._syncShowDummyToggle();
         this._syncRenderSlabToggle();
         this._syncExplodedDecorationsToggle();
+        this._syncCompiledPreviewToggle();
         this._syncAdjustLayoutButton();
         this._syncRulerButton();
     }
@@ -2337,6 +2358,25 @@ export class BuildingFabrication2UI {
 
     _syncExplodedDecorationsToggle() {
         this.explodedDecorationsToggleInput.checked = this._explodedDecorationsEnabled;
+    }
+
+    _syncCompiledPreviewToggle() {
+        this.compiledPreviewToggleInput.checked = this._compiledPreviewEnabled;
+    }
+
+    // Merge result readout under the view toggles while the compiled preview
+    // is active; hidden when stats are null (editing mode).
+    setCompiledStats(stats) {
+        if (!this.compiledStatsLine) return;
+        if (!stats || !Number.isFinite(stats.sourceMeshes)) {
+            this.compiledStatsLine.style.display = 'none';
+            this.compiledStatsLine.textContent = '';
+            return;
+        }
+        const failed = stats.failedBuckets > 0 ? ` · ${stats.failedBuckets} bucket(s) unmerged` : '';
+        this.compiledStatsLine.textContent =
+            `Compiled: ${stats.sourceMeshes} → ${stats.resultMeshes} meshes · ${stats.materialsBefore} → ${stats.materialsAfter} materials${failed}`;
+        this.compiledStatsLine.style.display = '';
     }
 
     _syncRulerButton() {

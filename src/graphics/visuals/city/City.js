@@ -287,6 +287,7 @@ export class City {
                         tiles: entry.tiles,
                         footprintLoops,
                         buildAreaLoops,
+                        footprintPlacement: entry?.footprintPlacement ?? null,
                         generatorConfig: this.generatorConfig,
                         tileSize: this.map.tileSize,
                         occupyRatio: 1.0,
