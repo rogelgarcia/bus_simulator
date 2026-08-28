@@ -5,6 +5,7 @@ import { getBuildingConfigById } from './buildings/index.js';
 import { createDemoCitySpec } from './specs/DemoCitySpec.js';
 import { createRoadNetworkFromWorldSegments } from './roads/RoadNetwork.js';
 import { generateCenterlineFromPolyline } from '../geometry/PolylineTAT.js';
+import { planCityConstructions } from './placement/index.js';
 export const DIR = { N: 1, E: 2, S: 4, W: 8 };
 export const TILE = { EMPTY: 0, ROAD: 1 };
 
@@ -253,6 +254,11 @@ export class CityMap {
         this.roadIntersections = new Uint8Array(n);
 
         this.buildings = [];
+        // Non-building constructions (bus start, fixed installations): keep-out
+        // areas for buildings, resolved by the placement planner.
+        this.reservations = [];
+        this.reservationSpecs = [];
+        this.placementDiagnostics = [];
     }
 
     index(x, y) { return (x | 0) + (y | 0) * this.width; }
@@ -655,9 +661,19 @@ export class CityMap {
                 tiles: tiles.map((tile) => [tile?.[0] | 0, tile?.[1] | 0])
             };
 
-            const footprintLoops = normalizeFootprintLoopsInput(building?.footprintLoops);
-            if (footprintLoops) record.footprintLoops = footprintLoops;
-            if (typeof building?.footprintPlacement === 'string') record.footprintPlacement = building.footprintPlacement;
+            // A parcel placement is authored, not derived: the spec keeps the
+            // squares + limits, never the world loops the planner produced.
+            const hasPlacement = !!building?.placement && typeof building.placement === 'object';
+            if (hasPlacement) {
+                record.placement = deepClone(building.placement);
+                if (building.sharesSquaresWith?.length) record.sharesSquaresWith = [...building.sharesSquaresWith];
+                const designLoops = normalizeFootprintLoopsInput(building?.designLoops);
+                if (designLoops && !building.configId) record.designLoops = designLoops;
+            } else {
+                const footprintLoops = normalizeFootprintLoopsInput(building?.footprintLoops);
+                if (footprintLoops) record.footprintLoops = footprintLoops;
+                if (typeof building?.footprintPlacement === 'string') record.footprintPlacement = building.footprintPlacement;
+            }
             if (Number.isFinite(building?.wallInset)) record.wallInset = building.wallInset;
             if (Number.isFinite(building?.materialVariationSeed)) record.materialVariationSeed = building.materialVariationSeed;
             if (building?.windowVisuals && typeof building.windowVisuals === 'object') record.windowVisuals = deepClone(building.windowVisuals);
@@ -681,6 +697,9 @@ export class CityMap {
             spec.buildings.push(record);
         }
 
+        const reservationSpecs = Array.isArray(this.reservationSpecs) ? this.reservationSpecs : [];
+        if (reservationSpecs.length) spec.reservations = deepClone(reservationSpecs);
+
         return spec;
     }
 
@@ -695,7 +714,7 @@ export class CityMap {
         return { a, b };
     }
 
-    static fromSpec(spec = {}, config) {
+    static fromSpec(spec = {}, config, { roadGeometry = null } = {}) {
         const width = spec.width ?? config.map.width;
         const height = spec.height ?? config.map.height;
         const tileSize = spec.tileSize ?? config.map.tileSize;
@@ -714,7 +733,49 @@ export class CityMap {
         map.finalize({ seed: spec.seed ?? config.seed ?? null });
 
         map.buildings = CityMap._buildingsFromSpec(spec.buildings, map);
+        map.reservationSpecs = Array.isArray(spec.reservations) ? deepClone(spec.reservations) : [];
+        CityMap._applyPlacementPlan(map, { roadGeometry });
         return map;
+    }
+
+    // Parcel resolution: constructions that declare squares + limits get their
+    // world placement computed here, so a spec never carries hand-computed
+    // coordinates. Entries without a placement block keep the tile-derived
+    // behaviour they have always had.
+    static _applyPlacementPlan(map, { roadGeometry = null } = {}) {
+        const buildings = Array.isArray(map.buildings) ? map.buildings : [];
+        const plan = planCityConstructions({
+            map,
+            buildings: buildings.map((entry) => ({
+                id: entry.id,
+                squares: entry.tiles,
+                placement: entry.placement,
+                sharedWith: entry.sharesSquaresWith,
+                designLoops: entry.designLoops,
+                worldFootprintLoops: entry.placement ? null : entry.footprintLoops
+            })),
+            reservations: map.reservationSpecs,
+            roadGeometry
+        });
+
+        for (const entry of buildings) {
+            const placed = plan.placements.get(entry.id);
+            if (!placed) continue;
+            entry.footprintLoops = placed.footprintLoops;
+            // The planner already solved the world placement: the generator
+            // must keep it exactly instead of re-fitting into the tile area.
+            entry.footprintPlacement = 'anchor';
+            entry.parcel = placed.parcel;
+        }
+
+        map.reservations = plan.reservations;
+        map.placementDiagnostics = plan.diagnostics;
+
+        for (const diagnostic of plan.diagnostics) {
+            const line = `[CityPlacement] ${diagnostic.code} (${diagnostic.id ?? 'city'}): ${diagnostic.message}`;
+            if (diagnostic.level === 'error') console.error(line);
+            else console.warn(line);
+        }
     }
 
     static _buildingsFromSpec(buildingsSpec, map) {
@@ -739,7 +800,8 @@ export class CityMap {
 
             const id = (typeof raw.id === 'string' && raw.id) ? raw.id : `building_${i + 1}`;
 
-            const tilesIn = Array.isArray(raw.tiles ?? raw.footprintTiles) ? (raw.tiles ?? raw.footprintTiles) : [];
+            const tilesRaw = raw.squares ?? raw.tiles ?? raw.footprintTiles;
+            const tilesIn = Array.isArray(tilesRaw) ? tilesRaw : [];
             const accepted = [];
             const acceptedSet = new Set();
 
@@ -837,6 +899,13 @@ export class CityMap {
 
             const rawFootprintLoops = normalizeFootprintLoopsInput(raw?.footprintLoops);
             const configFootprintLoops = normalizeFootprintLoopsInput(config?.footprintLoops);
+            // Design-space footprint (authored around the origin) for entries
+            // whose world placement the parcel planner solves.
+            const designLoops = normalizeFootprintLoopsInput(raw?.designLoops) ?? configFootprintLoops;
+            const placementRaw = (raw?.placement && typeof raw.placement === 'object') ? deepClone(raw.placement) : null;
+            const sharesSquaresWith = Array.isArray(raw?.sharesSquaresWith)
+                ? raw.sharesSquaresWith.filter((id) => typeof id === 'string' && id)
+                : [];
             const placementCentroid = computeTilesWorldCentroid(accepted, map);
             const footprintLoops = rawFootprintLoops
                 ?? (configFootprintLoops
@@ -865,6 +934,10 @@ export class CityMap {
                 layers: hasLayers ? deepClone(designLayers) : null,
                 footprintLoops,
                 footprintPlacement,
+                designLoops,
+                placement: placementRaw,
+                sharesSquaresWith,
+                parcel: null,
                 wallInset: clampFiniteLocal(overrideOrBase('wallInset'), 0.0, 4.0, 0.0),
                 materialVariationSeed: Number.isFinite(overrideOrBase('materialVariationSeed'))
                     ? clampIntLocal(overrideOrBase('materialVariationSeed'), 0, 4294967295)

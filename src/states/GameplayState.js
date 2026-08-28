@@ -20,6 +20,7 @@ import { GameLoop } from '../app/core/GameLoop.js';
 import { VehicleController } from '../app/vehicle/VehicleController.js';
 import { InputManager } from '../app/input/InputManager.js';
 import { createVehicleFromBus } from '../app/vehicle/createVehicle.js';
+import { RESERVATION_TYPE, findReservationByType } from '../app/city/placement/index.js';
 import { GameplayDebugPanel } from '../graphics/gui/gameplay/GameplayDebugPanel.js';
 import { VehicleMotionDebugOverlay } from '../graphics/gui/debug/VehicleMotionDebugOverlay.js';
 import { Q_MENU_GROUP } from './SceneShortcutRegistry.js';
@@ -308,13 +309,20 @@ export class GameplayState {
         // Store resolved model back to context
         this.engine.context.selectedBus = this.busModel;
 
-        // Position anchor on road
+        // Position anchor on road. The starting position is a city
+        // construction (a reservation the map reserves and lays buildings out
+        // around), not a literal; a launch pose overrides it.
         const roadY = this.city?.generatorConfig?.ground?.surfaceY ?? this.city?.generatorConfig?.road?.surfaceY ?? 0;
         const busPose = this._gameplayPose?.bus ?? null;
         const busPosition = busPose?.position ?? null;
+        const busStart = findReservationByType(this.city?.map?.reservations, RESERVATION_TYPE.BUS_START);
         const poseGroundY = busPosition?.y ?? roadY;
-        this.busAnchor.position.set(busPosition?.x ?? 0, poseGroundY, busPosition?.z ?? 0);
-        this.busAnchor.rotation.set(0, THREE.MathUtils.degToRad(busPose?.yawDeg ?? 0), 0);
+        this.busAnchor.position.set(
+            busPosition?.x ?? busStart?.position?.x ?? 0,
+            poseGroundY,
+            busPosition?.z ?? busStart?.position?.z ?? 0
+        );
+        this.busAnchor.rotation.set(0, THREE.MathUtils.degToRad(busPose?.yawDeg ?? busStart?.yawDeg ?? 0), 0);
         snapToGroundY(this.busAnchor, poseGroundY);
         this.engine.scene.add(this.busAnchor);
         // Bus materials must receive scene sun shadows (no-op unless cascaded

@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { createCityConfig } from '../../../app/city/CityConfig.js';
 import { CityMap } from '../../../app/city/CityMap.js';
+import { RESERVATION_GROUND } from '../../../app/city/placement/index.js';
 import { CityRNG } from '../../../app/city/CityRNG.js';
 import { computeTrafficControlPlacements } from '../../../app/city/TrafficControlPlacement.js';
 import { createCityWorld } from '../../assets3d/generators/TerrainGenerator.js';
@@ -189,7 +190,17 @@ export class City {
         this.rng = new CityRNG(this.genConfig.seed);
 
         const spec = mapSpec ?? CityMap.demoSpec(this.genConfig);
-        this.map = CityMap.fromSpec(spec, this.genConfig);
+        // Parcel limits are measured against the kerb line, so the placement
+        // planner needs the live road geometry the roads are built from.
+        const roadCfgForPlacement = this.generatorConfig?.road ?? {};
+        this.map = CityMap.fromSpec(spec, this.genConfig, {
+            roadGeometry: {
+                laneWidth: roadCfgForPlacement.laneWidth,
+                shoulder: roadCfgForPlacement.shoulder,
+                curbThickness: roadCfgForPlacement.curb?.thickness,
+                sidewalkWidth: roadCfgForPlacement.sidewalk?.extraWidth
+            }
+        });
 
         this.materials = getCityMaterials();
         this.roads = createRoadEngineRoads({ map: this.map, config: this.generatorConfig, materials: this.materials });
@@ -212,6 +223,12 @@ export class City {
                 occupyRatio: 1.0
             });
         }).filter((loops) => loops.length > 0);
+        // Reservations (bus start, fixed installations) are kept clear of
+        // scatter the same way building footprints are.
+        const reservationsList = Array.isArray(this.map.reservations) ? this.map.reservations : [];
+        for (const reservation of reservationsList) {
+            if (Array.isArray(reservation?.loops) && reservation.loops.length) buildingFootprints.push(reservation.loops);
+        }
         const roadHardscapeMargin = Math.max(0, this.generatorConfig.road?.curb?.thickness ?? 0)
             + Math.max(0, this.generatorConfig.road?.sidewalk?.extraWidth ?? 0);
 
@@ -253,8 +270,16 @@ export class City {
             buildingsGroup.name = 'Buildings';
 
             // Collected across all buildings so overlapping foundation slabs
-            // can merge into shared geometry.
+            // can merge into shared geometry. A reservation that asks for a
+            // slab ground treatment joins the same pass, so its apron runs
+            // into the sidewalk exactly like a building's does.
             const slabFootprintLoops = [];
+            for (const reservation of reservationsList) {
+                if (reservation?.ground !== RESERVATION_GROUND.SLAB) continue;
+                for (const loop of (Array.isArray(reservation.loops) ? reservation.loops : [])) {
+                    if (Array.isArray(loop) && loop.length >= 3) slabFootprintLoops.push(loop);
+                }
+            }
 
             const textures = new BuildingWallTextureCache();
             // Fabricated buildings emit one mesh per decoration segment/cap and per
@@ -267,14 +292,19 @@ export class City {
                 const wallInset = Number.isFinite(entry?.wallInset) ? entry.wallInset : 0.0;
                 const hasLayers = Array.isArray(entry?.layers) && entry.layers.length;
                 const footprintLoops = Array.isArray(entry?.footprintLoops) ? entry.footprintLoops : null;
+                // A planned parcel IS the build area (squares extended to their
+                // limits); only tile-placed entries fall back to the grid area.
+                const parcelLoops = Array.isArray(entry?.parcel?.loops) && entry.parcel.loops.length
+                    ? entry.parcel.loops
+                    : null;
                 const buildAreaLoops = hasLayers
-                    ? computeBuildingLoopsFromTiles({
+                    ? (parcelLoops ?? computeBuildingLoopsFromTiles({
                         map: this.map,
                         tiles: entry.tiles,
                         generatorConfig: this.generatorConfig,
                         tileSize: this.map.tileSize,
                         occupyRatio: 1.0
-                    })
+                    }))
                     : null;
                 const windowsSpec = entry?.windows ?? null;
                 const windowsEnabled = !!windowsSpec && typeof windowsSpec === 'object';

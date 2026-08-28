@@ -3,7 +3,6 @@
 // @ts-check
 
 import { BRADBURY_BLOCK_BUILDING_CONFIG } from '../../../graphics/content3d/buildings/configs/BradburyBlock.js';
-import { MODERN_BANK_BUILDING_CONFIG } from '../../../graphics/content3d/buildings/configs/ModernBank.js';
 
 // Bradbury Block on the avenue corner parcel (replaces the gov center slab).
 // The config is authored with its chamfer at the (+x,+z) corner; this parcel's
@@ -83,41 +82,56 @@ function createBradburyCornerEntry() {
     };
 }
 
-// Modern Bank on the next avenue parcel east of the Bradbury, with a parcel of
-// clear lawn between the two. The config's front is its +z face and the avenue
-// runs along +z, so it needs no rotation: only a placement.
-//
-// The footprint is authored flush with the AVENUE STREET LINE — the same
-// z = 31.1 the Bradbury's front sits on, so the two buildings address the same
-// pavement — and the placement mode is 'shift': the engine keeps the authored
-// size and translates the building back off the road until it is inside the
-// build area its tiles claim (here that lands the front on z = 30.23, the road
-// margin the tile row leaves in front of the avenue). Anchoring would leave it
-// overhanging the carriageway; centring would pull it off the street line and
-// into the middle of the lot.
+// Modern Bank on the next avenue parcel east of the Bradbury. Authored as a
+// PARCEL (AI 519), not as world coordinates: it claims four squares, may
+// extend west up to 8 m from the Bradbury, and fills out to the avenue street
+// line (the kerb line, which sits INSIDE the road tile row the tile grid would
+// have cut it at). The bus start reservation sits in the lawn strip west of
+// the parcel and cuts it, so the bank is laid out around the bus instead of
+// over it. The config's front is its +z face and the avenue runs along +z, so
+// the design needs no rotation.
 function createModernBankAvenueParcel() {
-    const src = MODERN_BANK_BUILDING_CONFIG;
-    const loopSrc = src.footprintLoops?.[0] ?? [];
-    const maxZ = Math.max(...loopSrc.map((p) => p.z));
-    const centerX = (Math.min(...loopSrc.map((p) => p.x)) + Math.max(...loopSrc.map((p) => p.x))) * 0.5;
-    // Parcel centre in x (tiles 11-12 span -36..12) and the avenue street line.
-    const PARCEL_CENTER_X = -12;
-    const STREET_LINE_Z = 31.1;
-    const loop = loopSrc.map((p) => ({
-        x: p.x - centerX + PARCEL_CENTER_X,
-        z: p.z - maxZ + STREET_LINE_Z
-    }));
-
     return {
         id: 'building_9_b',
         configId: 'modern_bank',
-        tiles: [
+        squares: [
             [11, 13], [12, 13],
             [11, 12], [12, 12]
         ],
-        footprintLoops: [loop],
-        footprintPlacement: 'shift',
+        placement: {
+            limits: {
+                north: 'street',
+                west: { type: 'construction', id: 'building_9', padding: 8 }
+            },
+            padding: 2,
+            front: 'north',
+            align: 'center'
+        },
         rendered: true
+    };
+}
+
+// The player bus starting position: a construction that is not a building —
+// fixed size, reserved against the city grid, keep-out for the buildings
+// around it, and carrying its own ground treatment (a slab that runs into the
+// avenue sidewalk). It takes the lawn strip between the Bradbury and the bank,
+// against the same avenue street line both buildings address, and shares the
+// Bradbury's square deliberately.
+function createBusStartReservation() {
+    return {
+        id: 'bus_start',
+        type: 'bus_start',
+        squares: [[10, 13]],
+        size: { width: 5.2, depth: 14.0 },
+        yawDeg: 0,
+        clearance: 1.5,
+        ground: 'slab',
+        sharesSquaresWith: ['building_9'],
+        placement: {
+            limits: { north: 'street' },
+            padding: 4,
+            front: 'north'
+        }
     };
 }
 
@@ -1636,6 +1650,9 @@ export const BIG_CITY_2_SPEC_SOURCE = Object.freeze(
                 ],
                 "rendered": true
             }
+        ],
+        "reservations": [
+            createBusStartReservation()
         ]
     }
 );

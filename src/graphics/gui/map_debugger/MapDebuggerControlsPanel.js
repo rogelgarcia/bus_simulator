@@ -35,6 +35,7 @@ export class MapDebuggerControlsPanel {
         hoverOutlineEnabled = true,
         collisionDebugEnabled = true,
         treesEnabled = true,
+        placementDebugEnabled = true,
         roadEdgesEnabled = true,
         roadCrossingsEnabled = true,
         roadCenterlineEnabled = true,
@@ -50,6 +51,7 @@ export class MapDebuggerControlsPanel {
         onHoverOutlineToggle = null,
         onCollisionDebugToggle = null,
         onTreesToggle = null,
+        onPlacementDebugToggle = null,
         onRoadEdgesToggle = null,
         onRoadCrossingsToggle = null,
         onRoadCenterlineToggle = null,
@@ -121,6 +123,18 @@ export class MapDebuggerControlsPanel {
         this.treesToggle.appendChild(this.treesToggleInput);
         this.treesToggle.appendChild(this.treesToggleLabel);
         this.controls.appendChild(this.treesToggle);
+
+        this.placementToggle = document.createElement('label');
+        this.placementToggle.className = 'connector-debug-toggle-switch map-debugger-toggle-switch';
+        this.placementToggle.title = 'Assigned squares, resolved parcels with their limits, and reservations (keep-out areas).';
+        this.placementToggleInput = document.createElement('input');
+        this.placementToggleInput.type = 'checkbox';
+        this.placementToggleInput.checked = !!placementDebugEnabled;
+        this.placementToggleLabel = document.createElement('span');
+        this.placementToggleLabel.textContent = 'Placements';
+        this.placementToggle.appendChild(this.placementToggleInput);
+        this.placementToggle.appendChild(this.placementToggleLabel);
+        this.controls.appendChild(this.placementToggle);
 
         this.roadEdgesToggle = document.createElement('label');
         this.roadEdgesToggle.className = 'connector-debug-toggle-switch map-debugger-toggle-switch';
@@ -404,6 +418,7 @@ export class MapDebuggerControlsPanel {
         this._onHoverOutlineToggle = onHoverOutlineToggle;
         this._onCollisionDebugToggle = onCollisionDebugToggle;
         this._onTreesToggle = onTreesToggle;
+        this._onPlacementDebugToggle = onPlacementDebugToggle;
         this._onRoadEdgesToggle = onRoadEdgesToggle;
         this._onRoadCrossingsToggle = onRoadCrossingsToggle;
         this._onRoadCenterlineToggle = onRoadCenterlineToggle;
@@ -439,6 +454,10 @@ export class MapDebuggerControlsPanel {
 
         this.treesToggleInput.addEventListener('change', () => {
             if (this._onTreesToggle) this._onTreesToggle(this.treesToggleInput.checked);
+        });
+
+        this.placementToggleInput.addEventListener('change', () => {
+            if (this._onPlacementDebugToggle) this._onPlacementDebugToggle(this.placementToggleInput.checked);
         });
 
         this.roadEdgesToggleInput.addEventListener('change', () => {
@@ -562,6 +581,10 @@ export class MapDebuggerControlsPanel {
 
     setTreesEnabled(enabled) {
         if (this.treesToggleInput) this.treesToggleInput.checked = !!enabled;
+    }
+
+    setPlacementDebugEnabled(enabled) {
+        if (this.placementToggleInput) this.placementToggleInput.checked = !!enabled;
     }
 
     setRoadEdgesEnabled(enabled) {

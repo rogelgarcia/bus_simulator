@@ -16,6 +16,7 @@ import { MapDebuggerInfoPanel } from '../graphics/gui/map_debugger/MapDebuggerIn
 import { computeBuildingLoopsFromTiles } from '../graphics/assets3d/generators/buildings/BuildingGenerator.js';
 import { ConnectorCameraTour } from '../graphics/gui/connector_debugger/ConnectorCameraTour.js';
 import { CityConnectorDebugOverlay } from '../graphics/visuals/city/CityConnectorDebugOverlay.js';
+import { CityPlacementDebugOverlay } from '../graphics/visuals/city/CityPlacementDebugOverlay.js';
 import { createRoadHighlightMesh } from '../graphics/visuals/city/RoadHighlightMesh.js';
 import { createCollisionPoleMarkers } from '../graphics/visuals/city/CollisionPoleMarkers.js';
 import { createConnectionPoleMarkers } from '../graphics/visuals/city/ConnectionPoleMarkers.js';
@@ -154,6 +155,8 @@ export class MapDebuggerState {
         };
         this._roadRenderMode = 'debug';
         this._treesEnabled = false;
+        this._placementDebugEnabled = true;
+        this._placementOverlay = null;
         this._junctionThresholdFactor = 1.5;
         this._junctionFilletRadiusFactor = 0.9;
         this._junctionMinThreshold = 7.2;
@@ -343,6 +346,7 @@ export class MapDebuggerState {
             hoverOutlineEnabled: this._hoverOutlineEnabled,
             collisionDebugEnabled: this._collisionDebugEnabled,
             treesEnabled: this._treesEnabled,
+            placementDebugEnabled: this._placementDebugEnabled,
             roadEdgesEnabled: this._roadEdgesDebugEnabled,
             roadCrossingsEnabled: this._roadCrossingsDebugEnabled,
             roadCenterlineEnabled: this._roadCenterlineDebugEnabled,
@@ -358,6 +362,7 @@ export class MapDebuggerState {
             onHoverOutlineToggle: (enabled) => this._setHoverOutlineEnabled(enabled),
             onCollisionDebugToggle: (enabled) => this._setCollisionDebugEnabled(enabled),
             onTreesToggle: (enabled) => this._setTreesEnabled(enabled),
+            onPlacementDebugToggle: (enabled) => this._setPlacementDebugEnabled(enabled),
             onRoadEdgesToggle: (enabled) => this._setRoadEdgesDebugEnabled(enabled),
             onRoadCrossingsToggle: (enabled) => this._setRoadCrossingsDebugEnabled(enabled),
             onRoadCenterlineToggle: (enabled) => this._setRoadCenterlineDebugEnabled(enabled),
@@ -420,6 +425,7 @@ export class MapDebuggerState {
         this._clearCollisionMarkers();
         this._clearConnectorOverlay();
         this._clearRoadGraphOverlay();
+        this._clearPlacementOverlay();
         this._destroyHoverOutline();
         this._stopTour();
         this._stopCameraDrag();
@@ -657,6 +663,7 @@ export class MapDebuggerState {
         this._clearRoadGraphOverlay();
         this._clearCollisionMarkers();
         this._clearSelectionOverlays();
+        this._clearPlacementOverlay();
         this.engine.clearScene();
         this.engine.context.city = null;
         if (mapSpec?.seed !== undefined) this._cityOptions.seed = mapSpec.seed;
@@ -670,6 +677,7 @@ export class MapDebuggerState {
         this._setupRoadGraphOverlay();
         this._setupCollisionMarkers();
         this._setupHoverOutline();
+        this._setupPlacementOverlay();
         this._setTreesEnabled(this._treesEnabled);
         this._setPoleInfoData(null);
     }
@@ -770,6 +778,7 @@ export class MapDebuggerState {
 
         const roads = Array.isArray(input.roads) ? input.roads.slice() : [];
         const buildings = Array.isArray(input.buildings) ? input.buildings.slice() : [];
+        const reservations = Array.isArray(input.reservations) ? input.reservations.slice() : [];
 
         if (Number.isFinite(tileSize) && tileSize > 0 && tileSize !== this._cityOptions.mapTileSize) {
             this._cityOptions.mapTileSize = tileSize;
@@ -783,7 +792,8 @@ export class MapDebuggerState {
             tileSize,
             origin,
             roads,
-            buildings
+            buildings,
+            reservations
         };
     }
 
@@ -2512,6 +2522,26 @@ export class MapDebuggerState {
         if (!this._collisionMarkerMesh && !this._connectionMarkerMesh && !this._adjustedEndRingMesh && !this._adjustedEndOriginMesh && this._collisionDebugEnabled) {
             this._setupCollisionMarkers();
         }
+    }
+
+    _setupPlacementOverlay() {
+        this._clearPlacementOverlay();
+        if (!this.city?.group) return;
+        this._placementOverlay = new CityPlacementDebugOverlay({ renderer: this.engine?.renderer ?? null });
+        this.city.group.add(this._placementOverlay.group);
+        this._placementOverlay.sync({ map: this.city.map, surfaceY: this._selectionPlanY() });
+        this._placementOverlay.setVisible(this._placementDebugEnabled);
+    }
+
+    _clearPlacementOverlay() {
+        this._placementOverlay?.dispose();
+        this._placementOverlay = null;
+    }
+
+    _setPlacementDebugEnabled(enabled) {
+        this._placementDebugEnabled = !!enabled;
+        this.debugsPanel?.setPlacementDebugEnabled(this._placementDebugEnabled);
+        this._placementOverlay?.setVisible(this._placementDebugEnabled);
     }
 
     _setTreesEnabled(enabled) {
