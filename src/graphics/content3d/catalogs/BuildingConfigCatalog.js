@@ -12,6 +12,7 @@ import { GOV_CENTER_2_BUILDING_CONFIG } from '../buildings/configs/GovCenter2.js
 import { HEX_PAVILION_BUILDING_CONFIG } from '../buildings/configs/HexPavilion.js';
 import { L_WAREHOUSE_BUILDING_CONFIG } from '../buildings/configs/LWarehouse.js';
 import { MAIN_STREET_BLOCK_BUILDING_CONFIG } from '../buildings/configs/MainStreetBlock.js';
+import { MODERN_BANK_BUILDING_CONFIG } from '../buildings/configs/ModernBank.js';
 import { MODERN_RESIDENTIAL_2_BUILDING_CONFIG } from '../buildings/configs/ModernResidential2.js';
 import { PIER_GRID_TOWER_2_BUILDING_CONFIG } from '../buildings/configs/PierGridTower2.js';
 import { STOREFRONT_ROW_2_BUILDING_CONFIG } from '../buildings/configs/StorefrontRow2.js';
@@ -32,6 +33,7 @@ const BUILDING_CONFIGS = Object.freeze([
     HEX_PAVILION_BUILDING_CONFIG,
     L_WAREHOUSE_BUILDING_CONFIG,
     MAIN_STREET_BLOCK_BUILDING_CONFIG,
+    MODERN_BANK_BUILDING_CONFIG,
     MODERN_RESIDENTIAL_2_BUILDING_CONFIG,
     PIER_GRID_TOWER_2_BUILDING_CONFIG,
     STOREFRONT_ROW_2_BUILDING_CONFIG,

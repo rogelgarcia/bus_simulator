@@ -3,6 +3,7 @@
 // @ts-check
 
 import { BRADBURY_BLOCK_BUILDING_CONFIG } from '../../../graphics/content3d/buildings/configs/BradburyBlock.js';
+import { MODERN_BANK_BUILDING_CONFIG } from '../../../graphics/content3d/buildings/configs/ModernBank.js';
 
 // Bradbury Block on the avenue corner parcel (replaces the gov center slab).
 // The config is authored with its chamfer at the (+x,+z) corner; this parcel's
@@ -78,6 +79,44 @@ function createBradburyCornerEntry() {
         facades,
         attachments,
         wallDecorations,
+        rendered: true
+    };
+}
+
+// Modern Bank on the next avenue parcel east of the Bradbury, with a parcel of
+// clear lawn between the two. The config's front is its +z face and the avenue
+// runs along +z, so it needs no rotation: only a placement.
+//
+// The footprint is authored flush with the AVENUE STREET LINE — the same
+// z = 31.1 the Bradbury's front sits on, so the two buildings address the same
+// pavement — and the placement mode is 'shift': the engine keeps the authored
+// size and translates the building back off the road until it is inside the
+// build area its tiles claim (here that lands the front on z = 30.23, the road
+// margin the tile row leaves in front of the avenue). Anchoring would leave it
+// overhanging the carriageway; centring would pull it off the street line and
+// into the middle of the lot.
+function createModernBankAvenueParcel() {
+    const src = MODERN_BANK_BUILDING_CONFIG;
+    const loopSrc = src.footprintLoops?.[0] ?? [];
+    const maxZ = Math.max(...loopSrc.map((p) => p.z));
+    const centerX = (Math.min(...loopSrc.map((p) => p.x)) + Math.max(...loopSrc.map((p) => p.x))) * 0.5;
+    // Parcel centre in x (tiles 11-12 span -36..12) and the avenue street line.
+    const PARCEL_CENTER_X = -12;
+    const STREET_LINE_Z = 31.1;
+    const loop = loopSrc.map((p) => ({
+        x: p.x - centerX + PARCEL_CENTER_X,
+        z: p.z - maxZ + STREET_LINE_Z
+    }));
+
+    return {
+        id: 'building_9_b',
+        configId: 'modern_bank',
+        tiles: [
+            [11, 13], [12, 13],
+            [11, 12], [12, 12]
+        ],
+        footprintLoops: [loop],
+        footprintPlacement: 'shift',
         rendered: true
     };
 }
@@ -795,6 +834,7 @@ export const BIG_CITY_2_SPEC_SOURCE = Object.freeze(
                 "rendered": true
             },
             createBradburyCornerEntry(),
+            createModernBankAvenueParcel(),
             {
                 "id": "building_10",
                 "configId": "brick_midrise",

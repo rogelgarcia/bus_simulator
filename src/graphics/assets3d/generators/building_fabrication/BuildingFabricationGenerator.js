@@ -1255,6 +1255,18 @@ function estimateBf2OutwardFootprintReserveMeters({ layers, facades, cornerTreat
     return reserve;
 }
 
+// How a placed building's authored footprint meets the build area its tiles
+// claim. ONE feature with modes rather than a flag per behaviour:
+//   'center' (default) — scale down if needed, then centre in the area.
+//   'anchor'           — keep the authored world placement exactly; warn only.
+//   'shift'            — keep the authored size, translate back into the area.
+function normalizeFootprintPlacementMode(value) {
+    const mode = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (mode === 'anchor') return 'anchor';
+    if (mode === 'shift') return 'shift';
+    return 'center';
+}
+
 function fitFootprintLoopsToBuildArea({
     footprintLoops,
     buildAreaLoops,
@@ -1306,9 +1318,19 @@ function fitFootprintLoopsToBuildArea({
     const targetD = targetBounds.maxZ - targetBounds.minZ;
     if (!(sourceW > EPS) || !(sourceD > EPS) || !(targetW > EPS) || !(targetD > EPS)) return sourceLoops;
 
+    // 'shift': the authored placement is a street line, not a lot centre. Keep
+    // the size and only TRANSLATE the loops back inside the build area — so a
+    // design authored flush with the kerb is pushed off the road rather than
+    // squeezed to fit it (scaling a fixed-bay facade squeezes doors) or
+    // re-centred away from the street it was drawn against.
+    const isShift = mode === 'shift';
+    if (isShift && warnings && (sourceW > targetW + 0.01 || sourceD > targetD + 0.01)) {
+        warnings.push(`Shifted footprint (${sourceW.toFixed(1)}x${sourceD.toFixed(1)}m) is larger than its build area (${targetW.toFixed(1)}x${targetD.toFixed(1)}m); it was pushed as far in as the area allows and still overhangs.`);
+    }
+
     const sx = targetW / sourceW;
     const sz = targetD / sourceD;
-    const scale = Math.min(1.0, sx, sz);
+    const scale = isShift ? 1.0 : Math.min(1.0, sx, sz);
     if (!(scale > EPS) || !Number.isFinite(scale)) return sourceLoops;
 
     const sourceCenterX = (sourceBounds.minX + sourceBounds.maxX) * 0.5;
@@ -1316,13 +1338,15 @@ function fitFootprintLoopsToBuildArea({
     const targetCenterX = (targetBounds.minX + targetBounds.maxX) * 0.5;
     const targetCenterZ = (targetBounds.minZ + targetBounds.maxZ) * 0.5;
 
-    let fitted = transformLoopsXZ(sourceLoops, {
-        scale,
-        pivotX: sourceCenterX,
-        pivotZ: sourceCenterZ,
-        translateX: targetCenterX - sourceCenterX,
-        translateZ: targetCenterZ - sourceCenterZ
-    });
+    let fitted = isShift
+        ? sourceLoops
+        : transformLoopsXZ(sourceLoops, {
+            scale,
+            pivotX: sourceCenterX,
+            pivotZ: sourceCenterZ,
+            translateX: targetCenterX - sourceCenterX,
+            translateZ: targetCenterZ - sourceCenterZ
+        });
 
     const fittedBounds = computeLoopsBoundsXZ(fitted);
     if (!fittedBounds) return sourceLoops;
@@ -7394,7 +7418,7 @@ export function buildBuildingFabricationVisualParts({
             footprintLoops: explicitFootprintLoops,
             buildAreaLoops: explicitBuildAreaLoops,
             reserveInsetMeters: estimateBf2OutwardFootprintReserveMeters({ layers: safeLayersForFit, facades, cornerTreatment: cornerTreatmentCfgForFit, windowDefinitions }),
-            mode: footprintPlacement === 'anchor' ? 'anchor' : 'center',
+            mode: normalizeFootprintPlacementMode(footprintPlacement),
             warnings
         })
         : explicitFootprintLoops;

@@ -116,6 +116,30 @@ Concrete schema definitions belong in dedicated specs:
 - City placement/runtime MAY override a config’s default footprint loops (and related facade-driven dimensions) per placed building without mutating the source config.
 - When city runtime uses a config’s default footprint loops (no per-instance override), those loops MUST be treated as building-local and translated to the placed building footprint centroid.
 
+### 5.1 Footprint placement modes
+
+A placed building carries `footprintPlacement`, ONE field with modes rather
+than a flag per behaviour, describing how its footprint loops meet the build
+area its tiles claim (that area skips road tiles and insets road-facing edges):
+
+- `center` (default, and what an entry with no authored loops gets) — scale the
+  footprint down if it does not fit, then centre it in the area. Scaling a
+  fixed-bay facade squeezes its bays and doors, so it suits generic fill
+  buildings, not authored designs.
+- `anchor` (the default when the spec authored world loops) — keep the loops
+  EXACTLY as authored. A placement that leaves the claimed area is a warning,
+  not a correction.
+- `shift` — keep the authored size and orientation and TRANSLATE the loops the
+  minimum distance that brings them inside the area. The mode a design authored
+  against a street line needs: it may be pushed back off the carriageway, never
+  squeezed to fit it nor re-centred away from the street it was drawn against.
+  A footprint larger than its area is pushed as far in as the area allows and
+  warns that it still overhangs.
+
+`planOffset` on a floor layer is RELATIVE to the layer below, so a setback is
+authored once on the layer that steps back, not repeated on every layer above
+it.
+
 ---
 
 ## 6. Rooftop prop placement rules (derived, not authored)
