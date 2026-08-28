@@ -58,7 +58,9 @@ export const WINDOW_INTERIOR_ATLAS_CATALOG = Object.freeze([
     makeShopAtlasEntry(WINDOW_INTERIOR_ATLAS_ID.SHOP_SQUARE_4X4_03, 'Shop Square (4x4) 03', 'parallax_interior_atlas_square_4x4_03.png'),
     makeShopAtlasEntry(WINDOW_INTERIOR_ATLAS_ID.SHOP_SQUARE_4X4_04, 'Shop Square (4x4) 04', 'parallax_interior_atlas_square_4x4_04.png'),
     makeShopAtlasEntry(WINDOW_INTERIOR_ATLAS_ID.SHOP_CINEMATIC_8X4_01, 'Shop Cinematic (8x4) 01', 'parallax_interior_atlas_cinematic_8x4_01.png'),
-    makeShopAtlasEntry(WINDOW_INTERIOR_ATLAS_ID.SHOP_CINEMATIC_8X4_02, 'Shop Cinematic (8x4) 02', 'parallax_interior_atlas_cinematic_8x4_02.png')
+    makeShopAtlasEntry(WINDOW_INTERIOR_ATLAS_ID.SHOP_CINEMATIC_8X4_02, 'Shop Cinematic (8x4) 02', 'parallax_interior_atlas_cinematic_8x4_02.png'),
+    // Generated dark silhouette interior (tools/bradbury_generate_silhouette_atlas.mjs).
+    makeShopAtlasEntry(WINDOW_INTERIOR_ATLAS_ID.STOREFRONT_SILHOUETTE_2X2, 'Storefront Silhouette (2x2)', 'parallax_interior_atlas_storefront_silhouette_2x2.png')
 ]);
 
 export function getWindowInteriorAtlasById(atlasId) {

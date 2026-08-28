@@ -528,10 +528,16 @@ export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
     const handleMaterialMode = handleMaterialModeRaw === WINDOW_HANDLE_MATERIAL_MODE.METAL
         ? WINDOW_HANDLE_MATERIAL_MODE.METAL
         : WINDOW_HANDLE_MATERIAL_MODE.MATCH;
+    // Optional explicit handle color (dark bronze pulls on a light frame);
+    // absent (null sentinel — test the RAW value, Number(null) is a finite
+    // 0), the mode's own color applies.
+    const handleColorHex = Number.isFinite(s?.frame?.handleColorHex)
+        ? ((Number(s.frame.handleColorHex) >>> 0) & 0xffffff)
+        : null;
     let handlesMat = null;
     if (handleMaterialMode === WINDOW_HANDLE_MATERIAL_MODE.METAL) {
         handlesMat = new THREE.MeshStandardMaterial({
-            color: 0xc7ccd4,
+            color: handleColorHex ?? 0xc7ccd4,
             roughness: 0.18,
             metalness: 0.92
         });
@@ -539,7 +545,7 @@ export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
         handlesMat.userData.iblEnvMapIntensity = 2.25;
     } else {
         handlesMat = new THREE.MeshStandardMaterial({
-            color: s.frame.colorHex,
+            color: handleColorHex ?? s.frame.colorHex,
             roughness: clamp(framePbr.roughness, 0.0, 1.0),
             metalness: clamp(framePbr.metalness, 0.0, 1.0)
         });

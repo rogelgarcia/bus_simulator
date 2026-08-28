@@ -118,6 +118,14 @@ export class PickerPopup {
         })).filter((s) => s.options.length > 0 || s.allowEmpty);
         this._activeSection = 0;
         this._selectedId = typeof selectedId === 'string' ? selectedId : null;
+        // Open on the section holding the current selection, so the caller's
+        // highlighted option is visible without hunting through the tabs.
+        if (this._selectedId) {
+            const selectedSection = this._sections.findIndex(
+                (s) => s.options.some((o) => o?.id === this._selectedId)
+            );
+            if (selectedSection > 0) this._activeSection = selectedSection;
+        }
         this._onSelect = typeof onSelect === 'function' ? onSelect : null;
 
         this.titleEl.textContent = title;

@@ -108,14 +108,52 @@ export const scenarioBuildingShowcase = {
         const tileSize = cityCfg.map.tileSize;
         const origin = cityCfg.map.origin;
 
-        // Two adjacent tiles near the map center (catalog footprints are
-        // authored against a 2x1-tile build area).
+        // Lets a test render the catalog design with one part swapped out (a
+        // facade, a decoration set) without adding a config to the catalog.
+        const configOverrides = options?.configOverrides && typeof options.configOverrides === 'object'
+            ? options.configOverrides
+            : null;
+        // A footprint override wins over the catalog's; both are authored
+        // around the origin and translated onto the build site here.
+        const footprintLoops = Array.isArray(configOverrides?.footprintLoops) && configOverrides.footprintLoops.length
+            ? configOverrides.footprintLoops
+            : config.footprintLoops;
+
+        // Build area near the map center, sized FROM the footprint: a fixed
+        // 2x1-tile area silently COMPRESSED any footprint deeper/wider than
+        // 48x24m (CityMap squeezes the loop into the buildable area, which
+        // shrinks every solved bay — the bradbury 46x38 lost ~40% of its
+        // depth this way). Default stays 2x1 for footprint-less configs.
         const cx = Math.floor(cityCfg.map.width / 2);
         const cy = Math.floor(cityCfg.map.height / 2);
-        const tiles = [[cx - 1, cy], [cx, cy]];
+        let tilesX = 2;
+        let tilesY = 1;
+        if (Array.isArray(footprintLoops) && footprintLoops.length) {
+            let minX = Infinity; let maxX = -Infinity; let minZ = Infinity; let maxZ = -Infinity;
+            for (const loop of footprintLoops) {
+                for (const p of (Array.isArray(loop) ? loop : [])) {
+                    const px = Number(p?.x) || 0;
+                    const pz = Number(p?.z) || 0;
+                    if (px < minX) minX = px;
+                    if (px > maxX) maxX = px;
+                    if (pz < minZ) minZ = pz;
+                    if (pz > maxZ) maxZ = pz;
+                }
+            }
+            if (maxX > minX && maxZ > minZ) {
+                tilesX = Math.max(2, Math.ceil((maxX - minX + 2) / tileSize));
+                tilesY = Math.max(1, Math.ceil((maxZ - minZ + 2) / tileSize));
+            }
+        }
+        const x0 = cx - Math.ceil(tilesX / 2);
+        const y0 = cy - Math.ceil(tilesY / 2);
+        const tiles = [];
+        for (let iy = 0; iy < tilesY; iy++) {
+            for (let ix = 0; ix < tilesX; ix++) tiles.push([x0 + ix, y0 + iy]);
+        }
         const centroid = {
-            x: origin.x + (cx - 0.5) * tileSize,
-            z: origin.z + cy * tileSize
+            x: origin.x + (x0 + (tilesX - 1) * 0.5) * tileSize,
+            z: origin.z + (y0 + (tilesY - 1) * 0.5) * tileSize
         };
 
         const entryId = `showcase_${config.id}`;
@@ -124,20 +162,10 @@ export const scenarioBuildingShowcase = {
             const value = config[key];
             if (value !== undefined && value !== null) entry[key] = value;
         }
-        // Lets a test render the catalog design with one part swapped out (a
-        // facade, a decoration set) without adding a config to the catalog.
-        const configOverrides = options?.configOverrides && typeof options.configOverrides === 'object'
-            ? options.configOverrides
-            : null;
         for (const key of CONFIG_OVERRIDE_KEYS) {
             const value = configOverrides?.[key];
             if (value !== undefined && value !== null) entry[key] = value;
         }
-        // A footprint override wins over the catalog's; both are authored
-        // around the origin and translated onto the build site here.
-        const footprintLoops = Array.isArray(configOverrides?.footprintLoops) && configOverrides.footprintLoops.length
-            ? configOverrides.footprintLoops
-            : config.footprintLoops;
         if (Array.isArray(footprintLoops) && footprintLoops.length) {
             entry.footprintLoops = footprintLoops.map((loop) => loop.map((point) => ({
                 x: (Number(point?.x) || 0) + centroid.x,
@@ -167,6 +195,15 @@ export const scenarioBuildingShowcase = {
 
         engine.context.city = city;
         city.attach(engine);
+
+        // Default showcase sun: high right of the corner view (azimuth 65)
+        // so the +x face is always the lit one, with reveal shadows falling
+        // the reference's way. Overridable per capture via options.sun.
+        const sunOpt = options?.sun && typeof options.sun === 'object' ? options.sun : null;
+        if (engine?.atmosphereSettings?.sun) {
+            engine.atmosphereSettings.sun.azimuthDeg = Number.isFinite(sunOpt?.azimuthDeg) ? sunOpt.azimuthDeg : 65;
+            engine.atmosphereSettings.sun.elevationDeg = Number.isFinite(sunOpt?.elevationDeg) ? sunOpt.elevationDeg : 35;
+        }
 
         // Showcase should read like the game, not the debug view: hide the tile
         // grid and origin axes helpers the city adds for development.

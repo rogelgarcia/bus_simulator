@@ -62,7 +62,7 @@ const OPENING_ASSET_TYPE = Object.freeze({
     GARAGE: 'garage',
     STOREFRONT: 'storefront'
 });
-const STOREFRONT_TRANSOM_MODES = Object.freeze(['glazed', 'backlit', 'none']);
+const STOREFRONT_TRANSOM_MODES = Object.freeze(['glazed', 'backlit', 'solid', 'none']);
 const OPENING_HEIGHT_MODE = Object.freeze({
     FIXED: 'fixed',
     FULL: 'full'
@@ -965,6 +965,7 @@ export class BuildingFabrication2UI {
         this.onSetBayWindowAssetType = null;
         this.onSetBayWindowHeightMode = null;
         this.onSetBayWindowVerticalOffset = null;
+        this.onSetBayWindowDepth = null;
         this.onSetBayWindowRepeatCount = null;
         this.onSetBayWindowMuntinsEnabled = null;
         this.onSetBayWindowShadesDisabled = null;
@@ -4374,6 +4375,10 @@ export class BuildingFabrication2UI {
                 const openingVerticalOffsetValue = Number.isFinite(openingVerticalOffsetRaw)
                     ? Math.max(0, openingVerticalOffsetRaw)
                     : 0;
+                const openingDepthRaw = Number(openingCfg?.depthMeters);
+                const openingDepthValue = Number.isFinite(openingDepthRaw)
+                    ? clamp(openingDepthRaw, -0.5, 1.0)
+                    : 0;
                 const openingPadding = openingCfg?.padding && typeof openingCfg.padding === 'object' ? openingCfg.padding : null;
                 const openingPaddingLinked = (openingPadding?.linked ?? true) !== false;
                 const openingPaddingLeft = Math.max(0, Number(openingPadding?.leftMeters) || 0);
@@ -5427,6 +5432,43 @@ export class BuildingFabrication2UI {
                             });
                             mainOpeningSection.appendChild(openingVerticalOffsetRow.row);
 
+                            // Opening depth: fine control for how deep the
+                            // door/window assembly sits in the wall, separate
+                            // from the bay's edge depth (which moves the whole
+                            // wall strip). 0 keeps the definition's own inset;
+                            // negative pulls the opening toward flush.
+                            const openingDepthRow = createRangeRow(`${openingAssetTypeLabel} depth`);
+                            openingDepthRow.row.classList.add('building-fab2-bay-window-range-row');
+                            openingDepthRow.range.min = '-0.5';
+                            openingDepthRow.range.max = '1';
+                            openingDepthRow.range.step = '0.01';
+                            openingDepthRow.number.min = '-0.5';
+                            openingDepthRow.number.max = '1';
+                            openingDepthRow.number.step = '0.01';
+                            openingDepthRow.range.disabled = openingControlsDisabled;
+                            openingDepthRow.number.disabled = openingControlsDisabled;
+                            const syncOpeningDepthValue = (rawValue) => {
+                                const next = clamp(Number(rawValue) || 0, -0.5, 1.0);
+                                openingDepthRow.range.value = String(next);
+                                openingDepthRow.number.value = next.toFixed(2);
+                            };
+                            syncOpeningDepthValue(openingDepthValue);
+                            openingDepthRow.range.addEventListener('input', () => {
+                                if (openingControlsDisabled) return;
+                                const next = clamp(Number(openingDepthRow.range.value) || 0, -0.5, 1.0);
+                                syncOpeningDepthValue(next);
+                                this.onSetBayWindowDepth?.(layerId, configFaceId, bayId, next);
+                            });
+                            openingDepthRow.number.addEventListener('input', () => {
+                                if (openingControlsDisabled) return;
+                                const next = Number(openingDepthRow.number.value);
+                                if (!Number.isFinite(next)) return;
+                                const clampedValue = clamp(next, -0.5, 1.0);
+                                syncOpeningDepthValue(clampedValue);
+                                this.onSetBayWindowDepth?.(layerId, configFaceId, bayId, clampedValue);
+                            });
+                            mainOpeningSection.appendChild(openingDepthRow.row);
+
                             const openingRepeatRow = createRangeRow(`${openingAssetTypeLabel} repeat`);
                             openingRepeatRow.row.classList.add('building-fab2-bay-window-range-row');
                             openingRepeatRow.range.min = String(OPENING_REPEAT_MIN);
@@ -5694,6 +5736,40 @@ export class BuildingFabrication2UI {
                                     return row.row;
                                 };
 
+                                // Signed depth rows: 0 = flush with the wall face,
+                                // positive = recessed into the wall (the generator
+                                // carves the niche), negative = proud.
+                                const zoneDepthRow = (labelText, value, min, max, onCommit) => {
+                                    const row = createRangeRow(labelText);
+                                    row.row.classList.add('building-fab2-bay-window-range-row');
+                                    row.range.min = String(min);
+                                    row.range.max = String(max);
+                                    row.range.step = '0.01';
+                                    row.number.min = String(min);
+                                    row.number.max = String(max);
+                                    row.number.step = '0.01';
+                                    row.range.disabled = zonesDisabled;
+                                    row.number.disabled = zonesDisabled;
+                                    const sync = (raw) => {
+                                        const next = Math.max(min, Math.min(max, Number(raw) || 0));
+                                        row.range.value = String(next);
+                                        row.number.value = next.toFixed(2);
+                                        return next;
+                                    };
+                                    sync(value);
+                                    row.range.addEventListener('input', () => {
+                                        if (zonesDisabled) return;
+                                        onCommit(sync(row.range.value));
+                                    });
+                                    row.number.addEventListener('input', () => {
+                                        if (zonesDisabled) return;
+                                        const raw = Number(row.number.value);
+                                        if (!Number.isFinite(raw)) return;
+                                        onCommit(sync(raw));
+                                    });
+                                    return row.row;
+                                };
+
                                 mainOpeningSection.appendChild(zoneNumberRow(
                                     'Bulkhead height',
                                     Number(defStorefront?.bulkhead?.heightMeters ?? 0.55),
@@ -5728,6 +5804,7 @@ export class BuildingFabrication2UI {
                                 };
                                 addTransomModeButton('glazed', 'Glazed');
                                 addTransomModeButton('backlit', 'Backlit');
+                                addTransomModeButton('solid', 'Solid');
                                 addTransomModeButton('none', 'None');
                                 transomModeControls.appendChild(transomModeToggle);
                                 transomModeRow.appendChild(transomModeLabel);
@@ -5740,11 +5817,23 @@ export class BuildingFabrication2UI {
                                         Number(defStorefront?.transom?.heightMeters ?? 0.45),
                                         (next) => this.onSetWindowDefinitionStorefrontZone?.(openingDefId, { transom: { heightMeters: next } })
                                     ));
+                                    mainOpeningSection.appendChild(zoneDepthRow(
+                                        'Transom depth',
+                                        Number(defStorefront?.transom?.insetMeters ?? 0),
+                                        -0.3, 0.5,
+                                        (next) => this.onSetWindowDefinitionStorefrontZone?.(openingDefId, { transom: { insetMeters: next } })
+                                    ));
                                 }
                                 mainOpeningSection.appendChild(zoneNumberRow(
                                     'Fascia height',
                                     Number(defStorefront?.fascia?.heightMeters ?? 0.5),
                                     (next) => this.onSetWindowDefinitionStorefrontZone?.(openingDefId, { fascia: { heightMeters: next } })
+                                ));
+                                mainOpeningSection.appendChild(zoneDepthRow(
+                                    'Fascia depth',
+                                    -Number(defStorefront?.fascia?.projectionMeters ?? 0),
+                                    -0.4, 0.4,
+                                    (next) => this.onSetWindowDefinitionStorefrontZone?.(openingDefId, { fascia: { projectionMeters: -next } })
                                 ));
                             }
 
@@ -7518,6 +7607,7 @@ export class BuildingFabrication2UI {
             options: [
                 { id: 'flat_band', label: 'Flat band' },
                 { id: 'stepped', label: 'Stepped' },
+                { id: 'wedge', label: 'Wedge' },
                 { id: 'crown_molding', label: 'Crown molding' },
                 { id: 'corbelled_brick', label: 'Corbelled brick' }
             ],

@@ -513,7 +513,7 @@ Rules:
   active; the outermost contour is clamped to the bay strip (paddings
   shrink proportionally, or the stack drops with a warning). `bands: N` on
   `arched_band` headers stays for genuine appliqué archivolts; the
-  bradbury arcade/brick windows move to insets in the AI 513 adoption.
+  bradbury arcade/brick windows moved to insets in the AI 513 adoption.
 
 ### 6.3 BF2 support slab (view helper)
 

@@ -33,7 +33,9 @@ export const EDGE_BEVEL_SCOPE = Object.freeze({
 export const EDGE_BEVEL_CORNER_IDS = Object.freeze(['AB', 'BC', 'CD', 'DA']);
 
 export const EDGE_BEVEL_WIDTH_MIN_METERS = 0.05;
-export const EDGE_BEVEL_WIDTH_MAX_METERS = 1.5;
+// AI 512: wide enough that a face-worthy chamfer (> the quad facet limit,
+// ~1.55m) is authorable — the N-face model promotes it to a real face.
+export const EDGE_BEVEL_WIDTH_MAX_METERS = 4.0;
 // A plan chamfer is a masonry detail, not a cut corner: the default is a few
 // centimetres, and anything wide enough to read as a fifth facade should be an
 // explicit authoring decision.

@@ -492,7 +492,10 @@ function normalizePrimaryFootprintLoop(footprintLoops) {
         if (!cleaned.length || !samePoint(cleaned[cleaned.length - 1], p)) cleaned.push(p);
     }
     if (cleaned.length > 2 && samePoint(cleaned[0], cleaned[cleaned.length - 1])) cleaned.pop();
-    if (cleaned.length === 4) return cleaned;
+    // AI 512 N-face model: keep any valid polygon (a chamfered corner is a
+    // 5-point loop). Only degenerate input falls back to the default rect;
+    // the quad-only layout-adjust gizmo is gated on loop.length === 4.
+    if (cleaned.length >= 3 && cleaned.length <= 26) return cleaned;
     return createDefaultFootprintLoop();
 }
 
@@ -911,6 +914,13 @@ export class BuildingFabrication2View {
         this._catalogEntries = this._buildCatalogEntries();
         this.ui.setCatalogEntries(this._catalogEntries);
 
+        // Deep link: index.html?screen=building_fabrication2&config=<id>
+        // opens the workspace with that catalog design loaded.
+        if (!this._currentConfig && typeof window !== 'undefined') {
+            const wanted = new URLSearchParams(window.location.search ?? '').get('config');
+            if (wanted && getBuildingConfigById(wanted)) this._loadConfigFromCatalog(wanted);
+        }
+
         this._syncUiState();
 
         this.ui.onCreateBuilding = () => this._createBuilding();
@@ -983,6 +993,7 @@ export class BuildingFabrication2View {
         this.ui.onSetBayWindowAssetType = (layerId, faceId, bayId, assetType) => this._setBayWindowAssetType(layerId, faceId, bayId, assetType);
         this.ui.onSetBayWindowHeightMode = (layerId, faceId, bayId, mode) => this._setBayWindowHeightMode(layerId, faceId, bayId, mode);
         this.ui.onSetBayWindowVerticalOffset = (layerId, faceId, bayId, value) => this._setBayWindowVerticalOffset(layerId, faceId, bayId, value);
+        this.ui.onSetBayWindowDepth = (layerId, faceId, bayId, value) => this._setBayWindowDepth(layerId, faceId, bayId, value);
         this.ui.onSetBayWindowRepeatCount = (layerId, faceId, bayId, repeatCount) => this._setBayWindowRepeatCount(layerId, faceId, bayId, repeatCount);
         this.ui.onSetBayWindowMuntinsEnabled = (layerId, faceId, bayId, target, enabled) => this._setBayWindowMuntinsEnabled(layerId, faceId, bayId, target, enabled);
         this.ui.onSetBayWindowShadesDisabled = (layerId, faceId, bayId, disabled) => this._setBayWindowShadesDisabled(layerId, faceId, bayId, disabled);
@@ -2763,7 +2774,9 @@ export class BuildingFabrication2View {
             const id = typeof entry?.id === 'string' ? entry.id : '';
             if (!id || seen.has(id)) continue;
             seen.add(id);
-            const label = typeof entry?.label === 'string' && entry.label.trim() ? entry.label.trim() : id;
+            const label = (typeof entry?.label === 'string' && entry.label.trim())
+                ? entry.label.trim()
+                : ((typeof entry?.name === 'string' && entry.name.trim()) ? entry.name.trim() : id);
             const settings = sanitizeWindowMeshSettings(entry?.settings ?? null);
             const previewUrl = this._getWindowDefinitionPreviewUrl(id, settings);
             const garageFacade = normalizeGarageFacadeConfig(entry?.garageFacade ?? null, null);
@@ -2810,7 +2823,9 @@ export class BuildingFabrication2View {
             const id = typeof entry?.id === 'string' ? entry.id : '';
             if (!id || seen.has(id)) continue;
             seen.add(id);
-            const label = typeof entry?.label === 'string' && entry.label.trim() ? entry.label.trim() : id;
+            const label = (typeof entry?.label === 'string' && entry.label.trim())
+                ? entry.label.trim()
+                : ((typeof entry?.name === 'string' && entry.name.trim()) ? entry.name.trim() : id);
             const settings = sanitizeWindowMeshSettings(entry?.settings ?? null);
             const garageFacade = normalizeGarageFacadeConfig(entry?.garageFacade ?? null, null);
             const wall = normalizeOpeningWallCutConfig(entry?.wall ?? null, null);
@@ -2870,7 +2885,9 @@ export class BuildingFabrication2View {
         if (!lib) return null;
         const legacy = lib.items.find((entry) => entry?.id === id) ?? null;
         if (!legacy) return null;
-        const label = typeof legacy?.label === 'string' && legacy.label.trim() ? legacy.label.trim() : id;
+        const label = (typeof legacy?.label === 'string' && legacy.label.trim())
+            ? legacy.label.trim()
+            : ((typeof legacy?.name === 'string' && legacy.name.trim()) ? legacy.name.trim() : id);
         const assetType = normalizeOpeningAssetType(
             legacy?.assetType ?? legacy?.openingType,
             WINDOW_FABRICATION_ASSET_TYPE.WINDOW
@@ -3574,6 +3591,29 @@ export class BuildingFabrication2View {
         this._requestRebuild({ preserveCamera: true });
     }
 
+    // Opening depth: bay-level offset for how deep the door/window assembly
+    // sits in the wall, separate from the bay's edge depth. 0 clears the
+    // override (the definition's own inset applies).
+    _setBayWindowDepth(layerId, faceId, bayId, value) {
+        const ctx = this._findBaySpec({ layerId, faceId, bayId });
+        if (!ctx) return;
+        const bay = ctx.bay && typeof ctx.bay === 'object' ? ctx.bay : null;
+        if (!bay) return;
+        if (resolveBayLinkFromSpec(bay)) return;
+
+        const windowCfg = this._ensureBayWindowConfig(bay, { create: false });
+        if (!windowCfg || windowCfg.enabled === false) return;
+
+        const raw = Number(value);
+        const next = Number.isFinite(raw) && Math.abs(raw) > 1e-6 ? clamp(raw, -0.5, 1.0) : null;
+        const prev = Number.isFinite(windowCfg.depthMeters) ? windowCfg.depthMeters : null;
+        if (next === null && prev === null) return;
+        if (next !== null && prev !== null && Math.abs(next - prev) < 1e-6) return;
+        if (next === null) delete windowCfg.depthMeters;
+        else windowCfg.depthMeters = next;
+        this._requestRebuild({ preserveCamera: true });
+    }
+
     _setBayWindowRepeatCount(layerId, faceId, bayId, repeatCount) {
         const ctx = this._findBaySpec({ layerId, faceId, bayId });
         if (!ctx) return;
@@ -3981,6 +4021,33 @@ export class BuildingFabrication2View {
             [WINDOW_FABRICATION_ASSET_TYPE.GARAGE]: 'Garage',
             [WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT]: 'Storefront'
         };
+        // Building-local definitions (config windowDefinitions) come first:
+        // bays referencing them must find their current selection in the
+        // picker even though the global catalog does not know these ids.
+        const localItems = Array.isArray(this._currentConfig?.windowDefinitions?.items)
+            ? this._currentConfig.windowDefinitions.items
+            : [];
+        const localOptions = [];
+        const seenLocalIds = new Set();
+        for (const entry of localItems) {
+            const id = typeof entry?.id === 'string' ? entry.id : '';
+            if (!id || seenLocalIds.has(id) || getWindowFabricationCatalogEntryById(id)) continue;
+            seenLocalIds.add(id);
+            const label = (typeof entry?.label === 'string' && entry.label.trim())
+                ? entry.label.trim()
+                : ((typeof entry?.name === 'string' && entry.name.trim()) ? entry.name.trim() : id);
+            const assetType = normalizeOpeningAssetType(
+                entry?.assetType ?? entry?.openingType,
+                WINDOW_FABRICATION_ASSET_TYPE.WINDOW
+            );
+            const settings = sanitizeWindowMeshSettings(entry?.settings ?? null);
+            localOptions.push({
+                id: `opening:${assetType}:${id}`,
+                label,
+                kind: 'texture',
+                previewUrl: this._getWindowDefinitionPreviewUrl(id, settings)
+            });
+        }
         const sections = assetTypes.map((assetType) => {
             const entries = getWindowFabricationCatalogEntries({ assetType });
             const options = entries.length
@@ -4009,6 +4076,9 @@ export class BuildingFabrication2View {
                 options
             };
         });
+        if (localOptions.length) {
+            sections.unshift({ label: 'This Building', options: localOptions });
+        }
 
         const selectedId = selectedDefId ? `opening:${selectedType}:${selectedDefId}` : null;
         this._windowPickerPopup.open({
@@ -6087,8 +6157,14 @@ export class BuildingFabrication2View {
 
     _syncLayoutSceneState() {
         const hasBuilding = !!this.scene?.getHasBuilding?.();
-        const enabled = !!this._layoutAdjustEnabled && hasBuilding && !!this._currentConfig;
-        const loop = enabled ? this._getCurrentFootprintLoop() : null;
+        let enabled = !!this._layoutAdjustEnabled && hasBuilding && !!this._currentConfig;
+        let loop = enabled ? this._getCurrentFootprintLoop() : null;
+        // The layout-adjust gizmo edits rectangles only (N-gon vertex
+        // editing is a deferred AI 512 follow-up); other tools keep working.
+        if (loop && loop.length !== 4) {
+            enabled = false;
+            loop = null;
+        }
         const drag = this._layoutDrag;
         const hover = this._layoutHover;
         const widthGuideFaceIds = enabled && drag ? this._resolveLayoutWidthGuideFaceIds(drag) : null;

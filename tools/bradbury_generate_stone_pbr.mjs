@@ -297,6 +297,32 @@ function bakeRedSandstoneBlock() {
 }
 
 // ---------------------------------------------------------------------------
+// 1b. Red sandstone noise — the SAME mottled red-brown palette as
+// red_sandstone_block but with NO block pattern: plain noise for mouldings,
+// bands and decorators where course joints would read wrong.
+// ---------------------------------------------------------------------------
+function bakeRedSandstoneNoise() {
+    const heightAt = (u, v) => 0.94 + fbm(u, v, { octaves: 4, basePeriod: 24, seed: 247 }) * 0.05;
+
+    const albedoAt = (u, v, h) => {
+        const blotch = fbm(u, v, { octaves: 4, basePeriod: 9, seed: 155 }) * 24
+            + fbm(u, v, { octaves: 3, basePeriod: 30, seed: 159 }) * 13;
+        const speck = (valueNoise(u, v, 340, 163) - 0.5) * 16;
+        const baseR = 71 + blotch + speck;
+        const baseG = 49 + blotch * 0.82 + speck * 0.9;
+        const baseB = 41 + blotch * 0.7 + speck * 0.8;
+        const shade = 0.93 + h * 0.07;
+        return [baseR * shade, baseG * shade, baseB * shade];
+    };
+
+    const roughnessAt = (u, v, h) => 0.74 + fbm(u, v, { octaves: 3, basePeriod: 36, seed: 167 }) * 0.07 + (1 - h) * 0.05;
+    const aoAt = () => 0.95;
+
+    bakeMaps({ slug: 'red_sandstone_noise', heightAt, albedoAt, roughnessAt, aoAt, normalStrength: 4 });
+    writeMaterialConfig({ slug: 'red_sandstone_noise', label: 'Red Sandstone Noise', classId: 'stone', tileMeters: 2.0 });
+}
+
+// ---------------------------------------------------------------------------
 // 2. Smooth terracotta — moulded trim matching the salmon brick family.
 // ---------------------------------------------------------------------------
 function bakeTerracottaSmooth() {
@@ -321,4 +347,5 @@ function bakeTerracottaSmooth() {
 }
 
 bakeRedSandstoneBlock();
+bakeRedSandstoneNoise();
 bakeTerracottaSmooth();

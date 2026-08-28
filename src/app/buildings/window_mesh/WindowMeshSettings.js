@@ -78,6 +78,15 @@ export const WINDOW_HANDLE_MATERIAL_MODE = Object.freeze({
     METAL: 'metal'
 });
 
+// Door pull shapes: 'bar' is the plain vertical bar on two standoffs;
+// 'c_pull' is the squared C-bracket pull (two arms off the leaf near the
+// meeting stile turning into a vertical grip standing off the face, the open
+// side of the C facing the stile) — the storefront door pull.
+export const WINDOW_HANDLE_STYLE = Object.freeze({
+    BAR: 'bar',
+    C_PULL: 'c_pull'
+});
+
 const COVERAGE_VALUES = Object.freeze([
     WINDOW_SHADE_COVERAGE.NONE,
     WINDOW_SHADE_COVERAGE.PCT_20,
@@ -149,6 +158,13 @@ function normalizeHandleMaterialMode(value, fallback) {
     const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
     if (raw === WINDOW_HANDLE_MATERIAL_MODE.METAL) return WINDOW_HANDLE_MATERIAL_MODE.METAL;
     if (raw === WINDOW_HANDLE_MATERIAL_MODE.MATCH) return WINDOW_HANDLE_MATERIAL_MODE.MATCH;
+    return fallback;
+}
+
+function normalizeHandleStyle(value, fallback) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === WINDOW_HANDLE_STYLE.C_PULL) return WINDOW_HANDLE_STYLE.C_PULL;
+    if (raw === WINDOW_HANDLE_STYLE.BAR) return WINDOW_HANDLE_STYLE.BAR;
     return fallback;
 }
 
@@ -348,7 +364,11 @@ export function detectWindowGlassPresetId(glass, { epsilon = 1e-6 } = {}) {
  * @property {boolean} openBottom
  * @property {boolean} addHandles
  * @property {'match'|'metal'} handleMaterialMode
+ * @property {'bar'|'c_pull'} handleStyle
+ * @property {number|null} handleColorHex
  * @property {'single'|'double'} doorStyle
+ * @property {{enabled: boolean, heightMeters: number}} doorKickPanel
+ * @property {{enabled: boolean, yMeters: number, thicknessMeters: number}} doorMidRail
  * @property {WindowMeshDoorBottomFrameSettings} doorBottomFrame
  * @property {WindowMeshDoorCenterFrameSettings} doorCenterFrame
  * @property {number} colorHex
@@ -470,7 +490,17 @@ export const WINDOW_MESH_DEFAULTS = Object.freeze({
         openBottom: false,
         addHandles: false,
         handleMaterialMode: WINDOW_HANDLE_MATERIAL_MODE.MATCH,
+        handleStyle: WINDOW_HANDLE_STYLE.BAR,
+        // null = the mode's own color (frame color for 'match', chrome for
+        // 'metal'); a hex overrides it (e.g. dark bronze pulls).
+        handleColorHex: null,
         doorStyle: WINDOW_FRAME_DOOR_STYLE.SINGLE,
+        // Solid frame-material panel filling the BOTTOM of each door leaf
+        // (the storefront-door kick panel); glass starts above it.
+        doorKickPanel: Object.freeze({ enabled: false, heightMeters: 0.4 }),
+        // Horizontal frame-material rail across each leaf at pull height,
+        // dividing the glass into an upper and a lower pane.
+        doorMidRail: Object.freeze({ enabled: false, yMeters: 1.05, thicknessMeters: 0.09 }),
         doorBottomFrame: Object.freeze({
             enabled: false,
             mode: WINDOW_FRAME_MATCH_MODE.MATCH
@@ -635,16 +665,50 @@ export function sanitizeWindowMeshSettings(input) {
         frameSrc.handleMaterialMode,
         WINDOW_MESH_DEFAULTS.frame.handleMaterialMode
     );
+    const frameHandleStyle = normalizeHandleStyle(
+        frameSrc.handleStyle,
+        WINDOW_MESH_DEFAULTS.frame.handleStyle
+    );
+    // Number.isFinite on the RAW value: Number(null) coerces to a finite 0,
+    // which would silently turn the "unset" sentinel into black.
+    const frameHandleColorHex = Number.isFinite(frameSrc.handleColorHex)
+        ? ((Number(frameSrc.handleColorHex) >>> 0) & 0xffffff)
+        : WINDOW_MESH_DEFAULTS.frame.handleColorHex;
     const frameDoorStyle = normalizeFrameDoorStyle(
         frameSrc.doorStyle ?? frameSrc.style,
         WINDOW_MESH_DEFAULTS.frame.doorStyle
     );
+    const frameDoorKickSrc = frameSrc.doorKickPanel && typeof frameSrc.doorKickPanel === 'object'
+        ? frameSrc.doorKickPanel
+        : {};
+    const frameDoorKickPanel = {
+        enabled: frameDoorKickSrc.enabled !== undefined
+            ? !!frameDoorKickSrc.enabled
+            : WINDOW_MESH_DEFAULTS.frame.doorKickPanel.enabled,
+        heightMeters: clamp(frameDoorKickSrc.heightMeters, 0.05, 1.5, WINDOW_MESH_DEFAULTS.frame.doorKickPanel.heightMeters)
+    };
+    const frameDoorMidRailSrc = frameSrc.doorMidRail && typeof frameSrc.doorMidRail === 'object'
+        ? frameSrc.doorMidRail
+        : {};
+    const frameDoorMidRail = {
+        enabled: frameDoorMidRailSrc.enabled !== undefined
+            ? !!frameDoorMidRailSrc.enabled
+            : WINDOW_MESH_DEFAULTS.frame.doorMidRail.enabled,
+        yMeters: clamp(frameDoorMidRailSrc.yMeters, 0.2, 3.0, WINDOW_MESH_DEFAULTS.frame.doorMidRail.yMeters),
+        thicknessMeters: clamp(frameDoorMidRailSrc.thicknessMeters, 0.02, 0.4, WINDOW_MESH_DEFAULTS.frame.doorMidRail.thicknessMeters)
+    };
     const frameDoorBottomSrc = frameSrc.doorBottomFrame && typeof frameSrc.doorBottomFrame === 'object'
         ? frameSrc.doorBottomFrame
         : {};
     const frameDoorBottomEnabled = frameDoorBottomSrc.enabled !== undefined
         ? !!frameDoorBottomSrc.enabled
         : WINDOW_MESH_DEFAULTS.frame.doorBottomFrame.enabled;
+    // Optional tall bottom rail (the storefront-door kick as a FLUSH frame
+    // member); null = the legacy horizontal frame width. Test the RAW value:
+    // Number(null) is a finite 0.
+    const frameDoorBottomHeight = Number.isFinite(frameDoorBottomSrc.heightMeters)
+        ? clamp(frameDoorBottomSrc.heightMeters, 0.02, 1.5, 0.4)
+        : null;
     const frameDoorBottomMode = normalizeFrameMatchMode(
         frameDoorBottomSrc.mode ?? frameSrc.doorBottomFrameMode,
         WINDOW_MESH_DEFAULTS.frame.doorBottomFrame.mode
@@ -848,10 +912,15 @@ export function sanitizeWindowMeshSettings(input) {
             openBottom: frameOpenBottom,
             addHandles: frameAddHandles,
             handleMaterialMode: frameHandleMaterialMode,
+            handleStyle: frameHandleStyle,
+            handleColorHex: frameHandleColorHex,
             doorStyle: frameDoorStyle,
+            doorKickPanel: frameDoorKickPanel,
+            doorMidRail: frameDoorMidRail,
             doorBottomFrame: {
                 enabled: frameDoorBottomEnabled,
-                mode: frameDoorBottomMode
+                mode: frameDoorBottomMode,
+                heightMeters: frameDoorBottomHeight
             },
             doorCenterFrame: {
                 leftMode: frameDoorCenterLeftMode,

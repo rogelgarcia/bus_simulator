@@ -33,6 +33,10 @@ import { resolveWallBaseTintHexFromWallBase } from '../../../app/buildings/WallB
 const DOUBLE = 2;
 const EPS = 1e-6;
 const BACKGROUND_COLOR = 0x101620;
+// Editor-only environment lighting boost. The game applies ~0.28 (and walls
+// 0) via the IBL scan; the editor deliberately shows everything at full
+// environment strength — the bright, readable look users asked to keep.
+const EDITOR_ENV_MAP_INTENSITY = 1.0;
 const FACE_HIGHLIGHT_COLOR = 0x64d2ff;
 const FACE_HIGHLIGHT_LINEWIDTH = 6;
 const FACE_HIGHLIGHT_OPACITY = 0.85;
@@ -80,7 +84,8 @@ const FACE_NORMAL_BY_ID = Object.freeze({
 });
 
 function isFaceId(faceId) {
-    return faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D';
+    // AI 512: N-face model — any single letter A-Z (matches the View).
+    return typeof faceId === 'string' && faceId.length === 1 && faceId >= 'A' && faceId <= 'Z';
 }
 
 function normalizeMaterialSpec(value) {
@@ -920,6 +925,7 @@ export class BuildingFabrication2Scene {
         this._hoverHighlightLine = null;
         this._floorLayerYRangeById = new Map();
         this._bayHighlightDataByLayerId = null;
+        this._facadeFaceLinesByLayerId = null;
         this._hoveredBay = null;
         this._hoveredBayOverlay = null;
         this._lineResolution = new THREE.Vector2(1, 1);
@@ -1369,6 +1375,9 @@ export class BuildingFabrication2Scene {
         this._bayHighlightDataByLayerId = (parts.bayHighlightDataByLayerId && typeof parts.bayHighlightDataByLayerId === 'object')
             ? parts.bayHighlightDataByLayerId
             : null;
+        this._facadeFaceLinesByLayerId = (parts.facadeFaceLinesByLayerId && typeof parts.facadeFaceLinesByLayerId === 'object')
+            ? parts.facadeFaceLinesByLayerId
+            : null;
         this._syncBuildingRenderMode();
         this._syncSceneWireframe();
         this._updateFocusBoxFromObject(group);
@@ -1384,12 +1393,46 @@ export class BuildingFabrication2Scene {
         this._syncFaceHighlight();
         this._syncLayoutEditOverlays();
 
+        // The engine's IBL scan only runs for ~2s after a screen change, so
+        // materials born in later rebuilds missed both the managed-envMap
+        // assignment and the intensity pass; they rode scene.environment at
+        // the shader-default intensity (1.0) and the whole building visibly
+        // brightened after any edit (and would darken again on the next
+        // screen switch). Re-sync env maps AND intensities for the freshly
+        // built materials so every rebuild matches the scanned state.
+        this.engine?.resyncIBL?.();
+        // …then deliberately brighten: the editor keeps the bright look that
+        // the un-scanned state accidentally had (users preferred it), applied
+        // consistently to every build instead of only after an edit.
+        this._applyEditorEnvBoost(group);
+        this._applyEditorEnvBoost(this._wallDecorationsGroup);
+
         if (keepCamera && cameraPos && cameraTarget) {
             this.controls.setLookAt({ position: cameraPos, target: cameraTarget });
         } else {
             this.controls?.frame?.();
         }
         return true;
+    }
+
+    // Editor lighting: run building materials at full environment intensity.
+    // Materials that author a strong env of their own (storefront glass) keep
+    // it; everything else — walls included — gets EDITOR_ENV_MAP_INTENSITY.
+    // The explicit `userData.iblEnvMapIntensity` override makes the engine's
+    // own IBL scans re-apply this value instead of the game's config, so the
+    // boost survives env-load, screen switches and rebuilds alike.
+    _applyEditorEnvBoost(root) {
+        root?.traverse?.((obj) => {
+            if (!obj?.isMesh) return;
+            const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+            for (const mat of mats) {
+                if (!mat || !('envMapIntensity' in mat)) continue;
+                const userData = mat.userData ?? (mat.userData = {});
+                if (userData.iblNoAutoEnvMapIntensity && mat.envMapIntensity > EDITOR_ENV_MAP_INTENSITY) continue;
+                mat.envMapIntensity = EDITOR_ENV_MAP_INTENSITY;
+                if (!userData.iblNoAutoEnvMapIntensity) userData.iblEnvMapIntensity = EDITOR_ENV_MAP_INTENSITY;
+            }
+        });
     }
 
     resetCamera() {
@@ -2774,22 +2817,47 @@ export class BuildingFabrication2Scene {
         const baseY = Number.isFinite(range?.startY) ? Number(range.startY) : (Number.isFinite(box.min.y) ? box.min.y : 0);
         const y = baseY + FACE_HIGHLIGHT_Y_LIFT;
 
+        // Prefer the generator's built face lines: on an N-gon footprint the
+        // bounding-box quad mapping below points at the wrong wall (the
+        // chamfer face B would highlight the +x face).
+        let faceLine = null;
+        const linesByLayer = this._facadeFaceLinesByLayerId;
+        if (linesByLayer && typeof linesByLayer === 'object') {
+            const pools = (baseLayerId && Array.isArray(linesByLayer[baseLayerId]))
+                ? [linesByLayer[baseLayerId]]
+                : Object.values(linesByLayer).filter((entry) => Array.isArray(entry));
+            for (const pool of pools) {
+                const hit = pool.find((entry) => entry?.faceId === faceId) ?? null;
+                if (hit) {
+                    faceLine = hit;
+                    break;
+                }
+            }
+        }
+
         let positions = null;
-        switch (faceId) {
-            case 'A':
-                positions = [minX, y, maxZ, maxX, y, maxZ];
-                break;
-            case 'C':
-                positions = [minX, y, minZ, maxX, y, minZ];
-                break;
-            case 'B':
-                positions = [maxX, y, minZ, maxX, y, maxZ];
-                break;
-            case 'D':
-                positions = [minX, y, minZ, minX, y, maxZ];
-                break;
-            default:
-                return;
+        if (faceLine) {
+            positions = [
+                Number(faceLine.x0) || 0, y, Number(faceLine.z0) || 0,
+                Number(faceLine.x1) || 0, y, Number(faceLine.z1) || 0
+            ];
+        } else {
+            switch (faceId) {
+                case 'A':
+                    positions = [minX, y, maxZ, maxX, y, maxZ];
+                    break;
+                case 'C':
+                    positions = [minX, y, minZ, maxX, y, minZ];
+                    break;
+                case 'B':
+                    positions = [maxX, y, minZ, maxX, y, maxZ];
+                    break;
+                case 'D':
+                    positions = [minX, y, minZ, minX, y, maxZ];
+                    break;
+                default:
+                    return;
+            }
         }
 
         const geo = new LineSegmentsGeometry();
@@ -2814,6 +2882,7 @@ export class BuildingFabrication2Scene {
         line.name = `bf2_face_${faceId}`;
         line.renderOrder = 180;
         line.frustumCulled = false;
+        line.raycast = () => {};
         line.visible = !this._suppressFaceHighlight;
         this.root.add(line);
         this._faceHighlightLine = line;
@@ -3057,12 +3126,17 @@ export class BuildingFabrication2Scene {
 
     _buildLights() {
         if (!this.root) return;
-        const hemi = new THREE.HemisphereLight(0xe5eeff, 0x463a2a, 0.42);
+        // Workbench lighting: high enough ambient that shaded faces stay
+        // readable while editing (the sun leaves -x/-z faces in the dark).
+        const hemi = new THREE.HemisphereLight(0xe5eeff, 0x463a2a, 0.75);
         hemi.name = 'bf2_hemi';
 
         const sun = new THREE.DirectionalLight(0xffffff, 1.75);
         sun.name = 'bf2_sun';
-        sun.position.set(60, 75, 40);
+        // Angled to light the default camera's facade (+z) with the right
+        // (+x) side still highlighted, so the editor opens onto a lit front
+        // instead of a grazing-lit one.
+        sun.position.set(45, 70, 70);
         sun.castShadow = true;
         sun.shadow.bias = -0.0001;
         sun.shadow.mapSize.set(2048, 2048);
@@ -3120,6 +3194,7 @@ export class BuildingFabrication2Scene {
             this._clearHoveredBayOverlay();
             this._clearSupportSlab();
             this._bayHighlightDataByLayerId = null;
+            this._facadeFaceLinesByLayerId = null;
             if (!preserveHoveredBay) this._hoveredBay = null;
             this._layoutLoop = null;
             this._layoutHoverFaceId = null;
@@ -3137,6 +3212,7 @@ export class BuildingFabrication2Scene {
         this._hoveredFloorLayerId = null;
         this._activeFaceLayerId = null;
         this._bayHighlightDataByLayerId = null;
+        this._facadeFaceLinesByLayerId = null;
         if (!preserveHoveredBay) this._hoveredBay = null;
         this._clearHoverHighlight();
         this._clearHoveredBayOverlay();

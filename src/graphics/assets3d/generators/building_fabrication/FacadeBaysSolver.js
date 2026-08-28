@@ -293,6 +293,12 @@ function normalizeBayWindowSpec(value) {
     const verticalOffsetMeters = Number.isFinite(verticalOffsetRaw)
         ? clamp(verticalOffsetRaw, 0, 9999)
         : null;
+    // Opening depth: how deep the door/window assembly sits relative to the
+    // bay's wall plane, independent of the bay's own edge depth (which moves
+    // the whole wall). Adds to the definition's frame inset; negative pulls
+    // the opening toward flush.
+    const openingDepthRaw = Number(src.depthMeters ?? src.openingDepthMeters);
+    const depthMeters = Number.isFinite(openingDepthRaw) ? clamp(openingDepthRaw, -0.5, 1.0) : null;
 
     const paddingSrc = src.padding && typeof src.padding === 'object' ? src.padding : null;
     const linked = (paddingSrc?.linked ?? true) !== false;
@@ -361,6 +367,7 @@ function normalizeBayWindowSpec(value) {
         },
         heightMode,
         verticalOffsetMeters,
+        ...(depthMeters !== null ? { depthMeters } : {}),
         width: {
             minMeters,
             maxMeters

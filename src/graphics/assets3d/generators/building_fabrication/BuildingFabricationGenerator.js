@@ -353,11 +353,25 @@ function applyOpeningVisualOverridesToSettings(settings, visual) {
             }
         };
     } else {
-        const presetId = interiorMode === OPENING_INTERIOR_MODE.OFFICE
+        // The opening's visual mode is COARSE (res/office/shop); a definition
+        // may refine WHICH preset of that mode renders (e.g. the silhouette
+        // shop glass). Keep the definition's preset when it already belongs
+        // to the requested mode — only stomp it on an actual mode change.
+        const currentPresetId = typeof next?.interior?.parallaxInteriorPresetId === 'string'
+            ? next.interior.parallaxInteriorPresetId
+            : '';
+        const currentLower = currentPresetId.toLowerCase();
+        const currentMode = currentLower.includes('office')
+            ? OPENING_INTERIOR_MODE.OFFICE
+            : (currentLower.includes('shop')
+                ? OPENING_INTERIOR_MODE.SHOP
+                : (currentLower.includes('residential') ? OPENING_INTERIOR_MODE.RES : null));
+        const stockPresetId = interiorMode === OPENING_INTERIOR_MODE.OFFICE
             ? PARALLAX_INTERIOR_PRESET_ID.OFFICE
             : (interiorMode === OPENING_INTERIOR_MODE.SHOP
                 ? PARALLAX_INTERIOR_PRESET_ID.SHOP
                 : PARALLAX_INTERIOR_PRESET_ID.RESIDENTIAL);
+        const presetId = currentMode === interiorMode ? currentPresetId : stockPresetId;
         next = {
             ...next,
             interior: {
@@ -638,13 +652,25 @@ function resolveStorefrontZoneLayout({ storefront, totalHeightMeters } = {}) {
     }
     const glazingH = Math.max(0.1, totalH - bulkheadH - transomH - fasciaH);
 
+    // Band order above the glazing: default is transom -> fascia (top);
+    // `fasciaBelowTransom` swaps them so the dark sign band sits directly on
+    // the glazing head with the transom band above it (the classic order).
+    const fasciaFirst = cfg.fasciaBelowTransom === true;
+    const firstH = fasciaFirst ? fasciaH : transomH;
     return {
         config: cfg,
         totalHeight: totalH,
         bulkhead: { height: bulkheadH, yBottom: 0 },
         glazing: { height: glazingH, yBottom: bulkheadH },
-        transom: { height: transomH, yBottom: bulkheadH + glazingH, mode: cfg.transom.mode },
-        fascia: { height: fasciaH, yBottom: bulkheadH + glazingH + transomH }
+        transom: {
+            height: transomH,
+            yBottom: bulkheadH + glazingH + (fasciaFirst ? firstH : 0),
+            mode: cfg.transom.mode
+        },
+        fascia: {
+            height: fasciaH,
+            yBottom: bulkheadH + glazingH + (fasciaFirst ? 0 : firstH)
+        }
     };
 }
 
@@ -664,7 +690,11 @@ function makeStorefrontZoneSettings({ baseSettings, width, layout } = {}) {
     });
 
     let transom = null;
-    if (layout.transom.mode !== STOREFRONT_TRANSOM_MODE.NONE && layout.transom.height > 0.05) {
+    // Solid mode has no glazed band: the zone renders as a plain slab (the
+    // fascia construction), so no window-mesh settings and no wall cut.
+    const transomWantsGlass = layout.transom.mode === STOREFRONT_TRANSOM_MODE.GLAZED
+        || layout.transom.mode === STOREFRONT_TRANSOM_MODE.BACKLIT;
+    if (transomWantsGlass && layout.transom.height > 0.05) {
         transom = sanitizeWindowMeshSettings({
             ...base,
             width,
@@ -2409,7 +2439,13 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
     ySlices = null,
     yBands = null,
     cutoutTol = 0.02,
-    cutoutCurveSegments = 18
+    cutoutCurveSegments = 18,
+    // Reveal walls extrude along the loop's inward direction. The interior
+    // shell loop is wound to face the room, which flips its inward toward
+    // the facade — its cut linings must run the other way (into the room),
+    // so it passes -1. Flipped reveals render inside-out; the shell's
+    // DoubleSide material covers that.
+    revealDirectionSign = 1
 } = {}) {
     const pts = Array.isArray(loop) ? loop : [];
     const n = pts.length;
@@ -2419,6 +2455,7 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
     const overrides = segmentOverrides instanceof Map ? segmentOverrides : null;
     const cutList = Array.isArray(cutouts) ? cutouts.filter((entry) => entry && typeof entry === 'object') : null;
     const cutTol = clamp(cutoutTol, 1e-4, 0.5);
+    const revealSign = Number(revealDirectionSign) < 0 ? -1 : 1;
     const curveSegments = clampInt(cutoutCurveSegments, 6, 64);
     const rawYSlices = Array.isArray(ySlices) ? ySlices : null;
     const cutoutsByFaceId = (() => {
@@ -2732,6 +2769,10 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                         x1: sx1,
                         y0: sy0,
                         y1: sy1,
+                        // The cut genuinely extends past this segment (it was
+                        // clamped): its side there is mid-opening, no jamb.
+                        openStart: x0 < -cutTol,
+                        openEnd: x1 > segLen + cutTol,
                         wantsArch: !!cut.wantsArch,
                         archRise: Math.max(0, Number(cut.archRise) || 0),
                         revealDepth: Math.max(0, Number(cut.revealDepth) || 0),
@@ -2903,9 +2944,9 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                     const u = addDepthToV ? baseU : (baseU + depth);
                     const v = addDepthToV ? (baseV + depth) : baseV;
                     positions.push(
-                        a.x + tx * lx + inwardX * depth,
+                        a.x + tx * lx + inwardX * depth * revealSign,
                         ly,
-                        a.z + tz * lx + inwardZ * depth
+                        a.z + tz * lx + inwardZ * depth * revealSign
                     );
                     uvs.push(u, v);
                 };
@@ -2941,19 +2982,29 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                     activeRevealMaterialOverride = Number.isInteger(cut.revealMaterialIndex) ? cut.revealMaterialIndex : null;
                     if (activeRevealMaterialOverride !== null) revealOverrideWasUsed = true;
 
-                    const x0 = cut.x0;
-                    const x1 = cut.x1;
                     const y0 = cut.y0;
                     const y1 = cut.y1;
-                    if (!(x1 - x0 > minEdge) || !(y1 - y0 > minEdge)) continue;
-                    const touchesStart = x0 <= cutTol + EPS;
-                    const touchesEnd = x1 >= segLen - cutTol - EPS;
+                    if (!(cut.x1 - cut.x0 > minEdge) || !(y1 - y0 > minEdge)) continue;
+                    // A jamb is skipped only when the cut genuinely CONTINUES
+                    // into the neighbouring segment (openStart/openEnd). A cut
+                    // that merely ENDS at the segment boundary — a bay whose
+                    // width derives from the opening with zero padding — still
+                    // needs its jamb, or the recess flank opens (the
+                    // interior lining shows as a pale strip, and a deeper
+                    // opening depth turns it into a real hole). Boundary jambs
+                    // sit a hair inside the edge so they never z-fight a
+                    // neighbouring strip's own depth-return wall.
+                    const touchesStart = cut.x0 <= cutTol + EPS;
+                    const touchesEnd = cut.x1 >= segLen - cutTol - EPS;
+                    const jambNudge = Math.min(0.004, Math.max(0, (cut.x1 - cut.x0) * 0.5 - EPS));
+                    const x0 = cut.x0 + (touchesStart && !cut.openStart ? jambNudge : 0);
+                    const x1 = cut.x1 - (touchesEnd && !cut.openEnd ? jambNudge : 0);
 
                     if (!cut.wantsArch || !(cut.archRise > EPS)) {
                         pushRevealQuad(x0, y0, x1, y0, depth);
-                        if (!touchesEnd) pushRevealQuad(x1, y0, x1, y1, depth);
+                        if (!cut.openEnd) pushRevealQuad(x1, y0, x1, y1, depth);
                         pushRevealQuad(x1, y1, x0, y1, depth);
-                        if (!touchesStart) pushRevealQuad(x0, y1, x0, y0, depth);
+                        if (!cut.openStart) pushRevealQuad(x0, y1, x0, y0, depth);
                         continue;
                     }
 
@@ -2961,9 +3012,9 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                     const yChord = yTop - cut.archRise;
                     if (yChord <= y0 + EPS) {
                         pushRevealQuad(x0, y0, x1, y0, depth);
-                        if (!touchesEnd) pushRevealQuad(x1, y0, x1, y1, depth);
+                        if (!cut.openEnd) pushRevealQuad(x1, y0, x1, y1, depth);
                         pushRevealQuad(x1, y1, x0, y1, depth);
-                        if (!touchesStart) pushRevealQuad(x0, y1, x0, y0, depth);
+                        if (!cut.openStart) pushRevealQuad(x0, y1, x0, y0, depth);
                         continue;
                     }
 
@@ -2981,7 +3032,7 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
 
                     const arcSegments = clampInt(curveSegments, 6, 64);
                     pushRevealQuad(x0, y0, x1, y0, depth);
-                    if (!touchesEnd) pushRevealQuad(x1, y0, x1, yChord, depth);
+                    if (!cut.openEnd) pushRevealQuad(x1, y0, x1, yChord, depth);
                     let prevX = x1;
                     let prevY = yChord;
                     for (let s = 1; s < arcSegments; s++) {
@@ -2992,7 +3043,7 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                         prevX = x;
                         prevY = y;
                     }
-                    if (!touchesStart) {
+                    if (!cut.openStart) {
                         pushRevealQuad(prevX, prevY, x0, yChord, depth);
                         pushRevealQuad(x0, yChord, x0, y0, depth);
                     }
@@ -3524,6 +3575,19 @@ function makeWindowDecorationPartMaterial({
             baseColorHex,
             textureCache
         });
+    } else if (materialMode === 'color' && Number.isFinite(Number(part?.material?.colorHex))) {
+        // Explicit flat color (storefront-zone dialect 'color' mode). Keep
+        // the environment reflection low so a dark band stays dark instead
+        // of washing out under the sky IBL.
+        const spec = part.material;
+        mat = new THREE.MeshStandardMaterial({
+            color: (Number(spec.colorHex) >>> 0) & 0xffffff,
+            roughness: Number.isFinite(Number(spec.roughness)) ? clamp(spec.roughness, 0.0, 1.0) : 0.75,
+            metalness: Number.isFinite(Number(spec.metalness)) ? clamp(spec.metalness, 0.0, 1.0) : 0.0
+        });
+        mat.envMapIntensity = 0.25;
+        mat.userData = mat.userData ?? {};
+        mat.userData.iblEnvMapIntensity = 0.25;
     }
 
     if (!mat) {
@@ -4083,6 +4147,15 @@ const CORNICE_ORNAMENT_CORNER_CLEARANCE_METERS = 0.05;
 // bottom to top. Every profile ends at full projection so the top shelf is the
 // widest point, as on real cornices.
 function resolveCorniceProfileFractions(profile) {
+    if (profile === 'wedge') {
+        // Splayed band: the underside slopes outward to full projection,
+        // then a vertical face to the top (the angled transition band).
+        return [
+            { o: 0.12, y: 0.0 },
+            { o: 1.0, y: 0.55 },
+            { o: 1.0, y: 1.0 }
+        ];
+    }
     if (profile === 'stepped') {
         return [
             { o: 0.45, y: 0.0 }, { o: 0.45, y: 0.34 },
@@ -4112,18 +4185,25 @@ function resolveCorniceProfileFractions(profile) {
 }
 
 // Closed cross-section swept around the layer loop. Offsets are outward from
-// the loop plane; the inner return is buried so it cannot z-fight the wall or
-// parapet body behind it.
-function resolveCorniceCrossSection({ profile, heightMeters, projectionMeters, baseOutset = 0.0 }) {
+// the loop plane. With `buryInner` the inner return sinks into the body behind
+// it (a roof cornice wraps a parapet standing in its range); a layer cornice
+// consumes its own elevation — nothing stands behind it — and a buried
+// underside ring would lie exactly in the capY closure-band plane (z-fight),
+// so it starts flush at the loop line instead.
+function resolveCorniceCrossSection({ profile, heightMeters, projectionMeters, baseOutset = 0.0, buryInner = true }) {
     const h = Math.max(0.02, Number(heightMeters) || 0);
     const p = Math.max(0.01, Number(projectionMeters) || 0);
     const base = Number(baseOutset) || 0;
-    const inner = base - CORNICE_BURIAL_METERS;
-    const section = [{ o: inner, y: 0 }];
+    // The TOP inner point is always buried: the shelf tucks under the wall
+    // standing above it, hiding the mesh-to-mesh T-junction that otherwise
+    // rasterizes as a bright crack line along the shelf's back edge.
+    const innerTop = base - CORNICE_BURIAL_METERS;
+    const innerBottom = buryInner ? innerTop : base;
+    const section = [{ o: innerBottom, y: 0 }];
     for (const f of resolveCorniceProfileFractions(profile)) {
         section.push({ o: base + f.o * p, y: f.y * h });
     }
-    section.push({ o: inner, y: h });
+    section.push({ o: innerTop, y: h });
     return section;
 }
 
@@ -4184,6 +4264,25 @@ function buildCorniceLoftGeometryFromLoop({ loop, crossSection, yBase }) {
             const p01 = ringB[j];
             const p11 = ringB[j1];
             if (!p00 || !p10 || !p01 || !p11) continue;
+
+            if (k1 === 0) {
+                // Closing segment = the inner return. Consistent traversal
+                // would wind it toward the building core, making it a
+                // backface from outside: over a recessed strip a grazing
+                // sightline read the ring as hollow (straight through its
+                // back into the closure notch). Wound outward it renders as
+                // the ring's visible back wall; behind a parapet it is
+                // buried either way.
+                positions.push(
+                    p00.x, yA, p00.z, p11.x, yB, p11.z, p01.x, yB, p01.z,
+                    p00.x, yA, p00.z, p10.x, yA, p10.z, p11.x, yB, p11.z
+                );
+                uvs.push(
+                    u0, v0, u1, v1, u0, v1,
+                    u0, v0, u1, v0, u1, v1
+                );
+                continue;
+            }
 
             // Outward-facing winding for CCW outer loops: (P00, P01, P11), (P00, P11, P10)
             positions.push(
@@ -4253,18 +4352,45 @@ function buildCorniceOrnamentGeometryFromLoop({ loop, ornament, baseOutset, yBas
     const runs = buildExteriorRunsFromLoop(pts);
     for (const run of runs) {
         const L = Number(run?.length) || 0;
-        const usable = L - margin * 2;
-        if (!(usable >= w)) continue;
-
-        const pitch = w + Math.max(0.02, gap);
-        const count = Math.max(1, Math.floor((usable - w) / pitch) + 1);
-        const step = count > 1 ? (usable - w) / (count - 1) : 0;
+        if (!(L > EPS)) continue;
 
         const tx = run.dir.x;
         const tz = run.dir.z;
         const nx = tz;
         const nz = -tx;
         const P = (u, o, y) => [run.a.x + tx * u + nx * o, y, run.a.z + tz * u + nz * o];
+
+        // Backing band: the ornament range replaced the solid cornice base
+        // ring, so between (and beside) the modules the band opened straight
+        // into the building. A full-run band at the module back plane keeps
+        // the ring closed — including short runs (chamfers) that fit no
+        // module at all. Nudged slightly proud so it never z-fights a
+        // parapet ring standing at the same outset; corner overlap by `base`
+        // closes outset mitres.
+        {
+            const bandO = base + 0.005;
+            const ext = Math.max(0.0, base);
+            const A = P(-ext, bandO, y0);
+            const B = P(L + ext, bandO, y0);
+            const C = P(L + ext, bandO, y1);
+            const D = P(-ext, bandO, y1);
+            positions.push(
+                A[0], A[1], A[2], C[0], C[1], C[2], B[0], B[1], B[2],
+                A[0], A[1], A[2], D[0], D[1], D[2], C[0], C[1], C[2]
+            );
+            const uSpan = L + ext * 2;
+            uvs.push(
+                0, 0, uSpan, h, uSpan, 0,
+                0, 0, 0, h, uSpan, h
+            );
+        }
+
+        const usable = L - margin * 2;
+        if (!(usable >= w)) continue;
+
+        const pitch = w + Math.max(0.02, gap);
+        const count = Math.max(1, Math.floor((usable - w) / pitch) + 1);
+        const step = count > 1 ? (usable - w) / (count - 1) : 0;
 
         for (let i = 0; i < count; i++) {
             const uc = count > 1 ? (margin + w * 0.5 + i * step) : (L * 0.5);
@@ -6182,7 +6308,19 @@ function projectFacadeCutoutOntoShell(cutout, { frames, shellDepthOf }) {
     const height = Math.max(0.05, (Number(cutout.height) || 0) - marginPerSide * 2);
     // The facade owns the reveal faces; the shell just needs the hole — an
     // inset stack (AI 511) must NOT re-emit its step rings on the shell.
-    return { ...cutout, x: point.x, z: point.z, width, height, revealDepth: 0, insetSteps: null };
+    //
+    // Except in the grown-hole case: the facade jamb stops at the frame's
+    // FRONT plane, so a grazing sightline through the recess can slip past
+    // the frame body, through the grown shell hole, and see the far side of
+    // the room (a see-through slit beside a deeply inset door whenever the
+    // cut edge sits mid-wall — e.g. a fixed-width opening with padding 0).
+    // Lining the grown hole with its own reveal walls, running inward past
+    // the frame body, seals that corridor; the lining shares the shell's
+    // plaster, which is what a room-side return would be.
+    const linedRevealDepth = frameClearsShell
+        ? 0
+        : clamp((framePlaneDepth - shellDepth) + 0.4, 0.2, 1.2);
+    return { ...cutout, x: point.x, z: point.z, width, height, revealDepth: linedRevealDepth, insetSteps: null };
 }
 
 function cornerJoinPointWithDepths(aFrame, aDepth, bFrame, bDepth, corner) {
@@ -7539,6 +7677,9 @@ export function buildBuildingFabricationVisualParts({
     const facadePatternTopologyByFaceId = new Map();
     const facadeBayTopologyByKey = new Map();
     const bayHighlightDataByLayerId = {};
+    // Per-layer face edge lines in built (world) space, so editors highlight
+    // the actual face — the bounding-box quad mapping is wrong on N-gons.
+    const facadeFaceLinesByLayerId = {};
     const facadeSurfaceRunsByLayerId = {};
     const floorSegmentsByLayerId = new Map();
     const floorLayerById = new Map();
@@ -7831,6 +7972,23 @@ export function buildBuildingFabricationVisualParts({
                 const window = strip?.window && typeof strip.window === 'object' ? strip.window : null;
                 return !!window && window.enabled !== false;
             });
+            if (layerId && facadeFrames && !facadeFaceLinesByLayerId[layerId]) {
+                const lines = [];
+                for (const lineFaceId of facadeFaceIdsOf(facadeFrames)) {
+                    const frame = facadeFrames?.[lineFaceId] ?? null;
+                    if (!frame?.start || !frame?.end) continue;
+                    lines.push({
+                        faceId: lineFaceId,
+                        x0: Number(frame.start.x) || 0,
+                        z0: Number(frame.start.z) || 0,
+                        x1: Number(frame.end.x) || 0,
+                        z1: Number(frame.end.z) || 0,
+                        nx: Number(frame?.n?.x) || 0,
+                        nz: Number(frame?.n?.z) || 0
+                    });
+                }
+                if (lines.length) facadeFaceLinesByLayerId[layerId] = lines;
+            }
             if (layerId && facadeFrames && Array.isArray(facadeStrips) && facadeStrips.length) {
                 const entries = [];
                 const surfaceRuns = buildFacadeSurfaceRunsByFaceId({ facadeStrips, facadeFrames });
@@ -8297,6 +8455,23 @@ export function buildBuildingFabricationVisualParts({
                             frame: {
                                 ...(placementSettings.frame ?? {}),
                                 inset: (Number(placementSettings.frame?.inset) || 0) + insetCarvedDepth
+                            }
+                        };
+                    }
+                    // Bay-level opening depth: moves just the door/window
+                    // assembly in and out of the wall, independent of the
+                    // bay's edge depth (which moves the whole wall strip).
+                    // Rides frame.inset so the wall cut, reveal walls and
+                    // shell hole all follow for free; negative pulls the
+                    // opening toward flush with the wall face.
+                    const openingDepthRaw = Number(windowCfg?.depthMeters);
+                    if (Number.isFinite(openingDepthRaw) && Math.abs(openingDepthRaw) > EPS) {
+                        const depthBump = clamp(openingDepthRaw, -0.5, 1.0);
+                        placementSettings = {
+                            ...placementSettings,
+                            frame: {
+                                ...(placementSettings.frame ?? {}),
+                                inset: Math.max(0, (Number(placementSettings.frame?.inset) || 0) + depthBump)
                             }
                         };
                     }
@@ -8979,32 +9154,41 @@ export function buildBuildingFabricationVisualParts({
                                     }
                                 };
 
-                                // AI 488: storefronts cut the wall per glazed zone only
-                                // (display glazing + transom band); bulkhead and fascia
-                                // sit proud of solid wall.
+                                // Storefronts open ONE hole for the whole stack —
+                                // glazing + fascia + transom together (the bulkhead
+                                // stays solid wall below). The band slabs and the
+                                // glazing mesh sit inside it at their own depths, so
+                                // no wall slivers ever appear between the door, the
+                                // fascia and the transom. The hole is a hair narrower
+                                // than the opening so the frame and the band slabs
+                                // tuck behind the reveal jambs instead of z-fighting
+                                // them; the reveal runs to the deepest element (the
+                                // glazing frame plane).
                                 if (placementAssetType === WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT && placement?.storefront) {
                                     const layout = resolveStorefrontZoneLayout({
                                         storefront: placement.storefront,
                                         totalHeightMeters: bottomHeight
                                     });
-                                    const zoneSettings = makeStorefrontZoneSettings({
-                                        baseSettings: bottomSettings,
-                                        width,
-                                        layout
-                                    });
                                     const openingBottomLocal = yCursorLocal + bottomYBottom;
-                                    appendCutoutsFromSettings({
-                                        settings: zoneSettings.glazing,
-                                        openingHeight: layout.glazing.height,
-                                        openingY: openingBottomLocal + layout.glazing.yBottom + layout.glazing.height * 0.5,
-                                        wall: placement?.wall ?? null
-                                    });
-                                    if (zoneSettings.transom) {
-                                        appendCutoutsFromSettings({
-                                            settings: zoneSettings.transom,
-                                            openingHeight: layout.transom.height,
-                                            openingY: openingBottomLocal + layout.transom.yBottom + layout.transom.height * 0.5,
-                                            wall: placement?.wall ?? null
+                                    const stackBottom = layout.glazing.yBottom;
+                                    const stackHeight = Math.max(0.1, bottomHeight - stackBottom);
+                                    const stackCutWidth = Math.max(0.05, width - 0.01);
+                                    const stackFrameInset = Math.max(0, Number(placement?.settings?.frame?.inset) || 0);
+                                    const stackCutY = openingBottomLocal + stackBottom + stackHeight * 0.5;
+                                    for (let pointIndex = 0; pointIndex < points.length; pointIndex++) {
+                                        const point = points[pointIndex] && typeof points[pointIndex] === 'object' ? points[pointIndex] : null;
+                                        facadeWallCutouts.push({
+                                            faceId,
+                                            x: Number(point?.x) || 0,
+                                            y: stackCutY,
+                                            z: Number(point?.z) || 0,
+                                            width: stackCutWidth,
+                                            height: stackHeight,
+                                            wantsArch: false,
+                                            archRise: 0,
+                                            revealDepth: stackFrameInset,
+                                            shellRevealDepth: stackFrameInset,
+                                            backed: !!placement?.settings?.interior?.enabled
                                         });
                                     }
                                     continue;
@@ -9358,7 +9542,10 @@ export function buildBuildingFabricationVisualParts({
                                     const interiorWallGeo = buildWallSidesGeometryFromLoopDetailXZ(interiorShellLoopDetail, {
                                         height: interiorHeight,
                                         uvBaseV: yOffset + segmentYBottom,
-                                        cutouts: segmentCutouts.length ? segmentCutouts : null
+                                        cutouts: segmentCutouts.length ? segmentCutouts : null,
+                                        // Cut linings must run into the room, not
+                                        // toward the facade (room-facing winding).
+                                        revealDirectionSign: -1
                                     });
                                     if (interiorWallGeo) {
                                         const interiorWallMat = createInteriorMaterial();
@@ -9383,7 +9570,11 @@ export function buildBuildingFabricationVisualParts({
                                     interiorFloorGeo.computeVertexNormals();
                                     const interiorFloorMat = createInteriorMaterial();
                                     const interiorFloorMesh = new THREE.Mesh(interiorFloorGeo, interiorFloorMat);
-                                    interiorFloorMesh.castShadow = true;
+                                    // Interior room surfaces must not cast: the exterior
+                                    // already shadows the world, and these full-footprint
+                                    // slabs leak through the thin walls (shadow bias),
+                                    // dimming the whole facade and striping ground + sky.
+                                    interiorFloorMesh.castShadow = false;
                                     interiorFloorMesh.receiveShadow = true;
                                     interiorFloorMesh.position.set(
                                         interiorAnchorX,
@@ -9408,7 +9599,7 @@ export function buildBuildingFabricationVisualParts({
                                     interiorCeilingGeo.computeVertexNormals();
                                     const interiorCeilingMat = createInteriorMaterial();
                                     const interiorCeilingMesh = new THREE.Mesh(interiorCeilingGeo, interiorCeilingMat);
-                                    interiorCeilingMesh.castShadow = true;
+                                    interiorCeilingMesh.castShadow = false;
                                     interiorCeilingMesh.receiveShadow = true;
                                     interiorCeilingMesh.position.set(
                                         interiorAnchorX,
@@ -9493,6 +9684,33 @@ export function buildBuildingFabricationVisualParts({
                         // topmost layer's cap belongs to the roof family.
                         const capHasLayerAbove = layerIndex < safeLayers.length - 1;
                         const capMatTemplate = capHasLayerAbove ? floorSlabMatTemplate : roofMatTemplate;
+                        // The closure bands' visible faces belong to the wall,
+                        // not the slab: the soffit over a recessed strip, the
+                        // ledge inside a closure notch. Slab material there
+                        // read as a pale floating panel beside the cornice, so
+                        // the bands inherit the layer's wall material.
+                        // Plan-projected UVs, no variation — the variation
+                        // shader keys off a per-vertex corner attribute the
+                        // band geometry does not carry.
+                        const closureBandWallMat = (() => {
+                            const m = makeWallMaterialFromSpec({
+                                material: layer.material,
+                                baseColorHex,
+                                textureCache,
+                                wallBase: layer?.wallBase ?? null
+                            });
+                            if (wallUvCfg.apply) {
+                                applyUvTilingToMeshStandardMaterial(m, {
+                                    scaleU: wallUvCfg.scaleU,
+                                    scaleV: wallUvCfg.scaleV,
+                                    offsetU: wallUvCfg.offsetU,
+                                    offsetV: wallUvCfg.offsetV,
+                                    rotationDegrees: wallUvCfg.rotationDegrees
+                                });
+                            }
+                            m.side = THREE.DoubleSide;
+                            return m;
+                        })();
                         const outerDetail = Array.isArray(facadeLoopDetail) ? facadeLoopDetail : null;
                         const baseLoopCore = (frames && depthMins)
                             ? buildCornerJoinLoopWithDepths({ frames, depthOf: (id) => depthMins[id] ?? 0 })
@@ -9610,8 +9828,10 @@ export function buildBuildingFabricationVisualParts({
                                 ringGeo.setIndex(ringIndices);
                                 ringGeo.computeVertexNormals();
 
-                                const ringMat = capMatTemplate.clone();
-                                // The ring doubles as the soffit over recessed bays below it.
+                                // The ring doubles as the soffit over recessed
+                                // bays below it; mid-stack it reads as wall,
+                                // only the topmost ring belongs to the roof.
+                                const ringMat = capHasLayerAbove ? closureBandWallMat : capMatTemplate.clone();
                                 ringMat.side = THREE.DoubleSide;
                                 const ringMesh = new THREE.Mesh(ringGeo, ringMat);
                                 ringMesh.castShadow = true;
@@ -9715,9 +9935,7 @@ export function buildBuildingFabricationVisualParts({
                                 bandGeo.setIndex(bandIndices);
                                 bandGeo.computeVertexNormals();
 
-                                const bandMat = floorSlabMatTemplate.clone();
-                                bandMat.side = THREE.DoubleSide;
-                                const bandMesh = new THREE.Mesh(bandGeo, bandMat);
+                                const bandMesh = new THREE.Mesh(bandGeo, closureBandWallMat);
                                 bandMesh.castShadow = true;
                                 bandMesh.receiveShadow = true;
                                 bandMesh.position.y = y;
@@ -9755,8 +9973,15 @@ export function buildBuildingFabricationVisualParts({
                             if (geo.index) geo = geo.toNonIndexed();
                             geo.computeVertexNormals();
 
-                            const roofMat = roofMatTemplate.clone();
-                            const mesh = new THREE.Mesh(geo, [roofMat, wallMat]);
+                            // Mid-stack, the extrude's top cap is a visible
+                            // ledge wherever the layer above recesses (an
+                            // arcade bay's floor is this cap, seen from the
+                            // street as a line over the cornice): it reads as
+                            // wall, not roof. Only the topmost layer's caps
+                            // belong to the roof family — same rule as the
+                            // facade path's cap slabs.
+                            const capMat = layerIndex < safeLayers.length - 1 ? wallMat : roofMatTemplate.clone();
+                            const mesh = new THREE.Mesh(geo, [capMat, wallMat]);
                             mesh.castShadow = true;
                             mesh.receiveShadow = true;
                             mesh.position.y = layerStartY;
@@ -10263,7 +10488,14 @@ export function buildBuildingFabricationVisualParts({
                                 const glazingFrameDepth = Math.max(0, Number(zoneSettings.glazing?.frame?.depth) || 0);
                                 const glazingInset = Math.max(0, glazingFrameDepth - 0.001);
                                 const transomFrameDepth = Math.max(0, Number(zoneSettings.transom?.frame?.depth) || 0);
-                                const transomInset = Math.max(0, transomFrameDepth - 0.001);
+                                // An authored transom inset overrides the legacy
+                                // frame-depth placement; negative stands the
+                                // white band PROUD of the wall plane, ahead of
+                                // the fascia (the reference's depth order).
+                                const transomInsetAuthored = Number.isFinite(cfg.transom?.insetMeters);
+                                const transomInset = transomInsetAuthored
+                                    ? cfg.transom.insetMeters
+                                    : Math.max(0, transomFrameDepth - 0.001);
                                 const wallCutX = Number(placement?.wall?.cutWidthLerp) || 0;
                                 const wallCutY = Number(placement?.wall?.cutHeightLerp) || 0;
 
@@ -10313,7 +10545,12 @@ export function buildBuildingFabricationVisualParts({
                                             });
                                             const panelWidth = Math.max(0.05, Number(transomMetrics?.cutWidth) || 0.05);
                                             const panelHeight = Math.max(0.05, Number(transomMetrics?.cutHeight) || 0.05);
-                                            const panelInset = Math.max(0.01, transomInset + 0.01);
+                                            // The backlit panel rides just behind its zone
+                                            // frame; an authored (possibly proud) inset
+                                            // carries it along instead of being floored.
+                                            const panelInset = transomInsetAuthored
+                                                ? transomInset + 0.01
+                                                : Math.max(0.01, transomInset + 0.01);
                                             const emissiveColor = (Number(cfg.transom.emissiveColorHex) >>> 0) & 0xffffff;
                                             const panelMatKey = `backlit|${emissiveColor}|${cfg.transom.emissiveIntensity}`;
                                             let panelMat = storefrontZoneMaterialCache.get(panelMatKey);
@@ -10328,14 +10565,22 @@ export function buildBuildingFabricationVisualParts({
                                                 disableIblOnMaterial(panelMat);
                                                 storefrontZoneMaterialCache.set(panelMatKey, panelMat);
                                             }
+                                            // A proud transom used to leave an open air gap
+                                            // between its floating panel and the wall — the
+                                            // panel is a closed light box now, its body
+                                            // running from behind the glass back past the
+                                            // wall plane so no gap shows from below/beside.
+                                            const panelBackInset = Math.max(panelInset + 0.02, 0.06);
+                                            const panelDepth = panelBackInset - panelInset;
+                                            const panelCenterInset = (panelInset + panelBackInset) * 0.5;
                                             const panelMesh = new THREE.Mesh(
-                                                getPlaneGeometry(panelWidth, panelHeight),
+                                                new THREE.BoxGeometry(panelWidth, panelHeight, panelDepth),
                                                 panelMat
                                             );
                                             panelMesh.position.set(
-                                                px + nx * (windowOffset - panelInset),
+                                                px + nx * (windowOffset - panelCenterInset),
                                                 transomY + (Number(transomMetrics?.cutCenterYOffset) || 0),
-                                                pz + nz * (windowOffset - panelInset)
+                                                pz + nz * (windowOffset - panelCenterInset)
                                             );
                                             panelMesh.rotation.set(0, yaw, 0);
                                             panelMesh.castShadow = false;
@@ -10350,10 +10595,17 @@ export function buildBuildingFabricationVisualParts({
 
                                     const emitZoneSlab = ({ zoneHeight, zoneYBottom, projection, materialSpec, role }) => {
                                         if (!(zoneHeight > 0.02)) return;
-                                        const slabDepth = Math.max(0.02, projection) + 0.08;
+                                        // `projection` is signed: the slab FACE sits at
+                                        // windowOffset + projection (negative = into the
+                                        // wall), with its body extending inward. 0 means
+                                        // FLUSH with the wall face — nudged a hair proud
+                                        // so the two planes never z-fight.
+                                        const projRaw = Number.isFinite(projection) ? projection : 0.02;
+                                        const proj = Math.abs(projRaw) < 0.003 ? 0.003 : projRaw;
+                                        const slabDepth = Math.max(0.02, Math.abs(proj)) + 0.08;
                                         const geo = new THREE.BoxGeometry(width, zoneHeight, slabDepth);
                                         const mesh = new THREE.Mesh(geo, zoneMaterialFor(materialSpec, WINDOW_DECORATION_MATERIAL_MODE.MATCH_FRAME));
-                                        const outCenter = windowOffset + Math.max(0.02, projection) - slabDepth * 0.5;
+                                        const outCenter = windowOffset + proj - slabDepth * 0.5;
                                         mesh.position.set(
                                             px + nx * outCenter,
                                             openingBottomY + zoneYBottom + zoneHeight * 0.5,
@@ -10385,6 +10637,20 @@ export function buildBuildingFabricationVisualParts({
                                             projection: cfg.fascia.projectionMeters,
                                             materialSpec: cfg.fascia.material,
                                             role: 'storefront_fascia'
+                                        });
+                                    }
+                                    // Solid transom: an unlit panel covering the band,
+                                    // built like a fascia slab. `insetMeters` keeps its
+                                    // sign convention (positive = into the wall,
+                                    // negative = proud, 0/unauthored = flush), mapped
+                                    // onto the slab's signed projection.
+                                    if (layout.transom.mode === STOREFRONT_TRANSOM_MODE.SOLID && layout.transom.height > 0.02) {
+                                        emitZoneSlab({
+                                            zoneHeight: layout.transom.height,
+                                            zoneYBottom: layout.transom.yBottom,
+                                            projection: transomInsetAuthored ? -transomInset : 0,
+                                            materialSpec: cfg.transom.material,
+                                            role: 'storefront_transom_solid'
                                         });
                                     }
                                 }
@@ -12453,10 +12719,31 @@ export function buildBuildingFabricationVisualParts({
                     profile: corniceCfg.profile,
                     heightMeters: corniceHeights.profile,
                     projectionMeters: corniceProjection,
-                    baseOutset: 0.0
+                    baseOutset: 0.0,
+                    // A layer cornice consumes its own elevation range — no
+                    // wall stands behind it to bury into, and the buried
+                    // underside was coplanar with the capY closure bands.
+                    buryInner: false
                 });
 
-                for (const rawLoop of wallOuterFacade) {
+                // The ring rides the layer's nominal zero-depth line (the
+                // line the next layer stands on), not the per-strip resolved
+                // outline: following recessed bays stepped the ring inward,
+                // exposing the capY closure band beside it as a floating pale
+                // panel and z-fighting it where the two overlapped. A string
+                // course bridges recessed storefront bays level, as on the
+                // reference.
+                const corniceZeroLoopRaw = facadeFrames
+                    ? buildCornerJoinLoopWithDepths({ frames: facadeFrames, depthOf: () => 0 })
+                    : null;
+                const corniceZeroLoop = (corniceZeroLoopRaw && corniceZeroLoopRaw.length >= 3)
+                    ? simplifyLoopConsecutiveCollinearXZ(corniceZeroLoopRaw, { tol: 1e-4, minEdge: 1e-3 })
+                    : null;
+                const corniceLoops = wallOuterFacade.map((loop, loopIndex) => (
+                    loopIndex === 0 && corniceZeroLoop && corniceZeroLoop.length >= 3 ? corniceZeroLoop : loop
+                ));
+
+                for (const rawLoop of corniceLoops) {
                     if (!rawLoop || rawLoop.length < 3) continue;
                     const outerLoop = signedArea(rawLoop) < 0 ? rawLoop.slice().reverse() : rawLoop;
 
@@ -13329,6 +13616,7 @@ export function buildBuildingFabricationVisualParts({
         // the geometry. Micro edge bevels emit no frames.
         edgeBevelCornerFacets: Object.keys(edgeBevelFacetsByCornerId).length ? { ...edgeBevelFacetsByCornerId } : null,
         bayHighlightDataByLayerId: Object.keys(bayHighlightDataByLayerId).length ? bayHighlightDataByLayerId : null,
+        facadeFaceLinesByLayerId: Object.keys(facadeFaceLinesByLayerId).length ? facadeFaceLinesByLayerId : null,
         wire,
         plan,
         border,

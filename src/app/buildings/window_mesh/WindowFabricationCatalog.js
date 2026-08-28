@@ -43,10 +43,12 @@ const CATALOG_WINDOW_SHADE_COLOR_HEX = 0x565851;
 export const STOREFRONT_TRANSOM_MODE = Object.freeze({
     GLAZED: 'glazed',
     BACKLIT: 'backlit',
+    // Unlit solid panel covering the band (no glazing, no light, wall uncut).
+    SOLID: 'solid',
     NONE: 'none'
 });
 
-const STOREFRONT_ZONE_MATERIAL_MODES = Object.freeze(['match_wall', 'match_frame', 'pbr', 'slot']);
+const STOREFRONT_ZONE_MATERIAL_MODES = Object.freeze(['match_wall', 'match_frame', 'pbr', 'slot', 'color']);
 
 function clampNumber(value, min, max, fallback) {
     const num = Number(value);
@@ -58,6 +60,7 @@ function normalizeStorefrontTransomMode(value, fallback = STOREFRONT_TRANSOM_MOD
     const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
     if (raw === STOREFRONT_TRANSOM_MODE.GLAZED) return STOREFRONT_TRANSOM_MODE.GLAZED;
     if (raw === STOREFRONT_TRANSOM_MODE.BACKLIT) return STOREFRONT_TRANSOM_MODE.BACKLIT;
+    if (raw === STOREFRONT_TRANSOM_MODE.SOLID) return STOREFRONT_TRANSOM_MODE.SOLID;
     if (raw === STOREFRONT_TRANSOM_MODE.NONE || raw === 'off' || raw === 'disabled') return STOREFRONT_TRANSOM_MODE.NONE;
     return fallback;
 }
@@ -75,6 +78,19 @@ export function normalizeStorefrontZoneMaterial(value, fallbackMode = 'match_fra
         const slotId = typeof src.slotId === 'string' ? src.slotId.trim() : '';
         if (slotId) out.slotId = slotId;
         else out.mode = fallbackMode;
+    } else if (mode === 'color') {
+        // Explicit flat color (e.g. a dark fascia over a light door frame,
+        // where match_frame would go light too).
+        const colorNum = Number(src.colorHex);
+        if (Number.isFinite(colorNum)) {
+            out.colorHex = (colorNum >>> 0) & 0xffffff;
+            const rough = Number(src.roughness);
+            if (Number.isFinite(rough)) out.roughness = Math.max(0, Math.min(1, rough));
+            const metal = Number(src.metalness);
+            if (Number.isFinite(metal)) out.metalness = Math.max(0, Math.min(1, metal));
+        } else {
+            out.mode = fallbackMode;
+        }
     }
     return out;
 }
@@ -104,14 +120,32 @@ export function normalizeStorefrontConfig(value) {
             heightMeters: clampNumber(transomSrc.heightMeters, 0.0, 2.0, 0.45),
             columns: Math.max(1, Math.min(12, Math.round(Number(transomSrc.columns) || 4))),
             emissiveColorHex: normalizeHexColorValue(transomSrc.emissiveColorHex, 0xfff3e0),
-            emissiveIntensity: clampNumber(transomSrc.emissiveIntensity, 0.0, 5.0, 1.2)
+            emissiveIntensity: clampNumber(transomSrc.emissiveIntensity, 0.0, 5.0, 1.2),
+            // Solid mode's panel material (fascia dialect: match_wall /
+            // match_frame / pbr / slot / color).
+            material: normalizeStorefrontZoneMaterial(transomSrc.material, 'match_frame'),
+            // How deep the transom face sits behind the wall plane (negative
+            // stands it PROUD of the wall). null = legacy (the zone frame's
+            // own depth). The reference's white band is the proudest element
+            // of the stack, ahead of the fascia.
+            insetMeters: Number.isFinite(transomSrc.insetMeters)
+                ? clampNumber(transomSrc.insetMeters, -0.3, 0.5, 0.0)
+                : null
         },
         fascia: {
             enabled: fasciaSrc.enabled !== false,
             heightMeters: clampNumber(fasciaSrc.heightMeters, 0.0, 2.0, 0.5),
-            projectionMeters: clampNumber(fasciaSrc.projectionMeters, 0.0, 0.4, 0.03),
+            // Signed: positive stands the band proud of the wall plane,
+            // negative sets its face INTO the wall (the reference's dark
+            // band sits slightly behind the white transom).
+            projectionMeters: clampNumber(fasciaSrc.projectionMeters, -0.4, 0.4, 0.03),
             material: normalizeStorefrontZoneMaterial(fasciaSrc.material, 'match_frame')
         },
+        // Classic sign-band order: the dark fascia sits DIRECTLY above the
+        // glazing with the transom band on top of it (glazing -> fascia ->
+        // transom). Default keeps the original stack (glazing -> transom ->
+        // fascia).
+        fasciaBelowTransom: src.fasciaBelowTransom === true,
         minGlazingHeightMeters: clampNumber(src.minGlazingHeightMeters, 0.3, 3.0, 0.6)
     };
 }

@@ -22,6 +22,7 @@ function disposeGeometryBundle(bundle) {
     bundle?.muntins?.dispose?.();
     bundle?.joinBar?.dispose?.();
     bundle?.handles?.dispose?.();
+    bundle?.kickPanels?.dispose?.();
 }
 
 function isInteractiveInstance(entry) {
@@ -174,6 +175,15 @@ export class WindowMeshGenerator {
             handlesMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
             frameLayer.add(handlesMesh);
         }
+        let kickMesh = null;
+        if (bundle.kickPanels) {
+            kickMesh = new THREE.InstancedMesh(bundle.kickPanels, mats.frameMat, count);
+            kickMesh.name = 'doorKickPanels';
+            kickMesh.castShadow = true;
+            kickMesh.receiveShadow = true;
+            kickMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            frameLayer.add(kickMesh);
+        }
 
         const muntinsLayer = new THREE.Group();
         muntinsLayer.name = 'muntins';
@@ -237,6 +247,7 @@ export class WindowMeshGenerator {
 
         frameMesh.renderOrder = 3;
         if (handlesMesh) handlesMesh.renderOrder = 3;
+        if (kickMesh) kickMesh.renderOrder = 3;
         if (muntinsMesh) muntinsMesh.renderOrder = 3;
         if (group.userData._joinMesh) group.userData._joinMesh.renderOrder = 3;
 
@@ -257,6 +268,7 @@ export class WindowMeshGenerator {
             dummy.updateMatrix();
             frameMesh.setMatrixAt(i, dummy.matrix);
             handlesMesh?.setMatrixAt(i, dummy.matrix);
+            kickMesh?.setMatrixAt(i, dummy.matrix);
             if (group.userData._joinMesh) group.userData._joinMesh.setMatrixAt(i, dummy.matrix);
             muntinsMesh?.setMatrixAt(i, dummy.matrix);
 
@@ -277,6 +289,7 @@ export class WindowMeshGenerator {
 
         frameMesh.instanceMatrix.needsUpdate = true;
         if (handlesMesh) handlesMesh.instanceMatrix.needsUpdate = true;
+        if (kickMesh) kickMesh.instanceMatrix.needsUpdate = true;
         if (group.userData._joinMesh) group.userData._joinMesh.instanceMatrix.needsUpdate = true;
         if (muntinsMesh) muntinsMesh.instanceMatrix.needsUpdate = true;
         if (interiorMesh) interiorMesh.instanceMatrix.needsUpdate = true;

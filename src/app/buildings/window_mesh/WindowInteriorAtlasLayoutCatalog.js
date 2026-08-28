@@ -13,7 +13,11 @@ export const WINDOW_INTERIOR_ATLAS_ID = Object.freeze({
     SHOP_SQUARE_4X4_03: 'window_interior_atlas.shop_square_4x4_03',
     SHOP_SQUARE_4X4_04: 'window_interior_atlas.shop_square_4x4_04',
     SHOP_CINEMATIC_8X4_01: 'window_interior_atlas.shop_cinematic_8x4_01',
-    SHOP_CINEMATIC_8X4_02: 'window_interior_atlas.shop_cinematic_8x4_02'
+    SHOP_CINEMATIC_8X4_02: 'window_interior_atlas.shop_cinematic_8x4_02',
+    // Generated dark silhouette interior for street-level glass (not SHOP_-
+    // prefixed: the shop set is the photographic atlases; this one is the
+    // discreet fake-texture alternative).
+    STOREFRONT_SILHOUETTE_2X2: 'window_interior_atlas.storefront_silhouette_2x2'
 });
 
 export const DEFAULT_WINDOW_INTERIOR_ATLAS_ID = WINDOW_INTERIOR_ATLAS_ID.RESIDENTIAL_4X4;
@@ -36,7 +40,8 @@ export const WINDOW_INTERIOR_ATLAS_LAYOUT_CATALOG = Object.freeze([
     Object.freeze({ id: WINDOW_INTERIOR_ATLAS_ID.SHOP_SQUARE_4X4_03, cols: 2, rows: 4, imageWidthPx: 1024, imageHeightPx: 1024 }),
     Object.freeze({ id: WINDOW_INTERIOR_ATLAS_ID.SHOP_SQUARE_4X4_04, cols: 4, rows: 3, imageWidthPx: 1024, imageHeightPx: 1024 }),
     Object.freeze({ id: WINDOW_INTERIOR_ATLAS_ID.SHOP_CINEMATIC_8X4_01, cols: 4, rows: 4, imageWidthPx: 1456, imageHeightPx: 720 }),
-    Object.freeze({ id: WINDOW_INTERIOR_ATLAS_ID.SHOP_CINEMATIC_8X4_02, cols: 4, rows: 2, imageWidthPx: 1456, imageHeightPx: 720 })
+    Object.freeze({ id: WINDOW_INTERIOR_ATLAS_ID.SHOP_CINEMATIC_8X4_02, cols: 4, rows: 2, imageWidthPx: 1456, imageHeightPx: 720 }),
+    Object.freeze({ id: WINDOW_INTERIOR_ATLAS_ID.STOREFRONT_SILHOUETTE_2X2, cols: 2, rows: 2, imageWidthPx: 1024, imageHeightPx: 1024 })
 ]);
 
 export function getWindowInteriorAtlasLayoutById(atlasId) {

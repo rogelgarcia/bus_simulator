@@ -10,6 +10,7 @@ import businessSquare03 from './parallax_interior_atlas_square_4x4_03.catalog.js
 import businessSquare04 from './parallax_interior_atlas_square_4x4_04.catalog.js';
 import businessCinematic01 from './parallax_interior_atlas_cinematic_8x4_01.catalog.js';
 import businessCinematic02 from './parallax_interior_atlas_cinematic_8x4_02.catalog.js';
+import storefrontSilhouette from './parallax_interior_atlas_storefront_silhouette_2x2.catalog.js';
 
 export const WINDOW_INTERIOR_IMAGE_ATLAS_CATALOG = Object.freeze([
     residential01,
@@ -23,7 +24,8 @@ export const WINDOW_INTERIOR_IMAGE_ATLAS_CATALOG = Object.freeze([
     businessSquare03,
     businessSquare04,
     businessCinematic01,
-    businessCinematic02
+    businessCinematic02,
+    storefrontSilhouette
 ]);
 
 export default WINDOW_INTERIOR_IMAGE_ATLAS_CATALOG;

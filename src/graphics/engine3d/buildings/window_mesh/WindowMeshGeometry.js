@@ -15,6 +15,14 @@ const HANDLE_CONNECTOR_RADIUS = HANDLE_RADIUS * 0.5;
 const HANDLE_MAIN_HEIGHT = 0.24;
 const HANDLE_SEGMENTS = 6;
 const HANDLE_EDGE_OFFSET_METERS = 0.15;
+// C-pull (squared C-bracket door pull): tube radius, vertical grip length,
+// horizontal arm length (stile -> grip), and how far the pull stands off the
+// leaf face. The open side of the C faces the meeting stile.
+const HANDLE_C_PULL_RADIUS = 0.016;
+const HANDLE_C_PULL_GRIP_HEIGHT = 0.3;
+const HANDLE_C_PULL_ARM_METERS = 0.1;
+const HANDLE_C_PULL_STANDOFF_METERS = 0.06;
+const HANDLE_C_PULL_EDGE_OFFSET_METERS = 0.075;
 export const WINDOW_MESH_DOUBLE_DOOR_CENTER_GAP_METERS = 0.006;
 const DOUBLE_DOOR_CENTER_GAP_METERS = WINDOW_MESH_DOUBLE_DOOR_CENTER_GAP_METERS;
 
@@ -45,6 +53,13 @@ function hasFrameBottomPiece(settings) {
     const frame = settings?.frame && typeof settings.frame === 'object' ? settings.frame : {};
     if (!frame.openBottom) return true;
     return getDoorBottomFrameRenderEnabled(frame);
+}
+
+// Bottom frame member height: an authored doorBottomFrame.heightMeters
+// (the flush kick rail) overrides the legacy horizontal frame width.
+function resolveBottomFrameHeight(settings, frameHorizontalWidth) {
+    const raw = settings?.frame?.doorBottomFrame?.heightMeters;
+    return Number.isFinite(raw) ? Math.max(0.02, Number(raw)) : frameHorizontalWidth;
 }
 
 function isDoorDoubleStyle(settings) {
@@ -140,7 +155,7 @@ function computeInnerOpeningProfile(settings) {
 
     const innerWidth = Math.max(EPS, w - sideMargin * 2);
     const topMargin = horizontalMargin;
-    const bottomMargin = bottomEnabled ? horizontalMargin : 0;
+    const bottomMargin = bottomEnabled ? resolveBottomFrameHeight(settings, horizontalMargin) : 0;
     const innerHeight = Math.max(EPS, h - topMargin - bottomMargin);
     const centerY = (bottomMargin - topMargin) * 0.5;
 
@@ -480,7 +495,7 @@ function buildFrameGeometry({ settings, curveSegments }) {
     const h = s.height;
     const { vertical: frameVerticalWidth, horizontal: frameHorizontalWidth } = getFrameWidths(s.frame);
     const depth = s.frame.depth;
-    const bottomFrameWidth = hasFrameBottomPiece(s) ? frameHorizontalWidth : 0;
+    const bottomFrameWidth = hasFrameBottomPiece(s) ? resolveBottomFrameHeight(s, frameHorizontalWidth) : 0;
 
     if (isDoorDoubleStyle(s)) {
         const centerGap = Math.max(0, Math.min(w - EPS, DOUBLE_DOOR_CENTER_GAP_METERS));
@@ -616,7 +631,7 @@ function buildOpeningGeometry({ settings, curveSegments }) {
 
     if (isDoorDoubleStyle(s)) {
         const { vertical: frameVerticalWidth, horizontal: frameHorizontalWidth } = getFrameWidths(s.frame);
-        const bottomFrameWidth = hasFrameBottomPiece(s) ? frameHorizontalWidth : 0;
+        const bottomFrameWidth = hasFrameBottomPiece(s) ? resolveBottomFrameHeight(s, frameHorizontalWidth) : 0;
         const centerGap = Math.max(0, Math.min(s.width - EPS, DOUBLE_DOOR_CENTER_GAP_METERS));
         const leafWidth = Math.max(EPS, (s.width - centerGap) * 0.5);
         const leafOffset = centerGap * 0.5 + leafWidth * 0.5;
@@ -690,7 +705,7 @@ function buildMuntinsGeometry({ settings, curveSegments }) {
 
     if (isDoorDoubleStyle(s)) {
         const { vertical: frameVerticalWidth, horizontal: frameHorizontalWidth } = getFrameWidths(s.frame);
-        const bottomFrameWidth = hasFrameBottomPiece(s) ? frameHorizontalWidth : 0;
+        const bottomFrameWidth = hasFrameBottomPiece(s) ? resolveBottomFrameHeight(s, frameHorizontalWidth) : 0;
         const centerGap = Math.max(0, Math.min(s.width - EPS, DOUBLE_DOOR_CENTER_GAP_METERS));
         const leafWidth = Math.max(EPS, (s.width - centerGap) * 0.5);
         const leafOffset = centerGap * 0.5 + leafWidth * 0.5;
@@ -889,10 +904,10 @@ function createHandleCylinderGeometry({ x = 0, y = 0, z = 0, height = 0.1, radiu
     return geo;
 }
 
-function resolveHandleYCenterFromProfile(profile) {
+function resolveHandleYCenterFromProfile(profile, { desiredAboveBottom = 1.0 } = {}) {
     const yBottom = profile.centerY - profile.innerHeight * 0.5;
     const yTop = profile.centerY + profile.innerHeight * 0.5;
-    const yDesired = yBottom + 1.0;
+    const yDesired = yBottom + desiredAboveBottom;
     const yMin = yBottom + HANDLE_MAIN_HEIGHT * 0.5 + 0.02;
     const yMax = yTop - HANDLE_MAIN_HEIGHT * 0.5 - 0.02;
     return yMax >= yMin
@@ -900,10 +915,124 @@ function resolveHandleYCenterFromProfile(profile) {
         : (yBottom + yTop) * 0.5;
 }
 
+// The C-pull grip centers at the DOOR's middle, slightly below its vertical
+// center (~1.18m absolute); the leaf inner bottom sits on the tall 0.51m
+// kick rail, so measure ~0.67 above it.
+const C_PULL_DESIRED_ABOVE_BOTTOM_METERS = 0.67;
+
+// One squared C-bracket pull: two arms leave the leaf face near the meeting
+// stile (short stubs out), turn sideways away from the stile, and a vertical
+// grip bar joins their far ends parallel to the face — the open side of the
+// C faces the stile. `dir` is the away-from-stile direction (+1/-1 in x).
+function buildCPullGeometry({ x, yCenter, dir, surfaceZ }) {
+    const r = HANDLE_C_PULL_RADIUS;
+    const grip = HANDLE_C_PULL_GRIP_HEIGHT;
+    const arm = HANDLE_C_PULL_ARM_METERS;
+    const standoff = HANDLE_C_PULL_STANDOFF_METERS;
+    const zOut = surfaceZ + standoff;
+    const yTop = yCenter + grip * 0.5;
+    const yBottom = yCenter - grip * 0.5;
+    const xGrip = x + dir * arm;
+
+    const parts = [];
+    for (const y of [yTop, yBottom]) {
+        // stub: leaf face -> standoff depth
+        parts.push(createHandleCylinderGeometry({
+            x, y, z: surfaceZ + standoff * 0.5, height: standoff + r, radius: r, axis: 'z'
+        }));
+        // arm: stile side -> grip side, parallel to the face
+        const armGeo = new THREE.CylinderGeometry(r, r, arm, HANDLE_SEGMENTS, 1, false);
+        armGeo.rotateZ(Math.PI * 0.5);
+        armGeo.translate(x + dir * arm * 0.5, y, zOut);
+        parts.push(armGeo);
+        // rounded elbow at the arm/grip corner
+        const elbow = new THREE.SphereGeometry(r, HANDLE_SEGMENTS, 4);
+        elbow.translate(xGrip, y, zOut);
+        parts.push(elbow);
+    }
+    // vertical grip bar joining the two arm ends
+    parts.push(createHandleCylinderGeometry({
+        x: xGrip, y: yCenter, z: zOut, height: grip, radius: r, axis: 'y'
+    }));
+    return parts;
+}
+
+// Solid frame-material panels filling the BOTTOM of each door leaf (the
+// storefront-door kick): glass reads above, panel below, inside the leaf
+// frame — NOT a separate band under the assembly.
+function buildDoorKickPanelsGeometry({ settings }) {
+    const s = sanitizeWindowMeshSettings(settings);
+    const kick = s.frame.doorKickPanel;
+    const midRail = s.frame.doorMidRail;
+    if ((!kick?.enabled && !midRail?.enabled) || !s.frame.openBottom) return null;
+
+    const rects = [];
+    if (isDoorDoubleStyle(s)) {
+        const { vertical: frameVerticalWidth, horizontal: frameHorizontalWidth } = getFrameWidths(s.frame);
+        const bottomFrameWidth = hasFrameBottomPiece(s) ? resolveBottomFrameHeight(s, frameHorizontalWidth) : 0;
+        const centerGap = Math.max(0, Math.min(s.width - EPS, DOUBLE_DOOR_CENTER_GAP_METERS));
+        const leafWidth = Math.max(EPS, (s.width - centerGap) * 0.5);
+        const leafOffset = centerGap * 0.5 + leafWidth * 0.5;
+        const leftCenterMode = resolveDoorCenterFrameSideMode(s.frame, 'left');
+        const rightCenterMode = resolveDoorCenterFrameSideMode(s.frame, 'right');
+        const centerLeftWidth = leftCenterMode === 'none' ? 0 : frameVerticalWidth;
+        const centerRightWidth = rightCenterMode === 'none' ? 0 : frameVerticalWidth;
+        const arch = computeDoubleDoorArchProfile(s);
+        const profileOf = (leftW, rightW) => {
+            const profile = computeRectLeafProfile({
+                width: leafWidth,
+                height: arch.leafHeight,
+                leftFrameWidth: leftW,
+                rightFrameWidth: rightW,
+                topFrameWidth: arch.leafTopFrameWidth,
+                bottomFrameWidth
+            });
+            return { ...profile, centerY: profile.centerY + arch.leafCenterY };
+        };
+        const lp = profileOf(frameVerticalWidth, centerLeftWidth);
+        const rp = profileOf(centerRightWidth, frameVerticalWidth);
+        rects.push({ cx: -leafOffset + lp.centerX, w: lp.innerWidth, yBottom: lp.centerY - lp.innerHeight * 0.5, hMax: lp.innerHeight });
+        rects.push({ cx: leafOffset + rp.centerX, w: rp.innerWidth, yBottom: rp.centerY - rp.innerHeight * 0.5, hMax: rp.innerHeight });
+    } else {
+        const { innerWidth, innerHeight, centerY } = computeInnerOpeningProfile(s);
+        rects.push({ cx: 0, w: innerWidth, yBottom: centerY - innerHeight * 0.5, hMax: innerHeight });
+    }
+
+    // Slabs spanning most of the frame depth so they read solid from both
+    // sides; slightly wider than the leaf opening to close hairline gaps.
+    const zBack = 0.015;
+    const zFront = Math.max(zBack + 0.02, s.frame.depth - 0.015);
+    const parts = [];
+    for (const r of rects) {
+        if (kick?.enabled) {
+            const h = Math.max(0.05, Math.min(kick.heightMeters, r.hMax * 0.8));
+            const geo = new THREE.BoxGeometry(Math.max(EPS, r.w + 0.012), h, zFront - zBack);
+            geo.translate(r.cx, r.yBottom + h * 0.5, (zBack + zFront) * 0.5);
+            parts.push(geo);
+        }
+        if (midRail?.enabled) {
+            // Rail at pull height, dividing the leaf glass into an upper and
+            // a lower pane. yMeters measures from the leaf's inner bottom.
+            const railY = r.yBottom + Math.max(0.1, Math.min(midRail.yMeters, r.hMax - 0.1));
+            const geo = new THREE.BoxGeometry(Math.max(EPS, r.w + 0.012), midRail.thicknessMeters, zFront - zBack);
+            geo.translate(r.cx, railY, (zBack + zFront) * 0.5);
+            parts.push(geo);
+        }
+    }
+    if (!parts.length) return null;
+    const merged = mergeGeometries(parts, false);
+    for (const part of parts) part.dispose();
+    merged.computeVertexNormals();
+    merged.computeBoundingBox();
+    return merged;
+}
+
 function buildDoorHandlesGeometry({ settings }) {
     const s = sanitizeWindowMeshSettings(settings);
     if (!s.frame.addHandles || !s.frame.openBottom) return null;
 
+    const cPull = s.frame.handleStyle === 'c_pull';
+    const edgeOffset = cPull ? HANDLE_C_PULL_EDGE_OFFSET_METERS : HANDLE_EDGE_OFFSET_METERS;
     const surfaceZ = Math.max(EPS, s.frame.depth);
     const handleCenterZ = surfaceZ + 0.08;
     const connectorLength = Math.max(EPS, handleCenterZ - surfaceZ);
@@ -913,7 +1042,7 @@ function buildDoorHandlesGeometry({ settings }) {
     const handlePlacements = [];
     if (isDoorDoubleStyle(s)) {
         const { vertical: frameVerticalWidth, horizontal: frameHorizontalWidth } = getFrameWidths(s.frame);
-        const bottomFrameWidth = hasFrameBottomPiece(s) ? frameHorizontalWidth : 0;
+        const bottomFrameWidth = hasFrameBottomPiece(s) ? resolveBottomFrameHeight(s, frameHorizontalWidth) : 0;
         const centerGap = Math.max(0, Math.min(s.width - EPS, DOUBLE_DOOR_CENTER_GAP_METERS));
         const leafWidth = Math.max(EPS, (s.width - centerGap) * 0.5);
         const leafOffset = centerGap * 0.5 + leafWidth * 0.5;
@@ -939,33 +1068,45 @@ function buildDoorHandlesGeometry({ settings }) {
         const rightProfile = leafProfileOf(centerRightWidth, frameVerticalWidth);
 
         const leftEdge = -leafOffset + leftProfile.centerX + leftProfile.innerWidth * 0.5;
+        // A C-pull mounts ON the meeting stile (the leaf's frame member near
+        // the center), never over the glass; the bar handle keeps its
+        // just-inside-the-glass placement.
+        const leftStileX = leftEdge + Math.max(0.02, centerLeftWidth) * 0.5;
         const leftMinX = -leafOffset + leftProfile.centerX - leftProfile.innerWidth * 0.5 + HANDLE_RADIUS;
-        const leftMaxX = -leafOffset + leftProfile.centerX + leftProfile.innerWidth * 0.5 - HANDLE_RADIUS;
-        const leftHandleX = Math.max(leftMinX, Math.min(leftMaxX, leftEdge - HANDLE_EDGE_OFFSET_METERS));
+        const leftMaxX = leftEdge + Math.max(0.02, centerLeftWidth);
+        const leftHandleX = cPull
+            ? leftStileX
+            : Math.max(leftMinX, Math.min(leftMaxX, leftEdge - edgeOffset));
         handlePlacements.push({
             x: leftHandleX,
-            y: resolveHandleYCenterFromProfile(leftProfile)
+            y: resolveHandleYCenterFromProfile(leftProfile, { desiredAboveBottom: cPull ? C_PULL_DESIRED_ABOVE_BOTTOM_METERS : 1.0 }),
+            dir: -1
         });
 
         const rightEdge = leafOffset + rightProfile.centerX - rightProfile.innerWidth * 0.5;
-        const rightMinX = leafOffset + rightProfile.centerX - rightProfile.innerWidth * 0.5 + HANDLE_RADIUS;
+        const rightStileX = rightEdge - Math.max(0.02, centerRightWidth) * 0.5;
+        const rightMinX = rightEdge - Math.max(0.02, centerRightWidth);
         const rightMaxX = leafOffset + rightProfile.centerX + rightProfile.innerWidth * 0.5 - HANDLE_RADIUS;
-        const rightHandleX = Math.max(rightMinX, Math.min(rightMaxX, rightEdge + HANDLE_EDGE_OFFSET_METERS));
+        const rightHandleX = cPull
+            ? rightStileX
+            : Math.max(rightMinX, Math.min(rightMaxX, rightEdge + edgeOffset));
         handlePlacements.push({
             x: rightHandleX,
-            y: resolveHandleYCenterFromProfile(rightProfile)
+            y: resolveHandleYCenterFromProfile(rightProfile, { desiredAboveBottom: cPull ? C_PULL_DESIRED_ABOVE_BOTTOM_METERS : 1.0 }),
+            dir: 1
         });
     } else {
         const { innerWidth, innerHeight, centerY } = computeInnerOpeningProfile(s);
         const xMin = -innerWidth * 0.5 + HANDLE_RADIUS;
         const xMax = innerWidth * 0.5 - HANDLE_RADIUS;
-        const x = Math.max(xMin, Math.min(xMax, innerWidth * 0.5 - HANDLE_EDGE_OFFSET_METERS));
+        const x = Math.max(xMin, Math.min(xMax, innerWidth * 0.5 - edgeOffset));
         handlePlacements.push({
             x,
             y: resolveHandleYCenterFromProfile({
                 centerY,
                 innerHeight
-            })
+            }, { desiredAboveBottom: cPull ? C_PULL_DESIRED_ABOVE_BOTTOM_METERS : 1.0 }),
+            dir: -1
         });
     }
 
@@ -974,6 +1115,15 @@ function buildDoorHandlesGeometry({ settings }) {
     for (const placement of handlePlacements) {
         const x = placement.x;
         const yCenter = placement.y;
+        if (cPull) {
+            parts.push(...buildCPullGeometry({
+                x,
+                yCenter,
+                dir: placement.dir ?? -1,
+                surfaceZ
+            }));
+            continue;
+        }
         parts.push(createHandleCylinderGeometry({
             x,
             y: yCenter,
@@ -1033,8 +1183,12 @@ export function getWindowMeshGeometryKey(settings, { curveSegments = 24 } = {}) 
         `fd:${q(f.depth)}`,
         `fob:${f.openBottom ? 1 : 0}`,
         `fah:${f.addHandles ? 1 : 0}`,
+        `fhs:${f.handleStyle === 'c_pull' ? 'c' : 'b'}`,
+        `fkp:${f.doorKickPanel?.enabled ? q(f.doorKickPanel.heightMeters) : 0}`,
+        `fmr:${f.doorMidRail?.enabled ? `${q(f.doorMidRail.yMeters)}x${q(f.doorMidRail.thicknessMeters)}` : 0}`,
         `fds:${f.doorStyle === 'double' ? 'd' : 's'}`,
         `fdb:${f.doorBottomFrame?.enabled ? 1 : 0}`,
+        `fdbh:${Number.isFinite(f.doorBottomFrame?.heightMeters) ? q(f.doorBottomFrame.heightMeters) : 'w'}`,
         `fdbm:${bottomMode === 'none' ? 'n' : 'm'}`,
         `fdcl:${centerLeftMode === 'none' ? 'n' : 'm'}`,
         `fdcr:${centerRightMode === 'none' ? 'n' : 'm'}`,
@@ -1122,9 +1276,10 @@ export function buildWindowMeshGeometryBundle(settings, { curveSegments = 24 } =
     const muntins = buildMuntinsGeometry({ settings, curveSegments });
     const joinBar = buildArchMeetRectJoinGeometry({ settings });
     const handles = buildDoorHandlesGeometry({ settings });
+    const kickPanels = buildDoorKickPanelsGeometry({ settings });
 
     const interiorPanel = buildInteriorPanelGeometry({ settings, openingGeometry: opening });
 
     const joinBarLayer = joinBar?.userData?.windowJoinBarLayer === 'muntins' ? 'muntins' : (joinBar ? 'frame' : null);
-    return { frame, opening, interiorPanel, muntins, joinBar, joinBarLayer, handles };
+    return { frame, opening, interiorPanel, muntins, joinBar, joinBarLayer, handles, kickPanels };
 }

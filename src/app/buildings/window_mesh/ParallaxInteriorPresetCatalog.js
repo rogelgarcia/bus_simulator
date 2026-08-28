@@ -19,6 +19,10 @@ export const PARALLAX_INTERIOR_PRESET_ID = Object.freeze({
     RESIDENTIAL: 'parallax_interior.residential',
     OFFICE: 'parallax_interior.office',
     SHOP: 'parallax_interior.shop',
+    // Dark generated silhouette glass for street level: a flat fake texture
+    // (zero parallax) that only hints at an interior. The id keeps 'shop' in
+    // it so the opening-level coarse mode ('shop') classifies it correctly.
+    SHOP_SILHOUETTE: 'parallax_interior.shop_silhouette',
     PROCEDURAL: 'parallax_interior.procedural'
 });
 
@@ -65,6 +69,24 @@ export const PARALLAX_INTERIOR_PRESET_CATALOG = Object.freeze([
                 hueShiftDeg: Object.freeze({ min: 0.0, max: 0.0 }),
                 saturationMul: Object.freeze({ min: 0.92, max: 1.0 }),
                 brightnessMul: Object.freeze({ min: 0.9, max: 1.0 })
+            })
+        })
+    }),
+    Object.freeze({
+        id: PARALLAX_INTERIOR_PRESET_ID.SHOP_SILHOUETTE,
+        label: 'Shop Silhouette',
+        atlasId: WINDOW_INTERIOR_ATLAS_ID.STOREFRONT_SILHOUETTE_2X2,
+        // A FLAT fake texture: zero parallax depth/scale, the cell nearly
+        // fills the opening, and no tint jitter (the atlas is already the
+        // final look — dark room, soft silhouettes).
+        defaults: Object.freeze({
+            uvZoom: 1.05,
+            parallaxDepthMeters: 0.0,
+            parallaxScale: Object.freeze({ x: 0.0, y: 0.0 }),
+            tintVariation: Object.freeze({
+                hueShiftDeg: Object.freeze({ min: 0.0, max: 0.0 }),
+                saturationMul: Object.freeze({ min: 0.96, max: 1.0 }),
+                brightnessMul: Object.freeze({ min: 0.92, max: 1.0 })
             })
         })
     }),

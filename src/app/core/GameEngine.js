@@ -1099,6 +1099,20 @@ export class GameEngine {
         applyIBLIntensity(this.scene, this._ibl.config, { force: !!force });
     }
 
+    // Full IBL re-sync for meshes born after the post-state-change scan
+    // window (editor rebuilds). Intensity alone is not enough: materials
+    // flagged iblNoAutoEnvMapIntensity are skipped by the intensity pass, and
+    // without a per-material envMap three renders scene.environment with the
+    // shader-default intensity (1.0) instead of the material's value — a
+    // rebuilt building visibly brightens. applyIBLToScene assigns the managed
+    // envMap to every material, which routes three through the material's own
+    // envMapIntensity again.
+    resyncIBL({ force = false } = {}) {
+        if (!this._ibl?.envMap) return;
+        applyIBLToScene(this.scene, this._ibl.envMap, this._ibl.config);
+        applyIBLIntensity(this.scene, this._ibl.config, { force: !!force });
+    }
+
     updateFrame(dt, { render = true, nowMs = null, rawDt = null } = {}) {
         const stepDt = Number.isFinite(dt) ? dt : 0;
         const now = Number.isFinite(nowMs) ? nowMs : performance.now();
