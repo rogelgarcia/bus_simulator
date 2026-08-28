@@ -11,8 +11,8 @@
 //   - front 27M = 33.75m of glass (34.15m at the base, which projects 0.2m)
 //   - flank 24M = 30.00m of glass (30.40m at the base)
 //   - 9 curtain wall glass courses separated by 8 metal spandrel panels
-//   - a 12.0m base: six openings on the reference rhythm (3.24m openings,
-//     1.81m piers, 2.83m end piers)
+//   - a 12.0m base: six openings on the reference rhythm, with every
+//     intermediate stone pier exactly two square panels wide
 const MODULE_METERS = 1.25;
 const CURTAIN_FLOOR_HEIGHT = 3.31;
 // The sill course is a storey without its panel band.
@@ -30,10 +30,31 @@ const FLANK_HALF_DEPTH = 15.2;     // 24M glass + 2 x base projection
 const BASE_LOW_HEIGHT = 3.42;
 const BASE_MID_HEIGHT = 2.82;
 const BASE_HIGH_HEIGHT = 5.76;
-const BASE_OPENING_WIDTH = 3.24;   // measured off the reference elevation
-const BASE_PIER_WIDTH = 1.81;
-const BASE_PIER_END_FRONT = 2.83;
-const BASE_PIER_END_FLANK = 3.48;
+// The reference sets the masonry out from the piers: one intermediate pier is
+// exactly two square panels. Keep the dimensions on that module instead of
+// letting a 1.4m texture grid drift through independently sized columns.
+const BASE_STONE_PANEL_METERS = 0.9;
+const BASE_STONE_TILING = Object.freeze({
+    enabled: true,
+    tileMeters: BASE_STONE_PANEL_METERS * 3,
+    tileMetersU: BASE_STONE_PANEL_METERS * 3,
+    tileMetersV: BASE_STONE_PANEL_METERS * 3,
+    uvEnabled: true,
+    offsetU: 0,
+    offsetV: 0,
+    rotationDegrees: 0
+});
+const BASE_OPENING_WIDTH = 3.25;
+const BASE_PIER_WIDTH = BASE_STONE_PANEL_METERS * 2;
+// Preserve the measured overall footprint after putting openings and piers on
+// clean dimensions. End piers absorb only deliberate footprint widening and
+// do so symmetrically (see `endPierBay`).
+const BASE_PIER_END_FRONT = (
+    FRONT_HALF_WIDTH * 2 - 6 * BASE_OPENING_WIDTH - 5 * BASE_PIER_WIDTH
+) * 0.5;
+const BASE_PIER_END_FLANK = (
+    FLANK_HALF_DEPTH * 2 - 5 * BASE_OPENING_WIDTH - 4 * BASE_PIER_WIDTH
+) * 0.5;
 // The openings stop 0.94m below the top of the base (the reference's 27px
 // head band of stone), so the tallest storey's glazing is short of its floor.
 const BASE_HIGH_OPENING_HEIGHT = 4.82;
@@ -149,6 +170,18 @@ function pierBay(id, widthMeters) {
     };
 }
 
+// A wider footprint must not turn the final pier into one giant remainder
+// strip. The two end piers share the extra width, leaving all openings and the
+// two-square intermediate piers at their authored dimensions.
+function endPierBay(id, minWidthMeters) {
+    return {
+        id,
+        size: { mode: 'range', minMeters: minWidthMeters, maxMeters: null },
+        expandPreference: 'prefer_expand',
+        wallMaterialOverride: null
+    };
+}
+
 function openingBay(id, window) {
     return {
         id,
@@ -161,13 +194,13 @@ function openingBay(id, window) {
 }
 
 // One module of curtain wall: the pane, with the mullion left as the wall
-// strip between neighbouring bays. `prefer_repeat` lets the solver tile the
-// module across the whole face, so a 27-module front and a 24-module flank
-// come from the same authored bay.
+// strip between neighbouring bays. `prefer_repeat` tiles exact 1.25m modules
+// when they fit; the open range shares a non-modular remainder across the run
+// instead of stretching only the final pane.
 function curtainBay(id, window) {
     return {
         id,
-        size: { mode: 'fixed', widthMeters: MODULE_METERS },
+        size: { mode: 'range', minMeters: MODULE_METERS, maxMeters: null },
         expandPreference: 'prefer_repeat',
         wallMaterialOverride: null,
         window
@@ -178,12 +211,12 @@ function curtainBay(id, window) {
 // `contentFor(index)` picks the opening content per position (0-based), which
 // is how the entry and the two lit bays differ from the plain glazed runs.
 function baseFacade({ openings, endPierWidth, contentFor }) {
-    const items = [pierBay('bay_pier_start', endPierWidth)];
+    const items = [endPierBay('bay_pier_start', endPierWidth)];
     for (let i = 0; i < openings; i++) {
         items.push(openingBay(`bay_open_${i + 1}`, contentFor(i)));
         if (i < openings - 1) items.push(pierBay(`bay_pier_${i + 1}`, BASE_PIER_WIDTH));
     }
-    items.push(pierBay('bay_pier_end', endPierWidth));
+    items.push(endPierBay('bay_pier_end', endPierWidth));
     return {
         layout: {
             bays: { items, nextBayIndex: items.length + 1 },
@@ -380,7 +413,8 @@ export const MODERN_BANK_BUILDING_CONFIG = Object.freeze({
     name: 'Modern Bank',
     materialSlots: Object.freeze({
         slots: {
-            // The base: burnt cement in ~1.4m square cast panels.
+            // The base: burnt cement in 0.9m square cast panels. Intermediate
+            // piers are 1.8m wide, so every one resolves to exactly two stones.
             base: { material: { kind: 'texture', id: 'pbr.burnt_cement_panel' } },
             // The curtain wall skin: mullion faces and spandrel backing.
             curtain: { material: { kind: 'texture', id: 'pbr.bronze_anodized_panel' } },
@@ -397,6 +431,7 @@ export const MODERN_BANK_BUILDING_CONFIG = Object.freeze({
             interior: { enabled: false },
             style: 'default',
             material: { kind: 'slot', id: 'base' },
+            tiling: BASE_STONE_TILING,
             materialVariation: {
                 enabled: true,
                 seedOffset: 21,
@@ -426,6 +461,7 @@ export const MODERN_BANK_BUILDING_CONFIG = Object.freeze({
             interior: { enabled: false },
             style: 'default',
             material: { kind: 'slot', id: 'base' },
+            tiling: BASE_STONE_TILING,
             materialVariation: {
                 enabled: true,
                 seedOffset: 22,
@@ -454,6 +490,7 @@ export const MODERN_BANK_BUILDING_CONFIG = Object.freeze({
             interior: { enabled: false },
             style: 'default',
             material: { kind: 'slot', id: 'base' },
+            tiling: BASE_STONE_TILING,
             materialVariation: {
                 enabled: true,
                 seedOffset: 23,
