@@ -1,0 +1,157 @@
+{
+  "generatedAt": "2026-08-29T21:26:36.552Z",
+  "elapsedMs": 349543.7000000477,
+  "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "profile": {
+    "id": "bigcity2-grid3-pitch12-neighbor1-aspect2_5-v1",
+    "cityId": "bigcity2",
+    "directionCount": 12,
+    "horizontalOffsets": [
+      -8,
+      0,
+      8
+    ],
+    "heights": [
+      1.22,
+      3.6831812721965655,
+      6.146362544393131
+    ],
+    "targetY": 1.12,
+    "baselinePitchDeg": [
+      -0.38101533705061646,
+      -9.67328903369499,
+      -18.48254682146594
+    ],
+    "pitchProfiles": [
+      {
+        "id": "low_up_30",
+        "heightIndex": 0,
+        "pitchDeg": 30
+      },
+      {
+        "id": "low_up_60",
+        "heightIndex": 0,
+        "pitchDeg": 60
+      },
+      {
+        "id": "low_straight_up_90",
+        "heightIndex": 0,
+        "pitchDeg": 90
+      },
+      {
+        "id": "mid_down_15",
+        "heightIndex": 1,
+        "pitchDeg": -15
+      },
+      {
+        "id": "high_down_30",
+        "heightIndex": 2,
+        "pitchDeg": -30
+      },
+      {
+        "id": "high_down_45",
+        "heightIndex": 2,
+        "pitchDeg": -45
+      }
+    ],
+    "bakeResolution": [
+      384,
+      216
+    ],
+    "validationResolution": [
+      1280,
+      720
+    ],
+    "edgeGuardPixels": 2,
+    "neighborRadius": 1,
+    "temporalGraceMs": 250,
+    "camera": {
+      "fovDeg": 55,
+      "near": 0.5,
+      "far": 1800,
+      "maxAspect": 2.5,
+      "minPitchDeg": -45,
+      "maxPitchDeg": 90
+    },
+    "categories": [
+      "buildings",
+      "traffic_lights",
+      "traffic_signs",
+      "trees"
+    ],
+    "geometryRevision": "bigcity2-static-geometry-2026-08-29"
+  },
+  "cityConfigHash": "c9edd0c515359975",
+  "unitCount": 228,
+  "wordsPerMask": 8,
+  "binaryBytes": 240000,
+  "jsonBase64Bytes": 320000,
+  "bakeViews": 607500,
+  "unknownPixels": 0,
+  "tableBits": 401851,
+  "averageRootsPerMask": 53.580133333333336,
+  "averageCulledRootsPerMask": 174.41986666666668,
+  "inventory": {
+    "buildings": {
+      "roots": 67,
+      "drawCalls": 4469,
+      "triangles": 980538
+    },
+    "traffic_lights": {
+      "roots": 10,
+      "drawCalls": 70,
+      "triangles": 15000
+    },
+    "traffic_signs": {
+      "roots": 27,
+      "drawCalls": 108,
+      "triangles": 1512
+    },
+    "trees": {
+      "roots": 124,
+      "drawCalls": 248,
+      "triangles": 1168979
+    }
+  },
+  "validation": {
+    "resolution": [
+      1280,
+      720
+    ],
+    "views": 750,
+    "missesBeforeRepair": 1,
+    "viewsWithMissBeforeRepair": 1,
+    "missesAfterRepair": 0,
+    "viewsWithMissAfterRepair": 0,
+    "categories": {
+      "buildings": {
+        "visibleObservations": 3191,
+        "candidateObservations": 7850,
+        "keptCandidateObservations": 5516,
+        "missesBeforeRepair": 0,
+        "missesAfterRepair": 0
+      },
+      "traffic_lights": {
+        "visibleObservations": 264,
+        "candidateObservations": 833,
+        "keptCandidateObservations": 817,
+        "missesBeforeRepair": 0,
+        "missesAfterRepair": 0
+      },
+      "traffic_signs": {
+        "visibleObservations": 435,
+        "candidateObservations": 2164,
+        "keptCandidateObservations": 2164,
+        "missesBeforeRepair": 0,
+        "missesAfterRepair": 0
+      },
+      "trees": {
+        "visibleObservations": 2155,
+        "candidateObservations": 10702,
+        "keptCandidateObservations": 6534,
+        "missesBeforeRepair": 1,
+        "missesAfterRepair": 0
+      }
+    }
+  }
+}

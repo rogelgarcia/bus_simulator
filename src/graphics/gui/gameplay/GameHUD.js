@@ -18,6 +18,14 @@ export class GameHUD {
         this.root.id = "hud-game";
         this.root.className = "hidden";
 
+        this.visibilityMapWarning = document.createElement("div");
+        this.visibilityMapWarning.className = "visibility-map-warning hidden";
+        this.visibilityMapWarning.setAttribute("role", "status");
+        this.visibilityMapWarning.setAttribute("aria-live", "polite");
+        this._visibilityMapWarningState = null;
+        this.visibilityMapDiagnostics = document.createElement("pre");
+        this.visibilityMapDiagnostics.className = "visibility-map-diagnostics hidden";
+
         // Telemetry -> bottom-left
         this.clusterTelemetry = document.createElement("div");
         this.clusterTelemetry.className = "hud-cluster bottom-left hud-panel gauge-widget";
@@ -58,6 +66,8 @@ export class GameHUD {
 
         this.root.appendChild(this.clusterTelemetry);
         this.root.appendChild(this.clusterControls);
+        this.root.appendChild(this.visibilityMapWarning);
+        this.root.appendChild(this.visibilityMapDiagnostics);
 
         // Input state
         this.keys = { left: false, right: false, up: false, down: false };
@@ -147,6 +157,44 @@ export class GameHUD {
         if (typeof t.rpm === "number") this._telemetry.rpm = t.rpm;
         if (typeof t.gear === "number") this._telemetry.gear = t.gear;
         this._telemetryDirty = true;
+    }
+
+    setVisibilityMapStatus(status = null) {
+        const state = String(status?.state ?? 'unavailable');
+        if (state === this._visibilityMapWarningState) return;
+        this._visibilityMapWarningState = state;
+
+        if (state === 'disabled') {
+            this.visibilityMapWarning.textContent = 'The visibility map is disabled. Performance may be impacted.';
+            this.visibilityMapWarning.classList.remove('hidden');
+            return;
+        }
+        if (state === 'fallback') {
+            this.visibilityMapWarning.textContent = 'The visibility map could not be loaded. Performance may be impacted.';
+            this.visibilityMapWarning.classList.remove('hidden');
+            return;
+        }
+        this.visibilityMapWarning.textContent = '';
+        this.visibilityMapWarning.classList.add('hidden');
+    }
+
+    setVisibilityMapDiagnostics(diagnostics = null) {
+        if (!diagnostics?.enabled) {
+            this.visibilityMapDiagnostics.textContent = '';
+            this.visibilityMapDiagnostics.classList.add('hidden');
+            return;
+        }
+        const cell = diagnostics.cell ? `${diagnostics.cell.x},${diagnostics.cell.y}` : '-';
+        const yawBins = Array.isArray(diagnostics.yawBins) ? diagnostics.yawBins.join('+') : '-';
+        const pitch = Array.isArray(diagnostics.pitchCoverage) ? diagnostics.pitchCoverage.join('..') : '-';
+        this.visibilityMapDiagnostics.textContent = [
+            `PVS ${diagnostics.state ?? '-'}`,
+            `cell ${cell} · yaw ${yawBins} · pitch ${pitch}°`,
+            `roots ${diagnostics.visibleRoots ?? '-'} visible / ${diagnostics.culledRoots ?? '-'} culled`,
+            `changed ${diagnostics.changedBits ?? 0} · lookup ${Number(diagnostics.updateMs ?? 0).toFixed(3)} ms`,
+            `load ${Number(diagnostics.loadMs ?? 0).toFixed(1)} ms · decode ${Number(diagnostics.decodeMs ?? 0).toFixed(1)} ms`
+        ].join('\n');
+        this.visibilityMapDiagnostics.classList.remove('hidden');
     }
 
     getControls() {

@@ -32,6 +32,12 @@ import { getResolvedSunBloomSettings } from '../postprocessing/SunBloomSettings.
 import { SunRaysRig } from '../sun/SunRaysRig.js';
 import { createRoadEngineRoads } from './RoadEngineRoads.js';
 import { createTrafficControlProps } from './TrafficControlProps.js';
+import {
+    STATIC_VISIBILITY_CATEGORY,
+    createBuildingVisibilityId,
+    getResolvedStaticVisibilitySettings
+} from '../../../app/city/visibility/index.js';
+import { CityStaticVisibility } from './CityStaticVisibility.js';
 
 const MATERIAL_SHADOW_SIDE_ORIGINAL = new WeakMap();
 
@@ -77,6 +83,7 @@ export class City {
             tileMeters = 2,
             mapTileSize = 24,
             seed = 'demo-001',
+            cityId = 'custom',
             mapSpec = null,
             generatorConfig = null,
             // Authoring tools that need per-mesh picking on fabricated buildings
@@ -99,6 +106,9 @@ export class City {
             cameraNear: 0.5,
             cameraFar: 1800
         };
+        this.cityId = typeof cityId === 'string' && cityId ? cityId : 'custom';
+        this.visibilitySourceSpec = mapSpec;
+        this.staticVisibility = null;
 
         this.group = new THREE.Group();
         this.group.name = 'City';
@@ -370,6 +380,10 @@ export class City {
 
                 const buildingGroup = new THREE.Group();
                 buildingGroup.name = entry.id ?? 'building';
+                buildingGroup.userData.staticVisibility = {
+                    id: createBuildingVisibilityId(buildingGroup.name),
+                    category: STATIC_VISIBILITY_CATEGORY.BUILDINGS
+                };
                 for (const mesh of parts.solidMeshes) buildingGroup.add(mesh);
                 if (parts.windows) buildingGroup.add(parts.windows);
                 if (parts.beltCourse) buildingGroup.add(parts.beltCourse);
@@ -507,6 +521,7 @@ export class City {
     detach(engine) {
         if (!this._attached) return;
 
+        this.disableStaticVisibility();
         this._deactivateCascadedShadows();
         engine.scene.remove(this.group);
         applyShadowSideToObject(this.group, null);
@@ -734,6 +749,40 @@ export class City {
         if (!root) return;
         this._extraShadowRoots.add(root);
         if (this._csm) registerObjectForSceneShadows(root);
+    }
+
+    enableStaticVisibility(engine, settings = null) {
+        if (this.staticVisibility) {
+            this.staticVisibility.setSettings(settings ?? getResolvedStaticVisibilitySettings());
+            return this.staticVisibility;
+        }
+        this.staticVisibility = new CityStaticVisibility({
+            city: this,
+            engine,
+            settings: settings ?? getResolvedStaticVisibilitySettings()
+        });
+        return this.staticVisibility;
+    }
+
+    setStaticVisibilitySettings(settings) {
+        this.staticVisibility?.setSettings(settings);
+    }
+
+    updateStaticVisibility(camera, nowMs = performance.now()) {
+        return this.staticVisibility?.update(camera, nowMs) ?? false;
+    }
+
+    getStaticVisibilityStatus() {
+        return this.staticVisibility?.getStatus() ?? Object.freeze({ state: 'unavailable', reason: 'not_initialized' });
+    }
+
+    getStaticVisibilityDiagnostics() {
+        return this.staticVisibility?.getDiagnostics() ?? null;
+    }
+
+    disableStaticVisibility() {
+        this.staticVisibility?.dispose();
+        this.staticVisibility = null;
     }
 
     update(engine) {

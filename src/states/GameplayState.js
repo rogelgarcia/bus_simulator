@@ -96,6 +96,7 @@ export function getGameplayCityOptions(gameplayPose = null) {
     const seed = typeof mapSpec?.seed === 'string' ? mapSpec.seed : 'x';
 
     return {
+        cityId,
         size: mapWidth * mapTileSize,
         tileMeters: 2,
         mapTileSize,
@@ -265,6 +266,7 @@ export class GameplayState {
         // Setup city
         this.city = getSharedCity(this.engine, getGameplayCityOptions(this._gameplayPose));
         this.city.attach(this.engine);
+        this.city.enableStaticVisibility(this.engine);
         this.gameLoop.setWorld(this.city);
 
         // Setup HUD
@@ -620,6 +622,9 @@ export class GameplayState {
             viewport: { width: vpW, height: vpH },
             settings: debugSettings
         });
+        this.city?.updateStaticVisibility?.(this.engine?.camera);
+        this.hud?.setVisibilityMapStatus?.(this.city?.getStaticVisibilityStatus?.());
+        this.hud?.setVisibilityMapDiagnostics?.(this.city?.getStaticVisibilityDiagnostics?.());
     }
 
     _configureGameplayPoseCamera() {

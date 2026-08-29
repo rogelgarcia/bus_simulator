@@ -15,6 +15,9 @@ to be copied here.
 | `shadow_modes_culling_and_merge_2026-08-15.json` | Same set again, after merged shadow casters landed — the current state |
 | `shadow_merge_correctness_2026-08-15.json` | Merge on/off draw calls at four cameras, including a rooftop-level view |
 | `ai499_type_quality_2026-08-15.json` | Every cell of the `type` x `quality` model (AI_499): off, single low/med/high, cascade low/med/high |
+| `ai520_static_visibility_bake_2026-08-29.json` | AI_520 production PVS bake, storage/inventory, and 750-view native validation table |
+| `ai520_static_visibility_runtime_2026-08-29.json` | AI_520 interleaved full-renderer A/B, lookup cost, and 12-case shadow-preservation matrix |
+| `ai520_road_sensitivity_2026-08-29.json` | AI_520 full 1x/10x road-density table for merged and 1/2/4/5-cell chunks |
 
 ### The type x quality ladder (AI_499, measured)
 

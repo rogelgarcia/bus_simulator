@@ -1,6 +1,10 @@
 // src/graphics/visuals/city/TrafficControlProps.js
 // Renders traffic control props (traffic lights / stop signs) from placement data.
 import * as THREE from 'three';
+import {
+    STATIC_VISIBILITY_CATEGORY,
+    createTrafficControlVisibilityId
+} from '../../../app/city/visibility/index.js';
 import { createTrafficControlVisualAsset } from './TrafficControlVisualRegistry.js';
 
 export function createTrafficControlProps({ placements = [], useSolidMaterials = true } = {}) {
@@ -8,7 +12,8 @@ export function createTrafficControlProps({ placements = [], useSolidMaterials =
     group.name = 'TrafficControls';
 
     const list = Array.isArray(placements) ? placements : [];
-    for (const placement of list) {
+    for (let placementIndex = 0; placementIndex < list.length; placementIndex += 1) {
+        const placement = list[placementIndex];
         const kind = placement?.kind ?? null;
         const entry = createTrafficControlVisualAsset(kind, { useSolidMaterials });
         const asset = entry?.asset ?? null;
@@ -36,6 +41,13 @@ export function createTrafficControlProps({ placements = [], useSolidMaterials =
             tile: placement?.tile ?? null,
             corner: placement?.corner ?? null,
             approach: placement?.approach ?? null
+        };
+        const category = instance.name === 'TrafficLight'
+            ? STATIC_VISIBILITY_CATEGORY.TRAFFIC_LIGHTS
+            : STATIC_VISIBILITY_CATEGORY.TRAFFIC_SIGNS;
+        instance.userData.staticVisibility = {
+            id: createTrafficControlVisibilityId(category, placementIndex),
+            category
         };
 
         instance.add(mesh);

@@ -12,6 +12,10 @@ import { COLOR_GRADING_DEFAULTS, sanitizeColorGradingSettings } from '../../visu
 import { BUILDING_WINDOW_VISUALS_DEFAULTS, sanitizeBuildingWindowVisualsSettings } from '../../visuals/buildings/BuildingWindowVisualsSettings.js';
 import { ASPHALT_NOISE_DEFAULTS, sanitizeAsphaltNoiseSettings } from '../../visuals/city/AsphaltNoiseSettings.js';
 import { SUN_FLARE_DEFAULTS, sanitizeSunFlareSettings } from '../../visuals/sun/SunFlareSettings.js';
+import {
+    STATIC_VISIBILITY_DEFAULTS,
+    sanitizeStaticVisibilitySettings
+} from '../../../app/city/visibility/index.js';
 
 export const OPTIONS_PRESET_SCHEMA_ID = 'bus_sim.options_preset';
 export const OPTIONS_PRESET_VERSION = 1;
@@ -26,7 +30,8 @@ const GROUPS = Object.freeze([
     'colorGrading',
     'sunFlare',
     'buildingWindowVisuals',
-    'asphaltNoise'
+    'asphaltNoise',
+    'staticVisibility'
 ]);
 
 function parseLooseBool(value, fallback) {
@@ -63,7 +68,8 @@ function getDefaultSettings() {
         colorGrading: sanitizeColorGradingSettings(COLOR_GRADING_DEFAULTS),
         sunFlare: sanitizeSunFlareSettings(SUN_FLARE_DEFAULTS),
         buildingWindowVisuals: sanitizeBuildingWindowVisualsSettings(BUILDING_WINDOW_VISUALS_DEFAULTS),
-        asphaltNoise: sanitizeAsphaltNoiseSettings(ASPHALT_NOISE_DEFAULTS)
+        asphaltNoise: sanitizeAsphaltNoiseSettings(ASPHALT_NOISE_DEFAULTS),
+        staticVisibility: sanitizeStaticVisibilitySettings(STATIC_VISIBILITY_DEFAULTS)
     };
 }
 
@@ -81,7 +87,8 @@ function sanitizeSettings(input) {
         colorGrading: sanitizeColorGradingSettings(normalized.colorGrading ?? defaults.colorGrading),
         sunFlare: sanitizeSunFlareSettings(normalized.sunFlare ?? defaults.sunFlare),
         buildingWindowVisuals: sanitizeBuildingWindowVisualsSettings(normalized.buildingWindowVisuals ?? defaults.buildingWindowVisuals),
-        asphaltNoise: sanitizeAsphaltNoiseSettings(normalized.asphaltNoise ?? defaults.asphaltNoise)
+        asphaltNoise: sanitizeAsphaltNoiseSettings(normalized.asphaltNoise ?? defaults.asphaltNoise),
+        staticVisibility: sanitizeStaticVisibilitySettings(normalized.staticVisibility ?? defaults.staticVisibility)
     };
 }
 
@@ -227,6 +234,21 @@ function normalizeSettingsBooleans(src) {
         };
     }
 
+    const staticVisibility = src.staticVisibility && typeof src.staticVisibility === 'object' ? src.staticVisibility : null;
+    if (staticVisibility) {
+        const categories = staticVisibility.categories && typeof staticVisibility.categories === 'object'
+            ? staticVisibility.categories
+            : null;
+        out.staticVisibility = {
+            ...staticVisibility,
+            enabled: parseLooseBool(staticVisibility.enabled, staticVisibility.enabled),
+            diagnostics: parseLooseBool(staticVisibility.diagnostics, staticVisibility.diagnostics),
+            categories: categories
+                ? Object.fromEntries(Object.entries(categories).map(([key, value]) => [key, parseLooseBool(value, value)]))
+                : categories
+        };
+    }
+
     return out;
 }
 
@@ -321,6 +343,7 @@ export function applyOptionsPresetToDraft(draft, preset) {
     if (includes.sunFlare) out.sunFlare = settings.sunFlare;
     if (includes.buildingWindowVisuals) out.buildingWindowVisuals = settings.buildingWindowVisuals;
     if (includes.asphaltNoise) out.asphaltNoise = settings.asphaltNoise;
+    if (includes.staticVisibility) out.staticVisibility = settings.staticVisibility;
 
     return out;
 }

@@ -12,6 +12,7 @@ import { getDefaultResolvedBuildingWindowVisualsSettings } from '../../visuals/b
 import { getDefaultResolvedAsphaltNoiseSettings } from '../../visuals/city/AsphaltNoiseSettings.js';
 import { getDefaultResolvedSunFlareSettings } from '../../visuals/sun/SunFlareSettings.js';
 import { getDefaultResolvedAtmosphereSettings } from '../../visuals/atmosphere/AtmosphereSettings.js';
+import { getDefaultResolvedStaticVisibilitySettings } from '../../../app/city/visibility/index.js';
 import {
     applyOptionsPresetToDraft,
     createOptionsPresetFromDraft,
@@ -72,7 +73,7 @@ async function copyTextToClipboard(text) {
 
 function formatIncludedGroups(includes) {
     const src = includes && typeof includes === 'object' ? includes : {};
-    const keys = ['lighting', 'shadows', 'antiAliasing', 'ambientOcclusion', 'bloom', 'sunBloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise'];
+    const keys = ['lighting', 'shadows', 'antiAliasing', 'ambientOcclusion', 'bloom', 'sunBloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise', 'staticVisibility'];
     const enabled = keys.filter((k) => src[k] !== false);
     return enabled.length ? enabled.join(', ') : '(none)';
 }
@@ -96,6 +97,7 @@ export class OptionsUI {
         initialPostProcessingActive = null,
         initialColorGradingDebug = null,
         initialVehicleMotionDebug = null,
+        initialStaticVisibility = null,
         markingsCalibration = null,
         getIblDebugInfo = null,
         getPostProcessingDebugInfo = null,
@@ -253,6 +255,9 @@ export class OptionsUI {
         this._draftVehicleMotionDebug = initialVehicleMotionDebug && typeof initialVehicleMotionDebug === 'object'
             ? JSON.parse(JSON.stringify(initialVehicleMotionDebug))
             : null;
+        this._draftStaticVisibility = initialStaticVisibility && typeof initialStaticVisibility === 'object'
+            ? JSON.parse(JSON.stringify(initialStaticVisibility))
+            : null;
         this._lightingControls = null;
         this._markingsCalibration = (() => {
             const cfg = markingsCalibration && typeof markingsCalibration === 'object' ? markingsCalibration : null;
@@ -285,6 +290,7 @@ export class OptionsUI {
         if (d.buildingWindowVisuals) this._draftBuildingWindowVisuals = JSON.parse(JSON.stringify(d.buildingWindowVisuals));
         if (d.asphaltNoise) this._draftAsphaltNoise = JSON.parse(JSON.stringify(d.asphaltNoise));
         if (d.vehicleMotionDebug) this._draftVehicleMotionDebug = JSON.parse(JSON.stringify(d.vehicleMotionDebug));
+        if (d.staticVisibility) this._draftStaticVisibility = JSON.parse(JSON.stringify(d.staticVisibility));
     }
 
     async _exportPreset() {
@@ -796,6 +802,11 @@ export class OptionsUI {
         if (tireWear.scale === undefined) tireWear.scale = livedInDefaults.tireWear?.scale;
     }
 
+    _ensureDraftStaticVisibility() {
+        if (this._draftStaticVisibility) return;
+        this._draftStaticVisibility = JSON.parse(JSON.stringify(getDefaultResolvedStaticVisibilitySettings()));
+    }
+
     _ensureDraftBuildingWindowVisuals() {
         if (this._draftBuildingWindowVisuals) return;
         const d = getDefaultResolvedBuildingWindowVisualsSettings();
@@ -1154,6 +1165,7 @@ export class OptionsUI {
             spike: { maxDistMeters: 0.9, maxYawDeg: 25, maxScreenPx: 18 },
             syntheticDt: { enabled: false, pattern: 'off', mode: 'stall', stallMs: 34 }
         };
+        this._draftStaticVisibility = JSON.parse(JSON.stringify(getDefaultResolvedStaticVisibilitySettings()));
         this._renderTab();
         this._emitLiveChange();
     }
@@ -1171,6 +1183,7 @@ export class OptionsUI {
         this._ensureDraftColorGrading();
         this._ensureDraftSunFlare();
         this._ensureDraftVehicleMotionDebug();
+        this._ensureDraftStaticVisibility();
         const d = this._draftLighting;
         const atmo = this._draftAtmosphere;
         const shadows = this._draftShadows;
@@ -1183,6 +1196,7 @@ export class OptionsUI {
         const windowVisuals = this._draftBuildingWindowVisuals;
         const sunFlare = this._draftSunFlare;
         const vehicleMotionDebug = this._draftVehicleMotionDebug;
+        const staticVisibility = this._draftStaticVisibility;
         return {
             lighting: {
                 exposure: d.exposure,
@@ -1370,6 +1384,7 @@ export class OptionsUI {
                     ghosting: !!sunFlare.components?.ghosting
                 }
             },
+            staticVisibility: JSON.parse(JSON.stringify(staticVisibility)),
             vehicleMotionDebug: {
                 enabled: !!vehicleMotionDebug.enabled,
                 overlay: vehicleMotionDebug.overlay !== false,

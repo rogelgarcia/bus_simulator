@@ -13,6 +13,7 @@ Registry of scripts under `tools/`. When adding a new tool, register it here.
 | pbrMaterialImporter | `tools/pbr_material_importer/` | Import and normalize PBR materials from `downloads/` into local-only `assets/public/pbr/` | `python3 tools/pbr_material_importer/run.py` |
 | assetSync | `tools/asset_sync/` | Replace this worktree `assets/`, `downloads/`, and `docs/` with symlinks to sibling root repo folders under `../../bus_simulator/` | `node tools/asset_sync/run.mjs` |
 | citySpecExporter | `tools/city_spec_exporter/` | Export authoritative JS city specs to JSON under `tests/artifacts/` | `node tools/city_spec_exporter/run.mjs` |
+| staticVisibilityBaker | `tools/static_visibility_baker/` | Bake and validate the `bigcity2` static potential-visibility set | `node tools/static_visibility_baker/run.mjs` |
 | optionsPresets | `tools/options_presets/` | Export/import Options presets and promote to defaults | `node tools/options_presets/promote_to_defaults.mjs path/to/preset.json --write` |
 | textureCorrectionPipeline | `tools/texture_correction_pipeline/` | Run deterministic plugin-based PBR texture correction config generation (class baselines + guard plugins) with optional map QA + headless capture harness analysis | `node tools/texture_correction_pipeline/run.mjs` |
 | runSelectedTest | `tools/run_selected_test/` | Run a selected test target via `tests/.selected_test` for fast AI/dev iteration | `node tools/run_selected_test/run.mjs` |

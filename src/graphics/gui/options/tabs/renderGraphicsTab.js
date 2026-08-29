@@ -5,10 +5,12 @@ export function renderGraphicsTab() {
     this._ensureDraftAntiAliasing();
     this._ensureDraftAmbientOcclusion();
     this._ensureDraftShadows();
+    this._ensureDraftStaticVisibility();
     const lighting = this._draftLighting;
     const aa = this._draftAntiAliasing;
     const ao = this._draftAmbientOcclusion;
     const shadows = this._draftShadows;
+    const staticVisibility = this._draftStaticVisibility;
     const emit = () => this._emitLiveChange();
 
     const info = this._getAntiAliasingDebugInfo?.() ?? null;
@@ -58,6 +60,42 @@ export function renderGraphicsTab() {
     toneMappingNote.textContent = 'Applies to direct render and post-processing pipeline (AO, bloom, sun bloom).';
     sectionToneMapping.appendChild(toneMappingMode.row);
     sectionToneMapping.appendChild(toneMappingNote);
+
+    const sectionVisibility = makeEl('div', 'options-section');
+    sectionVisibility.appendChild(makeEl('div', 'options-section-title', 'Static Visibility'));
+    const visibilityEnabled = makeToggleRow({
+        label: 'Visibility map',
+        value: staticVisibility.enabled !== false,
+        onChange: (value) => { staticVisibility.enabled = value; emit(); }
+    });
+    sectionVisibility.appendChild(visibilityEnabled.row);
+    const visibilityLabels = {
+        buildings: 'Buildings',
+        traffic_lights: 'Traffic lights',
+        traffic_signs: 'Traffic signs',
+        trees: 'Trees'
+    };
+    for (const [category, label] of Object.entries(visibilityLabels)) {
+        const row = makeToggleRow({
+            label,
+            value: staticVisibility.categories?.[category] !== false,
+            onChange: (value) => {
+                staticVisibility.categories ??= {};
+                staticVisibility.categories[category] = value;
+                emit();
+            }
+        });
+        sectionVisibility.appendChild(row.row);
+    }
+    const visibilityDiagnostics = makeToggleRow({
+        label: 'Visibility diagnostics',
+        value: staticVisibility.diagnostics === true,
+        onChange: (value) => { staticVisibility.diagnostics = value; emit(); }
+    });
+    sectionVisibility.appendChild(visibilityDiagnostics.row);
+    const visibilityNote = makeEl('div', 'options-note');
+    visibilityNote.textContent = 'Applies only to baked static buildings, traffic controls, and trees. Roads and ground surfaces remain outside the visibility map. Changes apply immediately; Save persists them.';
+    sectionVisibility.appendChild(visibilityNote);
 
     const updateAoStatus = () => {
         const mode = String(ao?.mode ?? 'off');
@@ -939,6 +977,7 @@ export function renderGraphicsTab() {
 
     this.body.appendChild(sectionStatus);
     this.body.appendChild(sectionToneMapping);
+    this.body.appendChild(sectionVisibility);
     this.body.appendChild(sectionAa);
     this.body.appendChild(sectionShadows);
     this.body.appendChild(sectionAo);

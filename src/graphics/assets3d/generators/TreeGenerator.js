@@ -5,6 +5,7 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { TGALoader } from 'three/addons/loaders/TGALoader.js';
 import { TILE } from '../../../app/city/CityMap.js';
 import { createTreePlacementExclusion } from '../../../app/city/TreePlacementExclusion.js';
+import { STATIC_VISIBILITY_CATEGORY, createTreeVisibilityId } from '../../../app/city/visibility/index.js';
 import { TREE_CONFIG } from './TreeConfig.js';
 
 const TAU = Math.PI * 2;
@@ -726,7 +727,7 @@ export function createTreeField({ map = null, rng = null, groundY = 0, config = 
     const group = new THREE.Group();
     group.name = 'Trees';
 
-    if (!map || !rng) return { group };
+    if (!map || !rng) return { group, placements: [], quality: null, readyPromise: Promise.resolve(null) };
 
     const params = {
         ...TREE_DEFAULTS,
@@ -736,7 +737,7 @@ export function createTreeField({ map = null, rng = null, groundY = 0, config = 
     const sink = Math.max(0, params.sink ?? 0);
     const quality = getResolvedTreeQuality({ quality: params.quality });
     const entries = getTreeEntries(quality);
-    if (!entries.length) return { group, placements: [] };
+    if (!entries.length) return { group, placements: [], quality, readyPromise: Promise.resolve(null) };
     const targetHeight = (Number.isFinite(params.height) && params.height > 0)
         ? params.height
         : Math.max(4, map.tileSize * 0.4);
@@ -750,9 +751,10 @@ export function createTreeField({ map = null, rng = null, groundY = 0, config = 
         targetHeight
     });
 
-    loadTreeAssets(quality, entries).then((assets) => {
+    const readyPromise = loadTreeAssets(quality, entries).then((assets) => {
         if (!assets) return;
-        for (const placement of placements) {
+        for (let placementIndex = 0; placementIndex < placements.length; placementIndex += 1) {
+            const placement = placements[placementIndex];
             const template = assets.templates[placement.variant];
             if (!template) continue;
             const tree = template.clone(true);
@@ -763,12 +765,18 @@ export function createTreeField({ map = null, rng = null, groundY = 0, config = 
             tree.scale.setScalar(scale);
             tree.position.set(0, -baseY * scale, 0);
             const wrapper = new THREE.Group();
+            wrapper.name = createTreeVisibilityId(placementIndex);
+            wrapper.userData.staticVisibility = {
+                id: wrapper.name,
+                category: STATIC_VISIBILITY_CATEGORY.TREES
+            };
             wrapper.position.set(placement.x, placement.y, placement.z);
             wrapper.rotation.y = placement.rotation;
             wrapper.add(tree);
             group.add(wrapper);
         }
+        return group;
     });
 
-    return { group, placements };
+    return { group, placements, quality, readyPromise };
 }

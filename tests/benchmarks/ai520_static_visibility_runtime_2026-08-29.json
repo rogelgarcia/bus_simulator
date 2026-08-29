@@ -1,0 +1,665 @@
+{
+  "generatedAt": "2026-08-29T21:36:17.912Z",
+  "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "rendererSize": [
+    1280,
+    696
+  ],
+  "rendererPixelRatio": 1,
+  "benchmark": [
+    {
+      "pose": {
+        "id": "north_open",
+        "x": 264,
+        "y": 1.22,
+        "z": -240,
+        "yaw": 0.2,
+        "pitchDeg": 20
+      },
+      "off": {
+        "frames": 12,
+        "totalMs": 345.2000000476837,
+        "averageMs": 28.76666667064031,
+        "calls": 7581,
+        "triangles": 4578961,
+        "points": 0,
+        "lines": 52,
+        "hiddenRoots": 0,
+        "diagnostics": {
+          "enabled": true,
+          "state": "disabled",
+          "fallbackReason": "disabled",
+          "cell": null,
+          "yawBins": null,
+          "pitchCoverage": [
+            -45,
+            90
+          ],
+          "changedBits": 0,
+          "visibleRoots": 228,
+          "culledRoots": 0,
+          "updateMs": 0,
+          "categories": {
+            "buildings": {
+              "visible": 67,
+              "culled": 0
+            },
+            "traffic_lights": {
+              "visible": 10,
+              "culled": 0
+            },
+            "traffic_signs": {
+              "visible": 27,
+              "culled": 0
+            },
+            "trees": {
+              "visible": 124,
+              "culled": 0
+            }
+          },
+          "bakeVersion": 1,
+          "profileId": "bigcity2-grid3-pitch12-neighbor1-aspect2_5-v1",
+          "loadMs": 16703.39999985695,
+          "decodeMs": 2.799999952316284,
+          "renderBridge": {
+            "colorWrites": 1378,
+            "shadowRestoreWrites": 140232,
+            "auxiliaryRestoreWrites": 0
+          },
+          "lastError": null
+        },
+        "medianMs": 28.99166665474574,
+        "samplesMs": [
+          29.066666662693024,
+          28.90833334128062,
+          28.99166665474574,
+          28.76666667064031
+        ]
+      },
+      "on": {
+        "frames": 12,
+        "totalMs": 185.40000009536743,
+        "averageMs": 15.450000007947287,
+        "calls": 3960,
+        "triangles": 2936204,
+        "points": 0,
+        "lines": 52,
+        "hiddenRoots": 143,
+        "diagnostics": {
+          "enabled": true,
+          "state": "active",
+          "fallbackReason": null,
+          "cell": {
+            "x": 23,
+            "y": 2,
+            "index": 73
+          },
+          "yawBins": [
+            0,
+            1
+          ],
+          "pitchCoverage": [
+            -45,
+            90
+          ],
+          "changedBits": 0,
+          "visibleRoots": 85,
+          "culledRoots": 143,
+          "updateMs": 0,
+          "categories": {
+            "buildings": {
+              "visible": 23,
+              "culled": 44
+            },
+            "traffic_lights": {
+              "visible": 7,
+              "culled": 3
+            },
+            "traffic_signs": {
+              "visible": 11,
+              "culled": 16
+            },
+            "trees": {
+              "visible": 44,
+              "culled": 80
+            }
+          },
+          "bakeVersion": 1,
+          "profileId": "bigcity2-grid3-pitch12-neighbor1-aspect2_5-v1",
+          "loadMs": 16703.39999985695,
+          "decodeMs": 2.799999952316284,
+          "renderBridge": {
+            "colorWrites": 1235,
+            "shadowRestoreWrites": 99048,
+            "auxiliaryRestoreWrites": 0
+          },
+          "lastError": null
+        },
+        "medianMs": 21.424999992052715,
+        "samplesMs": [
+          21.424999992052715,
+          21.92500001192093,
+          15.450000007947287,
+          16.274999996026356
+        ]
+      }
+    },
+    {
+      "pose": {
+        "id": "central_intersection",
+        "x": -216,
+        "y": 3.6831812721965655,
+        "z": 48,
+        "yaw": 2.1,
+        "pitchDeg": -10
+      },
+      "off": {
+        "frames": 12,
+        "totalMs": 259.2999999523163,
+        "averageMs": 21.60833332935969,
+        "calls": 6185,
+        "triangles": 4907606,
+        "points": 0,
+        "lines": 55,
+        "hiddenRoots": 0,
+        "diagnostics": {
+          "enabled": true,
+          "state": "disabled",
+          "fallbackReason": "disabled",
+          "cell": null,
+          "yawBins": null,
+          "pitchCoverage": [
+            -45,
+            90
+          ],
+          "changedBits": 0,
+          "visibleRoots": 228,
+          "culledRoots": 0,
+          "updateMs": 0,
+          "categories": {
+            "buildings": {
+              "visible": 67,
+              "culled": 0
+            },
+            "traffic_lights": {
+              "visible": 10,
+              "culled": 0
+            },
+            "traffic_signs": {
+              "visible": 27,
+              "culled": 0
+            },
+            "trees": {
+              "visible": 124,
+              "culled": 0
+            }
+          },
+          "bakeVersion": 1,
+          "profileId": "bigcity2-grid3-pitch12-neighbor1-aspect2_5-v1",
+          "loadMs": 16703.39999985695,
+          "decodeMs": 2.799999952316284,
+          "renderBridge": {
+            "colorWrites": 1852,
+            "shadowRestoreWrites": 179904,
+            "auxiliaryRestoreWrites": 0
+          },
+          "lastError": null
+        },
+        "medianMs": 22.166666666666668,
+        "samplesMs": [
+          22.166666666666668,
+          21.60833332935969,
+          21.950000007947285,
+          22.17500001192093
+        ]
+      },
+      "on": {
+        "frames": 12,
+        "totalMs": 234.40000009536743,
+        "averageMs": 19.53333334128062,
+        "calls": 5554,
+        "triangles": 4407300,
+        "points": 0,
+        "lines": 55,
+        "hiddenRoots": 57,
+        "diagnostics": {
+          "enabled": true,
+          "state": "active",
+          "fallbackReason": null,
+          "cell": {
+            "x": 3,
+            "y": 14,
+            "index": 353
+          },
+          "yawBins": [
+            4,
+            5
+          ],
+          "pitchCoverage": [
+            -45,
+            90
+          ],
+          "changedBits": 0,
+          "visibleRoots": 171,
+          "culledRoots": 57,
+          "updateMs": 0,
+          "categories": {
+            "buildings": {
+              "visible": 45,
+              "culled": 22
+            },
+            "traffic_lights": {
+              "visible": 10,
+              "culled": 0
+            },
+            "traffic_signs": {
+              "visible": 27,
+              "culled": 0
+            },
+            "trees": {
+              "visible": 89,
+              "culled": 35
+            }
+          },
+          "bakeVersion": 1,
+          "profileId": "bigcity2-grid3-pitch12-neighbor1-aspect2_5-v1",
+          "loadMs": 16703.39999985695,
+          "decodeMs": 2.799999952316284,
+          "renderBridge": {
+            "colorWrites": 2073,
+            "shadowRestoreWrites": 212736,
+            "auxiliaryRestoreWrites": 0
+          },
+          "lastError": null
+        },
+        "medianMs": 19.791666666666668,
+        "samplesMs": [
+          19.791666666666668,
+          19.758333325386047,
+          20.666666666666668,
+          19.53333334128062
+        ]
+      }
+    },
+    {
+      "pose": {
+        "id": "south_dense",
+        "x": 24,
+        "y": 6.146362544393131,
+        "z": 288,
+        "yaw": 4.4,
+        "pitchDeg": -35
+      },
+      "off": {
+        "frames": 12,
+        "totalMs": 66.40000009536743,
+        "averageMs": 5.53333334128062,
+        "calls": 272,
+        "triangles": 600977,
+        "points": 0,
+        "lines": 52,
+        "hiddenRoots": 0,
+        "diagnostics": {
+          "enabled": true,
+          "state": "disabled",
+          "fallbackReason": "disabled",
+          "cell": null,
+          "yawBins": null,
+          "pitchCoverage": [
+            -45,
+            90
+          ],
+          "changedBits": 0,
+          "visibleRoots": 228,
+          "culledRoots": 0,
+          "updateMs": 0,
+          "categories": {
+            "buildings": {
+              "visible": 67,
+              "culled": 0
+            },
+            "traffic_lights": {
+              "visible": 10,
+              "culled": 0
+            },
+            "traffic_signs": {
+              "visible": 27,
+              "culled": 0
+            },
+            "trees": {
+              "visible": 124,
+              "culled": 0
+            }
+          },
+          "bakeVersion": 1,
+          "profileId": "bigcity2-grid3-pitch12-neighbor1-aspect2_5-v1",
+          "loadMs": 16703.39999985695,
+          "decodeMs": 2.799999952316284,
+          "renderBridge": {
+            "colorWrites": 3412,
+            "shadowRestoreWrites": 253440,
+            "auxiliaryRestoreWrites": 0
+          },
+          "lastError": null
+        },
+        "medianMs": 5.608333329359691,
+        "samplesMs": [
+          5.608333329359691,
+          5.574999988079071,
+          5.608333349227905,
+          5.53333334128062
+        ]
+      },
+      "on": {
+        "frames": 12,
+        "totalMs": 64.40000009536743,
+        "averageMs": 5.366666674613953,
+        "calls": 272,
+        "triangles": 600977,
+        "points": 0,
+        "lines": 52,
+        "hiddenRoots": 32,
+        "diagnostics": {
+          "enabled": true,
+          "state": "active",
+          "fallbackReason": null,
+          "cell": {
+            "x": 13,
+            "y": 24,
+            "index": 613
+          },
+          "yawBins": [
+            8,
+            9
+          ],
+          "pitchCoverage": [
+            -45,
+            90
+          ],
+          "changedBits": 0,
+          "visibleRoots": 196,
+          "culledRoots": 32,
+          "updateMs": 0.09999990463256836,
+          "categories": {
+            "buildings": {
+              "visible": 59,
+              "culled": 8
+            },
+            "traffic_lights": {
+              "visible": 10,
+              "culled": 0
+            },
+            "traffic_signs": {
+              "visible": 27,
+              "culled": 0
+            },
+            "trees": {
+              "visible": 100,
+              "culled": 24
+            }
+          },
+          "bakeVersion": 1,
+          "profileId": "bigcity2-grid3-pitch12-neighbor1-aspect2_5-v1",
+          "loadMs": 16703.39999985695,
+          "decodeMs": 2.799999952316284,
+          "renderBridge": {
+            "colorWrites": 3162,
+            "shadowRestoreWrites": 244224,
+            "auxiliaryRestoreWrites": 0
+          },
+          "lastError": null
+        },
+        "medianMs": 5.466666678587596,
+        "samplesMs": [
+          5.466666678587596,
+          5.491666654745738,
+          5.366666674613953,
+          5.441666662693024
+        ]
+      }
+    }
+  ],
+  "shadowPreservation": [
+    {
+      "type": "single",
+      "quality": "low",
+      "elevationDeg": 38,
+      "azimuthDeg": 35,
+      "pose": "north_open",
+      "hiddenRoots": 143,
+      "pixels": {
+        "changedPixels": 0,
+        "changedChannels": 0,
+        "maxDifference": 0,
+        "meanAbsoluteDifference": 0
+      },
+      "shadowRestoreWrites": 143
+    },
+    {
+      "type": "single",
+      "quality": "low",
+      "elevationDeg": 38,
+      "azimuthDeg": 35,
+      "pose": "central_intersection",
+      "hiddenRoots": 98,
+      "pixels": {
+        "changedPixels": 0,
+        "changedChannels": 0,
+        "maxDifference": 0,
+        "meanAbsoluteDifference": 0
+      },
+      "shadowRestoreWrites": 98
+    },
+    {
+      "type": "single",
+      "quality": "low",
+      "elevationDeg": 38,
+      "azimuthDeg": 35,
+      "pose": "south_dense",
+      "hiddenRoots": 141,
+      "pixels": {
+        "changedPixels": 0,
+        "changedChannels": 0,
+        "maxDifference": 0,
+        "meanAbsoluteDifference": 0
+      },
+      "shadowRestoreWrites": 141
+    },
+    {
+      "type": "single",
+      "quality": "low",
+      "elevationDeg": 10,
+      "azimuthDeg": 220,
+      "pose": "north_open",
+      "hiddenRoots": 143,
+      "pixels": {
+        "changedPixels": 0,
+        "changedChannels": 0,
+        "maxDifference": 0,
+        "meanAbsoluteDifference": 0
+      },
+      "shadowRestoreWrites": 143
+    },
+    {
+      "type": "single",
+      "quality": "low",
+      "elevationDeg": 10,
+      "azimuthDeg": 220,
+      "pose": "central_intersection",
+      "hiddenRoots": 98,
+      "pixels": {
+        "changedPixels": 0,
+        "changedChannels": 0,
+        "maxDifference": 0,
+        "meanAbsoluteDifference": 0
+      },
+      "shadowRestoreWrites": 98
+    },
+    {
+      "type": "single",
+      "quality": "low",
+      "elevationDeg": 10,
+      "azimuthDeg": 220,
+      "pose": "south_dense",
+      "hiddenRoots": 141,
+      "pixels": {
+        "changedPixels": 0,
+        "changedChannels": 0,
+        "maxDifference": 0,
+        "meanAbsoluteDifference": 0
+      },
+      "shadowRestoreWrites": 141
+    },
+    {
+      "type": "cascade",
+      "quality": "low",
+      "elevationDeg": 38,
+      "azimuthDeg": 120,
+      "pose": "north_open",
+      "hiddenRoots": 143,
+      "pixels": {
+        "changedPixels": 0,
+        "changedChannels": 0,
+        "maxDifference": 0,
+        "meanAbsoluteDifference": 0
+      },
+      "shadowRestoreWrites": 143
+    },
+    {
+      "type": "cascade",
+      "quality": "low",
+      "elevationDeg": 38,
+      "azimuthDeg": 120,
+      "pose": "central_intersection",
+      "hiddenRoots": 98,
+      "pixels": {
+        "changedPixels": 0,
+        "changedChannels": 0,
+        "maxDifference": 0,
+        "meanAbsoluteDifference": 0
+      },
+      "shadowRestoreWrites": 98
+    },
+    {
+      "type": "cascade",
+      "quality": "low",
+      "elevationDeg": 38,
+      "azimuthDeg": 120,
+      "pose": "south_dense",
+      "hiddenRoots": 141,
+      "pixels": {
+        "changedPixels": 0,
+        "changedChannels": 0,
+        "maxDifference": 0,
+        "meanAbsoluteDifference": 0
+      },
+      "shadowRestoreWrites": 141
+    },
+    {
+      "type": "cascade",
+      "quality": "low",
+      "elevationDeg": 10,
+      "azimuthDeg": 300,
+      "pose": "north_open",
+      "hiddenRoots": 143,
+      "pixels": {
+        "changedPixels": 0,
+        "changedChannels": 0,
+        "maxDifference": 0,
+        "meanAbsoluteDifference": 0
+      },
+      "shadowRestoreWrites": 143
+    },
+    {
+      "type": "cascade",
+      "quality": "low",
+      "elevationDeg": 10,
+      "azimuthDeg": 300,
+      "pose": "central_intersection",
+      "hiddenRoots": 98,
+      "pixels": {
+        "changedPixels": 0,
+        "changedChannels": 0,
+        "maxDifference": 0,
+        "meanAbsoluteDifference": 0
+      },
+      "shadowRestoreWrites": 98
+    },
+    {
+      "type": "cascade",
+      "quality": "low",
+      "elevationDeg": 10,
+      "azimuthDeg": 300,
+      "pose": "south_dense",
+      "hiddenRoots": 141,
+      "pixels": {
+        "changedPixels": 0,
+        "changedChannels": 0,
+        "maxDifference": 0,
+        "meanAbsoluteDifference": 0
+      },
+      "shadowRestoreWrites": 141
+    }
+  ],
+  "runtimeLookup": {
+    "iterations": 10000,
+    "totalMs": 55.19999980926514,
+    "averageMs": 0.005519999980926514,
+    "visibilityWrites": 109,
+    "averageVisibilityWrites": 0.0109
+  },
+  "status": {
+    "state": "active",
+    "reason": null
+  },
+  "diagnostics": {
+    "enabled": true,
+    "state": "active",
+    "fallbackReason": null,
+    "cell": {
+      "x": 23,
+      "y": 2,
+      "index": 73
+    },
+    "yawBins": [
+      0,
+      1
+    ],
+    "pitchCoverage": [
+      -45,
+      90
+    ],
+    "changedBits": 0,
+    "visibleRoots": 196,
+    "culledRoots": 32,
+    "updateMs": 0,
+    "categories": {
+      "buildings": {
+        "visible": 59,
+        "culled": 8
+      },
+      "traffic_lights": {
+        "visible": 10,
+        "culled": 0
+      },
+      "traffic_signs": {
+        "visible": 27,
+        "culled": 0
+      },
+      "trees": {
+        "visible": 100,
+        "culled": 24
+      }
+    },
+    "bakeVersion": 1,
+    "profileId": "bigcity2-grid3-pitch12-neighbor1-aspect2_5-v1",
+    "loadMs": 16703.39999985695,
+    "decodeMs": 2.799999952316284,
+    "renderBridge": {
+      "colorWrites": 6436,
+      "shadowRestoreWrites": 254968,
+      "auxiliaryRestoreWrites": 0
+    },
+    "lastError": null
+  }
+}
