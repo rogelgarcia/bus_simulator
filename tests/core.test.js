@@ -161,7 +161,7 @@ async function runTests() {
         setMergedShadowCastersEnabled
     } = await import('/src/graphics/lighting/ShadowCasterMerge.js');
 
-    test('ShadowCasterMerge: structural instanced windows join the one-mesh building silhouette', () => {
+    test('ShadowCasterMerge: opaque instanced windows join the one-mesh building silhouette', () => {
         const root = new THREE.Group();
         const building = new THREE.Group();
         root.add(building);
@@ -177,10 +177,23 @@ async function runTests() {
         frame.setMatrixAt(0, new THREE.Matrix4().makeTranslation(2, 0, 0));
         frame.setMatrixAt(1, new THREE.Matrix4().makeTranslation(4, 0, 0));
         building.add(frame);
+        const glass = new THREE.InstancedMesh(
+            new THREE.PlaneGeometry(0.18, 1.8),
+            new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.5 }),
+            2
+        );
+        glass.castShadow = true;
+        glass.userData.expandIntoMergedShadowCaster = true;
+        glass.userData.mergeShadowAsOpaque = true;
+        glass.setMatrixAt(0, new THREE.Matrix4().makeTranslation(2, 0, 0.01));
+        glass.setMatrixAt(1, new THREE.Matrix4().makeTranslation(4, 0, 0.01));
+        building.add(glass);
 
         const entries = buildMergedShadowCasters(root);
         assertEqual(entries.length, 1, 'Expected one building shadow mesh.');
         assertTrue(entries[0].sources.includes(frame), 'Expected the window frames in the merged source set.');
+        assertTrue(entries[0].sources.includes(glass), 'Expected explicitly opaque glass in the merged source set.');
+        assertEqual(entries[0].merged.material.shadowSide, THREE.DoubleSide, 'Merged glazing must cast from either facade side.');
         entries[0].merged.geometry.computeBoundingBox();
         assertTrue(entries[0].merged.geometry.boundingBox.max.x > 4.05, 'Expected both frame instances in the merged silhouette.');
         assertFalse(collectInstancedShadowCasters(root).some((entry) => entry.mesh === frame), 'Structural frames must not be optional detail casters.');
@@ -5561,7 +5574,7 @@ async function runTests() {
         WINDOW_DECORATION_MATERIAL_MODE
     } = await import('/src/app/buildings/window_mesh/index.js');
 
-    test('WindowMeshGenerator: opaque frame structure opts into the merged caster, but glass does not', () => {
+    test('WindowMeshGenerator: frames and glazing opt into one opaque merged shadow silhouette', () => {
         const generator = new WindowMeshGenerator();
         const group = generator.createWindowGroup({
             settings: getDefaultWindowMeshSettings(),
@@ -5577,7 +5590,13 @@ async function runTests() {
         assertTrue(structural.length > 0, 'Expected frame or mullion meshes.');
         assertTrue(structural.every((mesh) => mesh.castShadow && mesh.userData.expandIntoMergedShadowCaster), 'Every structural opening mesh must join the merged caster.');
         assertTrue(glass.length > 0, 'Expected a glass mesh.');
-        assertTrue(glass.every((mesh) => !mesh.castShadow && !mesh.userData.expandIntoMergedShadowCaster), 'Glass must stay out of the opaque silhouette.');
+        assertTrue(
+            glass.every((mesh) => mesh.castShadow
+                && mesh.material.shadowSide === THREE.DoubleSide
+                && mesh.userData.expandIntoMergedShadowCaster
+                && mesh.userData.mergeShadowAsOpaque),
+            'Glass must fill the optimized opaque shadow silhouette.'
+        );
         generator.dispose();
     });
 

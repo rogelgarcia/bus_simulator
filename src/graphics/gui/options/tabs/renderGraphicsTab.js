@@ -518,7 +518,7 @@ export function renderGraphicsTab() {
     });
 
     const shadowNote = makeEl('div', 'options-note');
-    shadowNote.textContent = 'Applied immediately. Single uses one camera-fitted map (reach 110 / 200 / 340 m; High allocates 1 GiB of VRAM). Cascade splits the view into 2 / 3 / 4 maps by distance: much sharper near the bus for the same reach, at a higher frame cost. Quality sets resolution and reach together, so every step down is cheaper. Merged shadow casters draw each building’s complete structural silhouette—including window frames and mullions—from one mesh. Instanced detail shadows add small repeated trim such as sills and decorations, so they remain optional.';
+    shadowNote.textContent = 'Applied immediately. Single uses one camera-fitted map (reach 110 / 200 / 340 m; High allocates 1 GiB of VRAM). Cascade splits the view into 2 / 3 / 4 maps by distance: much sharper near the bus for the same reach, at a higher frame cost. Quality sets resolution and reach together, so every step down is cheaper. Merged shadow casters draw each building’s complete silhouette—including opaque window glazing—from one mesh. Instanced detail shadows add small repeated trim such as sills and decorations, so they remain optional.';
 
     for (const row of shadowMode.rows) sectionShadows.appendChild(row);
     sectionShadows.appendChild(shadowMergeCasters.row);

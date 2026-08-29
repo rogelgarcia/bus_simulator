@@ -26,8 +26,8 @@ export const SHADOW_DEFAULTS = Object.freeze({
     // material. Lossless (same triangles), purely a draw-call saving.
     mergeCasters: true,
     // Let optional instanced facade detail (window sills, decorations,
-    // handles) cast shadows. Structural frames and mullions are always folded
-    // into the building's merged caster, so this can remain off by default.
+    // handles) cast shadows. Window glazing and structure are always folded
+    // into the building's merged silhouette, so this can remain off by default.
     instancedCasters: false
 });
 

@@ -236,7 +236,9 @@ export class WindowMeshGenerator {
         const glassLayer = new THREE.Group();
         glassLayer.name = 'glass';
         const glassMesh = new THREE.InstancedMesh(openingGeo, mats.glassMat, count);
-        glassMesh.castShadow = false;
+        glassMesh.castShadow = true;
+        glassMesh.userData.expandIntoMergedShadowCaster = true;
+        glassMesh.userData.mergeShadowAsOpaque = true;
         glassMesh.receiveShadow = false;
         glassMesh.renderOrder = 2;
         glassMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

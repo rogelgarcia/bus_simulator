@@ -604,6 +604,7 @@ export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
         transparent: true
     });
     glassMat.depthWrite = false;
+    glassMat.shadowSide = THREE.DoubleSide;
     glassMat.polygonOffset = true;
     glassMat.polygonOffsetFactor = -1;
     glassMat.polygonOffsetUnits = -1;

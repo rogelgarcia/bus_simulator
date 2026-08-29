@@ -109,6 +109,29 @@ test('Shadows: instanced facade detail is out of the shadow passes by default', 
     expect(errors, 'no page errors').toEqual([]);
 });
 
+test('Shadows: window glazing joins the merged gameplay silhouette without source draws', async ({ page }) => {
+    test.setTimeout(180_000);
+    const errors = await bootPose(page);
+    const result = await page.evaluate(() => {
+        const city = window.__busSim.engine.context.city;
+        const glazing = [];
+        city.buildings.group.traverse((o) => {
+            if (o?.isInstancedMesh && o.userData?.mergeShadowAsOpaque) glazing.push(o);
+        });
+        const mergedSources = new Set(city._shadowMerge.flatMap((entry) => entry.sources));
+        return {
+            glazing: glazing.length,
+            merged: glazing.filter((mesh) => mergedSources.has(mesh)).length,
+            sourceCasters: glazing.filter((mesh) => mesh.castShadow).length
+        };
+    });
+
+    expect(result.glazing, 'the gameplay city has opaque-shadow glazing').toBeGreaterThan(0);
+    expect(result.merged, 'every glazing batch joins its building merge').toBe(result.glazing);
+    expect(result.sourceCasters, 'merged glazing adds no per-window shadow draws').toBe(0);
+    expect(errors, 'no page errors').toEqual([]);
+});
+
 test('Shadows: a cascade count below the live light count self-repairs instead of doubling the sun', async ({ page }) => {
     test.setTimeout(180_000);
     const errors = await bootPose(page);

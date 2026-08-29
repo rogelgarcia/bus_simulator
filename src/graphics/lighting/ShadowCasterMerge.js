@@ -12,10 +12,10 @@
 // normalBias is applied on the receiving surface, not the caster.
 //
 // Not merged:
-// - Optional InstancedMesh detail. Structural opening frames explicitly opt in
-//   and are expanded once so the building keeps one complete shadow draw.
-// - Anything alpha-tested or transparent. Its silhouette comes from a texture,
-//   which an untextured merged mesh cannot reproduce.
+// - Optional InstancedMesh detail. Window structure and glazing explicitly opt
+//   in and are expanded once so the building keeps one complete shadow draw.
+// - Alpha-tested or transparent geometry unless it explicitly requests an
+//   opaque shadow, as window glass does to complete the building silhouette.
 // @ts-check
 
 import * as THREE from 'three';
@@ -26,11 +26,12 @@ const ORIGINAL_CAST = '_shadowMergeOriginalCast';
 function isMergeableCaster(o) {
     if (!o?.isMesh || (o.isInstancedMesh && !o.userData?.expandIntoMergedShadowCaster) || !o.geometry) return false;
     if (!o.geometry.attributes?.position) return false;
+    const mergeAsOpaque = o.userData?.mergeShadowAsOpaque === true;
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     for (const m of mats) {
         if (!m) return false;
         // A cutout silhouette lives in the alpha map; merging would fill it in.
-        if (m.transparent || (Number.isFinite(m.alphaTest) && m.alphaTest > 0) || m.alphaMap) return false;
+        if (!mergeAsOpaque && (m.transparent || (Number.isFinite(m.alphaTest) && m.alphaTest > 0) || m.alphaMap)) return false;
     }
     return true;
 }
@@ -106,6 +107,7 @@ export function buildMergedShadowCasters(buildingsGroup) {
         if (!mergedGeometry) continue;
 
         const material = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+        if (sources.some((source) => source.userData?.mergeShadowAsOpaque)) material.shadowSide = THREE.DoubleSide;
         material.userData.isShadowCasterMerge = true;
         const merged = new THREE.Mesh(mergedGeometry, material);
         merged.name = `${group.name || 'building'}__shadow_merge`;
