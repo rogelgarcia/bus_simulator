@@ -15005,6 +15005,7 @@ async function runTests() {
 
             const white = roads?.group?.getObjectByName?.('MarkingsWhite') ?? null;
             assertTrue(white?.isMesh === true, 'Expected MarkingsWhite mesh in default mode.');
+            assertTrue(white?.receiveShadow === true, 'Expected road markings to receive dynamic shadows.');
         });
 
         test('City: uses RoadEngine roads pipeline (AI 149)', () => {

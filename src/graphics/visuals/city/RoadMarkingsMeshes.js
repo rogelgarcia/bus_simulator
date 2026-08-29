@@ -154,6 +154,7 @@ export function createRoadMarkingsMeshesFromData(
         const geo = buildThickLineGeometry(whiteSegs, { laneWidth });
         if (geo) {
             const mesh = new THREE.Mesh(geo, whiteMat);
+            mesh.receiveShadow = true;
             mesh.name = 'MarkingsWhite';
             mesh.userData = meta.white != null ? meta.white : { type: 'lane_markings_white' };
             applyRenderOrder(mesh, 'white');
@@ -166,6 +167,7 @@ export function createRoadMarkingsMeshesFromData(
         const geo = buildThickLineGeometry(yellowSegs, { laneWidth });
         if (geo) {
             const mesh = new THREE.Mesh(geo, yellowMat);
+            mesh.receiveShadow = true;
             mesh.name = 'MarkingsYellow';
             mesh.userData = meta.yellow != null ? meta.yellow : { type: 'lane_markings_centerline' };
             applyRenderOrder(mesh, 'yellow');
@@ -178,6 +180,7 @@ export function createRoadMarkingsMeshesFromData(
         const geo = buildTriangleGeometryFromPositions(crosswalkPositions instanceof Float32Array ? crosswalkPositions : new Float32Array(crosswalkPositions));
         if (geo) {
             const mesh = new THREE.Mesh(geo, crosswalkMat);
+            mesh.receiveShadow = true;
             mesh.name = 'Crosswalks';
             mesh.userData = meta.crosswalk != null ? meta.crosswalk : { type: 'crosswalks' };
             applyRenderOrder(mesh, 'crosswalk');
@@ -190,6 +193,7 @@ export function createRoadMarkingsMeshesFromData(
         const geo = buildTriangleGeometryFromPositions(arrowPositions instanceof Float32Array ? arrowPositions : new Float32Array(arrowPositions));
         if (geo) {
             const mesh = new THREE.Mesh(geo, arrowMat);
+            mesh.receiveShadow = true;
             mesh.name = 'LaneArrows';
             mesh.userData = meta.arrow != null ? meta.arrow : { type: 'lane_arrows' };
             applyRenderOrder(mesh, 'arrow');
