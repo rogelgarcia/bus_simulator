@@ -11253,8 +11253,8 @@ export function buildBuildingFabricationVisualParts({
                                             const lvl = geoP.levels[levelIdx];
                                             const next = geoP.levels[levelIdx + 1] ?? null;
                                             const innerC = contourAt(lvl.innerOffset, lvl.innerArched);
-                                            // tucked slightly under the previous ring's return
-                                            const outerC = contourAt(lvl.outerOffset - 0.004, lvl.holeArched);
+                                            // overlap slightly beneath the previous ring's return
+                                            const outerC = contourAt(lvl.outerOffset + 0.004, lvl.holeArched);
                                             const front = lvl.frontZ;
                                             const back = next
                                                 ? next.frontZ

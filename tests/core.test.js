@@ -20124,6 +20124,12 @@ async function runTests() {
         assertNear(levelFront(0), 0.12 - 0.3, 0.02, 'Level 1 face steps behind the box face.');
         assertNear(levelFront(1), 0.12 - 0.7, 0.02, 'Level 2 face lands on the door plane.');
         const innerLevel = levels.find((m) => m.userData.portalLevelIndex === 1);
+        innerLevel.geometry.computeBoundingBox();
+        const sharedLevelEdge = (2.4 * 0.5) + AI510_TEST_PORTAL_DEF.levels[1].frameWidthMeters;
+        assertTrue(
+            innerLevel.geometry.boundingBox.max.x > sharedLevelEdge,
+            'Each deeper portal level must overlap the preceding return at their shared contour.'
+        );
         const innerLevelBack = 5.0 - (innerLevel.position.z + innerLevel.geometry.boundingBox.min.z);
         assertTrue(innerLevelBack > 0.68, `Innermost return must overlap the inset door frame, got ${innerLevelBack.toFixed(2)}m.`);
 
