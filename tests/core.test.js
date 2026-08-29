@@ -19960,7 +19960,7 @@ async function runTests() {
             arch: { enabled: true, heightRatio: 0.24, meetsRectangleFrame: true, topPieceMode: 'frame', clipVerticalMuntinsToRectWhenNoTopPiece: true },
             // An open-bottom door only keeps its arch when the door bottom
             // frame closes the rectangle (sanitize gate).
-            frame: { width: 0.08, depth: 0.1, inset: 0.02, openBottom: true, addHandles: false, doorStyle: 'double', doorBottomFrame: { enabled: true, mode: 'match' }, colorHex: 0x222222 },
+            frame: { width: 0.08, depth: 0.1, inset: 0.1, openBottom: true, addHandles: false, doorStyle: 'double', doorBottomFrame: { enabled: true, mode: 'match' }, colorHex: 0x222222 },
             muntins: { enabled: false, columns: 1, rows: 1, verticalWidth: 0.05, horizontalWidth: 0.05, depth: 0.04, inset: 0.01 },
             glass: { opacity: 0.9, tintHex: 0x111111 },
             shade: { enabled: false },
@@ -20065,6 +20065,9 @@ async function runTests() {
         };
         assertNear(levelFront(0), 0.12 - 0.3, 0.02, 'Level 1 face steps behind the box face.');
         assertNear(levelFront(1), 0.12 - 0.7, 0.02, 'Level 2 face lands on the door plane.');
+        const innerLevel = levels.find((m) => m.userData.portalLevelIndex === 1);
+        const innerLevelBack = 5.0 - (innerLevel.position.z + innerLevel.geometry.boundingBox.min.z);
+        assertTrue(innerLevelBack > 0.68, `Innermost return must overlap the inset door frame, got ${innerLevelBack.toFixed(2)}m.`);
 
         // The ring moulding contours the outermost hole on the box face,
         // proud of it; 'stop' cuts it on the springing line.
@@ -20118,7 +20121,7 @@ async function runTests() {
 
         // AI 507 shell rule with the deep door: no interior shell geometry
         // inside the box opening in front of the door plane.
-        const doorPlaneBehind = 0.02 + 0.58; // frame inset + level depth behind the wall
+        const doorPlaneBehind = 0.1 + 0.58; // frame inset + level depth behind the wall
         const interiorWalls = (parts.solidMeshes ?? []).filter(
             (m) => m?.userData?.buildingFab2Role === 'interior' && m?.userData?.buildingFab2InteriorKind === 'wall'
         );

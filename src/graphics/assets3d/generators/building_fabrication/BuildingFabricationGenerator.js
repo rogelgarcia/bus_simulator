@@ -11248,6 +11248,7 @@ export function buildBuildingFabricationVisualParts({
                                         // ---- the LEVELS: telescoping face rings; each
                                         // ring's inner side wall is the return down to the
                                         // next face (the innermost reaches the door plane) ----
+                                        const doorFrameZ = -Math.max(0, Number(bottomSettings?.frame?.inset) || 0);
                                         for (let levelIdx = 0; levelIdx < geoP.levels.length; levelIdx++) {
                                             const lvl = geoP.levels[levelIdx];
                                             const next = geoP.levels[levelIdx + 1] ?? null;
@@ -11255,7 +11256,9 @@ export function buildBuildingFabricationVisualParts({
                                             // tucked slightly under the previous ring's return
                                             const outerC = contourAt(lvl.outerOffset - 0.004, lvl.holeArched);
                                             const front = lvl.frontZ;
-                                            const back = next ? next.frontZ : (geoP.doorPlaneZ - extraRecess - 0.05);
+                                            const back = next
+                                                ? next.frontZ
+                                                : Math.min(geoP.doorPlaneZ - extraRecess, doorFrameZ) - 0.05;
                                             const thickness = front - back;
                                             if (!(thickness > EPS)) continue;
                                             const lvlShape = buildRingShape(innerC, outerC, 0);
