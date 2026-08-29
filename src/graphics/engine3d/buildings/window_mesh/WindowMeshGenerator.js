@@ -163,6 +163,7 @@ export class WindowMeshGenerator {
         frameLayer.name = 'frame';
         const frameMesh = new THREE.InstancedMesh(bundle.frame, mats.frameMat, count);
         frameMesh.castShadow = true;
+        frameMesh.userData.expandIntoMergedShadowCaster = true;
         frameMesh.receiveShadow = true;
         frameMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         frameLayer.add(frameMesh);
@@ -191,6 +192,7 @@ export class WindowMeshGenerator {
         if (bundle.muntins && s.muntins.enabled) {
             muntinsMesh = new THREE.InstancedMesh(bundle.muntins, mats.muntinMat, count);
             muntinsMesh.castShadow = true;
+            muntinsMesh.userData.expandIntoMergedShadowCaster = true;
             muntinsMesh.receiveShadow = true;
             muntinsMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
             muntinsLayer.add(muntinsMesh);
@@ -201,6 +203,7 @@ export class WindowMeshGenerator {
             const joinMat = joinLayer === 'muntins' ? mats.muntinMat : mats.frameMat;
             const joinMesh = new THREE.InstancedMesh(bundle.joinBar, joinMat, count);
             joinMesh.castShadow = true;
+            joinMesh.userData.expandIntoMergedShadowCaster = true;
             joinMesh.receiveShadow = true;
             joinMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
             if (joinLayer === 'muntins') muntinsLayer.add(joinMesh);

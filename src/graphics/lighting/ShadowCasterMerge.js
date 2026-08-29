@@ -12,9 +12,8 @@
 // normalBias is applied on the receiving surface, not the caster.
 //
 // Not merged:
-// - InstancedMesh. Its instances would have to be expanded into real geometry
-//   (31k+ of them city-wide), and it already draws in a single call, so there
-//   is nothing to win and a lot of memory to lose.
+// - Optional InstancedMesh detail. Structural opening frames explicitly opt in
+//   and are expanded once so the building keeps one complete shadow draw.
 // - Anything alpha-tested or transparent. Its silhouette comes from a texture,
 //   which an untextured merged mesh cannot reproduce.
 // @ts-check
@@ -25,7 +24,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 const ORIGINAL_CAST = '_shadowMergeOriginalCast';
 
 function isMergeableCaster(o) {
-    if (!o?.isMesh || o.isInstancedMesh || !o.geometry) return false;
+    if (!o?.isMesh || (o.isInstancedMesh && !o.userData?.expandIntoMergedShadowCaster) || !o.geometry) return false;
     if (!o.geometry.attributes?.position) return false;
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     for (const m of mats) {
@@ -71,6 +70,7 @@ export function buildMergedShadowCasters(buildingsGroup) {
 
         inverse.copy(group.matrixWorld).invert();
         const parts = [];
+        const instanceMatrix = new THREE.Matrix4();
         for (const mesh of sources) {
             const src = mesh.geometry;
             const position = src.attributes.position;
@@ -90,8 +90,14 @@ export function buildMergedShadowCasters(buildingsGroup) {
             }
             // Bake into the building group's space so the merged mesh can sit
             // on the group with an identity transform.
-            geo.applyMatrix4(inverse.clone().multiply(mesh.matrixWorld));
-            parts.push(geo);
+            const instanceCount = mesh.isInstancedMesh ? mesh.count : 1;
+            for (let i = 0; i < instanceCount; i++) {
+                const part = i === instanceCount - 1 ? geo : geo.clone();
+                const matrix = inverse.clone().multiply(mesh.matrixWorld);
+                if (mesh.isInstancedMesh) { mesh.getMatrixAt(i, instanceMatrix); matrix.multiply(instanceMatrix); }
+                part.applyMatrix4(matrix);
+                parts.push(part);
+            }
         }
 
         // useGroups false: one draw for the whole building, which is the point.
@@ -131,13 +137,11 @@ export function setMergedShadowCastersEnabled(entries, enabled) {
 }
 
 /**
- * Index a building group's instanced facade detail — window sills, decorations,
- * handles — so its shadow casting can be switched as a set.
+ * Index a building group's optional instanced facade detail — window sills,
+ * decorations, handles — so its shadow casting can be switched as a set.
  *
- * These are excluded from the merge above (expanding 30k instances into real
- * geometry would cost a lot of memory to save nothing in the main pass), so
- * each one stays a draw call per shadow pass. There are ~1,091 of them city
- * wide, carrying ~0.31M triangles between them.
+ * These are excluded from the merge above, so each one stays a draw call per
+ * shadow pass when the optional detail-shadow setting is enabled.
  *
  * @param {THREE.Object3D} buildingsGroup
  * @returns {Array<{ mesh: THREE.Mesh, originalCast: boolean }>}
@@ -146,7 +150,7 @@ export function collectInstancedShadowCasters(buildingsGroup) {
     const entries = [];
     if (!buildingsGroup?.traverse) return entries;
     buildingsGroup.traverse((o) => {
-        if (!o?.isInstancedMesh) return;
+        if (!o?.isInstancedMesh || o.userData?.expandIntoMergedShadowCaster) return;
         entries.push({ mesh: o, originalCast: !!o.castShadow });
     });
     return entries;
@@ -155,13 +159,9 @@ export function collectInstancedShadowCasters(buildingsGroup) {
 /**
  * Switch instanced facade detail in or out of the shadow passes.
  *
- * Off is the default, and it is very nearly free: measured over a gameplay
- * street pose plus sunlit facades of the three most decorated buildings,
- * dropping these casters changes 0.05-0.07% of pixels and under 0.03% of them
- * by more than 16 levels, with no structure in the difference image. For
- * contrast, hiding the same meshes outright changes 10-13% of pixels — they
- * are very visible geometry that happens to cast almost nothing, because each
- * instance is a few centimetres of trim against a wall that already casts.
+ * Off is the default because these small details sit close to a wall that
+ * already casts. Structural opening frames are not optional; they are folded
+ * into the merged building silhouette instead.
  *
  * @returns {boolean} whether anything changed.
  */

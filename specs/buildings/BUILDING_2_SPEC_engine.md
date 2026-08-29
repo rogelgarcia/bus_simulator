@@ -229,6 +229,20 @@ Three rules keep that plane clear:
 Regression: `tests/core.test.js` -> "BuildingFabricationGenerator: stacked
 full-height openings leave the storey line clear".
 
+### 6.0.2 Structural opening shadows are part of the compiled silhouette
+
+- Opaque window/door frames, mullions, and join bars MUST cast shadows. Glass,
+  shades, and interior cards MUST NOT become opaque shadow casters.
+- Structural opening instances MUST be expanded into the position-only merged
+  building shadow mesh in compiled editor and gameplay rendering. Their source
+  instances switch off while the merged mesh casts, preserving one complete
+  shadow draw per building.
+- Structural opening shadows are not controlled by the optional instanced
+  detail-shadow setting; that setting is reserved for small repeated trim.
+
+Regression: `tests/core.test.js` -> "ShadowCasterMerge: structural instanced
+windows join the one-mesh building silhouette".
+
 ### 6.1 Bay wall material overrides + bay-to-bay linking (full spec)
 
 - A face’s effective wall material configuration MUST respect face master/slave rules:

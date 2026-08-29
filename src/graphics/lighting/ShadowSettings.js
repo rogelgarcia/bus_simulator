@@ -25,13 +25,9 @@ export const SHADOW_DEFAULTS = Object.freeze({
     // Cast each building's shadow from one merged mesh instead of one per
     // material. Lossless (same triangles), purely a draw-call saving.
     mergeCasters: true,
-    // Let a building's instanced facade detail (window sills, decorations,
-    // handles) cast shadows. Off by default: measured across a street pose and
-    // three sunlit facades of the most decorated buildings, switching it off
-    // changes 0.05-0.07% of pixels and under 0.03% by more than 16 levels,
-    // while hiding the same meshes outright changes 10-13%. The geometry
-    // matters to the image; its shadows do not. Off saves ~938 draw calls
-    // (~20% of the frame) and 0.82M triangles.
+    // Let optional instanced facade detail (window sills, decorations,
+    // handles) cast shadows. Structural frames and mullions are always folded
+    // into the building's merged caster, so this can remain off by default.
     instancedCasters: false
 });
 

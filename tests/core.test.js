@@ -154,6 +154,42 @@ async function runTests() {
 
     // ========== Camera Targeting (Regression) ==========
     const THREE = await import('three');
+    const {
+        buildMergedShadowCasters,
+        collectInstancedShadowCasters,
+        disposeMergedShadowCasters,
+        setMergedShadowCastersEnabled
+    } = await import('/src/graphics/lighting/ShadowCasterMerge.js');
+
+    test('ShadowCasterMerge: structural instanced windows join the one-mesh building silhouette', () => {
+        const root = new THREE.Group();
+        const building = new THREE.Group();
+        root.add(building);
+        for (let i = 0; i < 2; i++) {
+            const solid = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+            solid.position.y = i;
+            solid.castShadow = true;
+            building.add(solid);
+        }
+        const frame = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 2, 0.1), new THREE.MeshBasicMaterial(), 2);
+        frame.castShadow = true;
+        frame.userData.expandIntoMergedShadowCaster = true;
+        frame.setMatrixAt(0, new THREE.Matrix4().makeTranslation(2, 0, 0));
+        frame.setMatrixAt(1, new THREE.Matrix4().makeTranslation(4, 0, 0));
+        building.add(frame);
+
+        const entries = buildMergedShadowCasters(root);
+        assertEqual(entries.length, 1, 'Expected one building shadow mesh.');
+        assertTrue(entries[0].sources.includes(frame), 'Expected the window frames in the merged source set.');
+        entries[0].merged.geometry.computeBoundingBox();
+        assertTrue(entries[0].merged.geometry.boundingBox.max.x > 4.05, 'Expected both frame instances in the merged silhouette.');
+        assertFalse(collectInstancedShadowCasters(root).some((entry) => entry.mesh === frame), 'Structural frames must not be optional detail casters.');
+        setMergedShadowCastersEnabled(entries, true);
+        assertFalse(frame.castShadow, 'The source frame must switch off while its merged copy casts.');
+        disposeMergedShadowCasters(entries);
+        assertTrue(frame.castShadow, 'Disposal must restore the source frame caster.');
+    });
+
     const { GameplayState } = await import('/src/states/GameplayState.js');
 
     test('GameplayState: _getBusCenter updates world matrices (prevents manual camera stale target)', () => {
@@ -5510,6 +5546,7 @@ async function runTests() {
     });
 
     const { createWindowMeshMaterials } = await import('/src/graphics/engine3d/buildings/window_mesh/WindowMeshMaterials.js');
+    const { WindowMeshGenerator } = await import('/src/graphics/engine3d/buildings/window_mesh/WindowMeshGenerator.js');
     const {
         buildWindowMeshGeometryBundle,
         WINDOW_MESH_DOUBLE_DOOR_CENTER_GAP_METERS
@@ -5523,6 +5560,27 @@ async function runTests() {
         WINDOW_DECORATION_WIDTH_MODE,
         WINDOW_DECORATION_MATERIAL_MODE
     } = await import('/src/app/buildings/window_mesh/index.js');
+
+    test('WindowMeshGenerator: opaque frame structure opts into the merged caster, but glass does not', () => {
+        const generator = new WindowMeshGenerator();
+        const group = generator.createWindowGroup({
+            settings: getDefaultWindowMeshSettings(),
+            instances: [{ id: 'shadow-frame', position: { x: 0, y: 0, z: 0 }, yaw: 0 }]
+        });
+        const structural = [];
+        const glass = [];
+        group.traverse((mesh) => {
+            if (!mesh.isInstancedMesh) return;
+            if (mesh.parent?.name === 'frame' || mesh.parent?.name === 'muntins') structural.push(mesh);
+            if (mesh.parent?.name === 'glass') glass.push(mesh);
+        });
+        assertTrue(structural.length > 0, 'Expected frame or mullion meshes.');
+        assertTrue(structural.every((mesh) => mesh.castShadow && mesh.userData.expandIntoMergedShadowCaster), 'Every structural opening mesh must join the merged caster.');
+        assertTrue(glass.length > 0, 'Expected a glass mesh.');
+        assertTrue(glass.every((mesh) => !mesh.castShadow && !mesh.userData.expandIntoMergedShadowCaster), 'Glass must stay out of the opaque silhouette.');
+        generator.dispose();
+    });
+
     const { WindowMeshDecorationsRig } = await import('/src/graphics/gui/window_mesh_debugger/view/WindowMeshDecorationsRig.js');
     const { WindowMeshDebuggerUI } = await import('/src/graphics/gui/window_mesh_debugger/view/WindowMeshDebuggerUI.js');
     const { WindowMeshDebuggerView } = await import('/src/graphics/gui/window_mesh_debugger/view/WindowMeshDebuggerView.js');
