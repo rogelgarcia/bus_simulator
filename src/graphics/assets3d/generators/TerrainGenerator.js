@@ -7,6 +7,8 @@ import { GROUND_DEFAULTS, ROAD_DEFAULTS } from './GeneratorParams.js';
 import { createTreeField } from './TreeGenerator.js';
 
 const EPS = 1e-6;
+const CITY_GRASS_NORMAL_STRENGTH = 0.25;
+const CITY_GRASS_ENV_MAP_INTENSITY = 0.0;
 
 function ensureUv2(geo) {
     if (!geo?.attributes?.uv || geo.attributes.uv2) return;
@@ -38,8 +40,13 @@ function applyResolvedPayloadToGroundMaterial(material, payload) {
 
     material.map = tex.baseColor ?? null;
     material.normalMap = tex.normal ?? null;
+    material.normalScale.set(CITY_GRASS_NORMAL_STRENGTH, CITY_GRASS_NORMAL_STRENGTH);
     material.aoMap = orm ?? tex.ao ?? null;
     material.metalnessMap = orm ?? tex.metalness ?? null;
+
+    material.envMapIntensity = CITY_GRASS_ENV_MAP_INTENSITY;
+    material.userData = material.userData ?? {};
+    material.userData.iblEnvMapIntensity = CITY_GRASS_ENV_MAP_INTENSITY;
 
     const remap = normalizeRoughnessRemap(effective.roughnessRemap);
     const constantRoughness = remap && Math.abs(remap.max - remap.min) <= EPS
