@@ -16,7 +16,12 @@ import { scenarioAoFoliageMotionStability } from './scenario_ao_foliage_motion_s
 import { scenarioMaterialCalibrationCapture } from './scenario_material_calibration_capture.js';
 import { scenarioBuildingShowcase } from './scenario_building_showcase.js';
 import { scenarioAi515LotFitCompare } from './scenario_ai515_lot_fit_compare.js';
-import { scenarioAi516Burban, scenarioAi516BurbanCloseup } from './scenario_ai516_burban.js';
+import {
+    scenarioAi516Burban,
+    scenarioAi516BurbanCloseup,
+    scenarioAi516BurbanCloseupNeutral,
+    scenarioAi516BurbanNeutral
+} from './scenario_ai516_burban.js';
 
 const REGISTRY = new Map([
     [scenarioEmpty.id, scenarioEmpty],
@@ -37,7 +42,9 @@ const REGISTRY = new Map([
     [scenarioBuildingShowcase.id, scenarioBuildingShowcase],
     [scenarioAi515LotFitCompare.id, scenarioAi515LotFitCompare],
     [scenarioAi516Burban.id, scenarioAi516Burban],
-    [scenarioAi516BurbanCloseup.id, scenarioAi516BurbanCloseup]
+    [scenarioAi516BurbanNeutral.id, scenarioAi516BurbanNeutral],
+    [scenarioAi516BurbanCloseup.id, scenarioAi516BurbanCloseup],
+    [scenarioAi516BurbanCloseupNeutral.id, scenarioAi516BurbanCloseupNeutral]
 ]);
 
 export function listScenarioIds() {

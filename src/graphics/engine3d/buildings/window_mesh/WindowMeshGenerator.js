@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { sanitizeWindowMeshSettings, WINDOW_SHADE_DIRECTION } from '../../../../app/buildings/window_mesh/WindowMeshSettings.js';
 import { computeWindowMeshInstanceVariationFromSanitized } from '../../../../app/buildings/window_mesh/WindowMeshVariation.js';
+import { bendWindowGeometryToArc } from './WindowMeshCurveGeometry.js';
 import { buildWindowMeshGeometryBundle, getWindowMeshGeometryKey } from './WindowMeshGeometry.js';
 import { createWindowMeshMaterials, disposeWindowMeshMaterialCaches } from './WindowMeshMaterials.js';
 
@@ -47,6 +48,22 @@ function getInstancePose(entry) {
     const z = Number(p?.z) || 0;
     const yaw = Number(entry?.yaw) || 0;
     return { x, y, z, yaw };
+}
+
+function sanitizeWindowCurveBend(bend, width) {
+    if (bend === null || bend === undefined) return null;
+    const centerZ = Number(bend?.centerZ);
+    if (!Number.isFinite(centerZ) || Math.abs(centerZ) < 0.1) {
+        throw new RangeError('Window curve centerZ must be finite and at least 0.1m from the window plane.');
+    }
+    const windowWidth = Math.max(0.01, Number(width) || 0.01);
+    if (windowWidth / Math.abs(centerZ) >= Math.PI) {
+        throw new RangeError('Window curve radius is too small for the authored opening width.');
+    }
+    return Object.freeze({
+        centerZ,
+        segments: Math.max(2, Math.min(32, Math.round(Number(bend?.segments) || 8)))
+    });
 }
 
 export class WindowMeshGenerator {
@@ -100,8 +117,9 @@ export class WindowMeshGenerator {
         return materials;
     }
 
-    createWindowGroup({ settings, seed = 'window', instances = [] } = {}) {
+    createWindowGroup({ settings, seed = 'window', instances = [], bend = null } = {}) {
         const s = sanitizeWindowMeshSettings(settings);
+        const curveBend = sanitizeWindowCurveBend(bend, s.width);
         const bundle = this._getOrCreateGeometryBundle(s);
         const mats = this._getOrCreateMaterials(s);
         const geometryKey = getWindowMeshGeometryKey(s, { curveSegments: this.curveSegments });
@@ -113,6 +131,7 @@ export class WindowMeshGenerator {
         group.userData = group.userData ?? {};
         group.userData.settings = s;
         group.userData.mergeableBuildingWindowAssembly = true;
+        if (curveBend) group.userData.windowCurveBend = curveBend;
 
         if (!count) return group;
 
@@ -121,7 +140,6 @@ export class WindowMeshGenerator {
         // slip past its edge; it falls back to the opening geometry when the
         // panel needs no overscan (interior off / flush with the glass).
         const interiorGeo = bundle.interiorPanel?.isBufferGeometry ? bundle.interiorPanel.clone() : null;
-        group.userData.ownedGeometries = Object.freeze(interiorGeo ? [openingGeo, interiorGeo] : [openingGeo]);
         const shadeCoverage = new Float32Array(count);
         const shadeFlipX = new Float32Array(count);
         const shadeFabricScale = new Float32Array(count * 2);
@@ -240,18 +258,54 @@ export class WindowMeshGenerator {
             geo.setAttribute('instanceInteriorLight', new THREE.InstancedBufferAttribute(interiorLight, 1));
         }
 
+        const glassZ = s.frame.depth + s.glass.zOffset;
+        const shadeZ = glassZ + s.shade.zOffset;
+        const interiorZ = glassZ + Math.min(-0.02, s.shade.enabled ? (s.shade.zOffset - 0.02) : -0.02) + s.interior.zOffset;
+        const bendGeometry = (geometry, zOffset = 0) => bendWindowGeometryToArc(geometry, {
+            centerZ: curveBend.centerZ,
+            segments: curveBend.segments,
+            zOffset
+        });
+
+        const frameGeometry = curveBend ? bendGeometry(bundle.frame) : bundle.frame;
+        const handlesGeometry = curveBend && bundle.handles ? bendGeometry(bundle.handles) : bundle.handles;
+        const kickPanelsGeometry = curveBend && bundle.kickPanels ? bendGeometry(bundle.kickPanels) : bundle.kickPanels;
+        const muntinsGeometry = curveBend && bundle.muntins ? bendGeometry(bundle.muntins) : bundle.muntins;
+        const joinBarGeometry = curveBend && bundle.joinBar ? bendGeometry(bundle.joinBar) : bundle.joinBar;
+        const shadeGeometry = curveBend ? bendGeometry(openingGeo, shadeZ) : openingGeo;
+        const glassGeometry = curveBend ? bendGeometry(openingGeo, glassZ) : openingGeo;
+        const interiorSourceGeometry = interiorGeo ?? openingGeo;
+        const interiorGeometry = curveBend ? bendGeometry(interiorSourceGeometry, interiorZ) : interiorSourceGeometry;
+        if (curveBend) {
+            openingGeo.dispose();
+            interiorGeo?.dispose();
+        }
+        group.userData.ownedGeometries = Object.freeze(curveBend
+            ? Array.from(new Set([
+                frameGeometry,
+                handlesGeometry,
+                kickPanelsGeometry,
+                muntinsGeometry,
+                joinBarGeometry,
+                shadeGeometry,
+                glassGeometry,
+                interiorGeometry
+            ].filter(Boolean)))
+            : (interiorGeo ? [openingGeo, interiorGeo] : [openingGeo]));
+
         const dummy = new THREE.Object3D();
 
         const markMergeablePart = (mesh, part) => {
             mesh.userData = mesh.userData ?? {};
             mesh.userData.mergeableBuildingWindowPart = true;
             mesh.userData.buildingWindowPart = part;
-            mesh.userData.buildingWindowGeometryKey = `${geometryKey}:${part}`;
+            const bendKey = curveBend ? `:bend:${curveBend.centerZ.toFixed(4)}:${curveBend.segments}` : '';
+            mesh.userData.buildingWindowGeometryKey = `${geometryKey}${bendKey}:${part}`;
         };
 
         const frameLayer = new THREE.Group();
         frameLayer.name = 'frame';
-        const frameMesh = new THREE.InstancedMesh(bundle.frame, mats.frameMat, count);
+        const frameMesh = new THREE.InstancedMesh(frameGeometry, mats.frameMat, count);
         markMergeablePart(frameMesh, 'frame');
         frameMesh.castShadow = true;
         frameMesh.userData.expandIntoMergedShadowCaster = true;
@@ -259,8 +313,8 @@ export class WindowMeshGenerator {
         frameMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         frameLayer.add(frameMesh);
         let handlesMesh = null;
-        if (bundle.handles) {
-            handlesMesh = new THREE.InstancedMesh(bundle.handles, mats.handlesMat ?? mats.frameMat, count);
+        if (handlesGeometry) {
+            handlesMesh = new THREE.InstancedMesh(handlesGeometry, mats.handlesMat ?? mats.frameMat, count);
             handlesMesh.name = 'handles';
             markMergeablePart(handlesMesh, 'handles');
             handlesMesh.castShadow = true;
@@ -269,8 +323,8 @@ export class WindowMeshGenerator {
             frameLayer.add(handlesMesh);
         }
         let kickMesh = null;
-        if (bundle.kickPanels) {
-            kickMesh = new THREE.InstancedMesh(bundle.kickPanels, mats.frameMat, count);
+        if (kickPanelsGeometry) {
+            kickMesh = new THREE.InstancedMesh(kickPanelsGeometry, mats.frameMat, count);
             kickMesh.name = 'doorKickPanels';
             markMergeablePart(kickMesh, 'doorKickPanels');
             kickMesh.castShadow = true;
@@ -282,8 +336,8 @@ export class WindowMeshGenerator {
         const muntinsLayer = new THREE.Group();
         muntinsLayer.name = 'muntins';
         let muntinsMesh = null;
-        if (bundle.muntins && s.muntins.enabled) {
-            muntinsMesh = new THREE.InstancedMesh(bundle.muntins, mats.muntinMat, count);
+        if (muntinsGeometry && s.muntins.enabled) {
+            muntinsMesh = new THREE.InstancedMesh(muntinsGeometry, mats.muntinMat, count);
             markMergeablePart(muntinsMesh, 'muntins');
             muntinsMesh.castShadow = true;
             muntinsMesh.userData.expandIntoMergedShadowCaster = true;
@@ -292,10 +346,10 @@ export class WindowMeshGenerator {
             muntinsLayer.add(muntinsMesh);
         }
 
-        if (bundle.joinBar) {
+        if (joinBarGeometry) {
             const joinLayer = bundle.joinBarLayer === 'muntins' ? 'muntins' : 'frame';
             const joinMat = joinLayer === 'muntins' ? mats.muntinMat : mats.frameMat;
-            const joinMesh = new THREE.InstancedMesh(bundle.joinBar, joinMat, count);
+            const joinMesh = new THREE.InstancedMesh(joinBarGeometry, joinMat, count);
             markMergeablePart(joinMesh, 'joinBar');
             joinMesh.castShadow = true;
             joinMesh.userData.expandIntoMergedShadowCaster = true;
@@ -311,7 +365,7 @@ export class WindowMeshGenerator {
         if (s.interior.enabled) {
             interiorLayer = new THREE.Group();
             interiorLayer.name = 'interior';
-            interiorMesh = new THREE.InstancedMesh(interiorGeo ?? openingGeo, mats.interiorMat, count);
+            interiorMesh = new THREE.InstancedMesh(interiorGeometry, mats.interiorMat, count);
             markMergeablePart(interiorMesh, 'interior');
             interiorMesh.castShadow = false;
             interiorMesh.receiveShadow = false;
@@ -322,7 +376,7 @@ export class WindowMeshGenerator {
 
         const shadeLayer = new THREE.Group();
         shadeLayer.name = 'shade';
-        const shadeMesh = new THREE.InstancedMesh(openingGeo, mats.shadeMat, count);
+        const shadeMesh = new THREE.InstancedMesh(shadeGeometry, mats.shadeMat, count);
         markMergeablePart(shadeMesh, 'shade');
         shadeMesh.castShadow = false;
         shadeMesh.receiveShadow = false;
@@ -332,7 +386,7 @@ export class WindowMeshGenerator {
 
         const glassLayer = new THREE.Group();
         glassLayer.name = 'glass';
-        const glassMesh = new THREE.InstancedMesh(openingGeo, mats.glassMat, count);
+        const glassMesh = new THREE.InstancedMesh(glassGeometry, mats.glassMat, count);
         markMergeablePart(glassMesh, 'glass');
         glassMesh.castShadow = true;
         glassMesh.userData.expandIntoMergedShadowCaster = true;
@@ -341,10 +395,6 @@ export class WindowMeshGenerator {
         glassMesh.renderOrder = 2;
         glassMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         glassLayer.add(glassMesh);
-
-        const glassZ = s.frame.depth + s.glass.zOffset;
-        const shadeZ = glassZ + s.shade.zOffset;
-        const interiorZ = glassZ + Math.min(-0.02, s.shade.enabled ? (s.shade.zOffset - 0.02) : -0.02) + s.interior.zOffset;
 
         const insetLocalZ = -Number(s.frame.inset || 0);
 
@@ -376,16 +426,28 @@ export class WindowMeshGenerator {
             muntinsMesh?.setMatrixAt(i, dummy.matrix);
 
             if (interiorMesh) {
-                dummy.position.set(baseX + sinYaw * interiorZ, baseY, baseZ + cosYaw * interiorZ);
+                dummy.position.set(
+                    baseX + sinYaw * (curveBend ? 0 : interiorZ),
+                    baseY,
+                    baseZ + cosYaw * (curveBend ? 0 : interiorZ)
+                );
                 dummy.updateMatrix();
                 interiorMesh.setMatrixAt(i, dummy.matrix);
             }
 
-            dummy.position.set(baseX + sinYaw * shadeZ, baseY, baseZ + cosYaw * shadeZ);
+            dummy.position.set(
+                baseX + sinYaw * (curveBend ? 0 : shadeZ),
+                baseY,
+                baseZ + cosYaw * (curveBend ? 0 : shadeZ)
+            );
             dummy.updateMatrix();
             shadeMesh.setMatrixAt(i, dummy.matrix);
 
-            dummy.position.set(baseX + sinYaw * glassZ, baseY, baseZ + cosYaw * glassZ);
+            dummy.position.set(
+                baseX + sinYaw * (curveBend ? 0 : glassZ),
+                baseY,
+                baseZ + cosYaw * (curveBend ? 0 : glassZ)
+            );
             dummy.updateMatrix();
             glassMesh.setMatrixAt(i, dummy.matrix);
         }

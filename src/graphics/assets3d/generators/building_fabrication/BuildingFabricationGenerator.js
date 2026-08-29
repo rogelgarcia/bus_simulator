@@ -2760,6 +2760,7 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
             const x = Number(entry?.x);
             const y = Number(entry?.y);
             const z = Number(entry?.z);
+            const u = Number(entry?.u);
             const width = Number(entry?.width);
             const height = Number(entry?.height);
             const wantsArch = !!entry?.wantsArch;
@@ -2799,7 +2800,20 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                 return out.length ? out : null;
             })();
             const list = map.get(faceId);
-            const item = { faceId, x, y, z, width, height, wantsArch, archRise: wantsArch ? archRise : 0.0, revealDepth, revealMaterialIndex, insetSteps };
+            const item = {
+                faceId,
+                x,
+                y,
+                z,
+                ...(Number.isFinite(u) ? { u } : {}),
+                width,
+                height,
+                wantsArch,
+                archRise: wantsArch ? archRise : 0.0,
+                revealDepth,
+                revealMaterialIndex,
+                insetSteps
+            };
             if (list) list.push(item);
             else map.set(faceId, [item]);
         }
@@ -3005,10 +3019,20 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                 const tx = dx / segLen;
                 const tz = dz / segLen;
                 for (const cut of cuts) {
-                    const localX = (cut.x - a.x) * tx + (cut.z - a.z) * tz;
-                    if (localX < -cutTol || localX > segLen + cutTol) continue;
-                    const perp = Math.abs((cut.x - a.x) * tz - (cut.z - a.z) * tx);
-                    if (perp > cutTol) continue;
+                    const cutU = Number(cut?.u);
+                    const aU = Number(a?.u);
+                    const bU = Number(b?.u);
+                    const hasFaceU = Number.isFinite(cutU) && Number.isFinite(aU) && Number.isFinite(bU)
+                        && Math.abs(bU - aU) > EPS;
+                    const localX = hasFaceU
+                        ? ((cutU - aU) / (bU - aU)) * segLen
+                        : ((cut.x - a.x) * tx + (cut.z - a.z) * tz);
+                    const cutHalfWidth = Math.max(EPS, Number(cut.width) || 0) * 0.5;
+                    if (localX + cutHalfWidth < -cutTol || localX - cutHalfWidth > segLen + cutTol) continue;
+                    if (!hasFaceU) {
+                        const perp = Math.abs((cut.x - a.x) * tz - (cut.z - a.z) * tx);
+                        if (perp > cutTol) continue;
+                    }
                     segCuts.push({ ...cut, localX });
                 }
             }
@@ -6526,6 +6550,30 @@ function pointOnFacadeFrame({ frame, u, depth }) {
     return { x: qf(x), y: 0, z: qf(z) };
 }
 
+function resolveCurvedWindowBend({ frame, point, nx, nz, settings, poseOffset }) {
+    const curve = frame?.curve ?? null;
+    if (!curve) return null;
+    const normalLength = Math.hypot(nx, nz);
+    if (!(normalLength > EPS)) throw new Error('Curved window placement requires a valid facade normal.');
+    const normalX = nx / normalLength;
+    const normalZ = nz / normalLength;
+    const pointX = Number(point?.x) || 0;
+    const pointZ = Number(point?.z) || 0;
+    const centerX = Number(curve?.center?.x);
+    const centerZ = Number(curve?.center?.z);
+    if (!Number.isFinite(centerX) || !Number.isFinite(centerZ)) {
+        throw new Error('Curved window placement requires a resolved footprint arc center.');
+    }
+    const frameInset = Math.max(0, Number(settings?.frame?.inset) || 0);
+    const centerDistance = (centerX - pointX) * normalX + (centerZ - pointZ) * normalZ;
+    const bendCenterZ = qf(centerDistance - ((Number(poseOffset) || 0) - frameInset));
+    const width = Math.max(0.1, Number(settings?.width) || 0.1);
+    return {
+        centerZ: bendCenterZ,
+        segments: clampInt(Math.ceil(width / 0.3), 4, 24)
+    };
+}
+
 /**
  * Ordered wall surfaces of each facade face, in plan.
  *
@@ -6655,15 +6703,26 @@ function projectFacadeCutoutOntoShell(cutout, { frames, shellDepthOf }) {
     if (!isFaceId(faceId)) return null;
     const frame = frames?.[faceId] ?? null;
     if (!frame) return null;
-    const sx = Number(frame.start?.x) || 0;
-    const sz = Number(frame.start?.z) || 0;
-    const tx = Number(frame.t?.x) || 0;
-    const tz = Number(frame.t?.z) || 0;
-    const u = (Number(cutout.x) - sx) * tx + (Number(cutout.z) - sz) * tz;
+    // Bay openings already carry their solved arc-length u. Legacy cutouts do
+    // not, so project them through the same facade-frame helper; its curved
+    // path resolves angle to arc distance while its straight path is the
+    // original tangent dot product.
+    const fallbackProjection = projectPointToFacadeFrame({
+        frame,
+        x: Number(cutout.x) || 0,
+        z: Number(cutout.z) || 0
+    });
+    const authoredU = Number(cutout.u);
+    const u = Number.isFinite(authoredU)
+        ? clamp(authoredU, 0, Math.max(0, Number(frame.length) || 0))
+        : fallbackProjection.u;
     const shellDepth = shellDepthOf(faceId);
     const point = pointOnFacadeFrame({ frame, u, depth: shellDepth });
-    const outerDepth = (Number(cutout.x) - sx) * (Number(frame.n?.x) || 0)
-        + (Number(cutout.z) - sz) * (Number(frame.n?.z) || 0);
+    const facadeSample = sampleFacadeFrameAtU(frame, u);
+    const outerDepth = ((Number(cutout.x) || 0) - (Number(facadeSample?.x) || 0))
+        * (Number(facadeSample?.n?.x) || 0)
+        + ((Number(cutout.z) || 0) - (Number(facadeSample?.z) || 0))
+        * (Number(facadeSample?.n?.z) || 0);
     // AI 510: a portal's visible reveal box may stop at its outermost carved
     // order while the door sits deeper; `shellRevealDepth` carries the true
     // frame-plane depth for the shell decision when the two differ.
@@ -6689,7 +6748,7 @@ function projectFacadeCutoutOntoShell(cutout, { frames, shellDepthOf }) {
     const linedRevealDepth = frameClearsShell
         ? 0
         : clamp((framePlaneDepth - shellDepth) + 0.4, 0.2, 1.2);
-    return { ...cutout, x: point.x, z: point.z, width, height, revealDepth: linedRevealDepth, insetSteps: null };
+    return { ...cutout, x: point.x, z: point.z, u, width, height, revealDepth: linedRevealDepth, insetSteps: null };
 }
 
 function cornerJoinPointWithDepths(aFrame, aDepth, bFrame, bDepth, corner) {
@@ -6833,6 +6892,57 @@ function buildCornerJoinLoopWithDepths({ frames, depthOf }) {
         if (Math.hypot(first.x - last.x, first.z - last.z) < 1e-6) out.pop();
     }
     return out;
+}
+
+/**
+ * Room-facing wall profile for an interior shell at per-face depths.
+ *
+ * Unlike the floor/ceiling outline, the wall builder needs face ids and
+ * facade-u on every point so it can route opening cuts to the correct wall
+ * segment. Curved faces therefore retain their authored arc samples here;
+ * collapsing one to its endpoint chord would put a flat wall behind curved
+ * glazing and leave its projected cuts with no matching segment.
+ */
+function buildInteriorShellLoopDetailWithDepths({ frames, depthOf }) {
+    const order = facadeFaceIdsOf(frames);
+    if (order.length < 3) return [];
+    const pairs = order.map((aId, i) => {
+        const bId = order[(i + 1) % order.length];
+        return cornerJoinPairWithDepths(
+            frames[aId], depthOf(aId),
+            frames[bId], depthOf(bId),
+            frames?.cornerFacets?.[`${aId}${bId}`] ?? null
+        );
+    });
+    const raw = [];
+    for (let i = 0; i < order.length; i++) {
+        const faceId = order[i];
+        const frame = frames?.[faceId] ?? null;
+        if (!frame) continue;
+        const depth = Number(depthOf(faceId)) || 0;
+        const length = Math.max(0, Number(frame.length) || 0);
+        const start = pairs[(i - 1 + pairs.length) % pairs.length]?.bStart ?? null;
+        const end = pairs[i]?.aEnd ?? null;
+        if (start) raw.push({ ...start, kind: 'profile', faceId, u: 0, depth });
+        const segments = clampInt(frame?.curve?.segments ?? 1, 1, 96);
+        if (frame?.curve && segments > 1) {
+            for (let k = 1; k < segments; k++) {
+                const u = length * (k / segments);
+                raw.push({
+                    ...pointOnFacadeFrame({ frame, u, depth }),
+                    kind: 'profile',
+                    faceId,
+                    u,
+                    depth
+                });
+            }
+        }
+        if (end) raw.push({ ...end, kind: 'profile', faceId, u: length, depth });
+    }
+    // Negative signed area is the winding that points wall faces into the
+    // room. Facade-u remains valid when traversal reverses; the wall builder
+    // explicitly supports both increasing and decreasing u segments.
+    return signedArea(raw) > 0 ? raw.slice().reverse() : raw;
 }
 
 function projectPointToFacadeFrame({ frame, x, z }) {
@@ -9041,44 +9151,7 @@ export function buildBuildingFabricationVisualParts({
                         garageFacade
                     };
 
-                    // A curved opening is a small polygonal curtain-wall
-                    // assembly, not one flat chord pasted onto a curved wall.
-                    // Each sub-panel samples its own position, tangent, normal,
-                    // wall cut, frame, glass, sill/header, and storefront zones.
-                    // Shared boundary frames become the narrow vertical mullions
-                    // visible in the Burban reference.
-                    const canBendOpening = !!frame?.curve
-                        && (assetType === WINDOW_FABRICATION_ASSET_TYPE.WINDOW
-                            || assetType === WINDOW_FABRICATION_ASSET_TYPE.STOREFRONT);
-                    if (canBendOpening) {
-                        const curvedPanelCount = clampInt(Math.ceil(width / 0.45), 2, 8);
-                        const curvedPanelWidth = width / curvedPanelCount;
-                        for (let repeatIndex = 0; repeatIndex < points.length; repeatIndex++) {
-                            const centerU = Number(points[repeatIndex]?.u) || 0;
-                            for (let panelIndex = 0; panelIndex < curvedPanelCount; panelIndex++) {
-                                const panelU = centerU + (panelIndex + 0.5 - curvedPanelCount * 0.5) * curvedPanelWidth;
-                                const sample = sampleFacadeFrameAtU(frame, panelU);
-                                const world = pointOnFacadeFrame({ frame, u: panelU, depth });
-                                const panelNx = Number(sample?.n?.x) || 0;
-                                const panelNz = Number(sample?.n?.z) || 0;
-                                bayWindowPlacements.push({
-                                    ...basePlacement,
-                                    bayId: `${basePlacement.bayId}:curve_${repeatIndex + 1}_${panelIndex + 1}`,
-                                    points: [{ ...world, u: panelU }],
-                                    yaw: Math.atan2(panelNx, panelNz),
-                                    nx: panelNx,
-                                    nz: panelNz,
-                                    width: curvedPanelWidth,
-                                    repeatCount: 1,
-                                    curvedWindowAssembly: true,
-                                    curvedWindowPanelIndex: panelIndex,
-                                    curvedWindowPanelCount: curvedPanelCount
-                                });
-                            }
-                        }
-                    } else {
-                        bayWindowPlacements.push(basePlacement);
-                    }
+                    bayWindowPlacements.push(basePlacement);
                 }
             }
 
@@ -9682,6 +9755,7 @@ export function buildBuildingFabricationVisualParts({
                                             x: px,
                                             y: outCenterY,
                                             z: pz,
+                                            ...(Number.isFinite(Number(point?.u)) ? { u: Number(point.u) } : {}),
                                             width: outWidth,
                                             height: outHeight,
                                             wantsArch: outWantsArch,
@@ -9729,6 +9803,7 @@ export function buildBuildingFabricationVisualParts({
                                             x: Number(point?.x) || 0,
                                             y: stackCutY,
                                             z: Number(point?.z) || 0,
+                                            ...(Number.isFinite(Number(point?.u)) ? { u: Number(point.u) } : {}),
                                             width: stackCutWidth,
                                             height: stackHeight,
                                             wantsArch: false,
@@ -9991,49 +10066,19 @@ export function buildBuildingFabricationVisualParts({
                             // which is what lets the facade's opening cutouts be
                             // projected onto it.
                             const shellDepthOf = (faceId) => (Number(depthMins[faceId]) || 0) - FLOOR_INTERIOR_SHELL_INSET_METERS;
-                            // A beveled plan corner has no shared mitre point:
-                            // each face's shell run ends on its own fold line and
-                            // a facet segment bridges them (AI 501). Keeping the
-                            // runs on their face lines is what lets the projected
-                            // facade cutouts land on them.
-                            const shellCornerPair = (aId, bId) => cornerJoinPairWithDepths(
-                                frames[aId], shellDepthOf(aId),
-                                frames[bId], shellDepthOf(bId),
-                                frames?.cornerFacets?.[`${aId}${bId}`] ?? null
-                            );
-                            const shellFaceOrder = facadeFaceIdsOf(frames);
-                            const interiorPairByCornerId = {};
-                            for (let ci = 0; ci < shellFaceOrder.length; ci++) {
-                                const aId = shellFaceOrder[ci];
-                                const bId = shellFaceOrder[(ci + 1) % shellFaceOrder.length];
-                                interiorPairByCornerId[`${aId}${bId}`] = shellCornerPair(aId, bId);
-                            }
                             const interiorLoopRaw = buildCornerJoinLoopWithDepths({ frames, depthOf: shellDepthOf });
                             const interiorLoop = simplifyLoopConsecutiveCollinearXZ(interiorLoopRaw, { tol: 1e-4, minEdge: 1e-3 });
                             if (interiorLoop && interiorLoop.length >= 3) {
                                 const interiorArea = signedArea(interiorLoop);
                                 const interiorShellLoop = interiorArea < 0 ? interiorLoop.slice().reverse() : interiorLoop;
-                                // One wall run per face, corner to corner, so a
-                                // segment's endpoints always share a face id. At a
-                                // mitred corner the cross-face hop is zero-length
-                                // and dropped by the builder's minimum edge; at a
-                                // beveled corner it is the chamfer facet, rendered
-                                // as plain shell wall.
-                                const interiorShellLoopDetailRaw = [];
-                                for (let fi = 0; fi < shellFaceOrder.length; fi++) {
-                                    const faceId = shellFaceOrder[fi];
-                                    const prevId = shellFaceOrder[(fi - 1 + shellFaceOrder.length) % shellFaceOrder.length];
-                                    const nextId = shellFaceOrder[(fi + 1) % shellFaceOrder.length];
-                                    interiorShellLoopDetailRaw.push(
-                                        { ...interiorPairByCornerId[`${prevId}${faceId}`].bStart, kind: 'profile', faceId },
-                                        { ...interiorPairByCornerId[`${faceId}${nextId}`].aEnd, kind: 'profile', faceId }
-                                    );
-                                }
-                                // Negative signed area is the winding that points the
-                                // builder's wall faces inward, at the room.
-                                const interiorShellLoopDetail = signedArea(interiorShellLoopDetailRaw) > 0
-                                    ? interiorShellLoopDetailRaw.slice().reverse()
-                                    : interiorShellLoopDetailRaw;
+                                // Wall detail keeps the same corner joins as the
+                                // floor/ceiling outline, plus arc samples tagged
+                                // with face-u so curved openings cut the correct
+                                // shell segments.
+                                const interiorShellLoopDetail = buildInteriorShellLoopDetailWithDepths({
+                                    frames,
+                                    depthOf: shellDepthOf
+                                });
                                 const interiorCutouts = (Array.isArray(facadeWallCutouts) ? facadeWallCutouts : [])
                                     .map((cut) => projectFacadeCutoutOntoShell(cut, { frames, shellDepthOf }))
                                     .filter((cut) => !!cut);
@@ -10837,15 +10882,19 @@ export function buildBuildingFabricationVisualParts({
                     // AI 488: storefront zone slabs / portal steps share materials
                     // within a floor segment (layer material is fixed here).
                     const storefrontZoneMaterialCache = new Map();
-                    const addCustomInstance = ({ defId, assetType, settings, decoration, x, y, z, yaw, instanceId, floorBaseY, floorTopY }) => {
+                    const addCustomInstance = ({ defId, assetType, settings, decoration, bend, x, y, z, yaw, instanceId, floorBaseY, floorTopY }) => {
                         const safeAssetType = normalizeWindowFabricationAssetType(assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
                         const safeSettings = sanitizeWindowMeshSettings(settings ?? null);
                         const safeDecoration = deepClone(decoration ?? null);
+                        const safeBend = bend && typeof bend === 'object'
+                            ? { centerZ: Number(bend.centerZ), segments: clampInt(bend.segments, 2, 32) }
+                            : null;
                         const key = JSON.stringify({
                             defId: typeof defId === 'string' ? defId : '',
                             assetType: safeAssetType,
                             settings: safeSettings,
-                            decoration: safeDecoration
+                            decoration: safeDecoration,
+                            bend: safeBend
                         });
                         let bucket = customBuckets.get(key);
                         if (!bucket) {
@@ -10854,6 +10903,7 @@ export function buildBuildingFabricationVisualParts({
                                 assetType: safeAssetType,
                                 settings: safeSettings,
                                 decoration: safeDecoration,
+                                bend: safeBend,
                                 instances: []
                             };
                             customBuckets.set(key, bucket);
@@ -10979,6 +11029,7 @@ export function buildBuildingFabricationVisualParts({
                         const defId = typeof placement?.defId === 'string' ? placement.defId : '';
                         const defSettings = placement?.settings && typeof placement.settings === 'object' ? placement.settings : null;
                         const points = Array.isArray(placement?.points) ? placement.points : [];
+                        const placementFrame = facadeFrames?.[placement?.faceId] ?? null;
                         if (!points.length) continue;
 
                         const resolvedPlacement = resolveBayOpeningPlacementInSegment({
@@ -11108,20 +11159,32 @@ export function buildBuildingFabricationVisualParts({
                                     const point = points[pointIndex] && typeof points[pointIndex] === 'object' ? points[pointIndex] : null;
                                     const px = Number(point?.x) || 0;
                                     const pz = Number(point?.z) || 0;
+                                    const pointNx = Number(point?.nx ?? nx) || 0;
+                                    const pointNz = Number(point?.nz ?? nz) || 0;
+                                    const pointYaw = Number(point?.yaw ?? yaw) || 0;
                                     const baseInstanceId = points.length > 1
                                         ? `${layerId || 'layer'}:${floor}:${i}:${defId || 'opening'}:${pointIndex}`
                                         : `${layerId || 'layer'}:${floor}:${i}:${defId || 'opening'}`;
 
                                     const glazingY = openingBottomY + layout.glazing.yBottom + layout.glazing.height * 0.5;
+                                    const glazingPoseOffset = windowOffset - glazingInset;
                                     addCustomInstance({
                                         defId,
                                         assetType: placementAssetType,
                                         settings: zoneSettings.glazing,
                                         decoration: placement?.decoration ?? null,
-                                        x: px + nx * (windowOffset - glazingInset),
+                                        bend: resolveCurvedWindowBend({
+                                            frame: placementFrame,
+                                            point,
+                                            nx: pointNx,
+                                            nz: pointNz,
+                                            settings: zoneSettings.glazing,
+                                            poseOffset: glazingPoseOffset
+                                        }),
+                                        x: px + pointNx * glazingPoseOffset,
                                         y: glazingY,
-                                        z: pz + nz * (windowOffset - glazingInset),
-                                        yaw,
+                                        z: pz + pointNz * glazingPoseOffset,
+                                        yaw: pointYaw,
                                         instanceId: `${baseInstanceId}:glazing`,
                                         floorBaseY: yCursor,
                                         floorTopY: yCursor + segHeight
@@ -11129,15 +11192,24 @@ export function buildBuildingFabricationVisualParts({
 
                                     if (zoneSettings.transom) {
                                         const transomY = openingBottomY + layout.transom.yBottom + layout.transom.height * 0.5;
+                                        const transomPoseOffset = windowOffset - transomInset;
                                         addCustomInstance({
                                             defId,
                                             assetType: placementAssetType,
                                             settings: zoneSettings.transom,
                                             decoration: null,
-                                            x: px + nx * (windowOffset - transomInset),
+                                            bend: resolveCurvedWindowBend({
+                                                frame: placementFrame,
+                                                point,
+                                                nx: pointNx,
+                                                nz: pointNz,
+                                                settings: zoneSettings.transom,
+                                                poseOffset: transomPoseOffset
+                                            }),
+                                            x: px + pointNx * transomPoseOffset,
                                             y: transomY,
-                                            z: pz + nz * (windowOffset - transomInset),
-                                            yaw,
+                                            z: pz + pointNz * transomPoseOffset,
+                                            yaw: pointYaw,
                                             instanceId: `${baseInstanceId}:transom`,
                                             floorBaseY: yCursor,
                                             floorTopY: yCursor + segHeight
@@ -11266,18 +11338,30 @@ export function buildBuildingFabricationVisualParts({
                                 const point = points[pointIndex] && typeof points[pointIndex] === 'object' ? points[pointIndex] : null;
                                 const x = Number(point?.x) || 0;
                                 const z = Number(point?.z) || 0;
+                                const pointNx = Number(point?.nx ?? nx) || 0;
+                                const pointNz = Number(point?.nz ?? nz) || 0;
+                                const pointYaw = Number(point?.yaw ?? yaw) || 0;
                                 const baseInstanceId = points.length > 1
                                     ? `${layerId || 'layer'}:${floor}:${i}:${defId || 'opening'}:${pointIndex}`
                                     : `${layerId || 'layer'}:${floor}:${i}:${defId || 'opening'}`;
+                                const bottomPoseOffset = windowOffset - bottomFrameInset;
                                 addCustomInstance({
                                     defId,
                                     assetType: placementAssetType,
                                     settings: bottomSettings,
                                     decoration: bottomDecoration,
-                                    x: x + nx * (windowOffset - bottomFrameInset),
+                                    bend: resolveCurvedWindowBend({
+                                        frame: placementFrame,
+                                        point,
+                                        nx: pointNx,
+                                        nz: pointNz,
+                                        settings: bottomSettings,
+                                        poseOffset: bottomPoseOffset
+                                    }),
+                                    x: x + pointNx * bottomPoseOffset,
                                     y: bottomY,
-                                    z: z + nz * (windowOffset - bottomFrameInset),
-                                    yaw,
+                                    z: z + pointNz * bottomPoseOffset,
+                                    yaw: pointYaw,
                                     instanceId: (topSettings && topHeight > EPS)
                                         ? `${baseInstanceId}:bottom`
                                         : baseInstanceId,
@@ -12032,15 +12116,24 @@ export function buildBuildingFabricationVisualParts({
                                     }
                                 }
                                 if (topSettings && topHeight > EPS) {
+                                    const topPoseOffset = windowOffset - topPlacementInset;
                                     addCustomInstance({
                                         defId: topDefId,
                                         assetType: topAssetType,
                                         settings: topSettings,
                                         decoration: topDecoration,
-                                        x: x + nx * (windowOffset - topPlacementInset),
+                                        bend: resolveCurvedWindowBend({
+                                            frame: placementFrame,
+                                            point,
+                                            nx: pointNx,
+                                            nz: pointNz,
+                                            settings: topSettings,
+                                            poseOffset: topPoseOffset
+                                        }),
+                                        x: x + pointNx * topPoseOffset,
                                         y: topY,
-                                        z: z + nz * (windowOffset - topPlacementInset),
-                                        yaw,
+                                        z: z + pointNz * topPoseOffset,
+                                        yaw: pointYaw,
                                         instanceId: `${baseInstanceId}:top`,
                                         floorBaseY: yCursor,
                                         floorTopY: yCursor + segHeight
@@ -12097,7 +12190,8 @@ export function buildBuildingFabricationVisualParts({
                         const group = windowMeshGenerator.createWindowGroup({
                             settings: bucket.settings,
                             seed: bucket.defId || 'bf2_window',
-                            instances: bucket.instances
+                            instances: bucket.instances,
+                            bend: bucket.bend
                         });
                         group.name = `bf2_window_${bucket.defId || 'custom'}`;
                         group.userData = group.userData ?? {};
@@ -14252,6 +14346,7 @@ export const __testOnly = Object.freeze({
     pointOnFacadeFrame,
     cornerJoinPairWithDepths,
     buildCornerJoinLoopWithDepths,
+    buildInteriorShellLoopDetailWithDepths,
     computeQuadFacadeSilhouette,
     buildWallSidesGeometryFromLoopDetailXZ,
     segmentOverOpeningRange,

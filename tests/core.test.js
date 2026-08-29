@@ -347,6 +347,7 @@ async function runTests() {
     });
 
     // ========== Building Materials / IBL ==========
+    const { applyIBLToScene: applyIBLToSceneForMaterialTest } = await import('/src/graphics/lighting/IBL.js');
     const { buildBuildingVisualParts: buildBuildingVisualPartsForIbl } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
     const { buildBuildingFabricationVisualParts: buildBuildingFabricationVisualPartsForIbl } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js');
 
@@ -375,6 +376,27 @@ async function runTests() {
             }
         }
     };
+
+    test('IBL: managed material env maps inherit scene rotation on assign and resync', () => {
+        const scene = new THREE.Scene();
+        const envMap = new THREE.Texture();
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshStandardMaterial();
+        scene.add(new THREE.Mesh(geometry, material));
+
+        scene.environmentRotation.set(0, Math.PI / 3, 0);
+        applyIBLToSceneForMaterialTest(scene, envMap, { enabled: true });
+        assertEqual(material.envMap, envMap, 'Expected scene IBL to manage the material env map.');
+        assertNear(material.envMapRotation.y, Math.PI / 3, 1e-6, 'Expected initial scene environment rotation.');
+
+        scene.environmentRotation.set(0, -0.4, 0);
+        applyIBLToSceneForMaterialTest(scene, envMap, { enabled: true });
+        assertNear(material.envMapRotation.y, -0.4, 1e-6, 'Expected managed env map rotation to resync.');
+
+        geometry.dispose();
+        material.dispose();
+        envMap.dispose();
+    });
 
     test('BuildingGenerator: walls opt out of IBL', () => {
         const map = makeTinyMap({ width: 1, height: 1, tileSize: 2 });
@@ -5205,6 +5227,25 @@ async function runTests() {
             reference: farCandidate
         });
         assertEqual(noSnap, null, 'Expected far candidate to remain unsnapped.');
+    });
+
+    test('BuildingFabrication2View: footprint loop comparison notices arc-only edits', () => {
+        const matches = buildingFabrication2ViewTestOnly?.footprintLoopsMatchForEditor;
+        assertTrue(typeof matches === 'function', 'Expected BF2 footprint comparison helper.');
+        const base = [
+            { x: -5, z: 5, runId: 'A', runForward: true },
+            { x: 5, z: 5, runId: 'B', runForward: true },
+            { x: 5, z: -5, runId: 'C', runForward: true },
+            { x: -5, z: -5, runId: 'D', runForward: true }
+        ];
+        const curved = base.map((point) => ({ ...point }));
+        curved[1].arc = { bulge: Math.SQRT2 - 1, segments: 18 };
+        assertFalse(matches(base, curved), 'Adding curvature must count as a footprint edit.');
+
+        const smoother = curved.map((point) => ({ ...point, ...(point.arc ? { arc: { ...point.arc } } : {}) }));
+        smoother[1].arc.segments = 24;
+        assertFalse(matches(curved, smoother), 'Changing only curve tessellation must count as a footprint edit.');
+        assertTrue(matches(curved, curved.map((point) => ({ ...point, ...(point.arc ? { arc: { ...point.arc } } : {}) }))), 'Equivalent curve metadata should compare equal.');
     });
 
     test('BuildingFabrication2View: selecting door definition applies catalog size/muntins and top inherits main type', async () => {
@@ -20896,6 +20937,241 @@ async function runTests() {
         for (const p of curvedSamples) {
             assertNear(Math.hypot(p.x - 12, p.z - 8), 6.5, 0.003, 'Projected trim follows one concentric radius.');
         }
+    });
+
+    test('BuildingFabricationGenerator: curved interior shell walls follow the arc and receive face-u opening cuts', () => {
+        const loop = [
+            { x: -18, z: -14, runId: 'D', runForward: true },
+            { x: 18, z: -14, runId: 'C', runForward: true },
+            { x: 18, z: 8, runId: 'B', runForward: true, arc: { bulge: Math.SQRT2 - 1, segments: 18 } },
+            { x: 12, z: 14, runId: 'A', runForward: true },
+            { x: -18, z: 14, runId: 'E', runForward: true }
+        ];
+        const frames = buildingFabricationGeneratorTestOnly.computeFacadeFramesFromLoop(loop, {});
+        const buildDetail = buildingFabricationGeneratorTestOnly.buildInteriorShellLoopDetailWithDepths;
+        const projectCutout = buildingFabricationGeneratorTestOnly.projectFacadeCutoutOntoShell;
+        const buildWalls = buildingFabricationGeneratorTestOnly.buildWallSidesGeometryFromLoopDetailXZ;
+        assertTrue(typeof buildDetail === 'function' && typeof projectCutout === 'function', 'Expected interior-shell curve helpers.');
+
+        const shellDepth = -0.2;
+        const detail = buildDetail({ frames, depthOf: () => shellDepth });
+        const curvedPoints = detail.filter((point) => point.faceId === 'B');
+        assertEqual(curvedPoints.length, frames.B.curve.segments + 1, 'Curved shell wall retains every authored arc ring.');
+        for (const point of curvedPoints) {
+            assertNear(Math.hypot(point.x - 12, point.z - 8), 6 + shellDepth, 0.003, 'Shell wall sample stays concentric with face B.');
+            assertTrue(Number.isFinite(point.u), 'Every curved shell point carries facade-u for cut routing.');
+        }
+        assertEqual(detail.filter((point) => point.faceId === 'A').length, 2, 'A straight shell face keeps its original endpoint-only profile.');
+
+        const cutU = frames.B.length * 0.43;
+        const facadePoint = buildingFabricationGeneratorTestOnly.pointOnFacadeFrame({
+            frame: frames.B,
+            u: cutU,
+            depth: -0.05
+        });
+        const projected = projectCutout({
+            faceId: 'B',
+            x: facadePoint.x,
+            y: 1.5,
+            z: facadePoint.z,
+            u: cutU,
+            width: 1.4,
+            height: 1.6,
+            wantsArch: false,
+            revealDepth: 0.02,
+            shellRevealDepth: 0.02
+        }, { frames, shellDepthOf: () => shellDepth });
+        const expectedPoint = buildingFabricationGeneratorTestOnly.pointOnFacadeFrame({
+            frame: frames.B,
+            u: cutU,
+            depth: shellDepth
+        });
+        assertNear(projected.u, cutU, 1e-6, 'Shell cut preserves authored arc-length u.');
+        assertNear(projected.x, expectedPoint.x, 1e-6, 'Shell cut projects onto the concentric arc (x).');
+        assertNear(projected.z, expectedPoint.z, 1e-6, 'Shell cut projects onto the concentric arc (z).');
+
+        const plainGeo = buildWalls(detail, { height: 3.0, revealDirectionSign: -1 });
+        const cutGeo = buildWalls(detail, { height: 3.0, cutouts: [projected], revealDirectionSign: -1 });
+        const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+        const plainMesh = new THREE.Mesh(plainGeo, material);
+        const cutMesh = new THREE.Mesh(cutGeo, material);
+        plainMesh.updateMatrixWorld(true);
+        cutMesh.updateMatrixWorld(true);
+        const sample = buildingFabricationGeneratorTestOnly.sampleFacadeFrameAtU(frames.B, cutU);
+        const rayOrigin = new THREE.Vector3(
+            expectedPoint.x + sample.n.x * 0.5,
+            projected.y,
+            expectedPoint.z + sample.n.z * 0.5
+        );
+        const rayDirection = new THREE.Vector3(-sample.n.x, 0, -sample.n.z).normalize();
+        const raycaster = new THREE.Raycaster(rayOrigin, rayDirection, 0, 100);
+        const plainHits = raycaster.intersectObject(plainMesh, false);
+        const cutHits = raycaster.intersectObject(cutMesh, false);
+        assertTrue(plainHits.length > 0 && plainHits[0].distance < 0.75, 'Uncut control ray meets the curved shell wall.');
+        assertTrue(!cutHits.length || cutHits[0].distance > 2.0, 'The same ray passes through the curved shell opening instead of hitting a flat/chord wall.');
+
+        // Legacy straight cutouts do not carry u. Their fallback remains the
+        // original tangent projection and lands on the same straight plane.
+        const straightU = frames.A.length * 0.37;
+        const straightFacadePoint = buildingFabricationGeneratorTestOnly.pointOnFacadeFrame({ frame: frames.A, u: straightU, depth: -0.05 });
+        const straightProjected = projectCutout({
+            faceId: 'A',
+            x: straightFacadePoint.x,
+            y: 1.5,
+            z: straightFacadePoint.z,
+            width: 1.2,
+            height: 1.4,
+            revealDepth: 0.02
+        }, { frames, shellDepthOf: () => shellDepth });
+        const straightExpected = buildingFabricationGeneratorTestOnly.pointOnFacadeFrame({ frame: frames.A, u: straightU, depth: shellDepth });
+        assertNear(straightProjected.u, straightU, 1e-6, 'Straight cutout fallback preserves tangent u.');
+        assertNear(straightProjected.x, straightExpected.x, 1e-6, 'Straight shell projection remains unchanged (x).');
+        assertNear(straightProjected.z, straightExpected.z, 1e-6, 'Straight shell projection remains unchanged (z).');
+
+        // Integration guard: the production floor-layer path must use the
+        // sampled detail above, not merely expose a correct test helper.
+        const parts = buildAi512Parts({
+            footprintLoops: [loop],
+            layers: [createDefaultFloorLayer({
+                id: 'floor_curved_interior_shell',
+                floors: 1,
+                floorHeight: 3.0,
+                belt: { enabled: false },
+                windows: { enabled: false },
+                interior: { enabled: true }
+            })],
+            facades: {
+                B: {
+                    layout: {
+                        bays: {
+                            items: [{
+                                id: 'curve_shell_window',
+                                size: { mode: 'range', minMeters: 3.0, maxMeters: null },
+                                expandPreference: 'prefer_expand',
+                                window: {
+                                    enabled: true,
+                                    defId: 'window_white_sash_2x2',
+                                    assetType: 'window',
+                                    size: { widthMeters: 1.4, heightMeters: 1.6 },
+                                    heightMode: 'fixed',
+                                    verticalOffsetMeters: 0.7,
+                                    padding: { leftMeters: 0, rightMeters: 0 },
+                                    repeat: { count: 1 },
+                                    visual: { disableShades: true, interior: 'none' }
+                                }
+                            }]
+                        }
+                    }
+                }
+            }
+        });
+        const generatedWall = (parts.solidMeshes ?? []).find((mesh) => (
+            mesh?.userData?.buildingFab2Role === 'interior'
+            && mesh?.userData?.buildingFab2InteriorKind === 'wall'
+        )) ?? null;
+        assertTrue(!!generatedWall, 'Interior-enabled curved floor emits its shell wall.');
+        generatedWall.updateMatrixWorld(true);
+        const generatedU = frames.B.length * 0.5;
+        const generatedSample = buildingFabricationGeneratorTestOnly.sampleFacadeFrameAtU(frames.B, generatedU);
+        const generatedPoint = buildingFabricationGeneratorTestOnly.pointOnFacadeFrame({ frame: frames.B, u: generatedU, depth: -0.01 });
+        const generatedRay = new THREE.Raycaster(
+            new THREE.Vector3(
+                generatedPoint.x + generatedSample.n.x * 0.5,
+                1.5,
+                generatedPoint.z + generatedSample.n.z * 0.5
+            ),
+            new THREE.Vector3(-generatedSample.n.x, 0, -generatedSample.n.z).normalize(),
+            0,
+            100
+        );
+        const generatedHits = generatedRay.intersectObject(generatedWall, false);
+        assertTrue(!generatedHits.length || generatedHits[0].distance > 2.0, 'Generated curved floor shell contains the authored opening cut.');
+
+        plainGeo.dispose();
+        cutGeo.dispose();
+        material.dispose();
+    });
+
+    test('BuildingFabricationGenerator: one curved opening stays one full-width bent window', () => {
+        const loop = [
+            { x: -18, z: -14, runId: 'D', runForward: true },
+            { x: 18, z: -14, runId: 'C', runForward: true },
+            { x: 18, z: 8, runId: 'B', runForward: true, arc: { bulge: Math.SQRT2 - 1, segments: 18 } },
+            { x: 12, z: 14, runId: 'A', runForward: true },
+            { x: -18, z: 14, runId: 'E', runForward: true }
+        ];
+        const parts = buildAi512Parts({
+            footprintLoops: [loop],
+            layers: [createDefaultFloorLayer({
+                id: 'floor_curved_window',
+                floors: 1,
+                floorHeight: 3.2,
+                belt: { enabled: false },
+                windows: { enabled: false }
+            })],
+            facades: {
+                B: {
+                    layout: {
+                        bays: {
+                            items: [{
+                                id: 'curve_window',
+                                size: { mode: 'range', minMeters: 2.8, maxMeters: null },
+                                expandPreference: 'prefer_expand',
+                                window: {
+                                    enabled: true,
+                                    defId: 'window_white_sash_2x2',
+                                    assetType: 'window',
+                                    size: { widthMeters: 2.4, heightMeters: 2.2 },
+                                    heightMode: 'fixed',
+                                    verticalOffsetMeters: 0.5,
+                                    width: { minMeters: 2.4, maxMeters: null },
+                                    padding: { leftMeters: 0.2, rightMeters: 0.2 },
+                                    repeat: { count: 1 },
+                                    visual: { disableShades: true, interior: 'none' }
+                                }
+                            }]
+                        }
+                    }
+                }
+            }
+        });
+        const assemblies = [];
+        parts.windows?.traverse((object) => {
+            if (object?.userData?.windowDefinitionId === 'window_white_sash_2x2'
+                && object?.userData?.mergeableBuildingWindowAssembly === true) {
+                assemblies.push(object);
+            }
+        });
+        const instanceCount = assemblies.reduce(
+            (sum, assembly) => sum + (assembly.userData?.instanceVariations?.length ?? 0),
+            0
+        );
+        assertEqual(instanceCount, 1, 'One authored curved opening must not become repeated narrow window instances.');
+
+        const assembly = assemblies[0] ?? null;
+        const bend = assembly?.userData?.windowCurveBend ?? null;
+        const glass = assembly?.userData?.layers?.glass?.children?.[0] ?? null;
+        assertTrue(!!bend && bend.segments >= 4, 'Curved opening exposes its horizontal bend subdivision contract.');
+        assertTrue((glass?.geometry?.getAttribute('position')?.count ?? 0) > 12, 'Curved glass gains enough vertices to bend instead of remaining one flat quad.');
+
+        const positions = glass.geometry.getAttribute('position');
+        const yMin = Array.from({ length: positions.count }, (_entry, index) => positions.getY(index))
+            .reduce((min, value) => Math.min(min, value), Infinity);
+        const edgePoints = new Map();
+        for (let index = 0; index < positions.count; index++) {
+            if (Math.abs(positions.getY(index) - yMin) > 1e-5) continue;
+            const x = positions.getX(index);
+            const z = positions.getZ(index);
+            edgePoints.set(`${x.toFixed(5)}:${z.toFixed(5)}`, { x, z });
+        }
+        const angles = Array.from(edgePoints.values())
+            .map((point) => Math.asin(point.x / Math.hypot(point.x, point.z - bend.centerZ)))
+            .sort((a, b) => a - b);
+        const openingWidth = assembly.userData.settings.width
+            - assembly.userData.settings.frame.verticalWidth * 2;
+        const arcWidth = Math.abs(bend.centerZ) * (angles[angles.length - 1] - angles[0]);
+        assertTrue(edgePoints.size >= bend.segments + 1, 'Bent glass contains vertical subdivision rings across its width.');
+        assertNear(arcWidth, openingWidth, 0.01, 'Bending preserves the authored opening width as arc length.');
     });
 
     test('BuildingFabricationGenerator: curved wall UVs stay continuous in arc-length u (AI 516)', () => {

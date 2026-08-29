@@ -963,6 +963,41 @@
     flex-wrap: wrap;
 }
 
+.building-fab2-face-plan {
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 10px;
+    background:
+        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px),
+        rgba(0,0,0,0.12);
+    background-size: 12px 12px;
+}
+
+.building-fab2-face-curve-section {
+    margin-top: 12px;
+    padding: 10px;
+    border: 1px solid rgba(100,210,255,0.16);
+    border-radius: 10px;
+    background: rgba(100,210,255,0.035);
+}
+
+.building-fab2-face-curve-title {
+    margin-top: 0;
+    margin-bottom: 8px;
+}
+
+.building-fab2-face-curve-toggle-row {
+    align-items: center;
+}
+
+.building-fab2-face-curve-toggle {
+    justify-self: start;
+}
+
+.building-fab2-face-curve-sweep-row {
+    margin-top: 8px;
+}
+
 .building-fab2-face-btn {
     width: 44px;
     height: 44px;

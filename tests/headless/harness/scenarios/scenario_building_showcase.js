@@ -5,6 +5,8 @@ import { City } from '/src/graphics/visuals/city/City.js';
 import { createCityConfig } from '/src/app/city/CityConfig.js';
 import { getBuildingConfigById, getBuildingConfigs } from '/src/graphics/content3d/catalogs/BuildingConfigCatalog.js';
 import { getResolvedLightingSettings } from '/src/graphics/lighting/LightingSettings.js';
+import { getIBLConfig } from '/src/graphics/content3d/lighting/IBLConfig.js';
+import { applyIBLIntensity, applyIBLToScene, loadIBLTexture } from '/src/graphics/lighting/IBL.js';
 import { computeFrameDistanceForSphere } from '/src/graphics/engine3d/camera/ToolCameraController.js';
 import { PbrTextureLoaderService } from '/src/graphics/content3d/materials/PbrTexturePipeline.js';
 import { preloadPortalOrnamentParts } from '/src/graphics/assets3d/generators/building_fabrication/PortalOrnamentParts.js';
@@ -76,6 +78,18 @@ function collectTextureStats(root) {
         }
     });
     return stats;
+}
+
+async function waitForTextureImages(textures, { timeoutMs = 20_000 } = {}) {
+    const unique = Array.from(new Set(textures.filter((texture) => texture?.isTexture)));
+    if (!unique.length) throw new Error('Building showcase requires decoded ground textures');
+    const deadline = performance.now() + timeoutMs;
+    while (unique.some((texture) => !isTextureImageLoaded(texture))) {
+        if (performance.now() >= deadline) {
+            throw new Error('Building showcase timed out waiting for ground textures');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 16));
+    }
 }
 
 export const scenarioBuildingShowcase = {
@@ -197,8 +211,85 @@ export const scenarioBuildingShowcase = {
             mergeDedupeMaterials: options?.mergeDedupeMaterials !== false
         });
 
+        if (options?.waitForGroundTextures === true) {
+            await waitForTextureImages([
+                city.world?.floor?.material?.map,
+                city.world?.groundTiles?.material?.map
+            ]);
+        }
+
+        const groundMaterialRestore = [];
+        const groundPresentation = options?.groundPresentation && typeof options.groundPresentation === 'object'
+            ? options.groundPresentation
+            : null;
+        if (groundPresentation) {
+            for (const mesh of [city.world?.floor, city.world?.groundTiles]) {
+                const original = mesh?.material ?? null;
+                if (!mesh || !original?.map) continue;
+                const visibleMaterial = new THREE.MeshBasicMaterial({
+                    color: Number.isFinite(groundPresentation.color) ? groundPresentation.color : 0xffffff,
+                    map: original.map,
+                    fog: true
+                });
+                groundMaterialRestore.push({ mesh, original, visibleMaterial });
+                mesh.material = visibleMaterial;
+            }
+        }
+
         engine.context.city = city;
         city.attach(engine);
+
+        const lightingOptions = options?.lighting && typeof options.lighting === 'object'
+            ? options.lighting
+            : null;
+        if (Number.isFinite(lightingOptions?.hemiIntensity) && city.hemi) {
+            city.hemi.intensity = Math.max(0, lightingOptions.hemiIntensity);
+        }
+        if (Number.isFinite(lightingOptions?.sunIntensity)) {
+            city.setSunIntensity(Math.max(0, lightingOptions.sunIntensity));
+        }
+
+        const hdriOptions = options?.hdri && typeof options.hdri === 'object'
+            ? options.hdri
+            : null;
+        const previousLighting = hdriOptions ? engine.lightingSettings : null;
+        const previousEnvironmentPresentation = hdriOptions ? {
+            backgroundBlurriness: engine.scene.backgroundBlurriness,
+            backgroundIntensity: engine.scene.backgroundIntensity,
+            backgroundRotationY: engine.scene.backgroundRotation?.y ?? 0,
+            environmentRotationY: engine.scene.environmentRotation?.y ?? 0
+        } : null;
+        let showcaseIblConfig = null;
+        if (hdriOptions) {
+            showcaseIblConfig = getIBLConfig({
+                ...(engine.lightingSettings?.ibl ?? {}),
+                ...hdriOptions,
+                enabled: true,
+                setBackground: true
+            }, { includeUrlOverrides: false });
+            engine.setLightingSettings({
+                ...engine.lightingSettings,
+                ibl: showcaseIblConfig
+            });
+            const backgroundRotationY = THREE.MathUtils.degToRad(
+                Number(hdriOptions.backgroundRotationDeg ?? hdriOptions.rotationDeg) || 0
+            );
+            const environmentRotationY = THREE.MathUtils.degToRad(
+                Number(hdriOptions.environmentRotationDeg ?? hdriOptions.rotationDeg) || 0
+            );
+            if (engine.scene.backgroundRotation?.set) engine.scene.backgroundRotation.set(0, backgroundRotationY, 0);
+            if (engine.scene.environmentRotation?.set) engine.scene.environmentRotation.set(0, environmentRotationY, 0);
+            const envMap = await loadIBLTexture(engine.renderer, showcaseIblConfig);
+            applyIBLToScene(engine.scene, envMap, showcaseIblConfig);
+            applyIBLIntensity(engine.scene, showcaseIblConfig, { force: true });
+            if (Number.isFinite(hdriOptions.backgroundBlurriness)) {
+                engine.scene.backgroundBlurriness = Math.max(0, Math.min(1, hdriOptions.backgroundBlurriness));
+            }
+            if (Number.isFinite(hdriOptions.backgroundIntensity)) {
+                engine.scene.backgroundIntensity = Math.max(0, hdriOptions.backgroundIntensity);
+            }
+            city.update(engine);
+        }
 
         // Default showcase sun: high right of the corner view (azimuth 65)
         // so the +x face is always the lit one, with reveal shadows falling
@@ -247,7 +338,7 @@ export const scenarioBuildingShowcase = {
         engine.camera.lookAt(target);
         engine.camera.updateProjectionMatrix();
 
-        const iblExpected = getResolvedLightingSettings()?.ibl?.enabled === true;
+        const iblExpected = !!showcaseIblConfig?.enabled || getResolvedLightingSettings()?.ibl?.enabled === true;
 
         return {
             update(dt) {
@@ -266,7 +357,13 @@ export const scenarioBuildingShowcase = {
                     textures: collectTextureStats(city.group),
                     environment: {
                         expected: iblExpected,
-                        present: !!engine.scene.environment
+                        present: !!engine.scene.environment,
+                        backgroundExpected: !!showcaseIblConfig?.setBackground,
+                        backgroundPresent: !!engine.scene.background?.isTexture,
+                        hdrUrl: engine.scene.environment?.userData?.iblHdrUrl ?? null,
+                        iblId: showcaseIblConfig?.iblId ?? null,
+                        iblLabel: showcaseIblConfig?.iblLabel ?? null,
+                        skyDomeVisible: city.sky?.visible !== false
                     },
                     render: {
                         shadowMapEnabled: !!engine.renderer?.shadowMap?.enabled,
@@ -274,14 +371,38 @@ export const scenarioBuildingShowcase = {
                         toneMappingExposure: engine.renderer?.toneMappingExposure ?? null
                     },
                     ground: {
+                        materialId: 'pbr.grass_004',
                         floorMapPresent: !!city.world?.floor?.material?.map,
                         floorMapReady: isTextureImageLoaded(city.world?.floor?.material?.map),
-                        floorColorHex: city.world?.floor?.material?.color?.getHex?.() ?? null
+                        tileMapPresent: !!city.world?.groundTiles?.material?.map,
+                        tileMapReady: isTextureImageLoaded(city.world?.groundTiles?.material?.map),
+                        floorColorHex: city.world?.floor?.material?.color?.getHex?.() ?? null,
+                        visibilityBoostApplied: !!city.world?.floor?.material?.isMeshBasicMaterial
+                    },
+                    camera: {
+                        position: engine.camera.position.toArray(),
+                        quaternion: engine.camera.quaternion.toArray(),
+                        target: target.toArray()
                     }
                 };
             },
             dispose() {
+                for (const entry of groundMaterialRestore) {
+                    entry.mesh.material = entry.original;
+                    entry.visibleMaterial.dispose();
+                }
                 city.detach(engine);
+                if (previousLighting) engine.setLightingSettings(previousLighting);
+                if (previousEnvironmentPresentation) {
+                    engine.scene.backgroundBlurriness = previousEnvironmentPresentation.backgroundBlurriness;
+                    engine.scene.backgroundIntensity = previousEnvironmentPresentation.backgroundIntensity;
+                    if (engine.scene.backgroundRotation?.set) {
+                        engine.scene.backgroundRotation.set(0, previousEnvironmentPresentation.backgroundRotationY, 0);
+                    }
+                    if (engine.scene.environmentRotation?.set) {
+                        engine.scene.environmentRotation.set(0, previousEnvironmentPresentation.environmentRotationY, 0);
+                    }
+                }
                 engine.context.city = null;
                 engine.clearScene();
             }

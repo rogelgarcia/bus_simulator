@@ -39,6 +39,13 @@ import { MaterialPickerPopupController } from '../shared/material_picker/Materia
 import { createMaterialPickerRowController } from '../shared/material_picker/MaterialPickerRowController.js';
 import { setMaterialThumbToColor, setMaterialThumbToTexture } from '../shared/material_picker/materialThumb.js';
 import { SharedHsvbTintPicker } from '../shared/tint_picker/SharedHsvbTintPicker.js';
+import {
+    buildFacePlanPath,
+    createFaceArcMetadata,
+    FACE_CURVE_SWEEP_MAX_DEGREES,
+    FACE_CURVE_SWEEP_MIN_DEGREES,
+    resolveFaceCurveUiState
+} from './BuildingFabrication2FacePlanModel.js';
 
 const PAGE_SIZE = 6;
 const FACE_IDS = Object.freeze(['A', 'B', 'C', 'D']);
@@ -993,6 +1000,7 @@ export class BuildingFabrication2UI {
         this._materialSlots = null;
         this._brickPresetOptions = getBrickPresetOptions();
         this.onSelectFace = null;
+        this.onSetFaceArc = null;
         this.onToggleFaceLock = null;
         this.onSetFaceLockReverse = null;
         this.onHoverLayer = null;
@@ -1365,7 +1373,12 @@ export class BuildingFabrication2UI {
     // Renders only when a resolved face plan is present (footprint authored).
     _appendFacePlanPicker(doc, parent, { selectedFaceId = null, allowEdit = true, onSelect = null } = {}) {
         const plan = this._facadeFacePlan;
-        const segments = Array.isArray(plan?.segments) ? plan.segments.filter((s) => s?.a && s?.b && isFaceId(s?.faceId)) : [];
+        const segments = Array.isArray(plan?.segments)
+            ? plan.segments
+                .filter((s) => s?.a && s?.b && isFaceId(s?.faceId))
+                .map((segment) => ({ ...segment, path: buildFacePlanPath(segment) }))
+                .filter((segment) => segment.path.length >= 2)
+            : [];
         if (segments.length < 3) return;
 
         const width = 232;
@@ -1380,13 +1393,21 @@ export class BuildingFabrication2UI {
         canvas.style.display = 'block';
         canvas.style.margin = '2px auto 6px';
         canvas.style.cursor = allowEdit ? 'pointer' : 'default';
+        const curvedFaceIds = segments.filter((segment) => segment.path.length > 2).map((segment) => segment.faceId);
+        canvas.dataset.curvedFaceIds = curvedFaceIds.join(',');
+        canvas.setAttribute(
+            'aria-label',
+            curvedFaceIds.length
+                ? `Footprint face plan. Curved faces: ${curvedFaceIds.join(', ')}.`
+                : 'Footprint face plan. All faces are straight.'
+        );
 
         let minX = Infinity;
         let maxX = -Infinity;
         let minZ = Infinity;
         let maxZ = -Infinity;
         for (const seg of segments) {
-            for (const p of [seg.a, seg.b]) {
+            for (const p of seg.path) {
                 const x = Number(p.x) || 0;
                 const z = Number(p.z) || 0;
                 minX = Math.min(minX, x);
@@ -1412,22 +1433,25 @@ export class BuildingFabrication2UI {
             ctx.clearRect(0, 0, width, height);
             ctx.lineCap = 'round';
             for (const seg of segments) {
-                const a = toScreen(seg.a);
-                const b = toScreen(seg.b);
+                const path = seg.path.map(toScreen);
                 const isSelected = seg.faceId === selectedFaceId;
                 const isHover = seg.faceId === hoverFaceId;
                 ctx.beginPath();
-                ctx.moveTo(a.x, a.y);
-                ctx.lineTo(b.x, b.y);
+                ctx.moveTo(path[0].x, path[0].y);
+                for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
                 ctx.strokeStyle = isSelected ? '#4da3ff' : (isHover ? '#9fc7f2' : '#6b7078');
                 ctx.lineWidth = isSelected ? 4 : (isHover ? 3.5 : 2.5);
                 ctx.stroke();
 
                 // Label outside the edge midpoint (outward = away from center).
-                const mx = (a.x + b.x) * 0.5;
-                const my = (a.y + b.y) * 0.5;
-                let nx = -(b.y - a.y);
-                let ny = b.x - a.x;
+                const midIndex = Math.floor((path.length - 1) * 0.5);
+                const midpoint = path[midIndex];
+                const before = path[Math.max(0, midIndex - 1)];
+                const after = path[Math.min(path.length - 1, midIndex + 1)];
+                const mx = midpoint.x;
+                const my = midpoint.y;
+                let nx = -(after.y - before.y);
+                let ny = after.x - before.x;
                 const nLen = Math.hypot(nx, ny) || 1;
                 nx /= nLen;
                 ny /= nLen;
@@ -1453,18 +1477,21 @@ export class BuildingFabrication2UI {
             let best = null;
             let bestDist = 12;
             for (const seg of segments) {
-                const a = toScreen(seg.a);
-                const b = toScreen(seg.b);
-                const abx = b.x - a.x;
-                const aby = b.y - a.y;
-                const len2 = abx * abx + aby * aby;
-                const t = len2 > 1e-9 ? Math.max(0, Math.min(1, ((px - a.x) * abx + (py - a.y) * aby) / len2)) : 0;
-                const dx = px - (a.x + abx * t);
-                const dy = py - (a.y + aby * t);
-                const d = Math.hypot(dx, dy);
-                if (d < bestDist) {
-                    bestDist = d;
-                    best = seg.faceId;
+                const path = seg.path.map(toScreen);
+                for (let i = 1; i < path.length; i++) {
+                    const a = path[i - 1];
+                    const b = path[i];
+                    const abx = b.x - a.x;
+                    const aby = b.y - a.y;
+                    const len2 = abx * abx + aby * aby;
+                    const t = len2 > 1e-9 ? Math.max(0, Math.min(1, ((px - a.x) * abx + (py - a.y) * aby) / len2)) : 0;
+                    const dx = px - (a.x + abx * t);
+                    const dy = py - (a.y + aby * t);
+                    const d = Math.hypot(dx, dy);
+                    if (d < bestDist) {
+                        bestDist = d;
+                        best = seg.faceId;
+                    }
                 }
             }
             return best;
@@ -1480,6 +1507,118 @@ export class BuildingFabrication2UI {
         }
 
         parent.appendChild(canvas);
+    }
+
+    _appendFaceCurveControls(doc, parent, { selectedFaceId = null, allowEdit = true } = {}) {
+        if (!isFaceId(selectedFaceId)) return;
+        const segment = this._facadeFacePlan?.segments?.find?.((entry) => entry?.faceId === selectedFaceId) ?? null;
+        if (!segment) return;
+
+        const state = resolveFaceCurveUiState(segment);
+        const canAuthor = allowEdit && segment.curveEditable !== false;
+        const section = doc.createElement('div');
+        section.className = 'building-fab2-face-curve-section';
+        section.dataset.faceId = selectedFaceId;
+
+        const title = doc.createElement('div');
+        title.className = 'building-fab2-subtitle building-fab2-face-curve-title';
+        title.textContent = `Face ${selectedFaceId} shape`;
+        section.appendChild(title);
+
+        const appendToggleRow = (labelText, role, options, activeValue, onSelect) => {
+            const row = doc.createElement('div');
+            row.className = 'building-fab-row building-fab-row-wide building-fab2-face-curve-toggle-row';
+            const label = doc.createElement('div');
+            label.className = 'building-fab-row-label';
+            label.textContent = labelText;
+            const toggle = doc.createElement('div');
+            toggle.className = 'building-fab2-width-mode-toggle building-fab2-face-curve-toggle';
+            for (const option of options) {
+                const btn = doc.createElement('button');
+                btn.type = 'button';
+                btn.className = 'building-fab2-width-mode-btn';
+                btn.dataset.role = role;
+                btn.dataset.value = option.value;
+                btn.textContent = option.label;
+                btn.disabled = !canAuthor;
+                btn.classList.toggle('is-active', option.value === activeValue);
+                btn.addEventListener('click', () => {
+                    if (!canAuthor || option.value === activeValue) return;
+                    onSelect(option.value);
+                });
+                toggle.appendChild(btn);
+            }
+            row.appendChild(label);
+            row.appendChild(toggle);
+            section.appendChild(row);
+        };
+
+        const buildArc = ({ direction = state.direction, sweepDegrees = state.sweepDegrees } = {}) => createFaceArcMetadata({
+            direction,
+            sweepDegrees,
+            outwardBulgeSign: segment.outwardBulgeSign,
+            ...('segments' in state ? { segments: state.segments } : {})
+        });
+
+        appendToggleRow(
+            'Shape',
+            'faceCurve:shape',
+            [{ value: 'straight', label: 'Straight' }, { value: 'curved', label: 'Curved' }],
+            state.enabled ? 'curved' : 'straight',
+            (value) => this.onSetFaceArc?.(selectedFaceId, value === 'curved' ? buildArc() : null)
+        );
+
+        if (state.enabled) {
+            appendToggleRow(
+                'Bend',
+                'faceCurve:direction',
+                [{ value: 'outward', label: 'Outward' }, { value: 'inward', label: 'Inward' }],
+                state.direction,
+                (direction) => this.onSetFaceArc?.(selectedFaceId, buildArc({ direction }))
+            );
+
+            const sweepRow = createRangeRow('Sweep');
+            sweepRow.row.classList.add('building-fab2-face-curve-sweep-row');
+            sweepRow.range.min = String(FACE_CURVE_SWEEP_MIN_DEGREES);
+            sweepRow.range.max = String(FACE_CURVE_SWEEP_MAX_DEGREES);
+            sweepRow.range.step = '1';
+            sweepRow.number.min = String(FACE_CURVE_SWEEP_MIN_DEGREES);
+            sweepRow.number.max = String(FACE_CURVE_SWEEP_MAX_DEGREES);
+            sweepRow.number.step = '1';
+            sweepRow.range.value = String(Math.round(state.sweepDegrees));
+            sweepRow.number.value = String(Math.round(state.sweepDegrees));
+            sweepRow.range.disabled = !canAuthor;
+            sweepRow.number.disabled = !canAuthor;
+            sweepRow.range.dataset.role = 'faceCurve:sweep';
+            sweepRow.number.dataset.role = 'faceCurve:sweep';
+            sweepRow.range.setAttribute('aria-label', `Face ${selectedFaceId} curve sweep in degrees`);
+            sweepRow.number.setAttribute('aria-label', `Face ${selectedFaceId} curve sweep in degrees`);
+
+            const syncSweep = (source, target) => {
+                const next = Math.max(
+                    FACE_CURVE_SWEEP_MIN_DEGREES,
+                    Math.min(FACE_CURVE_SWEEP_MAX_DEGREES, Number(source.value) || FACE_CURVE_SWEEP_MIN_DEGREES)
+                );
+                source.value = String(next);
+                target.value = String(next);
+                return next;
+            };
+            sweepRow.range.addEventListener('input', () => syncSweep(sweepRow.range, sweepRow.number));
+            sweepRow.number.addEventListener('input', () => syncSweep(sweepRow.number, sweepRow.range));
+            sweepRow.range.addEventListener('change', () => {
+                this.onSetFaceArc?.(selectedFaceId, buildArc({ sweepDegrees: syncSweep(sweepRow.range, sweepRow.number) }));
+            });
+            sweepRow.number.addEventListener('change', () => {
+                this.onSetFaceArc?.(selectedFaceId, buildArc({ sweepDegrees: syncSweep(sweepRow.number, sweepRow.range) }));
+            });
+            section.appendChild(sweepRow.row);
+        }
+
+        const hint = createHint(canAuthor
+            ? 'The curve changes the shared footprint silhouette; this remains one logical facade.'
+            : 'Curve authoring needs stable footprint run metadata for this face.');
+        section.appendChild(hint);
+        parent.appendChild(section);
     }
 
     setCornerTreatment(value) {
@@ -3938,6 +4077,7 @@ export class BuildingFabrication2UI {
                     btn.type = 'button';
                     btn.className = 'building-fab2-face-btn';
                     btn.textContent = faceId;
+                    btn.dataset.faceId = faceId;
                     btn.disabled = !allowEdit;
                     const slaveOf = lockedToByFace.get(faceId) ?? null;
                     const isSlave = isFaceId(slaveOf);
@@ -3954,6 +4094,10 @@ export class BuildingFabrication2UI {
                     faceButtonsRow.appendChild(btn);
                 }
                 body.appendChild(faceButtonsRow);
+                this._appendFaceCurveControls(faceButtonsRow.ownerDocument, body, {
+                    selectedFaceId,
+                    allowEdit
+                });
 
                 // The rest of the per-face configuration goes below the face selection.
                 const dynamicArea = document.createElement('div');

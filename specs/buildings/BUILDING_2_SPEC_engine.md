@@ -682,6 +682,20 @@ widths spring from different heights; the arcade makes the run share one line.
   the band proud of the bay's own plane, with a fixed 4cm embed back into the
   wall. `planeDepth - projection` is the buried-band bug, not the convention.
 
+### 7.2 Openings on curved faces
+
+- Curvature MUST NOT change opening semantics: one authored opening produces
+  one window assembly, and `window.repeat.count` remains the only source of
+  repeated window instances.
+- The authored opening width is arc length. Frame, authored muntins, glass,
+  shade, and interior surfaces are first built at that full flat width, gain
+  horizontal tessellation rings, and are then bent onto the resolved facade
+  radius. Tessellation seams are geometry only and MUST NOT emit extra mullions,
+  frame bars, window definitions, or placements.
+- A curved opening's wall cut carries its facade arc-length `u` coordinate so
+  the one logical cut continues across every tessellated wall segment it spans;
+  intermediate wall-segment boundaries do not become reveal jambs.
+
 The detailed content model is described in `specs/buildings/BUILDING_2_FACADE_LAYOUT_SPEC.md`.
 
 ---

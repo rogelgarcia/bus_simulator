@@ -41,6 +41,10 @@ import {
     stretchFootprint
 } from '../../../app/buildings/footprint_edits/BuildingFootprintEdits.js';
 import {
+    normalizeFootprintArcMetadata,
+    reverseFootprintArcMetadata
+} from '../../../app/buildings/footprint_curves/BuildingFootprintCurves.js';
+import {
     EDGE_BEVEL_DEFAULT_WIDTH_METERS,
     normalizeEdgeBevelConfig
 } from '../../../app/buildings/EdgeBevelModel.js';
@@ -478,6 +482,26 @@ function cloneLoop(loop) {
         ...(p?.split === true ? { split: true } : {}),
         ...(p?.arc && typeof p.arc === 'object' ? { arc: { ...p.arc } } : {})
     }));
+}
+
+function footprintLoopsMatchForEditor(a, b) {
+    const left = Array.isArray(a) ? a : [];
+    const right = Array.isArray(b) ? b : [];
+    if (left.length !== right.length) return false;
+    for (let i = 0; i < left.length; i++) {
+        const dx = Math.abs((Number(left[i]?.x) || 0) - (Number(right[i]?.x) || 0));
+        const dz = Math.abs((Number(left[i]?.z) || 0) - (Number(right[i]?.z) || 0));
+        const leftArc = normalizeFootprintArcMetadata(left[i]?.arc);
+        const rightArc = normalizeFootprintArcMetadata(right[i]?.arc);
+        if (dx > 1e-6
+            || dz > 1e-6
+            || left[i]?.runId !== right[i]?.runId
+            || left[i]?.runForward !== right[i]?.runForward
+            || (left[i]?.split === true) !== (right[i]?.split === true)
+            || (leftArc?.bulge ?? null) !== (rightArc?.bulge ?? null)
+            || (leftArc?.segments ?? null) !== (rightArc?.segments ?? null)) return false;
+    }
+    return true;
 }
 
 function createDefaultFootprintLoop({ widthMeters = DEFAULT_FOOTPRINT_WIDTH_M, depthMeters = DEFAULT_FOOTPRINT_DEPTH_M } = {}) {
@@ -1034,6 +1058,7 @@ export class BuildingFabrication2View {
         this.ui.onMoveLayer = (layerId, dir) => this._moveLayer(layerId, dir);
         this.ui.onDeleteLayer = (layerId) => this._deleteLayer(layerId);
         this.ui.onSelectFace = (layerId, faceId) => this._setSelectedFace(layerId, faceId);
+        this.ui.onSetFaceArc = (faceId, arc) => this._setFootprintFaceArc(faceId, arc);
         this.ui.onToggleFaceLock = (layerId, masterFaceId, targetFaceId) => this._toggleFaceLock(layerId, masterFaceId, targetFaceId);
         this.ui.onSetFaceLockReverse = (layerId, masterFaceId, targetFaceId, enabled) => {
             this._setFaceLockReverse(layerId, masterFaceId, targetFaceId, enabled);
@@ -1224,6 +1249,7 @@ export class BuildingFabrication2View {
         this.ui.onMoveLayer = null;
         this.ui.onDeleteLayer = null;
         this.ui.onSelectFace = null;
+        this.ui.onSetFaceArc = null;
         this.ui.onToggleFaceLock = null;
         this.ui.onSetFaceLockReverse = null;
         this.ui.onHoverLayer = null;
@@ -1391,11 +1417,23 @@ export class BuildingFabrication2View {
         const faceIds = Array.isArray(frames.order) ? frames.order : ['A', 'B', 'C', 'D'];
         return {
             faceIds,
-            segments: faceIds.map((faceId) => ({
-                faceId,
-                a: { x: Number(frames[faceId]?.start?.x) || 0, z: Number(frames[faceId]?.start?.z) || 0 },
-                b: { x: Number(frames[faceId]?.end?.x) || 0, z: Number(frames[faceId]?.end?.z) || 0 }
-            }))
+            segments: faceIds.map((faceId) => {
+                const frame = frames[faceId] ?? null;
+                const runIndex = Number.isInteger(frame?.runIndex) ? frame.runIndex : null;
+                const source = runIndex !== null ? loop[runIndex] : null;
+                const rawArc = normalizeFootprintArcMetadata(source?.arc);
+                const orientedArc = source?.runForward === false
+                    ? reverseFootprintArcMetadata(rawArc)
+                    : rawArc;
+                return {
+                    faceId,
+                    a: { x: Number(frame?.start?.x) || 0, z: Number(frame?.start?.z) || 0 },
+                    b: { x: Number(frame?.end?.x) || 0, z: Number(frame?.end?.z) || 0 },
+                    arc: orientedArc ? { ...orientedArc } : null,
+                    outwardBulgeSign: frame?.normalSide === 'left' ? -1 : 1,
+                    curveEditable: runIndex !== null && source?.runId === faceId
+                };
+            })
         };
     }
 
@@ -5673,6 +5711,33 @@ export class BuildingFabrication2View {
         return id;
     }
 
+    _setFootprintFaceArc(faceId, value) {
+        const face = isFaceId(faceId) ? faceId : null;
+        if (!face) return;
+        const loop = this._ensureCurrentFootprintLoop();
+        if (!Array.isArray(loop)) return;
+        const frames = computeFacadeFramesFromLoop(loop, { warnings: null });
+        const frame = frames?.[face] ?? null;
+        const runIndex = Number.isInteger(frame?.runIndex) ? frame.runIndex : null;
+        const point = runIndex !== null ? loop[runIndex] : null;
+        if (!point || point.runId !== face) return;
+
+        const orientedArc = value === null ? null : normalizeFootprintArcMetadata(value);
+        if (value !== null && !orientedArc) throw new Error(`BF2 face curve: invalid arc metadata for face ${face}.`);
+        const rawArc = point.runForward === false
+            ? reverseFootprintArcMetadata(orientedArc)
+            : orientedArc;
+        const previous = normalizeFootprintArcMetadata(point.arc);
+        if ((previous?.bulge ?? null) === (rawArc?.bulge ?? null)
+            && (previous?.segments ?? null) === (rawArc?.segments ?? null)) return;
+
+        if (rawArc) point.arc = { ...rawArc };
+        else delete point.arc;
+        this._syncUiState();
+        this._syncLayoutSceneState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
     _setSelectedFace(layerId, faceId) {
         const id = typeof layerId === 'string' ? layerId : '';
         if (!id) return;
@@ -6257,16 +6322,7 @@ export class BuildingFabrication2View {
         const prev = this._ensureCurrentFootprintLoop();
         if (!Array.isArray(prev)) return false;
 
-        let changed = prev.length !== next.length;
-        for (let i = 0; !changed && i < next.length; i++) {
-            const dx = Math.abs((Number(prev[i]?.x) || 0) - (Number(next[i]?.x) || 0));
-            const dz = Math.abs((Number(prev[i]?.z) || 0) - (Number(next[i]?.z) || 0));
-            if (dx > 1e-6 || dz > 1e-6 || prev[i]?.runId !== next[i]?.runId || prev[i]?.runForward !== next[i]?.runForward) {
-                changed = true;
-                break;
-            }
-        }
-        if (!changed) return false;
+        if (footprintLoopsMatchForEditor(prev, next)) return false;
 
         cfg.footprintLoops = [next];
         this._syncLayoutSceneState();
@@ -7018,5 +7074,6 @@ export class BuildingFabrication2View {
 }
 
 export const __testOnly = Object.freeze({
-    snapVertexToRightAngleIfClose
+    snapVertexToRightAngleIfClose,
+    footprintLoopsMatchForEditor
 });

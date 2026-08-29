@@ -265,6 +265,7 @@ function markMaterialsForEnvMapUpdate(root) {
 
 function syncMaterialEnvMapFromScene(root, envMap) {
     const nextEnv = envMap ?? null;
+    const environmentRotation = root?.isScene ? root.environmentRotation : null;
     root?.traverse?.((obj) => {
         if (!obj?.isMesh) return;
         const mat = obj.material ?? null;
@@ -276,9 +277,17 @@ function syncMaterialEnvMapFromScene(root, envMap) {
             const managed = !!userData._iblManagedEnvMap;
 
             if (nextEnv) {
-                if (entry.envMap === nextEnv) continue;
+                if (entry.envMap === nextEnv) {
+                    if (managed && environmentRotation && entry.envMapRotation?.copy) {
+                        entry.envMapRotation.copy(environmentRotation);
+                    }
+                    continue;
+                }
                 if (entry.envMap && !managed) continue;
                 entry.envMap = nextEnv;
+                if (environmentRotation && entry.envMapRotation?.copy) {
+                    entry.envMapRotation.copy(environmentRotation);
+                }
                 userData._iblManagedEnvMap = true;
                 entry.needsUpdate = true;
                 continue;
