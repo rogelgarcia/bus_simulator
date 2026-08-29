@@ -6,15 +6,15 @@
 // The reference is one idea repeated at two scales: a dark bronze curtain wall
 // on a 27-module grid sitting on a monumental burnt-cement base pierced by six
 // tall recessed openings. Everything below is derived from ONE module
-// M = 1.25m (the reference's 33.2px bay) and ONE floor pitch of 3.31m (88px),
-// so the elevation keeps the reference's proportions:
+// M = 1.25m (the reference's 33.2px bay) and an authored upper-floor pitch of
+// 3.7m (raised from the reference's measured 3.31m pitch):
 //   - front 27M = 33.75m of glass (34.15m at the base, which projects 0.2m)
 //   - flank 24M = 30.00m of glass (30.40m at the base)
 //   - 9 curtain wall glass courses separated by 8 metal spandrel panels
 //   - a 12.0m base: six openings on the reference rhythm, with every
 //     intermediate stone pier exactly two square panels wide
 const MODULE_METERS = 1.25;
-const CURTAIN_FLOOR_HEIGHT = 3.31;
+const CURTAIN_FLOOR_HEIGHT = 3.7;
 // The sill course is a storey without its panel band.
 const CURTAIN_SILL_FLOOR_HEIGHT = 2.29;
 const BASE_PROJECTION = 0.2;
@@ -66,8 +66,8 @@ const BASE_OPENING_DEPTH = -0.34;  // recessed; the window frame insets further
 // metal spandrel panel UNDER it, and both belong to the same window: the panel
 // is the window's own bottom rail grown to panel height, so it wears the
 // frame's metal, the mullion grid runs unbroken past it, and it casts shadow.
-// Reference proportions per 3.31m floor: 2.19m of glass over a 1.02m panel,
-// with a 0.10m head rail.
+// Authored proportions per 3.7m floor: 2.58m of glass over a 1.02m panel,
+// with a 0.10m head rail (the reference floor pitch was 3.31m).
 //
 // The wall is left as the 0.02m strip between neighbouring modules and nothing
 // else. It cannot carry the spandrel: a wall surface in this engine bottoms

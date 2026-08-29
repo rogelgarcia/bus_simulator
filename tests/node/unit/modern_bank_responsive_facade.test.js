@@ -27,6 +27,13 @@ function widthOf(items, sourceBayId) {
     return items.find((item) => item.sourceBayId === sourceBayId)?.widthMeters ?? NaN;
 }
 
+test('Modern Bank: upper curtain layer uses 3.7m floors', () => {
+    const floorLayers = MODERN_BANK_BUILDING_CONFIG.layers.filter((layer) => layer.type === 'floor');
+    const topLayer = floorLayers.at(-1);
+    assert.equal(topLayer.id, 'floor_mb_curtain');
+    assert.equal(topLayer.floorHeight, 3.7);
+});
+
 test('Modern Bank: intermediate stone piers are exactly two square panels wide', () => {
     const baseLayer = MODERN_BANK_BUILDING_CONFIG.layers.find((layer) => layer.id === 'floor_mb_base_low');
     const panelMeters = baseLayer.tiling.tileMeters / 3;
