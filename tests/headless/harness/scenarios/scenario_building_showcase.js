@@ -169,7 +169,10 @@ export const scenarioBuildingShowcase = {
         if (Array.isArray(footprintLoops) && footprintLoops.length) {
             entry.footprintLoops = footprintLoops.map((loop) => loop.map((point) => ({
                 x: (Number(point?.x) || 0) + centroid.x,
-                z: (Number(point?.z) || 0) + centroid.z
+                z: (Number(point?.z) || 0) + centroid.z,
+                ...(typeof point?.runId === 'string' ? { runId: point.runId } : {}),
+                ...(typeof point?.runForward === 'boolean' ? { runForward: point.runForward } : {}),
+                ...(point?.arc && typeof point.arc === 'object' ? { arc: { ...point.arc } } : {})
             })));
         }
 
@@ -190,6 +193,7 @@ export const scenarioBuildingShowcase = {
             generatorConfig: { render: { treesEnabled: false } },
             // A/B hook: lets a capture compare merged vs unmerged building geometry.
             mergeBuildingGeometry: options?.mergeBuildingGeometry !== false,
+            mergeBuildingWindowAssemblies: options?.mergeBuildingWindowAssemblies !== false,
             mergeDedupeMaterials: options?.mergeDedupeMaterials !== false
         });
 

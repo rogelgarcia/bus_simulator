@@ -1,3 +1,10 @@
+# DONE
+
+- Preserved marked collinear footprint points as independent BF2 facade frames while keeping unmarked and physical-run consumers unchanged.
+- Added parallel-safe equal-depth joins and unequal-depth return steps across facade silhouettes, interior shells, caps, closure bands, and cornice loops.
+- Added the separate `bradbury_block_split_test` comparison config with linked pavilion, corner-stack, and upper-field faces; the production Bradbury config remains unchanged.
+- Preserved split metadata through editor, footprint edits, city placement, import/export, and added focused core/Node regression coverage plus deterministic comparison captures.
+
 # Problem
 
 The reference Bradbury organization (user drawing, 2026-08-28) reads each

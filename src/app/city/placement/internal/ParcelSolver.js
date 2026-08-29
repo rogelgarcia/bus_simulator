@@ -258,7 +258,7 @@ export function placeDesignInRect({ designLoops, rect, front, align }) {
 
     const dx = targetMinX - design.minX;
     const dz = targetMinZ - design.minZ;
-    const loops = designLoops.map((loop) => loop.map((p) => ({ x: p.x + dx, z: p.z + dz })));
+    const loops = designLoops.map((loop) => loop.map((p) => ({ ...p, x: p.x + dx, z: p.z + dz })));
 
     const bounds = {
         minX: design.minX + dx,

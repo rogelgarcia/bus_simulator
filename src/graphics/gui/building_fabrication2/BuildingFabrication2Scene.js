@@ -60,6 +60,11 @@ const LAYOUT_WIDTH_GUIDE_Y_LIFT = 0.014;
 const LAYOUT_VERTEX_RING_COLOR = 0xffdf8e;
 const LAYOUT_VERTEX_RING_RADIUS = 0.4;
 const LAYOUT_VERTEX_RING_TUBE = 0.06;
+const LAYOUT_GIZMO_VALID_COLOR = 0x67f0a3;
+const LAYOUT_GIZMO_INVALID_COLOR = 0xff4d5c;
+const LAYOUT_GIZMO_PUSH_COLOR = 0x64d2ff;
+const LAYOUT_GIZMO_RADIUS = 0.34;
+const LAYOUT_GIZMO_PUSH_OFFSET_M = 1.4;
 const SUPPORT_SLAB_OVERHANG_M = 1.0;
 const SUPPORT_SLAB_THICKNESS_M = 0.5;
 const SUPPORT_SLAB_MATERIAL_ID = 'pbr.plastered_wall_02';
@@ -957,11 +962,15 @@ export class BuildingFabrication2Scene {
         this._layoutLoop = null;
         this._layoutHoverFaceId = null;
         this._layoutHoverVertexIndex = null;
+        this._layoutFaceFrame = null;
+        this._layoutStretchHandles = null;
+        this._layoutPushPull = null;
         this._layoutWidthGuideFaceIds = null;
         this._layoutFaceOverlay = null;
         this._layoutFaceLine = null;
         this._layoutWidthGuideLine = null;
         this._layoutVertexRing = null;
+        this._layoutGizmoGroup = null;
         this._layoutRayPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
         this._layoutRayPoint = new THREE.Vector3();
 
@@ -1020,6 +1029,9 @@ export class BuildingFabrication2Scene {
         this._layoutLoop = null;
         this._layoutHoverFaceId = null;
         this._layoutHoverVertexIndex = null;
+        this._layoutFaceFrame = null;
+        this._layoutStretchHandles = null;
+        this._layoutPushPull = null;
         this._sun = null;
         this._sky = null;
         this._wallDecorationsExplodedGroup = null;
@@ -1176,13 +1188,14 @@ export class BuildingFabrication2Scene {
         enabled = false,
         loop = null,
         hoverFaceId = null,
-        hoverVertexIndex = null,
-        widthGuideFaceIds = null
+        widthGuideFaceIds = null,
+        faceFrame = null,
+        stretchHandles = null,
+        pushPull = null
     } = {}) {
         const nextEnabled = !!enabled;
         const nextLoop = Array.isArray(loop) ? loop : null;
         const nextFaceId = isFaceId(hoverFaceId) ? hoverFaceId : null;
-        const nextVertexIndex = Number.isInteger(hoverVertexIndex) ? Math.max(0, hoverVertexIndex | 0) : null;
         const nextWidthGuideFaceIds = Array.isArray(widthGuideFaceIds)
             ? widthGuideFaceIds.filter((faceId) => isFaceId(faceId))
             : null;
@@ -1190,8 +1203,11 @@ export class BuildingFabrication2Scene {
         this._layoutAdjustEnabled = nextEnabled;
         this._layoutLoop = nextLoop;
         this._layoutHoverFaceId = nextFaceId;
-        this._layoutHoverVertexIndex = nextVertexIndex;
+        this._layoutHoverVertexIndex = null;
         this._layoutWidthGuideFaceIds = nextWidthGuideFaceIds;
+        this._layoutFaceFrame = faceFrame && typeof faceFrame === 'object' ? faceFrame : null;
+        this._layoutStretchHandles = stretchHandles && typeof stretchHandles === 'object' ? stretchHandles : null;
+        this._layoutPushPull = pushPull && typeof pushPull === 'object' ? pushPull : null;
         this._syncLayoutEditOverlays();
     }
 
@@ -2718,11 +2734,22 @@ export class BuildingFabrication2Scene {
             disposeObject3D(this._layoutVertexRing);
             this._layoutVertexRing = null;
         }
+        if (this._layoutGizmoGroup) {
+            this._layoutGizmoGroup.removeFromParent();
+            disposeObject3D(this._layoutGizmoGroup);
+            this._layoutGizmoGroup = null;
+        }
     }
 
     _getLayoutLoopFaceVertices(loop, faceId) {
         const points = Array.isArray(loop) ? loop : [];
-        if (points.length < 4) return null;
+        if (points.length < 3) return null;
+        const runIndex = points.findIndex((point) => point?.runId === faceId);
+        if (runIndex >= 0) {
+            const a = points[runIndex];
+            const b = points[(runIndex + 1) % points.length];
+            return a?.runForward === false ? { a: b, b: a } : { a, b };
+        }
         switch (faceId) {
             case 'A': return { a: points[0], b: points[1] };
             case 'B': return { a: points[1], b: points[2] };
@@ -2737,7 +2764,7 @@ export class BuildingFabrication2Scene {
 
         if (!this.root || !this._layoutAdjustEnabled || !this._building) return;
         const loop = Array.isArray(this._layoutLoop) ? this._layoutLoop : null;
-        if (!loop || loop.length < 4) return;
+        if (!loop || loop.length < 3) return;
 
         const baseY = this.getLayoutEditPlaneY();
         const topY = this._focusBox && Number.isFinite(this._focusBox.max.y)
@@ -2851,6 +2878,107 @@ export class BuildingFabrication2Scene {
                     this._layoutFaceLine = line;
                 }
             }
+        }
+
+        const frame = this._layoutFaceFrame;
+        if (frame?.start && frame?.end && frame?.normal) {
+            const group = new THREE.Group();
+            group.name = `bf2_layout_gizmos_${faceId ?? 'face'}`;
+            const y = baseY + 0.09;
+            const addHandle = (point, validity, name) => {
+                const valid = !!validity?.valid;
+                const color = valid ? LAYOUT_GIZMO_VALID_COLOR : LAYOUT_GIZMO_INVALID_COLOR;
+                const ring = new THREE.Mesh(
+                    new THREE.TorusGeometry(LAYOUT_GIZMO_RADIUS, 0.07, 10, 28),
+                    new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false })
+                );
+                ring.name = name;
+                ring.rotation.x = Math.PI * 0.5;
+                ring.position.set(Number(point.x) || 0, y, Number(point.z) || 0);
+                ring.renderOrder = 214;
+                group.add(ring);
+                if (!valid) {
+                    const size = 0.42;
+                    const geometry = new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(point.x - size, y + 0.02, point.z - size),
+                        new THREE.Vector3(point.x + size, y + 0.02, point.z + size),
+                        new THREE.Vector3(point.x - size, y + 0.02, point.z + size),
+                        new THREE.Vector3(point.x + size, y + 0.02, point.z - size)
+                    ]);
+                    const cross = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color, depthTest: false, depthWrite: false }));
+                    cross.name = `${name}_invalid_x`;
+                    cross.renderOrder = 215;
+                    group.add(cross);
+                }
+                if (valid && Array.isArray(validity?.segments)) {
+                    const cutPoints = [];
+                    for (const segment of validity.segments) {
+                        cutPoints.push(
+                            new THREE.Vector3(segment.start.x, y - 0.02, segment.start.z),
+                            new THREE.Vector3(segment.end.x, y - 0.02, segment.end.z)
+                        );
+                    }
+                    if (cutPoints.length) {
+                        const cut = new THREE.LineSegments(
+                            new THREE.BufferGeometry().setFromPoints(cutPoints),
+                            new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.82, depthTest: false, depthWrite: false })
+                        );
+                        cut.name = `${name}_cuts`;
+                        cut.renderOrder = 213;
+                        group.add(cut);
+                    }
+                }
+            };
+            addHandle(frame.start, this._layoutStretchHandles?.start, `bf2_layout_stretch_start_${faceId}`);
+            addHandle(frame.end, this._layoutStretchHandles?.end, `bf2_layout_stretch_end_${faceId}`);
+
+            const mid = {
+                x: (Number(frame.start.x) + Number(frame.end.x)) * 0.5,
+                z: (Number(frame.start.z) + Number(frame.end.z)) * 0.5
+            };
+            const pushEnd = {
+                x: mid.x + (Number(frame.normal.x) || 0) * LAYOUT_GIZMO_PUSH_OFFSET_M,
+                z: mid.z + (Number(frame.normal.z) || 0) * LAYOUT_GIZMO_PUSH_OFFSET_M
+            };
+            const pushValid = !!this._layoutPushPull?.valid;
+            const pushColor = pushValid ? LAYOUT_GIZMO_PUSH_COLOR : LAYOUT_GIZMO_INVALID_COLOR;
+            const pushLine = new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(mid.x, y, mid.z),
+                    new THREE.Vector3(pushEnd.x, y, pushEnd.z)
+                ]),
+                new THREE.LineBasicMaterial({ color: pushColor, depthTest: false, depthWrite: false })
+            );
+            pushLine.name = `bf2_layout_push_line_${faceId}`;
+            pushLine.renderOrder = 214;
+            group.add(pushLine);
+            const arrow = new THREE.Mesh(
+                new THREE.ConeGeometry(0.24, 0.55, 12),
+                new THREE.MeshBasicMaterial({ color: pushColor, depthTest: false, depthWrite: false })
+            );
+            arrow.name = `bf2_layout_push_handle_${faceId}`;
+            arrow.position.set(pushEnd.x, y, pushEnd.z);
+            arrow.rotation.z = Math.PI * 0.5;
+            arrow.rotation.y = -Math.atan2(frame.normal.z, frame.normal.x);
+            arrow.renderOrder = 215;
+            group.add(arrow);
+            if (!pushValid) {
+                const size = 0.35;
+                const cross = new THREE.LineSegments(
+                    new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(pushEnd.x - size, y + 0.02, pushEnd.z - size),
+                        new THREE.Vector3(pushEnd.x + size, y + 0.02, pushEnd.z + size),
+                        new THREE.Vector3(pushEnd.x - size, y + 0.02, pushEnd.z + size),
+                        new THREE.Vector3(pushEnd.x + size, y + 0.02, pushEnd.z - size)
+                    ]),
+                    new THREE.LineBasicMaterial({ color: pushColor, depthTest: false, depthWrite: false })
+                );
+                cross.name = `bf2_layout_push_invalid_x_${faceId}`;
+                cross.renderOrder = 216;
+                group.add(cross);
+            }
+            this.root.add(group);
+            this._layoutGizmoGroup = group;
         }
 
         if (Number.isInteger(this._layoutHoverVertexIndex) && this._layoutHoverVertexIndex >= 0 && this._layoutHoverVertexIndex < loop.length) {
@@ -3280,6 +3408,9 @@ export class BuildingFabrication2Scene {
             this._layoutHoverFaceId = null;
             this._layoutHoverVertexIndex = null;
             this._layoutWidthGuideFaceIds = null;
+            this._layoutFaceFrame = null;
+            this._layoutStretchHandles = null;
+            this._layoutPushPull = null;
             return;
         }
         this._clearWallDecorations();
@@ -3301,6 +3432,9 @@ export class BuildingFabrication2Scene {
         this._layoutHoverFaceId = null;
         this._layoutHoverVertexIndex = null;
         this._layoutWidthGuideFaceIds = null;
+        this._layoutFaceFrame = null;
+        this._layoutStretchHandles = null;
+        this._layoutPushPull = null;
         this._syncFaceHighlight();
         this._syncDummy();
     }

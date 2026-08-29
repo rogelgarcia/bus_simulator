@@ -125,6 +125,7 @@ function definesKey(material) {
  */
 function hasCustomShaderHook(material) {
     if (!material) return false;
+    if (typeof material.userData?.buildingWindowMergeSafeShader === 'string') return false;
     const proto = Object.getPrototypeOf(material) ?? null;
     const fn = material.onBeforeCompile;
     if (typeof fn === 'function' && proto && fn !== proto.onBeforeCompile) return true;
@@ -188,15 +189,21 @@ function geometrySignature(geometry) {
     return parts.join('|');
 }
 
-function isMergeableMesh(object) {
+function isMergeableMesh(object, { mergeWindowAssemblies }) {
     if (!object || !object.isMesh) return false;
-    if (object.isInstancedMesh || object.isSkinnedMesh || object.isBatchedMesh) return false;
+    if (object.isInstancedMesh
+        && (object.userData?.mergeableBuildingWindowPart !== true || !mergeWindowAssemblies)) return false;
+    if (object.isSkinnedMesh || object.isBatchedMesh) return false;
     if (Array.isArray(object.material)) return false;
     if (!object.material || !object.geometry) return false;
     const geometry = object.geometry;
     if (geometry.morphAttributes && Object.keys(geometry.morphAttributes).length) return false;
     if (!geometry.attributes?.position) return false;
     return true;
+}
+
+function isMergeableWindowAssembly(object) {
+    return object?.isGroup === true && object.userData?.mergeableBuildingWindowAssembly === true;
 }
 
 function hasMeaningfulUserData(object) {
@@ -210,7 +217,7 @@ function hasMeaningfulUserData(object) {
  * its identity (groups carrying userData). Meshes are attributed to their
  * nearest enclosing scope.
  */
-function collectScopes(root, { preserveGroupsWithUserData }) {
+function collectScopes(root, { preserveGroupsWithUserData, mergeWindowAssemblies }) {
     const scopes = [];
 
     const visit = (container) => {
@@ -222,6 +229,7 @@ function collectScopes(root, { preserveGroupsWithUserData }) {
                 const isPreservedScope = child.isGroup === true
                     && preserveGroupsWithUserData
                     && hasMeaningfulUserData(child)
+                    && !(mergeWindowAssemblies && isMergeableWindowAssembly(child))
                     && child !== container;
 
                 if (isPreservedScope) {
@@ -231,7 +239,7 @@ function collectScopes(root, { preserveGroupsWithUserData }) {
                 }
 
                 if (child.isMesh) {
-                    if (isMergeableMesh(child)) scope.meshes.push(child);
+                    if (isMergeableMesh(child, { mergeWindowAssemblies })) scope.meshes.push(child);
                     else scope.keepChildren.push(child);
                     // A mesh may still parent further meshes.
                     if (child.children.length) walk(child);
@@ -258,14 +266,24 @@ function collectScopes(root, { preserveGroupsWithUserData }) {
     return scopes;
 }
 
-function bucketKeyFor(mesh, materialKey, geoSig) {
+function isEffectivelyVisible(mesh, scopeContainer) {
+    let node = mesh;
+    while (node) {
+        if (node.visible === false) return false;
+        if (node === scopeContainer) break;
+        node = node.parent ?? null;
+    }
+    return true;
+}
+
+function bucketKeyFor(mesh, materialKey, geoSig, effectiveVisible) {
     return [
         materialKey,
         geoSig,
         `cast:${mesh.castShadow ? 1 : 0}`,
         `recv:${mesh.receiveShadow ? 1 : 0}`,
         `order:${mesh.renderOrder ?? 0}`,
-        `visible:${mesh.visible ? 1 : 0}`,
+        `visible:${effectiveVisible ? 1 : 0}`,
         `layers:${mesh.layers?.mask ?? 1}`,
         // Mesh-level flags read by per-object passes (the post-processing AO
         // exclusion mask keys on these), so meshes differing here must not share
@@ -274,6 +292,74 @@ function bucketKeyFor(mesh, materialKey, geoSig) {
         `aoExcl:${mesh.userData?.excludeFromAmbientOcclusion === true ? 1 : 0}`,
         `foliage:${mesh.userData?.isFoliage === true ? 1 : 0}`
     ].join('||');
+}
+
+function pruneEmptyFlattenedGroups(container) {
+    for (const child of container.children.slice()) {
+        if (!child?.isGroup) continue;
+        pruneEmptyFlattenedGroups(child);
+        if (child.children.length === 0 && (!hasMeaningfulUserData(child) || isMergeableWindowAssembly(child))) {
+            container.remove(child);
+        }
+    }
+}
+
+function findWindowAssembly(mesh, scopeContainer) {
+    let node = mesh?.parent ?? null;
+    while (node && node !== scopeContainer) {
+        if (isMergeableWindowAssembly(node)) return node;
+        node = node.parent ?? null;
+    }
+    return isMergeableWindowAssembly(scopeContainer) ? scopeContainer : null;
+}
+
+function expandWindowInstancedMesh(mesh, relative) {
+    const attributeNames = Object.entries(mesh.geometry.attributes ?? {})
+        .filter(([, attribute]) => attribute?.isInstancedBufferAttribute === true)
+        .map(([name]) => name);
+    const instanceMatrix = new THREE.Matrix4();
+    const transform = new THREE.Matrix4();
+    const transformNormal = new THREE.Matrix3();
+    const tangent = new THREE.Vector3();
+    const geometries = [];
+
+    for (let instanceIndex = 0; instanceIndex < mesh.count; instanceIndex++) {
+        mesh.getMatrixAt(instanceIndex, instanceMatrix);
+        transform.multiplyMatrices(relative, instanceMatrix);
+        transformNormal.getNormalMatrix(transform);
+        const geometry = mesh.geometry.clone();
+        const vertexCount = geometry.attributes.position.count;
+        for (const name of attributeNames) {
+            const source = mesh.geometry.getAttribute(name);
+            if (!source || source.count <= instanceIndex) {
+                for (const built of geometries) built.dispose();
+                geometry.dispose();
+                return null;
+            }
+            const ArrayType = source.array.constructor;
+            const values = new ArrayType(vertexCount * source.itemSize);
+            const sourceOffset = instanceIndex * source.itemSize;
+            const tuple = [];
+            for (let component = 0; component < source.itemSize; component++) {
+                tuple.push(source.array[sourceOffset + component]);
+            }
+            if (name === 'instanceInteriorTanU' && tuple.length === 3) {
+                tangent.set(tuple[0], tuple[1], tuple[2]).applyMatrix3(transformNormal).normalize();
+                tuple[0] = tangent.x;
+                tuple[1] = tangent.y;
+                tuple[2] = tangent.z;
+            }
+            for (let vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++) {
+                values.set(tuple, vertexIndex * source.itemSize);
+            }
+            geometry.setAttribute(name, new THREE.BufferAttribute(values, source.itemSize, source.normalized));
+        }
+        geometry.applyMatrix4(transform);
+        geometry.boundingBox = null;
+        geometry.boundingSphere = null;
+        geometries.push(geometry);
+    }
+    return geometries;
 }
 
 /**
@@ -285,6 +371,7 @@ function bucketKeyFor(mesh, materialKey, geoSig) {
  * @param {THREE.Object3D} root building group produced by the fabrication generator
  * @param {object} [options]
  * @param {boolean} [options.preserveGroupsWithUserData=true]
+ * @param {boolean} [options.mergeWindowAssemblies=true]
  * @param {number} [options.minBucketSize=2] buckets smaller than this stay unmerged
  * @param {Map<string, THREE.Material>} [options.materialCache] shared across buildings
  * @returns {{merged: number, sourceMeshes: number, resultMeshes: number, materialsBefore: number, materialsAfter: number, failedBuckets: number}}
@@ -292,6 +379,7 @@ function bucketKeyFor(mesh, materialKey, geoSig) {
 export function mergeBuildingGroupGeometry(root, options = {}) {
     const {
         preserveGroupsWithUserData = true,
+        mergeWindowAssemblies = true,
         minBucketSize = 2,
         materialCache = null,
         dedupeMaterials = true
@@ -330,7 +418,7 @@ export function mergeBuildingGroupGeometry(root, options = {}) {
         ? computeMaterialIdentityKey(material)
         : `instance:${material?.uuid ?? 'null'}`);
 
-    const scopes = collectScopes(root, { preserveGroupsWithUserData });
+    const scopes = collectScopes(root, { preserveGroupsWithUserData, mergeWindowAssemblies });
     const scopeInverse = new THREE.Matrix4();
     const relative = new THREE.Matrix4();
     const materialsAfter = new Set();
@@ -343,7 +431,7 @@ export function mergeBuildingGroupGeometry(root, options = {}) {
         container.updateMatrixWorld(true);
         scopeInverse.copy(container.matrixWorld).invert();
 
-        /** @type {Map<string, {material: THREE.Material, sample: THREE.Mesh, geometries: THREE.BufferGeometry[], sources: THREE.Mesh[]}>} */
+        /** @type {Map<string, {material: THREE.Material, sample: THREE.Mesh, geometries: THREE.BufferGeometry[], sources: THREE.Mesh[], windowRanges: object[], vertexCursor: number, failedExpansion: boolean, effectiveVisible: boolean}>} */
         const buckets = new Map();
 
         for (const mesh of meshes) {
@@ -353,20 +441,52 @@ export function mergeBuildingGroupGeometry(root, options = {}) {
                 continue;
             }
             const material = canonicalize(mesh.material);
-            const key = bucketKeyFor(mesh, identityKeyFor(material), geoSig);
+            const effectiveVisible = isEffectivelyVisible(mesh, container);
+            const key = bucketKeyFor(mesh, identityKeyFor(material), geoSig, effectiveVisible);
             let bucket = buckets.get(key);
             if (!bucket) {
-                bucket = { material, sample: mesh, geometries: [], sources: [] };
+                bucket = {
+                    material,
+                    sample: mesh,
+                    geometries: [],
+                    sources: [],
+                    windowRanges: [],
+                    vertexCursor: 0,
+                    failedExpansion: false,
+                    effectiveVisible
+                };
                 buckets.set(key, bucket);
             }
             mesh.updateMatrixWorld(true);
             relative.multiplyMatrices(scopeInverse, mesh.matrixWorld);
-            const geometry = mesh.geometry.clone();
-            geometry.applyMatrix4(relative);
-            // Merged geometry is static; drop caches that no longer describe it.
-            geometry.boundingBox = null;
-            geometry.boundingSphere = null;
-            bucket.geometries.push(geometry);
+            if (mesh.isInstancedMesh) {
+                const assembly = findWindowAssembly(mesh, container);
+                const expanded = expandWindowInstancedMesh(mesh, relative);
+                if (!expanded) {
+                    bucket.failedExpansion = true;
+                } else {
+                    const vertexCount = expanded.reduce((sum, geometry) => sum + geometry.attributes.position.count, 0);
+                    bucket.windowRanges.push(Object.freeze({
+                        vertexStart: bucket.vertexCursor,
+                        vertexCount,
+                        instanceCount: mesh.count,
+                        definitionId: assembly?.userData?.windowDefinitionId ?? null,
+                        assetType: assembly?.userData?.windowAssetType ?? null,
+                        part: mesh.userData?.buildingWindowPart ?? null,
+                        instances: assembly?.userData?.instanceVariations ?? Object.freeze([])
+                    }));
+                    bucket.vertexCursor += vertexCount;
+                    bucket.geometries.push(...expanded);
+                }
+            } else {
+                const geometry = mesh.geometry.clone();
+                geometry.applyMatrix4(relative);
+                // Merged geometry is static; drop caches that no longer describe it.
+                geometry.boundingBox = null;
+                geometry.boundingSphere = null;
+                bucket.geometries.push(geometry);
+                bucket.vertexCursor += geometry.attributes.position.count;
+            }
             bucket.sources.push(mesh);
         }
 
@@ -381,22 +501,18 @@ export function mergeBuildingGroupGeometry(root, options = {}) {
                 container.add(keeper);
             }
         }
-        // Drop now-empty anonymous groups left behind by flattening.
-        for (const child of container.children.slice()) {
-            if (child.isGroup && child.children.length === 0 && !hasMeaningfulUserData(child)) {
-                container.remove(child);
-            }
-        }
+        pruneEmptyFlattenedGroups(container);
 
         let index = 0;
         for (const bucket of buckets.values()) {
-            const { material, sample, geometries, sources } = bucket;
+            const { material, sample, geometries, sources, windowRanges, failedExpansion, effectiveVisible } = bucket;
 
-            if (geometries.length < Math.max(1, minBucketSize)) {
+            if (failedExpansion || (!windowRanges.length && geometries.length < Math.max(1, minBucketSize))) {
                 // Not worth merging: restore the originals with their material canonicalized.
                 for (const geometry of geometries) geometry.dispose();
                 for (const source of sources) {
                     source.material = material;
+                    source.visible = effectiveVisible;
                     container.add(source);
                     stats.resultMeshes += 1;
                     materialsAfter.add(material.uuid);
@@ -416,6 +532,7 @@ export function mergeBuildingGroupGeometry(root, options = {}) {
                 for (const geometry of geometries) geometry.dispose();
                 for (const source of sources) {
                     source.material = material;
+                    source.visible = effectiveVisible;
                     container.add(source);
                     stats.resultMeshes += 1;
                     materialsAfter.add(material.uuid);
@@ -430,13 +547,14 @@ export function mergeBuildingGroupGeometry(root, options = {}) {
             merged.castShadow = sample.castShadow;
             merged.receiveShadow = sample.receiveShadow;
             merged.renderOrder = sample.renderOrder ?? 0;
-            merged.visible = sample.visible;
+            merged.visible = effectiveVisible;
             merged.layers.mask = sample.layers?.mask ?? merged.layers.mask;
             merged.matrixAutoUpdate = false;
             merged.updateMatrix();
             merged.userData = {
                 ...(sample.userData && typeof sample.userData === 'object' ? sample.userData : {}),
-                buildingMergedMeshCount: sources.length
+                buildingMergedMeshCount: sources.length,
+                ...(windowRanges.length ? { buildingWindowRanges: Object.freeze(windowRanges) } : {})
             };
             container.add(merged);
 

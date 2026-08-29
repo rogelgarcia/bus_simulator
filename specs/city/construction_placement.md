@@ -141,6 +141,38 @@ Buildings with **no** `placement` block keep the behaviour they have always had
 `shift`). They cannot be laid out around a reservation, so an overlap with one
 is reported instead.
 
+## Opt-in stretch fitting
+
+A building entry may set `fitToLot: true` to fit its authored BF2 footprint to
+the resolved parcel or tile-derived build area. The default remains the fixed
+placement path above. Stretch fitting uses the angle-preserving perpendicular
+cuts from the BF2 footprint-edit model; it never uniformly scales or shears the
+plan, and persisted A–Z run ids remain attached to the same facades.
+
+The optional catalog/config `footprintStretch` block controls participation:
+
+```js
+footprintStretch: {
+    quantumMeters: 0.1,
+    faces: { A: 'prefer_expand', C: 'never' },
+    bands: { 'A:start': { preference: 'allow', weight: 2 } }
+}
+```
+
+Preferences are `prefer_expand`, `allow`, or `never`. Explicit band metadata
+overrides its face metadata. Geometrically identical cuts are treated as one
+band; an explicit `never` on any alias pins that band. When preferred bands are
+available they absorb the side's delta before ordinary allowed bands. Multiple
+participating bands divide the delta proportionally by weight (or by cut length
+when no weight is authored), with seed-stable tie breaking.
+
+Each side is fitted independently to the build-area bounds after the existing
+outward reserve inset. Deltas are quantized and every affected facade is dry-run
+through the bay solver. Solver minima, invalid footprint geometry, and pinned or
+missing cuts clamp the result. An unreachable target keeps the nearest valid
+size and emits a building warning; it never falls back to shearing the plan.
+The same entry, lot, seed, and config must produce byte-stable fitted points.
+
 ## Diagnostics
 
 Collected on `map.placementDiagnostics` and logged with a `[CityPlacement]`

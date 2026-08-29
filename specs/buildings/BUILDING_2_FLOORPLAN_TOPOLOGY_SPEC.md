@@ -30,7 +30,7 @@ Non-goals for the first iteration:
 
 - **Footprint**: A 2D polygon (in plan view) describing the building outline for a layer.
 - **Corner**: A vertex of the footprint polygon.
-- **Edge**: The directed segment from `corner[i]` → `corner[i+1]` (wrapping at the end).
+- **Edge**: The directed run from `corner[i]` → `corner[i+1]` (wrapping at the end); it is straight unless it carries arc metadata.
 - **Face**: A logical facade surface corresponding to a footprint **edge**. Faces are the authoring units for facades.
 - **Topology**: The ordered corner list and the resulting ordered edge/face list. “Same topology” means same corner count and same corner order.
 
@@ -123,6 +123,31 @@ To keep face ids stable while editing:
 
 Note: how the initial “corner[0]” is chosen is an editor/authoring concern. Once chosen, the system MUST preserve it (or explicitly treat changes as topology edits).
 
+### 6.3 Persisted run identity
+
+- An authored footprint point MAY carry `runId` and `runForward`; the metadata belongs to the edge beginning at that point.
+- `runId` is the stable logical face id and MUST be a unique letter `A..Z` within the loop.
+- `runForward` records whether the point-list edge direction matches the facade's authored local-u direction. Winding normalization MUST transfer the run metadata to the reversed edge and invert `runForward`.
+- Geometry-only transforms MUST preserve this metadata. Connector-wall edits allocate unused ids without renaming existing runs.
+
+### 6.4 Circular facade runs
+
+- A footprint point MAY attach `arc: { bulge, segments? }` to the logical run beginning at that point. `bulge = tan(signedSweep / 4)`; its sign selects the side of the chord. A non-zero finite bulge and the run endpoints determine the circle center, radius, and sweep. `segments` is an optional tessellation-quality hint, not topology.
+- An arc run remains **one logical face** and keeps one `runId`. Its facade length and local `u` coordinate are circular arc length, not endpoint chord length.
+- The facade frame MUST provide position, tangent, and outward normal as functions of `u`. Line/arc and arc/arc joins use the endpoint tangents; tangent-continuous authored joins therefore remain tangent after plan normalization.
+- Winding reversal transfers the arc to the reversed source edge and negates its bulge. Translation and uniform scale preserve bulge; scale changes the derived radius and arc length through the endpoints.
+- Wall panels and reveals, horizontal belts, floor spandrels, roof/parapet/coping loops, cornice profiles, and repeated cornice ornaments MUST consume the same sampled curve. Meter-based wall UV distance MUST continue across its tessellated segments without resetting.
+- Openings on an arc solve bay widths in arc length. Window/storefront assemblies MUST conform to the run with independently tangent sub-panels (glass, frames, wall cuts, sills/headers, and storefront zones); a single flat opening spanning the curved run is not sufficient.
+- The current stretch/push-pull and lot-fit tools are straight-run operations. They MUST reject or keep fixed a footprint containing arcs and surface that limitation instead of silently dropping curve metadata.
+
+### 6.5 Collinear face split markers
+
+- A footprint point MAY carry `split: true`. The marker belongs to the point itself and declares a logical face boundary between the incoming and outgoing collinear edges.
+- Facade frame derivation MUST preserve a marked collinear boundary and expose each sub-run as its own stable `A..Z` face. Explicit `runId` / `runForward` metadata remains authoritative when present.
+- Physical-loop consumers MUST ignore the logical marker and continue merging collinear runs. Cornice module fitting, corner treatments, caps, parapets, and other whole-wall operations therefore keep one physical straight run.
+- Adjacent collinear faces at the same resolved depth share one point. At different depths, each face ends on its own offset line and the generated loop connects those two points with a perpendicular return wall; a parallel-line mitre is invalid.
+- Import, export, city placement, plan transforms, and the BF2 editor MUST preserve `split: true` metadata.
+
 ---
 
 ## 7. Relationship to facade layouts and bays
@@ -142,3 +167,16 @@ The system MUST validate and surface errors/warnings rather than silently fallin
 - Hard error if applicable layers do not share identical footprint topology (corner count/order).
 - Hard error if a footprint is invalid (self-intersection, collapsed edges, etc.).
 - Warning if an edge/face is too short to reasonably host authored bays/features (exact thresholds are implementation-defined).
+- Hard error for invalid arc metadata; straight-run edit/fit tools MUST surface their explicit curved-run guard.
+
+---
+
+## 9. Angle-preserving face extension edits
+
+Building Fabrication 2 exposes two plan edits and does not drag raw corners:
+
+- **Stretch band:** a perpendicular cut is cast at either authored end of a face. Every footprint edge intersected by the cut MUST be parallel to the selected face within `0.5°`; vertex hits are epsilon-nudged. Each inside interval of a concave multi-wall cut is transformed together. Geometry on the chosen end side translates along the face tangent, so crossed faces gain or lose the same delta while every corner angle and run id stays unchanged.
+- **Push/pull:** the selected face line offsets along its outward normal and re-intersects its two neighboring lines. A connected push is invalid for a parallel neighbor and clamps before any affected face falls below its facade-solver minimum.
+- **Detached push:** when the selected face must move without extending its neighbors, two perpendicular connector faces bridge the old endpoints to the moved face. The moved parent keeps its id; connectors receive unused generated ids, inherit the parent face material, and start with a plain flexible bay layout.
+
+All affected facades re-run the normal bay/group solver at their new lengths. Fixed/minimum bay sums clamp shrinking edits with a surfaced warning; repeat groups, flex bays, and arcade springing otherwise follow the existing facade-layout rules. Meter-seeded rooftop and decoration placements may reseed.

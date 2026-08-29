@@ -89,6 +89,7 @@ export class City {
             // Authoring tools that need per-mesh picking on fabricated buildings
             // (bay/decoration selection) can opt out.
             mergeBuildingGeometry = true,
+            mergeBuildingWindowAssemblies = true,
             mergeDedupeMaterials = true,
             // Sun shadows are fitted to a region around the active camera instead
             // of the whole map: fewer casters per frame, and the same shadow map
@@ -328,6 +329,8 @@ export class City {
                         footprintLoops,
                         buildAreaLoops,
                         footprintPlacement: entry?.footprintPlacement ?? null,
+                        fitToLot: entry?.fitToLot === true,
+                        footprintStretch: entry?.footprintStretch ?? null,
                         generatorConfig: this.generatorConfig,
                         tileSize: this.map.tileSize,
                         occupyRatio: 1.0,
@@ -392,6 +395,7 @@ export class City {
                 if (mergeBuildingGeometry) {
                     const stats = mergeBuildingGroupGeometry(buildingGroup, {
                         materialCache: mergedMaterialCache,
+                        mergeWindowAssemblies: mergeBuildingWindowAssemblies,
                         dedupeMaterials: mergeDedupeMaterials
                     });
                     mergeTotals.sourceMeshes += stats.sourceMeshes;

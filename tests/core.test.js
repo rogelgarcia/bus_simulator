@@ -1973,6 +1973,11 @@ async function runTests() {
         solveFacadeBaysLayout
     } = await import('/src/graphics/assets3d/generators/building_fabrication/FacadeBaysSolver.js');
     const {
+        createFootprintPlan,
+        pushPullFootprint,
+        stretchFootprint
+    } = await import('/src/app/buildings/footprint_edits/BuildingFootprintEdits.js');
+    const {
         layoutFacadeLetteringText,
         buildFacadeLetteringGeometry
     } = await import('/src/graphics/assets3d/generators/building_fabrication/FacadeLetteringGeometry.js');
@@ -5124,7 +5129,7 @@ async function runTests() {
         assertTrue(view.scene.controls.enabled, 'Expected camera controls re-enabled after layout adjust exits.');
     });
 
-    test('BuildingFabrication2View: dragging shows adjacent-face width guides', () => {
+    test('BuildingFabrication2View: face-extension drags show affected-run width guides', () => {
         const engine = {
             scene: new THREE.Scene(),
             camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
@@ -5157,15 +5162,15 @@ async function runTests() {
             { x: -24, z: -12 }
         ]] };
 
-        view._layoutDrag = { kind: 'face', faceId: 'A' };
+        view._layoutDrag = { kind: 'stretch', faceId: 'A', affectedRunIds: ['A', 'C'] };
         view._syncLayoutSceneState();
-        assertEqual((scenePayload?.widthGuideFaceIds ?? []).join(','), 'B,D', 'Expected adjacent faces B and D while dragging face A.');
-        assertTrue(Array.isArray(uiLabels) && uiLabels.length === 2, 'Expected two width labels while dragging face.');
+        assertEqual((scenePayload?.widthGuideFaceIds ?? []).join(','), 'A,C', 'Expected both crossed faces while stretching face A.');
+        assertTrue(Array.isArray(uiLabels) && uiLabels.length === 2, 'Expected two width labels while stretching.');
 
-        view._layoutDrag = { kind: 'vertex', vertexIndex: 1 };
+        view._layoutDrag = { kind: 'push', faceId: 'A', affectedRunIds: ['A', 'B'] };
         view._syncLayoutSceneState();
-        assertEqual((scenePayload?.widthGuideFaceIds ?? []).join(','), 'A,B', 'Expected adjacent faces A and B while dragging vertex 1.');
-        assertTrue(Array.isArray(uiLabels) && uiLabels.length === 2, 'Expected two width labels while dragging vertex.');
+        assertEqual((scenePayload?.widthGuideFaceIds ?? []).join(','), 'A,B', 'Expected the selected and changed-neighbor widths while pushing face A.');
+        assertTrue(Array.isArray(uiLabels) && uiLabels.length === 2, 'Expected two width labels while pushing.');
 
         view._layoutDrag = null;
         view._syncLayoutSceneState();
@@ -5560,6 +5565,7 @@ async function runTests() {
 
     const { createWindowMeshMaterials } = await import('/src/graphics/engine3d/buildings/window_mesh/WindowMeshMaterials.js');
     const { WindowMeshGenerator } = await import('/src/graphics/engine3d/buildings/window_mesh/WindowMeshGenerator.js');
+    const { mergeBuildingGroupGeometry } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingGeometryMerger.js');
     const {
         buildWindowMeshGeometryBundle,
         WINDOW_MESH_DOUBLE_DOOR_CENTER_GAP_METERS
@@ -5600,6 +5606,98 @@ async function runTests() {
         generator.dispose();
     });
 
+    test('WindowMeshGenerator: identical definitions share material instances', () => {
+        const generator = new WindowMeshGenerator();
+        const settings = getDefaultWindowMeshSettings();
+        const first = generator.createWindowGroup({
+            settings,
+            seed: 'shared_materials',
+            instances: [{ id: 'a', position: { x: 0, y: 0, z: 0 }, yaw: 0 }]
+        });
+        const second = generator.createWindowGroup({
+            settings,
+            seed: 'shared_materials',
+            instances: [{ id: 'b', position: { x: 2, y: 0, z: 0 }, yaw: 0 }]
+        });
+        assertTrue(first.userData.materials.frameMat === second.userData.materials.frameMat, 'Expected frame material reuse for identical sanitized settings.');
+        assertTrue(first.userData.materials.shadeMat === second.userData.materials.shadeMat, 'Expected custom shade material reuse for identical sanitized settings.');
+        assertTrue(first.userData.materials.interiorMat === second.userData.materials.interiorMat, 'Expected custom interior material reuse for identical sanitized settings.');
+        generator.dispose();
+    });
+
+    test('BuildingGeometryMerger: compiled windows combine instances and retain addressable ranges', () => {
+        const generator = new WindowMeshGenerator();
+        const defaults = getDefaultWindowMeshSettings();
+        const settings = {
+            ...defaults,
+            interior: { ...defaults.interior, enabled: true }
+        };
+        const makeGroup = (suffix, x) => {
+            const group = generator.createWindowGroup({
+                settings,
+                seed: 'merged_windows',
+                instances: [
+                    { id: `${suffix}:0`, position: { x, y: 0, z: 0 }, yaw: 0 },
+                    { id: `${suffix}:1`, position: { x: x + 1, y: 0, z: 0 }, yaw: 0 }
+                ]
+            });
+            group.userData.windowDefinitionId = 'shared_window';
+            group.userData.windowAssetType = 'window';
+            return group;
+        };
+        const root = new THREE.Group();
+        root.name = 'compiled_windows_test';
+        const left = makeGroup('left', 0);
+        const right = makeGroup('right', 10);
+        const rightInterior = right.userData.layers.interior.children[0];
+        rightInterior.geometry.getAttribute('instanceInteriorLight').setX(0, 0.0);
+        rightInterior.geometry.getAttribute('instanceInteriorLight').setX(1, 0.5);
+        root.add(left);
+        root.add(right);
+
+        const sourceParts = [];
+        root.traverse((object) => {
+            if (object.isInstancedMesh && object.userData?.mergeableBuildingWindowPart) sourceParts.push(object);
+        });
+        const stats = mergeBuildingGroupGeometry(root);
+        const mergedParts = [];
+        root.traverse((object) => {
+            if (object.isMesh && !object.isInstancedMesh && object.userData?.buildingWindowRanges) mergedParts.push(object);
+        });
+
+        assertEqual(stats.failedBuckets, 0, 'Expected all window instance buckets to combine.');
+        assertTrue(mergedParts.length > 0, 'Expected compiled window instance meshes.');
+        assertTrue(mergedParts.length * 2 <= sourceParts.length, 'Expected the two assemblies to collapse by material family.');
+        assertFalse(root.children.some((child) => child.userData?.mergeableBuildingWindowAssembly), 'Compiled output must flatten authoring assembly groups.');
+
+        const shade = mergedParts.find((mesh) => mesh.userData?.buildingWindowPart === 'shade');
+        assertTrue(!!shade, 'Expected one combined shade mesh.');
+        assertEqual(
+            shade.geometry.getAttribute('instanceShadeCoverage')?.count,
+            shade.geometry.getAttribute('position')?.count,
+            'Expected per-window shade values to expand across every compiled vertex.'
+        );
+        assertEqual(shade.userData.buildingWindowRanges.length, 2, 'Expected one addressable range per source assembly.');
+        assertEqual(shade.userData.buildingWindowRanges[0].instances.length, 2, 'Expected range metadata to retain per-window variation records.');
+        assertEqual(shade.userData.buildingWindowRanges[0].instanceCount, 2, 'Expected the compiled range to retain its source instance count.');
+        assertTrue(shade.userData.buildingWindowRanges[0].vertexCount > 0, 'Expected an addressable compiled vertex range.');
+        assertEqual(shade.userData.buildingWindowRanges[0].definitionId, 'shared_window', 'Expected the definition id on merged ranges.');
+
+        const interior = mergedParts.find((mesh) => mesh.userData?.buildingWindowPart === 'interior');
+        assertTrue(!!interior, 'Expected one combined interior mesh.');
+        const rightRange = interior.userData.buildingWindowRanges.find((range) => range.instances[0]?.id === 'right:0');
+        assertTrue(!!rightRange, 'Expected the right assembly range in the compiled interior.');
+        const light = interior.geometry.getAttribute('instanceInteriorLight');
+        assertNear(light.getX(rightRange.vertexStart), 0.0, 1e-6, 'Expected the unlit window state to survive compilation.');
+        assertNear(
+            light.getX(rightRange.vertexStart + rightRange.vertexCount / rightRange.instanceCount),
+            0.5,
+            1e-6,
+            'Expected the second per-window light level to survive compilation.'
+        );
+        generator.dispose();
+    });
+
     const { WindowMeshDecorationsRig } = await import('/src/graphics/gui/window_mesh_debugger/view/WindowMeshDecorationsRig.js');
     const { WindowMeshDebuggerUI } = await import('/src/graphics/gui/window_mesh_debugger/view/WindowMeshDebuggerUI.js');
     const { WindowMeshDebuggerView } = await import('/src/graphics/gui/window_mesh_debugger/view/WindowMeshDebuggerView.js');
@@ -5632,7 +5730,8 @@ async function runTests() {
         mat.onBeforeCompile(shader, null);
         assertFalse(shader.fragmentShader.includes('mapTexelToLinear'), 'Interior shader should not reference mapTexelToLinear.');
         assertTrue(shader.fragmentShader.includes('winSrgbToLinear'), 'Expected interior shader to define winSrgbToLinear.');
-        assertTrue(shader.fragmentShader.includes('uInteriorParallax'), 'Expected interior shader to reference uInteriorParallax.');
+        assertTrue(shader.fragmentShader.includes('vInteriorParams'), 'Expected interior shader to use attribute-driven parallax settings.');
+        assertTrue(shader.vertexShader.includes('instanceInteriorLight'), 'Expected per-window night-light state to be vertex-driven.');
     });
 
     test('WindowMeshMaterials: metal handle mode uses dedicated metallic handle material', () => {
@@ -10488,6 +10587,68 @@ async function runTests() {
         assertTrue(worldBounds.max.x <= areaBounds.maxX + eps, 'Expected fitted footprint geometry maxX inside city build area.');
         assertTrue(worldBounds.min.z >= areaBounds.minZ - eps, 'Expected fitted footprint geometry minZ inside city build area.');
         assertTrue(worldBounds.max.z <= areaBounds.maxZ + eps, 'Expected fitted footprint geometry maxZ inside city build area.');
+    });
+
+    test('BuildingFabricationGenerator: fitToLot grows stable runs while fixed placement remains the default', () => {
+        const footprintLoops = [[
+            { x: -5, z: 3, runId: 'A', runForward: true },
+            { x: 5, z: 3, runId: 'B', runForward: true },
+            { x: 5, z: -3, runId: 'C', runForward: true },
+            { x: -5, z: -3, runId: 'D', runForward: true }
+        ]];
+        const buildAreaLoops = [[
+            { x: -8, z: 4 }, { x: 8, z: 4 }, { x: 8, z: -4 }, { x: -8, z: -4 }
+        ]];
+        const layers = [
+            createDefaultFloorLayer({
+                id: 'floor_main',
+                floors: 1,
+                floorHeight: 3.2,
+                belt: { enabled: false, extrusion: 0 },
+                cornice: { enabled: false },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false }, cornice: { enabled: false } })
+        ];
+        const facade = {
+            layout: {
+                bays: {
+                    items: [{
+                        id: 'repeat_bay',
+                        size: { mode: 'range', minMeters: 2, maxMeters: 2.5 },
+                        expandPreference: 'prefer_repeat'
+                    }]
+                }
+            }
+        };
+        const facades = { A: facade, B: facade, C: facade, D: facade };
+        const common = {
+            footprintLoops,
+            buildAreaLoops,
+            footprintPlacement: 'center',
+            layers,
+            facades,
+            materialVariationSeed: 515,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0 }
+        };
+
+        const fixed = buildBuildingFabricationVisualParts(common);
+        const fitted = buildBuildingFabricationVisualParts({ ...common, fitToLot: true });
+        const widthOf = (parts) => {
+            const loop = parts?.placedFootprintLoops?.[0] ?? [];
+            return Math.max(...loop.map((point) => point.x)) - Math.min(...loop.map((point) => point.x));
+        };
+        assertTrue(Math.abs(widthOf(fixed) - 10) < 1e-6, 'Expected the default path to keep the authored fixed width.');
+        assertTrue(Math.abs(widthOf(fitted) - 16) < 1e-6, 'Expected fitToLot to fill the build-area width through stretch bands.');
+        assertEqual(
+            fitted.placedFootprintLoops[0].map((point) => point.runId).join(','),
+            fixed.placedFootprintLoops[0].map((point) => point.runId).join(','),
+            'Expected fitToLot to preserve every normalized stable run id.'
+        );
+        const beforeRepeatCount = solveFacadeBaysLayout({ bays: facade.layout.bays.items, faceLengthMeters: 10, warnings: [] }).length;
+        const afterRepeatCount = solveFacadeBaysLayout({ bays: facade.layout.bays.items, faceLengthMeters: 16, warnings: [] }).length;
+        assertTrue(afterRepeatCount > beforeRepeatCount, 'Expected the fitted facade to resolve with more repeat bays.');
     });
 
     // AI 496: the parallax interior panel is intentionally oversized (it must
@@ -19380,6 +19541,44 @@ async function runTests() {
     ];
     const RHYTHM_GROUPS = [{ id: 'group_1', bayIds: ['win_1', 'pier_2'], repeat: { minRepeats: 1, maxRepeats: 'auto' } }];
 
+    test('BuildingFootprintEdits: showcase L stretch re-solves with another repeat copy', () => {
+        const plan = createFootprintPlan([
+            { x: -15, z: 12 }, { x: 15, z: 12 }, { x: 15, z: -12 },
+            { x: 1, z: -12 }, { x: 1, z: -2 }, { x: -15, z: -2 }
+        ]);
+        const beforeLength = 30;
+        const stretched = stretchFootprint(plan, { faceId: 'A', end: 'end', delta: 8 });
+        const afterLength = Math.hypot(
+            stretched.footprint.points[1].x - stretched.footprint.points[0].x,
+            stretched.footprint.points[1].z - stretched.footprint.points[0].z
+        );
+        const before = solveFacadeBaysLayout({ bays: RHYTHM_BAYS, groups: RHYTHM_GROUPS, faceLengthMeters: beforeLength, warnings: [] });
+        const after = solveFacadeBaysLayout({ bays: RHYTHM_BAYS, groups: RHYTHM_GROUPS, faceLengthMeters: afterLength, warnings: [] });
+        assertTrue(after.length >= before.length + 2, 'Expected the stretched L face to gain a full repeat-group copy.');
+        assertEqual(stretched.footprint.runIds.join(','), plan.runIds.join(','), 'Expected every L run id to stay stable.');
+    });
+
+    test('BuildingFootprintEdits: push/pull keeps every corner angle', () => {
+        const plan = createFootprintPlan([
+            { x: -10, z: 5 }, { x: 10, z: 5 }, { x: 10, z: -5 }, { x: -10, z: -5 }
+        ]);
+        const angles = (footprint) => footprint.points.map((point, index) => {
+            const prev = footprint.points[(index - 1 + footprint.points.length) % footprint.points.length];
+            const next = footprint.points[(index + 1) % footprint.points.length];
+            const ax = prev.x - point.x;
+            const az = prev.z - point.z;
+            const bx = next.x - point.x;
+            const bz = next.z - point.z;
+            return Math.acos((ax * bx + az * bz) / (Math.hypot(ax, az) * Math.hypot(bx, bz)));
+        });
+        const before = angles(plan);
+        const pushed = pushPullFootprint(plan, { faceId: 'A', delta: 3 });
+        const after = angles(pushed.footprint);
+        for (let i = 0; i < before.length; i++) {
+            assertTrue(Math.abs(after[i] - before[i]) < 1e-8, `Expected corner ${i} to keep its angle.`);
+        }
+    });
+
     // A pier/window grid with solid filler bays at both ends: the fillers are
     // what absorb a shorter layer's slack while the grid keeps its pitch.
     const STACK_WINDOW = { enabled: true, defId: 'window_arch_civic', assetType: 'window', size: { widthMeters: 2.0, heightMeters: 2.0 } };
@@ -20649,6 +20848,233 @@ async function runTests() {
         ];
     })();
 
+    test('BuildingFabricationGenerator: one persisted run resolves as an arc-length facade frame (AI 516)', () => {
+        const loop = [
+            { x: -18, z: -14, runId: 'D', runForward: true },
+            { x: 18, z: -14, runId: 'C', runForward: true },
+            { x: 18, z: 8, runId: 'B', runForward: true, arc: { bulge: Math.SQRT2 - 1, segments: 18 } },
+            { x: 12, z: 14, runId: 'A', runForward: true },
+            { x: -18, z: 14, runId: 'E', runForward: true }
+        ];
+        const resolveFrames = buildingFabricationGeneratorTestOnly?.computeFacadeFramesFromLoop ?? null;
+        const sampleFrame = buildingFabricationGeneratorTestOnly?.sampleFacadeFrameAtU ?? null;
+        assertTrue(typeof resolveFrames === 'function' && typeof sampleFrame === 'function', 'Expected curved frame helpers.');
+
+        const frame = resolveFrames(loop, {})?.B ?? null;
+        assertTrue(!!frame?.curve, 'Face B remains one semantic curved face.');
+        assertNear(frame.curve.radius, 6, 1e-6, 'Quarter-round radius is derived from the bulge.');
+        assertNear(frame.length, Math.PI * 3, 1e-6, 'Bay solver length is circular arc length, not chord length.');
+        assertNear(frame.startT.x, 0, 1e-6, 'Arc enters tangent to the right wall (x).');
+        assertNear(frame.startT.z, 1, 1e-6, 'Arc enters tangent to the right wall (z).');
+        assertNear(frame.endT.x, -1, 1e-6, 'Arc exits tangent to the front wall (x).');
+        assertNear(frame.endT.z, 0, 1e-6, 'Arc exits tangent to the front wall (z).');
+
+        const mid = sampleFrame(frame, frame.length * 0.5);
+        assertNear(mid.x, 12 + 6 / Math.sqrt(2), 1e-6, 'Mid-arc world x.');
+        assertNear(mid.z, 8 + 6 / Math.sqrt(2), 1e-6, 'Mid-arc world z.');
+        assertNear(Math.hypot(mid.n.x, mid.n.z), 1, 1e-9, 'Per-slot outward normal stays normalized.');
+    });
+
+    test('BuildingFabricationGenerator: curved bands and cornice loops preserve the facade radius (AI 516)', () => {
+        const loop = [
+            { x: -18, z: -14, runId: 'D', runForward: true },
+            { x: 18, z: -14, runId: 'C', runForward: true },
+            { x: 18, z: 8, runId: 'B', runForward: true, arc: { bulge: Math.SQRT2 - 1, segments: 18 } },
+            { x: 12, z: 14, runId: 'A', runForward: true },
+            { x: -18, z: 14, runId: 'E', runForward: true }
+        ];
+        const frames = buildingFabricationGeneratorTestOnly.computeFacadeFramesFromLoop(loop, {});
+        const ring = buildingFabricationGeneratorTestOnly.buildCornerJoinLoopWithDepths({
+            frames,
+            depthOf: (faceId) => faceId === 'B' ? 0.5 : 0
+        });
+        const curvedSamples = ring.filter((p) => {
+            const radius = Math.hypot(p.x - 12, p.z - 8);
+            return p.x > 12.05 && p.z > 8.05 && radius > 6.2;
+        });
+        assertTrue(curvedSamples.length >= 17, 'Cornice/belt loop keeps the authored arc tessellation.');
+        for (const p of curvedSamples) {
+            assertNear(Math.hypot(p.x - 12, p.z - 8), 6.5, 0.003, 'Projected trim follows one concentric radius.');
+        }
+    });
+
+    test('BuildingFabricationGenerator: curved wall UVs stay continuous in arc-length u (AI 516)', () => {
+        const loop = [
+            { x: -18, z: -14, runId: 'D', runForward: true },
+            { x: 18, z: -14, runId: 'C', runForward: true },
+            { x: 18, z: 8, runId: 'B', runForward: true, arc: { bulge: Math.SQRT2 - 1, segments: 18 } },
+            { x: 12, z: 14, runId: 'A', runForward: true },
+            { x: -18, z: 14, runId: 'E', runForward: true }
+        ];
+        const frames = buildingFabricationGeneratorTestOnly.computeFacadeFramesFromLoop(loop, {});
+        const detail = [];
+        for (const faceId of frames.order) {
+            const frame = frames[faceId];
+            const segments = frame.curve?.segments ?? 1;
+            for (let k = 0; k < segments; k++) {
+                const u = frame.length * (k / segments);
+                detail.push({
+                    ...buildingFabricationGeneratorTestOnly.pointOnFacadeFrame({ frame, u, depth: 0 }),
+                    kind: 'profile',
+                    faceId,
+                    u,
+                    depth: 0
+                });
+            }
+        }
+        const overrides = new Map();
+        overrides.set('__ranges__:B', [{
+            materialIndex: 0,
+            faceId: 'B',
+            u0: 0,
+            u1: frames.B.length,
+            depth0: 0,
+            depth1: 0,
+            uvStart: 0
+        }]);
+        const geo = buildingFabricationGeneratorTestOnly.buildWallSidesGeometryFromLoopDetailXZ(detail, {
+            height: 2,
+            segmentOverrides: overrides
+        });
+        const positions = geo.getAttribute('position');
+        const uv = geo.getAttribute('uv');
+        for (let k = 2; k < frames.B.curve.segments - 1; k += 3) {
+            const u = frames.B.length * (k / frames.B.curve.segments);
+            const point = buildingFabricationGeneratorTestOnly.pointOnFacadeFrame({ frame: frames.B, u, depth: 0 });
+            const expected = frames.B.length - u;
+            let found = false;
+            for (let i = 0; i < positions.count; i++) {
+                if (Math.abs(positions.getX(i) - point.x) > 0.002 || Math.abs(positions.getZ(i) - point.z) > 0.002) continue;
+                if (Math.abs(uv.getX(i) - expected) <= 0.002) {
+                    found = true;
+                    break;
+                }
+            }
+            assertTrue(found, `Arc sample ${k} keeps continuous face-u UV distance.`);
+        }
+        geo.dispose();
+    });
+
+    test('BuildingFootprintEdits: straight-run tools explicitly reject curved faces (AI 516)', () => {
+        let thrown = null;
+        try {
+            createFootprintPlan([
+                { x: 0, z: 0, runId: 'A', arc: { bulge: 0.2 } },
+                { x: 5, z: 0, runId: 'B' },
+                { x: 0, z: 5, runId: 'C' }
+            ]);
+        } catch (error) {
+            thrown = error;
+        }
+        assertTrue(String(thrown?.message ?? '').includes('curved runs are read-only'), 'Arc edit guard explains the straight-run limitation.');
+    });
+
+    test('BuildingFabricationGenerator: split markers create collinear faces without splitting physical runs (AI 517)', () => {
+        const loop = [
+            { x: -10, z: 5 },
+            { x: 0, z: 5, split: true },
+            { x: 10, z: 5 },
+            { x: 10, z: -5 },
+            { x: -10, z: -5 }
+        ];
+        const resolve = buildingFabricationGeneratorTestOnly.computeFacadeFramesFromLoop;
+        const physicalRuns = buildingFabricationGeneratorTestOnly.buildExteriorRunsFromLoop(loop);
+        const frames = resolve(loop, {});
+        assertEqual(physicalRuns.length, 4, 'Cornice/cap/corner consumers still see one straight physical front run.');
+        assertEqual(frames.order.length, 5, 'The frame path promotes both sides of the marked point to logical faces.');
+        assertNear(frames.A.length, 10, 1e-6, 'First split face solves on its own length.');
+        assertNear(frames.B.length, 10, 1e-6, 'Second split face solves on its own length.');
+        assertNear(frames.A.end.x, frames.B.start.x, 1e-9, 'Split faces share the marker point (x).');
+        assertNear(frames.A.end.z, frames.B.start.z, 1e-9, 'Split faces share the marker point (z).');
+        assertNear(frames.A.t.x * frames.B.t.z - frames.A.t.z * frames.B.t.x, 0, 1e-9, 'Split face tangents stay collinear.');
+    });
+
+    test('BuildingFabricationGenerator: collinear depth changes form return steps in shell/cap loops (AI 517)', () => {
+        const loop = [
+            { x: -10, z: 5 },
+            { x: 0, z: 5, split: true },
+            { x: 10, z: 5 },
+            { x: 10, z: -5 },
+            { x: -10, z: -5 }
+        ];
+        const frames = buildingFabricationGeneratorTestOnly.computeFacadeFramesFromLoop(loop, {});
+        const pair = buildingFabricationGeneratorTestOnly.cornerJoinPairWithDepths(frames.A, 0, frames.B, -0.4, null);
+        assertNear(pair.aEnd.x, 0, 1e-9, 'The proud face ends on the split line.');
+        assertNear(pair.bStart.x, 0, 1e-9, 'The inset face starts on the split line.');
+        assertNear(pair.aEnd.z - pair.bStart.z, 0.4, 1e-6, 'Different depths emit a 0.4m return instead of a parallel-line mitre.');
+
+        const equal = buildingFabricationGeneratorTestOnly.cornerJoinPairWithDepths(frames.A, -0.2, frames.B, -0.2, null);
+        assertNear(equal.aEnd.x, equal.bStart.x, 1e-9, 'Matching depths keep one shared point (x).');
+        assertNear(equal.aEnd.z, equal.bStart.z, 1e-9, 'Matching depths keep one shared point (z).');
+
+        const capLoop = buildingFabricationGeneratorTestOnly.buildCornerJoinLoopWithDepths({
+            frames,
+            depthOf: (faceId) => faceId === 'B' ? -0.4 : 0
+        });
+        const shellLoop = buildingFabricationGeneratorTestOnly.buildCornerJoinLoopWithDepths({
+            frames,
+            depthOf: (faceId) => faceId === 'B' ? -0.5 : -0.1
+        });
+        const corniceLoop = buildingFabricationGeneratorTestOnly.buildCornerJoinLoopWithDepths({ frames, depthOf: () => 0 });
+        const hasReturn = (points, z0, z1) => points.some((point, index) => {
+            const next = points[(index + 1) % points.length];
+            return Math.abs(point.x) < 1e-6 && Math.abs(next.x) < 1e-6
+                && Math.abs(Math.abs(point.z - next.z) - Math.abs(z0 - z1)) < 1e-6;
+        });
+        assertTrue(hasReturn(capLoop, 5, 4.6), 'Cap outline contains the facade depth return.');
+        assertTrue(hasReturn(shellLoop, 4.9, 4.5), 'Interior shell outline contains its own depth return.');
+        assertTrue(corniceLoop.every((point, index) => {
+            const next = corniceLoop[(index + 1) % corniceLoop.length];
+            return Math.hypot(point.x - next.x, point.z - next.z) > 1e-6;
+        }), 'Zero-depth cornice outline has no collapsed edge at the 180-degree join.');
+    });
+
+    test('BuildingFabricationGenerator: linked split faces re-solve at each sub-run length (AI 517)', () => {
+        const loop = [
+            { x: -10, z: 5 },
+            { x: -2, z: 5, split: true },
+            { x: 10, z: 5 },
+            { x: 10, z: -5 },
+            { x: -10, z: -5 }
+        ];
+        const frames = buildingFabricationGeneratorTestOnly.computeFacadeFramesFromLoop(loop, {});
+        const frontIds = frames.order.filter((faceId) => frames[faceId].n.z > 0.99);
+        const masterFaceId = frontIds.find((faceId) => Math.abs(frames[faceId].length - 12) < 1e-6);
+        const slaveFaceId = frontIds.find((faceId) => faceId !== masterFaceId);
+        const master = {
+            layout: {
+                bays: {
+                    items: [
+                        { id: 'left', size: { mode: 'fixed', widthMeters: 1 }, expandPreference: 'no_repeat' },
+                        { id: 'field', size: { mode: 'range', minMeters: 2, maxMeters: null }, expandPreference: 'prefer_expand' },
+                        { id: 'right', size: { mode: 'fixed', widthMeters: 1 }, expandPreference: 'no_repeat' }
+                    ]
+                }
+            }
+        };
+        const parts = buildAi512Parts({
+            footprintLoops: [loop],
+            layers: [
+                createDefaultFloorLayer({
+                    id: 'floor_517_link',
+                    floors: 1,
+                    floorHeight: 3.2,
+                    belt: { enabled: false },
+                    windows: { enabled: false },
+                    faceLinking: { links: { [slaveFaceId]: masterFaceId } }
+                })
+            ],
+            facades: { [masterFaceId]: master }
+        });
+        const entries = parts.bayHighlightDataByLayerId?.floor_517_link ?? [];
+        const spanOf = (faceId) => entries
+            .filter((entry) => entry.faceId === faceId)
+            .reduce((sum, entry) => sum + Math.hypot(entry.x1 - entry.x0, entry.z1 - entry.z0), 0);
+        assertNear(spanOf(masterFaceId), 12, 1e-5, 'Master layout fills its 12m split face.');
+        assertNear(spanOf(slaveFaceId), 8, 1e-5, 'Linked layout independently re-solves to its 8m split face.');
+        assertTrue(!(parts.warnings ?? []).some((warning) => String(warning).includes('falling back')), 'Split-face solve does not fall back to the unsplit wall.');
+    });
+
     test('BuildingFabricationGenerator: rect footprints keep resolving to the same A–D frames (AI 512)', () => {
         const resolveN = buildingFabricationGeneratorTestOnly?.computeFacadeFramesFromLoop ?? null;
         const resolveQuad = buildingFabricationGeneratorTestOnly?.computeQuadFacadeFramesFromLoop ?? null;
@@ -20737,7 +21163,7 @@ async function runTests() {
         assertTrue(spike < 1.0, 'Neither bevel point spikes past the corner.');
     });
 
-    const buildAi512Parts = ({ footprintLoops, layers, facades, attachments = null }) => {
+    function buildAi512Parts({ footprintLoops, layers, facades, attachments = null }) {
         const { map, generatorConfig, tileSize } = makeBalconyTestMap();
         return buildBuildingFabricationVisualParts({
             map,
@@ -20752,7 +21178,7 @@ async function runTests() {
             overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
             walls: { inset: 0.0 }
         });
-    };
+    }
 
     const ai512WindowBay = (id, widthMeters, repeat) => ({
         id,

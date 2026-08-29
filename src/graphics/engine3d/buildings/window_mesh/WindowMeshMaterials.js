@@ -5,7 +5,6 @@
 import * as THREE from 'three';
 import {
     sanitizeWindowMeshSettings,
-    WINDOW_SHADE_DIRECTION,
     WINDOW_HANDLE_MATERIAL_MODE
 } from '../../../../app/buildings/window_mesh/WindowMeshSettings.js';
 import { getWindowInteriorAtlasById } from '../../../content3d/catalogs/WindowInteriorAtlasCatalog.js';
@@ -41,26 +40,6 @@ function disableIblOnMaterial(mat) {
     mat.userData.iblNoAutoEnvMapIntensity = true;
     mat.envMapIntensity = 0;
     mat.needsUpdate = true;
-}
-
-function getFrameWidths(frame) {
-    const src = frame && typeof frame === 'object' ? frame : {};
-    const legacy = Math.max(0, Number(src.width) || 0);
-    const vertical = Number(src.verticalWidth);
-    const horizontal = Number(src.horizontalWidth);
-    return {
-        vertical: Number.isFinite(vertical) ? Math.max(0, vertical) : legacy,
-        horizontal: Number.isFinite(horizontal) ? Math.max(0, horizontal) : legacy
-    };
-}
-
-function hasFrameBottomPiece(frame) {
-    const src = frame && typeof frame === 'object' ? frame : {};
-    if (!src.openBottom) return true;
-    const bottom = src.doorBottomFrame && typeof src.doorBottomFrame === 'object' ? src.doorBottomFrame : null;
-    if (!bottom) return false;
-    const mode = typeof bottom.mode === 'string' ? bottom.mode.trim().toLowerCase() : '';
-    return !!bottom.enabled && mode === 'match';
 }
 
 function makeNoiseTexture({ size = 64, seed = 1 } = {}) {
@@ -287,34 +266,27 @@ function getOrCreateInteriorAtlasTexture({ url, cols, rows } = {}) {
     return tex;
 }
 
-function patchShadeShader(mat, { fabricScaleX, fabricScaleY, fabricIntensity, openingWidth, openingHeight, shadeAxis }) {
+function patchShadeShader(mat) {
     mat.userData = mat.userData ?? {};
     mat.userData.windowShade = true;
-    mat.customProgramCacheKey = () => 'window_shade_v2';
+    mat.userData.buildingWindowMergeSafeShader = 'window_shade_v4';
+    mat.customProgramCacheKey = () => 'window_shade_v4';
 
     mat.onBeforeCompile = (shader) => {
-        shader.uniforms.uShadeFabricScale = { value: new THREE.Vector2(Number(fabricScaleX) || 1.0, Number(fabricScaleY) || 1.0) };
-        shader.uniforms.uShadeFabricIntensity = { value: Number(fabricIntensity) || 0.0 };
-        shader.uniforms.uShadeAxis = { value: Number(shadeAxis) || 0.0 };
-
-        const w = Math.max(1e-4, Number(openingWidth) || 1.0);
-        const h = Math.max(1e-4, Number(openingHeight) || 1.0);
-        shader.uniforms.uShadeXMin = { value: -w * 0.5 };
-        shader.uniforms.uShadeYMin = { value: -h * 0.5 };
-        shader.uniforms.uShadeInvWidth = { value: 1.0 / w };
-        shader.uniforms.uShadeInvHeight = { value: 1.0 / h };
-
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',
             `#include <common>
 attribute float instanceShadeCoverage;
 attribute float instanceShadeFlipX;
-uniform float uShadeXMin;
-uniform float uShadeYMin;
-uniform float uShadeInvWidth;
-uniform float uShadeInvHeight;
+attribute vec2 instanceShadeFabricScale;
+attribute float instanceShadeFabricIntensity;
+attribute float instanceShadeAxis;
+attribute vec2 windowShadeUv;
 varying float vShadeCoverage;
 varying float vShadeFlipX;
+varying vec2 vShadeFabricScale;
+varying float vShadeFabricIntensity;
+varying float vShadeAxis;
 varying float vShadeU;
 varying float vShadeV;`
         );
@@ -324,18 +296,21 @@ varying float vShadeV;`
             `#include <begin_vertex>
 vShadeCoverage = instanceShadeCoverage;
 vShadeFlipX = instanceShadeFlipX;
-vShadeU = clamp((position.x - uShadeXMin) * uShadeInvWidth, 0.0, 1.0);
-vShadeV = clamp((position.y - uShadeYMin) * uShadeInvHeight, 0.0, 1.0);`
+vShadeFabricScale = instanceShadeFabricScale;
+vShadeFabricIntensity = instanceShadeFabricIntensity;
+vShadeAxis = instanceShadeAxis;
+vShadeU = windowShadeUv.x;
+vShadeV = windowShadeUv.y;`
         );
 
         shader.fragmentShader = shader.fragmentShader.replace(
             '#include <common>',
             `#include <common>
-uniform vec2 uShadeFabricScale;
-uniform float uShadeFabricIntensity;
-uniform float uShadeAxis;
 varying float vShadeCoverage;
 varying float vShadeFlipX;
+varying vec2 vShadeFabricScale;
+varying float vShadeFabricIntensity;
+varying float vShadeAxis;
 varying float vShadeU;
 varying float vShadeV;`
         );
@@ -343,10 +318,10 @@ varying float vShadeV;`
         shader.fragmentShader = shader.fragmentShader.replace(
             '#include <map_fragment>',
             `#ifdef USE_MAP
-vec2 shadeUv = vMapUv * uShadeFabricScale;
+vec2 shadeUv = vMapUv * vShadeFabricScale;
 vec4 texelColor = texture2D(map, shadeUv);
 float n = texelColor.r * 2.0 - 1.0;
-float f = 1.0 + n * uShadeFabricIntensity;
+float f = 1.0 + n * vShadeFabricIntensity;
 diffuseColor.rgb *= f;
 #endif`
         );
@@ -356,7 +331,7 @@ diffuseColor.rgb *= f;
             `vec4 diffuseColor = vec4( diffuse, opacity );
 float cov = clamp(vShadeCoverage, 0.0, 1.0);
 if (cov <= 0.001) discard;
-float axis = step(0.5, clamp(uShadeAxis, 0.0, 1.0));
+float axis = step(0.5, clamp(vShadeAxis, 0.0, 1.0));
 float coord = mix(vShadeV, vShadeU, axis);
 float flip = step(0.5, vShadeFlipX);
 coord = mix(coord, 1.0 - coord, flip);
@@ -365,19 +340,13 @@ if (coord > cov) discard;`
     };
 }
 
-function patchInteriorShader(mat, { openingAspect, imageAspect, uvZoom, parallaxStrength, parallaxScale, uvPan }) {
+function patchInteriorShader(mat) {
     mat.userData = mat.userData ?? {};
     mat.userData.windowInterior = true;
-    mat.customProgramCacheKey = () => 'window_interior_v4';
+    mat.userData.buildingWindowMergeSafeShader = 'window_interior_v7';
+    mat.customProgramCacheKey = () => 'window_interior_v7';
 
 	    mat.onBeforeCompile = (shader) => {
-	        shader.uniforms.uInteriorOpeningAspect = { value: Number(openingAspect) || 1.0 };
-	        shader.uniforms.uInteriorImageAspect = { value: Number(imageAspect) || 1.0 };
-	        shader.uniforms.uInteriorUvZoom = { value: Number(uvZoom) || 1.0 };
-	        shader.uniforms.uInteriorParallax = { value: Number(parallaxStrength) || 0.0 };
-	        shader.uniforms.uInteriorParallaxScale = { value: new THREE.Vector2(Number(parallaxScale?.x ?? 1.0), Number(parallaxScale?.y ?? 1.0)) };
-	        shader.uniforms.uInteriorUvPan = { value: new THREE.Vector2(Number(uvPan?.x) || 0.0, Number(uvPan?.y) || 0.0) };
-
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',
             `#include <common>
@@ -385,12 +354,21 @@ attribute vec2 instanceInteriorUvOffset;
 attribute vec2 instanceInteriorUvScale;
 attribute float instanceInteriorFlipX;
 attribute vec3 instanceInteriorTint;
+attribute vec4 instanceInteriorParams;
+attribute vec2 instanceInteriorParallaxScale;
+attribute vec2 instanceInteriorUvPan;
+attribute vec3 instanceInteriorTanU;
+attribute float instanceInteriorLight;
 varying vec2 vInteriorUvOffset;
 varying vec2 vInteriorUvScale;
 varying float vInteriorFlipX;
 varying vec3 vInteriorTint;
+varying vec4 vInteriorParams;
+varying vec2 vInteriorParallaxScale;
+varying vec2 vInteriorUvPan;
 varying vec3 vInteriorTanU;
-varying vec3 vInteriorTanV;`
+varying float vInteriorLight;
+`
         );
 
         shader.vertexShader = shader.vertexShader.replace(
@@ -400,33 +378,29 @@ vInteriorUvOffset = instanceInteriorUvOffset;
 vInteriorUvScale = instanceInteriorUvScale;
 vInteriorFlipX = instanceInteriorFlipX;
 vInteriorTint = instanceInteriorTint;
-
-vec3 tanU = vec3(1.0, 0.0, 0.0);
-vec3 tanV = vec3(0.0, 1.0, 0.0);
+vInteriorParams = instanceInteriorParams;
+vInteriorParallaxScale = instanceInteriorParallaxScale;
+vInteriorUvPan = instanceInteriorUvPan;
+vec3 interiorTanU = instanceInteriorTanU;
 #ifdef USE_INSTANCING
-mat3 instMat3 = mat3(instanceMatrix);
-tanU = instMat3 * tanU;
-tanV = instMat3 * tanV;
+interiorTanU = mat3(instanceMatrix) * interiorTanU;
 #endif
-vInteriorTanU = normalize(normalMatrix * tanU);
-vInteriorTanV = normalize(normalMatrix * tanV);`
+vInteriorTanU = normalize(normalMatrix * interiorTanU);
+vInteriorLight = instanceInteriorLight;`
         );
 
         shader.fragmentShader = shader.fragmentShader.replace(
             '#include <common>',
             `#include <common>
-uniform float uInteriorOpeningAspect;
-uniform float uInteriorImageAspect;
-uniform float uInteriorUvZoom;
-uniform float uInteriorParallax;
-uniform vec2 uInteriorParallaxScale;
-uniform vec2 uInteriorUvPan;
 varying vec2 vInteriorUvOffset;
 varying vec2 vInteriorUvScale;
 varying float vInteriorFlipX;
 varying vec3 vInteriorTint;
+varying vec4 vInteriorParams;
+varying vec2 vInteriorParallaxScale;
+varying vec2 vInteriorUvPan;
 varying vec3 vInteriorTanU;
-varying vec3 vInteriorTanV;
+varying float vInteriorLight;
 
 vec3 rgb2hsv(vec3 c){
     vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
@@ -453,15 +427,15 @@ vec3 winSrgbToLinear(vec3 c){
         shader.fragmentShader = shader.fragmentShader.replace(
             '#include <map_fragment>',
             `#ifdef USE_MAP
-float openingAspect = max(1e-4, uInteriorOpeningAspect);
-float imageAspect = max(1e-4, uInteriorImageAspect);
-float zoom = max(1e-4, uInteriorUvZoom);
+float openingAspect = max(1e-4, vInteriorParams.x);
+float imageAspect = max(1e-4, vInteriorParams.y);
+float zoom = max(1e-4, vInteriorParams.z);
 float rel = openingAspect / imageAspect;
 vec2 coverScale = vec2(1.0, 1.0);
 coverScale.y = rel > 1.0 ? rel : 1.0;
 coverScale.x = rel < 1.0 ? (1.0 / max(1e-4, rel)) : 1.0;
 vec2 uvScale = coverScale * zoom;
-vec2 uvLocal = (vMapUv - vec2(0.5)) / uvScale + vec2(0.5) + uInteriorUvPan;
+vec2 uvLocal = (vMapUv - vec2(0.5)) / uvScale + vec2(0.5) + vInteriorUvPan;
 
 vec3 mvNormal = normalize(vNormal);
 vec3 mvViewDir = normalize(vViewPosition);
@@ -472,7 +446,7 @@ vec3 mvTanV = normalize(cross(mvNormal, mvTanU));
 vec3 mvViewTS = vec3(dot(mvViewDir, mvTanU), dot(mvViewDir, mvTanV), dot(mvViewDir, mvNormal));
 
 vec2 parDir = mvViewTS.xy / max(0.35, mvViewTS.z);
-	uvLocal -= (parDir / uvScale) * (clamp(uInteriorParallax, 0.0, 1.0) * max(vec2(0.0), uInteriorParallaxScale));
+	uvLocal -= (parDir / uvScale) * (clamp(vInteriorParams.w, 0.0, 1.0) * max(vec2(0.0), vInteriorParallaxScale));
 	uvLocal = clamp(uvLocal, vec2(0.0), vec2(1.0));
 
 float flipX = step(0.5, vInteriorFlipX);
@@ -491,18 +465,17 @@ texelColor.rgb = hsv2rgb(hsv);
 diffuseColor *= texelColor;
 #endif`
         );
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <emissivemap_fragment>',
+            `#include <emissivemap_fragment>
+totalEmissiveRadiance *= clamp(vInteriorLight, 0.0, 1.0);`
+        );
     };
 }
 
 export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
     const s = sanitizeWindowMeshSettings(settings);
-    const { vertical: frameVerticalWidth, horizontal: frameHorizontalWidth } = getFrameWidths(s.frame);
-    const bottomFrameEnabled = hasFrameBottomPiece(s.frame);
-
-    const openingWidth = Math.max(0.01, s.width - frameVerticalWidth * 2);
-    const openingHeight = Math.max(0.01, s.height - frameHorizontalWidth - (bottomFrameEnabled ? frameHorizontalWidth : 0));
-    const openingAspect = openingWidth / openingHeight;
-
     const frameBevel = s.frame.bevel;
     const frameNormalMap = (frameBevel.size > 0.001) ? getBevelNormalTexture(frameBevel) : null;
     const framePbr = s.frame.material ?? {};
@@ -620,16 +593,7 @@ export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
     });
     disableIblOnMaterial(shadeMat);
     shadeMat.side = THREE.DoubleSide;
-    const aspect = s.height / Math.max(0.01, s.width);
-    const shadeAxis = s.shade.direction === WINDOW_SHADE_DIRECTION.TOP_TO_BOTTOM ? 0.0 : 1.0;
-    patchShadeShader(shadeMat, {
-        fabricScaleX: s.shade.fabric.scale,
-        fabricScaleY: s.shade.fabric.scale * aspect,
-        fabricIntensity: s.shade.fabric.intensity,
-        openingWidth,
-        openingHeight,
-        shadeAxis
-    });
+    patchShadeShader(shadeMat);
     shadeMat.needsUpdate = true;
 
     const atlasTex = getOrCreateInteriorAtlasTexture({
@@ -648,15 +612,7 @@ export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
     });
     disableIblOnMaterial(interiorMat);
     interiorMat.side = THREE.DoubleSide;
-    const parallaxStrength = clamp((s.interior.parallaxDepthMeters || 0) / 50.0, 0.0, 1.0);
-    patchInteriorShader(interiorMat, {
-        openingAspect,
-        imageAspect: s.interior.imageAspect,
-        uvZoom: s.interior.uvZoom,
-        parallaxStrength,
-        parallaxScale: s.interior.parallaxScale,
-        uvPan: s.interior.uvPan
-    });
+    patchInteriorShader(interiorMat);
     interiorMat.needsUpdate = true;
 
     return {

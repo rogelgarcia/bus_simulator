@@ -1,3 +1,5 @@
+# DONE
+
 # Problem
 
 Once footprints are N-faced polygons (AI 512), editing them by dragging raw
@@ -78,3 +80,11 @@ content may move/re-seed on any of these edits.
   - `prompts/AI_DONE_<branch>_##_SUBJECT_title_DONE.md` on non-main branches
 - Do not move to `prompts/archive/` automatically.
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change)
+
+# Outcome (2026-08-29)
+
+- Added a pure footprint-editing geometry module for stretch validity, angle-preserving stretch, connected push/pull, detached connector faces, stable run ids, and solver-minimum clamping.
+- Persisted run identity and authored direction through footprint normalization, export, transforms, scenario overrides, and facade-frame generation.
+- Replaced raw-vertex layout editing with live face handles, cut guides, normal push gizmos, numeric delta entry, detached mode, disabled red-X states, and connector-face defaults.
+- Added focused unit tests, browser core guards, and an automated visual capture scenario for the L-warehouse stretch and connector-wall cases.
+- Documented the persisted-run metadata and face-extension edit contract in the building topology specification.

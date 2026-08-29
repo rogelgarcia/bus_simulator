@@ -3,10 +3,12 @@
 import { BLUE_BELT_TOWER_BUILDING_CONFIG } from '../buildings/configs/BlueBeltTower.js';
 import { BANDED_LOFT_2_BUILDING_CONFIG } from '../buildings/configs/BandedLoft2.js';
 import { BRADBURY_BLOCK_BUILDING_CONFIG } from '../buildings/configs/BradburyBlock.js';
+import { BRADBURY_BLOCK_SPLIT_TEST_BUILDING_CONFIG } from '../buildings/configs/BradburyBlockSplitTest.js';
 import { BEIGE_1_BUILDING_CONFIG } from '../buildings/configs/Beige1.js';
 import { BRICK_BANK_2_BUILDING_CONFIG } from '../buildings/configs/BrickBank2.js';
 import { BRICK_MIDRISE_BUILDING_CONFIG } from '../buildings/configs/BrickMidrise.js';
 import { BRICK_MIDRISE_2_BUILDING_CONFIG } from '../buildings/configs/BrickMidrise2.js';
+import { BURBAN_BUILDING_CONFIG } from '../buildings/configs/Burban.js';
 import { GOV_CENTER_BUILDING_CONFIG } from '../buildings/configs/GovCenter.js';
 import { GOV_CENTER_2_BUILDING_CONFIG } from '../buildings/configs/GovCenter2.js';
 import { HEX_PAVILION_BUILDING_CONFIG } from '../buildings/configs/HexPavilion.js';
@@ -24,9 +26,11 @@ const BUILDING_CONFIGS = Object.freeze([
     BANDED_LOFT_2_BUILDING_CONFIG,
     BEIGE_1_BUILDING_CONFIG,
     BRADBURY_BLOCK_BUILDING_CONFIG,
+    BRADBURY_BLOCK_SPLIT_TEST_BUILDING_CONFIG,
     BRICK_BANK_2_BUILDING_CONFIG,
     BRICK_MIDRISE_BUILDING_CONFIG,
     BRICK_MIDRISE_2_BUILDING_CONFIG,
+    BURBAN_BUILDING_CONFIG,
     BLUE_BELT_TOWER_BUILDING_CONFIG,
     GOV_CENTER_BUILDING_CONFIG,
     GOV_CENTER_2_BUILDING_CONFIG,

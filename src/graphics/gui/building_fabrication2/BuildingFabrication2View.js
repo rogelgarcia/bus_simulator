@@ -32,6 +32,15 @@ import {
 } from '../../../app/buildings/BayBalconyModel.js';
 import { normalizeFacadeAttachmentsConfig } from '../../../app/buildings/FacadeAttachmentsModel.js';
 import {
+    createFootprintPlan,
+    footprintPlanToLoop,
+    getFootprintRunFrame,
+    inspectPushPull,
+    inspectStretchHandles,
+    pushPullFootprint,
+    stretchFootprint
+} from '../../../app/buildings/footprint_edits/BuildingFootprintEdits.js';
+import {
     EDGE_BEVEL_DEFAULT_WIDTH_METERS,
     normalizeEdgeBevelConfig
 } from '../../../app/buildings/EdgeBevelModel.js';
@@ -115,6 +124,8 @@ const LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M = 1.0;
 const LAYOUT_DRAG_REBUILD_HZ = 4;
 const LAYOUT_HOVER_VERTEX_PX = 16;
 const LAYOUT_HOVER_EDGE_PX = 12;
+const LAYOUT_HOVER_HANDLE_PX = 18;
+const LAYOUT_PUSH_GIZMO_OFFSET_M = 1.4;
 const LAYOUT_VERTEX_RIGHT_ANGLE_SNAP_RATIO = 0.16;
 const LAYOUT_VERTEX_RIGHT_ANGLE_SNAP_MIN_DIST_M = 0.2;
 const LAYOUT_VERTEX_RIGHT_ANGLE_SNAP_MAX_DIST_M = 2.0;
@@ -459,17 +470,24 @@ function signedAreaXZ(loop) {
 
 function cloneLoop(loop) {
     const src = Array.isArray(loop) ? loop : [];
-    return src.map((p) => ({ x: Number(p?.x) || 0, z: Number(p?.z) || 0 }));
+    return src.map((p) => ({
+        x: Number(p?.x) || 0,
+        z: Number(p?.z) || 0,
+        ...(isFaceId(p?.runId) ? { runId: p.runId } : {}),
+        ...(typeof p?.runForward === 'boolean' ? { runForward: p.runForward } : {}),
+        ...(p?.split === true ? { split: true } : {}),
+        ...(p?.arc && typeof p.arc === 'object' ? { arc: { ...p.arc } } : {})
+    }));
 }
 
 function createDefaultFootprintLoop({ widthMeters = DEFAULT_FOOTPRINT_WIDTH_M, depthMeters = DEFAULT_FOOTPRINT_DEPTH_M } = {}) {
     const halfW = Math.max(0.5, Number(widthMeters) || DEFAULT_FOOTPRINT_WIDTH_M) * 0.5;
     const halfD = Math.max(0.5, Number(depthMeters) || DEFAULT_FOOTPRINT_DEPTH_M) * 0.5;
     return [
-        { x: -halfW, z: halfD },
-        { x: halfW, z: halfD },
-        { x: halfW, z: -halfD },
-        { x: -halfW, z: -halfD }
+        { x: -halfW, z: halfD, runId: 'A', runForward: true },
+        { x: halfW, z: halfD, runId: 'B', runForward: true },
+        { x: halfW, z: -halfD, runId: 'C', runForward: true },
+        { x: -halfW, z: -halfD, runId: 'D', runForward: true }
     ];
 }
 
@@ -488,7 +506,14 @@ function normalizePrimaryFootprintLoop(footprintLoops) {
         const x = Number(entry?.x ?? entry?.[0]);
         const z = Number(entry?.z ?? entry?.[1]);
         if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
-        const p = { x, z };
+        const p = {
+            x,
+            z,
+            ...(isFaceId(entry?.runId) ? { runId: entry.runId } : {}),
+            ...(typeof entry?.runForward === 'boolean' ? { runForward: entry.runForward } : {}),
+            ...(entry?.split === true ? { split: true } : {}),
+            ...(entry?.arc && typeof entry.arc === 'object' ? { arc: { ...entry.arc } } : {})
+        };
         if (!cleaned.length || !samePoint(cleaned[cleaned.length - 1], p)) cleaned.push(p);
     }
     if (cleaned.length > 2 && samePoint(cleaned[0], cleaned[cleaned.length - 1])) cleaned.pop();
@@ -497,6 +522,52 @@ function normalizePrimaryFootprintLoop(footprintLoops) {
     // the quad-only layout-adjust gizmo is gated on loop.length === 4.
     if (cleaned.length >= 3 && cleaned.length <= 26) return cleaned;
     return createDefaultFootprintLoop();
+}
+
+function loopHasStableRunMetadata(loop) {
+    const points = Array.isArray(loop) ? loop : [];
+    const ids = points.map((point) => point?.runId);
+    return points.length >= 3 && ids.every((id) => isFaceId(id)) && new Set(ids).size === ids.length;
+}
+
+function pointsEqual2(a, b, epsilon = 1e-5) {
+    return Math.abs((Number(a?.x) || 0) - (Number(b?.x) || 0)) <= epsilon
+        && Math.abs((Number(a?.z) || 0) - (Number(b?.z) || 0)) <= epsilon;
+}
+
+function attachStableRunMetadata(loop) {
+    const points = cloneLoop(loop);
+    if (loopHasStableRunMetadata(points)) return points;
+    const frames = computeFacadeFramesFromLoop(points, { warnings: null });
+    const faceIds = Array.isArray(frames?.order) ? frames.order : [];
+    if (faceIds.length !== points.length) return null;
+
+    const used = new Set();
+    for (let index = 0; index < points.length; index++) {
+        const a = points[index];
+        const b = points[(index + 1) % points.length];
+        let match = null;
+        let forward = true;
+        for (const faceId of faceIds) {
+            if (used.has(faceId)) continue;
+            const frame = frames?.[faceId] ?? null;
+            if (pointsEqual2(a, frame?.start) && pointsEqual2(b, frame?.end)) {
+                match = faceId;
+                forward = true;
+                break;
+            }
+            if (pointsEqual2(a, frame?.end) && pointsEqual2(b, frame?.start)) {
+                match = faceId;
+                forward = false;
+                break;
+            }
+        }
+        if (!match) return null;
+        used.add(match);
+        points[index].runId = match;
+        points[index].runForward = forward;
+    }
+    return points;
 }
 
 function edgeIndicesFromFaceId(faceId) {
@@ -845,6 +916,8 @@ export class BuildingFabrication2View {
         this._layoutPointer = new THREE.Vector2();
         this._layoutHover = null;
         this._layoutDrag = null;
+        this._layoutToolFaceId = null;
+        this._layoutLastWarning = '';
         this._layoutMinWidthByFaceId = null;
         this._layoutProjected = new THREE.Vector3();
         this._layoutProjectedA = new THREE.Vector3();
@@ -952,6 +1025,8 @@ export class BuildingFabrication2View {
         this.ui.onCompiledPreviewChange = (enabled) => this._setCompiledPreviewEnabled(enabled);
         this.ui.onRulerToggle = (enabled) => this._setRulerEnabled(enabled);
         this.ui.onAdjustLayoutToggle = (enabled) => this._setLayoutAdjustEnabled(enabled);
+        this.ui.onApplyLayoutDelta = (operation) => this._applyLayoutNumericDelta(operation);
+        this.ui.onLayoutDetachedChange = () => this._syncLayoutSceneState();
         this.ui.onSelectCatalogEntry = (configId) => this._loadConfigFromCatalog(configId);
 
         this.ui.onAddFloorLayer = () => this._addFloorLayer();
@@ -1098,6 +1173,8 @@ export class BuildingFabrication2View {
         this._rulerPointerMoved = false;
         this._layoutHover = null;
         this._layoutDrag = null;
+        this._layoutToolFaceId = null;
+        this._layoutLastWarning = '';
         this._layoutMinWidthByFaceId = null;
         if (canvas) canvas.style.cursor = '';
         this.scene?.setFaceHighlightSuppressed?.(false);
@@ -1139,6 +1216,8 @@ export class BuildingFabrication2View {
         this.ui.onExplodedDecorationsChange = null;
         this.ui.onRulerToggle = null;
         this.ui.onAdjustLayoutToggle = null;
+        this.ui.onApplyLayoutDelta = null;
+        this.ui.onLayoutDetachedChange = null;
         this.ui.onSelectCatalogEntry = null;
         this.ui.onAddFloorLayer = null;
         this.ui.onAddRoofLayer = null;
@@ -4195,6 +4274,8 @@ export class BuildingFabrication2View {
         this._materialConfigBayId = null;
         this._layoutHover = null;
         this._layoutDrag = null;
+        this._layoutToolFaceId = null;
+        this._layoutLastWarning = '';
         this._layoutMinWidthByFaceId = null;
         this.scene.setSelectedFaceId(null);
 
@@ -4242,6 +4323,8 @@ export class BuildingFabrication2View {
         this._materialConfigBayId = null;
         this._layoutHover = null;
         this._layoutDrag = null;
+        this._layoutToolFaceId = null;
+        this._layoutLastWarning = '';
         this._layoutMinWidthByFaceId = null;
         const lockedToByFace = createEmptyFaceLockMap();
         for (const [slave, master] of Object.entries(faceLinking.links)) lockedToByFace.set(slave, master);
@@ -4295,6 +4378,8 @@ export class BuildingFabrication2View {
 
         this._layoutHover = null;
         this._layoutDrag = null;
+        this._layoutToolFaceId = null;
+        this._layoutLastWarning = '';
         this._layoutMinWidthByFaceId = null;
         this._setCurrentFootprintLoop(nextLoop, { rateLimited: false });
     }
@@ -4310,6 +4395,8 @@ export class BuildingFabrication2View {
         this._materialConfigBayId = null;
         this._layoutHover = null;
         this._layoutDrag = null;
+        this._layoutToolFaceId = null;
+        this._layoutLastWarning = '';
         this._layoutMinWidthByFaceId = null;
         this._setLayoutAdjustEnabled(false);
         this.scene.setSelectedFaceId(null);
@@ -5927,6 +6014,8 @@ export class BuildingFabrication2View {
             if (this._layoutDrag) this._finishLayoutDrag(null);
             this._layoutHover = null;
             this._layoutDrag = null;
+            this._layoutToolFaceId = null;
+            this._layoutLastWarning = '';
             this._layoutMinWidthByFaceId = null;
         }
 
@@ -6142,7 +6231,7 @@ export class BuildingFabrication2View {
         const cfg = this._currentConfig;
         if (!cfg || typeof cfg !== 'object') return null;
         const loop = normalizePrimaryFootprintLoop(cfg.footprintLoops);
-        cfg.footprintLoops = [cloneLoop(loop)];
+        cfg.footprintLoops = [attachStableRunMetadata(loop) ?? cloneLoop(loop)];
         return cfg.footprintLoops[0];
     }
 
@@ -6151,18 +6240,28 @@ export class BuildingFabrication2View {
         return Array.isArray(loop) ? cloneLoop(loop) : null;
     }
 
+    _getCurrentFootprintPlan() {
+        const loop = this._getCurrentFootprintLoop();
+        if (!loopHasStableRunMetadata(loop)) return null;
+        try {
+            return createFootprintPlan(loop);
+        } catch {
+            return null;
+        }
+    }
+
     _setCurrentFootprintLoop(loop, { rateLimited = false } = {}) {
         const cfg = this._currentConfig;
-        if (!cfg || !Array.isArray(loop) || loop.length !== 4) return false;
+        if (!cfg || !Array.isArray(loop) || loop.length < 3 || loop.length > 26) return false;
         const next = cloneLoop(loop);
         const prev = this._ensureCurrentFootprintLoop();
-        if (!Array.isArray(prev) || prev.length !== 4) return false;
+        if (!Array.isArray(prev)) return false;
 
-        let changed = false;
-        for (let i = 0; i < 4; i++) {
+        let changed = prev.length !== next.length;
+        for (let i = 0; !changed && i < next.length; i++) {
             const dx = Math.abs((Number(prev[i]?.x) || 0) - (Number(next[i]?.x) || 0));
             const dz = Math.abs((Number(prev[i]?.z) || 0) - (Number(next[i]?.z) || 0));
-            if (dx > 1e-6 || dz > 1e-6) {
+            if (dx > 1e-6 || dz > 1e-6 || prev[i]?.runId !== next[i]?.runId || prev[i]?.runForward !== next[i]?.runForward) {
                 changed = true;
                 break;
             }
@@ -6181,28 +6280,40 @@ export class BuildingFabrication2View {
     _syncLayoutSceneState() {
         const hasBuilding = !!this.scene?.getHasBuilding?.();
         let enabled = !!this._layoutAdjustEnabled && hasBuilding && !!this._currentConfig;
-        let loop = enabled ? this._getCurrentFootprintLoop() : null;
-        // The layout-adjust gizmo edits rectangles only (N-gon vertex
-        // editing is a deferred AI 512 follow-up); other tools keep working.
-        if (loop && loop.length !== 4) {
+        const plan = enabled ? this._getCurrentFootprintPlan() : null;
+        let loop = plan ? footprintPlanToLoop(plan) : null;
+        if (!plan) {
             enabled = false;
             loop = null;
         }
         const drag = this._layoutDrag;
         const hover = this._layoutHover;
         const widthGuideFaceIds = enabled && drag ? this._resolveLayoutWidthGuideFaceIds(drag) : null;
-        const hoverFaceId = enabled
-            ? (drag?.kind === 'face' ? drag.faceId : (hover?.kind === 'face' ? hover.faceId : null))
-            : null;
-        const hoverVertexIndex = enabled
-            ? (drag?.kind === 'vertex' ? drag.vertexIndex : (hover?.kind === 'vertex' ? hover.vertexIndex : null))
-            : null;
+        const candidateFaceId = drag?.faceId ?? hover?.faceId ?? this._layoutToolFaceId;
+        const hoverFaceId = enabled && plan.runIds.includes(candidateFaceId) ? candidateFaceId : null;
+        let faceFrame = null;
+        let stretchHandles = null;
+        let pushPull = null;
+        if (hoverFaceId) {
+            faceFrame = getFootprintRunFrame(plan, hoverFaceId);
+            stretchHandles = inspectStretchHandles(plan, hoverFaceId);
+            pushPull = inspectPushPull(plan, hoverFaceId, { detached: !!this.ui?.getLayoutDetachedEnabled?.() });
+        }
         this.scene?.setLayoutEditState?.({
             enabled,
             loop,
             hoverFaceId,
-            hoverVertexIndex,
-            widthGuideFaceIds
+            widthGuideFaceIds,
+            faceFrame,
+            stretchHandles,
+            pushPull
+        });
+        this.ui?.setLayoutEditState?.({
+            faceId: hoverFaceId,
+            startValid: !!stretchHandles?.start?.valid,
+            endValid: !!stretchHandles?.end?.valid,
+            pushValid: !!pushPull?.valid,
+            warning: this._layoutLastWarning
         });
         this._syncLayoutWidthLabels({ enabled, loop, widthGuideFaceIds });
     }
@@ -6210,22 +6321,13 @@ export class BuildingFabrication2View {
     _resolveLayoutWidthGuideFaceIds(drag) {
         const d = drag && typeof drag === 'object' ? drag : null;
         if (!d) return [];
-        if (d.kind === 'face') {
-            const faceId = isFaceId(d.faceId) ? d.faceId : null;
-            return faceId ? [...(ADJACENT_FACE_IDS_BY_FACE_ID[faceId] ?? [])] : [];
-        }
-        if (d.kind === 'vertex') {
-            const idx = Number(d.vertexIndex);
-            if (!Number.isInteger(idx)) return [];
-            return [...(ADJACENT_FACE_IDS_BY_VERTEX_INDEX[idx] ?? [])];
-        }
-        return [];
+        return Array.isArray(d.affectedRunIds) ? [...d.affectedRunIds] : [];
     }
 
     _syncLayoutWidthLabels({ enabled = false, loop = null, widthGuideFaceIds = null } = {}) {
         const ui = this.ui ?? null;
         if (!ui || typeof ui.setLayoutWidthLabels !== 'function') return;
-        const active = !!enabled && Array.isArray(loop) && loop.length === 4 && Array.isArray(widthGuideFaceIds) && widthGuideFaceIds.length > 0;
+        const active = !!enabled && Array.isArray(loop) && loop.length >= 3 && Array.isArray(widthGuideFaceIds) && widthGuideFaceIds.length > 0;
         if (!active) {
             ui.setLayoutWidthLabels([]);
             return;
@@ -6233,10 +6335,14 @@ export class BuildingFabrication2View {
 
         const planeY = this.scene?.getLayoutEditPlaneY?.() ?? 0.02;
         const entries = [];
+        const plan = this._getCurrentFootprintPlan();
+        if (!plan) {
+            ui.setLayoutWidthLabels([]);
+            return;
+        }
         for (const faceId of widthGuideFaceIds) {
-            if (!isFaceId(faceId)) continue;
-            const frame = computeFaceFrameFromLoop(loop, faceId);
-            if (!frame) continue;
+            if (!isFaceId(faceId) || !plan.runIds.includes(faceId)) continue;
+            const frame = getFootprintRunFrame(plan, faceId);
             const mid = {
                 x: (frame.start.x + frame.end.x) * 0.5,
                 z: (frame.start.z + frame.end.z) * 0.5
@@ -6317,7 +6423,8 @@ export class BuildingFabrication2View {
     }
 
     _resolveFaceMinWidthByFaceId() {
-        const out = { A: LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M, B: LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M, C: LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M, D: LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M };
+        const faceIds = [...(this._getCurrentFootprintPlan()?.runIds ?? FACE_IDS)];
+        const out = Object.fromEntries(faceIds.map((faceId) => [faceId, LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M]));
         const cfg = this._currentConfig;
         const layers = Array.isArray(cfg?.layers) ? cfg.layers : [];
         const facadesByLayerId = cfg?.facades && typeof cfg.facades === 'object' ? cfg.facades : null;
@@ -6347,7 +6454,7 @@ export class BuildingFabrication2View {
                 return cur;
             };
 
-            for (const faceId of FACE_IDS) {
+            for (const faceId of faceIds) {
                 const masterFaceId = resolveMasterFaceId(faceId) ?? faceId;
                 const facade = layerFacades?.[masterFaceId] && typeof layerFacades[masterFaceId] === 'object'
                     ? layerFacades[masterFaceId]
@@ -6451,52 +6558,144 @@ export class BuildingFabrication2View {
         return ex * ex + ey * ey;
     }
 
+    _ensureConnectorFaceConfigs(parentFaceId, connectorRunIds) {
+        const cfg = this._currentConfig;
+        const connectorIds = Array.isArray(connectorRunIds) ? connectorRunIds.filter((id) => isFaceId(id)) : [];
+        if (!cfg || !isFaceId(parentFaceId) || !connectorIds.length) return;
+        const layers = Array.isArray(cfg.layers) ? cfg.layers : [];
+        cfg.facades ??= {};
+
+        for (const layer of layers) {
+            if (layer?.type !== 'floor' || typeof layer?.id !== 'string' || !layer.id) continue;
+            let materialFaceId = parentFaceId;
+            const links = layer?.faceLinking?.links && typeof layer.faceLinking.links === 'object'
+                ? layer.faceLinking.links
+                : null;
+            const visited = new Set();
+            while (isFaceId(links?.[materialFaceId]) && !visited.has(materialFaceId)) {
+                visited.add(materialFaceId);
+                materialFaceId = links[materialFaceId];
+            }
+            const parentMaterial = layer?.faceMaterials?.[materialFaceId] ?? layer?.faceMaterials?.[parentFaceId] ?? null;
+            if (parentMaterial && typeof parentMaterial === 'object') {
+                layer.faceMaterials ??= {};
+                for (const connectorId of connectorIds) {
+                    layer.faceMaterials[connectorId] ??= deepClone(parentMaterial);
+                }
+            }
+
+            cfg.facades[layer.id] ??= {};
+            const layerFacades = cfg.facades[layer.id];
+            for (const connectorId of connectorIds) {
+                layerFacades[connectorId] ??= {
+                    layout: {
+                        bays: {
+                            items: [{
+                                id: `${connectorId.toLowerCase()}_connector_1`,
+                                size: { mode: 'range', minMeters: 0.1, maxMeters: null },
+                                expandPreference: 'prefer_expand',
+                                wallMaterialOverride: null
+                            }],
+                            nextBayIndex: 2
+                        },
+                        groups: { items: [], nextGroupIndex: 1 }
+                    }
+                };
+            }
+        }
+    }
+
+    _applyFootprintTransformResult(result, { parentFaceId = null, rateLimited = false } = {}) {
+        const transformed = result?.footprint ?? null;
+        if (!transformed) return false;
+        const connectorRunIds = Array.isArray(result?.connectorRunIds) ? result.connectorRunIds : [];
+        if (connectorRunIds.length) this._ensureConnectorFaceConfigs(parentFaceId, connectorRunIds);
+        this._layoutLastWarning = Array.isArray(result?.warnings) && result.warnings.length
+            ? String(result.warnings[result.warnings.length - 1])
+            : '';
+        const changed = this._setCurrentFootprintLoop(footprintPlanToLoop(transformed), { rateLimited });
+        if (changed && (!rateLimited || connectorRunIds.length)) this._syncUiState();
+        return changed;
+    }
+
+    _applyLayoutNumericDelta({ kind = null, end = null, delta = 0, detached = false } = {}) {
+        if (!this._layoutAdjustEnabled) return;
+        const faceId = this._layoutToolFaceId ?? this._layoutHover?.faceId ?? null;
+        const plan = this._getCurrentFootprintPlan();
+        if (!plan || !plan.runIds.includes(faceId)) return;
+        const minLengthByRunId = this._resolveFaceMinWidthByFaceId();
+        try {
+            const result = kind === 'stretch'
+                ? stretchFootprint(plan, { faceId, end, delta, minLengthByRunId })
+                : pushPullFootprint(plan, { faceId, delta, detached, minLengthByRunId });
+            this._applyFootprintTransformResult(result, { parentFaceId: faceId, rateLimited: false });
+            this._layoutToolFaceId = faceId;
+            this._layoutHover = { kind, faceId, end };
+            this._syncLayoutSceneState();
+        } catch (error) {
+            this._layoutLastWarning = error instanceof Error ? error.message : String(error);
+            this._syncLayoutSceneState();
+        }
+    }
+
     _computeLayoutHoverFromEvent(event) {
         if (!this._layoutAdjustEnabled || !this._currentConfig) return null;
         if (!this._setLayoutPointerFromEvent(event)) return null;
 
-        const loop = this._getCurrentFootprintLoop();
-        if (!loop || loop.length !== 4) return null;
+        const plan = this._getCurrentFootprintPlan();
+        if (!plan) return null;
+        const loop = footprintPlanToLoop(plan);
 
         const planeY = this.scene?.getLayoutEditPlaneY?.() ?? 0.02;
         const hit3 = this.scene?.raycastHorizontalPlane?.(this._layoutPointer, { y: planeY }) ?? null;
         if (!hit3) return null;
 
         const pointerPx = { x: Number(event?.clientX) || 0, y: Number(event?.clientY) || 0 };
-        const vertexThreshSq = LAYOUT_HOVER_VERTEX_PX * LAYOUT_HOVER_VERTEX_PX;
+        const handleThreshSq = LAYOUT_HOVER_HANDLE_PX * LAYOUT_HOVER_HANDLE_PX;
         const edgeThreshSq = LAYOUT_HOVER_EDGE_PX * LAYOUT_HOVER_EDGE_PX;
 
-        let bestVertexIndex = -1;
-        let bestVertexDistSq = Infinity;
-        const projectedVertices = [];
-        for (let i = 0; i < 4; i++) {
-            const screen = this._projectLoopPointToScreen(loop[i], planeY);
-            projectedVertices.push(screen);
-            if (!screen) continue;
-            const dx = screen.x - pointerPx.x;
-            const dy = screen.y - pointerPx.y;
-            const d2 = dx * dx + dy * dy;
-            if (d2 < bestVertexDistSq) {
-                bestVertexDistSq = d2;
-                bestVertexIndex = i;
+        const activeFaceId = this._layoutDrag?.faceId ?? this._layoutHover?.faceId ?? this._layoutToolFaceId;
+        if (activeFaceId && plan.runIds.includes(activeFaceId)) {
+            const frame = getFootprintRunFrame(plan, activeFaceId);
+            const handles = inspectStretchHandles(plan, activeFaceId);
+            const detached = !!this.ui?.getLayoutDetachedEnabled?.();
+            const push = inspectPushPull(plan, activeFaceId, { detached });
+            const gizmos = [
+                { kind: 'stretch', end: 'start', point: frame.start, valid: !!handles.start.valid },
+                { kind: 'stretch', end: 'end', point: frame.end, valid: !!handles.end.valid },
+                {
+                    kind: 'push',
+                    point: {
+                        x: (frame.start.x + frame.end.x) * 0.5 + frame.normal.x * LAYOUT_PUSH_GIZMO_OFFSET_M,
+                        z: (frame.start.z + frame.end.z) * 0.5 + frame.normal.z * LAYOUT_PUSH_GIZMO_OFFSET_M
+                    },
+                    valid: !!push.valid
+                }
+            ];
+            for (const gizmo of gizmos) {
+                const screen = this._projectLoopPointToScreen(gizmo.point, planeY);
+                if (!screen) continue;
+                const dx = screen.x - pointerPx.x;
+                const dy = screen.y - pointerPx.y;
+                if (dx * dx + dy * dy > handleThreshSq) continue;
+                return {
+                    kind: gizmo.valid ? gizmo.kind : 'disabled',
+                    operation: gizmo.kind,
+                    end: gizmo.end ?? null,
+                    faceId: activeFaceId,
+                    loop,
+                    planeY,
+                    hit: { x: hit3.x, z: hit3.z }
+                };
             }
-        }
-
-        if (bestVertexIndex >= 0 && bestVertexDistSq <= vertexThreshSq) {
-            return {
-                kind: 'vertex',
-                vertexIndex: bestVertexIndex,
-                loop,
-                planeY,
-                hit: { x: hit3.x, z: hit3.z }
-            };
         }
 
         let bestEdgeIndex = -1;
         let bestEdgeDistSq = Infinity;
-        for (let i = 0; i < 4; i++) {
-            const a = projectedVertices[i];
-            const b = projectedVertices[(i + 1) % 4];
+        for (let i = 0; i < plan.runIds.length; i++) {
+            const frame = getFootprintRunFrame(plan, plan.runIds[i]);
+            const a = this._projectLoopPointToScreen(frame.start, planeY);
+            const b = this._projectLoopPointToScreen(frame.end, planeY);
             if (!a || !b) continue;
             const d2 = this._distanceSqPointToScreenSegment(pointerPx, a, b);
             if (d2 < bestEdgeDistSq) {
@@ -6506,7 +6705,7 @@ export class BuildingFabrication2View {
         }
 
         if (bestEdgeIndex >= 0 && bestEdgeDistSq <= edgeThreshSq) {
-            const faceId = faceIdFromEdgeIndex(bestEdgeIndex);
+            const faceId = plan.runIds[bestEdgeIndex] ?? null;
             if (faceId) {
                 return {
                     kind: 'face',
@@ -6532,48 +6731,47 @@ export class BuildingFabrication2View {
         if (!event || event.button !== 0) return;
 
         const hover = this._computeLayoutHoverFromEvent(event);
-        if (!hover || (hover.kind !== 'face' && hover.kind !== 'vertex')) {
+        if (!hover || hover.kind === 'disabled' || !['face', 'stretch', 'push'].includes(hover.kind)) {
             this._layoutHover = null;
             this._syncLayoutSceneState();
             return;
         }
 
-        const startLoop = hover.loop;
+        const startPlan = this._getCurrentFootprintPlan();
+        if (!startPlan) return;
         const minWidthByFaceId = this._resolveFaceMinWidthByFaceId();
-        if (!this._isFootprintLoopValidForLayout(startLoop, minWidthByFaceId)) return;
+        const frame = getFootprintRunFrame(startPlan, hover.faceId);
+        const kind = hover.kind === 'face' ? 'push' : hover.kind;
+        const detached = kind === 'push' && !!this.ui?.getLayoutDetachedEnabled?.();
+        const handles = kind === 'stretch' ? inspectStretchHandles(startPlan, hover.faceId) : null;
+        const cut = kind === 'stretch' ? handles?.[hover.end] : null;
+        const push = kind === 'push' ? inspectPushPull(startPlan, hover.faceId, { detached }) : null;
+        if ((kind === 'stretch' && !cut?.valid) || (kind === 'push' && !push?.valid)) return;
 
+        this._layoutToolFaceId = hover.faceId;
         this._layoutHover = hover;
-        if (hover.kind === 'face') {
-            const frame = computeFaceFrameFromLoop(startLoop, hover.faceId);
-            if (!frame) return;
-            this._layoutDrag = {
-                kind: 'face',
-                faceId: hover.faceId,
-                frame,
-                planeY: hover.planeY,
-                startHit: { x: hover.hit.x, z: hover.hit.z },
-                pointerId: Number.isFinite(event?.pointerId) ? event.pointerId : null,
-                startLoop
-            };
-        } else {
-            const idx = hover.vertexIndex | 0;
-            const p = startLoop[idx];
-            const prev = startLoop[(idx + 3) % 4];
-            const next = startLoop[(idx + 1) % 4];
-            this._layoutDrag = {
-                kind: 'vertex',
-                vertexIndex: idx,
-                planeY: hover.planeY,
-                startHit: { x: hover.hit.x, z: hover.hit.z },
-                pointerId: Number.isFinite(event?.pointerId) ? event.pointerId : null,
-                vertexStart: { x: p.x, z: p.z },
-                prevVertex: { x: prev.x, z: prev.z },
-                nextVertex: { x: next.x, z: next.z },
-                tangentPrev: normalize2({ x: p.x - prev.x, z: p.z - prev.z }),
-                tangentNext: normalize2({ x: next.x - p.x, z: next.z - p.z }),
-                startLoop
-            };
-        }
+        const faceIndex = startPlan.runIds.indexOf(hover.faceId);
+        const pushAffectedRunIds = detached
+            ? [hover.faceId]
+            : [
+                startPlan.runIds[(faceIndex - 1 + startPlan.runIds.length) % startPlan.runIds.length],
+                hover.faceId,
+                startPlan.runIds[(faceIndex + 1) % startPlan.runIds.length]
+            ];
+        this._layoutDrag = {
+            kind,
+            end: hover.end ?? null,
+            faceId: hover.faceId,
+            frame,
+            cut,
+            detached,
+            connectorRunIds: push?.connectorRunIds ?? [],
+            affectedRunIds: kind === 'stretch' ? [...cut.crossedRunIds] : pushAffectedRunIds,
+            planeY: hover.planeY,
+            startHit: { x: hover.hit.x, z: hover.hit.z },
+            pointerId: Number.isFinite(event?.pointerId) ? event.pointerId : null,
+            startPlan
+        };
 
         this._layoutMinWidthByFaceId = minWidthByFaceId;
         const canvas = this.engine?.canvas ?? null;
@@ -6593,6 +6791,7 @@ export class BuildingFabrication2View {
         if (!drag) {
             const hover = this._computeLayoutHoverFromEvent(event);
             this._layoutHover = hover && hover.kind ? hover : null;
+            if (hover?.kind === 'face') this._layoutToolFaceId = hover.faceId;
             this._syncLayoutSceneState();
             return;
         }
@@ -6602,58 +6801,31 @@ export class BuildingFabrication2View {
         if (!hit3) return;
         const hit = { x: hit3.x, z: hit3.z };
 
-        let targetLoop = null;
-        if (drag.kind === 'face') {
-            const delta = {
-                x: hit.x - drag.startHit.x,
-                z: hit.z - drag.startHit.z
-            };
-            const move = dot2(delta, drag.frame.normal);
-            targetLoop = cloneLoop(drag.startLoop);
-            const i0 = drag.frame.startIndex | 0;
-            const i1 = drag.frame.endIndex | 0;
-            targetLoop[i0].x += drag.frame.normal.x * move;
-            targetLoop[i0].z += drag.frame.normal.z * move;
-            targetLoop[i1].x += drag.frame.normal.x * move;
-            targetLoop[i1].z += drag.frame.normal.z * move;
-        } else if (drag.kind === 'vertex') {
-            const deltaHit = { x: hit.x - drag.startHit.x, z: hit.z - drag.startHit.z };
-            let delta = deltaHit;
-            if (event.shiftKey) {
-                const vStart = drag.vertexStart;
-                const prevLineEnd = { x: vStart.x + drag.tangentPrev.x, z: vStart.z + drag.tangentPrev.z };
-                const nextLineEnd = { x: vStart.x + drag.tangentNext.x, z: vStart.z + drag.tangentNext.z };
-                const dPrev = distanceSqPointToLine2(hit, vStart, prevLineEnd);
-                const dNext = distanceSqPointToLine2(hit, vStart, nextLineEnd);
-                const tangent = dPrev <= dNext ? drag.tangentPrev : drag.tangentNext;
-                const amount = dot2(deltaHit, tangent);
-                delta = { x: tangent.x * amount, z: tangent.z * amount };
-            }
-            let vertexTarget = {
-                x: drag.vertexStart.x + delta.x,
-                z: drag.vertexStart.z + delta.z
-            };
-            if (event.ctrlKey) {
-                const snapped = snapVertexToRightAngleIfClose({
-                    candidate: vertexTarget,
-                    prev: drag.prevVertex,
-                    next: drag.nextVertex,
-                    reference: drag.vertexStart
+        const pointerDelta = { x: hit.x - drag.startHit.x, z: hit.z - drag.startHit.z };
+        const delta = drag.kind === 'stretch'
+            ? dot2(pointerDelta, drag.cut.translationDirection)
+            : dot2(pointerDelta, drag.frame.normal);
+        try {
+            const result = drag.kind === 'stretch'
+                ? stretchFootprint(drag.startPlan, {
+                    faceId: drag.faceId,
+                    end: drag.end,
+                    delta,
+                    minLengthByRunId: this._layoutMinWidthByFaceId
+                })
+                : pushPullFootprint(drag.startPlan, {
+                    faceId: drag.faceId,
+                    delta,
+                    detached: drag.detached,
+                    connectorRunIds: drag.connectorRunIds,
+                    minLengthByRunId: this._layoutMinWidthByFaceId
                 });
-                if (snapped) vertexTarget = snapped;
-            }
-            targetLoop = cloneLoop(drag.startLoop);
-            const idx = drag.vertexIndex | 0;
-            targetLoop[idx].x = vertexTarget.x;
-            targetLoop[idx].z = vertexTarget.z;
+            if (result.crossedRunIds.length) drag.affectedRunIds = [...result.crossedRunIds];
+            this._applyFootprintTransformResult(result, { parentFaceId: drag.faceId, rateLimited: true });
+        } catch (error) {
+            this._layoutLastWarning = error instanceof Error ? error.message : String(error);
         }
-
-        if (!targetLoop) return;
-        const clamped = this._clampLoopCandidate(drag.startLoop, targetLoop, this._layoutMinWidthByFaceId);
-        this._setCurrentFootprintLoop(clamped, { rateLimited: true });
-        this._layoutHover = drag.kind === 'face'
-            ? { kind: 'face', faceId: drag.faceId, loop: clamped }
-            : { kind: 'vertex', vertexIndex: drag.vertexIndex, loop: clamped };
+        this._layoutHover = { kind: drag.kind, faceId: drag.faceId, end: drag.end };
         this._syncLayoutSceneState();
     }
 
@@ -6677,6 +6849,7 @@ export class BuildingFabrication2View {
         }
         this._setCanvasCursor();
         this._syncLayoutSceneState();
+        this._syncUiState();
         this._requestRebuild({ preserveCamera: true });
     }
 
@@ -6740,6 +6913,7 @@ export class BuildingFabrication2View {
             name,
             layers,
             footprintLoops,
+            footprintStretch: cfg?.footprintStretch ?? null,
             wallInset,
             materialVariationSeed,
             windowVisuals,

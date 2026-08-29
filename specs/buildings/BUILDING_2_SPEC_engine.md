@@ -109,6 +109,13 @@ Authoring and continuity across layers requires topology invariants; see:
   material override, C→B linking, fire escape on face E) and `hex_pavilion`
   (six 14m faces, 120° corners, D→A linking).
 
+### 4.2 Collinear logical faces (AI 517)
+
+- `split: true` on a footprint point preserves the otherwise merged collinear boundary in `computeFacadeFramesFromLoop`; unmarked footprints keep their existing frame result.
+- Each split face solves its bay layout against its own sub-run length. Per-layer face links use the normal master layout and re-solve that layout independently for every linked sub-run.
+- Collinear joins never intersect parallel offset lines. Equal face depths share the marker point; unequal depths produce a two-point step joined by a return surface.
+- Facade silhouettes, interior shells, closure bands, cap slabs, and roof/core loops retain the return point pair. Zero-depth cornice loops collapse the equal pair cleanly, while physical-run fitting still treats the wall as one straight run.
+
 ---
 
 ## 5. Facade layout solving (deterministic)
@@ -243,6 +250,27 @@ full-height openings leave the storey line clear".
 
 Regression: `tests/core.test.js` -> "ShadowCasterMerge: opaque instanced
 windows join the one-mesh building silhouette".
+
+### 6.0.3 Compiled window assemblies merge by material family
+
+- Authoring output MUST keep window-definition assembly groups and individual
+  part meshes so BF2 picking, debugging, and exploded views remain available.
+- The gameplay/BF2 compiled geometry pass MUST treat those marked assemblies
+  as merge scopes that may be flattened. Compatible frame, glass, shade,
+  interior, handle, sill, and muntin instances MUST expand into attribute-
+  preserving geometry and collapse into one mesh per material family.
+- Shade coverage/direction and interior atlas/tint/night-light attributes MUST concatenate
+  in the same order as instance matrices; compiled rendering MUST not replace
+  them with one material-wide value.
+- Every compiled window-part mesh MUST retain addressable range records with
+  definition id, asset type, part family, vertex start/count, instance count, and the source
+  variation records. Runtime window-light/state systems use these ranges rather
+  than depending on live authoring groups.
+- Window material sets MUST be reused for identical sanitized settings within a
+  fabrication build, including custom-shader shade and interior materials.
+
+Regression: `tests/core.test.js` -> "BuildingGeometryMerger: compiled windows
+combine instances and retain addressable ranges".
 
 ### 6.1 Bay wall material overrides + bay-to-bay linking (full spec)
 

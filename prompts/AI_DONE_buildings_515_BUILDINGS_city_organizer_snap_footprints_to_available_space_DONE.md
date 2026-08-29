@@ -1,3 +1,5 @@
+# DONE
+
 # Problem
 
 City placement today extrudes buildings from tiles or drops authored
@@ -49,3 +51,12 @@ yields a family of correctly detailed variants at many lot sizes
   - `prompts/AI_DONE_<branch>_##_SUBJECT_title_DONE.md` on non-main branches
 - Do not move to `prompts/archive/` automatically.
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change)
+
+# Outcome (2026-08-29)
+
+- Added a pure deterministic lot fitter that distributes quantized X/Z deltas through valid stretch bands while preserving facade ids and plan angles.
+- Added face/band `prefer_expand`, `allow`, and `never` metadata with proportional weights, seed-stable tie breaking, solver clamps, and nearest-fit warnings.
+- Wired the opt-in `fitToLot: true` entry contract and `footprintStretch` metadata through CityMap round-tripping, city rendering, config export, and BF2 generation.
+- Reused facade bay dry-runs and the existing outward reserve to prevent fitted runs from crossing facade minima or lot boundaries.
+- Added focused unit tests, a browser core integration guard, the narrow/wide city comparison scenario, and its visual capture.
+- Documented the opt-in city stretch-fitting contract in the construction placement specification.

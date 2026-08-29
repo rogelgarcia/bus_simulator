@@ -1,3 +1,5 @@
+# DONE
+
 # Problem
 
 With AI 512 the facade model handles N straight faces at arbitrary angles,
@@ -49,3 +51,11 @@ carrying windows, a belt and a cornice).
   - `prompts/AI_DONE_<branch>_##_SUBJECT_title_DONE.md` on non-main branches
 - Do not move to `prompts/archive/` automatically.
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change)
+
+## Implementation summary
+
+- Added canonical bulge-arc footprint metadata with arc-length position/tangent/normal frames and winding-safe persistence.
+- Curved facade walls, reveals, continuous UVs, belts, roof/parapet/coping, molded cornices, and repeated ornaments now share one tessellated curve.
+- Curved windows/storefronts now use independently tangent sub-panels so the glass, frames, cuts, sills, and zones bend with the wall rather than remaining one flat chord.
+- Added the Burban rounded-corner catalog building based on `downloads/references_ideas/burban.png` with blue curtain glazing, pale floor bands, and a dentiled cap cornice.
+- Added straight-editor/lot-fit guards, curve/persistence unit coverage, browser core guards, and deterministic overall/close-up capture scenarios.

@@ -10,6 +10,10 @@ import { createWindowMeshMaterials, disposeWindowMeshMaterialCaches } from './Wi
 
 const MAX_GEOMETRY_CACHE = 64;
 
+function getMaterialCacheKey(settings) {
+    return JSON.stringify(settings);
+}
+
 function clamp(value, min, max) {
     const num = Number(value);
     if (!Number.isFinite(num)) return min;
@@ -52,11 +56,19 @@ export class WindowMeshGenerator {
 
         /** @type {Map<string, any>} */
         this._geometryCache = new Map();
+        /** @type {Map<string, ReturnType<typeof createWindowMeshMaterials>>} */
+        this._materialCache = new Map();
     }
 
     dispose() {
         for (const bundle of this._geometryCache.values()) disposeGeometryBundle(bundle);
         this._geometryCache.clear();
+        const materials = new Set();
+        for (const bundle of this._materialCache.values()) {
+            for (const material of Object.values(bundle)) if (material) materials.add(material);
+        }
+        for (const material of materials) material.dispose();
+        this._materialCache.clear();
         disposeWindowMeshMaterialCaches();
     }
 
@@ -78,10 +90,21 @@ export class WindowMeshGenerator {
         return bundle;
     }
 
+    _getOrCreateMaterials(settings) {
+        const key = getMaterialCacheKey(settings);
+        let materials = this._materialCache.get(key);
+        if (!materials) {
+            materials = createWindowMeshMaterials(settings, { renderer: this.renderer });
+            this._materialCache.set(key, materials);
+        }
+        return materials;
+    }
+
     createWindowGroup({ settings, seed = 'window', instances = [] } = {}) {
         const s = sanitizeWindowMeshSettings(settings);
         const bundle = this._getOrCreateGeometryBundle(s);
-        const mats = createWindowMeshMaterials(s, { renderer: this.renderer });
+        const mats = this._getOrCreateMaterials(s);
+        const geometryKey = getWindowMeshGeometryKey(s, { curveSegments: this.curveSegments });
 
         const list = Array.isArray(instances) ? instances : [];
         const count = list.length;
@@ -89,6 +112,7 @@ export class WindowMeshGenerator {
         group.name = 'window_mesh';
         group.userData = group.userData ?? {};
         group.userData.settings = s;
+        group.userData.mergeableBuildingWindowAssembly = true;
 
         if (!count) return group;
 
@@ -100,15 +124,49 @@ export class WindowMeshGenerator {
         group.userData.ownedGeometries = Object.freeze(interiorGeo ? [openingGeo, interiorGeo] : [openingGeo]);
         const shadeCoverage = new Float32Array(count);
         const shadeFlipX = new Float32Array(count);
+        const shadeFabricScale = new Float32Array(count * 2);
+        const shadeFabricIntensity = new Float32Array(count);
+        const shadeAxis = new Float32Array(count);
         const interiorUvOffset = new Float32Array(count * 2);
         const interiorUvScale = new Float32Array(count * 2);
         const interiorFlipX = new Float32Array(count);
         const interiorTint = new Float32Array(count * 3);
+        const interiorParams = new Float32Array(count * 4);
+        const interiorParallaxScale = new Float32Array(count * 2);
+        const interiorUvPan = new Float32Array(count * 2);
+        const interiorTanU = new Float32Array(count * 3);
+        const interiorLight = new Float32Array(count);
 
         const cols = Math.max(1, s.interior.atlas.cols | 0);
         const rows = Math.max(1, s.interior.atlas.rows | 0);
         const uvScaleX = 1 / cols;
         const uvScaleY = 1 / rows;
+        const frameVerticalWidth = Math.max(0, Number(s.frame.verticalWidth ?? s.frame.width) || 0);
+        const frameHorizontalWidth = Math.max(0, Number(s.frame.horizontalWidth ?? s.frame.width) || 0);
+        const bottomFrameEnabled = !s.frame.openBottom
+            || (s.frame.doorBottomFrame?.enabled === true && s.frame.doorBottomFrame?.mode === 'match');
+        const openingWidth = Math.max(0.01, s.width - frameVerticalWidth * 2);
+        const openingHeight = Math.max(0.01, s.height - frameHorizontalWidth - (bottomFrameEnabled ? frameHorizontalWidth : 0));
+        const openingAspect = openingWidth / openingHeight;
+        const shadeScale = Number(s.shade.fabric.scale) || 1.0;
+        const shadeScaleY = shadeScale * (s.height / Math.max(0.01, s.width));
+        const shadeDirectionAxis = s.shade.direction === WINDOW_SHADE_DIRECTION.TOP_TO_BOTTOM ? 0.0 : 1.0;
+        const parallaxStrength = clamp((s.interior.parallaxDepthMeters || 0) / 50.0, 0.0, 1.0);
+        const openingPositions = openingGeo.getAttribute('position');
+        const windowShadeUv = new Float32Array(openingPositions.count * 2);
+        for (let vertexIndex = 0; vertexIndex < openingPositions.count; vertexIndex++) {
+            windowShadeUv[vertexIndex * 2] = clamp(
+                (openingPositions.getX(vertexIndex) + openingWidth * 0.5) / openingWidth,
+                0.0,
+                1.0
+            );
+            windowShadeUv[vertexIndex * 2 + 1] = clamp(
+                (openingPositions.getY(vertexIndex) + openingHeight * 0.5) / openingHeight,
+                0.0,
+                1.0
+            );
+        }
+        openingGeo.setAttribute('windowShadeUv', new THREE.BufferAttribute(windowShadeUv, 2));
         const instanceVariations = [];
 
         for (let i = 0; i < count; i++) {
@@ -119,6 +177,10 @@ export class WindowMeshGenerator {
             shadeCoverage[i] = Number.isFinite(v.shadeCoverage) ? v.shadeCoverage : 0.0;
             const shadeDir = String(v.shadeDirection ?? s.shade.direction ?? '');
             shadeFlipX[i] = (shadeDir === WINDOW_SHADE_DIRECTION.TOP_TO_BOTTOM || shadeDir === WINDOW_SHADE_DIRECTION.RIGHT_TO_LEFT) ? 1.0 : 0.0;
+            shadeFabricScale[i * 2] = shadeScale;
+            shadeFabricScale[i * 2 + 1] = shadeScaleY;
+            shadeFabricIntensity[i] = s.shade.fabric.intensity;
+            shadeAxis[i] = shadeDirectionAxis;
 
             const cell = v.interiorCell ?? { col: 0, row: 0 };
             const c = Math.max(0, Math.min(cols - 1, cell.col | 0));
@@ -133,6 +195,18 @@ export class WindowMeshGenerator {
             interiorTint[i * 3] = (Number(tint.hueShiftDeg) || 0) / 360.0;
             interiorTint[i * 3 + 1] = Number.isFinite(tint.saturationMul) ? tint.saturationMul : 1.0;
             interiorTint[i * 3 + 2] = Number.isFinite(tint.brightnessMul) ? tint.brightnessMul : 1.0;
+            interiorParams[i * 4] = openingAspect;
+            interiorParams[i * 4 + 1] = s.interior.imageAspect;
+            interiorParams[i * 4 + 2] = s.interior.uvZoom;
+            interiorParams[i * 4 + 3] = parallaxStrength;
+            interiorParallaxScale[i * 2] = s.interior.parallaxScale.x;
+            interiorParallaxScale[i * 2 + 1] = s.interior.parallaxScale.y;
+            interiorUvPan[i * 2] = s.interior.uvPan.x;
+            interiorUvPan[i * 2 + 1] = s.interior.uvPan.y;
+            interiorTanU[i * 3] = 1.0;
+            interiorTanU[i * 3 + 1] = 0.0;
+            interiorTanU[i * 3 + 2] = 0.0;
+            interiorLight[i] = 1.0;
 
             instanceVariations.push(Object.freeze({
                 id,
@@ -144,24 +218,41 @@ export class WindowMeshGenerator {
                     hueShiftDeg: Number(tint.hueShiftDeg) || 0,
                     saturationMul: Number.isFinite(tint.saturationMul) ? tint.saturationMul : 1.0,
                     brightnessMul: Number.isFinite(tint.brightnessMul) ? tint.brightnessMul : 1.0
-                })
+                }),
+                interiorLight: interiorLight[i]
             }));
         }
 
         openingGeo.setAttribute('instanceShadeCoverage', new THREE.InstancedBufferAttribute(shadeCoverage, 1));
         openingGeo.setAttribute('instanceShadeFlipX', new THREE.InstancedBufferAttribute(shadeFlipX, 1));
+        openingGeo.setAttribute('instanceShadeFabricScale', new THREE.InstancedBufferAttribute(shadeFabricScale, 2));
+        openingGeo.setAttribute('instanceShadeFabricIntensity', new THREE.InstancedBufferAttribute(shadeFabricIntensity, 1));
+        openingGeo.setAttribute('instanceShadeAxis', new THREE.InstancedBufferAttribute(shadeAxis, 1));
         for (const geo of interiorGeo ? [openingGeo, interiorGeo] : [openingGeo]) {
             geo.setAttribute('instanceInteriorUvOffset', new THREE.InstancedBufferAttribute(interiorUvOffset, 2));
             geo.setAttribute('instanceInteriorUvScale', new THREE.InstancedBufferAttribute(interiorUvScale, 2));
             geo.setAttribute('instanceInteriorFlipX', new THREE.InstancedBufferAttribute(interiorFlipX, 1));
             geo.setAttribute('instanceInteriorTint', new THREE.InstancedBufferAttribute(interiorTint, 3));
+            geo.setAttribute('instanceInteriorParams', new THREE.InstancedBufferAttribute(interiorParams, 4));
+            geo.setAttribute('instanceInteriorParallaxScale', new THREE.InstancedBufferAttribute(interiorParallaxScale, 2));
+            geo.setAttribute('instanceInteriorUvPan', new THREE.InstancedBufferAttribute(interiorUvPan, 2));
+            geo.setAttribute('instanceInteriorTanU', new THREE.InstancedBufferAttribute(interiorTanU, 3));
+            geo.setAttribute('instanceInteriorLight', new THREE.InstancedBufferAttribute(interiorLight, 1));
         }
 
         const dummy = new THREE.Object3D();
 
+        const markMergeablePart = (mesh, part) => {
+            mesh.userData = mesh.userData ?? {};
+            mesh.userData.mergeableBuildingWindowPart = true;
+            mesh.userData.buildingWindowPart = part;
+            mesh.userData.buildingWindowGeometryKey = `${geometryKey}:${part}`;
+        };
+
         const frameLayer = new THREE.Group();
         frameLayer.name = 'frame';
         const frameMesh = new THREE.InstancedMesh(bundle.frame, mats.frameMat, count);
+        markMergeablePart(frameMesh, 'frame');
         frameMesh.castShadow = true;
         frameMesh.userData.expandIntoMergedShadowCaster = true;
         frameMesh.receiveShadow = true;
@@ -171,6 +262,7 @@ export class WindowMeshGenerator {
         if (bundle.handles) {
             handlesMesh = new THREE.InstancedMesh(bundle.handles, mats.handlesMat ?? mats.frameMat, count);
             handlesMesh.name = 'handles';
+            markMergeablePart(handlesMesh, 'handles');
             handlesMesh.castShadow = true;
             handlesMesh.receiveShadow = true;
             handlesMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -180,6 +272,7 @@ export class WindowMeshGenerator {
         if (bundle.kickPanels) {
             kickMesh = new THREE.InstancedMesh(bundle.kickPanels, mats.frameMat, count);
             kickMesh.name = 'doorKickPanels';
+            markMergeablePart(kickMesh, 'doorKickPanels');
             kickMesh.castShadow = true;
             kickMesh.receiveShadow = true;
             kickMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -191,6 +284,7 @@ export class WindowMeshGenerator {
         let muntinsMesh = null;
         if (bundle.muntins && s.muntins.enabled) {
             muntinsMesh = new THREE.InstancedMesh(bundle.muntins, mats.muntinMat, count);
+            markMergeablePart(muntinsMesh, 'muntins');
             muntinsMesh.castShadow = true;
             muntinsMesh.userData.expandIntoMergedShadowCaster = true;
             muntinsMesh.receiveShadow = true;
@@ -202,6 +296,7 @@ export class WindowMeshGenerator {
             const joinLayer = bundle.joinBarLayer === 'muntins' ? 'muntins' : 'frame';
             const joinMat = joinLayer === 'muntins' ? mats.muntinMat : mats.frameMat;
             const joinMesh = new THREE.InstancedMesh(bundle.joinBar, joinMat, count);
+            markMergeablePart(joinMesh, 'joinBar');
             joinMesh.castShadow = true;
             joinMesh.userData.expandIntoMergedShadowCaster = true;
             joinMesh.receiveShadow = true;
@@ -217,6 +312,7 @@ export class WindowMeshGenerator {
             interiorLayer = new THREE.Group();
             interiorLayer.name = 'interior';
             interiorMesh = new THREE.InstancedMesh(interiorGeo ?? openingGeo, mats.interiorMat, count);
+            markMergeablePart(interiorMesh, 'interior');
             interiorMesh.castShadow = false;
             interiorMesh.receiveShadow = false;
             interiorMesh.renderOrder = 0;
@@ -227,6 +323,7 @@ export class WindowMeshGenerator {
         const shadeLayer = new THREE.Group();
         shadeLayer.name = 'shade';
         const shadeMesh = new THREE.InstancedMesh(openingGeo, mats.shadeMat, count);
+        markMergeablePart(shadeMesh, 'shade');
         shadeMesh.castShadow = false;
         shadeMesh.receiveShadow = false;
         shadeMesh.renderOrder = 1;
@@ -236,6 +333,7 @@ export class WindowMeshGenerator {
         const glassLayer = new THREE.Group();
         glassLayer.name = 'glass';
         const glassMesh = new THREE.InstancedMesh(openingGeo, mats.glassMat, count);
+        markMergeablePart(glassMesh, 'glass');
         glassMesh.castShadow = true;
         glassMesh.userData.expandIntoMergedShadowCaster = true;
         glassMesh.userData.mergeShadowAsOpaque = true;
@@ -317,7 +415,7 @@ export class WindowMeshGenerator {
 
         group.userData.instanceVariations = Object.freeze(instanceVariations);
         group.userData.materials = Object.freeze({ ...mats });
-        group.userData.geometryKey = getWindowMeshGeometryKey(s, { curveSegments: this.curveSegments });
+        group.userData.geometryKey = geometryKey;
 
         return group;
     }

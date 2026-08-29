@@ -6,6 +6,7 @@ import { createDemoCitySpec } from './specs/DemoCitySpec.js';
 import { createRoadNetworkFromWorldSegments } from './roads/RoadNetwork.js';
 import { generateCenterlineFromPolyline } from '../geometry/PolylineTAT.js';
 import { planCityConstructions } from './placement/index.js';
+import { normalizeFootprintArcMetadata } from '../buildings/footprint_curves/BuildingFootprintCurves.js';
 export const DIR = { N: 1, E: 2, S: 4, W: 8 };
 export const TILE = { EMPTY: 0, ROAD: 1 };
 
@@ -72,6 +73,11 @@ function normalizeFootprintLoopsInput(footprintLoops) {
             const z = Number(entry?.z ?? entry?.[1]);
             if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
             const p = { x, z };
+            if (typeof entry?.runId === 'string') p.runId = entry.runId;
+            if (typeof entry?.runForward === 'boolean') p.runForward = entry.runForward;
+            if (entry?.split === true) p.split = true;
+            const arc = normalizeFootprintArcMetadata(entry?.arc);
+            if (arc) p.arc = arc;
             if (!loop.length || !samePointXZ(loop[loop.length - 1], p)) loop.push(p);
         }
 
@@ -115,7 +121,11 @@ function translateFootprintLoops(footprintLoops, offset) {
         const points = Array.isArray(loop) ? loop : [];
         return points.map((point) => ({
             x: (Number(point?.x) || 0) + ox,
-            z: (Number(point?.z) || 0) + oz
+            z: (Number(point?.z) || 0) + oz,
+            ...(typeof point?.runId === 'string' ? { runId: point.runId } : {}),
+            ...(typeof point?.runForward === 'boolean' ? { runForward: point.runForward } : {}),
+            ...(point?.split === true ? { split: true } : {}),
+            ...(point?.arc && typeof point.arc === 'object' ? { arc: { ...point.arc } } : {})
         }));
     });
 }
@@ -676,6 +686,8 @@ export class CityMap {
             }
             if (Number.isFinite(building?.wallInset)) record.wallInset = building.wallInset;
             if (Number.isFinite(building?.materialVariationSeed)) record.materialVariationSeed = building.materialVariationSeed;
+            if (building?.fitToLot === true) record.fitToLot = true;
+            if (building?.footprintStretch && typeof building.footprintStretch === 'object') record.footprintStretch = deepClone(building.footprintStretch);
             if (building?.windowVisuals && typeof building.windowVisuals === 'object') record.windowVisuals = deepClone(building.windowVisuals);
             if (building?.facades && typeof building.facades === 'object') record.facades = deepClone(building.facades);
             if (building?.windowDefinitions && typeof building.windowDefinitions === 'object') record.windowDefinitions = deepClone(building.windowDefinitions);
@@ -926,6 +938,7 @@ export class CityMap {
             const cornerTreatment = overrideOrBase('cornerTreatment');
             const edgeBevel = overrideOrBase('edgeBevel');
             const materialSlots = overrideOrBase('materialSlots');
+            const footprintStretch = overrideOrBase('footprintStretch');
 
             out.push({
                 id,
@@ -934,6 +947,8 @@ export class CityMap {
                 layers: hasLayers ? deepClone(designLayers) : null,
                 footprintLoops,
                 footprintPlacement,
+                fitToLot: raw?.fitToLot === true,
+                footprintStretch: (footprintStretch && typeof footprintStretch === 'object') ? deepClone(footprintStretch) : null,
                 designLoops,
                 placement: placementRaw,
                 sharesSquaresWith,

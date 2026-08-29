@@ -691,6 +691,52 @@ export class BuildingFabrication2UI {
         this.adjustModeOverlayPanel = document.createElement('div');
         this.adjustModeOverlayPanel.className = 'building-fab2-adjust-overlay hidden';
 
+        this.layoutEditStatus = document.createElement('div');
+        this.layoutEditStatus.className = 'building-fab2-layout-edit-status';
+        this.layoutEditStatus.textContent = 'Hover a face';
+
+        this.layoutDeltaInput = document.createElement('input');
+        this.layoutDeltaInput.type = 'number';
+        this.layoutDeltaInput.className = 'building-fab2-input building-fab2-layout-delta-input';
+        this.layoutDeltaInput.step = '0.1';
+        this.layoutDeltaInput.value = '1';
+        this.layoutDeltaInput.title = 'Delta in meters';
+        this.layoutDeltaInput.setAttribute('aria-label', 'Layout delta in meters');
+
+        this.layoutStretchStartBtn = document.createElement('button');
+        this.layoutStretchStartBtn.type = 'button';
+        this.layoutStretchStartBtn.className = 'building-fab2-btn building-fab2-btn-small building-fab2-layout-action';
+        this.layoutStretchStartBtn.dataset.kind = 'stretch';
+        this.layoutStretchStartBtn.dataset.end = 'start';
+        this.layoutStretchStartBtn.textContent = 'Stretch start';
+
+        this.layoutStretchEndBtn = document.createElement('button');
+        this.layoutStretchEndBtn.type = 'button';
+        this.layoutStretchEndBtn.className = 'building-fab2-btn building-fab2-btn-small building-fab2-layout-action';
+        this.layoutStretchEndBtn.dataset.kind = 'stretch';
+        this.layoutStretchEndBtn.dataset.end = 'end';
+        this.layoutStretchEndBtn.textContent = 'Stretch end';
+
+        this.layoutPushPullBtn = document.createElement('button');
+        this.layoutPushPullBtn.type = 'button';
+        this.layoutPushPullBtn.className = 'building-fab2-btn building-fab2-btn-small building-fab2-layout-action';
+        this.layoutPushPullBtn.dataset.kind = 'push';
+        this.layoutPushPullBtn.textContent = 'Push / pull';
+
+        this.layoutDetachedLabel = document.createElement('label');
+        this.layoutDetachedLabel.className = 'building-fab2-layout-detached';
+        this.layoutDetachedInput = document.createElement('input');
+        this.layoutDetachedInput.type = 'checkbox';
+        this.layoutDetachedLabel.appendChild(this.layoutDetachedInput);
+        this.layoutDetachedLabel.appendChild(document.createTextNode(' Detached'));
+
+        this.adjustModeOverlayPanel.appendChild(this.layoutEditStatus);
+        this.adjustModeOverlayPanel.appendChild(this.layoutDeltaInput);
+        this.adjustModeOverlayPanel.appendChild(this.layoutStretchStartBtn);
+        this.adjustModeOverlayPanel.appendChild(this.layoutStretchEndBtn);
+        this.adjustModeOverlayPanel.appendChild(this.layoutPushPullBtn);
+        this.adjustModeOverlayPanel.appendChild(this.layoutDetachedLabel);
+
         this.adjustModeCloseBtn = document.createElement('button');
         this.adjustModeCloseBtn.type = 'button';
         this.adjustModeCloseBtn.className = 'building-fab2-btn building-fab2-btn-small';
@@ -924,6 +970,8 @@ export class BuildingFabrication2UI {
         this.onExplodedDecorationsChange = null;
         this.onRulerToggle = null;
         this.onAdjustLayoutToggle = null;
+        this.onApplyLayoutDelta = null;
+        this.onLayoutDetachedChange = null;
         this.onSelectCatalogEntry = null;
 
         this.onAddFloorLayer = null;
@@ -1087,6 +1135,19 @@ export class BuildingFabrication2UI {
             this._syncAdjustLayoutButton();
             this.onAdjustLayoutToggle?.(false);
         };
+        this._onLayoutActionClick = (event) => {
+            const button = event?.target?.closest?.('.building-fab2-layout-action');
+            if (!button || !this.adjustModeOverlayPanel.contains(button) || button.disabled) return;
+            const delta = Number(this.layoutDeltaInput.value);
+            if (!Number.isFinite(delta)) return;
+            this.onApplyLayoutDelta?.({
+                kind: button.dataset?.kind ?? null,
+                end: button.dataset?.end ?? null,
+                delta,
+                detached: !!this.layoutDetachedInput.checked
+            });
+        };
+        this._onLayoutDetachedChange = () => this.onLayoutDetachedChange?.(!!this.layoutDetachedInput.checked);
         this._onAddFloorClick = () => this.onAddFloorLayer?.();
         this._onAddRoofClick = () => this.onAddRoofLayer?.();
         this._onLinkOverlayClick = (e) => this._handleLinkOverlayClick(e);
@@ -1164,6 +1225,32 @@ export class BuildingFabrication2UI {
     setLayoutAdjustEnabled(enabled) {
         this._layoutAdjustEnabled = !!enabled;
         this._syncAdjustLayoutButton();
+    }
+
+    getLayoutDetachedEnabled() {
+        return !!this.layoutDetachedInput?.checked;
+    }
+
+    setLayoutEditState({ faceId = null, startValid = false, endValid = false, pushValid = false, warning = '' } = {}) {
+        const hasFace = isFaceId(faceId);
+        if (this.layoutEditStatus) {
+            this.layoutEditStatus.textContent = warning
+                ? String(warning)
+                : (hasFace ? `Face ${faceId} · Δ meters` : 'Hover a face');
+            this.layoutEditStatus.classList.toggle('is-warning', !!warning);
+        }
+        if (this.layoutStretchStartBtn) {
+            this.layoutStretchStartBtn.disabled = !this._enabled || !this._layoutAdjustEnabled || !hasFace || !startValid;
+            this.layoutStretchStartBtn.classList.toggle('is-invalid', hasFace && !startValid);
+        }
+        if (this.layoutStretchEndBtn) {
+            this.layoutStretchEndBtn.disabled = !this._enabled || !this._layoutAdjustEnabled || !hasFace || !endValid;
+            this.layoutStretchEndBtn.classList.toggle('is-invalid', hasFace && !endValid);
+        }
+        if (this.layoutPushPullBtn) {
+            this.layoutPushPullBtn.disabled = !this._enabled || !this._layoutAdjustEnabled || !hasFace || !pushValid;
+            this.layoutPushPullBtn.classList.toggle('is-invalid', hasFace && !pushValid);
+        }
     }
 
     setRulerLabel({ visible = false, x = 0, y = 0, text = '' } = {}) {
@@ -2215,6 +2302,8 @@ export class BuildingFabrication2UI {
         this.compiledPreviewToggleInput.addEventListener('change', this._onCompiledPreviewToggleChange);
         this.adjustLayoutBtn.addEventListener('click', this._onAdjustLayoutClick);
         this.adjustModeCloseBtn.addEventListener('click', this._onAdjustModeCloseClick);
+        this.adjustModeOverlayPanel.addEventListener('click', this._onLayoutActionClick);
+        this.layoutDetachedInput.addEventListener('change', this._onLayoutDetachedChange);
         this.rulerBtn.addEventListener('click', this._onRulerClick);
         this.addFloorBtn.addEventListener('click', this._onAddFloorClick);
         this.addRoofBtn.addEventListener('click', this._onAddRoofClick);
@@ -2262,6 +2351,8 @@ export class BuildingFabrication2UI {
         this.compiledPreviewToggleInput.removeEventListener('change', this._onCompiledPreviewToggleChange);
         this.adjustLayoutBtn.removeEventListener('click', this._onAdjustLayoutClick);
         this.adjustModeCloseBtn.removeEventListener('click', this._onAdjustModeCloseClick);
+        this.adjustModeOverlayPanel.removeEventListener('click', this._onLayoutActionClick);
+        this.layoutDetachedInput.removeEventListener('change', this._onLayoutDetachedChange);
         this.rulerBtn.removeEventListener('click', this._onRulerClick);
         this.addFloorBtn.removeEventListener('click', this._onAddFloorClick);
         this.addRoofBtn.removeEventListener('click', this._onAddRoofClick);
@@ -2302,6 +2393,8 @@ export class BuildingFabrication2UI {
         this.explodedDecorationsToggleInput.disabled = !allow || !hasBuilding;
         this.adjustLayoutBtn.disabled = !allow || !hasBuilding;
         this.adjustModeCloseBtn.disabled = !allow || !hasBuilding || !this._layoutAdjustEnabled;
+        this.layoutDeltaInput.disabled = !allow || !hasBuilding || !this._layoutAdjustEnabled;
+        this.layoutDetachedInput.disabled = !allow || !hasBuilding || !this._layoutAdjustEnabled;
         this.rulerBtn.disabled = !allow;
 
         this.addFloorBtn.disabled = !allow || !hasBuilding;
@@ -2395,6 +2488,12 @@ export class BuildingFabrication2UI {
         this.adjustModeOverlayPanel.classList.toggle('hidden', !this._layoutAdjustEnabled);
         if (this.adjustModeCloseBtn) {
             this.adjustModeCloseBtn.disabled = !this._enabled || !this._hasBuilding || !this._layoutAdjustEnabled;
+        }
+        if (this.layoutDeltaInput) {
+            this.layoutDeltaInput.disabled = !this._enabled || !this._hasBuilding || !this._layoutAdjustEnabled;
+        }
+        if (this.layoutDetachedInput) {
+            this.layoutDetachedInput.disabled = !this._enabled || !this._hasBuilding || !this._layoutAdjustEnabled;
         }
     }
 

@@ -382,12 +382,12 @@ export function offsetOrthogonalLoopXZ(loop, offset) {
         const p1 = { x: cur.x + nn1.x * d, z: cur.z + nn1.z * d };
         const hit = linesIntersection2(p0, e0, p1, e1);
         if (hit) {
-            insetPoints[i] = { x: hit.x, y: cur.y, z: hit.z };
+            insetPoints[i] = { ...cur, x: hit.x, y: cur.y, z: hit.z };
             continue;
         }
 
         const collinear = Math.abs(cross2(e0, e1)) < 1e-6 && dot2(e0, e1) > 0.999;
-        insetPoints[i] = collinear ? { x: p0.x, y: cur.y, z: p0.z } : cur;
+        insetPoints[i] = collinear ? { ...cur, x: p0.x, y: cur.y, z: p0.z } : cur;
     }
 
     return insetPoints;

@@ -2,6 +2,7 @@
 // Helpers for exporting building fabrication layers as city building config modules.
 import { BUILDING_STYLE, isBuildingStyle } from '../../buildings/BuildingStyle.js';
 import { LAYER_TYPE, normalizeBuildingLayers, normalizeBuildingWindowVisualsConfig } from '../../../graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
+import { normalizeFootprintArcMetadata } from '../../buildings/footprint_curves/BuildingFootprintCurves.js';
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -14,6 +15,10 @@ function clampInt(value, min, max) {
     if (!Number.isFinite(num)) return min;
     const rounded = Math.round(num);
     return Math.max(min, Math.min(max, rounded));
+}
+
+function isFootprintRunId(value) {
+    return typeof value === 'string' && value.length === 1 && value >= 'A' && value <= 'Z';
 }
 
 function normalizeFootprintLoopsInput(footprintLoops) {
@@ -36,6 +41,11 @@ function normalizeFootprintLoopsInput(footprintLoops) {
             const z = Number(entry?.z ?? entry?.[1]);
             if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
             const p = { x, z };
+            if (isFootprintRunId(entry?.runId)) p.runId = entry.runId;
+            if (typeof entry?.runForward === 'boolean') p.runForward = entry.runForward;
+            if (entry?.split === true) p.split = true;
+            const arc = normalizeFootprintArcMetadata(entry?.arc);
+            if (arc) p.arc = arc;
             if (!loop.length || !samePointXZ(loop[loop.length - 1], p)) loop.push(p);
         }
         if (loop.length > 2 && samePointXZ(loop[0], loop[loop.length - 1])) loop.pop();
@@ -118,6 +128,7 @@ export function createCityBuildingConfigFromFabrication({
     name,
     layers,
     footprintLoops = null,
+    footprintStretch = null,
     wallInset = 0.0,
     materialVariationSeed = null,
     windowVisuals = null,
@@ -149,6 +160,7 @@ export function createCityBuildingConfigFromFabrication({
     };
 
     if (footprint) cfg.footprintLoops = footprint;
+    if (footprintStretch && typeof footprintStretch === 'object') cfg.footprintStretch = footprintStretch;
     if (inset > 1e-6) cfg.wallInset = inset;
     if (seed !== null) cfg.materialVariationSeed = seed;
     if (windowVisuals && typeof windowVisuals === 'object') cfg.windowVisuals = normalizeBuildingWindowVisualsConfig(windowVisuals);
@@ -190,6 +202,7 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
     const wallInset = Number.isFinite(cfg.wallInset) ? clamp(cfg.wallInset, 0.0, 4.0) : null;
     const seed = Number.isFinite(cfg.materialVariationSeed) ? clampInt(cfg.materialVariationSeed, 0, 4294967295) : null;
     const footprintLoops = normalizeFootprintLoopsInput(cfg.footprintLoops);
+    const footprintStretch = cfg.footprintStretch && typeof cfg.footprintStretch === 'object' ? cfg.footprintStretch : null;
     const windowVisuals = cfg.windowVisuals && typeof cfg.windowVisuals === 'object' ? cfg.windowVisuals : null;
     const facades = cfg.facades && typeof cfg.facades === 'object' ? cfg.facades : null;
     const windowDefinitions = cfg.windowDefinitions && typeof cfg.windowDefinitions === 'object' ? cfg.windowDefinitions : null;
@@ -198,6 +211,11 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
     const footprintLines = footprintLoops ? [
         '    footprintLoops: Object.freeze(',
         indentLines(JSON.stringify(footprintLoops, null, 4), 8),
+        '    ),'
+    ] : [];
+    const footprintStretchLines = footprintStretch ? [
+        '    footprintStretch: Object.freeze(',
+        indentLines(JSON.stringify(footprintStretch, null, 4), 8),
         '    ),'
     ] : [];
     const windowVisualsLines = windowVisuals ? [
@@ -262,6 +280,7 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
         ...(wallInset !== null && wallInset > 1e-6 ? [`    wallInset: ${wallInset},`] : []),
         ...(seed !== null ? [`    materialVariationSeed: ${seed},`] : []),
         ...footprintLines,
+        ...footprintStretchLines,
         `    floors: ${clampInt(cfg.floors ?? 1, 1, 30)},`,
         `    floorHeight: ${clamp(cfg.floorHeight ?? 3, 1.0, 12.0)},`,
         `    style: ${JSON.stringify(isBuildingStyle(cfg.style) ? cfg.style : BUILDING_STYLE.DEFAULT)},`,

@@ -390,3 +390,24 @@ window.__testHooks = {
     pass,
     fail
 };
+
+const initialParams = new URLSearchParams(window.location.search);
+const initialScenarioId = initialParams.get('scenario');
+if (initialScenarioId) {
+    const initialSeed = initialParams.get('seed') ?? state.seed;
+    const initialWidth = Number(initialParams.get('width'));
+    const initialHeight = Number(initialParams.get('height'));
+    if (Number.isFinite(initialWidth) && Number.isFinite(initialHeight) && initialWidth > 0 && initialHeight > 0) {
+        setViewport(initialWidth, initialHeight);
+    }
+    loadScenario(initialScenarioId, { seed: initialSeed })
+        .then(() => {
+            setFixedDt(1 / 60);
+            step(30, { render: true });
+            if (initialParams.get('capture') === '1') {
+                const ui = document.getElementById('harness-ui');
+                if (ui) ui.style.display = 'none';
+            }
+        })
+        .catch((error) => fail(`Initial scenario "${initialScenarioId}" failed`, error));
+}

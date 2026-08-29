@@ -64,6 +64,38 @@
     z-index: 2;
 }
 
+.building-fab2-layout-edit-status {
+    min-width: 92px;
+    max-width: 250px;
+    font-size: 11px;
+    font-weight: 800;
+    color: rgba(255,255,255,0.92);
+}
+
+.building-fab2-layout-edit-status.is-warning {
+    color: #ffb0b8;
+}
+
+.building-fab2-layout-delta-input {
+    width: 72px;
+    min-width: 72px;
+    height: 30px;
+}
+
+.building-fab2-layout-action.is-invalid {
+    color: #ff8e99;
+    border-color: rgba(255,77,92,0.55);
+}
+
+.building-fab2-layout-detached {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
 .building-fab2-viewport-overlay {
     position: fixed;
     inset: 0;

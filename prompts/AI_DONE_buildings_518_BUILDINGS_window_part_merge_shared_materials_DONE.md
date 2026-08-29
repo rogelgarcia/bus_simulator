@@ -1,3 +1,5 @@
+# DONE
+
 # Problem
 
 After the per-building geometry merge (BuildingGeometryMerger, used by City on
@@ -56,3 +58,11 @@ Merge window parts per building without losing per-window behavior:
 - Night window lighting still varies per window in-game.
 - BF2 authoring mode unaffected (parts stay individual for picking/debug);
   the Compile toggle reflects the improvement automatically.
+
+## Completed changes
+
+- Reused material sets for identical sanitized window definitions, including custom shade and parallax-interior shaders.
+- Moved shade, interior, and night-light variation inputs into transform-safe vertex attributes.
+- Flattened marked window assemblies only in compiled gameplay/BF2 output and merged them by material family.
+- Preserved definition, asset, part, instance, and vertex-range records for runtime per-window state updates.
+- Added core and deterministic pixel-parity regressions and documented the compiled-window contract.
