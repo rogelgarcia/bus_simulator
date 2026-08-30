@@ -1,0 +1,147 @@
+{
+  "alpha": {
+    "backgroundDepthSentinel": 0,
+    "cutoutThreshold": 0.5,
+    "emptyCoverage": 0,
+    "opaqueCoverage": 1
+  },
+  "backend": {
+    "authoritative": true,
+    "cyclesDevice": "CPU",
+    "engine": "CYCLES",
+    "gpuAllowed": false,
+    "threads": 1,
+    "threadsMode": "FIXED"
+  },
+  "bake": {
+    "clearImage": true,
+    "marginPixels": 4,
+    "marginType": "ADJACENT_FACES",
+    "resolution": 32,
+    "target": "IMAGE_TEXTURES",
+    "uvLayer": "uv_proof"
+  },
+  "camera": {
+    "clipEndMeters": 1000,
+    "clipStartMeters": 0.1,
+    "depthUnits": "meters",
+    "orthographicScaleMeters": 8,
+    "projection": "orthographic",
+    "transform": {
+      "location": [
+        0,
+        0,
+        6
+      ],
+      "rotationEulerRadians": [
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  "colorManagement": {
+    "displayDevice": "sRGB",
+    "exposure": 0,
+    "gamma": 1,
+    "look": "None",
+    "sequencerColorSpace": "Linear Rec.709",
+    "viewTransform": "Standard"
+  },
+  "frame": 1,
+  "id": "ai529.proof.cycles_cpu.threads_1.v1",
+  "jobs": [
+    "sun_depth_position",
+    "diffuse_direct",
+    "diffuse_indirect",
+    "ambient_occlusion",
+    "transform_normal_uv_alpha",
+    "channel_isolation"
+  ],
+  "lighting": {
+    "receiverColorPolicy": "unit_diffuse_white",
+    "sunAngleRadians": 0.009250245035569947,
+    "sunColorLinearSrgb": [
+      1,
+      1,
+      1
+    ],
+    "sunDirectionBlender": [
+      0.5792279653395692,
+      -0.5792279653395691,
+      0.573576436351046
+    ],
+    "sunEnergy": 5.75,
+    "worldColorLinearSrgb": [
+      0.04,
+      0.05,
+      0.07
+    ],
+    "worldStrength": 0.28
+  },
+  "output": {
+    "authoritativeColorSpace": "scene-linear-linear-srgb",
+    "canonicalDirectory": "canonical",
+    "canonicalPixelEncoding": "float32_little_endian_rgba_lower_left_v1",
+    "colorDepthBits": 32,
+    "colorMode": "RGBA",
+    "exrCodec": "ZIP",
+    "fileFormat": "OPEN_EXR",
+    "lossy": false,
+    "pathPolicy": "stage_relative_stable_job_id",
+    "rawDirectory": "raw",
+    "rowOrigin": "lower_left"
+  },
+  "passes": {
+    "ambientOcclusion": "AO",
+    "diffuseDirect": [
+      "DIRECT"
+    ],
+    "diffuseIndirect": [
+      "INDIRECT"
+    ],
+    "shadowBakeForbidden": true
+  },
+  "paths": {
+    "diffuseBounces": 4,
+    "glossyBounces": 0,
+    "maxBounces": 4,
+    "minLightBounces": 0,
+    "minTransparentBounces": 0,
+    "transmissionBounces": 0,
+    "transparentBounces": 8,
+    "volumeBounces": 0
+  },
+  "sampling": {
+    "adaptiveMinSamples": 0,
+    "adaptiveSampling": false,
+    "adaptiveThreshold": 0,
+    "animatedSeed": false,
+    "autoScramblingDistance": false,
+    "denoising": false,
+    "directLightSamplingType": "MULTIPLE_IMPORTANCE_SAMPLING",
+    "pattern": "TABULATED_SOBOL",
+    "previewDenoising": false,
+    "previewSamples": 1,
+    "sampleOffset": 0,
+    "samples": 32,
+    "scramblingDistance": 1,
+    "seed": 529,
+    "timeLimitSeconds": 0,
+    "useGuiding": false,
+    "useSampleSubset": false
+  },
+  "scene": {
+    "causticsReflective": false,
+    "causticsRefractive": false,
+    "clampDirect": 0,
+    "clampIndirect": 0,
+    "depthOfField": false,
+    "lightTree": false,
+    "motionBlur": false,
+    "objectOrder": "stable_id_ascending",
+    "proceduralRandomness": "forbidden_or_seeded",
+    "transparentFilm": true
+  },
+  "schema": "bus-sim-illumination-compiler-profile-v1"
+}

@@ -1,0 +1,38 @@
+{
+  "archive": {
+    "byteLength": 404851964,
+    "fileName": "blender-5.2.1-windows-x64.zip",
+    "officialIndexUrl": "https://download.blender.org/release/Blender5.2/",
+    "officialSha256": "0e631dad7d0cad6d5d18abdd2e2550f6c0213215334eda00ddbd3d22b96ecb2c",
+    "portableDownloadUrl": "https://www.blender.org/download/release/Blender5.2/blender-5.2.1-windows-x64.zip/"
+  },
+  "blender": {
+    "architecture": "x86_64",
+    "buildHash": "9e2066aef7ef",
+    "buildPlatform": "Windows",
+    "executableByteLength": 113014232,
+    "executableRelativePath": "blender-5.2.1-windows-x64/blender.exe",
+    "executableSha256": "8f7a131ad8bc148edc218b334f07d92a57f5a357fa66d913b290537fd8353c06",
+    "version": [
+      5,
+      2,
+      1
+    ],
+    "versionString": "5.2.1 LTS"
+  },
+  "commandContract": {
+    "prefix": [
+      "--background",
+      "--factory-startup",
+      "--disable-autoexec",
+      "--offline-mode",
+      "--python-exit-code",
+      "1",
+      "--python"
+    ],
+    "separator": "--",
+    "shell": false
+  },
+  "id": "blender-5.2.1-lts-windows-x64-cycles-cpu-v1",
+  "schema": "bus-sim-illumination-blender-toolchain-v1"
+}

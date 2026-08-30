@@ -223,7 +223,7 @@ export function createCityWorld({
 
     // TerrainGenerator is synchronous; calibration loads async on first use.
     // Re-apply once calibration arrives so ground materials reflect correction files.
-    Promise.resolve()
+    const calibrationReadyPromise = Promise.resolve()
         .then(() => pbrLoader.preloadCalibrationForMaterialIds(['pbr.grass_004'], { forceReload: true }))
         .then(() => {
             const refreshedFloorPayload = pbrLoader.resolveMaterial('pbr.grass_004', {
@@ -244,5 +244,10 @@ export function createCityWorld({
         })
         .catch(() => {});
 
-    return { group, floor, groundTiles, gridLines, trees };
+    const readyPromise = Promise.all([
+        trees?.readyPromise ?? Promise.resolve(null),
+        calibrationReadyPromise
+    ]).then(() => group);
+
+    return { group, floor, groundTiles, gridLines, trees, readyPromise };
 }

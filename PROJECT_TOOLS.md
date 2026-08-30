@@ -14,6 +14,8 @@ Registry of scripts under `tools/`. When adding a new tool, register it here.
 | assetSync | `tools/asset_sync/` | Replace this worktree `assets/`, `downloads/`, and `docs/` with symlinks to sibling root repo folders under `../../bus_simulator/` | `node tools/asset_sync/run.mjs` |
 | citySpecExporter | `tools/city_spec_exporter/` | Export authoritative JS city specs to JSON under `tests/artifacts/` | `node tools/city_spec_exporter/run.mjs` |
 | staticVisibilityBaker | `tools/static_visibility_baker/` | Bake and validate the `bigcity2` static potential-visibility set | `node tools/static_visibility_baker/run.mjs` |
+| illuminationBakeExporter | `tools/illumination_bake_exporter/` | Export and validate the deterministic resolved-city illumination bake-input package | `node tools/illumination_bake_exporter/run.mjs` |
+| illuminationBakeCompiler | `tools/illumination_bake_compiler/` | Verify the pinned Blender 5.2.1 LTS toolchain and compile validated illumination bake-input packages into deterministic Cycles CPU proof intermediates | `node tools/illumination_bake_compiler/run.mjs` |
 | optionsPresets | `tools/options_presets/` | Export/import Options presets and promote to defaults | `node tools/options_presets/promote_to_defaults.mjs path/to/preset.json --write` |
 | textureCorrectionPipeline | `tools/texture_correction_pipeline/` | Run deterministic plugin-based PBR texture correction config generation (class baselines + guard plugins) with optional map QA + headless capture harness analysis | `node tools/texture_correction_pipeline/run.mjs` |
 | runSelectedTest | `tools/run_selected_test/` | Run a selected test target via `tests/.selected_test` for fast AI/dev iteration | `node tools/run_selected_test/run.mjs` |

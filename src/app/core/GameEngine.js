@@ -296,6 +296,17 @@ export class GameEngine {
         return this._antiAliasing?.settings ?? null;
     }
 
+    async waitForLightingReady() {
+        const pending = this._iblPromise;
+        if (pending) await pending;
+        const enabled = this._ibl?.config?.enabled === true;
+        return {
+            iblEnabled: enabled,
+            environmentReady: !enabled || !!this._ibl?.envMap,
+            source: enabled ? (this._ibl?.config?.hdrUrl ?? null) : null
+        };
+    }
+
     get ambientOcclusionSettings() {
         return this._ambientOcclusion?.settings ?? null;
     }

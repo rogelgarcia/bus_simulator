@@ -1,4 +1,4 @@
-# Problem
+# DONE — AI 528: Resolved-City Bake Export and Source Hash
 
 Blender cannot be an authoritative bake compiler unless it receives the exact resolved gameplay city rather than an independently maintained approximation. The existing city-spec exporter does not include evaluated Three.js geometry, instance transforms, generated materials, alpha-cutout silhouettes, receiver/caster semantics, or the stable mapping needed to return baked data to runtime objects.
 
@@ -53,3 +53,21 @@ Acceptance requirements:
 - Do not move it to `prompts/archive/` automatically.
 - Add a concise completion summary linking the format specification, tool/README, tests, representative export, inventory, source-hash sensitivity table, and round-trip report.
 - Report export time, package size, peak memory if measurable, object/mesh/instance/triangle/material/texture counts, and exact test conditions. Mark unavailable metrics as `not measured` with a reason.
+
+## Completion summary
+
+Implemented the deterministic `.bsib` resolved-city package, evaluated Three.js scene/material/texture extraction, stable identity and provenance, participant/receiver/caster mappings, per-domain and per-channel SHA-256 freshness, exact alpha-coverage channels, semantic package validation, direct resolved-source byte comparison, and two-clean-build determinism gate. The tool does not run Blender or change gameplay lighting.
+
+- Contract: [resolved-city bake-input specification](../specs/graphics/illumination_bake_input.md)
+- Tool: [illumination bake-input exporter README](../tools/illumination_bake_exporter/README.md)
+- Tests: [canonical/package](../tests/node/unit/illumination_bake_source.test.js), [geometry](../tests/node/unit/illumination_bake_source_geometry.test.js), [freshness](../tests/node/unit/illumination_bake_freshness.test.js), [semantic round trip](../tests/node/unit/illumination_bake_source_validation.test.js), [material/alpha](../tests/node/unit/illumination_bake_material_texture.test.js), [custom shadow materials](../tests/node/unit/illumination_bake_custom_shadow_materials.test.js), and [browser geometry regression](../tests/headless/e2e/window_mesh_arched_door_composition.pwtest.js)
+- Representative package: [representative_bigcity2.bsib](../tests/artifacts/illumination_528/packages/bigcity2/default/representative_bigcity2.bsib)
+- Reports: [inventory](../tests/artifacts/illumination_528/reports/bigcity2/default/inventory.json), [category/channel sizes](../tests/artifacts/illumination_528/reports/bigcity2/default/size_by_category_and_channel.json), [source-hash sensitivity](../tests/artifacts/illumination_528/reports/bigcity2/default/source_hash_sensitivity.json), [round trip](../tests/artifacts/illumination_528/reports/bigcity2/default/round_trip.json), [validation](../tests/artifacts/illumination_528/reports/bigcity2/default/validation.json), [export metrics](../tests/artifacts/illumination_528/reports/bigcity2/default/export_metrics.json), and [determinism](../tests/artifacts/illumination_528/reports/bigcity2/default/determinism.json)
+
+Representative result: BigCity2/default, 357,903,762 bytes, package digest `9957c6fdf3b30648d8a0bed56dc8a45ad62adb723e189a4959edb068904444ea`. The two clean export passes took 66,256.8 ms and 72,966.4 ms and produced identical manifests, inventories, source identities, and complete package bytes. Peak memory was `not measured` because Chromium does not expose a reliable per-export peak; the post-export heap sample was 2,305,291,495 bytes.
+
+Inventory: 237 roots; 2,663 mesh objects, including 381 instanced objects; 25,369 mesh instances; 1,843 geometries; 2,275,142 expanded triangles; 414 materials; 78 texture sources and 793 bindings; 2 exact coverage buffers (4,259,840 bytes); 25,558 participant, 6,730 receiver, and 6,043 caster mappings.
+
+Exact run conditions: Chrome 151.0.7922.176, headless 1280×720, gameplay pose `civic_center_curve_front`, one active configuration reference, zero exports from the already-running city, and two independently constructed fully prewarmed production cities. Direct parsed-package/source manifest and logical-buffer comparison passed; an independent on-disk semantic read also passed.
+
+Verification: 36/36 focused AI 528 Node tests passed; 5/5 focused browser tests passed; all 34 changed/new JavaScript modules passed `node --check`; `git diff --check` passed. The full Node suite ran 568 tests: 558 passed, 3 skipped, and 7 unrelated existing workspace tests failed (asset policy, facade fallback, Grass V2 metadata/asset, markings debugger shortcut, texture-correction profile, and wall-decorator profile). No AI 528 test failed.

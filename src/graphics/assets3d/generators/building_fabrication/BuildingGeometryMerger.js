@@ -108,6 +108,27 @@ function safeUserDataKey(userData) {
     }
 }
 
+function createMergedGeometryRange(mesh, {
+    referenceStart,
+    referenceCount,
+    vertexStart,
+    vertexCount
+}) {
+    const userData = mesh?.userData && typeof mesh.userData === 'object' ? mesh.userData : {};
+    return Object.freeze({
+        referenceStart,
+        referenceCount,
+        vertexStart,
+        vertexCount,
+        sourceName: mesh?.name || mesh?.type || null,
+        buildingFab2Role: userData.buildingFab2Role ?? null,
+        buildingFab2RoofKind: userData.buildingFab2RoofKind ?? null,
+        buildingFab2WallKind: userData.buildingFab2WallKind ?? null,
+        buildingWindowPart: userData.buildingWindowPart ?? null,
+        windowDefinitionId: userData.windowDefinitionId ?? null
+    });
+}
+
 function definesKey(material) {
     const defines = /** @type {any} */ (material).defines;
     if (!defines || typeof defines !== 'object') return '-';
@@ -431,7 +452,7 @@ export function mergeBuildingGroupGeometry(root, options = {}) {
         container.updateMatrixWorld(true);
         scopeInverse.copy(container.matrixWorld).invert();
 
-        /** @type {Map<string, {material: THREE.Material, sample: THREE.Mesh, geometries: THREE.BufferGeometry[], sources: THREE.Mesh[], windowRanges: object[], vertexCursor: number, failedExpansion: boolean, effectiveVisible: boolean}>} */
+        /** @type {Map<string, {material: THREE.Material, sample: THREE.Mesh, geometries: THREE.BufferGeometry[], sources: THREE.Mesh[], geometryRanges: object[], windowRanges: object[], vertexCursor: number, referenceCursor: number, failedExpansion: boolean, effectiveVisible: boolean}>} */
         const buckets = new Map();
 
         for (const mesh of meshes) {
@@ -450,8 +471,10 @@ export function mergeBuildingGroupGeometry(root, options = {}) {
                     sample: mesh,
                     geometries: [],
                     sources: [],
+                    geometryRanges: [],
                     windowRanges: [],
                     vertexCursor: 0,
+                    referenceCursor: 0,
                     failedExpansion: false,
                     effectiveVisible
                 };
@@ -466,6 +489,9 @@ export function mergeBuildingGroupGeometry(root, options = {}) {
                     bucket.failedExpansion = true;
                 } else {
                     const vertexCount = expanded.reduce((sum, geometry) => sum + geometry.attributes.position.count, 0);
+                    const referenceCount = expanded.reduce((sum, geometry) => (
+                        sum + (geometry.index?.count ?? geometry.attributes.position.count)
+                    ), 0);
                     bucket.windowRanges.push(Object.freeze({
                         vertexStart: bucket.vertexCursor,
                         vertexCount,
@@ -475,7 +501,14 @@ export function mergeBuildingGroupGeometry(root, options = {}) {
                         part: mesh.userData?.buildingWindowPart ?? null,
                         instances: assembly?.userData?.instanceVariations ?? Object.freeze([])
                     }));
+                    bucket.geometryRanges.push(createMergedGeometryRange(mesh, {
+                        referenceStart: bucket.referenceCursor,
+                        referenceCount,
+                        vertexStart: bucket.vertexCursor,
+                        vertexCount
+                    }));
                     bucket.vertexCursor += vertexCount;
+                    bucket.referenceCursor += referenceCount;
                     bucket.geometries.push(...expanded);
                 }
             } else {
@@ -484,8 +517,17 @@ export function mergeBuildingGroupGeometry(root, options = {}) {
                 // Merged geometry is static; drop caches that no longer describe it.
                 geometry.boundingBox = null;
                 geometry.boundingSphere = null;
+                const vertexCount = geometry.attributes.position.count;
+                const referenceCount = geometry.index?.count ?? vertexCount;
+                bucket.geometryRanges.push(createMergedGeometryRange(mesh, {
+                    referenceStart: bucket.referenceCursor,
+                    referenceCount,
+                    vertexStart: bucket.vertexCursor,
+                    vertexCount
+                }));
                 bucket.geometries.push(geometry);
-                bucket.vertexCursor += geometry.attributes.position.count;
+                bucket.vertexCursor += vertexCount;
+                bucket.referenceCursor += referenceCount;
             }
             bucket.sources.push(mesh);
         }
@@ -505,7 +547,7 @@ export function mergeBuildingGroupGeometry(root, options = {}) {
 
         let index = 0;
         for (const bucket of buckets.values()) {
-            const { material, sample, geometries, sources, windowRanges, failedExpansion, effectiveVisible } = bucket;
+            const { material, sample, geometries, sources, geometryRanges, windowRanges, failedExpansion, effectiveVisible } = bucket;
 
             if (failedExpansion || (!windowRanges.length && geometries.length < Math.max(1, minBucketSize))) {
                 // Not worth merging: restore the originals with their material canonicalized.
@@ -554,6 +596,7 @@ export function mergeBuildingGroupGeometry(root, options = {}) {
             merged.userData = {
                 ...(sample.userData && typeof sample.userData === 'object' ? sample.userData : {}),
                 buildingMergedMeshCount: sources.length,
+                buildingMergedGeometryRanges: Object.freeze(geometryRanges),
                 ...(windowRanges.length ? { buildingWindowRanges: Object.freeze(windowRanges) } : {})
             };
             container.add(merged);

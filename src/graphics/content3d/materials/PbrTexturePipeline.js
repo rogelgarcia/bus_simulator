@@ -271,6 +271,12 @@ export class PbrTextureLoaderService {
         return this._calibrationResolver?.getCachedOverrides?.(materialId) ?? null;
     }
 
+    async waitForReady() {
+        while (this._calibrationLoadInFlight.size > 0) {
+            await Promise.all(Array.from(this._calibrationLoadInFlight.values()));
+        }
+    }
+
     async preloadCalibrationForMaterialIds(materialIds, { forceReload = false } = {}) {
         if (!this._calibrationResolver?.preloadOverrides) return [];
         return this._calibrationResolver.preloadOverrides(materialIds, { forceReload });

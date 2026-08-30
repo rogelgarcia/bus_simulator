@@ -795,6 +795,17 @@ export class BuildingWallTextureCache {
         this._pbrLoader?.setDiagnosticsEnabled?.(enabled === true);
     }
 
+    async waitForReady() {
+        while (true) {
+            const textureJobs = Array.from(this._cache.values())
+                .map((entry) => entry?.promise)
+                .filter(Boolean);
+            await Promise.all(textureJobs);
+            await this._pbrLoader?.waitForReady?.();
+            if (!Array.from(this._cache.values()).some((entry) => entry?.promise)) return;
+        }
+    }
+
     resolveMaterial(materialId, {
         calibrationOverrides = undefined,
         localOverrides = null,
@@ -1946,19 +1957,9 @@ export function buildBuildingVisualParts({
 
         if (instancedBuckets.size) {
             const dummy = new THREE.Object3D();
-            const orderedBuckets = Array.from(instancedBuckets.values()).sort((a, b) => {
-                const ro = a.renderOrder - b.renderOrder;
-                if (ro) return ro;
-                const ma = a.material?.uuid ?? '';
-                const mb = b.material?.uuid ?? '';
-                if (ma < mb) return -1;
-                if (ma > mb) return 1;
-                const ga = a.geometry?.uuid ?? '';
-                const gb = b.geometry?.uuid ?? '';
-                if (ga < gb) return -1;
-                if (ga > gb) return 1;
-                return 0;
-            });
+            // Map insertion follows deterministic facade/floor traversal. UUIDs
+            // are process-random and must never reorder producer-owned children.
+            const orderedBuckets = Array.from(instancedBuckets.values());
             for (const bucket of orderedBuckets) {
                 const transforms = bucket.transforms;
                 const count = Math.floor(transforms.length / 4);

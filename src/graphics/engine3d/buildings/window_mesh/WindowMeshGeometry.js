@@ -30,6 +30,35 @@ function q(value) {
     return Math.round(Number(value) * QUANT);
 }
 
+// ShapeGeometry can preserve a duplicated closing point in an otherwise valid
+// outline. Earcut may reference that point in a zero-area triangle. Removing
+// only exact zero-area index triplets keeps the rendered surface unchanged and
+// prevents invalid topology from reaching downstream geometry consumers.
+function removeZeroAreaIndexTriangles(geometry) {
+    const position = geometry?.getAttribute?.('position') ?? null;
+    const index = geometry?.index ?? null;
+    if (!position || !index || index.count % 3 !== 0) return geometry;
+
+    const kept = [];
+    for (let offset = 0; offset < index.count; offset += 3) {
+        const ia = index.getX(offset);
+        const ib = index.getX(offset + 1);
+        const ic = index.getX(offset + 2);
+        const abx = position.getX(ib) - position.getX(ia);
+        const aby = position.getY(ib) - position.getY(ia);
+        const abz = position.getZ(ib) - position.getZ(ia);
+        const acx = position.getX(ic) - position.getX(ia);
+        const acy = position.getY(ic) - position.getY(ia);
+        const acz = position.getZ(ic) - position.getZ(ia);
+        const crossX = aby * acz - abz * acy;
+        const crossY = abz * acx - abx * acz;
+        const crossZ = abx * acy - aby * acx;
+        if (crossX !== 0 || crossY !== 0 || crossZ !== 0) kept.push(ia, ib, ic);
+    }
+    if (kept.length !== index.count) geometry.setIndex(kept);
+    return geometry;
+}
+
 function getFrameWidths(frame) {
     const src = frame && typeof frame === 'object' ? frame : {};
     const legacy = Math.max(0, Number(src.width) || 0);
@@ -276,7 +305,7 @@ function buildRectLeafOpeningGeometry({
         y1: centerY + profile.centerY + profile.innerHeight * 0.5,
         reverse: false
     });
-    const geo = new THREE.ShapeGeometry(shape, 1);
+    const geo = removeZeroAreaIndexTriangles(new THREE.ShapeGeometry(shape, 1));
     applyPlanarUv01(geo);
     geo.computeVertexNormals();
     geo.computeBoundingBox();
@@ -480,7 +509,7 @@ function buildDoorFanlightOpeningGeometry({ settings, curveSegments }) {
         curveSegments,
         reverse: false
     });
-    const geo = new THREE.ShapeGeometry(shape, Math.max(6, curveSegments | 0));
+    const geo = removeZeroAreaIndexTriangles(new THREE.ShapeGeometry(shape, Math.max(6, curveSegments | 0)));
     // Matches the leaf glass, which the fanlight is merged with.
     applyPlanarUv01(geo);
     geo.computeVertexNormals();
@@ -541,6 +570,7 @@ function buildFrameGeometry({ settings, curveSegments }) {
         const merged = mergeGeometries(parts, false);
         for (const part of parts) part?.dispose?.();
         for (const part of raw) if (!parts.includes(part)) part?.dispose?.();
+        removeZeroAreaIndexTriangles(merged);
         merged.computeVertexNormals();
         merged.computeBoundingBox();
         return merged;
@@ -690,7 +720,7 @@ function buildOpeningGeometry({ settings, curveSegments }) {
         reverse: false
     });
 
-    const geo = new THREE.ShapeGeometry(shape, Math.max(6, curveSegments | 0));
+    const geo = removeZeroAreaIndexTriangles(new THREE.ShapeGeometry(shape, Math.max(6, curveSegments | 0)));
     applyPlanarUv01(geo);
     geo.computeVertexNormals();
     geo.computeBoundingBox();

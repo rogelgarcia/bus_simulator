@@ -34,8 +34,33 @@ async function bundleFor(page, catalogId, overrides = null) {
             if (!geo) return null;
             geo.computeBoundingBox();
             const box = geo.boundingBox;
+            const position = geo.getAttribute('position');
+            const index = geo.index;
+            const referenceCount = index ? index.count : position.count;
+            let degenerateTriangles = 0;
+            for (let offset = 0; offset < referenceCount; offset += 3) {
+                const ids = [0, 1, 2].map((component) => index
+                    ? index.getX(offset + component)
+                    : offset + component);
+                const [a, b, c] = ids.map((id) => [
+                    position.getX(id),
+                    position.getY(id),
+                    position.getZ(id)
+                ]);
+                const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+                const ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+                const cross = [
+                    ab[1] * ac[2] - ab[2] * ac[1],
+                    ab[2] * ac[0] - ab[0] * ac[2],
+                    ab[0] * ac[1] - ab[1] * ac[0]
+                ];
+                if (cross[0] === 0 && cross[1] === 0 && cross[2] === 0) {
+                    degenerateTriangles += 1;
+                }
+            }
             return {
-                triangles: (geo.index ? geo.index.count : geo.attributes.position.count) / 3,
+                triangles: referenceCount / 3,
+                degenerateTriangles,
                 min: [box.min.x, box.min.y, box.min.z],
                 max: [box.max.x, box.max.y, box.max.z]
             };
@@ -98,6 +123,8 @@ test('arched double door: a fanlight fills the lunette', async ({ page }) => {
     expect(b.opening.max[1]).toBeGreaterThan(yChord);
     // The head ring is real geometry, not a couple of stray triangles.
     expect(b.frame.triangles).toBeGreaterThan(200);
+    expect(b.frame.degenerateTriangles).toBe(0);
+    expect(b.opening.degenerateTriangles).toBe(0);
 });
 
 test('a non-arched double door is unchanged', async ({ page }) => {

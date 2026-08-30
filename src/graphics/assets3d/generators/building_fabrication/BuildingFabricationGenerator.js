@@ -134,6 +134,32 @@ import {
 
 const EPS = 1e-6;
 const QUANT = 1000;
+
+function filterZeroAreaTriangleIndices(positionValues, indices) {
+    const kept = [];
+    for (let offset = 0; offset + 2 < indices.length; offset += 3) {
+        const ia = indices[offset] * 3;
+        const ib = indices[offset + 1] * 3;
+        const ic = indices[offset + 2] * 3;
+        const ax = Math.fround(positionValues[ia]);
+        const ay = Math.fround(positionValues[ia + 1]);
+        const az = Math.fround(positionValues[ia + 2]);
+        const abx = Math.fround(positionValues[ib]) - ax;
+        const aby = Math.fround(positionValues[ib + 1]) - ay;
+        const abz = Math.fround(positionValues[ib + 2]) - az;
+        const acx = Math.fround(positionValues[ic]) - ax;
+        const acy = Math.fround(positionValues[ic + 1]) - ay;
+        const acz = Math.fround(positionValues[ic + 2]) - az;
+        const crossX = aby * acz - abz * acy;
+        const crossY = abz * acx - abx * acz;
+        const crossZ = abx * acy - aby * acx;
+        if (crossX !== 0 || crossY !== 0 || crossZ !== 0) {
+            kept.push(indices[offset], indices[offset + 1], indices[offset + 2]);
+        }
+    }
+    return kept;
+}
+
 const WEDGE_ANGLE_STEP_DEG = 15;
 const WEDGE_ANGLE_MAX_DEG = 75;
 const FACADE_DEPTH_MIN_M = -2.0;
@@ -10901,11 +10927,12 @@ export function buildBuildingFabricationVisualParts({
                                 vCursor += 4;
                             }
 
-                            if (ringPositions.length && ringIndices.length) {
+                            const validRingIndices = filterZeroAreaTriangleIndices(ringPositions, ringIndices);
+                            if (ringPositions.length && validRingIndices.length) {
                                 const ringGeo = new THREE.BufferGeometry();
                                 ringGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ringPositions), 3));
                                 ringGeo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(ringUvs), 2));
-                                ringGeo.setIndex(ringIndices);
+                                ringGeo.setIndex(validRingIndices);
                                 ringGeo.computeVertexNormals();
 
                                 // The ring doubles as the soffit over recessed
@@ -11010,12 +11037,13 @@ export function buildBuildingFabricationVisualParts({
                                     bandCursor += 4;
                                 }
 
-                                if (!bandPositions.length || !bandIndices.length) return;
+                                const validBandIndices = filterZeroAreaTriangleIndices(bandPositions, bandIndices);
+                                if (!bandPositions.length || !validBandIndices.length) return;
 
                                 const bandGeo = new THREE.BufferGeometry();
                                 bandGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(bandPositions), 3));
                                 bandGeo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(bandUvs), 2));
-                                bandGeo.setIndex(bandIndices);
+                                bandGeo.setIndex(validBandIndices);
                                 bandGeo.computeVertexNormals();
 
                                 const bandMesh = new THREE.Mesh(bandGeo, closureBandWallMat);
@@ -14615,19 +14643,9 @@ export function buildBuildingFabricationVisualParts({
 
     if (instancedBuckets.size) {
         const dummy = new THREE.Object3D();
-        const orderedBuckets = Array.from(instancedBuckets.values()).sort((a, b) => {
-            const ro = a.renderOrder - b.renderOrder;
-            if (ro) return ro;
-            const ma = a.material?.uuid ?? '';
-            const mb = b.material?.uuid ?? '';
-            if (ma < mb) return -1;
-            if (ma > mb) return 1;
-            const ga = a.geometry?.uuid ?? '';
-            const gb = b.geometry?.uuid ?? '';
-            if (ga < gb) return -1;
-            if (ga > gb) return 1;
-            return 0;
-        });
+        // Map insertion follows deterministic fabrication traversal. UUIDs are
+        // process-random and cannot define stable source-object ordering.
+        const orderedBuckets = Array.from(instancedBuckets.values());
         for (const bucket of orderedBuckets) {
             const transforms = bucket.transforms;
             const count = Math.floor(transforms.length / 4);

@@ -354,6 +354,20 @@ function createAsphaltMaterialWithMarkings(
         fineRoughnessMap: asphaltFineRoughnessMap?.isTexture ? asphaltFineRoughnessMap : null,
         shaderUniforms: null
     };
+    mat.userData.roadMarkingsOverlayConfig = {
+        schema: 'bus-sim-road-markings-overlay-v5',
+        texture: markingsTexture,
+        bounds: { minX, minZ, sizeX, sizeZ },
+        variation: {
+            scale: markingsScale,
+            colorStrength: markingsColorStrength,
+            roughnessStrength: markingsRoughnessStrength,
+            dirtyStrength: markingsDirtyStrength,
+            edgeBreakStrength: markingsEdgeBreakStrength,
+            baseRoughness: markingsBaseRoughness,
+            seed: [seedVec2.x, seedVec2.y]
+        }
+    };
 
     const prevOnBeforeCompile = typeof mat.onBeforeCompile === 'function' ? mat.onBeforeCompile.bind(mat) : null;
     mat.onBeforeCompile = (shader, renderer) => {
