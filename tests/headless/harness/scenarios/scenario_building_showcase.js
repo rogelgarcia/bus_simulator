@@ -318,7 +318,10 @@ export const scenarioBuildingShowcase = {
         const cameraDir = options?.cameraDir && typeof options.cameraDir === 'object'
             ? options.cameraDir
             : CAMERA_DIR;
-        const padding = Number.isFinite(options?.cameraPadding) ? options.cameraPadding : CAMERA_PADDING;
+        const wideCapture = (engine.camera.aspect || 1) >= 1.5;
+        const padding = wideCapture && Number.isFinite(options?.cameraPaddingWide)
+            ? options.cameraPaddingWide
+            : (Number.isFinite(options?.cameraPadding) ? options.cameraPadding : CAMERA_PADDING);
         const dist = computeFrameDistanceForSphere({
             radius: sphere.radius || 1,
             fovDeg: engine.camera.fov,
@@ -332,9 +335,27 @@ export const scenarioBuildingShowcase = {
         ).normalize();
         // Optional close-up aim: 0 = building bottom, 1 = top (default center).
         const target = sphere.center.clone();
-        if (Number.isFinite(options?.cameraTargetYFrac)) {
-            const frac = Math.max(0, Math.min(1, Number(options.cameraTargetYFrac)));
+        const targetYFrac = wideCapture && Number.isFinite(options?.cameraTargetYFracWide)
+            ? options.cameraTargetYFracWide
+            : options?.cameraTargetYFrac;
+        if (Number.isFinite(targetYFrac)) {
+            const frac = Math.max(0, Math.min(1, Number(targetYFrac)));
             target.y = box.min.y + (box.max.y - box.min.y) * frac;
+        }
+        const wideTargetOffset = options?.cameraTargetOffsetWide && typeof options.cameraTargetOffsetWide === 'object'
+            ? options.cameraTargetOffsetWide
+            : null;
+        const targetOffset = wideCapture && wideTargetOffset
+            ? wideTargetOffset
+            : (options?.cameraTargetOffset && typeof options.cameraTargetOffset === 'object'
+                ? options.cameraTargetOffset
+                : null);
+        if (targetOffset) {
+            target.add(new THREE.Vector3(
+                Number(targetOffset.x) || 0,
+                Number(targetOffset.y) || 0,
+                Number(targetOffset.z) || 0
+            ));
         }
         engine.camera.position.copy(target).addScaledVector(dir, dist);
         engine.camera.lookAt(target);
