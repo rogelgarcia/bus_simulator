@@ -77,4 +77,6 @@ When a sequence prompt completes or supersedes a task tracked by an existing dyn
 
 Every active prompt from AI 358 through AI 363 must append a completion-evidence summary before it is marked DONE. The summary must include measured triangle counts and logical/total draw calls with before/after deltas and budget verdicts, plus a manifest of the prompt's required screenshots. All completion screenshots must be UI-free lossless PNGs captured natively from a real `3840x2160` drawing buffer at pixel ratio `1`; JPEG, browser-scaled, or upscaled images do not satisfy the gate. A prompt cannot be completed while a required cost measurement or 4K screenshot is missing.
 
+Performance summaries must state hardware, resolution, graphics settings, grass density/coverage, workload and camera/route, warm-up, sample count, and statistic. They must include frame time/FPS and relevant memory alongside geometry, draw-call, and measured CPU/GPU costs; unavailable metrics must be labeled `not measured` with a reason rather than replaced by projections.
+
 Generated screenshots, comparison images, and machine-readable capture manifests remain local under the prompt-specific `tests/artifacts/screens/grass/ai###/` directory and must never be staged or committed. Tracked completion summaries may reference those workspace-relative artifact paths.
