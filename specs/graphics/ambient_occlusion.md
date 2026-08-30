@@ -85,6 +85,14 @@ Setting: `ambientOcclusion.alpha`
 
 The selected handling mode is authoritative for foliage and other alpha-cutout materials. `alpha_test` uses the source cutout silhouette (including a dedicated `material.userData.aoAlphaMap` when supplied). `exclude` removes the cutout geometry from AO depth/normal passes and masks those visible pixels out of final SSAO/GTAO composition, so the material neither contributes to nor receives screen-space AO. Normal lighting and shadow-map rendering are unaffected by this AO-only setting.
 
+### Exclusion-mask depth reuse
+
+The exclusion mask runs immediately after the visible-scene render and reuses its resolved depth texture. It clears the mask to the normal AO value, submits only visible excluded receivers, depth-tests them against visible-scene depth, and leaves that retained depth unchanged. An empty receiver set skips the mask render entirely. This avoids redrawing opaque buildings, roads, props, and the bus merely to reconstruct mask depth.
+
+Receiver classification is generic. A whole object can opt out of receiving AO with `object.userData.ambientOcclusionReceiver = 'exclude'` or `object.userData.excludeFromAmbientOcclusionReceiver = true`; legacy foliage metadata remains supported. Alpha-cutout materials in `exclude` mode are handled per material group, so mixed-material meshes preserve opaque and cutout group behavior. Source alpha maps, cutoffs, sides, and alpha-to-coverage are copied into the mask material.
+
+The retained-depth path supports the normal SSAO/GTAO, TAA, resolved MSAA, resize, and device-pixel-ratio lifecycle. It automatically uses the correct legacy full-scene mask when a usable composer depth texture is unavailable. `?aoExclusionDepthReuse=0` forces that legacy path for visual or performance A/B testing; `=1` selects the optimized path. Runtime AO diagnostics report the selected strategy, fallback reason, receiver candidates, mask calls/triangles, render/skip state, and candidate-test time.
+
 ## Material tagging (foliage)
 
 To ensure alpha-blended foliage participates in AO alpha handling, tag foliage materials:

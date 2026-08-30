@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AI 524 AO Exclusion 4K Capture</title>
+    <style>
+        html, body, #game-frame {
+            border: 0;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            padding: 0;
+            width: 100%;
+        }
+
+        #game-frame {
+            display: block;
+        }
+
+        #capture-status {
+            height: 1px;
+            left: -10000px;
+            overflow: hidden;
+            position: fixed;
+            top: 0;
+            width: 1px;
+        }
+    </style>
+</head>
+<body>
+    <iframe
+        id="game-frame"
+        title="Production game capture"
+        src="/?pose=civic_center_curve_front&amp;coreTests=0&amp;aoExclusionDepthReuse=1"
+    ></iframe>
+    <div id="capture-status" aria-live="polite">booting</div>
+    <script id="capture-metadata" type="application/json">null</script>
+    <script type="module" src="./ao_exclusion_4k_controller.js"></script>
+</body>
+</html>

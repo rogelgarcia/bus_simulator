@@ -385,6 +385,15 @@ function buildCurrentMarkdown(report) {
         '|---|---:|---:|---:|---:|',
         ...summary.passes.map((row) => `| ${row.id} | ${number(row.calls, 1)} | ${percent(row.callShare)} | ${number(row.triangles, 0)} | ${percent(row.triangleShare)} |`),
         '',
+        ...(summary.global.aoExclusionMask ? [
+            '## AO exclusion-mask diagnostics',
+            '',
+            `- Strategies: ${Object.entries(summary.global.aoExclusionMask.strategies ?? {}).map(([id, count]) => `${id}=${count}`).join(', ') || 'none'}.`,
+            `- Retained-depth frames: ${number(summary.global.aoExclusionMask.retainedDepthFrames)} / ${number(summary.global.aoExclusionMask.frames)}; fallback frames: ${number(summary.global.aoExclusionMask.fallbackFrames)}.`,
+            `- Average candidates: ${number(summary.global.aoExclusionMask.averageCandidateObjects, 1)} objects / ${number(summary.global.aoExclusionMask.averageCandidateGroups, 1)} groups; candidate test: ${number(summary.global.aoExclusionMask.averageCandidateTestMs, 3)} ms.`,
+            `- Instrumented mask submissions: ${number(summary.global.aoExclusionMask.averagePassCalls, 1)} calls / ${number(summary.global.aoExclusionMask.averagePassTriangles, 0)} triangles per frame.`,
+            ''
+        ] : []),
         '## Workload by scene category',
         '',
         '| Category | Calls/frame | Call share | Triangles/frame | Triangle share |',
@@ -486,10 +495,24 @@ try {
         });
         ready = lastStartup.state === 'game_mode' && lastStartup.visibility?.state === 'active';
         if (ready) break;
+        if (lastStartup.state === 'game_mode' && lastStartup.visibility?.state === 'fallback') break;
         if (second % 10 === 0) process.stdout.write(`[RegionProfile] startup ${second}s ${JSON.stringify(lastStartup)}\n`);
         await new Promise((resolve) => setTimeout(resolve, 1000));
     }
-    if (!ready) throw new Error(`Production city did not become visibility-active: ${JSON.stringify(lastStartup)}`);
+    if (!ready) {
+        const diagnostics = await page.evaluate(async () => {
+            const city = window.__busSim?.sm?.current?.city ?? null;
+            if (!city) return null;
+            const visibility = await import('/src/app/city/visibility/index.js');
+            const response = await fetch('/src/app/city/visibility/bakes/bigcity2.v1.json');
+            const baked = response.ok ? await response.json() : null;
+            return {
+                liveCityConfigHash: visibility.createStaticVisibilityCityHash(city),
+                bakedCityConfigHash: baked?.cityConfigHash ?? null
+            };
+        });
+        throw new Error(`Production city did not become visibility-active: ${JSON.stringify({ ...lastStartup, diagnostics })}`);
+    }
 
     const report = await page.evaluate(async ({ profileMode, extraQuery }) => {
         const THREE = await import('three');
@@ -547,6 +570,7 @@ try {
                 totals: emptyMetrics(),
                 frameMs: [],
                 sunBloomFrames: [],
+                aoMaskFrames: [],
                 byCategory: new Map(),
                 byPass: new Map(),
                 byCategoryPass: new Map(),
@@ -565,6 +589,7 @@ try {
             add(target.totals, source.totals);
             target.frameMs.push(...source.frameMs);
             target.sunBloomFrames.push(...source.sunBloomFrames);
+            target.aoMaskFrames.push(...source.aoMaskFrames);
             for (const [id, row] of source.byCategory) addMap(target.byCategory, id, row);
             for (const [id, row] of source.byPass) addMap(target.byPass, id, row);
             for (const [id, row] of source.byCategoryPass) addMap(target.byCategoryPass, id, row, { category: row.category, pass: row.pass });
@@ -588,6 +613,12 @@ try {
             const averageSunBloom = (field) => sunBloomFrames.length
                 ? sunBloomFrames.reduce((sum, frame) => sum + Number(frame[field] || 0), 0) / sunBloomFrames.length
                 : 0;
+            const aoMaskFrames = capture.aoMaskFrames;
+            const aoStrategies = {};
+            for (const frame of aoMaskFrames) aoStrategies[frame.maskStrategy] = (aoStrategies[frame.maskStrategy] || 0) + 1;
+            const averageAoMask = (field) => aoMaskFrames.length
+                ? aoMaskFrames.reduce((sum, frame) => sum + Number(frame[field] || 0), 0) / aoMaskFrames.length
+                : 0;
             return {
                 totals,
                 frameMs: capture.frameMs.length
@@ -607,6 +638,19 @@ try {
                     averageReferenceBytes: averageSunBloom('approximateReferenceBytes'),
                     averagePassCalls: averageSunBloom('passCalls'),
                     averagePassTriangles: averageSunBloom('passTriangles')
+                },
+                aoExclusionMask: {
+                    frames: aoMaskFrames.length,
+                    strategies: aoStrategies,
+                    retainedDepthFrames: aoMaskFrames.filter((frame) => frame.retainedDepthUsed === true).length,
+                    fallbackFrames: aoMaskFrames.filter((frame) => !!frame.fallbackReason).length,
+                    renderedFrames: aoMaskFrames.filter((frame) => frame.maskRendered === true).length,
+                    skippedFrames: aoMaskFrames.filter((frame) => frame.maskSkipped === true).length,
+                    averageCandidateObjects: averageAoMask('maskCandidateObjects'),
+                    averageCandidateGroups: averageAoMask('maskCandidateGroups'),
+                    averageCandidateTestMs: averageAoMask('candidateTestMs'),
+                    averagePassCalls: averageAoMask('maskCalls'),
+                    averagePassTriangles: averageAoMask('maskTriangles')
                 },
                 byCategory: rows(capture.byCategory, divisor),
                 byPass: rows(capture.byPass, divisor),
@@ -789,6 +833,8 @@ try {
                 frameCapture.frameMs.push(renderOneFrame(frameCapture));
                 const sunBloomFrame = engine.getSunBloomDebugInfo?.()?.occlusionFiltering ?? null;
                 if (sunBloomFrame) frameCapture.sunBloomFrames.push({ ...sunBloomFrame });
+                const aoMaskFrame = engine.getAmbientOcclusionDebugInfo?.()?.alpha?.frameStats ?? null;
+                if (aoMaskFrame) frameCapture.aoMaskFrames.push({ ...aoMaskFrame });
                 reconciliation.frames += 1;
                 const actual = rendererMetrics();
                 const expected = frameCapture.totals;

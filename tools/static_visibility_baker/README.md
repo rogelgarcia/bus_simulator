@@ -61,4 +61,9 @@ paths with `--query sunBloomFilter=0` and `--query sunBloomFilter=1`. The JSON
 report records filtering outcomes, average candidate-test time, retained
 occluders, calls, triangles, and approximate reference storage.
 
+The same profiler records AO exclusion-mask strategy, fallback/retained-depth
+counts, receiver candidates, candidate-test time, and mask calls/triangles.
+Use `--query aoExclusionDepthReuse=0` for the preserved full-scene mask and
+`--query aoExclusionDepthReuse=1` for the retained-depth receiver-only path.
+
 Do not hand-edit the payload. Any city-map, building, traffic-control, tree-placement, generator, geometry-revision, or bake-profile change alters the canonical city hash and makes the old payload fail open at runtime.

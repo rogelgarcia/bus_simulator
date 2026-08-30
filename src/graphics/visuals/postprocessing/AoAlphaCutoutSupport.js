@@ -33,6 +33,13 @@ function setAoOverrideState(material, { map, alphaMap, alphaTest }) {
     if (changed) mat.needsUpdate = true;
 }
 
+export function isWholeObjectAoExcludedReceiver(object) {
+    const userData = object?.userData ?? null;
+    return userData?.ambientOcclusionReceiver === 'exclude'
+        || userData?.excludeFromAmbientOcclusionReceiver === true
+        || userData?.isFoliage === true;
+}
+
 export function getMaterialForAoGroup(object, group) {
     const obj = object ?? null;
     if (!obj) return null;
@@ -119,7 +126,7 @@ export function applyAoAlphaHandlingToMaterial({
         ? Math.max(0.01, Math.min(0.99, Number(threshold)))
         : 0.5;
 
-    const excludeWholeObject = mode === 'exclude' && object?.userData?.isFoliage === true;
+    const excludeWholeObject = mode === 'exclude' && isWholeObjectAoExcludedReceiver(object);
     if (!shouldApplyAoAlphaCutout(src, object) && !excludeWholeObject) {
         setAoOverrideState(mat, {
             map: whiteTexture,

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 import {
     applyAoAlphaHandlingToMaterial,
+    isWholeObjectAoExcludedReceiver,
     primeAoOverrideMaterial,
     resolveAoOverrideMaterial,
     shouldApplyAoAlphaCutout
@@ -64,6 +65,21 @@ test('AoAlphaCutoutSupport: mixed-mesh object foliage tag does not classify an o
         alphaTest: 0
     });
     assert.equal(shouldApplyAoAlphaCutout(trunk, { userData: { isFoliage: true } }), false);
+});
+
+test('AoAlphaCutoutSupport: generic receiver metadata excludes a whole object', () => {
+    assert.equal(isWholeObjectAoExcludedReceiver({
+        userData: { ambientOcclusionReceiver: 'exclude' }
+    }), true);
+    assert.equal(isWholeObjectAoExcludedReceiver({
+        userData: { excludeFromAmbientOcclusionReceiver: true }
+    }), true);
+});
+
+test('AoAlphaCutoutSupport: visual-only AO exclusion is not receiver exclusion', () => {
+    assert.equal(isWholeObjectAoExcludedReceiver({
+        userData: { excludeFromAmbientOcclusion: true }
+    }), false);
 });
 
 test('AoAlphaCutoutSupport: resolveAoOverrideMaterial falls back to active scene override material', () => {

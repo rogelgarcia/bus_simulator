@@ -25,10 +25,12 @@ import { resolveGtaoDenoisePolicy } from './GtaoDenoisePolicy.js';
 import { resolveSsaoPassParams } from './SsaoPassConfig.js';
 import { resolveGtaoCacheTexture } from './GtaoCacheSupport.js';
 import { AoExclusionMaskRenderer } from './AoExclusionMaskRenderer.js';
+import { AoExclusionMaskPass } from './AoExclusionMaskPass.js';
 import { SunBloomOcclusionFilter } from './SunBloomOcclusionFilter.js';
 import {
     applyAoAlphaHandlingToMaterial,
     getMaterialForAoGroup,
+    isWholeObjectAoExcludedReceiver,
     primeAoOverrideMaterial,
     resolveAoOverrideMaterial,
     shouldApplyAoAlphaCutout
@@ -282,6 +284,29 @@ function getSunBloomFilteringDebugDefault() {
     return !['0', 'false', 'off', 'no'].includes(String(raw).trim().toLowerCase());
 }
 
+function getAoExclusionDepthReuseDebugDefault() {
+    if (typeof window === 'undefined' || typeof window.location?.search !== 'string') return true;
+    const raw = new URLSearchParams(window.location.search).get('aoExclusionDepthReuse');
+    if (raw === null) return true;
+    return !['0', 'false', 'off', 'no'].includes(String(raw).trim().toLowerCase());
+}
+
+function ensureRenderTargetDepthTexture(target) {
+    const rt = target ?? null;
+    if (!rt || rt.depthTexture?.isDepthTexture) return;
+    const depthTexture = new THREE.DepthTexture(
+        Math.max(1, Math.floor(Number(rt.width) || 1)),
+        Math.max(1, Math.floor(Number(rt.height) || 1)),
+        THREE.UnsignedIntType
+    );
+    depthTexture.format = THREE.DepthFormat;
+    depthTexture.magFilter = THREE.NearestFilter;
+    depthTexture.minFilter = THREE.NearestFilter;
+    depthTexture.generateMipmaps = false;
+    depthTexture.name = 'visible-scene-depth';
+    rt.depthTexture = depthTexture;
+}
+
 function makeCompositePass({ globalBloomTexture, sunBloomTexture } = {}) {
     const payload = createPostProcessingCompositeShaderPayload({
         uniforms: {
@@ -391,6 +416,7 @@ export class PostProcessingPipeline {
             patchedObjects: new WeakSet(),
             originalOnBeforeRender: new WeakMap(),
             lastSceneScanMs: -Infinity,
+            depthReuseEnabled: getAoExclusionDepthReuseDebugDefault(),
             frameStats: {
                 handling: this._ambientOcclusion?.alpha?.handling ?? 'alpha_test',
                 overrideDraws: 0,
@@ -398,7 +424,17 @@ export class PostProcessingPipeline {
                 alphaTestDraws: 0,
                 excludedDraws: 0,
                 excludedFoliageObjects: 0,
-                excludedSceneObjects: 0
+                excludedSceneObjects: 0,
+                maskStrategy: 'disabled',
+                maskCandidateObjects: 0,
+                maskCandidateGroups: 0,
+                maskCalls: 0,
+                maskTriangles: 0,
+                maskRendered: false,
+                maskSkipped: true,
+                retainedDepthUsed: false,
+                fallbackReason: null,
+                candidateTestMs: 0
             }
         };
         this._aoExclusionMask = new AoExclusionMaskRenderer({
@@ -477,8 +513,14 @@ export class PostProcessingPipeline {
         // Final composer
         this.composer = new EffectComposer(renderer);
         this.composer.renderToScreen = true;
+        ensureRenderTargetDepthTexture(this.composer.renderTarget1);
+        ensureRenderTargetDepthTexture(this.composer.renderTarget2);
         setComposerRenderTargetColorSpace(this.composer, linearColorSpace);
         this.renderPass = new RenderPass(scene, camera);
+        this._aoExclusionPass = new AoExclusionMaskPass({
+            renderMask: (context) => this._renderAoReceiverExclusionMask(context)
+        });
+        this._aoExclusionPass.enabled = false;
 
         this.compositePass = makeCompositePass({
             globalBloomTexture: this._globalBloomComposer.renderTarget2.texture,
@@ -503,6 +545,7 @@ export class PostProcessingPipeline {
         if (this.outputPass?.material) this.outputPass.material.toneMapped = true;
 
         this.composer.addPass(this.renderPass);
+        this.composer.addPass(this._aoExclusionPass);
         this._syncAmbientOcclusionPass();
         this.composer.addPass(this.compositePass);
         this.composer.addPass(this.colorGradingPass);
@@ -607,7 +650,7 @@ export class PostProcessingPipeline {
         mat.needsUpdate = true;
     }
 
-    _syncAoReceiverMaskSupport() {
+    _syncAoReceiverMaskSupport({ enabled = null } = {}) {
         const pass = this._ao?.pass ?? null;
         if (!pass) return;
 
@@ -615,12 +658,14 @@ export class PostProcessingPipeline {
         if (mode === 'gtao') this._patchAoReceiverBlendMaterial(pass.blendMaterial, 'gtao');
         if (mode === 'ssao') this._patchAoReceiverBlendMaterial(pass.copyMaterial, 'ssao');
 
-        const enabled = this._ambientOcclusion?.alpha?.handling === 'exclude' ? 1 : 0;
+        const useMask = enabled === null
+            ? this._ambientOcclusion?.alpha?.handling === 'exclude'
+            : !!enabled;
         const texture = this._aoExclusionMask?.target?.texture ?? this._blackTex;
         for (const material of [pass.blendMaterial, pass.copyMaterial, this._gtaoCache?.blendPass?.material]) {
             const uniforms = material?.uniforms ?? null;
             if (uniforms?.uAoExclusionMask) uniforms.uAoExclusionMask.value = texture;
-            if (uniforms?.uUseAoExclusionMask) uniforms.uUseAoExclusionMask.value = enabled;
+            if (uniforms?.uUseAoExclusionMask) uniforms.uUseAoExclusionMask.value = useMask ? 1 : 0;
         }
     }
 
@@ -629,11 +674,11 @@ export class PostProcessingPipeline {
         const render = pass.render.bind(pass);
         pass.userData = { ...(pass.userData ?? {}), aoSceneExclusionsInstalled: true };
         pass.render = (...args) => {
-            const excludeFoliage = this._ambientOcclusion?.alpha?.handling === 'exclude';
+            const excludeReceivers = this._ambientOcclusion?.alpha?.handling === 'exclude';
             const hidden = [];
             this.scene?.traverse?.((object) => {
                 const excludeFromAo = object?.userData?.excludeFromAmbientOcclusion === true;
-                if (object?.visible !== false && (excludeFromAo || (excludeFoliage && object?.userData?.isFoliage === true))) {
+                if (object?.visible !== false && (excludeFromAo || (excludeReceivers && isWholeObjectAoExcludedReceiver(object)))) {
                     hidden.push(object);
                     object.visible = false;
                 }
@@ -650,11 +695,28 @@ export class PostProcessingPipeline {
         };
     }
 
-    _renderAoReceiverExclusionMask() {
+    _renderAoReceiverExclusionMask({ readBuffer = null } = {}) {
         if (this._ambientOcclusion?.alpha?.handling !== 'exclude') return;
-        this._aoExclusionMask?.render?.({
-            threshold: this._ambientOcclusion?.alpha?.threshold ?? 0.5
-        });
+        const result = this._aoExclusionMask?.render?.({
+            threshold: this._ambientOcclusion?.alpha?.threshold ?? 0.5,
+            retainedDepthTarget: readBuffer,
+            preferRetainedDepth: this._aoAlpha?.depthReuseEnabled !== false
+        }) ?? null;
+        if (result && this._aoAlpha?.frameStats) {
+            Object.assign(this._aoAlpha.frameStats, {
+                maskStrategy: result.strategy,
+                maskCandidateObjects: result.candidateObjects,
+                maskCandidateGroups: result.candidateGroups,
+                maskCalls: result.calls,
+                maskTriangles: result.triangles,
+                maskRendered: result.rendered,
+                maskSkipped: result.skipped,
+                retainedDepthUsed: result.retainedDepthUsed,
+                fallbackReason: result.fallbackReason,
+                candidateTestMs: result.candidateTestMs
+            });
+        }
+        this._syncAoReceiverMaskSupport({ enabled: (result?.candidateObjects ?? 0) > 0 });
     }
 
     _scanSceneForAoAlphaHooks() {
@@ -715,6 +777,7 @@ export class PostProcessingPipeline {
     setPixelRatio(pixelRatio) {
         const pr = clamp(pixelRatio, 0.1, 8, 1);
         this._pixelRatio = pr;
+        this._aoExclusionMask?.prepareForSourceResize?.();
         this.composer?.setPixelRatio?.(pr);
         this._globalBloomComposer?.setPixelRatio?.(pr);
         this._sunBloomComposer?.setPixelRatio?.(pr);
@@ -729,6 +792,7 @@ export class PostProcessingPipeline {
         const h = Math.max(1, Math.floor(Number(height)));
         this._size.w = w;
         this._size.h = h;
+        this._aoExclusionMask?.prepareForSourceResize?.();
         this.composer.setSize(w, h);
         this._globalBloomComposer.setSize(w, h);
         this._sunBloomComposer.setSize(w, h);
@@ -1094,6 +1158,10 @@ export class PostProcessingPipeline {
         const prevMode = this._ao?.mode ?? 'off';
         const prevPass = this._ao?.pass ?? null;
         const dynamicScale = getDynamicAoIntensityScale(settings);
+        if (this._aoExclusionPass) {
+            this._aoExclusionPass.enabled = (nextMode === 'ssao' || nextMode === 'gtao')
+                && settings?.alpha?.handling === 'exclude';
+        }
 
         if (prevPass && prevMode !== nextMode) {
             this._removeComposerPass(prevPass);
@@ -1122,8 +1190,9 @@ export class PostProcessingPipeline {
         if (!this._ao.pass) {
             const size = this._getAoPixelSize();
             const passes = this.composer?.passes ?? [];
+            const maskIdx = passes.indexOf(this._aoExclusionPass);
             const renderIdx = passes.indexOf(this.renderPass);
-            const insertAt = renderIdx >= 0 ? renderIdx + 1 : 1;
+            const insertAt = maskIdx >= 0 ? maskIdx + 1 : (renderIdx >= 0 ? renderIdx + 1 : 1);
 
             if (nextMode === 'ssao') {
                 const ssao = settings?.ssao ?? null;
@@ -1347,6 +1416,7 @@ export class PostProcessingPipeline {
         const edgeThreshold = clamp(fxaa?.edgeThreshold, 0.02, 0.5, 0.2);
         if (fxaaUniforms(this.fxaaPass)?.edgeThreshold) fxaaUniforms(this.fxaaPass).edgeThreshold.value = edgeThreshold;
 
+        this._aoExclusionMask?.prepareForSourceResize?.();
         setComposerSamples(this.composer, activeMode === 'msaa' ? msaaSamples : 0);
         this._aoExclusionMask?.setSamples?.(activeMode === 'msaa' ? msaaSamples : 0);
         this._syncAaPassSizes();
@@ -1374,6 +1444,11 @@ export class PostProcessingPipeline {
     setSunBloomFilteringEnabledForDebug(enabled) {
         if (!this._sunBloomOcclusion) return;
         this._sunBloomOcclusion.filteringEnabled = !!enabled;
+    }
+
+    setAoExclusionDepthReuseEnabledForDebug(enabled) {
+        if (!this._aoAlpha) return;
+        this._aoAlpha.depthReuseEnabled = !!enabled;
     }
 
     setColorGrading(colorGrading) {
@@ -1765,6 +1840,16 @@ export class PostProcessingPipeline {
             this._aoAlpha.frameStats.excludedDraws = 0;
             this._aoAlpha.frameStats.excludedFoliageObjects = 0;
             this._aoAlpha.frameStats.excludedSceneObjects = 0;
+            this._aoAlpha.frameStats.maskStrategy = aoOn && this._ambientOcclusion?.alpha?.handling === 'exclude' ? 'pending' : 'disabled';
+            this._aoAlpha.frameStats.maskCandidateObjects = 0;
+            this._aoAlpha.frameStats.maskCandidateGroups = 0;
+            this._aoAlpha.frameStats.maskCalls = 0;
+            this._aoAlpha.frameStats.maskTriangles = 0;
+            this._aoAlpha.frameStats.maskRendered = false;
+            this._aoAlpha.frameStats.maskSkipped = true;
+            this._aoAlpha.frameStats.retainedDepthUsed = false;
+            this._aoAlpha.frameStats.fallbackReason = null;
+            this._aoAlpha.frameStats.candidateTestMs = 0;
         }
         if (aoOn && typeof performance !== 'undefined' && typeof performance.now === 'function') {
             const now = performance.now();
@@ -1822,8 +1907,6 @@ export class PostProcessingPipeline {
 
             if (globalBloomOn) this._renderGlobalBloom(deltaTime);
             const sunBloomRendered = sunBloomOn ? this._renderSunBloom(deltaTime) : false;
-            if (aoOn) this._renderAoReceiverExclusionMask();
-
             // Avoid running the composite pass when both bloom layers are disabled;
             // even a "no-op" shader pass can subtly change output (alpha/dither/color space).
             this.compositePass.enabled = globalBloomOn || sunBloomRendered;
@@ -1849,6 +1932,7 @@ export class PostProcessingPipeline {
         this._globalBloomPass?.dispose?.();
         this._sunBloomPass?.dispose?.();
         this._ao?.pass?.dispose?.();
+        this._aoExclusionPass?.dispose?.();
         this._aoExclusionMask?.dispose?.();
         this._gtaoCache?.blendPass?.material?.dispose?.();
         this.taaPass?.dispose?.();

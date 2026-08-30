@@ -355,6 +355,7 @@ export class GameEngine {
             const gtao = s?.gtao ?? null;
             return {
                 mode,
+                alpha: s?.alpha ? { ...s.alpha, frameStats: null } : null,
                 gtao: mode === 'gtao'
                     ? {
                         updateMode: gtao?.updateMode ?? 'every_frame',
@@ -378,6 +379,11 @@ export class GameEngine {
         const gtao = ao?.gtao ?? null;
         return {
             mode: activeMode,
+            alpha: ao?.alpha ? {
+                handling: ao.alpha.handling ?? (s?.alpha?.handling ?? 'alpha_test'),
+                threshold: ao.alpha.threshold ?? (s?.alpha?.threshold ?? 0.5),
+                frameStats: ao.alpha.frameStats ? { ...ao.alpha.frameStats } : null
+            } : null,
             gtao: activeMode === 'gtao'
                 ? {
                     updateMode: gtao?.updateMode ?? (s?.gtao?.updateMode ?? 'every_frame'),

@@ -14,6 +14,7 @@ import { scenarioVehicleMotionFlickerProbe } from './scenario_vehicle_motion_fli
 import { scenarioSunBloomFoliageOcclusion } from './scenario_sun_bloom_foliage_occlusion.js';
 import { scenarioSunBloomFilteringOutcomes } from './scenario_sun_bloom_filtering_outcomes.js';
 import { scenarioAoFoliageMotionStability } from './scenario_ao_foliage_motion_stability.js';
+import { scenarioAoExclusionDepthReuse } from './scenario_ao_exclusion_depth_reuse.js';
 import { scenarioMaterialCalibrationCapture } from './scenario_material_calibration_capture.js';
 import { scenarioBuildingShowcase } from './scenario_building_showcase.js';
 import { scenarioAi515LotFitCompare } from './scenario_ai515_lot_fit_compare.js';
@@ -40,6 +41,7 @@ const REGISTRY = new Map([
     [scenarioSunBloomFoliageOcclusion.id, scenarioSunBloomFoliageOcclusion],
     [scenarioSunBloomFilteringOutcomes.id, scenarioSunBloomFilteringOutcomes],
     [scenarioAoFoliageMotionStability.id, scenarioAoFoliageMotionStability],
+    [scenarioAoExclusionDepthReuse.id, scenarioAoExclusionDepthReuse],
     [scenarioMaterialCalibrationCapture.id, scenarioMaterialCalibrationCapture],
     [scenarioBuildingShowcase.id, scenarioBuildingShowcase],
     [scenarioAi515LotFitCompare.id, scenarioAi515LotFitCompare],
