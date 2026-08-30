@@ -340,3 +340,4 @@ result: resolution is free (not fill-bound), the caster merge bought ~1 ms
 - Do not move to `prompts/archive/` automatically.
 - Completion is not enough to move a prompt; move to `prompts/archive/` only when explicitly requested by the user.
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change)
+- In the completion summary, include a same-condition before/after performance table with frame time/FPS, whole-frame and per-cascade draw calls and triangles, and CPU/GPU shadow time. State the hardware, resolution, shadow/graphics settings, workload/camera poses, warm-up, sample count, and statistic; mark unavailable metrics as `not measured` with a reason and distinguish measured results from projections.

@@ -48,6 +48,7 @@ function createSunDiscEmitter() {
     mesh.frustumCulled = false;
     mesh.renderOrder = 940;
     mesh.layers.set(SUN_BLOOM_LAYER_ID);
+    mesh.userData.sunBloomProjectionBoundsSafe = true;
     return mesh;
 }
 

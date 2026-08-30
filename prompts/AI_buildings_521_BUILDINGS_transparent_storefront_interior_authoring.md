@@ -78,3 +78,4 @@ Tasks:
 - Do not move to `prompts/archive/` automatically.
 - Move to `prompts/archive/` only when explicitly requested.
 - Add a high-level one-line summary per completed change.
+- Because this prompt includes performance budgets and LOD optimization, include a same-condition before/after performance table in the completion summary for representative storefront and city-block views. Report frame time/FPS, whole-frame and storefront draw calls and triangles, CPU/GPU time, and relevant light/texture memory; state the hardware, resolution, graphics settings, visible-floor/interior configuration, workload/camera, warm-up, sample count, and statistic. Mark unavailable metrics as `not measured` with a reason rather than substituting projections.

@@ -12,6 +12,7 @@ import { scenarioWindowMeshInteriorParallax } from './scenario_window_mesh_inter
 import { scenarioGrassBladeHiresShine } from './scenario_grass_blade_hires_shine.js';
 import { scenarioVehicleMotionFlickerProbe } from './scenario_vehicle_motion_flicker_probe.js';
 import { scenarioSunBloomFoliageOcclusion } from './scenario_sun_bloom_foliage_occlusion.js';
+import { scenarioSunBloomFilteringOutcomes } from './scenario_sun_bloom_filtering_outcomes.js';
 import { scenarioAoFoliageMotionStability } from './scenario_ao_foliage_motion_stability.js';
 import { scenarioMaterialCalibrationCapture } from './scenario_material_calibration_capture.js';
 import { scenarioBuildingShowcase } from './scenario_building_showcase.js';
@@ -37,6 +38,7 @@ const REGISTRY = new Map([
     [scenarioGrassBladeHiresShine.id, scenarioGrassBladeHiresShine],
     [scenarioVehicleMotionFlickerProbe.id, scenarioVehicleMotionFlickerProbe],
     [scenarioSunBloomFoliageOcclusion.id, scenarioSunBloomFoliageOcclusion],
+    [scenarioSunBloomFilteringOutcomes.id, scenarioSunBloomFilteringOutcomes],
     [scenarioAoFoliageMotionStability.id, scenarioAoFoliageMotionStability],
     [scenarioMaterialCalibrationCapture.id, scenarioMaterialCalibrationCapture],
     [scenarioBuildingShowcase.id, scenarioBuildingShowcase],

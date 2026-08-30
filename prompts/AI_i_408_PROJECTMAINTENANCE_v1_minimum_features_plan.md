@@ -131,6 +131,7 @@ Define and maintain a V1-minimum scope and implementation plan, then execute it 
 - [ ] Tune frustum-distance culling and visibility thresholds for stable performance.
 - [ ] Reduce expensive rendering overhead (draw calls/material passes) where practical.
 - [ ] Define and validate V1 runtime performance targets for the technical demo.
+- [ ] For every Phase 11 optimization, include same-condition before/after performance numbers in the implementation/final summary: frame time/FPS and relevant draw-call, triangle, CPU/GPU time, and memory metrics, together with hardware, resolution, settings, workload, warm-up, sample count, and statistic. Mark unavailable metrics as `not measured` with a reason; do not use projections as final results.
 
 Rules:
 - Do not edit text of completed items (`- [x]`).

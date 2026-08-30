@@ -52,6 +52,7 @@ function createSunRaysStarburstMesh() {
     mesh.renderOrder = 948;
     mesh.layers.set(0);
     mesh.layers.enable(SUN_BLOOM_LAYER_ID);
+    mesh.userData.sunBloomProjectionBoundsSafe = true;
     return mesh;
 }
 

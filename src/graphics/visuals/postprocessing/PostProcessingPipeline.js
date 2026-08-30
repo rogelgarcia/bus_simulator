@@ -25,6 +25,7 @@ import { resolveGtaoDenoisePolicy } from './GtaoDenoisePolicy.js';
 import { resolveSsaoPassParams } from './SsaoPassConfig.js';
 import { resolveGtaoCacheTexture } from './GtaoCacheSupport.js';
 import { AoExclusionMaskRenderer } from './AoExclusionMaskRenderer.js';
+import { SunBloomOcclusionFilter } from './SunBloomOcclusionFilter.js';
 import {
     applyAoAlphaHandlingToMaterial,
     getMaterialForAoGroup,
@@ -274,6 +275,13 @@ function sanitizeSunBloomRuntimeSettings(settings) {
     };
 }
 
+function getSunBloomFilteringDebugDefault() {
+    if (typeof window === 'undefined' || typeof window.location?.search !== 'string') return true;
+    const raw = new URLSearchParams(window.location.search).get('sunBloomFilter');
+    if (raw === null) return true;
+    return !['0', 'false', 'off', 'no'].includes(String(raw).trim().toLowerCase());
+}
+
 function makeCompositePass({ globalBloomTexture, sunBloomTexture } = {}) {
     const payload = createPostProcessingCompositeShaderPayload({
         uniforms: {
@@ -412,10 +420,36 @@ export class PostProcessingPipeline {
 
         this._darkMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
         this._darkMaterial.toneMapped = false;
+        const sunBloomFilteringEnabled = getSunBloomFilteringDebugDefault();
         this._sunBloomOcclusion = {
             materialCache: new WeakMap(),
             arrayCache: new WeakMap(),
-            createdMaterials: new Set()
+            createdMaterials: new Set(),
+            filteringEnabled: sunBloomFilteringEnabled,
+            filter: new SunBloomOcclusionFilter({
+                scene: this.scene,
+                camera: this.camera,
+                bloomLayer: SUN_BLOOM_LAYER
+            }),
+            frameStats: {
+                outcome: 'disabled',
+                filteringEnabled: sunBloomFilteringEnabled,
+                emitterCount: 0,
+                relevantEmitterCount: 0,
+                scannedOccluderCount: 0,
+                retainedOccluderCount: 0,
+                hiddenOccluderCount: 0,
+                conservativeInclusionCount: 0,
+                conservativeEmitterCount: 0,
+                hiddenAuxiliaryCount: 0,
+                candidateTestMs: 0,
+                approximateReferenceBytes: 0,
+                passCalls: 0,
+                passTriangles: 0,
+                rendered: false,
+                effectRect: null,
+                effectFarDepth: null
+            }
         };
         this._materialCache = new Map();
         this._hidden = [];
@@ -1337,6 +1371,11 @@ export class PostProcessingPipeline {
         if (mat?.uniforms?.uSunBrightnessOnly) mat.uniforms.uSunBrightnessOnly.value = this._sunBloom.brightnessOnly ? 1.0 : 0.0;
     }
 
+    setSunBloomFilteringEnabledForDebug(enabled) {
+        if (!this._sunBloomOcclusion) return;
+        this._sunBloomOcclusion.filteringEnabled = !!enabled;
+    }
+
     setColorGrading(colorGrading) {
         const src = colorGrading && typeof colorGrading === 'object' ? colorGrading : {};
         const intensity = clamp(src.intensity, 0, 1, 0);
@@ -1448,7 +1487,10 @@ export class PostProcessingPipeline {
                 msaaSamples: this._antiAliasing?.msaaSamples ?? 0
             },
             globalBloom: { ...(this._globalBloom ?? {}) },
-            sunBloom: { ...(this._sunBloom ?? {}) }
+            sunBloom: { ...(this._sunBloom ?? {}) },
+            sunBloomOcclusion: {
+                ...(this._sunBloomOcclusion?.frameStats ?? {})
+            }
         };
     }
 
@@ -1530,19 +1572,99 @@ export class PostProcessingPipeline {
     }
 
     _renderSunBloom(deltaTime) {
-        if (!this._sunBloom.enabled || this._sunBloom.strength <= 0) return;
+        if (!this._sunBloom.enabled || this._sunBloom.strength <= 0) return false;
 
         const camera = this.camera;
         const scene = this.scene;
+        const occlusion = this._sunBloomOcclusion;
+        const stats = occlusion?.frameStats ?? null;
+        const filter = occlusion?.filter ?? null;
+        const filteringEnabled = occlusion?.filteringEnabled !== false && !!filter;
+        const renderInfo = this.renderer?.info?.render ?? null;
+        const callsBefore = Number(renderInfo?.calls) || 0;
+        const trianglesBefore = Number(renderInfo?.triangles) || 0;
         const prevLayers = camera.layers.mask;
         const prevBackground = scene.background ?? null;
+        let rendered = false;
+
+        if (stats) {
+            Object.assign(stats, {
+                outcome: filteringEnabled ? 'pending' : 'legacy_full_scene',
+                filteringEnabled,
+                emitterCount: 0,
+                relevantEmitterCount: 0,
+                scannedOccluderCount: 0,
+                retainedOccluderCount: 0,
+                hiddenOccluderCount: 0,
+                conservativeInclusionCount: 0,
+                conservativeEmitterCount: 0,
+                hiddenAuxiliaryCount: 0,
+                candidateTestMs: 0,
+                approximateReferenceBytes: 0,
+                passCalls: 0,
+                passTriangles: 0,
+                rendered: false,
+                effectRect: null,
+                effectFarDepth: null
+            });
+        }
+
         scene.background = null;
 
         try {
+            if (filteringEnabled) {
+                const width = Math.max(1, (this._size?.w ?? 1) * (this._pixelRatio ?? 1));
+                const height = Math.max(1, (this._size?.h ?? 1) * (this._pixelRatio ?? 1));
+                const selection = filter.evaluate({
+                    mode: this._sunBloom.mode,
+                    viewportWidth: width,
+                    viewportHeight: height,
+                    bloomRadius: this._sunBloom.radius
+                });
+                if (stats) Object.assign(stats, selection);
+
+                if (selection.outcome === 'irrelevant') return false;
+
+                if (selection.outcome === 'clear') {
+                    camera.layers.set(SUN_BLOOM_LAYER_ID);
+                    this._sunBloomComposer.render(deltaTime);
+                    rendered = true;
+                    return true;
+                }
+
+                camera.layers.set(0);
+                camera.layers.enable(SUN_BLOOM_LAYER_ID);
+                this._materialCache.clear();
+                this._hidden.length = 0;
+
+                for (const object of filter.occluderMeshes) {
+                    if (filter.candidates.has(object)) {
+                        const material = object.material ?? null;
+                        if (!material) continue;
+                        this._materialCache.set(object, material);
+                        object.material = this._getSunBloomOcclusionMaterial(object, material);
+                        continue;
+                    }
+                    this._hidden.push(object);
+                    object.visible = false;
+                }
+
+                for (const object of filter.otherRenderables) {
+                    this._hidden.push(object);
+                    object.visible = false;
+                }
+                if (stats) stats.hiddenAuxiliaryCount = filter.otherRenderables.length;
+
+                this._sunBloomComposer.render(deltaTime);
+                rendered = true;
+                return true;
+            }
+
             if (this._sunBloom.mode === 'selective') {
                 camera.layers.set(SUN_BLOOM_LAYER_ID);
                 this._sunBloomComposer.render(deltaTime);
-                return;
+                rendered = true;
+                return true;
             }
 
             camera.layers.set(0);
@@ -1554,11 +1676,18 @@ export class PostProcessingPipeline {
                 if (!obj) return;
 
                 const inBloom = SUN_BLOOM_LAYER.test(obj.layers);
-                if (inBloom) return;
+                if (inBloom) {
+                    if (stats && obj.isMesh) stats.emitterCount += 1;
+                    return;
+                }
 
                 if (obj.isMesh) {
                     const mat = obj.material ?? null;
                     if (!mat) return;
+                    if (stats) {
+                        stats.scannedOccluderCount += 1;
+                        stats.retainedOccluderCount += 1;
+                    }
                     this._materialCache.set(obj, mat);
                     obj.material = this._getSunBloomOcclusionMaterial(obj, mat);
                     return;
@@ -1568,11 +1697,14 @@ export class PostProcessingPipeline {
                     if (obj.visible !== false) {
                         this._hidden.push(obj);
                         obj.visible = false;
+                        if (stats) stats.hiddenAuxiliaryCount += 1;
                     }
                 }
             });
 
             this._sunBloomComposer.render(deltaTime);
+            rendered = true;
+            return true;
         } finally {
             for (const [obj, mat] of this._materialCache.entries()) {
                 if (obj && obj.isMesh) obj.material = mat;
@@ -1583,6 +1715,11 @@ export class PostProcessingPipeline {
 
             camera.layers.mask = prevLayers;
             scene.background = prevBackground;
+            if (stats) {
+                stats.passCalls = Math.max(0, (Number(renderInfo?.calls) || 0) - callsBefore);
+                stats.passTriangles = Math.max(0, (Number(renderInfo?.triangles) || 0) - trianglesBefore);
+                stats.rendered = rendered;
+            }
         }
     }
 
@@ -1597,6 +1734,27 @@ export class PostProcessingPipeline {
 
         const globalBloomOn = !!this._globalBloom?.enabled && (this._globalBloom?.strength > 0);
         const sunBloomOn = !!this._sunBloom?.enabled && (this._sunBloom?.strength > 0);
+        if (!sunBloomOn && this._sunBloomOcclusion?.frameStats) {
+            Object.assign(this._sunBloomOcclusion.frameStats, {
+                outcome: 'disabled',
+                filteringEnabled: this._sunBloomOcclusion?.filteringEnabled !== false,
+                emitterCount: 0,
+                relevantEmitterCount: 0,
+                scannedOccluderCount: 0,
+                retainedOccluderCount: 0,
+                hiddenOccluderCount: 0,
+                conservativeInclusionCount: 0,
+                conservativeEmitterCount: 0,
+                hiddenAuxiliaryCount: 0,
+                candidateTestMs: 0,
+                approximateReferenceBytes: 0,
+                passCalls: 0,
+                passTriangles: 0,
+                rendered: false,
+                effectRect: null,
+                effectFarDepth: null
+            });
+        }
         const aoMode = this._ambientOcclusion?.mode ?? 'off';
         const aoOn = aoMode === 'ssao' || aoMode === 'gtao';
         if (this._aoAlpha?.frameStats) {
@@ -1663,16 +1821,16 @@ export class PostProcessingPipeline {
             }
 
             if (globalBloomOn) this._renderGlobalBloom(deltaTime);
-            if (sunBloomOn) this._renderSunBloom(deltaTime);
+            const sunBloomRendered = sunBloomOn ? this._renderSunBloom(deltaTime) : false;
             if (aoOn) this._renderAoReceiverExclusionMask();
 
             // Avoid running the composite pass when both bloom layers are disabled;
             // even a "no-op" shader pass can subtly change output (alpha/dither/color space).
-            this.compositePass.enabled = globalBloomOn || sunBloomOn;
+            this.compositePass.enabled = globalBloomOn || sunBloomRendered;
 
             const mat = this.compositePass?.material ?? null;
             if (mat?.uniforms?.uGlobalBloomTexture) mat.uniforms.uGlobalBloomTexture.value = globalBloomOn ? (this._globalBloomComposer.renderTarget2?.texture ?? this._blackTex) : this._blackTex;
-            if (mat?.uniforms?.uSunBloomTexture) mat.uniforms.uSunBloomTexture.value = sunBloomOn ? (this._sunBloomComposer.renderTarget2?.texture ?? this._blackTex) : this._blackTex;
+            if (mat?.uniforms?.uSunBloomTexture) mat.uniforms.uSunBloomTexture.value = sunBloomRendered ? (this._sunBloomComposer.renderTarget2?.texture ?? this._blackTex) : this._blackTex;
 
             // The visible pass builds the maps; the ShaderPasses after it carry
             // no lights, so WebGLShadowMap early-outs on them.

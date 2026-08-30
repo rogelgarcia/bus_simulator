@@ -150,6 +150,7 @@ Tasks:
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change
+- For optimization/performance work, include a same-condition before/after performance table in the completion summary. Report frame time and FPS plus the relevant workload metrics (for example draw calls, triangles, CPU/GPU pass time, memory, or bandwidth), and identify the hardware, resolution, graphics settings, workload/camera, warm-up, sample count, and statistic used. Mark unavailable metrics as `not measured` with a reason; do not replace final measurements with projections.
 ```
 
 ### Interactive prompt template
@@ -205,3 +206,4 @@ Rules:
 6. For interactive mode, keep checklist state current after every implementation cycle.
 7. Treat completed checklist items as immutable history; use new items for fixes.
 8. In interactive mode, create the `AI_i_...` file immediately once trigger + subject are known.
+9. Every optimization/performance prompt must require its completion summary to contain comparable before/after performance numbers and the benchmark conditions. Projections may guide the work but do not count as final results.

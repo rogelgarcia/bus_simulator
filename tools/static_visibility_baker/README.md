@@ -55,4 +55,10 @@ node tools/static_visibility_baker/profile_regions.mjs --on-only
 
 This writes absolute category, render-pass, direction, per-region ownership, synchronized CPU+GPU frame timing, and traffic-control material-group consolidation statistics under `tests/artifacts/visibility_on_regions/`.
 
+Pass additional production-page query parameters with `--query`. For example,
+profile the sun-bloom helper pass through its preserved legacy and filtered
+paths with `--query sunBloomFilter=0` and `--query sunBloomFilter=1`. The JSON
+report records filtering outcomes, average candidate-test time, retained
+occluders, calls, triangles, and approximate reference storage.
+
 Do not hand-edit the payload. Any city-map, building, traffic-control, tree-placement, generator, geometry-revision, or bake-profile change alters the canonical city hash and makes the old payload fail open at runtime.

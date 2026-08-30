@@ -336,13 +336,15 @@ export class GameEngine {
 
         const info = this._post.pipeline.getDebugInfo?.() ?? null;
         const p = info?.sunBloom ?? null;
+        const occlusionFiltering = info?.sunBloomOcclusion ?? null;
         return {
             enabled: !!p?.enabled,
             mode: p?.mode ?? (s?.mode ?? 'occlusion'),
             strength: p?.strength ?? (s?.strength ?? 0),
             radius: p?.radius ?? (s?.radius ?? 0),
             threshold: p?.threshold ?? (s?.threshold ?? 0),
-            brightnessOnly: p?.brightnessOnly ?? (s?.brightnessOnly ?? true)
+            brightnessOnly: p?.brightnessOnly ?? (s?.brightnessOnly ?? true),
+            occlusionFiltering: occlusionFiltering ? { ...occlusionFiltering } : null
         };
     }
 

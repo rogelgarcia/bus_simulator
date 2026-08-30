@@ -263,6 +263,10 @@ function getBloomDebugInfo() {
     return state.engine?.getBloomDebugInfo?.() ?? null;
 }
 
+function getSunBloomDebugInfo() {
+    return state.engine?.getSunBloomDebugInfo?.() ?? null;
+}
+
 function getColorGradingDebugInfo() {
     return state.engine?.getColorGradingDebugInfo?.() ?? null;
 }
@@ -378,6 +382,7 @@ window.__testHooks = {
     renderFrame,
     getMetrics,
     getBloomDebugInfo,
+    getSunBloomDebugInfo,
     getColorGradingDebugInfo,
     getAntiAliasingDebugInfo,
     setAntiAliasingSettings,

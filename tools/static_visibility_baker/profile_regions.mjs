@@ -28,6 +28,7 @@ const defaultArtifactDirectory = profileMode === 'on_only'
     : 'tests/artifacts/static_visibility_regions';
 const outputPath = path.resolve(repoRoot, String(args.get('--report') || `${defaultArtifactDirectory}/report.json`));
 const markdownPath = path.resolve(repoRoot, String(args.get('--markdown') || `${defaultArtifactDirectory}/REPORT.md`));
+const extraQuery = String(args.get('--query') || '').replace(/^\?/, '').trim();
 let server = null;
 let browser = null;
 
@@ -469,7 +470,9 @@ try {
     });
     await page.exposeFunction('__regionProfileProgress', (message) => process.stdout.write(`[RegionProfile] ${message}\n`));
     await page.addInitScript(() => localStorage.removeItem('bus_sim.staticVisibility.v1'));
-    await page.goto(`${baseUrl}/?pose=civic_center_curve_front&coreTests=0`);
+    const launchQuery = new URLSearchParams('pose=civic_center_curve_front&coreTests=0');
+    for (const [key, value] of new URLSearchParams(extraQuery)) launchQuery.set(key, value);
+    await page.goto(`${baseUrl}/?${launchQuery.toString()}`);
     let ready = false;
     let lastStartup = null;
     for (let second = 0; second < 300; second += 1) {
@@ -488,7 +491,7 @@ try {
     }
     if (!ready) throw new Error(`Production city did not become visibility-active: ${JSON.stringify(lastStartup)}`);
 
-    const report = await page.evaluate(async ({ profileMode }) => {
+    const report = await page.evaluate(async ({ profileMode, extraQuery }) => {
         const THREE = await import('three');
         const { engine, sm } = window.__busSim;
         const state = sm.current;
@@ -543,6 +546,7 @@ try {
             return {
                 totals: emptyMetrics(),
                 frameMs: [],
+                sunBloomFrames: [],
                 byCategory: new Map(),
                 byPass: new Map(),
                 byCategoryPass: new Map(),
@@ -560,6 +564,7 @@ try {
         function mergeCapture(target, source) {
             add(target.totals, source.totals);
             target.frameMs.push(...source.frameMs);
+            target.sunBloomFrames.push(...source.sunBloomFrames);
             for (const [id, row] of source.byCategory) addMap(target.byCategory, id, row);
             for (const [id, row] of source.byPass) addMap(target.byPass, id, row);
             for (const [id, row] of source.byCategoryPass) addMap(target.byCategoryPass, id, row, { category: row.category, pass: row.pass });
@@ -577,11 +582,32 @@ try {
         function finishCapture(capture, divisor) {
             const totals = { ...capture.totals };
             for (const metric of ['calls', 'triangles', 'lines', 'points']) totals[metric] /= divisor;
+            const sunBloomFrames = capture.sunBloomFrames;
+            const outcomes = {};
+            for (const frame of sunBloomFrames) outcomes[frame.outcome] = (outcomes[frame.outcome] || 0) + 1;
+            const averageSunBloom = (field) => sunBloomFrames.length
+                ? sunBloomFrames.reduce((sum, frame) => sum + Number(frame[field] || 0), 0) / sunBloomFrames.length
+                : 0;
             return {
                 totals,
                 frameMs: capture.frameMs.length
                     ? capture.frameMs.reduce((sum, value) => sum + value, 0) / capture.frameMs.length
                     : 0,
+                sunBloomFiltering: {
+                    frames: sunBloomFrames.length,
+                    outcomes,
+                    filteringEnabled: sunBloomFrames.length ? sunBloomFrames.every((frame) => frame.filteringEnabled !== false) : null,
+                    renderedFrames: sunBloomFrames.filter((frame) => frame.rendered === true).length,
+                    averageCandidateTestMs: averageSunBloom('candidateTestMs'),
+                    averageEmitterCount: averageSunBloom('emitterCount'),
+                    averageRelevantEmitterCount: averageSunBloom('relevantEmitterCount'),
+                    averageScannedOccluderCount: averageSunBloom('scannedOccluderCount'),
+                    averageRetainedOccluderCount: averageSunBloom('retainedOccluderCount'),
+                    averageConservativeInclusionCount: averageSunBloom('conservativeInclusionCount'),
+                    averageReferenceBytes: averageSunBloom('approximateReferenceBytes'),
+                    averagePassCalls: averageSunBloom('passCalls'),
+                    averagePassTriangles: averageSunBloom('passTriangles')
+                },
                 byCategory: rows(capture.byCategory, divisor),
                 byPass: rows(capture.byPass, divisor),
                 byCategoryPass: rows(capture.byCategoryPass, divisor),
@@ -761,6 +787,8 @@ try {
             for (let frame = 0; frame < framesPerState; frame += 1) {
                 const frameCapture = createCapture();
                 frameCapture.frameMs.push(renderOneFrame(frameCapture));
+                const sunBloomFrame = engine.getSunBloomDebugInfo?.()?.occlusionFiltering ?? null;
+                if (sunBloomFrame) frameCapture.sunBloomFrames.push({ ...sunBloomFrame });
                 reconciliation.frames += 1;
                 const actual = rendererMetrics();
                 const expected = frameCapture.totals;
@@ -812,6 +840,7 @@ try {
             framesPerState,
             poses: regions.length * directions.length,
             profileMode,
+            extraQuery,
             shadowSettings: engine.shadowSettings,
             postProcessing: pipeline?.getResolvedSettings?.() ?? null,
             staticVisibilityStatus: city.getStaticVisibilityStatus(),
@@ -825,7 +854,7 @@ try {
             reconciliation,
             samples
         };
-    }, { profileMode });
+    }, { profileMode, extraQuery });
 
     report.summary = profileMode === 'on_only' ? summarizeCurrent(report) : summarize(report);
     if (report.reconciliation.mismatches.length) {
