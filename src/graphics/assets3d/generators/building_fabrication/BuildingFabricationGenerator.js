@@ -3056,15 +3056,23 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                     const bU = Number(b?.u);
                     const hasFaceU = Number.isFinite(cutU) && Number.isFinite(aU) && Number.isFinite(bU)
                         && Math.abs(bU - aU) > EPS;
-                    const localX = hasFaceU
+                    const physicalLocalX = (cut.x - a.x) * tx + (cut.z - a.z) * tz;
+                    const perp = Math.abs((cut.x - a.x) * tz - (cut.z - a.z) * tx);
+                    // Arc samples carry facade-u explicitly because their
+                    // projected point lies on the curve rather than its chord.
+                    // A straight shell run must stay in world space: corner
+                    // mitres can extend its physical endpoints past u=0/length,
+                    // and scaling u across that longer segment shifts every
+                    // opening toward one end as a visible plaster strip.
+                    const useFaceUProjection = hasFaceU
+                        && a?.cutoutProjectionMode === 'face_u'
+                        && b?.cutoutProjectionMode === 'face_u';
+                    const localX = useFaceUProjection
                         ? ((cutU - aU) / (bU - aU)) * segLen
-                        : ((cut.x - a.x) * tx + (cut.z - a.z) * tz);
+                        : physicalLocalX;
                     const cutHalfWidth = Math.max(EPS, Number(cut.width) || 0) * 0.5;
                     if (localX + cutHalfWidth < -cutTol || localX - cutHalfWidth > segLen + cutTol) continue;
-                    if (!hasFaceU) {
-                        const perp = Math.abs((cut.x - a.x) * tz - (cut.z - a.z) * tx);
-                        if (perp > cutTol) continue;
-                    }
+                    if (!useFaceUProjection && perp > cutTol) continue;
                     segCuts.push({ ...cut, localX });
                 }
             }
@@ -6966,17 +6974,20 @@ function projectFacadeCutoutOntoShell(cutout, { frames, shellDepthOf }) {
     // The facade owns the reveal faces; the shell just needs the hole — an
     // inset stack (AI 511) must NOT re-emit its step rings on the shell.
     //
-    // Except in the grown-hole case: the facade jamb stops at the frame's
+    // Except for an UNBACKED grown-hole case: the facade jamb stops at the frame's
     // FRONT plane, so a grazing sightline through the recess can slip past
     // the frame body, through the grown shell hole, and see the far side of
     // the room (a see-through slit beside a deeply inset door whenever the
     // cut edge sits mid-wall — e.g. a fixed-width opening with padding 0).
     // Lining the grown hole with its own reveal walls, running inward past
     // the frame body, seals that corridor; the lining shares the shell's
-    // plaster, which is what a room-side return would be.
-    const linedRevealDepth = frameClearsShell
-        ? 0
-        : clamp((framePlaneDepth - shellDepth) + 0.4, 0.2, 1.2);
+    // plaster, which is what a room-side return would be. A backed opening's
+    // parallax panel already seals the corridor. Giving it the same lining
+    // leaks pale plaster fins past the facade reveal at grazing angles.
+    const needsShellLining = !frameClearsShell && !cutout.backed;
+    const linedRevealDepth = needsShellLining
+        ? clamp((framePlaneDepth - shellDepth) + 0.4, 0.2, 1.2)
+        : 0;
     return { ...cutout, x: point.x, z: point.z, u, width, height, revealDepth: linedRevealDepth, insetSteps: null };
 }
 
@@ -7164,9 +7175,10 @@ function buildInteriorShellLoopDetailWithDepths({ frames, depthOf }) {
         if (!frame) continue;
         const depth = Number(depthOf(faceId)) || 0;
         const length = Math.max(0, Number(frame.length) || 0);
+        const cutoutProjection = frame?.curve ? { cutoutProjectionMode: 'face_u' } : {};
         const start = pairs[(i - 1 + pairs.length) % pairs.length]?.bStart ?? null;
         const end = pairs[i]?.aEnd ?? null;
-        if (start) raw.push({ ...start, kind: 'profile', faceId, u: facadeFrameLoopStartU(frame), depth });
+        if (start) raw.push({ ...start, kind: 'profile', faceId, u: facadeFrameLoopStartU(frame), depth, ...cutoutProjection });
         const segments = clampInt(frame?.curve?.segments ?? 1, 1, 96);
         if (frame?.curve && segments > 1) {
             for (let k = 1; k < segments; k++) {
@@ -7179,11 +7191,12 @@ function buildInteriorShellLoopDetailWithDepths({ frames, depthOf }) {
                     kind: 'profile',
                     faceId,
                     u,
-                    depth
+                    depth,
+                    ...cutoutProjection
                 });
             }
         }
-        if (end) raw.push({ ...end, kind: 'profile', faceId, u: facadeFrameLoopEndU(frame), depth });
+        if (end) raw.push({ ...end, kind: 'profile', faceId, u: facadeFrameLoopEndU(frame), depth, ...cutoutProjection });
     }
     // Negative signed area is the winding that points wall faces into the
     // room. Facade-u remains valid when traversal reverses; the wall builder
@@ -7824,6 +7837,7 @@ function computeQuadFacadeSilhouette({
             ...(useEndJoin ? { cornerId: endCornerId } : {})
         }, pointTol);
         if (!f.curve || pts.length < 2) return pts;
+        const curvedPts = pts.map((point) => ({ ...point, cutoutProjectionMode: 'face_u' }));
 
         // AI 516: the authored profile remains expressed in arc-length u, but
         // every interval is tessellated onto the same circular frame. Wall
@@ -7833,9 +7847,9 @@ function computeQuadFacadeSilhouette({
         const dense = [];
         const segmentCount = clampInt(f.curve.segments ?? 3, 3, 96);
         const arcStep = f.length / segmentCount;
-        for (let i = 0; i < pts.length - 1; i++) {
-            const a = pts[i];
-            const b = pts[i + 1];
+        for (let i = 0; i < curvedPts.length - 1; i++) {
+            const a = curvedPts[i];
+            const b = curvedPts[i + 1];
             appendPointIfChanged(dense, a, pointTol);
             const ua = Number(a?.u);
             const ub = Number(b?.u);
@@ -7848,10 +7862,17 @@ function computeQuadFacadeSilhouette({
                 const t = (u - ua) / (ub - ua);
                 const depth = qf((Number(a?.depth) || 0) + ((Number(b?.depth) || 0) - (Number(a?.depth) || 0)) * t);
                 const world = pointOnFacadeFrame({ frame: f, u, depth });
-                appendPointIfChanged(dense, { ...world, kind: 'profile', faceId, u: qf(u), depth }, pointTol);
+                appendPointIfChanged(dense, {
+                    ...world,
+                    kind: 'profile',
+                    faceId,
+                    u: qf(u),
+                    depth,
+                    cutoutProjectionMode: 'face_u'
+                }, pointTol);
             }
         }
-        appendPointIfChanged(dense, pts[pts.length - 1], pointTol);
+        appendPointIfChanged(dense, curvedPts[curvedPts.length - 1], pointTol);
         return dense;
     };
 

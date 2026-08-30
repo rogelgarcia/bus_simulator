@@ -12043,6 +12043,15 @@ async function runTests() {
         assertTrue(inset.width > 1.6 + 1e-6 && inset.height > 1.6 + 1e-6,
             'Deep-set frame: the shell hole must clear the whole wall cut (no ring in front of the frame).');
         assertNear(inset.z, -0.01, 1e-6, 'Projected cutout must sit on the shell plane.');
+        assertTrue(inset.revealDepth > 0,
+            'An unbacked deep-set opening keeps a shell lining to seal grazing sightlines.');
+
+        const backedInset = project({ ...cut, revealDepth: 0.09, backed: true }, { frames, shellDepthOf });
+        assertTrue(!!backedInset, 'Expected a projected shell cutout for the backed deep-set frame.');
+        assertTrue(backedInset.width > 1.6 + 1e-6 && backedInset.height > 1.6 + 1e-6,
+            'Backed deep-set frame: the shell hole must still clear the whole wall cut.');
+        assertNear(backedInset.revealDepth, 0, 1e-9,
+            'A backed opening must not emit pale interior-shell lining beside the facade reveal.');
 
         // Same 9cm inset on a bay front proud of the shell by more than the
         // inset: the frame stays in front of the shell, so the ring stays.
@@ -12053,6 +12062,46 @@ async function runTests() {
         );
         assertTrue(!!proud, 'Expected a projected shell cutout for the proud-bay frame.');
         assertNear(proud.width, 1.6 - 0.16, 1e-6, 'A frame still in front of the shell keeps the reveal ring.');
+    });
+
+    test('BuildingFabricationGenerator: straight shell cut stays aligned when corner joins extend the face run', () => {
+        const buildWalls = buildingFabricationGeneratorTestOnly?.buildWallSidesGeometryFromLoopDetailXZ ?? null;
+        assertTrue(typeof buildWalls === 'function', 'Expected the detailed wall geometry test helper.');
+
+        // Face A's physical shell run extends one metre past each authored
+        // facade endpoint because its corner mitres meet faces at different
+        // depths. Its facade-u tags remain 0..10, so scaling u across the
+        // twelve-metre physical segment shifts the opening toward the end.
+        const detail = [
+            { x: -1, z: 0, kind: 'profile', faceId: 'A', u: 0, depth: -0.2 },
+            { x: 11, z: 0, kind: 'profile', faceId: 'A', u: 10, depth: -0.2 },
+            { x: 11, z: -5, kind: 'profile', faceId: 'B', u: 0, depth: -0.2 },
+            { x: -1, z: -5, kind: 'profile', faceId: 'C', u: 0, depth: -0.2 }
+        ];
+        const cutout = {
+            faceId: 'A',
+            x: 9,
+            y: 1.5,
+            z: 0,
+            u: 9,
+            width: 1,
+            height: 1,
+            revealDepth: 0
+        };
+        const geometry = buildWalls(detail, { height: 3, cutouts: [cutout] });
+        const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+        mesh.updateMatrixWorld(true);
+        const raycaster = new THREE.Raycaster(
+            new THREE.Vector3(9, 1.5, 1),
+            new THREE.Vector3(0, 0, -1),
+            0,
+            100
+        );
+        const hits = raycaster.intersectObject(mesh, false);
+        assertTrue(!hits.length || hits[0].distance > 2,
+            'The ray through the authored straight-face opening must not hit a u-scaled strip of shell wall.');
+        geometry.dispose();
+        mesh.material.dispose();
     });
 
     test('BuildingFabricationGenerator: no shell geometry inside a deep-set opening cut; reveal faces carry wall material (AI 507)', () => {
