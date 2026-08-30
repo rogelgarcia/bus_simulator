@@ -81,7 +81,7 @@ test('budget evaluation is deterministic, keeps GPU availability explicit, and c
     assert.equal(noGpu.checks.gpu, null);
     assert.equal(noGpu.pass, true, 'Unsupported GPU timing is documented, not treated as a universal hardware failure');
 
-    const regression = evaluateGrassLabBudget(makeSnapshot({ cpu: 0.8, gpu: 2.2, draws: 13, triangles: 120000, beyond: 1 }));
+    const regression = evaluateGrassLabBudget(makeSnapshot({ cpu: 0.8, gpu: 2.2, draws: 13, triangles: 240000, beyond: 1 }));
     assert.equal(regression.pass, false);
     assert.equal(regression.checks.cpu, false);
     assert.equal(regression.checks.hardDrawCeiling, false);

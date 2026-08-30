@@ -237,6 +237,7 @@ export class GrassDebuggerView {
         this._coverageSurfaceMaterial = null;
         this._coverageEdgeMaterial = null;
         this._boundaryEvidenceMode = null;
+        this._nearEvidenceMode = null;
         this._coverageDefinitionInputKey = null;
         this._midClusterMaterial = null;
         this._accentClusterMaterial = null;
@@ -414,6 +415,8 @@ export class GrassDebuggerView {
             terrainMesh: this._ground,
             terrainGrid: this._terrainGrid,
             getExclusionRects: () => this._labFixtures?.grassCoverage?.exclusionRects ?? this._labFixtures?.exclusionRects ?? [],
+            getCoverageDefinition: () => this._labFixtures?.grassCoverage ?? null,
+            getCoverageConfig: () => createGrassLabCoverageConfig(this._state),
             midClusterMaterial: this._midClusterMaterial,
             localizedAccentMaterial: this._accentClusterMaterial,
             wornAccentMaterial: this._wornAccentMaterial,
@@ -1151,6 +1154,7 @@ export class GrassDebuggerView {
     setBoundaryEvidenceMode(mode = null) {
         const wasBoundaryEvidenceActive = this._boundaryEvidenceMode !== null;
         const next = mode === 'substrate_only' || mode === 'boundary_final' ? mode : null;
+        if (next) this.setNearEvidenceMode(null);
         this._boundaryEvidenceMode = next;
         if (wasBoundaryEvidenceActive && next === null && this._grassEngine?.group) {
             this._grassEngine.group.visible = this._grassEngine?.getStats?.().enabled === true;
@@ -1163,6 +1167,19 @@ export class GrassDebuggerView {
         };
     }
 
+    setNearEvidenceMode(mode = null) {
+        const next = mode === 'texture_only' || mode === 'near_mesh' ? mode : null;
+        if (next) this._boundaryEvidenceMode = null;
+        this._nearEvidenceMode = next;
+        this._grassEngine?.setNearEvidenceMode?.(next);
+        this._applyBoundaryEvidenceVisibility();
+        return {
+            mode: next,
+            coverage: this._coverageSystem?.getStats?.() ?? null,
+            nearCarpet: this._grassEngine?.getStats?.().nearCarpet ?? null
+        };
+    }
+
     _applyBoundaryEvidenceVisibility() {
         if (this._boundaryEvidenceMode && this._grassEngine?.group) this._grassEngine.group.visible = false;
         if (!this._boundaryEvidenceMode) {
@@ -1172,6 +1189,7 @@ export class GrassDebuggerView {
                 lip: this._state?.coverage?.showLip !== false,
                 fringe: this._state?.coverage?.showFringe !== false
             });
+            this._grassEngine?.setNearEvidenceMode?.(this._nearEvidenceMode);
             return;
         }
         const final = this._boundaryEvidenceMode === 'boundary_final';
@@ -1525,12 +1543,17 @@ export class GrassDebuggerView {
 
     _syncGrassEngineFromState(state) {
         const config = createGrassLabEngineConfig(state, { tileSize: TILE_SIZE_METERS });
-        const appearance = this._getActiveGrassMaterialContract().family.nearBladeAppearance;
+        const activeMaterial = this._getActiveGrassMaterialContract();
+        const appearance = activeMaterial.family.nearBladeAppearance;
         config.material.roughness = appearance.roughness;
         config.nearCarpet = {
             ...config.nearCarpet,
             baseColor: appearance.baseColor,
             tipColor: appearance.tipColor,
+            materialId: activeMaterial.materialId,
+            bladeWidthMeters: {
+                ...(activeMaterial.family.bakeProfile?.widthMeters ?? config.nearCarpet.bladeWidthMeters)
+            },
             roughness: appearance.roughness
         };
         config.field.color.base = appearance.bodyColor;
@@ -1600,6 +1623,7 @@ export class GrassDebuggerView {
     getGrassMaterialDiagnostics() {
         const active = this._getActiveGrassMaterialContract();
         const near = active.family.nearBladeAppearance;
+        const nearStats = this._grassEngine?.getStats?.().nearCarpet ?? {};
         return {
             version: active.version,
             materialId: active.materialId,
@@ -1621,7 +1645,12 @@ export class GrassDebuggerView {
             nearBaseColor: near.baseColor,
             nearTipColor: near.tipColor,
             nearRoughness: near.roughness,
-            nearPaletteSource: near.paletteSource
+            nearPaletteSource: near.paletteSource,
+            nearResolvedMaterialId: nearStats.materialId ?? active.materialId,
+            nearEmissiveIntensity: nearStats.emissive ? 1 : 0,
+            nearDepthWrite: nearStats.depthWrite === true,
+            nearNormalPolicy: 'shared_geometry_vertex_normals',
+            nearCalibrationPath: 'none'
         };
     }
 
@@ -1670,6 +1699,10 @@ export class GrassDebuggerView {
             this._coverageDefinitionInputKey = definitionKey;
         }
         this._coverageSystem?.setConfig?.(config);
+        this._grassEngine?.setNearCarpetCoverageInput?.({
+            definition: this._labFixtures?.grassCoverage ?? null,
+            config
+        });
         this._coverageSystem?.setVisibility?.({
             surface: state?.coverage?.showSurface !== false,
             edge: state?.coverage?.showEdge !== false,
@@ -3071,6 +3104,13 @@ export class GrassDebuggerView {
                 legacyGeometryHidden: this._boundaryEvidenceMode !== null,
                 grassEngineVisible: this._grassEngine?.group?.visible === true,
                 coverageVisible: this._boundaryEvidenceMode === 'boundary_final'
+            },
+            nearEvidence: {
+                mode: this._nearEvidenceMode,
+                textureOnly: this._nearEvidenceMode === 'texture_only',
+                nearMeshVisible: this._nearEvidenceMode === 'near_mesh'
+                    && this._grassEngine?.getStats?.().nearCarpet?.drawCalls > 0,
+                midAndAccentHidden: this._nearEvidenceMode !== null
             },
             material: this._materialFixture?.getStats?.() ?? null,
             validation: {

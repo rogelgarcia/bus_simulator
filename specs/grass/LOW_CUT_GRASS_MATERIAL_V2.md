@@ -32,6 +32,13 @@ package does not contain authoritative physical dimensions. The far tile's
 1.4 × 1.4 m footprint is therefore a project calibration, recorded separately
 from unknown source-authored dimensions in the manifest.
 
+The `25-75 mm` authored profile is an overall visible-height envelope, not an
+instruction to add that entire interval above a separate structural cap. AI 360
+selects absolute near-fiber tip elevations of `40-75 mm` above terrain and roots
+them at AI 359's `27.5 mm` structural-base elevation. The resulting visible
+fiber length is `12.5-47.5 mm`; base height and tip elevation remain separately
+reported.
+
 ## Asset contract
 
 | File | Role | Color space |
@@ -183,3 +190,9 @@ a second palette, restore runtime emissive lift, reuse one atlas family at the
 other family's physical scale, repack V2 coverage into PBR alpha, or soften
 grass/substrate occupancy into a color fade. This specification does not itself
 authorize copying the staged V2 assets into the game.
+
+AI 360's opaque near micro-mesh consumes `nearBladeAppearance` directly: base
+`#494E30`, tip `#616743`, roughness `0.94`, metalness `0`, and emissive intensity
+`0`. It uses the existing shared catalog/composition path and must not add a
+near-tier texture loader, URL resolver, palette, or calibration override. Atlas
+coverage and mip behavior remain card concerns owned by AI 361.

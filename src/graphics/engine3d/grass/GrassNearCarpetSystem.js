@@ -1,4 +1,4 @@
-// Renders deterministic one-metre grass carpet patches with cell-stable GPU instance buffers.
+// Renders a deterministic, cohesive, exact-clipped near grass carpet.
 // @ts-check
 
 import * as THREE from 'three';
@@ -15,30 +15,33 @@ import {
     diffGrassNearCarpetCellSets,
     getGrassNearCarpetBladesPerPatch,
     getGrassNearCarpetChunkKey,
+    getGrassNearCarpetCoverageIdentity,
+    getGrassNearCarpetRootsPerPatch,
     GRASS_NEAR_CARPET_MODE,
     sanitizeGrassNearCarpetConfig
 } from './GrassNearCarpetLayout.js';
+
+const DEG_TO_RAD = Math.PI / 180;
 
 function nextPowerOfTwo(value) {
     return 2 ** Math.ceil(Math.log2(Math.max(1, Number(value) || 1)));
 }
 
 function writeTransform(array, offset, descriptor) {
-    const yaw = descriptor.yaw;
-    const scale = descriptor.scale;
-    const cosine = Math.cos(yaw) * scale;
-    const sine = Math.sin(yaw) * scale;
-    array[offset] = cosine;
+    const cosine = Math.cos(descriptor.yaw);
+    const sine = Math.sin(descriptor.yaw);
+    const width = descriptor.widthMeters;
+    array[offset] = cosine * width;
     array[offset + 1] = 0;
-    array[offset + 2] = -sine;
+    array[offset + 2] = -sine * width;
     array[offset + 3] = 0;
-    array[offset + 4] = 0;
-    array[offset + 5] = scale;
-    array[offset + 6] = 0;
+    array[offset + 4] = descriptor.leanX;
+    array[offset + 5] = descriptor.visibleLengthMeters;
+    array[offset + 6] = descriptor.leanZ;
     array[offset + 7] = 0;
-    array[offset + 8] = sine;
+    array[offset + 8] = sine * width;
     array[offset + 9] = 0;
-    array[offset + 10] = cosine;
+    array[offset + 10] = cosine * width;
     array[offset + 11] = 0;
     array[offset + 12] = descriptor.x;
     array[offset + 13] = descriptor.y;
@@ -68,43 +71,28 @@ function sampleTerrainHeight(terrainMesh, terrainGrid, x, z) {
     const y10 = position.getY(iz0 * stride + ix1);
     const y01 = position.getY(iz1 * stride + ix0);
     const y11 = position.getY(iz1 * stride + ix1);
-    return (y00 + (y10 - y00) * fx) + ((y01 + (y11 - y01) * fx) - (y00 + (y10 - y00) * fx)) * fz;
+    const y0 = y00 + (y10 - y00) * fx;
+    const y1 = y01 + (y11 - y01) * fx;
+    return y0 + (y1 - y0) * fz;
 }
 
-function createPatchGeometry(config) {
-    const bladeCount = getGrassNearCarpetBladesPerPatch(config);
-    const positions = new Float32Array(bladeCount * 9);
-    const colors = new Float32Array(bladeCount * 9);
-    const indices = new Uint32Array(bladeCount * 3);
+function createRootGeometry(config) {
+    const fibers = config.fibersPerRoot;
+    const positions = new Float32Array(fibers * 9);
+    const colors = new Float32Array(fibers * 9);
+    const indices = new Uint16Array(fibers * 3);
     const baseColor = new THREE.Color(config.baseColor);
     const tipColor = new THREE.Color(config.tipColor);
-    const columns = Math.ceil(Math.sqrt(bladeCount));
-    const rows = Math.ceil(bladeCount / columns);
-    const cellWidth = config.patchSizeMeters / columns;
-    const cellDepth = config.patchSizeMeters / rows;
-    const random = makeRng(`${config.seed}|near-carpet-geometry|${bladeCount}`);
 
-    for (let index = 0; index < bladeCount; index++) {
-        const column = index % columns;
-        const row = Math.floor(index / columns);
-        const rootX = -config.patchSizeMeters * 0.5 + (column + 0.5 + (random() - 0.5) * 0.58) * cellWidth;
-        const rootZ = -config.patchSizeMeters * 0.5 + (row + 0.5 + (random() - 0.5) * 0.58) * cellDepth;
-        const height = config.bladeHeightMeters.min + (config.bladeHeightMeters.max - config.bladeHeightMeters.min) * random();
-        const width = config.bladeWidthMeters.min + (config.bladeWidthMeters.max - config.bladeWidthMeters.min) * random();
-        const yaw = random() * Math.PI * 2;
-        const bendDegrees = config.bendDegrees.min + (config.bendDegrees.max - config.bendDegrees.min) * random();
-        const inclinationDegrees = config.inclinationDegrees.min + (config.inclinationDegrees.max - config.inclinationDegrees.min) * random();
-        const bend = Math.sin(bendDegrees * Math.PI / 180) * height * 0.35;
-        const inclination = Math.sin(inclinationDegrees * Math.PI / 180) * height * 0.25;
-        const tangentX = Math.cos(yaw) * width * 0.5;
-        const tangentZ = Math.sin(yaw) * width * 0.5;
-        const directionX = -Math.sin(yaw);
-        const directionZ = Math.cos(yaw);
+    for (let index = 0; index < fibers; index++) {
+        const angle = index * Math.PI / fibers;
+        const tangentX = Math.cos(angle) * 0.5;
+        const tangentZ = Math.sin(angle) * 0.5;
         const positionOffset = index * 9;
         positions.set([
-            rootX - tangentX, 0, rootZ - tangentZ,
-            rootX + tangentX, 0, rootZ + tangentZ,
-            rootX + directionX * bend, height, rootZ + directionZ * (bend + inclination)
+            -tangentX, 0, -tangentZ,
+            tangentX, 0, tangentZ,
+            0, 1, 0
         ], positionOffset);
         colors.set([
             baseColor.r, baseColor.g, baseColor.b,
@@ -121,37 +109,96 @@ function createPatchGeometry(config) {
     geometry.computeVertexNormals();
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
-    geometry.name = `GrassNearCarpetPatch_${bladeCount}`;
+    geometry.name = 'GrassNearCarpetRootCluster_' + fibers;
+    geometry.userData = {
+        schema: 'near-grass-carpet-v2',
+        fibersPerRoot: fibers,
+        trianglesPerRoot: fibers
+    };
     return geometry;
 }
 
 function createMaterial(config) {
-    return new THREE.MeshStandardMaterial({
+    const material = new THREE.MeshStandardMaterial({
         color: 0xffffff,
         roughness: config.roughness,
         metalness: 0,
+        emissive: 0x000000,
+        emissiveIntensity: 0,
         vertexColors: true,
         side: THREE.DoubleSide,
         transparent: false,
-        depthWrite: true
+        opacity: 1,
+        alphaTest: 0,
+        depthWrite: true,
+        depthTest: true
     });
+    material.name = 'GrassNearCarpetV2Material';
+    material.userData = {
+        resolvedMaterialId: config.materialId,
+        schema: 'near-grass-carpet-v2',
+        appearanceSource: 'ai358_shared_catalog',
+        normalPolicy: 'shared_geometry_vertex_normals',
+        calibrationPath: 'none'
+    };
+    return material;
 }
 
-function createDescriptor(cell, config, terrainMesh, terrainGrid) {
-    const random = makeRng(`${config.seed}|near-carpet-cell:${cell.key}`);
-    const variation = config.patchScaleVariation;
+function createRootDescriptor(root, config, terrainMesh, terrainGrid) {
+    const random = makeRng(config.seed + '|near-carpet-root:' + root.key);
+    const distributionT = Math.pow(random(), config.heightDistributionExponent);
+    const tipRange = config.bladeTipElevationMeters;
+    const absoluteTipElevationMeters = tipRange.min + (tipRange.max - tipRange.min) * distributionT;
+    const visibleLengthMeters = Math.max(0.001, absoluteTipElevationMeters - config.structuralBaseHeightMeters);
+    const requestedWidth = config.bladeWidthMeters.min
+        + (config.bladeWidthMeters.max - config.bladeWidthMeters.min) * random();
+    const boundaryDistance = Number(root.boundaryDistanceMeters);
+    const safeWidth = Number.isFinite(boundaryDistance)
+        ? Math.min(requestedWidth, Math.max(0.0008, 2 * Math.max(0.0004, boundaryDistance - config.boundarySafetyMeters)))
+        : requestedWidth;
+    const bendDegrees = config.bendDegrees.min
+        + (config.bendDegrees.max - config.bendDegrees.min) * random();
+    const inclinationDegrees = config.inclinationDegrees.min
+        + (config.inclinationDegrees.max - config.inclinationDegrees.min) * random();
+    const desiredLean = Math.sin((bendDegrees + inclinationDegrees) * DEG_TO_RAD) * visibleLengthMeters * 0.55;
+    const safeLean = Number.isFinite(boundaryDistance)
+        ? Math.min(desiredLean, Math.max(0, boundaryDistance - safeWidth * 0.5 - config.boundarySafetyMeters))
+        : desiredLean;
+    const leanYaw = random() * Math.PI * 2;
     const brightness = 1 + (random() * 2 - 1) * config.colorBrightnessVariation;
     return Object.freeze({
-        ...cell,
-        y: sampleTerrainHeight(terrainMesh, terrainGrid, cell.x, cell.z) + config.yOffsetMeters,
-        yaw: Math.floor(random() * 4) * Math.PI * 0.5,
-        scale: 1 + (random() * 2 - 1) * variation,
+        ...root,
+        y: sampleTerrainHeight(terrainMesh, terrainGrid, root.x, root.z) + config.structuralBaseHeightMeters,
+        yaw: random() * Math.PI * 2,
+        widthMeters: safeWidth,
+        requestedWidthMeters: requestedWidth,
+        absoluteTipElevationMeters,
+        visibleLengthMeters,
+        leanMeters: safeLean,
+        leanX: Math.cos(leanYaw) * safeLean,
+        leanZ: Math.sin(leanYaw) * safeLean,
         brightness
     });
 }
 
+function getTerrainBounds(terrainGrid) {
+    return {
+        minX: Number(terrainGrid.minX),
+        maxX: Number(terrainGrid.minX) + Number(terrainGrid.widthTiles) * Number(terrainGrid.tileSize),
+        minZ: Number(terrainGrid.minZ),
+        maxZ: Number(terrainGrid.minZ) + Number(terrainGrid.depthTiles) * Number(terrainGrid.tileSize)
+    };
+}
+
 export class GrassNearCarpetSystem {
-    constructor({ parent, terrainMesh, terrainGrid, getExclusionRects } = {}) {
+    constructor({
+        parent,
+        terrainMesh,
+        terrainGrid,
+        getExclusionRects,
+        getCoverageDefinition,
+        getCoverageConfig
+    } = {}) {
         if (!parent?.isObject3D) throw new Error('[GrassNearCarpetSystem] A THREE.Object3D parent is required.');
         this.group = new THREE.Group();
         this.group.name = 'GrassNearCarpetSystem';
@@ -159,28 +206,64 @@ export class GrassNearCarpetSystem {
         this._terrainMesh = terrainMesh ?? null;
         this._terrainGrid = terrainGrid ?? null;
         this._getExclusionRects = typeof getExclusionRects === 'function' ? getExclusionRects : (() => []);
+        this._getCoverageDefinition = typeof getCoverageDefinition === 'function' ? getCoverageDefinition : (() => null);
+        this._getCoverageConfig = typeof getCoverageConfig === 'function' ? getCoverageConfig : (() => null);
+        this._coverageDefinition = null;
+        this._coverageConfig = null;
+        this._coverageInputKey = '';
         this._config = sanitizeGrassNearCarpetConfig(null);
         this._autoLod = sanitizeGrassAutoLodConfig(null);
+        this._evidenceMode = null;
         this._geometry = null;
         this._material = null;
+        this._geometryKey = '';
         this._meshes = new Map();
         this._descriptors = new Map();
+        this._layoutCache = new Map();
+        this._coverageSampleCache = new Map();
         this._cells = new Map();
         this._centerCellKey = '';
         this._layoutKey = '';
+        this._layoutInvalidated = false;
         this._configKey = '';
         this._stats = {
             layoutRevision: 0,
             cameraCellMoves: 0,
+            cacheInvalidations: 0,
+            cacheHits: 0,
+            cacheMisses: 0,
             stationaryFrames: 0,
             totalBufferUpdates: 0,
             lastBufferUpdates: 0,
             lastEnteringCells: 0,
             lastLeavingCells: 0,
-            retainedCells: 0
+            retainedCells: 0,
+            transitionPatches: 0,
+            effectiveRadiusMeters: 0,
+            coverageMode: 'terrain_bounds',
+            boundarySignature: '',
+            placementSignature: '',
+            candidateBins: 0,
+            eligibleBins: 0,
+            representedBins: 0,
+            unrepresentedEligibleBins: 0,
+            acceptedRoots: 0,
+            rejectedRoots: 0,
+            clippedRoots: 0,
+            rejectedByKind: {},
+            partialCells: 0,
+            boundaryRootCandidates: 0,
+            boundaryRoots: 0,
+            boundaryRootRejected: 0,
+            exactPostcheckFailures: 0,
+            ineligibleRoots: 0,
+            sidewalkIntrusions: 0,
+            treeIntrusions: 0,
+            eligibleAreaSquareMeters: 0,
+            representedAreaSquareMeters: 0,
+            coverageSampleCacheHits: 0,
+            coverageSampleCacheMisses: 0
         };
-        this._stats.transitionPatches = 0;
-        this._stats.effectiveRadiusMeters = 0;
     }
 
     attach(parent) {
@@ -191,7 +274,17 @@ export class GrassNearCarpetSystem {
     setTerrain({ terrainMesh, terrainGrid } = {}) {
         this._terrainMesh = terrainMesh ?? this._terrainMesh;
         this._terrainGrid = terrainGrid ?? this._terrainGrid;
-        this._clearLayout();
+        this._invalidatePlacementCaches();
+        this._invalidateLayout();
+    }
+
+    setCoverageInput({ definition = null, config = null } = {}) {
+        const key = getGrassNearCarpetCoverageIdentity(definition) + '|' + JSON.stringify(config ?? null);
+        if (key === this._coverageInputKey && definition === this._coverageDefinition) return;
+        this._coverageDefinition = definition;
+        this._coverageConfig = config;
+        this._coverageInputKey = key;
+        this._invalidatePlacementCaches();
         this._invalidateLayout();
     }
 
@@ -200,26 +293,24 @@ export class GrassNearCarpetSystem {
         const configKey = JSON.stringify(next);
         const geometryKey = [
             next.seed,
-            next.patchSizeMeters,
-            next.bladesPerSquareMeter,
+            next.fibersPerRoot,
             next.baseColor,
             next.tipColor,
-            next.bladeHeightMeters.min,
-            next.bladeHeightMeters.max,
-            next.bladeWidthMeters.min,
-            next.bladeWidthMeters.max,
-            next.bendDegrees.min,
-            next.bendDegrees.max,
-            next.inclinationDegrees.min,
-            next.inclinationDegrees.max
+            next.materialId,
+            next.roughness
         ].join('|');
         const previousGeometryKey = this._geometryKey;
+        const configChanged = configKey !== this._configKey;
         this._config = next;
         this._geometryKey = geometryKey;
+        if (!configChanged) return;
+        this._invalidatePlacementCaches();
         if (previousGeometryKey !== geometryKey) this._rebuildRenderResources();
-        else if (configKey !== this._configKey) {
-            if (this._material) this._material.roughness = next.roughness;
-            this._clearLayout();
+        else {
+            if (this._material) {
+                this._material.roughness = next.roughness;
+                this._material.userData.resolvedMaterialId = next.materialId;
+            }
         }
         this._configKey = configKey;
         this._invalidateLayout();
@@ -232,10 +323,24 @@ export class GrassNearCarpetSystem {
         this._invalidateLayout();
     }
 
+    setEvidenceMode(mode = null) {
+        const next = mode === 'texture_only' || mode === 'near_mesh' ? mode : null;
+        if (next === this._evidenceMode) return;
+        this._evidenceMode = next;
+        if (next === 'texture_only') this._clearLayout();
+        this._invalidateLayout();
+    }
+
     update({ camera, viewAngleDeg = 0 } = {}) {
         const config = this._config;
-        const effectiveRadiusMeters = getGrassAutoLodCandidateRadius(this._autoLod, 'near', viewAngleDeg);
-        const active = config.enabled && config.mode !== GRASS_NEAR_CARPET_MODE.DISABLED && effectiveRadiusMeters > 0;
+        const forcedEvidence = this._evidenceMode === 'near_mesh';
+        const effectiveRadiusMeters = forcedEvidence
+            ? config.radiusMeters
+            : getGrassAutoLodCandidateRadius(this._autoLod, 'near', viewAngleDeg);
+        const active = config.enabled
+            && config.mode !== GRASS_NEAR_CARPET_MODE.DISABLED
+            && this._evidenceMode !== 'texture_only'
+            && effectiveRadiusMeters > 0;
         const terrainGrid = this._terrainGrid;
         if (!active || !camera?.isCamera || !terrainGrid || !this._geometry || !this._material) {
             this.group.visible = false;
@@ -245,33 +350,58 @@ export class GrassNearCarpetSystem {
         }
         this.group.visible = true;
 
+        const coverageDefinition = this._coverageDefinition ?? this._getCoverageDefinition();
+        const coverageConfig = this._coverageConfig ?? this._getCoverageConfig();
         const exclusionRects = this._getExclusionRects();
-        const exclusionKey = JSON.stringify(exclusionRects);
-        const angleBucket = Math.round(Number(viewAngleDeg) * 2) / 2;
-        const layoutKey = `${this._geometryKey}|${effectiveRadiusMeters.toFixed(3)}|${config.chunkSizeMeters}|${angleBucket}|${JSON.stringify(this._autoLod)}|${exclusionKey}`;
+        const terrainBounds = getTerrainBounds(terrainGrid);
+        const boundarySignature = String(coverageDefinition?.boundarySignature ?? '');
+        const coverageIdentity = getGrassNearCarpetCoverageIdentity(coverageDefinition);
+        const angleBucket = forcedEvidence ? 'forced' : String(Math.round(Number(viewAngleDeg) * 2) / 2);
+        const layoutKey = [
+            this._geometryKey,
+            this._configKey,
+            effectiveRadiusMeters.toFixed(3),
+            angleBucket,
+            JSON.stringify(this._autoLod),
+            coverageIdentity,
+            JSON.stringify(coverageConfig ?? null),
+            boundarySignature ? 'exact' : JSON.stringify(exclusionRects),
+            JSON.stringify(terrainBounds),
+            'evidence:' + (this._evidenceMode ?? 'none')
+        ].join('|');
         const centerCellX = Math.floor(camera.position.x / config.patchSizeMeters);
         const centerCellZ = Math.floor(camera.position.z / config.patchSizeMeters);
-        const centerCellKey = `${centerCellX},${centerCellZ}`;
-        if (centerCellKey === this._centerCellKey && layoutKey === this._layoutKey) {
+        const centerCellKey = centerCellX + ',' + centerCellZ;
+        if (!this._layoutInvalidated && centerCellKey === this._centerCellKey && layoutKey === this._layoutKey) {
             this._stats.stationaryFrames++;
             this._stats.lastBufferUpdates = 0;
             return;
         }
+        if (this._cells.size && (this._layoutInvalidated || (this._layoutKey && layoutKey !== this._layoutKey))) {
+            this._clearLayout();
+            this._stats.cacheInvalidations++;
+        }
 
-        const bounds = {
-            minX: Number(terrainGrid.minX),
-            maxX: Number(terrainGrid.minX) + Number(terrainGrid.widthTiles) * Number(terrainGrid.tileSize),
-            minZ: Number(terrainGrid.minZ),
-            maxZ: Number(terrainGrid.minZ) + Number(terrainGrid.depthTiles) * Number(terrainGrid.tileSize)
-        };
         const candidateConfig = sanitizeGrassNearCarpetConfig({ ...config, radiusMeters: effectiveRadiusMeters });
-        const candidates = createGrassNearCarpetCellSet({
-            cameraX: camera.position.x,
-            cameraZ: camera.position.z,
-            config: candidateConfig,
-            terrainBounds: bounds,
-            exclusionRects
-        });
+        const candidateCacheKey = centerCellKey + '|' + layoutKey;
+        let candidates = this._layoutCache.get(candidateCacheKey) ?? null;
+        if (candidates) {
+            this._stats.cacheHits++;
+        } else {
+            this._stats.cacheMisses++;
+            candidates = createGrassNearCarpetCellSet({
+                cameraX: camera.position.x,
+                cameraZ: camera.position.z,
+                config: candidateConfig,
+                terrainBounds,
+                coverageDefinition,
+                coverageConfig,
+                exclusionRects,
+                coverageSampleCache: this._coverageSampleCache
+            });
+            this._layoutCache.set(candidateCacheKey, candidates);
+            if (this._layoutCache.size > 9) this._layoutCache.delete(this._layoutCache.keys().next().value);
+        }
         const visibleCells = new Map();
         let transitionPatches = 0;
         for (const [key, cell] of candidates.cells) {
@@ -281,7 +411,7 @@ export class GrassNearCarpetSystem {
                 config: this._autoLod
             });
             if (evaluation.weights.near > 0 && evaluation.weights.near < 1) transitionPatches++;
-            const visible = resolveGrassAutoLodMaskedVisibility({
+            const visible = forcedEvidence || resolveGrassAutoLodMaskedVisibility({
                 weight: evaluation.weights.near,
                 stableSample: getGrassAutoLodStableSample(key, 'near'),
                 previousVisible: this._cells.has(key),
@@ -289,8 +419,8 @@ export class GrassNearCarpetSystem {
             });
             if (visible) visibleCells.set(key, cell);
         }
-        const next = { ...candidates, cells: visibleCells };
-        const delta = diffGrassNearCarpetCellSets(this._cells, next.cells);
+
+        const delta = diffGrassNearCarpetCellSets(this._cells, visibleCells);
         const changedChunks = new Set();
         for (const cell of delta.leaving) {
             changedChunks.add(getGrassNearCarpetChunkKey(cell, config));
@@ -298,24 +428,26 @@ export class GrassNearCarpetSystem {
         }
         for (const cell of delta.entering) {
             changedChunks.add(getGrassNearCarpetChunkKey(cell, config));
-            this._descriptors.set(cell.key, createDescriptor(cell, config, this._terrainMesh, terrainGrid));
+            const descriptors = cell.roots.map((root) => createRootDescriptor(root, config, this._terrainMesh, terrainGrid));
+            this._descriptors.set(cell.key, Object.freeze(descriptors));
         }
-        if (!this._cells.size) for (const descriptor of this._descriptors.values()) changedChunks.add(getGrassNearCarpetChunkKey(descriptor, config));
 
         let bufferUpdates = 0;
         for (const chunkKey of changedChunks) {
             const descriptors = [];
-            for (const descriptor of this._descriptors.values()) {
-                if (getGrassNearCarpetChunkKey(descriptor, config) === chunkKey) descriptors.push(descriptor);
+            for (const [cellKey, roots] of this._descriptors) {
+                const cell = visibleCells.get(cellKey) ?? this._cells.get(cellKey);
+                if (cell && getGrassNearCarpetChunkKey(cell, config) === chunkKey) descriptors.push(...roots);
             }
             this._writeChunk(chunkKey, descriptors);
             bufferUpdates++;
         }
 
-        this._cells = next.cells;
+        this._cells = visibleCells;
         if (this._centerCellKey && centerCellKey !== this._centerCellKey) this._stats.cameraCellMoves++;
         this._centerCellKey = centerCellKey;
         this._layoutKey = layoutKey;
+        this._layoutInvalidated = false;
         this._stats.layoutRevision++;
         this._stats.lastBufferUpdates = bufferUpdates;
         this._stats.totalBufferUpdates += bufferUpdates;
@@ -324,36 +456,113 @@ export class GrassNearCarpetSystem {
         this._stats.retainedCells = delta.retained;
         this._stats.transitionPatches = transitionPatches;
         this._stats.effectiveRadiusMeters = effectiveRadiusMeters;
+        this._stats.coverageMode = candidates.coverageMode;
+        this._stats.boundarySignature = candidates.boundarySignature;
+        this._stats.placementSignature = candidates.placementSignature;
+        this._stats.cacheIdentity = candidates.cacheIdentity;
+        Object.assign(this._stats, candidates.diagnostics);
     }
 
     getStats() {
-        const enabled = this._config.enabled && this._config.mode !== GRASS_NEAR_CARPET_MODE.DISABLED;
-        const patchInstances = enabled ? this._descriptors.size : 0;
-        const bladesPerPatch = getGrassNearCarpetBladesPerPatch(this._config);
+        const enabled = this._config.enabled
+            && this._config.mode !== GRASS_NEAR_CARPET_MODE.DISABLED
+            && this._evidenceMode !== 'texture_only';
+        let rootInstances = 0;
+        let observedTipMin = Infinity;
+        let observedTipMax = -Infinity;
+        let observedVisibleMin = Infinity;
+        let observedVisibleMax = -Infinity;
+        let observedWidthMin = Infinity;
+        let observedWidthMax = -Infinity;
+        for (const roots of this._descriptors.values()) {
+            rootInstances += roots.length;
+            for (const root of roots) {
+                observedTipMin = Math.min(observedTipMin, root.absoluteTipElevationMeters);
+                observedTipMax = Math.max(observedTipMax, root.absoluteTipElevationMeters);
+                observedVisibleMin = Math.min(observedVisibleMin, root.visibleLengthMeters);
+                observedVisibleMax = Math.max(observedVisibleMax, root.visibleLengthMeters);
+                observedWidthMin = Math.min(observedWidthMin, root.widthMeters);
+                observedWidthMax = Math.max(observedWidthMax, root.widthMeters);
+            }
+        }
+        if (!enabled) rootInstances = 0;
+        const fiberInstances = rootInstances * this._config.fibersPerRoot;
         let drawCalls = 0;
-        for (const mesh of this._meshes.values()) if (mesh.visible && mesh.count > 0) drawCalls++;
+        if (enabled) {
+            for (const mesh of this._meshes.values()) if (mesh.visible && mesh.count > 0) drawCalls++;
+        }
+        const rejectedByKind = this._stats.rejectedByKind ?? {};
+        const treeRejectedRoots = Object.entries(rejectedByKind)
+            .filter(([kind]) => /tree/i.test(kind))
+            .reduce((sum, [, count]) => sum + Number(count || 0), 0);
+        const sidewalkRejectedRoots = Object.entries(rejectedByKind)
+            .filter(([kind]) => /sidewalk|road|path/i.test(kind))
+            .reduce((sum, [, count]) => sum + Number(count || 0), 0);
         return {
+            schema: 'near-grass-carpet-v2',
             enabled,
+            evidenceMode: this._evidenceMode,
             mode: this._config.mode,
+            coverageMode: this._stats.coverageMode,
+            boundarySignature: this._stats.boundarySignature,
+            placementSignature: this._stats.placementSignature,
             patchSizeMeters: this._config.patchSizeMeters,
+            ownershipCellSizeMeters: this._config.patchSizeMeters,
             bladesPerSquareMeter: this._config.bladesPerSquareMeter,
+            rootBinsPerSquareMeter: this._config.bladesPerSquareMeter,
+            fibersPerRoot: this._config.fibersPerRoot,
             radiusMeters: this._config.radiusMeters,
-            patchInstances,
-            bladesPerPatch,
-            bladeInstances: patchInstances * bladesPerPatch,
-            triangles: patchInstances * bladesPerPatch,
+            patchInstances: enabled ? this._descriptors.size : 0,
+            cellInstances: enabled ? this._descriptors.size : 0,
+            rootsPerPatch: getGrassNearCarpetRootsPerPatch(this._config),
+            bladesPerPatch: getGrassNearCarpetBladesPerPatch(this._config),
+            rootInstances,
+            instanceCount: rootInstances,
+            fiberInstances,
+            bladeInstances: fiberInstances,
+            triangles: fiberInstances,
             drawCalls,
+            chunks: drawCalls,
             materialPaths: drawCalls > 0 ? 1 : 0,
+            materialId: this._config.materialId,
+            appearanceSource: 'ai358_shared_catalog',
+            structuralBaseHeightMeters: this._config.structuralBaseHeightMeters,
+            bladeTipElevationMeters: { ...this._config.bladeTipElevationMeters },
+            visibleBladeLengthMeters: { ...this._config.bladeHeightMeters },
+            observedTipElevationMeters: {
+                min: Number.isFinite(observedTipMin) ? observedTipMin : null,
+                max: Number.isFinite(observedTipMax) ? observedTipMax : null
+            },
+            observedVisibleLengthMeters: {
+                min: Number.isFinite(observedVisibleMin) ? observedVisibleMin : null,
+                max: Number.isFinite(observedVisibleMax) ? observedVisibleMax : null
+            },
+            observedBladeWidthMeters: {
+                min: Number.isFinite(observedWidthMin) ? observedWidthMin : null,
+                max: Number.isFinite(observedWidthMax) ? observedWidthMax : null
+            },
+            rootClearanceMeters: Number(this._coverageConfig?.rootClearanceMeters ?? this._getCoverageConfig()?.rootClearanceMeters ?? 0),
+            boundaryRootSpacingMeters: this._config.boundaryRootSpacingMeters,
+            rejectedByKind: { ...rejectedByKind },
+            sidewalkRejectedRoots,
+            treeRejectedRoots,
             castShadow: false,
             transparent: false,
+            alphaTest: 0,
+            depthWrite: true,
+            emissive: false,
             frustumCulled: true,
-            ...this._stats
+            stationaryUploadsZero: this._stats.stationaryFrames === 0 || this._stats.lastBufferUpdates === 0,
+            ...this._stats,
+            coverageSampleCacheEntries: this._coverageSampleCache.size
         };
     }
 
     dispose() {
         for (const mesh of this._meshes.values()) mesh.removeFromParent();
         this._meshes.clear();
+        this._layoutCache.clear();
+        this._coverageSampleCache.clear();
         this._geometry?.dispose?.();
         this._material?.dispose?.();
         this._geometry = null;
@@ -362,7 +571,17 @@ export class GrassNearCarpetSystem {
     }
 
     _invalidateLayout() {
-        this._layoutKey = '';
+        this._layoutInvalidated = true;
+    }
+
+    _invalidatePlacementCaches() {
+        const hadCachedState = this._layoutCache.size > 0
+            || this._coverageSampleCache.size > 0
+            || this._cells.size > 0;
+        this._layoutCache.clear();
+        this._coverageSampleCache.clear();
+        this._clearLayout();
+        if (hadCachedState) this._stats.cacheInvalidations++;
     }
 
     _clearLayout() {
@@ -380,7 +599,7 @@ export class GrassNearCarpetSystem {
         this._meshes.clear();
         this._geometry?.dispose?.();
         this._material?.dispose?.();
-        this._geometry = createPatchGeometry(this._config);
+        this._geometry = createRootGeometry(this._config);
         this._material = createMaterial(this._config);
         this._clearLayout();
     }
@@ -391,13 +610,19 @@ export class GrassNearCarpetSystem {
         existing?.removeFromParent?.();
         const capacity = nextPowerOfTwo(count);
         const mesh = new THREE.InstancedMesh(this._geometry, this._material, capacity);
-        mesh.name = `GrassNearCarpetChunk_${chunkKey}`;
+        mesh.name = 'GrassNearCarpetChunk_' + chunkKey;
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
         mesh.castShadow = false;
         mesh.receiveShadow = false;
         mesh.frustumCulled = true;
         mesh.renderOrder = 4;
+        mesh.userData = {
+            schema: 'near-grass-carpet-v2',
+            chunkKey,
+            sharedGeometry: true,
+            sharedMaterial: true
+        };
         this.group.add(mesh);
         this._meshes.set(chunkKey, mesh);
         return mesh;

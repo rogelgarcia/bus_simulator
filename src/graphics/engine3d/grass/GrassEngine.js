@@ -393,6 +393,8 @@ export class GrassEngine {
         terrainMesh,
         terrainGrid,
         getExclusionRects,
+        getCoverageDefinition,
+        getCoverageConfig,
         midClusterMaterial,
         localizedAccentMaterial,
         wornAccentMaterial,
@@ -402,8 +404,11 @@ export class GrassEngine {
         this._terrainMesh = terrainMesh ?? null;
         this._terrainGrid = terrainGrid ?? null;
         this._getExclusionRects = typeof getExclusionRects === 'function' ? getExclusionRects : (() => []);
+        this._getCoverageDefinition = typeof getCoverageDefinition === 'function' ? getCoverageDefinition : (() => null);
+        this._getCoverageConfig = typeof getCoverageConfig === 'function' ? getCoverageConfig : (() => null);
 
         this._config = sanitizeGrassEngineConfig(null);
+        this._nearEvidenceMode = null;
         this._instanceKey = getGrassEngineInstanceKey(this._config);
 
         this.group = new THREE.Group();
@@ -464,7 +469,9 @@ export class GrassEngine {
             parent: this.group,
             terrainMesh: this._terrainMesh,
             terrainGrid: this._terrainGrid,
-            getExclusionRects: () => this._getExpandedExclusionRects()
+            getExclusionRects: () => this._getExpandedExclusionRects(),
+            getCoverageDefinition: () => this._getCoverageDefinition(),
+            getCoverageConfig: () => this._getCoverageConfig()
         });
         this._nearCarpet.setConfig(this._config.nearCarpet);
         this._nearCarpet.setAutoLodConfig(this._config.autoLod);
@@ -523,6 +530,22 @@ export class GrassEngine {
 
     setMidClusterMaterial(material) {
         this._midCluster?.setMaterial?.(material);
+    }
+
+    setNearCarpetCoverageInput(value) {
+        this._nearCarpet?.setCoverageInput?.(value);
+    }
+
+    setNearEvidenceMode(mode = null) {
+        const next = mode === 'texture_only' || mode === 'near_mesh' ? mode : null;
+        this._nearEvidenceMode = next;
+        this._nearCarpet?.setEvidenceMode?.(next);
+        this._applyNearEvidenceVisibility();
+        return next;
+    }
+
+    getNearEvidenceMode() {
+        return this._nearEvidenceMode;
     }
 
     setLocalizedAccentInput(value) {
@@ -609,6 +632,7 @@ export class GrassEngine {
         const instancesByTier = { master: 0, near: 0, mid: 0, far: 0, accent: 0 };
 
         for (const chunk of this._chunks) {
+            if (this._nearEvidenceMode) continue;
             const meshes = chunk.meshes;
             if (!meshes) continue;
             for (const tier of GRASS_LOD_TIERS) {
@@ -629,21 +653,21 @@ export class GrassEngine {
             far: instancesByTier.far * this._trianglesPerInstance.far
         };
         const nearCarpet = this._nearCarpet?.getStats?.() ?? null;
-        if (nearCarpet?.enabled) {
+        if (nearCarpet?.enabled && this._nearEvidenceMode !== 'texture_only') {
             instancesByTier.near += Math.max(0, Number(nearCarpet.bladeInstances) || 0);
             trianglesByTier.near += Math.max(0, Number(nearCarpet.triangles) || 0);
             totalInstances += Math.max(0, Number(nearCarpet.bladeInstances) || 0);
             drawCalls += Math.max(0, Number(nearCarpet.drawCalls) || 0);
         }
         const midCluster = this._midCluster?.getStats?.() ?? null;
-        if (midCluster?.enabled) {
+        if (midCluster?.enabled && !this._nearEvidenceMode) {
             instancesByTier.mid += Math.max(0, Number(midCluster.instances) || 0);
             trianglesByTier.mid += Math.max(0, Number(midCluster.triangles) || 0);
             totalInstances += Math.max(0, Number(midCluster.instances) || 0);
             drawCalls += Math.max(0, Number(midCluster.drawCalls) || 0);
         }
         const localizedAccents = this._localizedAccents?.getStats?.() ?? null;
-        if (localizedAccents?.enabled) {
+        if (localizedAccents?.enabled && !this._nearEvidenceMode) {
             instancesByTier.accent += Math.max(0, Number(localizedAccents.visibleClusters) || 0);
             trianglesByTier.accent = Math.max(0, Number(localizedAccents.totalTriangles) || 0);
             totalInstances += Math.max(0, Number(localizedAccents.visibleClusters) || 0);
@@ -665,6 +689,7 @@ export class GrassEngine {
             instancesByTier,
             trianglesByTier,
             nearCarpet,
+            nearEvidenceMode: this._nearEvidenceMode,
             midCluster,
             localizedAccents,
             autoLod: this.getLodDebugInfo()
@@ -740,6 +765,7 @@ export class GrassEngine {
         this._nearCarpet?.update({ camera: cam, viewAngleDeg });
         this._midCluster?.update({ camera: cam, viewAngleDeg });
         this._localizedAccents?.update({ camera: cam, viewAngleDeg });
+        this._applyNearEvidenceVisibility();
         this._lodDebugInfo.geometryBeyondCutoff = (this._midCluster?.getStats?.().geometryBeyondCutoff ?? 0)
             + (this._localizedAccents?.getStats?.().geometryBeyondCutoff ?? 0);
 
@@ -921,6 +947,21 @@ export class GrassEngine {
             out.push({ x0: minX, x1: maxX, z0: minZ, z1: maxZ });
         }
         return out;
+    }
+
+    _applyNearEvidenceVisibility() {
+        if (!this._nearEvidenceMode) {
+            if (this._midCluster?.group) this._midCluster.group.visible = true;
+            if (this._localizedAccents?.group) this._localizedAccents.group.visible = true;
+            return;
+        }
+        const showNear = this._nearEvidenceMode === 'near_mesh';
+        if (this._nearCarpet?.group) this._nearCarpet.group.visible = showNear && this._nearCarpet.getStats().patchInstances > 0;
+        if (this._midCluster?.group) this._midCluster.group.visible = false;
+        if (this._localizedAccents?.group) this._localizedAccents.group.visible = false;
+        for (const chunk of this._chunks) if (chunk?.group) chunk.group.visible = false;
+        if (this._lodRings) this._lodRings.visible = false;
+        if (this._lodAngleScaledRings) this._lodAngleScaledRings.visible = false;
     }
 
     _syncTrianglesPerTier() {

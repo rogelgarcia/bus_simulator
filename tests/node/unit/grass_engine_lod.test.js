@@ -1,8 +1,22 @@
 // Node unit tests: Grass engine LOD evaluator + RNG determinism.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { makeRng } from '../../../src/graphics/engine3d/grass/GrassRng.js';
 import { evaluateGrassLod } from '../../../src/graphics/engine3d/grass/GrassLodEvaluator.js';
+
+const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
+
+function createGrassEngineMethodHarness() {
+    const source = readFileSync(`${REPO_ROOT}/src/graphics/engine3d/grass/GrassEngine.js`, 'utf8');
+    const marker = 'export class GrassEngine {';
+    const classStart = source.indexOf(marker);
+    assert.notEqual(classStart, -1);
+    const classSource = source.slice(classStart).replace(/^export\s+/, '');
+    const GrassEngineHarness = Function(`"use strict"; return (${classSource});`)();
+    return Object.create(GrassEngineHarness.prototype);
+}
 
 function makeLodConfig({ force = 'auto' } = {}) {
     return {
@@ -59,3 +73,38 @@ test('GrassLod: force tier obeys allowedLods mapping', () => {
     assert.equal(res.weights.far, 1);
 });
 
+test('AI 360 engine forwards exact coverage identity and bounds forced-near evidence to the near radius', () => {
+    const engine = readFileSync(`${REPO_ROOT}/src/graphics/engine3d/grass/GrassEngine.js`, 'utf8');
+    const near = readFileSync(`${REPO_ROOT}/src/graphics/engine3d/grass/GrassNearCarpetSystem.js`, 'utf8');
+    assert.match(engine, /setNearCarpetCoverageInput/);
+    assert.match(engine, /setCoverageInput/);
+    assert.match(engine, /setNearEvidenceMode/);
+    assert.match(near, /boundarySignature/);
+    assert.match(near, /setCoverageInput/);
+    assert.match(near, /forcedEvidence\s*\?\s*config\.radiusMeters/);
+});
+
+test('AI 360 clearing near evidence restores unchanged mid-cluster and accent layouts', () => {
+    const engine = createGrassEngineMethodHarness();
+    engine._nearEvidenceMode = null;
+    engine._nearCarpet = {
+        group: { visible: true },
+        setEvidenceMode() {},
+        getStats: () => ({ patchInstances: 1 })
+    };
+    engine._midCluster = { _layoutKey: 'stable-mid-layout', group: { visible: true } };
+    engine._localizedAccents = { _layoutKey: 'stable-accent-layout', group: { visible: true } };
+    engine._chunks = [];
+    engine._lodRings = null;
+    engine._lodAngleScaledRings = null;
+
+    engine.setNearEvidenceMode('near_mesh');
+    assert.equal(engine._midCluster.group.visible, false);
+    assert.equal(engine._localizedAccents.group.visible, false);
+
+    engine.setNearEvidenceMode(null);
+    assert.equal(engine._midCluster._layoutKey, 'stable-mid-layout');
+    assert.equal(engine._localizedAccents._layoutKey, 'stable-accent-layout');
+    assert.equal(engine._midCluster.group.visible, true);
+    assert.equal(engine._localizedAccents.group.visible, true);
+});

@@ -12,10 +12,13 @@ import {
     CARD_BAND_ROI,
     buildBoundaryCaptureRecipes,
     buildCaptureRecipes,
+    buildNearCaptureRecipes,
     evaluateBoundaryPairs,
     evaluateBoundaryRepresentationSnapshot,
     evaluateCardBandPairs,
     evaluateLuminancePairs,
+    evaluateNearPairs,
+    evaluateNearRepresentationSnapshot,
     measureCardBandPair,
     measurePngFrame,
     mergeCaptureManifest,
@@ -136,6 +139,160 @@ test('AI 359 read-only boundary inspection does not require an evidence phase', 
     assert.equal(options.inspectBoundary, true);
     assert.equal(options.matrix, 'ai359-boundary');
     assert.equal(options.phase, null);
+});
+
+test('AI 360 near matrix supplies nine native-4K texture/mesh pairs for every required pose', () => {
+    const recipes = buildNearCaptureRecipes();
+    assert.equal(recipes.length, 18);
+    assert.deepEqual(new Set(recipes.map((entry) => entry.quality)), new Set(['default']));
+    assert.deepEqual(new Set(recipes.map((entry) => entry.lighting)), new Set(['daylight']));
+    assert.deepEqual(new Set(recipes.map((entry) => entry.nearEvidenceMode)), new Set([
+        'texture_only',
+        'near_mesh'
+    ]));
+    assert.deepEqual(new Set(recipes.map((entry) => entry.pairId)), new Set([
+        'height_030',
+        'height_050',
+        'height_100',
+        'grazing',
+        'forward',
+        'oblique',
+        'top_down',
+        'physical_cut_side_profile',
+        'bus_scale'
+    ]));
+    assert.deepEqual(
+        recipes.filter((entry) => entry.pairId === 'physical_cut_side_profile')
+            .map((entry) => ({ target: entry.boundaryTarget, height: entry.heightMeters, distance: entry.distanceMeters })),
+        [
+            { target: 'straight', height: 0.3, distance: 1.25 },
+            { target: 'straight', height: 0.3, distance: 1.25 }
+        ]
+    );
+    const options = parseArgs(['--phase=before', '--matrix=ai360-near']);
+    assert.equal(options.matrix, 'ai360-near');
+    assert.equal(options.output, 'tests/artifacts/screens/grass/ai360');
+});
+
+function makeNearSnapshot(mode) {
+    const mesh = mode === 'near_mesh';
+    return {
+        nearEvidence: {
+            mode,
+            textureOnly: !mesh,
+            nearMeshVisible: mesh,
+            midAndAccentHidden: true
+        },
+        coverage: {
+            boundarySignature: 'grass-coverage-v2-ai360',
+            sourceLoopIdentity: 'rendered-sidewalk-and-tree-loops',
+            logicalDrawCalls: 2,
+            triangles: 95219,
+            opaqueCap: true,
+            transparentSurface: false,
+            alphaTestedSurface: false
+        },
+        grass: {
+            triangles: mesh ? 48000 : 0,
+            logicalDrawCalls: mesh ? 2 : 0,
+            trianglesByTier: { near: mesh ? 48000 : 0, mid: 0, accent: 0 },
+            nearCarpet: {
+                triangles: mesh ? 48000 : 0,
+                drawCalls: mesh ? 2 : 0,
+                materialPaths: mesh ? 1 : 0,
+                transparent: false,
+                depthWrite: true,
+                castShadow: false,
+                frustumCulled: true,
+                coverageMode: 'exact_polygon_v2',
+                boundarySignature: 'grass-coverage-v2-ai360',
+                eligibleBins: mesh ? 16000 : 0,
+                representedBins: mesh ? 16000 : 0,
+                unrepresentedOccupancyBins: 0,
+                unrepresentedEligibleBins: 0,
+                exactPostcheckFailures: 0,
+                ineligibleRoots: 0,
+                sidewalkIntrusions: 0,
+                treeIntrusions: 0,
+                stationaryUploadsZero: true
+            }
+        }
+    };
+}
+
+function makeNearCaptures({ meshLuminance = 0.3 } = {}) {
+    return buildNearCaptureRecipes().map((recipe) => {
+        const snapshot = makeNearSnapshot(recipe.nearEvidenceMode);
+        return {
+            recipeId: recipe.id,
+            pairId: recipe.pairId,
+            nearEvidenceMode: recipe.nearEvidenceMode,
+            lightingPreset: recipe.lighting,
+            qualityPreset: recipe.quality,
+            exposure: 1,
+            png: { width: 3840, height: 2160 },
+            camera: {
+                position: { x: recipe.pairId.length, y: recipe.heightMeters ?? 0.5, z: -3 },
+                target: { x: 0, y: 0.03, z: 0 },
+                fovDegrees: 50,
+                aspect: 16 / 9,
+                nearMeters: 0.02,
+                farMeters: 5000
+            },
+            frameMetrics: {
+                medianLuminance: recipe.nearEvidenceMode === 'near_mesh' ? meshLuminance : 0.3
+            },
+            representationApproval: evaluateNearRepresentationSnapshot(snapshot, recipe.nearEvidenceMode)
+        };
+    });
+}
+
+test('AI 360 paired gate requires V2 opaque near-only geometry, aligned cameras, and luminance agreement', () => {
+    const textureApproval = evaluateNearRepresentationSnapshot(makeNearSnapshot('texture_only'), 'texture_only');
+    const meshApproval = evaluateNearRepresentationSnapshot(makeNearSnapshot('near_mesh'), 'near_mesh');
+    assert.equal(textureApproval.pass, true);
+    assert.equal(meshApproval.pass, true);
+
+    const result = evaluateNearPairs(makeNearCaptures());
+    assert.equal(result.expectedPairIds.length, 9);
+    assert.equal(result.pairs.length, 9);
+    assert.equal(result.pairs.every((pair) => pair.cameraMatch && pair.luminanceMatch), true);
+    assert.equal(result.pass, true);
+
+    const shifted = structuredClone(makeNearCaptures());
+    shifted.find((entry) => entry.recipeId === 'near_mesh_physical_cut_side_profile').camera.position.x += 0.01;
+    assert.equal(evaluateNearPairs(shifted).pass, false);
+
+    const tooDark = evaluateNearPairs(makeNearCaptures({ meshLuminance: 0.2 }));
+    assert.equal(tooDark.pairs.every((pair) => pair.luminanceMatch === false), true);
+    assert.equal(tooDark.pass, false, 'AI 358 luminance mismatch must fail AI 360 approval');
+
+    const leaking = makeNearSnapshot('near_mesh');
+    leaking.grass.trianglesByTier.mid = 12;
+    assert.equal(evaluateNearRepresentationSnapshot(leaking, 'near_mesh').pass, false);
+
+    const rectangleFallback = makeNearSnapshot('near_mesh');
+    rectangleFallback.grass.nearCarpet.coverageMode = 'rectangle_compatibility';
+    assert.equal(evaluateNearRepresentationSnapshot(rectangleFallback, 'near_mesh').pass, false);
+
+    const missingBins = makeNearSnapshot('near_mesh');
+    missingBins.grass.nearCarpet.unrepresentedEligibleBins = 1;
+    missingBins.grass.nearCarpet.representedBins -= 1;
+    assert.equal(evaluateNearRepresentationSnapshot(missingBins, 'near_mesh').pass, false);
+
+    const ineligible = makeNearSnapshot('near_mesh');
+    ineligible.grass.nearCarpet.exactPostcheckFailures = 1;
+    assert.equal(evaluateNearRepresentationSnapshot(ineligible, 'near_mesh').pass, false);
+
+    const translucent = makeNearSnapshot('near_mesh');
+    translucent.coverage.opaqueCap = false;
+    assert.equal(evaluateNearRepresentationSnapshot(translucent, 'near_mesh').pass, false);
+
+    const overBudget = makeNearSnapshot('near_mesh');
+    overBudget.grass.triangles = 105000;
+    overBudget.grass.nearCarpet.triangles = 105000;
+    overBudget.grass.trianglesByTier.near = 105000;
+    assert.equal(evaluateNearRepresentationSnapshot(overBudget, 'near_mesh').pass, false);
 });
 
 function makeBoundarySnapshot(mode) {
@@ -341,13 +498,14 @@ test('grass capture manifest keeps the other phase and replaces only the request
         diagnosticsByPhase: { after: { ok: true } },
         cardBandGateByPhase: { after: { pass: true } }
     };
-    const diagnostics = { ok: true, cardBandGate: { pass: false } };
+    const diagnostics = { ok: true, cardBandGate: { pass: false }, nearGate: { pass: true } };
     const result = mergeCaptureManifest(existing, 'before', [{ phase: 'before', file: 'before_new.png' }], diagnostics);
     assert.equal(result.schema, 'grass-lab-capture-manifest-v2');
     assert.deepEqual(result.requiredDrawingBuffer, { width: 3840, height: 2160, pixelRatio: 1 });
     assert.deepEqual(result.captures.map((entry) => entry.file), ['after_keep.png', 'before_new.png']);
     assert.deepEqual(result.diagnosticsByPhase, { after: { ok: true }, before: diagnostics });
     assert.deepEqual(result.cardBandGateByPhase, { after: { pass: true }, before: { pass: false } });
+    assert.deepEqual(result.nearGateByPhase, { before: { pass: true } });
 });
 
 test('grass capture phase summary uses settled per-capture material diagnostics', () => {
@@ -399,7 +557,8 @@ test('Grass Lab exposes supported capture APIs and capture CSS removes dock and 
         'setMaterialLighting',
         'setMaterialVersion',
         'focusBoundaryCamera',
-        'setBoundaryEvidenceMode'
+        'setBoundaryEvidenceMode',
+        'setNearEvidenceMode'
     ]) assert.match(main, new RegExp(`${api}:`));
     assert.match(main, /drawingBufferWidth/);
     assert.match(main, /rendererPixelRatio === 1/);
@@ -417,6 +576,10 @@ test('Grass Lab exposes supported capture APIs and capture CSS removes dock and 
     assert.match(runner, /--matrix=/);
     assert.match(runner, /grass-boundary-paired-approval-v1/);
     assert.match(runner, /noNearMidAccentRepresentation/);
+    assert.match(runner, /ai360-near/);
+    assert.match(runner, /buildNearCaptureRecipes/);
+    assert.match(runner, /unrepresentedEligibleBins/);
+    assert.match(runner, /combinedVisibleGrassTriangles/);
     assert.deepEqual(CARD_BAND_GATE_CONTRACT, {
         geometryToTextureRatio: 0.7,
         minimumLuminanceDelta: 0.06,

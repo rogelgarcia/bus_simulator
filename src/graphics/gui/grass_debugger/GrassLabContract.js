@@ -10,8 +10,12 @@ import {
     sanitizeGrassCoverageConfig
 } from '../../../app/grass/GrassCoverageContract.js';
 import { buildRoadSidewalkGrassBoundaryLoopPairs } from '../../../app/road_decoration/sidewalks/RoadSidewalkBuilder.js';
+import {
+    LOW_CUT_GRASS_ASSET_FAMILY,
+    LOW_CUT_GRASS_MATERIAL_ID
+} from '../../content3d/catalogs/LowCutGrassMaterialCatalog.js';
 
-export const GRASS_LAB_CONTRACT_VERSION = 8;
+export const GRASS_LAB_CONTRACT_VERSION = 9;
 export const GRASS_LAB_CANONICAL_URL = 'debug_tools/grass_debug.html';
 export const GRASS_LAB_DEFAULT_SEED = 'grass-lab-baseline-v1';
 
@@ -353,16 +357,22 @@ export function createGrassLabEngineConfig(state, { tileSize = 24 } = {}) {
         mode: carpetMode,
         seed: `${labSeed}|${profile.seed}|near-carpet`,
         patchSizeMeters: finite(lod1?.carpetPatchSizeMeters, 1),
-        bladesPerSquareMeter: finite(lod1?.carpetBladesPerSquareMeter, 48) * coverage.densityMultiplier,
+        bladesPerSquareMeter: finite(lod1?.carpetBladesPerSquareMeter, 64),
+        fibersPerRoot: finite(lod1?.carpetFibersPerRoot, 3),
         radiusMeters: nearEnd,
         chunkSizeMeters: 32,
-        yOffsetMeters: coverage.layerHeightMeters,
+        yOffsetMeters: coverage.structuralBaseHeightMeters,
+        structuralBaseHeightMeters: coverage.structuralBaseHeightMeters,
         patchScaleVariation: 0.04,
         colorBrightnessVariation: profile.appearance.colorVariation.brightness,
         baseColor: profile.appearance.baseColor,
         tipColor: profile.appearance.tipColor,
-        bladeHeightMeters: { ...profile.blade.heightMeters },
-        bladeWidthMeters: { ...profile.blade.widthMeters },
+        materialId: LOW_CUT_GRASS_MATERIAL_ID,
+        bladeTipElevationMeters: {
+            min: coverage.visibleBladeTipMinMeters,
+            max: coverage.visibleBladeTipMaxMeters
+        },
+        bladeWidthMeters: { ...LOW_CUT_GRASS_ASSET_FAMILY.bakeProfile.widthMeters },
         bendDegrees: {
             min: profile.shape.bendDegrees.mean - profile.shape.bendDegrees.variation,
             max: profile.shape.bendDegrees.mean + profile.shape.bendDegrees.variation
@@ -371,6 +381,11 @@ export function createGrassLabEngineConfig(state, { tileSize = 24 } = {}) {
             min: profile.shape.inclinationDegrees.mean - profile.shape.inclinationDegrees.variation,
             max: profile.shape.inclinationDegrees.mean + profile.shape.inclinationDegrees.variation
         },
+        heightDistributionExponent: 1.35,
+        rootJitterFactor: 0.56,
+        boundaryRootSpacingMeters: 0.04,
+        boundaryRootInsetMeters: 0.0065,
+        boundarySafetyMeters: 0.0005,
         roughness: runtimeProfile.appearance.roughness
     };
     config.midCluster = {

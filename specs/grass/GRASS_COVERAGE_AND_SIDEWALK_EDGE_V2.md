@@ -14,6 +14,11 @@ the assembled lab system, and AI 363 is the only phase authorized to connect it
 to gameplay. This specification does not authorize changes to near/middle
 representation, automatic LOD, quality-preset policy, or gameplay.
 
+AI 360's representation contract is
+`specs/grass/NEAR_GRASS_CARPET_PATCH_V2.md`. It applies this query to every
+micro-clump root, retains eligible bins from partially excluded ownership cells,
+and keys its placement cache to this definition's `boundarySignature`.
+
 The V1 contract in `GRASS_COVERAGE_AND_SIDEWALK_EDGE_V1.md` remains historical
 evidence. Its rectangular partition, sparse fringe, alpha-cut cap, and three-draw
 boundary are not the V2 approval path.
@@ -289,6 +294,16 @@ AI 360, AI 361, AI 362, and AI 363 must consume this exact V2 definition and
 signature. In particular, they must preserve polygon onset geometry, signed
 distance orientation, root clearance, tree holes, opaque cap behavior, shared
 substrate ownership, and the two-draw boundary ceiling.
+
+`GrassEngine.setNearCarpetCoverageInput({ definition, config })` forwards this
+contract to
+`GrassNearCarpetSystem.setCoverageInput({ definition, config })`. When
+`definition.exclusions` contains exact polygons, compatibility rectangles are
+ignored even if a caller also supplies them. Every represented root passes the
+authoritative query; deterministic boundary-completion roots sit at
+`rootClearanceMeters + epsilon` on the occupied side so the carpet reaches the
+cut without restoring V1's whole-patch moat. A boundary-signature or
+root-clearance change invalidates the near placement cache before rendering.
 
 This contract does not:
 

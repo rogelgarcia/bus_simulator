@@ -83,7 +83,7 @@ test('Grass Lab evidence visibility and tree-hole rebuilds retain runtime owners
     assert.match(source, /wornRadiusMeters: finiteOr/);
 });
 
-test('Grass Lab v8 fixtures are deterministic and defer coverage to the exact rendered-loop handoff', () => {
+test('Grass Lab v9 fixtures are deterministic and defer coverage to the exact rendered-loop handoff', () => {
     const first = createGrassLabFixtureDefinition({ bounds: BOUNDS, tileSize: 24, roadHalfWidth: 8 });
     const second = createGrassLabFixtureDefinition({ bounds: BOUNDS, tileSize: 24, roadHalfWidth: 8 });
     assert.deepEqual(first, second);
@@ -262,8 +262,13 @@ test('Grass Lab maps source controls into one deterministic GrassEngine config',
     assert.equal(first.nearCarpet.mode, 'auto');
     assert.equal(first.nearCarpet.patchSizeMeters, 1);
     assert.equal(first.nearCarpet.bladesPerSquareMeter, 48);
+    assert.equal(first.nearCarpet.fibersPerRoot, 3);
+    assert.equal(first.nearCarpet.materialId, 'pbr.grass_low_cut_maintained_v2');
     assert.equal(first.nearCarpet.radiusMeters, 9);
     assert.equal(first.nearCarpet.yOffsetMeters, 0.0275);
+    assert.equal(first.nearCarpet.structuralBaseHeightMeters, 0.0275);
+    assert.deepEqual(first.nearCarpet.bladeTipElevationMeters, { min: 0.04, max: 0.075 });
+    assert.deepEqual(first.nearCarpet.bladeHeightMeters, { min: 0.0125, max: 0.0475 });
     assert.equal(first.midCluster.enabled, true);
     assert.equal(first.midCluster.patchSizeMeters, 2);
     assert.equal(first.midCluster.cardsPerPatch, 2);
@@ -293,7 +298,7 @@ test('Grass Lab baseline snapshot has stable ownership and numeric diagnostics',
     const snapshot = createGrassLabSnapshot({
         seed: 'approval',
         fixtures: { ...baseFixtures, grassCoverage },
-        engineStats: { enabled: true, patches: 4, totalInstances: 100, totalTriangles: 600, drawCalls: 3, nearCarpet: { enabled: true, patchInstances: 20, bladeInstances: 960 }, midCluster: { enabled: true, instances: 12, triangles: 48, drawCalls: 1 } },
+        engineStats: { enabled: true, patches: 4, totalInstances: 100, totalTriangles: 600, drawCalls: 3, nearCarpet: { enabled: true, patchInstances: 20, bladeInstances: 960, coverageMode: 'exact_polygon', boundarySignature: grassCoverage.boundarySignature, eligibleBins: 320, representedBins: 320, unrepresentedEligibleBins: 0, exactPostcheckFailures: 0 }, midCluster: { enabled: true, instances: 12, triangles: 48, drawCalls: 1 } },
         coverageStats: { enabled: true, structuralBaseHeightMeters: 0.0275, layerHeightMeters: 0.0275, triangles: 800, drawCalls: 2, opaqueCap: true, hardExclusionIntrusions: 0, ineligibleCutEdgeRoots: 0 },
         rendererInfo: { render: { calls: 11, triangles: 900 } },
         lodInfo: { viewAngleDeg: 12, angleScale: 0.9, effectiveDistanceMeters: 10, activeTier: 'cluster', transitionState: 'near_to_cluster', nearEndMeters: 9, clusterEndMeters: 30, geometryCutoffWorldMeters: 33.3, force: 'auto', geometryBeyondCutoff: 0 },
@@ -304,10 +309,15 @@ test('Grass Lab baseline snapshot has stable ownership and numeric diagnostics',
     assert.equal(snapshot.canonicalRuntime, 'GrassEngine');
     assert.equal(snapshot.canonicalUrl, GRASS_LAB_CANONICAL_URL);
     assert.equal(snapshot.contractVersion, GRASS_LAB_CONTRACT_VERSION);
-    assert.equal(snapshot.contractVersion, 8);
+    assert.equal(snapshot.contractVersion, 9);
     assert.equal(snapshot.grass.instances, 100);
     assert.equal(snapshot.grass.updateCpuMs, 0.35);
     assert.equal(snapshot.grass.nearCarpet.patchInstances, 20);
+    assert.equal(snapshot.grass.nearCarpet.coverageMode, 'exact_polygon');
+    assert.equal(snapshot.grass.nearCarpet.boundarySignature, grassCoverage.boundarySignature);
+    assert.equal(snapshot.grass.nearCarpet.eligibleBins, snapshot.grass.nearCarpet.representedBins);
+    assert.equal(snapshot.grass.nearCarpet.unrepresentedEligibleBins, 0);
+    assert.equal(snapshot.grass.nearCarpet.exactPostcheckFailures, 0);
     assert.equal(snapshot.grass.midCluster.instances, 12);
     assert.equal(snapshot.coverage.layerHeightMeters, 0.0275);
     assert.equal(snapshot.coverage.drawCalls, 2);

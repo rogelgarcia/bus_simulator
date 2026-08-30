@@ -209,6 +209,7 @@ view.start().then(() => {
             return pose;
         },
         setBoundaryEvidenceMode: (mode) => view.setBoundaryEvidenceMode(mode),
+        setNearEvidenceMode: (mode) => view.setNearEvidenceMode(mode),
         focusAccent: (targetId) => {
             view.focusLocalizedAccent(targetId);
             captureFocus = { id: String(targetId ?? 'tree'), pose: 'accent', fixture: 'accent' };

@@ -60,7 +60,7 @@ export const GRASS_LAB_QUALITY_PRESETS = freezeDeep({
         clusterRadiusMeters: 30,
         farCutoffMeters: 30,
         densityMultiplier: 1,
-        nearBladesPerSquareMeter: 48,
+        nearBladesPerSquareMeter: 64,
         clusterCardsPerPatch: 2,
         localizedAccents: true,
         clustersPerTree: 4,
@@ -89,6 +89,9 @@ export const GRASS_LAB_CAMERA_PRESETS = freezeDeep([
     { id: 'height_030', label: '0.30 m close-up', heightMeters: 0.3, distanceMeters: 2.2, lateralMeters: 0.35, targetHeightMeters: 0.04, pose: 'grazing', fixture: 'grazing' },
     { id: 'height_050', label: '0.50 m inspection', heightMeters: 0.5, distanceMeters: 3.4, lateralMeters: -0.3, targetHeightMeters: 0.04, pose: 'grazing', fixture: 'grazing' },
     { id: 'height_100', label: '1.00 m inspection', heightMeters: 1, distanceMeters: 5.2, lateralMeters: 0.8, targetHeightMeters: 0.04, pose: 'medium', fixture: 'grazing' },
+    { id: 'near_grazing', label: 'Near carpet grazing profile', heightMeters: 0.18, distanceMeters: 2.8, lateralMeters: -1.2, targetHeightMeters: 0.04, pose: 'grazing_side', fixture: 'grazing' },
+    { id: 'near_forward', label: 'Near carpet forward profile', heightMeters: 0.62, distanceMeters: 4.2, lateralMeters: 0, targetHeightMeters: 0.04, pose: 'forward', fixture: 'grazing' },
+    { id: 'near_oblique', label: 'Near carpet oblique profile', heightMeters: 0.72, distanceMeters: 3.6, lateralMeters: 2.8, targetHeightMeters: 0.04, pose: 'oblique', fixture: 'grazing' },
     { id: 'height_150', label: '1.50 m inspection', heightMeters: 1.5, distanceMeters: 7.5, lateralMeters: -0.6, targetHeightMeters: 0.05, pose: 'medium', fixture: 'grazing' },
     { id: 'height_200', label: '2.00 m inspection', heightMeters: 2, distanceMeters: 9, lateralMeters: 1.2, targetHeightMeters: 0.06, pose: 'medium', fixture: 'grazing' },
     { id: 'height_300', label: '3.00 m inspection', heightMeters: 3, distanceMeters: 13, lateralMeters: -1.2, targetHeightMeters: 0.08, pose: 'medium', fixture: 'grazing' },
@@ -149,7 +152,7 @@ export const GRASS_LAB_DEFAULT_BUDGET = freezeDeep({
     typicalDrawCallsMin: 4,
     typicalDrawCallsMax: 6,
     hardDrawCalls: 12,
-    typicalTriangles: 100000,
+    typicalTriangles: 200000,
     geometryBeyondCutoff: 0
 });
 

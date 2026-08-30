@@ -559,7 +559,8 @@ export class GrassDebuggerUI {
                 enabled: true,
                 carpetMode: 'auto',
                 carpetPatchSizeMeters: 1,
-                carpetBladesPerSquareMeter: 48,
+                carpetBladesPerSquareMeter: 64,
+                carpetFibersPerRoot: 3,
                 carpetRadiusMeters: 9,
                 region: { innerMeters: 0, outerMeters: 9 },
                 angle: { minGrazingDeg: 0, maxGrazingDeg: 90 },
@@ -1540,7 +1541,7 @@ export class GrassDebuggerUI {
         values.lod.textContent = `${Number(lod.viewAngleDeg ?? 0).toFixed(1)}° / scale ${Number(lod.angleScale ?? 1).toFixed(2)}`;
         const near = grass.nearCarpet ?? {};
         values.nearCarpet.textContent = near.enabled
-            ? `${number(near.patchInstances ?? 0)} patches · ${number(near.bladeInstances ?? 0)} blades · ${number(near.drawCalls ?? 0)} draws`
+            ? `${number(near.cellInstances ?? 0)} cells · ${number(near.rootInstances ?? 0)} roots · ${number(near.fiberInstances ?? 0)} fibers · ${number(near.drawCalls ?? 0)} draws`
             : 'disabled';
         this.setNearCarpetDiagnostics(near);
         const mid = grass.midCluster ?? {};
@@ -1580,7 +1581,7 @@ export class GrassDebuggerUI {
         values.draws.textContent = `${Number(measurements.averageDrawCalls ?? grass.logicalDrawCalls ?? 0).toFixed(2)} avg · ${number(measurements.maximumDrawCalls ?? grass.logicalDrawCalls)} max · 12 hard ceiling`;
         values.timing.textContent = `${milliseconds(measurements.averageCpuMs)} CPU · ${milliseconds(measurements.averageGpuMs)} whole-frame GPU proxy · ${number(budget.sampleCount)} samples`;
         values.buffers.textContent = `${Number(report.bufferUpdatesPerSecond ?? 0).toFixed(2)}/s · ${number(report.bufferUpdatesTotal ?? 0)} total · stationary should settle to 0/s`;
-        values.budget.textContent = `${budget.pass ? 'PASS' : 'MEASURING'} · CPU ≤0.60 ms · GPU proxy ≤1.50 ms · draws 4–6 typical · tris ≤100K`;
+        values.budget.textContent = `${budget.pass ? 'PASS' : 'MEASURING'} · CPU ≤0.60 ms · GPU proxy ≤1.50 ms · ≤12 draws · tris ≤200K`;
         const cameraSeen = validation.reviewedCameraIds?.length ?? 0;
         const lightSeen = validation.reviewedLightingIds?.length ?? 0;
         const pathSeen = validation.reviewedMotionPathIds?.length ?? 0;
@@ -1597,11 +1598,21 @@ export class GrassDebuggerUI {
         const values = this._controls?.nearCarpetReadouts ?? null;
         if (!values || !stats) return;
         const number = (value) => Number(value).toLocaleString('en-US');
-        values.layout.textContent = `${Number(stats.patchSizeMeters ?? 0).toFixed(2)} m patches · ${number(stats.bladesPerSquareMeter ?? 0)} blades/m²`;
-        values.visible.textContent = `${number(stats.patchInstances ?? 0)} patches · ${number(stats.bladeInstances ?? 0)} blades`;
+        const signature = String(stats.boundarySignature ?? '');
+        const tips = stats.bladeTipElevationMeters ?? {};
+        const visibleLengths = stats.visibleBladeLengthMeters ?? {};
+        const observedTips = stats.observedTipElevationMeters ?? {};
+        values.layout.textContent = `${Number(stats.ownershipCellSizeMeters ?? 0).toFixed(2)} m cells · ${number(stats.rootBinsPerSquareMeter ?? 0)} root bins/m² · ${number(stats.fibersPerRoot ?? 0)} fibers/root`;
+        values.coverage.textContent = `${stats.coverageMode ?? 'unknown'} · ${number(stats.eligibleBins ?? 0)} eligible / ${number(stats.representedBins ?? 0)} represented / ${number(stats.unrepresentedEligibleBins ?? 0)} missing`;
+        values.area.textContent = `${Number(stats.eligibleAreaSquareMeters ?? 0).toFixed(2)} m² eligible · ${Number(stats.representedAreaSquareMeters ?? 0).toFixed(2)} m² represented`;
+        values.clipping.textContent = `${number(stats.boundaryRoots ?? 0)} boundary roots · ${number(stats.clippedRoots ?? 0)} clipped · sidewalk ${number(stats.sidewalkRejectedRoots ?? 0)} / tree ${number(stats.treeRejectedRoots ?? 0)}`;
+        values.boundary.textContent = `${signature ? signature.slice(0, 24) : 'no exact signature'} · ${(Number(stats.rootClearanceMeters ?? 0) * 1000).toFixed(1)} mm clearance · ${number(stats.exactPostcheckFailures ?? 0)} postcheck failures`;
+        values.height.textContent = `${(Number(stats.structuralBaseHeightMeters ?? 0) * 1000).toFixed(1)} mm base · ${(Number(tips.min ?? 0) * 1000).toFixed(1)}–${(Number(tips.max ?? 0) * 1000).toFixed(1)} mm absolute tips · ${(Number(visibleLengths.min ?? 0) * 1000).toFixed(1)}–${(Number(visibleLengths.max ?? 0) * 1000).toFixed(1)} mm visible · observed ${(Number(observedTips.min ?? 0) * 1000).toFixed(1)}–${(Number(observedTips.max ?? 0) * 1000).toFixed(1)} mm`;
+        values.visible.textContent = `${number(stats.cellInstances ?? 0)} cells · ${number(stats.rootInstances ?? 0)} roots · ${number(stats.fiberInstances ?? 0)} fibers · ${number(stats.chunks ?? 0)} chunks`;
         values.cost.textContent = `${number(stats.triangles ?? 0)} tris · ${number(stats.drawCalls ?? 0)} draws · ${number(stats.materialPaths ?? 0)} material`;
-        values.buffers.textContent = `${number(stats.lastBufferUpdates ?? 0)} now · ${number(stats.totalBufferUpdates ?? 0)} total · ${number(stats.stationaryFrames ?? 0)} stationary frames`;
-        values.churn.textContent = `${number(stats.lastEnteringCells ?? 0)} enter / ${number(stats.lastLeavingCells ?? 0)} leave / ${number(stats.retainedCells ?? 0)} retained`;
+        values.material.textContent = `${stats.materialId ?? 'unresolved'} · ${stats.depthWrite ? 'depth write' : 'no depth write'} · zero emissive`;
+        values.buffers.textContent = `${number(stats.lastBufferUpdates ?? 0)} now · ${number(stats.totalBufferUpdates ?? 0)} total · ${number(stats.stationaryFrames ?? 0)} stationary frames · cache ${number(stats.cacheHits ?? 0)} hit / ${number(stats.cacheMisses ?? 0)} miss`;
+        values.churn.textContent = `${number(stats.lastEnteringCells ?? 0)} enter / ${number(stats.lastLeavingCells ?? 0)} leave / ${number(stats.retainedCells ?? 0)} retained · ${number(stats.cacheInvalidations ?? 0)} invalidations`;
         values.safety.textContent = `${stats.frustumCulled ? 'culled' : 'unculled'} · ${stats.castShadow ? 'shadows' : 'no shadows'} · ${stats.transparent ? 'transparent' : 'opaque'}`;
     }
 
@@ -2011,12 +2022,13 @@ export class GrassDebuggerUI {
         const lod = this._state.lod1;
         lod.carpetMode = ['auto', 'force', 'disabled'].includes(String(lod.carpetMode)) ? String(lod.carpetMode) : 'auto';
         lod.carpetPatchSizeMeters = Number.isFinite(Number(lod.carpetPatchSizeMeters)) ? Number(lod.carpetPatchSizeMeters) : 1;
-        lod.carpetBladesPerSquareMeter = Number.isFinite(Number(lod.carpetBladesPerSquareMeter)) ? Number(lod.carpetBladesPerSquareMeter) : 48;
+        lod.carpetBladesPerSquareMeter = Number.isFinite(Number(lod.carpetBladesPerSquareMeter)) ? Number(lod.carpetBladesPerSquareMeter) : 64;
+        lod.carpetFibersPerRoot = Number.isFinite(Number(lod.carpetFibersPerRoot)) ? Number(lod.carpetFibersPerRoot) : 3;
         lod.carpetRadiusMeters = Number.isFinite(Number(lod.carpetRadiusMeters)) ? Number(lod.carpetRadiusMeters) : 12;
 
         const carpet = makeSection({ title: 'Near geometry tier', collapsedByDefault: false });
         parent.appendChild(carpet);
-        carpet.appendChild(makeEl('div', 'ui-grass-lab-note', 'One-metre physical-blade patches are the highest runtime tier. AI 355 masks them into the atlas-cluster tier using distance, view angle, stable patch dithering, and hysteresis.'));
+        carpet.appendChild(makeEl('div', 'ui-grass-lab-note', 'Cohesive V2 root bins fill one-metre ownership cells, follow the exact AI359 polygon cut, and render three varied physical fibers per root. Forced-near is the AI360 diagnostic; AI361 owns automatic handoffs.'));
 
         carpet.appendChild(makeToggleRow({
             label: 'Enabled',
@@ -2044,7 +2056,7 @@ export class GrassDebuggerUI {
         }).row);
 
         const patchSize = makeNumberSliderRow({
-            label: 'Patch size (m)',
+            label: 'Ownership cell (m)',
             value: lod.carpetPatchSizeMeters,
             min: 0.5,
             max: 2,
@@ -2058,7 +2070,7 @@ export class GrassDebuggerUI {
         carpet.appendChild(patchSize.row);
 
         const density = makeNumberSliderRow({
-            label: 'Simplified blades / m²',
+            label: 'Root bins / m²',
             value: lod.carpetBladesPerSquareMeter,
             min: 1,
             max: 96,
@@ -2071,6 +2083,20 @@ export class GrassDebuggerUI {
         });
         carpet.appendChild(density.row);
         this._controls.nearCarpetDensity = density;
+
+        const fibers = makeNumberSliderRow({
+            label: 'Fibers / root',
+            value: lod.carpetFibersPerRoot,
+            min: 2,
+            max: 4,
+            step: 1,
+            digits: 0,
+            onChange: (value) => {
+                lod.carpetFibersPerRoot = Math.round(value);
+                this._emit();
+            }
+        });
+        carpet.appendChild(fibers.row);
 
         const radius = makeNumberSliderRow({
             label: 'Near end (m)',
@@ -2087,35 +2113,25 @@ export class GrassDebuggerUI {
         });
         carpet.appendChild(radius.row);
 
-        const applyDensityPreset = (value) => {
-            lod.carpetBladesPerSquareMeter = value;
-            density.range.value = String(value);
-            density.number.value = String(value);
-            this._emit();
-        };
         carpet.appendChild(makeButtonRow({
             label: 'Camera',
             text: 'Focus near carpet',
             onClick: () => this._onFocusNearCarpet?.()
-        }).row);
-        carpet.appendChild(makeButtonRow({
-            label: 'Comparison A',
-            text: 'Sparse reference · 4/m²',
-            onClick: () => applyDensityPreset(4)
-        }).row);
-        carpet.appendChild(makeButtonRow({
-            label: 'Comparison B',
-            text: 'Approved carpet · 48/m²',
-            onClick: () => applyDensityPreset(48)
         }).row);
 
         const diagnostics = makeEl('div', 'ui-grass-lab-readouts');
         carpet.appendChild(diagnostics);
         this._controls.nearCarpetReadouts = {};
         for (const [key, label] of [
-            ['layout', 'Patch layout'],
+            ['layout', 'Ownership / root layout'],
+            ['coverage', 'Exact coverage bins'],
+            ['area', 'Represented area'],
+            ['clipping', 'Root clipping'],
+            ['boundary', 'Boundary safety'],
+            ['height', 'Physical height'],
             ['visible', 'Visible instances'],
             ['cost', 'Geometry cost'],
+            ['material', 'Shared material'],
             ['buffers', 'Buffer updates'],
             ['churn', 'Cell churn'],
             ['safety', 'Render safety']

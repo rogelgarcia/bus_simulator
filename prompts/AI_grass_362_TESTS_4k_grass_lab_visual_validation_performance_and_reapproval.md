@@ -10,6 +10,7 @@ This is step 13 of the offline-first grass sequence and the final offline gate.
 
 Tasks:
 - Require completed AI 358 through AI 361 and the exact V2 contracts `specs/grass/LOW_CUT_GRASS_MATERIAL_V2.md`, `specs/grass/GRASS_COVERAGE_AND_SIDEWALK_EDGE_V2.md`, `specs/grass/NEAR_GRASS_CARPET_PATCH_V2.md`, `specs/grass/GRASS_AUTO_LOD_AND_COHESIVE_HANDOFF_V2.md`, and `specs/grass/LOCALIZED_GRASS_ACCENTS_V2.md` before starting whole-system approval.
+- Validate AI 360 against its finalized contract, not a retuned substitute: deterministic `1 m` ownership cells, `64` root bins per eligible square metre, exactly `3` fibers per represented root, final per-root AI 359 exact-polygon postchecks, and AI 358's shared opaque zero-emissive `nearBladeAppearance`/material response. Record and assert `coverageMode: exact_polygon`, `boundarySignature`, `placementSignature`, `candidateBins`, `eligibleBins`, `representedBins`, `unrepresentedEligibleBins`, `eligibleAreaSquareMeters`, `representedAreaSquareMeters`, `rejectedByKind`, and `exactPostcheckFailures`; exact approval fixtures require `unrepresentedEligibleBins === 0` and `exactPostcheckFailures === 0`.
 - Treat `specs/grass/GRASS_LAB_APPROVAL_AI357.json` and `GRASS_LAB_VALIDATION_AND_APPROVAL_V1.md` as historical V1 evidence. They are not sufficient dependencies for gameplay.
 - Use automatic LOD and the default quality preset as the primary approval path. Manual tier forcing remains diagnostic only.
 - Capture lossless native `3840x2160` PNGs from an actual `3840x2160` drawing buffer at pixel ratio `1`; never upscale a lower-resolution capture.
@@ -20,29 +21,30 @@ Tasks:
 - Repeat critical material, edge, and handoff views under daylight, overcast, golden-hour, and night/street lighting.
 - Capture texture-only and geometry-disabled fallback views proving low quality remains cohesive.
 - Exercise stationary, forward, reverse, strafe, and flyover paths through every handoff and measure temporal flicker, alpha disappearance, popping, geometry beyond cutoff, and buffer updates.
-- Add pixel/regression checks for isolated bright points, tier color/luminance discontinuity, zero-coverage mip collapse, missing coverage bins, sidewalk roots, boundary deviation, square substrate fades, excessive antialias width, height error, and non-deterministic reloads.
+- Add pixel/regression checks for isolated bright points, tier color/luminance discontinuity, zero-coverage mip collapse, missing coverage bins, sidewalk roots, boundary deviation, square substrate fades, excessive antialias width, height error, and non-deterministic reloads. Fail if AI 360's canonical density, fibers-per-root, exact-coverage diagnostics, boundary/placement signatures, or shared AI 358 material identity drift.
 - Verify RoadEngine sidewalk source identity against AI 359's source loops, positive/negative signed-distance orientation, root-clearance behavior, separate sidewalk/tree reveal diagnostics, zero source intrusions, stable boundary signatures, and the cap-plus-edge ceiling of two logical draws excluding substrate.
 - Verify the appearance target from AI 358, the `80 +/- 20 mm` exposed substrate strip, the configured shallow structural-base height, the separately declared blade-height/irregularity distribution, `<=15 mm` grass-onset antialias width, and exact hard exclusions. Do not require a universal `25-30 mm` canopy.
-- Re-measure the runtime gate at `1920x1080`: average GrassEngine CPU `<=0.60 ms`, whole-frame GPU proxy `<=1.50 ms` when supported, approximately `5-6` typical grass draws with `12` hard ceiling, `<=200,000` visible grass triangles, zero geometry beyond cutoff, and zero recurring stationary uploads. Report native-4K timing separately as informational hardware evidence.
+- Re-measure the runtime gate at `1920x1080`: average GrassEngine CPU `<=0.60 ms`, whole-frame GPU proxy `<=1.50 ms` when supported, approximately `5-6` typical grass draws with `12` hard ceiling, `<=200,000` combined visible grass triangles, zero geometry beyond cutoff, and zero recurring stationary uploads. The combined ceiling includes the AI 359 cap/edge boundary, AI 360 near carpet, billboard, middle, and localized-accent geometry; explicitly include the recorded `95,219`-triangle AI 359 reference boundary in the relevant fixture total. Report native-4K timing separately as informational hardware evidence.
 - Return architectural failures to the owning prompt instead of hiding them with validation-only special cases. Limit tuning here to bounded preset values and evidence settings already owned by the approved contracts.
-- Create `specs/grass/GRASS_LAB_VALIDATION_AND_APPROVAL_V2.md`, `specs/grass/GRASS_LAB_APPROVAL_AI362.json`, and the evidence directory `tests/artifacts/screens/grass/ai362/`.
+- Create `specs/grass/GRASS_LAB_VALIDATION_AND_APPROVAL_V2.md`, `specs/grass/GRASS_LAB_APPROVAL_AI362.json`, and the evidence directory `tests/artifacts/screens/grass/ai362/`. The approval JSON must carry the finalized AI 360 density/fiber settings, material identity, boundary and placement signatures, exact coverage diagnostic counts/areas/rejections, per-tier triangle totals, and the combined triangle total.
 - Set the AI 362 approval status to `approved` only if every required camera, lighting, boundary, material, motion, determinism, and budget gate passes with no missing evidence.
 - Keep gameplay untouched.
 
 Acceptance outcomes:
 - Every delivered visual approval PNG is verified native `3840x2160`, UI-free, and traceable to exact state metadata.
 - Close views read as a connected carpet with resolvable 3D fibers; later tiers simplify without becoming sparse or isolated.
+- AI 360 remains at `64` root bins per eligible square metre and `3` fibers per represented root, uses AI 358's shared material response, matches the exact AI 359 boundary signature, and reports zero unrepresented eligible bins and zero exact postcheck failures in approval fixtures.
 - No view contains neon blades/cards, bright atlas pixels, visible card-shaped clumps, square brown fades, or a grass tier whose color separates from the far surface.
 - Straight, curved, diagonal, and corner views clearly show a shallow raised grass carpet with a hard cut and real exposed substrate.
 - Motion tests show no major shimmer, alpha/mip collapse, handoff ring, isolated remnant, or obvious pop.
 - Low quality remains a coherent corrected texture, substrate, and physical-boundary fallback.
-- The `1920x1080` runtime budget gates pass; native-4K timings are recorded separately.
+- The `1920x1080` runtime budget gates pass, including the `200,000` combined visible-grass triangle ceiling across the boundary and every representation tier; native-4K timings are recorded separately.
 - `GRASS_LAB_APPROVAL_AI362.json` lists no missing review, regression, or evidence item and reports `status: "approved"`.
 - Gameplay remains untouched.
 
 ## Sequence dependency
 
-- Requires completed AI 358 through AI 361.
+- Requires completed AI 358 through AI 361 and consumes the finalized AI 360 contract unchanged: `64` root bins per eligible square metre, `3` fibers per represented root, exact AI 359 coverage diagnostics, and AI 358 shared material ownership.
 - Supersedes AI 357 only as the current gameplay-authorization gate; AI 357's completed prompt, screenshots, V1 spec, and measurements remain historical evidence.
 - AI 363 may begin only after this prompt is DONE and `specs/grass/GRASS_LAB_APPROVAL_AI362.json` reports `status: "approved"`.
 
@@ -58,7 +60,7 @@ Acceptance outcomes:
 
 Before marking this prompt DONE, add a `## Completion evidence` section to this file containing:
 
-- A consolidated before/after and per-tier cost table for every approval camera, motion path, lighting fixture, and quality preset. Report visible triangles by tier and total, logical draw calls by grass tier and total, total renderer draw calls, stationary/moving buffer updates, and measured CPU/GPU timing.
+- A consolidated before/after and per-tier cost table for every approval camera, motion path, lighting fixture, and quality preset. Report AI 359 boundary, near, billboard, middle-patch, accent, and combined visible triangles; logical draw calls by grass tier and total; total renderer draw calls; stationary/moving buffer updates; and measured CPU/GPU timing.
 - Explicit average, maximum, delta, and pass/fail values against every default/high/worst-view budget. The AI 362 JSON approval record must reference the same measurements.
 - State the hardware, resolution, graphics settings, grass density/coverage, workload and camera route, warm-up, sample count, and statistic for every measurement set. Include frame time/FPS and relevant memory; mark unavailable metrics as `not measured` with a reason instead of using projections.
 - A complete screenshot manifest with workspace-relative PNG paths under the prompt-specific ignored evidence directory, before/after role, camera position/target/height, pose, lighting, exposure, quality preset, active tiers, triangle count, grass/total draw-call counts, and image-dimension verification.

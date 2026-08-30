@@ -11,20 +11,21 @@ This is step 14 and the final prompt in the offline-first grass sequence. It is 
 Tasks:
 - Verify that AI 350 through AI 362 are complete and that `specs/grass/GRASS_LAB_APPROVAL_AI362.json` exists with `status: "approved"` before changing gameplay.
 - Treat the AI 357 approval record as historical evidence only; it is not sufficient authorization for this prompt.
-- Reuse the exact canonical V2 grass runtime and asset/profile contracts validated in the lab. Do not fork or reimplement a gameplay-only grass renderer, material family, boundary system, or LOD evaluator.
+- Reuse the exact canonical V2 grass runtime and asset/profile contracts validated in the lab. This includes AI 360's deterministic `1 m` ownership cells, `64` root bins per eligible square metre, exactly `3` fibers per represented root, final per-root AI 359 exact-polygon postchecks, and AI 358's shared opaque zero-emissive `nearBladeAppearance`/material response. Do not fork or reimplement a gameplay-only grass renderer, material family, boundary system, or LOD evaluator.
 - Integrate AI 359's polygon coverage and boundary-distance contract with city terrain generation so continuous substrate remains underneath and grass begins after roads and sidewalks with the approved exposed strip and shallow raised cut.
 - Consume actual gameplay road/sidewalk outer loops and terrain transforms rather than approximating them with axis-aligned rectangles.
 - Treat the canonical Grass Lab's `junctions.filletRadiusFactor: 1.0` as fixture-only evidence, not a gameplay default or requirement. Consume each gameplay road configuration and the exact sidewalk loops it actually renders.
 - Preserve AI 359's source-loop identity, onset-loop offset, signed-distance orientation, root clearance, boundary signature invalidation, opaque cap, tree holes, and maximum-two-draw boundary contract. Transform the same renderer-owned loops into coverage space once; do not reconstruct occupancy from textures, route envelopes, or compatibility rectangles.
+- Feed those gameplay loops and terrain bounds into the canonical AI 360 coverage input. Preserve `coverageMode: exact_polygon`, `boundarySignature`, `placementSignature`, `candidateBins`, `eligibleBins`, `representedBins`, `unrepresentedEligibleBins`, `eligibleAreaSquareMeters`, `representedAreaSquareMeters`, `rejectedByKind`, and `exactPostcheckFailures` in gameplay diagnostics and cache invalidation; representative exact fixtures require `unrepresentedEligibleBins === 0` and `exactPostcheckFailures === 0`.
 - Use existing deterministic tree placement records for validated localized accents and substrate exclusions without rendering opaque wear discs over live grass.
 - Integrate the approved `close mesh -> dense billboard -> cohesive middle patch -> far texture` hierarchy and preserve its automatic distance/angle handoffs, overlap, hysteresis, and hard cutoff.
-- Resolve all PBR assets, physical dimensions, tile metadata, and calibration through the global texture/catalog/calibration pipeline.
+- Resolve all PBR assets, physical dimensions, tile metadata, and calibration through the global texture/catalog/calibration pipeline, retaining AI 358's shared corrected near material identity rather than creating a gameplay palette or calibration fork.
 - Expose the approved low/default/high grass quality presets through existing gameplay graphics/options configuration, including the safe texture/substrate/boundary-only fallback.
 - Preserve lab culling, update-frequency, draw-call, geometry, shadow, alpha/mip, material, and stationary-upload constraints in the integrated city.
 - Replace conflicting flat-grass assumptions only where required by the adapter while preserving road, sidewalk, building, collision, navigation, and terrain-height behavior.
 - Validate representative driving, stationary, reverse, grazing, top-down/debug, straight/curved/corner sidewalk, exposed-substrate, tree-heavy, bus-camera, handoff, and far scenes against the AI 362 baseline.
-- Capture UI-free lossless PNG gameplay comparisons from a real `3840x2160` drawing buffer at pixel ratio `1`, inheriting AI 362's exact capture/metadata contract. Never upscale lower-resolution output. Retain the approved `1920x1080` runtime budget as the performance gate and report 4K timing separately.
-- Add focused gameplay integration, determinism, quality-preset, cutoff, boundary, and performance regressions without weakening Grass Lab tests.
+- Capture UI-free lossless PNG gameplay comparisons from a real `3840x2160` drawing buffer at pixel ratio `1`, inheriting AI 362's exact capture/metadata contract. Never upscale lower-resolution output. Retain the approved `1920x1080` runtime budget as the performance gate, including the `200,000` combined visible-grass triangle ceiling across the AI 359 boundary, AI 360 near carpet, billboard, middle, and localized-accent geometry; account explicitly for the recorded `95,219`-triangle AI 359 reference boundary in equivalent fixtures. Report 4K timing separately.
+- Add focused gameplay integration, determinism, quality-preset, cutoff, boundary, and performance regressions without weakening Grass Lab tests. Assert AI 360's canonical `64`-bin density, `3` fibers per root, exact coverage diagnostics/signatures, shared AI 358 material identity, and combined-budget accounting against the approved Lab state.
 - Remove or clearly deprecate obsolete gameplay grass loading/configuration paths only after the canonical replacement is verified.
 
 Acceptance outcomes:
@@ -32,7 +33,8 @@ Acceptance outcomes:
 - Grass reads as one continuous maintained carpet: close mesh, dense billboard coverage, cohesive middle patches, then far texture without isolated bright objects.
 - Sidewalks show the approved real exposed-substrate strip, shallow structural grass base, and separately approved blade-height variation without affecting gameplay physics. Grass may be longer or locally irregular; gameplay must not force it into a uniform soccer-field cut.
 - No grass root or geometry crosses roads, sidewalks, trunks, or other hard exclusions.
-- Near, billboard, middle, far, boundary, and localized-accent representations remain within the approved preset budgets and handoff contracts.
+- Near diagnostics match the actual gameplay AI 359 definition and approved AI 360 contract, including matching boundary signatures, `64` root bins per eligible square metre, `3` fibers per represented root, zero unrepresented eligible bins, and zero exact postcheck failures in representative exact fixtures.
+- Near, billboard, middle, far, boundary, and localized-accent representations remain within the approved preset budgets and handoff contracts, including the `200,000` combined visible-grass triangle ceiling.
 - Disabling field geometry leaves a coherent substrate, far carpet texture, and physical-boundary fallback.
 - There is one shared grass runtime and one shared material pipeline across the lab and gameplay.
 - Native-4K comparison screenshots and representative runtime measurements show no gameplay-only visual or performance regression.
@@ -40,7 +42,7 @@ Acceptance outcomes:
 ## Sequence dependency
 
 - Requires completed AI 350 through AI 362 and explicit V2 approval in `specs/grass/GRASS_LAB_APPROVAL_AI362.json`.
-- Must consume `specs/grass/LOW_CUT_GRASS_MATERIAL_V2.md`, `specs/grass/GRASS_COVERAGE_AND_SIDEWALK_EDGE_V2.md`, `specs/grass/NEAR_GRASS_CARPET_PATCH_V2.md`, `specs/grass/GRASS_AUTO_LOD_AND_COHESIVE_HANDOFF_V2.md`, and `specs/grass/LOCALIZED_GRASS_ACCENTS_V2.md` without forking them.
+- Must consume `specs/grass/LOW_CUT_GRASS_MATERIAL_V2.md`, `specs/grass/GRASS_COVERAGE_AND_SIDEWALK_EDGE_V2.md`, the finalized `specs/grass/NEAR_GRASS_CARPET_PATCH_V2.md` (`64` root bins per eligible square metre, `3` fibers per represented root, exact AI 359 coverage diagnostics, and shared AI 358 material ownership), `specs/grass/GRASS_AUTO_LOD_AND_COHESIVE_HANDOFF_V2.md`, and `specs/grass/LOCALIZED_GRASS_ACCENTS_V2.md` without forking them.
 - `specs/grass/GRASS_LAB_APPROVAL_AI357.json` and V1 contracts are historical and do not unblock gameplay.
 - This is the sole gameplay-integration owner in the sequence.
 
@@ -56,7 +58,7 @@ Acceptance outcomes:
 
 Before marking this prompt DONE, add a `## Completion evidence` section to this file containing:
 
-- A Grass Lab versus gameplay cost table for every representative scene and low/default/high quality preset. Report visible triangles by grass tier and total, logical draw calls by grass tier and total, total renderer draw calls, stationary/moving buffer updates, and measured CPU/GPU timing.
+- A Grass Lab versus gameplay cost table for every representative scene and low/default/high quality preset. Report AI 359 boundary, near, billboard, middle-patch, accent, and combined visible triangles; logical draw calls by grass tier and total; total renderer draw calls; stationary/moving buffer updates; and measured CPU/GPU timing.
 - Explicit Lab-to-gameplay and old-gameplay-to-new-gameplay cost deltas with pass/fail verdicts against the AI 362-approved budgets. Costs may not be replaced by qualitative statements.
 - A screenshot manifest with workspace-relative PNG paths under the prompt-specific ignored evidence directory, Lab/gameplay and before/after role, camera position/target/height, pose, lighting, exposure, quality preset, active tiers, triangle count, grass/total draw-call counts, and image-dimension verification.
 - Only UI-free lossless PNG screenshots captured from a real `3840x2160` drawing buffer at pixel ratio `1`. Do not use JPEG, browser-scaled screenshots, or upscaled lower-resolution captures.

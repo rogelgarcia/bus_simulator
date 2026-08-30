@@ -11,12 +11,14 @@ const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TOOL_DIR, '../..');
 const DEFAULT_OUTPUT = 'tests/artifacts/screens/grass/ai358';
 const DEFAULT_BOUNDARY_OUTPUT = 'tests/artifacts/screens/grass/ai359';
+const DEFAULT_NEAR_OUTPUT = 'tests/artifacts/screens/grass/ai360';
 const DEFAULT_BASE_URL = 'http://127.0.0.1:4173';
 const V2_ASSET_URL_PREFIX = '/assets/public/pbr/grass_low_cut_maintained_v2/';
 const WIDTH = 3840;
 const HEIGHT = 2160;
 const MATERIAL_MATRIX = 'material';
 const BOUNDARY_MATRIX = 'ai359-boundary';
+const NEAR_MATRIX = 'ai360-near';
 const TURF_ROI = Object.freeze({ x: 0.2, y: 0.55, width: 0.6, height: 0.35 });
 export const CARD_BAND_ROI = Object.freeze({ x: 0.05, y: 0.35, width: 0.9, height: 0.08 });
 export const CARD_BAND_GATE_CONTRACT = Object.freeze({
@@ -64,10 +66,11 @@ export function parseArgs(argv) {
     if (!options.inspectBoundary && options.phase !== 'before' && options.phase !== 'after') {
         throw new Error('[GrassLabCapture] --phase=before or --phase=after is required.');
     }
-    if (options.matrix !== MATERIAL_MATRIX && options.matrix !== BOUNDARY_MATRIX) {
-        throw new Error(`[GrassLabCapture] --matrix must be ${MATERIAL_MATRIX} or ${BOUNDARY_MATRIX}.`);
+    if (![MATERIAL_MATRIX, BOUNDARY_MATRIX, NEAR_MATRIX].includes(options.matrix)) {
+        throw new Error(`[GrassLabCapture] --matrix must be ${MATERIAL_MATRIX}, ${BOUNDARY_MATRIX}, or ${NEAR_MATRIX}.`);
     }
     if (options.matrix === BOUNDARY_MATRIX && !options.outputProvided) options.output = DEFAULT_BOUNDARY_OUTPUT;
+    if (options.matrix === NEAR_MATRIX && !options.outputProvided) options.output = DEFAULT_NEAR_OUTPUT;
     if (!options.output) throw new Error('[GrassLabCapture] --output must not be empty.');
     if (!options.baseUrl) throw new Error('[GrassLabCapture] --base-url must not be empty.');
     return options;
@@ -81,11 +84,13 @@ function usage() {
         '  node tools/grass_lab_capture/run.mjs --phase=before',
         '  node tools/grass_lab_capture/run.mjs --phase=after',
         '  node tools/grass_lab_capture/run.mjs --phase=after --matrix=ai359-boundary',
+        '  node tools/grass_lab_capture/run.mjs --phase=before --matrix=ai360-near',
+        '  node tools/grass_lab_capture/run.mjs --phase=after --matrix=ai360-near',
         '  node tools/grass_lab_capture/run.mjs --inspect-boundary',
         '',
         'Options:',
         `  --output=${DEFAULT_OUTPUT}`,
-        `  --matrix=${MATERIAL_MATRIX}|${BOUNDARY_MATRIX}`,
+        `  --matrix=${MATERIAL_MATRIX}|${BOUNDARY_MATRIX}|${NEAR_MATRIX}`,
         `  --base-url=${DEFAULT_BASE_URL}`,
         '  --v2-asset-root=<repository-relative staging directory>',
         '  --browser-executable=<path>',
@@ -241,6 +246,148 @@ export function buildBoundaryCaptureRecipes() {
         }
     }
     return Object.freeze(recipes);
+}
+
+export function buildNearCaptureRecipes() {
+    const poses = [
+        { id: 'height_030', camera: 'height_030' },
+        { id: 'height_050', camera: 'height_050' },
+        { id: 'height_100', camera: 'height_100' },
+        { id: 'grazing', camera: 'near_grazing' },
+        { id: 'forward', camera: 'near_forward' },
+        { id: 'oblique', camera: 'near_oblique' },
+        { id: 'top_down', camera: 'top_down' },
+        { id: 'physical_cut_side_profile', boundaryTarget: 'straight', heightMeters: 0.30, distanceMeters: 1.25 },
+        { id: 'bus_scale', camera: 'gameplay_bus' }
+    ];
+    const recipes = [];
+    for (const pose of poses) {
+        for (const nearEvidenceMode of ['texture_only', 'near_mesh']) {
+            recipes.push(Object.freeze({
+                ...pose,
+                id: `${nearEvidenceMode}_${pose.id}`,
+                pairId: pose.id,
+                role: nearEvidenceMode,
+                quality: 'default',
+                lighting: 'daylight',
+                nearEvidenceMode
+            }));
+        }
+    }
+    return Object.freeze(recipes);
+}
+
+export function evaluateNearRepresentationSnapshot(snapshot, expectedMode) {
+    const grass = snapshot?.grass ?? {};
+    const near = grass.nearCarpet ?? {};
+    const evidence = snapshot?.nearEvidence ?? {};
+    const coverage = snapshot?.coverage ?? {};
+    const textureOnly = expectedMode === 'texture_only';
+    const combinedVisibleGrassTriangles = Number(grass.triangles ?? 0) + Number(coverage.triangles ?? 0);
+    const checks = {
+        modeMatches: evidence.mode === expectedMode,
+        coverageRetained: Number(coverage.logicalDrawCalls ?? coverage.drawCalls) > 0,
+        fieldTrianglesMatch: textureOnly ? Number(grass.triangles) === 0 : Number(near.triangles) > 0,
+        fieldDrawsMatch: textureOnly ? Number(grass.logicalDrawCalls) === 0 : Number(near.drawCalls) > 0,
+        nearOnly: textureOnly || (
+            Number(grass.trianglesByTier?.mid) === 0
+            && Number(grass.trianglesByTier?.accent) === 0
+        ),
+        oneMaterialPath: textureOnly || Number(near.materialPaths) === 1,
+        opaque: textureOnly || near.transparent === false,
+        depthWriting: textureOnly || near.depthWrite === true,
+        shadowFree: textureOnly || near.castShadow === false,
+        frustumCulled: textureOnly || near.frustumCulled === true,
+        exactPolygonCoverage: textureOnly || (
+            String(near.coverageMode ?? '').startsWith('exact_polygon')
+            && String(near.boundarySignature ?? '').startsWith('grass-coverage-v2-')
+        ),
+        completeEligibleBins: textureOnly || Number(near.unrepresentedEligibleBins) === 0,
+        exactPostcheckClean: textureOnly || (
+            Number(near.exactPostcheckFailures) === 0
+            && Number(near.ineligibleRoots) === 0
+            && Number(near.sidewalkIntrusions ?? near.sidewalkRootIntrusions ?? 0) === 0
+            && Number(near.treeIntrusions ?? near.treeRootIntrusions ?? 0) === 0
+        ),
+        stationaryUploadsZero: textureOnly
+            || near.stationaryUploadsZero === true
+            || Number(near.stationaryBufferUpdates) === 0,
+        opaqueCoverageCap: coverage.opaqueCap === true
+            && coverage.transparentSurface === false
+            && coverage.alphaTestedSurface !== true,
+        combinedTriangleBudget: combinedVisibleGrassTriangles <= 200000
+    };
+    return {
+        expectedMode,
+        combinedVisibleGrassTriangles,
+        unrepresentedEligibleBins: Number(near.unrepresentedEligibleBins ?? 0),
+        checks,
+        pass: Object.values(checks).every(Boolean)
+    };
+}
+
+export function evaluateNearPairs(captures) {
+    const expectedPairIds = buildNearCaptureRecipes()
+        .filter((recipe) => recipe.nearEvidenceMode === 'texture_only')
+        .map((recipe) => recipe.pairId);
+    const source = Array.isArray(captures) ? captures : [];
+    const pairs = expectedPairIds.map((pairId) => {
+        const texture = source.find((entry) => entry?.pairId === pairId && entry?.nearEvidenceMode === 'texture_only') ?? null;
+        const mesh = source.find((entry) => entry?.pairId === pairId && entry?.nearEvidenceMode === 'near_mesh') ?? null;
+        const cameraMatch = !!texture && !!mesh && captureCameraSignature(texture) === captureCameraSignature(mesh);
+        const lightingMatch = texture?.lightingPreset === 'daylight' && mesh?.lightingPreset === 'daylight';
+        const exposureMatch = Number(texture?.exposure) === Number(mesh?.exposure);
+        const qualityMatch = texture?.qualityPreset === 'default' && mesh?.qualityPreset === 'default';
+        const dimensionsMatch = texture?.png?.width === WIDTH && texture?.png?.height === HEIGHT
+            && mesh?.png?.width === WIDTH && mesh?.png?.height === HEIGHT;
+        const textureLuminance = Number(texture?.frameMetrics?.medianLuminance);
+        const meshLuminance = Number(mesh?.frameMetrics?.medianLuminance);
+        const luminanceRatio = textureLuminance > 0 ? meshLuminance / textureLuminance : null;
+        const luminanceMatch = Number.isFinite(luminanceRatio) && luminanceRatio >= 0.9 && luminanceRatio <= 1.1;
+        const representationPass = texture?.representationApproval?.pass === true && mesh?.representationApproval?.pass === true;
+        const clipValues = [
+            mesh?.nearDiagnostics?.boundaryRoots,
+            mesh?.nearDiagnostics?.clippedRoots,
+            mesh?.nearDiagnostics?.sidewalkRejectedRoots
+        ];
+        const hasClipDiagnostics = clipValues.every((value) => Number.isFinite(Number(value)));
+        const clippingEvidence = pairId !== 'physical_cut_side_profile'
+            || !hasClipDiagnostics
+            || clipValues.every((value) => Number(value) > 0);
+        const textureCombinedTriangles = Number(
+            texture?.cost?.combinedVisibleGrassTriangles
+            ?? texture?.representationApproval?.combinedVisibleGrassTriangles
+        );
+        const meshCombinedTriangles = Number(
+            mesh?.cost?.combinedVisibleGrassTriangles
+            ?? mesh?.representationApproval?.combinedVisibleGrassTriangles
+        );
+        const combinedBudgetMatch = textureCombinedTriangles <= 200000
+            && meshCombinedTriangles <= 200000;
+        return {
+            pairId,
+            cameraMatch,
+            lightingMatch,
+            exposureMatch,
+            qualityMatch,
+            dimensionsMatch,
+            luminanceRatio,
+            luminanceMatch,
+            representationPass,
+            clippingEvidence,
+            combinedBudgetMatch,
+            pass: cameraMatch
+                && lightingMatch
+                && exposureMatch
+                && qualityMatch
+                && dimensionsMatch
+                && luminanceMatch
+                && representationPass
+                && clippingEvidence
+                && combinedBudgetMatch
+        };
+    });
+    return { expectedPairIds, pairs, pass: pairs.every((pair) => pair.pass) };
 }
 
 function paethPredictor(left, up, upperLeft) {
@@ -713,6 +860,10 @@ export function mergeCaptureManifest(existing, phase, captures, diagnostics = nu
         boundaryGateByPhase: {
             ...(previous.boundaryGateByPhase && typeof previous.boundaryGateByPhase === 'object' ? previous.boundaryGateByPhase : {}),
             [phase]: diagnostics?.boundaryGate ?? null
+        },
+        nearGateByPhase: {
+            ...(previous.nearGateByPhase && typeof previous.nearGateByPhase === 'object' ? previous.nearGateByPhase : {}),
+            [phase]: diagnostics?.nearGate ?? null
         }
     };
 }
@@ -743,14 +894,23 @@ async function captureRecipe(page, outputRoot, outputRelative, phase, recipe, ov
     await page.evaluate((next) => {
         const lab = window.__grassLab;
         lab.setQualityPreset(next.quality);
-        if (next.evidenceMode) {
+        if (next.nearEvidenceMode) {
+            lab.setBoundaryEvidenceMode(null);
+            lab.setNearEvidenceMode(next.nearEvidenceMode);
+            lab.setLighting(next.lighting);
+            if (next.boundaryTarget) lab.focusBoundaryCamera(next.boundaryTarget, next.heightMeters, next.distanceMeters);
+            else lab.focusCamera(next.camera);
+        } else if (next.evidenceMode) {
+            lab.setNearEvidenceMode(null);
             lab.setLighting(next.lighting);
             lab.setBoundaryEvidenceMode(next.evidenceMode);
             lab.focusBoundaryCamera(next.boundaryTarget, next.heightMeters, next.distanceMeters);
         } else if (next.material) {
+            lab.setNearEvidenceMode(null);
             lab.setMaterialLighting(next.lighting);
             lab.focusMaterialFixture({ grazing: next.grazing });
         } else {
+            lab.setNearEvidenceMode(null);
             lab.setLighting(next.lighting);
             lab.focusCamera(next.camera);
         }
@@ -775,18 +935,19 @@ async function captureRecipe(page, outputRoot, outputRelative, phase, recipe, ov
     }
     const frameMetrics = measurePngFrame(png);
     const snapshot = metadata.snapshot ?? {};
-    const representationApproval = recipe.evidenceMode
-        ? evaluateBoundaryRepresentationSnapshot(snapshot, recipe.evidenceMode)
-        : null;
+    const representationApproval = recipe.nearEvidenceMode
+        ? evaluateNearRepresentationSnapshot(snapshot, recipe.nearEvidenceMode)
+        : (recipe.evidenceMode ? evaluateBoundaryRepresentationSnapshot(snapshot, recipe.evidenceMode) : null);
     return {
         png,
         entry: {
             phase,
-            matrix: recipe.evidenceMode ? BOUNDARY_MATRIX : MATERIAL_MATRIX,
+            matrix: recipe.nearEvidenceMode ? NEAR_MATRIX : (recipe.evidenceMode ? BOUNDARY_MATRIX : MATERIAL_MATRIX),
             role: recipe.role,
             recipeId: recipe.id,
             pairId: recipe.pairId ?? null,
             evidenceMode: recipe.evidenceMode ?? null,
+            nearEvidenceMode: recipe.nearEvidenceMode ?? null,
             file: path.posix.join(outputRelative.replaceAll('\\', '/'), filename),
             lightingPreset: recipe.lighting,
             qualityPreset: recipe.quality,
@@ -802,11 +963,20 @@ async function captureRecipe(page, outputRoot, outputRelative, phase, recipe, ov
             png: dimensions,
             frameMetrics,
             boundaryEvidence: recipe.evidenceMode ? (snapshot.boundaryEvidence ?? null) : null,
+            nearEvidence: recipe.nearEvidenceMode ? (snapshot.nearEvidence ?? null) : null,
             representationApproval,
-            coverageDiagnostics: recipe.evidenceMode ? (snapshot.coverage ?? null) : null,
+            coverageDiagnostics: (recipe.evidenceMode || recipe.nearEvidenceMode) ? (snapshot.coverage ?? null) : null,
+            nearDiagnostics: recipe.nearEvidenceMode ? (snapshot.grass?.nearCarpet ?? null) : null,
             cost: {
                 visibleGrassTriangles: snapshot?.grass?.triangles ?? null,
+                combinedVisibleGrassTriangles: Number(snapshot?.grass?.triangles ?? 0) + Number(snapshot?.coverage?.triangles ?? 0),
                 grassLogicalDrawCalls: snapshot?.grass?.logicalDrawCalls ?? null,
+                nearTriangles: snapshot?.grass?.nearCarpet?.triangles ?? null,
+                nearLogicalDrawCalls: snapshot?.grass?.nearCarpet?.drawCalls ?? null,
+                unrepresentedEligibleBins: snapshot?.grass?.nearCarpet?.unrepresentedEligibleBins ?? null,
+                exactPostcheckFailures: snapshot?.grass?.nearCarpet?.exactPostcheckFailures ?? null,
+                ineligibleRoots: snapshot?.grass?.nearCarpet?.ineligibleRoots ?? null,
+                boundarySignature: snapshot?.grass?.nearCarpet?.boundarySignature ?? null,
                 coverageCapTriangles: snapshot?.coverage?.capTriangles ?? null,
                 coverageEdgeTriangles: snapshot?.coverage?.edgeTriangles ?? null,
                 coverageTriangles: snapshot?.coverage?.triangles ?? null,
@@ -829,18 +999,22 @@ async function collectCostSamples(page, phase, matrix = MATERIAL_MATRIX) {
     ), { width, height });
     const samples = [];
     for (const qualityPreset of ['low', 'default', 'high']) {
-        await page.evaluate(({ quality, boundaryMatrix }) => {
+        await page.evaluate(({ quality, boundaryMatrix, nearMatrix }) => {
             const lab = window.__grassLab;
             lab.setQualityPreset(quality);
             lab.setLighting('daylight');
             if (boundaryMatrix) {
                 lab.setBoundaryEvidenceMode('boundary_final');
                 lab.focusBoundaryCamera('straight', 1.0);
+            } else if (nearMatrix) {
+                lab.setBoundaryEvidenceMode(null);
+                lab.setNearEvidenceMode('near_mesh');
+                lab.focusCamera('height_050');
             } else {
                 lab.focusCamera('height_150');
             }
             lab.resetValidationSamples();
-        }, { quality: qualityPreset, boundaryMatrix: matrix === BOUNDARY_MATRIX });
+        }, { quality: qualityPreset, boundaryMatrix: matrix === BOUNDARY_MATRIX, nearMatrix: matrix === NEAR_MATRIX });
         await page.evaluate(() => window.__grassLab.settleCaptureFrames(60));
         const metadata = await page.evaluate((context) => window.__grassLab.getCaptureMetadata(context), {
             phase,
@@ -851,6 +1025,7 @@ async function collectCostSamples(page, phase, matrix = MATERIAL_MATRIX) {
         const visibleGrassTriangles = snapshot?.grass?.triangles ?? null;
         const grassLogicalDrawCalls = snapshot?.grass?.logicalDrawCalls ?? null;
         const coverageTriangles = snapshot?.coverage?.triangles ?? null;
+        const combinedVisibleGrassTriangles = Number(visibleGrassTriangles ?? 0) + Number(coverageTriangles ?? 0);
         const coverageLogicalDrawCalls = snapshot?.coverage?.logicalDrawCalls ?? null;
         const boundaryApproval = matrix === BOUNDARY_MATRIX
             ? evaluateBoundaryRepresentationSnapshot(snapshot, 'boundary_final')
@@ -860,11 +1035,17 @@ async function collectCostSamples(page, phase, matrix = MATERIAL_MATRIX) {
             matrix,
             qualityPreset,
             resolution: `${width}x${height}`,
-            cameraPreset: matrix === BOUNDARY_MATRIX ? 'boundary_straight_100' : 'height_150',
+            cameraPreset: matrix === BOUNDARY_MATRIX ? 'boundary_straight_100' : (matrix === NEAR_MATRIX ? 'height_050' : 'height_150'),
             lightingPreset: 'daylight',
             materialVersion: metadata.materialVersion ?? null,
             visibleGrassTriangles,
+            combinedVisibleGrassTriangles,
             grassLogicalDrawCalls,
+            nearTriangles: snapshot?.grass?.nearCarpet?.triangles ?? null,
+            nearLogicalDrawCalls: snapshot?.grass?.nearCarpet?.drawCalls ?? null,
+            unrepresentedEligibleBins: snapshot?.grass?.nearCarpet?.unrepresentedEligibleBins ?? null,
+            exactPostcheckFailures: snapshot?.grass?.nearCarpet?.exactPostcheckFailures ?? null,
+            boundarySignature: snapshot?.grass?.nearCarpet?.boundarySignature ?? null,
             coverageCapTriangles: snapshot?.coverage?.capTriangles ?? null,
             coverageRootThatchTriangles: snapshot?.coverage?.rootThatchTriangles ?? null,
             coverageCutEdgeTriangles: snapshot?.coverage?.cutEdgeTriangles ?? null,
@@ -879,7 +1060,7 @@ async function collectCostSamples(page, phase, matrix = MATERIAL_MATRIX) {
                 visibleGrassTriangleCeiling: 200000,
                 grassLogicalDrawCallCeiling: 12,
                 coverageLogicalDrawCallCeiling: matrix === BOUNDARY_MATRIX ? 2 : null,
-                pass: Number(visibleGrassTriangles) <= 200000
+                pass: combinedVisibleGrassTriangles <= 200000
                     && Number(grassLogicalDrawCalls) <= 12
                     && (matrix !== BOUNDARY_MATRIX || (
                         Number(coverageLogicalDrawCalls) <= 2
@@ -949,7 +1130,7 @@ async function run(options) {
             throw new Error(`[GrassLabCapture] Lab did not become ready. Startup: ${JSON.stringify(startup)}\n${runtimeErrors.join('\n')}\n${runtimeWarnings.join('\n')}\n${startupDiagnostics.slice(-20).join('\n')}`, { cause: error });
         }
         await page.evaluate(() => window.__grassLab.enterCaptureMode({ width: 3840, height: 2160 }));
-        const requestedMaterialVersion = options.matrix === BOUNDARY_MATRIX
+        const requestedMaterialVersion = options.matrix === BOUNDARY_MATRIX || options.matrix === NEAR_MATRIX
             ? 'v2'
             : (options.phase === 'before' ? 'v1' : 'v2');
         const materialVersionSwitch = await page.evaluate(
@@ -983,7 +1164,9 @@ async function run(options) {
         }
         const captures = [];
         const pngByRecipe = new Map();
-        const recipes = options.matrix === BOUNDARY_MATRIX ? buildBoundaryCaptureRecipes() : buildCaptureRecipes();
+        const recipes = options.matrix === BOUNDARY_MATRIX
+            ? buildBoundaryCaptureRecipes()
+            : (options.matrix === NEAR_MATRIX ? buildNearCaptureRecipes() : buildCaptureRecipes());
         for (const recipe of recipes) {
             const result = await captureRecipe(page, outputRoot, outputRelative, options.phase, recipe, options.overwrite);
             captures.push(result.entry);
@@ -995,6 +1178,7 @@ async function run(options) {
         const luminanceGate = options.matrix === MATERIAL_MATRIX ? evaluateLuminancePairs(captures) : null;
         const cardBandGate = options.matrix === MATERIAL_MATRIX ? evaluateCardBandPairs(captures, pngByRecipe) : null;
         const boundaryGate = options.matrix === BOUNDARY_MATRIX ? evaluateBoundaryPairs(captures) : null;
+        const nearGate = options.matrix === NEAR_MATRIX ? evaluateNearPairs(captures) : null;
         await page.evaluate(() => window.__grassLab.exitCaptureMode());
         const costSamples = await collectCostSamples(page, options.phase, options.matrix);
         if (runtimeErrors.length) {
@@ -1012,6 +1196,7 @@ async function run(options) {
             luminanceGate,
             cardBandGate,
             boundaryGate,
+            nearGate,
             costSamples,
             runtimeErrors,
             runtimeWarnings
@@ -1023,7 +1208,9 @@ async function run(options) {
             captures: captures.length,
             gates: options.matrix === BOUNDARY_MATRIX
                 ? { boundary: boundaryGate.pass }
-                : { luminance: luminanceGate.pass, cardBand: cardBandGate.pass },
+                : (options.matrix === NEAR_MATRIX
+                    ? { near: nearGate.pass }
+                    : { luminance: luminanceGate.pass, cardBand: cardBandGate.pass }),
             manifest: path.relative(REPO_ROOT, manifestPath).replaceAll('\\', '/')
         }, null, 2)}\n`);
         if (options.phase === 'after' && options.matrix === MATERIAL_MATRIX && (!luminanceGate.pass || !cardBandGate.pass)) {
@@ -1034,6 +1221,9 @@ async function run(options) {
         }
         if (options.matrix === BOUNDARY_MATRIX && !boundaryGate.pass) {
             throw new Error('[GrassLabCapture] Boundary evidence failed paired camera/representation/geometry approval. Evidence was saved with failing verdicts.');
+        }
+        if (options.phase === 'after' && options.matrix === NEAR_MATRIX && !nearGate.pass) {
+            throw new Error('[GrassLabCapture] Near-carpet evidence failed paired camera/representation approval. Evidence was saved with failing verdicts.');
         }
     } finally {
         await browser?.close?.();

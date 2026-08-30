@@ -1,6 +1,6 @@
 # Grass Lab Ownership Contract
 
-> Sequence reconciliation: AI 350 through AI 357 describe the completed V1 implementation below. Later visual review introduced corrective AI 358 through AI 362, and AI 363 is now the sole gameplay adapter. V2 contracts supersede the affected runtime claims for downstream work; `GRASS_LAB_APPROVAL_AI357.json` remains historical and cannot unblock gameplay.
+> Sequence reconciliation: AI 350 through AI 357 describe the completed V1 implementation below. Later visual review introduced corrective AI 358 through AI 362, and AI 363 is now the sole gameplay adapter. AI 358 through AI 360 now supply the corrected material, boundary, and closest-mesh contracts. V2 contracts supersede the affected runtime claims for downstream work; `GRASS_LAB_APPROVAL_AI357.json` remains historical and cannot unblock gameplay.
 
 ## Canonical entry point
 
@@ -28,7 +28,20 @@ AI 356 adds `GrassLocalizedAccentContract.js` and `GrassLocalizedAccentSystem.js
 
 AI 357 added `GrassLabValidationContract.js` plus the V1 Validation tab. Low/default/high presets, exact-height and LOD-handoff cameras, four deterministic lighting reviews, stationary/flyover paths, rolling budget diagnostics, stress sampling, regression gates, and an explicit approval record formed the V1 review route. Corrective AI 358 through AI 361 and AI 362 reapproval now form the only route to AI 363. Validation quality presets keep automatic LOD active and hide debug rings; manual forcing remains diagnostic.
 
-The adapter contract is `src/graphics/gui/grass_debugger/GrassLabContract.js`. Contract version 7 maps the existing source controls into sanitized `GrassEngine` near, cluster, localized-accent, automatic-LOD, and validation configuration and defines fixtures, terrain-grid metadata, exclusions, repeatable cameras, and the baseline snapshot schema.
+The adapter contract is `src/graphics/gui/grass_debugger/GrassLabContract.js`.
+Contract version `9` maps source controls into sanitized `GrassEngine` near,
+cluster, localized-accent, automatic-LOD, exact-coverage, and validation
+configuration and defines fixtures, terrain-grid metadata, repeatable cameras,
+and the current snapshot schema. Historical AI 357 evidence used contract
+version 7; it is not the current boundary or near approval contract.
+
+AI 359 adds the exact RoadEngine-derived polygon footprint, continuous
+substrate, opaque cap, two-draw physical edge, and hard tree-base holes defined
+by `GRASS_COVERAGE_AND_SIDEWALK_EDGE_V2.md`. AI 360 replaces the historical
+whole-patch near rejection with the area-complete, per-root-clipped micro-carpet
+defined by `NEAR_GRASS_CARPET_PATCH_V2.md`. The corrected near path consumes the
+AI 359 boundary signature and AI 358 appearance while forced-near remains a
+bounded diagnostic rather than a second LOD policy.
 
 ## Baseline diagnostics
 
@@ -42,7 +55,12 @@ The canonical snapshot records:
 - fixture counts, seed, runtime name, contract version, and LOD evaluation state.
 - authoring source mesh, blade/triangle count, geometry hash, stable signature, and derived runtime triangle/material/group/draw properties.
 - material-family identity, physical scale, separated map count, substrate identity, one-atlas draw contract, alpha/mip policy, and deterministic provenance.
-- near-carpet patch/blade instances, triangles, logical draws, material paths, buffer update totals/frequency, cell churn, and culling/shadow/transparency safety state.
+- near-carpet ownership cells, `eligibleBins`, `representedBins`,
+  `unrepresentedEligibleBins`, root and fiber instances,
+  boundary/clipped/rejected/ineligible roots, boundary and placement signatures,
+  configured/observed height range, triangles, logical draws, material paths,
+  buffer update totals/frequency, cell churn, cache invalidation, and
+  culling/shadow/transparency safety state.
 - hard-coverage semantics and response inputs, physical height/cutout threshold, sidewalk/irregular boundary counts, corner counts, surface/lip/fringe triangles, and bounded draw/material cost.
 - automatic tier, focus/view angle, effective distance/angle scale, transition state, near and cluster instances/triangles/draws, atlas policy, and actual geometry beyond the effective cutoff.
 - localized tree/feature records, eligible and visible clusters, worn patches, triangles/draws, deterministic signature, rejected roots, and render/cutoff safety.
