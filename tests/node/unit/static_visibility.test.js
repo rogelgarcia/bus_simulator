@@ -86,6 +86,42 @@ test('city hash changes for map, placement, and resolved building-config changes
     assert.notEqual(reference, createStaticVisibilityCityHash(createCity({ floors: 7 })));
 });
 
+test('city hash ignores unused catalog entries and visibility-neutral building defaults', () => {
+    const building = { id: 'block-a', configId: 'brick', tiles: [[2, 3]], layers: [{ floors: 6 }] };
+    const createCity = () => ({
+        cityId: 'bigcity2',
+        visibilitySourceSpec: { width: 25, height: 25, buildings: [{ id: 'block-a', configId: 'brick' }] },
+        genConfig: { seed: 'bigcity2' },
+        generatorConfig: {},
+        map: {
+            buildings: [{ ...building }],
+            reservationSpecs: [],
+            exportSpec: () => ({ width: 25, height: 25, buildings: [{ id: 'block-a', configId: 'brick' }] })
+        },
+        trafficControls: { placements: [] },
+        world: { trees: { quality: 'desktop', placements: [] } }
+    });
+    const referenceCity = createCity();
+    const reference = createStaticVisibilityCityHash(referenceCity);
+
+    const unusedCatalogCity = createCity();
+    unusedCatalogCity.unusedBuildingCatalog = [{ id: 'new-unused-building', layers: [{ floors: 100 }] }];
+    assert.equal(createStaticVisibilityCityHash(unusedCatalogCity), reference);
+
+    const neutralDefaultsCity = createCity();
+    neutralDefaultsCity.map.buildings[0].fitToLot = false;
+    neutralDefaultsCity.map.buildings[0].footprintStretch = null;
+    assert.equal(createStaticVisibilityCityHash(neutralDefaultsCity), reference);
+
+    const activeFitCity = createCity();
+    activeFitCity.map.buildings[0].fitToLot = true;
+    assert.notEqual(createStaticVisibilityCityHash(activeFitCity), reference);
+
+    const activeStretchCity = createCity();
+    activeStretchCity.map.buildings[0].footprintStretch = { A: 2 };
+    assert.notEqual(createStaticVisibilityCityHash(activeStretchCity), reference);
+});
+
 test('static visibility IDs are stable and category names are explicit', () => {
     assert.equal(createBuildingVisibilityId('building_9'), 'building:building_9');
     assert.equal(createTrafficControlVisibilityId(STATIC_VISIBILITY_CATEGORY.TRAFFIC_LIGHTS, 2), 'traffic_lights:002');

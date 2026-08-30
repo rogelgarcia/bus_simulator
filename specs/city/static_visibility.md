@@ -27,6 +27,8 @@ Payload activation requires exact agreement on:
 
 The FNV-1a 64-bit hash is computed over sorted-key canonical JSON containing the authored and resolved map data, resolved building and reservation lists, generator configuration, traffic-control placements, tree quality/placements, and the complete visibility profile. Object key order does not affect the hash. Any meaningful map, building, prop, geometry-revision, camera, sampling, resolution, or format change invalidates the payload and fails open.
 
+The resolved building list contains only configurations referenced by the active city; adding an unused catalog building does not invalidate the bake. Visibility-neutral disabled schema defaults such as `fitToLot: false` and `footprintStretch: null` are normalized away, while enabling either feature remains hash-significant.
+
 ## Production bake profile
 
 The tracked `bigcity2` payload uses:
