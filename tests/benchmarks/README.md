@@ -18,6 +18,7 @@ to be copied here.
 | `ai520_static_visibility_bake_2026-08-29.json` | AI_520 production PVS bake, storage/inventory, and 750-view native validation table |
 | `ai520_static_visibility_runtime_2026-08-29.json` | AI_520 interleaved full-renderer A/B, lookup cost, and 12-case shadow-preservation matrix |
 | `ai520_road_sensitivity_2026-08-29.json` | AI_520 full 1x/10x road-density table for merged and 1/2/4/5-cell chunks |
+| `ai527_current_illumination_baseline_2026-08-30.json` | AI_527 current-engine illumination baseline: fixed settings, 100-pose synchronized renderer profile, pass workload, visual artifact manifest, and unavailable-metric reasons |
 
 ### The type x quality ladder (AI_499, measured)
 

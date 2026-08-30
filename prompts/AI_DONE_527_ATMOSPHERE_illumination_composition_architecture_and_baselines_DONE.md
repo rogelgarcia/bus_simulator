@@ -1,3 +1,46 @@
+# DONE
+
+## Completion summary
+
+AI 527 established the architecture and before-state measurement contract without changing production rendering behavior. The authoritative specification is [`specs/graphics/illumination_framework.md`](../specs/graphics/illumination_framework.md); the tracked machine-readable baseline is [`tests/benchmarks/ai527_current_illumination_baseline_2026-08-30.json`](../tests/benchmarks/ai527_current_illumination_baseline_2026-08-30.json).
+
+The specification now fixes:
+
+- scene-linear ownership and formulas for live sun, cached static visibility, dynamic bus visibility, optional baked direct diffuse, indirect irradiance, live direct specular/transmission, IBL/reflection, emissive, AO, exposure, and post-processing;
+- `current`/`baked`/`auto`, six public lifecycle states with structured phases/reasons, atomic frame-boundary switching, and minimum channel sets for player-visible baked profiles;
+- Blender `5.2.1 LTS` portable x64 archive `blender-5.2.1-windows-x64.zip` with SHA-256 `0e631dad7d0cad6d5d18abdd2e2550f6c0213215334eda00ddbd3d22b96ecb2c`, authoritative Cycles CPU radiometric baking, EEVEE preview-only, and scripted clean-scene operation;
+- Three.js/Blender transform, precision, UV, alpha, color, irradiance-unit, normal-map, profile invalidation, shader-hook, validation-case, storage/loading/memory/performance, visual-error, seam, bake-time, and descendant dependency contracts.
+
+The generic loader, static-sun, direct/indirect, and Options descendant prompts were aligned to those contracts. `current` remains the permanent compatibility oracle and never depends on Blender or a generated payload.
+
+## Current-engine hardware baseline
+
+Primary conditions: Windows x64; Google Chrome 151.0.7922.174 headless; WebGL2/ANGLE D3D11; NVIDIA GeForce RTX 3060; production BigCity2 with static visibility active; 1280x696 drawing buffer at pixel ratio 1; default AgX/exposure 0.86, hemisphere 1.46, sun 5.75, IBL 0.28, sun 45/35; 8x MSAA; GTAO every frame with retained-depth exclusion; single/high 16384 shadow map with merged casters. The profiler sampled 25 fixed regions in four directions (100 poses), ran one complete warm-up and two measured frames per pose, and ended each measured `city.update()` plus render with `gl.finish()`. Values are arithmetic means across 200 frames unless identified as pose statistics.
+
+| Metric | Current before-state |
+|---|---:|
+| Synchronized CPU + GPU-complete frame time | 9.461 ms |
+| Derived throughput | 105.70 FPS |
+| Pose-mean median / nearest-rank p90 | 6.650 / 21.500 ms |
+| Pose-mean population standard deviation | 7.851 ms (spatial, not temporal) |
+| Whole frame | 1,249.70 calls / 2,592,844 triangles |
+| Visible scene | 903.61 calls / 807,402 triangles |
+| Shadow maps | 289.13 calls / 1,591,191 triangles |
+| Static-world part of shadow maps | 270.37 calls / 1,566,749 triangles |
+| Dynamic bus part of shadow maps | 18.76 calls / 24,442 triangles |
+| AO exclusion | 50.96 calls / 194,245 triangles |
+| Post-processing | 6.00 calls / 6 triangles |
+| CPU-only / GPU-only / per-pass time | not measured; the profiler synchronizes the whole frame and collected no reliable timer-query split |
+| Physical GPU residency / bandwidth | not measured; WebGL exposes no portable counter |
+
+All 200 frames reconciled attributed submissions to renderer totals. A separate SwiftShader run reproduced every workload counter and is retained as a software fallback, not a promotion baseline. The earlier AI 524 RTX 3060 result remains historical corroboration.
+
+Raw hardware results are [`tests/artifacts/illumination_527/current_regions_hardware.json`](../tests/artifacts/illumination_527/current_regions_hardware.json) and [`CURRENT_REGIONS_HARDWARE.md`](../tests/artifacts/illumination_527/CURRENT_REGIONS_HARDWARE.md). Software fallback results, exact artifact hashes, commands, settings, unavailable-metric reasons, and logical-versus-physical memory distinctions are in the tracked baseline.
+
+Six RTX 3060 reference captures and their hashes are recorded in [`tests/artifacts/illumination_527/capture_manifest.json`](../tests/artifacts/illumination_527/capture_manifest.json), with PNGs under `tests/artifacts/screens/illumination_527/`. They cover walls, roofs, overhangs, high/low sun, foliage, AO/contact, roads, the bus, and bus-road contact. They do not prove a static-object shadow boundary crossing the bus; the architecture therefore requires AI 532 to create and validate the dedicated fixed 16-pose partial-bus-shadow fixture rather than overstating this baseline.
+
+Focused AO/shadow/static-visibility tests passed 63/63. AI 528 is the next implementation step.
+
 # Problem
 
 `AI_DONE_526_ATMOSPHERE_illumination_framework_light_shadow_baking_master_plan_DONE.md` established the rationale for an optional baked-illumination framework, but production work must not begin until the project has one precise composition contract, engine decision, coordinate/color contract, compatibility boundary, and measured baseline.

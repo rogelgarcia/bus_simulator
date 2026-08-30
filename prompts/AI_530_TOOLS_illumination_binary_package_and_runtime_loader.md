@@ -17,7 +17,7 @@ Implement the generic illumination binary packager, manifest contract, validator
 Tasks:
 - Define and document a versioned binary container and compact sidecar/embedded manifest suitable for browser loading. Include magic, endian marker, schema/version, header length, profile/channel table, chunk table, offsets, lengths, encoding/precision, dimensions, coordinate transforms, source hashes, compiler signature, and per-chunk plus aggregate integrity hashes.
 - Use SHA-256 for artifact integrity. Validate exact byte lengths, non-overlap, bounds, alignment, channel inventory, and aggregate identity before exposing decoded data.
-- Define independent optional channels for static sun depth/visibility, direct illumination, indirect irradiance, AO/bent normals, receiver mappings, and future extensions. Unknown required channels must reject activation; unknown explicitly optional channels may be skipped only by versioned policy.
+- Define independent optional transport channels for static sun depth/visibility, direct illumination, indirect irradiance, AO/bent normals, receiver mappings, and future extensions. Enforce AI 527's named capability-profile minimum channel sets at activation. Unknown required channels must reject activation; unknown explicitly optional channels may be skipped only by versioned policy.
 - Package canonical decoded/quantized data rather than trusting nondeterministic EXR container bytes. Make quantization, byte ordering, compression, mip generation, and padding deterministic and compiler-signed.
 - Research and measure browser/WebGL2-compatible compression and texture formats before selecting defaults. Preserve a correct uncompressed/fallback fixture path and do not assume every device supports the same compressed or floating-point texture features.
 - Add a pack/inspect/verify/promote command under a dedicated tool folder or the appropriate AI 529 tool boundary, with README and `PROJECT_TOOLS.md` registration.
@@ -31,7 +31,7 @@ Tasks:
   - decodes and uploads into a staged inactive resource set;
   - activates only when all required resources for the requested capability are complete;
   - disposes rejected, superseded, cancelled, and deactivated resources without leaks.
-- Define lifecycle states and structured reasons: unavailable, loading, ready, active, stale-source, incompatible-profile, unsupported-capability, corrupt, cancelled, failed, and current-engine fallback.
+- Implement AI 527's six public states (`unavailable`, `loading`, `active`, `stale`, `failed`, and `fallback`) plus its structured phase/reason mapping. Labels such as ready, stale-source, incompatible-profile, unsupported-capability, corrupt, cancelled, and current-engine fallback are the specified phase/reason combinations, not additional competing primary states.
 - Add a programmatic mode controller contract for `current`, `baked`, and `auto`, but do not add the Options UI yet:
   - `current` never requests or samples baked assets;
   - `baked` activates only a complete compatible payload and otherwise remains on current with a specific reason;

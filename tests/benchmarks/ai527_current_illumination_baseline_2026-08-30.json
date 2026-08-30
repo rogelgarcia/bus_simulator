@@ -1,0 +1,608 @@
+{
+  "schema": "bus-simulator.illumination-current-baseline.v1",
+  "id": "ai527-current-illumination-2026-08-30",
+  "generatedAt": "2026-08-30T17:33:41.171Z",
+  "sourceRevision": "307912126c65847c48a6c25f1803da0249fc95b8",
+  "scope": {
+    "runtimeMode": "current",
+    "comparisonState": "before_only",
+    "afterState": null,
+    "reason": "AI 527 is architecture and baseline work only and changes no production rendering behavior."
+  },
+  "freshHardwareProfile": {
+    "classification": "primary_reference_desktop_current_baseline",
+    "promotionUse": true,
+    "environment": {
+      "os": "Windows x64",
+      "browser": "Google Chrome 151.0.7922.174 (headless)",
+      "api": "WebGL2 through ANGLE/D3D11",
+      "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "cpu": "AMD Ryzen 5 9600X",
+      "hardwareConcurrency": 12,
+      "reportedDeviceMemoryGiB": 32
+    },
+    "command": "$env:PLAYWRIGHT_EXECUTABLE_PATH='C:/Program Files/Google/Chrome/Application/chrome.exe'; node tools/static_visibility_baker/profile_regions.mjs --on-only --report tests/artifacts/illumination_527/current_regions_hardware.json --markdown tests/artifacts/illumination_527/CURRENT_REGIONS_HARDWARE.md",
+    "browserLaunch": {
+      "headless": true,
+      "flags": [
+        "--disable-background-timer-throttling",
+        "--disable-renderer-backgrounding"
+      ]
+    },
+    "rawArtifacts": [
+      {
+        "path": "tests/artifacts/illumination_527/current_regions_hardware.json",
+        "bytes": 24708763,
+        "sha256": "0790a91903ba23c796280e8da9a4d90818694466ef7cf60da78769b220501c48"
+      },
+      {
+        "path": "tests/artifacts/illumination_527/CURRENT_REGIONS_HARDWARE.md",
+        "bytes": 9412,
+        "sha256": "9dd07f3e2f5e2fadcb188df5fc1ba7af9390d87e87188a688df7c5c51d13d121"
+      }
+    ],
+    "workload": {
+      "cityId": "bigcity2",
+      "citySize": {
+        "widthTiles": 25,
+        "heightTiles": 25,
+        "tileSizeMeters": 24
+      },
+      "staticVisibility": "active",
+      "rendererSize": [
+        1280,
+        696
+      ],
+      "devicePixelRatio": 1,
+      "regions": 25,
+      "directionsPerRegion": 4,
+      "poses": 100,
+      "warmupFramesPerPose": 1,
+      "measuredFramesPerPose": 2,
+      "measuredFrames": 200,
+      "camera": {
+        "heightMeters": 3.6831812721965655,
+        "pitchDeg": -9.67328903369499,
+        "fovDeg": 55
+      },
+      "frameBoundary": "city.update() plus complete production renderFrame() ending in gl.finish()",
+      "counterMethod": "Exact renderer counter deltas around every submitted draw; all 200 frames reconciled to renderer totals."
+    },
+    "settings": {
+      "lighting": {
+        "toneMapping": "agx",
+        "exposure": 0.86,
+        "hemisphereIntensity": 1.46,
+        "sunIntensity": 5.75,
+        "iblEnabled": true,
+        "iblId": "ibl.hdri.german_town_street_2k",
+        "iblIntensity": 0.28
+      },
+      "atmosphereSun": {
+        "azimuthDeg": 45,
+        "elevationDeg": 35
+      },
+      "shadows": {
+        "type": "single",
+        "quality": "high",
+        "mapSize": 16384,
+        "radiusMeters": 340,
+        "filter": "pcf",
+        "radiusTexels": 1.5,
+        "mergeCasters": true,
+        "instancedCasters": false
+      },
+      "ambientOcclusion": {
+        "mode": "gtao",
+        "quality": "high",
+        "updateMode": "every_frame",
+        "alphaHandling": "exclude",
+        "retainedDepthExclusion": true,
+        "staticAoMode": "off",
+        "busContactShadowEnabled": false
+      },
+      "antiAliasing": "8x MSAA resolved path",
+      "bloomEnabled": false,
+      "sunBloom": "enabled, occlusion mode",
+      "colorGrading": "vivid at 0.65"
+    },
+    "timing": {
+      "unit": "ms",
+      "meaning": "synchronized CPU plus GPU-complete end-to-end frame time",
+      "globalArithmeticMeanAcrossFrames": 9.461,
+      "derivedFpsFromGlobalMean": 105.697,
+      "poseMeanDistribution": {
+        "samples": 100,
+        "framesPerSample": 2,
+        "median": 6.65,
+        "medianMethod": "midpoint_of_middle_two",
+        "p90": 21.5,
+        "p90Method": "nearest_rank",
+        "p95": 23.85,
+        "p95Method": "nearest_rank",
+        "populationStandardDeviation": 7.8514,
+        "varianceMeaning": "spatial variation across 100 different poses, not temporal repeated-run noise",
+        "minimum": 1.9,
+        "maximum": 40.45
+      }
+    },
+    "wholeFrame": {
+      "calls": 1249.7,
+      "triangles": 2592844.19,
+      "lines": 52.78
+    },
+    "passes": {
+      "visibleScene": {
+        "calls": 903.61,
+        "triangles": 807402.12
+      },
+      "shadowMaps": {
+        "calls": 289.13,
+        "triangles": 1591190.87
+      },
+      "aoExclusion": {
+        "calls": 50.96,
+        "triangles": 194245.2
+      },
+      "postProcessing": {
+        "calls": 6,
+        "triangles": 6
+      }
+    },
+    "shadowComposition": {
+      "staticWorld": {
+        "calls": 270.37,
+        "triangles": 1566748.71,
+        "shareOfShadowCallsPercent": 93.51,
+        "shareOfShadowTrianglesPercent": 98.46
+      },
+      "dynamicBus": {
+        "calls": 18.76,
+        "triangles": 24442.16
+      }
+    },
+    "aoExclusion": {
+      "retainedDepthFrames": 194,
+      "emptyFrames": 6,
+      "fallbackFrames": 0,
+      "averageCandidateObjects": 30.95,
+      "averageCandidateGroups": 50.96,
+      "averageCandidateTestMs": 0.603
+    },
+    "memory": {
+      "totalCpuBytes": null,
+      "totalGpuResidentBytes": null,
+      "bandwidthBytesPerSecond": null,
+      "unavailableReason": "WebGL renderer counters expose resource counts but not portable process/GPU physical residency or bandwidth.",
+      "knownLogicalAllocations": [
+        {
+          "name": "single-high shadow RGBA target",
+          "bytes": 1073741824,
+          "derivation": "16384 * 16384 * 4 bytes",
+          "classification": "derived logical allocation, not measured physical residency",
+          "excludes": "depth attachment, driver padding/compression, and other render targets"
+        }
+      ]
+    },
+    "unavailableMetrics": {
+      "cpuOnlyFrameTime": "not measured: the profiler intentionally synchronizes the complete frame and does not isolate CPU submission",
+      "gpuOnlyFrameTime": "not measured: no reliable WebGL timer-query split was collected",
+      "perPassTime": "not measured: passes were workload-attributed, not individually synchronized",
+      "totalGpuMemory": "not measured: WebGL exposes no reliable physical residency counter",
+      "memoryBandwidth": "not measured: the browser exposes no portable bandwidth counter"
+    }
+  },
+  "softwareFallbackProfile": {
+    "classification": "software_renderer_fallback",
+    "promotionUse": false,
+    "environment": {
+      "os": "Windows 10 x64",
+      "browser": "HeadlessChrome 151.0.7922.34",
+      "api": "WebGL2 through ANGLE/Vulkan",
+      "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "hardwareConcurrency": 12,
+      "reportedDeviceMemoryGiB": 32,
+      "timingCaveat": "SwiftShader and browser scheduling make elapsed time noisy; use this run as a reproducible fallback and exact workload baseline, not a desktop-GPU promotion result."
+    },
+    "command": "$env:PLAYWRIGHT_EXECUTABLE_PATH='C:/Users/rogel/AppData/Local/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-win64/chrome-headless-shell.exe'; node tools/static_visibility_baker/profile_regions.mjs --on-only --report tests/artifacts/illumination_527/current_regions.json --markdown tests/artifacts/illumination_527/CURRENT_REGIONS.md",
+    "rawArtifacts": [
+      {
+        "path": "tests/artifacts/illumination_527/current_regions.json",
+        "bytes": 24708836,
+        "sha256": "14bec0604cb5ecc90361d583e84d1cf1a867e4ea79bc1b2731484f75ad0af932"
+      },
+      {
+        "path": "tests/artifacts/illumination_527/CURRENT_REGIONS.md",
+        "bytes": 9413,
+        "sha256": "033703ddaddfc791d863129bfd47c102cfe909ed49d58065ac77e3e257e859e1"
+      }
+    ],
+    "workload": {
+      "cityId": "bigcity2",
+      "citySize": {
+        "widthTiles": 25,
+        "heightTiles": 25,
+        "tileSizeMeters": 24
+      },
+      "staticVisibility": "active",
+      "rendererSize": [
+        1280,
+        696
+      ],
+      "devicePixelRatio": 1,
+      "regions": 25,
+      "directionsPerRegion": 4,
+      "poses": 100,
+      "warmupFramesPerPose": 1,
+      "measuredFramesPerPose": 2,
+      "measuredFrames": 200,
+      "camera": {
+        "heightMeters": 3.6831812721965655,
+        "pitchDeg": -9.67328903369499,
+        "fovDeg": 55
+      },
+      "frameBoundary": "city.update() plus complete production renderFrame() ending in gl.finish()",
+      "counterMethod": "Exact renderer counter deltas around every submitted draw; all 200 frames reconciled to renderer totals."
+    },
+    "settings": {
+      "lighting": {
+        "toneMapping": "agx",
+        "exposure": 0.86,
+        "hemisphereIntensity": 1.46,
+        "sunIntensity": 5.75,
+        "ibl": {
+          "enabled": true,
+          "id": "ibl.hdri.german_town_street_2k",
+          "environmentMapIntensity": 0.28,
+          "setBackground": false
+        }
+      },
+      "atmosphere": {
+        "sunAzimuthDeg": 45,
+        "sunElevationDeg": 35,
+        "sky": {
+          "horizonColor": "#A8D2EE",
+          "zenithColor": "#1F6FC8",
+          "groundColor": "#78949A",
+          "curve": 0.5,
+          "exposure": 1,
+          "ditherStrength": 0.85,
+          "iblBackgroundMode": "ibl"
+        },
+        "haze": {
+          "enabled": true,
+          "intensity": 0.55,
+          "thickness": 0.09,
+          "curve": 1.6,
+          "tintColor": "#FFFFFF",
+          "tintStrength": 0
+        },
+        "glare": {
+          "enabled": true,
+          "intensity": 0.36,
+          "sigmaDeg": 7,
+          "power": 1
+        },
+        "disc": {
+          "enabled": true,
+          "intensity": 2.2,
+          "sigmaDeg": 0.22,
+          "coreIntensity": 1.25,
+          "coreSigmaDeg": 0.06
+        }
+      },
+      "shadows": {
+        "type": "single",
+        "quality": "high",
+        "mapSize": 16384,
+        "radiusMeters": 340,
+        "filter": "pcf",
+        "radiusTexels": 1.5,
+        "bias": -0.0000485,
+        "normalBias": 0.0232,
+        "twoSidedCasting": true,
+        "mergeCasters": true,
+        "instancedCasters": false
+      },
+      "ambientOcclusion": {
+        "mode": "gtao",
+        "alphaHandling": "exclude",
+        "alphaThreshold": 0.36,
+        "retainedDepthExclusion": true,
+        "gtao": {
+          "intensity": 1.05,
+          "radius": 2.42,
+          "quality": "high",
+          "denoise": false,
+          "updateMode": "every_frame"
+        },
+        "staticAoMode": "off",
+        "busContactShadowEnabled": false
+      },
+      "antiAliasing": {
+        "mode": "msaa",
+        "samples": 8
+      },
+      "bloom": {
+        "enabled": false
+      },
+      "sunBloom": {
+        "enabled": true,
+        "mode": "occlusion"
+      },
+      "colorGrading": {
+        "preset": "vivid",
+        "intensity": 0.65
+      }
+    },
+    "timing": {
+      "unit": "ms",
+      "meaning": "synchronized CPU plus GPU-complete end-to-end frame time",
+      "globalArithmeticMeanAcrossFrames": 30.519,
+      "derivedFpsFromGlobalMean": 32.766,
+      "poseMeanDistribution": {
+        "samples": 100,
+        "framesPerSample": 2,
+        "median": 20.775,
+        "p90": 71.95,
+        "p90Method": "nearest_rank",
+        "populationStandardDeviation": 26.7393,
+        "minimum": 2.7,
+        "maximum": 145.85
+      }
+    },
+    "wholeFrame": {
+      "calls": 1249.7,
+      "triangles": 2592844.19,
+      "lines": 52.78
+    },
+    "passes": {
+      "visibleScene": {
+        "calls": 903.61,
+        "triangles": 807402.12
+      },
+      "shadowMaps": {
+        "calls": 289.13,
+        "triangles": 1591190.87
+      },
+      "aoExclusion": {
+        "calls": 50.96,
+        "triangles": 194245.2
+      },
+      "postProcessing": {
+        "calls": 6,
+        "triangles": 6
+      }
+    },
+    "shadowComposition": {
+      "staticWorld": {
+        "calls": 270.37,
+        "triangles": 1566748.71,
+        "categories": {
+          "buildings": {
+            "calls": 55.24,
+            "triangles": 677701.5
+          },
+          "trees": {
+            "calls": 185.54,
+            "triangles": 875982.57
+          },
+          "trafficSigns": {
+            "calls": 21.69,
+            "triangles": 1214.64
+          },
+          "trafficLights": {
+            "calls": 7.9,
+            "triangles": 11850
+          }
+        },
+        "shareOfShadowCallsPercent": 93.51,
+        "shareOfShadowTrianglesPercent": 98.46
+      },
+      "dynamicBus": {
+        "calls": 18.76,
+        "triangles": 24442.16
+      }
+    },
+    "aoExclusion": {
+      "retainedDepthFrames": 194,
+      "emptyFrames": 6,
+      "fallbackFrames": 0,
+      "averageCandidateObjects": 30.95,
+      "averageCandidateGroups": 50.96,
+      "averageCandidateTestMs": 2.2215
+    },
+    "memory": {
+      "totalCpuBytes": null,
+      "totalGpuResidentBytes": null,
+      "bandwidthBytesPerSecond": null,
+      "unavailableReason": "WebGL renderer counters expose resource counts but not portable process/GPU physical residency or bandwidth.",
+      "knownLogicalAllocations": [
+        {
+          "name": "single-high shadow RGBA target",
+          "bytes": 1073741824,
+          "derivation": "16384 * 16384 * 4 bytes",
+          "classification": "derived logical allocation, not measured physical residency",
+          "excludes": "depth attachment, driver padding/compression, and other render targets"
+        }
+      ]
+    },
+    "unavailableMetrics": {
+      "cpuOnlyFrameTime": "not measured: the profiler intentionally synchronizes the complete frame and does not isolate CPU submission",
+      "gpuOnlyFrameTime": "not measured: no reliable WebGL timer-query split was collected",
+      "perPassTime": "not measured: passes were workload-attributed, not individually synchronized",
+      "totalGpuMemory": "not measured: WebGL exposes no reliable physical residency counter",
+      "memoryBandwidth": "not measured: the browser exposes no portable bandwidth counter"
+    }
+  },
+  "historicalHardwareReference": {
+    "provenance": "AI 524 retained-depth production baseline, prompts/AI_524_ATMOSPHERE_ao_exclusion_depth_reuse_DONE.md",
+    "classification": "same-condition current-path hardware reference; not a fresh AI 527 rerun",
+    "environment": {
+      "gpu": "NVIDIA GeForce RTX 3060",
+      "api": "WebGL2/D3D11",
+      "rendererSize": [
+        1280,
+        696
+      ],
+      "devicePixelRatio": 1
+    },
+    "workload": {
+      "cityId": "bigcity2",
+      "staticVisibility": "active",
+      "ambientOcclusion": "GTAO every frame with retained-depth receiver exclusion",
+      "antiAliasing": "8x MSAA resolved path",
+      "shadows": "single/high with merged casters",
+      "poses": 100,
+      "warmupFramesPerPose": 1,
+      "measuredFramesPerPose": 2,
+      "completeRuns": 2,
+      "measuredFrames": 400,
+      "frameBoundary": "city update plus complete renderer submission ending in gl.finish()",
+      "statistic": "mean of two complete profiler-run arithmetic means"
+    },
+    "result": {
+      "synchronizedFrameMs": 9.224,
+      "derivedFps": 108.41,
+      "wholeFrameCalls": 1249.7,
+      "wholeFrameTriangles": 2592844,
+      "aoExclusionCalls": 50.96,
+      "aoExclusionTriangles": 194245,
+      "aoCandidateTestMs": 0.589
+    },
+    "unavailableMetrics": {
+      "cpuOnlyFrameTime": "not measured: the profiler synchronized CPU and GPU work",
+      "gpuOnlyFrameTime": "not measured: a timer-query split was unavailable",
+      "perPassTime": "not measured in the AI 524 record",
+      "totalGpuMemory": "not measured: browser/WebGL exposes no reliable per-pass residency counter",
+      "memoryBandwidth": "not measured: browser/WebGL exposes no reliable bandwidth counter"
+    }
+  },
+  "visualBaseline": {
+    "command": "$env:PLAYWRIGHT_EXECUTABLE_PATH='C:/Program Files/Google/Chrome/Application/chrome.exe'; node tests/artifacts/illumination_527/capture_matrix.mjs",
+    "captureScript": {
+      "path": "tests/artifacts/illumination_527/capture_matrix.mjs",
+      "bytes": 12008,
+      "sha256": "7b2d8dcd139238efddb2b8da96b0346d6e627f267a737af9ac78cb952f8aea37"
+    },
+    "manifest": {
+      "path": "tests/artifacts/illumination_527/capture_manifest.json",
+      "bytes": 137837,
+      "sha256": "2414084529ed1818e49df6b38d50cb7dce896a5bf09382e605ce9c8182c8b8cf"
+    },
+    "captureDirectory": "tests/artifacts/screens/illumination_527/",
+    "captureCount": 6,
+    "captureEnvironment": "Google Chrome 151.0.7922.174 headless, RTX 3060 through ANGLE/D3D11, pixel ratio 1",
+    "harnessDrawingSize": [
+      1280,
+      720
+    ],
+    "gameplayDrawingSize": [
+      1280,
+      696
+    ],
+    "fixedTimeStepSeconds": 0.016666666666666666,
+    "warmupFramesPerCapture": 60,
+    "captures": [
+      {
+        "caseId": "building_high_sun",
+        "file": "tests/artifacts/screens/illumination_527/01_building_wall_roof_overhang_high_sun.png",
+        "sha256": "307b02d4d83acda0d97647b11da663c3f9e95aaf10272449f1ffa840e17ceb06",
+        "coverage": [
+          "wall",
+          "roof",
+          "overhang",
+          "self-contact"
+        ],
+        "sun": {
+          "azimuthDeg": 65,
+          "elevationDeg": 35
+        }
+      },
+      {
+        "caseId": "building_low_sun",
+        "file": "tests/artifacts/screens/illumination_527/02_building_wall_roof_overhang_low_sun.png",
+        "sha256": "a6cb4035ff91b47507624cd249216d4b7775c58740589f58fb320c7cbece6ab2",
+        "coverage": [
+          "wall",
+          "roof",
+          "overhang",
+          "low-sun",
+          "self-contact"
+        ],
+        "sun": {
+          "azimuthDeg": 65,
+          "elevationDeg": 8
+        }
+      },
+      {
+        "caseId": "foliage_ao_contact",
+        "file": "tests/artifacts/screens/illumination_527/03_foliage_ao_contact.png",
+        "sha256": "23aeef3c119ef42f033e13831db4a026c5f246232988cc8abbda78a7ad796c5a",
+        "coverage": [
+          "foliage",
+          "self-contact",
+          "AO"
+        ]
+      },
+      {
+        "caseId": "foliage_sun_occlusion",
+        "file": "tests/artifacts/screens/illumination_527/04_foliage_sun_occlusion.png",
+        "sha256": "fe8a6c026e5822337d17efbfd9c23daef660e7cccb2a1d1b728e47297c8c7f75",
+        "coverage": [
+          "foliage",
+          "sun-occlusion"
+        ]
+      },
+      {
+        "caseId": "gameplay_civic_current",
+        "file": "tests/artifacts/screens/illumination_527/05_gameplay_civic_bus_road_current.png",
+        "sha256": "297bcac5d8604b48880d524b4ae956c5b45144d05358bd4767a8c7afd52c84da",
+        "coverage": [
+          "bus",
+          "road",
+          "foliage",
+          "wall",
+          "current sun"
+        ]
+      },
+      {
+        "caseId": "gameplay_civic_low_sun",
+        "file": "tests/artifacts/screens/illumination_527/06_gameplay_civic_bus_road_low_sun.png",
+        "sha256": "4edfce4b33d99959f9e5d1f530db607ab46b137c320601efdb662fd34c68f142",
+        "coverage": [
+          "bus",
+          "road",
+          "foliage",
+          "wall",
+          "low-sun"
+        ],
+        "sun": {
+          "azimuthDeg": 65,
+          "elevationDeg": 8
+        }
+      }
+    ],
+    "inspection": {
+      "status": "captured_and_visually_inspected",
+      "currentModeOnly": true,
+      "deltaImages": null,
+      "deltaReason": "There is no after state in AI 527. High/low-sun pairs are reference images, not optimization comparisons.",
+      "partialBusShadowProof": false,
+      "partialBusShadowReason": "The civic pose covers the bus and city lighting but does not prove that a static shadow boundary crosses the bus. AI 532 must add the fixed 16-pose partial-shadow fixture required by the framework spec."
+    }
+  },
+  "verification": {
+    "profileCounterReconciliation": {
+      "hardwareFrames": 200,
+      "hardwareMismatches": 0,
+      "softwareFrames": 200,
+      "softwareMismatches": 0
+    },
+    "focusedNodeTests": {
+      "passed": 63,
+      "failed": 0,
+      "scope": "ambient occlusion, shadow settings, static visibility runtime, and static visibility payload"
+    }
+  }
+}

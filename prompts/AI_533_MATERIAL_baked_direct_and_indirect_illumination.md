@@ -31,7 +31,7 @@ Tasks:
   - baked indirect plus runtime direct/cached visibility;
   - baked direct and indirect together.
 - Ship baked direct only if it provides a justified quality/performance or consistency benefit beyond cached visibility and does not unnecessarily freeze runtime material/sun behavior. It is acceptable for the evidence to retain runtime direct sun and ship only indirect irradiance.
-- Apply baked irradiance in the material lighting stage, never as a final-color overlay. Preserve runtime albedo/normal/roughness/metalness response and prevent baked diffuse light from incorrectly illuminating metals/specular-only terms.
+- Apply baked irradiance in the material lighting stage, never as a final-color overlay. Preserve runtime albedo/roughness/metalness response and prevent baked diffuse light from incorrectly illuminating metals/specular-only terms. Per AI 527, a scalar irradiance texel cannot claim to preserve a perturbed runtime shading normal: retain that receiver's overlapping live diffuse term unless this AI implements and validates a directional-irradiance representation evaluated with the runtime normal.
 - Keep the moving bus outside static receiver lightmaps. It continues to use current runtime direct/IBL lighting plus the static/dynamic shadow visibility from AI 532; do not claim dynamic GI for the bus.
 - Define named lighting-profile compatibility for sun, sky/IBL, environment intensity/color, material inputs relevant to bounce, and channel settings. A mismatched profile must not activate.
 - Package/stream through AI 530 with deterministic quantization, measured precision, compression, mip generation, async upload, residency, and disposal.

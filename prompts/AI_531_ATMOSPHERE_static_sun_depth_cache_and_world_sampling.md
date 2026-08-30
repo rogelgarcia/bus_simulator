@@ -27,7 +27,7 @@ Tasks:
   - a small deterministic multi-direction profile representing sun angular size.
   Do not claim physical soft shadows from an unmeasured blur.
 - Implement runtime world-position sampling in dedicated shader source files under `src/graphics/shaders/`, integrated through the illumination hook defined by AI 527.
-- Attenuate only the direct sun term. Preserve IBL, indirect light, emissive, specular/reflection, transmission, material variation, road markings, and final-color behavior.
+- Attenuate only lobes produced directly by the named sun: direct diffuse, direct specular/clearcoat, and explicitly supported direct transmission. Preserve indirect IBL/environment reflection/specular, indirect light, emissive, material variation, and final-color behavior. Road markings receive ordinary direct-sun visibility; never multiply their generic base/final color by a dark decal.
 - Support static receivers on roads, terrain, curbs, sidewalks, walls, roofs, props, and foliage where compatible; do not limit the cache to a flat ground decal.
 - Implement tile lookup, guard-band sampling, mip/filter behavior, bias/normal-bias equivalent, out-of-bounds behavior, streamed/unresident tile behavior, and seam diagnostics.
 - Use AI 530 atomic lifecycle. No sampling is allowed until the complete compatible cache required by the active view/profile is ready.

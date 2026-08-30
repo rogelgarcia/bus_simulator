@@ -74,3 +74,9 @@ Mouse camera movement:
   - current Lab tuning draft (lighting/shadows/AA/AO/bloom/sun bloom/color grading/sun flare/building window visuals)
   - active camera preset id
 - Cancel restores the session baseline; reset returns to factory defaults for the lab.
+
+## Illumination-framework validation ownership
+
+Lab Scene is the shared look-development shell for the optional illumination framework; descendants of AI 526 must extend its scenario registry instead of creating a competing renderer or lab. The fixed illumination case IDs, sun profiles, gameplay poses, required debug channels, and promotion tolerances are defined in `specs/graphics/illumination_framework.md`.
+
+Automated illumination captures must ignore `bus_sim.lab_scene.v3` and other persisted user drafts. Each run applies and records a complete explicit snapshot: city/source hash, camera, bus render pose, sun, lighting, IBL, shadows, AO, exposure, tone mapping, color grade, bloom/sun effects, AA, resolution, pixel ratio, and seed. Generated captures remain under `tests/artifacts/screens/illumination_527/` or the descendant-specific topic directory.

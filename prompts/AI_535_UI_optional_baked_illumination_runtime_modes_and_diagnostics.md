@@ -25,7 +25,7 @@ Tasks:
   - switch to another exact compatible baked profile if already validated;
   - otherwise stay/return atomically to Current;
   - never continue using a stale approximate profile without an explicitly supported tolerance/profile rule.
-- Treat missing bake data as normal availability information, not a boot failure. Display concise states such as unavailable for city/profile, loading, ready, active, stale, unsupported device, corrupt, and fallback reason without repeating notifications every frame.
+- Treat missing bake data as normal availability information, not a boot failure. Display AI 527's six public states and concise structured phase/reason text without repeating notifications every frame: for example loading/ready-to-commit, unavailable/unsupported-device, failed/corrupt, stale/profile-mismatch, and fallback with its retained cause.
 - Disable or explain Baked selection when capability is known unavailable; do not present a selectable mode that silently produces incomplete lighting.
 - Add developer diagnostics for source/profile/compiler hashes, payload/channel versions, validation state, lifecycle timing, active mode, fallback reason, loaded/resident chunks, CPU/GPU memory, and per-channel debug views created by earlier AIs.
 - Connect the documented offline workflow from exporter through Blender compiler, package validation, and promotion. Blender remains an offline development dependency and is never invoked from normal game Options.

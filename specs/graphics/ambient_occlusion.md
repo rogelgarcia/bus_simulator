@@ -60,6 +60,8 @@ Composition with SSAO/GTAO:
 - Static AO is applied first (material ambient occlusion).
 - When Static AO is enabled, SSAO/GTAO intensities are automatically scaled down to reduce double-darkening.
 
+The optional baked-illumination composition and migration boundary is defined in `specs/graphics/illumination_framework.md`. A directional sun-depth cache or direct-light bake does not replace AO. AI 534 owns the measured decision for static AO, baked GI contact information, SSAO/GTAO, and bus grounding; until then `current` mode preserves this behavior exactly.
+
 ## Bus contact shadow
 
 The bus contact shadow is a cheap, bus-only grounding cue rendered as a small set of soft blobs under the wheels and chassis. It is independent of the AO mode and can be used even when `ambientOcclusion.mode = off`.

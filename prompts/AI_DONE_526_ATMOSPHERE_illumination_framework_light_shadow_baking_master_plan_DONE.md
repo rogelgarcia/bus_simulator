@@ -54,7 +54,7 @@ AI 526 is closed because its analysis, engine choice, system boundaries, and ord
 
 | Step | Descendant | Depends on | Exclusive outcome |
 | ---: | --- | --- | --- |
-| 1 | `AI_527_ATMOSPHERE_illumination_composition_architecture_and_baselines.md` | AI 526 | Linear composition/specification, engine/profile/coordinate contracts, current-engine baselines, budgets, and render-hook ownership. |
+| 1 | `AI_DONE_527_ATMOSPHERE_illumination_composition_architecture_and_baselines_DONE.md` | AI 526 | **Complete.** Linear composition/specification, engine/profile/coordinate contracts, current-engine baselines, budgets, and render-hook ownership. |
 | 2 | `AI_528_TOOLS_resolved_city_bake_export_and_source_hash.md` | AI 527 | Evaluated city export, stable IDs/provenance, material/alpha semantics, canonical source identity, and round-trip validation. |
 | 3 | `AI_529_TOOLS_blender_cycles_headless_bake_compiler.md` | AI 527–528 | Exact Blender/Cycles pin, clean scripted reconstruction, deterministic proof bakes, repeatability, and compiler signatures. |
 | 4 | `AI_530_TOOLS_illumination_binary_package_and_runtime_loader.md` | AI 527–529 | Versioned binary/chunk transport, integrity/freshness validation, async optional loading, lifecycle, and programmatic Current/Baked/Auto controller. |
