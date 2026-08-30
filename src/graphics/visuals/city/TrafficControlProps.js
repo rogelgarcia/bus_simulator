@@ -5,11 +5,26 @@ import {
     STATIC_VISIBILITY_CATEGORY,
     createTrafficControlVisibilityId
 } from '../../../app/city/visibility/index.js';
+import { mergeCompatibleMaterialGroups } from '../../engine3d/procedural_meshes/SmartMaterialGroupMerger.js';
 import { createTrafficControlVisualAsset } from './TrafficControlVisualRegistry.js';
 
-export function createTrafficControlProps({ placements = [], useSolidMaterials = true } = {}) {
+export function createTrafficControlProps({
+    placements = [],
+    useSolidMaterials = true,
+    mergeMaterialGroups = useSolidMaterials
+} = {}) {
     const group = new THREE.Group();
     group.name = 'TrafficControls';
+    const materialGroupMerge = {
+        candidates: 0,
+        merged: 0,
+        sourceMaterials: 0,
+        outputMaterials: 0,
+        addedAttributeBytes: 0,
+        geometryByteDelta: 0,
+        expandedToNonIndexed: 0,
+        skipped: {}
+    };
 
     const list = Array.isArray(placements) ? placements : [];
     for (let placementIndex = 0; placementIndex < list.length; placementIndex += 1) {
@@ -21,6 +36,21 @@ export function createTrafficControlProps({ placements = [], useSolidMaterials =
         if (!mesh) continue;
 
         entry?.spec?.applyPlacement?.(asset, placement);
+        if (mergeMaterialGroups) {
+            materialGroupMerge.candidates += 1;
+            const merge = mergeCompatibleMaterialGroups(mesh, { disposeSourceGeometry: true });
+            if (merge.merged) {
+                materialGroupMerge.merged += 1;
+                materialGroupMerge.sourceMaterials += merge.sourceMaterialCount ?? 0;
+                materialGroupMerge.outputMaterials += merge.outputMaterialCount ?? 0;
+                materialGroupMerge.addedAttributeBytes += merge.addedAttributeBytes ?? 0;
+                materialGroupMerge.geometryByteDelta += merge.geometryByteDelta ?? 0;
+                if (merge.expandedToNonIndexed) materialGroupMerge.expandedToNonIndexed += 1;
+            } else {
+                const reason = merge.reason ?? 'unknown';
+                materialGroupMerge.skipped[reason] = (materialGroupMerge.skipped[reason] ?? 0) + 1;
+            }
+        }
 
         const instance = new THREE.Group();
         instance.name = entry?.spec?.instanceName ?? 'TrafficControl';
@@ -54,5 +84,5 @@ export function createTrafficControlProps({ placements = [], useSolidMaterials =
         group.add(instance);
     }
 
-    return { group, placements: list };
+    return { group, placements: list, materialGroupMerge };
 }

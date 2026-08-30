@@ -39,4 +39,20 @@ node tools/static_visibility_baker/road_sensitivity.mjs
 
 It constructs actual-material merged and 1/2/4/5-cell chunk variants at the current density and with exactly ten planar sub-triangles per source triangle, then measures full-pipeline frustum-only A/Bs. It does not authorize road PVS use; the report explicitly separates measured chunk overhead from the earlier modeled occlusion opportunity.
 
+To attribute full-pipeline draw calls and triangles across a 5×5 city-region grid:
+
+```bash
+node tools/static_visibility_baker/profile_regions.mjs
+```
+
+The profiler samples the road cell nearest each region center in all four cardinal directions, compares static visibility off/on, and reconciles every attributed draw against the renderer counters. It writes JSON and Markdown reports under `tests/artifacts/static_visibility_regions/`.
+
+For a blank workload assessment with static visibility continuously enabled, without an off/on comparison:
+
+```bash
+node tools/static_visibility_baker/profile_regions.mjs --on-only
+```
+
+This writes absolute category, render-pass, direction, per-region ownership, synchronized CPU+GPU frame timing, and traffic-control material-group consolidation statistics under `tests/artifacts/visibility_on_regions/`.
+
 Do not hand-edit the payload. Any city-map, building, traffic-control, tree-placement, generator, geometry-revision, or bake-profile change alters the canonical city hash and makes the old payload fail open at runtime.
