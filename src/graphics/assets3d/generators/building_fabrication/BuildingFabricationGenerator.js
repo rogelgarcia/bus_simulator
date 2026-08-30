@@ -3868,8 +3868,11 @@ function makeWallMaterialFromSpec({ material, baseColorHex, textureCache, wallBa
     return mat;
 }
 
-function makeBeltLikeMaterialFromSpec({ material, baseColorHex, textureCache }) {
+function makeBeltLikeMaterialFromSpec({ material, baseColorHex, textureCache, wallBase = null }) {
     if (material?.kind === 'texture') {
+        if (wallBase && typeof wallBase === 'object') {
+            return makeWallMaterialFromSpec({ material, baseColorHex, textureCache, wallBase });
+        }
         return makeTextureMaterialFromBuildingStyle({
             style: material.id,
             baseColorHex,
@@ -8553,7 +8556,8 @@ export function buildBuildingFabricationVisualParts({
             const beltMat = makeBeltLikeMaterialFromSpec({
                 material: beltCfg.material,
                 baseColorHex,
-                textureCache
+                textureCache,
+                wallBase: beltCfg.wallBase ?? null
             });
             const beltStyleId = beltCfg.material?.kind === 'texture' ? beltCfg.material.id : null;
             const beltUrls = beltStyleId ? resolveBuildingStyleWallMaterialUrls(beltStyleId) : null;

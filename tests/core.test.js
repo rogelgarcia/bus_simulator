@@ -5609,6 +5609,7 @@ async function runTests() {
     const { mergeBuildingGroupGeometry } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingGeometryMerger.js');
     const {
         buildWindowMeshGeometryBundle,
+        getWindowMeshGeometryKey,
         WINDOW_MESH_DOUBLE_DOOR_CENTER_GAP_METERS
     } = await import('/src/graphics/engine3d/buildings/window_mesh/WindowMeshGeometry.js');
     const {
@@ -5840,6 +5841,53 @@ async function runTests() {
         const doubleHandleVerts = doubleBundle.handles?.attributes?.position?.count ?? 0;
         assertTrue(singleHandleVerts > 0, 'Expected single-door handles geometry.');
         assertTrue(doubleHandleVerts > singleHandleVerts, 'Expected double-door mode to generate handles on both leaves.');
+    });
+
+    test('WindowMeshGeometry: authored C-pull height uses the outer door bottom and scale changes geometry', () => {
+        const makeDoor = (handleScale) => ({
+            width: 4.88,
+            height: 5,
+            arch: { enabled: false },
+            frame: {
+                width: 0.13,
+                verticalWidth: 0.13,
+                horizontalWidth: 0.11,
+                depth: 0.16,
+                openBottom: true,
+                addHandles: true,
+                handleStyle: 'c_pull',
+                handleScale,
+                handleCenterHeightMeters: 1,
+                doorStyle: 'double',
+                doorBottomFrame: { enabled: true, mode: 'match', heightMeters: 0.12 },
+                doorCenterFrame: { leftMode: 'match', rightMode: 'none' }
+            },
+            muntins: { enabled: false, columns: 1, rows: 1 }
+        });
+        const normalSettings = makeDoor(1);
+        const largeSettings = makeDoor(3);
+        const normal = buildWindowMeshGeometryBundle(normalSettings);
+        const large = buildWindowMeshGeometryBundle(largeSettings);
+        normal.handles.computeBoundingBox();
+        large.handles.computeBoundingBox();
+
+        const boxHeight = (box) => box.max.y - box.min.y;
+        const centerAboveBottom = (box) => (box.min.y + box.max.y) * 0.5 + 2.5;
+        assertNear(centerAboveBottom(large.handles.boundingBox), 1, 1e-6, 'Expected authored pull center exactly 1m above the outer door bottom.');
+        assertNear(
+            boxHeight(large.handles.boundingBox) / boxHeight(normal.handles.boundingBox),
+            3,
+            1e-6,
+            'Expected a uniform 3x pull-height scale.'
+        );
+        assertFalse(
+            getWindowMeshGeometryKey(normalSettings) === getWindowMeshGeometryKey(largeSettings),
+            'Handle scale and center height must participate in the geometry cache key.'
+        );
+
+        for (const bundle of [normal, large]) {
+            for (const geometry of Object.values(bundle)) geometry?.dispose?.();
+        }
     });
 
     test('WindowMeshDecorationsRig: double-door sill splits and rejoins with style changes', () => {

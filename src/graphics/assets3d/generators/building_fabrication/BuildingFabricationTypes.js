@@ -678,6 +678,9 @@ export function createDefaultFloorLayer({
                 allowTextureId: (id) => isBuildingStyle(id) || isPbrBuildingWallMaterialId(id),
                 stringKind: 'color'
             }),
+            wallBase: b?.wallBase && typeof b.wallBase === 'object'
+                ? normalizeWallBaseMaterialConfig(b.wallBase)
+                : null,
             tiling: normalizeTilingConfig(b?.tiling, { defaultTileMeters: 2.0 })
         },
         cornice: normalizeCorniceConfig(cornice, { isRoof: false }),
@@ -826,6 +829,7 @@ export function cloneBuildingLayers(layers) {
         if (type === LAYER_TYPE.FLOOR) {
             const belt = layer?.belt ?? {};
             const beltMaterial = belt?.material ?? null;
+            const beltWallBase = belt?.wallBase ?? null;
             const beltTiling = belt?.tiling ?? null;
             const cornice = layer?.cornice ?? null;
             const windows = layer?.windows ?? {};
@@ -857,6 +861,7 @@ export function cloneBuildingLayers(layers) {
                 belt: {
                     ...belt,
                     material: beltMaterial ? { ...beltMaterial } : beltMaterial,
+                    wallBase: beltWallBase ? deepClone(beltWallBase) : beltWallBase,
                     tiling: beltTiling ? deepClone(beltTiling) : beltTiling
                 },
                 cornice: cornice ? deepClone(cornice) : cornice,

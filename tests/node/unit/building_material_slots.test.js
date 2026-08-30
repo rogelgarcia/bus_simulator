@@ -21,7 +21,11 @@ import {
 const SLOTS = normalizeBuildingMaterialSlotsConfig({
     slots: {
         wallPrimary: { material: { kind: 'preset', id: 'brick.red_standard' } },
-        trim: { material: { kind: 'texture', id: 'pbr.limestone_smooth' } },
+        trim: {
+            material: { kind: 'texture', id: 'pbr.limestone_smooth' },
+            wallBase: { tintHex: 0x645f58, roughness: 0.78, normalStrength: 1.25 },
+            tiling: { enabled: true, tileMeters: 0.4, tileMetersU: 0.4, tileMetersV: 0.4, uvEnabled: true }
+        },
         base: 'pbr.rusticated_ashlar'
     }
 });
@@ -67,6 +71,22 @@ test('MaterialSlots: slot references resolve to the slot bundle', () => {
     const missing = resolveMaterialSpecBundle({ kind: 'slot', id: 'nope' }, { materialSlots: SLOTS, warnings });
     assert.equal(missing, null);
     assert.ok(warnings.some((w) => w.includes('nope')), 'expected a warning for the unresolved slot');
+});
+
+test('MaterialSlots: belt slot carries wall tint, surface response, and tiling together', () => {
+    const resolved = resolveBuildingConfigMaterials({
+        layers: [{
+            id: 'floor_belt',
+            type: 'floor',
+            belt: { enabled: true, material: { kind: 'slot', id: 'trim' } }
+        }],
+        materialSlots: SLOTS
+    });
+    const belt = resolved.layers[0].belt;
+
+    assert.deepEqual(belt.material, SLOTS.slots.trim.material);
+    assert.deepEqual(belt.wallBase, SLOTS.slots.trim.wallBase);
+    assert.deepEqual(belt.tiling, SLOTS.slots.trim.tiling);
 });
 
 test('MaterialSlots: slots holding a brick preset resolve through the preset', () => {
@@ -188,6 +208,8 @@ test('resolveBuildingConfigMaterials: rewrites slot/preset refs across the confi
     assert.equal(floor.materialVariation.enabled, true, 'preset enables material variation for the brick block');
     assert.ok(floor.materialVariation.brick.perBrick.layout.bricksPerTileX > 0);
     assert.deepEqual(floor.belt.material, { kind: 'texture', id: 'pbr.limestone_smooth' });
+    assert.deepEqual(floor.belt.wallBase, SLOTS.slots.trim.wallBase);
+    assert.deepEqual(floor.belt.tiling, SLOTS.slots.trim.tiling);
     assert.deepEqual(floor.cornice.material, { kind: 'texture', id: 'pbr.limestone_smooth' });
     assert.equal(floor.cornice.ornament.material.kind, 'match_wall', 'match_wall stays legacy');
     assert.deepEqual(floor.banding.material, { kind: 'texture', id: 'pbr.limestone_smooth' });

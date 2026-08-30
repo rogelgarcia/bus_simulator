@@ -124,6 +124,30 @@ test('WindowMeshSettings: frame style defaults include door style, bottom/center
     assert.equal(s.frame.doorCenterFrame.leftMode, WINDOW_FRAME_MATCH_MODE.MATCH);
     assert.equal(s.frame.doorCenterFrame.rightMode, WINDOW_FRAME_MATCH_MODE.MATCH);
     assert.equal(s.frame.handleMaterialMode, WINDOW_HANDLE_MATERIAL_MODE.MATCH);
+    assert.equal(s.frame.handleScale, 1);
+    assert.equal(s.frame.handleCenterHeightMeters, null);
+});
+
+test('WindowMeshSettings: handle scale and authored center height sanitize independently', () => {
+    const s = sanitizeWindowMeshSettings({
+        height: 5,
+        frame: {
+            handleScale: 3,
+            handleCenterHeightMeters: 1
+        }
+    });
+    assert.equal(s.frame.handleScale, 3);
+    assert.equal(s.frame.handleCenterHeightMeters, 1);
+
+    const clamped = sanitizeWindowMeshSettings({
+        height: 2,
+        frame: {
+            handleScale: 20,
+            handleCenterHeightMeters: 20
+        }
+    });
+    assert.equal(clamped.frame.handleScale, 4);
+    assert.equal(clamped.frame.handleCenterHeightMeters, 1.9);
 });
 
 test('WindowMeshSettings: frame vertical/horizontal widths sanitize independently with legacy width fallback', () => {

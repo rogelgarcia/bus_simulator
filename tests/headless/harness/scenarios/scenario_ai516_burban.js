@@ -10,23 +10,28 @@ const COMMON_OPTIONS = Object.freeze({
 });
 
 const OVERALL_CAMERA = Object.freeze({
-    cameraDir: Object.freeze({ x: 0.82, y: 0.34, z: 1.0 }),
+    cameraDir: Object.freeze({ x: 0.18, y: 0.34, z: 1.0 }),
     cameraPadding: 1.08,
     cameraTargetYFrac: 0.48
 });
 
 const CLOSEUP_CAMERA = Object.freeze({
-    cameraDir: Object.freeze({ x: 0.92, y: -0.12, z: 1.0 }),
+    // The source photo is predominantly frontal with only enough rightward
+    // offset to describe the broad curve. A steep diagonal view makes the
+    // straight entrance run read as a false third arc.
+    cameraDir: Object.freeze({ x: 0.08, y: -0.12, z: 1.0 }),
     cameraPadding: 0.56,
     cameraTargetYFrac: 0.45
 });
 
 const HDRI_OPTIONS = Object.freeze({
-    envMapIntensity: 0.72,
-    backgroundBlurriness: 0.08,
-    backgroundIntensity: 0.72,
+    envMapIntensity: 0.82,
+    backgroundBlurriness: 0,
+    backgroundIntensity: 0.88,
     backgroundRotationDeg: 215,
-    environmentRotationDeg: 215
+    // Offset the reflection panorama from the visible backdrop so the front
+    // glass catches a bright city-and-sky sector without flattening the stone.
+    environmentRotationDeg: 125
 });
 
 function createBurbanScenario(context, camera, { hdri = false } = {}) {

@@ -150,6 +150,9 @@ Canonical controls:
 - `doorCenterFrameRightMode` (enum): `match | none` (double only)
 - `frameAddHandles` (bool, default `false`)
 - `frameHandleMaterialMode` (enum): `match | metal`
+- `frameHandleStyle` (enum): `bar | c_pull`
+- `frameHandleScale` (number, default `1`, range `0.25..4`)
+- `frameHandleCenterHeightMeters` (nullable number): handle center measured upward from the outer door bottom; `null` preserves the style-specific legacy placement
 
 Door frame style behavior:
 - `single`: one door leaf across the full opening width.
@@ -166,7 +169,9 @@ Door bottom frame behavior:
 
 Handle behavior:
 - Handles are generated only when `frameAddHandles = true` and door mode is active.
-- Handle placement uses a fixed border offset of `0.15m` from the relevant door-leaf edge (not size-relative).
+- Unless an authored center height is present, handle placement uses the legacy style-specific height. An authored `frameHandleCenterHeightMeters` is independent of the bottom-frame thickness.
+- Handle dimensions scale uniformly with `frameHandleScale`; the C-pull tube, grip, arms and stand-off all use the same factor.
+- Bar placement uses a `0.15m` base border offset from the relevant door-leaf edge; the offset scales with the authored handle.
 - In `single`, one handle is placed on the right side.
 - In `double`, one handle is placed per leaf (meeting-side placement).
 - Handle connector cylinders are `50%` thinner than the main handle body.

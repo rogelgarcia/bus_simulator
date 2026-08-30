@@ -398,7 +398,11 @@ export function resolveBuildingConfigMaterials({
             }
 
             if (layer.belt && typeof layer.belt === 'object') {
-                resolveSpecInPlace(layer.belt, 'material', ctx, { tilingKey: 'tiling', context: `${label} belt` });
+                resolveSpecInPlace(layer.belt, 'material', ctx, {
+                    wallBaseKey: 'wallBase',
+                    tilingKey: 'tiling',
+                    context: `${label} belt`
+                });
             }
             resolveCorniceMaterials(layer.cornice, ctx, label);
 

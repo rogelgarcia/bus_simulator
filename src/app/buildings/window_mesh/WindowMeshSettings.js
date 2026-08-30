@@ -365,6 +365,8 @@ export function detectWindowGlassPresetId(glass, { epsilon = 1e-6 } = {}) {
  * @property {boolean} addHandles
  * @property {'match'|'metal'} handleMaterialMode
  * @property {'bar'|'c_pull'} handleStyle
+ * @property {number} handleScale
+ * @property {number|null} handleCenterHeightMeters
  * @property {number|null} handleColorHex
  * @property {'single'|'double'} doorStyle
  * @property {{enabled: boolean, heightMeters: number}} doorKickPanel
@@ -491,6 +493,10 @@ export const WINDOW_MESH_DEFAULTS = Object.freeze({
         addHandles: false,
         handleMaterialMode: WINDOW_HANDLE_MATERIAL_MODE.MATCH,
         handleStyle: WINDOW_HANDLE_STYLE.BAR,
+        // Per-door dimensions preserve the legacy handle unless explicitly
+        // authored. Height is the handle center above the outer door bottom.
+        handleScale: 1,
+        handleCenterHeightMeters: null,
         // null = the mode's own color (frame color for 'match', chrome for
         // 'metal'); a hex overrides it (e.g. dark bronze pulls).
         handleColorHex: null,
@@ -669,6 +675,17 @@ export function sanitizeWindowMeshSettings(input) {
         frameSrc.handleStyle,
         WINDOW_MESH_DEFAULTS.frame.handleStyle
     );
+    const frameHandleScale = clamp(
+        frameSrc.handleScale,
+        0.25,
+        4.0,
+        WINDOW_MESH_DEFAULTS.frame.handleScale
+    );
+    // Keep null as the legacy, style-specific placement. Checking the raw
+    // value avoids treating null as an authored zero.
+    const frameHandleCenterHeightMeters = Number.isFinite(frameSrc.handleCenterHeightMeters)
+        ? clamp(frameSrc.handleCenterHeightMeters, 0.1, Math.max(0.1, height - 0.1), 1.0)
+        : WINDOW_MESH_DEFAULTS.frame.handleCenterHeightMeters;
     // Number.isFinite on the RAW value: Number(null) coerces to a finite 0,
     // which would silently turn the "unset" sentinel into black.
     const frameHandleColorHex = Number.isFinite(frameSrc.handleColorHex)
@@ -913,6 +930,8 @@ export function sanitizeWindowMeshSettings(input) {
             addHandles: frameAddHandles,
             handleMaterialMode: frameHandleMaterialMode,
             handleStyle: frameHandleStyle,
+            handleScale: frameHandleScale,
+            handleCenterHeightMeters: frameHandleCenterHeightMeters,
             handleColorHex: frameHandleColorHex,
             doorStyle: frameDoorStyle,
             doorKickPanel: frameDoorKickPanel,

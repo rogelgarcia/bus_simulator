@@ -200,6 +200,10 @@ Given a solved facade layout, geometry generation MUST:
 - Ensure belts and roofs follow the final wall silhouette defined by bays:
   - belts extrude/inset relative to the updated wall surface,
   - roof rings/edges align to the updated outer silhouette where applicable.
+- A belt that references a material slot MUST inherit the slot as one appearance
+  bundle: `material`, `wallBase` tint/roughness/normal strength, and `tiling`.
+  Textured belts MUST apply that `wallBase` response instead of silently
+  reverting to the texture's untinted defaults.
 - Treat corner handling as a first-class requirement (reserved corner zones / caps / ownership) to avoid cracks; see `specs/buildings/BUILDING_2_FACADE_LAYOUT_SPEC.md`.
 - Wall material UV continuity (AI 506): consecutive strips that resolve to the SAME wall material continue one accumulated texture run along the face — the pattern never resets at a strip boundary (whether a reset was visible used to depend on strip width vs texture period). A material change starts a fresh run. The old per-bay `textureFlow` gates (`repeats`/`overflow_*`) are subsumed by this rule; the field survives in the model for compatibility.
 - Wall material variation MUST NOT displace the texture lookup by default (AI 504): the wall preset's anti-tiling (per-cell UV offset+rotation) is opt-in — it shears crisp coursing (ashlar) into diagonal dashes and exposes wall-segment seams. Wear/grime/streak layers modulate tint/roughness only.

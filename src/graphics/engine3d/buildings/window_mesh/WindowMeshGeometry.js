@@ -904,31 +904,39 @@ function createHandleCylinderGeometry({ x = 0, y = 0, z = 0, height = 0.1, radiu
     return geo;
 }
 
-function resolveHandleYCenterFromProfile(profile, { desiredAboveBottom = 1.0 } = {}) {
+function resolveHandleYCenterFromProfile(profile, {
+    desiredAboveBottom = 1.0,
+    desiredCenterY = null,
+    handleHeight = HANDLE_MAIN_HEIGHT
+} = {}) {
     const yBottom = profile.centerY - profile.innerHeight * 0.5;
     const yTop = profile.centerY + profile.innerHeight * 0.5;
-    const yDesired = yBottom + desiredAboveBottom;
-    const yMin = yBottom + HANDLE_MAIN_HEIGHT * 0.5 + 0.02;
-    const yMax = yTop - HANDLE_MAIN_HEIGHT * 0.5 - 0.02;
+    const yDesired = Number.isFinite(desiredCenterY)
+        ? desiredCenterY
+        : yBottom + desiredAboveBottom;
+    const halfHandle = Math.max(EPS, Number(handleHeight) || HANDLE_MAIN_HEIGHT) * 0.5;
+    const yMin = yBottom + halfHandle + 0.02;
+    const yMax = yTop - halfHandle - 0.02;
     return yMax >= yMin
         ? Math.min(yMax, Math.max(yMin, yDesired))
         : (yBottom + yTop) * 0.5;
 }
 
-// The C-pull grip centers at the DOOR's middle, slightly below its vertical
-// center (~1.18m absolute); the leaf inner bottom sits on the tall 0.51m
-// kick rail, so measure ~0.67 above it.
+// Legacy automatic C-pull placement centers the grip slightly below the
+// door's vertical middle. Authored `handleCenterHeightMeters` supersedes this
+// offset and measures from the outer door bottom instead.
 const C_PULL_DESIRED_ABOVE_BOTTOM_METERS = 0.67;
 
 // One squared C-bracket pull: two arms leave the leaf face near the meeting
 // stile (short stubs out), turn sideways away from the stile, and a vertical
 // grip bar joins their far ends parallel to the face — the open side of the
 // C faces the stile. `dir` is the away-from-stile direction (+1/-1 in x).
-function buildCPullGeometry({ x, yCenter, dir, surfaceZ }) {
-    const r = HANDLE_C_PULL_RADIUS;
-    const grip = HANDLE_C_PULL_GRIP_HEIGHT;
-    const arm = HANDLE_C_PULL_ARM_METERS;
-    const standoff = HANDLE_C_PULL_STANDOFF_METERS;
+function buildCPullGeometry({ x, yCenter, dir, surfaceZ, scale = 1 }) {
+    const safeScale = Math.max(0.25, Number(scale) || 1);
+    const r = HANDLE_C_PULL_RADIUS * safeScale;
+    const grip = HANDLE_C_PULL_GRIP_HEIGHT * safeScale;
+    const arm = HANDLE_C_PULL_ARM_METERS * safeScale;
+    const standoff = HANDLE_C_PULL_STANDOFF_METERS * safeScale;
     const zOut = surfaceZ + standoff;
     const yTop = yCenter + grip * 0.5;
     const yBottom = yCenter - grip * 0.5;
@@ -1032,12 +1040,23 @@ function buildDoorHandlesGeometry({ settings }) {
     if (!s.frame.addHandles || !s.frame.openBottom) return null;
 
     const cPull = s.frame.handleStyle === 'c_pull';
-    const edgeOffset = cPull ? HANDLE_C_PULL_EDGE_OFFSET_METERS : HANDLE_EDGE_OFFSET_METERS;
+    const handleScale = Math.max(0.25, Number(s.frame.handleScale) || 1);
+    const handleRadius = (cPull ? HANDLE_C_PULL_RADIUS : HANDLE_RADIUS) * handleScale;
+    const handleHeight = (cPull ? HANDLE_C_PULL_GRIP_HEIGHT : HANDLE_MAIN_HEIGHT) * handleScale;
+    const edgeOffset = (cPull ? HANDLE_C_PULL_EDGE_OFFSET_METERS : HANDLE_EDGE_OFFSET_METERS) * handleScale;
+    const authoredCenterY = Number.isFinite(s.frame.handleCenterHeightMeters)
+        ? -s.height * 0.5 + s.frame.handleCenterHeightMeters
+        : null;
+    const resolveHandleY = (profile) => resolveHandleYCenterFromProfile(profile, {
+        desiredAboveBottom: cPull ? C_PULL_DESIRED_ABOVE_BOTTOM_METERS : 1.0,
+        desiredCenterY: authoredCenterY,
+        handleHeight
+    });
     const surfaceZ = Math.max(EPS, s.frame.depth);
-    const handleCenterZ = surfaceZ + 0.08;
+    const handleCenterZ = surfaceZ + 0.08 * handleScale;
     const connectorLength = Math.max(EPS, handleCenterZ - surfaceZ);
     const connectorCenterZ = surfaceZ + connectorLength * 0.5;
-    const connectorYOffset = HANDLE_MAIN_HEIGHT * 0.32;
+    const connectorYOffset = HANDLE_MAIN_HEIGHT * handleScale * 0.32;
 
     const handlePlacements = [];
     if (isDoorDoubleStyle(s)) {
@@ -1072,40 +1091,40 @@ function buildDoorHandlesGeometry({ settings }) {
         // the center), never over the glass; the bar handle keeps its
         // just-inside-the-glass placement.
         const leftStileX = leftEdge + Math.max(0.02, centerLeftWidth) * 0.5;
-        const leftMinX = -leafOffset + leftProfile.centerX - leftProfile.innerWidth * 0.5 + HANDLE_RADIUS;
+        const leftMinX = -leafOffset + leftProfile.centerX - leftProfile.innerWidth * 0.5 + handleRadius;
         const leftMaxX = leftEdge + Math.max(0.02, centerLeftWidth);
         const leftHandleX = cPull
             ? leftStileX
             : Math.max(leftMinX, Math.min(leftMaxX, leftEdge - edgeOffset));
         handlePlacements.push({
             x: leftHandleX,
-            y: resolveHandleYCenterFromProfile(leftProfile, { desiredAboveBottom: cPull ? C_PULL_DESIRED_ABOVE_BOTTOM_METERS : 1.0 }),
+            y: resolveHandleY(leftProfile),
             dir: -1
         });
 
         const rightEdge = leafOffset + rightProfile.centerX - rightProfile.innerWidth * 0.5;
         const rightStileX = rightEdge - Math.max(0.02, centerRightWidth) * 0.5;
         const rightMinX = rightEdge - Math.max(0.02, centerRightWidth);
-        const rightMaxX = leafOffset + rightProfile.centerX + rightProfile.innerWidth * 0.5 - HANDLE_RADIUS;
+        const rightMaxX = leafOffset + rightProfile.centerX + rightProfile.innerWidth * 0.5 - handleRadius;
         const rightHandleX = cPull
             ? rightStileX
             : Math.max(rightMinX, Math.min(rightMaxX, rightEdge + edgeOffset));
         handlePlacements.push({
             x: rightHandleX,
-            y: resolveHandleYCenterFromProfile(rightProfile, { desiredAboveBottom: cPull ? C_PULL_DESIRED_ABOVE_BOTTOM_METERS : 1.0 }),
+            y: resolveHandleY(rightProfile),
             dir: 1
         });
     } else {
         const { innerWidth, innerHeight, centerY } = computeInnerOpeningProfile(s);
-        const xMin = -innerWidth * 0.5 + HANDLE_RADIUS;
-        const xMax = innerWidth * 0.5 - HANDLE_RADIUS;
+        const xMin = -innerWidth * 0.5 + handleRadius;
+        const xMax = innerWidth * 0.5 - handleRadius;
         const x = Math.max(xMin, Math.min(xMax, innerWidth * 0.5 - edgeOffset));
         handlePlacements.push({
             x,
-            y: resolveHandleYCenterFromProfile({
+            y: resolveHandleY({
                 centerY,
                 innerHeight
-            }, { desiredAboveBottom: cPull ? C_PULL_DESIRED_ABOVE_BOTTOM_METERS : 1.0 }),
+            }),
             dir: -1
         });
     }
@@ -1120,7 +1139,8 @@ function buildDoorHandlesGeometry({ settings }) {
                 x,
                 yCenter,
                 dir: placement.dir ?? -1,
-                surfaceZ
+                surfaceZ,
+                scale: handleScale
             }));
             continue;
         }
@@ -1128,8 +1148,8 @@ function buildDoorHandlesGeometry({ settings }) {
             x,
             y: yCenter,
             z: handleCenterZ,
-            height: HANDLE_MAIN_HEIGHT,
-            radius: HANDLE_RADIUS,
+            height: HANDLE_MAIN_HEIGHT * handleScale,
+            radius: HANDLE_RADIUS * handleScale,
             axis: 'y'
         }));
         parts.push(createHandleCylinderGeometry({
@@ -1137,7 +1157,7 @@ function buildDoorHandlesGeometry({ settings }) {
             y: yCenter + connectorYOffset,
             z: connectorCenterZ,
             height: connectorLength,
-            radius: HANDLE_CONNECTOR_RADIUS,
+            radius: HANDLE_CONNECTOR_RADIUS * handleScale,
             axis: 'z'
         }));
         parts.push(createHandleCylinderGeometry({
@@ -1145,7 +1165,7 @@ function buildDoorHandlesGeometry({ settings }) {
             y: yCenter - connectorYOffset,
             z: connectorCenterZ,
             height: connectorLength,
-            radius: HANDLE_CONNECTOR_RADIUS,
+            radius: HANDLE_CONNECTOR_RADIUS * handleScale,
             axis: 'z'
         }));
     }
@@ -1184,6 +1204,8 @@ export function getWindowMeshGeometryKey(settings, { curveSegments = 24 } = {}) 
         `fob:${f.openBottom ? 1 : 0}`,
         `fah:${f.addHandles ? 1 : 0}`,
         `fhs:${f.handleStyle === 'c_pull' ? 'c' : 'b'}`,
+        `fhscale:${q(f.handleScale)}`,
+        `fhcenter:${Number.isFinite(f.handleCenterHeightMeters) ? q(f.handleCenterHeightMeters) : 'auto'}`,
         `fkp:${f.doorKickPanel?.enabled ? q(f.doorKickPanel.heightMeters) : 0}`,
         `fmr:${f.doorMidRail?.enabled ? `${q(f.doorMidRail.yMeters)}x${q(f.doorMidRail.thicknessMeters)}` : 0}`,
         `fds:${f.doorStyle === 'double' ? 'd' : 's'}`,
