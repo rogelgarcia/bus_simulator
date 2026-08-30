@@ -2288,3 +2288,650 @@
     justify-content: flex-end;
     gap: 10px;
 }
+
+/* AI 520: transactional per-layer silhouette authoring popup. */
+.building-fab2-silhouette-overlay {
+    z-index: 280;
+    padding: 12px;
+    box-sizing: border-box;
+}
+
+.building-fab2-silhouette-panel {
+    width: min(1480px, calc(100vw - 24px));
+    height: min(900px, calc(100vh - 24px));
+    max-width: none;
+    max-height: none;
+    padding: 0;
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    border-radius: 18px;
+    background: rgba(18, 25, 33, 0.98);
+    box-shadow: 0 24px 90px rgba(0,0,0,0.66);
+}
+
+.building-fab2-silhouette-header,
+.building-fab2-silhouette-source-bar,
+.building-fab2-silhouette-footer {
+    padding: 14px 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.11);
+}
+
+.building-fab2-silhouette-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.building-fab2-silhouette-heading {
+    min-width: 0;
+}
+
+.building-fab2-silhouette-title {
+    font-size: 18px;
+}
+
+.building-fab2-silhouette-subtitle {
+    margin-top: 3px;
+}
+
+.building-fab2-silhouette-history {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+}
+
+.building-fab2-silhouette-history-status {
+    min-width: 76px;
+    padding-left: 4px;
+    font-size: 11px;
+    color: rgba(235,244,250,0.68);
+}
+
+.building-fab2-silhouette-icon-btn {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 9px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.2);
+    color: #e9f2ff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.building-fab2-silhouette-icon-btn:hover:not(:disabled),
+.building-fab2-silhouette-icon-btn.is-active {
+    background: rgba(100,210,255,0.2);
+    border-color: rgba(100,210,255,0.42);
+}
+
+.building-fab2-silhouette-icon-btn:disabled {
+    opacity: 0.38;
+    cursor: default;
+}
+
+.building-fab2-silhouette-source-bar {
+    display: grid;
+    grid-template-columns: minmax(160px, 1fr) minmax(220px, 300px) auto;
+    align-items: center;
+    gap: 12px;
+    background: rgba(0,0,0,0.12);
+}
+
+.building-fab2-silhouette-source-text {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    min-width: 0;
+}
+
+.building-fab2-silhouette-source-label {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(235,244,250,0.6);
+}
+
+.building-fab2-silhouette-source-text strong {
+    color: #9be4ff;
+    font-size: 13px;
+}
+
+.building-fab2-silhouette-source-select {
+    min-height: 36px;
+}
+
+.building-fab2-silhouette-body {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 350px;
+}
+
+.building-fab2-silhouette-workspace {
+    min-width: 0;
+    min-height: 0;
+    padding: 12px;
+    display: grid;
+    grid-template-rows: auto minmax(360px, 1fr) auto auto;
+    gap: 9px;
+    border-right: 1px solid rgba(255,255,255,0.11);
+}
+
+.building-fab2-silhouette-toolbar {
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.building-fab2-silhouette-toolbar-divider {
+    width: 1px;
+    height: 24px;
+    margin: 0 3px;
+    background: rgba(255,255,255,0.14);
+}
+
+.building-fab2-silhouette-canvas-shell {
+    position: relative;
+    min-width: 0;
+    min-height: 360px;
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid rgba(160,210,236,0.2);
+    background: #121921;
+    box-shadow: inset 0 0 40px rgba(0,0,0,0.3);
+}
+
+.building-fab2-silhouette-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 360px;
+    outline: none;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+.building-fab2-silhouette-panel[data-tool="select"] .building-fab2-silhouette-canvas {
+    cursor: default;
+}
+
+.building-fab2-silhouette-panel[data-tool="translate"] .building-fab2-silhouette-canvas {
+    cursor: move;
+}
+
+.building-fab2-silhouette-canvas:focus-visible {
+    box-shadow: inset 0 0 0 2px rgba(100,210,255,0.65);
+}
+
+.building-fab2-silhouette-canvas-hud {
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    max-width: calc(100% - 20px);
+    padding: 6px 9px;
+    border-radius: 8px;
+    background: rgba(4,9,13,0.72);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: rgba(235,247,252,0.78);
+    font-size: 10px;
+    pointer-events: none;
+}
+
+.building-fab2-silhouette-legend,
+.building-fab2-silhouette-preview-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+}
+
+.building-fab2-silhouette-legend {
+    min-height: 20px;
+}
+
+.building-fab2-silhouette-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: rgba(235,244,250,0.68);
+    font-size: 10px;
+}
+
+.building-fab2-silhouette-legend-swatch {
+    width: 18px;
+    height: 3px;
+    border-radius: 999px;
+    background: rgba(222,231,239,0.78);
+}
+
+.building-fab2-silhouette-legend-swatch.is-stretchable {
+    background: rgba(84,226,172,0.95);
+}
+
+.building-fab2-silhouette-legend-swatch.is-pinned {
+    background: rgba(231,190,126,0.95);
+}
+
+.building-fab2-silhouette-legend-swatch.is-ghost {
+    height: 0;
+    border-top: 2px dashed rgba(150,220,235,0.62);
+    background: transparent;
+}
+
+.building-fab2-silhouette-legend-swatch.is-minimum {
+    height: 8px;
+    border-left: 2px solid rgba(255,255,255,0.7);
+    border-right: 2px solid rgba(255,255,255,0.7);
+    background: rgba(255,255,255,0.16);
+}
+
+.building-fab2-silhouette-preview-bar {
+    min-height: 40px;
+    padding: 8px 10px;
+    border-radius: 11px;
+    background: rgba(0,0,0,0.16);
+    border: 1px solid rgba(255,255,255,0.09);
+}
+
+.building-fab2-silhouette-preview-bar .building-fab2-silhouette-toggle {
+    flex-direction: row-reverse;
+    justify-content: flex-end;
+    gap: 7px;
+    white-space: nowrap;
+}
+
+.building-fab2-silhouette-preview-bar .building-fab2-silhouette-field {
+    width: 118px;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+}
+
+.building-fab2-silhouette-preview-bar .building-fab2-silhouette-field-label {
+    white-space: nowrap;
+}
+
+.building-fab2-silhouette-fit-status {
+    margin-left: auto;
+    max-width: min(430px, 45%);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    font-weight: 800;
+    color: #75e5b6;
+}
+
+.building-fab2-silhouette-fit-status.is-warning {
+    color: #ffd184;
+}
+
+.building-fab2-silhouette-inspector {
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 12px;
+    background: rgba(0,0,0,0.08);
+}
+
+.building-fab2-silhouette-inspector-section {
+    padding: 12px;
+    border-radius: 12px;
+    background: rgba(0,0,0,0.16);
+    border: 1px solid rgba(255,255,255,0.09);
+}
+
+.building-fab2-silhouette-inspector-section + .building-fab2-silhouette-inspector-section {
+    margin-top: 10px;
+}
+
+.building-fab2-silhouette-inspector-title {
+    margin-bottom: 10px;
+    font-size: 12px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.building-fab2-silhouette-inspector-body,
+.building-fab2-silhouette-selection-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}
+
+.building-fab2-silhouette-selection-summary {
+    color: #bcecff;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.building-fab2-silhouette-field-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+}
+
+.building-fab2-silhouette-field {
+    min-width: 0;
+    display: grid;
+    gap: 5px;
+}
+
+.building-fab2-silhouette-field-label {
+    font-size: 10px;
+    color: rgba(235,244,250,0.66);
+}
+
+.building-fab2-silhouette-input-shell {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    border-radius: 9px;
+    background: rgba(0,0,0,0.12);
+}
+
+.building-fab2-silhouette-number {
+    min-width: 0;
+    height: 34px;
+    padding: 6px 8px;
+}
+
+.building-fab2-silhouette-field-suffix {
+    margin-left: -27px;
+    width: 23px;
+    padding-right: 5px;
+    color: rgba(235,244,250,0.5);
+    font-size: 9px;
+    text-align: right;
+    pointer-events: none;
+}
+
+.building-fab2-silhouette-number:has(+ .building-fab2-silhouette-field-suffix) {
+    padding-right: 31px;
+}
+
+.building-fab2-silhouette-select {
+    height: 34px;
+    padding: 6px 8px;
+}
+
+.building-fab2-silhouette-tangent-feedback,
+.building-fab2-silhouette-band-indicator {
+    padding: 8px 9px;
+    border-radius: 9px;
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+.building-fab2-silhouette-tangent-feedback {
+    color: #f6d98e;
+    background: rgba(246,191,72,0.08);
+    border: 1px solid rgba(246,191,72,0.18);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.building-fab2-silhouette-band-indicator.is-pinned {
+    color: #edc383;
+    background: rgba(226,166,76,0.08);
+}
+
+.building-fab2-silhouette-band-indicator.is-stretchable {
+    color: #85e8bc;
+    background: rgba(73,206,144,0.08);
+}
+
+.building-fab2-silhouette-validation-summary {
+    padding: 8px 9px;
+    border-radius: 9px;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.building-fab2-silhouette-validation-summary.is-valid {
+    color: #79e5b5;
+    background: rgba(73,206,144,0.09);
+}
+
+.building-fab2-silhouette-validation-summary.has-warnings {
+    color: #ffd184;
+    background: rgba(255,188,72,0.09);
+}
+
+.building-fab2-silhouette-validation-summary.has-errors {
+    color: #ff9ca5;
+    background: rgba(255,85,100,0.1);
+}
+
+.building-fab2-silhouette-validation-list,
+.building-fab2-silhouette-remap-list {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.building-fab2-silhouette-validation-item {
+    width: 100%;
+    padding: 7px 8px;
+    border: 0;
+    border-radius: 8px;
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr);
+    gap: 6px;
+    color: rgba(241,247,250,0.88);
+    background: rgba(255,255,255,0.035);
+    font: inherit;
+    font-size: 10px;
+    line-height: 1.35;
+    text-align: left;
+    cursor: pointer;
+}
+
+.building-fab2-silhouette-validation-item:hover {
+    background: rgba(255,255,255,0.07);
+}
+
+.building-fab2-silhouette-validation-icon {
+    width: 15px;
+    height: 15px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    font-weight: 900;
+}
+
+.building-fab2-silhouette-validation-item.is-error .building-fab2-silhouette-validation-icon {
+    color: #ffafb7;
+    background: rgba(255,85,100,0.14);
+}
+
+.building-fab2-silhouette-validation-item.is-warning .building-fab2-silhouette-validation-icon {
+    color: #ffd184;
+    background: rgba(255,188,72,0.12);
+}
+
+.building-fab2-silhouette-remap-summary {
+    padding: 7px 8px;
+    border-radius: 8px;
+    color: #c6eefe;
+    background: rgba(100,210,255,0.08);
+    font-size: 10px;
+}
+
+.building-fab2-silhouette-remap-row {
+    padding: 9px;
+    border-radius: 9px;
+    border: 1px solid rgba(255,188,72,0.22);
+    background: rgba(255,188,72,0.055);
+}
+
+.building-fab2-silhouette-remap-row-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 10px;
+}
+
+.building-fab2-silhouette-remap-row-header span {
+    padding: 2px 5px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.08);
+    color: rgba(235,244,250,0.66);
+    font-size: 8px;
+    text-transform: uppercase;
+}
+
+.building-fab2-silhouette-remap-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 7px;
+    margin-top: 8px;
+}
+
+.building-fab2-silhouette-footer {
+    border-top: 1px solid rgba(255,255,255,0.11);
+    border-bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    background: rgba(0,0,0,0.12);
+}
+
+.building-fab2-silhouette-footer-message {
+    min-width: 0;
+    margin-top: 0;
+    color: rgba(235,244,250,0.72);
+}
+
+.building-fab2-silhouette-footer-message.is-error {
+    color: #ff9ca5;
+    opacity: 1;
+}
+
+.building-fab2-silhouette-footer-actions {
+    display: flex;
+    gap: 9px;
+    flex: 0 0 auto;
+}
+
+.building-fab2-silhouette-footer-actions .building-fab2-btn {
+    min-width: 96px;
+}
+
+.building-fab2-silhouette-panel.is-inherited .building-fab2-silhouette-canvas {
+    cursor: default;
+    opacity: 0.86;
+}
+
+@media (max-width: 1050px) {
+    .building-fab2-silhouette-panel {
+        height: calc(100vh - 16px);
+        width: calc(100vw - 16px);
+    }
+
+    .building-fab2-silhouette-body {
+        overflow-y: auto;
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .building-fab2-silhouette-workspace {
+        min-height: 620px;
+        border-right: 0;
+        border-bottom: 1px solid rgba(255,255,255,0.11);
+    }
+
+    .building-fab2-silhouette-inspector {
+        overflow: visible;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
+        gap: 10px;
+    }
+
+    .building-fab2-silhouette-inspector-section + .building-fab2-silhouette-inspector-section {
+        margin-top: 0;
+    }
+}
+
+@media (max-width: 700px) {
+    .building-fab2-silhouette-overlay {
+        padding: 0;
+    }
+
+    .building-fab2-silhouette-panel {
+        width: 100vw;
+        height: 100vh;
+        border-radius: 0;
+    }
+
+    .building-fab2-silhouette-header,
+    .building-fab2-silhouette-source-bar,
+    .building-fab2-silhouette-footer {
+        padding: 10px;
+    }
+
+    .building-fab2-silhouette-header {
+        align-items: flex-start;
+    }
+
+    .building-fab2-silhouette-history-status {
+        display: none;
+    }
+
+    .building-fab2-silhouette-source-bar {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .building-fab2-silhouette-source-text {
+        grid-column: 1 / -1;
+    }
+
+    .building-fab2-silhouette-source-select {
+        min-width: 0;
+    }
+
+    .building-fab2-silhouette-workspace {
+        min-height: 560px;
+        padding: 8px;
+        grid-template-rows: auto minmax(330px, 1fr) auto auto;
+    }
+
+    .building-fab2-silhouette-preview-bar {
+        align-items: flex-start;
+    }
+
+    .building-fab2-silhouette-preview-bar .building-fab2-silhouette-toggle {
+        flex: 1 1 45%;
+    }
+
+    .building-fab2-silhouette-fit-status {
+        flex: 1 0 100%;
+        margin-left: 0;
+    }
+
+    .building-fab2-silhouette-inspector {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 8px;
+    }
+
+    .building-fab2-silhouette-footer-message {
+        display: none;
+    }
+
+    .building-fab2-silhouette-footer-actions {
+        width: 100%;
+    }
+
+    .building-fab2-silhouette-footer-actions .building-fab2-btn {
+        flex: 1 1 50%;
+    }
+}

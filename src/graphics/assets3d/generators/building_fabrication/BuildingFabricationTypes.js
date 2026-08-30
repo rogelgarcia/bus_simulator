@@ -12,6 +12,7 @@ import {
 import { WINDOW_TYPE, getDefaultWindowParams, isWindowTypeId } from '../buildings/WindowTextureGenerator.js';
 import { isValidMaterialSlotName, parseMaterialSpecShorthand } from '../../../../app/buildings/BuildingMaterialSlots.js';
 import { normalizeRooftopPropsConfig } from '../../../../app/buildings/RooftopPropsModel.js';
+import { normalizeLayerSilhouette } from '../../../../app/buildings/silhouette_authoring/BuildingLayerSilhouetteModel.js';
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -630,7 +631,8 @@ export function createDefaultFloorLayer({
     materialVariation = null,
     faceLinking = null,
     faceMaterials = null,
-    banding = null
+    banding = null,
+    silhouette = undefined
 } = {}) {
     const b = belt ?? {};
     const styleId = typeof style === 'string' ? style : '';
@@ -655,6 +657,9 @@ export function createDefaultFloorLayer({
     const interiorCfg = normalizeFloorLayerInteriorConfig(interior, {
         fallbackEnabled: interiorEnabled !== undefined ? !!interiorEnabled : false
     });
+    // Field absence is the legacy inheritance path. Do not materialize an
+    // `inherit_default` record unless the source explicitly owns a silhouette.
+    const silhouetteCfg = normalizeLayerSilhouette(silhouette);
 
     const out = {
         id: typeof id === 'string' && id ? id : createLayerId('floor'),
@@ -690,6 +695,7 @@ export function createDefaultFloorLayer({
 
     if (faceLinkingCfg) out.faceLinking = faceLinkingCfg;
     if (faceMaterialsCfg) out.faceMaterials = faceMaterialsCfg;
+    if (silhouetteCfg) out.silhouette = silhouetteCfg;
     return out;
 }
 

@@ -19,16 +19,18 @@ The system MUST:
 - Support **repeatable groups** of bays (pattern repeats) that expand “if it fits”.
 - Support **local repetition ranges** inside groups (e.g., a “window slot” that repeats `min..max` times per group).
 - Support deterministic ordering when distributing extra local repeats (default: **center-out**).
-- Allow **per-layer reflow** (faces can be different lengths per layer) while keeping:
-  - the **same bay topology** across layers (same bay ids/order), and
-  - the same **group repeat counts** across layers.
+- Allow **per-layer reflow** within an explicitly compatible stable-run group
+  while keeping the same bay ids/order and group repeat decisions in that
+  group. Layers with incompatible silhouettes solve as separate groups.
 - Support bays spanning multiple floors and (optionally) spanning multiple layers, with an explicit hint for **continuous mesh generation** (avoid visible breaks).
 - Provide deterministic rules for **corner handling** (seams between adjacent faces).
 
 Non-goals for the first iteration:
 
-- Supporting a layer footprint that changes polygon topology (face count/order changes).
-- Per-layer bay graphs with different bay counts (this breaks vertical continuity).
+- Automatically sharing a facade across unrelated layer runs merely because
+  their local letter ids match.
+- Guessing topology remaps or silently discarding face-targeted authoring when a
+  layer footprint changes face count/order.
 - Backtracking constraint solvers; the fitting must be deterministic and explainable.
 
 ---
@@ -43,9 +45,14 @@ Non-goals for the first iteration:
 
 ### 2.2 Face identity (letters)
 
-- Faces MUST be labeled with stable letter ids: `A`, `B`, `C`, … in clockwise order.
+- Faces MUST carry persistent letter ids from `A..Z`. Initial legacy identity
+  assignment follows clockwise order; subsequent topology edits preserve
+  unaffected ids rather than relabeling by array position.
 - The number of faces is **not limited** to 4.
 - Faces may be at any angle; the editor may snap angles (e.g. 15°), but the model is defined by the polygon geometry.
+- A face letter is local to its silhouette owner. Cross-layer sharing also
+  requires stable lineage/remap provenance and compatible authored local-u
+  orientation/topology; equal letters alone do not establish identity.
 
 ### 2.3 2D facade frame
 
@@ -60,7 +67,7 @@ The facade layout is authored in `(u, v)` and later mapped into 3D space for eac
 
 ---
 
-## 3. Floor layer model and the “faces must match” constraint
+## 3. Floor layer silhouettes and facade compatibility
 
 Buildings are defined in vertical **Layers** (floor layers and roof layers). This facade model targets vertical walls (typically from **floor layers**).
 
@@ -70,12 +77,21 @@ Buildings are defined in vertical **Layers** (floor layers and roof layers). Thi
 - A floor layer owns its own face configuration; face master/slave linking is defined per floor layer (see §4.2).
 - Within a floor layer, a face MAY be linked (slave) to another face (master) so it inherits the master’s authored facade layout for that floor layer.
 
-### 3.2 Topology invariants
+### 3.2 Silhouette ownership and compatibility
 
-To preserve stable face ids and allow cross-layer continuity:
+A floor layer MAY resolve the building default, the preceding resolved floor
+layer, or a detached owned silhouette. Field absence is exactly the legacy
+`inherit_default` path. Detached layer groups MAY have different face counts,
+orders, curves, and configurations; this is not itself invalid.
 
-- All layers to which facades apply MUST have a footprint polygon with the **same number of corners** and **same face order**, so face ids `A..` map consistently.
-- If a layer operation (e.g., `planOffset`) would change topology (edge collapses, vertex merge/split, face disappears), the configuration MUST be considered invalid for this facade system (until a future “remapping” feature exists).
+Facade continuity or a shared solve may cross layers only when participating
+runs have compatible stable identity/remap lineage, `runForward` local-u
+orientation, required straight/arc/split topology, and facade solver
+constraints. Incompatible runs form separate facade groups and require an
+explicit new or accepted remapped face design. Positional letters and geometric
+proximity MUST NOT be used as an implicit mapping. Topology edits follow the
+explicit target-remap/orphan review in
+`BUILDING_2_FLOORPLAN_TOPOLOGY_SPEC.md` §4.3.
 
 ---
 
@@ -96,6 +112,9 @@ This is a conceptual schema; concrete serialization can be JSON/ES module later.
   - `floors: int`
   - `floorHeight: meters`
   - `planOffset: meters`
+  - `silhouette?: { mode: 'inherit_default' | 'inherit_previous' | 'detached', ... }`
+    (absence is exactly `inherit_default`; detached data is defined by the
+    topology/model specs)
   - `facades: Record<FaceId, FacadeSpec>` (facade authored per face for this floor layer)
   - `faceLinking?: FaceLinkingSpec`
   - (Optional) other layer properties (belts/roof/etc) are out of scope for this facade doc except where they affect vertical extents.
@@ -131,6 +150,10 @@ Face linking is an authoring concept used to reuse a single facade design across
 Rules:
 - A face MUST NOT be both a master and a slave in a way that creates cycles (no loops).
 - A linked (slave) face uses the master’s authored `FacadeSpec` for this floor layer (effective equivalence).
+- Master and slave ids MUST both exist on the current layer's resolved
+  silhouette. A topology edit that removes either endpoint enters the explicit
+  remap/orphan review; normalization MUST NOT silently drop or redirect the
+  link.
 
 ### 4.5 BF2 (current) serialization snapshot (groups)
 
@@ -160,6 +183,10 @@ Constraints:
 
 **FacadeStackingSpec** (AI 493, on `facade.layout.stacking`)
 - `mode: 'lock_columns' | 'per_layer'` (default `lock_columns`)
+
+`lock_columns` groups only compatible stable runs with the same authored
+local-u orientation, required run topology, and bay-layout signature. It never
+groups unrelated detached runs by face letter alone.
 
 A rhythm needs no schema of its own: a bay group IS the repeating unit, and
 in-group vs between-group spacing is just two pier bays of different widths
@@ -223,6 +250,11 @@ Repeat items allow expressing “a thing repeats inside the group”, e.g. “wi
 
 ## 6. Bay sizing model
 
+All facade sizing values in this section are physical meters. Preferred
+silhouette design size and runtime lot fitting MUST re-solve through valid named
+plan stretch bands; neither operation may uniformly scale fixed/minimum bay
+widths, openings, or facade details.
+
 ### 6.1 BaySizeSpec
 
 Each bay MUST be either fixed or flexible.
@@ -266,17 +298,20 @@ UI note (non-normative):
 - `maxRepeats: int | 'auto'`
 - `fitMetric: 'min' | 'preferred'`
 - `repeatCountPolicy: 'global' | 'pinned'`
-  - `global`: compute one repeat count for this face within the floor layer.
+  - `global`: compute one repeat count for this compatible stable-run group
+    (or for this layer alone when it has no compatible cross-layer members).
   - `pinned`: repeat count is fixed by authoring (`pinnedRepeats`).
 - `pinnedRepeats?: int` (required when `repeatCountPolicy === 'pinned'`)
 - `remainder: RemainderPolicy`
 
 ### 7.2 Global repeat count requirement (continuity)
 
-To keep bay topology aligned within a floor layer:
+To keep bay topology aligned within a compatible stable-run group:
 
-- All repeat counts MUST be resolved **once per face** (per floor layer).
-- When `repeatCountPolicy = 'global'`, the solver MUST ensure the resolved repeat counts are feasible for the floor layer face length (see §9.2).
+- All repeat counts MUST be resolved once for the participating facade design.
+- When `repeatCountPolicy = 'global'`, the solver MUST ensure the resolved
+  repeat counts are feasible for every participating compatible layer length
+  (see §9.2).
 
 ### 7.3 RemainderPolicy
 
@@ -297,7 +332,9 @@ Local repeats define how a `RepeatItem` expands within a group instance.
 - `distributionOrder: 'centerOut' | 'leftToRight' | 'rightToLeft'`
 
 Rules:
-- Local repeat counts MUST be resolved globally per face (shared across applicable layers) so bay topology stays identical across layers.
+- Local repeat counts MUST be resolved once per compatible stable-run group so
+  bay topology stays identical within that group; incompatible silhouettes
+  solve independently.
 - When extra local repeats are assigned across multiple group instances, `centerOut` MUST allocate extras from the center of the face outward deterministically (with stable tie-breaks for even counts).
 
 ---
@@ -408,7 +445,9 @@ For a given face `F` and layer `K`:
 - `Lusable(F, K) = max(0, L(F, K) - Cstart(F) - Cend(F))`.
 
 ### 9.2 Resolve repeat counts (global per face)
-Repeat counts MUST be resolved deterministically per face, shared across applicable layers, according to the canonical algorithm in:
+Repeat counts MUST be resolved deterministically per compatible stable-run
+group and shared only across its participating layers, according to the
+canonical algorithm in:
 - `specs/buildings/BUILDING_2_FACADE_FILL_SOLVER_SPEC.md`
 
 ### 9.3 Expand layout into a flat bay list
@@ -534,9 +573,13 @@ To reduce visible breaks at layer boundaries:
 
 Rules:
 
-- `stitchAcrossLayers` indicates that geometry for this bay SHOULD be treated as one continuous element across applicable layers.
+- `stitchAcrossLayers` indicates that geometry for this bay SHOULD be treated
+  as one continuous element only across a compatible stable-run group.
 - Bay widths MAY change per layer due to reflow; continuity is maintained by connecting bay cross-sections at layer boundaries (creating step transitions).
 - Openings SHOULD remain aligned to floor bands; an opening segment that spans layers MUST be explicitly authored (layers-based span), otherwise openings are per-floor/per-layer.
+- An incompatible/missing/remapped run ends the stitch. Each side closes against
+  its owning silhouette and the engine generates the watertight layer
+  transition; the facade solver MUST NOT guess a replacement face.
 
 ---
 
@@ -546,13 +589,20 @@ The system MUST validate and surface errors/warnings rather than silently fallin
 
 ### 13.1 Hard errors (invalid configuration)
 
-- Face topology mismatch across applicable layers.
+- Invalid local silhouette/identity data or an unresolved required topology
+  remap decision.
+- A requested cross-layer stitch/lock whose runs fail stable identity,
+  orientation, topology, or solver compatibility.
 - Any bay with invalid size constraints (min/preferred/max ordering, non-positive widths).
 - No feasible solution under constraints and overflow policy.
 - Overlapping vertical segments within a bay.
 
 ### 13.2 Warnings (configuration is usable but imperfect)
 
+- A cross-layer continuity group split by an incompatible or missing run, when
+  both resulting per-layer facade groups remain valid.
+- Orphaned facade/link/material/decoration/attachment/stretch targets retained
+  for explicit author resolution.
 - Openings omitted due to insufficient bay width after margins/clearance.
 - Repeat counts reduced (if using `reduceRepeats`) to satisfy constraints.
 - Extremely small or large resolved bay widths (outside recommended ranges).
@@ -572,7 +622,6 @@ This increases authoring power while keeping deterministic fitting rules.
 
 ## 15. Open questions (to finalize before implementation)
 
-1. **Face id stability in editing:** how the “starting face” is chosen and persisted when the footprint polygon is edited.
-2. **Default remainder policy:** whether leftover length should always reflow, or sometimes become padding gaps.
-3. **Per-face vs per-layer overrides:** what overrides are allowed without breaking continuity (materials, window types, depth).
-4. **Corner cap styling:** whether caps are a simple post, or derived from adjacent bay materials.
+1. **Default remainder policy:** whether leftover length should always reflow, or sometimes become padding gaps.
+2. **Per-face vs per-layer overrides:** what overrides are allowed without breaking continuity (materials, window types, depth).
+3. **Corner cap styling:** whether caps are a simple post, or derived from adjacent bay materials.

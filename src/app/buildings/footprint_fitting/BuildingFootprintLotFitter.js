@@ -305,6 +305,7 @@ function applyBandGroup(plan, bands, requestedDelta, options, warnings, applicat
             applications.push(Object.freeze({
                 axis: options.axis,
                 side: band.direction < 0 ? 'min' : 'max',
+                bandId: `${band.faceId}:${band.end}`,
                 faceId: band.faceId,
                 end: band.end,
                 requestedDelta: allocation,

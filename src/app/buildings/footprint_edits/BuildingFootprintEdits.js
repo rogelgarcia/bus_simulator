@@ -6,7 +6,7 @@ const DEFAULT_MIN_RUN_LENGTH_METERS = 0.01;
 const DEFAULT_ANGLE_TOLERANCE_DEGREES = 0.5;
 const MAX_RUN_COUNT = 26;
 
-/** @typedef {{x:number, z:number, split?:boolean}} PlanPoint */
+/** @typedef {{x:number, z:number, cornerId?:string, split?:boolean}} PlanPoint */
 /** @typedef {{points:PlanPoint[], runIds:string[], runDirections:boolean[]}} FootprintPlan */
 
 function isRunId(value) {
@@ -22,6 +22,7 @@ function clonePoint(point) {
     return {
         x: Number(point?.x),
         z: Number(point?.z),
+        ...(typeof point?.cornerId === 'string' && point.cornerId ? { cornerId: point.cornerId } : {}),
         ...(point?.split === true ? { split: true } : {})
     };
 }
@@ -192,6 +193,7 @@ export function footprintPlanToLoop(plan) {
     return safe.points.map((point, index) => ({
         x: point.x,
         z: point.z,
+        ...(typeof point.cornerId === 'string' && point.cornerId ? { cornerId: point.cornerId } : {}),
         runId: safe.runIds[index],
         runForward: safe.runDirections[index],
         ...(point.split === true ? { split: true } : {})

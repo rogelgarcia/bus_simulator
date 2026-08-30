@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {
     buildFacePlanPath,
     createFaceArcMetadata,
+    resolveFacePlanLabelAnchor,
     resolveFaceCurveUiState
 } from '../../../src/graphics/gui/building_fabrication2/BuildingFabrication2FacePlanModel.js';
 
@@ -22,6 +23,27 @@ test('BuildingFabrication2FacePlanModel: a curved face samples one continuous cu
     assert.ok(Math.hypot(path.at(-1).x - b.x, path.at(-1).z - b.z) < 1e-9);
     const midpoint = path[Math.floor(path.length / 2)];
     assert.ok(Math.hypot(midpoint.x - 15, midpoint.z - 11) > 1, 'arc midpoint must not collapse to the endpoint chord');
+});
+
+test('BuildingFabrication2FacePlanModel: face labels anchor halfway along straight and curved runs', () => {
+    const straightPath = buildFacePlanPath({ a: { x: 0, z: 0 }, b: { x: 12, z: 6 } });
+    const straightAnchor = resolveFacePlanLabelAnchor(straightPath);
+    assert.deepEqual(straightAnchor?.point, { x: 6, z: 3 });
+    assert.deepEqual(straightAnchor?.tangentStart, straightPath[0]);
+    assert.deepEqual(straightAnchor?.tangentEnd, straightPath[1]);
+
+    const curvedPath = buildFacePlanPath({
+        a: { x: 18, z: 8 },
+        b: { x: 12, z: 14 },
+        arc: { bulge: Math.SQRT2 - 1, segments: 17 }
+    });
+    const curvedAnchor = resolveFacePlanLabelAnchor(curvedPath);
+    assert.deepEqual(curvedAnchor?.point, {
+        x: (curvedPath[8].x + curvedPath[9].x) * 0.5,
+        z: (curvedPath[8].z + curvedPath[9].z) * 0.5
+    });
+    assert.deepEqual(curvedAnchor?.tangentStart, curvedPath[7]);
+    assert.deepEqual(curvedAnchor?.tangentEnd, curvedPath[10]);
 });
 
 test('BuildingFabrication2FacePlanModel: curve controls map outward direction and sweep to canonical bulge', () => {

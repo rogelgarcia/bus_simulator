@@ -4,7 +4,11 @@ import * as THREE from 'three';
 
 import { getBuildingConfigById, getBuildingConfigs } from '../../content3d/catalogs/BuildingConfigCatalog.js';
 import { createLayerId, normalizeCorniceConfig, normalizeCornerTreatmentConfig, normalizeFacadeBandingConfig } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
-import { computeFacadeFramesFromLoop } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
+import {
+    computeFacadeFramesFromLoop,
+    resolveFloorLayerPlanLoops
+} from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
+import { solveFacadeBaysLayout } from '../../assets3d/generators/building_fabrication/FacadeBaysSolver.js';
 import { normalizeBuildingMaterialSlotsConfig } from '../../../app/buildings/BuildingMaterialSlots.js';
 import {
     buildingConfigIdToFileBaseName,
@@ -45,6 +49,18 @@ import {
     reverseFootprintArcMetadata
 } from '../../../app/buildings/footprint_curves/BuildingFootprintCurves.js';
 import {
+    applySilhouetteRemapDecisions,
+    createDetachedLayerSilhouette,
+    createSilhouetteRemapReport,
+    LAYER_SILHOUETTE_MODE,
+    solveSilhouettePreferredSize,
+    validateLayerSilhouette
+} from '../../../app/buildings/silhouette_authoring/BuildingLayerSilhouetteModel.js';
+import {
+    collectBuildingSilhouetteRemapTargets,
+    materializeBuildingSilhouetteTargetRemap
+} from '../../../app/buildings/silhouette_authoring/BuildingSilhouetteTargetRemap.js';
+import {
     EDGE_BEVEL_DEFAULT_WIDTH_METERS,
     normalizeEdgeBevelConfig
 } from '../../../app/buildings/EdgeBevelModel.js';
@@ -71,6 +87,7 @@ import {
 } from '../../../app/buildings/wall_decorators/index.js';
 
 import { BuildingFabrication2Scene } from './BuildingFabrication2Scene.js';
+import { BuildingFabrication2SilhouettePopup } from './BuildingFabrication2SilhouettePopup.js';
 import { BuildingFabrication2ThumbnailRenderer } from './BuildingFabrication2ThumbnailRenderer.js';
 import { BuildingFabrication2UI } from './BuildingFabrication2UI.js';
 import { ensureGlobalPerfBar } from '../perf_bar/PerfBar.js';
@@ -388,7 +405,8 @@ function buildFaceLinkingFromFaceState(lockedToByFace, reverseByFace) {
     const lockMap = lockedToByFace instanceof Map ? lockedToByFace : createEmptyFaceLockMap();
     const reverseMap = reverseByFace instanceof Map ? reverseByFace : createEmptyFaceReverseMap();
 
-    for (const faceId of FACE_IDS) {
+    const faceIds = new Set([...FACE_IDS, ...lockMap.keys(), ...reverseMap.keys()]);
+    for (const faceId of faceIds) {
         const master = lockMap.get(faceId) ?? null;
         if (!isFaceId(master) || master === faceId) continue;
         links[faceId] = master;
@@ -477,6 +495,7 @@ function cloneLoop(loop) {
     return src.map((p) => ({
         x: Number(p?.x) || 0,
         z: Number(p?.z) || 0,
+        ...(typeof p?.cornerId === 'string' && p.cornerId ? { cornerId: p.cornerId } : {}),
         ...(isFaceId(p?.runId) ? { runId: p.runId } : {}),
         ...(typeof p?.runForward === 'boolean' ? { runForward: p.runForward } : {}),
         ...(p?.split === true ? { split: true } : {}),
@@ -495,6 +514,7 @@ function footprintLoopsMatchForEditor(a, b) {
         const rightArc = normalizeFootprintArcMetadata(right[i]?.arc);
         if (dx > 1e-6
             || dz > 1e-6
+            || left[i]?.cornerId !== right[i]?.cornerId
             || left[i]?.runId !== right[i]?.runId
             || left[i]?.runForward !== right[i]?.runForward
             || (left[i]?.split === true) !== (right[i]?.split === true)
@@ -533,6 +553,7 @@ function normalizePrimaryFootprintLoop(footprintLoops) {
         const p = {
             x,
             z,
+            ...(typeof entry?.cornerId === 'string' && entry.cornerId ? { cornerId: entry.cornerId } : {}),
             ...(isFaceId(entry?.runId) ? { runId: entry.runId } : {}),
             ...(typeof entry?.runForward === 'boolean' ? { runForward: entry.runForward } : {}),
             ...(entry?.split === true ? { split: true } : {}),
@@ -561,7 +582,21 @@ function pointsEqual2(a, b, epsilon = 1e-5) {
 
 function attachStableRunMetadata(loop) {
     const points = cloneLoop(loop);
-    if (loopHasStableRunMetadata(points)) return points;
+    const attachCornerIds = () => {
+        const used = new Set(points.map((point) => point?.cornerId).filter((id) => typeof id === 'string' && id));
+        let serial = 1;
+        for (const point of points) {
+            if (typeof point.cornerId === 'string' && point.cornerId) continue;
+            while (used.has(`corner_${serial}`)) serial += 1;
+            point.cornerId = `corner_${serial}`;
+            used.add(point.cornerId);
+            serial += 1;
+        }
+    };
+    if (loopHasStableRunMetadata(points)) {
+        attachCornerIds();
+        return points;
+    }
     const frames = computeFacadeFramesFromLoop(points, { warnings: null });
     const faceIds = Array.isArray(frames?.order) ? frames.order : [];
     if (faceIds.length !== points.length) return null;
@@ -591,6 +626,7 @@ function attachStableRunMetadata(loop) {
         points[index].runId = match;
         points[index].runForward = forward;
     }
+    attachCornerIds();
     return points;
 }
 
@@ -903,6 +939,7 @@ export class BuildingFabrication2View {
         this._perfBar = ensureGlobalPerfBar();
         this._windowFabricationPopup = new WindowFabricationPopup();
         this._windowPickerPopup = new MaterialPickerPopupController();
+        this._silhouettePopup = new BuildingFabrication2SilhouettePopup();
 
         this._catalogEntries = [];
         this._thumbCache = new Map();
@@ -910,6 +947,10 @@ export class BuildingFabrication2View {
         this._bayWindowRequiredMinByBay = new WeakMap();
         this._thumbJobId = 0;
         this._currentConfig = null;
+        this._silhouettePreviewConfig = null;
+        this._silhouetteApplyUndo = [];
+        this._silhouetteApplyRedo = [];
+        this._silhouettePopupBaseline = null;
         this._floorLayerFaceStateById = new Map();
         this._activeFloorLayerId = null;
         this._materialConfigLayerId = null;
@@ -1058,7 +1099,8 @@ export class BuildingFabrication2View {
         this.ui.onMoveLayer = (layerId, dir) => this._moveLayer(layerId, dir);
         this.ui.onDeleteLayer = (layerId) => this._deleteLayer(layerId);
         this.ui.onSelectFace = (layerId, faceId) => this._setSelectedFace(layerId, faceId);
-        this.ui.onSetFaceArc = (faceId, arc) => this._setFootprintFaceArc(faceId, arc);
+        this.ui.onSetFaceArc = (layerId, faceId, arc) => this._setFootprintFaceArc(layerId, faceId, arc);
+        this.ui.onRequestSilhouetteDraw = (layerId) => this._openSilhouetteDraw(layerId);
         this.ui.onToggleFaceLock = (layerId, masterFaceId, targetFaceId) => this._toggleFaceLock(layerId, masterFaceId, targetFaceId);
         this.ui.onSetFaceLockReverse = (layerId, masterFaceId, targetFaceId, enabled) => {
             this._setFaceLockReverse(layerId, masterFaceId, targetFaceId, enabled);
@@ -1201,6 +1243,8 @@ export class BuildingFabrication2View {
         this._layoutToolFaceId = null;
         this._layoutLastWarning = '';
         this._layoutMinWidthByFaceId = null;
+        this._silhouettePreviewConfig = null;
+        this._silhouettePopupBaseline = null;
         if (canvas) canvas.style.cursor = '';
         this.scene?.setFaceHighlightSuppressed?.(false);
         this.scene?.setRenderSky?.(true);
@@ -1250,6 +1294,7 @@ export class BuildingFabrication2View {
         this.ui.onDeleteLayer = null;
         this.ui.onSelectFace = null;
         this.ui.onSetFaceArc = null;
+        this.ui.onRequestSilhouetteDraw = null;
         this.ui.onToggleFaceLock = null;
         this.ui.onSetFaceLockReverse = null;
         this.ui.onHoverLayer = null;
@@ -1326,6 +1371,7 @@ export class BuildingFabrication2View {
 
         this._windowPickerPopup?.close?.();
         this._windowFabricationPopup?.close?.();
+        this._silhouettePopup?.close?.({ notifyCancel: false });
         this.ui.unmount();
         this.scene?.exit?.();
         this._thumbRenderer.dispose();
@@ -1341,9 +1387,10 @@ export class BuildingFabrication2View {
                 this._pendingRebuild = false;
                 this._pendingRebuildPreserveCamera = true;
                 this._pendingRebuildEarliestAtMs = 0;
-                if (this._currentConfig) {
-                    this._refreshDecorationAutoCornerMetadata();
-                    const loaded = this.scene.loadBuildingConfig(this._currentConfig, { preserveCamera });
+                const renderConfig = this._silhouettePreviewConfig ?? this._currentConfig;
+                if (renderConfig) {
+                    if (!this._silhouettePreviewConfig) this._refreshDecorationAutoCornerMetadata();
+                    const loaded = this.scene.loadBuildingConfig(renderConfig, { preserveCamera });
                     if (loaded) this._perfBar?.requestUpdate?.();
                     this._syncCompiledStatsUi();
                 }
@@ -1357,6 +1404,10 @@ export class BuildingFabrication2View {
     }
 
     handleEscape() {
+        if (this._silhouettePopup?.isOpen?.()) {
+            this._silhouettePopup.cancel();
+            return true;
+        }
         if (this._layoutAdjustEnabled) {
             this._setLayoutAdjustEnabled(false);
             return true;
@@ -1407,10 +1458,22 @@ export class BuildingFabrication2View {
             .filter((e) => !!e.id);
     }
 
-    // AI 512: resolve the current footprint's N faces for the UI's plan-view
-    // face picker. Null (no footprint / unresolvable) keeps the A-D fallback.
-    _buildFacadeFacePlanUiState() {
-        const loop = Array.isArray(this._currentConfig?.footprintLoops) ? this._currentConfig.footprintLoops[0] : null;
+    _resolveCurrentLayerPlanLoops(config = this._currentConfig) {
+        if (!config) return new Map();
+        return resolveFloorLayerPlanLoops({
+            layers: config.layers,
+            defaultLoops: config.footprintLoops,
+            authoredDefaultLoops: config.footprintLoops,
+            minRunLengthsForLayer: ({ layer, loop }) => (
+                this._resolveLayerSilhouetteSolverConstraints(layer?.id, loop, config).minRunLengths
+            ),
+            warnings: null
+        });
+    }
+
+    // AI 512/520: resolve each floor layer's actual N-face silhouette for its
+    // own picker. Detached layers may expose a different A-Z face set.
+    _buildFacadeFacePlanUiStateForLoop(loop) {
         if (!Array.isArray(loop) || loop.length < 3) return null;
         const frames = computeFacadeFramesFromLoop(loop, { warnings: null });
         if (!frames) return null;
@@ -1435,6 +1498,243 @@ export class BuildingFabrication2View {
                 };
             })
         };
+    }
+
+    _buildFacadeFacePlanUiState() {
+        const loop = Array.isArray(this._currentConfig?.footprintLoops) ? this._currentConfig.footprintLoops[0] : null;
+        return this._buildFacadeFacePlanUiStateForLoop(loop);
+    }
+
+    _buildFacadeFacePlansByLayerId() {
+        const plans = {};
+        const loopsByLayerId = this._resolveCurrentLayerPlanLoops();
+        for (const layer of Array.isArray(this._currentConfig?.layers) ? this._currentConfig.layers : []) {
+            if (layer?.type !== 'floor' || typeof layer?.id !== 'string') continue;
+            const loop = loopsByLayerId.get(layer.id)?.[0] ?? null;
+            const plan = this._buildFacadeFacePlanUiStateForLoop(loop);
+            if (plan) plans[layer.id] = plan;
+        }
+        return plans;
+    }
+
+    _collectSilhouetteRemapTargets(layerId) {
+        return collectBuildingSilhouetteRemapTargets(this._currentConfig, layerId);
+    }
+
+    _recordSilhouetteApplySnapshot() {
+        if (!this._currentConfig) return;
+        this._silhouetteApplyUndo.push(deepClone(this._currentConfig));
+        if (this._silhouetteApplyUndo.length > 50) this._silhouetteApplyUndo.shift();
+        this._silhouetteApplyRedo = [];
+    }
+
+    _restoreSilhouetteApplySnapshot(direction) {
+        if (this._silhouettePopup?.isOpen?.()) return false;
+        const source = direction === 'redo' ? this._silhouetteApplyRedo : this._silhouetteApplyUndo;
+        const target = direction === 'redo' ? this._silhouetteApplyUndo : this._silhouetteApplyRedo;
+        if (!source.length || !this._currentConfig) return false;
+        target.push(deepClone(this._currentConfig));
+        this._currentConfig = source.pop();
+        this._silhouettePreviewConfig = null;
+        const loaded = this.scene.loadBuildingConfig(this._currentConfig, { preserveCamera: true });
+        if (loaded) this._perfBar?.requestUpdate?.();
+        this._syncUiState();
+        return true;
+    }
+
+    _applySilhouetteDocumentToConfig(config, layerId, documentValue, context, {
+        resetPlanOffset = false,
+        beforeLoop = null,
+        remapTargets = []
+    } = {}) {
+        let layer = Array.isArray(config?.layers)
+            ? config.layers.find((entry) => entry?.type === 'floor' && entry?.id === layerId)
+            : null;
+        if (!layer || !documentValue) return false;
+        const nextDocument = deepClone(documentValue);
+        const afterLoop = nextDocument.mode === LAYER_SILHOUETTE_MODE.DETACHED && Array.isArray(nextDocument.loop)
+            ? nextDocument.loop
+            : context?.resolvedDocument?.loop;
+        if (Array.isArray(afterLoop)) {
+            const combinedTargets = [];
+            const seenTargetIds = new Set();
+            for (const target of [
+                ...(Array.isArray(remapTargets) ? remapTargets : []),
+                ...(Array.isArray(context?.remapReport?.targets)
+                    ? context.remapReport.targets.map((entry) => entry?.target).filter(Boolean)
+                    : [])
+            ]) {
+                const targetId = typeof target?.targetId === 'string' ? target.targetId : '';
+                if (!targetId || seenTargetIds.has(targetId)) continue;
+                seenTargetIds.add(targetId);
+                combinedTargets.push(target);
+            }
+            const report = createSilhouetteRemapReport({
+                beforeLoop: beforeLoop ?? afterLoop,
+                afterLoop,
+                targets: combinedTargets
+            });
+            const decisions = context?.remapDecisions && typeof context.remapDecisions === 'object'
+                && !Array.isArray(context.remapDecisions)
+                ? deepClone(context.remapDecisions)
+                : {};
+            for (const entry of Array.isArray(context?.remapDecisions) ? context.remapDecisions : []) {
+                if (entry?.id && entry?.decision) decisions[entry.id] = entry.decision;
+            }
+            const remap = applySilhouetteRemapDecisions(report, decisions);
+            if (!remap.valid) {
+                nextDocument.targetRemap = remap.targetRemap;
+            } else {
+                const materialized = materializeBuildingSilhouetteTargetRemap(config, {
+                    layerId,
+                    resolution: remap,
+                    existingTargetRemap: nextDocument.targetRemap ?? null
+                });
+                if (!materialized.valid) return false;
+                for (const key of Object.keys(config)) delete config[key];
+                Object.assign(config, materialized.config);
+                layer = Array.isArray(config.layers)
+                    ? config.layers.find((entry) => entry?.type === 'floor' && entry?.id === layerId)
+                    : null;
+                if (!layer) return false;
+                nextDocument.targetRemap = materialized.targetRemap;
+            }
+        }
+        if (resetPlanOffset) layer.planOffset = 0;
+        layer.silhouette = nextDocument;
+        return true;
+    }
+
+    _openSilhouetteDraw(layerId) {
+        const cfg = this._currentConfig;
+        if (!cfg || this._silhouettePopup?.isOpen?.()) return;
+        const floorLayers = Array.isArray(cfg.layers) ? cfg.layers.filter((entry) => entry?.type === 'floor') : [];
+        const layerIndex = floorLayers.findIndex((entry) => entry?.id === layerId);
+        const layer = floorLayers[layerIndex] ?? null;
+        if (!layer) return;
+
+        this._setLayoutAdjustEnabled(false);
+        const loopsByLayerId = this._resolveCurrentLayerPlanLoops(cfg);
+        const resolvedLoop = loopsByLayerId.get(layer.id)?.[0] ?? cfg.footprintLoops?.[0] ?? null;
+        if (!Array.isArray(resolvedLoop) || resolvedLoop.length < 3) return;
+        const previousLayer = floorLayers[layerIndex - 1] ?? null;
+        const nextLayer = floorLayers[layerIndex + 1] ?? null;
+        const sourceMode = layer?.silhouette?.mode ?? LAYER_SILHOUETTE_MODE.INHERIT_DEFAULT;
+        const sourceLayerId = sourceMode === LAYER_SILHOUETTE_MODE.INHERIT_PREVIOUS
+            ? (previousLayer?.id ?? 'building_default')
+            : (layer?.silhouette?.sourceLayerId ?? 'building_default');
+        const resolvedDocument = createDetachedLayerSilhouette(resolvedLoop, { sourceLayerId });
+        const initialDocument = layer?.silhouette
+            ? deepClone(layer.silhouette)
+            : { version: 1, mode: LAYER_SILHOUETTE_MODE.INHERIT_DEFAULT };
+        const previousLoop = previousLayer ? loopsByLayerId.get(previousLayer.id)?.[0] : null;
+        const defaultLoop = cfg.footprintLoops?.[0] ?? resolvedLoop;
+        const silhouetteConstraints = this._resolveLayerSilhouetteSolverConstraints(layer.id, resolvedLoop);
+        const remapTargets = this._collectSilhouetteRemapTargets(layer.id);
+        const remapReport = createSilhouetteRemapReport({ beforeLoop: resolvedLoop, afterLoop: resolvedLoop, targets: remapTargets });
+        const baselineConfig = deepClone(cfg);
+        const baselineSerialized = JSON.stringify(cfg);
+        const wasDetached = sourceMode === LAYER_SILHOUETTE_MODE.DETACHED;
+        this._silhouettePopupBaseline = {
+            config: baselineConfig,
+            serialized: baselineSerialized,
+            layerId: layer.id,
+            loop: deepClone(resolvedLoop),
+            targets: deepClone(remapTargets),
+            wasDetached
+        };
+
+        const previewDocument = (documentValue, context) => {
+            const preview = deepClone(baselineConfig);
+            this._applySilhouetteDocumentToConfig(preview, layer.id, documentValue, context, {
+                resetPlanOffset: !wasDetached && documentValue?.mode === LAYER_SILHOUETTE_MODE.DETACHED,
+                beforeLoop: resolvedLoop,
+                remapTargets
+            });
+            this._silhouettePreviewConfig = preview;
+            // Geometry rebuilds can be expensive on large facade catalogs.
+            // Coalesce rapid drag/history changes while keeping the normal 3D
+            // viewport visibly live from the popup's private working copy.
+            this._requestRebuild({ preserveCamera: true, maxRateHz: 8 });
+        };
+
+        this._silhouettePopup.open({
+            layerId: layer.id,
+            layerLabel: `floor layer ${layerIndex + 1}`,
+            sourceMode,
+            initialDocument,
+            resolvedDocument,
+            sourceDocuments: {
+                default: createDetachedLayerSilhouette(defaultLoop, { sourceLayerId: 'building_default' }),
+                previous: previousLoop
+                    ? createDetachedLayerSilhouette(previousLoop, { sourceLayerId: previousLayer.id })
+                    : null,
+                previousResolved: previousLoop ? { layerId: previousLayer.id, loop: previousLoop } : null
+            },
+            neighboringDocuments: [
+                previousLayer && previousLoop ? { layerId: previousLayer.id, label: 'Layer below', loop: previousLoop } : null,
+                nextLayer ? { layerId: nextLayer.id, label: 'Layer above', loop: loopsByLayerId.get(nextLayer.id)?.[0] } : null
+            ].filter(Boolean),
+            constraints: {
+                minRunLengths: silhouetteConstraints.minRunLengths,
+                bayRhythmByRunId: silhouetteConstraints.bayRhythmByRunId,
+                requireClockwise: true,
+                remapTargets
+            },
+            remapReport,
+            resolveContext: {
+                layers: cfg.layers,
+                footprintLoops: cfg.footprintLoops,
+                defaultLoop,
+                previousResolved: previousLoop ? { layerId: previousLayer.id, loop: previousLoop } : null
+            },
+            validate: (documentValue, context) => {
+                if (context?.sourceMode !== LAYER_SILHOUETTE_MODE.DETACHED) return [];
+                return validateLayerSilhouette(documentValue, {
+                    layerId: layer.id,
+                    minRunLengths: silhouetteConstraints.minRunLengths,
+                    neighboringLoops: [previousLoop, nextLayer ? loopsByLayerId.get(nextLayer.id)?.[0] : null].filter(Boolean),
+                    requireClockwise: true
+                });
+            },
+            resolvePreview: (documentValue, settings) => solveSilhouettePreferredSize({
+                loop: documentValue?.loop,
+                preferredSize: settings?.lotFitEnabled
+                    ? { widthMeters: settings.lotWidthMeters, depthMeters: settings.lotDepthMeters }
+                    : documentValue?.preferredSize,
+                stretchBands: documentValue?.stretchBands,
+                minRunLengths: silhouetteConstraints.minRunLengths,
+                seed: `bf2-silhouette:${layer.id}`
+            }),
+            onPreview: previewDocument,
+            onApply: (documentValue, context) => {
+                const committed = deepClone(baselineConfig);
+                if (!this._applySilhouetteDocumentToConfig(committed, layer.id, documentValue, context, {
+                    resetPlanOffset: !wasDetached && documentValue?.mode === LAYER_SILHOUETTE_MODE.DETACHED,
+                    beforeLoop: resolvedLoop,
+                    remapTargets
+                })) return false;
+                this._recordSilhouetteApplySnapshot();
+                this._currentConfig = committed;
+                this._silhouettePreviewConfig = null;
+                this._silhouettePopupBaseline = null;
+                const loaded = this.scene.loadBuildingConfig(this._currentConfig, { preserveCamera: true });
+                if (loaded) this._perfBar?.requestUpdate?.();
+                this._syncUiState();
+                return true;
+            },
+            onCancel: () => {
+                this._silhouettePreviewConfig = null;
+                if (JSON.stringify(this._currentConfig) !== baselineSerialized) {
+                    console.error('[BuildingFabrication2View] Silhouette Cancel detected an unexpected saved-config mutation; restoring the byte-identical baseline.');
+                    this._currentConfig = deepClone(baselineConfig);
+                }
+                this._silhouettePopupBaseline = null;
+                const loaded = this.scene.loadBuildingConfig(this._currentConfig, { preserveCamera: true });
+                if (loaded) this._perfBar?.requestUpdate?.();
+                this._syncUiState();
+            }
+        });
     }
 
     _syncUiState() {
@@ -1504,7 +1804,11 @@ export class BuildingFabrication2View {
         this.ui.setMaterialConfigContext(this._buildMaterialConfigContext());
         this.ui.setWindowDefinitions(this._buildWindowDefinitionsUiModel());
         this.ui.setFacadesByLayerId(this._currentConfig?.facades ?? null);
-        this.ui.setFacadeFacePlan?.(this._buildFacadeFacePlanUiState());
+        if (typeof this.ui.setFacadeFacePlansByLayerId === 'function') {
+            this.ui.setFacadeFacePlansByLayerId(this._buildFacadeFacePlansByLayerId());
+        } else {
+            this.ui.setFacadeFacePlan?.(this._buildFacadeFacePlanUiState());
+        }
         this.ui.setEditorMode(this._editorMode);
         this.ui.setDecorationEditorState(this._buildDecorationEditorUiState());
         this._syncLayoutSceneState();
@@ -1595,6 +1899,14 @@ export class BuildingFabrication2View {
         const linking = normalizeFaceLinking(layer?.faceLinking ?? null);
         const links = linking?.links ?? null;
         const reverseByFace = linking?.reverseByFace ?? null;
+        const planFaceIds = this._buildFacadeFacePlansByLayerId()?.[id]?.faceIds ?? [];
+        const faceIds = [...new Set([
+            ...planFaceIds,
+            ...Object.keys(layerFacades ?? {}).filter(isFaceId),
+            ...Object.keys(links ?? {}).filter(isFaceId),
+            ...Object.values(links ?? {}).filter(isFaceId)
+        ])];
+        if (!faceIds.length) faceIds.push(...FACE_IDS);
 
         const resolveMasterFaceId = (faceId) => {
             if (!isFaceId(faceId)) return null;
@@ -1612,7 +1924,7 @@ export class BuildingFabrication2View {
 
         const masterByFace = new Map();
         const facesByMasterFace = new Map();
-        for (const faceId of FACE_IDS) {
+        for (const faceId of faceIds) {
             const masterFaceId = resolveMasterFaceId(faceId) ?? faceId;
             masterByFace.set(faceId, masterFaceId);
             const list = facesByMasterFace.get(masterFaceId) ?? [];
@@ -1695,6 +2007,7 @@ export class BuildingFabrication2View {
 
         return {
             layerFacades,
+            faceIds,
             masterByFace,
             facesByMasterFace,
             resolveFaceBays,
@@ -1710,7 +2023,7 @@ export class BuildingFabrication2View {
 
         const out = [];
         const seen = new Set();
-        for (const faceId of FACE_IDS) {
+        for (const faceId of topology.faceIds ?? FACE_IDS) {
             const bays = topology.resolveFaceBays(faceId);
             for (let i = 0; i < bays.length; i += 1) {
                 const bay = bays[i] && typeof bays[i] === 'object' ? bays[i] : null;
@@ -2033,7 +2346,7 @@ export class BuildingFabrication2View {
                 };
 
                 if (bayCtx.isFaceStartBoundary) {
-                    const prevFaceId = FACE_PREV_BY_FACE_ID[bayCtx.faceId] ?? null;
+                    const prevFaceId = layerCtx.previousFaceId?.(bayCtx.faceId) ?? FACE_PREV_BY_FACE_ID[bayCtx.faceId] ?? null;
                     if (prevFaceId) {
                         changed = evaluateBoundaryEdge({
                             edgeId: 'start',
@@ -2043,7 +2356,7 @@ export class BuildingFabrication2View {
                     }
                 }
                 if (bayCtx.isFaceEndBoundary) {
-                    const nextFaceId = FACE_NEXT_BY_FACE_ID[bayCtx.faceId] ?? null;
+                    const nextFaceId = layerCtx.nextFaceId?.(bayCtx.faceId) ?? FACE_NEXT_BY_FACE_ID[bayCtx.faceId] ?? null;
                     if (nextFaceId) {
                         changed = evaluateBoundaryEdge({
                             edgeId: 'end',
@@ -2123,7 +2436,8 @@ export class BuildingFabrication2View {
         const byRef = new Map();
         const edgeByFace = new Map();
 
-        for (const faceId of FACE_IDS) {
+        const faceIds = topology.faceIds ?? FACE_IDS;
+        for (const faceId of faceIds) {
             const bays = topology.resolveFaceBays(faceId);
             const faceRefs = [];
             for (let i = 0; i < bays.length; i += 1) {
@@ -2167,7 +2481,20 @@ export class BuildingFabrication2View {
             });
         }
 
-        return { byRef, edgeByFace };
+        const faceIndex = new Map(faceIds.map((faceId, index) => [faceId, index]));
+        return {
+            byRef,
+            edgeByFace,
+            faceIds,
+            previousFaceId: (faceId) => {
+                const index = faceIndex.get(faceId);
+                return Number.isInteger(index) ? faceIds[(index - 1 + faceIds.length) % faceIds.length] : null;
+            },
+            nextFaceId: (faceId) => {
+                const index = faceIndex.get(faceId);
+                return Number.isInteger(index) ? faceIds[(index + 1) % faceIds.length] : null;
+            }
+        };
     }
 
     _resolveOutmostDecorationCornerOwnerContext(a, b) {
@@ -2181,8 +2508,8 @@ export class BuildingFabrication2View {
         const faceA = isFaceId(entryA.faceId) ? entryA.faceId : null;
         const faceB = isFaceId(entryB.faceId) ? entryB.faceId : null;
         if (faceA && faceB && faceA !== faceB) {
-            const orderA = FACE_ORDER[faceA] ?? 0;
-            const orderB = FACE_ORDER[faceB] ?? 0;
+            const orderA = FACE_ORDER[faceA] ?? (faceA.charCodeAt(0) - 65);
+            const orderB = FACE_ORDER[faceB] ?? (faceB.charCodeAt(0) - 65);
             return orderA <= orderB ? entryA : entryB;
         }
         if (faceA && !faceB) return entryA;
@@ -2398,7 +2725,7 @@ export class BuildingFabrication2View {
                     }
 
                     if (bayCtx.isFaceStartBoundary) {
-                        const prevFaceId = FACE_PREV_BY_FACE_ID[bayCtx.faceId] ?? null;
+                        const prevFaceId = layerCtx.previousFaceId?.(bayCtx.faceId) ?? FACE_PREV_BY_FACE_ID[bayCtx.faceId] ?? null;
                         if (prevFaceId) {
                             const adjacentEdgeCtx = layerCtx.edgeByFace.get(prevFaceId) ?? null;
                             const resolved = evaluateEdge({
@@ -2412,7 +2739,7 @@ export class BuildingFabrication2View {
                         }
                     }
                     if (bayCtx.isFaceEndBoundary) {
-                        const nextFaceId = FACE_NEXT_BY_FACE_ID[bayCtx.faceId] ?? null;
+                        const nextFaceId = layerCtx.nextFaceId?.(bayCtx.faceId) ?? FACE_NEXT_BY_FACE_ID[bayCtx.faceId] ?? null;
                         if (nextFaceId) {
                             const adjacentEdgeCtx = layerCtx.edgeByFace.get(nextFaceId) ?? null;
                             const resolved = evaluateEdge({
@@ -4302,6 +4629,11 @@ export class BuildingFabrication2View {
         const cfg = getBuildingConfigById(id);
         if (!cfg) return;
 
+        this._silhouettePopup?.close?.({ notifyCancel: false });
+        this._silhouettePreviewConfig = null;
+        this._silhouettePopupBaseline = null;
+        this._silhouetteApplyUndo = [];
+        this._silhouetteApplyRedo = [];
         this._currentConfig = deepClone(cfg);
         applyBaseWallMaterialFallbackToFloorLayers(this._currentConfig);
         this._ensureCurrentFootprintLoop();
@@ -4329,6 +4661,11 @@ export class BuildingFabrication2View {
     }
 
     _createBuilding({ widthMeters = null, depthMeters = null } = {}) {
+        this._silhouettePopup?.close?.({ notifyCancel: false });
+        this._silhouettePreviewConfig = null;
+        this._silhouettePopupBaseline = null;
+        this._silhouetteApplyUndo = [];
+        this._silhouetteApplyRedo = [];
         const tileSizeMeters = Math.max(0.5, Number(this.scene?.tileSize) || DEFAULT_FOOTPRINT_DEPTH_M);
         const resolvedWidthMeters = Number.isFinite(widthMeters) && widthMeters > 0 ? widthMeters : tileSizeMeters;
         const resolvedDepthMeters = Number.isFinite(depthMeters) && depthMeters > 0 ? depthMeters : tileSizeMeters;
@@ -4424,6 +4761,11 @@ export class BuildingFabrication2View {
 
     _reset() {
         if (!this.scene.getHasBuilding()) return;
+        this._silhouettePopup?.close?.({ notifyCancel: false });
+        this._silhouettePreviewConfig = null;
+        this._silhouettePopupBaseline = null;
+        this._silhouetteApplyUndo = [];
+        this._silhouetteApplyRedo = [];
         this.scene.clearBuilding();
         this._currentConfig = null;
         this._floorLayerFaceStateById = new Map();
@@ -5711,10 +6053,33 @@ export class BuildingFabrication2View {
         return id;
     }
 
-    _setFootprintFaceArc(faceId, value) {
+    _setFootprintFaceArc(layerId, faceId, value) {
+        const cfg = this._currentConfig;
+        const layer = Array.isArray(cfg?.layers)
+            ? cfg.layers.find((entry) => entry?.type === 'floor' && entry?.id === layerId)
+            : null;
+        if (!layer) return;
         const face = isFaceId(faceId) ? faceId : null;
         if (!face) return;
-        const loop = this._ensureCurrentFootprintLoop();
+        const editBuildingDefault = !layer?.silhouette
+            || layer.silhouette.mode === LAYER_SILHOUETTE_MODE.INHERIT_DEFAULT;
+        let documentValue = editBuildingDefault
+            ? { mode: LAYER_SILHOUETTE_MODE.DETACHED, loop: this._ensureCurrentFootprintLoop() }
+            : (layer?.silhouette?.mode === LAYER_SILHOUETTE_MODE.DETACHED ? layer.silhouette : null);
+        let detachedNow = false;
+        if (!documentValue) {
+            const resolvedLoops = this._resolveCurrentLayerPlanLoops(cfg).get(layer.id);
+            const resolvedLoop = resolvedLoops?.[0] ?? null;
+            if (!Array.isArray(resolvedLoop)) return;
+            const floorLayers = cfg.layers.filter((entry) => entry?.type === 'floor');
+            const floorIndex = floorLayers.indexOf(layer);
+            const sourceLayerId = layer?.silhouette?.mode === LAYER_SILHOUETTE_MODE.INHERIT_PREVIOUS
+                ? (floorLayers[floorIndex - 1]?.id ?? 'building_default')
+                : 'building_default';
+            documentValue = createDetachedLayerSilhouette(resolvedLoop, { sourceLayerId });
+            detachedNow = true;
+        }
+        const loop = documentValue?.loop;
         if (!Array.isArray(loop)) return;
         const frames = computeFacadeFramesFromLoop(loop, { warnings: null });
         const frame = frames?.[face] ?? null;
@@ -5729,8 +6094,14 @@ export class BuildingFabrication2View {
             : orientedArc;
         const previous = normalizeFootprintArcMetadata(point.arc);
         if ((previous?.bulge ?? null) === (rawArc?.bulge ?? null)
-            && (previous?.segments ?? null) === (rawArc?.segments ?? null)) return;
+            && (previous?.segments ?? null) === (rawArc?.segments ?? null)
+            && !detachedNow) return;
 
+        this._recordSilhouetteApplySnapshot();
+        if (detachedNow) {
+            layer.silhouette = documentValue;
+            layer.planOffset = 0;
+        }
         if (rawArc) point.arc = { ...rawArc };
         else delete point.arc;
         this._syncUiState();
@@ -5892,7 +6263,8 @@ export class BuildingFabrication2View {
                 : null;
 
             // If the target is becoming a slave, it cannot have slaves.
-            for (const faceId of FACE_IDS) {
+            const layerFaceIds = this._buildFacadeFacePlansByLayerId()?.[id]?.faceIds ?? FACE_IDS;
+            for (const faceId of layerFaceIds) {
                 if ((lockedToByFace.get(faceId) ?? null) !== target) continue;
                 lockedToByFace.set(faceId, null);
                 reverseByFace.set(faceId, false);
@@ -6478,6 +6850,92 @@ export class BuildingFabrication2View {
         return Math.max(LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M, totalMin);
     }
 
+    _resolveLayerSilhouetteSolverConstraints(layerId, loop, config = this._currentConfig) {
+        const cfg = config;
+        const layer = (Array.isArray(cfg?.layers) ? cfg.layers : [])
+            .find((entry) => entry?.type === 'floor' && entry?.id === layerId) ?? null;
+        const frames = computeFacadeFramesFromLoop(loop, { warnings: null });
+        const faceIds = Array.isArray(frames?.order) ? frames.order.filter(isFaceId) : [];
+        const minRunLengths = {};
+        const bayRhythmByRunId = {};
+        if (!layer || !faceIds.length) return { minRunLengths, bayRhythmByRunId };
+
+        const facadeRoot = cfg?.facades && typeof cfg.facades === 'object' ? cfg.facades : null;
+        const globalFacades = facadeRoot && Object.keys(facadeRoot).some(isFaceId) ? facadeRoot : null;
+        const layerFacades = globalFacades
+            ?? (facadeRoot?.[layerId] && typeof facadeRoot[layerId] === 'object' ? facadeRoot[layerId] : null);
+        const links = layer?.faceLinking?.links && typeof layer.faceLinking.links === 'object'
+            ? layer.faceLinking.links
+            : null;
+        const reverseByFace = layer?.faceLinking?.reverseByFace && typeof layer.faceLinking.reverseByFace === 'object'
+            ? layer.faceLinking.reverseByFace
+            : null;
+        const resolveMasterFaceId = (faceId) => {
+            const visited = new Set();
+            let current = faceId;
+            for (let index = 0; index < 26; index += 1) {
+                if (visited.has(current)) break;
+                visited.add(current);
+                const next = links?.[current];
+                if (!isFaceId(next) || next === current) break;
+                current = next;
+            }
+            return current;
+        };
+        const invalidSolverWarning = (warning) => /min width .* exceeds|minrepeats does not fit|locked column widths need/i.test(String(warning));
+
+        for (const faceId of faceIds) {
+            const facade = layerFacades?.[resolveMasterFaceId(faceId)] ?? null;
+            const layout = facade?.layout && typeof facade.layout === 'object' ? facade.layout : null;
+            const bays = Array.isArray(layout?.bays?.items) ? layout.bays.items : [];
+            const groups = Array.isArray(layout?.groups?.items) ? layout.groups.items : null;
+            const authoredLength = Math.max(
+                LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M,
+                Number(frames?.[faceId]?.length) || LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M
+            );
+            if (!bays.length) {
+                minRunLengths[faceId] = LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M;
+                continue;
+            }
+
+            const solve = (length) => {
+                const warnings = [];
+                const items = solveFacadeBaysLayout({
+                    bays,
+                    groups,
+                    faceLengthMeters: length,
+                    warnings
+                });
+                return {
+                    items,
+                    valid: !warnings.some(invalidSolverWarning)
+                };
+            };
+
+            let low = LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M;
+            let high = Math.max(authoredLength, this._resolveFacadeMinimumWidthMeters(facade));
+            while (!solve(high).valid && high < 10000) high *= 2;
+            if (solve(low).valid) {
+                high = low;
+            } else if (high < 10000) {
+                for (let iteration = 0; iteration < 28; iteration += 1) {
+                    const middle = (low + high) * 0.5;
+                    if (solve(middle).valid) high = middle;
+                    else low = middle;
+                }
+            }
+            minRunLengths[faceId] = Math.max(LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M, high);
+
+            const rhythmItems = solve(authoredLength).items;
+            const widths = rhythmItems
+                .map((item) => (Number(item?.widthFrac) || 0) * authoredLength)
+                .filter((width) => width > 1e-6);
+            if (reverseByFace?.[faceId] === true) widths.reverse();
+            if (widths.length) bayRhythmByRunId[faceId] = { widths };
+        }
+        return { minRunLengths, bayRhythmByRunId };
+    }
+
     _resolveFaceMinWidthByFaceId() {
         const faceIds = [...(this._getCurrentFootprintPlan()?.runIds ?? FACE_IDS)];
         const out = Object.fromEntries(faceIds.map((faceId) => [faceId, LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M]));
@@ -6997,6 +7455,21 @@ export class BuildingFabrication2View {
 
     _handleKeyDown(e) {
         if (!e) return;
+        if (this._silhouettePopup?.isOpen?.()) return;
+
+        const command = !!(e.ctrlKey || e.metaKey);
+        if (command && !e.altKey && !isTextEditingElement(e.target) && !isTextEditingElement(document.activeElement)) {
+            const key = String(e.key ?? '').toLowerCase();
+            if (key === 'z') {
+                const direction = e.shiftKey ? 'redo' : 'undo';
+                if (this._restoreSilhouetteApplySnapshot(direction)) e.preventDefault();
+                return;
+            }
+            if (key === 'y' && !e.shiftKey) {
+                if (this._restoreSilhouetteApplySnapshot('redo')) e.preventDefault();
+                return;
+            }
+        }
 
         if (!isTextEditingElement(e.target) && !isTextEditingElement(document.activeElement)) {
             if (e.key === 'l' || e.key === 'L') {

@@ -13,6 +13,16 @@ import { resolveWallBaseTintHexFromWallBase } from '../../../../app/buildings/Wa
 import { fitBuildingFootprintToLot } from '../../../../app/buildings/footprint_fitting/BuildingFootprintLotFitter.js';
 import { createFootprintPlan, footprintPlanToLoop, getFootprintRunFrame } from '../../../../app/buildings/footprint_edits/BuildingFootprintEdits.js';
 import {
+    LAYER_SILHOUETTE_MODE,
+    createFacadeRunContinuityKey,
+    createSilhouetteRunTraversal,
+    createSilhouetteStretchProvenance,
+    planLayerSilhouetteTransitionSurfaces,
+    replaySilhouetteLotFitApplications,
+    resolveLayerSilhouette,
+    tessellateLayerSilhouetteLoopForGeometry
+} from '../../../../app/buildings/silhouette_authoring/BuildingLayerSilhouetteModel.js';
+import {
     normalizeFootprintArcMetadata,
     resolveFootprintArcRun,
     reverseFootprintArcMetadata,
@@ -906,6 +916,7 @@ function normalizeFootprintLoopsInput(footprintLoops) {
             const z = Number(entry?.z ?? entry?.[1]);
             if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
             const p = { x: qf(x), z: qf(z) };
+            if (typeof entry?.cornerId === 'string' && entry.cornerId) p.cornerId = entry.cornerId;
             if (isFaceId(entry?.runId)) p.runId = entry.runId;
             if (typeof entry?.runForward === 'boolean') p.runForward = entry.runForward;
             if (entry?.split === true) p.split = true;
@@ -927,6 +938,7 @@ function normalizeFootprintLoopsInput(footprintLoops) {
                 const sourceEdgeIndex = (i - 1 + loop.length) % loop.length;
                 const sourceEdge = loop[sourceEdgeIndex];
                 const point = { x: loop[i].x, z: loop[i].z };
+                if (typeof loop[i]?.cornerId === 'string' && loop[i].cornerId) point.cornerId = loop[i].cornerId;
                 if (isFaceId(sourceEdge?.runId)) point.runId = sourceEdge.runId;
                 if (typeof sourceEdge?.runForward === 'boolean') point.runForward = !sourceEdge.runForward;
                 if (loop[i]?.split === true) point.split = true;
@@ -981,6 +993,7 @@ function transformLoopsXZ(loops, { scale = 1.0, pivotX = 0.0, pivotZ = 0.0, tran
             loop.push({
                 x: qf(px + (x - px) * s + tx),
                 z: qf(pz + (z - pz) * s + tz),
+                ...(typeof point?.cornerId === 'string' && point.cornerId ? { cornerId: point.cornerId } : {}),
                 ...(isFaceId(point?.runId) ? { runId: point.runId } : {}),
                 ...(typeof point?.runForward === 'boolean' ? { runForward: point.runForward } : {}),
                 ...(point?.split === true ? { split: true } : {}),
@@ -1386,7 +1399,8 @@ function fitFootprintLoopsToBuildArea({
     footprintStretch = null,
     fitSeed = 0,
     lotFitSolvability = null,
-    warnings = null
+    warnings = null,
+    fitCapture = null
 } = {}) {
     const sourceLoops = normalizeFootprintLoopsInput(footprintLoops);
     const areaLoops = normalizeFootprintLoopsInput(buildAreaLoops);
@@ -1439,6 +1453,27 @@ function fitFootprintLoopsToBuildArea({
             minLengthByRunId: lotFitSolvability?.minLengthByRunId ?? null,
             isFootprintSolvable: lotFitSolvability?.isFootprintSolvable ?? null
         });
+        if (fitCapture && typeof fitCapture === 'object') {
+            fitCapture.sourceLoop = sourceLoops[0];
+            fitCapture.result = fitted;
+            const bandsById = new Map();
+            for (const application of fitted.applications ?? []) {
+                const runId = application?.faceId ?? application?.runId;
+                const end = application?.end;
+                if (!isFaceId(runId) || (end !== 'start' && end !== 'end')) continue;
+                const id = typeof application?.bandId === 'string' && application.bandId
+                    ? application.bandId
+                    : `${runId}:${end}`;
+                bandsById.set(id, { id, runId, end, stretchable: true, curveRule: 'pinned' });
+            }
+            fitCapture.provenance = createSilhouetteStretchProvenance({
+                sourceLoop: sourceLoops[0],
+                stretchBands: [...bandsById.values()],
+                applications: fitted.applications,
+                sourceLayerId: 'building_default',
+                lineageId: 'building_default'
+            });
+        }
         if (warnings) warnings.push(...fitted.warnings);
         return [footprintPlanToLoop(fitted.footprint)];
     }
@@ -1988,19 +2023,15 @@ function computePersistedFacadeFramesFromLoop(loop, { warnings = null } = {}) {
     const ids = points.map((point) => point?.runId);
     if (!ids.every((id) => isFaceId(id)) || new Set(ids).size !== ids.length) return null;
     const directions = points.map((point) => point?.runForward !== false);
-    if (!directions.every((value) => value === directions[0])) {
-        if (Array.isArray(warnings)) warnings.push('Facade silhouette: persisted run directions are inconsistent.');
-        return null;
-    }
 
     const area = signedArea(points);
     if (!(Math.abs(area) > EPS)) return null;
-    const indices = [];
-    for (let k = 0; k < points.length; k++) {
-        indices.push(directions[0] ? k : (points.length - 1 - k));
-    }
-    const aPosition = indices.findIndex((index) => ids[index] === 'A');
-    if (aPosition > 0) indices.push(...indices.splice(0, aPosition));
+    // `order` is the physical polygon traversal. `runForward` is independent:
+    // it defines the stable run's authored local-u direction and may differ on
+    // every run after an explicit target remap. Reversing the whole traversal
+    // from one run's flag relabelled unrelated faces positionally and made
+    // mixed-orientation silhouettes impossible to join.
+    const indices = createSilhouetteRunTraversal(points).map((entry) => entry.loopIndex);
 
     const frames = {};
     const order = [];
@@ -2032,6 +2063,7 @@ function computePersistedFacadeFramesFromLoop(loop, { warnings = null } = {}) {
         frames[faceId] = {
             faceId,
             runIndex: index,
+            runForward: forward,
             start: {
                 x: qf(orientedStart.x),
                 z: qf(orientedStart.z)
@@ -4462,6 +4494,128 @@ function applyPlanOffset({ loops, offset }) {
     return { outer: nextOuter, holes: nextHoles, all: [...nextOuter, ...nextHoles] };
 }
 
+/**
+ * Resolves the authored silhouette owner before the existing per-floor
+ * plan-offset pass. Field-absent layers deliberately retain the legacy
+ * cumulative-offset path; an explicit ownership mode opts into the AI 520
+ * default/previous/detached contract.
+ */
+export function resolveFloorLayerPlanLoops({
+    layers,
+    defaultLoops,
+    authoredDefaultLoops = null,
+    lotFitCapture = null,
+    minRunLengthsForLayer = null,
+    warnings = null
+} = {}) {
+    const fallbackLoops = normalizeFootprintLoopsInput(defaultLoops);
+    const authoredLoops = normalizeFootprintLoopsInput(authoredDefaultLoops);
+    const byLayerId = new Map();
+    const floorLayers = (Array.isArray(layers) ? layers : []).filter((layer) => layer?.type === LAYER_TYPE.FLOOR);
+    const usesSilhouetteOwnership = floorLayers.some((layer) => (
+        layer?.silhouette && typeof layer.silhouette === 'object'
+    ));
+    let previousLoops = fallbackLoops;
+    let previousResolved = fallbackLoops[0]
+        ? { layerId: 'building_default', sourceLayerId: 'building_default', loop: fallbackLoops[0] }
+        : null;
+
+    const authoredBounds = computeLoopsBoundsXZ(authoredLoops);
+    const placedBounds = computeLoopsBoundsXZ(fallbackLoops);
+    const translateX = authoredBounds && placedBounds
+        ? ((placedBounds.minX + placedBounds.maxX) - (authoredBounds.minX + authoredBounds.maxX)) * 0.5
+        : 0;
+    const translateZ = authoredBounds && placedBounds
+        ? ((placedBounds.minZ + placedBounds.maxZ) - (authoredBounds.minZ + authoredBounds.maxZ)) * 0.5
+        : 0;
+
+    for (const layer of Array.isArray(layers) ? layers : []) {
+        if (layer?.type !== LAYER_TYPE.FLOOR) continue;
+        const explicit = layer?.silhouette && typeof layer.silhouette === 'object'
+            ? layer.silhouette
+            : null;
+        // Once a building opts into per-layer ownership, a field-absent layer
+        // remains the backwards-compatible building-default owner. It must not
+        // silently inherit a detached neighbour merely because the old offset
+        // pipeline carried `previousLoops` forward. Entirely legacy configs
+        // keep their cumulative plan-offset behaviour unchanged.
+        let ownedLoops = usesSilhouetteOwnership ? fallbackLoops : previousLoops;
+        let resolved = null;
+
+        if (explicit) {
+            let minimumSourceLoop = fallbackLoops[0] ?? [];
+            if (explicit.mode === LAYER_SILHOUETTE_MODE.INHERIT_PREVIOUS && previousResolved?.loop?.length) {
+                minimumSourceLoop = previousResolved.loop;
+            } else if (explicit.mode === LAYER_SILHOUETTE_MODE.DETACHED && Array.isArray(explicit.loop)) {
+                minimumSourceLoop = explicit.loop;
+            }
+            let minRunLengths = null;
+            if (typeof minRunLengthsForLayer === 'function') {
+                try {
+                    minRunLengths = minRunLengthsForLayer({ layer, loop: minimumSourceLoop }) ?? null;
+                } catch (error) {
+                    if (warnings) warnings.push(`Layer ${layer.id}: facade minima could not be resolved (${error instanceof Error ? error.message : String(error)}).`);
+                }
+            }
+            resolved = resolveLayerSilhouette({
+                layer,
+                defaultLoop: fallbackLoops[0] ?? [],
+                previousResolved,
+                minRunLengths
+            });
+            for (const entry of resolved.issues ?? []) {
+                if (warnings && entry?.message) warnings.push(`Layer ${layer.id}: ${entry.message}`);
+            }
+
+            let outer = resolved.loop;
+            if (resolved.mode === LAYER_SILHOUETTE_MODE.DETACHED) {
+                const fitApplications = lotFitCapture?.result?.applications;
+                if (Array.isArray(fitApplications) && fitApplications.length) {
+                    const replay = replaySilhouetteLotFitApplications({
+                        loop: outer,
+                        provenance: lotFitCapture?.provenance ?? null,
+                        applications: fitApplications,
+                        bandMap: explicit.stretchProvenance?.bandMap ?? explicit.lotFitBandMap ?? null,
+                        minRunLengths,
+                        targetSourceLayerId: explicit.sourceLayerId ?? layer.id,
+                        targetLineageId: explicit.stretchProvenance?.lineageId ?? explicit.sourceLayerId ?? layer.id
+                    });
+                    outer = replay.loop;
+                    for (const entry of replay.issues ?? []) {
+                        if (warnings && entry?.message) warnings.push(`Layer ${layer.id}: ${entry.message}`);
+                    }
+                } else if (Math.abs(translateX) > EPS || Math.abs(translateZ) > EPS) {
+                    // Placement translations carry every detached design frame;
+                    // dimensions remain authored meters and are never scaled.
+                    outer = transformLoopsXZ([outer], { translateX, translateZ })[0] ?? outer;
+                }
+            }
+
+            const inheritedHoles = resolved.mode === LAYER_SILHOUETTE_MODE.INHERIT_PREVIOUS
+                ? previousLoops.slice(1)
+                : fallbackLoops.slice(1);
+            ownedLoops = normalizeFootprintLoopsInput([outer, ...inheritedHoles]);
+        }
+
+        const offset = clamp(layer?.planOffset ?? 0.0, -8.0, 8.0);
+        const planLoops = applyPlanOffset({ loops: ownedLoops, offset }).all;
+        const finalLoops = planLoops.length ? planLoops : ownedLoops;
+        if (typeof layer?.id === 'string' && layer.id) byLayerId.set(layer.id, finalLoops);
+        previousLoops = finalLoops;
+        previousResolved = finalLoops[0]
+            ? {
+                layerId: typeof layer?.id === 'string' ? layer.id : '',
+                sourceLayerId: resolved?.sourceLayerId
+                    ?? (usesSilhouetteOwnership ? 'building_default' : previousResolved?.sourceLayerId)
+                    ?? 'building_default',
+                loop: finalLoops[0]
+            }
+            : previousResolved;
+    }
+
+    return byLayerId;
+}
+
 function applyWallInset({ loops, inset }) {
     const { outer, holes } = splitLoops(loops);
     const d = clamp(inset, 0.0, 4.0);
@@ -4473,12 +4627,14 @@ function applyWallInset({ loops, inset }) {
 }
 
 function buildShapeFromLoops({ outerLoop, holeLoops }) {
-    const shapePts = (outerLoop ?? []).map((p) => new THREE.Vector2(p.x, -p.z));
+    const shapePts = tessellateLayerSilhouetteLoopForGeometry(outerLoop)
+        .map((p) => new THREE.Vector2(p.x, -p.z));
     shapePts.reverse();
     const shape = new THREE.Shape(shapePts);
 
     for (const hole of holeLoops ?? []) {
-        const holePts = (hole ?? []).map((p) => new THREE.Vector2(p.x, -p.z));
+        const holePts = tessellateLayerSilhouetteLoopForGeometry(hole)
+            .map((p) => new THREE.Vector2(p.x, -p.z));
         holePts.reverse();
         shape.holes.push(new THREE.Path(holePts));
     }
@@ -6364,7 +6520,17 @@ function appendLoopLinePositions(dst, loops, y) {
         for (let i = 0; i < loop.length; i++) {
             const a = loop[i];
             const b = loop[(i + 1) % loop.length];
-            dst.push(a.x, y, a.z, b.x, y, b.z);
+            const curve = resolveFootprintArcRun(a, b, a?.arc);
+            if (!curve) {
+                dst.push(a.x, y, a.z, b.x, y, b.z);
+                continue;
+            }
+            let previous = sampleResolvedFootprintArc(curve, 0);
+            for (let sampleIndex = 1; sampleIndex <= curve.segments; sampleIndex++) {
+                const next = sampleResolvedFootprintArc(curve, curve.length * (sampleIndex / curve.segments));
+                if (previous && next) dst.push(previous.x, y, previous.z, next.x, y, next.z);
+                previous = next;
+            }
         }
     }
 }
@@ -6551,6 +6717,66 @@ function pointOnFacadeFrame({ frame, u, depth }) {
     const x = sample.x + sample.n.x * d;
     const z = sample.z + sample.n.z * d;
     return { x: qf(x), y: 0, z: qf(z) };
+}
+
+function facadeFrameRunsForward(frame) {
+    return frame?.runForward !== false;
+}
+
+function facadeFrameLoopStart(frame) {
+    return facadeFrameRunsForward(frame) ? frame?.start : frame?.end;
+}
+
+function facadeFrameLoopEnd(frame) {
+    return facadeFrameRunsForward(frame) ? frame?.end : frame?.start;
+}
+
+function facadeFrameLoopStartT(frame) {
+    const tangent = facadeFrameRunsForward(frame)
+        ? (frame?.startT ?? frame?.t)
+        : (frame?.endT ?? frame?.t);
+    const sign = facadeFrameRunsForward(frame) ? 1 : -1;
+    return tangent ? { x: (Number(tangent.x) || 0) * sign, z: (Number(tangent.z) || 0) * sign } : null;
+}
+
+function facadeFrameLoopEndT(frame) {
+    const tangent = facadeFrameRunsForward(frame)
+        ? (frame?.endT ?? frame?.t)
+        : (frame?.startT ?? frame?.t);
+    const sign = facadeFrameRunsForward(frame) ? 1 : -1;
+    return tangent ? { x: (Number(tangent.x) || 0) * sign, z: (Number(tangent.z) || 0) * sign } : null;
+}
+
+function facadeFrameLoopStartN(frame) {
+    return facadeFrameRunsForward(frame)
+        ? (frame?.startN ?? frame?.n)
+        : (frame?.endN ?? frame?.n);
+}
+
+function facadeFrameLoopEndN(frame) {
+    return facadeFrameRunsForward(frame)
+        ? (frame?.endN ?? frame?.n)
+        : (frame?.startN ?? frame?.n);
+}
+
+function facadeFrameLoopStartU(frame) {
+    return facadeFrameRunsForward(frame) ? 0 : Math.max(0, Number(frame?.length) || 0);
+}
+
+function facadeFrameLoopEndU(frame) {
+    return facadeFrameRunsForward(frame) ? Math.max(0, Number(frame?.length) || 0) : 0;
+}
+
+function facadeProfileLoopStartDepth(frame, profile) {
+    return facadeFrameRunsForward(frame)
+        ? (Number(profile?.startDepth) || 0)
+        : (Number(profile?.endDepth) || 0);
+}
+
+function facadeProfileLoopEndDepth(frame, profile) {
+    return facadeFrameRunsForward(frame)
+        ? (Number(profile?.endDepth) || 0)
+        : (Number(profile?.startDepth) || 0);
 }
 
 function resolveCurvedWindowBend({ frame, point, nx, nz, settings, poseOffset }) {
@@ -6758,6 +6984,12 @@ function cornerJoinPointWithDepths(aFrame, aDepth, bFrame, bDepth, corner) {
     const da = Number(aDepth) || 0;
     const db = Number(bDepth) || 0;
     const c = corner && typeof corner === 'object' ? corner : { x: 0, z: 0 };
+    const aEnd = facadeFrameLoopEnd(aFrame) ?? { x: 0, z: 0 };
+    const bStart = facadeFrameLoopStart(bFrame) ?? { x: 0, z: 0 };
+    const aEndT = facadeFrameLoopEndT(aFrame) ?? { x: 0, z: 0 };
+    const bStartT = facadeFrameLoopStartT(bFrame) ?? { x: 0, z: 0 };
+    const aEndN = facadeFrameLoopEndN(aFrame) ?? { x: 0, z: 0 };
+    const bStartN = facadeFrameLoopStartN(bFrame) ?? { x: 0, z: 0 };
 
     // Each face's line is anchored on its OWN frame point. On a plan with
     // beveled corners the two faces do not meet at `corner` (it is a fold point
@@ -6765,24 +6997,24 @@ function cornerJoinPointWithDepths(aFrame, aDepth, bFrame, bDepth, corner) {
     // to collapse the mitre onto the fold — which tilted every loop derived
     // from these joins off its face line (AI 501).
     const pa = {
-        x: (Number(aFrame?.end?.x) || 0) + (Number(aFrame?.endN?.x ?? aFrame?.n?.x) || 0) * da,
-        z: (Number(aFrame?.end?.z) || 0) + (Number(aFrame?.endN?.z ?? aFrame?.n?.z) || 0) * da
+        x: (Number(aEnd.x) || 0) + (Number(aEndN.x) || 0) * da,
+        z: (Number(aEnd.z) || 0) + (Number(aEndN.z) || 0) * da
     };
     const pb = {
-        x: (Number(bFrame?.start?.x) || 0) + (Number(bFrame?.startN?.x ?? bFrame?.n?.x) || 0) * db,
-        z: (Number(bFrame?.start?.z) || 0) + (Number(bFrame?.startN?.z ?? bFrame?.n?.z) || 0) * db
+        x: (Number(bStart.x) || 0) + (Number(bStartN.x) || 0) * db,
+        z: (Number(bStart.z) || 0) + (Number(bStartN.z) || 0) * db
     };
-    const ia = intersectLines2(pa, aFrame?.endT ?? aFrame?.t, pb, bFrame?.startT ?? bFrame?.t);
+    const ia = intersectLines2(pa, aEndT, pb, bStartT);
     const out = ia ?? {
-        x: c.x + (Number(aFrame?.endN?.x ?? aFrame?.n?.x) || 0) * da,
-        z: c.z + (Number(aFrame?.endN?.z ?? aFrame?.n?.z) || 0) * da
+        x: c.x + (Number(aEndN.x) || 0) * da,
+        z: c.z + (Number(aEndN.z) || 0) * da
     };
     return { x: qf(out.x), y: 0, z: qf(out.z) };
 }
 
 function framesContinueCollinearly(aFrame, bFrame) {
-    const aT = aFrame?.endT ?? aFrame?.t ?? null;
-    const bT = bFrame?.startT ?? bFrame?.t ?? null;
+    const aT = facadeFrameLoopEndT(aFrame);
+    const bT = facadeFrameLoopStartT(bFrame);
     if (!aT || !bT) return false;
     return Math.abs(cross2(aT, bT)) < 1e-6 && dot2(aT, bT) > 0.999999;
 }
@@ -6797,39 +7029,43 @@ function framesContinueCollinearly(aFrame, bFrame) {
  * @returns {{aEnd: {x,y,z}, bStart: {x,y,z}}} equal points when mitred
  */
 function cornerJoinPairWithDepths(aFrame, aDepth, bFrame, bDepth, facet) {
+    const aEnd = facadeFrameLoopEnd(aFrame) ?? { x: 0, z: 0 };
+    const bStart = facadeFrameLoopStart(bFrame) ?? { x: 0, z: 0 };
+    const aEndN = facadeFrameLoopEndN(aFrame) ?? { x: 0, z: 0 };
+    const bStartN = facadeFrameLoopStartN(bFrame) ?? { x: 0, z: 0 };
     if (!facet && framesContinueCollinearly(aFrame, bFrame)) {
         const da = Number(aDepth) || 0;
         const db = Number(bDepth) || 0;
-        const corner = aFrame?.end ?? bFrame?.start ?? { x: 0, z: 0 };
+        const corner = aEnd ?? bStart;
         if (Math.abs(da - db) <= 1e-6) {
             const join = {
-                x: qf((Number(corner.x) || 0) + (Number(aFrame?.endN?.x ?? aFrame?.n?.x) || 0) * da),
+                x: qf((Number(corner.x) || 0) + (Number(aEndN.x) || 0) * da),
                 y: 0,
-                z: qf((Number(corner.z) || 0) + (Number(aFrame?.endN?.z ?? aFrame?.n?.z) || 0) * da)
+                z: qf((Number(corner.z) || 0) + (Number(aEndN.z) || 0) * da)
             };
             return { aEnd: join, bStart: join };
         }
         return {
             aEnd: {
-                x: qf((Number(aFrame?.end?.x) || 0) + (Number(aFrame?.endN?.x ?? aFrame?.n?.x) || 0) * da),
+                x: qf((Number(aEnd.x) || 0) + (Number(aEndN.x) || 0) * da),
                 y: 0,
-                z: qf((Number(aFrame?.end?.z) || 0) + (Number(aFrame?.endN?.z ?? aFrame?.n?.z) || 0) * da)
+                z: qf((Number(aEnd.z) || 0) + (Number(aEndN.z) || 0) * da)
             },
             bStart: {
-                x: qf((Number(bFrame?.start?.x) || 0) + (Number(bFrame?.startN?.x ?? bFrame?.n?.x) || 0) * db),
+                x: qf((Number(bStart.x) || 0) + (Number(bStartN.x) || 0) * db),
                 y: 0,
-                z: qf((Number(bFrame?.start?.z) || 0) + (Number(bFrame?.startN?.z ?? bFrame?.n?.z) || 0) * db)
+                z: qf((Number(bStart.z) || 0) + (Number(bStartN.z) || 0) * db)
             }
         };
     }
     if (!facet) {
-        const join = cornerJoinPointWithDepths(aFrame, aDepth, bFrame, bDepth, aFrame?.end ?? null);
+        const join = cornerJoinPointWithDepths(aFrame, aDepth, bFrame, bDepth, aEnd);
         // AI 512: arbitrary-angle corners cap the mitre. Past the spike limit
         // (an acute meeting with a real offset) the corner falls back to a
         // bevel pair: each face ends on its own offset corner and the short
         // chamfer bridges them, exactly like an authored facet.
-        const cx = Number(aFrame?.end?.x) || 0;
-        const cz = Number(aFrame?.end?.z) || 0;
+        const cx = Number(aEnd.x) || 0;
+        const cz = Number(aEnd.z) || 0;
         const maxDepth = Math.max(Math.abs(Number(aDepth) || 0), Math.abs(Number(bDepth) || 0));
         const spikeLimit = Math.max(1.5, maxDepth * 3);
         if (Math.hypot(join.x - cx, join.z - cz) <= spikeLimit) {
@@ -6840,14 +7076,14 @@ function cornerJoinPairWithDepths(aFrame, aDepth, bFrame, bDepth, facet) {
     const db = Number(bDepth) || 0;
     return {
         aEnd: {
-            x: qf((Number(aFrame?.end?.x) || 0) + (Number(aFrame?.endN?.x ?? aFrame?.n?.x) || 0) * da),
+            x: qf((Number(aEnd.x) || 0) + (Number(aEndN.x) || 0) * da),
             y: 0,
-            z: qf((Number(aFrame?.end?.z) || 0) + (Number(aFrame?.endN?.z ?? aFrame?.n?.z) || 0) * da)
+            z: qf((Number(aEnd.z) || 0) + (Number(aEndN.z) || 0) * da)
         },
         bStart: {
-            x: qf((Number(bFrame?.start?.x) || 0) + (Number(bFrame?.startN?.x ?? bFrame?.n?.x) || 0) * db),
+            x: qf((Number(bStart.x) || 0) + (Number(bStartN.x) || 0) * db),
             y: 0,
-            z: qf((Number(bFrame?.start?.z) || 0) + (Number(bFrame?.startN?.z ?? bFrame?.n?.z) || 0) * db)
+            z: qf((Number(bStart.z) || 0) + (Number(bStartN.z) || 0) * db)
         }
     };
 }
@@ -6878,7 +7114,11 @@ function buildCornerJoinLoopWithDepths({ frames, depthOf }) {
         const segments = clampInt(frame?.curve?.segments ?? 1, 1, 96);
         if (frame?.curve && segments > 1) {
             for (let k = 1; k < segments; k++) {
-                raw.push(pointOnFacadeFrame({ frame, u: frame.length * (k / segments), depth }));
+                const fraction = k / segments;
+                const u = facadeFrameRunsForward(frame)
+                    ? frame.length * fraction
+                    : frame.length * (1 - fraction);
+                raw.push(pointOnFacadeFrame({ frame, u, depth }));
             }
         }
         if (end) raw.push(end);
@@ -6926,11 +7166,14 @@ function buildInteriorShellLoopDetailWithDepths({ frames, depthOf }) {
         const length = Math.max(0, Number(frame.length) || 0);
         const start = pairs[(i - 1 + pairs.length) % pairs.length]?.bStart ?? null;
         const end = pairs[i]?.aEnd ?? null;
-        if (start) raw.push({ ...start, kind: 'profile', faceId, u: 0, depth });
+        if (start) raw.push({ ...start, kind: 'profile', faceId, u: facadeFrameLoopStartU(frame), depth });
         const segments = clampInt(frame?.curve?.segments ?? 1, 1, 96);
         if (frame?.curve && segments > 1) {
             for (let k = 1; k < segments; k++) {
-                const u = length * (k / segments);
+                const fraction = k / segments;
+                const u = facadeFrameRunsForward(frame)
+                    ? length * fraction
+                    : length * (1 - fraction);
                 raw.push({
                     ...pointOnFacadeFrame({ frame, u, depth }),
                     kind: 'profile',
@@ -6940,7 +7183,7 @@ function buildInteriorShellLoopDetailWithDepths({ frames, depthOf }) {
                 });
             }
         }
-        if (end) raw.push({ ...end, kind: 'profile', faceId, u: length, depth });
+        if (end) raw.push({ ...end, kind: 'profile', faceId, u: facadeFrameLoopEndU(frame), depth });
     }
     // Negative signed area is the winding that points wall faces into the
     // room. Facade-u remains valid when traversal reverses; the wall builder
@@ -7244,14 +7487,15 @@ function computeQuadFacadeSilhouette({
         const aProf = profByFaceId[aId];
         const bProf = profByFaceId[bId];
         const pair = cornerJoinPairWithDepths(
-            frames[aId], aProf.endDepth,
-            frames[bId], bProf.startDepth,
+            frames[aId], facadeProfileLoopEndDepth(frames[aId], aProf),
+            frames[bId], facadeProfileLoopStartDepth(frames[bId], bProf),
             cornerFacets?.[cornerId] ?? null
         );
         joinPairByCornerId[cornerId] = pair;
         joinByCornerId[cornerId] = pair.aEnd;
         if (framesContinueCollinearly(frames[aId], frames[bId])
-            && Math.abs((Number(aProf.endDepth) || 0) - (Number(bProf.startDepth) || 0)) > 1e-6) {
+            && Math.abs(facadeProfileLoopEndDepth(frames[aId], aProf)
+                - facadeProfileLoopStartDepth(frames[bId], bProf)) > 1e-6) {
             depthStepCorners.add(cornerId);
         } else if (!cornerFacets?.[cornerId]) {
             // AI 512: acute-mitre limit — same rule as cornerJoinPairWithDepths.
@@ -7372,16 +7616,23 @@ function computeQuadFacadeSilhouette({
     for (let i = 0; i < faceCount; i++) {
         const faceId = faceOrder[i];
         cutWantsByFaceId[faceId] = resolveCornerCutWants(getFacade(faceId));
-        const startCornerId = cornerIdAt(i - 1 + faceCount);
-        const endCornerId = cornerIdAt(i);
+        const loopStartCornerId = cornerIdAt(i - 1 + faceCount);
+        const loopEndCornerId = cornerIdAt(i);
+        const runsForward = facadeFrameRunsForward(frames[faceId]);
         faceInfoByFaceId[faceId] = {
             faceId,
             frame: frames[faceId],
             prof: profByFaceId[faceId],
-            startJoin: joinPairByCornerId[startCornerId].bStart,
-            endJoin: joinPairByCornerId[endCornerId].aEnd,
-            startCornerId,
-            endCornerId
+            startJoin: runsForward
+                ? joinPairByCornerId[loopStartCornerId].bStart
+                : joinPairByCornerId[loopEndCornerId].aEnd,
+            endJoin: runsForward
+                ? joinPairByCornerId[loopEndCornerId].aEnd
+                : joinPairByCornerId[loopStartCornerId].bStart,
+            startCornerId: runsForward ? loopStartCornerId : loopEndCornerId,
+            endCornerId: runsForward ? loopEndCornerId : loopStartCornerId,
+            loopStartCornerId,
+            loopEndCornerId
         };
     }
 
@@ -7406,29 +7657,44 @@ function computeQuadFacadeSilhouette({
         const prev = faceInfoByFaceId[prevFaceId];
         const next = faceInfoByFaceId[nextFaceId];
         if (!prev || !next) return { cutPrev: 0, cutNext: 0, q: null };
+        const prevEndpoint = facadeFrameRunsForward(prev.frame) ? 'end' : 'start';
+        const nextEndpoint = facadeFrameRunsForward(next.frame) ? 'start' : 'end';
+        const endpointValue = (info, endpoint, kind) => {
+            if (kind === 'want') return Number(cutWantsByFaceId?.[info.faceId]?.[endpoint]) || 0;
+            if (kind === 'max') return Number(endpoint === 'start' ? info.maxCutStart : info.maxCutEnd) || 0;
+            if (kind === 'u') return Number(endpoint === 'start' ? info.uStartJoin : info.uEndJoin) || 0;
+            if (kind === 'depth') return Number(endpoint === 'start' ? info.prof.startDepth : info.prof.endDepth) || 0;
+            return null;
+        };
+        const cutU = (info, endpoint, cut) => qf(endpointValue(info, endpoint, 'u')
+            + (endpoint === 'start' ? 1 : -1) * (Number(cut) || 0));
+        const uIsInside = (info, endpoint, u) => endpoint === 'start'
+            ? u < (Number(info.uEndJoin) || 0) - minEdge
+            : u > (Number(info.uStartJoin) || 0) + minEdge;
 
-        const wantPrev = dropCutForBeveledCorner(cornerId, prevFaceId, Number(cutWantsByFaceId?.[prevFaceId]?.end) || 0);
-        const wantNext = dropCutForBeveledCorner(cornerId, nextFaceId, Number(cutWantsByFaceId?.[nextFaceId]?.start) || 0);
-        const maxPrev = Number(prev.maxCutEnd) || 0;
-        const maxNext = Number(next.maxCutStart) || 0;
+        const wantPrev = dropCutForBeveledCorner(cornerId, prevFaceId, endpointValue(prev, prevEndpoint, 'want'));
+        const wantNext = dropCutForBeveledCorner(cornerId, nextFaceId, endpointValue(next, nextEndpoint, 'want'));
+        const maxPrev = endpointValue(prev, prevEndpoint, 'max');
+        const maxNext = endpointValue(next, nextEndpoint, 'max');
 
         let cutPrev = qf(clamp(wantPrev, 0, maxPrev));
         let cutNext = qf(clamp(wantNext, 0, maxNext));
         if (!(cutPrev > cornerCutEps) && !(cutNext > cornerCutEps)) return { cutPrev: 0, cutNext: 0, q: null };
 
         const computeQ = (cp, cn) => {
-            const uPrev = qf((Number(prev.uEndJoin) || 0) - (Number(cp) || 0));
-            const uNext = qf((Number(next.uStartJoin) || 0) + (Number(cn) || 0));
-            if (!(uPrev > (Number(prev.uStartJoin) || 0) + minEdge)) return null;
-            if (!(uNext < (Number(next.uEndJoin) || 0) - minEdge)) return null;
+            const uPrev = cutU(prev, prevEndpoint, cp);
+            const uNext = cutU(next, nextEndpoint, cn);
+            if (!uIsInside(prev, prevEndpoint, uPrev) || !uIsInside(next, nextEndpoint, uNext)) return null;
 
             const usePrevJoin = (Number(cp) || 0) <= cornerCutEps;
             const useNextJoin = (Number(cn) || 0) <= cornerCutEps;
 
-            const dPrev = usePrevJoin ? qf(Number(prev.prof.endDepth) || 0) : sampleProfileDepthAtU(prev.prof.profile, uPrev);
-            const dNext = useNextJoin ? qf(Number(next.prof.startDepth) || 0) : sampleProfileDepthAtU(next.prof.profile, uNext);
-            const pPrev = usePrevJoin ? { x: qf(prev.endJoin.x), y: 0, z: qf(prev.endJoin.z) } : pointOnFacadeFrame({ frame: prev.frame, u: uPrev, depth: dPrev });
-            const pNext = useNextJoin ? { x: qf(next.startJoin.x), y: 0, z: qf(next.startJoin.z) } : pointOnFacadeFrame({ frame: next.frame, u: uNext, depth: dNext });
+            const dPrev = usePrevJoin ? qf(endpointValue(prev, prevEndpoint, 'depth')) : sampleProfileDepthAtU(prev.prof.profile, uPrev);
+            const dNext = useNextJoin ? qf(endpointValue(next, nextEndpoint, 'depth')) : sampleProfileDepthAtU(next.prof.profile, uNext);
+            const prevJoin = prevEndpoint === 'start' ? prev.startJoin : prev.endJoin;
+            const nextJoin = nextEndpoint === 'start' ? next.startJoin : next.endJoin;
+            const pPrev = usePrevJoin ? { x: qf(prevJoin.x), y: 0, z: qf(prevJoin.z) } : pointOnFacadeFrame({ frame: prev.frame, u: uPrev, depth: dPrev });
+            const pNext = useNextJoin ? { x: qf(nextJoin.x), y: 0, z: qf(nextJoin.z) } : pointOnFacadeFrame({ frame: next.frame, u: uNext, depth: dNext });
 
             const r = next.frame?.t ?? null;
             const s = prev.frame?.t ?? null;
@@ -7458,21 +7724,25 @@ function computeQuadFacadeSilhouette({
             return { cutPrev: 0, cutNext: 0, q: null };
         }
 
-        return { cutPrev, cutNext, q };
+        return { cutPrev, cutNext, prevEndpoint, nextEndpoint, q };
     };
 
     const cornerCuts = {};
     const cutStartByFaceId = {};
     const cutEndByFaceId = {};
+    for (const faceId of faceOrder) {
+        cutStartByFaceId[faceId] = 0;
+        cutEndByFaceId[faceId] = 0;
+    }
     for (let i = 0; i < faceCount; i++) {
         const aId = faceOrder[i];
         const bId = faceOrder[(i + 1) % faceCount];
-        cornerCuts[`${aId}${bId}`] = resolveCornerCut(`${aId}${bId}`, aId, bId);
-    }
-    for (let i = 0; i < faceCount; i++) {
-        const faceId = faceOrder[i];
-        cutStartByFaceId[faceId] = qf(Number(cornerCuts[cornerIdAt(i - 1 + faceCount)]?.cutNext) || 0);
-        cutEndByFaceId[faceId] = qf(Number(cornerCuts[cornerIdAt(i)]?.cutPrev) || 0);
+        const cut = resolveCornerCut(`${aId}${bId}`, aId, bId);
+        cornerCuts[`${aId}${bId}`] = cut;
+        if (cut.prevEndpoint === 'start') cutStartByFaceId[aId] = qf(Number(cut.cutPrev) || 0);
+        else cutEndByFaceId[aId] = qf(Number(cut.cutPrev) || 0);
+        if (cut.nextEndpoint === 'start') cutStartByFaceId[bId] = qf(Number(cut.cutNext) || 0);
+        else cutEndByFaceId[bId] = qf(Number(cut.cutNext) || 0);
     }
 
     const buildTrimmedFaceWorldPoints = ({
@@ -7613,12 +7883,14 @@ function computeQuadFacadeSilhouette({
             const aId = faceOrder[i];
             const bId = faceOrder[(i + 1) % faceCount];
             const cornerId = `${aId}${bId}`;
+            const aEndpoint = facadeFrameRunsForward(frames[aId]) ? 'end' : 'start';
+            const bEndpoint = facadeFrameRunsForward(frames[bId]) ? 'start' : 'end';
             corners.push({
                 cornerId,
-                a: { faceId: aId, end: 'end', depth: Number(profByFaceId[aId].endDepth) || 0 },
-                b: { faceId: bId, end: 'start', depth: Number(profByFaceId[bId].startDepth) || 0 },
+                a: { faceId: aId, end: aEndpoint, depth: facadeProfileLoopEndDepth(frames[aId], profByFaceId[aId]) },
+                b: { faceId: bId, end: bEndpoint, depth: facadeProfileLoopStartDepth(frames[bId], profByFaceId[bId]) },
                 join: joinByCornerId[cornerId],
-                frameCorner: frames[aId].end
+                frameCorner: facadeFrameLoopEnd(frames[aId])
             });
         }
         for (const c of corners) {
@@ -7695,7 +7967,8 @@ function computeQuadFacadeSilhouette({
     const loopDetail = [];
     for (let i = 0; i < faceCount; i++) {
         const faceId = faceOrder[i];
-        loopDetail.push(...ptsByFaceId[faceId]);
+        const facePoints = ptsByFaceId[faceId];
+        loopDetail.push(...(facadeFrameRunsForward(frames[faceId]) ? facePoints : facePoints.slice().reverse()));
         const cut = cutPoint(cornerIdAt(i));
         if (cut) loopDetail.push(cut);
     }
@@ -7947,6 +8220,7 @@ export function buildBuildingFabricationVisualParts({
         : ((Array.isArray(tiles) && tiles.length)
             ? computeMaterialVariationSeedFromTiles(tiles, { salt: 'lot_fit' })
             : computeMaterialVariationSeedFromFootprintLoops(explicitFootprintLoops, { salt: 'lot_fit' }));
+    const lotFitCapture = { sourceLoop: null, result: null, provenance: null };
     const fittedExplicitFootprintLoops = (explicitFootprintLoops.length && explicitBuildAreaLoops.length)
         ? fitFootprintLoopsToBuildArea({
             footprintLoops: explicitFootprintLoops,
@@ -7957,7 +8231,8 @@ export function buildBuildingFabricationVisualParts({
             footprintStretch,
             fitSeed,
             lotFitSolvability,
-            warnings
+            warnings,
+            fitCapture: lotFitCapture
         })
         : explicitFootprintLoops;
     const sourceFootprintLoops = fittedExplicitFootprintLoops.length
@@ -8012,7 +8287,27 @@ export function buildBuildingFabricationVisualParts({
     const firstFloorHeight = clamp(firstFloorLayer?.floorHeight ?? 3.2, 1.0, 12.0);
     const { baseY, extraFirstFloor, planY } = computeBuildingBaseAndSidewalk({ generatorConfig, floorHeight: firstFloorHeight });
     const matVarHeightMax = estimateFabricationHeightMax({ baseY, extraFirstFloor, layers: safeLayers });
-    const overlayLoops = applyPlanOffset({ loops: sourceFootprintLoops, offset: firstFloorLayer?.planOffset ?? 0.0 }).all;
+    const layerPlanLoopsById = resolveFloorLayerPlanLoops({
+        layers: safeLayers,
+        defaultLoops: sourceFootprintLoops,
+        authoredDefaultLoops: explicitFootprintLoops,
+        lotFitCapture,
+        minRunLengthsForLayer: ({ layer, loop }) => createFacadeLotFitSolvability({
+            layers: [layer],
+            facades: resolvedFacades,
+            footprintLoop: loop
+        }).minLengthByRunId,
+        warnings
+    });
+    const floorLayerTransitionPlans = planLayerSilhouetteTransitionSurfaces({ layers: safeLayers, layerPlanLoopsById });
+    const transitionSurfaceUpperLayerIds = new Set(floorLayerTransitionPlans.map((entry) => entry.upperLayerId));
+    const transitionLowerLayerIdByUpperLayerId = new Map(
+        floorLayerTransitionPlans.map((entry) => [entry.upperLayerId, entry.lowerLayerId])
+    );
+    const overlayLoops = (typeof firstFloorLayer?.id === 'string'
+        ? layerPlanLoopsById.get(firstFloorLayer.id)
+        : null)
+        ?? applyPlanOffset({ loops: sourceFootprintLoops, offset: firstFloorLayer?.planOffset ?? 0.0 }).all;
 
     const wallInset = clamp(walls?.inset, 0.0, 4.0);
     const lineColor = colors?.line ?? 0xff3b30;
@@ -8214,45 +8509,6 @@ export function buildBuildingFabricationVisualParts({
     const globalFacadeSpec = facadesAreGlobal ? facadesRaw : null;
     const facadesByLayerId = facadesAreGlobal ? null : facadesRaw;
 
-    // AI 487: pier capitals are run-aware. A capital/base only lands where the
-    // pier run actually ends, so a bay repeated across stacked floor layers
-    // keeps one unbroken pier with a single capital at the very top and a
-    // single base at the very bottom.
-    const capitalBayKeysByLayerId = new Map();
-    for (const layer of safeLayers) {
-        if (layer?.type !== LAYER_TYPE.FLOOR) continue;
-        const layerFacades = globalFacadeSpec
-            ?? ((facadesByLayerId?.[layer.id] && typeof facadesByLayerId[layer.id] === 'object') ? facadesByLayerId[layer.id] : null);
-        const keys = new Set();
-        if (layerFacades && typeof layerFacades === 'object') {
-            const links = layer?.faceLinking?.links && typeof layer.faceLinking.links === 'object'
-                ? layer.faceLinking.links
-                : null;
-            const resolveMaster = (faceId) => {
-                const seen = new Set();
-                let cur = faceId;
-                for (let i = 0; i < 8; i++) {
-                    if (seen.has(cur)) break;
-                    seen.add(cur);
-                    const next = links?.[cur] ?? null;
-                    if (next === null || next === undefined || next === cur) return cur;
-                    cur = next;
-                }
-                return faceId;
-            };
-            for (const faceId of facadeSpecFaceIds(layerFacades)) {
-                const facade = layerFacades?.[resolveMaster(faceId)];
-                const bays = facade?.layout?.bays?.items;
-                if (!Array.isArray(bays)) continue;
-                for (const bay of bays) {
-                    if (bay?.capital && typeof bay.capital === 'object' && typeof bay?.id === 'string' && bay.id) {
-                        keys.add(`${faceId}:${bay.id}`);
-                    }
-                }
-            }
-        }
-        capitalBayKeysByLayerId.set(layer.id, keys);
-    }
     const wantsFacadePatterns = !!globalFacadeSpec && facadeSpecFaceIds(globalFacadeSpec).some((id) => !!globalFacadeSpec?.[id]?.layout?.pattern);
 
     // AI 493: bay repeat topology is resolved ONCE per face and replayed on
@@ -8267,14 +8523,123 @@ export function buildBuildingFabricationVisualParts({
         if (!bays || !bays.length) return false;
         return normalizeFacadeStackingSpec(layout?.stacking ?? null).mode === FACADE_BAY_STACKING_MODE.LOCK_COLUMNS;
     };
-    const facadeBayLockKey = (faceId, layout) => {
+    const silhouetteCompatibilityGroupByLayerId = new Map();
+    let previousSilhouetteCompatibilityGroup = 'building_default';
+    for (const candidate of safeLayers) {
+        if (candidate?.type !== LAYER_TYPE.FLOOR) continue;
+        const silhouette = candidate?.silhouette && typeof candidate.silhouette === 'object'
+            ? candidate.silhouette
+            : null;
+        let group = 'building_default';
+        if (silhouette?.mode === LAYER_SILHOUETTE_MODE.INHERIT_PREVIOUS) {
+            group = previousSilhouetteCompatibilityGroup;
+        } else if (silhouette?.mode === LAYER_SILHOUETTE_MODE.DETACHED) {
+            group = silhouetteCompatibilityGroupByLayerId.get(silhouette.sourceLayerId)
+                ?? (silhouette.sourceLayerId === 'building_default' ? 'building_default' : null)
+                ?? `detached:${candidate.id}`;
+        }
+        silhouetteCompatibilityGroupByLayerId.set(candidate.id, group);
+        previousSilhouetteCompatibilityGroup = group;
+    }
+    const facadeFrameCompatibilityKey = (frame) => {
+        if (!frame) return 'unknown';
+        const mid = sampleFacadeFrameAtU(frame, (Number(frame.length) || 0) * 0.5);
+        const tx = Math.round((Number(mid?.t?.x) || 0) * 1000) / 1000;
+        const tz = Math.round((Number(mid?.t?.z) || 0) * 1000) / 1000;
+        const curveKind = frame.curve
+            ? `arc:${Math.sign(Number(frame.curve?.sweep) || 0)}`
+            : 'line';
+        return `${curveKind}:${tx}:${tz}`;
+    };
+    const facadeBayLockKey = (layer, faceId, layout, frame = null) => {
         if (!facadeBayLockWanted(layout)) return null;
-        return `${faceId}:${stableStringify({ bays: layout.bays.items, groups: layout?.groups?.items ?? null })}`;
+        const group = silhouetteCompatibilityGroupByLayerId.get(layer?.id) ?? 'building_default';
+        return `${group}:${faceId}:${facadeFrameCompatibilityKey(frame)}:${stableStringify({ bays: layout.bays.items, groups: layout?.groups?.items ?? null })}`;
     };
     const facadeSpecForLayer = (layer) => globalFacadeSpec
         ?? ((facadesByLayerId?.[layer?.id] && typeof facadesByLayerId[layer.id] === 'object')
             ? facadesByLayerId[layer.id]
             : null);
+
+    // AI 487/520: capital/base continuity is semantic, not positional. Two
+    // stacked bays suppress their touching ornaments only when the actual run
+    // identity, direction (including linked-face reversal), silhouette lineage
+    // and facade design all continue across the layer boundary.
+    const capitalBayKeysByLayerId = new Map();
+    const capitalBayKeyByLayerFaceBayRef = new Map();
+    for (const layer of safeLayers) {
+        if (layer?.type !== LAYER_TYPE.FLOOR || typeof layer?.id !== 'string') continue;
+        const keys = new Set();
+        const keyByFaceBayRef = new Map();
+        const layerFacades = facadeSpecForLayer(layer);
+        const planLoop = layerPlanLoopsById.get(layer.id)?.[0] ?? null;
+        const frames = planLoop ? computeFacadeFramesFromLoop(planLoop, { warnings: null }) : null;
+        const links = layer?.faceLinking?.links && typeof layer.faceLinking.links === 'object'
+            ? layer.faceLinking.links
+            : null;
+        const reverseByFace = layer?.faceLinking?.reverseByFace && typeof layer.faceLinking.reverseByFace === 'object'
+            ? layer.faceLinking.reverseByFace
+            : null;
+        const resolveMaster = (faceId) => {
+            const seen = new Set();
+            let cur = faceId;
+            for (let i = 0; i < 8; i++) {
+                if (seen.has(cur)) break;
+                seen.add(cur);
+                const next = links?.[cur] ?? null;
+                if (!isFaceId(next) || next === cur) return cur;
+                cur = next;
+            }
+            return faceId;
+        };
+        const lineageId = silhouetteCompatibilityGroupByLayerId.get(layer.id) ?? `detached:${layer.id}`;
+        for (const faceId of facadeFaceIdsOf(frames)) {
+            const masterFaceId = resolveMaster(faceId);
+            const facade = layerFacades?.[masterFaceId] && typeof layerFacades[masterFaceId] === 'object'
+                ? layerFacades[masterFaceId]
+                : null;
+            const bays = facade?.layout?.bays?.items;
+            if (!Array.isArray(bays)) continue;
+            const runPoint = Array.isArray(planLoop)
+                ? (planLoop.find((point) => point?.runId === faceId) ?? null)
+                : null;
+            const geometricForward = runPoint?.runForward !== false;
+            const effectiveForward = reverseByFace?.[faceId] ? !geometricForward : geometricForward;
+            const frame = frames?.[faceId] ?? null;
+            const designKey = stableStringify({
+                bays,
+                groups: facade?.layout?.groups?.items ?? null,
+                frame: frame ? {
+                    start: [qf(frame.start?.x), qf(frame.start?.z)],
+                    end: [qf(frame.end?.x), qf(frame.end?.z)],
+                    length: qf(frame.length),
+                    curve: frame.curve ? [
+                        qf(frame.curve.center?.x),
+                        qf(frame.curve.center?.z),
+                        qf(frame.curve.radius),
+                        qf(frame.curve.sweep)
+                    ] : null
+                } : null
+            });
+            for (const bay of bays) {
+                const bayId = typeof bay?.id === 'string' ? bay.id : '';
+                if (!bayId || !bay?.capital || typeof bay.capital !== 'object') continue;
+                const key = createFacadeRunContinuityKey({
+                    lineageId,
+                    runId: runPoint?.runId ?? faceId,
+                    runForward: effectiveForward,
+                    bayId,
+                    designKey
+                });
+                if (key) {
+                    keys.add(key);
+                    keyByFaceBayRef.set(`${faceId}:${bayId}`, key);
+                }
+            }
+        }
+        capitalBayKeysByLayerId.set(layer.id, keys);
+        capitalBayKeyByLayerFaceBayRef.set(layer.id, keyByFaceBayRef);
+    }
     const wantsFacadeBayLock = safeLayers.some((layer) => {
         if (layer?.type !== LAYER_TYPE.FLOOR) return false;
         const spec = facadeSpecForLayer(layer);
@@ -8294,12 +8659,9 @@ export function buildBuildingFabricationVisualParts({
     if (wantsFacadePatterns || wantsFacadeBayLock) {
         const minFaceLengthByFaceId = {};
         const bayLockProbeByKey = new Map();
-        let probeLoops = sourceFootprintLoops;
-
         for (const layer of safeLayers) {
             if (layer?.type !== LAYER_TYPE.FLOOR) continue;
-            const planOffset = clamp(layer?.planOffset ?? 0.0, -8.0, 8.0);
-            const { all: planLoops } = applyPlanOffset({ loops: probeLoops, offset: planOffset });
+            const planLoops = layerPlanLoopsById.get(layer.id) ?? sourceFootprintLoops;
             const { outer: wallOuterRaw } = applyWallInset({ loops: planLoops, inset: wallInset });
             const wallOuter = applyEdgeBevelToOuterLoops(wallOuterRaw);
             const main = Array.isArray(wallOuter) ? wallOuter[0] : null;
@@ -8328,14 +8690,13 @@ export function buildBuildingFabricationVisualParts({
 
                     if (!wantsFacadeBayLock) continue;
                     const layout = layerFacadeSpec?.[resolveMaster(faceId)]?.layout ?? null;
-                    const key = facadeBayLockKey(faceId, layout);
+                    const key = facadeBayLockKey(layer, faceId, layout, frames?.[faceId] ?? null);
                     if (!key) continue;
                     const probe = bayLockProbeByKey.get(key) ?? null;
                     if (probe) probe.referenceLength = Math.max(probe.referenceLength, L);
                     else bayLockProbeByKey.set(key, { referenceLength: L, layout });
                 }
             }
-            probeLoops = planLoops.length ? planLoops : probeLoops;
         }
 
         for (const [key, probe] of bayLockProbeByKey) {
@@ -8379,8 +8740,8 @@ export function buildBuildingFabricationVisualParts({
         const type = layer?.type;
         if (type === LAYER_TYPE.FLOOR) {
             lastFloorLayer = layer;
-            const planOffset = clamp(layer.planOffset, -8.0, 8.0);
-            const { outer: planOuter, holes: planHoles, all: planLoops } = applyPlanOffset({ loops: currentLoops, offset: planOffset });
+            const planLoops = layerPlanLoopsById.get(layer.id) ?? currentLoops;
+            const { outer: planOuter, holes: planHoles } = splitLoops(planLoops);
 
             const { outer: wallOuterRaw, holes: wallHoles } = applyWallInset({ loops: planLoops, inset: wallInset });
             const wallOuter = applyEdgeBevelToOuterLoops(wallOuterRaw, { collectFacets: true, warnings });
@@ -8430,7 +8791,16 @@ export function buildBuildingFabricationVisualParts({
             const layerFacadeSpec = globalFacadeSpec
                 ? globalFacadeSpec
                 : ((layerId && facadesByLayerId?.[layerId] && typeof facadesByLayerId[layerId] === 'object') ? facadesByLayerId[layerId] : null);
-            const wantsFacadeSilhouette = !!layerFacadeSpec && facadeSpecFaceIds(layerFacadeSpec).length > 0;
+            const hasAuthoredCurvedRun = wallOuter.some((loop) => (
+                Array.isArray(loop) && loop.some((point, index) => (
+                    !!resolveFootprintArcRun(point, loop[(index + 1) % loop.length], point?.arc)
+                ))
+            ));
+            // The facade-profile path is also the curved-wall path. A layer
+            // with no facade layout still needs its authored arcs sampled into
+            // the vertical shell rather than falling back to chord-only planes.
+            const wantsFacadeSilhouette = hasAuthoredCurvedRun
+                || (!!layerFacadeSpec && facadeSpecFaceIds(layerFacadeSpec).length > 0);
 
             if (wantsFacadeSilhouette && wallOuter.length) {
                 const main = wallOuter[0] ?? null;
@@ -8476,7 +8846,7 @@ export function buildBuildingFabricationVisualParts({
                                 bays: baysForSolve,
                                 groups,
                                 faceLengthMeters: len,
-                                topology: facadeBayTopologyByKey.get(facadeBayLockKey(faceId, srcLayout) ?? '') ?? null,
+                                topology: facadeBayTopologyByKey.get(facadeBayLockKey(layer, faceId, srcLayout, frames?.[faceId] ?? null) ?? '') ?? null,
                                 warnings
                             })
                             : null;
@@ -8505,7 +8875,7 @@ export function buildBuildingFabricationVisualParts({
                             && typeof faceMaterialSpec.id === 'string'
                             && !!faceMaterialSpec.id;
 
-                        if (!srcFacade && !hasFaceMaterialSpec && !hasBays && !solvedPatternItems) continue;
+                        if (!srcFacade && !hasFaceMaterialSpec && !hasBays && !solvedPatternItems && !hasAuthoredCurvedRun) continue;
 
                         const base = srcFacade ? { ...srcFacade } : {};
                         const layout = (base.layout && typeof base.layout === 'object') ? { ...base.layout } : {};
@@ -8586,6 +8956,14 @@ export function buildBuildingFabricationVisualParts({
                 for (const lineFaceId of facadeFaceIdsOf(facadeFrames)) {
                     const frame = facadeFrames?.[lineFaceId] ?? null;
                     if (!frame?.start || !frame?.end) continue;
+                    const sampleCount = frame.curve
+                        ? Math.max(2, Math.min(96, Number(frame.curve.segments) || Math.ceil((Number(frame.length) || 0) / 0.5)))
+                        : 1;
+                    const path = [];
+                    for (let sampleIndex = 0; sampleIndex <= sampleCount; sampleIndex++) {
+                        const sample = sampleFacadeFrameAtU(frame, (Number(frame.length) || 0) * (sampleIndex / sampleCount));
+                        if (sample) path.push({ x: Number(sample.x) || 0, z: Number(sample.z) || 0 });
+                    }
                     lines.push({
                         faceId: lineFaceId,
                         x0: Number(frame.start.x) || 0,
@@ -8593,7 +8971,8 @@ export function buildBuildingFabricationVisualParts({
                         x1: Number(frame.end.x) || 0,
                         z1: Number(frame.end.z) || 0,
                         nx: Number(frame?.n?.x) || 0,
-                        nz: Number(frame?.n?.z) || 0
+                        nz: Number(frame?.n?.z) || 0,
+                        path
                     });
                 }
                 if (lines.length) facadeFaceLinesByLayerId[layerId] = lines;
@@ -10043,6 +10422,37 @@ export function buildBuildingFabricationVisualParts({
                             const edgeGeo = new THREE.EdgesGeometry(facadeGeo, 1);
                             appendWirePositions(wirePositions, edgeGeo, layerStartY);
                             edgeGeo.dispose();
+                        }
+
+                        if (transitionSurfaceUpperLayerIds.has(layerId)) {
+                            // Facade walls are side-only geometry. When this
+                            // layer owns a different plan from the floor below,
+                            // close its complete lower outline so an overhang is
+                            // a real soffit instead of an open shell. The lower
+                            // layer's existing top cap supplies the complementary
+                            // terrace surface for setbacks/partial overlaps.
+                            const transitionShape = buildShapeFromLoops({ outerLoop, holeLoops: [] });
+                            const transitionGeo = new THREE.ShapeGeometry(transitionShape);
+                            transitionGeo.rotateX(-Math.PI / 2);
+                            transitionGeo.computeVertexNormals();
+                            const transitionMat = floorSlabMatTemplate.clone();
+                            transitionMat.side = THREE.DoubleSide;
+                            const transitionMesh = new THREE.Mesh(transitionGeo, transitionMat);
+                            transitionMesh.castShadow = false;
+                            transitionMesh.receiveShadow = true;
+                            transitionMesh.position.y = layerStartY;
+                            transitionMesh.userData = transitionMesh.userData ?? {};
+                            transitionMesh.userData.buildingFab2Role = 'roof';
+                            transitionMesh.userData.buildingFab2RoofKind = 'layer_transition_underside';
+                            transitionMesh.userData.lowerLayerId = transitionLowerLayerIdByUpperLayerId.get(layerId) ?? null;
+                            transitionMesh.userData.upperLayerId = layerId;
+                            solidMeshes.push(transitionMesh);
+
+                            if (showWire) {
+                                const edgeGeo = new THREE.EdgesGeometry(transitionGeo, 1);
+                                appendWirePositions(wirePositions, edgeGeo, transitionMesh.position.y);
+                                edgeGeo.dispose();
+                            }
                         }
 
                         const frames = facadeFrames && typeof facadeFrames === 'object' ? facadeFrames : null;
@@ -12313,6 +12723,7 @@ export function buildBuildingFabricationVisualParts({
                 }
                 const prevKeys = prevFloorLayer ? (capitalBayKeysByLayerId.get(prevFloorLayer.id) ?? new Set()) : new Set();
                 const nextKeys = nextFloorLayer ? (capitalBayKeysByLayerId.get(nextFloorLayer.id) ?? new Set()) : new Set();
+                const currentKeysByFaceBayRef = capitalBayKeyByLayerFaceBayRef.get(layer.id) ?? new Map();
 
                 const capitalMatCache = new Map();
                 const getCapitalMaterial = (spec) => {
@@ -12370,7 +12781,10 @@ export function buildBuildingFabricationVisualParts({
                 for (const strip of capitalStrips) {
                     const frame = facadeFrames?.[strip.faceId] ?? null;
                     if (!frame) continue;
-                    const runKey = `${strip.faceId}:${typeof strip.sourceBayId === 'string' && strip.sourceBayId ? strip.sourceBayId : strip.id}`;
+                    const sourceBayId = typeof strip.sourceBayId === 'string' && strip.sourceBayId
+                        ? strip.sourceBayId
+                        : strip.id;
+                    const runKey = currentKeysByFaceBayRef.get(`${strip.faceId}:${sourceBayId}`) ?? null;
                     const rawU0 = Number(strip.frontU0);
                     const rawU1 = Number(strip.frontU1);
                     const u0 = Number.isFinite(rawU0) ? rawU0 : (Number(strip.u0) || 0);
@@ -12443,8 +12857,8 @@ export function buildBuildingFabricationVisualParts({
                     };
 
                     const cap = strip.capital;
-                    if (cap.top && !nextKeys.has(runKey)) emitEnd(cap.top, 'top');
-                    if (cap.bottom && !prevKeys.has(runKey)) emitEnd(cap.bottom, 'bottom');
+                    if (cap.top && (!runKey || !nextKeys.has(runKey))) emitEnd(cap.top, 'top');
+                    if (cap.bottom && (!runKey || !prevKeys.has(runKey))) emitEnd(cap.bottom, 'bottom');
                 }
             }
 
@@ -13603,7 +14017,7 @@ export function buildBuildingFabricationVisualParts({
                                 bays: baysForSolve,
                                 groups,
                                 faceLengthMeters: len,
-                                topology: facadeBayTopologyByKey.get(facadeBayLockKey(faceId, srcLayout) ?? '') ?? null,
+                                topology: facadeBayTopologyByKey.get(facadeBayLockKey(lastFloorLayer, faceId, srcLayout, frames?.[faceId] ?? null) ?? '') ?? null,
                                 warnings
                             })
                             : null;
@@ -13696,7 +14110,7 @@ export function buildBuildingFabricationVisualParts({
                 : loops);
             const layerAboveRoof = safeLayers[layerIndex + 1] ?? null;
             const roofPropKeepOutLoops = layerAboveRoof?.type === LAYER_TYPE.FLOOR
-                ? applyPlanOffset({ loops: currentLoops, offset: layerAboveRoof.planOffset ?? 0.0 }).outer
+                ? splitLoops(layerPlanLoopsById.get(layerAboveRoof.id) ?? currentLoops).outer
                 : [];
 
             for (const mesh of buildRooftopPropMeshes({
@@ -14087,7 +14501,7 @@ export function buildBuildingFabricationVisualParts({
                             bays: baysForSolve,
                             groups,
                             faceLengthMeters: len,
-                            topology: facadeBayTopologyByKey.get(facadeBayLockKey(faceId, srcLayout) ?? '') ?? null,
+                            topology: facadeBayTopologyByKey.get(facadeBayLockKey(topFloorLayer, faceId, srcLayout, frames?.[faceId] ?? null) ?? '') ?? null,
                             warnings
                         })
                         : null;

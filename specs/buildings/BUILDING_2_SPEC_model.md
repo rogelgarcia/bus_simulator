@@ -29,11 +29,24 @@ The UI must not rely on “implicit behavior” not represented in the model.
 
 ## 3. Stability requirements (ids + topology)
 
-To keep authoring stable and to support continuity across layers:
+To keep authoring stable while allowing floor layers to own different
+silhouettes:
 
 - Identifiers SHOULD be stable where it matters (building id/name, layer ids, face ids, bay ids/group ids, window definition ids).
-- Face identity is derived from the footprint topology and must be stable across applicable layers.
-- Facade authoring depends on topology invariants; see:
+- Every authored silhouette corner MUST have a persistent `cornerId`. Every
+  logical run MUST have a persistent `runId` in `A..Z`; the run id, rather than
+  its current array index or position, is the facade identity.
+- Moving geometry, translating a silhouette, changing preferred design size,
+  and editing an arc without splitting/merging it MUST preserve corner and run
+  identities.
+- A topology edit MUST deterministically retain unaffected identities, allocate
+  new identities without recycling a deleted identity during the authoring
+  transaction/session, and carry its identity-allocation state through
+  undo/redo and round-trip persistence.
+- Positional letters MUST NOT be guessed across independently owned layer
+  silhouettes. Cross-layer continuity is opt-in and requires compatible stable
+  run identity, orientation, and facade-solver constraints.
+- Topology edits and target remapping follow the explicit review contract in:
   - `specs/buildings/BUILDING_2_FLOORPLAN_TOPOLOGY_SPEC.md`
 
 ---
@@ -46,7 +59,10 @@ At a conceptual level, a Building v2 model includes:
 - **Building-default footprint loops in meters** (tile-independent authoring shape):
   - stored as a default silhouette for the config,
   - used by BF2 and runtime when no placement override is provided.
-- **Floorplan/footprint** data per layer (topology-preserving across applicable layers).
+- **Floorplan/footprint ownership per floor layer**. A layer silhouette either
+  inherits the building default, inherits the preceding resolved floor layer,
+  or owns a detached shape; different detached layer groups may have different
+  corner/run counts.
 - **Facades**, authored per floor layer and per face id (`A`, `B`, `C`, …), using a bay/group layout model.
 - **Per-floor-layer face relationships**:
   - Each floor layer has its own set of faces (derived from that layer’s footprint topology).
@@ -84,7 +100,10 @@ At a conceptual level, a Building v2 model includes:
   - `arcade`: the arcade MODE of that group — `springing.mode` (`auto` | `fixed` + `offsetMeters`) and `impost` (`enabled`, `heightMeters`, `projectionMeters`, `overhangMeters`, `material` accepting `slot:<name>`); `impost.enabled` is always serialized so "no band" round-trips.
 - **Facade column stacking** authored on `facade.layout.stacking` (AI 493):
   - `mode: 'lock_columns'` (default, omitted when authored) | `'per_layer'`,
-  - locked faces share one resolved bay pitch across every layer that authors the same bay layout, so windows stack across a setback.
+  - locked faces share one resolved bay pitch only within a compatible stable-run
+    group (same identity lineage/remap, local-u orientation, required topology,
+    and bay layout), so compatible windows stack across a setback without
+    conflating unrelated detached silhouettes.
 - **Plan edge bevel** authored building-level as `edgeBevel` (AI 499) — ONE feature with scopes, not one feature per edge kind:
   - `enabled` (absent/`false` drops the whole block so a sharp building round-trips unchanged),
   - `scope`: `main_corners` (default) | `all_convex_edges` (AI 501 — see engine §6.2.3),
@@ -108,6 +127,65 @@ Concrete schema definitions belong in dedicated specs:
 
 ---
 
+### 4.1 Per-floor-layer silhouette and sizing contract
+
+The model uses one optional `layer.silhouette` value on a floor layer. Its
+`mode` has exactly these meanings:
+
+- `inherit_default` — resolve the building-level default silhouette.
+- `inherit_previous` — resolve the preceding floor layer's already-resolved
+  silhouette. It is invalid when no preceding floor layer exists.
+- `detached` — resolve the silhouette data owned by this layer.
+
+For backwards compatibility, an absent `layer.silhouette` MUST resolve exactly
+as `inherit_default`. Loading, normalizing, cloning, or exporting a legacy
+config MUST NOT eagerly add the field or alter its building-level
+`footprintLoops`; its rendered meter geometry therefore remains unchanged.
+Inheritance is resolution, not an implicit copy: editing a default or upstream
+owner affects inheritors, while detaching takes an identity-preserving snapshot
+and makes subsequent edits local to that layer.
+
+Silhouette authoring separates three values that MUST NOT be conflated:
+
+1. **Design shape** — topology, relative corner positions, arcs, stable ids, and
+   named stretch-band provenance in a stable design frame.
+2. **Preferred design size** — an optional width/depth target used for the
+   deterministic BF2/catalog preview and for compiling the compatibility
+   footprint in meters.
+3. **Placed size** — a runtime result produced by the city placement/lot-fit
+   solver.
+
+The existing building-level `footprintLoops` remain the canonical meter input
+for legacy configs and the backwards-compatible compiled meter silhouette for
+new authored configs. Changing a preferred design width/depth MUST be solved by
+applying only valid named stretch bands to the design shape. Uniform scaling or
+shearing is forbidden because fixed/minimum bay widths, openings, decorations,
+and other facade units remain physical meters. If the preferred target cannot
+be reached, compilation keeps the deterministic nearest valid result and
+reports the pinned/limited bands that prevented it.
+
+A runtime lot fit is solved once against the placement envelope. Its named band
+applications (band id, delta, direction, and source-run provenance) may be
+replayed on another resolved layer silhouette only when that layer declares a
+compatible provenance mapping. Curved runs and pinned or unmapped bands remain
+fixed unless a curve-preserving rule is explicitly authored. An incompatible
+mapping MUST pin the affected geometry, preserve the nearest valid result, and
+emit an actionable warning; layers MUST NOT independently stretch to fill the
+parcel.
+
+Changing topology produces an atomic remap review covering at least facade
+layouts, face links, face materials, decorations, attachments, and footprint
+stretch preferences. Each affected target MUST receive an explicit retained,
+remapped, orphaned, or deliberately removed decision. The model MUST preserve
+unresolved/orphaned target records until the author resolves them; normalization
+and export MUST NOT silently retarget or discard authored data.
+The optional versioned `layer.silhouette.targetRemap` record owns those explicit
+decisions plus resolved and unresolved target records; cloning, normalization,
+and round-trip serialization MUST deep-copy it rather than recomputing it from
+current array positions.
+
+---
+
 ## 5. Export/import expectations
 
 - Exported building configs SHOULD be self-contained and portable.
@@ -115,6 +193,11 @@ Concrete schema definitions belong in dedicated specs:
 - Importing a v1 config MUST convert to v2 and then render via v2.
 - City placement/runtime MAY override a config’s default footprint loops (and related facade-driven dimensions) per placed building without mutating the source config.
 - When city runtime uses a config’s default footprint loops (no per-instance override), those loops MUST be treated as building-local and translated to the placed building footprint centroid.
+- Per-layer silhouette ownership, stable corner/run ids, arc/split metadata,
+  preferred-size/design-frame data, identity-allocation state, target remap or
+  orphan decisions, and stretch-band provenance MUST survive normalization,
+  cloning, import/export, catalog thumbnails, BF2 reload, city round-trip, plan
+  transforms, and runtime placement.
 
 ### 5.1 Footprint placement modes
 
@@ -125,7 +208,8 @@ area its tiles claim (that area skips road tiles and insets road-facing edges):
 - `center` (default, and what an entry with no authored loops gets) — scale the
   footprint down if it does not fit, then centre it in the area. Scaling a
   fixed-bay facade squeezes its bays and doors, so it suits generic fill
-  buildings, not authored designs.
+  buildings, not authored silhouette designs. A config using the design-frame
+  contract MUST instead fit through valid named stretch bands.
 - `anchor` (the default when the spec authored world loops) — keep the loops
   EXACTLY as authored. A placement that leaves the claimed area is a warning,
   not a correction.

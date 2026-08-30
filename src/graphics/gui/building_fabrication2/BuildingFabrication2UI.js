@@ -44,6 +44,7 @@ import {
     createFaceArcMetadata,
     FACE_CURVE_SWEEP_MAX_DEGREES,
     FACE_CURVE_SWEEP_MIN_DEGREES,
+    resolveFacePlanLabelAnchor,
     resolveFaceCurveUiState
 } from './BuildingFabrication2FacePlanModel.js';
 
@@ -295,17 +296,17 @@ function normalizeLockedToByFace(value) {
     if (!value) return out;
 
     if (value instanceof Map) {
-        for (const faceId of FACE_IDS) {
-            const lockedTo = value.get(faceId);
-            out.set(faceId, isFaceId(lockedTo) ? lockedTo : null);
+        for (const [faceId, valueLockedTo] of value.entries()) {
+            if (!isFaceId(faceId)) continue;
+            out.set(faceId, isFaceId(valueLockedTo) ? valueLockedTo : null);
         }
         return out;
     }
 
     if (typeof value === 'object') {
-        for (const faceId of FACE_IDS) {
-            const lockedTo = value[faceId];
-            out.set(faceId, isFaceId(lockedTo) ? lockedTo : null);
+        for (const [faceId, valueLockedTo] of Object.entries(value)) {
+            if (!isFaceId(faceId)) continue;
+            out.set(faceId, isFaceId(valueLockedTo) ? valueLockedTo : null);
         }
         return out;
     }
@@ -320,12 +321,16 @@ function normalizeReverseByFace(value) {
     if (!value) return out;
 
     if (value instanceof Map) {
-        for (const faceId of FACE_IDS) out.set(faceId, !!value.get(faceId));
+        for (const [faceId, reversed] of value.entries()) {
+            if (isFaceId(faceId)) out.set(faceId, !!reversed);
+        }
         return out;
     }
 
     if (typeof value === 'object') {
-        for (const faceId of FACE_IDS) out.set(faceId, !!value[faceId]);
+        for (const [faceId, reversed] of Object.entries(value)) {
+            if (isFaceId(faceId)) out.set(faceId, !!reversed);
+        }
         return out;
     }
 
@@ -952,6 +957,7 @@ export class BuildingFabrication2UI {
         this._decorationBayOptionsByLayerId = {};
         // AI 512: current footprint's resolved faces (ids + plan-view edges).
         this._facadeFacePlan = null;
+        this._facadeFacePlansByLayerId = {};
         this._decorationSetOpenById = new Map();
         this._decorationEntryTabByKey = new Map();
         this._decorationLayerPicker = null;
@@ -1001,6 +1007,7 @@ export class BuildingFabrication2UI {
         this._brickPresetOptions = getBrickPresetOptions();
         this.onSelectFace = null;
         this.onSetFaceArc = null;
+        this.onRequestSilhouetteDraw = null;
         this.onToggleFaceLock = null;
         this.onSetFaceLockReverse = null;
         this.onHoverLayer = null;
@@ -1360,19 +1367,49 @@ export class BuildingFabrication2UI {
         this._facadeFacePlan = plan && typeof plan === 'object' && Array.isArray(plan.faceIds) && plan.faceIds.length
             ? plan
             : null;
+        this._facadeFacePlansByLayerId = {};
         this._renderLayers();
     }
 
-    _faceIds() {
-        return this._facadeFacePlan?.faceIds ?? FACE_IDS;
+    setFacadeFacePlansByLayerId(plansByLayerId) {
+        const source = plansByLayerId && typeof plansByLayerId === 'object' ? plansByLayerId : {};
+        const next = {};
+        for (const [layerId, plan] of Object.entries(source)) {
+            if (typeof layerId !== 'string' || !layerId) continue;
+            if (!plan || typeof plan !== 'object' || !Array.isArray(plan.faceIds) || !plan.faceIds.length) continue;
+            next[layerId] = plan;
+        }
+        this._facadeFacePlansByLayerId = next;
+        this._facadeFacePlan = Object.values(next)[0] ?? null;
+        this._renderLayers();
+    }
+
+    _facePlanForLayer(layerId = null) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        return (id ? this._facadeFacePlansByLayerId?.[id] : null) ?? this._facadeFacePlan;
+    }
+
+    _faceIds(layerId = null) {
+        const plan = this._facePlanForLayer(layerId);
+        if (plan?.faceIds?.length) return plan.faceIds;
+        const union = [];
+        const seen = new Set();
+        for (const entry of Object.values(this._facadeFacePlansByLayerId ?? {})) {
+            for (const faceId of (entry?.faceIds ?? [])) {
+                if (!isFaceId(faceId) || seen.has(faceId)) continue;
+                seen.add(faceId);
+                union.push(faceId);
+            }
+        }
+        return union.length ? union : FACE_IDS;
     }
 
     // AI 512: plan-view face picker — the letter buttons do not scale to N
     // faces, so the footprint polygon itself becomes the picker: each edge is
     // a clickable face, labelled with its id, the selection highlighted.
     // Renders only when a resolved face plan is present (footprint authored).
-    _appendFacePlanPicker(doc, parent, { selectedFaceId = null, allowEdit = true, onSelect = null } = {}) {
-        const plan = this._facadeFacePlan;
+    _appendFacePlanPicker(doc, parent, { layerId = null, selectedFaceId = null, allowEdit = true, onSelect = null } = {}) {
+        const plan = this._facePlanForLayer(layerId);
         const segments = Array.isArray(plan?.segments)
             ? plan.segments
                 .filter((s) => s?.a && s?.b && isFaceId(s?.faceId))
@@ -1444,10 +1481,11 @@ export class BuildingFabrication2UI {
                 ctx.stroke();
 
                 // Label outside the edge midpoint (outward = away from center).
-                const midIndex = Math.floor((path.length - 1) * 0.5);
-                const midpoint = path[midIndex];
-                const before = path[Math.max(0, midIndex - 1)];
-                const after = path[Math.min(path.length - 1, midIndex + 1)];
+                const labelAnchor = resolveFacePlanLabelAnchor(seg.path);
+                if (!labelAnchor) continue;
+                const midpoint = toScreen(labelAnchor.point);
+                const before = toScreen(labelAnchor.tangentStart);
+                const after = toScreen(labelAnchor.tangentEnd);
                 const mx = midpoint.x;
                 const my = midpoint.y;
                 let nx = -(after.y - before.y);
@@ -1509,9 +1547,9 @@ export class BuildingFabrication2UI {
         parent.appendChild(canvas);
     }
 
-    _appendFaceCurveControls(doc, parent, { selectedFaceId = null, allowEdit = true } = {}) {
+    _appendFaceCurveControls(doc, parent, { layerId = null, selectedFaceId = null, allowEdit = true } = {}) {
         if (!isFaceId(selectedFaceId)) return;
-        const segment = this._facadeFacePlan?.segments?.find?.((entry) => entry?.faceId === selectedFaceId) ?? null;
+        const segment = this._facePlanForLayer(layerId)?.segments?.find?.((entry) => entry?.faceId === selectedFaceId) ?? null;
         if (!segment) return;
 
         const state = resolveFaceCurveUiState(segment);
@@ -1565,7 +1603,7 @@ export class BuildingFabrication2UI {
             'faceCurve:shape',
             [{ value: 'straight', label: 'Straight' }, { value: 'curved', label: 'Curved' }],
             state.enabled ? 'curved' : 'straight',
-            (value) => this.onSetFaceArc?.(selectedFaceId, value === 'curved' ? buildArc() : null)
+            (value) => this.onSetFaceArc?.(layerId, selectedFaceId, value === 'curved' ? buildArc() : null)
         );
 
         if (state.enabled) {
@@ -1574,7 +1612,7 @@ export class BuildingFabrication2UI {
                 'faceCurve:direction',
                 [{ value: 'outward', label: 'Outward' }, { value: 'inward', label: 'Inward' }],
                 state.direction,
-                (direction) => this.onSetFaceArc?.(selectedFaceId, buildArc({ direction }))
+                (direction) => this.onSetFaceArc?.(layerId, selectedFaceId, buildArc({ direction }))
             );
 
             const sweepRow = createRangeRow('Sweep');
@@ -1606,10 +1644,10 @@ export class BuildingFabrication2UI {
             sweepRow.range.addEventListener('input', () => syncSweep(sweepRow.range, sweepRow.number));
             sweepRow.number.addEventListener('input', () => syncSweep(sweepRow.number, sweepRow.range));
             sweepRow.range.addEventListener('change', () => {
-                this.onSetFaceArc?.(selectedFaceId, buildArc({ sweepDegrees: syncSweep(sweepRow.range, sweepRow.number) }));
+                this.onSetFaceArc?.(layerId, selectedFaceId, buildArc({ sweepDegrees: syncSweep(sweepRow.range, sweepRow.number) }));
             });
             sweepRow.number.addEventListener('change', () => {
-                this.onSetFaceArc?.(selectedFaceId, buildArc({ sweepDegrees: syncSweep(sweepRow.number, sweepRow.range) }));
+                this.onSetFaceArc?.(layerId, selectedFaceId, buildArc({ sweepDegrees: syncSweep(sweepRow.number, sweepRow.range) }));
             });
             section.appendChild(sweepRow.row);
         }
@@ -3783,15 +3821,6 @@ export class BuildingFabrication2UI {
         this._appendCornerTreatmentSection(this.layersList, { allowEdit });
         this._appendEdgeBevelSection(this.layersList, { allowEdit });
         this._appendAttachmentsSection(this.layersList, { allowEdit });
-        let globalSelectedFaceId = null;
-        for (const faceState of this._floorLayerFaceStateById.values()) {
-            const faceId = isFaceId(faceState?.selectedFaceId) ? faceState.selectedFaceId : null;
-            if (faceId) {
-                globalSelectedFaceId = faceId;
-                break;
-            }
-        }
-
 	        for (const [idx, layer] of layers.entries()) {
 	            const layerId = layer.id;
 	            const type = layer.type;
@@ -3799,6 +3828,7 @@ export class BuildingFabrication2UI {
 
 	            const group = document.createElement('div');
 	            group.className = `building-fab2-layer-group ${isFloor ? 'is-floor' : 'is-roof'}`;
+	            group.dataset.layerId = layerId;
 	            if (isFloor) {
 	                group.addEventListener('pointerenter', () => this.onHoverLayer?.(layerId));
 	                group.addEventListener('pointerleave', () => this.onHoverLayer?.(null));
@@ -4042,8 +4072,18 @@ export class BuildingFabrication2UI {
                 linkBtn.className = 'building-fab2-btn building-fab2-btn-small';
                 linkBtn.textContent = 'Link';
 
+                const drawBtn = document.createElement('button');
+                drawBtn.type = 'button';
+                drawBtn.className = 'building-fab2-btn building-fab2-btn-small building-fab2-silhouette-draw-btn';
+                drawBtn.textContent = 'Draw';
+                drawBtn.dataset.action = 'silhouette:draw';
+                drawBtn.dataset.layerId = layerId;
+                drawBtn.disabled = !allowEdit;
+                drawBtn.addEventListener('click', () => this.onRequestSilhouetteDraw?.(layerId));
+
                 const faceState = this._getFloorLayerFaceState(layerId);
-                const selectedFaceId = globalSelectedFaceId;
+                const layerFaceIds = this._faceIds(layerId);
+                const selectedFaceId = layerFaceIds.includes(faceState.selectedFaceId) ? faceState.selectedFaceId : null;
                 const lockedToByFace = faceState.lockedToByFace;
                 const lockedTo = selectedFaceId ? (lockedToByFace.get(selectedFaceId) ?? null) : null;
                 const masterFaceId = lockedTo ?? selectedFaceId;
@@ -4056,6 +4096,17 @@ export class BuildingFabrication2UI {
                 });
 
                 facesHeader.appendChild(facesTitle);
+                const silhouette = layer?.silhouette && typeof layer.silhouette === 'object' ? layer.silhouette : null;
+                const sourceLabel = silhouette?.mode === 'detached'
+                    ? 'Detached'
+                    : (silhouette?.mode === 'inherit_previous' ? 'Previous' : 'Default');
+                const sourceBadge = document.createElement('span');
+                sourceBadge.className = 'building-fab2-silhouette-source-badge';
+                sourceBadge.dataset.role = 'silhouette:source';
+                sourceBadge.dataset.mode = silhouette?.mode ?? 'legacy';
+                sourceBadge.textContent = sourceLabel;
+                facesHeader.appendChild(sourceBadge);
+                facesHeader.appendChild(drawBtn);
                 facesHeader.appendChild(linkBtn);
                 body.appendChild(facesHeader);
 
@@ -4063,6 +4114,7 @@ export class BuildingFabrication2UI {
                 faceButtonsRow.className = 'building-fab2-face-buttons';
 
                 this._appendFacePlanPicker(faceButtonsRow.ownerDocument, body, {
+                    layerId,
                     selectedFaceId,
                     allowEdit,
                     onSelect: (faceId) => {
@@ -4072,7 +4124,7 @@ export class BuildingFabrication2UI {
                     }
                 });
                 const relatedFaces = this._getRelatedFacesForLayer({ selectedFaceId, lockedToByFace });
-                for (const faceId of this._faceIds()) {
+                for (const faceId of layerFaceIds) {
                     const btn = document.createElement('button');
                     btn.type = 'button';
                     btn.className = 'building-fab2-face-btn';
@@ -4095,6 +4147,7 @@ export class BuildingFabrication2UI {
                 }
                 body.appendChild(faceButtonsRow);
                 this._appendFaceCurveControls(faceButtonsRow.ownerDocument, body, {
+                    layerId,
                     selectedFaceId,
                     allowEdit
                 });

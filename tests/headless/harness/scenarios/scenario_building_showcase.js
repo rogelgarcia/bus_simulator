@@ -184,8 +184,10 @@ export const scenarioBuildingShowcase = {
             entry.footprintLoops = footprintLoops.map((loop) => loop.map((point) => ({
                 x: (Number(point?.x) || 0) + centroid.x,
                 z: (Number(point?.z) || 0) + centroid.z,
+                ...(typeof point?.cornerId === 'string' && point.cornerId ? { cornerId: point.cornerId } : {}),
                 ...(typeof point?.runId === 'string' ? { runId: point.runId } : {}),
                 ...(typeof point?.runForward === 'boolean' ? { runForward: point.runForward } : {}),
+                ...(point?.split === true ? { split: true } : {}),
                 ...(point?.arc && typeof point.arc === 'object' ? { arc: { ...point.arc } } : {})
             })));
         }

@@ -50,7 +50,13 @@ Building v2 refers to the bay-based facade system with:
 The v2 engine MUST:
 
 - Validate floorplan topology and face identity stability (see §4).
-- Resolve repeat counts and bay widths deterministically across layers (see §5).
+- Resolve building-default, previous-layer, and detached floor silhouettes and
+  compile preferred design size without uniformly scaling physical facade units
+  (see §4).
+- Solve one placement-envelope lot fit and replay named stretch-band deltas only
+  through compatible layer provenance mappings (see §4).
+- Resolve repeat counts and bay widths deterministically within compatible
+  stable-run groups across layers (see §5).
 - Convert solved facades into 3D geometry for:
   - walls,
   - belts,
@@ -68,7 +74,8 @@ Building v2 defines **logical faces** from the building footprint edges.
 - Faces are derived from a footprint polygon’s ordered edges and labeled `A`, `B`, `C`, … in clockwise order.
 - “Angled bays / wedge bays / extrude/inset bays” may generate extra wall **surfaces** (returns, wedge sides, etc.), but MUST NOT create new logical faces or change face topology.
 
-Authoring and continuity across layers requires topology invariants; see:
+Authoring and continuity across layers require stable identity plus explicit
+compatibility/remapping rules; see:
 - `specs/buildings/BUILDING_2_FLOORPLAN_TOPOLOGY_SPEC.md`
 
 ### 4.1 N-face model (AI 512)
@@ -80,12 +87,15 @@ Authoring and continuity across layers requires topology invariants; see:
   polygon (L/V/W wings, hexagons, chamfered corners wider than a facet,
   arbitrary convex or concave plans) derives ONE first-class face per
   exterior run.
-- Generated ids are deterministic: the most street-facing run (max outward
+- For legacy loops without persisted run identities, generated ids are
+  deterministic: the most street-facing run (max outward
   +z, ties to the longest) is `A`; traversal walks the loop toward the
   neighbour whose outward leans +x (so a rect-like N-gon still reads
   A=front, B=right) and labels faces in that order. `frames.order` carries
   the loop-chain order; corners are consecutive pairs (`AB`, `BC`, …,
-  wrapping).
+  wrapping). Once `cornerId`/`runId`/`runForward` are authored, those persisted
+  identities are authoritative and geometry or topology edits MUST NOT relabel
+  unaffected runs through this fallback.
 - Runs shorter than ~0.6m become **corner facets** between their
   neighbouring faces (the AI 499 bevel-facet treatment); a quad-path
   connector wider than ~1.5m is refused so the N-face path promotes the
@@ -116,6 +126,51 @@ Authoring and continuity across layers requires topology invariants; see:
 - Collinear joins never intersect parallel offset lines. Equal face depths share the marker point; unequal depths produce a two-point step joined by a return surface.
 - Facade silhouettes, interior shells, closure bands, cap slabs, and roof/core loops retain the return point pair. Zero-depth cornice loops collapse the equal pair cleanly, while physical-run fitting still treats the wall as one straight run.
 
+### 4.3 Per-layer silhouette resolution and transitions (AI 520)
+
+Before facade solving or mesh generation, the engine MUST resolve every floor
+layer's optional `silhouette.mode` in vertical layer order:
+
+- absent or `inherit_default` resolves the unchanged building-level
+  `footprintLoops` compatibility default;
+- `inherit_previous` resolves the preceding floor layer's silhouette and is a
+  hard error when there is no preceding floor layer; and
+- `detached` resolves the stable ids, topology, curves/splits, and stretch
+  provenance owned by that layer.
+
+Legacy configs with no layer silhouette fields MUST follow the same geometry
+path and meter coordinates they used before AI 520. Resolution MUST NOT mutate
+or eagerly normalize those source configs.
+
+Adjacent layers with different silhouettes are valid. Compatible stable runs
+may stitch across the boundary; incompatible runs close independently. The
+boundary MUST remain watertight: exposed lower-layer area becomes a cap/terrace,
+the upper wall starts on a closed boundary, and walls, caps/terraces, roofs,
+interiors, cornices, and decorations are clipped or closed against their owning
+resolved loops without cracks or open edges. No transition may invent a facade
+identity from the spatially nearest run. Relative `planOffset` is applied after
+ownership resolution and is invalid if it collapses topology or cannot preserve
+authored curve metadata.
+
+### 4.4 Design-size compilation and lot-fit propagation (AI 520)
+
+Silhouette shape/proportions, optional preferred design size, and runtime placed
+size are separate inputs. The engine compiles a preferred design width/depth by
+solving only the silhouette's valid named stretch bands. Fixed/minimum bay
+widths, openings, decorations, and all other facade dimensions stay in meters;
+uniform scaling or shearing of an authored silhouette is forbidden. If the
+preferred target is unreachable, the deterministic nearest valid result is
+used and the limiting pinned bands are reported.
+
+Runtime placement solves the placement envelope once, using the default
+silhouette's valid named bands. The result records band id, delta, direction,
+and source-run provenance. A resolved layer receives the same delta only when
+its provenance mapping is compatible. Curved runs, pinned bands, and
+incompatible or absent mappings stay fixed unless a curve-preserving stretch
+rule is explicitly supported. The engine MUST NOT independently fit each layer
+to the parcel. An unreachable fit keeps the nearest deterministic valid result
+and reports the exact band/mapping limitation.
+
 ---
 
 ## 5. Facade layout solving (deterministic)
@@ -125,6 +180,9 @@ Authoring and continuity across layers requires topology invariants; see:
 - Facade solving is evaluated per **floor layer** and per **face** (face lengths come from that floor layer’s footprint).
 - Face master/slave (linking/locking) relationships are defined **per floor layer** in the model/UI.
   - For a given floor layer, if a face is a **slave**, the engine MUST use the master face’s facade layout/solution for that floor layer (equivalent result).
+- Cross-layer sharing is evaluated only within a compatibility group whose runs
+  have the same stable identity, local-u orientation, required topology, and
+  facade solver contract. Matching positional letters alone is insufficient.
 
 ### 5.1 Inputs
 
@@ -158,9 +216,18 @@ When distributing extra local repeated items (e.g., extra windows within groups)
 
 ### 5.5 Cross-layer continuity
 
-To keep topology stable across layers:
-- the resolved **bay id/order/count per face** MUST be identical across applicable layers.
-- repeat counts MUST be shared across applicable layers for the face (the “most restrictive layer” determines repeat feasibility).
+Within one compatible stable-run group:
+
+- the resolved **bay id/order/count** MUST be identical across participating
+  layers; and
+- repeat decisions MUST be shared, with that group's most restrictive usable
+  run length determining feasibility.
+
+A layer with a missing/remapped-incompatible run, opposite authored local-u
+orientation, incompatible arc/split topology, or incompatible facade constraints
+starts a separate group. It MUST receive an explicit new or accepted remapped
+facade design; the engine MUST NOT copy a design merely because both local
+silhouettes contain a face letter such as `A`.
 
 ### 5.6 Column stacking lock (AI 493)
 
@@ -169,9 +236,11 @@ own repeat counts per layer, so the columns of a setback layer landed between
 the columns below. The lock resolves the rhythm **once per face** and replays it:
 
 - `facade.layout.stacking.mode` — `lock_columns` (default) or `per_layer`.
-- The lock groups layers by **face id + bay layout signature** (bays + groups),
-  so layers that deliberately author a different layout stay independent, and
-  per-layer facades (the only shape the BF2 editor writes) are covered too.
+- The lock groups layers by compatible stable-run lineage + authored local-u
+  orientation + required run topology + bay layout signature (bays + groups).
+  Layers that deliberately author a different layout or an incompatible
+  silhouette stay independent. A reused face letter on an unrelated detached
+  silhouette is never enough to join a lock group.
 - The reference is the **longest** face using that layout. Its solved
   **absolute bay widths** become the locked pitch (`topology.bayWidths`);
   locking repeat *counts* would be a no-op, because a count that fits a shorter
@@ -191,6 +260,9 @@ the `topology` input of `solveFacadeBaysLayout()`.
 
 Given a solved facade layout, geometry generation MUST:
 
+- Generate from each floor layer's resolved silhouette rather than assuming one
+  building-wide loop for the full stack, and apply the watertight transition
+  rules in §4.3.
 - Produce wall geometry that matches:
   - bay width partitions (full face coverage),
   - per-bay depth offsets (extrude/inset), including per-edge depth offsets (left/right in `u`),
@@ -710,9 +782,17 @@ The engine MUST validate and surface issues explicitly:
 
 - Hard errors:
   - invalid footprint/topology for applicable layers,
+  - invalid silhouette ownership (`inherit_previous` without a predecessor),
+  - duplicate/missing stable identities, more than 26 logical runs, invalid
+    arcs/tangencies, or unresolved topology-remap decisions at Apply,
   - invalid sizing constraints (non-positive widths, min/preferred/max ordering),
   - no feasible solution under constraints and overflow policy.
 - Warnings:
+  - incompatible cross-layer run/link/solver groups that must split,
+  - pinned curved bands or incompatible stretch provenance that prevented a
+    preferred-size or lot-fit target,
+  - orphaned facade/material/decoration/attachment/stretch targets awaiting an
+    explicit author decision,
   - openings omitted due to insufficient bay width,
   - repeat counts reduced/adjusted (if allowed by policy),
   - suspiciously small/large resolved widths.

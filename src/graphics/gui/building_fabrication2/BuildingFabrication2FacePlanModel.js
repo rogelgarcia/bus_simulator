@@ -38,6 +38,26 @@ export function buildFacePlanPath(segment) {
 }
 
 /**
+ * @param {Array<{x: number, z: number}>} path
+ * @returns {{point: {x: number, z: number}, tangentStart: {x: number, z: number}, tangentEnd: {x: number, z: number}}|null}
+ */
+export function resolveFacePlanLabelAnchor(path) {
+    if (!Array.isArray(path) || path.length < 2) return null;
+    const sample = (path.length - 1) * 0.5;
+    const lower = Math.floor(sample);
+    const upper = Math.ceil(sample);
+    const t = sample - lower;
+    return {
+        point: {
+            x: path[lower].x + (path[upper].x - path[lower].x) * t,
+            z: path[lower].z + (path[upper].z - path[lower].z) * t
+        },
+        tangentStart: path[Math.max(0, lower - 1)],
+        tangentEnd: path[Math.min(path.length - 1, upper + 1)]
+    };
+}
+
+/**
  * @param {{ arc?: object|null, outwardBulgeSign?: number }} segment
  * @returns {{ enabled: boolean, direction: 'outward'|'inward', sweepDegrees: number, segments?: number }}
  */

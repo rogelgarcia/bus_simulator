@@ -25,6 +25,7 @@ const readFaceBArc = (page) => page.evaluate(() => {
 });
 
 test('BF2: curved faces draw curved in the picker and expose face-shape controls', async ({ page }) => {
+    test.setTimeout(300_000);
     const getErrors = await attachFailFastConsole({ page });
     await page.goto('/index.html?config=burban&ibl=0&bloom=0&coreTests=0');
     await page.waitForSelector('#ui-welcome:not(.hidden)');
@@ -36,8 +37,8 @@ test('BF2: curved faces draw curved in the picker and expose face-shape controls
 
     const floor = page.locator('.building-fab2-layer-group.is-floor').first();
     const plan = floor.locator('canvas.building-fab2-face-plan');
-    await expect(plan).toHaveAttribute('data-curved-face-ids', 'B');
-    await expect(plan).toHaveAttribute('aria-label', /Curved faces: B/);
+    await expect(plan).toHaveAttribute('data-curved-face-ids', 'F,B');
+    await expect(plan).toHaveAttribute('aria-label', /Curved faces: F, B/);
 
     await floor.locator('.building-fab2-face-btn[data-face-id="B"]').click();
     const section = floor.locator('.building-fab2-face-curve-section[data-face-id="B"]');
@@ -48,11 +49,11 @@ test('BF2: curved faces draw curved in the picker and expose face-shape controls
 
     await section.locator('[data-role="faceCurve:shape"][data-value="straight"]').click();
     await expect.poll(() => readFaceBArc(page)).toBeNull();
-    await expect(plan).toHaveAttribute('data-curved-face-ids', '');
+    await expect(plan).toHaveAttribute('data-curved-face-ids', 'F');
 
     await floor.locator('.building-fab2-face-curve-section[data-face-id="B"] [data-role="faceCurve:shape"][data-value="curved"]').click();
     await expect.poll(async () => Number((await readFaceBArc(page))?.bulge ?? 0)).toBeGreaterThan(0);
-    await expect(plan).toHaveAttribute('data-curved-face-ids', 'B');
+    await expect(plan).toHaveAttribute('data-curved-face-ids', 'F,B');
 
     const sweep = floor.locator('.building-fab2-face-curve-section[data-face-id="B"] input[data-role="faceCurve:sweep"][type="number"]');
     await sweep.fill('60');

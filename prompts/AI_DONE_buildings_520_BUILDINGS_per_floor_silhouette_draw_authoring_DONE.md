@@ -1,4 +1,6 @@
-# Problem
+# DONE — AI 520 per-floor silhouette Draw authoring
+
+## Problem
 
 Building Fabrication 2 can select faces from a small plan diagram and can adjust
 one building-wide `footprintLoops` shape in the viewport, but it has no proper
@@ -119,3 +121,18 @@ Tasks:
 - Do not move to `prompts/archive/` automatically.
 - Move to `prompts/archive/` only when explicitly requested.
 - Add a high-level one-line summary per completed change.
+
+## Completed changes
+
+- Added a versioned per-floor silhouette model with default/previous inheritance, independent detachment, stable A–Z run identities, and non-recycled corner identities.
+- Added the BF2 `Draw` popup with corner/run creation, movement, translation, split/merge/delete, numeric span/position editing, circular arcs, tangents, and local undo/redo.
+- Made popup preview, Apply, Cancel, and BF2 undo/redo transactional so Cancel preserves the saved config byte-for-byte and Apply is one reversible edit.
+- Added explicit topology target review and materialization for facade layouts, links, materials, decorations, attachments, and stretch data, including recoverable orphan/remove/conflict ledgers.
+- Rendered one authored arc as one curved logical face in the popup, compact plan, hit/highlight paths, walls, slabs, transitions, roofs, and no-facade fallback buildings.
+- Added per-layer runtime plan resolution, mixed `runForward` local-u support, compatible capital continuity, and watertight transition undersides for differing adjacent shells.
+- Separated preferred design size from physical facade sizing and routed preferred-size and lot-fit solves through named bands, authoritative provenance, and layer-specific facade minima.
+- Added live validation for geometry, winding, arcs, solver lengths, layer compatibility, target decisions, stretch mappings, and the 26-face limit, with hard-error Apply blocking.
+- Added selected-layer bay rhythm/minimum overlays, neighboring-layer ghosts, stretch/pinned indicators, default-size preview, and simulated lot-fit feedback.
+- Preserved silhouette, arc, split, identity, remap, preferred-size, and provenance data through normalization, transforms, export, catalog-backed city round trips, placement, and runtime generation.
+- Updated the Building v2 model, topology, engine, UI, facade-layout, fill-solver, and city-placement specifications for the new ownership and compatibility contracts.
+- Added focused model/remap/persistence tests, three passing BF2 browser workflows, and deterministic editor/compact-plan screenshots for distinct lower and upper layer silhouettes.

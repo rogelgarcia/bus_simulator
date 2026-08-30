@@ -173,6 +173,31 @@ missing cuts clamp the result. An unreachable target keeps the nearest valid
 size and emits a building warning; it never falls back to shearing the plan.
 The same entry, lot, seed, and config must produce byte-stable fitted points.
 
+### Per-layer silhouette propagation (AI 520)
+
+For a Building v2 config with floor-layer silhouettes, city placement still
+owns exactly one placement envelope and one lot-fit solve. The building-level
+compiled meter `footprintLoops` are the compatibility/default envelope input;
+the placement planner MUST NOT independently fit every floor layer to the
+parcel.
+
+The authoritative fit records each named band id, applied delta/direction, and
+stable source-run provenance. After layer silhouette ownership is resolved, a
+layer may replay that delta only through an explicitly compatible band mapping:
+the stable run identity/remap lineage, `runForward` local-u orientation,
+required straight/arc topology, and facade solver constraints must agree.
+Curved, pinned, missing, or incompatible mappings stay fixed unless their band
+declares a supported curve-preserving rule. An unreachable replay keeps the
+nearest deterministic valid layer result and adds an actionable placement
+diagnostic naming the layer and limiting band; it never guesses from a matching
+face letter or silently scales facade meters.
+
+Legacy configs with no `layer.silhouette` fields keep the pre-AI-520 placement
+path and coordinates unchanged. Placement transforms and city round-tripping
+MUST preserve explicit per-layer silhouette ownership, corner/run identities,
+arc/split metadata, preferred-size/design-frame data, identity allocator state,
+remap/orphan decisions, and stretch-band provenance.
+
 ## Diagnostics
 
 Collected on `map.placementDiagnostics` and logged with a `[CityPlacement]`
@@ -191,6 +216,9 @@ plus outline), so a placement can be judged before it is driven in game.
 `CityMap.exportSpec()` exports the authored `placement` / `squares` /
 `sharesSquaresWith` and `spec.reservations`, never the solved world loops: the
 spec stays parcel-authored and re-planning it reproduces the same placement.
+Authored Building v2 layer silhouettes and their stretch provenance remain part
+of the referenced/embedded building config; only derived per-placement replay
+coordinates are omitted.
 
 ## Big City 2
 

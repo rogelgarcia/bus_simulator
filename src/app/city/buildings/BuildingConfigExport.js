@@ -41,6 +41,7 @@ function normalizeFootprintLoopsInput(footprintLoops) {
             const z = Number(entry?.z ?? entry?.[1]);
             if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
             const p = { x, z };
+            if (typeof entry?.cornerId === 'string' && entry.cornerId) p.cornerId = entry.cornerId;
             if (isFootprintRunId(entry?.runId)) p.runId = entry.runId;
             if (typeof entry?.runForward === 'boolean') p.runForward = entry.runForward;
             if (entry?.split === true) p.split = true;

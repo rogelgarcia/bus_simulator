@@ -14,7 +14,8 @@ The system MUST:
 - Represent each layer’s floorplan as a **simple polygon footprint** (clockwise corner order).
 - Derive **logical faces** from the footprint edges and assign stable face identities (`A`, `B`, `C`, …).
 - Support non-rectangular footprints (including **concave** shapes like L-shaped buildings) as first-class topology.
-- Keep facade authoring stable across layers by enforcing topology invariants (see §4).
+- Keep facade authoring stable within each silhouette and permit cross-layer
+  continuity only for explicitly compatible stable runs (see §4).
 - Keep “angled bays / wedge bays / depth offsets” as **facade features** that generate derived geometry, not as topology edits (see §5).
 
 Non-goals for the first iteration:
@@ -22,17 +23,23 @@ Non-goals for the first iteration:
 - Footprints with holes/courtyards (multiple polygons).
 - Self-intersecting polygons.
 - Automatically changing face count/order due to facade features.
-- Solving arbitrary topology remapping across layers when corners/edges appear/disappear.
+- Silently guessing topology remaps or retargeting authored face data by spatial
+  proximity when corners/edges appear or disappear.
 
 ---
 
 ## 2. Terminology
 
 - **Footprint**: A 2D polygon (in plan view) describing the building outline for a layer.
-- **Corner**: A vertex of the footprint polygon.
+- **Corner**: A vertex of the footprint polygon with a persistent `cornerId` in
+  an authored silhouette.
 - **Edge**: The directed run from `corner[i]` → `corner[i+1]` (wrapping at the end); it is straight unless it carries arc metadata.
-- **Face**: A logical facade surface corresponding to a footprint **edge**. Faces are the authoring units for facades.
+- **Face / run**: A logical facade surface corresponding to a footprint
+  **edge**, identified by its persistent `runId`. Faces are the authoring units
+  for facades.
 - **Topology**: The ordered corner list and the resulting ordered edge/face list. “Same topology” means same corner count and same corner order.
+- **Compatible run**: A run that retains the same stable identity, authored
+  local-u orientation, and solver-relevant contract on each layer being grouped.
 
 ---
 
@@ -44,20 +51,97 @@ For any footprint used by Building Fabrication:
 - The polygon MUST be **simple** (no self-intersections).
 - Adjacent corners MUST NOT be coincident.
 - Each edge length SHOULD be greater than a minimum practical threshold (to avoid degenerate faces that cannot host bays or corners), but the exact threshold is implementation-defined.
+- A loop MUST contain no more than 26 logical runs because authored `runId`
+  values are limited to `A..Z`.
 
 Concave polygons (e.g., L-shaped footprints) are allowed.
 
 ---
 
-## 4. Topology invariants across layers
+## 4. Layer ownership, compatibility, and topology remapping
 
-Facade authoring depends on stable face identity and consistent bay topology across layers. Therefore:
+Different floor layers MAY resolve to different silhouettes, including different
+corner/run counts. A topology mismatch is not by itself an invalid building.
 
-- All layers to which facade layouts apply MUST have footprints with the **same number of corners** and the **same corner order**.
-- If a layer edit would cause a topology change (corner count changes, corner order changes, an edge collapses to ~0 length, corners merge/split), the configuration MUST be treated as **invalid** for the facade system (until a future remapping feature exists).
-- Layer operations that offset/shrink/expand the plan are allowed only if they preserve topology (i.e., do not collapse edges or reorder corners).
+### 4.1 Layer silhouette ownership
 
-This matches the “faces must match” constraint required by facade layout continuity.
+A floor layer's optional `silhouette.mode` resolves as follows:
+
+- `inherit_default`: use the building-level default footprint.
+- `inherit_previous`: use the preceding floor layer's resolved silhouette; this
+  is invalid on the first floor layer.
+- `detached`: use the silhouette owned by that layer.
+
+Field absence is the legacy compatibility path and MUST behave exactly as
+`inherit_default`, without rewriting or changing the existing meter
+`footprintLoops`. Inheritance is live ownership, not a hidden copy. Detaching
+copies the currently resolved shape, identities, curve/split metadata, and
+stretch provenance into a new owner before local edits begin.
+
+`planOffset` remains relative to the resolved layer below and MUST preserve the
+resolved silhouette's logical topology. An offset that collapses/reorders runs
+or cannot preserve an authored curve is invalid rather than silently changing
+metadata.
+
+### 4.2 Cross-layer compatibility
+
+Two layer runs may participate in one facade-continuity or solver group only
+when all of the following are true:
+
+- both carry the same stable `runId` through shared inheritance, a recorded
+  identity-preserving detachment from that owner, or an accepted explicit
+  remap;
+- their `runForward` values define the same authored local-u orientation;
+- their straight/arc topology and any split boundary needed by the operation
+  are compatible; and
+- their facade/bay sizing and continuity constraints admit the same solver
+  contract.
+
+Whole-layer compatibility additionally requires the relevant run identities to
+have the same cyclic adjacency for the operation being shared. Unrelated
+detached silhouettes MAY reuse the same letter locally; that coincidence alone
+never establishes compatibility. Incompatible layers form separate facade and
+solver groups and remain valid, with their boundary handled as an explicit
+layer transition by the engine.
+
+### 4.3 Topology edits and target review
+
+Moving a corner/run, translating the whole loop, changing relative span, or
+editing a run's curvature without splitting it is a non-topology edit and MUST
+preserve every identity. Insert, delete, split, merge, and reorder operations are
+topology edits and MUST produce a deterministic change record containing:
+
+- retained corner/run ids;
+- newly allocated corner/run ids;
+- removed ids and any possible explicit remap candidates; and
+- every affected authored target.
+
+New ids MUST be allocated deterministically from `A..Z` and MUST NOT reuse an id
+retired during the authoring transaction/session. Identity allocation and
+retirement state is part of undo/redo and round-trip state. A split retains the
+source run id on the operation-defined source segment and allocates a new id to
+the other segment; a merge records which source run is the retained owner.
+These choices are recorded by the operation and MUST NOT be inferred later from
+array position.
+
+Stable identity alone is not orientation compatibility. If a retained `runId`
+changes `runForward`, every target that consumes that run enters the same
+decision-required review even though the letter still exists. It MUST NOT be
+silently classified as retained. An accepted explicit remap records whether
+the consumer must reverse local-u (`reverseLocalU`); the other safe choices are
+to preserve the target as an orphan or deliberately remove it.
+For a composite target such as a face link or decoration set, the chosen remap
+applies only to its missing or orientation-incompatible references. Every
+unaffected reference remains identity-mapped in the resolved target; review
+must never collapse all references onto the one selected replacement.
+
+Before a topology edit can commit, the author MUST review affected facade
+layouts, face links, face materials, decoration targets, attachments, and named
+stretch-band preferences/mappings. Each target receives an explicit
+`retain`, `remap`, `orphan`, or deliberate removal decision. Automatic
+suggestions may use known stable provenance, but MUST NOT guess from positional
+letters or proximity. Unresolved targets remain surfaced as orphans; the system
+MUST NOT silently delete or retarget them.
 
 ---
 
@@ -110,25 +194,37 @@ Each wall decoration carries `inheritOnDerivedSurfaces: boolean` (default `true`
 
 ### 6.1 Face labeling
 
-- Faces MUST be labeled with stable letter ids: `A`, `B`, `C`, … in clockwise order.
-- Face `A` corresponds to the first edge in the footprint’s ordered corner list (`corner[0]` → `corner[1]`).
-- Face `B` corresponds to (`corner[1]` → `corner[2]`), and so on.
+- Faces MUST use stable letter ids from `A..Z`.
+- When identities are first bootstrapped for a legacy loop, face `A`
+  corresponds to the first ordered edge, face `B` to the next edge, and so on
+  clockwise. Once authored, persistent metadata is authoritative and an edit
+  MUST NOT relabel unaffected runs merely because an edge was inserted or
+  deleted.
 
 ### 6.2 Stability requirements
 
 To keep face ids stable while editing:
 
-- Corner identity SHOULD be stable (each corner has a persistent identity in the model), and edits SHOULD primarily move corner positions rather than rebuild/reorder the corner list.
-- A footprint edit that reorders corners changes which edge is face `A`, etc., and therefore MUST be considered a topology change.
-
-Note: how the initial “corner[0]” is chosen is an editor/authoring concern. Once chosen, the system MUST preserve it (or explicitly treat changes as topology edits).
+- Every authored corner MUST carry a persistent `cornerId`; every authored run
+  MUST carry a persistent `runId`.
+- Editors MUST move existing corner records for geometry edits instead of
+  rebuilding/relabeling the list.
+- Reordering corners is a topology edit and follows §4.3. Winding normalization
+  is a geometry representation transform, not a topology edit, and MUST transfer
+  all identities and invert run orientation/arc metadata as specified below.
 
 ### 6.3 Persisted run identity
 
-- An authored footprint point MAY carry `runId` and `runForward`; the metadata belongs to the edge beginning at that point.
+- An authored footprint point MUST carry `cornerId`; it also carries `runId` and
+  `runForward` for the edge beginning at that point.
 - `runId` is the stable logical face id and MUST be a unique letter `A..Z` within the loop.
 - `runForward` records whether the point-list edge direction matches the facade's authored local-u direction. Winding normalization MUST transfer the run metadata to the reversed edge and invert `runForward`.
-- Geometry-only transforms MUST preserve this metadata. Connector-wall edits allocate unused ids without renaming existing runs.
+- Geometry-only transforms MUST preserve this metadata. Connector-wall edits
+  allocate never-used ids without renaming existing runs.
+- A legacy loop without identity metadata remains valid and renders through its
+  existing deterministic frame derivation. Entering silhouette authoring assigns
+  ids to the popup working copy; Cancel therefore leaves the source legacy model
+  unchanged, while Apply persists the assigned identities atomically.
 
 ### 6.4 Circular facade runs
 
@@ -138,10 +234,17 @@ Note: how the initial “corner[0]” is chosen is an editor/authoring concern. 
 - Winding reversal transfers the arc to the reversed source edge and negates its bulge. Translation and uniform scale preserve bulge; scale changes the derived radius and arc length through the endpoints.
 - Wall panels and reveals, horizontal belts, floor spandrels, roof/parapet/coping loops, cornice profiles, and repeated cornice ornaments MUST consume the same sampled curve. Meter-based wall UV distance MUST continue across its tessellated segments without resetting.
 - Openings on an arc solve bay widths in arc length, and one authored opening remains one opening at its solved width/count. Its existing glass, frame, wall-cut, sill/header, and storefront geometry is subdivided across width and bent through tangent samples; subdivision rings are geometry only, never semantic window repeats or extra mullions. A single flat chord spanning the curved run is not sufficient.
-- The current stretch/push-pull and lot-fit tools are straight-run operations. They MUST reject or keep fixed a footprint containing arcs and surface that limitation instead of silently dropping curve metadata.
-- In Building Fabrication 2, selecting a stable face exposes its footprint shape directly under the **Faces** picker: `Straight` removes the run arc; `Curved` authors an inward/outward circular bend and a sweep in degrees, converted to canonical `bulge` metadata. This control edits the shared building footprint, not a per-layer facade material/layout.
+- A stretch/push-pull or lot-fit operation MUST keep an affected curved run
+  fixed unless it declares a valid curve-preserving rule for that named band.
+  Unaffected straight bands remain eligible; one curved run MUST NOT silently
+  drop curve metadata or pin the whole silhouette.
+- Building Fabrication 2 authors straight/curved state, inward/outward
+  direction, and radius/sweep (or an equivalent canonical pair) in the layer's
+  **Draw** transaction. Numeric and visual edits convert to canonical `bulge`
+  metadata and expose endpoint-tangent feedback.
 - The plan-view face picker MUST sample the same circular run for drawing, bounds, labels, and pointer hit testing. A curved run therefore appears and selects as one curved edge, never as several narrow logical faces.
-- This control is the current safe authoring subset. Per-floor footprint silhouettes, freehand drawing, face repositioning, and coordinated default/proportional sizing require a separate silhouette-authoring model; the current building config has one primary footprint shared by its floor layers.
+- Arc tessellation is always display/geometry detail; splitting tessellation
+  MUST NOT create corner ids, run ids, facade targets, or semantic repeats.
 
 ### 6.5 Collinear face split markers
 
@@ -163,18 +266,28 @@ For detailed facade layout and fitting behavior, see `specs/buildings/BUILDING_2
 
 ---
 
-## 8. Validation requirements (v1)
+## 8. Validation requirements
 
 The system MUST validate and surface errors/warnings rather than silently falling back:
 
-- Hard error if applicable layers do not share identical footprint topology (corner count/order).
-- Hard error if a footprint is invalid (self-intersection, collapsed edges, etc.).
+- Hard error if a footprint is invalid (wrong winding, self-intersection,
+  duplicate/collapsed points, collapsed edges, or more than 26 logical runs).
+- Hard error for duplicate/missing authored `cornerId` or `runId`, exhausted or
+  recycled transaction identities, invalid `runForward`, or an invalid first
+  layer `inherit_previous` source.
 - Warning if an edge/face is too short to reasonably host authored bays/features (exact thresholds are implementation-defined).
-- Hard error for invalid arc metadata; straight-run edit/fit tools MUST surface their explicit curved-run guard.
+- Hard error when a face is shorter than its facade solver minimum.
+- Hard error for invalid arc metadata, radius/sweep, or required tangency.
+- Hard error for an invalid named stretch-band mapping or an unresolved target
+  decision while applying a topology edit.
+- An incompatible cross-layer topology/solver group is not a topology error;
+  it MUST split continuity and produce an actionable transition/link warning.
+- Straight-run edit/fit tools MUST surface each curved or pinned band they keep
+  fixed.
 
 ---
 
-## 9. Angle-preserving face extension edits
+## 9. Angle-preserving face extension and named stretch bands
 
 Building Fabrication 2 exposes two plan edits and does not drag raw corners:
 
@@ -183,3 +296,12 @@ Building Fabrication 2 exposes two plan edits and does not drag raw corners:
 - **Detached push:** when the selected face must move without extending its neighbors, two perpendicular connector faces bridge the old endpoints to the moved face. The moved parent keeps its id; connectors receive unused generated ids, inherit the parent face material, and start with a plain flexible bay layout.
 
 All affected facades re-run the normal bay/group solver at their new lengths. Fixed/minimum bay sums clamp shrinking edits with a surfaced warning; repeat groups, flex bays, and arcade springing otherwise follow the existing facade-layout rules. Meter-seeded rooftop and decoration placements may reseed.
+
+Silhouette design-size compilation and runtime lot fitting MUST express these
+edits as named band applications with stable source-run provenance. Preferred
+width/depth is a target for the allowed bands, not permission to uniformly
+scale or shear the loop. A placement fit is solved once against its envelope;
+the same band deltas are replayed on another layer only through an explicitly
+compatible provenance mapping. Curved, pinned, or unmapped bands stay fixed.
+When the target is unreachable, the nearest deterministic valid result is kept
+and the limiting bands are reported.

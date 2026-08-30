@@ -3045,10 +3045,19 @@ export class BuildingFabrication2Scene {
 
         let positions = null;
         if (faceLine) {
-            positions = [
-                Number(faceLine.x0) || 0, y, Number(faceLine.z0) || 0,
-                Number(faceLine.x1) || 0, y, Number(faceLine.z1) || 0
-            ];
+            const path = Array.isArray(faceLine.path) && faceLine.path.length >= 2
+                ? faceLine.path
+                : [
+                    { x: Number(faceLine.x0) || 0, z: Number(faceLine.z0) || 0 },
+                    { x: Number(faceLine.x1) || 0, z: Number(faceLine.z1) || 0 }
+                ];
+            positions = [];
+            for (let i = 1; i < path.length; i++) {
+                positions.push(
+                    Number(path[i - 1]?.x) || 0, y, Number(path[i - 1]?.z) || 0,
+                    Number(path[i]?.x) || 0, y, Number(path[i]?.z) || 0
+                );
+            }
         } else {
             switch (faceId) {
                 case 'A':
@@ -3132,14 +3141,28 @@ export class BuildingFabrication2Scene {
             );
         };
 
-        // A (front +Z)
-        pushQuad(minX, y0, maxZ, maxX, y0, maxZ, maxX, y1, maxZ, minX, y1, maxZ);
-        // B (right +X)
-        pushQuad(maxX, y0, maxZ, maxX, y0, minZ, maxX, y1, minZ, maxX, y1, maxZ);
-        // C (back -Z)
-        pushQuad(maxX, y0, minZ, minX, y0, minZ, minX, y1, minZ, maxX, y1, minZ);
-        // D (left -X)
-        pushQuad(minX, y0, minZ, minX, y0, maxZ, minX, y1, maxZ, minX, y1, minZ);
+        const layerLines = Array.isArray(this._facadeFaceLinesByLayerId?.[layerId])
+            ? this._facadeFaceLinesByLayerId[layerId]
+            : [];
+        for (const faceLine of layerLines) {
+            const path = Array.isArray(faceLine?.path) && faceLine.path.length >= 2
+                ? faceLine.path
+                : [
+                    { x: Number(faceLine?.x0) || 0, z: Number(faceLine?.z0) || 0 },
+                    { x: Number(faceLine?.x1) || 0, z: Number(faceLine?.z1) || 0 }
+                ];
+            for (let i = 1; i < path.length; i++) {
+                const a = path[i - 1];
+                const b = path[i];
+                pushQuad(a.x, y0, a.z, b.x, y0, b.z, b.x, y1, b.z, a.x, y1, a.z);
+            }
+        }
+        if (!positions.length) {
+            pushQuad(minX, y0, maxZ, maxX, y0, maxZ, maxX, y1, maxZ, minX, y1, maxZ);
+            pushQuad(maxX, y0, maxZ, maxX, y0, minZ, maxX, y1, minZ, maxX, y1, maxZ);
+            pushQuad(maxX, y0, minZ, minX, y0, minZ, minX, y1, minZ, maxX, y1, minZ);
+            pushQuad(minX, y0, minZ, minX, y0, maxZ, minX, y1, maxZ, minX, y1, minZ);
+        }
 
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));

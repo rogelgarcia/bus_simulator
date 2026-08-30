@@ -1,7 +1,7 @@
 # Building v2 — Facade Fill Solver Specification (Groups + Bays)
 
 Status: **Proposed (draft)**  
-Scope: **Deterministic horizontal fitting (repeat + expand) for a single face**, shared across applicable layers.
+Scope: **Deterministic horizontal fitting (repeat + expand) for one compatible stable-run group**.
 
 This document defines the canonical **v0** algorithm for expanding a face’s facade layout (bays + groups) into a resolved bay list that **fills the face length** deterministically.
 
@@ -24,8 +24,9 @@ The solver MUST:
 - Expand remaining length across expandable bays using deterministic preference tiers, respecting min/max constraints.
 - Use **center-out** tie-breaks for deterministic symmetry.
 - Support cross-layer continuity:
-  - repeat decisions are shared across applicable layers for a face (stable bay topology),
-  - width reflow is per-layer (face lengths can differ per layer).
+  - repeat decisions are shared only across layers whose run identity,
+    orientation, topology, and solver contract are compatible,
+  - width reflow is per participating layer (run lengths can differ per layer).
 
 ---
 
@@ -70,6 +71,15 @@ This ordering MUST be used whenever the solver needs a deterministic tie-break f
 
 ## 3. Inputs and outputs
 
+Before this solver runs, the engine forms a compatibility group. Every member
+MUST have the same stable run lineage (through shared inheritance, a recorded
+identity-preserving detachment, or an accepted explicit remap), the same
+authored local-u orientation, compatible
+straight/arc/split topology for the requested continuity, and the same facade
+layout/solver contract. A matching local face letter on an unrelated detached
+silhouette is not evidence of compatibility. Missing or incompatible runs form
+separate groups and MUST NOT share repeat or column-lock decisions.
+
 ### 3.1 Inputs (per floor layer, per face)
 
 The solver consumes, for a given floor layer face:
@@ -77,22 +87,31 @@ The solver consumes, for a given floor layer face:
 - bay sizing constraints (min/max / fixed),
 - group repeat constraints (`minRepeats`, `maxRepeats`),
 - bay `expandPreference` flags (local repetition vs expansion intent),
-- per-layer face lengths `Lusable(F,K)` for all applicable layers `K` that share this face topology.
+- per-layer face lengths `Lusable(F,K)` for every participating layer `K` in
+  the compatibility group.
+
+All bay widths and face lengths are physical meters. A preferred silhouette
+size or runtime lot fit changes eligible plan lengths only through valid named
+stretch bands before facade solving; it MUST NOT scale fixed/minimum bay widths,
+openings, or facade details.
 
 ### 3.2 Output
 
-For each applicable layer `K`, the solver produces an ordered `ResolvedBay[]`:
+For each participating compatible layer `K`, the solver produces an ordered `ResolvedBay[]`:
 - `bayId`
 - `uStart`, `uEnd`, `width` (meters)
 
-The **topology** (bay ids and ordering) MUST be the same across applicable layers for the face.
+The **topology** (bay ids and ordering) MUST be the same across layers in this
+compatibility group. It need not match a separate group on an incompatible
+layer silhouette.
 
 ---
 
 ## 4. v0 Algorithm (phases)
 
 The solver runs in two stages:
-1) **Topology stage** (repeat decisions): decide how many bays exist and in what order (shared across layers).
+1) **Topology stage** (repeat decisions): decide how many bays exist and in what
+   order (shared across this compatibility group's participating layers).
 2) **Width stage** (per layer): assign widths to fill each layer’s `Lusable(F,K)`.
 
 ### 4.1 Stage A — Build the base expanded layout (topology)
@@ -106,10 +125,11 @@ The solver runs in two stages:
 
 ### 4.2 Stage B — Determine the “most restrictive” layer length
 
-Repeat decisions MUST be feasible across all applicable layers.
+Repeat decisions MUST be feasible across all layers in the compatibility group.
 
 Define:
-- `LusableMin(F) = min_K (Lusable(F,K))` across layers that must share topology.
+- `LusableMin(F) = min_K (Lusable(F,K))` across participating compatible layers
+  that share this facade topology.
 
 All topology decisions in §4.3–§4.4 MUST use `LusableMin(F)` as the fit target.
 
@@ -151,7 +171,7 @@ This rule is deterministic because every successful pass repeats the full eligib
 
 ### 4.5 Stage E — Per-layer width solve: expand remainder with preference tiers (with clamp + redistribute)
 
-For each applicable layer `K`:
+For each participating compatible layer `K`:
 
 1) Initialize each bay instance width:
    - `w = fixedWidth` for fixed bays

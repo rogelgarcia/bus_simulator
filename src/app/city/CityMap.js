@@ -52,6 +52,23 @@ function deepClone(value) {
     return value;
 }
 
+function deepEqual(a, b) {
+    if (Object.is(a, b)) return true;
+    if (Array.isArray(a) || Array.isArray(b)) {
+        if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+        for (let i = 0; i < a.length; i++) if (!deepEqual(a[i], b[i])) return false;
+        return true;
+    }
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+    const aKeys = Object.keys(a).sort();
+    const bKeys = Object.keys(b).sort();
+    if (aKeys.length !== bKeys.length) return false;
+    for (let i = 0; i < aKeys.length; i++) {
+        if (aKeys[i] !== bKeys[i] || !deepEqual(a[aKeys[i]], b[bKeys[i]])) return false;
+    }
+    return true;
+}
+
 function normalizeFootprintLoopsInput(footprintLoops) {
     const srcLoops = Array.isArray(footprintLoops) ? footprintLoops : [];
     if (!srcLoops.length) return null;
@@ -73,6 +90,7 @@ function normalizeFootprintLoopsInput(footprintLoops) {
             const z = Number(entry?.z ?? entry?.[1]);
             if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
             const p = { x, z };
+            if (typeof entry?.cornerId === 'string' && entry.cornerId) p.cornerId = entry.cornerId;
             if (typeof entry?.runId === 'string') p.runId = entry.runId;
             if (typeof entry?.runForward === 'boolean') p.runForward = entry.runForward;
             if (entry?.split === true) p.split = true;
@@ -122,12 +140,43 @@ function translateFootprintLoops(footprintLoops, offset) {
         return points.map((point) => ({
             x: (Number(point?.x) || 0) + ox,
             z: (Number(point?.z) || 0) + oz,
+            ...(typeof point?.cornerId === 'string' && point.cornerId ? { cornerId: point.cornerId } : {}),
             ...(typeof point?.runId === 'string' ? { runId: point.runId } : {}),
             ...(typeof point?.runForward === 'boolean' ? { runForward: point.runForward } : {}),
             ...(point?.split === true ? { split: true } : {}),
             ...(point?.arc && typeof point.arc === 'object' ? { arc: { ...point.arc } } : {})
         }));
     });
+}
+
+function translateLayerSilhouettes(layers, offset) {
+    const list = Array.isArray(layers) ? deepClone(layers) : [];
+    for (const layer of list) {
+        const silhouette = layer?.silhouette;
+        if (silhouette?.mode !== 'detached' || !Array.isArray(silhouette.loop)) continue;
+        const translated = translateFootprintLoops([silhouette.loop], offset);
+        if (translated[0]) silhouette.loop = translated[0];
+    }
+    return list;
+}
+
+function footprintBounds(loops) {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const loop of (Array.isArray(loops) ? loops : [])) {
+        for (const point of (Array.isArray(loop) ? loop : [])) {
+            const x = Number(point?.x);
+            const z = Number(point?.z);
+            if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+            minX = Math.min(minX, x);
+            maxX = Math.max(maxX, x);
+            minZ = Math.min(minZ, z);
+            maxZ = Math.max(maxZ, z);
+        }
+    }
+    return Number.isFinite(minX) ? { minX, maxX, minZ, maxZ } : null;
 }
 
 function bitCount4(m) {
@@ -698,8 +747,15 @@ export class CityMap {
             if (building?.edgeBevel && typeof building.edgeBevel === 'object') record.edgeBevel = deepClone(building.edgeBevel);
             if (building?.materialSlots && typeof building.materialSlots === 'object') record.materialSlots = deepClone(building.materialSlots);
 
+            const layers = Array.isArray(building?.layers) && building.layers.length ? building.layers : null;
+            const catalogLayersBaseline = Array.isArray(building?._catalogLayersBaseline)
+                ? building._catalogLayersBaseline
+                : null;
+            if (layers && (!record.configId || !catalogLayersBaseline || !deepEqual(layers, catalogLayersBaseline))) {
+                record.layers = deepClone(layers);
+            }
+
             if (!record.configId) {
-                if (Array.isArray(building?.layers) && building.layers.length) record.layers = building.layers;
                 if (Number.isFinite(building?.floorHeight)) record.floorHeight = building.floorHeight;
                 if (Number.isFinite(building?.floors)) record.floors = building.floors;
                 if (typeof building?.style === 'string') record.style = building.style;
@@ -773,6 +829,20 @@ export class CityMap {
         for (const entry of buildings) {
             const placed = plan.placements.get(entry.id);
             if (!placed) continue;
+            if (entry.placement && Array.isArray(entry.layers) && Array.isArray(entry.designLoops)) {
+                const sourceBounds = footprintBounds(entry.designLoops);
+                const placedBounds = footprintBounds(placed.footprintLoops);
+                if (sourceBounds && placedBounds) {
+                    const offset = {
+                        x: ((placedBounds.minX + placedBounds.maxX) - (sourceBounds.minX + sourceBounds.maxX)) * 0.5,
+                        z: ((placedBounds.minZ + placedBounds.maxZ) - (sourceBounds.minZ + sourceBounds.maxZ)) * 0.5
+                    };
+                    entry.layers = translateLayerSilhouettes(entry.layers, offset);
+                    if (Array.isArray(entry._catalogLayersBaseline)) {
+                        entry._catalogLayersBaseline = translateLayerSilhouettes(entry._catalogLayersBaseline, offset);
+                    }
+                }
+            }
             entry.footprintLoops = placed.footprintLoops;
             // The planner already solved the world placement: the generator
             // must keep it exactly instead of re-fitting into the tile area.
@@ -929,6 +999,16 @@ export class CityMap {
             const footprintPlacement = typeof raw?.footprintPlacement === 'string'
                 ? raw.footprintPlacement
                 : (rawFootprintLoops ? 'anchor' : null);
+            const runtimeLayers = hasLayers
+                ? ((!placementRaw && !rawFootprintLoops && configFootprintLoops && placementCentroid)
+                    ? translateLayerSilhouettes(designLayers, placementCentroid)
+                    : deepClone(designLayers))
+                : null;
+            const catalogLayers = Array.isArray(config?.layers) && config.layers.length
+                ? ((!placementRaw && !rawFootprintLoops && configFootprintLoops && placementCentroid)
+                    ? translateLayerSilhouettes(config.layers, placementCentroid)
+                    : deepClone(config.layers))
+                : null;
             const facades = overrideOrBase('facades');
             const windowDefinitions = overrideOrBase('windowDefinitions');
             const portalDefinitions = overrideOrBase('portalDefinitions');
@@ -944,7 +1024,8 @@ export class CityMap {
                 id,
                 configId: config?.id ?? null,
                 tiles: accepted,
-                layers: hasLayers ? deepClone(designLayers) : null,
+                layers: runtimeLayers,
+                _catalogLayersBaseline: catalogLayers,
                 footprintLoops,
                 footprintPlacement,
                 fitToLot: raw?.fitToLot === true,

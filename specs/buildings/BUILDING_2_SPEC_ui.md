@@ -119,8 +119,12 @@ Face selection and face linking (master/slave) are scoped to a **floor layer** (
 
 Within a given `Floor layer` section, the UI must support:
 
-- Face buttons (initial rectangle): `A`, `B`, `C`, `D`
+- Face buttons for that layer's resolved stable run ids (the initial rectangle
+  is `A`, `B`, `C`, `D`; detached silhouettes may expose a different set)
 - Selecting a face highlights it in the viewport; allow “unselecting” back to none
+- The compact plan diagram MUST sample straight and circular runs for drawing,
+  bounds, labels, highlighting, and pointer hit testing. One arc remains one
+  selectable face button/run.
 - A `link` button that opens a popup to link faces for that floor layer:
   - Linking creates master/slave relationships within the floor layer.
   - The selected face is treated as the master; the popup selects which other faces become slaves.
@@ -156,7 +160,9 @@ At the building level:
   - `Decoration` (wall decoration set authoring flow),
   - `Wear` (placeholder mode with no authoring content yet).
 - `Adjust Layout` behavior:
-  - enables direct silhouette editing in meters (tile-independent)
+  - remains the compatibility quick-edit path for non-topology edits of the
+    building-default silhouette in meters; per-layer ownership, topology, and
+    curvature edits use the floor layer's `Draw` action in §7.3.1
   - hover a face edge: highlight the edge and show an always-on-top wall overlay, then drag along the face normal
   - hover a corner/edge handle: show a ring handle, then drag that corner freely
   - holding `Shift` during corner drag snaps motion to the tangent of the closest adjacent wall line
@@ -239,7 +245,9 @@ Inside each `Floor layer` group, the UI order MUST be:
      - toggle state must always reflect the current floor-layer runtime/model state,
      - repeated toggles in the same session must be deterministic (no stuck/ghost active state).
 2) `Faces` section:
-   - `A B C D` face buttons
+   - buttons for the layer's resolved stable run ids (`A B C D` for the default
+     created rectangle)
+   - a visible `Draw` action alongside the face controls; see §7.3.1
    - a `link` button that opens a popup to select faces to link (master/slave) for this floor layer
 3) `Materials` section (per face):
    - a wall material picker (thumbnail + name, no text label)
@@ -387,6 +395,71 @@ Inside each `Floor layer` group, the UI order MUST be:
         - `Overflow right` is disabled for the rightmost bay
 
 These must initialize to match the created building defaults when `Create Building` is used.
+
+### 7.3.1 Per-floor-layer `Draw` silhouette transaction (AI 520)
+
+Every floor-layer card MUST show `Draw` alongside its `Faces` controls. `Draw`
+opens a dedicated plan-authoring popup scoped to that layer's resolved
+silhouette. The popup MUST state whether the layer is `inherit_default`,
+`inherit_previous`, or `detached`, identify the current owner, and make the
+scope of an edit explicit. Editing an inherited owner and detaching into a local
+copy are separate author choices; the UI MUST NOT detach or modify an upstream
+owner implicitly. Field absence is displayed as the legacy-compatible
+`inherit_default` state without writing that field merely by opening the popup.
+
+The popup is a transaction:
+
+- It edits a complete working copy, including geometry, identities, curve/split
+  metadata, stretch provenance, and target-remap decisions.
+- The normal BF2 3D viewport previews that working copy, but the saved/current
+  model remains untouched until Apply.
+- `Apply` is enabled only when hard validation errors and unresolved required
+  target decisions are clear. It commits the complete working copy as one
+  atomic, reversible BF2 model edit.
+- `Cancel` discards the working copy and leaves the building byte-for-byte
+  unchanged, including a legacy config that lacked identities or silhouette
+  fields.
+
+The editing surface MUST support creating/selecting/moving/inserting/deleting
+corners and logical runs, translating the entire silhouette, changing face
+position and relative span/proportion, splitting/merging collinear logical
+faces, and choosing straight or circular-arc runs. Curved editing provides
+visual and numeric direction plus radius/sweep (or an equivalent canonical
+pair), clear straight/curved state, and endpoint-tangent feedback. Curve
+tessellation is display detail: popup drawing, hit testing/highlighting, the
+compact `Faces` diagram, and plan preview all sample the same curve while
+retaining one stable face id and one reported arc length.
+
+Non-topology edits preserve `cornerId`, `runId`, `runForward`, `split`, and arc
+identity. Topology operations show the deterministic retained/new/retired ids
+before commit and never recycle a retired id during the transaction/session. If
+targets are affected, Apply presents a remap review for facade layouts, face
+links, materials, decorations, attachments, and stretch preferences. Every
+affected target requires an explicit retain/remap/orphan/deliberate-removal
+choice; the UI MUST NOT guess by letter or proximity, silently retarget, or
+discard authored data.
+
+Live validation MUST identify the exact layer, corner, run, or target and
+distinguish hard errors from warnings. Hard errors include non-clockwise or
+self-intersecting loops, duplicate/collapsed points, invalid or duplicate
+stable ids, the `A..Z` logical-run limit, invalid arcs/tangencies, faces below
+their facade-solver minimum, invalid stretch-band mappings, and unresolved
+target decisions. Incompatible layer transitions, broken links/targets, pinned
+bands, and unreachable preferred/lot-fit targets remain visible as actionable
+warnings when a deterministic valid result exists.
+
+The popup preview includes labelled face ids and line/arc lengths,
+selected/hovered feedback, optional neighboring-layer ghost outlines, current
+bay rhythm/solver minima, stretchable versus pinned bands, the default-design
+result, and a simulated lot-fit result. Preferred design width/depth is edited
+as a solver target through valid named bands; the UI MUST NOT uniformly scale
+fixed-meter bays, openings, or facade details.
+
+Popup-local undo/redo is available through buttons and standard keyboard
+shortcuts. History records geometry, curvature, topology/identity allocation,
+stretch metadata, remap/orphan decisions, and ownership changes as coherent
+operations. Undo/redo, Cancel/reopen, and Apply/outer undo MUST preserve ids and
+metadata deterministically.
 
 ---
 
