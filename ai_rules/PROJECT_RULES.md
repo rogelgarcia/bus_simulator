@@ -59,6 +59,27 @@ Any AI prompt or change that modifies a specification/model MUST update one or m
 **Tasks:**
 These are the ones from AI prompt files.
 - Building Fabrication 1 is deprecated. Any prompt related to building fabrication must target Building Fabrication 2 by default, unless the user explicitly requests otherwise.
+
+### New building modeling / fabrication
+
+When a user request or AI prompt creates/models a new building or adds a new building catalog entry, its prompt, implementation plan, and completion criteria MUST include the following:
+
+- Target Building Fabrication 2. Before implementation, inspect the relevant canonical framework documents, starting with:
+  - `specs/buildings/BUILDING_2_SPEC_engine.md`
+  - `specs/buildings/BUILDING_2_SPEC_model.md`
+  - `specs/buildings/BUILDING_2_SPEC_ui.md`
+  - the applicable facade/layout/topology specs under `specs/buildings/`
+- Use `tests/headless/harness/scenarios/scenario_building_showcase.js` as the standard rendered-building scenario and `tests/headless/visual/specs/harness_building_showcase_capture.pwtest.js` as the standard capture workflow, extending them when the building requires additional deterministic setup.
+- Produce at least three distinct final screenshots, each at UHD 4K (exactly 3840×2160):
+  1. a straight-on front/elevation view;
+  2. a three-quarter angle view;
+  3. a low-angle close-up looking upward from the base toward the top.
+- When finishing the model, accompany the final screenshots with every source reference image actually used to create the model. Clearly label the references and rendered poses in the completion handoff so they can be compared directly. Preserve the originals and place artifact copies under `tests/artifacts/screens/buildings/<building-id>/references/`; if a reference cannot legally or technically be copied, include a stable link to its existing local source or original URL instead.
+- Render every required pose in a showcase scenario that uses an HDRI image as both the visible background and the environment/reflection source. Wait for all textures and the HDRI environment to finish loading, and verify that reflective materials visibly receive environment reflections before capture.
+- Save these generated deliverables under `tests/artifacts/screens/buildings/<building-id>/`. This path is gitignored. Never save them under `screens/`, `tests/assets/`, beside source files, or as committed visual baselines unless the user explicitly requests a baseline update.
+- New textures may be generated when needed. Integrate retained textures according to the project asset, licensing, and provenance rules; temporary generation outputs remain artifacts.
+- Blender may be used when needed. Before launching or automating Blender, check for an existing Blender process, render job, or unsaved interactive session. Never interrupt, close, or repurpose an occupied session; if its status cannot be established safely, do not use it without user confirmation.
+
 - Even if explicitly requested, never start prompts whose filename indicates DONE (`AI_DONE_##_..._DONE.md`, `AI_DONE_<branch>_##_..._DONE.md`, `AI_i_DONE_##_..._DONE.md`, or `AI_i_DONE_<branch>_##_..._DONE.md`) without double confirming with the user.
 - If multiple prompts share the same numeric id, prefer the prompt in the current branch namespace for implementation within the same mode (standard or interactive).
 - If id selection is still ambiguous or conflicting, stop and ask the user for guidance before implementing.

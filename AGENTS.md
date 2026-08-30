@@ -2,6 +2,11 @@
 
 - Follow `ai_rules/PROJECT_RULES.md` (and root-level `PROJECT_RULES.local.md` when pushing code to github) for repo structure, coding style, comments, commits, and asset rules.
 - Generated screenshots and debug captures go under `tests/artifacts/screens/<topic>/` (gitignored). Never save them into `screens/` or next to source code (see `ai_rules/TESTING_RULES.md`, "Artifacts and baselines").
+- New-building modeling/fabrication requests MUST follow `ai_rules/PROJECT_RULES.md` → "New building modeling / fabrication". Target Building Fabrication 2, inspect its canonical specs under `specs/buildings/`, and use the building showcase harness/capture workflow identified there.
+  - Completion requires at least three distinct UHD 4K (3840×2160) final screenshots: a straight-on front view, a three-quarter angle view, and a low-angle close-up looking from the building base toward the top.
+  - When finishing the model, accompany the final screenshots with the source reference image(s) actually used to create the model, clearly labeled so the reference and rendered result can be compared. Include them in the completion handoff and place artifact copies under `tests/artifacts/screens/buildings/<building-id>/references/` without altering the originals.
+  - Render the captures in a scenario that uses an HDRI as both the visible background and the environment/reflection source. Save them under `tests/artifacts/screens/buildings/<building-id>/` so they remain gitignored.
+  - New textures may be generated when needed and must follow the project asset rules. Blender may be used when needed, but first check for an existing Blender process/render or unsaved interactive work; never interrupt, close, or repurpose an occupied Blender session.
 - When creating AI prompt files, follow `ai_rules/AI_PROMPT_INSTRUCTIONS.md` for naming and structure.
   - Active prompt files live in `prompts/`; archived prompt files live in `prompts/archive/`.
   - User requested `create promtpt` or `create ai` or `create ai prompt`. Or similar variations.
