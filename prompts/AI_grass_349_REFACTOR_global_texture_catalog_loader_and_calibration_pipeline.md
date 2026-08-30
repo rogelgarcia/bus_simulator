@@ -82,6 +82,11 @@ Additional texture-path follow-ups discovered during review (non-blocking for th
 - Leave this dynamic AI file in place. Mark only genuinely completed checklist items complete, and retain unrelated pending follow-ups.
 - The current gameplay authorization gate is the future `specs/grass/GRASS_LAB_APPROVAL_AI362.json`; the AI 357 approval record remains historical.
 
+## Generated evidence location
+
+- Any screenshots, capture manifests, comparison images, traces, logs, or reports produced by this AI must be saved under `tests/artifacts/screens/grass/ai349/`.
+- This directory is gitignored. Do not write generated evidence to `screens/`, stage it, or commit it. Only tracked prompt/spec summaries may reference workspace-relative artifact paths.
+
 ## On completion
 - For each iteration, only implement tasks that are still unchecked (`[ ]`).
 - After implementing a task, mark it as checked (`[x]`) in this file.

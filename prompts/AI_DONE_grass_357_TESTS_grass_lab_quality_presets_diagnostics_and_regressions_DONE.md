@@ -53,7 +53,7 @@ Acceptance outcomes:
 - Added daylight, overcast, golden-hour, and night/street-lit lighting reviews plus rolling per-tier, timing, draw, triangle, and buffer-upload diagnostics.
 - Tuned near-carpet batching to keep the default approval camera at five logical grass draws without changing grass placement or density.
 - Added deterministic budget/approval contracts, focused Node and browser regression coverage, a high-preset stress scenario, and explicit checked approval evidence.
-- Captured the multi-height and multi-pose approval set under `screens/grass_ai357/` and left gameplay unchanged.
+- Captured the multi-height and multi-pose approval set under `tests/artifacts/screens/grass/ai357/` and left gameplay unchanged.
 - Updated the dynamic AI 349 tracker and the then-current gameplay dependency with the V1 validation contract and record; the reconciliation below supersedes that authorization.
 
 ## Post-completion sequence reconciliation

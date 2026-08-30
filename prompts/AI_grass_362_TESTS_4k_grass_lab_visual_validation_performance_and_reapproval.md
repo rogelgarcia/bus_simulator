@@ -24,7 +24,7 @@ Tasks:
 - Verify the appearance target from AI 358, the `80 +/- 20 mm` exposed substrate strip, the configured shallow structural-base height, the separately declared blade-height/irregularity distribution, `<=15 mm` grass-onset antialias width, and exact hard exclusions. Do not require a universal `25-30 mm` canopy.
 - Re-measure the runtime gate at `1920x1080`: average GrassEngine CPU `<=0.60 ms`, whole-frame GPU proxy `<=1.50 ms` when supported, approximately `5-6` typical grass draws with `12` hard ceiling, `<=200,000` visible grass triangles, zero geometry beyond cutoff, and zero recurring stationary uploads. Report native-4K timing separately as informational hardware evidence.
 - Return architectural failures to the owning prompt instead of hiding them with validation-only special cases. Limit tuning here to bounded preset values and evidence settings already owned by the approved contracts.
-- Create `specs/grass/GRASS_LAB_VALIDATION_AND_APPROVAL_V2.md`, `specs/grass/GRASS_LAB_APPROVAL_AI362.json`, and the evidence directory `screens/grass_ai362/`.
+- Create `specs/grass/GRASS_LAB_VALIDATION_AND_APPROVAL_V2.md`, `specs/grass/GRASS_LAB_APPROVAL_AI362.json`, and the evidence directory `tests/artifacts/screens/grass/ai362/`.
 - Set the AI 362 approval status to `approved` only if every required camera, lighting, boundary, material, motion, determinism, and budget gate passes with no missing evidence.
 - Keep gameplay untouched.
 
@@ -59,9 +59,14 @@ Before marking this prompt DONE, add a `## Completion evidence` section to this 
 
 - A consolidated before/after and per-tier cost table for every approval camera, motion path, lighting fixture, and quality preset. Report visible triangles by tier and total, logical draw calls by grass tier and total, total renderer draw calls, stationary/moving buffer updates, and measured CPU/GPU timing.
 - Explicit average, maximum, delta, and pass/fail values against every default/high/worst-view budget. The AI 362 JSON approval record must reference the same measurements.
-- A complete screenshot manifest with repository-relative PNG paths, before/after role, camera position/target/height, pose, lighting, exposure, quality preset, active tiers, triangle count, grass/total draw-call counts, and image-dimension verification.
+- A complete screenshot manifest with workspace-relative PNG paths under the prompt-specific ignored evidence directory, before/after role, camera position/target/height, pose, lighting, exposure, quality preset, active tiers, triangle count, grass/total draw-call counts, and image-dimension verification.
 - Only UI-free lossless PNG screenshots captured from a real `3840x2160` drawing buffer at pixel ratio `1`. Do not use JPEG, browser-scaled screenshots, or upscaled lower-resolution captures.
 - Every camera, height, lighting, boundary, tree, fallback, handoff, motion, and far comparison required above. List missing evidence as a failed gate; this prompt cannot be marked DONE and `GRASS_LAB_APPROVAL_AI362.json` cannot report approval while anything is missing.
+
+## Generated evidence location
+
+- Any screenshots, capture manifests, comparison images, traces, logs, or reports produced by this AI must be saved under `tests/artifacts/screens/grass/ai362/`.
+- This directory is gitignored. Do not write generated evidence to `screens/`, stage it, or commit it. Only tracked prompt/spec summaries may reference workspace-relative artifact paths.
 
 ## On completion
 - Mark the AI document as DONE in the first line.

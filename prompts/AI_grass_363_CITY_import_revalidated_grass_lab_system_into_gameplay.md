@@ -56,9 +56,14 @@ Before marking this prompt DONE, add a `## Completion evidence` section to this 
 
 - A Grass Lab versus gameplay cost table for every representative scene and low/default/high quality preset. Report visible triangles by grass tier and total, logical draw calls by grass tier and total, total renderer draw calls, stationary/moving buffer updates, and measured CPU/GPU timing.
 - Explicit Lab-to-gameplay and old-gameplay-to-new-gameplay cost deltas with pass/fail verdicts against the AI 362-approved budgets. Costs may not be replaced by qualitative statements.
-- A screenshot manifest with repository-relative PNG paths, Lab/gameplay and before/after role, camera position/target/height, pose, lighting, exposure, quality preset, active tiers, triangle count, grass/total draw-call counts, and image-dimension verification.
+- A screenshot manifest with workspace-relative PNG paths under the prompt-specific ignored evidence directory, Lab/gameplay and before/after role, camera position/target/height, pose, lighting, exposure, quality preset, active tiers, triangle count, grass/total draw-call counts, and image-dimension verification.
 - Only UI-free lossless PNG screenshots captured from a real `3840x2160` drawing buffer at pixel ratio `1`. Do not use JPEG, browser-scaled screenshots, or upscaled lower-resolution captures.
 - All driving, stationary, reverse, grazing, top-down, sidewalk/corner/substrate, tree-heavy, bus, handoff, far, and geometry-disabled comparisons required above. State any missing image or measurement explicitly; the prompt cannot be marked DONE while required evidence is missing.
+
+## Generated evidence location
+
+- Any screenshots, capture manifests, comparison images, traces, logs, or reports produced by this AI must be saved under `tests/artifacts/screens/grass/ai363/`.
+- This directory is gitignored. Do not write generated evidence to `screens/`, stage it, or commit it. Only tracked prompt/spec summaries may reference workspace-relative artifact paths.
 
 ## On completion
 - Mark the AI document as DONE in the first line.

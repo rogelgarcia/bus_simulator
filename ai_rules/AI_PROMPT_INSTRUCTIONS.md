@@ -189,6 +189,13 @@ Rules:
 - Rename to regular mode naming (`AI_...`) and keep all checklist items.
 ```
 
+## Generated Screenshot Evidence (Required When Applicable)
+
+- Any prompt requiring screenshots or visual evidence must name a prompt-specific output directory under `tests/artifacts/screens/<topic>/`.
+- Generated screenshots, comparison images, capture manifests, traces, logs, and reports are gitignored artifacts and must never be requested under `screens/`, beside source files, or staged/committed.
+- Tracked prompt/spec completion summaries may reference workspace-relative artifact paths.
+- Only explicitly requested visual-regression baselines may be committed under `tests/headless/visual/baselines/`, using the explicit baseline workflow in `ai_rules/TESTING_RULES.md`.
+
 ## Notes
 
 - The AI has access to the repository and can retrieve files as needed.

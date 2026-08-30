@@ -20,7 +20,7 @@ Capture the corrected result from the same recipes:
 node tools/grass_lab_capture/run.mjs --phase=after
 ```
 
-The default output is `screens/grass_ai358/`. The two runs merge into `capture_manifest.json`; matching phase files are never overwritten unless `--overwrite` is provided.
+The default output is `tests/artifacts/screens/grass/ai358/`. The two runs merge into `capture_manifest.json`; matching phase files are never overwritten unless `--overwrite` is provided.
 
 The runner starts the existing local static server when `http://127.0.0.1:4173` is not already healthy. Use an existing server or browser installation when required:
 

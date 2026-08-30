@@ -1,7 +1,7 @@
 // Node unit tests: AI 357 Grass Lab quality, review, budget, and approval contract.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
     GRASS_LAB_CAMERA_PRESETS,
@@ -140,17 +140,21 @@ test('AI 357 record remains complete historical V1 evidence but cannot authorize
     assert.deepEqual(record.reviewCoverage.missingCameras, []);
     assert.deepEqual(record.reviewCoverage.missingLighting, []);
     assert.deepEqual(record.reviewCoverage.missingPaths, []);
-    for (const file of [
-        '01_height_030m_daylight_close_grazing.jpg',
-        '02_height_050m_golden_grazing.jpg',
-        '03_height_100m_overcast_medium.jpg',
-        '05_gameplay_bus_camera_daylight.jpg',
-        '07_top_down_overcast_coverage.jpg',
-        '08_far_texture_only_daylight.jpg',
-        '09_tree_tuft_worn_substrate_golden.jpg',
-        '11_low_quality_texture_boundary_bus.jpg',
-        '12_high_quality_top_down_stress.jpg'
-    ]) {
-        assert.ok(statSync(`${REPO_ROOT}/screens/grass_ai357/${file}`).size > 50000, `Missing or empty approval capture ${file}`);
+    assert.equal(record.screenshotDirectory, 'tests/artifacts/screens/grass/ai357');
+    const localEvidenceDirectory = `${REPO_ROOT}/${record.screenshotDirectory}`;
+    if (existsSync(localEvidenceDirectory)) {
+        for (const file of [
+            '01_height_030m_daylight_close_grazing.jpg',
+            '02_height_050m_golden_grazing.jpg',
+            '03_height_100m_overcast_medium.jpg',
+            '05_gameplay_bus_camera_daylight.jpg',
+            '07_top_down_overcast_coverage.jpg',
+            '08_far_texture_only_daylight.jpg',
+            '09_tree_tuft_worn_substrate_golden.jpg',
+            '11_low_quality_texture_boundary_bus.jpg',
+            '12_high_quality_top_down_stress.jpg'
+        ]) {
+            assert.ok(statSync(`${localEvidenceDirectory}/${file}`).size > 50000, `Missing or empty approval capture ${file}`);
+        }
     }
 });

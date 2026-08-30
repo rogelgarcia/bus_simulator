@@ -106,7 +106,7 @@
     "headlessBrowserSpec": "authored; local run blocked by sandbox CDN network policy",
     "fullNodeUnitSuite": "156 passed, 9 unrelated/pre-existing failures or broken worktree asset links"
   },
-  "screenshotDirectory": "screens/grass_ai357",
+  "screenshotDirectory": "tests/artifacts/screens/grass/ai357",
   "gameplayTouched": false,
   "approved": true
 }

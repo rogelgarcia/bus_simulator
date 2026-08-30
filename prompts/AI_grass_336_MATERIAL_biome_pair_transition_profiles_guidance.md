@@ -20,6 +20,11 @@ Tasks:
 - It does not govern the binary occupancy edge, raised cap, cut edge, or geometry of maintained grass. AI 354 and `GRASS_COVERAGE_AND_SIDEWALK_EDGE_V1.md` remain historical; corrective ownership belongs to AI 359 and its V2 contract.
 - A `grass->dirt` biome-material profile may influence substrate appearance inside or around a grass area, but it must not replace the hard grass coverage decision with a broad dissolve.
 
+## Generated evidence location
+
+- Any screenshots, capture manifests, comparison images, traces, logs, or reports produced by this AI must be saved under `tests/artifacts/screens/grass/ai336/`.
+- This directory is gitignored. Do not write generated evidence to `screens/`, stage it, or commit it. Only tracked prompt/spec summaries may reference workspace-relative artifact paths.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:

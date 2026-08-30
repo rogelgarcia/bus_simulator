@@ -9,7 +9,7 @@ import { inflateSync } from 'node:zlib';
 
 const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TOOL_DIR, '../..');
-const DEFAULT_OUTPUT = 'screens/grass_ai358';
+const DEFAULT_OUTPUT = 'tests/artifacts/screens/grass/ai358';
 const DEFAULT_BASE_URL = 'http://127.0.0.1:4173';
 const V2_ASSET_URL_PREFIX = '/assets/public/pbr/grass_low_cut_maintained_v2/';
 const WIDTH = 3840;

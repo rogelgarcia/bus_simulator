@@ -20,6 +20,11 @@ Tasks:
 - AI 350 and AI 357 remain the historical V1 Grass Lab and validation owners. Corrective fixtures are owned by AI 358 through AI 361, and current native-4K visual/performance approval belongs to AI 362.
 - Do not create another grass renderer or duplicate Grass Lab controls in Terrain Debugger as part of this guidance.
 
+## Generated evidence location
+
+- Any screenshots, capture manifests, comparison images, traces, logs, or reports produced by this AI must be saved under `tests/artifacts/screens/grass/ai340/`.
+- This directory is gitignored. Do not write generated evidence to `screens/`, stage it, or commit it. Only tracked prompt/spec summaries may reference workspace-relative artifact paths.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:

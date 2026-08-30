@@ -59,7 +59,7 @@ The near carpet now uses `32 m` render chunks. This changes batching only: blade
 
 ## Screenshot evidence
 
-The approval set is stored under `screens/grass_ai357/` and includes exact `0.30`, `0.50`, `1.00`, and `1.50 m` views, the gameplay bus camera, near/cluster handoff, top-down, far texture-only, tree accent, night, low fallback, and high stress poses.
+The approval set is stored under `tests/artifacts/screens/grass/ai357/` and includes exact `0.30`, `0.50`, `1.00`, and `1.50 m` views, the gameplay bus camera, near/cluster handoff, top-down, far texture-only, tree accent, night, low fallback, and high stress poses.
 
 ## Decision
 

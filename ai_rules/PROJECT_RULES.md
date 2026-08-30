@@ -34,6 +34,7 @@ Any AI prompt or change that modifies a specification/model MUST update one or m
 - Add new tests near related sections and keep naming descriptive (e.g., `System: behavior should ...`).
 - If adding new modules, ensure they are importable from the browser (relative import paths).
 - Expanded testing policy and conventions: `ai_rules/TESTING_RULES.md`
+- Any screenshot or visual evidence generated for an AI prompt/task MUST be written under a prompt-specific `tests/artifacts/screens/<topic>/` subdirectory and remain gitignored/untracked. If a prompt names `screens/` or another tracked evidence directory, update the prompt/output path before capture. Tracked summaries may reference workspace-relative artifact paths, but generated files and machine-readable manifests must not be staged or committed. The only exception is an explicitly requested visual-regression baseline under `tests/headless/visual/baselines/`, updated through the explicit baseline workflow in `ai_rules/TESTING_RULES.md`.
 
 ## AI Guidance
 

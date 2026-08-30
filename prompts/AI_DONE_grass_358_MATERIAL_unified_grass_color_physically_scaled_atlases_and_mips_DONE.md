@@ -131,32 +131,32 @@ V2 reduces the neutral-fixture mean saturation while preserving the far/geometry
 
 ### Native-4K screenshot manifest
 
-All 22 images below are UI-free lossless PNGs captured from a real `3840×2160` WebGL drawing buffer at renderer pixel ratio `1`; independent manifest validation reports `bad4k=0`. There are no missing required images or measurements. The full machine-readable record is `screens/grass_ai358/capture_manifest.json`. The capture recorded zero runtime errors in both phases. It also retained ten non-fatal Three.js texture warm-up warnings per phase (`Texture marked for update but no image data found`) while cloned textures were waiting for their shared image sources; the final images and asset requests resolved successfully.
+All 22 images below are UI-free lossless PNGs captured from a real `3840×2160` WebGL drawing buffer at renderer pixel ratio `1`; independent manifest validation reports `bad4k=0`. There are no missing required images or measurements. The full machine-readable record is `tests/artifacts/screens/grass/ai358/capture_manifest.json`. The capture recorded zero runtime errors in both phases. It also retained ten non-fatal Three.js texture warm-up warnings per phase (`Texture marked for update but no image data found`) while cloned textures were waiting for their shared image sources; the final images and asset requests resolved successfully.
 
 | PNG | Phase / role | Camera position → target (m) | H | Pose | Light / exp. | Quality | Active representation | Tris | Calls grass/total |
 |---|---|---|---:|---|---|---|---|---:|---:|
-| `screens/grass_ai358/after_close_geometry_daylight.png` | after / geometry_on_close | (-9.97,0.30,-72.20) → (-10.32,0.04,-74.40) | 0.30 | grazing | daylight / 1.00 | default | geometry_on_close | 21528 | 5/18 |
-| `screens/grass_ai358/after_far_texture_night.png` | after / far | (3.68,3.20,-28.40) → (5.68,0.08,-74.40) | 3.20 | far | night / 0.78 | default | far | 22224 | 6/20 |
-| `screens/grass_ai358/after_geometry_on_daylight.png` | after / geometry_on_neutral_pair | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | daylight / 1.00 | default | geometry_on_neutral_pair | 21920 | 5/18 |
-| `screens/grass_ai358/after_geometry_on_overcast.png` | after / geometry_on_grazing | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | overcast / 0.98 | default | geometry_on_grazing | 21920 | 5/18 |
-| `screens/grass_ai358/after_material_daylight.png` | after / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | daylight / 1.00 | default | material_fixture | 3240 | 4/23 |
-| `screens/grass_ai358/after_material_golden.png` | after / material_fixture | (-36.00,3.28,-109.50) → (-36.00,1.28,-128.00) | 3.28 | grazing | golden / 1.02 | default | material_fixture | 5676 | 4/24 |
-| `screens/grass_ai358/after_material_night.png` | after / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | night / 0.78 | default | material_fixture | 3668 | 4/22 |
-| `screens/grass_ai358/after_material_overcast.png` | after / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | overcast / 0.98 | default | material_fixture | 3240 | 4/23 |
-| `screens/grass_ai358/after_near_handoff_golden.png` | after / handoff | (-10.32,0.85,-65.40) → (-10.32,0.04,-74.40) | 0.85 | handoff | golden / 1.02 | default | handoff | 21760 | 6/19 |
-| `screens/grass_ai358/after_texture_only_daylight.png` | after / texture_only | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | daylight / 1.00 | low | texture_only | 0 | 0/15 |
-| `screens/grass_ai358/after_texture_only_overcast.png` | after / texture_only_neutral_pair | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | overcast / 0.98 | low | texture_only_neutral_pair | 0 | 0/15 |
-| `screens/grass_ai358/before_close_geometry_daylight.png` | before / geometry_on_close | (-9.97,0.30,-72.20) → (-10.32,0.04,-74.40) | 0.30 | grazing | daylight / 1.00 | default | geometry_on_close | 21528 | 5/18 |
-| `screens/grass_ai358/before_far_texture_night.png` | before / far | (3.68,3.20,-28.40) → (5.68,0.08,-74.40) | 3.20 | far | night / 0.78 | default | far | 22224 | 6/20 |
-| `screens/grass_ai358/before_geometry_on_daylight.png` | before / geometry_on_neutral_pair | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | daylight / 1.00 | default | geometry_on_neutral_pair | 21920 | 5/18 |
-| `screens/grass_ai358/before_geometry_on_overcast.png` | before / geometry_on_grazing | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | overcast / 0.98 | default | geometry_on_grazing | 21920 | 5/18 |
-| `screens/grass_ai358/before_material_daylight.png` | before / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | daylight / 1.00 | default | material_fixture | 3240 | 4/23 |
-| `screens/grass_ai358/before_material_golden.png` | before / material_fixture | (-36.00,3.28,-109.50) → (-36.00,1.28,-128.00) | 3.28 | grazing | golden / 1.02 | default | material_fixture | 5676 | 4/24 |
-| `screens/grass_ai358/before_material_night.png` | before / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | night / 0.78 | default | material_fixture | 3668 | 4/22 |
-| `screens/grass_ai358/before_material_overcast.png` | before / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | overcast / 0.98 | default | material_fixture | 3240 | 4/23 |
-| `screens/grass_ai358/before_near_handoff_golden.png` | before / handoff | (-10.32,0.85,-65.40) → (-10.32,0.04,-74.40) | 0.85 | handoff | golden / 1.02 | default | handoff | 21760 | 6/19 |
-| `screens/grass_ai358/before_texture_only_daylight.png` | before / texture_only | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | daylight / 1.00 | low | texture_only | 0 | 0/15 |
-| `screens/grass_ai358/before_texture_only_overcast.png` | before / texture_only_neutral_pair | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | overcast / 0.98 | low | texture_only_neutral_pair | 0 | 0/15 |
+| `tests/artifacts/screens/grass/ai358/after_close_geometry_daylight.png` | after / geometry_on_close | (-9.97,0.30,-72.20) → (-10.32,0.04,-74.40) | 0.30 | grazing | daylight / 1.00 | default | geometry_on_close | 21528 | 5/18 |
+| `tests/artifacts/screens/grass/ai358/after_far_texture_night.png` | after / far | (3.68,3.20,-28.40) → (5.68,0.08,-74.40) | 3.20 | far | night / 0.78 | default | far | 22224 | 6/20 |
+| `tests/artifacts/screens/grass/ai358/after_geometry_on_daylight.png` | after / geometry_on_neutral_pair | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | daylight / 1.00 | default | geometry_on_neutral_pair | 21920 | 5/18 |
+| `tests/artifacts/screens/grass/ai358/after_geometry_on_overcast.png` | after / geometry_on_grazing | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | overcast / 0.98 | default | geometry_on_grazing | 21920 | 5/18 |
+| `tests/artifacts/screens/grass/ai358/after_material_daylight.png` | after / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | daylight / 1.00 | default | material_fixture | 3240 | 4/23 |
+| `tests/artifacts/screens/grass/ai358/after_material_golden.png` | after / material_fixture | (-36.00,3.28,-109.50) → (-36.00,1.28,-128.00) | 3.28 | grazing | golden / 1.02 | default | material_fixture | 5676 | 4/24 |
+| `tests/artifacts/screens/grass/ai358/after_material_night.png` | after / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | night / 0.78 | default | material_fixture | 3668 | 4/22 |
+| `tests/artifacts/screens/grass/ai358/after_material_overcast.png` | after / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | overcast / 0.98 | default | material_fixture | 3240 | 4/23 |
+| `tests/artifacts/screens/grass/ai358/after_near_handoff_golden.png` | after / handoff | (-10.32,0.85,-65.40) → (-10.32,0.04,-74.40) | 0.85 | handoff | golden / 1.02 | default | handoff | 21760 | 6/19 |
+| `tests/artifacts/screens/grass/ai358/after_texture_only_daylight.png` | after / texture_only | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | daylight / 1.00 | low | texture_only | 0 | 0/15 |
+| `tests/artifacts/screens/grass/ai358/after_texture_only_overcast.png` | after / texture_only_neutral_pair | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | overcast / 0.98 | low | texture_only_neutral_pair | 0 | 0/15 |
+| `tests/artifacts/screens/grass/ai358/before_close_geometry_daylight.png` | before / geometry_on_close | (-9.97,0.30,-72.20) → (-10.32,0.04,-74.40) | 0.30 | grazing | daylight / 1.00 | default | geometry_on_close | 21528 | 5/18 |
+| `tests/artifacts/screens/grass/ai358/before_far_texture_night.png` | before / far | (3.68,3.20,-28.40) → (5.68,0.08,-74.40) | 3.20 | far | night / 0.78 | default | far | 22224 | 6/20 |
+| `tests/artifacts/screens/grass/ai358/before_geometry_on_daylight.png` | before / geometry_on_neutral_pair | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | daylight / 1.00 | default | geometry_on_neutral_pair | 21920 | 5/18 |
+| `tests/artifacts/screens/grass/ai358/before_geometry_on_overcast.png` | before / geometry_on_grazing | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | overcast / 0.98 | default | geometry_on_grazing | 21920 | 5/18 |
+| `tests/artifacts/screens/grass/ai358/before_material_daylight.png` | before / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | daylight / 1.00 | default | material_fixture | 3240 | 4/23 |
+| `tests/artifacts/screens/grass/ai358/before_material_golden.png` | before / material_fixture | (-36.00,3.28,-109.50) → (-36.00,1.28,-128.00) | 3.28 | grazing | golden / 1.02 | default | material_fixture | 5676 | 4/24 |
+| `tests/artifacts/screens/grass/ai358/before_material_night.png` | before / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | night / 0.78 | default | material_fixture | 3668 | 4/22 |
+| `tests/artifacts/screens/grass/ai358/before_material_overcast.png` | before / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | overcast / 0.98 | default | material_fixture | 3240 | 4/23 |
+| `tests/artifacts/screens/grass/ai358/before_near_handoff_golden.png` | before / handoff | (-10.32,0.85,-65.40) → (-10.32,0.04,-74.40) | 0.85 | handoff | golden / 1.02 | default | handoff | 21760 | 6/19 |
+| `tests/artifacts/screens/grass/ai358/before_texture_only_daylight.png` | before / texture_only | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | daylight / 1.00 | low | texture_only | 0 | 0/15 |
+| `tests/artifacts/screens/grass/ai358/before_texture_only_overcast.png` | before / texture_only_neutral_pair | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | overcast / 0.98 | low | texture_only_neutral_pair | 0 | 0/15 |
 
 ### Verification
 
@@ -229,32 +229,32 @@ Broad geometry-on versus texture-only median luminance must remain within `0.90-
 
 ### Native-4K screenshot manifest
 
-All 22 images are UI-free lossless PNGs whose actual IHDR, viewport, canvas, and WebGL drawing-buffer dimensions are `3840×2160` at device/renderer pixel ratio `1`. There are no missing or extra PNGs and both phases recorded zero runtime errors. Each phase retains ten non-fatal Three.js texture warm-up warnings while shared image sources are attached; all capture-local material diagnostics and rendered maps are resolved. The machine-readable authority is `screens/grass_ai358/capture_manifest.json`.
+All 22 images are UI-free lossless PNGs whose actual IHDR, viewport, canvas, and WebGL drawing-buffer dimensions are `3840×2160` at device/renderer pixel ratio `1`. There are no missing or extra PNGs and both phases recorded zero runtime errors. Each phase retains ten non-fatal Three.js texture warm-up warnings while shared image sources are attached; all capture-local material diagnostics and rendered maps are resolved. The machine-readable authority is `tests/artifacts/screens/grass/ai358/capture_manifest.json`.
 
 | PNG | Phase / role | Camera position → target (m) | H | Pose | Light / exp. | Quality | Active representation | Tris | Calls grass/total |
 |---|---|---|---:|---|---|---|---|---:|---:|
-| `screens/grass_ai358/after_close_geometry_daylight.png` | after / geometry_on_close | (-9.97,0.30,-72.20) → (-10.32,0.04,-74.40) | 0.30 | grazing | daylight / 1.00 | default | geometry_on_close | 21528 | 5/18 |
-| `screens/grass_ai358/after_far_texture_night.png` | after / far | (3.68,3.20,-28.40) → (5.68,0.08,-74.40) | 3.20 | far | night / 0.78 | default | far | 22224 | 6/20 |
-| `screens/grass_ai358/after_geometry_on_daylight.png` | after / geometry_on_neutral_pair | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | daylight / 1.00 | default | geometry_on_neutral_pair | 21920 | 5/18 |
-| `screens/grass_ai358/after_geometry_on_overcast.png` | after / geometry_on_grazing | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | overcast / 0.98 | default | geometry_on_grazing | 21920 | 5/18 |
-| `screens/grass_ai358/after_material_daylight.png` | after / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | daylight / 1.00 | default | material_fixture | 3240 | 4/23 |
-| `screens/grass_ai358/after_material_golden.png` | after / material_fixture | (-36.00,3.28,-109.50) → (-36.00,1.28,-128.00) | 3.28 | grazing | golden / 1.02 | default | material_fixture | 5676 | 4/24 |
-| `screens/grass_ai358/after_material_night.png` | after / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | night / 0.78 | default | material_fixture | 3668 | 4/22 |
-| `screens/grass_ai358/after_material_overcast.png` | after / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | overcast / 0.98 | default | material_fixture | 3240 | 4/23 |
-| `screens/grass_ai358/after_near_handoff_golden.png` | after / handoff | (-10.32,0.85,-65.40) → (-10.32,0.04,-74.40) | 0.85 | handoff | golden / 1.02 | default | handoff | 21760 | 6/19 |
-| `screens/grass_ai358/after_texture_only_daylight.png` | after / texture_only | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | daylight / 1.00 | low | texture_only | 0 | 0/15 |
-| `screens/grass_ai358/after_texture_only_overcast.png` | after / texture_only_neutral_pair | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | overcast / 0.98 | low | texture_only_neutral_pair | 0 | 0/15 |
-| `screens/grass_ai358/before_close_geometry_daylight.png` | before / geometry_on_close | (-9.97,0.30,-72.20) → (-10.32,0.04,-74.40) | 0.30 | grazing | daylight / 1.00 | default | geometry_on_close | 21528 | 5/18 |
-| `screens/grass_ai358/before_far_texture_night.png` | before / far | (3.68,3.20,-28.40) → (5.68,0.08,-74.40) | 3.20 | far | night / 0.78 | default | far | 22224 | 6/20 |
-| `screens/grass_ai358/before_geometry_on_daylight.png` | before / geometry_on_neutral_pair | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | daylight / 1.00 | default | geometry_on_neutral_pair | 21920 | 5/18 |
-| `screens/grass_ai358/before_geometry_on_overcast.png` | before / geometry_on_grazing | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | overcast / 0.98 | default | geometry_on_grazing | 21920 | 5/18 |
-| `screens/grass_ai358/before_material_daylight.png` | before / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | daylight / 1.00 | default | material_fixture | 3240 | 4/23 |
-| `screens/grass_ai358/before_material_golden.png` | before / material_fixture | (-36.00,3.28,-109.50) → (-36.00,1.28,-128.00) | 3.28 | grazing | golden / 1.02 | default | material_fixture | 5676 | 4/24 |
-| `screens/grass_ai358/before_material_night.png` | before / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | night / 0.78 | default | material_fixture | 3668 | 4/22 |
-| `screens/grass_ai358/before_material_overcast.png` | before / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | overcast / 0.98 | default | material_fixture | 3240 | 4/23 |
-| `screens/grass_ai358/before_near_handoff_golden.png` | before / handoff | (-10.32,0.85,-65.40) → (-10.32,0.04,-74.40) | 0.85 | handoff | golden / 1.02 | default | handoff | 21760 | 6/19 |
-| `screens/grass_ai358/before_texture_only_daylight.png` | before / texture_only | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | daylight / 1.00 | low | texture_only | 0 | 0/15 |
-| `screens/grass_ai358/before_texture_only_overcast.png` | before / texture_only_neutral_pair | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | overcast / 0.98 | low | texture_only_neutral_pair | 0 | 0/15 |
+| `tests/artifacts/screens/grass/ai358/after_close_geometry_daylight.png` | after / geometry_on_close | (-9.97,0.30,-72.20) → (-10.32,0.04,-74.40) | 0.30 | grazing | daylight / 1.00 | default | geometry_on_close | 21528 | 5/18 |
+| `tests/artifacts/screens/grass/ai358/after_far_texture_night.png` | after / far | (3.68,3.20,-28.40) → (5.68,0.08,-74.40) | 3.20 | far | night / 0.78 | default | far | 22224 | 6/20 |
+| `tests/artifacts/screens/grass/ai358/after_geometry_on_daylight.png` | after / geometry_on_neutral_pair | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | daylight / 1.00 | default | geometry_on_neutral_pair | 21920 | 5/18 |
+| `tests/artifacts/screens/grass/ai358/after_geometry_on_overcast.png` | after / geometry_on_grazing | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | overcast / 0.98 | default | geometry_on_grazing | 21920 | 5/18 |
+| `tests/artifacts/screens/grass/ai358/after_material_daylight.png` | after / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | daylight / 1.00 | default | material_fixture | 3240 | 4/23 |
+| `tests/artifacts/screens/grass/ai358/after_material_golden.png` | after / material_fixture | (-36.00,3.28,-109.50) → (-36.00,1.28,-128.00) | 3.28 | grazing | golden / 1.02 | default | material_fixture | 5676 | 4/24 |
+| `tests/artifacts/screens/grass/ai358/after_material_night.png` | after / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | night / 0.78 | default | material_fixture | 3668 | 4/22 |
+| `tests/artifacts/screens/grass/ai358/after_material_overcast.png` | after / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | overcast / 0.98 | default | material_fixture | 3240 | 4/23 |
+| `tests/artifacts/screens/grass/ai358/after_near_handoff_golden.png` | after / handoff | (-10.32,0.85,-65.40) → (-10.32,0.04,-74.40) | 0.85 | handoff | golden / 1.02 | default | handoff | 21760 | 6/19 |
+| `tests/artifacts/screens/grass/ai358/after_texture_only_daylight.png` | after / texture_only | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | daylight / 1.00 | low | texture_only | 0 | 0/15 |
+| `tests/artifacts/screens/grass/ai358/after_texture_only_overcast.png` | after / texture_only_neutral_pair | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | overcast / 0.98 | low | texture_only_neutral_pair | 0 | 0/15 |
+| `tests/artifacts/screens/grass/ai358/before_close_geometry_daylight.png` | before / geometry_on_close | (-9.97,0.30,-72.20) → (-10.32,0.04,-74.40) | 0.30 | grazing | daylight / 1.00 | default | geometry_on_close | 21528 | 5/18 |
+| `tests/artifacts/screens/grass/ai358/before_far_texture_night.png` | before / far | (3.68,3.20,-28.40) → (5.68,0.08,-74.40) | 3.20 | far | night / 0.78 | default | far | 22224 | 6/20 |
+| `tests/artifacts/screens/grass/ai358/before_geometry_on_daylight.png` | before / geometry_on_neutral_pair | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | daylight / 1.00 | default | geometry_on_neutral_pair | 21920 | 5/18 |
+| `tests/artifacts/screens/grass/ai358/before_geometry_on_overcast.png` | before / geometry_on_grazing | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | overcast / 0.98 | default | geometry_on_grazing | 21920 | 5/18 |
+| `tests/artifacts/screens/grass/ai358/before_material_daylight.png` | before / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | daylight / 1.00 | default | material_fixture | 3240 | 4/23 |
+| `tests/artifacts/screens/grass/ai358/before_material_golden.png` | before / material_fixture | (-36.00,3.28,-109.50) → (-36.00,1.28,-128.00) | 3.28 | grazing | golden / 1.02 | default | material_fixture | 5676 | 4/24 |
+| `tests/artifacts/screens/grass/ai358/before_material_night.png` | before / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | night / 0.78 | default | material_fixture | 3668 | 4/22 |
+| `tests/artifacts/screens/grass/ai358/before_material_overcast.png` | before / material_fixture | (-36.00,11.78,-109.50) → (-36.00,1.28,-128.00) | 11.78 | oblique | overcast / 0.98 | default | material_fixture | 3240 | 4/23 |
+| `tests/artifacts/screens/grass/ai358/before_near_handoff_golden.png` | before / handoff | (-10.32,0.85,-65.40) → (-10.32,0.04,-74.40) | 0.85 | handoff | golden / 1.02 | default | handoff | 21760 | 6/19 |
+| `tests/artifacts/screens/grass/ai358/before_texture_only_daylight.png` | before / texture_only | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | daylight / 1.00 | low | texture_only | 0 | 0/15 |
+| `tests/artifacts/screens/grass/ai358/before_texture_only_overcast.png` | before / texture_only_neutral_pair | (-10.62,0.50,-71.00) → (-10.32,0.04,-74.40) | 0.50 | grazing | overcast / 0.98 | low | texture_only_neutral_pair | 0 | 0/15 |
 
 ### Verification
 

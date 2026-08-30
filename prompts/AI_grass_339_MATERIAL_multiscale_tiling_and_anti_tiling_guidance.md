@@ -20,6 +20,11 @@ Tasks:
 - AI 352 remains the historical V1 grass-material baseline. Corrective physical scale, macro/micro appearance, baked assets, and mip behavior belong to AI 358; this guidance AI must not introduce a competing grass material path.
 - Grass work must use the global texture/catalog/calibration pipeline and must not create a competing material loader while applying this guidance.
 
+## Generated evidence location
+
+- Any screenshots, capture manifests, comparison images, traces, logs, or reports produced by this AI must be saved under `tests/artifacts/screens/grass/ai339/`.
+- This directory is gitignored. Do not write generated evidence to `screens/`, stage it, or commit it. Only tracked prompt/spec summaries may reference workspace-relative artifact paths.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:

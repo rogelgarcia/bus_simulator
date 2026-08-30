@@ -20,6 +20,11 @@ Tasks:
 - AI 354 and `GRASS_COVERAGE_AND_SIDEWALK_EDGE_V1.md` remain the historical V1 grass occupancy baseline. Corrective hard occupancy, exclusion, boundary-distance, and root-eligibility ownership belongs to AI 359 and its V2 contract; AI 361 owns representation and accent rendering.
 - Grass may consume compatible offline biome channels, but the Grass Lab sequence must not depend on unfinished biome tooling and must retain a deterministic fallback.
 
+## Generated evidence location
+
+- Any screenshots, capture manifests, comparison images, traces, logs, or reports produced by this AI must be saved under `tests/artifacts/screens/grass/ai338/`.
+- This directory is gitignored. Do not write generated evidence to `screens/`, stage it, or commit it. Only tracked prompt/spec summaries may reference workspace-relative artifact paths.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:

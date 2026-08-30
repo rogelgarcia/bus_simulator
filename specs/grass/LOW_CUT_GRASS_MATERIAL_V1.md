@@ -52,4 +52,4 @@ Run `tools/grass_material_baker/blender_bake.py` through Blender's Python enviro
 
 ## Grass Lab review
 
-Open `debug_tools/grass_debug.html`, choose **Material**, and focus the fixture. Floor swatches are source Grass004, approved low-cut far surface, and substrate; the vertical board renders the single alpha atlas. Use Daylight, Overcast, and Grazing buttons to repeat the acceptance review. Reference captures are `screens/grass_ai352/daylight_material_fixture.png`, `overcast_material_fixture.png`, and `grazing_material_fixture.png`.
+Open `debug_tools/grass_debug.html`, choose **Material**, and focus the fixture. Floor swatches are source Grass004, approved low-cut far surface, and substrate; the vertical board renders the single alpha atlas. Use Daylight, Overcast, and Grazing buttons to repeat the acceptance review. Reference captures are `tests/artifacts/screens/grass/ai352/daylight_material_fixture.png`, `overcast_material_fixture.png`, and `grazing_material_fixture.png`.

@@ -50,8 +50,8 @@ At the canonical tree camera on 2026-08-29, one tree contributes `4` visible clu
 
 Reference captures:
 
-- `screens/grass_ai356/tree_base_before_localized_accents.png`
-- `screens/grass_ai356/tree_base_after_localized_accents.png`
+- `tests/artifacts/screens/grass/ai356/tree_base_before_localized_accents.png`
+- `tests/artifacts/screens/grass/ai356/tree_base_after_localized_accents.png`
 
 ## Downstream ownership
 

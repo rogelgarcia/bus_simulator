@@ -55,7 +55,7 @@ GPU timing is explicitly reported as unavailable when the browser or graphics co
 
 ### AI 354 hard-coverage reference
 
-The default binary footprint uses a `27.5 mm` raised surface, `0.35` far-coverage cutoff, `15 mm` maximum edge-AA treatment, and `0.35 m` sparse-fringe spacing. The canonical partition reports `9` sidewalk segments, `11` irregular segments, `12` outside corners, and `8` inside corners. It renders `130` top, `40` lip, and `2,600` fringe triangles through `3` logical draws and `2` materials. All coverage meshes are culled, opaque, and shadow-free. Reference captures live in `screens/grass_ai354/`.
+The default binary footprint uses a `27.5 mm` raised surface, `0.35` far-coverage cutoff, `15 mm` maximum edge-AA treatment, and `0.35 m` sparse-fringe spacing. The canonical partition reports `9` sidewalk segments, `11` irregular segments, `12` outside corners, and `8` inside corners. It renders `130` top, `40` lip, and `2,600` fringe triangles through `3` logical draws and `2` materials. All coverage meshes are culled, opaque, and shadow-free. Reference captures live in `tests/artifacts/screens/grass/ai354/`.
 
 ### AI 355 automatic-LOD reference
 
@@ -63,11 +63,11 @@ The default binary footprint uses a `27.5 mm` raised surface, `0.35` far-coverag
 
 ### AI 356 localized-accent reference
 
-`specs/grass/LOCALIZED_GRASS_ACCENTS_V1.md` is authoritative. At the deterministic tree camera one tree contributes `4` visible cards, `8` grass triangles, and one global atlas draw. The four tree-wear patches contribute `72` triangles in one global substrate draw. The signature `grass-accents-v1-4686ae3a` repeated after reload, all candidate roots passed coverage/trunk rejection, and zero accent geometry appeared beyond the automatic cutoff. Before/after captures live in `screens/grass_ai356/`.
+`specs/grass/LOCALIZED_GRASS_ACCENTS_V1.md` is authoritative. At the deterministic tree camera one tree contributes `4` visible cards, `8` grass triangles, and one global atlas draw. The four tree-wear patches contribute `72` triangles in one global substrate draw. The signature `grass-accents-v1-4686ae3a` repeated after reload, all candidate roots passed coverage/trunk rejection, and zero accent geometry appeared beyond the automatic cutoff. Before/after captures live in `tests/artifacts/screens/grass/ai356/`.
 
 ### AI 357 validation and approval reference
 
-`specs/grass/GRASS_LAB_VALIDATION_AND_APPROVAL_V1.md` is authoritative only for the historical V1 result. The stationary default `1.50 m` camera measured `0.07 ms` GrassEngine CPU, `0.87 ms` whole-frame GPU proxy, `5` logical grass draws, `21,492` visible grass triangles, `0.00` buffer uploads/s, and zero geometry beyond the cutoff on the 1280×720 WebGL2 RTX 3060 reference. The high/top-down stress view measured `26,912` triangles and `4` draws. The historical approval decision is recorded in `specs/grass/GRASS_LAB_APPROVAL_AI357.json`; captures live in `screens/grass_ai357/`. AI 362 must create the current V2 approval record.
+`specs/grass/GRASS_LAB_VALIDATION_AND_APPROVAL_V1.md` is authoritative only for the historical V1 result. The stationary default `1.50 m` camera measured `0.07 ms` GrassEngine CPU, `0.87 ms` whole-frame GPU proxy, `5` logical grass draws, `21,492` visible grass triangles, `0.00` buffer uploads/s, and zero geometry beyond the cutoff on the 1280×720 WebGL2 RTX 3060 reference. The high/top-down stress view measured `26,912` triangles and `4` draws. The historical approval decision is recorded in `specs/grass/GRASS_LAB_APPROVAL_AI357.json`; captures live in `tests/artifacts/screens/grass/ai357/`. AI 362 must create the current V2 approval record.
 
 ### AI 350 reference capture
 

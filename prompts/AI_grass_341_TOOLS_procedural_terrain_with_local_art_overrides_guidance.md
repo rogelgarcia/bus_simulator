@@ -20,6 +20,11 @@ Tasks:
 - Historical V1 grass coverage and localized accents were implemented by AI 354 and AI 356. Corrective V2 physical boundary/substrate ownership belongs to AI 359, while AI 361 owns reconciled localized rendering and handoffs.
 - No grass prompt may import these systems into gameplay before `AI_grass_363_CITY_import_revalidated_grass_lab_system_into_gameplay.md`, and that prompt remains blocked until AI 362 issues the V2 approval.
 
+## Generated evidence location
+
+- Any screenshots, capture manifests, comparison images, traces, logs, or reports produced by this AI must be saved under `tests/artifacts/screens/grass/ai341/`.
+- This directory is gitignored. Do not write generated evidence to `screens/`, stage it, or commit it. Only tracked prompt/spec summaries may reference workspace-relative artifact paths.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:

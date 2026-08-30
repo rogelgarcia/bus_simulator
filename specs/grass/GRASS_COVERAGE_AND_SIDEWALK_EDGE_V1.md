@@ -56,7 +56,7 @@ The contract depends only on a sampled mask or exclusion result, not on the auth
 
 The Coverage tab exposes the physical height, density, threshold, narrow edge limit, layer visibility, fringe spacing/inset, and deterministic cameras for straight, corner, and irregular cuts. Diagnostics report semantics, response controls, segment/corner counts, geometry split, draw/material cost, and render-safety flags.
 
-Reference captures are stored in `screens/grass_ai354/`:
+Reference captures are stored in `tests/artifacts/screens/grass/ai354/`:
 
 - `straight_substrate_only_reference.png`
 - `straight_hard_coverage_27_5mm.png`

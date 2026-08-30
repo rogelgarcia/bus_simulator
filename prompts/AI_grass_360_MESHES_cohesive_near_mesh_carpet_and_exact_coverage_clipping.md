@@ -55,9 +55,14 @@ Before marking this prompt DONE, add a `## Completion evidence` section to this 
 
 - A before/after cost table for every representative fixture and quality preset used here. Report visible near-grass triangles, total visible grass triangles, grass logical draw calls, total renderer draw calls, and measured CPU/GPU timing when available.
 - An explicit cost delta and budget verdict for the near carpet, including default and worst required camera views. Costs may not be replaced by instance counts alone.
-- A screenshot manifest with repository-relative file paths, before/after role, camera position/target/height, pose, lighting, exposure, quality preset, active representation, triangle count, and grass/total draw-call counts.
+- A screenshot manifest with workspace-relative file paths under the prompt-specific ignored evidence directory, before/after role, camera position/target/height, pose, lighting, exposure, quality preset, active representation, triangle count, and grass/total draw-call counts.
 - Only UI-free lossless PNG screenshots captured from a real `3840x2160` drawing buffer at pixel ratio `1`. Do not use JPEG, browser-scaled screenshots, or upscaled lower-resolution captures.
 - All texture-only/mesh-on, `0.30/0.50/1.00 m`, grazing, forward, oblique, top-down, cut-edge, and bus-scale comparisons required above. State any missing image or measurement explicitly; the prompt cannot be marked DONE while required evidence is missing.
+
+## Generated evidence location
+
+- Any screenshots, capture manifests, comparison images, traces, logs, or reports produced by this AI must be saved under `tests/artifacts/screens/grass/ai360/`.
+- This directory is gitignored. Do not write generated evidence to `screens/`, stage it, or commit it. Only tracked prompt/spec summaries may reference workspace-relative artifact paths.
 
 ## On completion
 - Mark the AI document as DONE in the first line.

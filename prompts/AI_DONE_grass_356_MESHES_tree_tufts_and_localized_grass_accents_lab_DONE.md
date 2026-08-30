@@ -55,7 +55,7 @@ Acceptance outcomes:
 - Reconciled Grass Lab tree fixtures with the city generator's `x/y/z/rotation/scaleVar/variant` record shape and added one explicitly eligible optional worn-area feature.
 - Added a Tree accents Lab tab with bounded controls, deterministic tree/feature cameras, placement/cost/signature/rejection diagnostics, and contract-v6 snapshots.
 - Added deterministic unit coverage for geometry bounds, reload stability, binary eligibility, trunk/sidewalk rejection, batching, fixture shape, and Lab-only gameplay isolation.
-- Captured matching before/after tree-base comparisons under `screens/grass_ai356/` and documented the completed `LOCALIZED_GRASS_ACCENTS_V1.md` contract.
+- Captured matching before/after tree-base comparisons under `tests/artifacts/screens/grass/ai356/` and documented the completed `LOCALIZED_GRASS_ACCENTS_V1.md` contract.
 - Updated the offline sequence, downstream prompts, and active AI 349 texture-pipeline checklist while leaving the dynamic AI active.
 
 ## Post-completion sequence reconciliation
