@@ -41,6 +41,32 @@ const CONFIG_OVERRIDE_KEYS = Object.freeze([
     'materialSlots'
 ]);
 
+function translateShowcaseLoop(loop, offset) {
+    return (Array.isArray(loop) ? loop : []).map((point) => ({
+        x: (Number(point?.x) || 0) + offset.x,
+        z: (Number(point?.z) || 0) + offset.z,
+        ...(typeof point?.cornerId === 'string' && point.cornerId ? { cornerId: point.cornerId } : {}),
+        ...(typeof point?.runId === 'string' ? { runId: point.runId } : {}),
+        ...(typeof point?.runForward === 'boolean' ? { runForward: point.runForward } : {}),
+        ...(point?.split === true ? { split: true } : {}),
+        ...(point?.arc && typeof point.arc === 'object' ? { arc: { ...point.arc } } : {})
+    }));
+}
+
+function translateShowcaseLayerSilhouettes(layers, offset) {
+    return (Array.isArray(layers) ? layers : []).map((layer) => {
+        const silhouette = layer?.silhouette;
+        if (silhouette?.mode !== 'detached' || !Array.isArray(silhouette.loop)) return layer;
+        return {
+            ...layer,
+            silhouette: {
+                ...silhouette,
+                loop: translateShowcaseLoop(silhouette.loop, offset)
+            }
+        };
+    });
+}
+
 function collectPbrMaterialIds(config, configOverrides = null) {
     const ids = new Set(['pbr.grass_004']);
     const json = JSON.stringify(config) + (configOverrides ? JSON.stringify(configOverrides) : '');
@@ -181,15 +207,13 @@ export const scenarioBuildingShowcase = {
             if (value !== undefined && value !== null) entry[key] = value;
         }
         if (Array.isArray(footprintLoops) && footprintLoops.length) {
-            entry.footprintLoops = footprintLoops.map((loop) => loop.map((point) => ({
-                x: (Number(point?.x) || 0) + centroid.x,
-                z: (Number(point?.z) || 0) + centroid.z,
-                ...(typeof point?.cornerId === 'string' && point.cornerId ? { cornerId: point.cornerId } : {}),
-                ...(typeof point?.runId === 'string' ? { runId: point.runId } : {}),
-                ...(typeof point?.runForward === 'boolean' ? { runForward: point.runForward } : {}),
-                ...(point?.split === true ? { split: true } : {}),
-                ...(point?.arc && typeof point.arc === 'object' ? { arc: { ...point.arc } } : {})
-            })));
+            // Raw footprint loops are world-authored to CityMap. Detached layer
+            // silhouettes share the same design coordinate space, so move both
+            // together or upper floors remain behind when the site is off-origin.
+            entry.footprintLoops = footprintLoops.map((loop) => translateShowcaseLoop(loop, centroid));
+            if (Array.isArray(entry.layers)) {
+                entry.layers = translateShowcaseLayerSilhouettes(entry.layers, centroid);
+            }
         }
 
         const mapSpec = createHarnessCitySpec({

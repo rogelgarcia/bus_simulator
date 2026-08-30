@@ -11,6 +11,7 @@ import { BRICK_MIDRISE_BUILDING_CONFIG } from '../buildings/configs/BrickMidrise
 import { BRICK_MIDRISE_2_BUILDING_CONFIG } from '../buildings/configs/BrickMidrise2.js';
 import { BURBAN_BUILDING_CONFIG } from '../buildings/configs/Burban.js';
 import { BG_GLASS_MIRROR_BUILDING_CONFIG } from '../buildings/configs/BgGlassMirror.js';
+import { B_GLASS_BUILDING_CONFIG } from '../buildings/configs/BGlass.js';
 import { GOV_CENTER_BUILDING_CONFIG } from '../buildings/configs/GovCenter.js';
 import { GOV_CENTER_2_BUILDING_CONFIG } from '../buildings/configs/GovCenter2.js';
 import { HEX_PAVILION_BUILDING_CONFIG } from '../buildings/configs/HexPavilion.js';
@@ -35,6 +36,7 @@ const BUILDING_CONFIGS = Object.freeze([
     BRICK_MIDRISE_2_BUILDING_CONFIG,
     BURBAN_BUILDING_CONFIG,
     BG_GLASS_MIRROR_BUILDING_CONFIG,
+    B_GLASS_BUILDING_CONFIG,
     BLUE_BELT_TOWER_BUILDING_CONFIG,
     GOV_CENTER_BUILDING_CONFIG,
     GOV_CENTER_2_BUILDING_CONFIG,

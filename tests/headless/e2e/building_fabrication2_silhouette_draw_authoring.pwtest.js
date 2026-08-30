@@ -81,17 +81,38 @@ test('BF2: Draw authors one atomic, cancel-safe per-floor silhouette with stable
     await page.waitForSelector('#building-fab2-hud');
     await page.getByRole('button', { name: 'Create Building' }).click();
     await page.getByRole('button', { name: '+ Floor' }).click();
+    await page.getByRole('button', { name: '+ Floor' }).click();
 
     const floors = page.locator('.building-fab2-layer-group.is-floor');
-    await expect(floors).toHaveCount(2);
+    await expect(floors).toHaveCount(3);
     const lower = floors.nth(0);
-    const upper = floors.nth(1);
+    const middle = floors.nth(1);
+    const upper = floors.nth(2);
     const baseline = await configJson(page);
 
     await lower.locator('[data-action="silhouette:draw"]').click();
     await expect(page.locator('[data-role="silhouette-popup"]')).toBeVisible();
     await expect(page.locator('[data-role="silhouette:source-status"]')).toContainText('Building default');
     await expect(page.locator('[data-role="silhouette:source"] option[value="inherit_previous"]')).toBeDisabled();
+    await expect(page.getByRole('checkbox', { name: 'Show all floor layers' })).toBeChecked();
+    await expect(page.locator('.building-fab2-silhouette-legend')).toContainText('Other floor layer');
+    const referenceState = await page.evaluate(() => {
+        const popup = window.__busSim?.sm?.current?.view?._silhouettePopup;
+        return {
+            ghosts: popup?._ghosts?.map((ghost) => ({
+                layerId: ghost.layerId,
+                label: ghost.label,
+                runCount: ghost.loop?.length ?? 0
+            })) ?? [],
+            transitionNeighbors: popup?._constraints?.neighboringLoops?.map((entry) => entry.layerId) ?? []
+        };
+    });
+    expect(referenceState.ghosts.map((ghost) => ghost.label)).toEqual([
+        'Layer 2 · above',
+        'Layer 3 · above'
+    ]);
+    expect(referenceState.ghosts.every((ghost) => ghost.runCount >= 3)).toBe(true);
+    expect(referenceState.transitionNeighbors).toHaveLength(1);
     await detachAndSplitFace(page);
     expect(await configJson(page)).toBe(baseline);
 
@@ -115,8 +136,10 @@ test('BF2: Draw authors one atomic, cancel-safe per-floor silhouette with stable
     const applied = await configJson(page);
     expect(applied).not.toBe(baseline);
     await expect(lower.locator('[data-role="silhouette:source"]')).toHaveText('Detached');
+    await expect(middle.locator('[data-role="silhouette:source"]')).toHaveText('Default');
     await expect(upper.locator('[data-role="silhouette:source"]')).toHaveText('Default');
     await expect(lower.locator('.building-fab2-face-btn')).toHaveCount(5);
+    await expect(middle.locator('.building-fab2-face-btn')).toHaveCount(4);
     await expect(upper.locator('.building-fab2-face-btn')).toHaveCount(4);
     await expect(lower.locator('canvas.building-fab2-face-plan')).toHaveAttribute('data-curved-face-ids', 'B');
     const runtimeWallKinds = await page.evaluate(() => {

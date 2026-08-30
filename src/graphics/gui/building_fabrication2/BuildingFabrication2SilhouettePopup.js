@@ -484,7 +484,7 @@ export class BuildingFabrication2SilhouettePopup {
         for (const [className, label] of [
             ['is-stretchable', 'Stretchable'],
             ['is-pinned', 'Pinned'],
-            ['is-ghost', 'Neighbor layer'],
+            ['is-ghost', 'Other floor layer'],
             ['is-minimum', 'Bay minimum']
         ]) {
             const item = document.createElement('span');
@@ -498,7 +498,7 @@ export class BuildingFabrication2SilhouettePopup {
 
         this.previewBar = document.createElement('div');
         this.previewBar.className = 'building-fab2-silhouette-preview-bar';
-        const ghostsToggle = makeToggle('Ghost neighboring layers', 'silhouette:ghost-neighbors');
+        const ghostsToggle = makeToggle('Show all floor layers', 'silhouette:ghost-neighbors');
         this.ghostToggle = ghostsToggle.input;
         this.previewBar.appendChild(ghostsToggle.label);
         const lotFitToggle = makeToggle('Simulated lot fit', 'silhouette:lot-fit-enabled');
@@ -1308,7 +1308,9 @@ export class BuildingFabrication2SilhouettePopup {
                     layerId: this._layerId || null,
                     minRunLengths: this._constraints?.minRunLengths ?? null,
                     targetIssues: this._constraints?.targetIssues ?? [],
-                    neighboringLoops: this._ghosts.map((ghost) => ghost.loop),
+                    neighboringLoops: Array.isArray(this._constraints?.neighboringLoops)
+                        ? this._constraints.neighboringLoops
+                        : this._ghosts.map((ghost) => ghost.loop),
                     requireClockwise: this._constraints?.requireClockwise !== false
                 });
                 domainIssues = validationEntries(validation).map(normalizeIssue);
@@ -2085,12 +2087,12 @@ export class BuildingFabrication2SilhouettePopup {
 
     _updateCanvasHint() {
         if (this._sourceMode !== SOURCE_MODE.DETACHED) {
-            this.canvasHint.textContent = 'Read-only inherited silhouette · detach to edit';
+            this.canvasHint.textContent = 'Read-only inherited silhouette · other floor outlines are dashed · detach to edit';
             return;
         }
         if (this._tool === TOOL.INSERT) this.canvasHint.textContent = 'Click a face to split it at that position · I';
-        else if (this._tool === TOOL.TRANSLATE) this.canvasHint.textContent = 'Drag anywhere to move the whole silhouette · M';
-        else this.canvasHint.textContent = 'Drag corners or faces · drag the diamond to bend a selected face · V';
+        else if (this._tool === TOOL.TRANSLATE) this.canvasHint.textContent = 'Drag this floor outline against the other floors · M';
+        else this.canvasHint.textContent = 'Other floor outlines are dashed · drag corners or faces · V';
     }
 
     _resizeCanvas() {
@@ -2299,10 +2301,11 @@ export class BuildingFabrication2SilhouettePopup {
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 5]);
         ctx.stroke();
-        const anchor = this._worldToCanvas(ghost.loop[0]);
+        const anchorPoint = ghost.loop[index % ghost.loop.length] ?? ghost.loop[0];
+        const anchor = this._worldToCanvas(anchorPoint);
         ctx.fillStyle = ghost.color ?? 'rgba(150,220,235,0.68)';
         ctx.font = '600 10px system-ui, sans-serif';
-        ctx.fillText(ghost.label, anchor.x + 7, anchor.y - 7);
+        ctx.fillText(ghost.label, anchor.x + 7, anchor.y - 7 - index * 4);
         ctx.restore();
     }
 

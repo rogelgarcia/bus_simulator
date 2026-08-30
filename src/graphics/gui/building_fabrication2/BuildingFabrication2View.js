@@ -1628,6 +1628,20 @@ export class BuildingFabrication2View {
             ? deepClone(layer.silhouette)
             : { version: 1, mode: LAYER_SILHOUETTE_MODE.INHERIT_DEFAULT };
         const previousLoop = previousLayer ? loopsByLayerId.get(previousLayer.id)?.[0] : null;
+        const transitionNeighbors = [
+            previousLayer && previousLoop ? { layerId: previousLayer.id, loop: previousLoop } : null,
+            nextLayer ? { layerId: nextLayer.id, loop: loopsByLayerId.get(nextLayer.id)?.[0] } : null
+        ].filter((entry) => Array.isArray(entry?.loop) && entry.loop.length >= 3);
+        const floorReferences = floorLayers.map((entry, index) => {
+            if (index === layerIndex) return null;
+            const loop = loopsByLayerId.get(entry.id)?.[0];
+            if (!Array.isArray(loop) || loop.length < 3) return null;
+            return {
+                layerId: entry.id,
+                label: `Layer ${index + 1} · ${index < layerIndex ? 'below' : 'above'}`,
+                loop
+            };
+        }).filter(Boolean);
         const defaultLoop = cfg.footprintLoops?.[0] ?? resolvedLoop;
         const silhouetteConstraints = this._resolveLayerSilhouetteSolverConstraints(layer.id, resolvedLoop);
         const remapTargets = this._collectSilhouetteRemapTargets(layer.id);
@@ -1671,13 +1685,11 @@ export class BuildingFabrication2View {
                     : null,
                 previousResolved: previousLoop ? { layerId: previousLayer.id, loop: previousLoop } : null
             },
-            neighboringDocuments: [
-                previousLayer && previousLoop ? { layerId: previousLayer.id, label: 'Layer below', loop: previousLoop } : null,
-                nextLayer ? { layerId: nextLayer.id, label: 'Layer above', loop: loopsByLayerId.get(nextLayer.id)?.[0] } : null
-            ].filter(Boolean),
+            neighboringDocuments: floorReferences,
             constraints: {
                 minRunLengths: silhouetteConstraints.minRunLengths,
                 bayRhythmByRunId: silhouetteConstraints.bayRhythmByRunId,
+                neighboringLoops: transitionNeighbors,
                 requireClockwise: true,
                 remapTargets
             },
@@ -1693,7 +1705,7 @@ export class BuildingFabrication2View {
                 return validateLayerSilhouette(documentValue, {
                     layerId: layer.id,
                     minRunLengths: silhouetteConstraints.minRunLengths,
-                    neighboringLoops: [previousLoop, nextLayer ? loopsByLayerId.get(nextLayer.id)?.[0] : null].filter(Boolean),
+                    neighboringLoops: transitionNeighbors,
                     requireClockwise: true
                 });
             },
