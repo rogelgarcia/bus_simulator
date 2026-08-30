@@ -67,7 +67,7 @@ function getRendererInfo(renderer) {
     return base;
 }
 
-function simplifyGpuLabel(label) {
+export function simplifyGpuLabel(label) {
     let s = typeof label === 'string' ? label.trim() : '';
     if (!s) return '';
 
@@ -90,6 +90,7 @@ function simplifyGpuLabel(label) {
     }
 
     s = s.replace(/\b(vs|ps|fs|gs|cs)_[0-9_]+\b/gi, ' ');
+    s = s.replace(/\s*\(0x[0-9a-f]+\)\s*/gi, ' ');
     s = s.replace(/\bLaptop GPU\b/gi, ' ');
     s = s.replace(/\/PCIe\/SSE2\b/gi, ' ');
     s = s.replace(/\/SSE2\b/gi, ' ');
