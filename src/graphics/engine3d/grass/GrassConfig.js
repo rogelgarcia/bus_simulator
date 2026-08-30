@@ -3,6 +3,10 @@
 // @ts-check
 
 import { GRASS_LOD_TIERS } from './GrassLodEvaluator.js';
+import { sanitizeGrassAutoLodConfig } from '../../../app/grass/GrassAutoLodContract.js';
+import { sanitizeGrassLocalizedAccentConfig } from '../../../app/grass/GrassLocalizedAccentContract.js';
+import { sanitizeGrassNearCarpetConfig } from './GrassNearCarpetLayout.js';
+import { sanitizeGrassMidClusterConfig } from './GrassMidClusterConfig.js';
 
 function clamp(value, min, max, fallback = min) {
     const num = Number(value);
@@ -113,6 +117,10 @@ export function createDefaultGrassEngineConfig() {
             showLodRings: true,
             showLodAngleScaledRings: false
         },
+        nearCarpet: sanitizeGrassNearCarpetConfig(null),
+        midCluster: sanitizeGrassMidClusterConfig(null),
+        localizedAccents: sanitizeGrassLocalizedAccentConfig(null),
+        autoLod: sanitizeGrassAutoLodConfig(null),
         field: makeDefaultField(),
         exclusion: {
             enabled: true,
@@ -208,6 +216,11 @@ export function sanitizeGrassEngineConfig(input) {
         showLodAngleScaledRings: debugSrc.showLodAngleScaledRings === true
     };
 
+    const nearCarpet = sanitizeGrassNearCarpetConfig(src.nearCarpet);
+    const midCluster = sanitizeGrassMidClusterConfig(src.midCluster);
+    const localizedAccents = sanitizeGrassLocalizedAccentConfig(src.localizedAccents);
+    const autoLod = sanitizeGrassAutoLodConfig(src.autoLod);
+
     const resolveLegacyField = () => {
         const list = Array.isArray(src.areas) ? src.areas : [];
         const firstArea = list.find((a) => a?.enabled !== false && (Number(a?.density) || 0) > 0) ?? list[0] ?? null;
@@ -264,7 +277,7 @@ export function sanitizeGrassEngineConfig(input) {
         marginMeters: clamp(exclusionSrc.marginMeters, 0.0, 50.0, 0.6)
     };
 
-    return { enabled, seed, patch, geometry, material, density, lod, debug, field, exclusion };
+    return { enabled, seed, patch, geometry, material, density, lod, debug, nearCarpet, midCluster, localizedAccents, autoLod, field, exclusion };
 }
 
 export function getGrassEngineInstanceKey(config) {
@@ -277,6 +290,10 @@ export function getGrassEngineInstanceKey(config) {
         `${Number(cfg.geometry?.blade?.width ?? 0).toFixed(4)}|${Number(cfg.geometry?.blade?.height ?? 0).toFixed(4)}`,
         `${Number(cfg.density?.globalMultiplier ?? 1).toFixed(3)}|${Number(cfg.density?.masterMul ?? 0).toFixed(3)}|${Number(cfg.density?.nearMul ?? 0).toFixed(3)}|${Number(cfg.density?.midMul ?? 0).toFixed(3)}|${Number(cfg.density?.farMul ?? 0).toFixed(3)}`,
         `${String(cfg?.lod?.renderMode?.master ?? '')}|${String(cfg?.lod?.renderMode?.near ?? '')}|${String(cfg?.lod?.renderMode?.mid ?? '')}|${String(cfg?.lod?.renderMode?.far ?? '')}`,
+        JSON.stringify(cfg.nearCarpet ?? null),
+        JSON.stringify(cfg.midCluster ?? null),
+        JSON.stringify(cfg.localizedAccents ?? null),
+        JSON.stringify(cfg.autoLod ?? null),
         `${cfg.exclusion?.enabled !== false ? '1' : '0'}|${Number(cfg.exclusion?.marginMeters ?? 0).toFixed(3)}`
     ];
 

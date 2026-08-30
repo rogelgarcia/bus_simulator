@@ -146,3 +146,41 @@ test('PbrTextureLoaderService does not force texture upload before image data is
         assert.notEqual(tex.needsUpdate, true);
     }
 });
+
+test('PbrTextureLoaderService can bind only the auxiliary maps requested by a material consumer', async (t) => {
+    let PbrTextureLoaderService = null;
+    let THREE = null;
+    try {
+        ({ PbrTextureLoaderService } = await import('../../../src/graphics/content3d/materials/PbrTexturePipeline.js'));
+        THREE = await import('three');
+    } catch (err) {
+        if (err?.code === 'ERR_MODULE_NOT_FOUND') {
+            t.skip('PbrTexturePipeline/three unavailable in this Node test environment.');
+            return;
+        }
+        throw err;
+    }
+
+    const service = new PbrTextureLoaderService({
+        textureLoader: { load: () => new THREE.Texture() },
+        logger: { warn: () => {}, info: () => {} }
+    });
+    const coverageOnly = service.resolveMaterial('pbr.grass_low_cut_maintained_v2', {
+        auxiliaryKeys: ['coverage']
+    });
+    if (!Object.keys(coverageOnly?.urls?.auxiliaryUrls ?? {}).length) {
+        t.skip('PBR asset URLs are disabled in this environment.');
+        return;
+    }
+    assert.deepEqual(Object.keys(coverageOnly.auxiliaryTextures), ['coverage']);
+
+    const midOnly = service.resolveMaterial('pbr.grass_low_cut_maintained_v2', {
+        auxiliaryKeys: ['midClusterColor', 'midClusterNormal', 'midClusterRoughness', 'midClusterAo']
+    });
+    assert.deepEqual(Object.keys(midOnly.auxiliaryTextures).sort(), [
+        'midClusterAo',
+        'midClusterColor',
+        'midClusterNormal',
+        'midClusterRoughness'
+    ]);
+});

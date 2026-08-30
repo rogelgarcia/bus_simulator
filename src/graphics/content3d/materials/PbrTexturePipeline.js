@@ -19,6 +19,24 @@ const PBR_TEXTURE_CHANNELS = Object.freeze([
     Object.freeze({ key: 'metalness', urlKey: 'metalnessUrl', srgb: false }),
     Object.freeze({ key: 'displacement', urlKey: 'displacementUrl', srgb: false })
 ]);
+const AUXILIARY_TEXTURE_CHANNELS = Object.freeze({
+    coverage: Object.freeze({ srgb: false, wrap: 'repeat' }),
+    height: Object.freeze({ srgb: false, wrap: 'repeat' }),
+    clusterColor: Object.freeze({ srgb: true, wrap: 'clamp' }),
+    clusterNormal: Object.freeze({ srgb: false, wrap: 'clamp' }),
+    clusterRoughness: Object.freeze({ srgb: false, wrap: 'clamp' }),
+    clusterAo: Object.freeze({ srgb: false, wrap: 'clamp' }),
+    midClusterColor: Object.freeze({ srgb: true, wrap: 'clamp' }),
+    midClusterCoverage: Object.freeze({ srgb: false, wrap: 'clamp' }),
+    midClusterNormal: Object.freeze({ srgb: false, wrap: 'clamp' }),
+    midClusterRoughness: Object.freeze({ srgb: false, wrap: 'clamp' }),
+    midClusterAo: Object.freeze({ srgb: false, wrap: 'clamp' }),
+    accentClumpColor: Object.freeze({ srgb: true, wrap: 'clamp' }),
+    accentClumpCoverage: Object.freeze({ srgb: false, wrap: 'clamp' }),
+    accentClumpNormal: Object.freeze({ srgb: false, wrap: 'clamp' }),
+    accentClumpRoughness: Object.freeze({ srgb: false, wrap: 'clamp' }),
+    accentClumpAo: Object.freeze({ srgb: false, wrap: 'clamp' })
+});
 const OVERRIDE_KEYS = Object.freeze([
     'tileMeters',
     'normalStrength',
@@ -266,6 +284,7 @@ export class PbrTextureLoaderService {
         uvSpace = 'meters',
         surfaceSizeMeters = null,
         repeatScale = 1.0,
+        auxiliaryKeys = null,
         diagnosticsTag = ''
     } = {}) {
         const resolved = resolvePbrMaterialPipeline(materialId, {
@@ -294,10 +313,26 @@ export class PbrTextureLoaderService {
             });
         }
 
+        const allowedAuxiliaryKeys = Array.isArray(auxiliaryKeys)
+            ? new Set(auxiliaryKeys.filter((key) => typeof key === 'string' && key))
+            : null;
+        const auxiliaryTextures = {};
+        for (const [key, url] of Object.entries(resolved?.urls?.auxiliaryUrls ?? {})) {
+            if (allowedAuxiliaryKeys && !allowedAuxiliaryKeys.has(key)) continue;
+            const channel = AUXILIARY_TEXTURE_CHANNELS[key] ?? { srgb: false, wrap: 'repeat' };
+            auxiliaryTextures[key] = this._loadTexture(url, {
+                srgb: channel.srgb,
+                wrap: channel.wrap,
+                cloneTexture: cloneTextures,
+                repeat: channel.wrap === 'clamp' ? { x: 1, y: 1 } : finalRepeat
+            });
+        }
+
         const payload = Object.freeze({
             ...resolved,
             repeat: Object.freeze({ ...finalRepeat }),
-            textures: Object.freeze({ ...textures })
+            textures: Object.freeze({ ...textures }),
+            auxiliaryTextures: Object.freeze({ ...auxiliaryTextures })
         });
 
         if (calibrationOverrides === undefined && !resolved?.diagnostics?.calibrationLoaded) {
@@ -344,12 +379,14 @@ export class PbrTextureLoaderService {
 
     _loadTexture(url, {
         srgb = true,
+        wrap = 'repeat',
         cloneTexture = false,
         repeat = null
     } = {}) {
         const safeUrl = typeof url === 'string' && url ? url : null;
         if (!safeUrl) return null;
-        const key = `${safeUrl}|cs:${srgb ? 'srgb' : 'data'}`;
+        const safeWrap = wrap === 'clamp' ? 'clamp' : 'repeat';
+        const key = `${safeUrl}|cs:${srgb ? 'srgb' : 'data'}|wrap:${safeWrap}`;
 
         let entry = this._cache.get(key);
         if (!entry) {
@@ -359,7 +396,7 @@ export class PbrTextureLoaderService {
                 undefined,
                 (err) => this._warnTextureLoadError(safeUrl, err)
             );
-            this._configureSharedTexture(tex, { srgb });
+            this._configureSharedTexture(tex, { srgb, wrap: safeWrap });
             entry = { texture: tex };
             this._cache.set(key, entry);
         }
@@ -371,15 +408,19 @@ export class PbrTextureLoaderService {
 
         const clone = entry.texture?.clone?.() ?? null;
         if (!clone) return entry.texture ?? null;
-        this._configureSharedTexture(clone, { srgb });
+        this._configureSharedTexture(clone, { srgb, wrap: safeWrap });
         setTextureTransform(clone, { repeat });
         return clone;
     }
 
-    _configureSharedTexture(tex, { srgb = true } = {}) {
+    _configureSharedTexture(tex, { srgb = true, wrap = 'repeat' } = {}) {
         if (!tex?.isTexture) return;
-        tex.wrapS = THREE.RepeatWrapping;
-        tex.wrapT = THREE.RepeatWrapping;
+        const wrapping = wrap === 'clamp' ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
+        tex.wrapS = wrapping;
+        tex.wrapT = wrapping;
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.generateMipmaps = true;
         applyTextureColorSpace(tex, { srgb: !!srgb });
 
         const renderer = this._renderer;

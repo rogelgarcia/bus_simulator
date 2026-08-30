@@ -2,6 +2,7 @@
 // Defines a stable registry of imported PBR materials (URLs + building eligibility).
 import { getPbrAssetsEnabled } from '../materials/PbrAssetsRuntime.js';
 import { PBR_MATERIAL_CATALOG } from '../../../../assets/public/pbr/_catalog_index.js';
+import { LOW_CUT_GRASS_PBR_ENTRIES } from './LowCutGrassMaterialCatalog.js';
 
 const PBR_ID_PREFIX = 'pbr.';
 
@@ -122,6 +123,19 @@ function normalizeMapFiles(value) {
     return Object.keys(out).length ? out : null;
 }
 
+function normalizeAuxiliaryMapFiles(value) {
+    const src = value && typeof value === 'object' ? value : null;
+    if (!src) return null;
+    const out = {};
+    for (const [key, raw] of Object.entries(src)) {
+        const safeKey = typeof key === 'string' ? key.trim() : '';
+        const file = typeof raw === 'string' ? raw.trim() : '';
+        if (!safeKey || !/^[A-Za-z][A-Za-z0-9]*$/.test(safeKey) || !file) continue;
+        out[safeKey] = file;
+    }
+    return Object.keys(out).length ? out : null;
+}
+
 function normalizeNormalizationMeta(value) {
     const src = value && typeof value === 'object' ? value : {};
     const notes = typeof src.notes === 'string' ? src.notes : '';
@@ -213,6 +227,8 @@ function normalizeCatalogEntry(entry) {
     const groundEligible = !!src.groundEligible;
     const mapFilesRaw = normalizeMapFiles(src.mapFiles);
     const mapFiles = mapFilesRaw ? Object.freeze(mapFilesRaw) : null;
+    const auxiliaryMapFilesRaw = normalizeAuxiliaryMapFiles(src.auxiliaryMapFiles);
+    const auxiliaryMapFiles = auxiliaryMapFilesRaw ? Object.freeze(auxiliaryMapFilesRaw) : null;
 
     const files = mapFiles ?? MAPS;
     const hasBase = typeof files.baseColor === 'string' && files.baseColor.trim();
@@ -231,12 +247,17 @@ function normalizeCatalogEntry(entry) {
         groundEligible,
         tileMeters,
         mapFiles,
+        auxiliaryMapFiles,
         calibration: normalizeCalibrationMeta(src.calibration),
-        normalization: normalizeNormalizationMeta(src.normalization)
+        normalization: normalizeNormalizationMeta(src.normalization),
+        provenance: src.provenance && typeof src.provenance === 'object' ? src.provenance : null
     });
 }
 
-const MATERIALS = Object.freeze((Array.isArray(PBR_MATERIAL_CATALOG) ? PBR_MATERIAL_CATALOG : []).map((entry) => normalizeCatalogEntry(entry)));
+const MATERIALS = Object.freeze([
+    ...(Array.isArray(PBR_MATERIAL_CATALOG) ? PBR_MATERIAL_CATALOG : []),
+    ...LOW_CUT_GRASS_PBR_ENTRIES
+].map((entry) => normalizeCatalogEntry(entry)));
 
 const MATERIAL_BY_ID = new Map(MATERIALS.map((entry) => [entry.id, entry]));
 if (MATERIAL_BY_ID.size !== MATERIALS.length) throw new Error('[PbrMaterialCatalog] Duplicate materialId detected in PBR catalog.');
@@ -287,6 +308,8 @@ export function getPbrMaterialMeta(materialId) {
 
     const mapFiles = normalizeMapFiles(override?.mapFiles ?? def.mapFiles) ?? null;
     const maps = Object.keys(mapFiles ?? MAPS);
+    const auxiliaryMapFiles = normalizeAuxiliaryMapFiles(override?.auxiliaryMapFiles ?? def.auxiliaryMapFiles) ?? null;
+    const auxiliaryMaps = Object.keys(auxiliaryMapFiles ?? {});
 
     return {
         id: def.id,
@@ -300,7 +323,9 @@ export function getPbrMaterialMeta(materialId) {
         calibration: def.calibration ?? null,
         preferredVariant,
         variants,
-        maps
+        maps,
+        auxiliaryMaps,
+        provenance: def.provenance ?? null
     };
 }
 
@@ -406,7 +431,8 @@ export function resolvePbrMaterialUrls(materialId) {
             aoUrl: null,
             roughnessUrl: null,
             metalnessUrl: null,
-            displacementUrl: null
+            displacementUrl: null,
+            auxiliaryUrls: Object.freeze({})
         };
     }
     if (!getPbrAssetsEnabled()) {
@@ -417,16 +443,21 @@ export function resolvePbrMaterialUrls(materialId) {
             aoUrl: null,
             roughnessUrl: null,
             metalnessUrl: null,
-            displacementUrl: null
+            displacementUrl: null,
+            auxiliaryUrls: Object.freeze({})
         };
     }
     const dir = new URL(`${def.id.slice(PBR_ID_PREFIX.length)}/`, PBR_BASE_URL);
 
     const files = normalizeMapFiles(def.mapFiles) ?? MAPS;
+    const auxiliaryFiles = normalizeAuxiliaryMapFiles(def.auxiliaryMapFiles) ?? {};
     const urlOrNull = (file) => {
         const f = typeof file === 'string' ? file.trim() : '';
         return f ? new URL(f, dir).toString() : null;
     };
+
+    const auxiliaryUrls = {};
+    for (const [key, file] of Object.entries(auxiliaryFiles)) auxiliaryUrls[key] = urlOrNull(file);
 
     return {
         baseColorUrl: urlOrNull(files.baseColor),
@@ -435,7 +466,8 @@ export function resolvePbrMaterialUrls(materialId) {
         aoUrl: urlOrNull(files.ao),
         roughnessUrl: urlOrNull(files.roughness),
         metalnessUrl: urlOrNull(files.metalness),
-        displacementUrl: urlOrNull(files.displacement)
+        displacementUrl: urlOrNull(files.displacement),
+        auxiliaryUrls: Object.freeze(auxiliaryUrls)
     };
 }
 
@@ -461,7 +493,8 @@ export function getPbrMaterialOptions() {
             tileMeters: meta?.tileMeters ?? null,
             preferredVariant: meta?.preferredVariant ?? null,
             variants: meta?.variants ?? null,
-            maps: meta?.maps ?? null
+            maps: meta?.maps ?? null,
+            auxiliaryMaps: meta?.auxiliaryMaps ?? null
         };
     });
 }

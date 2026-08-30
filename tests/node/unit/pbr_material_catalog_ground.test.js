@@ -9,6 +9,8 @@ test('PbrMaterialCatalog: ground options include ground materials', () => {
 
     assert.ok(ids.has('pbr.grass_001'));
     assert.ok(ids.has('pbr.grass_004'));
+    assert.ok(ids.has('pbr.grass_low_cut_maintained_v1'));
+    assert.ok(ids.has('pbr.grass_low_cut_maintained_v2'));
     assert.ok(ids.has('pbr.grass_005'));
     assert.ok(ids.has('pbr.ground_037'));
     assert.ok(ids.has('pbr.coast_sand_rocks_02'));
@@ -17,6 +19,27 @@ test('PbrMaterialCatalog: ground options include ground materials', () => {
     assert.ok(ids.has('pbr.rocky_terrain_02'));
 
     for (const opt of opts) assert.equal(!!opt.groundEligible, true);
+});
+
+test('PbrMaterialCatalog: V2 low-cut grass exposes separate mid and accent atlas channels', () => {
+    const meta = getPbrMaterialMeta('pbr.grass_low_cut_maintained_v2');
+    assert.ok(meta);
+    assert.equal(meta.tileMeters, 1.4);
+    assert.deepEqual(new Set(meta.auxiliaryMaps), new Set([
+        'coverage',
+        'height',
+        'midClusterColor',
+        'midClusterCoverage',
+        'midClusterNormal',
+        'midClusterRoughness',
+        'midClusterAo',
+        'accentClumpColor',
+        'accentClumpCoverage',
+        'accentClumpNormal',
+        'accentClumpRoughness',
+        'accentClumpAo'
+    ]));
+    assert.equal(meta.provenance.source.license, 'CC0 1.0');
 });
 
 test('PbrMaterialCatalog: grass materials expose AO/roughness map metadata', () => {

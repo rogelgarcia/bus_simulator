@@ -1,7 +1,34 @@
 # Grass Engine Specification (Low-Cut, Auto-LOD, Authoring)
 
-Status: Proposed (merged v2)  
+Status: Reconciled architecture; AI 351 authoring through AI 356 localized accents implemented
 Scope: Rendering engine + authoring contract for low-cut gameplay grass (`< 0.10 m`).
+
+## Offline-first reconciliation notice
+
+The executable work order is now `specs/grass/GRASS_OFFLINE_FIRST_AI_SEQUENCE.md` and prompts AI 350 through AI 363. Where this older proposed specification conflicts with that sequence, the newer sequence takes precedence:
+
+- Uniform maintained grass uses an instanced area patch as its primary near runtime unit; tufts are reserved for localized tree, worn-area, and optional edge accents.
+- Initial geometry LOD evaluation is intentionally short (`near` approximately `0-8/10 m`, clusters approximately `8/10-25/35 m`, then texture only) and must be justified by Grass Lab measurements before being extended.
+- The dedicated Grass Lab owns V1 implementation through AI 357, corrective V2 work through AI 361, and reapproval in AI 362. Gameplay integration is deferred to AI 363.
+- Grass occupancy has a hard substrate-aware physical edge; soft biome-material blending remains a separate terrain concern.
+
+The remaining sections preserve useful authoring, stability, and budget guidance but are not an alternate execution order.
+
+### Implemented near runtime (AI 353)
+
+`specs/grass/NEAR_GRASS_CARPET_PATCH_V1.md` is authoritative for the historical V1 near layer only. It uses deterministic camera-cell area patches rather than field-wide tufts: `1 m`, `48` one-triangle blades/m², a `12 m` evaluation radius, shared geometry/material, chunked instanced draws, valid frustum bounds, no grass shadows, and no transparent blending. Stable camera cells perform zero instance-buffer uploads. AI 360 and `NEAR_GRASS_CARPET_PATCH_V2.md` own downstream near behavior.
+
+### Implemented hard coverage (AI 354)
+
+`specs/grass/GRASS_COVERAGE_AND_SIDEWALK_EDGE_V1.md` is authoritative for historical V1 grass occupancy only. The substrate remains continuous while a binary `27.5 mm` raised layer is partitioned around sidewalk and irregular exclusions. The top, lip, and sparse fringe are three batched meshes; `far_coverage.png` is an opaque micro cutout and not a soft biome/material blend. AI 359 and `GRASS_COVERAGE_AND_SIDEWALK_EDGE_V2.md` own downstream footprint, substrate, and cut-edge behavior.
+
+### Implemented automatic field LOD (AI 355)
+
+`specs/grass/GRASS_AUTO_LOD_AND_CLUSTER_HANDOFF_V1.md` is authoritative for the historical V1 field path only. The default effective tiers are near patches through `9 m`, one opaque atlas-cluster batch through `30 m`, and texture only beyond. Distance and view angle are evaluated per patch, with deterministic masked transitions and hysteresis. AI 361 and `GRASS_AUTO_LOD_AND_COHESIVE_HANDOFF_V2.md` own downstream field behavior.
+
+### Implemented localized accents (AI 356)
+
+`specs/grass/LOCALIZED_GRASS_ACCENTS_V1.md` is authoritative for historical V1 `localized_tufts` only. Explicit city-shaped tree and optional worn-feature records generate coverage-bounded accents only. AI 359 owns the corrected substrate exclusion, while AI 361 and `LOCALIZED_GRASS_ACCENTS_V2.md` own downstream accent rendering.
 
 ## 1. Goals
 
@@ -65,14 +92,15 @@ Tooling MUST separate:
 
 ### 5.2 Export contract
 
-Inspector output MUST be a versioned runtime profile.
+Inspector output MUST be a versioned runtime profile. AI 351 implemented the canonical v1 schema in `specs/grass/LOW_CUT_GRASS_PROFILE_V1.md`; that contract supersedes the older illustrative JSON below, particularly its oversized `65 mm` blade and field-wide tuft shape.
 
 ```json
 {
   "profileId": "grass.lowcut.default",
   "version": 1,
-  "heightMeters": 0.065,
-  "tuft": { "bladesPerTuft": 6, "radiusMeters": 0.028, "spread": 0.55 },
+  "blade": { "heightMeters": { "min": 0.025, "max": 0.030 } },
+  "carpet": { "layout": "area_patch" },
+  "accents": { "layout": "localized_tufts", "bladesPerTuft": 7 },
   "shape": { "bend": 0.45, "inclination": 0.3, "curvature": 0.5 },
   "appearance": {
     "baseColor": "#3A8E45",

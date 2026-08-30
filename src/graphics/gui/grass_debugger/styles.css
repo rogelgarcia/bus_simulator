@@ -1,5 +1,25 @@
 /* src/graphics/gui/grass_debugger/styles.css */
 
+body.grass-lab-capture-mode {
+    --global-top-bar-height: 0px;
+    --options-dock-width: 0px;
+}
+
+body.grass-lab-capture-mode #game-canvas {
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+}
+
+body.grass-lab-capture-mode #ui-grass-debugger,
+body.grass-lab-capture-mode .ui-perf-bar,
+body.grass-lab-capture-mode .ui-grass-debugger-distance-panel,
+body.grass-lab-capture-mode .ui-picker-overlay,
+body.grass-lab-capture-mode .ui-grass-inspector-overlay {
+    display: none !important;
+}
+
 .ui-grass-inspector-overlay {
     position: fixed;
     inset: 0;
@@ -134,4 +154,78 @@
 
 .ui-grass-debugger-distance-value {
     font-weight: 900;
+}
+
+.ui-grass-lab-note {
+    margin: 8px 10px 10px;
+    color: rgba(233, 242, 255, 0.78);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.ui-grass-lab-status {
+    margin: 8px 10px;
+    color: #a9d8ff;
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+.ui-grass-lab-readouts {
+    display: grid;
+    gap: 6px;
+    padding: 8px 10px 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.ui-grass-lab-readout-row {
+    display: grid;
+    grid-template-columns: minmax(110px, 0.8fr) minmax(140px, 1.2fr);
+    gap: 12px;
+    align-items: baseline;
+}
+
+.ui-grass-lab-readout-label {
+    color: rgba(233, 242, 255, 0.64);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.ui-grass-lab-readout-value {
+    overflow-wrap: anywhere;
+    color: #f0f7ff;
+    font-size: 11px;
+    font-weight: 800;
+    text-align: right;
+}
+
+.ui-grass-authoring-color {
+    width: 54px;
+    height: 30px;
+    padding: 2px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 5px;
+    background: rgba(8, 13, 20, 0.9);
+    cursor: pointer;
+}
+
+.ui-grass-authoring-json {
+    box-sizing: border-box;
+    width: calc(100% - 20px);
+    min-height: 210px;
+    margin: 4px 10px 8px;
+    padding: 10px;
+    resize: vertical;
+    border: 1px solid rgba(130, 188, 235, 0.28);
+    border-radius: 5px;
+    color: #e9f3ff;
+    background: rgba(5, 10, 16, 0.92);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
+    line-height: 1.4;
+    tab-size: 2;
+}
+
+.ui-grass-authoring-json:focus {
+    border-color: rgba(90, 188, 255, 0.72);
+    outline: none;
 }

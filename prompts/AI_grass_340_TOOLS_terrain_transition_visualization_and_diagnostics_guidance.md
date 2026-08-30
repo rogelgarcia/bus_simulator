@@ -14,6 +14,12 @@ Tasks:
 - Define preset/save/load guidance so reviews and comparisons can be reproduced across sessions.
 - Define usability expectations for rapid iteration in both close-up and flyover camera contexts.
 
+## Scope boundary
+
+- This prompt concerns transition inspection in Terrain Debugger.
+- AI 350 and AI 357 remain the historical V1 Grass Lab and validation owners. Corrective fixtures are owned by AI 358 through AI 361, and current native-4K visual/performance approval belongs to AI 362.
+- Do not create another grass renderer or duplicate Grass Lab controls in Terrain Debugger as part of this guidance.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:

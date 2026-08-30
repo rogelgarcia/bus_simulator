@@ -373,28 +373,28 @@ export function createAsset() {
     const bladeHeightCmProp = createNumberProperty({
         id: 'bladeHeightCm',
         label: 'Blade height (cm)',
-        min: 6,
+        min: 2,
         max: 70,
         step: 0.1,
-        defaultValue: 8
+        defaultValue: 2.8
     });
 
     const baseWidthCmProp = createNumberProperty({
         id: 'baseWidthCm',
         label: 'Base width (cm)',
-        min: 0.5,
+        min: 0.1,
         max: 9,
         step: 0.01,
-        defaultValue: 0.5
+        defaultValue: 0.28
     });
 
     const midWidthCmProp = createNumberProperty({
         id: 'midWidthCm',
         label: 'Middle width (cm)',
-        min: 0.5,
+        min: 0.1,
         max: 9,
         step: 0.01,
-        defaultValue: 0.5
+        defaultValue: 0.28
     });
 
     const tipStartProp = createNumberProperty({
@@ -419,10 +419,10 @@ export function createAsset() {
     const tipWidthCmProp = createNumberProperty({
         id: 'tipWidthCm',
         label: 'Tip width (cm)',
-        min: 0.5,
+        min: 0.1,
         max: 9,
         step: 0.01,
-        defaultValue: 0.5
+        defaultValue: 0.28
     });
 
     const tipRoundnessProp = createNumberProperty({

@@ -3,9 +3,13 @@
 // @ts-check
 
 import * as THREE from 'three';
+import { evaluateGrassAutoLod } from '../../../app/grass/GrassAutoLodContract.js';
 import { createGrassBladeGeometry, createGrassBladeTuftGeometry, createGrassCrossGeometry, createGrassStarGeometry } from './GrassGeometry.js';
 import { GRASS_LOD_TIERS } from './GrassLodEvaluator.js';
 import { getGrassEngineInstanceKey, getGrassLodDensityMultiplier, sanitizeGrassEngineConfig } from './GrassConfig.js';
+import { GrassNearCarpetSystem } from './GrassNearCarpetSystem.js';
+import { GrassMidClusterSystem } from './GrassMidClusterSystem.js';
+import { GrassLocalizedAccentSystem } from './GrassLocalizedAccentSystem.js';
 import { makeRng } from './GrassRng.js';
 
 const EPS = 1e-6;
@@ -384,7 +388,16 @@ function sampleTerrainHeightBilinear({ positionAttr, nx, nz, minX, minZ, dx, dz 
 }
 
 export class GrassEngine {
-    constructor({ scene, terrainMesh, terrainGrid, getExclusionRects } = {}) {
+    constructor({
+        scene,
+        terrainMesh,
+        terrainGrid,
+        getExclusionRects,
+        midClusterMaterial,
+        localizedAccentMaterial,
+        wornAccentMaterial,
+        localizedAccentInput
+    } = {}) {
         this._scene = scene ?? null;
         this._terrainMesh = terrainMesh ?? null;
         this._terrainGrid = terrainGrid ?? null;
@@ -421,7 +434,18 @@ export class GrassEngine {
 
         this._lodRings = null;
         this._lodAngleScaledRings = null;
-        this._lodDebugInfo = { viewAngleDeg: 0, angleScale: 1, masterActiveByAngle: false };
+        this._lodDebugInfo = {
+            viewAngleDeg: 0,
+            angleScale: 1,
+            masterActiveByAngle: false,
+            effectiveDistanceMeters: 0,
+            activeTier: 'texture',
+            transitionState: 'texture_only',
+            nearEndMeters: 0,
+            clusterEndMeters: 0,
+            geometryCutoffWorldMeters: 0,
+            force: 'auto'
+        };
 
         this._tmpFrustum = new THREE.Frustum();
         this._tmpMatrix = new THREE.Matrix4();
@@ -436,11 +460,44 @@ export class GrassEngine {
         this._rebuildGeometries();
         this._rebuildChunks();
         this._rebuildDebugOverlays();
+        this._nearCarpet = new GrassNearCarpetSystem({
+            parent: this.group,
+            terrainMesh: this._terrainMesh,
+            terrainGrid: this._terrainGrid,
+            getExclusionRects: () => this._getExpandedExclusionRects()
+        });
+        this._nearCarpet.setConfig(this._config.nearCarpet);
+        this._nearCarpet.setAutoLodConfig(this._config.autoLod);
+        this._midCluster = new GrassMidClusterSystem({
+            parent: this.group,
+            terrainMesh: this._terrainMesh,
+            terrainGrid: this._terrainGrid,
+            getExclusionRects: () => this._getExpandedExclusionRects(),
+            material: midClusterMaterial
+        });
+        this._midCluster.setConfig(this._config.midCluster);
+        this._midCluster.setAutoLodConfig(this._config.autoLod);
+        this._localizedAccents = new GrassLocalizedAccentSystem({
+            parent: this.group,
+            terrainMesh: this._terrainMesh,
+            terrainGrid: this._terrainGrid,
+            accentMaterial: localizedAccentMaterial ?? midClusterMaterial,
+            wornMaterial: wornAccentMaterial
+        });
+        this._localizedAccents.setConfig(this._config.localizedAccents);
+        this._localizedAccents.setAutoLodConfig(this._config.autoLod);
+        this._localizedAccents.setInput(localizedAccentInput);
     }
 
     dispose() {
         if (this._scene && this.group) this._scene.remove(this.group);
 
+        this._nearCarpet?.dispose?.();
+        this._nearCarpet = null;
+        this._midCluster?.dispose?.();
+        this._midCluster = null;
+        this._localizedAccents?.dispose?.();
+        this._localizedAccents = null;
         this._disposeDebugOverlays();
         this._disposeChunkMeshes();
         this._disposeGeometries();
@@ -456,6 +513,20 @@ export class GrassEngine {
         this._terrainGrid = terrainGrid ?? this._terrainGrid;
         this._rebuildChunks();
         this._rebuildDebugOverlays();
+        this._nearCarpet?.setTerrain({ terrainMesh: this._terrainMesh, terrainGrid: this._terrainGrid });
+        this._nearCarpet?.attach(this.group);
+        this._midCluster?.setTerrain({ terrainMesh: this._terrainMesh, terrainGrid: this._terrainGrid });
+        this._midCluster?.attach(this.group);
+        this._localizedAccents?.setTerrain({ terrainMesh: this._terrainMesh, terrainGrid: this._terrainGrid });
+        this._localizedAccents?.attach(this.group);
+    }
+
+    setMidClusterMaterial(material) {
+        this._midCluster?.setMaterial?.(material);
+    }
+
+    setLocalizedAccentInput(value) {
+        this._localizedAccents?.setInput?.(value);
     }
 
     setConfig(nextConfig) {
@@ -467,6 +538,12 @@ export class GrassEngine {
         const prevRingsKey = this._lodRingsKey;
         this._config = next;
         this._instanceKey = nextInstanceKey;
+        this._nearCarpet?.setConfig(next.nearCarpet);
+        this._nearCarpet?.setAutoLodConfig(next.autoLod);
+        this._midCluster?.setConfig(next.midCluster);
+        this._midCluster?.setAutoLodConfig(next.autoLod);
+        this._localizedAccents?.setConfig(next.localizedAccents);
+        this._localizedAccents?.setAutoLodConfig(next.autoLod);
 
         const patchSizeChanged = prev?.patch?.sizeMeters !== next.patch.sizeMeters;
         if (patchSizeChanged) {
@@ -529,7 +606,7 @@ export class GrassEngine {
     getStats() {
         let totalInstances = 0;
         let drawCalls = 0;
-        const instancesByTier = { master: 0, near: 0, mid: 0, far: 0 };
+        const instancesByTier = { master: 0, near: 0, mid: 0, far: 0, accent: 0 };
 
         for (const chunk of this._chunks) {
             const meshes = chunk.meshes;
@@ -551,16 +628,46 @@ export class GrassEngine {
             mid: instancesByTier.mid * this._trianglesPerInstance.mid,
             far: instancesByTier.far * this._trianglesPerInstance.far
         };
-        const totalTriangles = trianglesByTier.master + trianglesByTier.near + trianglesByTier.mid + trianglesByTier.far;
+        const nearCarpet = this._nearCarpet?.getStats?.() ?? null;
+        if (nearCarpet?.enabled) {
+            instancesByTier.near += Math.max(0, Number(nearCarpet.bladeInstances) || 0);
+            trianglesByTier.near += Math.max(0, Number(nearCarpet.triangles) || 0);
+            totalInstances += Math.max(0, Number(nearCarpet.bladeInstances) || 0);
+            drawCalls += Math.max(0, Number(nearCarpet.drawCalls) || 0);
+        }
+        const midCluster = this._midCluster?.getStats?.() ?? null;
+        if (midCluster?.enabled) {
+            instancesByTier.mid += Math.max(0, Number(midCluster.instances) || 0);
+            trianglesByTier.mid += Math.max(0, Number(midCluster.triangles) || 0);
+            totalInstances += Math.max(0, Number(midCluster.instances) || 0);
+            drawCalls += Math.max(0, Number(midCluster.drawCalls) || 0);
+        }
+        const localizedAccents = this._localizedAccents?.getStats?.() ?? null;
+        if (localizedAccents?.enabled) {
+            instancesByTier.accent += Math.max(0, Number(localizedAccents.visibleClusters) || 0);
+            trianglesByTier.accent = Math.max(0, Number(localizedAccents.totalTriangles) || 0);
+            totalInstances += Math.max(0, Number(localizedAccents.visibleClusters) || 0);
+            drawCalls += Math.max(0, Number(localizedAccents.totalDrawCalls) || 0);
+        } else {
+            trianglesByTier.accent = 0;
+        }
+        const totalTriangles = trianglesByTier.master + trianglesByTier.near + trianglesByTier.mid + trianglesByTier.far + trianglesByTier.accent;
 
         return {
             enabled: !!this._config.enabled,
-            patches: this._chunks.length,
+            patches: this._chunks.length
+                + Math.max(0, Number(nearCarpet?.patchInstances) || 0)
+                + Math.max(0, Number(midCluster?.instances) || 0)
+                + Math.max(0, Number(localizedAccents?.visibleClusters) || 0),
             drawCalls,
             totalInstances,
             totalTriangles,
             instancesByTier,
-            trianglesByTier
+            trianglesByTier,
+            nearCarpet,
+            midCluster,
+            localizedAccents,
+            autoLod: this.getLodDebugInfo()
         };
     }
 
@@ -569,11 +676,19 @@ export class GrassEngine {
         return {
             viewAngleDeg: Number(d.viewAngleDeg) || 0,
             angleScale: Number(d.angleScale) || 1,
-            masterActiveByAngle: !!d.masterActiveByAngle
+            masterActiveByAngle: !!d.masterActiveByAngle,
+            effectiveDistanceMeters: Math.max(0, Number(d.effectiveDistanceMeters) || 0),
+            activeTier: String(d.activeTier ?? 'texture'),
+            transitionState: String(d.transitionState ?? 'texture_only'),
+            nearEndMeters: Math.max(0, Number(d.nearEndMeters) || 0),
+            clusterEndMeters: Math.max(0, Number(d.clusterEndMeters) || 0),
+            geometryCutoffWorldMeters: Math.max(0, Number(d.geometryCutoffWorldMeters) || 0),
+            force: String(d.force ?? 'auto'),
+            geometryBeyondCutoff: Math.max(0, Number(d.geometryBeyondCutoff) || 0)
         };
     }
 
-    update({ camera } = {}) {
+    update({ camera, focusDistanceMeters = 0 } = {}) {
         const cfg = this._config;
         const cam = camera?.isCamera ? camera : null;
         let viewAngleDeg = 0;
@@ -595,6 +710,18 @@ export class GrassEngine {
             this._lodDebugInfo.viewAngleDeg = viewAngleDeg;
             this._lodDebugInfo.angleScale = angleScale;
             this._lodDebugInfo.masterActiveByAngle = enableMaster && viewAngleDeg <= masterMaxDeg && masterDist > EPS;
+            const autoEvaluation = evaluateGrassAutoLod({
+                distanceMeters: focusDistanceMeters,
+                viewAngleDeg,
+                config: cfg.autoLod
+            });
+            this._lodDebugInfo.effectiveDistanceMeters = autoEvaluation.effectiveDistanceMeters;
+            this._lodDebugInfo.activeTier = autoEvaluation.activeTier;
+            this._lodDebugInfo.transitionState = autoEvaluation.transitionState;
+            this._lodDebugInfo.nearEndMeters = cfg.autoLod.nearEndMeters;
+            this._lodDebugInfo.clusterEndMeters = cfg.autoLod.clusterEndMeters;
+            this._lodDebugInfo.geometryCutoffWorldMeters = cfg.autoLod.clusterEndMeters / Math.max(EPS, autoEvaluation.angleScale);
+            this._lodDebugInfo.force = cfg.autoLod.force;
         }
 
         if (!cfg.enabled) {
@@ -609,6 +736,12 @@ export class GrassEngine {
         const terrainGeo = this._terrainMesh?.geometry;
         const posAttr = terrainGeo?.attributes?.position ?? null;
         if (!cam || !terrainGrid || !posAttr?.isBufferAttribute) return;
+
+        this._nearCarpet?.update({ camera: cam, viewAngleDeg });
+        this._midCluster?.update({ camera: cam, viewAngleDeg });
+        this._localizedAccents?.update({ camera: cam, viewAngleDeg });
+        this._lodDebugInfo.geometryBeyondCutoff = (this._midCluster?.getStats?.().geometryBeyondCutoff ?? 0)
+            + (this._localizedAccents?.getStats?.().geometryBeyondCutoff ?? 0);
 
         this._tmpMatrix.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
         this._tmpFrustum.setFromProjectionMatrix(this._tmpMatrix);
@@ -947,6 +1080,9 @@ export class GrassEngine {
         for (const chunk of this._chunks) chunk.group?.remove?.();
         this._chunks = [];
         this.group.clear();
+        this._nearCarpet?.attach(this.group);
+        this._midCluster?.attach(this.group);
+        this._localizedAccents?.attach(this.group);
 
         const terrainGrid = this._terrainGrid;
         if (!terrainGrid) return;

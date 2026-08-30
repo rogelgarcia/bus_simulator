@@ -4,18 +4,60 @@
 
 import * as THREE from 'three';
 import { FirstPersonCameraController } from '../../../engine3d/camera/FirstPersonCameraController.js';
+import { GrassEngine } from '../../../engine3d/grass/GrassEngine.js';
+import { GrassCoverageSurfaceSystem } from '../../../engine3d/grass/GrassCoverageSurfaceSystem.js';
+import { applyGrassClusterAtlasVariantShader } from '../../../engine3d/grass/GrassMidClusterSystem.js';
+import {
+    createDefaultLowCutGrassProfile,
+    parseLowCutGrassProfileJson,
+    sanitizeLowCutGrassProfile,
+    serializeLowCutGrassProfile
+} from '../../../engine3d/grass/LowCutGrassProfile.js';
 import { getOrCreateGpuFrameTimer } from '../../../engine3d/perf/GpuFrameTimer.js';
 import { applyIBLIntensity, applyIBLToScene, loadIBLTexture } from '../../../lighting/IBL.js';
 import { DEFAULT_IBL_ID, getIblEntryById } from '../../../content3d/catalogs/IBLCatalog.js';
 import { createProceduralMeshAsset } from '../../../assets3d/procedural_meshes/ProceduralMeshCatalog.js';
 import { getPbrMaterialMeta } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
-import { PbrTextureLoaderService } from '../../../content3d/materials/PbrTexturePipeline.js';
+import {
+    LOW_CUT_GRASS_ASSET_FAMILY,
+    LOW_CUT_GRASS_ATLAS_ROLE,
+    LOW_CUT_GRASS_LOCAL_OVERRIDES,
+    LOW_CUT_GRASS_MATERIAL_ID,
+    LOW_CUT_GRASS_SHADER_DEFAULTS,
+    LOW_CUT_GRASS_SUBSTRATE_MATERIAL_ID,
+    LOW_CUT_GRASS_V1_ASSET_FAMILY,
+    LOW_CUT_GRASS_V1_MATERIAL_ID
+} from '../../../content3d/catalogs/LowCutGrassMaterialCatalog.js';
+import { applyResolvedPbrToStandardMaterial, PbrTextureLoaderService } from '../../../content3d/materials/PbrTexturePipeline.js';
+import { primePbrAssetsAvailability } from '../../../content3d/materials/PbrAssetsRuntime.js';
 import { createGeneratorConfig, ROAD_DEFAULTS } from '../../../assets3d/generators/GeneratorParams.js';
 import { getCityMaterials } from '../../../assets3d/textures/CityMaterials.js';
 import { createRoadEngineRoads } from '../../../visuals/city/RoadEngineRoads.js';
 import { computeUvScaleForGroundSize, updateGroundSubstrateBlendOnMeshStandardMaterial } from '../../../assets3d/materials/GroundSubstrateBlendSystem.js';
 import { GrassDebuggerUI } from './GrassDebuggerUI.js';
 import { GrassLod1InspectorPopup } from './GrassLod1InspectorPopup.js';
+import { GrassAuthoringFixture } from '../GrassAuthoringFixture.js';
+import { GrassMaterialFixture } from '../GrassMaterialFixture.js';
+import {
+    applyLowCutGrassCarpetMaterial,
+    removeLowCutGrassCarpetMaterial,
+    updateLowCutGrassCarpetMaterial
+} from '../../../engine3d/grass/LowCutGrassCarpetMaterialSystem.js';
+import {
+    createGrassLabEngineConfig,
+    createGrassLabCoverageConfig,
+    createGrassLabFixtureDefinition,
+    createGrassLabSnapshot,
+    createGrassLabTerrainGrid,
+    GRASS_LAB_DEFAULT_SEED
+} from '../GrassLabContract.js';
+import {
+    GRASS_LAB_REQUIRED_REGRESSIONS,
+    createGrassLabApprovalRecord,
+    evaluateGrassLabBudget,
+    getGrassLabCameraPreset,
+    getGrassLabLightingPreset
+} from '../../../../app/grass/GrassLabValidationContract.js';
 
 const EPS = 1e-6;
 const TILE_SIZE_METERS = 24;
@@ -27,6 +69,7 @@ const LOD1_VARIANTS = 8;
 const LOD2_COLOR = 0x9cff2b;
 const LOD2_VARIANTS = 4;
 const CAMERA_PRESET_BEHIND_GAMEPLAY_DISTANCE = 13.5;
+const LOW_CUT_PROFILE_STORAGE_KEY = 'bus-simulator.grass-lab.low-cut-profile.v1';
 
 function clamp(value, min, max, fallback = min) {
     const num = Number(value);
@@ -143,15 +186,6 @@ function degToRad(deg) {
     return d * (Math.PI / 180);
 }
 
-function applyTextureColorSpace(tex, { srgb = true } = {}) {
-    if (!tex) return;
-    if ('colorSpace' in tex) {
-        tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-        return;
-    }
-    if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
-}
-
 function ensureUv2(geo) {
     const g = geo?.isBufferGeometry ? geo : null;
     const uv = g?.attributes?.uv ?? null;
@@ -173,7 +207,6 @@ export class GrassDebuggerView {
         this._ui = null;
 
         this._texLoader = new THREE.TextureLoader();
-        this._texCache = new Map();
         this._pbrTextureService = null;
         this._groundMat = null;
         this._groundSize = { x: 1, z: 1 };
@@ -182,7 +215,33 @@ export class GrassDebuggerView {
 
         this._ground = null;
         this._roads = null;
+        this._fixtureGroup = null;
+        this._labFixtures = null;
+        this._terrainGrid = null;
+        this._grassEngine = null;
+        this._coverageSystem = null;
+        this._coverageSurfaceMaterial = null;
+        this._midClusterMaterial = null;
+        this._accentClusterMaterial = null;
+        this._wornAccentMaterial = null;
+        this._grassMaterialVersion = 'v2';
+        this._authoringFixture = null;
+        this._materialFixture = null;
+        this._authoringProfile = null;
+        this._grassUpdateCpuMs = null;
+        this._labDiagnosticsLastUpdateMs = 0;
         this._sun = null;
+        this._hemi = null;
+        this._streetLight = null;
+        this._validationCameraId = 'height_150';
+        this._validationLightingId = 'daylight';
+        this._validationMotion = { id: 'stationary', active: false, startedAtMs: 0, durationMs: 0 };
+        this._validationSamples = [];
+        this._validationBufferSamples = [];
+        this._validationSampleWarmupUntilMs = 0;
+        this._validationStress = { completed: false };
+        this._validationApproval = null;
+        this._validationRegressionStatus = Object.fromEntries(GRASS_LAB_REQUIRED_REGRESSIONS.map((id) => [id, false]));
         this._map = null;
         this._roadBounds = { halfWidth: 0, z0: 0, z1: 0 };
 
@@ -257,6 +316,7 @@ export class GrassDebuggerView {
         this._centerDistanceValueEl = null;
         this._cameraHeightValueEl = null;
         this._centerDistanceLastUpdateMs = 0;
+        this._centerHitDistanceMeters = 0;
 
         this._onResize = () => this._resize();
         this._onKeyDown = (e) => this._handleKey(e, true);
@@ -270,6 +330,7 @@ export class GrassDebuggerView {
 
     async start() {
         if (!this.canvas) throw new Error('[GrassDebuggerView] Missing canvas');
+        await primePbrAssetsAvailability();
 
         const renderer = new THREE.WebGLRenderer({
             canvas: this.canvas,
@@ -297,6 +358,7 @@ export class GrassDebuggerView {
         const hemi = new THREE.HemisphereLight(0xffffff, 0x182016, 0.45);
         hemi.position.set(0, 1, 0);
         scene.add(hemi);
+        this._hemi = hemi;
 
         const sun = new THREE.DirectionalLight(0xffffff, 1.05);
         sun.position.set(110, 160, 90);
@@ -311,6 +373,12 @@ export class GrassDebuggerView {
         scene.add(sun);
         this._sun = sun;
 
+        const streetLight = new THREE.PointLight(0xffd7a3, 0, 32, 2);
+        streetLight.position.set(0, 6, 0);
+        streetLight.castShadow = false;
+        scene.add(streetLight);
+        this._streetLight = streetLight;
+
         this.renderer = renderer;
         this._pbrTextureService = new PbrTextureLoaderService({
             renderer: this.renderer,
@@ -321,13 +389,63 @@ export class GrassDebuggerView {
         this.camera = camera;
 
         this._buildSceneContent();
+        this._midClusterMaterial = this._createGrassMidClusterMaterial();
+        this._accentClusterMaterial = this._createGrassAccentClusterMaterial();
+        this._wornAccentMaterial = this._createGrassWornAccentMaterial();
+        this._grassEngine = new GrassEngine({
+            scene: this.scene,
+            terrainMesh: this._ground,
+            terrainGrid: this._terrainGrid,
+            getExclusionRects: () => this._labFixtures?.grassCoverage?.exclusionRects ?? this._labFixtures?.exclusionRects ?? [],
+            midClusterMaterial: this._midClusterMaterial,
+            localizedAccentMaterial: this._accentClusterMaterial,
+            wornAccentMaterial: this._wornAccentMaterial,
+            localizedAccentInput: {
+                treePlacements: this._labFixtures?.treePlacements ?? [],
+                featurePlacements: this._labFixtures?.accentFeaturePlacements ?? [],
+                coverageDefinition: this._labFixtures?.grassCoverage ?? null,
+                coverageConfig: createGrassLabCoverageConfig(null)
+            }
+        });
+        const authoringProfile = this._loadAuthoringProfile();
+        const fixtureAnchor = this._labFixtures?.busAnchor?.position ?? { x: -36, z: -150 };
+        this._authoringFixture = new GrassAuthoringFixture({
+            scene: this.scene,
+            position: { x: Number(fixtureAnchor.x) - 16, y: 0.025, z: Number(fixtureAnchor.z) + 12 }
+        });
+        this._authoringFixture.setProfile(authoringProfile);
+        this._materialFixture = new GrassMaterialFixture({
+            scene: this.scene,
+            resolveMaterial: (materialId, options) => this._resolvePbrMaterialPayload(materialId, options),
+            position: { x: Number(fixtureAnchor.x), y: 0.03, z: Number(fixtureAnchor.z) + 22 }
+        });
 
         this._mountCenterDistancePanel();
 
         const ui = new GrassDebuggerUI({
+            initialState: { authoring: { profile: authoringProfile } },
             onChange: (next) => this._applyUiState(next),
             onInspectLod1: () => this._openLod1Inspector(),
-            onCameraBehindBus: () => this._applyBehindBusCameraPreset()
+            onCameraBehindBus: () => this._applyBehindBusCameraPreset(),
+            onResetLab: () => this.resetLab(),
+            onCaptureBaseline: () => this.captureBaseline(),
+            onFocusNearCarpet: () => this.focusNearCarpet(),
+            onFocusAutoLod: (target) => this.focusAutoLod(target),
+            onFocusCoverage: (target) => this.focusCoverage(target),
+            onFocusLocalizedAccent: (target) => this.focusLocalizedAccent(target),
+            onFocusAuthoringFixture: () => this.focusAuthoringFixture(),
+            onFocusMaterialFixture: (options) => this.focusMaterialFixture(options),
+            onMaterialLightingPreset: (presetId) => this.applyMaterialLightingPreset(presetId),
+            onSaveAuthoringProfile: () => this.saveAuthoringProfile(),
+            onExportAuthoringProfile: () => this.exportAuthoringProfile(),
+            onImportAuthoringProfile: (json) => this.importAuthoringProfile(json),
+            onResetAuthoringProfile: () => this.resetAuthoringProfile(),
+            onValidationCameraPreset: (presetId) => this.applyValidationCameraPreset(presetId),
+            onValidationLightingPreset: (presetId) => this.applyValidationLightingPreset(presetId),
+            onValidationMotionPath: (pathId) => this.startValidationMotionPath(pathId),
+            onValidationStress: () => this.runValidationStress(),
+            onValidationResetSamples: () => this.resetValidationSamples(),
+            onValidationApprove: () => this.createValidationApprovalCandidate()
         });
         ui.mount();
         this._ui = ui;
@@ -351,6 +469,8 @@ export class GrassDebuggerView {
 
         this._resize();
         this._applyUiState(ui.getState(), { force: true });
+        this.applyValidationLightingPreset('daylight');
+        this.applyValidationCameraPreset('height_150');
         this._startLoop();
     }
 
@@ -371,6 +491,19 @@ export class GrassDebuggerView {
         this.controls?.dispose?.();
         this.controls = null;
 
+        this._grassEngine?.dispose?.();
+        this._grassEngine = null;
+        this._midClusterMaterial = null;
+        this._accentClusterMaterial = null;
+        this._wornAccentMaterial = null;
+        this._coverageSystem?.dispose?.();
+        this._coverageSystem = null;
+        this._coverageSurfaceMaterial = null;
+        this._authoringFixture?.dispose?.();
+        this._authoringFixture = null;
+        this._materialFixture?.dispose?.();
+        this._materialFixture = null;
+        this._disposeFixtures();
         this._disposeLod1();
         this._disposeLod2();
         this._disposeRoads();
@@ -384,12 +517,12 @@ export class GrassDebuggerView {
         this.renderer?.dispose?.();
         this.renderer = null;
         this._gpuFrameTimer = null;
+        this._hemi = null;
+        this._sun = null;
+        this._streetLight = null;
         this.camera = null;
         this._pbrTextureService?.dispose?.();
         this._pbrTextureService = null;
-
-        for (const tex of this._texCache.values()) tex?.dispose?.();
-        this._texCache.clear();
 
         this._unmountCenterDistancePanel();
     }
@@ -442,6 +575,7 @@ export class GrassDebuggerView {
         this._centerDistanceValueEl = null;
         this._cameraHeightValueEl = null;
         this._centerDistanceLastUpdateMs = 0;
+        this._centerHitDistanceMeters = 0;
     }
 
     _updateCenterDistanceOverlay({ nowMs } = {}) {
@@ -466,6 +600,7 @@ export class GrassDebuggerView {
         this._centerRaycaster.setFromCamera(this._centerPointer, camera);
         const hits = this._centerRaycaster.intersectObjects(targets, true);
         const dist = Number.isFinite(hits?.[0]?.distance) ? hits[0].distance : null;
+        this._centerHitDistanceMeters = Number.isFinite(dist) ? dist : 0;
 
         valueEl.textContent = Number.isFinite(dist) ? `${dist.toFixed(2)} m` : '—';
 
@@ -510,6 +645,14 @@ export class GrassDebuggerView {
         this._ground = ground;
         this._groundMat = groundMat;
         this._groundSize = { x: bounds.sizeX, z: bounds.sizeZ };
+        this._terrainGrid = createGrassLabTerrainGrid({
+            bounds,
+            tileSize,
+            widthTiles: width,
+            depthTiles: height,
+            nx: width * 2,
+            nz: height * 2
+        });
 
         const grid = new THREE.GridHelper(Math.max(bounds.sizeX, bounds.sizeZ), width, 0x2f2f2f, 0x2f2f2f);
         grid.position.y = 0.02;
@@ -524,28 +667,16 @@ export class GrassDebuggerView {
         const sidewalkWidth = ROAD_DEFAULTS.sidewalk.extraWidth;
         const roadHalfWidth = (lanesEach * laneWidth * 2 + shoulder * 2 + curbThickness * 2 + sidewalkWidth * 2) * 0.5;
 
-        const roadZ0 = bounds.minZ + tileSize;
-        const roadZ1 = bounds.maxZ - tileSize;
+        const fixtures = createGrassLabFixtureDefinition({ bounds, tileSize, roadHalfWidth });
+        this._labFixtures = fixtures;
 
         const map = {
             tileSize,
             width,
             height,
             origin,
-            roadNetwork: { seed: 'grass-debugger' },
-            roadSegments: [
-                {
-                    kind: 'polyline',
-                    tag: 'straight',
-                    rendered: true,
-                    lanesF: lanesEach,
-                    lanesB: lanesEach,
-                    points: [
-                        { x: 0, z: roadZ0 },
-                        { x: 0, z: roadZ1 }
-                    ]
-                }
-            ]
+            roadNetwork: { seed: fixtures.seed },
+            roadSegments: fixtures.roadSegments
         };
 
         const generatorConfig = createGeneratorConfig({
@@ -577,11 +708,87 @@ export class GrassDebuggerView {
             scene.add(roads.group);
         }
         this._roads = roads;
+        this._coverageSurfaceMaterial = this._createGrassCoverageSurfaceMaterial(createGrassLabCoverageConfig(null));
+        this._coverageSystem = new GrassCoverageSurfaceSystem({
+            parent: scene,
+            definition: fixtures.grassCoverage,
+            config: createGrassLabCoverageConfig(null),
+            surfaceMaterial: this._coverageSurfaceMaterial
+        });
+        this._buildTreeFixtures(fixtures.treePlacements);
 
         const cam = this.camera;
-        if (cam) cam.position.set(0, 8.5, roadZ0 + 18);
+        if (cam) {
+            const anchor = fixtures.busAnchor?.position ?? { x: 0, z: 0 };
+            cam.position.set(Number(anchor.x) || 0, 8.5, (Number(anchor.z) || 0) + 18);
+        }
 
-        this._roadBounds = { halfWidth: roadHalfWidth, z0: roadZ0, z1: roadZ1 };
+        const primaryPoints = fixtures.roadSegments?.[0]?.points ?? [];
+        const first = primaryPoints[0] ?? { z: bounds.minZ };
+        const last = primaryPoints[primaryPoints.length - 1] ?? { z: bounds.maxZ };
+        this._roadBounds = { halfWidth: roadHalfWidth, z0: Number(first.z) || 0, z1: Number(last.z) || 0 };
+    }
+
+    _buildTreeFixtures(placements) {
+        const scene = this.scene;
+        const entries = Array.isArray(placements) ? placements : [];
+        if (!scene || !entries.length) return;
+
+        const group = new THREE.Group();
+        group.name = 'GrassLabTreeFixtures';
+        group.userData.grassLabTreePlacements = entries.map((entry) => ({ ...entry }));
+
+        const trunkGeo = new THREE.CylinderGeometry(0.35, 0.55, 4.4, 7);
+        const canopyGeo = new THREE.ConeGeometry(2.2, 5.4, 8);
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5f4027, roughness: 0.95 });
+        const canopyMat = new THREE.MeshStandardMaterial({ color: 0x335f2c, roughness: 0.92 });
+        const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, entries.length);
+        const canopies = new THREE.InstancedMesh(canopyGeo, canopyMat, entries.length);
+        trunks.name = 'GrassLabTreeTrunks';
+        canopies.name = 'GrassLabTreeCanopies';
+        trunks.castShadow = true;
+        trunks.receiveShadow = true;
+        canopies.castShadow = true;
+        canopies.receiveShadow = true;
+
+        const matrix = new THREE.Matrix4();
+        const quaternion = new THREE.Quaternion();
+        const position = new THREE.Vector3();
+        const scale = new THREE.Vector3();
+        for (let index = 0; index < entries.length; index++) {
+            const entry = entries[index];
+            const fixtureScale = Math.max(0.2, Number(entry.scaleVar) || 1);
+            quaternion.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, Number(entry.rotation) || 0);
+            scale.setScalar(fixtureScale);
+
+            position.set(Number(entry.x) || 0, 2.2 * fixtureScale, Number(entry.z) || 0);
+            matrix.compose(position, quaternion, scale);
+            trunks.setMatrixAt(index, matrix);
+
+            position.set(Number(entry.x) || 0, 6.2 * fixtureScale, Number(entry.z) || 0);
+            matrix.compose(position, quaternion, scale);
+            canopies.setMatrixAt(index, matrix);
+        }
+        trunks.instanceMatrix.needsUpdate = true;
+        canopies.instanceMatrix.needsUpdate = true;
+
+        group.add(trunks, canopies);
+        scene.add(group);
+        this._fixtureGroup = group;
+    }
+
+    _disposeFixtures() {
+        const group = this._fixtureGroup;
+        if (!group) return;
+        this.scene?.remove?.(group);
+        group.traverse?.((obj) => {
+            if (!obj?.isMesh) return;
+            obj.geometry?.dispose?.();
+            const material = obj.material;
+            if (Array.isArray(material)) for (const item of material) item?.dispose?.();
+            else material?.dispose?.();
+        });
+        this._fixtureGroup = null;
     }
 
     _disposeGround() {
@@ -780,6 +987,16 @@ export class GrassDebuggerView {
     }
 
     _getBusAnchor() {
+        const fixtureAnchor = this._labFixtures?.busAnchor ?? null;
+        if (fixtureAnchor) {
+            const p = fixtureAnchor.position ?? {};
+            const f = fixtureAnchor.forward ?? {};
+            return {
+                position: new THREE.Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0),
+                forward: new THREE.Vector3(Number(f.x) || 0, Number(f.y) || 0, Number(f.z) || 1).normalize()
+            };
+        }
+
         const map = this._map;
         if (!map) {
             return {
@@ -821,6 +1038,359 @@ export class GrassDebuggerView {
         controls.setLookAt({ position, target });
     }
 
+    _loadAuthoringProfile() {
+        const fallback = createDefaultLowCutGrassProfile();
+        let stored = null;
+        try {
+            stored = globalThis.localStorage?.getItem?.(LOW_CUT_PROFILE_STORAGE_KEY) ?? null;
+        } catch {
+            return fallback;
+        }
+        if (!stored) return fallback;
+        try {
+            return parseLowCutGrassProfileJson(stored);
+        } catch (error) {
+            console.warn('[GrassLab] Ignoring invalid saved low-cut profile.', error);
+            try {
+                globalThis.localStorage?.removeItem?.(LOW_CUT_PROFILE_STORAGE_KEY);
+            } catch {
+            }
+            return fallback;
+        }
+    }
+
+    _storeAuthoringProfile(profile) {
+        const serialized = serializeLowCutGrassProfile(profile);
+        globalThis.localStorage?.setItem?.(LOW_CUT_PROFILE_STORAGE_KEY, serialized);
+        return serialized;
+    }
+
+    focusAuthoringFixture() {
+        const pose = this._authoringFixture?.getFocusPose?.() ?? null;
+        if (pose) this.controls?.setLookAt?.(pose);
+    }
+
+    focusNearCarpet() {
+        const anchor = this._labFixtures?.busAnchor?.position ?? { x: -36, z: -150 };
+        const target = new THREE.Vector3(Number(anchor.x) + 16, 0.025, Number(anchor.z) + 18);
+        const position = target.clone().add(new THREE.Vector3(0, 0.22, 2.2));
+        this.controls?.setLookAt?.({ position, target });
+    }
+
+    focusCoverage(targetId = 'straight') {
+        const id = targetId === 'corner' || targetId === 'irregular' ? targetId : 'straight';
+        const fixture = this._labFixtures?.coverageCameraTargets?.[id] ?? null;
+        if (!fixture) return;
+        const target = new THREE.Vector3(Number(fixture.x), 0.03, Number(fixture.z));
+        const offset = id === 'corner'
+            ? new THREE.Vector3(4.2, 0.72, 4.2)
+            : id === 'irregular'
+                ? new THREE.Vector3(4.0, 0.45, 4.0)
+                : new THREE.Vector3(2.8, 0.30, 3.0);
+        this.controls?.setLookAt?.({ position: target.clone().add(offset), target });
+    }
+
+    focusAutoLod(targetId = 'grazing') {
+        const id = targetId === 'topDown' || targetId === 'cutoff' ? targetId : 'grazing';
+        const fixture = this._labFixtures?.lodCameraTargets?.[id] ?? null;
+        if (!fixture) return;
+        const target = new THREE.Vector3(Number(fixture.x), 0.035, Number(fixture.z));
+        const offset = id === 'topDown'
+            ? new THREE.Vector3(0.4, 17, 0.6)
+            : id === 'cutoff'
+                ? new THREE.Vector3(0, 0.85, 42)
+                : new THREE.Vector3(0, 0.48, 13);
+        this.controls?.setLookAt?.({ position: target.clone().add(offset), target });
+    }
+
+    focusLocalizedAccent(targetId = 'tree') {
+        const id = targetId === 'wornFeature' ? 'wornFeature' : 'tree';
+        const fixture = this._labFixtures?.accentCameraTargets?.[id] ?? null;
+        if (!fixture) return;
+        const target = new THREE.Vector3(Number(fixture.x), 0.045, Number(fixture.z));
+        const offset = id === 'wornFeature'
+            ? new THREE.Vector3(2.8, 0.55, 3.4)
+            : new THREE.Vector3(3.4, 0.72, 4.8);
+        this.controls?.setLookAt?.({ position: target.clone().add(offset), target });
+    }
+
+    focusMaterialFixture(options = null) {
+        const pose = this._materialFixture?.getFocusPose?.(options ?? {}) ?? null;
+        if (pose) this.controls?.setLookAt?.(pose);
+    }
+
+    applyMaterialLightingPreset(presetId) {
+        const id = presetId === 'overcast' || presetId === 'grazing' ? presetId : 'daylight';
+        if (this._sun) {
+            if (id === 'grazing') this._sun.position.set(110, 12, 42);
+            else if (id === 'overcast') this._sun.position.set(50, 180, 80);
+            else this._sun.position.set(110, 160, 90);
+            this._sun.color.setHex(id === 'grazing' ? 0xffd3a0 : id === 'overcast' ? 0xdce8f0 : 0xffffff);
+        }
+        this.focusMaterialFixture({ grazing: id === 'grazing' });
+    }
+
+    _getValidationTarget(fixtureId = 'grazing') {
+        if (fixtureId === 'bus') {
+            return this._getBusAnchor().position;
+        }
+        const targets = this._labFixtures?.lodCameraTargets ?? {};
+        const fixture = targets[fixtureId] ?? targets.grazing ?? { x: 0, z: 0 };
+        return new THREE.Vector3(Number(fixture.x) || 0, 0.04, Number(fixture.z) || 0);
+    }
+
+    applyValidationCameraPreset(presetId) {
+        const preset = getGrassLabCameraPreset(presetId);
+        this._validationMotion = { id: 'stationary', active: false, startedAtMs: 0, durationMs: 0 };
+        this._validationCameraId = preset.id;
+        this._ui?.recordValidationReview?.('camera', preset.id);
+        if (preset.fixture === 'bus') {
+            this._applyBehindBusCameraPreset();
+            this.resetValidationSamples();
+            return preset;
+        }
+        const target = this._getValidationTarget(preset.fixture);
+        target.y = Number(preset.targetHeightMeters) || 0.04;
+        const position = target.clone().add(new THREE.Vector3(
+            Number(preset.lateralMeters) || 0,
+            0,
+            Number(preset.distanceMeters) || 1
+        ));
+        position.y = Math.max(0.05, Number(preset.heightMeters) || 1);
+        this.controls?.setLookAt?.({ position, target });
+        this.resetValidationSamples();
+        return preset;
+    }
+
+    applyValidationLightingPreset(presetId) {
+        const preset = getGrassLabLightingPreset(presetId);
+        this._validationLightingId = preset.id;
+        this._ui?.recordValidationReview?.('lighting', preset.id);
+        if (this._sun) {
+            this._sun.intensity = preset.sunIntensity;
+            this._sun.color.setHex(preset.sunColor);
+            this._sun.position.set(preset.sunPosition.x, preset.sunPosition.y, preset.sunPosition.z);
+        }
+        if (this._hemi) {
+            this._hemi.intensity = preset.hemiIntensity;
+            this._hemi.color.setHex(preset.skyColor);
+            this._hemi.groundColor.setHex(preset.groundColor);
+        }
+        if (this.renderer) this.renderer.toneMappingExposure = preset.exposure;
+        if (this.scene) {
+            this.scene.background = preset.id === 'night'
+                ? new THREE.Color(0x070b18)
+                : (this.scene.environment ?? new THREE.Color(0x0b0f16));
+        }
+        if (this._streetLight) {
+            const target = this._getValidationTarget('grazing');
+            this._streetLight.position.set(target.x + 3, 5.5, target.z + 2);
+            this._streetLight.intensity = preset.id === 'night' ? 18 : 0;
+        }
+        this.resetValidationSamples();
+        return preset;
+    }
+
+    startValidationMotionPath(pathId) {
+        const id = pathId === 'flyover' ? 'flyover' : 'stationary';
+        this._ui?.recordValidationReview?.('motion', id);
+        if (id === 'stationary') {
+            this._validationMotion = { id, active: false, startedAtMs: performance.now(), durationMs: 4000 };
+            this.applyValidationCameraPreset('near_handoff');
+            this._validationMotion.id = id;
+            return { ...this._validationMotion };
+        }
+        this._validationMotion = {
+            id,
+            active: true,
+            startedAtMs: performance.now(),
+            durationMs: 9000,
+            target: this._getValidationTarget('grazing')
+        };
+        this.resetValidationSamples();
+        return { id, active: true, durationMs: 9000 };
+    }
+
+    _updateValidationMotion(nowMs) {
+        const motion = this._validationMotion;
+        if (!motion?.active || motion.id !== 'flyover' || !motion.target) return;
+        const elapsed = Math.max(0, Number(nowMs) - Number(motion.startedAtMs));
+        const t = Math.min(1, elapsed / Math.max(1, Number(motion.durationMs)));
+        const eased = t * t * (3 - 2 * t);
+        const target = motion.target.clone();
+        target.y = 0.05;
+        const distance = 2 + eased * 46;
+        const height = 0.45 + eased * 2.75;
+        const lateral = Math.sin(t * Math.PI * 2) * 2.25;
+        const position = target.clone().add(new THREE.Vector3(lateral, height, distance));
+        this.controls?.setLookAt?.({ position, target });
+        if (t >= 1) motion.active = false;
+    }
+
+    resetValidationSamples() {
+        this._validationSamples.length = 0;
+        this._validationBufferSamples.length = 0;
+        this._validationSampleWarmupUntilMs = performance.now() + 1000;
+    }
+
+    _getBufferUpdateTotal(snapshot) {
+        const grass = snapshot?.grass ?? {};
+        return Math.max(0, Number(grass.nearCarpet?.totalBufferUpdates) || 0)
+            + Math.max(0, Number(grass.midCluster?.bufferUpdates) || 0)
+            + Math.max(0, Number(grass.localizedAccents?.bufferUpdates) || 0);
+    }
+
+    _recordValidationSample(snapshot, nowMs) {
+        const sample = JSON.parse(JSON.stringify(snapshot));
+        const timeMs = Number(nowMs) || performance.now();
+        if (timeMs < this._validationSampleWarmupUntilMs) return;
+        this._validationSamples.push(sample);
+        if (this._validationSamples.length > 120) this._validationSamples.shift();
+        this._validationBufferSamples.push({ timeMs, total: this._getBufferUpdateTotal(snapshot) });
+        while (this._validationBufferSamples.length > 1 && timeMs - this._validationBufferSamples[0].timeMs > 5000) {
+            this._validationBufferSamples.shift();
+        }
+    }
+
+    _getBufferUpdatesPerSecond() {
+        const samples = this._validationBufferSamples;
+        if (samples.length < 2) return 0;
+        let updates = 0;
+        let durationMs = 0;
+        for (let index = 1; index < samples.length; index++) {
+            const previous = samples[index - 1];
+            const current = samples[index];
+            const delta = current.total - previous.total;
+            if (delta < 0) continue;
+            updates += delta;
+            durationMs += Math.max(0, current.timeMs - previous.timeMs);
+        }
+        return durationMs > 0 ? updates / (durationMs / 1000) : 0;
+    }
+
+    getValidationDiagnostics(snapshot = null) {
+        const current = snapshot ?? this.getLabSnapshot();
+        const qualityPreset = current?.validation?.qualityPreset ?? 'default';
+        const matchingSamples = this._validationSamples.filter((sample) => sample?.validation?.qualityPreset === qualityPreset);
+        const budgetResult = evaluateGrassLabBudget(matchingSamples.length ? matchingSamples : [current]);
+        return {
+            snapshot: current,
+            validation: current.validation,
+            budgetResult,
+            bufferUpdatesTotal: this._getBufferUpdateTotal(current),
+            bufferUpdatesPerSecond: this._getBufferUpdatesPerSecond(),
+            stress: { ...this._validationStress },
+            approval: this._validationApproval ? JSON.parse(JSON.stringify(this._validationApproval)) : null
+        };
+    }
+
+    runValidationStress() {
+        this._ui?.applyQualityPreset?.('high');
+        this.applyValidationCameraPreset('top_down');
+        this._validationStress = {
+            completed: false,
+            startedAtMs: performance.now(),
+            qualityPreset: 'high',
+            cameraPreset: 'top_down'
+        };
+        this.resetValidationSamples();
+        return { ...this._validationStress };
+    }
+
+    _finishValidationStress(nowMs) {
+        if (this._validationStress?.completed || !this._validationStress?.startedAtMs) return;
+        if (Number(nowMs) - Number(this._validationStress.startedAtMs) < 2500 || this._validationSamples.length < 4) return;
+        const result = evaluateGrassLabBudget(this._validationSamples);
+        this._validationStress = {
+            ...this._validationStress,
+            completed: true,
+            completedAtMs: Number(nowMs),
+            pass: result.structuralPass,
+            timingInformational: true,
+            triangles: result.measurements.maximumTriangles,
+            drawCalls: result.measurements.maximumDrawCalls,
+            averageCpuMs: result.measurements.averageCpuMs,
+            averageGpuMs: result.measurements.averageGpuMs,
+            bufferUpdatesPerSecond: this._getBufferUpdatesPerSecond()
+        };
+    }
+
+    setValidationRegressionResults(results = {}) {
+        for (const id of GRASS_LAB_REQUIRED_REGRESSIONS) {
+            if (Object.hasOwn(results, id)) this._validationRegressionStatus[id] = results[id] === true;
+        }
+        return { ...this._validationRegressionStatus };
+    }
+
+    createValidationApprovalCandidate() {
+        const report = this.getValidationDiagnostics();
+        const validation = this._ui?.getState?.()?.validation ?? report.validation ?? {};
+        this._validationApproval = createGrassLabApprovalRecord({
+            environment: {
+                userAgent: globalThis.navigator?.userAgent ?? 'unknown',
+                renderer: this.renderer?.getContext?.()?.getParameter?.(this.renderer.getContext().RENDERER) ?? 'WebGL',
+                resolution: `${this.canvas?.width ?? 0}×${this.canvas?.height ?? 0}`
+            },
+            qualityPreset: validation.qualityPreset,
+            budgetResult: report.budgetResult,
+            reviewedCameraIds: validation.reviewedCameraIds,
+            reviewedLightingIds: validation.reviewedLightingIds,
+            reviewedMotionPathIds: validation.reviewedMotionPathIds,
+            regressions: this._validationRegressionStatus,
+            stress: this._validationStress,
+            gameplayTouched: false
+        });
+        return JSON.parse(JSON.stringify(this._validationApproval));
+    }
+
+    saveAuthoringProfile() {
+        try {
+            this._storeAuthoringProfile(this._authoringProfile);
+            this._ui?.setAuthoringStatus?.('Profile saved locally; reload will reproduce this source.');
+        } catch (error) {
+            console.error('[GrassLab] Failed to save low-cut profile.', error);
+            this._ui?.setAuthoringStatus?.('Profile save failed.');
+        }
+    }
+
+    exportAuthoringProfile() {
+        const serialized = serializeLowCutGrassProfile(this._authoringProfile);
+        this._ui?.setAuthoringProfileJson?.(serialized);
+        const clipboardWrite = globalThis.navigator?.clipboard?.writeText?.(serialized);
+        this._ui?.setAuthoringStatus?.('Canonical profile JSON prepared.');
+        if (clipboardWrite) {
+            clipboardWrite.then(() => {
+                this._ui?.setAuthoringStatus?.('Canonical profile JSON copied to clipboard.');
+            }).catch(() => {
+                this._ui?.setAuthoringStatus?.('Profile JSON prepared; clipboard unavailable.');
+            });
+        }
+        return serialized;
+    }
+
+    getAuthoringProfile() {
+        return sanitizeLowCutGrassProfile(this._authoringProfile);
+    }
+
+    importAuthoringProfile(json) {
+        try {
+            const profile = parseLowCutGrassProfileJson(json);
+            this._storeAuthoringProfile(profile);
+            window.location.reload();
+        } catch (error) {
+            console.warn('[GrassLab] Low-cut profile import rejected.', error);
+            this._ui?.setAuthoringStatus?.(error instanceof Error ? error.message : 'Profile import failed.');
+        }
+    }
+
+    resetAuthoringProfile() {
+        try {
+            globalThis.localStorage?.removeItem?.(LOW_CUT_PROFILE_STORAGE_KEY);
+        } catch {
+        }
+        window.location.reload();
+    }
+
     _applyUiState(next, { force = false } = {}) {
         const scene = this.scene;
         const renderer = this.renderer;
@@ -854,27 +1424,178 @@ export class GrassDebuggerView {
 
         if (this._sun) this._sun.intensity = clamp(next?.environment?.sunIntensity, 0, 6, 1.05);
 
+        const previousQuality = this._state?.validation?.qualityPreset ?? null;
         this._state = next;
+        if (previousQuality && previousQuality !== next?.validation?.qualityPreset) this.resetValidationSamples();
         this._syncTerrainFromState(next, { force });
-        this._syncLod1FromState(next, { force });
-        this._syncLod2FromState(next, { force });
+        this._syncAuthoringFromState(next);
+        this._syncMaterialFromState(next);
+        this._syncCoverageFromState(next);
+        this._syncGrassEngineFromState(next);
+        if (this._fixtureGroup) this._fixtureGroup.visible = next?.lab?.showFixtures !== false;
     }
 
-    _loadTexture(url, { srgb } = {}) {
-        const renderer = this.renderer;
-        const safeUrl = typeof url === 'string' && url ? url : null;
-        if (!safeUrl || !renderer) return null;
+    _syncGrassEngineFromState(state) {
+        const config = createGrassLabEngineConfig(state, { tileSize: TILE_SIZE_METERS });
+        const appearance = this._getActiveGrassMaterialContract().family.nearBladeAppearance;
+        config.material.roughness = appearance.roughness;
+        config.nearCarpet = {
+            ...config.nearCarpet,
+            baseColor: appearance.baseColor,
+            tipColor: appearance.tipColor,
+            roughness: appearance.roughness
+        };
+        config.field.color.base = appearance.bodyColor;
+        this._grassEngine?.setConfig?.(config);
+        this._grassEngine?.setLocalizedAccentInput?.({
+            treePlacements: this._labFixtures?.treePlacements ?? [],
+            featurePlacements: this._labFixtures?.accentFeaturePlacements ?? [],
+            coverageDefinition: this._labFixtures?.grassCoverage ?? null,
+            coverageConfig: createGrassLabCoverageConfig(state)
+        });
+    }
 
-        const cached = this._texCache.get(safeUrl) ?? null;
-        if (cached?.isTexture) return cached;
+    _syncAuthoringFromState(state) {
+        const profile = sanitizeLowCutGrassProfile(state?.authoring?.profile);
+        this._authoringProfile = profile;
+        this._authoringFixture?.setProfile?.(profile);
+        this._authoringFixture?.setVisible?.(state?.tab === 'authoring');
+        this._ui?.setAuthoringProfileJson?.(serializeLowCutGrassProfile(profile), { preserveEditing: true });
+    }
 
-        const tex = this._texLoader.load(safeUrl);
-        tex.wrapS = THREE.RepeatWrapping;
-        tex.wrapT = THREE.RepeatWrapping;
-        tex.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy?.() ?? 16);
-        applyTextureColorSpace(tex, { srgb: !!srgb });
-        this._texCache.set(safeUrl, tex);
-        return tex;
+    _getActiveGrassMaterialContract() {
+        if (this._grassMaterialVersion === 'v1') {
+            return {
+                version: 'v1',
+                materialId: LOW_CUT_GRASS_V1_MATERIAL_ID,
+                family: LOW_CUT_GRASS_V1_ASSET_FAMILY
+            };
+        }
+        return {
+            version: 'v2',
+            materialId: LOW_CUT_GRASS_MATERIAL_ID,
+            family: LOW_CUT_GRASS_ASSET_FAMILY
+        };
+    }
+
+    _getActiveGrassAtlasContract(role) {
+        const active = this._getActiveGrassMaterialContract();
+        if (active.version === 'v1') return active.family.atlas;
+        const atlas = active.family.atlases?.[role] ?? null;
+        if (!atlas) throw new Error(`[GrassLab] Missing V2 grass atlas role: ${String(role)}`);
+        return atlas;
+    }
+
+    getGrassMaterialVersion() {
+        return this._grassMaterialVersion;
+    }
+
+    setGrassMaterialVersion(version) {
+        const next = String(version ?? '').trim().toLowerCase();
+        if (next !== 'v1' && next !== 'v2') throw new Error(`[GrassLab] Unsupported grass material version: ${String(version)}`);
+        if (next === this._grassMaterialVersion) return this.getGrassMaterialDiagnostics();
+        this._grassMaterialVersion = next;
+        if (this._coverageSurfaceMaterial) this._applyGrassCoverageMaterialPayload(this._coverageSurfaceMaterial);
+        if (this._midClusterMaterial) {
+            this._applyGrassAtlasMaterialPayload(this._midClusterMaterial, LOW_CUT_GRASS_ATLAS_ROLE.MID_CLUSTER);
+        }
+        if (this._accentClusterMaterial) {
+            this._applyGrassAtlasMaterialPayload(this._accentClusterMaterial, LOW_CUT_GRASS_ATLAS_ROLE.ACCENT_CLUMP);
+        }
+        this._materialFixture?.setMaterialVersion?.(next);
+        this._syncCoverageFromState(this._state);
+        this._syncGrassEngineFromState(this._state);
+        return this.getGrassMaterialDiagnostics();
+    }
+
+    getGrassMaterialDiagnostics() {
+        const active = this._getActiveGrassMaterialContract();
+        const near = active.family.nearBladeAppearance;
+        return {
+            version: active.version,
+            materialId: active.materialId,
+            coverageMaterialId: this._coverageSurfaceMaterial?.userData?.resolvedMaterialId ?? null,
+            midMaterialId: this._midClusterMaterial?.userData?.resolvedMaterialId ?? null,
+            accentMaterialId: this._accentClusterMaterial?.userData?.resolvedMaterialId ?? null,
+            midShaderSignature: this._midClusterMaterial?.userData?.grassCardShaderSignature ?? null,
+            midCompiledShaderSignature: this._midClusterMaterial?.userData?.grassCardShaderCompiledSignature ?? null,
+            midCompiledAlphaLayout: this._midClusterMaterial?.userData?.grassCardShaderCompiledAlphaLayout ?? null,
+            midCompiledNormalPolicy: this._midClusterMaterial?.userData?.grassCardShaderCompiledNormalPolicy ?? null,
+            midHasAlphaMap: this._midClusterMaterial?.alphaMap?.isTexture === true,
+            midMapAlphaMapDistinct: !!this._midClusterMaterial?.map
+                && !!this._midClusterMaterial?.alphaMap
+                && this._midClusterMaterial.map !== this._midClusterMaterial.alphaMap,
+            midVertexColorsEnabled: this._midClusterMaterial?.vertexColors === true,
+            midEmissiveIntensity: Number(this._midClusterMaterial?.emissiveIntensity) || 0,
+            accentEmissiveIntensity: Number(this._accentClusterMaterial?.emissiveIntensity) || 0,
+            nearBaseColor: near.baseColor,
+            nearTipColor: near.tipColor,
+            nearRoughness: near.roughness,
+            nearPaletteSource: near.paletteSource
+        };
+    }
+
+    _syncMaterialFromState(state) {
+        const config = {
+            ...LOW_CUT_GRASS_SHADER_DEFAULTS,
+            ...(state?.material && typeof state.material === 'object' ? state.material : {})
+        };
+        this._materialFixture?.setVisible?.(state?.tab === 'material');
+        this._materialFixture?.updateMaterial?.(config);
+        if (this._coverageSurfaceMaterial) updateLowCutGrassCarpetMaterial(this._coverageSurfaceMaterial, config);
+        if (this._groundMat) {
+            if (
+                state?.terrain?.groundMaterialId === LOW_CUT_GRASS_MATERIAL_ID
+                || state?.terrain?.groundMaterialId === LOW_CUT_GRASS_V1_MATERIAL_ID
+            ) {
+                const hasSystem = this._groundMat.userData?.__lowCutGrassCarpetMaterialV2;
+                if (hasSystem) updateLowCutGrassCarpetMaterial(this._groundMat, config);
+                else applyLowCutGrassCarpetMaterial(this._groundMat, config);
+            } else {
+                removeLowCutGrassCarpetMaterial(this._groundMat);
+            }
+        }
+        this._ui?.setMaterialDiagnostics?.(this._materialFixture?.getStats?.() ?? null);
+    }
+
+    _syncCoverageFromState(state) {
+        const config = createGrassLabCoverageConfig(state);
+        this._coverageSystem?.setConfig?.(config);
+        this._coverageSystem?.setVisibility?.({
+            surface: state?.coverage?.showSurface !== false,
+            lip: state?.coverage?.showLip !== false,
+            fringe: state?.coverage?.showFringe !== false
+        });
+        if (this._coverageSurfaceMaterial) {
+            this._coverageSurfaceMaterial.alphaTest = config.farCoverageThreshold;
+            this._coverageSurfaceMaterial.alphaToCoverage = true;
+            this._coverageSurfaceMaterial.transparent = false;
+            this._coverageSurfaceMaterial.roughness = clamp(0.90 + config.dryness * 0.08 - config.humidity * 0.30, 0.45, 1, 0.9);
+            const response = clamp(1 + config.dryness * 0.06 - config.humidity * 0.08, 0.8, 1.15, 1);
+            this._coverageSurfaceMaterial.color?.setRGB?.(response, response, response);
+            this._coverageSurfaceMaterial.needsUpdate = true;
+        }
+        const atlasMaterials = [
+            [this._midClusterMaterial, LOW_CUT_GRASS_ATLAS_ROLE.MID_CLUSTER],
+            [this._accentClusterMaterial, LOW_CUT_GRASS_ATLAS_ROLE.ACCENT_CLUMP]
+        ];
+        for (const [material, role] of atlasMaterials) {
+            if (!material) continue;
+            const atlas = this._getActiveGrassAtlasContract(role);
+            material.roughness = clamp(0.90 + config.dryness * 0.08 - config.humidity * 0.30, 0.55, 1, 0.9);
+            const response = clamp(1 + config.dryness * 0.06 - config.humidity * 0.08, 0.8, 1.15, 1);
+            material.color?.setRGB?.(response, response, response);
+            material.alphaTest = atlas.alphaCutoff;
+            material.alphaToCoverage = atlas.alphaToCoverage;
+            material.transparent = false;
+            material.needsUpdate = true;
+        }
+        if (this._wornAccentMaterial) {
+            const response = clamp(0.72 + config.dryness * 0.08 - config.humidity * 0.05, 0.58, 0.84, 0.72);
+            this._wornAccentMaterial.color?.setRGB?.(response, response * 0.82, response * 0.62);
+            this._wornAccentMaterial.roughness = clamp(0.92 + config.dryness * 0.06, 0.85, 1, 0.96);
+            this._wornAccentMaterial.needsUpdate = true;
+        }
     }
 
     _resolvePbrMaterialPayload(materialId, {
@@ -885,6 +1606,7 @@ export class GrassDebuggerView {
         uvSpace = 'meters',
         surfaceSizeMeters = null,
         repeatScale = 1.0,
+        auxiliaryKeys = null,
         diagnosticsTag = 'GrassDebuggerView'
     } = {}) {
         const id = typeof materialId === 'string' ? materialId.trim() : '';
@@ -897,6 +1619,7 @@ export class GrassDebuggerView {
             uvSpace,
             surfaceSizeMeters,
             repeatScale,
+            auxiliaryKeys,
             diagnosticsTag
         });
     }
@@ -907,49 +1630,167 @@ export class GrassDebuggerView {
 
         const id = typeof materialId === 'string' ? materialId : '';
         const resolved = this._resolvePbrMaterialPayload(id, {
+            localOverrides: (id === LOW_CUT_GRASS_MATERIAL_ID || id === LOW_CUT_GRASS_V1_MATERIAL_ID)
+                ? LOW_CUT_GRASS_LOCAL_OVERRIDES
+                : null,
             cloneTextures: false,
+            uvSpace: 'unit',
+            surfaceSizeMeters: { x: this._groundSize.x, y: this._groundSize.z },
+            auxiliaryKeys: [],
             diagnosticsTag: 'GrassDebuggerView.applyGroundPbrMaterial'
         });
-        const textures = resolved?.textures ?? {};
-
         mat.color?.setHex?.(0xffffff);
-        mat.map = textures.baseColor ?? null;
-        mat.normalMap = textures.normal ?? null;
+        applyResolvedPbrToStandardMaterial(mat, resolved);
+    }
 
-        if (textures.orm) {
-            mat.roughnessMap = textures.orm;
-            mat.metalnessMap = textures.orm;
-            mat.aoMap = textures.orm;
-            mat.metalness = 1.0;
-        } else {
-            mat.aoMap = textures.ao ?? null;
-            mat.roughnessMap = textures.roughness ?? null;
-            mat.metalnessMap = textures.metalness ?? null;
-            mat.metalness = 0.0;
+    _applyGrassCoverageMaterialPayload(material) {
+        const active = this._getActiveGrassMaterialContract();
+        const resolved = this._resolvePbrMaterialPayload(active.materialId, {
+            localOverrides: LOW_CUT_GRASS_LOCAL_OVERRIDES,
+            cloneTextures: true,
+            uvSpace: 'unit',
+            surfaceSizeMeters: { x: this._groundSize.x, y: this._groundSize.z },
+            auxiliaryKeys: ['coverage'],
+            diagnosticsTag: `GrassDebuggerView.coverageSurface.${active.version}`
+        });
+        applyResolvedPbrToStandardMaterial(material, resolved);
+        material.alphaMap = resolved?.auxiliaryTextures?.coverage ?? null;
+        material.emissive?.setHex?.(0x000000);
+        material.emissiveIntensity = 0;
+        material.emissiveMap = null;
+        material.transparent = false;
+        material.depthWrite = true;
+        material.userData.grassCoverageMapRole = 'far_coverage.png';
+        material.userData.grassCoverageOccupancy = 'hard_alpha_test';
+        material.userData.resolvedMaterialId = active.materialId;
+        material.needsUpdate = true;
+    }
+
+    _createGrassCoverageSurfaceMaterial(coverageConfig) {
+        const material = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness: 0.9,
+            metalness: 0,
+            emissive: 0x000000,
+            emissiveIntensity: 0,
+            vertexColors: true,
+            transparent: false,
+            depthWrite: true
+        });
+        material.name = 'GrassCoverageSurfaceMaterial';
+        this._applyGrassCoverageMaterialPayload(material);
+        material.alphaTest = Number(coverageConfig?.farCoverageThreshold) || 0.35;
+        material.alphaToCoverage = true;
+        applyLowCutGrassCarpetMaterial(material, LOW_CUT_GRASS_SHADER_DEFAULTS);
+        material.needsUpdate = true;
+        return material;
+    }
+
+    _applyGrassAtlasMaterialPayload(material, role) {
+        const active = this._getActiveGrassMaterialContract();
+        const contract = this._getActiveGrassAtlasContract(role);
+        const channels = active.version === 'v1'
+            ? { color: 'clusterColor', normal: 'clusterNormal', roughness: 'clusterRoughness', ao: 'clusterAo' }
+            : contract.channels;
+        const resolved = this._resolvePbrMaterialPayload(active.materialId, {
+            localOverrides: LOW_CUT_GRASS_LOCAL_OVERRIDES,
+            cloneTextures: false,
+            auxiliaryKeys: Object.values(channels),
+            diagnosticsTag: `GrassDebuggerView.${role}.${active.version}`
+        });
+        const atlas = resolved?.auxiliaryTextures ?? {};
+        const textures = [
+            atlas[channels.color],
+            channels.coverage ? atlas[channels.coverage] : null,
+            atlas[channels.normal],
+            atlas[channels.roughness],
+            atlas[channels.ao]
+        ].filter(Boolean);
+        for (const texture of textures) {
+            texture.wrapS = THREE.ClampToEdgeWrapping;
+            texture.wrapT = THREE.ClampToEdgeWrapping;
+            texture.repeat.set(1, 1);
+            texture.offset.set(0, 0);
+            texture.rotation = 0;
+            texture.center.set(0, 0);
+            texture.generateMipmaps = true;
+            texture.minFilter = THREE.LinearMipmapLinearFilter;
+            texture.magFilter = THREE.LinearFilter;
         }
+        const response = active.family.materialResponse;
+        material.map = atlas[channels.color] ?? null;
+        material.alphaMap = channels.coverage ? (atlas[channels.coverage] ?? null) : null;
+        material.normalMap = atlas[channels.normal] ?? null;
+        material.roughnessMap = atlas[channels.roughness] ?? null;
+        material.aoMap = atlas[channels.ao] ?? null;
+        material.roughness = Number(response?.roughness) || LOW_CUT_GRASS_LOCAL_OVERRIDES.roughness;
+        material.metalness = Number(response?.metalness) || 0;
+        material.emissive?.set?.(response?.emissive ?? '#000000');
+        material.emissiveIntensity = Number(response?.emissiveIntensity) || 0;
+        material.emissiveMap = null;
+        material.aoMapIntensity = Number(response?.aoIntensity) || 0;
+        material.normalScale.setScalar(active.version === 'v1' ? 0.38 : LOW_CUT_GRASS_LOCAL_OVERRIDES.normalStrength);
+        material.alphaTest = contract.alphaCutoff;
+        material.alphaToCoverage = contract.alphaToCoverage;
+        material.transparent = false;
+        material.depthWrite = true;
+        material.userData.grassClusterAtlasMaps = Object.freeze({ ...channels });
+        material.userData.grassClusterAtlasVariants = contract.variants;
+        material.userData.grassClusterAtlasRole = role;
+        material.userData.resolvedMaterialId = active.materialId;
+        applyGrassClusterAtlasVariantShader(material, contract);
+        material.needsUpdate = true;
+    }
 
-        mat.roughness = 1.0;
+    _createGrassAtlasMaterial(role, name) {
+        const material = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness: LOW_CUT_GRASS_LOCAL_OVERRIDES.roughness,
+            metalness: 0,
+            emissive: 0x000000,
+            emissiveIntensity: 0,
+            vertexColors: false,
+            side: THREE.DoubleSide,
+            transparent: false,
+            depthWrite: true
+        });
+        material.name = name;
+        this._applyGrassAtlasMaterialPayload(material, role);
+        return material;
+    }
 
-        const resolvedTileMeters = Number(resolved?.overrides?.effective?.tileMeters);
-        const tileMeters = (Number.isFinite(resolvedTileMeters) && resolvedTileMeters > EPS)
-            ? resolvedTileMeters
-            : (Number(getPbrMaterialMeta(id)?.tileMeters) || 4.0);
-        const repX = this._groundSize.x / Math.max(EPS, tileMeters);
-        const repY = this._groundSize.z / Math.max(EPS, tileMeters);
+    _createGrassMidClusterMaterial() {
+        return this._createGrassAtlasMaterial(LOW_CUT_GRASS_ATLAS_ROLE.MID_CLUSTER, 'GrassMidClusterAtlasMaterial');
+    }
 
-        const applyRepeat = (tex) => {
-            if (!tex?.isTexture) return;
-            tex.repeat?.set?.(repX, repY);
-            tex.needsUpdate = true;
-        };
+    _createGrassAccentClusterMaterial() {
+        return this._createGrassAtlasMaterial(LOW_CUT_GRASS_ATLAS_ROLE.ACCENT_CLUMP, 'GrassAccentClumpAtlasMaterial');
+    }
 
-        applyRepeat(mat.map);
-        applyRepeat(mat.normalMap);
-        applyRepeat(mat.aoMap);
-        applyRepeat(mat.roughnessMap);
-        applyRepeat(mat.metalnessMap);
-
-        mat.needsUpdate = true;
+    _createGrassWornAccentMaterial() {
+        const material = new THREE.MeshStandardMaterial({
+            color: 0x715d43,
+            roughness: 0.96,
+            metalness: 0,
+            transparent: false,
+            depthWrite: true,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1
+        });
+        material.name = 'GrassLocalizedWornSubstrateMaterial';
+        const resolved = this._resolvePbrMaterialPayload(LOW_CUT_GRASS_SUBSTRATE_MATERIAL_ID, {
+            cloneTextures: false,
+            uvSpace: 'unit',
+            diagnosticsTag: 'GrassDebuggerView.localizedWornSubstrate'
+        });
+        applyResolvedPbrToStandardMaterial(material, resolved);
+        material.color.setHex(0x715d43);
+        material.roughness = 0.96;
+        material.userData.grassLocalizedAccentRole = 'worn_tree_substrate';
+        material.userData.resolvedMaterialId = LOW_CUT_GRASS_SUBSTRATE_MATERIAL_ID;
+        material.needsUpdate = true;
+        return material;
     }
 
     _getSubstrateLayerTextures(materialId) {
@@ -1529,6 +2370,7 @@ export class GrassDebuggerView {
     }
 
     _openLod1Inspector() {
+        if (this._state?.lod1) this._rebuildLod1Variants(this._state.lod1);
         const asset = this._lod1.controlAsset ?? null;
         if (!asset?.mesh) {
             console.warn('[GrassDebugger] Missing LOD1 blade asset.');
@@ -2055,6 +2897,75 @@ export class GrassDebuggerView {
         }
     }
 
+    getLabSnapshot() {
+        const snapshot = createGrassLabSnapshot({
+            seed: this._state?.lab?.seed ?? GRASS_LAB_DEFAULT_SEED,
+            engineStats: this._grassEngine?.getStats?.() ?? null,
+            coverageStats: this._coverageSystem?.getStats?.() ?? null,
+            lodInfo: this._grassEngine?.getLodDebugInfo?.() ?? null,
+            rendererInfo: this.renderer?.info ?? null,
+            cpuMs: this._grassUpdateCpuMs,
+            gpuMs: this._gpuFrameTimer?.getLastMs?.() ?? null,
+            fixtures: this._labFixtures,
+            authoring: this._authoringFixture?.getStats?.() ?? null
+        });
+        return {
+            ...snapshot,
+            material: this._materialFixture?.getStats?.() ?? null,
+            validation: {
+                qualityPreset: this._state?.validation?.qualityPreset ?? 'default',
+                cameraPreset: this._validationCameraId,
+                lightingPreset: this._validationLightingId,
+                motionPath: this._validationMotion?.id ?? 'stationary',
+                motionActive: !!this._validationMotion?.active,
+                reviewedCameraIds: [...(this._ui?.getState?.()?.validation?.reviewedCameraIds ?? [])],
+                reviewedLightingIds: [...(this._ui?.getState?.()?.validation?.reviewedLightingIds ?? [])],
+                reviewedMotionPathIds: [...(this._ui?.getState?.()?.validation?.reviewedMotionPathIds ?? [])]
+            }
+        };
+    }
+
+    applyValidationQualityPreset(presetId) {
+        return this._ui?.applyQualityPreset?.(presetId) ?? null;
+    }
+
+    captureBaseline() {
+        const snapshot = this.getLabSnapshot();
+        const serialized = JSON.stringify(snapshot, null, 2);
+        console.info('[GrassLab] Baseline snapshot', snapshot);
+        this._ui?.setLabCaptureStatus?.('Baseline logged to console.');
+        const clipboardWrite = globalThis.navigator?.clipboard?.writeText?.(serialized);
+        if (clipboardWrite) {
+            clipboardWrite.then(() => {
+                this._ui?.setLabCaptureStatus?.('Baseline copied to clipboard and logged.');
+            }).catch(() => {
+                this._ui?.setLabCaptureStatus?.('Baseline logged; clipboard unavailable.');
+            });
+        }
+        return snapshot;
+    }
+
+    resetLab() {
+        try {
+            globalThis.localStorage?.removeItem?.(LOW_CUT_PROFILE_STORAGE_KEY);
+        } catch {
+        }
+        window.location.reload();
+    }
+
+    _updateLabDiagnostics(nowMs) {
+        const now = Number.isFinite(Number(nowMs)) ? Number(nowMs) : performance.now();
+        if (now - this._labDiagnosticsLastUpdateMs < 250) return;
+        this._labDiagnosticsLastUpdateMs = now;
+        const snapshot = this.getLabSnapshot();
+        this._recordValidationSample(snapshot, now);
+        this._finishValidationStress(now);
+        this._ui?.setLabDiagnostics?.(snapshot);
+        this._ui?.setValidationDiagnostics?.(this.getValidationDiagnostics(snapshot));
+        this._ui?.setAuthoringDiagnostics?.(this._authoringFixture?.getStats?.() ?? null);
+        this._ui?.setMaterialDiagnostics?.(this._materialFixture?.getStats?.() ?? null);
+    }
+
     _startLoop() {
         if (this._raf) return;
         this._lastT = performance.now();
@@ -2067,9 +2978,16 @@ export class GrassDebuggerView {
             this._updateCameraFromKeys(dt);
 
             this.controls?.update?.();
-            this._updateLod1();
-            this._updateLod2();
+            this._updateValidationMotion(now);
+            // The former per-blade LOD1/LOD2 renderer stays dormant.
+            // GrassEngine is the one canonical live field runtime.
             this._updateCenterDistanceOverlay({ nowMs: now });
+            const grassStartMs = performance.now();
+            this._grassEngine?.update?.({ camera: this.camera, focusDistanceMeters: this._centerHitDistanceMeters });
+            const grassCpuMs = Math.max(0, performance.now() - grassStartMs);
+            this._grassUpdateCpuMs = Number.isFinite(this._grassUpdateCpuMs)
+                ? this._grassUpdateCpuMs * 0.9 + grassCpuMs * 0.1
+                : grassCpuMs;
             this._gpuFrameTimer?.beginFrame?.();
             try {
                 this.renderer?.render?.(this.scene, this.camera);
@@ -2077,6 +2995,7 @@ export class GrassDebuggerView {
                 this._gpuFrameTimer?.endFrame?.();
                 this._gpuFrameTimer?.poll?.();
             }
+            this._updateLabDiagnostics(now);
             this.onFrame?.({ dt, nowMs: now });
         };
         this._raf = requestAnimationFrame(loop);

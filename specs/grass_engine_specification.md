@@ -5,6 +5,8 @@ This document specifies the **Grass Engine** — a lightweight GPU-instanced gra
 Status: **Proposed (draft)**
 Scope: **Rendering engine only** (placement logic out of scope)
 
+> Reconciliation notice: this draft predates `specs/grass/GRASS_OFFLINE_FIRST_AI_SEQUENCE.md`. The newer offline-first sequence and AI 350-363 take precedence where they differ. In particular, corrective AI 358-362 own the cohesive maintained-lawn design and native-4K approval, localized tufts remain accents only, the geometry cutoff must be justified in the Grass Lab, and gameplay integration is deferred until AI 363.
+
 ---
 
 ## 1. Goals

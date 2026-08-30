@@ -14,6 +14,12 @@ Tasks:
 - Define quality gates to detect abrupt seams or unintended conflicts between adjacent override regions.
 - Define acceptance criteria for deciding when to use procedural defaults versus local manual intervention.
 
+## Scope boundary
+
+- This prompt remains general guidance for procedural terrain and biome overrides.
+- Historical V1 grass coverage and localized accents were implemented by AI 354 and AI 356. Corrective V2 physical boundary/substrate ownership belongs to AI 359, while AI 361 owns reconciled localized rendering and handoffs.
+- No grass prompt may import these systems into gameplay before `AI_grass_363_CITY_import_revalidated_grass_lab_system_into_gameplay.md`, and that prompt remains blocked until AI 362 issues the V2 approval.
+
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Rename the file in `prompts/` to:

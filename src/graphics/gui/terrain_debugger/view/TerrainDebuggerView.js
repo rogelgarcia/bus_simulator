@@ -17,7 +17,6 @@ import { applyMaterialVariationToMeshStandardMaterial, updateMaterialVariationOn
 import { getCityMaterials } from '../../../assets3d/textures/CityMaterials.js';
 import { ROAD_DEFAULTS, createGeneratorConfig } from '../../../assets3d/generators/GeneratorParams.js';
 import { createRoadEngineRoads } from '../../../visuals/city/RoadEngineRoads.js';
-import { GrassEngine } from '../../../engine3d/grass/GrassEngine.js';
 import { createTerrainEngine } from '../../../../app/city/terrain_engine/index.js';
 import { createValueNoise2DSampler, mixU32, sampleFbm2D } from '../../../../app/core/noise/DeterministicNoise.js';
 import { TerrainDebuggerUI } from './TerrainDebuggerUI.js';
@@ -2394,7 +2393,6 @@ export class TerrainDebuggerView {
         this._asphaltWireframe = false;
         this._gameplayLightingDefaults = getResolvedDefaultLightingSettings({ includeUrlOverrides: true });
 
-        this._grassEngine = null;
         this._grassRoadBounds = { enabled: false, halfWidth: 0, z0: 0, z1: 0 };
         this._grassStatsLastMs = 0;
         this._grassInspector = null;
@@ -2885,7 +2883,6 @@ export class TerrainDebuggerView {
         this._sceneController.buildScene();
         this._updateGrassRoadBounds();
         this._terrainEngineAdapter.ensureEngineCreated();
-        this._sceneController.ensureGrassEngine(GrassEngine);
         const initialState = ui.getState();
         this._applyUiState(initialState);
         this._applyInitialBiomeTilingUrlCameraOverride();
@@ -3030,8 +3027,6 @@ export class TerrainDebuggerView {
         this._grassLodInspector?.dispose?.();
         this._grassLodInspector = null;
 
-        this._grassEngine?.dispose?.();
-        this._grassEngine = null;
 
         this._terrainEngineAdapter.dispose();
         this._terrainHumiditySourceMap = null;
@@ -3430,7 +3425,6 @@ export class TerrainDebuggerView {
                 this._terrainEngineMaskDirty = true;
             }
         }
-        this._grassEngine?.setTerrain?.({ terrainMesh: terrain, terrainGrid: this._terrainGrid });
 
         if (this._gridLines) {
             const grid = this._gridLines;
@@ -3466,7 +3460,6 @@ export class TerrainDebuggerView {
         const hideRoadAndGrass = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION
             || this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING;
         if (this._roads?.group) this._roads.group.visible = !hideRoadAndGrass;
-        if (this._grassEngine?.group) this._grassEngine.group.visible = !hideRoadAndGrass;
         this._syncBiomeTilingAxisHelper();
         this._syncBiomeTilingAdaptiveRingHelper();
         this._syncBiomeTilingTileLodDebugHelper();
@@ -8299,14 +8292,8 @@ export class TerrainDebuggerView {
         this._syncOutputPanel({ nowMs: t });
         this._terrainEngineAdapter.updatePerFrame({ nowMs: t, camera });
 
-        this._grassEngine?.update?.({ camera });
 
         const ui = this._ui;
-        if (ui && this._grassEngine && t - (this._grassStatsLastMs || 0) > 250) {
-            this._grassStatsLastMs = t;
-            ui.setGrassStats?.(this._grassEngine.getStats());
-            ui.setGrassLodDebugInfo?.(this._grassEngine.getLodDebugInfo());
-        }
 
         const gpuTimer = this._gpuFrameTimer;
         gpuTimer?.beginFrame?.();
@@ -11747,11 +11734,9 @@ export class TerrainDebuggerView {
 
         void this._materialController.applyIblState(s.ibl, { force: false });
 
-        if (this._grassEngine) this._grassEngine.setConfig?.(s.grass);
         const hideRoadAndGrass = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION
             || this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING;
         if (this._roads?.group) this._roads.group.visible = !hideRoadAndGrass;
-        if (this._grassEngine?.group) this._grassEngine.group.visible = !hideRoadAndGrass;
 
         if (nextLandWireframe !== this._terrainWireframe || nextAsphaltWireframe !== this._asphaltWireframe) {
             this._terrainWireframe = nextLandWireframe;

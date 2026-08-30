@@ -4,4 +4,13 @@ export { GrassEngine } from './GrassEngine.js';
 export { createDefaultGrassEngineConfig, sanitizeGrassEngineConfig } from './GrassConfig.js';
 export { evaluateGrassLod, GRASS_LOD_TIERS } from './GrassLodEvaluator.js';
 export { createGrassBladeGeometry, createGrassBladeTuftGeometry, createGrassCrossGeometry, createGrassStarGeometry } from './GrassGeometry.js';
-
+export {
+    createDefaultLowCutGrassProfile,
+    createLowCutGrassAuthoringBladeDescriptors,
+    createLowCutGrassRuntimeBladeData,
+    deriveLowCutGrassRuntimeProfile,
+    getLowCutGrassAuthoringSignature,
+    parseLowCutGrassProfileJson,
+    sanitizeLowCutGrassProfile,
+    serializeLowCutGrassProfile
+} from './LowCutGrassProfile.js';

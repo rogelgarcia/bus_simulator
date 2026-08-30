@@ -5,7 +5,21 @@
 import { DEFAULT_IBL_ID, getIblOptions } from '../../../content3d/catalogs/IBLCatalog.js';
 import { getPbrMaterialClassSectionsForGround, getPbrMaterialOptionsForGround } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
 import { PROCEDURAL_MESH } from '../../../content3d/catalogs/ProceduralMeshCatalog.js';
+import {
+    LOW_CUT_GRASS_SHADER_DEFAULTS,
+    LOW_CUT_GRASS_SUBSTRATE_MATERIAL_ID
+} from '../../../content3d/catalogs/LowCutGrassMaterialCatalog.js';
+import { createDefaultLowCutGrassProfile, serializeLowCutGrassProfile } from '../../../engine3d/grass/LowCutGrassProfile.js';
 import { PickerPopup } from '../../shared/PickerPopup.js';
+import { GRASS_LAB_DEFAULT_SEED } from '../GrassLabContract.js';
+import {
+    GRASS_LAB_CAMERA_PRESETS,
+    GRASS_LAB_LIGHTING_PRESETS,
+    GRASS_LAB_MOTION_PATHS,
+    GRASS_LAB_QUALITY_PRESETS,
+    applyGrassLabQualityPreset,
+    createGrassLabValidationState
+} from '../../../../app/grass/GrassLabValidationContract.js';
 
 function clamp(value, min, max, fallback = min) {
     const num = Number(value);
@@ -232,6 +246,44 @@ function makeSeedRow({ label, value = '', tooltip = '', onChange }) {
     return { row, input };
 }
 
+function makeTextRow({ label, value = '', placeholder = '', tooltip = '', onChange }) {
+    const row = makeEl('div', 'options-row options-row-wide');
+    const left = makeEl('div', 'options-row-label', label);
+    const right = makeEl('div', 'options-row-control options-row-control-wide');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'options-number';
+    input.value = String(value ?? '');
+    input.placeholder = placeholder;
+    input.addEventListener('change', () => onChange?.(String(input.value ?? '').trim()));
+    input.addEventListener('blur', () => onChange?.(String(input.value ?? '').trim()));
+    right.appendChild(input);
+    row.append(left, right);
+    if (tooltip) {
+        left.title = tooltip;
+        input.title = tooltip;
+    }
+    return { row, input };
+}
+
+function makeColorRow({ label, value, tooltip = '', onChange }) {
+    const row = makeEl('div', 'options-row');
+    const left = makeEl('div', 'options-row-label', label);
+    const right = makeEl('div', 'options-row-control');
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.className = 'ui-grass-authoring-color';
+    input.value = String(value ?? '#FFFFFF');
+    input.addEventListener('input', () => onChange?.(String(input.value).toUpperCase()));
+    right.appendChild(input);
+    row.append(left, right);
+    if (tooltip) {
+        left.title = tooltip;
+        input.title = tooltip;
+    }
+    return { row, input };
+}
+
 function makeButtonRow({ label, text, tooltip = '', onClick }) {
     const row = makeEl('div', 'options-row');
     const left = makeEl('div', 'options-row-label', label);
@@ -247,6 +299,14 @@ function makeButtonRow({ label, text, tooltip = '', onClick }) {
         btn.title = tooltip;
     }
     return { row, btn };
+}
+
+function makeReadoutRow(label, initialValue = '—') {
+    const row = makeEl('div', 'ui-grass-lab-readout-row');
+    const labelEl = makeEl('div', 'ui-grass-lab-readout-label', label);
+    const valueEl = makeEl('div', 'ui-grass-lab-readout-value', initialValue);
+    row.append(labelEl, valueEl);
+    return { row, valueEl };
 }
 
 function setOptionsThumbToTexture(thumb, url, label) {
@@ -346,17 +406,79 @@ function makeSection({ title, collapsedByDefault = false } = {}) {
 }
 
 export class GrassDebuggerUI {
-    constructor({ initialState, onChange, onInspectLod1, onCameraBehindBus } = {}) {
+    constructor({
+        initialState,
+        onChange,
+        onInspectLod1,
+        onCameraBehindBus,
+        onResetLab,
+        onCaptureBaseline,
+        onFocusNearCarpet,
+        onFocusAutoLod,
+        onFocusCoverage,
+        onFocusLocalizedAccent,
+        onFocusAuthoringFixture,
+        onFocusMaterialFixture,
+        onMaterialLightingPreset,
+        onSaveAuthoringProfile,
+        onExportAuthoringProfile,
+        onImportAuthoringProfile,
+        onResetAuthoringProfile,
+        onValidationCameraPreset,
+        onValidationLightingPreset,
+        onValidationMotionPath,
+        onValidationStress,
+        onValidationResetSamples,
+        onValidationApprove
+    } = {}) {
         this._onChange = typeof onChange === 'function' ? onChange : null;
         this._onInspectLod1 = typeof onInspectLod1 === 'function' ? onInspectLod1 : null;
         this._onCameraBehindBus = typeof onCameraBehindBus === 'function' ? onCameraBehindBus : null;
+        this._onResetLab = typeof onResetLab === 'function' ? onResetLab : null;
+        this._onCaptureBaseline = typeof onCaptureBaseline === 'function' ? onCaptureBaseline : null;
+        this._onFocusNearCarpet = typeof onFocusNearCarpet === 'function' ? onFocusNearCarpet : null;
+        this._onFocusAutoLod = typeof onFocusAutoLod === 'function' ? onFocusAutoLod : null;
+        this._onFocusCoverage = typeof onFocusCoverage === 'function' ? onFocusCoverage : null;
+        this._onFocusLocalizedAccent = typeof onFocusLocalizedAccent === 'function' ? onFocusLocalizedAccent : null;
+        this._onFocusAuthoringFixture = typeof onFocusAuthoringFixture === 'function' ? onFocusAuthoringFixture : null;
+        this._onFocusMaterialFixture = typeof onFocusMaterialFixture === 'function' ? onFocusMaterialFixture : null;
+        this._onMaterialLightingPreset = typeof onMaterialLightingPreset === 'function' ? onMaterialLightingPreset : null;
+        this._onSaveAuthoringProfile = typeof onSaveAuthoringProfile === 'function' ? onSaveAuthoringProfile : null;
+        this._onExportAuthoringProfile = typeof onExportAuthoringProfile === 'function' ? onExportAuthoringProfile : null;
+        this._onImportAuthoringProfile = typeof onImportAuthoringProfile === 'function' ? onImportAuthoringProfile : null;
+        this._onResetAuthoringProfile = typeof onResetAuthoringProfile === 'function' ? onResetAuthoringProfile : null;
+        this._onValidationCameraPreset = typeof onValidationCameraPreset === 'function' ? onValidationCameraPreset : null;
+        this._onValidationLightingPreset = typeof onValidationLightingPreset === 'function' ? onValidationLightingPreset : null;
+        this._onValidationMotionPath = typeof onValidationMotionPath === 'function' ? onValidationMotionPath : null;
+        this._onValidationStress = typeof onValidationStress === 'function' ? onValidationStress : null;
+        this._onValidationResetSamples = typeof onValidationResetSamples === 'function' ? onValidationResetSamples : null;
+        this._onValidationApprove = typeof onValidationApprove === 'function' ? onValidationApprove : null;
         this._isSetting = false;
 
         const groundOptions = getPbrMaterialOptionsForGround();
-        const defaultGroundMaterialId = groundOptions[0]?.id ?? '';
+        const defaultGroundMaterialId = groundOptions.find((option) => option?.id === LOW_CUT_GRASS_SUBSTRATE_MATERIAL_ID)?.id
+            ?? groundOptions[0]?.id
+            ?? '';
 
         const defaultState = {
-            tab: 'lod1',
+            tab: 'lab',
+            lab: {
+                seed: GRASS_LAB_DEFAULT_SEED,
+                showFixtures: true
+            },
+            validation: createGrassLabValidationState(),
+            authoring: {
+                profile: createDefaultLowCutGrassProfile()
+            },
+            material: {
+                enabled: LOW_CUT_GRASS_SHADER_DEFAULTS.enabled,
+                macroScaleMeters: LOW_CUT_GRASS_SHADER_DEFAULTS.macroScaleMeters,
+                macroVariationStrength: LOW_CUT_GRASS_SHADER_DEFAULTS.macroVariationStrength,
+                secondaryScale: LOW_CUT_GRASS_SHADER_DEFAULTS.secondaryScale,
+                secondaryBlend: LOW_CUT_GRASS_SHADER_DEFAULTS.secondaryBlend,
+                seedOffset: { ...LOW_CUT_GRASS_SHADER_DEFAULTS.seedOffset },
+                lightingPreset: 'daylight'
+            },
             environment: {
                 ibl: {
                     enabled: true,
@@ -370,7 +492,7 @@ export class GrassDebuggerUI {
                 showGrid: false,
                 groundMaterialId: defaultGroundMaterialId,
                 substrate: {
-                    enabled: true,
+                    enabled: false,
                     seed: 0,
                     layer1: {
                         enabled: true,
@@ -392,9 +514,49 @@ export class GrassDebuggerUI {
                     }
                 }
             },
+            coverage: {
+                enabled: true,
+                showSurface: true,
+                showLip: true,
+                showFringe: true,
+                layerHeightMillimeters: 27.5,
+                densityMultiplier: 1,
+                farCoverageThreshold: 0.35,
+                edgeAntialiasMillimeters: 15,
+                fringeEnabled: true,
+                fringeSpacingMeters: 0.35,
+                fringeInsetMeters: 0.055,
+                accentEligibility: true
+            },
+            accents: {
+                enabled: true,
+                wornEnabled: true,
+                featureAccentsEnabled: true,
+                clustersPerTree: 4,
+                clustersPerFeature: 3,
+                trunkRadiusMeters: 0.55,
+                ringInnerMeters: 0.82,
+                ringOuterMeters: 1.25,
+                wornRadiusMeters: 0.76,
+                cardWidthMeters: 0.24,
+                cardHeightMeters: 0.075
+            },
+            autoLod: {
+                force: 'auto',
+                nearEndMeters: 9,
+                clusterEndMeters: 30,
+                transitionWidthMeters: 2,
+                hysteresisMeters: 0.75,
+                grazingDistanceScale: 0.8,
+                topDownDistanceScale: 1.2
+            },
             lod1: {
                 enabled: true,
-                region: { innerMeters: 0, outerMeters: 32 },
+                carpetMode: 'auto',
+                carpetPatchSizeMeters: 1,
+                carpetBladesPerSquareMeter: 48,
+                carpetRadiusMeters: 9,
+                region: { innerMeters: 0, outerMeters: 9 },
                 angle: { minGrazingDeg: 0, maxGrazingDeg: 90 },
                 debug: { printRegion: true, drawBounds: true },
                 bladeMeshId: PROCEDURAL_MESH.SOCCER_GRASS_BLADE_V1,
@@ -407,7 +569,11 @@ export class GrassDebuggerUI {
             },
             lod2: {
                 enabled: true,
-                region: { innerMeters: 32, outerMeters: 80 },
+                clusterPatchSizeMeters: 2,
+                clusterCardsPerPatch: 2,
+                clusterCardWidthMeters: 1.15,
+                clusterCardHeightMeters: 0.055,
+                region: { innerMeters: 9, outerMeters: 30 },
                 angle: { minGrazingDeg: 0, maxGrazingDeg: 90 },
                 debug: { printRegion: false, drawBounds: false },
                 bladeMeshId: PROCEDURAL_MESH.SOCCER_GRASS_BLADE_V1,
@@ -419,14 +585,14 @@ export class GrassDebuggerUI {
                 curvature: { min: 0.4, max: 1.2 }
             },
             lod3: {
-                enabled: false,
-                region: { innerMeters: 80, outerMeters: 160 },
+                enabled: true,
+                region: { innerMeters: 30, outerMeters: 30 },
                 angle: { minGrazingDeg: 0, maxGrazingDeg: 90 },
                 debug: { printRegion: false, drawBounds: false }
             },
             lod4: {
-                enabled: false,
-                region: { innerMeters: 160, outerMeters: 260 },
+                enabled: true,
+                region: { innerMeters: 30, outerMeters: 30 },
                 angle: { minGrazingDeg: 0, maxGrazingDeg: 90 },
                 debug: { printRegion: false, drawBounds: false }
             }
@@ -442,8 +608,8 @@ export class GrassDebuggerUI {
         this.panel = makeEl('div', 'ui-panel is-interactive options-panel');
 
         const header = makeEl('div', 'options-header');
-        const title = makeEl('div', 'options-title', 'Grass Debugger');
-        const subtitle = makeEl('div', 'options-subtitle', 'LMB look · RMB orbit · MMB pan · WASD/Arrow keys move · Shift = fast · Wheel dolly · F frame · R reset');
+        const title = makeEl('div', 'options-title', 'Grass Lab');
+        const subtitle = makeEl('div', 'options-subtitle', 'Canonical GrassEngine runtime · deterministic offline fixtures · no gameplay integration');
         header.appendChild(title);
         header.appendChild(subtitle);
 
@@ -482,6 +648,29 @@ export class GrassDebuggerUI {
 
     getState() {
         return deepClone(this._state);
+    }
+
+    applyQualityPreset(presetId, { emit = true } = {}) {
+        this._state = applyGrassLabQualityPreset(this._state, presetId);
+        this._refreshValidationPresetReadout();
+        if (emit) this._emit();
+        return this.getState();
+    }
+
+    recordValidationReview(kind, id) {
+        const validation = this._state.validation ?? (this._state.validation = createGrassLabValidationState());
+        const value = String(id ?? '');
+        if (!value) return;
+        if (kind === 'camera') {
+            validation.cameraPreset = value;
+            this._markValidationReview('reviewedCameraIds', value);
+        } else if (kind === 'lighting') {
+            validation.lightingPreset = value;
+            this._markValidationReview('reviewedLightingIds', value);
+        } else if (kind === 'motion') {
+            validation.motionPath = value;
+            this._markValidationReview('reviewedMotionPathIds', value);
+        }
     }
 
     setLod1(nextLod1, { emit = true } = {}) {
@@ -614,15 +803,135 @@ export class GrassDebuggerUI {
         }).row);
     }
 
+    _buildMaterialTab(parent) {
+        const material = this._state.material && typeof this._state.material === 'object'
+            ? this._state.material
+            : (this._state.material = { ...LOW_CUT_GRASS_SHADER_DEFAULTS, lightingPreset: 'daylight' });
+
+        const contract = makeSection({ title: 'Matched grass material family', collapsedByDefault: false });
+        parent.appendChild(contract);
+        contract.appendChild(makeEl(
+            'div',
+            'ui-grass-lab-note',
+            'The three floor swatches compare Grass004, the approved 1.4 m low-cut surface, and its substrate. The vertical board is the single 4×2 alpha atlas used by later cluster LODs.'
+        ));
+        contract.appendChild(makeButtonRow({
+            label: 'Fixture camera',
+            text: 'Focus material fixture',
+            onClick: () => this._onFocusMaterialFixture?.({ grazing: material.lightingPreset === 'grazing' })
+        }).row);
+        contract.appendChild(makeToggleRow({
+            label: 'Anti-tiling',
+            value: material.enabled !== false,
+            tooltip: 'Stable world-space macro variation; the grass footprint is unchanged.',
+            onChange: (value) => {
+                material.enabled = value;
+                this._emit();
+            }
+        }).row);
+
+        const variation = makeSection({ title: 'Stable macro / micro variation', collapsedByDefault: false });
+        parent.appendChild(variation);
+        variation.appendChild(makeNumberSliderRow({
+            label: 'Macro scale (m)',
+            value: material.macroScaleMeters,
+            min: 2,
+            max: 80,
+            step: 0.5,
+            digits: 1,
+            onChange: (value) => {
+                material.macroScaleMeters = value;
+                this._emit();
+            }
+        }).row);
+        variation.appendChild(makeNumberSliderRow({
+            label: 'Macro strength',
+            value: material.macroVariationStrength,
+            min: 0,
+            max: 0.35,
+            step: 0.01,
+            digits: 2,
+            onChange: (value) => {
+                material.macroVariationStrength = value;
+                this._emit();
+            }
+        }).row);
+        variation.appendChild(makeNumberSliderRow({
+            label: 'Second sample blend',
+            value: material.secondaryBlend,
+            min: 0,
+            max: 0.75,
+            step: 0.01,
+            digits: 2,
+            onChange: (value) => {
+                material.secondaryBlend = value;
+                this._emit();
+            }
+        }).row);
+
+        const lighting = makeSection({ title: 'Acceptance lighting', collapsedByDefault: false });
+        parent.appendChild(lighting);
+        const applyPreset = (presetId) => {
+            const presets = {
+                daylight: { sun: 1.05, ibl: 0.25 },
+                overcast: { sun: 0.18, ibl: 0.48 },
+                grazing: { sun: 1.65, ibl: 0.2 }
+            };
+            const preset = presets[presetId] ?? presets.daylight;
+            material.lightingPreset = presetId in presets ? presetId : 'daylight';
+            this._state.environment.sunIntensity = preset.sun;
+            this._state.environment.ibl.envMapIntensity = preset.ibl;
+            if (this._controls?.sunIntensity) {
+                this._controls.sunIntensity.range.value = String(preset.sun);
+                this._controls.sunIntensity.number.value = preset.sun.toFixed(2);
+            }
+            if (this._controls?.iblIntensity) {
+                this._controls.iblIntensity.range.value = String(preset.ibl);
+                this._controls.iblIntensity.number.value = preset.ibl.toFixed(2);
+            }
+            this._onMaterialLightingPreset?.(material.lightingPreset);
+            this._emit();
+        };
+        lighting.appendChild(makeButtonRow({ label: 'Neutral', text: 'Daylight', onClick: () => applyPreset('daylight') }).row);
+        lighting.appendChild(makeButtonRow({ label: 'Diffuse', text: 'Overcast', onClick: () => applyPreset('overcast') }).row);
+        lighting.appendChild(makeButtonRow({ label: 'Low angle', text: 'Grazing', onClick: () => applyPreset('grazing') }).row);
+
+        const diagnostics = makeSection({ title: 'Material contract', collapsedByDefault: false });
+        parent.appendChild(diagnostics);
+        const grid = makeEl('div', 'ui-grass-lab-readouts');
+        diagnostics.appendChild(grid);
+        this._controls.materialReadouts = {};
+        for (const [key, label] of [
+            ['surface', 'Matched surface'],
+            ['scale', 'Physical scale'],
+            ['maps', 'Separated far maps'],
+            ['substrate', 'Substrate'],
+            ['atlas', 'Cluster atlas'],
+            ['mips', 'Alpha / mips'],
+            ['provenance', 'Provenance'],
+            ['pipeline', 'Texture pipeline']
+        ]) {
+            const readout = makeReadoutRow(label);
+            grid.appendChild(readout.row);
+            this._controls.materialReadouts[key] = readout.valueEl;
+        }
+    }
+
     _buildTabs() {
         this.tabs = makeEl('div', 'options-tabs');
         this._tabButtons = {
+            lab: makeEl('button', 'options-tab', 'Lab'),
+            validation: makeEl('button', 'options-tab', 'Validation'),
+            authoring: makeEl('button', 'options-tab', 'Authoring'),
+            material: makeEl('button', 'options-tab', 'Material'),
             environment: makeEl('button', 'options-tab', 'Environment'),
             terrain: makeEl('button', 'options-tab', 'Terrain'),
-            lod1: makeEl('button', 'options-tab', 'LOD 1'),
-            lod2: makeEl('button', 'options-tab', 'LOD 2'),
-            lod3: makeEl('button', 'options-tab', 'LOD 3'),
-            lod4: makeEl('button', 'options-tab', 'LOD 4')
+            coverage: makeEl('button', 'options-tab', 'Coverage'),
+            accents: makeEl('button', 'options-tab', 'Tree accents'),
+            lod1: makeEl('button', 'options-tab', 'Near geometry'),
+            lod2: makeEl('button', 'options-tab', 'Cluster LOD'),
+            lod3: makeEl('button', 'options-tab', 'Texture surface'),
+            lod4: makeEl('button', 'options-tab', 'Geometry cutoff')
         };
 
         for (const [key, btn] of Object.entries(this._tabButtons)) {
@@ -636,8 +945,14 @@ export class GrassDebuggerUI {
 
     _buildTabBodies() {
         this._tabBodies = {
+            lab: makeEl('div', null),
+            validation: makeEl('div', null),
+            authoring: makeEl('div', null),
+            material: makeEl('div', null),
             environment: makeEl('div', null),
             terrain: makeEl('div', null),
+            coverage: makeEl('div', null),
+            accents: makeEl('div', null),
             lod1: makeEl('div', null),
             lod2: makeEl('div', null),
             lod3: makeEl('div', null),
@@ -649,12 +964,689 @@ export class GrassDebuggerUI {
             this.body.appendChild(el);
         }
 
+        this._buildLabTab(this._tabBodies.lab);
+        this._buildValidationTab(this._tabBodies.validation);
+        this._buildAuthoringTab(this._tabBodies.authoring);
+        this._buildMaterialTab(this._tabBodies.material);
         this._buildEnvironmentTab(this._tabBodies.environment);
         this._buildTerrainTab(this._tabBodies.terrain);
+        this._buildCoverageTab(this._tabBodies.coverage);
+        this._buildLocalizedAccentsTab(this._tabBodies.accents);
         this._buildLod1Body(this._tabBodies.lod1);
-        this._buildLod2Body(this._tabBodies.lod2);
-        this._buildLodStubBody(this._tabBodies.lod3, { key: 'lod3', title: 'LOD 3 (TODO)' });
-        this._buildLodStubBody(this._tabBodies.lod4, { key: 'lod4', title: 'LOD 4 (TODO)' });
+        this._buildAutoLodBody(this._tabBodies.lod2);
+        this._buildLodStubBody(this._tabBodies.lod3, { key: 'lod3', title: 'Texture-only maintained grass' });
+        this._buildLodStubBody(this._tabBodies.lod4, { key: 'lod4', title: 'Hard geometry cutoff' });
+    }
+
+    _buildLabTab(parent) {
+        const lab = this._state.lab && typeof this._state.lab === 'object'
+            ? this._state.lab
+            : (this._state.lab = { seed: GRASS_LAB_DEFAULT_SEED, showFixtures: true });
+
+        const contract = makeSection({ title: 'Canonical runtime', collapsedByDefault: false });
+        parent.appendChild(contract);
+        const ownership = makeEl(
+            'div',
+            'ui-grass-lab-note',
+            'This screen owns offline grass approval and runs GrassEngine. The high-resolution bake source is isolated in Authoring; the field uses the derived lightweight, single-material runtime contract.'
+        );
+        contract.appendChild(ownership);
+
+        contract.appendChild(makeSeedRow({
+            label: 'Lab seed',
+            value: lab.seed,
+            tooltip: 'Reset returns to the canonical baseline seed.',
+            onChange: (value) => {
+                lab.seed = value || GRASS_LAB_DEFAULT_SEED;
+                this._emit();
+            }
+        }).row);
+        contract.appendChild(makeToggleRow({
+            label: 'Tree fixtures',
+            value: lab.showFixtures !== false,
+            onChange: (value) => {
+                lab.showFixtures = value;
+                this._emit();
+            }
+        }).row);
+        contract.appendChild(makeButtonRow({
+            label: 'Deterministic state',
+            text: 'Reset canonical baseline',
+            onClick: () => this._onResetLab?.()
+        }).row);
+        contract.appendChild(makeButtonRow({
+            label: 'Diagnostics',
+            text: 'Capture baseline JSON',
+            onClick: () => this._onCaptureBaseline?.()
+        }).row);
+
+        const status = makeEl('div', 'ui-grass-lab-status', 'Baseline not captured yet.');
+        contract.appendChild(status);
+        this._controls.labCaptureStatus = status;
+
+        const metrics = makeSection({ title: 'Live baseline metrics', collapsedByDefault: false });
+        parent.appendChild(metrics);
+        const grid = makeEl('div', 'ui-grass-lab-readouts');
+        metrics.appendChild(grid);
+        const definitions = [
+            ['runtime', 'Runtime'],
+            ['fixtures', 'Fixtures'],
+            ['instances', 'Grass instances'],
+            ['triangles', 'Grass triangles'],
+            ['draws', 'Logical grass draws'],
+            ['nearCarpet', 'Near carpet'],
+            ['midCluster', 'Atlas clusters'],
+            ['accents', 'Localized accents'],
+            ['coverage', 'Hard coverage'],
+            ['cpu', 'Grass update CPU'],
+            ['gpu', 'Whole-frame GPU'],
+            ['renderer', 'Renderer totals'],
+            ['lod', 'LOD evaluation']
+        ];
+        this._controls.labReadouts = {};
+        for (const [key, label] of definitions) {
+            const readout = makeReadoutRow(label);
+            grid.appendChild(readout.row);
+            this._controls.labReadouts[key] = readout.valueEl;
+        }
+    }
+
+    _markValidationReview(key, id) {
+        const validation = this._state.validation ?? (this._state.validation = createGrassLabValidationState());
+        const list = Array.isArray(validation[key]) ? validation[key] : (validation[key] = []);
+        if (!list.includes(id)) list.push(id);
+    }
+
+    _refreshValidationPresetReadout() {
+        const validation = this._state.validation ?? createGrassLabValidationState();
+        const preset = GRASS_LAB_QUALITY_PRESETS[validation.qualityPreset] ?? GRASS_LAB_QUALITY_PRESETS.default;
+        const value = this._controls?.validationPresetSummary;
+        if (value) {
+            value.textContent = `${preset.label} · near ${preset.nearRadiusMeters} m · cluster ${preset.clusterRadiusMeters} m · density ×${preset.densityMultiplier.toFixed(2)} · accents ${preset.localizedAccents ? 'on' : 'off'} · cutoff ${preset.farCutoffMeters} m`;
+        }
+        for (const [id, button] of Object.entries(this._controls?.validationQualityButtons ?? {})) {
+            button.classList.toggle('options-btn-primary', id === preset.id);
+        }
+    }
+
+    _buildValidationTab(parent) {
+        const validation = this._state.validation && typeof this._state.validation === 'object'
+            ? this._state.validation
+            : (this._state.validation = createGrassLabValidationState());
+
+        const quality = makeSection({ title: 'Quality presets · automatic LOD canonical', collapsedByDefault: false });
+        parent.appendChild(quality);
+        quality.appendChild(makeEl('div', 'ui-grass-lab-note', 'Low preserves the raised, hard-cut maintained surface with texture-only grass. Default is the approval target. High is a review/stress preset. Manual tier forcing remains in Cluster LOD only for diagnosis.'));
+        this._controls.validationQualityButtons = {};
+        for (const preset of Object.values(GRASS_LAB_QUALITY_PRESETS)) {
+            const row = makeButtonRow({
+                label: preset.id === 'default' ? 'Approval target' : 'Quality',
+                text: preset.label,
+                tooltip: preset.description,
+                onClick: () => {
+                    this.applyQualityPreset(preset.id);
+                }
+            });
+            quality.appendChild(row.row);
+            this._controls.validationQualityButtons[preset.id] = row.btn;
+        }
+        const presetSummary = makeEl('div', 'ui-grass-lab-status');
+        quality.appendChild(presetSummary);
+        this._controls.validationPresetSummary = presetSummary;
+
+        const cameras = makeSection({ title: 'Repeatable cameras and poses', collapsedByDefault: false });
+        parent.appendChild(cameras);
+        cameras.appendChild(makeEl('div', 'ui-grass-lab-note', 'The 0.30 m shot supplements the required 0.5–5 m inspection ladder. Handoff and texture-only poses measure center-screen focus distance under automatic LOD.'));
+        for (const preset of GRASS_LAB_CAMERA_PRESETS) {
+            cameras.appendChild(makeButtonRow({
+                label: preset.pose.replaceAll('_', ' '),
+                text: preset.label,
+                onClick: () => {
+                    const currentValidation = this._state.validation ?? (this._state.validation = createGrassLabValidationState());
+                    currentValidation.cameraPreset = preset.id;
+                    this._markValidationReview('reviewedCameraIds', preset.id);
+                    this._onValidationCameraPreset?.(preset.id);
+                    this._emit();
+                }
+            }).row);
+        }
+
+        const lighting = makeSection({ title: 'Deterministic lighting reviews', collapsedByDefault: false });
+        parent.appendChild(lighting);
+        for (const preset of Object.values(GRASS_LAB_LIGHTING_PRESETS)) {
+            lighting.appendChild(makeButtonRow({
+                label: 'Lighting',
+                text: preset.label,
+                onClick: () => {
+                    const currentValidation = this._state.validation ?? (this._state.validation = createGrassLabValidationState());
+                    currentValidation.lightingPreset = preset.id;
+                    this._state.environment.sunIntensity = preset.sunIntensity;
+                    this._markValidationReview('reviewedLightingIds', preset.id);
+                    this._emit();
+                    this._onValidationLightingPreset?.(preset.id);
+                }
+            }).row);
+        }
+
+        const motion = makeSection({ title: 'Stationary, flyover, and stress', collapsedByDefault: false });
+        parent.appendChild(motion);
+        for (const path of Object.values(GRASS_LAB_MOTION_PATHS)) {
+            motion.appendChild(makeButtonRow({
+                label: 'Path',
+                text: path.label,
+                onClick: () => {
+                    const currentValidation = this._state.validation ?? (this._state.validation = createGrassLabValidationState());
+                    currentValidation.motionPath = path.id;
+                    this._markValidationReview('reviewedMotionPathIds', path.id);
+                    this._onValidationMotionPath?.(path.id);
+                    this._emit();
+                }
+            }).row);
+        }
+        motion.appendChild(makeButtonRow({
+            label: 'Structural ceiling',
+            text: 'Run high-preset stress view',
+            onClick: () => this._onValidationStress?.()
+        }).row);
+        motion.appendChild(makeButtonRow({
+            label: 'Measurements',
+            text: 'Clear rolling samples',
+            onClick: () => this._onValidationResetSamples?.()
+        }).row);
+
+        const diagnostics = makeSection({ title: 'Approval diagnostics', collapsedByDefault: false });
+        parent.appendChild(diagnostics);
+        const grid = makeEl('div', 'ui-grass-lab-readouts');
+        diagnostics.appendChild(grid);
+        const definitions = [
+            ['review', 'Active review'],
+            ['lod', 'Active LOD / response'],
+            ['instances', 'Per-tier instances'],
+            ['triangles', 'Per-tier triangles'],
+            ['draws', 'Grass draws'],
+            ['timing', 'Rolling CPU / GPU proxy'],
+            ['buffers', 'Instance-buffer uploads'],
+            ['budget', 'Default budget'],
+            ['coverage', 'Review coverage'],
+            ['stress', 'Stress baseline'],
+            ['approval', 'Approval record']
+        ];
+        this._controls.validationReadouts = {};
+        for (const [key, label] of definitions) {
+            const readout = makeReadoutRow(label);
+            grid.appendChild(readout.row);
+            this._controls.validationReadouts[key] = readout.valueEl;
+        }
+        diagnostics.appendChild(makeButtonRow({
+            label: 'Explicit gate',
+            text: 'Record current approval candidate',
+            tooltip: 'Creates an in-memory approval candidate. Checked-in approval evidence is recorded only after all automated and visual reviews pass.',
+            onClick: () => this._onValidationApprove?.()
+        }).row);
+        this._refreshValidationPresetReadout();
+    }
+
+    _buildAuthoringTab(parent) {
+        const authoring = this._state.authoring && typeof this._state.authoring === 'object'
+            ? this._state.authoring
+            : (this._state.authoring = { profile: createDefaultLowCutGrassProfile() });
+        const profile = authoring.profile && typeof authoring.profile === 'object'
+            ? authoring.profile
+            : (authoring.profile = createDefaultLowCutGrassProfile());
+        const emit = () => this._emit();
+        const metersToMillimeters = (value) => Number(value) * 1000;
+        const millimetersToMeters = (value) => Number(value) / 1000;
+
+        const contract = makeSection({ title: 'Versioned authoring profile', collapsedByDefault: false });
+        parent.appendChild(contract);
+        contract.appendChild(makeEl(
+            'div',
+            'ui-grass-lab-note',
+            'Left fixture: deterministic high-resolution procedural bake source. Right fixture: the derived one-triangle, one-material runtime blade. Neither source-authoring complexity nor saved profiles enter gameplay in AI 351.'
+        ));
+        contract.appendChild(makeTextRow({
+            label: 'Profile ID',
+            value: profile.profileId,
+            placeholder: 'grass.lowcut.maintained.v1',
+            onChange: (value) => {
+                profile.profileId = value;
+                emit();
+            }
+        }).row);
+        contract.appendChild(makeSeedRow({
+            label: 'Seed',
+            value: profile.seed,
+            tooltip: 'The same sanitized profile and seed produce the same bake-source descriptors and geometry.',
+            onChange: (value) => {
+                profile.seed = value;
+                emit();
+            }
+        }).row);
+        contract.appendChild(makeButtonRow({
+            label: 'Fixture camera',
+            text: 'Focus comparison fixture',
+            onClick: () => this._onFocusAuthoringFixture?.()
+        }).row);
+        contract.appendChild(makeButtonRow({
+            label: 'Persist locally',
+            text: 'Save profile',
+            onClick: () => this._onSaveAuthoringProfile?.(this.getState())
+        }).row);
+
+        const blade = makeSection({ title: 'Maintained blade silhouette', collapsedByDefault: false });
+        parent.appendChild(blade);
+        blade.appendChild(makeEl('div', 'ui-grass-lab-note', 'Canonical maintained-turf target: 25–30 mm. Wider bounds are exposed only for controlled authoring experiments.'));
+        blade.appendChild(makeNumberSliderRow({
+            label: 'Height min (mm)',
+            value: metersToMillimeters(profile.blade.heightMeters.min),
+            min: 15,
+            max: 80,
+            step: 0.5,
+            digits: 1,
+            onChange: (value) => {
+                profile.blade.heightMeters.min = millimetersToMeters(value);
+                if (profile.blade.heightMeters.max < profile.blade.heightMeters.min) profile.blade.heightMeters.max = profile.blade.heightMeters.min;
+                emit();
+            }
+        }).row);
+        blade.appendChild(makeNumberSliderRow({
+            label: 'Height max (mm)',
+            value: metersToMillimeters(profile.blade.heightMeters.max),
+            min: 15,
+            max: 80,
+            step: 0.5,
+            digits: 1,
+            onChange: (value) => {
+                profile.blade.heightMeters.max = millimetersToMeters(value);
+                if (profile.blade.heightMeters.min > profile.blade.heightMeters.max) profile.blade.heightMeters.min = profile.blade.heightMeters.max;
+                emit();
+            }
+        }).row);
+        blade.appendChild(makeNumberSliderRow({
+            label: 'Width min (mm)',
+            value: metersToMillimeters(profile.blade.widthMeters.min),
+            min: 0.8,
+            max: 10,
+            step: 0.1,
+            digits: 1,
+            onChange: (value) => {
+                profile.blade.widthMeters.min = millimetersToMeters(value);
+                if (profile.blade.widthMeters.max < profile.blade.widthMeters.min) profile.blade.widthMeters.max = profile.blade.widthMeters.min;
+                emit();
+            }
+        }).row);
+        blade.appendChild(makeNumberSliderRow({
+            label: 'Width max (mm)',
+            value: metersToMillimeters(profile.blade.widthMeters.max),
+            min: 0.8,
+            max: 10,
+            step: 0.1,
+            digits: 1,
+            onChange: (value) => {
+                profile.blade.widthMeters.max = millimetersToMeters(value);
+                if (profile.blade.widthMeters.min > profile.blade.widthMeters.max) profile.blade.widthMeters.min = profile.blade.widthMeters.max;
+                emit();
+            }
+        }).row);
+
+        const shape = makeSection({ title: 'Shape variation', collapsedByDefault: false });
+        parent.appendChild(shape);
+        const shapeRows = [
+            ['Bend mean (deg)', profile.shape.bendDegrees, 'mean', -60, 60, 1, 0],
+            ['Bend variation (deg)', profile.shape.bendDegrees, 'variation', 0, 45, 1, 0],
+            ['Inclination mean (deg)', profile.shape.inclinationDegrees, 'mean', -45, 45, 1, 0],
+            ['Inclination variation (deg)', profile.shape.inclinationDegrees, 'variation', 0, 35, 1, 0],
+            ['Curvature mean', profile.shape.curvature, 'mean', 0, 3, 0.01, 2],
+            ['Curvature variation', profile.shape.curvature, 'variation', 0, 1.5, 0.01, 2]
+        ];
+        for (const [label, target, key, min, max, step, digits] of shapeRows) {
+            shape.appendChild(makeNumberSliderRow({
+                label,
+                value: target[key],
+                min,
+                max,
+                step,
+                digits,
+                onChange: (value) => {
+                    target[key] = value;
+                    emit();
+                }
+            }).row);
+        }
+
+        const appearance = makeSection({ title: 'Appearance response', collapsedByDefault: false });
+        parent.appendChild(appearance);
+        appearance.appendChild(makeColorRow({
+            label: 'Base color',
+            value: profile.appearance.baseColor,
+            onChange: (value) => {
+                profile.appearance.baseColor = value;
+                emit();
+            }
+        }).row);
+        appearance.appendChild(makeColorRow({
+            label: 'Tip color',
+            value: profile.appearance.tipColor,
+            onChange: (value) => {
+                profile.appearance.tipColor = value;
+                emit();
+            }
+        }).row);
+        const appearanceRows = [
+            ['Hue variation (deg)', profile.appearance.colorVariation, 'hueDegrees', 0, 40, 1, 0],
+            ['Saturation variation', profile.appearance.colorVariation, 'saturation', 0, 0.5, 0.01, 2],
+            ['Brightness variation', profile.appearance.colorVariation, 'brightness', 0, 0.5, 0.01, 2],
+            ['Dryness response', profile.appearance, 'dryness', 0, 1, 0.01, 2],
+            ['Humidity response', profile.appearance, 'humidity', 0, 1, 0.01, 2]
+        ];
+        for (const [label, target, key, min, max, step, digits] of appearanceRows) {
+            appearance.appendChild(makeNumberSliderRow({
+                label,
+                value: target[key],
+                min,
+                max,
+                step,
+                digits,
+                onChange: (value) => {
+                    target[key] = value;
+                    emit();
+                }
+            }).row);
+        }
+
+        const carpet = makeSection({ title: 'Carpet patch', collapsedByDefault: false });
+        parent.appendChild(carpet);
+        carpet.appendChild(makeEl('div', 'ui-grass-lab-note', 'Primary field layout is always area_patch. It is authored independently from localized tree, edge, and corner accents.'));
+        const carpetRows = [
+            ['Blade density (/m²)', 'bladeDensityPerSquareMeter', 1000, 30000, 100, 0],
+            ['Patch size (m)', 'patchSizeMeters', 0.25, 8, 0.05, 2],
+            ['Coverage', 'coverage', 0.1, 1, 0.01, 2],
+            ['Clumpiness', 'clumpiness', 0, 0.45, 0.01, 2]
+        ];
+        for (const [label, key, min, max, step, digits] of carpetRows) {
+            carpet.appendChild(makeNumberSliderRow({
+                label,
+                value: profile.carpet[key],
+                min,
+                max,
+                step,
+                digits,
+                onChange: (value) => {
+                    profile.carpet[key] = key === 'bladeDensityPerSquareMeter' ? Math.round(value) : value;
+                    emit();
+                }
+            }).row);
+        }
+
+        const accents = makeSection({ title: 'Localized accent tufts', collapsedByDefault: false });
+        parent.appendChild(accents);
+        accents.appendChild(makeEl('div', 'ui-grass-lab-note', 'Accent tufts are a separate localized recipe for future tree bases and boundary cuts; they do not define the uniform gameplay carpet.'));
+        accents.appendChild(makeToggleRow({
+            label: 'Enabled in recipe',
+            value: profile.accents.enabled,
+            onChange: (value) => {
+                profile.accents.enabled = value;
+                emit();
+            }
+        }).row);
+        accents.appendChild(makeNumberSliderRow({
+            label: 'Blades per tuft',
+            value: profile.accents.bladesPerTuft,
+            min: 1,
+            max: 32,
+            step: 1,
+            digits: 0,
+            onChange: (value) => {
+                profile.accents.bladesPerTuft = Math.round(value);
+                emit();
+            }
+        }).row);
+        accents.appendChild(makeNumberSliderRow({
+            label: 'Tuft radius (mm)',
+            value: metersToMillimeters(profile.accents.radiusMeters),
+            min: 5,
+            max: 250,
+            step: 1,
+            digits: 0,
+            onChange: (value) => {
+                profile.accents.radiusMeters = millimetersToMeters(value);
+                emit();
+            }
+        }).row);
+        accents.appendChild(makeNumberSliderRow({
+            label: 'Density multiplier',
+            value: profile.accents.densityMultiplier,
+            min: 0,
+            max: 2,
+            step: 0.01,
+            digits: 2,
+            onChange: (value) => {
+                profile.accents.densityMultiplier = value;
+                emit();
+            }
+        }).row);
+
+        const interchange = makeSection({ title: 'Stable export / import', collapsedByDefault: false });
+        parent.appendChild(interchange);
+        interchange.appendChild(makeEl('div', 'ui-grass-lab-note', 'Import validates the profile schema and version before rebuilding. Save or import, reload, and compare the source hash/signature below.'));
+        interchange.appendChild(makeButtonRow({
+            label: 'Canonical JSON',
+            text: 'Export profile',
+            onClick: () => this._onExportAuthoringProfile?.(this.getState())
+        }).row);
+        const json = document.createElement('textarea');
+        json.className = 'ui-grass-authoring-json';
+        json.spellcheck = false;
+        json.value = serializeLowCutGrassProfile(profile);
+        interchange.appendChild(json);
+        this._controls.authoringJson = json;
+        interchange.appendChild(makeButtonRow({
+            label: 'Validated JSON',
+            text: 'Import and reload',
+            onClick: () => this._onImportAuthoringProfile?.(json.value)
+        }).row);
+        interchange.appendChild(makeButtonRow({
+            label: 'Defaults',
+            text: 'Reset maintained-turf profile',
+            onClick: () => this._onResetAuthoringProfile?.()
+        }).row);
+        const status = makeEl('div', 'ui-grass-lab-status', 'Profile is sanitized and ready for save or export.');
+        interchange.appendChild(status);
+        this._controls.authoringStatus = status;
+
+        const diagnostics = makeSection({ title: 'Derivation diagnostics', collapsedByDefault: false });
+        parent.appendChild(diagnostics);
+        const grid = makeEl('div', 'ui-grass-lab-readouts');
+        diagnostics.appendChild(grid);
+        const definitions = [
+            ['profile', 'Profile'],
+            ['source', 'Bake source'],
+            ['sourceGeometry', 'Source geometry'],
+            ['signature', 'Stable signature'],
+            ['runtimeGeometry', 'Runtime geometry'],
+            ['runtimeMaterial', 'Runtime material'],
+            ['runtimeDraws', 'Runtime fixture draws'],
+            ['layouts', 'Layout split']
+        ];
+        this._controls.authoringReadouts = {};
+        for (const [key, label] of definitions) {
+            const readout = makeReadoutRow(label);
+            grid.appendChild(readout.row);
+            this._controls.authoringReadouts[key] = readout.valueEl;
+        }
+    }
+
+    setAuthoringProfileJson(json, { preserveEditing = false } = {}) {
+        const textarea = this._controls?.authoringJson ?? null;
+        if (!textarea) return;
+        if (preserveEditing && document.activeElement === textarea) return;
+        textarea.value = String(json ?? '');
+    }
+
+    setAuthoringStatus(message) {
+        const status = this._controls?.authoringStatus ?? null;
+        if (status) status.textContent = String(message ?? '');
+    }
+
+    setAuthoringDiagnostics(stats) {
+        const values = this._controls?.authoringReadouts ?? null;
+        if (!values || !stats) return;
+        const number = (value) => Number(value).toLocaleString('en-US');
+        values.profile.textContent = `${stats.profileId ?? '?'} · v${stats.profileVersion ?? '?'} · seed ${stats.profileSeed ?? '?'}`;
+        values.source.textContent = `${stats.sourceMeshId ?? '?'} · ${number(stats.sourceBladeCount ?? 0)} blades`;
+        values.sourceGeometry.textContent = `${number(stats.sourceTriangles ?? 0)} tris · hash ${stats.sourceGeometryHash ?? '?'}`;
+        values.signature.textContent = String(stats.sourceSignature ?? '?');
+        values.runtimeGeometry.textContent = `${stats.runtimeSourceMeshId ?? '?'} · ${number(stats.runtimeTrianglesPerBlade ?? 0)} tri/blade`;
+        values.runtimeMaterial.textContent = `${number(stats.runtimeMaterialSlots ?? 0)} slot · ${number(stats.runtimeGroupCount ?? 0)} groups`;
+        values.runtimeDraws.textContent = `${number(stats.runtimeDrawCalls ?? 0)} draw for comparison patch`;
+        values.layouts.textContent = `${stats.carpetLayout ?? '?'} carpet / ${stats.accentLayout ?? '?'} accents`;
+    }
+
+    setMaterialDiagnostics(stats) {
+        const values = this._controls?.materialReadouts ?? null;
+        if (!values || !stats) return;
+        values.surface.textContent = stats.matchedMaterialId ?? '?';
+        values.scale.textContent = `${Number(stats.physicalTileMeters ?? 0).toFixed(1)} × ${Number(stats.physicalTileMeters ?? 0).toFixed(1)} m`;
+        values.maps.textContent = `${Number(stats.farMapCount ?? 0)} maps · no baked light`;
+        values.substrate.textContent = stats.substrateMaterialId ?? '?';
+        values.atlas.textContent = `${Number(stats.clusterAtlas?.variants ?? 0)} variants · ${Number(stats.clusterAtlas?.materialPaths ?? 0)} material · ${Number(stats.clusterAtlas?.logicalDraws ?? 0)} draw`;
+        values.mips.textContent = `alpha ${Number(stats.clusterAtlas?.alphaCutoff ?? 0).toFixed(2)} · A2C · trilinear · dilated RGB`;
+        values.provenance.textContent = `${stats.provenance?.profileId ?? '?'} v${stats.provenance?.profileVersion ?? '?'} · ${stats.provenance?.license ?? '?'}`;
+        values.pipeline.textContent = 'global catalog → calibration → local overrides';
+    }
+
+    setLabDiagnostics(snapshot) {
+        const values = this._controls?.labReadouts ?? null;
+        if (!values || !snapshot) return;
+        const grass = snapshot.grass ?? {};
+        const frame = snapshot.frame ?? {};
+        const fixtures = snapshot.fixtures ?? {};
+        const lod = snapshot.lod ?? {};
+        const number = (value) => Number(value).toLocaleString('en-US');
+        const milliseconds = (value) => Number.isFinite(Number(value)) ? `${Number(value).toFixed(2)} ms` : 'unavailable';
+        values.runtime.textContent = `${snapshot.canonicalRuntime ?? 'GrassEngine'} · contract v${snapshot.contractVersion ?? '?'}`;
+        values.fixtures.textContent = `${number(fixtures.roadSegments ?? 0)} road / ${number(fixtures.exclusionRects ?? 0)} sidewalk cuts / ${number(fixtures.irregularCuts ?? 0)} irregular / ${number(fixtures.treePlacements ?? 0)} trees`;
+        values.instances.textContent = number(grass.instances ?? 0);
+        values.triangles.textContent = number(grass.triangles ?? 0);
+        values.draws.textContent = number(grass.logicalDrawCalls ?? 0);
+        values.cpu.textContent = milliseconds(grass.updateCpuMs);
+        values.gpu.textContent = milliseconds(frame.gpuMs);
+        values.renderer.textContent = `${number(frame.rendererDrawCalls ?? 0)} draws / ${number(frame.rendererTriangles ?? 0)} tris`;
+        values.lod.textContent = `${Number(lod.viewAngleDeg ?? 0).toFixed(1)}° / scale ${Number(lod.angleScale ?? 1).toFixed(2)}`;
+        const near = grass.nearCarpet ?? {};
+        values.nearCarpet.textContent = near.enabled
+            ? `${number(near.patchInstances ?? 0)} patches · ${number(near.bladeInstances ?? 0)} blades · ${number(near.drawCalls ?? 0)} draws`
+            : 'disabled';
+        this.setNearCarpetDiagnostics(near);
+        const mid = grass.midCluster ?? {};
+        values.midCluster.textContent = mid.enabled
+            ? `${number(mid.instances ?? 0)} clusters · ${number(mid.triangles ?? 0)} tris · ${number(mid.drawCalls ?? 0)} draw`
+            : 'disabled';
+        this.setAutoLodDiagnostics(lod, mid);
+        const localized = grass.localizedAccents ?? {};
+        values.accents.textContent = localized.enabled
+            ? `${number(localized.visibleClusters ?? 0)}/${number(localized.potentialClusters ?? 0)} clusters · ${number(localized.totalTriangles ?? 0)} tris · ${number(localized.totalDrawCalls ?? 0)} draws`
+            : 'disabled';
+        this.setLocalizedAccentDiagnostics(localized, snapshot.coverage ?? {});
+        const coverage = snapshot.coverage ?? {};
+        values.coverage.textContent = coverage.enabled
+            ? `${Number(coverage.layerHeightMeters ?? 0) * 1000} mm · ${number(coverage.triangles ?? 0)} tris · ${number(coverage.drawCalls ?? 0)} draws`
+            : 'disabled';
+        this.setCoverageDiagnostics(coverage);
+    }
+
+    setValidationDiagnostics(report) {
+        const values = this._controls?.validationReadouts ?? null;
+        if (!values || !report) return;
+        const snapshot = report.snapshot ?? {};
+        const validation = report.validation ?? {};
+        const grass = snapshot.grass ?? {};
+        const lod = snapshot.lod ?? {};
+        const budget = report.budgetResult ?? {};
+        const measurements = budget.measurements ?? {};
+        const instances = grass.instancesByTier ?? {};
+        const triangles = grass.trianglesByTier ?? {};
+        const number = (value) => Number(value ?? 0).toLocaleString('en-US');
+        const milliseconds = (value) => Number.isFinite(Number(value)) ? `${Number(value).toFixed(2)} ms` : 'unavailable';
+        values.review.textContent = `${validation.qualityPreset ?? 'default'} · ${validation.cameraPreset ?? '?'} · ${validation.lightingPreset ?? '?'} · ${validation.motionPath ?? 'stationary'}`;
+        values.lod.textContent = `${lod.activeTier ?? 'texture'} · ${Number(lod.effectiveDistanceMeters ?? 0).toFixed(2)} m · ${Number(lod.viewAngleDeg ?? 0).toFixed(1)}° · scale ${Number(lod.angleScale ?? 1).toFixed(2)}`;
+        values.instances.textContent = `near ${number(instances.near)} · cluster ${number(instances.mid)} · accents ${number(instances.accent)}`;
+        values.triangles.textContent = `near ${number(triangles.near)} · cluster ${number(triangles.mid)} · accents ${number(triangles.accent)} · total ${number(grass.triangles)}`;
+        values.draws.textContent = `${Number(measurements.averageDrawCalls ?? grass.logicalDrawCalls ?? 0).toFixed(2)} avg · ${number(measurements.maximumDrawCalls ?? grass.logicalDrawCalls)} max · 12 hard ceiling`;
+        values.timing.textContent = `${milliseconds(measurements.averageCpuMs)} CPU · ${milliseconds(measurements.averageGpuMs)} whole-frame GPU proxy · ${number(budget.sampleCount)} samples`;
+        values.buffers.textContent = `${Number(report.bufferUpdatesPerSecond ?? 0).toFixed(2)}/s · ${number(report.bufferUpdatesTotal ?? 0)} total · stationary should settle to 0/s`;
+        values.budget.textContent = `${budget.pass ? 'PASS' : 'MEASURING'} · CPU ≤0.60 ms · GPU proxy ≤1.50 ms · draws 4–6 typical · tris ≤100K`;
+        const cameraSeen = validation.reviewedCameraIds?.length ?? 0;
+        const lightSeen = validation.reviewedLightingIds?.length ?? 0;
+        const pathSeen = validation.reviewedMotionPathIds?.length ?? 0;
+        values.coverage.textContent = `${cameraSeen} cameras · ${lightSeen}/4 lights · ${pathSeen}/2 paths`;
+        values.stress.textContent = report.stress?.completed
+            ? `${report.stress.pass ? 'PASS' : 'REVIEW'} · ${number(report.stress.triangles)} tris · ${number(report.stress.drawCalls)} draws`
+            : 'not run';
+        values.approval.textContent = report.approval?.status === 'approved'
+            ? `APPROVED · ${report.approval.generatedAt ?? ''}`
+            : `PENDING · ${report.approval?.missingRegressions?.length ?? 11} regression checks remaining`;
+    }
+
+    setNearCarpetDiagnostics(stats) {
+        const values = this._controls?.nearCarpetReadouts ?? null;
+        if (!values || !stats) return;
+        const number = (value) => Number(value).toLocaleString('en-US');
+        values.layout.textContent = `${Number(stats.patchSizeMeters ?? 0).toFixed(2)} m patches · ${number(stats.bladesPerSquareMeter ?? 0)} blades/m²`;
+        values.visible.textContent = `${number(stats.patchInstances ?? 0)} patches · ${number(stats.bladeInstances ?? 0)} blades`;
+        values.cost.textContent = `${number(stats.triangles ?? 0)} tris · ${number(stats.drawCalls ?? 0)} draws · ${number(stats.materialPaths ?? 0)} material`;
+        values.buffers.textContent = `${number(stats.lastBufferUpdates ?? 0)} now · ${number(stats.totalBufferUpdates ?? 0)} total · ${number(stats.stationaryFrames ?? 0)} stationary frames`;
+        values.churn.textContent = `${number(stats.lastEnteringCells ?? 0)} enter / ${number(stats.lastLeavingCells ?? 0)} leave / ${number(stats.retainedCells ?? 0)} retained`;
+        values.safety.textContent = `${stats.frustumCulled ? 'culled' : 'unculled'} · ${stats.castShadow ? 'shadows' : 'no shadows'} · ${stats.transparent ? 'transparent' : 'opaque'}`;
+    }
+
+    setAutoLodDiagnostics(lod, cluster) {
+        const values = this._controls?.autoLodReadouts ?? null;
+        if (!values || !lod) return;
+        const number = (value) => Number(value).toLocaleString('en-US');
+        values.mode.textContent = `${lod.force ?? 'auto'} · ${lod.activeTier ?? 'texture'}`;
+        values.response.textContent = `${Number(lod.effectiveDistanceMeters ?? 0).toFixed(2)} m effective · ${Number(lod.viewAngleDeg ?? 0).toFixed(1)}° · scale ${Number(lod.angleScale ?? 1).toFixed(2)}`;
+        values.ranges.textContent = `near ${Number(lod.nearEndMeters ?? 0).toFixed(1)} m · cutoff ${Number(lod.geometryCutoffWorldMeters ?? 0).toFixed(1)} m world`;
+        values.transition.textContent = `${String(lod.transitionState ?? 'texture_only').replaceAll('_', ' ')} · ${number(cluster?.transitionPatches ?? 0)} masked patches`;
+        values.cluster.textContent = `${number(cluster?.instances ?? 0)} instances · ${number(cluster?.cardsPerPatch ?? 0)} cards/patch · ${number(cluster?.atlasVariants ?? 0)} variants`;
+        values.cost.textContent = `${number(cluster?.triangles ?? 0)} tris · ${number(cluster?.drawCalls ?? 0)} draw · ${number(cluster?.materialPaths ?? 0)} material`;
+        values.material.textContent = `${Number(cluster?.alphaCutoff ?? 0).toFixed(2)} cutoff · ${cluster?.alphaToCoverage ? 'A2C' : 'no A2C'} · ${cluster?.transparent ? 'transparent' : 'opaque'}`;
+        values.cutoff.textContent = `${number(lod.geometryBeyondCutoff ?? 0)} geometry instances beyond cutoff`;
+    }
+
+    setLocalizedAccentDiagnostics(stats, coverage) {
+        const values = this._controls?.localizedAccentReadouts ?? null;
+        if (!values || !stats) return;
+        const number = (value) => Number(value).toLocaleString('en-US');
+        values.eligibility.textContent = `${coverage?.accentEligibility ? 'eligible' : 'blocked'} · ${stats.layout ?? 'localized_tufts'} only`;
+        values.placements.textContent = `${number(stats.eligibleTrees ?? 0)}/${number(stats.treePlacements ?? 0)} trees · ${number(stats.optionalFeatures ?? 0)} optional feature`;
+        values.visible.textContent = `${number(stats.visibleClusters ?? 0)}/${number(stats.potentialClusters ?? 0)} clusters · ${number(stats.clustersPerTree ?? 0)}/tree`;
+        values.cost.textContent = `${number(stats.grassTriangles ?? 0)} tris · ${number(stats.grassDrawCalls ?? 0)} draw · ${number(stats.grassMaterialPaths ?? 0)} atlas material`;
+        values.worn.textContent = `${number(stats.wornPatches ?? 0)} patches · ${number(stats.wornTriangles ?? 0)} tris · ${number(stats.wornDrawCalls ?? 0)} draw`;
+        values.batching.textContent = `${number(stats.totalDrawCalls ?? 0)} global draws · ${number(stats.trianglesPerTreeAccent ?? 0)} grass tris/tree`;
+        values.determinism.textContent = String(stats.deterministicSignature ?? '?');
+        values.rejections.textContent = `${number(stats.rejectedCoverage ?? 0)} coverage · ${number(stats.rejectedInsideTrunk ?? 0)} inside trunk`;
+        values.safety.textContent = `${stats.frustumCulled ? 'culled' : 'unculled'} · ${stats.castShadow ? 'shadows' : 'no shadows'} · ${stats.transparent ? 'transparent' : 'opaque'} · ${number(stats.geometryBeyondCutoff ?? 0)} beyond cutoff`;
+    }
+
+    setCoverageDiagnostics(stats) {
+        const values = this._controls?.coverageReadouts ?? null;
+        if (!values || !stats) return;
+        const number = (value) => Number(value).toLocaleString('en-US');
+        values.occupancy.textContent = `${stats.occupancy ?? '?'} · substrate blend ${stats.substrateBlendIndependent ? 'independent' : 'coupled'}`;
+        values.response.textContent = `density ×${Number(stats.densityMultiplier ?? 0).toFixed(2)} · humidity ${Number(stats.humidity ?? 0).toFixed(2)} · dryness ${Number(stats.dryness ?? 0).toFixed(2)} · accents ${stats.accentEligibility ? 'eligible' : 'blocked'}`;
+        values.height.textContent = `${(Number(stats.layerHeightMeters ?? 0) * 1000).toFixed(1)} mm · alpha test ${Number(stats.farCoverageThreshold ?? 0).toFixed(2)}`;
+        values.boundary.textContent = `${number(stats.sidewalkSegments ?? 0)} sidewalk / ${number(stats.irregularSegments ?? 0)} irregular segments`;
+        values.corners.textContent = `${number(stats.outsideCorners ?? 0)} outside / ${number(stats.insideCorners ?? 0)} inside`;
+        values.geometry.textContent = `${number(stats.surfaceTriangles ?? 0)} surface + ${number(stats.lipTriangles ?? 0)} lip + ${number(stats.fringeTriangles ?? 0)} fringe tris`;
+        values.cost.textContent = `${number(stats.drawCalls ?? 0)} draws · ${number(stats.materialPaths ?? 0)} materials · ${number(stats.fringeBlades ?? 0)} fringe blades`;
+        values.data.textContent = `${stats.farCoverageMap ?? '?'} · ${stats.alphaTestedSurface ? 'hard cutout' : 'no cutout'} · ${stats.transparentSurface ? 'blended' : 'opaque'}`;
+        values.safety.textContent = `${stats.frustumCulled ? 'culled' : 'unculled'} · ${stats.castShadow ? 'shadows' : 'no shadows'}`;
+    }
+
+    setLabCaptureStatus(message) {
+        const status = this._controls?.labCaptureStatus ?? null;
+        if (status) status.textContent = String(message ?? '');
     }
 
     _buildRegionRows(lodState, { onAnyChange } = {}) {
@@ -743,13 +1735,272 @@ export class GrassDebuggerUI {
         return rows;
     }
 
+    _buildCoverageTab(parent) {
+        const coverage = this._state.coverage && typeof this._state.coverage === 'object'
+            ? this._state.coverage
+            : (this._state.coverage = {});
+        const defaults = {
+            enabled: true,
+            showSurface: true,
+            showLip: true,
+            showFringe: true,
+            layerHeightMillimeters: 27.5,
+            densityMultiplier: 1,
+            farCoverageThreshold: 0.35,
+            edgeAntialiasMillimeters: 15,
+            fringeEnabled: true,
+            fringeSpacingMeters: 0.35,
+            fringeInsetMeters: 0.055,
+            accentEligibility: true
+        };
+        for (const [key, value] of Object.entries(defaults)) if (coverage[key] === undefined) coverage[key] = value;
+
+        const contract = makeSection({ title: 'AI 354 hard coverage contract', collapsedByDefault: false });
+        parent.appendChild(contract);
+        contract.appendChild(makeEl('div', 'ui-grass-lab-note', 'Binary lawn occupancy cuts a 25–30 mm raised grass surface out of the continuously visible substrate. far_coverage.png supplies micro cutouts only; it never dissolves grass into the substrate.'));
+        contract.appendChild(makeToggleRow({
+            label: 'Coverage enabled',
+            value: coverage.enabled !== false,
+            onChange: (value) => {
+                coverage.enabled = value;
+                this._emit();
+            }
+        }).row);
+        contract.appendChild(makeNumberSliderRow({
+            label: 'Grass layer height (mm)',
+            value: coverage.layerHeightMillimeters,
+            min: 15,
+            max: 50,
+            step: 0.5,
+            digits: 1,
+            onChange: (value) => {
+                coverage.layerHeightMillimeters = value;
+                this._emit();
+            }
+        }).row);
+        contract.appendChild(makeNumberSliderRow({
+            label: 'Density multiplier',
+            value: coverage.densityMultiplier,
+            min: 0,
+            max: 2,
+            step: 0.05,
+            digits: 2,
+            onChange: (value) => {
+                coverage.densityMultiplier = value;
+                this._emit();
+            }
+        }).row);
+        contract.appendChild(makeNumberSliderRow({
+            label: 'far_coverage threshold',
+            value: coverage.farCoverageThreshold,
+            min: 0.05,
+            max: 0.95,
+            step: 0.01,
+            digits: 2,
+            onChange: (value) => {
+                coverage.farCoverageThreshold = value;
+                this._emit();
+            }
+        }).row);
+        contract.appendChild(makeNumberSliderRow({
+            label: 'Edge AA limit (mm)',
+            value: coverage.edgeAntialiasMillimeters,
+            min: 0,
+            max: 30,
+            step: 1,
+            digits: 0,
+            tooltip: 'Documents the maximum narrow antialias treatment. The footprint itself stays binary.',
+            onChange: (value) => {
+                coverage.edgeAntialiasMillimeters = value;
+                this._emit();
+            }
+        }).row);
+        contract.appendChild(makeToggleRow({
+            label: 'Accent eligible',
+            value: coverage.accentEligibility !== false,
+            tooltip: 'Consumed later by AI 356; this does not place tufts in AI 354.',
+            onChange: (value) => {
+                coverage.accentEligibility = value;
+                this._emit();
+            }
+        }).row);
+
+        const layers = makeSection({ title: 'Boundary layers', collapsedByDefault: false });
+        parent.appendChild(layers);
+        for (const [key, label] of [['showSurface', 'Raised grass surface'], ['showLip', 'Batched grass lip'], ['showFringe', 'Sparse cut fringe']]) {
+            layers.appendChild(makeToggleRow({
+                label,
+                value: coverage[key] !== false,
+                onChange: (value) => {
+                    coverage[key] = value;
+                    this._emit();
+                }
+            }).row);
+        }
+        layers.appendChild(makeNumberSliderRow({
+            label: 'Fringe spacing (m)',
+            value: coverage.fringeSpacingMeters,
+            min: 0.15,
+            max: 1,
+            step: 0.05,
+            digits: 2,
+            onChange: (value) => {
+                coverage.fringeSpacingMeters = value;
+                this._emit();
+            }
+        }).row);
+        layers.appendChild(makeNumberSliderRow({
+            label: 'Fringe inset (m)',
+            value: coverage.fringeInsetMeters,
+            min: 0.01,
+            max: 0.2,
+            step: 0.005,
+            digits: 3,
+            onChange: (value) => {
+                coverage.fringeInsetMeters = value;
+                this._emit();
+            }
+        }).row);
+
+        const cameras = makeSection({ title: 'Deterministic acceptance cameras', collapsedByDefault: false });
+        parent.appendChild(cameras);
+        cameras.appendChild(makeButtonRow({ label: 'Straight sidewalk', text: 'Focus straight hard edge', onClick: () => this._onFocusCoverage?.('straight') }).row);
+        cameras.appendChild(makeButtonRow({ label: 'Inside / outside', text: 'Focus corner transition', onClick: () => this._onFocusCoverage?.('corner') }).row);
+        cameras.appendChild(makeButtonRow({ label: 'Approximate cut', text: 'Focus irregular stepped cut', onClick: () => this._onFocusCoverage?.('irregular') }).row);
+
+        const diagnostics = makeSection({ title: 'Coverage diagnostics', collapsedByDefault: false });
+        parent.appendChild(diagnostics);
+        const grid = makeEl('div', 'ui-grass-lab-readouts');
+        diagnostics.appendChild(grid);
+        this._controls.coverageReadouts = {};
+        for (const [key, label] of [
+            ['occupancy', 'Occupancy'],
+            ['response', 'Control response'],
+            ['height', 'Physical edge'],
+            ['boundary', 'Boundary batches'],
+            ['corners', 'Corner fixtures'],
+            ['geometry', 'Geometry split'],
+            ['cost', 'Boundary cost'],
+            ['data', 'Coverage data'],
+            ['safety', 'Render safety']
+        ]) {
+            const readout = makeReadoutRow(label);
+            grid.appendChild(readout.row);
+            this._controls.coverageReadouts[key] = readout.valueEl;
+        }
+    }
+
+    _buildLocalizedAccentsTab(parent) {
+        const accents = this._state.accents && typeof this._state.accents === 'object'
+            ? this._state.accents
+            : (this._state.accents = {});
+        const defaults = {
+            enabled: true,
+            wornEnabled: true,
+            featureAccentsEnabled: true,
+            clustersPerTree: 4,
+            clustersPerFeature: 3,
+            trunkRadiusMeters: 0.55,
+            ringInnerMeters: 0.82,
+            ringOuterMeters: 1.25,
+            wornRadiusMeters: 0.76,
+            cardWidthMeters: 0.24,
+            cardHeightMeters: 0.075
+        };
+        for (const [key, value] of Object.entries(defaults)) if (accents[key] === undefined) accents[key] = value;
+
+        const contract = makeSection({ title: 'AI 356 localized accent contract', collapsedByDefault: false });
+        parent.appendChild(contract);
+        contract.appendChild(makeEl('div', 'ui-grass-lab-note', 'Tufts are reserved for explicit tree and worn-area records. Four single-card atlas clusters provide eight grass triangles per tree; the uniform area-patch carpet remains unchanged.'));
+        contract.appendChild(makeToggleRow({
+            label: 'Localized accents enabled',
+            value: accents.enabled !== false,
+            onChange: (value) => {
+                accents.enabled = value;
+                this._emit();
+            }
+        }).row);
+        contract.appendChild(makeToggleRow({
+            label: 'Worn trunk substrate',
+            value: accents.wornEnabled !== false,
+            onChange: (value) => {
+                accents.wornEnabled = value;
+                this._emit();
+            }
+        }).row);
+        contract.appendChild(makeToggleRow({
+            label: 'Rare worn feature accent',
+            value: accents.featureAccentsEnabled !== false,
+            onChange: (value) => {
+                accents.featureAccentsEnabled = value;
+                this._emit();
+            }
+        }).row);
+
+        const geometry = makeSection({ title: 'Bounded tree ring', collapsedByDefault: false });
+        parent.appendChild(geometry);
+        for (const definition of [
+            ['clustersPerTree', 'Clusters / tree', 3, 6, 1, 0],
+            ['ringInnerMeters', 'Ring inner radius (m)', 0.35, 1.5, 0.01, 2],
+            ['ringOuterMeters', 'Ring outer radius (m)', 0.5, 2.4, 0.01, 2],
+            ['wornRadiusMeters', 'Worn radius (m)', 0.25, 1.2, 0.01, 2],
+            ['cardWidthMeters', 'Card width (m)', 0.08, 0.45, 0.01, 2],
+            ['cardHeightMeters', 'Card height (m)', 0.035, 0.12, 0.005, 3]
+        ]) {
+            const [key, label, min, max, step, digits] = definition;
+            geometry.appendChild(makeNumberSliderRow({
+                label,
+                value: accents[key],
+                min,
+                max,
+                step,
+                digits,
+                onChange: (value) => {
+                    accents[key] = key === 'clustersPerTree' ? Math.round(value) : value;
+                    this._emit();
+                }
+            }).row);
+        }
+
+        const cameras = makeSection({ title: 'Deterministic comparison cameras', collapsedByDefault: false });
+        parent.appendChild(cameras);
+        cameras.appendChild(makeButtonRow({ label: 'Tree base', text: 'Focus tree intersection', onClick: () => this._onFocusLocalizedAccent?.('tree') }).row);
+        cameras.appendChild(makeButtonRow({ label: 'Optional irregularity', text: 'Focus rare worn accent', onClick: () => this._onFocusLocalizedAccent?.('wornFeature') }).row);
+
+        const diagnostics = makeSection({ title: 'Localized accent diagnostics', collapsedByDefault: false });
+        parent.appendChild(diagnostics);
+        const grid = makeEl('div', 'ui-grass-lab-readouts');
+        diagnostics.appendChild(grid);
+        this._controls.localizedAccentReadouts = {};
+        for (const [key, label] of [
+            ['eligibility', 'Coverage eligibility'],
+            ['placements', 'Placement records'],
+            ['visible', 'Visible accents'],
+            ['cost', 'Grass accent cost'],
+            ['worn', 'Worn substrate cost'],
+            ['batching', 'Batching'],
+            ['determinism', 'Determinism'],
+            ['rejections', 'Rejected roots'],
+            ['safety', 'Render safety']
+        ]) {
+            const readout = makeReadoutRow(label);
+            grid.appendChild(readout.row);
+            this._controls.localizedAccentReadouts[key] = readout.valueEl;
+        }
+    }
+
     _buildLod1Body(parent) {
         const lod = this._state.lod1;
+        lod.carpetMode = ['auto', 'force', 'disabled'].includes(String(lod.carpetMode)) ? String(lod.carpetMode) : 'auto';
+        lod.carpetPatchSizeMeters = Number.isFinite(Number(lod.carpetPatchSizeMeters)) ? Number(lod.carpetPatchSizeMeters) : 1;
+        lod.carpetBladesPerSquareMeter = Number.isFinite(Number(lod.carpetBladesPerSquareMeter)) ? Number(lod.carpetBladesPerSquareMeter) : 48;
+        lod.carpetRadiusMeters = Number.isFinite(Number(lod.carpetRadiusMeters)) ? Number(lod.carpetRadiusMeters) : 12;
 
-        const section = makeSection({ title: 'LOD 1', collapsedByDefault: false });
-        parent.appendChild(section);
+        const carpet = makeSection({ title: 'Near geometry tier', collapsedByDefault: false });
+        parent.appendChild(carpet);
+        carpet.appendChild(makeEl('div', 'ui-grass-lab-note', 'One-metre physical-blade patches are the highest runtime tier. AI 355 masks them into the atlas-cluster tier using distance, view angle, stable patch dithering, and hysteresis.'));
 
-        section.appendChild(makeToggleRow({
+        carpet.appendChild(makeToggleRow({
             label: 'Enabled',
             value: lod.enabled,
             onChange: (v) => {
@@ -757,6 +2008,108 @@ export class GrassDebuggerUI {
                 this._emit();
             }
         }).row);
+
+        carpet.appendChild(makeSelectRow({
+            label: 'Tier availability',
+            value: lod.carpetMode,
+            options: [
+                { id: 'auto', label: 'Auto LOD' },
+                { id: 'force', label: 'Force near diagnostic' },
+                { id: 'disabled', label: 'Disabled' }
+            ],
+            onChange: (value) => {
+                lod.carpetMode = value;
+                if (value === 'force') this._state.autoLod.force = 'near';
+                else if (this._state.autoLod.force === 'near') this._state.autoLod.force = 'auto';
+                this._emit();
+            }
+        }).row);
+
+        const patchSize = makeNumberSliderRow({
+            label: 'Patch size (m)',
+            value: lod.carpetPatchSizeMeters,
+            min: 0.5,
+            max: 2,
+            step: 0.25,
+            digits: 2,
+            onChange: (value) => {
+                lod.carpetPatchSizeMeters = value;
+                this._emit();
+            }
+        });
+        carpet.appendChild(patchSize.row);
+
+        const density = makeNumberSliderRow({
+            label: 'Simplified blades / m²',
+            value: lod.carpetBladesPerSquareMeter,
+            min: 1,
+            max: 96,
+            step: 1,
+            digits: 0,
+            onChange: (value) => {
+                lod.carpetBladesPerSquareMeter = Math.round(value);
+                this._emit();
+            }
+        });
+        carpet.appendChild(density.row);
+        this._controls.nearCarpetDensity = density;
+
+        const radius = makeNumberSliderRow({
+            label: 'Near end (m)',
+            value: lod.carpetRadiusMeters,
+            min: 4,
+            max: 18,
+            step: 0.5,
+            digits: 1,
+            onChange: (value) => {
+                lod.carpetRadiusMeters = value;
+                this._state.autoLod.nearEndMeters = value;
+                this._emit();
+            }
+        });
+        carpet.appendChild(radius.row);
+
+        const applyDensityPreset = (value) => {
+            lod.carpetBladesPerSquareMeter = value;
+            density.range.value = String(value);
+            density.number.value = String(value);
+            this._emit();
+        };
+        carpet.appendChild(makeButtonRow({
+            label: 'Camera',
+            text: 'Focus near carpet',
+            onClick: () => this._onFocusNearCarpet?.()
+        }).row);
+        carpet.appendChild(makeButtonRow({
+            label: 'Comparison A',
+            text: 'Sparse reference · 4/m²',
+            onClick: () => applyDensityPreset(4)
+        }).row);
+        carpet.appendChild(makeButtonRow({
+            label: 'Comparison B',
+            text: 'Approved carpet · 48/m²',
+            onClick: () => applyDensityPreset(48)
+        }).row);
+
+        const diagnostics = makeEl('div', 'ui-grass-lab-readouts');
+        carpet.appendChild(diagnostics);
+        this._controls.nearCarpetReadouts = {};
+        for (const [key, label] of [
+            ['layout', 'Patch layout'],
+            ['visible', 'Visible instances'],
+            ['cost', 'Geometry cost'],
+            ['buffers', 'Buffer updates'],
+            ['churn', 'Cell churn'],
+            ['safety', 'Render safety']
+        ]) {
+            const readout = makeReadoutRow(label);
+            diagnostics.appendChild(readout.row);
+            this._controls.nearCarpetReadouts[key] = readout.valueEl;
+        }
+
+        const section = makeSection({ title: 'Legacy LOD 1 inputs (dormant)', collapsedByDefault: true });
+        parent.appendChild(section);
+        section.appendChild(makeEl('div', 'ui-grass-lab-note', 'Preserved for later LOD reconciliation and the blade inspector. AI 353 does not render this older sparse per-blade field.'));
 
         for (const row of this._buildRegionRows(lod, { onAnyChange: () => this._emit() })) section.appendChild(row);
         for (const row of this._buildDebugRows(lod, { onAnyChange: () => this._emit() })) section.appendChild(row);
@@ -912,11 +2265,107 @@ export class GrassDebuggerUI {
         }).row);
     }
 
+    _buildAutoLodBody(parent) {
+        const lod = this._state.lod2;
+        const auto = this._state.autoLod;
+        lod.clusterPatchSizeMeters = Number(lod.clusterPatchSizeMeters) || 2;
+        lod.clusterCardsPerPatch = Number(lod.clusterCardsPerPatch) || 2;
+        lod.clusterCardWidthMeters = Number(lod.clusterCardWidthMeters) || 1.15;
+        lod.clusterCardHeightMeters = Number(lod.clusterCardHeightMeters) || 0.055;
+
+        const section = makeSection({ title: 'AI 355 automatic cluster handoff', collapsedByDefault: false });
+        parent.appendChild(section);
+        section.appendChild(makeEl('div', 'ui-grass-lab-note', 'Automatic LOD is canonical: physical near patches hand off to one opaque atlas-backed cluster batch, then to the raised PBR surface with zero grass geometry after the cutoff.'));
+        section.appendChild(makeToggleRow({
+            label: 'Cluster tier enabled',
+            value: lod.enabled,
+            onChange: (value) => {
+                lod.enabled = value;
+                this._emit();
+            }
+        }).row);
+        section.appendChild(makeSelectRow({
+            label: 'Manual tier override',
+            value: auto.force,
+            options: [
+                { id: 'auto', label: 'Automatic (canonical)' },
+                { id: 'near', label: 'Force near geometry' },
+                { id: 'cluster', label: 'Force cluster geometry' },
+                { id: 'texture', label: 'Force texture only' }
+            ],
+            onChange: (value) => {
+                auto.force = value;
+                if (value === 'near') this._state.lod1.carpetMode = 'force';
+                else if (this._state.lod1.carpetMode === 'force') this._state.lod1.carpetMode = 'auto';
+                this._emit();
+            }
+        }).row);
+        for (const options of [
+            { label: 'Near end (m)', key: 'nearEndMeters', min: 4, max: 18, step: 0.5, digits: 1 },
+            { label: 'Geometry cutoff (m)', key: 'clusterEndMeters', min: 16, max: 48, step: 1, digits: 0 },
+            { label: 'Dither band (m)', key: 'transitionWidthMeters', min: 0.5, max: 5, step: 0.25, digits: 2 },
+            { label: 'Hysteresis (m)', key: 'hysteresisMeters', min: 0, max: 2.5, step: 0.05, digits: 2 },
+            { label: 'Grazing distance scale', key: 'grazingDistanceScale', min: 0.55, max: 1, step: 0.01, digits: 2 },
+            { label: 'Top-down distance scale', key: 'topDownDistanceScale', min: 1, max: 1.75, step: 0.01, digits: 2 }
+        ]) section.appendChild(makeNumberSliderRow({
+            ...options,
+            value: auto[options.key],
+            onChange: (value) => {
+                auto[options.key] = value;
+                if (options.key === 'nearEndMeters') this._state.lod1.carpetRadiusMeters = value;
+                this._emit();
+            }
+        }).row);
+
+        const geometry = makeSection({ title: 'One-batch cluster geometry', collapsedByDefault: false });
+        parent.appendChild(geometry);
+        for (const options of [
+            { label: 'Patch spacing (m)', key: 'clusterPatchSizeMeters', min: 1, max: 4, step: 0.25, digits: 2 },
+            { label: 'Cards / patch', key: 'clusterCardsPerPatch', min: 1, max: 2, step: 1, digits: 0 },
+            { label: 'Card width (m)', key: 'clusterCardWidthMeters', min: 0.35, max: 2.5, step: 0.05, digits: 2 },
+            { label: 'Card height (m)', key: 'clusterCardHeightMeters', min: 0.025, max: 0.12, step: 0.005, digits: 3 }
+        ]) geometry.appendChild(makeNumberSliderRow({
+            ...options,
+            value: lod[options.key],
+            onChange: (value) => {
+                lod[options.key] = options.key === 'clusterCardsPerPatch' ? Math.round(value) : value;
+                this._emit();
+            }
+        }).row);
+
+        const cameras = makeSection({ title: 'Deterministic LOD cameras', collapsedByDefault: false });
+        parent.appendChild(cameras);
+        for (const [id, label, text] of [
+            ['grazing', 'Grazing', 'Review near → cluster'],
+            ['topDown', 'Top-down', 'Review angle contraction'],
+            ['cutoff', 'Cutoff', 'Review texture-only field']
+        ]) cameras.appendChild(makeButtonRow({ label, text, onClick: () => this._onFocusAutoLod?.(id) }).row);
+
+        const diagnostics = makeSection({ title: 'Automatic LOD diagnostics', collapsedByDefault: false });
+        parent.appendChild(diagnostics);
+        this._controls.autoLodReadouts = {};
+        for (const [key, label] of [
+            ['mode', 'Mode / active tier'],
+            ['response', 'Distance / angle response'],
+            ['ranges', 'Effective ranges'],
+            ['transition', 'Transition state'],
+            ['cluster', 'Cluster instances'],
+            ['cost', 'Cluster cost'],
+            ['material', 'Atlas material'],
+            ['cutoff', 'Far geometry']
+        ]) {
+            const readout = makeReadoutRow(label);
+            diagnostics.appendChild(readout.row);
+            this._controls.autoLodReadouts[key] = readout.valueEl;
+        }
+    }
+
     _buildLod2Body(parent) {
         const lod = this._state.lod2;
 
-        const section = makeSection({ title: 'LOD 2', collapsedByDefault: false });
+        const section = makeSection({ title: 'Mid source controls', collapsedByDefault: false });
         parent.appendChild(section);
+        section.appendChild(makeEl('div', 'ui-grass-lab-note', 'Enable, range, density, seed, and debug bounds feed GrassEngine. These legacy bend controls remain inspector-only; use Authoring for the canonical profile.'));
 
         section.appendChild(makeToggleRow({
             label: 'Enabled',
@@ -1035,24 +2484,12 @@ export class GrassDebuggerUI {
     }
 
     _buildLodStubBody(parent, { key, title }) {
-        const lod = this._state[key];
         const section = makeSection({ title, collapsedByDefault: false });
         parent.appendChild(section);
 
-        section.appendChild(makeToggleRow({
-            label: 'Enabled',
-            value: lod.enabled,
-            onChange: (v) => {
-                lod.enabled = v;
-                this._emit();
-            }
-        }).row);
-
-        for (const row of this._buildRegionRows(lod, { onAnyChange: () => this._emit() })) section.appendChild(row);
-        for (const row of this._buildDebugRows(lod, { onAnyChange: () => this._emit() })) section.appendChild(row);
-
-        const msg = makeEl('div', 'options-row-label', 'TODO: LOD rendering not implemented yet.');
-        msg.style.opacity = '0.75';
+        const msg = makeEl('div', 'ui-grass-lab-note', key === 'lod3'
+            ? 'The AI 352/354 raised PBR surface is always the far representation. Geometry tiers dither into it without a second far-card renderer.'
+            : 'Automatic mode emits no blade or cluster geometry after the configured cutoff. The binary grass surface and sidewalk edge remain visible.');
         section.appendChild(msg);
     }
 
@@ -1116,14 +2553,14 @@ export class GrassDebuggerUI {
         substrate.layer2.materialId = normalizeGroundId(substrate.layer2.materialId, options[2]?.id ?? options[0].id);
 
         const pickerRow = makeGroundMaterialPickerRow({
-            label: 'Ground material',
+            label: 'Base substrate',
             onPick: () => this._openGroundMaterialPicker()
         });
         section.appendChild(pickerRow.row);
         this._controls.groundMaterialPicker = pickerRow;
         this._syncGroundMaterialPicker();
 
-        const substrateSection = makeSection({ title: 'Substrate Blend', collapsedByDefault: false });
+        const substrateSection = makeSection({ title: 'Optional substrate variation', collapsedByDefault: false });
         parent.appendChild(substrateSection);
 
         substrateSection.appendChild(makeToggleRow({
@@ -1269,7 +2706,7 @@ export class GrassDebuggerUI {
         }));
 
         this._pickerPopup?.open?.({
-            title: 'Ground material',
+            title: 'Base substrate material',
             sections,
             selectedId: String(this._state?.terrain?.groundMaterialId ?? ''),
             onSelect: (opt) => {
@@ -1328,7 +2765,7 @@ export class GrassDebuggerUI {
     }
 
     _setActiveTab(key) {
-        const next = (key === 'environment' || key === 'terrain' || key === 'lod2' || key === 'lod3' || key === 'lod4') ? key : 'lod1';
+        const next = (key === 'lab' || key === 'validation' || key === 'authoring' || key === 'material' || key === 'environment' || key === 'terrain' || key === 'coverage' || key === 'accents' || key === 'lod1' || key === 'lod2' || key === 'lod3' || key === 'lod4') ? key : 'lab';
         this._state.tab = next;
         for (const [id, btn] of Object.entries(this._tabButtons)) btn.classList.toggle('is-active', id === next);
         for (const [id, body] of Object.entries(this._tabBodies)) body.style.display = id === next ? '' : 'none';
