@@ -15324,6 +15324,7 @@ async function runTests() {
         const { createGeneratorConfig } = await import('/src/graphics/assets3d/generators/GeneratorParams.js');
         const { getCityMaterials } = await import('/src/graphics/assets3d/textures/CityMaterials.js');
         const { createRoadEngineRoads } = await import('/src/graphics/visuals/city/RoadEngineRoads.js');
+        const { buildRoadSidewalkOuterBoundaryLoopsFromRoadEnginePrimitives } = await import('/src/app/road_decoration/sidewalks/RoadSidewalkBuilder.js');
 
         test('RoadEngineRoads: renders CityMap roads using RoadEngine compute (AI 149)', () => {
             const map = new CityMap({ width: 6, height: 6, tileSize: 24, origin: { x: 0, z: 0 } });
@@ -15347,6 +15348,49 @@ async function runTests() {
             const white = roads?.group?.getObjectByName?.('MarkingsWhite') ?? null;
             assertTrue(white?.isMesh === true, 'Expected MarkingsWhite mesh in default mode.');
             assertTrue(white?.receiveShadow === true, 'Expected road markings to receive dynamic shadows.');
+
+            const expectedSidewalkLoops = buildRoadSidewalkOuterBoundaryLoopsFromRoadEnginePrimitives(
+                roads.debug.derived.primitives,
+                {
+                    curbThickness: config.road.curb.thickness,
+                    sidewalkWidth: config.road.sidewalk.extraWidth,
+                    startFromCurb: true,
+                    boundaryEpsilon: 1e-4,
+                    miterLimit: 4
+                }
+            );
+            assertTrue(roads.sidewalkOuterBoundaryLoops.length > 0, 'Expected rendered sidewalk outer boundary loops.');
+            assertEqual(
+                JSON.stringify(roads.sidewalkOuterBoundaryLoops),
+                JSON.stringify(expectedSidewalkLoops),
+                'Expected returned loops to use the rendered sidewalk primitives and config.'
+            );
+            assertEqual(roads.sidewalkBoundarySource.source, 'road_engine', 'Expected stable RoadEngine boundary provenance.');
+            assertEqual(roads.sidewalkBoundarySource.role, 'sidewalk_outer_boundary', 'Expected sidewalk boundary source role.');
+            assertEqual(
+                roads.sidewalkBoundarySource.loopIds.length,
+                roads.sidewalkOuterBoundaryLoops.length,
+                'Expected one stable source-loop id per returned loop.'
+            );
+            assertTrue(roads.sidewalkEdgeDirt?.isMesh === true, 'Expected legacy sidewalk dirt strip by default.');
+
+            const suppressed = createRoadEngineRoads({
+                map,
+                config,
+                materials,
+                options: { suppressSidewalkEdgeDirtStrip: true }
+            });
+            assertEqual(suppressed.sidewalkEdgeDirt, null, 'Expected opt-in dirt-strip suppression to omit the mesh.');
+            assertEqual(
+                JSON.stringify(suppressed.sidewalkOuterBoundaryLoops),
+                JSON.stringify(roads.sidewalkOuterBoundaryLoops),
+                'Expected suppression to leave sidewalk boundary geometry unchanged.'
+            );
+            assertEqual(
+                suppressed.sidewalkBoundarySource.id,
+                roads.sidewalkBoundarySource.id,
+                'Expected stable boundary source identity across identical rebuilds.'
+            );
         });
 
         test('City: uses RoadEngine roads pipeline (AI 149)', () => {

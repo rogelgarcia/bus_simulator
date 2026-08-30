@@ -7,7 +7,10 @@ import { buildRoadEnginePolygonMeshData } from '../../../app/road_engine/RoadEng
 import { buildRoadEngineRoadsFromCityMap } from '../../../app/road_engine/RoadEngineCityMapAdapter.js';
 import { buildRoadCurbMeshDataFromRoadEnginePrimitives } from '../../../app/road_decoration/curbs/RoadCurbBuilder.js';
 import { buildRoadAsphaltEdgeWearMeshDataFromRoadEnginePrimitives } from '../../../app/road_decoration/wear/RoadAsphaltEdgeWearBuilder.js';
-import { buildRoadSidewalkMeshDataFromRoadEnginePrimitives } from '../../../app/road_decoration/sidewalks/RoadSidewalkBuilder.js';
+import {
+    buildRoadSidewalkMeshDataFromRoadEnginePrimitives,
+    buildRoadSidewalkOuterBoundaryLoopsFromRoadEnginePrimitives
+} from '../../../app/road_decoration/sidewalks/RoadSidewalkBuilder.js';
 import { buildRoadSidewalkEdgeDirtStripMeshDataFromRoadEnginePrimitives } from '../../../app/road_decoration/wear/RoadSidewalkEdgeDirtStripBuilder.js';
 import { buildRoadMarkingsMeshDataFromRoadEngineDerived } from '../../../app/road_decoration/markings/RoadMarkingsBuilder.js';
 import { createRoadMarkingsMeshesFromData } from './RoadMarkingsMeshes.js';
@@ -146,16 +149,95 @@ function getMapBoundsXZ(map) {
     return { minX, minZ, sizeX, sizeZ };
 }
 
-function hashStringToVec2(str) {
+function hashStringToU32(str) {
     const s = String(str ?? '');
     let h = 2166136261;
     for (let i = 0; i < s.length; i++) {
         h ^= s.charCodeAt(i);
         h = Math.imul(h, 16777619);
     }
+    return h >>> 0;
+}
+
+function hashStringToVec2(str) {
+    const h = hashStringToU32(str);
     const a = ((h >>> 0) & 0xffff) / 65535;
     const b = ((h >>> 16) & 0xffff) / 65535;
     return new THREE.Vector2(a * 512.0, b * 512.0);
+}
+
+function buildBoundaryLoopSignature(loop, epsilon) {
+    const eps = Math.max(EPS, clampNumber(epsilon, 1e-4));
+    const points = Array.isArray(loop) ? loop : [];
+    const keys = points.map((point) => {
+        const x = Math.round(clampNumber(point?.x, 0) / eps);
+        const z = Math.round(clampNumber(point?.z, 0) / eps);
+        return `${x},${z}`;
+    });
+    if (!keys.length) return '';
+
+    let start = 0;
+    for (let i = 1; i < keys.length; i++) {
+        if (keys[i] < keys[start]) start = i;
+    }
+    const forward = [];
+    const reverse = [];
+    for (let i = 0; i < keys.length; i++) {
+        forward.push(keys[(start + i) % keys.length]);
+        reverse.push(keys[(start - i + keys.length) % keys.length]);
+    }
+    const forwardSignature = forward.join(';');
+    const reverseSignature = reverse.join(';');
+    return forwardSignature < reverseSignature ? forwardSignature : reverseSignature;
+}
+
+function buildSidewalkBoundarySource(asphaltPolys, loops, {
+    enabled,
+    surfaceY,
+    curbThickness,
+    curbHeight,
+    sidewalkWidth,
+    sidewalkLift,
+    startFromCurb,
+    boundaryEpsilon,
+    miterLimit
+}) {
+    const primitives = Array.isArray(asphaltPolys) ? asphaltPolys : [];
+    const boundaryLoops = Array.isArray(loops) ? loops : [];
+    const primitiveIds = Object.freeze(primitives
+        .map((primitive, index) => String(primitive?.id ?? `${primitive?.kind ?? 'polygon'}:${index}`))
+        .sort());
+    const loopIds = Object.freeze(boundaryLoops.map((loop) => {
+        const signature = buildBoundaryLoopSignature(loop, boundaryEpsilon);
+        const hash = hashStringToU32(signature).toString(16).padStart(8, '0');
+        return `road-engine-sidewalk-outer-${hash}`;
+    }));
+    const config = Object.freeze({
+        enabled: enabled === true,
+        surfaceY,
+        curbThickness,
+        curbHeight,
+        sidewalkWidth,
+        sidewalkLift,
+        startFromCurb: startFromCurb === true,
+        boundaryEpsilon,
+        miterLimit
+    });
+    const sourceHash = hashStringToU32(JSON.stringify({ primitiveIds, loopIds: [...loopIds].sort(), config }))
+        .toString(16)
+        .padStart(8, '0');
+
+    return Object.freeze({
+        id: `road-engine-sidewalk-outer-v1-${sourceHash}`,
+        source: 'road_engine',
+        role: 'sidewalk_outer_boundary',
+        coordinateSpace: 'world_xz',
+        primitiveKinds: Object.freeze(['asphalt_piece', 'junction_surface']),
+        primitiveIds,
+        loopIds,
+        loopCount: boundaryLoops.length,
+        config
+    });
 }
 
 function createRoadMarkingsTexture(markings, {
@@ -847,6 +929,7 @@ export function createRoadEngineRoads({
     const includeMarkings = opt.includeMarkings !== false;
     const includeJunctions = opt.includeJunctions !== false;
     const includeDebug = opt.includeDebug !== false;
+    const suppressSidewalkEdgeDirtStrip = opt.suppressSidewalkEdgeDirtStrip === true;
     const markingsMode = (opt.markingsMode === 'baked') ? 'baked' : 'meshes';
 
     const laneWidth = Math.max(EPS, clampNumber(roadCfg?.laneWidth, 4.8));
@@ -923,6 +1006,31 @@ export function createRoadEngineRoads({
 
     const primitives = Array.isArray(derived?.primitives) ? derived.primitives : [];
     const asphaltPolys = primitives.filter((p) => p?.type === 'polygon' && (p.kind === 'asphalt_piece' || p.kind === 'junction_surface'));
+    const sidewalkGeometryEnabled = includeSidewalks && sidewalkWidth > EPS && asphaltPolys.length > 0;
+    const sidewalkBuildConfig = Object.freeze({
+        surfaceY: asphaltY,
+        curbThickness,
+        curbHeight: curbHeight + curbExtraHeight,
+        sidewalkWidth,
+        sidewalkLift,
+        startFromCurb: true,
+        boundaryEpsilon: 1e-4,
+        miterLimit: 4
+    });
+    const sidewalkOuterBoundaryLoops = sidewalkGeometryEnabled
+        ? buildRoadSidewalkOuterBoundaryLoopsFromRoadEnginePrimitives(asphaltPolys, sidewalkBuildConfig)
+        : [];
+    const sidewalkBoundarySource = buildSidewalkBoundarySource(asphaltPolys, sidewalkOuterBoundaryLoops, {
+        enabled: sidewalkGeometryEnabled,
+        surfaceY: sidewalkBuildConfig.surfaceY,
+        curbThickness: sidewalkBuildConfig.curbThickness,
+        curbHeight: sidewalkBuildConfig.curbHeight,
+        sidewalkWidth: sidewalkBuildConfig.sidewalkWidth,
+        sidewalkLift: sidewalkBuildConfig.sidewalkLift,
+        startFromCurb: sidewalkBuildConfig.startFromCurb,
+        boundaryEpsilon: sidewalkBuildConfig.boundaryEpsilon,
+        miterLimit: sidewalkBuildConfig.miterLimit
+    });
 
     let markings = null;
     let markingsTexture = null;
@@ -1027,16 +1135,8 @@ export function createRoadEngineRoads({
     }
 
     let sidewalkMesh = null;
-    if (includeSidewalks && sidewalkWidth > EPS && asphaltPolys.length) {
-        const sidewalkData = buildRoadSidewalkMeshDataFromRoadEnginePrimitives(asphaltPolys, {
-            surfaceY: asphaltY,
-            curbThickness,
-            curbHeight: curbHeight + curbExtraHeight,
-            sidewalkWidth,
-            sidewalkLift,
-            boundaryEpsilon: 1e-4,
-            miterLimit: 4
-        });
+    if (sidewalkGeometryEnabled) {
+        const sidewalkData = buildRoadSidewalkMeshDataFromRoadEnginePrimitives(asphaltPolys, sidewalkBuildConfig);
         if (sidewalkData?.positions?.length) {
             const sidewalkGeo = new THREE.BufferGeometry();
             sidewalkGeo.setAttribute('position', new THREE.BufferAttribute(sidewalkData.positions, 3));
@@ -1050,7 +1150,7 @@ export function createRoadEngineRoads({
     }
 
     let sidewalkEdgeDirtMesh = null;
-    if (!debugMode && includeSidewalks && sidewalkWidth > EPS && sidewalkEdgeStrip.width > EPS && asphaltPolys.length) {
+    if (!suppressSidewalkEdgeDirtStrip && !debugMode && sidewalkGeometryEnabled && sidewalkEdgeStrip.width > EPS) {
         const stripData = buildRoadSidewalkEdgeDirtStripMeshDataFromRoadEnginePrimitives(asphaltPolys, {
             surfaceY: asphaltY,
             curbThickness,
@@ -1161,6 +1261,8 @@ export function createRoadEngineRoads({
         curbBlocks: curbMesh,
         sidewalk: sidewalkMesh,
         sidewalkEdgeDirt: sidewalkEdgeDirtMesh,
+        sidewalkOuterBoundaryLoops,
+        sidewalkBoundarySource,
         markingsWhite: markingsGroup.getObjectByName('MarkingsWhite') ?? null,
         markingsYellow: markingsGroup.getObjectByName('MarkingsYellow') ?? null,
         curbConnectors,

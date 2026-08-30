@@ -10,10 +10,13 @@ import { inflateSync } from 'node:zlib';
 const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TOOL_DIR, '../..');
 const DEFAULT_OUTPUT = 'tests/artifacts/screens/grass/ai358';
+const DEFAULT_BOUNDARY_OUTPUT = 'tests/artifacts/screens/grass/ai359';
 const DEFAULT_BASE_URL = 'http://127.0.0.1:4173';
 const V2_ASSET_URL_PREFIX = '/assets/public/pbr/grass_low_cut_maintained_v2/';
 const WIDTH = 3840;
 const HEIGHT = 2160;
+const MATERIAL_MATRIX = 'material';
+const BOUNDARY_MATRIX = 'ai359-boundary';
 const TURF_ROI = Object.freeze({ x: 0.2, y: 0.55, width: 0.6, height: 0.35 });
 export const CARD_BAND_ROI = Object.freeze({ x: 0.05, y: 0.35, width: 0.9, height: 0.08 });
 export const CARD_BAND_GATE_CONTRACT = Object.freeze({
@@ -27,31 +30,44 @@ const NEUTRAL_PAIR_DEFINITIONS = Object.freeze([
     Object.freeze({ lighting: 'overcast', geometry: 'geometry_on_overcast', texture: 'texture_only_overcast' })
 ]);
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
     const options = {
         phase: null,
+        matrix: MATERIAL_MATRIX,
         output: DEFAULT_OUTPUT,
         baseUrl: process.env.GRASS_LAB_BASE_URL || DEFAULT_BASE_URL,
         v2AssetRoot: process.env.GRASS_LAB_V2_ASSET_ROOT || null,
         executablePath: process.env.E2E_BROWSER_EXECUTABLE || null,
         headed: false,
-        overwrite: false
+        overwrite: false,
+        inspectBoundary: false,
+        outputProvided: false
     };
     for (const arg of argv) {
         if (arg === '--headed') options.headed = true;
         else if (arg === '--overwrite') options.overwrite = true;
+        else if (arg === '--inspect-boundary') options.inspectBoundary = true;
         else if (arg === '--help' || arg === '-h') options.help = true;
         else if (arg.startsWith('--phase=')) options.phase = arg.slice('--phase='.length).trim();
-        else if (arg.startsWith('--output=')) options.output = arg.slice('--output='.length).trim();
+        else if (arg.startsWith('--matrix=')) options.matrix = arg.slice('--matrix='.length).trim();
+        else if (arg.startsWith('--output=')) {
+            options.output = arg.slice('--output='.length).trim();
+            options.outputProvided = true;
+        }
         else if (arg.startsWith('--base-url=')) options.baseUrl = arg.slice('--base-url='.length).trim();
         else if (arg.startsWith('--v2-asset-root=')) options.v2AssetRoot = arg.slice('--v2-asset-root='.length).trim();
         else if (arg.startsWith('--browser-executable=')) options.executablePath = arg.slice('--browser-executable='.length).trim();
         else throw new Error(`[GrassLabCapture] Unknown argument: ${arg}`);
     }
     if (options.help) return options;
-    if (options.phase !== 'before' && options.phase !== 'after') {
+    if (options.inspectBoundary) options.matrix = BOUNDARY_MATRIX;
+    if (!options.inspectBoundary && options.phase !== 'before' && options.phase !== 'after') {
         throw new Error('[GrassLabCapture] --phase=before or --phase=after is required.');
     }
+    if (options.matrix !== MATERIAL_MATRIX && options.matrix !== BOUNDARY_MATRIX) {
+        throw new Error(`[GrassLabCapture] --matrix must be ${MATERIAL_MATRIX} or ${BOUNDARY_MATRIX}.`);
+    }
+    if (options.matrix === BOUNDARY_MATRIX && !options.outputProvided) options.output = DEFAULT_BOUNDARY_OUTPUT;
     if (!options.output) throw new Error('[GrassLabCapture] --output must not be empty.');
     if (!options.baseUrl) throw new Error('[GrassLabCapture] --base-url must not be empty.');
     return options;
@@ -64,13 +80,17 @@ function usage() {
         'Usage:',
         '  node tools/grass_lab_capture/run.mjs --phase=before',
         '  node tools/grass_lab_capture/run.mjs --phase=after',
+        '  node tools/grass_lab_capture/run.mjs --phase=after --matrix=ai359-boundary',
+        '  node tools/grass_lab_capture/run.mjs --inspect-boundary',
         '',
         'Options:',
         `  --output=${DEFAULT_OUTPUT}`,
+        `  --matrix=${MATERIAL_MATRIX}|${BOUNDARY_MATRIX}`,
         `  --base-url=${DEFAULT_BASE_URL}`,
         '  --v2-asset-root=<repository-relative staging directory>',
         '  --browser-executable=<path>',
         '  --headed',
+        '  --inspect-boundary  Print the live V2 boundary snapshot/topology without writing captures',
         '  --overwrite'
     ].join('\n');
 }
@@ -190,6 +210,37 @@ export function buildCaptureRecipes() {
         Object.freeze({ id: 'near_handoff_golden', role: 'handoff', quality: 'default', lighting: 'golden', camera: 'near_handoff' }),
         Object.freeze({ id: 'far_texture_night', role: 'far', quality: 'default', lighting: 'night', camera: 'far_texture' })
     ]);
+}
+
+export function buildBoundaryCaptureRecipes() {
+    const poses = [
+        { id: 'straight_030', target: 'straight', heightMeters: 0.30 },
+        { id: 'straight_050', target: 'straight', heightMeters: 0.50 },
+        { id: 'straight_100', target: 'straight', heightMeters: 1.00 },
+        { id: 'straight_zoom', target: 'straight', heightMeters: 0.40, distanceMeters: 1.25 },
+        { id: 'curve', target: 'curve', heightMeters: 0.50 },
+        { id: 'diagonal', target: 'diagonal', heightMeters: 0.50 },
+        { id: 'inside_corner', target: 'inside_corner', heightMeters: 0.50 },
+        { id: 'outside_corner', target: 'outside_corner', heightMeters: 0.50 },
+        { id: 'tree_base', target: 'tree_base', heightMeters: 0.50 }
+    ];
+    const recipes = [];
+    for (const pose of poses) {
+        for (const evidenceMode of ['substrate_only', 'boundary_final']) {
+            recipes.push(Object.freeze({
+                id: `${evidenceMode}_${pose.id}`,
+                pairId: pose.id,
+                role: evidenceMode,
+                quality: 'low',
+                lighting: 'daylight',
+                boundaryTarget: pose.target,
+                heightMeters: pose.heightMeters,
+                ...(pose.distanceMeters ? { distanceMeters: pose.distanceMeters } : {}),
+                evidenceMode
+            }));
+        }
+    }
+    return Object.freeze(recipes);
 }
 
 function paethPredictor(left, up, upperLeft) {
@@ -404,6 +455,146 @@ function captureCameraSignature(capture) {
     } : null);
 }
 
+export function evaluateBoundaryRepresentationSnapshot(snapshot, expectedMode) {
+    const source = snapshot && typeof snapshot === 'object' ? snapshot : {};
+    const boundary = source.boundaryEvidence && typeof source.boundaryEvidence === 'object'
+        ? source.boundaryEvidence
+        : {};
+    const coverage = source.coverage && typeof source.coverage === 'object' ? source.coverage : {};
+    const final = expectedMode === 'boundary_final';
+    const substrateOnly = expectedMode === 'substrate_only';
+    const coverageDrawCalls = Number(coverage.logicalDrawCalls ?? coverage.drawCalls);
+    const coverageTriangles = Number(coverage.triangles);
+    const sourceLoopIdentity = String(coverage.sourceLoopIdentity ?? source?.fixtures?.sourceLoopIdentity ?? '');
+    const grassOnsetWidthMeters = Number(coverage.grassOnsetWidthMeters);
+    const checks = {
+        supportedMode: final || substrateOnly,
+        modeMatch: boundary.mode === expectedMode,
+        legacyGeometryHidden: boundary.legacyGeometryHidden === true,
+        grassEngineHidden: boundary.grassEngineVisible === false,
+        coverageVisibilityMatch: boundary.coverageVisible === final,
+        substrateHasNoGrassGeometry: !substrateOnly || (coverageDrawCalls === 0 && coverageTriangles === 0),
+        finalHasCoverageGeometry: !final || (
+            coverageDrawCalls > 0
+            && coverageTriangles > 0
+            && Number(coverage.capTriangles) > 0
+            && Number(coverage.edgeTriangles) > 0
+        ),
+        finalUsesAtMostTwoCoverageDraws: !final || (
+            coverageDrawCalls <= 2
+            && Number(coverage.physicalEdgeLogicalDraws) <= 1
+        ),
+        finalUsesOpaqueCap: !final || (
+            coverage.opaqueCap === true
+            && coverage.transparentSurface === false
+            && coverage.alphaTestedSurface === false
+        ),
+        finalUsesExactSourceIdentity: !final || sourceLoopIdentity.length > 0,
+        finalUsesApprovedSidewalkReveal: !final || (
+            grassOnsetWidthMeters >= 0.06
+            && grassOnsetWidthMeters <= 0.10
+            && Number(coverage.sidewalkOnsetDistanceMinMeters) >= 0.06 - 1e-6
+            && Number(coverage.sidewalkOnsetDistanceMaxMeters) <= 0.10 + 1e-6
+        ),
+        finalUsesApprovedStructuralBase: !final || (
+            Number(coverage.structuralBaseHeightMeters) >= 0.025
+            && Number(coverage.structuralBaseHeightMeters) <= 0.030
+        ),
+        finalKeepsVisibleTipsSeparate: !final || (
+            Number(coverage.visibleBladeTipMinMeters) >= 0.040
+            && Number(coverage.visibleBladeTipMaxMeters) <= 0.075
+            && Number(coverage.visibleBladeTipMaxMeters) > Number(coverage.structuralBaseHeightMeters)
+        ),
+        finalCapsAntialiasWidth: !final || Number(coverage.antialiasWidthMeters) <= 0.015,
+        finalIncludesApprovalShapes: !final || (
+            Number(coverage.diagonalSegments) > 0
+            && Number(coverage.curvedSegments) > 0
+            && Number(coverage.insideCorners) > 0
+            && Number(coverage.outsideCorners) > 0
+            && Number(coverage.treeBaseSegments) > 0
+        ),
+        finalStaysWithinBoundaryTolerance: !final || Number(coverage.maxBoundaryDeviationMeters) <= 0.020 + 1e-6,
+        finalHasNoHardExclusionIntrusions: !final || Number(coverage.hardExclusionIntrusions) === 0,
+        finalHasNoGrassOnsetIntrusions: !final || Number(coverage.grassOnsetIntrusions) === 0,
+        finalHasNoIneligibleRoots: !final || Number(coverage.ineligibleCutEdgeRoots) === 0
+    };
+    return {
+        expectedMode,
+        noNearMidAccentRepresentation: checks.legacyGeometryHidden && checks.grassEngineHidden,
+        coverageDrawCalls: Number.isFinite(coverageDrawCalls) ? coverageDrawCalls : null,
+        coverageTriangles: Number.isFinite(coverageTriangles) ? coverageTriangles : null,
+        sourceLoopIdentity,
+        grassOnsetWidthMeters: Number.isFinite(grassOnsetWidthMeters) ? grassOnsetWidthMeters : null,
+        checks,
+        pass: Object.values(checks).every(Boolean)
+    };
+}
+
+export function evaluateBoundaryPairs(captures) {
+    const expectedPairIds = buildBoundaryCaptureRecipes()
+        .filter((recipe) => recipe.evidenceMode === 'substrate_only')
+        .map((recipe) => recipe.pairId);
+    const source = Array.isArray(captures) ? captures : [];
+    const pairs = expectedPairIds.map((pairId) => {
+        const substrate = source.find((entry) => entry?.pairId === pairId && entry?.evidenceMode === 'substrate_only') ?? null;
+        const final = source.find((entry) => entry?.pairId === pairId && entry?.evidenceMode === 'boundary_final') ?? null;
+        const cameraMatch = !!substrate && !!final && captureCameraSignature(substrate) === captureCameraSignature(final);
+        const lightingMatch = substrate?.lightingPreset === final?.lightingPreset && substrate?.lightingPreset === 'daylight';
+        const exposureMatch = Number.isFinite(Number(substrate?.exposure))
+            && Number(substrate?.exposure) === Number(final?.exposure);
+        const qualityMatch = substrate?.qualityPreset === 'low' && final?.qualityPreset === 'low';
+        const dimensionsMatch = substrate?.png?.width === WIDTH
+            && substrate?.png?.height === HEIGHT
+            && final?.png?.width === WIDTH
+            && final?.png?.height === HEIGHT;
+        const substrateApproval = substrate?.representationApproval ?? null;
+        const finalApproval = final?.representationApproval ?? null;
+        const alignment = {
+            cameraMatch,
+            lightingMatch,
+            exposureMatch,
+            qualityMatch,
+            dimensionsMatch,
+            pass: cameraMatch && lightingMatch && exposureMatch && qualityMatch && dimensionsMatch
+        };
+        return {
+            pairId,
+            substrateRecipeId: substrate?.recipeId ?? null,
+            finalRecipeId: final?.recipeId ?? null,
+            alignment,
+            substrateApproval,
+            finalApproval,
+            boundaryCost: final ? {
+                capTriangles: final.cost?.coverageCapTriangles ?? null,
+                edgeTriangles: final.cost?.coverageEdgeTriangles ?? null,
+                totalTriangles: final.cost?.coverageTriangles ?? null,
+                logicalDrawCalls: final.cost?.coverageLogicalDrawCalls ?? null
+            } : null,
+            pass: !!substrate && !!final && alignment.pass
+                && substrateApproval?.pass === true
+                && finalApproval?.pass === true
+        };
+    });
+    const recipeIds = source.map((entry) => entry?.recipeId).filter(Boolean);
+    const exactCaptureSet = source.length === expectedPairIds.length * 2
+        && new Set(recipeIds).size === expectedPairIds.length * 2;
+    const sourceLoopIdentities = [...new Set(source
+        .map((entry) => entry?.representationApproval?.sourceLoopIdentity)
+        .filter(Boolean))];
+    return {
+        gateId: 'grass-boundary-paired-approval-v1',
+        requiredResolution: { width: WIDTH, height: HEIGHT, pixelRatio: 1 },
+        requiredQualityPreset: 'low',
+        requiredPairCount: expectedPairIds.length,
+        captureCount: source.length,
+        exactCaptureSet,
+        sourceLoopIdentities,
+        stableSourceLoopIdentity: sourceLoopIdentities.length === 1,
+        pairs,
+        pass: exactCaptureSet && sourceLoopIdentities.length === 1 && pairs.every((pair) => pair.pass)
+    };
+}
+
 function captureBuffer(pngByRecipe, recipeId) {
     if (pngByRecipe instanceof Map) return pngByRecipe.get(recipeId) ?? null;
     if (pngByRecipe && typeof pngByRecipe === 'object') return pngByRecipe[recipeId] ?? null;
@@ -518,6 +709,10 @@ export function mergeCaptureManifest(existing, phase, captures, diagnostics = nu
         cardBandGateByPhase: {
             ...(previous.cardBandGateByPhase && typeof previous.cardBandGateByPhase === 'object' ? previous.cardBandGateByPhase : {}),
             [phase]: diagnostics?.cardBandGate ?? null
+        },
+        boundaryGateByPhase: {
+            ...(previous.boundaryGateByPhase && typeof previous.boundaryGateByPhase === 'object' ? previous.boundaryGateByPhase : {}),
+            [phase]: diagnostics?.boundaryGate ?? null
         }
     };
 }
@@ -548,7 +743,11 @@ async function captureRecipe(page, outputRoot, outputRelative, phase, recipe, ov
     await page.evaluate((next) => {
         const lab = window.__grassLab;
         lab.setQualityPreset(next.quality);
-        if (next.material) {
+        if (next.evidenceMode) {
+            lab.setLighting(next.lighting);
+            lab.setBoundaryEvidenceMode(next.evidenceMode);
+            lab.focusBoundaryCamera(next.boundaryTarget, next.heightMeters, next.distanceMeters);
+        } else if (next.material) {
             lab.setMaterialLighting(next.lighting);
             lab.focusMaterialFixture({ grazing: next.grazing });
         } else {
@@ -576,12 +775,18 @@ async function captureRecipe(page, outputRoot, outputRelative, phase, recipe, ov
     }
     const frameMetrics = measurePngFrame(png);
     const snapshot = metadata.snapshot ?? {};
+    const representationApproval = recipe.evidenceMode
+        ? evaluateBoundaryRepresentationSnapshot(snapshot, recipe.evidenceMode)
+        : null;
     return {
         png,
         entry: {
             phase,
+            matrix: recipe.evidenceMode ? BOUNDARY_MATRIX : MATERIAL_MATRIX,
             role: recipe.role,
             recipeId: recipe.id,
+            pairId: recipe.pairId ?? null,
+            evidenceMode: recipe.evidenceMode ?? null,
             file: path.posix.join(outputRelative.replaceAll('\\', '/'), filename),
             lightingPreset: recipe.lighting,
             qualityPreset: recipe.quality,
@@ -596,9 +801,16 @@ async function captureRecipe(page, outputRoot, outputRelative, phase, recipe, ov
             canvas: metadata.canvas,
             png: dimensions,
             frameMetrics,
+            boundaryEvidence: recipe.evidenceMode ? (snapshot.boundaryEvidence ?? null) : null,
+            representationApproval,
+            coverageDiagnostics: recipe.evidenceMode ? (snapshot.coverage ?? null) : null,
             cost: {
                 visibleGrassTriangles: snapshot?.grass?.triangles ?? null,
                 grassLogicalDrawCalls: snapshot?.grass?.logicalDrawCalls ?? null,
+                coverageCapTriangles: snapshot?.coverage?.capTriangles ?? null,
+                coverageEdgeTriangles: snapshot?.coverage?.edgeTriangles ?? null,
+                coverageTriangles: snapshot?.coverage?.triangles ?? null,
+                coverageLogicalDrawCalls: snapshot?.coverage?.logicalDrawCalls ?? null,
                 totalRendererDrawCalls: snapshot?.frame?.rendererDrawCalls ?? null,
                 rendererTriangles: snapshot?.frame?.rendererTriangles ?? null,
                 grassCpuMs: snapshot?.grass?.updateCpuMs ?? null,
@@ -608,7 +820,7 @@ async function captureRecipe(page, outputRoot, outputRelative, phase, recipe, ov
     };
 }
 
-async function collectCostSamples(page, phase) {
+async function collectCostSamples(page, phase, matrix = MATERIAL_MATRIX) {
     const width = 1920;
     const height = 1080;
     await page.setViewportSize({ width, height });
@@ -617,13 +829,18 @@ async function collectCostSamples(page, phase) {
     ), { width, height });
     const samples = [];
     for (const qualityPreset of ['low', 'default', 'high']) {
-        await page.evaluate((quality) => {
+        await page.evaluate(({ quality, boundaryMatrix }) => {
             const lab = window.__grassLab;
             lab.setQualityPreset(quality);
             lab.setLighting('daylight');
-            lab.focusCamera('height_150');
+            if (boundaryMatrix) {
+                lab.setBoundaryEvidenceMode('boundary_final');
+                lab.focusBoundaryCamera('straight', 1.0);
+            } else {
+                lab.focusCamera('height_150');
+            }
             lab.resetValidationSamples();
-        }, qualityPreset);
+        }, { quality: qualityPreset, boundaryMatrix: matrix === BOUNDARY_MATRIX });
         await page.evaluate(() => window.__grassLab.settleCaptureFrames(60));
         const metadata = await page.evaluate((context) => window.__grassLab.getCaptureMetadata(context), {
             phase,
@@ -633,15 +850,27 @@ async function collectCostSamples(page, phase) {
         const snapshot = metadata.snapshot ?? {};
         const visibleGrassTriangles = snapshot?.grass?.triangles ?? null;
         const grassLogicalDrawCalls = snapshot?.grass?.logicalDrawCalls ?? null;
+        const coverageTriangles = snapshot?.coverage?.triangles ?? null;
+        const coverageLogicalDrawCalls = snapshot?.coverage?.logicalDrawCalls ?? null;
+        const boundaryApproval = matrix === BOUNDARY_MATRIX
+            ? evaluateBoundaryRepresentationSnapshot(snapshot, 'boundary_final')
+            : null;
         samples.push({
             phase,
+            matrix,
             qualityPreset,
             resolution: `${width}x${height}`,
-            cameraPreset: 'height_150',
+            cameraPreset: matrix === BOUNDARY_MATRIX ? 'boundary_straight_100' : 'height_150',
             lightingPreset: 'daylight',
             materialVersion: metadata.materialVersion ?? null,
             visibleGrassTriangles,
             grassLogicalDrawCalls,
+            coverageCapTriangles: snapshot?.coverage?.capTriangles ?? null,
+            coverageRootThatchTriangles: snapshot?.coverage?.rootThatchTriangles ?? null,
+            coverageCutEdgeTriangles: snapshot?.coverage?.cutEdgeTriangles ?? null,
+            coverageTriangles,
+            coverageLogicalDrawCalls,
+            boundaryApproval,
             totalRendererDrawCalls: snapshot?.frame?.rendererDrawCalls ?? null,
             rendererTriangles: snapshot?.frame?.rendererTriangles ?? null,
             grassCpuMs: snapshot?.grass?.updateCpuMs ?? null,
@@ -649,7 +878,13 @@ async function collectCostSamples(page, phase) {
             budget: {
                 visibleGrassTriangleCeiling: 200000,
                 grassLogicalDrawCallCeiling: 12,
-                pass: Number(visibleGrassTriangles) <= 200000 && Number(grassLogicalDrawCalls) <= 12
+                coverageLogicalDrawCallCeiling: matrix === BOUNDARY_MATRIX ? 2 : null,
+                pass: Number(visibleGrassTriangles) <= 200000
+                    && Number(grassLogicalDrawCalls) <= 12
+                    && (matrix !== BOUNDARY_MATRIX || (
+                        Number(coverageLogicalDrawCalls) <= 2
+                        && boundaryApproval?.pass === true
+                    ))
             }
         });
     }
@@ -660,10 +895,11 @@ async function collectCostSamples(page, phase) {
 async function run(options) {
     const outputRoot = resolveOutputRoot(options.output);
     const outputRelative = path.relative(REPO_ROOT, outputRoot);
-    await mkdir(outputRoot, { recursive: true });
+    if (!options.inspectBoundary) await mkdir(outputRoot, { recursive: true });
     const server = await ensureStaticServer(options.baseUrl);
     const runtimeErrors = [];
     const runtimeWarnings = [];
+    const startupDiagnostics = [];
     let browser = null;
     try {
         browser = await chromium.launch({
@@ -685,15 +921,18 @@ async function run(options) {
         const v2AssetOverride = await installV2AssetOverride(page, options.v2AssetRoot);
         page.on('pageerror', (error) => runtimeErrors.push(`pageerror: ${error?.message ?? error}`));
         page.on('console', (message) => {
+            if (message.type() === 'error') startupDiagnostics.push(`console: ${message.text()}`);
             if (message.type() === 'error' && !message.text().startsWith('Failed to load resource:')) runtimeErrors.push(`console: ${message.text()}`);
             else if (message.type() === 'warning') runtimeWarnings.push(`console: ${message.text()}`);
         });
         page.on('response', (response) => {
+            if (response.status() >= 400) startupDiagnostics.push(`http ${response.status()}: ${response.url()}`);
             if (response.status() >= 400 && response.url().startsWith(options.baseUrl) && !isOptionalCorrectionConfig(response.url())) {
                 runtimeErrors.push(`http ${response.status()}: ${response.url()}`);
             }
         });
         page.on('requestfailed', (request) => {
+            startupDiagnostics.push(`request failed: ${request.url()} · ${request.failure()?.errorText ?? '?'}`);
             if (request.url().startsWith(options.baseUrl) && !isOptionalCorrectionConfig(request.url())) {
                 runtimeErrors.push(`request failed: ${request.url()} · ${request.failure()?.errorText ?? '?'}`);
             }
@@ -707,31 +946,64 @@ async function run(options) {
                 hasApi: !!window.__grassLab,
                 title: document.title
             })).catch(() => null);
-            throw new Error(`[GrassLabCapture] Lab did not become ready. Startup: ${JSON.stringify(startup)}\n${runtimeErrors.join('\n')}\n${runtimeWarnings.join('\n')}`, { cause: error });
+            throw new Error(`[GrassLabCapture] Lab did not become ready. Startup: ${JSON.stringify(startup)}\n${runtimeErrors.join('\n')}\n${runtimeWarnings.join('\n')}\n${startupDiagnostics.slice(-20).join('\n')}`, { cause: error });
         }
         await page.evaluate(() => window.__grassLab.enterCaptureMode({ width: 3840, height: 2160 }));
-        const materialVersionSwitch = await page.evaluate(async (version) => window.__grassLab.setMaterialVersion(version), options.phase === 'before' ? 'v1' : 'v2');
+        const requestedMaterialVersion = options.matrix === BOUNDARY_MATRIX
+            ? 'v2'
+            : (options.phase === 'before' ? 'v1' : 'v2');
+        const materialVersionSwitch = await page.evaluate(
+            async (version) => window.__grassLab.setMaterialVersion(version),
+            requestedMaterialVersion
+        );
         await page.evaluate(() => window.__grassLab.settleCaptureFrames(60));
+        if (options.inspectBoundary) {
+            const inspection = await page.evaluate(() => {
+                const lab = window.__grassLab;
+                lab.setQualityPreset('low');
+                lab.setBoundaryEvidenceMode('boundary_final');
+                lab.focusBoundaryCamera('straight', 0.5);
+                const snapshot = lab.getSnapshot();
+                return {
+                    snapshot: {
+                        fixtures: snapshot.fixtures,
+                        coverage: snapshot.coverage,
+                        frame: snapshot.frame,
+                        boundaryEvidence: snapshot.boundaryEvidence
+                    },
+                    topologyWindows: [
+                        lab.getBoundaryTopologyDiagnostics({ startIndex: 112, endIndex: 140 }),
+                        lab.getBoundaryTopologyDiagnostics({ startIndex: 244, endIndex: 269 })
+                    ]
+                };
+            });
+            await page.evaluate(() => window.__grassLab.settleCaptureFrames(5));
+            process.stdout.write(`${JSON.stringify(inspection, null, 2)}\n`);
+            return;
+        }
         const captures = [];
         const pngByRecipe = new Map();
-        for (const recipe of buildCaptureRecipes()) {
+        const recipes = options.matrix === BOUNDARY_MATRIX ? buildBoundaryCaptureRecipes() : buildCaptureRecipes();
+        for (const recipe of recipes) {
             const result = await captureRecipe(page, outputRoot, outputRelative, options.phase, recipe, options.overwrite);
             captures.push(result.entry);
-            if (NEUTRAL_PAIR_DEFINITIONS.some((definition) => (
+            if (options.matrix === MATERIAL_MATRIX && NEUTRAL_PAIR_DEFINITIONS.some((definition) => (
                 definition.geometry === recipe.id || definition.texture === recipe.id
             ))) pngByRecipe.set(recipe.id, result.png);
         }
         const materialVersion = summarizeSettledMaterialVersion(materialVersionSwitch, captures);
-        const luminanceGate = evaluateLuminancePairs(captures);
-        const cardBandGate = evaluateCardBandPairs(captures, pngByRecipe);
+        const luminanceGate = options.matrix === MATERIAL_MATRIX ? evaluateLuminancePairs(captures) : null;
+        const cardBandGate = options.matrix === MATERIAL_MATRIX ? evaluateCardBandPairs(captures, pngByRecipe) : null;
+        const boundaryGate = options.matrix === BOUNDARY_MATRIX ? evaluateBoundaryPairs(captures) : null;
         await page.evaluate(() => window.__grassLab.exitCaptureMode());
-        const costSamples = await collectCostSamples(page, options.phase);
+        const costSamples = await collectCostSamples(page, options.phase, options.matrix);
         if (runtimeErrors.length) {
             throw new Error(`Grass Lab emitted runtime errors:\n${runtimeErrors.join('\n')}`);
         }
         const manifestPath = path.join(outputRoot, 'capture_manifest.json');
         const existing = await readExistingManifest(manifestPath);
         const manifest = mergeCaptureManifest(existing, options.phase, captures, {
+            matrix: options.matrix,
             baseUrl: options.baseUrl,
             v2AssetSource: v2AssetOverride
                 ? { mode: 'lab_staging_override', root: v2AssetOverride }
@@ -739,6 +1011,7 @@ async function run(options) {
             materialVersion,
             luminanceGate,
             cardBandGate,
+            boundaryGate,
             costSamples,
             runtimeErrors,
             runtimeWarnings
@@ -746,18 +1019,21 @@ async function run(options) {
         await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
         process.stdout.write(`${JSON.stringify({
             phase: options.phase,
+            matrix: options.matrix,
             captures: captures.length,
-            gates: {
-                luminance: luminanceGate.pass,
-                cardBand: cardBandGate.pass
-            },
+            gates: options.matrix === BOUNDARY_MATRIX
+                ? { boundary: boundaryGate.pass }
+                : { luminance: luminanceGate.pass, cardBand: cardBandGate.pass },
             manifest: path.relative(REPO_ROOT, manifestPath).replaceAll('\\', '/')
         }, null, 2)}\n`);
-        if (options.phase === 'after' && (!luminanceGate.pass || !cardBandGate.pass)) {
+        if (options.phase === 'after' && options.matrix === MATERIAL_MATRIX && (!luminanceGate.pass || !cardBandGate.pass)) {
             const failures = [];
             if (!luminanceGate.pass) failures.push('geometry/texture median-luminance ratio is outside 0.90-1.10');
             if (!cardBandGate.pass) failures.push('live field card-band darkening exceeds 0.10');
             throw new Error(`[GrassLabCapture] Corrected evidence failed: ${failures.join('; ')}. Evidence was saved with failing verdicts.`);
+        }
+        if (options.matrix === BOUNDARY_MATRIX && !boundaryGate.pass) {
+            throw new Error('[GrassLabCapture] Boundary evidence failed paired camera/representation/geometry approval. Evidence was saved with failing verdicts.');
         }
     } finally {
         await browser?.close?.();

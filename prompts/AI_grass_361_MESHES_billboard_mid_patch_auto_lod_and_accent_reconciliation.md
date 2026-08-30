@@ -17,6 +17,7 @@ Tasks:
 - Preserve the selected profile's blade-length and directional irregularity across simplified tiers. Longer grass is allowed, but it must remain cohesive and must not turn into isolated tall cards or highlighted tufts.
 - Match every tier and localized accent to AI 358's far-surface appearance under daylight, overcast, golden-hour, and night lighting, with zero emissive contribution.
 - Use AI 359's root eligibility at sufficient granularity that no tier crosses the physical grass cut and no whole-cell exclusion produces a visible moat.
+- Preserve AI 359's signed-distance orientation, root clearance, source/onset identities, boundary signature, tree holes, opaque cap, and shared-substrate ownership. Rebuild affected tier placement when that signature changes; do not fall back to rectangle approximations or alpha-derived occupancy.
 - Implement stable spatial handoffs with overlap and hysteresis. Remove representations coherently by sub-patch, blade, or coverage unit so transitions do not leave isolated remnants, empty rings, or grid patterns.
 - Keep automatic distance and view-angle evaluation canonical. Manual tier forcing remains diagnostic and must never create geometry beyond the effective cutoff.
 - Preserve AI 356's deterministic city-shaped tree and feature placement inputs, but reconcile accent rendering/materials with the corrected hierarchy. Consume AI 359's real substrate exclusion instead of rendering an opaque worn disc over live grass.
@@ -33,6 +34,7 @@ Acceptance outcomes:
 - Tier identity is not apparent from color or luminance alone under any required lighting preset.
 - Moving forward, backward, sideways, and through grazing views reveals no obvious ring, pop, halo, checkerboard, or isolated remnant at any handoff.
 - Localized accents remain bounded to explicit features and no longer use an opaque substrate disc over grass.
+- Sidewalk and tree roots are rejected through the same V2 polygon query, while the AI 359 cap/edge remains a separate maximum-two-draw boundary subsystem.
 - No grass geometry crosses a hard exclusion or exists beyond the effective cutoff.
 - Default views remain near `5-6` typical grass draws, never exceed `12`, and never exceed the V2 hard ceiling of `200,000` visible grass triangles.
 - Low quality remains a coherent corrected texture, substrate, and physical-boundary fallback with field geometry disabled.

@@ -12,6 +12,7 @@ Tasks:
 - Replace the scattered V1 near tier with area-based micro-mesh patches that read as continuous short turf at `0.30 m`, `0.50 m`, and `1.00 m` camera heights.
 - Keep the corrected opaque far surface under the near geometry so simplification never reveals empty ground between fibers.
 - Use the AI 358 material family and AI 359 occupancy, boundary-distance, and root-eligibility contracts without changing their appearance or footprint semantics.
+- Treat AI 359 boundary distance as positive on occupied grass and negative in an onset exclusion. Sample `rootEligible` at each blade/root or an equivalent proven sub-patch unit, preserve the declared root clearance, and invalidate placement caches when AI 359's boundary signature changes.
 - Ensure every eligible close-region area receives a near representation. Do not use sparse random cell selection or isolated field-wide blades as the default path.
 - Clip roots at blade or sub-patch granularity, or use deterministic edge variants, so the near carpet reaches the physical cut without crossing substrate or rejecting an entire patch because one corner overlaps an exclusion.
 - Keep the structural turf base shallow while using a documented, configurable blade-height distribution. Blade tips may be longer, uneven, bent, and locally irregular; do not clip the entire mesh carpet to a universal `25-30 mm` canopy or make every blade the same height.
@@ -27,6 +28,7 @@ Acceptance outcomes:
 - The closest lawn reads as one connected carpet with resolvable 3D fibers, not scattered blades or visible grid-cell stamps.
 - No eligible near occupancy bin is unintentionally empty because of random placement.
 - The near carpet reaches AI 359's physical cut without a conservative moat and without placing roots on exposed substrate, sidewalk, road, or tree exclusions.
+- Rectangle compatibility data is not used when AI 359 supplies exact polygon exclusions; the same root test applies to sidewalk and tree onset loops.
 - Geometry-on and texture-only color/luminance remain within AI 358's appearance contract.
 - Side-profile evidence separately shows the shallow structural base and the selected blade-height range, including natural irregularity and any intentionally longer blades.
 - Near rendering uses one normal material path and batched shared geometry, with no per-patch material or draw-call growth.

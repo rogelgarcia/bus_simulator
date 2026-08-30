@@ -16,6 +16,13 @@ const coverageDefinition = createGrassCoverageDefinition({
     exclusionRects: [{ id: 'sidewalk', kind: 'sidewalk', x0: -2, x1: 2, z0: -2, z1: 2 }]
 });
 
+function circleLoop(x, z, radius, segments = 32) {
+    return Array.from({ length: segments }, (_, index) => {
+        const angle = index / segments * Math.PI * 2;
+        return { x: x + Math.cos(angle) * radius, z: z + Math.sin(angle) * radius };
+    });
+}
+
 test('localized accent defaults stay inside the per-tree geometry budget', () => {
     const config = sanitizeGrassLocalizedAccentConfig(null);
     assert.equal(config.clustersPerTree, 4);
@@ -37,8 +44,38 @@ test('tree placement uses the city scaleVar shape and reproduces the same accent
     assert.deepEqual(first, second);
     assert.equal(first.treePlacements[0].scaleVar, 1.1);
     assert.equal(first.accents.length, 7);
-    assert.equal(first.wornPatches.length, 1);
+    assert.equal(first.wornPatches.length, 0, 'V2 never submits an opaque worn-disc overlay');
     assert.equal(first.deterministicSignature, second.deterministicSignature);
+});
+
+test('V2 tree wear is a hard polygon exclusion that reveals the shared substrate', () => {
+    const definition = createGrassCoverageDefinition({
+        seed: 'tree-base-v2',
+        bounds: { minX: -20, maxX: 20, minZ: -20, maxZ: 20 },
+        boundaryExclusions: [{
+            id: 'tree_base_approval',
+            kind: 'tree_base',
+            shape: 'circle',
+            sourceIdentity: 'grass-lab-tree:approval:1.000000',
+            substrateRevealMeters: 0.21,
+            sourceLoop: circleLoop(8, 7, 0.55),
+            onsetLoop: circleLoop(8, 7, 0.76)
+        }]
+    });
+    const layout = createGrassLocalizedAccentLayout({
+        config: { seed: 'tree-base-v2', wornEnabled: true, clustersPerTree: 4 },
+        treePlacements: [{ id: 'approval', x: 8, y: 0, z: 7, rotation: 0, scaleVar: 1, variant: 0 }],
+        coverageDefinition: definition,
+        coverageConfig: sanitizeGrassCoverageConfig(null)
+    });
+
+    assert.equal(sampleGrassCoverage(definition, 8, 7), 0);
+    assert.equal(sampleGrassCoverage(definition, 8.6, 7), 0, 'The worn ring remains shared substrate, not a colored disc');
+    assert.equal(sampleGrassCoverage(definition, 8.8, 7), 1);
+    assert.equal(layout.wornPatches.length, 0);
+    assert.equal(layout.eligibleTrees, 1);
+    assert.equal(layout.accents.length, 4);
+    assert.ok(layout.accents.every((accent) => sampleGrassCoverage(definition, accent.x, accent.z) === 1));
 });
 
 test('localized roots remain outside trunks and inside the binary coverage footprint', () => {
@@ -80,11 +117,12 @@ test('canonical Lab fixtures expose city-shaped trees and an optional explicit a
     assert.ok(fixtures.accentCameraTargets.tree);
     const config = createGrassLabEngineConfig({ coverage: { accentEligibility: true }, accents: { clustersPerTree: 4 } });
     assert.equal(config.localizedAccents.enabled, true);
+    assert.equal(config.localizedAccents.wornEnabled, false);
     assert.equal(config.localizedAccents.clustersPerTree, 4);
     assert.equal(config.localizedAccents.cardHeightMeters, 0.075);
 });
 
-test('localized accent renderer uses one global atlas batch and one worn-substrate batch', () => {
+test('localized accent renderer keeps one global atlas batch and a legacy-only worn batch', () => {
     const source = readFileSync(`${REPO_ROOT}/src/graphics/engine3d/grass/GrassLocalizedAccentSystem.js`, 'utf8');
     assert.equal((source.match(/new THREE\.InstancedMesh\(/g) ?? []).length, 2);
     assert.match(source, /grassAtlasVariant/);

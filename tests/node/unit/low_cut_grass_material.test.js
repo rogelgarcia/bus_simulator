@@ -119,7 +119,9 @@ test('Grass Lab V2 atlas consumers are opaque, guttered, and have zero emissive 
     assert.doesNotMatch(viewSource, /emissiveIntensity:\s*0\.[0-9]/);
     assert.match(viewSource, /transparent:\s*false/);
     assert.match(viewSource, /depthWrite:\s*true/);
-    assert.match(viewSource, /auxiliaryKeys: \['coverage'\]/);
+    assert.match(viewSource, /auxiliaryKeys: active\.version === 'v1' \? \['coverage'\] : \[\]/);
+    assert.match(viewSource, /material\.alphaMap = active\.version === 'v1' \? \(resolved\?\.auxiliaryTextures\?\.coverage \?\? null\) : null/);
+    assert.match(viewSource, /material\.alphaTest = active\.version === 'v1' \? 0\.35 : 0/);
     assert.match(viewSource, /auxiliaryKeys: Object\.values\(channels\)/);
     assert.match(viewSource, /material\.alphaMap = channels\.coverage \? \(atlas\[channels\.coverage\] \?\? null\) : null/);
     assert.match(viewSource, /_createGrassAtlasMaterial\([\s\S]*?vertexColors:\s*false/);

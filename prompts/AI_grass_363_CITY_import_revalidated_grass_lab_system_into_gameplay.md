@@ -14,6 +14,8 @@ Tasks:
 - Reuse the exact canonical V2 grass runtime and asset/profile contracts validated in the lab. Do not fork or reimplement a gameplay-only grass renderer, material family, boundary system, or LOD evaluator.
 - Integrate AI 359's polygon coverage and boundary-distance contract with city terrain generation so continuous substrate remains underneath and grass begins after roads and sidewalks with the approved exposed strip and shallow raised cut.
 - Consume actual gameplay road/sidewalk outer loops and terrain transforms rather than approximating them with axis-aligned rectangles.
+- Treat the canonical Grass Lab's `junctions.filletRadiusFactor: 1.0` as fixture-only evidence, not a gameplay default or requirement. Consume each gameplay road configuration and the exact sidewalk loops it actually renders.
+- Preserve AI 359's source-loop identity, onset-loop offset, signed-distance orientation, root clearance, boundary signature invalidation, opaque cap, tree holes, and maximum-two-draw boundary contract. Transform the same renderer-owned loops into coverage space once; do not reconstruct occupancy from textures, route envelopes, or compatibility rectangles.
 - Use existing deterministic tree placement records for validated localized accents and substrate exclusions without rendering opaque wear discs over live grass.
 - Integrate the approved `close mesh -> dense billboard -> cohesive middle patch -> far texture` hierarchy and preserve its automatic distance/angle handoffs, overlap, hysteresis, and hard cutoff.
 - Resolve all PBR assets, physical dimensions, tile metadata, and calibration through the global texture/catalog/calibration pipeline.

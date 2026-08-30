@@ -517,20 +517,25 @@ export class GrassDebuggerUI {
             coverage: {
                 enabled: true,
                 showSurface: true,
+                showEdge: true,
                 showLip: true,
                 showFringe: true,
                 layerHeightMillimeters: 27.5,
+                substrateRevealMillimeters: 80,
                 densityMultiplier: 1,
                 farCoverageThreshold: 0.35,
-                edgeAntialiasMillimeters: 15,
-                fringeEnabled: true,
-                fringeSpacingMeters: 0.35,
-                fringeInsetMeters: 0.055,
+                edgeAntialiasMillimeters: 12,
+                rootClearanceMillimeters: 3,
+                cutEdgeEnabled: true,
+                cutEdgeSpacingMeters: 0.018,
+                cutEdgeInsetMeters: 0.004,
+                visibleBladeTipMinMillimeters: 40,
+                visibleBladeTipMaxMillimeters: 75,
                 accentEligibility: true
             },
             accents: {
                 enabled: true,
-                wornEnabled: true,
+                wornEnabled: false,
                 featureAccentsEnabled: true,
                 clustersPerTree: 4,
                 clustersPerFeature: 3,
@@ -1525,7 +1530,7 @@ export class GrassDebuggerUI {
         const number = (value) => Number(value).toLocaleString('en-US');
         const milliseconds = (value) => Number.isFinite(Number(value)) ? `${Number(value).toFixed(2)} ms` : 'unavailable';
         values.runtime.textContent = `${snapshot.canonicalRuntime ?? 'GrassEngine'} · contract v${snapshot.contractVersion ?? '?'}`;
-        values.fixtures.textContent = `${number(fixtures.roadSegments ?? 0)} road / ${number(fixtures.exclusionRects ?? 0)} sidewalk cuts / ${number(fixtures.irregularCuts ?? 0)} irregular / ${number(fixtures.treePlacements ?? 0)} trees`;
+        values.fixtures.textContent = `${number(fixtures.roadSegments ?? 0)} road / ${number(fixtures.boundaryFeatures ?? 0)} exact boundary features / ${number(fixtures.treePlacements ?? 0)} trees`;
         values.instances.textContent = number(grass.instances ?? 0);
         values.triangles.textContent = number(grass.triangles ?? 0);
         values.draws.textContent = number(grass.logicalDrawCalls ?? 0);
@@ -1550,7 +1555,7 @@ export class GrassDebuggerUI {
         this.setLocalizedAccentDiagnostics(localized, snapshot.coverage ?? {});
         const coverage = snapshot.coverage ?? {};
         values.coverage.textContent = coverage.enabled
-            ? `${Number(coverage.layerHeightMeters ?? 0) * 1000} mm · ${number(coverage.triangles ?? 0)} tris · ${number(coverage.drawCalls ?? 0)} draws`
+            ? `${Number(coverage.structuralBaseHeightMeters ?? 0) * 1000} mm base · ${number(coverage.triangles ?? 0)} tris · ${number(coverage.drawCalls ?? 0)} draws`
             : 'disabled';
         this.setCoverageDiagnostics(coverage);
     }
@@ -1635,13 +1640,13 @@ export class GrassDebuggerUI {
         const number = (value) => Number(value).toLocaleString('en-US');
         values.occupancy.textContent = `${stats.occupancy ?? '?'} · substrate blend ${stats.substrateBlendIndependent ? 'independent' : 'coupled'}`;
         values.response.textContent = `density ×${Number(stats.densityMultiplier ?? 0).toFixed(2)} · humidity ${Number(stats.humidity ?? 0).toFixed(2)} · dryness ${Number(stats.dryness ?? 0).toFixed(2)} · accents ${stats.accentEligibility ? 'eligible' : 'blocked'}`;
-        values.height.textContent = `${(Number(stats.layerHeightMeters ?? 0) * 1000).toFixed(1)} mm · alpha test ${Number(stats.farCoverageThreshold ?? 0).toFixed(2)}`;
-        values.boundary.textContent = `${number(stats.sidewalkSegments ?? 0)} sidewalk / ${number(stats.irregularSegments ?? 0)} irregular segments`;
+        values.height.textContent = `${(Number(stats.structuralBaseHeightMeters ?? 0) * 1000).toFixed(1)} mm base · ${(Number(stats.visibleBladeTipMinMeters ?? 0) * 1000).toFixed(0)}–${(Number(stats.visibleBladeTipMaxMeters ?? 0) * 1000).toFixed(0)} mm tips`;
+        values.boundary.textContent = `${number(stats.sidewalkSegments ?? 0)} sidewalk / ${number(stats.curvedSegments ?? 0)} curve / ${number(stats.diagonalSegments ?? 0)} diagonal segments`;
         values.corners.textContent = `${number(stats.outsideCorners ?? 0)} outside / ${number(stats.insideCorners ?? 0)} inside`;
-        values.geometry.textContent = `${number(stats.surfaceTriangles ?? 0)} surface + ${number(stats.lipTriangles ?? 0)} lip + ${number(stats.fringeTriangles ?? 0)} fringe tris`;
-        values.cost.textContent = `${number(stats.drawCalls ?? 0)} draws · ${number(stats.materialPaths ?? 0)} materials · ${number(stats.fringeBlades ?? 0)} fringe blades`;
-        values.data.textContent = `${stats.farCoverageMap ?? '?'} · ${stats.alphaTestedSurface ? 'hard cutout' : 'no cutout'} · ${stats.transparentSurface ? 'blended' : 'opaque'}`;
-        values.safety.textContent = `${stats.frustumCulled ? 'culled' : 'unculled'} · ${stats.castShadow ? 'shadows' : 'no shadows'}`;
+        values.geometry.textContent = `${number(stats.capTriangles ?? 0)} cap + ${number(stats.rootThatchTriangles ?? 0)} root/thatch + ${number(stats.cutEdgeTriangles ?? 0)} cut-edge tris`;
+        values.cost.textContent = `${number(stats.drawCalls ?? 0)} draws · ${number(stats.physicalEdgeLogicalDraws ?? 0)} physical-edge draw · ${number(stats.fringeBlades ?? 0)} dense edge pairs`;
+        values.data.textContent = `${(Number(stats.grassOnsetWidthMeters ?? 0) * 1000).toFixed(0)} mm sidewalk reveal · ${(Number(stats.antialiasWidthMeters ?? 0) * 1000).toFixed(0)} mm AA · opaque polygon cap`;
+        values.safety.textContent = `${number(stats.hardExclusionIntrusions ?? 0)} intrusions · ${number(stats.ineligibleCutEdgeRoots ?? 0)} ineligible roots · ${stats.sourceLoopIdentity ?? '?'}`;
     }
 
     setLabCaptureStatus(message) {
@@ -1742,22 +1747,27 @@ export class GrassDebuggerUI {
         const defaults = {
             enabled: true,
             showSurface: true,
+            showEdge: true,
             showLip: true,
             showFringe: true,
             layerHeightMillimeters: 27.5,
+            substrateRevealMillimeters: 80,
             densityMultiplier: 1,
             farCoverageThreshold: 0.35,
-            edgeAntialiasMillimeters: 15,
-            fringeEnabled: true,
-            fringeSpacingMeters: 0.35,
-            fringeInsetMeters: 0.055,
+            edgeAntialiasMillimeters: 12,
+            rootClearanceMillimeters: 3,
+            cutEdgeEnabled: true,
+            cutEdgeSpacingMeters: 0.018,
+            cutEdgeInsetMeters: 0.004,
+            visibleBladeTipMinMillimeters: 40,
+            visibleBladeTipMaxMillimeters: 75,
             accentEligibility: true
         };
         for (const [key, value] of Object.entries(defaults)) if (coverage[key] === undefined) coverage[key] = value;
 
-        const contract = makeSection({ title: 'AI 354 hard coverage contract', collapsedByDefault: false });
+        const contract = makeSection({ title: 'AI 359 exact polygon coverage contract', collapsedByDefault: false });
         parent.appendChild(contract);
-        contract.appendChild(makeEl('div', 'ui-grass-lab-note', 'Binary lawn occupancy cuts a 25–30 mm raised grass surface out of the continuously visible substrate. far_coverage.png supplies micro cutouts only; it never dissolves grass into the substrate.'));
+        contract.appendChild(makeEl('div', 'ui-grass-lab-note', 'The rendered sidewalk outer loop drives an 80 mm uncovered substrate reveal and an opaque polygon cap. The 27.5 mm root/thatch base is separate from irregular 40–75 mm cut-edge blade tips.'));
         contract.appendChild(makeToggleRow({
             label: 'Coverage enabled',
             value: coverage.enabled !== false,
@@ -1767,7 +1777,7 @@ export class GrassDebuggerUI {
             }
         }).row);
         contract.appendChild(makeNumberSliderRow({
-            label: 'Grass layer height (mm)',
+            label: 'Structural base height (mm)',
             value: coverage.layerHeightMillimeters,
             min: 15,
             max: 50,
@@ -1775,6 +1785,18 @@ export class GrassDebuggerUI {
             digits: 1,
             onChange: (value) => {
                 coverage.layerHeightMillimeters = value;
+                this._emit();
+            }
+        }).row);
+        contract.appendChild(makeNumberSliderRow({
+            label: 'Exposed substrate (mm)',
+            value: coverage.substrateRevealMillimeters,
+            min: 60,
+            max: 100,
+            step: 1,
+            digits: 0,
+            onChange: (value) => {
+                coverage.substrateRevealMillimeters = value;
                 this._emit();
             }
         }).row);
@@ -1791,14 +1813,14 @@ export class GrassDebuggerUI {
             }
         }).row);
         contract.appendChild(makeNumberSliderRow({
-            label: 'far_coverage threshold',
-            value: coverage.farCoverageThreshold,
-            min: 0.05,
-            max: 0.95,
-            step: 0.01,
-            digits: 2,
+            label: 'Visible tip maximum (mm)',
+            value: coverage.visibleBladeTipMaxMillimeters,
+            min: 40,
+            max: 120,
+            step: 1,
+            digits: 0,
             onChange: (value) => {
-                coverage.farCoverageThreshold = value;
+                coverage.visibleBladeTipMaxMillimeters = value;
                 this._emit();
             }
         }).row);
@@ -1806,7 +1828,7 @@ export class GrassDebuggerUI {
             label: 'Edge AA limit (mm)',
             value: coverage.edgeAntialiasMillimeters,
             min: 0,
-            max: 30,
+            max: 15,
             step: 1,
             digits: 0,
             tooltip: 'Documents the maximum narrow antialias treatment. The footprint itself stays binary.',
@@ -1825,9 +1847,9 @@ export class GrassDebuggerUI {
             }
         }).row);
 
-        const layers = makeSection({ title: 'Boundary layers', collapsedByDefault: false });
+        const layers = makeSection({ title: 'Two-draw boundary layers', collapsedByDefault: false });
         parent.appendChild(layers);
-        for (const [key, label] of [['showSurface', 'Raised grass surface'], ['showLip', 'Batched grass lip'], ['showFringe', 'Sparse cut fringe']]) {
+        for (const [key, label] of [['showSurface', 'Opaque polygon cap'], ['showEdge', 'Continuous root/thatch cut edge']]) {
             layers.appendChild(makeToggleRow({
                 label,
                 value: coverage[key] !== false,
@@ -1838,26 +1860,26 @@ export class GrassDebuggerUI {
             }).row);
         }
         layers.appendChild(makeNumberSliderRow({
-            label: 'Fringe spacing (m)',
-            value: coverage.fringeSpacingMeters,
-            min: 0.15,
-            max: 1,
-            step: 0.05,
-            digits: 2,
+            label: 'Dense edge spacing (m)',
+            value: coverage.cutEdgeSpacingMeters,
+            min: 0.008,
+            max: 0.04,
+            step: 0.001,
+            digits: 3,
             onChange: (value) => {
-                coverage.fringeSpacingMeters = value;
+                coverage.cutEdgeSpacingMeters = value;
                 this._emit();
             }
         }).row);
         layers.appendChild(makeNumberSliderRow({
-            label: 'Fringe inset (m)',
-            value: coverage.fringeInsetMeters,
-            min: 0.01,
-            max: 0.2,
-            step: 0.005,
+            label: 'Cut-edge root inset (m)',
+            value: coverage.cutEdgeInsetMeters,
+            min: 0.001,
+            max: 0.02,
+            step: 0.001,
             digits: 3,
             onChange: (value) => {
-                coverage.fringeInsetMeters = value;
+                coverage.cutEdgeInsetMeters = value;
                 this._emit();
             }
         }).row);
@@ -1865,8 +1887,11 @@ export class GrassDebuggerUI {
         const cameras = makeSection({ title: 'Deterministic acceptance cameras', collapsedByDefault: false });
         parent.appendChild(cameras);
         cameras.appendChild(makeButtonRow({ label: 'Straight sidewalk', text: 'Focus straight hard edge', onClick: () => this._onFocusCoverage?.('straight') }).row);
-        cameras.appendChild(makeButtonRow({ label: 'Inside / outside', text: 'Focus corner transition', onClick: () => this._onFocusCoverage?.('corner') }).row);
-        cameras.appendChild(makeButtonRow({ label: 'Approximate cut', text: 'Focus irregular stepped cut', onClick: () => this._onFocusCoverage?.('irregular') }).row);
+        cameras.appendChild(makeButtonRow({ label: 'Curved sidewalk', text: 'Focus rendered curve chords', onClick: () => this._onFocusCoverage?.('curve') }).row);
+        cameras.appendChild(makeButtonRow({ label: 'Diagonal sidewalk', text: 'Focus long diagonal cut', onClick: () => this._onFocusCoverage?.('diagonal') }).row);
+        cameras.appendChild(makeButtonRow({ label: 'Inside corner', text: 'Focus physical inside corner', onClick: () => this._onFocusCoverage?.('inside_corner') }).row);
+        cameras.appendChild(makeButtonRow({ label: 'Outside corner', text: 'Focus physical outside corner', onClick: () => this._onFocusCoverage?.('outside_corner') }).row);
+        cameras.appendChild(makeButtonRow({ label: 'Tree base', text: 'Focus shared-substrate exclusion', onClick: () => this._onFocusCoverage?.('tree_base') }).row);
 
         const diagnostics = makeSection({ title: 'Coverage diagnostics', collapsedByDefault: false });
         parent.appendChild(diagnostics);
@@ -1896,7 +1921,7 @@ export class GrassDebuggerUI {
             : (this._state.accents = {});
         const defaults = {
             enabled: true,
-            wornEnabled: true,
+            wornEnabled: false,
             featureAccentsEnabled: true,
             clustersPerTree: 4,
             clustersPerFeature: 3,
@@ -1920,14 +1945,7 @@ export class GrassDebuggerUI {
                 this._emit();
             }
         }).row);
-        contract.appendChild(makeToggleRow({
-            label: 'Worn trunk substrate',
-            value: accents.wornEnabled !== false,
-            onChange: (value) => {
-                accents.wornEnabled = value;
-                this._emit();
-            }
-        }).row);
+        contract.appendChild(makeEl('div', 'ui-grass-lab-note', 'Tree wear is an AI 359 polygon exclusion that reveals the shared substrate. The legacy opaque worn disc is disabled.'));
         contract.appendChild(makeToggleRow({
             label: 'Rare worn feature accent',
             value: accents.featureAccentsEnabled !== false,

@@ -35,7 +35,7 @@ function getCaptureMetadata(context = null) {
     const rect = canvas.getBoundingClientRect();
     const gl = renderer?.getContext?.() ?? null;
     return {
-        schema: 'grass-lab-capture-v1',
+        schema: 'grass-lab-capture-v2',
         captureMode: document.body.classList.contains(CAPTURE_MODE_CLASS),
         context: context && typeof context === 'object' ? { ...context } : null,
         focus: { ...captureFocus },
@@ -197,10 +197,18 @@ view.start().then(() => {
     document.body.dataset.grassLabReady = 'true';
     window.__grassLab = Object.freeze({
         getSnapshot: () => view.getLabSnapshot(),
+        getBoundaryTopologyDiagnostics: (options) => view.getBoundaryTopologyDiagnostics(options),
         focusCoverage: (targetId) => {
-            view.focusCoverage(targetId);
-            captureFocus = { id: String(targetId ?? 'straight'), pose: 'coverage', fixture: 'coverage' };
+            const pose = view.focusCoverage(targetId);
+            captureFocus = { id: String(pose?.id ?? targetId ?? 'straight'), pose: String(pose?.pose ?? 'coverage'), fixture: 'coverage' };
+            return pose;
         },
+        focusBoundaryCamera: (targetId, heightMeters, distanceMeters) => {
+            const pose = view.focusBoundaryCamera(targetId, heightMeters, distanceMeters);
+            captureFocus = { id: String(pose?.id ?? targetId ?? 'straight'), pose: String(pose?.pose ?? 'boundary'), fixture: 'boundary' };
+            return pose;
+        },
+        setBoundaryEvidenceMode: (mode) => view.setBoundaryEvidenceMode(mode),
         focusAccent: (targetId) => {
             view.focusLocalizedAccent(targetId);
             captureFocus = { id: String(targetId ?? 'tree'), pose: 'accent', fixture: 'accent' };

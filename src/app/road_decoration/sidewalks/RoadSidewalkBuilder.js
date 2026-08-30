@@ -318,6 +318,69 @@ export function buildRoadSidewalkOuterBoundaryLoopsFromRoadEnginePrimitives(prim
     return out;
 }
 
+/**
+ * Offsets already-built sidewalk outer loops outward without mutating them.
+ *
+ * @param {{x:number,z:number}[][]} loops
+ * @param {{distance?:number,boundaryEpsilon?:number,miterLimit?:number}} [options]
+ * @returns {{x:number,z:number}[][]}
+ */
+export function offsetRoadSidewalkOuterBoundaryLoops(loops, {
+    distance = 0,
+    boundaryEpsilon = 1e-4,
+    miterLimit = 4
+} = {}) {
+    return buildRoadSidewalkGrassBoundaryLoopPairs(loops, {
+        distance,
+        boundaryEpsilon,
+        miterLimit
+    }).map(({ onsetLoop }) => onsetLoop);
+}
+
+/**
+ * Builds canonical source/onset pairs for the grass boundary handoff.
+ *
+ * The source and onset must be derived from the same normalized point list.
+ * Returning that list with its offset prevents harmless duplicate or collinear
+ * vertices in a rendered loop from shifting the two polygons out of topology.
+ * Input loops are never mutated.
+ *
+ * @param {{x:number,z:number}[][]} loops
+ * @param {{distance?:number,boundaryEpsilon?:number,miterLimit?:number}} [options]
+ * @returns {{sourceLoop:{x:number,z:number}[],onsetLoop:{x:number,z:number}[]}[]}
+ */
+export function buildRoadSidewalkGrassBoundaryLoopPairs(loops, {
+    distance = 0,
+    boundaryEpsilon = 1e-4,
+    miterLimit = 4
+} = {}) {
+    const sourceLoops = Array.isArray(loops) ? loops : [];
+    const offsetDistance = Math.max(0, clampNumber(distance, 0));
+    const epsilon = Math.max(EPS, clampNumber(boundaryEpsilon, 1e-4));
+    const limit = Math.max(1, clampNumber(miterLimit, 4));
+    const out = [];
+
+    for (const loop of sourceLoops) {
+        // `offsetLoop` defines the right-hand side as outward, so normalize the
+        // handoff copy to CCW even if a caller supplied the same polygon in CW
+        // order. The rendered source loop itself remains untouched.
+        const points = normalizePointList(loop, { epsilon, forceCcw: true });
+        if (points.length < 3) continue;
+        const offset = offsetLoop(points, offsetDistance, {
+            miterLimit: limit,
+            epsilon
+        });
+        if (offset.length === points.length) {
+            out.push({
+                sourceLoop: points,
+                onsetLoop: offset
+            });
+        }
+    }
+
+    return out;
+}
+
 export function buildRoadSidewalkMeshDataFromRoadEnginePrimitives(primitives, {
     surfaceY = 0,
     curbThickness = 0.48,

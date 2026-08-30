@@ -116,17 +116,12 @@ export function createGrassLocalizedAccentLayout({
 
     if (settings.enabled && coverage.accentEligibility && coverageDefinition) {
         for (const tree of trees) {
-            if (sampleGrassCoverage(coverageDefinition, tree.x, tree.z, coverage) !== 1) {
-                rejectedCoverage += settings.clustersPerTree;
-                continue;
-            }
-            eligibleTrees++;
             const random = makeRandom(`${settings.seed}|tree|${tree.id}|${tree.variant}`);
             const scale = tree.scaleVar;
             const trunkRadius = settings.trunkRadiusMeters * scale;
             const innerRadius = Math.max(trunkRadius + 0.05, settings.ringInnerMeters * scale);
             const outerRadius = Math.max(innerRadius + 0.05, settings.ringOuterMeters * scale);
-            if (settings.wornEnabled) {
+            if (settings.wornEnabled && Number(coverageDefinition?.version) < 2) {
                 wornPatches.push(Object.freeze({
                     key: `${tree.id}|worn`,
                     sourceId: tree.id,
@@ -138,6 +133,7 @@ export function createGrassLocalizedAccentLayout({
                     yawRadians: tree.rotation
                 }));
             }
+            const accentCountBeforeTree = accents.length;
             for (let index = 0; index < settings.clustersPerTree; index++) {
                 const baseAngle = tree.rotation + (index / settings.clustersPerTree) * Math.PI * 2;
                 const angle = baseAngle + (random() - 0.5) * (Math.PI * 0.36);
@@ -166,6 +162,7 @@ export function createGrassLocalizedAccentLayout({
                     variant: Math.floor(random() * settings.atlasVariants)
                 }));
             }
+            if (accents.length > accentCountBeforeTree) eligibleTrees++;
         }
 
         for (const feature of features) {

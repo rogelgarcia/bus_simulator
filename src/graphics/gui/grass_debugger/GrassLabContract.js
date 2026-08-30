@@ -4,9 +4,14 @@
 
 import { createDefaultGrassEngineConfig, sanitizeGrassEngineConfig } from '../../engine3d/grass/GrassConfig.js';
 import { deriveLowCutGrassRuntimeProfile, sanitizeLowCutGrassProfile } from '../../engine3d/grass/LowCutGrassProfile.js';
-import { createGrassCoverageDefinition, sanitizeGrassCoverageConfig } from '../../../app/grass/GrassCoverageContract.js';
+import {
+    createGrassCoverageDefinition,
+    createGrassCoveragePartition,
+    sanitizeGrassCoverageConfig
+} from '../../../app/grass/GrassCoverageContract.js';
+import { buildRoadSidewalkGrassBoundaryLoopPairs } from '../../../app/road_decoration/sidewalks/RoadSidewalkBuilder.js';
 
-export const GRASS_LAB_CONTRACT_VERSION = 7;
+export const GRASS_LAB_CONTRACT_VERSION = 8;
 export const GRASS_LAB_CANONICAL_URL = 'debug_tools/grass_debug.html';
 export const GRASS_LAB_DEFAULT_SEED = 'grass-lab-baseline-v1';
 
@@ -61,38 +66,27 @@ export function createGrassLabFixtureDefinition({ bounds, tileSize = 24, roadHal
     const tile = Math.max(4, finite(tileSize, 24));
     const inset = tile;
     const routePoints = [
-        { x: -tile * 1.5, z: b.minZ + inset },
-        { x: -tile * 1.5, z: tile },
-        { x: tile * 3.0, z: tile },
+        { x: -tile * 3.0, z: b.minZ + inset },
+        { x: -tile * 3.0, z: -tile * 3.0 },
+        { x: -tile * 1.5, z: -tile * 1.5 },
+        { x: tile * 0.75, z: -tile * 1.25 },
+        { x: tile * 2.25, z: tile * 0.75 },
+        { x: tile * 3.0, z: tile * 3.0 },
         { x: tile * 3.0, z: b.maxZ - inset }
     ];
     const exclusionRects = makeSegmentExclusionRects(routePoints, Math.max(0, roadHalfWidth));
-    const firstRoadPoint = routePoints[0];
-    const eastSidewalkEdgeX = firstRoadPoint.x + Math.max(0, roadHalfWidth);
-    const irregularCenterZ = firstRoadPoint.z + tile * 1.2;
-    const irregularCutRects = [
-        { id: 'irregular_cut_0', kind: 'irregular_cut', x0: eastSidewalkEdgeX, x1: eastSidewalkEdgeX + 2.1, z0: irregularCenterZ - 2.0, z1: irregularCenterZ + 2.0 },
-        { id: 'irregular_cut_1', kind: 'irregular_cut', x0: eastSidewalkEdgeX + 2.1, x1: eastSidewalkEdgeX + 4.0, z0: irregularCenterZ - 1.45, z1: irregularCenterZ + 1.65 },
-        { id: 'irregular_cut_2', kind: 'irregular_cut', x0: eastSidewalkEdgeX + 4.0, x1: eastSidewalkEdgeX + 5.5, z0: irregularCenterZ - 0.75, z1: irregularCenterZ + 0.85 }
-    ];
-    const grassCoverage = createGrassCoverageDefinition({
-        seed: `${GRASS_LAB_DEFAULT_SEED}|coverage-v1`,
-        bounds: b,
-        exclusionRects,
-        irregularCutRects
-    });
 
     const treePlacements = [
-        { id: 'tree_northwest', x: -tile * 3.6, y: 0, z: tile * 3.6, rotation: 0.35, scaleVar: 1.05, variant: 0 },
-        { id: 'tree_southwest', x: -tile * 3.8, y: 0, z: -tile * 2.1, rotation: 1.8, scaleVar: 0.92, variant: 1 },
-        { id: 'tree_southeast', x: tile * 3.8, y: 0, z: -tile * 2.2, rotation: 3.2, scaleVar: 1.12, variant: 0 },
-        { id: 'tree_northeast', x: tile * 4.4, y: 0, z: tile * 4.0, rotation: 4.7, scaleVar: 0.98, variant: 1 }
+        { id: 'tree_northwest', x: -tile * 5.0, y: 0, z: tile * 3.8, rotation: 0.35, scaleVar: 1.05, variant: 0 },
+        { id: 'tree_southwest', x: -tile * 5.0, y: 0, z: -tile * 1.2, rotation: 1.8, scaleVar: 0.92, variant: 1 },
+        { id: 'tree_southeast', x: tile * 5.0, y: 0, z: -tile * 3.4, rotation: 3.2, scaleVar: 1.12, variant: 0 },
+        { id: 'tree_northeast', x: tile * 5.0, y: 0, z: tile * 4.5, rotation: 4.7, scaleVar: 0.98, variant: 1 }
     ].filter((placement) => !pointIsInsideGrassLabExclusion(placement.x, placement.z, exclusionRects));
     const accentFeaturePlacements = [{
-        id: 'worn_irregular_edge_0',
-        x: eastSidewalkEdgeX + 6.4,
+        id: 'localized_irregularity_0',
+        x: -tile * 4.3,
         y: 0,
-        z: irregularCenterZ + 2.6,
+        z: tile * 1.0,
         rotation: 0.8,
         scaleVar: 0.9,
         variant: 0
@@ -114,17 +108,15 @@ export function createGrassLabFixtureDefinition({ bounds, tileSize = 24, roadHal
             points: routePoints
         }],
         exclusionRects,
-        irregularCutRects,
-        grassCoverage,
-        coverageCameraTargets: {
-            straight: { x: eastSidewalkEdgeX, z: firstRoadPoint.z + tile * 3.4 },
-            corner: { x: routePoints[1].x + roadHalfWidth, z: routePoints[1].z + roadHalfWidth },
-            irregular: { x: eastSidewalkEdgeX + 3.2, z: irregularCenterZ }
+        boundaryApproval: {
+            source: 'rendered_road_engine_sidewalk_outer_loops',
+            substrateRevealMeters: 0.08,
+            approvalShapes: ['straight', 'curve', 'diagonal', 'inside_corner', 'outside_corner', 'tree_base']
         },
         lodCameraTargets: {
-            grazing: { x: eastSidewalkEdgeX + 18, z: firstRoadPoint.z + tile * 3.4 },
-            topDown: { x: eastSidewalkEdgeX + 18, z: firstRoadPoint.z + tile * 3.4 },
-            cutoff: { x: eastSidewalkEdgeX + 34, z: firstRoadPoint.z + tile * 3.4 }
+            grazing: { x: routePoints[0].x + roadHalfWidth + 18, z: routePoints[0].z + tile * 1.6 },
+            topDown: { x: routePoints[0].x + roadHalfWidth + 18, z: routePoints[0].z + tile * 1.6 },
+            cutoff: { x: routePoints[0].x + roadHalfWidth + 34, z: routePoints[0].z + tile * 1.6 }
         },
         accentCameraTargets: {
             tree: { x: treePlacements[0]?.x ?? 0, z: treePlacements[0]?.z ?? 0 },
@@ -139,10 +131,169 @@ export function createGrassLabFixtureDefinition({ bounds, tileSize = 24, roadHal
         labels: {
             maintainedGrass: 'Canonical GrassEngine field',
             substrate: 'PBR ground below grass',
-            boundary: 'Road + curb + sidewalk straight/corner fixture',
+            boundary: 'Exact RoadEngine sidewalk loop + 80 mm substrate reveal',
             trees: 'Deterministic localized tree accents'
         }
     };
+}
+
+function createCircleLoop(x, z, radius, segments = 48) {
+    const count = Math.max(12, Math.round(finite(segments, 48)));
+    const r = Math.max(0.001, finite(radius, 0.55));
+    return Array.from({ length: count }, (_, index) => {
+        const angle = index / count * Math.PI * 2;
+        return { x: x + Math.cos(angle) * r, z: z + Math.sin(angle) * r };
+    });
+}
+
+export function createGrassLabCoverageDefinition({
+    bounds,
+    fixtures,
+    sidewalkOuterBoundaryLoops,
+    sidewalkBoundarySource,
+    substrateRevealMeters = 0.08,
+    onsetMiterLimit = 1.25,
+    trunkRadiusMeters = 0.55,
+    wornRadiusMeters = 0.76
+} = {}) {
+    const sourceLoops = Array.isArray(sidewalkOuterBoundaryLoops) ? sidewalkOuterBoundaryLoops : [];
+    if (!sourceLoops.length) throw new Error('[GrassLabContract] Rendered sidewalk outer loops are required for coverage.');
+    const reveal = clamp(substrateRevealMeters, 0.06, 0.1, 0.08);
+    const boundaryPairs = buildRoadSidewalkGrassBoundaryLoopPairs(sourceLoops, {
+        distance: reveal,
+        boundaryEpsilon: 1e-4,
+        miterLimit: clamp(onsetMiterLimit, 1, 2, 1.25)
+    });
+    if (boundaryPairs.length !== sourceLoops.length) throw new Error('[GrassLabContract] Grass onset loop count must match the rendered sidewalk source.');
+    const loopIds = Array.isArray(sidewalkBoundarySource?.loopIds) ? sidewalkBoundarySource.loopIds : [];
+    const boundaryExclusions = boundaryPairs.map(({ sourceLoop, onsetLoop }, index) => ({
+        id: `sidewalk_outer_${index}`,
+        kind: 'sidewalk',
+        shape: 'rendered_polygon',
+        sourceIdentity: `${String(sidewalkBoundarySource?.id ?? 'road-engine-sidewalk')}|${String(loopIds[index] ?? index)}`,
+        substrateRevealMeters: reveal,
+        sourceLoop,
+        onsetLoop
+    }));
+    for (const tree of Array.isArray(fixtures?.treePlacements) ? fixtures.treePlacements : []) {
+        const scale = Math.max(0.2, finite(tree?.scaleVar, 1));
+        const x = finite(tree?.x);
+        const z = finite(tree?.z);
+        const sourceRadius = Math.max(0.2, finite(trunkRadiusMeters, 0.55)) * scale;
+        const onsetRadius = Math.max(sourceRadius + 0.02, finite(wornRadiusMeters, 0.76) * scale);
+        const sourceIdentity = [
+            'grass-lab-tree',
+            String(tree.id),
+            scale.toFixed(6),
+            `${x.toFixed(6)},${z.toFixed(6)}`,
+            `r${sourceRadius.toFixed(6)}`
+        ].join(':');
+        boundaryExclusions.push({
+            id: `tree_base_${String(tree.id)}`,
+            kind: 'tree_base',
+            shape: 'circle',
+            sourceIdentity,
+            substrateRevealMeters: onsetRadius - sourceRadius,
+            sourceLoop: createCircleLoop(x, z, sourceRadius),
+            onsetLoop: createCircleLoop(x, z, onsetRadius)
+        });
+    }
+    return createGrassCoverageDefinition({
+        seed: `${String(fixtures?.seed ?? GRASS_LAB_DEFAULT_SEED)}|coverage-v2`,
+        bounds,
+        boundaryExclusions,
+        compatibilityExclusionRects: Array.isArray(fixtures?.exclusionRects) ? fixtures.exclusionRects : []
+    });
+}
+
+function segmentPose(segment, id, kind = 'segment') {
+    const dx = segment.b.x - segment.a.x;
+    const dz = segment.b.z - segment.a.z;
+    const length = Math.max(1e-6, Math.hypot(dx, dz));
+    return Object.freeze({
+        id,
+        kind,
+        x: (segment.a.x + segment.b.x) * 0.5,
+        z: (segment.a.z + segment.b.z) * 0.5,
+        tangent: Object.freeze({ x: dx / length, z: dz / length }),
+        grassNormal: Object.freeze({ ...segment.grassNormal })
+    });
+}
+
+function cornerPose(loop, index, id, kind) {
+    const previous = loop[(index - 1 + loop.length) % loop.length];
+    const current = loop[index];
+    const next = loop[(index + 1) % loop.length];
+    const aLength = Math.max(1e-6, Math.hypot(current.x - previous.x, current.z - previous.z));
+    const bLength = Math.max(1e-6, Math.hypot(next.x - current.x, next.z - current.z));
+    const tangent = { x: (next.x - previous.x) / Math.max(1e-6, Math.hypot(next.x - previous.x, next.z - previous.z)), z: (next.z - previous.z) / Math.max(1e-6, Math.hypot(next.x - previous.x, next.z - previous.z)) };
+    const normalA = { x: (current.z - previous.z) / aLength, z: -(current.x - previous.x) / aLength };
+    const normalB = { x: (next.z - current.z) / bLength, z: -(next.x - current.x) / bLength };
+    const normalLength = Math.max(1e-6, Math.hypot(normalA.x + normalB.x, normalA.z + normalB.z));
+    return Object.freeze({
+        id,
+        kind,
+        x: current.x,
+        z: current.z,
+        tangent: Object.freeze(tangent),
+        grassNormal: Object.freeze({ x: (normalA.x + normalB.x) / normalLength, z: (normalA.z + normalB.z) / normalLength })
+    });
+}
+
+export function createGrassLabBoundaryCameraTargets(coverageDefinition) {
+    const partition = createGrassCoveragePartition(coverageDefinition);
+    const sidewalkSegments = partition.boundarySegments.filter((segment) => segment.kind === 'sidewalk');
+    const straight = sidewalkSegments.filter((segment) => !segment.diagonal).sort((a, b) => b.length - a.length)[0] ?? sidewalkSegments[0];
+    const diagonal = sidewalkSegments.filter((segment) => segment.diagonal && segment.length >= 2).sort((a, b) => b.length - a.length)[0] ?? sidewalkSegments[0];
+    let curve = null;
+    let inside = null;
+    let outside = null;
+    let strongestInsideTurn = 0;
+    let strongestOutsideTurn = 0;
+    const sidewalk = coverageDefinition.exclusions.find((entry) => entry.kind === 'sidewalk');
+    const loop = sidewalk?.onsetLoop ?? [];
+    for (let index = 0; index < loop.length; index++) {
+        const previous = loop[(index - 1 + loop.length) % loop.length];
+        const current = loop[index];
+        const next = loop[(index + 1) % loop.length];
+        const ax = current.x - previous.x;
+        const az = current.z - previous.z;
+        const bx = next.x - current.x;
+        const bz = next.z - current.z;
+        const turn = Math.atan2(ax * bz - az * bx, ax * bx + az * bz) * 180 / Math.PI;
+        if (!curve && Math.abs(turn) >= 0.5 && Math.abs(turn) < 15) {
+            const segment = sidewalkSegments.find((candidate) => candidate.a === current) ?? sidewalkSegments[0];
+            curve = segmentPose(segment, 'curve', 'curve');
+        }
+        if (turn > strongestOutsideTurn + 0.01) {
+            strongestOutsideTurn = turn;
+            outside = cornerPose(loop, index, 'outside_corner', 'outside_corner');
+        }
+        if (turn < strongestInsideTurn - 0.01) {
+            strongestInsideTurn = turn;
+            inside = cornerPose(loop, index, 'inside_corner', 'inside_corner');
+        }
+    }
+    const tree = coverageDefinition.exclusions.find((entry) => entry.kind === 'tree_base');
+    const treePoint = tree?.onsetLoop?.reduce((best, point) => !best || point.x > best.x ? point : best, null);
+    const treeCenter = tree?.sourceLoop?.reduce((sum, point) => ({ x: sum.x + point.x / tree.sourceLoop.length, z: sum.z + point.z / tree.sourceLoop.length }), { x: 0, z: 0 });
+    const treeTarget = treePoint && treeCenter ? Object.freeze({
+        id: 'tree_base',
+        kind: 'tree_base',
+        x: treePoint.x,
+        z: treePoint.z,
+        tangent: Object.freeze({ x: 0, z: 1 }),
+        grassNormal: Object.freeze({ x: 1, z: 0 })
+    }) : null;
+    const targets = {
+        straight: segmentPose(straight, 'straight', 'straight'),
+        curve: curve ?? segmentPose(sidewalkSegments[0], 'curve', 'curve'),
+        diagonal: segmentPose(diagonal, 'diagonal', 'diagonal'),
+        inside_corner: inside ?? cornerPose(loop, 0, 'inside_corner', 'inside_corner'),
+        outside_corner: outside ?? cornerPose(loop, 0, 'outside_corner', 'outside_corner'),
+        tree_base: treeTarget
+    };
+    return Object.freeze(targets);
 }
 
 export function createGrassLabTerrainGrid({ bounds, tileSize = 24, widthTiles = 15, depthTiles = 15, nx = 30, nz = 30 } = {}) {
@@ -239,7 +390,7 @@ export function createGrassLabEngineConfig(state, { tileSize = 24 } = {}) {
     const coverageHeight = finite(coverageState.layerHeightMillimeters, 27.5) / 1000;
     config.localizedAccents = {
         enabled: accentState.enabled !== false && profile.accents.enabled !== false && coverageState.accentEligibility !== false,
-        wornEnabled: accentState.wornEnabled !== false,
+        wornEnabled: false,
         featureAccentsEnabled: accentState.featureAccentsEnabled !== false,
         seed: `${String(state?.lab?.seed ?? GRASS_LAB_DEFAULT_SEED)}|${profile.seed}|localized-accents`,
         clustersPerTree: finite(accentState.clustersPerTree, Math.round(3 + profile.accents.densityMultiplier * 3)),
@@ -325,14 +476,18 @@ export function createGrassLabCoverageConfig(state) {
     const source = state?.coverage && typeof state.coverage === 'object' ? state.coverage : {};
     return sanitizeGrassCoverageConfig({
         enabled: source.enabled !== false,
-        layerHeightMeters: finite(source.layerHeightMillimeters, 27.5) / 1000,
+        structuralBaseHeightMeters: finite(source.layerHeightMillimeters, 27.5) / 1000,
+        substrateRevealMeters: finite(source.substrateRevealMillimeters, 80) / 1000,
         densityMultiplier: finite(source.densityMultiplier, 1),
         exclusionMarginMeters: 0,
         farCoverageThreshold: finite(source.farCoverageThreshold, 0.35),
-        edgeAntialiasMeters: finite(source.edgeAntialiasMillimeters, 15) / 1000,
-        fringeEnabled: source.fringeEnabled !== false,
-        fringeSpacingMeters: finite(source.fringeSpacingMeters, 0.35),
-        fringeInsetMeters: finite(source.fringeInsetMeters, 0.055),
+        edgeAntialiasMeters: finite(source.edgeAntialiasMillimeters, 12) / 1000,
+        rootClearanceMeters: finite(source.rootClearanceMillimeters, 3) / 1000,
+        cutEdgeEnabled: source.cutEdgeEnabled !== false && source.fringeEnabled !== false,
+        cutEdgeSpacingMeters: finite(source.cutEdgeSpacingMeters, 0.018),
+        cutEdgeInsetMeters: finite(source.cutEdgeInsetMeters, 0.004),
+        visibleBladeTipMinMeters: finite(source.visibleBladeTipMinMillimeters, 40) / 1000,
+        visibleBladeTipMaxMeters: finite(source.visibleBladeTipMaxMillimeters, 75) / 1000,
         accentEligibility: source.accentEligibility !== false && profile.accents.enabled !== false,
         humidity: profile.appearance.humidity,
         dryness: profile.appearance.dryness
@@ -349,8 +504,10 @@ export function createGrassLabSnapshot({ seed, engineStats, coverageStats, lodIn
         fixtures: {
             roadSegments: Array.isArray(fixtures?.roadSegments) ? fixtures.roadSegments.length : 0,
             exclusionRects: Array.isArray(fixtures?.exclusionRects) ? fixtures.exclusionRects.length : 0,
-            irregularCuts: Array.isArray(fixtures?.irregularCutRects) ? fixtures.irregularCutRects.length : 0,
-            treePlacements: Array.isArray(fixtures?.treePlacements) ? fixtures.treePlacements.length : 0
+            irregularCuts: 0,
+            boundaryFeatures: Array.isArray(fixtures?.boundaryApproval?.approvalShapes) ? fixtures.boundaryApproval.approvalShapes.length : 0,
+            treePlacements: Array.isArray(fixtures?.treePlacements) ? fixtures.treePlacements.length : 0,
+            sourceLoopIdentity: String(fixtures?.grassCoverage?.sourceLoopIdentity ?? '')
         },
         grass: {
             enabled: !!engineStats?.enabled,

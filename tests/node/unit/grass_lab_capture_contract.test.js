@@ -10,12 +10,16 @@ import { deflateSync } from 'node:zlib';
 import {
     CARD_BAND_GATE_CONTRACT,
     CARD_BAND_ROI,
+    buildBoundaryCaptureRecipes,
     buildCaptureRecipes,
+    evaluateBoundaryPairs,
+    evaluateBoundaryRepresentationSnapshot,
     evaluateCardBandPairs,
     evaluateLuminancePairs,
     measureCardBandPair,
     measurePngFrame,
     mergeCaptureManifest,
+    parseArgs,
     readPngDimensions,
     resolveV2AssetRoot,
     summarizeSettledMaterialVersion
@@ -94,6 +98,145 @@ test('grass capture recipes cover four lights and material, close, grazing, text
         'handoff',
         'far'
     ]));
+});
+
+test('AI 359 boundary matrix supplies nine native-4K substrate/final pairs with exact target coverage', () => {
+    const recipes = buildBoundaryCaptureRecipes();
+    assert.equal(recipes.length, 18);
+    assert.deepEqual(new Set(recipes.map((entry) => entry.quality)), new Set(['low']));
+    assert.deepEqual(new Set(recipes.map((entry) => entry.lighting)), new Set(['daylight']));
+    assert.deepEqual(new Set(recipes.map((entry) => entry.evidenceMode)), new Set([
+        'substrate_only',
+        'boundary_final'
+    ]));
+    assert.deepEqual(new Set(recipes.map((entry) => entry.pairId)), new Set([
+        'straight_030',
+        'straight_050',
+        'straight_100',
+        'straight_zoom',
+        'curve',
+        'diagonal',
+        'inside_corner',
+        'outside_corner',
+        'tree_base'
+    ]));
+    assert.deepEqual(
+        recipes.filter((entry) => entry.boundaryTarget === 'straight' && !entry.distanceMeters)
+            .map((entry) => entry.heightMeters),
+        [0.3, 0.3, 0.5, 0.5, 1, 1]
+    );
+    assert.deepEqual(
+        recipes.filter((entry) => entry.pairId === 'straight_zoom').map((entry) => entry.distanceMeters),
+        [1.25, 1.25]
+    );
+});
+
+test('AI 359 read-only boundary inspection does not require an evidence phase', () => {
+    const options = parseArgs(['--inspect-boundary']);
+    assert.equal(options.inspectBoundary, true);
+    assert.equal(options.matrix, 'ai359-boundary');
+    assert.equal(options.phase, null);
+});
+
+function makeBoundarySnapshot(mode) {
+    const final = mode === 'boundary_final';
+    return {
+        fixtures: { sourceLoopIdentity: 'rendered-sidewalk-loop-359' },
+        boundaryEvidence: {
+            mode,
+            legacyGeometryHidden: true,
+            grassEngineVisible: false,
+            coverageVisible: final
+        },
+        coverage: {
+            sourceLoopIdentity: 'rendered-sidewalk-loop-359',
+            grassOnsetWidthMeters: 0.08,
+            sidewalkOnsetDistanceMinMeters: 0.079,
+            sidewalkOnsetDistanceMaxMeters: 0.1,
+            logicalDrawCalls: final ? 2 : 0,
+            physicalEdgeLogicalDraws: final ? 1 : 0,
+            triangles: final ? 3200 : 0,
+            capTriangles: final ? 120 : 0,
+            edgeTriangles: final ? 3080 : 0,
+            opaqueCap: true,
+            transparentSurface: false,
+            alphaTestedSurface: false,
+            structuralBaseHeightMeters: 0.0275,
+            visibleBladeTipMinMeters: 0.04,
+            visibleBladeTipMaxMeters: 0.075,
+            antialiasWidthMeters: 0.012,
+            diagonalSegments: 4,
+            curvedSegments: 8,
+            insideCorners: 2,
+            outsideCorners: 3,
+            treeBaseSegments: 24,
+            maxBoundaryDeviationMeters: 0.01,
+            hardExclusionIntrusions: 0,
+            grassOnsetIntrusions: 0,
+            ineligibleCutEdgeRoots: 0
+        }
+    };
+}
+
+function makeBoundaryCaptures() {
+    const cameraFor = (recipe) => ({
+        position: { x: recipe.pairId.length, y: recipe.heightMeters, z: -3 },
+        target: { x: 0, y: 0.03, z: 0 },
+        fovDegrees: 50,
+        aspect: 16 / 9,
+        nearMeters: 0.02,
+        farMeters: 5000
+    });
+    return buildBoundaryCaptureRecipes().map((recipe) => {
+        const snapshot = makeBoundarySnapshot(recipe.evidenceMode);
+        const approval = evaluateBoundaryRepresentationSnapshot(snapshot, recipe.evidenceMode);
+        return {
+            recipeId: recipe.id,
+            pairId: recipe.pairId,
+            evidenceMode: recipe.evidenceMode,
+            qualityPreset: recipe.quality,
+            lightingPreset: recipe.lighting,
+            exposure: 1,
+            png: { width: 3840, height: 2160 },
+            camera: cameraFor(recipe),
+            representationApproval: approval,
+            cost: {
+                coverageCapTriangles: snapshot.coverage.capTriangles,
+                coverageEdgeTriangles: snapshot.coverage.edgeTriangles,
+                coverageTriangles: snapshot.coverage.triangles,
+                coverageLogicalDrawCalls: snapshot.coverage.logicalDrawCalls
+            }
+        };
+    });
+}
+
+test('AI 359 boundary gate requires pair-stable cameras and excludes near/mid/accent geometry', () => {
+    const captures = makeBoundaryCaptures();
+    const result = evaluateBoundaryPairs(captures);
+    assert.equal(result.gateId, 'grass-boundary-paired-approval-v1');
+    assert.equal(result.requiredPairCount, 9);
+    assert.equal(result.captureCount, 18);
+    assert.equal(result.stableSourceLoopIdentity, true);
+    assert.equal(result.pass, true);
+    assert.equal(result.pairs.every((pair) => pair.alignment.cameraMatch), true);
+    assert.equal(result.pairs.every((pair) => pair.substrateApproval.noNearMidAccentRepresentation), true);
+    assert.equal(result.pairs.every((pair) => pair.finalApproval.coverageDrawCalls <= 2), true);
+
+    const shifted = structuredClone(captures);
+    shifted.find((entry) => entry.recipeId === 'boundary_final_curve').camera.position.x += 0.01;
+    assert.equal(evaluateBoundaryPairs(shifted).pass, false);
+
+    const leaked = makeBoundarySnapshot('boundary_final');
+    leaked.boundaryEvidence.grassEngineVisible = true;
+    const leakApproval = evaluateBoundaryRepresentationSnapshot(leaked, 'boundary_final');
+    assert.equal(leakApproval.noNearMidAccentRepresentation, false);
+    assert.equal(leakApproval.pass, false);
+
+    const crossedOnset = makeBoundarySnapshot('boundary_final');
+    crossedOnset.coverage.grassOnsetIntrusions = 1;
+    const crossingApproval = evaluateBoundaryRepresentationSnapshot(crossedOnset, 'boundary_final');
+    assert.equal(crossingApproval.checks.finalHasNoGrassOnsetIntrusions, false);
+    assert.equal(crossingApproval.pass, false);
 });
 
 test('grass capture evaluates identical-camera daylight and overcast turf luminance pairs', () => {
@@ -254,7 +397,9 @@ test('Grass Lab exposes supported capture APIs and capture CSS removes dock and 
         'getCaptureMetadata',
         'focusMaterialFixture',
         'setMaterialLighting',
-        'setMaterialVersion'
+        'setMaterialVersion',
+        'focusBoundaryCamera',
+        'setBoundaryEvidenceMode'
     ]) assert.match(main, new RegExp(`${api}:`));
     assert.match(main, /drawingBufferWidth/);
     assert.match(main, /rendererPixelRatio === 1/);
@@ -269,6 +414,9 @@ test('Grass Lab exposes supported capture APIs and capture CSS removes dock and 
     assert.match(runner, /--v2-asset-root=/);
     assert.match(runner, /lab_staging_override/);
     assert.match(runner, /page\.route/);
+    assert.match(runner, /--matrix=/);
+    assert.match(runner, /grass-boundary-paired-approval-v1/);
+    assert.match(runner, /noNearMidAccentRepresentation/);
     assert.deepEqual(CARD_BAND_GATE_CONTRACT, {
         geometryToTextureRatio: 0.7,
         minimumLuminanceDelta: 0.06,

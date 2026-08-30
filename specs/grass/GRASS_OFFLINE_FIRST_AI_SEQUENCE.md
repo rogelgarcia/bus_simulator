@@ -13,7 +13,7 @@ This document is the canonical execution order for the grass work. The complete 
 7. `AI_DONE_grass_356_MESHES_tree_tufts_and_localized_grass_accents_lab_DONE.md`
 8. `AI_DONE_grass_357_TESTS_grass_lab_quality_presets_diagnostics_and_regressions_DONE.md`
 9. `AI_DONE_grass_358_MATERIAL_unified_grass_color_physically_scaled_atlases_and_mips_DONE.md`
-10. `AI_grass_359_CITY_exact_substrate_grass_boundary_and_height_lab_correction.md`
+10. `AI_DONE_grass_359_CITY_exact_substrate_grass_boundary_and_height_lab_correction_DONE.md`
 11. `AI_grass_360_MESHES_cohesive_near_mesh_carpet_and_exact_coverage_clipping.md`
 12. `AI_grass_361_MESHES_billboard_mid_patch_auto_lod_and_accent_reconciliation.md`
 13. `AI_grass_362_TESTS_4k_grass_lab_visual_validation_performance_and_reapproval.md`
@@ -25,7 +25,7 @@ Prompts 350-362 are offline/lab-only. Prompt 363 is the sole gameplay-integratio
 
 AI 350 through AI 357 remain completed V1 history. Later native-4K and zoomed visual review rejected that result as authorization for gameplay because the grass read as scattered bright objects, tier colors did not merge with the far surface, and the sidewalk/substrate transition was not adequately demonstrated.
 
-The unimplemented gameplay prompt formerly numbered AI 358 was renumbered to AI 363 before implementation so the corrective work has an explicit execution order. AI 358 is complete: its replacement native-4K evidence passes after correcting the shared card material, split coverage contract, fixture parity, and pixel-aligned validation. AI 359 is next and corrects the physical footprint and substrate cut; AI 360 builds the cohesive near mesh; AI 361 owns billboard/middle tiers, handoffs, and accent rendering; AI 362 performs native-4K reapproval; and AI 363 alone integrates the approved result into gameplay.
+The unimplemented gameplay prompt formerly numbered AI 358 was renumbered to AI 363 before implementation so the corrective work has an explicit execution order. AI 358 is complete: its replacement native-4K evidence passes after correcting the shared card material, split coverage contract, fixture parity, and pixel-aligned validation. AI 359 is complete: it corrects the physical footprint and substrate cut. AI 360 is next and builds the cohesive near mesh; AI 361 owns billboard/middle tiers, handoffs, and accent rendering; AI 362 performs native-4K reapproval; and AI 363 alone integrates the approved result into gameplay.
 
 `specs/grass/GRASS_LAB_APPROVAL_AI357.json` and `GRASS_LAB_VALIDATION_AND_APPROVAL_V1.md` remain historical evidence but no longer authorize gameplay. AI 363 is blocked until AI 362 creates `specs/grass/GRASS_LAB_APPROVAL_AI362.json` with `status: "approved"`.
 
@@ -41,6 +41,8 @@ The unimplemented gameplay prompt formerly numbered AI 358 was renumbered to AI 
 | Gameplay adapter | AI 363 | Gameplay only |
 
 AI 362 may tune bounded preset values while validating, but it must return architectural defects to the owning AI instead of creating validation-only behavior. AI 363 must consume the approved V2 contracts without a gameplay-only fork.
+
+The canonical AI 359 handoff is `specs/grass/GRASS_COVERAGE_AND_SIDEWALK_EDGE_V2.md`. It separates each rendered physical source loop from its grass-onset loop, defines hard occupancy plus positive-on-grass signed distance and root clearance, exposes stable source/signature identities, retains the continuous substrate through sidewalk and tree holes, and limits the opaque cap plus batched physical edge to two logical draws excluding substrate. AI 360-363 must consume those semantics without rectangle, alpha, or material-blend fallbacks.
 
 The corrective V2 runtime has a hard ceiling of `200,000` visible grass triangles at the `1920x1080` performance gate. Lower practical targets remain desirable, and draw-call, CPU/GPU, cutoff, and stationary-upload gates still apply independently. Historical V1 records retain their original `100,000`-triangle limit as historical evidence.
 

@@ -6,6 +6,8 @@ The runner uses the Lab's supported `window.__grassLab` evidence API. Before eve
 
 Each phase also records low/default/high cost samples at `1920x1080`, including a verdict against the corrective V2 ceilings of 200,000 visible grass triangles and 12 logical grass draw calls.
 
+The optional AI 359 boundary matrix records exact paired substrate-only and final-boundary approval frames. In that matrix the legacy near/mid/accent grass group is hidden, the final boundary is limited to two logical coverage draws, and the manifest records hard-exclusion/root-eligibility diagnostics.
+
 ## Run
 
 Capture the unchanged baseline before material edits:
@@ -20,7 +22,19 @@ Capture the corrected result from the same recipes:
 node tools/grass_lab_capture/run.mjs --phase=after
 ```
 
+Capture the AI 359 polygon-boundary approval matrix:
+
+```powershell
+node tools/grass_lab_capture/run.mjs --phase=after --matrix=ai359-boundary
+```
+
+Add `--inspect-boundary` for a read-only live boundary snapshot and the two
+problem topology windows without writing images or a manifest. Inspection is a
+diagnostic aid only and does not count as completion evidence.
+
 The default output is `tests/artifacts/screens/grass/ai358/`. The two runs merge into `capture_manifest.json`; matching phase files are never overwritten unless `--overwrite` is provided.
+
+For `--matrix=ai359-boundary`, the default output changes to `tests/artifacts/screens/grass/ai359/`. Pass `--output=...` to override either matrix destination.
 
 The runner starts the existing local static server when `http://127.0.0.1:4173` is not already healthy. Use an existing server or browser installation when required:
 
@@ -43,7 +57,7 @@ Run `node tools/grass_lab_capture/run.mjs --help` for all options.
 
 ## Capture matrix
 
-Each phase produces eleven native-4K PNGs:
+The default `--matrix=material` behavior is unchanged. Each phase produces eleven native-4K PNGs:
 
 - material fixture under daylight, overcast, golden-hour, and night lighting;
 - close geometry at `0.30 m`;
@@ -51,6 +65,16 @@ Each phase produces eleven native-4K PNGs:
 - identical-camera geometry-on and texture-only overcast captures at `0.50 m` (the geometry view also supplies the required grazing-angle evidence);
 - near handoff;
 - far texture at night.
+
+### AI 359 boundary matrix
+
+`--matrix=ai359-boundary` produces 18 native-4K PNGs: a pixel-aligned `substrate_only` / `boundary_final` pair for each of nine poses.
+
+- straight boundary at `0.30 m`, `0.50 m`, and `1.00 m` camera heights;
+- a `0.40 m` straight close-up at `1.25 m` camera distance;
+- curve, diagonal, inside-corner, outside-corner, and tree-base views at `0.50 m`.
+
+Every pair uses the supported `focusBoundaryCamera` and `setBoundaryEvidenceMode` APIs with low quality, daylight, identical exposure, and an identical camera. The pair gate fails unless all 18 images are exact `3840x2160` PNGs, the shared rendered-sidewalk source identity is stable, the legacy grass engine is hidden in both roles, substrate-only contains no coverage geometry, and final coverage is opaque, intrusion-free, root-eligible, and at most two logical draws. The manifest stores per-frame cap/edge costs, complete coverage diagnostics, pair alignment, and low/default/high boundary cost samples.
 
 The tool fails rather than accepting a browser-scaled image, non-PNG payload, wrong canvas bounds, wrong drawing-buffer dimensions, or local runtime/request error.
 

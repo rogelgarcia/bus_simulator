@@ -45,7 +45,9 @@ import {
 } from '../../../engine3d/grass/LowCutGrassCarpetMaterialSystem.js';
 import {
     createGrassLabEngineConfig,
+    createGrassLabBoundaryCameraTargets,
     createGrassLabCoverageConfig,
+    createGrassLabCoverageDefinition,
     createGrassLabFixtureDefinition,
     createGrassLabSnapshot,
     createGrassLabTerrainGrid,
@@ -75,6 +77,18 @@ function clamp(value, min, max, fallback = min) {
     const num = Number(value);
     if (!Number.isFinite(num)) return fallback;
     return Math.max(min, Math.min(max, num));
+}
+
+function coverageDefinitionInputKey(state, coverageConfig) {
+    const finiteOr = (value, fallback) => {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : fallback;
+    };
+    return JSON.stringify({
+        sidewalkRevealMeters: finiteOr(coverageConfig?.substrateRevealMeters, 0.08),
+        trunkRadiusMeters: Math.max(0.2, finiteOr(state?.accents?.trunkRadiusMeters, 0.55)),
+        wornRadiusMeters: finiteOr(state?.accents?.wornRadiusMeters, 0.76)
+    });
 }
 
 function isInteractiveElement(target) {
@@ -221,6 +235,9 @@ export class GrassDebuggerView {
         this._grassEngine = null;
         this._coverageSystem = null;
         this._coverageSurfaceMaterial = null;
+        this._coverageEdgeMaterial = null;
+        this._boundaryEvidenceMode = null;
+        this._coverageDefinitionInputKey = null;
         this._midClusterMaterial = null;
         this._accentClusterMaterial = null;
         this._wornAccentMaterial = null;
@@ -499,6 +516,8 @@ export class GrassDebuggerView {
         this._coverageSystem?.dispose?.();
         this._coverageSystem = null;
         this._coverageSurfaceMaterial = null;
+        this._coverageEdgeMaterial = null;
+        this._coverageDefinitionInputKey = null;
         this._authoringFixture?.dispose?.();
         this._authoringFixture = null;
         this._materialFixture?.dispose?.();
@@ -667,16 +686,15 @@ export class GrassDebuggerView {
         const sidewalkWidth = ROAD_DEFAULTS.sidewalk.extraWidth;
         const roadHalfWidth = (lanesEach * laneWidth * 2 + shoulder * 2 + curbThickness * 2 + sidewalkWidth * 2) * 0.5;
 
-        const fixtures = createGrassLabFixtureDefinition({ bounds, tileSize, roadHalfWidth });
-        this._labFixtures = fixtures;
+        const baseFixtures = createGrassLabFixtureDefinition({ bounds, tileSize, roadHalfWidth });
 
         const map = {
             tileSize,
             width,
             height,
             origin,
-            roadNetwork: { seed: fixtures.seed },
-            roadSegments: fixtures.roadSegments
+            roadNetwork: { seed: baseFixtures.seed },
+            roadSegments: baseFixtures.roadSegments
         };
 
         const generatorConfig = createGeneratorConfig({
@@ -685,7 +703,11 @@ export class GrassDebuggerView {
                 shoulder,
                 surfaceY: 0,
                 curb: { ...ROAD_DEFAULTS.curb },
-                sidewalk: { ...ROAD_DEFAULTS.sidewalk }
+                sidewalk: { ...ROAD_DEFAULTS.sidewalk },
+                junctions: {
+                    ...ROAD_DEFAULTS.junctions,
+                    filletRadiusFactor: 1.0
+                }
             },
             ground: { surfaceY: 0 }
         });
@@ -699,7 +721,8 @@ export class GrassDebuggerView {
                 includeCurbs: true,
                 includeSidewalks: true,
                 includeMarkings: true,
-                includeDebug: false
+                includeDebug: false,
+                suppressSidewalkEdgeDirtStrip: true
             }
         });
         if (roads?.group) {
@@ -708,12 +731,28 @@ export class GrassDebuggerView {
             scene.add(roads.group);
         }
         this._roads = roads;
+        const grassCoverage = createGrassLabCoverageDefinition({
+            bounds,
+            fixtures: baseFixtures,
+            sidewalkOuterBoundaryLoops: roads?.sidewalkOuterBoundaryLoops,
+            sidewalkBoundarySource: roads?.sidewalkBoundarySource,
+            substrateRevealMeters: baseFixtures.boundaryApproval.substrateRevealMeters
+        });
+        const fixtures = {
+            ...baseFixtures,
+            grassCoverage,
+            coverageCameraTargets: createGrassLabBoundaryCameraTargets(grassCoverage)
+        };
+        this._labFixtures = fixtures;
+        this._coverageDefinitionInputKey = coverageDefinitionInputKey(null, createGrassLabCoverageConfig(null));
         this._coverageSurfaceMaterial = this._createGrassCoverageSurfaceMaterial(createGrassLabCoverageConfig(null));
+        this._coverageEdgeMaterial = this._createGrassCoverageEdgeMaterial();
         this._coverageSystem = new GrassCoverageSurfaceSystem({
             parent: scene,
             definition: fixtures.grassCoverage,
             config: createGrassLabCoverageConfig(null),
-            surfaceMaterial: this._coverageSurfaceMaterial
+            surfaceMaterial: this._coverageSurfaceMaterial,
+            edgeMaterial: this._coverageEdgeMaterial
         });
         this._buildTreeFixtures(fixtures.treePlacements);
 
@@ -1078,16 +1117,65 @@ export class GrassDebuggerView {
     }
 
     focusCoverage(targetId = 'straight') {
-        const id = targetId === 'corner' || targetId === 'irregular' ? targetId : 'straight';
+        const aliases = { corner: 'outside_corner', irregular: 'diagonal', tree: 'tree_base' };
+        return this.focusBoundaryCamera(aliases[String(targetId)] ?? String(targetId ?? 'straight'), 0.5);
+    }
+
+    focusBoundaryCamera(targetId = 'straight', heightMeters = 0.5, distanceMeters = 2.6) {
+        const id = ['straight', 'curve', 'diagonal', 'inside_corner', 'outside_corner', 'tree_base'].includes(String(targetId))
+            ? String(targetId)
+            : 'straight';
         const fixture = this._labFixtures?.coverageCameraTargets?.[id] ?? null;
-        if (!fixture) return;
-        const target = new THREE.Vector3(Number(fixture.x), 0.03, Number(fixture.z));
-        const offset = id === 'corner'
-            ? new THREE.Vector3(4.2, 0.72, 4.2)
-            : id === 'irregular'
-                ? new THREE.Vector3(4.0, 0.45, 4.0)
-                : new THREE.Vector3(2.8, 0.30, 3.0);
-        this.controls?.setLookAt?.({ position: target.clone().add(offset), target });
+        if (!fixture) throw new Error(`[GrassLab] Missing boundary camera target: ${id}`);
+        const height = clamp(heightMeters, 0.3, 1, 0.5);
+        const distance = clamp(distanceMeters, 1.1, 4, 2.6);
+        const normal = new THREE.Vector3(Number(fixture.grassNormal?.x) || 0, 0, Number(fixture.grassNormal?.z) || 0).normalize();
+        const tangent = new THREE.Vector3(Number(fixture.tangent?.x) || 0, 0, Number(fixture.tangent?.z) || 0).normalize();
+        const treeBase = id === 'tree_base';
+        const target = new THREE.Vector3(Number(fixture.x), 0.03, Number(fixture.z))
+            .addScaledVector(normal, treeBase ? -0.12 : 0.22);
+        const position = new THREE.Vector3(Number(fixture.x), height, Number(fixture.z))
+            .addScaledVector(normal, treeBase ? distance : -distance)
+            .addScaledVector(tangent, id === 'straight' ? 0.45 : 1.15);
+        this.controls?.setLookAt?.({ position, target });
+        return {
+            id,
+            pose: String(fixture.kind ?? id),
+            heightMeters: height,
+            distanceMeters: distance,
+            position: { x: position.x, y: position.y, z: position.z },
+            target: { x: target.x, y: target.y, z: target.z }
+        };
+    }
+
+    setBoundaryEvidenceMode(mode = null) {
+        const wasBoundaryEvidenceActive = this._boundaryEvidenceMode !== null;
+        const next = mode === 'substrate_only' || mode === 'boundary_final' ? mode : null;
+        this._boundaryEvidenceMode = next;
+        if (wasBoundaryEvidenceActive && next === null && this._grassEngine?.group) {
+            this._grassEngine.group.visible = this._grassEngine?.getStats?.().enabled === true;
+        }
+        this._applyBoundaryEvidenceVisibility();
+        return {
+            mode: next,
+            legacyGeometryHidden: next !== null,
+            coverage: this._coverageSystem?.getStats?.() ?? null
+        };
+    }
+
+    _applyBoundaryEvidenceVisibility() {
+        if (this._boundaryEvidenceMode && this._grassEngine?.group) this._grassEngine.group.visible = false;
+        if (!this._boundaryEvidenceMode) {
+            this._coverageSystem?.setVisibility?.({
+                surface: this._state?.coverage?.showSurface !== false,
+                edge: this._state?.coverage?.showEdge !== false,
+                lip: this._state?.coverage?.showLip !== false,
+                fringe: this._state?.coverage?.showFringe !== false
+            });
+            return;
+        }
+        const final = this._boundaryEvidenceMode === 'boundary_final';
+        this._coverageSystem?.setVisibility?.({ surface: final, edge: final, lip: final, fringe: final });
     }
 
     focusAutoLod(targetId = 'grazing') {
@@ -1496,6 +1584,7 @@ export class GrassDebuggerView {
         if (next === this._grassMaterialVersion) return this.getGrassMaterialDiagnostics();
         this._grassMaterialVersion = next;
         if (this._coverageSurfaceMaterial) this._applyGrassCoverageMaterialPayload(this._coverageSurfaceMaterial);
+        if (this._coverageEdgeMaterial) this._applyGrassCoverageEdgeMaterialPayload(this._coverageEdgeMaterial);
         if (this._midClusterMaterial) {
             this._applyGrassAtlasMaterialPayload(this._midClusterMaterial, LOW_CUT_GRASS_ATLAS_ROLE.MID_CLUSTER);
         }
@@ -1515,6 +1604,7 @@ export class GrassDebuggerView {
             version: active.version,
             materialId: active.materialId,
             coverageMaterialId: this._coverageSurfaceMaterial?.userData?.resolvedMaterialId ?? null,
+            coverageEdgeMaterialId: this._coverageEdgeMaterial?.userData?.resolvedMaterialId ?? null,
             midMaterialId: this._midClusterMaterial?.userData?.resolvedMaterialId ?? null,
             accentMaterialId: this._accentClusterMaterial?.userData?.resolvedMaterialId ?? null,
             midShaderSignature: this._midClusterMaterial?.userData?.grassCardShaderSignature ?? null,
@@ -1560,15 +1650,36 @@ export class GrassDebuggerView {
 
     _syncCoverageFromState(state) {
         const config = createGrassLabCoverageConfig(state);
+        const definitionKey = coverageDefinitionInputKey(state, config);
+        if (definitionKey !== this._coverageDefinitionInputKey) {
+            const grassCoverage = createGrassLabCoverageDefinition({
+                bounds: this._map?.bounds,
+                fixtures: this._labFixtures,
+                sidewalkOuterBoundaryLoops: this._roads?.sidewalkOuterBoundaryLoops,
+                sidewalkBoundarySource: this._roads?.sidewalkBoundarySource,
+                substrateRevealMeters: config.substrateRevealMeters,
+                trunkRadiusMeters: state?.accents?.trunkRadiusMeters,
+                wornRadiusMeters: state?.accents?.wornRadiusMeters
+            });
+            this._labFixtures = {
+                ...this._labFixtures,
+                grassCoverage,
+                coverageCameraTargets: createGrassLabBoundaryCameraTargets(grassCoverage)
+            };
+            this._coverageSystem?.setDefinition?.(grassCoverage);
+            this._coverageDefinitionInputKey = definitionKey;
+        }
         this._coverageSystem?.setConfig?.(config);
         this._coverageSystem?.setVisibility?.({
             surface: state?.coverage?.showSurface !== false,
+            edge: state?.coverage?.showEdge !== false,
             lip: state?.coverage?.showLip !== false,
             fringe: state?.coverage?.showFringe !== false
         });
         if (this._coverageSurfaceMaterial) {
-            this._coverageSurfaceMaterial.alphaTest = config.farCoverageThreshold;
-            this._coverageSurfaceMaterial.alphaToCoverage = true;
+            const opaqueCap = this._getActiveGrassMaterialContract().version === 'v2';
+            this._coverageSurfaceMaterial.alphaTest = opaqueCap ? 0 : config.farCoverageThreshold;
+            this._coverageSurfaceMaterial.alphaToCoverage = !opaqueCap;
             this._coverageSurfaceMaterial.transparent = false;
             this._coverageSurfaceMaterial.roughness = clamp(0.90 + config.dryness * 0.08 - config.humidity * 0.30, 0.45, 1, 0.9);
             const response = clamp(1 + config.dryness * 0.06 - config.humidity * 0.08, 0.8, 1.15, 1);
@@ -1596,6 +1707,7 @@ export class GrassDebuggerView {
             this._wornAccentMaterial.roughness = clamp(0.92 + config.dryness * 0.06, 0.85, 1, 0.96);
             this._wornAccentMaterial.needsUpdate = true;
         }
+        this._applyBoundaryEvidenceVisibility();
     }
 
     _resolvePbrMaterialPayload(materialId, {
@@ -1650,18 +1762,20 @@ export class GrassDebuggerView {
             cloneTextures: true,
             uvSpace: 'unit',
             surfaceSizeMeters: { x: this._groundSize.x, y: this._groundSize.z },
-            auxiliaryKeys: ['coverage'],
+            auxiliaryKeys: active.version === 'v1' ? ['coverage'] : [],
             diagnosticsTag: `GrassDebuggerView.coverageSurface.${active.version}`
         });
         applyResolvedPbrToStandardMaterial(material, resolved);
-        material.alphaMap = resolved?.auxiliaryTextures?.coverage ?? null;
+        material.alphaMap = active.version === 'v1' ? (resolved?.auxiliaryTextures?.coverage ?? null) : null;
         material.emissive?.setHex?.(0x000000);
         material.emissiveIntensity = 0;
         material.emissiveMap = null;
         material.transparent = false;
         material.depthWrite = true;
-        material.userData.grassCoverageMapRole = 'far_coverage.png';
-        material.userData.grassCoverageOccupancy = 'hard_alpha_test';
+        material.alphaTest = active.version === 'v1' ? 0.35 : 0;
+        material.alphaToCoverage = active.version === 'v1';
+        material.userData.grassCoverageMapRole = active.version === 'v1' ? 'far_coverage.png' : null;
+        material.userData.grassCoverageOccupancy = active.version === 'v1' ? 'historical_hard_alpha_test' : 'opaque_polygon_cap';
         material.userData.resolvedMaterialId = active.materialId;
         material.needsUpdate = true;
     }
@@ -1679,10 +1793,51 @@ export class GrassDebuggerView {
         });
         material.name = 'GrassCoverageSurfaceMaterial';
         this._applyGrassCoverageMaterialPayload(material);
-        material.alphaTest = Number(coverageConfig?.farCoverageThreshold) || 0.35;
-        material.alphaToCoverage = true;
         applyLowCutGrassCarpetMaterial(material, LOW_CUT_GRASS_SHADER_DEFAULTS);
         material.needsUpdate = true;
+        return material;
+    }
+
+    _applyGrassCoverageEdgeMaterialPayload(material) {
+        const active = this._getActiveGrassMaterialContract();
+        const resolved = this._resolvePbrMaterialPayload(active.materialId, {
+            localOverrides: LOW_CUT_GRASS_LOCAL_OVERRIDES,
+            cloneTextures: true,
+            uvSpace: 'unit',
+            surfaceSizeMeters: { x: this._groundSize.x, y: this._groundSize.z },
+            auxiliaryKeys: [],
+            diagnosticsTag: `GrassDebuggerView.coverageCutEdge.${active.version}`
+        });
+        applyResolvedPbrToStandardMaterial(material, resolved);
+        material.alphaMap = null;
+        material.alphaTest = 0;
+        material.alphaToCoverage = false;
+        material.emissive?.setHex?.(0x000000);
+        material.emissiveIntensity = 0;
+        material.emissiveMap = null;
+        material.vertexColors = true;
+        material.side = THREE.DoubleSide;
+        material.transparent = false;
+        material.depthWrite = true;
+        material.userData.grassCoverageOccupancy = 'opaque_continuous_cut_edge';
+        material.userData.resolvedMaterialId = active.materialId;
+        material.needsUpdate = true;
+    }
+
+    _createGrassCoverageEdgeMaterial() {
+        const material = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness: 0.96,
+            metalness: 0,
+            emissive: 0x000000,
+            emissiveIntensity: 0,
+            vertexColors: true,
+            side: THREE.DoubleSide,
+            transparent: false,
+            depthWrite: true
+        });
+        material.name = 'GrassCoverageContinuousCutEdgeMaterial';
+        this._applyGrassCoverageEdgeMaterialPayload(material);
         return material;
     }
 
@@ -2911,6 +3066,12 @@ export class GrassDebuggerView {
         });
         return {
             ...snapshot,
+            boundaryEvidence: {
+                mode: this._boundaryEvidenceMode,
+                legacyGeometryHidden: this._boundaryEvidenceMode !== null,
+                grassEngineVisible: this._grassEngine?.group?.visible === true,
+                coverageVisible: this._boundaryEvidenceMode === 'boundary_final'
+            },
             material: this._materialFixture?.getStats?.() ?? null,
             validation: {
                 qualityPreset: this._state?.validation?.qualityPreset ?? 'default',
@@ -2922,6 +3083,33 @@ export class GrassDebuggerView {
                 reviewedLightingIds: [...(this._ui?.getState?.()?.validation?.reviewedLightingIds ?? [])],
                 reviewedMotionPathIds: [...(this._ui?.getState?.()?.validation?.reviewedMotionPathIds ?? [])]
             }
+        };
+    }
+
+    getBoundaryTopologyDiagnostics({ exclusionId = 'sidewalk_outer_0', startIndex = 0, endIndex = null } = {}) {
+        const definition = this._labFixtures?.grassCoverage ?? null;
+        const exclusion = definition?.exclusions?.find?.((entry) => entry.id === String(exclusionId)) ?? null;
+        if (!exclusion) return null;
+        const count = exclusion.onsetLoop.length;
+        const start = Math.max(0, Math.min(count, Math.floor(Number(startIndex) || 0)));
+        const requestedEnd = endIndex === null ? count : Math.floor(Number(endIndex));
+        const end = Math.max(start, Math.min(count, Number.isFinite(requestedEnd) ? requestedEnd : count));
+        return {
+            boundarySignature: definition.boundarySignature,
+            sourceLoopIdentity: exclusion.sourceIdentity,
+            exclusionId: exclusion.id,
+            kind: exclusion.kind,
+            count,
+            startIndex: start,
+            endIndex: end,
+            points: Array.from({ length: end - start }, (_, offset) => {
+                const index = start + offset;
+                return {
+                    index,
+                    source: { ...exclusion.sourceLoop[index] },
+                    onset: { ...exclusion.onsetLoop[index] }
+                };
+            })
         };
     }
 
@@ -2984,6 +3172,7 @@ export class GrassDebuggerView {
             this._updateCenterDistanceOverlay({ nowMs: now });
             const grassStartMs = performance.now();
             this._grassEngine?.update?.({ camera: this.camera, focusDistanceMeters: this._centerHitDistanceMeters });
+            this._applyBoundaryEvidenceVisibility();
             const grassCpuMs = Math.max(0, performance.now() - grassStartMs);
             this._grassUpdateCpuMs = Number.isFinite(this._grassUpdateCpuMs)
                 ? this._grassUpdateCpuMs * 0.9 + grassCpuMs * 0.1
