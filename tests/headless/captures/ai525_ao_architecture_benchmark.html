@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AI 525 AO architecture benchmark</title>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/",
+            "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/"
+        }
+    }
+    </script>
+    <style>
+        html, body, #game-frame {
+            border: 0;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            padding: 0;
+            width: 100%;
+        }
+
+        #game-frame {
+            display: block;
+        }
+
+        #benchmark-status,
+        #benchmark-result {
+            height: 1px;
+            left: -10000px;
+            overflow: hidden;
+            position: fixed;
+            top: 0;
+            width: 1px;
+        }
+    </style>
+</head>
+<body>
+    <iframe
+        id="game-frame"
+        title="Production game benchmark"
+        src="/?pose=civic_center_curve_front&amp;coreTests=0&amp;aoExclusionDepthReuse=1"
+    ></iframe>
+    <div id="benchmark-status" aria-live="polite">booting</div>
+    <script id="benchmark-result" type="application/json">null</script>
+    <script type="module" src="./ai525_ao_architecture_benchmark.js"></script>
+</body>
+</html>
