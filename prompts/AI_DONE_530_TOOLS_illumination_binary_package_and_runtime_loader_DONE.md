@@ -1,4 +1,4 @@
-# Problem
+# DONE — AI 530: Illumination Binary Package and Runtime Loader
 
 Raw Blender outputs are not safe runtime assets. The game needs a compact, versioned, independently verifiable binary format with explicit channel metadata, source freshness, compiler provenance, integrity hashes, asynchronous loading, capability checks, atomic activation, and disposal.
 
@@ -57,3 +57,25 @@ Acceptance requirements:
 - Do not move it to `prompts/archive/` automatically.
 - Add a concise completion summary linking the format specification, pack/inspect/promote tools, loader API, fixtures, tests, and lifecycle diagnostics.
 - Include a same-condition package/load table with raw/packed/compressed sizes, compression ratio, hash/decode/upload/activation/disposal times, peak CPU and GPU memory, browser/hardware, sample count, and statistic. Mark unavailable metrics as `not measured` with a reason.
+
+## Completion summary
+
+Implemented the deterministic `ILPKG001` V1 container, strict embedded manifest and chunk-table validators, exact SHA-256 hierarchy, AI 529 canonical-input adapter, content-addressed atomic publication, package CLI, bounded browser fetch, generic staged loader, real WebGL2 resource factory and capability probe, six-state lifecycle, three-mode controller, frame-boundary activation, safe retirement, and immutable diagnostics. The final runtime also owns mutable package bytes before asynchronous verification, bounds its pre-parse working set, counts every live set during replacement, preserves supersession diagnostics, refuses to dispose after a failed GPU-safety fence, and cleans up malformed post-allocation results. `current` mode fetches nothing and has no bake-file or Blender dependency.
+
+- Contract: [binary package and runtime specification](../specs/graphics/illumination_binary_package.md)
+- Tools: [README](../tools/illumination_package/README.md), [pack/inspect/verify/promote CLI](../tools/illumination_package/run.mjs), and [Chromium/WebGL profiler](../tools/illumination_package/profile.mjs)
+- Package API: [public exports](../src/app/illumination/package/index.js), [container implementation](../src/app/illumination/package/IlluminationBinaryPackage.js), and [capability profiles](../src/app/illumination/package/IlluminationCapabilityProfiles.js)
+- Runtime API: [facade](../src/graphics/illumination/runtime/IlluminationRuntime.js), [staged loader](../src/graphics/illumination/runtime/IlluminationResourceLoader.js), [WebGL2 probe/factory](../src/graphics/illumination/runtime/WebGl2IlluminationResources.js), and [mode controller](../src/app/illumination/runtime/IlluminationModeController.js)
+- Diagnostics: [resource timing/memory diagnostics](../src/graphics/illumination/runtime/RuntimeDiagnostics.js) and [fixed lifecycle vocabulary](../src/app/illumination/runtime/IlluminationLifecycleCatalog.js)
+- Fixtures/tests: [package fixture builder](../tests/node/unit/illumination_package/package_fixture.js), [package/CLI cases](../tests/node/unit/illumination_package/), and [runtime/WebGL cases](../tests/node/unit/illumination_runtime/)
+- Evidence: [real AI 529-derived package](../tests/artifacts/illumination_530/packages_final/bigcity2/ai529.proof.cycles_cpu.threads_1.v1/development.static_sun_v1/releases/29737a08820dad176b4b3903e768ef39dd0cf38c45c41e123457e75e70c7c29c/package.ilpkg) and [canonical runtime/format profile](../tests/artifacts/illumination_530/reports/runtime_profile.json)
+
+The real package has aggregate identity `29737a08820dad176b4b3903e768ef39dd0cf38c45c41e123457e75e70c7c29c`; pack, inspect, expectation-aware verify, and independent promotion all passed. The row below uses the same immutable package and runtime for every sample, with HTTP caching disabled and one unreported warmup.
+
+| Condition | Raw AI 529 EXR | Packed file | Stored/compressed payload | Ratio | Fetch/read | Hash/validate | Decode | CPU stage | GPU upload | Activation | Disposal | Peak logical CPU / GPU | Browser / hardware | Samples / statistic |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
+| AI 529 proof, `development.static_sun_v1`, load → commit → deactivate → safe dispose | 28,879 B | 75,584 B | 65,536 B (`none`) | 1.000 | 0.945 ms | 0.660 ms | 0.005 ms | 0.020 ms | 0.165 ms | 0.000 ms | 0.015 ms | 226,752 B / 16,384 B | Headless Chrome 151.0.7922.176; ANGLE/D3D11; NVIDIA RTX 3060 | 20; arithmetic mean |
+
+Physical browser-process peak CPU is `not measured` because the runtime exposes logical allocation accounting rather than per-cycle process RSS. Physical GPU peak is `not measured` because WebGL2 exposes no portable authoritative allocation counter. The same session measured deterministic 32×32 synthetic uploads for RGBA32F, RGBA16F, and R8 and recorded exact optional compression-extension availability; compressed encoded sizes/uploads remain `not measured` because AI 530 has no deterministic compiler-signed semantic encoder and AI 531/AI 533 own precision promotion.
+
+Validation: 28/28 package/CLI tests, 61/61 runtime/WebGL tests, and 3/3 project guardrails pass. The repository-wide Node run is 679 passed, 7 failed, and 3 skipped; all seven failures are unrelated existing asset/catalog expectations outside the AI 530 change set (oversized local `assets.zip`, two missing grass outputs, and four pre-existing model/catalog assertions).
