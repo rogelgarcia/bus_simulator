@@ -4,10 +4,9 @@
 
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { createColorGradingPass, setColorGradingPassState } from './ColorGradingPass.js';
+import { createColorGradingOutputPass, setColorGradingOutputState } from './ColorGradingPass.js';
 
 function clamp(value, min, max, fallback) {
     const num = Number(value);
@@ -44,12 +43,10 @@ export class BloomPipeline {
 
         this.renderPass = new RenderPass(scene, camera);
         this.bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), initial.strength, initial.radius, initial.threshold);
-        this.outputPass = new OutputPass();
-        this.colorGradingPass = createColorGradingPass();
+        this.outputPass = createColorGradingOutputPass();
 
         this.composer.addPass(this.renderPass);
         this.composer.addPass(this.bloomPass);
-        this.composer.addPass(this.colorGradingPass);
         this.composer.addPass(this.outputPass);
 
         this._settings = initial;
@@ -88,7 +85,7 @@ export class BloomPipeline {
             intensity,
             lutTexture
         };
-        setColorGradingPassState(this.colorGradingPass, { lutTexture, intensity });
+        setColorGradingOutputState(this.outputPass, { lutTexture, intensity });
     }
 
     getDebugInfo() {
@@ -103,7 +100,8 @@ export class BloomPipeline {
         return {
             enabled: !!g?.enabled,
             intensity: g?.intensity ?? 0,
-            hasLut: !!g?.lutTexture
+            hasLut: !!g?.lutTexture,
+            applicationSpace: 'display-referred-srgb-after-tone-mapping'
         };
     }
 
@@ -120,7 +118,6 @@ export class BloomPipeline {
     dispose() {
         this.bloomPass?.dispose?.();
         this.outputPass?.dispose?.();
-        this.colorGradingPass?.material?.dispose?.();
         this.composer?.dispose?.();
         if (this.composer?.renderTarget1) this.composer.renderTarget1.dispose();
         if (this.composer?.renderTarget2) this.composer.renderTarget2.dispose();

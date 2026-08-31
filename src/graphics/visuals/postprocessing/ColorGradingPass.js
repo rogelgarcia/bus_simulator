@@ -1,31 +1,39 @@
-// 3D LUT color grading post-processing pass (WebGL2).
+// Final display transform: tone mapping, display-referred 3D LUT, then output encoding.
 // @ts-check
 
 import * as THREE from 'three';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
-import { createColorGradingShaderPayload } from '../../shaders/postprocessing/ColorGradingShader.js';
+import { createPostProcessingOutputShaderPayload } from '../../shaders/postprocessing/PostProcessingOutputShader.js';
 
-export function createColorGradingPass() {
-    const payload = createColorGradingShaderPayload();
+export function createColorGradingOutputPass() {
+    const payload = createPostProcessingOutputShaderPayload();
     const pass = new ShaderPass({
         uniforms: THREE.UniformsUtils.clone(payload.uniforms),
         vertexShader: payload.vertexSource,
         fragmentShader: payload.fragmentSource
     });
-    pass.enabled = false;
     if (pass.material) {
-        attachShaderMetadata(pass.material, payload, 'postprocessing-color-grading');
-        pass.material.glslVersion = THREE.GLSL3;
+        attachShaderMetadata(pass.material, payload, 'postprocessing-display-output');
+        pass.material.toneMapped = true;
         pass.material.needsUpdate = true;
     }
     return pass;
 }
 
-export function setColorGradingPassState(pass, { lutTexture = null, intensity = 0 } = {}) {
+export function setColorGradingOutputState(pass, { lutTexture = null, intensity = 0 } = {}) {
     const p = pass && typeof pass === 'object' ? pass : null;
     if (!p?.uniforms) return;
+
+    const rawIntensity = Number(intensity);
+    const strength = Number.isFinite(rawIntensity)
+        ? Math.max(0, Math.min(1, rawIntensity))
+        : 0;
+    const image = lutTexture?.image ?? null;
+    const size = Number(image?.width) || Number(image?.depth) || 2;
+
     p.uniforms.tLut.value = lutTexture ?? null;
-    p.uniforms.intensity.value = Number.isFinite(Number(intensity)) ? Number(intensity) : 0;
-    p.enabled = !!lutTexture && (p.uniforms.intensity.value > 0);
+    p.uniforms.uColorGradingIntensity.value = strength;
+    p.uniforms.uLutSize.value = Math.max(2, size);
+    p.uniforms.uEnableColorGrading.value = lutTexture && strength > 0 ? 1 : 0;
 }

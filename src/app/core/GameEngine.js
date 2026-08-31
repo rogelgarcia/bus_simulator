@@ -602,6 +602,7 @@ export class GameEngine {
             intensity,
             supported,
             hasLut,
+            applicationSpace: 'display-referred-srgb-after-tone-mapping',
             status,
             lastError
         };

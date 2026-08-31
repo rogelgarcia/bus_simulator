@@ -11,10 +11,9 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
-import { createColorGradingPass, setColorGradingPassState } from './ColorGradingPass.js';
+import { createColorGradingOutputPass, setColorGradingOutputState } from './ColorGradingPass.js';
 import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
 import { createPostProcessingCompositeShaderPayload } from '../../shaders/postprocessing/PostProcessingCompositeShader.js';
-import { createPostProcessingOutputShaderPayload } from '../../shaders/postprocessing/PostProcessingOutputShader.js';
 import { createPostProcessingGtaoBlendShaderPayload } from '../../shaders/postprocessing/PostProcessingGtaoBlendShader.js';
 import { SUN_BLOOM_LAYER, SUN_BLOOM_LAYER_ID } from '../sun/SunBloomLayers.js';
 import { sanitizeAntiAliasingSettings } from './AntiAliasingSettings.js';
@@ -329,17 +328,6 @@ function makeCompositePass({ globalBloomTexture, sunBloomTexture } = {}) {
     return new ShaderPass(mat, 'baseTexture');
 }
 
-function makeOutputPass() {
-    const payload = createPostProcessingOutputShaderPayload();
-    const mat = new THREE.ShaderMaterial({
-        uniforms: cloneShaderUniforms(payload.uniforms),
-        vertexShader: payload.vertexSource,
-        fragmentShader: payload.fragmentSource
-    });
-    attachShaderMetadata(mat, payload, 'postprocessing-output');
-    return new ShaderPass(mat);
-}
-
 function createBlackTexture() {
     const tex = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
     tex.needsUpdate = true;
@@ -527,9 +515,6 @@ export class PostProcessingPipeline {
             sunBloomTexture: this._sunBloomComposer.renderTarget2.texture
         });
 
-        this.colorGradingPass = createColorGradingPass();
-        if (this.colorGradingPass?.material) this.colorGradingPass.material.toneMapped = false;
-
         this.taaPass = new TemporalAAPass({ colorSpace: linearColorSpace });
         this.taaPass.enabled = false;
 
@@ -541,14 +526,13 @@ export class PostProcessingPipeline {
         this.fxaaPass.enabled = false;
         if (this.fxaaPass?.material) this.fxaaPass.material.toneMapped = false;
 
-        this.outputPass = makeOutputPass();
+        this.outputPass = createColorGradingOutputPass();
         if (this.outputPass?.material) this.outputPass.material.toneMapped = true;
 
         this.composer.addPass(this.renderPass);
         this.composer.addPass(this._aoExclusionPass);
         this._syncAmbientOcclusionPass();
         this.composer.addPass(this.compositePass);
-        this.composer.addPass(this.colorGradingPass);
         this.composer.addPass(this.taaPass);
         this.composer.addPass(this.smaaPass);
         this.composer.addPass(this.fxaaPass);
@@ -1460,7 +1444,7 @@ export class PostProcessingPipeline {
             intensity,
             lutTexture
         };
-        setColorGradingPassState(this.colorGradingPass, { lutTexture, intensity });
+        setColorGradingOutputState(this.outputPass, { lutTexture, intensity });
     }
 
     setToneMapping({ toneMapping = null, exposure = null } = {}) {
@@ -1574,7 +1558,8 @@ export class PostProcessingPipeline {
         return {
             enabled: !!g?.enabled,
             intensity: g?.intensity ?? 0,
-            hasLut: !!g?.lutTexture
+            hasLut: !!g?.lutTexture,
+            applicationSpace: 'display-referred-srgb-after-tone-mapping'
         };
     }
 
@@ -1940,7 +1925,6 @@ export class PostProcessingPipeline {
         this.fxaaPass?.material?.dispose?.();
         this.outputPass?.material?.dispose?.();
         this.compositePass?.material?.dispose?.();
-        this.colorGradingPass?.material?.dispose?.();
 
         this._globalBloomComposer?.dispose?.();
         this._sunBloomComposer?.dispose?.();
