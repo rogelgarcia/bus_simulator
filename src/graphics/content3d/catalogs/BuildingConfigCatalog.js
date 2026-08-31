@@ -3,6 +3,7 @@
 import { BLUE_BELT_TOWER_BUILDING_CONFIG } from '../buildings/configs/BlueBeltTower.js';
 import { B2_BUILDING_CONFIG } from '../buildings/configs/B2.js';
 import { TERRA_MAR_BUILDING_CONFIG } from '../buildings/configs/terramar.js';
+import { TERRA_MAR_RECESSED_BUILDING_CONFIG } from '../buildings/configs/terramar_recessed.js';
 import { BANDED_LOFT_2_BUILDING_CONFIG } from '../buildings/configs/BandedLoft2.js';
 import { BRADBURY_BLOCK_BUILDING_CONFIG } from '../buildings/configs/BradburyBlock.js';
 import { BRADBURY_BLOCK_SPLIT_TEST_BUILDING_CONFIG } from '../buildings/configs/BradburyBlockSplitTest.js';
@@ -29,6 +30,7 @@ import { STONE_SETBACK_TOWER_BUILDING_CONFIG } from '../buildings/configs/StoneS
 const BUILDING_CONFIGS = Object.freeze([
     B2_BUILDING_CONFIG,
     TERRA_MAR_BUILDING_CONFIG,
+    TERRA_MAR_RECESSED_BUILDING_CONFIG,
     BANDED_LOFT_2_BUILDING_CONFIG,
     BEIGE_1_BUILDING_CONFIG,
     BRADBURY_BLOCK_BUILDING_CONFIG,

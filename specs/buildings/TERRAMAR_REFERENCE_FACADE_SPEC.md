@@ -205,6 +205,28 @@ suppressing the internal end guards and duplicate corner hardware. The center
 A balcony and every unlinked balcony remain independent. Curved custom face
 paths remain outside this stage and are deferred to AI 539.
 
+## Recessed-balcony catalog variant
+
+`terramar_recessed`, displayed as `Terra & Mar — Recessed Balconies`, is a
+separate catalog version of the same building. It preserves the original
+`terramar` massing, entrance, signs, materials, windows, floor stack,
+penthouse and roof terraces. The original catalog entry remains unchanged.
+
+The variant converts every balcony-enabled bay in the five-floor residential
+group to the existing AI 489 `balcony.modern_recessed` mode. Each bay authors
+a symmetric 1.5 m negative depth, so the window sits at the rear of a real
+loggia void while the glass guard stays at the nominal facade line. The
+residential belt extrusion is reduced from 1.5 m to 0.12 m so it reads as a
+facade-edge slab rather than an outstanding balcony. The podium restaurant
+terrace remains projecting.
+
+Residential `balconyContinuity` is intentionally absent in this variant:
+AI 537 joins projecting balconies only, while recessed cross-face cavities are
+not yet supported. Each loggia therefore uses the current adjacency-driven
+side behavior and remains an independent bay. It does not fake AI 540's
+planned full-height opaque front wall, optional internal partitions, or
+connected hidden cavity across neighboring bays.
+
 ## Penthouse and exposed upper terrace
 
 - The penthouse is a distinct floor layer, not a mechanical roof prop.
@@ -258,8 +280,14 @@ wear are not appropriate.
 - Display name: `Terra & Mar`.
 - `getBuildingConfigById('terramar')` resolves the exact authored object.
 - `getBuildingConfigs()` includes it exactly once.
+- Variant configuration id: `terramar_recessed`.
+- Variant export: `TERRA_MAR_RECESSED_BUILDING_CONFIG`.
+- Variant display name: `Terra & Mar — Recessed Balconies`.
+- `getBuildingConfigById('terramar_recessed')` resolves the exact variant
+  object, while `getBuildingConfigById('terramar')` continues to resolve the
+  unchanged original.
 - Final comparison preserves all source copies under
-  `tests/artifacts/screens/buildings/terramar/references/`.
+  `tests/artifacts/screens/buildings/<catalog-id>/references/`.
 - Final rendered evidence uses the building showcase with an HDRI as both
   visible background and reflection source.
 - Evidence includes distinct exact 3840 x 2160 front, three-quarter and
