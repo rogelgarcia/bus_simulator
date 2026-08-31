@@ -54,6 +54,12 @@ const SHOTS = Object.freeze([
         cameraDir: Object.freeze({ x: -0.35, y: 0.1, z: 1 }),
         cameraPadding: 0.38,
         cameraTargetYFrac: 0.13
+    },
+    {
+        name: 'rooftop-terrace.png',
+        cameraDir: Object.freeze({ x: -0.58, y: 0.72, z: 1 }),
+        cameraPadding: 0.82,
+        cameraTargetYFrac: 0.62
     }
 ]);
 

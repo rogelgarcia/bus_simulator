@@ -1,6 +1,7 @@
-// City building config: Terra & Mar — a seven-storey coastal mixed-use
+// City building config: Terra & Mar — an eight-storey coastal mixed-use
 // building with a two-level limestone restaurant podium and five residential
-// floors wrapped by projecting glass balconies.
+// floors wrapped by projecting glass balconies, an open rooftop terrace and
+// a detached penthouse pavilion.
 //
 // BF2's circular facade runs do not yet bend balcony slabs or railings. The
 // softened reference corners are therefore authored as eight stable straight
@@ -34,6 +35,11 @@ const GROUND_HEIGHT = 4.8;
 const PODIUM_HEIGHT = 4.3;
 const RESIDENTIAL_HEIGHT = 3.35;
 const RESIDENTIAL_FLOORS = 5;
+const PENTHOUSE_HEIGHT = 3.6;
+const PENTHOUSE_HALF_WIDTH = 5;
+const PENTHOUSE_HALF_DEPTH = 3.75;
+const PENTHOUSE_CENTER_Z = -1.5;
+const PENTHOUSE_SIDE_LENGTH = PENTHOUSE_HALF_DEPTH * 2;
 
 function stableLoop(points, prefix) {
     return Object.freeze(points.map((point, index) => Object.freeze({
@@ -77,6 +83,13 @@ const TOWER_SILHOUETTE = detachedSilhouette(stableLoop([
     { x: TOWER_HALF_WIDTH, z: -TOWER_SHOULDER_Z, runId: 'C' },
     { x: TOWER_HALF_WIDTH, z: TOWER_SHOULDER_Z, runId: 'B' }
 ], 'b8_tower'));
+
+const PENTHOUSE_SILHOUETTE = detachedSilhouette(stableLoop([
+    { x: PENTHOUSE_HALF_WIDTH, z: PENTHOUSE_CENTER_Z + PENTHOUSE_HALF_DEPTH, runId: 'A' },
+    { x: -PENTHOUSE_HALF_WIDTH, z: PENTHOUSE_CENTER_Z + PENTHOUSE_HALF_DEPTH, runId: 'D' },
+    { x: -PENTHOUSE_HALF_WIDTH, z: PENTHOUSE_CENTER_Z - PENTHOUSE_HALF_DEPTH, runId: 'C' },
+    { x: PENTHOUSE_HALF_WIDTH, z: PENTHOUSE_CENTER_Z - PENTHOUSE_HALF_DEPTH, runId: 'B' }
+], 'b8_penthouse'));
 
 const NO_ARCH = Object.freeze({
     enabled: false,
@@ -291,11 +304,9 @@ function podiumFrontFacade() {
     ]);
 }
 
-function projectingBalconyFacade(prefix, faceLength, defId) {
-    const pierWidth = 0.55;
-    const balconyWidth = faceLength - pierWidth * 2;
+function projectingBalconyBay(id, width, defId) {
     const window = openingPlacement(defId, {
-        width: balconyWidth,
+        width,
         height: 2.65,
         heightMode: 'fixed',
         verticalOffsetMeters: 0.22,
@@ -303,34 +314,99 @@ function projectingBalconyFacade(prefix, faceLength, defId) {
         depthMeters: 0.2,
         interior: 'res'
     });
+    return {
+        ...openingBay(id, width, window, { kind: 'slot', id: 'wood' }),
+        balcony: {
+            enabled: true,
+            presetId: 'balcony.modern_glass_projecting',
+            platform: {
+                depthMeters: BALCONY_DEPTH,
+                thicknessMeters: 0.04,
+                widthMode: 'bay',
+                sideMarginMeters: 0,
+                elevationMeters: 0.04,
+                material: { kind: 'slot', id: 'stone' }
+            },
+            railing: {
+                heightMeters: 1.02,
+                insetMeters: 0.04,
+                colorHex: 0x343735,
+                roughness: 0.38,
+                metalness: 0.72,
+                topRail: { enabled: true, widthMeters: 0.055, heightMeters: 0.04 },
+                posts: { enabled: true, widthMeters: 0.04, maxSpacingMeters: 1.6 },
+                glass: { opacity: 0.25, tintHex: 0xb4ccd0 }
+            },
+            sides: { left: 'always', front: 'always', right: 'always' }
+        }
+    };
+}
+
+function projectingBalconyFacade(prefix, faceLength, defId) {
+    const pierWidth = 0.55;
+    const balconyWidth = faceLength - pierWidth * 2;
     return facadeFromItems([
         fixedBay(`${prefix}_pier_start`, pierWidth, { material: { kind: 'slot', id: 'stone' }, projection: 0.06 }),
-        {
-            ...openingBay(`${prefix}_balcony`, balconyWidth, window, { kind: 'slot', id: 'wood' }),
-            balcony: {
-                enabled: true,
-                presetId: 'balcony.modern_glass_projecting',
-                platform: {
-                    depthMeters: BALCONY_DEPTH,
-                    thicknessMeters: 0.22,
-                    widthMode: 'bay',
-                    sideMarginMeters: 0,
-                    material: { kind: 'slot', id: 'stone' }
-                },
-                railing: {
-                    heightMeters: 1.02,
-                    insetMeters: 0.04,
-                    colorHex: 0x343735,
-                    roughness: 0.38,
-                    metalness: 0.72,
-                    topRail: { enabled: true, widthMeters: 0.055, heightMeters: 0.04 },
-                    posts: { enabled: true, widthMeters: 0.04, maxSpacingMeters: 1.6 },
-                    glass: { opacity: 0.25, tintHex: 0xb4ccd0 }
-                },
-                sides: { left: 'always', front: 'always', right: 'always' }
-            },
-        },
+        projectingBalconyBay(`${prefix}_balcony`, balconyWidth, defId),
         fixedBay(`${prefix}_pier_end`, pierWidth, { material: { kind: 'slot', id: 'stone' }, projection: 0.06 })
+    ]);
+}
+
+function residentialFrontFacade() {
+    return facadeFromItems([
+        projectingBalconyBay('b8_residential_front_balcony_right', 3, 'window_b8_residential_chamfer'),
+        fixedBay('b8_residential_front_pier_right', 0.65, {
+            material: { kind: 'slot', id: 'stone' },
+            projection: 0.06
+        }),
+        projectingBalconyBay('b8_residential_front_balcony_center', 5.5, 'window_b8_residential_front'),
+        fixedBay('b8_residential_front_pier_left', 0.65, {
+            material: { kind: 'slot', id: 'stone' },
+            projection: 0.06
+        }),
+        projectingBalconyBay('b8_residential_front_balcony_left', 3, 'window_b8_residential_chamfer')
+    ]);
+}
+
+function residentialAdjacentChamferFacade(prefix, {
+    adjacentToAAtStart
+}) {
+    const pierWidth = 0.65;
+    const balconyWidth = (TOWER_CHAMFER_LENGTH - pierWidth) * 0.5;
+    const adjacent = projectingBalconyBay(
+        `${prefix}_balcony_adjacent_a`,
+        balconyWidth,
+        'window_b8_residential_chamfer'
+    );
+    const outer = projectingBalconyBay(
+        `${prefix}_balcony_outer`,
+        balconyWidth,
+        'window_b8_residential_chamfer'
+    );
+    const pier = fixedBay(`${prefix}_pier_center`, pierWidth, {
+        material: { kind: 'slot', id: 'stone' },
+        projection: 0.06
+    });
+    return facadeFromItems(adjacentToAAtStart
+        ? [adjacent, pier, outer]
+        : [outer, pier, adjacent]);
+}
+
+function glazedPenthouseFacade(prefix, faceLength, defId, {
+    pierWidth = 0.8
+} = {}) {
+    const openingWidth = faceLength - pierWidth * 2;
+    return facadeFromItems([
+        fixedBay(`${prefix}_pier_start`, pierWidth, { material: { kind: 'slot', id: 'stone' }, projection: 0.05 }),
+        openingBay(`${prefix}_glass`, openingWidth, openingPlacement(defId, {
+            width: openingWidth,
+            height: 3.05,
+            verticalOffsetMeters: 0.22,
+            paddingMeters: 0.18,
+            depthMeters: 0.2,
+            interior: 'res'
+        }), { kind: 'slot', id: 'wood' }),
+        fixedBay(`${prefix}_pier_end`, pierWidth, { material: { kind: 'slot', id: 'stone' }, projection: 0.05 })
     ]);
 }
 
@@ -440,13 +516,22 @@ const PODIUM_SIDE_FACADE = Object.freeze(framedStorefrontFacade(
     'window_b8_side_podium',
     { height: 3.0, verticalOffsetMeters: 0.38 }
 ));
-const RESIDENTIAL_FRONT_FACADE = Object.freeze(projectingBalconyFacade(
-    'b8_residential_front',
+const RESIDENTIAL_FRONT_FACADE = Object.freeze(residentialFrontFacade());
+const RESIDENTIAL_RIGHT_CHAMFER_FACADE = Object.freeze(residentialAdjacentChamferFacade(
+    'b8_residential_right_chamfer',
+    { adjacentToAAtStart: false }
+));
+const RESIDENTIAL_LEFT_CHAMFER_FACADE = Object.freeze(residentialAdjacentChamferFacade(
+    'b8_residential_left_chamfer',
+    { adjacentToAAtStart: true }
+));
+const RESIDENTIAL_REAR_FACADE = Object.freeze(projectingBalconyFacade(
+    'b8_residential_rear',
     TOWER_FRONT_LENGTH,
     'window_b8_residential_front'
 ));
-const RESIDENTIAL_CHAMFER_FACADE = Object.freeze(projectingBalconyFacade(
-    'b8_residential_chamfer',
+const RESIDENTIAL_REAR_CHAMFER_FACADE = Object.freeze(projectingBalconyFacade(
+    'b8_residential_rear_chamfer',
     TOWER_CHAMFER_LENGTH,
     'window_b8_residential_chamfer'
 ));
@@ -454,6 +539,17 @@ const RESIDENTIAL_SIDE_FACADE = Object.freeze(projectingBalconyFacade(
     'b8_residential_side',
     TOWER_SIDE_LENGTH,
     'window_b8_residential_side'
+));
+const PENTHOUSE_FRONT_FACADE = Object.freeze(glazedPenthouseFacade(
+    'b8_penthouse_front',
+    PENTHOUSE_HALF_WIDTH * 2,
+    'window_b8_penthouse_front'
+));
+const PENTHOUSE_SIDE_FACADE = Object.freeze(glazedPenthouseFacade(
+    'b8_penthouse_side',
+    PENTHOUSE_SIDE_LENGTH,
+    'window_b8_penthouse_side',
+    { pierWidth: 0.75 }
 ));
 
 export const TERRA_MAR_BUILDING_CONFIG = Object.freeze({
@@ -534,10 +630,45 @@ export const TERRA_MAR_BUILDING_CONFIG = Object.freeze({
             style: 'default',
             material: { kind: 'slot', id: 'stone' },
             materialVariation: { enabled: false },
-            belt: { enabled: true, height: 0.22, extrusion: 0.12, material: { kind: 'slot', id: 'stone' } },
+            belt: { enabled: true, height: 0.22, extrusion: BALCONY_DEPTH, material: { kind: 'slot', id: 'stone' } },
             cornice: { enabled: false },
             windows: { enabled: false },
             faceLinking: { links: { B: 'H', C: 'G', D: 'A', E: 'H', F: 'G' } }
+        },
+        {
+            id: 'roof_b8_residential_terrace',
+            type: 'roof',
+            props: { enabled: false },
+            ring: {
+                enabled: true,
+                innerRadius: 0.22,
+                outerRadius: 0.14,
+                height: 0.5,
+                material: { kind: 'slot', id: 'stone' }
+            },
+            cornice: { enabled: false },
+            roof: {
+                type: 'Asphalt',
+                material: { kind: 'slot', id: 'stone' },
+                tiling: { enabled: true, tileMeters: 1.2, tileMetersU: 1.2, tileMetersV: 1.2, uvEnabled: true },
+                color: 'offwhite'
+            }
+        },
+        {
+            id: 'floor_b8_penthouse',
+            type: 'floor',
+            floors: 1,
+            floorHeight: PENTHOUSE_HEIGHT,
+            planOffset: 0,
+            silhouette: PENTHOUSE_SILHOUETTE,
+            interior: { enabled: true },
+            style: 'default',
+            material: { kind: 'slot', id: 'stone' },
+            materialVariation: { enabled: false },
+            belt: { enabled: true, height: 0.2, extrusion: 0.1, material: { kind: 'slot', id: 'stone' } },
+            cornice: { enabled: false },
+            windows: { enabled: false },
+            faceLinking: { links: { B: 'D', C: 'A' } }
         },
         {
             id: 'roof_b8',
@@ -560,7 +691,7 @@ export const TERRA_MAR_BUILDING_CONFIG = Object.freeze({
         }
     ]),
     footprintLoops: Object.freeze([PODIUM_FOOTPRINT]),
-    floors: 7,
+    floors: 8,
     floorHeight: RESIDENTIAL_HEIGHT,
     style: 'default',
     windows: null,
@@ -581,13 +712,17 @@ export const TERRA_MAR_BUILDING_CONFIG = Object.freeze({
         },
         floor_b8_residential: {
             A: RESIDENTIAL_FRONT_FACADE,
-            B: RESIDENTIAL_CHAMFER_FACADE,
+            B: RESIDENTIAL_RIGHT_CHAMFER_FACADE,
             C: RESIDENTIAL_SIDE_FACADE,
-            D: RESIDENTIAL_FRONT_FACADE,
-            E: RESIDENTIAL_CHAMFER_FACADE,
-            F: RESIDENTIAL_SIDE_FACADE,
+            D: RESIDENTIAL_REAR_CHAMFER_FACADE,
+            E: RESIDENTIAL_REAR_FACADE,
+            F: RESIDENTIAL_REAR_CHAMFER_FACADE,
             G: RESIDENTIAL_SIDE_FACADE,
-            H: RESIDENTIAL_CHAMFER_FACADE
+            H: RESIDENTIAL_LEFT_CHAMFER_FACADE
+        },
+        floor_b8_penthouse: {
+            A: PENTHOUSE_FRONT_FACADE,
+            D: PENTHOUSE_SIDE_FACADE
         }
     }),
     wallDecorations: Object.freeze({
@@ -706,6 +841,28 @@ export const TERRA_MAR_BUILDING_CONFIG = Object.freeze({
                 width: TOWER_FRONT_LENGTH - 0.68,
                 height: 2.65,
                 columns: 5,
+                glass: RESIDENTIAL_GLASS,
+                frameWidth: 0.035,
+                horizontalFrameWidth: 0.045,
+                muntinWidth: 0.024
+            }),
+            screenDefinition({
+                id: 'window_b8_penthouse_front',
+                name: 'Terra & Mar Penthouse Front Screen',
+                width: 8.04,
+                height: 3.05,
+                columns: 4,
+                glass: RESIDENTIAL_GLASS,
+                frameWidth: 0.035,
+                horizontalFrameWidth: 0.045,
+                muntinWidth: 0.024
+            }),
+            screenDefinition({
+                id: 'window_b8_penthouse_side',
+                name: 'Terra & Mar Penthouse Side Screen',
+                width: 5.64,
+                height: 3.05,
+                columns: 3,
                 glass: RESIDENTIAL_GLASS,
                 frameWidth: 0.035,
                 horizontalFrameWidth: 0.045,

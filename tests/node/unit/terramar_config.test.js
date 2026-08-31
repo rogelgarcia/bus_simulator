@@ -1,4 +1,4 @@
-// Verifies the Terra & Mar clipped-octagon massing, segmented wrap balconies and Terra & Mar facade contract.
+// Verifies the Terra & Mar clipped-octagon massing, balcony-bay rhythm, penthouse and facade contract.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -12,7 +12,7 @@ import {
     resolveBuildingLayerSilhouettes
 } from '../../../src/app/buildings/silhouette_authoring/BuildingLayerSilhouetteModel.js';
 
-const EXPECTED_OCCUPIED_HEIGHT_METERS = 25.85;
+const EXPECTED_OCCUPIED_HEIGHT_METERS = 29.45;
 const EXPECTED_RUN_IDS = Object.freeze(['A', 'H', 'G', 'F', 'E', 'D', 'C', 'B']);
 const EXPECTED_PODIUM_POINTS = Object.freeze([
     Object.freeze({ x: 7, z: 11, runId: 'A' }),
@@ -34,6 +34,12 @@ const EXPECTED_RESIDENTIAL_POINTS = Object.freeze([
     Object.freeze({ x: 12.5, z: -3.4, runId: 'C' }),
     Object.freeze({ x: 12.5, z: 3.4, runId: 'B' })
 ]);
+const EXPECTED_PENTHOUSE_POINTS = Object.freeze([
+    Object.freeze({ x: 5, z: 2.25, runId: 'A' }),
+    Object.freeze({ x: -5, z: 2.25, runId: 'D' }),
+    Object.freeze({ x: -5, z: -5.25, runId: 'C' }),
+    Object.freeze({ x: 5, z: -5.25, runId: 'B' })
+]);
 const VISIBLE_RESIDENTIAL_RUN_IDS = Object.freeze(['A', 'B', 'C', 'G', 'H']);
 
 function assertClose(actual, expected, tolerance = 1e-9) {
@@ -53,11 +59,12 @@ function roofLayers() {
 
 function layerRoles() {
     const layers = floorLayers();
-    assert.equal(layers.length, 3, 'expected ground, podium and residential floor layers');
+    assert.equal(layers.length, 4, 'expected ground, podium, residential and penthouse floor layers');
     return {
         ground: layers[0],
         podium: layers[1],
-        residential: layers[2]
+        residential: layers[2],
+        penthouse: layers[3]
     };
 }
 
@@ -97,6 +104,23 @@ function assertStableClippedOctagon(loop, expectedPoints) {
         assert.ok(point.cornerId.length > 0);
         assert.equal(point.runForward, true);
         assert.equal(Object.hasOwn(point, 'arc'), false, 'Terra & Mar uses planar clipped corners');
+    }
+}
+
+function assertStablePenthouse(loop) {
+    assert.ok(Array.isArray(loop));
+    assert.equal(loop.length, 4);
+    assert.ok(signedAreaOf(loop) > 0, 'BF2 XZ loops must use clockwise winding');
+    assert.deepEqual(
+        loop.map(({ x, z, runId }) => ({ x, z, runId })),
+        EXPECTED_PENTHOUSE_POINTS
+    );
+    assert.equal(new Set(loop.map((point) => point.cornerId)).size, 4);
+    assert.equal(new Set(loop.map((point) => point.runId)).size, 4);
+    for (const point of loop) {
+        assert.equal(typeof point.cornerId, 'string');
+        assert.equal(point.runForward, true);
+        assert.equal(Object.hasOwn(point, 'arc'), false);
     }
 }
 
@@ -151,16 +175,16 @@ test('Terra & Mar resolves through the building catalog under its stable id once
     );
 });
 
-test('Terra & Mar authors exactly seven occupied floors and 25.85m of occupied height', () => {
-    const { ground, podium, residential } = layerRoles();
+test('Terra & Mar authors eight occupied floors and 29.45m of occupied height', () => {
+    const { ground, podium, residential, penthouse } = layerRoles();
 
     assert.deepEqual(
-        [ground.id, podium.id, residential.id],
-        ['floor_b8_ground', 'floor_b8_podium', 'floor_b8_residential']
+        [ground.id, podium.id, residential.id, penthouse.id],
+        ['floor_b8_ground', 'floor_b8_podium', 'floor_b8_residential', 'floor_b8_penthouse']
     );
-    assert.deepEqual([ground.floors, podium.floors, residential.floors], [1, 1, 5]);
-    assert.deepEqual([ground.floorHeight, podium.floorHeight, residential.floorHeight], [4.8, 4.3, 3.35]);
-    assert.equal(TERRA_MAR_BUILDING_CONFIG.floors, 7);
+    assert.deepEqual([ground.floors, podium.floors, residential.floors, penthouse.floors], [1, 1, 5, 1]);
+    assert.deepEqual([ground.floorHeight, podium.floorHeight, residential.floorHeight, penthouse.floorHeight], [4.8, 4.3, 3.35, 3.6]);
+    assert.equal(TERRA_MAR_BUILDING_CONFIG.floors, 8);
     assertClose(
         floorLayers().reduce((sum, layer) => sum + layer.floors * layer.floorHeight, 0),
         EXPECTED_OCCUPIED_HEIGHT_METERS
@@ -183,22 +207,24 @@ test('Terra & Mar keeps the 28x22m planar clipped-octagon podium as its default 
     });
 });
 
-test('Terra & Mar resolves one detached 25x19m residential clipped octagon above the podium', () => {
-    const { ground, podium, residential } = layerRoles();
+test('Terra & Mar resolves detached residential and rear-set penthouse silhouettes above the podium', () => {
+    const { ground, podium, residential, penthouse } = layerRoles();
     const resolved = resolvedSilhouettes();
 
     assert.deepEqual(
         resolved.ordered.map((entry) => entry.mode),
-        ['inherit_default', 'inherit_previous', 'detached']
+        ['inherit_default', 'inherit_previous', 'detached', 'detached']
     );
     assert.deepEqual(
         resolved.ordered.map((entry) => entry.layerId),
-        [ground.id, podium.id, residential.id]
+        [ground.id, podium.id, residential.id, penthouse.id]
     );
     assert.deepEqual(resolved.byLayerId[ground.id].loop, TERRA_MAR_BUILDING_CONFIG.footprintLoops[0]);
     assert.deepEqual(resolved.byLayerId[podium.id].loop, resolved.byLayerId[ground.id].loop);
     assert.notDeepEqual(resolved.byLayerId[residential.id].loop, resolved.byLayerId[podium.id].loop);
     assertStableClippedOctagon(resolved.byLayerId[residential.id].loop, EXPECTED_RESIDENTIAL_POINTS);
+    assert.notDeepEqual(resolved.byLayerId[penthouse.id].loop, resolved.byLayerId[residential.id].loop);
+    assertStablePenthouse(resolved.byLayerId[penthouse.id].loop);
     assert.deepEqual(boundsOf(resolved.byLayerId[residential.id].loop), {
         minX: -12.5,
         maxX: 12.5,
@@ -207,10 +233,18 @@ test('Terra & Mar resolves one detached 25x19m residential clipped octagon above
         width: 25,
         depth: 19
     });
+    assert.deepEqual(boundsOf(resolved.byLayerId[penthouse.id].loop), {
+        minX: -5,
+        maxX: 5,
+        minZ: -5.25,
+        maxZ: 2.25,
+        width: 10,
+        depth: 7.5
+    });
 });
 
-test('Terra & Mar plans only the podium-to-residential silhouette transition', () => {
-    const { podium, residential } = layerRoles();
+test('Terra & Mar plans podium-to-residential and residential-to-penthouse transitions', () => {
+    const { podium, residential, penthouse } = layerRoles();
     const resolved = resolvedSilhouettes();
     const layerPlanLoopsById = new Map(
         resolved.ordered.map((entry) => [entry.layerId, [entry.loop]])
@@ -221,13 +255,16 @@ test('Terra & Mar plans only the podium-to-residential silhouette transition', (
     });
 
     assert.deepEqual(transitions, [
-        { lowerLayerId: podium.id, upperLayerId: residential.id }
+        { lowerLayerId: podium.id, upperLayerId: residential.id },
+        { lowerLayerId: residential.id, upperLayerId: penthouse.id }
     ]);
 });
 
-test('Terra & Mar gives all eight runs deterministic facade coverage on every occupied layer', () => {
+test('Terra & Mar gives every resolved occupied run deterministic facade coverage', () => {
+    const resolved = resolvedSilhouettes();
     for (const layer of floorLayers()) {
-        for (const faceId of [...EXPECTED_RUN_IDS].sort()) {
+        const runIds = resolved.byLayerId[layer.id].loop.map((point) => point.runId);
+        for (const faceId of [...runIds].sort()) {
             const facade = resolvedFacade(layer, faceId);
             assert.ok(facade, `${layer.id}:${faceId} must resolve to a facade`);
             assert.ok(
@@ -238,7 +275,7 @@ test('Terra & Mar gives all eight runs deterministic facade coverage on every oc
     }
 });
 
-test('Terra & Mar repeats segmented projecting glass balconies around all five visible residential runs', () => {
+test('Terra & Mar places three front balcony bays and centered piers on the adjacent chamfers', () => {
     const { residential } = layerRoles();
     assert.equal(residential.floors, 5);
 
@@ -259,13 +296,41 @@ test('Terra & Mar repeats segmented projecting glass balconies around all five v
             balconyBays.every((bay) => bay.balcony?.platform?.material?.id === 'stone'),
             `${faceId} balcony platforms must continue the pale slab material`
         );
-        const first = bays[0];
-        const last = bays[bays.length - 1];
-        assert.equal(first.window?.enabled, undefined, `${faceId} must start with a structural pier`);
-        assert.equal(last.window?.enabled, undefined, `${faceId} must end with a structural pier`);
-        assert.ok(nominalBayWidth(first) >= 0.45 && nominalBayWidth(first) <= 0.8);
-        assert.ok(nominalBayWidth(last) >= 0.45 && nominalBayWidth(last) <= 0.8);
+        assert.ok(balconyBays.every((bay) => bay.balcony.platform.thicknessMeters === 0.04));
+        assert.ok(balconyBays.every((bay) => bay.balcony.platform.elevationMeters === 0.04));
     }
+
+    const front = faceBays(residential, 'A');
+    assert.deepEqual(
+        front.map((bay) => bay.balcony?.enabled ? 'balcony' : 'pier'),
+        ['balcony', 'pier', 'balcony', 'pier', 'balcony']
+    );
+    assert.deepEqual(front.map(nominalBayWidth), [3, 0.65, 5.5, 0.65, 3]);
+    assert.equal(front[0].id, 'b8_residential_front_balcony_right');
+    assert.equal(front[4].id, 'b8_residential_front_balcony_left');
+    assert.ok(front[1].id.includes('pier_right'));
+    assert.ok(front[3].id.includes('pier_left'));
+    assert.equal(front.reduce((sum, bay) => sum + nominalBayWidth(bay), 0), 12.8);
+
+    const right = faceBays(residential, 'B');
+    const left = faceBays(residential, 'H');
+    for (const [faceId, bays] of [['B', right], ['H', left]]) {
+        assert.deepEqual(
+            bays.map((bay) => bay.balcony?.enabled ? 'balcony' : 'pier'),
+            ['balcony', 'pier', 'balcony'],
+            `${faceId} must have a centered pier between two balcony bays`
+        );
+        assert.equal(nominalBayWidth(bays[1]), 0.65);
+        assertClose(nominalBayWidth(bays[0]), nominalBayWidth(bays[2]));
+        assertClose(
+            nominalBayWidth(bays[0]) + nominalBayWidth(bays[1]) + nominalBayWidth(bays[2]),
+            Math.hypot(6.1, 6.1)
+        );
+    }
+    assert.ok(right[2].id.includes('adjacent_a'));
+    assert.ok(left[0].id.includes('adjacent_a'));
+    assert.equal(residential.belt?.extrusion, 1.5);
+    assert.equal(residential.belt?.height, 0.22);
 });
 
 test('Terra & Mar ground front centers one broad glazed entrance under the exact two-line sign', () => {
@@ -360,26 +425,41 @@ test('Terra & Mar calibrates pale limestone, warm soffits and cool transmissive 
     }
 });
 
-test('Terra & Mar closes on the residential silhouette with a low plain roof edge', () => {
-    const { podium, residential } = layerRoles();
+test('Terra & Mar exposes an intermediate terrace around a detached penthouse and closes on its roof', () => {
+    const { podium, residential, penthouse } = layerRoles();
     const roofs = roofLayers();
     const finalRoof = roofs.find((layer) => layer.id === 'roof_b8');
-    const terraceRoof = roofs.find((layer) => layer.id === 'roof_b8_podium_terrace');
+    const podiumTerrace = roofs.find((layer) => layer.id === 'roof_b8_podium_terrace');
+    const residentialTerrace = roofs.find((layer) => layer.id === 'roof_b8_residential_terrace');
     const layerOrder = TERRA_MAR_BUILDING_CONFIG.layers;
 
     assert.ok(finalRoof, 'Terra & Mar must end with roof_b8');
-    assert.ok(layerOrder.indexOf(finalRoof) > layerOrder.indexOf(residential));
+    assert.ok(residentialTerrace, 'Terra & Mar must expose a rooftop terrace below the penthouse');
+    assert.ok(layerOrder.indexOf(residentialTerrace) > layerOrder.indexOf(residential));
+    assert.ok(layerOrder.indexOf(residentialTerrace) < layerOrder.indexOf(penthouse));
+    assert.equal(layerOrder[layerOrder.indexOf(residentialTerrace) + 1], penthouse);
+    assert.equal(Object.hasOwn(residentialTerrace, 'silhouette'), false);
+    assert.equal(residentialTerrace.ring?.enabled, true);
+    assert.ok(residentialTerrace.ring.height >= 0.4 && residentialTerrace.ring.height <= 0.65);
+    assert.equal(residentialTerrace.cornice?.enabled, false);
+    assert.notEqual(residentialTerrace.props?.enabled, true);
+
+    assert.ok(layerOrder.indexOf(finalRoof) > layerOrder.indexOf(penthouse));
     assert.equal(Object.hasOwn(finalRoof, 'silhouette'), false);
     assert.equal(finalRoof.ring?.enabled, true);
     assert.ok(finalRoof.ring.height >= 0.4 && finalRoof.ring.height <= 0.65);
     assert.notEqual(finalRoof.cornice?.enabled, true);
     assert.notEqual(finalRoof.props?.enabled, true);
 
-    if (terraceRoof) {
-        assert.ok(layerOrder.indexOf(terraceRoof) > layerOrder.indexOf(podium));
-        assert.ok(layerOrder.indexOf(terraceRoof) < layerOrder.indexOf(residential));
-        assert.equal(Object.hasOwn(terraceRoof, 'silhouette'), false);
-        assert.equal(terraceRoof.ring?.enabled, false);
-        assert.equal(terraceRoof.cornice?.enabled, false);
+    assert.ok(layerOrder.indexOf(podiumTerrace) > layerOrder.indexOf(podium));
+    assert.ok(layerOrder.indexOf(podiumTerrace) < layerOrder.indexOf(residential));
+    assert.equal(Object.hasOwn(podiumTerrace, 'silhouette'), false);
+    assert.equal(podiumTerrace.ring?.enabled, false);
+    assert.equal(podiumTerrace.cornice?.enabled, false);
+
+    for (const faceId of ['A', 'B', 'C', 'D']) {
+        const bays = faceBays(penthouse, faceId);
+        assert.ok(bays.some((bay) => bay.window?.enabled), `penthouse ${faceId} must be glazed`);
+        assert.ok(bays.every((bay) => bay.balcony?.enabled !== true));
     }
 });
