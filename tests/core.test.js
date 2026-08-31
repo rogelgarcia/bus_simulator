@@ -19443,15 +19443,19 @@ async function runTests() {
         };
     };
 
-    const buildBalconyParts = ({ facades, floors = 2, floorHeight = 3.0 }) => {
+    const buildBalconyParts = ({ facades, floors = 2, floorHeight = 3.0, balconyContinuity = null, footprintLoops = null }) => {
         const { map, generatorConfig, tileSize } = makeBalconyTestMap();
         const layers = [
-            createDefaultFloorLayer({ id: 'floor_balcony', floors, floorHeight, belt: { enabled: false }, windows: { enabled: false } }),
+            createDefaultFloorLayer({
+                id: 'floor_balcony', floors, floorHeight, belt: { enabled: false }, windows: { enabled: false },
+                ...(balconyContinuity ? { balconyContinuity } : {})
+            }),
             createDefaultRoofLayer({ ring: { enabled: false } })
         ];
         return buildBuildingFabricationVisualParts({
             map,
             tiles: [[0, 0]],
+            ...(footprintLoops ? { footprintLoops } : {}),
             generatorConfig,
             tileSize,
             occupyRatio: 1.0,
@@ -21829,6 +21833,284 @@ async function runTests() {
         const glassMat = glass[0].material;
         assertTrue(!!glassMat?.transparent && glassMat?.userData?.windowGlass === true, 'Expected balcony glass on the window-glass material family.');
         assertTrue(glass[0].castShadow === false, 'Expected glass panels not to cast shadows.');
+    });
+
+    // ========== AI 537: optional balcony continuity ==========
+    const ai537BalconyFacade = (bayId, balcony = null) => ({
+        layout: {
+            bays: {
+                items: [{
+                    id: bayId,
+                    size: { mode: 'range', minMeters: 1.0, maxMeters: null },
+                    expandPreference: 'prefer_expand',
+                    balcony: balcony ?? { enabled: true, presetId: balconyPresetId.MODERN_GLASS_PROJECTING }
+                }]
+            }
+        }
+    });
+    const AI537_RECT_LOOP = [[
+        { x: -5, z: 5, runId: 'A', runForward: true },
+        { x: 5, z: 5, runId: 'B', runForward: true },
+        { x: 5, z: -5, runId: 'C', runForward: true },
+        { x: -5, z: -5, runId: 'D', runForward: true }
+    ]];
+    const ai537Continuity = (id, a, b) => ({ links: [{ id, endpoints: [a, b] }] });
+    const ai537JoinedMeshes = (parts, role) => balconyMeshesByRole(parts, role)
+        .filter((mesh) => mesh.userData?.balconyContinuity === true);
+
+    test('BuildingFabricationGenerator: continuity plan-loop guard rejects self-intersection (AI 537)', () => {
+        const isSimple = buildingFabricationGeneratorTestOnly?.isSimplePlanLoopXZ;
+        assertTrue(typeof isSimple === 'function', 'Expected the AI537 simple-polygon guard test export.');
+        assertTrue(isSimple([
+            { x: 0, z: 0 }, { x: 4, z: 0 }, { x: 4, z: 3 }, { x: 0, z: 3 }
+        ]), 'A nonzero-area rectangle is a simple plan loop.');
+        assertFalse(isSimple([
+            { x: 0, z: 0 }, { x: 4, z: 3 }, { x: 0, z: 3 }, { x: 4, z: 0 }
+        ]), 'A bow-tie outline is rejected before extrusion or floor claim.');
+    });
+
+    test('BuildingFabricationGenerator: a 90-degree continuity chain emits one watertight platform and guard per floor (AI 537)', () => {
+        const parts = buildBalconyParts({
+            footprintLoops: AI537_RECT_LOOP,
+            floors: 2,
+            facades: {
+                A: ai537BalconyFacade('front_balcony'),
+                B: ai537BalconyFacade('right_balcony')
+            },
+            balconyContinuity: ai537Continuity(
+                'front_to_right',
+                { faceId: 'A', bayId: 'front_balcony', edge: 'end' },
+                { faceId: 'B', bayId: 'right_balcony', edge: 'start' }
+            )
+        });
+        const platforms = balconyMeshesByRole(parts, 'balcony_platform');
+        const railings = balconyMeshesByRole(parts, 'balcony_railing');
+        const glass = balconyMeshesByRole(parts, 'balcony_infill_glass');
+        assertEqual(platforms.length, 2, 'Two linked bays across two floors emit two platforms, never four overlapping slabs.');
+        assertEqual(ai537JoinedMeshes(parts, 'balcony_platform').length, 2, 'Every emitted platform is owned by the joined component.');
+        assertEqual(new Set(platforms.map((mesh) => mesh.userData.balconyFloor)).size, 2, 'A component claims each selected floor exactly once.');
+        assertEqual(railings.length, 2, 'The guard is one continuous mesh per floor.');
+        assertEqual(glass.length, 2, 'The glass infill is one continuous mesh per floor.');
+        for (const railing of railings) {
+            assertEqual(railing.userData?.balconyContinuityCornerPostCount, 1, 'A non-collinear logical join owns exactly one deterministic corner post.');
+        }
+        for (const platform of platforms) {
+            const x = meshWorldBand(platform, 'x');
+            const z = meshWorldBand(platform, 'z');
+            assertTrue(x.max > 6.3 && z.max > 6.3, 'The single platform includes the outer 90-degree mitre instead of stopping at either face.');
+            const position = platform.geometry.getAttribute('position');
+            for (let index = 0; index < position.count; index += 1) {
+                assertTrue(Number.isFinite(position.getX(index)) && Number.isFinite(position.getY(index)) && Number.isFinite(position.getZ(index)), 'Joined platform vertices stay finite.');
+            }
+        }
+        assertFalse((parts.warnings ?? []).some((warning) => String(warning).includes('front_to_right')), 'A supported 90-degree join emits without fallback warnings.');
+    });
+
+    test('BuildingFabricationGenerator: same-face linked bays coalesce without a slab or guard seam (AI 537)', () => {
+        const parts = buildBalconyParts({
+            footprintLoops: AI537_RECT_LOOP,
+            floors: 1,
+            facades: {
+                A: {
+                    layout: {
+                        bays: {
+                            items: [
+                                {
+                                    id: 'front_left',
+                                    size: { mode: 'fixed', widthMeters: 5 },
+                                    expandPreference: 'no_repeat',
+                                    balcony: { enabled: true, presetId: balconyPresetId.MODERN_GLASS_PROJECTING }
+                                },
+                                {
+                                    id: 'front_right',
+                                    size: { mode: 'fixed', widthMeters: 5 },
+                                    expandPreference: 'no_repeat',
+                                    balcony: { enabled: true, presetId: balconyPresetId.MODERN_GLASS_PROJECTING }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            balconyContinuity: ai537Continuity(
+                'front_same_run',
+                { faceId: 'A', bayId: 'front_left', edge: 'end' },
+                { faceId: 'A', bayId: 'front_right', edge: 'start' }
+            )
+        });
+        const platforms = balconyMeshesByRole(parts, 'balcony_platform');
+        const railings = balconyMeshesByRole(parts, 'balcony_railing');
+        assertEqual(platforms.length, 1, 'Same-run members share one platform extrusion.');
+        assertEqual(railings.length, 1, 'Same-run members share one guard mesh with the internal side/post suppressed.');
+        const span = meshWorldBand(platforms[0], 'x');
+        assertNear(span.max - span.min, 10, 0.05, 'The coalesced platform spans both 5m bays exactly once.');
+        assertTrue(platforms[0].userData?.balconyContinuity === true, 'The platform is marked as joined geometry.');
+        assertEqual(railings[0].userData?.balconyContinuityCornerPostCount, 0, 'A collinear same-run seam never adds an internal post.');
+    });
+
+    test('BuildingFabricationGenerator: a corner-facet join bridges both offset fold points (AI 537)', () => {
+        const loop = makeBeveledRectLoop(1.0);
+        const frames = buildingFabricationGeneratorTestOnly.computeQuadFacadeFramesFromLoop(loop, { warnings: [] });
+        const aEdge = frames.A.runForward === false ? 'start' : 'end';
+        const bEdge = frames.B.runForward === false ? 'end' : 'start';
+        const parts = buildBalconyParts({
+            footprintLoops: [loop],
+            floors: 1,
+            facades: {
+                A: ai537BalconyFacade('facet_front'),
+                B: ai537BalconyFacade('facet_right')
+            },
+            balconyContinuity: ai537Continuity(
+                'facet_ab',
+                { faceId: 'A', bayId: 'facet_front', edge: aEdge },
+                { faceId: 'B', bayId: 'facet_right', edge: bEdge }
+            )
+        });
+        assertTrue(!!frames.cornerFacets?.AB, 'Fixture must expose the existing AB corner-facet path.');
+        const platforms = balconyMeshesByRole(parts, 'balcony_platform');
+        assertEqual(platforms.length, 1, 'Facet-linked bays emit one platform, not two coplanar slabs.');
+        assertTrue(platforms[0].userData?.balconyContinuity === true, 'Facet bridge is emitted by the joined path.');
+        const expected = buildingFabricationGeneratorTestOnly.cornerJoinPairWithDepths(
+            frames.A, 1.5, frames.B, 1.5, frames.cornerFacets.AB
+        );
+        const position = platforms[0].geometry.getAttribute('position');
+        let hasFrontFold = false;
+        let hasRightFold = false;
+        for (let index = 0; index < position.count; index += 1) {
+            const x = position.getX(index);
+            const z = position.getZ(index);
+            if (Math.hypot(x - expected.aEnd.x, z - expected.aEnd.z) < 0.08) hasFrontFold = true;
+            if (Math.hypot(x - expected.bStart.x, z - expected.bStart.z) < 0.08) hasRightFold = true;
+        }
+        assertTrue(hasFrontFold && hasRightFold, 'The platform outline follows both facet folds and bridges between them.');
+        const railings = balconyMeshesByRole(parts, 'balcony_railing');
+        assertEqual(railings[0]?.userData?.balconyContinuityCornerPostCount, 1, 'A faceted logical join still owns exactly one corner post.');
+    });
+
+    test('BuildingFabricationGenerator: narrower front face and reversed local-u still resolve physical corner endpoints (AI 537)', () => {
+        const loop = [
+            { x: -3, z: 5, runId: 'A', runForward: false },
+            { x: 3, z: 5, runId: 'B', runForward: true },
+            { x: 5, z: 3, runId: 'C', runForward: true },
+            { x: 5, z: -5, runId: 'D', runForward: true },
+            { x: -5, z: -5, runId: 'E', runForward: true },
+            { x: -5, z: 3, runId: 'F', runForward: true }
+        ];
+        const frames = buildingFabricationGeneratorTestOnly.computeFacadeFramesFromLoop(loop, {});
+        assertTrue(frames.A.length < frames.C.length, 'Fixture front run is intentionally narrower than the side run.');
+        assertTrue(frames.A.runForward === false, 'Fixture exercises physical local-u reversal explicitly.');
+        const parts = buildBalconyParts({
+            footprintLoops: [loop],
+            floors: 1,
+            facades: {
+                A: ai537BalconyFacade('narrow_front'),
+                B: ai537BalconyFacade('narrow_chamfer')
+            },
+            balconyContinuity: ai537Continuity(
+                'narrow_reversed_ab',
+                { faceId: 'A', bayId: 'narrow_front', edge: 'start' },
+                { faceId: 'B', bayId: 'narrow_chamfer', edge: 'start' }
+            )
+        });
+        const platforms = balconyMeshesByRole(parts, 'balcony_platform');
+        assertEqual(platforms.length, 1, 'Physical target-face endpoints join even when the first face local-u is reversed.');
+        assertTrue(platforms[0].userData?.balconyContinuity === true, 'The narrower-front synthetic variant uses joined geometry.');
+    });
+
+    test('BuildingFabricationGenerator: curves and incompatible configs warn and preserve legacy balcony output (AI 537)', () => {
+        const curvedLoop = [
+            { x: -18, z: -14, runId: 'D', runForward: true },
+            { x: 18, z: -14, runId: 'C', runForward: true },
+            { x: 18, z: 8, runId: 'B', runForward: true, arc: { bulge: Math.SQRT2 - 1, segments: 18 } },
+            { x: 12, z: 14, runId: 'A', runForward: true },
+            { x: -18, z: 14, runId: 'E', runForward: true }
+        ];
+        const curvedParts = buildBalconyParts({
+            footprintLoops: [curvedLoop],
+            floors: 1,
+            facades: { B: ai537BalconyFacade('curve_b'), A: ai537BalconyFacade('curve_a') },
+            balconyContinuity: ai537Continuity(
+                'curve_ba',
+                { faceId: 'B', bayId: 'curve_b', edge: 'end' },
+                { faceId: 'A', bayId: 'curve_a', edge: 'start' }
+            )
+        });
+        assertEqual(balconyMeshesByRole(curvedParts, 'balcony_platform').length, 2, 'Rejected curve link keeps both legacy per-bay slabs.');
+        assertEqual(ai537JoinedMeshes(curvedParts, 'balcony_platform').length, 0, 'Rejected curve link claims no joined floor.');
+        assertTrue((curvedParts.warnings ?? []).some((warning) => String(warning).includes('curved facade runs')), 'Curve rejection is actionable.');
+
+        const incompatibleFacades = {
+            A: ai537BalconyFacade('incompatible_a'),
+            B: ai537BalconyFacade('incompatible_b', {
+                enabled: true,
+                presetId: balconyPresetId.MODERN_GLASS_PROJECTING,
+                support: { mode: 'corbel_brackets' }
+            })
+        };
+        const legacyParts = buildBalconyParts({
+            footprintLoops: AI537_RECT_LOOP,
+            floors: 1,
+            facades: incompatibleFacades
+        });
+        const incompatibleParts = buildBalconyParts({
+            footprintLoops: AI537_RECT_LOOP,
+            floors: 1,
+            facades: incompatibleFacades,
+            balconyContinuity: ai537Continuity(
+                'incompatible_ab',
+                { faceId: 'A', bayId: 'incompatible_a', edge: 'end' },
+                { faceId: 'B', bayId: 'incompatible_b', edge: 'start' }
+            )
+        });
+        assertEqual(balconyMeshesByRole(incompatibleParts, 'balcony_platform').length, 2, 'Incompatible link keeps both legacy per-bay slabs.');
+        assertEqual(ai537JoinedMeshes(incompatibleParts, 'balcony_platform').length, 0, 'Incompatible link claims no joined floor.');
+        assertTrue((incompatibleParts.warnings ?? []).some((warning) => String(warning).includes('settings are incompatible')), 'Compatibility rejection explains the mismatch.');
+
+        const legacyGeometrySignature = (parts) => {
+            const roles = ['balcony_platform', 'balcony_railing', 'balcony_infill_glass', 'balcony_infill_solid', 'balcony_support'];
+            const records = [];
+            for (const role of roles) {
+                for (const mesh of balconyMeshesByRole(parts, role)) {
+                    const position = mesh.geometry.getAttribute('position');
+                    records.push({
+                        role,
+                        bayId: mesh.userData?.balconyBayId ?? '',
+                        floor: mesh.userData?.balconyFloor ?? 0,
+                        position: [mesh.position.x, mesh.position.y, mesh.position.z],
+                        rotationY: mesh.rotation.y,
+                        indexed: !!mesh.geometry.index,
+                        vertices: Array.from(position.array)
+                    });
+                }
+            }
+            records.sort((a, b) => `${a.role}|${a.bayId}|${a.floor}`.localeCompare(`${b.role}|${b.bayId}|${b.floor}`));
+            return JSON.stringify(records);
+        };
+        assertEqual(
+            legacyGeometrySignature(incompatibleParts),
+            legacyGeometrySignature(legacyParts),
+            'An invalid link falls through to byte-identical legacy balcony buffers and transforms.'
+        );
+
+        const nonAdjacentParts = buildBalconyParts({
+            footprintLoops: AI537_RECT_LOOP,
+            floors: 1,
+            facades: {
+                A: ai537BalconyFacade('nonadjacent_a'),
+                C: ai537BalconyFacade('nonadjacent_c')
+            },
+            balconyContinuity: ai537Continuity(
+                'nonadjacent_ac',
+                { faceId: 'A', bayId: 'nonadjacent_a', edge: 'end' },
+                { faceId: 'C', bayId: 'nonadjacent_c', edge: 'start' }
+            )
+        });
+        assertEqual(balconyMeshesByRole(nonAdjacentParts, 'balcony_platform').length, 2, 'A non-adjacent link preserves both legacy slabs.');
+        assertEqual(ai537JoinedMeshes(nonAdjacentParts, 'balcony_platform').length, 0, 'A non-adjacent link never claims geometry.');
+        assertTrue(
+            (nonAdjacentParts.warnings ?? []).some((warning) => String(warning).includes('non-adjacent facade faces')),
+            'Non-adjacent rejection is actionable.'
+        );
     });
 
     test('BuildingFabricationGenerator: recessed balcony furnishes the notch without side rails', () => {

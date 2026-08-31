@@ -1347,14 +1347,17 @@ export function createSilhouetteRemapReport({ beforeLoop, afterLoop, targets = [
     };
 }
 
-function orientationMappingsForTarget(report, target, targetRunId) {
+function orientationMappingsForTarget(report, target, targetRunId, runIdsBySource = null) {
     const affectedRunIds = new Set([
         ...(Array.isArray(target?.missingRunIds) ? target.missingRunIds : []),
         ...(Array.isArray(target?.incompatibleRunIds) ? target.incompatibleRunIds : [])
     ]);
     return (Array.isArray(target?.runIds) ? target.runIds : []).map((sourceRunId) => {
         const affected = affectedRunIds.has(sourceRunId);
-        const resolvedTargetRunId = affected ? targetRunId : sourceRunId;
+        const perSourceTarget = isObject(runIdsBySource) ? runIdsBySource[sourceRunId] : null;
+        const resolvedTargetRunId = affected
+            ? (isRunId(perSourceTarget) ? perSourceTarget : targetRunId)
+            : sourceRunId;
         const sourceRunForward = report?.beforeRunForwardById?.[sourceRunId] !== false;
         const targetRunForward = report?.afterRunForwardById?.[resolvedTargetRunId] !== false;
         return {
@@ -1396,8 +1399,21 @@ export function applySilhouetteRemapDecisions(report, decisions = {}) {
         const action = decision?.action;
         if (action === SILHOUETTE_REMAP_DECISION.REMAP) {
             const runId = decision?.runId;
-            if (isRunId(runId) && availableRunIds.has(runId)) {
-                const orientationMappings = orientationMappingsForTarget(report, target, runId);
+            const runIdsBySource = isObject(decision?.runIdsBySource) ? decision.runIdsBySource : null;
+            const affectedRunIds = [...new Set([
+                ...(Array.isArray(target?.missingRunIds) ? target.missingRunIds : []),
+                ...(Array.isArray(target?.incompatibleRunIds) ? target.incompatibleRunIds : [])
+            ])];
+            // `runId` remains the backward-compatible target for ordinary
+            // one-run decisions. Compound consumers may instead choose one
+            // target per affected source run without splitting their atomic
+            // remap target.
+            const hasValidTargets = affectedRunIds.length > 0 && affectedRunIds.every((sourceRunId) => {
+                const targetRunId = runIdsBySource?.[sourceRunId] ?? runId;
+                return isRunId(targetRunId) && availableRunIds.has(targetRunId);
+            });
+            if (hasValidTargets) {
+                const orientationMappings = orientationMappingsForTarget(report, target, runId, runIdsBySource);
                 const resolvedRunIds = [...new Set(orientationMappings.map((mapping) => mapping.targetRunId))];
                 resolved.push({
                     ...deepClone(target),

@@ -821,3 +821,4 @@ This engine spec is the entrypoint/index; detailed specs SHOULD be split, for ex
 - (future) `BUILDING_2_GEOMETRY_GENERATION_SPEC.md`
 - (future) `BUILDING_2_WINDOWS_AND_OPENINGS_SPEC.md`
 - `BUILDING_2_FACADE_FILL_SOLVER_SPEC.md`
+- `BUILDING_2_BALCONY_CONTINUITY_SPEC.md`

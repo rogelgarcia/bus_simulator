@@ -84,6 +84,10 @@ import {
     resolveBalconySideCoverage
 } from '../../../../app/buildings/BayBalconyModel.js';
 import {
+    balconyContinuityEndpointKey,
+    resolveBalconyContinuityLinks
+} from '../../../../app/buildings/BalconyContinuityModel.js';
+import {
     FACADE_ATTACHMENT_TYPE,
     normalizeFacadeAttachmentsConfig,
     shouldPlaceAcUnit
@@ -6603,6 +6607,364 @@ function appendPointIfChanged(points, p, tol = 1e-6) {
     list.push(p);
 }
 
+function simplifyOpenPolylineConsecutiveCollinearXZ(points, tol = 1e-5) {
+    const source = Array.isArray(points) ? points : [];
+    const clean = [];
+    for (const point of source) appendPointIfChanged(clean, point, tol);
+    if (clean.length < 3) return clean;
+
+    const out = [clean[0]];
+    for (let index = 1; index < clean.length - 1; index += 1) {
+        const previous = out[out.length - 1];
+        const current = clean[index];
+        const next = clean[index + 1];
+        const ax = current.x - previous.x;
+        const az = current.z - previous.z;
+        const bx = next.x - current.x;
+        const bz = next.z - current.z;
+        const aLength = Math.hypot(ax, az);
+        const bLength = Math.hypot(bx, bz);
+        if (aLength > tol && bLength > tol) {
+            const cross = Math.abs(ax * bz - az * bx) / (aLength * bLength);
+            const dot = (ax * bx + az * bz) / (aLength * bLength);
+            if (cross <= tol && dot > 0.9999) continue;
+        }
+        out.push(current);
+    }
+    out.push(clean[clean.length - 1]);
+    return out;
+}
+
+function buildOpenPolylineStripLoopXZ(points, widthMeters, { miterLimit = 4 } = {}) {
+    const path = simplifyOpenPolylineConsecutiveCollinearXZ(points);
+    const half = Math.max(0.001, Number(widthMeters) || 0.001) * 0.5;
+    if (path.length < 2) return null;
+
+    const segments = [];
+    for (let index = 0; index < path.length - 1; index += 1) {
+        const a = path[index];
+        const b = path[index + 1];
+        const direction = normalize2({ x: b.x - a.x, z: b.z - a.z });
+        if (!(direction.len > EPS)) continue;
+        segments.push({
+            a,
+            b,
+            t: { x: direction.x, z: direction.z },
+            n: { x: -direction.z, z: direction.x }
+        });
+    }
+    if (segments.length < 1) return null;
+
+    const offsetSide = (sign) => {
+        const side = [];
+        const first = segments[0];
+        side.push({
+            x: first.a.x + first.n.x * half * sign,
+            z: first.a.z + first.n.z * half * sign
+        });
+        for (let index = 1; index < path.length - 1; index += 1) {
+            const previous = segments[index - 1];
+            const next = segments[index];
+            const vertex = path[index];
+            const previousOffset = {
+                x: vertex.x + previous.n.x * half * sign,
+                z: vertex.z + previous.n.z * half * sign
+            };
+            const nextOffset = {
+                x: vertex.x + next.n.x * half * sign,
+                z: vertex.z + next.n.z * half * sign
+            };
+            const join = intersectLines2(previousOffset, previous.t, nextOffset, next.t);
+            if (join && Math.hypot(join.x - vertex.x, join.z - vertex.z) <= half * Math.max(1, miterLimit)) {
+                side.push({ x: join.x, z: join.z });
+            } else {
+                appendPointIfChanged(side, previousOffset);
+                appendPointIfChanged(side, nextOffset);
+            }
+        }
+        const last = segments[segments.length - 1];
+        side.push({
+            x: last.b.x + last.n.x * half * sign,
+            z: last.b.z + last.n.z * half * sign
+        });
+        return side;
+    };
+
+    const left = offsetSide(1);
+    const right = offsetSide(-1).reverse();
+    const loop = [];
+    for (const point of [...left, ...right]) appendPointIfChanged(loop, point);
+    if (loop.length > 2 && pointsEqualXZ(loop[0], loop[loop.length - 1])) loop.pop();
+    return loop.length >= 3 ? loop : null;
+}
+
+function isSimplePlanLoopXZ(loop, tolerance = 1e-6) {
+    const points = Array.isArray(loop) ? loop : [];
+    if (points.length < 3 || Math.abs(signedArea(points)) <= tolerance) return false;
+    const orient = (a, b, c) => (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
+    const onSegment = (a, b, point) => (
+        point.x >= Math.min(a.x, b.x) - tolerance
+        && point.x <= Math.max(a.x, b.x) + tolerance
+        && point.z >= Math.min(a.z, b.z) - tolerance
+        && point.z <= Math.max(a.z, b.z) + tolerance
+    );
+    const segmentsIntersect = (a, b, c, d) => {
+        const abC = orient(a, b, c);
+        const abD = orient(a, b, d);
+        const cdA = orient(c, d, a);
+        const cdB = orient(c, d, b);
+        if (((abC > tolerance && abD < -tolerance) || (abC < -tolerance && abD > tolerance))
+            && ((cdA > tolerance && cdB < -tolerance) || (cdA < -tolerance && cdB > tolerance))) return true;
+        if (Math.abs(abC) <= tolerance && onSegment(a, b, c)) return true;
+        if (Math.abs(abD) <= tolerance && onSegment(a, b, d)) return true;
+        if (Math.abs(cdA) <= tolerance && onSegment(c, d, a)) return true;
+        if (Math.abs(cdB) <= tolerance && onSegment(c, d, b)) return true;
+        return false;
+    };
+
+    for (let i = 0; i < points.length; i += 1) {
+        const iNext = (i + 1) % points.length;
+        if (pointsEqualXZ(points[i], points[iNext], tolerance)) return false;
+        for (let j = i + 1; j < points.length; j += 1) {
+            const jNext = (j + 1) % points.length;
+            if (i === j || iNext === j || jNext === i) continue;
+            if (i === 0 && jNext === 0) continue;
+            if (segmentsIntersect(points[i], points[iNext], points[j], points[jNext])) return false;
+        }
+    }
+    return true;
+}
+
+function makePlanExtrusionGeometryXZ(loop, height, { downward = false } = {}) {
+    const source = simplifyLoopConsecutiveCollinearXZ(loop);
+    if (!Array.isArray(source) || source.length < 3 || !(height > EPS)) return null;
+    const planLoop = signedArea(source) < 0 ? source.slice().reverse() : source.slice();
+    const shape = buildShapeFromLoops({ outerLoop: planLoop, holeLoops: [] });
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false, steps: 1 });
+    geometry.rotateX(-Math.PI / 2);
+    if (downward) geometry.translate(0, -height, 0);
+    geometry.computeVertexNormals();
+    return geometry;
+}
+
+function balconyContinuityCandidateKey(faceId, bayId) {
+    const face = typeof faceId === 'string' ? faceId : '';
+    const bay = typeof bayId === 'string' ? bayId : '';
+    return JSON.stringify([face, bay]);
+}
+
+function balconyContinuityEdgeU(candidate, edge) {
+    return edge === 'end' ? candidate.u1 : candidate.u0;
+}
+
+function balconyContinuityEdgePoint(candidate, edge, depth) {
+    return pointOnFacadeFrame({
+        frame: candidate.frame,
+        u: balconyContinuityEdgeU(candidate, edge),
+        depth
+    });
+}
+
+/**
+ * Pairwise topology gate for AI 537. Endpoints are already expressed in the
+ * solved physical face's local-u, so linked-face reversal is deliberately not
+ * repeated here. The link must either join touching bays on one straight run,
+ * or the physical loop end of one straight face to the next face's loop start.
+ */
+function resolveBalconyContinuityAdjacency({ aEndpoint, aCandidate, bEndpoint, bCandidate, frames, toleranceMeters = 0.04 }) {
+    const tol = Math.max(1e-4, Number(toleranceMeters) || 0.04);
+    if (!aCandidate || !bCandidate || aCandidate.key === bCandidate.key) {
+        return { valid: false, reason: 'must target two different balcony bays' };
+    }
+    if (aCandidate.frame?.curve || bCandidate.frame?.curve) {
+        return { valid: false, reason: 'curved facade runs are not supported yet' };
+    }
+
+    const aEdge = aEndpoint?.edge;
+    const bEdge = bEndpoint?.edge;
+    const aU = balconyContinuityEdgeU(aCandidate, aEdge);
+    const bU = balconyContinuityEdgeU(bCandidate, bEdge);
+    if (aCandidate.faceId === bCandidate.faceId) {
+        const ordered = (aEdge === 'end' && bEdge === 'start' && Math.abs(aCandidate.u1 - bCandidate.u0) <= tol)
+            || (bEdge === 'end' && aEdge === 'start' && Math.abs(bCandidate.u1 - aCandidate.u0) <= tol);
+        if (!ordered || Math.abs(aU - bU) > tol) {
+            return { valid: false, reason: 'same-face endpoints are not adjacent bay edges' };
+        }
+        if (Math.abs(aCandidate.stripDepth - bCandidate.stripDepth) > 1e-4) {
+            return { valid: false, reason: 'same-face balcony bays have incompatible facade depths' };
+        }
+        return {
+            valid: true,
+            kind: 'same_run',
+            firstKey: aEdge === 'end' ? aCandidate.key : bCandidate.key,
+            secondKey: aEdge === 'end' ? bCandidate.key : aCandidate.key,
+            facet: null,
+            nonCollinear: false
+        };
+    }
+
+    const order = facadeFaceIdsOf(frames);
+    const aIndex = order.indexOf(aCandidate.faceId);
+    const bIndex = order.indexOf(bCandidate.faceId);
+    if (aIndex < 0 || bIndex < 0) return { valid: false, reason: 'targets an unresolved facade face' };
+
+    let firstCandidate = null;
+    let firstEndpoint = null;
+    let secondCandidate = null;
+    let secondEndpoint = null;
+    if (order[(aIndex + 1) % order.length] === bCandidate.faceId) {
+        firstCandidate = aCandidate;
+        firstEndpoint = aEndpoint;
+        secondCandidate = bCandidate;
+        secondEndpoint = bEndpoint;
+    } else if (order[(bIndex + 1) % order.length] === aCandidate.faceId) {
+        firstCandidate = bCandidate;
+        firstEndpoint = bEndpoint;
+        secondCandidate = aCandidate;
+        secondEndpoint = aEndpoint;
+    } else {
+        return { valid: false, reason: 'targets non-adjacent facade faces' };
+    }
+
+    const firstBoundaryU = facadeFrameLoopEndU(firstCandidate.frame);
+    const secondBoundaryU = facadeFrameLoopStartU(secondCandidate.frame);
+    const firstU = balconyContinuityEdgeU(firstCandidate, firstEndpoint.edge);
+    const secondU = balconyContinuityEdgeU(secondCandidate, secondEndpoint.edge);
+    if (Math.abs(firstU - firstBoundaryU) > tol || Math.abs(secondU - secondBoundaryU) > tol) {
+        return { valid: false, reason: 'cross-face endpoints do not reach their shared physical corner' };
+    }
+
+    const collinear = framesContinueCollinearly(firstCandidate.frame, secondCandidate.frame);
+    const firstT = facadeFrameLoopEndT(firstCandidate.frame);
+    const secondN = facadeFrameLoopStartN(secondCandidate.frame);
+    if (!collinear && (!firstT || !secondN || dot2(firstT, secondN) <= 1e-5)) {
+        return { valid: false, reason: 'concave or re-entrant balcony corners are not supported yet' };
+    }
+
+    const cornerId = `${firstCandidate.faceId}${secondCandidate.faceId}`;
+    return {
+        valid: true,
+        kind: 'corner',
+        firstKey: firstCandidate.key,
+        secondKey: secondCandidate.key,
+        facet: frames?.cornerFacets?.[cornerId] ?? null,
+        nonCollinear: !collinear
+    };
+}
+
+function orderBalconyContinuityComponent(links) {
+    const source = Array.isArray(links) ? links : [];
+    const byCandidate = new Map();
+    for (const link of source) {
+        for (let endpointIndex = 0; endpointIndex < 2; endpointIndex += 1) {
+            const endpoint = link?.endpoints?.[endpointIndex] ?? null;
+            const key = endpoint?.candidate?.key ?? '';
+            if (!key) continue;
+            if (!byCandidate.has(key)) byCandidate.set(key, []);
+            byCandidate.get(key).push({ link, endpointIndex });
+        }
+    }
+    if (byCandidate.size < 2 || source.length !== byCandidate.size - 1) {
+        return { valid: false, reason: 'closed or branching continuity components are not supported yet' };
+    }
+    for (const entries of byCandidate.values()) {
+        if (entries.length < 1 || entries.length > 2) {
+            return { valid: false, reason: 'a balcony bay may continue through at most its two distinct edges' };
+        }
+    }
+
+    const starts = [...byCandidate.entries()]
+        .filter(([, entries]) => entries.length === 1)
+        .map(([key]) => key)
+        .sort();
+    if (starts.length !== 2) return { valid: false, reason: 'continuity component must be an open chain' };
+
+    const ordered = [];
+    const orderedLinks = [];
+    const seenCandidates = new Set();
+    let currentKey = starts[0];
+    let incomingLink = null;
+    let guard = 0;
+    while (currentKey && guard <= byCandidate.size) {
+        guard += 1;
+        if (seenCandidates.has(currentKey)) return { valid: false, reason: 'continuity component contains a cycle' };
+        seenCandidates.add(currentKey);
+        const entries = byCandidate.get(currentKey) ?? [];
+        const incomingEntry = incomingLink ? entries.find((entry) => entry.link === incomingLink) : null;
+        const outgoingEntry = entries.find((entry) => entry.link !== incomingLink) ?? null;
+        const orientationEdge = incomingEntry
+            ? incomingEntry.link.endpoints[incomingEntry.endpointIndex].edge
+            : outgoingEntry?.link.endpoints[outgoingEntry.endpointIndex]?.edge;
+        const forward = incomingEntry ? orientationEdge === 'start' : orientationEdge === 'end';
+        const candidate = (incomingEntry ?? outgoingEntry)?.link.endpoints[(incomingEntry ?? outgoingEntry).endpointIndex]?.candidate ?? null;
+        if (!candidate) return { valid: false, reason: 'continuity component lost a resolved balcony bay' };
+        const exitEdge = forward ? 'end' : 'start';
+        if (outgoingEntry && outgoingEntry.link.endpoints[outgoingEntry.endpointIndex]?.edge !== exitEdge) {
+            return { valid: false, reason: 'continuity links reuse the same side of a balcony bay' };
+        }
+        ordered.push({ candidate, forward });
+        if (!outgoingEntry) break;
+        orderedLinks.push(outgoingEntry.link);
+        const nextIndex = outgoingEntry.endpointIndex === 0 ? 1 : 0;
+        currentKey = outgoingEntry.link.endpoints[nextIndex]?.candidate?.key ?? '';
+        incomingLink = outgoingEntry.link;
+    }
+    if (ordered.length !== byCandidate.size || orderedLinks.length !== source.length) {
+        return { valid: false, reason: 'continuity component is disconnected' };
+    }
+    return { valid: true, ordered, links: orderedLinks };
+}
+
+function balconyContinuityJoinPair({ current, next, link, depthOf }) {
+    const currentEntry = link.endpoints.find((endpoint) => endpoint.candidate.key === current.candidate.key);
+    const nextEntry = link.endpoints.find((endpoint) => endpoint.candidate.key === next.candidate.key);
+    if (!currentEntry || !nextEntry) return null;
+    if (link.relation.kind === 'same_run') {
+        return {
+            current: balconyContinuityEdgePoint(current.candidate, currentEntry.edge, depthOf(current.candidate)),
+            next: balconyContinuityEdgePoint(next.candidate, nextEntry.edge, depthOf(next.candidate))
+        };
+    }
+
+    const first = link.relation.firstKey === current.candidate.key ? current.candidate : next.candidate;
+    const second = link.relation.secondKey === current.candidate.key ? current.candidate : next.candidate;
+    const pair = cornerJoinPairWithDepths(
+        first.frame,
+        depthOf(first),
+        second.frame,
+        depthOf(second),
+        link.relation.facet
+    );
+    return current.candidate.key === link.relation.firstKey
+        ? { current: pair.aEnd, next: pair.bStart }
+        : { current: pair.bStart, next: pair.aEnd };
+}
+
+function buildBalconyContinuityDepthPath({ ordered, links, depthOf }) {
+    if (!Array.isArray(ordered) || !ordered.length) return null;
+    const points = [];
+    const joins = [];
+    const first = ordered[0];
+    appendPointIfChanged(points, balconyContinuityEdgePoint(first.candidate, first.forward ? 'start' : 'end', depthOf(first.candidate)));
+    for (let index = 0; index < links.length; index += 1) {
+        const link = links[index];
+        const pair = balconyContinuityJoinPair({ current: ordered[index], next: ordered[index + 1], link, depthOf });
+        if (!pair) return null;
+        appendPointIfChanged(points, pair.current);
+        appendPointIfChanged(points, pair.next);
+        joins.push({
+            link,
+            nonCollinear: !!link.relation.nonCollinear,
+            point: {
+                x: qf((pair.current.x + pair.next.x) * 0.5),
+                z: qf((pair.current.z + pair.next.z) * 0.5)
+            }
+        });
+    }
+    const last = ordered[ordered.length - 1];
+    appendPointIfChanged(points, balconyContinuityEdgePoint(last.candidate, last.forward ? 'end' : 'start', depthOf(last.candidate)));
+    return { points: simplifyOpenPolylineConsecutiveCollinearXZ(points), joins };
+}
 function simplifyLoopConsecutiveCollinearXZ(loop, {
     tol = 1e-4,
     minEdge = 1e-3,
@@ -13062,6 +13424,11 @@ export function buildBuildingFabricationVisualParts({
                 }
                 for (const fid of Object.keys(balconyStripsByFaceId)) balconyStripsByFaceId[fid].sort((a, b) => a.u0 - b.u0);
 
+                const continuityStripsByFaceId = {};
+                for (const fid of facadeFaceIdsOf(facadeFrames)) continuityStripsByFaceId[fid] = [];
+                for (const strip of balconyStrips) {
+                    if (continuityStripsByFaceId[strip.faceId]) continuityStripsByFaceId[strip.faceId].push(strip);
+                }
                 const balconyMatCache = new Map();
                 const balconyWallMaterial = (spec) => {
                     const key = 'wall|' + stableStringify(spec ?? null);
@@ -13122,11 +13489,20 @@ export function buildBuildingFabricationVisualParts({
                     return mat;
                 };
 
-                const emitBalconyMergedMesh = ({ geos, material, role, strip, cfg, floorNumber, baseX, baseY, baseZ, yaw, glass = false }) => {
-                    const list = Array.isArray(geos) ? geos.filter((g) => !!g) : [];
-                    if (!list.length) return;
+                const emitBalconyMergedMesh = ({ geos, material, role, strip, cfg, floorNumber, baseX, baseY, baseZ, yaw, glass = false, continuity = null }) => {
+                    let list = Array.isArray(geos) ? geos.filter((g) => !!g) : [];
+                    if (!list.length) return null;
+                    // Joined guards mix extruded polyline strips (non-indexed)
+                    // with box posts (indexed). BufferGeometryUtils correctly
+                    // refuses that mismatch, so normalize only the opt-in path;
+                    // legacy balcony buffers remain untouched.
+                    if (continuity && list.length > 1 && list.some((geometry) => !!geometry.index) && list.some((geometry) => !geometry.index)) {
+                        const originals = list;
+                        list = originals.map((geometry) => geometry.index ? geometry.toNonIndexed() : geometry);
+                        for (let index = 0; index < originals.length; index += 1) if (originals[index] !== list[index]) originals[index].dispose();
+                    }
                     const merged = list.length === 1 ? list[0] : mergeGeometries(list, false);
-                    if (!merged) return;
+                    if (!merged) return null;
                     if (list.length > 1) for (const g of list) g.dispose();
                     const mesh = new THREE.Mesh(merged, material);
                     mesh.position.set(baseX, baseY, baseZ);
@@ -13139,6 +13515,12 @@ export function buildBuildingFabricationVisualParts({
                     mesh.userData.balconyBayId = typeof strip.id === 'string' ? strip.id : '';
                     mesh.userData.balconyPlacement = cfg.placement;
                     mesh.userData.balconyFloor = floorNumber;
+                    if (continuity) {
+                        mesh.userData.balconyContinuity = true;
+                        mesh.userData.balconyContinuityLinkIds = [...continuity.linkIds];
+                        mesh.userData.balconyContinuityBayIds = [...continuity.bayIds];
+                        mesh.userData.balconyContinuityFaceIds = [...continuity.faceIds];
+                    }
                     (glass ? windowsGroup : beltsGroup).add(mesh);
                     if (showWire && !glass) {
                         mesh.updateMatrix();
@@ -13146,7 +13528,410 @@ export function buildBuildingFabricationVisualParts({
                         appendWirePositionsTransformed(wirePositions, edgeGeo, mesh.matrix);
                         edgeGeo.dispose();
                     }
+                    return mesh;
                 };
+
+                // AI 537: continuity is opt-in at the floor-layer level. A
+                // valid chain is claimed as one world-space platform/guard;
+                // a malformed or unsupported chain claims nothing and drops
+                // through to the byte-for-byte legacy per-bay loop below.
+                const balconyContinuityClaimedFloors = new Set();
+                const continuityResolution = resolveBalconyContinuityLinks({
+                    continuity: layer?.balconyContinuity ?? null,
+                    stripsByFaceId: continuityStripsByFaceId
+                });
+                for (const diagnostic of continuityResolution.diagnostics) {
+                    warnings.push(`${diagnostic.message} Legacy separate balcony geometry was preserved.`);
+                }
+
+                if (continuityResolution.links.length) {
+                    const candidateByStrip = new Map();
+                    for (const strip of balconyStrips) {
+                        const frame = facadeFrames?.[strip.faceId] ?? null;
+                        const cfg = normalizeBalconyConfig(strip.balcony);
+                        const sourceBayId = typeof strip.sourceBayId === 'string' && strip.sourceBayId
+                            ? strip.sourceBayId
+                            : (typeof strip.id === 'string' ? strip.id : '');
+                        const rawU0 = Number(strip.frontU0);
+                        const rawU1 = Number(strip.frontU1);
+                        const rawStart = Number.isFinite(rawU0) ? rawU0 : (Number(strip.u0) || 0);
+                        const rawEnd = Number.isFinite(rawU1) ? rawU1 : (Number(strip.u1) || 0);
+                        const stripDepth = Number(strip.depth) || 0;
+                        let unsupportedReason = null;
+                        if (!frame || !cfg || !sourceBayId || !(rawEnd > rawStart + 0.3)) unsupportedReason = 'targets an unresolved balcony bay';
+                        else if (frame.curve) unsupportedReason = 'curved facade runs are not supported yet';
+                        else if (cfg.placement !== BALCONY_PLACEMENT.PROJECTING) unsupportedReason = 'recessed balcony continuity is not supported yet';
+                        else if (cfg.platform.widthMode !== BALCONY_PLATFORM_WIDTH_MODE.BAY) unsupportedReason = 'only bay-width balcony platforms can be linked';
+
+                        const margin = cfg?.platform?.sideMarginMeters ?? 0;
+                        const u0 = rawStart + margin;
+                        const u1 = rawEnd - margin;
+                        if (!unsupportedReason && !(u1 > u0 + 0.25)) unsupportedReason = 'platform side margins leave no joinable width';
+                        const platDepth = Number.isFinite(cfg?.platform?.depthMeters) ? cfg.platform.depthMeters : 1.4;
+                        const coverage = cfg ? resolveBalconySideCoverage({
+                            faceId: strip.faceId,
+                            u0: Number(strip.u0) || 0,
+                            u1: Number(strip.u1) || 0,
+                            platformFrontDepth: stripDepth + platDepth,
+                            stripsByFaceId: balconyStripsByFaceId,
+                            sides: cfg.sides
+                        }) : { left: false, front: false, right: false };
+                        if (!unsupportedReason && !coverage.front) unsupportedReason = 'linked guard continuity requires a front railing on every member';
+
+                        const segCount = floorSegmentStartYs.length;
+                        const floorsEnd = cfg?.floors?.end > 0 ? Math.min(cfg.floors.end, segCount) : segCount;
+                        const selectedFloors = [];
+                        if (cfg) {
+                            for (let floor = cfg.floors.start; floor <= floorsEnd; floor += cfg.floors.every) selectedFloors.push(floor);
+                        }
+                        const candidate = {
+                            key: balconyContinuityCandidateKey(strip.faceId, sourceBayId),
+                            strip,
+                            sourceBayId,
+                            faceId: strip.faceId,
+                            frame,
+                            cfg,
+                            u0,
+                            u1,
+                            stripDepth,
+                            platDepth,
+                            coverage,
+                            selectedFloors,
+                            unsupportedReason,
+                            compatibilityKey: cfg ? stableStringify({
+                                platform: {
+                                    depthMeters: platDepth,
+                                    thicknessMeters: cfg.platform.thicknessMeters,
+                                    widthMode: cfg.platform.widthMode,
+                                    sideMarginMeters: cfg.platform.sideMarginMeters,
+                                    elevationMeters: cfg.platform.elevationMeters,
+                                    material: cfg.platform.material
+                                },
+                                support: cfg.support,
+                                railing: cfg.railing,
+                                frontCoverage: coverage.front,
+                                selectedFloors
+                            }) : ''
+                        };
+                        candidateByStrip.set(strip, candidate);
+                    }
+
+                    const claimedEndpointKeys = new Set();
+                    const validLinks = [];
+                    const rejectLink = (link, reason) => {
+                        warnings.push(`Balcony continuity "${link?.id ?? ''}": ${reason}; legacy separate balcony geometry was preserved.`);
+                    };
+                    for (const resolvedLink of continuityResolution.links) {
+                        const endpoints = resolvedLink.endpoints.map((endpoint) => ({
+                            ...endpoint,
+                            endpointKey: balconyContinuityEndpointKey(endpoint),
+                            candidate: candidateByStrip.get(endpoint.strip) ?? null
+                        }));
+                        const [aEndpoint, bEndpoint] = endpoints;
+                        const aCandidate = aEndpoint?.candidate ?? null;
+                        const bCandidate = bEndpoint?.candidate ?? null;
+                        const duplicateEndpoint = endpoints.some((endpoint) => !endpoint.endpointKey || claimedEndpointKeys.has(endpoint.endpointKey));
+                        if (duplicateEndpoint) {
+                            rejectLink(resolvedLink, 'an endpoint is ambiguous or already owned by another valid link');
+                            continue;
+                        }
+                        if (!aCandidate || !bCandidate || aCandidate.unsupportedReason || bCandidate.unsupportedReason) {
+                            rejectLink(resolvedLink, aCandidate?.unsupportedReason ?? bCandidate?.unsupportedReason ?? 'could not resolve both balcony bays');
+                            continue;
+                        }
+                        if (aCandidate.compatibilityKey !== bCandidate.compatibilityKey) {
+                            rejectLink(resolvedLink, 'balcony floor, platform, support, material, or railing settings are incompatible');
+                            continue;
+                        }
+                        const relation = resolveBalconyContinuityAdjacency({
+                            aEndpoint,
+                            aCandidate,
+                            bEndpoint,
+                            bCandidate,
+                            frames: facadeFrames
+                        });
+                        if (!relation.valid) {
+                            rejectLink(resolvedLink, relation.reason);
+                            continue;
+                        }
+                        const link = { id: resolvedLink.id, endpoints, relation };
+                        validLinks.push(link);
+                        for (const endpoint of endpoints) claimedEndpointKeys.add(endpoint.endpointKey);
+                    }
+
+                    const linksByCandidateKey = new Map();
+                    for (const link of validLinks) {
+                        for (const endpoint of link.endpoints) {
+                            const key = endpoint.candidate.key;
+                            if (!linksByCandidateKey.has(key)) linksByCandidateKey.set(key, []);
+                            linksByCandidateKey.get(key).push(link);
+                        }
+                    }
+                    const visitedCandidateKeys = new Set();
+                    for (const rootKey of [...linksByCandidateKey.keys()].sort()) {
+                        if (visitedCandidateKeys.has(rootKey)) continue;
+                        const pending = [rootKey];
+                        const componentKeys = new Set();
+                        const componentLinks = new Set();
+                        while (pending.length) {
+                            const key = pending.pop();
+                            if (!key || componentKeys.has(key)) continue;
+                            componentKeys.add(key);
+                            visitedCandidateKeys.add(key);
+                            for (const link of linksByCandidateKey.get(key) ?? []) {
+                                componentLinks.add(link);
+                                for (const endpoint of link.endpoints) {
+                                    if (!componentKeys.has(endpoint.candidate.key)) pending.push(endpoint.candidate.key);
+                                }
+                            }
+                        }
+                        const orderedComponent = orderBalconyContinuityComponent([...componentLinks]);
+                        if (!orderedComponent.valid) {
+                            const ids = [...componentLinks].map((link) => link.id).join(', ');
+                            warnings.push(`Balcony continuity component ${ids}: ${orderedComponent.reason}; legacy separate balcony geometry was preserved.`);
+                            continue;
+                        }
+
+                        const { ordered, links } = orderedComponent;
+                        const firstCandidate = ordered[0].candidate;
+                        const cfg = firstCandidate.cfg;
+                        const thickness = cfg.platform.thicknessMeters;
+                        const backPath = buildBalconyContinuityDepthPath({
+                            ordered,
+                            links,
+                            depthOf: (candidate) => candidate.stripDepth - 0.04
+                        });
+                        const frontPath = buildBalconyContinuityDepthPath({
+                            ordered,
+                            links,
+                            depthOf: (candidate) => candidate.stripDepth + candidate.platDepth
+                        });
+                        const railPath = buildBalconyContinuityDepthPath({
+                            ordered,
+                            links,
+                            depthOf: (candidate) => candidate.stripDepth + Math.max(0.06, candidate.platDepth - candidate.cfg.railing.insetMeters)
+                        });
+                        if (!backPath || !frontPath || !railPath) {
+                            warnings.push('Balcony continuity could not construct a stable joined outline; legacy separate balcony geometry was preserved.');
+                            continue;
+                        }
+                        const platformLoop = [];
+                        for (const point of [...backPath.points, ...frontPath.points.slice().reverse()]) appendPointIfChanged(platformLoop, point);
+                        const platformProbe = isSimplePlanLoopXZ(platformLoop) ? makePlanExtrusionGeometryXZ(platformLoop, thickness, { downward: true }) : null;
+                        if (!platformProbe) {
+                            warnings.push('Balcony continuity produced a degenerate or self-intersecting joined platform; legacy separate balcony geometry was preserved.');
+                            continue;
+                        }
+                        platformProbe.dispose();
+
+                        const firstEdge = ordered[0].forward ? 'start' : 'end';
+                        const lastEntry = ordered[ordered.length - 1];
+                        const lastEdge = lastEntry.forward ? 'end' : 'start';
+                        const hasFirstSide = firstEdge === 'start' ? firstCandidate.coverage.left : firstCandidate.coverage.right;
+                        const lastCandidate = lastEntry.candidate;
+                        const hasLastSide = lastEdge === 'start' ? lastCandidate.coverage.left : lastCandidate.coverage.right;
+                        const guardPath = railPath.points.slice();
+                        if (hasFirstSide) {
+                            guardPath.unshift(balconyContinuityEdgePoint(firstCandidate, firstEdge, firstCandidate.stripDepth + 0.02));
+                        }
+                        if (hasLastSide) {
+                            guardPath.push(balconyContinuityEdgePoint(lastCandidate, lastEdge, lastCandidate.stripDepth + 0.02));
+                        }
+
+                        const continuityMetadata = {
+                            linkIds: links.map((link) => link.id),
+                            bayIds: ordered.map((entry) => entry.candidate.sourceBayId),
+                            faceIds: [...new Set(ordered.map((entry) => entry.candidate.faceId))]
+                        };
+                        const joinedStrip = { id: continuityMetadata.bayIds.join('+') };
+                        const selectedFloors = new Set(firstCandidate.selectedFloors);
+                        for (let floorIdx = 0; floorIdx < floorSegmentStartYs.length; floorIdx += 1) {
+                            const floorNumber = floorIdx + 1;
+                            if (!selectedFloors.has(floorNumber)) continue;
+                            const segStart = floorSegmentStartYs[floorIdx];
+                            const segEnd = floorIdx + 1 < floorSegmentStartYs.length ? floorSegmentStartYs[floorIdx + 1] : layerEndY;
+                            if (!(segEnd - segStart > 0.5)) continue;
+                            const platformTopY = segStart + cfg.platform.elevationMeters;
+                            const platformGeometry = makePlanExtrusionGeometryXZ(platformLoop, thickness, { downward: true });
+                            const platformMesh = emitBalconyMergedMesh({
+                                geos: [platformGeometry],
+                                material: balconyWallMaterial(cfg.platform.material),
+                                role: 'balcony_platform',
+                                strip: joinedStrip,
+                                cfg,
+                                floorNumber,
+                                baseX: 0,
+                                baseY: platformTopY,
+                                baseZ: 0,
+                                yaw: 0,
+                                continuity: continuityMetadata
+                            });
+                            if (!platformMesh) continue;
+                            for (const entry of ordered) {
+                                balconyContinuityClaimedFloors.add(`${entry.candidate.key}|${floorNumber}`);
+                            }
+
+                            const metalGeos = [];
+                            const glassGeos = [];
+                            const solidGeos = [];
+                            const supportGeos = [];
+                            const railH = cfg.railing.heightMeters;
+                            const topRail = cfg.railing.topRail;
+                            const posts = cfg.railing.posts;
+                            const postKeys = new Set();
+                            let cornerPostCount = 0;
+                            const addPost = (point) => {
+                                if (!posts.enabled || !point) return;
+                                const key = `${point.x.toFixed(3)}|${point.z.toFixed(3)}`;
+                                if (postKeys.has(key)) return;
+                                postKeys.add(key);
+                                const geometry = new THREE.BoxGeometry(posts.widthMeters, railH, posts.widthMeters);
+                                geometry.translate(point.x, railH * 0.5, point.z);
+                                metalGeos.push(geometry);
+                            };
+                            addPost(railPath.points[0]);
+                            addPost(railPath.points[railPath.points.length - 1]);
+                            for (const join of railPath.joins) {
+                                if (!join.nonCollinear) continue;
+                                const before = postKeys.size;
+                                addPost(join.point);
+                                if (postKeys.size > before) cornerPostCount += 1;
+                            }
+                            if (posts.enabled) {
+                                for (let index = 0; index < guardPath.length - 1; index += 1) {
+                                    const a = guardPath[index];
+                                    const b = guardPath[index + 1];
+                                    const length = Math.hypot(b.x - a.x, b.z - a.z);
+                                    const count = Math.max(0, Math.ceil(length / posts.maxSpacingMeters) - 1);
+                                    for (let postIndex = 1; postIndex <= count; postIndex += 1) {
+                                        const t = postIndex / (count + 1);
+                                        addPost({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t });
+                                    }
+                                }
+                            }
+
+                            if (topRail.enabled) {
+                                const loop = buildOpenPolylineStripLoopXZ(guardPath, topRail.widthMeters);
+                                const geometry = makePlanExtrusionGeometryXZ(loop, topRail.heightMeters);
+                                if (geometry) {
+                                    geometry.translate(0, railH - topRail.heightMeters, 0);
+                                    metalGeos.push(geometry);
+                                }
+                            }
+                            const infillBottomY = 0.06;
+                            const infillTopY = railH - (topRail.enabled ? topRail.heightMeters + 0.01 : 0);
+                            const infillH = infillTopY - infillBottomY;
+                            if (cfg.railing.infill === BALCONY_RAILING_INFILL.GLASS_PANEL && infillH > 0.05) {
+                                const loop = buildOpenPolylineStripLoopXZ(guardPath, 0.012);
+                                const geometry = makePlanExtrusionGeometryXZ(loop, infillH);
+                                if (geometry) {
+                                    geometry.translate(0, infillBottomY, 0);
+                                    glassGeos.push(geometry);
+                                }
+                            } else if (cfg.railing.infill === BALCONY_RAILING_INFILL.SOLID_WALL) {
+                                const solidH = railH - (topRail.enabled ? topRail.heightMeters : 0);
+                                const loop = buildOpenPolylineStripLoopXZ(guardPath, cfg.railing.solid.thicknessMeters);
+                                const geometry = makePlanExtrusionGeometryXZ(loop, solidH);
+                                if (geometry) solidGeos.push(geometry);
+                            } else if (cfg.railing.infill === BALCONY_RAILING_INFILL.GRID && infillH > 0.05) {
+                                const grid = cfg.railing.grid;
+                                if (grid.pattern === BALCONY_GRID_PATTERN.HORIZONTAL_BARS) {
+                                    const count = Math.max(1, Math.floor(infillH / grid.spacingMeters));
+                                    for (let bar = 0; bar < count; bar += 1) {
+                                        const loop = buildOpenPolylineStripLoopXZ(guardPath, grid.barWidthMeters);
+                                        const geometry = makePlanExtrusionGeometryXZ(loop, grid.barWidthMeters);
+                                        if (geometry) {
+                                            geometry.translate(0, infillBottomY + (infillH * (bar + 0.5)) / count, 0);
+                                            metalGeos.push(geometry);
+                                        }
+                                    }
+                                } else {
+                                    const barKeys = new Set();
+                                    for (let index = 0; index < guardPath.length - 1; index += 1) {
+                                        const a = guardPath[index];
+                                        const b = guardPath[index + 1];
+                                        const length = Math.hypot(b.x - a.x, b.z - a.z);
+                                        const count = Math.max(1, Math.floor(length / grid.spacingMeters));
+                                        for (let bar = 1; bar <= count; bar += 1) {
+                                            const t = bar / (count + 1);
+                                            const point = { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
+                                            const key = `${point.x.toFixed(3)}|${point.z.toFixed(3)}`;
+                                            if (barKeys.has(key)) continue;
+                                            barKeys.add(key);
+                                            const geometry = new THREE.BoxGeometry(grid.barWidthMeters, infillH, grid.barWidthMeters);
+                                            geometry.translate(point.x, infillBottomY + infillH * 0.5, point.z);
+                                            metalGeos.push(geometry);
+                                        }
+                                    }
+                                    const bottomLoop = buildOpenPolylineStripLoopXZ(guardPath, 0.03);
+                                    const bottomRailGeometry = makePlanExtrusionGeometryXZ(bottomLoop, 0.03);
+                                    if (bottomRailGeometry) {
+                                        bottomRailGeometry.translate(0, infillBottomY - 0.03, 0);
+                                        metalGeos.push(bottomRailGeometry);
+                                    }
+                                }
+                            }
+
+                            for (const entry of ordered) {
+                                const candidate = entry.candidate;
+                                const width = candidate.u1 - candidate.u0;
+                                const centerU = (candidate.u0 + candidate.u1) * 0.5;
+                                const base = pointOnFacadeFrame({ frame: candidate.frame, u: centerU, depth: candidate.stripDepth });
+                                const yaw = Math.atan2(Number(candidate.frame?.n?.x) || 0, Number(candidate.frame?.n?.z) || 0);
+                                if (cfg.support.mode === BALCONY_SUPPORT_MODE.CORBEL_BRACKETS) {
+                                    const count = Math.max(2, 1 + Math.floor((width - 0.3) / 2.5));
+                                    for (let bracket = 0; bracket < count; bracket += 1) {
+                                        const t = count === 1 ? 0 : -width * 0.5 + 0.15 + ((width - 0.3) * bracket) / (count - 1);
+                                        const geometry = makeBalconyBracketGeometry({
+                                            widthMeters: 0.08,
+                                            depthMeters: candidate.platDepth * 0.82,
+                                            heightMeters: cfg.support.bracketHeightMeters
+                                        });
+                                        geometry.translate(t, -thickness, 0);
+                                        geometry.rotateY(yaw);
+                                        geometry.translate(base.x, 0, base.z);
+                                        supportGeos.push(geometry);
+                                    }
+                                } else if (cfg.support.mode === BALCONY_SUPPORT_MODE.POSTS_TO_BELOW) {
+                                    let postLength = 0;
+                                    if (floorIdx > 0 && selectedFloors.has(floorIdx)) {
+                                        postLength = segStart - floorSegmentStartYs[floorIdx - 1] - thickness;
+                                    } else if (floorIdx === 0 && Math.abs(segStart - layerStartY) < EPS) {
+                                        postLength = Math.max(0, cfg.platform.elevationMeters - thickness);
+                                    }
+                                    if (postLength > 0.15) {
+                                        const size = cfg.support.postSizeMeters;
+                                        const railDepth = candidate.stripDepth + Math.max(0.06, candidate.platDepth - cfg.railing.insetMeters) - size * 0.5;
+                                        for (const u of [candidate.u0 + cfg.railing.insetMeters + size * 0.5, candidate.u1 - cfg.railing.insetMeters - size * 0.5]) {
+                                            const point = pointOnFacadeFrame({ frame: candidate.frame, u, depth: railDepth });
+                                            const geometry = new THREE.BoxGeometry(size, postLength, size);
+                                            geometry.translate(point.x, -thickness - postLength * 0.5, point.z);
+                                            supportGeos.push(geometry);
+                                        }
+                                    }
+                                }
+                            }
+
+                            const sharedArgs = {
+                                strip: joinedStrip,
+                                cfg,
+                                floorNumber,
+                                baseX: 0,
+                                baseY: platformTopY,
+                                baseZ: 0,
+                                yaw: 0,
+                                continuity: continuityMetadata
+                            };
+                            const railingMesh = emitBalconyMergedMesh({ ...sharedArgs, geos: metalGeos, material: balconyMetalMaterial(cfg.railing), role: 'balcony_railing' });
+                            if (railingMesh) {
+                                railingMesh.userData.balconyContinuityCornerPostCount = cornerPostCount;
+                            }
+                            emitBalconyMergedMesh({ ...sharedArgs, geos: solidGeos, material: balconyWallMaterial(cfg.railing.solid.material), role: 'balcony_infill_solid' });
+                            emitBalconyMergedMesh({ ...sharedArgs, geos: supportGeos, material: balconyWallMaterial(cfg.support.material), role: 'balcony_support' });
+                            emitBalconyMergedMesh({ ...sharedArgs, geos: glassGeos, material: balconyGlassMaterial(cfg.railing.glass), role: 'balcony_infill_glass', glass: true });
+                        }
+                    }
+                }
 
                 for (const strip of balconyStrips) {
                     const frame = facadeFrames?.[strip.faceId] ?? null;
@@ -13231,6 +14016,11 @@ export function buildBuildingFabricationVisualParts({
                     for (let floorIdx = 0; floorIdx < segCount; floorIdx++) {
                         const floorNumber = floorIdx + 1;
                         if (!selectedFloors.has(floorNumber)) continue;
+                        const sourceBayId = typeof strip.sourceBayId === 'string' && strip.sourceBayId
+                            ? strip.sourceBayId
+                            : (typeof strip.id === 'string' ? strip.id : '');
+                        const continuityClaimKey = `${balconyContinuityCandidateKey(strip.faceId, sourceBayId)}|${floorNumber}`;
+                        if (balconyContinuityClaimedFloors.has(continuityClaimKey)) continue;
                         const segStart = floorSegmentStartYs[floorIdx];
                         const segEnd = floorIdx + 1 < segCount ? floorSegmentStartYs[floorIdx + 1] : layerEndY;
                         const segH = segEnd - segStart;
@@ -14811,6 +15601,10 @@ export const __testOnly = Object.freeze({
     computeFacadeFramesFromLoop,
     sampleFacadeFrameAtU,
     pointOnFacadeFrame,
+    isSimplePlanLoopXZ,
+    buildOpenPolylineStripLoopXZ,
+    resolveBalconyContinuityAdjacency,
+    orderBalconyContinuityComponent,
     cornerJoinPairWithDepths,
     buildCornerJoinLoopWithDepths,
     buildInteriorShellLoopDetailWithDepths,

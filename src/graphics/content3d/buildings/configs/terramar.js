@@ -633,7 +633,56 @@ export const TERRA_MAR_BUILDING_CONFIG = Object.freeze({
             belt: { enabled: true, height: 0.22, extrusion: BALCONY_DEPTH, material: { kind: 'slot', id: 'stone' } },
             cornice: { enabled: false },
             windows: { enabled: false },
-            faceLinking: { links: { B: 'H', C: 'G', D: 'A', E: 'H', F: 'G' } }
+            faceLinking: { links: { C: 'G', D: 'A', E: 'H', F: 'G' } },
+            balconyContinuity: {
+                links: [
+                    {
+                        id: 'b8_residential_front_to_right_chamfer',
+                        endpoints: [
+                            {
+                                faceId: 'A',
+                                bayId: 'b8_residential_front_balcony_right',
+                                edge: 'start'
+                            },
+                            {
+                                faceId: 'B',
+                                bayId: 'b8_residential_right_chamfer_balcony_adjacent_a',
+                                edge: 'end'
+                            }
+                        ]
+                    },
+                    {
+                        id: 'b8_residential_front_to_left_chamfer',
+                        endpoints: [
+                            {
+                                faceId: 'A',
+                                bayId: 'b8_residential_front_balcony_left',
+                                edge: 'end'
+                            },
+                            {
+                                faceId: 'H',
+                                bayId: 'b8_residential_left_chamfer_balcony_adjacent_a',
+                                edge: 'start'
+                            }
+                        ]
+                    },
+                    {
+                        id: 'b8_residential_rear_to_right_chamfer',
+                        endpoints: [
+                            {
+                                faceId: 'E',
+                                bayId: 'b8_residential_left_chamfer_balcony_outer',
+                                edge: 'end'
+                            },
+                            {
+                                faceId: 'D',
+                                bayId: 'b8_residential_front_balcony_right',
+                                edge: 'start'
+                            }
+                        ]
+                    }
+                ]
+            }
         },
         {
             id: 'roof_b8_residential_terrace',

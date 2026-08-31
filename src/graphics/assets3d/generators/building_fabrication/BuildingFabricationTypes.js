@@ -12,6 +12,7 @@ import {
 import { WINDOW_TYPE, getDefaultWindowParams, isWindowTypeId } from '../buildings/WindowTextureGenerator.js';
 import { isValidMaterialSlotName, parseMaterialSpecShorthand } from '../../../../app/buildings/BuildingMaterialSlots.js';
 import { normalizeRooftopPropsConfig } from '../../../../app/buildings/RooftopPropsModel.js';
+import { normalizeBalconyContinuityConfig } from '../../../../app/buildings/BalconyContinuityModel.js';
 import { normalizeLayerSilhouette } from '../../../../app/buildings/silhouette_authoring/BuildingLayerSilhouetteModel.js';
 
 function clamp(value, min, max) {
@@ -632,6 +633,7 @@ export function createDefaultFloorLayer({
     faceLinking = null,
     faceMaterials = null,
     banding = null,
+    balconyContinuity = undefined,
     silhouette = undefined
 } = {}) {
     const b = belt ?? {};
@@ -660,6 +662,7 @@ export function createDefaultFloorLayer({
     // Field absence is the legacy inheritance path. Do not materialize an
     // `inherit_default` record unless the source explicitly owns a silhouette.
     const silhouetteCfg = normalizeLayerSilhouette(silhouette);
+    const balconyContinuityCfg = normalizeBalconyContinuityConfig(balconyContinuity);
 
     const out = {
         id: typeof id === 'string' && id ? id : createLayerId('floor'),
@@ -695,6 +698,7 @@ export function createDefaultFloorLayer({
 
     if (faceLinkingCfg) out.faceLinking = faceLinkingCfg;
     if (faceMaterialsCfg) out.faceMaterials = faceMaterialsCfg;
+    if (balconyContinuityCfg) out.balconyContinuity = balconyContinuityCfg;
     if (silhouetteCfg) out.silhouette = silhouetteCfg;
     return out;
 }
@@ -853,12 +857,14 @@ export function cloneBuildingLayers(layers) {
             const faceLinking = layer?.faceLinking ?? null;
             const faceMaterials = layer?.faceMaterials ?? null;
             const banding = layer?.banding ?? null;
+            const balconyContinuity = layer?.balconyContinuity ?? null;
 
             out.push({
                 ...layer,
                 faceLinking: faceLinking ? deepClone(faceLinking) : faceLinking,
                 faceMaterials: faceMaterials ? deepClone(faceMaterials) : faceMaterials,
                 banding: banding ? deepClone(banding) : banding,
+                ...(balconyContinuity ? { balconyContinuity: deepClone(balconyContinuity) } : {}),
                 material: material ? { ...material } : material,
                 wallBase: wallBase ? deepClone(wallBase) : wallBase,
                 tiling: tiling ? deepClone(tiling) : tiling,

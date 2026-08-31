@@ -189,11 +189,21 @@ canonical H.
 - Glazing behind every balcony is a near-full-height 2.5-to-2.75 m slider
   assembly with warm reveal material.
 
-The layout is ready for semantic A-B and A-H continuity, but current BF2 has no
-optional cross-run balcony join. Independent rail/slab kits cannot guarantee a
-watertight miter, uninterrupted outer guard or single corner post. AI 537 is
-the required first-stage engine/editor work for true joins across adjacent
-planar/chamfered runs. The config must not invent unsupported link fields.
+The residential layer opts into the BF2 balcony-continuity contract with three
+stable links. `b8_residential_front_to_right_chamfer` joins the physical start
+edge of A's right balcony to the physical end edge of B's A-adjacent balcony;
+`b8_residential_front_to_left_chamfer` joins the physical end edge of A's left
+balcony to the physical start edge of H's A-adjacent balcony; and
+`b8_residential_rear_to_right_chamfer` joins the physical end edge of E's outer
+balcony to the physical start edge of D's E-adjacent balcony. D reuses A's
+facade, so that last physical endpoint deliberately retains the stable source
+bay id `b8_residential_front_balcony_right`. B remains a separately authored
+physical facade instead of reusing H, so both front target bay ids stay direct
+and inspectable. Each valid link generates one continuous platform/fascia
+footprint and one uninterrupted outer guard path per selected floor,
+suppressing the internal end guards and duplicate corner hardware. The center
+A balcony and every unlinked balcony remain independent. Curved custom face
+paths remain outside this stage and are deferred to AI 539.
 
 ## Penthouse and exposed upper terrace
 

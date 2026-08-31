@@ -891,9 +891,17 @@
     padding-top: 0;
 }
 
+.building-fab2-layer-dynamic.has-slave-continuity .building-fab2-layer-dynamic-overlay {
+    position: static;
+}
+
 .building-fab2-layer-dynamic-content.is-hidden {
     visibility: hidden;
     pointer-events: none;
+}
+
+.building-fab2-layer-dynamic-content.is-slave-collapsed {
+    display: none;
 }
 
 .building-fab2-subtitle {
@@ -2166,6 +2174,223 @@
 
 .building-fab2-link-bay-icon {
     --ui-icon-size: 16px;
+}
+
+.building-fab2-balcony-continuity-row {
+    align-items: flex-start;
+}
+
+.building-fab2-balcony-continuity-controls {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.building-fab2-slave-continuity-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.building-fab2-slave-continuity-title {
+    margin: 0;
+}
+
+.building-fab2-slave-continuity-hint {
+    line-height: 1.45;
+}
+
+.building-fab2-slave-continuity-bay {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 9px;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.11);
+}
+
+.building-fab2-slave-continuity-bay-title {
+    color: rgba(233, 242, 255, 0.9);
+    font-size: 10px;
+    font-weight: 750;
+    line-height: 1.35;
+}
+
+.building-fab2-balcony-endpoint-row {
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 7px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 9px;
+    background: rgba(0, 0, 0, 0.14);
+}
+
+.building-fab2-balcony-endpoint-row.is-linked {
+    border-color: rgba(100, 210, 255, 0.46);
+    background: rgba(100, 210, 255, 0.12);
+}
+
+.building-fab2-balcony-endpoint-row.is-error {
+    border-color: rgba(255, 151, 102, 0.42);
+}
+
+.building-fab2-balcony-endpoint-edge {
+    color: #dceafa;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.building-fab2-balcony-endpoint-meta {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+}
+
+.building-fab2-balcony-endpoint-status {
+    max-width: 100%;
+    color: rgba(233, 242, 255, 0.84);
+    font-size: 10px;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+.building-fab2-balcony-endpoint-row.is-error .building-fab2-balcony-endpoint-status {
+    color: #ffc2a6;
+}
+
+.building-fab2-balcony-endpoint-action {
+    flex: 0 0 auto;
+}
+
+.building-fab2-balcony-continuity-badge {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    min-height: 18px;
+    padding: 1px 6px;
+    border: 1px solid rgba(100, 210, 255, 0.32);
+    border-radius: 999px;
+    background: rgba(100, 210, 255, 0.1);
+    color: #a8e5ff;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.building-fab2-balcony-continuity-badge[data-relationship="invalid"] {
+    border-color: rgba(255, 151, 102, 0.42);
+    background: rgba(255, 151, 102, 0.1);
+    color: #ffc2a6;
+}
+
+.building-fab2-balcony-continuity-popup {
+    display: flex;
+    max-height: 340px;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+}
+
+.building-fab2-balcony-continuity-source,
+.building-fab2-balcony-continuity-linked-card,
+.building-fab2-balcony-continuity-target,
+.building-fab2-balcony-continuity-diagnostics {
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 11px;
+    background: rgba(0, 0, 0, 0.17);
+    padding: 10px;
+}
+
+.building-fab2-balcony-continuity-linked-card,
+.building-fab2-balcony-continuity-target {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+}
+
+.building-fab2-balcony-continuity-target {
+    width: 100%;
+    color: #e9f2ff;
+    text-align: left;
+    cursor: pointer;
+}
+
+.building-fab2-balcony-continuity-target:hover:not(:disabled) {
+    border-color: rgba(100, 210, 255, 0.42);
+    background: rgba(100, 210, 255, 0.13);
+}
+
+.building-fab2-balcony-continuity-target:disabled {
+    cursor: default;
+    opacity: 0.68;
+}
+
+.building-fab2-balcony-continuity-target-meta {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+}
+
+.building-fab2-balcony-continuity-eyebrow {
+    color: rgba(233, 242, 255, 0.56);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+.building-fab2-balcony-continuity-name {
+    color: #f1f7ff;
+    font-size: 11px;
+    font-weight: 750;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.building-fab2-balcony-continuity-target-icon {
+    --ui-icon-size: 18px;
+    color: #8cddff;
+}
+
+.building-fab2-balcony-continuity-diagnostics {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    border-color: rgba(255, 151, 102, 0.42);
+    background: rgba(98, 34, 11, 0.18);
+}
+
+.building-fab2-balcony-continuity-diagnostic {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 7px;
+    color: #ffc2a6;
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+.building-fab2-balcony-continuity-diagnostic .ui-material-symbol {
+    --ui-icon-size: 15px;
+}
+
+.building-fab2-balcony-continuity-remove {
+    white-space: nowrap;
 }
 
 .building-fab2-group-panel {

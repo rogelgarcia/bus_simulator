@@ -34,6 +34,11 @@ import {
     getBalconyPresetPreviewConfigs,
     normalizeBalconyConfig
 } from '../../../app/buildings/BayBalconyModel.js';
+import {
+    balconyContinuityEndpointKey,
+    normalizeBalconyContinuityConfig,
+    validateBalconyContinuityConfig
+} from '../../../app/buildings/BalconyContinuityModel.js';
 import { normalizeFacadeAttachmentsConfig } from '../../../app/buildings/FacadeAttachmentsModel.js';
 import {
     createFootprintPlan,
@@ -1121,6 +1126,8 @@ export class BuildingFabrication2View {
         this.ui.onSetBayDepthEdge = (layerId, faceId, bayId, edge, depth) => this._setBayDepthEdge(layerId, faceId, bayId, edge, depth);
         this.ui.onSetBayCapital = (layerId, faceId, bayId, end, patch) => this._setBayCapital(layerId, faceId, bayId, end, patch);
         this.ui.onSetBayBalcony = (layerId, faceId, bayId, patch) => this._setBayBalcony(layerId, faceId, bayId, patch);
+        this.ui.onSetBalconyContinuityLink = (layerId, source, target) => this._setBalconyContinuityLink(layerId, source, target);
+        this.ui.onRemoveBalconyContinuityLink = (layerId, linkId) => this._removeBalconyContinuityLink(layerId, linkId);
         this.ui.onRequestBalconyPresetThumbnails = () => this._renderBalconyPresetThumbnails();
         this.ui.onSetBayWindowPortal = (layerId, faceId, bayId, patch) => this._setBayWindowPortal(layerId, faceId, bayId, patch);
         this.ui.onSetWindowDefinitionStorefrontZone = (windowDefId, patch) => this._setWindowDefinitionStorefrontZone(windowDefId, patch);
@@ -1313,6 +1320,8 @@ export class BuildingFabrication2View {
         this.ui.onSetBayDepthEdge = null;
         this.ui.onSetBayCapital = null;
         this.ui.onSetBayBalcony = null;
+        this.ui.onSetBalconyContinuityLink = null;
+        this.ui.onRemoveBalconyContinuityLink = null;
         this.ui.onRequestBalconyPresetThumbnails = null;
         this.ui.onSetBayWindowPortal = null;
         this.ui.onSetWindowDefinitionStorefrontZone = null;
@@ -5780,6 +5789,88 @@ export class BuildingFabrication2View {
         }
         this._syncUiState();
         this._requestRebuild({ preserveCamera: true });
+    }
+
+    _setBalconyContinuityLink(layerId, sourceValue, targetValue) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        const layer = Array.isArray(this._currentConfig?.layers)
+            ? this._currentConfig.layers.find((entry) => entry?.type === 'floor' && entry?.id === id)
+            : null;
+        if (!layer) return false;
+
+        const normalizeEndpoint = (value) => {
+            const endpoint = {
+                faceId: typeof value?.faceId === 'string' ? value.faceId.trim().toUpperCase() : '',
+                bayId: typeof value?.bayId === 'string' ? value.bayId.trim() : '',
+                edge: typeof value?.edge === 'string' ? value.edge.trim().toLowerCase() : ''
+            };
+            return balconyContinuityEndpointKey(endpoint) ? endpoint : null;
+        };
+        const source = normalizeEndpoint(sourceValue);
+        const target = normalizeEndpoint(targetValue);
+        const sourceKey = balconyContinuityEndpointKey(source);
+        const targetKey = balconyContinuityEndpointKey(target);
+        if (!source || !target || !sourceKey || !targetKey || sourceKey === targetKey) return false;
+
+        const currentLinks = normalizeBalconyContinuityConfig(layer.balconyContinuity)?.links ?? [];
+        const occupied = new Set();
+        for (const link of currentLinks) {
+            for (const endpoint of link.endpoints) {
+                const key = balconyContinuityEndpointKey(endpoint);
+                if (key) occupied.add(key);
+            }
+        }
+        if (occupied.has(sourceKey) || occupied.has(targetKey)) {
+            console.warn('[BuildingFabrication2View] Cannot create balcony continuity: an endpoint is already linked.');
+            return false;
+        }
+
+        const usedIds = new Set(currentLinks.map((link) => link.id).filter(Boolean));
+        let nextIndex = 1;
+        let linkId = 'balcony_continuity_' + nextIndex;
+        while (usedIds.has(linkId) && nextIndex < 10000) {
+            nextIndex += 1;
+            linkId = 'balcony_continuity_' + nextIndex;
+        }
+
+        const next = {
+            links: [
+                ...currentLinks,
+                { id: linkId, endpoints: [source, target] }
+            ]
+        };
+        const validation = validateBalconyContinuityConfig(next);
+        if (!validation.valid) {
+            console.warn('[BuildingFabrication2View] Cannot create balcony continuity:', validation.diagnostics);
+            return false;
+        }
+
+        layer.balconyContinuity = next;
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+        return true;
+    }
+
+    _removeBalconyContinuityLink(layerId, linkId) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        const targetLinkId = typeof linkId === 'string' ? linkId.trim() : '';
+        const layer = Array.isArray(this._currentConfig?.layers)
+            ? this._currentConfig.layers.find((entry) => entry?.type === 'floor' && entry?.id === id)
+            : null;
+        if (!layer || !targetLinkId) return false;
+
+        const links = normalizeBalconyContinuityConfig(layer.balconyContinuity)?.links ?? [];
+        const nextLinks = links.filter((link) => link.id !== targetLinkId);
+        if (nextLinks.length === links.length) return false;
+
+        if (nextLinks.length) {
+            layer.balconyContinuity = { links: nextLinks };
+        } else {
+            delete layer.balconyContinuity;
+        }
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+        return true;
     }
 
     async _renderBalconyPresetThumbnails() {

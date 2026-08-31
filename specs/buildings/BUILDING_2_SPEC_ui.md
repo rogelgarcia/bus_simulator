@@ -512,3 +512,10 @@ The Material Configuration panel MAY also be opened for a **bay material overrid
 - the same two top-level sections are shown (`Base material`, `Texture tiling`)
 - bay settings inherit from the face material configuration until overridden
 - if the bay is linked to another bay (bay master/slave), the panel shows `Linked to Bay X` and suppresses editable controls; an `Unlink` action is provided
+
+---
+
+## 9. Balcony continuity
+
+An enabled balcony bay exposes separate physical Start and End continuity rows. The endpoint popup shows the immediate same-run or cross-run target, linked counterpart, face-master/reversed-order provenance, and actionable compatibility diagnostics. Create and Remove actions update the layer model and preview immediately. The complete UI and topology contract is defined in `specs/buildings/BUILDING_2_BALCONY_CONTINUITY_SPEC.md`.
+A selected face-linked slave keeps inherited facade controls collapsed but exposes a continuity-only panel for its physical endpoints, including master provenance and reversed bay order. This panel manages links on the physical face id without authoring duplicate facade data on the slave.

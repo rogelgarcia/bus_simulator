@@ -2,6 +2,11 @@
 // @ts-check
 
 import { SILHOUETTE_REMAP_DECISION } from './BuildingLayerSilhouetteModel.js';
+import {
+    balconyContinuityEndpointKey,
+    validateBalconyContinuityConfig
+} from '../BalconyContinuityModel.js';
+import { normalizeBalconyConfig } from '../BayBalconyModel.js';
 
 function isObject(value) {
     return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -231,6 +236,26 @@ export function collectBuildingSilhouetteRemapTargets(config, layerId) {
             locator: { type: 'face_link', sourceKey: slaveFaceId }
         });
     }
+    const continuityLinks = Array.isArray(layer?.balconyContinuity?.links)
+        ? layer.balconyContinuity.links
+        : [];
+    for (const link of continuityLinks) {
+        const linkId = typeof link?.id === 'string' ? link.id.trim() : '';
+        if (!linkId) continue;
+        const faceIds = uniqueRunIds((Array.isArray(link?.endpoints) ? link.endpoints : [])
+            .map((endpoint) => endpoint?.faceId));
+        if (!faceIds.length) continue;
+        add({
+            kind: 'balcony_continuity_link',
+            targetId: `balcony_continuity:${layerId}:${linkId}`,
+            layerId,
+            faceIds,
+            locator: {
+                type: 'balcony_continuity_link',
+                sourceId: linkId
+            }
+        });
+    }
 
     collectEntityTargets(config?.wallDecorations, ['wallDecorations'], 'decoration', layerId, add);
     collectEntityTargets(config?.attachments, ['attachments'], 'attachment', layerId, add);
@@ -292,6 +317,145 @@ function mappedRunId(entry, sourceRunId) {
 function mappingReverses(entry, sourceRunId) {
     const mapping = mappingsOf(entry).find((candidate) => candidate.sourceRunId === sourceRunId);
     return !!mapping?.affected && !!mapping?.reverseLocalU;
+}
+
+function remapBalconyContinuityLinkPayload(entry, value) {
+    const link = isObject(value) ? value : null;
+    if (!link || typeof link.id !== 'string' || !link.id || !Array.isArray(link.endpoints) || link.endpoints.length !== 2) {
+        return { valid: false, reason: 'balcony_continuity_link_invalid' };
+    }
+    const affectedRunIds = new Set([
+        ...(Array.isArray(entry?.missingRunIds) ? entry.missingRunIds : []),
+        ...(Array.isArray(entry?.incompatibleRunIds) ? entry.incompatibleRunIds : [])
+    ]);
+    const mappings = mappingsOf(entry);
+    const endpoints = [];
+    for (const endpoint of link.endpoints) {
+        const faceId = endpoint?.faceId;
+        const bayId = typeof endpoint?.bayId === 'string' ? endpoint.bayId : '';
+        const edge = endpoint?.edge;
+        if (!isRunId(faceId) || !bayId || (edge !== 'start' && edge !== 'end')) {
+            return { valid: false, reason: 'balcony_continuity_endpoint_invalid' };
+        }
+        const mapping = mappings.find((candidate) => candidate.sourceRunId === faceId);
+        if (affectedRunIds.has(faceId) && !mapping?.affected) {
+            return { valid: false, reason: 'balcony_continuity_endpoint_mapping_missing' };
+        }
+        const targetFaceId = mapping?.affected ? mapping.targetRunId : faceId;
+        if (!isRunId(targetFaceId)) {
+            return { valid: false, reason: 'balcony_continuity_endpoint_mapping_invalid' };
+        }
+        endpoints.push({
+            faceId: targetFaceId,
+            bayId,
+            edge: mapping?.affected && mapping.reverseLocalU
+                ? (edge === 'start' ? 'end' : 'start')
+                : edge
+        });
+    }
+    const endpointKeys = endpoints.map((endpoint) => balconyContinuityEndpointKey(endpoint));
+    if (endpointKeys.some((key) => !key) || new Set(endpointKeys).size !== endpointKeys.length) {
+        return { valid: false, reason: 'balcony_continuity_endpoint_collision_after_remap' };
+    }
+    return { valid: true, payload: { id: link.id, endpoints } };
+}
+
+function resolveBalconyContinuityFacade(config, layerId, faceId) {
+    const layer = floorLayer(config, layerId);
+    const links = isObject(layer?.faceLinking?.links) ? layer.faceLinking.links : null;
+    const seen = new Set();
+    let current = faceId;
+    for (let index = 0; index < 32; index += 1) {
+        if (!isRunId(current) || seen.has(current)) return null;
+        seen.add(current);
+        const next = links?.[current];
+        if (!isRunId(next) || next === current) break;
+        current = next;
+    }
+    const facades = facadeScope(config, layerId).container;
+    return isObject(facades?.[current]) ? facades[current] : null;
+}
+
+function resolveAuthoredBalconyBay(facade, bayId) {
+    const bays = Array.isArray(facade?.layout?.bays?.items) ? facade.layout.bays.items : [];
+    const matches = bays.filter((bay) => bay?.id === bayId);
+    if (matches.length !== 1) return { count: matches.length, bay: null };
+    const byId = new Map(bays
+        .filter((bay) => typeof bay?.id === 'string' && bay.id)
+        .map((bay) => [bay.id, bay]));
+    const original = matches[0];
+    const seen = new Set();
+    let current = original;
+    for (let index = 0; index < 32; index += 1) {
+        const currentId = typeof current?.id === 'string' ? current.id : '';
+        if (!currentId || seen.has(currentId)) return { count: 1, bay: original };
+        seen.add(currentId);
+        const nextId = typeof current?.linkFromBayId === 'string' && current.linkFromBayId
+            ? current.linkFromBayId
+            : (typeof current?.materialLinkFromBayId === 'string' ? current.materialLinkFromBayId : '');
+        if (!nextId || nextId === currentId) return { count: 1, bay: current };
+        const next = byId.get(nextId);
+        if (!next) return { count: 1, bay: current };
+        current = next;
+    }
+    return { count: 1, bay: original };
+}
+
+function balconyContinuityMaterializationDiagnostic(code, message, {
+    linkId,
+    linkIndex,
+    endpointIndex = null
+}) {
+    return {
+        severity: 'error',
+        code,
+        message,
+        linkId,
+        linkIndex,
+        ...(Number.isInteger(endpointIndex) ? { endpointIndex } : {})
+    };
+}
+
+function validateMaterializedBalconyContinuity(config, layerId) {
+    const layer = floorLayer(config, layerId);
+    const structural = validateBalconyContinuityConfig(layer?.balconyContinuity);
+    const diagnostics = [...structural.diagnostics];
+    if (!structural.config) return { valid: structural.valid, diagnostics };
+
+    structural.config.links.forEach((link, linkIndex) => {
+        if (diagnostics.some((entry) => entry.linkIndex === linkIndex)) return;
+        link.endpoints.forEach((endpoint, endpointIndex) => {
+            const facade = resolveBalconyContinuityFacade(config, layerId, endpoint.faceId);
+            if (!facade) {
+                diagnostics.push(balconyContinuityMaterializationDiagnostic(
+                    'balcony_continuity_destination_facade_missing',
+                    `Link "${link.id}" cannot resolve physical face ${endpoint.faceId} to an authored facade after remap.`,
+                    { linkId: link.id, linkIndex, endpointIndex }
+                ));
+                return;
+            }
+            const resolved = resolveAuthoredBalconyBay(facade, endpoint.bayId);
+            if (resolved.count !== 1) {
+                const code = resolved.count > 1
+                    ? 'balcony_continuity_destination_bay_ambiguous'
+                    : 'balcony_continuity_destination_bay_missing';
+                diagnostics.push(balconyContinuityMaterializationDiagnostic(
+                    code,
+                    `Link "${link.id}" ${resolved.count > 1 ? 'matches multiple authored bays for' : 'cannot find authored bay'} ${endpoint.faceId}:${endpoint.bayId} after remap.`,
+                    { linkId: link.id, linkIndex, endpointIndex }
+                ));
+                return;
+            }
+            if (!normalizeBalconyConfig(resolved.bay?.balcony)) {
+                diagnostics.push(balconyContinuityMaterializationDiagnostic(
+                    'balcony_continuity_destination_has_no_balcony',
+                    `Link "${link.id}" targets ${endpoint.faceId}:${endpoint.bayId}, whose effective authored bay has no enabled balcony after remap.`,
+                    { linkId: link.id, linkIndex, endpointIndex }
+                ));
+            }
+        });
+    });
+    return { valid: diagnostics.length === 0, diagnostics };
 }
 
 function mapReferenceString(value, key, replacements) {
@@ -440,6 +604,22 @@ function sourcePayload(config, layerId, target) {
             path: ['layers', layerId, 'faceLinking', 'links', locator.sourceKey]
         };
     }
+    if (locator.type === 'balcony_continuity_link') {
+        const links = Array.isArray(layer?.balconyContinuity?.links) ? layer.balconyContinuity.links : [];
+        const matches = links
+            .map((link, index) => ({ link, index }))
+            .filter((entry) => entry.link?.id === locator.sourceId);
+        const layerIndex = (Array.isArray(config?.layers) ? config.layers : [])
+            .findIndex((entry) => entry?.type === 'floor' && entry?.id === layerId);
+        const exists = matches.length === 1 && layerIndex >= 0;
+        return {
+            exists,
+            payload: exists ? deepClone(matches[0].link) : undefined,
+            path: exists
+                ? ['layers', layerIndex, 'balconyContinuity', 'links', matches[0].index]
+                : []
+        };
+    }
     if (locator.type === 'entity') {
         const payload = getAtPath(config, locator.path);
         return { exists: payload !== undefined, payload: deepClone(payload), path: [...locator.path] };
@@ -577,6 +757,7 @@ export function materializeBuildingSilhouetteTargetRemap(config, {
     const unresolved = [];
     const removals = [];
     const keyedJobs = [];
+    const balconyContinuityRemaps = [];
     let promotedGlobalFacades = resolved.some((entry) => {
         const target = resolvedTarget(entry);
         return entry?.decision !== SILHOUETTE_REMAP_DECISION.KEEP
@@ -623,6 +804,39 @@ export function materializeBuildingSilhouetteTargetRemap(config, {
             continue;
         }
         if (decision !== SILHOUETTE_REMAP_DECISION.REMAP) continue;
+        if (locator.type === 'balcony_continuity_link') {
+            const remapped = remapBalconyContinuityLinkPayload(entry, source.payload);
+            if (!remapped.valid || !setAtPath(nextConfig, source.path, remapped.payload)) {
+                const reason = remapped.reason ?? 'balcony_continuity_materialization_path_missing';
+                orphaned.push(archiveEntry(entry, source, { reason, disposition: 'orphaned' }));
+                unresolved.push({
+                    targetId: entry?.targetId ?? '',
+                    kind: entry?.kind ?? 'target',
+                    reason,
+                    target: deepClone(target)
+                });
+                removals.push({ entry, target, source, locator, path: source.path });
+                continue;
+            }
+            balconyContinuityRemaps.push({
+                entry,
+                target,
+                source,
+                linkId: remapped.payload.id
+            });
+            applied.push({
+                targetId: entry?.targetId ?? '',
+                kind: entry?.kind ?? 'target',
+                decision,
+                effect: 'remap_balcony_continuity_link',
+                sourcePath: pathText(source.path),
+                resolvedRunIds: deepClone(entry.resolvedRunIds ?? []),
+                reverseLocalU: remapped.payload.endpoints.some((endpoint, index) => (
+                    endpoint.edge !== source.payload.endpoints[index].edge
+                ))
+            });
+            continue;
+        }
         if (locator.type === 'entity') {
             const replacements = replacementMap(entry);
             const originalRefs = referencedRunIds(source.payload);
@@ -873,6 +1087,12 @@ export function materializeBuildingSilhouetteTargetRemap(config, {
             }
         } else {
             removed = deleteAtPath(nextConfig, removal.path);
+            if (removed && locator.type === 'balcony_continuity_link') {
+                const layer = floorLayer(nextConfig, layerId);
+                if (Array.isArray(layer?.balconyContinuity?.links) && !layer.balconyContinuity.links.length) {
+                    delete layer.balconyContinuity;
+                }
+            }
         }
         if (!removed) {
             unresolved.push({
@@ -890,6 +1110,48 @@ export function materializeBuildingSilhouetteTargetRemap(config, {
             effect: dispositionForDecision(removal.entry?.decision),
             sourcePath: pathText(removal.path)
         });
+    }
+
+    // Facade and face-link moves materialize after link payload rewrites, so
+    // destination identity can only be checked once every keyed job/removal is
+    // complete. Any failed remapped link is archived and removed atomically;
+    // an existing conflicting link is left untouched.
+    if (balconyContinuityRemaps.length) {
+        const validation = validateMaterializedBalconyContinuity(nextConfig, layerId);
+        for (const job of balconyContinuityRemaps) {
+            const relevant = validation.diagnostics.filter((entry) => entry.linkId === job.linkId);
+            if (!relevant.length) continue;
+
+            const layer = floorLayer(nextConfig, layerId);
+            const links = Array.isArray(layer?.balconyContinuity?.links)
+                ? layer.balconyContinuity.links
+                : [];
+            const matches = links
+                .map((link, index) => ({ link, index }))
+                .filter((entry) => entry.link?.id === job.linkId);
+            if (matches.length === 1) links.splice(matches[0].index, 1);
+            if (layer?.balconyContinuity && !links.length) delete layer.balconyContinuity;
+
+            for (let index = applied.length - 1; index >= 0; index -= 1) {
+                if (applied[index]?.targetId === job.entry?.targetId
+                    && applied[index]?.effect === 'remap_balcony_continuity_link') {
+                    applied.splice(index, 1);
+                }
+            }
+
+            const primary = relevant[0];
+            orphaned.push(archiveEntry(job.entry, job.source, {
+                reason: primary.code,
+                disposition: 'orphaned'
+            }));
+            unresolved.push({
+                targetId: job.entry?.targetId ?? '',
+                kind: job.entry?.kind ?? 'target',
+                reason: primary.code,
+                target: deepClone(job.target),
+                diagnostics: deepClone(relevant)
+            });
+        }
     }
 
     const targetRemap = createTargetRemap(resolution, applied, orphaned, unresolved, existingTargetRemap);

@@ -139,10 +139,10 @@ function resolvedFacade(layer, faceId) {
     const seen = new Set();
     let current = faceId;
     while (current && !seen.has(current)) {
-        const facade = directFacade(layer.id, current);
-        if (facade) return facade;
         seen.add(current);
-        current = layer.faceLinking?.links?.[current] ?? null;
+        const master = layer.faceLinking?.links?.[current] ?? null;
+        if (master) current = master;
+        else return directFacade(layer.id, current);
     }
     return null;
 }
@@ -331,6 +331,68 @@ test('Terra & Mar places three front balcony bays and centered piers on the adja
     assert.ok(left[0].id.includes('adjacent_a'));
     assert.equal(residential.belt?.extrusion, 1.5);
     assert.equal(residential.belt?.height, 0.22);
+});
+
+test('Terra & Mar explicitly joins both front corners and the compatible E-D rear corner', () => {
+    const { residential } = layerRoles();
+
+    assert.equal(Object.hasOwn(residential.faceLinking?.links ?? {}, 'B'), false);
+    assert.equal(faceBays(residential, 'B')[2]?.id, 'b8_residential_right_chamfer_balcony_adjacent_a');
+    assert.equal(faceBays(residential, 'H')[0]?.id, 'b8_residential_left_chamfer_balcony_adjacent_a');
+    assert.deepEqual(residential.balconyContinuity, {
+        links: [
+            {
+                id: 'b8_residential_front_to_right_chamfer',
+                endpoints: [
+                    {
+                        faceId: 'A',
+                        bayId: 'b8_residential_front_balcony_right',
+                        edge: 'start'
+                    },
+                    {
+                        faceId: 'B',
+                        bayId: 'b8_residential_right_chamfer_balcony_adjacent_a',
+                        edge: 'end'
+                    }
+                ]
+            },
+            {
+                id: 'b8_residential_front_to_left_chamfer',
+                endpoints: [
+                    {
+                        faceId: 'A',
+                        bayId: 'b8_residential_front_balcony_left',
+                        edge: 'end'
+                    },
+                    {
+                        faceId: 'H',
+                        bayId: 'b8_residential_left_chamfer_balcony_adjacent_a',
+                        edge: 'start'
+                    }
+                ]
+            },
+            {
+                id: 'b8_residential_rear_to_right_chamfer',
+                endpoints: [
+                    {
+                        faceId: 'E',
+                        bayId: 'b8_residential_left_chamfer_balcony_outer',
+                        edge: 'end'
+                    },
+                    {
+                        faceId: 'D',
+                        bayId: 'b8_residential_front_balcony_right',
+                        edge: 'start'
+                    }
+                ]
+            }
+        ]
+    });
+
+    const endpointKeys = residential.balconyContinuity.links
+        .flatMap((link) => link.endpoints)
+        .map((endpoint) => `${endpoint.faceId}:${endpoint.bayId}:${endpoint.edge}`);
+    assert.equal(new Set(endpointKeys).size, 6);
 });
 
 test('Terra & Mar ground front centers one broad glazed entrance under the exact two-line sign', () => {

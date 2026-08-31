@@ -4,7 +4,13 @@
 import { getBeltCourseColorOptions } from '../../../app/buildings/BeltCourseColor.js';
 import { getBrickPresetOptions } from '../../../app/buildings/BrickPresetCatalog.js';
 import { BUILDING_MATERIAL_SLOT_IDS, getMaterialSlotNames, normalizeBuildingMaterialSlotsConfig } from '../../../app/buildings/BuildingMaterialSlots.js';
-import { BALCONY_PRESET_OPTIONS } from '../../../app/buildings/BayBalconyModel.js';
+import { BALCONY_PRESET_OPTIONS, normalizeBalconyConfig } from '../../../app/buildings/BayBalconyModel.js';
+import {
+    BALCONY_CONTINUITY_EDGE_IDS,
+    balconyContinuityEndpointKey,
+    normalizeBalconyContinuityConfig,
+    validateBalconyContinuityConfig
+} from '../../../app/buildings/BalconyContinuityModel.js';
 import { ROOFTOP_PROPS_DEFAULTS, ROOFTOP_PROP_OPTIONS } from '../../../app/buildings/RooftopPropsModel.js';
 import {
     EDGE_BEVEL_CORNER_IDS,
@@ -127,6 +133,131 @@ function resolveBayWindowFromSpec(bay) {
     if (spec.window && typeof spec.window === 'object') return spec.window;
     const legacy = spec.features && typeof spec.features === 'object' ? spec.features.window : null;
     return legacy && typeof legacy === 'object' ? legacy : null;
+}
+
+function normalizeBalconyContinuityEndpoint(value) {
+    const faceId = typeof value?.faceId === 'string' ? value.faceId.trim().toUpperCase() : '';
+    const bayId = typeof value?.bayId === 'string' ? value.bayId.trim() : '';
+    const edge = typeof value?.edge === 'string' ? value.edge.trim().toLowerCase() : '';
+    const endpoint = { faceId, bayId, edge };
+    return balconyContinuityEndpointKey(endpoint) ? endpoint : null;
+}
+
+function balconyContinuityFloorKey(value, layerFloorCount) {
+    const src = value && typeof value === 'object' ? value : {};
+    const total = Math.max(1, Math.round(Number(layerFloorCount) || 1));
+    const start = Math.max(1, Math.round(Number(src.start) || 1));
+    const every = Math.max(1, Math.round(Number(src.every) || 1));
+    const explicitEnd = Number(src.end);
+    const end = explicitEnd > 0 ? Math.min(total, Math.round(explicitEnd)) : total;
+    const selected = [];
+    for (let floor = start; floor <= end; floor += every) selected.push(floor);
+    return selected.join(',');
+}
+
+function balconyContinuityConfigKey(value) {
+    const sortRecursively = (entry) => {
+        if (Array.isArray(entry)) return entry.map((item) => sortRecursively(item));
+        if (!entry || typeof entry !== 'object') return entry;
+        const sorted = {};
+        for (const key of Object.keys(entry).sort()) sorted[key] = sortRecursively(entry[key]);
+        return sorted;
+    };
+    return JSON.stringify(sortRecursively(value ?? null));
+}
+
+function balconyContinuityCrossRunTurnKind(plan, sourceFaceId, targetFaceId) {
+    const faceIds = Array.isArray(plan?.faceIds) ? plan.faceIds.filter(isFaceId) : [];
+    const segmentByFaceId = new Map((Array.isArray(plan?.segments) ? plan.segments : [])
+        .filter((segment) => isFaceId(segment?.faceId) && segment?.a && segment?.b)
+        .map((segment) => [segment.faceId, segment]));
+    const segments = faceIds.map((faceId) => segmentByFaceId.get(faceId) ?? null);
+    if (segments.length < 3 || segments.some((segment) => !segment)) return null;
+
+    let firstIndex = faceIds.findIndex((faceId, index) => (
+        faceId === sourceFaceId && faceIds[(index + 1) % faceIds.length] === targetFaceId
+    ));
+    if (firstIndex < 0) {
+        firstIndex = faceIds.findIndex((faceId, index) => (
+            faceId === targetFaceId && faceIds[(index + 1) % faceIds.length] === sourceFaceId
+        ));
+    }
+    if (firstIndex < 0) return null;
+
+    const point = (value) => {
+        const x = Number(value?.x);
+        const z = Number(value?.z);
+        return Number.isFinite(x) && Number.isFinite(z) ? { x, z } : null;
+    };
+    const sharedCorner = (first, second) => {
+        const firstPoints = [point(first?.a), point(first?.b)].filter(Boolean);
+        const secondPoints = [point(second?.a), point(second?.b)].filter(Boolean);
+        let best = null;
+        for (const a of firstPoints) {
+            for (const b of secondPoints) {
+                const distanceSquared = (a.x - b.x) ** 2 + (a.z - b.z) ** 2;
+                if (!best || distanceSquared < best.distanceSquared) {
+                    best = {
+                        distanceSquared,
+                        point: { x: (a.x + b.x) * 0.5, z: (a.z + b.z) * 0.5 }
+                    };
+                }
+            }
+        }
+        return best && best.distanceSquared <= 1e-6 ? best.point : null;
+    };
+
+    const corners = segments.map((segment, index) => (
+        sharedCorner(segment, segments[(index + 1) % segments.length])
+    ));
+    if (corners.some((corner) => !corner)) return null;
+    let twiceArea = 0;
+    for (let index = 0; index < corners.length; index += 1) {
+        const a = corners[index];
+        const b = corners[(index + 1) % corners.length];
+        twiceArea += a.x * b.z - b.x * a.z;
+    }
+    if (Math.abs(twiceArea) <= 1e-8) return null;
+
+    const previous = corners[(firstIndex - 1 + corners.length) % corners.length];
+    const corner = corners[firstIndex];
+    const next = corners[(firstIndex + 1) % corners.length];
+    const incoming = { x: corner.x - previous.x, z: corner.z - previous.z };
+    const outgoing = { x: next.x - corner.x, z: next.z - corner.z };
+    const lengthProduct = Math.hypot(incoming.x, incoming.z) * Math.hypot(outgoing.x, outgoing.z);
+    if (lengthProduct <= 1e-8) return null;
+    const normalizedTurn = ((incoming.x * outgoing.z - incoming.z * outgoing.x) / lengthProduct)
+        * (twiceArea >= 0 ? 1 : -1);
+    if (normalizedTurn < -1e-5) return 'concave';
+    return Math.abs(normalizedTurn) <= 1e-5 ? 'collinear' : 'convex';
+}
+
+function balconyContinuityBayStripDepth(facade, bay) {
+    const boundDepth = (value) => Math.max(-2, Math.min(2, Number(value) || 0));
+    const quantize = (value) => Math.round(Number(value) * 1000) / 1000;
+    const baseDepth = quantize(boundDepth(facade?.depthOffset));
+    const depthSpec = bay?.depth && typeof bay.depth === 'object' ? bay.depth : null;
+    const wedgeAngleDeg = Number(bay?.wedgeAngleDeg) || 0;
+    let left = 0;
+    let right = 0;
+    if (depthSpec) {
+        const leftRaw = Number(depthSpec.left);
+        left = quantize(Number.isFinite(leftRaw) ? boundDepth(leftRaw) : 0);
+        const rightRaw = Number(depthSpec.right);
+        right = quantize(Number.isFinite(rightRaw)
+            ? boundDepth(rightRaw)
+            : ((depthSpec.linked ?? true) !== false ? left : 0));
+    } else {
+        const offsetRaw = Number(bay?.depthOffset);
+        left = quantize(Number.isFinite(offsetRaw) ? boundDepth(offsetRaw) : 0);
+        right = left;
+    }
+    const frontDepth0 = quantize(baseDepth + left);
+    const frontDepth1 = quantize(baseDepth + right);
+    return {
+        depthMeters: (frontDepth0 + frontDepth1) * 0.5,
+        legacyWedge: !depthSpec && wedgeAngleDeg > 0
+    };
 }
 
 function normalizeGarageFacadeState(value) {
@@ -1026,6 +1157,8 @@ export class BuildingFabrication2UI {
         this.onSetBayDepthEdge = null;
         this.onSetBayCapital = null;
         this.onSetBayBalcony = null;
+        this.onSetBalconyContinuityLink = null;
+        this.onRemoveBalconyContinuityLink = null;
         this.onRequestBalconyPresetThumbnails = null;
         this.onToggleBayDepthLink = null;
         this.onSetBayLink = null;
@@ -4185,9 +4318,19 @@ export class BuildingFabrication2UI {
                 }
 
                 dynamicContent.classList.toggle('is-hidden', !isMasterSelection);
+                dynamicContent.classList.toggle('is-slave-collapsed', isSlaveSelection);
+                dynamicArea.classList.toggle('has-slave-continuity', isSlaveSelection);
 
                 const configFaceId = lockedTo ?? selectedFaceId ?? 'A';
                 const allowDynamicEdit = allowEdit && isMasterSelection;
+
+                if (isSlaveSelection) {
+                    this._appendPhysicalSlaveBalconyContinuityPanel(dynamicArea, {
+                        layerId,
+                        faceId: selectedFaceId,
+                        allowManage: allowEdit
+                    });
+                }
 
                 const materialsTitle = document.createElement('div');
                 materialsTitle.className = 'building-fab2-subtitle';
@@ -5422,6 +5565,25 @@ export class BuildingFabrication2UI {
 		                            sidesRow.appendChild(sidesLabel);
 		                            sidesRow.appendChild(sidesControls);
 		                            bayBodyContent.appendChild(sidesRow);
+
+                                const continuityRow = document.createElement('div');
+                                continuityRow.className = 'building-fab-row building-fab-row-wide building-fab2-balcony-continuity-row';
+                                const continuityLabel = document.createElement('div');
+                                continuityLabel.className = 'building-fab-row-label';
+                                continuityLabel.textContent = 'Continuity';
+                                const continuityControls = document.createElement('div');
+                                continuityControls.className = 'building-fab2-balcony-continuity-controls';
+
+                                this._appendBalconyContinuityEndpointRows(continuityControls, {
+                                    layerId,
+                                    faceId: configFaceId,
+                                    bayId,
+                                    allowManage: allowBayConfigEdit
+                                });
+
+                                continuityRow.appendChild(continuityLabel);
+                                continuityRow.appendChild(continuityControls);
+                                bayBodyContent.appendChild(continuityRow);
 		                        }
 		                    }
 
@@ -8222,6 +8384,468 @@ export class BuildingFabrication2UI {
         }
     }
 
+    _getBalconyContinuityLayer(layerId) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        return this._layers.find((entry) => entry?.type === 'floor' && entry?.id === id) ?? null;
+    }
+
+    _getBalconyContinuityLinks(layerId) {
+        const layer = this._getBalconyContinuityLayer(layerId);
+        return normalizeBalconyContinuityConfig(layer?.balconyContinuity)?.links ?? [];
+    }
+
+    _appendBalconyContinuityEndpointRows(container, { layerId, faceId, bayId, allowManage }) {
+        for (const edge of BALCONY_CONTINUITY_EDGE_IDS) {
+            const endpoint = { faceId, bayId, edge };
+            const endpointView = this._getBalconyContinuityEndpointView(layerId, endpoint);
+            const endpointRow = document.createElement('div');
+            endpointRow.className = 'building-fab2-balcony-endpoint-row';
+            endpointRow.dataset.role = 'balcony-continuity:endpoint';
+            endpointRow.dataset.faceId = faceId;
+            endpointRow.dataset.bayId = bayId;
+            endpointRow.dataset.edge = edge;
+            endpointRow.dataset.linked = endpointView.linked ? 'true' : 'false';
+            endpointRow.classList.toggle('is-linked', !!endpointView.linked);
+            endpointRow.classList.toggle('is-error', !endpointView.validation.valid);
+
+            const edgeChip = document.createElement('span');
+            edgeChip.className = 'building-fab2-balcony-endpoint-edge';
+            edgeChip.textContent = edge === 'start' ? 'Start' : 'End';
+
+            const endpointMeta = document.createElement('div');
+            endpointMeta.className = 'building-fab2-balcony-endpoint-meta';
+            const endpointStatus = document.createElement('div');
+            endpointStatus.className = 'building-fab2-balcony-endpoint-status';
+            if (endpointView.linked) {
+                endpointStatus.textContent = 'Linked to ' + this._describeBalconyContinuityEndpoint(layerId, endpointView.target);
+            } else if (endpointView.validation.valid && endpointView.target) {
+                endpointStatus.textContent = 'Available · ' + this._describeBalconyContinuityEndpoint(layerId, endpointView.target);
+            } else {
+                endpointStatus.textContent = endpointView.validation.errors[0] || 'No compatible adjacent endpoint.';
+            }
+            endpointMeta.appendChild(endpointStatus);
+
+            if (endpointView.validation.relationship) {
+                const relation = document.createElement('span');
+                relation.className = 'building-fab2-balcony-continuity-badge';
+                relation.dataset.relationship = endpointView.validation.relationship;
+                relation.textContent = endpointView.validation.relationship === 'cross-run' ? 'Cross-run' : 'Same run';
+                endpointMeta.appendChild(relation);
+            }
+
+            const manageBtn = document.createElement('button');
+            manageBtn.type = 'button';
+            manageBtn.className = 'building-fab2-icon-btn building-fab2-balcony-endpoint-action';
+            manageBtn.dataset.action = 'balcony-continuity:open';
+            manageBtn.dataset.edge = edge;
+            applyMaterialSymbolToButton(manageBtn, {
+                name: endpointView.linked ? 'link_off' : 'link',
+                label: 'Balcony ' + (edge === 'start' ? 'Start' : 'End') + ' continuity',
+                size: 'sm'
+            });
+            manageBtn.disabled = !allowManage;
+            manageBtn.addEventListener('click', () => {
+                if (manageBtn.disabled) return;
+                this.openBalconyContinuityPopup({ layerId, faceId, bayId, edge });
+            });
+
+            endpointRow.appendChild(edgeChip);
+            endpointRow.appendChild(endpointMeta);
+            endpointRow.appendChild(manageBtn);
+            container.appendChild(endpointRow);
+        }
+    }
+
+    _appendPhysicalSlaveBalconyContinuityPanel(container, { layerId, faceId, allowManage }) {
+        const physicalFace = this._resolveBalconyContinuityFace(layerId, faceId);
+        if (!physicalFace) return;
+
+        const panel = document.createElement('section');
+        panel.className = 'building-fab2-slave-continuity-panel';
+        panel.dataset.role = 'balcony-continuity:physical-slave';
+        panel.dataset.faceId = physicalFace.faceId;
+
+        const title = document.createElement('div');
+        title.className = 'building-fab2-subtitle building-fab2-slave-continuity-title';
+        title.textContent = 'Physical balcony continuity';
+        panel.appendChild(title);
+
+        const hint = document.createElement('div');
+        hint.className = 'building-fab2-hint building-fab2-slave-continuity-hint';
+        hint.textContent = 'Face ' + physicalFace.faceId + ' inherits facade bays from Face ' + physicalFace.masterFaceId
+            + '. Only endpoint continuity owned by physical Face ' + physicalFace.faceId + ' is editable here.';
+        panel.appendChild(hint);
+
+        const visibleBays = physicalFace.bays.filter((bay) => (
+            !!bay.balcony
+            || BALCONY_CONTINUITY_EDGE_IDS.some((edge) => !!this._findBalconyContinuityLink(layerId, {
+                faceId: physicalFace.faceId,
+                bayId: bay.bayId,
+                edge
+            }))
+        ));
+
+        if (!visibleBays.length) {
+            const empty = document.createElement('div');
+            empty.className = 'building-fab2-hint';
+            empty.textContent = 'This physical face has no inherited balcony endpoints.';
+            panel.appendChild(empty);
+        }
+
+        for (const bay of visibleBays) {
+            const bayCard = document.createElement('div');
+            bayCard.className = 'building-fab2-slave-continuity-bay';
+            bayCard.dataset.role = 'balcony-continuity:physical-slave-bay';
+            bayCard.dataset.faceId = physicalFace.faceId;
+            bayCard.dataset.bayId = bay.bayId;
+
+            const bayTitle = document.createElement('div');
+            bayTitle.className = 'building-fab2-slave-continuity-bay-title';
+            bayTitle.textContent = 'Face ' + physicalFace.faceId + ' · Bay ' + (bay.physicalIndex + 1)
+                + ' · authored on Face ' + physicalFace.masterFaceId
+                + (physicalFace.reversed ? ' (reversed order)' : '');
+            bayCard.appendChild(bayTitle);
+
+            const controls = document.createElement('div');
+            controls.className = 'building-fab2-balcony-continuity-controls';
+            this._appendBalconyContinuityEndpointRows(controls, {
+                layerId,
+                faceId: physicalFace.faceId,
+                bayId: bay.bayId,
+                allowManage
+            });
+            bayCard.appendChild(controls);
+            panel.appendChild(bayCard);
+        }
+
+        container.appendChild(panel);
+    }
+
+    _resolveBalconyContinuityFace(layerId, faceId) {
+        const physicalFaceId = isFaceId(faceId) ? faceId : null;
+        if (!physicalFaceId) return null;
+
+        const faceState = this._getFloorLayerFaceState(layerId);
+        const visited = new Set();
+        let masterFaceId = physicalFaceId;
+        let reversed = false;
+        for (let guard = 0; guard < 26; guard += 1) {
+            if (visited.has(masterFaceId)) break;
+            visited.add(masterFaceId);
+            const nextFaceId = faceState.lockedToByFace.get(masterFaceId) ?? null;
+            if (!isFaceId(nextFaceId) || nextFaceId === masterFaceId) break;
+            reversed = reversed !== !!faceState.reverseByFace.get(masterFaceId);
+            masterFaceId = nextFaceId;
+        }
+
+        const layerFacades = this._facadesByLayerId?.[layerId] && typeof this._facadesByLayerId[layerId] === 'object'
+            ? this._facadesByLayerId[layerId]
+            : null;
+        const facade = layerFacades?.[masterFaceId] && typeof layerFacades[masterFaceId] === 'object'
+            ? layerFacades[masterFaceId]
+            : null;
+        const authoredBays = Array.isArray(facade?.layout?.bays?.items)
+            ? facade.layout.bays.items.filter((entry) => entry && typeof entry === 'object' && typeof entry.id === 'string' && entry.id)
+            : [];
+        const bayGraph = buildBayLinkGraph(authoredBays);
+
+        const potentiallyRepeated = new Set();
+        for (const bay of authoredBays) {
+            const preference = typeof bay?.expandPreference === 'string' ? bay.expandPreference : '';
+            if (preference === 'prefer_repeat' || (preference === '' && bay?.repeatable === true)) {
+                potentiallyRepeated.add(bay.id);
+            }
+        }
+        const groups = Array.isArray(facade?.layout?.groups?.items) ? facade.layout.groups.items : [];
+        for (const group of groups) {
+            const repeat = normalizeFacadeBayGroupRepeat(group?.repeat ?? null);
+            const canRepeat = repeat.minRepeats > 1
+                || repeat.maxRepeats === 'auto'
+                || (Number.isFinite(repeat.maxRepeats) && repeat.maxRepeats > 1);
+            if (!canRepeat) continue;
+            for (const bayId of Array.isArray(group?.bayIds) ? group.bayIds : []) {
+                if (typeof bayId === 'string' && bayId) potentiallyRepeated.add(bayId);
+            }
+        }
+
+        const physicalOrder = reversed ? [...authoredBays].reverse() : [...authoredBays];
+        const bays = physicalOrder.map((authoredBay, physicalIndex) => {
+            const rootBayId = bayGraph.rootMasterByBayId.get(authoredBay.id) ?? authoredBay.id;
+            const effectiveBay = bayGraph.byId.get(rootBayId) ?? authoredBay;
+            const stripDepth = balconyContinuityBayStripDepth(facade, effectiveBay);
+            return {
+                faceId: physicalFaceId,
+                masterFaceId,
+                reversed,
+                authoredBay,
+                effectiveBay,
+                bayId: authoredBay.id,
+                physicalIndex,
+                balcony: normalizeBalconyConfig(effectiveBay?.balcony),
+                stripDepthMeters: stripDepth.depthMeters,
+                legacyWedge: stripDepth.legacyWedge,
+                potentiallyRepeated: potentiallyRepeated.has(authoredBay.id) || potentiallyRepeated.has(rootBayId)
+            };
+        });
+
+        return {
+            faceId: physicalFaceId,
+            masterFaceId,
+            reversed,
+            facade,
+            bays
+        };
+    }
+
+    _resolveBalconyContinuityEndpoint(layerId, endpointValue) {
+        const endpoint = normalizeBalconyContinuityEndpoint(endpointValue);
+        if (!endpoint) return null;
+        const face = this._resolveBalconyContinuityFace(layerId, endpoint.faceId);
+        const bay = face?.bays?.find((entry) => entry.bayId === endpoint.bayId) ?? null;
+        if (!face || !bay) return null;
+        return { ...bay, endpoint };
+    }
+
+    _findBalconyContinuityLink(layerId, endpointValue) {
+        const endpoint = normalizeBalconyContinuityEndpoint(endpointValue);
+        const key = balconyContinuityEndpointKey(endpoint);
+        if (!key) return null;
+        const links = this._getBalconyContinuityLinks(layerId);
+        for (let linkIndex = 0; linkIndex < links.length; linkIndex += 1) {
+            const link = links[linkIndex];
+            const endpointIndex = link.endpoints.findIndex((entry) => balconyContinuityEndpointKey(entry) === key);
+            if (endpointIndex < 0) continue;
+            const counterpart = link.endpoints.find((entry, index) => (
+                index !== endpointIndex && !!balconyContinuityEndpointKey(entry)
+            )) ?? null;
+            return { link, linkIndex, endpointIndex, counterpart };
+        }
+        return null;
+    }
+
+    _getAdjacentBalconyEndpoint(layerId, sourceValue) {
+        const source = normalizeBalconyContinuityEndpoint(sourceValue);
+        const sourceContext = this._resolveBalconyContinuityEndpoint(layerId, source);
+        if (!source || !sourceContext) {
+            return { source, sourceContext, target: null, targetContext: null, relationship: null, error: 'The source balcony endpoint no longer exists.' };
+        }
+
+        const currentFace = this._resolveBalconyContinuityFace(layerId, source.faceId);
+        const bayIndex = currentFace?.bays?.findIndex((entry) => entry.bayId === source.bayId) ?? -1;
+        if (bayIndex < 0) {
+            return { source, sourceContext, target: null, targetContext: null, relationship: null, error: 'The source bay is not present on this physical face.' };
+        }
+
+        let target = null;
+        let relationship = 'same-run';
+        if (source.edge === 'start' && bayIndex > 0) {
+            target = { faceId: source.faceId, bayId: currentFace.bays[bayIndex - 1].bayId, edge: 'end' };
+        } else if (source.edge === 'end' && bayIndex < currentFace.bays.length - 1) {
+            target = { faceId: source.faceId, bayId: currentFace.bays[bayIndex + 1].bayId, edge: 'start' };
+        } else {
+            relationship = 'cross-run';
+            const faceIds = this._faceIds(layerId);
+            const faceIndex = faceIds.indexOf(source.faceId);
+            if (faceIndex < 0 || faceIds.length < 2) {
+                return { source, sourceContext, target: null, targetContext: null, relationship, error: 'The physical facade loop cannot resolve an adjacent run.' };
+            }
+            const targetFaceIndex = source.edge === 'start'
+                ? (faceIndex - 1 + faceIds.length) % faceIds.length
+                : (faceIndex + 1) % faceIds.length;
+            const targetFaceId = faceIds[targetFaceIndex];
+            const targetFace = this._resolveBalconyContinuityFace(layerId, targetFaceId);
+            if (!targetFace?.bays?.length) {
+                return {
+                    source,
+                    sourceContext,
+                    target: null,
+                    targetContext: null,
+                    relationship,
+                    error: 'Adjacent Face ' + targetFaceId + ' has no authored balcony bay at this corner.'
+                };
+            }
+            const targetBay = source.edge === 'start'
+                ? targetFace.bays[targetFace.bays.length - 1]
+                : targetFace.bays[0];
+            target = {
+                faceId: targetFaceId,
+                bayId: targetBay.bayId,
+                edge: source.edge === 'start' ? 'end' : 'start'
+            };
+        }
+
+        const targetContext = this._resolveBalconyContinuityEndpoint(layerId, target);
+        return {
+            source,
+            sourceContext,
+            target,
+            targetContext,
+            relationship,
+            error: targetContext ? null : 'The neighboring physical balcony endpoint could not be resolved.'
+        };
+    }
+
+    _describeBalconyContinuityEndpoint(layerId, endpointValue) {
+        const endpoint = normalizeBalconyContinuityEndpoint(endpointValue);
+        if (!endpoint) return 'Invalid endpoint';
+        const context = this._resolveBalconyContinuityEndpoint(layerId, endpoint);
+        const edgeLabel = endpoint.edge === 'start' ? 'Start' : 'End';
+        if (!context) return 'Face ' + endpoint.faceId + ' · ' + endpoint.bayId + ' · ' + edgeLabel;
+        let label = 'Face ' + endpoint.faceId + ' · Bay ' + (context.physicalIndex + 1) + ' · ' + edgeLabel;
+        if (context.masterFaceId !== endpoint.faceId) {
+            label += ' · authored on Face ' + context.masterFaceId;
+            if (context.reversed) label += ' (reversed order)';
+        }
+        return label;
+    }
+
+    _balconyContinuityRelationship(layerId, source, target) {
+        const adjacent = this._getAdjacentBalconyEndpoint(layerId, source);
+        if (balconyContinuityEndpointKey(adjacent.target) !== balconyContinuityEndpointKey(target)) return null;
+        return adjacent.relationship;
+    }
+
+    _validateBalconyContinuityCandidate(layerId, sourceValue, targetValue, { ignoreLinkId = null } = {}) {
+        const source = normalizeBalconyContinuityEndpoint(sourceValue);
+        const target = normalizeBalconyContinuityEndpoint(targetValue);
+        const errors = [];
+        if (!source || !target) {
+            return { valid: false, errors: ['Both endpoints require a physical face, stable bay id, and Start or End edge.'], relationship: null };
+        }
+        if (balconyContinuityEndpointKey(source) === balconyContinuityEndpointKey(target)) {
+            errors.push('A balcony endpoint cannot link to itself.');
+        }
+
+        const sourceContext = this._resolveBalconyContinuityEndpoint(layerId, source);
+        const targetContext = this._resolveBalconyContinuityEndpoint(layerId, target);
+        if (!sourceContext) errors.push('The source balcony bay is missing from the physical facade.');
+        if (!targetContext) errors.push('The target balcony bay is missing from the physical facade.');
+
+        const relationship = this._balconyContinuityRelationship(layerId, source, target);
+        if (!relationship) errors.push('These endpoints are not immediate neighbors on the physical facade loop.');
+
+        const plan = this._facePlanForLayer(layerId);
+        const segmentByFaceId = new Map((Array.isArray(plan?.segments) ? plan.segments : []).map((segment) => [segment?.faceId, segment]));
+        for (const endpoint of [source, target]) {
+            if (segmentByFaceId.get(endpoint.faceId)?.arc) {
+                errors.push('Face ' + endpoint.faceId + ' is curved. Balcony continuity currently supports planar runs only.');
+            }
+        }
+        if (relationship === 'cross-run'
+            && balconyContinuityCrossRunTurnKind(plan, source.faceId, target.faceId) === 'concave') {
+            errors.push(
+                'Cross-run balcony continuity cannot cross this concave or re-entrant corner; choose a convex or straight adjacent corner.'
+            );
+        }
+
+        for (const context of [sourceContext, targetContext]) {
+            if (!context) continue;
+            if (!context.balcony) {
+                errors.push('Face ' + context.faceId + ' · Bay ' + (context.physicalIndex + 1) + ' needs an enabled balcony.');
+            }
+            if (context.legacyWedge) {
+                errors.push('Legacy wedge-only bays cannot participate in balcony continuity; replace the wedge with explicit Left/Right bay depth values first.');
+            }
+            if (context.potentiallyRepeated) {
+                errors.push('Face ' + context.faceId + ' · Bay ' + (context.physicalIndex + 1) + ' may repeat; repeated balcony endpoints need an explicit occurrence and are not supported yet.');
+            }
+        }
+
+        const sourceOwner = this._findBalconyContinuityLink(layerId, source);
+        const targetOwner = this._findBalconyContinuityLink(layerId, target);
+        if (sourceOwner && sourceOwner.link.id !== ignoreLinkId) {
+            errors.push('The source endpoint is already linked by ' + (sourceOwner.link.id || 'another continuity link') + '.');
+        }
+        if (targetOwner && targetOwner.link.id !== ignoreLinkId) {
+            errors.push('The target endpoint is already linked by ' + (targetOwner.link.id || 'another continuity link') + '.');
+        }
+
+        const a = sourceContext?.balcony ?? null;
+        const b = targetContext?.balcony ?? null;
+        if (a && b) {
+            if (a.placement !== b.placement) {
+                errors.push('Balcony placement differs (' + a.placement + ' versus ' + b.placement + ').');
+            }
+            if (a.placement !== 'projecting' || b.placement !== 'projecting') {
+                errors.push('Recessed balcony continuity is not supported yet; both balconies must be Projecting.');
+            }
+
+            const layerFloors = this._getBalconyContinuityLayer(layerId)?.floors ?? 1;
+            if (balconyContinuityFloorKey(a.floors, layerFloors) !== balconyContinuityFloorKey(b.floors, layerFloors)) {
+                errors.push('Balcony floor selections differ after resolving All floors against this layer.');
+            }
+            if (a.platform.widthMode !== 'bay' || b.platform.widthMode !== 'bay') {
+                errors.push('Opening-width balconies cannot join across bay endpoints; use Bay width on both balconies.');
+            }
+            if (a.platform.sideMarginMeters > 0.04 || b.platform.sideMarginMeters > 0.04) {
+                errors.push('Linked balcony side margins must be 0.04 m or less so both slabs reach their shared endpoint.');
+            }
+            if (relationship === 'same-run'
+                && Math.abs(sourceContext.stripDepthMeters - targetContext.stripDepthMeters) > 1e-4) {
+                errors.push(
+                    'Same-run balcony bays resolve to different facade depths; align their bay Depth settings before linking.'
+                );
+            }
+            if (a.sides.front === 'never' || b.sides.front === 'never') {
+                errors.push('Linked guard continuity requires the Front side on both balconies.');
+            }
+
+            const platformKey = (cfg) => balconyContinuityConfigKey({
+                depthMeters: Number.isFinite(cfg.platform.depthMeters) ? cfg.platform.depthMeters : 1.4,
+                thicknessMeters: cfg.platform.thicknessMeters,
+                widthMode: cfg.platform.widthMode,
+                sideMarginMeters: cfg.platform.sideMarginMeters,
+                elevationMeters: cfg.platform.elevationMeters,
+                material: cfg.platform.material
+            });
+            if (platformKey(a) !== platformKey(b)) {
+                errors.push('Platform depth, thickness, width mode, side margin, elevation, and material must match.');
+            }
+            if (balconyContinuityConfigKey(a.support) !== balconyContinuityConfigKey(b.support)) {
+                errors.push('Balcony support mode, dimensions, and material must match.');
+            }
+            if (balconyContinuityConfigKey(a.railing) !== balconyContinuityConfigKey(b.railing)) {
+                errors.push('Full railing settings must match, including posts, infill material, glass/grid/solid, and top rail.');
+            }
+        }
+
+        const structural = validateBalconyContinuityConfig(this._getBalconyContinuityLayer(layerId)?.balconyContinuity);
+        if (ignoreLinkId) {
+            for (const diagnostic of structural.diagnostics) {
+                if (diagnostic.linkId === ignoreLinkId && !errors.includes(diagnostic.message)) errors.push(diagnostic.message);
+            }
+        }
+
+        return { valid: errors.length === 0, errors, relationship };
+    }
+
+    _getBalconyContinuityEndpointView(layerId, endpointValue) {
+        const source = normalizeBalconyContinuityEndpoint(endpointValue);
+        const linked = this._findBalconyContinuityLink(layerId, source);
+        if (linked) {
+            const validation = linked.counterpart
+                ? this._validateBalconyContinuityCandidate(layerId, source, linked.counterpart, { ignoreLinkId: linked.link.id })
+                : { valid: false, errors: ['This link does not have exactly two usable endpoints.'], relationship: null };
+            return { source, linked, target: linked.counterpart, validation };
+        }
+        const adjacent = this._getAdjacentBalconyEndpoint(layerId, source);
+        const validation = adjacent.target
+            ? this._validateBalconyContinuityCandidate(layerId, source, adjacent.target)
+            : { valid: false, errors: [adjacent.error || 'No adjacent balcony endpoint is available.'], relationship: adjacent.relationship };
+        return { source, linked: null, target: adjacent.target, validation };
+    }
+
+    openBalconyContinuityPopup({ layerId = null, faceId = null, bayId = null, edge = null } = {}) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        const endpoint = normalizeBalconyContinuityEndpoint({ faceId, bayId, edge });
+        if (!id || !endpoint) return false;
+        this._linkPopup = { target: 'balcony-continuity', layerId: id, sourceEndpoint: endpoint };
+        if (!this.linkOverlay.isConnected) document.body.appendChild(this.linkOverlay);
+        this.linkOverlay.classList.remove('hidden');
+        this._renderLinkPopup();
+        return true;
+    }
+
     isLinkPopupOpen() {
         return this.linkOverlay.isConnected && !this.linkOverlay.classList.contains('hidden');
     }
@@ -8287,11 +8911,137 @@ export class BuildingFabrication2UI {
         const popup = this._linkPopup;
         if (!popup) return;
 
+        if (popup.target === 'balcony-continuity') {
+            this._renderBalconyContinuityPopup(popup);
+            return;
+        }
         if (popup.target === 'bay') {
             this._renderBayLinkPopup(popup);
             return;
         }
         this._renderFaceLinkPopup(popup);
+    }
+
+
+    _renderBalconyContinuityPopup(popup) {
+        const layerId = typeof popup?.layerId === 'string' ? popup.layerId : '';
+        const source = normalizeBalconyContinuityEndpoint(popup?.sourceEndpoint);
+        if (!layerId || !source) {
+            this.closeLinkPopup();
+            return;
+        }
+
+        const endpointView = this._getBalconyContinuityEndpointView(layerId, source);
+        const sourceLabel = this._describeBalconyContinuityEndpoint(layerId, source);
+        this.linkTitle.textContent = 'Balcony continuity · ' + (source.edge === 'start' ? 'Start' : 'End');
+        this.linkFooter.textContent = endpointView.linked
+            ? 'This endpoint is explicit and default-off. Remove the link to restore independent balcony geometry.'
+            : 'Only the immediate compatible endpoint on the physical facade loop can be joined.';
+
+        const content = document.createElement('div');
+        content.className = 'building-fab2-balcony-continuity-popup';
+        content.dataset.role = 'balcony-continuity:popup';
+
+        const sourceCard = document.createElement('div');
+        sourceCard.className = 'building-fab2-balcony-continuity-source';
+        const sourceEyebrow = document.createElement('div');
+        sourceEyebrow.className = 'building-fab2-balcony-continuity-eyebrow';
+        sourceEyebrow.textContent = 'Source endpoint';
+        const sourceName = document.createElement('div');
+        sourceName.className = 'building-fab2-balcony-continuity-name';
+        sourceName.textContent = sourceLabel;
+        sourceCard.appendChild(sourceEyebrow);
+        sourceCard.appendChild(sourceName);
+        content.appendChild(sourceCard);
+
+        const relationship = endpointView.validation.relationship;
+        const relationLabel = relationship === 'cross-run' ? 'Cross-run' : (relationship === 'same-run' ? 'Same run' : 'Invalid topology');
+
+        if (endpointView.linked) {
+            const linkedCard = document.createElement('div');
+            linkedCard.className = 'building-fab2-balcony-continuity-linked-card';
+            linkedCard.dataset.role = 'balcony-continuity:linked';
+            const linkedMeta = document.createElement('div');
+            linkedMeta.className = 'building-fab2-balcony-continuity-target-meta';
+            const linkedEyebrow = document.createElement('div');
+            linkedEyebrow.className = 'building-fab2-balcony-continuity-eyebrow';
+            linkedEyebrow.textContent = 'Linked counterpart';
+            const linkedName = document.createElement('div');
+            linkedName.className = 'building-fab2-balcony-continuity-name';
+            linkedName.textContent = this._describeBalconyContinuityEndpoint(layerId, endpointView.target);
+            linkedMeta.appendChild(linkedEyebrow);
+            linkedMeta.appendChild(linkedName);
+
+            const badge = document.createElement('span');
+            badge.className = 'building-fab2-balcony-continuity-badge';
+            badge.dataset.relationship = relationship ?? 'invalid';
+            badge.textContent = relationLabel;
+            linkedMeta.appendChild(badge);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'building-fab2-btn building-fab2-btn-small building-fab2-balcony-continuity-remove';
+            removeBtn.dataset.action = 'balcony-continuity:remove';
+            removeBtn.dataset.linkId = endpointView.linked.link.id;
+            removeBtn.textContent = 'Remove link';
+            removeBtn.disabled = !this._enabled || !this._hasBuilding;
+
+            linkedCard.appendChild(linkedMeta);
+            linkedCard.appendChild(removeBtn);
+            content.appendChild(linkedCard);
+        } else if (endpointView.target) {
+            const targetBtn = document.createElement('button');
+            targetBtn.type = 'button';
+            targetBtn.className = 'building-fab2-balcony-continuity-target';
+            targetBtn.dataset.action = 'balcony-continuity:create';
+            targetBtn.dataset.role = 'balcony-continuity:target';
+            targetBtn.dataset.relationship = relationship ?? '';
+            targetBtn.disabled = !this._enabled || !this._hasBuilding || !endpointView.validation.valid;
+
+            const targetMeta = document.createElement('div');
+            targetMeta.className = 'building-fab2-balcony-continuity-target-meta';
+            const targetEyebrow = document.createElement('div');
+            targetEyebrow.className = 'building-fab2-balcony-continuity-eyebrow';
+            targetEyebrow.textContent = 'Compatible adjacent endpoint';
+            const targetName = document.createElement('div');
+            targetName.className = 'building-fab2-balcony-continuity-name';
+            targetName.textContent = this._describeBalconyContinuityEndpoint(layerId, endpointView.target);
+            const badge = document.createElement('span');
+            badge.className = 'building-fab2-balcony-continuity-badge';
+            badge.dataset.relationship = relationship ?? 'invalid';
+            badge.textContent = relationLabel;
+            targetMeta.appendChild(targetEyebrow);
+            targetMeta.appendChild(targetName);
+            targetMeta.appendChild(badge);
+
+            const targetIcon = createMaterialSymbolIcon('link', { size: 'sm' });
+            targetIcon.classList.add('building-fab2-balcony-continuity-target-icon');
+            targetBtn.appendChild(targetMeta);
+            targetBtn.appendChild(targetIcon);
+            content.appendChild(targetBtn);
+        }
+
+        if (!endpointView.validation.valid) {
+            const diagnostics = document.createElement('div');
+            diagnostics.className = 'building-fab2-balcony-continuity-diagnostics';
+            diagnostics.dataset.role = 'balcony-continuity:diagnostics';
+            const diagnosticTitle = document.createElement('div');
+            diagnosticTitle.className = 'building-fab2-balcony-continuity-eyebrow';
+            diagnosticTitle.textContent = endpointView.linked ? 'Link needs attention' : 'Cannot create this link';
+            diagnostics.appendChild(diagnosticTitle);
+            for (const message of endpointView.validation.errors) {
+                const row = document.createElement('div');
+                row.className = 'building-fab2-balcony-continuity-diagnostic';
+                row.appendChild(createMaterialSymbolIcon('error', { size: 'sm' }));
+                const text = document.createElement('span');
+                text.textContent = message;
+                row.appendChild(text);
+                diagnostics.appendChild(row);
+            }
+            content.appendChild(diagnostics);
+        }
+
+        this.linkBody.appendChild(content);
     }
 
     _renderFaceLinkPopup(popup) {
@@ -8823,6 +9573,22 @@ export class BuildingFabrication2UI {
         if (!btn || !this.linkBody.contains(btn)) return;
         if (btn.disabled) return;
         const popup = this._linkPopup;
+        if (popup?.target === 'balcony-continuity') {
+            const action = btn.dataset?.action ?? '';
+            const layerId = typeof popup.layerId === 'string' ? popup.layerId : '';
+            const source = normalizeBalconyContinuityEndpoint(popup.sourceEndpoint);
+            const endpointView = this._getBalconyContinuityEndpointView(layerId, source);
+            if (action === 'balcony-continuity:create' && endpointView.target && endpointView.validation.valid) {
+                this.onSetBalconyContinuityLink?.(layerId, source, endpointView.target);
+                return;
+            }
+            if (action === 'balcony-continuity:remove') {
+                const linkId = typeof btn.dataset?.linkId === 'string' ? btn.dataset.linkId : '';
+                if (linkId) this.onRemoveBalconyContinuityLink?.(layerId, linkId);
+                return;
+            }
+            return;
+        }
         if (popup?.target === 'bay') {
             const layerId = btn.dataset?.layerId ?? '';
             const faceId = btn.dataset?.faceId ?? null;

@@ -1462,13 +1462,31 @@ export class BuildingFabrication2SilhouettePopup {
                 action.disabled = this._applying;
                 const candidateIds = rowData.options.map((option) => typeof option === 'string' ? option : option?.runId).filter(Boolean);
                 if (action.value === SILHOUETTE_REMAP_DECISION.REMAP) {
-                    const target = appendSelectField(actions, 'New face', 'silhouette:remap-run', [
-                        ['', 'Choose face…'],
-                        ...candidateIds.map((id) => [id, `Face ${id}`])
-                    ]);
-                    target.dataset.remapId = rowData.id;
-                    target.value = rowData.decision?.runId ?? '';
-                    target.disabled = this._applying;
+                    const affectedSourceIds = [...new Set([
+                        ...(Array.isArray(rowData.missingRunIds) ? rowData.missingRunIds : []),
+                        ...(Array.isArray(rowData.incompatibleRunIds) ? rowData.incompatibleRunIds : [])
+                    ].filter((id) => typeof id === 'string' && id))];
+                    const usesPerSourceTargets = rowData.kind === 'balcony_continuity_link'
+                        && affectedSourceIds.length > 1;
+                    const appendTarget = (sourceRunId = null) => {
+                        const target = appendSelectField(
+                            actions,
+                            sourceRunId ? `New face for ${sourceRunId}` : 'New face',
+                            'silhouette:remap-run',
+                            [
+                                ['', 'Choose face…'],
+                                ...candidateIds.map((id) => [id, `Face ${id}`])
+                            ]
+                        );
+                        target.dataset.remapId = rowData.id;
+                        if (sourceRunId) target.dataset.sourceRunId = sourceRunId;
+                        target.value = sourceRunId
+                            ? (rowData.decision?.runIdsBySource?.[sourceRunId] ?? '')
+                            : (rowData.decision?.runId ?? '');
+                        target.disabled = this._applying;
+                    };
+                    if (usesPerSourceTargets) affectedSourceIds.forEach(appendTarget);
+                    else appendTarget();
                 }
                 row.appendChild(actions);
             }
@@ -2007,6 +2025,15 @@ export class BuildingFabrication2SilhouettePopup {
         const before = this._captureSnapshot('Review topology remap');
         if (input.dataset.role === 'silhouette:remap-action') {
             row.decision = input.value ? { action: input.value } : null;
+        } else if (input.dataset.sourceRunId) {
+            const sourceRunId = input.dataset.sourceRunId;
+            const previous = row.decision?.runIdsBySource && typeof row.decision.runIdsBySource === 'object'
+                ? row.decision.runIdsBySource
+                : {};
+            const runIdsBySource = { ...previous };
+            if (input.value) runIdsBySource[sourceRunId] = input.value;
+            else delete runIdsBySource[sourceRunId];
+            row.decision = { action: SILHOUETTE_REMAP_DECISION.REMAP, runIdsBySource };
         } else {
             row.decision = { action: SILHOUETTE_REMAP_DECISION.REMAP, runId: input.value || null };
         }

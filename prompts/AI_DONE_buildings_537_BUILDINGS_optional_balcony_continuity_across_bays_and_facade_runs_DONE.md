@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 Building Fabrication 2 currently generates each balcony as planar, per-bay geometry. Its side controls can hide an end railing, but they do not create a true shared balcony slab, fascia, guard, or top rail between neighboring bays or across adjacent facade runs. This leaves gaps, overlaps, duplicate end elements, and makes corner-wrapping balconies such as Terra & Mar impossible to author reliably.
@@ -27,3 +29,13 @@ Tasks:
 - Do not move it to `prompts/archive/` automatically.
 - Move it to `prompts/archive/` only when explicitly requested.
 - Add a high-level one-line summary per completed change.
+
+## Completion summary
+
+- Added stable, opt-in balcony-continuity links with canonical normalization, cloning, validation, persistence, and atomic silhouette remapping.
+- Generated unified same-run and supported convex planar/chamfered corner slabs, fascia, guards, rails, supports, and deterministic corner posts while preserving safe legacy fallbacks.
+- Added Building Fabrication 2 endpoint controls, compatibility diagnostics, linked-counterpart state, reversal-aware labels, create/remove actions, and immediate preview updates.
+- Added a continuity-only editor panel for physical face-linked slaves so inherited/reversed endpoints remain inspectable and removable without duplicating master facade controls.
+- Updated Terra & Mar so both front corners and the compatible E-D rear corner join without moving its three-bay composition or internal piers.
+- Documented supported topology, compatibility rules, editor behavior, schema, and multi-face remapping in the Building Fabrication 2 specifications.
+- Added focused model, remap, persistence, editor, generator, fallback, Terra & Mar, and visual-evidence coverage.
