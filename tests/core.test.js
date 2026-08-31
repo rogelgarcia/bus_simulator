@@ -12277,6 +12277,10 @@ async function runTests() {
         assertNear(a.widthUnits, b.widthUnits, 1e-12, 'Layout must be deterministic.');
         assertEqual(a.unsupported.length, 0, 'All BRADBURY glyphs are in the built-in set.');
 
+        const branded = layoutFacadeLetteringText('TERRA & MAR');
+        assertEqual(branded.unsupported.length, 0, 'TERRA & MAR must use only built-in glyphs.');
+        assertTrue(branded.glyphs.find((glyph) => glyph.char === '&')?.strokes.length > 0, 'Ampersand must render ink.');
+
         const odd = layoutFacadeLetteringText('B@X');
         assertTrue(odd.unsupported.includes('@'), 'Unsupported characters must be reported.');
         assertTrue(odd.widthUnits > 1.0, 'Unsupported characters still take a space advance.');
@@ -12299,7 +12303,7 @@ async function runTests() {
         assertTrue(box.min.z < 0, 'Relief must embed behind the wall plane so the seam stays closed.');
     });
 
-    const buildAi508LetteringParts = ({ text, heightMeters, letteringExtra = null }) => {
+    const buildAi508LetteringParts = ({ text, heightMeters, letteringExtra = null, footprintLoops = null }) => {
         const tileSize = 10;
         const map = {
             tileSize,
@@ -12317,6 +12321,7 @@ async function runTests() {
             },
             tileSize,
             occupyRatio: 1.0,
+            ...(footprintLoops ? { footprintLoops } : {}),
             layers: [
                 createDefaultFloorLayer({
                     id: 'floor_sign508',
@@ -12409,6 +12414,33 @@ async function runTests() {
 
         const clampWarnings = (parts.warnings ?? []).filter((w) => typeof w === 'string' && w.startsWith('Lettering sign_1'));
         assertEqual(clampWarnings.length, 0, `Fitting text must not warn, got: ${clampWarnings.join(' | ')}`);
+    });
+
+    test('BuildingFabricationGenerator: lettering stays centered when persisted facade +u opposes glyph +X (AI 508)', () => {
+        const parts = buildAi508LetteringParts({
+            text: 'TERRA & MAR',
+            heightMeters: 0.3,
+            footprintLoops: [[
+                { x: 5, z: 5, cornerId: 'sign_corner_1', runId: 'A', runForward: true },
+                { x: -5, z: 5, cornerId: 'sign_corner_2', runId: 'D', runForward: true },
+                { x: -5, z: -5, cornerId: 'sign_corner_3', runId: 'C', runForward: true },
+                { x: 5, z: -5, cornerId: 'sign_corner_4', runId: 'B', runForward: true }
+            ]]
+        });
+        const signs = collectAi508LetteringMeshes(parts);
+        assertEqual(signs.length, 1, 'Expected one sign on the persisted reversed front run.');
+        const box = new THREE.Box3().setFromObject(signs[0]);
+        const center = box.getCenter(new THREE.Vector3());
+        assertNear(
+            center.x,
+            0,
+            0.03,
+            'Visible lettering ink must center on the bay even when facade +u points toward -X.'
+        );
+        assertTrue(
+            center.z > 4.9 && center.z < 5.15,
+            `Persisted-run lettering must sit on the front plane, got z=${center.z.toFixed(3)}.`
+        );
     });
 
     test('BuildingFabricationGenerator: overflowing lettering warns and clamps to the band (AI 508)', () => {

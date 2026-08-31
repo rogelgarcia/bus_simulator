@@ -502,7 +502,7 @@ Rules:
   the bay opening's head (top opening included, portal step rise included) and
   the floor top. A rhythm-expanded bay resolves to the strip instance nearest
   the face middle.
-- Letterforms come from a built-in stroke font (caps, digits, hyphen, period;
+- Letterforms come from a built-in stroke font (caps, digits, ampersand, hyphen, period;
   extruded quad prisms, perpendicular butt ends) — no font-file pipeline.
   Unsupported characters render as spaces and warn. `style` has one mode,
   `raised_block`.
@@ -511,8 +511,11 @@ Rules:
   plane (slightly embedded so the seam stays closed).
 - Placement is deterministic and clamped by INK bounds (diagonal strokes
   overshoot the em box like type overshoot): the sign is centered on the
-  target span, `yOffsetMeters` nudges it within its band but never out of it,
-  and text that cannot fit at the authored height is scaled down uniformly
+  target span. Visible-ink centering is resolved in the glyph basis derived
+  from the outward facade normal and must remain invariant when a persisted
+  run's local `+u` direction is reversed. `yOffsetMeters` nudges the sign
+  within its band but never out of it, and text that cannot fit at the authored
+  height is scaled down uniformly
   with a warning. Unresolvable targets (missing bay/floor, header zone with
   no opening) warn and skip.
 - `material` uses the capital wall-material dialect (explicit texture/color,

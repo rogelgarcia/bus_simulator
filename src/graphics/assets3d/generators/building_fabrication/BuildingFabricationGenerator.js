@@ -13780,12 +13780,22 @@ export function buildBuildingFabricationVisualParts({
                         bandBottomY + V_MARGIN - ink.minY,
                         Math.max(bandBottomY + V_MARGIN - ink.minY, bandTopY - V_MARGIN - ink.maxY)
                     );
-                    const uStart = (u0 + u1) * 0.5 - (ink.minX + ink.maxX) * 0.5;
-                    const base = pointOnFacadeFrame({ frame, u: uStart, depth: (stripDepth0 + stripDepth1) * 0.5 });
                     const yaw = Math.atan2(Number(frame?.n?.x) || 0, Number(frame?.n?.z) || 0);
+                    const bayCenter = pointOnFacadeFrame({
+                        frame,
+                        u: (u0 + u1) * 0.5,
+                        depth: (stripDepth0 + stripDepth1) * 0.5
+                    });
+                    // Glyph +X is derived from the outward normal, while a
+                    // persisted run's +u can point either way. Offset from the
+                    // world-space bay center in glyph space so both run
+                    // orientations remain visually centered.
+                    const inkCenterX = (ink.minX + ink.maxX) * 0.5;
+                    const baseX = bayCenter.x - Math.cos(yaw) * inkCenterX;
+                    const baseZ = bayCenter.z + Math.sin(yaw) * inkCenterX;
 
                     const mesh = new THREE.Mesh(built.geometry, getLetteringMaterial(item.material));
-                    mesh.position.set(base.x, baselineY, base.z);
+                    mesh.position.set(baseX, baselineY, baseZ);
                     mesh.rotation.set(0, yaw, 0);
                     mesh.castShadow = true;
                     mesh.receiveShadow = true;
