@@ -358,7 +358,7 @@ function makeTreeMaterials({ leafMap, leafAoAlphaMap, leafNormal, trunkMap, trun
         side: THREE.DoubleSide
     });
     leaf.shadowSide = THREE.DoubleSide;
-    leaf.alphaToCoverage = true;
+    leaf.alphaToCoverage = false;
     leaf.userData.isFoliage = true;
     leaf.userData.preserveShadowSide = true;
     if (leafAoAlphaMap) leaf.userData.aoAlphaMap = leafAoAlphaMap;

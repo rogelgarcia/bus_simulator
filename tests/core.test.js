@@ -1970,12 +1970,22 @@ async function runTests() {
         assertEqual(calls[0].params?.initialMenu, 'debugs', 'Expected initialMenu=debugs.');
     });
 
-    test('TreeGenerator: resolves tree quality', async () => {
-        const { getResolvedTreeQuality } = await import('/src/graphics/assets3d/generators/TreeGenerator.js');
+    const { getResolvedTreeQuality, loadTreeMaterials } = await import('/src/graphics/assets3d/generators/TreeGenerator.js');
+    const treeMaterials = await loadTreeMaterials();
+
+    test('TreeGenerator: resolves tree quality', () => {
         assertEqual(getResolvedTreeQuality({ quality: 'desktop' }), 'desktop', 'Expected desktop quality passthrough.');
         assertEqual(getResolvedTreeQuality({ quality: 'mobile' }), 'mobile', 'Expected mobile quality passthrough.');
         const auto = getResolvedTreeQuality({ quality: 'auto' });
         assertTrue(auto === 'desktop' || auto === 'mobile', 'Expected auto to resolve to desktop or mobile.');
+    });
+
+    test('TreeGenerator: leaf beauty material keeps a hard cutout without changing AO alpha metadata', () => {
+        const { leaf } = treeMaterials;
+        assertEqual(leaf.alphaTest, 0.5, 'Expected the leaf beauty material to retain the 0.5 alpha cutout.');
+        assertTrue(leaf.alphaToCoverage === false, 'Expected the leaf beauty material to disable alpha-to-coverage.');
+        assertTrue(leaf.transparent === false, 'Expected the leaf beauty material to remain opaque/cutout.');
+        assertTrue(leaf.userData?.aoAlphaMap?.isTexture === true, 'Expected the AO override path to retain its dedicated alpha map.');
     });
 
     // ========== Building Fabrication UI Tests ==========
