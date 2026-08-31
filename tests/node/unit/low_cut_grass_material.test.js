@@ -97,7 +97,10 @@ test('anti-tiling contract is stable world-space color variation only', async ()
     ), 'utf8');
     assert.match(shaderSource, /vLowCutWorldPosition\.xz \/ lowCutMacroScale/);
     assert.match(shaderSource, /#include <map_fragment>/);
-    assert.match(shaderSource, /clamp\(lowCutRatio/);
+    assert.match(shaderSource, /float lowCutRatio = clamp/);
+    assert.match(shaderSource, /lowCutPrimaryLuminance/);
+    assert.match(shaderSource, /lowCutSecondaryLuminance/);
+    assert.doesNotMatch(shaderSource, /vec3 lowCutRatio/);
     assert.doesNotMatch(shaderSource, /gl_Position\s*\+=/);
 });
 

@@ -146,6 +146,7 @@ test('polygon exclusions reject mismatched source/onset point topology', () => {
 test('coverage renderer is an opaque polygon cap plus one batched physical edge draw', () => {
     const source = readFileSync(`${REPO_ROOT}/src/graphics/engine3d/grass/GrassCoverageSurfaceSystem.js`, 'utf8');
     assert.match(source, /ShapeUtils\.triangulateShape\(contour, holes\)/);
+    assert.match(source, /pushTriangle\(positions, uvs, colors, a, c, b, uv\(a2\), uv\(c2\), uv\(b2\)/);
     assert.match(source, /new THREE\.Mesh\(surfaceGeometry, this\._surfaceMaterial\)/);
     assert.match(source, /new THREE\.Mesh\(edgeGeometry, this\._edgeMaterial\)/);
     assert.match(source, /transparent:\s*false/);

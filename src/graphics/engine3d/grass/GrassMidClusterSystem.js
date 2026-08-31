@@ -1,23 +1,27 @@
-// Renders the automatic mid-distance grass tier as one atlas-backed instanced batch.
+// Renders the automatic billboard and middle grass tiers as two atlas-backed instanced batches.
 // @ts-check
 
 import * as THREE from 'three';
 import {
+    createGrassAutoLodFieldUnitHandoff,
     evaluateGrassAutoLod,
     getGrassAutoLodCandidateRadius,
-    getGrassAutoLodStableSample,
-    resolveGrassAutoLodMaskedVisibility,
+    resolveGrassAutoLodUnitVisibility,
     sanitizeGrassAutoLodConfig
 } from '../../../app/grass/GrassAutoLodContract.js';
+import {
+    createGrassCohesiveFieldLayout,
+    sanitizeGrassCohesiveFieldConfig
+} from '../../../app/grass/GrassCohesiveFieldLayout.js';
 import {
     LOW_CUT_GRASS_ASSET_FAMILY,
     LOW_CUT_GRASS_ATLAS_ROLE,
     LOW_CUT_GRASS_NORMAL_POLICY
 } from '../../content3d/catalogs/LowCutGrassMaterialCatalog.js';
 import { sanitizeGrassMidClusterConfig } from './GrassMidClusterConfig.js';
-import { makeRng } from './GrassRng.js';
 
 const ATLAS_SHADER_VERSION = 6;
+const EPS = 1e-7;
 
 function nextPowerOfTwo(value) {
     return 2 ** Math.ceil(Math.log2(Math.max(1, Number(value) || 1)));
@@ -57,21 +61,23 @@ function sampleTerrainHeight(terrainMesh, terrainGrid, x, z) {
     return y0 + (y1 - y0) * fz;
 }
 
-function createClusterGeometry(config, capacity) {
+function createClusterGeometry(config, capacity, tier) {
     const positions = [];
     const uvs = [];
     const indices = [];
-    const halfWidth = config.cardWidthMeters * 0.5;
-    for (let card = 0; card < config.cardsPerPatch; card++) {
-        const angle = card * Math.PI / config.cardsPerPatch;
+    const halfWidth = config.widthMeters * 0.5;
+    const baseY = -config.baseSinkMeters;
+    const tipY = baseY + config.heightMeters;
+    for (let card = 0; card < config.cardsPerUnit; card++) {
+        const angle = card * Math.PI / config.cardsPerUnit;
         const cosine = Math.cos(angle);
         const sine = Math.sin(angle);
         const vertex = positions.length / 3;
         positions.push(
-            -halfWidth * cosine, 0, halfWidth * sine,
-            halfWidth * cosine, 0, -halfWidth * sine,
-            halfWidth * cosine, config.cardHeightMeters, -halfWidth * sine,
-            -halfWidth * cosine, config.cardHeightMeters, halfWidth * sine
+            -halfWidth * cosine, baseY, halfWidth * sine,
+            halfWidth * cosine, baseY, -halfWidth * sine,
+            halfWidth * cosine, tipY, -halfWidth * sine,
+            -halfWidth * cosine, tipY, halfWidth * sine
         );
         uvs.push(0, 0, 1, 0, 1, 1, 0, 1);
         indices.push(vertex, vertex + 1, vertex + 2, vertex, vertex + 2, vertex + 3);
@@ -85,7 +91,7 @@ function createClusterGeometry(config, capacity) {
     geometry.computeVertexNormals();
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
-    geometry.name = `GrassMidCluster_${config.cardsPerPatch}Cards`;
+    geometry.name = `GrassCohesiveField_${tier}_${config.cardsPerUnit}Cards`;
     return geometry;
 }
 
@@ -108,6 +114,22 @@ function writeTransform(array, offset, descriptor) {
     array[offset + 13] = descriptor.y;
     array[offset + 14] = descriptor.z;
     array[offset + 15] = 1;
+}
+
+function normalizeCardFacingDelta(angle) {
+    const halfTurn = Math.PI;
+    const quarterTurn = Math.PI * 0.5;
+    return ((angle + quarterTurn) % halfTurn + halfTurn) % halfTurn - quarterTurn;
+}
+
+function resolveBillboardYaw(worldYaw, cameraX, cameraZ, x, z) {
+    const cameraFacingYaw = Math.atan2(cameraX - x, cameraZ - z);
+    const facingDelta = normalizeCardFacingDelta(cameraFacingYaw - worldYaw);
+    const maximumBias = Math.PI * 11 / 24;
+    // Retain enough deterministic world orientation to keep neighboring card
+    // tops from collapsing into camera-aligned horizontal rows.
+    const boundedBias = Math.max(-maximumBias, Math.min(maximumBias, facingDelta * 0.65));
+    return worldYaw + boundedBias;
 }
 
 function sanitizeAtlasContract(value) {
@@ -289,27 +311,57 @@ export function applyGrassClusterAtlasVariantShader(
     return applyGrassCardShader(material, atlasContract, { remapAtlasVariant: true });
 }
 
+/**
+ * V2 cohesive grass renderer. Billboard and middle tiers share one deterministic
+ * one-metre world layout and one material, but remain separate global batches.
+ */
 export class GrassMidClusterSystem {
-    constructor({ parent, terrainMesh, terrainGrid, getExclusionRects, material } = {}) {
+    constructor({
+        parent,
+        terrainMesh,
+        terrainGrid,
+        getExclusionRects,
+        getCoverageDefinition,
+        getCoverageConfig,
+        material
+    } = {}) {
         if (!parent?.isObject3D) throw new Error('[GrassMidClusterSystem] A THREE.Object3D parent is required.');
         this.group = new THREE.Group();
-        this.group.name = 'GrassMidClusterSystem';
+        this.group.name = 'GrassCohesiveFieldSystemV2';
         parent.add(this.group);
         this._terrainMesh = terrainMesh ?? null;
         this._terrainGrid = terrainGrid ?? null;
         this._getExclusionRects = typeof getExclusionRects === 'function' ? getExclusionRects : (() => []);
+        this._getCoverageDefinition = typeof getCoverageDefinition === 'function' ? getCoverageDefinition : (() => null);
+        this._getCoverageConfig = typeof getCoverageConfig === 'function' ? getCoverageConfig : (() => null);
+        this._coverageDefinition = null;
+        this._coverageConfig = null;
+        this._coverageInputKey = '';
         this._material = material?.isMaterial ? material : null;
         this._config = sanitizeGrassMidClusterConfig(null);
         this._autoLod = sanitizeGrassAutoLodConfig(null);
-        this._mesh = null;
-        this._visibleKeys = new Set();
-        this._layoutKey = '';
+        this._meshes = { billboard: null, middle: null };
+        this._visibleKeys = { billboard: new Set(), middle: new Set() };
+        this._batchSignatures = { billboard: '', middle: '' };
+        this._coverageSampleCache = new Map();
+        this._layout = null;
+        this._layoutInputKey = '';
+        this._frameKey = '';
+        this._evidenceMode = 'auto';
         this._lastAngleScale = 1;
+        this._lastBufferUpdates = 0;
+        this._geometryBeyondCutoffByTier = { billboard: 0, middle: 0 };
         this._stats = {
             bufferUpdates: 0,
             stationaryFrames: 0,
-            transitionPatches: 0,
-            rejectedPatches: 0,
+            layoutCacheHits: 0,
+            layoutCacheMisses: 0,
+            transitionUnits: 0,
+            overlapUnits: 0,
+            cutoffRejectedUnits: 0,
+            cutoffClampedUnits: 0,
+            cutoffCulledUnits: 0,
+            rejectedUnits: 0,
             geometryBeyondCutoff: 0,
             maxVisibleEffectiveDistanceMeters: 0
         };
@@ -323,134 +375,330 @@ export class GrassMidClusterSystem {
     setTerrain({ terrainMesh, terrainGrid } = {}) {
         this._terrainMesh = terrainMesh ?? this._terrainMesh;
         this._terrainGrid = terrainGrid ?? this._terrainGrid;
-        this._invalidate();
+        this._invalidateLayout();
     }
 
     setMaterial(material) {
         if (!material?.isMaterial) throw new Error('[GrassMidClusterSystem] A material is required.');
         this._material = material;
-        if (this._mesh) this._mesh.material = material;
+        for (const mesh of Object.values(this._meshes)) {
+            if (mesh) mesh.material = material;
+        }
+        this._frameKey = '';
     }
 
     setConfig(value) {
         const next = sanitizeGrassMidClusterConfig(value);
-        if (JSON.stringify(next) !== JSON.stringify(this._config)) {
-            this._config = next;
-            this._disposeMesh();
-            this._invalidate();
-        }
+        if (JSON.stringify(next) === JSON.stringify(this._config)) return;
+        this._config = next;
+        this._disposeMeshes();
+        this._invalidateLayout();
     }
 
     setAutoLodConfig(value) {
         const next = sanitizeGrassAutoLodConfig(value);
-        if (JSON.stringify(next) !== JSON.stringify(this._autoLod)) {
-            this._autoLod = next;
-            this._invalidate();
-        }
+        if (JSON.stringify(next) === JSON.stringify(this._autoLod)) return;
+        this._autoLod = next;
+        this.resetLodHysteresis();
+    }
+
+    setCoverageInput({ definition = null, config = null } = {}) {
+        const nextKey = [
+            String(definition?.boundarySignature ?? 'none'),
+            String(definition?.sourceLoopIdentity ?? ''),
+            JSON.stringify(definition?.bounds ?? null),
+            JSON.stringify(config ?? null)
+        ].join('|');
+        if (
+            nextKey === this._coverageInputKey
+            && definition === this._coverageDefinition
+            && config === this._coverageConfig
+        ) return;
+        this._coverageDefinition = definition;
+        this._coverageConfig = config;
+        this._coverageInputKey = nextKey;
+        this._coverageSampleCache.clear();
+        this._invalidateLayout();
+    }
+
+    setEvidenceMode(mode) {
+        const requested = String(mode ?? 'auto');
+        const next = requested === 'billboard' || requested === 'middle' || requested === 'texture_only'
+            ? requested
+            : 'auto';
+        if (next === this._evidenceMode) return;
+        this._evidenceMode = next;
+        this.resetLodHysteresis();
+    }
+
+    resetLodHysteresis() {
+        this._visibleKeys.billboard.clear();
+        this._visibleKeys.middle.clear();
+        this._batchSignatures.billboard = '';
+        this._batchSignatures.middle = '';
+        this._frameKey = '';
     }
 
     update({ camera, viewAngleDeg = 0 } = {}) {
         const grid = this._terrainGrid;
-        const config = this._config;
-        const radius = getGrassAutoLodCandidateRadius(this._autoLod, 'cluster', viewAngleDeg);
-        if (!config.enabled || !camera?.isCamera || !grid || !this._material || radius <= 0) {
-            this.group.visible = false;
-            if (this._mesh) this._mesh.count = 0;
-            this._visibleKeys.clear();
-            this._stats.geometryBeyondCutoff = 0;
-            this._stats.maxVisibleEffectiveDistanceMeters = 0;
+        const angle = Number(viewAngleDeg) || 0;
+        const billboardRadius = getGrassAutoLodCandidateRadius(this._autoLod, 'billboard', angle);
+        const middleRadius = getGrassAutoLodCandidateRadius(this._autoLod, 'middle', angle);
+        const evidenceRadius = this._evidenceMode === 'billboard' || this._evidenceMode === 'middle'
+            ? this._config.radiusMeters
+            : 0;
+        const radius = Math.max(billboardRadius, middleRadius, evidenceRadius);
+        if (!this._config.enabled || !camera?.isCamera || !grid || !this._material || radius <= 0) {
+            this._hideAll();
             return;
         }
+        const terrainBounds = this._getTerrainBounds(grid);
+        if (!terrainBounds) {
+            this._hideAll();
+            return;
+        }
+        const definition = this._coverageDefinition ?? this._getCoverageDefinition();
+        const coverageConfig = this._coverageConfig ?? this._getCoverageConfig();
+        const exclusions = definition ? [] : this._getExclusionRects();
+        const centerCellX = Math.floor(camera.position.x);
+        const centerCellZ = Math.floor(camera.position.z);
+        const layoutConfig = sanitizeGrassCohesiveFieldConfig({
+            seed: this._config.seed,
+            radiusMeters: Math.max(this._config.radiusMeters, radius),
+            rootJitterFactor: this._config.rootJitterFactor,
+            boundarySafetyMeters: this._config.boundarySafetyMeters,
+            scaleVariation: this._config.scaleVariation,
+            atlasVariants: this._config.atlasVariants,
+            billboard: this._config.billboard,
+            middle: this._config.middle
+        });
+        const layoutInputKey = [
+            centerCellX,
+            centerCellZ,
+            JSON.stringify(layoutConfig),
+            String(definition?.boundarySignature ?? 'compatibility'),
+            String(definition?.sourceLoopIdentity ?? ''),
+            JSON.stringify(definition?.bounds ?? terrainBounds),
+            JSON.stringify(coverageConfig ?? null),
+            JSON.stringify(exclusions ?? [])
+        ].join('|');
+        if (layoutInputKey !== this._layoutInputKey) {
+            this._layout = createGrassCohesiveFieldLayout({
+                cameraX: camera.position.x,
+                cameraZ: camera.position.z,
+                terrainBounds,
+                config: layoutConfig,
+                coverageDefinition: definition,
+                coverageConfig,
+                exclusionRects: exclusions,
+                coverageSampleCache: this._coverageSampleCache
+            });
+            this._layoutInputKey = layoutInputKey;
+            this._frameKey = '';
+            this._stats.layoutCacheMisses++;
+        } else {
+            this._stats.layoutCacheHits++;
+        }
+        this._updateVisibleBatches(camera, angle);
+    }
 
-        const centerCellX = Math.floor(camera.position.x / config.patchSizeMeters);
-        const centerCellZ = Math.floor(camera.position.z / config.patchSizeMeters);
-        const angleBucket = Math.round(Number(viewAngleDeg) * 2) / 2;
-        const exclusions = this._getExclusionRects();
-        const layoutKey = `${centerCellX},${centerCellZ}|${angleBucket}|${JSON.stringify(this._autoLod)}|${JSON.stringify(exclusions)}`;
-        if (layoutKey === this._layoutKey) {
+    _updateVisibleBatches(camera, viewAngleDeg) {
+        const layout = this._layout;
+        if (!layout) {
+            this._hideAll();
+            return;
+        }
+        const frameKey = [
+            layout.placementSignature,
+            camera.position.x.toFixed(6),
+            camera.position.z.toFixed(6),
+            Number(viewAngleDeg).toFixed(4),
+            JSON.stringify(this._autoLod),
+            this._evidenceMode
+        ].join('|');
+        if (frameKey === this._frameKey) {
+            this._lastBufferUpdates = 0;
             this._stats.stationaryFrames++;
             return;
         }
 
-        const minX = Number(grid.minX);
-        const minZ = Number(grid.minZ);
-        const maxX = minX + Number(grid.widthTiles) * Number(grid.tileSize);
-        const maxZ = minZ + Number(grid.depthTiles) * Number(grid.tileSize);
-        const cellRadius = Math.ceil((radius + config.patchSizeMeters) / config.patchSizeMeters);
-        const descriptors = [];
-        const nextVisibleKeys = new Set();
-        let transitionPatches = 0;
-        let rejectedPatches = 0;
+        const descriptors = { billboard: [], middle: [] };
+        const nextVisibleKeys = { billboard: new Set(), middle: new Set() };
+        let transitionUnits = 0;
+        let cutoffClampedUnits = 0;
+        let cutoffCulledUnits = 0;
         let geometryBeyondCutoff = 0;
+        const geometryBeyondCutoffByTier = { billboard: 0, middle: 0 };
         let maxVisibleEffectiveDistanceMeters = 0;
+        let lastAngleScale = 1;
 
-        for (let cellZ = centerCellZ - cellRadius; cellZ <= centerCellZ + cellRadius; cellZ++) {
-            for (let cellX = centerCellX - cellRadius; cellX <= centerCellX + cellRadius; cellX++) {
-                const x = (cellX + 0.5) * config.patchSizeMeters;
-                const z = (cellZ + 0.5) * config.patchSizeMeters;
-                if (x < minX || x > maxX || z < minZ || z > maxZ) continue;
-                const dx = x - camera.position.x;
-                const dz = z - camera.position.z;
-                const distance = Math.hypot(dx, dz);
-                if (distance > radius + config.patchSizeMeters) continue;
-                if (exclusions.some((rect) => x >= Number(rect?.x0) && x <= Number(rect?.x1) && z >= Number(rect?.z0) && z <= Number(rect?.z1))) {
-                    rejectedPatches++;
+        for (const unit of layout.units) {
+            const handoff = createGrassAutoLodFieldUnitHandoff({
+                unitKey: unit.key,
+                fieldSeed: this._config.seed,
+                boundarySignature: layout.boundarySignature,
+                cameraX: camera.position.x,
+                cameraZ: camera.position.z
+            });
+            const evaluation = evaluateGrassAutoLod({
+                distanceMeters: handoff.distanceMeters,
+                viewAngleDeg,
+                config: this._autoLod
+            });
+            const renderRootDistanceMeters = Math.hypot(
+                unit.x - camera.position.x,
+                unit.z - camera.position.z
+            );
+            const renderRootEffectiveDistanceMeters = renderRootDistanceMeters * evaluation.angleScale;
+            lastAngleScale = evaluation.angleScale;
+            if (
+                evaluation.transitionState === 'near_to_billboard'
+                || evaluation.transitionState === 'billboard_to_middle'
+                || evaluation.transitionState === 'middle_to_texture'
+            ) transitionUnits++;
+
+            for (const tier of ['billboard', 'middle']) {
+                const tierUnit = unit[tier];
+                if (!tierUnit?.represented) continue;
+                let visible = false;
+                if (this._evidenceMode === tier) {
+                    visible = !evaluation.beyondGeometryCutoff;
+                } else if (this._evidenceMode === 'auto') {
+                    visible = resolveGrassAutoLodUnitVisibility({
+                        evaluation,
+                        tier,
+                        unitKey: handoff.identity,
+                        previousVisible: this._visibleKeys[tier].has(unit.key),
+                        config: this._autoLod
+                    });
+                }
+                if (!visible) continue;
+                const remainingWorldMeters = Math.max(
+                    0,
+                    (this._autoLod.middleEndMeters - renderRootEffectiveDistanceMeters)
+                        / Math.max(EPS, evaluation.angleScale)
+                        - EPS
+                );
+                const cutoffFootprintScale = Math.min(
+                    1,
+                    remainingWorldMeters / Math.max(EPS, tierUnit.footprintRadiusMeters)
+                );
+                if (cutoffFootprintScale <= EPS) {
+                    cutoffCulledUnits++;
                     continue;
                 }
-                const key = `${cellX},${cellZ}`;
-                const evaluation = evaluateGrassAutoLod({ distanceMeters: distance, viewAngleDeg, config: this._autoLod });
-                if (evaluation.weights.cluster > 0 && evaluation.weights.cluster < 1) transitionPatches++;
-                const visible = resolveGrassAutoLodMaskedVisibility({
-                    weight: evaluation.weights.cluster,
-                    stableSample: getGrassAutoLodStableSample(key, 'cluster'),
-                    previousVisible: this._visibleKeys.has(key),
-                    config: this._autoLod
+                if (cutoffFootprintScale < 1 - EPS) cutoffClampedUnits++;
+                const footprintEffectiveDistanceMeters = renderRootEffectiveDistanceMeters
+                    + tierUnit.footprintRadiusMeters * cutoffFootprintScale * evaluation.angleScale;
+                if (footprintEffectiveDistanceMeters >= this._autoLod.middleEndMeters) {
+                    geometryBeyondCutoff++;
+                    geometryBeyondCutoffByTier[tier]++;
+                    continue;
+                }
+                maxVisibleEffectiveDistanceMeters = Math.max(
+                    maxVisibleEffectiveDistanceMeters,
+                    footprintEffectiveDistanceMeters
+                );
+                descriptors[tier].push({
+                    key: unit.key,
+                    x: unit.x,
+                    z: unit.z,
+                    y: sampleTerrainHeight(this._terrainMesh, this._terrainGrid, unit.x, unit.z)
+                        + this._config.yOffsetMeters,
+                    yaw: tier === 'billboard'
+                        ? resolveBillboardYaw(
+                            unit.yawRadians,
+                            camera.position.x,
+                            camera.position.z,
+                            unit.x,
+                            unit.z
+                        )
+                        : unit.yawRadians,
+                    scale: unit.scale * tierUnit.footprintScale * cutoffFootprintScale,
+                    brightness: this._config[tier].brightnessBias
+                        * (1 + (unit.stableSample * 2 - 1) * this._config.brightnessVariation),
+                    variant: unit.atlasVariant
                 });
-                if (!visible) continue;
-                if (evaluation.beyondGeometryCutoff) geometryBeyondCutoff++;
-                maxVisibleEffectiveDistanceMeters = Math.max(maxVisibleEffectiveDistanceMeters, evaluation.effectiveDistanceMeters);
-                const random = makeRng(`${config.seed}|${key}`);
-                descriptors.push({
-                    key,
-                    x,
-                    z,
-                    y: sampleTerrainHeight(this._terrainMesh, grid, x, z) + config.yOffsetMeters,
-                    yaw: random() * Math.PI * 2,
-                    scale: 1 + (random() * 2 - 1) * config.scaleVariation,
-                    brightness: 1 + (random() * 2 - 1) * config.brightnessVariation,
-                    variant: Math.floor(random() * config.atlasVariants)
-                });
-                nextVisibleKeys.add(key);
+                nextVisibleKeys[tier].add(unit.key);
             }
         }
 
-        descriptors.sort((a, b) => a.key.localeCompare(b.key));
-        this._writeDescriptors(descriptors);
+        const billboardUpdated = this._writeTier('billboard', descriptors.billboard);
+        const middleUpdated = this._writeTier('middle', descriptors.middle);
+        let overlapUnits = 0;
+        for (const key of nextVisibleKeys.billboard) {
+            if (nextVisibleKeys.middle.has(key)) overlapUnits++;
+        }
+        this._lastBufferUpdates = Number(billboardUpdated) + Number(middleUpdated);
+        this._stats.bufferUpdates += this._lastBufferUpdates;
         this._visibleKeys = nextVisibleKeys;
-        this._layoutKey = layoutKey;
-        this._lastAngleScale = descriptors.length
-            ? evaluateGrassAutoLod({ distanceMeters: 0, viewAngleDeg, config: this._autoLod }).angleScale
-            : 1;
-        this._stats.bufferUpdates++;
-        this._stats.transitionPatches = transitionPatches;
-        this._stats.rejectedPatches = rejectedPatches;
+        this._frameKey = frameKey;
+        this._lastAngleScale = lastAngleScale;
+        this._stats.transitionUnits = transitionUnits;
+        this._stats.overlapUnits = overlapUnits;
+        this._stats.cutoffRejectedUnits = 0;
+        this._stats.cutoffClampedUnits = cutoffClampedUnits;
+        this._stats.cutoffCulledUnits = cutoffCulledUnits;
+        this._stats.rejectedUnits = Number(layout.diagnostics?.rejectedUnits) || 0;
         this._stats.geometryBeyondCutoff = geometryBeyondCutoff;
+        this._geometryBeyondCutoffByTier = geometryBeyondCutoffByTier;
         this._stats.maxVisibleEffectiveDistanceMeters = maxVisibleEffectiveDistanceMeters;
-        this.group.visible = true;
+        this.group.visible = descriptors.billboard.length > 0 || descriptors.middle.length > 0;
     }
 
     getStats() {
-        const instances = this._mesh?.visible ? Math.max(0, this._mesh.count | 0) : 0;
+        const tierStats = {};
+        for (const tier of ['billboard', 'middle']) {
+            const mesh = this._meshes[tier];
+            const instances = mesh?.visible ? Math.max(0, mesh.count | 0) : 0;
+            const cardsPerUnit = this._config[tier].cardsPerUnit;
+            const tierDiagnostics = this._layout?.tiers?.[tier]?.diagnostics ?? null;
+            tierStats[tier] = Object.freeze({
+                instances,
+                visibleUnits: instances,
+                candidateUnits: Number(tierDiagnostics?.candidateUnits) || 0,
+                cardsPerUnit,
+                trianglesPerUnit: cardsPerUnit * 2,
+                renderedBaseOffsetMeters: this._config.yOffsetMeters - this._config[tier].baseSinkMeters,
+                renderedTipOffsetMeters: this._config.yOffsetMeters
+                    - this._config[tier].baseSinkMeters
+                    + this._config[tier].heightMeters,
+                triangles: instances * cardsPerUnit * 2,
+                drawCalls: instances > 0 ? 1 : 0,
+                batches: instances > 0 ? 1 : 0,
+                castShadow: mesh?.castShadow === true,
+                frustumCulled: mesh?.frustumCulled !== false,
+                geometryBeyondCutoff: this._geometryBeyondCutoffByTier[tier],
+                eligibleUnits: Number(tierDiagnostics?.eligibleUnits) || 0,
+                representedUnits: Number(tierDiagnostics?.representedUnits) || 0,
+                unrepresentedEligibleUnits: Number(tierDiagnostics?.unrepresentedEligibleUnits) || 0,
+                eligibleAreaSquareMeters: Number(tierDiagnostics?.eligibleAreaSquareMeters) || 0,
+                representedAreaSquareMeters: Number(tierDiagnostics?.representedAreaSquareMeters) || 0,
+                missingAreaSquareMeters: Number(tierDiagnostics?.missingAreaSquareMeters) || 0,
+                exactEnvelopeFailures: Number(tierDiagnostics?.exactEnvelopeFailures) || 0,
+                footprintClampedUnits: Number(tierDiagnostics?.footprintClampedUnits) || 0,
+                diagnostics: tierDiagnostics
+            });
+        }
+        const instances = tierStats.billboard.instances + tierStats.middle.instances;
+        const triangles = tierStats.billboard.triangles + tierStats.middle.triangles;
+        const drawCalls = tierStats.billboard.drawCalls + tierStats.middle.drawCalls;
         const atlasChannelRoles = Object.values(this._material?.userData?.grassClusterAtlasMaps ?? {})
             .filter((value) => typeof value === 'string' && value);
+        const diagnostics = this._layout?.diagnostics ?? null;
         return {
             enabled: this._config.enabled,
+            schema: 'bus-simulator.grass-cohesive-field-renderer',
+            version: 2,
             instances,
-            cardsPerPatch: this._config.cardsPerPatch,
-            trianglesPerPatch: this._config.cardsPerPatch * 2,
-            triangles: instances * this._config.cardsPerPatch * 2,
-            drawCalls: instances > 0 ? 1 : 0,
-            materialPaths: instances > 0 ? 1 : 0,
+            triangles,
+            drawCalls,
+            batches: drawCalls,
+            materialPaths: drawCalls > 0 ? 1 : 0,
+            billboard: tierStats.billboard,
+            middle: tierStats.middle,
+            cardsPerPatch: this._config.middle.cardsPerUnit,
+            trianglesPerPatch: this._config.middle.cardsPerUnit * 2,
             atlasVariants: this._config.atlasVariants,
             atlasMaps: Object.freeze(atlasChannelRoles.length
                 ? atlasChannelRoles
@@ -460,60 +708,143 @@ export class GrassMidClusterSystem {
             alphaCutoff: Number(this._material?.alphaTest) || 0,
             alphaToCoverage: this._material?.alphaToCoverage === true,
             transparent: this._material?.transparent === true,
-            frustumCulled: this._mesh?.frustumCulled !== false,
-            castShadow: this._mesh?.castShadow === true,
+            frustumCulled: Object.values(this._meshes).every((mesh) => !mesh || mesh.frustumCulled !== false),
+            castShadow: Object.values(this._meshes).some((mesh) => mesh?.castShadow === true),
             angleScale: this._lastAngleScale,
+            lastBufferUpdates: this._lastBufferUpdates,
+            totalBufferUpdates: this._stats.bufferUpdates,
+            cacheHits: this._stats.layoutCacheHits,
+            cacheMisses: this._stats.layoutCacheMisses,
+            coverageMode: this._layout?.coverageMode ?? null,
+            coverageIdentity: this._layout?.coverageIdentity ?? null,
+            boundarySignature: this._layout?.boundarySignature ?? null,
+            sourceLoopIdentity: this._layout?.sourceLoopIdentity ?? null,
+            placementSignature: this._layout?.placementSignature ?? null,
+            candidateUnits: Number(diagnostics?.candidateUnits) || 0,
+            eligibleUnits: Number(diagnostics?.eligibleUnits) || 0,
+            representedUnits: Number(diagnostics?.representedUnits) || 0,
+            unrepresentedEligibleUnits: Number(diagnostics?.unrepresentedEligibleUnits) || 0,
+            eligibleAreaSquareMeters: Number(diagnostics?.eligibleAreaSquareMeters) || 0,
+            representedAreaSquareMeters: Number(diagnostics?.representedAreaSquareMeters) || 0,
+            missingAreaSquareMeters: Number(diagnostics?.missingAreaSquareMeters) || 0,
+            rejectedByKind: Object.freeze({ ...(diagnostics?.rejectedByKind ?? {}) }),
+            exactPostcheckFailures: Number(diagnostics?.exactPostcheckFailures) || 0,
+            exactEnvelopeFailures: Number(diagnostics?.exactEnvelopeFailures) || 0,
+            boundaryCompletionProbes: Number(diagnostics?.boundaryCompletionProbes) || 0,
+            boundaryCompletionSelectedUnits: Number(diagnostics?.boundaryCompletionSelectedUnits) || 0,
+            footprintClampedUnits: (
+                Number(tierStats.billboard.diagnostics?.footprintClampedUnits)
+                + Number(tierStats.middle.diagnostics?.footprintClampedUnits)
+            ) || 0,
+            evidenceMode: this._evidenceMode,
             ...this._stats
         };
     }
 
     dispose() {
-        this._disposeMesh();
-        this._material?.dispose?.();
+        this._disposeMeshes();
         this._material = null;
+        this._coverageSampleCache.clear();
         this.group.removeFromParent();
     }
 
-    _invalidate() {
-        this._layoutKey = '';
+    _getTerrainBounds(grid) {
+        const minX = Number(grid?.minX);
+        const minZ = Number(grid?.minZ);
+        const maxX = minX + Number(grid?.widthTiles) * Number(grid?.tileSize);
+        const maxZ = minZ + Number(grid?.depthTiles) * Number(grid?.tileSize);
+        if (![minX, minZ, maxX, maxZ].every(Number.isFinite) || maxX <= minX || maxZ <= minZ) return null;
+        return { minX, minZ, maxX, maxZ };
     }
 
-    _disposeMesh() {
-        this._mesh?.geometry?.dispose?.();
-        this._mesh?.removeFromParent?.();
-        this._mesh = null;
-        this._visibleKeys.clear();
+    _invalidateLayout() {
+        this._layout = null;
+        this._layoutInputKey = '';
+        this._frameKey = '';
+        this._batchSignatures.billboard = '';
+        this._batchSignatures.middle = '';
     }
 
-    _ensureMesh(count) {
+    _hideAll() {
+        for (const mesh of Object.values(this._meshes)) {
+            if (mesh) {
+                mesh.count = 0;
+                mesh.visible = false;
+            }
+        }
+        this.group.visible = false;
+        this._visibleKeys.billboard.clear();
+        this._visibleKeys.middle.clear();
+        this._batchSignatures.billboard = '';
+        this._batchSignatures.middle = '';
+        this._lastBufferUpdates = 0;
+        this._geometryBeyondCutoffByTier = { billboard: 0, middle: 0 };
+        this._stats.cutoffRejectedUnits = 0;
+        this._stats.cutoffClampedUnits = 0;
+        this._stats.cutoffCulledUnits = 0;
+        this._stats.geometryBeyondCutoff = 0;
+        this._stats.maxVisibleEffectiveDistanceMeters = 0;
+    }
+
+    _ensureBillboardMesh(count) {
         const required = Math.max(1, count);
-        const existingCapacity = this._mesh?.instanceMatrix?.count ?? 0;
-        if (this._mesh?.isInstancedMesh && existingCapacity >= required) return this._mesh;
-        this._disposeMesh();
+        const current = this._meshes.billboard;
+        if (current?.isInstancedMesh && current.instanceMatrix.count >= required) return current;
+        this._disposeTier('billboard');
         const capacity = nextPowerOfTwo(required);
-        const geometry = createClusterGeometry(this._config, capacity);
+        const geometry = createClusterGeometry(this._config.billboard, capacity, 'billboard');
         const mesh = new THREE.InstancedMesh(geometry, this._material, capacity);
-        mesh.name = 'GrassMidClusterBatch';
+        this._configureMesh(mesh, 'billboard', capacity);
+        this._meshes.billboard = mesh;
+        return mesh;
+    }
+
+    _ensureMiddleMesh(count) {
+        const required = Math.max(1, count);
+        const current = this._meshes.middle;
+        if (current?.isInstancedMesh && current.instanceMatrix.count >= required) return current;
+        this._disposeTier('middle');
+        const capacity = nextPowerOfTwo(required);
+        const geometry = createClusterGeometry(this._config.middle, capacity, 'middle');
+        const mesh = new THREE.InstancedMesh(geometry, this._material, capacity);
+        this._configureMesh(mesh, 'middle', capacity);
+        this._meshes.middle = mesh;
+        return mesh;
+    }
+
+    _configureMesh(mesh, tier, capacity) {
+        mesh.name = tier === 'billboard' ? 'GrassBillboardFieldBatch' : 'GrassMiddleFieldBatch';
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
         mesh.castShadow = false;
         mesh.receiveShadow = false;
         mesh.frustumCulled = true;
-        mesh.renderOrder = 4;
+        mesh.renderOrder = tier === 'billboard' ? 4 : 5;
         this.group.add(mesh);
-        this._mesh = mesh;
-        return mesh;
     }
 
-    _writeDescriptors(descriptors) {
+    _writeTier(tier, descriptors) {
+        descriptors.sort((a, b) => a.key.localeCompare(b.key));
+        const signature = [
+            this._layout?.placementSignature ?? 'none',
+            tier,
+            descriptors.map((descriptor) => tier === 'billboard'
+                ? `${descriptor.key}:${descriptor.yaw.toFixed(5)}:${descriptor.scale.toFixed(6)}`
+                : `${descriptor.key}:${descriptor.scale.toFixed(6)}`).join(',')
+        ].join('|');
+        if (signature === this._batchSignatures[tier]) return false;
+        this._batchSignatures[tier] = signature;
         if (!descriptors.length) {
-            if (this._mesh) {
-                this._mesh.count = 0;
-                this._mesh.visible = false;
+            const existing = this._meshes[tier];
+            if (existing) {
+                existing.count = 0;
+                existing.visible = false;
             }
-            return;
+            return true;
         }
-        const mesh = this._ensureMesh(descriptors.length);
+        const mesh = tier === 'billboard'
+            ? this._ensureBillboardMesh(descriptors.length)
+            : this._ensureMiddleMesh(descriptors.length);
         const matrices = mesh.instanceMatrix.array;
         const colors = mesh.instanceColor.array;
         const variants = mesh.geometry.attributes.grassAtlasVariant;
@@ -532,5 +863,20 @@ export class GrassMidClusterSystem {
         variants.needsUpdate = true;
         mesh.computeBoundingBox();
         mesh.computeBoundingSphere();
+        return true;
+    }
+
+    _disposeTier(tier) {
+        const mesh = this._meshes[tier];
+        mesh?.geometry?.dispose?.();
+        mesh?.removeFromParent?.();
+        this._meshes[tier] = null;
+        this._batchSignatures[tier] = '';
+        this._visibleKeys[tier].clear();
+    }
+
+    _disposeMeshes() {
+        this._disposeTier('billboard');
+        this._disposeTier('middle');
     }
 }

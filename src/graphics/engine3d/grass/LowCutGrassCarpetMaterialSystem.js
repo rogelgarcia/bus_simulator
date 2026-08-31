@@ -76,14 +76,15 @@ float lowCutNoise(vec2 p) {
     if (lowCutEnabled > 0.5) {
         vec2 lowCutUv = vec2(1.0 - vMapUv.y, vMapUv.x) * lowCutSecondaryScale + lowCutSeedOffset;
         vec4 lowCutSecondary = texture2D(map, lowCutUv);
-        vec3 lowCutRatio = lowCutSecondary.rgb / max(sampledDiffuseColor.rgb, vec3(0.025));
-        lowCutRatio = clamp(lowCutRatio, vec3(0.72), vec3(1.28));
+        float lowCutPrimaryLuminance = dot(sampledDiffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lowCutSecondaryLuminance = dot(lowCutSecondary.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lowCutRatio = clamp(lowCutSecondaryLuminance / max(lowCutPrimaryLuminance, 0.025), 0.72, 1.28);
         vec2 lowCutMacroPosition = vLowCutWorldPosition.xz / lowCutMacroScale + lowCutSeedOffset;
         float lowCutMacroPrimary = lowCutNoise(lowCutMacroPosition);
         float lowCutMacroSecondary = lowCutNoise(vec2(-lowCutMacroPosition.y, lowCutMacroPosition.x) * 0.47 + lowCutSeedOffset.yx);
         float lowCutMacro = mix(lowCutMacroPrimary, lowCutMacroSecondary, 0.35);
         float lowCutBlend = lowCutSecondaryBlend * smoothstep(0.18, 0.82, lowCutMacro);
-        diffuseColor.rgb *= mix(vec3(1.0), lowCutRatio, lowCutBlend);
+        diffuseColor.rgb *= mix(1.0, lowCutRatio, lowCutBlend);
         diffuseColor.rgb *= 1.0 + (lowCutMacro * 2.0 - 1.0) * lowCutMacroStrength;
     }
 #endif`);

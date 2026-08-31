@@ -548,10 +548,13 @@ export class GrassDebuggerUI {
             },
             autoLod: {
                 force: 'auto',
-                nearEndMeters: 9,
-                clusterEndMeters: 30,
+                nearEndMeters: 3,
+                billboardEndMeters: 8,
+                middleEndMeters: 25,
+                clusterEndMeters: 25,
                 transitionWidthMeters: 2,
                 hysteresisMeters: 0.75,
+                overlapMeters: 0.5,
                 grazingDistanceScale: 0.8,
                 topDownDistanceScale: 1.2
             },
@@ -561,8 +564,8 @@ export class GrassDebuggerUI {
                 carpetPatchSizeMeters: 1,
                 carpetBladesPerSquareMeter: 64,
                 carpetFibersPerRoot: 3,
-                carpetRadiusMeters: 9,
-                region: { innerMeters: 0, outerMeters: 9 },
+                carpetRadiusMeters: 3,
+                region: { innerMeters: 0, outerMeters: 3 },
                 angle: { minGrazingDeg: 0, maxGrazingDeg: 90 },
                 debug: { printRegion: true, drawBounds: true },
                 bladeMeshId: PROCEDURAL_MESH.SOCCER_GRASS_BLADE_V1,
@@ -575,11 +578,19 @@ export class GrassDebuggerUI {
             },
             lod2: {
                 enabled: true,
-                clusterPatchSizeMeters: 2,
+                billboardEnabled: true,
+                middleEnabled: true,
+                ownershipCellMeters: 1,
+                billboardCardsPerUnit: 1,
+                middleCardsPerUnit: 2,
+                billboardCardWidthMeters: 1.15,
+                middleCardWidthMeters: 1.15,
+                cardHeightMeters: 0.055,
+                clusterPatchSizeMeters: 1,
                 clusterCardsPerPatch: 2,
                 clusterCardWidthMeters: 1.15,
                 clusterCardHeightMeters: 0.055,
-                region: { innerMeters: 9, outerMeters: 30 },
+                region: { innerMeters: 3, outerMeters: 25 },
                 angle: { minGrazingDeg: 0, maxGrazingDeg: 90 },
                 debug: { printRegion: false, drawBounds: false },
                 bladeMeshId: PROCEDURAL_MESH.SOCCER_GRASS_BLADE_V1,
@@ -592,13 +603,13 @@ export class GrassDebuggerUI {
             },
             lod3: {
                 enabled: true,
-                region: { innerMeters: 30, outerMeters: 30 },
+                region: { innerMeters: 25, outerMeters: 25 },
                 angle: { minGrazingDeg: 0, maxGrazingDeg: 90 },
                 debug: { printRegion: false, drawBounds: false }
             },
             lod4: {
                 enabled: true,
-                region: { innerMeters: 30, outerMeters: 30 },
+                region: { innerMeters: 25, outerMeters: 25 },
                 angle: { minGrazingDeg: 0, maxGrazingDeg: 90 },
                 debug: { printRegion: false, drawBounds: false }
             }
@@ -1041,7 +1052,7 @@ export class GrassDebuggerUI {
             ['triangles', 'Grass triangles'],
             ['draws', 'Logical grass draws'],
             ['nearCarpet', 'Near carpet'],
-            ['midCluster', 'Atlas clusters'],
+            ['midCluster', 'Billboard + middle field'],
             ['accents', 'Localized accents'],
             ['coverage', 'Hard coverage'],
             ['cpu', 'Grass update CPU'],
@@ -1545,8 +1556,10 @@ export class GrassDebuggerUI {
             : 'disabled';
         this.setNearCarpetDiagnostics(near);
         const mid = grass.midCluster ?? {};
+        const billboard = mid.billboard ?? {};
+        const middle = mid.middle ?? {};
         values.midCluster.textContent = mid.enabled
-            ? `${number(mid.instances ?? 0)} clusters · ${number(mid.triangles ?? 0)} tris · ${number(mid.drawCalls ?? 0)} draw`
+            ? `${number(billboard.visibleUnits ?? billboard.instances ?? 0)} billboard / ${number(middle.visibleUnits ?? middle.instances ?? 0)} middle · ${number(mid.triangles ?? 0)} tris · ${number(mid.drawCalls ?? 0)} draws`
             : 'disabled';
         this.setAutoLodDiagnostics(lod, mid);
         const localized = grass.localizedAccents ?? {};
@@ -1576,16 +1589,16 @@ export class GrassDebuggerUI {
         const milliseconds = (value) => Number.isFinite(Number(value)) ? `${Number(value).toFixed(2)} ms` : 'unavailable';
         values.review.textContent = `${validation.qualityPreset ?? 'default'} · ${validation.cameraPreset ?? '?'} · ${validation.lightingPreset ?? '?'} · ${validation.motionPath ?? 'stationary'}`;
         values.lod.textContent = `${lod.activeTier ?? 'texture'} · ${Number(lod.effectiveDistanceMeters ?? 0).toFixed(2)} m · ${Number(lod.viewAngleDeg ?? 0).toFixed(1)}° · scale ${Number(lod.angleScale ?? 1).toFixed(2)}`;
-        values.instances.textContent = `near ${number(instances.near)} · cluster ${number(instances.mid)} · accents ${number(instances.accent)}`;
-        values.triangles.textContent = `near ${number(triangles.near)} · cluster ${number(triangles.mid)} · accents ${number(triangles.accent)} · total ${number(grass.triangles)}`;
+        values.instances.textContent = `near ${number(instances.near)} · billboard ${number(instances.billboard)} · middle ${number(instances.middle ?? instances.mid)} · accents ${number(instances.accent)}`;
+        values.triangles.textContent = `near ${number(triangles.near)} · billboard ${number(triangles.billboard)} · middle ${number(triangles.middle ?? triangles.mid)} · accents ${number(triangles.accent)} · total ${number(grass.triangles)}`;
         values.draws.textContent = `${Number(measurements.averageDrawCalls ?? grass.logicalDrawCalls ?? 0).toFixed(2)} avg · ${number(measurements.maximumDrawCalls ?? grass.logicalDrawCalls)} max · 12 hard ceiling`;
         values.timing.textContent = `${milliseconds(measurements.averageCpuMs)} CPU · ${milliseconds(measurements.averageGpuMs)} whole-frame GPU proxy · ${number(budget.sampleCount)} samples`;
         values.buffers.textContent = `${Number(report.bufferUpdatesPerSecond ?? 0).toFixed(2)}/s · ${number(report.bufferUpdatesTotal ?? 0)} total · stationary should settle to 0/s`;
-        values.budget.textContent = `${budget.pass ? 'PASS' : 'MEASURING'} · CPU ≤0.60 ms · GPU proxy ≤1.50 ms · ≤12 draws · tris ≤200K`;
+        values.budget.textContent = `${budget.pass ? 'PASS' : 'MEASURING'} · CPU ≤0.60 ms · GPU proxy ≤1.50 ms · ≤12 draws · field ≈50K / combined ≤200K`;
         const cameraSeen = validation.reviewedCameraIds?.length ?? 0;
         const lightSeen = validation.reviewedLightingIds?.length ?? 0;
         const pathSeen = validation.reviewedMotionPathIds?.length ?? 0;
-        values.coverage.textContent = `${cameraSeen} cameras · ${lightSeen}/4 lights · ${pathSeen}/2 paths`;
+        values.coverage.textContent = `${cameraSeen} cameras · ${lightSeen}/4 lights · ${pathSeen}/5 paths`;
         values.stress.textContent = report.stress?.completed
             ? `${report.stress.pass ? 'PASS' : 'REVIEW'} · ${number(report.stress.triangles)} tris · ${number(report.stress.drawCalls)} draws`
             : 'not run';
@@ -1616,29 +1629,29 @@ export class GrassDebuggerUI {
         values.safety.textContent = `${stats.frustumCulled ? 'culled' : 'unculled'} · ${stats.castShadow ? 'shadows' : 'no shadows'} · ${stats.transparent ? 'transparent' : 'opaque'}`;
     }
 
-    setAutoLodDiagnostics(lod, cluster) {
+    setAutoLodDiagnostics(lod, field) {
         const values = this._controls?.autoLodReadouts ?? null;
         if (!values || !lod) return;
         const number = (value) => Number(value).toLocaleString('en-US');
         values.mode.textContent = `${lod.force ?? 'auto'} · ${lod.activeTier ?? 'texture'}`;
         values.response.textContent = `${Number(lod.effectiveDistanceMeters ?? 0).toFixed(2)} m effective · ${Number(lod.viewAngleDeg ?? 0).toFixed(1)}° · scale ${Number(lod.angleScale ?? 1).toFixed(2)}`;
-        values.ranges.textContent = `near ${Number(lod.nearEndMeters ?? 0).toFixed(1)} m · cutoff ${Number(lod.geometryCutoffWorldMeters ?? 0).toFixed(1)} m world`;
-        values.transition.textContent = `${String(lod.transitionState ?? 'texture_only').replaceAll('_', ' ')} · ${number(cluster?.transitionPatches ?? 0)} masked patches`;
-        values.cluster.textContent = `${number(cluster?.instances ?? 0)} instances · ${number(cluster?.cardsPerPatch ?? 0)} cards/patch · ${number(cluster?.atlasVariants ?? 0)} variants`;
-        values.cost.textContent = `${number(cluster?.triangles ?? 0)} tris · ${number(cluster?.drawCalls ?? 0)} draw · ${number(cluster?.materialPaths ?? 0)} material`;
-        values.material.textContent = `${Number(cluster?.alphaCutoff ?? 0).toFixed(2)} cutoff · ${cluster?.alphaToCoverage ? 'A2C' : 'no A2C'} · ${cluster?.transparent ? 'transparent' : 'opaque'}`;
-        values.cutoff.textContent = `${number(lod.geometryBeyondCutoff ?? 0)} geometry instances beyond cutoff`;
+        values.ranges.textContent = `close ${Number(lod.nearEndMeters ?? 0).toFixed(1)} m · billboard ${Number(lod.billboardEndMeters ?? 0).toFixed(1)} m · middle ${Number(lod.middleEndMeters ?? 0).toFixed(1)} m · cutoff ${Number(lod.geometryCutoffWorldMeters ?? 0).toFixed(1)} m world`;
+        values.transition.textContent = `${String(lod.transitionState ?? 'texture_only').replaceAll('_', ' ')} · ${number(field?.transitionUnits ?? 0)} transition / ${number(field?.overlapUnits ?? 0)} overlap units`;
+        values.field.textContent = `${number(field?.billboard?.visibleUnits ?? 0)} billboard · ${number(field?.middle?.visibleUnits ?? 0)} middle · ${number(field?.representedUnits ?? 0)}/${number(field?.eligibleUnits ?? 0)} represented · ${number(field?.atlasVariants ?? 0)} variants`;
+        values.cost.textContent = `${number(field?.triangles ?? 0)} tris · ${number(field?.drawCalls ?? 0)} draws/${number(field?.batches ?? 0)} batches · ${number(field?.lastBufferUpdates ?? 0)} now/${number(field?.totalBufferUpdates ?? 0)} total uploads`;
+        values.material.textContent = `${Number(field?.alphaCutoff ?? 0).toFixed(2)} cutoff · ${field?.alphaToCoverage ? 'A2C' : 'no A2C'} · ${field?.transparent ? 'transparent' : 'opaque'} · zero emissive`;
+        values.cutoff.textContent = `${number(lod.geometryBeyondCutoff ?? 0)} beyond cutoff · ${number(field?.exactPostcheckFailures ?? 0)} root / ${number(field?.exactEnvelopeFailures ?? 0)} envelope failures · ${String(field?.boundarySignature ?? 'no signature').slice(0, 20)}`;
     }
 
     setLocalizedAccentDiagnostics(stats, coverage) {
         const values = this._controls?.localizedAccentReadouts ?? null;
         if (!values || !stats) return;
         const number = (value) => Number(value).toLocaleString('en-US');
-        values.eligibility.textContent = `${coverage?.accentEligibility ? 'eligible' : 'blocked'} · ${stats.layout ?? 'localized_tufts'} only`;
+        values.eligibility.textContent = `${coverage?.accentEligibility ? 'eligible' : 'blocked'} · ${stats.layout ?? 'localized_feature_accents'} only · ${stats.substrateOwnership ?? 'coverage_tree_hole'}`;
         values.placements.textContent = `${number(stats.eligibleTrees ?? 0)}/${number(stats.treePlacements ?? 0)} trees · ${number(stats.optionalFeatures ?? 0)} optional feature`;
         values.visible.textContent = `${number(stats.visibleClusters ?? 0)}/${number(stats.potentialClusters ?? 0)} clusters · ${number(stats.clustersPerTree ?? 0)}/tree`;
         values.cost.textContent = `${number(stats.grassTriangles ?? 0)} tris · ${number(stats.grassDrawCalls ?? 0)} draw · ${number(stats.grassMaterialPaths ?? 0)} atlas material`;
-        values.worn.textContent = `${number(stats.wornPatches ?? 0)} patches · ${number(stats.wornTriangles ?? 0)} tris · ${number(stats.wornDrawCalls ?? 0)} draw`;
+        values.worn.textContent = `${number(stats.wornPatches ?? 0)} patches · ${number(stats.wornTriangles ?? 0)} tris · ${number(stats.wornDrawCalls ?? 0)} draws · V2 requires zero`;
         values.batching.textContent = `${number(stats.totalDrawCalls ?? 0)} global draws · ${number(stats.trianglesPerTreeAccent ?? 0)} grass tris/tree`;
         values.determinism.textContent = String(stats.deterministicSignature ?? '?');
         values.rejections.textContent = `${number(stats.rejectedCoverage ?? 0)} coverage · ${number(stats.rejectedInsideTrunk ?? 0)} inside trunk`;
@@ -1945,9 +1958,9 @@ export class GrassDebuggerUI {
         };
         for (const [key, value] of Object.entries(defaults)) if (accents[key] === undefined) accents[key] = value;
 
-        const contract = makeSection({ title: 'AI 356 localized accent contract', collapsedByDefault: false });
+        const contract = makeSection({ title: 'AI 361 localized accent contract', collapsedByDefault: false });
         parent.appendChild(contract);
-        contract.appendChild(makeEl('div', 'ui-grass-lab-note', 'Tufts are reserved for explicit tree and worn-area records. Four single-card atlas clusters provide eight grass triangles per tree; the uniform area-patch carpet remains unchanged.'));
+        contract.appendChild(makeEl('div', 'ui-grass-lab-note', 'Low clumps are reserved for explicit tree and optional-feature records. Four deterministic two-card clumps provide sixteen grass triangles per tree; worn-substrate geometry remains disabled.'));
         contract.appendChild(makeToggleRow({
             label: 'Localized accents enabled',
             value: accents.enabled !== false,
@@ -1958,7 +1971,7 @@ export class GrassDebuggerUI {
         }).row);
         contract.appendChild(makeEl('div', 'ui-grass-lab-note', 'Tree wear is an AI 359 polygon exclusion that reveals the shared substrate. The legacy opaque worn disc is disabled.'));
         contract.appendChild(makeToggleRow({
-            label: 'Rare worn feature accent',
+            label: 'Optional feature accent',
             value: accents.featureAccentsEnabled !== false,
             onChange: (value) => {
                 accents.featureAccentsEnabled = value;
@@ -1994,7 +2007,7 @@ export class GrassDebuggerUI {
         const cameras = makeSection({ title: 'Deterministic comparison cameras', collapsedByDefault: false });
         parent.appendChild(cameras);
         cameras.appendChild(makeButtonRow({ label: 'Tree base', text: 'Focus tree intersection', onClick: () => this._onFocusLocalizedAccent?.('tree') }).row);
-        cameras.appendChild(makeButtonRow({ label: 'Optional irregularity', text: 'Focus rare worn accent', onClick: () => this._onFocusLocalizedAccent?.('wornFeature') }).row);
+        cameras.appendChild(makeButtonRow({ label: 'Feature irregularity', text: 'Focus explicit feature accent', onClick: () => this._onFocusLocalizedAccent?.('wornFeature') }).row);
 
         const diagnostics = makeSection({ title: 'Localized accent diagnostics', collapsedByDefault: false });
         parent.appendChild(diagnostics);
@@ -2024,7 +2037,7 @@ export class GrassDebuggerUI {
         lod.carpetPatchSizeMeters = Number.isFinite(Number(lod.carpetPatchSizeMeters)) ? Number(lod.carpetPatchSizeMeters) : 1;
         lod.carpetBladesPerSquareMeter = Number.isFinite(Number(lod.carpetBladesPerSquareMeter)) ? Number(lod.carpetBladesPerSquareMeter) : 64;
         lod.carpetFibersPerRoot = Number.isFinite(Number(lod.carpetFibersPerRoot)) ? Number(lod.carpetFibersPerRoot) : 3;
-        lod.carpetRadiusMeters = Number.isFinite(Number(lod.carpetRadiusMeters)) ? Number(lod.carpetRadiusMeters) : 12;
+        lod.carpetRadiusMeters = Number.isFinite(Number(lod.carpetRadiusMeters)) ? Number(lod.carpetRadiusMeters) : 3;
 
         const carpet = makeSection({ title: 'Near geometry tier', collapsedByDefault: false });
         parent.appendChild(carpet);
@@ -2101,8 +2114,8 @@ export class GrassDebuggerUI {
         const radius = makeNumberSliderRow({
             label: 'Near end (m)',
             value: lod.carpetRadiusMeters,
-            min: 4,
-            max: 18,
+            min: 1,
+            max: 12,
             step: 0.5,
             digits: 1,
             onChange: (value) => {
@@ -2302,16 +2315,19 @@ export class GrassDebuggerUI {
     _buildAutoLodBody(parent) {
         const lod = this._state.lod2;
         const auto = this._state.autoLod;
-        lod.clusterPatchSizeMeters = Number(lod.clusterPatchSizeMeters) || 2;
-        lod.clusterCardsPerPatch = Number(lod.clusterCardsPerPatch) || 2;
-        lod.clusterCardWidthMeters = Number(lod.clusterCardWidthMeters) || 1.15;
-        lod.clusterCardHeightMeters = Number(lod.clusterCardHeightMeters) || 0.055;
+        lod.billboardEnabled = lod.billboardEnabled !== false;
+        lod.middleEnabled = lod.middleEnabled !== false;
+        lod.billboardCardsPerUnit = 1;
+        lod.middleCardsPerUnit = 2;
+        lod.billboardCardWidthMeters = Number(lod.billboardCardWidthMeters) || 1.15;
+        lod.middleCardWidthMeters = Number(lod.middleCardWidthMeters) || 1.15;
+        lod.cardHeightMeters = Number(lod.cardHeightMeters) || 0.055;
 
-        const section = makeSection({ title: 'AI 355 automatic cluster handoff', collapsedByDefault: false });
+        const section = makeSection({ title: 'AI 361 cohesive automatic hierarchy', collapsedByDefault: false });
         parent.appendChild(section);
-        section.appendChild(makeEl('div', 'ui-grass-lab-note', 'Automatic LOD is canonical: physical near patches hand off to one opaque atlas-backed cluster batch, then to the raised PBR surface with zero grass geometry after the cutoff.'));
+        section.appendChild(makeEl('div', 'ui-grass-lab-note', 'Canonical order: close mesh → dense billboard coverage → cohesive middle patches → texture-only turf. Shared one-metre exact-coverage units, complementary masks, overlap, and hysteresis keep the carpet connected.'));
         section.appendChild(makeToggleRow({
-            label: 'Cluster tier enabled',
+            label: 'Simplified field enabled',
             value: lod.enabled,
             onChange: (value) => {
                 lod.enabled = value;
@@ -2324,7 +2340,8 @@ export class GrassDebuggerUI {
             options: [
                 { id: 'auto', label: 'Automatic (canonical)' },
                 { id: 'near', label: 'Force near geometry' },
-                { id: 'cluster', label: 'Force cluster geometry' },
+                { id: 'billboard', label: 'Force billboard coverage' },
+                { id: 'middle', label: 'Force middle patches' },
                 { id: 'texture', label: 'Force texture only' }
             ],
             onChange: (value) => {
@@ -2335,10 +2352,12 @@ export class GrassDebuggerUI {
             }
         }).row);
         for (const options of [
-            { label: 'Near end (m)', key: 'nearEndMeters', min: 4, max: 18, step: 0.5, digits: 1 },
-            { label: 'Geometry cutoff (m)', key: 'clusterEndMeters', min: 16, max: 48, step: 1, digits: 0 },
+            { label: 'Close end (m)', key: 'nearEndMeters', min: 1, max: 12, step: 0.5, digits: 1 },
+            { label: 'Billboard end (m)', key: 'billboardEndMeters', min: 4, max: 24, step: 0.5, digits: 1 },
+            { label: 'Middle / geometry cutoff (m)', key: 'middleEndMeters', min: 10, max: 48, step: 1, digits: 0 },
             { label: 'Dither band (m)', key: 'transitionWidthMeters', min: 0.5, max: 5, step: 0.25, digits: 2 },
             { label: 'Hysteresis (m)', key: 'hysteresisMeters', min: 0, max: 2.5, step: 0.05, digits: 2 },
+            { label: 'Guaranteed overlap (m)', key: 'overlapMeters', min: 0, max: 2, step: 0.05, digits: 2 },
             { label: 'Grazing distance scale', key: 'grazingDistanceScale', min: 0.55, max: 1, step: 0.01, digits: 2 },
             { label: 'Top-down distance scale', key: 'topDownDistanceScale', min: 1, max: 1.75, step: 0.01, digits: 2 }
         ]) section.appendChild(makeNumberSliderRow({
@@ -2347,22 +2366,23 @@ export class GrassDebuggerUI {
             onChange: (value) => {
                 auto[options.key] = value;
                 if (options.key === 'nearEndMeters') this._state.lod1.carpetRadiusMeters = value;
+                if (options.key === 'middleEndMeters') auto.clusterEndMeters = value;
                 this._emit();
             }
         }).row);
 
-        const geometry = makeSection({ title: 'One-batch cluster geometry', collapsedByDefault: false });
+        const geometry = makeSection({ title: 'Two-batch cohesive field geometry', collapsedByDefault: false });
         parent.appendChild(geometry);
+        geometry.appendChild(makeEl('div', 'ui-grass-lab-note', 'Every eligible one-metre unit is represented: one billboard card and one crossed two-card middle patch. Both batches share AI 358 MID_CLUSTER material ownership.'));
         for (const options of [
-            { label: 'Patch spacing (m)', key: 'clusterPatchSizeMeters', min: 1, max: 4, step: 0.25, digits: 2 },
-            { label: 'Cards / patch', key: 'clusterCardsPerPatch', min: 1, max: 2, step: 1, digits: 0 },
-            { label: 'Card width (m)', key: 'clusterCardWidthMeters', min: 0.35, max: 2.5, step: 0.05, digits: 2 },
-            { label: 'Card height (m)', key: 'clusterCardHeightMeters', min: 0.025, max: 0.12, step: 0.005, digits: 3 }
+            { label: 'Billboard width (m)', key: 'billboardCardWidthMeters', min: 0.35, max: 1.5, step: 0.05, digits: 2 },
+            { label: 'Middle width (m)', key: 'middleCardWidthMeters', min: 0.35, max: 1.5, step: 0.05, digits: 2 },
+            { label: 'Visible card height (m)', key: 'cardHeightMeters', min: 0.025, max: 0.12, step: 0.005, digits: 3 }
         ]) geometry.appendChild(makeNumberSliderRow({
             ...options,
             value: lod[options.key],
             onChange: (value) => {
-                lod[options.key] = options.key === 'clusterCardsPerPatch' ? Math.round(value) : value;
+                lod[options.key] = value;
                 this._emit();
             }
         }).row);
@@ -2370,9 +2390,9 @@ export class GrassDebuggerUI {
         const cameras = makeSection({ title: 'Deterministic LOD cameras', collapsedByDefault: false });
         parent.appendChild(cameras);
         for (const [id, label, text] of [
-            ['grazing', 'Grazing', 'Review near → cluster'],
+            ['grazing', 'Grazing', 'Review close → billboard'],
             ['topDown', 'Top-down', 'Review angle contraction'],
-            ['cutoff', 'Cutoff', 'Review texture-only field']
+            ['cutoff', 'Cutoff', 'Review middle → texture']
         ]) cameras.appendChild(makeButtonRow({ label, text, onClick: () => this._onFocusAutoLod?.(id) }).row);
 
         const diagnostics = makeSection({ title: 'Automatic LOD diagnostics', collapsedByDefault: false });
@@ -2383,8 +2403,8 @@ export class GrassDebuggerUI {
             ['response', 'Distance / angle response'],
             ['ranges', 'Effective ranges'],
             ['transition', 'Transition state'],
-            ['cluster', 'Cluster instances'],
-            ['cost', 'Cluster cost'],
+            ['field', 'Billboard / middle units'],
+            ['cost', 'Cohesive field cost'],
             ['material', 'Atlas material'],
             ['cutoff', 'Far geometry']
         ]) {

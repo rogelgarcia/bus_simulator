@@ -24,7 +24,6 @@ import {
     LOW_CUT_GRASS_LOCAL_OVERRIDES,
     LOW_CUT_GRASS_MATERIAL_ID,
     LOW_CUT_GRASS_SHADER_DEFAULTS,
-    LOW_CUT_GRASS_SUBSTRATE_MATERIAL_ID,
     LOW_CUT_GRASS_V1_ASSET_FAMILY,
     LOW_CUT_GRASS_V1_MATERIAL_ID
 } from '../../../content3d/catalogs/LowCutGrassMaterialCatalog.js';
@@ -54,11 +53,13 @@ import {
     GRASS_LAB_DEFAULT_SEED
 } from '../GrassLabContract.js';
 import {
+    GRASS_LAB_MOTION_PATHS,
     GRASS_LAB_REQUIRED_REGRESSIONS,
     createGrassLabApprovalRecord,
     evaluateGrassLabBudget,
     getGrassLabCameraPreset,
-    getGrassLabLightingPreset
+    getGrassLabLightingPreset,
+    summarizeGrassTimingSamples
 } from '../../../../app/grass/GrassLabValidationContract.js';
 
 const EPS = 1e-6;
@@ -72,11 +73,23 @@ const LOD2_COLOR = 0x9cff2b;
 const LOD2_VARIANTS = 4;
 const CAMERA_PRESET_BEHIND_GAMEPLAY_DISTANCE = 13.5;
 const LOW_CUT_PROFILE_STORAGE_KEY = 'bus-simulator.grass-lab.low-cut-profile.v1';
+const HIERARCHY_EVIDENCE_MODES = new Set(['auto', 'texture_only', 'close', 'billboard', 'middle', 'accent']);
+const HANDOFF_CAMERA_PRESETS = Object.freeze({
+    close_billboard: 'close_billboard_handoff',
+    billboard_middle: 'billboard_middle_handoff',
+    middle_texture: 'middle_texture_handoff'
+});
+const VALIDATION_MOTION_ROUTE_IDS = new Set(['forward', 'reverse', 'strafe', 'flyover']);
 
 function clamp(value, min, max, fallback = min) {
     const num = Number(value);
     if (!Number.isFinite(num)) return fallback;
     return Math.max(min, Math.min(max, num));
+}
+
+function smoothstep01(value) {
+    const t = clamp(value, 0, 1, 0);
+    return t * t * (3 - 2 * t);
 }
 
 function coverageDefinitionInputKey(state, coverageConfig) {
@@ -238,22 +251,24 @@ export class GrassDebuggerView {
         this._coverageEdgeMaterial = null;
         this._boundaryEvidenceMode = null;
         this._nearEvidenceMode = null;
+        this._hierarchyEvidenceMode = null;
         this._coverageDefinitionInputKey = null;
         this._midClusterMaterial = null;
         this._accentClusterMaterial = null;
-        this._wornAccentMaterial = null;
         this._grassMaterialVersion = 'v2';
         this._authoringFixture = null;
         this._materialFixture = null;
         this._authoringProfile = null;
+        this._grassUpdateCpuRawMs = null;
         this._grassUpdateCpuMs = null;
+        this._performanceMeasurement = null;
         this._labDiagnosticsLastUpdateMs = 0;
         this._sun = null;
         this._hemi = null;
         this._streetLight = null;
         this._validationCameraId = 'height_150';
         this._validationLightingId = 'daylight';
-        this._validationMotion = { id: 'stationary', active: false, startedAtMs: 0, durationMs: 0 };
+        this._validationMotion = { id: 'stationary', active: false, startedAtMs: 0, durationMs: 0, progress: 0, seeked: false };
         this._validationSamples = [];
         this._validationBufferSamples = [];
         this._validationSampleWarmupUntilMs = 0;
@@ -353,7 +368,8 @@ export class GrassDebuggerView {
         const renderer = new THREE.WebGLRenderer({
             canvas: this.canvas,
             antialias: true,
-            alpha: false
+            alpha: false,
+            powerPreference: 'high-performance'
         });
         renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
         renderer.setSize(this.canvas.clientWidth, this.canvas.clientHeight, false);
@@ -409,7 +425,6 @@ export class GrassDebuggerView {
         this._buildSceneContent();
         this._midClusterMaterial = this._createGrassMidClusterMaterial();
         this._accentClusterMaterial = this._createGrassAccentClusterMaterial();
-        this._wornAccentMaterial = this._createGrassWornAccentMaterial();
         this._grassEngine = new GrassEngine({
             scene: this.scene,
             terrainMesh: this._ground,
@@ -419,7 +434,6 @@ export class GrassDebuggerView {
             getCoverageConfig: () => createGrassLabCoverageConfig(this._state),
             midClusterMaterial: this._midClusterMaterial,
             localizedAccentMaterial: this._accentClusterMaterial,
-            wornAccentMaterial: this._wornAccentMaterial,
             localizedAccentInput: {
                 treePlacements: this._labFixtures?.treePlacements ?? [],
                 featurePlacements: this._labFixtures?.accentFeaturePlacements ?? [],
@@ -513,9 +527,10 @@ export class GrassDebuggerView {
 
         this._grassEngine?.dispose?.();
         this._grassEngine = null;
+        this._midClusterMaterial?.dispose?.();
+        this._accentClusterMaterial?.dispose?.();
         this._midClusterMaterial = null;
         this._accentClusterMaterial = null;
-        this._wornAccentMaterial = null;
         this._coverageSystem?.dispose?.();
         this._coverageSystem = null;
         this._coverageSurfaceMaterial = null;
@@ -1154,7 +1169,11 @@ export class GrassDebuggerView {
     setBoundaryEvidenceMode(mode = null) {
         const wasBoundaryEvidenceActive = this._boundaryEvidenceMode !== null;
         const next = mode === 'substrate_only' || mode === 'boundary_final' ? mode : null;
-        if (next) this.setNearEvidenceMode(null);
+        if (next) {
+            this.setNearEvidenceMode(null);
+            this._hierarchyEvidenceMode = null;
+            this._grassEngine?.setHierarchyEvidenceMode?.(null);
+        }
         this._boundaryEvidenceMode = next;
         if (wasBoundaryEvidenceActive && next === null && this._grassEngine?.group) {
             this._grassEngine.group.visible = this._grassEngine?.getStats?.().enabled === true;
@@ -1169,7 +1188,11 @@ export class GrassDebuggerView {
 
     setNearEvidenceMode(mode = null) {
         const next = mode === 'texture_only' || mode === 'near_mesh' ? mode : null;
-        if (next) this._boundaryEvidenceMode = null;
+        if (next) {
+            this._boundaryEvidenceMode = null;
+            this._hierarchyEvidenceMode = null;
+            this._grassEngine?.setHierarchyEvidenceMode?.(null);
+        }
         this._nearEvidenceMode = next;
         this._grassEngine?.setNearEvidenceMode?.(next);
         this._applyBoundaryEvidenceVisibility();
@@ -1178,6 +1201,38 @@ export class GrassDebuggerView {
             coverage: this._coverageSystem?.getStats?.() ?? null,
             nearCarpet: this._grassEngine?.getStats?.().nearCarpet ?? null
         };
+    }
+
+    setHierarchyEvidenceMode(mode = null) {
+        const requested = mode === null || mode === undefined ? null : String(mode);
+        if (requested !== null && !HIERARCHY_EVIDENCE_MODES.has(requested)) {
+            throw new Error(`[GrassLab] Unsupported hierarchy evidence mode: ${requested}`);
+        }
+        const setMode = this._grassEngine?.setHierarchyEvidenceMode;
+        if (typeof setMode !== 'function') {
+            throw new Error('[GrassLab] GrassEngine hierarchy evidence control is unavailable.');
+        }
+        if (requested !== null) {
+            this._boundaryEvidenceMode = null;
+            this._nearEvidenceMode = null;
+            this._grassEngine?.setNearEvidenceMode?.(null);
+        }
+        this._hierarchyEvidenceMode = requested;
+        const result = setMode.call(this._grassEngine, requested);
+        this._applyBoundaryEvidenceVisibility();
+        return result ?? {
+            mode: requested,
+            grass: this._grassEngine?.getStats?.() ?? null
+        };
+    }
+
+    resetLodHysteresis() {
+        const reset = this._grassEngine?.resetLodHysteresis;
+        if (typeof reset !== 'function') {
+            throw new Error('[GrassLab] GrassEngine LOD hysteresis reset is unavailable.');
+        }
+        const result = reset.call(this._grassEngine);
+        return result ?? this._grassEngine?.getLodDebugInfo?.() ?? null;
     }
 
     _applyBoundaryEvidenceVisibility() {
@@ -1189,7 +1244,9 @@ export class GrassDebuggerView {
                 lip: this._state?.coverage?.showLip !== false,
                 fringe: this._state?.coverage?.showFringe !== false
             });
-            this._grassEngine?.setNearEvidenceMode?.(this._nearEvidenceMode);
+            if (this._hierarchyEvidenceMode === null) {
+                this._grassEngine?.setNearEvidenceMode?.(this._nearEvidenceMode);
+            }
             return;
         }
         const final = this._boundaryEvidenceMode === 'boundary_final';
@@ -1245,27 +1302,98 @@ export class GrassDebuggerView {
         return new THREE.Vector3(Number(fixture.x) || 0, 0.04, Number(fixture.z) || 0);
     }
 
-    applyValidationCameraPreset(presetId) {
-        const preset = getGrassLabCameraPreset(presetId);
-        this._validationMotion = { id: 'stationary', active: false, startedAtMs: 0, durationMs: 0 };
+    _applyValidationCameraPose(preset, distanceOffsetMeters = 0) {
+        this._validationMotion = {
+            id: 'stationary',
+            active: false,
+            startedAtMs: 0,
+            durationMs: Number(GRASS_LAB_MOTION_PATHS.stationary?.durationMs) || 4000,
+            progress: 0,
+            seeked: false
+        };
         this._validationCameraId = preset.id;
         this._ui?.recordValidationReview?.('camera', preset.id);
         if (preset.fixture === 'bus') {
             this._applyBehindBusCameraPreset();
             this.resetValidationSamples();
-            return preset;
+            return {
+                baseDistanceMeters: Number(preset.distanceMeters) || 0,
+                distanceMeters: Number(preset.distanceMeters) || 0,
+                offsetMeters: 0,
+                position: this.camera ? { x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z } : null,
+                target: this.controls?.target
+                    ? { x: this.controls.target.x, y: this.controls.target.y, z: this.controls.target.z }
+                    : null
+            };
         }
         const target = this._getValidationTarget(preset.fixture);
         target.y = Number(preset.targetHeightMeters) || 0.04;
+        const baseDistance = Math.max(0.05, Number(preset.distanceMeters) || 1);
+        const offset = clamp(distanceOffsetMeters, -baseDistance + 0.05, 100 - baseDistance, 0);
+        const distance = baseDistance + offset;
         const position = target.clone().add(new THREE.Vector3(
             Number(preset.lateralMeters) || 0,
             0,
-            Number(preset.distanceMeters) || 1
+            distance
         ));
         position.y = Math.max(0.05, Number(preset.heightMeters) || 1);
         this.controls?.setLookAt?.({ position, target });
         this.resetValidationSamples();
+        return {
+            baseDistanceMeters: baseDistance,
+            distanceMeters: distance,
+            offsetMeters: offset,
+            position: { x: position.x, y: position.y, z: position.z },
+            target: { x: target.x, y: target.y, z: target.z }
+        };
+    }
+
+    applyValidationCameraPreset(presetId) {
+        const preset = getGrassLabCameraPreset(presetId);
+        this._applyValidationCameraPose(preset, 0);
         return preset;
+    }
+
+    focusHandoff(handoffId, offsetMeters = 0) {
+        const id = String(handoffId ?? '');
+        const presetId = HANDOFF_CAMERA_PRESETS[id];
+        if (!presetId) throw new Error(`[GrassLab] Unsupported hierarchy handoff: ${id}`);
+        const preset = getGrassLabCameraPreset(presetId);
+        const auto = this._state?.autoLod ?? {};
+        const transitionWidth = clamp(auto.transitionWidthMeters, 0.5, 5, 2);
+        const effectiveCenterMeters = id === 'close_billboard'
+            ? clamp(auto.nearEndMeters, 1, 12, 3)
+            : id === 'billboard_middle'
+                ? clamp(auto.billboardEndMeters, 2, 24, 8)
+                : Math.max(
+                    0.1,
+                    clamp(auto.middleEndMeters ?? auto.clusterEndMeters, 4, 48, 25)
+                        - transitionWidth * 0.5
+                );
+        const grazingScale = clamp(auto.grazingDistanceScale, 0.55, 1, 0.8);
+        const worldCenterMeters = effectiveCenterMeters / grazingScale;
+        const verticalMeters = Math.abs(
+            (Number(preset.heightMeters) || 1) - (Number(preset.targetHeightMeters) || 0.04)
+        );
+        const horizontalCenterMeters = Math.sqrt(Math.max(
+            0.05 ** 2,
+            worldCenterMeters ** 2 - verticalMeters ** 2
+        ));
+        const pose = this._applyValidationCameraPose({
+            ...preset,
+            distanceMeters: horizontalCenterMeters
+        }, offsetMeters);
+        return {
+            ...preset,
+            id,
+            presetId,
+            effectiveCenterMeters,
+            baseDistanceMeters: pose.baseDistanceMeters,
+            distanceMeters: pose.distanceMeters,
+            offsetMeters: pose.offsetMeters,
+            position: pose.position,
+            target: pose.target
+        };
     }
 
     applyValidationLightingPreset(presetId) {
@@ -1297,39 +1425,122 @@ export class GrassDebuggerView {
         return preset;
     }
 
+    _evaluateValidationMotionPath(routeId, progress) {
+        const id = String(routeId ?? '');
+        if (!VALIDATION_MOTION_ROUTE_IDS.has(id)) {
+            throw new Error(`[GrassLab] Unsupported validation motion route: ${id}`);
+        }
+        const t = clamp(progress, 0, 1, 0);
+        const routeT = id === 'reverse' ? 1 - t : t;
+        const eased = smoothstep01(routeT);
+        const target = this._getValidationTarget('grazing').clone();
+        target.y = 0.05;
+        let distance = 2 + eased * 28;
+        let height = 0.58 + eased * 0.82;
+        let lateral = 0;
+        if (id === 'strafe') {
+            const strafeT = smoothstep01(t);
+            distance = 8;
+            height = 0.85;
+            lateral = -6 + strafeT * 12;
+        } else if (id === 'flyover') {
+            distance = 2 + eased * 46;
+            height = 0.45 + eased * 2.75;
+            lateral = Math.sin(t * Math.PI * 2) * 2.25;
+        }
+        const position = target.clone().add(new THREE.Vector3(lateral, height, distance));
+        return {
+            id,
+            progress: t,
+            routeProgress: routeT,
+            easedProgress: eased,
+            distanceMeters: distance,
+            heightMeters: height,
+            lateralMeters: lateral,
+            position,
+            target
+        };
+    }
+
+    _applyValidationMotionPose(routeId, progress) {
+        const pose = this._evaluateValidationMotionPath(routeId, progress);
+        this.controls?.setLookAt?.({ position: pose.position, target: pose.target });
+        return {
+            id: pose.id,
+            progress: pose.progress,
+            routeProgress: pose.routeProgress,
+            easedProgress: pose.easedProgress,
+            distanceMeters: pose.distanceMeters,
+            heightMeters: pose.heightMeters,
+            lateralMeters: pose.lateralMeters,
+            position: { x: pose.position.x, y: pose.position.y, z: pose.position.z },
+            target: { x: pose.target.x, y: pose.target.y, z: pose.target.z }
+        };
+    }
+
+    seekMotionPath(routeId, progress) {
+        const id = String(routeId ?? '');
+        const fixedProgress = clamp(progress, 0, 1, 0);
+        const path = GRASS_LAB_MOTION_PATHS[id];
+        if (!VALIDATION_MOTION_ROUTE_IDS.has(id) || !path) {
+            throw new Error(`[GrassLab] Unsupported validation motion route: ${id}`);
+        }
+        this._ui?.recordValidationReview?.('motion', id);
+        this._validationMotion = {
+            id,
+            active: false,
+            startedAtMs: 0,
+            durationMs: Number(path.durationMs) || 1,
+            progress: fixedProgress,
+            seeked: true
+        };
+        const pose = this._applyValidationMotionPose(id, fixedProgress);
+        this.resetValidationSamples();
+        return {
+            ...this._validationMotion,
+            ...pose
+        };
+    }
+
     startValidationMotionPath(pathId) {
-        const id = pathId === 'flyover' ? 'flyover' : 'stationary';
+        const requested = String(pathId ?? '');
+        const id = requested === 'stationary' || VALIDATION_MOTION_ROUTE_IDS.has(requested)
+            ? requested
+            : 'stationary';
+        const path = GRASS_LAB_MOTION_PATHS[id] ?? GRASS_LAB_MOTION_PATHS.stationary;
         this._ui?.recordValidationReview?.('motion', id);
         if (id === 'stationary') {
-            this._validationMotion = { id, active: false, startedAtMs: performance.now(), durationMs: 4000 };
             this.applyValidationCameraPreset('near_handoff');
-            this._validationMotion.id = id;
+            this._validationMotion = {
+                id,
+                active: false,
+                startedAtMs: performance.now(),
+                durationMs: Number(path.durationMs) || 4000,
+                progress: 0,
+                seeked: false
+            };
             return { ...this._validationMotion };
         }
         this._validationMotion = {
             id,
             active: true,
             startedAtMs: performance.now(),
-            durationMs: 9000,
-            target: this._getValidationTarget('grazing')
+            durationMs: Number(path.durationMs) || 9000,
+            progress: 0,
+            seeked: false
         };
+        this._applyValidationMotionPose(id, 0);
         this.resetValidationSamples();
-        return { id, active: true, durationMs: 9000 };
+        return { ...this._validationMotion };
     }
 
     _updateValidationMotion(nowMs) {
         const motion = this._validationMotion;
-        if (!motion?.active || motion.id !== 'flyover' || !motion.target) return;
+        if (!motion?.active || !VALIDATION_MOTION_ROUTE_IDS.has(String(motion.id))) return;
         const elapsed = Math.max(0, Number(nowMs) - Number(motion.startedAtMs));
         const t = Math.min(1, elapsed / Math.max(1, Number(motion.durationMs)));
-        const eased = t * t * (3 - 2 * t);
-        const target = motion.target.clone();
-        target.y = 0.05;
-        const distance = 2 + eased * 46;
-        const height = 0.45 + eased * 2.75;
-        const lateral = Math.sin(t * Math.PI * 2) * 2.25;
-        const position = target.clone().add(new THREE.Vector3(lateral, height, distance));
-        this.controls?.setLookAt?.({ position, target });
+        motion.progress = t;
+        this._applyValidationMotionPose(motion.id, t);
         if (t >= 1) motion.active = false;
     }
 
@@ -1339,11 +1550,205 @@ export class GrassDebuggerView {
         this._validationSampleWarmupUntilMs = performance.now() + 1000;
     }
 
+    beginPerformanceMeasurement(options = {}) {
+        const source = options && typeof options === 'object' ? options : {};
+        const targetFrameSamples = Number(source.targetFrameSamples ?? 120);
+        const minimumGpuSamples = Number(source.minimumGpuSamples ?? 30);
+        const maximumGpuFlushFrames = Number(source.maximumGpuFlushFrames ?? 30);
+        const warmupFrames = Number(source.warmupFrames);
+        const warmupDurationMs = Number(source.warmupDurationMs);
+        const stableZeroUploadFrames = Number(source.stableZeroUploadFrames);
+        for (const [name, value] of Object.entries({
+            targetFrameSamples,
+            minimumGpuSamples,
+            maximumGpuFlushFrames,
+            warmupFrames,
+            warmupDurationMs,
+            stableZeroUploadFrames
+        })) {
+            if (!Number.isFinite(value) || value < 0 || (
+                name !== 'warmupDurationMs' && !Number.isInteger(value)
+            )) {
+                throw new Error(`[GrassDebuggerView] Invalid performance measurement ${name}: ${value}`);
+            }
+        }
+        if (targetFrameSamples < 1 || maximumGpuFlushFrames < 1) {
+            throw new Error('[GrassDebuggerView] Performance measurement requires positive frame targets.');
+        }
+        if (this._gpuFrameTimer?.resetSamples?.() === false) {
+            throw new Error('[GrassDebuggerView] GPU timer was active during performance reset.');
+        }
+        const timer = this.getGpuTimerDiagnostics();
+        this._performanceMeasurement = {
+            schema: 'grass-lab-performance-measurement-v1',
+            status: 'measuring',
+            startedAtMs: performance.now(),
+            completedAtMs: null,
+            targetFrameSamples,
+            minimumGpuSamples,
+            maximumGpuFlushFrames,
+            warmup: {
+                frames: warmupFrames,
+                durationMs: warmupDurationMs,
+                stableZeroUploadFrames
+            },
+            cpuSamplesMs: [],
+            frameSamplesMs: [],
+            bufferUpdateSamples: [],
+            gpuSamples: [],
+            gpuSupported: timer.isSupported === true,
+            gpuBackend: String(timer.backend ?? 'unsupported'),
+            gpuNotMeasuredReason: timer.isSupported === true
+                ? null
+                : String(timer.disabledReason ?? 'GPU timer query unsupported'),
+            gpuStartSubmissionSequence: Number(timer.submissionSequence) || 0,
+            gpuEndSubmissionSequence: null,
+            lastGpuSampleSequence: Number(timer.sampleSequence) || 0,
+            cpuClosed: false,
+            gpuFlushFrames: 0,
+            failureReason: null
+        };
+        return this.getPerformanceMeasurement();
+    }
+
+    getGpuTimerDiagnostics() {
+        const diagnostics = this._gpuFrameTimer?.getDiagnostics?.() ?? null;
+        return diagnostics ? { ...diagnostics } : {
+            isSupported: false,
+            backend: 'unsupported',
+            active: false,
+            sampleSequence: 0,
+            sampleCount: 0,
+            submissionSequence: 0,
+            pendingQueryCount: 0,
+            disjointCount: 0,
+            lastMs: null,
+            lastCompletedAtMs: null,
+            disabledReason: 'GPU timer unavailable'
+        };
+    }
+
+    getPerformanceMeasurement() {
+        const measurement = this._performanceMeasurement;
+        if (!measurement) return null;
+        const timer = this.getGpuTimerDiagnostics();
+        const cpu = summarizeGrassTimingSamples(measurement.cpuSamplesMs);
+        const frame = summarizeGrassTimingSamples(measurement.frameSamplesMs);
+        const gpu = summarizeGrassTimingSamples(measurement.gpuSamples.map((sample) => sample.ms));
+        const bufferUpdates = measurement.bufferUpdateSamples;
+        return {
+            schema: measurement.schema,
+            status: measurement.status,
+            failureReason: measurement.failureReason,
+            startedAtMs: measurement.startedAtMs,
+            completedAtMs: measurement.completedAtMs,
+            durationMs: Math.max(
+                0,
+                Number(measurement.completedAtMs ?? performance.now()) - Number(measurement.startedAtMs)
+            ),
+            targetFrameSamples: measurement.targetFrameSamples,
+            minimumGpuSamples: measurement.minimumGpuSamples,
+            warmup: { ...measurement.warmup },
+            cpu: {
+                scope: 'GrassEngine.update',
+                statistic: 'arithmetic_mean',
+                ...cpu,
+                samplesMs: [...measurement.cpuSamplesMs]
+            },
+            frame: {
+                scope: 'requestAnimationFrame interval',
+                statistic: 'arithmetic_mean',
+                ...frame,
+                fpsFromMeanFrameMs: frame.meanMs > 0 ? 1000 / frame.meanMs : null,
+                samplesMs: [...measurement.frameSamplesMs]
+            },
+            gpu: {
+                scope: 'WebGLRenderer.render timer query',
+                statistic: 'arithmetic_mean',
+                supported: measurement.gpuSupported,
+                active: measurement.gpuSupported ? timer.active === true : false,
+                backend: measurement.gpuBackend,
+                notMeasuredReason: measurement.gpuSupported
+                    ? (timer.disabledReason ?? null)
+                    : measurement.gpuNotMeasuredReason,
+                ...gpu,
+                samples: measurement.gpuSamples.map((sample) => ({ ...sample })),
+                timerSampleSequence: Number(timer.sampleSequence) || 0,
+                timerSampleCount: Number(timer.sampleCount) || 0,
+                submissionSequenceStart: measurement.gpuStartSubmissionSequence,
+                submissionSequenceEnd: measurement.gpuEndSubmissionSequence,
+                pendingQueryCount: Number(timer.pendingQueryCount) || 0,
+                disjointCount: Number(timer.disjointCount) || 0
+            },
+            bufferUpdates: {
+                scope: 'near + billboard/middle + localized accent instance uploads',
+                samples: [...bufferUpdates],
+                sampleCount: bufferUpdates.length,
+                total: bufferUpdates.reduce((sum, value) => sum + value, 0),
+                maximum: bufferUpdates.length ? Math.max(...bufferUpdates) : null,
+                stationaryZero: bufferUpdates.length > 0 && bufferUpdates.every((value) => value === 0)
+            }
+        };
+    }
+
+    _recordPerformanceMeasurement({ cpuMs, frameMs, lastBufferUpdates, nowMs }) {
+        const measurement = this._performanceMeasurement;
+        if (!measurement || measurement.status === 'complete' || measurement.status === 'failed') return;
+        const timer = this.getGpuTimerDiagnostics();
+        const newGpuSamples = this._gpuFrameTimer?.getSamplesSince?.(measurement.lastGpuSampleSequence) ?? [];
+        measurement.lastGpuSampleSequence = Number(timer.sampleSequence) || measurement.lastGpuSampleSequence;
+        for (const sample of newGpuSamples) {
+            const submissionSequence = Number(sample?.submissionSequence);
+            if (!(submissionSequence > measurement.gpuStartSubmissionSequence)) continue;
+            if (
+                measurement.gpuEndSubmissionSequence !== null
+                && submissionSequence > measurement.gpuEndSubmissionSequence
+            ) continue;
+            measurement.gpuSamples.push({ ...sample });
+        }
+
+        if (!measurement.cpuClosed) {
+            if (Number.isFinite(cpuMs) && Number.isFinite(frameMs) && Number.isFinite(lastBufferUpdates)) {
+                measurement.cpuSamplesMs.push(cpuMs);
+                measurement.frameSamplesMs.push(frameMs);
+                measurement.bufferUpdateSamples.push(lastBufferUpdates);
+            }
+            if (measurement.cpuSamplesMs.length >= measurement.targetFrameSamples) {
+                measurement.cpuClosed = true;
+                measurement.gpuEndSubmissionSequence = Number(timer.submissionSequence) || 0;
+            }
+        } else {
+            measurement.gpuFlushFrames += 1;
+        }
+
+        if (measurement.gpuSupported && timer.active !== true) {
+            measurement.status = 'failed';
+            measurement.failureReason = String(timer.disabledReason ?? 'GPU timer became inactive');
+        } else if (
+            measurement.cpuClosed
+            && (!measurement.gpuSupported || measurement.gpuSamples.length >= measurement.minimumGpuSamples)
+        ) {
+            measurement.status = 'complete';
+            measurement.completedAtMs = Number(nowMs) || performance.now();
+        } else if (measurement.cpuClosed && measurement.gpuFlushFrames >= measurement.maximumGpuFlushFrames) {
+            measurement.status = 'failed';
+            measurement.failureReason = `GPU timer produced ${measurement.gpuSamples.length}/${measurement.minimumGpuSamples} required samples.`;
+        }
+        if (measurement.status === 'failed') measurement.completedAtMs = Number(nowMs) || performance.now();
+    }
+
     _getBufferUpdateTotal(snapshot) {
         const grass = snapshot?.grass ?? {};
         return Math.max(0, Number(grass.nearCarpet?.totalBufferUpdates) || 0)
             + Math.max(0, Number(grass.midCluster?.bufferUpdates) || 0)
             + Math.max(0, Number(grass.localizedAccents?.bufferUpdates) || 0);
+    }
+
+    _getLastBufferUpdates() {
+        const grass = this._grassEngine?.getStats?.() ?? {};
+        return Math.max(0, Number(grass.nearCarpet?.lastBufferUpdates) || 0)
+            + Math.max(0, Number(grass.midCluster?.lastBufferUpdates) || 0)
+            + Math.max(0, Number(grass.localizedAccents?.lastBufferUpdates) || 0);
     }
 
     _recordValidationSample(snapshot, nowMs) {
@@ -1734,12 +2139,6 @@ export class GrassDebuggerView {
             material.transparent = false;
             material.needsUpdate = true;
         }
-        if (this._wornAccentMaterial) {
-            const response = clamp(0.72 + config.dryness * 0.08 - config.humidity * 0.05, 0.58, 0.84, 0.72);
-            this._wornAccentMaterial.color?.setRGB?.(response, response * 0.82, response * 0.62);
-            this._wornAccentMaterial.roughness = clamp(0.92 + config.dryness * 0.06, 0.85, 1, 0.96);
-            this._wornAccentMaterial.needsUpdate = true;
-        }
         this._applyBoundaryEvidenceVisibility();
     }
 
@@ -1953,32 +2352,6 @@ export class GrassDebuggerView {
 
     _createGrassAccentClusterMaterial() {
         return this._createGrassAtlasMaterial(LOW_CUT_GRASS_ATLAS_ROLE.ACCENT_CLUMP, 'GrassAccentClumpAtlasMaterial');
-    }
-
-    _createGrassWornAccentMaterial() {
-        const material = new THREE.MeshStandardMaterial({
-            color: 0x715d43,
-            roughness: 0.96,
-            metalness: 0,
-            transparent: false,
-            depthWrite: true,
-            polygonOffset: true,
-            polygonOffsetFactor: -1,
-            polygonOffsetUnits: -1
-        });
-        material.name = 'GrassLocalizedWornSubstrateMaterial';
-        const resolved = this._resolvePbrMaterialPayload(LOW_CUT_GRASS_SUBSTRATE_MATERIAL_ID, {
-            cloneTextures: false,
-            uvSpace: 'unit',
-            diagnosticsTag: 'GrassDebuggerView.localizedWornSubstrate'
-        });
-        applyResolvedPbrToStandardMaterial(material, resolved);
-        material.color.setHex(0x715d43);
-        material.roughness = 0.96;
-        material.userData.grassLocalizedAccentRole = 'worn_tree_substrate';
-        material.userData.resolvedMaterialId = LOW_CUT_GRASS_SUBSTRATE_MATERIAL_ID;
-        material.needsUpdate = true;
-        return material;
     }
 
     _getSubstrateLayerTextures(materialId) {
@@ -3086,6 +3459,7 @@ export class GrassDebuggerView {
     }
 
     getLabSnapshot() {
+        const gpuTimer = this.getGpuTimerDiagnostics();
         const snapshot = createGrassLabSnapshot({
             seed: this._state?.lab?.seed ?? GRASS_LAB_DEFAULT_SEED,
             engineStats: this._grassEngine?.getStats?.() ?? null,
@@ -3099,6 +3473,15 @@ export class GrassDebuggerView {
         });
         return {
             ...snapshot,
+            grass: {
+                ...snapshot.grass,
+                updateCpuRawMs: this._grassUpdateCpuRawMs
+            },
+            frame: {
+                ...snapshot.frame,
+                gpuTimer
+            },
+            performanceMeasurement: this.getPerformanceMeasurement(),
             boundaryEvidence: {
                 mode: this._boundaryEvidenceMode,
                 legacyGeometryHidden: this._boundaryEvidenceMode !== null,
@@ -3112,6 +3495,9 @@ export class GrassDebuggerView {
                     && this._grassEngine?.getStats?.().nearCarpet?.drawCalls > 0,
                 midAndAccentHidden: this._nearEvidenceMode !== null
             },
+            hierarchyEvidence: {
+                mode: this._hierarchyEvidenceMode
+            },
             material: this._materialFixture?.getStats?.() ?? null,
             validation: {
                 qualityPreset: this._state?.validation?.qualityPreset ?? 'default',
@@ -3119,6 +3505,8 @@ export class GrassDebuggerView {
                 lightingPreset: this._validationLightingId,
                 motionPath: this._validationMotion?.id ?? 'stationary',
                 motionActive: !!this._validationMotion?.active,
+                motionProgress: clamp(this._validationMotion?.progress, 0, 1, 0),
+                motionSeeked: this._validationMotion?.seeked === true,
                 reviewedCameraIds: [...(this._ui?.getState?.()?.validation?.reviewedCameraIds ?? [])],
                 reviewedLightingIds: [...(this._ui?.getState?.()?.validation?.reviewedLightingIds ?? [])],
                 reviewedMotionPathIds: [...(this._ui?.getState?.()?.validation?.reviewedMotionPathIds ?? [])]
@@ -3200,7 +3588,8 @@ export class GrassDebuggerView {
         const loop = () => {
             this._raf = requestAnimationFrame(loop);
             const now = performance.now();
-            const dt = Math.min(0.05, Math.max(0, (now - this._lastT) / 1000));
+            const frameMs = Math.max(0, now - this._lastT);
+            const dt = Math.min(0.05, frameMs / 1000);
             this._lastT = now;
 
             this._updateCameraFromKeys(dt);
@@ -3212,8 +3601,9 @@ export class GrassDebuggerView {
             this._updateCenterDistanceOverlay({ nowMs: now });
             const grassStartMs = performance.now();
             this._grassEngine?.update?.({ camera: this.camera, focusDistanceMeters: this._centerHitDistanceMeters });
-            this._applyBoundaryEvidenceVisibility();
             const grassCpuMs = Math.max(0, performance.now() - grassStartMs);
+            this._applyBoundaryEvidenceVisibility();
+            this._grassUpdateCpuRawMs = grassCpuMs;
             this._grassUpdateCpuMs = Number.isFinite(this._grassUpdateCpuMs)
                 ? this._grassUpdateCpuMs * 0.9 + grassCpuMs * 0.1
                 : grassCpuMs;
@@ -3224,6 +3614,12 @@ export class GrassDebuggerView {
                 this._gpuFrameTimer?.endFrame?.();
                 this._gpuFrameTimer?.poll?.();
             }
+            this._recordPerformanceMeasurement({
+                cpuMs: grassCpuMs,
+                frameMs,
+                lastBufferUpdates: this._getLastBufferUpdates(),
+                nowMs: now
+            });
             this._updateLabDiagnostics(now);
             this.onFrame?.({ dt, nowMs: now });
         };

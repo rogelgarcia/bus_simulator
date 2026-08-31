@@ -29,6 +29,85 @@ function vectorSnapshot(value) {
     };
 }
 
+function getGraphicsMetadata(renderer) {
+    const gl = renderer?.getContext?.() ?? null;
+    const timer = view.getGpuTimerDiagnostics?.() ?? null;
+    if (!gl) {
+        return {
+            requestedPowerPreference: 'high-performance',
+            webglVersion: null,
+            vendor: null,
+            renderer: null,
+            unmaskedVendor: null,
+            unmaskedRenderer: null,
+            hardwareAccelerated: null,
+            timer
+        };
+    }
+    const debug = gl.getExtension?.('WEBGL_debug_renderer_info') ?? null;
+    const read = (parameter) => {
+        try {
+            return parameter === null || parameter === undefined ? null : gl.getParameter(parameter);
+        } catch {
+            return null;
+        }
+    };
+    const unmaskedVendor = debug ? read(debug.UNMASKED_VENDOR_WEBGL) : null;
+    const unmaskedRenderer = debug ? read(debug.UNMASKED_RENDERER_WEBGL) : null;
+    const hardwareAccelerated = typeof unmaskedRenderer === 'string' && unmaskedRenderer.length > 0
+        ? !/swiftshader|software|llvmpipe/i.test(unmaskedRenderer)
+        : null;
+    return {
+        requestedPowerPreference: 'high-performance',
+        webglVersion: typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext
+            ? 'webgl2'
+            : 'webgl1',
+        vendor: read(gl.VENDOR),
+        renderer: read(gl.RENDERER),
+        unmaskedVendor,
+        unmaskedRenderer,
+        contextVersion: read(gl.VERSION),
+        shadingLanguageVersion: read(gl.SHADING_LANGUAGE_VERSION),
+        hardwareAccelerated,
+        timer
+    };
+}
+
+function getBrowserEnvironment(renderer) {
+    const heap = performance?.memory;
+    const rendererMemory = renderer?.info?.memory ?? null;
+    return {
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        hardwareConcurrency: Number(navigator.hardwareConcurrency) || null,
+        deviceMemoryGiB: Number(navigator.deviceMemory) || null,
+        graphics: getGraphicsMetadata(renderer),
+        memory: {
+            jsHeap: heap ? {
+                status: 'measured',
+                usedBytes: Number(heap.usedJSHeapSize) || 0,
+                totalBytes: Number(heap.totalJSHeapSize) || 0,
+                limitBytes: Number(heap.jsHeapSizeLimit) || 0
+            } : {
+                status: 'not measured',
+                reason: 'performance.memory unavailable in this browser'
+            },
+            rendererResources: rendererMemory ? {
+                status: 'measured',
+                geometries: Math.max(0, Number(rendererMemory.geometries) || 0),
+                textures: Math.max(0, Number(rendererMemory.textures) || 0)
+            } : {
+                status: 'not measured',
+                reason: 'renderer.info.memory unavailable'
+            },
+            gpuBytes: {
+                status: 'not measured',
+                reason: 'WebGL does not expose authoritative GPU allocation bytes'
+            }
+        }
+    };
+}
+
 function getCaptureMetadata(context = null) {
     const renderer = view.renderer ?? null;
     const camera = view.camera ?? null;
@@ -65,6 +144,8 @@ function getCaptureMetadata(context = null) {
             farMeters: Number(camera.far) || 0
         } : null,
         exposure: Number(renderer?.toneMappingExposure) || 0,
+        environment: getBrowserEnvironment(renderer),
+        performanceMeasurement: view.getPerformanceMeasurement?.() ?? null,
         snapshot: view.getLabSnapshot()
     };
 }
@@ -210,6 +291,18 @@ view.start().then(() => {
         },
         setBoundaryEvidenceMode: (mode) => view.setBoundaryEvidenceMode(mode),
         setNearEvidenceMode: (mode) => view.setNearEvidenceMode(mode),
+        setHierarchyEvidenceMode: (mode) => view.setHierarchyEvidenceMode(mode),
+        focusHandoff: (handoffId, offsetMeters) => {
+            const pose = view.focusHandoff(handoffId, offsetMeters);
+            captureFocus = {
+                id: String(pose?.presetId ?? handoffId ?? 'unknown'),
+                pose: 'handoff',
+                fixture: String(pose?.fixture ?? 'grazing'),
+                handoffId: String(pose?.id ?? handoffId ?? 'unknown'),
+                offsetMeters: Number(pose?.offsetMeters) || 0
+            };
+            return pose;
+        },
         focusAccent: (targetId) => {
             view.focusLocalizedAccent(targetId);
             captureFocus = { id: String(targetId ?? 'tree'), pose: 'accent', fixture: 'accent' };
@@ -229,9 +322,24 @@ view.start().then(() => {
         settleCaptureFrames: (frameCount) => settleCaptureFrames(frameCount),
         getCaptureMetadata: (context) => getCaptureMetadata(context),
         startMotionPath: (pathId) => view.startValidationMotionPath(pathId),
+        seekMotionPath: (routeId, progress) => {
+            const pose = view.seekMotionPath(routeId, progress);
+            captureFocus = {
+                id: `motion_${String(pose?.id ?? routeId ?? 'unknown')}_${Number(pose?.progress ?? 0).toFixed(6)}`,
+                pose: 'motion',
+                fixture: 'grazing',
+                routeId: String(pose?.id ?? routeId ?? 'unknown'),
+                progress: Number(pose?.progress) || 0
+            };
+            return pose;
+        },
+        resetLodHysteresis: () => view.resetLodHysteresis(),
         runStress: () => view.runValidationStress(),
         resetValidationSamples: () => view.resetValidationSamples(),
         getValidationDiagnostics: () => view.getValidationDiagnostics(),
+        beginPerformanceMeasurement: (options) => view.beginPerformanceMeasurement(options),
+        getPerformanceMeasurement: () => view.getPerformanceMeasurement(),
+        getGpuTimerDiagnostics: () => view.getGpuTimerDiagnostics(),
         setRegressionResults: (results) => view.setValidationRegressionResults(results),
         createApprovalCandidate: () => view.createValidationApprovalCandidate(),
         reset: () => view.resetLab()

@@ -83,7 +83,7 @@ test('Grass Lab evidence visibility and tree-hole rebuilds retain runtime owners
     assert.match(source, /wornRadiusMeters: finiteOr/);
 });
 
-test('Grass Lab v9 fixtures are deterministic and defer coverage to the exact rendered-loop handoff', () => {
+test('Grass Lab v10 fixtures are deterministic and defer coverage to the exact rendered-loop handoff', () => {
     const first = createGrassLabFixtureDefinition({ bounds: BOUNDS, tileSize: 24, roadHalfWidth: 8 });
     const second = createGrassLabFixtureDefinition({ bounds: BOUNDS, tileSize: 24, roadHalfWidth: 8 });
     assert.deepEqual(first, second);
@@ -267,11 +267,17 @@ test('Grass Lab maps source controls into one deterministic GrassEngine config',
     assert.equal(first.nearCarpet.radiusMeters, 9);
     assert.equal(first.nearCarpet.yOffsetMeters, 0.0275);
     assert.equal(first.nearCarpet.structuralBaseHeightMeters, 0.0275);
+    assert.equal(first.nearCarpet.rootJitterFactor, 0.56);
     assert.deepEqual(first.nearCarpet.bladeTipElevationMeters, { min: 0.04, max: 0.075 });
     assert.deepEqual(first.nearCarpet.bladeHeightMeters, { min: 0.0125, max: 0.0475 });
     assert.equal(first.midCluster.enabled, true);
-    assert.equal(first.midCluster.patchSizeMeters, 2);
+    assert.equal(first.midCluster.patchSizeMeters, 1);
+    assert.equal(first.midCluster.rootJitterFactor, 0.56);
+    assert.equal(first.midCluster.billboard.cardsPerUnit, 1);
+    assert.equal(first.midCluster.billboard.brightnessBias, 1.1);
     assert.equal(first.midCluster.cardsPerPatch, 2);
+    assert.equal(first.midCluster.middle.brightnessBias, 0.98);
+    assert.ok(Math.abs(first.midCluster.yOffsetMeters - 0.0025) < 1e-9);
     assert.equal(first.midCluster.atlasVariants, 8);
     assert.equal(first.localizedAccents.enabled, true);
     assert.equal(first.localizedAccents.clustersPerTree, 4);
@@ -283,7 +289,7 @@ test('Grass Lab maps source controls into one deterministic GrassEngine config',
     assert.deepEqual(first.lod.renderMode, { master: 'star', near: 'star', mid: 'cross', far: 'cross_sparse' });
     assert.equal(first.density.midMul, 0.25);
     assert.deepEqual(first.field.lod.allow, { master: false, near: true, mid: false, far: false });
-    assert.deepEqual(first.lod.distances, { master: 0, near: 9, mid: 30, far: 30, cutoff: 30 });
+    assert.deepEqual(first.lod.distances, { master: 0, near: 9, mid: 10, far: 30, cutoff: 30 });
     assert.equal(first.debug.showLodRings, true);
 });
 
@@ -309,7 +315,7 @@ test('Grass Lab baseline snapshot has stable ownership and numeric diagnostics',
     assert.equal(snapshot.canonicalRuntime, 'GrassEngine');
     assert.equal(snapshot.canonicalUrl, GRASS_LAB_CANONICAL_URL);
     assert.equal(snapshot.contractVersion, GRASS_LAB_CONTRACT_VERSION);
-    assert.equal(snapshot.contractVersion, 9);
+    assert.equal(snapshot.contractVersion, 10);
     assert.equal(snapshot.grass.instances, 100);
     assert.equal(snapshot.grass.updateCpuMs, 0.35);
     assert.equal(snapshot.grass.nearCarpet.patchInstances, 20);

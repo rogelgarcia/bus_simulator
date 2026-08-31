@@ -3,10 +3,10 @@
 
 import * as THREE from 'three';
 import {
+    createGrassAutoLodFieldUnitHandoff,
     evaluateGrassAutoLod,
     getGrassAutoLodCandidateRadius,
-    getGrassAutoLodStableSample,
-    resolveGrassAutoLodMaskedVisibility,
+    resolveGrassAutoLodUnitVisibility,
     sanitizeGrassAutoLodConfig
 } from '../../../app/grass/GrassAutoLodContract.js';
 import { makeRng } from './GrassRng.js';
@@ -197,7 +197,8 @@ export class GrassNearCarpetSystem {
         terrainGrid,
         getExclusionRects,
         getCoverageDefinition,
-        getCoverageConfig
+        getCoverageConfig,
+        fieldHandoffSeed = 'cohesive-field-v2'
     } = {}) {
         if (!parent?.isObject3D) throw new Error('[GrassNearCarpetSystem] A THREE.Object3D parent is required.');
         this.group = new THREE.Group();
@@ -224,8 +225,10 @@ export class GrassNearCarpetSystem {
         this._cells = new Map();
         this._centerCellKey = '';
         this._layoutKey = '';
+        this._visibilityKey = '';
         this._layoutInvalidated = false;
         this._configKey = '';
+        this._fieldHandoffSeed = String(fieldHandoffSeed).trim() || 'cohesive-field-v2';
         this._stats = {
             layoutRevision: 0,
             cameraCellMoves: 0,
@@ -323,17 +326,30 @@ export class GrassNearCarpetSystem {
         this._invalidateLayout();
     }
 
+    setFieldHandoffSeed(value) {
+        const next = String(value ?? '').trim();
+        if (!next) throw new Error('[GrassNearCarpetSystem] A cohesive-field handoff seed is required.');
+        if (next === this._fieldHandoffSeed) return;
+        this._fieldHandoffSeed = next;
+        this.resetLodHysteresis();
+    }
+
     setEvidenceMode(mode = null) {
-        const next = mode === 'texture_only' || mode === 'near_mesh' ? mode : null;
+        const next = mode === 'texture_only' || mode === 'near_mesh' || mode === 'close' ? mode : null;
         if (next === this._evidenceMode) return;
         this._evidenceMode = next;
         if (next === 'texture_only') this._clearLayout();
         this._invalidateLayout();
     }
 
+    resetLodHysteresis() {
+        this._clearLayout();
+        this._invalidateLayout();
+    }
+
     update({ camera, viewAngleDeg = 0 } = {}) {
         const config = this._config;
-        const forcedEvidence = this._evidenceMode === 'near_mesh';
+        const forcedEvidence = this._evidenceMode === 'near_mesh' || this._evidenceMode === 'close';
         const effectiveRadiusMeters = forcedEvidence
             ? config.radiusMeters
             : getGrassAutoLodCandidateRadius(this._autoLod, 'near', viewAngleDeg);
@@ -372,7 +388,18 @@ export class GrassNearCarpetSystem {
         const centerCellX = Math.floor(camera.position.x / config.patchSizeMeters);
         const centerCellZ = Math.floor(camera.position.z / config.patchSizeMeters);
         const centerCellKey = centerCellX + ',' + centerCellZ;
-        if (!this._layoutInvalidated && centerCellKey === this._centerCellKey && layoutKey === this._layoutKey) {
+        const visibilityKey = [
+            camera.position.x.toFixed(6),
+            camera.position.z.toFixed(6),
+            Number(viewAngleDeg).toFixed(4),
+            this._fieldHandoffSeed
+        ].join('|');
+        if (
+            !this._layoutInvalidated
+            && centerCellKey === this._centerCellKey
+            && layoutKey === this._layoutKey
+            && visibilityKey === this._visibilityKey
+        ) {
             this._stats.stationaryFrames++;
             this._stats.lastBufferUpdates = 0;
             return;
@@ -382,7 +409,10 @@ export class GrassNearCarpetSystem {
             this._stats.cacheInvalidations++;
         }
 
-        const candidateConfig = sanitizeGrassNearCarpetConfig({ ...config, radiusMeters: effectiveRadiusMeters });
+        const candidateConfig = sanitizeGrassNearCarpetConfig({
+            ...config,
+            radiusMeters: effectiveRadiusMeters + config.patchSizeMeters / Math.SQRT2
+        });
         const candidateCacheKey = centerCellKey + '|' + layoutKey;
         let candidates = this._layoutCache.get(candidateCacheKey) ?? null;
         if (candidates) {
@@ -390,8 +420,8 @@ export class GrassNearCarpetSystem {
         } else {
             this._stats.cacheMisses++;
             candidates = createGrassNearCarpetCellSet({
-                cameraX: camera.position.x,
-                cameraZ: camera.position.z,
+                cameraX: (centerCellX + 0.5) * config.patchSizeMeters,
+                cameraZ: (centerCellZ + 0.5) * config.patchSizeMeters,
                 config: candidateConfig,
                 terrainBounds,
                 coverageDefinition,
@@ -405,18 +435,29 @@ export class GrassNearCarpetSystem {
         const visibleCells = new Map();
         let transitionPatches = 0;
         for (const [key, cell] of candidates.cells) {
+            const handoff = createGrassAutoLodFieldUnitHandoff({
+                unitKey: key,
+                fieldSeed: this._fieldHandoffSeed,
+                boundarySignature: candidates.boundarySignature,
+                cameraX: camera.position.x,
+                cameraZ: camera.position.z
+            });
             const evaluation = evaluateGrassAutoLod({
-                distanceMeters: Math.hypot(cell.x - camera.position.x, cell.z - camera.position.z),
+                distanceMeters: handoff.distanceMeters,
                 viewAngleDeg,
                 config: this._autoLod
             });
             if (evaluation.weights.near > 0 && evaluation.weights.near < 1) transitionPatches++;
-            const visible = forcedEvidence || resolveGrassAutoLodMaskedVisibility({
-                weight: evaluation.weights.near,
-                stableSample: getGrassAutoLodStableSample(key, 'near'),
-                previousVisible: this._cells.has(key),
-                config: this._autoLod
-            });
+            const insideSelectionRadius = handoff.distanceMeters <= effectiveRadiusMeters;
+            const visible = insideSelectionRadius && (
+                forcedEvidence || resolveGrassAutoLodUnitVisibility({
+                    evaluation,
+                    tier: 'near',
+                    unitKey: handoff.identity,
+                    previousVisible: this._cells.has(key),
+                    config: this._autoLod
+                })
+            );
             if (visible) visibleCells.set(key, cell);
         }
 
@@ -447,6 +488,7 @@ export class GrassNearCarpetSystem {
         if (this._centerCellKey && centerCellKey !== this._centerCellKey) this._stats.cameraCellMoves++;
         this._centerCellKey = centerCellKey;
         this._layoutKey = layoutKey;
+        this._visibilityKey = visibilityKey;
         this._layoutInvalidated = false;
         this._stats.layoutRevision++;
         this._stats.lastBufferUpdates = bufferUpdates;
@@ -503,6 +545,7 @@ export class GrassNearCarpetSystem {
             enabled,
             evidenceMode: this._evidenceMode,
             mode: this._config.mode,
+            fieldHandoffSeed: this._fieldHandoffSeed,
             coverageMode: this._stats.coverageMode,
             boundarySignature: this._stats.boundarySignature,
             placementSignature: this._stats.placementSignature,
@@ -592,6 +635,7 @@ export class GrassNearCarpetSystem {
         this._descriptors.clear();
         this._cells.clear();
         this._centerCellKey = '';
+        this._visibilityKey = '';
     }
 
     _rebuildRenderResources() {

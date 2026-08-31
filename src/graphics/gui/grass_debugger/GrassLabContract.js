@@ -15,7 +15,7 @@ import {
     LOW_CUT_GRASS_MATERIAL_ID
 } from '../../content3d/catalogs/LowCutGrassMaterialCatalog.js';
 
-export const GRASS_LAB_CONTRACT_VERSION = 9;
+export const GRASS_LAB_CONTRACT_VERSION = 10;
 export const GRASS_LAB_CANONICAL_URL = 'debug_tools/grass_debug.html';
 export const GRASS_LAB_DEFAULT_SEED = 'grass-lab-baseline-v1';
 
@@ -337,13 +337,17 @@ export function createGrassLabEngineConfig(state, { tileSize = 24 } = {}) {
 
     const carpetMode = ['auto', 'force', 'disabled'].includes(String(lod1?.carpetMode)) ? String(lod1.carpetMode) : 'auto';
     const nearEnabled = coverage.enabled && carpetMode !== 'disabled' && lod1?.enabled !== false;
-    const clusterEnabled = coverage.enabled && lod2?.enabled !== false;
-    const autoForce = ['auto', 'near', 'cluster', 'texture'].includes(String(autoLod?.force))
-        ? String(autoLod.force)
-        : (carpetMode === 'force' ? 'near' : 'auto');
-    const nearEnd = clamp(autoLod?.nearEndMeters ?? lod1?.carpetRadiusMeters, 4, 18, 9);
-    const clusterEnd = clamp(autoLod?.clusterEndMeters, nearEnd + 4, 48, 30);
-    config.enabled = coverage.enabled && (nearEnabled || clusterEnabled);
+    const cohesiveFieldEnabled = coverage.enabled && lod2?.enabled !== false;
+    const requestedForce = String(autoLod?.force);
+    const autoForce = ['auto', 'near', 'billboard', 'middle', 'texture'].includes(requestedForce)
+        ? requestedForce
+        : requestedForce === 'cluster'
+            ? 'middle'
+            : (carpetMode === 'force' ? 'near' : 'auto');
+    const nearEnd = clamp(autoLod?.nearEndMeters ?? lod1?.carpetRadiusMeters, 1, 12, 3);
+    const billboardEnd = clamp(autoLod?.billboardEndMeters, nearEnd + 1, 24, 8);
+    const middleEnd = clamp(autoLod?.middleEndMeters ?? autoLod?.clusterEndMeters, billboardEnd + 2, 48, 25);
+    config.enabled = coverage.enabled && (nearEnabled || cohesiveFieldEnabled);
     config.seed = `${labSeed}|${profile.seed}|${String(lod1?.seed ?? 'near')}|${String(lod2?.seed ?? 'mid')}`;
     config.patch.sizeMeters = 72;
     config.patch.yOffset = 0.02;
@@ -389,15 +393,27 @@ export function createGrassLabEngineConfig(state, { tileSize = 24 } = {}) {
         roughness: runtimeProfile.appearance.roughness
     };
     config.midCluster = {
-        enabled: clusterEnabled,
-        seed: `${labSeed}|${profile.seed}|mid-cluster|${String(lod2?.seed ?? 'mid')}`,
-        patchSizeMeters: finite(lod2?.clusterPatchSizeMeters, 2),
-        cardsPerPatch: finite(lod2?.clusterCardsPerPatch, 2),
-        cardWidthMeters: finite(lod2?.clusterCardWidthMeters, 1.15),
-        cardHeightMeters: finite(lod2?.clusterCardHeightMeters, 0.055),
-        yOffsetMeters: coverage.layerHeightMeters,
+        enabled: cohesiveFieldEnabled,
+        seed: `${labSeed}|${profile.seed}|cohesive-field|${String(lod2?.seed ?? 'mid')}`,
+        unitSizeMeters: 1,
+        radiusMeters: middleEnd,
+        rootJitterFactor: 0.56,
+        boundarySafetyMeters: 0.0005,
+        billboard: {
+            cardsPerUnit: 1,
+            widthMeters: finite(lod2?.billboardCardWidthMeters ?? lod2?.clusterCardWidthMeters, 1.15),
+            heightMeters: finite(lod2?.cardHeightMeters ?? lod2?.clusterCardHeightMeters, 0.055),
+            brightnessBias: 1.1
+        },
+        middle: {
+            cardsPerUnit: 2,
+            widthMeters: finite(lod2?.middleCardWidthMeters ?? lod2?.clusterCardWidthMeters, 1.15),
+            heightMeters: finite(lod2?.cardHeightMeters ?? lod2?.clusterCardHeightMeters, 0.055),
+            brightnessBias: 0.98
+        },
+        yOffsetMeters: Math.max(0, coverage.layerHeightMeters - 0.025),
         scaleVariation: 0.08,
-        brightnessVariation: profile.appearance.colorVariation.brightness,
+        brightnessVariation: Math.min(0.02, profile.appearance.colorVariation.brightness),
         atlasVariants: 8
     };
     const accentState = state?.accents && typeof state.accents === 'object' ? state.accents : {};
@@ -426,9 +442,12 @@ export function createGrassLabEngineConfig(state, { tileSize = 24 } = {}) {
         enabled: coverage.enabled,
         force: autoForce,
         nearEndMeters: nearEnd,
-        clusterEndMeters: clusterEnd,
+        billboardEndMeters: billboardEnd,
+        middleEndMeters: middleEnd,
+        clusterEndMeters: middleEnd,
         transitionWidthMeters: finite(autoLod?.transitionWidthMeters, 2),
         hysteresisMeters: finite(autoLod?.hysteresisMeters, 0.75),
+        overlapMeters: finite(autoLod?.overlapMeters, 0.5),
         angle: {
             grazingDeg: 12,
             topDownDeg: 70,
@@ -467,9 +486,9 @@ export function createGrassLabEngineConfig(state, { tileSize = 24 } = {}) {
     config.lod.distances = {
         master: 0,
         near: nearEnd,
-        mid: clusterEnd,
-        far: clusterEnd,
-        cutoff: clusterEnd
+        mid: billboardEnd,
+        far: middleEnd,
+        cutoff: middleEnd
     };
     config.lod.enableMaster = false;
     config.lod.transitionWidthMeters = finite(autoLod?.transitionWidthMeters, 2);
@@ -480,7 +499,7 @@ export function createGrassLabEngineConfig(state, { tileSize = 24 } = {}) {
     config.exclusion.enabled = true;
     config.exclusion.marginMeters = Math.max(
         config.nearCarpet.patchSizeMeters * (1 + config.nearCarpet.patchScaleVariation) * 0.5,
-        config.midCluster.cardWidthMeters * (1 + config.midCluster.scaleVariation) * 0.5
+        config.midCluster.middle.widthMeters * (1 + config.midCluster.scaleVariation) * 0.5
     );
 
     return sanitizeGrassEngineConfig(config);
@@ -511,6 +530,22 @@ export function createGrassLabCoverageConfig(state) {
 
 export function createGrassLabSnapshot({ seed, engineStats, coverageStats, lodInfo, rendererInfo, cpuMs, gpuMs, fixtures, authoring } = {}) {
     const render = rendererInfo?.render ?? rendererInfo ?? {};
+    const nearStats = engineStats?.nearCarpet && typeof engineStats.nearCarpet === 'object' ? engineStats.nearCarpet : null;
+    const fieldStats = engineStats?.midCluster && typeof engineStats.midCluster === 'object' ? engineStats.midCluster : null;
+    const accentStats = engineStats?.localizedAccents && typeof engineStats.localizedAccents === 'object'
+        ? engineStats.localizedAccents
+        : null;
+    const boundaryTriangles = Math.max(0, Math.round(finite(coverageStats?.triangles, 0)));
+    const nearTriangles = Math.max(0, Math.round(finite(nearStats?.triangles, 0)));
+    const billboardTriangles = Math.max(0, Math.round(finite(fieldStats?.billboard?.triangles, 0)));
+    const middleTriangles = Math.max(0, Math.round(finite(fieldStats?.middle?.triangles, 0)));
+    const accentTriangles = Math.max(0, Math.round(finite(accentStats?.totalTriangles, 0)));
+    const fieldTriangles = Math.max(0, Math.round(finite(engineStats?.totalTriangles, 0)));
+    const fieldLogicalDrawCalls = Math.max(0, Math.round(finite(engineStats?.drawCalls, 0)));
+    const boundaryLogicalDrawCalls = Math.max(0, Math.round(finite(
+        coverageStats?.logicalDrawCalls ?? coverageStats?.drawCalls,
+        0
+    )));
     return {
         contractVersion: GRASS_LAB_CONTRACT_VERSION,
         canonicalRuntime: 'GrassEngine',
@@ -528,19 +563,23 @@ export function createGrassLabSnapshot({ seed, engineStats, coverageStats, lodIn
             enabled: !!engineStats?.enabled,
             patches: Math.max(0, Math.round(finite(engineStats?.patches, 0))),
             instances: Math.max(0, Math.round(finite(engineStats?.totalInstances, 0))),
-            triangles: Math.max(0, Math.round(finite(engineStats?.totalTriangles, 0))),
-            logicalDrawCalls: Math.max(0, Math.round(finite(engineStats?.drawCalls, 0))),
+            triangles: fieldTriangles,
+            logicalDrawCalls: fieldLogicalDrawCalls,
             instancesByTier: { ...(engineStats?.instancesByTier ?? {}) },
             trianglesByTier: { ...(engineStats?.trianglesByTier ?? {}) },
-            nearCarpet: engineStats?.nearCarpet && typeof engineStats.nearCarpet === 'object'
-                ? { ...engineStats.nearCarpet }
-                : null,
-            midCluster: engineStats?.midCluster && typeof engineStats.midCluster === 'object'
-                ? { ...engineStats.midCluster }
-                : null,
-            localizedAccents: engineStats?.localizedAccents && typeof engineStats.localizedAccents === 'object'
-                ? { ...engineStats.localizedAccents }
-                : null,
+            nearCarpet: nearStats ? { ...nearStats } : null,
+            midCluster: fieldStats ? { ...fieldStats } : null,
+            billboard: fieldStats?.billboard ? { ...fieldStats.billboard } : null,
+            middle: fieldStats?.middle ? { ...fieldStats.middle } : null,
+            localizedAccents: accentStats ? { ...accentStats } : null,
+            boundaryTriangles,
+            nearTriangles,
+            billboardTriangles,
+            middleTriangles,
+            accentTriangles,
+            combinedVisibleGrassTriangles: fieldTriangles + boundaryTriangles,
+            boundaryLogicalDrawCalls,
+            combinedVisibleGrassLogicalDrawCalls: fieldLogicalDrawCalls + boundaryLogicalDrawCalls,
             updateCpuMs: cpuMs !== null && cpuMs !== undefined && Number.isFinite(Number(cpuMs)) ? Number(cpuMs) : null
         },
         coverage: coverageStats && typeof coverageStats === 'object' ? { ...coverageStats } : null,
@@ -550,13 +589,19 @@ export function createGrassLabSnapshot({ seed, engineStats, coverageStats, lodIn
             rendererTriangles: Math.max(0, Math.round(finite(render?.triangles, 0)))
         },
         lod: {
+            schema: String(lodInfo?.schema ?? 'bus-simulator.grass-auto-lod'),
+            version: Math.max(0, Math.round(finite(lodInfo?.version, 2))),
             viewAngleDeg: finite(lodInfo?.viewAngleDeg, 0),
             angleScale: finite(lodInfo?.angleScale, 1),
             masterActiveByAngle: !!lodInfo?.masterActiveByAngle,
             effectiveDistanceMeters: finite(lodInfo?.effectiveDistanceMeters, 0),
             activeTier: String(lodInfo?.activeTier ?? 'texture'),
             transitionState: String(lodInfo?.transitionState ?? 'texture_only'),
+            transitionProgress: clamp(lodInfo?.transitionProgress, 0, 1, 0),
+            weights: { ...(lodInfo?.weights ?? { near: 0, billboard: 0, middle: 0, texture: 1 }) },
             nearEndMeters: finite(lodInfo?.nearEndMeters, 0),
+            billboardEndMeters: finite(lodInfo?.billboardEndMeters, 0),
+            middleEndMeters: finite(lodInfo?.middleEndMeters ?? lodInfo?.clusterEndMeters, 0),
             clusterEndMeters: finite(lodInfo?.clusterEndMeters, 0),
             geometryCutoffWorldMeters: finite(lodInfo?.geometryCutoffWorldMeters, 0),
             force: String(lodInfo?.force ?? 'auto'),

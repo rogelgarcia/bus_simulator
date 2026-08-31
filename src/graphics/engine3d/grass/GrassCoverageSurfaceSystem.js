@@ -55,7 +55,8 @@ function buildSurfaceGeometry(partition, bounds) {
         const a = { x: a2.x, y, z: a2.y };
         const b = { x: b2.x, y, z: b2.y };
         const c = { x: c2.x, y, z: c2.y };
-        pushTriangle(positions, uvs, colors, a, b, c, uv(a2), uv(b2), uv(c2), color, color, color);
+        // Mapping ShapeUtils' XY faces into XZ reverses their visible winding.
+        pushTriangle(positions, uvs, colors, a, c, b, uv(a2), uv(c2), uv(b2), color, color, color);
     }
     const geometry = createGeometry(positions, uvs, colors);
     geometry.name = 'GrassCoverageOpaquePolygonCap';

@@ -14,6 +14,14 @@ import { makeRng } from './GrassRng.js';
 
 const EPS = 1e-6;
 const GRASS_LOD_SHADER_VERSION = 1;
+const GRASS_HIERARCHY_EVIDENCE_MODES = new Set([
+    'auto',
+    'texture_only',
+    'close',
+    'billboard',
+    'middle',
+    'accent'
+]);
 
 function clamp(value, min, max, fallback = min) {
     const num = Number(value);
@@ -397,7 +405,6 @@ export class GrassEngine {
         getCoverageConfig,
         midClusterMaterial,
         localizedAccentMaterial,
-        wornAccentMaterial,
         localizedAccentInput
     } = {}) {
         this._scene = scene ?? null;
@@ -409,6 +416,11 @@ export class GrassEngine {
 
         this._config = sanitizeGrassEngineConfig(null);
         this._nearEvidenceMode = null;
+        this._hierarchyEvidenceMode = 'auto';
+        this._coverageInput = {
+            definition: this._getCoverageDefinition(),
+            config: this._getCoverageConfig()
+        };
         this._instanceKey = getGrassEngineInstanceKey(this._config);
 
         this.group = new THREE.Group();
@@ -440,13 +452,19 @@ export class GrassEngine {
         this._lodRings = null;
         this._lodAngleScaledRings = null;
         this._lodDebugInfo = {
+            schema: 'bus-simulator.grass-auto-lod',
+            version: 2,
             viewAngleDeg: 0,
             angleScale: 1,
             masterActiveByAngle: false,
             effectiveDistanceMeters: 0,
             activeTier: 'texture',
             transitionState: 'texture_only',
+            transitionProgress: 0,
+            weights: { near: 0, billboard: 0, middle: 0, texture: 1 },
             nearEndMeters: 0,
+            billboardEndMeters: 0,
+            middleEndMeters: 0,
             clusterEndMeters: 0,
             geometryCutoffWorldMeters: 0,
             force: 'auto'
@@ -471,7 +489,8 @@ export class GrassEngine {
             terrainGrid: this._terrainGrid,
             getExclusionRects: () => this._getExpandedExclusionRects(),
             getCoverageDefinition: () => this._getCoverageDefinition(),
-            getCoverageConfig: () => this._getCoverageConfig()
+            getCoverageConfig: () => this._getCoverageConfig(),
+            fieldHandoffSeed: this._config.midCluster.seed
         });
         this._nearCarpet.setConfig(this._config.nearCarpet);
         this._nearCarpet.setAutoLodConfig(this._config.autoLod);
@@ -480,20 +499,23 @@ export class GrassEngine {
             terrainMesh: this._terrainMesh,
             terrainGrid: this._terrainGrid,
             getExclusionRects: () => this._getExpandedExclusionRects(),
+            getCoverageDefinition: () => this._getCoverageDefinition(),
+            getCoverageConfig: () => this._getCoverageConfig(),
             material: midClusterMaterial
         });
         this._midCluster.setConfig(this._config.midCluster);
         this._midCluster.setAutoLodConfig(this._config.autoLod);
+        this._midCluster.setCoverageInput(this._coverageInput);
         this._localizedAccents = new GrassLocalizedAccentSystem({
             parent: this.group,
             terrainMesh: this._terrainMesh,
             terrainGrid: this._terrainGrid,
-            accentMaterial: localizedAccentMaterial ?? midClusterMaterial,
-            wornMaterial: wornAccentMaterial
+            accentMaterial: localizedAccentMaterial ?? midClusterMaterial
         });
         this._localizedAccents.setConfig(this._config.localizedAccents);
         this._localizedAccents.setAutoLodConfig(this._config.autoLod);
         this._localizedAccents.setInput(localizedAccentInput);
+        this._localizedAccents.setCoverageInput(this._coverageInput);
     }
 
     dispose() {
@@ -533,12 +555,26 @@ export class GrassEngine {
     }
 
     setNearCarpetCoverageInput(value) {
-        this._nearCarpet?.setCoverageInput?.(value);
+        const source = value && typeof value === 'object' ? value : {};
+        this._coverageInput = {
+            definition: source.definition ?? null,
+            config: source.config ?? null
+        };
+        this._nearCarpet?.setCoverageInput?.(this._coverageInput);
+        this._midCluster?.setCoverageInput?.(this._coverageInput);
+        this._localizedAccents?.setCoverageInput?.(this._coverageInput);
+    }
+
+    setCoverageInput(value) {
+        this.setNearCarpetCoverageInput(value);
     }
 
     setNearEvidenceMode(mode = null) {
         const next = mode === 'texture_only' || mode === 'near_mesh' ? mode : null;
+        this._hierarchyEvidenceMode = 'auto';
         this._nearEvidenceMode = next;
+        this._midCluster?.setEvidenceMode?.('auto');
+        this._localizedAccents?.setEvidenceMode?.('auto');
         this._nearCarpet?.setEvidenceMode?.(next);
         this._applyNearEvidenceVisibility();
         return next;
@@ -548,8 +584,56 @@ export class GrassEngine {
         return this._nearEvidenceMode;
     }
 
+    setHierarchyEvidenceMode(mode = null) {
+        const requested = mode === null || mode === undefined ? 'auto' : String(mode);
+        if (!GRASS_HIERARCHY_EVIDENCE_MODES.has(requested)) {
+            throw new Error(`[GrassEngine] Unsupported hierarchy evidence mode: ${requested}`);
+        }
+        this._nearEvidenceMode = null;
+        this._hierarchyEvidenceMode = requested;
+        const nearMode = requested === 'auto'
+            ? null
+            : requested === 'close'
+                ? 'close'
+                : 'texture_only';
+        const midMode = requested === 'billboard' || requested === 'middle'
+            ? requested
+            : requested === 'auto'
+                ? 'auto'
+                : 'texture_only';
+        const accentMode = requested === 'accent'
+            ? 'accent'
+            : requested === 'auto'
+                ? 'auto'
+                : 'texture_only';
+        this._nearCarpet?.setEvidenceMode?.(nearMode);
+        this._midCluster?.setEvidenceMode?.(midMode);
+        this._localizedAccents?.setEvidenceMode?.(accentMode);
+        if (this._nearCarpet?.group) this._nearCarpet.group.visible = false;
+        if (this._midCluster?.group) this._midCluster.group.visible = false;
+        if (this._localizedAccents?.group) this._localizedAccents.group.visible = false;
+        this._applyNearEvidenceVisibility();
+        return requested;
+    }
+
+    getHierarchyEvidenceMode() {
+        return this._hierarchyEvidenceMode;
+    }
+
+    resetLodHysteresis() {
+        this._nearCarpet?.resetLodHysteresis?.();
+        this._midCluster?.resetLodHysteresis?.();
+        this._localizedAccents?.resetLodHysteresis?.();
+        if (this._midCluster?.group) this._midCluster.group.visible = false;
+    }
+
     setLocalizedAccentInput(value) {
-        this._localizedAccents?.setInput?.(value);
+        const source = value && typeof value === 'object' ? value : {};
+        this._localizedAccents?.setInput?.({
+            ...source,
+            coverageDefinition: source.coverageDefinition ?? this._coverageInput.definition,
+            coverageConfig: source.coverageConfig ?? this._coverageInput.config
+        });
     }
 
     setConfig(nextConfig) {
@@ -563,6 +647,7 @@ export class GrassEngine {
         this._instanceKey = nextInstanceKey;
         this._nearCarpet?.setConfig(next.nearCarpet);
         this._nearCarpet?.setAutoLodConfig(next.autoLod);
+        this._nearCarpet?.setFieldHandoffSeed(next.midCluster.seed);
         this._midCluster?.setConfig(next.midCluster);
         this._midCluster?.setAutoLodConfig(next.autoLod);
         this._localizedAccents?.setConfig(next.localizedAccents);
@@ -629,10 +714,20 @@ export class GrassEngine {
     getStats() {
         let totalInstances = 0;
         let drawCalls = 0;
-        const instancesByTier = { master: 0, near: 0, mid: 0, far: 0, accent: 0 };
+        const instancesByTier = {
+            master: 0,
+            near: 0,
+            mid: 0,
+            far: 0,
+            billboard: 0,
+            middle: 0,
+            accent: 0
+        };
+        const isolatedHierarchy = this._nearEvidenceMode !== null
+            || this._hierarchyEvidenceMode !== 'auto';
 
         for (const chunk of this._chunks) {
-            if (this._nearEvidenceMode) continue;
+            if (isolatedHierarchy) continue;
             const meshes = chunk.meshes;
             if (!meshes) continue;
             for (const tier of GRASS_LOD_TIERS) {
@@ -650,32 +745,42 @@ export class GrassEngine {
             master: instancesByTier.master * this._trianglesPerInstance.master,
             near: instancesByTier.near * this._trianglesPerInstance.near,
             mid: instancesByTier.mid * this._trianglesPerInstance.mid,
-            far: instancesByTier.far * this._trianglesPerInstance.far
+            far: instancesByTier.far * this._trianglesPerInstance.far,
+            billboard: 0,
+            middle: 0,
+            accent: 0
         };
         const nearCarpet = this._nearCarpet?.getStats?.() ?? null;
-        if (nearCarpet?.enabled && this._nearEvidenceMode !== 'texture_only') {
+        if (nearCarpet?.enabled && this._nearCarpet?.group?.visible !== false) {
             instancesByTier.near += Math.max(0, Number(nearCarpet.bladeInstances) || 0);
             trianglesByTier.near += Math.max(0, Number(nearCarpet.triangles) || 0);
             totalInstances += Math.max(0, Number(nearCarpet.bladeInstances) || 0);
             drawCalls += Math.max(0, Number(nearCarpet.drawCalls) || 0);
         }
         const midCluster = this._midCluster?.getStats?.() ?? null;
-        if (midCluster?.enabled && !this._nearEvidenceMode) {
-            instancesByTier.mid += Math.max(0, Number(midCluster.instances) || 0);
-            trianglesByTier.mid += Math.max(0, Number(midCluster.triangles) || 0);
-            totalInstances += Math.max(0, Number(midCluster.instances) || 0);
+        if (midCluster?.enabled && this._midCluster?.group?.visible !== false) {
+            const billboardInstances = Math.max(0, Number(midCluster.billboard?.instances) || 0);
+            const middleInstances = Math.max(0, Number(midCluster.middle?.instances) || 0);
+            instancesByTier.billboard += billboardInstances;
+            instancesByTier.middle += middleInstances;
+            trianglesByTier.billboard += Math.max(0, Number(midCluster.billboard?.triangles) || 0);
+            trianglesByTier.middle += Math.max(0, Number(midCluster.middle?.triangles) || 0);
+            totalInstances += billboardInstances + middleInstances;
             drawCalls += Math.max(0, Number(midCluster.drawCalls) || 0);
         }
         const localizedAccents = this._localizedAccents?.getStats?.() ?? null;
-        if (localizedAccents?.enabled && !this._nearEvidenceMode) {
+        if (localizedAccents?.enabled && this._localizedAccents?.group?.visible !== false) {
             instancesByTier.accent += Math.max(0, Number(localizedAccents.visibleClusters) || 0);
             trianglesByTier.accent = Math.max(0, Number(localizedAccents.totalTriangles) || 0);
             totalInstances += Math.max(0, Number(localizedAccents.visibleClusters) || 0);
             drawCalls += Math.max(0, Number(localizedAccents.totalDrawCalls) || 0);
-        } else {
-            trianglesByTier.accent = 0;
         }
-        const totalTriangles = trianglesByTier.master + trianglesByTier.near + trianglesByTier.mid + trianglesByTier.far + trianglesByTier.accent;
+        const totalTriangles = Object.values(trianglesByTier)
+            .reduce((sum, value) => sum + Math.max(0, Number(value) || 0), 0);
+        const nearTriangles = Math.max(0, Number(trianglesByTier.near) || 0);
+        const billboardTriangles = Math.max(0, Number(trianglesByTier.billboard) || 0);
+        const middleTriangles = Math.max(0, Number(trianglesByTier.middle) || 0);
+        const accentTriangles = Math.max(0, Number(trianglesByTier.accent) || 0);
 
         return {
             enabled: !!this._config.enabled,
@@ -684,13 +789,25 @@ export class GrassEngine {
                 + Math.max(0, Number(midCluster?.instances) || 0)
                 + Math.max(0, Number(localizedAccents?.visibleClusters) || 0),
             drawCalls,
+            logicalDrawCalls: drawCalls,
             totalInstances,
             totalTriangles,
+            triangles: totalTriangles,
             instancesByTier,
             trianglesByTier,
+            nearTriangles,
+            billboardTriangles,
+            middleTriangles,
+            accentTriangles,
+            cohesiveFieldTriangles: billboardTriangles + middleTriangles,
+            combinedVisibleGrassTriangles: totalTriangles,
+            combinedLogicalDrawCalls: drawCalls,
             nearCarpet,
             nearEvidenceMode: this._nearEvidenceMode,
+            hierarchyEvidenceMode: this._hierarchyEvidenceMode,
             midCluster,
+            billboard: midCluster?.billboard ?? null,
+            middle: midCluster?.middle ?? null,
             localizedAccents,
             autoLod: this.getLodDebugInfo()
         };
@@ -699,16 +816,28 @@ export class GrassEngine {
     getLodDebugInfo() {
         const d = this._lodDebugInfo ?? {};
         return {
+            schema: String(d.schema ?? 'bus-simulator.grass-auto-lod'),
+            version: Math.max(0, Number(d.version) || 0),
             viewAngleDeg: Number(d.viewAngleDeg) || 0,
             angleScale: Number(d.angleScale) || 1,
             masterActiveByAngle: !!d.masterActiveByAngle,
             effectiveDistanceMeters: Math.max(0, Number(d.effectiveDistanceMeters) || 0),
             activeTier: String(d.activeTier ?? 'texture'),
             transitionState: String(d.transitionState ?? 'texture_only'),
+            transitionProgress: clamp(d.transitionProgress, 0, 1, 0),
+            weights: {
+                near: clamp(d.weights?.near, 0, 1, 0),
+                billboard: clamp(d.weights?.billboard, 0, 1, 0),
+                middle: clamp(d.weights?.middle, 0, 1, 0),
+                texture: clamp(d.weights?.texture, 0, 1, 1)
+            },
             nearEndMeters: Math.max(0, Number(d.nearEndMeters) || 0),
+            billboardEndMeters: Math.max(0, Number(d.billboardEndMeters) || 0),
+            middleEndMeters: Math.max(0, Number(d.middleEndMeters ?? d.clusterEndMeters) || 0),
             clusterEndMeters: Math.max(0, Number(d.clusterEndMeters) || 0),
             geometryCutoffWorldMeters: Math.max(0, Number(d.geometryCutoffWorldMeters) || 0),
             force: String(d.force ?? 'auto'),
+            evidenceMode: this._hierarchyEvidenceMode,
             geometryBeyondCutoff: Math.max(0, Number(d.geometryBeyondCutoff) || 0)
         };
     }
@@ -743,9 +872,14 @@ export class GrassEngine {
             this._lodDebugInfo.effectiveDistanceMeters = autoEvaluation.effectiveDistanceMeters;
             this._lodDebugInfo.activeTier = autoEvaluation.activeTier;
             this._lodDebugInfo.transitionState = autoEvaluation.transitionState;
+            this._lodDebugInfo.transitionProgress = autoEvaluation.transitionProgress;
+            this._lodDebugInfo.weights = { ...autoEvaluation.weights };
             this._lodDebugInfo.nearEndMeters = cfg.autoLod.nearEndMeters;
+            this._lodDebugInfo.billboardEndMeters = cfg.autoLod.billboardEndMeters;
+            this._lodDebugInfo.middleEndMeters = cfg.autoLod.middleEndMeters;
             this._lodDebugInfo.clusterEndMeters = cfg.autoLod.clusterEndMeters;
-            this._lodDebugInfo.geometryCutoffWorldMeters = cfg.autoLod.clusterEndMeters / Math.max(EPS, autoEvaluation.angleScale);
+            this._lodDebugInfo.geometryCutoffWorldMeters = cfg.autoLod.middleEndMeters
+                / Math.max(EPS, autoEvaluation.angleScale);
             this._lodDebugInfo.force = cfg.autoLod.force;
         }
 
@@ -766,7 +900,8 @@ export class GrassEngine {
         this._midCluster?.update({ camera: cam, viewAngleDeg });
         this._localizedAccents?.update({ camera: cam, viewAngleDeg });
         this._applyNearEvidenceVisibility();
-        this._lodDebugInfo.geometryBeyondCutoff = (this._midCluster?.getStats?.().geometryBeyondCutoff ?? 0)
+        this._lodDebugInfo.geometryBeyondCutoff = (this._nearCarpet?.getStats?.().geometryBeyondCutoff ?? 0)
+            + (this._midCluster?.getStats?.().geometryBeyondCutoff ?? 0)
             + (this._localizedAccents?.getStats?.().geometryBeyondCutoff ?? 0);
 
         this._tmpMatrix.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
@@ -950,15 +1085,33 @@ export class GrassEngine {
     }
 
     _applyNearEvidenceVisibility() {
-        if (!this._nearEvidenceMode) {
+        if (!this._nearEvidenceMode && this._hierarchyEvidenceMode === 'auto') {
+            if (this._nearCarpet?.group) this._nearCarpet.group.visible = this._nearCarpet.getStats().enabled;
             if (this._midCluster?.group) this._midCluster.group.visible = true;
             if (this._localizedAccents?.group) this._localizedAccents.group.visible = true;
             return;
         }
-        const showNear = this._nearEvidenceMode === 'near_mesh';
-        if (this._nearCarpet?.group) this._nearCarpet.group.visible = showNear && this._nearCarpet.getStats().patchInstances > 0;
-        if (this._midCluster?.group) this._midCluster.group.visible = false;
-        if (this._localizedAccents?.group) this._localizedAccents.group.visible = false;
+        const role = this._nearEvidenceMode
+            ? (this._nearEvidenceMode === 'near_mesh' ? 'close' : 'texture_only')
+            : this._hierarchyEvidenceMode;
+        const nearStats = this._nearCarpet?.getStats?.() ?? null;
+        const midStats = this._midCluster?.getStats?.() ?? null;
+        const accentStats = this._localizedAccents?.getStats?.() ?? null;
+        if (this._nearCarpet?.group) {
+            this._nearCarpet.group.visible = role === 'close' && Number(nearStats?.patchInstances) > 0;
+        }
+        if (this._midCluster?.group) {
+            const selectedInstances = role === 'billboard'
+                ? Number(midStats?.billboard?.instances)
+                : role === 'middle'
+                    ? Number(midStats?.middle?.instances)
+                    : 0;
+            this._midCluster.group.visible = selectedInstances > 0;
+        }
+        if (this._localizedAccents?.group) {
+            this._localizedAccents.group.visible = role === 'accent'
+                && Number(accentStats?.visibleClusters) > 0;
+        }
         for (const chunk of this._chunks) if (chunk?.group) chunk.group.visible = false;
         if (this._lodRings) this._lodRings.visible = false;
         if (this._lodAngleScaledRings) this._lodAngleScaledRings.visible = false;

@@ -5,9 +5,11 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createGrassCoverageDefinition, sanitizeGrassCoverageConfig, sampleGrassCoverage } from '../../../src/app/grass/GrassCoverageContract.js';
 import {
+    createGrassLocalizedAccentHandoffIdentity,
     createGrassLocalizedAccentLayout,
     sanitizeGrassLocalizedAccentConfig
 } from '../../../src/app/grass/GrassLocalizedAccentContract.js';
+import { getGrassAutoLodStableSample } from '../../../src/app/grass/GrassAutoLodContract.js';
 import { createGrassLabEngineConfig, createGrassLabFixtureDefinition } from '../../../src/graphics/gui/grass_debugger/GrassLabContract.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -26,9 +28,33 @@ function circleLoop(x, z, radius, segments = 32) {
 test('localized accent defaults stay inside the per-tree geometry budget', () => {
     const config = sanitizeGrassLocalizedAccentConfig(null);
     assert.equal(config.clustersPerTree, 4);
-    assert.equal(config.clustersPerTree * 2, 8);
+    assert.equal(config.cardsPerCluster, 2);
+    assert.equal(config.clustersPerTree * config.cardsPerCluster, 8);
     assert.ok(config.clustersPerTree >= 3 && config.clustersPerTree <= 6);
     assert.equal(config.atlasVariants, 8);
+    assert.equal(config.wornEnabled, false);
+});
+
+test('localized accent final-handoff samples include seed and exact boundary identity', () => {
+    const options = {
+        accentKey: 'tree:oak:2',
+        seed: 'accent-seed-a',
+        boundarySignature: 'boundary-a'
+    };
+    const first = createGrassLocalizedAccentHandoffIdentity(options);
+    assert.equal(createGrassLocalizedAccentHandoffIdentity(options), first);
+    assert.notEqual(
+        createGrassLocalizedAccentHandoffIdentity({ ...options, seed: 'accent-seed-b' }),
+        first
+    );
+    assert.notEqual(
+        createGrassLocalizedAccentHandoffIdentity({ ...options, boundarySignature: 'boundary-b' }),
+        first
+    );
+    assert.notEqual(
+        getGrassAutoLodStableSample(first, 'middle_to_texture'),
+        getGrassAutoLodStableSample(first, 'billboard_to_middle')
+    );
 });
 
 test('tree placement uses the city scaleVar shape and reproduces the same accent layout', () => {
@@ -122,12 +148,31 @@ test('canonical Lab fixtures expose city-shaped trees and an optional explicit a
     assert.equal(config.localizedAccents.cardHeightMeters, 0.075);
 });
 
-test('localized accent renderer keeps one global atlas batch and a legacy-only worn batch', () => {
+test('localized accents retain the middle cutoff for every non-texture force mode', () => {
     const source = readFileSync(`${REPO_ROOT}/src/graphics/engine3d/grass/GrassLocalizedAccentSystem.js`, 'utf8');
-    assert.equal((source.match(/new THREE\.InstancedMesh\(/g) ?? []).length, 2);
+    assert.match(source, /if \(!config\.enabled \|\| config\.force === 'texture'\) return 0;/);
+    assert.match(
+        source,
+        /return config\.middleEndMeters \/ Math\.max\(EPS, getGrassAutoLodAngleScale\(config, viewAngleDeg\)\);/
+    );
+});
+
+test('localized accent renderer keeps one V2 two-card atlas batch and no worn geometry batch', () => {
+    const source = readFileSync(`${REPO_ROOT}/src/graphics/engine3d/grass/GrassLocalizedAccentSystem.js`, 'utf8');
+    assert.equal((source.match(/new THREE\.InstancedMesh\(/g) ?? []).length, 1);
+    assert.match(source, /for \(let card = 0; card < config\.cardsPerCluster; card\+\+\)/);
+    assert.match(source, /trianglesPerCluster: config\.cardsPerCluster \* 2/);
+    assert.match(source, /GrassLocalizedAccentV2CrossedClump/);
+    assert.match(source, /GrassLocalizedAccentV2Batch/);
     assert.match(source, /grassAtlasVariant/);
     assert.match(source, /mesh\.frustumCulled = true/g);
     assert.match(source, /mesh\.castShadow = false/g);
+    assert.match(source, /createGrassLocalizedAccentHandoffIdentity/);
+    assert.match(source, /camera\.position\.x\.toFixed\(6\)/);
+    assert.match(source, /camera\.position\.z\.toFixed\(6\)/);
+    assert.match(source, /batchSignature/);
+    assert.doesNotMatch(source, /CAMERA_BUCKET_METERS|cameraBucketX|cameraBucketZ/);
+    assert.doesNotMatch(source, /_wornMesh|CircleGeometry|GrassLocalizedWornSubstrateBatch|\bwornMaterial\b/);
     const gameplay = readFileSync(`${REPO_ROOT}/src/states/GameplayState.js`, 'utf8');
     assert.doesNotMatch(gameplay, /GrassLocalizedAccentSystem|GrassLocalizedAccentContract/);
 });

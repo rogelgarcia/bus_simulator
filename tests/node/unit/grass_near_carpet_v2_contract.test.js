@@ -115,6 +115,39 @@ test('AI 360 shared coverage samples include exact definition bounds in their ca
     assert.notEqual(narrow.placementSignature, wide.placementSignature);
 });
 
+test('AI 361 near cache pads same-cell candidate data while keeping visibility bounded to the effective radius', () => {
+    const effectiveRadiusMeters = 2;
+    const patchSizeMeters = 1;
+    const createLayout = (radiusMeters) => createGrassNearCarpetCellSet({
+        cameraX: 0.5,
+        cameraZ: 0.5,
+        config: sanitizeGrassNearCarpetConfig({
+            enabled: true,
+            patchSizeMeters,
+            bladesPerSquareMeter: 64,
+            fibersPerRoot: 3,
+            radiusMeters
+        }),
+        terrainBounds: { minX: -10, maxX: 10, minZ: -10, maxZ: 10 }
+    });
+    const unpadded = createLayout(effectiveRadiusMeters);
+    const padded = createLayout(effectiveRadiusMeters + patchSizeMeters / Math.SQRT2);
+    const movedCamera = { x: 0.99, z: 0.99 };
+    const enteringCell = padded.cells.get('2,1');
+
+    assert.ok(enteringCell, 'the ownership-cell cache must include a unit that enters range before the cell changes');
+    assert.ok(Math.hypot(enteringCell.x - movedCamera.x, enteringCell.z - movedCamera.z) <= effectiveRadiusMeters);
+    assert.ok(
+        enteringCell.roots.length > (unpadded.cells.get(enteringCell.key)?.roots.length ?? 0),
+        'candidate padding must preserve root data that the centered effective-radius layout clipped'
+    );
+
+    const source = readFileSync(`${REPO_ROOT}/src/graphics/engine3d/grass/GrassNearCarpetSystem.js`, 'utf8');
+    assert.match(source, /radiusMeters:\s*effectiveRadiusMeters \+ config\.patchSizeMeters \/ Math\.SQRT2/);
+    assert.match(source, /const insideSelectionRadius = handoff\.distanceMeters <= effectiveRadiusMeters/);
+    assert.match(source, /const visible = insideSelectionRadius && \([\s\S]*?forcedEvidence \|\| resolveGrassAutoLodUnitVisibility/);
+});
+
 test('AI 360 high near carpet leaves triangle headroom under the combined V2 200k ceiling', () => {
     const config = sanitizeGrassNearCarpetConfig({
         enabled: true,
