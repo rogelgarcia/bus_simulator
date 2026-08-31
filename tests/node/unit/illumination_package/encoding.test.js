@@ -43,6 +43,10 @@ test('encoding dimensions derive exact lengths and reject precision/component mi
         dimensions: { width: 4, height: 2, depth: 1, components: 4 }
     }), 128);
     assert.equal(getIlluminationDecodedByteLength({
+        encoding: 'rg8_unorm', precision: 'unorm8',
+        dimensions: { width: 4, height: 2, depth: 1, components: 2 }
+    }), 16);
+    assert.equal(getIlluminationDecodedByteLength({
         encoding: 'future_encoding', precision: 'future',
         dimensions: { width: 1, height: 1, depth: 1, components: 1 }
     }), null);
@@ -53,6 +57,10 @@ test('encoding dimensions derive exact lengths and reject precision/component mi
     assert.throws(() => getIlluminationDecodedByteLength({
         encoding: 'rgba32f_le', precision: 'float32',
         dimensions: { width: 1, height: 1, depth: 1, components: 3 }
+    }), /component/);
+    assert.throws(() => getIlluminationDecodedByteLength({
+        encoding: 'rg8_unorm', precision: 'unorm8',
+        dimensions: { width: 1, height: 1, depth: 1, components: 1 }
     }), /component/);
 });
 

@@ -109,6 +109,10 @@ export class GameEngine {
             lastCity: null
         };
 
+        this._illuminationPipeline = null;
+        this._disposalPromise = null;
+        this._disposed = false;
+
         this._sunBloom = {
             settings: getResolvedSunBloomSettings()
         };
@@ -1070,6 +1074,26 @@ export class GameEngine {
         this._frameListeners.delete(fn);
     }
 
+    installIlluminationPipeline(pipeline) {
+        const next = pipeline ?? null;
+        const previous = this._illuminationPipeline;
+        if (next === previous) return previous;
+        if (next !== null
+            && (typeof next.frameBegin !== 'function'
+                || typeof next.shadowPrepare !== 'function'
+                || typeof next.frameEnd !== 'function'
+                || typeof next.uninstall !== 'function')) {
+            throw new TypeError('[GameEngine] Illumination pipeline must implement frameBegin, shadowPrepare, frameEnd, and uninstall.');
+        }
+        previous?.uninstall(next === null ? 'pipeline_removed' : 'pipeline_replaced');
+        this._illuminationPipeline = next;
+        return previous;
+    }
+
+    getIlluminationPipeline() {
+        return this._illuminationPipeline;
+    }
+
     resize() {
         const rect = this.canvas?.getBoundingClientRect?.() ?? null;
         const width = Number.isFinite(rect?.width) ? rect.width : null;
@@ -1170,17 +1194,30 @@ export class GameEngine {
 
         if (!render) return;
 
-        this._updateStaticAo();
-        this._updateBusContactShadow(stepDt);
-
+        const illuminationPipeline = this._illuminationPipeline;
         const gpuTimer = this._gpuFrameTimer;
-        gpuTimer?.beginFrame?.();
+        let gpuFrameBegun = false;
         try {
+            illuminationPipeline?.frameBegin?.({ engine: this, dt: stepDt, nowMs: now });
+            this._updateStaticAo();
+            this._updateBusContactShadow(stepDt);
+            gpuTimer?.beginFrame?.();
+            gpuFrameBegun = !!gpuTimer;
+            illuminationPipeline?.shadowPrepare?.({ engine: this, dt: stepDt, nowMs: now });
             if (this._post?.pipeline) this._post.pipeline.render(stepDt);
             else this.renderer.render(this.scene, this.camera);
         } finally {
-            gpuTimer?.endFrame?.();
-            gpuTimer?.poll?.();
+            try {
+                if (gpuFrameBegun) {
+                    try {
+                        gpuTimer?.endFrame?.();
+                    } finally {
+                        gpuTimer?.poll?.();
+                    }
+                }
+            } finally {
+                illuminationPipeline?.frameEnd?.({ engine: this, dt: stepDt, nowMs: now });
+            }
         }
 
         if (!this._frameListeners.size) return;
@@ -1259,22 +1296,55 @@ export class GameEngine {
         // Shadow maps are built once per frame, pinned to the visible pass —
         // see PostProcessingPipeline.render(), which owns that because it is
         // what issues the several scene renders per frame.
-        if (this._post?.pipeline) this._post.pipeline.render();
-        else this.renderer.render(this.scene, this.camera);
+        const illuminationPipeline = this._illuminationPipeline;
+        const nowMs = performance.now();
+        try {
+            illuminationPipeline?.frameBegin?.({ engine: this, dt: 0, nowMs });
+            illuminationPipeline?.shadowPrepare?.({ engine: this, dt: 0, nowMs });
+            if (this._post?.pipeline) this._post.pipeline.render();
+            else this.renderer.render(this.scene, this.camera);
+        } finally {
+            illuminationPipeline?.frameEnd?.({ engine: this, dt: 0, nowMs });
+        }
     }
 
     dispose() {
+        if (this._disposalPromise) return this._disposalPromise;
+        if (this._disposed) return undefined;
+        this._disposed = true;
         this.stop();
         if (this._autoResize) window.removeEventListener('resize', this._onResize);
         this.simulation?.dispose?.();
         this._post?.pipeline?.dispose?.();
         if (this._post) this._post.pipeline = null;
-        this._staticAo?.runtime?.dispose?.();
-        if (this._staticAo) this._staticAo.runtime = null;
-        this._busContactShadow?.rig?.dispose?.();
+        const illuminationPipeline = this._illuminationPipeline;
+        this._illuminationPipeline = null;
         const renderer = this.renderer ?? null;
         this.renderer = null;
-        renderer?.dispose?.();
+        const finishDisposal = () => {
+            this._staticAo?.runtime?.dispose?.();
+            if (this._staticAo) this._staticAo.runtime = null;
+            this._busContactShadow?.rig?.dispose?.();
+            renderer?.dispose?.();
+        };
+        let pipelineDisposal;
+        try {
+            pipelineDisposal = illuminationPipeline?.dispose?.();
+        } catch (error) {
+            finishDisposal();
+            throw error;
+        }
+        if (pipelineDisposal && typeof pipelineDisposal.then === 'function') {
+            this._disposalPromise = Promise.resolve(pipelineDisposal).then(
+                () => finishDisposal(),
+                (error) => {
+                    finishDisposal();
+                    throw error;
+                }
+            );
+            return this._disposalPromise;
+        }
+        finishDisposal();
     }
 
     _tick(t) {

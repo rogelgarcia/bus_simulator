@@ -5,19 +5,19 @@
 // (guarded by USE_CSM defines, so unregistered materials keep stock behavior),
 // creates one shadow-casting DirectionalLight per cascade under `parent`, and
 // expects every lit material to be registered. Registration here deliberately
-// does NOT use csm.setupMaterial(): that overwrites material.onBeforeCompile,
-// while this codebase chains it (capture previous, call it). The CSM hook only
-// adds uniforms — it does no source surgery — so chain order is irrelevant.
+// does NOT use csm.setupMaterial(): CSM instead owns one entry in the shared
+// material shader-hook registry, so independently owned extensions survive its
+// teardown. The CSM hook only adds uniforms and does no source surgery.
 //
 // csm.dispose() is never called either: it deletes material.onBeforeCompile
-// unconditionally, which would nuke chained wrappers (material variation, UV
-// tiling, static AO) on shared materials. Teardown restores each material to
-// its exact pre-registration state instead.
+// unconditionally, which would nuke other registered extensions on shared
+// materials. Teardown removes only the CSM-owned registry entry.
 // @ts-check
 
 import * as THREE from 'three';
 import { CSM } from 'three/addons/csm/CSM.js';
 import { isLitMaterial } from '../../lighting/SceneShadowMaterials.js';
+import { registerMaterialShaderHook } from '../../shaders/core/MaterialShaderHookRegistry.js';
 
 // Texel density the shadow presets' normalBias values are tuned for: the
 // single fitted map (110 m radius -> 220 m box) at 4096 px = ~0.054 m/texel.
@@ -74,6 +74,8 @@ const MAX_CASCADE_MAP_SIZE = 8192;
 // to this). Every CSM_cascades uniform array is held at this length — see
 // _padCascadeUniforms.
 const MAX_SUPPORTED_CASCADES = 4;
+const CSM_MATERIAL_HOOK_ID = 'city.cascaded_shadows';
+const CSM_MATERIAL_HOOK_PRIORITY = 100;
 
 /**
  * Grow a CSM_cascades uniform array to MAX_SUPPORTED_CASCADES, repeating the
@@ -178,7 +180,7 @@ export class CityCascadedShadows {
         this.csm.updateFrustums();
         this._applyPresetToLights();
 
-        /** @type {Map<any, { hadOwnOnBeforeCompile: boolean, prevOnBeforeCompile: any }>} */
+        /** @type {Map<any, { remove: () => boolean }>} */
         this._registered = new Map();
         this._camState = null;
         this._disposed = false;
@@ -205,14 +207,11 @@ export class CityCascadedShadows {
 
     /**
      * Prepare one lit material for cascaded shadows. Idempotent. Equivalent to
-     * csm.setupMaterial() but chains onBeforeCompile instead of overwriting it.
+     * csm.setupMaterial(), with independently removable registry ownership.
      */
     registerMaterial(material) {
         if (this._disposed || !isLitMaterial(material)) return;
         if (this._registered.has(material)) return;
-
-        const hadOwnOnBeforeCompile = Object.prototype.hasOwnProperty.call(material, 'onBeforeCompile');
-        const prevOnBeforeCompile = hadOwnOnBeforeCompile ? material.onBeforeCompile : null;
 
         material.defines = material.defines || {};
         material.defines.USE_CSM = 1;
@@ -220,23 +219,25 @@ export class CityCascadedShadows {
         if (this.csm.fade) material.defines.CSM_FADE = '';
 
         const csm = this.csm;
-        const prev = typeof material.onBeforeCompile === 'function' ? material.onBeforeCompile.bind(material) : null;
-        material.onBeforeCompile = (shader, renderer) => {
-            if (prev) prev(shader, renderer);
-            const far = Math.min(csm.camera.far, csm.maxFar);
-            const breaksVec2 = [];
-            csm._getExtendedBreaks(breaksVec2);
-            // Born at full length: this compile may be producing a program that
-            // declares MORE cascades than the live count (see padCascadeUniforms).
-            shader.uniforms.CSM_cascades = { value: padBreaks(breaksVec2) };
-            shader.uniforms.cameraNear = { value: csm.camera.near };
-            shader.uniforms.shadowFar = { value: far };
-            csm.shaders.set(material, shader);
-        };
+        const hook = registerMaterialShaderHook(material, {
+            id: CSM_MATERIAL_HOOK_ID,
+            priority: CSM_MATERIAL_HOOK_PRIORITY,
+            variantKey: 'v1:c' + this.csm.cascades + ':f' + (this.csm.fade ? 1 : 0),
+            apply(shader) {
+                const far = Math.min(csm.camera.far, csm.maxFar);
+                const breaksVec2 = [];
+                csm._getExtendedBreaks(breaksVec2);
+                // Born at full length: this compile may be producing a program that
+                // declares MORE cascades than the live count (see padCascadeUniforms).
+                shader.uniforms.CSM_cascades = { value: padBreaks(breaksVec2) };
+                shader.uniforms.cameraNear = { value: csm.camera.near };
+                shader.uniforms.shadowFar = { value: far };
+                csm.shaders.set(material, shader);
+            }
+        });
         csm.shaders.set(material, null);
 
-        this._registered.set(material, { hadOwnOnBeforeCompile, prevOnBeforeCompile });
-        material.needsUpdate = true;
+        this._registered.set(material, hook);
     }
 
     /**
@@ -375,9 +376,8 @@ export class CityCascadedShadows {
         if (this._disposed) return;
         this._disposed = true;
 
-        for (const [material, entry] of this._registered) {
-            if (entry.hadOwnOnBeforeCompile) material.onBeforeCompile = entry.prevOnBeforeCompile;
-            else delete material.onBeforeCompile;
+        for (const [material, hook] of this._registered) {
+            hook.remove();
             if (material.defines) {
                 delete material.defines.USE_CSM;
                 delete material.defines.CSM_CASCADES;
@@ -393,7 +393,6 @@ export class CityCascadedShadows {
             // place is harmless: the next program simply stops asking for
             // them. Reproduced by changing splitScale at runtime, which
             // disposes and rebuilds the whole cascade set mid-frame.
-            material.needsUpdate = true;
         }
         this._registered.clear();
         this.csm.shaders.clear();

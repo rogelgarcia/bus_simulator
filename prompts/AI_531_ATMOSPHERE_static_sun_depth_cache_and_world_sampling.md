@@ -45,6 +45,62 @@ Acceptance requirements:
 - Missing/stale/corrupt/unsupported cache states atomically retain or return to current shadows.
 - The cache exposes a stable arbitrary-world-position sampling contract for AI 532 without containing bus-specific logic.
 
+## Implementation progress — 2026-08-30
+
+Implemented the development/runtime foundation:
+
+- Strict versioned `static_sun_depth` identity, float32-safe coordinate/depth
+  contract, RG8 encoding, complete-set residency, guard-aware arbitrary-world
+  CPU sampler, and deterministic fixture compiler.
+- AI 530 RG8 array packaging and capability vocabulary, pre-upload per-layer
+  SHA-256 and complete guard verification, explicit upload boundary, async
+  prewarm, frame-boundary activation, fence-safe retirement, and exact current
+  fallback.
+- Dedicated GLSL world sampling for Standard/Physical materials through the
+  ordered illumination hook. Only the named sun's direct lobes are attenuated;
+  indirect/environment/emissive/final color remain outside the multiplier.
+- Exact live-provenance revalidation, ambiguous directional-light rejection,
+  exact attached-city shader compilation before caster suppression, City-only
+  caster ownership, comparison mode with current casters retained, pipeline
+  replacement/removal symmetry, and WebGL context-loss restoration.
+- Ten debug variants and a frozen 205-case validation catalog (8 lab, 100 route
+  profiler, 1 civic, and 96 low-sun cases).
+
+Current automated evidence:
+
+- 161 focused Node contract, encoding, sampling, hook, graphics, fence, caster,
+  engine-lifecycle, validation-catalog, and tile-integrity tests pass.
+- Chromium compiles the pinned stock/CSM shader paths and verifies 14 rendered
+  CPU/GPU visibility pairs across MeshStandard and MeshPhysical, including
+  rotated world coordinates, signed/empty depths, PCF, internal guards, global
+  boundaries, and normal bias. Ten additional final-color readbacks prove that
+  cache occlusion attenuates the named sun while preserving a non-aligned
+  directional light, ambient contribution, and emissive.
+- Browser lifecycle coverage proves that forged tile hashes, valid-hash invalid
+  guards, whole-package corruption, stale request identity, live identity
+  drift/exceptions, receiver-material drift, exact-city compile failure,
+  context loss, and pipeline removal never expose a partial cache or leave
+  static caster ownership orphaned.
+
+The prompt intentionally remains active. The available AI 529 city
+reconstruction emits only a 32×32 proof depth image, so these release gates are
+still open:
+
+- a fresh production multi-tile city bake and production `.ilpkg`;
+- opaque BVH/ray truth plus exact alpha-cutout/foliage certification and reviewed
+  caster exclusions;
+- same-session full validation-catalog image comparisons and required visual
+  artifacts with zero missing occluders; and
+- measured current/comparison/cache frame and shadow workload, CPU/GPU timing,
+  memory, payload/load/upload/residency, bake duration, variance, and hardware
+  table.
+
+See [the static-sun cache authority](../specs/graphics/static_sun_depth_cache.md),
+[runtime/app contract](../src/app/illumination/static_sun_depth/),
+[graphics pipeline](../src/graphics/illumination/static_sun_depth/),
+[shader sources](../src/graphics/shaders/materials/), and
+[fixture compiler](../tools/static_sun_depth/).
+
 ## On completion
 
 - Mark the AI document as DONE in the first line.

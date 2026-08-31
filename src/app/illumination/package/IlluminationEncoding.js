@@ -10,6 +10,7 @@ const FLOAT32_BITS = new Uint32Array(FLOAT32_VALUE.buffer);
 export const ILLUMINATION_ENCODING_LAYOUTS = Object.freeze({
     raw_u8: Object.freeze({ bytesPerComponent: 1, components: null, precision: 'uint8' }),
     r8_unorm: Object.freeze({ bytesPerComponent: 1, components: 1, precision: 'unorm8' }),
+    rg8_unorm: Object.freeze({ bytesPerComponent: 1, components: 2, precision: 'unorm8' }),
     rgba16f_le: Object.freeze({ bytesPerComponent: 2, components: 4, precision: 'float16' }),
     rgba32f_le: Object.freeze({ bytesPerComponent: 4, components: 4, precision: 'float32' }),
     uint32_le: Object.freeze({ bytesPerComponent: 4, components: 1, precision: 'uint32' })

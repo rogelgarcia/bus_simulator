@@ -11,7 +11,7 @@ const KNOWN_CHANNELS = new Set(ILLUMINATION_KNOWN_CHANNELS);
 const SUPPORTED_ENCODINGS = new Set(ILLUMINATION_SUPPORTED_ENCODINGS);
 const SUPPORTED_RESOURCES = new Set(['buffer', 'texture_2d', 'texture_2d_array']);
 const BUFFER_ENCODINGS = new Set(['raw_u8', 'uint32_le']);
-const TEXTURE_ENCODINGS = new Set(['r8_unorm', 'rgba16f_le', 'rgba32f_le']);
+const TEXTURE_ENCODINGS = new Set(['r8_unorm', 'rg8_unorm', 'rgba16f_le', 'rgba32f_le']);
 
 /** @param {string} resourceType @param {string} encoding */
 export function isSupportedIlluminationResourceEncoding(resourceType, encoding) {
@@ -46,6 +46,16 @@ export function evaluateIlluminationPackageCompatibility(manifest, chunkTable, o
             expected: expectations.profileSha256,
             actual: [...new Set(manifest.channels.map((channel) => channel.profileSha256))].sort()
         });
+    }
+    if (expectations.staticSunDepthSourceSha256 !== undefined) {
+        const staticSun = manifest.channels.find((channel) => channel.id === 'static_sun_depth');
+        if (!staticSun || staticSun.sourceSha256 !== expectations.staticSunDepthSourceSha256) {
+            return result(false, 'stale_source', [], [], [], [], {
+                channelId: 'static_sun_depth',
+                expected: expectations.staticSunDepthSourceSha256,
+                actual: staticSun?.sourceSha256 ?? null
+            });
+        }
     }
     const selectedProfile = manifest.capabilityProfiles.find((profile) => profile.id === manifest.selectedCapabilityProfileId);
     const selectedProfileChannelIds = new Set([

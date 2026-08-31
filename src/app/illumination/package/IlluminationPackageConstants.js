@@ -26,6 +26,7 @@ export const ILLUMINATION_KNOWN_CHANNELS = Object.freeze([
 export const ILLUMINATION_SUPPORTED_ENCODINGS = Object.freeze([
     'raw_u8',
     'r8_unorm',
+    'rg8_unorm',
     'rgba16f_le',
     'rgba32f_le',
     'uint32_le'

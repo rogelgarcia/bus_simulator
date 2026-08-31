@@ -96,6 +96,7 @@ test('expectation mismatches are compatibility outcomes after full integrity ver
         [{ cityId: 'other.city' }, 'wrong_city'],
         [{ lightingProfileId: 'other.profile' }, 'wrong_profile'],
         [{ resolvedSourceSha256: 'f'.repeat(64) }, 'stale_source'],
+        [{ staticSunDepthSourceSha256: 'd'.repeat(64) }, 'stale_source'],
         [{ selectedCapabilityProfileId: 'baked.hybrid_sun_v1' }, 'incompatible_capability_profile'],
         [{ aggregateSha256: 'e'.repeat(64) }, 'aggregate_identity_mismatch']
     ]) {
@@ -257,9 +258,9 @@ test('named capability profiles enforce runtime minimum capabilities without cha
             sourceSha256: HASHES.sunSource, profileSha256: HASHES.sunProfile
         }],
         chunks: [{
-            id: 'sun.depth', channelId: 'static_sun_depth', data: new Float32Array([10, 10, 10, 1]),
-            resourceType: 'texture_2d', encoding: 'rgba32f_le', precision: 'float32',
-            dimensions: { width: 1, height: 1, depth: 1, components: 4 }, rowOrigin: 'lower_left',
+            id: 'sun.depth', channelId: 'static_sun_depth', data: new Uint8Array([0x12, 0x34, 0xff, 0xff]),
+            resourceType: 'texture_2d', encoding: 'rg8_unorm', precision: 'unorm8',
+            dimensions: { width: 2, height: 1, depth: 1, components: 2 }, rowOrigin: 'lower_left',
             coordinateTransform: null, mipLevel: 0, requiredRuntimeCapabilities: []
         }]
     });
@@ -274,6 +275,8 @@ test('named capability profiles enforce runtime minimum capabilities without cha
         runtimeCapabilities: ['static_sun_sampling_on_bus_v1', 'dynamic_bus_shadow_layer_v1']
     });
     assert.equal(supported.compatibility.compatible, true);
+    assert.equal(supported.chunks[0].descriptor.encoding, 'rg8_unorm');
+    assert.deepEqual(Array.from(supported.chunks[0].data), [0x12, 0x34, 0xff, 0xff]);
 });
 
 test('selected capability profiles skip undeclared optional channels and reject undeclared required channels', async () => {

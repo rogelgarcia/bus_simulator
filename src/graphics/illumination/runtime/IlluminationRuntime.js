@@ -34,7 +34,8 @@ const RUNTIME_EXPECTATION_FIELDS = new Set([
     ...REQUIRED_RUNTIME_IDENTITY_FIELDS,
     'aggregateSha256',
     'compilerSignatureSha256',
-    'profileSha256'
+    'profileSha256',
+    'staticSunDepthSourceSha256'
 ]);
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 

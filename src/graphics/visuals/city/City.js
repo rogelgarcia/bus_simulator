@@ -490,6 +490,8 @@ export class City {
         // CSM: the single fitted map's box is already small enough that three's
         // own culling against it does the same job.
         this._shadowCuller = null;
+        this._staticSunDepthCacheActive = false;
+        this._staticSunDepthCasterController = null;
         // Roots outside this.group whose materials must receive scene shadows
         // (the bus). Remembered so a later mode switch can re-register them.
         this._extraShadowRoots = new Set();
@@ -526,6 +528,12 @@ export class City {
         if (!this._attached) return;
 
         this.disableStaticVisibility();
+        let casterRestorationError = null;
+        try {
+            this._staticSunDepthCasterController?.deactivate?.('city_detached');
+        } catch (error) {
+            casterRestorationError = error;
+        }
         this._deactivateCascadedShadows();
         engine.scene.remove(this.group);
         applyShadowSideToObject(this.group, null);
@@ -540,6 +548,7 @@ export class City {
 
         this._restore = null;
         this._attached = false;
+        if (casterRestorationError) throw casterRestorationError;
     }
 
     /**
@@ -555,56 +564,66 @@ export class City {
     }
 
     applyShadowSettings(engine) {
-        const renderer = engine?.renderer ?? null;
-        const settings = engine?.shadowSettings ?? getResolvedShadowSettings();
-        const preset = getShadowQualityPreset(settings);
-        const enabled = !!preset.enabled;
-        const wantsCsm = enabled
-            && Number.isFinite(preset.cascades)
-            && !!engine?.camera
-            && typeof window !== 'undefined';
+        const staticSunCasterController = this._staticSunDepthCasterController;
+        let refreshStarted = false;
+        let settingsApplied = false;
+        try {
+            const refreshResult = staticSunCasterController?.beforeShadowSettings?.();
+            refreshStarted = !!staticSunCasterController && refreshResult !== false;
+            const renderer = engine?.renderer ?? null;
+            const settings = engine?.shadowSettings ?? getResolvedShadowSettings();
+            const preset = getShadowQualityPreset(settings);
+            const enabled = !!preset.enabled;
+            const wantsCsm = enabled
+                && Number.isFinite(preset.cascades)
+                && !!engine?.camera
+                && typeof window !== 'undefined';
 
-        // Both must run before the culler is built: it captures the caster list
-        // once, and these decide which meshes are casters at all.
-        this._applyShadowCasterMerge(settings);
-        this._applyInstancedShadowCasters(settings);
+            // Both must run before the culler is built: it captures the caster list
+            // once, and these decide which meshes are casters at all.
+            this._applyShadowCasterMerge(settings);
+            this._applyInstancedShadowCasters(settings);
 
-        if (wantsCsm) {
-            this._activateCascadedShadows(engine, preset, settings);
-        } else {
-            this._deactivateCascadedShadows();
-        }
+            if (wantsCsm) {
+                this._activateCascadedShadows(engine, preset, settings);
+            } else {
+                this._deactivateCascadedShadows();
+            }
 
-        // Reach is part of the quality tier, so the fitted map's half-extent
-        // comes from the preset rather than the constructor option (which now
-        // only supplies the fallback for tools that build a City directly).
-        if (this._sunShadowFocus && Number.isFinite(preset.radiusMeters)) {
-            this._sunShadowFocus.radiusMeters = Math.max(20, preset.radiusMeters);
-        }
+            // Reach is part of the quality tier, so the fitted map's half-extent
+            // comes from the preset rather than the constructor option (which now
+            // only supplies the fallback for tools that build a City directly).
+            if (this._sunShadowFocus && Number.isFinite(preset.radiusMeters)) {
+                this._sunShadowFocus.radiusMeters = Math.max(20, preset.radiusMeters);
+            }
 
-        if (this.sun) {
-            // Under CSM the single sun light neither lights nor shadows: the
-            // cascade lights carry the full sun (one per fragment).
-            this.sun.visible = !wantsCsm;
-            this.sun.castShadow = enabled && !wantsCsm;
-            this.sun.shadow.bias = preset.bias;
-            if ('normalBias' in this.sun.shadow) this.sun.shadow.normalBias = preset.normalBias;
-            if ('radius' in this.sun.shadow) this.sun.shadow.radius = preset.radius;
+            if (this.sun) {
+                // Under CSM the single sun light neither lights nor shadows: the
+                // cascade lights carry the full sun (one per fragment).
+                this.sun.visible = !wantsCsm;
+                this.sun.castShadow = enabled && !wantsCsm;
+                this.sun.shadow.bias = preset.bias;
+                if ('normalBias' in this.sun.shadow) this.sun.shadow.normalBias = preset.normalBias;
+                if ('radius' in this.sun.shadow) this.sun.shadow.radius = preset.radius;
 
-            if (!wantsCsm && enabled && preset.mapSize > 0) {
-                // Only the hardware limit caps this; the tiers decide the size.
-                const size = Math.max(256, Math.min(preset.mapSize, this._maxShadowTextureSize(renderer, preset.mapSize)));
-                const current = this.sun.shadow.mapSize;
-                if (current?.x !== size || current?.y !== size) {
-                    this.sun.shadow.mapSize.set(size, size);
-                    if (this.sun.shadow.map?.dispose) this.sun.shadow.map.dispose();
-                    this.sun.shadow.map = null;
+                if (!wantsCsm && enabled && preset.mapSize > 0) {
+                    // Only the hardware limit caps this; the tiers decide the size.
+                    const size = Math.max(256, Math.min(preset.mapSize, this._maxShadowTextureSize(renderer, preset.mapSize)));
+                    const current = this.sun.shadow.mapSize;
+                    if (current?.x !== size || current?.y !== size) {
+                        this.sun.shadow.mapSize.set(size, size);
+                        if (this.sun.shadow.map?.dispose) this.sun.shadow.map.dispose();
+                        this.sun.shadow.map = null;
+                    }
                 }
             }
-        }
 
-        const wantsTwoSided = enabled && preset.twoSidedCasting;
-        applyShadowSideToObject(this.group, wantsTwoSided ? THREE.DoubleSide : null);
+            const wantsTwoSided = enabled && preset.twoSidedCasting;
+            applyShadowSideToObject(this.group, wantsTwoSided ? THREE.DoubleSide : null);
+            settingsApplied = true;
+        } finally {
+            if (refreshStarted) staticSunCasterController?.afterShadowSettings?.(settingsApplied);
+        }
     }
 
     /** @returns {boolean} whether the active caster set changed. */
@@ -794,7 +813,9 @@ export class City {
         if (this._csm) {
             // Cull before the cascades fit: castShadow flags are read during
             // the renderer's shadow pass, which happens after this returns.
-            this._shadowCuller?.update(engine?.camera, this.sunRef.direction, this._csm.maxFar);
+            if (!this._staticSunDepthCacheActive) {
+                this._shadowCuller?.update(engine?.camera, this.sunRef.direction, this._csm.maxFar);
+            }
             this._csm.updateFrame(engine);
             // Repair pass for materials that appear after the registration walk
             // or otherwise end up with the wrong cascade count — they double

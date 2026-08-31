@@ -5,6 +5,7 @@ const ENCODINGS = Object.freeze({
     rgba32f_le: Object.freeze({ components: 4, bytesPerComponent: 4, arrayType: 'f32', internalFormat: 'RGBA32F', format: 'RGBA', type: 'FLOAT' }),
     rgba16f_le: Object.freeze({ components: 4, bytesPerComponent: 2, arrayType: 'u16', internalFormat: 'RGBA16F', format: 'RGBA', type: 'HALF_FLOAT' }),
     r8_unorm: Object.freeze({ components: 1, bytesPerComponent: 1, arrayType: 'u8', internalFormat: 'R8', format: 'RED', type: 'UNSIGNED_BYTE' }),
+    rg8_unorm: Object.freeze({ components: 2, bytesPerComponent: 1, arrayType: 'u8', internalFormat: 'RG8', format: 'RG', type: 'UNSIGNED_BYTE' }),
     uint32_le: Object.freeze({ components: 1, bytesPerComponent: 4, arrayType: 'u32', internalFormat: 'R32UI', format: 'RED_INTEGER', type: 'UNSIGNED_INT' }),
     raw_u8: Object.freeze({ components: 1, bytesPerComponent: 1, arrayType: 'u8', internalFormat: null, format: null, type: null })
 });
@@ -302,6 +303,7 @@ export function probeWebGl2IlluminationCapabilities(gl) {
         rgba32f_le: texture2d && gl.RGBA32F !== undefined && gl.FLOAT !== undefined,
         rgba16f_le: texture2d && gl.RGBA16F !== undefined && gl.HALF_FLOAT !== undefined,
         r8_unorm: texture2d && gl.R8 !== undefined && gl.UNSIGNED_BYTE !== undefined,
+        rg8_unorm: texture2d && gl.RG8 !== undefined && gl.RG !== undefined && gl.UNSIGNED_BYTE !== undefined,
         uint32_le: buffer && gl.UNSIGNED_INT !== undefined,
         raw_u8: buffer && gl.UNSIGNED_BYTE !== undefined
     });
