@@ -260,7 +260,16 @@ function ensureGrassLodShaderOnMaterial(material) {
                 [
                     '#include <worldpos_vertex>',
                     '#ifdef USE_GRASS_LOD_BLEND',
-                    'vec3 gdGrassViewPos = (viewMatrix * worldPosition).xyz;',
+                    // three.js only declares `worldPosition` for selected material features.
+                    'vec4 gdGrassWorldPosition = vec4( transformed, 1.0 );',
+                    '#ifdef USE_BATCHING',
+                    'gdGrassWorldPosition = batchingMatrix * gdGrassWorldPosition;',
+                    '#endif',
+                    '#ifdef USE_INSTANCING',
+                    'gdGrassWorldPosition = instanceMatrix * gdGrassWorldPosition;',
+                    '#endif',
+                    'gdGrassWorldPosition = modelMatrix * gdGrassWorldPosition;',
+                    'vec3 gdGrassViewPos = (viewMatrix * gdGrassWorldPosition).xyz;',
                     'vGrassLodAlpha = gdGrassComputeTierAlpha(length(gdGrassViewPos));',
                     '#endif'
                 ].join('\n')

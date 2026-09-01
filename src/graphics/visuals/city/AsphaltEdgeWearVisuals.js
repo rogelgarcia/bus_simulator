@@ -61,10 +61,22 @@ function injectAsphaltEdgeWearShader(material, shader) {
             '#include <common>\nvarying vec3 vAsphaltEdgeWearWorldPos;'
         );
     }
-    if (!shader.vertexShader.includes('vAsphaltEdgeWearWorldPos = worldPosition.xyz;')) {
+    if (!shader.vertexShader.includes('vec4 asphaltEdgeWearWorldPosition')) {
         shader.vertexShader = shader.vertexShader.replace(
             '#include <worldpos_vertex>',
-            '#include <worldpos_vertex>\nvAsphaltEdgeWearWorldPos = worldPosition.xyz;'
+            [
+                '#include <worldpos_vertex>',
+                // three.js only declares `worldPosition` for selected material features.
+                'vec4 asphaltEdgeWearWorldPosition = vec4( transformed, 1.0 );',
+                '#ifdef USE_BATCHING',
+                'asphaltEdgeWearWorldPosition = batchingMatrix * asphaltEdgeWearWorldPosition;',
+                '#endif',
+                '#ifdef USE_INSTANCING',
+                'asphaltEdgeWearWorldPosition = instanceMatrix * asphaltEdgeWearWorldPosition;',
+                '#endif',
+                'asphaltEdgeWearWorldPosition = modelMatrix * asphaltEdgeWearWorldPosition;',
+                'vAsphaltEdgeWearWorldPos = asphaltEdgeWearWorldPosition.xyz;'
+            ].join('\n')
         );
     }
 

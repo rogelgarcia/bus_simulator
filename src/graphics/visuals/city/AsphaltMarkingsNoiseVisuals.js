@@ -84,10 +84,22 @@ function injectAsphaltMarkingsNoiseShader(material, shader) {
             '#include <common>\nvarying vec3 vAsphaltMarkingsWorldPos;'
         );
     }
-    if (!shader.vertexShader.includes('vAsphaltMarkingsWorldPos = worldPosition.xyz;')) {
+    if (!shader.vertexShader.includes('vec4 asphaltMarkingsWorldPosition')) {
         shader.vertexShader = shader.vertexShader.replace(
             '#include <worldpos_vertex>',
-            '#include <worldpos_vertex>\nvAsphaltMarkingsWorldPos = worldPosition.xyz;'
+            [
+                '#include <worldpos_vertex>',
+                // three.js only declares `worldPosition` for selected material features.
+                'vec4 asphaltMarkingsWorldPosition = vec4( transformed, 1.0 );',
+                '#ifdef USE_BATCHING',
+                'asphaltMarkingsWorldPosition = batchingMatrix * asphaltMarkingsWorldPosition;',
+                '#endif',
+                '#ifdef USE_INSTANCING',
+                'asphaltMarkingsWorldPosition = instanceMatrix * asphaltMarkingsWorldPosition;',
+                '#endif',
+                'asphaltMarkingsWorldPosition = modelMatrix * asphaltMarkingsWorldPosition;',
+                'vAsphaltMarkingsWorldPos = asphaltMarkingsWorldPosition.xyz;'
+            ].join('\n')
         );
     }
 

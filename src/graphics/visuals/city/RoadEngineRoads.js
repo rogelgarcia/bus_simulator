@@ -484,7 +484,19 @@ function createAsphaltMaterialWithMarkings(
         );
         shader.vertexShader = shader.vertexShader.replace(
             '#include <worldpos_vertex>',
-            '#include <worldpos_vertex>\nvRoadMarkingsWorldPos = worldPosition.xyz;'
+            [
+                '#include <worldpos_vertex>',
+                // three.js only declares `worldPosition` for selected material features.
+                'vec4 roadMarkingsWorldPosition = vec4( transformed, 1.0 );',
+                '#ifdef USE_BATCHING',
+                'roadMarkingsWorldPosition = batchingMatrix * roadMarkingsWorldPosition;',
+                '#endif',
+                '#ifdef USE_INSTANCING',
+                'roadMarkingsWorldPosition = instanceMatrix * roadMarkingsWorldPosition;',
+                '#endif',
+                'roadMarkingsWorldPosition = modelMatrix * roadMarkingsWorldPosition;',
+                'vRoadMarkingsWorldPos = roadMarkingsWorldPosition.xyz;'
+            ].join('\n')
         );
 
         shader.fragmentShader = shader.fragmentShader.replace(

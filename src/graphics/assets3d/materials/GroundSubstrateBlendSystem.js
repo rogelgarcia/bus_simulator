@@ -149,7 +149,16 @@ function injectGroundSubstrateBlendShader(material, shader) {
         [
             '#include <worldpos_vertex>',
             '#ifdef USE_GROUND_SUBSTRATE_BLEND',
-            'vGdSubWorldPos = worldPosition.xyz;',
+            // three.js only declares `worldPosition` for selected material features.
+            'vec4 gdSubWorldPosition = vec4( transformed, 1.0 );',
+            '#ifdef USE_BATCHING',
+            'gdSubWorldPosition = batchingMatrix * gdSubWorldPosition;',
+            '#endif',
+            '#ifdef USE_INSTANCING',
+            'gdSubWorldPosition = instanceMatrix * gdSubWorldPosition;',
+            '#endif',
+            'gdSubWorldPosition = modelMatrix * gdSubWorldPosition;',
+            'vGdSubWorldPos = gdSubWorldPosition.xyz;',
             '#endif'
         ].join('\n')
     );

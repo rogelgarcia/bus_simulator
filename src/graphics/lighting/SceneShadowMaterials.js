@@ -24,6 +24,22 @@ export function setActiveSceneShadowSystem(system) {
     _activeSystem = system && typeof system.registerMaterial === 'function' ? system : null;
 }
 
+/**
+ * Transfer the single scene-shadow registration slot to a new system.
+ * A previous owner can survive an interrupted scene attachment, so dispose it
+ * before exposing the replacement. Replacing with the same system is a no-op.
+ */
+export function replaceActiveSceneShadowSystem(system) {
+    const next = system && typeof system.registerMaterial === 'function' ? system : null;
+    const previous = _activeSystem;
+    if (previous === next) return previous;
+
+    _activeSystem = null;
+    previous?.dispose?.();
+    _activeSystem = next;
+    return previous;
+}
+
 export function getActiveSceneShadowSystem() {
     return _activeSystem;
 }

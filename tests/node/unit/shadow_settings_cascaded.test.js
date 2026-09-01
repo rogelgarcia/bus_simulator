@@ -9,6 +9,7 @@ import {
 } from '../../../src/graphics/lighting/ShadowSettings.js';
 import {
     setActiveSceneShadowSystem,
+    replaceActiveSceneShadowSystem,
     getActiveSceneShadowSystem,
     isLitMaterial,
     registerMaterialForSceneShadows,
@@ -41,6 +42,26 @@ test('SceneShadowMaterials: everything is a no-op without an active system', () 
     registerMaterialForSceneShadows(mat);
     assert.deepEqual(mat, { isMeshStandardMaterial: true }, 'material must stay untouched');
     assert.equal(getActiveSceneShadowSystem(), null);
+});
+
+test('SceneShadowMaterials: replacing an orphaned active system disposes it exactly once', () => {
+    let disposed = 0;
+    const previous = {
+        registerMaterial() {},
+        dispose() { disposed += 1; }
+    };
+    const next = { registerMaterial() {} };
+    setActiveSceneShadowSystem(previous);
+    try {
+        assert.equal(replaceActiveSceneShadowSystem(next), previous);
+        assert.equal(disposed, 1);
+        assert.equal(getActiveSceneShadowSystem(), next);
+
+        assert.equal(replaceActiveSceneShadowSystem(next), next);
+        assert.equal(disposed, 1, 'replacing with the same system must be a no-op');
+    } finally {
+        setActiveSceneShadowSystem(null);
+    }
 });
 
 test('SceneShadowMaterials: only lit material types register', () => {

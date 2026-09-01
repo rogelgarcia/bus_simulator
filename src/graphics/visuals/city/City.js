@@ -19,7 +19,12 @@ import { preloadPortalOrnamentParts } from '../../assets3d/generators/building_f
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js';
 import { getResolvedShadowSettings, getShadowQualityPreset } from '../../lighting/ShadowSettings.js';
-import { registerObjectForSceneShadows, setActiveSceneShadowSystem, getActiveSceneShadowSystem } from '../../lighting/SceneShadowMaterials.js';
+import {
+    registerObjectForSceneShadows,
+    setActiveSceneShadowSystem,
+    replaceActiveSceneShadowSystem,
+    getActiveSceneShadowSystem
+} from '../../lighting/SceneShadowMaterials.js';
 import { CityCascadedShadows } from './CityCascadedShadows.js';
 import { ShadowCasterCuller } from '../../lighting/ShadowCasterCulling.js';
 import {
@@ -526,8 +531,24 @@ export class City {
         engine.camera.updateProjectionMatrix();
 
         engine.scene.add(this.group);
-        this.applyShadowSettings(engine);
-        this._attached = true;
+        try {
+            this.applyShadowSettings(engine);
+            this._attached = true;
+        } catch (error) {
+            // Do not leave cascade hooks or scene state behind when attachment
+            // fails before `_attached` commits. A later state transition must
+            // be able to build a fresh city without colliding with this one.
+            this._deactivateCascadedShadows();
+            engine.scene.remove(this.group);
+            applyShadowSideToObject(this.group, null);
+            engine.scene.background = this._restore?.bg ?? null;
+            engine.scene.fog = this._restore?.fog ?? null;
+            engine.camera.near = this._restore?.near ?? engine.camera.near;
+            engine.camera.far = this._restore?.far ?? engine.camera.far;
+            engine.camera.updateProjectionMatrix();
+            this._restore = null;
+            throw error;
+        }
     }
 
     detach(engine) {
@@ -671,6 +692,10 @@ export class City {
     }
 
     _activateCascadedShadows(engine, preset, settings) {
+        // Another city may have replaced and disposed this system after an
+        // interrupted transition. Treat it as absent so this city can recover.
+        if (this._csm?._disposed) this._csm = null;
+
         const cascades = Math.max(2, Math.min(4, Math.round(settings?.cascades ?? preset.cascades) || preset.cascades));
         // Cascades multiply this by their own scales, so keep the base at or
         // below 4096: the ladder tops out at 8192 per cascade, and four 16384
@@ -699,39 +724,49 @@ export class City {
             // there rather than by the base-size clamp above.
             maxTextureSize: engine?.renderer?.capabilities?.maxTextureSize ?? 0
         });
-        setActiveSceneShadowSystem(this._csm);
-        // Walk the whole scene, not just the city: any lit material the walk
-        // misses keeps no USE_CSM branch and then reads every cascade light as
-        // a separate full-intensity sun, which brightens the scene in step with
-        // the cascade count. engine.scene is a superset of the roots below,
-        // which stay for anything registered later.
-        registerObjectForSceneShadows(engine?.scene ?? this.group);
-        registerObjectForSceneShadows(this.group);
-        for (const root of this._extraShadowRoots) registerObjectForSceneShadows(root);
-
-        // Force the new defines to become real programs before anything
-        // renders. CSM_CASCADES is baked into each material, while the
-        // CSM_cascades uniform array is resized to the live cascade count every
-        // frame — so a material still holding a program from a different count
-        // gets an array of the wrong length and three crashes inside
-        // flatten() ("cannot read properties of undefined (reading
-        // 'toArray')"). Reproduced by changing the cascade count at runtime.
         try {
-            engine?.renderer?.compile?.(engine.scene, engine.camera);
-        } catch {
-            // A failed pre-compile only costs us the guarantee, not correctness.
-        }
-        // compile() only reaches visible in-scene variants, so some materials
-        // can still hold a program from the previous cascade count. Pad the
-        // uniform arrays now rather than waiting for the first updateFrame, so
-        // even a render that beats the next city.update() is safe.
-        this._csm.padCascadeUniforms();
+            // Scene shadow registration is a singleton. Dispose an orphaned
+            // owner left by an interrupted attachment before walking shared
+            // canonical materials, otherwise its hook id collides with ours.
+            replaceActiveSceneShadowSystem(this._csm);
+            // Walk the whole scene, not just the city: any lit material the walk
+            // misses keeps no USE_CSM branch and then reads every cascade light as
+            // a separate full-intensity sun, which brightens the scene in step with
+            // the cascade count. engine.scene is a superset of the roots below,
+            // which stay for anything registered later.
+            registerObjectForSceneShadows(engine?.scene ?? this.group);
+            registerObjectForSceneShadows(this.group);
+            for (const root of this._extraShadowRoots) registerObjectForSceneShadows(root);
 
-        // Index the static city only. The bus and anything else registered as a
-        // dynamic root keeps casting unconditionally: its bounding sphere would
-        // have to be recomputed every frame, and it is a handful of meshes.
-        this._shadowCuller = new ShadowCasterCuller();
-        this._shadowCuller.addRoot(this.group);
+            // Force the new defines to become real programs before anything
+            // renders. CSM_CASCADES is baked into each material, while the
+            // CSM_cascades uniform array is resized to the live cascade count every
+            // frame — so a material still holding a program from a different count
+            // gets an array of the wrong length and three crashes inside
+            // flatten() ("cannot read properties of undefined (reading
+            // 'toArray')"). Reproduced by changing the cascade count at runtime.
+            try {
+                engine?.renderer?.compile?.(engine.scene, engine.camera);
+            } catch {
+                // A failed pre-compile only costs us the guarantee, not correctness.
+            }
+            // compile() only reaches visible in-scene variants, so some materials
+            // can still hold a program from the previous cascade count. Pad the
+            // uniform arrays now rather than waiting for the first updateFrame, so
+            // even a render that beats the next city.update() is safe.
+            this._csm.padCascadeUniforms();
+
+            // Index the static city only. The bus and anything else registered as a
+            // dynamic root keeps casting unconditionally: its bounding sphere would
+            // have to be recomputed every frame, and it is a handful of meshes.
+            this._shadowCuller = new ShadowCasterCuller();
+            this._shadowCuller.addRoot(this.group);
+        } catch (error) {
+            // Registration itself is transactional too: never retain a partial
+            // hook inventory if a material or downstream setup step rejects it.
+            this._deactivateCascadedShadows();
+            throw error;
+        }
     }
 
     _deactivateCascadedShadows() {

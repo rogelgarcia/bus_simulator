@@ -75,7 +75,19 @@ function injectRoadSurfaceVariationShader(material, shader) {
     );
     shader.vertexShader = shader.vertexShader.replace(
         '#include <worldpos_vertex>',
-        '#include <worldpos_vertex>\nvRoadSurfaceVarWorldPos = worldPosition.xyz;'
+        [
+            '#include <worldpos_vertex>',
+            // three.js only declares `worldPosition` for selected material features.
+            'vec4 roadSurfaceVarWorldPosition = vec4( transformed, 1.0 );',
+            '#ifdef USE_BATCHING',
+            'roadSurfaceVarWorldPosition = batchingMatrix * roadSurfaceVarWorldPosition;',
+            '#endif',
+            '#ifdef USE_INSTANCING',
+            'roadSurfaceVarWorldPosition = instanceMatrix * roadSurfaceVarWorldPosition;',
+            '#endif',
+            'roadSurfaceVarWorldPosition = modelMatrix * roadSurfaceVarWorldPosition;',
+            'vRoadSurfaceVarWorldPos = roadSurfaceVarWorldPosition.xyz;'
+        ].join('\n')
     );
 
     shader.fragmentShader = shader.fragmentShader.replace(
