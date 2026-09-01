@@ -158,9 +158,7 @@ export function runNativeShadowDepthTextureCaptureFixture() {
             depth24: {
                 expectedIntegers: expected24Integers,
                 capturedIntegers: captured24Integers,
-                expectedFloatBits: float32Bits(new Float32Array(
-                    expected24Integers.map((value) => Math.fround(value / DEPTH24_MAX))
-                )),
+                expectedFloatBits: float32Bits(expected32),
                 capturedFloatBits: float32Bits(full24.depthValues),
                 capturedValues: [...full24.depthValues]
             },

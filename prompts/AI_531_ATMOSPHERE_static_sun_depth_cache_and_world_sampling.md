@@ -134,6 +134,39 @@ survive a restart.
   under controlled same-condition runs. Calls/triangles and correctness
   evidence may still be collected independently.
 
+### 2026-09-01 post-rebase continuation
+
+- The AI 531 checkpoint remains an ancestor of rebased main at b949b01. The
+  shader/cascade lifecycle fix is retained and the audited AI 531 files were not
+  lost by the rebase.
+- The native WebGL2 depth-texture transform-feedback fixture now passes. The
+  helper no longer inherits an incomplete caller draw framebuffer, restores the
+  exact caller GL/renderer state, authenticates the depth attachment identity,
+  and preserves Depth32F plus Depth24 values. The Lab tree-transport browser gate
+  also passes.
+- Production alpha-cutout spatial parity is now file-backed rather than a set of
+  declared counters. The builder rehashes repository-confined occupancy,
+  first-hit Float32, comparison, and canonical sample-plan files; rejects
+  traversal, symlinks, duplicates, tampering, incomplete data, fabricated
+  classifications, omitted cutout casters, and any measured mismatch; and
+  records path, byteLength, and sha256 for every stream. The sample plan binds
+  the lighting profile, canonical sample indices/texels, and the exact complete
+  cutout-caster ID set.
+- Persisted spatial parity artifacts have an independent reauthentication API.
+  The production release finalizer calls it for every profile. The focused
+  parity suite passes 6/6, the release suite passes 12/12, and the complete
+  static-sun-depth unit directory passes 112/112 after finalizer and sample-plan
+  wiring.
+- A fresh Lab validation was interrupted by a computer crash before a report
+  was written. Its partial output is not evidence. Do not replace the last
+  trustworthy 7/8 Lab report with that directory.
+- The pinned portable Blender 5.2.1 executable is present under the AI 529
+  toolchain artifacts and may be used in an isolated headless process. The open
+  unsaved GUI session is Blender 5.2.0 and must not be repurposed. The user
+  approved headless use, but a full rebake must wait until the bake-side spatial
+  evidence producer exists; otherwise the expensive output remains
+  uncertifiable.
+
 ### Primary blocker
 
 Production foliage/alpha-cutout caster silhouettes do not yet reproduce the
@@ -152,18 +185,19 @@ symlinked, mismatched, or incomplete evidence.
 
 ### Remaining work, in order
 
-1. Audit the uncommitted files against 64001d7. Separate completed production
-   functionality from temporary diagnostics and interrupted experiments; keep
-   unrelated/user changes intact.
+1. Implement the two remaining measured-evidence producers against one shared
+   canonical sample plan: sparse native Three r183 cutout-only shadow-depth
+   samples in the browser, and cutout-only Blender 5.2.1/Cycles first-hit samples
+   in the headless renderer. Publish their authenticated binary files with each
+   profile. Include cutout-versus-opaque ordering and non-vacuous coverage of
+   every cutout caster.
 2. Implement a deterministic alpha-cutout path that matches current foliage
    shadow occupancy, either by reproducing the effective runtime UV/alpha,
    threshold, side/culling, mip, filter, and anisotropy semantics or by
    compiling deterministic silhouette geometry with proven equivalence.
-3. Finish authoritative opaque and cutout certification for every production
-   caster. Record spatial occupancy and first-hit depth, including cutout versus
-   opaque ordering. Authenticate every evidence file with repository-confined
-   path, byteLength, and sha256 data plus negative traversal/symlink/tamper
-   tests.
+3. Feed the two real producer streams into the completed file-backed parity
+   builder and mandatory release-finalizer reauthentication. Do not construct a
+   spatial parity artifact from synthetic counters or unauthenticated bytes.
 4. Keep AI 531 validation scoped to static-world receivers. Dynamic bus receiver
    sampling belongs to AI 532; do not promote interrupted comparisons that count
    bus pixels as AI 531 static-world failures. Preserve the required proof that

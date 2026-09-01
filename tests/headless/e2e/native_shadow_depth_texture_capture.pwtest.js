@@ -27,7 +27,12 @@ test('native shadow depth texture capture preserves values, identity, and render
         const fixture = await import(
             '/tests/headless/e2e/fixtures/NativeShadowDepthTextureFixture.js'
         );
-        return fixture.runNativeShadowDepthTextureCaptureFixture();
+        try {
+            return fixture.runNativeShadowDepthTextureCaptureFixture();
+        } catch (error) {
+            const diagnostics = JSON.stringify(error?.diagnostics ?? {});
+            throw new Error(`${error?.code ?? 'CAPTURE_FAILED'}: ${error?.message ?? error}; ${diagnostics}`);
+        }
     });
     result.browserVersion = page.context().browser()?.version() ?? null;
 

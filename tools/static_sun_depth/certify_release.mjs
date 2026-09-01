@@ -43,6 +43,9 @@ import {
     validateProductionStaticSunDepthReceipt
 } from './src/ProductionArtifact.mjs';
 import {
+    authenticateProductionAlphaCutoutSpatialParityArtifactFiles
+} from './src/ProductionAlphaCutoutParity.mjs';
+import {
     createProductionStaticSunRequest,
     deriveProductionSourceIdentityHashes,
     selectProductionStaticSunProfiles
@@ -216,7 +219,8 @@ Options:
  *   validateReceiptFn?: typeof validateProductionStaticSunDepthReceipt,
  *   validatePayloadFn?: typeof validateProductionStaticSunDepthArrayPayload,
  *   validateSourcePackageFn?: typeof validateResolvedCityBakePackage,
- *   verifyPackageFn?: typeof verifyIlluminationBinaryPackage
+ *   verifyPackageFn?: typeof verifyIlluminationBinaryPackage,
+ *   authenticateAlphaParityFn?: typeof authenticateProductionAlphaCutoutSpatialParityArtifactFiles
  * }} [deps]
  */
 export async function finalizeProductionReleaseCertification(options, deps = {}) {
@@ -234,6 +238,8 @@ export async function finalizeProductionReleaseCertification(options, deps = {})
     const validateSourcePackageFn = deps.validateSourcePackageFn
         ?? validateResolvedCityBakePackage;
     const verifyPackageFn = deps.verifyPackageFn ?? verifyIlluminationBinaryPackage;
+    const authenticateAlphaParityFn = deps.authenticateAlphaParityFn
+        ?? authenticateProductionAlphaCutoutSpatialParityArtifactFiles;
     await assertNoSymlinkPathSegments(
         normalized.repoRoot,
         normalized.artifactRoot,
@@ -413,6 +419,14 @@ export async function finalizeProductionReleaseCertification(options, deps = {})
                 `Published certification evidence for '${lightingProfileId}' differs from its authenticated receipt`
             );
         }
+        await authenticateAlphaParityFn(
+            receipt.alphaCertification.spatialParityArtifact,
+            {
+                authorityRoot: normalized.artifactRoot,
+                repoRoot: normalized.repoRoot
+            },
+            {lstatFn, readFileFn}
+        );
         const certification = validateProductionProfileReleaseCertification(
             parseCanonicalJsonBytes(
                 certificationBytes,

@@ -14,6 +14,7 @@ const repoRoot = path.resolve(__dirname, '../..');
 const SELECTED_TEST_PATH = path.resolve(repoRoot, 'tests/.selected_test');
 const RUNNER_ARTIFACTS_DIR = path.resolve(repoRoot, 'tests/artifacts/run_selected_test');
 const CORE_ARTIFACTS_DIR = path.resolve(RUNNER_ARTIFACTS_DIR, 'core');
+const PLAYWRIGHT_CLI_PATH = path.resolve(repoRoot, 'node_modules/@playwright/test/cli.js');
 
 function printUsage() {
     console.log(`runSelectedTest
@@ -258,8 +259,8 @@ async function runPlaywrightTarget(target) {
 
     console.log(`[runSelectedTest] Playwright: ${normalized}`);
     const { code, signal, err } = await spawnInherit(
-        'npx',
-        ['--no-install', 'playwright', 'test', '-c', configPath, normalized],
+        process.execPath,
+        [PLAYWRIGHT_CLI_PATH, 'test', '-c', configPath, normalized],
         { cwd: repoRoot }
     );
     if (err) console.error('[runSelectedTest] Failed to spawn playwright:', err);
@@ -278,8 +279,8 @@ async function runHeadlessSuite(suite) {
 
     console.log(`[runSelectedTest] Playwright suite: ${suite}`);
     const { code, signal, err } = await spawnInherit(
-        'npx',
-        ['--no-install', 'playwright', 'test', '-c', configPath],
+        process.execPath,
+        [PLAYWRIGHT_CLI_PATH, 'test', '-c', configPath],
         { cwd: repoRoot }
     );
     if (err) console.error('[runSelectedTest] Failed to spawn playwright:', err);

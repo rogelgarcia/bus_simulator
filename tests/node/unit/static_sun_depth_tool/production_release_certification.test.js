@@ -94,7 +94,7 @@ test('profile release certification deterministically proves all 6043 casters an
     assert.equal(BASE_CERTIFICATION.alpha.certifiedCasterCount, 124);
     assert.equal(BASE_CERTIFICATION.alpha.sampleCount, 4096);
     assert.equal(BASE_CERTIFICATION.alpha.firstHitDepthSampleCount, 1024);
-    assert.equal(BASE_CERTIFICATION.alpha.maximumAbsoluteFirstHitDepthErrorMeters, 0.001);
+    assert.equal(BASE_CERTIFICATION.alpha.maximumAbsoluteFirstHitDepthErrorMeters, 0);
     assert.equal(BASE_CERTIFICATION.alpha.mismatchCounts.mip, 0);
     assert.equal(BASE_CERTIFICATION.alpha.mismatchCounts.anisotropy, 0);
     assert.equal(
@@ -1123,6 +1123,16 @@ test('release finalizer authenticates eight packages and independently rehashes 
             ['static_sun_depth.rg8', payloadBytes],
             [fixture.receipt.outputs[0].path, interiorBytes]
         ]);
+        const cutoutCasterIds = fixture.manifest.casterMappings
+            .filter((entry) => entry.coverageMode === 'cutout')
+            .map((entry) => entry.id)
+            .sort();
+        for (const [key, bytes] of Object.entries(makeAlphaCutoutEvidenceBytes(
+            certification.lightingProfileId,
+            cutoutCasterIds
+        ))) {
+            published.set(`alpha/${alphaEvidenceFileName(key)}`, bytes);
+        }
         verifiedEvidence.set(certification.lightingProfileId, {
             descriptor: fixture.descriptor,
             payloadBytes,
@@ -1135,7 +1145,9 @@ test('release finalizer authenticates eight packages and independently rehashes 
                     path: relativePath,
                     sha256: rawBytesSha256(bytes)
                 }))
-                .sort((left, right) => left.path.localeCompare(right.path)),
+                .sort((left, right) => (
+                    left.path < right.path ? -1 : left.path > right.path ? 1 : 0
+                )),
             inputIdentitySha256: HASHES.a,
             lightingProfileId: certification.lightingProfileId,
             packageAggregateSha256: certification.packageAggregateSha256,
@@ -1712,11 +1724,16 @@ function makeAlphaCutoutSpatialParityArtifact({
         .sort();
     const sampleCount = 4096;
     const firstHitDepthSampleCount = 1024;
-    const evidenceStream = (encoding, streamSampleCount, byteLength, sha256) => ({
-        byteLength,
+    const evidenceBytes = makeAlphaCutoutEvidenceBytes(
+        lightingProfileId,
+        cutoutCasterIds
+    );
+    const evidenceStream = (key, encoding, streamSampleCount) => ({
+        byteLength: evidenceBytes[key].byteLength,
         encoding,
+        path: `tests/artifacts/illumination_531/production/${lightingProfileId}/alpha/${alphaEvidenceFileName(key)}`,
         sampleCount: streamSampleCount,
-        sha256
+        sha256: rawBytesSha256(evidenceBytes[key])
     });
     return {
         alphaSemanticsSha256: identity.alphaSemanticsSha256,
@@ -1735,34 +1752,34 @@ function makeAlphaCutoutSpatialParityArtifact({
         descriptorSha256: rawCanonicalSha256(descriptor),
         evidence: {
             bakeFirstHitDepth: evidenceStream(
+                'bakeFirstHitDepth',
                 'f32le-world-depth-common-occupied-v1',
-                firstHitDepthSampleCount,
-                firstHitDepthSampleCount * 4,
-                HASHES.a
+                firstHitDepthSampleCount
             ),
             bakeOccupancy: evidenceStream(
+                'bakeOccupancy',
                 'u8-occupied-1-empty-0-v1',
-                sampleCount,
-                sampleCount,
-                HASHES.b
+                sampleCount
             ),
             comparison: evidenceStream(
+                'comparison',
                 'u8-alpha-parity-classification-v1',
-                sampleCount,
-                sampleCount,
-                HASHES.c
+                sampleCount
             ),
             liveFirstHitDepth: evidenceStream(
+                'liveFirstHitDepth',
                 'f32le-world-depth-common-occupied-v1',
-                firstHitDepthSampleCount,
-                firstHitDepthSampleCount * 4,
-                HASHES.d
+                firstHitDepthSampleCount
             ),
             liveOccupancy: evidenceStream(
+                'liveOccupancy',
                 'u8-occupied-1-empty-0-v1',
-                sampleCount,
-                sampleCount,
-                HASHES.e
+                sampleCount
+            ),
+            samplePlan: evidenceStream(
+                'samplePlan',
+                'canonical-json-ai531-alpha-cutout-sample-plan-v1',
+                sampleCount
             )
         },
         firstHitDepthMismatchCount: 0,
@@ -1774,7 +1791,7 @@ function makeAlphaCutoutSpatialParityArtifact({
         liveDepthAttachmentIdentitySha256: HASHES.g,
         liveOccupiedSampleCount: firstHitDepthSampleCount,
         matchingOccupancySampleCount: sampleCount,
-        maximumAbsoluteFirstHitDepthErrorMeters: 0.001,
+        maximumAbsoluteFirstHitDepthErrorMeters: 0,
         method: PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_METHOD,
         mismatchCounts: Object.fromEntries(
             PRODUCTION_ALPHA_CUTOUT_MISMATCH_KEYS.map((key) => [key, 0])
@@ -1782,13 +1799,48 @@ function makeAlphaCutoutSpatialParityArtifact({
         missingOccluderCount: 0,
         sampleCount,
         samplePlanMethod: PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_METHOD,
-        samplePlanSha256: HASHES.f,
+        samplePlanSha256: rawBytesSha256(evidenceBytes.samplePlan),
         samplerParityMethod: PRODUCTION_ALPHA_CUTOUT_SAMPLER_PARITY_METHOD,
         schema: PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_SCHEMA,
         status: 'measured_spatial_parity_passed',
         unexpectedOccluderCount: 0,
         unsupportedBindingIds: ['binding.cutout']
     };
+}
+
+function makeAlphaCutoutEvidenceBytes(lightingProfileId, cutoutCasterIds) {
+    const sampleCount = 4096;
+    const occupiedSampleCount = 1024;
+    const occupancy = new Uint8Array(sampleCount);
+    occupancy.fill(1, 0, occupiedSampleCount);
+    const comparison = new Uint8Array(sampleCount);
+    comparison.fill(1, 0, occupiedSampleCount);
+    const depth = new Uint8Array(occupiedSampleCount * 4);
+    const view = new DataView(depth.buffer);
+    for (let index = 0; index < occupiedSampleCount; index += 1) {
+        view.setFloat32(index * 4, 1, true);
+    }
+    return {
+        bakeFirstHitDepth: depth.slice(),
+        bakeOccupancy: occupancy.slice(),
+        comparison,
+        liveFirstHitDepth: depth.slice(),
+        liveOccupancy: occupancy.slice(),
+        samplePlan: canonicalJsonBytes({
+            lightingProfileId,
+            method: PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_METHOD,
+            samples: Array.from({length: sampleCount}, (_, index) => ({
+                casterId: cutoutCasterIds[index % cutoutCasterIds.length],
+                globalTexel: [index, 0],
+                index
+            })),
+            schema: 'ai531-production-alpha-cutout-sample-plan-v1'
+        })
+    };
+}
+
+function alphaEvidenceFileName(key) {
+    return `${key.replace(/[A-Z]/g, (value) => `_${value.toLowerCase()}`)}.bin`;
 }
 
 function makeStaticSunDepthDescriptor({compilerSignatureSha256, identity, request}) {

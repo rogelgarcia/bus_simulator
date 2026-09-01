@@ -1,6 +1,9 @@
 // Validates independently measured production alpha-cutout spatial parity evidence.
 // @ts-check
 
+import {createHash} from 'node:crypto';
+import {lstat, readFile} from 'node:fs/promises';
+import path from 'node:path';
 import {
     canonicalJsonStringify,
     cloneCanonicalJson,
@@ -20,6 +23,8 @@ export const PRODUCTION_ALPHA_CUTOUT_LIVE_CAPTURE_METHOD =
 export const PRODUCTION_ALPHA_CUTOUT_BAKE_CAPTURE_METHOD =
     'blender-cutout-only-cycles-z-primary-ray-v1';
 export const PRODUCTION_ALPHA_CUTOUT_FIRST_HIT_DEPTH_TOLERANCE_METERS = 5e-3;
+export const PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_SCHEMA =
+    'ai531-production-alpha-cutout-sample-plan-v1';
 export const PRODUCTION_ALPHA_CUTOUT_MISMATCH_KEYS = Object.freeze([
     'anisotropy',
     'coverage',
@@ -36,6 +41,289 @@ const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const OCCUPANCY_EVIDENCE_ENCODING = 'u8-occupied-1-empty-0-v1';
 const FIRST_HIT_DEPTH_EVIDENCE_ENCODING = 'f32le-world-depth-common-occupied-v1';
 const COMPARISON_EVIDENCE_ENCODING = 'u8-alpha-parity-classification-v1';
+const SAMPLE_PLAN_EVIDENCE_ENCODING =
+    'canonical-json-ai531-alpha-cutout-sample-plan-v1';
+const EVIDENCE_KEYS = Object.freeze([
+    'bakeFirstHitDepth',
+    'bakeOccupancy',
+    'comparison',
+    'liveFirstHitDepth',
+    'liveOccupancy',
+    'samplePlan'
+]);
+const COMPARISON_MATCHED_EMPTY = 0;
+const COMPARISON_MATCHED_OCCUPIED = 1;
+const COMPARISON_MISSING_OCCLUDER = 2;
+const COMPARISON_UNEXPECTED_OCCLUDER = 3;
+const COMPARISON_FIRST_HIT_DEPTH_MISMATCH = 4;
+
+/**
+ * Rehash repository-confined evidence files and derive every spatial count from
+ * their bytes. The comparison stream is checked against an independent
+ * reconstruction so declared zeroes cannot certify production foliage.
+ *
+ * @param {{
+ *   authorityRoot: string,
+ *   evidence: Record<string, {byteLength: number, path: string, sha256: string}>,
+ *   metadata: Record<string, any>,
+ *   repoRoot: string
+ * }} options
+ * @param {{readFileFn?: typeof readFile, lstatFn?: typeof lstat}} [deps]
+ */
+export async function buildProductionAlphaCutoutSpatialParityArtifactFromFiles(
+    options,
+    deps = {}
+) {
+    const input = requireAllowedKeys(
+        options,
+        ['authorityRoot', 'evidence', 'metadata', 'repoRoot'],
+        'production alpha-cutout evidence build options'
+    );
+    const metadata = requireAllowedKeys(input.metadata, [
+        'alphaSemanticsSha256',
+        'casterInventorySha256',
+        'cutoutBindingProjectionSha256',
+        'cutoutCasterCount',
+        'cutoutCasterIdsSha256',
+        'descriptorSha256',
+        'lightingProfileId',
+        'liveDepthAttachmentIdentitySha256',
+        'samplePlanSha256',
+        'unsupportedBindingIds'
+    ], 'production alpha-cutout evidence metadata');
+    const evidence = requireExactKeys(
+        input.evidence,
+        EVIDENCE_KEYS,
+        'production alpha-cutout evidence file records'
+    );
+    const roots = normalizeEvidenceRoots(input.repoRoot, input.authorityRoot);
+    const readFileFn = deps.readFileFn ?? readFile;
+    const lstatFn = deps.lstatFn ?? lstat;
+    const authenticated = {};
+    const seenPaths = new Set();
+    for (const key of EVIDENCE_KEYS) {
+        authenticated[key] = await authenticateEvidenceFile(
+            key,
+            evidence[key],
+            roots,
+            seenPaths,
+            readFileFn,
+            lstatFn
+        );
+    }
+    const samplePlan = validateAuthenticatedSamplePlan(
+        authenticated.samplePlan,
+        metadata
+    );
+
+    const liveOccupancy = authenticated.liveOccupancy.bytes;
+    const bakeOccupancy = authenticated.bakeOccupancy.bytes;
+    if (liveOccupancy.byteLength === 0
+        || liveOccupancy.byteLength !== bakeOccupancy.byteLength) {
+        throw new Error(
+            'Production alpha-cutout occupancy files must have the same nonzero sample count'
+        );
+    }
+    requireOccupancyBytes(liveOccupancy, 'live occupancy');
+    requireOccupancyBytes(bakeOccupancy, 'bake occupancy');
+    if (samplePlan.samples.length !== liveOccupancy.length) {
+        throw new Error(
+            'Production alpha-cutout sample plan length must equal the occupancy sample count'
+        );
+    }
+
+    let firstHitDepthSampleCount = 0;
+    for (let index = 0; index < liveOccupancy.length; index += 1) {
+        if (liveOccupancy[index] === 1 && bakeOccupancy[index] === 1) {
+            firstHitDepthSampleCount += 1;
+        }
+    }
+    const expectedDepthByteLength = firstHitDepthSampleCount * 4;
+    if (authenticated.liveFirstHitDepth.bytes.byteLength !== expectedDepthByteLength
+        || authenticated.bakeFirstHitDepth.bytes.byteLength !== expectedDepthByteLength) {
+        throw new Error(
+            'Production alpha-cutout first-hit-depth files must contain one Float32 value per common occupied sample'
+        );
+    }
+    const liveDepth = decodeFloat32Le(
+        authenticated.liveFirstHitDepth.bytes,
+        'live first-hit-depth'
+    );
+    const bakeDepth = decodeFloat32Le(
+        authenticated.bakeFirstHitDepth.bytes,
+        'bake first-hit-depth'
+    );
+
+    const comparison = new Uint8Array(liveOccupancy.length);
+    let bakeOccupiedSampleCount = 0;
+    let depthIndex = 0;
+    let firstHitDepthMismatchCount = 0;
+    let liveOccupiedSampleCount = 0;
+    let matchingOccupancySampleCount = 0;
+    let maximumAbsoluteFirstHitDepthErrorMeters = 0;
+    let missingOccluderCount = 0;
+    let unexpectedOccluderCount = 0;
+    for (let index = 0; index < liveOccupancy.length; index += 1) {
+        const liveOccupied = liveOccupancy[index] === 1;
+        const bakeOccupied = bakeOccupancy[index] === 1;
+        if (liveOccupied) liveOccupiedSampleCount += 1;
+        if (bakeOccupied) bakeOccupiedSampleCount += 1;
+        if (liveOccupied && bakeOccupied) {
+            matchingOccupancySampleCount += 1;
+            const errorMeters = Math.abs(liveDepth[depthIndex] - bakeDepth[depthIndex]);
+            maximumAbsoluteFirstHitDepthErrorMeters = Math.max(
+                maximumAbsoluteFirstHitDepthErrorMeters,
+                errorMeters
+            );
+            if (errorMeters
+                > PRODUCTION_ALPHA_CUTOUT_FIRST_HIT_DEPTH_TOLERANCE_METERS) {
+                comparison[index] = COMPARISON_FIRST_HIT_DEPTH_MISMATCH;
+                firstHitDepthMismatchCount += 1;
+            } else {
+                comparison[index] = COMPARISON_MATCHED_OCCUPIED;
+            }
+            depthIndex += 1;
+        } else if (liveOccupied) {
+            comparison[index] = COMPARISON_MISSING_OCCLUDER;
+            missingOccluderCount += 1;
+        } else if (bakeOccupied) {
+            comparison[index] = COMPARISON_UNEXPECTED_OCCLUDER;
+            unexpectedOccluderCount += 1;
+        } else {
+            comparison[index] = COMPARISON_MATCHED_EMPTY;
+            matchingOccupancySampleCount += 1;
+        }
+    }
+    if (!bytesEqual(authenticated.comparison.bytes, comparison)) {
+        throw new Error(
+            'Production alpha-cutout comparison evidence differs from independently derived classifications'
+        );
+    }
+
+    const mismatchCounts = Object.fromEntries(
+        PRODUCTION_ALPHA_CUTOUT_MISMATCH_KEYS.map((key) => [key, 0])
+    );
+    mismatchCounts.coverage = missingOccluderCount + unexpectedOccluderCount;
+    mismatchCounts.firstHitDepth = firstHitDepthMismatchCount;
+    const artifact = {
+        alphaSemanticsSha256: metadata.alphaSemanticsSha256,
+        bakeCaptureMethod: PRODUCTION_ALPHA_CUTOUT_BAKE_CAPTURE_METHOD,
+        bakeOccupiedSampleCount,
+        casterInventorySha256: metadata.casterInventorySha256,
+        cutoutBindingProjectionSha256: metadata.cutoutBindingProjectionSha256,
+        cutoutCasterCount: metadata.cutoutCasterCount,
+        cutoutCasterIdsSha256: metadata.cutoutCasterIdsSha256,
+        descriptorSha256: metadata.descriptorSha256,
+        evidence: {
+            bakeFirstHitDepth: createEvidenceStream(
+                authenticated.bakeFirstHitDepth.record,
+                FIRST_HIT_DEPTH_EVIDENCE_ENCODING,
+                firstHitDepthSampleCount
+            ),
+            bakeOccupancy: createEvidenceStream(
+                authenticated.bakeOccupancy.record,
+                OCCUPANCY_EVIDENCE_ENCODING,
+                liveOccupancy.length
+            ),
+            comparison: createEvidenceStream(
+                authenticated.comparison.record,
+                COMPARISON_EVIDENCE_ENCODING,
+                liveOccupancy.length
+            ),
+            liveFirstHitDepth: createEvidenceStream(
+                authenticated.liveFirstHitDepth.record,
+                FIRST_HIT_DEPTH_EVIDENCE_ENCODING,
+                firstHitDepthSampleCount
+            ),
+            liveOccupancy: createEvidenceStream(
+                authenticated.liveOccupancy.record,
+                OCCUPANCY_EVIDENCE_ENCODING,
+                liveOccupancy.length
+            ),
+            samplePlan: createEvidenceStream(
+                authenticated.samplePlan.record,
+                SAMPLE_PLAN_EVIDENCE_ENCODING,
+                liveOccupancy.length
+            )
+        },
+        firstHitDepthMismatchCount,
+        firstHitDepthSampleCount,
+        firstHitDepthToleranceMeters:
+            PRODUCTION_ALPHA_CUTOUT_FIRST_HIT_DEPTH_TOLERANCE_METERS,
+        lightingProfileId: metadata.lightingProfileId,
+        liveCaptureMethod: PRODUCTION_ALPHA_CUTOUT_LIVE_CAPTURE_METHOD,
+        liveDepthAttachmentIdentitySha256:
+            metadata.liveDepthAttachmentIdentitySha256,
+        liveOccupiedSampleCount,
+        matchingOccupancySampleCount,
+        maximumAbsoluteFirstHitDepthErrorMeters,
+        method: PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_METHOD,
+        mismatchCounts,
+        missingOccluderCount,
+        sampleCount: liveOccupancy.length,
+        samplePlanMethod: PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_METHOD,
+        samplePlanSha256: metadata.samplePlanSha256,
+        samplerParityMethod: PRODUCTION_ALPHA_CUTOUT_SAMPLER_PARITY_METHOD,
+        schema: PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_SCHEMA,
+        status: 'measured_spatial_parity_passed',
+        unexpectedOccluderCount,
+        unsupportedBindingIds: metadata.unsupportedBindingIds
+    };
+    return validateProductionAlphaCutoutSpatialParityArtifact(artifact);
+}
+
+/**
+ * Reauthenticate a persisted parity artifact at a later trust boundary.
+ *
+ * @param {unknown} value
+ * @param {{authorityRoot: string, repoRoot: string}} options
+ * @param {{readFileFn?: typeof readFile, lstatFn?: typeof lstat}} [deps]
+ */
+export async function authenticateProductionAlphaCutoutSpatialParityArtifactFiles(
+    value,
+    options,
+    deps = {}
+) {
+    const artifact = validateProductionAlphaCutoutSpatialParityArtifact(value);
+    const roots = requireAllowedKeys(
+        options,
+        ['authorityRoot', 'repoRoot'],
+        'production alpha-cutout evidence authentication roots'
+    );
+    const evidence = Object.fromEntries(EVIDENCE_KEYS.map((key) => {
+        const stream = artifact.evidence[key];
+        return [key, {
+            byteLength: stream.byteLength,
+            path: stream.path,
+            sha256: stream.sha256
+        }];
+    }));
+    const rebuilt = await buildProductionAlphaCutoutSpatialParityArtifactFromFiles({
+        authorityRoot: roots.authorityRoot,
+        evidence,
+        metadata: {
+            alphaSemanticsSha256: artifact.alphaSemanticsSha256,
+            casterInventorySha256: artifact.casterInventorySha256,
+            cutoutBindingProjectionSha256:
+                artifact.cutoutBindingProjectionSha256,
+            cutoutCasterCount: artifact.cutoutCasterCount,
+            cutoutCasterIdsSha256: artifact.cutoutCasterIdsSha256,
+            descriptorSha256: artifact.descriptorSha256,
+            lightingProfileId: artifact.lightingProfileId,
+            liveDepthAttachmentIdentitySha256:
+                artifact.liveDepthAttachmentIdentitySha256,
+            samplePlanSha256: artifact.samplePlanSha256,
+            unsupportedBindingIds: artifact.unsupportedBindingIds
+        },
+        repoRoot: roots.repoRoot
+    }, deps);
+    if (canonicalJsonStringify(rebuilt) !== canonicalJsonStringify(artifact)) {
+        throw new Error(
+            'Production alpha-cutout parity artifact differs from independently reauthenticated evidence files'
+        );
+    }
+    return rebuilt;
+}
 
 /**
  * @param {unknown} value
@@ -198,7 +486,8 @@ function validateEvidenceStreams(value, artifact) {
         'bakeOccupancy',
         'comparison',
         'liveFirstHitDepth',
-        'liveOccupancy'
+        'liveOccupancy',
+        'samplePlan'
     ], 'production alpha-cutout parity evidence streams');
     validateEvidenceStream(
         evidence.liveOccupancy,
@@ -235,22 +524,287 @@ function validateEvidenceStreams(value, artifact) {
         artifact.sampleCount,
         artifact.sampleCount
     );
+    validateEvidenceStream(
+        evidence.samplePlan,
+        'alpha parity sample-plan evidence',
+        SAMPLE_PLAN_EVIDENCE_ENCODING,
+        artifact.sampleCount,
+        evidence.samplePlan?.byteLength
+    );
+    if (evidence.samplePlan.byteLength <= 0
+        || evidence.samplePlan.sha256 !== artifact.samplePlanSha256) {
+        throw new Error(
+            'Alpha parity sample-plan evidence differs from the authenticated sample plan identity'
+        );
+    }
 }
 
 function validateEvidenceStream(value, label, encoding, sampleCount, byteLength) {
     const stream = requireExactKeys(
         value,
-        ['byteLength', 'encoding', 'sampleCount', 'sha256'],
+        ['byteLength', 'encoding', 'path', 'sampleCount', 'sha256'],
         label
     );
     requireNonNegativeInteger(stream.byteLength, `${label}.byteLength`);
     requireNonNegativeInteger(stream.sampleCount, `${label}.sampleCount`);
     requireSha256(stream.sha256, `${label}.sha256`);
+    requireSafeRepositoryRelativePath(stream.path, `${label}.path`);
     if (stream.encoding !== encoding
         || stream.sampleCount !== sampleCount
         || stream.byteLength !== byteLength) {
         throw new Error(`${label} does not match the authenticated measurement dimensions`);
     }
+}
+
+function normalizeEvidenceRoots(repoRootValue, authorityRootValue) {
+    if (typeof repoRootValue !== 'string' || !repoRootValue
+        || typeof authorityRootValue !== 'string' || !authorityRootValue) {
+        throw new TypeError('Production alpha-cutout evidence roots must be paths');
+    }
+    const repoRoot = path.resolve(repoRootValue);
+    const authorityRoot = path.resolve(authorityRootValue);
+    requireInside(repoRoot, authorityRoot, true, 'repository');
+    return Object.freeze({authorityRoot, repoRoot});
+}
+
+async function authenticateEvidenceFile(
+    key,
+    value,
+    roots,
+    seenPaths,
+    readFileFn,
+    lstatFn
+) {
+    const record = requireExactKeys(
+        value,
+        ['byteLength', 'path', 'sha256'],
+        `production alpha-cutout evidence file '${key}'`
+    );
+    requireNonNegativeInteger(
+        record.byteLength,
+        `production alpha-cutout evidence file '${key}'.byteLength`
+    );
+    requireSafeRepositoryRelativePath(
+        record.path,
+        `production alpha-cutout evidence file '${key}'.path`
+    );
+    requireSha256(
+        record.sha256,
+        `production alpha-cutout evidence file '${key}'.sha256`
+    );
+    const absolutePath = path.resolve(
+        roots.repoRoot,
+        ...record.path.split('/')
+    );
+    requireInside(roots.repoRoot, absolutePath, false, 'repository');
+    requireInside(roots.authorityRoot, absolutePath, false, 'artifact authority');
+    const identity = process.platform === 'win32'
+        ? absolutePath.toLowerCase()
+        : absolutePath;
+    if (seenPaths.has(identity)) {
+        throw new Error('Production alpha-cutout evidence must use unique files');
+    }
+    seenPaths.add(identity);
+    await assertNoSymlinkPathSegments(
+        roots.authorityRoot,
+        absolutePath,
+        lstatFn
+    );
+    const bytes = copyBytes(
+        await readFileFn(absolutePath),
+        `production alpha-cutout evidence file '${key}'`
+    );
+    if (bytes.byteLength !== record.byteLength
+        || rawSha256(bytes) !== record.sha256) {
+        throw new Error(
+            `Production alpha-cutout evidence file '${key}' differs from its authenticated record`
+        );
+    }
+    return Object.freeze({bytes, record: cloneCanonicalJson(record)});
+}
+
+async function assertNoSymlinkPathSegments(root, candidate, lstatFn) {
+    const absoluteRoot = path.resolve(root);
+    const absoluteCandidate = path.resolve(candidate);
+    requireInside(absoluteRoot, absoluteCandidate, false, 'artifact authority');
+    const relative = path.relative(absoluteRoot, absoluteCandidate);
+    let current = absoluteRoot;
+    for (const segment of ['', ...relative.split(path.sep)]) {
+        if (segment) current = path.join(current, segment);
+        const entry = await lstatFn(current);
+        if (entry?.isSymbolicLink?.() === true) {
+            throw new Error(
+                `Production alpha-cutout evidence rejects symbolic-link path segment '${current}'`
+            );
+        }
+    }
+}
+
+function requireSafeRepositoryRelativePath(value, label) {
+    if (typeof value !== 'string'
+        || value.length === 0
+        || value.includes('\\')
+        || value.startsWith('/')
+        || /^[A-Za-z]:/.test(value)
+        || path.posix.normalize(value) !== value
+        || value.split('/').includes('..')
+        || value.split('/').includes('.')) {
+        throw new TypeError(`${label} is unsafe`);
+    }
+    return value;
+}
+
+function requireInside(root, candidate, allowRoot, label) {
+    const relative = path.relative(path.resolve(root), path.resolve(candidate));
+    if ((!allowRoot && !relative)
+        || relative.startsWith('..')
+        || path.isAbsolute(relative)) {
+        throw new Error(
+            `Production alpha-cutout evidence path must stay inside the ${label}`
+        );
+    }
+}
+
+function requireOccupancyBytes(bytes, label) {
+    for (let index = 0; index < bytes.length; index += 1) {
+        if (bytes[index] !== 0 && bytes[index] !== 1) {
+            throw new Error(`${label}[${index}] must be encoded as 0 or 1`);
+        }
+    }
+}
+
+function validateAuthenticatedSamplePlan(authenticated, metadata) {
+    if (authenticated.record.sha256 !== metadata.samplePlanSha256) {
+        throw new Error(
+            'Production alpha-cutout sample-plan file differs from samplePlanSha256'
+        );
+    }
+    let text;
+    let plan;
+    try {
+        text = new TextDecoder('utf-8', {fatal: true}).decode(authenticated.bytes);
+        plan = JSON.parse(text);
+    } catch (error) {
+        throw new Error(
+            'Production alpha-cutout sample plan must be canonical UTF-8 JSON',
+            {cause: error}
+        );
+    }
+    if (canonicalJsonStringify(plan) !== text) {
+        throw new Error('Production alpha-cutout sample plan must be canonical JSON');
+    }
+    requireExactKeys(plan, [
+        'lightingProfileId',
+        'method',
+        'samples',
+        'schema'
+    ], 'production alpha-cutout sample plan');
+    if (plan.schema !== PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_SCHEMA
+        || plan.method !== PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_METHOD
+        || plan.lightingProfileId !== metadata.lightingProfileId
+        || !Array.isArray(plan.samples)
+        || plan.samples.length === 0) {
+        throw new Error(
+            'Production alpha-cutout sample plan identity or sample inventory is invalid'
+        );
+    }
+    const casterIds = new Set();
+    const sampleIdentities = new Set();
+    for (let index = 0; index < plan.samples.length; index += 1) {
+        const sample = requireExactKeys(plan.samples[index], [
+            'casterId',
+            'globalTexel',
+            'index'
+        ], `production alpha-cutout sample plan.samples[${index}]`);
+        const casterId = requireNonEmptyString(
+            sample.casterId,
+            `production alpha-cutout sample plan.samples[${index}].casterId`
+        );
+        if (sample.index !== index
+            || !Array.isArray(sample.globalTexel)
+            || sample.globalTexel.length !== 2
+            || sample.globalTexel.some((value) => (
+                !Number.isSafeInteger(value) || value < 0
+            ))) {
+            throw new Error(
+                'Production alpha-cutout sample plan indices and global texels must be canonical'
+            );
+        }
+        const identity = canonicalJsonStringify([
+            casterId,
+            sample.globalTexel[0],
+            sample.globalTexel[1]
+        ]);
+        if (sampleIdentities.has(identity)) {
+            throw new Error(
+                'Production alpha-cutout sample plan must not duplicate caster texels'
+            );
+        }
+        sampleIdentities.add(identity);
+        casterIds.add(casterId);
+    }
+    const canonicalCasterIds = [...casterIds].sort(compareCanonicalStrings);
+    const casterIdsSha256 = rawSha256(new TextEncoder().encode(
+        canonicalJsonStringify({
+            casterIds: canonicalCasterIds,
+            schema: 'ai531-production-alpha-cutout-caster-plan-v1'
+        })
+    ));
+    if (canonicalCasterIds.length !== metadata.cutoutCasterCount
+        || casterIdsSha256 !== metadata.cutoutCasterIdsSha256) {
+        throw new Error(
+            'Production alpha-cutout sample plan must cover every authenticated cutout caster'
+        );
+    }
+    return plan;
+}
+
+function decodeFloat32Le(bytes, label) {
+    if (bytes.byteLength % 4 !== 0) {
+        throw new Error(`${label} byte length must be divisible by four`);
+    }
+    const result = new Float32Array(bytes.byteLength / 4);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (let index = 0; index < result.length; index += 1) {
+        const value = view.getFloat32(index * 4, true);
+        if (!Number.isFinite(value) || value < 0) {
+            throw new Error(`${label}[${index}] must be a non-negative finite Float32`);
+        }
+        result[index] = value;
+    }
+    return result;
+}
+
+function createEvidenceStream(record, encoding, sampleCount) {
+    return cloneCanonicalJson({
+        byteLength: record.byteLength,
+        encoding,
+        path: record.path,
+        sampleCount,
+        sha256: record.sha256
+    });
+}
+
+function bytesEqual(left, right) {
+    return left.byteLength === right.byteLength
+        && left.every((value, index) => value === right[index]);
+}
+
+function copyBytes(value, label) {
+    if (value instanceof Uint8Array) return value.slice();
+    if (ArrayBuffer.isView(value)) {
+        return new Uint8Array(
+            value.buffer,
+            value.byteOffset,
+            value.byteLength
+        ).slice();
+    }
+    if (value instanceof ArrayBuffer) return new Uint8Array(value.slice(0));
+    throw new TypeError(`${label} must be bytes`);
+}
+
+function rawSha256(bytes) {
+    return createHash('sha256').update(bytes).digest('hex');
 }
 
 function validateExpectations(artifact, expectations) {

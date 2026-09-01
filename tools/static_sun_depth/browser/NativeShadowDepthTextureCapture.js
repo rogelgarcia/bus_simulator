@@ -338,6 +338,7 @@ export function captureNativeShadowDepthTexture(options) {
         assertNoGlErrors(gl, stage, label);
 
         stage = 'transform-feedback-draw';
+        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
         gl.enable(gl.RASTERIZER_DISCARD);
         gl.beginTransformFeedback(gl.POINTS);
         transformFeedbackBegun = true;

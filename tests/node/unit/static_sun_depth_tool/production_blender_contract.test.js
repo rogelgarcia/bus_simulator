@@ -67,7 +67,7 @@ test('production request derives a phase-locked caster-plus-map receiver domain 
     assert.match(source, /production_request_filter_axes_mismatch/);
     assert.match(source, /set\(value\) != expected/);
     assert.match(source, /for corner in blender_object\.bound_box/);
-    assert.match(source, /_derive_basis_and_bounds\(collection, request, package\.manifest\)/);
+    assert.match(source, /_derive_basis_and_bounds\([\s\S]*collection,[\s\S]*request,[\s\S]*package\.manifest,[\s\S]*arguments\.output_encoding,[\s\S]*\)/);
     assert.match(source, /source\.get\("schema"\) != "bus-sim-resolved-city-source-v1"/);
     assert.match(source, /origin_world\[0\] - tile_size \* 0\.5/);
     assert.match(source, /minimum_x \+ width \* tile_size/);
@@ -176,7 +176,7 @@ test('receipt exposes canonical production identities, RG8 measurements, and sep
     assert.match(source, /\"depthMismatchCount\": 0/);
     assert.match(source, /\"coverageSha256\": coverage\[\"sha256\"\]/);
     assert.match(source, /\"sourceContentSha256\": source\[\"contentSha256\"\]/);
-    assert.match(source, /\"measurementMethod\": \"blender-canonical-depth-before-rg8-quantization-v1\"/);
+    assert.match(source, /else \"blender-canonical-depth-before-rg8-quantization-v1\"/);
     assert.match(source, /\"maximumAbsoluteErrorMeters\"/);
     assert.match(source, /\"meanAbsoluteErrorMeters\"/);
     assert.match(source, /atomic_write_bytes\(output_root \/ \"production_static_sun_receipt\.json\", receipt_bytes\)/);
