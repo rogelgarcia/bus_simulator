@@ -1,5 +1,7 @@
 # DONE
 
+> **Human visual validation: REJECTED (2026-08-31).** The user rejected the complete offline-first grass solution spanning AI 350–362 and AI 537 after reviewing the final renders. This prompt is historical implementation evidence only: its DONE state does not approve the visual result, authorize gameplay integration, or define an acceptable baseline for future grass work. Any replacement must start from a new visual direction and receive explicit human approval.
+
 The V1 Grass Lab does not clearly show the physical order from sidewalk to exposed substrate to a shallow raised grass carpet. Its canonical irregular cuts are stepped rectangles, the road edge can read as a broad fading brown overlay, the far cap exposes artificial square or micro-cutout patterns, and sparse fringe blades do not create a convincing cut edge.
 
 # Request

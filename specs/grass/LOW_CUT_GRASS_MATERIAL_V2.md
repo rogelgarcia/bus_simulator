@@ -1,5 +1,7 @@
 # Natural Maintained-Grass Material Family V2
 
+> **Human visual validation: REJECTED (2026-08-31).** This specification documents the rejected AI 350–362/AI 537 solution for historical reference only. It is not an approved visual baseline and cannot authorize gameplay. See `GRASS_LAB_HUMAN_REJECTION.md`.
+
 ## Scope and authority
 
 `pbr.grass_low_cut_maintained_v2` is the AI 358 appearance authority for the

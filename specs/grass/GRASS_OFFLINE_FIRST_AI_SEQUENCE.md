@@ -1,5 +1,7 @@
 # Grass Offline-First AI Sequence
 
+> **Human visual validation: REJECTED (2026-08-31).** This entire sequence is historical engineering evidence, not an approved visual baseline. The user rejected the final AI 350–362/AI 537 renders, AI 363 was cancelled and deleted without implementation, and no gameplay integration is authorized. See `GRASS_LAB_HUMAN_REJECTION.md`.
+
 This document is the canonical execution order for the grass work. The complete grass system is authored, rendered, corrected, tuned, and approved in the dedicated Grass Lab before gameplay integration. Soccer-field grass is only a reference for cohesive carpet coverage, not a mandated style; profiles may use longer, uneven, and locally irregular blades over a shallow structural base.
 
 ## Required order
@@ -17,33 +19,39 @@ This document is the canonical execution order for the grass work. The complete 
 11. `AI_DONE_grass_360_MESHES_cohesive_near_mesh_carpet_and_exact_coverage_clipping_DONE.md`
 12. `AI_DONE_grass_361_MESHES_billboard_mid_patch_auto_lod_and_accent_reconciliation_DONE.md`
 13. `AI_DONE_grass_362_TESTS_4k_grass_lab_visual_validation_performance_and_reapproval_DONE.md`
-14. `AI_grass_537_REFACTOR_grass_lab_gpu_budget_optimization_and_approval.md`
-15. `AI_grass_363_CITY_import_revalidated_grass_lab_system_into_gameplay.md`
+14. `AI_DONE_grass_537_REFACTOR_grass_lab_gpu_budget_optimization_and_approval_DONE.md`
 
-Prompts 350-362 and AI 537 are offline/lab-only. Prompt 363 is the sole
-gameplay-integration phase. AI 537 uses the next globally available prompt ID
-and is intentionally sequenced between AI 362 and AI 363; numeric ID order does
-not override this required execution order.
+Prompts 350-362 and AI 537 were offline/lab-only. The planned gameplay phase,
+AI 363, was cancelled and its prompt deleted after human visual rejection.
+Numeric ID order does not override this historical execution order.
+
+## Human visual rejection
+
+The final renders were reviewed by the user and rejected. Automated structural,
+determinism, pixel-comparison, regression, and performance passes did not prove
+acceptable visual quality. Every earlier approval claim below is preserved only
+as a record of what the automation concluded at the time; none remains valid
+for gameplay authorization or as a future visual baseline.
 
 ## Corrective V2 review state
 
 AI 350 through AI 357 remain completed V1 history. Later native-4K and zoomed visual review rejected that result as authorization for gameplay because the grass read as scattered bright objects, tier colors did not merge with the far surface, and the sidewalk/substrate transition was not adequately demonstrated.
 
-The unimplemented gameplay prompt formerly numbered AI 358 was renumbered to AI 363 before implementation so the corrective work has an explicit execution order. AI 358 is complete: its replacement native-4K evidence passes after correcting the shared card material, split coverage contract, fixture parity, and pixel-aligned validation. AI 359 is complete: it corrects the physical footprint and substrate cut. AI 360 is complete: it replaces the sparse closest tier with an area-complete micro-carpet clipped per root to that exact footprint. AI 361 is complete in its hierarchy implementation scope: its runtime, `84/84` focused unit/contract tests, `5/5` browser cases, and fresh final-code `60/60` native-4K visual/functional/motion evidence pass. AI 362 is complete with a scoped native-4K visual, functional, motion, and determinism approval: `114/114` capture checks, `29/29` regressions, and `36/36` immutable AI 361 baseline pairs pass. Its approval record retains the measured failed hardware-timing verdict and records performance as `deferred_to_ai537`. AI 537 is now the next required stage and owns whole-scene optimization plus the unchanged hardware performance gate. AI 363 alone integrates the result after both approvals.
+The unimplemented gameplay prompt formerly numbered AI 358 was renumbered to AI 363 before implementation so the corrective work had an explicit execution order. AI 358 through AI 362 and AI 537 completed their engineering scopes and automated evidence, but the final combined visual result was rejected by the user. AI 363 was cancelled and deleted; there is no downstream stage for this solution.
 
-`specs/grass/GRASS_LAB_APPROVAL_AI357.json` and `GRASS_LAB_VALIDATION_AND_APPROVAL_V1.md` remain historical evidence but no longer authorize gameplay. AI 362 has created `specs/grass/GRASS_LAB_APPROVAL_AI362.json` with `schema: "grass-lab-approval-v2"`, scoped `status: "approved"`, `performance.status: "deferred_to_ai537"`, exact `performanceOwnership` and `performance.ownership` values of `{ "status": "deferred_to_ai537", "ownerPrompt": "AI537" }`, `gameplayTouched: false`, and `authorization.gameplayAuthorized: false`. AI 363 remains blocked until AI 537 creates `specs/grass/GRASS_LAB_PERFORMANCE_APPROVAL_AI537.json` with `schema: "grass-lab-performance-approval-v1"`, `approvalScope: "performance"`, `status: "approved"`, and `sourceVisualApproval.sha256` matching the SHA-256 of the exact UTF-8 file bytes of the current AI 362 approval record.
+`GRASS_LAB_APPROVAL_AI357.json` and `GRASS_LAB_APPROVAL_AI362.json` remain historical machine-validation records and cannot authorize gameplay. The uncommitted AI 537 performance approval was removed after its source visual solution was rejected. `GRASS_LAB_HUMAN_REJECTION.md` is the current authoritative decision.
 
 ## Ownership boundaries for the corrective sequence
 
-| Concern | Sole corrective owner | Downstream consumers |
+| Concern | Historical corrective owner | Current disposition |
 |---|---|---|
-| Canonical grass color/PBR response, physical atlas dimensions, bake assets, and mips | AI 358 | AI 359-362, AI 537, and AI 363 |
-| Polygon footprint, exposed substrate, canopy height, root/thatch cut, and tree substrate exclusion | AI 359 | AI 360-362, AI 537, and AI 363 |
-| Cohesive closest-camera mesh carpet and exact root clipping | AI 360 | AI 361-362, AI 537, and AI 363 |
-| Billboard and middle-patch representations, automatic handoffs, and accent rendering reconciliation | AI 361 | AI 362, AI 537, and AI 363 |
-| Native-4K visual, functional, motion, and determinism approval | AI 362 | AI 537 and AI 363 |
-| Whole-scene GPU optimization, unchanged performance gate, and performance approval | AI 537 | AI 363 |
-| Gameplay adapter | AI 363 | Gameplay only |
+| Canonical grass color/PBR response, physical atlas dimensions, bake assets, and mips | AI 358 | Human-rejected; historical reference only |
+| Polygon footprint, exposed substrate, canopy height, root/thatch cut, and tree substrate exclusion | AI 359 | Human-rejected solution; coverage techniques may be studied |
+| Cohesive closest-camera mesh carpet and exact root clipping | AI 360 | Human-rejected; do not reuse as an accepted visual baseline |
+| Billboard and middle-patch representations, automatic handoffs, and accent rendering reconciliation | AI 361 | Human-rejected; do not integrate |
+| Native-4K visual, functional, motion, and determinism approval | AI 362 | Machine record overridden by human rejection |
+| Whole-scene GPU optimization and performance approval | AI 537 | Approval removed; tooling may be studied |
+| Gameplay adapter | AI 363 | Cancelled; prompt deleted without implementation |
 
 AI 362 may tune bounded evidence values while validating, but it must return
 architectural defects to the owning AI instead of creating validation-only
@@ -101,7 +109,7 @@ Completed prompts in `prompts/` remain preserved as implementation history. Only
 - AI 336 and AI 337 own soft transitions between terrain/biome surface materials. They do not own the hard occupancy edge of a raised grass carpet.
 - AI 338 owns general offline biome-mask guidance. Corrective AI 359 owns grass-specific physical coverage and may consume compatible biome data without depending on an unfinished biome workflow.
 - AI 339 owns general multi-biome tiling guidance. AI 358 applied the relevant material outcomes through the shared V2 grass catalog family and Grass Lab consumers; later grass prompts must consume that contract rather than fork it.
-- AI 340 owns Terrain Debugger transition diagnostics. AI 362 completed the final Grass Lab visual/functional validation matrix, and AI 537 owns the remaining hardware performance gate.
+- AI 340 owns Terrain Debugger transition diagnostics. The completed Grass Lab validation/performance evidence is historical and human-rejected; AI 363 was cancelled and no gameplay-integration stage is active.
 - AI 341 owns general procedural-terrain art overrides. Grass V1 work remains historical under AI 354/356; corrective physical boundary and rendering ownership belongs to AI 359/361.
 - AI 349 remains the dynamic global texture/catalog/calibration tracker. Every grass AI must use that pipeline and update its scoped checklist item before completion; it must not be deleted, renamed, completed as a whole, or replaced by a grass-local loader.
 
@@ -111,7 +119,7 @@ When a sequence prompt completes or supersedes a task tracked by an existing dyn
 
 ## Required completion evidence
 
-Every corrective prompt from AI 358 through AI 363, plus AI 537, must append a completion-evidence summary before it is marked DONE. The summary must include measured triangle counts and logical/total draw calls with before/after deltas and its scoped budget verdicts, plus a manifest of the prompt's required screenshots. All completion screenshots must be UI-free lossless PNGs captured natively from a real `3840x2160` drawing buffer at pixel ratio `1`; JPEG, browser-scaled, or upscaled images do not satisfy the gate. A prompt cannot be completed while a required cost measurement or 4K screenshot is missing.
+Historical corrective prompts AI 358 through AI 362 plus AI 537 retain their completion-evidence summaries. Those automated records did not satisfy human visual validation and cannot be reused as approval.
 
 Performance summaries must state hardware, resolution, graphics settings, grass density/coverage, workload and camera/route, warm-up, sample count, and statistic. They must include frame time/FPS and relevant memory alongside geometry, draw-call, and measured CPU/GPU costs; unavailable metrics must be labeled `not measured` with a reason rather than replaced by projections.
 

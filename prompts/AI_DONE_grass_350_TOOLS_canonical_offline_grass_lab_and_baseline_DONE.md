@@ -1,5 +1,7 @@
 # DONE — AI 350 canonical offline Grass Lab and baseline
 
+> **Human visual validation: REJECTED (2026-08-31).** The user rejected the complete offline-first grass solution spanning AI 350–362 and AI 537 after reviewing the final renders. This prompt is historical implementation evidence only: its DONE state does not approve the visual result, authorize gameplay integration, or define an acceptable baseline for future grass work. Any replacement must start from a new visual direction and receive explicit human approval.
+
 # Problem
 
 Grass work is split between a reusable grass engine, Terrain Debugger integration, and a newer Grass Debugger implementation. Continuing in multiple screens or render paths would make visual iteration and later gameplay integration unreliable.

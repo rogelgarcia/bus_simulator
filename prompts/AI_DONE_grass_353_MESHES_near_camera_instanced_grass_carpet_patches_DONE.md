@@ -1,5 +1,7 @@
 DONE
 
+> **Human visual validation: REJECTED (2026-08-31).** The user rejected the complete offline-first grass solution spanning AI 350–362 and AI 537 after reviewing the final renders. This prompt is historical implementation evidence only: its DONE state does not approve the visual result, authorize gameplay integration, or define an acceptable baseline for future grass work. Any replacement must start from a new visual direction and receive explicit human approval.
+
 # Problem
 
 Individual blades at field scale are too sparse to look like carpet and too expensive to manage independently. Uniform lawn also should not be represented as visibly separated tufts.

@@ -1,5 +1,7 @@
 DONE
 
+> **Human visual validation: REJECTED (2026-08-31).** The user rejected the complete offline-first grass solution spanning AI 350–362 and AI 537 after reviewing the final renders. This prompt is historical implementation evidence only: its DONE state does not approve the visual result, authorize gameplay integration, or define an acceptable baseline for future grass work. Any replacement must start from a new visual direction and receive explicit human approval.
+
 # Problem
 
 The V1 automatic LOD reduces a continuous turf surface to sparse crossed cards and isolated localized accents. Middle-distance grass therefore appears as individual highlighted pixels or tufts, and representation handoffs reveal rings, gaps, or a color change instead of simplifying one cohesive carpet.

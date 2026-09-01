@@ -1,5 +1,7 @@
 # Grass Lab Validation and Approval V2
 
+> **Human visual validation: REJECTED (2026-08-31).** This specification documents the rejected AI 350–362/AI 537 solution for historical reference only. It is not an approved visual baseline and cannot authorize gameplay. See `GRASS_LAB_HUMAN_REJECTION.md`.
+
 ## Authority and current status
 
 This specification is the normative approval contract for the corrected V2

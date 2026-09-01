@@ -1,5 +1,7 @@
 DONE
 
+> **Human visual validation: REJECTED (2026-08-31).** The user rejected the complete offline-first grass solution spanning AI 350–362 and AI 537 after reviewing the final renders. This prompt is historical implementation evidence only: its DONE state does not approve the visual result, authorize gameplay integration, or define an acceptable baseline for future grass work. Any replacement must start from a new visual direction and receive explicit human approval.
+
 # Problem
 
 The V1 near tier scatters simplified blades across one-metre cells. At close camera heights it reads as occasional objects standing over a flat texture instead of the continuous fibers and shallow volume of a cohesive natural grass layer. Conservative whole-patch rejection also leaves a visible gap near physical grass cuts.

@@ -1,5 +1,7 @@
 # DONE
 
+> **Human visual validation: REJECTED (2026-08-31).** The user rejected the complete offline-first grass solution spanning AI 350–362 and AI 537 after reviewing the final renders. This prompt is historical implementation evidence only: its DONE state does not approve the visual result, authorize gameplay integration, or define an acceptable baseline for future grass work. Any replacement must start from a new visual direction and receive explicit human approval.
+
 # Problem
 
 Grass quality, LOD stability, boundary appearance, and cost can drift without repeatable camera/lighting reviews, explicit quality presets, and automated regressions. The isolated lab must prove the system before gameplay is allowed to consume it.

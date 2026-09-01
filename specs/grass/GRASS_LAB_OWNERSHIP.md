@@ -1,6 +1,6 @@
 # Grass Lab Ownership Contract
 
-> Sequence reconciliation: AI 350 through AI 357 describe the completed V1 implementation below. Later visual review introduced corrective AI 358 through AI 362, AI 537 owns the subsequent whole-scene GPU optimization and performance approval, and AI 363 is the sole gameplay adapter. AI 358 through AI 360 now supply the corrected material, boundary, and closest-mesh contracts. V2 contracts supersede the affected runtime claims for downstream work; `GRASS_LAB_APPROVAL_AI357.json` remains historical and cannot unblock gameplay.
+> **Human visual validation: REJECTED (2026-08-31).** The complete AI 350–362/AI 537 solution is historical only. It cannot authorize gameplay or serve as an accepted visual baseline. AI 363 was cancelled and deleted without implementation. See `GRASS_LAB_HUMAN_REJECTION.md`.
 
 ## Canonical entry point
 
@@ -16,7 +16,7 @@ The lab uses the deterministic seed `grass-lab-baseline-v1`. Its default fixture
 | `GrassEngine` and `GrassConfig` | Reusable patch batching, geometry tiers, placement, LOD evaluation, exclusion, grass statistics | Debug-screen DOM, gameplay terrain policy, PBR catalog resolution |
 | Global PBR pipeline | Catalog URLs, physical tile metadata, calibration precedence, shared texture loading | Grass placement or boundary rules |
 | Terrain and biome systems | Ground geometry and eventual grass coverage inputs | An independently rendered debug grass field |
-| Future gameplay adapter (AI 363) | Attach the AI 362 visual/functional-approved and AI 537 performance-approved V2 runtime and contracts to gameplay terrain, road exclusions, and quality settings | Re-authoring the approved offline asset/runtime path |
+| Cancelled gameplay adapter (AI 363) | No implementation; prompt deleted after human visual rejection | Importing any part of the rejected solution into gameplay |
 
 ## Runtime reconciliation
 
@@ -26,7 +26,7 @@ AI 355 adds the pure `GrassAutoLodContract.js` evaluator plus `GrassMidClusterSy
 
 AI 356 adds `GrassLocalizedAccentContract.js` and `GrassLocalizedAccentSystem.js`. Four city-shaped tree records and one explicit optional worn feature feed a coverage-bounded `localized_tufts` layout. One shared atlas batch renders near-tier grass cards and one shared substrate batch renders trunk wear. Field-wide tuft distribution remains prohibited.
 
-AI 357 added `GrassLabValidationContract.js` plus the V1 Validation tab. Low/default/high presets, exact-height and LOD-handoff cameras, four deterministic lighting reviews, stationary/flyover paths, rolling budget diagnostics, stress sampling, regression gates, and an explicit approval record formed the V1 review route. Corrective AI 358 through AI 361, AI 362 visual/functional reapproval, and AI 537 performance approval now form the only route to AI 363. Validation quality presets keep automatic LOD active and hide debug rings; manual forcing remains diagnostic.
+AI 357 added `GrassLabValidationContract.js` plus the V1 Validation tab. Low/default/high presets, exact-height and LOD-handoff cameras, four deterministic lighting reviews, stationary/flyover paths, rolling budget diagnostics, stress sampling, regression gates, and an explicit approval record formed the V1 review route. Corrective AI 358 through AI 361, AI 362 machine validation, and AI 537 performance work are now rejected historical evidence with no gameplay route. Validation quality presets keep automatic LOD active and hide debug rings; manual forcing remains diagnostic.
 
 The adapter contract is `src/graphics/gui/grass_debugger/GrassLabContract.js`.
 AI 360 completed with contract version `9`, mapping source controls into
@@ -87,14 +87,11 @@ AI 362 also records all five canonical `1920x1080` timing rows with complete
 informational row. The headless Chromium run used SwiftShader without
 `EXT_disjoint_timer_query_webgl2`, so each canonical row truthfully retains a
 failed `hardwareAdapter` check and unavailable GPU-query timing rather than
-substituting a CPU proxy. Performance remains `deferred_to_ai537`; gameplay
-was not touched or authorized. AI 537 is the current owner of broader
-whole-scene optimization and a separate unchanged-budget
-`grass-lab-performance-approval-v1` record whose
-`sourceVisualApproval.sha256` must match the SHA-256 of the exact UTF-8 file
-bytes of the current AI 362 approval. AI 363
-remains blocked until both approval records report their scoped
-`status: "approved"` and that digest linkage is current.
+substituting a CPU proxy. Performance remains `deferred_to_ai537` in that
+scoped visual/functional record; gameplay was not touched or authorized by
+AI 362. AI 537 later completed automated performance work, but the user
+rejected the source visual result. The uncommitted AI 537 approval record was
+removed, the AI 362 machine record is historical only, and AI 363 is cancelled.
 
 ## Baseline diagnostics
 
@@ -143,7 +140,7 @@ The default binary footprint uses a `27.5 mm` raised surface, `0.35` far-coverag
 
 ### AI 357 validation and approval reference
 
-`specs/grass/GRASS_LAB_VALIDATION_AND_APPROVAL_V1.md` is authoritative only for the historical V1 result. The stationary default `1.50 m` camera measured `0.07 ms` GrassEngine CPU, `0.87 ms` whole-frame GPU proxy, `5` logical grass draws, `21,492` visible grass triangles, `0.00` buffer uploads/s, and zero geometry beyond the cutoff on the 1280×720 WebGL2 RTX 3060 reference. The high/top-down stress view measured `26,912` triangles and `4` draws. The historical approval decision is recorded in `specs/grass/GRASS_LAB_APPROVAL_AI357.json`; captures live in `tests/artifacts/screens/grass/ai357/`. AI 362 has created the current scoped V2 visual/functional approval record at `specs/grass/GRASS_LAB_APPROVAL_AI362.json`; AI 537 must still create the corresponding digest-linked performance approval record.
+`specs/grass/GRASS_LAB_VALIDATION_AND_APPROVAL_V1.md` is authoritative only for the historical V1 result. The stationary default `1.50 m` camera measured `0.07 ms` GrassEngine CPU, `0.87 ms` whole-frame GPU proxy, `5` logical grass draws, `21,492` visible grass triangles, `0.00` buffer uploads/s, and zero geometry beyond the cutoff on the 1280×720 WebGL2 RTX 3060 reference. The high/top-down stress view measured `26,912` triangles and `4` draws. The AI 357 and AI 362 approval records remain historical machine evidence overridden by human visual rejection; the uncommitted AI 537 performance approval was removed.
 
 ### AI 350 reference capture
 
@@ -162,4 +159,8 @@ The displayed values are sampled and may vary slightly with camera timing, brows
 
 ## Sequence rule
 
-AI 351 through AI 362 and AI 537 must work through the canonical Lab URL and reusable engine/config contract. AI 363 is the only prompt allowed to import the system into gameplay, and only after AI 362's scoped visual/functional approval plus AI 537's performance approval whose `sourceVisualApproval.sha256` matches the SHA-256 of the exact UTF-8 file bytes of the current AI 362 record. Every prompt in the sequence must update the dynamic AI 349 texture-pipeline tracker after changing a PBR consumer or discovering a shared-pipeline obligation.
+AI 351 through AI 362 and AI 537 used the canonical Lab URL and reusable
+engine/config contract. No prompt is currently allowed to import this rejected
+system into gameplay. Any future restart requires a new visual direction, a
+new prompt, and explicit human approval before a new gameplay adapter may be
+created.

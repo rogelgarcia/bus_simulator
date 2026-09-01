@@ -1,5 +1,7 @@
 # DONE
 
+> **Human visual validation: REJECTED (2026-08-31).** The user rejected the complete offline-first grass solution spanning AI 350–362 and AI 537 after reviewing the final renders. This prompt is historical implementation evidence only: its DONE state does not approve the visual result, authorize gameplay integration, or define an acceptable baseline for future grass work. Any replacement must start from a new visual direction and receive explicit human approval.
+
 # Problem
 
 Uniform maintained grass benefits from area patches, but trees, worn ground, and selected boundary irregularities still need localized tufts to hide intersections and add natural variation. The previous tuft task incorrectly treated tufts as the primary primitive for the whole field.
