@@ -163,9 +163,44 @@ survive a restart.
 - The pinned portable Blender 5.2.1 executable is present under the AI 529
   toolchain artifacts and may be used in an isolated headless process. The open
   unsaved GUI session is Blender 5.2.0 and must not be repurposed. The user
-  approved headless use, but a full rebake must wait until the bake-side spatial
-  evidence producer exists; otherwise the expensive output remains
-  uncertifiable.
+  approved headless use. A full rebake must wait until the measured foliage
+  mismatch and per-profile coverage contract are resolved; otherwise the
+  expensive output remains uncertifiable.
+- The remaining measured-evidence producers now exist. Native WebGL2 sparse
+  capture uses integer texel attributes plus transform feedback against the
+  authenticated depth attachment and restores exact GL/renderer state. The
+  cutout-only live wrapper restores all caster/material identities and the full
+  live shadow target. Its Three/ANGLE fixture passes, and a real BigCity2 Depth24
+  probe authenticated all 124 cutout foliage slots.
+- The deterministic candidate planner projects every authenticated foliage
+  triangle-group centroid, retains closest depth per caster/texel, and proves
+  the signed-permutation/phase transform from local 16384x16384 live texels to
+  the production cache-global lattice. For `ai527.sun.az135.el08` it produced
+  98,867 candidates and selected 111 native first-hit plus 111 transparent
+  samples. Maximum geometric-versus-native first-hit error was
+  0.0049727557596952465 m, inside the fixed 5 mm gate.
+- The headless Blender producer reuses the pinned AI 529 package verification,
+  reconstruction, and AI 531 production material/camera pipeline. It physically
+  removes every opaque/forced-opaque face, retains 233,232 cutout triangles,
+  renders the 16 exact production tiles containing the requested texels, and
+  publishes authenticated U8 occupancy and Float32 source-camera-distance
+  streams. The completed bounded diagnostic emitted 222 samples without using
+  or modifying the open Blender GUI session.
+- Measured live-versus-Blender parity currently fails as expected from the
+  foliage filter blocker: live occupancy is 111/222, Blender cutout-only
+  occupancy is 9/222, occupancy mismatch count is 108, only 6 samples are
+  commonly occupied, and 4 of those exceed 5 mm first-hit-depth error (maximum
+  1.85205078125 m). These are correctness measurements, not performance
+  evidence. The reusable runner now reauthenticates both raw streams and derives
+  this comparison from bytes rather than accepting declared counters.
+- A separate physical coverage blocker was also proven. The camera-relative
+  680 m rotated live shadow square does not contain every authenticated foliage
+  caster in every profile: az045/az225 profiles cover 114 and exclude 10;
+  az135/az315 profiles cover 111 and exclude 13. The current per-profile exact
+  124-caster sample-plan contract is therefore unsatisfiable. Do not clamp or
+  fabricate texels. Evolve it to authenticate each profile's in/out-of-coverage
+  classification and require the release-wide sampled-caster union to cover all
+  124 casters non-vacuously.
 
 ### Primary blocker
 
@@ -185,17 +220,17 @@ symlinked, mismatched, or incomplete evidence.
 
 ### Remaining work, in order
 
-1. Implement the two remaining measured-evidence producers against one shared
-   canonical sample plan: sparse native Three r183 cutout-only shadow-depth
-   samples in the browser, and cutout-only Blender 5.2.1/Cycles first-hit samples
-   in the headless renderer. Publish their authenticated binary files with each
-   profile. Include cutout-versus-opaque ordering and non-vacuous coverage of
-   every cutout caster.
+1. Evolve the file-backed spatial-evidence contract without weakening it:
+   authenticate each profile's native in-coverage and projected out-of-coverage
+   caster sets, require the eight-profile sampled-caster union to equal the
+   exact 124-caster source inventory, and use nonnegative source-camera-distance
+   Float32 for the shared first-hit comparison stream while preserving signed
+   canonical depth in the cache payload.
 2. Implement a deterministic alpha-cutout path that matches current foliage
    shadow occupancy, either by reproducing the effective runtime UV/alpha,
    threshold, side/culling, mip, filter, and anisotropy semantics or by
    compiling deterministic silhouette geometry with proven equivalence.
-3. Feed the two real producer streams into the completed file-backed parity
+3. Feed the now-implemented real producer streams into the evolved file-backed parity
    builder and mandatory release-finalizer reauthentication. Do not construct a
    spatial parity artifact from synthetic counters or unauthenticated bytes.
 4. Keep AI 531 validation scoped to static-world receivers. Dynamic bus receiver

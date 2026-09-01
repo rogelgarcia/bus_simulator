@@ -56,12 +56,21 @@ test('native shadow depth texture capture preserves values, identity, and render
         result.depth32f.expectedBits[9],
         result.depth32f.expectedBits[10]
     ]);
+    expect(result.sparse32f.texels).toEqual([[3, 2], [0, 0], [2, 1], [3, 2]]);
+    expect(result.sparse32f.capturedBits).toEqual([
+        result.depth32f.expectedBits[11],
+        result.depth32f.expectedBits[0],
+        result.depth32f.expectedBits[6],
+        result.depth32f.expectedBits[11]
+    ]);
+    expect(result.sparse32f.transfer.vertexIndex).toBe('integer-texel-attribute-v1');
 
     expect(result.transfer.pixelPackBuffer).toBe('not-used');
     expect(result.transfer.synchronization).toBe('blocking-get-buffer-sub-data-v1');
     expect(result.restoration.helper).toEqual({gl: 'verified', renderer: 'verified'});
     expect(result.restoration.afterFullState).toEqual([]);
     expect(result.restoration.afterSubregionState).toEqual([]);
+    expect(result.restoration.afterSparseState).toEqual([]);
     expect(result.restoration.afterDepth24State).toEqual([]);
     expect(result.restoration.afterMismatchState).toEqual([]);
     expect(result.mismatchError).toEqual({

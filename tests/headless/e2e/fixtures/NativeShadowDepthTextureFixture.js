@@ -4,7 +4,8 @@
 import * as THREE from 'three';
 import {
     NATIVE_SHADOW_DEPTH_CAPTURE_METHOD,
-    captureNativeShadowDepthTexture
+    captureNativeShadowDepthTexture,
+    captureNativeShadowDepthTextureSamples
 } from '/tools/static_sun_depth/browser/NativeShadowDepthTextureCapture.js';
 
 const WIDTH = 4;
@@ -99,6 +100,19 @@ export function runNativeShadowDepthTextureCaptureFixture() {
         });
         const afterSubregionState = compareSentinelState(gl, sentinel);
 
+        const sparseTexels = [[3, 2], [0, 0], [2, 1], [3, 2]];
+        const sparse32 = captureNativeShadowDepthTextureSamples({
+            gl,
+            renderer,
+            framebuffer: depth32Fixture.framebuffer,
+            depthTexture: depth32Fixture.depthTexture,
+            textureWidth: WIDTH,
+            textureHeight: HEIGHT,
+            texels: sparseTexels,
+            label: 'depth32f-sparse'
+        });
+        const afterSparseState = compareSentinelState(gl, sentinel);
+
         const full24 = captureNativeShadowDepthTexture({
             gl,
             renderer,
@@ -167,11 +181,18 @@ export function runNativeShadowDepthTextureCaptureFixture() {
                 capturedBits: float32Bits(subregion32.depthValues),
                 capturedValues: [...subregion32.depthValues]
             },
+            sparse32f: {
+                texels: sparse32.plan.texels,
+                capturedBits: float32Bits(sparse32.depthValues),
+                capturedValues: [...sparse32.depthValues],
+                transfer: sparse32.transfer
+            },
             transfer: full32.transfer,
             restoration: {
                 helper: full32.stateRestoration,
                 afterFullState,
                 afterSubregionState,
+                afterSparseState,
                 afterDepth24State,
                 afterMismatchState
             },

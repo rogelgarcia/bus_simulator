@@ -5,7 +5,9 @@ import {
     NATIVE_SHADOW_DEPTH_CAPTURE_METHOD,
     NATIVE_SHADOW_DEPTH_CAPTURE_ORDER,
     NATIVE_SHADOW_DEPTH_CAPTURE_SCHEMA,
+    NATIVE_SHADOW_DEPTH_SPARSE_CAPTURE_ORDER,
     createNativeShadowDepthCapturePlan,
+    createNativeShadowDepthSparseCapturePlan,
     validateNativeShadowDepthCaptureEvidence
 } from '../../../../tools/static_sun_depth/browser/NativeShadowDepthTextureCapture.js';
 
@@ -82,6 +84,65 @@ test('native shadow depth capture plan rejects unsafe and out-of-bounds work', (
         }),
         /exceeding maximumTexels 15/
     );
+});
+
+test('native shadow depth sparse capture plan preserves explicit texel order and duplicates', () => {
+    const plan = createNativeShadowDepthSparseCapturePlan({
+        textureWidth: 8,
+        textureHeight: 4,
+        texels: [[7, 3], [0, 0], [2, 1], [7, 3]]
+    });
+    assert.deepEqual(plan, {
+        byteLength: 16,
+        order: NATIVE_SHADOW_DEPTH_SPARSE_CAPTURE_ORDER,
+        texelCount: 4,
+        texels: [[7, 3], [0, 0], [2, 1], [7, 3]],
+        textureSize: [8, 4]
+    });
+    assert.ok(Object.isFrozen(plan));
+    assert.ok(Object.isFrozen(plan.texels));
+    assert.ok(Object.isFrozen(plan.texels[0]));
+});
+
+test('native shadow depth sparse capture plan rejects empty, malformed, and excessive work', () => {
+    assert.throws(
+        () => createNativeShadowDepthSparseCapturePlan({
+            textureWidth: 4,
+            textureHeight: 4,
+            texels: []
+        }),
+        /texels must be a non-empty array/
+    );
+    assert.throws(
+        () => createNativeShadowDepthSparseCapturePlan({
+            textureWidth: 4,
+            textureHeight: 4,
+            texels: [[4, 0]]
+        }),
+        /texels\[0\] must remain inside/
+    );
+    assert.throws(
+        () => createNativeShadowDepthSparseCapturePlan({
+            textureWidth: 4,
+            textureHeight: 4,
+            texels: [[0, 0], [1, 1]],
+            maximumTexels: 1
+        }),
+        /contains 2 texels, exceeding maximumTexels 1/
+    );
+});
+
+test('native shadow depth capture evidence accepts authenticated sparse values', () => {
+    const plan = createNativeShadowDepthSparseCapturePlan({
+        textureWidth: 8,
+        textureHeight: 4,
+        texels: [[7, 3], [0, 0], [2, 1], [7, 3]]
+    });
+    const evidence = makeEvidence({
+        plan,
+        depthValues: new Float32Array([1, 0, 0.25, 1])
+    });
+    assert.equal(validateNativeShadowDepthCaptureEvidence(evidence), evidence);
 });
 
 test('native shadow depth capture evidence requires attachment identity and restored state', () => {

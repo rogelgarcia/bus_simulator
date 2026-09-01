@@ -7,11 +7,13 @@ export const NATIVE_SHADOW_DEPTH_CAPTURE_METHOD =
     'three-r183-native-shadow-depth-texture-transform-feedback-v1';
 export const NATIVE_SHADOW_DEPTH_CAPTURE_ORDER =
     'x-fastest-bottom-row-first-v1';
+export const NATIVE_SHADOW_DEPTH_SPARSE_CAPTURE_ORDER =
+    'explicit-texel-order-v1';
 
 const FLOAT32_BYTES = Float32Array.BYTES_PER_ELEMENT;
 const MAX_DRAW_INSTANCE_COUNT = 0x7fffffff;
 
-const VERTEX_SHADER_SOURCE = `#version 300 es
+const REGION_VERTEX_SHADER_SOURCE = `#version 300 es
 precision highp float;
 precision highp int;
 
@@ -32,6 +34,21 @@ void main() {
         captureRegionOrigin + localTexel,
         0
     ).r;
+    gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
+    gl_PointSize = 1.0;
+}
+`;
+
+const SPARSE_VERTEX_SHADER_SOURCE = `#version 300 es
+precision highp float;
+precision highp int;
+
+layout(location = 0) in highp ivec2 captureTexel;
+uniform highp sampler2D captureDepthTexture;
+out highp float capturedDepth;
+
+void main() {
+    capturedDepth = texelFetch(captureDepthTexture, captureTexel, 0).r;
     gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
     gl_PointSize = 1.0;
 }
@@ -126,6 +143,69 @@ export function createNativeShadowDepthCapturePlan(value) {
 }
 
 /**
+ * Create an immutable capture plan for an explicit sequence of native depth texels.
+ * Coordinates use the WebGL lower-left texture origin. Order and duplicates are
+ * preserved so the returned values remain aligned with caster-labelled samples.
+ *
+ * @param {{
+ *   textureWidth: number,
+ *   textureHeight: number,
+ *   texels: Array<[number, number]>,
+ *   maximumTexels?: number
+ * }} value
+ */
+export function createNativeShadowDepthSparseCapturePlan(value) {
+    const textureWidth = requirePositiveSafeInteger(
+        value?.textureWidth,
+        'textureWidth'
+    );
+    const textureHeight = requirePositiveSafeInteger(
+        value?.textureHeight,
+        'textureHeight'
+    );
+    if (!Array.isArray(value?.texels) || value.texels.length === 0) {
+        throw new TypeError('texels must be a non-empty array');
+    }
+    const texels = value.texels.map((texel, index) => {
+        if (!Array.isArray(texel) || texel.length !== 2) {
+            throw new TypeError(`texels[${index}] must be an [x, y] coordinate`);
+        }
+        const x = requireNonNegativeSafeInteger(texel[0], `texels[${index}][0]`);
+        const y = requireNonNegativeSafeInteger(texel[1], `texels[${index}][1]`);
+        if (x >= textureWidth || y >= textureHeight) {
+            throw new RangeError(`texels[${index}] must remain inside the depth texture`);
+        }
+        return [x, y];
+    });
+    const texelCount = texels.length;
+    if (texelCount > MAX_DRAW_INSTANCE_COUNT) {
+        throw new RangeError('sparse capture contains too many texels for one WebGL draw');
+    }
+    if (value?.maximumTexels !== undefined) {
+        const maximumTexels = requirePositiveSafeInteger(
+            value.maximumTexels,
+            'maximumTexels'
+        );
+        if (texelCount > maximumTexels) {
+            throw new RangeError(
+                `sparse capture contains ${texelCount} texels, exceeding maximumTexels ${maximumTexels}`
+            );
+        }
+    }
+    const byteLength = texelCount * FLOAT32_BYTES;
+    if (!Number.isSafeInteger(byteLength)) {
+        throw new RangeError('capture byte length is not a safe integer');
+    }
+    return freezeDeep({
+        byteLength,
+        order: NATIVE_SHADOW_DEPTH_SPARSE_CAPTURE_ORDER,
+        texelCount,
+        texels,
+        textureSize: [textureWidth, textureHeight]
+    });
+}
+
+/**
  * Capture the exact float values exposed by a native WebGL2 depth texture.
  * The helper is synchronous because getBufferSubData is the required GPU fence.
  * No PIXEL_PACK_BUFFER or color attachment is used.
@@ -143,8 +223,35 @@ export function createNativeShadowDepthCapturePlan(value) {
  * }} options
  */
 export function captureNativeShadowDepthTexture(options) {
-    const gl = requireWebGl2Context(options?.gl);
     const plan = createNativeShadowDepthCapturePlan(options);
+    return captureNativeShadowDepthTextureWithPlan(options, plan);
+}
+
+/**
+ * Capture an explicit, ordered set of native depth texels without allocating a
+ * full-map readback. Duplicate coordinates are intentionally retained.
+ *
+ * @param {{
+ *   gl: WebGL2RenderingContext,
+ *   framebuffer: WebGLFramebuffer,
+ *   depthTexture: WebGLTexture,
+ *   textureWidth: number,
+ *   textureHeight: number,
+ *   texels: Array<[number, number]>,
+ *   maximumTexels?: number,
+ *   renderer?: any,
+ *   label?: string
+ * }} options
+ */
+export function captureNativeShadowDepthTextureSamples(options) {
+    const plan = createNativeShadowDepthSparseCapturePlan(options);
+    return captureNativeShadowDepthTextureWithPlan(options, plan);
+}
+
+/** @param {any} options @param {any} plan */
+function captureNativeShadowDepthTextureWithPlan(options, plan) {
+    const gl = requireWebGl2Context(options?.gl);
+    const sparse = plan.order === NATIVE_SHADOW_DEPTH_SPARSE_CAPTURE_ORDER;
     const framebuffer = requireObject(options?.framebuffer, 'framebuffer');
     const depthTexture = requireObject(options?.depthTexture, 'depthTexture');
     const label = options?.label === undefined
@@ -182,6 +289,8 @@ export function captureNativeShadowDepthTexture(options) {
     let captureBuffer = null;
     /** @type {WebGLBuffer | null} */
     let dummyVertexBuffer = null;
+    /** @type {WebGLBuffer | null} */
+    let texelCoordinateBuffer = null;
     let transformFeedbackBegun = false;
     let stage = 'preflight';
     /** @type {NativeShadowDepthCaptureError | null} */
@@ -248,7 +357,7 @@ export function captureNativeShadowDepthTexture(options) {
         assertNoGlErrors(gl, stage, label);
 
         stage = 'capture-resources';
-        program = createCaptureProgram(gl, label);
+        program = createCaptureProgram(gl, label, sparse);
         sampler = requireCreatedResource(gl.createSampler(), 'sampler', label);
         vertexArray = requireCreatedResource(
             gl.createVertexArray(),
@@ -265,11 +374,19 @@ export function captureNativeShadowDepthTexture(options) {
             'capture buffer',
             label
         );
-        dummyVertexBuffer = requireCreatedResource(
-            gl.createBuffer(),
-            'dummy vertex buffer',
-            label
-        );
+        if (sparse) {
+            texelCoordinateBuffer = requireCreatedResource(
+                gl.createBuffer(),
+                'texel coordinate buffer',
+                label
+            );
+        } else {
+            dummyVertexBuffer = requireCreatedResource(
+                gl.createBuffer(),
+                'dummy vertex buffer',
+                label
+            );
+        }
 
         const textureUnitIndex = glStateBefore.activeTexture - gl.TEXTURE0;
         gl.bindTexture(gl.TEXTURE_2D, depthTexture);
@@ -304,28 +421,41 @@ export function captureNativeShadowDepthTexture(options) {
             textureUnitIndex,
             label
         );
-        setRequiredUniform2i(
-            gl,
-            program,
-            'captureRegionOrigin',
-            plan.region.x,
-            plan.region.y,
-            label
-        );
-        setRequiredUniform1i(
-            gl,
-            program,
-            'captureRegionWidth',
-            plan.region.width,
-            label
-        );
+        if (!sparse) {
+            setRequiredUniform2i(
+                gl,
+                program,
+                'captureRegionOrigin',
+                plan.region.x,
+                plan.region.y,
+                label
+            );
+            setRequiredUniform1i(
+                gl,
+                program,
+                'captureRegionWidth',
+                plan.region.width,
+                label
+            );
+        }
 
         gl.bindVertexArray(vertexArray);
-        gl.bindBuffer(gl.ARRAY_BUFFER, dummyVertexBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, 1, gl.STATIC_DRAW);
-        gl.enableVertexAttribArray(0);
-        gl.vertexAttribPointer(0, 1, gl.UNSIGNED_BYTE, false, 1, 0);
-        gl.vertexAttribDivisor(0, 0);
+        if (sparse) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, texelCoordinateBuffer);
+            gl.bufferData(
+                gl.ARRAY_BUFFER,
+                new Int32Array(plan.texels.flat()),
+                gl.STATIC_DRAW
+            );
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribIPointer(0, 2, gl.INT, 0, 0);
+        } else {
+            gl.bindBuffer(gl.ARRAY_BUFFER, dummyVertexBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, 1, gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribPointer(0, 1, gl.UNSIGNED_BYTE, false, 1, 0);
+            gl.vertexAttribDivisor(0, 0);
+        }
 
         gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, transformFeedback);
         gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, captureBuffer);
@@ -342,7 +472,8 @@ export function captureNativeShadowDepthTexture(options) {
         gl.enable(gl.RASTERIZER_DISCARD);
         gl.beginTransformFeedback(gl.POINTS);
         transformFeedbackBegun = true;
-        gl.drawArraysInstanced(gl.POINTS, 0, 1, plan.texelCount);
+        if (sparse) gl.drawArrays(gl.POINTS, 0, plan.texelCount);
+        else gl.drawArraysInstanced(gl.POINTS, 0, 1, plan.texelCount);
         gl.endTransformFeedback();
         transformFeedbackBegun = false;
         assertNoGlErrors(gl, stage, label);
@@ -394,6 +525,7 @@ export function captureNativeShadowDepthTexture(options) {
                 dummyVertexBuffer,
                 program,
                 sampler,
+                texelCoordinateBuffer,
                 transformFeedback,
                 vertexArray
             });
@@ -460,7 +592,9 @@ export function captureNativeShadowDepthTexture(options) {
             pixelPackBuffer: 'not-used',
             synchronization: 'blocking-get-buffer-sub-data-v1',
             transformFeedbackPrimitive: 'POINTS',
-            vertexIndex: 'gl-instance-id-v1'
+            vertexIndex: sparse
+                ? 'integer-texel-attribute-v1'
+                : 'gl-instance-id-v1'
         }),
         stateRestoration,
         implementation: captureImplementationDiagnostics(gl),
@@ -487,12 +621,19 @@ export function validateNativeShadowDepthCaptureEvidence(evidence) {
     if (evidence.status !== 'captured') {
         throw new Error('native depth capture status must be captured');
     }
-    const plan = createNativeShadowDepthCapturePlan({
-        textureWidth: evidence?.plan?.textureSize?.[0],
-        textureHeight: evidence?.plan?.textureSize?.[1],
-        region: evidence?.plan?.region
-    });
-    if (evidence?.plan?.order !== NATIVE_SHADOW_DEPTH_CAPTURE_ORDER
+    const sparse = evidence?.plan?.order === NATIVE_SHADOW_DEPTH_SPARSE_CAPTURE_ORDER;
+    const plan = sparse
+        ? createNativeShadowDepthSparseCapturePlan({
+            textureWidth: evidence?.plan?.textureSize?.[0],
+            textureHeight: evidence?.plan?.textureSize?.[1],
+            texels: evidence?.plan?.texels
+        })
+        : createNativeShadowDepthCapturePlan({
+            textureWidth: evidence?.plan?.textureSize?.[0],
+            textureHeight: evidence?.plan?.textureSize?.[1],
+            region: evidence?.plan?.region
+        });
+    if (evidence?.plan?.order !== plan.order
         || evidence?.plan?.texelCount !== plan.texelCount
         || evidence?.plan?.byteLength !== plan.byteLength) {
         throw new Error('native depth capture plan metadata is inconsistent');
@@ -522,11 +663,11 @@ export function validateNativeShadowDepthCaptureEvidence(evidence) {
 }
 
 /** @param {WebGL2RenderingContext} gl @param {string | null} label */
-function createCaptureProgram(gl, label) {
+function createCaptureProgram(gl, label, sparse) {
     const vertexShader = compileShader(
         gl,
         gl.VERTEX_SHADER,
-        VERTEX_SHADER_SOURCE,
+        sparse ? SPARSE_VERTEX_SHADER_SOURCE : REGION_VERTEX_SHADER_SOURCE,
         'vertex',
         label
     );
@@ -543,7 +684,7 @@ function createCaptureProgram(gl, label) {
         program = requireCreatedResource(gl.createProgram(), 'program', label);
         gl.attachShader(program, vertexShader);
         gl.attachShader(program, fragmentShader);
-        gl.bindAttribLocation(program, 0, 'captureVertex');
+        gl.bindAttribLocation(program, 0, sparse ? 'captureTexel' : 'captureVertex');
         gl.transformFeedbackVaryings(
             program,
             ['capturedDepth'],
@@ -745,6 +886,7 @@ function compareRendererState(before, after) {
  *   dummyVertexBuffer: WebGLBuffer | null,
  *   program: WebGLProgram | null,
  *   sampler: WebGLSampler | null,
+ *   texelCoordinateBuffer: WebGLBuffer | null,
  *   transformFeedback: WebGLTransformFeedback | null,
  *   vertexArray: WebGLVertexArrayObject | null
  * }} resources
@@ -754,6 +896,7 @@ function deleteCaptureResources(gl, resources) {
     if (resources.vertexArray) gl.deleteVertexArray(resources.vertexArray);
     if (resources.captureBuffer) gl.deleteBuffer(resources.captureBuffer);
     if (resources.dummyVertexBuffer) gl.deleteBuffer(resources.dummyVertexBuffer);
+    if (resources.texelCoordinateBuffer) gl.deleteBuffer(resources.texelCoordinateBuffer);
     if (resources.sampler) gl.deleteSampler(resources.sampler);
     if (resources.program) gl.deleteProgram(resources.program);
 }
@@ -841,7 +984,8 @@ function requireWebGl2Context(value) {
         'getBufferSubData',
         'getIndexedParameter',
         'texStorage2D',
-        'transformFeedbackVaryings'
+        'transformFeedbackVaryings',
+        'vertexAttribIPointer'
     ];
     if (!value || typeof value !== 'object'
         || requiredMethods.some((name) => typeof value[name] !== 'function')) {
