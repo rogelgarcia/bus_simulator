@@ -397,7 +397,7 @@ async function extractAccessor(attribute, semanticNameValue, role, bufferRegistr
         });
     }
     if (attribute.isFloat16BufferAttribute) {
-        failBakeSource('unsupported_attribute_component', 'Float16BufferAttribute is not supported by bake-input V1.', {
+        failBakeSource('unsupported_attribute_component', 'Float16BufferAttribute is not supported by bake-input V2.', {
             ...context,
             attribute: semanticNameString
         });

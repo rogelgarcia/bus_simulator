@@ -15,8 +15,10 @@ const HASH = '8'.repeat(64);
 function material() {
     return {
         id: 'material:fixture',
-        schema: 'bus-sim-evaluated-material-semantics-v1',
+        schema: 'bus-sim-evaluated-material-semantics-v2',
         model: 'MeshStandardMaterial',
+        preserveShadowSide: false,
+        isFoliage: false,
         alphaInputId: 'alpha:fixture',
         alpha: {
             mode: 'opaque',
@@ -72,8 +74,8 @@ function manifest() {
         channelRelevance: { static_ao_bent_normal: true }
     }];
     return {
-        format: 'bus-sim-illumination-bake-input-v1',
-        schemaVersion: 1,
+        format: 'bus-sim-illumination-bake-input-v2',
+        schemaVersion: 2,
         coordinateContract: {
             id: 'three-y-up-to-blender-z-up-v1',
             target: 'blender_right_handed_z_up_column_major',
@@ -146,6 +148,16 @@ test('malformed geometry references fail before Blender spawn', () => {
         (error) => error instanceof CompilerError
             && error.code === 'reconstruction_mapping_reference_missing'
             && error.context.reference === 'geometryId'
+    );
+});
+
+test('V2 material sidedness flags fail closed before Blender spawn', () => {
+    const source = manifest();
+    source.materials[0].isFoliage = 'false';
+    assert.throws(
+        () => createReconstructionPlan(source),
+        (error) => error instanceof CompilerError
+            && error.code === 'reconstruction_material_schema_unsupported'
     );
 });
 

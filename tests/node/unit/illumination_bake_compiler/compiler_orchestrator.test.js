@@ -39,8 +39,8 @@ function fixture(toolchain, profile) {
         { id: 'static_sun_depth', sha256: '4'.repeat(64) }
     ];
     const inputManifest = {
-        format: 'bus-sim-illumination-bake-input-v1',
-        schemaVersion: 1,
+        format: 'bus-sim-illumination-bake-input-v2',
+        schemaVersion: 2,
         hashes: {
             channelSources,
             geometry: '5'.repeat(64),
@@ -201,6 +201,7 @@ test('Blender environment has no inherited user paths and isolates all writable 
     });
     assert.equal(isolated.env.HOME, undefined);
     assert.equal(isolated.env.APPDATA, undefined);
+    assert.equal(isolated.env.PROCESSOR_ARCHITECTURE, 'AMD64');
     assert.equal(isolated.env.PYTHONNOUSERSITE, '1');
     for (const key of ['TEMP', 'TMP', 'BLENDER_USER_CONFIG', 'BLENDER_USER_SCRIPTS', 'BLENDER_USER_EXTENSIONS', 'BLENDER_USER_DATAFILES']) {
         assert.equal(path.relative(path.resolve('C:/artifacts/stage.partial'), path.resolve(isolated.env[key])).startsWith('..'), false);

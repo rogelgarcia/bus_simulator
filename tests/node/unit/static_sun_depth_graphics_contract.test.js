@@ -151,9 +151,12 @@ test('static-sun upload and descriptor layout account exact RG8 array bytes', ()
     );
     const rectangular = makeDescriptor();
     rectangular.identity.layout.interiorTexels = [4, 2];
-    assert.throws(
-        () => assertStaticSunDepthTextureLayout(resource, rectangular),
-        /requires square/
+    rectangular.tiles[0].storedTexels = [6, 4];
+    const rectangularResource = makeResource(rectangular);
+    rectangularResource.upload.height = 4;
+    assert.equal(
+        assertStaticSunDepthTextureLayout(rectangularResource, rectangular),
+        true
     );
 });
 
@@ -224,18 +227,54 @@ test('graphics source keeps registry updates stable, current exact, and prewarm 
         '../../../src/graphics/illumination/static_sun_depth/ThreeStaticSunDepthResources.js',
         import.meta.url
     ), 'utf8');
+    const fragmentShader = await readFile(new URL(
+        '../../../src/graphics/shaders/materials/static_sun_depth.frag.glsl',
+        import.meta.url
+    ), 'utf8');
 
-    assert.match(adapter, /#include <project_vertex>\\nstaticSunDepthTransferWorldPosition/);
+    assert.match(
+        adapter,
+        /#include <project_vertex>\\nstaticSunDepthTransferWorldPosition\( transformed, transformedNormal \)/
+    );
     assert.doesNotMatch(adapter, /#include <begin_vertex>\\nstaticSunDepthTransferWorldPosition/);
+    assert.match(adapter, /geometric-normal-offset-plus-constant-depth-relief-v1/);
+    assert.match(adapter, /three-r183-vogel-5-linear-compare-v1/);
+    assert.match(adapter, /sourceMapRightAxisWorld/);
+    assert.match(adapter, /staticSunDepthSourceMapSizeAndExtent/);
+    assert.doesNotMatch(adapter, /DiagnosticDepthEncoding/);
+    assert.match(adapter, /new THREE\.Vector4\(/);
     assert.match(adapter, /state = \{ binding \}/);
     assert.doesNotMatch(adapter, /handle\.update\(\{[^\n]*apply/);
     assert.doesNotMatch(adapter, /material\.needsUpdate/);
+
+    assert.match(fragmentShader, /52\.9829189[\s\S]*0\.06711056[\s\S]*0\.00583715/);
+    assert.match(fragmentShader, /goldenAngle = 2\.399963229728653/);
+    assert.match(fragmentShader, /staticSunDepthInterleavedGradientNoise\( gl_FragCoord\.xy \) \* PI2/);
+    assert.match(fragmentShader, /for \( int sampleIndex = 0; sampleIndex < 5; sampleIndex \+\+ \)/);
+    assert.match(fragmentShader, /staticSunDepthLinearCompare/);
+    assert.match(
+        fragmentShader,
+        /staticSunDepthApplyDirectional[\s\S]*?if \( ! receiveShadow \) return;/
+    );
+    assert.match(
+        fragmentShader,
+        /staticSunDepthDebugColor[\s\S]*?if \( ! receiveShadow \)/
+    );
+    assert.match(fragmentShader, /texelFetch\( staticSunDepthTiles/);
+    assert.doesNotMatch(fragmentShader, /texture\( staticSunDepthTiles/);
+    assert.doesNotMatch(fragmentShader, /DiagnosticDepthEncoding|unpackFactors/);
+    assert.match(
+        fragmentShader,
+        /packedDepth\.rg \* 255\.0 \+ 0\.5[\s\S]*quantized \/ 65534\.0/
+    );
 
     assert.match(pipeline, /await this\._prewarmMaterialVariants\(binding\)/);
     assert.match(pipeline, /await this\.renderer\.compileAsync\(scene, camera\)/);
     assert.match(pipeline, /createShaderDiagnosticGuard\(this\.renderer\)/);
     assert.match(pipeline, /shaderDiagnostics\.assertNoFailure\(\)/);
     assert.match(pipeline, /validateOwnedStaticSunDepthTileArrayIntegrity/);
+    assert.match(pipeline, /fetchPackage: options\.fetchPackage/);
+    assert.doesNotMatch(pipeline, /transferOwnership/);
     assert.match(pipeline, /this\._materials\.verifyOwnership\(\)/);
     assert.match(pipeline, /addEventListener\?\.\('webglcontextlost'/);
     assert.match(pipeline, /removeEventListener\?\.\('webglcontextlost'/);
@@ -246,7 +285,7 @@ test('graphics source keeps registry updates stable, current exact, and prewarm 
     );
     assert.match(pipeline, /city !== active\.city/);
     assert.match(resources, /new THREE\.DataArrayTexture\(pixels, upload\.width, upload\.height, upload\.layers\)/);
-    assert.match(resources, /const pixels = source\.slice\(\)/);
+    assert.match(resources, /const pixels = copyIlluminationPackageResourceBytes\(/);
     assert.match(resources, /texture\.image\.data = verifiedPixels;\s*renderer\.initTexture\(texture\)/);
     assert.match(resources, /cpuBytes: expectedByteLength,\s*gpuBytes: expectedByteLength/);
 });

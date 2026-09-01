@@ -101,6 +101,98 @@ See [the static-sun cache authority](../specs/graphics/static_sun_depth_cache.md
 [shader sources](../src/graphics/shaders/materials/), and
 [fixture compiler](../tools/static_sun_depth/).
 
+## Restart handoff - 2026-08-31
+
+AI 531 is **not DONE**. The runtime/cache foundation is committed at
+64001d7 (feat(illumination): add static sun depth cache), but the production
+bake, validation, diagnostics, and certification work after that commit is a
+large uncommitted and partially interrupted worktree. Preserve it: audit the
+diff before changing direction, and do not reset, delete, or assume every
+experimental path is ready to keep. All long-running validation was stopped at
+the user's request; no bake, browser run, or validator should be assumed to
+survive a restart.
+
+### Last trustworthy evidence
+
+- Lab validation completed all 8 canonical cases: 7 passed and 1 failed. The
+  stable failure is illum.lab.overhang_receiver_fixture.az135_el08 with a
+  remaining missing_occluder result. Report:
+  tests/artifacts/screens/illumination_531/lab_evidence_identity/canonical_fresh_evidence_canvas_v2/lab_validation_report.json.
+- Production validation completed all 197 canonical cases: 51 passed and 146
+  failed. Missing occluders dominate, with additional maximum/mean RGB,
+  pixels-over-four, seam, continuous-seam, and aggregate browser-diagnostic
+  failures. Report:
+  tests/artifacts/screens/illumination_531/production_final_v1/production_validation_report.json.
+- The RGB24-plus-occupancy diagnostic completed 12 selected cases: 5 passed and
+  7 failed, essentially matching RG8 failure locations and magnitudes. Higher
+  depth precision did not fix the blocker, so do not spend another cycle on
+  depth encoding without new contrary evidence. Report:
+  tests/artifacts/screens/illumination_531/depth_precision_rgba8_rgb24a_v1/depth_precision_diagnostic_validation_report.json.
+- All timing evidence above is contaminated by other processes and shared GPU
+  contention, as reported by the user. It is not promotion evidence. Keep final
+  timing metrics not measured with that reason unless they are recollected
+  under controlled same-condition runs. Calls/triangles and correctness
+  evidence may still be collected independently.
+
+### Primary blocker
+
+Production foliage/alpha-cutout caster silhouettes do not yet reproduce the
+current Three.js r183 shadow sampler exactly. Runtime leaves use generated
+mipmaps, trilinear minification, and anisotropy 8, while the current exported
+Blender reconstruction reduces non-nearest sampling to a generic linear mode.
+GPU-generated mip and anisotropic sampling are implementation-dependent. The
+remaining production errors therefore cannot be accepted as a simple bias,
+filter-radius, or RG8 precision difference.
+
+The alpha-cutout release certificate must be based on actual spatial
+occupancy/first-hit observations. Texture/source authentication alone, or
+declared zero mismatch counts without spatial evidence, is not sufficient.
+The certificate must fail closed for missing, stale, tampered, traversed,
+symlinked, mismatched, or incomplete evidence.
+
+### Remaining work, in order
+
+1. Audit the uncommitted files against 64001d7. Separate completed production
+   functionality from temporary diagnostics and interrupted experiments; keep
+   unrelated/user changes intact.
+2. Implement a deterministic alpha-cutout path that matches current foliage
+   shadow occupancy, either by reproducing the effective runtime UV/alpha,
+   threshold, side/culling, mip, filter, and anisotropy semantics or by
+   compiling deterministic silhouette geometry with proven equivalence.
+3. Finish authoritative opaque and cutout certification for every production
+   caster. Record spatial occupancy and first-hit depth, including cutout versus
+   opaque ordering. Authenticate every evidence file with repository-confined
+   path, byteLength, and sha256 data plus negative traversal/symlink/tamper
+   tests.
+4. Keep AI 531 validation scoped to static-world receivers. Dynamic bus receiver
+   sampling belongs to AI 532; do not promote interrupted comparisons that count
+   bus pixels as AI 531 static-world failures. Preserve the required proof that
+   current fallback and dynamic caster behavior remain safe.
+5. Close the remaining Lab low-sun missing-occluder failure without weakening
+   the zero-missing-occluder gate. Use native 1280x720 evidence captures and
+   retain exact current/cache same-session pairing.
+6. Fix or conclusively classify the production browser diagnostic failure. The
+   interrupted audit found asset-request ERR_ABORTED noise consistent with the
+   headless static server closing large parallel tree transfers; harden server
+   streaming/keep-alive and fail-closed tree readiness rather than filtering the
+   diagnostic.
+7. After any exporter, compiler, sampler, foliage, or certification change,
+   re-export the canonical city source and rebuild all 8 production sun-profile
+   bakes/packages. Old packages are stale when source/compiler identity changes.
+8. Rerun the strict 8-case Lab matrix and full 197-case production catalog.
+   Require authenticated complete capture sets, zero missing occluders, zero
+   false-lit seams, and every documented numeric/image gate. Do not substitute
+   the RGB24 diagnostic subset for the full RG8 production release matrix.
+9. Rerun focused Node, Python/Blender, and browser tests; update the cache,
+   compiler, package, validation, and tool documentation; record deliberate
+   caster exclusions and their visual consequences.
+10. Collect controlled performance/load/memory/bake measurements when the host
+    is suitable, or explicitly mark unavailable timing metrics not measured
+    with the shared-machine/GPU reason. Never promote contaminated timing data.
+11. Only after the correctness and fallback gates pass, add the completion
+    summary, mark the first line DONE, rename the prompt as specified below, and
+    commit when requested. Do not begin AI 532 while AI 531 remains active.
+
 ## On completion
 
 - Mark the AI document as DONE in the first line.

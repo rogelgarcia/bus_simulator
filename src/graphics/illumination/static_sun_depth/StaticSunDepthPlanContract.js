@@ -1,6 +1,10 @@
 // Fail-closed package-plan and texture-layout checks for the AI 531 graphics boundary.
 // @ts-check
 
+import {
+    STATIC_SUN_DEPTH_DIAGNOSTIC_ENCODING_ID
+} from '../../../app/illumination/static_sun_depth/StaticSunDepthEncoding.js';
+
 export const STATIC_SUN_DEPTH_CHANNEL_ID = 'static_sun_depth';
 export const STATIC_SUN_DEPTH_TILE_SET_SCHEMA = 'static-sun-depth-tile-set-v1';
 export const ILLUMINATION_COORDINATE_ENVELOPE_SCHEMA = 'bus-sim-illumination-intermediate-coordinate-v1';
@@ -21,14 +25,14 @@ function requireExactKeys(value, expected, label) {
 }
 
 /**
- * A static-sun pipeline owns one complete texture-array chunk. Packages with
+ * A static-sun pipeline owns one complete logical texture-array resource. Packages with
  * unrelated optional resources must use another runtime/factory.
  * @param {any} plan
  */
 export function requireStaticSunDepthPlanResource(plan) {
     const resources = requireRecord(plan, 'Static-sun resource plan').resources;
     if (!Array.isArray(resources) || resources.length !== 1) {
-        throw new TypeError('Static-sun V1 requires exactly one complete texture-array resource.');
+        throw new TypeError('Static-sun V1 requires exactly one complete logical texture-array resource.');
     }
     const descriptor = requireRecord(resources[0], 'Static-sun resource descriptor');
     if (descriptor.channelId !== STATIC_SUN_DEPTH_CHANNEL_ID) {
@@ -110,15 +114,23 @@ export function validateStaticSunDepthUploadDescriptor(descriptor, limits = {}) 
         throw new TypeError(`Static-sun resource factory rejects channel '${resource.channelId ?? 'unknown'}'.`);
     }
     const upload = requireRecord(resource.upload, 'Static-sun upload descriptor');
-    if (upload.kind !== 'texture_2d_array' || upload.encoding !== 'rg8_unorm') {
-        throw new TypeError('Static-sun V1 requires one RG8 texture_2d_array resource.');
+    const tileSet = extractStaticSunDepthTileSetDescriptor(resource);
+    const diagnostic = tileSet.identity?.encoding?.id
+        === STATIC_SUN_DEPTH_DIAGNOSTIC_ENCODING_ID;
+    const expectedEncoding = diagnostic ? 'rgba8_unorm' : 'rg8_unorm';
+    if (upload.kind !== 'texture_2d_array'
+        || upload.encoding !== expectedEncoding) {
+        throw new TypeError(
+            `Static-sun ${diagnostic ? 'diagnostic' : 'V1'} requires one ${expectedEncoding} texture_2d_array resource.`
+        );
     }
     for (const key of ['width', 'height', 'layers']) {
         if (!Number.isSafeInteger(upload[key]) || upload[key] < 1) {
             throw new TypeError(`Static-sun upload.${key} must be a positive safe integer.`);
         }
     }
-    const expectedBytes = upload.width * upload.height * upload.layers * 2;
+    const expectedBytes = upload.width * upload.height * upload.layers
+        * (diagnostic ? 4 : 2);
     if (!Number.isSafeInteger(expectedBytes)) {
         throw new RangeError('Static-sun texture byte length exceeds safe integer range.');
     }
@@ -157,9 +169,6 @@ export function assertStaticSunDepthTextureLayout(resourceDescriptor, descriptor
     const tileCount = layout.tileCount;
     if (!Array.isArray(stored) || !Array.isArray(interior) || !Array.isArray(tileCount)) {
         throw new TypeError('Static-sun tile-set dimensions are absent.');
-    }
-    if (interior[0] !== interior[1] || stored[0] !== stored[1]) {
-        throw new Error('Static-sun V1 shader requires square interior and stored tile dimensions.');
     }
     const layers = tileCount[0] * tileCount[1];
     if (!Number.isSafeInteger(layers)

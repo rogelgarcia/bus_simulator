@@ -121,7 +121,7 @@ async function runSensitivityVerification() {
 
 function classifyBrowserDiagnostics(diagnostics) {
     const optionalCorrectionPattern = /\/assets\/public\/pbr\/brownstone\/pbr\.material\.correction\.config\.js(?:\?|\s|$)/;
-    const redundantTreeTextureAbortPattern = /\/assets\/trees\/Textures\/T_Leaf_Realistic9_normal\.TGA net::ERR_ABORTED$/;
+    const redundantTreeTextureAbortPattern = /\/assets\/trees\/Textures\/T_(?:Leaf_Realistic9_normal|Trunk_Realistic9(?:_normal)?)\.TGA net::ERR_ABORTED$/;
     const expectedRequests = diagnostics.filter((entry) => (
         entry.kind === 'requestfailed' && optionalCorrectionPattern.test(entry.message)
     ));

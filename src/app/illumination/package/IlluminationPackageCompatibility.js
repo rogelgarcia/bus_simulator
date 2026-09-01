@@ -11,7 +11,13 @@ const KNOWN_CHANNELS = new Set(ILLUMINATION_KNOWN_CHANNELS);
 const SUPPORTED_ENCODINGS = new Set(ILLUMINATION_SUPPORTED_ENCODINGS);
 const SUPPORTED_RESOURCES = new Set(['buffer', 'texture_2d', 'texture_2d_array']);
 const BUFFER_ENCODINGS = new Set(['raw_u8', 'uint32_le']);
-const TEXTURE_ENCODINGS = new Set(['r8_unorm', 'rg8_unorm', 'rgba16f_le', 'rgba32f_le']);
+const TEXTURE_ENCODINGS = new Set([
+    'r8_unorm',
+    'rg8_unorm',
+    'rgba8_unorm',
+    'rgba16f_le',
+    'rgba32f_le'
+]);
 
 /** @param {string} resourceType @param {string} encoding */
 export function isSupportedIlluminationResourceEncoding(resourceType, encoding) {

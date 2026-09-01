@@ -80,6 +80,8 @@ function casterPolicyRecord(mapping) {
         coverageMode: mapping.coverageMode,
         side: mapping.side,
         shadowSide: mapping.shadowSide,
+        preserveShadowSide: mapping.preserveShadowSide,
+        effectiveShadowSide: mapping.effectiveShadowSide,
         policySource: mapping.policySource,
         channelRelevance: mapping.channelRelevance
     };
@@ -202,6 +204,8 @@ function projectChannelMapping(mapping, channelId, kind) {
         coverageMode: mapping.coverageMode,
         side: mapping.side,
         shadowSide: mapping.shadowSide,
+        preserveShadowSide: mapping.preserveShadowSide,
+        effectiveShadowSide: mapping.effectiveShadowSide,
         policySource: mapping.policySource,
         channelRelevant: mapping.channelRelevance[channelId] === true
     };
@@ -310,6 +314,8 @@ function channelMaterialProjection(channelId, material, slotId, { participant = 
         alpha: projectAlpha(material.alpha, slotId, textureUses),
         side: material.side,
         shadowSide: material.shadowSide,
+        preserveShadowSide: material.preserveShadowSide === true,
+        isFoliage: material.isFoliage === true,
         channelSupport: material.channelSupport[channelId],
         normalMapBindingId,
         normalMapType: channelId === 'direct_receiver' ? material.normalMapType ?? null : null,

@@ -24,6 +24,9 @@ test('AI 531 GPU visibility matches the CPU sampler across world-space and guard
         const sunPointDirectionWorld = new THREE.Vector3(0.36, 0.8, -0.48).normalize().toArray();
         const originWorld = [3.25, -2.5, 5.75];
         const basis = app.createStableStaticSunDepthBasis(sunPointDirectionWorld, originWorld);
+        const sourceMapAxes = app.createThreeR183DirectionalShadowFilterAxes(
+            sunPointDirectionWorld
+        );
         const tileCount = [2, 2];
         const interiorTexels = [4, 4];
         const guardTexels = 1;
@@ -75,11 +78,21 @@ test('AI 531 GPU visibility matches the CPU sampler across world-space and guard
                     emptyPolicy: 'visible-v1',
                     outOfBoundsPolicy: 'fail-closed-zero-visibility-v1',
                     bias: {
-                        model: 'constant-plus-normal-offset-v1',
-                        constantMeters: 0,
-                        normalOffsetScaleMeters: 0.2
+                        model: 'geometric-normal-offset-plus-constant-depth-relief-v1',
+                        constantDepthReliefMeters: 0.0697915,
+                        geometricNormalOffsetMeters: 0.0232
                     },
-                    pcf: { model: 'square-nearest-box-v1', radiusTexels: 1 }
+                    pcf: {
+                        model: 'three-r183-vogel-5-linear-compare-v1',
+                        radiusTexels: 1.5,
+                        sampleCount: 5,
+                        screenRotation: 'interleaved-gradient-noise-gl-fragcoord-v1',
+                        hardwareComparison: 'linear-four-compare-taps-v1',
+                        shadowMapSizeTexels: [16384, 16384],
+                        shadowMapWorldExtentMeters: [680, 680],
+                        sourceMapRightAxisWorld: sourceMapAxes.rightAxisWorld,
+                        sourceMapUpAxisWorld: sourceMapAxes.upAxisWorld
+                    }
                 }
             },
             tiles: Array.from({ length: 4 }, (_, index) => {
@@ -227,6 +240,9 @@ test('AI 531 GPU visibility matches the CPU sampler across world-space and guard
             depth
         );
         const towardSun = new THREE.Vector3().fromArray(sunPointDirectionWorld).normalize();
+        const geometricShiftNormal = towardSun.clone()
+            .add(new THREE.Vector3().fromArray(basis.rightAxisWorld))
+            .normalize();
         const cases = [
             { id: 'signed_negative_depth_occluded', global: [2, 2], depth: 0, normal: towardSun },
             { id: 'positive_depth_fully_lit', global: [5, 2], depth: 0, normal: towardSun },
@@ -234,15 +250,29 @@ test('AI 531 GPU visibility matches the CPU sampler across world-space and guard
             { id: 'internal_boundary_guard_mix', global: [3, 5], depth: 0.25, normal: towardSun },
             { id: 'global_boundary_fail_closed_taps', global: [0, 0], depth: -2, normal: towardSun },
             { id: 'normal_bias_toward_sun', global: [5, 5], depth: 0.25, normal: towardSun },
-            { id: 'normal_bias_away_from_sun', global: [5, 5], depth: 0.25, normal: towardSun.clone().negate() }
+            { id: 'normal_bias_away_from_sun', global: [5, 5], depth: 0.25, normal: towardSun.clone().negate() },
+            {
+                id: 'geometric_bias_shifts_xy_and_depth',
+                position: worldFromLight(-0.01, -1.5, 0.9),
+                normal: geometricShiftNormal
+            }
         ];
         const readback = [];
         const composition = [];
         try {
             for (const testCase of cases) {
-                const position = worldAtTexel(testCase.global[0], testCase.global[1], testCase.depth);
+                const position = testCase.position?.clone?.() ?? worldAtTexel(
+                    testCase.global[0],
+                    testCase.global[1],
+                    testCase.depth
+                );
                 const normal = testCase.normal.clone().normalize();
-                const cpu = app.sampleStaticSunDepthWorld(activeSet, position.toArray(), normal.toArray());
+                const cpu = app.sampleStaticSunDepthWorld(
+                    activeSet,
+                    position.toArray(),
+                    normal.toArray(),
+                    { fragmentCoordinatePixels: [1.5, 1.5] }
+                );
                 for (const [materialId, mesh] of Object.entries(meshes)) {
                     meshes.standard.visible = materialId === 'standard';
                     meshes.physical.visible = materialId === 'physical';
@@ -266,6 +296,8 @@ test('AI 531 GPU visibility matches the CPU sampler across world-space and guard
                         cpuStatus: cpu.status,
                         cpuOutOfBoundsTapCount: cpu.outOfBoundsTapCount,
                         cpuAppliedBiasMeters: cpu.appliedBiasMeters,
+                        cpuBiasedWorldPosition: cpu.biasedWorldPosition,
+                        cpuLightPosition: cpu.lightPosition,
                         pixel: [...pixel],
                         gpuVisibility: pixel[0] / 255
                     });
@@ -282,7 +314,12 @@ test('AI 531 GPU visibility matches the CPU sampler across world-space and guard
             for (const testCase of compositionCases) {
                 const position = worldAtTexel(testCase.global[0], testCase.global[1], 0);
                 const normal = testCase.normal.clone().normalize();
-                const cpu = app.sampleStaticSunDepthWorld(activeSet, position.toArray(), normal.toArray());
+                const cpu = app.sampleStaticSunDepthWorld(
+                    activeSet,
+                    position.toArray(),
+                    normal.toArray(),
+                    { fragmentCoordinatePixels: [1.5, 1.5] }
+                );
                 light.intensity = testCase.named;
                 otherLight.intensity = testCase.other;
                 ambientLight.intensity = testCase.ambient;
@@ -332,14 +369,17 @@ test('AI 531 GPU visibility matches the CPU sampler across world-space and guard
         signed_negative_depth_occluded: 0,
         positive_depth_fully_lit: 1,
         empty_texel_fully_lit: 1,
-        internal_boundary_guard_mix: 6 / 9,
-        global_boundary_fail_closed_taps: 4 / 9,
         normal_bias_toward_sun: 0,
-        normal_bias_away_from_sun: 1
+        normal_bias_away_from_sun: 0
     };
     for (const entry of result.readback) {
         expect(entry.cpuStatus, entry.id).toBe('sampled');
-        expect(entry.cpuVisibility, entry.id).toBeCloseTo(expectedCpu[entry.id], 12);
+        if (Object.hasOwn(expectedCpu, entry.id)) {
+            expect(entry.cpuVisibility, entry.id).toBeCloseTo(expectedCpu[entry.id], 12);
+        } else {
+            expect(entry.cpuVisibility, entry.id).toBeGreaterThan(0);
+            expect(entry.cpuVisibility, entry.id).toBeLessThan(1);
+        }
         expect(entry.pixel[3], `${entry.id}/${entry.materialId} alpha`).toBe(255);
         expect(
             Math.abs(entry.gpuVisibility - entry.cpuVisibility),
@@ -347,11 +387,23 @@ test('AI 531 GPU visibility matches the CPU sampler across world-space and guard
         ).toBeLessThanOrEqual(2 / 255);
     }
     const globalEntries = result.readback.filter((entry) => entry.id === 'global_boundary_fail_closed_taps');
-    expect(globalEntries.every((entry) => entry.cpuOutOfBoundsTapCount === 5)).toBe(true);
+    expect(globalEntries.every((entry) => entry.cpuOutOfBoundsTapCount > 0)).toBe(true);
     const toward = result.readback.find((entry) => entry.id === 'normal_bias_toward_sun');
     const away = result.readback.find((entry) => entry.id === 'normal_bias_away_from_sun');
-    expect(toward.cpuAppliedBiasMeters).toBeCloseTo(0, 12);
-    expect(away.cpuAppliedBiasMeters).toBeCloseTo(0.4, 12);
+    expect(toward.cpuAppliedBiasMeters).toBeCloseTo(0.0697915, 12);
+    expect(away.cpuAppliedBiasMeters).toBeCloseTo(0.0697915, 12);
+    const shifted = result.readback.find((entry) => (
+        entry.id === 'geometric_bias_shifts_xy_and_depth'
+    ));
+    expect(shifted.cpuLightPosition[0]).toBeCloseTo(
+        -0.01 + 0.0232 / Math.sqrt(2),
+        6
+    );
+    expect(shifted.cpuLightPosition[1]).toBeCloseTo(-1.5, 6);
+    expect(shifted.cpuLightPosition[2]).toBeCloseTo(
+        0.9 - 0.0232 / Math.sqrt(2),
+        6
+    );
     for (const materialId of ['standard', 'physical']) {
         const sample = (id) => result.composition.find((entry) => entry.id === id && entry.materialId === materialId);
         const namedVisible = sample('named_sun_visible');

@@ -6,6 +6,7 @@ import { createRuntimeFailure } from './IlluminationRuntimeError.js';
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/;
 const MEMORY_FIELDS = Object.freeze([
+    'fetchedCpuBytes',
     'decodedCpuBytes',
     'residentCpuBytes',
     'residentGpuBytes'
@@ -76,16 +77,20 @@ function normalizeResource(resource, index) {
             context: { path: `resources[${index}].sha256`, id }
         });
     }
+    const byteLength = requireByteCount(resource.byteLength, `resources[${index}].byteLength`);
     const memory = requireRecord(resource.memory, `resources[${index}].memory`);
     const normalizedMemory = Object.freeze(Object.fromEntries(MEMORY_FIELDS.map((field) => [
         field,
-        requireByteCount(memory[field], `resources[${index}].memory.${field}`)
+        requireByteCount(
+            field === 'fetchedCpuBytes' ? memory[field] ?? byteLength : memory[field],
+            `resources[${index}].memory.${field}`
+        )
     ])));
     return Object.freeze({
         ...resource,
         id,
         sha256: resource.sha256,
-        byteLength: requireByteCount(resource.byteLength, `resources[${index}].byteLength`),
+        byteLength,
         memory: normalizedMemory
     });
 }
@@ -99,7 +104,7 @@ function computeEstimatedMemory(resources, prewarmMemory) {
         peakCpuBytes = Math.max(
             peakCpuBytes,
             residentCpuBytes
-                + descriptor.byteLength
+                + descriptor.memory.fetchedCpuBytes
                 + descriptor.memory.decodedCpuBytes
                 + descriptor.memory.residentCpuBytes
         );

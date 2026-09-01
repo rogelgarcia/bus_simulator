@@ -1,7 +1,11 @@
 // Composes package fetch/verification, staged resources, and the sole app-owned frame-boundary controller.
 // @ts-check
 
-import { parseIlluminationBinaryPackage } from '../../../app/illumination/package/IlluminationBinaryPackage.js';
+import {
+    parseIlluminationBinaryPackage,
+    parseTransferredIlluminationBinaryPackage,
+    transferIlluminationPackageOwnership
+} from '../../../app/illumination/package/IlluminationBinaryPackage.js';
 import { ILLUMINATION_MAX_PACKAGE_BYTES } from '../../../app/illumination/package/IlluminationPackageConstants.js';
 import { IlluminationPackageError } from '../../../app/illumination/package/IlluminationPackageError.js';
 import { createIlluminationModeController } from '../../../app/illumination/runtime/IlluminationModeController.js';
@@ -23,7 +27,8 @@ const DEFAULT_MEMORY_LIMITS = Object.freeze({
     peakGpuBytes: 384 * MIB
 });
 const DEFAULT_MAX_PACKAGE_BYTES = 64 * MIB;
-const PACKAGE_TRUST_BOUNDARY_COPY_FACTOR = 3;
+const DEFENSIVE_PACKAGE_COPY_FACTOR = 3;
+const TRANSFERRED_PACKAGE_COPY_FACTOR = 1;
 const REQUIRED_RUNTIME_IDENTITY_FIELDS = Object.freeze([
     'cityId',
     'lightingProfileId',
@@ -38,6 +43,27 @@ const RUNTIME_EXPECTATION_FIELDS = new Set([
     'staticSunDepthSourceSha256'
 ]);
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+
+/**
+ * Explicitly certifies that every value returned by this fetcher is fresh,
+ * exclusively owned, and may have its backing ArrayBuffer detached.
+ * Cached, shared, or caller-retained byte views must not use this marker.
+ * @template {Function} T
+ * @param {T} fetchPackage
+ * @returns {T}
+ */
+export function markIlluminationPackageFetcherAsTransferOwned(fetchPackage) {
+    if (typeof fetchPackage !== 'function') {
+        throw new TypeError('Illumination runtime fetchPackage must be a function');
+    }
+    Object.defineProperty(fetchPackage, 'transferOwnership', {
+        configurable: false,
+        enumerable: false,
+        value: true,
+        writable: false
+    });
+    return fetchPackage;
+}
 
 /**
  * @param {{
@@ -66,6 +92,11 @@ export function createIlluminationRuntime(options) {
     if (fetchPackage !== null && typeof fetchPackage !== 'function') {
         throw new TypeError('Illumination runtime fetchPackage must be a function');
     }
+    const transfersFetchOwnership = fetchPackage === null
+        || /** @type {any} */ (fetchPackage).transferOwnership === true;
+    const packageCopyFactor = transfersFetchOwnership
+        ? TRANSFERRED_PACKAGE_COPY_FACTOR
+        : DEFENSIVE_PACKAGE_COPY_FACTOR;
     const prewarm = options.prewarm ?? (() => undefined);
     const commitSnapshot = options.commitSnapshot ?? (() => true);
     const validateResourcePlan = options.validateResourcePlan
@@ -108,7 +139,8 @@ export function createIlluminationRuntime(options) {
                 const maximumLoadPackageBytes = maximumPackageBytesForWorkingSet(
                     maximumPackageBytes,
                     memoryLimits.peakCpuBytes,
-                    fetchBaselineMemory.cpuBytes
+                    fetchBaselineMemory.cpuBytes,
+                    packageCopyFactor
                 );
                 if (maximumLoadPackageBytes <= 0) {
                     throw packageWorkingSetFailure('locating', {
@@ -118,7 +150,7 @@ export function createIlluminationRuntime(options) {
                 }
                 loadReservation.cpuBytes = multiplyByteCount(
                     maximumLoadPackageBytes,
-                    PACKAGE_TRUST_BOUNDARY_COPY_FACTOR
+                    packageCopyFactor
                 );
                 let packageBytes;
                 let fetchedValue;
@@ -162,16 +194,26 @@ export function createIlluminationRuntime(options) {
                 }
                 const packageByteLength = packageBytes.byteLength;
                 const packageBackingByteLength = packageBytes.buffer.byteLength;
+                let transferredPackageLease = null;
+                let packageResidentCpuBytes = packageByteLength;
+                let trustBoundaryReservationCpuBytes;
+                if (transfersFetchOwnership) {
+                    transferredPackageLease = transferIlluminationPackageOwnership(packageBytes);
+                    packageBytes = null;
+                    packageResidentCpuBytes = transferredPackageLease.backingByteLength;
+                    trustBoundaryReservationCpuBytes = transferredPackageLease.transferPeakCpuBytes;
+                } else {
+                    trustBoundaryReservationCpuBytes = addByteCounts(
+                        packageBackingByteLength,
+                        packageByteLength,
+                        packageByteLength
+                    );
+                }
                 const trustBoundaryBaselineMemory = getConcurrentBaselineMemory(
                     baselineMemory,
                     liveResourceSets,
                     inFlightLoadReservations,
                     loadReservation
-                );
-                const trustBoundaryReservationCpuBytes = addByteCounts(
-                    packageBackingByteLength,
-                    packageByteLength,
-                    packageByteLength
                 );
                 const trustBoundaryPeakCpuBytes = addByteCounts(
                     trustBoundaryBaselineMemory.cpuBytes,
@@ -192,14 +234,21 @@ export function createIlluminationRuntime(options) {
                 const validateStarted = now(options.now);
                 let parsed;
                 try {
-                    parsed = await parseIlluminationBinaryPackage(packageBytes, {
+                    const parseOptions = {
                         expectations,
                         runtimeCapabilities: capabilities.ids
-                    });
+                    };
+                    parsed = transferredPackageLease
+                        ? await parseTransferredIlluminationBinaryPackage(
+                            transferredPackageLease,
+                            parseOptions
+                        )
+                        : await parseIlluminationBinaryPackage(packageBytes, parseOptions);
                 } catch (error) {
                     throw mapPackageError(error);
                 } finally {
                     packageBytes = null;
+                    transferredPackageLease = null;
                 }
                 const packageValidateMs = elapsed(options.now, validateStarted);
                 lastParsedIdentity = freezeParsedIdentity(parsed);
@@ -240,10 +289,13 @@ export function createIlluminationRuntime(options) {
                     loadReservation
                 );
                 const stagingBaselineMemory = addRuntimeMemory(stagingExternalBaselineMemory, {
-                    cpuBytes: packageByteLength,
+                    cpuBytes: packageResidentCpuBytes,
                     gpuBytes: 0
                 });
-                loadReservation.cpuBytes = addByteCounts(packageByteLength, estimatedPlanMemory.peakCpuBytes);
+                loadReservation.cpuBytes = addByteCounts(
+                    packageResidentCpuBytes,
+                    estimatedPlanMemory.peakCpuBytes
+                );
                 loadReservation.gpuBytes = estimatedPlanMemory.peakGpuBytes;
                 hooks.reportPhase('decoding');
                 const reader = createIlluminationPackageChunkReader(parsed);
@@ -548,12 +600,17 @@ function getConcurrentBaselineMemory(configuredBaseline, liveResourceSets, reser
     );
 }
 
-/** @param {number} maximumPackageBytes @param {number | null} peakCpuBytes @param {number} baselineCpuBytes */
-function maximumPackageBytesForWorkingSet(maximumPackageBytes, peakCpuBytes, baselineCpuBytes) {
+/** @param {number} maximumPackageBytes @param {number | null} peakCpuBytes @param {number} baselineCpuBytes @param {number} copyFactor */
+function maximumPackageBytesForWorkingSet(
+    maximumPackageBytes,
+    peakCpuBytes,
+    baselineCpuBytes,
+    copyFactor
+) {
     if (peakCpuBytes === null) return maximumPackageBytes;
     const available = peakCpuBytes - baselineCpuBytes;
     if (available <= 0) return 0;
-    return Math.min(maximumPackageBytes, Math.floor(available / PACKAGE_TRUST_BOUNDARY_COPY_FACTOR));
+    return Math.min(maximumPackageBytes, Math.floor(available / copyFactor));
 }
 
 /** @param {number} value @param {number} factor */

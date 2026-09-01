@@ -80,6 +80,17 @@ export class ShadowCasterCuller {
         this.stats.total = this._entries.length;
     }
 
+    /**
+     * Snapshot the casters captured before camera-dependent culling mutates
+     * their `castShadow` flags. The returned array is detached and immutable so
+     * callers cannot alter the culler's inventory.
+     *
+     * @returns {ReadonlyArray<any>}
+     */
+    getIndexedCasterMeshes() {
+        return Object.freeze(this._entries.map((entry) => entry.mesh));
+    }
+
     /** Forget every indexed caster, restoring each one's shadow casting. */
     clear() {
         this.restore();

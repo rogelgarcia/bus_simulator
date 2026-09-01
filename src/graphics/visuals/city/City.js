@@ -22,6 +22,10 @@ import { getResolvedShadowSettings, getShadowQualityPreset } from '../../lightin
 import { registerObjectForSceneShadows, setActiveSceneShadowSystem, getActiveSceneShadowSystem } from '../../lighting/SceneShadowMaterials.js';
 import { CityCascadedShadows } from './CityCascadedShadows.js';
 import { ShadowCasterCuller } from '../../lighting/ShadowCasterCulling.js';
+import {
+    STATIC_SUN_DEPTH_CASTER_SIDEDNESS,
+    resolveStaticSunDepthEffectiveShadowSide
+} from '../../lighting/EffectiveShadowSide.js';
 import { buildMergedShadowCasters, collectInstancedShadowCasters, setInstancedShadowCastersEnabled, setMergedShadowCastersEnabled, summarizeMergedShadowCasters } from '../../lighting/ShadowCasterMerge.js';
 import { azimuthElevationDegToDir } from '../atmosphere/SunDirection.js';
 import { getResolvedBuildingWindowVisualsSettings } from '../buildings/BuildingWindowVisualsSettings.js';
@@ -50,21 +54,23 @@ const ZERO_VEC = new THREE.Vector3(0, 0, 0);
 const UP_DEFAULT = new THREE.Vector3(0, 1, 0);
 const UP_ALT = new THREE.Vector3(0, 0, 1);
 
-function applyShadowSideToObject(root, shadowSide) {
+function applyShadowSideToObject(root, useStaticSunDepthCasterSidedness) {
     if (!root?.traverse) return;
 
     root.traverse((o) => {
-        if (!o || !o.isMesh || !o.material || !o.castShadow) return;
+        if (!o || !o.isMesh || !o.material) return;
 
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         for (const mat of mats) {
             if (!mat || typeof mat !== 'object' || !('shadowSide' in mat)) continue;
-            const preserveShadowSide = mat.userData?.preserveShadowSide === true || mat.userData?.isFoliage === true;
-
-            if (shadowSide !== null && shadowSide !== undefined) {
-                if (preserveShadowSide) continue;
+            if (useStaticSunDepthCasterSidedness && o.castShadow) {
                 if (!MATERIAL_SHADOW_SIDE_ORIGINAL.has(mat)) MATERIAL_SHADOW_SIDE_ORIGINAL.set(mat, mat.shadowSide ?? null);
-                mat.shadowSide = shadowSide;
+                mat.shadowSide = resolveStaticSunDepthEffectiveShadowSide({
+                    side: mat.side,
+                    shadowSide: MATERIAL_SHADOW_SIDE_ORIGINAL.get(mat),
+                    preserveShadowSide: mat.userData?.preserveShadowSide === true,
+                    isFoliage: mat.userData?.isFoliage === true
+                }, STATIC_SUN_DEPTH_CASTER_SIDEDNESS);
                 continue;
             }
 
@@ -619,7 +625,7 @@ export class City {
             }
 
             const wantsTwoSided = enabled && preset.twoSidedCasting;
-            applyShadowSideToObject(this.group, wantsTwoSided ? THREE.DoubleSide : null);
+            applyShadowSideToObject(this.group, wantsTwoSided);
             settingsApplied = true;
         } finally {
             if (refreshStarted) staticSunCasterController?.afterShadowSettings?.(settingsApplied);
@@ -772,6 +778,45 @@ export class City {
         if (!root) return;
         this._extraShadowRoots.add(root);
         if (this._csm) registerObjectForSceneShadows(root);
+    }
+
+    /**
+     * Return the stable authored static-caster inventory used by offline and
+     * diagnostic depth capture. Unlike live `castShadow`, this snapshot is not
+     * changed by camera-dependent shadow culling. Merged and optional instance
+     * caster switches are resolved back to their original source semantics.
+     *
+     * @returns {ReadonlyArray<any>}
+     */
+    getStaticSunDepthCasterMeshes() {
+        const authored = new Map();
+        for (const entry of (this._shadowMerge ?? [])) {
+            if (entry?.merged) authored.set(entry.merged, false);
+            for (const source of (entry?.sources ?? [])) authored.set(source, true);
+        }
+        for (const entry of (this._instancedCasters ?? [])) {
+            if (entry?.mesh) authored.set(entry.mesh, entry.originalCast === true);
+        }
+        for (const mesh of (this._shadowCuller?.getIndexedCasterMeshes?.() ?? [])) {
+            if (mesh && !authored.has(mesh)) authored.set(mesh, true);
+        }
+        this.group?.traverse?.((object) => {
+            if (object?.isMesh && !authored.has(object)) {
+                authored.set(object, object.castShadow === true);
+            }
+        });
+        return Object.freeze(
+            Array.from(authored, ([mesh, enabled]) => enabled ? mesh : null)
+                .filter(Boolean)
+        );
+    }
+
+    /** Return authored shadowSide even while live two-sided casting is active. */
+    getStaticSunDepthAuthoredMaterialShadowSide(material) {
+        if (!material || typeof material !== 'object') return null;
+        return MATERIAL_SHADOW_SIDE_ORIGINAL.has(material)
+            ? MATERIAL_SHADOW_SIDE_ORIGINAL.get(material)
+            : material.shadowSide ?? null;
     }
 
     enableStaticVisibility(engine, settings = null) {

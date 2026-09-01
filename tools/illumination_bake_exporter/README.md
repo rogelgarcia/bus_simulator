@@ -39,13 +39,21 @@ artifact until a later AI owns shipped runtime assets.
 
 ## Determinism and authority
 
-The v1 container uses canonical sorted-key UTF-8 JSON and exact little-endian
+The authoritative semantic manifest is
+`bus-sim-illumination-bake-input-v2`: `schemaVersion` is `2` and its semantic
+`containerVersion` is `{ "major": 2, "minor": 0 }`. It is stored inside the
+byte-compatible `ILBSRC01` low-level framing and fixed header version `1`.
+Low-level header version 1 does not mean semantic V1; semantic V1 manifests are
+rejected by V2 consumers. See the normative
+[`illumination_bake_input` contract](../../specs/graphics/illumination_bake_input.md).
+
+The container uses canonical sorted-key UTF-8 JSON and exact little-endian
 typed buffers. Stable source IDs, provenance, instance transforms, material
-groups, texture/alpha inputs, participant/caster/receiver semantics, and separate SHA-256
-freshness domains are preserved. GLB is not the canonical source package: its
-exporter/container normalization does not retain every custom attribute and
-identity contract with stable bytes. A later diagnostic GLB derivative may be
-created from this authoritative package.
+groups, texture/alpha inputs, participant/caster/receiver semantics, and
+separate SHA-256 freshness domains are preserved. GLB is not the canonical
+source package: its exporter/container normalization does not retain every
+custom attribute and identity contract with stable bytes. A later diagnostic
+GLB derivative may be created from this authoritative package.
 
 The exporter constructs two independent, fully prewarmed production gameplay
 cities by default and requires their canonical manifests, inventories, source

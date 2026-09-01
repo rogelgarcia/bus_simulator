@@ -13,6 +13,12 @@ The feature is internal/development opt-in. `current` remains the permanent
 fallback and performs no package request, shader mutation, or caster handoff.
 AI 532 owns bus sampling and AI 535 owns player-facing Options behavior.
 
+The AI 528 semantic source is
+`bus-sim-illumination-bake-input-v2` with `schemaVersion: 2` and semantic
+container version 2.0. Its byte-compatible `ILBSRC01` framing and fixed binary
+header remain low-level version 1; that framing version does not make a
+semantic V1 manifest acceptable.
+
 ## V1 channel identity
 
 The channel descriptor schema is `static-sun-depth-tile-set-v1`; its channel ID
@@ -24,9 +30,22 @@ semantic strings reject validation. The immutable identity contains:
 - one normalized point direction from a world receiver toward the named sun;
 - a stable world-to-light basis and origin;
 - the complete row-major tile inventory, half-open global and per-tile bounds,
-  square interior resolution, guard width, texel density, and payload hashes;
+  per-axis interior resolution, guard width, isotropic texel density, and
+  payload hashes;
 - signed light-depth range and exact RG8 quantization/empty representation; and
 - comparison, empty, out-of-bounds, bias, and PCF policy.
+
+The resolved-source channel profile additionally authenticates
+`casterSidedness` as
+`three-r183-effective-shadow-side-v1` with `twoSidedCasting: true`
+and preservation semantics
+`material-userdata-preserveShadowSide-or-isFoliage-v1`. Each selected
+caster mapping retains authored `side`/`shadowSide` and carries
+the independently verifiable combined preservation flag plus
+`effectiveShadowSide`. Lab and Cycles depth capture use that effective
+side, while ordinary visible reconstruction keeps the authored side. Any
+missing field, invalid Three side enum, policy drift, or recomputation mismatch
+rejects the source before baking.
 
 Activation additionally compares the AI 530 city, lighting profile, capability
 profile, resolved-source identity, and the `static_sun_depth` channel-source
@@ -57,13 +76,14 @@ length.
 
 World points are translated by `originWorld` and dotted with right, up, and
 depth. XY lookup uses minimum-inclusive, maximum-exclusive bounds. Tiles are
-ordered by increasing light-space Y and then X. Each tile has a square interior
-and an equal guard on all four edges. The hashed V1 guard policy copies the
-owning adjacent tile's interior texels across internal seams and clamps to the
-nearest domain-edge interior texel at exterior edges. A guard must cover the
-entire PCF radius; runtime mip generation and implicit linear filtering are
-forbidden in V1. CPU activation verifies every internal, exterior, and corner
-guard against the complete resident set before exposing it to sampling.
+ordered by increasing light-space Y and then X. Every layer has the same
+rectangular per-axis interior and one isotropic texel pitch, with an equal
+scalar guard on all four edges. The hashed V1 guard policy copies the owning
+adjacent tile's interior texels across internal seams and clamps to the nearest
+domain-edge interior texel at exterior edges. A guard must cover the entire PCF
+radius; runtime mip generation and implicit linear filtering are forbidden in
+V1. CPU activation verifies every internal, exterior, and corner guard against
+the complete resident set before exposing it to sampling.
 
 The runtime resource is one WebGL2 `DataArrayTexture`, one layer per tile, with
 `RG8`, nearest minification/magnification, no mipmaps, lower-left row origin,
@@ -104,10 +124,46 @@ bytes are sufficient for every chosen depth range.
 ## Bias and softness
 
 V1 chooses one point-direction depth field. It does not model the angular area
-of the sun and does not claim physical penumbrae. Its only softness option is a
-deterministic nearest box kernel with radius 0 or 1 texel (1×1 or 3×3).
+of the sun and does not claim physical penumbrae. Filter semantics are explicit
+hashed identity. `square-nearest-box-v1` preserves the original deterministic
+radius-0/radius-1 cache-texel kernel. It is not interchangeable with
+`three-r183-vogel-5-linear-compare-v1`, which reproduces the live directional
+filter used by the pinned renderer:
 
-Receiver bias is:
+```text
+phi = IGN(gl_FragCoord.xy) * 2*pi
+IGN(p) = fract(52.9829189 * fract(dot(p, (0.06711056, 0.00583715))))
+r(i) = sqrt((i + 0.5) / 5)
+theta(i) = i * 2.399963229728653 + phi
+offset(i) = (cos(theta), sin(theta)) * r(i) * radiusTexels
+visibility = mean(five hardware-linear shadow comparisons)
+```
+
+Each hardware-linear shadow lookup is emulated as four depth comparisons with
+the exact bilinear weights; interpolating encoded RG bytes is forbidden. The
+identity stores sample count 5, radius, source shadow-map texture size and
+world extent, `gl_FragCoord`/IGN rotation semantics, the four-compare policy,
+and the source map's right/up world axes. Those axes must equal the canonical
+Three r183 directional-camera roll derived from the sun direction and default
+world-up vector. The runtime transforms that finite disk into cache-light XY;
+it never assumes the cache basis has the same roll. Integer comparison taps
+resolve through the complete tile grid, including an adjacent array layer at a
+tile seam. Taps outside the global cache domain remain fail-closed.
+
+The AI 531 Lab oracle derives and hashes the actual live source texture size,
+because a host may cap the `single_high` request to its device limit. It
+asserts a 680×680 m camera extent and `radiusTexels = 1.5`, and rejects any
+difference between its recorded size/extent/radius/axes and the live camera.
+Device-capped Lab evidence identifies that observed capability and cannot
+certify a differently sized production source. Production v4 explicitly pins
+`three-r183-single-high-effective-16384-v1`, a 16384×16384 source map, exact
+`680 / 16384 = 0.04150390625` m pitch, and exact 0.062255859375 m disk
+radius. Offline producers derive the same canonical source axes from the
+profile sun direction; no live camera state or camera-relative roll is needed.
+
+Bias semantics are versioned and field-exact. Existing
+`constant-plus-normal-offset-v1` packages retain their original fragment-depth
+formula:
 
 ```text
 constantMeters + normalOffsetScaleMeters *
@@ -119,6 +175,30 @@ The comparison is
 values are hashed channel identity, not mutable ambient settings. Production
 promotion must reject acne, peter-panning, halos, leaks, and seam hiding caused
 by unmeasured bias or blur.
+
+The parity candidate
+`geometric-normal-offset-plus-constant-depth-relief-v1` is explicitly different.
+It matches Three r183 shadow bias order:
+
+```text
+biasedWorldPosition = worldPosition
+    + geometricReceiverNormalWorld * geometricNormalOffsetMeters
+biasedLightPosition = worldToLight(biasedWorldPosition)
+visible = biasedLightPosition.depth - constantDepthReliefMeters
+    <= storedCasterDepthMeters
+```
+
+`geometricReceiverNormalWorld` is the geometric/interpolated normal produced by
+Three's vertex shadow path (`transformedNormal` converted to world space). It is
+not the fragment shading normal and never includes a normal map. The world-space
+offset occurs before projection, so both light-space XY lookup and depth move;
+replacing it with a dot-product-only depth adjustment is not equivalent. The
+AI 531 Lab oracle uses `geometricNormalOffsetMeters = 0.0232` and
+`constantDepthReliefMeters = 0.0697915`, the exact `single_high` r183 values for
+its 1..1440 m shadow camera. CPU callers must pass the same geometric receiver
+normal that the vertex path interpolates. Legacy and geometric fields cannot be
+mixed, and a Lab report for one model cannot certify a package hashed with the
+other.
 
 ## Shader composition
 
@@ -174,9 +254,12 @@ frame boundary. Replacing or removing the engine pipeline synchronously calls
 its uninstall contract before transferring ownership; a failed uninstall keeps
 the previous pipeline installed. The static-sun pipeline also listens for
 `webglcontextlost`, restores current ownership synchronously, and unregisters
-the listener on disposal. The generic arbitrary-world sampler has only
-position and receiver-normal inputs and contains no bus, route, or entity
-policy.
+the listener on disposal. The generic arbitrary-world sampler contains no bus,
+route, or entity policy. Its receiver normal is the same interpolated geometric
+vertex normal defined above. The screen-rotated Three r183 filter additionally
+requires exact `fragmentCoordinatePixels` corresponding to `gl_FragCoord.xy`;
+missing or malformed screen context fails closed and never substitutes
+world-space noise. The square filter needs no screen context.
 
 While active, the pipeline rechecks the exact receiver material set and rejects
 new unsupported/unhooked materials or newly shared outside-root materials
@@ -185,30 +268,66 @@ receiver checks are exception-contained; an accessor/proxy/traversal failure is
 an identity failure that restores current ownership instead of escaping with
 casters suppressed.
 
-## Production sizing decision
+## Production exact-parity sizing decision
 
 The authoritative AI 528 inventory establishes a roughly 600 m city and
-2,275,142 expanded triangles, but the checked AI 529 sun-depth output is only a
-32×32 proof. The following is therefore a bounded production candidate, not a
-promoted layout or visual-quality result:
+2,275,142 expanded triangles, but the checked AI 529 sun-depth output remains a
+32×32 proof. Production v4 therefore fixes an exact layout contract and package
+model; it does not claim that a full-city artifact or its visual result has
+been measured.
 
-| Item | Candidate | Reason |
+The versioned chain is exact: the resolved-source channel is
+`bus-sim-static-sun-depth-source-v4`, the request is
+`ai531-static-sun-production-request-v4`, the raw Blender receipt is
+`ai531-static-sun-production-render-receipt-v4`, and the normalized receipt is
+`bus-sim-static-sun-depth-production-blender-receipt-v4`. Older request or
+receipt schemas cannot certify this layout.
+
+Strict comparison evidence rejects the phase-locked 65:64 pitch candidate: a
+periodic rational lattice is not strict current/cache parity. The selected
+cache pitch is exactly the live 16384-over-680 m source pitch, so the ratio is
+1:1. On both light-space axes the authenticated minimum bound must satisfy:
+
+```text
+(boundsLightMeters.min[axis]
+    + dot(originWorld, basisAxisWorld[axis])) / 0.04150390625
+    is an integer texel-edge coordinate
+```
+
+That phase rule is `absolute-stable-basis-texel-edge-lattice-v1` and is
+validated again from the normalized receipt and final descriptor.
+
+| Item | Production v4 contract/model | Reason |
 |---|---:|---|
-| Covered square | 640×640 m | Ten 64 m tiles per axis cover the approximately 600 m city with an explicit edge margin |
-| Tile grid | 10×10 (100 layers) | Below the V1 256-layer target and preserves bounded spatial diagnostics |
-| Interior | 544×544 texels/layer | 0.117647 m/texel; a 3×3 kernel spans about 0.353 m |
-| Guard | 4 texels/edge | Covers radius-1 PCF and leaves room for deterministic edge duplication |
-| Stored layer | 552×552 RG8 | Nearest, base mip only |
-| Full payload/GPU logical bytes | 60,940,800 B (58.12 MiB) | Fits AI 530's 64 MiB single-chunk ceiling with 6,168,064 B headroom |
-| Depth quantization | `range / 65534`, half-unit max | The actual measured city light-depth range must set and certify this value |
+| Source/cache texel pitch | 0.04150390625 m; exact 1:1 | Equals `680 / 16384`; no rational resampling phase remains |
+| Interior per layer | [1870, 1821] texels | Rectangular dimensions retain exact isotropic pitch while fitting the immutable package cap |
+| Tile size | [77.6123046875, 75.57861328125] m | Exact interior dimensions multiplied by the exact pitch |
+| Guard | 4 texels/edge | Stored symmetrically on every rectangular layer |
+| Stored layer | [1878, 1829] RG8 | 6,869,724 exact logical bytes per layer |
+| Modeled tile array | 77 row-major layers | Below the V1 256-layer ceiling |
+| Full payload/GPU logical bytes | 528,968,748 B (504.46 MiB) | Exact guarded RG8 dimensions × 77 layers |
+| Canonical layer-window chunks | 9 total: [9, 9, 9, 9, 9, 9, 9, 9, 5] layers | A 9-layer chunk is 61,827,516 B; 10 layers would exceed the immutable 64 MiB chunk cap |
+| Modeled package | 529,189,392 B (504.67 MiB) | Leaves 7,681,520 B below the immutable 536,870,912 B (512 MiB) package cap |
+| Depth quantization | `range / 65534`, half-unit max | The measured city light-depth range must set and certify this value |
 
-A denser 960-interior, 10×10 RG8 layout would require 187,404,800 bytes
-(178.72 MiB) before package metadata. It is below the broad 256 MiB steady GPU
-budget but violates AI 530's 64 MiB single-chunk/first-activation target and is
-not selected. The 544-interior candidate still requires an exact fresh AI 528
-export, measured light-space bounds, a production AI 529 tiled bake, alpha
-parity, current-shadow comparisons, load/upload profiling, and a device layer
-limit check before promotion.
+The package cap is not raised. Only the internal
+`development.static_sun_v1` capability profile admits this candidate's static
+logical limits:
+
+| Static-sun development limit | Value |
+|---|---:|
+| Steady CPU | 512 MiB |
+| Steady GPU | 512 MiB |
+| Peak CPU during atomic replacement | 1536 MiB |
+| Peak GPU during atomic replacement | 1024 MiB |
+
+Those limits require the transfer-owned production fetch path during atomic
+replacement. They account for declared package and RG8 resource bytes, not
+JavaScript/process overhead or physical GPU residency. Generic runtime defaults
+and the framework's player-selectable promotion gates remain unchanged. The
+modeled package exceeds the normal 256 MiB promoted disk target and cannot
+satisfy first-activation network policy without reduction or streaming, so this
+tier remains internal even if correctness validation passes.
 
 ## Alpha and caster release gate
 
@@ -244,10 +363,12 @@ CPU/runtime sampling. They do not prove production city coverage:
 | Browser CPU/GPU sampler parity | 14 WebGL2 readbacks (Standard + Physical) passed within 2/255 across rotated basis/origin, signed and empty depths, fully lit/occluded PCF, internal guards, global edges, and normal bias |
 | Browser composition scope | 10 final-color readbacks prove named-sun visible/occluded contrast while a non-aligned directional light, ambient light, and emissive remain visible for Standard + Physical |
 | Atomic negative coverage | Whole-package corruption, forged per-layer hash, valid-hash invalid guards, stale request identity, live-source drift/exception, receiver-material drift, exact-city compile failure, context loss, and pipeline removal all retain/restore current |
+| Strict density/phase evidence | Exact 0.04150390625 m source/cache pitch, 1:1 ratio, and integral stable-basis texel-edge phase are required; the phase-locked 65:64 candidate failed strict parity and is rejected |
+| Production logical layout/package | [1870, 1821] interior, [1878, 1829] stored, 77 layers, 528,968,748 B payload, nine [9×8, 5] layer-window chunks, and 529,189,392 B modeled package; no production artifact is claimed |
 | Physical GPU memory | `not measured` — WebGL2 exposes no portable authoritative counter |
 | Full-city image error and missing occluders | `not measured` — no production tiled bake exists |
-| Current/cache frame and shadow-pass timings | `not measured` — the fixture is not representative |
-| Full-city disk/load/decode/upload/residency | `not measured` — the production package is absent |
+| Current/cache frame and shadow-pass timings | `not measured` for promotion — the machine has concurrent processes and a shared GPU, and the fixture is not representative |
+| Full-city disk/load/decode/upload/residency | 529,189,392 B disk and 528,968,748 B logical RG8 residency are modeled; actual load/decode/upload time and physical residency are `not measured` because the production artifact is absent and the GPU session is shared |
 | Alpha-cutout parity | `not measured` — proof output cannot release production foliage |
 
 Production promotion requires the immutable validation catalog, same-session

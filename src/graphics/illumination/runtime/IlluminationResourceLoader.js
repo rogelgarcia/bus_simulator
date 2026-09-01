@@ -16,6 +16,7 @@ import {
 } from './ResourcePlan.js';
 import { createRuntimeDiagnostics } from './RuntimeDiagnostics.js';
 import { createStagedIlluminationResources } from './StagedIlluminationResources.js';
+import { isTrustedIlluminationPackageSegmentedBytes } from './IlluminationPackagePlan.js';
 
 export const ILLUMINATION_RUNTIME_STATES = Object.freeze([
     'unavailable',
@@ -51,6 +52,8 @@ function requireFunction(value, name) {
 }
 
 function bytesFrom(value, resourceId) {
+    if (isTrustedIlluminationPackageSegmentedBytes(value)) return value;
+    if (value instanceof Uint8Array) return value;
     if (value instanceof ArrayBuffer) return new Uint8Array(value);
     if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
     throw createRuntimeFailure('fetch_result_invalid', `Fetch result for '${resourceId}' did not provide binary bytes.`, {
@@ -69,12 +72,29 @@ function normalizeFetchResult(value, resourceId) {
                 context: { resourceId }
             });
         }
+        const bytes = bytesFrom(value.bytes, resourceId);
+        const cpuBytes = value.cpuBytes ?? bytes.byteLength;
+        if (!Number.isSafeInteger(cpuBytes) || cpuBytes < 0) {
+            throw createRuntimeFailure('fetch_result_invalid', `Fetch result CPU byte count for '${resourceId}' is invalid.`, {
+                phase: 'fetching',
+                reason: 'fetch_failure',
+                context: { resourceId, actual: cpuBytes ?? null }
+            });
+        }
         return Object.freeze({
-            bytes: bytesFrom(value.bytes, resourceId),
+            bytes,
+            cpuBytes,
+            ownership: value.ownership ?? 'owned-fetch-snapshot-v1',
             dispose: value.dispose ?? null
         });
     }
-    return Object.freeze({ bytes: bytesFrom(value, resourceId), dispose: null });
+    const bytes = bytesFrom(value, resourceId);
+    return Object.freeze({
+        bytes,
+        cpuBytes: bytes.byteLength,
+        ownership: 'owned-fetch-snapshot-v1',
+        dispose: null
+    });
 }
 
 function normalizeDecodeResult(value, descriptor) {
@@ -262,8 +282,8 @@ function frozenStatus({ generation, planId, state, phase, reason, causeState = n
 /**
  * @param {{
  *   fetchResource: (descriptor: Readonly<Record<string, any>>, context: Readonly<Record<string, any>>) => unknown | Promise<unknown>,
- *   hashResource: (bytes: Uint8Array, context: Readonly<Record<string, any>>) => string | Promise<string>,
- *   decodeResource: (bytes: Uint8Array, descriptor: Readonly<Record<string, any>>, context: Readonly<Record<string, any>>) => unknown | Promise<unknown>,
+ *   hashResource: (bytes: unknown, context: Readonly<Record<string, any>>) => string | Promise<string>,
+ *   decodeResource: (bytes: unknown, descriptor: Readonly<Record<string, any>>, context: Readonly<Record<string, any>>) => unknown | Promise<unknown>,
  *   createResource: (decoded: unknown, descriptor: Readonly<Record<string, any>>, context: Readonly<Record<string, any>>) => unknown | Promise<unknown>,
  *   prewarm: (resources: Readonly<Record<string, any>>, context: Readonly<Record<string, any>>) => unknown | Promise<unknown>,
  *   checkCapabilities?: (required: readonly string[], available: unknown, context: Readonly<Record<string, any>>) => unknown | Promise<unknown>,
@@ -364,7 +384,7 @@ export function createIlluminationResourceLoader({
                 })), descriptor.id);
                 const fetchAllocation = diagnostics.allocate({
                     id: `fetch/${descriptor.id}`,
-                    cpuBytes: fetched.bytes.byteLength,
+                    cpuBytes: fetched.cpuBytes,
                     gpuBytes: 0,
                     resident: false
                 });
@@ -373,8 +393,24 @@ export function createIlluminationResourceLoader({
                     dispose: fetched.dispose,
                     allocationToken: fetchAllocation
                 });
-                diagnostics.recordResource(descriptor.id, { fetchedBytes: fetched.bytes.byteLength });
+                diagnostics.recordResource(descriptor.id, {
+                    fetchedBytes: fetched.bytes.byteLength,
+                    fetchedCpuBytes: fetched.cpuBytes,
+                    fetchOwnership: fetched.ownership
+                });
                 assertActualMemoryFits(diagnostics.snapshot(), plan.id);
+                if (fetched.cpuBytes !== descriptor.memory.fetchedCpuBytes) {
+                    throw createRuntimeFailure('fetched_memory_mismatch', `Fetched CPU bytes for '${descriptor.id}' do not match its verified plan.`, {
+                        phase: 'fetching',
+                        reason: 'validation_failure',
+                        context: {
+                            planId: plan.id,
+                            resourceId: descriptor.id,
+                            expected: descriptor.memory.fetchedCpuBytes,
+                            actual: fetched.cpuBytes
+                        }
+                    });
+                }
                 if (fetched.bytes.byteLength !== descriptor.byteLength) {
                     throw createRuntimeFailure('resource_byte_length_mismatch', `Fetched byte length for '${descriptor.id}' does not match its verified plan.`, {
                         phase: 'validating',

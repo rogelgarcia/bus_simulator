@@ -7,5 +7,9 @@ export * from './IlluminationEncoding.js';
 export * from './IlluminationPackageManifest.js';
 export * from './IlluminationChunkTable.js';
 export * from './IlluminationPackageCompatibility.js';
-export * from './IlluminationBinaryPackage.js';
+export {
+    buildIlluminationBinaryPackage,
+    parseIlluminationBinaryPackage,
+    verifyIlluminationBinaryPackage
+} from './IlluminationBinaryPackage.js';
 export * from './RawSha256.js';

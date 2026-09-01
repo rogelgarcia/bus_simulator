@@ -8,6 +8,10 @@ import {
 } from '../../../src/app/illumination/bake_source/CanonicalJson.js';
 import { createStableInventory } from '../../../src/app/illumination/bake_source/StableInventory.js';
 import { failCompiler } from './CompilerErrors.mjs';
+import {
+    requireStaticSunDepthCasterSidedness,
+    resolveStaticSunDepthEffectiveShadowSide
+} from '../../../src/graphics/lighting/EffectiveShadowSide.js';
 
 export const RECONSTRUCTION_PLAN_SCHEMA = 'bus-sim-illumination-reconstruction-plan-v1';
 export const RECONSTRUCTION_MODE = 'scripted_clean_scene_v1';
@@ -36,8 +40,8 @@ const SUPPORTED_MIN_FILTERS = new Set([1003, 1004, 1005, 1006, 1007, 1008]);
  */
 export function createReconstructionPlan(manifestValue, options = {}) {
     const manifest = requireObject(manifestValue, 'Resolved-city manifest');
-    if (manifest.format !== 'bus-sim-illumination-bake-input-v1' || manifest.schemaVersion !== 1) {
-        failCompiler('reconstruction_input_version_unsupported', 'Reconstruction requires a validated AI 528 V1 manifest.', {
+    if (manifest.format !== 'bus-sim-illumination-bake-input-v2' || manifest.schemaVersion !== 2) {
+        failCompiler('reconstruction_input_version_unsupported', 'Reconstruction requires a validated bake-input V2 manifest.', {
             format: manifest.format ?? null,
             schemaVersion: manifest.schemaVersion ?? null
         });
@@ -120,7 +124,12 @@ export function createReconstructionPlan(manifestValue, options = {}) {
         materials,
         alphaInputs,
         textures: inventories.textures,
-        buffers: inventories.buffers
+        buffers: inventories.buffers,
+        casterSidedness: selectedMappings.casters.length > 0
+            ? requireStaticSunDepthCasterSidedness(
+                inventories.channelProfiles.find((entry) => entry.id === 'static_sun_depth')?.casterSidedness
+            )
+            : null
     });
     const referencedLightingIds = new Set();
     for (const channel of channels) {
@@ -284,7 +293,8 @@ function assertMappingReferences(selection) {
  *   materials: readonly Record<string, any>[],
  *   alphaInputs: readonly Record<string, any>[],
  *   textures: readonly Record<string, any>[],
- *   buffers: readonly Record<string, any>[]
+ *   buffers: readonly Record<string, any>[],
+ *   casterSidedness: Readonly<Record<string, any>>
  * }} selection
  */
 function validateMaterialSemantics(selection) {
@@ -303,10 +313,16 @@ function validateMaterialSemantics(selection) {
     }
 
     for (const material of selection.materials) {
-        if (material.schema !== 'bus-sim-evaluated-material-semantics-v1') {
-            failCompiler('reconstruction_material_schema_unsupported', 'Material semantics have no V1 Blender adapter.', {
+        if (material.schema !== 'bus-sim-evaluated-material-semantics-v2') {
+            failCompiler('reconstruction_material_schema_unsupported', 'Material semantics have no V2 Blender adapter.', {
                 materialId: material.id,
                 schema: material.schema ?? null
+            });
+        }
+        if (typeof material.preserveShadowSide !== 'boolean'
+            || typeof material.isFoliage !== 'boolean') {
+            failCompiler('reconstruction_material_schema_unsupported', 'V2 material sidedness flags must be booleans.', {
+                materialId: material.id
             });
         }
         const usages = usageByMaterial.get(material.id) ?? [];
@@ -322,6 +338,24 @@ function validateMaterialSemantics(selection) {
             });
         }
         for (const { channelId, role, mapping } of usages) {
+            if (role === 'caster') {
+                const expectedPreserve = material.preserveShadowSide === true
+                    || material.isFoliage === true;
+                const expectedEffective = resolveStaticSunDepthEffectiveShadowSide({
+                    side: material.side,
+                    shadowSide: material.shadowSide,
+                    preserveShadowSide: material.preserveShadowSide,
+                    isFoliage: material.isFoliage
+                }, selection.casterSidedness);
+                if (mapping.side !== material.side || mapping.shadowSide !== material.shadowSide
+                    || mapping.preserveShadowSide !== expectedPreserve
+                    || mapping.effectiveShadowSide !== expectedEffective) {
+                    failCompiler('reconstruction_caster_sidedness_mismatch', 'Caster effective shadow side does not reconstruct from material and channel policy.', {
+                        mappingId: mapping.id,
+                        materialId: material.id
+                    });
+                }
+            }
             if (role !== 'caster') {
                 const support = material.channelSupport?.[channelId];
                 if (support?.supported !== true) {

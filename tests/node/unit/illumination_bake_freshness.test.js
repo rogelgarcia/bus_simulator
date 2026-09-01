@@ -74,6 +74,7 @@ function fixture() {
     };
     const materials = [{
         id: 'material:one',
+        schema: 'bus-sim-evaluated-material-semantics-v2',
         alphaInputId: 'alpha-input:one',
         model: 'MeshStandardMaterial',
         colorLinearSrgb: [0.6, 0.5, 0.4],
@@ -83,6 +84,8 @@ function fixture() {
         alpha,
         side: 0,
         shadowSide: null,
+        preserveShadowSide: false,
+        isFoliage: false,
         textureBindings: { map: 'texture-binding:one' },
         customSemantics: {},
         channelSupport: support
@@ -122,6 +125,8 @@ function fixture() {
         coverageMode: 'cutout',
         side: 0,
         shadowSide: null,
+        preserveShadowSide: false,
+        effectiveShadowSide: 2,
         policySource: 'evaluated_original_caster',
         channelRelevance: {
             static_sun_depth: true,
@@ -169,7 +174,16 @@ function fixture() {
         intensity: 0.28,
         sourceReference: { sha256: 'a'.repeat(64) }
     }];
-    const channelProfiles = [{ id: 'static_sun_depth', lightProfileId: 'sun.default', resolution: 4096 }, {
+    const channelProfiles = [{
+        id: 'static_sun_depth',
+        lightProfileId: 'sun.default',
+        resolution: 4096,
+        casterSidedness: {
+            model: 'three-r183-effective-shadow-side-v1',
+            preserveMaterialFlagSemantics: 'material-userdata-preserveShadowSide-or-isFoliage-v1',
+            twoSidedCasting: true
+        }
+    }, {
         id: 'direct_receiver', lightProfileIds: ['sun.default'], resolution: 4096
     }, {
         id: 'indirect_irradiance', lightProfileIds: ['sun.default', 'hemisphere.current', 'environment.default'], samples: 256
@@ -393,6 +407,20 @@ test('sensitivity matrix covers geometry, eligibility, profiles, transport, sett
 test('channel hashes isolate sun, transport, alpha, receiver mapping, and AO settings', async () => {
     const base = fixture();
     const reference = await identities(base);
+
+    const effectiveSide = clone(base);
+    effectiveSide.materials[0].preserveShadowSide = true;
+    effectiveSide.casterMappings[0].preserveShadowSide = true;
+    effectiveSide.casterMappings[0].effectiveShadowSide = 1;
+    const effectiveSideHashes = await identities(effectiveSide);
+    assert.notEqual(effectiveSideHashes.channels.static_sun_depth, reference.channels.static_sun_depth);
+
+    const sidednessPolicy = clone(base);
+    sidednessPolicy.channelProfiles.find((entry) => entry.id === 'static_sun_depth')
+        .casterSidedness.model = 'tampered-model';
+    const sidednessPolicyHashes = await identities(sidednessPolicy);
+    assert.notEqual(sidednessPolicyHashes.channels.static_sun_depth, reference.channels.static_sun_depth);
+    assert.equal(sidednessPolicyHashes.channels.direct_receiver, reference.channels.direct_receiver);
 
     const sunIntensity = clone(base);
     sunIntensity.lightingProfiles[0].intensity += 1;

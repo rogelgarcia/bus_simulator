@@ -279,6 +279,36 @@ test('City shadow settings always finish the exact captured refresh transaction'
     ]);
 });
 
+test('City static-depth caster snapshot survives camera culling and resolves caster modes', () => {
+    const source = {isMesh: true, name: 'source', castShadow: false};
+    const merged = {isMesh: true, name: 'merged', castShadow: true};
+    const optionalInstance = {isMesh: true, name: 'optional', castShadow: false};
+    const indexedCulled = {isMesh: true, name: 'indexed', castShadow: false};
+    const uncatalogued = {isMesh: true, name: 'uncatalogued', castShadow: true};
+    const disabled = {isMesh: true, name: 'disabled', castShadow: false};
+    const meshes = [source, merged, optionalInstance, indexedCulled, uncatalogued, disabled];
+    const city = Object.create(City.prototype);
+    Object.assign(city, {
+        group: {traverse(visitor) { meshes.forEach(visitor); }},
+        _shadowMerge: [{merged, sources: [source]}],
+        _instancedCasters: [{mesh: optionalInstance, originalCast: false}],
+        _shadowCuller: {getIndexedCasterMeshes: () => Object.freeze([indexedCulled])}
+    });
+
+    const cameraA = city.getStaticSunDepthCasterMeshes();
+    indexedCulled.castShadow = true;
+    uncatalogued.castShadow = false;
+    const cameraB = city.getStaticSunDepthCasterMeshes();
+
+    assert.equal(Object.isFrozen(cameraA), true);
+    assert.deepEqual(cameraA.map((mesh) => mesh.name), ['source', 'indexed', 'uncatalogued']);
+    assert.deepEqual(cameraB.map((mesh) => mesh.name), ['source', 'indexed']);
+    assert.equal(cameraA.includes(indexedCulled), true);
+    assert.equal(cameraB.includes(indexedCulled), true);
+    assert.equal(cameraA.includes(merged), false);
+    assert.equal(cameraA.includes(optionalInstance), false);
+});
+
 test('City detach releases static caster ownership before CSM and scene teardown', () => {
     const events = [];
     const city = Object.create(City.prototype);

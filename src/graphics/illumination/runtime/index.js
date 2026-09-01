@@ -6,7 +6,10 @@ export {
     ILLUMINATION_RUNTIME_PHASES,
     ILLUMINATION_RUNTIME_STATES
 } from './IlluminationResourceLoader.js';
-export { createIlluminationRuntime } from './IlluminationRuntime.js';
+export {
+    createIlluminationRuntime,
+    markIlluminationPackageFetcherAsTransferOwned
+} from './IlluminationRuntime.js';
 export { createIlluminationControllerStagingResult } from './IlluminationControllerAdapter.js';
 export {
     createRuntimeFailure,

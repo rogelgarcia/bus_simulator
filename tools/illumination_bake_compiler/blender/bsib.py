@@ -29,12 +29,18 @@ GEOMETRY_CONTENT_DOMAIN = "bus-simulator/illumination/bake-source/evaluated-geom
 TEXTURE_CONTENT_DOMAIN = "bus-simulator/illumination/bake-source/texture-content/v1"
 TEXTURE_COVERAGE_DOMAIN = "bus-simulator/illumination/bake-source/texture-coverage-channel/v1"
 PROFILE_ASSET_DOMAIN = "bus-simulator/illumination/bake-source/profile-asset/v1"
-FORMAT = "bus-sim-illumination-bake-input-v1"
+FORMAT = "bus-sim-illumination-bake-input-v2"
 HASH_SET_SCHEMA = "bus-simulator/illumination/bake-source-hash-set/v1"
 PINNED_ARCHIVE = "blender-5.2.1-windows-x64.zip"
 PINNED_ARCHIVE_SHA256 = "0e631dad7d0cad6d5d18abdd2e2550f6c0213215334eda00ddbd3d22b96ecb2c"
 PINNED_COMPILER_REFERENCE = "blender-5.2.1-lts-cycles-cpu-contract-v1"
 REQUIRED_CHANNELS = frozenset(("direct_receiver", "indirect_irradiance", "static_ao_bent_normal", "static_sun_depth"))
+CASTER_SIDEDNESS = {
+    "model": "three-r183-effective-shadow-side-v1",
+    "twoSidedCasting": True,
+    "preserveMaterialFlagSemantics": "material-userdata-preserveShadowSide-or-isFoliage-v1",
+}
+THREE_SIDES = (0, 1, 2)
 REQUIRED_MANIFEST_KEYS = (
     "alphaInputs", "buffers", "casterMappings", "categories", "channelProfiles", "chunks",
     "colorContract", "compilerReferences", "containerVersion", "coordinateContract", "extractorContract",
@@ -171,8 +177,8 @@ def open_verified_package(path: Path, expected_raw_sha256: str) -> BsibPackage:
 def validate_resolved_city_contract(package: BsibPackage, expected_archive_sha256: str = PINNED_ARCHIVE_SHA256) -> dict[str, Any]:
     manifest = package.manifest
     if tuple(sorted(manifest, key=canonical_string_key)) != REQUIRED_MANIFEST_KEYS:
-        fail("manifest_shape_invalid", "The resolved-city manifest top-level shape is not exact V1.", actual=sorted(manifest))
-    if manifest.get("format") != FORMAT or manifest.get("schemaVersion") != 1 or manifest.get("containerVersion") != {"major": 1, "minor": 0}:
+        fail("manifest_shape_invalid", "The resolved-city manifest top-level shape is not exact V2.", actual=sorted(manifest))
+    if manifest.get("format") != FORMAT or manifest.get("schemaVersion") != 2 or manifest.get("containerVersion") != {"major": 2, "minor": 0}:
         fail("manifest_version_unsupported", "The resolved-city semantic or container version is unsupported.")
     coordinate = manifest.get("coordinateContract")
     expected_basis = [1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1]
@@ -181,7 +187,8 @@ def validate_resolved_city_contract(package: BsibPackage, expected_archive_sha25
     if not isinstance(manifest.get("colorContract"), str) or not manifest["colorContract"].strip():
         fail("manifest_color_contract_invalid", "The resolved-city color contract is missing.")
     extractor = manifest.get("extractorContract")
-    if not isinstance(extractor, dict) or extractor.get("sourceHashSetSchema") != HASH_SET_SCHEMA:
+    if (not isinstance(extractor, dict) or extractor.get("sourceHashSetSchema") != HASH_SET_SCHEMA
+            or extractor.get("materialAdapter") != "evaluated-three-material-semantics-v2"):
         fail("manifest_extractor_contract_unsupported", "The resolved-city extractor hash-set contract is unsupported.")
     readiness = manifest.get("readiness")
     if not isinstance(readiness, dict) or readiness.get("schema") != "resolved-city-bake-readiness-v1" or readiness.get("freshSourceEqualityVerified") is not True or readiness.get("lightingProfileSourcesReady") is not True:
@@ -391,11 +398,17 @@ def _validate_compiler_reference(references: list[dict[str, Any]], expected_arch
     if expected_archive_sha256 != PINNED_ARCHIVE_SHA256 or len(references) != 1:
         fail("compiler_reference_unsupported", "The package does not target the pinned Blender 5.2.1 compiler archive.")
     reference = references[0]
-    if reference.get("id") != PINNED_COMPILER_REFERENCE or reference.get("archive") != PINNED_ARCHIVE or reference.get("archiveSha256") != expected_archive_sha256 or reference.get("backend") != "cycles_cpu" or reference.get("implementationOwner") != "AI_529" or reference.get("schema") != "bus-sim-illumination-compiler-reference-v1" or reference.get("implementationStatus") not in ("pending", "implemented"):
+    status = reference.get("implementationStatus")
+    if reference.get("id") != PINNED_COMPILER_REFERENCE or reference.get("archive") != PINNED_ARCHIVE or reference.get("archiveSha256") != expected_archive_sha256 or reference.get("backend") != "cycles_cpu" or reference.get("implementationOwner") != "AI_529" or reference.get("schema") != "bus-sim-illumination-compiler-reference-v1" or status not in ("pending", "implemented", "done"):
         fail("compiler_reference_unsupported", "The package compiler reference does not match the pinned AI 529 contract.", id=reference.get("id"))
     refs = reference.get("configurationRefs")
+    prompt_ref = (
+        "prompts/AI_DONE_529_TOOLS_blender_cycles_headless_bake_compiler_DONE.md"
+        if status == "done"
+        else "prompts/AI_529_TOOLS_blender_cycles_headless_bake_compiler.md"
+    )
     expected_refs = {
-        "prompts/AI_529_TOOLS_blender_cycles_headless_bake_compiler.md",
+        prompt_ref,
         "specs/graphics/illumination_bake_input.md",
         "specs/graphics/illumination_framework.md",
     }
@@ -516,6 +529,9 @@ def _validate_relationships(manifest: dict[str, Any], inventories: dict[str, dic
     objects = inventories["objects"]
     instances = inventories["meshInstances"]
     chunks = inventories["chunks"]
+    static_channel = inventories["channelProfiles"].get("static_sun_depth")
+    if not isinstance(static_channel, dict) or static_channel.get("casterSidedness") != CASTER_SIDEDNESS:
+        fail("caster_sidedness_policy_unsupported", "The static-sun channel has no authenticated caster-sidedness policy.")
     for record in manifest["objects"]:
         for field, inventory in (("rootId", roots), ("geometryId", geometries)):
             _require_reference(inventory, record.get(field), f"objects.{record['id']}.{field}")
@@ -559,6 +575,23 @@ def _validate_relationships(manifest: dict[str, Any], inventories: dict[str, dic
                 fail("mapping_range_invalid", "A mapping range does not address complete triangles.", id=mapping["id"])
             if inventory_name == "casterMappings" and mapping.get("coverageMode") not in ("opaque", "cutout", "forced_opaque"):
                 fail("caster_coverage_mode_unsupported", "A selected caster mapping has unsupported coverage semantics.", id=mapping["id"], coverageMode=mapping.get("coverageMode"))
+            if inventory_name == "casterMappings":
+                material = materials[mapping["materialId"]]
+                preserve_flag = material.get("preserveShadowSide")
+                foliage_flag = material.get("isFoliage")
+                if not isinstance(preserve_flag, bool) or not isinstance(foliage_flag, bool):
+                    fail("caster_sidedness_material_invalid", "Caster material preserve flags must be booleans.", id=mapping["id"])
+                expected_preserve = preserve_flag or foliage_flag
+                side = material.get("side")
+                shadow_side = material.get("shadowSide")
+                if side not in THREE_SIDES or shadow_side not in (None, *THREE_SIDES):
+                    fail("caster_sidedness_value_invalid", "Caster material side is outside the Three enum.", id=mapping["id"])
+                authored_effective = shadow_side if shadow_side is not None else {0: 1, 1: 0, 2: 2}[side]
+                expected_effective = authored_effective if expected_preserve else 2
+                if (mapping.get("side") != side or mapping.get("shadowSide") != shadow_side
+                        or mapping.get("preserveShadowSide") is not expected_preserve
+                        or mapping.get("effectiveShadowSide") != expected_effective):
+                    fail("caster_sidedness_mismatch", "Caster sidedness does not reconstruct from material and channel policy.", id=mapping["id"])
 
 
 def _validate_material_texture_alpha(manifest: dict[str, Any], inventories: dict[str, dict[str, dict[str, Any]]], descriptors: dict[str, dict[str, Any]]) -> None:
@@ -599,6 +632,10 @@ def _validate_material_texture_alpha(manifest: dict[str, Any], inventories: dict
     allowed_modes = ("opaque", "cutout", "forced_opaque", "blended", "cutout_blended", "procedural_coverage")
     allowed_models = ("MeshBasicMaterial", "MeshLambertMaterial", "MeshPhongMaterial", "MeshPhysicalMaterial", "MeshStandardMaterial")
     for stable_id, material in inventories["materials"].items():
+        if (material.get("schema") != "bus-sim-evaluated-material-semantics-v2"
+                or not isinstance(material.get("preserveShadowSide"), bool)
+                or not isinstance(material.get("isFoliage"), bool)):
+            fail("material_schema_unsupported", "A material does not satisfy the V2 sidedness schema.", id=stable_id)
         if material.get("model") not in allowed_models or material.get("alpha", {}).get("mode") not in allowed_modes:
             fail("material_semantics_unsupported", "A material model or alpha mode has no deterministic Blender adapter.", id=stable_id, model=material.get("model"), alphaMode=material.get("alpha", {}).get("mode"))
         alpha_id = material.get("alphaInputId")

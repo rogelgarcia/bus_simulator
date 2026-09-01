@@ -85,6 +85,8 @@ export function createIsolatedBlenderEnvironment(options) {
         BLENDER_USER_SCRIPTS: scriptsPath,
         COMSPEC: hostEnv.COMSPEC || path.join(system32, 'cmd.exe'),
         PATH: [path.dirname(options.executablePath), system32].join(path.delimiter),
+        PROCESSOR_ARCHITECTURE:
+            hostEnv.PROCESSOR_ARCHITECTURE || hostEnv.PROCESSOR_ARCHITEW6432 || 'AMD64',
         PYTHONDONTWRITEBYTECODE: '1',
         PYTHONNOUSERSITE: '1',
         SystemRoot: systemRoot,
@@ -580,9 +582,12 @@ function assertPinnedCompilerReference(manifest, toolchain) {
     for (const [key, value] of Object.entries(expected)) {
         if (reference?.[key] !== value) failCompiler('compiler_reference_unsupported', 'AI 528 compiler reference does not match the pinned AI 529 toolchain.', { field: key });
     }
-    if (!['pending', 'implemented'].includes(reference.implementationStatus)) failCompiler('compiler_reference_unsupported', 'AI 528 compiler reference has an unsupported implementation status.', {});
+    if (!['pending', 'implemented', 'done'].includes(reference.implementationStatus)) failCompiler('compiler_reference_unsupported', 'AI 528 compiler reference has an unsupported implementation status.', {});
+    const promptReference = reference.implementationStatus === 'done'
+        ? 'prompts/AI_DONE_529_TOOLS_blender_cycles_headless_bake_compiler_DONE.md'
+        : 'prompts/AI_529_TOOLS_blender_cycles_headless_bake_compiler.md';
     const expectedRefs = [
-        'prompts/AI_529_TOOLS_blender_cycles_headless_bake_compiler.md',
+        promptReference,
         'specs/graphics/illumination_bake_input.md',
         'specs/graphics/illumination_framework.md'
     ].sort(compareCanonicalStrings);

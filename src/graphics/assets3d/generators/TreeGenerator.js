@@ -9,6 +9,7 @@ import { STATIC_VISIBILITY_CATEGORY, createTreeVisibilityId } from '../../../app
 import { TREE_CONFIG } from './TreeConfig.js';
 
 const TAU = Math.PI * 2;
+const TREE_LOAD_BATCH_SIZE = 4;
 
 const TREE_QUALITY_STORAGE_KEY = 'bus_sim.tree_quality.v1';
 
@@ -519,7 +520,7 @@ function loadTreeAssets(quality, entries) {
         return Promise.resolve({ templates: templateCache[key], materials: treeMaterials });
     }
     if (!promiseCache[key]) {
-        promiseCache[key] = ensureMaterials().then((mats) => {
+        promiseCache[key] = ensureMaterials().then(async (mats) => {
             const loader = new FBXLoader(makeTreeLoadingManager());
             const baseUrl = getModelBaseUrl(key);
             const loadModel = (entry) => loader.loadAsync(new URL(entry.name, baseUrl).toString()).then((model) => {
@@ -557,7 +558,12 @@ function loadTreeAssets(quality, entries) {
                 model.userData.treeHeight = (Number.isFinite(computedHeight) && computedHeight > 0) ? computedHeight : fallbackHeight;
                 return model;
             });
-            return Promise.all(entries.map(loadModel));
+            const models = [];
+            for (let start = 0; start < entries.length; start += TREE_LOAD_BATCH_SIZE) {
+                const batch = await Promise.all(entries.slice(start, start + TREE_LOAD_BATCH_SIZE).map(loadModel));
+                models.push(...batch);
+            }
+            return models;
         }).then((models) => {
             templateCache[key] = models;
             return { templates: templateCache[key], materials: treeMaterials };

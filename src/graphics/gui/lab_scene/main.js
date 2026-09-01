@@ -14,12 +14,31 @@ const viewportContextMenuBlocker = viewport ? installViewportContextMenuBlocker(
 const perfBar = ensureGlobalPerfBar();
 
 const view = new LabSceneView({ canvas });
-view.start().then(() => {
+const started = view.start().then(() => {
     if (view.engine?.renderer) perfBar.setRenderer(view.engine.renderer);
     if (view.engine?.addFrameListener) view.engine.addFrameListener((frame) => perfBar.onFrame(frame));
+    return view.waitForValidationReadiness();
 }).catch((err) => {
     console.error('[LabScene] Failed to start', err);
+    throw err;
 });
+
+const validationHooks = {};
+Object.defineProperties(validationHooks, {
+    view: { enumerable: true, get: () => view },
+    engine: { enumerable: true, get: () => view.engine },
+    city: { enumerable: true, get: () => view.city },
+    readiness: { enumerable: true, value: started },
+    applyCameraPreset: {
+        enumerable: true,
+        value: (presetId) => view.applyCameraPreset(presetId)
+    },
+    getReadiness: {
+        enumerable: true,
+        value: () => view.getValidationReadiness()
+    }
+});
+window.__labSceneValidation = Object.freeze(validationHooks);
 
 const onKeyDown = (e) => {
     if (!e) return;
@@ -33,4 +52,5 @@ window.addEventListener('beforeunload', () => {
     window.removeEventListener('keydown', onKeyDown);
     viewportContextMenuBlocker?.dispose?.();
     view.destroy();
+    delete window.__labSceneValidation;
 }, { passive: true });

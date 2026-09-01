@@ -59,6 +59,8 @@ import { bytesToHex, copyBytes } from './internal/ByteArrays.js';
 const MAX_CANONICAL_SECTION_BYTES = 16 * 1024 * 1024;
 const SUPPORTED_RESOURCE_TYPES = new Set(['buffer', 'texture_2d', 'texture_2d_array']);
 const SUPPORTED_ENCODINGS = new Set(ILLUMINATION_SUPPORTED_ENCODINGS);
+const OWNED_PACKAGE_LEASES = new WeakMap();
+const OWNED_PACKAGE_PARSES = new WeakSet();
 
 /**
  * @typedef {{
@@ -188,7 +190,67 @@ export async function buildIlluminationBinaryPackage(options) {
  * @returns {Promise<Readonly<Record<string, any>>>}
  */
 export async function parseIlluminationBinaryPackage(value, options = {}) {
-    const bytes = ownedPackageBytes(value);
+    return parsePackageBytes(ownedPackageBytes(value), options);
+}
+
+/** @param {ArrayBuffer | ArrayBufferView} value */
+export function transferIlluminationPackageOwnership(value) {
+    const source = byteView(value);
+    const sourceBackingByteLength = source.buffer.byteLength;
+    let owned;
+    let ownershipCopyCpuBytes;
+    try {
+        const transferred = structuredClone({
+            buffer: source.buffer,
+            byteLength: source.byteLength,
+            byteOffset: source.byteOffset
+        }, { transfer: [source.buffer] });
+        owned = new Uint8Array(
+            transferred.buffer,
+            transferred.byteOffset,
+            transferred.byteLength
+        );
+        ownershipCopyCpuBytes = source.buffer.byteLength === 0
+            ? 0
+            : transferred.buffer.byteLength;
+    } catch {
+        owned = source.slice();
+        ownershipCopyCpuBytes = owned.buffer.byteLength;
+    }
+    const lease = Object.freeze({
+        byteLength: owned.byteLength,
+        backingByteLength: owned.buffer.byteLength,
+        ownershipCopyCpuBytes,
+        transferPeakCpuBytes: ownershipCopyCpuBytes === 0
+            ? owned.buffer.byteLength
+            : sourceBackingByteLength + owned.buffer.byteLength
+    });
+    OWNED_PACKAGE_LEASES.set(lease, owned);
+    return lease;
+}
+
+/** @param {object} lease @param {{expectations?: Record<string, unknown>, runtimeCapabilities?: Iterable<string>}} [options] */
+export async function parseTransferredIlluminationBinaryPackage(lease, options = {}) {
+    const bytes = OWNED_PACKAGE_LEASES.get(lease);
+    if (!(bytes instanceof Uint8Array)) {
+        throw new TypeError('Transferred illumination package lease is invalid or already consumed');
+    }
+    OWNED_PACKAGE_LEASES.delete(lease);
+    const parsed = await parsePackageBytes(bytes, options);
+    OWNED_PACKAGE_PARSES.add(parsed);
+    return parsed;
+}
+
+/** @param {unknown} value */
+export function isTransferredIlluminationPackageParse(value) {
+    return Boolean(value && typeof value === 'object' && OWNED_PACKAGE_PARSES.has(value));
+}
+
+/**
+ * @param {Uint8Array} bytes
+ * @param {{expectations?: Record<string, unknown>, runtimeCapabilities?: Iterable<string>}} options
+ */
+async function parsePackageBytes(bytes, options) {
     const header = readAndValidateHeader(bytes);
     const manifestBytes = bytes.subarray(header.manifestOffset, header.manifestOffset + header.manifestLength);
     const tableBytes = bytes.subarray(header.tableOffset, header.tableOffset + header.tableLength);

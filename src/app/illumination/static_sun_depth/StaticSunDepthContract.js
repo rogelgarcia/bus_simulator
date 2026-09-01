@@ -13,6 +13,11 @@ import {
 } from '../package/IlluminationPackageConstants.js';
 import {
     assertStaticSunDepthEncoding,
+    getStaticSunDepthBytesPerTexel,
+    STATIC_SUN_DEPTH_DIAGNOSTIC_EMPTY_ALPHA,
+    STATIC_SUN_DEPTH_DIAGNOSTIC_ENCODING_ID,
+    STATIC_SUN_DEPTH_DIAGNOSTIC_MAX_QUANTIZED,
+    STATIC_SUN_DEPTH_DIAGNOSTIC_OCCUPIED_ALPHA,
     STATIC_SUN_DEPTH_ENCODING_ID,
     STATIC_SUN_DEPTH_EMPTY_QUANTIZED,
     STATIC_SUN_DEPTH_MAX_QUANTIZED
@@ -27,7 +32,9 @@ const BOUNDS_TOLERANCE = 1e-9;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const MAX_INTERIOR_TEXELS = 16384;
 const MAX_GUARD_TEXELS = 64;
-const MAX_PCF_RADIUS_TEXELS = 1;
+const MAX_SQUARE_PCF_RADIUS_TEXELS = 1;
+const THREE_R183_VOGEL_SAMPLE_COUNT = 5;
+const THREE_R183_FILTER_MODEL = 'three-r183-vogel-5-linear-compare-v1';
 
 /**
  * @typedef {{
@@ -127,6 +134,47 @@ export function createStableStaticSunDepthBasis(
         rightAxisWorld: right,
         upAxisWorld: up,
         depthAxisWorld: depth
+    }));
+}
+
+/**
+ * Reproduces the directional-shadow camera roll used by Three r183. The
+ * camera looks from the light toward its target with Object3D's default
+ * world-up vector. Keeping these axes canonical makes the finite five-sample
+ * Vogel pattern derivable by offline producers instead of reading a live
+ * camera matrix or assuming that the cache basis has the same roll.
+ *
+ * @param {readonly number[]} sunPointDirectionWorld
+ * @returns {Readonly<{
+ *   policy: string,
+ *   rightAxisWorld: readonly [number, number, number],
+ *   upAxisWorld: readonly [number, number, number]
+ * }>}
+ */
+export function createThreeR183DirectionalShadowFilterAxes(sunPointDirectionWorld) {
+    const backward = normalizeVector3(
+        sunPointDirectionWorld,
+        'sunPointDirectionWorld'
+    );
+    let right = cross3([0, 1, 0], backward);
+    if (Math.hypot(...right) <= Number.EPSILON) {
+        // Matrix4.lookAt perturbs its backward axis when up and view are
+        // parallel. The normalized equivalent is stable and deterministic.
+        const perturbed = normalizeVector3(
+            [backward[0] + 0.0001, backward[1], backward[2]],
+            'Three r183 parallel-up fallback'
+        );
+        right = cross3([0, 1, 0], perturbed);
+    }
+    right = normalizeVector3(right, 'Three r183 shadow-map right axis');
+    const up = normalizeVector3(
+        cross3(backward, right),
+        'Three r183 shadow-map up axis'
+    );
+    return /** @type {any} */ (cloneCanonicalJson({
+        policy: 'three-r183-directional-shadow-camera-world-up-v1',
+        rightAxisWorld: right,
+        upAxisWorld: up
     }));
 }
 
@@ -282,8 +330,11 @@ function normalizeIdentity(value) {
     const basis = normalizeBasis(source.basis, sunPointDirectionWorld);
     const alpha = normalizeAlpha(source.alpha);
     const encoding = normalizeEncoding(source.encoding);
-    const sampling = normalizeSampling(source.sampling, encoding);
-    const layout = normalizeLayout(source.layout, sampling.pcf.radiusTexels);
+    const sampling = normalizeSampling(source.sampling, encoding, sunPointDirectionWorld);
+    const requiredGuardTexels = sampling.pcf.model === 'square-nearest-box-v1'
+        ? sampling.pcf.radiusTexels
+        : 0;
+    const layout = normalizeLayout(source.layout, requiredGuardTexels, encoding);
     return {
         channelId: STATIC_SUN_DEPTH_CHANNEL_ID,
         channelVersion: STATIC_SUN_DEPTH_CHANNEL_VERSION,
@@ -397,7 +448,20 @@ function normalizeAlpha(value) {
 function normalizeEncoding(value) {
     const source = /** @type {Record<string, any>} */ (value);
     requirePlainObject(source, 'identity.encoding');
-    requireExactKeys(source, [
+    const diagnostic = source.id === STATIC_SUN_DEPTH_DIAGNOSTIC_ENCODING_ID;
+    requireExactKeys(source, diagnostic ? [
+        'alphaChannel',
+        'blueChannel',
+        'emptyAlpha',
+        'greenChannel',
+        'id',
+        'maxDepthMeters',
+        'maxQuantized',
+        'minDepthMeters',
+        'occupiedAlpha',
+        'quantization',
+        'redChannel'
+    ] : [
         'emptyQuantized',
         'greenChannel',
         'id',
@@ -408,6 +472,21 @@ function normalizeEncoding(value) {
         'redChannel'
     ], 'identity.encoding');
     assertStaticSunDepthEncoding(source);
+    if (diagnostic) {
+        return {
+            id: STATIC_SUN_DEPTH_DIAGNOSTIC_ENCODING_ID,
+            quantization: 'linear-endpoints-inclusive-v1',
+            redChannel: 'quantized-high-byte-v1',
+            greenChannel: 'quantized-middle-byte-v1',
+            blueChannel: 'quantized-low-byte-v1',
+            alphaChannel: 'occupied-255-empty-0-v1',
+            minDepthMeters: source.minDepthMeters,
+            maxDepthMeters: source.maxDepthMeters,
+            maxQuantized: STATIC_SUN_DEPTH_DIAGNOSTIC_MAX_QUANTIZED,
+            emptyAlpha: STATIC_SUN_DEPTH_DIAGNOSTIC_EMPTY_ALPHA,
+            occupiedAlpha: STATIC_SUN_DEPTH_DIAGNOSTIC_OCCUPIED_ALPHA
+        };
+    }
     return {
         id: STATIC_SUN_DEPTH_ENCODING_ID,
         quantization: 'linear-endpoints-inclusive-v1',
@@ -423,9 +502,10 @@ function normalizeEncoding(value) {
 /**
  * @param {unknown} value
  * @param {import('./StaticSunDepthEncoding.js').StaticSunDepthEncoding} encoding
+ * @param {readonly [number, number, number]} sunPointDirectionWorld
  * @returns {Record<string, any>}
  */
-function normalizeSampling(value, encoding) {
+function normalizeSampling(value, encoding, sunPointDirectionWorld) {
     const source = /** @type {Record<string, any>} */ (value);
     requirePlainObject(source, 'identity.sampling');
     requireExactKeys(source, [
@@ -445,28 +525,37 @@ function normalizeSampling(value, encoding) {
         throw new Error('identity.sampling.outOfBoundsPolicy is unsupported');
     }
     requirePlainObject(source.bias, 'identity.sampling.bias');
-    requireExactKeys(
-        source.bias,
-        ['constantMeters', 'model', 'normalOffsetScaleMeters'],
-        'identity.sampling.bias'
-    );
-    if (source.bias.model !== 'constant-plus-normal-offset-v1') {
+    const legacyBias = source.bias.model === 'constant-plus-normal-offset-v1';
+    const geometricBias = source.bias.model
+        === 'geometric-normal-offset-plus-constant-depth-relief-v1';
+    if (!legacyBias && !geometricBias) {
         throw new Error('identity.sampling.bias.model is unsupported');
     }
+    const expectedBiasKeys = legacyBias
+        ? ['constantMeters', 'model', 'normalOffsetScaleMeters']
+        : ['constantDepthReliefMeters', 'geometricNormalOffsetMeters', 'model'];
+    requireExactKeys(source.bias, expectedBiasKeys, 'identity.sampling.bias');
+    const constantBiasName = legacyBias ? 'constantMeters' : 'constantDepthReliefMeters';
+    const normalBiasName = legacyBias
+        ? 'normalOffsetScaleMeters' : 'geometricNormalOffsetMeters';
     const constantBiasFloat32 = requireNonNegativeFloat32(
-        source.bias.constantMeters,
-        'identity.sampling.bias.constantMeters'
+        source.bias[constantBiasName],
+        `identity.sampling.bias.${constantBiasName}`
     );
     const normalBiasFloat32 = requireNonNegativeFloat32(
-        source.bias.normalOffsetScaleMeters,
-        'identity.sampling.bias.normalOffsetScaleMeters'
+        source.bias[normalBiasName],
+        `identity.sampling.bias.${normalBiasName}`
     );
-    const maximumBias = source.bias.constantMeters + source.bias.normalOffsetScaleMeters * 2;
+    const maximumBias = legacyBias
+        ? source.bias.constantMeters + source.bias.normalOffsetScaleMeters * 2
+        : source.bias.constantDepthReliefMeters + source.bias.geometricNormalOffsetMeters;
     if (maximumBias > encoding.maxDepthMeters - encoding.minDepthMeters) {
         throw new RangeError('identity.sampling.bias maximum exceeds the encoding range');
     }
     const maximumBiasFloat32 = Math.fround(
-        constantBiasFloat32 + Math.fround(normalBiasFloat32 * 2)
+        constantBiasFloat32 + Math.fround(
+            normalBiasFloat32 * (legacyBias ? 2 : 1)
+        )
     );
     const encodingRangeFloat32 = Math.fround(
         Math.fround(encoding.maxDepthMeters) - Math.fround(encoding.minDepthMeters)
@@ -477,26 +566,120 @@ function normalizeSampling(value, encoding) {
         throw new RangeError('identity.sampling.bias maximum is invalid for the float32 encoding range');
     }
     requirePlainObject(source.pcf, 'identity.sampling.pcf');
-    requireExactKeys(source.pcf, ['model', 'radiusTexels'], 'identity.sampling.pcf');
-    if (source.pcf.model !== 'square-nearest-box-v1') {
+    const squarePcf = source.pcf.model === 'square-nearest-box-v1';
+    const threeR183Pcf = source.pcf.model === THREE_R183_FILTER_MODEL;
+    if (!squarePcf && !threeR183Pcf) {
         throw new Error('identity.sampling.pcf.model is unsupported');
     }
-    requireIntegerInRange(
-        source.pcf.radiusTexels,
-        0,
-        MAX_PCF_RADIUS_TEXELS,
-        'identity.sampling.pcf.radiusTexels'
-    );
+    let pcf;
+    if (squarePcf) {
+        requireExactKeys(source.pcf, ['model', 'radiusTexels'], 'identity.sampling.pcf');
+        requireIntegerInRange(
+            source.pcf.radiusTexels,
+            0,
+            MAX_SQUARE_PCF_RADIUS_TEXELS,
+            'identity.sampling.pcf.radiusTexels'
+        );
+        pcf = {model: source.pcf.model, radiusTexels: source.pcf.radiusTexels};
+    } else {
+        requireExactKeys(source.pcf, [
+            'hardwareComparison',
+            'model',
+            'radiusTexels',
+            'sampleCount',
+            'screenRotation',
+            'shadowMapSizeTexels',
+            'shadowMapWorldExtentMeters',
+            'sourceMapRightAxisWorld',
+            'sourceMapUpAxisWorld'
+        ], 'identity.sampling.pcf');
+        if (source.pcf.hardwareComparison !== 'linear-four-compare-taps-v1') {
+            throw new Error('identity.sampling.pcf.hardwareComparison is unsupported');
+        }
+        if (source.pcf.screenRotation
+            !== 'interleaved-gradient-noise-gl-fragcoord-v1') {
+            throw new Error('identity.sampling.pcf.screenRotation is unsupported');
+        }
+        if (source.pcf.sampleCount !== THREE_R183_VOGEL_SAMPLE_COUNT) {
+            throw new Error('identity.sampling.pcf.sampleCount must be 5');
+        }
+        const radiusTexels = requirePositiveFloat32(
+            source.pcf.radiusTexels,
+            'identity.sampling.pcf.radiusTexels'
+        );
+        const shadowMapSizeTexels = requireIntegerVector2(
+            source.pcf.shadowMapSizeTexels,
+            1,
+            MAX_INTERIOR_TEXELS,
+            'identity.sampling.pcf.shadowMapSizeTexels'
+        );
+        const shadowMapWorldExtentMeters = requirePositiveFloat32Vector2(
+            source.pcf.shadowMapWorldExtentMeters,
+            'identity.sampling.pcf.shadowMapWorldExtentMeters'
+        );
+        if (shadowMapSizeTexels[0] !== shadowMapSizeTexels[1]
+            || shadowMapWorldExtentMeters[0] !== shadowMapWorldExtentMeters[1]) {
+            throw new Error('identity.sampling.pcf Three r183 source shadow map must be square');
+        }
+        const sourceMapRightAxisWorld = requireUnitVector3(
+            source.pcf.sourceMapRightAxisWorld,
+            'identity.sampling.pcf.sourceMapRightAxisWorld'
+        );
+        const sourceMapUpAxisWorld = requireUnitVector3(
+            source.pcf.sourceMapUpAxisWorld,
+            'identity.sampling.pcf.sourceMapUpAxisWorld'
+        );
+        const expectedAxes = createThreeR183DirectionalShadowFilterAxes(
+            sunPointDirectionWorld
+        );
+        if (!vectorsNearlyEqual(
+            sourceMapRightAxisWorld,
+            expectedAxes.rightAxisWorld,
+            ORTHONORMAL_TOLERANCE
+        ) || !vectorsNearlyEqual(
+            sourceMapUpAxisWorld,
+            expectedAxes.upAxisWorld,
+            ORTHONORMAL_TOLERANCE
+        )) {
+            throw new Error('identity.sampling.pcf source-map axes do not match Three r183');
+        }
+        const worldRadiusFloat32 = Math.fround(
+            Math.fround(radiusTexels)
+                * Math.fround(
+                    Math.fround(shadowMapWorldExtentMeters[0])
+                        / Math.fround(shadowMapSizeTexels[0])
+                )
+        );
+        if (!Number.isFinite(worldRadiusFloat32) || worldRadiusFloat32 <= 0) {
+            throw new RangeError('identity.sampling.pcf world radius must remain positive in float32');
+        }
+        pcf = {
+            model: source.pcf.model,
+            radiusTexels: source.pcf.radiusTexels,
+            sampleCount: source.pcf.sampleCount,
+            screenRotation: source.pcf.screenRotation,
+            hardwareComparison: source.pcf.hardwareComparison,
+            shadowMapSizeTexels,
+            shadowMapWorldExtentMeters,
+            sourceMapRightAxisWorld,
+            sourceMapUpAxisWorld
+        };
+    }
+    const bias = legacyBias ? {
+        model: source.bias.model,
+        constantMeters: source.bias.constantMeters,
+        normalOffsetScaleMeters: source.bias.normalOffsetScaleMeters
+    } : {
+        model: source.bias.model,
+        constantDepthReliefMeters: source.bias.constantDepthReliefMeters,
+        geometricNormalOffsetMeters: source.bias.geometricNormalOffsetMeters
+    };
     return {
         comparison: source.comparison,
         emptyPolicy: source.emptyPolicy,
         outOfBoundsPolicy: source.outOfBoundsPolicy,
-        bias: {
-            model: source.bias.model,
-            constantMeters: source.bias.constantMeters,
-            normalOffsetScaleMeters: source.bias.normalOffsetScaleMeters
-        },
-        pcf: {model: source.pcf.model, radiusTexels: source.pcf.radiusTexels}
+        bias,
+        pcf
     };
 }
 
@@ -505,7 +688,7 @@ function normalizeSampling(value, encoding) {
  * @param {number} pcfRadiusTexels
  * @returns {StaticSunDepthLayout}
  */
-function normalizeLayout(value, pcfRadiusTexels) {
+function normalizeLayout(value, pcfRadiusTexels, encoding) {
     const source = /** @type {Record<string, any>} */ (value);
     requirePlainObject(source, 'identity.layout');
     requireExactKeys(source, [
@@ -534,9 +717,6 @@ function normalizeLayout(value, pcfRadiusTexels) {
         MAX_INTERIOR_TEXELS,
         'identity.layout.interiorTexels'
     );
-    if (interiorTexels[0] !== interiorTexels[1]) {
-        throw new Error('identity.layout.interiorTexels must be square for V1 texture-array sampling');
-    }
     requireIntegerInRange(source.guardTexels, 0, MAX_GUARD_TEXELS, 'identity.layout.guardTexels');
     if (source.guardTexels < pcfRadiusTexels) {
         throw new Error('identity.layout.guardTexels must cover the complete PCF radius');
@@ -548,13 +728,20 @@ function normalizeLayout(value, pcfRadiusTexels) {
         source.texelSizeMeters,
         'identity.layout.texelSizeMeters'
     );
-    requirePositiveFloat32(
-        interiorTexels[0] * source.texelSizeMeters,
-        'identity.layout tile world size'
-    );
-    const tileWorldSizeFloat32 = Math.fround(interiorTexels[0] * texelSizeFloat32);
-    if (!Number.isFinite(tileWorldSizeFloat32) || tileWorldSizeFloat32 <= 0) {
-        throw new RangeError('identity.layout tile world size must remain finite and positive in float32');
+    for (let axis = 0; axis < 2; axis += 1) {
+        requirePositiveFloat32(
+            interiorTexels[axis] * source.texelSizeMeters,
+            'identity.layout tile world size axis ' + axis
+        );
+        const tileWorldSizeFloat32 = Math.fround(
+            interiorTexels[axis] * texelSizeFloat32
+        );
+        if (!Number.isFinite(tileWorldSizeFloat32)
+            || tileWorldSizeFloat32 <= 0) {
+            throw new RangeError(
+                'identity.layout tile world size must remain finite and positive in float32'
+            );
+        }
     }
     const tileTotal = tileCount[0] * tileCount[1];
     if (!Number.isSafeInteger(tileTotal) || tileTotal > ILLUMINATION_MAX_CHUNKS) {
@@ -562,7 +749,8 @@ function normalizeLayout(value, pcfRadiusTexels) {
     }
     const storedWidth = interiorTexels[0] + source.guardTexels * 2;
     const storedHeight = interiorTexels[1] + source.guardTexels * 2;
-    const tileBytes = storedWidth * storedHeight * 2;
+    const tileBytes = storedWidth * storedHeight
+        * getStaticSunDepthBytesPerTexel(encoding);
     const totalBytes = tileBytes * tileTotal;
     if (!Number.isSafeInteger(tileBytes) || tileBytes > ILLUMINATION_MAX_CHUNK_BYTES) {
         throw new RangeError('identity.layout stored tile exceeds the package chunk byte limit');
@@ -737,6 +925,20 @@ function requireVector2(value, label) {
     }
     value.forEach((entry, index) => requireFiniteFloat32(entry, label + '[' + index + ']'));
     return /** @type {[number, number]} */ (value.map((entry) => cleanZero(entry)));
+}
+
+/**
+ * @param {unknown} value
+ * @param {string} label
+ * @returns {[number, number]}
+ */
+function requirePositiveFloat32Vector2(value, label) {
+    if (!Array.isArray(value) || value.length !== 2) {
+        throw new TypeError(label + ' must contain exactly two positive numbers');
+    }
+    requirePositiveFloat32(value[0], label + '[0]');
+    requirePositiveFloat32(value[1], label + '[1]');
+    return /** @type {[number, number]} */ ([value[0], value[1]]);
 }
 
 /**

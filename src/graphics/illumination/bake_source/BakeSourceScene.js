@@ -226,6 +226,11 @@ export function collectResolvedRootMeshes(rootEntry) {
 }
 
 export function createOriginalCasterResolver(city) {
+    const stableSnapshot = city?.getStaticSunDepthCasterMeshes?.();
+    if (Array.isArray(stableSnapshot)) {
+        const stableCasters = new Set(stableSnapshot);
+        return (mesh) => stableCasters.has(mesh);
+    }
     const values = new WeakMap();
     for (const entry of (city?._shadowMerge ?? [])) {
         if (entry?.merged) values.set(entry.merged, false);
@@ -234,8 +239,8 @@ export function createOriginalCasterResolver(city) {
     for (const entry of (city?._instancedCasters ?? [])) {
         if (entry?.mesh) values.set(entry.mesh, entry.originalCast === true);
     }
-    for (const entry of (city?._shadowCuller?._entries ?? [])) {
-        if (entry?.mesh && !values.has(entry.mesh)) values.set(entry.mesh, true);
+    for (const mesh of (city?._shadowCuller?.getIndexedCasterMeshes?.() ?? [])) {
+        if (mesh && !values.has(mesh)) values.set(mesh, true);
     }
     return (mesh) => values.has(mesh) ? values.get(mesh) === true : mesh?.castShadow === true;
 }

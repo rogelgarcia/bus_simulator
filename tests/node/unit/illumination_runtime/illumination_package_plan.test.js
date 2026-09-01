@@ -4,6 +4,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseIlluminationBinaryPackage } from '../../../../src/app/illumination/package/index.js';
 import {
+    isTransferredIlluminationPackageParse,
+    parseTransferredIlluminationBinaryPackage,
+    transferIlluminationPackageOwnership
+} from '../../../../src/app/illumination/package/IlluminationBinaryPackage.js';
+import {
     createIlluminationPackageChunkReader,
     createIlluminationPackageResourcePlan,
     decodeIlluminationPackageResource,
@@ -35,6 +40,30 @@ test('verified package compatibility produces a deterministic resource plan and 
         () => reader.fetchResource(plan.resources[0]),
         (error) => error.code === 'verified_chunk_reader_disposed'
     );
+});
+
+test('transferred package parsing borrows fetch/decode subviews without weakening public snapshots', async () => {
+    const built = await buildPackageFixture();
+    const publicParsed = await parseIlluminationBinaryPackage(built.bytes);
+    const publicPlan = createIlluminationPackageResourcePlan(publicParsed);
+    assert.equal(publicPlan.resources[0].memory.fetchedCpuBytes, publicPlan.resources[0].byteLength);
+    assert.equal(publicPlan.resources[0].memory.decodedCpuBytes, publicPlan.resources[0].byteLength);
+
+    const transferredBytes = built.bytes.slice();
+    const lease = transferIlluminationPackageOwnership(transferredBytes);
+    const parsed = await parseTransferredIlluminationBinaryPackage(lease);
+    assert.equal(isTransferredIlluminationPackageParse(parsed), true);
+    const plan = createIlluminationPackageResourcePlan(parsed);
+    assert.equal(plan.resources[0].memory.fetchedCpuBytes, 0);
+    assert.equal(plan.resources[0].memory.decodedCpuBytes, 0);
+    const reader = createIlluminationPackageChunkReader(parsed);
+    const fetched = reader.fetchResource(plan.resources[0]);
+    assert.equal(fetched.ownership, 'borrowed-verified-package-subview-v1');
+    assert.equal(fetched.cpuBytes, 0);
+    const decoded = decodeIlluminationPackageResource(fetched.bytes, plan.resources[0]);
+    assert.strictEqual(decoded.decoded, fetched.bytes);
+    assert.equal(decoded.cpuBytes, 0);
+    reader.dispose();
 });
 
 test('compatibility failures map to the fixed lifecycle state and reason vocabulary before upload', async () => {

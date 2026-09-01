@@ -77,6 +77,12 @@ const LAB_CAMERA_PRESETS = Object.freeze([
         key: '6',
         label: 'Building glass',
         description: 'Window reflections and skyline composition.'
+    }),
+    Object.freeze({
+        id: 'overhang_receiver_fixture',
+        key: '9',
+        label: 'Overhang receiver',
+        description: 'Road, wall, roof, underside, and alpha-cutout sun visibility.'
     })
 ]);
 
@@ -88,6 +94,8 @@ const LAB_BUS_POSE = Object.freeze({
     z: 0,
     yawDeg: 90
 });
+
+const OVERHANG_FIXTURE_ID = 'illumination_overhang_receiver_v1';
 
 function deepClone(value) {
     return value && typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : null;
@@ -403,6 +411,91 @@ function createReferencePropsGroup() {
     return group;
 }
 
+function createOverhangAlphaTexture() {
+    const size = 16;
+    const pixels = new Uint8Array(size * size * 4);
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+            const offset = (y * size + x) * 4;
+            const leaf = ((x + y * 3) % 7 <= 3) && ((x * 5 + y) % 11 <= 7);
+            pixels[offset] = 64;
+            pixels[offset + 1] = 116;
+            pixels[offset + 2] = 47;
+            pixels[offset + 3] = leaf ? 255 : 0;
+        }
+    }
+    const texture = new THREE.DataTexture(pixels, size, size, THREE.RGBAFormat);
+    texture.name = 'LabOverhangAlphaCoverage';
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.generateMipmaps = true;
+    texture.needsUpdate = true;
+    return texture;
+}
+
+function createOverhangReceiverFixture(baseY) {
+    const group = new THREE.Group();
+    group.name = OVERHANG_FIXTURE_ID;
+    group.position.set(40, baseY, 34);
+    group.userData.fixtureId = OVERHANG_FIXTURE_ID;
+    group.userData.staticSunOwnership = 'city_static';
+
+    const materials = {
+        road: new THREE.MeshStandardMaterial({ color: 0x34383c, roughness: 0.93, metalness: 0 }),
+        wall: new THREE.MeshStandardMaterial({ color: 0xb9b0a1, roughness: 0.82, metalness: 0 }),
+        roof: new THREE.MeshStandardMaterial({ color: 0x8c949a, roughness: 0.72, metalness: 0.04 }),
+        trim: new THREE.MeshStandardMaterial({ color: 0x4a5157, roughness: 0.62, metalness: 0.08 })
+    };
+    const addBox = (name, role, size, position, material, castShadow = true) => {
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+        mesh.name = name;
+        mesh.position.set(...position);
+        mesh.castShadow = castShadow;
+        mesh.receiveShadow = true;
+        mesh.userData.validationReceiver = role;
+        group.add(mesh);
+        return mesh;
+    };
+
+    addBox('OverhangRoadReceiver', 'road', [28, 0.18, 18], [0, -0.09, 0], materials.road, false);
+    addBox('OverhangVerticalWallReceiver', 'wall', [14, 6.4, 0.42], [0, 3.2, -5.4], materials.wall);
+    addBox('OverhangRoofAndUndersideReceiver', 'roof_and_underside', [14, 0.42, 8.6], [0, 6.2, -1.3], materials.roof);
+    addBox('OverhangLeftSupport', 'support', [0.48, 6.0, 0.48], [-5.7, 3.0, 2.1], materials.trim);
+    addBox('OverhangRightSupport', 'support', [0.48, 6.0, 0.48], [5.7, 3.0, 2.1], materials.trim);
+
+    const alphaTexture = createOverhangAlphaTexture();
+    const alphaMaterial = new THREE.MeshStandardMaterial({
+        alphaTest: 0.5,
+        color: 0xffffff,
+        map: alphaTexture,
+        roughness: 0.86,
+        metalness: 0,
+        side: THREE.DoubleSide,
+        shadowSide: THREE.DoubleSide
+    });
+    const alphaPanel = new THREE.Mesh(new THREE.PlaneGeometry(5.5, 5.5, 1, 1), alphaMaterial);
+    alphaPanel.name = 'OverhangAlphaCutoutCaster';
+    alphaPanel.position.set(-8.5, 3.1, -0.5);
+    alphaPanel.rotation.y = THREE.MathUtils.degToRad(18);
+    alphaPanel.castShadow = true;
+    alphaPanel.receiveShadow = true;
+    alphaPanel.userData.validationReceiver = 'alpha_cutout';
+    alphaPanel.userData.alphaCoverage = 'deterministic_rgba_alpha_test_0_5_v1';
+    group.add(alphaPanel);
+
+    return group;
+}
+
+function isDescendantOf(object, ancestor) {
+    for (let cursor = object; cursor; cursor = cursor.parent) {
+        if (cursor === ancestor) return true;
+    }
+    return false;
+}
+
 export class LabSceneView {
     constructor({ canvas } = {}) {
         this.canvas = canvas;
@@ -417,6 +510,7 @@ export class LabSceneView {
         this._busRoot = null;
         this._surfaceHeights = null;
         this._busGroundSnapFrames = 0;
+        this._validationPaused = false;
         this._raf = 0;
         this._lastT = 0;
 
@@ -442,6 +536,7 @@ export class LabSceneView {
         const config = createCityConfig({ size: 360, tileMeters: 2, mapTileSize: 24, seed });
         const mapSpec = makeLabCitySpec({ config, seed });
         const city = new City({
+            cityId: 'lab_scene',
             size: 360,
             tileMeters: 2,
             mapTileSize: 24,
@@ -509,6 +604,7 @@ export class LabSceneView {
 
         this._unmountPresetPanel();
 
+        if (this._busRoot?.parent) this._busRoot.parent.remove(this._busRoot);
         if (this._propsRoot?.parent) this._propsRoot.parent.remove(this._propsRoot);
         this._propsRoot = null;
         this._busRoot = null;
@@ -526,6 +622,11 @@ export class LabSceneView {
 
     _tick(t) {
         if (!this.engine) return;
+        if (this._validationPaused) {
+            this._lastT = t;
+            this._raf = requestAnimationFrame((tt) => this._tick(tt));
+            return;
+        }
         const dt = Math.min((t - this._lastT) / 1000, 0.05);
         this._lastT = t;
         if (this._busGroundSnapFrames > 0 && this._busRoot && this._surfaceHeights) {
@@ -535,6 +636,15 @@ export class LabSceneView {
         this.controls?.update?.(dt);
         this.engine.updateFrame(dt, { render: true, nowMs: t });
         this._raf = requestAnimationFrame((tt) => this._tick(tt));
+    }
+
+    pauseForValidation() {
+        this._validationPaused = true;
+    }
+
+    resumeAfterValidation() {
+        this._validationPaused = false;
+        this._lastT = performance.now();
     }
 
     _rebuildTrafficControlsFromRoadEngine() {
@@ -571,13 +681,16 @@ export class LabSceneView {
             bus.rotation.y = THREE.MathUtils.degToRad(LAB_BUS_POSE.yawDeg);
             snapObjectBaseToY(bus, heights.roadY);
             this._busRoot = bus;
-            root.add(bus);
+            this.engine?.scene?.add(bus);
         }
 
         const references = createReferencePropsGroup();
         references.position.set(20, 0, 0);
         root.add(references);
         snapObjectBaseToY(references, heights.groundY + 0.02);
+
+        const overhangFixture = createOverhangReceiverFixture(heights.groundY + 0.02);
+        root.add(overhangFixture);
     }
 
     _resolvePresetPose(presetId) {
@@ -643,6 +756,12 @@ export class LabSceneView {
                 target: new THREE.Vector3(38.3, 0.9, -22)
             };
         }
+        if (preset.id === 'overhang_receiver_fixture') {
+            return {
+                position: new THREE.Vector3(61, 10.5, 57),
+                target: new THREE.Vector3(40, 2.8, 32)
+            };
+        }
         return {
             position: new THREE.Vector3(82, 18, -64),
             target: new THREE.Vector3(89, 17, -92)
@@ -656,6 +775,61 @@ export class LabSceneView {
         this._state.activeCameraPresetId = preset.id;
         this._syncPresetUi();
         this._persist();
+    }
+
+    applyCameraPreset(presetId) {
+        const id = typeof presetId === 'string' ? presetId.trim() : '';
+        const preset = LAB_CAMERA_PRESETS.find((entry) => entry.id === id) ?? null;
+        if (!preset) throw new Error(`[LabScene] Unknown camera preset '${String(presetId)}'`);
+        this._applyCameraPreset(preset.id);
+        return Object.freeze({ id: preset.id, position: this.engine?.camera?.position?.toArray?.() ?? null });
+    }
+
+    getValidationReadiness() {
+        const fixture = this.city?.group?.getObjectByName?.(OVERHANG_FIXTURE_ID) ?? null;
+        const trees = this.city?.world?.trees ?? null;
+        const treePlacementCount = trees?.placements?.length ?? 0;
+        const treeChildCount = trees?.group?.children?.length ?? 0;
+        const treesReady = treePlacementCount > 0 && treeChildCount === treePlacementCount;
+        const receiverRoles = fixture?.children
+            ?.map((child) => child?.userData?.validationReceiver)
+            .filter((role) => typeof role === 'string')
+            .sort() ?? [];
+        const dynamicBusOutsideStaticCity = !!this._busRoot
+            && !!this.city?.group
+            && !isDescendantOf(this._busRoot, this.city.group);
+        let dynamicBusCastShadow = false;
+        this._busRoot?.traverse?.((node) => {
+            if (node?.isMesh && node.castShadow === true) dynamicBusCastShadow = true;
+        });
+        return Object.freeze({
+            ready: !!this.engine && this.city?.cityId === 'lab_scene' && !!fixture
+                && dynamicBusOutsideStaticCity && dynamicBusCastShadow && treesReady,
+            cityId: this.city?.cityId ?? null,
+            fixtureId: fixture?.userData?.fixtureId ?? null,
+            receiverRoles: Object.freeze(receiverRoles),
+            activeCameraPresetId: this._state.activeCameraPresetId,
+            dynamicBusOutsideStaticCity,
+            dynamicBusCastShadow,
+            treePlacementCount,
+            treeChildCount,
+            treesReady
+        });
+    }
+
+    async waitForValidationReadiness() {
+        if (!this.engine || !this.city) throw new Error('[LabScene] Scene has not started');
+        await Promise.all([
+            this.engine.waitForLightingReady?.(),
+            this.city?.world?.trees?.readyPromise,
+            this._busRoot?.userData?.readyPromise
+        ].filter(Boolean));
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const readiness = this.getValidationReadiness();
+        if (!readiness.ready) {
+            throw new Error(`[LabScene] Validation fixture is not ready: ${JSON.stringify(readiness)}`);
+        }
+        return readiness;
     }
 
     _mountPresetPanel() {
@@ -672,7 +846,7 @@ export class LabSceneView {
 
         const subtitle = document.createElement('div');
         subtitle.className = 'lab-scene-subtitle';
-        subtitle.textContent = 'Camera presets for reproducible visual reviews. Keys 1-8 switch views. Mouse drag orbits/pans.';
+        subtitle.textContent = 'Camera presets for reproducible visual reviews. Keys 1-9 switch views. Mouse drag orbits/pans.';
         panel.appendChild(subtitle);
 
         const grid = document.createElement('div');

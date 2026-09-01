@@ -120,12 +120,14 @@ async function createFixture({ indirectSupported = true, matrixThreeWorld = IDEN
         matrixHelpers: { validateAffineTransform, convertThreeMatrixToBlender }
     });
     const materialSemantics = {
-        schema: 'bus-sim-evaluated-material-semantics-v1',
+        schema: 'bus-sim-evaluated-material-semantics-v2',
         type: 'MeshStandardMaterial',
         name: 'fixture-material',
         visible: true,
         side: 0,
         shadowSide: null,
+        preserveShadowSide: false,
+        isFoliage: false,
         vertexColors: false,
         alpha: { mode: 'opaque', cutoff: null, opacity: 1, inputs: [] },
         textureBindings: {},
@@ -240,7 +242,15 @@ async function createFixture({ indirectSupported = true, matrixThreeWorld = IDEN
     const lightingProfiles = [];
     const channelProfiles = [
         { id: 'indirect_irradiance', samples: 4 },
-        { id: 'static_ao_bent_normal', samples: 4 }
+        { id: 'static_ao_bent_normal', samples: 4 },
+        {
+            id: 'static_sun_depth',
+            casterSidedness: {
+                model: 'three-r183-effective-shadow-side-v1',
+                preserveMaterialFlagSemantics: 'material-userdata-preserveShadowSide-or-isFoliage-v1',
+                twoSidedCasting: true
+            }
+        }
     ];
     const compilerReferences = [{
         id: 'compiler:fixture',
@@ -298,9 +308,9 @@ async function createFixture({ indirectSupported = true, matrixThreeWorld = IDEN
         lightingProfiles
     });
     const manifest = {
-        format: 'bus-sim-illumination-bake-input-v1',
-        schemaVersion: 1,
-        containerVersion: { major: 1, minor: 0 },
+        format: 'bus-sim-illumination-bake-input-v2',
+        schemaVersion: 2,
+        containerVersion: { major: 2, minor: 0 },
         coordinateContract,
         colorContract,
         source: {
@@ -314,7 +324,7 @@ async function createFixture({ indirectSupported = true, matrixThreeWorld = IDEN
             id: 'resolved-city-bake-extractor-v1',
             canonicalizer: 'strict-sorted-json-v1',
             geometryAdapter: 'evaluated-three-buffer-geometry-v1',
-            materialAdapter: 'evaluated-three-material-semantics-v1',
+            materialAdapter: 'evaluated-three-material-semantics-v2',
             textureAdapter: 'evaluated-three-texture-source-v1',
             sourceHashSetSchema: BAKE_SOURCE_HASH_SET_SCHEMA
         },
@@ -433,6 +443,37 @@ test('semantic validator rejects a stale self-asserted source hash after parsed 
     await assert.rejects(
         () => validateResolvedCityBakePackage(bytes),
         hasCode('freshness_hash_projection_mismatch')
+    );
+});
+
+test('semantic validator rejects V1 material adapters and non-boolean sidedness flags', async () => {
+    const fixture = await createFixture();
+    const adapterBytes = await packageFixture(fixture, (manifest) => {
+        manifest.extractorContract.materialAdapter = 'evaluated-three-material-semantics-v1';
+    });
+    await assert.rejects(
+        () => validateResolvedCityBakePackage(adapterBytes),
+        hasCode('manifest_contract_unsupported')
+    );
+
+    const flagBytes = await packageFixture(fixture, (manifest) => {
+        manifest.materials[0].preserveShadowSide = 'true';
+    });
+    await assert.rejects(
+        () => validateResolvedCityBakePackage(flagBytes),
+        hasCode('material_schema_unsupported')
+    );
+});
+
+test('semantic validator requires exact static-sun sidedness even with zero casters', async () => {
+    const fixture = await createFixture();
+    const bytes = await packageFixture(fixture, (manifest) => {
+        manifest.channelProfiles.find((entry) => entry.id === 'static_sun_depth')
+            .casterSidedness.model = 'tampered-model';
+    });
+    await assert.rejects(
+        () => validateResolvedCityBakePackage(bytes),
+        hasCode('static_sun_depth_caster_sidedness_invalid')
     );
 });
 

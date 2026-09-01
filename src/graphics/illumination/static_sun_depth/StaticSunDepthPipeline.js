@@ -21,6 +21,7 @@ import {
 } from './StaticSunDepthPlanContract.js';
 import { createThreeStaticSunDepthResourceFactory } from './ThreeStaticSunDepthResources.js';
 import { StaticSunDepthFenceTracker } from './StaticSunDepthFenceTracker.js';
+import { STATIC_SUN_DEPTH_RUNTIME_DEFAULTS } from './StaticSunDepthRuntimeLimits.js';
 
 const PREPARED_BINDING_ID = 'static_sun_depth.prepared_binding.v1';
 const SUN_DIRECTION_EPSILON = 1e-8;
@@ -69,11 +70,15 @@ export class StaticSunDepthPipeline {
             waitUntilSafeToDispose: (_resourceSet, context) => this._waitForGeneration(context.generation),
             capabilities: options.capabilities ?? this._capabilities(),
             expectations: options.expectations,
-            memoryLimits: options.memoryLimits,
+            memoryLimits: {
+                ...STATIC_SUN_DEPTH_RUNTIME_DEFAULTS.memoryLimits,
+                ...(options.memoryLimits ?? {})
+            },
             baselineMemory: options.baselineMemory,
             residentCpuPolicy: 'retain',
             prewarmMemory: { cpuBytes: 0, gpuBytes: 0 },
-            maximumPackageBytes: options.maximumPackageBytes,
+            maximumPackageBytes: options.maximumPackageBytes
+                ?? STATIC_SUN_DEPTH_RUNTIME_DEFAULTS.maximumPackageBytes,
             now: options.now
         });
         this._contextEventTarget = this.renderer.domElement ?? null;
@@ -224,7 +229,7 @@ export class StaticSunDepthPipeline {
         const resource = resources.getResource(resourceDescriptor.id);
         const sourcePixels = resource?.texture?.image?.data;
         if (!(sourcePixels instanceof Uint8Array)) {
-            throw new TypeError('Static-sun texture resource has no owned RG8 payload.');
+            throw new TypeError('Static-sun texture resource has no owned authenticated payload.');
         }
         let initialized = false;
         const tileIntegrity = await validateOwnedStaticSunDepthTileArrayIntegrity(
@@ -430,6 +435,7 @@ export class StaticSunDepthPipeline {
             texture_2d_array: typeof THREE.DataArrayTexture === 'function',
             fragment_highp_float: Number(precision?.precision ?? 0) > 0,
             rg8_unorm: THREE.RGFormat !== undefined && THREE.UnsignedByteType !== undefined,
+            rgba8_unorm: THREE.RGBAFormat !== undefined && THREE.UnsignedByteType !== undefined,
             static_receiver_sampling_v1: true
         });
     }

@@ -49,12 +49,24 @@ test('Lab Scene: standalone tool loads with presets and layers panel', async ({ 
     await page.waitForSelector('.lab-scene-options-layer');
     await page.waitForSelector('.lab-scene-controls');
     await page.waitForSelector('.lab-scene-preset-btn');
-    await expect(page.locator('.lab-scene-preset-btn')).toHaveCount(8);
+    await expect(page.locator('.lab-scene-preset-btn')).toHaveCount(9);
     await expect(page.locator('.lab-scene-options-layer .options-toggle')).toHaveCount(5);
     await expect(page.locator('.lab-scene-options-layer .options-choice-group')).toHaveCount(3);
 
     await page.click('.lab-scene-preset-btn[data-preset-id="crossing_bus_right_wide"]');
     await page.waitForTimeout(180);
+
+    const readiness = await page.evaluate(() => window.__labSceneValidation.readiness);
+    expect(readiness).toMatchObject({
+        ready: true,
+        cityId: 'lab_scene',
+        fixtureId: 'illumination_overhang_receiver_v1',
+        dynamicBusOutsideStaticCity: true,
+        dynamicBusCastShadow: true,
+        treesReady: true
+    });
+    expect(readiness.treePlacementCount).toBeGreaterThan(0);
+    expect(readiness.treeChildCount).toBe(readiness.treePlacementCount);
 
     expect(await getErrors()).toEqual([]);
 });

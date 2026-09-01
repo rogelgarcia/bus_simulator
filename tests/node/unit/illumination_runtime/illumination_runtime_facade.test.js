@@ -76,12 +76,16 @@ async function resealUnsupportedResourceType(packageBytes) {
 
 test('current mode never fetches and a baked set activates only at one explicit frame boundary', async () => {
     const built = await buildPackageFixture();
+    const callerPackageSnapshot = built.bytes.slice();
+    const callerBackingByteLength = built.bytes.buffer.byteLength;
     const fixture = fixtureRuntime(built.bytes);
     await fixture.runtime.load({ url: 'fixture.ilpkg' });
     assert.equal(fixture.getFetchCount(), 0);
     assert.equal(fixture.runtime.getSnapshot().effectiveMode, 'current');
 
     await fixture.runtime.setMode('auto', requestFor(built));
+    assert.equal(built.bytes.buffer.byteLength, callerBackingByteLength);
+    assert.deepEqual(built.bytes, callerPackageSnapshot);
     assert.equal(fixture.getFetchCount(), 1);
     assert.equal(fixture.runtime.getSnapshot().state, 'loading');
     assert.equal(fixture.runtime.getSnapshot().phase, 'ready_to_commit');

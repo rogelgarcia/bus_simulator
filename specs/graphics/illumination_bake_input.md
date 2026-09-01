@@ -2,17 +2,17 @@
 
 ## Status and authority
 
-This document is the authoritative AI 528 contract for extracting the fully resolved gameplay city and handing it to the offline illumination pipeline. It refines, but does not replace, [`illumination_framework.md`](./illumination_framework.md). If the two documents conflict, the framework owns lighting composition, channel meaning, coordinate conventions, and descendant ownership; this document owns the resolved-city interchange format, stable identity, provenance, canonical serialization, source freshness, and round-trip validation.
+This document is the authoritative resolved-city contract established by AI 528 and revised by AI 531 for extracting the fully resolved gameplay city and handing it to the offline illumination pipeline. It refines, but does not replace, [`illumination_framework.md`](./illumination_framework.md). If the two documents conflict, the framework owns lighting composition, channel meaning, coordinate conventions, and descendant ownership; this document owns the resolved-city interchange format, stable identity, provenance, canonical serialization, source freshness, and round-trip validation.
 
-The canonical V1 format ID is `bus-sim-illumination-bake-input-v1`. Its file extension is `.bsib`. A valid package is a deterministic custom container containing one canonical manifest and its declared binary buffers. It is derived from a fully prewarmed production gameplay city constructed from the active gameplay configuration and is never an authored source of city truth. The already-running city supplies configuration and evaluated lighting-profile provenance, but its geometry is not the canonical export input because optional ornament preload can complete after that city's synchronous construction.
+The canonical semantic format ID is `bus-sim-illumination-bake-input-v2`. Its file extension is `.bsib`. V2 adds authenticated effective static-sun caster sidedness and evaluated material flags. The low-level `ILBSRC01` container framing, fixed header version `1`, table schema, and hash framing remain byte-compatible infrastructure; semantic V1 manifests are rejected by V2 consumers. A valid package is a deterministic custom container containing one canonical manifest and its declared binary buffers. It is derived from a fully prewarmed production gameplay city constructed from the active gameplay configuration and is never an authored source of city truth. The already-running city supplies configuration and evaluated lighting-profile provenance, but its geometry is not the canonical export input because optional ornament preload can complete after that city's synchronous construction.
 
 AI 528 does not run Blender, bake lighting, create runtime illumination payloads, change gameplay rendering, select player-visible illumination modes, or replace the current renderer. AI 529 consumes this format as offline compiler input. AI 530 owns any runtime-oriented binary container, compression, streaming, or activation logic.
 
-## Why GLB is not the canonical V1 package
+## Why GLB is not the canonical package
 
-The V1 stable-byte and round-trip format evaluation rejects GLB as the canonical package. A normal Three.js-to-GLB export may reorder nodes, accessors, material records, images, extension records, or JSON keys; may expand or normalize attributes and instancing; and may change integer widths, interleaving, image representation, or metadata between exporter versions. Standard GLB material fields also cannot faithfully carry this project's stable IDs, source provenance, receiver/caster mappings, `mergeShadowAsOpaque`, channel relevance, custom bake semantics, structured unsupported cases, or independent source-hash domains. Importing that GLB through Blender would consequently prove visual interchange, not exact recovery of the evaluated runtime source.
+The stable-byte and round-trip format evaluation rejects GLB as the canonical package. A normal Three.js-to-GLB export may reorder nodes, accessors, material records, images, extension records, or JSON keys; may expand or normalize attributes and instancing; and may change integer widths, interleaving, image representation, or metadata between exporter versions. Standard GLB material fields also cannot faithfully carry this project's stable IDs, source provenance, receiver/caster mappings, `mergeShadowAsOpaque`, channel relevance, custom bake semantics, structured unsupported cases, or independent source-hash domains. Importing that GLB through Blender would consequently prove visual interchange, not exact recovery of the evaluated runtime source.
 
-The custom V1 container preserves the exact declared typed attribute bytes, accessors, material groups, per-instance identities, transforms, texture source bytes, alpha semantics, and mappings. Its canonical manifest and fixed binary layout make whole-package stable bytes testable. A GLB may be produced later as an optional diagnostic preview derived from a successfully validated `.bsib` package. Such a GLB is never authoritative, is excluded from all freshness hashes, and may not be consumed by AI 529 in place of the `.bsib` package.
+The custom `.bsib` container preserves the exact declared typed attribute bytes, accessors, material groups, per-instance identities, transforms, texture source bytes, alpha semantics, and mappings. Its canonical manifest and fixed binary layout make whole-package stable bytes testable. A GLB may be produced later as an optional diagnostic preview derived from a successfully validated `.bsib` package. Such a GLB is never authoritative, is excluded from all freshness hashes, and may not be consumed by AI 529 in place of the `.bsib` package.
 
 ## Canonical/derived boundary
 
@@ -28,12 +28,12 @@ The `.bsib` file, any diagnostic GLB, Blender objects, `.blend` files, bake imag
 Freshness and integrity are separate:
 
 - Freshness hashes identify the resolved source and the inputs relevant to each physical channel.
-- Integrity hashes verify every stored buffer blob and the package bytes. The package-integrity digest transitively authenticates the exact manifest and internal-table bytes; V1 has no separate manifest-digest field.
+- Integrity hashes verify every stored buffer blob and the package bytes. The package-integrity digest transitively authenticates the exact manifest and internal-table bytes; the current format has no separate manifest-digest field.
 - A matching integrity hash does not prove freshness, and a matching source hash does not prove intact package bytes.
 
 ## Container layout
 
-All header integers and all numeric typed buffers are little-endian. Hashes use domain-separated SHA-256. Lengths and offsets are unsigned 32-bit byte counts in V1; an exporter must reject a package that exceeds that range instead of truncating it.
+All header integers and all numeric typed buffers are little-endian. Hashes use domain-separated SHA-256. Lengths and offsets are unsigned 32-bit byte counts in low-level container version 1; an exporter must reject a package that exceeds that range instead of truncating it.
 
 ### Fixed 64-byte header
 
@@ -126,7 +126,7 @@ buffers[]
 hashes
 ```
 
-`format` is exactly `bus-sim-illumination-bake-input-v1`, `schemaVersion` is `1`, and `containerVersion` is `{ "major": 1, "minor": 0 }`. At the AI 528 semantic boundary, missing or additional top-level keys reject the package. A consumer must likewise reject enum or nested-record values it does not implement; extension fields are not permitted in V1 unless a later minor version defines a namespaced location and compatibility rule.
+`format` is exactly `bus-sim-illumination-bake-input-v2`, `schemaVersion` is `2`, and semantic `containerVersion` is `{ "major": 2, "minor": 0 }`. This semantic container version is distinct from the fixed low-level header version `1`. Missing or additional top-level keys reject the package. A consumer must likewise reject enum or nested-record values it does not implement; unversioned extension fields are not permitted.
 
 There are deliberately two parser scopes. `parseBakeSourcePackage` is the reusable byte-container parser: it validates the fixed header, package integrity, canonical manifest/table encoding, exact internal-table shape, sorted unique logical-buffer IDs, contiguous hash-sorted blobs, and blob integrity. It accepts any canonical JSON object as the manifest and does not claim that object is an AI 528 resolved-city manifest. It neither requires nor correlates a semantic `manifest.buffers` array. `validateResolvedCityBakePackage` is the AI 528 semantic parser: it additionally enforces the exact top-level inventory, semantic `format`/`schemaVersion`, ID-sorted unique inventories, semantic-buffer ID/length correlation, core foreign keys, accessor ranges, geometry counts/bounds/topology, and Three-to-Blender transforms. Role-specific `contentSha256` fields are semantic projection inputs, not aliases of the internal storage digest. AI 529 must call the semantic validator, not treat a successful low-level parse as sufficient source validation.
 
@@ -134,19 +134,19 @@ There are deliberately two parser scopes. `parseBakeSourcePackage` is the reusab
 
 ### Package-level validity and semantic derivation
 
-At the reusable container layer, a stable ID is an opaque non-empty string with no surrounding whitespace and no C0 or DEL control character. The container does not impose a slash-only grammar: current V1 semantic IDs intentionally use both `/` and `:`. IDs and inventory records are compared with the same canonical JavaScript string comparator used for object keys. This distinction is important: `parseBakeSourcePackage` validates table identity, while `validateResolvedCityBakePackage` and the exporter own namespace semantics.
+At the reusable container layer, a stable ID is an opaque non-empty string with no surrounding whitespace and no C0 or DEL control character. The container does not impose a slash-only grammar: current V2 semantic IDs intentionally use both `/` and `:`. IDs and inventory records are compared with the same canonical JavaScript string comparator used for object keys. This distinction is important: `parseBakeSourcePackage` validates table identity, while `validateResolvedCityBakePackage` and the exporter own namespace semantics.
 
 ID-producing adapters normalize source text to NFC before deriving IDs. When an arbitrary source value is embedded in a slash path, each path segment preserves ASCII letters and digits plus `.`, `_`, and `-`, and percent-encodes every other UTF-8 byte with uppercase hexadecimal. Already-defined producer root IDs remain opaque and may contain `:`. Three.js UUIDs, object allocation order, promise-completion order, browser origin/port, timestamps, and artifact filenames never enter identity.
 
 Source-owned roots, objects, and instances use semantic identity. Evaluated immutable records—geometry descriptors, geometry buffers, material semantics, texture sources/bindings, alpha inputs, and profile assets—are deliberately content-addressed. A content-addressed record gets a new ID when its declared semantic content changes; stable source-to-content references preserve ownership. `contentHash` on an object or instance is freshness evidence and is not its semantic ID.
 
-The V1 exporter emits these exact forms:
+The V2 exporter emits these exact forms:
 
-| Entity | V1 ID form and derivation |
+| Entity | V2 ID form and derivation |
 |---|---|
 | City | `source.cityId` is the resolved gameplay city ID; there is no redundant city inventory record |
 | Category | `category/<encoded-category>` for each category actually represented by an exported object |
-| Chunk | `chunk/<encoded-category>/<signed-cell-x>/<signed-cell-z>`; each signed cell is `p` or `n` plus a decimal magnitude padded to at least eight digits, using the centre of the world AABB and a 128-metre V1 grid |
+| Chunk | `chunk/<encoded-category>/<signed-cell-x>/<signed-cell-z>`; each signed cell is `p` or `n` plus a decimal magnitude padded to at least eight digits, using the centre of the world AABB and a 128-metre V2 grid |
 | Root | Producer/root-adapter ID, including `terrain:city_floor`, `terrain:ground_tiles`, `road:<token>`, `sidewalk:building_slabs`, a resolved building metadata ID or `building:<token>`, and placement-backed traffic/tree IDs |
 | Object | `object/<encoded-root-id>/<semantic-path>` |
 | Geometry | `geometry/<evaluated-geometry-descriptor-sha256>` |
@@ -168,7 +168,7 @@ The current root adapters report `buildings`, `roads`, `road_markings`, `curbs`,
 
 An object's semantic path is `root` when the mesh is the selected root. Otherwise each segment is the zero-padded eight-digit index in the producer-owned `parent.children` array, a hyphen, and the encoded normalized object name/type. This evaluated graph ordering contract is part of the resolved source and is checked by repeated clean export. Placement-backed traffic and tree roots use their synchronous resolved placement index when no stronger runtime metadata ID exists; they never use asynchronous completion order.
 
-Spatial chunks are reporting, budgeting, and downstream-addressing partitions only. They do not authorize independent chunk freshness, partial promotion, streaming, or incremental rebuilding. Full-city invalidation remains V1 policy until a later specification supplies a dependency and seam model.
+Spatial chunks are reporting, budgeting, and downstream-addressing partitions only. They do not authorize independent chunk freshness, partial promotion, streaming, or incremental rebuilding. Full-city invalidation remains V2 policy until a later specification supplies a dependency and seam model.
 
 ### Provenance and reference chain
 
@@ -184,7 +184,7 @@ Together these foreign keys must form a complete source-to-derived chain. Absolu
 
 ## Resolved scene and readiness
 
-The exporter loads the production gameplay city through the existing browser/Playwright path so it inspects the same Three.js revision and evaluated generators as gameplay. Adding a duplicate Node-side Three.js dependency is outside V1. It first resolves portal-ornament and active-city readiness, snapshots the active configuration and evaluated lighting-profile provenance, and only then constructs the fresh city used for canonical extraction.
+The exporter loads the production gameplay city through the existing browser/Playwright path so it inspects the same Three.js revision and evaluated generators as gameplay. Adding a duplicate Node-side Three.js dependency is outside V2. It first resolves portal-ornament and active-city readiness, snapshots the active configuration and evaluated lighting-profile provenance, and only then constructs the fresh city used for canonical extraction.
 
 Export begins only after all of the following are true:
 
@@ -210,7 +210,7 @@ Sky domes, lights used only for live rendering, camera helpers, origin axes, til
 Each geometry record declares:
 
 - content-addressed geometry ID and `contentHash`;
-- topology mode, which is `triangles` in V1;
+- topology mode, which is `triangles` in V2;
 - required `position` accessor;
 - optional `normal`, `tangent`, `uv`, `uv1`, color, and named custom bake accessors;
 - optional index accessor;
@@ -226,7 +226,7 @@ Normals are required for a receiver. Tangents are required when a selected chann
 
 ### Instancing and transforms
 
-Shared geometry is stored once. Every ordinary `Mesh` has one mesh-instance record with instance key `base`. Every live `InstancedMesh` instance has its own mesh-instance record, material-slot references, source provenance, and `sourceIndex`. V1 uses that zero-padded index in the producer-owned `InstancedMesh.instanceMatrix` order as the instance key. The active count is validated against matrix capacity and dormant capacity is omitted; asynchronous child traversal never supplies the index.
+Shared geometry is stored once. Every ordinary `Mesh` has one mesh-instance record with instance key `base`. Every live `InstancedMesh` instance has its own mesh-instance record, material-slot references, source provenance, and `sourceIndex`. V2 uses that zero-padded index in the producer-owned `InstancedMesh.instanceMatrix` order as the instance key. The active count is validated against matrix capacity and dormant capacity is omitted; asynchronous child traversal never supplies the index.
 
 Three.js `matrixWorld` after the final world-matrix update is authoritative. For an instanced mesh:
 
@@ -234,7 +234,7 @@ Three.js `matrixWorld` after the final world-matrix update is authoritative. For
 M_three_world_instance = object.matrixWorld * instanceMatrix
 ```
 
-Matrices are 16 finite IEEE-754 binary64 values in Three.js column-major element order. They are not decomposed to translation/rotation/scale for authority. A V1 transform must be affine, nonsingular, and have a positive determinant for its linear 3x3 portion. Perspective, singular, non-finite, or negative-determinant transforms are rejected. A later format may add the framework-approved geometry normalization for negative determinants; V1 never passes one ambiguously.
+Matrices are 16 finite IEEE-754 binary64 values in Three.js column-major element order. They are not decomposed to translation/rotation/scale for authority. A V2 transform must be affine, nonsingular, and have a positive determinant for its linear 3x3 portion. Perspective, singular, non-finite, or negative-determinant transforms are rejected. A later format may add the framework-approved geometry normalization for negative determinants; V2 never passes one ambiguously.
 
 The fixed Three.js-to-Blender basis is:
 
@@ -281,6 +281,15 @@ Materials are semantic bake records, not serialized shader programs. Each used m
 - evaluated caster/receiver eligibility and per-channel relevance;
 - known custom material adapter data, including road-material semantics where supported.
 
+V2 material records use schema `bus-sim-evaluated-material-semantics-v2`
+and `extractorContract.materialAdapter` is exactly
+`evaluated-three-material-semantics-v2`. In addition to the authored
+numeric `side` and nullable `shadowSide`, every material carries
+strict boolean `preserveShadowSide` and `isFoliage` values derived
+from the corresponding evaluated material `userData` flags. Missing,
+non-boolean, or additional unadapted semantics reject V2 validation; an old V1
+material or manifest is stale rather than implicitly upgraded.
+
 Arbitrary `onBeforeCompile`, custom shader code, uniforms, or program cache keys are not serialized. A material whose bake-relevant appearance depends on an unknown shader patch records the affected channel as unsupported with `custom_shader_semantics_require_compiler_adapter`; a required consumer must stop rather than approximate it. Its ordinary live rendering remains unchanged.
 
 Receiver base color is recorded for provenance and indirect-transport classification but is not an input to light-only direct or indirect receiver output when it belongs only to the receiver. The same material color is hash-significant for indirect transport when the surface participates as a bounce source. This contextual distinction is represented in channel projections rather than guessed from the material record alone.
@@ -312,11 +321,31 @@ Caster coverage mode is one of:
 - `cutout`: the declared coverage expression and threshold are authoritative;
 - `forced_opaque`: the visible material remains transparent or transmissive, but the caster silhouette is opaque;
 - `none`: the use is not a caster;
-- `unsupported_blend_or_transmission`: no V1 static-caster approximation is permitted.
+- `unsupported_blend_or_transmission`: no V2 static-caster approximation is permitted.
 
 `userData.mergeShadowAsOpaque === true` on the source mesh resolves to `forced_opaque` for caster coverage and records that exact runtime source flag. It does not alter visible material opacity, receiver semantics, or indirect transport automatically. The evaluated material `side` and `shadowSide` are recorded explicitly.
 
-Blended transparency or transmission without `mergeShadowAsOpaque`, a validated cutout threshold, or an explicit caster opt-out is unsupported for static-sun casting. Blended/transmissive receivers are unsupported for V1 direct/indirect light-only receiver promotion. They remain on the current renderer or are excluded by an explicit channel profile; a required downstream consumer must reject them. Ambiguous combinations such as missing alpha bytes, conflicting UV sets, or unknown map channels fail with `ambiguous_alpha_semantics` or the applicable structured texture/material error. A selected caster with an unadapted `customDepthMaterial` or `customDistanceMaterial` fails with `custom_shadow_material_adapter_missing`; the error names the object, root/path, shadow-material property/type, affected channels, and remediation. The explicit `mergeShadowAsOpaque` path remains supported as forced opaque.
+The V2 `static_sun_depth` profile also authenticates this exact
+`casterSidedness` policy:
+
+```text
+model: three-r183-effective-shadow-side-v1
+twoSidedCasting: true
+preserveMaterialFlagSemantics:
+  material-userdata-preserveShadowSide-or-isFoliage-v1
+```
+
+Three r183 first chooses the authored shadow side: explicit `shadowSide`
+wins; otherwise Front and Back are flipped for the shadow pass while Double is
+retained. Under the authenticated `single_high` policy, ordinary caster
+materials are then forced to DoubleSide. A material with either preservation
+flag retains that authored Three shadow-side result. The exporter stores the
+combined boolean as `casterMappings[].preserveShadowSide` and the numeric
+result as `casterMappings[].effectiveShadowSide`. JavaScript and Python
+consumers independently recompute both fields from the raw material record and
+channel policy before accepting them.
+
+Blended transparency or transmission without `mergeShadowAsOpaque`, a validated cutout threshold, or an explicit caster opt-out is unsupported for static-sun casting. Blended/transmissive receivers are unsupported for V2 direct/indirect light-only receiver promotion. They remain on the current renderer or are excluded by an explicit channel profile; a required downstream consumer must reject them. Ambiguous combinations such as missing alpha bytes, conflicting UV sets, or unknown map channels fail with `ambiguous_alpha_semantics` or the applicable structured texture/material error. A selected caster with an unadapted `customDepthMaterial` or `customDistanceMaterial` fails with `custom_shadow_material_adapter_missing`; the error names the object, root/path, shadow-material property/type, affected channels, and remediation. The explicit `mergeShadowAsOpaque` path remains supported as forced opaque.
 
 The current runtime deliberately treats some glazing as opaque shadow silhouette through `mergeShadowAsOpaque`, while older window prose says glass must not cast. The evaluated runtime behavior above is exported and the conflict is emitted as `SPEC_RUNTIME_SEMANTIC_CONFLICT` in the validation report. AI 528 does not change either behavior or prose.
 
@@ -326,7 +355,7 @@ A mapping addresses one mesh instance and one ordered material-group/draw range.
 
 Participant mappings cover every visible exported static material-group/instance range. They are separate from evaluated Three.js cast/receive flags because indirect transport and AO depend on bounce/occlusion surfaces that may be neither a shadow-map caster nor a promoted receiver. Their per-channel relevance is true only when the material adapter supports the applicable indirect or AO semantics; unsupported cases remain explicit and are never silently included.
 
-Receiver mappings additionally declare `geometricNormalAttribute`, available `uvSets`, `lightmapMappingId`, and whether a normal map prevents scalar-lightmap promotion under the AI 527 contract. Caster mappings declare coverage mode, side/shadow-side state, and the resolved caster-policy source. A `mergeShadowAsOpaque` caster is supported as `forced_opaque`; it does not inherit unsupported blended visible coverage.
+Receiver mappings additionally declare `geometricNormalAttribute`, available `uvSets`, `lightmapMappingId`, and whether a normal map prevents scalar-lightmap promotion under the AI 527 contract. Caster mappings declare coverage mode, authored side/shadow-side state, the strict preservation boolean, authenticated effective shadow side, and the resolved caster-policy source. A `mergeShadowAsOpaque` caster is supported as `forced_opaque`; it does not inherit unsupported blended visible coverage. Blender reconstruction retains authored side semantics for visible materials; the static-sun depth producer alone consumes the authenticated effective side for caster culling.
 
 Duplicate or overlapping mappings for the same semantic role are rejected unless the channel profile explicitly defines non-overlapping index ranges. A receiver/lightmap mapping in this package is identity and source metadata only; AI 533 owns atlas generation and final receiver encoding.
 
@@ -340,7 +369,7 @@ Each channel-profile record uses its stable `id` as the physical channel ID and 
 
 Each compiler-reference record contains a stable `id`, schema, archive identity/digest, backend, implementation owner/status, and ID-stable repository-relative configuration references. It contains no absolute Blender path and makes no assertion that the referenced Blender build is installed. AI 529 replaces this reference-level expectation with its verified compiler signature.
 
-All freshness hashes are lowercase SHA-256. A hash domain is calculated with the V1 framing protocol `bus-simulator/illumination/bake-source/sha256-framing/v1`:
+All freshness hashes are lowercase SHA-256. A hash domain is calculated with the version-1 framing protocol `bus-simulator/illumination/bake-source/sha256-framing/v1`:
 
 ```text
 SHA256(
@@ -352,7 +381,7 @@ SHA256(
 )
 ```
 
-Explicit lengths make the two variable-width inputs unambiguous. Projections use the canonical JSON rules above and exclude their own digest fields, container offsets, integrity hashes, reports, timings, and artifact paths. Names included by a declared root or material provenance adapter are semantic V1 inputs; unrelated logs and generated artifact names are not.
+Explicit lengths make the two variable-width inputs unambiguous. Projections use the canonical JSON rules above and exclude their own digest fields, container offsets, integrity hashes, reports, timings, and artifact paths. Names included by a declared root or material provenance adapter are semantic V2 inputs; unrelated logs and generated artifact names are not.
 
 ### Required freshness domains and exact projections
 
@@ -384,7 +413,7 @@ hashes.compiler
 hashes.channelSources[]: { id, sha256 }
 ```
 
-The three arrays are ID-sorted stable inventories; there is no `hashes.algorithm` property in V1. Every digest is exactly 64 lowercase hexadecimal characters. A projection hashes referenced buffer digests and semantic descriptors, not container offsets; moving an unchanged buffer cannot change freshness.
+The three arrays are ID-sorted stable inventories; there is no `hashes.algorithm` property in V2. Every digest is exactly 64 lowercase hexadecimal characters. A projection hashes referenced buffer digests and semantic descriptors, not container offsets; moving an unchanged buffer cannot change freshness.
 
 Role-specific content identities use additional fixed domains:
 
@@ -515,9 +544,9 @@ AI 530 may reuse independently derived source and channel hashes plus stable rec
 
 No `.bsib` package may activate gameplay lighting directly, and no runtime payload may trust only the `.bsib` filename or embedded source assertion. The live resolved city must independently derive the compatible channel freshness identity.
 
-## V1 non-goals
+## V2 non-goals
 
-V1 deliberately does not define:
+V2 deliberately does not define:
 
 - Blender installation, invocation, baking, or `.blend` authority;
 - runtime illumination binary transport or GPU formats;

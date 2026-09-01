@@ -44,6 +44,7 @@ function createMockWebGl2() {
         CLAMP_TO_EDGE: 'CLAMP_TO_EDGE',
         RGBA32F: 'RGBA32F',
         RGBA16F: 'RGBA16F',
+        RGBA8: 'RGBA8',
         R8: 'R8',
         RG8: 'RG8',
         R32UI: 'R32UI',
@@ -188,6 +189,7 @@ test('graphics WebGL2 illumination probe exposes generic texture, buffer, and en
         rgba16f_le: true,
         r8_unorm: true,
         rg8_unorm: true,
+        rgba8_unorm: true,
         uint32_le: true,
         raw_u8: true
     });
@@ -296,6 +298,12 @@ test('graphics WebGL2 illumination factory uploads every supported canonical enc
             arrayType: Uint8Array
         },
         {
+            id: 'diagnostic-packed-depth-array',
+            bytes: new Uint8Array([0x12, 0x34, 0x56, 0xff]),
+            upload: { kind: 'texture_2d_array', encoding: 'rgba8_unorm', width: 1, height: 1, layers: 1 },
+            arrayType: Uint8Array
+        },
+        {
             id: 'mapping-buffer',
             bytes: encodeLittleEndian([0x01020304, 0xa0b0c0d0], 'u32'),
             upload: { kind: 'buffer', encoding: 'uint32_le' },
@@ -331,7 +339,7 @@ test('graphics WebGL2 illumination factory uploads every supported canonical enc
         entry.dispose();
         entry.dispose();
     }
-    assert.equal(mock.deletedTextures.length, 4);
+    assert.equal(mock.deletedTextures.length, 5);
     assert.equal(mock.deletedBuffers.length, 2);
 });
 

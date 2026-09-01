@@ -1,7 +1,9 @@
 // Serves the repo as static files for headless browser tests.
 import http from 'node:http';
-import { stat, readFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -72,18 +74,29 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
-        const body = await readFile(diskPath);
         res.writeHead(200, {
             'content-type': getMimeType(diskPath),
-            'cache-control': 'no-store'
+            'cache-control': 'no-store',
+            'content-length': String(info.size)
         });
-        res.end(body);
+        await pipeline(createReadStream(diskPath), res);
     } catch (err) {
         const msg = err?.message ?? String(err);
+        if (res.headersSent) {
+            res.destroy(err);
+            return;
+        }
         res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
         res.end(`Server error: ${msg}`);
     }
 });
+
+// The Lab scene loads several large tree assets as a burst. Keep the normal
+// HTTP/1.1 connection alive long enough to stream all bodies with backpressure;
+// opening a fresh socket for every response can surface completed transfers as
+// ERR_ABORTED in Chrome DevTools under shared-machine contention.
+server.keepAliveTimeout = 120_000;
+server.headersTimeout = 125_000;
 
 server.listen(port, host, () => {
     console.log(`Static server: http://${host}:${port}/`);

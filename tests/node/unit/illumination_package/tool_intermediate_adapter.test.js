@@ -48,11 +48,11 @@ function createManifest(rawBytes, canonicalBytes) {
         },
         input: {
             channelSources: [{ id: 'static_sun_depth', sha256: '1'.repeat(64) }],
-            format: 'bus-sim-illumination-bake-input-v1',
+            format: 'bus-sim-illumination-bake-input-v2',
             geometrySha256: '2'.repeat(64),
             packageRawSha256: '3'.repeat(64),
             resolvedSourceSha256: '4'.repeat(64),
-            schemaVersion: 1,
+            schemaVersion: 2,
             usedMaterialsSha256: '5'.repeat(64)
         },
         outputs: [{

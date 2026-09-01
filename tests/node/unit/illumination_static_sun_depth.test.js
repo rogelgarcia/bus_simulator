@@ -7,6 +7,7 @@ import {
     STATIC_SUN_DEPTH_EMPTY_QUANTIZED,
     STATIC_SUN_DEPTH_MAX_QUANTIZED,
     createStableStaticSunDepthBasis,
+    createThreeR183DirectionalShadowFilterAxes,
     createStaticSunDepthActiveSet,
     createStaticSunDepthResidency,
     decodeStaticSunDepthMeters,
@@ -71,7 +72,16 @@ test('stable basis and strict descriptor validation establish the complete immut
 
     const rectangular = makeDescriptor();
     rectangular.identity.layout.interiorTexels = [2, 1];
-    assert.throws(() => validateStaticSunDepthTileSetDescriptor(rectangular), /must be square/);
+    rectangular.identity.layout.boundsLightMeters.max = [4, 2];
+    rectangular.tiles.forEach((tile) => {
+        const [x, y] = tile.coordinates;
+        tile.interiorBoundsLightMeters = {
+            min: [x * 2, y],
+            max: [(x + 1) * 2, y + 1]
+        };
+        tile.storedTexels = [4, 3];
+    });
+    assert.doesNotThrow(() => validateStaticSunDepthTileSetDescriptor(rectangular));
 });
 
 test('descriptor rejects WebGL float32 overflow and precision collapse', () => {
@@ -357,6 +367,205 @@ test('normal-offset bias matches constant + scale * (1 - dot(normal, sun))', () 
     assert.equal(awayFromSun.visibility, 1);
 });
 
+test('geometric bias shifts receiver light XY and depth before constant relief', () => {
+    const raw = makeDescriptor();
+    raw.identity.sampling.pcf.radiusTexels = 0;
+    raw.identity.sampling.bias = {
+        model: 'geometric-normal-offset-plus-constant-depth-relief-v1',
+        constantDepthReliefMeters: 0.0697915,
+        geometricNormalOffsetMeters: 0.25
+    };
+    const descriptor = validateStaticSunDepthTileSetDescriptor(raw);
+    const grid = constantGrid(encodeStaticSunDepthMeters(3, descriptor.identity.encoding));
+    const activeSet = createStaticSunDepthActiveSet(
+        descriptor,
+        makeResources(descriptor, grid),
+        {expectedIdentity: descriptor.identity}
+    );
+    const right = descriptor.identity.basis.rightAxisWorld;
+    const sun = descriptor.identity.sunPointDirectionWorld;
+    const inverseRootTwo = 1 / Math.sqrt(2);
+    const normal = right.map((value, index) => (
+        (value + sun[index]) * inverseRootTwo
+    ));
+    const position = worldFromLight(descriptor, 1.9, 1.5, 3.1);
+    const result = sampleStaticSunDepthWorld(activeSet, position, normal);
+
+    assert.equal(result.status, 'sampled');
+    assert.equal(result.biasModel, raw.identity.sampling.bias.model);
+    assert.equal(result.constantBiasMeters, null);
+    assert.equal(result.normalOffsetScaleMeters, null);
+    assert.equal(result.constantDepthReliefMeters, 0.0697915);
+    assert.equal(result.geometricNormalOffsetMeters, 0.25);
+    assert.ok(Math.abs(result.lightPosition[0] - (1.9 + 0.25 * inverseRootTwo)) < 1e-12);
+    assert.ok(Math.abs(result.lightPosition[1] - 1.5) < 1e-12);
+    assert.ok(Math.abs(result.lightPosition[2] - (3.1 - 0.25 * inverseRootTwo)) < 1e-12);
+    assert.deepEqual(result.tileCoordinates, [1, 0]);
+    assert.equal(result.appliedBiasMeters, 0.0697915);
+    assert.ok(Math.abs(
+        result.effectiveDepthReliefMeters
+            - (0.0697915 + 0.25 * inverseRootTwo)
+    ) < 1e-12);
+    for (let index = 0; index < 3; index++) {
+        assert.ok(Math.abs(
+            result.biasedWorldPosition[index] - position[index] - normal[index] * 0.25
+        ) < 1e-12);
+    }
+
+    const mixedFields = makeDescriptor();
+    mixedFields.identity.sampling.bias = {
+        ...raw.identity.sampling.bias,
+        constantMeters: 0.1
+    };
+    assert.throws(
+        () => validateStaticSunDepthTileSetDescriptor(mixedFields),
+        /must contain exactly/
+    );
+});
+
+test('geometric bias range uses one world-normal offset, not the legacy two-sided scale', () => {
+    const geometric = makeDescriptor();
+    geometric.identity.sampling.bias = {
+        model: 'geometric-normal-offset-plus-constant-depth-relief-v1',
+        constantDepthReliefMeters: 1,
+        geometricNormalOffsetMeters: 5
+    };
+    assert.doesNotThrow(() => validateStaticSunDepthTileSetDescriptor(geometric));
+
+    const legacy = makeDescriptor();
+    legacy.identity.sampling.bias = {
+        model: 'constant-plus-normal-offset-v1',
+        constantMeters: 1,
+        normalOffsetScaleMeters: 5
+    };
+    assert.throws(
+        () => validateStaticSunDepthTileSetDescriptor(legacy),
+        /maximum exceeds the encoding range/
+    );
+});
+
+test('Three r183 Vogel filter requires screen context and emulates linear compare taps', () => {
+    const raw = makeDescriptor();
+    raw.identity.sampling.bias = {
+        model: 'geometric-normal-offset-plus-constant-depth-relief-v1',
+        constantDepthReliefMeters: 0.0697915,
+        geometricNormalOffsetMeters: 0.0232
+    };
+    const sourceAxes = createThreeR183DirectionalShadowFilterAxes(
+        raw.identity.sunPointDirectionWorld
+    );
+    raw.identity.sampling.pcf = {
+        model: 'three-r183-vogel-5-linear-compare-v1',
+        radiusTexels: 1.5,
+        sampleCount: 5,
+        screenRotation: 'interleaved-gradient-noise-gl-fragcoord-v1',
+        hardwareComparison: 'linear-four-compare-taps-v1',
+        shadowMapSizeTexels: [16, 16],
+        shadowMapWorldExtentMeters: [16, 16],
+        sourceMapRightAxisWorld: sourceAxes.rightAxisWorld,
+        sourceMapUpAxisWorld: sourceAxes.upAxisWorld
+    };
+    const descriptor = validateStaticSunDepthTileSetDescriptor(raw);
+    const occupied = encodeStaticSunDepthMeters(3, descriptor.identity.encoding);
+    const grid = constantGrid(occupied);
+    for (let y = 0; y < grid.length; y++) {
+        for (let x = 2; x < grid[y].length; x++) {
+            grid[y][x] = STATIC_SUN_DEPTH_EMPTY_QUANTIZED;
+        }
+    }
+    const activeSet = createStaticSunDepthActiveSet(
+        descriptor,
+        makeResources(descriptor, grid),
+        {expectedIdentity: descriptor.identity}
+    );
+    const position = worldFromLight(descriptor, 2, 1.75, 4);
+    const missingContext = sampleStaticSunDepthWorld(
+        activeSet,
+        position,
+        descriptor.identity.sunPointDirectionWorld
+    );
+    assert.equal(missingContext.status, 'invalid_sampling_context');
+    assert.equal(missingContext.failClosed, true);
+    assert.equal(missingContext.visibility, 0);
+
+    const first = sampleStaticSunDepthWorld(
+        activeSet,
+        position,
+        descriptor.identity.sunPointDirectionWorld,
+        {fragmentCoordinatePixels: [10.5, 20.5]}
+    );
+    const rotated = sampleStaticSunDepthWorld(
+        activeSet,
+        position,
+        descriptor.identity.sunPointDirectionWorld,
+        {fragmentCoordinatePixels: [11.5, 20.5]}
+    );
+    assert.equal(first.status, 'sampled');
+    assert.equal(first.pcfModel, raw.identity.sampling.pcf.model);
+    assert.equal(first.filterSampleCount, 5);
+    assert.equal(first.comparisonTapCount, 20);
+    assert.equal(first.tapCount, 20);
+    assert.equal(first.hardwareComparison, 'linear-four-compare-taps-v1');
+    assert.equal(first.filterWorldRadiusMeters, 1.5);
+    assert.deepEqual(first.fragmentCoordinatePixels, [10.5, 20.5]);
+    assert.ok(first.visibility > 0 && first.visibility < 1);
+    assert.notEqual(first.visibility, rotated.visibility);
+    assert.ok(Math.abs(first.visibility - first.weightedVisibleSampleSum / 5) < 1e-12);
+
+    const wrongAxes = makeDescriptor();
+    wrongAxes.identity.sampling.pcf = {
+        ...raw.identity.sampling.pcf,
+        sourceMapRightAxisWorld: raw.identity.sampling.pcf.sourceMapUpAxisWorld
+    };
+    assert.throws(
+        () => validateStaticSunDepthTileSetDescriptor(wrongAxes),
+        /source-map axes do not match Three r183/
+    );
+});
+
+test('3x2 row-major exact filter fetches adjacent layers across X and Y boundaries', () => {
+    const descriptor = validateStaticSunDepthTileSetDescriptor(makeThreeByTwoDescriptor());
+    assert.deepEqual(descriptor.tiles.map((tile) => tile.coordinates), [
+        [0, 0], [1, 0], [2, 0],
+        [0, 1], [1, 1], [2, 1]
+    ]);
+    assert.deepEqual(lookupStaticSunDepthTile(descriptor, 11.999, 7.999)?.tileCoordinates, [2, 1]);
+    assert.equal(lookupStaticSunDepthTile(descriptor, 12, 7.999), null);
+    const occupied = encodeStaticSunDepthMeters(3, descriptor.identity.encoding);
+    const sampleGrid = (grid, lightX, lightY) => {
+        const activeSet = createStaticSunDepthActiveSet(
+            descriptor,
+            makeResources(descriptor, grid),
+            {expectedIdentity: descriptor.identity}
+        );
+        return sampleStaticSunDepthWorld(
+            activeSet,
+            worldFromLight(descriptor, lightX, lightY, 4),
+            descriptor.identity.sunPointDirectionWorld,
+            {fragmentCoordinatePixels: [10.5, 20.5]}
+        );
+    };
+    const xBoundaryGrid = Array.from({length: 8}, () => (
+        Array.from({length: 12}, (_, x) => (
+            x >= 8 ? STATIC_SUN_DEPTH_EMPTY_QUANTIZED : occupied
+        ))
+    ));
+    const xBoundary = sampleGrid(xBoundaryGrid, 7.9, 2);
+    assert.deepEqual(xBoundary.tileCoordinates, [1, 0]);
+    assert.equal(xBoundary.comparisonTapCount, 20);
+    assert.equal(xBoundary.outOfBoundsTapCount, 0);
+    assert.ok(xBoundary.visibility > 0 && xBoundary.visibility < 1);
+
+    const yBoundaryGrid = Array.from({length: 8}, (_, y) => (
+        Array(12).fill(y >= 4 ? STATIC_SUN_DEPTH_EMPTY_QUANTIZED : occupied)
+    ));
+    const yBoundary = sampleGrid(yBoundaryGrid, 6, 3.9);
+    assert.deepEqual(yBoundary.tileCoordinates, [1, 0]);
+    assert.equal(yBoundary.comparisonTapCount, 20);
+    assert.equal(yBoundary.outOfBoundsTapCount, 0);
+    assert.ok(yBoundary.visibility > 0 && yBoundary.visibility < 1);
+});
+
 test('sampler snapshots caller bytes and fails closed for XY and depth out of bounds', () => {
     const descriptor = validateStaticSunDepthTileSetDescriptor(makeDescriptor());
     const grid = constantGrid(encodeStaticSunDepthMeters(3, descriptor.identity.encoding));
@@ -469,6 +678,50 @@ function makeDescriptor() {
             };
         })
     };
+}
+
+/** @returns {Record<string, any>} */
+function makeThreeByTwoDescriptor() {
+    const raw = makeDescriptor();
+    const tileCount = [3, 2];
+    const interiorTexels = [4, 4];
+    raw.identity.layout.tileCount = tileCount;
+    raw.identity.layout.interiorTexels = interiorTexels;
+    raw.identity.layout.boundsLightMeters = {min: [0, 0], max: [12, 8]};
+    raw.tiles = Array.from({length: 6}, (_, index) => {
+        const x = index % tileCount[0];
+        const y = Math.floor(index / tileCount[0]);
+        return {
+            id: 'tile-' + x + '-' + y,
+            coordinates: [x, y],
+            interiorBoundsLightMeters: {
+                min: [x * interiorTexels[0], y * interiorTexels[1]],
+                max: [(x + 1) * interiorTexels[0], (y + 1) * interiorTexels[1]]
+            },
+            storedTexels: [6, 6],
+            contentSha256: String(index + 1).repeat(64)
+        };
+    });
+    raw.identity.sampling.bias = {
+        model: 'geometric-normal-offset-plus-constant-depth-relief-v1',
+        constantDepthReliefMeters: 0.0697915,
+        geometricNormalOffsetMeters: 0.0232
+    };
+    const sourceAxes = createThreeR183DirectionalShadowFilterAxes(
+        raw.identity.sunPointDirectionWorld
+    );
+    raw.identity.sampling.pcf = {
+        model: 'three-r183-vogel-5-linear-compare-v1',
+        radiusTexels: 1.5,
+        sampleCount: 5,
+        screenRotation: 'interleaved-gradient-noise-gl-fragcoord-v1',
+        hardwareComparison: 'linear-four-compare-taps-v1',
+        shadowMapSizeTexels: [16, 16],
+        shadowMapWorldExtentMeters: [16, 16],
+        sourceMapRightAxisWorld: sourceAxes.rightAxisWorld,
+        sourceMapUpAxisWorld: sourceAxes.upAxisWorld
+    };
+    return raw;
 }
 
 /**

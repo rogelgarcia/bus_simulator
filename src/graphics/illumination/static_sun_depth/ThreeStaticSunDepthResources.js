@@ -1,4 +1,4 @@
-// Three-native AI 530 resource factory for the compact AI 531 RG8 tile array.
+// Three-native AI 530 resource factory for authenticated AI 531 tile arrays.
 // @ts-check
 
 import * as THREE from 'three';
@@ -6,6 +6,10 @@ import {
     requireStaticSunDepthPlanResource,
     validateStaticSunDepthUploadDescriptor
 } from './StaticSunDepthPlanContract.js';
+import {
+    copyIlluminationPackageResourceBytes,
+    isTrustedIlluminationPackageSegmentedBytes
+} from '../runtime/IlluminationPackagePlan.js';
 
 function requireDescriptor(descriptor, renderer) {
     const maxTextureSize = Number(renderer?.capabilities?.maxTextureSize ?? 0);
@@ -24,23 +28,33 @@ function bytesView(value, id) {
     throw new TypeError(`Decoded static-sun resource '${id}' must be binary bytes.`);
 }
 
+function decodedByteLength(value, id) {
+    return isTrustedIlluminationPackageSegmentedBytes(value)
+        ? value.byteLength
+        : bytesView(value, id).byteLength;
+}
+
 export function createThreeStaticSunDepthResourceFactory(renderer) {
     if (!renderer?.isWebGLRenderer || !renderer.capabilities?.isWebGL2) {
         throw new TypeError('Static-sun depth requires a Three WebGL2Renderer.');
     }
     const createResource = function createResource(decoded, descriptor) {
         const upload = requireDescriptor(descriptor, renderer);
-        const source = bytesView(decoded, descriptor.id);
-        if (source.byteLength !== upload.expectedBytes) {
-            throw new RangeError(`Static-sun resource '${descriptor.id}' has ${source.byteLength} bytes; expected ${upload.expectedBytes}.`);
+        const sourceByteLength = decodedByteLength(decoded, descriptor.id);
+        if (sourceByteLength !== upload.expectedBytes) {
+            throw new RangeError(`Static-sun resource '${descriptor.id}' has ${sourceByteLength} bytes; expected ${upload.expectedBytes}.`);
         }
-        const pixels = source.slice();
+        const pixels = copyIlluminationPackageResourceBytes(
+            decoded,
+            `static-sun resource '${descriptor.id}'`
+        );
         const expectedByteLength = pixels.byteLength;
+        const diagnostic = upload.encoding === 'rgba8_unorm';
         const texture = new THREE.DataArrayTexture(pixels, upload.width, upload.height, upload.layers);
         texture.name = `illumination/static-sun/${descriptor.id}`;
-        texture.format = THREE.RGFormat;
+        texture.format = diagnostic ? THREE.RGBAFormat : THREE.RGFormat;
         texture.type = THREE.UnsignedByteType;
-        texture.internalFormat = 'RG8';
+        texture.internalFormat = diagnostic ? 'RGBA8' : 'RG8';
         texture.minFilter = THREE.NearestFilter;
         texture.magFilter = THREE.NearestFilter;
         texture.wrapS = THREE.ClampToEdgeWrapping;
@@ -55,7 +69,7 @@ export function createThreeStaticSunDepthResourceFactory(renderer) {
         return Object.freeze({
             resource: Object.freeze({
                 kind: 'texture_2d_array',
-                encoding: 'rg8_unorm',
+                encoding: upload.encoding,
                 texture,
                 width: upload.width,
                 height: upload.height,

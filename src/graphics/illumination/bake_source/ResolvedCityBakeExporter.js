@@ -36,8 +36,12 @@ import {
     createUsedMaterialsFreshnessInventory
 } from './BakeSourceFreshness.js';
 import { validateResolvedCityBakePackage } from './BakeSourceValidation.js';
+import {
+    requireStaticSunDepthCasterSidedness,
+    resolveStaticSunDepthEffectiveShadowSide
+} from '../../lighting/EffectiveShadowSide.js';
 
-export const RESOLVED_CITY_BAKE_INPUT_FORMAT = 'bus-sim-illumination-bake-input-v1';
+export const RESOLVED_CITY_BAKE_INPUT_FORMAT = 'bus-sim-illumination-bake-input-v2';
 export const RESOLVED_CITY_BAKE_GEOMETRY_BUFFER_DOMAIN = 'bus-simulator/illumination/bake-source/evaluated-geometry-buffer/v1';
 export const RESOLVED_CITY_BAKE_ALPHA_DOMAIN = 'bus-simulator/illumination/bake-source/alpha-input/v1';
 export const RESOLVED_CITY_BAKE_PROFILE_ASSET_DOMAIN = 'bus-simulator/illumination/bake-source/profile-asset/v1';
@@ -127,7 +131,15 @@ async function createAlphaInputs(materials) {
     return { records: sortById(records), byMaterialId };
 }
 
-function createMappings({ geometryExtraction, materialRecords, materialIdByLiveObject, alphaByMaterialId, city }) {
+function createMappings({
+    geometryExtraction,
+    materialRecords,
+    materialIdByLiveObject,
+    alphaByMaterialId,
+    city,
+    casterSidedness
+}) {
+    const authenticatedCasterSidedness = requireStaticSunDepthCasterSidedness(casterSidedness);
     const geometryById = new Map(geometryExtraction.geometries.map((entry) => [entry.id, entry]));
     const materialById = new Map(materialRecords.map((entry) => [entry.id, entry]));
     const materialReferences = getBakeSourceMaterialReferences(geometryExtraction);
@@ -288,6 +300,8 @@ function createMappings({ geometryExtraction, materialRecords, materialIdByLiveO
                     });
                 }
                 if (sourceCaster && visible) {
+                    const preserveShadowSide = material.preserveShadowSide === true
+                        || material.isFoliage === true;
                     casterMappings.push({
                         id: `caster/${suffix}`,
                         meshInstanceId: instance.id,
@@ -304,6 +318,13 @@ function createMappings({ geometryExtraction, materialRecords, materialIdByLiveO
                         coverageMode,
                         side: material.side,
                         shadowSide: material.shadowSide,
+                        preserveShadowSide,
+                        effectiveShadowSide: resolveStaticSunDepthEffectiveShadowSide({
+                            side: material.side,
+                            shadowSide: material.shadowSide,
+                            preserveShadowSide: material.preserveShadowSide,
+                            isFoliage: material.isFoliage
+                        }, authenticatedCasterSidedness),
                         policySource: forcedOpaque ? 'mergeShadowAsOpaque' : 'evaluated_original_caster',
                         channelRelevance: {
                             static_sun_depth: coverageMode !== 'unsupported_blend_or_transmission',
@@ -562,14 +583,15 @@ export async function exportResolvedCityBakeSource({ city, profile, readiness = 
         materialRecords: sourceMaterialRecords,
         materialIdByLiveObject: materialCatalog.materialByObject,
         alphaByMaterialId: alphaCatalog.byMaterialId,
-        city
+        city,
+        casterSidedness: profile.channelConfigurations?.static_sun_depth?.casterSidedness
     });
     const blockingUnsupportedCases = mappings.unsupportedCases.filter((entry) => {
         const channel = profile.channelConfigurations?.[entry.channelId];
         return channel && channel.unsupportedMaterialPolicy !== 'exclude';
     });
     if (blockingUnsupportedCases.length > 0) {
-        failBakeSource('unsupported_required_material_semantics', 'A required bake channel references material semantics without a V1 compiler adapter.', {
+        failBakeSource('unsupported_required_material_semantics', 'A required bake channel references material semantics without a V2 compiler adapter.', {
             count: blockingUnsupportedCases.length,
             cases: blockingUnsupportedCases.slice(0, 25)
         });
@@ -652,8 +674,8 @@ export async function exportResolvedCityBakeSource({ city, profile, readiness = 
     const channelSources = await buildChannelSourceHashes(channelProfiles, hashSet, channelSourceContext);
     const manifest = {
         format: RESOLVED_CITY_BAKE_INPUT_FORMAT,
-        schemaVersion: 1,
-        containerVersion: { major: 1, minor: 0 },
+        schemaVersion: 2,
+        containerVersion: { major: 2, minor: 0 },
         coordinateContract: {
             id: profile.coordinateContract,
             source: 'three_right_handed_y_up_column_major',
@@ -674,7 +696,7 @@ export async function exportResolvedCityBakeSource({ city, profile, readiness = 
             id: 'resolved-city-bake-extractor-v1',
             canonicalizer: 'strict-sorted-json-v1',
             geometryAdapter: 'evaluated-three-buffer-geometry-v1',
-            materialAdapter: 'evaluated-three-material-semantics-v1',
+            materialAdapter: 'evaluated-three-material-semantics-v2',
             textureAdapter: 'evaluated-three-texture-source-v1',
             sourceHashSetSchema: BAKE_SOURCE_HASH_SET_SCHEMA
         },

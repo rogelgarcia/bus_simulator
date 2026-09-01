@@ -1,6 +1,36 @@
 // Defines the explicit AI 528 source, light, channel, and compiler references.
 
+import {
+    STATIC_SUN_DEPTH_CASTER_SIDEDNESS
+} from '../../src/graphics/lighting/EffectiveShadowSide.js';
+
 export const ILLUMINATION_EXPORT_PROFILE_SCHEMA = 'bus-sim-illumination-export-profile-v1';
+
+export const AI531_STATIC_SUN_PROFILE_ANGLES = Object.freeze([
+    Object.freeze({ azimuthDeg: 45, elevationDeg: 8 }),
+    Object.freeze({ azimuthDeg: 45, elevationDeg: 35 }),
+    Object.freeze({ azimuthDeg: 135, elevationDeg: 8 }),
+    Object.freeze({ azimuthDeg: 135, elevationDeg: 35 }),
+    Object.freeze({ azimuthDeg: 225, elevationDeg: 8 }),
+    Object.freeze({ azimuthDeg: 225, elevationDeg: 12 }),
+    Object.freeze({ azimuthDeg: 225, elevationDeg: 35 }),
+    Object.freeze({ azimuthDeg: 315, elevationDeg: 8 }),
+    Object.freeze({ azimuthDeg: 315, elevationDeg: 35 })
+]);
+
+export const AI531_STATIC_SUN_DEPTH_PRODUCTION_LAYOUT = Object.freeze({
+    policy: 'per_profile_phase_locked_rectangular_light_space_grid_v2',
+    texelSizeMeters: 680 / 16384,
+    tileSizeMeters: Object.freeze([
+        1870 * (680 / 16384),
+        1821 * (680 / 16384)
+    ]),
+    interiorPixels: Object.freeze([1870, 1821]),
+    guardPixels: 4,
+    maximumPayloadBytes: 536870912,
+    layerOrder: 'row-major-y-then-x-v1',
+    phasePolicy: 'absolute-stable-basis-texel-edge-lattice-v1'
+});
 
 export const ILLUMINATION_COMPILER_REFERENCE = Object.freeze({
     schema: 'bus-sim-illumination-compiler-reference-v1',
@@ -9,11 +39,11 @@ export const ILLUMINATION_COMPILER_REFERENCE = Object.freeze({
     archiveSha256: '0e631dad7d0cad6d5d18abdd2e2550f6c0213215334eda00ddbd3d22b96ecb2c',
     backend: 'cycles_cpu',
     implementationOwner: 'AI_529',
-    implementationStatus: 'pending',
+    implementationStatus: 'done',
     configurationRefs: Object.freeze([
         'specs/graphics/illumination_framework.md',
         'specs/graphics/illumination_bake_input.md',
-        'prompts/AI_529_TOOLS_blender_cycles_headless_bake_compiler.md'
+        'prompts/AI_DONE_529_TOOLS_blender_cycles_headless_bake_compiler_DONE.md'
     ])
 });
 
@@ -26,6 +56,25 @@ function finite(value, label) {
 function colorArray(color, label) {
     if (!color?.isColor) throw new Error(`[IlluminationBakeExporter] ${label} is unavailable.`);
     return [finite(color.r, `${label}.r`), finite(color.g, `${label}.g`), finite(color.b, `${label}.b`)];
+}
+
+export function createAi531StaticSunLightProfiles() {
+    return Object.freeze(AI531_STATIC_SUN_PROFILE_ANGLES.map(({ azimuthDeg, elevationDeg }) => {
+        const azimuth = azimuthDeg * Math.PI / 180;
+        const elevation = elevationDeg * Math.PI / 180;
+        const horizontal = Math.cos(elevation);
+        return Object.freeze({
+            id: `ai527.sun.az${String(azimuthDeg).padStart(3, '0')}.el${String(elevationDeg).padStart(2, '0')}`,
+            type: 'directional_sun',
+            directionThree: Object.freeze([
+                Math.cos(azimuth) * horizontal,
+                Math.sin(elevation),
+                Math.sin(azimuth) * horizontal
+            ]),
+            angularDiameterDegrees: 0,
+            filterModel: 'point_direction_depth_with_runtime_pcf_v1'
+        });
+    }));
 }
 
 export function createResolvedIlluminationExportProfile({ city, engine }) {
@@ -86,7 +135,7 @@ export function createResolvedIlluminationExportProfile({ city, engine }) {
             intensity: finite(city.sunRef.intensity, 'sun.intensity'),
             angularDiameterDegrees: 0.53,
             filterModel: 'cycles_directional_soft_angle_v1'
-        }, {
+        }, ...createAi531StaticSunLightProfiles(), {
             id: 'hemisphere.current',
             type: 'hemisphere_diffuse',
             directionThree: [0, 1, 0],
@@ -104,14 +153,15 @@ export function createResolvedIlluminationExportProfile({ city, engine }) {
         }],
         channelConfigurations: {
             static_sun_depth: {
-                schema: 'bus-sim-static-sun-depth-source-v1',
-                lightProfileId: 'sun.default',
+                schema: 'bus-sim-static-sun-depth-source-v4',
+                lightProfileIds: createAi531StaticSunLightProfiles().map((entry) => entry.id),
                 geometryRole: 'static_casters',
                 alphaPolicy: 'evaluated_runtime_coverage',
                 depthUnits: 'meters',
-                layout: { policy: 'full_city_single_domain_v1', resolution: 4096, paddingPixels: 8 },
-                precision: 'float32_source_depth_v1',
-                filtering: { model: 'cycles_directional_soft_angle_v1', samples: 128 },
+                casterSidedness: STATIC_SUN_DEPTH_CASTER_SIDEDNESS,
+                layout: AI531_STATIC_SUN_DEPTH_PRODUCTION_LAYOUT,
+                precision: 'cycles_float32_depth_to_rg8_endpoint_quantization_v1',
+                filtering: { sourceModel: 'point_direction_v1', runtimeModel: 'square_nearest_box_v1', radiusPixels: 1 },
                 precisionOwner: 'AI_531'
             },
             direct_receiver: {

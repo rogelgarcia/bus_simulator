@@ -1,6 +1,10 @@
 varying highp vec3 vStaticSunWorldPosition;
+uniform highp vec4 staticSunDepthBiasPolicy;
 
-void staticSunDepthTransferWorldPosition( highp vec3 transformedPosition ) {
+void staticSunDepthTransferWorldPosition(
+    highp vec3 transformedPosition,
+    highp vec3 transformedNormal
+) {
     highp vec4 worldPosition = vec4( transformedPosition, 1.0 );
     #ifdef USE_BATCHING
         worldPosition = getBatchingMatrix( batchId ) * worldPosition;
@@ -8,5 +12,12 @@ void staticSunDepthTransferWorldPosition( highp vec3 transformedPosition ) {
     #ifdef USE_INSTANCING
         worldPosition = instanceMatrix * worldPosition;
     #endif
-    vStaticSunWorldPosition = ( modelMatrix * worldPosition ).xyz;
+    highp vec3 receiverWorldPosition = ( modelMatrix * worldPosition ).xyz;
+    if ( staticSunDepthBiasPolicy.w > 0.5 ) {
+        highp vec3 geometricWorldNormal = normalize(
+            inverseTransformDirection( transformedNormal, viewMatrix )
+        );
+        receiverWorldPosition += geometricWorldNormal * staticSunDepthBiasPolicy.y;
+    }
+    vStaticSunWorldPosition = receiverWorldPosition;
 }

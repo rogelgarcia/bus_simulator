@@ -230,8 +230,8 @@ function validateInput(value) {
         'schemaVersion',
         'usedMaterialsSha256'
     ], 'input');
-    if (input.format !== 'bus-sim-illumination-bake-input-v1' || input.schemaVersion !== 1) {
-        failCompiler('intermediate_input_version_unsupported', 'Intermediate input contract must be AI 528 bake-input V1.', {
+    if (input.format !== 'bus-sim-illumination-bake-input-v2' || input.schemaVersion !== 2) {
+        failCompiler('intermediate_input_version_unsupported', 'Intermediate input contract must be bake-input V2.', {
             format: input.format ?? null,
             schemaVersion: input.schemaVersion ?? null
         });

@@ -8,6 +8,16 @@
     z-index: 110;
 }
 
+.lab-validation-evidence-canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 1280px;
+    height: 720px;
+    z-index: 2147483647;
+    pointer-events: none;
+}
+
 .lab-scene-panel {
     width: min(360px, calc(100vw - 32px));
     display: flex;

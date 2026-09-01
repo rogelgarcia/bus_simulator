@@ -1,8 +1,9 @@
-// Authenticates and validates an immutable snapshot of an AI 531 RG8 tile array.
+// Authenticates and validates an immutable snapshot of an AI 531 tile array.
 // @ts-check
 
 import {rawSha256OwnedHex} from '../package/RawSha256.js';
 import {validateStaticSunDepthTileSetDescriptor} from './StaticSunDepthContract.js';
+import {getStaticSunDepthBytesPerTexel} from './StaticSunDepthEncoding.js';
 
 export const STATIC_SUN_DEPTH_TILE_ARRAY_INTEGRITY_SCHEMA =
     'static-sun-depth-tile-array-integrity-v1';
@@ -94,7 +95,10 @@ function prepareValidation(descriptorValue, payloadValue, consumeVerifiedPayload
     const payload = requireUint8Array(payloadValue);
     const storedWidth = descriptor.tiles[0].storedTexels[0];
     const storedHeight = descriptor.tiles[0].storedTexels[1];
-    const bytesPerLayer = storedWidth * storedHeight * 2;
+    const bytesPerTexel = getStaticSunDepthBytesPerTexel(
+        descriptor.identity.encoding
+    );
+    const bytesPerLayer = storedWidth * storedHeight * bytesPerTexel;
     const expectedByteLength = bytesPerLayer * descriptor.tiles.length;
     if (payload.byteLength !== expectedByteLength) {
         throw new Error(
@@ -206,6 +210,9 @@ function validateGuards(descriptor, payload, bytesPerLayer) {
     const storedHeight = descriptor.tiles[0].storedTexels[1];
     const globalWidth = interiorWidth * layout.tileCount[0];
     const globalHeight = interiorHeight * layout.tileCount[1];
+    const bytesPerTexel = getStaticSunDepthBytesPerTexel(
+        descriptor.identity.encoding
+    );
     let validatedGuardTexelCount = 0;
 
     for (let tileIndex = 0; tileIndex < descriptor.tiles.length; tileIndex += 1) {
@@ -224,11 +231,15 @@ function validateGuards(descriptor, payload, bytesPerLayer) {
                 const ownerStoredX = guard + ownerGlobalX - ownerTileX * interiorWidth;
                 const ownerStoredY = guard + ownerGlobalY - ownerTileY * interiorHeight;
                 const actualOffset = tileIndex * bytesPerLayer
-                    + (storedY * storedWidth + storedX) * 2;
+                    + (storedY * storedWidth + storedX) * bytesPerTexel;
                 const expectedOffset = ownerIndex * bytesPerLayer
-                    + (ownerStoredY * storedWidth + ownerStoredX) * 2;
-                if (payload[actualOffset] !== payload[expectedOffset]
-                    || payload[actualOffset + 1] !== payload[expectedOffset + 1]) {
+                    + (ownerStoredY * storedWidth + ownerStoredX) * bytesPerTexel;
+                let mismatch = false;
+                for (let byteIndex = 0; byteIndex < bytesPerTexel; byteIndex += 1) {
+                    mismatch ||= payload[actualOffset + byteIndex]
+                        !== payload[expectedOffset + byteIndex];
+                }
+                if (mismatch) {
                     throw new Error(
                         'static sun depth tile "' + tile.id + '" guard ['
                         + storedX + ', ' + storedY + '] does not match owning tile "'

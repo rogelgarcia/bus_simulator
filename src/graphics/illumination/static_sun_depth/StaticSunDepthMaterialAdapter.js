@@ -27,6 +27,7 @@ const SHADER_PAYLOAD = createShaderPayload({
     shaderId: 'illumination.static_sun_depth.v1',
     sourceSet: SHADER_SOURCES
 });
+let bindingVariantSerial = 0;
 
 export const STATIC_SUN_DEPTH_DEBUG_MODES = Object.freeze({
     final: 0,
@@ -79,17 +80,35 @@ export function createStaticSunDepthShaderBinding({ descriptor, texture, debugMo
     const validated = validateStaticSunDepthTileSetDescriptor(descriptor);
     if (!texture?.isDataArrayTexture) throw new TypeError('Static-sun depth requires a Three DataArrayTexture.');
     const layout = validated.identity.layout;
-    const stored = validated.tiles[0].storedTexels;
     const pointDirectionWorld = new THREE.Vector3(...validated.identity.sunPointDirectionWorld).normalize();
     const pointDirectionView = pointDirectionWorld.clone();
-    const normalBias = Number(validated.identity.sampling.bias.normalOffsetScaleMeters ?? 0);
-    // Program identity follows shader source, not package content. Every
-    // descriptor-specific value below is a uniform and can safely reuse the
-    // same compiled program.
+    const bias = validated.identity.sampling.bias;
+    const pcf = validated.identity.sampling.pcf;
+    const geometricBias = bias.model
+        === 'geometric-normal-offset-plus-constant-depth-relief-v1';
+    const threeR183Filter = pcf.model === 'three-r183-vogel-5-linear-compare-v1';
+    const constantBias = geometricBias
+        ? bias.constantDepthReliefMeters : bias.constantMeters;
+    const normalBias = geometricBias
+        ? bias.geometricNormalOffsetMeters : bias.normalOffsetScaleMeters;
+    const sourceMapRightLight = threeR183Filter ? new THREE.Vector2(
+        dot(pcf.sourceMapRightAxisWorld, validated.identity.basis.rightAxisWorld),
+        dot(pcf.sourceMapRightAxisWorld, validated.identity.basis.upAxisWorld)
+    ) : new THREE.Vector2();
+    const sourceMapUpLight = threeR183Filter ? new THREE.Vector2(
+        dot(pcf.sourceMapUpAxisWorld, validated.identity.basis.rightAxisWorld),
+        dot(pcf.sourceMapUpAxisWorld, validated.identity.basis.upAxisWorld)
+    ) : new THREE.Vector2();
+    // Three may retain a material's current program across hook removal and
+    // reinstallation. Isolate each uniform owner so a replacement profile or
+    // texture can never resume a program bound to disposed cache resources.
+    bindingVariantSerial++;
     const variantKey = [
         'static-sun-depth-v2',
         'three-r' + STATIC_SUN_DEPTH_THREE_REVISION,
-        SHADER_PAYLOAD.variantKey
+        SHADER_PAYLOAD.variantKey,
+        validated.identity.encoding.id,
+        'binding-' + bindingVariantSerial
     ].join(':');
     const uniforms = Object.freeze({
         staticSunDepthTiles: { value: texture },
@@ -99,21 +118,46 @@ export function createStaticSunDepthShaderBinding({ descriptor, texture, debugMo
         staticSunDepthGridOrigin: { value: new THREE.Vector2(...layout.boundsLightMeters.min) },
         staticSunDepthTileCount: { value: new THREE.Vector2(...layout.tileCount) },
         staticSunDepthDepthRange: { value: new THREE.Vector2(validated.identity.encoding.minDepthMeters, validated.identity.encoding.maxDepthMeters) },
+        staticSunDepthEncodingMode: {
+            value: validated.identity.encoding.id
+                === 'rgba8-rgb24-linear-depth-alpha-occupancy-diagnostic-v1'
+                ? 1
+                : 0
+        },
         staticSunDepthLayout: {
             value: new THREE.Vector4(
-                layout.interiorTexels[0] * layout.texelSizeMeters,
                 layout.interiorTexels[0],
-                stored[0],
-                layout.guardTexels
+                layout.interiorTexels[1],
+                layout.guardTexels,
+                layout.texelSizeMeters
             )
         },
         staticSunDepthBiasPolicy: {
-            value: new THREE.Vector3(
-                validated.identity.sampling.bias.constantMeters,
+            value: new THREE.Vector4(
+                constantBias,
                 normalBias,
-                validated.identity.sampling.pcf.radiusTexels
+                pcf.radiusTexels,
+                geometricBias ? 1 : 0
             )
         },
+        staticSunDepthFilterPolicy: {
+            value: new THREE.Vector4(
+                threeR183Filter ? 1 : 0,
+                pcf.radiusTexels,
+                threeR183Filter ? pcf.sampleCount : 0,
+                0
+            )
+        },
+        staticSunDepthSourceMapSizeAndExtent: {
+            value: new THREE.Vector4(
+                threeR183Filter ? pcf.shadowMapSizeTexels[0] : 0,
+                threeR183Filter ? pcf.shadowMapSizeTexels[1] : 0,
+                threeR183Filter ? pcf.shadowMapWorldExtentMeters[0] : 0,
+                threeR183Filter ? pcf.shadowMapWorldExtentMeters[1] : 0
+            )
+        },
+        staticSunDepthSourceMapRightLight: { value: sourceMapRightLight },
+        staticSunDepthSourceMapUpLight: { value: sourceMapUpLight },
         staticSunDepthDebugMode: { value: debugModeValue(debugMode) }
     });
     return {
@@ -147,7 +191,7 @@ export function applyStaticSunDepthShaderPatch(shader, binding) {
     shader.vertexShader = replaceExactlyOnce(
         shader.vertexShader,
         '#include <project_vertex>',
-        '#include <project_vertex>\nstaticSunDepthTransferWorldPosition( transformed );',
+        '#include <project_vertex>\nstaticSunDepthTransferWorldPosition( transformed, transformedNormal );',
         'post-transform vertex position'
     );
     shader.fragmentShader = replaceExactlyOnce(

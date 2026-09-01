@@ -216,6 +216,27 @@ The generic AI 530 container may carry independently optional channels, but a na
 | `baked.hybrid_sun_indirect_v1` | `baked.hybrid_sun_v1`, receiver mapping, and `indirect_irradiance` | AO/bent normal selected by AI 534 | Player-selectable only after channel validation |
 | `baked.hybrid_sun_direct_indirect_v1` | previous profile plus receiver mapping and `direct_receiver` | AO/bent normal selected by AI 534 | Player-selectable only if AI 533 promotes direct baking |
 
+`development.static_sun_v1` is the only capability profile with the AI 531
+high-memory static-sun validation tier. The immutable package cap remains
+512 MiB; its profile-scoped logical ceilings are 512 MiB steady CPU, 512 MiB
+steady GPU, 1536 MiB peak CPU, and 1024 MiB peak GPU during atomic replacement.
+The tier requires the transfer-owned production fetch path and does not alter
+generic runtime defaults.
+
+The production v4 exact-parity model uses a 0.04150390625 m source/cache pitch
+(strict 1:1; the 65:64 candidate is rejected), rectangular [1870, 1821]
+interiors, [1878, 1829] guarded RG8 layers, and 77 layers. Its 528,968,748-byte
+payload is partitioned into eight 9-layer chunks plus one 5-layer chunk; the
+modeled 529,189,392-byte package remains below the cap. These are logical
+projections, not a measured full-city artifact or physical residency result.
+Performance, load, decode, upload, and timing remain `not measured` for
+promotion while other processes share the machine and GPU.
+
+This development allowance does not satisfy the player-selectable gates below:
+the modeled package exceeds the normal 256 MiB promoted disk target and needs
+reduction or streaming before promotion, in addition to the missing bus
+composition owned by AI 532.
+
 Direct-only or indirect-only packages remain valid transport fixtures, but they cannot activate the final player-facing `baked` mode. A receiver mapping is required whenever a receiver channel is required. Unknown required channels reject the profile; absent optional channels do not change ownership of a term.
 
 ## Baking toolchain decision

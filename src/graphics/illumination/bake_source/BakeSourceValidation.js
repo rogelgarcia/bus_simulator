@@ -23,6 +23,10 @@ import {
 import { BAKE_MATERIAL_SEMANTICS_DOMAIN } from './BakeSourceMaterials.js';
 import { failBakeSource } from './BakeSourceErrors.js';
 import {
+    requireStaticSunDepthCasterSidedness,
+    resolveStaticSunDepthEffectiveShadowSide
+} from '../../lighting/EffectiveShadowSide.js';
+import {
     BAKE_TEXTURE_BINDING_DOMAIN,
     BAKE_TEXTURE_CONTENT_DOMAIN,
     BAKE_TEXTURE_COVERAGE_DOMAIN,
@@ -852,6 +856,14 @@ async function validateSemanticContentDigests(manifest, parsed, bufferDescriptor
     const materialById = recordsById(manifest.materials);
     const expectedCoverageBufferIds = new Set();
     for (const material of manifest.materials) {
+        if (material.schema !== 'bus-sim-evaluated-material-semantics-v2'
+            || typeof material.preserveShadowSide !== 'boolean'
+            || typeof material.isFoliage !== 'boolean') {
+            failBakeSource('material_schema_unsupported', `Material '${material.id}' does not satisfy the V2 sidedness contract.`, {
+                id: material.id,
+                schema: material.schema ?? null
+            });
+        }
         const { id, alphaInputId, ...semanticProjection } = material;
         const computed = await hashCanonicalJsonSha256(BAKE_MATERIAL_SEMANTICS_DOMAIN, semanticProjection);
         if (id !== `material:${computed}`) {
@@ -1360,6 +1372,19 @@ async function validateSemanticRelationships(manifest, parsed, bufferDescriptors
         'Chunk inventory does not reconstruct from mesh instances.'
     );
 
+    const staticSunDepthChannel = manifest.channelProfiles.find((entry) => entry.id === 'static_sun_depth');
+    let staticSunDepthCasterSidedness;
+    try {
+        staticSunDepthCasterSidedness = requireStaticSunDepthCasterSidedness(
+            staticSunDepthChannel?.casterSidedness
+        );
+    } catch (error) {
+        failBakeSource(
+            'static_sun_depth_caster_sidedness_invalid',
+            'The static-sun channel does not declare the exact V2 caster-sidedness policy.',
+            {reason: error instanceof Error ? error.message : String(error)}
+        );
+    }
     for (const mappingName of ['participantMappings', 'receiverMappings', 'casterMappings']) {
         const mappingKind = mappingName === 'participantMappings'
             ? 'participant'
@@ -1454,8 +1479,18 @@ async function validateSemanticRelationships(manifest, parsed, bufferDescriptors
                     indirect_irradiance: supported,
                     static_ao_bent_normal: supported
                 };
+                const expectedPreserveShadowSide = material.preserveShadowSide === true
+                    || material.isFoliage === true;
+                const expectedEffectiveShadowSide = resolveStaticSunDepthEffectiveShadowSide({
+                    side: material.side,
+                    shadowSide: material.shadowSide,
+                    preserveShadowSide: material.preserveShadowSide,
+                    isFoliage: material.isFoliage
+                }, staticSunDepthCasterSidedness);
                 if (mapping.coverageMode !== coverageMode || mapping.side !== material.side
                     || mapping.shadowSide !== material.shadowSide
+                    || mapping.preserveShadowSide !== expectedPreserveShadowSide
+                    || mapping.effectiveShadowSide !== expectedEffectiveShadowSide
                     || mapping.policySource !== (object.mergeShadowAsOpaque ? 'mergeShadowAsOpaque' : 'evaluated_original_caster')) {
                     failBakeSource('caster_semantics_mismatch', `Caster mapping '${mapping.id}' semantics do not reconstruct.`, { id: mapping.id });
                 }
@@ -1664,19 +1699,19 @@ export async function validateResolvedCityBakePackage(packageBytes, options = {}
     const manifest = parsed.manifest;
     const keys = Object.keys(manifest).sort();
     if (JSON.stringify(keys) !== JSON.stringify(REQUIRED_MANIFEST_KEYS)) {
-        failBakeSource('manifest_shape_invalid', 'The bake-source manifest top-level shape is not V1.', {
+        failBakeSource('manifest_shape_invalid', 'The bake-source manifest top-level shape is not V2.', {
             expected: REQUIRED_MANIFEST_KEYS,
             actual: keys
         });
     }
-    if (manifest.format !== 'bus-sim-illumination-bake-input-v1' || manifest.schemaVersion !== 1) {
+    if (manifest.format !== 'bus-sim-illumination-bake-input-v2' || manifest.schemaVersion !== 2) {
         failBakeSource('manifest_version_unsupported', 'The bake-source semantic manifest version is unsupported.', {
             format: manifest.format,
             schemaVersion: manifest.schemaVersion
         });
     }
     if (!manifest.containerVersion || typeof manifest.containerVersion !== 'object' || Array.isArray(manifest.containerVersion)
-        || canonicalJsonStringify(manifest.containerVersion) !== '{"major":1,"minor":0}'
+        || canonicalJsonStringify(manifest.containerVersion) !== '{"major":2,"minor":0}'
         || typeof manifest.colorContract !== 'string' || !manifest.colorContract || manifest.colorContract.trim() !== manifest.colorContract
         || typeof manifest.coordinateContract?.id !== 'string' || !manifest.coordinateContract.id
         || manifest.coordinateContract?.source !== 'three_right_handed_y_up_column_major'
@@ -1685,12 +1720,17 @@ export async function validateResolvedCityBakePackage(packageBytes, options = {}
         || manifest.coordinateContract?.logicalUvOrigin !== 'lower_left'
         || canonicalJsonStringify(manifest.coordinateContract?.threeToBlenderBasisColumnMajor)
             !== '[1,0,0,0,0,0,1,0,0,-1,0,0,0,0,0,1]') {
-        failBakeSource('manifest_contract_unsupported', 'The bake-source manifest declares an unsupported V1 coordinate, color, or container contract.');
+        failBakeSource('manifest_contract_unsupported', 'The bake-source manifest declares an unsupported V2 coordinate, color, or container contract.');
     }
     if (manifest.extractorContract?.sourceHashSetSchema !== BAKE_SOURCE_HASH_SET_SCHEMA) {
         failBakeSource('manifest_contract_unsupported', 'The bake-source extractor contract declares an unsupported hash-set schema.', {
             expected: BAKE_SOURCE_HASH_SET_SCHEMA,
             actual: manifest.extractorContract?.sourceHashSetSchema ?? null
+        });
+    }
+    if (manifest.extractorContract?.materialAdapter !== 'evaluated-three-material-semantics-v2') {
+        failBakeSource('manifest_contract_unsupported', 'The bake-source extractor material adapter is not V2.', {
+            actual: manifest.extractorContract?.materialAdapter ?? null
         });
     }
     if (manifest.readiness?.schema !== 'resolved-city-bake-readiness-v1'

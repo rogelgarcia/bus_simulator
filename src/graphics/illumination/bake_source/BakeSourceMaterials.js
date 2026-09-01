@@ -326,7 +326,7 @@ function materialRecord(material, bindingByTexture) {
         });
     }
     return {
-        schema: 'bus-sim-evaluated-material-semantics-v1',
+        schema: 'bus-sim-evaluated-material-semantics-v2',
         provenance: {
             kind: 'evaluated_three_material',
             type: String(material.type || 'Material'),
@@ -361,6 +361,8 @@ function materialRecord(material, bindingByTexture) {
         lightMapIntensity: finite(material.lightMapIntensity, 'material.lightMapIntensity', 1),
         side: finite(material.side, 'material.side', 0),
         shadowSide: material.shadowSide === null ? null : finite(material.shadowSide, 'material.shadowSide', 0),
+        preserveShadowSide: material.userData?.preserveShadowSide === true,
+        isFoliage: material.userData?.isFoliage === true,
         vertexColors: material.vertexColors === true,
         flatShading: material.flatShading === true,
         depthTest: material.depthTest !== false,
