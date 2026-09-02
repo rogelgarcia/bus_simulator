@@ -75,6 +75,13 @@ test('Terra & Mar recessed balconies converts every authored residential balcony
     }
 });
 
+test('Terra & Mar recessed balconies mirrors matching residential facade runs', () => {
+    const residential = layer(TERRA_MAR_RECESSED_BUILDING_CONFIG, RESIDENTIAL_LAYER_ID);
+
+    assert.deepEqual(residential.faceLinking?.links, { C: 'G', D: 'B', E: 'A', F: 'H' });
+    assert.deepEqual(residential.faceLinking?.reverseByFace, { C: true, D: true, E: true });
+});
+
 test('Terra & Mar recessed balconies preserves all non-residential authored content', () => {
     const baseLayers = TERRA_MAR_BUILDING_CONFIG.layers
         .filter((entry) => entry.id !== RESIDENTIAL_LAYER_ID);

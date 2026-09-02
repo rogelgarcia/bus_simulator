@@ -227,6 +227,12 @@ side behavior and remains an independent bay. It does not fake AI 540's
 planned full-height opaque front wall, optional internal partitions, or
 connected hidden cavity across neighboring bays.
 
+The recessed variant mirrors matching residential runs around the whole mass:
+C reuses G in reverse, D reuses B in reverse, E reuses A in reverse, and F
+reuses H. This preserves the front facade's balcony/pier language on the rear
+and keeps the two sides geometrically mirrored instead of fitting layouts from
+unrelated face lengths.
+
 ## Penthouse and exposed upper terrace
 
 - The penthouse is a distinct floor layer, not a mechanical roof prop.

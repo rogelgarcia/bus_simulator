@@ -19597,7 +19597,7 @@ async function runTests() {
     const BEVEL_TEST_RECT_7M = [
         { x: -3.5, y: 0, z: 3 }, { x: 3.5, y: 0, z: 3 }, { x: 3.5, y: 0, z: -3 }, { x: -3.5, y: 0, z: -3 }
     ];
-    const BEVEL_FACE = (bays) => ({ layout: { bays: { items: bays } } });
+    const BEVEL_FACE = (bays) => ({ layout: { items: bays } });
     const bevelWindow = (widthMeters, padding = 0.2) => ({
         enabled: true,
         defId: 'window_arch_civic',
@@ -21490,6 +21490,33 @@ async function runTests() {
             const next = corniceLoop[(index + 1) % corniceLoop.length];
             return Math.hypot(point.x - next.x, point.z - next.z) > 1e-6;
         }), 'Zero-depth cornice outline has no collapsed edge at the 180-degree join.');
+    });
+
+    test('BuildingFabricationGenerator: recessed corner bay fronts stop at the resolved inward mitre', () => {
+        const loop = [
+            { x: -5, z: 5 }, { x: 5, z: 5 }, { x: 5, z: -5 }, { x: -5, z: -5 }
+        ];
+        const recessedBay = (id) => ({
+            id,
+            size: { mode: 'fixed', widthMeters: 10 },
+            expandPreference: 'no_repeat',
+            depth: { left: -1, right: -1, linked: true },
+            window: bevelWindow(8.8, 0.2)
+        });
+        const res = bevelSilhouette({
+            wallOuter: [loop],
+            facades: {
+                A: BEVEL_FACE(solveFacadeBaysLayout({ bays: [recessedBay('a_recess')], faceLengthMeters: 10, warnings: [] })),
+                B: BEVEL_FACE(solveFacadeBaysLayout({ bays: [recessedBay('b_recess')], faceLengthMeters: 10, warnings: [] }))
+            },
+            layerMaterial: null,
+            warnings: []
+        });
+        const a = res.strips.find((strip) => strip.faceId === 'A');
+        const b = res.strips.find((strip) => strip.faceId === 'B');
+
+        assertNear(a.frontU1, 9, 1e-6, 'Face A frontage stops where the two inset planes meet.');
+        assertNear(b.frontU0, 1, 1e-6, 'Face B frontage starts where the two inset planes meet.');
     });
 
     test('BuildingFabricationGenerator: linked split faces re-solve at each sub-run length (AI 517)', () => {

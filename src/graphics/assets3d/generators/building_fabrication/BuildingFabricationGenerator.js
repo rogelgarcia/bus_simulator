@@ -8050,6 +8050,10 @@ function computeQuadFacadeSilhouette({
         const faceLength = Number(prof?.faceLength) || Number(f?.length) || 0;
         info.uStartJoin = isBeveledCorner(info.startCornerId) ? 0 : getUAtJoin(f, startDepth, info.startJoin);
         info.uEndJoin = isBeveledCorner(info.endCornerId) ? qf(faceLength) : getUAtJoin(f, endDepth, info.endJoin);
+        for (const strip of prof.strips) {
+            strip.frontU0 = qf(Math.max(Number(strip.frontU0) || 0, info.uStartJoin));
+            strip.frontU1 = qf(Math.min(Number(strip.frontU1) || 0, info.uEndJoin));
+        }
         info.maxCutStart = computeMaxCutStart(info);
         info.maxCutEnd = computeMaxCutEnd(info);
     }

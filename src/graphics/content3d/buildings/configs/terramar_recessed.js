@@ -63,6 +63,10 @@ function buildTerraMarRecessedConfig() {
         if (layer.id !== RESIDENTIAL_LAYER_ID) return layer;
         const converted = {
             ...layer,
+            faceLinking: {
+                links: { C: 'G', D: 'B', E: 'A', F: 'H' },
+                reverseByFace: { C: true, D: true, E: true }
+            },
             belt: {
                 ...layer.belt,
                 extrusion: RESIDENTIAL_BELT_EXTRUSION_METERS

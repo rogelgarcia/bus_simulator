@@ -111,6 +111,9 @@ compatibility/remapping rules; see:
   pair** — each face ends on its own offset corner and the short chamfer
   bridges them — in the silhouette, the interior shell, and every
   corner-join loop (caps, roof surfaces).
+- A recessed face-end strip exposes frontage only between its resolved inward
+  corner joins. Openings, windows, balconies, decorations, and highlights use
+  that trimmed frontage so they cannot extend through the adjacent wall area.
 - Loop-driven subsystems (interior shell, belts, cornices, roof rings,
   parapet, coping, caps) follow the N-gon loop; nothing may assume four
   corners. The BF2 GUI renders a plan-view face picker (the footprint
