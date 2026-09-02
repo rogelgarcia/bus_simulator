@@ -9214,8 +9214,8 @@ export class BuildingFabrication2UI {
             if (a.placement !== b.placement) {
                 errors.push('Balcony placement differs (' + a.placement + ' versus ' + b.placement + ').');
             }
-            if (a.placement !== 'projecting' || b.placement !== 'projecting') {
-                errors.push('Recessed balcony continuity is not supported yet; both balconies must be Projecting.');
+            if (!['projecting', 'recessed'].includes(a.placement) || !['projecting', 'recessed'].includes(b.placement)) {
+                errors.push('Only Projecting or Recessed balconies can use continuity.');
             }
 
             const layerFloors = this._getBalconyContinuityLayer(layerId)?.floors ?? 1;
@@ -9238,15 +9238,17 @@ export class BuildingFabrication2UI {
                 errors.push('Linked guard continuity requires the Front side on both balconies.');
             }
 
-            const platformKey = (cfg) => balconyContinuityConfigKey({
-                depthMeters: Number.isFinite(cfg.platform.depthMeters) ? cfg.platform.depthMeters : 1.4,
+            const platformKey = (cfg, context) => balconyContinuityConfigKey({
+                depthMeters: Number.isFinite(cfg.platform.depthMeters)
+                    ? cfg.platform.depthMeters
+                    : (cfg.placement === 'recessed' ? Math.max(0, -context.stripDepthMeters) : 1.4),
                 thicknessMeters: cfg.platform.thicknessMeters,
                 widthMode: cfg.platform.widthMode,
                 sideMarginMeters: cfg.platform.sideMarginMeters,
                 elevationMeters: cfg.platform.elevationMeters,
                 material: cfg.platform.material
             });
-            if (platformKey(a) !== platformKey(b)) {
+            if (platformKey(a, sourceContext) !== platformKey(b, targetContext)) {
                 errors.push('Platform depth, thickness, width mode, side margin, elevation, and material must match.');
             }
             if (balconyContinuityConfigKey(a.support) !== balconyContinuityConfigKey(b.support)) {

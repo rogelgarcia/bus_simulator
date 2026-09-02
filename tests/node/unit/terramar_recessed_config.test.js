@@ -59,7 +59,7 @@ test('Terra & Mar recessed balconies converts every authored residential balcony
     const variantBalconies = balconyBays(TERRA_MAR_RECESSED_BUILDING_CONFIG, RESIDENTIAL_LAYER_ID);
 
     assert.equal(residential.belt.extrusion, 0.12);
-    assert.equal(Object.hasOwn(residential, 'balconyContinuity'), false);
+    assert.equal(residential.balconyContinuity.links.length, 3);
     assert.equal(variantBalconies.length, baseBalconies.length);
     assert.ok(variantBalconies.length > 0);
 
@@ -72,6 +72,39 @@ test('Terra & Mar recessed balconies converts every authored residential balcony
         assert.equal(bay.balcony.platform.elevationMeters, 0.04);
         assert.deepEqual(bay.balcony.sides, { left: 'auto', front: 'always', right: 'auto' });
         assert.equal(bay.balcony.railing.infill ?? 'glass_panel', 'glass_panel');
+    }
+});
+
+test('Terra & Mar recessed balconies join and round the three authored cross-face balcony pairs', () => {
+    const residential = layer(TERRA_MAR_RECESSED_BUILDING_CONFIG, RESIDENTIAL_LAYER_ID);
+    const links = residential.balconyContinuity?.links ?? [];
+    const endpointKeys = links.flatMap((link) => link.endpoints)
+        .map((endpoint) => `${endpoint.faceId}:${endpoint.bayId}:${endpoint.edge}`);
+
+    assert.equal(links.length, 3);
+    assert.equal(Object.hasOwn(residential, 'bayBoundaryConnections'), false);
+    assert.equal(new Set(endpointKeys).size, endpointKeys.length);
+    assert.ok(links.every((link) => link.endpoints[0].faceId !== link.endpoints[1].faceId));
+    assert.ok(links.every((link) => link.cornerTransition.type === 'rounded'));
+    assert.ok(links.every((link) => link.cornerTransition.leftRunoutMeters === 0.42));
+    assert.ok(links.every((link) => link.cornerTransition.rightRunoutMeters === 0.42));
+    assert.ok(links.every((link) => link.cornerTransition.runoutsLinked === true));
+    assert.ok(links.every((link) => link.cornerTransition.meeting === 0.5));
+    assert.deepEqual(links.find((link) => link.id === 'b8_residential_rear_to_right_chamfer')?.endpoints, [
+        { faceId: 'E', bayId: 'b8_residential_front_balcony_right', edge: 'end' },
+        { faceId: 'D', bayId: 'b8_residential_right_chamfer_balcony_adjacent_a', edge: 'start' }
+    ]);
+});
+
+test('Terra & Mar recessed glazing preserves the original authored widths', () => {
+    const baseById = new Map(
+        balconyBays(TERRA_MAR_BUILDING_CONFIG, RESIDENTIAL_LAYER_ID)
+            .map((bay) => [bay.id, bay])
+    );
+    for (const bay of balconyBays(TERRA_MAR_RECESSED_BUILDING_CONFIG, RESIDENTIAL_LAYER_ID)) {
+        const base = baseById.get(bay.id);
+        assert.ok(base);
+        assert.deepEqual(bay.window, base.window);
     }
 });
 

@@ -21977,6 +21977,60 @@ async function runTests() {
         assertFalse((parts.warnings ?? []).some((warning) => String(warning).includes('front_to_right')), 'A supported 90-degree join emits without fallback warnings.');
     });
 
+    test('BuildingFabricationGenerator: recessed continuity derives platform depth from each notch (AI 537)', () => {
+        const recessedFacade = (bayId) => ({
+            layout: {
+                bays: {
+                    items: [{
+                        id: bayId,
+                        size: { mode: 'range', minMeters: 1.0, maxMeters: null },
+                        expandPreference: 'prefer_expand',
+                        depth: { left: -1.4, right: -1.4, linked: true },
+                        balcony: { enabled: true, presetId: balconyPresetId.MODERN_RECESSED }
+                    }]
+                }
+            }
+        });
+        const parts = buildBalconyParts({
+            footprintLoops: AI537_RECT_LOOP,
+            floors: 1,
+            facades: {
+                A: recessedFacade('recessed_front'),
+                B: recessedFacade('recessed_right')
+            },
+            balconyContinuity: {
+                links: [{
+                    id: 'recessed_front_to_right',
+                    endpoints: [
+                        { faceId: 'A', bayId: 'recessed_front', edge: 'end' },
+                        { faceId: 'B', bayId: 'recessed_right', edge: 'start' }
+                    ],
+                    cornerTransition: {
+                        type: 'rounded',
+                        leftRunoutMeters: 0.42,
+                        rightRunoutMeters: 0.42,
+                        runoutsLinked: true,
+                        meeting: 0.5
+                    }
+                }]
+            }
+        });
+        const platforms = balconyMeshesByRole(parts, 'balcony_platform');
+        const railings = balconyMeshesByRole(parts, 'balcony_railing');
+        assertEqual(
+            platforms.length,
+            1,
+            `Two recessed members emit one joined notch platform. Warnings: ${JSON.stringify(parts.warnings ?? [])}`
+        );
+        assertEqual(railings.length, 1, 'The recessed corner owns one continuous outer guard.');
+        assertTrue(platforms[0].userData?.balconyContinuity === true, 'The recessed slab is emitted by the joined path.');
+        assertEqual(platforms[0].userData?.balconyPlacement, 'recessed', 'Joined metadata preserves recessed placement.');
+        assertFalse(
+            (parts.warnings ?? []).some((warning) => String(warning).includes('recessed_front_to_right')),
+            'A valid recessed link emits without fallback diagnostics.'
+        );
+    });
+
     test('BuildingFabricationGenerator: same-face linked bays coalesce without a slab or guard seam (AI 537)', () => {
         const parts = buildBalconyParts({
             footprintLoops: AI537_RECT_LOOP,

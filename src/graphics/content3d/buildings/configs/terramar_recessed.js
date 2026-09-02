@@ -1,11 +1,13 @@
 // Terra & Mar catalog variant using the existing AI 489 recessed-balcony mode.
-// This deliberately does not anticipate AI 540's full-height front treatments
-// or connected cross-bay cavities; each residential loggia remains independent.
+// AI 537 joins only the authored outer platforms/guards; this deliberately does
+// not anticipate AI 540's full-height front treatments or connected cavities.
 import { TERRA_MAR_BUILDING_CONFIG } from './terramar.js';
 
 const RESIDENTIAL_LAYER_ID = 'floor_b8_residential';
 const RECESSED_BALCONY_DEPTH_METERS = 1.5;
 const RESIDENTIAL_BELT_EXTRUSION_METERS = 0.12;
+const RECESSED_BALCONY_RUNOUT_METERS = 0.42;
+const REAR_CONTINUITY_LINK_ID = 'b8_residential_rear_to_right_chamfer';
 
 function clonePlainValue(value) {
     if (Array.isArray(value)) return value.map((entry) => clonePlainValue(entry));
@@ -40,6 +42,28 @@ function convertBalconyBayToRecessed(bay) {
     };
 }
 
+function mirrorRearContinuityEndpoint(link) {
+    const mirrored = link?.id === REAR_CONTINUITY_LINK_ID
+        ? {
+            ...link,
+            endpoints: [
+            { faceId: 'E', bayId: 'b8_residential_front_balcony_right', edge: 'end' },
+            { faceId: 'D', bayId: 'b8_residential_right_chamfer_balcony_adjacent_a', edge: 'start' }
+            ]
+        }
+        : link;
+    return {
+        ...mirrored,
+        cornerTransition: {
+            type: 'rounded',
+            leftRunoutMeters: RECESSED_BALCONY_RUNOUT_METERS,
+            rightRunoutMeters: RECESSED_BALCONY_RUNOUT_METERS,
+            runoutsLinked: true,
+            meeting: 0.5
+        }
+    };
+}
+
 function convertResidentialFacadeToRecessed(facade) {
     const items = facade?.layout?.bays?.items;
     if (!Array.isArray(items)) return facade;
@@ -70,9 +94,13 @@ function buildTerraMarRecessedConfig() {
             belt: {
                 ...layer.belt,
                 extrusion: RESIDENTIAL_BELT_EXTRUSION_METERS
+            },
+            balconyContinuity: {
+                ...layer.balconyContinuity,
+                links: (layer?.balconyContinuity?.links ?? [])
+                    .map((link) => mirrorRearContinuityEndpoint(link))
             }
         };
-        delete converted.balconyContinuity;
         return converted;
     });
     config.facades = {

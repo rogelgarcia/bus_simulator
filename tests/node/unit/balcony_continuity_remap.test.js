@@ -150,6 +150,13 @@ test('Balcony continuity remap flips only the affected endpoint in physical loca
         { faceId: 'A', bayId: 'front_outer', edge: 'end' },
         { faceId: 'B', bayId: 'side_outer', edge: 'start' }
     ]);
+    config.layers[0].balconyContinuity.links[0].cornerTransition = {
+        type: 'rounded',
+        leftRunoutMeters: 0.42,
+        rightRunoutMeters: 0.42,
+        runoutsLinked: true,
+        meeting: 0.5
+    };
     const frozen = JSON.stringify(config);
     const result = remap(config, {
         afterLoop: loop(['A', 'E', 'C', 'D'], ['E']),
@@ -163,7 +170,14 @@ test('Balcony continuity remap flips only the affected endpoint in physical loca
         endpoints: [
             { faceId: 'A', bayId: 'front_outer', edge: 'end' },
             { faceId: 'E', bayId: 'side_outer', edge: 'end' }
-        ]
+        ],
+        cornerTransition: {
+            type: 'rounded',
+            leftRunoutMeters: 0.42,
+            rightRunoutMeters: 0.42,
+            runoutsLinked: true,
+            meeting: 0.5
+        }
     });
     const applied = result.applied.find((entry) => entry.effect === 'remap_balcony_continuity_link');
     assert.ok(applied);

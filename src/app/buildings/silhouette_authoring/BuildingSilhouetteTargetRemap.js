@@ -378,7 +378,16 @@ function remapBalconyContinuityLinkPayload(entry, value) {
     if (endpointKeys.some((key) => !key) || new Set(endpointKeys).size !== endpointKeys.length) {
         return { valid: false, reason: 'balcony_continuity_endpoint_collision_after_remap' };
     }
-    return { valid: true, payload: { id: link.id, endpoints } };
+    return {
+        valid: true,
+        payload: {
+            id: link.id,
+            endpoints,
+            ...(isObject(link.cornerTransition)
+                ? { cornerTransition: deepClone(link.cornerTransition) }
+                : {})
+        }
+    };
 }
 
 function remapBayBoundaryConnectionPayload(entry, value) {

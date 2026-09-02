@@ -13,6 +13,14 @@ export const BALCONY_CONTINUITY_EDGE_IDS = Object.freeze([
     BALCONY_CONTINUITY_EDGE.END
 ]);
 
+export const BALCONY_CONTINUITY_CORNER_TRANSITION = Object.freeze({
+    ROUNDED: 'rounded'
+});
+
+const BALCONY_CONTINUITY_CORNER_TRANSITION_IDS = Object.freeze(
+    Object.values(BALCONY_CONTINUITY_CORNER_TRANSITION)
+);
+
 function isObject(value) {
     return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -33,11 +41,32 @@ function normalizeEndpoint(value) {
     };
 }
 
+function finiteOr(value, fallback) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+}
+
+function normalizeCornerTransition(value) {
+    const src = isObject(value) ? value : null;
+    if (!src) return null;
+    const left = finiteOr(src.leftRunoutMeters, 0.75);
+    const linked = src.runoutsLinked === undefined ? true : !!src.runoutsLinked;
+    return {
+        type: normalizedString(src.type, { lowercase: true }) || BALCONY_CONTINUITY_CORNER_TRANSITION.ROUNDED,
+        leftRunoutMeters: left,
+        rightRunoutMeters: linked ? left : finiteOr(src.rightRunoutMeters, 0.75),
+        runoutsLinked: linked,
+        meeting: finiteOr(src.meeting, 0.5)
+    };
+}
+
 function normalizeLink(value) {
     const src = isObject(value) ? value : {};
+    const cornerTransition = normalizeCornerTransition(src.cornerTransition);
     return {
         id: normalizedString(src.id),
-        endpoints: (Array.isArray(src.endpoints) ? src.endpoints : []).map(normalizeEndpoint)
+        endpoints: (Array.isArray(src.endpoints) ? src.endpoints : []).map(normalizeEndpoint),
+        ...(cornerTransition ? { cornerTransition } : {})
     };
 }
 
@@ -102,10 +131,12 @@ export function validateBalconyContinuityConfig(value) {
     const config = normalizeBalconyContinuityConfig(value);
     if (!config) return { valid: true, config: null, diagnostics: [] };
 
+    const rawLinks = isObject(value) && Array.isArray(value.links) ? value.links : [];
     const diagnostics = [];
     const linkOccurrencesById = new Map();
 
     config.links.forEach((link, linkIndex) => {
+        const rawLink = isObject(rawLinks[linkIndex]) ? rawLinks[linkIndex] : {};
         const linkId = link.id || null;
         if (!link.id) {
             diagnostics.push(diagnostic(
@@ -149,6 +180,41 @@ export function validateBalconyContinuityConfig(value) {
                 ));
             }
         });
+
+        if (link.cornerTransition) {
+            const context = { linkId, linkIndex };
+            const rawTransition = isObject(rawLink.cornerTransition) ? rawLink.cornerTransition : {};
+            if (!BALCONY_CONTINUITY_CORNER_TRANSITION_IDS.includes(link.cornerTransition.type)) {
+                diagnostics.push(diagnostic(
+                    'balcony_continuity_corner_transition_type_invalid',
+                    `Balcony continuity link "${link.id || linkIndex + 1}" must use corner transition type "rounded".`,
+                    context
+                ));
+            }
+            const rawLeft = rawTransition.leftRunoutMeters === undefined
+                ? link.cornerTransition.leftRunoutMeters
+                : Number(rawTransition.leftRunoutMeters);
+            const rawRight = rawTransition.rightRunoutMeters === undefined
+                ? link.cornerTransition.rightRunoutMeters
+                : Number(rawTransition.rightRunoutMeters);
+            if (!Number.isFinite(rawLeft) || !Number.isFinite(rawRight) || !(rawLeft > 0) || !(rawRight > 0)) {
+                diagnostics.push(diagnostic(
+                    'balcony_continuity_corner_transition_runout_invalid',
+                    `Balcony continuity link "${link.id || linkIndex + 1}" requires positive left and right corner runouts.`,
+                    context
+                ));
+            }
+            const rawMeeting = rawTransition.meeting === undefined
+                ? link.cornerTransition.meeting
+                : Number(rawTransition.meeting);
+            if (!Number.isFinite(rawMeeting) || !(rawMeeting > 0) || !(rawMeeting < 1)) {
+                diagnostics.push(diagnostic(
+                    'balcony_continuity_corner_transition_meeting_invalid',
+                    `Balcony continuity link "${link.id || linkIndex + 1}" requires a corner meeting position greater than 0 and less than 1.`,
+                    context
+                ));
+            }
+        }
     });
 
     // Identity conflicts invalidate every participant. Choosing the first
@@ -254,7 +320,11 @@ export function resolveBalconyContinuityLinks({ continuity, stripsByFaceId } = {
         });
 
         if (!failed && resolvedEndpoints.length === 2) {
-            links.push({ id: link.id, endpoints: resolvedEndpoints });
+            links.push({
+                id: link.id,
+                endpoints: resolvedEndpoints,
+                ...(link.cornerTransition ? { cornerTransition: link.cornerTransition } : {})
+            });
         }
     });
 

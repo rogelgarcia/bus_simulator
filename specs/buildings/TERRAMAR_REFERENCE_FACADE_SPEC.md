@@ -220,12 +220,20 @@ residential belt extrusion is reduced from 1.5 m to 0.12 m so it reads as a
 facade-edge slab rather than an outstanding balcony. The podium restaurant
 terrace remains projecting.
 
-Residential `balconyContinuity` is intentionally absent in this variant:
-AI 537 joins projecting balconies only, while recessed cross-face cavities are
-not yet supported. Each loggia therefore uses the current adjacency-driven
-side behavior and remains an independent bay. It does not fake AI 540's
-planned full-height opaque front wall, optional internal partitions, or
-connected hidden cavity across neighboring bays.
+The variant retains three explicit AI 537 `balconyContinuity` links across the
+front-left, front-right, and mirrored rear cross-face balcony pairs. Recessed
+continuity derives an implicit platform depth from each bay's 1.5 m notch, so
+each linked pair emits one continuous outer platform and guard at the nominal
+facade line rather than two disconnected balcony ends.
+
+Each continuity link owns a balcony-only rounded corner transition with linked
+0.42 m runouts and a centered meeting point. Only the visible platform edge,
+fascia, glass guard, and rail curve through the adjacent face. The 1.5 m-deep
+recessed wall and rear glazing retain their original straight planes and
+authored window widths; no endpoint is pulled toward the physical corner and
+no AI 541 wall-boundary relationship is authored. This does not fake AI 540's
+planned full-height opaque front wall, optional internal partitions, or a
+connected hidden cavity between neighboring loggias.
 
 The recessed variant mirrors matching residential runs around the whole mass:
 C reuses G in reverse, D reuses B in reverse, E reuses A in reverse, and F

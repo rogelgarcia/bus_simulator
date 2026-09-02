@@ -49,6 +49,12 @@ const SHOTS = Object.freeze([
         cameraDir: Object.freeze({ x: -0.3, y: -0.42, z: 1 }),
         cameraPadding: 0.7,
         cameraTargetYFrac: 0.52
+    },
+    {
+        name: 'smooth-junction-closeup.png',
+        cameraDir: Object.freeze({ x: -0.48, y: 0.02, z: 1 }),
+        cameraPadding: 0.58,
+        cameraTargetYFrac: 0.68
     }
 ]);
 
@@ -111,8 +117,18 @@ function readPngDimensions(bytes) {
 
 test('Capture: Terra & Mar recessed balconies UHD HDRI reference poses', async ({ page }) => {
     test.setTimeout(600_000);
+    const targetedGenerationWarnings = [];
     page.on('pageerror', (error) => console.log(`[browser:pageerror] ${error.message}`));
     page.on('requestfailed', (request) => console.log(`[browser:requestfailed] ${request.url()} ${request.failure()?.errorText ?? ''}`));
+    page.on('console', (message) => {
+        const text = message.text();
+        if (message.type() === 'warning' && (
+            text.includes('Balcony continuity "b8_residential_')
+            || text.includes('Balcony continuity component b8_residential_')
+        )) {
+            targetedGenerationWarnings.push(text);
+        }
+    });
     await bootHarness(page, { query: '' });
     await fs.mkdir(OUT_DIR, { recursive: true });
     await preserveReferenceCopy();
@@ -152,4 +168,5 @@ test('Capture: Terra & Mar recessed balconies UHD HDRI reference poses', async (
         await page.locator('#harness-canvas').screenshot({ path: outputPath });
         expect(readPngDimensions(await fs.readFile(outputPath))).toEqual(VIEWPORT);
     }
+    expect(targetedGenerationWarnings).toEqual([]);
 });

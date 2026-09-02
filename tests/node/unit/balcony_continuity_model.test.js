@@ -48,6 +48,54 @@ test('BalconyContinuityModel: normalization emits only the canonical schema and 
     assert.equal(CONTINUITY.links[0].endpoints[0].bayId, ' front_outer ');
 });
 
+test('BalconyContinuityModel: optional rounded corner transition normalizes, validates, and resolves with its link', () => {
+    const continuity = {
+        links: [{
+            id: 'rounded_wrap',
+            endpoints: [
+                { faceId: 'A', bayId: 'front', edge: 'end' },
+                { faceId: 'B', bayId: 'side', edge: 'start' }
+            ],
+            cornerTransition: {
+                type: 'ROUNDED',
+                leftRunoutMeters: 0.42,
+                rightRunoutMeters: 0.7,
+                runoutsLinked: true,
+                meeting: 0.5
+            }
+        }]
+    };
+    const normalized = normalizeBalconyContinuityConfig(continuity);
+    assert.deepEqual(normalized.links[0].cornerTransition, {
+        type: 'rounded',
+        leftRunoutMeters: 0.42,
+        rightRunoutMeters: 0.42,
+        runoutsLinked: true,
+        meeting: 0.5
+    });
+    assert.equal(validateBalconyContinuityConfig(normalized).valid, true);
+
+    const resolved = resolveBalconyContinuityLinks({
+        continuity: normalized,
+        stripsByFaceId: {
+            A: [{ faceId: 'A', sourceBayId: 'front', balcony: { enabled: true } }],
+            B: [{ faceId: 'B', sourceBayId: 'side', balcony: { enabled: true } }]
+        }
+    });
+    assert.deepEqual(resolved.links[0].cornerTransition, normalized.links[0].cornerTransition);
+
+    const invalid = validateBalconyContinuityConfig({
+        links: [{
+            ...continuity.links[0],
+            cornerTransition: { type: 'spline', leftRunoutMeters: 0, rightRunoutMeters: -1, meeting: 1 }
+        }]
+    });
+    const codes = new Set(invalid.diagnostics.map((entry) => entry.code));
+    assert.ok(codes.has('balcony_continuity_corner_transition_type_invalid'));
+    assert.ok(codes.has('balcony_continuity_corner_transition_runout_invalid'));
+    assert.ok(codes.has('balcony_continuity_corner_transition_meeting_invalid'));
+});
+
 test('BalconyContinuityModel: endpoint keys are stable and collision-safe', () => {
     assert.equal(
         balconyContinuityEndpointKey({ faceId: 'a', bayId: ' bay:with:colons ', edge: 'START' }),

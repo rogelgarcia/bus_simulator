@@ -20,7 +20,14 @@ Continuity belongs to the floor layer that owns the participating balconies:
                 endpoints: [
                     { faceId: 'A', bayId: 'front_right', edge: 'start' },
                     { faceId: 'B', bayId: 'side_front', edge: 'end' }
-                ]
+                ],
+                cornerTransition: {
+                    type: 'rounded',
+                    leftRunoutMeters: 0.42,
+                    rightRunoutMeters: 0.42,
+                    runoutsLinked: true,
+                    meeting: 0.5
+                }
             }
         ]
     }
@@ -41,6 +48,10 @@ Continuity belongs to the floor layer that owns the participating balconies:
   never whichever record happens to occur later. A malformed link never
   reserves its otherwise valid endpoints, so it cannot suppress unrelated
   valid geometry.
+- `cornerTransition` is optional. Its absence keeps the canonical sharp/faceted
+  join. A rounded transition is link-owned and specifies positive left/right
+  runouts plus a `0..1` meeting position. It affects only balcony geometry; it
+  never edits the facade wall profile, openings, bay depths, or decorators.
 - No corner-post policy is authored in this stage. When posts are enabled, the
   generator deterministically emits one post at a non-collinear joined corner
   and none at a collinear internal seam.
@@ -74,7 +85,10 @@ an explicit relink instead of a guessed retarget.
 A link is generatable only when all of the following hold:
 
 - both endpoints resolve uniquely on the same floor layer to enabled,
-  projecting, bay-width balcony spans;
+  bay-width balcony spans with the same `projecting` or `recessed` placement;
+- a recessed member has at least 0.25 m of bay recession; when its platform
+  depth is automatic, continuity derives that depth from the recession so the
+  platform reaches the nominal facade line;
 - both spans select the same resolved floor numbers;
 - normalized platform depth, thickness, side margin, elevation, and material
   match;
@@ -86,6 +100,8 @@ A link is generatable only when all of the following hold:
   planar runs and the turn is convex or collinear;
 - an existing planar corner facet/micro-bevel may bridge the consecutive runs;
 - a multi-link component is one non-branching open chain.
+- an optional rounded balcony corner is used only across two adjacent planar
+  facade faces and both runout stations remain inside their balcony bays.
 
 Ordinary 90-degree corners, explicit chamfer runs, edge-bevel corner facets,
 and narrower-front-face planar/chamfered arrangements are supported. Facade
@@ -97,7 +113,7 @@ the balcony component.
 This stage rejects, with an actionable diagnostic:
 
 - curved/spline facade runs;
-- recessed balcony continuity;
+- Juliet/guard-only placement or mixed projecting/recessed endpoints;
 - opening-width or repeated/multi-span balcony endpoints;
 - missing/duplicate ids, ambiguous source-bay matches, duplicate endpoint
   ownership, non-adjacent bays/runs, concave or re-entrant turns;
@@ -122,6 +138,12 @@ For every valid component and selected floor:
 - never retain overlapping member slabs or add a bridge over them;
 - build one continuous outer guard path, suppress internal side guards/end
   caps/posts, and preserve required guards at the two free component ends;
+- when a link owns a rounded corner transition, trim the outer platform/fascia
+  and guard path to its two runout stations and solve a tangent-continuous curve
+  between them without modifying the wall or rear glazing;
+- if a deep recessed platform back-edge offset would fold across a tighter
+  rounded transition, meet that hidden back edge at the canonical planar
+  corner while the visible slab front and guard retain the authored curve;
 - continue top rails and infill through the turn without coplanar overlap or
   duplicate corner hardware;
 - retain per-member balcony supports while de-duplicating world-space guard
@@ -173,7 +195,14 @@ the corners. B and H each retain an outer balcony, a centered pier, and an
 A-adjacent balcony. Only these three compatible corner pairs join; the center
 and all other balconies remain independent.
 
-## 8. Interaction with rounded wall boundaries (AI 541)
+## 8. Balcony-owned rounded corners and AI 541 interaction
+
+The optional `cornerTransition` belongs to AI 537 continuity. It is the
+lightweight case needed when adjacent balconies should wrap a planar building
+corner but the facade walls, recessed returns, openings, and decorators must
+remain on their authored straight runs. Deep recessed platform back edges meet
+at the canonical planar corner when offsetting the visible curve would fold the
+outline; the outer slab edge, fascia, railing, and glass retain the curve.
 
 AI 541 does not implicitly join balconies. Without an explicit valid AI 537
 link, each balcony keeps its own platform and guards even when the wall

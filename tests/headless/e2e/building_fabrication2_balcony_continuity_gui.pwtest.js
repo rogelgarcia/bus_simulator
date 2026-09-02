@@ -120,6 +120,31 @@ test('BF2: balcony endpoints create/remove same-run and reversed cross-run links
     await clickLiveElement(page, LIVE_OVERLAY_CLOSE);
 
     await setFaceABayDepth(0, 0);
+    const recessedValidation = await page.evaluate(() => {
+        const view = window.__busSim?.sm?.current?.view;
+        const ui = view?.ui;
+        const layer = view?._currentConfig?.layers?.find((entry) => entry?.type === 'floor') ?? null;
+        const bays = view?._currentConfig?.facades?.[layer?.id]?.A?.layout?.bays?.items ?? [];
+        const originals = bays.map((bay) => ({ depth: structuredClone(bay.depth), balcony: structuredClone(bay.balcony) }));
+        for (const bay of bays) {
+            bay.depth = { left: -1.4, right: -1.4, linked: true };
+            bay.balcony = { enabled: true, presetId: 'balcony.modern_recessed' };
+        }
+        const source = { faceId: 'A', bayId: bays[0].id, edge: 'end' };
+        const target = { faceId: 'A', bayId: bays[1].id, edge: 'start' };
+        const result = ui._validateBalconyContinuityCandidate(layer.id, source, target);
+        for (let index = 0; index < bays.length; index += 1) {
+            if (originals[index].depth === undefined) delete bays[index].depth;
+            else bays[index].depth = originals[index].depth;
+            bays[index].balcony = originals[index].balcony;
+        }
+        return result;
+    });
+    expect(recessedValidation.valid).toBe(true);
+    expect(recessedValidation.errors).not.toContain(
+        'Recessed balcony continuity is not supported yet; both balconies must be Projecting.'
+    );
+
     await clickLiveElement(page, LIVE_CONTINUITY_OPEN);
     await expect(sameRunTarget).toHaveAttribute('data-relationship', 'same-run');
     await expect(sameRunTarget).toBeEnabled();

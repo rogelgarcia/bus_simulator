@@ -6807,6 +6807,7 @@ function resolveBalconyContinuityAdjacency({
     bCandidate,
     frames,
     boundaryTransitions = null,
+    cornerTransition = null,
     toleranceMeters = 0.04
 }) {
     const tol = Math.max(1e-4, Number(toleranceMeters) || 0.04);
@@ -6839,6 +6840,9 @@ function resolveBalconyContinuityAdjacency({
     const aU = balconyContinuityEdgeU(aCandidate, aEdge);
     const bU = balconyContinuityEdgeU(bCandidate, bEdge);
     if (aCandidate.faceId === bCandidate.faceId) {
+        if (cornerTransition) {
+            return { valid: false, reason: 'rounded balcony corner transitions require endpoints on adjacent facade faces' };
+        }
         const ordered = (aEdge === 'end' && bEdge === 'start' && Math.abs(aCandidate.u1 - bCandidate.u0) <= tol)
             || (bEdge === 'end' && aEdge === 'start' && Math.abs(bCandidate.u1 - aCandidate.u0) <= tol);
         if (!ordered || Math.abs(aU - bU) > tol) {
@@ -6882,10 +6886,20 @@ function resolveBalconyContinuityAdjacency({
 
     const firstBoundaryU = facadeFrameLoopEndU(firstCandidate.frame);
     const secondBoundaryU = facadeFrameLoopStartU(secondCandidate.frame);
-    const firstU = balconyContinuityEdgeU(firstCandidate, firstEndpoint.edge);
-    const secondU = balconyContinuityEdgeU(secondCandidate, secondEndpoint.edge);
+    // Cross-face topology belongs to the authored bay endpoint. Platform side
+    // margins deliberately stop short of it and must not make an otherwise
+    // valid physical corner appear non-adjacent.
+    const authoredEdgeU = (candidate, endpoint) => {
+        const value = Number(endpoint.edge === 'end' ? candidate.strip?.u1 : candidate.strip?.u0);
+        return Number.isFinite(value) ? value : balconyContinuityEdgeU(candidate, endpoint.edge);
+    };
+    const firstU = authoredEdgeU(firstCandidate, firstEndpoint);
+    const secondU = authoredEdgeU(secondCandidate, secondEndpoint);
     if (Math.abs(firstU - firstBoundaryU) > tol || Math.abs(secondU - secondBoundaryU) > tol) {
-        return { valid: false, reason: 'cross-face endpoints do not reach their shared physical corner' };
+        return {
+            valid: false,
+            reason: `cross-face endpoints do not reach their shared physical corner (${qf(firstU)}/${qf(firstBoundaryU)}, ${qf(secondU)}/${qf(secondBoundaryU)})`
+        };
     }
 
     const collinear = framesContinueCollinearly(firstCandidate.frame, secondCandidate.frame);
@@ -6898,11 +6912,12 @@ function resolveBalconyContinuityAdjacency({
     const cornerId = `${firstCandidate.faceId}${secondCandidate.faceId}`;
     return {
         valid: true,
-        kind: 'corner',
+        kind: cornerTransition ? 'rounded_balcony_corner' : 'corner',
         firstKey: firstCandidate.key,
         secondKey: secondCandidate.key,
         facet: frames?.cornerFacets?.[cornerId] ?? null,
-        nonCollinear: !collinear
+        nonCollinear: !collinear,
+        ...(cornerTransition ? { transition: cornerTransition } : {})
     };
 }
 
@@ -6969,6 +6984,86 @@ function orderBalconyContinuityComponent(links) {
     return { valid: true, ordered, links: orderedLinks };
 }
 
+function balconyContinuityRoundedCornerStation({ candidate, endpoint, first, runoutMeters, depth }) {
+    const runForward = facadeFrameRunsForward(candidate.frame);
+    const edgeU = balconyContinuityEdgeU(candidate, endpoint.edge);
+    const direction = first
+        ? (runForward ? -1 : 1)
+        : (runForward ? 1 : -1);
+    const u = qf(edgeU + direction * runoutMeters);
+    const minU = Math.min(candidate.u0, candidate.u1);
+    const maxU = Math.max(candidate.u0, candidate.u1);
+    if (!(u > minU + 0.05) || !(u < maxU - 0.05)) return null;
+    const sample = sampleFacadeFrameAtU(candidate.frame, u);
+    const tangent = first
+        ? facadeFrameLoopEndT(candidate.frame)
+        : facadeFrameLoopStartT(candidate.frame);
+    if (!sample || !tangent) return null;
+    return {
+        u,
+        point: pointOnFacadeFrame({ frame: candidate.frame, u, depth }),
+        tangent,
+        outward: sample.n
+    };
+}
+
+function roundedBalconyContinuityJoinPair({ current, next, link, depthOf }) {
+    const relation = link.relation;
+    const transition = relation.transition;
+    const firstCandidate = relation.firstKey === current.candidate.key
+        ? current.candidate
+        : next.candidate;
+    const secondCandidate = relation.secondKey === current.candidate.key
+        ? current.candidate
+        : next.candidate;
+    const firstEndpoint = link.endpoints.find((endpoint) => endpoint.candidate.key === firstCandidate.key);
+    const secondEndpoint = link.endpoints.find((endpoint) => endpoint.candidate.key === secondCandidate.key);
+    if (!firstEndpoint || !secondEndpoint || !transition) return null;
+
+    const firstStation = balconyContinuityRoundedCornerStation({
+        candidate: firstCandidate,
+        endpoint: firstEndpoint,
+        first: true,
+        runoutMeters: transition.leftRunoutMeters,
+        depth: depthOf(firstCandidate)
+    });
+    const secondStation = balconyContinuityRoundedCornerStation({
+        candidate: secondCandidate,
+        endpoint: secondEndpoint,
+        first: false,
+        runoutMeters: transition.rightRunoutMeters,
+        depth: depthOf(secondCandidate)
+    });
+    if (!firstStation || !secondStation) return null;
+
+    const path = solveBayBoundaryTransitionPath({
+        id: link.id,
+        p0: firstStation.point,
+        p1: secondStation.point,
+        tangent0: firstStation.tangent,
+        tangent1: secondStation.tangent,
+        outward0: firstStation.outward,
+        outward1: secondStation.outward,
+        leftRunoutMeters: transition.leftRunoutMeters,
+        rightRunoutMeters: transition.rightRunoutMeters,
+        meeting: transition.meeting,
+        maxChordErrorMeters: 0.01
+    });
+    if (!path.valid) return null;
+    const points = path.samples.map((sample) => ({
+        x: qf(sample.position.x),
+        y: 0,
+        z: qf(sample.position.z)
+    }));
+    const forward = relation.firstKey === current.candidate.key;
+    const orderedPoints = forward ? points : points.slice().reverse();
+    return {
+        current: orderedPoints[0],
+        next: orderedPoints[orderedPoints.length - 1],
+        between: orderedPoints.slice(1, -1)
+    };
+}
+
 function balconyContinuityJoinPair({ current, next, link, depthOf }) {
     const currentEntry = link.endpoints.find((endpoint) => endpoint.candidate.key === current.candidate.key);
     const nextEntry = link.endpoints.find((endpoint) => endpoint.candidate.key === next.candidate.key);
@@ -6989,11 +7084,53 @@ function balconyContinuityJoinPair({ current, next, link, depthOf }) {
                 z: qf(sample.z + sample.normal.z * offset)
             };
         });
+        // A tight visible corner can be offset farther inward than its local
+        // radius by a deep recessed platform back edge. That mathematical
+        // offset folds over itself. Keep the visible platform front/guard on
+        // the authored curve, but let an over-deep hidden back edge meet at
+        // the exact planar corner instead of emitting a self-intersection.
+        const offsetReverses = points.slice(1).some((point, index) => {
+            const previous = points[index];
+            const sourcePrevious = sourceSamples[index];
+            const sourcePoint = sourceSamples[index + 1];
+            const offsetDx = point.x - previous.x;
+            const offsetDz = point.z - previous.z;
+            const sourceDx = sourcePoint.x - sourcePrevious.x;
+            const sourceDz = sourcePoint.z - sourcePrevious.z;
+            return offsetDx * sourceDx + offsetDz * sourceDz <= 1e-8;
+        });
+        if (offsetReverses) {
+            if (current.candidate.faceId === next.candidate.faceId) {
+                return {
+                    current: balconyContinuityEdgePoint(current.candidate, currentEntry.edge, depthOf(current.candidate)),
+                    next: balconyContinuityEdgePoint(next.candidate, nextEntry.edge, depthOf(next.candidate))
+                };
+            }
+            const first = link.relation.firstKey === current.candidate.key ? current.candidate : next.candidate;
+            const second = link.relation.secondKey === current.candidate.key ? current.candidate : next.candidate;
+            const pair = cornerJoinPairWithDepths(
+                first.frame,
+                depthOf(first),
+                second.frame,
+                depthOf(second),
+                link.relation.facet
+            );
+            return current.candidate.key === link.relation.firstKey
+                ? { current: pair.aEnd, next: pair.bStart }
+                : { current: pair.bStart, next: pair.aEnd };
+        }
         return {
             current: points[0],
             next: points[points.length - 1],
             between: points.slice(1, -1)
         };
+    }
+    if (link.relation.kind === 'rounded_balcony_corner') {
+        const rounded = roundedBalconyContinuityJoinPair({ current, next, link, depthOf });
+        if (rounded) return rounded;
+        // Recessed platform back edges can sit farther inside than the visible
+        // corner radius. In that case only the hidden back edge uses the exact
+        // planar corner; the slab front, fascia, and guard retain the curve.
     }
     if (link.relation.kind === 'same_run') {
         return {
@@ -7845,7 +7982,6 @@ function buildFacadeFaceProfile({
         let deltaDepthRight = qf(depthSpec
             ? (Number.isFinite(depthRightRaw) ? clampFacadeDepthMeters(depthRightRaw) : (depthLinked ? deltaDepthLeft : 0.0))
             : deltaDepthLeft);
-
         if (isBay && sourceBayId && boundaryDepthByEndpointKey instanceof Map) {
             const startKey = bayBoundaryEndpointKey({ faceId, bayId: sourceBayId, edge: BAY_BOUNDARY_EDGE.START });
             const endKey = bayBoundaryEndpointKey({ faceId, bayId: sourceBayId, edge: BAY_BOUNDARY_EDGE.END });
@@ -14222,21 +14358,36 @@ export function buildBuildingFabricationVisualParts({
                         const sourceBayId = typeof strip.sourceBayId === 'string' && strip.sourceBayId
                             ? strip.sourceBayId
                             : (typeof strip.id === 'string' ? strip.id : '');
-                        const rawU0 = Number(strip.frontU0);
-                        const rawU1 = Number(strip.frontU1);
-                        const rawStart = Number.isFinite(rawU0) ? rawU0 : (Number(strip.u0) || 0);
-                        const rawEnd = Number.isFinite(rawU1) ? rawU1 : (Number(strip.u1) || 0);
+                        const isRecessed = cfg?.placement === BALCONY_PLACEMENT.RECESSED;
+                        const frontU0 = Number(strip.frontU0);
+                        const frontU1 = Number(strip.frontU1);
+                        const authoredU0 = Number(strip.u0);
+                        const authoredU1 = Number(strip.u1);
+                        // A recessed wall front is clipped inward where its
+                        // straight plane meets the cavity returns. Its balcony
+                        // floor and outer guard still own the full authored bay
+                        // span at the nominal facade, including the corner.
+                        const rawStart = isRecessed && Number.isFinite(authoredU0)
+                            ? authoredU0
+                            : (Number.isFinite(frontU0) ? frontU0 : (authoredU0 || 0));
+                        const rawEnd = isRecessed && Number.isFinite(authoredU1)
+                            ? authoredU1
+                            : (Number.isFinite(frontU1) ? frontU1 : (authoredU1 || 0));
                         const stripDepth = Number(strip.depth) || 0;
+                        const notchDepth = Math.max(0, -stripDepth);
                         let unsupportedReason = null;
                         if (!frame || !cfg || !sourceBayId || !(rawEnd > rawStart + 0.3)) unsupportedReason = 'targets an unresolved balcony bay';
-                        else if (cfg.placement !== BALCONY_PLACEMENT.PROJECTING) unsupportedReason = 'recessed balcony continuity is not supported yet';
+                        else if (cfg.placement !== BALCONY_PLACEMENT.PROJECTING && !isRecessed) unsupportedReason = 'only projecting and recessed balconies can be linked';
+                        else if (isRecessed && notchDepth < 0.25) unsupportedReason = 'a recessed balcony link needs a bay recession of at least 0.25 m';
                         else if (cfg.platform.widthMode !== BALCONY_PLATFORM_WIDTH_MODE.BAY) unsupportedReason = 'only bay-width balcony platforms can be linked';
 
                         const margin = cfg?.platform?.sideMarginMeters ?? 0;
                         const u0 = rawStart + margin;
                         const u1 = rawEnd - margin;
                         if (!unsupportedReason && !(u1 > u0 + 0.25)) unsupportedReason = 'platform side margins leave no joinable width';
-                        const platDepth = Number.isFinite(cfg?.platform?.depthMeters) ? cfg.platform.depthMeters : 1.4;
+                        const platDepth = Number.isFinite(cfg?.platform?.depthMeters)
+                            ? cfg.platform.depthMeters
+                            : (isRecessed ? notchDepth : 1.4);
                         const coverage = cfg ? resolveBalconySideCoverage({
                             faceId: strip.faceId,
                             u0: Number(strip.u0) || 0,
@@ -14268,6 +14419,7 @@ export function buildBuildingFabricationVisualParts({
                             selectedFloors,
                             unsupportedReason,
                             compatibilityKey: cfg ? stableStringify({
+                                placement: cfg.placement,
                                 platform: {
                                     depthMeters: platDepth,
                                     thicknessMeters: cfg.platform.thicknessMeters,
@@ -14318,7 +14470,8 @@ export function buildBuildingFabricationVisualParts({
                             bEndpoint,
                             bCandidate,
                             frames: facadeFrames,
-                            boundaryTransitions: facadeBoundaryTransitions
+                            boundaryTransitions: facadeBoundaryTransitions,
+                            cornerTransition: resolvedLink.cornerTransition ?? null
                         });
                         if (!relation.valid) {
                             rejectLink(resolvedLink, relation.reason);
