@@ -515,7 +515,26 @@ The Material Configuration panel MAY also be opened for a **bay material overrid
 
 ---
 
-## 9. Balcony continuity
+## 9. Bay-boundary connection editor (AI 541)
+
+Each selected consecutive bay End boundary exposes a Boundary connection
+editor. Face-linked slaves expose the same editor in their physical inherited
+relationships panel, using the slave face id and resolved/reversed local-u.
+
+Controls are Sharp/Rounded, Link boundary depths plus one linked meter value,
+Centered/Authored stations, linked or independent P0/P1 runouts, and meeting
+position. The plan diagram exposes draggable P0/J/P1 handles and tangent guides;
+every value also has numeric input. The editor shows physical endpoint
+provenance, reserved meters, fixed-bay opening/frontage failures, and exact
+runtime-validation status. Invalid drafts disable Apply. Apply is one outer
+undo record; Cancel discards the draft; Ctrl+Z/Ctrl+Y preserve identities.
+
+The normal bay depth editor remains visible. Its within-bay link and AI 541's
+cross-bay boundary link are labelled and stored independently.
+
+---
+
+## 10. Balcony continuity
 
 An enabled balcony bay exposes separate physical Start and End continuity rows. The endpoint popup shows the immediate same-run or cross-run target, linked counterpart, face-master/reversed-order provenance, and actionable compatibility diagnostics. Create and Remove actions update the layer model and preview immediately. The complete UI and topology contract is defined in `specs/buildings/BUILDING_2_BALCONY_CONTINUITY_SPEC.md`.
 A selected face-linked slave keeps inherited facade controls collapsed but exposes a continuity-only panel for its physical endpoints, including master provenance and reversed bay order. This panel manages links on the physical face id without authoring duplicate facade data on the slave.

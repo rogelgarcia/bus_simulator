@@ -6,6 +6,10 @@ import {
     balconyContinuityEndpointKey,
     validateBalconyContinuityConfig
 } from '../BalconyContinuityModel.js';
+import {
+    bayBoundaryEndpointKey,
+    validateBayBoundaryConnectionsConfig
+} from '../BayBoundaryConnectionsModel.js';
 import { normalizeBalconyConfig } from '../BayBalconyModel.js';
 
 function isObject(value) {
@@ -256,6 +260,23 @@ export function collectBuildingSilhouetteRemapTargets(config, layerId) {
             }
         });
     }
+    const boundaryConnections = Array.isArray(layer?.bayBoundaryConnections?.connections)
+        ? layer.bayBoundaryConnections.connections
+        : [];
+    for (const connection of boundaryConnections) {
+        const connectionId = typeof connection?.id === 'string' ? connection.id.trim() : '';
+        if (!connectionId) continue;
+        const faceIds = uniqueRunIds((Array.isArray(connection?.endpoints) ? connection.endpoints : [])
+            .map((endpoint) => endpoint?.faceId));
+        if (!faceIds.length) continue;
+        add({
+            kind: 'bay_boundary_connection',
+            targetId: `bay_boundary:${layerId}:${connectionId}`,
+            layerId,
+            faceIds,
+            locator: { type: 'bay_boundary_connection', sourceId: connectionId }
+        });
+    }
 
     collectEntityTargets(config?.wallDecorations, ['wallDecorations'], 'decoration', layerId, add);
     collectEntityTargets(config?.attachments, ['attachments'], 'attachment', layerId, add);
@@ -360,6 +381,44 @@ function remapBalconyContinuityLinkPayload(entry, value) {
     return { valid: true, payload: { id: link.id, endpoints } };
 }
 
+function remapBayBoundaryConnectionPayload(entry, value) {
+    const connection = isObject(value) ? value : null;
+    if (!connection || typeof connection.id !== 'string' || !connection.id
+        || !Array.isArray(connection.endpoints) || connection.endpoints.length !== 2) {
+        return { valid: false, reason: 'bay_boundary_connection_invalid' };
+    }
+    const affectedRunIds = new Set([
+        ...(Array.isArray(entry?.missingRunIds) ? entry.missingRunIds : []),
+        ...(Array.isArray(entry?.incompatibleRunIds) ? entry.incompatibleRunIds : [])
+    ]);
+    const mappings = mappingsOf(entry);
+    const endpoints = [];
+    for (const endpoint of connection.endpoints) {
+        const faceId = endpoint?.faceId;
+        const bayId = typeof endpoint?.bayId === 'string' ? endpoint.bayId : '';
+        const edge = endpoint?.edge;
+        if (!isRunId(faceId) || !bayId || (edge !== 'start' && edge !== 'end')) {
+            return { valid: false, reason: 'bay_boundary_endpoint_invalid' };
+        }
+        const mapping = mappings.find((candidate) => candidate.sourceRunId === faceId);
+        if (affectedRunIds.has(faceId) && !mapping?.affected) {
+            return { valid: false, reason: 'bay_boundary_endpoint_mapping_missing' };
+        }
+        endpoints.push({
+            faceId: mapping?.affected ? mapping.targetRunId : faceId,
+            bayId,
+            edge: mapping?.affected && mapping.reverseLocalU
+                ? (edge === 'start' ? 'end' : 'start')
+                : edge
+        });
+    }
+    const keys = endpoints.map((endpoint) => bayBoundaryEndpointKey(endpoint));
+    if (keys.some((key) => !key) || new Set(keys).size !== keys.length) {
+        return { valid: false, reason: 'bay_boundary_endpoint_collision_after_remap' };
+    }
+    return { valid: true, payload: { ...deepClone(connection), endpoints } };
+}
+
 function resolveBalconyContinuityFacade(config, layerId, faceId) {
     const layer = floorLayer(config, layerId);
     const links = isObject(layer?.faceLinking?.links) ? layer.faceLinking.links : null;
@@ -453,6 +512,30 @@ function validateMaterializedBalconyContinuity(config, layerId) {
                     { linkId: link.id, linkIndex, endpointIndex }
                 ));
             }
+        });
+    });
+    return { valid: diagnostics.length === 0, diagnostics };
+}
+
+function validateMaterializedBayBoundaryConnections(config, layerId) {
+    const layer = floorLayer(config, layerId);
+    const structural = validateBayBoundaryConnectionsConfig(layer?.bayBoundaryConnections);
+    const diagnostics = [...structural.diagnostics];
+    if (!structural.config) return { valid: structural.valid, diagnostics };
+    structural.config.connections.forEach((connection, connectionIndex) => {
+        if (diagnostics.some((entry) => entry.connectionIndex === connectionIndex)) return;
+        connection.endpoints.forEach((endpoint, endpointIndex) => {
+            const facade = resolveBalconyContinuityFacade(config, layerId, endpoint.faceId);
+            const resolved = facade ? resolveAuthoredBalconyBay(facade, endpoint.bayId) : { count: 0 };
+            if (resolved.count === 1) return;
+            diagnostics.push({
+                severity: 'error',
+                code: facade ? 'bay_boundary_destination_bay_missing' : 'bay_boundary_destination_facade_missing',
+                message: `Connection "${connection.id}" cannot resolve ${endpoint.faceId}:${endpoint.bayId} after remap.`,
+                connectionId: connection.id,
+                connectionIndex,
+                endpointIndex
+            });
         });
     });
     return { valid: diagnostics.length === 0, diagnostics };
@@ -620,6 +703,24 @@ function sourcePayload(config, layerId, target) {
                 : []
         };
     }
+    if (locator.type === 'bay_boundary_connection') {
+        const connections = Array.isArray(layer?.bayBoundaryConnections?.connections)
+            ? layer.bayBoundaryConnections.connections
+            : [];
+        const matches = connections
+            .map((connection, index) => ({ connection, index }))
+            .filter((entry) => entry.connection?.id === locator.sourceId);
+        const layerIndex = (Array.isArray(config?.layers) ? config.layers : [])
+            .findIndex((entry) => entry?.type === 'floor' && entry?.id === layerId);
+        const exists = matches.length === 1 && layerIndex >= 0;
+        return {
+            exists,
+            payload: exists ? deepClone(matches[0].connection) : undefined,
+            path: exists
+                ? ['layers', layerIndex, 'bayBoundaryConnections', 'connections', matches[0].index]
+                : []
+        };
+    }
     if (locator.type === 'entity') {
         const payload = getAtPath(config, locator.path);
         return { exists: payload !== undefined, payload: deepClone(payload), path: [...locator.path] };
@@ -758,6 +859,7 @@ export function materializeBuildingSilhouetteTargetRemap(config, {
     const removals = [];
     const keyedJobs = [];
     const balconyContinuityRemaps = [];
+    const bayBoundaryRemaps = [];
     let promotedGlobalFacades = resolved.some((entry) => {
         const target = resolvedTarget(entry);
         return entry?.decision !== SILHOUETTE_REMAP_DECISION.KEEP
@@ -829,6 +931,34 @@ export function materializeBuildingSilhouetteTargetRemap(config, {
                 kind: entry?.kind ?? 'target',
                 decision,
                 effect: 'remap_balcony_continuity_link',
+                sourcePath: pathText(source.path),
+                resolvedRunIds: deepClone(entry.resolvedRunIds ?? []),
+                reverseLocalU: remapped.payload.endpoints.some((endpoint, index) => (
+                    endpoint.edge !== source.payload.endpoints[index].edge
+                ))
+            });
+            continue;
+        }
+        if (locator.type === 'bay_boundary_connection') {
+            const remapped = remapBayBoundaryConnectionPayload(entry, source.payload);
+            if (!remapped.valid || !setAtPath(nextConfig, source.path, remapped.payload)) {
+                const reason = remapped.reason ?? 'bay_boundary_materialization_path_missing';
+                orphaned.push(archiveEntry(entry, source, { reason, disposition: 'orphaned' }));
+                unresolved.push({
+                    targetId: entry?.targetId ?? '',
+                    kind: entry?.kind ?? 'target',
+                    reason,
+                    target: deepClone(target)
+                });
+                removals.push({ entry, target, source, locator, path: source.path });
+                continue;
+            }
+            bayBoundaryRemaps.push({ entry, target, source, connectionId: remapped.payload.id });
+            applied.push({
+                targetId: entry?.targetId ?? '',
+                kind: entry?.kind ?? 'target',
+                decision,
+                effect: 'remap_bay_boundary_connection',
                 sourcePath: pathText(source.path),
                 resolvedRunIds: deepClone(entry.resolvedRunIds ?? []),
                 reverseLocalU: remapped.payload.endpoints.some((endpoint, index) => (
@@ -1093,6 +1223,13 @@ export function materializeBuildingSilhouetteTargetRemap(config, {
                     delete layer.balconyContinuity;
                 }
             }
+            if (removed && locator.type === 'bay_boundary_connection') {
+                const layer = floorLayer(nextConfig, layerId);
+                if (Array.isArray(layer?.bayBoundaryConnections?.connections)
+                    && !layer.bayBoundaryConnections.connections.length) {
+                    delete layer.bayBoundaryConnections;
+                }
+            }
         }
         if (!removed) {
             unresolved.push({
@@ -1144,6 +1281,36 @@ export function materializeBuildingSilhouetteTargetRemap(config, {
                 reason: primary.code,
                 disposition: 'orphaned'
             }));
+            unresolved.push({
+                targetId: job.entry?.targetId ?? '',
+                kind: job.entry?.kind ?? 'target',
+                reason: primary.code,
+                target: deepClone(job.target),
+                diagnostics: deepClone(relevant)
+            });
+        }
+    }
+
+    if (bayBoundaryRemaps.length) {
+        const validation = validateMaterializedBayBoundaryConnections(nextConfig, layerId);
+        for (const job of bayBoundaryRemaps) {
+            const relevant = validation.diagnostics.filter((entry) => entry.connectionId === job.connectionId);
+            if (!relevant.length) continue;
+            const layer = floorLayer(nextConfig, layerId);
+            const connections = Array.isArray(layer?.bayBoundaryConnections?.connections)
+                ? layer.bayBoundaryConnections.connections
+                : [];
+            const index = connections.findIndex((connection) => connection?.id === job.connectionId);
+            if (index >= 0) connections.splice(index, 1);
+            if (layer?.bayBoundaryConnections && !connections.length) delete layer.bayBoundaryConnections;
+            for (let index = applied.length - 1; index >= 0; index -= 1) {
+                if (applied[index]?.targetId === job.entry?.targetId
+                    && applied[index]?.effect === 'remap_bay_boundary_connection') {
+                    applied.splice(index, 1);
+                }
+            }
+            const primary = relevant[0];
+            orphaned.push(archiveEntry(job.entry, job.source, { reason: primary.code, disposition: 'orphaned' }));
             unresolved.push({
                 targetId: job.entry?.targetId ?? '',
                 kind: job.entry?.kind ?? 'target',

@@ -620,7 +620,29 @@ This increases authoring power while keeping deterministic fitting rules.
 
 ---
 
-## 15. Open questions (to finalize before implementation)
+## 15. Local bay-boundary transitions (AI 541)
+
+Bay fill first resolves physical strips and repeated occurrences. AI 541 then
+matches stable source bay ids at consecutive Start/End endpoints; it never
+matches by authored array index. Runout stations are meters along the resolved
+front paths. The reserved span reduces usable content frontage before openings,
+cuts, balconies, piers, or decorators are emitted.
+
+The transition retains both source bay identities. Material and decoration
+ownership follows the source side until the exact meeting sample J, then the
+target side; meter UV distance continues along the curve. A relationship that
+overlaps another reserved span or enters required content is blocked with the
+two physical endpoint identities in its warning.
+
+An opening that remains on a source bay front samples that strip at its own
+resolved station. Its center uses the interpolated left/right bay depth, and
+its tangent, outward normal, yaw, wall cut, reveals, and visible assembly all
+use the same world-space strip plane. Repeated openings sample independently;
+they must not share one average depth or the parent face's unsloped normal.
+
+---
+
+## 16. Open questions (to finalize before implementation)
 
 1. **Default remainder policy:** whether leftover length should always reflow, or sometimes become padding gaps.
 2. **Per-face vs per-layer overrides:** what overrides are allowed without breaking continuity (materials, window types, depth).

@@ -39,6 +39,11 @@ import {
     normalizeBalconyContinuityConfig,
     validateBalconyContinuityConfig
 } from '../../../app/buildings/BalconyContinuityModel.js';
+import {
+    bayBoundaryEndpointKey,
+    normalizeBayBoundaryConnectionsConfig,
+    validateBayBoundaryConnectionsConfig
+} from '../../../app/buildings/BayBoundaryConnectionsModel.js';
 import { normalizeFacadeAttachmentsConfig } from '../../../app/buildings/FacadeAttachmentsModel.js';
 import {
     createFootprintPlan,
@@ -1128,6 +1133,9 @@ export class BuildingFabrication2View {
         this.ui.onSetBayBalcony = (layerId, faceId, bayId, patch) => this._setBayBalcony(layerId, faceId, bayId, patch);
         this.ui.onSetBalconyContinuityLink = (layerId, source, target) => this._setBalconyContinuityLink(layerId, source, target);
         this.ui.onRemoveBalconyContinuityLink = (layerId, linkId) => this._removeBalconyContinuityLink(layerId, linkId);
+        this.ui.onSetBayBoundaryConnection = (layerId, source, target, value) => {
+            this._setBayBoundaryConnection(layerId, source, target, value);
+        };
         this.ui.onRequestBalconyPresetThumbnails = () => this._renderBalconyPresetThumbnails();
         this.ui.onSetBayWindowPortal = (layerId, faceId, bayId, patch) => this._setBayWindowPortal(layerId, faceId, bayId, patch);
         this.ui.onSetWindowDefinitionStorefrontZone = (windowDefId, patch) => this._setWindowDefinitionStorefrontZone(windowDefId, patch);
@@ -1322,6 +1330,7 @@ export class BuildingFabrication2View {
         this.ui.onSetBayBalcony = null;
         this.ui.onSetBalconyContinuityLink = null;
         this.ui.onRemoveBalconyContinuityLink = null;
+        this.ui.onSetBayBoundaryConnection = null;
         this.ui.onRequestBalconyPresetThumbnails = null;
         this.ui.onSetBayWindowPortal = null;
         this.ui.onSetWindowDefinitionStorefrontZone = null;
@@ -5867,6 +5876,150 @@ export class BuildingFabrication2View {
             layer.balconyContinuity = { links: nextLinks };
         } else {
             delete layer.balconyContinuity;
+        }
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+        return true;
+    }
+
+    _findBayBoundaryAuthoredEndpoint(layerId, endpointValue) {
+        const endpoint = {
+            faceId: typeof endpointValue?.faceId === 'string' ? endpointValue.faceId.trim().toUpperCase() : '',
+            bayId: typeof endpointValue?.bayId === 'string' ? endpointValue.bayId.trim() : '',
+            edge: typeof endpointValue?.edge === 'string' ? endpointValue.edge.trim().toLowerCase() : ''
+        };
+        if (!bayBoundaryEndpointKey(endpoint)) return null;
+        const layer = Array.isArray(this._currentConfig?.layers)
+            ? this._currentConfig.layers.find((entry) => entry?.type === 'floor' && entry?.id === layerId)
+            : null;
+        if (!layer) return null;
+        const links = layer?.faceLinking?.links && typeof layer.faceLinking.links === 'object'
+            ? layer.faceLinking.links
+            : null;
+        const reverseByFace = layer?.faceLinking?.reverseByFace && typeof layer.faceLinking.reverseByFace === 'object'
+            ? layer.faceLinking.reverseByFace
+            : null;
+        let faceId = endpoint.faceId;
+        let reversed = false;
+        const visited = new Set();
+        for (let guard = 0; guard < 26; guard += 1) {
+            if (visited.has(faceId)) break;
+            visited.add(faceId);
+            const master = links?.[faceId] ?? null;
+            if (!isFaceId(master) || master === faceId) break;
+            reversed = reversed !== !!reverseByFace?.[faceId];
+            faceId = master;
+        }
+        let context = this._findBaySpec({ layerId, faceId, bayId: endpoint.bayId });
+        if (!context) return null;
+        const linkedBayIds = new Set();
+        for (let guard = 0; guard < 64; guard += 1) {
+            const linkedBayId = resolveBayLinkFromSpec(context.bay);
+            if (!linkedBayId || linkedBayIds.has(linkedBayId)) break;
+            linkedBayIds.add(linkedBayId);
+            const next = this._findBaySpec({ layerId, faceId, bayId: linkedBayId });
+            if (!next) break;
+            context = next;
+        }
+        const edge = reversed
+            ? (endpoint.edge === 'start' ? 'end' : 'start')
+            : endpoint.edge;
+        return { ...context, layer, endpoint, authoredFaceId: faceId, authoredEdge: edge };
+    }
+
+    _setBayBoundaryAuthoredDepth(layerId, endpoint, valueMeters) {
+        const context = this._findBayBoundaryAuthoredEndpoint(layerId, endpoint);
+        if (!context?.bay) return false;
+        const value = clamp(Number(valueMeters) || 0, -2, 2);
+        const source = context.bay.depth && typeof context.bay.depth === 'object' ? context.bay.depth : null;
+        const linked = (source?.linked ?? true) !== false;
+        const left = Number.isFinite(Number(source?.left)) ? clamp(Number(source.left), -2, 2) : 0;
+        const right = Number.isFinite(Number(source?.right)) ? clamp(Number(source.right), -2, 2) : (linked ? left : 0);
+        context.bay.depth = { left, right, linked };
+        if (context.authoredEdge === 'start') context.bay.depth.left = value;
+        else context.bay.depth.right = value;
+        if (linked) {
+            context.bay.depth.left = value;
+            context.bay.depth.right = value;
+        }
+        return true;
+    }
+
+    _setBayBoundaryConnection(layerId, sourceValue, targetValue, value) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        const layer = Array.isArray(this._currentConfig?.layers)
+            ? this._currentConfig.layers.find((entry) => entry?.type === 'floor' && entry?.id === id)
+            : null;
+        const normalizeEndpoint = (entry) => {
+            const endpoint = {
+                faceId: typeof entry?.faceId === 'string' ? entry.faceId.trim().toUpperCase() : '',
+                bayId: typeof entry?.bayId === 'string' ? entry.bayId.trim() : '',
+                edge: typeof entry?.edge === 'string' ? entry.edge.trim().toLowerCase() : ''
+            };
+            return bayBoundaryEndpointKey(endpoint) ? endpoint : null;
+        };
+        const source = normalizeEndpoint(sourceValue);
+        const target = normalizeEndpoint(targetValue);
+        if (!layer || !source || !target) return false;
+        const sourceKey = bayBoundaryEndpointKey(source);
+        const targetKey = bayBoundaryEndpointKey(target);
+        const current = normalizeBayBoundaryConnectionsConfig(layer.bayBoundaryConnections)?.connections ?? [];
+        const matchIndex = current.findIndex((connection) => {
+            const keys = connection.endpoints.map((endpoint) => bayBoundaryEndpointKey(endpoint));
+            return keys.includes(sourceKey) && keys.includes(targetKey);
+        });
+
+        if (value === null || value === undefined) {
+            if (matchIndex < 0) return false;
+            this._recordSilhouetteApplySnapshot();
+            const next = current.filter((_, index) => index !== matchIndex);
+            if (next.length) layer.bayBoundaryConnections = { connections: next };
+            else delete layer.bayBoundaryConnections;
+            this._syncUiState();
+            this._requestRebuild({ preserveCamera: true });
+            return true;
+        }
+
+        const patch = value && typeof value === 'object' ? value : {};
+        const existing = matchIndex >= 0 ? current[matchIndex] : null;
+        const usedIds = new Set(current.map((connection) => connection.id).filter(Boolean));
+        let connectionId = existing?.id ?? 'bay_boundary_1';
+        for (let index = 1; !existing && usedIds.has(connectionId); index += 1) connectionId = `bay_boundary_${index + 1}`;
+        const candidate = {
+            id: connectionId,
+            type: patch.type ?? existing?.type ?? 'sharp',
+            endpoints: [source, target],
+            depthLink: {
+                ...(existing?.depthLink ?? { enabled: false }),
+                ...(patch.depthLink && typeof patch.depthLink === 'object' ? patch.depthLink : {})
+            },
+            transition: {
+                ...(existing?.transition ?? {
+                    mode: 'centered',
+                    leftRunoutMeters: 0.75,
+                    rightRunoutMeters: 0.75,
+                    runoutsLinked: true,
+                    meeting: 0.5
+                }),
+                ...(patch.transition && typeof patch.transition === 'object' ? patch.transition : {})
+            }
+        };
+        const nextConnections = [...current];
+        if (matchIndex >= 0) nextConnections[matchIndex] = candidate;
+        else nextConnections.push(candidate);
+        const validation = validateBayBoundaryConnectionsConfig({ connections: nextConnections });
+        if (!validation.valid || !validation.config) {
+            console.warn('[BuildingFabrication2View] Cannot apply bay-boundary connection:', validation.diagnostics);
+            return false;
+        }
+
+        this._recordSilhouetteApplySnapshot();
+        layer.bayBoundaryConnections = validation.config;
+        const applied = validation.config.connections.find((connection) => connection.id === connectionId);
+        if (applied?.depthLink?.enabled) {
+            const depth = Number(applied.depthLink.valueMeters) || 0;
+            this._setBayBoundaryAuthoredDepth(id, source, depth);
+            this._setBayBoundaryAuthoredDepth(id, target, depth);
         }
         this._syncUiState();
         this._requestRebuild({ preserveCamera: true });

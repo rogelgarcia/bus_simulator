@@ -1,4 +1,4 @@
-# Problem
+# DONE — AI 541: bay-boundary rounded transitions and depth links
 
 Building Fabrication 2 already lets each bay author independent left and right
 depths. The resolved front of a bay can therefore slope, project, or recess,
@@ -133,3 +133,19 @@ Tasks:
 - Do not move it to `prompts/archive/` automatically; archive it only when
   explicitly requested.
 - Add a high-level one-line summary per completed change.
+
+## Completion summary
+
+- Added the canonical default-off bayBoundaryConnections model, normalization, validation, stable endpoint identity, and deterministic repeat resolution.
+- Added the tangent-continuous adaptive transition-path solver with stable samples, normals, arc length, ownership, and meeting-bias behavior.
+- Integrated one shared rounded path across BF2 wall shells, slabs, roof/parapet edges, belts, cornices, materials, UVs, openings, decorators, and highlights.
+- Added boundary-depth linking without changing either bay's independent within-bay depth-link semantics.
+- Added clearance, overlap, edge-bevel, corner-cut, degenerate-path, and topology conflict blocking with actionable diagnostics.
+- Integrated explicit AI 537 balcony continuity so matching balcony links follow the rounded path while unlinked balconies remain independent.
+- Added BF2 controls, P0/J/P1 plan handles, tangent guides, live invalid-state feedback, numeric edits, Apply/Cancel, and undo/redo.
+- Added physical-face controls for face-linked/reversed slave instances and reversal-aware silhouette target remapping.
+- Added matched sharp/rounded catalog showcase variants covering a depth step, tangent kink, asymmetric step, and 90-degree cross-face corner.
+- Corrected bay openings to sample per-instance strip depth and tangent so windows, doors, storefronts, cutouts, reveals, and attached decorations remain flush with depth-sloped source walls.
+- Added model, path, generator, persistence, editor, remap, face-link, balcony, catalog, and visual regression coverage.
+- Captured the design references, UHD HDRI before/after and close-up renders, plan view, final showcase, editor handles, invalid-state feedback, and manifest in the gitignored artifact tree.
+- Updated the canonical BF2 engine, model, UI, facade, topology, curved-run, balcony, schema, and testing specifications.

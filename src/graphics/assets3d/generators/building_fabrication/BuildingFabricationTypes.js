@@ -13,6 +13,7 @@ import { WINDOW_TYPE, getDefaultWindowParams, isWindowTypeId } from '../building
 import { isValidMaterialSlotName, parseMaterialSpecShorthand } from '../../../../app/buildings/BuildingMaterialSlots.js';
 import { normalizeRooftopPropsConfig } from '../../../../app/buildings/RooftopPropsModel.js';
 import { normalizeBalconyContinuityConfig } from '../../../../app/buildings/BalconyContinuityModel.js';
+import { normalizeBayBoundaryConnectionsConfig } from '../../../../app/buildings/BayBoundaryConnectionsModel.js';
 import { normalizeLayerSilhouette } from '../../../../app/buildings/silhouette_authoring/BuildingLayerSilhouetteModel.js';
 
 function clamp(value, min, max) {
@@ -634,6 +635,7 @@ export function createDefaultFloorLayer({
     faceMaterials = null,
     banding = null,
     balconyContinuity = undefined,
+    bayBoundaryConnections = undefined,
     silhouette = undefined
 } = {}) {
     const b = belt ?? {};
@@ -663,6 +665,7 @@ export function createDefaultFloorLayer({
     // `inherit_default` record unless the source explicitly owns a silhouette.
     const silhouetteCfg = normalizeLayerSilhouette(silhouette);
     const balconyContinuityCfg = normalizeBalconyContinuityConfig(balconyContinuity);
+    const bayBoundaryConnectionsCfg = normalizeBayBoundaryConnectionsConfig(bayBoundaryConnections);
 
     const out = {
         id: typeof id === 'string' && id ? id : createLayerId('floor'),
@@ -699,6 +702,7 @@ export function createDefaultFloorLayer({
     if (faceLinkingCfg) out.faceLinking = faceLinkingCfg;
     if (faceMaterialsCfg) out.faceMaterials = faceMaterialsCfg;
     if (balconyContinuityCfg) out.balconyContinuity = balconyContinuityCfg;
+    if (bayBoundaryConnectionsCfg) out.bayBoundaryConnections = bayBoundaryConnectionsCfg;
     if (silhouetteCfg) out.silhouette = silhouetteCfg;
     return out;
 }
@@ -858,6 +862,7 @@ export function cloneBuildingLayers(layers) {
             const faceMaterials = layer?.faceMaterials ?? null;
             const banding = layer?.banding ?? null;
             const balconyContinuity = layer?.balconyContinuity ?? null;
+            const bayBoundaryConnections = layer?.bayBoundaryConnections ?? null;
 
             out.push({
                 ...layer,
@@ -865,6 +870,7 @@ export function cloneBuildingLayers(layers) {
                 faceMaterials: faceMaterials ? deepClone(faceMaterials) : faceMaterials,
                 banding: banding ? deepClone(banding) : banding,
                 ...(balconyContinuity ? { balconyContinuity: deepClone(balconyContinuity) } : {}),
+                ...(bayBoundaryConnections ? { bayBoundaryConnections: deepClone(bayBoundaryConnections) } : {}),
                 material: material ? { ...material } : material,
                 wallBase: wallBase ? deepClone(wallBase) : wallBase,
                 tiling: tiling ? deepClone(tiling) : tiling,

@@ -88,6 +88,15 @@ import {
     resolveBalconyContinuityLinks
 } from '../../../../app/buildings/BalconyContinuityModel.js';
 import {
+    BAY_BOUNDARY_EDGE,
+    BAY_BOUNDARY_TYPE,
+    bayBoundaryEndpointKey,
+    normalizeBayBoundaryConnectionsConfig,
+    resolveBayBoundaryConnections,
+    validateBayBoundaryConnectionsConfig
+} from '../../../../app/buildings/BayBoundaryConnectionsModel.js';
+import { solveBayBoundaryTransitionPath } from '../../../../app/buildings/BayBoundaryTransitionPath.js';
+import {
     FACADE_ATTACHMENT_TYPE,
     normalizeFacadeAttachmentsConfig,
     shouldPlaceAcUnit
@@ -2545,6 +2554,16 @@ function facadeStripSegmentKey(faceId, u0, depth0, u1, depth1) {
     return `${faceId}|${p0.u}|${p0.d}|${p1.u}|${p1.d}`;
 }
 
+function facadeWorldSegmentKey(x0, z0, x1, z1) {
+    const f = (n) => qf(Number(n) || 0);
+    const a = { x: f(x0), z: f(z0) };
+    const b = { x: f(x1), z: f(z1) };
+    const ordered = a.x < b.x || (a.x === b.x && a.z <= b.z);
+    const p0 = ordered ? a : b;
+    const p1 = ordered ? b : a;
+    return `__world__:${p0.x}|${p0.z}|${p1.x}|${p1.z}`;
+}
+
 function sortUniqueNumbers(values, { tol = 1e-5 } = {}) {
     const list = [];
     for (const v of values) {
@@ -2982,8 +3001,18 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
         let uAtA = baseU0;
         let uAtB = baseU1;
 
+        const worldOverride = overrides?.get?.(facadeWorldSegmentKey(a.x, a.z, b.x, b.z)) ?? null;
+        if (worldOverride) {
+            matIndex = clampInt(worldOverride.materialIndex, 0, 9999);
+            const uvStart = Number(worldOverride.uvStart) || 0;
+            const forward = Math.hypot(a.x - Number(worldOverride.x0), a.z - Number(worldOverride.z0))
+                <= Math.hypot(a.x - Number(worldOverride.x1), a.z - Number(worldOverride.z1));
+            uAtA = forward ? uvStart : uvStart + segLen;
+            uAtB = forward ? uvStart + segLen : uvStart;
+        }
+
         const faceId = a.faceId;
-        if (overrides && a.kind === 'profile' && b.kind === 'profile' && faceId && faceId === b.faceId) {
+        if (!worldOverride && overrides && a.kind === 'profile' && b.kind === 'profile' && faceId && faceId === b.faceId) {
             const segKey = facadeStripSegmentKey(faceId, a.u, a.depth, b.u, b.depth);
             let ovr = overrides.get(segKey) ?? null;
 
@@ -6771,10 +6800,35 @@ function balconyContinuityEdgePoint(candidate, edge, depth) {
  * repeated here. The link must either join touching bays on one straight run,
  * or the physical loop end of one straight face to the next face's loop start.
  */
-function resolveBalconyContinuityAdjacency({ aEndpoint, aCandidate, bEndpoint, bCandidate, frames, toleranceMeters = 0.04 }) {
+function resolveBalconyContinuityAdjacency({
+    aEndpoint,
+    aCandidate,
+    bEndpoint,
+    bCandidate,
+    frames,
+    boundaryTransitions = null,
+    toleranceMeters = 0.04
+}) {
     const tol = Math.max(1e-4, Number(toleranceMeters) || 0.04);
     if (!aCandidate || !bCandidate || aCandidate.key === bCandidate.key) {
         return { valid: false, reason: 'must target two different balcony bays' };
+    }
+    const roundedTransition = (Array.isArray(boundaryTransitions) ? boundaryTransitions : []).find((transition) => {
+        const startStrip = transition?.startEndpoint?.strip ?? null;
+        const endStrip = transition?.endEndpoint?.strip ?? null;
+        return (startStrip === aCandidate.strip && endStrip === bCandidate.strip)
+            || (startStrip === bCandidate.strip && endStrip === aCandidate.strip);
+    }) ?? null;
+    if (roundedTransition) {
+        return {
+            valid: true,
+            kind: 'rounded_boundary',
+            firstKey: roundedTransition.startEndpoint.strip === aCandidate.strip ? aCandidate.key : bCandidate.key,
+            secondKey: roundedTransition.endEndpoint.strip === bCandidate.strip ? bCandidate.key : aCandidate.key,
+            facet: null,
+            nonCollinear: true,
+            transition: roundedTransition
+        };
     }
     if (aCandidate.frame?.curve || bCandidate.frame?.curve) {
         return { valid: false, reason: 'curved facade runs are not supported yet' };
@@ -6919,6 +6973,28 @@ function balconyContinuityJoinPair({ current, next, link, depthOf }) {
     const currentEntry = link.endpoints.find((endpoint) => endpoint.candidate.key === current.candidate.key);
     const nextEntry = link.endpoints.find((endpoint) => endpoint.candidate.key === next.candidate.key);
     if (!currentEntry || !nextEntry) return null;
+    if (link.relation.kind === 'rounded_boundary') {
+        const transition = link.relation.transition;
+        const forward = transition.startEndpoint.strip === current.candidate.strip;
+        const sourceSamples = forward ? transition.samples : transition.samples.slice().reverse();
+        const points = sourceSamples.map((sample) => {
+            const ownerIsStart = sample.owner === 'left';
+            const ownerStrip = ownerIsStart ? transition.startEndpoint.strip : transition.endEndpoint.strip;
+            const ownerStation = ownerIsStart ? transition.startStation : transition.endStation;
+            const ownerCandidate = ownerStrip === current.candidate.strip ? current.candidate : next.candidate;
+            const offset = depthOf(ownerCandidate) - ownerStation.depth;
+            return {
+                x: qf(sample.x + sample.normal.x * offset),
+                y: 0,
+                z: qf(sample.z + sample.normal.z * offset)
+            };
+        });
+        return {
+            current: points[0],
+            next: points[points.length - 1],
+            between: points.slice(1, -1)
+        };
+    }
     if (link.relation.kind === 'same_run') {
         return {
             current: balconyContinuityEdgePoint(current.candidate, currentEntry.edge, depthOf(current.candidate)),
@@ -6951,6 +7027,7 @@ function buildBalconyContinuityDepthPath({ ordered, links, depthOf }) {
         const pair = balconyContinuityJoinPair({ current: ordered[index], next: ordered[index + 1], link, depthOf });
         if (!pair) return null;
         appendPointIfChanged(points, pair.current);
+        for (const point of pair.between ?? []) appendPointIfChanged(points, point);
         appendPointIfChanged(points, pair.next);
         joins.push({
             link,
@@ -7214,9 +7291,10 @@ function resolveCurvedWindowBend({ frame, point, nx, nz, settings, poseOffset })
  * @param {object} params
  * @param {Array<object>} params.facadeStrips strips from `computeQuadFacadeSilhouette`
  * @param {object} params.facadeFrames per-face `{start, t, n, length}` frames
+ * @param {Array<object>} [params.boundaryTransitions] AI 541 derived curve segments
  * @returns {Record<string, Array<object>> | null}
  */
-function buildFacadeSurfaceRunsByFaceId({ facadeStrips, facadeFrames }) {
+function buildFacadeSurfaceRunsByFaceId({ facadeStrips, facadeFrames, boundaryTransitions = null }) {
     const strips = Array.isArray(facadeStrips) ? facadeStrips : [];
     if (!strips.length || !facadeFrames) return null;
 
@@ -7257,10 +7335,48 @@ function buildFacadeSurfaceRunsByFaceId({ facadeStrips, facadeFrames }) {
                 x1: Number(b.x) || 0,
                 z1: Number(b.z) || 0,
                 nx: Number(frame?.n?.x) || 0,
-                nz: Number(frame?.n?.z) || 0
+                nz: Number(frame?.n?.z) || 0,
+                strip
             });
         }
         if (!fronts.length) continue;
+
+        const transitions = Array.isArray(boundaryTransitions) ? boundaryTransitions : [];
+        const connectedPairs = new Set();
+        const beforeByStrip = new Map();
+        const afterByStrip = new Map();
+        const addSegments = (map, strip, segments) => {
+            if (!strip || !segments.length) return;
+            const existing = map.get(strip) ?? [];
+            existing.push(...segments);
+            map.set(strip, existing);
+        };
+        for (const transition of transitions) {
+            const startStrip = transition?.startEndpoint?.strip ?? null;
+            const endStrip = transition?.endEndpoint?.strip ?? null;
+            if (startStrip && endStrip) connectedPairs.add(`${startStrip.id}|${endStrip.id}`);
+            const toRunSegment = (segment) => ({
+                kind: 'transition',
+                faceId: segment.ownerFaceId,
+                bayId: segment.ownerBayId,
+                isBay: true,
+                isWedge: false,
+                x0: segment.x0,
+                z0: segment.z0,
+                x1: segment.x1,
+                z1: segment.z1,
+                nx: segment.nx,
+                nz: segment.nz
+            });
+            const startSegments = (transition.segments ?? [])
+                .filter((segment) => segment.ownerFaceId === faceId && segment.ownerStrip === startStrip)
+                .map(toRunSegment);
+            const endSegments = (transition.segments ?? [])
+                .filter((segment) => segment.ownerFaceId === faceId && segment.ownerStrip === endStrip)
+                .map(toRunSegment);
+            addSegments(afterByStrip, startStrip, startSegments);
+            addSegments(beforeByStrip, endStrip, endSegments);
+        }
 
         const run = [];
         for (let i = 0; i < fronts.length; i += 1) {
@@ -7268,7 +7384,8 @@ function buildFacadeSurfaceRunsByFaceId({ facadeStrips, facadeFrames }) {
             if (i > 0) {
                 const prev = fronts[i - 1];
                 const step = front.depth0 - prev.depth1;
-                if (!prev.isWedge && !front.isWedge && Math.abs(step) > 1e-4) {
+                const ownedByTransition = connectedPairs.has(`${prev.strip?.id}|${front.strip?.id}`);
+                if (!ownedByTransition && !prev.isWedge && !front.isWedge && Math.abs(step) > 1e-4) {
                     // The return runs from the previous front's depth to the
                     // next one's, at the shared u. Deeper-along-+t means the
                     // return looks back down the tangent.
@@ -7288,7 +7405,9 @@ function buildFacadeSurfaceRunsByFaceId({ facadeStrips, facadeFrames }) {
                     });
                 }
             }
+            run.push(...(beforeByStrip.get(front.strip) ?? []));
             run.push(front);
+            run.push(...(afterByStrip.get(front.strip) ?? []));
         }
         byFaceId[faceId] = run;
     }
@@ -7682,6 +7801,7 @@ function buildFacadeFaceProfile({
     frame,
     facade,
     layerMaterial,
+    boundaryDepthByEndpointKey = null,
     warnings
 }) {
     const faceLength = Number(frame?.length) || 0;
@@ -7705,6 +7825,7 @@ function buildFacadeFaceProfile({
         const it = items[i] ?? {};
         const type = it?.type === 'padding' ? 'padding' : 'bay';
         const id = typeof it?.id === 'string' && it.id ? it.id : `${faceId}_${type}_${i + 1}`;
+        const sourceBayId = type === 'bay' && typeof it?.sourceBayId === 'string' ? it.sourceBayId : null;
 
         const frac = clamp(it?.widthFrac, 0, 1);
         const w = (i === items.length - 1) ? (faceLength - uCursor) : (frac * faceLength);
@@ -7717,13 +7838,22 @@ function buildFacadeFaceProfile({
         const depthSpec = isBay && it?.depth && typeof it.depth === 'object' ? it.depth : null;
         const depthLinked = (depthSpec?.linked ?? true) !== false;
         const depthLeftRaw = Number(depthSpec?.left);
-        const deltaDepthLeft = qf(depthSpec
+        let deltaDepthLeft = qf(depthSpec
             ? (Number.isFinite(depthLeftRaw) ? clampFacadeDepthMeters(depthLeftRaw) : 0.0)
             : (isBay ? clampFacadeDepthMeters(it?.depthOffset ?? 0.0) : 0.0));
         const depthRightRaw = Number(depthSpec?.right);
-        const deltaDepthRight = qf(depthSpec
+        let deltaDepthRight = qf(depthSpec
             ? (Number.isFinite(depthRightRaw) ? clampFacadeDepthMeters(depthRightRaw) : (depthLinked ? deltaDepthLeft : 0.0))
             : deltaDepthLeft);
+
+        if (isBay && sourceBayId && boundaryDepthByEndpointKey instanceof Map) {
+            const startKey = bayBoundaryEndpointKey({ faceId, bayId: sourceBayId, edge: BAY_BOUNDARY_EDGE.START });
+            const endKey = bayBoundaryEndpointKey({ faceId, bayId: sourceBayId, edge: BAY_BOUNDARY_EDGE.END });
+            const startDepth = startKey ? boundaryDepthByEndpointKey.get(startKey) : undefined;
+            const endDepth = endKey ? boundaryDepthByEndpointKey.get(endKey) : undefined;
+            if (Number.isFinite(Number(startDepth))) deltaDepthLeft = qf(clampFacadeDepthMeters(startDepth));
+            if (Number.isFinite(Number(endDepth))) deltaDepthRight = qf(clampFacadeDepthMeters(endDepth));
+        }
 
         const wedgeAngleDeg = isBay && !depthSpec ? normalizeWedgeAngleDeg(it?.wedgeAngleDeg) : 0;
         const wantsWedge = isBay && !depthSpec && wedgeAngleDeg > 0 && Math.abs(deltaDepthLeft) > depthEps;
@@ -7765,7 +7895,6 @@ function buildFacadeFaceProfile({
         const stripDepth0 = frontDepth0;
         const stripDepth1 = wantsWedge ? frontDepth0 : frontDepth1;
         const frontDepth = (stripDepth0 + stripDepth1) * 0.5;
-        const sourceBayId = isBay && typeof it?.sourceBayId === 'string' ? it.sourceBayId : null;
         const textureFlow = isBay && typeof it?.textureFlow === 'string' ? it.textureFlow : null;
         const wallBase = isBay && it?.wallBase && typeof it.wallBase === 'object' ? it.wallBase : null;
         const tiling = isBay && it?.tiling && typeof it.tiling === 'object' ? it.tiling : null;
@@ -7815,6 +7944,325 @@ function buildFacadeFaceProfile({
     return { profile, startDepth, endDepth, strips, faceLength };
 }
 
+function resolveBayBoundaryDepthOverrides(config, warnings) {
+    const validated = validateBayBoundaryConnectionsConfig(config);
+    const invalid = new Set(validated.diagnostics
+        .map((entry) => entry.connectionIndex)
+        .filter((index) => Number.isInteger(index)));
+    for (const entry of validated.diagnostics) warnings?.push?.(`Bay boundary: ${entry.message}`);
+    const values = new Map();
+    for (let index = 0; index < (validated.config?.connections?.length ?? 0); index += 1) {
+        if (invalid.has(index)) continue;
+        const connection = validated.config.connections[index];
+        if (!connection?.depthLink?.enabled) continue;
+        for (const endpoint of connection.endpoints) {
+            const key = bayBoundaryEndpointKey(endpoint);
+            if (key) values.set(key, Number(connection.depthLink.valueMeters) || 0);
+        }
+    }
+    return { config: validated.config, values };
+}
+
+function facadeStripFrontU(strip, edge) {
+    const raw = Number(edge === BAY_BOUNDARY_EDGE.END ? strip?.frontU1 : strip?.frontU0);
+    if (Number.isFinite(raw)) return raw;
+    return Number(edge === BAY_BOUNDARY_EDGE.END ? strip?.u1 : strip?.u0) || 0;
+}
+
+function facadeStripDepthAtU(strip, u) {
+    const u0 = facadeStripFrontU(strip, BAY_BOUNDARY_EDGE.START);
+    const u1 = facadeStripFrontU(strip, BAY_BOUNDARY_EDGE.END);
+    const fallback = Number(strip?.depth) || 0;
+    const d0 = Number.isFinite(Number(strip?.depth0)) ? Number(strip.depth0) : fallback;
+    const d1 = Number.isFinite(Number(strip?.depth1)) ? Number(strip.depth1) : fallback;
+    const t = u1 > u0 + EPS ? clamp(((Number(u) || 0) - u0) / (u1 - u0), 0, 1) : 0;
+    return qf(d0 + (d1 - d0) * t);
+}
+
+function facadeStripPointAtU(frame, strip, u) {
+    return pointOnFacadeFrame({ frame, u, depth: facadeStripDepthAtU(strip, u) });
+}
+
+function facadeStripPathLength(frame, strip, u0, u1, segments = 16) {
+    const count = clampInt(segments, 4, 64);
+    let length = 0;
+    let previous = facadeStripPointAtU(frame, strip, u0);
+    for (let index = 1; index <= count; index += 1) {
+        const u = u0 + (u1 - u0) * (index / count);
+        const point = facadeStripPointAtU(frame, strip, u);
+        length += Math.hypot(point.x - previous.x, point.z - previous.z);
+        previous = point;
+    }
+    return length;
+}
+
+function resolveFacadeStripRunoutStation({ frame, strip, edge, runoutMeters }) {
+    const start = facadeStripFrontU(strip, BAY_BOUNDARY_EDGE.START);
+    const end = facadeStripFrontU(strip, BAY_BOUNDARY_EDGE.END);
+    const requested = Number(runoutMeters) || 0;
+    if (!(end > start + 1e-4) || !(requested > 0)) return null;
+    const total = facadeStripPathLength(frame, strip, start, end);
+    if (!(total > requested + 0.1)) return null;
+    let low = start;
+    let high = end;
+    for (let iteration = 0; iteration < 24; iteration += 1) {
+        const mid = (low + high) * 0.5;
+        const distance = edge === BAY_BOUNDARY_EDGE.END
+            ? facadeStripPathLength(frame, strip, mid, end, 12)
+            : facadeStripPathLength(frame, strip, start, mid, 12);
+        if (edge === BAY_BOUNDARY_EDGE.END) {
+            if (distance > requested) low = mid;
+            else high = mid;
+        } else if (distance > requested) {
+            high = mid;
+        } else {
+            low = mid;
+        }
+    }
+    const u = qf((low + high) * 0.5);
+    return {
+        u,
+        depth: facadeStripDepthAtU(strip, u),
+        point: facadeStripPointAtU(frame, strip, u),
+        availableMeters: total
+    };
+}
+
+function facadeStripWorldTangent(frame, strip, u, direction = 1) {
+    const start = facadeStripFrontU(strip, BAY_BOUNDARY_EDGE.START);
+    const end = facadeStripFrontU(strip, BAY_BOUNDARY_EDGE.END);
+    const du = Math.max(1e-4, Math.min(0.01, (end - start) * 0.02));
+    const ua = clamp((Number(u) || 0) - du, start, end);
+    const ub = clamp((Number(u) || 0) + du, start, end);
+    const a = facadeStripPointAtU(frame, strip, ua);
+    const b = facadeStripPointAtU(frame, strip, ub);
+    const sign = direction < 0 ? -1 : 1;
+    const dx = (b.x - a.x) * sign;
+    const dz = (b.z - a.z) * sign;
+    const length = Math.hypot(dx, dz);
+    return length > EPS ? { x: dx / length, z: dz / length } : null;
+}
+
+/**
+ * Resolve the local mounting pose of an opening on a bay front.
+ *
+ * A bay with independent left/right depths is a sloped world-space wall even
+ * when its parent facade is straight. Opening assemblies used to sample the
+ * parent face normal and one average bay depth, leaving their frames parallel
+ * to the original facade while the wall (and its cutout) followed the sloped
+ * strip. Keep the opening on the exact strip point and derive its outward
+ * normal from the strip tangent so windows, doors, storefronts, and their
+ * attached decorations share the wall's resolved plane.
+ */
+function resolveFacadeStripOpeningPose(frame, strip, u) {
+    const point = facadeStripPointAtU(frame, strip, u);
+    const tangent = facadeStripWorldTangent(frame, strip, u) ?? sampleFacadeFrameAtU(frame, u)?.t ?? frame?.t ?? null;
+    const tangentLength = Math.hypot(Number(tangent?.x) || 0, Number(tangent?.z) || 0);
+    if (!(tangentLength > EPS)) return null;
+
+    const tx = (Number(tangent?.x) || 0) / tangentLength;
+    const tz = (Number(tangent?.z) || 0) / tangentLength;
+    const baseSample = sampleFacadeFrameAtU(frame, u);
+    const baseNx = Number(baseSample?.n?.x ?? frame?.n?.x) || 0;
+    const baseNz = Number(baseSample?.n?.z ?? frame?.n?.z) || 0;
+    const right = { x: tz, z: -tx };
+    const left = { x: -tz, z: tx };
+    const rightAlignment = right.x * baseNx + right.z * baseNz;
+    const leftAlignment = left.x * baseNx + left.z * baseNz;
+    const normal = rightAlignment >= leftAlignment ? right : left;
+
+    return {
+        ...point,
+        u: Number(u) || 0,
+        depth: facadeStripDepthAtU(strip, u),
+        tx,
+        tz,
+        nx: normal.x,
+        nz: normal.z,
+        yaw: Math.atan2(normal.x, normal.z)
+    };
+}
+
+function facadeStripTransitionClearance(strip, stationU, edge) {
+    const remaining = edge === BAY_BOUNDARY_EDGE.END
+        ? stationU - facadeStripFrontU(strip, BAY_BOUNDARY_EDGE.START)
+        : facadeStripFrontU(strip, BAY_BOUNDARY_EDGE.END) - stationU;
+    const win = strip?.window && typeof strip.window === 'object' && strip.window.enabled !== false ? strip.window : null;
+    const windowReserve = win
+        ? clamp(win?.padding?.leftMeters ?? 0, 0, 9999)
+            + clamp(win?.padding?.rightMeters ?? 0, 0, 9999)
+            + Math.max(0.3, Number(win?.size?.widthMeters ?? win?.width?.minMeters) || 0.3)
+        : 0;
+    return { valid: remaining > Math.max(0.1, windowReserve) + 1e-4, remaining, required: Math.max(0.1, windowReserve) };
+}
+
+function buildResolvedBayBoundaryTransition({
+    connection,
+    instance,
+    frames,
+    startEndpoint,
+    endEndpoint,
+    startDirection = 1,
+    endDirection = 1,
+    instanceIndex = 0,
+    warnings
+}) {
+    const transition = connection?.transition ?? null;
+    const startStrip = startEndpoint?.strip ?? null;
+    const endStrip = endEndpoint?.strip ?? null;
+    const startFrame = frames?.[startEndpoint?.faceId] ?? null;
+    const endFrame = frames?.[endEndpoint?.faceId] ?? null;
+    if (!transition || !startStrip || !endStrip || !startFrame || !endFrame) return null;
+    const startStation = resolveFacadeStripRunoutStation({
+        frame: startFrame,
+        strip: startStrip,
+        edge: startEndpoint.edge,
+        runoutMeters: transition.leftRunoutMeters
+    });
+    const endStation = resolveFacadeStripRunoutStation({
+        frame: endFrame,
+        strip: endStrip,
+        edge: endEndpoint.edge,
+        runoutMeters: transition.rightRunoutMeters
+    });
+    if (!startStation || !endStation) {
+        warnings?.push?.(`Bay boundary "${connection.id}": a runout exceeds its solved bay frontage; the rounded join was blocked.`);
+        return null;
+    }
+    const startClearance = facadeStripTransitionClearance(startStrip, startStation.u, startEndpoint.edge);
+    const endClearance = facadeStripTransitionClearance(endStrip, endStation.u, endEndpoint.edge);
+    if (!startClearance.valid || !endClearance.valid) {
+        warnings?.push?.(`Bay boundary "${connection.id}": the rounded span would enter an opening or collapse usable bay frontage; the join was blocked.`);
+        return null;
+    }
+    const tangent0 = facadeStripWorldTangent(startFrame, startStrip, startStation.u, startDirection);
+    const tangent1 = facadeStripWorldTangent(endFrame, endStrip, endStation.u, endDirection);
+    const startFrameSample = sampleFacadeFrameAtU(startFrame, startStation.u);
+    const endFrameSample = sampleFacadeFrameAtU(endFrame, endStation.u);
+    const path = solveBayBoundaryTransitionPath({
+        id: connection.id,
+        p0: startStation.point,
+        p1: endStation.point,
+        tangent0,
+        tangent1,
+        outward0: startFrameSample?.n,
+        outward1: endFrameSample?.n,
+        leftRunoutMeters: transition.leftRunoutMeters,
+        rightRunoutMeters: transition.rightRunoutMeters,
+        meeting: transition.meeting,
+        maxChordErrorMeters: 0.01
+    });
+    if (!path.valid) {
+        for (const entry of path.diagnostics) warnings?.push?.(`Bay boundary "${connection.id}": ${entry.message}`);
+        return null;
+    }
+    const id = `${connection.id}:${instanceIndex + 1}`;
+    const samples = path.samples.map((sample) => ({
+        ...sample,
+        x: sample.position.x,
+        y: 0,
+        z: sample.position.z,
+        boundaryTransitionId: id
+    }));
+    const segments = [];
+    for (let index = 0; index < samples.length - 1; index += 1) {
+        const a = samples[index];
+        const b = samples[index + 1];
+        const ownerIsStart = ((a.t + b.t) * 0.5) < path.meeting;
+        const ownerEndpoint = ownerIsStart ? startEndpoint : endEndpoint;
+        const ownerStrip = ownerIsStart ? startStrip : endStrip;
+        const ownerStation = ownerIsStart ? startStation : endStation;
+        segments.push({
+            x0: a.x,
+            z0: a.z,
+            x1: b.x,
+            z1: b.z,
+            s0: a.sMeters,
+            s1: b.sMeters,
+            nx: qf((a.normal.x + b.normal.x) * 0.5),
+            nz: qf((a.normal.z + b.normal.z) * 0.5),
+            ownerFaceId: ownerEndpoint.faceId,
+            ownerBayId: ownerEndpoint.bayId,
+            ownerStrip,
+            ownerWallDepth: ownerStation.depth
+        });
+    }
+    return {
+        id,
+        connectionId: connection.id,
+        instance,
+        startEndpoint,
+        endEndpoint,
+        startStation,
+        endStation,
+        samples,
+        segments,
+        meeting: path.meeting,
+        meetingPoint: path.meetingPoint,
+        lengthMeters: path.lengthMeters
+    };
+}
+
+function applySameFaceBayBoundaryTransition(transition, profile) {
+    const faceId = transition?.startEndpoint?.faceId;
+    if (!faceId || faceId !== transition?.endEndpoint?.faceId || !profile) return false;
+    const u0 = transition.startStation.u;
+    const u1 = transition.endStation.u;
+    if (!(u1 > u0 + 1e-4)) return false;
+    const next = [];
+    for (const point of profile.profile ?? []) {
+        const u = Number(point?.u) || 0;
+        if (u < u0 - 1e-5 || u > u1 + 1e-5) appendPointIfChangedUD(next, point, 1e-5);
+    }
+    const projected = transition.samples.map((sample) => ({
+        u: sample.t === 0 ? u0 : (sample.t === 1 ? u1 : null),
+        depth: null,
+        sample
+    }));
+    const faceFrame = transition.faceFrame ?? null;
+    if (!faceFrame) return false;
+    for (const entry of projected) {
+        const coords = entry.u === null
+            ? projectPointToFacadeFrame({ frame: faceFrame, x: entry.sample.x, z: entry.sample.z })
+            : { u: entry.u, depth: entry.sample.t === 0 ? transition.startStation.depth : transition.endStation.depth };
+        next.push({
+            u: qf(coords.u),
+            depth: qf(coords.depth),
+            boundaryTransitionId: transition.id,
+            boundaryTransitionT: entry.sample.t
+        });
+    }
+    next.sort((a, b) => (Number(a.u) || 0) - (Number(b.u) || 0));
+    profile.profile = [];
+    for (const point of next) appendPointIfChangedUD(profile.profile, point, 1e-5);
+    const startStrip = transition.startEndpoint.strip;
+    const endStrip = transition.endEndpoint.strip;
+    startStrip.frontU1 = qf(u0);
+    startStrip.depth1 = qf(transition.startStation.depth);
+    startStrip.depth = qf((Number(startStrip.depth0) + Number(startStrip.depth1)) * 0.5);
+    endStrip.frontU0 = qf(u1);
+    endStrip.depth0 = qf(transition.endStation.depth);
+    endStrip.depth = qf((Number(endStrip.depth0) + Number(endStrip.depth1)) * 0.5);
+    return true;
+}
+
+function trimFacePointsAtBoundaryTransition(points, endpoint, station) {
+    const list = Array.isArray(points) ? points : [];
+    const kept = list.filter((point) => endpoint.edge === BAY_BOUNDARY_EDGE.END
+        ? Number(point?.u) < station.u - 1e-5
+        : Number(point?.u) > station.u + 1e-5);
+    const stationPoint = {
+        ...station.point,
+        kind: 'profile',
+        faceId: endpoint.faceId,
+        u: station.u,
+        depth: station.depth
+    };
+    if (endpoint.edge === BAY_BOUNDARY_EDGE.END) kept.push(stationPoint);
+    else kept.unshift(stationPoint);
+    return kept;
+}
+
 // Pier/spandrel grids (AI_487, refs 7/6/m1) are a RECIPE over this facade
 // silhouette system — no dedicated feature is needed for the planes:
 //   - pier: a narrow wall bay with an outward depth offset (proud strip),
@@ -7828,6 +8276,7 @@ function computeQuadFacadeSilhouette({
     wallOuter,
     facades,
     layerMaterial,
+    bayBoundaryConnections = null,
     warnings,
     cornerStrategy = null,
     cornerDebug = null,
@@ -7862,6 +8311,10 @@ function computeQuadFacadeSilhouette({
 
     const fac = facades && typeof facades === 'object' ? facades : null;
     const getFacade = (id) => (fac?.[id] && typeof fac[id] === 'object') ? fac[id] : null;
+    const boundaryDepthState = resolveBayBoundaryDepthOverrides(
+        normalizeBayBoundaryConnectionsConfig(bayBoundaryConnections),
+        warnings
+    );
 
     const profByFaceId = {};
     for (const faceId of faceOrder) {
@@ -7870,6 +8323,7 @@ function computeQuadFacadeSilhouette({
             frame: frames[faceId],
             facade: getFacade(faceId),
             layerMaterial,
+            boundaryDepthByEndpointKey: boundaryDepthState.values,
             warnings
         });
         if (!prof?.profile?.length) {
@@ -7904,6 +8358,117 @@ function computeQuadFacadeSilhouette({
                 spikyCorners.add(cornerId);
             }
         }
+    }
+
+    const facadeStripsByFaceId = {};
+    for (const faceId of faceOrder) facadeStripsByFaceId[faceId] = profByFaceId[faceId].strips;
+    const boundaryResolution = resolveBayBoundaryConnections({
+        connections: boundaryDepthState.config,
+        stripsByFaceId: facadeStripsByFaceId,
+        faceOrder
+    });
+    for (const entry of boundaryResolution.diagnostics) {
+        if (entry.code === 'bay_boundary_endpoint_missing' || entry.code === 'bay_boundary_endpoints_not_adjacent') {
+            warnings?.push?.(`Bay boundary: ${entry.message}`);
+        }
+    }
+    const boundaryTransitions = [];
+    const crossBoundaryTransitionByCornerId = {};
+    const sameFaceSpans = {};
+    const trimStripEndpoint = (endpoint, station) => {
+        const strip = endpoint?.strip ?? null;
+        if (!strip || !station) return;
+        if (endpoint.edge === BAY_BOUNDARY_EDGE.END) {
+            strip.frontU1 = qf(station.u);
+            strip.depth1 = qf(station.depth);
+        } else {
+            strip.frontU0 = qf(station.u);
+            strip.depth0 = qf(station.depth);
+        }
+        strip.depth = qf(((Number(strip.depth0) || 0) + (Number(strip.depth1) || 0)) * 0.5);
+    };
+    for (const connection of boundaryResolution.connections) {
+        if (connection.type !== BAY_BOUNDARY_TYPE.ROUNDED) continue;
+        connection.instances.forEach((instance, instanceIndex) => {
+            const [rawA, rawB] = instance.endpoints;
+            if (rawA.faceId === rawB.faceId) {
+                const startEndpoint = rawA.edge === BAY_BOUNDARY_EDGE.END ? rawA : rawB;
+                const endEndpoint = startEndpoint === rawA ? rawB : rawA;
+                const transition = buildResolvedBayBoundaryTransition({
+                    connection,
+                    instance,
+                    frames,
+                    startEndpoint,
+                    endEndpoint,
+                    startDirection: 1,
+                    endDirection: 1,
+                    instanceIndex,
+                    warnings
+                });
+                if (!transition) return;
+                transition.faceFrame = frames[startEndpoint.faceId];
+                const span = { u0: transition.startStation.u, u1: transition.endStation.u };
+                const claimed = sameFaceSpans[startEndpoint.faceId] ?? [];
+                if (claimed.some((entry) => span.u1 > entry.u0 + 1e-4 && span.u0 < entry.u1 - 1e-4)) {
+                    warnings?.push?.(`Bay boundary "${connection.id}": its rounded runout overlaps another transition; the join was blocked.`);
+                    return;
+                }
+                if (!applySameFaceBayBoundaryTransition(transition, profByFaceId[startEndpoint.faceId])) return;
+                claimed.push(span);
+                sameFaceSpans[startEndpoint.faceId] = claimed;
+                boundaryTransitions.push(transition);
+                return;
+            }
+
+            const aIndex = faceOrder.indexOf(rawA.faceId);
+            const bIndex = faceOrder.indexOf(rawB.faceId);
+            let startEndpoint = null;
+            let endEndpoint = null;
+            if (aIndex >= 0 && faceOrder[(aIndex + 1) % faceCount] === rawB.faceId) {
+                startEndpoint = rawA;
+                endEndpoint = rawB;
+            } else if (bIndex >= 0 && faceOrder[(bIndex + 1) % faceCount] === rawA.faceId) {
+                startEndpoint = rawB;
+                endEndpoint = rawA;
+            }
+            if (!startEndpoint || !endEndpoint) return;
+            const expectedStartEdge = facadeFrameRunsForward(frames[startEndpoint.faceId])
+                ? BAY_BOUNDARY_EDGE.END
+                : BAY_BOUNDARY_EDGE.START;
+            const expectedEndEdge = facadeFrameRunsForward(frames[endEndpoint.faceId])
+                ? BAY_BOUNDARY_EDGE.START
+                : BAY_BOUNDARY_EDGE.END;
+            if (startEndpoint.edge !== expectedStartEdge || endEndpoint.edge !== expectedEndEdge) {
+                warnings?.push?.(`Bay boundary "${connection.id}": endpoint identities do not meet at the selected physical corner; the rounded join was blocked.`);
+                return;
+            }
+            const cornerId = `${startEndpoint.faceId}${endEndpoint.faceId}`;
+            if (cornerFacets?.[cornerId]) {
+                warnings?.push?.(`Bay boundary "${connection.id}": corner ${cornerId} already belongs to a plan edge bevel; the rounded join was blocked.`);
+                return;
+            }
+            if (crossBoundaryTransitionByCornerId[cornerId]) {
+                warnings?.push?.(`Bay boundary "${connection.id}": corner ${cornerId} is already owned by another rounded transition.`);
+                return;
+            }
+            const transition = buildResolvedBayBoundaryTransition({
+                connection,
+                instance,
+                frames,
+                startEndpoint,
+                endEndpoint,
+                startDirection: facadeFrameRunsForward(frames[startEndpoint.faceId]) ? 1 : -1,
+                endDirection: facadeFrameRunsForward(frames[endEndpoint.faceId]) ? 1 : -1,
+                instanceIndex,
+                warnings
+            });
+            if (!transition) return;
+            trimStripEndpoint(startEndpoint, transition.startStation);
+            trimStripEndpoint(endEndpoint, transition.endStation);
+            transition.cornerId = cornerId;
+            crossBoundaryTransitionByCornerId[cornerId] = transition;
+            boundaryTransitions.push(transition);
+        });
     }
 
     const getUAtJoin = (frame, depth, p) => {
@@ -8059,6 +8624,9 @@ function computeQuadFacadeSilhouette({
     }
 
     const resolveCornerCut = (cornerId, prevFaceId, nextFaceId) => {
+        if (crossBoundaryTransitionByCornerId[cornerId]) {
+            return { cutPrev: 0, cutNext: 0, q: null };
+        }
         const prev = faceInfoByFaceId[prevFaceId];
         const next = faceInfoByFaceId[nextFaceId];
         if (!prev || !next) return { cutPrev: 0, cutNext: 0, q: null };
@@ -8217,7 +8785,17 @@ function computeQuadFacadeSilhouette({
             if (!(u > uStart + pointTol && u < uEnd - pointTol)) continue;
             const d = qf(Number(p.depth) || 0);
             const world = pointOnFacadeFrame({ frame: f, u, depth: d });
-            appendPointIfChanged(pts, { ...world, kind: 'profile', faceId, u: qf(u), depth: d }, pointTol);
+            appendPointIfChanged(pts, {
+                ...world,
+                kind: 'profile',
+                faceId,
+                u: qf(u),
+                depth: d,
+                ...(p.boundaryTransitionId ? {
+                    boundaryTransitionId: p.boundaryTransitionId,
+                    boundaryTransitionT: p.boundaryTransitionT
+                } : {})
+            }, pointTol);
         }
 
         appendPointIfChanged(pts, {
@@ -8288,6 +8866,18 @@ function computeQuadFacadeSilhouette({
         });
         if (!pts) return null;
         ptsByFaceId[faceId] = pts;
+    }
+    for (const transition of Object.values(crossBoundaryTransitionByCornerId)) {
+        ptsByFaceId[transition.startEndpoint.faceId] = trimFacePointsAtBoundaryTransition(
+            ptsByFaceId[transition.startEndpoint.faceId],
+            transition.startEndpoint,
+            transition.startStation
+        );
+        ptsByFaceId[transition.endEndpoint.faceId] = trimFacePointsAtBoundaryTransition(
+            ptsByFaceId[transition.endEndpoint.faceId],
+            transition.endEndpoint,
+            transition.endStation
+        );
     }
 
     if (cornerDebugList) {
@@ -8382,8 +8972,23 @@ function computeQuadFacadeSilhouette({
         const faceId = faceOrder[i];
         const facePoints = ptsByFaceId[faceId];
         loopDetail.push(...(facadeFrameRunsForward(frames[faceId]) ? facePoints : facePoints.slice().reverse()));
-        const cut = cutPoint(cornerIdAt(i));
-        if (cut) loopDetail.push(cut);
+        const cornerId = cornerIdAt(i);
+        const boundaryTransition = crossBoundaryTransitionByCornerId[cornerId] ?? null;
+        if (boundaryTransition) {
+            for (const sample of boundaryTransition.samples.slice(1, -1)) {
+                appendPointIfChanged(loopDetail, {
+                    x: sample.x,
+                    y: 0,
+                    z: sample.z,
+                    kind: 'boundary_transition',
+                    boundaryTransitionId: boundaryTransition.id,
+                    boundaryTransitionT: sample.t
+                }, pointTol);
+            }
+        } else {
+            const cut = cutPoint(cornerId);
+            if (cut) loopDetail.push(cut);
+        }
     }
 
     // AI 499 `all_convex_edges`: cut the arrises the bay relief itself creates
@@ -8431,6 +9036,10 @@ function computeQuadFacadeSilhouette({
         if (warnings) warnings.push('Facade silhouette: produced invalid loop.');
         return null;
     }
+    if (boundaryTransitions.length && !isSimplePlanLoopXZ(simplified)) {
+        if (warnings) warnings.push('Facade silhouette: a rounded bay boundary produced a self-intersecting wall loop.');
+        return null;
+    }
 
     const area = signedArea(simplified);
     const finalLoop = area < 0 ? simplified.slice().reverse() : simplified;
@@ -8446,6 +9055,7 @@ function computeQuadFacadeSilhouette({
         loop: finalLoop,
         loopDetail: finalDetail,
         strips: faceOrder.flatMap((faceId) => profByFaceId[faceId].strips),
+        boundaryTransitions,
         depthMinsByFaceId
     };
 }
@@ -9162,6 +9772,7 @@ export function buildBuildingFabricationVisualParts({
             let facadeFrames = null;
             let facadeLoopDetail = null;
             let facadeStrips = null;
+            let facadeBoundaryTransitions = null;
             let facadeDepthMinsByFaceId = null;
 
             const floors = clampInt(layer.floors, 0, 99);
@@ -9307,6 +9918,7 @@ export function buildBuildingFabricationVisualParts({
                         wallOuter,
                         facades: next,
                         layerMaterial: layer.material,
+                        bayBoundaryConnections: layer?.bayBoundaryConnections ?? null,
                         warnings,
                         cornerStrategy: resolvedCornerStrategy,
                         cornerDebug: cornerDebugList,
@@ -9317,6 +9929,7 @@ export function buildBuildingFabricationVisualParts({
                         facadeFrames = res.frames ?? null;
                         facadeLoopDetail = res.loopDetail ?? null;
                         facadeStrips = Array.isArray(res.strips) ? res.strips : null;
+                        facadeBoundaryTransitions = Array.isArray(res.boundaryTransitions) ? res.boundaryTransitions : null;
                         facadeDepthMinsByFaceId = res.depthMinsByFaceId ?? null;
                         if (facadeCornerDebugByLayerId && layerId && cornerDebugList && cornerDebugList.length) {
                             facadeCornerDebugByLayerId[layerId] = {
@@ -9392,7 +10005,11 @@ export function buildBuildingFabricationVisualParts({
             }
             if (layerId && facadeFrames && Array.isArray(facadeStrips) && facadeStrips.length) {
                 const entries = [];
-                const surfaceRuns = buildFacadeSurfaceRunsByFaceId({ facadeStrips, facadeFrames });
+                const surfaceRuns = buildFacadeSurfaceRunsByFaceId({
+                    facadeStrips,
+                    facadeFrames,
+                    boundaryTransitions: facadeBoundaryTransitions
+                });
                 for (const strip of facadeStrips) {
                     const type = typeof strip?.type === 'string' ? strip.type : '';
                     if (type !== 'bay') continue;
@@ -9431,6 +10048,22 @@ export function buildBuildingFabricationVisualParts({
                         nx: Number(frame?.n?.x) || 0,
                         nz: Number(frame?.n?.z) || 0
                     });
+                }
+                for (const transition of facadeBoundaryTransitions ?? []) {
+                    for (const segment of transition.segments ?? []) {
+                        if (!isFaceId(segment?.ownerFaceId) || !segment?.ownerBayId) continue;
+                        entries.push({
+                            faceId: segment.ownerFaceId,
+                            bayId: segment.ownerBayId,
+                            x0: Number(segment.x0) || 0,
+                            z0: Number(segment.z0) || 0,
+                            x1: Number(segment.x1) || 0,
+                            z1: Number(segment.z1) || 0,
+                            nx: Number(segment.nx) || 0,
+                            nz: Number(segment.nz) || 0,
+                            boundaryTransitionId: transition.id
+                        });
+                    }
                 }
                 if (entries.length) bayHighlightDataByLayerId[layerId] = entries;
                 if (surfaceRuns) facadeSurfaceRunsByLayerId[layerId] = surfaceRuns;
@@ -9651,30 +10284,22 @@ export function buildBuildingFabricationVisualParts({
                         repeatCentersU.push(centerU);
                     }
 
-                    const depth0Raw = Number(strip?.depth0);
-                    const depth1Raw = Number(strip?.depth1);
-                    const depthRaw = Number(strip?.depth);
-                    const depth = Number.isFinite(depth0Raw) && Number.isFinite(depth1Raw)
-                        ? ((depth0Raw + depth1Raw) * 0.5)
-                        : (Number.isFinite(depthRaw) ? depthRaw : 0);
-
-                    const centerSample = sampleFacadeFrameAtU(frame, (u0 + u1) * 0.5);
-                    const nx = Number(centerSample?.n?.x ?? frame?.n?.x) || 0;
-                    const nz = Number(centerSample?.n?.z ?? frame?.n?.z) || 0;
-                    const yaw = Math.atan2(nx, nz);
-                    const points = repeatCentersU.map((centerU) => {
-                        const world = pointOnFacadeFrame({ frame, u: centerU, depth });
-                        const sample = sampleFacadeFrameAtU(frame, centerU);
-                        const pointNx = Number(sample?.n?.x ?? nx) || 0;
-                        const pointNz = Number(sample?.n?.z ?? nz) || 0;
-                        return {
-                            ...world,
+                    const fallbackSample = sampleFacadeFrameAtU(frame, (u0 + u1) * 0.5);
+                    const fallbackNx = Number(fallbackSample?.n?.x ?? frame?.n?.x) || 0;
+                    const fallbackNz = Number(fallbackSample?.n?.z ?? frame?.n?.z) || 0;
+                    const fallbackYaw = Math.atan2(fallbackNx, fallbackNz);
+                    const points = repeatCentersU.map((centerU) => (
+                        resolveFacadeStripOpeningPose(frame, strip, centerU) ?? {
+                            ...facadeStripPointAtU(frame, strip, centerU),
                             u: centerU,
-                            nx: pointNx,
-                            nz: pointNz,
-                            yaw: Math.atan2(pointNx, pointNz)
-                        };
-                    });
+                            nx: fallbackNx,
+                            nz: fallbackNz,
+                            yaw: fallbackYaw
+                        }
+                    ));
+                    const nx = Number(points[0]?.nx ?? fallbackNx) || 0;
+                    const nz = Number(points[0]?.nz ?? fallbackNz) || 0;
+                    const yaw = Number(points[0]?.yaw ?? fallbackYaw) || 0;
                     const requestedHeightRaw = Number(sizeSpec?.heightMeters ?? windowCfg?.heightMeters);
                     const height = Number.isFinite(requestedHeightRaw)
                         ? clamp(requestedHeightRaw, 0.1, 9999)
@@ -10304,6 +10929,47 @@ export function buildBuildingFabricationVisualParts({
                             prevMaterialKeyForUv = matKey;
                             prevUvStartForUv = uvStart;
                             prevWidthForUv = w;
+                        }
+
+                        // AI 541: each adaptive curve segment keeps the wall
+                        // material owned by its left/right source bay. The
+                        // override is keyed in world space because a rounded
+                        // cross-face segment has no single facade-local u.
+                        for (const transition of facadeBoundaryTransitions ?? []) {
+                            for (const segment of transition.segments ?? []) {
+                                const ownerStrip = segment?.ownerStrip ?? null;
+                                const faceId = segment?.ownerFaceId;
+                                if (!ownerStrip || !isFaceId(faceId)) continue;
+                                const masterFaceId = resolveMasterFaceId(faceId);
+                                const faceCfg = masterFaceId && faceMaterials?.[masterFaceId] && typeof faceMaterials[masterFaceId] === 'object'
+                                    ? faceMaterials[masterFaceId]
+                                    : null;
+                                const wallBase = ownerStrip?.wallBase && typeof ownerStrip.wallBase === 'object'
+                                    ? ownerStrip.wallBase
+                                    : (faceCfg?.wallBase ?? layer?.wallBase ?? null);
+                                const tiling = ownerStrip?.tiling && typeof ownerStrip.tiling === 'object'
+                                    ? ownerStrip.tiling
+                                    : (faceCfg?.tiling ?? wallTiling);
+                                const materialVariation = ownerStrip?.materialVariation && typeof ownerStrip.materialVariation === 'object'
+                                    ? ownerStrip.materialVariation
+                                    : (faceCfg?.materialVariation ?? wallMatVar);
+                                const materialSpec = ownerStrip?.material ?? null;
+                                const matKey = materialKey(materialSpec);
+                                const key = configKey({ materialSpec, wallBase, tiling, materialVariation });
+                                if (!matKey || key === baseKey) continue;
+                                const materialIndex = getFacadeMaterialIndex({ materialSpec, wallBase, tiling, materialVariation });
+                                facadeWallSegmentOverrides.set(
+                                    facadeWorldSegmentKey(segment.x0, segment.z0, segment.x1, segment.z1),
+                                    {
+                                        materialIndex,
+                                        x0: segment.x0,
+                                        z0: segment.z0,
+                                        x1: segment.x1,
+                                        z1: segment.z1,
+                                        uvStart: Number(segment.s0) || 0
+                                    }
+                                );
+                            }
                         }
                     }
 
@@ -13563,7 +14229,6 @@ export function buildBuildingFabricationVisualParts({
                         const stripDepth = Number(strip.depth) || 0;
                         let unsupportedReason = null;
                         if (!frame || !cfg || !sourceBayId || !(rawEnd > rawStart + 0.3)) unsupportedReason = 'targets an unresolved balcony bay';
-                        else if (frame.curve) unsupportedReason = 'curved facade runs are not supported yet';
                         else if (cfg.placement !== BALCONY_PLACEMENT.PROJECTING) unsupportedReason = 'recessed balcony continuity is not supported yet';
                         else if (cfg.platform.widthMode !== BALCONY_PLATFORM_WIDTH_MODE.BAY) unsupportedReason = 'only bay-width balcony platforms can be linked';
 
@@ -13652,7 +14317,8 @@ export function buildBuildingFabricationVisualParts({
                             aCandidate,
                             bEndpoint,
                             bCandidate,
-                            frames: facadeFrames
+                            frames: facadeFrames,
+                            boundaryTransitions: facadeBoundaryTransitions
                         });
                         if (!relation.valid) {
                             rejectLink(resolvedLink, relation.reason);
@@ -14903,6 +15569,7 @@ export function buildBuildingFabricationVisualParts({
                         wallOuter: roofWallOuter,
                         facades: next,
                         layerMaterial: null,
+                        bayBoundaryConnections: lastFloorLayer?.bayBoundaryConnections ?? null,
                         warnings,
                         cornerStrategy: resolvedCornerStrategy,
                         edgeBevel: edgeBevelCfg
@@ -15387,6 +16054,7 @@ export function buildBuildingFabricationVisualParts({
                     wallOuter: roofWallOuter,
                     facades: next,
                     layerMaterial: null,
+                    bayBoundaryConnections: lastFloorLayer?.bayBoundaryConnections ?? null,
                     warnings,
                     cornerStrategy: resolvedCornerStrategy,
                     edgeBevel: edgeBevelCfg
@@ -15605,6 +16273,7 @@ export const __testOnly = Object.freeze({
     computeFacadeFramesFromLoop,
     sampleFacadeFrameAtU,
     pointOnFacadeFrame,
+    resolveFacadeStripOpeningPose,
     isSimplePlanLoopXZ,
     buildOpenPolylineStripLoopXZ,
     resolveBalconyContinuityAdjacency,

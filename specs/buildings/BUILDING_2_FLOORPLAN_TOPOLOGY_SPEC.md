@@ -266,6 +266,21 @@ For detailed facade layout and fitting behavior, see `specs/buildings/BUILDING_2
 
 ---
 
+## 7.1 Rounded boundaries at physical corners (AI 541)
+
+An AI 541 relationship may connect the outer resolved bay endpoint of one face
+to the adjacent endpoint of the next physical face. The logical footprint,
+run ids, and face count do not change. P0/P1 trim only the local facade-front
+paths, while the rounded connector owns the intervening corner samples.
+
+At that corner, an edge bevel, corner cut, sharp return/cap, or duplicate patch
+must not compete with the rounded connector. Valid convex and valid concave
+results use normal loop validation; collapsed or self-intersecting output is
+blocked. Topology remap addresses endpoints by source run and bay ids and flips
+Start/End only when that physical run reverses.
+
+---
+
 ## 8. Validation requirements
 
 The system MUST validate and surface errors/warnings rather than silently falling back:

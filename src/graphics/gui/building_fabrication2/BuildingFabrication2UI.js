@@ -11,6 +11,10 @@ import {
     normalizeBalconyContinuityConfig,
     validateBalconyContinuityConfig
 } from '../../../app/buildings/BalconyContinuityModel.js';
+import {
+    bayBoundaryEndpointKey,
+    normalizeBayBoundaryConnectionsConfig
+} from '../../../app/buildings/BayBoundaryConnectionsModel.js';
 import { ROOFTOP_PROPS_DEFAULTS, ROOFTOP_PROP_OPTIONS } from '../../../app/buildings/RooftopPropsModel.js';
 import {
     EDGE_BEVEL_CORNER_IDS,
@@ -1159,6 +1163,7 @@ export class BuildingFabrication2UI {
         this.onSetBayBalcony = null;
         this.onSetBalconyContinuityLink = null;
         this.onRemoveBalconyContinuityLink = null;
+        this.onSetBayBoundaryConnection = null;
         this.onRequestBalconyPresetThumbnails = null;
         this.onToggleBayDepthLink = null;
         this.onSetBayLink = null;
@@ -5260,6 +5265,14 @@ export class BuildingFabrication2UI {
 		                    depthSection.appendChild(rightDepthRow.row);
 		                    bayBodyContent.appendChild(depthSection);
 
+                            this._appendBayBoundaryEditor(bayBodyContent, {
+                                layerId,
+                                faceId: configFaceId,
+                                bayId,
+                                edge: 'end',
+                                allowManage: allowBayConfigEdit
+                            });
+
 		                    // AI 487: pilaster terminations on the bay strip.
 		                    const capitalCfg = editorBay?.capital && typeof editorBay.capital === 'object' ? editorBay.capital : {};
 		                    const appendCapitalEndRow = (endKey, label) => {
@@ -8384,6 +8397,383 @@ export class BuildingFabrication2UI {
         }
     }
 
+    _appendBayBoundaryEditor(container, { layerId, faceId, bayId, edge = 'end', allowManage }) {
+        const source = { faceId, bayId, edge };
+        const adjacent = this._getAdjacentBalconyEndpoint(layerId, source);
+        const target = adjacent?.target ?? null;
+        const sourceKey = bayBoundaryEndpointKey(source);
+        const targetKey = bayBoundaryEndpointKey(target);
+        const layer = this._getBalconyContinuityLayer(layerId);
+        const connections = normalizeBayBoundaryConnectionsConfig(layer?.bayBoundaryConnections)?.connections ?? [];
+        const existing = connections.find((connection) => {
+            const keys = connection.endpoints.map((endpoint) => bayBoundaryEndpointKey(endpoint));
+            return keys.includes(sourceKey) && keys.includes(targetKey);
+        }) ?? null;
+
+        const section = document.createElement('section');
+        section.className = 'building-fab2-boundary-editor';
+        section.dataset.role = 'bay-boundary-editor';
+        section.dataset.faceId = faceId;
+        section.dataset.bayId = bayId;
+        section.dataset.edge = edge;
+
+        const title = document.createElement('div');
+        title.className = 'building-fab2-boundary-editor-title';
+        title.textContent = 'Boundary connection';
+        section.appendChild(title);
+
+        const meta = document.createElement('div');
+        meta.className = 'building-fab2-hint building-fab2-boundary-editor-meta';
+        meta.textContent = target
+            ? `${this._describeBalconyContinuityEndpoint(layerId, source)} → ${this._describeBalconyContinuityEndpoint(layerId, target)}`
+            : (adjacent?.error || 'No consecutive physical bay endpoint is available.');
+        section.appendChild(meta);
+        if (!target || !sourceKey || !targetKey) {
+            section.classList.add('is-disabled');
+            container.appendChild(section);
+            return;
+        }
+
+        const makeSelect = (label, options, value) => {
+            const wrap = document.createElement('label');
+            wrap.className = 'building-fab2-boundary-field';
+            const text = document.createElement('span');
+            text.textContent = label;
+            const select = document.createElement('select');
+            select.className = 'building-fab-select';
+            for (const [optionValue, optionLabel] of options) {
+                const option = document.createElement('option');
+                option.value = optionValue;
+                option.textContent = optionLabel;
+                select.appendChild(option);
+            }
+            select.value = value;
+            select.disabled = !allowManage;
+            wrap.appendChild(text);
+            wrap.appendChild(select);
+            return { wrap, select };
+        };
+        const makeNumber = (label, value, min, max, step) => {
+            const wrap = document.createElement('label');
+            wrap.className = 'building-fab2-boundary-field';
+            const text = document.createElement('span');
+            text.textContent = label;
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.className = 'building-fab-number';
+            input.min = String(min);
+            input.max = String(max);
+            input.step = String(step);
+            input.value = String(value);
+            input.disabled = !allowManage;
+            wrap.appendChild(text);
+            wrap.appendChild(input);
+            return { wrap, input };
+        };
+        const makeCheck = (label, checked) => {
+            const wrap = document.createElement('label');
+            wrap.className = 'building-fab2-boundary-check';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.checked = checked;
+            input.disabled = !allowManage;
+            const text = document.createElement('span');
+            text.textContent = label;
+            wrap.appendChild(input);
+            wrap.appendChild(text);
+            return { wrap, input };
+        };
+
+        const type = makeSelect('Connection', [['sharp', 'Sharp'], ['rounded', 'Rounded']], existing?.type ?? 'sharp');
+        section.appendChild(type.wrap);
+
+        const sourceContext = adjacent?.sourceContext ?? null;
+        const physicalEdge = sourceContext?.reversed ? (edge === 'start' ? 'end' : 'start') : edge;
+        const depth = sourceContext?.effectiveBay?.depth && typeof sourceContext.effectiveBay.depth === 'object'
+            ? sourceContext.effectiveBay.depth
+            : null;
+        const depthFallback = physicalEdge === 'start' ? Number(depth?.left) : Number(depth?.right);
+        const depthLink = makeCheck('Link boundary depths', !!existing?.depthLink?.enabled);
+        const depthValue = makeNumber(
+            'Linked depth (m)',
+            Number.isFinite(Number(existing?.depthLink?.valueMeters)) ? Number(existing.depthLink.valueMeters) : (Number.isFinite(depthFallback) ? depthFallback : 0),
+            BAY_DEPTH_MIN_M,
+            BAY_DEPTH_MAX_M,
+            BAY_DEPTH_STEP_M
+        );
+        const depthRow = document.createElement('div');
+        depthRow.className = 'building-fab2-boundary-inline';
+        depthRow.appendChild(depthLink.wrap);
+        depthRow.appendChild(depthValue.wrap);
+        section.appendChild(depthRow);
+
+        const roundedPanel = document.createElement('div');
+        roundedPanel.className = 'building-fab2-boundary-rounded';
+        const transition = existing?.transition ?? {};
+        const mode = makeSelect('Stations', [['centered', 'Centered'], ['authored', 'Authored']], transition.mode ?? 'centered');
+        const leftRunout = makeNumber('Left runout (m)', transition.leftRunoutMeters ?? 0.75, 0.1, 5, 0.05);
+        const rightRunout = makeNumber('Right runout (m)', transition.rightRunoutMeters ?? transition.leftRunoutMeters ?? 0.75, 0.1, 5, 0.05);
+        const runoutsLinked = makeCheck('Link runouts', transition.runoutsLinked ?? true);
+        roundedPanel.appendChild(mode.wrap);
+        const runoutRow = document.createElement('div');
+        runoutRow.className = 'building-fab2-boundary-inline';
+        runoutRow.appendChild(leftRunout.wrap);
+        runoutRow.appendChild(runoutsLinked.wrap);
+        runoutRow.appendChild(rightRunout.wrap);
+        roundedPanel.appendChild(runoutRow);
+
+        const meetingRow = createRangeRow('Meeting position');
+        meetingRow.row.classList.add('building-fab2-boundary-meeting');
+        meetingRow.range.min = '0.05';
+        meetingRow.range.max = '0.95';
+        meetingRow.range.step = '0.01';
+        meetingRow.number.min = '0.05';
+        meetingRow.number.max = '0.95';
+        meetingRow.number.step = '0.01';
+        meetingRow.range.value = String(transition.meeting ?? 0.5);
+        meetingRow.number.value = String(transition.meeting ?? 0.5);
+        meetingRow.range.disabled = !allowManage;
+        meetingRow.number.disabled = !allowManage;
+        roundedPanel.appendChild(meetingRow.row);
+
+        const svgNs = 'http://www.w3.org/2000/svg';
+        const diagram = document.createElementNS(svgNs, 'svg');
+        diagram.classList.add('building-fab2-boundary-diagram');
+        diagram.setAttribute('viewBox', '0 0 300 120');
+        diagram.setAttribute('role', 'img');
+        diagram.setAttribute('aria-label', 'Rounded boundary plan handles P0, J, and P1 with tangent guides');
+        const tangentA = document.createElementNS(svgNs, 'line');
+        const tangentB = document.createElementNS(svgNs, 'line');
+        const curve = document.createElementNS(svgNs, 'path');
+        tangentA.classList.add('is-guide');
+        tangentB.classList.add('is-guide');
+        curve.classList.add('is-curve');
+        diagram.appendChild(tangentA);
+        diagram.appendChild(tangentB);
+        diagram.appendChild(curve);
+        const handles = {};
+        for (const id of ['P0', 'J', 'P1']) {
+            const group = document.createElementNS(svgNs, 'g');
+            group.classList.add('building-fab2-boundary-handle');
+            group.dataset.handle = id;
+            const circle = document.createElementNS(svgNs, 'circle');
+            circle.setAttribute('r', id === 'J' ? '6' : '5');
+            const label = document.createElementNS(svgNs, 'text');
+            label.textContent = id;
+            label.setAttribute('y', '-10');
+            group.appendChild(circle);
+            group.appendChild(label);
+            diagram.appendChild(group);
+            handles[id] = group;
+        }
+        roundedPanel.appendChild(diagram);
+
+        const clearance = document.createElement('div');
+        clearance.className = 'building-fab2-hint building-fab2-boundary-clearance';
+        roundedPanel.appendChild(clearance);
+        section.appendChild(roundedPanel);
+
+        const syncLinkedRunouts = (sourceInput) => {
+            if (!runoutsLinked.input.checked) return;
+            const rawValue = Number(sourceInput.value);
+            const value = Number.isFinite(rawValue) ? rawValue : 0.75;
+            leftRunout.input.value = String(value);
+            rightRunout.input.value = String(value);
+        };
+        const authoredBayWidth = (context) => {
+            const size = context?.effectiveBay?.size;
+            if (size?.mode !== 'fixed') return null;
+            const width = Number(size.widthMeters);
+            return Number.isFinite(width) && width > 0 ? width : null;
+        };
+        const openingReserve = (context) => {
+            const win = context?.effectiveBay?.window;
+            if (!win || win.enabled === false) return 0.1;
+            const width = Number(win?.size?.widthMeters ?? win?.width?.minMeters);
+            const left = Number(win?.padding?.leftMeters) || 0;
+            const right = Number(win?.padding?.rightMeters) || 0;
+            return Math.max(0.1, Math.max(0.3, Number.isFinite(width) ? width : 0.3) + left + right);
+        };
+        const validateDraft = () => {
+            const errors = [];
+            if (type.select.value === 'rounded') {
+                const rawLeft = Number(leftRunout.input.value);
+                const rawRight = Number(rightRunout.input.value);
+                const rawMeeting = Number(meetingRow.number.value);
+                if (!Number.isFinite(rawLeft) || rawLeft < 0.1 || rawLeft > 5) {
+                    errors.push('Left runout must be between 0.10 m and 5.00 m.');
+                }
+                if (!Number.isFinite(rawRight) || rawRight < 0.1 || rawRight > 5) {
+                    errors.push('Right runout must be between 0.10 m and 5.00 m.');
+                }
+                if (mode.select.value === 'authored'
+                    && (!Number.isFinite(rawMeeting) || rawMeeting < 0.05 || rawMeeting > 0.95)) {
+                    errors.push('Meeting position must be between 0.05 and 0.95.');
+                }
+                const leftWidth = authoredBayWidth(adjacent?.sourceContext);
+                const rightWidth = authoredBayWidth(adjacent?.targetContext);
+                if (leftWidth !== null && rawLeft >= leftWidth - openingReserve(adjacent.sourceContext)) {
+                    errors.push('P0 enters the source bay opening or collapses its usable frontage.');
+                }
+                if (rightWidth !== null && rawRight >= rightWidth - openingReserve(adjacent.targetContext)) {
+                    errors.push('P1 enters the target bay opening or collapses its usable frontage.');
+                }
+            }
+            if (depthLink.input.checked) {
+                const linkedDepth = Number(depthValue.input.value);
+                if (!Number.isFinite(linkedDepth) || linkedDepth < BAY_DEPTH_MIN_M || linkedDepth > BAY_DEPTH_MAX_M) {
+                    errors.push(`Linked depth must be between ${BAY_DEPTH_MIN_M.toFixed(2)} m and ${BAY_DEPTH_MAX_M.toFixed(2)} m.`);
+                }
+            }
+            section.classList.toggle('is-invalid', errors.length > 0);
+            clearance.classList.toggle('is-error', errors.length > 0);
+            apply.disabled = !allowManage || errors.length > 0;
+            return errors;
+        };
+        const updateDiagram = () => {
+            const left = clamp(Number(leftRunout.input.value) || 0.75, 0.1, 5);
+            const right = clamp(Number(rightRunout.input.value) || left, 0.1, 5);
+            const meeting = clamp(Number(meetingRow.number.value) || 0.5, 0.05, 0.95);
+            const p0x = 105 - left * 12;
+            const p1x = 195 + right * 12;
+            const p0 = { x: p0x, y: 82 };
+            const p1 = { x: p1x, y: 38 };
+            const j = { x: p0.x + (p1.x - p0.x) * meeting, y: 60 - (meeting - 0.5) * 30 };
+            tangentA.setAttribute('x1', String(p0.x - 34));
+            tangentA.setAttribute('y1', String(p0.y));
+            tangentA.setAttribute('x2', String(p0.x + 38));
+            tangentA.setAttribute('y2', String(p0.y));
+            tangentB.setAttribute('x1', String(p1.x));
+            tangentB.setAttribute('y1', String(p1.y + 34));
+            tangentB.setAttribute('x2', String(p1.x));
+            tangentB.setAttribute('y2', String(p1.y - 38));
+            curve.setAttribute('d', `M ${p0.x} ${p0.y} C ${j.x - 22} ${p0.y}, ${p1.x} ${j.y + 22}, ${p1.x} ${p1.y}`);
+            for (const [id, point] of Object.entries({ P0: p0, J: j, P1: p1 })) {
+                handles[id].setAttribute('transform', `translate(${point.x} ${point.y})`);
+            }
+            const errors = validateDraft();
+            clearance.textContent = errors[0]
+                ?? `Valid draft · P0/P1 reserve ${left.toFixed(2)}m and ${right.toFixed(2)}m. Exact solved opening, balcony, and overlap clearance is revalidated on Apply.`;
+        };
+        const updateVisibility = () => {
+            const rounded = type.select.value === 'rounded';
+            roundedPanel.hidden = !rounded;
+            depthValue.input.disabled = !allowManage || !depthLink.input.checked;
+            const centered = mode.select.value === 'centered';
+            if (centered) runoutsLinked.input.checked = true;
+            runoutsLinked.input.disabled = !allowManage || centered;
+            rightRunout.input.disabled = !allowManage || runoutsLinked.input.checked;
+            meetingRow.range.disabled = !allowManage || centered;
+            meetingRow.number.disabled = !allowManage || centered;
+            updateDiagram();
+        };
+        type.select.addEventListener('change', updateVisibility);
+        depthLink.input.addEventListener('change', updateVisibility);
+        depthValue.input.addEventListener('input', updateDiagram);
+        mode.select.addEventListener('change', updateVisibility);
+        runoutsLinked.input.addEventListener('change', () => {
+            syncLinkedRunouts(leftRunout.input);
+            updateVisibility();
+        });
+        leftRunout.input.addEventListener('input', () => {
+            syncLinkedRunouts(leftRunout.input);
+            updateDiagram();
+        });
+        rightRunout.input.addEventListener('input', () => {
+            syncLinkedRunouts(rightRunout.input);
+            updateDiagram();
+        });
+        meetingRow.range.addEventListener('input', () => {
+            meetingRow.number.value = meetingRow.range.value;
+            updateDiagram();
+        });
+        meetingRow.number.addEventListener('input', () => {
+            meetingRow.range.value = String(clamp(Number(meetingRow.number.value) || 0.5, 0.05, 0.95));
+            updateDiagram();
+        });
+        for (const [id, handle] of Object.entries(handles)) {
+            handle.addEventListener('pointerdown', (event) => {
+                if (!allowManage || roundedPanel.hidden) return;
+                event.preventDefault();
+                handle.setPointerCapture?.(event.pointerId);
+                const startX = event.clientX;
+                const initialLeft = Number(leftRunout.input.value) || 0.75;
+                const initialRight = Number(rightRunout.input.value) || 0.75;
+                const initialMeeting = Number(meetingRow.number.value) || 0.5;
+                const move = (moveEvent) => {
+                    const dx = moveEvent.clientX - startX;
+                    if (id === 'P0') leftRunout.input.value = String(clamp(initialLeft - dx / 24, 0.1, 5).toFixed(2));
+                    else if (id === 'P1') rightRunout.input.value = String(clamp(initialRight + dx / 24, 0.1, 5).toFixed(2));
+                    else {
+                        const value = clamp(initialMeeting + dx / 180, 0.05, 0.95);
+                        meetingRow.number.value = value.toFixed(2);
+                        meetingRow.range.value = String(value);
+                    }
+                    if (id !== 'J') syncLinkedRunouts(id === 'P0' ? leftRunout.input : rightRunout.input);
+                    updateDiagram();
+                };
+                const up = () => {
+                    handle.removeEventListener('pointermove', move);
+                    handle.removeEventListener('pointerup', up);
+                    handle.removeEventListener('pointercancel', up);
+                };
+                handle.addEventListener('pointermove', move);
+                handle.addEventListener('pointerup', up);
+                handle.addEventListener('pointercancel', up);
+            });
+        }
+
+        const actions = document.createElement('div');
+        actions.className = 'building-fab2-boundary-actions';
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'building-fab2-btn building-fab2-btn-small';
+        cancel.textContent = 'Cancel';
+        cancel.disabled = !allowManage;
+        cancel.addEventListener('click', () => this._renderLayers());
+        const apply = document.createElement('button');
+        apply.type = 'button';
+        apply.className = 'building-fab2-btn building-fab2-btn-small is-primary';
+        apply.textContent = 'Apply';
+        apply.disabled = !allowManage;
+        apply.addEventListener('click', () => {
+            const left = clamp(Number(leftRunout.input.value) || 0.75, 0.1, 5);
+            const linked = mode.select.value === 'centered' || runoutsLinked.input.checked;
+            const right = linked ? left : clamp(Number(rightRunout.input.value) || 0.75, 0.1, 5);
+            const payload = {
+                type: type.select.value,
+                depthLink: {
+                    enabled: depthLink.input.checked,
+                    valueMeters: clamp(Number(depthValue.input.value) || 0, BAY_DEPTH_MIN_M, BAY_DEPTH_MAX_M)
+                },
+                transition: {
+                    mode: mode.select.value,
+                    leftRunoutMeters: left,
+                    rightRunoutMeters: right,
+                    runoutsLinked: linked,
+                    meeting: mode.select.value === 'centered'
+                        ? 0.5
+                        : clamp(Number(meetingRow.number.value) || 0.5, 0.05, 0.95)
+                }
+            };
+            this.onSetBayBoundaryConnection?.(layerId, source, target, payload);
+        });
+        actions.appendChild(cancel);
+        actions.appendChild(apply);
+        if (existing) {
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'building-fab2-btn building-fab2-btn-small is-danger';
+            remove.textContent = 'Remove';
+            remove.disabled = !allowManage;
+            remove.addEventListener('click', () => this.onSetBayBoundaryConnection?.(layerId, source, target, null));
+            actions.appendChild(remove);
+        }
+        section.appendChild(actions);
+        updateVisibility();
+        container.appendChild(section);
+    }
+
     _getBalconyContinuityLayer(layerId) {
         const id = typeof layerId === 'string' ? layerId : '';
         return this._layers.find((entry) => entry?.type === 'floor' && entry?.id === id) ?? null;
@@ -8467,15 +8857,61 @@ export class BuildingFabrication2UI {
 
         const title = document.createElement('div');
         title.className = 'building-fab2-subtitle building-fab2-slave-continuity-title';
-        title.textContent = 'Physical balcony continuity';
+        title.textContent = 'Physical inherited relationships';
         panel.appendChild(title);
 
         const hint = document.createElement('div');
         hint.className = 'building-fab2-hint building-fab2-slave-continuity-hint';
         hint.textContent = 'Face ' + physicalFace.faceId + ' inherits facade bays from Face ' + physicalFace.masterFaceId
-            + '. Only endpoint continuity owned by physical Face ' + physicalFace.faceId + ' is editable here.';
+            + '. Bay-boundary curvature and balcony links remain owned by physical Face ' + physicalFace.faceId + '.';
         panel.appendChild(hint);
 
+        const boundaryTitle = document.createElement('div');
+        boundaryTitle.className = 'building-fab2-subtitle building-fab2-slave-continuity-title';
+        boundaryTitle.textContent = 'Physical corner boundaries';
+        panel.appendChild(boundaryTitle);
+        const boundarySources = [];
+        const boundarySourceKeys = new Set();
+        const addBoundarySource = (value) => {
+            const key = bayBoundaryEndpointKey(value);
+            if (!key || boundarySourceKeys.has(key)) return;
+            boundarySourceKeys.add(key);
+            boundarySources.push(value);
+        };
+        if (physicalFace.bays.length) {
+            addBoundarySource({
+                faceId: physicalFace.faceId,
+                bayId: physicalFace.bays[0].bayId,
+                edge: 'start'
+            });
+            addBoundarySource({
+                faceId: physicalFace.faceId,
+                bayId: physicalFace.bays[physicalFace.bays.length - 1].bayId,
+                edge: 'end'
+            });
+        }
+        const boundaryConnections = normalizeBayBoundaryConnectionsConfig(
+            this._getBalconyContinuityLayer(layerId)?.bayBoundaryConnections
+        )?.connections ?? [];
+        for (const connection of boundaryConnections) {
+            for (const endpoint of connection.endpoints) {
+                if (endpoint.faceId === physicalFace.faceId) addBoundarySource(endpoint);
+            }
+        }
+        for (const source of boundarySources) {
+            this._appendBayBoundaryEditor(panel, {
+                layerId,
+                faceId: physicalFace.faceId,
+                bayId: source.bayId,
+                edge: source.edge,
+                allowManage
+            });
+        }
+
+        const balconyTitle = document.createElement('div');
+        balconyTitle.className = 'building-fab2-subtitle building-fab2-slave-continuity-title';
+        balconyTitle.textContent = 'Physical balcony continuity';
+        panel.appendChild(balconyTitle);
         const visibleBays = physicalFace.bays.filter((bay) => (
             !!bay.balcony
             || BALCONY_CONTINUITY_EDGE_IDS.some((edge) => !!this._findBalconyContinuityLink(layerId, {
@@ -8723,15 +9159,27 @@ export class BuildingFabrication2UI {
 
         const relationship = this._balconyContinuityRelationship(layerId, source, target);
         if (!relationship) errors.push('These endpoints are not immediate neighbors on the physical facade loop.');
+        const boundaryConnections = normalizeBayBoundaryConnectionsConfig(
+            this._getBalconyContinuityLayer(layerId)?.bayBoundaryConnections
+        )?.connections ?? [];
+        const sourceBoundaryKey = bayBoundaryEndpointKey(source);
+        const targetBoundaryKey = bayBoundaryEndpointKey(target);
+        const roundedBoundary = boundaryConnections.find((connection) => {
+            if (connection.type !== 'rounded') return false;
+            const keys = connection.endpoints.map((endpoint) => bayBoundaryEndpointKey(endpoint));
+            return keys.includes(sourceBoundaryKey) && keys.includes(targetBoundaryKey);
+        }) ?? null;
 
         const plan = this._facePlanForLayer(layerId);
         const segmentByFaceId = new Map((Array.isArray(plan?.segments) ? plan.segments : []).map((segment) => [segment?.faceId, segment]));
-        for (const endpoint of [source, target]) {
-            if (segmentByFaceId.get(endpoint.faceId)?.arc) {
-                errors.push('Face ' + endpoint.faceId + ' is curved. Balcony continuity currently supports planar runs only.');
+        if (!roundedBoundary) {
+            for (const endpoint of [source, target]) {
+                if (segmentByFaceId.get(endpoint.faceId)?.arc) {
+                    errors.push('Face ' + endpoint.faceId + ' is curved. Balcony continuity requires an explicit rounded bay-boundary connection on curved runs.');
+                }
             }
         }
-        if (relationship === 'cross-run'
+        if (!roundedBoundary && relationship === 'cross-run'
             && balconyContinuityCrossRunTurnKind(plan, source.faceId, target.faceId) === 'concave') {
             errors.push(
                 'Cross-run balcony continuity cannot cross this concave or re-entrant corner; choose a convex or straight adjacent corner.'
@@ -8743,7 +9191,7 @@ export class BuildingFabrication2UI {
             if (!context.balcony) {
                 errors.push('Face ' + context.faceId + ' · Bay ' + (context.physicalIndex + 1) + ' needs an enabled balcony.');
             }
-            if (context.legacyWedge) {
+            if (context.legacyWedge && !roundedBoundary) {
                 errors.push('Legacy wedge-only bays cannot participate in balcony continuity; replace the wedge with explicit Left/Right bay depth values first.');
             }
             if (context.potentiallyRepeated) {
@@ -8780,7 +9228,7 @@ export class BuildingFabrication2UI {
             if (a.platform.sideMarginMeters > 0.04 || b.platform.sideMarginMeters > 0.04) {
                 errors.push('Linked balcony side margins must be 0.04 m or less so both slabs reach their shared endpoint.');
             }
-            if (relationship === 'same-run'
+            if (!roundedBoundary && relationship === 'same-run'
                 && Math.abs(sourceContext.stripDepthMeters - targetContext.stripDepthMeters) > 1e-4) {
                 errors.push(
                     'Same-run balcony bays resolve to different facade depths; align their bay Depth settings before linking.'

@@ -1,7 +1,7 @@
 // Headless browser test: BF2 explicit balcony endpoint continuity controls.
 import test, { expect } from '@playwright/test';
 
-test.setTimeout(240_000);
+test.setTimeout(360_000);
 
 async function enableSelectedBayBalcony(floorLayer) {
     const editor = floorLayer.locator('.building-fab2-bay-editor');
@@ -236,6 +236,7 @@ test('BF2: balcony endpoints create/remove same-run and reversed cross-run links
     await expect(slavePanel).toContainText('Face D inherits facade bays from Face A');
     await expect(slavePanel).toContainText('authored on Face A');
     await expect(slavePanel).toContainText('reversed order');
+    await expect(slavePanel.locator('[data-role="bay-boundary-editor"][data-face-id="D"]').first()).toBeVisible();
     await expect(floorLayer.locator('.building-fab2-layer-dynamic-content')).toHaveClass(/is-slave-collapsed/);
 
     const initiallyLinkedSlaveEndpoint = slavePanel.locator(

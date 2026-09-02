@@ -813,7 +813,28 @@ The engine SHOULD expose debug information suitable for UI display:
 
 ---
 
-## 9. Spec modularization requirement (important)
+## 9. Bay-boundary rounded transitions (AI 541)
+
+After facade fill resolution, the engine resolves optional floor-layer
+bayBoundaryConnections by stable physical endpoint identity. Sharp or absent
+relationships keep the legacy loop unchanged. Rounded relationships trim the
+two solved strips, reserve their runouts, and insert one shared
+tangent-continuous sampled path before wall/slab/roof consumers run.
+
+All boundary-following consumers use that same loop/path: exterior and interior
+shells, floors, roofs/parapets, belts/cornices, materials, normals, UV distance,
+openings, decorators, highlights, and explicitly compatible balcony joins.
+Edge-bevel and sharp-corner patches yield to an owning rounded transition.
+
+Structural/model errors disable competing relationships. Solved clearance,
+overlap, tangent, curvature, and topology failures block only the unsafe
+rounded join and emit a physical face/bay/edge diagnostic. The complete path
+contract is in BUILDING_2_CURVED_RUN_SPEC.md; the concrete serialized schema
+is in BUILDING_2_SCHEMA_SPEC.md.
+
+---
+
+## 10. Spec modularization requirement (important)
 
 To avoid a single monolithic spec and to keep concepts isolated, **each major engine concept MUST live in its own spec file** under `specs/buildings/`.
 

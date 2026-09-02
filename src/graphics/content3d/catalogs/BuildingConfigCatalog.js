@@ -26,8 +26,14 @@ import { STOREFRONT_ROW_2_BUILDING_CONFIG } from '../buildings/configs/Storefron
 import { STONE_LOWRISE_BUILDING_CONFIG } from '../buildings/configs/StoneLowrise.js';
 import { STONE_LOWRISE_2_BUILDING_CONFIG } from '../buildings/configs/StoneLowrise2.js';
 import { STONE_SETBACK_TOWER_BUILDING_CONFIG } from '../buildings/configs/StoneSetbackTower.js';
+import {
+    AI541_BOUNDARY_SHOWCASE_ROUNDED_CONFIG,
+    AI541_BOUNDARY_SHOWCASE_SHARP_CONFIG
+} from '../buildings/configs/Ai541BoundaryShowcase.js';
 
 const BUILDING_CONFIGS = Object.freeze([
+    AI541_BOUNDARY_SHOWCASE_SHARP_CONFIG,
+    AI541_BOUNDARY_SHOWCASE_ROUNDED_CONFIG,
     B2_BUILDING_CONFIG,
     TERRA_MAR_BUILDING_CONFIG,
     TERRA_MAR_RECESSED_BUILDING_CONFIG,

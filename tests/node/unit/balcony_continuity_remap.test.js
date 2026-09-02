@@ -170,6 +170,63 @@ test('Balcony continuity remap flips only the affected endpoint in physical loca
     assert.equal(applied.reverseLocalU, true);
 });
 
+test('Bay boundary remap flips endpoint local-u while preserving transition and depth-link settings', () => {
+    const connection = {
+        id: 'rounded_corner',
+        type: 'rounded',
+        endpoints: [
+            { faceId: 'A', bayId: 'front_outer', edge: 'end' },
+            { faceId: 'B', bayId: 'side_outer', edge: 'start' }
+        ],
+        depthLink: { enabled: true, valueMeters: 0.35 },
+        transition: {
+            mode: 'authored',
+            leftRunoutMeters: 1.2,
+            rightRunoutMeters: 0.8,
+            runoutsLinked: false,
+            meeting: 0.4
+        }
+    };
+    const config = {
+        layers: [{
+            id: 'floor_1',
+            type: 'floor',
+            bayBoundaryConnections: { connections: [connection] }
+        }],
+        facades: {
+            floor_1: {
+                A: facadeForBayIds(['front_outer']),
+                B: facadeForBayIds(['side_outer'])
+            }
+        }
+    };
+    const targets = collectBuildingSilhouetteRemapTargets(config, 'floor_1');
+    assert.ok(targets.some((target) => target.targetId === 'bay_boundary:floor_1:rounded_corner'));
+    const report = createSilhouetteRemapReport({
+        beforeLoop: loop(['A', 'B', 'C', 'D']),
+        afterLoop: loop(['A', 'E', 'C', 'D'], ['E']),
+        targets
+    });
+    const decisions = {};
+    for (const target of report.targets) {
+        if (target.status !== 'needs_decision') continue;
+        decisions[target.targetId] = { action: SILHOUETTE_REMAP_DECISION.REMAP, runId: 'E' };
+    }
+    const resolution = applySilhouetteRemapDecisions(report, decisions);
+    const result = materializeBuildingSilhouetteTargetRemap(config, { layerId: 'floor_1', resolution });
+    assert.equal(result.valid, true);
+    assert.deepEqual(result.config.layers[0].bayBoundaryConnections.connections[0], {
+        ...connection,
+        endpoints: [
+            { faceId: 'A', bayId: 'front_outer', edge: 'end' },
+            { faceId: 'E', bayId: 'side_outer', edge: 'end' }
+        ]
+    });
+    assert.ok(result.applied.some((entry) => (
+        entry.effect === 'remap_bay_boundary_connection' && entry.reverseLocalU === true
+    )));
+});
+
 test('Balcony continuity remap independently maps and reverses two affected endpoint faces', () => {
     const config = configWithLink([
         { faceId: 'A', bayId: 'front_outer', edge: 'end' },

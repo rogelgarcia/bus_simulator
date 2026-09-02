@@ -265,6 +265,20 @@ config renders identically everywhere:
 
 ---
 
-## 8. Balcony continuity
+## 8. Bay-boundary connection ownership
+
+A floor layer may own bayBoundaryConnections. Each connection identifies two
+consecutive physical endpoints by stable face id, source bay id, and local-u
+edge. It may link only those two boundary depth values and independently choose
+a sharp or rounded connection. It does not create a bay or face.
+
+Normalization, cloning, exported modules, catalog loading, undo/redo, layer
+copying, and topology remap preserve this block. Face reversal flips only the
+affected Start/End identity. Missing, empty, or null data remains absent for
+exact legacy compatibility. See BUILDING_2_SCHEMA_SPEC.md.
+
+---
+
+## 9. Balcony continuity
 
 The canonical floor-layer schema, physical endpoint identity, face-reversal/remap behavior, default-off compatibility, and persistence contract are defined in `specs/buildings/BUILDING_2_BALCONY_CONTINUITY_SPEC.md`.

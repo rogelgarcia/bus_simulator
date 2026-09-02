@@ -173,7 +173,20 @@ the corners. B and H each retain an outer balcony, a centered pier, and an
 A-adjacent balcony. Only these three compatible corner pairs join; the center
 and all other balconies remain independent.
 
-## 8. Verification
+## 8. Interaction with rounded wall boundaries (AI 541)
+
+AI 541 does not implicitly join balconies. Without an explicit valid AI 537
+link, each balcony keeps its own platform and guards even when the wall
+boundary is rounded. When both relationships explicitly identify the same two
+physical endpoints, the joined platform back/front edges and guard path follow
+the AI 541 transition normals instead of a sharp bridge or chord. Internal end
+caps/posts remain suppressed by the AI 537 component rules.
+
+The rounded relationship supersedes the legacy curved-run/depth-mismatch
+rejection only for that exact endpoint pair. All floor, placement, platform,
+railing, ownership, repeat, and non-branching checks remain required.
+
+## 9. Verification
 
 Coverage includes normalization/default-off behavior, endpoint identity,
 duplicate ownership, atomic topology remap and reversal, clone/export round
