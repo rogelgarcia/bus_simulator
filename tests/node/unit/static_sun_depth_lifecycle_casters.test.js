@@ -55,6 +55,61 @@ test('activation suppresses only City.group and deactivation restores exact merg
     assert.equal(controller.getDiagnostics().lastReason, 'current');
 });
 
+test('idempotent deactivation records the latest live ownership reason', () => {
+    const scene = {};
+    const city = makeCity(scene, [mesh('caster', true)]);
+    const controller = new StaticSunDepthCasterController({
+        scene,
+        camera: {},
+        context: {city}
+    });
+
+    controller.activate(city);
+    controller.deactivate('comparison_current_shadow_retained');
+    const restored = controller.getDiagnostics().restores;
+
+    assert.equal(controller.deactivate('validation_live_final_shadow_retained'), false);
+    assert.equal(
+        controller.getDiagnostics().lastReason,
+        'validation_live_final_shadow_retained'
+    );
+    assert.equal(controller.getDiagnostics().restores, restored);
+});
+
+test('caster ownership transitions invalidate the renderer, sun, and CSM shadow maps', () => {
+    const scene = {};
+    const sun = {shadow: {needsUpdate: false}};
+    const cascadeA = {shadow: {needsUpdate: false}};
+    const cascadeB = {shadow: {needsUpdate: false}};
+    const city = makeCity(scene, [mesh('caster', true)]);
+    city.sun = sun;
+    city._csm = {csm: {lights: [cascadeA, cascadeB]}, maxFar: 300};
+    const rendererShadowMap = {needsUpdate: false};
+    const controller = new StaticSunDepthCasterController({
+        scene,
+        renderer: {shadowMap: rendererShadowMap},
+        camera: {},
+        context: {city}
+    });
+
+    controller.activate(city);
+    assert.equal(rendererShadowMap.needsUpdate, true);
+    assert.equal(sun.shadow.needsUpdate, true);
+    assert.equal(cascadeA.shadow.needsUpdate, true);
+    assert.equal(cascadeB.shadow.needsUpdate, true);
+
+    rendererShadowMap.needsUpdate = false;
+    sun.shadow.needsUpdate = false;
+    cascadeA.shadow.needsUpdate = false;
+    cascadeB.shadow.needsUpdate = false;
+    controller.deactivate('current');
+    assert.equal(rendererShadowMap.needsUpdate, true);
+    assert.equal(sun.shadow.needsUpdate, true);
+    assert.equal(cascadeA.shadow.needsUpdate, true);
+    assert.equal(cascadeB.shadow.needsUpdate, true);
+    assert.equal(controller.getDiagnostics().shadowRefreshRequests, 2);
+});
+
 test('verification detects refresh windows, ownership loss, context changes, detach, and new meshes', () => {
     const scene = {};
     const original = mesh('original', true);

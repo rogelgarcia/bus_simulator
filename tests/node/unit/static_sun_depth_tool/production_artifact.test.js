@@ -12,6 +12,7 @@ import {
     PRODUCTION_STATIC_SUN_DEPTH_ARTIFACT_SCHEMA,
     PRODUCTION_STATIC_SUN_DEPTH_RECEIPT_SCHEMA,
     buildAlphaCutoutCertificationRecord,
+    buildAlphaCutoutCoverageCertificationRecord,
     buildCasterExclusionCertificationRecord,
     buildOpaqueOccluderCertificationRecord,
     buildProductionStaticSunDepthArtifact,
@@ -106,6 +107,65 @@ test('production receipt and payload validation reject stale interiors and any g
         (error) => error instanceof StaticSunDepthToolError
             && error.code === 'static_sun_depth_production_guard_mismatch'
     );
+});
+
+test('final production receipt accepts an authenticated promoted textureGrad v3 field', () => {
+    const receipt = makeRawFixture().receipt;
+    const method =
+        'headless-blender-full-lattice-candidates-three-r183-native-texture-grad-v3';
+    const schema = 'ai531-production-alpha-cutout-native-field-receipt-v3';
+    Object.assign(receipt.compilerDescriptor.nativeCutoutField, {method, schema});
+    Object.assign(receipt.alphaCertification.nativeCutoutField, {method, schema});
+    const signature = digest(new TextEncoder().encode(
+        canonicalJsonStringify(receipt.compilerDescriptor)
+    ));
+    receipt.compilerSignatureSha256 = signature;
+    receipt.identity.compilerSignatureSha256 = signature;
+    assert.doesNotThrow(() => validateProductionStaticSunDepthReceipt(receipt));
+});
+
+test('final production receipt accepts an authenticated promoted native union v6 field', () => {
+    const receipt = makeRawFixture().receipt;
+    const method = 'authenticated-direct-depth24-texture-grad-hole-fill-v6';
+    const schema = 'ai531-production-alpha-cutout-native-field-receipt-v6';
+    Object.assign(receipt.compilerDescriptor.nativeCutoutField, {method, schema});
+    Object.assign(receipt.alphaCertification.nativeCutoutField, {method, schema});
+    const signature = digest(new TextEncoder().encode(
+        canonicalJsonStringify(receipt.compilerDescriptor)
+    ));
+    receipt.compilerSignatureSha256 = signature;
+    receipt.identity.compilerSignatureSha256 = signature;
+    assert.doesNotThrow(() => validateProductionStaticSunDepthReceipt(receipt));
+});
+
+test('final production receipt accepts an authenticated calibrated native v7 field', () => {
+    const receipt = makeRawFixture().receipt;
+    const method =
+        'authenticated-direct-preferred-hole-fill-minus-measured-bake-only-v7';
+    const schema = 'ai531-production-alpha-cutout-native-field-receipt-v7';
+    Object.assign(receipt.compilerDescriptor.nativeCutoutField, {method, schema});
+    Object.assign(receipt.alphaCertification.nativeCutoutField, {method, schema});
+    const signature = digest(new TextEncoder().encode(
+        canonicalJsonStringify(receipt.compilerDescriptor)
+    ));
+    receipt.compilerSignatureSha256 = signature;
+    receipt.identity.compilerSignatureSha256 = signature;
+    assert.doesNotThrow(() => validateProductionStaticSunDepthReceipt(receipt));
+});
+
+test('final production receipt accepts an authenticated exact calibrated native v8 field', () => {
+    const receipt = makeRawFixture().receipt;
+    const method =
+        'authenticated-minimum-union-plus-measured-exact-corrections-v8';
+    const schema = 'ai531-production-alpha-cutout-native-field-receipt-v8';
+    Object.assign(receipt.compilerDescriptor.nativeCutoutField, {method, schema});
+    Object.assign(receipt.alphaCertification.nativeCutoutField, {method, schema});
+    const signature = digest(new TextEncoder().encode(
+        canonicalJsonStringify(receipt.compilerDescriptor)
+    ));
+    receipt.compilerSignatureSha256 = signature;
+    receipt.identity.compilerSignatureSha256 = signature;
+    assert.doesNotThrow(() => validateProductionStaticSunDepthReceipt(receipt));
 });
 
 test('production receipt rejects incomplete row-major inventory and unmeasured quantization', () => {
@@ -292,6 +352,41 @@ test('release certification records require zero missing occluders and complete 
     const alpha = buildAlphaCutoutCertificationRecord(alphaInput);
     assert.equal(alpha.status, 'passed');
 
+    const cutoutCasterIds = ['caster.alpha', 'caster.beta', 'caster.gamma'];
+    const cutoutCasterIdsSha256 = createHash('sha256')
+        .update(canonicalJsonStringify({
+            casterIds: cutoutCasterIds,
+            schema: 'ai531-production-alpha-cutout-caster-plan-v1'
+        }))
+        .digest('hex');
+    const coverageAlphaInput = {
+        ...alphaInput,
+        certifiedCasterCount: 2,
+        certifiedCasterIds: ['caster.alpha', 'caster.beta'],
+        cutoutCasterIdsSha256,
+        expectedCasterCount: 3,
+        outOfCoverageCasterIds: ['caster.gamma']
+    };
+    const coverageAlpha = buildAlphaCutoutCoverageCertificationRecord(
+        coverageAlphaInput
+    );
+    assert.equal(
+        coverageAlpha.schema,
+        'bus-sim-static-sun-depth-alpha-cutout-certification-v3'
+    );
+    assert.deepEqual(coverageAlpha.certifiedCasterIds, [
+        'caster.alpha',
+        'caster.beta'
+    ]);
+    assert.deepEqual(coverageAlpha.outOfCoverageCasterIds, ['caster.gamma']);
+    assert.throws(
+        () => buildAlphaCutoutCoverageCertificationRecord({
+            ...coverageAlphaInput,
+            certifiedCasterIds: ['caster.alpha', 'caster.gamma']
+        }),
+        /exact partition/
+    );
+
     const casters = buildCasterExclusionCertificationRecord({
         casterInventorySha256: HASHES.caster,
         certifiedCategoryCount: 8,
@@ -379,9 +474,16 @@ function makeRawFixture() {
         executableSha256: HASHES.executable,
         fixedThreadCount: 12,
         gpuAllowed: false,
+        nativeCutoutField: {
+            method: 'three-r183-production-lattice-mixed-foliage-depth24-native-readback-v2',
+            nativeOwnedMeshInstanceCount: 1,
+            nativeOwnedMeshInstanceIdsSha256: HASHES.caster,
+            producerInventorySha256: HASHES.evidence,
+            schema: 'ai531-production-alpha-cutout-native-field-receipt-v2'
+        },
         profileSha256: HASHES.profile,
         rendererScriptSha256: HASHES.geometry,
-        schema: 'ai531-static-sun-production-compiler-v1',
+        schema: 'ai531-static-sun-production-compiler-v3',
         toolchainSha256: HASHES.materials
     };
     const compilerSignatureSha256 = digest(
@@ -418,20 +520,35 @@ function makeRawFixture() {
                 cutoutMaterialIds: [],
                 exactCoverageInputCount: 0,
                 forcedOpaqueMaterialVariantCount: 1,
+                nativeCutoutField: {
+                    cutoutCasterCount: 1,
+                    cutoutCasterIdsSha256: HASHES.caster,
+                    method: 'three-r183-production-lattice-mixed-foliage-depth24-native-readback-v2',
+                    nativeOwnedMeshInstanceCount: 1,
+                    nativeOwnedMeshInstanceIdsSha256: HASHES.caster,
+                    outputProjectionSha256: HASHES.channel,
+                    producerInventorySha256: HASHES.evidence,
+                    receiptByteLength: 1,
+                    receiptSha256: HASHES.truth,
+                    schema: 'ai531-production-alpha-cutout-native-field-receipt-v2',
+                    status: 'authenticated_complete_native_field',
+                    tilesSha256: HASHES.geometry
+                },
                 occupiedRenderedPixelCount: pixelCount - 1,
-                status: 'exact_inputs_and_binary_render_output_verified',
+                status: 'native_three_mixed_mesh_field_min_merged_with_cycles_opaque_including_mixed_foliage_verified',
                 transparentRenderedPixelCount: 1
             },
             assumptions: {
                 depthMaterial:
-                    'cycles_z_pass_with_binary_principled_visibility_v1',
+                    'cycles_opaque_including_mixed_foliage_z_pass_min_merged_with_native_three_mixed_mesh_depth24_v3',
                 f32Intermediate: 'rgba_f32le_lower_left_with_depth_in_b_and_binary_occupancy_in_a_v1',
                 guardGeneration: 'not_performed_outputs_are_unguarded_interiors',
                 performanceUse: 'render_timings_are_intentionally_absent_and_must_be_measured_by_the_outer_acceptance_run',
                 pointSun: 'one_normalized_receiver_to_sun_direction_no_angular_penumbra',
                 rg8Encoding: 'linear_endpoints_0_through_65534_with_65535_empty_msb_first_v1',
                 sidedness: 'authenticated-three-r183-effective-shadow-side-then-world-space-direction-filter-v1',
-                spatialSampling: 'one_deterministic_cycles_primary_camera_sample_per_texel'
+                spatialSampling:
+                    'one_cycles_opaque_including_mixed_foliage_primary_sample_min_merged_with_one_native_three_mixed_mesh_depth24_sample_per_texel_v3'
             },
             compiler: {
                 archiveSha256: HASHES.archive,

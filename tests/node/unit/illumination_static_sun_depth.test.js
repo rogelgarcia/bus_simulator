@@ -336,6 +336,27 @@ test('CPU sampler performs guard-aware 3x3 PCF and returns explicit debug fields
     assert.equal(edge.visibility, 4 / 9);
 });
 
+test('RG8 comparisons use a bounded conservative caster-depth margin', () => {
+    const raw = makeDescriptor();
+    raw.identity.sampling.pcf.radiusTexels = 0;
+    const descriptor = validateStaticSunDepthTileSetDescriptor(raw);
+    const quantized = 32767;
+    const decoded = decodeStaticSunDepthMeters(quantized, descriptor.identity.encoding);
+    const halfStep = 5 / STATIC_SUN_DEPTH_MAX_QUANTIZED;
+    const activeSet = createStaticSunDepthActiveSet(
+        descriptor,
+        makeResources(descriptor, constantGrid(quantized)),
+        {expectedIdentity: descriptor.identity}
+    );
+    const result = sampleStaticSunDepthWorld(
+        activeSet,
+        worldFromLight(descriptor, 1.5, 1.5, decoded - halfStep * 0.5),
+        descriptor.identity.sunPointDirectionWorld
+    );
+    assert.equal(result.visibility, 0);
+    assert.equal(result.centerDecodedDepthMeters, decoded);
+});
+
 test('normal-offset bias matches constant + scale * (1 - dot(normal, sun))', () => {
     const raw = makeDescriptor();
     raw.identity.sampling.bias.constantMeters = 0.1;

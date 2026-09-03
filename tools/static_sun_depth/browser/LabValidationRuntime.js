@@ -2333,12 +2333,13 @@ export async function installLabValidationRuntime(settings) {
                 uniform highp sampler2DShadow sourceDepth;
                 uniform vec2 sourceUv;
                 uniform float compareDepth;
+                out vec4 outColor;
                 void main() {
                     float comparison = texture(
                         sourceDepth,
                         vec3(sourceUv, compareDepth)
                     );
-                    gl_FragColor = vec4(comparison, comparison, comparison, 1.0);
+                    outColor = vec4(comparison, comparison, comparison, 1.0);
                 }
             `,
             glslVersion: THREE.GLSL3,

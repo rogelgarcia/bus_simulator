@@ -392,6 +392,11 @@ test('threshold evaluator fails missing occluders, false-lit seams, continuous s
         meanRgbErrorByte: PRODUCTION_VALIDATION_THRESHOLDS.meanRgbErrorByte,
         pixelsOverFourBytePercent: PRODUCTION_VALIDATION_THRESHOLDS.pixelsOverFourBytePercent,
         maxRgbErrorByte: PRODUCTION_VALIDATION_THRESHOLDS.maxRgbErrorByte,
+        rawSamePixelMeanRgbErrorByte: PRODUCTION_VALIDATION_THRESHOLDS.meanRgbErrorByte,
+        rawSamePixelPixelsOverFourByte: 1,
+        rawSamePixelPixelsOverFourBytePercent:
+            PRODUCTION_VALIDATION_THRESHOLDS.pixelsOverFourBytePercent,
+        rawSamePixelMaxRgbErrorByte: PRODUCTION_VALIDATION_THRESHOLDS.maxRgbErrorByte,
         missingOccluderPixelCount: 0,
         seamErrorPixelCount: 1,
         seamFalseLitPixelCount: 0,
@@ -404,6 +409,10 @@ test('threshold evaluator fails missing occluders, false-lit seams, continuous s
         pixelsOverFourByte: 2,
         pixelsOverFourBytePercent: 0.4,
         maxRgbErrorByte: 65,
+        rawSamePixelMeanRgbErrorByte: 0.351,
+        rawSamePixelPixelsOverFourByte: 2,
+        rawSamePixelPixelsOverFourBytePercent: 0.4,
+        rawSamePixelMaxRgbErrorByte: 65,
         missingOccluderPixelCount: 1,
         seamFalseLitPixelCount: 1,
         seamErrorPixelCount: 2,
@@ -447,6 +456,20 @@ test('production metrics are exact own finite non-negative records with consiste
     assert.throws(
         () => evaluateProductionCaseMetrics({
             ...passing,
+            rawSamePixelPixelsOverFourBytePercent: 1
+        }),
+        /rawSamePixelPixelsOverFourBytePercent is inconsistent with its count/
+    );
+    assert.throws(
+        () => evaluateProductionCaseMetrics({
+            ...passing,
+            maxRgbErrorByte: passing.rawSamePixelMaxRgbErrorByte + 1
+        }),
+        /aligned RGB metrics contradict raw same-pixel evidence/
+    );
+    assert.throws(
+        () => evaluateProductionCaseMetrics({
+            ...passing,
             seamErrorPixelCount: 1,
             maxContinuousSeamRunPixels: 0
         }),
@@ -465,7 +488,9 @@ test('production metrics are exact own finite non-negative records with consiste
             dynamicReceiverMaskedPixelCount: 1,
             eligibleStaticReceiverPixelCount: 3,
             pixelsOverFourByte: 1,
-            pixelsOverFourBytePercent: 25
+            pixelsOverFourBytePercent: 25,
+            rawSamePixelPixelsOverFourByte: 1,
+            rawSamePixelPixelsOverFourBytePercent: 100 / 3
         }),
         /inconsistent with its count/
     );
@@ -592,6 +617,36 @@ test('production bus shadow proof uses signed luma darkening and rejects inverse
 });
 
 test('production caster and aggregate tile-boundary evidence gates are fail-closed', () => {
+    const current = {
+        active: null,
+        debugMode: 'final',
+        casters: {
+            active: false,
+            staticMeshCount: 0,
+            originalCasterCount: 0,
+            suppressedCasterCount: 0,
+            snapshotMeshCount: 0,
+            restores: 0
+        },
+        runtime: {
+            controller: {
+                requestedMode: 'current',
+                effectiveMode: 'current',
+                state: 'unavailable',
+                phase: 'disposed',
+                reason: 'not_configured'
+            }
+        }
+    };
+    const pairedCurrent = makeDiagnostics('liveFinal', {
+        active: false,
+        staticMeshCount: 8,
+        originalCasterCount: 6,
+        suppressedCasterCount: 6,
+        snapshotMeshCount: 0,
+        restores: 3,
+        lastReason: 'validation_live_final_shadow_retained'
+    });
     const cache = makeDiagnostics('final', {
         active: true,
         staticMeshCount: 8,
@@ -601,7 +656,7 @@ test('production caster and aggregate tile-boundary evidence gates are fail-clos
         restores: 2,
         lastReason: null
     });
-    const comparison = makeDiagnostics('currentDifference', {
+    const comparison = makeDiagnostics('signedDifference', {
         active: false,
         staticMeshCount: 8,
         originalCasterCount: 6,
@@ -610,7 +665,7 @@ test('production caster and aggregate tile-boundary evidence gates are fail-clos
         restores: 3,
         lastReason: 'comparison_current_shadow_retained'
     });
-    assert.deepEqual(evaluateProductionCasterTransition(cache, comparison), []);
+    assert.deepEqual(evaluateProductionCasterTransition(current, cache, comparison), []);
     const currentWorkload = makeWorkload(3, 120);
     const cacheWorkload = makeWorkload(0, 0);
     const comparisonWorkload = makeWorkload(3, 120);
@@ -642,17 +697,26 @@ test('production caster and aggregate tile-boundary evidence gates are fail-clos
     ), ['dynamic_bus_ownership_or_caster_state']);
     assert.deepEqual(
         evaluateProductionCasterTransition(
+            current,
             {...cache, casters: {...cache.casters, suppressedCasterCount: 5}},
             comparison
         ),
         ['static_casters_not_suppressed']
     );
     assert.deepEqual(
-        evaluateProductionCasterTransition(cache, {
+        evaluateProductionCasterTransition(current, cache, {
             ...comparison,
             casters: {...comparison.casters, active: true}
         }),
         ['static_casters_not_restored_for_comparison']
+    );
+    assert.deepEqual(
+        evaluateProductionCasterTransition(
+            pairedCurrent,
+            cache,
+            comparison
+        ),
+        ['genuine_current_lifecycle_invalid']
     );
     assert.equal(createProductionTileBoundaryEvidence([
         {metrics: makeMetrics({seamPixelCount: 4})}
@@ -692,7 +756,7 @@ test('production caster and aggregate tile-boundary evidence gates are fail-clos
     }]).passed, false);
 });
 
-test('runner source owns production launch, pipeline activation, paired RGBA/PNG, workload, seam, and contamination contracts', async () => {
+test('runner source owns production launch, genuine-current RGBA/PNG, workload, seam, and contamination contracts', async () => {
     const source = await readFile(
         'tools/static_sun_depth/validate_production.mjs',
         'utf8'
@@ -701,7 +765,7 @@ test('runner source owns production launch, pipeline activation, paired RGBA/PNG
         /tests\/headless\/e2e\/static_server\.mjs/,
         /chromiumApi\.launch/,
         /newPage\(\{viewport: \{width: 1280, height: 744\}\}\)/,
-        /const gameCanvas = page\.locator\('#game-canvas'\)/,
+        /gameCanvas = page\.locator\('#game-canvas'\)/,
         /const gameCanvasBounds = await gameCanvas\.boundingBox\(\)/,
         /gameCanvasBounds\.width\s*!==\s*PRODUCTION_VALIDATION_CAPTURE_DIMENSIONS_PIXELS\[0\]/,
         /gameCanvasBounds\.height\s*!==\s*PRODUCTION_VALIDATION_CAPTURE_DIMENSIONS_PIXELS\[1\]/,
@@ -728,10 +792,17 @@ test('runner source owns production launch, pipeline activation, paired RGBA/PNG
         /getGameplayPosePreset/,
         /gl\.readPixels\(0, 0, width, height, gl\.RGBA, gl\.UNSIGNED_BYTE, pixels\)/,
         /indexedDB\.open\('ai531-production-validation-v1'/,
+        /existing\?\.cachePixels/,
         /captureCurrent/,
+        /capturePairedCurrent/,
         /captureCache/,
         /captureComparisonAndCompare/,
-        /setDebugMode\('currentDifference'\)/,
+        /Capture the genuine current engine before cache activation/,
+        /initializeProfilePage/,
+        /Production validation environment changed between profile pages/,
+        /A fresh page per sun profile prevents those validation-only mutations/,
+        /setDebugMode\('liveFinal'\)/,
+        /setDebugMode\('signedDifference'\)/,
         /current\.png/,
         /cache\.png/,
         /comparison\.png/,
@@ -754,6 +825,17 @@ test('runner source owns production launch, pipeline activation, paired RGBA/PNG
         /renderer\.shadowMap\.render/,
         /staticCityShadow/,
         /dynamicBusShadow/,
+        /function staticShadowState\(\)/,
+        /function resetValidationTemporalHistory\(\)/,
+        /function renderValidationFrame\(\)/,
+        /setDirectRenderingForDiagnostics\(enabled\)/,
+        /taaPass\?\.resetHistory\?\.\(\)/,
+        /_invalidateGtaoCache\?\.\(\{resetFrameIndex: true\}\)/,
+        /city\.sunFlare, city\.sunRays/,
+        /indexedCasterMeshCount/,
+        /cameraMatrixWorld/,
+        /primarySun: describeShadowLight\(city\.sun\)/,
+        /postProcessing: engine\._post\?\.pipeline\?\.getDebugInfo/,
         /captureVisibleReceiverIdentityMask/,
         /requireProductionDynamicReceiverRootScope/,
         /requireNonCityDynamicReceiverTarget/,
@@ -771,6 +853,14 @@ test('runner source owns production launch, pipeline activation, paired RGBA/PNG
         /effectiveMode === 'baked'/,
         /production validation failed/
     ]) assert.match(source, pattern);
+    const pairedCurrentStart = source.indexOf('async capturePairedCurrent');
+    const pairedCurrentEnd = source.indexOf('async captureCache', pairedCurrentStart);
+    const pairedCurrentSource = source.slice(pairedCurrentStart, pairedCurrentEnd);
+    assert.ok(
+        pairedCurrentSource.indexOf('applyCase(validationCase)')
+            < pairedCurrentSource.indexOf("pipeline.setDebugMode('liveFinal')"),
+        'paired live-current capture must position the target camera before restoring CSM caster ownership'
+    );
     assert.equal(source.match(/await gameCanvas\.screenshot\(\{/g)?.length, 3);
     assert.equal(
         source.match(/await receiverMaskEvidenceCanvas\.screenshot\(\{/g)?.length,
@@ -795,7 +885,7 @@ test('runner source owns production launch, pipeline activation, paired RGBA/PNG
     );
     assert.match(
         comparisonSource,
-        /compareRgba\(\s*current,\s*cache,\s*seam,\s*receiverMaskPartition\.dynamicReceiverMask,\s*receiverMaskPartition\.staticCityReceiverMask/
+        /compareRgba\(\s*current,\s*cache,\s*seam,\s*signedVisibility,\s*receiverMaskPartition\.dynamicReceiverMask,\s*receiverMaskPartition\.staticCityReceiverMask/
     );
     assert.doesNotMatch(source, /page\.locator\('#game-canvas'\)\.screenshot/);
     assert.doesNotMatch(source, /ILLUMINATION_LAB_VALIDATION_CASES/);
@@ -1020,20 +1110,36 @@ function makeMetrics(overrides = {}) {
     const eligibleStaticReceiverPixelCount =
         overrides.eligibleStaticReceiverPixelCount
         ?? pixelCount - dynamicReceiverMaskedPixelCount - outsideStaticReceiverPixelCount;
+    const maxRgbErrorByte = overrides.maxRgbErrorByte ?? 0;
+    const meanRgbErrorByte = overrides.meanRgbErrorByte ?? 0;
+    const rawSamePixelMaxRgbErrorByte =
+        overrides.rawSamePixelMaxRgbErrorByte ?? maxRgbErrorByte;
+    const rawSamePixelMeanRgbErrorByte =
+        overrides.rawSamePixelMeanRgbErrorByte ?? meanRgbErrorByte;
+    const rawSamePixelPixelsOverFourByte =
+        overrides.rawSamePixelPixelsOverFourByte ?? pixelsOverFourByte;
     return {
         dynamicReceiverMaskedPixelCount,
         eligibleStaticReceiverPixelCount,
-        falseLitMethod: 'cache_luma_gt_eligible_current_3x3_max_plus_4_bytes_v2',
+        falseLitMethod:
+            'cache_luma_gt_eligible_current_3x3_max_plus_4_and_same_frame_cache_visibility_gt_live_v3',
         height: 2,
         maxContinuousSeamRunPixels: 0,
-        maxRgbErrorByte: 0,
-        meanRgbErrorByte: 0,
+        maxRgbErrorByte,
+        meanRgbErrorByte,
         missingOccluderPixelCount: 0,
         outsideStaticReceiverPixelCount,
         pixelCount,
         pixelsOverFourByte,
         pixelsOverFourBytePercent:
             pixelsOverFourByte / eligibleStaticReceiverPixelCount * 100,
+        rawSamePixelMaxRgbErrorByte,
+        rawSamePixelMeanRgbErrorByte,
+        rawSamePixelPixelsOverFourByte,
+        rawSamePixelPixelsOverFourBytePercent:
+            rawSamePixelPixelsOverFourByte / eligibleStaticReceiverPixelCount * 100,
+        rawSamePixelRgbErrorMethod: 'same_pixel_rgb_chebyshev_v1',
+        rgbErrorMethod: 'nearest_eligible_current_3x3_rgb_chebyshev_v1',
         seamErrorPixelCount: 0,
         seamFalseLitPixelCount: 0,
         seamMaskMethod: 'static_sun_depth_seam_debug_red_gt_blue_plus_32_v1',
@@ -1050,7 +1156,13 @@ function makeDiagnostics(debugMode, casters) {
         active: {generation: 1},
         debugMode,
         casters,
-        runtime: {controller: {state: 'active', effectiveMode: 'baked'}}
+        runtime: {controller: {
+            effectiveMode: 'baked',
+            phase: 'committed',
+            reason: null,
+            requestedMode: 'auto',
+            state: 'active'
+        }}
     };
 }
 

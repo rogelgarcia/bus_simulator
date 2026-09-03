@@ -151,14 +151,40 @@ test('depth override preserves exact cutout coverage through Principled alpha an
 test('receipt exposes canonical production identities, RG8 measurements, and separate opaque/alpha certification', async () => {
     const source = await readFile(SOURCE_URL, 'utf8');
 
-    assert.match(source, /RECEIPT_SCHEMA = \"ai531-static-sun-production-render-receipt-v4\"/);
-    assert.match(source, /\"schema\": \"ai531-static-sun-production-compiler-v1\"/);
+    assert.match(source, /RECEIPT_SCHEMA = \"ai531-static-sun-production-render-receipt-v5\"/);
+    assert.match(source, /\"ai531-static-sun-production-compiler-v3\"/);
     assert.match(source, /compiler_signature_sha256 = sha256_bytes\(canonical_json_bytes\(compiler_descriptor\)\)/);
     assert.match(source, /\"casterInventorySha256\": identity_hashes\[\"casterInventorySha256\"\]/);
     assert.match(source, /\"alphaSemanticsSha256\": identity_hashes\[\"alphaSemanticsSha256\"\]/);
     assert.match(source, /\"cityId\": city_id/);
     assert.match(source, /\"opaqueCertification\": opaque_certification/);
     assert.match(source, /\"alphaCertification\": alpha_certification/);
+    assert.match(source, /--alpha-parity-artifact/);
+    assert.match(source, /--alpha-parity-artifact-sha256/);
+    assert.match(source, /production_alpha_parity_artifact_hash_mismatch/);
+    assert.match(source, /canonical_json_bytes\(alpha_parity_artifact\) != alpha_parity_bytes/);
+    assert.match(source, /alpha_certification\[\"spatialParityArtifact\"\] = alpha_parity_artifact/);
+    assert.match(source, /--native-cutout-field-receipt/);
+    assert.match(source, /production_native_cutout_field_receipt_hash_mismatch/);
+    assert.match(source, /_validate_native_cutout_field_promotion\(receipt_root, receipt\)/);
+    assert.match(source, /unpromoted_native_cutout_field_receipt\.json/);
+    assert.match(
+        source,
+        /source_field\["schema"\] == NATIVE_RESIDUAL_FIELD_RECEIPT_SCHEMA/
+    );
+    assert.match(
+        source,
+        /source_field\["method"\] == NATIVE_RESIDUAL_FIELD_METHOD/
+    );
+    assert.match(source, /authenticated-unpromoted-field-plus-file-backed-spatial-parity-v1/);
+    assert.match(source, /native_three_mixed_mesh_field_min_merged_with_cycles_opaque_including_mixed_foliage_verified/);
+    assert.match(source, /def _exclude_native_owned_foliage_meshes/);
+    assert.match(source, /material\.get\("bus_sim_coverage_mode"\) == "cutout"/);
+    assert.match(source, /bmesh\.ops\.delete\(mesh, geom=cutout_faces, context="FACES"\)/);
+    assert.doesNotMatch(source, /bpy\.data\.objects\.remove\(blender_object, do_unlink=True\)/);
+    assert.match(source, /excluded_mesh_instance_ids/);
+    assert.match(source, /mode != "cutout" or mapping\["meshInstanceId"\] not in excluded_mesh_instance_ids/);
+    assert.match(source, /native_depth < depth_meters/);
     assert.match(source, /BVHTree\.FromPolygons/);
     assert.match(source, /visible_polygons\.append\(indices\)/);
     assert.match(source, /opaque_visible_polygons\.append\(indices\)/);
@@ -171,6 +197,10 @@ test('receipt exposes canonical production identities, RG8 measurements, and sep
     assert.match(source, /opaque_truth = _build_opaque_primary_ray_truth/);
     assert.match(source, /def _fail_large_truth_error_for_tile/);
     assert.match(source, /production_opaque_bvh_large_error/);
+    assert.match(source, /production_merged_depth_large_error/);
+    assert.match(source, /opaque_rendered_samples/);
+    assert.match(source, /merged_rendered_samples/);
+    assert.match(source, /nativeDepthMeters=native_depth/);
     assert.match(source, /truthSource=expected\[\"source\"\]/);
     assert.match(source, /\"occupancyMismatchCount\": 0/);
     assert.match(source, /\"depthMismatchCount\": 0/);

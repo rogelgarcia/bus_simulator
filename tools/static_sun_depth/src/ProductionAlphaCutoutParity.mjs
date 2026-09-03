@@ -11,20 +11,26 @@ import {
 } from '../../../src/app/illumination/bake_source/CanonicalJson.js';
 
 export const PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_SCHEMA =
-    'ai531-production-alpha-cutout-spatial-parity-v1';
+    'ai531-production-alpha-cutout-spatial-parity-native-field-v1';
+export const PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_V2_SCHEMA =
+    'ai531-production-alpha-cutout-spatial-parity-native-field-v2';
 export const PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_METHOD =
-    'independent-three-r183-live-vs-blender-cutout-occupancy-and-first-hit-depth-v1';
+    'independent-three-r183-live-vs-production-native-mixed-foliage-field-occupancy-and-first-hit-depth-v3';
 export const PRODUCTION_ALPHA_CUTOUT_SAMPLER_PARITY_METHOD =
-    'three-r183-live-shadow-sampler-vs-blender-reconstruction-spatial-v1';
+    'three-r183-live-mixed-foliage-shadow-sampler-vs-production-native-depth24-field-spatial-v3';
 export const PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_METHOD =
     'all-cutout-casters-projected-light-texel-coverage-v1';
+export const PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_V2_METHOD =
+    'per-profile-in-out-cutout-casters-projected-light-texel-coverage-v2';
 export const PRODUCTION_ALPHA_CUTOUT_LIVE_CAPTURE_METHOD =
     'three-r183-native-shadow-depth-texture-transform-feedback-v1';
 export const PRODUCTION_ALPHA_CUTOUT_BAKE_CAPTURE_METHOD =
-    'blender-cutout-only-cycles-z-primary-ray-v1';
+    'authenticated-production-native-three-mixed-foliage-depth24-field-v2';
 export const PRODUCTION_ALPHA_CUTOUT_FIRST_HIT_DEPTH_TOLERANCE_METERS = 5e-3;
 export const PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_SCHEMA =
     'ai531-production-alpha-cutout-sample-plan-v1';
+export const PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_V2_SCHEMA =
+    'ai531-production-alpha-cutout-sample-plan-v2';
 export const PRODUCTION_ALPHA_CUTOUT_MISMATCH_KEYS = Object.freeze([
     'anisotropy',
     'coverage',
@@ -43,6 +49,8 @@ const FIRST_HIT_DEPTH_EVIDENCE_ENCODING = 'f32le-world-depth-common-occupied-v1'
 const COMPARISON_EVIDENCE_ENCODING = 'u8-alpha-parity-classification-v1';
 const SAMPLE_PLAN_EVIDENCE_ENCODING =
     'canonical-json-ai531-alpha-cutout-sample-plan-v1';
+const SAMPLE_PLAN_V2_EVIDENCE_ENCODING =
+    'canonical-json-ai531-alpha-cutout-sample-plan-v2';
 const EVIDENCE_KEYS = Object.freeze([
     'bakeFirstHitDepth',
     'bakeOccupancy',
@@ -111,10 +119,11 @@ export async function buildProductionAlphaCutoutSpatialParityArtifactFromFiles(
             lstatFn
         );
     }
-    const samplePlan = validateAuthenticatedSamplePlan(
+    const samplePlanEvidence = validateAuthenticatedSamplePlan(
         authenticated.samplePlan,
         metadata
     );
+    const samplePlan = samplePlanEvidence.plan;
 
     const liveOccupancy = authenticated.liveOccupancy.bytes;
     const bakeOccupancy = authenticated.bakeOccupancy.bytes;
@@ -242,7 +251,9 @@ export async function buildProductionAlphaCutoutSpatialParityArtifactFromFiles(
             ),
             samplePlan: createEvidenceStream(
                 authenticated.samplePlan.record,
-                SAMPLE_PLAN_EVIDENCE_ENCODING,
+                samplePlanEvidence.v2
+                    ? SAMPLE_PLAN_V2_EVIDENCE_ENCODING
+                    : SAMPLE_PLAN_EVIDENCE_ENCODING,
                 liveOccupancy.length
             )
         },
@@ -261,13 +272,25 @@ export async function buildProductionAlphaCutoutSpatialParityArtifactFromFiles(
         mismatchCounts,
         missingOccluderCount,
         sampleCount: liveOccupancy.length,
-        samplePlanMethod: PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_METHOD,
+        samplePlanMethod: samplePlanEvidence.v2
+            ? PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_V2_METHOD
+            : PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_METHOD,
         samplePlanSha256: metadata.samplePlanSha256,
         samplerParityMethod: PRODUCTION_ALPHA_CUTOUT_SAMPLER_PARITY_METHOD,
-        schema: PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_SCHEMA,
+        schema: samplePlanEvidence.v2
+            ? PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_V2_SCHEMA
+            : PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_SCHEMA,
         status: 'measured_spatial_parity_passed',
         unexpectedOccluderCount,
-        unsupportedBindingIds: metadata.unsupportedBindingIds
+        unsupportedBindingIds: metadata.unsupportedBindingIds,
+        ...(samplePlanEvidence.v2 ? {
+            inCoverageCasterCount:
+                samplePlanEvidence.inCoverageCasterIds.length,
+            inCoverageCasterIds: samplePlanEvidence.inCoverageCasterIds,
+            outOfCoverageCasterCount:
+                samplePlanEvidence.outOfCoverageCasterIds.length,
+            outOfCoverageCasterIds: samplePlanEvidence.outOfCoverageCasterIds
+        } : {})
     };
     return validateProductionAlphaCutoutSpatialParityArtifact(artifact);
 }
@@ -343,6 +366,7 @@ export function validateProductionAlphaCutoutSpatialParityArtifact(
     expectations = {}
 ) {
     const artifact = /** @type {Record<string, any>} */ (cloneCanonicalJson(value));
+    const v2 = artifact.schema === PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_V2_SCHEMA;
     requireExactKeys(artifact, [
         'alphaSemanticsSha256',
         'bakeCaptureMethod',
@@ -372,13 +396,21 @@ export function validateProductionAlphaCutoutSpatialParityArtifact(
         'schema',
         'status',
         'unexpectedOccluderCount',
-        'unsupportedBindingIds'
+        'unsupportedBindingIds',
+        ...(v2 ? [
+            'inCoverageCasterCount',
+            'inCoverageCasterIds',
+            'outOfCoverageCasterCount',
+            'outOfCoverageCasterIds'
+        ] : [])
     ], 'production alpha-cutout spatial parity artifact');
 
-    if (artifact.schema !== PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_SCHEMA
+    if ((!v2 && artifact.schema !== PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_SCHEMA)
         || artifact.method !== PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_METHOD
         || artifact.samplerParityMethod !== PRODUCTION_ALPHA_CUTOUT_SAMPLER_PARITY_METHOD
-        || artifact.samplePlanMethod !== PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_METHOD
+        || artifact.samplePlanMethod !== (v2
+            ? PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_V2_METHOD
+            : PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_METHOD)
         || artifact.liveCaptureMethod !== PRODUCTION_ALPHA_CUTOUT_LIVE_CAPTURE_METHOD
         || artifact.bakeCaptureMethod !== PRODUCTION_ALPHA_CUTOUT_BAKE_CAPTURE_METHOD
         || artifact.status !== 'measured_spatial_parity_passed') {
@@ -421,10 +453,47 @@ export function validateProductionAlphaCutoutSpatialParityArtifact(
             'Production alpha-cutout parity must use the fixed 5 mm first-hit-depth tolerance'
         );
     }
-    if (artifact.sampleCount < artifact.cutoutCasterCount
-        || artifact.firstHitDepthSampleCount < artifact.cutoutCasterCount) {
+    let certifiedCasterCount = artifact.cutoutCasterCount;
+    if (v2) {
+        const inCoverageCasterIds = requireCanonicalIds(
+            artifact.inCoverageCasterIds,
+            'alpha parity artifact.inCoverageCasterIds',
+            false
+        );
+        const outOfCoverageCasterIds = requireCanonicalIds(
+            artifact.outOfCoverageCasterIds,
+            'alpha parity artifact.outOfCoverageCasterIds',
+            true
+        );
+        requirePositiveInteger(
+            artifact.inCoverageCasterCount,
+            'alpha parity artifact.inCoverageCasterCount'
+        );
+        requireNonNegativeInteger(
+            artifact.outOfCoverageCasterCount,
+            'alpha parity artifact.outOfCoverageCasterCount'
+        );
+        const overlap = inCoverageCasterIds.filter(
+            (casterId) => outOfCoverageCasterIds.includes(casterId)
+        );
+        const allCasterIds = [...inCoverageCasterIds, ...outOfCoverageCasterIds]
+            .sort(compareCanonicalStrings);
+        if (overlap.length > 0
+            || artifact.inCoverageCasterCount !== inCoverageCasterIds.length
+            || artifact.outOfCoverageCasterCount !== outOfCoverageCasterIds.length
+            || allCasterIds.length !== artifact.cutoutCasterCount
+            || cutoutCasterIdsSha256(allCasterIds)
+                !== artifact.cutoutCasterIdsSha256) {
+            throw new Error(
+                'Production alpha-cutout v2 coverage classes must form the exact authenticated caster partition'
+            );
+        }
+        certifiedCasterCount = artifact.inCoverageCasterCount;
+    }
+    if (artifact.sampleCount < certifiedCasterCount * (v2 ? 2 : 1)
+        || artifact.firstHitDepthSampleCount < certifiedCasterCount) {
         throw new Error(
-            'Production alpha-cutout spatial parity must non-vacuously sample every cutout caster'
+            'Production alpha-cutout spatial parity must non-vacuously sample every covered cutout caster'
         );
     }
     if (artifact.matchingOccupancySampleCount
@@ -527,7 +596,9 @@ function validateEvidenceStreams(value, artifact) {
     validateEvidenceStream(
         evidence.samplePlan,
         'alpha parity sample-plan evidence',
-        SAMPLE_PLAN_EVIDENCE_ENCODING,
+        artifact.schema === PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_V2_SCHEMA
+            ? SAMPLE_PLAN_V2_EVIDENCE_ENCODING
+            : SAMPLE_PLAN_EVIDENCE_ENCODING,
         artifact.sampleCount,
         evidence.samplePlan?.byteLength
     );
@@ -693,14 +764,18 @@ function validateAuthenticatedSamplePlan(authenticated, metadata) {
     if (canonicalJsonStringify(plan) !== text) {
         throw new Error('Production alpha-cutout sample plan must be canonical JSON');
     }
+    const v2 = plan.schema === PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_V2_SCHEMA;
     requireExactKeys(plan, [
+        ...(v2 ? ['inCoverageCasterIds', 'outOfCoverageCasterIds'] : []),
         'lightingProfileId',
         'method',
         'samples',
         'schema'
     ], 'production alpha-cutout sample plan');
-    if (plan.schema !== PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_SCHEMA
-        || plan.method !== PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_METHOD
+    if ((!v2 && plan.schema !== PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_SCHEMA)
+        || plan.method !== (v2
+            ? PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_V2_METHOD
+            : PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_METHOD)
         || plan.lightingProfileId !== metadata.lightingProfileId
         || !Array.isArray(plan.samples)
         || plan.samples.length === 0) {
@@ -743,20 +818,63 @@ function validateAuthenticatedSamplePlan(authenticated, metadata) {
         sampleIdentities.add(identity);
         casterIds.add(casterId);
     }
-    const canonicalCasterIds = [...casterIds].sort(compareCanonicalStrings);
-    const casterIdsSha256 = rawSha256(new TextEncoder().encode(
-        canonicalJsonStringify({
-            casterIds: canonicalCasterIds,
-            schema: 'ai531-production-alpha-cutout-caster-plan-v1'
-        })
-    ));
-    if (canonicalCasterIds.length !== metadata.cutoutCasterCount
-        || casterIdsSha256 !== metadata.cutoutCasterIdsSha256) {
+    const sampledCasterIds = [...casterIds].sort(compareCanonicalStrings);
+    if (v2) {
+        const inCoverageCasterIds = requireCanonicalIds(
+            plan.inCoverageCasterIds,
+            'production alpha-cutout sample plan.inCoverageCasterIds',
+            false
+        );
+        const outOfCoverageCasterIds = requireCanonicalIds(
+            plan.outOfCoverageCasterIds,
+            'production alpha-cutout sample plan.outOfCoverageCasterIds',
+            true
+        );
+        const overlap = inCoverageCasterIds.filter(
+            (casterId) => outOfCoverageCasterIds.includes(casterId)
+        );
+        if (overlap.length > 0) {
+            throw new Error(
+                'Production alpha-cutout sample-plan coverage classes must be disjoint'
+            );
+        }
+        if (canonicalJsonStringify(sampledCasterIds)
+            !== canonicalJsonStringify(inCoverageCasterIds)) {
+            throw new Error(
+                'Production alpha-cutout sample plan must sample every in-coverage caster and no out-of-coverage caster'
+            );
+        }
+        const allCasterIds = [...inCoverageCasterIds, ...outOfCoverageCasterIds]
+            .sort(compareCanonicalStrings);
+        if (allCasterIds.length !== metadata.cutoutCasterCount
+            || cutoutCasterIdsSha256(allCasterIds)
+                !== metadata.cutoutCasterIdsSha256) {
+            throw new Error(
+                'Production alpha-cutout sample-plan coverage classes do not partition the authenticated cutout inventory'
+            );
+        }
+        return {
+            inCoverageCasterIds,
+            outOfCoverageCasterIds,
+            plan,
+            v2: true
+        };
+    }
+    if (sampledCasterIds.length !== metadata.cutoutCasterCount
+        || cutoutCasterIdsSha256(sampledCasterIds)
+            !== metadata.cutoutCasterIdsSha256) {
         throw new Error(
             'Production alpha-cutout sample plan must cover every authenticated cutout caster'
         );
     }
-    return plan;
+    return {plan, v2: false};
+}
+
+function cutoutCasterIdsSha256(casterIds) {
+    return rawSha256(new TextEncoder().encode(canonicalJsonStringify({
+        casterIds,
+        schema: 'ai531-production-alpha-cutout-caster-plan-v1'
+    })));
 }
 
 function decodeFloat32Le(bytes, label) {
@@ -845,8 +963,10 @@ function validateExpectations(artifact, expectations) {
     }
 }
 
-function requireCanonicalIds(value, label) {
-    if (!Array.isArray(value)) throw new TypeError(`${label} must be an array`);
+function requireCanonicalIds(value, label, allowEmpty = true) {
+    if (!Array.isArray(value) || (!allowEmpty && value.length === 0)) {
+        throw new TypeError(`${label} must be a${allowEmpty ? 'n' : ' non-empty'} array`);
+    }
     const ids = value.map((entry, index) => (
         requireNonEmptyString(entry, `${label}[${index}]`)
     ));

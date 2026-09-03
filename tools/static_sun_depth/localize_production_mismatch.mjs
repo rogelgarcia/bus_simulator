@@ -15,6 +15,7 @@ import {
     PRODUCTION_VALIDATION_CAPTURE_DIMENSIONS_PIXELS,
     PRODUCTION_VALIDATION_REPORT_SCHEMA,
     PRODUCTION_VALIDATION_THRESHOLDS,
+    evaluateProductionCaseMetrics,
     installBrowserValidationRuntime,
     validateProductionPackageIndex
 } from './validate_production.mjs';
@@ -52,6 +53,24 @@ const defaultOutputRoot = path.join(
 
 /** @param {any} [options] @param {{chromiumApi?: typeof chromium}} [deps] */
 export async function runProductionMismatchLocalization(options = {}, deps = {}) {
+    const metricsOnly = options.metricsOnly === true;
+    const directRender = options.directRender === true;
+    const disableGtao = options.disableGtao === true;
+    // The pre-activation capture is the real gameplay renderer and therefore
+    // the default oracle. paired-live deliberately remains available only to
+    // diagnose the validation-only transition itself.
+    const currentSource = options.currentSource ?? 'preactivation';
+    const direction = options.direction ?? 'cache_brighter';
+    if (currentSource !== 'paired-live'
+        && currentSource !== 'paired-live-cache-first'
+        && currentSource !== 'preactivation') {
+        throw new Error(
+            "currentSource must be 'paired-live', 'paired-live-cache-first', or 'preactivation'"
+        );
+    }
+    if (direction !== 'cache_brighter' && direction !== 'cache_darker') {
+        throw new Error("direction must be 'cache_brighter' or 'cache_darker'");
+    }
     const sourceReportPath = requireRepositoryFile(
         options.sourceReportPath ?? defaultSourceReportPath,
         'source production report'
@@ -62,21 +81,68 @@ export async function runProductionMismatchLocalization(options = {}, deps = {})
     );
     const outputRoot = requireOutputRoot(options.outputRoot ?? defaultOutputRoot);
     const warmupFrames = requireInteger(options.warmupFrames ?? 2, 0, 30, 'warmupFrames');
+    const sampleCount = requireInteger(
+        options.sampleCount ?? PRODUCTION_MISMATCH_LOCALIZATION_SAMPLE_COUNT,
+        1,
+        PRODUCTION_MISMATCH_LOCALIZATION_SAMPLE_COUNT,
+        'sampleCount'
+    );
+    const targetPixel = options.targetPixel ?? null;
+    if (targetPixel && (metricsOnly || sampleCount !== 1)) {
+        throw new Error('target pixel requires caster localization with sampleCount 1');
+    }
     const timingContaminationReason = normalizeReason(
         options.timingContaminationReason
             ?? 'multiple-process-and-gpu-contention-declared-by-user'
     );
-    const sourceReportAuthentication = await authenticateSourceReport(sourceReportPath);
+    const targetCaseId = options.caseId
+        ?? PRODUCTION_MISMATCH_LOCALIZATION_TARGET_CASE_ID;
     const packageIndex = validateProductionPackageIndex(
         JSON.parse(await readFile(packageIndexPath, 'utf8'))
     );
     const validationCase = ILLUMINATION_VALIDATION_CASES.find(
-        (entry) => entry.id === PRODUCTION_MISMATCH_LOCALIZATION_TARGET_CASE_ID
+        (entry) => entry.id === targetCaseId
     );
-    if (!validationCase || validationCase.kind !== 'low_sun_pose'
-        || validationCase.sunProfile?.id !== 'ai527.sun.az135.el08') {
-        throw new Error('canonical mismatch-localization case is absent or drifted');
+    if (!validationCase || !validationCase.sunProfile?.id) {
+        throw new Error(
+            `requested mismatch-localization case ${JSON.stringify(targetCaseId)}`
+            + ' is absent or has no sun profile'
+        );
     }
+    const preludeCaseIds = options.preludeCaseId
+        ? String(options.preludeCaseId).split(',').map((entry) => entry.trim()).filter(Boolean)
+        : [];
+    if (preludeCaseIds.length > 8 || new Set(preludeCaseIds).size !== preludeCaseIds.length) {
+        throw new Error('prelude cases must contain at most eight unique IDs');
+    }
+    const preludeCases = preludeCaseIds.map((caseId) => (
+        ILLUMINATION_VALIDATION_CASES.find((entry) => entry.id === caseId)
+    ));
+    const preludeRepeat = requireInteger(options.preludeRepeat ?? 1, 1, 8, 'preludeRepeat');
+    if (preludeCases.length === 0 && options.preludeRepeat !== undefined) {
+        throw new Error('prelude repeat requires a prelude case');
+    }
+    if (preludeCases.some((entry) => (!entry
+        || entry.kind === 'lab'
+        || entry.sunProfile?.id !== validationCase.sunProfile.id))) {
+        throw new Error('prelude case must be a non-lab case in the target sun profile');
+    }
+    if (preludeCases.length > 0
+        && currentSource !== 'paired-live-cache-first'
+        && currentSource !== 'preactivation') {
+        throw new Error(
+            'prelude case requires cache-first or production preactivation current ordering'
+        );
+    }
+    if (preludeCases.length > 0 && currentSource === 'preactivation' && preludeRepeat !== 1) {
+        throw new Error('production preactivation preludes cannot be repeated');
+    }
+    const sourceReportAuthentication = await authenticateSourceReport(
+        sourceReportPath,
+        validationCase,
+        sampleCount,
+        !metricsOnly && direction === 'cache_brighter'
+    );
     const packageEntry = packageIndex.profiles[validationCase.sunProfile.id];
     if (!packageEntry) throw new Error('target diagnostic profile is absent from package index');
     await mkdir(outputRoot, {recursive: true});
@@ -120,6 +186,21 @@ export async function runProductionMismatchLocalization(options = {}, deps = {})
         });
         const page = await browser.newPage({viewport: {width: 1280, height: 744}});
         page.setDefaultTimeout(0);
+        await page.route('**/pbr.material.correction.config.js', async (route) => {
+            const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
+            const diskPath = path.resolve(repoRoot, `.${pathname}`);
+            const relative = path.relative(repoRoot, diskPath);
+            if (!relative.startsWith('..') && !path.isAbsolute(relative)
+                && existsSync(diskPath)) {
+                await route.continue();
+                return;
+            }
+            await route.fulfill({
+                body: 'export default null;\n',
+                contentType: 'text/javascript; charset=utf-8',
+                status: 200
+            });
+        });
         page.on('pageerror', (error) => browserDiagnostics.push({
             kind: 'pageerror',
             message: error?.message ?? String(error)
@@ -148,6 +229,18 @@ export async function runProductionMismatchLocalization(options = {}, deps = {})
             ].filter(Boolean));
         });
         const environment = await installBrowserValidationRuntime(page);
+        await page.evaluate((enabled) => (
+            window.__ai531ProductionValidation.setDirectRenderingForDiagnostics(enabled)
+        ), directRender);
+        if (disableGtao) {
+            await page.evaluate(() => {
+                const {engine} = window.__busSim;
+                engine.setAmbientOcclusionSettings({
+                    ...engine._ambientOcclusion?.settings,
+                    mode: 'off'
+                });
+            });
+        }
         const gameCanvas = page.locator('#game-canvas');
         const receiverMaskCanvas = page.locator('#ai531-production-receiver-mask-evidence');
         const gameCanvasBounds = await gameCanvas.boundingBox();
@@ -168,13 +261,29 @@ export async function runProductionMismatchLocalization(options = {}, deps = {})
         const capturePaths = Object.fromEntries(PRODUCTION_VALIDATION_CAPTURE_SLOTS.map(
             (slot) => [slot, path.join(outputRoot, `${slot}.png`)]
         ));
-        const current = await page.evaluate(
-            async ({caseValue, warmups}) => (
-                window.__ai531ProductionValidation.captureCurrent(caseValue, warmups)
-            ),
-            {caseValue: validationCase, warmups: warmupFrames}
-        );
-        await gameCanvas.screenshot({path: capturePaths.current, type: 'png'});
+        if (currentSource === 'preactivation') {
+            // Mirror the production validator: every genuine current frame is
+            // captured before package activation, in catalog order.
+            for (const preludeCase of preludeCases) {
+                await page.evaluate(
+                    async ({caseValue, warmups}) => (
+                        window.__ai531ProductionValidation.captureCurrent(caseValue, warmups)
+                    ),
+                    {caseValue: preludeCase, warmups: warmupFrames}
+                );
+            }
+        }
+        const preactivationCurrent = currentSource === 'paired-live-cache-first'
+            ? null
+            : await page.evaluate(
+                async ({caseValue, warmups}) => (
+                    window.__ai531ProductionValidation.captureCurrent(caseValue, warmups)
+                ),
+                {caseValue: validationCase, warmups: warmupFrames}
+            );
+        if (currentSource === 'preactivation') {
+            await gameCanvas.screenshot({path: capturePaths.current, type: 'png'});
+        }
         const activation = await page.evaluate(async () => (
             window.__ai531ProductionValidation.activatePreparedProfile()
         ));
@@ -182,13 +291,76 @@ export async function runProductionMismatchLocalization(options = {}, deps = {})
             || activation.sourceShadowTexelPhaseEvidence?.status !== 'verified') {
             throw new Error(`target package did not activate with verified phase: ${JSON.stringify(activation)}`);
         }
-        const cache = await page.evaluate(
-            async ({caseValue, warmups}) => (
-                window.__ai531ProductionValidation.captureCache(caseValue, warmups)
-            ),
-            {caseValue: validationCase, warmups: warmupFrames}
-        );
-        await gameCanvas.screenshot({path: capturePaths.cache, type: 'png'});
+        if (preludeCases.length > 0) {
+            for (let repeat = 0; repeat < preludeRepeat; repeat += 1) {
+                for (const preludeCase of preludeCases) {
+                    await page.evaluate(async ({caseValue, warmups, productionOrdering}) => {
+                        await window.__ai531ProductionValidation.captureCache(caseValue, warmups);
+                        if (!productionOrdering) {
+                            await window.__ai531ProductionValidation.capturePairedCurrent(
+                                caseValue,
+                                warmups
+                            );
+                        }
+                        await window.__ai531ProductionValidation.captureComparisonAndCompare(
+                            caseValue,
+                            warmups
+                        );
+                        window.__ai531ProductionValidation.captureReceiverMask(
+                            caseValue,
+                            'staticCityReceiverMask'
+                        );
+                        window.__ai531ProductionValidation.captureReceiverMask(
+                            caseValue,
+                            'dynamicReceiverMask'
+                        );
+                        window.__ai531ProductionValidation.finishReceiverMaskEvidence(caseValue);
+                    }, {
+                        caseValue: preludeCase,
+                        productionOrdering: currentSource === 'preactivation',
+                        warmups: warmupFrames
+                    });
+                }
+            }
+        }
+        let current = preactivationCurrent;
+        let cache;
+        if (currentSource === 'paired-live-cache-first') {
+            // Hardware evidence showed that entering liveFinal perturbs the next
+            // cache frame. Capture the untouched cache first, then replace only
+            // the stored current oracle while preserving those cache bytes.
+            cache = await page.evaluate(
+                async ({caseValue, warmups}) => (
+                    window.__ai531ProductionValidation.captureCache(caseValue, warmups)
+                ),
+                {caseValue: validationCase, warmups: warmupFrames}
+            );
+            await gameCanvas.screenshot({path: capturePaths.cache, type: 'png'});
+            current = await page.evaluate(
+                async ({caseValue, warmups}) => (
+                    window.__ai531ProductionValidation.capturePairedCurrent(caseValue, warmups)
+                ),
+                {caseValue: validationCase, warmups: warmupFrames}
+            );
+            await gameCanvas.screenshot({path: capturePaths.current, type: 'png'});
+        } else {
+            if (currentSource === 'paired-live') {
+                current = await page.evaluate(
+                    async ({caseValue, warmups}) => (
+                        window.__ai531ProductionValidation.capturePairedCurrent(caseValue, warmups)
+                    ),
+                    {caseValue: validationCase, warmups: warmupFrames}
+                );
+                await gameCanvas.screenshot({path: capturePaths.current, type: 'png'});
+            }
+            cache = await page.evaluate(
+                async ({caseValue, warmups}) => (
+                    window.__ai531ProductionValidation.captureCache(caseValue, warmups)
+                ),
+                {caseValue: validationCase, warmups: warmupFrames}
+            );
+            await gameCanvas.screenshot({path: capturePaths.cache, type: 'png'});
+        }
         const comparison = await page.evaluate(
             async ({caseValue, warmups, request}) => (
                 window.__ai531ProductionValidation.captureComparisonAndCompare(
@@ -200,10 +372,16 @@ export async function runProductionMismatchLocalization(options = {}, deps = {})
             {
                 caseValue: validationCase,
                 warmups: warmupFrames,
-                request: {
+                request: metricsOnly ? null : {
                     schema: 'ai531-production-mismatch-localization-request-v1',
                     productionEligible: false,
-                    sampleCount: PRODUCTION_MISMATCH_LOCALIZATION_SAMPLE_COUNT
+                    sampleCount,
+                    direction,
+                    ...(targetPixel ? {targetPixel} : {}),
+                    ...(validationCase.id
+                        === PRODUCTION_MISMATCH_LOCALIZATION_TARGET_CASE_ID
+                        ? {}
+                        : {targetCaseId: validationCase.id})
                 }
             }
         );
@@ -237,25 +415,44 @@ export async function runProductionMismatchLocalization(options = {}, deps = {})
         const captureEntries = Object.entries(captures)
             .sort(([left], [right]) => compareStrings(left, right));
         const localization = comparison.mismatchLocalization;
-        if (localization?.samples?.length !== PRODUCTION_MISMATCH_LOCALIZATION_SAMPLE_COUNT
+        if (!metricsOnly && (localization?.samples?.length !== sampleCount
             || localization?.aggregate?.sampleCount
-                !== PRODUCTION_MISMATCH_LOCALIZATION_SAMPLE_COUNT
+                !== sampleCount
             || localization?.depthColorInferenceUsed !== false
-            || localization?.productionEligible !== false) {
+            || localization?.productionEligible !== false)) {
             throw new Error('bounded live caster localization result is incomplete or promotable');
         }
+        if (metricsOnly && localization != null) {
+            throw new Error('metrics-only probe unexpectedly ran caster localization');
+        }
+        const metricFailures = evaluateProductionCaseMetrics(comparison.metrics);
         const report = {
             schema: PRODUCTION_MISMATCH_LOCALIZATION_REPORT_SCHEMA,
             diagnosticSchema: PRODUCTION_MISMATCH_LOCALIZATION_SCHEMA,
             generatedAt: new Date().toISOString(),
-            status: browserDiagnostics.length === 0 ? 'completed' : 'invalid_browser_diagnostics',
+            status: browserDiagnostics.length > 0
+                ? 'invalid_browser_diagnostics'
+                : (metricsOnly
+                    ? (metricFailures.length === 0 ? 'metrics_passed' : 'metrics_failed')
+                    : 'completed'),
             productionEligible: false,
             promotable: false,
+            mode: metricsOnly ? 'metrics_only' : 'caster_localization',
+            renderPath: directRender ? 'direct_renderer_diagnostic' : 'gameplay_postprocessing',
+            postProcessingOverrides: {gtaoDisabled: disableGtao},
+            currentSource,
+            preludeCaseIds,
+            preludeRepeat: preludeCases.length > 0 ? preludeRepeat : 0,
+            direction,
             targetCaseId: validationCase.id,
             lightingProfileId: validationCase.sunProfile.id,
-            samplePlan: {
-                method: 'stable-hash-one-per-8x8-framebuffer-stratum-then-fill-v1',
-                requestedSampleCount: PRODUCTION_MISMATCH_LOCALIZATION_SAMPLE_COUNT,
+            samplePlan: metricsOnly ? null : {
+                method: targetPixel
+                    ? 'explicit-single-framebuffer-pixel-v1'
+                    : 'stable-hash-one-per-8x8-framebuffer-stratum-then-fill-v1',
+                direction,
+                ...(targetPixel ? {targetPixel} : {}),
+                requestedSampleCount: sampleCount,
                 selectedSampleCount: localization.samples.length,
                 strictMissingOccluderPixelCount:
                     comparison.metrics.missingOccluderPixelCount,
@@ -280,7 +477,20 @@ export async function runProductionMismatchLocalization(options = {}, deps = {})
             },
             comparison: {
                 thresholds: PRODUCTION_VALIDATION_THRESHOLDS,
-                metrics: comparison.metrics
+                metrics: comparison.metrics,
+                maximumRgbErrorPixel: comparison.maximumRgbErrorPixel,
+                passed: metricFailures.length === 0,
+                failures: metricFailures
+            },
+            captureWorkloads: {
+                current: current.workload,
+                cache: cache.workload,
+                comparison: comparison.workload
+            },
+            staticShadowDiagnostics: {
+                current: current.staticShadow,
+                cache: cache.staticShadow,
+                comparison: comparison.staticShadow
             },
             casterLocalization: localization,
             currentDiagnostics: current.diagnostics,
@@ -320,7 +530,12 @@ export async function runProductionMismatchLocalization(options = {}, deps = {})
     }
 }
 
-async function authenticateSourceReport(reportPath) {
+async function authenticateSourceReport(
+    reportPath,
+    validationCase,
+    sampleCount,
+    requireMissingCandidates = true
+) {
     const bytes = await readFile(reportPath);
     const report = JSON.parse(bytes.toString('utf8'));
     if (report.schema !== PRODUCTION_VALIDATION_REPORT_SCHEMA
@@ -332,12 +547,16 @@ async function authenticateSourceReport(reportPath) {
         throw new Error('source production report is stale or incompatible');
     }
     const target = report.cases?.find(
-        (entry) => entry.caseId === PRODUCTION_MISMATCH_LOCALIZATION_TARGET_CASE_ID
+        (entry) => entry.caseId === validationCase.id
     );
-    if (!target || target.lightingProfileId !== 'ai527.sun.az135.el08'
+    if (!target || target.lightingProfileId !== validationCase.sunProfile.id
         || !Number.isSafeInteger(target.metrics?.missingOccluderPixelCount)
-        || target.metrics.missingOccluderPixelCount < 1) {
-        throw new Error('source production report lacks the exact failed target case');
+        || (requireMissingCandidates
+            && target.metrics.missingOccluderPixelCount < sampleCount)) {
+        throw new Error(
+            'source production report lacks enough strict missing-occluder pixels '
+            + 'for the requested bounded target case'
+        );
     }
     const authenticatedCaptures = {};
     for (const slot of PRODUCTION_VALIDATION_CAPTURE_SLOTS) {
@@ -376,6 +595,12 @@ export function parseProductionMismatchLocalizationArgs(argv) {
             result.help = true;
             continue;
         }
+        if (token === '--metrics-only' || token === '--direct-render' || token === '--disable-gtao') {
+            const flagKey = token === '--metrics-only' ? 'metricsOnly'
+                : (token === '--direct-render' ? 'directRender' : 'disableGtao');
+            result[flagKey] = true;
+            continue;
+        }
         const next = argv[index + 1];
         if (!token.startsWith('--') || !next || next.startsWith('--')) {
             throw new Error(`Option '${token}' requires a value`);
@@ -384,18 +609,36 @@ export function parseProductionMismatchLocalizationArgs(argv) {
             '--source-report': 'sourceReportPath',
             '--package-index': 'packageIndexPath',
             '--output-root': 'outputRoot',
+            '--case-id': 'caseId',
+            '--prelude-case-id': 'preludeCaseId',
+            '--prelude-repeat': 'preludeRepeat',
+            '--current-source': 'currentSource',
+            '--direction': 'direction',
+            '--target-pixel': 'targetPixel',
             '--url': 'baseUrl',
             '--port': 'preferredPort',
             '--chrome': 'chromePath',
             '--warmup-frames': 'warmupFrames',
+            '--sample-count': 'sampleCount',
             '--timing-contaminated-reason': 'timingContaminationReason'
         })[token];
         if (!key) throw new Error(`Unknown option '${token}'`);
-        result[key] = key === 'preferredPort' || key === 'warmupFrames'
+        result[key] = key === 'targetPixel' ? parseTargetPixel(next)
+            : key === 'preferredPort' || key === 'warmupFrames'
+            || key === 'preludeRepeat'
+            || key === 'sampleCount'
             ? Number(next) : next;
         index += 1;
     }
     return Object.freeze(result);
+}
+
+function parseTargetPixel(value) {
+    const parts = String(value).split(',').map(Number);
+    if (parts.length !== 2 || parts.some((entry) => !Number.isSafeInteger(entry) || entry < 0)) {
+        throw new Error('target pixel must be two nonnegative integers formatted x,y');
+    }
+    return parts;
 }
 
 export function createProductionMismatchLocalizationUsageText() {
@@ -405,10 +648,21 @@ export function createProductionMismatchLocalizationUsageText() {
         '  --source-report <production_validation_report.json>',
         '  --package-index <package_index.json>',
         '  --output-root <tests/artifacts/screens/illumination_531/...>',
+        '  --case-id <validation-case-id>  Explicit failed catalog case with at least 64 missing pixels',
+        '  --prelude-case-id <id[,id...]>      Run up to eight same-profile transitions first',
+        '  --prelude-repeat <1..8>             Repeat the prelude transition (default 1)',
+        '  --current-source <paired-live|paired-live-cache-first|preactivation>',
+        '                                      Diagnostic current capture source/order',
+        '  --direction <cache_brighter|cache_darker>  Diagnostic mismatch direction',
+        '  --target-pixel <x,y>          Localize one exact WebGL framebuffer pixel',
         '  --url <http://127.0.0.1:port>  Reuse a repository static server',
         '  --port <number>                Preferred local port (default 4181)',
         '  --chrome <path>                Installed Chrome/Chromium executable',
         '  --warmup-frames <count>        Frames before each capture (default 2)',
+        '  --sample-count <1..64>          Strict missing pixels to localize (default 64)',
+        '  --metrics-only                  Skip caster sampling and write parity metrics even with zero missing pixels',
+        '  --direct-render                 Diagnostic-only: bypass gameplay post-processing for captures',
+        '  --disable-gtao                  Diagnostic-only: retain the composer but disable GTAO',
         '  --timing-contaminated-reason <text>',
         ''
     ].join('\n');
@@ -506,7 +760,7 @@ async function main() {
         report: artifactPath(result.reportPath),
         strictMissingOccluderPixelCount:
             result.report.comparison.metrics.missingOccluderPixelCount,
-        aggregate: result.report.casterLocalization.aggregate
+        aggregate: result.report.casterLocalization?.aggregate ?? null
     }, null, 2)}\n`);
 }
 

@@ -77,7 +77,11 @@ highp float staticSunDepthCompareGlobalTexel(
     reconstructedDepth = reconstructedDepth < staticSunDepthDepthRange.x
         ? decoded.x
         : min( reconstructedDepth, decoded.x );
-    return step( comparisonDepth, decoded.x );
+    highp float staticSunDepthQuantizationSafetyMargin =
+        ( staticSunDepthDepthRange.y - staticSunDepthDepthRange.x )
+        * 0.375 / ( staticSunDepthEncodingMode == 1 ? 16777215.0 : 65534.0 );
+    return step( comparisonDepth, max( staticSunDepthDepthRange.x,
+        decoded.x - staticSunDepthQuantizationSafetyMargin ) );
 }
 
 highp float staticSunDepthLinearCompare(
@@ -231,6 +235,11 @@ void staticSunDepthApplyDirectional(
         dot( normalize( directLight.direction ), normalize( staticSunDepthPointDirectionView ) )
     );
     if ( directionMatch < 0.5 ) return;
+    // Validation-only exact live oracle: the package remains resident while
+    // current casters are restored, but this hook must not sample or attenuate
+    // the named sun. The following cache capture can therefore happen in the
+    // same case state without unloading/reloading the 500+ MiB package.
+    if ( staticSunDepthDebugMode == 10 ) return;
     highp float denominator = max( staticSunDepthMaxComponent( unshadowedColor ), 0.000001 );
     staticSunDepthCurrentVisibility = clamp( staticSunDepthMaxComponent( directLight.color ) / denominator, 0.0, 1.0 );
     staticSunDepthDebugSample = staticSunDepthLookup( vStaticSunWorldPosition, receiverNormal );
@@ -243,7 +252,7 @@ void staticSunDepthApplyDirectional(
 }
 
 highp vec3 staticSunDepthDebugColor( highp vec3 normalColor, highp vec3 receiverNormal ) {
-    if ( staticSunDepthDebugMode == 0 ) return normalColor;
+    if ( staticSunDepthDebugMode == 0 || staticSunDepthDebugMode == 10 ) return normalColor;
     if ( ! receiveShadow ) {
         if ( staticSunDepthDebugMode == 1 ) return vec3( 1.0 );
         if ( staticSunDepthDebugMode == 8 ) return vec3( 0.0, 0.0, 1.0 );
@@ -285,5 +294,10 @@ highp vec3 staticSunDepthDebugColor( highp vec3 normalColor, highp vec3 receiver
     if ( staticSunDepthDebugMode == 7 ) return sampleValue.z < 0.0 ? vec3( 1.0, 0.0, 0.0 ) : vec3( 0.0, 0.2, 0.0 );
     if ( staticSunDepthDebugMode == 8 ) return vec3( sampleValue.w, 0.0, 1.0 - sampleValue.w );
     if ( staticSunDepthDebugMode == 9 ) return vec3( staticSunDepthMaximumVisibilityDifference );
+    if ( staticSunDepthDebugMode == 11 ) return vec3(
+        max( staticSunDepthCacheVisibility - staticSunDepthCurrentVisibility, 0.0 ),
+        abs( staticSunDepthCacheVisibility - staticSunDepthCurrentVisibility ),
+        max( staticSunDepthCurrentVisibility - staticSunDepthCacheVisibility, 0.0 )
+    );
     return normalColor;
 }

@@ -15,7 +15,8 @@ export class StaticSunDepthCasterController {
             originalCasterCount: 0,
             suppressedCasterCount: 0,
             restores: 0,
-            settingsRefreshes: 0
+            settingsRefreshes: 0,
+            shadowRefreshRequests: 0
         };
     }
 
@@ -40,6 +41,7 @@ export class StaticSunDepthCasterController {
             city._staticSunDepthCasterController = this;
             city._staticSunDepthCacheActive = true;
             this._active = true;
+            this._markShadowMapsDirty(city);
         } catch (error) {
             try {
                 this._restoreSnapshot();
@@ -52,6 +54,7 @@ export class StaticSunDepthCasterController {
             this._active = false;
             this._refreshing = false;
             this._rebuildCityCuller(city);
+            this._markShadowMapsDirty(city);
             throw error;
         }
         return this.getDiagnostics();
@@ -63,6 +66,7 @@ export class StaticSunDepthCasterController {
         if (this.city) this.city._staticSunDepthCacheActive = false;
         try {
             this._restoreSnapshot(false);
+            this._markShadowMapsDirty(this.city);
         } catch (error) {
             this.deactivate('shadow_settings_restore_failed');
             throw error;
@@ -82,6 +86,7 @@ export class StaticSunDepthCasterController {
             this._metrics.settingsRefreshes += 1;
             if (this.city) this.city._staticSunDepthCacheActive = true;
             this._refreshing = false;
+            this._markShadowMapsDirty(this.city);
             return true;
         } catch (error) {
             this.deactivate('shadow_settings_refresh_failed');
@@ -91,6 +96,10 @@ export class StaticSunDepthCasterController {
 
     deactivate(reason = 'current') {
         const city = this.city;
+        // Debug-mode transitions are idempotent. Record the requested live
+        // ownership reason even when a prior comparison transition already
+        // restored the same city caster snapshot.
+        this._lastReason = reason;
         if (!city) return false;
         let restorationError = null;
         try {
@@ -104,8 +113,8 @@ export class StaticSunDepthCasterController {
         this._active = false;
         this._refreshing = false;
         this._metrics.restores += 1;
-        this._lastReason = reason;
         this._rebuildCityCuller(city);
+        this._markShadowMapsDirty(city);
         if (restorationError) throw restorationError;
         return true;
     }
@@ -168,6 +177,21 @@ export class StaticSunDepthCasterController {
         } catch (error) {
             this._lastError = error;
         }
+    }
+
+    _markShadowMapsDirty(city) {
+        const rendererShadowMap = this.engine?.renderer?.shadowMap;
+        if (rendererShadowMap && 'needsUpdate' in rendererShadowMap) {
+            rendererShadowMap.needsUpdate = true;
+        }
+        const lights = new Set([
+            city?.sun,
+            ...(Array.isArray(city?._csm?.csm?.lights) ? city._csm.csm.lights : [])
+        ]);
+        for (const light of lights) {
+            if (light?.shadow && 'needsUpdate' in light.shadow) light.shadow.needsUpdate = true;
+        }
+        this._metrics.shadowRefreshRequests += 1;
     }
 
     verifySuppressed() {

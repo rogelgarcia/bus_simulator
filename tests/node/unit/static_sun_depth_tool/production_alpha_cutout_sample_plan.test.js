@@ -115,6 +115,47 @@ test('alpha cutout sample-plan selection marks partial live-map coverage diagnos
         () => selectProductionAlphaCutoutSamplePlan(partial, liveCapture()),
         /outside the live shadow map/
     );
+
+    const releaseCoverage = selectProductionAlphaCutoutSamplePlan(
+        partial,
+        liveCapture(),
+        {allowReleaseUnionCoverage: true}
+    );
+    assert.equal(releaseCoverage.productionEligible, true);
+    assert.deepEqual(releaseCoverage.samplePlan, {
+        inCoverageCasterIds: ['caster.alpha', 'caster.beta'],
+        lightingProfileId: 'ai527.sun.az135.el08',
+        method: 'per-profile-in-out-cutout-casters-projected-light-texel-coverage-v2',
+        outOfCoverageCasterIds: ['caster.gamma'],
+        samples: [
+            {casterId: 'caster.alpha', globalTexel: [10, 20], index: 0},
+            {casterId: 'caster.alpha', globalTexel: [11, 20], index: 1},
+            {casterId: 'caster.beta', globalTexel: [30, 40], index: 2},
+            {casterId: 'caster.beta', globalTexel: [31, 40], index: 3}
+        ],
+        schema: 'ai531-production-alpha-cutout-sample-plan-v2'
+    });
+    assert.deepEqual(releaseCoverage.bakeSampleRequest, {
+        depthReference: {
+            cacheDepthAxisWorld: [0, 0, 1],
+            encoding: 'source-shadow-camera-distance-meters-v1',
+            sourceCameraFarMeters: 11,
+            sourceCameraNearMeters: 1,
+            sourceCameraOriginDepthMetersInCacheBasis: -10
+        },
+        inCoverageCasterIds: ['caster.alpha', 'caster.beta'],
+        lightingProfileId: 'ai527.sun.az135.el08',
+        method: 'per-profile-in-out-cutout-casters-projected-light-texel-coverage-v2',
+        outOfCoverageCasterIds: ['caster.gamma'],
+        productionEligible: true,
+        samples: [
+            {casterId: 'caster.alpha', globalTexel: [10, 20], index: 0},
+            {casterId: 'caster.alpha', globalTexel: [11, 20], index: 1},
+            {casterId: 'caster.beta', globalTexel: [30, 40], index: 2},
+            {casterId: 'caster.beta', globalTexel: [31, 40], index: 3}
+        ],
+        schema: 'ai531-production-alpha-cutout-bake-sample-request-v2'
+    });
 });
 
 test('alpha cutout sample-plan selection rejects mislabeled or absent caster first hits', () => {

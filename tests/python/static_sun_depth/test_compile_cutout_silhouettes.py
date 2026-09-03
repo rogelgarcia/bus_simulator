@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import struct
 import sys
 import unittest
 
@@ -55,6 +56,163 @@ def triangle_at_depth(depth_offset: float = 0.0, *, reverse: bool = False, side:
 
 
 class CutoutSilhouetteCompilerTests(unittest.TestCase):
+    def test_full_lattice_candidates_are_bounded_tiled_and_binary_stable(self):
+        chunks = []
+        stats = silhouette.emit_cutout_candidate_chunks(
+            [triangle_at_depth()],
+            solid_texture(),
+            identity_lattice(),
+            (1, 1),
+            lambda tile, chunk, data, count: chunks.append(
+                (tile, chunk, data, count)
+            ),
+            maximum_chunk_records=2,
+        )
+
+        self.assertEqual(stats["candidateCount"], 3)
+        self.assertEqual(stats["chunkCount"], 3)
+        self.assertEqual(
+            [(tile, chunk, count) for tile, chunk, _, count in chunks],
+            [(0, 0, 1), (1, 0, 1), (2, 0, 1)],
+        )
+        records = [
+            struct.unpack("<IIfIffffff", data)
+            for _, _, data, _ in chunks
+        ]
+        self.assertEqual(
+            [(record[0], record[1], record[3]) for record in records],
+            [(0, 0, 0), (1, 0, 0), (0, 1, 0)],
+        )
+        self.assertAlmostEqual(records[0][2], 1.5)
+        self.assertEqual(records[0][4:6], (0.5, 0.5))
+        self.assertEqual(
+            silhouette.CUTOUT_CANDIDATE_RECORD_BYTE_LENGTH,
+            len(chunks[0][2]),
+        )
+        self.assertEqual(
+            silhouette.cutout_candidate_version_identity()["sha256"],
+            silhouette.CUTOUT_CANDIDATE_VERSION_SHA256,
+        )
+
+    def test_generated_alpha_mips_use_canonical_unorm8_box_reduction(self):
+        texture = silhouette.AlphaTextureMip0(
+            width=4,
+            height=4,
+            pixels=bytes([
+                0, 0, 64, 64,
+                0, 0, 64, 64,
+                128, 128, 255, 255,
+                128, 128, 255, 255,
+            ]),
+        )
+
+        levels = silhouette.generate_alpha_mip_chain(texture)
+
+        self.assertEqual([(level.width, level.height) for level in levels], [
+            (4, 4),
+            (2, 2),
+            (1, 1),
+        ])
+        self.assertEqual(levels[1].pixels, bytes([0, 64, 128, 255]))
+        self.assertEqual(levels[2].pixels, bytes([112]))
+        self.assertEqual(
+            levels,
+            silhouette.generate_alpha_mip_chain(texture),
+        )
+
+    def test_trilinear_sampling_blends_explicit_adjacent_alpha_mips(self):
+        texture = silhouette.AlphaTextureMip0(
+            width=2,
+            height=2,
+            pixels=bytes([0, 255, 255, 255]),
+        )
+        levels = silhouette.generate_alpha_mip_chain(texture)
+
+        self.assertEqual(levels[1].pixels, bytes([191]))
+        self.assertAlmostEqual(
+            silhouette.sample_trilinear_alpha(
+                texture, levels, (0.25, 0.25), 0.5
+            ),
+            191 / 510,
+        )
+        self.assertEqual(
+            silhouette.sample_trilinear_alpha(
+                texture, levels, (0.25, 0.25), 100.0
+            ),
+            191 / 255,
+        )
+
+    def test_transformed_gradients_and_bounded_anisotropic_kernel_are_explicit(self):
+        gradient_texture = silhouette.AlphaTextureMip0(
+            width=1,
+            height=1,
+            pixels=bytes([255]),
+            matrix=(2.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 1.0),
+            flip_y=True,
+        )
+        gradients = silhouette.texture_uv_gradients(
+            ((0.0, 0.0), (2.0, 0.0), (0.0, 4.0)),
+            ((0.0, 0.0), (1.0, 0.0), (0.0, 1.0)),
+            gradient_texture,
+        )
+        self.assertEqual(gradients, ((1.0, 0.0), (0.0, -0.75)))
+
+        stripe_pixels = bytes([255, 255, 255, 255, 0, 0, 0, 0])
+        anisotropic = silhouette.AlphaTextureMip0(
+            width=8,
+            height=1,
+            pixels=stripe_pixels,
+            anisotropy=8,
+        )
+        isotropic = silhouette.AlphaTextureMip0(
+            width=8,
+            height=1,
+            pixels=stripe_pixels,
+            anisotropy=1,
+        )
+        anisotropic_coverage = silhouette.sample_deterministic_anisotropic_alpha(
+            anisotropic,
+            silhouette.generate_alpha_mip_chain(anisotropic),
+            (0.5, 0.5),
+            ((1.0, 0.0), (0.0, 0.0)),
+        )
+        isotropic_coverage = silhouette.sample_deterministic_anisotropic_alpha(
+            isotropic,
+            silhouette.generate_alpha_mip_chain(isotropic),
+            (0.5, 0.5),
+            ((1.0, 0.0), (0.0, 0.0)),
+        )
+        self.assertAlmostEqual(anisotropic_coverage, 0.5)
+        self.assertEqual(isotropic_coverage, 128 / 255)
+        self.assertNotEqual(anisotropic_coverage, isotropic_coverage)
+        footprint = silhouette.deterministic_anisotropic_footprint(
+            anisotropic,
+            ((1.0, 0.0), (0.0, 0.0)),
+        )
+        self.assertEqual(footprint["tapCount"], 8)
+        self.assertEqual(footprint["lod"], 0.0)
+        self.assertEqual(
+            anisotropic_coverage,
+            silhouette.sample_diagnostic_anisotropic_alpha(
+                anisotropic,
+                silhouette.generate_alpha_mip_chain(anisotropic),
+                (0.5, 0.5),
+                ((1.0, 0.0), (0.0, 0.0)),
+                tap_count=8,
+            ),
+        )
+        self.assertAlmostEqual(
+            anisotropic_coverage,
+            silhouette.sample_diagnostic_anisotropic_alpha(
+                anisotropic,
+                silhouette.generate_alpha_mip_chain(anisotropic),
+                (0.5, 0.5),
+                ((1.0, 0.0), (0.0, 0.0)),
+                tap_count=8,
+                footprint_mode="svd",
+            ),
+        )
+
     def test_127_discards_128_keeps_and_threshold_equality_survives(self):
         texture = silhouette.AlphaTextureMip0(
             width=2,
@@ -198,6 +356,34 @@ class CutoutSilhouetteCompilerTests(unittest.TestCase):
             silhouette.pixel_center_covered_top_left(upper_right, 1, 0)
         )
 
+    def test_sparse_sample_restriction_preserves_exact_global_pixel_footprints(self):
+        triangle = silhouette.CutoutTriangle(
+            vertices=((0, 0, 0), (4, 0, 0), (0, 4, 0)),
+            uvs=((0.5, 0.5),) * 3,
+        )
+        complete = silhouette.compile_cutout_silhouettes(
+            [triangle], solid_texture(), identity_lattice(4, 4), 0.5
+        )
+        sparse = silhouette.compile_cutout_silhouettes(
+            [triangle],
+            solid_texture(),
+            identity_lattice(4, 4),
+            0.5,
+            sample_pixels=((0, 0), (2, 0), (0, 2), (3, 3)),
+        )
+
+        self.assertGreater(complete["stats"]["keptPixelCount"], 3)
+        self.assertEqual(sparse["stats"]["keptPixelCount"], 3)
+        self.assertEqual(sparse["stats"]["restrictedSamplePixelCount"], 4)
+        self.assertEqual(sparse["sampleRestriction"], {
+            "pixelCount": 4,
+            "policy": "authenticated-explicit-lattice-pixels-only-v1",
+        })
+        self.assertEqual(
+            {(run["xStart"], run["row"]) for run in sparse["runs"]},
+            {(0, 0), (2, 0), (0, 2)},
+        )
+
     def test_world_projection_uses_orthographic_axes_bounds_and_texel_pitch(self):
         lattice = silhouette.OrthographicLightLattice(
             origin_world=(10.0, 20.0, 30.0),
@@ -291,6 +477,9 @@ class CutoutSilhouetteCompilerTests(unittest.TestCase):
             result["versionIdentity"]["sha256"],
             silhouette.CUTOUT_SILHOUETTE_VERSION_SHA256,
         )
+        self.assertEqual(result["version"], "ai531-cutout-silhouette-proxy-v2")
+        self.assertEqual(result["stats"]["mipLevelCount"], 1)
+        self.assertEqual(result["stats"]["maximumAnisotropy"], 8)
 
 
 if __name__ == "__main__":

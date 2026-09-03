@@ -12,9 +12,10 @@ import {
     aggregateProductionMismatchCasterSamples,
     selectProductionMismatchSamples
 } from './ProductionMismatchLocalization.js';
+import {captureNativeShadowDepthTextureSamples} from './NativeShadowDepthTextureCapture.js';
 
 export const PRODUCTION_MISMATCH_CASTER_ID_METHOD =
-    'cropped-live-shadow-camera-rgba8-caster-id-alpha-sampler-v1';
+    'cropped-live-shadow-camera-rgba8-caster-id-alpha-sampler-v2';
 const CROP_TEXELS = 8;
 
 /**
@@ -24,6 +25,7 @@ const CROP_TEXELS = 8;
  *   engine: any,
  *   renderer: any,
  *   validationCase: any,
+ *   cacheBinding: any,
  *   missingOccluderCandidates: readonly any[],
  *   sampleCount: number
  * }} options
@@ -38,9 +40,11 @@ export function localizeProductionMismatchCasters(options) {
     const sourceCamera = shadow?.camera;
     const sourceTarget = shadow?.map;
     if (!light?.isDirectionalLight || !light.castShadow || !sourceCamera?.isOrthographicCamera
-        || !sourceTarget || sourceCamera.view || sourceCamera.zoom !== 1) {
+        || !sourceTarget?.depthTexture?.isDepthTexture
+        || sourceCamera.view || sourceCamera.zoom !== 1) {
         throw new Error('caster localization requires the unmodified live orthographic shadow camera');
     }
+    const cacheField = requireCacheField(options.cacheBinding);
     const mapSize = [Number(sourceTarget.width), Number(sourceTarget.height)];
     if (mapSize[0] !== shadow.mapSize?.x || mapSize[1] !== shadow.mapSize?.y
         || mapSize.some((entry) => !Number.isSafeInteger(entry) || entry < CROP_TEXELS)) {
@@ -97,6 +101,19 @@ export function localizeProductionMismatchCasters(options) {
                 sample.pixel,
                 framebufferSize
             );
+            if (receiver.status !== 'supported') {
+                localized.push(Object.freeze({
+                    ...sample,
+                    receiver,
+                    liveShadow: null,
+                    depthTapParity: null,
+                    geometricFirstCaster: null,
+                    dominantAlphaEvaluatedCaster: null,
+                    dominantAlphaEvaluatedCasterId: 0,
+                    dominantAlphaEvaluatedOcclusionWeight: 0
+                }));
+                continue;
+            }
             const biasedWorldPosition = receiver.point.clone().addScaledVector(
                 receiver.geometricOffsetWorldNormal,
                 shadow.normalBias
@@ -119,6 +136,31 @@ export function localizeProductionMismatchCasters(options) {
                 sourceCoordinate,
                 shadow.radius
             );
+            const sourceTapTexels = footprint.flatMap((vogel) => (
+                vogel.taps.map((tap) => tap.texel)
+            ));
+            const sourceHandles = resolveNativeShadowTarget(renderer, sourceTarget);
+            const sourceDepthCapture = captureNativeShadowDepthTextureSamples({
+                depthTexture: sourceHandles.depthTexture,
+                framebuffer: sourceHandles.framebuffer,
+                gl: renderer.getContext(),
+                label: `${validationCase.id}:${sample.pixel.join(',')}`,
+                maximumTexels: 20,
+                renderer,
+                texels: sourceTapTexels,
+                textureHeight: mapSize[1],
+                textureWidth: mapSize[0]
+            });
+            const depthParity = compareLiveAndCacheDepthTaps({
+                cacheField,
+                currentComparisonDepthNormalized: comparisonDepthNormalized,
+                currentSourceCoordinate: sourceCoordinate,
+                currentDepthValues: sourceDepthCapture.depthValues,
+                pixel: sample.pixel,
+                receiverBiasedWorldPosition: biasedWorldPosition.toArray(),
+                sourceDepthRangeMeters: sourceCamera.far - sourceCamera.near,
+                sourceFootprint: footprint
+            });
             const crop = requireCropWindow(footprint, sourceCoordinate, mapSize);
             const cropCamera = createCropCamera(
                 sourceCamera,
@@ -199,6 +241,7 @@ export function localizeProductionMismatchCasters(options) {
                     centerAlphaEvaluatedCasterId: centerId,
                     vogelSamples: Object.freeze(vogelSamples)
                 }),
+                depthTapParity: depthParity,
                 geometricFirstCaster: geometricFirst,
                 dominantAlphaEvaluatedCaster:
                     dominant ? idPass.metadataById.get(dominant[0]) ?? null : null,
@@ -216,7 +259,7 @@ export function localizeProductionMismatchCasters(options) {
         sampleIndex
     }));
     return Object.freeze({
-        schema: 'ai531-production-live-shadow-caster-id-pass-v1',
+        schema: 'ai531-production-live-shadow-caster-id-pass-v2',
         validationCaseId: validationCase?.id,
         productionEligible: false,
         method: PRODUCTION_MISMATCH_CASTER_ID_METHOD,
@@ -236,6 +279,241 @@ export function localizeProductionMismatchCasters(options) {
         aggregate: aggregateProductionMismatchCasterSamples(indexed),
         samples: Object.freeze(indexed)
     });
+}
+
+function requireCacheField(binding) {
+    const descriptor = binding?.descriptor;
+    const pixels = binding?.texture?.image?.data;
+    const image = binding?.texture?.image;
+    if (!descriptor?.identity?.basis || !(pixels instanceof Uint8Array)
+        || !Number.isSafeInteger(image?.width) || !Number.isSafeInteger(image?.height)
+        || !Number.isSafeInteger(image?.depth)) {
+        throw new Error('caster localization requires the active authenticated RG8 cache binding');
+    }
+    const expected = image.width * image.height * image.depth * 2;
+    if (descriptor.identity.encoding?.id !== 'rg8-packed-linear-depth-v1'
+        || pixels.byteLength !== expected) {
+        throw new Error('caster localization cache binding is not the exact RG8 tile array');
+    }
+    return {descriptor, image, pixels};
+}
+
+function compareLiveAndCacheDepthTaps(options) {
+    const {descriptor} = options.cacheField;
+    const identity = descriptor.identity;
+    const basis = identity.basis;
+    const layout = identity.layout;
+    const pcf = identity.sampling.pcf;
+    const delta = options.receiverBiasedWorldPosition.map(
+        (value, axis) => value - basis.originWorld[axis]
+    );
+    const lightPosition = [
+        dot3(delta, basis.rightAxisWorld),
+        dot3(delta, basis.upAxisWorld),
+        dot3(delta, basis.depthAxisWorld)
+    ];
+    const globalCoordinate = [
+        (lightPosition[0] - layout.boundsLightMeters.min[0]) / layout.texelSizeMeters,
+        (lightPosition[1] - layout.boundsLightMeters.min[1]) / layout.texelSizeMeters
+    ];
+    const sourceWorldRadius = pcf.radiusTexels
+        * pcf.shadowMapWorldExtentMeters[0]
+        / pcf.shadowMapSizeTexels[0];
+    const sourceRightLight = [
+        dot3(pcf.sourceMapRightAxisWorld, basis.rightAxisWorld),
+        dot3(pcf.sourceMapRightAxisWorld, basis.upAxisWorld)
+    ];
+    const sourceUpLight = [
+        dot3(pcf.sourceMapUpAxisWorld, basis.rightAxisWorld),
+        dot3(pcf.sourceMapUpAxisWorld, basis.upAxisWorld)
+    ];
+    const comparisonDepthMeters = lightPosition[2]
+        - identity.sampling.bias.constantDepthReliefMeters;
+    let currentDepthIndex = 0;
+    let currentVisibilitySum = 0;
+    let cacheVisibilitySum = 0;
+    let occupancyMismatchTapCount = 0;
+    let comparisonMismatchTapCount = 0;
+    let unmatchedMappedTapCount = 0;
+    let maximumCommonDepthDeltaMeters = 0;
+    const samples = options.sourceFootprint.map((sourceSample) => {
+        const cacheOffset = [
+            sourceWorldRadius * (
+                sourceRightLight[0] * sourceSample.disk[0]
+                + sourceUpLight[0] * sourceSample.disk[1]
+            ) / layout.texelSizeMeters,
+            sourceWorldRadius * (
+                sourceRightLight[1] * sourceSample.disk[0]
+                + sourceUpLight[1] * sourceSample.disk[1]
+            ) / layout.texelSizeMeters
+        ];
+        const cacheLookup = [
+            globalCoordinate[0] + cacheOffset[0],
+            globalCoordinate[1] + cacheOffset[1]
+        ];
+        const cacheTaps = linearTapPlan(cacheLookup);
+        const evaluatedCacheTaps = cacheTaps.map((tap) => {
+            const cacheTap = readCacheTap(options.cacheField, tap.texel);
+            const visible = cacheTap.outOfBounds
+                ? false
+                : cacheTap.depthMeters === null
+                    || comparisonDepthMeters <= cacheTap.depthMeters;
+            return {...tap, ...cacheTap, visible};
+        });
+        let currentSampleVisibility = 0;
+        const cacheSampleVisibility = evaluatedCacheTaps.reduce(
+            (sum, tap) => sum + (tap.visible ? 1 : 0) * tap.linearWeight,
+            0
+        );
+        const taps = sourceSample.taps.map((sourceTap, tapIndex) => {
+            const currentNormalized = options.currentDepthValues[currentDepthIndex++];
+            const sourceCenterOffset = [
+                sourceTap.texel[0] + 0.5 - options.currentSourceCoordinate[0],
+                sourceTap.texel[1] + 0.5 - options.currentSourceCoordinate[1]
+            ];
+            const mappedCacheTexel = [0, 1].map((axis) => Math.round(
+                globalCoordinate[axis]
+                + sourceRightLight[axis] * sourceCenterOffset[0]
+                + sourceUpLight[axis] * sourceCenterOffset[1]
+                - 0.5
+            ));
+            const matchedCacheTap = evaluatedCacheTaps.find((tap) => (
+                tap.texel[0] === mappedCacheTexel[0]
+                && tap.texel[1] === mappedCacheTexel[1]
+            ));
+            if (!matchedCacheTap) unmatchedMappedTapCount += 1;
+            const mappedRead = matchedCacheTap
+                ?? readCacheTap(options.cacheField, mappedCacheTexel);
+            const cacheTap = matchedCacheTap ?? {
+                ...mappedRead,
+                linearWeight: sourceTap.linearWeight,
+                texel: mappedCacheTexel,
+                visible: mappedRead.outOfBounds
+                    ? false
+                    : mappedRead.depthMeters === null
+                        || comparisonDepthMeters <= mappedRead.depthMeters
+            };
+            const currentOccupied = currentNormalized < 1;
+            const currentVisible = options.currentComparisonDepthNormalized <= currentNormalized;
+            const currentDepthMeters = currentOccupied
+                ? comparisonDepthMeters
+                    + (currentNormalized - options.currentComparisonDepthNormalized)
+                        * options.sourceDepthRangeMeters
+                : null;
+            const cacheVisible = cacheTap.visible;
+            if (currentOccupied !== (cacheTap.depthMeters !== null)) {
+                occupancyMismatchTapCount += 1;
+            }
+            if (currentVisible !== cacheVisible) comparisonMismatchTapCount += 1;
+            const depthDeltaMeters = currentOccupied && cacheTap.depthMeters !== null
+                ? (cacheTap.depthMeters - comparisonDepthMeters)
+                    - (currentNormalized - options.currentComparisonDepthNormalized)
+                        * options.sourceDepthRangeMeters
+                : null;
+            if (depthDeltaMeters !== null) {
+                maximumCommonDepthDeltaMeters = Math.max(
+                    maximumCommonDepthDeltaMeters,
+                    Math.abs(depthDeltaMeters)
+                );
+            }
+            currentSampleVisibility += (currentVisible ? 1 : 0) * sourceTap.linearWeight;
+            return Object.freeze({
+                cacheDepthMeters: cacheTap.depthMeters,
+                cacheGlobalTexel: Object.freeze([...cacheTap.texel]),
+                cacheLinearWeight: cacheTap.linearWeight,
+                phaseMatchedCacheFootprint: matchedCacheTap !== undefined,
+                cacheVisible,
+                currentDepthNormalized: currentNormalized,
+                currentDepthMeters,
+                currentLinearWeight: sourceTap.linearWeight,
+                currentSourceShadowTexel: Object.freeze([...sourceTap.texel]),
+                currentVisible,
+                depthDeltaMeters
+            });
+        });
+        currentVisibilitySum += currentSampleVisibility;
+        cacheVisibilitySum += cacheSampleVisibility;
+        return Object.freeze({
+            sampleIndex: sourceSample.sampleIndex,
+            cacheLookupCoordinate: Object.freeze(cacheLookup),
+            cacheSampleVisibility,
+            currentLookupCoordinate: Object.freeze([...sourceSample.lookupCoordinate]),
+            currentSampleVisibility,
+            taps: Object.freeze(taps)
+        });
+    });
+    return Object.freeze({
+        method: 'native-live-depth24-vs-resident-cache-rg8-vogel-taps-v1',
+        cacheComparisonDepthMeters: comparisonDepthMeters,
+        cacheGlobalCoordinate: Object.freeze(globalCoordinate),
+        cacheVisibility: cacheVisibilitySum / samples.length,
+        comparisonMismatchTapCount,
+        currentComparisonDepthNormalized: options.currentComparisonDepthNormalized,
+        currentVisibility: currentVisibilitySum / samples.length,
+        maximumCommonDepthDeltaMeters,
+        occupancyMismatchTapCount,
+        samples: Object.freeze(samples),
+        sourceDepthRangeMeters: options.sourceDepthRangeMeters,
+        unmatchedMappedTapCount
+    });
+}
+
+function linearTapPlan(coordinate) {
+    const linear = [coordinate[0] - 0.5, coordinate[1] - 0.5];
+    const base = [Math.floor(linear[0]), Math.floor(linear[1])];
+    const fraction = [linear[0] - base[0], linear[1] - base[1]];
+    return [
+        {texel: [base[0], base[1]], linearWeight: (1 - fraction[0]) * (1 - fraction[1])},
+        {texel: [base[0] + 1, base[1]], linearWeight: fraction[0] * (1 - fraction[1])},
+        {texel: [base[0], base[1] + 1], linearWeight: (1 - fraction[0]) * fraction[1]},
+        {texel: [base[0] + 1, base[1] + 1], linearWeight: fraction[0] * fraction[1]}
+    ];
+}
+
+function readCacheTap(cacheField, globalTexel) {
+    const identity = cacheField.descriptor.identity;
+    const layout = identity.layout;
+    const [interiorWidth, interiorHeight] = layout.interiorTexels;
+    const globalWidth = interiorWidth * layout.tileCount[0];
+    const globalHeight = interiorHeight * layout.tileCount[1];
+    if (globalTexel[0] < 0 || globalTexel[0] >= globalWidth
+        || globalTexel[1] < 0 || globalTexel[1] >= globalHeight) {
+        return {depthMeters: null, outOfBounds: true};
+    }
+    const tileX = Math.floor(globalTexel[0] / interiorWidth);
+    const tileY = Math.floor(globalTexel[1] / interiorHeight);
+    const localX = globalTexel[0] - tileX * interiorWidth + layout.guardTexels;
+    const localY = globalTexel[1] - tileY * interiorHeight + layout.guardTexels;
+    const layer = tileY * layout.tileCount[0] + tileX;
+    const byteOffset = (
+        (layer * cacheField.image.height + localY) * cacheField.image.width + localX
+    ) * 2;
+    const quantized = cacheField.pixels[byteOffset] * 256
+        + cacheField.pixels[byteOffset + 1];
+    if (quantized === identity.encoding.emptyQuantized) {
+        return {depthMeters: null, outOfBounds: false};
+    }
+    return {
+        depthMeters: identity.encoding.minDepthMeters
+            + quantized / identity.encoding.maxQuantized
+                * (identity.encoding.maxDepthMeters - identity.encoding.minDepthMeters),
+        outOfBounds: false
+    };
+}
+
+function resolveNativeShadowTarget(renderer, target) {
+    const targetProperties = renderer.properties.get(target);
+    const depthProperties = renderer.properties.get(target.depthTexture);
+    const framebuffer = targetProperties?.__webglFramebuffer;
+    const depthTexture = depthProperties?.__webglTexture;
+    if (!framebuffer || Array.isArray(framebuffer) || !depthTexture) {
+        throw new Error('caster localization could not resolve the native live shadow target');
+    }
+    return {depthTexture, framebuffer};
+}
+
+function dot3(left, right) {
+    return left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
 }
 
 function collectLiveShadowCasters(city, sourceCamera) {
@@ -455,14 +733,39 @@ function reconstructReceiver(THREE, city, camera, pixel, framebufferSize) {
         (pixel[0] + 0.5) / width * 2 - 1,
         (pixel[1] + 0.5) / height * 2 - 1
     ), camera);
-    const hit = raycaster.intersectObject(city.group, true).find((candidate) => {
+    const intersections = raycaster.intersectObject(city.group, true);
+    const hit = intersections.find((candidate) => {
         if (candidate.object?.receiveShadow !== true || !candidate.face) return false;
         const materials = Array.isArray(candidate.object.material)
             ? candidate.object.material : [candidate.object.material];
         return isLitMaterial(materials[candidate.face.materialIndex] ?? materials[0]);
     });
     if (!hit?.face || !hit.object?.geometry?.attributes?.normal) {
-        throw new Error(`caster localization found no supported receiver at ${pixel}`);
+        return Object.freeze({
+            status: 'unsupported',
+            reason: 'no_lit_triangle_receiver_with_vertex_normals',
+            intersectionCount: intersections.length,
+            intersections: Object.freeze(intersections.slice(0, 8).map((candidate) => {
+                const object = candidate.object ?? null;
+                const materials = Array.isArray(object?.material)
+                    ? object.material : [object?.material];
+                const material = candidate.face
+                    ? materials[candidate.face.materialIndex] ?? materials[0]
+                    : materials[0];
+                return Object.freeze({
+                    faceAvailable: Boolean(candidate.face),
+                    isBatchedMesh: object?.isBatchedMesh === true,
+                    isInstancedMesh: object?.isInstancedMesh === true,
+                    litMaterial: isLitMaterial(material),
+                    normalAttributeAvailable:
+                        Boolean(object?.geometry?.attributes?.normal),
+                    objectName: String(object?.name || ''),
+                    objectPath: object ? createObjectPath(object, city.group) : '',
+                    objectType: String(object?.type || ''),
+                    receiveShadow: object?.receiveShadow === true
+                });
+            }))
+        });
     }
     const object = hit.object;
     const geometry = object.geometry;
@@ -501,7 +804,13 @@ function reconstructReceiver(THREE, city, camera, pixel, framebufferSize) {
         .addScaledVector(normals[0], barycentric.x)
         .addScaledVector(normals[1], barycentric.y)
         .addScaledVector(normals[2], barycentric.z);
-    return {object, material, point: hit.point, geometricOffsetWorldNormal};
+    return {
+        status: 'supported',
+        object,
+        material,
+        point: hit.point,
+        geometricOffsetWorldNormal
+    };
 }
 
 function createVogelLinearFootprint(pixel, sourceCoordinate, radiusTexels) {

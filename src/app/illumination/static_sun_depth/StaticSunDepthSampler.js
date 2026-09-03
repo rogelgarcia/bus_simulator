@@ -221,7 +221,8 @@ export function sampleStaticSunDepthWorld(
             }
             minCasterDepthMeters = Math.min(minCasterDepthMeters, casterDepthMeters);
             maxCasterDepthMeters = Math.max(maxCasterDepthMeters, casterDepthMeters);
-            if (receiverDepthMeters - appliedBiasMeters <= casterDepthMeters) visibleTapCount += 1;
+            if (receiverDepthMeters - appliedBiasMeters
+                <= conservativeCasterDepthMeters(casterDepthMeters, encoding)) visibleTapCount += 1;
             else occludedTapCount += 1;
         }
     }
@@ -476,7 +477,8 @@ function readGlobalComparisonTap(
     if (quantized === null) return {status: 'unresident'};
     const casterDepthMeters = decodeStaticSunDepthMeters(quantized, identity.encoding);
     const empty = casterDepthMeters === null;
-    const visible = empty || comparisonDepthMeters <= casterDepthMeters;
+    const visible = empty || comparisonDepthMeters
+        <= conservativeCasterDepthMeters(casterDepthMeters, identity.encoding);
     return {
         status: 'sampled',
         visibility: visible ? 1 : 0,
@@ -485,6 +487,13 @@ function readGlobalComparisonTap(
         outOfBounds: false,
         casterDepthMeters
     };
+}
+
+function conservativeCasterDepthMeters(decodedDepthMeters, encoding) {
+    if (decodedDepthMeters === null) return null;
+    const safetyMargin = (encoding.maxDepthMeters - encoding.minDepthMeters)
+        / encoding.maxQuantized * 0.375;
+    return Math.max(encoding.minDepthMeters, decodedDepthMeters - safetyMargin);
 }
 
 /** @param {readonly [number, number]} position */

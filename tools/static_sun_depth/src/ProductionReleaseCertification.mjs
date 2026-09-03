@@ -22,7 +22,7 @@ import {
 } from './ValidationCaptureAuthentication.mjs';
 import {
     PRODUCTION_OPAQUE_BVH_DEPTH_EPSILON_METERS,
-    buildAlphaCutoutCertificationRecord,
+    buildAlphaCutoutCoverageCertificationRecord,
     buildCasterExclusionCertificationRecord,
     buildOpaqueOccluderCertificationRecord
 } from './ProductionArtifact.mjs';
@@ -31,13 +31,14 @@ import {
     resolveStaticSunDepthEffectiveShadowSide
 } from '../../../src/graphics/lighting/EffectiveShadowSide.js';
 import {
+    PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_V2_SCHEMA,
     validateProductionAlphaCutoutSpatialParityArtifact
 } from './ProductionAlphaCutoutParity.mjs';
 
 export const PRODUCTION_PROFILE_RELEASE_CERTIFICATION_SCHEMA =
-    'bus-sim-static-sun-depth-production-profile-release-certification-v1';
+    'bus-sim-static-sun-depth-production-profile-release-certification-v2';
 export const PRODUCTION_RELEASE_CERTIFICATION_SCHEMA =
-    'bus-sim-static-sun-depth-production-release-certification-v2';
+    'bus-sim-static-sun-depth-production-release-certification-v3';
 export const PRODUCTION_VALIDATION_EVIDENCE_SCHEMA =
     'bus-sim-static-sun-depth-production-validation-evidence-v4';
 export const LAB_VALIDATION_EVIDENCE_SCHEMA =
@@ -104,6 +105,12 @@ const VALIDATION_CASE_METRIC_KEYS = Object.freeze([
     'pixelCount',
     'pixelsOverFourByte',
     'pixelsOverFourBytePercent',
+    'rawSamePixelMaxRgbErrorByte',
+    'rawSamePixelMeanRgbErrorByte',
+    'rawSamePixelPixelsOverFourByte',
+    'rawSamePixelPixelsOverFourBytePercent',
+    'rawSamePixelRgbErrorMethod',
+    'rgbErrorMethod',
     'seamErrorPixelCount',
     'seamFalseLitPixelCount',
     'seamMaskMethod',
@@ -121,6 +128,8 @@ const VALIDATION_CASE_INTEGER_METRIC_KEYS = Object.freeze([
     'outsideStaticReceiverPixelCount',
     'pixelCount',
     'pixelsOverFourByte',
+    'rawSamePixelMaxRgbErrorByte',
+    'rawSamePixelPixelsOverFourByte',
     'seamErrorPixelCount',
     'seamFalseLitPixelCount',
     'seamPixelCount',
@@ -550,12 +559,16 @@ export function buildProductionReleaseCertification(options) {
         packageAggregateSha256: entry.packageAggregateSha256,
         packagePath: entry.packagePath
     }));
+    const alphaCutoutCoverage = buildReleaseAlphaCutoutCoverage(profiles);
     const blockers = [
+        ...(alphaCutoutCoverage.status === 'complete'
+            ? [] : ['alpha_cutout_release_union_incomplete']),
         ...(labValidationEvidence === null ? ['lab_validation_report_missing'] : []),
         ...(validationEvidence === null ? ['production_validation_report_missing'] : [])
     ];
     const releaseEligible = blockers.length === 0;
     return cloneCanonicalJson({
+        alphaCutoutCoverage,
         blockers,
         expectedLabValidationReportSha256,
         expectedValidationReportSha256,
@@ -564,7 +577,7 @@ export function buildProductionReleaseCertification(options) {
         performancePromotionEligible: false,
         profileCertificationSetSha256: rawCanonicalSha256({
             profiles: profileEntries,
-            schema: 'ai531-production-profile-certification-set-v1'
+            schema: 'ai531-production-profile-certification-set-v2'
         }),
         profileIds: AI531_PRODUCTION_RELEASE_PROFILE_IDS,
         profiles: profileEntries,
@@ -738,7 +751,7 @@ function requireReceiptSourceIdentity(receipt, identities) {
 }
 
 function requireReleaseSamplingPolicy(descriptor, receipt, lightingProfileId) {
-    if (receipt.schema !== 'ai531-static-sun-production-render-receipt-v4') {
+    if (receipt.schema !== 'ai531-static-sun-production-render-receipt-v5') {
         throw new Error('Authenticated receipt must use the final production render schema');
     }
     const request = requireExactKeys(receipt.request, [
@@ -1041,7 +1054,10 @@ function buildAlphaRecord({
             .filter((entry) => entry.coverageMode === 'forced_opaque')
             .map((entry) => entry.materialId)
     ).size;
-    if (raw.status !== 'exact_inputs_and_binary_render_output_verified'
+    const expectedStatus = raw.nativeCutoutField
+        ? 'native_three_mixed_mesh_field_min_merged_with_cycles_opaque_including_mixed_foliage_verified'
+        : 'exact_inputs_and_binary_render_output_verified';
+    if (raw.status !== expectedStatus
         || canonicalJsonStringify(raw.cutoutMaterialIds)
             !== canonicalJsonStringify(expectedCoverage.cutoutMaterialIds)
         || canonicalJsonStringify(raw.coverageInputs)
@@ -1078,11 +1094,21 @@ function buildAlphaRecord({
         }
     );
     const parityArtifactSha256 = rawCanonicalSha256(parityArtifact);
-    return buildAlphaCutoutCertificationRecord({
+    const v2Coverage = parityArtifact.schema
+        === PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_V2_SCHEMA;
+    const certifiedCasterIds = v2Coverage
+        ? parityArtifact.inCoverageCasterIds
+        : expectedCoverage.cutoutCasterIds;
+    const outOfCoverageCasterIds = v2Coverage
+        ? parityArtifact.outOfCoverageCasterIds
+        : [];
+    return buildAlphaCutoutCoverageCertificationRecord({
         alphaSemanticsSha256: receipt.identity.alphaSemanticsSha256,
-        certifiedCasterCount: parityArtifact.cutoutCasterCount,
+        certifiedCasterCount: certifiedCasterIds.length,
+        certifiedCasterIds,
         cutoutBindingProjectionSha256:
             expectedCoverage.cutoutBindingProjectionSha256,
+        cutoutCasterIdsSha256: expectedCoverage.cutoutCasterIdsSha256,
         evidenceSha256: rawCanonicalSha256({
             coverageInputs: expectedCoverage.coverageInputs,
             forcedOpaqueMaterialVariantCount: expectedForcedOpaqueMaterialVariantCount,
@@ -1090,7 +1116,7 @@ function buildAlphaRecord({
             parityArtifactSha256,
             receiptAlphaCertification: raw,
             receiptSha256,
-            schema: 'ai531-production-alpha-cutout-evidence-v2'
+            schema: 'ai531-production-alpha-cutout-evidence-v3'
         }),
         expectedCasterCount,
         firstHitDepthSampleCount: parityArtifact.firstHitDepthSampleCount,
@@ -1100,6 +1126,7 @@ function buildAlphaRecord({
             parityArtifact.maximumAbsoluteFirstHitDepthErrorMeters,
         mismatchCounts: parityArtifact.mismatchCounts,
         missingOccluderCount: parityArtifact.missingOccluderCount,
+        outOfCoverageCasterIds,
         parityArtifactSha256,
         sampleCount: parityArtifact.sampleCount,
         samplePlanSha256: parityArtifact.samplePlanSha256,
@@ -1194,10 +1221,37 @@ function deriveExpectedAlphaCoverage(manifest, selected) {
             casterIds: cutoutCasterIds,
             schema: CUTOUT_CASTER_PLAN_SCHEMA
         }),
+        cutoutCasterIds,
         cutoutMaterialIds,
         exactCoverageInputCount,
         unsupportedBindingIds
     };
+}
+
+export function deriveProductionAlphaCutoutCoverageIdentity(manifestValue) {
+    const manifest = requirePlainObject(
+        manifestValue,
+        'authenticated alpha-cutout coverage manifest'
+    );
+    if (!Array.isArray(manifest.casterMappings)) {
+        throw new TypeError(
+            'authenticated alpha-cutout coverage manifest.casterMappings must be an array'
+        );
+    }
+    const selected = manifest.casterMappings
+        .filter((entry) => entry?.channelRelevance?.static_sun_depth === true)
+        .map((entry) => cloneCanonicalJson(entry))
+        .sort((left, right) => compareCanonicalStrings(left.id, right.id));
+    requireCanonicalUniqueIds(selected, 'alpha-cutout coverage caster mappings');
+    const coverage = deriveExpectedAlphaCoverage(manifest, selected);
+    return cloneCanonicalJson({
+        cutoutBindingProjectionSha256:
+            coverage.cutoutBindingProjectionSha256,
+        cutoutCasterCount: coverage.cutoutCasterIds.length,
+        cutoutCasterIds: coverage.cutoutCasterIds,
+        cutoutCasterIdsSha256: coverage.cutoutCasterIdsSha256,
+        unsupportedBindingIds: coverage.unsupportedBindingIds
+    });
 }
 
 function projectCutoutSamplerBinding(value) {
@@ -1950,13 +2004,22 @@ function requireProductionValidationCaseMetrics(value, label) {
         throw new Error(`${label} static-receiver mask coverage collapsed`);
     }
     if (metrics.maxRgbErrorByte > 255 || metrics.meanRgbErrorByte > 255
+        || metrics.rawSamePixelMaxRgbErrorByte > 255
+        || metrics.rawSamePixelMeanRgbErrorByte > 255
         || metrics.pixelsOverFourByte > metrics.eligibleStaticReceiverPixelCount
+        || metrics.rawSamePixelPixelsOverFourByte
+            > metrics.eligibleStaticReceiverPixelCount
         || metrics.missingOccluderPixelCount > metrics.eligibleStaticReceiverPixelCount
         || metrics.seamPixelCount > metrics.eligibleStaticReceiverPixelCount
         || metrics.seamErrorPixelCount > metrics.seamPixelCount
         || metrics.seamFalseLitPixelCount > metrics.seamPixelCount
-        || metrics.pixelsOverFourBytePercent > 100) {
+        || metrics.pixelsOverFourBytePercent > 100
+        || metrics.rawSamePixelPixelsOverFourBytePercent > 100) {
         throw new Error(`${label} contains an impossible count or byte value`);
+    }
+    if (metrics.maxRgbErrorByte > metrics.rawSamePixelMaxRgbErrorByte
+        || metrics.pixelsOverFourByte > metrics.rawSamePixelPixelsOverFourByte) {
+        throw new Error(`${label} aligned RGB metrics contradict raw same-pixel evidence`);
     }
     if ((metrics.seamErrorPixelCount === 0) !== (metrics.maxContinuousSeamRunPixels === 0)
         || metrics.maxContinuousSeamRunPixels > metrics.seamErrorPixelCount
@@ -1969,8 +2032,20 @@ function requireProductionValidationCaseMetrics(value, label) {
     if (Math.abs(metrics.pixelsOverFourBytePercent - expectedPercent) > 1e-12) {
         throw new Error(`${label}.pixelsOverFourBytePercent is inconsistent with its count`);
     }
+    const expectedRawSamePixelPercent = metrics.rawSamePixelPixelsOverFourByte
+        / metrics.eligibleStaticReceiverPixelCount * 100;
+    if (Math.abs(
+        metrics.rawSamePixelPixelsOverFourBytePercent - expectedRawSamePixelPercent
+    ) > 1e-12) {
+        throw new Error(
+            `${label}.rawSamePixelPixelsOverFourBytePercent is inconsistent with its count`
+        );
+    }
     if (metrics.falseLitMethod
-            !== 'cache_luma_gt_eligible_current_3x3_max_plus_4_bytes_v2'
+            !== 'cache_luma_gt_eligible_current_3x3_max_plus_4_and_same_frame_cache_visibility_gt_live_v3'
+        || metrics.rgbErrorMethod
+            !== 'nearest_eligible_current_3x3_rgb_chebyshev_v1'
+        || metrics.rawSamePixelRgbErrorMethod !== 'same_pixel_rgb_chebyshev_v1'
         || metrics.seamMaskMethod
             !== 'static_sun_depth_seam_debug_red_gt_blue_plus_32_v1'
         || metrics.staticReceiverMaskMethod
@@ -2101,6 +2176,10 @@ function validateProductionCaseReleaseGates(result, certification) {
             );
         }
     }
+    const currentDiagnostics = requirePlainObject(
+        result.diagnostics?.current,
+        `production validation case '${result.caseId}' current diagnostics`
+    );
     const cacheDiagnostics = requirePlainObject(
         result.diagnostics?.cache,
         `production validation case '${result.caseId}' cache diagnostics`
@@ -2108,6 +2187,10 @@ function validateProductionCaseReleaseGates(result, certification) {
     const comparisonDiagnostics = requirePlainObject(
         result.diagnostics?.comparison,
         `production validation case '${result.caseId}' comparison diagnostics`
+    );
+    const currentCasters = requirePlainObject(
+        currentDiagnostics.casters,
+        `production validation case '${result.caseId}' current casters`
     );
     const cacheCasters = requirePlainObject(
         cacheDiagnostics.casters,
@@ -2117,7 +2200,7 @@ function validateProductionCaseReleaseGates(result, certification) {
         comparisonDiagnostics.casters,
         `production validation case '${result.caseId}' comparison casters`
     );
-    for (const diagnostics of [cacheDiagnostics, comparisonDiagnostics]) {
+    for (const diagnostics of [currentDiagnostics, cacheDiagnostics, comparisonDiagnostics]) {
         if (diagnostics.runtime?.package?.aggregateSha256
                 !== certification.packageAggregateSha256
             || diagnostics.runtime?.package?.lightingProfileId
@@ -2127,6 +2210,14 @@ function validateProductionCaseReleaseGates(result, certification) {
             );
         }
     }
+    const currentRetained = isCacheActive(currentDiagnostics)
+        && currentDiagnostics.debugMode === 'liveFinal'
+        && currentCasters.active === false
+        && currentCasters.snapshotMeshCount === 0
+        && Number.isSafeInteger(currentCasters.originalCasterCount)
+        && currentCasters.originalCasterCount > 0
+        && Number.isSafeInteger(currentCasters.restores)
+        && currentCasters.lastReason === 'validation_live_final_shadow_retained';
     const cacheSuppressed = isCacheActive(cacheDiagnostics)
         && cacheDiagnostics.debugMode === 'final'
         && cacheCasters.active === true
@@ -2137,15 +2228,17 @@ function validateProductionCaseReleaseGates(result, certification) {
         && cacheCasters.suppressedCasterCount === cacheCasters.originalCasterCount
         && cacheCasters.snapshotMeshCount === cacheCasters.staticMeshCount;
     const comparisonRestored = isCacheActive(comparisonDiagnostics)
-        && comparisonDiagnostics.debugMode === 'currentDifference'
+        && comparisonDiagnostics.debugMode === 'signedDifference'
         && comparisonCasters.active === false
         && comparisonCasters.snapshotMeshCount === 0
         && comparisonCasters.originalCasterCount === cacheCasters.originalCasterCount
+        && cacheCasters.originalCasterCount === currentCasters.originalCasterCount
         && comparisonCasters.lastReason === 'comparison_current_shadow_retained'
         && Number.isSafeInteger(cacheCasters.restores)
         && Number.isSafeInteger(comparisonCasters.restores)
+        && cacheCasters.restores === currentCasters.restores
         && comparisonCasters.restores === cacheCasters.restores + 1;
-    if (!cacheSuppressed || !comparisonRestored) {
+    if (!currentRetained || !cacheSuppressed || !comparisonRestored) {
         throw new Error(
             `Production validation case '${result.caseId}' caster transition gate did not pass`
         );
@@ -2547,10 +2640,12 @@ function validateOpaqueRecord(record) {
 
 function validateAlphaRecord(record) {
     const source = requirePlainObject(record, 'profile alpha certification');
-    const rebuilt = buildAlphaCutoutCertificationRecord({
+    const rebuilt = buildAlphaCutoutCoverageCertificationRecord({
         alphaSemanticsSha256: source.alphaSemanticsSha256,
         certifiedCasterCount: source.certifiedCasterCount,
+        certifiedCasterIds: source.certifiedCasterIds,
         cutoutBindingProjectionSha256: source.cutoutBindingProjectionSha256,
+        cutoutCasterIdsSha256: source.cutoutCasterIdsSha256,
         evidenceSha256: source.evidenceSha256,
         expectedCasterCount: source.expectedCasterCount,
         firstHitDepthSampleCount: source.firstHitDepthSampleCount,
@@ -2560,12 +2655,68 @@ function validateAlphaRecord(record) {
             source.maximumAbsoluteFirstHitDepthErrorMeters,
         mismatchCounts: source.mismatchCounts,
         missingOccluderCount: source.missingOccluderCount,
+        outOfCoverageCasterIds: source.outOfCoverageCasterIds,
         parityArtifactSha256: source.parityArtifactSha256,
         sampleCount: source.sampleCount,
         samplePlanSha256: source.samplePlanSha256,
         unexpectedOccluderCount: source.unexpectedOccluderCount
     });
     requireCanonicalMatch(rebuilt, source, 'profile alpha certification');
+}
+
+function buildReleaseAlphaCutoutCoverage(profiles) {
+    const first = profiles[0].alpha;
+    const expectedCasterCount = first.expectedCasterCount;
+    const cutoutCasterIdsSha256 = first.cutoutCasterIdsSha256;
+    const expectedCasterIds = [
+        ...first.certifiedCasterIds,
+        ...first.outOfCoverageCasterIds
+    ].sort(compareCanonicalStrings);
+    const releaseCovered = new Set();
+    const profileCoverage = profiles.map((profile) => {
+        const alpha = profile.alpha;
+        if (alpha.expectedCasterCount !== expectedCasterCount
+            || alpha.cutoutCasterIdsSha256 !== cutoutCasterIdsSha256) {
+            throw new Error(
+                'Production alpha-cutout profile coverage has different authenticated caster inventories'
+            );
+        }
+        alpha.certifiedCasterIds.forEach((casterId) => releaseCovered.add(casterId));
+        return {
+            certifiedCasterCount: alpha.certifiedCasterCount,
+            certifiedCasterIdsSha256: rawCanonicalSha256({
+                casterIds: alpha.certifiedCasterIds,
+                schema: CUTOUT_CASTER_PLAN_SCHEMA
+            }),
+            lightingProfileId: profile.lightingProfileId,
+            outOfCoverageCasterCount: alpha.outOfCoverageCasterIds.length,
+            outOfCoverageCasterIdsSha256: rawCanonicalSha256({
+                casterIds: alpha.outOfCoverageCasterIds,
+                schema: CUTOUT_CASTER_PLAN_SCHEMA
+            })
+        };
+    });
+    const releaseCoveredCasterIds = [...releaseCovered].sort(compareCanonicalStrings);
+    const missingCasterIds = expectedCasterIds.filter(
+        (casterId) => !releaseCovered.has(casterId)
+    );
+    return cloneCanonicalJson({
+        cutoutCasterIdsSha256,
+        expectedCasterCount,
+        missingCasterIds,
+        profileCoverage,
+        profileCoverageSha256: rawCanonicalSha256({
+            profiles: profileCoverage,
+            schema: 'ai531-production-alpha-cutout-profile-coverage-set-v1'
+        }),
+        releaseCoveredCasterCount: releaseCoveredCasterIds.length,
+        releaseCoveredCasterIdsSha256: rawCanonicalSha256({
+            casterIds: releaseCoveredCasterIds,
+            schema: CUTOUT_CASTER_PLAN_SCHEMA
+        }),
+        schema: 'ai531-production-alpha-cutout-release-union-v1',
+        status: missingCasterIds.length === 0 ? 'complete' : 'incomplete'
+    });
 }
 
 function validateCasterRecord(record) {

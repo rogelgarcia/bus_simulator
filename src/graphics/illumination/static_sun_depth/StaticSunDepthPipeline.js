@@ -135,10 +135,21 @@ export class StaticSunDepthPipeline {
         this._debugMode = validatedMode;
         if (!this._active) return;
         try {
+            if (debugModeValue(validatedMode) === STATIC_SUN_DEPTH_DEBUG_MODES.liveFinal) {
+                // This must be the genuine current-engine program, not merely
+                // a cache shader that happens to return before sampling.
+                this._materials.deactivate();
+            } else if (!this._materials.getDiagnostics().enabled) {
+                this._materials.activate();
+            }
             if (this._shouldSuppressCasters()) {
                 if (!this._casters.getDiagnostics().active) this._casters.activate(this._active.city);
             } else {
-                this._casters.deactivate('comparison_current_shadow_retained');
+                this._casters.deactivate(
+                    debugModeValue(validatedMode) === STATIC_SUN_DEPTH_DEBUG_MODES.liveFinal
+                        ? 'validation_live_final_shadow_retained'
+                        : 'comparison_current_shadow_retained'
+                );
             }
         } catch (error) {
             this._lastError = error;
@@ -416,6 +427,10 @@ export class StaticSunDepthPipeline {
 
     _activeReceiverOwnershipMatches() {
         try {
+            if (debugModeValue(this._debugMode) === STATIC_SUN_DEPTH_DEBUG_MODES.liveFinal) {
+                return this._materials.getDiagnostics().enabled === false
+                    && this._materials.verifyPreparedOwnership();
+            }
             return this._materials.verifyOwnership();
         } catch (error) {
             this._lastError = error;
@@ -424,7 +439,10 @@ export class StaticSunDepthPipeline {
     }
 
     _shouldSuppressCasters() {
-        return debugModeValue(this._debugMode) !== STATIC_SUN_DEPTH_DEBUG_MODES.currentDifference;
+        const mode = debugModeValue(this._debugMode);
+        return mode !== STATIC_SUN_DEPTH_DEBUG_MODES.currentDifference
+            && mode !== STATIC_SUN_DEPTH_DEBUG_MODES.liveFinal
+            && mode !== STATIC_SUN_DEPTH_DEBUG_MODES.signedDifference;
     }
 
     _capabilities() {

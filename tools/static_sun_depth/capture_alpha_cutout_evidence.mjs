@@ -24,10 +24,20 @@ import {
     prepareProductionAuthority,
     selectProductionStaticSunProfiles
 } from './src/ProductionOrchestrator.mjs';
+import {
+    deriveProductionAlphaCutoutCoverageIdentity
+} from './src/ProductionReleaseCertification.mjs';
+import {
+    buildProductionAlphaCutoutSpatialParityArtifactFromFiles
+} from './src/ProductionAlphaCutoutParity.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../..');
 const artifactRoot = path.join(repoRoot, 'tests/artifacts/illumination_531');
+const nativeTextureGradProbePath = path.join(
+    here,
+    'browser/ProductionAlphaCutoutTextureGradCapture.js'
+);
 const defaults = Object.freeze({
     ai529Directory: path.join(repoRoot, 'tools/illumination_bake_compiler/blender'),
     archivePath: path.join(
@@ -51,6 +61,10 @@ const defaults = Object.freeze({
         repoRoot,
         'tools/static_sun_depth/blender/production_static_sun.py'
     ),
+    silhouetteCompilerPath: path.join(
+        repoRoot,
+        'tools/static_sun_depth/blender/compile_cutout_silhouettes.py'
+    ),
     profileId: 'ai527.sun.az135.el08',
     profilePath: path.join(
         repoRoot,
@@ -59,7 +73,8 @@ const defaults = Object.freeze({
     toolchainPath: path.join(
         repoRoot,
         'tools/illumination_bake_compiler/toolchain.v1.json'
-    )
+    ),
+    coverageMode: 'source'
 });
 
 export function parseAlphaCutoutEvidenceArguments(argv) {
@@ -91,6 +106,19 @@ export function parseAlphaCutoutEvidenceArguments(argv) {
             case '--timeout-ms':
                 options.timeoutMs = positiveInteger(value, flag);
                 break;
+            case '--coverage-mode':
+                if (![
+                    'source',
+                    'force-opaque-diagnostic',
+                    'source-no-flipy-diagnostic',
+                    'deterministic-silhouette-diagnostic'
+                ].includes(value)) {
+                    throw new TypeError(
+                        '--coverage-mode must name a supported coverage mode'
+                    );
+                }
+                options.coverageMode = value;
+                break;
             default:
                 throw new TypeError(`Unknown option '${flag}'`);
         }
@@ -107,7 +135,7 @@ export function parseAlphaCutoutEvidenceArguments(argv) {
 }
 
 export function alphaCutoutEvidenceUsage() {
-    return `AI 531 real alpha-cutout sparse evidence\n\nUsage:\n  node tools/static_sun_depth/capture_alpha_cutout_evidence.mjs [options]\n\nOptions:\n  --profile-id <id>       One AI 531 release lighting profile\n  --output-root <path>    New child below tests/artifacts/illumination_531\n  --url <loopback-url>    Reuse an existing repository server\n  --live-root <path>      Reuse completed live files from an earlier artifact child\n  --port <number>         Preferred local server port (default 4173)\n  --timeout-ms <ms>       Headless Blender timeout (default 3600000)\n`;
+    return `AI 531 real alpha-cutout sparse evidence\n\nUsage:\n  node tools/static_sun_depth/capture_alpha_cutout_evidence.mjs [options]\n\nOptions:\n  --profile-id <id>       One AI 531 release lighting profile\n  --output-root <path>    New child below tests/artifacts/illumination_531\n  --url <loopback-url>    Reuse an existing repository server\n  --live-root <path>      Reuse completed live files from an earlier artifact child\n  --port <number>         Preferred local server port (default 4173)\n  --timeout-ms <ms>       Headless Blender timeout (default 3600000)\n  --coverage-mode <mode>  source, force-opaque-diagnostic, source-no-flipy-diagnostic,\n                          or deterministic-silhouette-diagnostic\n`;
 }
 
 async function run(argv = process.argv.slice(2)) {
@@ -211,6 +239,9 @@ async function run(argv = process.argv.slice(2)) {
         await mkdir(directory, {recursive: true});
     }
     const producerSha256 = sha256(await readFile(options.producerPath));
+    const silhouetteCompilerSha256 = sha256(
+        await readFile(options.silhouetteCompilerPath)
+    );
     const result = await runBlenderProcess({
         cwd: path.dirname(options.executablePath),
         env: isolated.env,
@@ -230,9 +261,16 @@ async function run(argv = process.argv.slice(2)) {
             '--request-sha256', sha256(requestBytes),
             '--sample-request-sha256', sha256(sampleRequestBytes),
             '--producer-script-sha256', producerSha256,
+            '--silhouette-compiler-sha256', silhouetteCompilerSha256,
             '--production-renderer-sha256', authority.rendererScriptSha256,
             '--ai529-script-sha256', authority.ai529ScriptSha256,
-            '--package-raw-sha256', authority.packageRawSha256
+            '--package-raw-sha256', authority.packageRawSha256,
+            ...(options.coverageMode === 'force-opaque-diagnostic'
+                ? ['--force-cutout-opaque-diagnostic'] : []),
+            ...(options.coverageMode === 'source-no-flipy-diagnostic'
+                ? ['--disable-binding-flipy-diagnostic'] : []),
+            ...(options.coverageMode === 'deterministic-silhouette-diagnostic'
+                ? ['--compile-cutout-silhouette-diagnostic'] : [])
         ],
         timeoutMs: options.timeoutMs
     });
@@ -260,6 +298,71 @@ async function run(argv = process.argv.slice(2)) {
         liveOccupancyBytes,
         samplePlan: live.samplePlan
     });
+    const parityStreams = deriveAlphaCutoutParityEvidenceStreams({
+        bakeDepthBytes,
+        bakeOccupancyBytes,
+        liveDepthBytes,
+        liveOccupancyBytes
+    });
+    const parityRoot = path.join(options.outputRoot, 'parity');
+    const parityEvidence = await writeParityEvidenceFiles(parityRoot, {
+        bakeFirstHitDepth: parityStreams.bakeFirstHitDepthBytes,
+        bakeOccupancy: bakeOccupancyBytes,
+        comparison: parityStreams.comparisonBytes,
+        liveFirstHitDepth: parityStreams.liveFirstHitDepthBytes,
+        liveOccupancy: liveOccupancyBytes,
+        samplePlan: samplePlanBytes
+    });
+    const coverageIdentity = deriveProductionAlphaCutoutCoverageIdentity(
+        validated.manifest
+    );
+    const parityMetadata = {
+        alphaSemanticsSha256:
+            authority.sourceIdentityHashes.alphaSemanticsSha256,
+        casterInventorySha256:
+            authority.sourceIdentityHashes.casterInventorySha256,
+        cutoutBindingProjectionSha256:
+            coverageIdentity.cutoutBindingProjectionSha256,
+        cutoutCasterCount: coverageIdentity.cutoutCasterCount,
+        cutoutCasterIdsSha256: coverageIdentity.cutoutCasterIdsSha256,
+        descriptorSha256: sha256(canonicalJsonBytes(descriptor)),
+        lightingProfileId: options.profileId,
+        liveDepthAttachmentIdentitySha256: sha256(canonicalJsonBytes({
+            schema: 'ai531-production-alpha-cutout-live-depth-attachment-proof-v1',
+            sourceProof: live.receipt.nativeCapture.sourceProof,
+            transfer: live.receipt.nativeCapture.transfer
+        })),
+        samplePlanSha256: sha256(samplePlanBytes),
+        unsupportedBindingIds: coverageIdentity.unsupportedBindingIds
+    };
+    await writeFile(
+        path.join(parityRoot, 'build_input.json'),
+        canonicalJsonBytes({
+            evidence: parityEvidence,
+            metadata: parityMetadata,
+            schema: 'ai531-production-alpha-cutout-parity-build-input-v1'
+        })
+    );
+    let parityArtifactRecord = null;
+    if (spatialParity.status === 'passed') {
+        const parityArtifact =
+            await buildProductionAlphaCutoutSpatialParityArtifactFromFiles({
+                authorityRoot: parityRoot,
+                evidence: parityEvidence,
+                metadata: parityMetadata,
+                repoRoot
+            });
+        const parityArtifactBytes = canonicalJsonBytes(parityArtifact);
+        const parityArtifactPath = path.join(
+            options.outputRoot,
+            'spatial_parity_artifact.json'
+        );
+        await writeFile(parityArtifactPath, parityArtifactBytes);
+        parityArtifactRecord = createEvidenceFileRecord(
+            parityArtifactPath,
+            parityArtifactBytes
+        );
+    }
     await writeFile(
         path.join(options.outputRoot, 'comparison.json'),
         canonicalJsonBytes(spatialParity)
@@ -267,10 +370,12 @@ async function run(argv = process.argv.slice(2)) {
     const report = {
         blenderReceipt: marker,
         coverage: live.receipt.coverage,
+        coverageMode: options.coverageMode,
         performance: {
             eligibleForPromotion: false,
             reason: 'host-load-and-gpu-contention-declared-by-user'
         },
+        parityArtifact: parityArtifactRecord,
         productionEligible: live.bakeSampleRequest.productionEligible,
         spatialParity,
         schema: 'ai531-production-alpha-cutout-evidence-run-report-v1',
@@ -383,6 +488,73 @@ export function compareAlphaCutoutEvidenceStreams(options) {
     };
 }
 
+export function deriveAlphaCutoutParityEvidenceStreams(options) {
+    const {
+        bakeDepthBytes,
+        bakeOccupancyBytes,
+        liveDepthBytes,
+        liveOccupancyBytes
+    } = options ?? {};
+    if (!(bakeOccupancyBytes instanceof Uint8Array)
+        || !(liveOccupancyBytes instanceof Uint8Array)
+        || !(bakeDepthBytes instanceof Uint8Array)
+        || !(liveDepthBytes instanceof Uint8Array)
+        || bakeOccupancyBytes.byteLength !== liveOccupancyBytes.byteLength
+        || bakeDepthBytes.byteLength !== liveDepthBytes.byteLength
+        || bakeDepthBytes.byteLength !== bakeOccupancyBytes.byteLength * 4) {
+        throw new TypeError('Alpha-cutout parity source stream lengths do not align');
+    }
+    const bakeDepth = new DataView(
+        bakeDepthBytes.buffer,
+        bakeDepthBytes.byteOffset,
+        bakeDepthBytes.byteLength
+    );
+    const liveDepth = new DataView(
+        liveDepthBytes.buffer,
+        liveDepthBytes.byteOffset,
+        liveDepthBytes.byteLength
+    );
+    const comparisonBytes = new Uint8Array(bakeOccupancyBytes.byteLength);
+    const commonBakeDepth = [];
+    const commonLiveDepth = [];
+    for (let index = 0; index < bakeOccupancyBytes.byteLength; index += 1) {
+        const bakeOccupied = requireBinaryOccupancy(
+            bakeOccupancyBytes[index],
+            index,
+            'bake'
+        );
+        const liveOccupied = requireBinaryOccupancy(
+            liveOccupancyBytes[index],
+            index,
+            'live'
+        );
+        const bakeValue = bakeDepth.getFloat32(index * 4, true);
+        const liveValue = liveDepth.getFloat32(index * 4, true);
+        if (!Number.isFinite(bakeValue) || bakeValue < 0
+            || !Number.isFinite(liveValue) || liveValue < 0
+            || (!bakeOccupied && bakeValue !== 0)
+            || (!liveOccupied && liveValue !== 0)) {
+            throw new Error(`Alpha-cutout first-hit depth stream is invalid at index ${index}`);
+        }
+        if (liveOccupied && bakeOccupied) {
+            commonBakeDepth.push(bakeValue);
+            commonLiveDepth.push(liveValue);
+            comparisonBytes[index] = Math.abs(bakeValue - liveValue) > 5e-3
+                ? 4
+                : 1;
+        } else if (liveOccupied) {
+            comparisonBytes[index] = 2;
+        } else if (bakeOccupied) {
+            comparisonBytes[index] = 3;
+        }
+    }
+    return {
+        bakeFirstHitDepthBytes: encodeFloat32Le(commonBakeDepth),
+        comparisonBytes,
+        liveFirstHitDepthBytes: encodeFloat32Le(commonLiveDepth)
+    };
+}
+
 async function readAuthenticatedEvidenceFile(root, record, label) {
     if (!record || typeof record !== 'object'
         || !Number.isSafeInteger(record.byteLength) || record.byteLength <= 0
@@ -397,6 +569,39 @@ async function readAuthenticatedEvidenceFile(root, record, label) {
     return bytes;
 }
 
+async function writeParityEvidenceFiles(root, streams) {
+    await mkdir(root, {recursive: false});
+    const fileNames = {
+        bakeFirstHitDepth: 'bake_first_hit_depth.f32le',
+        bakeOccupancy: 'bake_occupancy.u8',
+        comparison: 'comparison.u8',
+        liveFirstHitDepth: 'live_first_hit_depth.f32le',
+        liveOccupancy: 'live_occupancy.u8',
+        samplePlan: 'sample_plan.json'
+    };
+    const records = {};
+    for (const [key, fileName] of Object.entries(fileNames)) {
+        const bytes = streams[key];
+        const filePath = path.join(root, fileName);
+        await writeFile(filePath, bytes);
+        records[key] = createEvidenceFileRecord(filePath, bytes);
+    }
+    return records;
+}
+
+function createEvidenceFileRecord(filePath, bytes) {
+    const relativePath = path.relative(repoRoot, filePath);
+    if (!relativePath || relativePath.startsWith('..')
+        || path.isAbsolute(relativePath)) {
+        throw new Error('Alpha-cutout parity evidence must stay inside the repository');
+    }
+    return {
+        byteLength: bytes.byteLength,
+        path: relativePath.replaceAll('\\', '/'),
+        sha256: sha256(bytes)
+    };
+}
+
 function requireBinaryOccupancy(value, index, label) {
     if (value !== 0 && value !== 1) {
         throw new Error(`${label} occupancy[${index}] must be zero or one`);
@@ -404,11 +609,17 @@ function requireBinaryOccupancy(value, index, label) {
     return value;
 }
 
-async function captureLiveEvidence(options) {
+export async function captureLiveTextureGradEvidence(options) {
     let server = null;
     let browser = null;
     const diagnostics = [];
     try {
+        const producerBytes = await readFile(nativeTextureGradProbePath);
+        const producer = {
+            byteLength: producerBytes.byteLength,
+            path: 'tools/static_sun_depth/browser/ProductionAlphaCutoutTextureGradCapture.js',
+            sha256: sha256(producerBytes)
+        };
         const port = options.baseUrl ? options.port : await findFreePort(options.port);
         const baseUrl = options.baseUrl ?? `http://127.0.0.1:${port}`;
         if (!options.baseUrl) {
@@ -448,7 +659,134 @@ async function captureLiveEvidence(options) {
             window.__busSim?.sm?.currentName === 'game_mode'
             && window.__busSim?.sm?.current?.city?.cityId === 'bigcity2'
         ), null, {timeout: 180_000});
-        const result = await page.evaluate(async ({descriptor, expectedCasterIds, profile}) => {
+        const result = await page.evaluate(async ({
+            expectedCutoutCasterCount,
+            profile,
+            samples
+        }) => {
+            const THREE = await import('three');
+            const probe = await import(
+                './tools/static_sun_depth/browser/ProductionAlphaCutoutTextureGradCapture.js'
+            );
+            const {engine, sm} = window.__busSim;
+            const state = sm.current;
+            const city = state.city;
+            engine.stop();
+            if (state.gameLoop) state.gameLoop.paused = true;
+            await Promise.all([
+                engine.waitForLightingReady?.(),
+                city.world?.trees?.readyPromise
+            ].filter(Boolean));
+            const direction = profile.directionThree;
+            const elevationDeg = THREE.MathUtils.radToDeg(Math.asin(direction[1]));
+            const azimuthDeg = (
+                THREE.MathUtils.radToDeg(Math.atan2(direction[2], direction[0]))
+                + 360
+            ) % 360;
+            engine.setAtmosphereSettings({
+                ...engine.atmosphereSettings,
+                sun: {
+                    ...engine.atmosphereSettings?.sun,
+                    azimuthDeg,
+                    elevationDeg
+                }
+            });
+            city.update(engine);
+            engine.renderFrame();
+            engine.renderer.getContext().finish();
+            return probe.captureProductionAlphaCutoutTextureGradSamples({
+                city,
+                engine,
+                expectedCutoutCasterCount,
+                label: `${profile.id}-retained-candidate-gradients`,
+                samples
+            });
+        }, {
+            expectedCutoutCasterCount: options.expectedCutoutCasterCount,
+            profile: options.profile,
+            samples: options.samples
+        });
+        const blocking = diagnostics.filter((entry) => !(
+            entry.kind === 'console.error'
+            && entry.message.includes('Failed to load resource')
+        ));
+        if (blocking.length > 0) {
+            throw new Error(
+                `Native textureGrad capture emitted blocking diagnostics: ${JSON.stringify(blocking)}`
+            );
+        }
+        return {...result, producer};
+    } finally {
+        await browser?.close().catch(() => {});
+        server?.kill();
+    }
+}
+
+export async function captureLiveEvidence(options) {
+    let server = null;
+    let browser = null;
+    const diagnostics = [];
+    try {
+        const port = options.baseUrl ? options.port : await findFreePort(options.port);
+        const baseUrl = options.baseUrl ?? `http://127.0.0.1:${port}`;
+        if (!options.baseUrl) {
+            server = spawn(process.execPath, ['tests/headless/e2e/static_server.mjs'], {
+                cwd: repoRoot,
+                env: {...process.env, PORT: String(port)},
+                stdio: ['ignore', 'ignore', 'pipe']
+            });
+            let serverError = '';
+            server.stderr.on('data', (chunk) => { serverError += String(chunk); });
+            await waitForServer(baseUrl).catch((error) => {
+                throw new Error(`${error.message}\n${serverError.trim()}`);
+            });
+        }
+        const chromePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH
+            || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+        browser = await chromium.launch({
+            headless: true,
+            ...(existsSync(chromePath) ? {executablePath: chromePath} : {}),
+            args: [
+                '--disable-background-timer-throttling',
+                '--disable-renderer-backgrounding'
+            ]
+        });
+        const page = await browser.newPage({viewport: {width: 1280, height: 720}});
+        page.setDefaultTimeout(0);
+        await page.route('**/pbr.material.correction.config.js', async (route) => {
+            const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
+            const diskPath = path.resolve(repoRoot, `.${pathname}`);
+            const relative = path.relative(repoRoot, diskPath);
+            if (!relative.startsWith('..') && !path.isAbsolute(relative)
+                && existsSync(diskPath)) {
+                await route.continue();
+                return;
+            }
+            await route.fulfill({
+                body: 'export default null;\n',
+                contentType: 'text/javascript; charset=utf-8',
+                status: 200
+            });
+        });
+        page.on('pageerror', (error) => diagnostics.push({
+            kind: 'pageerror', message: error?.message ?? String(error)
+        }));
+        page.on('console', (message) => {
+            if (message.type() === 'error') {
+                diagnostics.push({kind: 'console.error', message: message.text()});
+            }
+        });
+        await page.goto(`${baseUrl}/?pose=civic_center_curve_front&coreTests=0&visibilityMap=0`);
+        await page.waitForFunction(() => (
+            window.__busSim?.sm?.currentName === 'game_mode'
+            && window.__busSim?.sm?.current?.city?.cityId === 'bigcity2'
+        ), null, {timeout: 180_000});
+        const result = await page.evaluate(async ({
+            coverageDomain,
+            descriptor,
+            expectedCasterIds,
+            profile
+        }) => {
             const THREE = await import('three');
             const planner = await import(
                 './tools/static_sun_depth/browser/ProductionAlphaCutoutSamplePlan.js'
@@ -467,9 +805,10 @@ async function captureLiveEvidence(options) {
             ].filter(Boolean));
             const direction = profile.directionThree;
             const elevationDeg = THREE.MathUtils.radToDeg(Math.asin(direction[1]));
-            const azimuthDeg = THREE.MathUtils.radToDeg(
-                Math.atan2(direction[2], direction[0])
-            );
+            const azimuthDeg = (
+                THREE.MathUtils.radToDeg(Math.atan2(direction[2], direction[0]))
+                + 360
+            ) % 360;
             engine.setAtmosphereSettings({
                 ...engine.atmosphereSettings,
                 sun: {
@@ -491,6 +830,7 @@ async function captureLiveEvidence(options) {
             const liveCapture = liveProducer.captureProductionAlphaCutoutLiveShadowDepth({
                 THREE,
                 city,
+                coverageDomain,
                 engine,
                 expectedCutoutCasterCount: expectedCasterIds.length,
                 label: `${profile.id}-all-cutout-candidates`,
@@ -499,7 +839,7 @@ async function captureLiveEvidence(options) {
             const selected = planner.selectProductionAlphaCutoutSamplePlan(
                 candidates,
                 liveCapture,
-                {allowOutOfCoverageDiagnostic: true}
+                {allowReleaseUnionCoverage: true}
             );
             const liveOccupancy = selected.selectedCandidateIndices.map(
                 (index) => liveCapture.liveOccupancy[index]
@@ -515,6 +855,7 @@ async function captureLiveEvidence(options) {
                     coverage: {
                         authenticatedCasterCount: candidates.casterIds.length,
                         candidateCount: candidates.candidates.length,
+                        domain: liveCapture.coverageDomain,
                         outOfCoverageCasterIds: selected.outOfCoverageCasterIds,
                         sampledCasterCount: selected.diagnostics.authenticatedFirstHitSampleCount
                     },
@@ -524,23 +865,24 @@ async function captureLiveEvidence(options) {
                         stateRestoration: liveCapture.nativeCapture.stateRestoration,
                         transfer: liveCapture.nativeCapture.transfer
                     },
-                    schema: 'ai531-production-alpha-cutout-live-sparse-capture-receipt-v1',
+                    captureMethod: liveCapture.method,
+                    captureSchema: liveCapture.schema,
+                    schema: coverageDomain === 'mixed_foliage_meshes'
+                        ? 'ai531-production-alpha-cutout-live-sparse-capture-receipt-v2'
+                        : 'ai531-production-alpha-cutout-live-sparse-capture-receipt-v1',
                     stateRestoration: liveCapture.stateRestoration,
                     status: 'complete'
                 },
                 samplePlan: selected.samplePlan
             };
         }, {
+            coverageDomain: options.coverageDomain ?? 'cutout_groups',
             descriptor: options.descriptor,
             expectedCasterIds: options.expectedCasterIds,
             profile: options.profile
         });
-        const blocking = diagnostics.filter((entry) => !(
-            entry.kind === 'console.error'
-            && entry.message.includes('Failed to load resource')
-        ));
-        if (blocking.length > 0) {
-            throw new Error(`Live capture emitted blocking diagnostics: ${JSON.stringify(blocking)}`);
+        if (diagnostics.length > 0) {
+            throw new Error(`Live capture emitted blocking diagnostics: ${JSON.stringify(diagnostics)}`);
         }
         return result;
     } finally {
@@ -570,7 +912,10 @@ async function loadPriorLiveEvidence(liveRoot) {
     const samplePlan = JSON.parse(samplePlanBytes);
     const bakeSampleRequest = JSON.parse(sampleRequestBytes);
     const receipt = JSON.parse(receiptBytes);
-    if (receipt.schema !== 'ai531-production-alpha-cutout-live-sparse-capture-receipt-v1'
+    if (![
+        'ai531-production-alpha-cutout-live-sparse-capture-receipt-v1',
+        'ai531-production-alpha-cutout-live-sparse-capture-receipt-v2'
+    ].includes(receipt.schema)
         || receipt.status !== 'complete'
         || samplePlan.samples?.length !== liveOccupancyBytes.byteLength
         || liveDepthBytes.byteLength !== liveOccupancyBytes.byteLength * 4

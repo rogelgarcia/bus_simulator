@@ -235,7 +235,7 @@ test('the package trust-boundary budget counts an oversized backing buffer behin
     await runtime.teardown();
 });
 
-test('the default browser fetch path fails closed when bounded streaming is unavailable', async () => {
+test('the default browser fetch consumes a declared-length body without manual streaming', async () => {
     const built = await buildPackageFixture();
     const originalFetch = globalThis.fetch;
     let arrayBufferCalls = 0;
@@ -247,24 +247,91 @@ test('the default browser fetch path fails closed when bounded streaming is unav
         body: null,
         async arrayBuffer() {
             arrayBufferCalls += 1;
-            return built.bytes.buffer;
+            return built.bytes.slice().buffer;
+        }
+    });
+    const runtime = createIlluminationRuntime({
+        initialMode: 'baked',
+        createResource(decoded, descriptor) {
+            creates += 1;
+            return {
+                resource: {id: descriptor.id},
+                cpuBytes: 0,
+                gpuBytes: decoded.byteLength,
+                dispose() {}
+            };
+        }
+    });
+    try {
+        await runtime.load(requestFor(built));
+        assert.equal(runtime.getSnapshot().phase, 'ready_to_commit');
+        runtime.commitFrameBoundary();
+        assert.equal(runtime.getSnapshot().state, 'active');
+        assert.equal(arrayBufferCalls, 1);
+        assert.equal(creates, 2);
+    } finally {
+        await runtime.teardown();
+        globalThis.fetch = originalFetch;
+    }
+});
+
+test('the default browser fetch still requires a bounded stream without a declared length', async () => {
+    const built = await buildPackageFixture();
+    const originalFetch = globalThis.fetch;
+    let arrayBufferCalls = 0;
+    globalThis.fetch = async () => ({
+        ok: true,
+        status: 200,
+        headers: {get: () => null},
+        body: null,
+        async arrayBuffer() {
+            arrayBufferCalls += 1;
+            return built.bytes.slice().buffer;
         }
     });
     const runtime = createIlluminationRuntime({
         initialMode: 'baked',
         createResource() {
-            creates += 1;
-            throw new Error('must not upload without a bounded package reader');
+            throw new Error('must not upload an unbounded package response');
         }
     });
     try {
         await runtime.load(requestFor(built));
-        const snapshot = runtime.getSnapshot();
-        assert.equal(snapshot.state, 'failed');
-        assert.equal(snapshot.reason, 'fetch_failure');
-        assert.equal(snapshot.failureCode, 'package_streaming_unavailable');
+        assert.equal(runtime.getSnapshot().failureCode, 'package_streaming_unavailable');
         assert.equal(arrayBufferCalls, 0);
-        assert.equal(creates, 0);
+    } finally {
+        await runtime.teardown();
+        globalThis.fetch = originalFetch;
+    }
+});
+
+test('a completed browser package fetch detaches from later profile cancellation', async () => {
+    const built = await buildPackageFixture();
+    const originalFetch = globalThis.fetch;
+    const fetchSignals = [];
+    globalThis.fetch = async (_url, options) => {
+        fetchSignals.push(options.signal);
+        return new Response(built.bytes, {
+            headers: {'content-length': String(built.bytes.byteLength)}
+        });
+    };
+    const runtime = createIlluminationRuntime({
+        initialMode: 'baked',
+        createResource(decoded, descriptor) {
+            return {
+                resource: Object.freeze({id: descriptor.id}),
+                cpuBytes: 0,
+                gpuBytes: decoded.byteLength,
+                dispose() {}
+            };
+        }
+    });
+    try {
+        await runtime.load(requestFor(built));
+        runtime.commitFrameBoundary();
+        await runtime.load(requestFor(built));
+        assert.equal(fetchSignals.length, 2);
+        assert.equal(fetchSignals[0].aborted, false);
     } finally {
         await runtime.teardown();
         globalThis.fetch = originalFetch;

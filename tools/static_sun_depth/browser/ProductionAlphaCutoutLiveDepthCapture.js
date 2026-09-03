@@ -8,6 +8,12 @@ export const PRODUCTION_ALPHA_CUTOUT_LIVE_DEPTH_CAPTURE_SCHEMA =
     'ai531-production-alpha-cutout-live-depth-capture-v1';
 export const PRODUCTION_ALPHA_CUTOUT_LIVE_DEPTH_CAPTURE_METHOD =
     'three-r183-cutout-only-native-shadow-depth-sparse-samples-v1';
+export const PRODUCTION_MIXED_FOLIAGE_LIVE_DEPTH_CAPTURE_SCHEMA =
+    'ai531-production-mixed-foliage-live-depth-capture-v2';
+export const PRODUCTION_MIXED_FOLIAGE_LIVE_DEPTH_CAPTURE_METHOD =
+    'three-r183-mixed-foliage-mesh-native-shadow-depth-sparse-samples-v2';
+const CUTOUT_COVERAGE_DOMAIN = 'cutout_groups';
+const MIXED_FOLIAGE_COVERAGE_DOMAIN = 'mixed_foliage_meshes';
 
 /**
  * Temporarily suppress every opaque static caster, refresh the original Three
@@ -21,6 +27,7 @@ export const PRODUCTION_ALPHA_CUTOUT_LIVE_DEPTH_CAPTURE_METHOD =
  *   engine: any,
  *   texels: Array<[number, number]>,
  *   expectedCutoutCasterCount?: number,
+ *   coverageDomain?: 'cutout_groups' | 'mixed_foliage_meshes',
  *   label?: string
  * }} options
  */
@@ -57,6 +64,11 @@ export function captureProductionAlphaCutoutLiveShadowDepth(options) {
     const label = options.label === undefined
         ? 'production-alpha-cutout-live-depth'
         : requireNonEmptyString(options.label, 'label');
+    const coverageDomain = options.coverageDomain ?? CUTOUT_COVERAGE_DOMAIN;
+    if (coverageDomain !== CUTOUT_COVERAGE_DOMAIN
+        && coverageDomain !== MIXED_FOLIAGE_COVERAGE_DOMAIN) {
+        throw new TypeError('live-depth coverageDomain is unsupported');
+    }
     const casters = collectCasterSnapshots(city.group, camera);
     const cutoutCasterMaterialSlotCount = casters.reduce(
         (sum, caster) => sum + caster.cutoutMaterialSlotCount,
@@ -87,7 +99,7 @@ export function captureProductionAlphaCutoutLiveShadowDepth(options) {
     let primaryError = null;
     let restorationError = null;
     try {
-        isolateCutoutCasters(casters, discardMaterial);
+        isolateCasterCoverage(casters, discardMaterial, coverageDomain);
         refreshShadowMap(renderer, shadow, renderFrame, gl);
         const handles = resolveNativeShadowTarget(renderer, target);
         capture = captureNativeShadowDepthTextureSamples({
@@ -151,9 +163,14 @@ export function captureProductionAlphaCutoutLiveShadowDepth(options) {
         }
     }
     return {
-        schema: PRODUCTION_ALPHA_CUTOUT_LIVE_DEPTH_CAPTURE_SCHEMA,
-        method: PRODUCTION_ALPHA_CUTOUT_LIVE_DEPTH_CAPTURE_METHOD,
+        schema: coverageDomain === MIXED_FOLIAGE_COVERAGE_DOMAIN
+            ? PRODUCTION_MIXED_FOLIAGE_LIVE_DEPTH_CAPTURE_SCHEMA
+            : PRODUCTION_ALPHA_CUTOUT_LIVE_DEPTH_CAPTURE_SCHEMA,
+        method: coverageDomain === MIXED_FOLIAGE_COVERAGE_DOMAIN
+            ? PRODUCTION_MIXED_FOLIAGE_LIVE_DEPTH_CAPTURE_METHOD
+            : PRODUCTION_ALPHA_CUTOUT_LIVE_DEPTH_CAPTURE_METHOD,
         status: 'captured_and_restored',
+        coverageDomain,
         cutoutCasterMaterialSlotCount,
         isolatedCasterMeshCount: casters.length,
         liveOccupiedSampleCount,
@@ -209,11 +226,12 @@ function isCutoutMaterial(material) {
         ) > 0;
 }
 
-function isolateCutoutCasters(casters, discardMaterial) {
+function isolateCasterCoverage(casters, discardMaterial, coverageDomain) {
     for (const caster of casters) {
         if (caster.cutoutMaterialSlotCount === 0) {
             caster.object.castShadow = false;
-        } else if (Array.isArray(caster.originalMaterial)) {
+        } else if (coverageDomain === CUTOUT_COVERAGE_DOMAIN
+            && Array.isArray(caster.originalMaterial)) {
             caster.object.material = caster.materials.map((material, index) => (
                 caster.cutoutMask[index] ? material : discardMaterial
             ));

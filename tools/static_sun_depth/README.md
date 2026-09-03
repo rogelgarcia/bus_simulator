@@ -113,8 +113,8 @@ validates the complete production channel/package metadata.
 effective Three r183 `single_high` directional-shadow allocation. The semantic
 resolved-source channel is `bus-sim-static-sun-depth-source-v4`; the production
 request is `ai531-static-sun-production-request-v4`, the raw Blender receipt is
-`ai531-static-sun-production-render-receipt-v4`, and the normalized receipt is
-`bus-sim-static-sun-depth-production-blender-receipt-v4`. All four contracts
+`ai531-static-sun-production-render-receipt-v5`, and the normalized receipt is
+`bus-sim-static-sun-depth-production-blender-receipt-v5`. All four contracts
 carry the complete policy under `sampling: {bias, pcf}`. The exact policy is:
 
 - capability `three-r183-single-high-effective-16384-v1`, with an effective
@@ -160,6 +160,32 @@ reduction/streaming before player-facing promotion.
 ```powershell
 node tools/static_sun_depth/production.mjs --repeat 2
 ```
+
+## Authenticated residual fields
+
+`calibrate_static_shadow_residual_field.mjs` applies a deliberately narrow
+post-bake correction to an authenticated v9, v10, or already corrected v11
+native field. It accepts only fresh one-case localization reports captured
+from the genuine pre-activation gameplay renderer that contain native live-shadow depth
+samples from the same package authority. A correction may fill an empty texel
+or replace an occupied texel only with a finite, nonzero, nearer measured
+depth. It cannot clear a texel, invent depth, accept a farther hit, or promote
+its own output.
+
+The resulting v11 receipt records every source report and five-image capture
+set, package/certification hashes, caster class, exact global texel, old depth,
+measured live depth, correction count, producer inventory, and inherited field
+provenance. Promotion still requires a fresh exact occupancy/first-hit parity
+artifact for every profile. Changing any listed producer invalidates old
+Blender receipts and requires rebuilding the affected provisional/production
+outputs; copied parity directories are likewise rejected because evidence
+paths remain bound to their original authority.
+
+Residual calibration is not a substitute for release validation. The strict
+Lab and 197-case production runners remain authoritative, and a failed
+production report cannot produce a release certificate. Normal gameplay also
+continues to request the current shadow engine: baked activation is wired for
+development validation but disabled by default.
 
 ## AI 531 validation runners
 

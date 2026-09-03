@@ -39,12 +39,16 @@ import {
     buildLabValidationEvidence,
     buildProductionProfileReleaseCertification,
     buildProductionReleaseCertification,
-    buildProductionValidationEvidence
+    buildProductionValidationEvidence,
+    deriveProductionAlphaCutoutCoverageIdentity
 } from '../../../../tools/static_sun_depth/src/ProductionReleaseCertification.mjs';
 import {
     authenticateProductionValidationCaptureSet,
     authenticateValidationCaptureSet
 } from '../../../../tools/static_sun_depth/src/ValidationCaptureAuthentication.mjs';
+import {
+    buildAlphaCutoutCoverageCertificationRecord
+} from '../../../../tools/static_sun_depth/src/ProductionArtifact.mjs';
 import {
     createProductionLiveTexelPhaseEvidence
 } from '../../../../tools/static_sun_depth/browser/ProductionTexelPhase.js';
@@ -57,9 +61,11 @@ import {
     PRODUCTION_ALPHA_CUTOUT_LIVE_CAPTURE_METHOD,
     PRODUCTION_ALPHA_CUTOUT_MISMATCH_KEYS,
     PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_METHOD,
+    PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_V2_METHOD,
     PRODUCTION_ALPHA_CUTOUT_SAMPLER_PARITY_METHOD,
     PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_METHOD,
-    PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_SCHEMA
+    PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_SCHEMA,
+    PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_V2_SCHEMA
 } from '../../../../tools/static_sun_depth/src/ProductionAlphaCutoutParity.mjs';
 
 const HASHES = Object.freeze(
@@ -99,7 +105,7 @@ test('profile release certification deterministically proves all 6043 casters an
     assert.equal(BASE_CERTIFICATION.alpha.mismatchCounts.anisotropy, 0);
     assert.equal(
         BASE_CERTIFICATION.alpha.schema,
-        'bus-sim-static-sun-depth-alpha-cutout-certification-v2'
+        'bus-sim-static-sun-depth-alpha-cutout-certification-v3'
     );
     assert.equal(BASE_CERTIFICATION.casters.includedCasterCount, 6043);
     assert.equal(BASE_CERTIFICATION.casters.exclusionCount, 0);
@@ -114,6 +120,45 @@ test('profile release certification deterministically proves all 6043 casters an
         forced_opaque: 64,
         opaque: 5855
     });
+    const coverageIdentity = deriveProductionAlphaCutoutCoverageIdentity(
+        BASE_FIXTURE.manifest
+    );
+    assert.equal(coverageIdentity.cutoutCasterCount, 124);
+    assert.equal(coverageIdentity.cutoutCasterIds.length, 124);
+    assert.equal(new Set(coverageIdentity.cutoutCasterIds).size, 124);
+    assert.equal(
+        coverageIdentity.cutoutCasterIdsSha256,
+        BASE_CERTIFICATION.alpha.cutoutCasterIdsSha256
+    );
+});
+
+test('profile release certification owns the authenticated v2 physical coverage partition', () => {
+    const fixture = makeProfileFixture(AI531_PRODUCTION_RELEASE_PROFILE_IDS[0]);
+    const artifact = fixture.receipt.alphaCertification.spatialParityArtifact;
+    const cutoutCasterIds = fixture.manifest.casterMappings
+        .filter((entry) => entry.coverageMode === 'cutout')
+        .map((entry) => entry.id)
+        .sort();
+    artifact.schema = PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_V2_SCHEMA;
+    artifact.samplePlanMethod = PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_V2_METHOD;
+    artifact.evidence.samplePlan.encoding =
+        'canonical-json-ai531-alpha-cutout-sample-plan-v2';
+    artifact.inCoverageCasterIds = cutoutCasterIds.slice(0, -1);
+    artifact.inCoverageCasterCount = artifact.inCoverageCasterIds.length;
+    artifact.outOfCoverageCasterIds = cutoutCasterIds.slice(-1);
+    artifact.outOfCoverageCasterCount = artifact.outOfCoverageCasterIds.length;
+
+    const certification = buildProductionProfileReleaseCertification(fixture);
+    assert.equal(certification.alpha.expectedCasterCount, 124);
+    assert.equal(certification.alpha.certifiedCasterCount, 123);
+    assert.deepEqual(
+        certification.alpha.certifiedCasterIds,
+        artifact.inCoverageCasterIds
+    );
+    assert.deepEqual(
+        certification.alpha.outOfCoverageCasterIds,
+        artifact.outOfCoverageCasterIds
+    );
 });
 
 test('all eight production profiles preserve canonical request and descriptor sampling', () => {
@@ -473,6 +518,9 @@ test('exact-eight aggregate remains pending without visual evidence and passes c
         'lab_validation_report_missing',
         'production_validation_report_missing'
     ]);
+    assert.equal(pending.alphaCutoutCoverage.expectedCasterCount, 124);
+    assert.equal(pending.alphaCutoutCoverage.releaseCoveredCasterCount, 124);
+    assert.deepEqual(pending.alphaCutoutCoverage.missingCasterIds, []);
     assert.equal(pending.zeroMissingOccluderCounts.labValidationPixels, null);
     assert.equal(pending.zeroMissingOccluderCounts.validationPixels, null);
 
@@ -503,7 +551,7 @@ test('exact-eight aggregate remains pending without visual evidence and passes c
     assert.equal(passed.status, 'passed');
     assert.equal(
         passed.schema,
-        'bus-sim-static-sun-depth-production-release-certification-v2'
+        'bus-sim-static-sun-depth-production-release-certification-v3'
     );
     assert.equal(passed.releaseEligible, true);
     assert.equal(passed.performancePromotionEligible, false);
@@ -515,6 +563,51 @@ test('exact-eight aggregate remains pending without visual evidence and passes c
         opaque: 0,
         validationPixels: 0
     });
+
+    const incompleteProfiles = structuredClone(profiles);
+    for (const profile of incompleteProfiles) {
+        const missingId = profile.alpha.certifiedCasterIds.at(-1);
+        profile.alpha.certifiedCasterIds.pop();
+        profile.alpha.certifiedCasterCount -= 1;
+        profile.alpha.outOfCoverageCasterIds = [
+            ...profile.alpha.outOfCoverageCasterIds,
+            missingId
+        ].sort();
+        profile.alpha = buildAlphaCutoutCoverageCertificationRecord({
+            alphaSemanticsSha256: profile.alpha.alphaSemanticsSha256,
+            certifiedCasterCount: profile.alpha.certifiedCasterCount,
+            certifiedCasterIds: profile.alpha.certifiedCasterIds,
+            cutoutBindingProjectionSha256:
+                profile.alpha.cutoutBindingProjectionSha256,
+            cutoutCasterIdsSha256: profile.alpha.cutoutCasterIdsSha256,
+            evidenceSha256: profile.alpha.evidenceSha256,
+            expectedCasterCount: profile.alpha.expectedCasterCount,
+            firstHitDepthSampleCount: profile.alpha.firstHitDepthSampleCount,
+            firstHitDepthToleranceMeters:
+                profile.alpha.firstHitDepthToleranceMeters,
+            matchingSampleCount: profile.alpha.matchingSampleCount,
+            maximumAbsoluteFirstHitDepthErrorMeters:
+                profile.alpha.maximumAbsoluteFirstHitDepthErrorMeters,
+            mismatchCounts: profile.alpha.mismatchCounts,
+            missingOccluderCount: profile.alpha.missingOccluderCount,
+            outOfCoverageCasterIds: profile.alpha.outOfCoverageCasterIds,
+            parityArtifactSha256: profile.alpha.parityArtifactSha256,
+            sampleCount: profile.alpha.sampleCount,
+            samplePlanSha256: profile.alpha.samplePlanSha256,
+            unexpectedOccluderCount: profile.alpha.unexpectedOccluderCount
+        });
+    }
+    const incomplete = buildProductionReleaseCertification({
+        expectedValidationReportSha256: null,
+        packageIndex: index,
+        packageIndexSha256,
+        profileCertifications: incompleteProfiles,
+        validationEvidence: null
+    });
+    assert.equal(incomplete.releaseEligible, false);
+    assert.ok(incomplete.blockers.includes('alpha_cutout_release_union_incomplete'));
+    assert.equal(incomplete.alphaCutoutCoverage.releaseCoveredCasterCount, 123);
+    assert.equal(incomplete.alphaCutoutCoverage.missingCasterIds.length, 1);
 
     const reboundValidationEvidence = structuredClone(validationEvidence);
     const packageAggregate = reboundValidationEvidence
@@ -840,13 +933,19 @@ test('validation evidence independently rejects case-catalog and complete metric
         /independent metrics: mean_rgb_error/
     );
     mutation(
-        (report) => { report.cases[0].metrics.maxRgbErrorByte = 65; },
+        (report) => {
+            report.cases[0].metrics.maxRgbErrorByte = 65;
+            report.cases[0].metrics.rawSamePixelMaxRgbErrorByte = 65;
+        },
         /independent metrics: maximum_rgb_error/
     );
     mutation(
         (report) => {
             report.cases[0].metrics.pixelsOverFourByte = 2000;
             report.cases[0].metrics.pixelsOverFourBytePercent =
+                2000 / report.cases[0].metrics.eligibleStaticReceiverPixelCount * 100;
+            report.cases[0].metrics.rawSamePixelPixelsOverFourByte = 2000;
+            report.cases[0].metrics.rawSamePixelPixelsOverFourBytePercent =
                 2000 / report.cases[0].metrics.eligibleStaticReceiverPixelCount * 100;
         },
         /independent metrics: pixels_over_four/
@@ -1682,7 +1781,7 @@ function makeProfileFixture(lightingProfileId) {
                 selectedMappingCount: 6043
             },
             request,
-            schema: 'ai531-static-sun-production-render-receipt-v4'
+            schema: 'ai531-static-sun-production-render-receipt-v5'
         },
         receiptSha256: HASHES.b,
         sourceValidationReport: { valid: true }
@@ -2892,19 +2991,39 @@ function makeLiveTexelPhaseEvidence(lightingProfileId) {
 }
 
 function makeValidationMetrics(overrides = {}) {
+    const maxRgbErrorByte = overrides.maxRgbErrorByte ?? 0;
+    const meanRgbErrorByte = overrides.meanRgbErrorByte ?? 0;
+    const pixelsOverFourByte = overrides.pixelsOverFourByte ?? 0;
+    const eligibleStaticReceiverPixelCount =
+        overrides.eligibleStaticReceiverPixelCount ?? 821599;
+    const rawSamePixelMaxRgbErrorByte =
+        overrides.rawSamePixelMaxRgbErrorByte ?? maxRgbErrorByte;
+    const rawSamePixelMeanRgbErrorByte =
+        overrides.rawSamePixelMeanRgbErrorByte ?? meanRgbErrorByte;
+    const rawSamePixelPixelsOverFourByte =
+        overrides.rawSamePixelPixelsOverFourByte ?? pixelsOverFourByte;
     return {
         dynamicReceiverMaskedPixelCount: 1,
-        eligibleStaticReceiverPixelCount: 821599,
-        falseLitMethod: 'cache_luma_gt_eligible_current_3x3_max_plus_4_bytes_v2',
+        eligibleStaticReceiverPixelCount,
+        falseLitMethod:
+            'cache_luma_gt_eligible_current_3x3_max_plus_4_and_same_frame_cache_visibility_gt_live_v3',
         height: 720,
         maxContinuousSeamRunPixels: 0,
-        maxRgbErrorByte: 0,
-        meanRgbErrorByte: 0,
+        maxRgbErrorByte,
+        meanRgbErrorByte,
         missingOccluderPixelCount: 0,
         outsideStaticReceiverPixelCount: 100000,
         pixelCount: 921600,
-        pixelsOverFourByte: 0,
-        pixelsOverFourBytePercent: 0,
+        pixelsOverFourByte,
+        pixelsOverFourBytePercent:
+            pixelsOverFourByte / eligibleStaticReceiverPixelCount * 100,
+        rawSamePixelMaxRgbErrorByte,
+        rawSamePixelMeanRgbErrorByte,
+        rawSamePixelPixelsOverFourByte,
+        rawSamePixelPixelsOverFourBytePercent:
+            rawSamePixelPixelsOverFourByte / eligibleStaticReceiverPixelCount * 100,
+        rawSamePixelRgbErrorMethod: 'same_pixel_rgb_chebyshev_v1',
+        rgbErrorMethod: 'nearest_eligible_current_3x3_rgb_chebyshev_v1',
         seamErrorPixelCount: 0,
         seamFalseLitPixelCount: 0,
         seamMaskMethod: 'static_sun_depth_seam_debug_red_gt_blue_plus_32_v1',
@@ -2966,6 +3085,18 @@ function makeCaseDiagnostics(lightingProfileId, aggregateSha256) {
     const controller = { effectiveMode: 'baked', state: 'active' };
     const packageIdentity = { aggregateSha256, lightingProfileId };
     return {
+        current: {
+            active: { lightingProfileId: 'fixture' },
+            casters: {
+                active: false,
+                lastReason: 'validation_live_final_shadow_retained',
+                originalCasterCount: 6043,
+                restores: 0,
+                snapshotMeshCount: 0
+            },
+            debugMode: 'liveFinal',
+            runtime: { controller, package: packageIdentity }
+        },
         cache: {
             active: { lightingProfileId: 'fixture' },
             casters: {
@@ -2988,7 +3119,7 @@ function makeCaseDiagnostics(lightingProfileId, aggregateSha256) {
                 restores: 1,
                 snapshotMeshCount: 0
             },
-            debugMode: 'currentDifference',
+            debugMode: 'signedDifference',
             runtime: { controller, package: packageIdentity }
         }
     };

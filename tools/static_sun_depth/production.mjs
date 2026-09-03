@@ -41,6 +41,10 @@ export const PRODUCTION_STATIC_SUN_DEFAULTS = Object.freeze({
         'tests/artifacts/illumination_528/packages/bigcity2',
         'ai531-production/bigcity2.bsib'
     ),
+    nativeCutoutRoot: path.join(
+        repoRoot,
+        'tests/artifacts/illumination_531/native_cutout_fields/release-v1'
+    ),
     profilePath: path.join(
         repoRoot,
         'tools/illumination_bake_compiler/profiles/proof_cpu_12.v1.json'
@@ -96,6 +100,12 @@ export function parseProductionCliArguments(argv) {
             case '--output-root':
                 options.artifactRoot = path.resolve(value);
                 break;
+            case '--alpha-parity-root':
+                options.alphaParityRoot = path.resolve(value);
+                break;
+            case '--native-cutout-root':
+                options.nativeCutoutRoot = path.resolve(value);
+                break;
             case '--profiles':
                 options.profiles = parseProfileIds(value);
                 break;
@@ -141,6 +151,8 @@ Options:
   --profile <json>             Pinned proof_cpu_12.v1.json profile
   --renderer <python>          AI 531 production Blender renderer
   --output-root <directory>    Artifact root below tests/artifacts/illumination_531
+  --alpha-parity-root <dir>    Profile subdirectories containing authenticated spatial_parity_artifact.json files
+  --native-cutout-root <dir>   Profile subdirectories containing complete native_cutout_field_receipt.json fields
   --profiles <id,id>           Exact subset of the eight non-lab release profile IDs
   --repeat <count>             Fresh deterministic runs per selected profile (default: 1)
   --timeout-ms <milliseconds>  Explicit timeout per Blender process

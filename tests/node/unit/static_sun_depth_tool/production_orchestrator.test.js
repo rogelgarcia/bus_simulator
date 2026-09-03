@@ -22,10 +22,12 @@ import {
     PRODUCTION_STATIC_SUN_RECEIPT_STDOUT_PREFIX,
     buildProductionPackageIndex,
     createProductionStaticSunRequest,
+    deriveLiveSourceToCacheLightAxisTransform,
     deriveProductionSourceIdentityHashes,
     orchestrateProductionStaticSunDepth,
     parseProductionReceiptStdoutDescriptor,
-    selectProductionStaticSunProfiles
+    selectProductionStaticSunProfiles,
+    validateResidualNativeFieldSource
 } from '../../../../tools/static_sun_depth/src/ProductionOrchestrator.mjs';
 import {
     validateProductionPackageIndex
@@ -35,6 +37,38 @@ const HASH_A = 'a'.repeat(64);
 const HASH_B = 'b'.repeat(64);
 const HASH_C = 'c'.repeat(64);
 const HASH_D = 'd'.repeat(64);
+
+test('residual calibration accepts authenticated incremental v11 field lineage', () => {
+    const residual = makeResidualCalibrationSource();
+    assert.doesNotThrow(() => validateResidualNativeFieldSource(residual));
+
+    residual.sourceField.method =
+        'authenticated-stable-direct-historical-hole-restoration-minus-measured-bake-only-v10';
+    assert.throws(
+        () => validateResidualNativeFieldSource(residual),
+        /source field is unsupported/u
+    );
+});
+
+test('production orchestrator independently authenticates v4 derivative axes', () => {
+    const profile = selectProductionStaticSunProfiles(['ai527.sun.az045.el35'])[0];
+    const pcf = structuredClone(
+        createProductionStaticSunRequest(profile).sampling.pcf
+    );
+    const cacheBasis = {
+        rightAxisWorld: pcf.sourceMapRightAxisWorld.map((value) => -value),
+        upAxisWorld: [...pcf.sourceMapUpAxisWorld]
+    };
+    assert.deepEqual(
+        deriveLiveSourceToCacheLightAxisTransform(cacheBasis, pcf),
+        [[-1, 0], [0, 1]]
+    );
+    pcf.sourceMapUpAxisWorld = [...pcf.sourceMapRightAxisWorld];
+    assert.throws(
+        () => deriveLiveSourceToCacheLightAxisTransform(cacheBasis, pcf),
+        /not bijective/u
+    );
+});
 
 test('production request inventory uses the exact eight non-lab release profiles', () => {
     const profiles = selectProductionStaticSunProfiles();
@@ -281,6 +315,8 @@ test('CLI pins the fresh source, proof_cpu_12, full-row rendering, and repeat de
     assert.equal(PRODUCTION_STATIC_SUN_DEFAULTS.repeat, 1);
 
     const selected = parseProductionCliArguments([
+        '--alpha-parity-root',
+        'tests/artifacts/illumination_531/alpha_parity',
         '--profiles',
         'ai527.sun.az045.el35,ai527.sun.az225.el35',
         '--repeat',
@@ -294,6 +330,10 @@ test('CLI pins the fresh source, proof_cpu_12, full-row rendering, and repeat de
     ]);
     assert.equal(selected.repeat, 2);
     assert.equal(selected.rowStripPixels, 1821);
+    assert.match(
+        selected.alphaParityRoot.replaceAll('\\', '/'),
+        /tests\/artifacts\/illumination_531\/alpha_parity$/
+    );
     assert.throws(
         () => parseProductionCliArguments([
             '--profiles',
@@ -334,6 +374,10 @@ test('dependency injection selects profiles, executes repeats, resumes peers, an
         artifactRoot: path.join(repoRoot, 'tests/artifacts/illumination_531'),
         executablePath: path.join(repoRoot, 'blender.exe'),
         inputPath: path.join(repoRoot, 'fresh.bsib'),
+        nativeCutoutRoot: path.join(
+            repoRoot,
+            'tests/artifacts/illumination_531/native-cutout-fixture'
+        ),
         profilePath: path.join(repoRoot, 'proof_cpu_12.v1.json'),
         profiles: selectedIds,
         rendererPath: path.join(repoRoot, 'production_static_sun.py'),
@@ -404,6 +448,52 @@ function makeIndexEntry(lightingProfileId, seedHash) {
             staticSunDepthSourceSha256: HASH_D
         },
         packagePath: `tests/artifacts/illumination_531/production/${lightingProfileId}/static_sun_depth.ilpkg`
+    };
+}
+
+function makeResidualCalibrationSource() {
+    return {
+        correctedTexelCount: 1,
+        correctedTexels: [{
+            casterClasses: ['foliage'],
+            correctedDepthMeters: Math.fround(1.25),
+            formerDepthMeters: 2,
+            globalTexel: [1, 2],
+            liveDepthMeters: 1.25,
+            observationCount: 1,
+            observationSha256: HASH_A,
+            reportSha256s: [HASH_B]
+        }],
+        localizationReports: [{
+            byteLength: 1,
+            captureSetSha256: HASH_C,
+            casterClasses: ['foliage'],
+            path: 'localization_report.json',
+            sha256: HASH_D,
+            targetCaseId: 'illum.profiler.r1c1.n'
+        }],
+        method: 'apply-authenticated-same-session-nearer-live-depth-residuals-v4',
+        productionPackage: {
+            alphaCertification: {
+                byteLength: 1,
+                path: 'alpha_certification.json',
+                sha256: HASH_A
+            },
+            packagePath: 'static_sun_depth.ilpkg'
+        },
+        schema: 'ai531-production-static-shadow-residual-calibration-v4',
+        sourceField: {
+            method: 'authenticated-static-shadow-residual-live-depth-corrections-v11',
+            outputProjectionSha256: HASH_B,
+            receiptSha256: HASH_C,
+            schema: 'ai531-production-alpha-cutout-native-field-receipt-v11'
+        },
+        sourceProductionReport: {
+            byteLength: 1,
+            path: 'production_validation_report.json',
+            schema: 'bus-sim-static-sun-depth-production-validation-report-v4',
+            sha256: HASH_D
+        }
     };
 }
 

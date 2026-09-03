@@ -252,6 +252,7 @@ test('graphics source keeps registry updates stable, current exact, and prewarm 
     assert.match(fragmentShader, /staticSunDepthInterleavedGradientNoise\( gl_FragCoord\.xy \) \* PI2/);
     assert.match(fragmentShader, /for \( int sampleIndex = 0; sampleIndex < 5; sampleIndex \+\+ \)/);
     assert.match(fragmentShader, /staticSunDepthLinearCompare/);
+    assert.match(fragmentShader, /staticSunDepthQuantizationSafetyMargin/);
     assert.match(
         fragmentShader,
         /staticSunDepthApplyDirectional[\s\S]*?if \( ! receiveShadow \) return;/

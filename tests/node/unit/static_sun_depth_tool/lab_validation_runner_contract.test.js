@@ -703,8 +703,15 @@ test('browser runtime uses AI530, the real pipeline, guarded world depth, and cu
 test('headless static server streams exact-length assets over keep-alive connections', async () => {
     const serverSource = await readFile('tests/headless/e2e/static_server.mjs', 'utf8');
     assert.match(serverSource, /createReadStream/);
-    assert.match(serverSource, /pipeline\(createReadStream\(diskPath\), res\)/);
-    assert.match(serverSource, /'content-length': String\(info\.size\)/);
+    assert.match(serverSource, /function streamFileResponse/);
+    assert.match(serverSource, /source\.pipe\(res\)/);
+    assert.match(serverSource, /parseSingleByteRange\(req\.headers\.range, info\.size\)/);
+    assert.match(
+        serverSource,
+        /'content-length': String\(range\?\.length \?\? info\.size\)/
+    );
+    assert.match(serverSource, /res\.once\('finish', onFinish\)/);
+    assert.match(serverSource, /res\.once\('close', onClose\)/);
     assert.match(serverSource, /server\.keepAliveTimeout = 120_000/);
     assert.doesNotMatch(serverSource, /'connection': 'close'/);
 });

@@ -309,9 +309,53 @@ function makeTreeLoadingManager() {
     return manager;
 }
 
+async function fetchCompleteAsset(url, label) {
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(
+            `[TreeGenerator] ${label} responded with HTTP ${response.status}.`
+        );
+    }
+    return response.arrayBuffer();
+}
+
+function createTgaDataTexture(loader, bytes) {
+    const data = loader.parse(bytes);
+    const texture = new THREE.DataTexture();
+    if (data.image !== undefined) texture.image = data.image;
+    else if (data.data !== undefined) {
+        texture.image.width = data.width;
+        texture.image.height = data.height;
+        texture.image.data = data.data;
+    }
+    texture.wrapS = data.wrapS ?? THREE.ClampToEdgeWrapping;
+    texture.wrapT = data.wrapT ?? THREE.ClampToEdgeWrapping;
+    texture.magFilter = data.magFilter ?? THREE.LinearFilter;
+    texture.minFilter = data.minFilter ?? THREE.LinearFilter;
+    texture.anisotropy = data.anisotropy ?? 1;
+    if (data.colorSpace !== undefined) texture.colorSpace = data.colorSpace;
+    if (data.flipY !== undefined) texture.flipY = data.flipY;
+    if (data.format !== undefined) texture.format = data.format;
+    if (data.type !== undefined) texture.type = data.type;
+    if (data.mipmaps !== undefined) {
+        texture.mipmaps = data.mipmaps;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+    }
+    if (data.mipmapCount === 1) texture.minFilter = THREE.LinearFilter;
+    if (data.generateMipmaps !== undefined) {
+        texture.generateMipmaps = data.generateMipmaps;
+    }
+    texture.needsUpdate = true;
+    return texture;
+}
+
 function loadTextures() {
     const loader = new TGALoader();
-    const load = (name) => loader.loadAsync(new URL(name, TEXTURE_BASE_URL).toString());
+    const load = async (name) => {
+        const url = new URL(name, TEXTURE_BASE_URL).toString();
+        const bytes = await fetchCompleteAsset(url, `Texture '${name}'`);
+        return createTgaDataTexture(loader, bytes);
+    };
     return Promise.all([
         load('T_Leaf_Realistic9.TGA'),
         load('T_Leaf_Realistic9_normal.TGA'),
@@ -523,7 +567,10 @@ function loadTreeAssets(quality, entries) {
         promiseCache[key] = ensureMaterials().then(async (mats) => {
             const loader = new FBXLoader(makeTreeLoadingManager());
             const baseUrl = getModelBaseUrl(key);
-            const loadModel = (entry) => loader.loadAsync(new URL(entry.name, baseUrl).toString()).then((model) => {
+            const loadModel = async (entry) => {
+                const url = new URL(entry.name, baseUrl).toString();
+                const bytes = await fetchCompleteAsset(url, `Model '${entry.name}'`);
+                const model = loader.parse(bytes, baseUrl.toString());
                 removeCollisionMeshes(model);
                 removeNonMeshRenderables(model);
                 applyTreeMaterials(model, mats);
@@ -557,7 +604,7 @@ function loadTreeAssets(quality, entries) {
                 model.userData.treeBaseY = Number.isFinite(baseY) ? baseY : fallbackBaseY;
                 model.userData.treeHeight = (Number.isFinite(computedHeight) && computedHeight > 0) ? computedHeight : fallbackHeight;
                 return model;
-            });
+            };
             const models = [];
             for (let start = 0; start < entries.length; start += TREE_LOAD_BATCH_SIZE) {
                 const batch = await Promise.all(entries.slice(start, start + TREE_LOAD_BATCH_SIZE).map(loadModel));

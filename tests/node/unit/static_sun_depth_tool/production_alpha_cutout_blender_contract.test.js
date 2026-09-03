@@ -13,12 +13,14 @@ test('cutout sparse Blender producer reuses the authenticated production reconst
     const source = await readFile(SOURCE_URL, 'utf8');
 
     assert.match(source, /import production_static_sun as production/);
+    assert.match(source, /import compile_cutout_silhouettes as silhouette/);
     assert.match(source, /open_verified_package/);
     assert.match(source, /validate_resolved_city_contract/);
     assert.match(source, /reconstruct_resolved_city/);
     assert.match(source, /assert_blender_runtime/);
     assert.match(source, /PINNED_EXECUTABLE_SHA256/);
     assert.match(source, /producer_script_sha256/);
+    assert.match(source, /silhouette_compiler_sha256/);
     assert.match(source, /production_renderer_sha256/);
     assert.match(source, /sample_request_sha256/);
     assert.match(source, /production\._validate_request/);
@@ -27,7 +29,7 @@ test('cutout sparse Blender producer reuses the authenticated production reconst
     assert.match(source, /production\._convert_materials_to_depth/);
 });
 
-test('cutout sparse Blender producer removes opaque faces and reads exact full production tiles', async () => {
+test('cutout sparse Blender producer removes opaque faces and renders exact micro-cameras', async () => {
     const source = await readFile(SOURCE_URL, 'utf8');
 
     assert.match(source, /def _isolate_cutout_polygons/);
@@ -36,18 +38,37 @@ test('cutout sparse Blender producer removes opaque faces and reads exact full p
     assert.match(source, /bmesh\.ops\.delete/);
     assert.match(source, /context="FACES"/);
     assert.match(source, /production\._filter_direction_invisible_polygons/);
+    assert.match(source, /--force-cutout-opaque-diagnostic/);
+    assert.match(source, /--disable-binding-flipy-diagnostic/);
+    assert.match(source, /--compile-cutout-silhouette-diagnostic/);
+    assert.match(source, /def _force_cutout_materials_opaque/);
+    assert.match(source, /def _disable_cutout_binding_flipy/);
+    assert.match(source, /if sample_request\["productionEligible"\]/);
+    assert.match(source, /diagnostic_forced_opaque_cutout_coverage_v1/);
+    assert.match(source, /def _compile_cutout_silhouette_diagnostic/);
+    assert.match(source, /silhouette\.AlphaTextureMip0/);
+    assert.match(source, /silhouette\.OrthographicLightLattice/);
+    assert.match(source, /silhouette\.compile_cutout_silhouettes/);
+    assert.match(source, /sample_pixels=sample_pixels/);
+    assert.match(source, /compiled_cutout_proxy/);
+    assert.match(source, /An unproven deterministic silhouette compiler cannot produce release evidence/);
+    assert.match(source, /SPARSE_RENDER_SIZE = 4/);
+    assert.match(source, /SPARSE_SOURCE_PIXEL = \(1, 1\)/);
     assert.match(source, /resolution_x, resolution_y = basis\["layout"\]\["interiorPixels"\]/);
-    assert.match(source, /tile_x = global_x \/\/ resolution_x/);
-    assert.match(source, /tile_y = global_y \/\/ resolution_y/);
-    assert.match(source, /samples_by_tile\.setdefault\(tile_index, \[\]\)\.append\(sample\)/);
-    assert.match(source, /for tile_index in sorted\(samples_by_tile\)/);
+    assert.match(source, /texel_size = float\(basis\["layout"\]\["texelSizeMeters"\]\)/);
+    assert.match(source, /scene\.render\.resolution_x = SPARSE_RENDER_SIZE/);
+    assert.match(source, /scene\.render\.resolution_y = SPARSE_RENDER_SIZE/);
     assert.match(source, /scene\.render\.use_border = False/);
     assert.match(source, /scene\.render\.use_crop_to_border = False/);
-    assert.match(source, /source_x = resolution_x - 1 - local_x/);
-    assert.match(source, /pixel_offset = \(local_y \* resolution_x \+ source_x\) \* 4/);
+    assert.match(source, /camera\.data\.ortho_scale = texel_size \* SPARSE_RENDER_SIZE/);
+    assert.match(source, /for sample in sample_request\["samples"\]/);
+    assert.match(source, /light_x = bounds\["min"\]\[0\] \+ \(global_x \+ 0\.5\) \* texel_size/);
+    assert.match(source, /light_y = bounds\["min"\]\[1\] \+ \(global_y \+ 0\.5\) \* texel_size/);
+    assert.match(source, /pixel_offset = \(SPARSE_SOURCE_PIXEL\[1\] \* SPARSE_RENDER_SIZE/);
     assert.match(source, /alpha = float\(pixels\[pixel_offset \+ 3\]\)/);
     assert.match(source, /camera_depth = float\(pixels\[pixel_offset\]\)/);
     assert.match(source, /production\._capture_render_strip/);
+    assert.doesNotMatch(source, /samples_by_tile/);
 });
 
 test('cutout sparse Blender producer emits source-camera-distance evidence and never performance-promotes it', async () => {

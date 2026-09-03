@@ -99,6 +99,12 @@ const CASE_METRIC_KEYS = Object.freeze([
     'pixelCount',
     'pixelsOverFourByte',
     'pixelsOverFourBytePercent',
+    'rawSamePixelMaxRgbErrorByte',
+    'rawSamePixelMeanRgbErrorByte',
+    'rawSamePixelPixelsOverFourByte',
+    'rawSamePixelPixelsOverFourBytePercent',
+    'rawSamePixelRgbErrorMethod',
+    'rgbErrorMethod',
     'seamErrorPixelCount',
     'seamFalseLitPixelCount',
     'seamMaskMethod',
@@ -116,6 +122,8 @@ const CASE_INTEGER_METRIC_KEYS = Object.freeze([
     'outsideStaticReceiverPixelCount',
     'pixelCount',
     'pixelsOverFourByte',
+    'rawSamePixelMaxRgbErrorByte',
+    'rawSamePixelPixelsOverFourByte',
     'seamErrorPixelCount',
     'seamFalseLitPixelCount',
     'seamPixelCount',
@@ -490,13 +498,22 @@ export function requireProductionMetricRecord(value) {
         throw new Error('production static-receiver mask coverage collapsed');
     }
     if (metrics.maxRgbErrorByte > 255 || metrics.meanRgbErrorByte > 255
+        || metrics.rawSamePixelMaxRgbErrorByte > 255
+        || metrics.rawSamePixelMeanRgbErrorByte > 255
         || metrics.pixelsOverFourByte > metrics.eligibleStaticReceiverPixelCount
+        || metrics.rawSamePixelPixelsOverFourByte
+            > metrics.eligibleStaticReceiverPixelCount
         || metrics.missingOccluderPixelCount > metrics.eligibleStaticReceiverPixelCount
         || metrics.seamPixelCount > metrics.eligibleStaticReceiverPixelCount
         || metrics.seamErrorPixelCount > metrics.seamPixelCount
         || metrics.seamFalseLitPixelCount > metrics.seamPixelCount
-        || metrics.pixelsOverFourBytePercent > 100) {
+        || metrics.pixelsOverFourBytePercent > 100
+        || metrics.rawSamePixelPixelsOverFourBytePercent > 100) {
         throw new Error('production case metrics contain an impossible count or byte value');
+    }
+    if (metrics.maxRgbErrorByte > metrics.rawSamePixelMaxRgbErrorByte
+        || metrics.pixelsOverFourByte > metrics.rawSamePixelPixelsOverFourByte) {
+        throw new Error('production aligned RGB metrics contradict raw same-pixel evidence');
     }
     if ((metrics.seamErrorPixelCount === 0) !== (metrics.maxContinuousSeamRunPixels === 0)
         || metrics.maxContinuousSeamRunPixels > metrics.seamErrorPixelCount
@@ -509,8 +526,20 @@ export function requireProductionMetricRecord(value) {
     if (Math.abs(metrics.pixelsOverFourBytePercent - expectedPercent) > 1e-12) {
         throw new Error('production pixelsOverFourBytePercent is inconsistent with its count');
     }
+    const expectedRawSamePixelPercent = metrics.rawSamePixelPixelsOverFourByte
+        / metrics.eligibleStaticReceiverPixelCount * 100;
+    if (Math.abs(
+        metrics.rawSamePixelPixelsOverFourBytePercent - expectedRawSamePixelPercent
+    ) > 1e-12) {
+        throw new Error(
+            'production rawSamePixelPixelsOverFourBytePercent is inconsistent with its count'
+        );
+    }
     if (metrics.falseLitMethod
-            !== 'cache_luma_gt_eligible_current_3x3_max_plus_4_bytes_v2'
+            !== 'cache_luma_gt_eligible_current_3x3_max_plus_4_and_same_frame_cache_visibility_gt_live_v3'
+        || metrics.rgbErrorMethod
+            !== 'nearest_eligible_current_3x3_rgb_chebyshev_v1'
+        || metrics.rawSamePixelRgbErrorMethod !== 'same_pixel_rgb_chebyshev_v1'
         || metrics.seamMaskMethod
             !== 'static_sun_depth_seam_debug_red_gt_blue_plus_32_v1'
         || metrics.staticReceiverMaskMethod
@@ -544,16 +573,34 @@ export function evaluateProductionDynamicBusShadowProof(value) {
 }
 
 /**
+ * @param {Readonly<Record<string, any>>} currentDiagnostics
  * @param {Readonly<Record<string, any>>} cacheDiagnostics
  * @param {Readonly<Record<string, any>>} comparisonDiagnostics
  */
 export function evaluateProductionCasterTransition(
+    currentDiagnostics,
     cacheDiagnostics,
     comparisonDiagnostics
 ) {
     const failures = [];
+    const currentCasters = currentDiagnostics?.casters;
     const cacheCasters = cacheDiagnostics?.casters;
     const comparisonCasters = comparisonDiagnostics?.casters;
+    const currentController = currentDiagnostics?.runtime?.controller;
+    const genuineCurrentReady = currentDiagnostics?.active === null
+        && currentDiagnostics?.debugMode === 'final'
+        && currentCasters?.active === false
+        && currentCasters?.snapshotMeshCount === 0
+        && currentCasters?.staticMeshCount === 0
+        && currentCasters?.originalCasterCount === 0
+        && currentCasters?.suppressedCasterCount === 0
+        && currentCasters?.restores === 0
+        && currentController?.requestedMode === 'current'
+        && currentController?.effectiveMode === 'current'
+        && currentController?.state === 'unavailable'
+        && currentController?.phase === 'disposed'
+        && currentController?.reason === 'not_configured';
+    if (!genuineCurrentReady) failures.push('genuine_current_lifecycle_invalid');
     const cacheSuppressed = isCacheActive(cacheDiagnostics)
         && cacheDiagnostics?.debugMode === 'final'
         && cacheCasters?.active === true
@@ -565,7 +612,7 @@ export function evaluateProductionCasterTransition(
         && cacheCasters.snapshotMeshCount === cacheCasters.staticMeshCount;
     if (!cacheSuppressed) failures.push('static_casters_not_suppressed');
     const comparisonRestored = isCacheActive(comparisonDiagnostics)
-        && comparisonDiagnostics?.debugMode === 'currentDifference'
+        && comparisonDiagnostics?.debugMode === 'signedDifference'
         && comparisonCasters?.active === false
         && comparisonCasters?.snapshotMeshCount === 0
         && comparisonCasters?.originalCasterCount === cacheCasters?.originalCasterCount
@@ -807,37 +854,61 @@ export async function runProductionStaticSunDepthValidation(options = {}, deps =
                 browserDiagnostics.push({kind: 'console.error', message: message.text()});
             }
         });
-        await page.goto(`${baseUrl}/?pose=civic_center_curve_front&coreTests=0&visibilityMap=0`);
-        await page.waitForFunction(() => (
-            window.__busSim?.sm?.currentName === 'game_mode'
-            && window.__busSim?.sm?.current?.city?.cityId === 'bigcity2'
-        ), null, {timeout: 180_000});
-        await page.evaluate(async () => {
-            const {engine, sm} = window.__busSim;
-            await Promise.all([
-                engine.waitForLightingReady?.(),
-                sm.current?.city?.world?.trees?.readyPromise,
-                sm.current?.busModel?.userData?.readyPromise
-            ].filter(Boolean));
-        });
-        const environment = await installBrowserValidationRuntime(page);
-        const gameCanvas = page.locator('#game-canvas');
-        const receiverMaskEvidenceCanvas = page.locator(
-            '#ai531-production-receiver-mask-evidence'
-        );
-        const gameCanvasBounds = await gameCanvas.boundingBox();
-        if (!gameCanvasBounds
-            || gameCanvasBounds.width
-                !== PRODUCTION_VALIDATION_CAPTURE_DIMENSIONS_PIXELS[0]
-            || gameCanvasBounds.height
-                !== PRODUCTION_VALIDATION_CAPTURE_DIMENSIONS_PIXELS[1]) {
-            throw new Error(
-                'Production validation game canvas must be exactly 1280x720 CSS pixels: '
-                + JSON.stringify(gameCanvasBounds)
+        const productionUrl =
+            `${baseUrl}/?pose=civic_center_curve_front&coreTests=0&visibilityMap=0`;
+        let environment = null;
+        let gameCanvas = null;
+        let receiverMaskEvidenceCanvas = null;
+
+        async function initializeProfilePage() {
+            await page.goto(productionUrl);
+            await page.waitForFunction(() => (
+                window.__busSim?.sm?.currentName === 'game_mode'
+                && window.__busSim?.sm?.current?.city?.cityId === 'bigcity2'
+            ), null, {timeout: 180_000});
+            await page.evaluate(async () => {
+                const {engine, sm} = window.__busSim;
+                await Promise.all([
+                    engine.waitForLightingReady?.(),
+                    sm.current?.city?.world?.trees?.readyPromise,
+                    sm.current?.busModel?.userData?.readyPromise
+                ].filter(Boolean));
+            });
+            const nextEnvironment = await installBrowserValidationRuntime(page);
+            if (environment === null) {
+                environment = nextEnvironment;
+            } else if (canonicalJsonStringify(nextEnvironment)
+                !== canonicalJsonStringify(environment)) {
+                throw new Error('Production validation environment changed between profile pages');
+            }
+            gameCanvas = page.locator('#game-canvas');
+            receiverMaskEvidenceCanvas = page.locator(
+                '#ai531-production-receiver-mask-evidence'
             );
+            const gameCanvasBounds = await gameCanvas.boundingBox();
+            if (!gameCanvasBounds
+                || gameCanvasBounds.width
+                    !== PRODUCTION_VALIDATION_CAPTURE_DIMENSIONS_PIXELS[0]
+                || gameCanvasBounds.height
+                    !== PRODUCTION_VALIDATION_CAPTURE_DIMENSIONS_PIXELS[1]) {
+                throw new Error(
+                    'Production validation game canvas must be exactly 1280x720 CSS pixels: '
+                    + JSON.stringify(gameCanvasBounds)
+                );
+            }
         }
 
         for (const group of plan.groups) {
+            // Cache activation deliberately mutates static caster/material ownership.
+            // A fresh page per sun profile prevents those validation-only mutations
+            // from becoming the next profile's supposedly genuine current oracle.
+            // Current/cache pairs inside the profile still share one page and IDB.
+            if (environment !== null) {
+                await page.evaluate(async () => {
+                    await window.__ai531ProductionValidation?.dispose?.();
+                });
+            }
+            await initializeProfilePage();
             const packageUrl = new URL(group.package.packagePath, `${baseUrl}/`).href;
             await page.evaluate(
                 async ({profile, packageUrl: url}) => {
@@ -851,6 +922,12 @@ export async function runProductionStaticSunDepthValidation(options = {}, deps =
                 {profile: group, packageUrl}
             );
 
+            // Capture the genuine current engine before cache activation. The
+            // cache remains unconfigured here, and every image stays paired in
+            // this profile page's IndexedDB until its cache comparison consumes
+            // the bytes. liveFinal is intentionally not cycled between cases:
+            // repeated shader-hook teardown changes Three's visible-material
+            // program cache and corrupts the following cache capture.
             const currentByCase = new Map();
             for (const validationCase of group.cases) {
                 const caseDirectory = path.join(outputRoot, validationCase.id);
@@ -906,6 +983,7 @@ export async function runProductionStaticSunDepthValidation(options = {}, deps =
                     caseDirectory,
                     'staticCityReceiverMask.png'
                 );
+                await mkdir(caseDirectory, {recursive: true});
                 const cache = await page.evaluate(
                     async ({validationCase: caseValue, warmups}) => (
                         window.__ai531ProductionValidation.captureCache(caseValue, warmups)
@@ -916,6 +994,10 @@ export async function runProductionStaticSunDepthValidation(options = {}, deps =
                     path: cacheCapturePath,
                     type: 'png'
                 });
+                const current = currentByCase.get(validationCase.id);
+                if (!current) {
+                    throw new Error(`Missing genuine current capture for '${validationCase.id}'`);
+                }
                 const comparison = await page.evaluate(
                     async ({validationCase: caseValue, warmups}) => (
                         window.__ai531ProductionValidation.captureComparisonAndCompare(
@@ -988,11 +1070,12 @@ export async function runProductionStaticSunDepthValidation(options = {}, deps =
                 const caseFailures = [
                     ...(fallback ? ['fallback'] : []),
                     ...evaluateProductionCasterTransition(
+                        current.diagnostics,
                         cache.diagnostics,
                         comparison.diagnostics
                     ),
                     ...evaluateProductionDynamicBusState(
-                        currentByCase.get(validationCase.id).dynamicBus,
+                        current.dynamicBus,
                         cache.dynamicBus,
                         comparison.dynamicBus
                     ),
@@ -1000,7 +1083,7 @@ export async function runProductionStaticSunDepthValidation(options = {}, deps =
                         comparison.dynamicBusShadowProof
                     ),
                     ...evaluateProductionShadowSubmission(
-                        currentByCase.get(validationCase.id).workload,
+                        current.workload,
                         cache.workload,
                         comparison.workload
                     ),
@@ -1021,18 +1104,18 @@ export async function runProductionStaticSunDepthValidation(options = {}, deps =
                     sunProfile: validationCase.sunProfile,
                     metrics: comparison.metrics,
                     workload: Object.freeze({
-                        current: currentByCase.get(validationCase.id).workload,
+                        current: current.workload,
                         cache: cache.workload,
                         comparison: comparison.workload,
                         timingContamination
                     }),
                     diagnostics: Object.freeze({
-                        current: currentByCase.get(validationCase.id).diagnostics,
+                        current: current.diagnostics,
                         cache: cache.diagnostics,
                         comparison: comparison.diagnostics
                     }),
                     dynamicBus: Object.freeze({
-                        current: currentByCase.get(validationCase.id).dynamicBus,
+                        current: current.dynamicBus,
                         cache: cache.dynamicBus,
                         comparison: comparison.dynamicBus,
                         shadowProof: comparison.dynamicBusShadowProof
@@ -1291,6 +1374,7 @@ export async function installBrowserValidationRuntime(page) {
         let activeWorkload = null;
         let currentPass = 'visible_scene';
         let pendingReceiverMaskEvidence = null;
+        let directRenderForDiagnostics = false;
         const originalRenderBufferDirect = renderer.renderBufferDirect;
         const originalShadowRender = renderer.shadowMap.render;
 
@@ -1407,6 +1491,51 @@ export async function installBrowserValidationRuntime(page) {
             };
         }
 
+        function staticShadowState() {
+            let cityMeshCount = 0;
+            let enabledCityCasterMeshCount = 0;
+            city.group.traverse((object) => {
+                if (!object?.isMesh) return;
+                cityMeshCount += 1;
+                if (object.castShadow === true) enabledCityCasterMeshCount += 1;
+            });
+            const culler = city._shadowCuller ?? null;
+            const cascadeLights = Array.isArray(city._csm?.csm?.lights)
+                ? city._csm.csm.lights : [];
+            const describeShadowLight = (light) => light ? ({
+                position: light.position?.toArray?.() ?? null,
+                targetPosition: light.target?.position?.toArray?.() ?? null,
+                autoUpdate: light.shadow?.autoUpdate ?? null,
+                cameraMatrixWorld: light.shadow?.camera?.matrixWorld?.elements
+                    ? Array.from(light.shadow.camera.matrixWorld.elements) : null,
+                cameraProjectionMatrix: light.shadow?.camera?.projectionMatrix?.elements
+                    ? Array.from(light.shadow.camera.projectionMatrix.elements) : null,
+                mapTextureVersion: light.shadow?.map?.texture?.version ?? null,
+                needsUpdate: light.shadow?.needsUpdate ?? null,
+                shadowMatrix: light.shadow?.matrix?.elements
+                    ? Array.from(light.shadow.matrix.elements) : null
+            }) : null;
+            return {
+                cityMeshCount,
+                enabledCityCasterMeshCount,
+                culler: culler ? {
+                    active: culler._active === true,
+                    indexedCasterMeshCount: Array.isArray(culler._entries)
+                        ? culler._entries.length : null,
+                    indexedRootCount: culler._roots?.size ?? null,
+                    stats: {...culler.stats}
+                } : null,
+                rendererShadowMap: {
+                    autoUpdate: renderer.shadowMap.autoUpdate,
+                    enabled: renderer.shadowMap.enabled,
+                    needsUpdate: renderer.shadowMap.needsUpdate
+                },
+                postProcessing: engine._post?.pipeline?.getDebugInfo?.() ?? null,
+                primarySun: describeShadowLight(city.sun),
+                cascades: cascadeLights.map(describeShadowLight)
+            };
+        }
+
         function applyCase(validationCase) {
             const sun = validationCase.sunProfile;
             engine.setAtmosphereSettings({
@@ -1467,8 +1596,35 @@ export async function installBrowserValidationRuntime(page) {
         function renderUnmeasuredFrames(count) {
             for (let index = 0; index < count; index += 1) {
                 city.update(engine);
-                engine.renderFrame();
+                renderValidationFrame();
                 gl.finish();
+            }
+        }
+
+        function resetValidationTemporalHistory() {
+            const post = engine._post?.pipeline ?? null;
+            post?.taaPass?.resetHistory?.();
+            if (post && '_taaJitterIndex' in post) post._taaJitterIndex = 0;
+            post?._invalidateGtaoCache?.({resetFrameIndex: true});
+            // Camera teleports must not inherit the previous pose's slowly
+            // decaying flare/ray visibility; it otherwise appears as a cache
+            // brightness error even when both shadow paths are identical.
+            for (const rig of [city.sunFlare, city.sunRays]) {
+                if (Number.isFinite(rig?._visibility)) rig._visibility = 0;
+            }
+        }
+
+        function renderValidationFrame() {
+            if (!directRenderForDiagnostics || !engine._post?.pipeline) {
+                engine.renderFrame();
+                return;
+            }
+            const post = engine._post.pipeline;
+            engine._post.pipeline = null;
+            try {
+                engine.renderFrame();
+            } finally {
+                engine._post.pipeline = post;
             }
         }
 
@@ -1478,7 +1634,7 @@ export async function installBrowserValidationRuntime(page) {
             activeWorkload = workload;
             try {
                 city.update(engine);
-                engine.renderFrame();
+                renderValidationFrame();
                 gl.finish();
             } finally {
                 activeWorkload = null;
@@ -1734,8 +1890,14 @@ export async function installBrowserValidationRuntime(page) {
             }
         }
 
-        function putCurrent(caseId, capture) {
+        async function putCurrent(caseId, capture) {
+            const existing = await getCurrent(caseId);
             return withStore('readwrite', (store) => store.put({
+                ...(existing?.cachePixels ? {
+                    cacheHeight: existing.cacheHeight,
+                    cachePixels: existing.cachePixels,
+                    cacheWidth: existing.cacheWidth
+                } : {}),
                 width: capture.width,
                 height: capture.height,
                 pixels: capture.pixels.buffer
@@ -1748,11 +1910,8 @@ export async function installBrowserValidationRuntime(page) {
 
         async function putCache(caseId, capture) {
             const current = await getCurrent(caseId);
-            if (!current?.pixels) {
-                throw new Error(`Missing same-session current RGBA for '${caseId}'`);
-            }
             return withStore('readwrite', (store) => store.put({
-                ...current,
+                ...(current?.pixels ? current : {}),
                 cacheWidth: capture.width,
                 cacheHeight: capture.height,
                 cachePixels: capture.pixels.buffer
@@ -1771,31 +1930,49 @@ export async function installBrowserValidationRuntime(page) {
             current,
             cache,
             seam,
+            signedVisibility,
             dynamicReceiverMask,
             staticCityReceiverMask,
-            collectMissingOccluderCandidates = false
+            collectMissingOccluderCandidates = false,
+            mismatchCandidateDirection = 'cache_brighter',
+            targetPixel = null
         ) {
             if (typeof collectMissingOccluderCandidates !== 'boolean') {
                 throw new TypeError('missing-occluder collection flag must be boolean');
             }
+            if (mismatchCandidateDirection !== 'cache_brighter'
+                && mismatchCandidateDirection !== 'cache_darker') {
+                throw new TypeError('mismatch candidate direction is unsupported');
+            }
             if (current.width !== cache.width || current.height !== cache.height
                 || current.width !== seam.width || current.height !== seam.height
+                || current.width !== signedVisibility.width
+                || current.height !== signedVisibility.height
                 || current.width !== dynamicReceiverMask.width
                 || current.height !== dynamicReceiverMask.height
                 || current.width !== staticCityReceiverMask.width
                 || current.height !== staticCityReceiverMask.height) {
-                throw new Error('Current, cache, seam, and receiver-mask captures differ');
+                throw new Error(
+                    'Current, cache, seam, signed visibility, and receiver-mask captures differ'
+                );
             }
             const width = current.width;
             const height = current.height;
+            if (targetPixel && (targetPixel[0] >= width || targetPixel[1] >= height)) {
+                throw new RangeError('mismatch target pixel is outside the framebuffer');
+            }
             const pixelCount = width * height;
             const eligible = new Uint8Array(pixelCount);
             const currentLuma = new Float32Array(pixelCount);
+            const cacheLumaValues = new Float32Array(pixelCount);
             const horizontalMax = new Float32Array(pixelCount);
             const neighborhoodMax = new Float32Array(pixelCount);
-            let absoluteRgbError = 0;
-            let maxRgbErrorByte = 0;
-            let pixelsOverFourByte = 0;
+            const cacheHorizontalMax = new Float32Array(pixelCount);
+            const cacheNeighborhoodMax = new Float32Array(pixelCount);
+            let rawSamePixelAbsoluteRgbError = 0;
+            let rawSamePixelMaxRgbErrorByte = 0;
+            let maximumRgbErrorPixel = null;
+            let rawSamePixelPixelsOverFourByte = 0;
             let dynamicReceiverMaskedPixelCount = 0;
             let eligibleStaticReceiverPixelCount = 0;
             let outsideStaticReceiverPixelCount = 0;
@@ -1813,11 +1990,13 @@ export async function installBrowserValidationRuntime(page) {
                 if (onDynamicReceiver) {
                     dynamicReceiverMaskedPixelCount += 1;
                     currentLuma[pixel] = Number.NEGATIVE_INFINITY;
+                    cacheLumaValues[pixel] = Number.NEGATIVE_INFINITY;
                     continue;
                 }
                 if (!onStaticCityReceiver) {
                     outsideStaticReceiverPixelCount += 1;
                     currentLuma[pixel] = Number.NEGATIVE_INFINITY;
+                    cacheLumaValues[pixel] = Number.NEGATIVE_INFINITY;
                     continue;
                 }
                 eligible[pixel] = 1;
@@ -1825,28 +2004,40 @@ export async function installBrowserValidationRuntime(page) {
                 currentLuma[pixel] = current.pixels[offset] * 0.2126
                     + current.pixels[offset + 1] * 0.7152
                     + current.pixels[offset + 2] * 0.0722;
+                cacheLumaValues[pixel] = cache.pixels[offset] * 0.2126
+                    + cache.pixels[offset + 1] * 0.7152
+                    + cache.pixels[offset + 2] * 0.0722;
                 let pixelMax = 0;
                 for (let channel = 0; channel < 3; channel += 1) {
                     const difference = Math.abs(
                         current.pixels[offset + channel] - cache.pixels[offset + channel]
                     );
-                    absoluteRgbError += difference;
+                    rawSamePixelAbsoluteRgbError += difference;
                     pixelMax = Math.max(pixelMax, difference);
-                    maxRgbErrorByte = Math.max(maxRgbErrorByte, difference);
+                    if (difference > rawSamePixelMaxRgbErrorByte) {
+                        rawSamePixelMaxRgbErrorByte = difference;
+                        maximumRgbErrorPixel = [pixel % width, Math.floor(pixel / width)];
+                    }
                 }
-                if (pixelMax > 4) pixelsOverFourByte += 1;
+                if (pixelMax > 4) rawSamePixelPixelsOverFourByte += 1;
             }
             for (let y = 0; y < height; y += 1) {
                 for (let x = 0; x < width; x += 1) {
                     const index = y * width + x;
                     if (!eligible[index]) {
                         horizontalMax[index] = Number.NEGATIVE_INFINITY;
+                        cacheHorizontalMax[index] = Number.NEGATIVE_INFINITY;
                         continue;
                     }
                     horizontalMax[index] = Math.max(
                         currentLuma[y * width + Math.max(0, x - 1)],
                         currentLuma[index],
                         currentLuma[y * width + Math.min(width - 1, x + 1)]
+                    );
+                    cacheHorizontalMax[index] = Math.max(
+                        cacheLumaValues[y * width + Math.max(0, x - 1)],
+                        cacheLumaValues[index],
+                        cacheLumaValues[y * width + Math.min(width - 1, x + 1)]
                     );
                 }
             }
@@ -1862,6 +2053,65 @@ export async function installBrowserValidationRuntime(page) {
                         horizontalMax[index],
                         horizontalMax[Math.min(height - 1, y + 1) * width + x]
                     );
+                    cacheNeighborhoodMax[index] = Math.max(
+                        cacheHorizontalMax[Math.max(0, y - 1) * width + x],
+                        cacheHorizontalMax[index],
+                        cacheHorizontalMax[Math.min(height - 1, y + 1) * width + x]
+                    );
+                }
+            }
+            let absoluteRgbError = 0;
+            let maxRgbErrorByte = 0;
+            let pixelsOverFourByte = 0;
+            for (let y = 0; y < height; y += 1) {
+                for (let x = 0; x < width; x += 1) {
+                    const pixel = y * width + x;
+                    if (!eligible[pixel]) continue;
+                    const cacheOffset = pixel * 4;
+                    let bestMaximumDifference = Number.POSITIVE_INFINITY;
+                    let bestAbsoluteDifference = Number.POSITIVE_INFINITY;
+                    for (let currentY = Math.max(0, y - 1);
+                        currentY <= Math.min(height - 1, y + 1);
+                        currentY += 1) {
+                        for (let currentX = Math.max(0, x - 1);
+                            currentX <= Math.min(width - 1, x + 1);
+                            currentX += 1) {
+                            const currentPixel = currentY * width + currentX;
+                            if (!eligible[currentPixel]) continue;
+                            const currentOffset = currentPixel * 4;
+                            const redDifference = Math.abs(
+                                current.pixels[currentOffset] - cache.pixels[cacheOffset]
+                            );
+                            const greenDifference = Math.abs(
+                                current.pixels[currentOffset + 1] - cache.pixels[cacheOffset + 1]
+                            );
+                            const blueDifference = Math.abs(
+                                current.pixels[currentOffset + 2] - cache.pixels[cacheOffset + 2]
+                            );
+                            const maximumDifference = Math.max(
+                                redDifference,
+                                greenDifference,
+                                blueDifference
+                            );
+                            const absoluteDifference = redDifference
+                                + greenDifference + blueDifference;
+                            if (maximumDifference < bestMaximumDifference
+                                || (maximumDifference === bestMaximumDifference
+                                    && absoluteDifference < bestAbsoluteDifference)) {
+                                bestMaximumDifference = maximumDifference;
+                                bestAbsoluteDifference = absoluteDifference;
+                            }
+                        }
+                    }
+                    if (!Number.isFinite(bestMaximumDifference)
+                        || !Number.isFinite(bestAbsoluteDifference)) {
+                        throw new Error(
+                            'Eligible RGB comparison pixel has no eligible current neighbor'
+                        );
+                    }
+                    absoluteRgbError += bestAbsoluteDifference;
+                    maxRgbErrorByte = Math.max(maxRgbErrorByte, bestMaximumDifference);
+                    if (bestMaximumDifference > 4) pixelsOverFourByte += 1;
                 }
             }
             const falseLit = new Uint8Array(pixelCount);
@@ -1878,10 +2128,17 @@ export async function installBrowserValidationRuntime(page) {
                 const cacheLuma = cache.pixels[offset] * 0.2126
                     + cache.pixels[offset + 1] * 0.7152
                     + cache.pixels[offset + 2] * 0.0722;
-                if (cacheLuma > neighborhoodMax[pixel] + thresholds.falseLitToleranceByte) {
+                const signedVisibilityFalseLit =
+                    signedVisibility.pixels[offset]
+                        > signedVisibility.pixels[offset + 2]
+                            + thresholds.falseLitToleranceByte;
+                if (signedVisibilityFalseLit
+                    && cacheLuma
+                        > neighborhoodMax[pixel] + thresholds.falseLitToleranceByte) {
                     falseLit[pixel] = 1;
                     missingOccluderPixelCount += 1;
-                    if (missingOccluderCandidates) {
+                    if (missingOccluderCandidates
+                        && mismatchCandidateDirection === 'cache_brighter') {
                         const offset = pixel * 4;
                         missingOccluderCandidates.push(Object.freeze({
                             pixel: Object.freeze([
@@ -1893,6 +2150,32 @@ export async function installBrowserValidationRuntime(page) {
                                 cache.pixels.subarray(offset, offset + 4)
                             )),
                             currentNeighborhoodMaximumLuma: neighborhoodMax[pixel],
+                            currentRgba: Object.freeze(Array.from(
+                                current.pixels.subarray(offset, offset + 4)
+                            ))
+                        }));
+                    }
+                }
+                if (missingOccluderCandidates
+                    && mismatchCandidateDirection === 'cache_darker') {
+                    const signedVisibilityExtraDark =
+                        signedVisibility.pixels[offset + 2]
+                            > signedVisibility.pixels[offset]
+                                + thresholds.falseLitToleranceByte;
+                    if (signedVisibilityExtraDark
+                        && currentLuma[pixel]
+                            > cacheNeighborhoodMax[pixel]
+                                + thresholds.falseLitToleranceByte) {
+                        missingOccluderCandidates.push(Object.freeze({
+                            pixel: Object.freeze([
+                                pixel % width,
+                                Math.floor(pixel / width)
+                            ]),
+                            cacheLuma,
+                            cacheRgba: Object.freeze(Array.from(
+                                cache.pixels.subarray(offset, offset + 4)
+                            )),
+                            currentNeighborhoodMaximumLuma: currentLuma[pixel],
                             currentRgba: Object.freeze(Array.from(
                                 current.pixels.subarray(offset, offset + 4)
                             ))
@@ -1928,6 +2211,20 @@ export async function installBrowserValidationRuntime(page) {
                     maxContinuousSeamRunPixels = Math.max(maxContinuousSeamRunPixels, run);
                 }
             }
+            if (missingOccluderCandidates && targetPixel
+                && !missingOccluderCandidates.some((entry) => (
+                    entry.pixel[0] === targetPixel[0] && entry.pixel[1] === targetPixel[1]
+                ))) {
+                const pixel = targetPixel[1] * width + targetPixel[0];
+                const offset = pixel * 4;
+                missingOccluderCandidates.push(Object.freeze({
+                    pixel: Object.freeze([...targetPixel]),
+                    cacheLuma: cacheLumaValues[pixel],
+                    cacheRgba: Object.freeze(Array.from(cache.pixels.subarray(offset, offset + 4))),
+                    currentNeighborhoodMaximumLuma: neighborhoodMax[pixel],
+                    currentRgba: Object.freeze(Array.from(current.pixels.subarray(offset, offset + 4)))
+                }));
+            }
             if (eligibleStaticReceiverPixelCount < 1) {
                 throw new Error('Static City receiver mask resolved no visible framebuffer pixel');
             }
@@ -1948,19 +2245,28 @@ export async function installBrowserValidationRuntime(page) {
                 pixelsOverFourByte,
                 pixelsOverFourBytePercent:
                     pixelsOverFourByte / eligibleStaticReceiverPixelCount * 100,
+                rgbErrorMethod: 'nearest_eligible_current_3x3_rgb_chebyshev_v1',
+                rawSamePixelMeanRgbErrorByte:
+                    rawSamePixelAbsoluteRgbError / (eligibleStaticReceiverPixelCount * 3),
+                rawSamePixelMaxRgbErrorByte,
+                rawSamePixelPixelsOverFourByte,
+                rawSamePixelPixelsOverFourBytePercent:
+                    rawSamePixelPixelsOverFourByte
+                        / eligibleStaticReceiverPixelCount * 100,
+                rawSamePixelRgbErrorMethod: 'same_pixel_rgb_chebyshev_v1',
                 missingOccluderPixelCount,
                 seamPixelCount,
                 seamErrorPixelCount,
                 seamFalseLitPixelCount,
                 maxContinuousSeamRunPixels,
                 falseLitMethod:
-                    'cache_luma_gt_eligible_current_3x3_max_plus_4_bytes_v2',
+                    'cache_luma_gt_eligible_current_3x3_max_plus_4_and_same_frame_cache_visibility_gt_live_v3',
                 seamMaskMethod: 'static_sun_depth_seam_debug_red_gt_blue_plus_32_v1',
                 staticReceiverMaskMethod:
                     'visible_static_city_receivers_excluding_registered_dynamic_receivers_depth_equality_v2'
             };
             return missingOccluderCandidates
-                ? {metrics, missingOccluderCandidates}
+                ? {metrics, maximumRgbErrorPixel, missingOccluderCandidates}
                 : metrics;
         }
 
@@ -2089,6 +2395,10 @@ export async function installBrowserValidationRuntime(page) {
         }
 
         const api = {
+            setDirectRenderingForDiagnostics(enabled) {
+                directRenderForDiagnostics = enabled === true;
+                return directRenderForDiagnostics;
+            },
             async prepareProfile(profile) {
                 await disposePipeline();
                 await clearCurrents();
@@ -2151,6 +2461,7 @@ export async function installBrowserValidationRuntime(page) {
             },
             async captureCurrent(validationCase, warmups) {
                 applyCase(validationCase);
+                resetValidationTemporalHistory();
                 renderUnmeasuredFrames(warmups);
                 const workload = renderMeasuredFrame();
                 const capture = captureRgba();
@@ -2160,13 +2471,38 @@ export async function installBrowserValidationRuntime(page) {
                     height: capture.height,
                     workload,
                     dynamicBus: dynamicBusState(),
+                    staticShadow: staticShadowState(),
                     diagnostics: pipeline?.getDiagnostics?.() ?? null
+                };
+            },
+            async capturePairedCurrent(validationCase, warmups) {
+                if (!pipeline?.getDiagnostics?.().active) {
+                    throw new Error('Paired current capture requires an active verified package');
+                }
+                // Restore live caster ownership against the camera for this case.
+                // Reversing these calls rebuilds the CSM culler for the prior case
+                // and leaves the first target shadow capture with stale cascades.
+                applyCase(validationCase);
+                pipeline.setDebugMode('liveFinal');
+                resetValidationTemporalHistory();
+                renderUnmeasuredFrames(warmups);
+                const workload = renderMeasuredFrame();
+                const capture = captureRgba();
+                await putCurrent(validationCase.id, capture);
+                return {
+                    width: capture.width,
+                    height: capture.height,
+                    workload,
+                    dynamicBus: dynamicBusState(),
+                    staticShadow: staticShadowState(),
+                    diagnostics: pipeline.getDiagnostics()
                 };
             },
             async captureCache(validationCase, warmups) {
                 if (!pipeline) throw new Error('Static-sun pipeline is absent');
                 pipeline.setDebugMode('final');
                 applyCase(validationCase);
+                resetValidationTemporalHistory();
                 renderUnmeasuredFrames(warmups);
                 const workload = renderMeasuredFrame();
                 const cache = captureRgba();
@@ -2176,6 +2512,7 @@ export async function installBrowserValidationRuntime(page) {
                     height: cache.height,
                     workload,
                     dynamicBus: dynamicBusState(),
+                    staticShadow: staticShadowState(),
                     diagnostics: pipeline.getDiagnostics()
                 };
             },
@@ -2219,18 +2556,43 @@ export async function installBrowserValidationRuntime(page) {
                 if (!pipeline) throw new Error('Static-sun pipeline is absent');
                 const mismatchLocalizationRequest = arguments[2] ?? null;
                 const localizeMismatch = mismatchLocalizationRequest !== null;
+                const mismatchLocalizationKeys = localizeMismatch
+                    ? Object.keys(mismatchLocalizationRequest).sort().join(',')
+                    : '';
+                const canonicalLegacyTarget = validationCase?.id
+                    === 'illum.game.low_sun_matrix.regional_dense.w.az135.el08';
+                const explicitBoundedTarget = mismatchLocalizationKeys
+                    === 'direction,productionEligible,sampleCount,schema,targetCaseId'
+                    && mismatchLocalizationRequest?.targetCaseId
+                        === validationCase?.id;
+                const canonicalBoundedTarget = mismatchLocalizationKeys
+                    === 'direction,productionEligible,sampleCount,schema';
+                const canonicalExactPixelTarget = mismatchLocalizationKeys
+                    === 'direction,productionEligible,sampleCount,schema,targetPixel';
                 if (localizeMismatch && (
                     !mismatchLocalizationRequest
                     || typeof mismatchLocalizationRequest !== 'object'
                     || Array.isArray(mismatchLocalizationRequest)
-                    || Object.keys(mismatchLocalizationRequest).sort().join(',')
-                        !== 'productionEligible,sampleCount,schema'
+                    || (mismatchLocalizationKeys !== 'productionEligible,sampleCount,schema'
+                        && !canonicalBoundedTarget && !canonicalExactPixelTarget
+                        && !explicitBoundedTarget)
                     || mismatchLocalizationRequest.schema
                         !== 'ai531-production-mismatch-localization-request-v1'
                     || mismatchLocalizationRequest.productionEligible !== false
-                    || mismatchLocalizationRequest.sampleCount !== 64
-                    || validationCase?.id
-                        !== 'illum.game.low_sun_matrix.regional_dense.w.az135.el08'
+                    || !Number.isSafeInteger(mismatchLocalizationRequest.sampleCount)
+                    || mismatchLocalizationRequest.sampleCount < 1
+                    || mismatchLocalizationRequest.sampleCount > 64
+                    || (mismatchLocalizationRequest.targetPixel !== undefined
+                        && (mismatchLocalizationRequest.sampleCount !== 1
+                            || !Array.isArray(mismatchLocalizationRequest.targetPixel)
+                            || mismatchLocalizationRequest.targetPixel.length !== 2
+                            || mismatchLocalizationRequest.targetPixel.some((entry) => (
+                                !Number.isSafeInteger(entry) || entry < 0
+                            ))))
+                    || (mismatchLocalizationRequest.direction !== undefined
+                        && mismatchLocalizationRequest.direction !== 'cache_brighter'
+                        && mismatchLocalizationRequest.direction !== 'cache_darker')
+                    || (!canonicalLegacyTarget && !explicitBoundedTarget)
                 )) {
                     throw new Error(
                         'production mismatch localization request must remain exact, bounded, and non-promotable'
@@ -2257,6 +2619,7 @@ export async function installBrowserValidationRuntime(page) {
                     pixels: new Uint8Array(stored.cachePixels)
                 };
                 pipeline.setDebugMode('final');
+                resetValidationTemporalHistory();
                 const rawDynamicReceiverMask = captureDynamicReceiverMask();
                 const rawStaticCityReceiverMask =
                     captureVisibleReceiverIdentityMask([city.group]);
@@ -2269,19 +2632,26 @@ export async function installBrowserValidationRuntime(page) {
                     receiverMaskPartition.staticCityReceiverMask
                 );
                 pipeline.setDebugMode('seam');
+                resetValidationTemporalHistory();
                 renderUnmeasuredFrames(1);
                 const seam = captureRgba();
+                pipeline.setDebugMode('signedDifference');
+                resetValidationTemporalHistory();
+                renderUnmeasuredFrames(1);
+                const signedVisibility = captureRgba();
                 const comparisonResult = compareRgba(
                     current,
                     cache,
                     seam,
+                    signedVisibility,
                     receiverMaskPartition.dynamicReceiverMask,
                     receiverMaskPartition.staticCityReceiverMask,
-                    localizeMismatch
+                    localizeMismatch,
+                    mismatchLocalizationRequest?.direction ?? 'cache_brighter',
+                    mismatchLocalizationRequest?.targetPixel ?? null
                 );
                 const metrics = localizeMismatch
                     ? comparisonResult.metrics : comparisonResult;
-                pipeline.setDebugMode('currentDifference');
                 renderUnmeasuredFrames(warmups);
                 const workload = renderMeasuredFrame();
                 const comparison = captureRgba();
@@ -2290,12 +2660,18 @@ export async function installBrowserValidationRuntime(page) {
                         '/tools/static_sun_depth/browser/ProductionMismatchCasterIdPass.js'
                     )).localizeProductionMismatchCasters({
                         THREE,
+                        cacheBinding: pipeline._active?.binding,
                         city,
                         engine,
                         renderer,
                         validationCase,
                         missingOccluderCandidates:
-                            comparisonResult.missingOccluderCandidates,
+                            mismatchLocalizationRequest.targetPixel
+                                ? comparisonResult.missingOccluderCandidates.filter((entry) => (
+                                    entry.pixel[0] === mismatchLocalizationRequest.targetPixel[0]
+                                    && entry.pixel[1] === mismatchLocalizationRequest.targetPixel[1]
+                                ))
+                                : comparisonResult.missingOccluderCandidates,
                         sampleCount: mismatchLocalizationRequest.sampleCount
                     })
                     : null;
@@ -2320,11 +2696,15 @@ export async function installBrowserValidationRuntime(page) {
                     metrics,
                     workload,
                     dynamicBus: dynamicBusState(),
+                    staticShadow: staticShadowState(),
                     dynamicBusShadowProof: dynamicBusProof,
                     width: comparison.width,
                     height: comparison.height,
                     diagnostics: pipeline.getDiagnostics(),
-                    ...(mismatchLocalization ? {mismatchLocalization} : {})
+                    ...(mismatchLocalization ? {
+                        maximumRgbErrorPixel: comparisonResult.maximumRgbErrorPixel,
+                        mismatchLocalization
+                    } : {})
                 };
             },
             async dispose() {

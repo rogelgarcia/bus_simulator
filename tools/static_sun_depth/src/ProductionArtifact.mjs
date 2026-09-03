@@ -40,13 +40,17 @@ import {
 } from './ProductionAlphaCutoutParity.mjs';
 
 export const PRODUCTION_STATIC_SUN_DEPTH_RECEIPT_SCHEMA =
-    'bus-sim-static-sun-depth-production-blender-receipt-v4';
+    'bus-sim-static-sun-depth-production-blender-receipt-v5';
 export const BLENDER_PRODUCTION_STATIC_SUN_DEPTH_RECEIPT_SCHEMA =
-    'ai531-static-sun-production-render-receipt-v4';
+    'ai531-static-sun-production-render-receipt-v5';
 export const BLENDER_PRODUCTION_DEPTH_DIAGNOSTIC_RECEIPT_SCHEMA =
     'ai531-static-sun-depth-precision-diagnostic-receipt-v1';
 export const PRODUCTION_STATIC_SUN_DEPTH_ARTIFACT_SCHEMA =
     'bus-sim-static-sun-depth-production-artifact-v1';
+export const PROVISIONAL_STATIC_SUN_DEPTH_RECEIPT_SCHEMA =
+    'bus-sim-static-sun-depth-provisional-blender-receipt-v1';
+export const PROVISIONAL_STATIC_SUN_DEPTH_ARTIFACT_SCHEMA =
+    'bus-sim-static-sun-depth-provisional-artifact-v1';
 export const PRODUCTION_STATIC_SUN_DEPTH_METRICS_SCHEMA =
     'bus-sim-static-sun-depth-production-metrics-v1';
 export const PRODUCTION_DEPTH_DIAGNOSTIC_ARTIFACT_SCHEMA =
@@ -57,6 +61,8 @@ export const STATIC_SUN_DEPTH_OPAQUE_CERTIFICATION_SCHEMA =
     'bus-sim-static-sun-depth-opaque-certification-v1';
 export const STATIC_SUN_DEPTH_ALPHA_CERTIFICATION_SCHEMA =
     'bus-sim-static-sun-depth-alpha-cutout-certification-v2';
+export const STATIC_SUN_DEPTH_ALPHA_COVERAGE_CERTIFICATION_SCHEMA =
+    'bus-sim-static-sun-depth-alpha-cutout-certification-v3';
 export const STATIC_SUN_DEPTH_CASTER_CERTIFICATION_SCHEMA =
     'bus-sim-static-sun-depth-caster-exclusion-certification-v1';
 export const PRODUCTION_OPAQUE_BVH_DEPTH_EPSILON_METERS = 5e-3;
@@ -67,6 +73,10 @@ const DIAGNOSTIC_ARTIFACT_CONTENT_SCHEMA =
     'bus-sim-static-sun-depth-precision-diagnostic-content-v1';
 const DIAGNOSTIC_ARTIFACT_CONTENT_DOMAIN =
     'bus-simulator/static-sun-depth/precision-diagnostic-content/v1';
+const PROVISIONAL_ARTIFACT_CONTENT_SCHEMA =
+    'bus-sim-static-sun-depth-provisional-content-v1';
+const PROVISIONAL_ARTIFACT_CONTENT_DOMAIN =
+    'bus-simulator/static-sun-depth/provisional-content/v1';
 const FIXED_GUARD_TEXELS = 4;
 const MAX_PRODUCTION_ARRAY_LAYERS = 256;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
@@ -89,6 +99,7 @@ const PRODUCTION_SOURCE_SHADOW_CAPABILITY = Object.freeze({
 const PRODUCTION_FILTER_WORLD_RADIUS_METERS = 0.062255859375;
 const DEPTH_DIAGNOSTIC_LIGHTING_PROFILE_ID = 'ai527.sun.az135.el08';
 const PRODUCTION_ENCODING_CONTRACT = Object.freeze({
+    allowUnpromotedNativeCutoutField: false,
     artifactClass: 'production',
     artifactSchema: PRODUCTION_STATIC_SUN_DEPTH_ARTIFACT_SCHEMA,
     bytesPerTexel: 2,
@@ -105,7 +116,19 @@ const PRODUCTION_ENCODING_CONTRACT = Object.freeze({
     rawReceiptSchema: BLENDER_PRODUCTION_STATIC_SUN_DEPTH_RECEIPT_SCHEMA,
     receiptManifestSchema: PRODUCTION_STATIC_SUN_DEPTH_RECEIPT_SCHEMA
 });
+const PROVISIONAL_ENCODING_CONTRACT = Object.freeze({
+    ...PRODUCTION_ENCODING_CONTRACT,
+    allowUnpromotedNativeCutoutField: true,
+    artifactClass: 'provisional',
+    artifactSchema: PROVISIONAL_STATIC_SUN_DEPTH_ARTIFACT_SCHEMA,
+    contentDomain: PROVISIONAL_ARTIFACT_CONTENT_DOMAIN,
+    contentSchema: PROVISIONAL_ARTIFACT_CONTENT_SCHEMA,
+    productionEligible: false,
+    provisional: true,
+    receiptManifestSchema: PROVISIONAL_STATIC_SUN_DEPTH_RECEIPT_SCHEMA
+});
 const DIAGNOSTIC_ENCODING_CONTRACT = Object.freeze({
+    allowUnpromotedNativeCutoutField: false,
     artifactClass: 'diagnostic',
     artifactSchema: PRODUCTION_DEPTH_DIAGNOSTIC_ARTIFACT_SCHEMA,
     bytesPerTexel: 4,
@@ -128,10 +151,27 @@ const DIAGNOSTIC_ENCODING_CONTRACT = Object.freeze({
  * @param {unknown} value
  */
 export function validateProductionStaticSunDepthReceipt(value) {
+    return validateStaticSunDepthReceipt(value, PRODUCTION_ENCODING_CONTRACT);
+}
+
+/**
+ * Validates a receipt only for parity bootstrap. The resulting artifact is
+ * explicitly provisional and cannot be published as production content.
+ * @param {unknown} value
+ */
+export function validateProvisionalStaticSunDepthReceipt(value) {
+    return validateStaticSunDepthReceipt(value, PROVISIONAL_ENCODING_CONTRACT);
+}
+
+function validateStaticSunDepthReceipt(value, contract) {
     const receipt = /** @type {Record<string, any>} */ (cloneCanonicalJson(value));
     if (receipt.schema === BLENDER_PRODUCTION_STATIC_SUN_DEPTH_RECEIPT_SCHEMA
         || receipt.schema === BLENDER_PRODUCTION_DEPTH_DIAGNOSTIC_RECEIPT_SCHEMA) {
-        validateRawBlenderReceipt(receipt, encodingContractForReceipt(receipt));
+        const rawContract = receipt.schema
+                === BLENDER_PRODUCTION_DEPTH_DIAGNOSTIC_RECEIPT_SCHEMA
+            ? DIAGNOSTIC_ENCODING_CONTRACT
+            : contract;
+        validateRawBlenderReceipt(receipt, rawContract);
         return receipt;
     }
     requireExactKeys(receipt, [
@@ -147,13 +187,13 @@ export function validateProductionStaticSunDepthReceipt(value) {
         'status',
         'tiles'
     ], 'production receipt');
-    if (receipt.schema !== PRODUCTION_STATIC_SUN_DEPTH_RECEIPT_SCHEMA
-        || receipt.artifactClass !== 'production'
-        || receipt.productionEligible !== true
+    if (receipt.schema !== contract.receiptManifestSchema
+        || receipt.artifactClass !== contract.artifactClass
+        || receipt.productionEligible !== contract.productionEligible
         || receipt.status !== 'complete') {
         failStaticSunDepth(
             'static_sun_depth_production_receipt_invalid',
-            'Static-sun production receipt must be complete and explicitly production eligible.',
+            'Static-sun receipt does not match its requested artifact eligibility contract.',
             {}
         );
     }
@@ -179,13 +219,17 @@ export function buildProductionStaticSunDepthArtifact(options) {
     return buildStaticSunDepthArtifact(options, PRODUCTION_ENCODING_CONTRACT);
 }
 
+export function buildProvisionalStaticSunDepthArtifact(options) {
+    return buildStaticSunDepthArtifact(options, PROVISIONAL_ENCODING_CONTRACT);
+}
+
 export function buildProductionDepthDiagnosticArtifact(options) {
     return buildStaticSunDepthArtifact(options, DIAGNOSTIC_ENCODING_CONTRACT);
 }
 
 function buildStaticSunDepthArtifact(options, contract) {
     requireExactKeys(options, ['interiorTiles', 'receipt'], 'production artifact options');
-    const sourceReceipt = validateProductionStaticSunDepthReceipt(options.receipt);
+    const sourceReceipt = validateStaticSunDepthReceipt(options.receipt, contract);
     if (contract.diagnostic
         ? sourceReceipt.schema !== BLENDER_PRODUCTION_DEPTH_DIAGNOSTIC_RECEIPT_SCHEMA
         : sourceReceipt.schema === BLENDER_PRODUCTION_DEPTH_DIAGNOSTIC_RECEIPT_SCHEMA) {
@@ -553,6 +597,149 @@ export function buildAlphaCutoutCertificationRecord(value) {
 }
 
 /** @param {unknown} value */
+export function buildAlphaCutoutCoverageCertificationRecord(value) {
+    const input = /** @type {Record<string, any>} */ (cloneCanonicalJson(value));
+    requireExactKeys(input, [
+        'alphaSemanticsSha256',
+        'certifiedCasterCount',
+        'certifiedCasterIds',
+        'cutoutBindingProjectionSha256',
+        'cutoutCasterIdsSha256',
+        'evidenceSha256',
+        'expectedCasterCount',
+        'firstHitDepthSampleCount',
+        'firstHitDepthToleranceMeters',
+        'matchingSampleCount',
+        'maximumAbsoluteFirstHitDepthErrorMeters',
+        'mismatchCounts',
+        'missingOccluderCount',
+        'outOfCoverageCasterIds',
+        'parityArtifactSha256',
+        'sampleCount',
+        'samplePlanSha256',
+        'unexpectedOccluderCount'
+    ], 'alpha coverage certification input');
+    for (const key of [
+        'alphaSemanticsSha256',
+        'cutoutBindingProjectionSha256',
+        'cutoutCasterIdsSha256',
+        'evidenceSha256',
+        'parityArtifactSha256',
+        'samplePlanSha256'
+    ]) requireSha256(input[key], `alpha coverage certification.${key}`);
+    requirePositiveInteger(
+        input.expectedCasterCount,
+        'alpha coverage certification.expectedCasterCount'
+    );
+    requirePositiveInteger(
+        input.certifiedCasterCount,
+        'alpha coverage certification.certifiedCasterCount'
+    );
+    requirePositiveInteger(
+        input.sampleCount,
+        'alpha coverage certification.sampleCount'
+    );
+    requirePositiveInteger(
+        input.firstHitDepthSampleCount,
+        'alpha coverage certification.firstHitDepthSampleCount'
+    );
+    const certifiedCasterIds = requireCanonicalIdArray(
+        input.certifiedCasterIds,
+        'alpha coverage certification.certifiedCasterIds',
+        false
+    );
+    const outOfCoverageCasterIds = requireCanonicalIdArray(
+        input.outOfCoverageCasterIds,
+        'alpha coverage certification.outOfCoverageCasterIds',
+        true
+    );
+    requireNonNegativeFinite(
+        input.firstHitDepthToleranceMeters,
+        'alpha coverage certification.firstHitDepthToleranceMeters'
+    );
+    requireNonNegativeFinite(
+        input.maximumAbsoluteFirstHitDepthErrorMeters,
+        'alpha coverage certification.maximumAbsoluteFirstHitDepthErrorMeters'
+    );
+    requireNonNegativeInteger(
+        input.matchingSampleCount,
+        'alpha coverage certification.matchingSampleCount'
+    );
+    requireNonNegativeInteger(
+        input.missingOccluderCount,
+        'alpha coverage certification.missingOccluderCount'
+    );
+    requireNonNegativeInteger(
+        input.unexpectedOccluderCount,
+        'alpha coverage certification.unexpectedOccluderCount'
+    );
+    requireExactKeys(
+        input.mismatchCounts,
+        PRODUCTION_ALPHA_CUTOUT_MISMATCH_KEYS,
+        'alpha coverage certification.mismatchCounts'
+    );
+    let mismatchTotal = 0;
+    for (const key of PRODUCTION_ALPHA_CUTOUT_MISMATCH_KEYS) {
+        requireNonNegativeInteger(
+            input.mismatchCounts[key],
+            `alpha coverage certification.mismatchCounts.${key}`
+        );
+        mismatchTotal += input.mismatchCounts[key];
+    }
+    const overlap = certifiedCasterIds.filter(
+        (casterId) => outOfCoverageCasterIds.includes(casterId)
+    );
+    const allCasterIds = [...certifiedCasterIds, ...outOfCoverageCasterIds]
+        .sort(compareCanonicalStrings);
+    const casterIdsSha256 = rawSha256(utf8Bytes(canonicalJsonStringify({
+        casterIds: allCasterIds,
+        schema: 'ai531-production-alpha-cutout-caster-plan-v1'
+    })));
+    if (overlap.length > 0
+        || input.certifiedCasterCount !== certifiedCasterIds.length
+        || allCasterIds.length !== input.expectedCasterCount
+        || casterIdsSha256 !== input.cutoutCasterIdsSha256) {
+        failStaticSunDepth(
+            'static_sun_depth_alpha_coverage_partition_failed',
+            'Alpha-cutout coverage certification requires an exact partition of the authenticated caster inventory.',
+            {
+                certifiedCasterCount: input.certifiedCasterCount,
+                expectedCasterCount: input.expectedCasterCount,
+                outOfCoverageCasterCount: outOfCoverageCasterIds.length
+            }
+        );
+    }
+    if (input.matchingSampleCount !== input.sampleCount
+        || input.firstHitDepthSampleCount < input.certifiedCasterCount
+        || input.firstHitDepthSampleCount > input.sampleCount
+        || input.firstHitDepthToleranceMeters
+            !== PRODUCTION_ALPHA_CUTOUT_FIRST_HIT_DEPTH_TOLERANCE_METERS
+        || input.maximumAbsoluteFirstHitDepthErrorMeters
+            > input.firstHitDepthToleranceMeters
+        || input.missingOccluderCount !== 0
+        || input.unexpectedOccluderCount !== 0
+        || mismatchTotal !== 0) {
+        failStaticSunDepth(
+            'static_sun_depth_alpha_certification_failed',
+            'Alpha-cutout coverage certification requires every measured in-coverage sample to match runtime alpha semantics.',
+            {
+                certifiedCasterCount: input.certifiedCasterCount,
+                firstHitDepthSampleCount: input.firstHitDepthSampleCount,
+                mismatchTotal,
+                missingOccluderCount: input.missingOccluderCount,
+                unexpectedOccluderCount: input.unexpectedOccluderCount
+            }
+        );
+    }
+    return cloneCanonicalJson({
+        ...input,
+        method: 'measured-per-profile-alpha-coverage-and-release-union-v3',
+        schema: STATIC_SUN_DEPTH_ALPHA_COVERAGE_CERTIFICATION_SCHEMA,
+        status: 'passed'
+    });
+}
+
+/** @param {unknown} value */
 export function buildCasterExclusionCertificationRecord(value) {
     const input = /** @type {Record<string, any>} */ (cloneCanonicalJson(value));
     requireExactKeys(input, [
@@ -661,7 +848,12 @@ function validateRawBlenderReceipt(receipt, contract) {
             { status: receipt.status ?? null }
         );
     }
-    validateRawCompiler(receipt.compiler, receipt.compilerDescriptor, receipt.configuration);
+    validateRawCompiler(
+        receipt.compiler,
+        receipt.compilerDescriptor,
+        receipt.configuration,
+        contract
+    );
     validateRawIdentity(receipt);
     validateRawInput(receipt.input, receipt.identity);
     validateRawAssumptions(receipt.assumptions, contract);
@@ -683,19 +875,29 @@ function validateRawBlenderReceipt(receipt, contract) {
         contract
     );
     validateRawOpaqueCertification(receipt.opaqueCertification);
-    validateRawAlphaCertification(receipt.alphaCertification, receipt.outputs);
+    validateRawAlphaCertification(
+        receipt.alphaCertification,
+        receipt.outputs,
+        contract
+    );
+    if (!contract.diagnostic) {
+        const compilerField = receipt.compilerDescriptor.nativeCutoutField;
+        const alphaField = receipt.alphaCertification.nativeCutoutField;
+        if (compilerField.method !== alphaField.method
+            || compilerField.schema !== alphaField.schema
+            || compilerField.nativeOwnedMeshInstanceCount
+                !== alphaField.nativeOwnedMeshInstanceCount
+            || compilerField.nativeOwnedMeshInstanceIdsSha256
+                !== alphaField.nativeOwnedMeshInstanceIdsSha256
+            || compilerField.producerInventorySha256
+                !== alphaField.producerInventorySha256) {
+            throw new Error(
+                'Blender native cutout compiler and alpha identities differ'
+            );
+        }
+    }
     validateRawProfile(receipt.profile, receipt.configuration, receipt.request);
     validateRawReconstruction(receipt.reconstruction);
-}
-
-function encodingContractForReceipt(receipt) {
-    if (receipt.schema === BLENDER_PRODUCTION_STATIC_SUN_DEPTH_RECEIPT_SCHEMA) {
-        return PRODUCTION_ENCODING_CONTRACT;
-    }
-    if (receipt.schema === BLENDER_PRODUCTION_DEPTH_DIAGNOSTIC_RECEIPT_SCHEMA) {
-        return DIAGNOSTIC_ENCODING_CONTRACT;
-    }
-    throw new Error(`Unsupported Blender receipt schema '${String(receipt.schema)}'`);
 }
 
 function validateRawCasterSidedness(value, request) {
@@ -769,9 +971,7 @@ function normalizeRawBlenderReceipt(receipt, contract) {
         profile: { id: receipt.profile.id, sha256: receipt.profile.rawSha256 },
         quantizationMeasurements: receipt.quantizationMeasurements,
         sampling: receipt.request.sampling,
-        schema: contract.diagnostic
-            ? BLENDER_PRODUCTION_DEPTH_DIAGNOSTIC_RECEIPT_SCHEMA
-            : PRODUCTION_STATIC_SUN_DEPTH_RECEIPT_SCHEMA,
+        schema: contract.receiptManifestSchema,
         source: {
             alphaSemanticsSha256: receipt.identity.alphaSemanticsSha256,
             casterInventorySha256: receipt.identity.casterInventorySha256,
@@ -791,21 +991,28 @@ function normalizeRawBlenderReceipt(receipt, contract) {
     };
     return contract.diagnostic
         ? normalized
-        : validateProductionStaticSunDepthReceipt(normalized);
+        : validateStaticSunDepthReceipt(normalized, contract);
 }
 
-function validateRawCompiler(compiler, descriptor, configuration) {
+function validateRawCompiler(compiler, descriptor, configuration, contract) {
     requireExactKeys(compiler, [
         'archiveSha256', 'architecture', 'backend', 'blenderBuildHash',
         'blenderVersion', 'blenderVersionString', 'cyclesDevice',
         'executableSha256', 'fixedThreadCount', 'gpuAllowed', 'operatingSystem'
     ], 'Blender receipt.compiler');
-    requireExactKeys(descriptor, [
+    const descriptorKeys = [
         'ai529ScriptSha256', 'archiveSha256', 'backend', 'blenderBuildHash',
         'blenderVersion', 'cyclesDevice', 'executableSha256', 'fixedThreadCount',
         'gpuAllowed', 'profileSha256', 'rendererScriptSha256', 'schema',
         'toolchainSha256'
-    ], 'Blender receipt.compilerDescriptor');
+    ];
+    requireExactKeys(
+        descriptor,
+        contract.diagnostic
+            ? descriptorKeys
+            : [...descriptorKeys, 'nativeCutoutField'],
+        'Blender receipt.compilerDescriptor'
+    );
     requireExactKeys(configuration, [
         'ai529ScriptInventory', 'ai529ScriptSha256', 'profileSha256',
         'rendererScriptSha256', 'requestSha256', 'toolchainSha256'
@@ -843,9 +1050,18 @@ function validateRawCompiler(compiler, descriptor, configuration) {
         gpuAllowed: compiler.gpuAllowed,
         profileSha256: configuration.profileSha256,
         rendererScriptSha256: configuration.rendererScriptSha256,
-        schema: 'ai531-static-sun-production-compiler-v1',
+        schema: contract.diagnostic
+            ? 'ai531-static-sun-production-compiler-v1'
+            : 'ai531-static-sun-production-compiler-v3',
         toolchainSha256: configuration.toolchainSha256
     };
+    if (!contract.diagnostic) {
+        validateNativeCutoutFieldCompilerIdentity(
+            descriptor.nativeCutoutField,
+            contract.allowUnpromotedNativeCutoutField
+        );
+        expectedDescriptor.nativeCutoutField = descriptor.nativeCutoutField;
+    }
     if (canonicalJsonStringify(descriptor) !== canonicalJsonStringify(expectedDescriptor)) {
         failStaticSunDepth(
             'static_sun_depth_production_compiler_invalid',
@@ -867,6 +1083,70 @@ function validateRawCompiler(compiler, descriptor, configuration) {
             throw new Error('AI529 script inventory paths must be unique and ascending');
         }
         previousPath = entry.path;
+    }
+}
+
+function validateNativeCutoutFieldCompilerIdentity(value, allowTextureGradV3) {
+    requireExactKeys(value, [
+        'method', 'nativeOwnedMeshInstanceCount',
+        'nativeOwnedMeshInstanceIdsSha256', 'producerInventorySha256', 'schema'
+    ], 'Blender compiler nativeCutoutField');
+    requireSha256(
+        value.producerInventorySha256,
+        'Blender compiler native cutout producer inventory'
+    );
+    requirePositiveInteger(
+        value.nativeOwnedMeshInstanceCount,
+        'Blender compiler native foliage mesh-instance count'
+    );
+    requireSha256(
+        value.nativeOwnedMeshInstanceIdsSha256,
+        'Blender compiler native foliage mesh-instance projection'
+    );
+    const legacyV2 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v2'
+        && value.method
+            === 'three-r183-production-lattice-mixed-foliage-depth24-native-readback-v2';
+    const textureGradV3 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v3'
+        && value.method
+            === 'headless-blender-full-lattice-candidates-three-r183-native-texture-grad-v3';
+    const implicitGradientV4 = allowTextureGradV3 === true
+        && value.schema === 'ai531-production-alpha-cutout-native-field-receipt-v4'
+        && value.method
+            === 'headless-blender-full-lattice-candidates-three-r183-native-implicit-gradient-v4';
+    const composedV5 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v5'
+        && value.method
+            === 'authenticated-direct-depth24-texture-grad-minimum-union-v5';
+    const composedV6 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v6'
+        && value.method
+            === 'authenticated-direct-depth24-texture-grad-hole-fill-v6';
+    const calibratedV7 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v7'
+        && value.method
+            === 'authenticated-direct-preferred-hole-fill-minus-measured-bake-only-v7';
+    const calibratedV8 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v8'
+        && value.method
+            === 'authenticated-minimum-union-plus-measured-exact-corrections-v8';
+    const rebasedV9 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v9'
+        && value.method
+            === 'authenticated-stable-direct-plus-historical-texture-grad-hole-restoration-v9';
+    const rebasedCalibratedV10 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v10'
+        && value.method
+            === 'authenticated-stable-direct-historical-hole-restoration-minus-measured-bake-only-v10';
+    const residualV11 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v11'
+        && value.method
+            === 'authenticated-static-shadow-residual-live-depth-corrections-v11';
+    if (!legacyV2 && !textureGradV3 && !implicitGradientV4
+        && !composedV5 && !composedV6 && !calibratedV7 && !calibratedV8
+        && !rebasedV9 && !rebasedCalibratedV10 && !residualV11) {
+        throw new Error('Blender compiler native cutout field identity is unsupported');
     }
 }
 
@@ -911,14 +1191,17 @@ function validateRawInput(input, identity) {
 
 function validateRawAssumptions(value, contract) {
     const expected = /** @type {Record<string, string>} */ ({
-        depthMaterial:
-            'cycles_z_pass_with_binary_principled_visibility_v1',
+        depthMaterial: contract.diagnostic
+            ? 'cycles_z_pass_with_binary_principled_visibility_v1'
+            : 'cycles_opaque_including_mixed_foliage_z_pass_min_merged_with_native_three_mixed_mesh_depth24_v3',
         f32Intermediate: 'rgba_f32le_lower_left_with_depth_in_b_and_binary_occupancy_in_a_v1',
         guardGeneration: 'not_performed_outputs_are_unguarded_interiors',
         performanceUse: 'render_timings_are_intentionally_absent_and_must_be_measured_by_the_outer_acceptance_run',
         pointSun: 'one_normalized_receiver_to_sun_direction_no_angular_penumbra',
         sidedness: 'authenticated-three-r183-effective-shadow-side-then-world-space-direction-filter-v1',
-        spatialSampling: 'one_deterministic_cycles_primary_camera_sample_per_texel'
+        spatialSampling: contract.diagnostic
+            ? 'one_deterministic_cycles_primary_camera_sample_per_texel'
+            : 'one_cycles_opaque_including_mixed_foliage_primary_sample_min_merged_with_one_native_three_mixed_mesh_depth24_sample_per_texel_v3'
     });
     if (contract.diagnostic) {
         expected.rgba8Rgb24aEncoding =
@@ -1484,7 +1767,7 @@ function validateRawOpaqueCertification(value) {
     }
 }
 
-function validateRawAlphaCertification(value, outputs) {
+function validateRawAlphaCertification(value, outputs, contract) {
     const requiredKeys = [
         'binaryAlphaEpsilon', 'binaryOutputRequired', 'coverageInputs',
         'cutoutMaterialCount', 'cutoutMaterialIds', 'exactCoverageInputCount',
@@ -1495,13 +1778,31 @@ function validateRawAlphaCertification(value, outputs) {
         && typeof value === 'object'
         && !Array.isArray(value)
         && Object.prototype.hasOwnProperty.call(value, 'spatialParityArtifact');
+    const hasNativeCutoutField = !!value
+        && typeof value === 'object'
+        && !Array.isArray(value)
+        && Object.prototype.hasOwnProperty.call(value, 'nativeCutoutField');
+    if ((!contract.diagnostic && !hasNativeCutoutField)
+        || (contract.diagnostic && hasNativeCutoutField)) {
+        throw new Error(
+            'Blender production alpha certification native cutout field presence is invalid'
+        );
+    }
+    const optionalKeys = [
+        ...(hasNativeCutoutField ? ['nativeCutoutField'] : []),
+        ...(hasSpatialParityArtifact ? ['spatialParityArtifact'] : [])
+    ];
     requireExactKeys(
         value,
-        hasSpatialParityArtifact
-            ? [...requiredKeys, 'spatialParityArtifact']
-            : requiredKeys,
+        [...requiredKeys, ...optionalKeys],
         'Blender receipt.alphaCertification'
     );
+    if (hasNativeCutoutField) {
+        validateNativeCutoutFieldCertificationIdentity(
+            value.nativeCutoutField,
+            contract.allowUnpromotedNativeCutoutField
+        );
+    }
     if (hasSpatialParityArtifact) {
         validateProductionAlphaCutoutSpatialParityArtifact(
             value.spatialParityArtifact
@@ -1519,7 +1820,9 @@ function validateRawAlphaCertification(value, outputs) {
     const empty = outputs.reduce((sum, output) => sum + output.transparentPixelCount, 0);
     if (value.binaryAlphaEpsilon !== 1e-6
         || value.binaryOutputRequired !== true
-        || value.status !== 'exact_inputs_and_binary_render_output_verified'
+        || value.status !== (contract.diagnostic
+            ? 'exact_inputs_and_binary_render_output_verified'
+            : 'native_three_mixed_mesh_field_min_merged_with_cycles_opaque_including_mixed_foliage_verified')
         || value.cutoutMaterialCount !== value.cutoutMaterialIds.length
         || value.cutoutMaterialCount !== value.coverageInputs.length
         || value.occupiedRenderedPixelCount !== occupied
@@ -1571,6 +1874,79 @@ function validateRawAlphaCertification(value, outputs) {
             'Exact alpha coverage input count is incomplete.',
             {}
         );
+    }
+}
+
+function validateNativeCutoutFieldCertificationIdentity(value, allowTextureGradV3) {
+    requireExactKeys(value, [
+        'cutoutCasterCount', 'cutoutCasterIdsSha256', 'method',
+        'nativeOwnedMeshInstanceCount', 'nativeOwnedMeshInstanceIdsSha256',
+        'outputProjectionSha256', 'producerInventorySha256',
+        'receiptByteLength', 'receiptSha256', 'schema', 'status',
+        'tilesSha256'
+    ], 'Blender alpha nativeCutoutField');
+    requirePositiveInteger(
+        value.cutoutCasterCount,
+        'Blender alpha native cutout caster count'
+    );
+    requirePositiveInteger(
+        value.receiptByteLength,
+        'Blender alpha native cutout receipt byte length'
+    );
+    requirePositiveInteger(
+        value.nativeOwnedMeshInstanceCount,
+        'Blender alpha native foliage mesh-instance count'
+    );
+    for (const key of [
+        'cutoutCasterIdsSha256', 'outputProjectionSha256',
+        'nativeOwnedMeshInstanceIdsSha256', 'producerInventorySha256',
+        'receiptSha256', 'tilesSha256'
+    ]) requireSha256(value[key], `Blender alpha native cutout ${key}`);
+    const legacyV2 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v2'
+        && value.method
+            === 'three-r183-production-lattice-mixed-foliage-depth24-native-readback-v2';
+    const textureGradV3 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v3'
+        && value.method
+            === 'headless-blender-full-lattice-candidates-three-r183-native-texture-grad-v3';
+    const implicitGradientV4 = allowTextureGradV3 === true
+        && value.schema === 'ai531-production-alpha-cutout-native-field-receipt-v4'
+        && value.method
+            === 'headless-blender-full-lattice-candidates-three-r183-native-implicit-gradient-v4';
+    const composedV5 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v5'
+        && value.method
+            === 'authenticated-direct-depth24-texture-grad-minimum-union-v5';
+    const composedV6 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v6'
+        && value.method
+            === 'authenticated-direct-depth24-texture-grad-hole-fill-v6';
+    const calibratedV7 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v7'
+        && value.method
+            === 'authenticated-direct-preferred-hole-fill-minus-measured-bake-only-v7';
+    const calibratedV8 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v8'
+        && value.method
+            === 'authenticated-minimum-union-plus-measured-exact-corrections-v8';
+    const rebasedV9 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v9'
+        && value.method
+            === 'authenticated-stable-direct-plus-historical-texture-grad-hole-restoration-v9';
+    const rebasedCalibratedV10 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v10'
+        && value.method
+            === 'authenticated-stable-direct-historical-hole-restoration-minus-measured-bake-only-v10';
+    const residualV11 = value.schema
+            === 'ai531-production-alpha-cutout-native-field-receipt-v11'
+        && value.method
+            === 'authenticated-static-shadow-residual-live-depth-corrections-v11';
+    if ((!legacyV2 && !textureGradV3 && !implicitGradientV4
+            && !composedV5 && !composedV6 && !calibratedV7 && !calibratedV8
+            && !rebasedV9 && !rebasedCalibratedV10 && !residualV11)
+        || value.status !== 'authenticated_complete_native_field') {
+        throw new Error('Blender alpha native cutout field identity is unsupported');
     }
 }
 
@@ -2369,6 +2745,21 @@ function requireNonEmptyString(value, label) {
     if (typeof value !== 'string' || !value.trim() || value.trim() !== value) {
         throw new TypeError(`${label} must be a non-empty string without surrounding whitespace`);
     }
+}
+
+function requireCanonicalIdArray(value, label, allowEmpty) {
+    if (!Array.isArray(value) || (!allowEmpty && value.length === 0)) {
+        throw new TypeError(`${label} must be a canonical string array`);
+    }
+    const ids = value.map((entry, index) => {
+        requireNonEmptyString(entry, `${label}[${index}]`);
+        return entry;
+    });
+    const canonical = [...new Set(ids)].sort(compareCanonicalStrings);
+    if (canonicalJsonStringify(ids) !== canonicalJsonStringify(canonical)) {
+        throw new TypeError(`${label} must contain unique IDs in canonical order`);
+    }
+    return ids;
 }
 
 function requireFinite(value, label) {

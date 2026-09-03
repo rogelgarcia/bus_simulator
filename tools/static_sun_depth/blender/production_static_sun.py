@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import array
 import json
 import math
 import struct
@@ -25,8 +26,52 @@ from scene import BakeProfile, assert_blender_runtime, configure_camera_determin
 
 
 REQUEST_SCHEMA = "ai531-static-sun-production-request-v4"
-RECEIPT_SCHEMA = "ai531-static-sun-production-render-receipt-v4"
+RECEIPT_SCHEMA = "ai531-static-sun-production-render-receipt-v5"
 DIAGNOSTIC_RECEIPT_SCHEMA = "ai531-static-sun-depth-precision-diagnostic-receipt-v1"
+NATIVE_CUTOUT_FIELD_RECEIPT_SCHEMA = "ai531-production-alpha-cutout-native-field-receipt-v2"
+NATIVE_CUTOUT_FIELD_SESSION_SCHEMA = "ai531-production-alpha-cutout-native-field-session-v2"
+NATIVE_CUTOUT_FIELD_METHOD = "three-r183-production-lattice-mixed-foliage-depth24-native-readback-v2"
+NATIVE_TEXTURE_GRAD_FIELD_RECEIPT_SCHEMA = "ai531-production-alpha-cutout-native-field-receipt-v3"
+NATIVE_TEXTURE_GRAD_FIELD_SESSION_SCHEMA = "ai531-production-alpha-cutout-texture-grad-field-session-v3"
+NATIVE_TEXTURE_GRAD_FIELD_METHOD = "headless-blender-full-lattice-candidates-three-r183-native-texture-grad-v3"
+NATIVE_IMPLICIT_GRADIENT_FIELD_RECEIPT_SCHEMA = "ai531-production-alpha-cutout-native-field-receipt-v4"
+NATIVE_IMPLICIT_GRADIENT_FIELD_SESSION_SCHEMA = "ai531-production-alpha-cutout-implicit-gradient-field-session-v4"
+NATIVE_IMPLICIT_GRADIENT_FIELD_METHOD = "headless-blender-full-lattice-candidates-three-r183-native-implicit-gradient-v4"
+NATIVE_COMPOSED_FIELD_V5_RECEIPT_SCHEMA = "ai531-production-alpha-cutout-native-field-receipt-v5"
+NATIVE_COMPOSED_FIELD_V5_SESSION_SCHEMA = "ai531-production-alpha-cutout-composed-field-session-v5"
+NATIVE_COMPOSED_FIELD_V5_METHOD = "authenticated-direct-depth24-texture-grad-minimum-union-v5"
+NATIVE_COMPOSED_FIELD_RECEIPT_SCHEMA = "ai531-production-alpha-cutout-native-field-receipt-v6"
+NATIVE_COMPOSED_FIELD_SESSION_SCHEMA = "ai531-production-alpha-cutout-composed-field-session-v6"
+NATIVE_COMPOSED_FIELD_METHOD = "authenticated-direct-depth24-texture-grad-hole-fill-v6"
+NATIVE_CALIBRATED_FIELD_RECEIPT_SCHEMA = "ai531-production-alpha-cutout-native-field-receipt-v7"
+NATIVE_CALIBRATED_FIELD_SESSION_SCHEMA = "ai531-production-alpha-cutout-calibrated-field-session-v7"
+NATIVE_CALIBRATED_FIELD_METHOD = "authenticated-direct-preferred-hole-fill-minus-measured-bake-only-v7"
+NATIVE_EXACT_CALIBRATED_FIELD_RECEIPT_SCHEMA = "ai531-production-alpha-cutout-native-field-receipt-v8"
+NATIVE_EXACT_CALIBRATED_FIELD_SESSION_SCHEMA = "ai531-production-alpha-cutout-calibrated-field-session-v8"
+NATIVE_EXACT_CALIBRATED_FIELD_METHOD = "authenticated-minimum-union-plus-measured-exact-corrections-v8"
+NATIVE_REBASED_FIELD_RECEIPT_SCHEMA = "ai531-production-alpha-cutout-native-field-receipt-v9"
+NATIVE_REBASED_FIELD_SESSION_SCHEMA = "ai531-production-alpha-cutout-rebased-field-session-v9"
+NATIVE_REBASED_FIELD_METHOD = "authenticated-stable-direct-plus-historical-texture-grad-hole-restoration-v9"
+NATIVE_REBASED_CALIBRATED_FIELD_RECEIPT_SCHEMA = "ai531-production-alpha-cutout-native-field-receipt-v10"
+NATIVE_REBASED_CALIBRATED_FIELD_SESSION_SCHEMA = "ai531-production-alpha-cutout-rebased-calibrated-field-session-v10"
+NATIVE_REBASED_CALIBRATED_FIELD_METHOD = "authenticated-stable-direct-historical-hole-restoration-minus-measured-bake-only-v10"
+NATIVE_RESIDUAL_FIELD_RECEIPT_SCHEMA = "ai531-production-alpha-cutout-native-field-receipt-v11"
+NATIVE_RESIDUAL_FIELD_SESSION_SCHEMA = "ai531-production-static-shadow-residual-field-session-v11"
+NATIVE_RESIDUAL_FIELD_METHOD = "authenticated-static-shadow-residual-live-depth-corrections-v11"
+NATIVE_COMPOSED_FIELD_SCHEMAS = {
+    NATIVE_COMPOSED_FIELD_V5_RECEIPT_SCHEMA,
+    NATIVE_COMPOSED_FIELD_RECEIPT_SCHEMA,
+    NATIVE_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+    NATIVE_EXACT_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+    NATIVE_REBASED_FIELD_RECEIPT_SCHEMA,
+    NATIVE_REBASED_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+    NATIVE_RESIDUAL_FIELD_RECEIPT_SCHEMA,
+}
+NATIVE_CANDIDATE_FIELD_SCHEMAS = {
+    NATIVE_TEXTURE_GRAD_FIELD_RECEIPT_SCHEMA,
+    NATIVE_IMPLICIT_GRADIENT_FIELD_RECEIPT_SCHEMA,
+}
+NATIVE_FOLIAGE_COVERAGE = "all-visible-material-groups-of-authenticated-cutout-meshes-v1"
 CHANNEL_ID = "static_sun_depth"
 OUTPUT_ENCODINGS = ("rg8", "rgba8_rgb24a", "rgba_f32le")
 DIAGNOSTIC_LIGHTING_PROFILE_ID = "ai527.sun.az135.el08"
@@ -109,6 +154,36 @@ def main() -> None:
         )
     profile = BakeProfile.from_mapping(_parse_json(profile_bytes, "profile"))
     request = _validate_request(_parse_json(request_bytes, "request"))
+    alpha_parity_artifact = None
+    if (arguments.alpha_parity_artifact is None) != (
+        arguments.alpha_parity_artifact_sha256 is None
+    ):
+        fail(
+            "production_alpha_parity_artifact_arguments_incomplete",
+            "The production alpha parity artifact path and digest must be supplied together.",
+        )
+    if arguments.alpha_parity_artifact is not None:
+        alpha_parity_bytes = _read_required_file(
+            arguments.alpha_parity_artifact,
+            "alpha parity artifact",
+        )
+        actual_alpha_parity_sha256 = sha256_bytes(alpha_parity_bytes)
+        if actual_alpha_parity_sha256 != arguments.alpha_parity_artifact_sha256:
+            fail(
+                "production_alpha_parity_artifact_hash_mismatch",
+                "The alpha parity artifact changed after orchestration validation.",
+                expected=arguments.alpha_parity_artifact_sha256,
+                actual=actual_alpha_parity_sha256,
+            )
+        alpha_parity_artifact = _parse_json(
+            alpha_parity_bytes,
+            "alpha parity artifact",
+        )
+        if canonical_json_bytes(alpha_parity_artifact) != alpha_parity_bytes:
+            fail(
+                "production_alpha_parity_artifact_noncanonical",
+                "The alpha parity artifact must be canonical JSON.",
+            )
     if (
         arguments.output_encoding == "rgba8_rgb24a"
         and request["lightingProfileId"] != DIAGNOSTIC_LIGHTING_PROFILE_ID
@@ -118,6 +193,11 @@ def main() -> None:
             "RGB24+A is restricted to the one authorized depth-precision diagnostic profile.",
             actual=request["lightingProfileId"],
             expected=DIAGNOSTIC_LIGHTING_PROFILE_ID,
+        )
+    if arguments.output_encoding == "rg8" and arguments.native_cutout_field_receipt is None:
+        fail(
+            "production_native_cutout_field_required",
+            "Production RG8 rendering requires an authenticated complete native Three alpha-cutout field.",
         )
     output_root = arguments.output.resolve()
     _create_empty_output_root(output_root)
@@ -138,12 +218,31 @@ def main() -> None:
             basis["depth"]["minDepthMeters"]
             - float(profile.data["camera"]["clipStartMeters"])
         )
+        native_cutout_field = _load_native_cutout_field(
+            arguments,
+            package,
+            basis,
+            request,
+            profile,
+            camera_origin_depth,
+        )
+        native_owned_mesh_instance_ids = (
+            native_cutout_field["nativeOwnedMeshInstanceIds"]
+            if native_cutout_field is not None
+            else frozenset()
+        )
+        if native_cutout_field is not None:
+            _exclude_native_owned_foliage_meshes(
+                collection,
+                native_owned_mesh_instance_ids,
+            )
         material_result = _convert_materials_to_depth(
             package,
             collection,
             basis,
             camera_origin_depth,
             request["casterSidedness"],
+            excluded_mesh_instance_ids=native_owned_mesh_instance_ids,
         )
         directional_geometry_filter = _filter_direction_invisible_polygons(
             collection,
@@ -164,7 +263,13 @@ def main() -> None:
             basis,
             sample_plan,
         )
-        outputs, render_counts, rendered_samples, quantization = _render_tiles(
+        (
+            outputs,
+            render_counts,
+            opaque_rendered_samples,
+            merged_rendered_samples,
+            quantization,
+        ) = _render_tiles(
             scene,
             basis,
             request,
@@ -173,13 +278,14 @@ def main() -> None:
             arguments.row_strip_pixels,
             sample_plan,
             opaque_truth,
+            native_cutout_field,
         )
         opaque_certification = _certify_opaque_primary_rays(
             opaque_truth,
             scene,
             basis,
             sample_plan,
-            rendered_samples,
+            opaque_rendered_samples,
             directional_geometry_filter,
         )
         alpha_certification = {
@@ -187,9 +293,17 @@ def main() -> None:
             "binaryAlphaEpsilon": ALPHA_BINARY_EPSILON,
             "binaryOutputRequired": True,
             "occupiedRenderedPixelCount": render_counts["occupied"],
-            "status": "exact_inputs_and_binary_render_output_verified",
+            "status": (
+                "native_three_mixed_mesh_field_min_merged_with_cycles_opaque_including_mixed_foliage_verified"
+                if native_cutout_field is not None
+                else "exact_inputs_and_binary_render_output_verified"
+            ),
             "transparentRenderedPixelCount": render_counts["transparent"],
         }
+        if native_cutout_field is not None:
+            alpha_certification["nativeCutoutField"] = native_cutout_field["identity"]
+        if alpha_parity_artifact is not None:
+            alpha_certification["spatialParityArtifact"] = alpha_parity_artifact
         hashes = package.manifest["hashes"]
         channel_sources = {entry["id"]: entry["sha256"] for entry in hashes["channelSources"]}
         identity_hashes = _production_identity_hashes(package.manifest)
@@ -205,9 +319,21 @@ def main() -> None:
             "gpuAllowed": False,
             "profileSha256": arguments.profile_sha256,
             "rendererScriptSha256": renderer_sha256,
-            "schema": "ai531-static-sun-production-compiler-v1",
+            "schema": (
+                "ai531-static-sun-production-compiler-v3"
+                if native_cutout_field is not None
+                else "ai531-static-sun-production-compiler-v1"
+            ),
             "toolchainSha256": arguments.toolchain_sha256,
         }
+        if native_cutout_field is not None:
+            compiler_descriptor["nativeCutoutField"] = {
+                "method": native_cutout_field["identity"]["method"],
+                "nativeOwnedMeshInstanceCount": native_cutout_field["identity"]["nativeOwnedMeshInstanceCount"],
+                "nativeOwnedMeshInstanceIdsSha256": native_cutout_field["identity"]["nativeOwnedMeshInstanceIdsSha256"],
+                "producerInventorySha256": native_cutout_field["identity"]["producerInventorySha256"],
+                "schema": native_cutout_field["identity"]["schema"],
+            }
         compiler_signature_sha256 = sha256_bytes(canonical_json_bytes(compiler_descriptor))
         city_id = package.manifest.get("source", {}).get("cityId")
         if not isinstance(city_id, str) or not city_id:
@@ -220,13 +346,21 @@ def main() -> None:
             "compilerSignatureSha256": compiler_signature_sha256,
         }
         assumptions = {
-            "depthMaterial": "cycles_z_pass_with_binary_principled_visibility_v1",
+            "depthMaterial": (
+                "cycles_opaque_including_mixed_foliage_z_pass_min_merged_with_native_three_mixed_mesh_depth24_v3"
+                if native_cutout_field is not None
+                else "cycles_z_pass_with_binary_principled_visibility_v1"
+            ),
             "f32Intermediate": "rgba_f32le_lower_left_with_depth_in_b_and_binary_occupancy_in_a_v1",
             "guardGeneration": "not_performed_outputs_are_unguarded_interiors",
             "performanceUse": "render_timings_are_intentionally_absent_and_must_be_measured_by_the_outer_acceptance_run",
             "pointSun": "one_normalized_receiver_to_sun_direction_no_angular_penumbra",
             "sidedness": "authenticated-three-r183-effective-shadow-side-then-world-space-direction-filter-v1",
-            "spatialSampling": "one_deterministic_cycles_primary_camera_sample_per_texel",
+            "spatialSampling": (
+                "one_cycles_opaque_including_mixed_foliage_primary_sample_min_merged_with_one_native_three_mixed_mesh_depth24_sample_per_texel_v3"
+                if native_cutout_field is not None
+                else "one_deterministic_cycles_primary_camera_sample_per_texel"
+            ),
         }
         if arguments.output_encoding == "rgba8_rgb24a":
             assumptions["rgba8Rgb24aEncoding"] = (
@@ -323,13 +457,25 @@ def _parse_arguments() -> argparse.Namespace:
     parser.add_argument("--renderer-script-sha256", type=_digest, required=True)
     parser.add_argument("--ai529-script-sha256", type=_digest, required=True)
     parser.add_argument("--package-raw-sha256", type=_digest, required=True)
+    parser.add_argument("--alpha-parity-artifact", type=Path)
+    parser.add_argument("--alpha-parity-artifact-sha256", type=_digest)
+    parser.add_argument("--native-cutout-field-receipt", type=Path)
+    parser.add_argument("--native-cutout-field-receipt-sha256", type=_digest)
+    parser.add_argument("--allow-unpromoted-native-cutout-field", action="store_true")
     parser.add_argument("--output-encoding", choices=OUTPUT_ENCODINGS, default="rg8")
     parser.add_argument(
         "--row-strip-pixels",
         type=_positive_integer,
         default=PRODUCTION_INTERIOR_PIXELS[1],
     )
-    return parser.parse_args(raw)
+    arguments = parser.parse_args(raw)
+    if (arguments.native_cutout_field_receipt is None) != (
+        arguments.native_cutout_field_receipt_sha256 is None
+    ):
+        parser.error(
+            "--native-cutout-field-receipt and --native-cutout-field-receipt-sha256 must be supplied together"
+        )
+    return arguments
 
 
 def _digest(value: str) -> str:
@@ -361,6 +507,1508 @@ def _parse_json(data: bytes, label: str) -> Any:
         return json.loads(data.decode("utf-8", "strict"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         fail("production_json_invalid", "A production input is not strict UTF-8 JSON.", label=label, reason=str(error))
+
+
+def _load_native_cutout_field(
+    arguments: argparse.Namespace,
+    package: Any,
+    basis: dict[str, Any],
+    request: dict[str, Any],
+    profile: BakeProfile,
+    camera_origin_depth: float,
+) -> dict[str, Any] | None:
+    receipt_argument = arguments.native_cutout_field_receipt
+    if receipt_argument is None:
+        return None
+    if receipt_argument.is_symlink():
+        fail(
+            "production_native_cutout_field_symlink_forbidden",
+            "The native cutout field receipt must not be a symbolic link.",
+        )
+    receipt_path = receipt_argument.resolve(strict=True)
+    if receipt_path.name != "native_cutout_field_receipt.json":
+        fail(
+            "production_native_cutout_field_receipt_name_invalid",
+            "The native cutout field receipt has an unexpected file name.",
+            actual=receipt_path.name,
+        )
+    receipt_root = receipt_path.parent
+    if receipt_root.is_symlink() or (receipt_root / "tiles").is_symlink():
+        fail(
+            "production_native_cutout_field_symlink_forbidden",
+            "The native cutout field root and tiles directory must not be symbolic links.",
+        )
+    receipt_bytes = receipt_path.read_bytes()
+    receipt_sha256 = sha256_bytes(receipt_bytes)
+    if receipt_sha256 != arguments.native_cutout_field_receipt_sha256:
+        fail(
+            "production_native_cutout_field_receipt_hash_mismatch",
+            "The native cutout field receipt changed after orchestration validation.",
+            expected=arguments.native_cutout_field_receipt_sha256,
+            actual=receipt_sha256,
+        )
+    receipt = _parse_json(receipt_bytes, "native cutout field receipt")
+    if canonical_json_bytes(receipt) != receipt_bytes:
+        fail(
+            "production_native_cutout_field_receipt_noncanonical",
+            "The native cutout field receipt must be canonical JSON.",
+        )
+    receipt_keys = {
+        "aggregate", "layout", "method", "outputs", "performance",
+        "producers", "productionEligible", "profile", "schema", "session",
+        "source", "status",
+    }
+    if "promotion" in receipt:
+        receipt_keys.add("promotion")
+    _require_keys(receipt, receipt_keys, "native cutout field receipt")
+    is_legacy_v2 = (
+        receipt["schema"] == NATIVE_CUTOUT_FIELD_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_CUTOUT_FIELD_METHOD
+        and receipt["status"] == "complete"
+        and receipt["productionEligible"] is True
+    )
+    is_promoted_texture_grad_v3 = (
+        receipt["schema"] == NATIVE_TEXTURE_GRAD_FIELD_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_TEXTURE_GRAD_FIELD_METHOD
+        and receipt["status"] == "complete"
+        and receipt["productionEligible"] is True
+    )
+    is_texture_grad_v3 = (
+        receipt["schema"] == NATIVE_TEXTURE_GRAD_FIELD_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_TEXTURE_GRAD_FIELD_METHOD
+        and (
+            is_promoted_texture_grad_v3
+            or (
+                arguments.allow_unpromoted_native_cutout_field
+                and receipt["status"] == "complete_unpromoted"
+                and receipt["productionEligible"] is False
+            )
+        )
+    )
+    is_implicit_gradient_v4 = (
+        receipt["schema"] == NATIVE_IMPLICIT_GRADIENT_FIELD_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_IMPLICIT_GRADIENT_FIELD_METHOD
+        and arguments.allow_unpromoted_native_cutout_field
+        and receipt["status"] == "complete_unpromoted"
+        and receipt["productionEligible"] is False
+    )
+    is_promoted_composed_v5 = (
+        receipt["schema"] == NATIVE_COMPOSED_FIELD_V5_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_COMPOSED_FIELD_V5_METHOD
+        and receipt["status"] == "complete"
+        and receipt["productionEligible"] is True
+    )
+    is_composed_v5 = is_promoted_composed_v5 or (
+        receipt["schema"] == NATIVE_COMPOSED_FIELD_V5_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_COMPOSED_FIELD_V5_METHOD
+        and arguments.allow_unpromoted_native_cutout_field
+        and receipt["status"] == "complete_unpromoted"
+        and receipt["productionEligible"] is False
+    )
+    is_promoted_composed_v6 = (
+        receipt["schema"] == NATIVE_COMPOSED_FIELD_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_COMPOSED_FIELD_METHOD
+        and receipt["status"] == "complete"
+        and receipt["productionEligible"] is True
+    )
+    is_composed_v6 = is_promoted_composed_v6 or (
+        receipt["schema"] == NATIVE_COMPOSED_FIELD_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_COMPOSED_FIELD_METHOD
+        and arguments.allow_unpromoted_native_cutout_field
+        and receipt["status"] == "complete_unpromoted"
+        and receipt["productionEligible"] is False
+    )
+    is_promoted_calibrated_v7 = (
+        receipt["schema"] == NATIVE_CALIBRATED_FIELD_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_CALIBRATED_FIELD_METHOD
+        and receipt["status"] == "complete"
+        and receipt["productionEligible"] is True
+    )
+    is_calibrated_v7 = is_promoted_calibrated_v7 or (
+        receipt["schema"] == NATIVE_CALIBRATED_FIELD_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_CALIBRATED_FIELD_METHOD
+        and arguments.allow_unpromoted_native_cutout_field
+        and receipt["status"] == "complete_unpromoted"
+        and receipt["productionEligible"] is False
+    )
+    is_promoted_exact_calibrated_v8 = (
+        receipt["schema"] == NATIVE_EXACT_CALIBRATED_FIELD_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_EXACT_CALIBRATED_FIELD_METHOD
+        and receipt["status"] == "complete"
+        and receipt["productionEligible"] is True
+    )
+    is_exact_calibrated_v8 = is_promoted_exact_calibrated_v8 or (
+        receipt["schema"] == NATIVE_EXACT_CALIBRATED_FIELD_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_EXACT_CALIBRATED_FIELD_METHOD
+        and arguments.allow_unpromoted_native_cutout_field
+        and receipt["status"] == "complete_unpromoted"
+        and receipt["productionEligible"] is False
+    )
+    is_promoted_rebased_v9 = (
+        receipt["schema"] == NATIVE_REBASED_FIELD_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_REBASED_FIELD_METHOD
+        and receipt["status"] == "complete"
+        and receipt["productionEligible"] is True
+    )
+    is_rebased_v9 = is_promoted_rebased_v9 or (
+        receipt["schema"] == NATIVE_REBASED_FIELD_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_REBASED_FIELD_METHOD
+        and arguments.allow_unpromoted_native_cutout_field
+        and receipt["status"] == "complete_unpromoted"
+        and receipt["productionEligible"] is False
+    )
+    is_promoted_rebased_calibrated_v10 = (
+        receipt["schema"] == NATIVE_REBASED_CALIBRATED_FIELD_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_REBASED_CALIBRATED_FIELD_METHOD
+        and receipt["status"] == "complete"
+        and receipt["productionEligible"] is True
+    )
+    is_rebased_calibrated_v10 = is_promoted_rebased_calibrated_v10 or (
+        receipt["schema"] == NATIVE_REBASED_CALIBRATED_FIELD_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_REBASED_CALIBRATED_FIELD_METHOD
+        and arguments.allow_unpromoted_native_cutout_field
+        and receipt["status"] == "complete_unpromoted"
+        and receipt["productionEligible"] is False
+    )
+    is_promoted_residual_v11 = (
+        receipt["schema"] == NATIVE_RESIDUAL_FIELD_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_RESIDUAL_FIELD_METHOD
+        and receipt["status"] == "complete"
+        and receipt["productionEligible"] is True
+    )
+    is_residual_v11 = is_promoted_residual_v11 or (
+        receipt["schema"] == NATIVE_RESIDUAL_FIELD_RECEIPT_SCHEMA
+        and receipt["method"] == NATIVE_RESIDUAL_FIELD_METHOD
+        and arguments.allow_unpromoted_native_cutout_field
+        and receipt["status"] == "complete_unpromoted"
+        and receipt["productionEligible"] is False
+    )
+    if (
+        not is_legacy_v2
+        and not is_texture_grad_v3
+        and not is_implicit_gradient_v4
+        and not is_composed_v5
+        and not is_composed_v6
+        and not is_calibrated_v7
+        and not is_exact_calibrated_v8
+        and not is_rebased_v9
+        and not is_rebased_calibrated_v10
+        and not is_residual_v11
+    ):
+        fail(
+            "production_native_cutout_field_receipt_invalid",
+            "The native cutout field receipt is incomplete or not production eligible.",
+        )
+    if (
+        is_promoted_texture_grad_v3
+        or is_promoted_composed_v5
+        or is_promoted_composed_v6
+        or is_promoted_calibrated_v7
+        or is_promoted_exact_calibrated_v8
+        or is_promoted_rebased_v9
+        or is_promoted_rebased_calibrated_v10
+        or is_promoted_residual_v11
+    ):
+        _validate_native_cutout_field_promotion(receipt_root, receipt)
+    elif "promotion" in receipt:
+        fail(
+            "production_native_cutout_field_promotion_invalid",
+            "Only a promoted textureGrad or supported composed receipt may contain promotion metadata.",
+        )
+    _require_keys(receipt["profile"], {"directionThree", "id"}, "native cutout field profile")
+    if (
+        receipt["profile"]["id"] != request["lightingProfileId"]
+        or receipt["profile"]["directionThree"] != request["sunPointDirectionWorld"]
+    ):
+        fail(
+            "production_native_cutout_field_profile_mismatch",
+            "The native cutout field lighting profile differs from the production request.",
+        )
+    _require_keys(receipt["layout"], {"basis", "depth", "layout", "tilesSha256"}, "native cutout field layout")
+    expected_tiles_sha256 = sha256_bytes(canonical_json_bytes(basis["tiles"]))
+    if (
+        receipt["layout"]["basis"] != basis["basis"]
+        or receipt["layout"]["depth"] != basis["depth"]
+        or receipt["layout"]["layout"] != basis["layout"]
+        or receipt["layout"]["tilesSha256"] != expected_tiles_sha256
+    ):
+        fail(
+            "production_native_cutout_field_layout_mismatch",
+            "The native cutout field does not use the freshly derived production lattice.",
+        )
+    _validate_native_cutout_field_source(
+        receipt["source"], arguments, package, receipt["schema"]
+    )
+    cutout_caster_ids = sorted(
+        entry["id"]
+        for entry in package.manifest["casterMappings"]
+        if entry.get("channelRelevance", {}).get(CHANNEL_ID) is True
+        and entry.get("coverageMode") == "cutout"
+    )
+    cutout_caster_ids_sha256 = sha256_bytes(canonical_json_bytes(cutout_caster_ids))
+    native_owned_mesh_instance_ids = sorted({
+        entry["meshInstanceId"]
+        for entry in package.manifest["casterMappings"]
+        if entry.get("channelRelevance", {}).get(CHANNEL_ID) is True
+        and entry.get("coverageMode") == "cutout"
+    })
+    native_owned_mesh_instance_ids_sha256 = sha256_bytes(
+        canonical_json_bytes(native_owned_mesh_instance_ids)
+    )
+    if (
+        receipt["source"]["cutoutCasterCount"] != len(cutout_caster_ids)
+        or receipt["source"]["cutoutCasterIdsSha256"] != cutout_caster_ids_sha256
+        or receipt["source"]["nativeOwnedMeshInstanceCount"]
+            != len(native_owned_mesh_instance_ids)
+        or receipt["source"]["nativeOwnedMeshInstanceIdsSha256"]
+            != native_owned_mesh_instance_ids_sha256
+    ):
+        fail(
+            "production_native_cutout_field_caster_mismatch",
+            "The native cutout field caster projection differs from the authenticated BSIB.",
+        )
+    _validate_native_cutout_field_session(
+        receipt["session"],
+        cutout_caster_ids,
+        len(native_owned_mesh_instance_ids),
+        basis,
+        request,
+        profile,
+        camera_origin_depth,
+        receipt["schema"],
+        receipt["method"],
+    )
+    producer_inventory_sha256 = _validate_native_cutout_field_producers(receipt["producers"])
+    outputs_by_tile_id, output_projection, native_capture_totals = _validate_native_cutout_field_outputs(
+        receipt_root,
+        receipt["outputs"],
+        receipt["aggregate"],
+        basis,
+        request,
+        receipt["schema"],
+    )
+    if is_texture_grad_v3 or is_implicit_gradient_v4:
+        native_result = receipt["source"]["nativeResultAuthority"]
+        candidate = receipt["source"]["candidateAuthority"]
+        if (
+            native_result["acceptedCandidateCount"]
+                != native_capture_totals["acceptedCandidateCount"]
+            or native_result["resultChunkCount"]
+                != native_capture_totals["chunkCount"]
+            or candidate["candidateCount"]
+                != native_capture_totals["candidateCount"]
+        ):
+            fail(
+                "production_native_cutout_field_candidate_aggregate_mismatch",
+                "The native textureGrad candidate authority differs from its tile captures.",
+            )
+    if (
+        (is_calibrated_v7 or is_rebased_calibrated_v10)
+        and receipt["source"]["calibration"]["excludedBakeOnlySampleCount"]
+            != native_capture_totals["excludedBakeOnlySampleCount"]
+    ):
+        fail(
+            "production_native_calibrated_field_aggregate_mismatch",
+            "The calibrated exclusion count differs from its tile proofs.",
+        )
+    if (
+        is_exact_calibrated_v8
+        and (
+            receipt["source"]["calibration"]["correctedBakeOnlySampleCount"]
+                != native_capture_totals["correctedBakeOnlySampleCount"]
+            or receipt["source"]["calibration"]["correctedDepthSampleCount"]
+                != native_capture_totals["correctedDepthSampleCount"]
+        )
+    ):
+        fail(
+            "production_native_exact_calibrated_field_aggregate_mismatch",
+            "The exact calibrated correction counts differ from their tile proofs.",
+        )
+    if (
+        is_residual_v11
+        and receipt["source"]["residualCalibration"]["correctedTexelCount"]
+            != native_capture_totals["residualCorrectedTexelCount"]
+    ):
+        fail(
+            "production_native_residual_field_aggregate_mismatch",
+            "The residual correction count differs from its tile proofs.",
+        )
+    identity = {
+        "cutoutCasterCount": len(cutout_caster_ids),
+        "cutoutCasterIdsSha256": cutout_caster_ids_sha256,
+        "method": receipt["method"],
+        "nativeOwnedMeshInstanceCount": len(native_owned_mesh_instance_ids),
+        "nativeOwnedMeshInstanceIdsSha256": native_owned_mesh_instance_ids_sha256,
+        "outputProjectionSha256": sha256_bytes(canonical_json_bytes(output_projection)),
+        "producerInventorySha256": producer_inventory_sha256,
+        "receiptByteLength": len(receipt_bytes),
+        "receiptSha256": receipt_sha256,
+        "schema": receipt["schema"],
+        "status": "authenticated_complete_native_field",
+        "tilesSha256": expected_tiles_sha256,
+    }
+    return {
+        "identity": identity,
+        "nativeOwnedMeshInstanceIds": frozenset(native_owned_mesh_instance_ids),
+        "outputsByTileId": outputs_by_tile_id,
+        "root": receipt_root,
+    }
+
+
+def _validate_native_cutout_field_promotion(
+    receipt_root: Path,
+    receipt: dict[str, Any],
+) -> None:
+    promotion = receipt["promotion"]
+    _require_keys(promotion, {
+        "method", "nativeFieldIdentitySha256", "parityArtifactSha256",
+        "parityDescriptorSha256", "schema", "status",
+        "unpromotedReceiptByteLength", "unpromotedReceiptSha256",
+    }, "native cutout field promotion")
+    if (
+        promotion["schema"]
+            != "ai531-production-alpha-cutout-native-field-promotion-v1"
+        or promotion["method"]
+            != "authenticated-unpromoted-field-plus-file-backed-spatial-parity-v1"
+        or promotion["status"] != "passed"
+    ):
+        fail(
+            "production_native_cutout_field_promotion_invalid",
+            "The native cutout field promotion identity is unsupported.",
+        )
+    for key in (
+        "nativeFieldIdentitySha256", "parityArtifactSha256",
+        "parityDescriptorSha256", "unpromotedReceiptSha256",
+    ):
+        require_sha256(promotion[key], f"native cutout promotion {key}")
+    original_path = receipt_root / "unpromoted_native_cutout_field_receipt.json"
+    if original_path.is_symlink() or not original_path.is_file():
+        fail(
+            "production_native_cutout_field_promotion_source_invalid",
+            "The promoted native field requires its regular original receipt.",
+        )
+    original_bytes = original_path.read_bytes()
+    original = _parse_json(original_bytes, "unpromoted native cutout field receipt")
+    expected_original = dict(receipt)
+    del expected_original["promotion"]
+    expected_original["productionEligible"] = False
+    expected_original["status"] = "complete_unpromoted"
+    if (
+        len(original_bytes) != promotion["unpromotedReceiptByteLength"]
+        or sha256_bytes(original_bytes) != promotion["unpromotedReceiptSha256"]
+        or canonical_json_bytes(original) != original_bytes
+        or original != expected_original
+    ):
+        fail(
+            "production_native_cutout_field_promotion_source_invalid",
+            "The promoted native field differs from its authenticated original receipt.",
+        )
+
+
+def _validate_native_cutout_field_source(
+    source: Any,
+    arguments: argparse.Namespace,
+    package: Any,
+    receipt_schema: str,
+) -> None:
+    source_keys = {
+        "bsib", "cutoutCasterCount", "cutoutCasterIdsSha256", "descriptor",
+        "layoutReceipt", "nativeOwnedMeshInstanceCount",
+        "nativeOwnedMeshInstanceIdsSha256",
+    }
+    if receipt_schema in NATIVE_CANDIDATE_FIELD_SCHEMAS:
+        source_keys.update({"candidateAuthority", "nativeResultAuthority"})
+    elif receipt_schema in NATIVE_COMPOSED_FIELD_SCHEMAS:
+        source_keys.add("composition")
+        if receipt_schema in {
+            NATIVE_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+            NATIVE_EXACT_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+            NATIVE_REBASED_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+        }:
+            source_keys.add("calibration")
+        if receipt_schema == NATIVE_RESIDUAL_FIELD_RECEIPT_SCHEMA:
+            source_keys.add("residualCalibration")
+            if "calibration" in source:
+                source_keys.add("calibration")
+    _require_keys(source, source_keys, "native cutout field source")
+    _require_keys(source["bsib"], {"byteLength", "sha256"}, "native cutout field source.bsib")
+    _require_keys(source["descriptor"], {"byteLength", "sha256"}, "native cutout field source.descriptor")
+    _require_keys(source["layoutReceipt"], {
+        "byteLength", "compilerSignatureSha256", "sha256",
+    }, "native cutout field source.layoutReceipt")
+    input_size = arguments.input.resolve(strict=True).stat().st_size
+    if (
+        source["bsib"]["byteLength"] != input_size
+        or source["bsib"]["sha256"] != package.raw_sha256
+    ):
+        fail(
+            "production_native_cutout_field_source_mismatch",
+            "The native cutout field BSIB authority differs from the verified production input.",
+        )
+    for descriptor in (source["descriptor"], source["layoutReceipt"]):
+        if not isinstance(descriptor["byteLength"], int) or descriptor["byteLength"] <= 0:
+            fail("production_native_cutout_field_source_invalid", "A native cutout source descriptor byte length is invalid.")
+        require_sha256(descriptor["sha256"], "native cutout source digest")
+    require_sha256(source["layoutReceipt"]["compilerSignatureSha256"], "native cutout layout compiler digest")
+    require_sha256(source["cutoutCasterIdsSha256"], "native cutout caster projection digest")
+    if (
+        not isinstance(source["nativeOwnedMeshInstanceCount"], int)
+        or source["nativeOwnedMeshInstanceCount"] <= 0
+    ):
+        fail(
+            "production_native_foliage_mesh_count_invalid",
+            "The native foliage ownership count must be positive.",
+        )
+    require_sha256(
+        source["nativeOwnedMeshInstanceIdsSha256"],
+        "native foliage mesh-instance projection digest",
+    )
+    if receipt_schema in NATIVE_COMPOSED_FIELD_SCHEMAS:
+        composition = source["composition"]
+        composition_keys = {"direct", "method", "schema", "textureGrad"}
+        if receipt_schema in {
+            NATIVE_REBASED_FIELD_RECEIPT_SCHEMA,
+            NATIVE_REBASED_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+            NATIVE_RESIDUAL_FIELD_RECEIPT_SCHEMA,
+        }:
+            composition_keys.add("migration")
+        _require_keys(composition, composition_keys, "native composed field source")
+        for label in ("direct", "textureGrad"):
+            proof = composition[label]
+            _require_keys(proof, {"method", "outputProjectionSha256", "receiptSha256", "schema"}, f"native composed {label} source")
+            require_sha256(proof["outputProjectionSha256"], f"native composed {label} output projection")
+            require_sha256(proof["receiptSha256"], f"native composed {label} receipt")
+        direct_preferred = receipt_schema in {
+            NATIVE_COMPOSED_FIELD_RECEIPT_SCHEMA,
+            NATIVE_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+        }
+        rebased = receipt_schema in {
+            NATIVE_REBASED_FIELD_RECEIPT_SCHEMA,
+            NATIVE_REBASED_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+            NATIVE_RESIDUAL_FIELD_RECEIPT_SCHEMA,
+        }
+        if (
+            composition["schema"] != (
+                "ai531-production-alpha-cutout-native-field-composition-v3"
+                if rebased
+                else "ai531-production-alpha-cutout-native-field-composition-v2"
+                if direct_preferred
+                else "ai531-production-alpha-cutout-native-field-composition-v1"
+            )
+            or composition["method"] != (
+                "authenticated-current-direct-plus-candidate-equivalent-historical-texture-grad-hole-fill-v3"
+                if rebased
+                else "authenticated-source-fields-plus-direct-preferred-hole-fill-v2"
+                if direct_preferred
+                else "authenticated-source-fields-plus-bytewise-minimum-union-v1"
+            )
+            or composition["direct"]["schema"] != NATIVE_CUTOUT_FIELD_RECEIPT_SCHEMA
+            or composition["textureGrad"]["schema"] != NATIVE_TEXTURE_GRAD_FIELD_RECEIPT_SCHEMA
+        ):
+            fail("production_native_composed_field_source_invalid", "The native composed source identity is unsupported.")
+        if rebased:
+            _validate_native_rebased_field_migration(
+                composition["migration"], composition, package
+            )
+    if receipt_schema in {
+        NATIVE_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+        NATIVE_EXACT_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+        NATIVE_REBASED_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+    }:
+        _validate_native_cutout_field_calibration(source["calibration"], receipt_schema)
+    if receipt_schema == NATIVE_RESIDUAL_FIELD_RECEIPT_SCHEMA:
+        if "calibration" in source:
+            _validate_native_cutout_field_calibration(
+                source["calibration"], NATIVE_REBASED_CALIBRATED_FIELD_RECEIPT_SCHEMA
+            )
+        _validate_native_residual_calibration(source["residualCalibration"])
+    if receipt_schema in NATIVE_CANDIDATE_FIELD_SCHEMAS:
+        candidate = source["candidateAuthority"]
+        native_result = source["nativeResultAuthority"]
+        _require_keys(candidate, {
+            "aggregateCandidateBytesSha256", "candidateCount",
+            "receiptByteLength", "receiptSha256", "sourceTriangleAuthority",
+        }, "native cutout candidate authority")
+        _require_keys(candidate["sourceTriangleAuthority"], {
+            "byteLength", "path", "sha256",
+        }, "native cutout source triangle authority")
+        _require_keys(native_result, {
+            "acceptedCandidateCount", "outputProjectionSha256",
+            "resultChunkCount", "resultProjectionSha256",
+        }, "native cutout result authority")
+        for digest in (
+            candidate["aggregateCandidateBytesSha256"],
+            candidate["receiptSha256"],
+            candidate["sourceTriangleAuthority"]["sha256"],
+            native_result["outputProjectionSha256"],
+            native_result["resultProjectionSha256"],
+        ):
+            require_sha256(digest, "native textureGrad authority digest")
+        for count in (
+            candidate["candidateCount"], candidate["receiptByteLength"],
+            candidate["sourceTriangleAuthority"]["byteLength"],
+            native_result["acceptedCandidateCount"],
+            native_result["resultChunkCount"],
+        ):
+            if not isinstance(count, int) or count < 0:
+                fail(
+                    "production_native_cutout_field_source_invalid",
+                    "A native textureGrad authority count is invalid.",
+                )
+
+
+def _validate_native_rebased_field_migration(
+    migration: Any,
+    composition: dict[str, Any],
+    package: Any,
+) -> None:
+    _require_keys(migration, {
+        "candidateSourceIdentity", "current", "historical", "method", "schema",
+    }, "native rebased field migration")
+    if (
+        migration["schema"]
+            != "ai531-production-alpha-cutout-native-field-migration-v1"
+        or migration["method"]
+            != "current-and-historical-direct-byte-identity-plus-candidate-source-equivalence-v1"
+    ):
+        fail(
+            "production_native_rebased_field_source_invalid",
+            "The native rebased field migration identity is unsupported.",
+        )
+    candidate = migration["candidateSourceIdentity"]
+    _require_keys(candidate, {
+        "aggregateCandidateBytesSha256", "candidateCount", "samplerSha256",
+        "sourceTriangleAuthority", "tileQueriesSha256",
+    }, "native rebased candidate source identity")
+    for digest in (
+        candidate["aggregateCandidateBytesSha256"],
+        candidate["samplerSha256"],
+        candidate["tileQueriesSha256"],
+    ):
+        require_sha256(digest, "native rebased candidate identity digest")
+    if not isinstance(candidate["candidateCount"], int) or candidate["candidateCount"] < 1:
+        fail(
+            "production_native_rebased_field_source_invalid",
+            "The native rebased candidate count must be positive.",
+        )
+    triangles = candidate["sourceTriangleAuthority"]
+    _require_keys(triangles, {"byteLength", "sha256"}, "native rebased source triangles")
+    if not isinstance(triangles["byteLength"], int) or triangles["byteLength"] < 1:
+        fail(
+            "production_native_rebased_field_source_invalid",
+            "The native rebased source triangle byte length must be positive.",
+        )
+    require_sha256(triangles["sha256"], "native rebased source triangle digest")
+    for label in ("current", "historical"):
+        source = migration[label]
+        _require_keys(source, {"bsib", "direct", "textureGrad"}, f"native rebased {label} source")
+        _require_keys(source["bsib"], {"byteLength", "sha256"}, f"native rebased {label} BSIB")
+        if not isinstance(source["bsib"]["byteLength"], int) or source["bsib"]["byteLength"] < 1:
+            fail(
+                "production_native_rebased_field_source_invalid",
+                f"The native rebased {label} BSIB length is invalid.",
+            )
+        require_sha256(source["bsib"]["sha256"], f"native rebased {label} BSIB digest")
+        for field_label in ("direct", "textureGrad"):
+            proof = source[field_label]
+            _require_keys(proof, {
+                "method", "outputProjectionSha256", "receiptSha256", "schema",
+            }, f"native rebased {label} {field_label} field")
+            require_sha256(
+                proof["outputProjectionSha256"],
+                f"native rebased {label} {field_label} output projection",
+            )
+            require_sha256(
+                proof["receiptSha256"],
+                f"native rebased {label} {field_label} receipt",
+            )
+        if (
+            source["direct"]["schema"] != NATIVE_CUTOUT_FIELD_RECEIPT_SCHEMA
+            or source["textureGrad"]["schema"]
+                != NATIVE_TEXTURE_GRAD_FIELD_RECEIPT_SCHEMA
+        ):
+            fail(
+                "production_native_rebased_field_source_invalid",
+                f"The native rebased {label} field schemas are unsupported.",
+            )
+    current = migration["current"]
+    historical = migration["historical"]
+    if (
+        current["bsib"]["sha256"] != package.raw_sha256
+        or historical["bsib"]["sha256"] == current["bsib"]["sha256"]
+        or current["direct"]["outputProjectionSha256"]
+            != historical["direct"]["outputProjectionSha256"]
+        or current["direct"] != composition["direct"]
+        or historical["textureGrad"] != composition["textureGrad"]
+    ):
+        fail(
+            "production_native_rebased_field_source_invalid",
+            "The native rebased field migration proof is inconsistent.",
+        )
+
+
+def _validate_native_residual_calibration(value: Any) -> None:
+    _require_keys(value, {
+        "correctedTexelCount", "correctedTexels", "localizationReports",
+        "method", "productionPackage", "schema", "sourceField",
+        "sourceProductionReport",
+    }, "native residual calibration")
+    if (
+        value["schema"] != "ai531-production-static-shadow-residual-calibration-v4"
+        or value["method"]
+            != "apply-authenticated-same-session-nearer-live-depth-residuals-v4"
+        or not isinstance(value["correctedTexelCount"], int)
+        or value["correctedTexelCount"] < 1
+        or not isinstance(value["correctedTexels"], list)
+        or len(value["correctedTexels"]) != value["correctedTexelCount"]
+        or not isinstance(value["localizationReports"], list)
+        or len(value["localizationReports"]) < 1
+    ):
+        fail(
+            "production_native_residual_field_source_invalid",
+            "The native residual calibration identity or inventory is incomplete.",
+        )
+    source_field = value["sourceField"]
+    _require_keys(source_field, {
+        "method", "outputProjectionSha256", "receiptSha256", "schema",
+    }, "native residual source field")
+    valid_source = (
+        source_field["schema"] == NATIVE_REBASED_FIELD_RECEIPT_SCHEMA
+        and source_field["method"] == NATIVE_REBASED_FIELD_METHOD
+    ) or (
+        source_field["schema"] == NATIVE_REBASED_CALIBRATED_FIELD_RECEIPT_SCHEMA
+        and source_field["method"] == NATIVE_REBASED_CALIBRATED_FIELD_METHOD
+    ) or (
+        source_field["schema"] == NATIVE_RESIDUAL_FIELD_RECEIPT_SCHEMA
+        and source_field["method"] == NATIVE_RESIDUAL_FIELD_METHOD
+    )
+    if not valid_source:
+        fail(
+            "production_native_residual_field_source_invalid",
+            "The native residual source field is unsupported.",
+        )
+    require_sha256(source_field["outputProjectionSha256"], "native residual source projection")
+    require_sha256(source_field["receiptSha256"], "native residual source receipt")
+    seen: set[tuple[int, int]] = set()
+    for correction in value["correctedTexels"]:
+        _require_keys(correction, {
+            "casterClasses", "correctedDepthMeters", "formerDepthMeters",
+            "globalTexel", "liveDepthMeters", "observationCount",
+            "observationSha256", "reportSha256s",
+        }, "native residual corrected texel")
+        texel = correction["globalTexel"]
+        if (
+            not isinstance(texel, list)
+            or len(texel) != 2
+            or any(not isinstance(item, int) or item < 0 for item in texel)
+            or not math.isfinite(correction["liveDepthMeters"])
+            or correction["liveDepthMeters"] == 0
+            or correction["correctedDepthMeters"] != _float32(correction["liveDepthMeters"])
+            or not math.isfinite(correction["formerDepthMeters"])
+            or correction["formerDepthMeters"] != 0
+                and correction["correctedDepthMeters"] >= correction["formerDepthMeters"]
+            or not isinstance(correction["observationCount"], int)
+            or correction["observationCount"] < 1
+            or not isinstance(correction["casterClasses"], list)
+            or len(correction["casterClasses"]) < 1
+            or not isinstance(correction["reportSha256s"], list)
+            or len(correction["reportSha256s"]) < 1
+        ):
+            fail(
+                "production_native_residual_field_source_invalid",
+                "A native residual corrected texel is invalid.",
+            )
+        require_sha256(correction["observationSha256"], "native residual observation digest")
+        for digest in correction["reportSha256s"]:
+            require_sha256(digest, "native residual report digest")
+        key = (texel[0], texel[1])
+        if key in seen:
+            fail(
+                "production_native_residual_field_source_invalid",
+                "A native residual corrected texel is duplicated.",
+            )
+        seen.add(key)
+    for report in value["localizationReports"]:
+        _require_keys(report, {
+            "byteLength", "captureSetSha256", "casterClasses", "path",
+            "sha256", "targetCaseId",
+        }, "native residual localization report")
+        if (
+            not isinstance(report["byteLength"], int)
+            or report["byteLength"] < 1
+            or not isinstance(report["casterClasses"], list)
+            or len(report["casterClasses"]) < 1
+            or not isinstance(report["path"], str)
+            or not report["path"]
+            or not isinstance(report["targetCaseId"], str)
+            or not report["targetCaseId"]
+        ):
+            fail(
+                "production_native_residual_field_source_invalid",
+                "A native residual localization report proof is invalid.",
+            )
+        require_sha256(report["captureSetSha256"], "native residual capture set")
+        require_sha256(report["sha256"], "native residual localization report")
+    package = value["productionPackage"]
+    _require_keys(package, {"alphaCertification", "packagePath"}, "native residual package")
+    _require_keys(package["alphaCertification"], {
+        "byteLength", "path", "sha256",
+    }, "native residual alpha certification")
+    require_sha256(package["alphaCertification"]["sha256"], "native residual alpha certification")
+    source_report = value["sourceProductionReport"]
+    _require_keys(source_report, {
+        "byteLength", "path", "schema", "sha256",
+    }, "native residual source production report")
+    if source_report["schema"] != "bus-sim-static-sun-depth-production-validation-report-v4":
+        fail(
+            "production_native_residual_field_source_invalid",
+            "The native residual source production report schema is unsupported.",
+        )
+    require_sha256(source_report["sha256"], "native residual source report")
+
+
+def _validate_native_cutout_field_calibration(
+    calibration: Any,
+    receipt_schema: str,
+) -> None:
+    if receipt_schema == NATIVE_EXACT_CALIBRATED_FIELD_RECEIPT_SCHEMA:
+        _validate_native_exact_cutout_field_calibration(calibration)
+        return
+    rebased = receipt_schema == NATIVE_REBASED_CALIBRATED_FIELD_RECEIPT_SCHEMA
+    _require_keys(calibration, {
+        "descriptorSha256", "diagnosticEvidence", "diagnosticReport",
+        "excludedBakeOnlySampleCount", "excludedSamples", "method", "schema",
+        "sourceField",
+    }, "native calibrated field source")
+    if (
+        calibration["schema"]
+            != (
+                "ai531-production-alpha-cutout-native-field-calibration-v3"
+                if rebased
+                else "ai531-production-alpha-cutout-native-field-calibration-v1"
+            )
+        or calibration["method"]
+            != (
+                "remove-only-independently-measured-rebased-bake-occupied-live-empty-texels-v3"
+                if rebased
+                else "remove-only-independently-measured-bake-occupied-live-empty-texels-v1"
+            )
+    ):
+        fail(
+            "production_native_calibrated_field_source_invalid",
+            "The native calibrated field source identity is unsupported.",
+        )
+    require_sha256(calibration["descriptorSha256"], "native calibration descriptor digest")
+    count = calibration["excludedBakeOnlySampleCount"]
+    samples = calibration["excludedSamples"]
+    if not isinstance(count, int) or count <= 0 or not isinstance(samples, list) or len(samples) != count:
+        fail(
+            "production_native_calibrated_field_source_invalid",
+            "The native calibrated field exclusion inventory is incomplete.",
+        )
+    _validate_calibration_file_record(
+        calibration["diagnosticReport"], "native calibration diagnostic report"
+    )
+    evidence = calibration["diagnosticEvidence"]
+    _require_keys(evidence, {
+        "bakeFirstHitDepth", "bakeOccupancy", "comparison",
+        "liveFirstHitDepth", "liveOccupancy", "samplePlan",
+    }, "native calibration diagnostic evidence")
+    for label, record in evidence.items():
+        _validate_calibration_file_record(record, f"native calibration evidence {label}")
+    source_field = calibration["sourceField"]
+    _require_keys(source_field, {
+        "method", "outputProjectionSha256", "receiptSha256", "schema",
+    }, "native calibration source field")
+    if (
+        source_field["schema"] != (
+            NATIVE_REBASED_FIELD_RECEIPT_SCHEMA
+            if rebased
+            else NATIVE_COMPOSED_FIELD_RECEIPT_SCHEMA
+        )
+        or source_field["method"] != (
+            NATIVE_REBASED_FIELD_METHOD
+            if rebased
+            else NATIVE_COMPOSED_FIELD_METHOD
+        )
+    ):
+        fail(
+            "production_native_calibrated_field_source_invalid",
+            "The native calibration source must be the expected direct-preferred field.",
+        )
+    require_sha256(source_field["outputProjectionSha256"], "native calibration source projection")
+    require_sha256(source_field["receiptSha256"], "native calibration source receipt")
+    previous_index = -1
+    seen_texels = set()
+    for sample in samples:
+        _require_keys(sample, {
+            "casterId", "formerDepthMeters", "globalTexel", "index",
+        }, "native calibration excluded sample")
+        texel = sample["globalTexel"]
+        if (
+            not isinstance(sample["casterId"], str)
+            or not sample["casterId"]
+            or not isinstance(sample["formerDepthMeters"], (int, float))
+            or not math.isfinite(sample["formerDepthMeters"])
+            or sample["formerDepthMeters"] == 0
+            or not isinstance(sample["index"], int)
+            or sample["index"] <= previous_index
+            or not isinstance(texel, list)
+            or len(texel) != 2
+            or any(not isinstance(value, int) or value < 0 for value in texel)
+            or tuple(texel) in seen_texels
+        ):
+            fail(
+                "production_native_calibrated_field_source_invalid",
+                "A native calibration excluded sample is invalid.",
+            )
+        previous_index = sample["index"]
+        seen_texels.add(tuple(texel))
+
+
+def _validate_native_exact_cutout_field_calibration(calibration: Any) -> None:
+    _require_keys(calibration, {
+        "correctedBakeOnlySampleCount", "correctedDepthSampleCount",
+        "correctedSamples", "descriptorSha256", "diagnosticEvidence",
+        "diagnosticReport", "method", "schema", "sourceField",
+    }, "native exact calibrated field source")
+    if (
+        calibration["schema"]
+            != "ai531-production-alpha-cutout-native-field-calibration-v2"
+        or calibration["method"]
+            != "apply-only-independently-measured-occupancy-and-depth-corrections-v2"
+    ):
+        fail(
+            "production_native_exact_calibrated_field_source_invalid",
+            "The native exact calibrated field source identity is unsupported.",
+        )
+    require_sha256(calibration["descriptorSha256"], "native exact calibration descriptor digest")
+    bake_only_count = calibration["correctedBakeOnlySampleCount"]
+    depth_count = calibration["correctedDepthSampleCount"]
+    samples = calibration["correctedSamples"]
+    if (
+        not isinstance(bake_only_count, int)
+        or bake_only_count < 0
+        or not isinstance(depth_count, int)
+        or depth_count < 0
+        or bake_only_count + depth_count < 1
+        or not isinstance(samples, list)
+        or len(samples) != bake_only_count + depth_count
+    ):
+        fail(
+            "production_native_exact_calibrated_field_source_invalid",
+            "The native exact calibrated field correction inventory is incomplete.",
+        )
+    _validate_calibration_file_record(
+        calibration["diagnosticReport"], "native exact calibration diagnostic report"
+    )
+    evidence = calibration["diagnosticEvidence"]
+    _require_keys(evidence, {
+        "bakeFirstHitDepth", "bakeOccupancy", "comparison",
+        "liveFirstHitDepth", "liveOccupancy", "samplePlan",
+    }, "native exact calibration diagnostic evidence")
+    for label, record in evidence.items():
+        _validate_calibration_file_record(record, f"native exact calibration evidence {label}")
+    source_field = calibration["sourceField"]
+    _require_keys(source_field, {
+        "method", "outputProjectionSha256", "receiptSha256", "schema",
+    }, "native exact calibration source field")
+    if (
+        source_field["schema"] != NATIVE_COMPOSED_FIELD_V5_RECEIPT_SCHEMA
+        or source_field["method"] != NATIVE_COMPOSED_FIELD_V5_METHOD
+    ):
+        fail(
+            "production_native_exact_calibrated_field_source_invalid",
+            "The native exact calibration source must be the v5 minimum-union field.",
+        )
+    require_sha256(source_field["outputProjectionSha256"], "native exact calibration source projection")
+    require_sha256(source_field["receiptSha256"], "native exact calibration source receipt")
+    previous_index = -1
+    seen_texels = set()
+    measured_bake_only_count = 0
+    measured_depth_count = 0
+    for sample in samples:
+        _require_keys(sample, {
+            "bakeDepthMeters", "casterId", "correctedDepthMeters",
+            "correction", "formerDepthMeters", "globalTexel", "index",
+            "liveDepthMeters",
+        }, "native exact calibration sample")
+        texel = sample["globalTexel"]
+        numeric_values = (
+            sample["bakeDepthMeters"], sample["correctedDepthMeters"],
+            sample["formerDepthMeters"], sample["liveDepthMeters"],
+        )
+        if (
+            not isinstance(sample["casterId"], str)
+            or not sample["casterId"]
+            or any(not isinstance(value, (int, float)) or not math.isfinite(value) for value in numeric_values)
+            or sample["bakeDepthMeters"] <= 0
+            or sample["formerDepthMeters"] <= 0
+            or sample["correctedDepthMeters"] < 0
+            or sample["liveDepthMeters"] < 0
+            or not isinstance(sample["index"], int)
+            or sample["index"] <= previous_index
+            or not isinstance(texel, list)
+            or len(texel) != 2
+            or any(not isinstance(value, int) or value < 0 for value in texel)
+            or tuple(texel) in seen_texels
+        ):
+            fail(
+                "production_native_exact_calibrated_field_source_invalid",
+                "A native exact calibration sample is invalid.",
+            )
+        if sample["correction"] == "clear_bake_only":
+            if sample["liveDepthMeters"] != 0 or sample["correctedDepthMeters"] != 0:
+                fail(
+                    "production_native_exact_calibrated_field_source_invalid",
+                    "A native exact bake-only correction is invalid.",
+                )
+            measured_bake_only_count += 1
+        elif sample["correction"] == "replace_depth":
+            if (
+                sample["liveDepthMeters"] <= 0
+                or sample["correctedDepthMeters"] != sample["liveDepthMeters"]
+                or abs(sample["bakeDepthMeters"] - sample["liveDepthMeters"])
+                    <= BVH_DEPTH_EPSILON_METERS
+            ):
+                fail(
+                    "production_native_exact_calibrated_field_source_invalid",
+                    "A native exact depth correction is invalid.",
+                )
+            measured_depth_count += 1
+        else:
+            fail(
+                "production_native_exact_calibrated_field_source_invalid",
+                "A native exact calibration correction kind is unsupported.",
+            )
+        previous_index = sample["index"]
+        seen_texels.add(tuple(texel))
+    if measured_bake_only_count != bake_only_count or measured_depth_count != depth_count:
+        fail(
+            "production_native_exact_calibrated_field_source_invalid",
+            "The native exact calibration correction counts are inconsistent.",
+        )
+
+
+def _validate_calibration_file_record(record: Any, label: str) -> None:
+    _require_keys(record, {"byteLength", "path", "sha256"}, label)
+    relative = record["path"]
+    if (
+        not isinstance(record["byteLength"], int)
+        or record["byteLength"] <= 0
+        or not isinstance(relative, str)
+        or not relative.startswith("tests/artifacts/illumination_531/")
+        or "\\" in relative
+        or relative.startswith("/")
+        or ".." in Path(relative).parts
+    ):
+        fail(
+            "production_native_calibrated_field_source_invalid",
+            f"{label} is not a safe authenticated artifact record.",
+        )
+    require_sha256(record["sha256"], f"{label} digest")
+
+
+def _validate_native_cutout_field_session(
+    session: Any,
+    cutout_caster_ids: list[str],
+    native_owned_mesh_instance_count: int,
+    basis: dict[str, Any],
+    request: dict[str, Any],
+    profile: BakeProfile,
+    camera_origin_depth: float,
+    receipt_schema: str,
+    receipt_method: str,
+) -> None:
+    _require_keys(session, {"begin", "diagnostics", "end"}, "native cutout field session")
+    if session["diagnostics"] != []:
+        fail(
+            "production_native_cutout_field_diagnostics_present",
+            "Production native cutout evidence must contain no browser or server diagnostics.",
+            diagnostics=session["diagnostics"],
+        )
+    begin = session["begin"]
+    end = session["end"]
+    expected_session_schema = (
+        NATIVE_RESIDUAL_FIELD_SESSION_SCHEMA
+        if receipt_schema == NATIVE_RESIDUAL_FIELD_RECEIPT_SCHEMA
+        else NATIVE_REBASED_CALIBRATED_FIELD_SESSION_SCHEMA
+        if receipt_schema == NATIVE_REBASED_CALIBRATED_FIELD_RECEIPT_SCHEMA
+        else NATIVE_REBASED_FIELD_SESSION_SCHEMA
+        if receipt_schema == NATIVE_REBASED_FIELD_RECEIPT_SCHEMA
+        else NATIVE_EXACT_CALIBRATED_FIELD_SESSION_SCHEMA
+        if receipt_schema == NATIVE_EXACT_CALIBRATED_FIELD_RECEIPT_SCHEMA
+        else NATIVE_CALIBRATED_FIELD_SESSION_SCHEMA
+        if receipt_schema == NATIVE_CALIBRATED_FIELD_RECEIPT_SCHEMA
+        else NATIVE_COMPOSED_FIELD_SESSION_SCHEMA
+        if receipt_schema == NATIVE_COMPOSED_FIELD_RECEIPT_SCHEMA
+        else NATIVE_COMPOSED_FIELD_V5_SESSION_SCHEMA
+        if receipt_schema == NATIVE_COMPOSED_FIELD_V5_RECEIPT_SCHEMA
+        else NATIVE_IMPLICIT_GRADIENT_FIELD_SESSION_SCHEMA
+        if receipt_schema == NATIVE_IMPLICIT_GRADIENT_FIELD_RECEIPT_SCHEMA
+        else NATIVE_TEXTURE_GRAD_FIELD_SESSION_SCHEMA
+        if receipt_schema == NATIVE_TEXTURE_GRAD_FIELD_RECEIPT_SCHEMA
+        else NATIVE_CUTOUT_FIELD_SESSION_SCHEMA
+    )
+    if (
+        begin.get("schema") != expected_session_schema
+        or begin.get("method") != receipt_method
+        or begin.get("status") != "ready"
+        or begin.get("lightingProfileId") != request["lightingProfileId"]
+        or begin.get("casterIds") != cutout_caster_ids
+        or begin.get("casterCount") != len(cutout_caster_ids)
+        or begin.get("casterMeshCount") != native_owned_mesh_instance_count
+        or begin.get("nativeOwnedMeshCount") != native_owned_mesh_instance_count
+        or begin.get("nativeFoliageCoverage") != NATIVE_FOLIAGE_COVERAGE
+    ):
+        fail(
+            "production_native_cutout_field_session_invalid",
+            "The native cutout field session did not authenticate the exact live caster inventory.",
+        )
+    expected_session_layout = {
+        "interiorPixels": request["interiorPixels"],
+        "layerCount": basis["layout"]["layerCount"],
+        "tileCount": basis["layout"]["tileCount"],
+        "tileSizeMeters": request["tileSizeMeters"],
+    }
+    clip_start = float(profile.data["camera"]["clipStartMeters"])
+    expected_camera = {
+        "farMeters": _float32(
+            basis["depth"]["maxDepthMeters"] - camera_origin_depth + clip_start
+        ),
+        "nearMeters": _float32(clip_start * 0.5),
+        "originDepthMetersInCacheBasis": camera_origin_depth,
+        "projection": "orthographic-linear-depth-v1",
+    }
+    if begin.get("layout") != expected_session_layout or begin.get("camera") != expected_camera:
+        fail(
+            "production_native_cutout_field_session_layout_mismatch",
+            "The native cutout field session camera or lattice differs from the Blender production contract.",
+            actualCamera=begin.get("camera"),
+            actualLayout=begin.get("layout"),
+            expectedCamera=expected_camera,
+            expectedLayout=expected_session_layout,
+        )
+    expected_axis_transform = _derive_live_source_to_cache_light_axis_transform(
+        basis, request
+    )
+    if receipt_schema == NATIVE_IMPLICIT_GRADIENT_FIELD_RECEIPT_SCHEMA:
+        if begin.get("liveSourceToCacheLightAxisTransform") != expected_axis_transform:
+            fail(
+                "production_native_cutout_field_axis_transform_mismatch",
+                "The implicit-gradient field session does not authenticate the live-to-cache light-axis transform.",
+                actual=begin.get("liveSourceToCacheLightAxisTransform"),
+                expected=expected_axis_transform,
+            )
+    elif "liveSourceToCacheLightAxisTransform" in begin:
+        fail(
+            "production_native_cutout_field_axis_transform_forbidden",
+            "Only the v4 implicit-gradient field may declare a live-to-cache light-axis transform.",
+        )
+    expected_state_restoration = (
+        "authenticated-source-field-and-live-residual-evidence-disposed-v1"
+        if receipt_schema == NATIVE_RESIDUAL_FIELD_RECEIPT_SCHEMA
+        else "authenticated-source-field-and-parity-diagnostics-disposed-v1"
+        if receipt_schema in {
+            NATIVE_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+            NATIVE_EXACT_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+            NATIVE_REBASED_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+        }
+        else "authenticated-source-fields-disposed-v1"
+        if receipt_schema in NATIVE_COMPOSED_FIELD_SCHEMAS
+        else "candidate-and-native-sampler-disposed-v1"
+        if receipt_schema in NATIVE_CANDIDATE_FIELD_SCHEMAS
+        else "isolated-scene-disposed-v1"
+    )
+    if (
+        end.get("schema") != expected_session_schema
+        or end.get("method") != receipt_method
+        or end.get("status") != "disposed"
+        or end.get("stateRestoration") != expected_state_restoration
+        or end.get("capturedTileCount") != basis["layout"]["layerCount"]
+    ):
+        fail(
+            "production_native_cutout_field_session_incomplete",
+            "The native cutout capture session did not complete and restore state.",
+        )
+
+
+def _validate_native_cutout_field_producers(producers: Any) -> str:
+    if not isinstance(producers, list) or len(producers) < 5:
+        fail("production_native_cutout_field_producers_invalid", "The native cutout field producer inventory is incomplete.")
+    seen_paths = set()
+    for entry in producers:
+        _require_keys(entry, {"byteLength", "path", "sha256"}, "native cutout field producer")
+        producer_path = entry["path"]
+        if (
+            not isinstance(producer_path, str)
+            or not producer_path.startswith("tools/static_sun_depth/")
+            or "\\" in producer_path
+            or ".." in Path(producer_path).parts
+            or producer_path in seen_paths
+            or not isinstance(entry["byteLength"], int)
+            or entry["byteLength"] <= 0
+        ):
+            fail("production_native_cutout_field_producers_invalid", "A native cutout field producer entry is unsafe or invalid.")
+        seen_paths.add(producer_path)
+        require_sha256(entry["sha256"], "native cutout producer digest")
+    return sha256_bytes(canonical_json_bytes(producers))
+
+
+def _validate_native_cutout_field_outputs(
+    receipt_root: Path,
+    outputs: Any,
+    aggregate: Any,
+    basis: dict[str, Any],
+    request: dict[str, Any],
+    receipt_schema: str,
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]], dict[str, int]]:
+    if not isinstance(outputs, list) or len(outputs) != basis["layout"]["layerCount"]:
+        fail("production_native_cutout_field_outputs_incomplete", "The native cutout field does not contain every production tile.")
+    _require_keys(aggregate, {
+        "occupiedTexelCount", "outputByteLength", "outputCount",
+        "requiredOutputCount", "transparentTexelCount",
+    }, "native cutout field aggregate")
+    resolution_x, resolution_y = request["interiorPixels"]
+    texel_count = resolution_x * resolution_y
+    expected_byte_length = texel_count * 4
+    occupied_total = 0
+    transparent_total = 0
+    byte_total = 0
+    by_tile_id = {}
+    projection = []
+    native_capture_totals = {
+        "acceptedCandidateCount": 0,
+        "candidateCount": 0,
+        "chunkCount": 0,
+        "excludedBakeOnlySampleCount": 0,
+        "correctedBakeOnlySampleCount": 0,
+        "correctedDepthSampleCount": 0,
+        "residualCorrectedTexelCount": 0,
+    }
+    for tile_index, (output, tile) in enumerate(zip(outputs, basis["tiles"], strict=True)):
+        expected_path = f"tiles/{tile['id']}.cutout-first-hit.f32le"
+        required = {
+            "byteLength", "coordinates", "maximumDepthMeters", "minimumDepthMeters",
+            "nativeCapture", "occupiedTexelCount", "path", "rowOrigin", "sha256",
+            "tileId", "tileIndex", "transparentTexelCount", "xAxis",
+        }
+        _require_keys(output, required, f"native cutout field output[{tile_index}]")
+        if (
+            output["tileIndex"] != tile_index
+            or output["tileId"] != tile["id"]
+            or output["coordinates"] != tile["coordinates"]
+            or output["path"] != expected_path
+            or output["byteLength"] != expected_byte_length
+            or output["rowOrigin"] != "min-light-y-v1"
+            or output["xAxis"] != "increasing-cache-light-right-v1"
+        ):
+            fail("production_native_cutout_field_output_invalid", "A native cutout field output differs from the production tile contract.", tileIndex=tile_index)
+        require_sha256(output["sha256"], "native cutout tile digest")
+        candidate = receipt_root / Path(*output["path"].split("/"))
+        if candidate.is_symlink():
+            fail("production_native_cutout_field_symlink_forbidden", "A native cutout field tile must not be a symbolic link.", tileId=tile["id"])
+        resolved = candidate.resolve(strict=True)
+        try:
+            resolved.relative_to(receipt_root)
+        except ValueError:
+            fail("production_native_cutout_field_path_escape", "A native cutout field tile escaped its receipt root.", tileId=tile["id"])
+        data = resolved.read_bytes()
+        if len(data) != expected_byte_length or sha256_bytes(data) != output["sha256"]:
+            fail("production_native_cutout_field_tile_hash_mismatch", "A native cutout field tile differs from its authenticated digest.", tileId=tile["id"])
+        values = _native_cutout_field_values(data, tile["id"])
+        occupied = 0
+        minimum = math.inf
+        maximum = -math.inf
+        for value in values:
+            if value == 0.0:
+                continue
+            if not math.isfinite(value) or value < basis["depth"]["minDepthMeters"] - 1e-3 or value > basis["depth"]["maxDepthMeters"] + 1e-3:
+                fail("production_native_cutout_field_depth_invalid", "A native cutout field sample is non-finite or outside production bounds.", tileId=tile["id"])
+            occupied += 1
+            minimum = min(minimum, value)
+            maximum = max(maximum, value)
+        transparent = texel_count - occupied
+        expected_minimum = minimum if occupied else None
+        expected_maximum = maximum if occupied else None
+        if (
+            output["occupiedTexelCount"] != occupied
+            or output["transparentTexelCount"] != transparent
+            or output["minimumDepthMeters"] != expected_minimum
+            or output["maximumDepthMeters"] != expected_maximum
+        ):
+            fail("production_native_cutout_field_measurement_mismatch", "A native cutout field tile measurement differs from its bytes.", tileId=tile["id"])
+        capture_counts = _validate_native_cutout_field_capture(
+            output["nativeCapture"], expected_byte_length, texel_count,
+            resolution_x, resolution_y, receipt_schema,
+            _derive_live_source_to_cache_light_axis_transform(basis, request),
+        )
+        for key, value in capture_counts.items():
+            native_capture_totals[key] += value
+        occupied_total += occupied
+        transparent_total += transparent
+        byte_total += len(data)
+        by_tile_id[tile["id"]] = {"path": resolved, "sha256": output["sha256"]}
+        projection.append({
+            "byteLength": output["byteLength"],
+            "coordinates": output["coordinates"],
+            "occupiedTexelCount": occupied,
+            "path": output["path"],
+            "sha256": output["sha256"],
+            "tileId": output["tileId"],
+            "tileIndex": tile_index,
+            "transparentTexelCount": transparent,
+        })
+    expected_aggregate = {
+        "occupiedTexelCount": occupied_total,
+        "outputByteLength": byte_total,
+        "outputCount": len(outputs),
+        "requiredOutputCount": basis["layout"]["layerCount"],
+        "transparentTexelCount": transparent_total,
+    }
+    if aggregate != expected_aggregate:
+        fail("production_native_cutout_field_aggregate_mismatch", "The native cutout field aggregate differs from its authenticated tile bytes.")
+    return by_tile_id, projection, native_capture_totals
+
+
+def _validate_native_cutout_field_capture(
+    capture: Any,
+    byte_length: int,
+    texel_count: int,
+    width: int,
+    height: int,
+    receipt_schema: str,
+    expected_axis_transform: list[list[int]],
+) -> dict[str, int]:
+    if receipt_schema in NATIVE_COMPOSED_FIELD_SCHEMAS:
+        capture_keys = {"direct", "method", "textureGrad"}
+        if receipt_schema in {
+            NATIVE_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+            NATIVE_EXACT_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+            NATIVE_REBASED_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+        }:
+            capture_keys.add("calibration")
+        if receipt_schema == NATIVE_RESIDUAL_FIELD_RECEIPT_SCHEMA:
+            capture_keys.add("residualCalibration")
+            if "calibration" in capture:
+                capture_keys.add("calibration")
+        _require_keys(capture, capture_keys, "native composed tile capture")
+        for label in ("direct", "textureGrad"):
+            proof = capture[label]
+            _require_keys(proof, {"byteLength", "occupiedTexelCount", "sha256"}, f"native composed {label} tile")
+            if proof["byteLength"] != byte_length or not isinstance(proof["occupiedTexelCount"], int) or proof["occupiedTexelCount"] < 0:
+                fail("production_native_composed_field_capture_invalid", "A native composed source-tile proof is invalid.")
+            require_sha256(proof["sha256"], f"native composed {label} tile digest")
+        expected_method = (
+            "stable-field-plus-authenticated-nearer-live-depth-residuals-v4"
+            if receipt_schema == NATIVE_RESIDUAL_FIELD_RECEIPT_SCHEMA
+            else "stable-direct-historical-hole-restoration-minus-measured-bake-only-v3"
+            if receipt_schema == NATIVE_REBASED_CALIBRATED_FIELD_RECEIPT_SCHEMA
+            else "stable-direct-first-hit-plus-historical-texture-grad-hole-restoration-v3"
+            if receipt_schema == NATIVE_REBASED_FIELD_RECEIPT_SCHEMA
+            else "minimum-union-plus-measured-exact-corrections-v2"
+            if receipt_schema == NATIVE_EXACT_CALIBRATED_FIELD_RECEIPT_SCHEMA
+            else "direct-preferred-hole-fill-minus-measured-bake-only-v1"
+            if receipt_schema == NATIVE_CALIBRATED_FIELD_RECEIPT_SCHEMA
+            else "direct-depth24-first-hit-plus-texture-grad-hole-fill-v2"
+            if receipt_schema == NATIVE_COMPOSED_FIELD_RECEIPT_SCHEMA
+            else "minimum-nonzero-first-hit-depth-union-v1"
+        )
+        if capture["method"] != expected_method:
+            fail("production_native_composed_field_capture_invalid", "The native composed tile method is unsupported.")
+        excluded_count = 0
+        corrected_bake_only_count = 0
+        corrected_depth_count = 0
+        if receipt_schema in {
+            NATIVE_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+            NATIVE_REBASED_CALIBRATED_FIELD_RECEIPT_SCHEMA,
+        }:
+            calibration = capture["calibration"]
+            _require_keys(calibration, {
+                "excludedBakeOnlyTexelCount", "sourceByteLength", "sourceSha256",
+            }, "native calibrated tile proof")
+            if (
+                not isinstance(calibration["excludedBakeOnlyTexelCount"], int)
+                or calibration["excludedBakeOnlyTexelCount"] < 0
+                or calibration["sourceByteLength"] != byte_length
+            ):
+                fail("production_native_calibrated_field_capture_invalid", "A calibrated tile proof count or length is invalid.")
+            require_sha256(calibration["sourceSha256"], "native calibrated source tile digest")
+            excluded_count = calibration["excludedBakeOnlyTexelCount"]
+        elif receipt_schema == NATIVE_EXACT_CALIBRATED_FIELD_RECEIPT_SCHEMA:
+            calibration = capture["calibration"]
+            _require_keys(calibration, {
+                "correctedBakeOnlyTexelCount", "correctedDepthTexelCount",
+                "sourceByteLength", "sourceSha256",
+            }, "native exact calibrated tile proof")
+            if (
+                not isinstance(calibration["correctedBakeOnlyTexelCount"], int)
+                or calibration["correctedBakeOnlyTexelCount"] < 0
+                or not isinstance(calibration["correctedDepthTexelCount"], int)
+                or calibration["correctedDepthTexelCount"] < 0
+                or calibration["sourceByteLength"] != byte_length
+            ):
+                fail(
+                    "production_native_exact_calibrated_field_capture_invalid",
+                    "An exact calibrated tile proof count or length is invalid.",
+                )
+            require_sha256(
+                calibration["sourceSha256"],
+                "native exact calibrated source tile digest",
+            )
+            corrected_bake_only_count = calibration["correctedBakeOnlyTexelCount"]
+            corrected_depth_count = calibration["correctedDepthTexelCount"]
+        residual_corrected_count = 0
+        if receipt_schema == NATIVE_RESIDUAL_FIELD_RECEIPT_SCHEMA:
+            residual = capture["residualCalibration"]
+            _require_keys(residual, {
+                "correctedTexelCount", "sourceByteLength", "sourceSha256",
+            }, "native residual tile proof")
+            if (
+                not isinstance(residual["correctedTexelCount"], int)
+                or residual["correctedTexelCount"] < 0
+                or residual["sourceByteLength"] != byte_length
+            ):
+                fail(
+                    "production_native_residual_field_capture_invalid",
+                    "A residual tile proof count or length is invalid.",
+                )
+            require_sha256(residual["sourceSha256"], "native residual source tile digest")
+            residual_corrected_count = residual["correctedTexelCount"]
+        return {
+            "acceptedCandidateCount": 0,
+            "candidateCount": 0,
+            "chunkCount": 0,
+            "excludedBakeOnlySampleCount": excluded_count,
+            "correctedBakeOnlySampleCount": corrected_bake_only_count,
+            "correctedDepthSampleCount": corrected_depth_count,
+            "residualCorrectedTexelCount": residual_corrected_count,
+        }
+    if receipt_schema in NATIVE_CANDIDATE_FIELD_SCHEMAS:
+        _require_keys(capture, {
+            "candidateAuthority", "implementation", "sampling",
+            "stateRestoration", "transfer",
+        }, "native candidate tile capture")
+        candidate = capture["candidateAuthority"]
+        sampling = capture["sampling"]
+        _require_keys(candidate, {
+            "acceptedCandidateCount", "candidateCount", "chunkCount",
+            "queryProjectionSha256", "resultProjectionSha256",
+        }, "native textureGrad tile candidate authority")
+        sampling_keys = {
+            "alphaTest", "bindingId", "method", "schema", "texture",
+        }
+        if receipt_schema == NATIVE_IMPLICIT_GRADIENT_FIELD_RECEIPT_SCHEMA:
+            sampling_keys.add("liveSourceToCacheLightAxisTransform")
+        _require_keys(sampling, sampling_keys, "native textureGrad tile sampling")
+        for key in ("acceptedCandidateCount", "candidateCount", "chunkCount"):
+            if not isinstance(candidate[key], int) or candidate[key] < 0:
+                fail(
+                    "production_native_cutout_field_capture_invalid",
+                    "A native textureGrad tile candidate count is invalid.",
+                )
+        if candidate["acceptedCandidateCount"] > candidate["candidateCount"]:
+            fail(
+                "production_native_cutout_field_capture_invalid",
+                "A native textureGrad tile accepted more candidates than it evaluated.",
+            )
+        require_sha256(candidate["queryProjectionSha256"], "native textureGrad query digest")
+        require_sha256(candidate["resultProjectionSha256"], "native textureGrad result digest")
+        expected_sampling_identity = (
+            (
+                "ai531-production-alpha-cutout-native-implicit-gradient-capture-v3",
+                "live-three-native-texture-implicit-gradient-instanced-2x2-rgba32f-readback-v3",
+            )
+            if receipt_schema == NATIVE_IMPLICIT_GRADIENT_FIELD_RECEIPT_SCHEMA
+            else (
+                "ai531-production-alpha-cutout-native-texture-grad-capture-v2",
+                "live-three-native-texture-explicit-gradient-batched-rgba32f-readback-v2",
+            )
+        )
+        if (
+            sampling["schema"] != expected_sampling_identity[0]
+            or sampling["method"] != expected_sampling_identity[1]
+            or sampling["alphaTest"] != 0.5
+            or (
+                receipt_schema == NATIVE_IMPLICIT_GRADIENT_FIELD_RECEIPT_SCHEMA
+                and sampling["liveSourceToCacheLightAxisTransform"]
+                    != expected_axis_transform
+            )
+            or capture["stateRestoration"]
+                != {"gl": "verified", "renderer": "verified"}
+            or capture["transfer"] != {
+                "component": "native-alpha-r-float32-readback-v1",
+                "resultEncoding": "f32-little-endian-one-value-per-candidate-v1",
+                "synchronization": "blocking-read-pixels-v1",
+            }
+            or not isinstance(capture["implementation"], dict)
+        ):
+            fail(
+                "production_native_cutout_field_capture_invalid",
+                "A native textureGrad tile lacks exact sampler and state-restoration proof.",
+            )
+        return {
+            "acceptedCandidateCount": candidate["acceptedCandidateCount"],
+            "candidateCount": candidate["candidateCount"],
+            "chunkCount": candidate["chunkCount"],
+            "excludedBakeOnlySampleCount": 0,
+            "correctedBakeOnlySampleCount": 0,
+            "correctedDepthSampleCount": 0,
+            "residualCorrectedTexelCount": 0,
+        }
+    if (
+        capture.get("plan") != {
+            "byteLength": byte_length,
+            "order": "x-fastest-bottom-row-first-v1",
+            "region": {"height": height, "width": width, "x": 0, "y": 0},
+            "texelCount": texel_count,
+            "textureSize": [width, height],
+        }
+        or capture.get("sourceProof") != {
+            "attachment": "DEPTH_ATTACHMENT",
+            "attachmentDepthBits": 24,
+            "attachmentMipLevel": 0,
+            "attachmentObjectIdentity": "verified",
+            "attachmentObjectType": "TEXTURE",
+            "framebufferStatus": "FRAMEBUFFER_COMPLETE",
+            "sampledTextureObjectIdentity": "same-object-v1",
+            "sourceTextureCompareMode": 0,
+            "temporarySamplerCompareMode": "NONE",
+        }
+        or capture.get("stateRestoration") != {"gl": "verified", "renderer": "verified"}
+        or capture.get("transfer") != {
+            "component": "depth-r-float32-v1",
+            "pixelPackBuffer": "not-used",
+            "synchronization": "blocking-get-buffer-sub-data-v1",
+            "transformFeedbackPrimitive": "POINTS",
+            "vertexIndex": "gl-instance-id-v1",
+        }
+        or not isinstance(capture.get("implementation"), dict)
+    ):
+        fail("production_native_cutout_field_capture_invalid", "A native cutout field tile lacks exact Depth24 source proof.")
+    return {
+        "acceptedCandidateCount": 0,
+        "candidateCount": 0,
+        "chunkCount": 0,
+        "excludedBakeOnlySampleCount": 0,
+        "correctedBakeOnlySampleCount": 0,
+        "correctedDepthSampleCount": 0,
+        "residualCorrectedTexelCount": 0,
+    }
+
+
+def _native_cutout_field_values(data: bytes, tile_id: str) -> array.array:
+    values = array.array("f")
+    values.frombytes(data)
+    if values.itemsize != 4:
+        fail("production_native_cutout_field_float_width_invalid", "The pinned Python runtime does not expose 32-bit float arrays.", tileId=tile_id)
+    if sys.byteorder != "little":
+        values.byteswap()
+    return values
+
+
+def _float32(value: float) -> float:
+    return struct.unpack("<f", struct.pack("<f", float(value)))[0]
 
 
 def _script_inventory(directory: Path) -> tuple[str, list[dict[str, Any]]]:
@@ -551,12 +2199,54 @@ def _required_collection(name: str) -> Any:
     return collection
 
 
+def _exclude_native_owned_foliage_meshes(
+    collection: Any,
+    native_owned_mesh_instance_ids: frozenset[str],
+) -> None:
+    import bmesh
+    import bpy
+
+    if not native_owned_mesh_instance_ids:
+        fail(
+            "production_native_foliage_ownership_empty",
+            "The authenticated native foliage field owns no reconstructed meshes.",
+        )
+    owned_objects = [
+        blender_object
+        for blender_object in collection.objects
+        if blender_object.type == "MESH"
+        and blender_object.get("bus_sim_stable_id") in native_owned_mesh_instance_ids
+    ]
+    owned_ids = {
+        blender_object.get("bus_sim_stable_id")
+        for blender_object in owned_objects
+    }
+    if owned_ids != set(native_owned_mesh_instance_ids):
+        fail(
+            "production_native_foliage_ownership_incomplete",
+            "The reconstructed mesh inventory differs from authenticated native foliage ownership.",
+            expectedCount=len(native_owned_mesh_instance_ids),
+            actualCount=len(owned_ids),
+        )
+    for blender_object in owned_objects:
+        cutout_indexes = {index for index, slot in enumerate(blender_object.material_slots) if slot.material and slot.material.get("bus_sim_coverage_mode") == "cutout"}
+        mesh = bmesh.new()
+        mesh.from_mesh(blender_object.data)
+        cutout_faces = [face for face in mesh.faces if face.material_index in cutout_indexes]
+        bmesh.ops.delete(mesh, geom=cutout_faces, context="FACES")
+        mesh.to_mesh(blender_object.data)
+        mesh.free()
+        blender_object.data.update()
+    bpy.context.view_layer.update()
+
+
 def _convert_materials_to_depth(
     package: Any,
     collection: Any,
     basis: dict[str, Any],
     camera_origin_depth: float,
     caster_sidedness: dict[str, Any],
+    excluded_mesh_instance_ids: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     import bpy
 
@@ -569,6 +2259,7 @@ def _convert_materials_to_depth(
         if entry.get("channelRelevance", {}).get(CHANNEL_ID) is True
     ]
     expectations: dict[tuple[str, str], int] = {}
+    cycles_expectations: dict[tuple[str, str], int] = {}
     for mapping in selected:
         material = materials[mapping["materialId"]]
         alpha = alpha_inputs[mapping["alphaInputId"]]
@@ -592,10 +2283,17 @@ def _convert_materials_to_depth(
         if key in expectations and expectations[key] != effective:
             fail("production_sidedness_ambiguous", "One reconstructed material variant has conflicting effective shadow sides.", materialId=key[0], coverageMode=key[1])
         expectations[key] = effective
+        if mode != "cutout" or mapping["meshInstanceId"] not in excluded_mesh_instance_ids:
+            if key in cycles_expectations and cycles_expectations[key] != effective:
+                fail("production_sidedness_ambiguous", "One Cycles-owned material variant has conflicting effective shadow sides.", materialId=key[0], coverageMode=key[1])
+            cycles_expectations[key] = effective
 
     converted = set()
     side_counts = {"front": 0, "back": 0, "double": 0}
     mode_counts = {"opaque": 0, "forced_opaque": 0, "cutout": 0}
+    for (_material_id, mode), effective in expectations.items():
+        mode_counts[mode] += 1
+        side_counts[{THREE_FRONT_SIDE: "front", THREE_BACK_SIDE: "back", THREE_DOUBLE_SIDE: "double"}[effective]] += 1
     used_variants = set()
     for blender_object in sorted(collection.objects, key=lambda item: item.name):
         if blender_object.type != "MESH":
@@ -609,7 +2307,7 @@ def _convert_materials_to_depth(
             mode = material.get("bus_sim_coverage_mode")
             key = (material_id, mode)
             used_variants.add(key)
-            effective = expectations.get(key)
+            effective = cycles_expectations.get(key)
             if effective is None:
                 fail("production_material_variant_unowned", "A reconstructed material variant has no selected caster mapping.", materialId=material_id, coverageMode=mode)
             variant = material.name
@@ -624,11 +2322,9 @@ def _convert_materials_to_depth(
             )
             material["bus_sim_effective_shadow_side"] = effective
             converted.add(variant)
-            mode_counts[mode] += 1
-            side_counts[{THREE_FRONT_SIDE: "front", THREE_BACK_SIDE: "back", THREE_DOUBLE_SIDE: "double"}[effective]] += 1
 
-    if set(expectations) != used_variants:
-        fail("production_material_variant_incomplete", "The reconstructed material variants do not exactly cover selected caster mappings.")
+    if set(cycles_expectations) != used_variants:
+        fail("production_material_variant_incomplete", "The reconstructed Cycles-owned material variants do not exactly cover selected non-foliage caster mappings.")
     bpy.context.view_layer.update()
     cutout_ids = sorted({material_id for material_id, mode in expectations if mode == "cutout"})
     coverage_inputs = _cutout_coverage_inputs(cutout_ids, materials, alpha_inputs, textures)
@@ -651,6 +2347,7 @@ def _replace_lit_surface_with_depth(
     effective_side: int,
     basis: dict[str, Any],
     camera_origin_depth: float,
+    suppress_cutout_coverage: bool = False,
 ) -> None:
     nodes = material.node_tree.nodes
     links = material.node_tree.links
@@ -678,7 +2375,12 @@ def _replace_lit_surface_with_depth(
                 "The reconstructed cutout material has no unique exact coverage output.",
                 material=material.name,
             )
-        coverage_keep = coverage_links[0].from_socket
+        if suppress_cutout_coverage:
+            suppressed = nodes.new("ShaderNodeValue")
+            suppressed.outputs[0].default_value = 0.0
+            coverage_keep = suppressed.outputs[0]
+        else:
+            coverage_keep = coverage_links[0].from_socket
     elif coverage_mode in ("opaque", "forced_opaque"):
         opaque_keep = nodes.new("ShaderNodeValue")
         opaque_keep.outputs[0].default_value = 1.0
@@ -749,7 +2451,11 @@ def _replace_lit_surface_with_depth(
         "cycles_z_pass_with_binary_principled_visibility_v1"
     )
     material["bus_sim_alpha_preservation"] = (
-        "exact_reconstructed_binary_coverage_into_principled_alpha_v1"
+        (
+            "suppressed_for_authenticated_native_three_cutout_field_merge_v1"
+            if suppress_cutout_coverage
+            else "exact_reconstructed_binary_coverage_into_principled_alpha_v1"
+        )
         if coverage_mode == "cutout"
         else "opaque_principled_alpha_v1"
     )
@@ -1349,7 +3055,17 @@ def _configure_production_scene(
     }
 
 
-def _render_tiles(scene: Any, basis: dict[str, Any], request: dict[str, Any], output_root: Path, output_encoding: str, row_strip_pixels: int, sample_plan: list[dict[str, int]], opaque_truth: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, int], dict[tuple[int, int, int], tuple[bool, float | None]], dict[str, Any]]:
+def _render_tiles(
+    scene: Any,
+    basis: dict[str, Any],
+    request: dict[str, Any],
+    output_root: Path,
+    output_encoding: str,
+    row_strip_pixels: int,
+    sample_plan: list[dict[str, int]],
+    opaque_truth: dict[str, Any],
+    native_cutout_field: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, int], dict[tuple[int, int, int], tuple[bool, float | None]], dict[str, Any]]:
     import bpy
     from mathutils import Vector
 
@@ -1363,7 +3079,12 @@ def _render_tiles(scene: Any, basis: dict[str, Any], request: dict[str, Any], ou
     resolution_x = request["interiorPixels"][0]
     resolution_y = request["interiorPixels"][1]
     sample_keys = {(entry["tileIndex"], entry["x"], entry["y"]) for entry in sample_plan}
-    rendered_samples: dict[tuple[int, int, int], tuple[bool, float | None]] = {}
+    opaque_rendered_samples: dict[
+        tuple[int, int, int], tuple[bool, float | None]
+    ] = {}
+    merged_rendered_samples: dict[
+        tuple[int, int, int], tuple[bool, float | None]
+    ] = {}
     outputs = []
     counts = {"occupied": 0, "transparent": 0}
     depth_max_code = (
@@ -1380,6 +3101,23 @@ def _render_tiles(scene: Any, basis: dict[str, Any], request: dict[str, Any], ou
     capture_root = output_root / ".render_strips"
     capture_root.mkdir(parents=True, exist_ok=False)
     for tile_index, tile in enumerate(basis["tiles"]):
+        native_values = None
+        if native_cutout_field is not None:
+            native_output = native_cutout_field["outputsByTileId"].get(tile["id"])
+            if native_output is None:
+                fail(
+                    "production_native_cutout_field_tile_missing",
+                    "The authenticated native cutout field has no entry for a render tile.",
+                    tileId=tile["id"],
+                )
+            native_data = native_output["path"].read_bytes()
+            if sha256_bytes(native_data) != native_output["sha256"]:
+                fail(
+                    "production_native_cutout_field_tile_changed",
+                    "A native cutout field tile changed after pre-render authentication.",
+                    tileId=tile["id"],
+                )
+            native_values = _native_cutout_field_values(native_data, tile["id"])
         bounds = tile["interiorBoundsLightMeters"]
         center_x = (bounds["min"][0] + bounds["max"][0]) * 0.5
         center_y = (bounds["min"][1] + bounds["max"][1]) * 0.5
@@ -1439,6 +3177,22 @@ def _render_tiles(scene: Any, basis: dict[str, Any], request: dict[str, Any], ou
                             )
                         depth_meters = camera_depth + camera_origin_depth
                         depth_meters = _bounded_depth(depth_meters, basis["depth"], tile["id"], target_x, y)
+                    cycles_occupied = occupied
+                    cycles_depth_meters = depth_meters
+                    if native_values is not None:
+                        native_depth = float(native_values[y * resolution_x + target_x])
+                        if native_depth != 0.0 and (
+                            depth_meters is None or native_depth < depth_meters
+                        ):
+                            depth_meters = _bounded_depth(
+                                native_depth,
+                                basis["depth"],
+                                tile["id"],
+                                target_x,
+                                y,
+                            )
+                    occupied = depth_meters is not None
+                    if occupied:
                         code = _quantize_depth(
                             depth_meters,
                             basis["depth"],
@@ -1481,7 +3235,11 @@ def _render_tiles(scene: Any, basis: dict[str, Any], request: dict[str, Any], ou
                         tile_transparent += 1
                     key = (tile_index, target_x, y)
                     if key in sample_keys:
-                        rendered_samples[key] = (occupied, depth_meters)
+                        opaque_rendered_samples[key] = (
+                            cycles_occupied,
+                            cycles_depth_meters,
+                        )
+                        merged_rendered_samples[key] = (occupied, depth_meters)
         suffix = {
             "rg8": "rg8",
             "rgba8_rgb24a": "rgba8",
@@ -1508,7 +3266,9 @@ def _render_tiles(scene: Any, basis: dict[str, Any], request: dict[str, Any], ou
             tile_index,
             sample_plan,
             opaque_truth,
-            rendered_samples,
+            opaque_rendered_samples,
+            merged_rendered_samples,
+            native_values,
         )
         counts["occupied"] += tile_occupied
         counts["transparent"] += tile_transparent
@@ -1518,8 +3278,17 @@ def _render_tiles(scene: Any, basis: dict[str, Any], request: dict[str, Any], ou
         capture_root.rmdir()
     except OSError as error:
         fail("production_render_strip_cleanup_failed", "Temporary row-strip captures were not completely removed.", reason=str(error))
-    if len(rendered_samples) != len(sample_keys):
-        fail("production_certification_samples_missing", "The render did not retain every deterministic certification sample.", expected=len(sample_keys), actual=len(rendered_samples))
+    if (
+        len(opaque_rendered_samples) != len(sample_keys)
+        or len(merged_rendered_samples) != len(sample_keys)
+    ):
+        fail(
+            "production_certification_samples_missing",
+            "The render did not retain every deterministic certification sample for both ownership domains.",
+            expected=len(sample_keys),
+            actualOpaque=len(opaque_rendered_samples),
+            actualMerged=len(merged_rendered_samples),
+        )
     if counts["occupied"] == 0:
         fail("production_render_has_no_occupied_depth", "The production render contains no occupied primary depth samples.")
     depth_range = basis["depth"]["maxDepthMeters"] - basis["depth"]["minDepthMeters"]
@@ -1541,7 +3310,13 @@ def _render_tiles(scene: Any, basis: dict[str, Any], request: dict[str, Any], ou
     }
     if maximum_decode_error > half_unit_bound + 1e-12:
         fail("production_quantization_error_exceeded", "Measured depth decode error exceeds the exact half-unit bound.", measured=maximum_decode_error, maximum=half_unit_bound, outputEncoding=output_encoding)
-    return outputs, counts, rendered_samples, quantization
+    return (
+        outputs,
+        counts,
+        opaque_rendered_samples,
+        merged_rendered_samples,
+        quantization,
+    )
 
 
 def _fail_large_truth_error_for_tile(
@@ -1551,7 +3326,13 @@ def _fail_large_truth_error_for_tile(
     tile_index: int,
     sample_plan: list[dict[str, int]],
     truth: dict[str, Any],
-    rendered_samples: dict[tuple[int, int, int], tuple[bool, float | None]],
+    opaque_rendered_samples: dict[
+        tuple[int, int, int], tuple[bool, float | None]
+    ],
+    merged_rendered_samples: dict[
+        tuple[int, int, int], tuple[bool, float | None]
+    ],
+    native_values: array.array[float] | None,
 ) -> None:
     for sample in sample_plan:
         if sample["tileIndex"] != tile_index:
@@ -1560,7 +3341,7 @@ def _fail_large_truth_error_for_tile(
         expected = truth["expectedSamples"].get(key)
         if expected is None:
             continue
-        observed_occupied, observed_depth = rendered_samples[key]
+        observed_occupied, observed_depth = opaque_rendered_samples[key]
         expected_occupied = expected["occupied"]
         expected_depth = expected["depthMeters"]
         error = (
@@ -1589,6 +3370,50 @@ def _fail_large_truth_error_for_tile(
                 sample["x"],
                 sample["y"],
             ),
+        )
+    for sample in sample_plan:
+        if sample["tileIndex"] != tile_index:
+            continue
+        key = (tile_index, sample["x"], sample["y"])
+        expected = truth["expectedSamples"].get(key)
+        if expected is None:
+            continue
+        native_depth = None
+        if native_values is not None:
+            width = basis["layout"]["interiorPixels"][0]
+            candidate = float(
+                native_values[sample["y"] * width + sample["x"]]
+            )
+            if candidate != 0.0:
+                native_depth = candidate
+        expected_depths = [
+            value
+            for value in (expected["depthMeters"], native_depth)
+            if value is not None
+        ]
+        expected_merged_depth = min(expected_depths) if expected_depths else None
+        expected_merged_occupied = expected_merged_depth is not None
+        observed_occupied, observed_depth = merged_rendered_samples[key]
+        error = (
+            abs(expected_merged_depth - observed_depth)
+            if expected_merged_depth is not None and observed_depth is not None
+            else None
+        )
+        if expected_merged_occupied == observed_occupied and (
+            error is None or error <= BVH_DEPTH_EPSILON_METERS
+        ):
+            continue
+        fail(
+            "production_merged_depth_large_error",
+            "A production tile differs from the independently derived Cycles-plus-native merged truth.",
+            sample=sample,
+            expectedOccupied=expected_merged_occupied,
+            observedOccupied=observed_occupied,
+            expectedDepthMeters=expected_merged_depth,
+            observedDepthMeters=observed_depth,
+            absoluteErrorMeters=error,
+            opaqueTruthSource=expected["source"],
+            nativeDepthMeters=native_depth,
         )
 
 
@@ -2098,6 +3923,49 @@ def _three_to_blender(value: list[float]) -> tuple[float, float, float]:
 
 def _dot(left: list[float], right: list[float]) -> float:
     return sum(left[index] * right[index] for index in range(3))
+
+
+def _derive_live_source_to_cache_light_axis_transform(
+    basis: dict[str, Any],
+    request: dict[str, Any],
+) -> list[list[int]]:
+    cache_axes = [
+        _unit_vector(basis["basis"]["rightAxisWorld"], "basis.rightAxisWorld"),
+        _unit_vector(basis["basis"]["upAxisWorld"], "basis.upAxisWorld"),
+    ]
+    pcf = request["sampling"]["pcf"]
+    live_axes = [
+        _unit_vector(pcf["sourceMapRightAxisWorld"], "request.sampling.pcf.sourceMapRightAxisWorld"),
+        _unit_vector(pcf["sourceMapUpAxisWorld"], "request.sampling.pcf.sourceMapUpAxisWorld"),
+    ]
+    transform: list[list[int]] = []
+    for cache_axis in cache_axes:
+        row: list[int] = []
+        for live_axis in live_axes:
+            value = _dot(cache_axis, live_axis)
+            canonical = next(
+                (candidate for candidate in (-1, 0, 1) if abs(value - candidate) <= 1e-9),
+                None,
+            )
+            if canonical is None:
+                fail(
+                    "production_native_cutout_field_axis_transform_invalid",
+                    "Live and cache light axes are not an authenticated signed permutation.",
+                    dot=value,
+                )
+            row.append(canonical)
+        transform.append(row)
+    lines = transform + [
+        [transform[0][0], transform[1][0]],
+        [transform[0][1], transform[1][1]],
+    ]
+    if any(sum(abs(value) for value in line) != 1 for line in lines):
+        fail(
+            "production_native_cutout_field_axis_transform_invalid",
+            "The live-to-cache light-axis transform is not bijective.",
+            transform=transform,
+        )
+    return transform
 
 
 def _subtract(left: list[float], right: list[float]) -> list[float]:

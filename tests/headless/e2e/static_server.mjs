@@ -3,8 +3,8 @@ import http from 'node:http';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
-import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
+import { parseSingleByteRange } from './static_server_range.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,6 +49,41 @@ function toDiskPath(urlPath) {
     return resolved;
 }
 
+function streamFileResponse(filePath, range, res) {
+    return new Promise((resolve, reject) => {
+        const source = createReadStream(
+            filePath,
+            range ? {start: range.start, end: range.end} : undefined
+        );
+        let settled = false;
+        const finish = (error = null) => {
+            if (settled) return;
+            settled = true;
+            source.removeListener('error', onSourceError);
+            res.removeListener('finish', onFinish);
+            res.removeListener('close', onClose);
+            if (error) reject(error);
+            else resolve();
+        };
+        const onSourceError = (error) => finish(error);
+        const onFinish = () => finish();
+        const onClose = () => {
+            if (res.writableFinished) {
+                finish();
+                return;
+            }
+            source.destroy();
+            const error = new Error('Client closed before the static response completed');
+            error.code = 'ECONNRESET';
+            finish(error);
+        };
+        source.once('error', onSourceError);
+        res.once('finish', onFinish);
+        res.once('close', onClose);
+        source.pipe(res);
+    });
+}
+
 const host = process.env.HOST || '127.0.0.1';
 const port = Number(process.env.PORT) || 4173;
 
@@ -74,16 +109,38 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
-        res.writeHead(200, {
+        const range = parseSingleByteRange(req.headers.range, info.size);
+        if (range?.satisfiable === false) {
+            res.writeHead(416, {
+                'accept-ranges': 'bytes',
+                'content-range': `bytes */${info.size}`,
+                'content-type': 'text/plain; charset=utf-8'
+            });
+            res.end('Range not satisfiable');
+            return;
+        }
+        const headers = {
             'content-type': getMimeType(diskPath),
             'cache-control': 'no-store',
-            'content-length': String(info.size)
-        });
-        await pipeline(createReadStream(diskPath), res);
+            'accept-ranges': 'bytes',
+            'content-length': String(range?.length ?? info.size),
+            ...(range ? {'content-range': `bytes ${range.start}-${range.end}/${info.size}`} : {})
+        };
+        res.writeHead(range ? 206 : 200, headers);
+        if (req.method === 'HEAD') {
+            res.end();
+            return;
+        }
+        await streamFileResponse(diskPath, range, res);
     } catch (err) {
         const msg = err?.message ?? String(err);
         if (res.headersSent) {
             res.destroy(err);
+            return;
+        }
+        if (err?.code === 'ENOENT' || err?.code === 'ENOTDIR') {
+            res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+            res.end('Not found');
             return;
         }
         res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });

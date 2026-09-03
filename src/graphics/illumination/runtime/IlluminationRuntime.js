@@ -468,6 +468,13 @@ async function fetchPackageWithBrowserFetch(request, context, maximumPackageByte
     if (declaredLength !== null && Number.isSafeInteger(declaredLength) && declaredLength > maximumPackageBytes) {
         throw packageSizeError(declaredLength, maximumPackageBytes, options.limitCode);
     }
+    if (declaredLength !== null && Number.isSafeInteger(declaredLength) && declaredLength >= 0) {
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.byteLength !== declaredLength) {
+            throw packageContentLengthError(bytes.byteLength, declaredLength);
+        }
+        return bytes;
+    }
     if (!response.body || typeof response.body.getReader !== 'function') {
         const error = new Error('A bounded streaming response body is required for illumination packages.');
         error.code = 'package_streaming_unavailable';

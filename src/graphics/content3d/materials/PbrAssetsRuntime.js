@@ -44,6 +44,9 @@ export function setPbrAssetsEnabled(enabled, { persist = true } = {}) {
 async function probeUrl(url) {
     try {
         const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+        // Consume the probe completely. Returning after headers alone leaves
+        // an unread body occupying a browser connection during scene startup.
+        await res.arrayBuffer();
         return !!res && res.ok;
     } catch {
         return false;

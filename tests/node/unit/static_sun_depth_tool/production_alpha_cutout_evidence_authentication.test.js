@@ -9,7 +9,8 @@ import {
 } from '../../../../src/app/illumination/bake_source/CanonicalJson.js';
 import {
     authenticateProductionAlphaCutoutSpatialParityArtifactFiles,
-    buildProductionAlphaCutoutSpatialParityArtifactFromFiles
+    buildProductionAlphaCutoutSpatialParityArtifactFromFiles,
+    PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_V2_SCHEMA
 } from '../../../../tools/static_sun_depth/src/ProductionAlphaCutoutParity.mjs';
 
 const HASHES = Object.freeze({
@@ -192,6 +193,84 @@ test('alpha-cutout parity builder rejects sample plans that omit a cutout caster
             fixture.deps
         ),
         /must cover every authenticated cutout caster/
+    );
+});
+
+test('alpha-cutout parity v2 authenticates a physical per-profile coverage partition', async () => {
+    const fixture = makeFixture();
+    const plan = {
+        inCoverageCasterIds: ['caster.alpha', 'caster.beta'],
+        lightingProfileId: 'ai527.sun.az135.el08',
+        method: 'per-profile-in-out-cutout-casters-projected-light-texel-coverage-v2',
+        outOfCoverageCasterIds: ['caster.gamma'],
+        samples: [
+            {casterId: 'caster.alpha', globalTexel: [10, 20], index: 0},
+            {casterId: 'caster.beta', globalTexel: [11, 20], index: 1},
+            {casterId: 'caster.alpha', globalTexel: [12, 20], index: 2},
+            {casterId: 'caster.beta', globalTexel: [13, 20], index: 3}
+        ],
+        schema: 'ai531-production-alpha-cutout-sample-plan-v2'
+    };
+    replaceRecordBytes(fixture, 'samplePlan', canonicalJsonBytes(plan));
+    fixture.options.metadata.samplePlanSha256 =
+        fixture.options.evidence.samplePlan.sha256;
+    fixture.options.metadata.cutoutCasterCount = 3;
+    fixture.options.metadata.cutoutCasterIdsSha256 = rawSha256(canonicalJsonBytes({
+        casterIds: ['caster.alpha', 'caster.beta', 'caster.gamma'],
+        schema: 'ai531-production-alpha-cutout-caster-plan-v1'
+    }));
+
+    const artifact = await buildProductionAlphaCutoutSpatialParityArtifactFromFiles(
+        fixture.options,
+        fixture.deps
+    );
+    assert.equal(artifact.schema, PRODUCTION_ALPHA_CUTOUT_SPATIAL_PARITY_V2_SCHEMA);
+    assert.equal(artifact.cutoutCasterCount, 3);
+    assert.equal(artifact.inCoverageCasterCount, 2);
+    assert.deepEqual(
+        artifact.inCoverageCasterIds,
+        ['caster.alpha', 'caster.beta']
+    );
+    assert.equal(artifact.outOfCoverageCasterCount, 1);
+    assert.deepEqual(artifact.outOfCoverageCasterIds, ['caster.gamma']);
+    assert.equal(artifact.sampleCount, 4);
+    assert.equal(artifact.firstHitDepthSampleCount, 2);
+
+    const repeated = await authenticateProductionAlphaCutoutSpatialParityArtifactFiles(
+        artifact,
+        {
+            authorityRoot: fixture.authorityRoot,
+            repoRoot: fixture.repoRoot
+        },
+        fixture.deps
+    );
+    assert.deepEqual(repeated, artifact);
+});
+
+test('alpha-cutout parity v2 rejects overlapping or incomplete coverage classes', async () => {
+    const fixture = makeFixture();
+    const plan = {
+        inCoverageCasterIds: ['caster.alpha', 'caster.beta'],
+        lightingProfileId: 'ai527.sun.az135.el08',
+        method: 'per-profile-in-out-cutout-casters-projected-light-texel-coverage-v2',
+        outOfCoverageCasterIds: ['caster.beta'],
+        samples: [
+            {casterId: 'caster.alpha', globalTexel: [10, 20], index: 0},
+            {casterId: 'caster.beta', globalTexel: [11, 20], index: 1},
+            {casterId: 'caster.alpha', globalTexel: [12, 20], index: 2},
+            {casterId: 'caster.beta', globalTexel: [13, 20], index: 3}
+        ],
+        schema: 'ai531-production-alpha-cutout-sample-plan-v2'
+    };
+    replaceRecordBytes(fixture, 'samplePlan', canonicalJsonBytes(plan));
+    fixture.options.metadata.samplePlanSha256 =
+        fixture.options.evidence.samplePlan.sha256;
+    await assert.rejects(
+        buildProductionAlphaCutoutSpatialParityArtifactFromFiles(
+            fixture.options,
+            fixture.deps
+        ),
+        /coverage classes must be disjoint/
     );
 });
 

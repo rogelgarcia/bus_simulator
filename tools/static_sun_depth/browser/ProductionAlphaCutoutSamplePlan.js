@@ -10,11 +10,17 @@ export const PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_SCHEMA =
     'ai531-production-alpha-cutout-sample-plan-v1';
 export const PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_METHOD =
     'all-cutout-casters-projected-light-texel-coverage-v1';
+export const PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_V2_SCHEMA =
+    'ai531-production-alpha-cutout-sample-plan-v2';
+export const PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_V2_METHOD =
+    'per-profile-in-out-cutout-casters-projected-light-texel-coverage-v2';
 export const PRODUCTION_ALPHA_CUTOUT_FIRST_HIT_TOLERANCE_METERS = 5e-3;
 export const PRODUCTION_ALPHA_CUTOUT_DIAGNOSTIC_SAMPLE_PLAN_SCHEMA =
     'ai531-production-alpha-cutout-in-coverage-diagnostic-plan-v1';
 export const PRODUCTION_ALPHA_CUTOUT_BAKE_SAMPLE_REQUEST_SCHEMA =
     'ai531-production-alpha-cutout-bake-sample-request-v1';
+export const PRODUCTION_ALPHA_CUTOUT_BAKE_SAMPLE_REQUEST_V2_SCHEMA =
+    'ai531-production-alpha-cutout-bake-sample-request-v2';
 export const PRODUCTION_ALPHA_CUTOUT_DIAGNOSTIC_BAKE_SAMPLE_REQUEST_SCHEMA =
     'ai531-production-alpha-cutout-in-coverage-bake-diagnostic-request-v1';
 export const PRODUCTION_ALPHA_CUTOUT_DEPTH_REFERENCE =
@@ -179,7 +185,8 @@ export function createProductionAlphaCutoutCandidatePlan(options) {
  * @param {{
  *   occupiedSamplesPerCaster?: number,
  *   emptySamplesPerCaster?: number,
- *   allowOutOfCoverageDiagnostic?: boolean
+ *   allowOutOfCoverageDiagnostic?: boolean,
+ *   allowReleaseUnionCoverage?: boolean
  * }} [options]
  */
 export function selectProductionAlphaCutoutSamplePlan(
@@ -191,7 +198,15 @@ export function selectProductionAlphaCutoutSamplePlan(
     const outOfCoverageCasterIds = candidatePlan.outOfCoverageCasterIds ?? [];
     const diagnosticOnly = outOfCoverageCasterIds.length > 0
         && options.allowOutOfCoverageDiagnostic === true;
-    if (outOfCoverageCasterIds.length > 0 && !diagnosticOnly) {
+    const releaseUnionCoverage = outOfCoverageCasterIds.length > 0
+        && options.allowReleaseUnionCoverage === true;
+    if (diagnosticOnly && releaseUnionCoverage) {
+        throw new TypeError(
+            'partial alpha-cutout coverage cannot be diagnostic and release-union evidence'
+        );
+    }
+    if (outOfCoverageCasterIds.length > 0
+        && !diagnosticOnly && !releaseUnionCoverage) {
         throw new Error(
             `alpha-cutout candidate plan contains ${candidatePlan.outOfCoverageCasterIds.length} `
             + 'casters outside the live shadow map; the release sample-plan schema cannot '
@@ -287,6 +302,16 @@ export function selectProductionAlphaCutoutSamplePlan(
         globalTexel: [...candidatePlan.candidates[candidateIndex].globalTexel],
         index
     }));
+    const inCoverageCasterIds = candidatePlan.casterIds.filter(
+        (casterId) => !outOfCoverageCasterIds.includes(casterId)
+    );
+    const samplePlanMethod = releaseUnionCoverage
+        ? PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_V2_METHOD
+        : PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_METHOD;
+    const coveragePartition = releaseUnionCoverage ? {
+        inCoverageCasterIds,
+        outOfCoverageCasterIds: [...outOfCoverageCasterIds]
+    } : {};
     const bakeSampleRequest = {
         depthReference: {
             cacheDepthAxisWorld: [...candidatePlan.shadowCamera.cacheDepthAxisWorld],
@@ -296,23 +321,29 @@ export function selectProductionAlphaCutoutSamplePlan(
             sourceCameraOriginDepthMetersInCacheBasis:
                 candidatePlan.shadowCamera.sourceCameraOriginDepthMetersInCacheBasis
         },
+        ...coveragePartition,
         lightingProfileId: candidatePlan.lightingProfileId,
-        method: PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_METHOD,
+        method: samplePlanMethod,
         productionEligible: !diagnosticOnly,
         samples,
-        schema: diagnosticOnly
-            ? PRODUCTION_ALPHA_CUTOUT_DIAGNOSTIC_BAKE_SAMPLE_REQUEST_SCHEMA
-            : PRODUCTION_ALPHA_CUTOUT_BAKE_SAMPLE_REQUEST_SCHEMA
+        schema: releaseUnionCoverage
+            ? PRODUCTION_ALPHA_CUTOUT_BAKE_SAMPLE_REQUEST_V2_SCHEMA
+            : diagnosticOnly
+                ? PRODUCTION_ALPHA_CUTOUT_DIAGNOSTIC_BAKE_SAMPLE_REQUEST_SCHEMA
+                : PRODUCTION_ALPHA_CUTOUT_BAKE_SAMPLE_REQUEST_SCHEMA
     };
     return {
         bakeSampleRequest,
         samplePlan: {
+            ...coveragePartition,
             lightingProfileId: candidatePlan.lightingProfileId,
-            method: PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_METHOD,
+            method: samplePlanMethod,
             samples,
-            schema: diagnosticOnly
-                ? PRODUCTION_ALPHA_CUTOUT_DIAGNOSTIC_SAMPLE_PLAN_SCHEMA
-                : PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_SCHEMA
+            schema: releaseUnionCoverage
+                ? PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_V2_SCHEMA
+                : diagnosticOnly
+                    ? PRODUCTION_ALPHA_CUTOUT_DIAGNOSTIC_SAMPLE_PLAN_SCHEMA
+                    : PRODUCTION_ALPHA_CUTOUT_SAMPLE_PLAN_SCHEMA
         },
         selectedCandidateIndices,
         outOfCoverageCasterIds: [...outOfCoverageCasterIds],
@@ -401,7 +432,7 @@ function readProjectedVertex(target, position, index, offset, matrixWorld, shado
         .applyMatrix4(shadowMatrix);
 }
 
-function createRuntimeTreeCasterId(cityRoot, object, groupIndex) {
+export function createRuntimeTreeCasterId(cityRoot, object, groupIndex) {
     let treeRoot = object;
     while (treeRoot && treeRoot !== cityRoot
         && !/^trees:\d{3}$/u.test(String(treeRoot.name))) {

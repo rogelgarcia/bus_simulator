@@ -39,7 +39,9 @@ export const STATIC_SUN_DEPTH_DEBUG_MODES = Object.freeze({
     bias: 6,
     outOfRange: 7,
     seam: 8,
-    currentDifference: 9
+    currentDifference: 9,
+    liveFinal: 10,
+    signedDifference: 11
 });
 
 function replaceExactlyOnce(source, anchor, replacement, label) {
@@ -69,7 +71,7 @@ function dot(left, right) {
 }
 
 function debugModeValue(value) {
-    if (Number.isSafeInteger(value) && value >= 0 && value <= 9) return value;
+    if (Number.isSafeInteger(value) && value >= 0 && value <= 11) return value;
     if (typeof value === 'string' && Object.prototype.hasOwnProperty.call(STATIC_SUN_DEPTH_DEBUG_MODES, value)) {
         return STATIC_SUN_DEPTH_DEBUG_MODES[value];
     }
@@ -306,7 +308,16 @@ export class StaticSunDepthMaterialSet {
 
     /** @returns {boolean} */
     verifyOwnership() {
-        if (!this._enabled || !this._root?.traverse) return false;
+        return this._enabled && this.verifyPreparedOwnership();
+    }
+
+    /**
+     * Validate the prepared receiver inventory even while the validation-only
+     * liveFinal mode has disabled every hook to render the original shaders.
+     * @returns {boolean}
+     */
+    verifyPreparedOwnership() {
+        if (!this._root?.traverse) return false;
         const current = new Set();
         for (const material of collectMaterials(this._root)) {
             if (!isLitMaterial(material)) continue;

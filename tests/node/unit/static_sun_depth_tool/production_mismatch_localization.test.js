@@ -103,17 +103,57 @@ test('mismatch-localization CLI remains one-case, artifact-only, and bounded', (
     assert.deepEqual(parseProductionMismatchLocalizationArgs([
         '--source-report', 'source.json',
         '--output-root', 'tests/artifacts/screens/illumination_531/localize',
-        '--warmup-frames', '3'
+        '--warmup-frames', '3',
+        '--sample-count', '8',
+        '--current-source', 'preactivation',
+        '--prelude-case-id', 'illum.profiler.r1c1.n',
+        '--prelude-repeat', '4',
+        '--direction', 'cache_darker',
+        '--target-pixel', '31,404',
+        '--metrics-only',
+        '--direct-render',
+        '--disable-gtao'
     ]), {
         sourceReportPath: 'source.json',
         outputRoot: 'tests/artifacts/screens/illumination_531/localize',
-        warmupFrames: 3
+        warmupFrames: 3,
+        sampleCount: 8,
+        currentSource: 'preactivation',
+        preludeCaseId: 'illum.profiler.r1c1.n',
+        preludeRepeat: 4,
+        direction: 'cache_darker',
+        targetPixel: [31, 404],
+        metricsOnly: true,
+        directRender: true,
+        disableGtao: true
     });
     assert.match(createProductionMismatchLocalizationUsageText(), /localize_production_mismatch/);
     assert.throws(
-        () => parseProductionMismatchLocalizationArgs(['--sample-count', '1000']),
-        /Unknown option/
+        () => parseProductionMismatchLocalizationArgs(['--sample-count']),
+        /requires a value/
     );
+    assert.throws(
+        () => parseProductionMismatchLocalizationArgs(['--target-pixel', '31']),
+        /target pixel/
+    );
+});
+
+test('mismatch localization defaults to the genuine pre-activation gameplay oracle', async () => {
+    const source = await readFile(
+        path.join(repoRoot, 'tools/static_sun_depth/localize_production_mismatch.mjs'),
+        'utf8'
+    );
+    assert.match(source, /options\.currentSource \?\? 'preactivation'/);
+    assert.match(source, /currentSource === 'paired-live-cache-first'/);
+    assert.match(source, /currentSource === 'paired-live-cache-first'\s*\? null/);
+    assert.match(source, /Capture the untouched cache first/);
+    assert.match(source, /Mirror the production validator/);
+    assert.match(source, /productionOrdering: currentSource === 'preactivation'/);
+    assert.match(source, /production preactivation preludes cannot be repeated/);
+    assert.match(source, /captureWorkloads/);
+    assert.match(source, /staticShadowDiagnostics/);
+    assert.match(source, /setDirectRenderingForDiagnostics/);
+    assert.match(source, /setAmbientOcclusionSettings/);
 });
 
 test('browser pass uses explicit caster IDs and live alpha sampling, never color depth inference', async () => {
@@ -128,15 +168,23 @@ test('browser pass uses explicit caster IDs and live alpha sampling, never color
             'tools/static_sun_depth/localize_production_mismatch.mjs'
         ), 'utf8')
     ]);
-    assert.match(passSource, /cropped-live-shadow-camera-rgba8-caster-id-alpha-sampler-v1/);
+    assert.match(passSource, /cropped-live-shadow-camera-rgba8-caster-id-alpha-sampler-v2/);
     assert.match(passSource, /resolveThreeR183ShadowAlphaTest/);
     assert.match(passSource, /resolveThreeR183ShadowSide/);
     assert.match(passSource, /map: source\.map \?\? null/);
     assert.match(passSource, /alphaMap: source\.alphaMap \?\? null/);
     assert.match(passSource, /renderer\.readRenderTargetPixels/);
     assert.match(passSource, /depthColorInferenceUsed: false/);
-    assert.doesNotMatch(passSource, /sourceDepth|packDepth|unpackRGBAToDepth/);
+    assert.match(passSource, /captureNativeShadowDepthTextureSamples/);
+    assert.match(passSource, /native-live-depth24-vs-resident-cache-rg8-vogel-taps-v1/);
+    assert.match(passSource, /currentDepthMeters/);
+    assert.match(passSource, /sourceDepthRangeMeters/);
+    assert.match(passSource, /status: 'unsupported'/);
+    assert.match(passSource, /no_lit_triangle_receiver_with_vertex_normals/);
+    assert.match(passSource, /depthTapParity: null/);
+    assert.doesNotMatch(passSource, /packDepth|unpackRGBAToDepth/);
     assert.match(validatorSource, /collectMissingOccluderCandidates/);
+    assert.match(validatorSource, /maximumRgbErrorPixel/);
     assert.match(validatorSource, /ai531-production-mismatch-localization-request-v1/);
     assert.match(cliSource, /productionEligible: false/);
     assert.match(cliSource, /promotable: false/);
