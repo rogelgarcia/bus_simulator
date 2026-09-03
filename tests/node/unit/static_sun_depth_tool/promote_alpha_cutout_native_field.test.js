@@ -74,70 +74,55 @@ test('authenticated union promotion retains the original composite identity', ()
     assert.equal(promoted.productionEligible, true);
 });
 
-test('authenticated calibration promotion retains the v7 identity', () => {
+test('authenticated calibration v7 is diagnostic-only and cannot be promoted', () => {
     const source = {
         schema: 'ai531-production-alpha-cutout-native-field-receipt-v7',
         method: 'authenticated-direct-preferred-hole-fill-minus-measured-bake-only-v7',
         status: 'complete_unpromoted',
         productionEligible: false
     };
-    const promoted = buildPromotedNativeCutoutFieldReceipt({
+    assert.throws(() => buildPromotedNativeCutoutFieldReceipt({
         nativeFieldIdentitySha256: SHA_A,
         parityArtifactSha256: SHA_B,
         parityDescriptorSha256: SHA_C,
         receipt: source,
         unpromotedReceiptByteLength: 789,
         unpromotedReceiptSha256: SHA_D
-    });
-
-    assert.equal(promoted.method, source.method);
-    assert.equal(promoted.schema, source.schema);
-    assert.equal(promoted.status, 'complete');
-    assert.equal(promoted.productionEligible, true);
+    }), /complete unpromoted textureGrad receipt or composite receipt/u);
 });
 
-test('authenticated exact calibration promotion retains the v8 identity', () => {
+test('authenticated exact calibration v8 is diagnostic-only and cannot be promoted', () => {
     const source = {
         schema: 'ai531-production-alpha-cutout-native-field-receipt-v8',
         method: 'authenticated-minimum-union-plus-measured-exact-corrections-v8',
         status: 'complete_unpromoted',
         productionEligible: false
     };
-    const promoted = buildPromotedNativeCutoutFieldReceipt({
+    assert.throws(() => buildPromotedNativeCutoutFieldReceipt({
         nativeFieldIdentitySha256: SHA_A,
         parityArtifactSha256: SHA_B,
         parityDescriptorSha256: SHA_C,
         receipt: source,
         unpromotedReceiptByteLength: 987,
         unpromotedReceiptSha256: SHA_D
-    });
-
-    assert.equal(promoted.method, source.method);
-    assert.equal(promoted.schema, source.schema);
-    assert.equal(promoted.status, 'complete');
-    assert.equal(promoted.productionEligible, true);
+    }), /complete unpromoted textureGrad receipt or composite receipt/u);
 });
 
-test('authenticated residual calibration promotion retains the v11 identity', () => {
+test('authenticated residual v11 is diagnostic-only and cannot be promoted', () => {
     const source = {
         schema: 'ai531-production-alpha-cutout-native-field-receipt-v11',
         method: 'authenticated-static-shadow-residual-live-depth-corrections-v11',
         status: 'complete_unpromoted',
         productionEligible: false
     };
-    const promoted = buildPromotedNativeCutoutFieldReceipt({
+    assert.throws(() => buildPromotedNativeCutoutFieldReceipt({
         nativeFieldIdentitySha256: SHA_A,
         parityArtifactSha256: SHA_B,
         parityDescriptorSha256: SHA_C,
         receipt: source,
         unpromotedReceiptByteLength: 1111,
         unpromotedReceiptSha256: SHA_D
-    });
-
-    assert.equal(promoted.method, source.method);
-    assert.equal(promoted.schema, source.schema);
-    assert.equal(promoted.status, 'complete');
-    assert.equal(promoted.productionEligible, true);
+    }), /complete unpromoted textureGrad receipt or composite receipt/u);
 });
 
 test('native textureGrad promotion rejects an already eligible receipt', () => {

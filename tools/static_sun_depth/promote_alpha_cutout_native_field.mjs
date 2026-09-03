@@ -17,6 +17,9 @@ import {
     prepareProductionAuthority,
     selectProductionStaticSunProfiles
 } from './src/ProductionOrchestrator.mjs';
+import {
+    assertCleanProductionNativeFieldReceipt
+} from './src/ProductionProvenance.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../..');
@@ -29,27 +32,9 @@ export function buildPromotedNativeCutoutFieldReceipt(options) {
             === 'ai531-production-alpha-cutout-native-field-receipt-v3'
         && receipt?.method
             === 'headless-blender-full-lattice-candidates-three-r183-native-texture-grad-v3'
-        || receipt?.schema === 'ai531-production-alpha-cutout-native-field-receipt-v5'
-        && receipt?.method
-            === 'authenticated-direct-depth24-texture-grad-minimum-union-v5'
         || receipt?.schema === 'ai531-production-alpha-cutout-native-field-receipt-v6'
         && receipt?.method
-            === 'authenticated-direct-depth24-texture-grad-hole-fill-v6'
-        || receipt?.schema === 'ai531-production-alpha-cutout-native-field-receipt-v7'
-        && receipt?.method
-            === 'authenticated-direct-preferred-hole-fill-minus-measured-bake-only-v7'
-        || receipt?.schema === 'ai531-production-alpha-cutout-native-field-receipt-v8'
-        && receipt?.method
-            === 'authenticated-minimum-union-plus-measured-exact-corrections-v8'
-        || receipt?.schema === 'ai531-production-alpha-cutout-native-field-receipt-v9'
-        && receipt?.method
-            === 'authenticated-stable-direct-plus-historical-texture-grad-hole-restoration-v9'
-        || receipt?.schema === 'ai531-production-alpha-cutout-native-field-receipt-v10'
-        && receipt?.method
-            === 'authenticated-stable-direct-historical-hole-restoration-minus-measured-bake-only-v10'
-        || receipt?.schema === 'ai531-production-alpha-cutout-native-field-receipt-v11'
-        && receipt?.method
-            === 'authenticated-static-shadow-residual-live-depth-corrections-v11';
+            === 'authenticated-direct-depth24-texture-grad-hole-fill-v6';
     if (!supported
         || receipt.status !== 'complete_unpromoted'
         || receipt.productionEligible !== false) {
@@ -68,7 +53,7 @@ export function buildPromotedNativeCutoutFieldReceipt(options) {
         || options.unpromotedReceiptByteLength < 1) {
         throw new TypeError('promotion requires a positive receipt byte length');
     }
-    return {
+    const promoted = {
         ...structuredClone(receipt),
         productionEligible: true,
         promotion: {
@@ -83,6 +68,8 @@ export function buildPromotedNativeCutoutFieldReceipt(options) {
         },
         status: 'complete'
     };
+    assertCleanProductionNativeFieldReceipt(promoted);
+    return promoted;
 }
 
 export function parseNativeFieldPromotionArguments(argv) {

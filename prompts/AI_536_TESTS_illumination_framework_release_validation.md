@@ -8,7 +8,7 @@ Run the integrated release validation for the complete AI 526 descendant chain, 
 
 ## Execution gate
 
-- Do not start until AI 527 through AI 535 are DONE.
+- Do not start until AI 527 through AI 535 and AI 546 are DONE.
 - Verify that every child completion summary links raw artifacts and states its measured limitations. Do not replace missing child evidence with projections.
 - Freeze the exact source, compiler, payload, browser, graphics, and route profiles used by the final run.
 

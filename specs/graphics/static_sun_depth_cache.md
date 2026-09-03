@@ -272,15 +272,15 @@ casters suppressed.
 
 The authoritative AI 528 inventory establishes a roughly 600 m city and
 2,275,142 expanded triangles, but the checked AI 529 sun-depth output remains a
-32×32 proof. Production v4 therefore fixes an exact layout contract and package
-model; it does not claim that a full-city artifact or its visual result has
-been measured.
+32×32 proof. Production v4 fixes the exact layout contract. AI 531 Part A later
+materialized and authenticated the complete accepted-caster eight-profile set;
+its strict visual result remains failed and development-only.
 
 The versioned chain is exact: the resolved-source channel is
 `bus-sim-static-sun-depth-source-v4`, the request is
 `ai531-static-sun-production-request-v4`, the raw Blender receipt is
-`ai531-static-sun-production-render-receipt-v4`, and the normalized receipt is
-`bus-sim-static-sun-depth-production-blender-receipt-v4`. Older request or
+`ai531-static-sun-production-render-receipt-v5`, and the normalized receipt is
+`bus-sim-static-sun-depth-production-blender-receipt-v5`. Older request or
 receipt schemas cannot certify this layout.
 
 Strict comparison evidence rejects the phase-locked 65:64 pitch candidate: a
@@ -297,17 +297,17 @@ cache pitch is exactly the live 16384-over-680 m source pitch, so the ratio is
 That phase rule is `absolute-stable-basis-texel-edge-lattice-v1` and is
 validated again from the normalized receipt and final descriptor.
 
-| Item | Production v4 contract/model | Reason |
+| Item | Production v4 contract and measured Part A result | Reason |
 |---|---:|---|
 | Source/cache texel pitch | 0.04150390625 m; exact 1:1 | Equals `680 / 16384`; no rational resampling phase remains |
 | Interior per layer | [1870, 1821] texels | Rectangular dimensions retain exact isotropic pitch while fitting the immutable package cap |
 | Tile size | [77.6123046875, 75.57861328125] m | Exact interior dimensions multiplied by the exact pitch |
 | Guard | 4 texels/edge | Stored symmetrically on every rectangular layer |
 | Stored layer | [1878, 1829] RG8 | 6,869,724 exact logical bytes per layer |
-| Modeled tile array | 77 row-major layers | Below the V1 256-layer ceiling |
-| Full payload/GPU logical bytes | 528,968,748 B (504.46 MiB) | Exact guarded RG8 dimensions × 77 layers |
-| Canonical layer-window chunks | 9 total: [9, 9, 9, 9, 9, 9, 9, 9, 5] layers | A 9-layer chunk is 61,827,516 B; 10 layers would exceed the immutable 64 MiB chunk cap |
-| Modeled package | 529,189,392 B (504.67 MiB) | Leaves 7,681,520 B below the immutable 536,870,912 B (512 MiB) package cap |
+| Tile arrays | 33 row-major layers for each elevation-8 profile; 77 for each elevation-35 profile | Both remain below the V1 256-layer ceiling |
+| Payload/GPU logical bytes | 226,700,892 B per 33-layer profile; 528,968,748 B per 77-layer profile | Exact guarded RG8 dimensions multiplied by the measured layer count |
+| Canonical layer-window chunks | [9, 9, 9, 6] for 33 layers; [9, 9, 9, 9, 9, 9, 9, 9, 5] for 77 | A 9-layer chunk is 61,827,516 B; 10 layers would exceed the immutable 64 MiB chunk cap |
+| Authenticated packages | 226,754,672–226,755,120 B low profiles; 529,195,408–529,195,696 B high profiles; 3,023,801,792 B across all eight | Every package remains below the immutable 536,870,912 B (512 MiB) cap |
 | Depth quantization | `range / 65534`, half-unit max | The measured city light-depth range must set and certify this value |
 
 The package cap is not raised. Only the internal
@@ -347,6 +347,25 @@ the hashed inventory or have a reviewed exclusion with an image consequence.
 Any missing silhouette, alpha mismatch, or missing occluder blocks production
 activation rather than becoming a tolerance.
 
+Production native-field provenance is source-only. The package boundary
+accepts only authenticated direct Depth24 readback v2, texture-gradient source
+reconstruction v3, or source-only hole-fill v6 receipts. Validation reports,
+screenshots, localization output, calibrated texels, and residual corrections
+are diagnostic inputs and cannot be promoted into a production bake. The
+orchestrator checks this allowlist before rendering, production-receipt
+normalization rejects diagnostic identities, and release finalization checks
+the normalized receipt again. A visually improved diagnostic field does not
+override this provenance rule.
+
+AI 531 Part A uses `tools/static_sun_depth/finish_part_a.mjs` as its resumable
+development-readiness boundary. It checkpoints each of the exact eight
+production profiles, proves that presentation-only validation state leaves all
+package/publication bytes unchanged, requires Lab 8/8, and accepts no more than
+nine visual-only failures in the unchanged 197-case production catalog. It
+accepts no nonvisual failure. Remaining visual cases transfer to AI 546; Part A
+completion neither activates gameplay by default nor issues a release
+certificate.
+
 ## Current evidence and promotion gate
 
 The deterministic fixture compiler and checked artifact prove strict AI 529
@@ -364,15 +383,16 @@ CPU/runtime sampling. They do not prove production city coverage:
 | Browser composition scope | 10 final-color readbacks prove named-sun visible/occluded contrast while a non-aligned directional light, ambient light, and emissive remain visible for Standard + Physical |
 | Atomic negative coverage | Whole-package corruption, forged per-layer hash, valid-hash invalid guards, stale request identity, live-source drift/exception, receiver-material drift, exact-city compile failure, context loss, and pipeline removal all retain/restore current |
 | Strict density/phase evidence | Exact 0.04150390625 m source/cache pitch, 1:1 ratio, and integral stable-basis texel-edge phase are required; the phase-locked 65:64 candidate failed strict parity and is rejected |
-| Production logical layout/package | [1870, 1821] interior, [1878, 1829] stored, 77 layers, 528,968,748 B payload, nine [9×8, 5] layer-window chunks, and 529,189,392 B modeled package; no production artifact is claimed |
+| Production logical layout/package | Complete authenticated eight-profile index: four 33-layer packages and four 77-layer packages, totaling 3,023,801,792 B on disk; deterministic isolation passed |
 | Physical GPU memory | `not measured` — WebGL2 exposes no portable authoritative counter |
-| Full-city image error and missing occluders | `not measured` — no production tiled bake exists |
+| Full-city image error and missing occluders | Strict catalog passed 128/197; maximum aligned RGB error 95 B, maximum mean 0.258907 B, maximum pixels-over-four 0.486897%, 386 missing-occluder pixels in aggregate, maximum seam run 12 px, and zero seam-false-lit pixels; strict/Part A readiness failed |
 | Current/cache frame and shadow-pass timings | `not measured` for promotion — the machine has concurrent processes and a shared GPU, and the fixture is not representative |
-| Full-city disk/load/decode/upload/residency | 529,189,392 B disk and 528,968,748 B logical RG8 residency are modeled; actual load/decode/upload time and physical residency are `not measured` because the production artifact is absent and the GPU session is shared |
-| Alpha-cutout parity | `not measured` — proof output cannot release production foliage |
+| Full-city disk/load/decode/upload/residency | 3,023,801,792 B measured package bytes across eight profiles; per-active-profile logical RG8 residency is 226,700,892 B or 528,968,748 B; load/decode/upload time and physical residency are `not measured` because the GPU session is shared |
+| Alpha-cutout parity | 8/8 accepted-caster profiles, 1,800 sparse samples, zero occupancy and first-hit-depth mismatches, maximum matched depth error 0.000488281 m against the 0.005 m gate |
 
 Production promotion requires the immutable validation catalog, same-session
 current/cache comparisons, zero missing occluders, strict numeric and image
-tolerances, and the complete performance table requested by AI 531. Until all
-rows are measured on a fresh source identity, the prompt remains active and the
-runtime stays development-only with current-engine fallback.
+tolerances, and the complete performance table requested by AI 531. The Part A
+report does not meet those gates or its separate 188/197 readiness gate, so the
+prompt remains active and the runtime stays development-only with
+current-engine fallback.

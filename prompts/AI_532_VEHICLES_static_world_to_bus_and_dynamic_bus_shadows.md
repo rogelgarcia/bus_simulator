@@ -11,6 +11,10 @@ Integrate the moving bus with the optional static sun cache and implement a sepa
 ## Execution gate
 
 - Do not start until AI 527 through AI 531 are DONE.
+- AI 531 completion means the deterministic Part A prompt. AI 546 visual
+  refinement is not a prerequisite for development-only bus integration, but
+  the combined cached path must remain disabled by default and may not be
+  exposed through Options until AI 546 is DONE.
 - Audit the current Three.js version and AI 498 before coding. Reuse its verified shadow-lab cases, texel snapping, low-sun extent, bias, measurement pitfalls, and composition findings.
 - AI 532 supersedes AI 498's overlapping bus-map and cascade-retuning phases when this prompt ships. If a Three.js upgrade is still required, isolate and complete that compatibility work first rather than silently combining it here.
 

@@ -138,34 +138,47 @@ test('final production receipt accepts an authenticated promoted native union v6
     assert.doesNotThrow(() => validateProductionStaticSunDepthReceipt(receipt));
 });
 
-test('final production receipt accepts an authenticated calibrated native v7 field', () => {
-    const receipt = makeRawFixture().receipt;
-    const method =
-        'authenticated-direct-preferred-hole-fill-minus-measured-bake-only-v7';
-    const schema = 'ai531-production-alpha-cutout-native-field-receipt-v7';
-    Object.assign(receipt.compilerDescriptor.nativeCutoutField, {method, schema});
-    Object.assign(receipt.alphaCertification.nativeCutoutField, {method, schema});
-    const signature = digest(new TextEncoder().encode(
-        canonicalJsonStringify(receipt.compilerDescriptor)
-    ));
-    receipt.compilerSignatureSha256 = signature;
-    receipt.identity.compilerSignatureSha256 = signature;
-    assert.doesNotThrow(() => validateProductionStaticSunDepthReceipt(receipt));
-});
-
-test('final production receipt accepts an authenticated exact calibrated native v8 field', () => {
-    const receipt = makeRawFixture().receipt;
-    const method =
-        'authenticated-minimum-union-plus-measured-exact-corrections-v8';
-    const schema = 'ai531-production-alpha-cutout-native-field-receipt-v8';
-    Object.assign(receipt.compilerDescriptor.nativeCutoutField, {method, schema});
-    Object.assign(receipt.alphaCertification.nativeCutoutField, {method, schema});
-    const signature = digest(new TextEncoder().encode(
-        canonicalJsonStringify(receipt.compilerDescriptor)
-    ));
-    receipt.compilerSignatureSha256 = signature;
-    receipt.identity.compilerSignatureSha256 = signature;
-    assert.doesNotThrow(() => validateProductionStaticSunDepthReceipt(receipt));
+test('final production receipt rejects diagnostic and validation-derived native fields', () => {
+    const identities = [
+        [
+            'ai531-production-alpha-cutout-native-field-receipt-v5',
+            'authenticated-direct-depth24-texture-grad-minimum-union-v5'
+        ],
+        [
+            'ai531-production-alpha-cutout-native-field-receipt-v7',
+            'authenticated-direct-preferred-hole-fill-minus-measured-bake-only-v7'
+        ],
+        [
+            'ai531-production-alpha-cutout-native-field-receipt-v8',
+            'authenticated-minimum-union-plus-measured-exact-corrections-v8'
+        ],
+        [
+            'ai531-production-alpha-cutout-native-field-receipt-v9',
+            'authenticated-stable-direct-plus-historical-texture-grad-hole-restoration-v9'
+        ],
+        [
+            'ai531-production-alpha-cutout-native-field-receipt-v10',
+            'authenticated-stable-direct-historical-hole-restoration-minus-measured-bake-only-v10'
+        ],
+        [
+            'ai531-production-alpha-cutout-native-field-receipt-v11',
+            'authenticated-static-shadow-residual-live-depth-corrections-v11'
+        ]
+    ];
+    for (const [schema, method] of identities) {
+        const receipt = makeRawFixture().receipt;
+        Object.assign(receipt.compilerDescriptor.nativeCutoutField, {method, schema});
+        Object.assign(receipt.alphaCertification.nativeCutoutField, {method, schema});
+        const signature = digest(new TextEncoder().encode(
+            canonicalJsonStringify(receipt.compilerDescriptor)
+        ));
+        receipt.compilerSignatureSha256 = signature;
+        receipt.identity.compilerSignatureSha256 = signature;
+        assert.throws(
+            () => validateProductionStaticSunDepthReceipt(receipt),
+            /native cutout field identity is unsupported/u
+        );
+    }
 });
 
 test('production receipt rejects incomplete row-major inventory and unmeasured quantization', () => {

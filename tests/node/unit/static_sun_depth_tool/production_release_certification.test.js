@@ -1709,8 +1709,16 @@ function makeProfileFixture(lightingProfileId) {
                 cutoutMaterialIds: ['material.cutout'],
                 exactCoverageInputCount: 1,
                 forcedOpaqueMaterialVariantCount: 1,
+                nativeCutoutField: {
+                    method:
+                        'three-r183-production-lattice-mixed-foliage-depth24-native-readback-v2',
+                    receiptSha256: HASHES.p,
+                    schema: 'ai531-production-alpha-cutout-native-field-receipt-v2',
+                    status: 'authenticated_complete_native_field'
+                },
                 spatialParityArtifact,
-                status: 'exact_inputs_and_binary_render_output_verified'
+                status:
+                    'native_three_mixed_mesh_field_min_merged_with_cycles_opaque_including_mixed_foliage_verified'
             },
             compilerDescriptor,
             compilerSignatureSha256,

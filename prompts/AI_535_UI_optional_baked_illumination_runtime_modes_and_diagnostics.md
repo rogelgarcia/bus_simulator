@@ -8,8 +8,11 @@ Expose the optional illumination capability through runtime Options, profile/sta
 
 ## Execution gate
 
-- Do not start until AI 527 through AI 534 are DONE.
-- Use the lifecycle/mode controller from AI 530 and the final channel/preset decisions from AI 531–534. Do not redesign shader algorithms, bake formats, or AO composition here.
+- Do not start until AI 527 through AI 534 and AI 546 are DONE.
+- Use the lifecycle/mode controller from AI 530, AI 531 Part A's deterministic
+  channel/package contract, AI 546's final static-sun visual disposition, and
+  the final channel/preset decisions from AI 532–534. Do not redesign shader
+  algorithms, bake formats, or AO composition here.
 
 Tasks:
 - Add an Options control for illumination mode with clear semantics:

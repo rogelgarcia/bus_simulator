@@ -65,6 +65,9 @@ import {
     authenticateProductionAlphaCutoutSpatialParityArtifactFiles,
     validateProductionAlphaCutoutSpatialParityArtifact
 } from './ProductionAlphaCutoutParity.mjs';
+import {
+    assertCleanProductionNativeFieldReceipt
+} from './ProductionProvenance.mjs';
 
 export const PRODUCTION_STATIC_SUN_REQUEST_SCHEMA =
     'ai531-static-sun-production-request-v4';
@@ -342,6 +345,7 @@ export async function orchestrateProductionStaticSunDepth(options, deps = {}) {
     const executeProfileFn = deps.executeProfileFn ?? executeProductionProfile;
     const loadExistingProfileFn = deps.loadExistingProfileFn ?? loadExistingProductionProfile;
     const publishIndexFn = deps.publishIndexFn ?? publishProductionPackageIndex;
+    const onProfileCompleteFn = deps.onProfileCompleteFn ?? (() => {});
     const authority = await prepareAuthorityFn(normalized, deps);
     const selectedProfiles = selectProductionStaticSunProfiles(normalized.profiles);
     const selectedIds = new Set(selectedProfiles.map((entry) => entry.id));
@@ -373,6 +377,7 @@ export async function orchestrateProductionStaticSunDepth(options, deps = {}) {
         const entry = normalizeProfileResult(result, profile.id);
         entries.push(entry);
         results.push(result);
+        await onProfileCompleteFn(Object.freeze({entry, profile, result}));
     }
     if (entries.length === 0) {
         throw new Error('No production static-sun packages were published or resumed');
@@ -1332,6 +1337,9 @@ export async function loadProductionNativeCutoutField(context, deps = {}) {
         bytes,
         'production native cutout field receipt'
     );
+    if (context.allowUnpromotedNativeCutoutField !== true) {
+        assertCleanProductionNativeFieldReceipt(receipt);
+    }
     const receiptKeys = [
         'aggregate', 'layout', 'method', 'outputs', 'performance', 'producers',
         'productionEligible', 'profile', 'schema', 'session', 'source', 'status'

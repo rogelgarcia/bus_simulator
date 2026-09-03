@@ -143,12 +143,13 @@ has rectangular interior `[1870, 1821]`, four guards per edge, stored dimensions
 stable-basis origin, and pitch must resolve to integral texel-edge coordinates
 on both axes.
 
-The 77-layer RG8 array is 6,869,724 bytes per guarded layer and
-528,968,748 bytes (504.46 MiB) of exact payload. Canonical 64 MiB layer-window
-partitioning yields nine chunks: eight 9-layer chunks followed by one 5-layer
-chunk. The current package model is 529,189,392 bytes (504.67 MiB), leaving
-7,681,520 bytes below the immutable 512 MiB package cap. This is modeled
-accounting, not a measured production artifact.
+Each guarded RG8 layer is 6,869,724 bytes. Elevation-8 profiles contain 33
+layers (226,700,892 payload bytes) split [9, 9, 9, 6]; elevation-35 profiles
+contain 77 layers (528,968,748 payload bytes, 504.46 MiB) split
+[9, 9, 9, 9, 9, 9, 9, 9, 5]. The accepted-caster Part A packages measure
+226,754,672–226,755,120 bytes for low profiles and
+529,195,408–529,195,696 bytes for high profiles. All remain under the immutable
+512 MiB per-package cap; the complete exact-eight set is 3,023,801,792 bytes.
 
 Only `development.static_sun_v1` admits the corresponding static-sun logical
 limits: 512 MiB steady CPU, 512 MiB steady GPU, 1536 MiB peak CPU, and 1024 MiB
@@ -161,7 +162,56 @@ reduction/streaming before player-facing promotion.
 node tools/static_sun_depth/production.mjs --repeat 2
 ```
 
-## Authenticated residual fields
+## Deterministic Part A finishing driver
+
+`finish_part_a.mjs` is the resumable AI 531 Part A entry point. It authenticates
+the clean source-derived native fields, builds or reuses all eight production
+profiles, proves that presentation-only validation state cannot change the
+published package bytes, runs the eight-case Lab and 197-case production
+validators, and writes a deterministic visual-only failure inventory. Its
+default checkpoint is
+`tests/artifacts/illumination_531/production_accepted_casters_v1_all8/part_a_checkpoint.json`.
+Each completed profile is recorded immediately, so rerunning the same command
+after an interruption authenticates and reuses completed publications instead
+of rebaking them.
+
+```powershell
+node tools/static_sun_depth/finish_part_a.mjs
+```
+
+`--stop-after production` provides a clean boundary before browser validation.
+If the final result is `awaiting_human_verification`, present the checkpoint's
+Current/cache pairs in chat without deriving corrections from them, then record
+that delivery with:
+
+```powershell
+node tools/static_sun_depth/finish_part_a.mjs --acknowledge-first-failures
+```
+
+Checkpoint exit states are `running`, `stopped`,
+`awaiting_human_verification`, `complete`, or `failed_readiness`. A failed
+readiness result remains resumable; invoking the full driver again reruns
+production validation, while the acknowledgement command changes only
+presentation-delivery metadata.
+
+Part A readiness requires Lab 8/8, at least 188/197 unchanged production cases,
+no nonvisual failures, and no more than nine visual-only failures. This is a
+development-readiness boundary, not strict release certification. AI 546 owns
+manual visual refinement and the final 197/197 release gate. When the host or
+GPU is shared, pass a contamination reason and treat every timing as
+non-promotable.
+
+## Production provenance and diagnostic residual fields
+
+Production accepts only clean native-field receipts whose samples descend from
+authenticated caster/material sources: direct Depth24 readback v2,
+texture-gradient source reconstruction v3, or source-only hole-fill v6.
+`ProductionOrchestrator` authenticates this allowlist before Blender starts,
+the production receipt normalizer rejects every diagnostic-only identity, and
+release finalization rechecks the normalized render receipt. Calibration,
+residual correction, diagnostic evidence, validation reports, and screenshot
+lineage are rejected at the production package boundary even if their visual
+results are better.
 
 `calibrate_static_shadow_residual_field.mjs` applies a deliberately narrow
 post-bake correction to an authenticated v9, v10, or already corrected v11
@@ -172,14 +222,14 @@ or replace an occupied texel only with a finite, nonzero, nearer measured
 depth. It cannot clear a texel, invent depth, accept a farther hit, or promote
 its own output.
 
-The resulting v11 receipt records every source report and five-image capture
+The resulting v11 diagnostic receipt records every source report and five-image capture
 set, package/certification hashes, caster class, exact global texel, old depth,
 measured live depth, correction count, producer inventory, and inherited field
-provenance. Promotion still requires a fresh exact occupancy/first-hit parity
-artifact for every profile. Changing any listed producer invalidates old
-Blender receipts and requires rebuilding the affected provisional/production
-outputs; copied parity directories are likewise rejected because evidence
-paths remain bound to their original authority.
+provenance. It is intentionally non-promotable and may be used only for
+diagnosis or AI 546 investigation. Changing any listed clean producer
+invalidates old Blender receipts and requires rebuilding the affected
+production outputs; copied parity directories are likewise rejected because
+evidence paths remain bound to their original authority.
 
 Residual calibration is not a substitute for release validation. The strict
 Lab and 197-case production runners remain authoritative, and a failed

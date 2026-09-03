@@ -51,6 +51,9 @@ import {
     selectProductionStaticSunProfiles
 } from './src/ProductionOrchestrator.mjs';
 import {
+    assertCleanProductionRenderReceipt
+} from './src/ProductionProvenance.mjs';
+import {
     requireProductionStaticSunDepthChunkWindows
 } from './src/ProductionPackage.mjs';
 
@@ -337,6 +340,7 @@ export async function finalizeProductionReleaseCertification(options, deps = {})
             `production receipt '${lightingProfileId}'`
         );
         const receipt = await validateReceiptFn(receiptValue);
+        assertCleanProductionRenderReceipt(receipt);
         const expectedRequest = createProductionStaticSunRequest(
             releaseProfiles.get(lightingProfileId)
         );

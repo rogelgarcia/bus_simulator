@@ -183,6 +183,7 @@ test('AI 531 GPU visibility matches the CPU sampler across world-space and guard
         };
         for (const mesh of Object.values(meshes)) {
             mesh.frustumCulled = false;
+            mesh.receiveShadow = true;
             root.add(mesh);
         }
         const light = new THREE.DirectionalLight(0xffffff, 2);

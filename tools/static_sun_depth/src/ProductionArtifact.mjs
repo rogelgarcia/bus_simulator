@@ -1877,7 +1877,7 @@ function validateRawAlphaCertification(value, outputs, contract) {
     }
 }
 
-function validateNativeCutoutFieldCertificationIdentity(value, allowTextureGradV3) {
+function validateNativeCutoutFieldCertificationIdentity(value, allowDiagnosticNativeField) {
     requireExactKeys(value, [
         'cutoutCasterCount', 'cutoutCasterIdsSha256', 'method',
         'nativeOwnedMeshInstanceCount', 'nativeOwnedMeshInstanceIdsSha256',
@@ -1910,7 +1910,7 @@ function validateNativeCutoutFieldCertificationIdentity(value, allowTextureGradV
             === 'ai531-production-alpha-cutout-native-field-receipt-v3'
         && value.method
             === 'headless-blender-full-lattice-candidates-three-r183-native-texture-grad-v3';
-    const implicitGradientV4 = allowTextureGradV3 === true
+    const implicitGradientV4 = allowDiagnosticNativeField === true
         && value.schema === 'ai531-production-alpha-cutout-native-field-receipt-v4'
         && value.method
             === 'headless-blender-full-lattice-candidates-three-r183-native-implicit-gradient-v4';
@@ -1942,9 +1942,11 @@ function validateNativeCutoutFieldCertificationIdentity(value, allowTextureGradV
             === 'ai531-production-alpha-cutout-native-field-receipt-v11'
         && value.method
             === 'authenticated-static-shadow-residual-live-depth-corrections-v11';
-    if ((!legacyV2 && !textureGradV3 && !implicitGradientV4
-            && !composedV5 && !composedV6 && !calibratedV7 && !calibratedV8
-            && !rebasedV9 && !rebasedCalibratedV10 && !residualV11)
+    const cleanProduction = legacyV2 || textureGradV3 || composedV6;
+    const diagnosticOnly = allowDiagnosticNativeField === true
+        && (implicitGradientV4 || composedV5 || calibratedV7 || calibratedV8
+            || rebasedV9 || rebasedCalibratedV10 || residualV11);
+    if ((!cleanProduction && !diagnosticOnly)
         || value.status !== 'authenticated_complete_native_field') {
         throw new Error('Blender alpha native cutout field identity is unsupported');
     }

@@ -4,9 +4,27 @@ The mostly static city is repeatedly submitted to current camera-relative sun sh
 
 The framework needs a reusable world-space directional visibility representation. For a fixed sun profile, a tiled orthographic light-space depth field can record the nearest static caster along each sun ray and can be sampled from any receiver fragment without rerendering static casters every frame.
 
+This prompt originally combined deterministic pipeline construction with final
+pixel-level visual refinement. Those are now split so repeatable engineering
+work can complete without hiding or repeatedly reanalyzing the difficult
+raster/filter residuals. This file is Part A. AI 546 owns Part B.
+
 # Request
 
-Implement the optional static directional sun-depth cache and apply it to static world receivers. Produce the cache through the deterministic AI 529 compiler, package/load it through AI 530, and compare it against the current runtime shadow engine. Do not integrate the bus or baked GI in this step.
+Implement the optional static directional sun-depth cache and apply it to static
+world receivers. Produce the cache through the deterministic AI 529 compiler,
+package/load it through AI 530, and compare it against the current runtime
+shadow engine. Complete a resumable deterministic production/validation driver
+and a fully authenticated development-ready eight-profile result. Do not
+integrate the bus, baked GI, final manual visual refinement, or player-facing
+activation in this step.
+
+Production cache artifacts must be a pure deterministic result of the
+authenticated city source, accepted caster/material data, sun profile, and
+versioned generic compiler configuration. Screenshots and validation evidence
+are read-only outputs: no validation case, camera, screen pixel, failed-image
+measurement, residual observation, or manual review decision may influence a
+production depth field, descriptor, package, or package index.
 
 ## Execution gate
 
@@ -35,15 +53,151 @@ Tasks:
 - Do not alter current-engine rendering or cost when the illumination mode is `current`.
 - Add debug views for light-space tiles, reconstructed depth, receiver coordinates, comparisons, tile residency, bias, out-of-range samples, and per-pixel current-vs-cache visibility difference.
 - Add deterministic same-session image comparisons at the AI 527 lab/route cases, including low sun, long shadows, vertical receivers, roofline/self-shadow detail, tile boundaries, city edges, and alpha-cutout foliage.
-- Require zero missing occluders. Define strict numeric/image tolerances for filtering differences and reject halos, light leaks, acne, peter-panning, swimming, seams, and stale-profile use.
+- Keep the strict production validator's zero-missing-occluder and existing
+  numeric/image tolerances unchanged. Part A may finish only through the
+  separate readiness policy below; it must preserve every strict failure in the
+  report for AI 546 and must never relabel a failed strict case as passed.
 - Benchmark current shadows, cache sampling with current maps still present, and cache sampling with static caster submissions removed. Record whole-frame and shadow-pass calls/triangles, CPU/GPU timing, shader cost, memory, disk/load/upload, and tile residency.
+- Add one deterministic, resumable AI 531 finishing driver around the existing
+  stage-specific tools. It must authenticate and reuse completed work, run only
+  missing stages, maintain a machine-readable checkpoint, stop cleanly, and
+  never promote a partial profile set.
+- Keep that driver inside the existing `tools/static_sun_depth/` tool rather
+  than creating a competing pipeline. Document its commands, checkpoint schema,
+  exit states, and recovery behavior in the tool README and `PROJECT_TOOLS.md`.
+- Generate a deterministic failure inventory from the Lab and production
+  reports. Preserve each case ID, profile, failed gate, metrics, and canonical
+  screenshot paths, but do not generate corrective action items from visual
+  failures or screenshot content. Only an independently failing nonvisual
+  source, contract, integrity, lifecycle, or configuration test may identify
+  implementation work.
+- Keep generation and validation unidirectional. Production generation may emit
+  inputs for validation, but validators, screenshot analyzers, localization
+  tools, and residual-analysis tools must not write, patch, or promote
+  production fields, descriptors, packages, or package indexes.
+- Prohibit output-space calibration, including per-case, per-camera,
+  per-screen-pixel, per-texel, or hand-authored depth/occupancy overrides. An
+  authenticated mismatch may identify a defect, but it does not authorize
+  editing the generated field to match the oracle image.
+- Resolve a proven failure only at its authoritative cause: fix canonical map
+  geometry/material data when the source is wrong, or fix a generic
+  compiler/runtime configuration or algorithm when the pipeline is wrong. Give
+  either change a new authenticated identity and cleanly rebuild every affected
+  profile. If source visibility is correct and the remainder is only a bounded
+  raster/filter difference, retain the strict failure for AI 546 instead of
+  patching baked output.
+- Existing residual-field calibration utilities and their historical v9-v11
+  artifacts are diagnostic evidence only. They must be impossible to select,
+  package, index, or certify as production authority. Do not delete them merely
+  to hide the experiment; label and enforce their non-promotable status.
+- Add a production provenance/taint gate that allowlists the complete set of
+  legitimate source and configuration inputs and rejects any lineage derived
+  from validation reports, screenshots, case catalogs, pixel observations,
+  residual overrides, or manually edited generated fields.
+- Add a determinism isolation test: identical authenticated source, profile,
+  toolchain, and configuration must produce byte-identical production artifacts
+  whether validation artifacts are absent, present, or changed. The finishing
+  driver must fail if validation state can alter production output.
+
+## Production provenance boundary -- 2026-09-03
+
+This section supersedes every historical note below that discusses applying an
+authenticated or bounded residual field correction. Those experiments remain
+useful for diagnosing raster/filter differences, but neither AI 531 nor AI 546
+may promote their output. Passing more screenshot cases is never sufficient
+provenance for changing baked depth values.
+
+Expected map-specific output is limited to the ordinary result of baking that
+map's authenticated casters for a named sun profile. Scenario-specific output
+is forbidden: production recipes must not contain validation case IDs, camera
+poses, viewport coordinates, screen pixels, expected image colors, or exception
+lists derived from them. A 95% Part A readiness target measures the clean bake;
+it is not an optimization objective for a calibration loop.
+
+Screenshots are presentation artifacts for human verification only. Their
+pixels, visual gate failures, and human-visible differences must not start a
+localization, calibration, or refinement pass; create an automated or manual
+action item; change source/configuration; or schedule a case-specific rerun.
+Record the unchanged strict result and continue only independently required
+nonvisual work.
+
+## Chat screenshot evidence policy
+
+- For every visual test case that fails, retain the authenticated Current/oracle
+  image and clean baked cache/candidate image, then embed exactly one labeled
+  before/after pair in a visible commentary/reasoning update immediately after
+  the authoritative result is available. Never defer this pair to the final
+  response. Use absolute local image paths so both images render in Codex; do
+  not provide only filenames or links.
+- Treat the Current/oracle capture as **Before** and the failing cache/candidate
+  capture as **After — failed**. Include the case ID and failed gates beside the
+  pair so the human can verify it without the agent interpreting the image into
+  a correction.
+- After posting a failed pair, take no action based on the screenshot or its
+  visual metrics. Do not run screenshot-driven localization, correction,
+  calibration, or manual refinement, and do not generate intermediate attempt
+  screenshots.
+- If a separately justified canonical-source or generic-pipeline change later
+  causes the case to pass, embed exactly one final labeled pair during
+  validation: the same authoritative **Before** image and the **After — final
+  passing result**. The independent change must already have non-screenshot
+  justification; the failed pair itself cannot justify it. Do not fabricate or
+  imply a final passing image for an unresolved case.
+- Make the finishing driver expose canonical first-result and, when applicable,
+  final-pass image paths plus chat-delivery state in its checkpoint. Screenshot
+  paths and delivery state are presentation metadata only and must not feed
+  production, triage, or action-item generation.
+- If a failing test is genuinely nonvisual and produces no renderable before/
+  after evidence, say so explicitly in a commentary/reasoning update and report
+  the failure normally; never fabricate a screenshot or substitute an unrelated
+  screen capture.
+- The final response may summarize case IDs, metrics, and artifact paths, but it
+  must not postpone, duplicate, or substitute for the required in-progress
+  first-failure and final-pass image posts.
+- Store all generated Part A captures under a case-specific child of
+  `tests/artifacts/screens/illumination_531/`. They remain gitignored and must
+  not be staged or committed.
 
 Acceptance requirements:
-- Static world receivers reproduce the accepted current-engine sun visibility within documented gates across the full test matrix.
-- Static casters are not rerendered every frame in the cache mode after activation.
-- Current mode remains visually and behaviorally unchanged and works without the payload.
-- Missing/stale/corrupt/unsupported cache states atomically retain or return to current shadows.
-- The cache exposes a stable arbitrary-world-position sampling contract for AI 532 without containing bus-specific logic.
+- All eight source-bound packages and their exact package index are complete,
+  authenticated, deterministic, and reproducibly resumable through the Part A
+  finishing driver.
+- Alpha-cutout spatial parity, package integrity, lifecycle, activation,
+  corruption/freshness, caster suppression/restoration, browser diagnostics,
+  and current-mode fallback gates pass completely.
+- The strict 8-case Lab report passes 8/8, and the complete 197-case production
+  report executes with authenticated evidence for every case.
+- At least 188/197 production cases (95%) pass the unchanged strict per-case
+  visual gates. At most nine remaining cases may be deferred, and only when
+  every failure is visual-only, bounded, deterministically classified, linked
+  to retained evidence, and does not regress the last authoritative aggregate
+  baseline. Strict reports remain failed while any such case remains.
+- Static casters are not rerendered every frame after authenticated cache
+  activation; Current remains visually/behaviorally unchanged and works with no
+  payload; every missing, stale, corrupt, unsupported, or partial state retains
+  or returns atomically to Current.
+- The stable arbitrary-world-position sampling contract is ready for AI 532
+  without bus-specific logic. Cache gameplay activation remains disabled by
+  default, and Part A completion is not a production release certificate.
+- Every selected package passes the production provenance/taint gate and the
+  determinism isolation test. No selected field, descriptor, package, or index
+  descends from a validation-driven residual correction.
+
+## Part split and dependency boundary — 2026-09-03
+
+- This prompt is **Part A: deterministic pipeline and development readiness**.
+- `AI_546_ATMOSPHERE_static_sun_depth_visual_parity_refinement.md` is **Part B**
+  and owns human display of deferred visual cases, independently justified
+  source/generic-pipeline remediation, strict 197/197 closure, and final
+  static-sun release certification.
+- Existing code schemas, artifact roots, reports, and compiler identities keep
+  the `AI 531` name. The split changes prompt ownership, not binary identity.
+- AI 532 may depend on completed Part A because the sampler and fallback remain
+  development-only and disabled by default. AI 535 and AI 536 must also require
+  completed Part B before player-facing activation or framework release.
+- The production validator thresholds remain the single strict oracle. The 95%
+  Part A readiness policy is an outer workflow decision and must not be encoded
+  by weakening, filtering, or suppressing validator failures.
 
 ## Implementation progress — 2026-08-30
 
@@ -423,12 +577,21 @@ survive a restart.
 - [x] Complete focused/full Node, Python/Blender, and browser validation; update
   documentation; record unavailable performance numbers as `not measured` due
   to concurrent processes and shared GPU use.
-- [ ] Resolve the remaining strict production visual failures and rerun the
-  complete 197-case catalog until its report passes without weakening any
-  missing-occluder, seam, or aligned RGB gate.
-- [ ] Add the completion summary and rename this prompt only after the strict
-  production report and release certification pass. Keep baked gameplay
-  activation disabled by default.
+- [x] Implement and pass the deterministic resumable finishing driver,
+  checkpoint manifest, and complete failure-triage output defined by the Part A
+  split policy.
+  - `tools/static_sun_depth/finish_part_a.mjs` now checkpoints every completed
+    profile/stage, authenticates reuse after restart, proves production-byte
+    isolation from presentation state, and emits
+    `part_a_failure_inventory.json` without action items.
+- [ ] Resume the corrected exact-eight packages, rerun strict Lab and production
+  validation, and meet the separate Part A readiness gate: Lab 8/8, at least
+  188/197 production cases, complete nonvisual gates, and at most nine bounded
+  visual-only failures preserved for AI 546.
+- [ ] Add the Part A completion summary and rename this prompt only after the
+  readiness policy passes and the exact AI 546 handoff is complete. Keep baked
+  gameplay activation disabled by default; do not claim strict release
+  certification here.
 
 ## Tracked issues — 2026-09-02
 
@@ -566,18 +729,21 @@ No visual threshold has been weakened and no release certificate exists.
 6. Record performance/load/memory/bake figures as 'not measured' under current
    shared-machine/GPU contention unless a controlled measurement window becomes
    available.
-7. Only after all correctness and fallback gates pass, add the completion
-   summary, mark the first line DONE, rename the prompt as specified below, and
-   commit only when requested. Do not begin AI 532 while AI 531 remains active.
+7. This list records the pre-split strict-release plan. Under the 2026-09-03
+   split, complete the Part A deterministic/readiness policy, transfer every
+   remaining visual-only case to AI 546, add the Part A completion summary, and
+   rename the prompt as specified below. AI 532 remains gated until Part A is
+   DONE; AI 546 owns strict visual release closure.
 
 ## Candidate progress — 2026-09-03
 
 The user approved pragmatic progress without requiring perfect same-pixel
-matching, provided progress and problems remain separately documented. The
-completion audit nevertheless keeps AI 531 open because the active acceptance
-contract still requires the strict production report to pass. The failed report
-is retained, no release certificate was issued, and normal gameplay remains on
-the previous current-shadow engine.
+matching, provided progress and problems remain separately documented. This
+paragraph records the pre-split completion decision: the then-active contract
+still required a strict production pass. The failed report remains retained and
+no release certificate was issued. The 2026-09-03 Part A policy above now
+supersedes that completion boundary while preserving every failure for AI 546;
+normal gameplay remains on the previous current-shadow engine.
 
 - The canonical current source remains
   `tests/artifacts/illumination_528/packages/bigcity2/ai531-production-current-20260902/bigcity2.bsib`
@@ -846,14 +1012,15 @@ timing evidence is marked contaminated and `usableForPromotion: false`.
    shared GPU load remain. Frame, load, bake, and throughput timings are marked
    contaminated and are not used for any conclusion.
 
-AI 531 remains open. The stable world-space sampling contract, package
-lifecycle, fallback, debug/validation tooling, all-eight package selection,
-headless production, and correctness gates are implemented, but the final
-197-case report still contradicts the strict completion requirement. Production
-release certification remains withheld until the tracked visual failures are
-resolved and the full catalog passes.
+This pre-split audit explains why strict production release certification was
+withheld: the stable world-space sampling contract, package lifecycle, fallback,
+debug/validation tooling, all-eight package selection, headless production, and
+correctness gates were implemented, but the final 197-case report still failed.
+Those strict visual failures and final certificate now belong to AI 546. Part A
+remains open only for its deterministic finishing driver, corrected package
+resume, readiness reports/triage, and handoff requirements.
 
-## Accepted-caster inventory recovery progress — 2026-09-04
+## Accepted-caster inventory recovery progress — 2026-09-03
 
 - A post-crash exact-pixel audit proved that the prior production BSIB included
   optional instanced facade-detail casters even though the accepted gameplay
@@ -896,7 +1063,7 @@ resolved and the full catalog passes.
   default; opening the game still uses the previous current-shadow engine and
   does not require or fetch a baked package.
 
-## Tracked issues — 2026-09-04 accepted-caster rebuild
+## Tracked issues — 2026-09-03 accepted-caster rebuild
 
 1. **The corrected inventory is not yet an all-eight authority.** Only
    production packaging remains incomplete. The exact-eight run was stopped at
@@ -914,14 +1081,15 @@ resolved and the full catalog passes.
    live visibility is one, with a maximum common tap-depth delta of about
    0.4665 m. Disabling live shadow culling made no difference, and no threshold
    was weakened. Use the rebuilt full-catalog evidence to determine whether a
-   bounded authenticated field correction is safe; do not infer a general
-   caster exclusion from this single receiver edge.
+   generic sampling/configuration defect or canonical source defect exists. If
+   neither is proven, retain the visual failure; a field/texel correction is not
+   permitted, and no caster exclusion may be inferred from this single edge.
 3. **Performance measurements remain non-promotable.** The user reported other
    processes and shared GPU work, so all new timing/throughput measurements stay
    `not measured` for promotion. Correctness hashes, deterministic outputs,
    parity, image gates, calls, and triangle counts remain valid evidence.
 
-## Stop checkpoint — 2026-09-04
+## Stop checkpoint — 2026-09-03
 
 The active headless production process was interrupted cleanly at the user's
 request. The user's headed Blender 5.2 process remains untouched. Normal
@@ -929,28 +1097,133 @@ gameplay remains on the disabled-cache/current-shadow fallback path.
 
 Resume in this order:
 
-1. Rerun the exact-eight `tools/static_sun_depth/production.mjs` command against
+1. Implement the deterministic Part A finishing driver, persistent checkpoint,
+   authenticated stage reuse, and machine-readable failure inventory. Exercise
+   its clean stop/resume path against the retained partial production root.
+2. Rerun the exact-eight `tools/static_sun_depth/production.mjs` stage through
+   that driver against
    the corrected BSIB, parity root, native-field root, and existing
    `production_accepted_casters_v1_all8` output root. Require a complete
    authenticated eight-profile `package_index.json`.
-2. Run the strict 8-case Lab matrix against that index.
-3. Run the complete strict 197-case production catalog. The one-profile probe
+3. Run the strict 8-case Lab matrix and complete strict 197-case production
+   catalog against that index. The one-profile probe
    already predicts at least one unresolved gate: `illum.profiler.r3c3.w` has
    maximum aligned RGB error 75 versus 64 at `[806,484]`, despite passing mean,
    over-four, missing-occluder, and seam-run gates.
-4. If the full catalog fails, localize only authenticated failures, make bounded
-   evidence-backed field or renderer corrections, rebuild affected packages,
-   and rerun the complete catalog without weakening the gates.
-5. Produce the exact-eight release certificate only after Lab and production
-   both pass. Then run the complete relevant Node/Python/browser verification,
-   update the channel/tool/runtime documentation and final evidence table, add
-   the completion summary, mark the first line DONE, and rename this prompt as
-   specified below. AI 531 is not DONE before those steps succeed.
+4. Require Lab 8/8 and at least 188/197 strict production cases with every
+   nonvisual gate passing. Deterministically record and retain at most nine
+   bounded visual-only failures, embed their screenshot pairs for human
+   verification, and take no screenshot-driven follow-up action. Do not weaken
+   the validator or issue a strict release certificate.
+5. Run the complete relevant Node/Python/browser verification, update the
+   finishing-driver and channel/tool/runtime documentation and final evidence
+   table, add the Part A completion summary, and hand the remaining visual cases
+   to AI 546. Then mark the first line DONE and rename this prompt as specified
+   below. AI 546 owns human visual verification and only independently justified
+   source/generic-pipeline work, plus strict 197/197 closure and the release
+   certificate.
+
+## Part A finishing-driver progress — 2026-09-03
+
+- The deterministic driver resumed the retained partial root and completed all
+  8/8 accepted-caster production profiles. It atomically published
+  `tests/artifacts/illumination_531/production_accepted_casters_v1_all8/package_index.json`.
+  Checkpoint revision 24 is retained at
+  `tests/artifacts/illumination_531/production_accepted_casters_v1_all8/part_a_checkpoint.json`
+  with explicit exit state `failed_readiness`.
+- Determinism isolation passed. With identical authenticated production inputs,
+  both present and changed presentation-only validation-state probes caused all
+  eight profiles to be authenticated/reused; the package index and every
+  publication record remained byte-identical.
+- The strict Lab report passed 8/8 with all 24 authenticated captures at
+  `tests/artifacts/screens/illumination_531/lab_accepted_casters_v1_part_a/lab_validation_report.json`.
+- The unchanged 197-case production report completed with authenticated
+  evidence for every case at
+  `tests/artifacts/screens/illumination_531/production_accepted_casters_v1_part_a/production_validation_report.json`.
+  It passed 128/197 and failed 69 visual cases: 43 `missing_occluder`, 22
+  `continuous_seam`, 10 `maximum_rgb_error`, and 3 `pixels_over_four` gate
+  occurrences (some cases contain multiple gates). No nonvisual production
+  gate failed. The machine-readable inventory is
+  `tests/artifacts/illumination_531/production_accepted_casters_v1_all8/part_a_failure_inventory.json`.
+- Every one of the 69 Current/cache failure pairs was embedded in chat in
+  deterministic inventory order for human verification only. Checkpoint
+  presentation metadata records `firstResultDelivered: true` for all 69; no
+  case has an action item and no screenshot or metric was used to change source,
+  configuration, generated fields, packages, or thresholds.
+- The clean production provenance boundary is implemented at orchestration,
+  native-field promotion, production-receipt normalization, and release
+  finalization. Direct Depth24 v2,
+  texture-gradient source v3, and source-only hole-fill v6 are allowlisted.
+  Calibration/residual/diagnostic/validation-derived lineages remain readable
+  for diagnosis but cannot enter production or release certification.
+- Correctness verification passes 167/167 complete static-sun-depth Node tests,
+  113/113 related illumination bake/runtime/lifecycle Node tests, and 12/12
+  Python cutout-silhouette tests; all static-sun Blender Python files compile.
+  The isolated GPU/CPU browser sampler test initially found that its own fixture
+  omitted Three's required `receiveShadow = true`; registering both fixture
+  meshes as receivers is independently justified and the corrected test passes
+  1/1. Adapter, atomic-pipeline, and profile-transition browser cases also
+  passed during the bounded browser runs.
+- Gameplay cache activation remains wired but disabled by default. Current mode
+  has no baked-asset dependency, and no release certificate was issued.
+- Final raw artifact hashes for restart authentication are: package index
+  `6a1d3db704e94ed6713eac3781ed9e6ada2c84bca2d231ffb08f1f682c5dceea`;
+  checkpoint
+  `6bbabc429f4ff91fe1a352c08693ff1609c7f149f32c103e3794c1330ff2e391`;
+  failure inventory
+  `95cf26af111e2ad294626ee19dd6e79e7dbc8fd0246cbc12f5c67074628f4858`;
+  Lab report
+  `2bfe524af04b330a529930b1e0c93429d7b4a9f69354737b7e225839d9f0bc02`;
+  and production report
+  `83cf37365774ddcc27785f1011807da175568b5a92c1e0f759c89e665b7524da`.
+
+## Tracked issues — 2026-09-03 Part A finishing attempt
+
+1. **Part A readiness is not met.** The immutable outer gate requires at least
+   188/197 production cases and at most nine visual-only failures. The clean
+   accepted-caster run produced 128/197 with 69 visual-only failures. This is a
+   strict failed report, not a Part A pass. Do not mark this prompt DONE, rename
+   it, unblock AI 546's execution gate, or issue a certificate unless the user
+   explicitly changes the Part A readiness policy or a later independently
+   justified source/generic-pipeline fix reaches the existing gate.
+2. **Seven authenticated native-field payloads had changed bytes after the
+   prior machine crashes.** The files retained their expected lengths but
+   failed receipt SHA-256 checks across five profiles. Exact byte-identical
+   copies matching the already authenticated receipt hashes existed in the
+   earlier clean direct-Depth24 authority. The changed originals were preserved
+   under
+   `tests/artifacts/illumination_531/native_cutout_fields/accepted_casters_v1_direct_corrupt_recovery_20260903/`,
+   the seven accepted files were restored from those hash-matching copies, and
+   a complete rehash passed 440/440 tiles before production resumed. This was a
+   nonvisual integrity recovery; no screenshot or validation metric selected
+   any replacement bytes.
+3. **Focused density-browser verification is capability-blocked in a later
+   Playwright context.** Its independent gate expected WebGL
+   `MAX_TEXTURE_SIZE = 16384` but received 8192, and therefore failed before
+   image comparison. The authenticated Lab and production report environments
+   both recorded the RTX 3060 at 16384, so this later downgrade does not explain
+   away or invalidate the 69 production failures. It does make the remaining
+   density-diagnostic browser matrix incomplete on the currently contended
+   machine. Retain the failed capture under
+   `tests/artifacts/headless/e2e/illumination_static_sun_de-01765-density-diagnostic-0-078125/`.
+4. **Performance remains non-promotable.** The user declared concurrent
+   processes and shared GPU use. Frame, FPS, CPU/GPU time, physical GPU memory,
+   load/decode/upload, bake duration, throughput, and variance remain `not
+   measured` for promotion. Exact hashes, package bytes, calls/triangles,
+   correctness gates, and capture authentication remain valid.
 
 ## On completion
 
 - Mark the AI document as DONE in the first line.
-- Rename it to `prompts/AI_DONE_531_ATMOSPHERE_static_sun_depth_cache_and_world_sampling_DONE.md`.
+- Rename it to `prompts/AI_DONE_531_ATMOSPHERE_static_sun_depth_deterministic_pipeline_DONE.md`.
 - Do not move it to `prompts/archive/` automatically.
-- Add a concise completion summary linking the channel spec, production/fixture bake, shader/runtime modules, debug views, validation artifacts, tests, and fallback behavior.
+- Add a concise completion summary linking the finishing driver/checkpoint,
+  channel spec, production/fixture bake, shader/runtime modules, debug views,
+  complete strict reports, deterministic failure inventory, tests, fallback
+  behavior, and the exact AI 546 handoff. Confirm that each visual failure pair
+  was posted during commentary/reasoning for human verification only and did
+  not create an action item. If an independently justified change resolved a
+  case, confirm its final passing pair was posted there before the final
+  response. State plainly that deferred visual cases are not a strict pass or
+  release certificate.
 - Include same-condition before/after tables for visual error, frame time/FPS, whole-frame and shadow-pass calls/triangles, CPU/GPU time, GPU memory, payload size, load/decode/upload time, tile residency, bake duration, hardware, resolution, settings, route/poses, warm-up, sample count, statistic, and variance. Mark unavailable metrics as `not measured` with a reason.
