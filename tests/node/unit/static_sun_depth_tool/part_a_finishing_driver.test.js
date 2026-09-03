@@ -46,33 +46,38 @@ test('production provenance accepts clean source fields and rejects calibration 
 });
 
 test('Part A inventory retains visual failures without creating action items', () => {
-    const report = makeReport(9);
+    const report = makeReport(69);
     const inventory = buildPartAFailureInventory(report, {
         reportPath: 'tests/artifacts/screens/illumination_531/report.json',
         reportSha256: HASH
     });
-    assert.equal(inventory.cases.length, 9);
+    assert.equal(inventory.cases.length, 69);
     assert.deepEqual(inventory.actionItems, []);
     assert.deepEqual(inventory.cases[0].actionItems, []);
     assert.equal(inventory.nonvisualFailures.length, 0);
     assert.deepEqual(evaluatePartAReadiness(report, inventory), {
         complete: true,
-        deferredVisualCaseCount: 9,
-        minimumPassingCaseCount: 188,
+        deferredVisualCaseCount: 69,
+        maximumDeferredVisualCaseCount: 69,
+        minimumPassingCaseCount: 128,
         nonvisualFailureCount: 0,
+        policy: 'accepted-2026-09-03-complete-report-zero-nonvisual-v2',
         passed: true,
-        passedCaseCount: 188,
+        passedCaseCount: 128,
         strictStatus: 'failed'
     });
 });
 
-test('Part A readiness rejects a tenth visual failure or any nonvisual gate', () => {
-    const tenReport = makeReport(10);
-    const tenInventory = buildPartAFailureInventory(tenReport, {
+test('Part A readiness rejects visual regression beyond the accepted baseline or any nonvisual gate', () => {
+    const regressedReport = makeReport(70);
+    const regressedInventory = buildPartAFailureInventory(regressedReport, {
         reportPath: 'tests/artifacts/screens/illumination_531/report.json',
         reportSha256: HASH
     });
-    assert.equal(evaluatePartAReadiness(tenReport, tenInventory).passed, false);
+    assert.equal(
+        evaluatePartAReadiness(regressedReport, regressedInventory).passed,
+        false
+    );
     const nonvisualReport = makeReport(1);
     nonvisualReport.failures[0].failures = ['browser_diagnostics'];
     const nonvisualInventory = buildPartAFailureInventory(nonvisualReport, {

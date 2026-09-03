@@ -156,17 +156,16 @@ Acceptance requirements:
 - Gameplay activation remains disabled pending AI 535; AI 546 contains no
   bus-specific integration or player-facing Options work.
 
-## Pending Part A handoff — 2026-09-03
+## Accepted Part A handoff — 2026-09-03
 
-AI 531's deterministic finishing driver has completed the exact-eight package
+AI 531's deterministic finishing driver completed the exact-eight package
 index, determinism isolation, Lab 8/8, the full authenticated 197-case report,
-and a no-action-item failure inventory. However, its unchanged Part A readiness
-gate remains closed: the clean run passed 128/197 and retained 69 visual-only
-failures rather than the allowed maximum of nine. All 69 Current/cache pairs
-were already presented in chat and checkpointed as delivered. Do not start this
-prompt under the existing execution gate until AI 531 legitimately reaches its
-readiness policy or the user explicitly revises that policy. The pending
-artifacts are:
+and a no-action-item failure inventory. On 2026-09-03 the user reviewed
+representative Current/cache evidence and approved the clean 128/197 result,
+with 69 visual-only failures and zero nonvisual failures, as the Part A
+development-readiness boundary. The strict report remains failed and no release
+certificate exists. All 69 Current/cache pairs were already presented in chat
+and checkpointed as delivered. The frozen handoff artifacts are:
 
 - `tests/artifacts/illumination_531/production_accepted_casters_v1_all8/package_index.json`;
 - `tests/artifacts/illumination_531/production_accepted_casters_v1_all8/part_a_checkpoint.json`;

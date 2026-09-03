@@ -190,13 +190,17 @@ node tools/static_sun_depth/finish_part_a.mjs --acknowledge-first-failures
 
 Checkpoint exit states are `running`, `stopped`,
 `awaiting_human_verification`, `complete`, or `failed_readiness`. A failed
-readiness result remains resumable; invoking the full driver again reruns
-production validation, while the acknowledgement command changes only
-presentation-delivery metadata.
+readiness result remains resumable. Invoking the full driver reauthenticates an
+existing complete report and inventory and applies the current workflow policy;
+it reruns production validation only when that reassessment still fails. The
+acknowledgement command changes only presentation-delivery metadata.
 
-Part A readiness requires Lab 8/8, at least 188/197 unchanged production cases,
-no nonvisual failures, and no more than nine visual-only failures. This is a
-development-readiness boundary, not strict release certification. AI 546 owns
+Part A readiness requires Lab 8/8, at least the user-approved 128/197 unchanged
+production baseline, no nonvisual failures, and no more than the accepted 69
+visual-only failures. A failed checkpoint can reauthenticate and reassess its
+existing report and inventory after a workflow-policy update without rerunning
+the GPU validation catalog. This is a development-readiness boundary, not
+strict release certification. AI 546 owns
 manual visual refinement and the final 197/197 release gate. When the host or
 GPU is shared, pass a contamination reason and treat every timing as
 non-promotable.

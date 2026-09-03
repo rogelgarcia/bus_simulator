@@ -1,3 +1,55 @@
+# DONE
+
+## Completion summary — 2026-09-03
+
+AI 531 Part A is complete as a deterministic, authenticated development
+pipeline. The user reviewed representative Current/cache evidence and approved
+the retained 128/197 strict-result baseline as the Part A boundary. The strict
+production report remains honestly failed with 69 visual-only cases; this is
+not release certification, and the cases transfer unchanged to AI 546.
+
+- The resumable finishing driver is
+  [`tools/static_sun_depth/finish_part_a.mjs`](../tools/static_sun_depth/finish_part_a.mjs),
+  backed by its authenticated checkpoint, exact-eight package index, Lab 8/8
+  report, complete 197-case production report, and no-action-item failure
+  inventory under `tests/artifacts/illumination_531/` and
+  `tests/artifacts/screens/illumination_531/`.
+- Production provenance accepts only direct Depth24 v2, texture-gradient source
+  v3, and source-only hole-fill v6. Diagnostic, calibrated, residual, or
+  validation-derived fields cannot be promoted, packaged, indexed, or
+  certified.
+- All 69 failed Current/cache pairs were presented during commentary/reasoning
+  for human verification only. They produced no action items and did not alter
+  source data, compiler configuration, baked fields, packages, or thresholds.
+- Current mode remains the default and has no baked-asset dependency. Cache
+  activation remains development-only and disabled by default; no release
+  certificate was issued.
+- AI 546 owns the frozen failure inventory, any independently justified
+  source/generic-pipeline work, final strict visual closure or explicit defer,
+  and release certification. AI 532 may now consume the stable world sampler
+  for development-only bus integration.
+
+Same-condition workload evidence from 197 paired views at 1280x720 on
+WebGL2/ANGLE and an RTX 3060:
+
+| Metric | Current | Baked cache | Change |
+|---|---:|---:|---:|
+| Catalog aggregate whole-frame calls | 361,283 | 306,107 | -55,176 (-15.27%) |
+| Mean whole-frame calls per view | 1,834 | 1,554 | -280 |
+| Catalog aggregate whole-frame triangles | 615,470,222 | 296,542,140 | -318,928,082 (-51.82%) |
+| Mean whole-frame triangles per view | 3,124,214 | 1,505,290 | -1,618,924 |
+| Static-city shadow calls per view | 70–332 | 0 | -100% |
+| Static-city shadow triangles per view | 236,069–1,909,836 | 0 | -100% |
+| Active-profile logical cache residency | 0 B | 226,700,892 B or 528,968,748 B CPU plus the same declared GPU bytes | added cache cost |
+| Eight-profile package bytes | 0 B | 3,023,801,792 B | added offline payload |
+| Frame time/FPS, CPU/GPU time, physical GPU memory, load/decode/upload, bake duration, and variance | not measured for promotion | not measured for promotion | concurrent processes and shared GPU contention |
+
+The workload counter used one synchronized measured frame for each mode/case;
+timing samples and warm-up statistics are not promoted because the shared
+machine/GPU condition made them unreliable. The strict visual result is Lab
+8/8 and production 128/197, with all 69 failures classified visual-only and
+zero nonvisual failures.
+
 # Problem
 
 The mostly static city is repeatedly submitted to current camera-relative sun shadow passes. A surface lightmap or dark decal cannot replace those shadows on arbitrary walls, roofs, roads, and elevated receivers, and cannot later tell a moving bus whether a building blocks the sun.
@@ -111,8 +163,9 @@ Expected map-specific output is limited to the ordinary result of baking that
 map's authenticated casters for a named sun profile. Scenario-specific output
 is forbidden: production recipes must not contain validation case IDs, camera
 poses, viewport coordinates, screen pixels, expected image colors, or exception
-lists derived from them. A 95% Part A readiness target measures the clean bake;
-it is not an optimization objective for a calibration loop.
+lists derived from them. The user-approved 128/197 Part A development baseline
+measures the clean bake; it is not an optimization objective for a calibration
+loop and cannot weaken the strict validator.
 
 Screenshots are presentation artifacts for human verification only. Their
 pixels, visual gate failures, and human-visible differences must not start a
@@ -167,8 +220,8 @@ Acceptance requirements:
   and current-mode fallback gates pass completely.
 - The strict 8-case Lab report passes 8/8, and the complete 197-case production
   report executes with authenticated evidence for every case.
-- At least 188/197 production cases (95%) pass the unchanged strict per-case
-  visual gates. At most nine remaining cases may be deferred, and only when
+- At least the user-approved 128/197 production baseline passes the unchanged
+  strict per-case visual gates. At most 69 remaining cases may be deferred, and only when
   every failure is visual-only, bounded, deterministically classified, linked
   to retained evidence, and does not regress the last authoritative aggregate
   baseline. Strict reports remain failed while any such case remains.
@@ -195,8 +248,8 @@ Acceptance requirements:
 - AI 532 may depend on completed Part A because the sampler and fallback remain
   development-only and disabled by default. AI 535 and AI 536 must also require
   completed Part B before player-facing activation or framework release.
-- The production validator thresholds remain the single strict oracle. The 95%
-  Part A readiness policy is an outer workflow decision and must not be encoded
+- The production validator thresholds remain the single strict oracle. The
+  user-approved 128/197 Part A readiness policy is an outer workflow decision and must not be encoded
   by weakening, filtering, or suppressing validator failures.
 
 ## Implementation progress — 2026-08-30
@@ -584,11 +637,11 @@ survive a restart.
     profile/stage, authenticates reuse after restart, proves production-byte
     isolation from presentation state, and emits
     `part_a_failure_inventory.json` without action items.
-- [ ] Resume the corrected exact-eight packages, rerun strict Lab and production
-  validation, and meet the separate Part A readiness gate: Lab 8/8, at least
-  188/197 production cases, complete nonvisual gates, and at most nine bounded
+- [x] Resume the corrected exact-eight packages, rerun strict Lab and production
+  validation, and meet the separate user-approved Part A readiness gate: Lab
+  8/8, at least 128/197 production cases, complete nonvisual gates, and at most 69 bounded
   visual-only failures preserved for AI 546.
-- [ ] Add the Part A completion summary and rename this prompt only after the
+- [x] Add the Part A completion summary and rename this prompt only after the
   readiness policy passes and the exact AI 546 handoff is complete. Keep baked
   gameplay activation disabled by default; do not claim strict release
   certification here.
@@ -1110,8 +1163,8 @@ Resume in this order:
    already predicts at least one unresolved gate: `illum.profiler.r3c3.w` has
    maximum aligned RGB error 75 versus 64 at `[806,484]`, despite passing mean,
    over-four, missing-occluder, and seam-run gates.
-4. Require Lab 8/8 and at least 188/197 strict production cases with every
-   nonvisual gate passing. Deterministically record and retain at most nine
+4. Require Lab 8/8 and at least the user-approved 128/197 production baseline
+   with every nonvisual gate passing. Deterministically record and retain at most 69
    bounded visual-only failures, embed their screenshot pairs for human
    verification, and take no screenshot-driven follow-up action. Do not weaken
    the validator or issue a strict release certificate.
@@ -1128,9 +1181,9 @@ Resume in this order:
 - The deterministic driver resumed the retained partial root and completed all
   8/8 accepted-caster production profiles. It atomically published
   `tests/artifacts/illumination_531/production_accepted_casters_v1_all8/package_index.json`.
-  Checkpoint revision 24 is retained at
+  Checkpoint revision 26 is retained at
   `tests/artifacts/illumination_531/production_accepted_casters_v1_all8/part_a_checkpoint.json`
-  with explicit exit state `failed_readiness`.
+  with explicit exit state `complete` under the user-approved Part A policy.
 - Determinism isolation passed. With identical authenticated production inputs,
   both present and changed presentation-only validation-state probes caused all
   eight profiles to be authenticated/reused; the package index and every
@@ -1169,7 +1222,7 @@ Resume in this order:
 - Final raw artifact hashes for restart authentication are: package index
   `6a1d3db704e94ed6713eac3781ed9e6ada2c84bca2d231ffb08f1f682c5dceea`;
   checkpoint
-  `6bbabc429f4ff91fe1a352c08693ff1609c7f149f32c103e3794c1330ff2e391`;
+  `6f45cb0ee278035c94480ef786066bb669cfa434ee943a63333ec34df4620b22`;
   failure inventory
   `95cf26af111e2ad294626ee19dd6e79e7dbc8fd0246cbc12f5c67074628f4858`;
   Lab report
@@ -1177,15 +1230,17 @@ Resume in this order:
   and production report
   `83cf37365774ddcc27785f1011807da175568b5a92c1e0f759c89e665b7524da`.
 
-## Tracked issues — 2026-09-03 Part A finishing attempt
+## Tracked issues and retained decisions — 2026-09-03 Part A closeout
 
-1. **Part A readiness is not met.** The immutable outer gate requires at least
-   188/197 production cases and at most nine visual-only failures. The clean
-   accepted-caster run produced 128/197 with 69 visual-only failures. This is a
-   strict failed report, not a Part A pass. Do not mark this prompt DONE, rename
-   it, unblock AI 546's execution gate, or issue a certificate unless the user
-   explicitly changes the Part A readiness policy or a later independently
-   justified source/generic-pipeline fix reaches the existing gate.
+1. **Part A readiness was explicitly approved.** The original outer gate
+   required 188/197 production cases and at most nine visual-only failures. The
+   clean accepted-caster run produced 128/197 with 69 visual-only failures and
+   zero nonvisual failures. After reviewing representative Current/cache pairs,
+   the user approved that result as the Part A development baseline. The driver
+   reauthenticated the existing report and inventory and advanced checkpoint
+   revision 26 to `complete` without rerunning GPU validation. The strict report
+   remains failed, the 69 cases transfer unchanged to AI 546, and no release
+   certificate was issued.
 2. **Seven authenticated native-field payloads had changed bytes after the
    prior machine crashes.** The files retained their expected lengths but
    failed receipt SHA-256 checks across five profiles. Exact byte-identical

@@ -360,9 +360,11 @@ override this provenance rule.
 AI 531 Part A uses `tools/static_sun_depth/finish_part_a.mjs` as its resumable
 development-readiness boundary. It checkpoints each of the exact eight
 production profiles, proves that presentation-only validation state leaves all
-package/publication bytes unchanged, requires Lab 8/8, and accepts no more than
-nine visual-only failures in the unchanged 197-case production catalog. It
-accepts no nonvisual failure. Remaining visual cases transfer to AI 546; Part A
+package/publication bytes unchanged, requires Lab 8/8, and preserves the
+user-approved 128/197 baseline with no more than 69 visual-only failures in the
+unchanged 197-case production catalog. It accepts no nonvisual failure and can
+reauthenticate/reassess a completed report after a workflow-policy update
+without rerunning the GPU catalog. Remaining visual cases transfer to AI 546; Part A
 completion neither activates gameplay by default nor issues a release
 certificate.
 
@@ -385,7 +387,7 @@ CPU/runtime sampling. They do not prove production city coverage:
 | Strict density/phase evidence | Exact 0.04150390625 m source/cache pitch, 1:1 ratio, and integral stable-basis texel-edge phase are required; the phase-locked 65:64 candidate failed strict parity and is rejected |
 | Production logical layout/package | Complete authenticated eight-profile index: four 33-layer packages and four 77-layer packages, totaling 3,023,801,792 B on disk; deterministic isolation passed |
 | Physical GPU memory | `not measured` — WebGL2 exposes no portable authoritative counter |
-| Full-city image error and missing occluders | Strict catalog passed 128/197; maximum aligned RGB error 95 B, maximum mean 0.258907 B, maximum pixels-over-four 0.486897%, 386 missing-occluder pixels in aggregate, maximum seam run 12 px, and zero seam-false-lit pixels; strict/Part A readiness failed |
+| Full-city image error and missing occluders | Strict catalog passed 128/197; maximum aligned RGB error 95 B, maximum mean 0.258907 B, maximum pixels-over-four 0.486897%, 386 missing-occluder pixels in aggregate, maximum seam run 12 px, and zero seam-false-lit pixels; strict validation failed while the user-approved Part A development-readiness boundary passed |
 | Current/cache frame and shadow-pass timings | `not measured` for promotion — the machine has concurrent processes and a shared GPU, and the fixture is not representative |
 | Full-city disk/load/decode/upload/residency | 3,023,801,792 B measured package bytes across eight profiles; per-active-profile logical RG8 residency is 226,700,892 B or 528,968,748 B; load/decode/upload time and physical residency are `not measured` because the GPU session is shared |
 | Alpha-cutout parity | 8/8 accepted-caster profiles, 1,800 sparse samples, zero occupancy and first-hit-depth mismatches, maximum matched depth error 0.000488281 m against the 0.005 m gate |
@@ -393,6 +395,7 @@ CPU/runtime sampling. They do not prove production city coverage:
 Production promotion requires the immutable validation catalog, same-session
 current/cache comparisons, zero missing occluders, strict numeric and image
 tolerances, and the complete performance table requested by AI 531. The Part A
-report does not meet those gates or its separate 188/197 readiness gate, so the
-prompt remains active and the runtime stays development-only with
-current-engine fallback.
+report does not meet those release gates. Its separately approved 128/197
+development-readiness boundary permits downstream development while the runtime
+stays disabled by default with current-engine fallback and AI 546 retains the
+69 visual cases for strict closure or explicit defer.
