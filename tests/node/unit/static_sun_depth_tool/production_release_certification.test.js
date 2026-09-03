@@ -82,7 +82,7 @@ const PRODUCTION_CAPTURE_AUTHENTICATION_METHOD =
     'sha256-byte-length-rehash-png-decode-receiver-mask-partition-v2';
 const PNG_SIGNATURE = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
 
-test('profile release certification deterministically proves all 6043 casters and exact cutout/BVH evidence', () => {
+test('profile release certification proves all 1968 accepted casters and exact cutout/BVH evidence', () => {
     const repeated = buildProductionProfileReleaseCertification(
         structuredClone(BASE_FIXTURE)
     );
@@ -107,18 +107,18 @@ test('profile release certification deterministically proves all 6043 casters an
         BASE_CERTIFICATION.alpha.schema,
         'bus-sim-static-sun-depth-alpha-cutout-certification-v3'
     );
-    assert.equal(BASE_CERTIFICATION.casters.includedCasterCount, 6043);
+    assert.equal(BASE_CERTIFICATION.casters.includedCasterCount, 1968);
     assert.equal(BASE_CERTIFICATION.casters.exclusionCount, 0);
     assert.equal(BASE_CERTIFICATION.casters.missingOccluderCount, 0);
     assert.deepEqual(BASE_CERTIFICATION.sourceInventory.categoryCounts, {
-        buildings: 5758,
+        buildings: 1683,
         traffic_controls: 37,
         trees_foliage: 248
     });
     assert.deepEqual(BASE_CERTIFICATION.sourceInventory.coverageModeCounts, {
         cutout: 124,
         forced_opaque: 64,
-        opaque: 5855
+        opaque: 1780
     });
     const coverageIdentity = deriveProductionAlphaCutoutCoverageIdentity(
         BASE_FIXTURE.manifest
@@ -190,14 +190,14 @@ test('profile release certification rejects caster drift, alpha drift, and opaqu
     countDrift.receipt.reconstruction.selectedMappingCount = 6042;
     assert.throws(
         () => buildProductionProfileReleaseCertification(countDrift),
-        /all 6043 source casters/
+        /all 1968 accepted source casters/
     );
 
     const excludedCaster = structuredClone(BASE_FIXTURE);
     excludedCaster.manifest.casterMappings[0].channelRelevance.static_sun_depth = false;
     assert.throws(
         () => buildProductionProfileReleaseCertification(excludedCaster),
-        /all 6043 source casters/
+        /all 1968 accepted source casters/
     );
 
     const alphaDrift = structuredClone(BASE_FIXTURE);
@@ -1777,8 +1777,8 @@ function makeProfileFixture(lightingProfileId) {
             reconstruction: {
                 channelId: 'static_sun_depth',
                 completeSelectedChannel: true,
-                inventory: { casterMappingCount: 6043 },
-                selectedMappingCount: 6043
+                inventory: { casterMappingCount: 1968 },
+                selectedMappingCount: 1968
             },
             request,
             schema: 'ai531-static-sun-production-render-receipt-v5'
@@ -2026,13 +2026,13 @@ function swapSamplingAxes(sampling) {
 
 function makeManifest() {
     const casterMappings = [];
-    for (let index = 0; index < 6043; index += 1) {
-        const category = index < 5758
+    for (let index = 0; index < 1968; index += 1) {
+        const category = index < 1683
             ? 'buildings'
-            : index < 5795 ? 'traffic_controls' : 'trees_foliage';
-        const coverageMode = index < 5855
+            : index < 1720 ? 'traffic_controls' : 'trees_foliage';
+        const coverageMode = index < 1780
             ? 'opaque'
-            : index < 5919 ? 'forced_opaque' : 'cutout';
+            : index < 1844 ? 'forced_opaque' : 'cutout';
         const suffix = coverageMode === 'forced_opaque' ? 'forced' : coverageMode;
         casterMappings.push({
             alphaInputId: `alpha.${suffix}`,
@@ -3090,7 +3090,7 @@ function makeCaseDiagnostics(lightingProfileId, aggregateSha256) {
             casters: {
                 active: false,
                 lastReason: 'validation_live_final_shadow_retained',
-                originalCasterCount: 6043,
+                originalCasterCount: 1968,
                 restores: 0,
                 snapshotMeshCount: 0
             },
@@ -3101,11 +3101,11 @@ function makeCaseDiagnostics(lightingProfileId, aggregateSha256) {
             active: { lightingProfileId: 'fixture' },
             casters: {
                 active: true,
-                originalCasterCount: 6043,
+                originalCasterCount: 1968,
                 restores: 0,
-                snapshotMeshCount: 6043,
-                staticMeshCount: 6043,
-                suppressedCasterCount: 6043
+                snapshotMeshCount: 1968,
+                staticMeshCount: 1968,
+                suppressedCasterCount: 1968
             },
             debugMode: 'final',
             runtime: { controller, package: packageIdentity }
@@ -3115,7 +3115,7 @@ function makeCaseDiagnostics(lightingProfileId, aggregateSha256) {
             casters: {
                 active: false,
                 lastReason: 'comparison_current_shadow_retained',
-                originalCasterCount: 6043,
+                originalCasterCount: 1968,
                 restores: 1,
                 snapshotMeshCount: 0
             },

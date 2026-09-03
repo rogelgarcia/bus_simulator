@@ -112,7 +112,9 @@ test('mismatch-localization CLI remains one-case, artifact-only, and bounded', (
         '--target-pixel', '31,404',
         '--metrics-only',
         '--direct-render',
-        '--disable-gtao'
+        '--disable-gtao',
+        '--enable-instanced-casters',
+        '--disable-shadow-culling'
     ]), {
         sourceReportPath: 'source.json',
         outputRoot: 'tests/artifacts/screens/illumination_531/localize',
@@ -125,7 +127,9 @@ test('mismatch-localization CLI remains one-case, artifact-only, and bounded', (
         targetPixel: [31, 404],
         metricsOnly: true,
         directRender: true,
-        disableGtao: true
+        disableGtao: true,
+        enableInstancedCasters: true,
+        disableShadowCulling: true
     });
     assert.match(createProductionMismatchLocalizationUsageText(), /localize_production_mismatch/);
     assert.throws(
@@ -154,6 +158,8 @@ test('mismatch localization defaults to the genuine pre-activation gameplay orac
     assert.match(source, /staticShadowDiagnostics/);
     assert.match(source, /setDirectRenderingForDiagnostics/);
     assert.match(source, /setAmbientOcclusionSettings/);
+    assert.match(source, /instancedCasters: true/);
+    assert.match(source, /paddingMeters = 1_000_000/);
 });
 
 test('browser pass uses explicit caster IDs and live alpha sampling, never color depth inference', async () => {
@@ -179,6 +185,10 @@ test('browser pass uses explicit caster IDs and live alpha sampling, never color
     assert.match(passSource, /native-live-depth24-vs-resident-cache-rg8-vogel-taps-v1/);
     assert.match(passSource, /currentDepthMeters/);
     assert.match(passSource, /sourceDepthRangeMeters/);
+    assert.match(passSource, /describeReceiverCasterMembership/);
+    assert.match(passSource, /stableStaticSunCaster/);
+    assert.match(passSource, /indexedByShadowCuller/);
+    assert.match(passSource, /shadowMergeEntries/);
     assert.match(passSource, /status: 'unsupported'/);
     assert.match(passSource, /no_lit_triangle_receiver_with_vertex_normals/);
     assert.match(passSource, /depthTapParity: null/);

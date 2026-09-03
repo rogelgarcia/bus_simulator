@@ -56,6 +56,8 @@ export async function runProductionMismatchLocalization(options = {}, deps = {})
     const metricsOnly = options.metricsOnly === true;
     const directRender = options.directRender === true;
     const disableGtao = options.disableGtao === true;
+    const enableInstancedCasters = options.enableInstancedCasters === true;
+    const disableShadowCulling = options.disableShadowCulling === true;
     // The pre-activation capture is the real gameplay renderer and therefore
     // the default oracle. paired-live deliberately remains available only to
     // diagnose the validation-only transition itself.
@@ -229,6 +231,24 @@ export async function runProductionMismatchLocalization(options = {}, deps = {})
             ].filter(Boolean));
         });
         const environment = await installBrowserValidationRuntime(page);
+        if (enableInstancedCasters) {
+            await page.evaluate(() => {
+                const {engine, sm} = window.__busSim;
+                engine.setShadowSettings({
+                    ...engine.shadowSettings,
+                    instancedCasters: true
+                });
+                sm.current?.city?.applyShadowSettings?.(engine);
+            });
+        }
+        if (disableShadowCulling) {
+            await page.evaluate(() => {
+                const city = window.__busSim?.sm?.current?.city;
+                // Preserve the culler object and its inventory for diagnostics,
+                // but make every conservative test intersect for all warmups.
+                if (city?._shadowCuller) city._shadowCuller.paddingMeters = 1_000_000;
+            });
+        }
         await page.evaluate((enabled) => (
             window.__ai531ProductionValidation.setDirectRenderingForDiagnostics(enabled)
         ), directRender);
@@ -440,6 +460,10 @@ export async function runProductionMismatchLocalization(options = {}, deps = {})
             mode: metricsOnly ? 'metrics_only' : 'caster_localization',
             renderPath: directRender ? 'direct_renderer_diagnostic' : 'gameplay_postprocessing',
             postProcessingOverrides: {gtaoDisabled: disableGtao},
+            shadowCasterOverrides: {
+                instancedCastersEnabled: enableInstancedCasters,
+                shadowCullingDisabled: disableShadowCulling
+            },
             currentSource,
             preludeCaseIds,
             preludeRepeat: preludeCases.length > 0 ? preludeRepeat : 0,
@@ -595,9 +619,15 @@ export function parseProductionMismatchLocalizationArgs(argv) {
             result.help = true;
             continue;
         }
-        if (token === '--metrics-only' || token === '--direct-render' || token === '--disable-gtao') {
+        if (token === '--metrics-only' || token === '--direct-render'
+            || token === '--disable-gtao' || token === '--enable-instanced-casters'
+            || token === '--disable-shadow-culling') {
             const flagKey = token === '--metrics-only' ? 'metricsOnly'
-                : (token === '--direct-render' ? 'directRender' : 'disableGtao');
+                : (token === '--direct-render' ? 'directRender'
+                    : (token === '--disable-gtao'
+                        ? 'disableGtao'
+                        : (token === '--enable-instanced-casters'
+                            ? 'enableInstancedCasters' : 'disableShadowCulling')));
             result[flagKey] = true;
             continue;
         }
@@ -663,6 +693,8 @@ export function createProductionMismatchLocalizationUsageText() {
         '  --metrics-only                  Skip caster sampling and write parity metrics even with zero missing pixels',
         '  --direct-render                 Diagnostic-only: bypass gameplay post-processing for captures',
         '  --disable-gtao                  Diagnostic-only: retain the composer but disable GTAO',
+        '  --enable-instanced-casters      Diagnostic-only: compare optional live facade-detail casters',
+        '  --disable-shadow-culling         Diagnostic-only: retain every indexed live static caster',
         '  --timing-contaminated-reason <text>',
         ''
     ].join('\n');

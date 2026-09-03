@@ -56,16 +56,16 @@ export const AI531_PRODUCTION_RELEASE_PROFILE_IDS = Object.freeze([
 
 export const AI531_PRODUCTION_CASTER_INVENTORY = Object.freeze({
     categoryCounts: Object.freeze({
-        buildings: 5758,
+        buildings: 1683,
         traffic_controls: 37,
         trees_foliage: 248
     }),
     coverageModeCounts: Object.freeze({
         cutout: 124,
         forced_opaque: 64,
-        opaque: 5855
+        opaque: 1780
     }),
-    selectedCasterCount: 6043
+    selectedCasterCount: 1968
 });
 
 const PACKAGE_INDEX_SCHEMA =
@@ -612,7 +612,7 @@ function deriveCasterInventoryEvidence(manifest, receipt) {
         || receipt.reconstruction?.completeSelectedChannel !== true
         || receipt.reconstruction?.channelId !== 'static_sun_depth') {
         throw new Error(
-            'Production caster certification requires all 6043 source casters and matching reconstruction counts'
+            'Production caster certification requires all 1968 accepted source casters and matching reconstruction counts'
         );
     }
     const categoryCounts = countNamedValues(selected, 'category');
@@ -2616,7 +2616,7 @@ function validateSourceInventory(value) {
         'profile certification caster coverage mode'
     );
     if (value.selectedCasterCount !== AI531_PRODUCTION_CASTER_INVENTORY.selectedCasterCount) {
-        throw new Error('Profile certification source inventory must contain 6043 casters');
+        throw new Error('Profile certification source inventory must contain 1968 accepted casters');
     }
     requireSha256(value.includedCasterIdsSha256, 'includedCasterIdsSha256');
     requireSha256(value.includedCasterProjectionSha256, 'includedCasterProjectionSha256');
@@ -2736,7 +2736,7 @@ function validateCasterRecord(record) {
         || source.exclusions.length !== 0
         || source.includedCasterCount
             !== AI531_PRODUCTION_CASTER_INVENTORY.selectedCasterCount) {
-        throw new Error('Production caster certification must include all 6043 casters');
+        throw new Error('Production caster certification must include all 1968 accepted casters');
     }
 }
 

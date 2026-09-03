@@ -853,6 +853,100 @@ headless production, and correctness gates are implemented, but the final
 release certification remains withheld until the tracked visual failures are
 resolved and the full catalog passes.
 
+## Accepted-caster inventory recovery progress — 2026-09-04
+
+- A post-crash exact-pixel audit proved that the prior production BSIB included
+  optional instanced facade-detail casters even though the accepted gameplay
+  setting had `instancedCasters: false`. At `illum.profiler.r3c3.w` pixel
+  `[963,552]`, enabling those optional live casters reproduced the cached depth
+  and identified `bf2_window_decoration_sill`. Static-sun caster collection now
+  includes those details only when the setting is explicitly enabled, in both
+  the live City path and the bake-source fallback path.
+- Two clean exports of the corrected current source were byte-identical. The
+  retained source is
+  `tests/artifacts/illumination_528/packages/bigcity2/ai531-production-accepted-casters-v1/bigcity2.bsib`;
+  it is 354,101,675 bytes with package SHA-256
+  `dcb4142140aa48c133e26ac69d27d6f0423306803c073b3d0728844815d2c626`.
+  Its accepted static-sun inventory contains 1,968 mappings: 1,683 buildings,
+  37 traffic controls, and 248 tree/foliage mappings; coverage is 1,780 opaque,
+  64 forced-opaque, and 124 cutout. The release certification contract and its
+  boundary tests are pinned to this exact inventory rather than the stale 6,043
+  mappings.
+- Corrected-source candidate lattices, complete native Depth24 cutout fields,
+  provisional Blender 5.2.1 descriptors, and exact spatial-parity evidence are
+  complete for all 8/8 release profiles. Across 1,800 parity samples there are
+  zero occupancy mismatches and zero first-hit-depth mismatches; maximum matched
+  depth error is 0.000488281 m against the unchanged 0.005 m gate. Retained
+  roots are
+  `tests/artifacts/illumination_531/native_cutout_fields/accepted_casters_v1_candidate_*`,
+  `tests/artifacts/illumination_531/native_cutout_fields/accepted_casters_v1_direct`,
+  `tests/artifacts/illumination_531/provisional_accepted_casters_v1`, and
+  `tests/artifacts/illumination_531/native_field_parity_accepted_casters_v1`.
+  A fresh authenticated one-profile production probe is retained at
+  `tests/artifacts/illumination_531/production_accepted_casters_v1_probe`.
+- The original `[806,484]` cache-darker classification no longer counts as a
+  missing occluder in a fresh same-session probe. The complete frame now has
+  aligned mean RGB error 0.0181489 bytes, 0.0315573% pixels over four bytes,
+  zero missing occluders, zero false-lit seam pixels, and maximum continuous
+  seam run one pixel. It still fails the unchanged maximum-RGB gate at the same
+  window edge: 75 bytes versus 64. Evidence is retained under
+  `tests/artifacts/screens/illumination_531/localize_accepted_casters_v1_probe_r3c3w_806x484`.
+- Focused inventory, lifecycle, localization, production-runner, and release
+  certification tests pass 41/41. Gameplay activation remains disabled by
+  default; opening the game still uses the previous current-shadow engine and
+  does not require or fetch a baked package.
+
+## Tracked issues — 2026-09-04 accepted-caster rebuild
+
+1. **The corrected inventory is not yet an all-eight authority.** Only
+   production packaging remains incomplete. The exact-eight run was stopped at
+   the user's request after atomically publishing
+   `production/ai527.sun.az045.el08` below
+   `tests/artifacts/illumination_531/production_accepted_casters_v1_all8`.
+   There is deliberately no `package_index.json`, so the partial root is not a
+   consumable eight-profile authority. The orchestrator supports authenticated
+   resume: rerun the identical `production.mjs` command with that output root;
+   it will verify and reuse the completed profile, then continue the other
+   seven. Do not delete the retained production directory or `.staging` root.
+2. **A facade raster/filter edge remains after removing unintended casters.**
+   At the current worst pixel, the cache and live PCF footprints use different
+   fixed-versus-camera-relative lattice phases. Cache visibility is zero while
+   live visibility is one, with a maximum common tap-depth delta of about
+   0.4665 m. Disabling live shadow culling made no difference, and no threshold
+   was weakened. Use the rebuilt full-catalog evidence to determine whether a
+   bounded authenticated field correction is safe; do not infer a general
+   caster exclusion from this single receiver edge.
+3. **Performance measurements remain non-promotable.** The user reported other
+   processes and shared GPU work, so all new timing/throughput measurements stay
+   `not measured` for promotion. Correctness hashes, deterministic outputs,
+   parity, image gates, calls, and triangle counts remain valid evidence.
+
+## Stop checkpoint — 2026-09-04
+
+The active headless production process was interrupted cleanly at the user's
+request. The user's headed Blender 5.2 process remains untouched. Normal
+gameplay remains on the disabled-cache/current-shadow fallback path.
+
+Resume in this order:
+
+1. Rerun the exact-eight `tools/static_sun_depth/production.mjs` command against
+   the corrected BSIB, parity root, native-field root, and existing
+   `production_accepted_casters_v1_all8` output root. Require a complete
+   authenticated eight-profile `package_index.json`.
+2. Run the strict 8-case Lab matrix against that index.
+3. Run the complete strict 197-case production catalog. The one-profile probe
+   already predicts at least one unresolved gate: `illum.profiler.r3c3.w` has
+   maximum aligned RGB error 75 versus 64 at `[806,484]`, despite passing mean,
+   over-four, missing-occluder, and seam-run gates.
+4. If the full catalog fails, localize only authenticated failures, make bounded
+   evidence-backed field or renderer corrections, rebuild affected packages,
+   and rerun the complete catalog without weakening the gates.
+5. Produce the exact-eight release certificate only after Lab and production
+   both pass. Then run the complete relevant Node/Python/browser verification,
+   update the channel/tool/runtime documentation and final evidence table, add
+   the completion summary, mark the first line DONE, and rename this prompt as
+   specified below. AI 531 is not DONE before those steps succeed.
+
 ## On completion
 
 - Mark the AI document as DONE in the first line.

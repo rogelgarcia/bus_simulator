@@ -291,7 +291,8 @@ test('City static-depth caster snapshot survives camera culling and resolves cas
     Object.assign(city, {
         group: {traverse(visitor) { meshes.forEach(visitor); }},
         _shadowMerge: [{merged, sources: [source]}],
-        _instancedCasters: [{mesh: optionalInstance, originalCast: false}],
+        _instancedCasters: [{mesh: optionalInstance, originalCast: true}],
+        _instancedCastersEnabled: false,
         _shadowCuller: {getIndexedCasterMeshes: () => Object.freeze([indexedCulled])}
     });
 
@@ -307,6 +308,10 @@ test('City static-depth caster snapshot survives camera culling and resolves cas
     assert.equal(cameraB.includes(indexedCulled), true);
     assert.equal(cameraA.includes(merged), false);
     assert.equal(cameraA.includes(optionalInstance), false);
+
+    city._instancedCastersEnabled = true;
+    const optionalEnabled = city.getStaticSunDepthCasterMeshes();
+    assert.equal(optionalEnabled.includes(optionalInstance), true);
 });
 
 test('City detach releases static caster ownership before CSM and scene teardown', () => {

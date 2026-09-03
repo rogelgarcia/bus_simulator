@@ -237,7 +237,12 @@ export function createOriginalCasterResolver(city) {
         for (const source of (entry?.sources ?? [])) values.set(source, true);
     }
     for (const entry of (city?._instancedCasters ?? [])) {
-        if (entry?.mesh) values.set(entry.mesh, entry.originalCast === true);
+        if (entry?.mesh) {
+            values.set(
+                entry.mesh,
+                city?._instancedCastersEnabled === true && entry.originalCast === true
+            );
+        }
     }
     for (const mesh of (city?._shadowCuller?.getIndexedCasterMeshes?.() ?? [])) {
         if (mesh && !values.has(mesh)) values.set(mesh, true);

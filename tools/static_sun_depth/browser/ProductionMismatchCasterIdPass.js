@@ -223,6 +223,11 @@ export function localizeProductionMismatchCasters(options) {
                     materialName: String(receiver.material?.name || ''),
                     objectName: String(receiver.object?.name || ''),
                     objectPath: createObjectPath(receiver.object, city.group),
+                    casterMembership: describeReceiverCasterMembership(
+                        city,
+                        receiver.object,
+                        sourceCamera
+                    ),
                     surfaceWorldPosition: Object.freeze(receiver.point.toArray()),
                     biasedWorldPosition: Object.freeze(biasedWorldPosition.toArray())
                 }),
@@ -537,6 +542,35 @@ function collectLiveShadowCasters(city, sourceCamera) {
     });
     if (casters.length < 1) throw new Error('live shadow caster inventory is empty');
     return casters;
+}
+
+function describeReceiverCasterMembership(city, object, sourceCamera) {
+    const mergeEntries = (city?._shadowMerge ?? [])
+        .filter((entry) => entry?.merged === object || entry?.sources?.includes(object))
+        .map((entry) => Object.freeze({
+            mergedCastShadow: entry?.merged?.castShadow === true,
+            mergedName: String(entry?.merged?.name || ''),
+            receiverIsMergedCaster: entry?.merged === object,
+            receiverIsSource: entry?.sources?.includes(object) === true,
+            sourceCount: entry?.sources?.length ?? 0
+        }));
+    const instancedEntry = (city?._instancedCasters ?? [])
+        .find((entry) => entry?.mesh === object) ?? null;
+    const stableCasters = new Set(city?.getStaticSunDepthCasterMeshes?.() ?? []);
+    const indexedCasters = new Set(
+        city?._shadowCuller?.getIndexedCasterMeshes?.() ?? []
+    );
+    return Object.freeze({
+        castShadow: object?.castShadow === true,
+        indexedByShadowCuller: indexedCasters.has(object),
+        instancedCasterSettingEnabled: city?._instancedCastersEnabled === true,
+        optionalInstancedCaster: instancedEntry !== null,
+        optionalInstancedOriginalCast: instancedEntry?.originalCast === true,
+        sourceCameraLayerVisible: object?.layers?.test?.(sourceCamera.layers) === true,
+        stableStaticSunCaster: stableCasters.has(object),
+        worldVisible: isWorldVisible(object),
+        shadowMergeEntries: Object.freeze(mergeEntries)
+    });
 }
 
 function createCasterIdScene(THREE, city, casters) {

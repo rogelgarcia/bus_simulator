@@ -2569,13 +2569,17 @@ export async function installBrowserValidationRuntime(page) {
                     === 'direction,productionEligible,sampleCount,schema';
                 const canonicalExactPixelTarget = mismatchLocalizationKeys
                     === 'direction,productionEligible,sampleCount,schema,targetPixel';
+                const explicitExactPixelTarget = mismatchLocalizationKeys
+                    === 'direction,productionEligible,sampleCount,schema,targetCaseId,targetPixel'
+                    && mismatchLocalizationRequest?.targetCaseId
+                        === validationCase?.id;
                 if (localizeMismatch && (
                     !mismatchLocalizationRequest
                     || typeof mismatchLocalizationRequest !== 'object'
                     || Array.isArray(mismatchLocalizationRequest)
                     || (mismatchLocalizationKeys !== 'productionEligible,sampleCount,schema'
                         && !canonicalBoundedTarget && !canonicalExactPixelTarget
-                        && !explicitBoundedTarget)
+                        && !explicitBoundedTarget && !explicitExactPixelTarget)
                     || mismatchLocalizationRequest.schema
                         !== 'ai531-production-mismatch-localization-request-v1'
                     || mismatchLocalizationRequest.productionEligible !== false
@@ -2592,7 +2596,8 @@ export async function installBrowserValidationRuntime(page) {
                     || (mismatchLocalizationRequest.direction !== undefined
                         && mismatchLocalizationRequest.direction !== 'cache_brighter'
                         && mismatchLocalizationRequest.direction !== 'cache_darker')
-                    || (!canonicalLegacyTarget && !explicitBoundedTarget)
+                    || (!canonicalLegacyTarget
+                        && !explicitBoundedTarget && !explicitExactPixelTarget)
                 )) {
                     throw new Error(
                         'production mismatch localization request must remain exact, bounded, and non-promotable'

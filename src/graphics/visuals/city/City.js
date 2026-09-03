@@ -818,8 +818,9 @@ export class City {
     /**
      * Return the stable authored static-caster inventory used by offline and
      * diagnostic depth capture. Unlike live `castShadow`, this snapshot is not
-     * changed by camera-dependent shadow culling. Merged and optional instance
-     * caster switches are resolved back to their original source semantics.
+     * changed by camera-dependent shadow culling. Merged casters are resolved
+     * back to their original source semantics, while optional instanced detail
+     * follows the resolved live setting used by the accepted current renderer.
      *
      * @returns {ReadonlyArray<any>}
      */
@@ -829,8 +830,14 @@ export class City {
             if (entry?.merged) authored.set(entry.merged, false);
             for (const source of (entry?.sources ?? [])) authored.set(source, true);
         }
+        const includeInstancedDetail = this._instancedCastersEnabled === true;
         for (const entry of (this._instancedCasters ?? [])) {
-            if (entry?.mesh) authored.set(entry.mesh, entry.originalCast === true);
+            if (entry?.mesh) {
+                authored.set(
+                    entry.mesh,
+                    includeInstancedDetail && entry.originalCast === true
+                );
+            }
         }
         for (const mesh of (this._shadowCuller?.getIndexedCasterMeshes?.() ?? [])) {
             if (mesh && !authored.has(mesh)) authored.set(mesh, true);
