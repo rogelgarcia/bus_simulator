@@ -200,18 +200,23 @@ export class StaticSunDepthPipeline {
         this._debugMode = validatedMode;
         if (!this._active) return;
         try {
-            if (debugModeValue(validatedMode) === STATIC_SUN_DEPTH_DEBUG_MODES.liveFinal) {
+            const rendersCurrent = debugModeValue(validatedMode) === STATIC_SUN_DEPTH_DEBUG_MODES.liveFinal;
+            if (this._shouldSuppressCasters()) {
+                // Remove CSM before enabling the baked hook. Reversing these
+                // steps compiles a transient baked-plus-CSM program and can
+                // briefly multiply the sun while validation modes are cycled.
+                if (!this._casters.getDiagnostics().active) this._casters.activate(this._active.city);
+            }
+            if (rendersCurrent) {
                 // This must be the genuine current-engine program, not merely
                 // a cache shader that happens to return before sampling.
                 this._materials.deactivate();
             } else if (!this._materials.getDiagnostics().enabled) {
                 this._materials.activate();
             }
-            if (this._shouldSuppressCasters()) {
-                if (!this._casters.getDiagnostics().active) this._casters.activate(this._active.city);
-            } else {
+            if (!this._shouldSuppressCasters()) {
                 this._casters.deactivate(
-                    debugModeValue(validatedMode) === STATIC_SUN_DEPTH_DEBUG_MODES.liveFinal
+                    rendersCurrent
                         ? 'validation_live_final_shadow_retained'
                         : 'comparison_current_shadow_retained'
                 );
@@ -409,15 +414,16 @@ export class StaticSunDepthPipeline {
         if (this._canReuseCachedActivation(binding, city)) {
             const cached = this._cachedActivation;
             try {
+                if (this._shouldSuppressCasters()) this._casters.activate(city);
                 this._materials.activate();
                 binding.updateCamera(this.engine.camera);
                 if (this._shouldUseDynamicLayer()) this._renderDynamicLayer(binding);
-                if (this._shouldSuppressCasters()) this._casters.activate(city);
                 this._active = Object.freeze({ ...cached, generation: snapshot.generation });
                 this._cachedActivation = null;
                 this._cacheActivationCount += 1;
                 return true;
             } catch (error) {
+                this._lastError = error;
                 this._restoreCurrent('cache_activation_rollback');
                 throw error;
             }
@@ -426,11 +432,11 @@ export class StaticSunDepthPipeline {
         try {
             const receiverRoots = [city.group, ...this._dynamicShadows.getReceiverRoots()];
             this._materials.prepareRoots(receiverRoots, binding, { outsideRoot: this.engine.scene });
+            if (this._shouldSuppressCasters()) this._casters.activate(city);
             this._materials.activate();
             binding.updateCamera(this.engine.camera);
             if (this._shouldUseDynamicLayer()) this._renderDynamicLayer(binding);
             this._compileExactCityVariants();
-            if (this._shouldSuppressCasters()) this._casters.activate(city);
             this._active = Object.freeze({
                 generation: snapshot.generation,
                 binding,
@@ -442,6 +448,7 @@ export class StaticSunDepthPipeline {
             });
             return true;
         } catch (error) {
+            this._lastError = error;
             this._restoreCurrent('activation_rollback');
             throw error;
         }
@@ -451,14 +458,9 @@ export class StaticSunDepthPipeline {
         const previous = this._active;
         let firstError = null;
         try {
-            this._casters.deactivate(reason);
-        } catch (error) {
-            firstError = error;
-        }
-        try {
             this._dynamicShadows.deactivate();
         } catch (error) {
-            firstError ??= error;
+            firstError = error;
         }
         let retained = false;
         if (retainPreparedMaterials && previous) {
@@ -479,6 +481,11 @@ export class StaticSunDepthPipeline {
             }
             this._materials = new StaticSunDepthMaterialSet();
             this._cachedActivation = null;
+        }
+        try {
+            this._casters.deactivate(reason);
+        } catch (error) {
+            firstError ??= error;
         }
         this._active = null;
         if (firstError) throw firstError;
@@ -709,6 +716,16 @@ function hasUnambiguousNamedSun(city, scene, expectedDirection) {
     let ambiguous = false;
     scene.traverse((object) => {
         if (ambiguous || !object?.isDirectionalLight || object.visible === false || object.intensity === 0) return;
+        if (allowed.has(object)) {
+            // The canonical city.sunRef was compared immediately above. CSM
+            // light transforms lag that reference until City.update() runs,
+            // so requiring their still-authored positions to match here makes
+            // an otherwise exact cache fail during early gameplay startup.
+            // Membership is authoritative for these owned lights; direction
+            // matching below remains necessary for detecting an extra sun.
+            matchedAllowed += 1;
+            return;
+        }
         object.getWorldPosition(lightPosition);
         object.target?.getWorldPosition?.(targetPosition);
         const direction = lightPosition.sub(targetPosition);
@@ -720,8 +737,7 @@ function hasUnambiguousNamedSun(city, scene, expectedDirection) {
             + direction.z * expectedDirection[2]
         ) / magnitude;
         if (!Number.isFinite(dot) || dot < SHADER_DIRECTION_MATCH_MINIMUM) return;
-        if (!allowed.has(object)) ambiguous = true;
-        else matchedAllowed += 1;
+        ambiguous = true;
     });
     return !ambiguous && matchedAllowed === allowed.size;
 }

@@ -614,7 +614,7 @@ export function renderGraphicsTab() {
 
     const staticAoIntensity = makeNumberSliderRow({
         label: 'Static AO intensity',
-        value: ao?.staticAo?.intensity ?? 0.6,
+        value: ao?.staticAo?.intensity ?? 0.44,
         min: 0,
         max: 2,
         step: 0.01,

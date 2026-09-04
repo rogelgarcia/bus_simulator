@@ -136,9 +136,12 @@ export function createStagedIlluminationResources({
             onLifecycle('committed', { result });
             return result;
         } catch (caught) {
+            const detail = caught instanceof Error && caught.message
+                ? ` Cause: ${caught.message}`
+                : '';
             commitError = caught instanceof IlluminationRuntimeError
                 ? caught
-                : createRuntimeFailure('resource_handoff_failed', `Controller handoff failed for resource set '${plan.id}'.`, {
+                : createRuntimeFailure('resource_handoff_failed', `Controller handoff failed for resource set '${plan.id}'.${detail}`, {
                     phase: 'ready_to_commit',
                     reason: 'activation_failure',
                     context: { planId: plan.id },

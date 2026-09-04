@@ -137,6 +137,12 @@ test('generic engine registry transfers two moving objects to one illumination p
     const engine = makeEngine(events, null);
     const rootA = { isObject3D: true };
     const rootB = { isObject3D: true };
+    const registeredShadowRoots = [];
+    const unregisteredShadowRoots = [];
+    engine._contextProxy = {city: {
+        registerShadowReceivers: (root) => registeredShadowRoots.push(root),
+        unregisterShadowReceivers: (root) => unregisteredShadowRoots.push(root)
+    }};
     const handleB = engine.registerDynamicIlluminationObject({
         id: 'vehicle.b',
         root: rootB,
@@ -153,6 +159,7 @@ test('generic engine registry transfers two moving objects to one illumination p
         engine.getDynamicIlluminationObjects().map((entry) => entry.id),
         ['vehicle.a', 'vehicle.b']
     );
+    assert.deepEqual(registeredShadowRoots, [rootB, rootA]);
 
     const pipeline = lifecyclePipeline(events, null, 'hybrid');
     pipeline.registerDynamicShadowObject = (record) => {
@@ -172,6 +179,7 @@ test('generic engine registry transfers two moving objects to one illumination p
         'unbind:vehicle.b'
     ]);
     assert.deepEqual(engine.getDynamicIlluminationObjects(), []);
+    assert.deepEqual(unregisteredShadowRoots, [rootA, rootB]);
 });
 
 test('invalid replacement or failed uninstall preserves the installed owner', () => {
@@ -326,6 +334,53 @@ test('City shadow settings always finish the exact captured refresh transaction'
         'instanced',
         'deactivateCsm'
     ]);
+});
+
+test('City baked ownership replaces CSM with one non-shadowing sun and restores the saved mode', () => {
+    const events = [];
+    const city = makeCityForShadowSettings(events);
+    city._staticSunDepthCasterController = null;
+    city._staticSunDepthCacheActive = false;
+    city._csm = { active: true };
+    city._activateCascadedShadows = () => {
+        events.push('activateCsm');
+        city._csm = { active: true };
+    };
+    city._deactivateCascadedShadows = () => {
+        events.push('deactivateCsm');
+        city._csm = null;
+    };
+    city.sun = {
+        visible: false,
+        castShadow: false,
+        shadow: {
+            bias: 0,
+            normalBias: 0,
+            radius: 0,
+            mapSize: { x: 0, y: 0, set() {} },
+            map: null
+        }
+    };
+    const engine = {
+        shadowSettings: { type: 'cascade', quality: 'high' },
+        renderer: null,
+        camera: {}
+    };
+    const previousWindow = globalThis.window;
+    globalThis.window = {};
+    try {
+        assert.equal(city.setStaticSunDepthCacheActive(true, engine), true);
+        assert.equal(city._csm, null);
+        assert.equal(city.sun.visible, true);
+        assert.equal(city.sun.castShadow, false);
+        assert.equal(city.setStaticSunDepthCacheActive(false, engine), true);
+        assert.equal(city._csm?.active, true);
+        assert.equal(city.sun.visible, false);
+        assert.equal(city.sun.castShadow, false);
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
+    }
 });
 
 test('City static-depth caster snapshot survives camera culling and resolves caster modes', () => {
@@ -557,8 +612,9 @@ function createDependencyStub(names) {
     exports.push(`export function getResolvedShadowSettings() {
         return {type:'off',quality:'low',cascades:0,splitScale:1,mergeCasters:true,instancedCasters:false};
     }`);
-    exports.push(`export function getShadowQualityPreset() {
-        return {enabled:false,mapSize:0,radiusMeters:110,radius:1,bias:0,normalBias:0,twoSidedCasting:false};
+    exports.push(`export function getShadowQualityPreset(settings) {
+        const enabled = settings?.type !== 'off';
+        return {enabled,mapSize:enabled ? 4096 : 0,radiusMeters:110,radius:1,bias:0,normalBias:0,twoSidedCasting:enabled,...(settings?.type === 'cascade' ? {cascades:4} : {})};
     }`);
     return exports.join('\n');
 }

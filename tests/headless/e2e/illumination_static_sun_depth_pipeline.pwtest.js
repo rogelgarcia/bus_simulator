@@ -213,16 +213,28 @@ test('AI 531 static-sun pipeline activates only a verified complete set and roll
             receive: true
         });
         const sun = new THREE.DirectionalLight(0xffffff, 2);
-        sun.position.set(0, 8, 0);
+        // Model the real startup race: the canonical sunRef is current before
+        // CSM has copied it into its owned light transforms. Baked activation
+        // removes that stale CSM before exact programs compile.
+        sun.position.set(8, 0, 0);
         sun.castShadow = true;
         engine.scene.add(root, busMesh, sun, sun.target);
+        const fakeCsm = { csm: { lights: [sun] } };
         engine.context.city = {
             group: root,
             cityId: ids.cityId,
             sun,
             sunRef: { direction: new THREE.Vector3(...pointDirection) },
-            _csm: null,
-            _shadowCuller: null
+            _csm: fakeCsm,
+            _shadowCuller: null,
+            _staticSunDepthCacheActive: false,
+            setStaticSunDepthCacheActive(active) {
+                this._staticSunDepthCacheActive = active === true;
+                this._csm = active ? null : fakeCsm;
+                sun.castShadow = !active;
+                sun.position.set(active ? 0 : 8, active ? 8 : 0, 0);
+                return true;
+            }
         };
         engine.camera.position.set(5, 4, 7);
         engine.camera.lookAt(0, 0, 0);
@@ -498,7 +510,9 @@ test('AI 531 static-sun pipeline activates only a verified complete set and roll
     expect(result.rejectedCityCompile.controller.reason).toBe('activation_failure');
     expect(result.rejectedCityCompile.controller.effectiveMode).toBe('current');
     expect(result.cityCompileCasterStates.length).toBeGreaterThanOrEqual(2);
-    expect(result.cityCompileCasterStates.every((value) => value === true)).toBe(true);
+    // Exact baked programs compile only after legacy casters/CSM are detached;
+    // rollback above proves a rejected compile restores their authored state.
+    expect(result.cityCompileCasterStates.every((value) => value === false)).toBe(true);
     expect(result.active.caster).toBe(false);
     expect(result.active.bus).toBe(false);
     expect(result.active.diagnostics.active).not.toBeNull();

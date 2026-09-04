@@ -74,10 +74,13 @@ test('ShadowSettings: an unknown quality falls back to a real preset', () => {
     assert.ok(SHADOW_QUALITY_PRESETS[getShadowPresetId(s)], 'resolves to a defined preset');
 });
 
-test('ShadowSettings: defaults match the legacy id they replace', () => {
-    // The pinned options preset stores `shadows: { quality: 'high' }`, so the
-    // code defaults and that record must resolve identically.
-    assert.deepEqual(sanitizeShadowSettings(SHADOW_DEFAULTS), sanitizeShadowSettings({ quality: 'high' }));
+test('ShadowSettings: cascade defaults do not reinterpret legacy quality-only records', () => {
+    const defaults = sanitizeShadowSettings(SHADOW_DEFAULTS);
+    const legacy = sanitizeShadowSettings({ quality: 'high' });
+    assert.equal(defaults.type, 'cascade');
+    assert.equal(defaults.quality, 'high');
+    assert.equal(legacy.type, 'single');
+    assert.equal(legacy.quality, 'high');
 });
 
 test('ShadowSettings: legacy records drop the retired cascade knobs', () => {

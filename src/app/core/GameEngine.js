@@ -1150,7 +1150,15 @@ export class GameEngine {
         if (this._dynamicIlluminationObjects.has(record.id)) {
             throw new Error(`[GameEngine] Dynamic illumination object '${record.id}' is already registered.`);
         }
-        const pipelineBinding = this._illuminationPipeline?.registerDynamicShadowObject?.(record) ?? null;
+        const city = this._contextProxy?.city ?? null;
+        city?.registerShadowReceivers?.(record.root);
+        let pipelineBinding;
+        try {
+            pipelineBinding = this._illuminationPipeline?.registerDynamicShadowObject?.(record) ?? null;
+        } catch (error) {
+            city?.unregisterShadowReceivers?.(record.root);
+            throw error;
+        }
         this._dynamicIlluminationObjects.set(record.id, record);
         if (pipelineBinding) this._dynamicIlluminationBindings.set(record.id, pipelineBinding);
         let removed = false;
@@ -1161,6 +1169,7 @@ export class GameEngine {
                 const binding = this._dynamicIlluminationBindings.get(record.id);
                 binding?.unregister?.();
                 this._dynamicIlluminationBindings.delete(record.id);
+                city?.unregisterShadowReceivers?.(record.root);
                 removed = this._dynamicIlluminationObjects.delete(record.id);
                 return removed;
             }

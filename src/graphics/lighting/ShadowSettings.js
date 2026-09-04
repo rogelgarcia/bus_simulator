@@ -11,7 +11,7 @@ export const SHADOW_QUALITIES = Object.freeze(['low', 'med', 'high']);
 export const SHADOW_DEFAULTS = Object.freeze({
     // off: no sun shadows. single: one camera-fitted map. cascade: N maps by
     // depth range.
-    type: 'single',
+    type: 'cascade',
     // low | med | high. Governs resolution AND reach together, so every step
     // down is unambiguously cheaper. Kept while `type` is 'off' so turning
     // shadows back on returns to the tier you left.

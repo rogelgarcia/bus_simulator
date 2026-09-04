@@ -506,6 +506,9 @@ export class City {
         // Roots outside this.group whose materials must receive scene shadows
         // (the bus). Remembered so a later mode switch can re-register them.
         this._extraShadowRoots = new Set();
+        void this.world?.readyPromise?.then(() => {
+            if (this._attached && this._csm) registerObjectForSceneShadows(this.world.group);
+        });
     }
 
     attach(engine) {
@@ -600,7 +603,7 @@ export class City {
             const renderer = engine?.renderer ?? null;
             const settings = engine?.shadowSettings ?? getResolvedShadowSettings();
             const preset = getShadowQualityPreset(settings);
-            const enabled = !!preset.enabled;
+            const enabled = !!preset.enabled && !this._staticSunDepthCacheActive;
             const wantsCsm = enabled
                 && Number.isFinite(preset.cascades)
                 && !!engine?.camera
@@ -642,6 +645,9 @@ export class City {
                         if (this.sun.shadow.map?.dispose) this.sun.shadow.map.dispose();
                         this.sun.shadow.map = null;
                     }
+                } else if (this._staticSunDepthCacheActive && this.sun.shadow.map) {
+                    this.sun.shadow.map.dispose?.();
+                    this.sun.shadow.map = null;
                 }
             }
 
@@ -651,6 +657,18 @@ export class City {
         } finally {
             if (refreshStarted) staticSunCasterController?.afterShadowSettings?.(settingsApplied);
         }
+    }
+
+    /**
+     * Suspend or restore the saved legacy sun-shadow system while the baked
+     * static-depth cache owns static shadow reception.
+     */
+    setStaticSunDepthCacheActive(active, engine) {
+        const next = active === true;
+        if (this._staticSunDepthCacheActive === next) return false;
+        this._staticSunDepthCacheActive = next;
+        this.applyShadowSettings(engine);
+        return true;
     }
 
     /** @returns {boolean} whether the active caster set changed. */
@@ -813,6 +831,10 @@ export class City {
         if (!root) return;
         this._extraShadowRoots.add(root);
         if (this._csm) registerObjectForSceneShadows(root);
+    }
+
+    unregisterShadowReceivers(root) {
+        return this._extraShadowRoots.delete(root);
     }
 
     /**

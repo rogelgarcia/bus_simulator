@@ -357,7 +357,7 @@ export class StaticAoRuntime {
 
         if (materialKey !== this._materialKey) {
             this._materialKey = materialKey;
-            const intensity = clamp(staticAo?.intensity, 0, 2, 0.6);
+            const intensity = clamp(staticAo?.intensity, 0, 2, 0.44);
             const debugView = staticAo?.debugView === true;
             for (const mat of this._materialClones) applyStaticAoToMeshStandardMaterial(mat, { intensity, debugView });
         }

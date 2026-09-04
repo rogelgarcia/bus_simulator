@@ -14,6 +14,8 @@ import { getDefaultResolvedColorGradingSettings } from '../../../src/graphics/vi
 import { getDefaultResolvedBuildingWindowVisualsSettings } from '../../../src/graphics/visuals/buildings/BuildingWindowVisualsSettings.js';
 import { getDefaultResolvedAsphaltNoiseSettings } from '../../../src/graphics/visuals/city/AsphaltNoiseSettings.js';
 import { getDefaultResolvedSunFlareSettings } from '../../../src/graphics/visuals/sun/SunFlareSettings.js';
+import { getDefaultResolvedBakedLightingSettings } from '../../../src/app/illumination/runtime/index.js';
+import { getDefaultResolvedStaticVisibilitySettings } from '../../../src/app/city/visibility/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -44,6 +46,7 @@ test('Options defaults: promoted sunny preset matches code defaults', () => {
     assert.equal(lighting.ibl.setBackground, s.lighting.ibl.setBackground);
 
     assert.deepEqual(getDefaultResolvedShadowSettings(), s.shadows);
+    assert.deepEqual(getDefaultResolvedBakedLightingSettings(), s.bakedLighting);
     assert.deepEqual(getDefaultResolvedAntiAliasingSettings(), s.antiAliasing);
     assert.deepEqual(getDefaultResolvedAmbientOcclusionSettings(), s.ambientOcclusion);
     assert.deepEqual(getDefaultResolvedBloomSettings(), s.bloom);
@@ -52,4 +55,5 @@ test('Options defaults: promoted sunny preset matches code defaults', () => {
     assert.deepEqual(getDefaultResolvedSunFlareSettings(), s.sunFlare);
     assert.deepEqual(getDefaultResolvedBuildingWindowVisualsSettings(), s.buildingWindowVisuals);
     assert.deepEqual(getDefaultResolvedAsphaltNoiseSettings(), s.asphaltNoise);
+    assert.deepEqual(getDefaultResolvedStaticVisibilitySettings(), s.staticVisibility);
 });

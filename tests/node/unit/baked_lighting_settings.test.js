@@ -33,11 +33,13 @@ function makeIndex() {
     };
 }
 
-test('BakedLightingSettings: defaults preserve the legacy renderer', () => {
-    const medium = { shadows: { enabled: false, dynamicResolution: 'medium' } };
-    assert.deepEqual(BAKED_LIGHTING_DEFAULTS, medium);
-    assert.deepEqual(getDefaultResolvedBakedLightingSettings(), medium);
-    assert.deepEqual(sanitizeBakedLightingSettings({ shadows: { enabled: 'true' } }), medium);
+test('BakedLightingSettings: defaults enable the high-resolution moving-object map', () => {
+    const defaults = { shadows: { enabled: true, dynamicResolution: 'high' } };
+    assert.deepEqual(BAKED_LIGHTING_DEFAULTS, defaults);
+    assert.deepEqual(getDefaultResolvedBakedLightingSettings(), defaults);
+    assert.deepEqual(sanitizeBakedLightingSettings({ shadows: { enabled: 'true' } }), {
+        shadows: { enabled: false, dynamicResolution: 'medium' }
+    });
     assert.deepEqual(sanitizeBakedLightingSettings({ shadows: { enabled: true, dynamicResolution: 'ultra' } }), {
         shadows: { enabled: true, dynamicResolution: 'medium' }
     });
@@ -66,7 +68,7 @@ test('BakedLightingSettings: saves and restores baked-shadow intent only', () =>
         });
         assert.equal(clearSavedBakedLightingSettings(), true);
         assert.deepEqual(getResolvedBakedLightingSettings(), {
-            shadows: { enabled: false, dynamicResolution: 'medium' }
+            shadows: { enabled: true, dynamicResolution: 'high' }
         });
     } finally {
         if (previousWindow === undefined) delete globalThis.window;

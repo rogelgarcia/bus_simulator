@@ -207,6 +207,9 @@ test('AI 532 real gameplay proves tree-to-bus and bus-to-bus shadow reception', 
                     staticCastersActive: finalDiagnostics.casters.active,
                     legacyShadowMapPassDisabled:
                         finalDiagnostics.casters.legacyShadowMapPassDisabled,
+                    csmActive: state.city?._csm !== null,
+                    citySunVisible: state.city?.sun?.visible,
+                    citySunCastShadow: state.city?.sun?.castShadow,
                     legacyShadowTargetBinds,
                     legacyShadowLights: legacyShadowLights.map((light) => ({
                         autoUpdate: light.shadow?.autoUpdate,
@@ -236,15 +239,12 @@ test('AI 532 real gameplay proves tree-to-bus and bus-to-bus shadow reception', 
         effectiveMode: 'baked',
         staticCastersActive: true,
         legacyShadowMapPassDisabled: true,
+        csmActive: false,
+        citySunVisible: true,
+        citySunCastShadow: false,
         legacyShadowTargetBinds: 0
     });
-    expect(activation.legacyShadowLights.length).toBeGreaterThan(0);
-    expect(activation.legacyShadowLights).toEqual(
-        activation.legacyShadowLights.map(() => ({
-            autoUpdate: false,
-            needsUpdate: false
-        }))
-    );
+    expect(activation.legacyShadowLights).toEqual([]);
     expect(activation.registrations.map((entry) => entry.id)).toEqual([
         'vehicle.ai532.secondary',
         'vehicle.player'

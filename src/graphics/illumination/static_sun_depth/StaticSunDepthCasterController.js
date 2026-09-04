@@ -42,6 +42,7 @@ export class StaticSunDepthCasterController {
         }
         this.city = city;
         try {
+            city.setStaticSunDepthCacheActive?.(true, this.engine);
             city._shadowCuller?.clear?.();
             this._captureAndSuppress();
             this._captureShadowMapUpdates(city);
@@ -57,11 +58,14 @@ export class StaticSunDepthCasterController {
             }
             this._restoreShadowMapUpdates({ forceRefresh: true });
             if (city._staticSunDepthCasterController === this) city._staticSunDepthCasterController = null;
-            city._staticSunDepthCacheActive = false;
             this.city = null;
             this._active = false;
             this._refreshing = false;
-            this._rebuildCityCuller(city);
+            if (typeof city.setStaticSunDepthCacheActive === 'function') city.setStaticSunDepthCacheActive(false, this.engine);
+            else {
+                city._staticSunDepthCacheActive = false;
+                this._rebuildCityCuller(city);
+            }
             this._markShadowMapsDirty(city);
             throw error;
         }
@@ -71,7 +75,6 @@ export class StaticSunDepthCasterController {
     beforeShadowSettings() {
         if (!this._active || this._refreshing) return false;
         this._refreshing = true;
-        if (this.city) this.city._staticSunDepthCacheActive = false;
         try {
             this._restoreSnapshot(false);
             this._restoreShadowMapUpdates({ forceRefresh: true });
@@ -122,23 +125,29 @@ export class StaticSunDepthCasterController {
         } catch (error) {
             restorationError ??= error;
         }
-        city._staticSunDepthCacheActive = false;
         if (city._staticSunDepthCasterController === this) city._staticSunDepthCasterController = null;
         this.city = null;
         this._active = false;
         this._refreshing = false;
         this._metrics.restores += 1;
-        this._rebuildCityCuller(city);
+        try {
+            if (typeof city.setStaticSunDepthCacheActive === 'function') city.setStaticSunDepthCacheActive(false, this.engine);
+            else {
+                city._staticSunDepthCacheActive = false;
+                this._rebuildCityCuller(city);
+            }
+        } catch (error) {
+            restorationError ??= error;
+        }
         this._markShadowMapsDirty(city);
         if (restorationError) throw restorationError;
         return true;
     }
 
     /**
-     * Freezes every live sun shadow after the first baked frame has rendered
-     * empty maps. Keeping the lights shadow-enabled preserves CSM's single-sun
-     * shader branches while per-light autoUpdate=false makes WebGLShadowMap
-     * skip their targets on all later renders.
+     * Compatibility fallback for City-like hosts that cannot detach their
+     * legacy lights. A real City reaches this point with an empty inventory,
+     * because baked ownership removes its single/CSM shadow system outright.
      */
     freezeShadowMapPassAfterEmptyRender() {
         if (!this._active || this._refreshing || !this._shadowMapFreezePending) return false;

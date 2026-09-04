@@ -12,7 +12,7 @@ export const AMBIENT_OCCLUSION_DEFAULTS = Object.freeze({
     },
     staticAo: {
         mode: 'off',
-        intensity: 0.6,
+        intensity: 0.44,
         quality: 'medium',
         radius: 4,
         wallHeight: 1.6,

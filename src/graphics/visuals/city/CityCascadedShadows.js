@@ -272,8 +272,11 @@ export class CityCascadedShadows {
                 }
                 // Registered but carrying the wrong count — someone rewrote the
                 // defines, or it was registered against a previous cascade set.
-                if (material.defines && material.defines.CSM_CASCADES !== live) {
+                if (!material.defines?.USE_CSM || material.defines.CSM_CASCADES !== live) {
+                    material.defines ||= {};
+                    material.defines.USE_CSM = 1;
                     material.defines.CSM_CASCADES = live;
+                    if (this.csm.fade) material.defines.CSM_FADE = '';
                     material.needsUpdate = true;
                     repaired++;
                 }

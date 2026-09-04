@@ -255,6 +255,24 @@ test('graphics illumination staged activation rejects thenables at the synchrono
     assert.equal(harness.disposalCounts.get('resource/alpha'), 1);
 });
 
+test('graphics illumination staged activation preserves a controller failure cause in diagnostics', async () => {
+    const plan = createResourcePlan();
+    const harness = createLoaderHarness();
+    const staged = await harness.loader.load(plan, createLoadOptions(plan));
+
+    assert.throws(
+        () => staged.commitPrepared(() => {
+            throw new Error('prepared cache identity mismatch');
+        }),
+        (error) => error.code === 'resource_handoff_failed'
+            && error.message.includes('Cause: prepared cache identity mismatch')
+    );
+
+    await staged.dispose();
+    assert.equal(staged.disposition, 'disposed');
+    assert.equal(harness.disposalCounts.get('resource/alpha'), 1);
+});
+
 test('graphics illumination staged retirement synchronously prevents a same-turn activation', async () => {
     const plan = createResourcePlan();
     const harness = createLoaderHarness();

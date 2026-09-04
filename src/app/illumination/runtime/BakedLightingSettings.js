@@ -10,8 +10,8 @@ export const BAKED_DYNAMIC_SHADOW_RESOLUTIONS = Object.freeze({
 
 export const BAKED_LIGHTING_DEFAULTS = Object.freeze({
     shadows: Object.freeze({
-        enabled: false,
-        dynamicResolution: BAKED_DYNAMIC_SHADOW_RESOLUTIONS.medium
+        enabled: true,
+        dynamicResolution: BAKED_DYNAMIC_SHADOW_RESOLUTIONS.high
     })
 });
 
