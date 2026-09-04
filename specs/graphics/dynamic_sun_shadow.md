@@ -119,6 +119,13 @@ Debug captures are generated under
 `tests/artifacts/screens/illumination_532/`; they are human-verification
 artifacts and never runtime or corrective inputs.
 
+The authoritative visual pair uses the real `game_mode` Big City 2 civic-center
+pose, the normal gameplay visibility system, the player City Bus, a second
+Coach created through `BusFactory`, and the full AI 531 production package.
+The Coach is inserted into the actual gameplay scene and both vehicles are
+registered through `GameEngine`; no separate lab scene or substitute geometry
+is used for that before/current and after/hybrid comparison.
+
 Production whole-frame, CPU/GPU shadow timing, load, and variance metrics are
 not measured for AI 532 because other processes share the machine and GPU. The
 browser fixtures prove behavior, not production performance. AI 536 retains the
