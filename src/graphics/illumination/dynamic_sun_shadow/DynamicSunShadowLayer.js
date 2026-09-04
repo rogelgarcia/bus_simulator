@@ -303,6 +303,33 @@ export class DynamicSunShadowLayer {
         return this._registrations.size;
     }
 
+    /**
+     * Changes only the shared moving-object map density. Registration state is
+     * retained, but active graphics must be released by the owning pipeline so
+     * no receiver can sample a disposed render target.
+     * @param {{mapSize: number, worldUnitsPerTexel: number}} resolution
+     */
+    setResolution(resolution) {
+        if (this._disposed) throw new Error('DynamicSunShadowLayer is disposed.');
+        const nextMapSize = mapSize(resolution?.mapSize);
+        const nextWorldUnitsPerTexel = positive(
+            resolution?.worldUnitsPerTexel,
+            'dynamic shadow worldUnitsPerTexel'
+        );
+        if (nextMapSize === this.options.mapSize
+            && nextWorldUnitsPerTexel === this.options.worldUnitsPerTexel) return false;
+        if (this._active || this._target || this._records.length > 0) {
+            throw new Error('Dynamic sun-shadow resolution may only change while the layer is inactive.');
+        }
+        this.options = Object.freeze({
+            ...this.options,
+            mapSize: nextMapSize,
+            worldUnitsPerTexel: nextWorldUnitsPerTexel,
+            paddingTexels: paddingTexels(this.options.paddingTexels, nextMapSize)
+        });
+        return true;
+    }
+
     activate({ suppressCurrentCasters = true } = {}) {
         if (this._disposed) throw new Error('DynamicSunShadowLayer is disposed.');
         if (typeof suppressCurrentCasters !== 'boolean') {

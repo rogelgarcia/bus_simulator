@@ -23,7 +23,8 @@ test('OptionsPreset: createOptionsPresetFromDraft produces schema + clamps', () 
         sunFlare: { enabled: '0', preset: 'Subtle', strength: -1, components: { core: 0, halo: 1, starburst: 'yes', ghosting: null } },
         buildingWindowVisuals: { reflective: { enabled: 'yes', glass: { colorHex: -1, metalness: 2, roughness: -1, transmission: 2, ior: 999, envMapIntensity: 999 } } },
         asphaltNoise: { coarse: { scale: 999 }, fine: { scale: 999 }, color: { value: 999, warmCool: -999, saturation: 999 } },
-        staticVisibility: { enabled: 'false', diagnostics: 'true', categories: { trees: 'false' } }
+        staticVisibility: { enabled: 'false', diagnostics: 'true', categories: { trees: 'false' } },
+        bakedLighting: { shadows: { enabled: 'true', dynamicResolution: 'high' } }
     });
 
     assert.equal(preset.schema, OPTIONS_PRESET_SCHEMA_ID);
@@ -52,6 +53,8 @@ test('OptionsPreset: createOptionsPresetFromDraft produces schema + clamps', () 
     assert.equal(preset.settings.staticVisibility.enabled, false);
     assert.equal(preset.settings.staticVisibility.diagnostics, true);
     assert.equal(preset.settings.staticVisibility.categories.trees, false);
+    assert.equal(preset.settings.bakedLighting.shadows.enabled, true);
+    assert.equal(preset.settings.bakedLighting.shadows.dynamicResolution, 'high');
 });
 
 test('OptionsPreset: parse migrates legacy shape (no version)', () => {
@@ -63,6 +66,7 @@ test('OptionsPreset: parse migrates legacy shape (no version)', () => {
     assert.equal(preset.version, 1);
     assert.equal(preset.settings.lighting.exposure, 2.2);
     assert.equal(preset.includes.bloom, false);
+    assert.equal(preset.includes.bakedLighting, false);
 });
 
 test('OptionsPreset: applyOptionsPresetToDraft respects includes', () => {

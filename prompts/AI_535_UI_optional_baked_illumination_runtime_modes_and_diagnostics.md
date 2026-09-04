@@ -14,6 +14,92 @@ Expose the optional illumination capability through runtime Options, profile/sta
   the final channel/preset decisions from AI 532–534. Do not redesign shader
   algorithms, bake formats, or AO composition here.
 
+## Incremental progress — 2026-09-03
+
+The user authorized a staged AI 535 slice before AI 533/534: expose the
+default-off AI 531/532 baked-shadow path now, while keeping this prompt open for
+direct/indirect lighting and the complete Current/Baked/Auto workflow.
+
+- [x] Add a **Baked lighting** Options tab with a concise performance/fallback explanation.
+- [x] Add persisted, live-previewed **Enable baked shadows** intent with Save/Cancel/Reset and preset support.
+- [x] Disable the legacy shadow controls while baked shadows are requested without changing their retained values.
+- [x] Add exact city/sun package lookup, atomic AI 530/531 activation, and visible Current fallback status for missing, stale, invalid, or unsupported data.
+- [x] Keep baked shadows off by default so normal startup has no package fetch or baked-asset dependency.
+- [x] Move the staged shadow package index and generator output to `assets/baked_lighting/shadows/`, while keeping evidence under `tests/artifacts/`.
+- [x] Retain a validated/uploaded/compiled exact shadow publication while the user toggle is off, then re-enable it through a uniform-only cached apply with no repeat fetch, decode, upload, or city-shader compilation.
+- [ ] Add direct baked-light controls after AI 533 records its promote/defer decision.
+- [ ] Add indirect baked-light and AO policy controls after AI 533/534 are complete.
+- [ ] Complete the original Current/Baked/Auto diagnostics, reload/revalidate, lifecycle matrix, screenshots, and performance measurements below.
+
+Focused validation for this slice passes: 21 settings/preset/engine-lifecycle
+tests and the real-gameplay Baked lighting Options test (about 39 seconds).
+Final captures are under `tests/artifacts/screens/illumination_535/`. The runtime
+also invalidates in-flight index/package work before engine disposal. On
+2026-09-04, the runtime, offline generator, validators, and release finalizer
+were moved to the `assets/baked_lighting/shadows/` authority; the existing
+eight publications were copied there without rerunning Blender.
+
+On 2026-09-04, the baked-shadow lifecycle gained an explicit inactive cache.
+Turning the option off restores legacy shadow ownership on the frame boundary
+but keeps the exact package resource set and compiled receiver shader variant
+resident. Re-enabling the same canonical request performs only the cached
+activation transaction. Identity mismatch, live drift, uninstall, context
+loss, or teardown still invalidates and retires the cache exactly once.
+The focused cache/lifecycle/settings/graphics checks pass 60/60, including a
+canonical reordered-request reuse test proving one fetch/upload allocation
+across disable and re-enable and one final disposal at teardown.
+
+On 2026-09-04, baked-shadow activation also took explicit ownership of the
+legacy single/CSM shadow-map pass. The transition renders one empty legacy map
+set after City and registered moving casters are suppressed, then freezes every
+live sun shadow with per-light `autoUpdate=false` and `needsUpdate=false`.
+This preserves the CSM light/shader shape while preventing later gameplay
+renders from binding or clearing those legacy shadow targets. Returning to
+Current restores the captured per-light update policy and forces one fresh live
+map rebuild. The focused deterministic lifecycle/graphics/tool suite passes
+118/118; the real-gameplay two-vehicle validation also passes and observed zero
+legacy sun-shadow target binds in a steady baked frame. A separate pinned-Three
+browser check passes with two real CSM cascades: both targets remain unbound in
+the steady baked render and both original per-light update policies are restored
+for Current.
+
+## Implementation issues — 2026-09-03
+
+- The sandboxed browser could not load the game's existing Three.js CDN modules
+  (`ERR_NETWORK_ACCESS_DENIED`), so the focused check was rerun with approved
+  network access. No dependency or Blender download was needed.
+- The first shadow-pass gameplay rerun likewise remained on the title screen
+  until its 180-second launch wait expired because the sandboxed browser could
+  not complete the CDN-backed startup. With approved network access it reached
+  baked gameplay; an initial test-only inventory assertion then omitted the
+  non-CSM `city.sun`. The corrected exact runtime inventory (`city.sun` plus any
+  CSM lights) passed. The final GPU run took about 4.6 minutes under the reported
+  machine contention and produced the existing AI 532 gameplay captures.
+- Physical Playwright clicks stalled while the GPU-rendered gameplay frame was
+  busy. The focused test now launches a paused deterministic gameplay pose,
+  stops the render loop after entry, and dispatches the same DOM change/click
+  events used by the existing Options test suite. It passes in about 39 seconds.
+- The older all-tabs Options smoke still uses a four-minute keyboard/physical-
+  click flow and made no progress for more than three minutes under the same
+  machine contention, so it was stopped. The focused AI 535 test covers the new
+  tab and its Save/Cancel/Reset compatibility without that nondeterminism.
+- This slice validates missing-package fallback without loading the active
+  high-elevation package (about 505 MiB). The complete eight-package set is
+  3,023,798,656 bytes (about 2.82 GiB); the complete copied resumable asset
+  publications are 9,043,884,819 bytes (about 8.42 GiB) because they also keep
+  canonical RG8 and tile interiors. Full baked-active screenshots and
+  performance measurements remain part of the open release-validation work
+  below.
+- The copied packages pass byte-for-byte SHA-256 comparison against all eight
+  source `.ilpkg` files, and their rewritten index/publication/certification
+  paths are internally consistent. A real offline-generator resume correctly
+  refused the old publications because the authenticated Blender renderer
+  script changed from SHA-256 `05bb7666...` to `bbbc6687...` after those bakes.
+  This is a freshness guard, not a copy failure. The user-requested existing
+  maps remain available to the default-off staged runtime; a new certified
+  bake from the current renderer script must use a fresh asset output root and
+  be promoted separately rather than forging the old input identity.
+
 Tasks:
 - Add an Options control for illumination mode with clear semantics:
   - `Current`: always available; existing live lights, shadows, and AO operate as before and no baked asset is required;

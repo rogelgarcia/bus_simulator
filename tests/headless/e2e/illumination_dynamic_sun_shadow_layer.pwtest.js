@@ -103,6 +103,15 @@ test('AI 532 renders two interacting moving objects into one texel-snapped dynam
         const second = layer.getDiagnostics();
 
         layer.deactivate();
+        const resolutionChanged = layer.setResolution({
+            mapSize: 128,
+            worldUnitsPerTexel: 0.125
+        });
+        layer.activate();
+        const highBinding = layer.render([0.25, 1, 0.2]);
+        const high = layer.getDiagnostics();
+        const highTarget = layer.getDebugRenderTarget();
+        layer.deactivate();
         const restoredCasterFlags = [meshA.castShadow, meshB.castShadow, glass.castShadow];
         const removed = [handleA.unregister(), handleB.unregister()];
         layer.dispose();
@@ -130,6 +139,16 @@ test('AI 532 renders two interacting moving objects into one texel-snapped dynam
                 worldUnitsPerTexel: first.map.projection.worldUnitsPerTexel
             },
             secondRenderCount: second.metrics.renders,
+            resolutionChanged,
+            high: {
+                bindingEnabled: highBinding.enabled,
+                size: high.map.size,
+                targetSize: [highTarget.width, highTarget.height],
+                worldUnitsPerTexel: high.map.worldUnitsPerTexel,
+                estimatedGpuBytes: high.map.estimatedGpuBytes,
+                linearCoverageMeters: high.map.size * high.map.worldUnitsPerTexel,
+                registrations: high.registrations.map((entry) => entry.id)
+            },
             restoredCasterFlags,
             removed
         };
@@ -150,6 +169,16 @@ test('AI 532 renders two interacting moving objects into one texel-snapped dynam
         worldUnitsPerTexel: 0.25
     });
     expect(result.secondRenderCount).toBe(2);
+    expect(result.resolutionChanged).toBe(true);
+    expect(result.high).toEqual({
+        bindingEnabled: true,
+        size: 128,
+        targetSize: [128, 128],
+        worldUnitsPerTexel: 0.125,
+        estimatedGpuBytes: 128 * 128 * 8,
+        linearCoverageMeters: 16,
+        registrations: ['vehicle.a', 'vehicle.b']
+    });
     expect(result.restoredCasterFlags).toEqual([true, true, true]);
     expect(result.removed).toEqual([true, true]);
     expect(pageErrors).toEqual([]);

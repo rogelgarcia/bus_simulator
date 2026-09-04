@@ -162,6 +162,31 @@ reduction/streaming before player-facing promotion.
 node tools/static_sun_depth/production.mjs --repeat 2
 ```
 
+Production publications now live below
+`assets/baked_lighting/shadows/`: the root `package_index.json` selects the
+eight sun profiles, and each complete profile is written below `production/`.
+The `.ilpkg` files in that tree are the runtime shadow assets. Raw RG8 data,
+receipts, and publication metadata stay beside each package so an interrupted
+offline bake can be authenticated and resumed. Diagnostic inputs, validation
+reports, and screenshots remain below `tests/artifacts/`; they are evidence,
+not runtime assets. All bake entry points remain in `tools/static_sun_depth/`.
+
+To migrate the already completed eight-profile publication without rerunning
+Blender, run the one-time authenticated copy:
+
+```powershell
+node tools/static_sun_depth/copy_existing_production_to_assets.mjs
+```
+
+The command fails if the destination already exists. It copies through a
+sibling staging directory, updates only the repository-relative package paths
+and their publication digest, then atomically promotes the asset root.
+If any authenticated bake input has changed, the production compiler will
+correctly reject a copied publication as stale. Generate that revision under a
+fresh named child with `--output-root assets/baked_lighting/shadows/<candidate>`
+and promote it only after validation; never rewrite an input-identity hash to
+make an old bake appear current.
+
 ## Deterministic Part A finishing driver
 
 `finish_part_a.mjs` is the resumable AI 531 Part A entry point. It authenticates
@@ -238,8 +263,9 @@ evidence paths remain bound to their original authority.
 Residual calibration is not a substitute for release validation. The strict
 Lab and 197-case production runners remain authoritative, and a failed
 production report cannot produce a release certificate. Normal gameplay also
-continues to request the current shadow engine: baked activation is wired for
-development validation but disabled by default.
+continues to request the current shadow engine: the staged Baked lighting
+toggle loads `assets/baked_lighting/shadows/package_index.json` only when the
+user enables baked shadows, and remains disabled by default.
 
 ## AI 531 validation runners
 

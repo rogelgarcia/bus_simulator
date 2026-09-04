@@ -15,6 +15,7 @@ uniform highp vec4 staticSunDepthSourceMapSizeAndExtent;
 uniform highp vec2 staticSunDepthSourceMapRightLight;
 uniform highp vec2 staticSunDepthSourceMapUpLight;
 uniform int staticSunDepthDebugMode;
+uniform int staticSunDepthEnabled;
 
 void dynamicSunShadowApplyDirectional(
     inout IncidentLight directLight,
@@ -241,6 +242,7 @@ void staticSunDepthApplyDirectional(
     // shared by receiver and non-receiver meshes, so this gate must stay in
     // the shader rather than being inferred while registering materials.
     if ( ! receiveShadow ) return;
+    if ( staticSunDepthEnabled == 0 ) return;
     highp float directionMatch = step(
         0.9995,
         dot( normalize( directLight.direction ), normalize( staticSunDepthPointDirectionView ) )
@@ -264,6 +266,7 @@ void staticSunDepthApplyDirectional(
 }
 
 highp vec3 staticSunDepthDebugColor( highp vec3 normalColor, highp vec3 receiverNormal ) {
+    if ( staticSunDepthEnabled == 0 ) return normalColor;
     if ( staticSunDepthDebugMode == 0 || staticSunDepthDebugMode == 10 ) return normalColor;
     if ( staticSunDepthDebugMode >= 12 ) return dynamicSunShadowDebugColor(
         normalColor,

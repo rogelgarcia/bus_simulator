@@ -24,8 +24,12 @@ export function sanitizeControllerOptions(options) {
     assertOptionalFunction(options.waitUntilSafeToDispose, 'waitUntilSafeToDispose');
     assertOptionalFunction(options.disposeResources, 'disposeResources');
     assertOptionalFunction(options.now, 'now');
+    if (options.cacheInactiveResources !== undefined && typeof options.cacheInactiveResources !== 'boolean') {
+        throw new TypeError('cacheInactiveResources must be boolean');
+    }
     return {
         initialMode,
+        cacheInactiveResources: options.cacheInactiveResources ?? false,
         loadStagedResources: options.loadStagedResources ?? null,
         commitResources: options.commitResources ?? (() => undefined),
         waitUntilSafeToDispose: options.waitUntilSafeToDispose ?? (() => undefined),
@@ -49,6 +53,7 @@ export function sanitizeStagingResult(result, generation) {
     const memory = sanitizeMetricInput(result.memory, ILLUMINATION_MEMORY_KEYS, 'Illumination staging memory', true);
     return Object.freeze({
         ...identity,
+        cacheKey: optionalString(result.cacheKey, 'Illumination staging result cacheKey'),
         resourceSet: /** @type {object} */ (result.resourceSet),
         generation,
         timings,

@@ -177,6 +177,7 @@ export function createStaticSunDepthShaderBinding({ descriptor, texture, debugMo
         staticSunDepthSourceMapRightLight: { value: sourceMapRightLight },
         staticSunDepthSourceMapUpLight: { value: sourceMapUpLight },
         staticSunDepthDebugMode: { value: debugModeValue(debugMode) },
+        staticSunDepthEnabled: { value: 1 },
         dynamicSunShadowMap: { value: null },
         dynamicSunShadowWorldToClip: { value: new THREE.Matrix4() },
         dynamicSunShadowMapSizeBias: { value: new THREE.Vector4(1, 1, 0, 0) },
@@ -219,6 +220,9 @@ export function createStaticSunDepthShaderBinding({ descriptor, texture, debugMo
         },
         setDebugMode(mode) {
             uniforms.staticSunDepthDebugMode.value = debugModeValue(mode);
+        },
+        setEnabled(enabled) {
+            uniforms.staticSunDepthEnabled.value = enabled ? 1 : 0;
         }
     };
 }
@@ -275,6 +279,7 @@ export class StaticSunDepthMaterialSet {
         this._handles = new Map();
         this._binding = null;
         this._enabled = false;
+        this._suspended = false;
         this._unsupported = [];
         this._roots = [];
         this._outsideRoot = null;
@@ -340,7 +345,9 @@ export class StaticSunDepthMaterialSet {
                 handle.update({ enabled: true, variantKey: this._binding.variantKey });
                 activated.push(handle);
             }
+            this._binding.setEnabled(true);
             this._enabled = true;
+            this._suspended = false;
         } catch (error) {
             for (const handle of activated) handle.update({ enabled: false });
             this._enabled = false;
@@ -350,7 +357,17 @@ export class StaticSunDepthMaterialSet {
 
     deactivate() {
         for (const { handle } of this._handles.values()) handle.update({ enabled: false });
+        this._binding?.setEnabled(false);
         this._enabled = false;
+        this._suspended = false;
+    }
+
+    suspend() {
+        if (!this._binding || !this._enabled) {
+            throw new Error('Static-sun material set must be active before it can be suspended.');
+        }
+        this._binding.setEnabled(false);
+        this._suspended = true;
     }
 
     updateCamera(camera) {
@@ -363,7 +380,7 @@ export class StaticSunDepthMaterialSet {
 
     /** @returns {boolean} */
     verifyOwnership() {
-        return this._enabled && this.verifyPreparedOwnership();
+        return this._enabled && !this._suspended && this.verifyPreparedOwnership();
     }
 
     /**
@@ -392,7 +409,9 @@ export class StaticSunDepthMaterialSet {
 
     getDiagnostics() {
         return Object.freeze({
-            enabled: this._enabled,
+            enabled: this._enabled && !this._suspended,
+            shaderHooksEnabled: this._enabled,
+            suspended: this._suspended,
             rootCount: this._roots.length,
             materialCount: this._handles.size,
             unsupported: Object.freeze(this._unsupported.slice()),
@@ -405,6 +424,7 @@ export class StaticSunDepthMaterialSet {
         this._handles.clear();
         this._binding = null;
         this._enabled = false;
+        this._suspended = false;
         this._unsupported = [];
         this._roots = [];
         this._outsideRoot = null;

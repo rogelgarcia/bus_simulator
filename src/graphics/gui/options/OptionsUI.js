@@ -13,6 +13,7 @@ import { getDefaultResolvedAsphaltNoiseSettings } from '../../visuals/city/Aspha
 import { getDefaultResolvedSunFlareSettings } from '../../visuals/sun/SunFlareSettings.js';
 import { getDefaultResolvedAtmosphereSettings } from '../../visuals/atmosphere/AtmosphereSettings.js';
 import { getDefaultResolvedStaticVisibilitySettings } from '../../../app/city/visibility/index.js';
+import { getDefaultResolvedBakedLightingSettings } from '../../../app/illumination/runtime/index.js';
 import {
     applyOptionsPresetToDraft,
     createOptionsPresetFromDraft,
@@ -22,6 +23,7 @@ import {
 import { makeEl } from './OptionsUiControls.js';
 import { renderAsphaltTab } from './tabs/renderAsphaltTab.js';
 import { renderBuildingsTab } from './tabs/renderBuildingsTab.js';
+import { renderBakedLightingTab } from './tabs/renderBakedLightingTab.js';
 import { renderDebugTab } from './tabs/renderDebugTab.js';
 import { renderGrassTab } from './tabs/renderGrassTab.js';
 import { renderGraphicsTab } from './tabs/renderGraphicsTab.js';
@@ -73,7 +75,7 @@ async function copyTextToClipboard(text) {
 
 function formatIncludedGroups(includes) {
     const src = includes && typeof includes === 'object' ? includes : {};
-    const keys = ['lighting', 'shadows', 'antiAliasing', 'ambientOcclusion', 'bloom', 'sunBloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise', 'staticVisibility'];
+    const keys = ['lighting', 'bakedLighting', 'shadows', 'antiAliasing', 'ambientOcclusion', 'bloom', 'sunBloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise', 'staticVisibility'];
     const enabled = keys.filter((k) => src[k] !== false);
     return enabled.length ? enabled.join(', ') : '(none)';
 }
@@ -98,11 +100,13 @@ export class OptionsUI {
         initialColorGradingDebug = null,
         initialVehicleMotionDebug = null,
         initialStaticVisibility = null,
+        initialBakedLighting = null,
         markingsCalibration = null,
         getIblDebugInfo = null,
         getPostProcessingDebugInfo = null,
         getAntiAliasingDebugInfo = null,
         getVehicleMotionDebugInfo = null,
+        getBakedLightingDebugInfo = null,
         titleText = 'Options',
         subtitleText = '0 opens options · Esc closes',
         onCancel = null,
@@ -116,10 +120,12 @@ export class OptionsUI {
         this._getPostProcessingDebugInfo = typeof getPostProcessingDebugInfo === 'function' ? getPostProcessingDebugInfo : null;
         this._getAntiAliasingDebugInfo = typeof getAntiAliasingDebugInfo === 'function' ? getAntiAliasingDebugInfo : null;
         this._getVehicleMotionDebugInfo = typeof getVehicleMotionDebugInfo === 'function' ? getVehicleMotionDebugInfo : null;
+        this._getBakedLightingDebugInfo = typeof getBakedLightingDebugInfo === 'function' ? getBakedLightingDebugInfo : null;
         this._iblDebugEls = null;
         this._postDebugEls = null;
         this._aaDebugEls = null;
         this._vehicleDebugEls = null;
+        this._bakedLightingDebugEls = null;
         this._debugInterval = null;
         this._initialPostProcessingActive = initialPostProcessingActive !== null ? !!initialPostProcessingActive : null;
         this._initialColorGradingDebug = initialColorGradingDebug && typeof initialColorGradingDebug === 'object'
@@ -142,14 +148,14 @@ export class OptionsUI {
         this._visibleTabs = (() => {
             const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
             const wantsDebugTab = params ? (params.get('debug') === 'true' || params.get('debugOptions') === 'true') : false;
-            const base = ['lighting', 'graphics', 'sun_bloom', 'asphalt', 'grass', 'buildings'];
+            const base = ['lighting', 'baked_lighting', 'graphics', 'sun_bloom', 'asphalt', 'grass', 'buildings'];
             if (wantsDebugTab) base.push('debug');
             if (!Array.isArray(visibleTabs)) return base;
             const out = [];
             for (const entry of visibleTabs) {
                 const raw = String(entry ?? '').toLowerCase();
                 const key = raw === 'gameplay' ? 'buildings' : (raw === 'sunbloom' ? 'sun_bloom' : raw);
-                if (key !== 'lighting' && key !== 'graphics' && key !== 'sun_bloom' && key !== 'asphalt' && key !== 'grass' && key !== 'buildings' && key !== 'debug') continue;
+                if (key !== 'lighting' && key !== 'baked_lighting' && key !== 'graphics' && key !== 'sun_bloom' && key !== 'asphalt' && key !== 'grass' && key !== 'buildings' && key !== 'debug') continue;
                 if (out.includes(key)) continue;
                 out.push(key);
             }
@@ -161,6 +167,7 @@ export class OptionsUI {
         const TAB_LABELS = {
             graphics: 'Graphics',
             lighting: 'Lighting',
+            baked_lighting: 'Baked lighting',
             sun_bloom: 'Sun Bloom',
             asphalt: 'Asphalt',
             grass: 'Grass',
@@ -209,7 +216,9 @@ export class OptionsUI {
         this.panel.appendChild(this.footer);
         this.root.appendChild(this.panel);
 
-        const desiredTab = (initialTab === 'buildings' || initialTab === 'gameplay')
+        const desiredTab = (initialTab === 'baked_lighting' || initialTab === 'bakedlighting')
+            ? 'baked_lighting'
+            : (initialTab === 'buildings' || initialTab === 'gameplay')
             ? 'buildings'
             : (initialTab === 'graphics'
                 ? 'graphics'
@@ -258,6 +267,9 @@ export class OptionsUI {
         this._draftStaticVisibility = initialStaticVisibility && typeof initialStaticVisibility === 'object'
             ? JSON.parse(JSON.stringify(initialStaticVisibility))
             : null;
+        this._draftBakedLighting = initialBakedLighting && typeof initialBakedLighting === 'object'
+            ? JSON.parse(JSON.stringify(initialBakedLighting))
+            : null;
         this._lightingControls = null;
         this._markingsCalibration = (() => {
             const cfg = markingsCalibration && typeof markingsCalibration === 'object' ? markingsCalibration : null;
@@ -291,6 +303,7 @@ export class OptionsUI {
         if (d.asphaltNoise) this._draftAsphaltNoise = JSON.parse(JSON.stringify(d.asphaltNoise));
         if (d.vehicleMotionDebug) this._draftVehicleMotionDebug = JSON.parse(JSON.stringify(d.vehicleMotionDebug));
         if (d.staticVisibility) this._draftStaticVisibility = JSON.parse(JSON.stringify(d.staticVisibility));
+        if (d.bakedLighting) this._draftBakedLighting = JSON.parse(JSON.stringify(d.bakedLighting));
     }
 
     async _exportPreset() {
@@ -363,6 +376,8 @@ export class OptionsUI {
     setTab(key) {
         const desired = (key === 'debug')
             ? 'debug'
+            : (key === 'baked_lighting' || key === 'bakedlighting')
+                ? 'baked_lighting'
             : (key === 'buildings' || key === 'gameplay')
             ? 'buildings'
             : (key === 'graphics'
@@ -383,9 +398,11 @@ export class OptionsUI {
         this._postDebugEls = null;
         this._aaDebugEls = null;
         this._vehicleDebugEls = null;
+        this._bakedLightingDebugEls = null;
         this.body.textContent = '';
         if (this._tab === 'graphics') return this._renderGraphicsTab();
         if (this._tab === 'lighting') return this._renderLightingTab();
+        if (this._tab === 'baked_lighting') return this._renderBakedLightingTab();
         if (this._tab === 'sun_bloom') return this._renderSunBloomTab();
         if (this._tab === 'asphalt') return this._renderAsphaltTab();
         if (this._tab === 'grass') return this._renderGrassTab();
@@ -395,7 +412,7 @@ export class OptionsUI {
 
     _startDebugRefresh() {
         if (this._debugInterval) return;
-        if (!this._getIblDebugInfo && !this._getPostProcessingDebugInfo && !this._getAntiAliasingDebugInfo && !this._getVehicleMotionDebugInfo) return;
+        if (!this._getIblDebugInfo && !this._getPostProcessingDebugInfo && !this._getAntiAliasingDebugInfo && !this._getVehicleMotionDebugInfo && !this._getBakedLightingDebugInfo) return;
         this._debugInterval = window.setInterval(() => this._refreshDebug(), 250);
     }
 
@@ -410,6 +427,7 @@ export class OptionsUI {
         this._refreshPostProcessingDebug();
         this._refreshAntiAliasingDebug();
         this._refreshVehicleMotionDebug();
+        this._refreshBakedLightingDebug();
     }
 
 	    _refreshIblDebug() {
@@ -710,6 +728,22 @@ export class OptionsUI {
         }
     }
 
+    _refreshBakedLightingDebug() {
+        const els = this._bakedLightingDebugEls;
+        if (!els || !this._getBakedLightingDebugInfo) return;
+        const info = this._getBakedLightingDebugInfo() ?? null;
+        const status = info?.status ?? null;
+        const bakedActive = status?.effectiveMode === 'baked';
+        if (els.path) els.path.textContent = bakedActive ? 'Baked shadows' : 'Legacy shadows';
+        if (els.state) {
+            const state = String(status?.state ?? 'current');
+            const phase = typeof status?.phase === 'string' && status.phase ? ` · ${status.phase.replaceAll('_', ' ')}` : '';
+            const reason = typeof status?.reason === 'string' && status.reason ? ` · ${status.reason.replaceAll('_', ' ')}` : '';
+            els.state.textContent = `${state}${phase}${reason}`;
+        }
+        if (els.profile) els.profile.textContent = status?.profileId ?? 'No exact baked profile selected';
+    }
+
     _ensureDraftAsphaltNoise() {
         const defaults = getDefaultResolvedAsphaltNoiseSettings();
 
@@ -805,6 +839,11 @@ export class OptionsUI {
     _ensureDraftStaticVisibility() {
         if (this._draftStaticVisibility) return;
         this._draftStaticVisibility = JSON.parse(JSON.stringify(getDefaultResolvedStaticVisibilitySettings()));
+    }
+
+    _ensureDraftBakedLighting() {
+        if (this._draftBakedLighting) return;
+        this._draftBakedLighting = JSON.parse(JSON.stringify(getDefaultResolvedBakedLightingSettings()));
     }
 
     _ensureDraftBuildingWindowVisuals() {
@@ -1072,6 +1111,10 @@ export class OptionsUI {
         return renderGraphicsTab.call(this);
     }
 
+    _renderBakedLightingTab() {
+        return renderBakedLightingTab.call(this);
+    }
+
     _renderDebugTab() {
         return renderDebugTab.call(this);
     }
@@ -1166,6 +1209,7 @@ export class OptionsUI {
             syntheticDt: { enabled: false, pattern: 'off', mode: 'stall', stallMs: 34 }
         };
         this._draftStaticVisibility = JSON.parse(JSON.stringify(getDefaultResolvedStaticVisibilitySettings()));
+        this._draftBakedLighting = JSON.parse(JSON.stringify(getDefaultResolvedBakedLightingSettings()));
         this._renderTab();
         this._emitLiveChange();
     }
@@ -1184,6 +1228,7 @@ export class OptionsUI {
         this._ensureDraftSunFlare();
         this._ensureDraftVehicleMotionDebug();
         this._ensureDraftStaticVisibility();
+        this._ensureDraftBakedLighting();
         const d = this._draftLighting;
         const atmo = this._draftAtmosphere;
         const shadows = this._draftShadows;
@@ -1197,6 +1242,7 @@ export class OptionsUI {
         const sunFlare = this._draftSunFlare;
         const vehicleMotionDebug = this._draftVehicleMotionDebug;
         const staticVisibility = this._draftStaticVisibility;
+        const bakedLighting = this._draftBakedLighting;
         return {
             lighting: {
                 exposure: d.exposure,
@@ -1211,6 +1257,7 @@ export class OptionsUI {
                 }
             },
             atmosphere: JSON.parse(JSON.stringify(atmo)),
+            bakedLighting: JSON.parse(JSON.stringify(bakedLighting)),
             // Pass the whole draft through rather than picking fields: this
             // used to emit `quality` alone, which silently dropped every other
             // shadow setting (cascade count, split scale, caster merge) the

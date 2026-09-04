@@ -1071,19 +1071,25 @@ function normalizeOrchestrationOptions(options) {
         }
         normalized[key] = path.resolve(options[key]);
     }
-    const expectedArtifactAuthority = path.join(
+    const expectedAssetAuthority = path.join(
+        normalized.repoRoot,
+        'assets',
+        'baked_lighting',
+        'shadows'
+    );
+    const expectedEvidenceAuthority = path.join(
         normalized.repoRoot,
         'tests',
         'artifacts',
         'illumination_531'
     );
-    if (!isPathInside(expectedArtifactAuthority, normalized.artifactRoot, true)) {
+    if (!isPathInside(expectedAssetAuthority, normalized.artifactRoot, true)) {
         throw new Error(
-            'artifactRoot must remain below tests/artifacts/illumination_531'
+            'artifactRoot must remain below assets/baked_lighting/shadows'
         );
     }
     if (!isPathInside(
-        expectedArtifactAuthority,
+        expectedEvidenceAuthority,
         normalized.nativeCutoutRoot,
         false
     )) {
@@ -1100,7 +1106,7 @@ function normalizeOrchestrationOptions(options) {
         }
         normalized.alphaParityRoot = path.resolve(options.alphaParityRoot);
         if (!isPathInside(
-            expectedArtifactAuthority,
+            expectedEvidenceAuthority,
             normalized.alphaParityRoot,
             false
         )) {
@@ -2735,9 +2741,9 @@ function requireCanonicalPackagePath(value) {
         || !/^[A-Za-z0-9._/-]+$/.test(value)
         || path.posix.normalize(value) !== value
         || value.split('/').includes('..')
-        || !value.startsWith('tests/artifacts/illumination_531/')) {
+        || !value.startsWith('assets/baked_lighting/shadows/')) {
         throw new TypeError(
-            'Production packagePath must be repository-relative below tests/artifacts/illumination_531'
+            'Production packagePath must be repository-relative below assets/baked_lighting/shadows'
         );
     }
 }

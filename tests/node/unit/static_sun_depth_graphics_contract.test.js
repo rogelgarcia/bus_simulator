@@ -253,6 +253,15 @@ test('graphics source keeps registry updates stable, current exact, and prewarm 
     assert.match(fragmentShader, /for \( int sampleIndex = 0; sampleIndex < 5; sampleIndex \+\+ \)/);
     assert.match(fragmentShader, /staticSunDepthLinearCompare/);
     assert.match(fragmentShader, /staticSunDepthQuantizationSafetyMargin/);
+    assert.match(fragmentShader, /uniform int staticSunDepthEnabled;/);
+    assert.match(
+        fragmentShader,
+        /staticSunDepthApplyDirectional[\s\S]*?if \( staticSunDepthEnabled == 0 \) return;/
+    );
+    assert.match(
+        fragmentShader,
+        /staticSunDepthDebugColor[\s\S]*?if \( staticSunDepthEnabled == 0 \) return normalColor;/
+    );
     assert.match(
         fragmentShader,
         /staticSunDepthApplyDirectional[\s\S]*?if \( ! receiveShadow \) return;/
@@ -275,6 +284,24 @@ test('graphics source keeps registry updates stable, current exact, and prewarm 
     assert.match(pipeline, /shaderDiagnostics\.assertNoFailure\(\)/);
     assert.match(pipeline, /validateOwnedStaticSunDepthTileArrayIntegrity/);
     assert.match(pipeline, /fetchPackage: options\.fetchPackage/);
+    assert.match(pipeline, /cacheInactiveResources: true/);
+    assert.match(pipeline, /this\._materials\.suspend\(\)/);
+    assert.match(pipeline, /this\._casters\.freezeShadowMapPassAfterEmptyRender\(\)/);
+    assert.match(pipeline, /this\._canReuseCachedActivation\(binding, city\)/);
+    assert.match(pipeline, /this\._cacheActivationCount \+= 1/);
+    assert.match(pipeline, /dispose: \(\) => this\._releasePreparedBinding\(binding\)/);
+    assert.match(adapter, /setEnabled\(enabled\)[\s\S]*staticSunDepthEnabled\.value = enabled \? 1 : 0/);
+    assert.match(adapter, /suspend\(\)[\s\S]*this\._binding\.setEnabled\(false\)/);
+    const suspendBody = adapter.slice(
+        adapter.indexOf('    suspend() {'),
+        adapter.indexOf('    updateCamera(camera)', adapter.indexOf('    suspend() {'))
+    );
+    assert.doesNotMatch(suspendBody, /handle\.update|needsUpdate/);
+    const cacheActivationBranch = pipeline.slice(
+        pipeline.indexOf('        if (this._canReuseCachedActivation(binding, city)) {'),
+        pipeline.indexOf("        this._restoreCurrent('baked_replacement');")
+    );
+    assert.doesNotMatch(cacheActivationBranch, /_compileExactCityVariants/);
     assert.doesNotMatch(pipeline, /transferOwnership/);
     assert.match(pipeline, /this\._materials\.verifyOwnership\(\)/);
     assert.match(pipeline, /addEventListener\?\.\('webglcontextlost'/);

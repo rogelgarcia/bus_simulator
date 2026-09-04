@@ -23,6 +23,10 @@ import {
     getResolvedStaticVisibilitySettings,
     saveStaticVisibilitySettings
 } from '../app/city/visibility/index.js';
+import {
+    getResolvedBakedLightingSettings,
+    saveBakedLightingSettings
+} from '../app/illumination/runtime/index.js';
 
 function isEditableTarget(target) {
     const el = target && typeof target === 'object' ? target : null;
@@ -78,6 +82,7 @@ export class OptionsState {
         const asphaltNoise = getResolvedAsphaltNoiseSettings();
         const vehicleMotionDebug = this.engine?.vehicleMotionDebugSettings ?? getResolvedVehicleMotionDebugSettings();
         const staticVisibility = getResolvedStaticVisibilitySettings({ includeUrlOverrides: false });
+        const bakedLighting = this.engine?.bakedLightingSettings ?? getResolvedBakedLightingSettings();
 
         this._original = {
             lighting: lighting && typeof lighting === 'object' ? JSON.parse(JSON.stringify(lighting)) : null,
@@ -96,7 +101,8 @@ export class OptionsState {
             vehicleMotionDebug: vehicleMotionDebug && typeof vehicleMotionDebug === 'object'
                 ? JSON.parse(JSON.stringify(vehicleMotionDebug))
                 : null,
-            staticVisibility: JSON.parse(JSON.stringify(staticVisibility))
+            staticVisibility: JSON.parse(JSON.stringify(staticVisibility)),
+            bakedLighting: JSON.parse(JSON.stringify(bakedLighting))
         };
         if (this._original.lighting?.ibl && typeof this._original.lighting.ibl === 'object') {
             this._original.lighting.ibl.showProbeSphere = showProbeSphere;
@@ -238,6 +244,7 @@ export class OptionsState {
                 ? JSON.parse(JSON.stringify(vehicleMotionDebug))
                 : null,
             initialStaticVisibility: JSON.parse(JSON.stringify(staticVisibility)),
+            initialBakedLighting: JSON.parse(JSON.stringify(bakedLighting)),
             getIblDebugInfo: () => this.engine?.getIBLDebugInfo?.() ?? null,
             getPostProcessingDebugInfo: () => ({
                 postActive: !!this.engine?.isPostProcessingActive,
@@ -248,6 +255,7 @@ export class OptionsState {
             }),
             getAntiAliasingDebugInfo: () => this.engine?.getAntiAliasingDebugInfo?.() ?? null,
             getVehicleMotionDebugInfo: () => this._getVehicleMotionDebugInfo(),
+            getBakedLightingDebugInfo: () => this.engine?.getBakedLightingDebugInfo?.() ?? null,
             onCancel: () => this._cancel(),
             onLiveChange: (draft) => this._applyDraft(draft),
             onSave: (draft) => this._save(draft)
@@ -292,6 +300,7 @@ export class OptionsState {
         saveAsphaltNoiseSettings(draft?.asphaltNoise ?? null);
         saveVehicleMotionDebugSettings(draft?.vehicleMotionDebug ?? null);
         saveStaticVisibilitySettings(draft?.staticVisibility ?? null);
+        saveBakedLightingSettings(draft?.bakedLighting ?? null);
         if (this._overlay) {
             this.sm.popOverlay();
             return;
@@ -320,6 +329,7 @@ export class OptionsState {
         const asphaltNoise = d?.asphaltNoise ?? null;
         const vehicleMotionDebug = d?.vehicleMotionDebug ?? null;
         const staticVisibility = d?.staticVisibility ?? null;
+        const bakedLighting = d?.bakedLighting ?? null;
 
         this.engine?.setShadowSettings?.(shadows ?? null);
         this.engine?.setLightingSettings?.(lighting ?? null);
@@ -342,6 +352,7 @@ export class OptionsState {
             else if (city?.sun) city.sun.intensity = lighting.sunIntensity;
         }
         if (city?.applyShadowSettings) city.applyShadowSettings(this.engine);
+        if (bakedLighting) void this.engine?.setBakedLightingSettings?.(bakedLighting);
         if (sunFlare && city?.sunFlare?.setSettings) {
             city.sunFlare.setSettings(sunFlare);
         }

@@ -212,6 +212,29 @@ function writeMaterialConfig({ slug, label, classId, tileMeters }) {
 });
 `;
     writeFileSync(path.join(dir, 'pbr.material.config.js'), source);
+
+    // Keep the runtime calibration probe deterministic and console-clean even
+    // before a material receives a tuned correction-pipeline preset.
+    const correctionSource = `export default Object.freeze({
+    schema: 'bus_sim.pbr_material_correction',
+    version: 1,
+    materialId: 'pbr.${slug}',
+    label: '${label}',
+    classId: '${classId}',
+    sourceConfigFile: 'assets/public/pbr/${slug}/pbr.material.config.js',
+    textureFolder: 'assets/public/pbr/${slug}',
+    resolvedMapFiles: Object.freeze({
+        baseColor: 'assets/public/pbr/${slug}/basecolor.png',
+        normal: 'assets/public/pbr/${slug}/normal_gl.png',
+        orm: 'assets/public/pbr/${slug}/arm.png'
+    }),
+    presets: Object.freeze({})
+});
+`;
+    writeFileSync(
+        path.join(dir, 'pbr.material.correction.config.js'),
+        correctionSource
+    );
 }
 
 // ---------------------------------------------------------------------------

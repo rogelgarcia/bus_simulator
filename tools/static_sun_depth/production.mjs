@@ -29,7 +29,7 @@ export const PRODUCTION_STATIC_SUN_DEFAULTS = Object.freeze({
     ),
     artifactRoot: path.join(
         repoRoot,
-        'tests/artifacts/illumination_531'
+        'assets/baked_lighting/shadows'
     ),
     executablePath: path.join(
         repoRoot,
@@ -150,7 +150,7 @@ Options:
   --toolchain <json>           Pinned AI 529 toolchain contract
   --profile <json>             Pinned proof_cpu_12.v1.json profile
   --renderer <python>          AI 531 production Blender renderer
-  --output-root <directory>    Artifact root below tests/artifacts/illumination_531
+  --output-root <directory>    Runtime asset root below assets/baked_lighting/shadows
   --alpha-parity-root <dir>    Profile subdirectories containing authenticated spatial_parity_artifact.json files
   --native-cutout-root <dir>   Profile subdirectories containing complete native_cutout_field_receipt.json fields
   --profiles <id,id>           Exact subset of the eight non-lab release profile IDs

@@ -26,7 +26,7 @@ import {
 
 const toolRoot = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(toolRoot, '../..');
-const productionRoot = path.join(
+const checkpointRoot = path.join(
     repoRoot,
     'tests/artifacts/illumination_531/production_accepted_casters_v1_all8'
 );
@@ -36,8 +36,8 @@ const screenRoot = path.join(
 );
 
 export const PART_A_DEFAULTS = Object.freeze({
-    checkpointPath: path.join(productionRoot, 'part_a_checkpoint.json'),
-    failureInventoryPath: path.join(productionRoot, 'part_a_failure_inventory.json'),
+    checkpointPath: path.join(checkpointRoot, 'part_a_checkpoint.json'),
+    failureInventoryPath: path.join(checkpointRoot, 'part_a_failure_inventory.json'),
     isolationProbePath: path.join(
         screenRoot,
         'part_a_accepted_casters_v1/determinism_validation_state.json'
@@ -49,7 +49,6 @@ export const PART_A_DEFAULTS = Object.freeze({
             repoRoot,
             'tests/artifacts/illumination_531/native_field_parity_accepted_casters_v1'
         ),
-        artifactRoot: productionRoot,
         inputPath: path.join(
             repoRoot,
             'tests/artifacts/illumination_528/packages/bigcity2',
@@ -102,16 +101,6 @@ export function parsePartAFinishingArguments(argv) {
         })[flag];
         if (productionKey) {
             result.productionOptions[productionKey] = path.resolve(value);
-            if (flag === '--output-root') {
-                result.checkpointPath = path.join(
-                    result.productionOptions.artifactRoot,
-                    'part_a_checkpoint.json'
-                );
-                result.failureInventoryPath = path.join(
-                    result.productionOptions.artifactRoot,
-                    'part_a_failure_inventory.json'
-                );
-            }
             continue;
         }
         switch (flag) {
@@ -158,7 +147,7 @@ Usage:
 
 Options:
   --input <package.bsib>             Authenticated AI 528 city source
-  --output-root <directory>          Exact-eight production artifact root
+  --output-root <directory>          Exact-eight runtime asset root
   --alpha-parity-root <directory>    Exact spatial-parity artifacts
   --native-cutout-root <directory>   Clean source-derived native fields
   --lab-output-root <directory>      Eight-case Lab evidence root

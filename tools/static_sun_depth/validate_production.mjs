@@ -72,7 +72,7 @@ const screenshotAuthorityRoot = path.join(
 );
 const defaultPackageIndexPath = path.join(
     repoRoot,
-    'tests/artifacts/illumination_531/package_index.json'
+    'assets/baked_lighting/shadows/package_index.json'
 );
 const HASH_PATTERN = /^[0-9a-f]{64}$/;
 const PROFILE_ID_PATTERN = /^ai527\.sun\.az\d{3}\.el\d{2}$/;
@@ -220,7 +220,7 @@ export function validateProductionDepthDiagnosticPackageIndex(value) {
         PROFILE_ENTRY_KEYS,
         'depth diagnostic package index profile'
     );
-    const packagePath = requirePackagePath(
+    const packagePath = requireDiagnosticPackagePath(
         entry.packagePath,
         PRODUCTION_DEPTH_DIAGNOSTIC_PROFILE_ID
     );
@@ -2991,10 +2991,27 @@ function requirePackagePath(value, lightingProfileId) {
         || !/^[A-Za-z0-9._/-]+$/.test(value)
         || path.posix.normalize(value) !== value
         || value.split('/').includes('..')
-        || !value.startsWith('tests/artifacts/illumination_531/')) {
+        || !value.startsWith('assets/baked_lighting/shadows/')) {
         throw new TypeError(
             `package index profile '${lightingProfileId}'.packagePath must be a canonical`
-            + ' repository-relative .ilpkg below tests/artifacts/illumination_531/'
+            + ' repository-relative .ilpkg below assets/baked_lighting/shadows/'
+        );
+    }
+    return value;
+}
+
+function requireDiagnosticPackagePath(value, lightingProfileId) {
+    if (typeof value !== 'string'
+        || !value.endsWith('.ilpkg')
+        || value.includes('\\')
+        || value.startsWith('/')
+        || !/^[A-Za-z0-9._/-]+$/.test(value)
+        || path.posix.normalize(value) !== value
+        || value.split('/').includes('..')
+        || !value.startsWith('tests/artifacts/illumination_531/diagnostics/')) {
+        throw new TypeError(
+            `depth diagnostic profile '${lightingProfileId}'.packagePath must remain below the`
+            + ' separate diagnostics artifact root tests/artifacts/illumination_531/diagnostics/'
         );
     }
     return value;

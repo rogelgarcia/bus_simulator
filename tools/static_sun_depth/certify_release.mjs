@@ -100,7 +100,7 @@ const EXPECTED_PRODUCTION_CASE_IDS = Object.freeze(
 );
 
 export const PRODUCTION_RELEASE_CERTIFICATION_DEFAULTS = Object.freeze({
-    artifactRoot: path.join(repoRoot, 'tests/artifacts/illumination_531'),
+    artifactRoot: path.join(repoRoot, 'assets/baked_lighting/shadows'),
     expectedLabValidationReportSha256: null,
     expectedValidationReportSha256: null,
     inputPath: path.join(
@@ -110,11 +110,11 @@ export const PRODUCTION_RELEASE_CERTIFICATION_DEFAULTS = Object.freeze({
     ),
     packageIndexPath: path.join(
         repoRoot,
-        'tests/artifacts/illumination_531/package_index.json'
+        'assets/baked_lighting/shadows/package_index.json'
     ),
     outputPath: path.join(
         repoRoot,
-        'tests/artifacts/illumination_531/release_certification.json'
+        'assets/baked_lighting/shadows/release_certification.json'
     ),
     repoRoot,
     labValidationReportPath: null,
@@ -426,7 +426,7 @@ export async function finalizeProductionReleaseCertification(options, deps = {})
         await authenticateAlphaParityFn(
             receipt.alphaCertification.spatialParityArtifact,
             {
-                authorityRoot: normalized.artifactRoot,
+                authorityRoot: normalized.alphaParityAuthorityRoot,
                 repoRoot: normalized.repoRoot
             },
             {lstatFn, readFileFn}
@@ -644,9 +644,9 @@ function normalizeOptions(options) {
     requireInsideArtifactRoot(normalized.artifactRoot, normalized.packageIndexPath, false);
     const expectedArtifactAuthority = path.join(
         normalized.repoRoot,
-        'tests',
-        'artifacts',
-        'illumination_531'
+        'assets',
+        'baked_lighting',
+        'shadows'
     );
     requireInsideArtifactRoot(expectedArtifactAuthority, normalized.artifactRoot, true);
     requireInsideRepository(normalized.repoRoot, normalized.inputPath, false);
@@ -656,6 +656,17 @@ function normalizeOptions(options) {
         'artifacts',
         'screens',
         'illumination_531'
+    );
+    normalized.alphaParityAuthorityRoot = path.join(
+        normalized.repoRoot,
+        'tests',
+        'artifacts',
+        'illumination_531'
+    );
+    requireInsideRepository(
+        normalized.repoRoot,
+        normalized.alphaParityAuthorityRoot,
+        false
     );
     requireInsideRepository(
         normalized.repoRoot,

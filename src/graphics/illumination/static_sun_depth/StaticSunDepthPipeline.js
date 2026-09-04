@@ -47,6 +47,9 @@ export class StaticSunDepthPipeline {
         this._casters = new StaticSunDepthCasterController(engine);
         this._dynamicShadows = new DynamicSunShadowLayer(this.renderer, options.dynamicShadow);
         this._active = null;
+        this._cachedActivation = null;
+        this._exactCityCompileCount = 0;
+        this._cacheActivationCount = 0;
         this._lastError = null;
         this._disposed = false;
         this._debugMode = requireDebugMode(options.debugMode ?? 'final');
@@ -64,6 +67,7 @@ export class StaticSunDepthPipeline {
         const createResource = createThreeStaticSunDepthResourceFactory(this.renderer);
         this.runtime = createIlluminationRuntime({
             initialMode: options.initialMode ?? 'current',
+            cacheInactiveResources: true,
             fetchPackage: options.fetchPackage,
             createResource,
             validateResourcePlan: createResource.validatePlan,
@@ -113,6 +117,31 @@ export class StaticSunDepthPipeline {
         });
     }
 
+    /**
+     * Rebuilds only the independently owned moving-object target. Static baked
+     * textures and prepared receiver materials remain resident.
+     * @param {{mapSize: number, worldUnitsPerTexel: number}} resolution
+     */
+    setDynamicShadowResolution(resolution) {
+        if (this._disposed) throw new Error('StaticSunDepthPipeline is disposed.');
+        const diagnostics = this._dynamicShadows.getDiagnostics();
+        if (diagnostics.map.size === resolution?.mapSize
+            && diagnostics.map.worldUnitsPerTexel === resolution?.worldUnitsPerTexel) return false;
+        const activeBinding = this._active?.binding ?? null;
+        try {
+            this._dynamicShadows.deactivate();
+            const changed = this._dynamicShadows.setResolution(resolution);
+            if (changed && activeBinding && this._shouldUseDynamicLayer()) {
+                this._renderDynamicLayer(activeBinding);
+            }
+            return changed;
+        } catch (error) {
+            this._lastError = error;
+            this._fallbackNow('dynamic_shadow_resolution_change_failed');
+            throw error;
+        }
+    }
+
     frameBegin() {
         if (this._disposed) return;
         if (this._active && !this._activeLiveIdentityMatches()) {
@@ -153,6 +182,15 @@ export class StaticSunDepthPipeline {
 
     frameEnd() {
         if (!this._active) return;
+        if (this._shouldSuppressCasters()) {
+            try {
+                this._casters.freezeShadowMapPassAfterEmptyRender();
+            } catch (error) {
+                this._lastError = error;
+                this._fallbackNow('legacy_shadow_map_pass_disable_failed');
+                return;
+            }
+        }
         this._recordFence(this._active.generation);
     }
 
@@ -225,6 +263,13 @@ export class StaticSunDepthPipeline {
                     validatedGuardTexelCount: this._active.tileIntegrity.validatedGuardTexelCount
                 })
             }) : null,
+            cached: this._cachedActivation ? Object.freeze({
+                generation: this._cachedActivation.generation,
+                cityId: this._cachedActivation.binding.descriptor.identity.cityId,
+                variantKey: this._cachedActivation.binding.variantKey
+            }) : null,
+            exactCityCompileCount: this._exactCityCompileCount,
+            cacheActivationCount: this._cacheActivationCount,
             debugMode: this._debugMode,
             lastError: this._lastError ? String(this._lastError?.message ?? this._lastError) : null,
             fences: this._fenceTracker.getSnapshot(),
@@ -305,7 +350,7 @@ export class StaticSunDepthPipeline {
             }),
             cpuBytes: 0,
             gpuBytes: 0,
-            dispose() {}
+            dispose: () => this._releasePreparedBinding(binding)
         }));
     }
 
@@ -349,7 +394,9 @@ export class StaticSunDepthPipeline {
 
     _commitSnapshot(snapshot) {
         if (snapshot.mode === 'current') {
-            this._restoreCurrent('current_commit');
+            this._restoreCurrent('current_commit', {
+                retainPreparedMaterials: snapshot.retainResources === true
+            });
             return true;
         }
         const prepared = snapshot.resources?.getResource?.(PREPARED_BINDING_ID);
@@ -359,6 +406,22 @@ export class StaticSunDepthPipeline {
             throw new Error('Prepared static-sun cache does not match the live city/sun identity.');
         }
         const city = this.engine?.context?.city;
+        if (this._canReuseCachedActivation(binding, city)) {
+            const cached = this._cachedActivation;
+            try {
+                this._materials.activate();
+                binding.updateCamera(this.engine.camera);
+                if (this._shouldUseDynamicLayer()) this._renderDynamicLayer(binding);
+                if (this._shouldSuppressCasters()) this._casters.activate(city);
+                this._active = Object.freeze({ ...cached, generation: snapshot.generation });
+                this._cachedActivation = null;
+                this._cacheActivationCount += 1;
+                return true;
+            } catch (error) {
+                this._restoreCurrent('cache_activation_rollback');
+                throw error;
+            }
+        }
         this._restoreCurrent('baked_replacement');
         try {
             const receiverRoots = [city.group, ...this._dynamicShadows.getReceiverRoots()];
@@ -384,7 +447,8 @@ export class StaticSunDepthPipeline {
         }
     }
 
-    _restoreCurrent(reason) {
+    _restoreCurrent(reason, { retainPreparedMaterials = false } = {}) {
+        const previous = this._active;
         let firstError = null;
         try {
             this._casters.deactivate(reason);
@@ -396,12 +460,26 @@ export class StaticSunDepthPipeline {
         } catch (error) {
             firstError ??= error;
         }
-        try {
-            this._materials.dispose();
-        } catch (error) {
-            firstError ??= error;
+        let retained = false;
+        if (retainPreparedMaterials && previous) {
+            try {
+                previous.binding.setDynamicShadowState(null);
+                this._materials.suspend();
+                this._cachedActivation = previous;
+                retained = true;
+            } catch (error) {
+                firstError ??= error;
+            }
         }
-        this._materials = new StaticSunDepthMaterialSet();
+        if (!retained) {
+            try {
+                this._materials.dispose();
+            } catch (error) {
+                firstError ??= error;
+            }
+            this._materials = new StaticSunDepthMaterialSet();
+            this._cachedActivation = null;
+        }
         this._active = null;
         if (firstError) throw firstError;
     }
@@ -411,9 +489,33 @@ export class StaticSunDepthPipeline {
         try {
             this.renderer.compile(this.engine.scene, this.engine.camera);
             shaderDiagnostics.assertNoFailure();
+            this._exactCityCompileCount += 1;
         } finally {
             shaderDiagnostics.restore();
         }
+    }
+
+    _canReuseCachedActivation(binding, city) {
+        const cached = this._cachedActivation;
+        return Boolean(
+            cached
+            && cached.binding === binding
+            && cached.city === city
+            && cached.cityGroup === city?.group
+            && cached.cityParent === city?.group?.parent
+            && this._materials.getDiagnostics().shaderHooksEnabled
+            && this._materials.verifyPreparedOwnership()
+        );
+    }
+
+    _releasePreparedBinding(binding) {
+        if (this._active?.binding === binding) {
+            throw new Error('Cannot dispose the active static-sun shader binding.');
+        }
+        if (this._cachedActivation?.binding !== binding) return;
+        this._materials.dispose();
+        this._materials = new StaticSunDepthMaterialSet();
+        this._cachedActivation = null;
     }
 
     _fallbackNow(reason) {

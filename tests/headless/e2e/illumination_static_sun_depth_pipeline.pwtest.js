@@ -294,6 +294,22 @@ test('AI 531 static-sun pipeline activates only a verified complete set and roll
             bus: busMesh.castShadow,
             diagnostics: pipeline.getDiagnostics()
         };
+        const staticUploadsBeforeDynamicResolutionChange = staticSunUploadCount;
+        const dynamicResolutionChanged = pipeline.setDynamicShadowResolution({
+            mapSize: 128,
+            worldUnitsPerTexel: 0.125
+        });
+        const afterDynamicResolutionChangeDiagnostics = pipeline.getDiagnostics();
+        const afterDynamicResolutionChange = {
+            changed: dynamicResolutionChanged,
+            active: afterDynamicResolutionChangeDiagnostics.active !== null,
+            controllerMode: afterDynamicResolutionChangeDiagnostics.runtime.controller.effectiveMode,
+            caster: cityMesh.castShadow,
+            bus: busMesh.castShadow,
+            mapSize: afterDynamicResolutionChangeDiagnostics.dynamicShadows.map.size,
+            worldUnitsPerTexel: afterDynamicResolutionChangeDiagnostics.dynamicShadows.map.worldUnitsPerTexel,
+            staticUploadDelta: staticSunUploadCount - staticUploadsBeforeDynamicResolutionChange
+        };
         pipeline.setDebugMode('currentDifference');
         engine.renderFrame();
         const comparison = {
@@ -437,6 +453,7 @@ test('AI 531 static-sun pipeline activates only a verified complete set and roll
             rejectedCityCompile,
             cityCompileCasterStates,
             active,
+            afterDynamicResolutionChange,
             comparison,
             afterComparison,
             receiverDriftFallback,
@@ -492,6 +509,16 @@ test('AI 531 static-sun pipeline activates only a verified complete set and roll
         cast: true,
         receive: true
     }]);
+    expect(result.afterDynamicResolutionChange).toEqual({
+        changed: true,
+        active: true,
+        controllerMode: 'baked',
+        caster: false,
+        bus: false,
+        mapSize: 128,
+        worldUnitsPerTexel: 0.125,
+        staticUploadDelta: 0
+    });
     expect(result.comparison).toEqual({ caster: true, bus: true, active: true });
     expect(result.afterComparison).toEqual({ caster: false, bus: false, active: true });
     expect(result.receiverDriftFallback.caster).toBe(true);

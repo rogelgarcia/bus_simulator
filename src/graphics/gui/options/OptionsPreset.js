@@ -16,12 +16,17 @@ import {
     STATIC_VISIBILITY_DEFAULTS,
     sanitizeStaticVisibilitySettings
 } from '../../../app/city/visibility/index.js';
+import {
+    BAKED_LIGHTING_DEFAULTS,
+    sanitizeBakedLightingSettings
+} from '../../../app/illumination/runtime/index.js';
 
 export const OPTIONS_PRESET_SCHEMA_ID = 'bus_sim.options_preset';
 export const OPTIONS_PRESET_VERSION = 1;
 
 const GROUPS = Object.freeze([
     'lighting',
+    'bakedLighting',
     'shadows',
     'antiAliasing',
     'ambientOcclusion',
@@ -60,6 +65,7 @@ function sanitizeIncludes(input) {
 function getDefaultSettings() {
     return {
         lighting: sanitizeLightingSettings(LIGHTING_DEFAULTS),
+        bakedLighting: sanitizeBakedLightingSettings(BAKED_LIGHTING_DEFAULTS),
         shadows: sanitizeShadowSettings(SHADOW_DEFAULTS),
         antiAliasing: sanitizeAntiAliasingSettings(ANTIALIASING_DEFAULTS),
         ambientOcclusion: sanitizeAmbientOcclusionSettings(AMBIENT_OCCLUSION_DEFAULTS),
@@ -79,6 +85,7 @@ function sanitizeSettings(input) {
     const defaults = getDefaultSettings();
     return {
         lighting: sanitizeLightingSettings(normalized.lighting ?? defaults.lighting),
+        bakedLighting: sanitizeBakedLightingSettings(normalized.bakedLighting ?? defaults.bakedLighting),
         shadows: sanitizeShadowSettings(normalized.shadows ?? defaults.shadows),
         antiAliasing: sanitizeAntiAliasingSettings(normalized.antiAliasing ?? defaults.antiAliasing),
         ambientOcclusion: sanitizeAmbientOcclusionSettings(normalized.ambientOcclusion ?? defaults.ambientOcclusion),
@@ -111,6 +118,15 @@ function normalizeSettingsBooleans(src) {
     }
 
     if (src.shadows && typeof src.shadows === 'object') out.shadows = { ...src.shadows };
+
+    const bakedLighting = src.bakedLighting && typeof src.bakedLighting === 'object' ? src.bakedLighting : null;
+    if (bakedLighting) {
+        const shadows = bakedLighting.shadows && typeof bakedLighting.shadows === 'object' ? bakedLighting.shadows : null;
+        out.bakedLighting = {
+            ...bakedLighting,
+            shadows: shadows ? { ...shadows, enabled: parseLooseBool(shadows.enabled, shadows.enabled) } : shadows
+        };
+    }
 
     if (src.antiAliasing && typeof src.antiAliasing === 'object') out.antiAliasing = { ...src.antiAliasing };
 
@@ -256,6 +272,7 @@ function migrateLegacyPreset(input) {
     const src = input && typeof input === 'object' ? input : {};
     const legacySettings = src.settings && typeof src.settings === 'object' ? src.settings : src;
     const includes = sanitizeIncludes(src.includes);
+    if (src.includes?.bakedLighting === undefined && legacySettings.bakedLighting === undefined) includes.bakedLighting = false;
     return {
         schema: OPTIONS_PRESET_SCHEMA_ID,
         version: OPTIONS_PRESET_VERSION,
@@ -280,8 +297,9 @@ export function sanitizeOptionsPresetPayload(input) {
     const schema = typeof src.schema === 'string' && src.schema ? src.schema : OPTIONS_PRESET_SCHEMA_ID;
     if (schema !== OPTIONS_PRESET_SCHEMA_ID) throw new Error(`Unsupported options preset schema: ${schema}`);
 
-    const includes = sanitizeIncludes(src.includes);
     const rawSettings = src.settings && typeof src.settings === 'object' ? src.settings : {};
+    const includes = sanitizeIncludes(src.includes);
+    if (src.includes?.bakedLighting === undefined && rawSettings.bakedLighting === undefined) includes.bakedLighting = false;
 
     return {
         schema: OPTIONS_PRESET_SCHEMA_ID,
@@ -334,6 +352,7 @@ export function applyOptionsPresetToDraft(draft, preset) {
     const settings = p.settings ?? {};
 
     if (includes.lighting) out.lighting = settings.lighting;
+    if (includes.bakedLighting) out.bakedLighting = settings.bakedLighting;
     if (includes.shadows) out.shadows = settings.shadows;
     if (includes.antiAliasing) out.antiAliasing = settings.antiAliasing;
     if (includes.ambientOcclusion) out.ambientOcclusion = settings.ambientOcclusion;

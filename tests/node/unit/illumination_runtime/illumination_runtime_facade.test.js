@@ -16,6 +16,7 @@ function fixtureRuntime(packageBytes, overrides = {}) {
     let fetchCount = 0;
     const runtime = createIlluminationRuntime({
         initialMode: overrides.initialMode ?? 'current',
+        cacheInactiveResources: overrides.cacheInactiveResources,
         capabilities: overrides.capabilities ?? {},
         fetchPackage: overrides.fetchPackage ?? (async () => {
             fetchCount += 1;
@@ -574,6 +575,49 @@ test('repeated package-facade activation and deactivation disposes every WebGL o
         'mapping.ids'
     ]);
     await fixture.runtime.teardown();
+});
+
+test('package facade keeps an opt-in inactive publication resident and reuses it without fetch or upload', async () => {
+    const built = await buildPackageFixture();
+    const fixture = fixtureRuntime(built.bytes, {
+        initialMode: 'auto',
+        cacheInactiveResources: true
+    });
+    const request = requestFor(built);
+    await fixture.runtime.setMode('auto', request);
+    fixture.runtime.commitFrameBoundary();
+    assert.equal(fixture.getFetchCount(), 1);
+
+    await fixture.runtime.setMode('current');
+    fixture.runtime.commitFrameBoundary();
+    await fixture.runtime.waitForIdle();
+    assert.equal(fixture.runtime.getSnapshot().effectiveMode, 'current');
+    assert.equal(fixture.runtime.getSnapshot().resources.cached, 'cached');
+    assert.deepEqual(fixture.disposals, []);
+    assert.equal(fixture.commits.at(-1).retainResources, true);
+
+    const reorderedRequest = {
+        expectations: {
+            resolvedSourceSha256: request.expectations.resolvedSourceSha256,
+            selectedCapabilityProfileId: request.expectations.selectedCapabilityProfileId,
+            lightingProfileId: request.expectations.lightingProfileId,
+            cityId: request.expectations.cityId
+        },
+        url: request.url
+    };
+    await fixture.runtime.setMode('auto', reorderedRequest);
+    assert.equal(fixture.runtime.getSnapshot().phase, 'ready_to_commit');
+    fixture.runtime.commitFrameBoundary();
+    assert.equal(fixture.runtime.getSnapshot().effectiveMode, 'baked');
+    assert.equal(fixture.getFetchCount(), 1);
+    assert.deepEqual(fixture.disposals, []);
+    const bakedCommits = fixture.commits.filter((entry) => entry.mode === 'baked');
+    assert.equal(bakedCommits.length, 2);
+    assert.strictEqual(bakedCommits[1].resources, bakedCommits[0].resources);
+    assert.equal(bakedCommits[1].reused, true);
+
+    await fixture.runtime.teardown();
+    assert.deepEqual(fixture.disposals.sort(), ['direct.rgba32f', 'mapping.ids']);
 });
 
 test('a configured URL without live identity expectations stays current and never fetches', async () => {

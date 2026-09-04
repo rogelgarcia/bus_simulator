@@ -70,8 +70,9 @@ import {
  *
  * @typedef {{
  *   initialMode?: 'current' | 'baked' | 'auto',
+ *   cacheInactiveResources?: boolean,
  *   loadStagedResources?: (request: Readonly<JsonRecord>, hooks: IlluminationLoadHooks) => Promise<IlluminationStagingResult> | IlluminationStagingResult,
- *   commitResources?: (snapshot: Readonly<{mode: 'current' | 'baked', resourceSet: object | null, generation: number}>) => void,
+ *   commitResources?: (snapshot: Readonly<{mode: 'current' | 'baked', resourceSet: object | null, generation: number, retainResources?: boolean, reuseResources?: boolean}>) => void,
  *   waitUntilSafeToDispose?: (resourceSet: object, context: Readonly<{reason: string, generation: number}>) => Promise<void> | void,
  *   disposeResources?: (resourceSet: object, context: Readonly<{reason: string, generation: number}>) => Promise<void> | void,
  *   now?: () => number
@@ -104,6 +105,8 @@ export function createIlluminationModeController(options = {}) {
     let currentLoad = /** @type {ReturnType<typeof createLoadRecord> | null} */ (null);
     let staged = /** @type {ReturnType<typeof sanitizeStagingResult> | null} */ (null);
     let active = /** @type {ReturnType<typeof sanitizeStagingResult> | null} */ (null);
+    let cached = /** @type {ReturnType<typeof sanitizeStagingResult> | null} */ (null);
+    let retainActiveOnCurrent = false;
     let pendingTransition = /** @type {'current' | 'baked' | null} */ (null);
     let destroyed = false;
     let teardownPromise = /** @type {Promise<void> | null} */ (null);
@@ -121,7 +124,7 @@ export function createIlluminationModeController(options = {}) {
     if (requestedMode !== ILLUMINATION_MODES.current) publishFallback(DEFAULT_CAUSE);
 
     function getSnapshot() {
-        const identity = staged ?? active ?? currentLoad?.identity ?? null;
+        const identity = staged ?? active ?? cached ?? currentLoad?.identity ?? null;
         return deepFreeze({
             requestedMode,
             effectiveMode,
@@ -153,6 +156,7 @@ export function createIlluminationModeController(options = {}) {
             resources: {
                 staging: staged ? 'staged' : 'none',
                 active: active && effectiveMode === ILLUMINATION_MODES.baked ? 'active' : 'none',
+                cached: cached ? 'cached' : 'none',
                 retiring: retiringCount,
                 retained: retainedResources.size,
                 disposed: disposedCount,
@@ -173,7 +177,9 @@ export function createIlluminationModeController(options = {}) {
         assertIlluminationMode(mode);
         requestedMode = mode;
         if (mode === ILLUMINATION_MODES.current) {
+            retainActiveOnCurrent = false;
             cancelPendingWork('current_requested', false);
+            discardCachedInternal('current_requested');
             pendingTransition = 'current';
             if (!active) {
                 state = ILLUMINATION_STATES.unavailable;
@@ -203,6 +209,33 @@ export function createIlluminationModeController(options = {}) {
             publishFallback(DEFAULT_CAUSE);
         }
         return getSnapshot();
+    }
+
+    /** @param {string} cacheKey @param {'baked' | 'auto'} [mode] */
+    function activateCached(cacheKey, mode = ILLUMINATION_MODES.auto) {
+        assertUsable();
+        assertReason(cacheKey, 'Illumination cache key');
+        assertIlluminationMode(mode);
+        if (mode === ILLUMINATION_MODES.current) {
+            throw new TypeError('Cached illumination activation mode cannot be "current"');
+        }
+        if (!config.cacheInactiveResources || !cached || cached.cacheKey !== cacheKey
+            || currentLoad || staged) return false;
+        requestedMode = mode;
+        retainActiveOnCurrent = false;
+        pendingTransition = 'baked';
+        state = ILLUMINATION_STATES.loading;
+        phase = ILLUMINATION_PHASES.readyToCommit;
+        reason = null;
+        clearCause();
+        return true;
+    }
+
+    /** @param {string} [discardReason] */
+    function discardCached(discardReason = 'cache_discarded') {
+        assertUsable();
+        assertReason(discardReason, 'Illumination cache-discard reason');
+        return discardCachedInternal(discardReason);
     }
 
     /** @param {JsonRecord} [request] */
@@ -359,7 +392,7 @@ export function createIlluminationModeController(options = {}) {
 
     function commitFrameBoundary() {
         assertUsable();
-        if (pendingTransition === 'baked' && staged) return commitBaked();
+        if (pendingTransition === 'baked' && (staged || cached)) return commitBaked();
         if (pendingTransition === 'current') return commitCurrent();
         if (!active && requestedMode !== ILLUMINATION_MODES.current
             && (state === ILLUMINATION_STATES.unavailable
@@ -376,12 +409,21 @@ export function createIlluminationModeController(options = {}) {
         return getSnapshot();
     }
 
-    /** @param {string} [deactivationReason] */
-    function deactivate(deactivationReason = 'deactivated') {
+    /** @param {string} [deactivationReason] @param {{retainResources?: boolean}} [options] */
+    function deactivate(deactivationReason = 'deactivated', options = {}) {
         assertUsable();
         assertReason(deactivationReason, 'Illumination deactivation reason');
+        if (!options || typeof options !== 'object' || Array.isArray(options)) {
+            throw new TypeError('Illumination deactivation options must be an object');
+        }
+        if (options.retainResources !== undefined && typeof options.retainResources !== 'boolean') {
+            throw new TypeError('Illumination retainResources must be boolean');
+        }
+        const retainResources = options.retainResources === true && config.cacheInactiveResources;
         requestedMode = ILLUMINATION_MODES.current;
+        retainActiveOnCurrent = retainResources;
         cancelPendingWork(deactivationReason, false);
+        if (!retainResources) discardCachedInternal(deactivationReason);
         pendingTransition = 'current';
         reason = deactivationReason;
         clearCause();
@@ -405,8 +447,11 @@ export function createIlluminationModeController(options = {}) {
         }
         if (staged) queueDisposal(staged.resourceSet, 'teardown', staged.generation);
         if (active) queueDisposal(active.resourceSet, 'teardown', active.generation);
+        if (cached) queueDisposal(cached.resourceSet, 'teardown', cached.generation);
         staged = null;
         active = null;
+        cached = null;
+        retainActiveOnCurrent = false;
         effectiveMode = ILLUMINATION_MODES.current;
         state = ILLUMINATION_STATES.unavailable;
         phase = ILLUMINATION_PHASES.disposed;
@@ -422,19 +467,22 @@ export function createIlluminationModeController(options = {}) {
     }
 
     function commitBaked() {
-        const next = staged;
+        const next = staged ?? cached;
         if (!next) return getSnapshot();
+        const fromCache = next === cached;
         const started = config.now();
         try {
             tryCommit({
                 mode: ILLUMINATION_MODES.baked,
                 resourceSet: next.resourceSet,
-                generation: next.generation
+                generation: next.generation,
+                reuseResources: fromCache
             });
         } catch (error) {
             timings.activationMs += elapsed(config.now, started);
             queueDisposal(next.resourceSet, 'activation_failure', next.generation);
-            staged = null;
+            if (fromCache) cached = null;
+            else staged = null;
             pendingTransition = active ? 'current' : null;
             const outcome = {
                 state: ILLUMINATION_STATES.failed,
@@ -454,8 +502,10 @@ export function createIlluminationModeController(options = {}) {
         }
         timings.activationMs += elapsed(config.now, started);
         const previous = active;
+        const previousCache = fromCache ? null : cached;
         active = next;
         staged = null;
+        cached = null;
         pendingTransition = null;
         effectiveMode = ILLUMINATION_MODES.baked;
         state = ILLUMINATION_STATES.active;
@@ -465,14 +515,27 @@ export function createIlluminationModeController(options = {}) {
         if (previous && previous.resourceSet !== next.resourceSet) {
             queueDisposal(previous.resourceSet, 'replaced', previous.generation);
         }
+        if (previousCache && previousCache.resourceSet !== next.resourceSet) {
+            queueDisposal(previousCache.resourceSet, 'replaced', previousCache.generation);
+        }
         return getSnapshot();
     }
 
     function commitCurrent() {
         const previous = active;
+        const retainResources = Boolean(
+            config.cacheInactiveResources
+            && retainActiveOnCurrent
+            && (previous || cached)
+        );
         const started = config.now();
         try {
-            tryCommit({ mode: ILLUMINATION_MODES.current, resourceSet: null, generation });
+            tryCommit({
+                mode: ILLUMINATION_MODES.current,
+                resourceSet: null,
+                generation,
+                retainResources
+            });
         } catch (error) {
             timings.activationMs += elapsed(config.now, started);
             failureCode = errorCode(error);
@@ -480,9 +543,17 @@ export function createIlluminationModeController(options = {}) {
         }
         timings.activationMs += elapsed(config.now, started);
         active = null;
+        retainActiveOnCurrent = false;
         effectiveMode = ILLUMINATION_MODES.current;
         pendingTransition = null;
-        if (previous) queueDisposal(previous.resourceSet, reason ?? 'deactivated', previous.generation);
+        if (previous && retainResources) {
+            if (cached && cached.resourceSet !== previous.resourceSet) {
+                queueDisposal(cached.resourceSet, 'cache_replaced', cached.generation);
+            }
+            cached = previous;
+        } else if (previous) {
+            queueDisposal(previous.resourceSet, reason ?? 'deactivated', previous.generation);
+        }
         if (requestedMode === ILLUMINATION_MODES.current) {
             state = ILLUMINATION_STATES.unavailable;
             phase = ILLUMINATION_PHASES.committed;
@@ -539,7 +610,7 @@ export function createIlluminationModeController(options = {}) {
                 timings.disposalMs += elapsed(config.now, started);
                 retiringCount -= 1;
                 disposedCount += 1;
-                if (!active && !staged && retiringCount === 0 && retainedResources.size === 0) {
+                if (!active && !staged && !cached && retiringCount === 0 && retainedResources.size === 0) {
                     memory.residentCpuBytes = 0;
                     memory.residentGpuBytes = 0;
                 }
@@ -547,6 +618,15 @@ export function createIlluminationModeController(options = {}) {
         });
         disposalTasks.add(task);
         task.finally(() => disposalTasks.delete(task));
+    }
+
+    /** @param {string} discardReason */
+    function discardCachedInternal(discardReason) {
+        if (!cached) return false;
+        const previous = cached;
+        cached = null;
+        queueDisposal(previous.resourceSet, discardReason, previous.generation);
+        return true;
     }
 
     async function waitForDisposals() {
@@ -615,7 +695,7 @@ export function createIlluminationModeController(options = {}) {
         if (destroyed) throw new Error('Illumination mode controller has been torn down');
     }
 
-    /** @param {{mode: 'current' | 'baked', resourceSet: object | null, generation: number}} snapshot */
+    /** @param {{mode: 'current' | 'baked', resourceSet: object | null, generation: number, retainResources?: boolean, reuseResources?: boolean}} snapshot */
     function tryCommit(snapshot) {
         const result = config.commitResources(Object.freeze(snapshot));
         if (isThenable(result)) throw new TypeError('Illumination frame-boundary commits must be synchronous');
@@ -626,6 +706,8 @@ export function createIlluminationModeController(options = {}) {
         getDiagnostics: getSnapshot,
         getActiveResourceSet,
         setRequestedMode,
+        activateCached,
+        discardCached,
         startLoad,
         load,
         reportLoadPhase,

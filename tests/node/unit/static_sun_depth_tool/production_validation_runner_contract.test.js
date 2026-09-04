@@ -912,7 +912,7 @@ function makeIndex() {
 function profileEntry(lightingProfileId) {
     return {
         packagePath:
-            `tests/artifacts/illumination_531/packages/${lightingProfileId}/package.ilpkg`,
+            `assets/baked_lighting/shadows/production/${lightingProfileId}/static_sun_depth.ilpkg`,
         liveIdentity: {
             alphaSemanticsSha256: HASH_A,
             casterInventorySha256: HASH_B,

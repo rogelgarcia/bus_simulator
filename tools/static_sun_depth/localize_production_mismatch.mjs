@@ -44,7 +44,7 @@ const defaultSourceReportPath = path.join(
 );
 const defaultPackageIndexPath = path.join(
     repoRoot,
-    'tests/artifacts/illumination_531/package_index.json'
+    'assets/baked_lighting/shadows/package_index.json'
 );
 const defaultOutputRoot = path.join(
     screenshotAuthorityRoot,

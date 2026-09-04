@@ -107,7 +107,7 @@ test('diagnostic index and plan are hard-gated to 12 canonical az135/el08 cases'
     );
     const productionPath = structuredClone(index);
     productionPath.profiles[PRODUCTION_DEPTH_DIAGNOSTIC_PROFILE_ID].packagePath =
-        'tests/artifacts/illumination_531/production/ai527.sun.az135.el08/static_sun_depth.ilpkg';
+        'assets/baked_lighting/shadows/production/ai527.sun.az135.el08/static_sun_depth.ilpkg';
     assert.throws(
         () => validateProductionDepthDiagnosticPackageIndex(productionPath),
         /separate diagnostics artifact root/

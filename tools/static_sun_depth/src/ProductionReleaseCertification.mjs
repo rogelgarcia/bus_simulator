@@ -2854,7 +2854,7 @@ function requireReleaseProfileId(value, label) {
 function requirePackagePath(value, lightingProfileId) {
     const expectedSuffix = `/production/${lightingProfileId}/static_sun_depth.ilpkg`;
     if (typeof value !== 'string'
-        || !value.startsWith('tests/artifacts/illumination_531/')
+        || !value.startsWith('assets/baked_lighting/shadows/')
         || !value.endsWith(expectedSuffix)
         || value.includes('\\')
         || value.includes('..')) {

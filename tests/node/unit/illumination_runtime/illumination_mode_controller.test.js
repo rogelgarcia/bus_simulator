@@ -454,6 +454,73 @@ test('repeated activate/deactivate and teardown dispose every set exactly once',
     assert.throws(() => controller.setRequestedMode('auto'), /torn down/);
 });
 
+test('opt-in inactive cache reactivates the same resource set without disposal', async () => {
+    const commits = [];
+    const disposed = [];
+    const controller = createIlluminationModeController({
+        initialMode: 'auto',
+        cacheInactiveResources: true,
+        commitResources(snapshot) {
+            commits.push(snapshot);
+        },
+        disposeResources(resource, context) {
+            disposed.push([resource.id, context.reason]);
+        }
+    });
+    const ready = createReadyResult('cached', { cacheKey: 'request.cached' });
+    const load = controller.startLoad();
+    load.accept(ready);
+    controller.commitFrameBoundary();
+
+    controller.deactivate('disabled', { retainResources: true });
+    controller.commitFrameBoundary();
+    assert.equal(controller.getSnapshot().effectiveMode, 'current');
+    assert.equal(controller.getSnapshot().resources.cached, 'cached');
+    assert.deepEqual(disposed, []);
+    assert.equal(commits.at(-1).retainResources, true);
+
+    assert.equal(controller.activateCached('request.cached', 'auto'), true);
+    controller.commitFrameBoundary();
+    assert.equal(controller.getSnapshot().effectiveMode, 'baked');
+    assert.equal(controller.getSnapshot().resources.cached, 'none');
+    assert.strictEqual(controller.getActiveResourceSet(), ready.resourceSet);
+    assert.equal(commits.at(-1).reuseResources, true);
+    assert.deepEqual(disposed, []);
+
+    await controller.teardown();
+    assert.deepEqual(disposed, [['cached', 'teardown']]);
+});
+
+test('inactive cache rejects a different identity and disposes it exactly once', async () => {
+    const commits = [];
+    const disposed = [];
+    const controller = createIlluminationModeController({
+        initialMode: 'auto',
+        cacheInactiveResources: true,
+        commitResources(snapshot) {
+            commits.push(snapshot);
+        },
+        disposeResources(resource, context) {
+            disposed.push([resource.id, context.reason]);
+        }
+    });
+    const load = controller.startLoad();
+    load.accept(createReadyResult('old', { cacheKey: 'request.old' }));
+    controller.commitFrameBoundary();
+    controller.deactivate('disabled', { retainResources: true });
+    controller.commitFrameBoundary();
+
+    assert.equal(controller.activateCached('request.new', 'auto'), false);
+    const commitCountBeforeDiscard = commits.length;
+    assert.equal(controller.discardCached('cache_mismatch'), true);
+    await controller.waitForIdle();
+    assert.equal(controller.getSnapshot().resources.cached, 'none');
+    assert.deepEqual(disposed, [['old', 'cache_mismatch']]);
+    assert.equal(commits.length, commitCountBeforeDiscard);
+    await controller.teardown();
+    assert.deepEqual(disposed, [['old', 'cache_mismatch']]);
+});
+
 test('teardown still disposes active resources when the current-path commit hook fails', async () => {
     const disposed = [];
     const controller = createIlluminationModeController({

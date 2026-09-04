@@ -68,6 +68,7 @@ export function markIlluminationPackageFetcherAsTransferOwned(fetchPackage) {
 /**
  * @param {{
  *   initialMode?: 'current' | 'baked' | 'auto',
+ *   cacheInactiveResources?: boolean,
  *   fetchPackage?: (request: Readonly<Record<string, any>>, context: {signal: AbortSignal}) => unknown | Promise<unknown>,
  *   createResource: (decoded: unknown, descriptor: Readonly<Record<string, any>>, context: Readonly<Record<string, any>>) => unknown | Promise<unknown>,
  *   validateResourcePlan?: (plan: Readonly<Record<string, any>>) => unknown,
@@ -111,6 +112,10 @@ export function createIlluminationRuntime(options) {
     const residentCpuPolicy = options.residentCpuPolicy ?? 'release';
     const prewarmMemory = Object.freeze({ cpuBytes: 0, gpuBytes: 0, ...(options.prewarmMemory ?? {}) });
     const configuredExpectations = normalizeRuntimeExpectations(options.expectations, 'runtime expectations');
+    const cacheInactiveResources = options.cacheInactiveResources ?? false;
+    if (typeof cacheInactiveResources !== 'boolean') {
+        throw new TypeError('Illumination runtime cacheInactiveResources must be boolean');
+    }
     let currentResourceLoader = null;
     let lastParsedIdentity = null;
     const liveResourceSets = new Set();
@@ -118,6 +123,7 @@ export function createIlluminationRuntime(options) {
 
     const controller = createIlluminationModeController({
         initialMode: options.initialMode ?? 'current',
+        cacheInactiveResources,
         now: options.now,
         async loadStagedResources(request, hooks) {
             if (typeof request.url !== 'string' || !request.url) {
@@ -338,6 +344,7 @@ export function createIlluminationRuntime(options) {
                     complete: true,
                     compatible: true,
                     resourceSet: stage,
+                    cacheKey: cacheInactiveResources ? createRuntimeCacheKey(request) : null,
                     ...plan.identity,
                     timings: {
                         fetchReadMs: packageFetchMs + diagnostics.timingsMs.fetchMs,
@@ -364,10 +371,23 @@ export function createIlluminationRuntime(options) {
                 return commitSnapshot(Object.freeze({
                     mode: 'current',
                     generation: snapshot.generation,
-                    resources: null
+                    resources: null,
+                    retainResources: snapshot.retainResources === true
                 }));
             }
             const stage = /** @type {{commitPrepared?: (callback: (value: unknown) => unknown) => unknown}} */ (snapshot.resourceSet);
+            if (snapshot.reuseResources === true) {
+                const reusableStage = /** @type {{disposition?: string, activationSnapshot?: unknown}} */ (stage);
+                if (reusableStage.disposition !== 'committed' || !reusableStage.activationSnapshot) {
+                    throw new Error('Cached baked resources are not in a reusable committed state');
+                }
+                return commitSnapshot(Object.freeze({
+                    mode: 'baked',
+                    generation: snapshot.generation,
+                    resources: reusableStage.activationSnapshot,
+                    reused: true
+                }));
+            }
             if (typeof stage?.commitPrepared !== 'function') {
                 throw new TypeError('Baked frame-boundary commit requires a prepared resource set');
             }
@@ -395,8 +415,18 @@ export function createIlluminationRuntime(options) {
     }
 
     async function setMode(mode, request = null) {
+        if (mode === 'current') {
+            return controller.deactivate('current_requested', {
+                retainResources: cacheInactiveResources
+            });
+        }
+        if (request !== null && cacheInactiveResources) {
+            const cacheKey = createRuntimeCacheKey(request);
+            if (controller.activateCached(cacheKey, mode)) return controller.getSnapshot();
+            controller.discardCached('cache_mismatch');
+        }
         const snapshot = controller.setRequestedMode(mode);
-        if (mode === 'current' || request === null) return snapshot;
+        if (request === null) return snapshot;
         return load(request);
     }
 
@@ -423,6 +453,32 @@ export function createIlluminationRuntime(options) {
         },
         getActiveResourceSet: controller.getActiveResourceSet
     });
+}
+
+/** @param {Record<string, any>} request */
+function createRuntimeCacheKey(request) {
+    const clone = cloneRuntimeCacheValue(request, 'Illumination cache request');
+    return JSON.stringify(clone);
+}
+
+/** @param {unknown} value @param {string} label */
+function cloneRuntimeCacheValue(value, label) {
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+    if (typeof value === 'number') {
+        if (!Number.isFinite(value)) throw new TypeError(label + ' contains a non-finite number');
+        return value;
+    }
+    if (Array.isArray(value)) return value.map((entry) => cloneRuntimeCacheValue(entry, label));
+    if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+        return Object.fromEntries(Object.keys(value).sort().map((key) => {
+            const entry = value[key];
+            if (entry === undefined || typeof entry === 'function' || typeof entry === 'symbol' || typeof entry === 'bigint') {
+                throw new TypeError(label + ' contains a non-JSON value at "' + key + '"');
+            }
+            return [key, cloneRuntimeCacheValue(entry, label)];
+        }));
+    }
+    throw new TypeError(label + ' must contain only JSON-compatible values');
 }
 
 /** @param {unknown} value @param {string} label */

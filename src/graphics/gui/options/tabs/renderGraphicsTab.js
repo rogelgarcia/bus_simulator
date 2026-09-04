@@ -6,11 +6,13 @@ export function renderGraphicsTab() {
     this._ensureDraftAmbientOcclusion();
     this._ensureDraftShadows();
     this._ensureDraftStaticVisibility();
+    this._ensureDraftBakedLighting();
     const lighting = this._draftLighting;
     const aa = this._draftAntiAliasing;
     const ao = this._draftAmbientOcclusion;
     const shadows = this._draftShadows;
     const staticVisibility = this._draftStaticVisibility;
+    const bakedShadowsEnabled = this._draftBakedLighting.shadows.enabled === true;
     const emit = () => this._emitLiveChange();
 
     const info = this._getAntiAliasingDebugInfo?.() ?? null;
@@ -492,7 +494,15 @@ export function renderGraphicsTab() {
     syncEnabled();
 
     const sectionShadows = makeEl('div', 'options-section');
-    sectionShadows.appendChild(makeEl('div', 'options-section-title', 'Shadows'));
+    sectionShadows.appendChild(makeEl('div', 'options-section-title', 'Shadows (legacy)'));
+    const bakedShadowNote = makeEl(
+        'div',
+        'options-note',
+        bakedShadowsEnabled
+            ? 'Baked shadows are enabled in the Baked lighting tab. These legacy controls are disabled, but their selected values are retained for fallback.'
+            : 'Baked shadows can be enabled in the Baked lighting tab. These legacy values remain available as the safe fallback.'
+    );
+    sectionShadows.appendChild(bakedShadowNote);
 
     // Type (row) x quality (button) as ONE exclusive block, so any cell is a
     // single click from any other -- cascade/med to single/low is one press.
@@ -554,6 +564,10 @@ export function renderGraphicsTab() {
             emit();
         }
     });
+
+    shadowMode.setDisabled(bakedShadowsEnabled);
+    shadowMergeCasters.setDisabled(bakedShadowsEnabled);
+    shadowInstancedCasters.setDisabled(bakedShadowsEnabled);
 
     const shadowNote = makeEl('div', 'options-note');
     shadowNote.textContent = 'Applied immediately. Single uses one camera-fitted map (reach 110 / 200 / 340 m; High allocates 1 GiB of VRAM). Cascade splits the view into 2 / 3 / 4 maps by distance: much sharper near the bus for the same reach, at a higher frame cost. Quality sets resolution and reach together, so every step down is cheaper. Merged shadow casters draw each building’s complete silhouette—including opaque window glazing—from one mesh. Instanced detail shadows add small repeated trim such as sills and decorations, so they remain optional.';

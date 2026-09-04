@@ -533,7 +533,7 @@ test('exact-eight aggregate remains pending without visual evidence and passes c
     assert.ok(maximumEdgePhaseErrorTexels <= 1e-9);
     const validationEvidence = buildProductionValidationEvidence({
         packageIndex: index,
-        packageIndexPath: 'tests/artifacts/illumination_531/package_index.json',
+        packageIndexPath: 'assets/baked_lighting/shadows/package_index.json',
         profileCertifications: [...profiles].reverse(),
         rawSha256: HASHES.o,
         report
@@ -1151,7 +1151,7 @@ test('release package authentication rejects malformed windows and independently
 
 test('release finalizer authenticates eight packages and independently rehashes dual reports plus 1009 PNGs', async () => {
     const currentRoot = process.cwd();
-    const artifactRoot = path.join(currentRoot, 'tests/artifacts/illumination_531');
+    const artifactRoot = path.join(currentRoot, 'assets/baked_lighting/shadows');
     const inputPath = path.join(
         currentRoot,
         'tests/artifacts/illumination_528/packages/bigcity2',
@@ -1230,7 +1230,16 @@ test('release finalizer authenticates eight packages and independently rehashes 
             certification.lightingProfileId,
             cutoutCasterIds
         ))) {
-            published.set(`alpha/${alphaEvidenceFileName(key)}`, bytes);
+            files.set(
+                path.join(
+                    currentRoot,
+                    'tests/artifacts/illumination_531/production',
+                    certification.lightingProfileId,
+                    'alpha',
+                    alphaEvidenceFileName(key)
+                ),
+                bytes
+            );
         }
         verifiedEvidence.set(certification.lightingProfileId, {
             descriptor: fixture.descriptor,
@@ -2852,7 +2861,7 @@ function makeValidationReport(index, profiles = null) {
                 'visible_static_city_receivers_excluding_registered_dynamic_receivers_depth_equality_v2',
             totalMaskedDynamicReceiverPixelCount: 197
         },
-        packageIndex: 'tests/artifacts/illumination_531/package_index.json',
+        packageIndex: 'assets/baked_lighting/shadows/package_index.json',
         profileGroups: AI531_PRODUCTION_RELEASE_PROFILE_IDS.map(
             (lightingProfileId) => ({
                 caseCount: counts[lightingProfileId],
@@ -3134,7 +3143,7 @@ function makeCaseDiagnostics(lightingProfileId, aggregateSha256) {
 }
 
 function packagePathFor(lightingProfileId) {
-    return `tests/artifacts/illumination_531/production/${lightingProfileId}/static_sun_depth.ilpkg`;
+    return `assets/baked_lighting/shadows/production/${lightingProfileId}/static_sun_depth.ilpkg`;
 }
 
 function rawCanonicalSha256(value) {

@@ -9,7 +9,7 @@ const PROFILE_ID = 'ai527.sun.az045.el35';
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const PACKAGE_INDEX_PATH = path.join(
     REPO_ROOT,
-    'tests/artifacts/illumination_531/package_index.json'
+    'assets/baked_lighting/shadows/package_index.json'
 );
 const CAPTURE_DIRECTORY = path.join(
     REPO_ROOT,
@@ -175,6 +175,27 @@ test('AI 532 real gameplay proves tree-to-bus and bus-to-bus shadow reception', 
                 for (let frame = 0; frame < 4; frame += 1) engine.renderFrame();
                 engine.renderer.getContext().finish();
                 const finalDiagnostics = pipeline.getDiagnostics();
+                const legacyShadowLights = [...new Set([
+                    state.city?.sun,
+                    ...(state.city?._csm?.csm?.lights ?? [])
+                ])].filter((light) => light?.castShadow === true && light.shadow);
+                const legacyShadowTargets = new Set(
+                    legacyShadowLights
+                        .map((light) => light?.shadow?.map)
+                        .filter(Boolean)
+                );
+                const originalSetRenderTarget = engine.renderer.setRenderTarget;
+                let legacyShadowTargetBinds = 0;
+                engine.renderer.setRenderTarget = function(target, ...args) {
+                    if (legacyShadowTargets.has(target)) legacyShadowTargetBinds += 1;
+                    return originalSetRenderTarget.call(this, target, ...args);
+                };
+                try {
+                    engine.renderFrame();
+                    engine.renderer.getContext().finish();
+                } finally {
+                    engine.renderer.setRenderTarget = originalSetRenderTarget;
+                }
                 return {
                     active: true,
                     effectiveMode: finalDiagnostics.runtime.controller.effectiveMode,
@@ -183,7 +204,14 @@ test('AI 532 real gameplay proves tree-to-bus and bus-to-bus shadow reception', 
                     casterMeshCount: finalDiagnostics.dynamicShadows.metrics.casterMeshCount,
                     dynamicDrawCalls: finalDiagnostics.dynamicShadows.metrics.drawCalls,
                     dynamicTriangles: finalDiagnostics.dynamicShadows.metrics.triangles,
-                    staticCastersActive: finalDiagnostics.casters.active
+                    staticCastersActive: finalDiagnostics.casters.active,
+                    legacyShadowMapPassDisabled:
+                        finalDiagnostics.casters.legacyShadowMapPassDisabled,
+                    legacyShadowTargetBinds,
+                    legacyShadowLights: legacyShadowLights.map((light) => ({
+                        autoUpdate: light.shadow?.autoUpdate,
+                        needsUpdate: light.shadow?.needsUpdate
+                    }))
                 };
             }
             const stateName = diagnostics.runtime?.controller?.state;
@@ -206,8 +234,17 @@ test('AI 532 real gameplay proves tree-to-bus and bus-to-bus shadow reception', 
     expect(activation, JSON.stringify(activation, null, 2)).toMatchObject({
         active: true,
         effectiveMode: 'baked',
-        staticCastersActive: true
+        staticCastersActive: true,
+        legacyShadowMapPassDisabled: true,
+        legacyShadowTargetBinds: 0
     });
+    expect(activation.legacyShadowLights.length).toBeGreaterThan(0);
+    expect(activation.legacyShadowLights).toEqual(
+        activation.legacyShadowLights.map(() => ({
+            autoUpdate: false,
+            needsUpdate: false
+        }))
+    );
     expect(activation.registrations.map((entry) => entry.id)).toEqual([
         'vehicle.ai532.secondary',
         'vehicle.player'

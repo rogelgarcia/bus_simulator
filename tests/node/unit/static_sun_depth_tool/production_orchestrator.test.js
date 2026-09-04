@@ -313,6 +313,10 @@ test('CLI pins the fresh source, proof_cpu_12, full-row rendering, and repeat de
     );
     assert.equal(PRODUCTION_STATIC_SUN_DEFAULTS.rowStripPixels, 1821);
     assert.equal(PRODUCTION_STATIC_SUN_DEFAULTS.repeat, 1);
+    assert.equal(
+        PRODUCTION_STATIC_SUN_DEFAULTS.artifactRoot.replaceAll('\\', '/'),
+        `${process.cwd().replaceAll('\\', '/')}/assets/baked_lighting/shadows`
+    );
 
     const selected = parseProductionCliArguments([
         '--alpha-parity-root',
@@ -371,7 +375,7 @@ test('dependency injection selects profiles, executes repeats, resumes peers, an
     const options = {
         ai529Directory: path.join(repoRoot, 'tools/illumination_bake_compiler/blender'),
         archivePath: path.join(repoRoot, 'archive.zip'),
-        artifactRoot: path.join(repoRoot, 'tests/artifacts/illumination_531'),
+        artifactRoot: path.join(repoRoot, 'assets/baked_lighting/shadows'),
         executablePath: path.join(repoRoot, 'blender.exe'),
         inputPath: path.join(repoRoot, 'fresh.bsib'),
         nativeCutoutRoot: path.join(
@@ -447,7 +451,7 @@ function makeIndexEntry(lightingProfileId, seedHash) {
             resolvedSourceSha256: HASH_C,
             staticSunDepthSourceSha256: HASH_D
         },
-        packagePath: `tests/artifacts/illumination_531/production/${lightingProfileId}/static_sun_depth.ilpkg`
+        packagePath: `assets/baked_lighting/shadows/production/${lightingProfileId}/static_sun_depth.ilpkg`
     };
 }
 

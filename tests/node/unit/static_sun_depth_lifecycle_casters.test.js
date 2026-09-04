@@ -110,6 +110,125 @@ test('caster ownership transitions invalidate the renderer, sun, and CSM shadow 
     assert.equal(controller.getDiagnostics().shadowRefreshRequests, 2);
 });
 
+test('baked cutover clears once, disables every live shadow-map pass, and restores live updates', () => {
+    const scene = {};
+    const cascadeA = shadowLight();
+    const cascadeB = shadowLight();
+    const city = makeCity(scene, [mesh('caster', true)]);
+    city._csm = {csm: {lights: [cascadeA, cascadeB]}, maxFar: 300};
+    const rendererShadowMap = {autoUpdate: true, needsUpdate: false};
+    const controller = new StaticSunDepthCasterController({
+        scene,
+        renderer: {shadowMap: rendererShadowMap},
+        camera: {},
+        context: {city}
+    });
+
+    controller.activate(city);
+    assert.equal(cascadeA.shadow.needsUpdate, true);
+    assert.equal(cascadeB.shadow.needsUpdate, true);
+    assert.equal(controller.getDiagnostics().shadowMapFreezePending, true);
+    assert.equal(controller.getDiagnostics().legacyShadowMapPassDisabled, false);
+
+    // frameEnd must not freeze stale maps if the empty transition render did
+    // not complete. WebGLShadowMap clears needsUpdate after that render.
+    assert.equal(controller.freezeShadowMapPassAfterEmptyRender(), false);
+    assert.equal(cascadeA.shadow.autoUpdate, true);
+    assert.equal(cascadeB.shadow.autoUpdate, true);
+
+    cascadeA.shadow.needsUpdate = false;
+    cascadeB.shadow.needsUpdate = false;
+    assert.equal(controller.freezeShadowMapPassAfterEmptyRender(), true);
+    assert.deepEqual(
+        [cascadeA.shadow.autoUpdate, cascadeB.shadow.autoUpdate],
+        [false, false]
+    );
+    assert.deepEqual(
+        [cascadeA.shadow.needsUpdate, cascadeB.shadow.needsUpdate],
+        [false, false]
+    );
+    assert.equal(controller.verifySuppressed(), true);
+    assert.equal(controller.freezeShadowMapPassAfterEmptyRender(), false);
+    assert.equal(controller.getDiagnostics().legacyShadowMapPassDisabled, true);
+    assert.equal(controller.getDiagnostics().shadowPassDisableTransitions, 1);
+
+    controller.deactivate('current');
+    assert.deepEqual(
+        [cascadeA.shadow.autoUpdate, cascadeB.shadow.autoUpdate],
+        [true, true]
+    );
+    assert.deepEqual(
+        [cascadeA.shadow.needsUpdate, cascadeB.shadow.needsUpdate],
+        [true, true]
+    );
+    assert.equal(rendererShadowMap.needsUpdate, true);
+    assert.equal(controller.getDiagnostics().legacyShadowMapPassDisabled, false);
+    assert.equal(controller.getDiagnostics().shadowPassRestoreTransitions, 1);
+});
+
+test('shadow-pass ownership preserves manual per-light policy and detects CSM replacement', () => {
+    const scene = {};
+    const original = shadowLight({autoUpdate: false});
+    const replacement = shadowLight();
+    const city = makeCity(scene, [mesh('caster', true)]);
+    city._csm = {csm: {lights: [original]}, maxFar: 300};
+    const controller = new StaticSunDepthCasterController({
+        scene,
+        renderer: {shadowMap: {needsUpdate: false}},
+        camera: {},
+        context: {city}
+    });
+
+    controller.activate(city);
+    city._csm.csm.lights = [replacement];
+    assert.equal(controller.verifySuppressed(), false);
+    assert.throws(
+        () => controller.freezeShadowMapPassAfterEmptyRender(),
+        /shadow-map ownership changed/
+    );
+    city._csm.csm.lights = [original];
+    original.shadow.needsUpdate = false;
+    assert.equal(controller.freezeShadowMapPassAfterEmptyRender(), true);
+
+    controller.deactivate('csm_replaced');
+    assert.equal(original.shadow.autoUpdate, false);
+    assert.equal(original.shadow.needsUpdate, true);
+});
+
+test('shadow settings refresh restores old maps and schedules one empty pass for replacement lights', () => {
+    const scene = {};
+    const original = shadowLight();
+    const replacement = shadowLight();
+    const city = makeCity(scene, [mesh('caster', true)]);
+    city._csm = {csm: {lights: [original]}, maxFar: 300};
+    const controller = new StaticSunDepthCasterController({
+        scene,
+        renderer: {shadowMap: {needsUpdate: false}},
+        camera: {},
+        context: {city}
+    });
+
+    controller.activate(city);
+    original.shadow.needsUpdate = false;
+    controller.freezeShadowMapPassAfterEmptyRender();
+    assert.equal(original.shadow.autoUpdate, false);
+
+    assert.equal(controller.beforeShadowSettings(), true);
+    assert.equal(original.shadow.autoUpdate, true);
+    assert.equal(original.shadow.needsUpdate, true);
+    city._csm.csm.lights = [replacement];
+    assert.equal(controller.afterShadowSettings(true), true);
+    assert.equal(controller.getDiagnostics().shadowMapFreezePending, true);
+    assert.equal(replacement.shadow.needsUpdate, true);
+
+    replacement.shadow.needsUpdate = false;
+    assert.equal(controller.freezeShadowMapPassAfterEmptyRender(), true);
+    assert.equal(replacement.shadow.autoUpdate, false);
+    controller.deactivate('current');
+    assert.equal(replacement.shadow.autoUpdate, true);
+    assert.equal(replacement.shadow.needsUpdate, true);
+});
+
 test('verification detects refresh windows, ownership loss, context changes, detach, and new meshes', () => {
     const scene = {};
     const original = mesh('original', true);
@@ -307,6 +426,17 @@ test('activation rejects an explicit null, stale, or already-owned City context'
 /** @param {string} name @param {boolean} castShadow */
 function mesh(name, castShadow) {
     return {isMesh: true, name, castShadow};
+}
+
+function shadowLight({autoUpdate = true} = {}) {
+    return {
+        castShadow: true,
+        shadow: {
+            autoUpdate,
+            needsUpdate: false,
+            map: {}
+        }
+    };
 }
 
 /** @param {object} scene @param {Record<string, any>[]} nodes */

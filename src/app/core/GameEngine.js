@@ -17,6 +17,7 @@ import { getOrCreateGpuFrameTimer } from '../../graphics/engine3d/perf/GpuFrameT
 import { getResolvedVehicleMotionDebugSettings, sanitizeVehicleMotionDebugSettings } from '../vehicle/VehicleMotionDebugSettings.js';
 import { BusContactShadowRig } from '../../graphics/visuals/vehicles/BusContactShadowRig.js';
 import { StaticAoRuntime } from '../../graphics/visuals/static_ao/StaticAoRuntime.js';
+import { BakedShadowRuntime } from '../../graphics/illumination/baked_lighting/index.js';
 
 function resolveThreeToneMapping(mode) {
     const key = sanitizeToneMappingMode(mode, 'aces');
@@ -131,6 +132,7 @@ export class GameEngine {
         this._illuminationPipeline = null;
         this._dynamicIlluminationObjects = new Map();
         this._dynamicIlluminationBindings = new Map();
+        this._bakedLighting = new BakedShadowRuntime(this);
         this._disposalPromise = null;
         this._disposed = false;
 
@@ -1124,6 +1126,22 @@ export class GameEngine {
         return this._illuminationPipeline;
     }
 
+    get bakedLightingSettings() {
+        return this._bakedLighting?.getSettings?.() ?? null;
+    }
+
+    setBakedLightingSettings(settings) {
+        return this._bakedLighting?.setSettings?.(settings) ?? Promise.resolve(null);
+    }
+
+    refreshBakedLighting() {
+        return this._bakedLighting?.refresh?.() ?? Promise.resolve(null);
+    }
+
+    getBakedLightingDebugInfo() {
+        return this._bakedLighting?.getDiagnostics?.() ?? null;
+    }
+
     registerDynamicIlluminationObject(descriptor) {
         if (this._disposed) throw new Error('[GameEngine] Cannot register a dynamic illumination object after disposal.');
         this._dynamicIlluminationObjects ??= new Map();
@@ -1393,7 +1411,10 @@ export class GameEngine {
         this._post?.pipeline?.dispose?.();
         if (this._post) this._post.pipeline = null;
         const illuminationPipeline = this._illuminationPipeline;
+        const bakedLighting = this._bakedLighting;
         this._illuminationPipeline = null;
+        this._bakedLighting = null;
+        bakedLighting?.dispose?.({ disposePipeline: false });
         this._dynamicIlluminationBindings?.clear?.();
         this._dynamicIlluminationObjects?.clear?.();
         const renderer = this.renderer ?? null;

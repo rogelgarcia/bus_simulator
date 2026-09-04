@@ -163,9 +163,20 @@ Diagnostics also expose `phase` (`locating`, `fetching`, `validating`, `decoding
 2. Required channels for the selected baked profile, their bindings, and all shader programs are ready before commitment.
 3. The controller commits one immutable frame snapshot at the frame-begin boundary. No frame may mix old and new ownership for overlapping terms.
 4. Switching to `current`, or any stale/failure event, commits a complete current snapshot at the next frame boundary.
-5. Resources from the previous snapshot remain alive until no submitted frame can reference them, then are disposed exactly once.
+5. Resources from a replaced or invalid snapshot remain alive until no submitted frame can reference them, then are disposed exactly once. A user-disabled but still exact baked-shadow snapshot may instead remain in the explicit inactive cache.
 6. Cancellation, city teardown, context loss, mode thrashing, and repeated load failure must not leak CPU/GPU resources.
 7. A live mode switch requires no page reload and no restart. Once staging is ready, its commitment meets the mode-switch budget below.
+
+For the staged baked-shadow capability, `current` selected through the user
+toggle restores live shadow ownership at the next frame boundary but retains
+the last exact compatible package, uploaded depth texture, receiver bindings,
+and compiled city shader variant. The retained shader uses a uniform-only
+bypass while disabled, so selecting the same city/sun publication again only
+reapplies those resources. A different request identity, city/sun identity
+drift, pipeline uninstall, WebGL context loss, or engine teardown invalidates
+the cache and retires its resources through the normal fence/disposal path.
+This is a deliberate GPU/CPU residency tradeoff; disabled does not mean
+unloaded, and diagnostics expose the inactive cached disposition.
 
 ## Channel profiles and invalidation
 
@@ -211,7 +222,7 @@ The generic AI 530 container may carry independently optional channels, but a na
 
 | Capability profile | Required data/runtime capability | Optional additions | Exposure |
 |---|---|---|---|
-| `development.static_sun_v1` | `static_sun_depth` and compatible static-receiver shader path | AI 532 registered moving-object composition in internal builds | Internal validation only; not player-selectable |
+| `development.static_sun_v1` | `static_sun_depth` and compatible static-receiver shader path | AI 532 registered moving-object composition in internal builds | AI 535 staged opt-in for baked shadows; default off, exact-match only, and not eligible for default/release promotion |
 | `baked.hybrid_sun_v1` | `static_sun_depth`, AI 532 static-world sampling on registered moving receivers, and AI 532 shared dynamic self/world/mover shadow layer | AO policy selected by AI 534 | Minimum player-selectable baked profile after later promotion gates pass |
 | `baked.hybrid_sun_indirect_v1` | `baked.hybrid_sun_v1`, receiver mapping, and `indirect_irradiance` | AO/bent normal selected by AI 534 | Player-selectable only after channel validation |
 | `baked.hybrid_sun_direct_indirect_v1` | previous profile plus receiver mapping and `direct_receiver` | AO/bent normal selected by AI 534 | Player-selectable only if AI 533 promotes direct baking |
@@ -237,6 +248,35 @@ the modeled package exceeds the normal 256 MiB promoted disk target and needs
 reduction or streaming before promotion. AI 532 supplies the missing generic
 moving-object composition, but does not waive the size, performance, AO, UI,
 or release-validation gates.
+
+AI 535 exposes this development cache through a default-off baked-shadow toggle
+at the user's explicit staged-integration request. It is not a release
+promotion: an absent index/package, unsupported city or sun, failed validation,
+or identity drift retains or restores Current atomically. The legacy shadow
+settings remain stored and are never rewritten by the baked toggle. Direct and
+indirect player controls remain gated on AI 533/534 outputs.
+
+The staged runtime authority is
+`assets/baked_lighting/shadows/package_index.json`, with profile publications
+below `assets/baked_lighting/shadows/production/`. The offline generator writes
+complete resumable publications there; validation reports, screenshots, and
+diagnostic fields remain under `tests/artifacts/`. Static visibility continues
+to use its separate tracked PVS payload, and the current on-demand vertex
+Static AO does not move into this shadow tree. If AI 534 later promotes an
+offline AO channel, its assets belong in a sibling `assets/baked_lighting/ao/`
+authority rather than inside `shadows/`.
+
+Baked static-shadow ownership also disables the legacy sun shadow-map work; it
+does not stop at setting static casters to `castShadow=false`. The first baked
+visible frame invalidates and clears each current single/CSM sun map while all
+City static casters and registered dynamic casters are under baked ownership.
+At that frame's end, the runtime sets each sun shadow's `autoUpdate=false` and
+`needsUpdate=false`, so Three skips those render targets even when the global
+post-processing shadow update flag is raised. The directional lights remain
+shadow-enabled to preserve the existing CSM shader defines and single-sun
+lighting branches. Returning to Current restores each captured per-light
+`autoUpdate` policy and forces `needsUpdate=true` so live maps rebuild with the
+restored casters on the next render.
 
 Direct-only or indirect-only packages remain valid transport fixtures, but they cannot activate the final player-facing `baked` mode. A receiver mapping is required whenever a receiver channel is required. Unknown required channels reject the profile; absent optional channels do not change ownership of a term.
 

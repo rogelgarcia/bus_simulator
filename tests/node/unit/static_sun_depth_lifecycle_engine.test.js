@@ -264,6 +264,12 @@ test('GameEngine waits for asynchronous illumination teardown before renderer di
                 return pipelineDone;
             }
         },
+        _bakedLighting: {
+            dispose(options) {
+                assert.equal(options?.disposePipeline, false);
+                events.push('bakedRuntimeDispose');
+            }
+        },
         _post: {pipeline: null},
         _staticAo: {runtime: {dispose: () => events.push('staticAoDispose')}},
         _busContactShadow: {rig: {dispose: () => events.push('busDispose')}},
@@ -273,15 +279,16 @@ test('GameEngine waits for asynchronous illumination teardown before renderer di
     });
 
     const disposing = engine.dispose();
-    assert.deepEqual(events, ['stop', 'simulationDispose', 'pipelineDispose']);
+    assert.deepEqual(events, ['stop', 'simulationDispose', 'bakedRuntimeDispose', 'pipelineDispose']);
     assert.equal(engine.renderer, null);
     assert.equal(engine.dispose(), disposing);
-    assert.deepEqual(events, ['stop', 'simulationDispose', 'pipelineDispose']);
+    assert.deepEqual(events, ['stop', 'simulationDispose', 'bakedRuntimeDispose', 'pipelineDispose']);
     resolvePipeline();
     await disposing;
     assert.deepEqual(events, [
         'stop',
         'simulationDispose',
+        'bakedRuntimeDispose',
         'pipelineDispose',
         'staticAoDispose',
         'busDispose',

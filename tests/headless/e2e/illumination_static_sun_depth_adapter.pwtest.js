@@ -162,19 +162,55 @@ test('AI 531 static-sun adapter compiles on pinned Three and preserves current/c
         materials.setDebugMode('final');
         engine.renderer.compile(engine.scene, engine.camera);
         const csmHooks = registry.getMaterialShaderHookRegistrySnapshot(material).hooks;
-        csm.dispose();
-        materials.deactivate();
-        const disabledKey = material.customProgramCacheKey();
 
-        const fakeCity = { group: root, cityId: 'fixture.ai531', sunRef: { direction: new THREE.Vector3(0, 1, 0) }, _csm: null, _shadowCuller: null };
+        // Match gameplay CSM ownership: the original single sun remains as the
+        // lighting reference but only the cascade lights cast live shadows.
+        sun.visible = false;
+        sun.castShadow = false;
+        const fakeCity = {
+            group: root,
+            cityId: 'fixture.ai531',
+            sun,
+            sunRef: { direction: new THREE.Vector3(0, 1, 0) },
+            _csm: csm,
+            _shadowCuller: null
+        };
         const previousCity = engine.context.city;
         engine.context.city = fakeCity;
         const casters = new graphics.StaticSunDepthCasterController(engine);
         casters.activate(fakeCity);
         const suppressed = { city: caster.castShadow, bus: busOutside.castShadow, verified: casters.verifySuppressed() };
+        // The full pipeline suppresses registered movers before this render.
+        busOutside.castShadow = false;
+        engine.renderer.render(engine.scene, engine.camera);
+        const frozen = casters.freezeShadowMapPassAfterEmptyRender();
+        const csmShadowTargets = new Set(csm.csm.lights.map((light) => light.shadow.map));
+        const originalSetRenderTarget = engine.renderer.setRenderTarget;
+        let csmShadowTargetBinds = 0;
+        engine.renderer.setRenderTarget = function(target, ...args) {
+            if (csmShadowTargets.has(target)) csmShadowTargetBinds += 1;
+            return originalSetRenderTarget.call(this, target, ...args);
+        };
+        try {
+            engine.renderer.render(engine.scene, engine.camera);
+        } finally {
+            engine.renderer.setRenderTarget = originalSetRenderTarget;
+        }
+        const frozenPolicies = csm.csm.lights.map((light) => ({
+            autoUpdate: light.shadow.autoUpdate,
+            needsUpdate: light.shadow.needsUpdate
+        }));
+        busOutside.castShadow = true;
         casters.deactivate('test_current');
         const restored = { city: caster.castShadow, bus: busOutside.castShadow };
+        const restoredPolicies = csm.csm.lights.map((light) => ({
+            autoUpdate: light.shadow.autoUpdate,
+            needsUpdate: light.shadow.needsUpdate
+        }));
         engine.context.city = previousCity ?? null;
+        csm.dispose();
+        materials.deactivate();
+        const disabledKey = material.customProgramCacheKey();
 
         materials.dispose();
         const finalCompileRestored = material.onBeforeCompile === originalCompile;
@@ -197,6 +233,10 @@ test('AI 531 static-sun adapter compiles on pinned Three and preserves current/c
             csmHooks,
             disabledKeyExact: disabledKey === originalKey,
             finalCompileRestored,
+            frozen,
+            frozenPolicies,
+            csmShadowTargetBinds,
+            restoredPolicies,
             suppressed,
             restored,
             programs: engine.renderer.info.programs?.length ?? 0
@@ -210,6 +250,16 @@ test('AI 531 static-sun adapter compiles on pinned Three and preserves current/c
     expect(result.csmHooks.map((hook) => hook.id)).toEqual(['city.cascaded_shadows', 'illumination.static_sun_depth']);
     expect(result.disabledKeyExact).toBe(true);
     expect(result.finalCompileRestored).toBe(true);
+    expect(result.frozen).toBe(true);
+    expect(result.frozenPolicies).toEqual([
+        { autoUpdate: false, needsUpdate: false },
+        { autoUpdate: false, needsUpdate: false }
+    ]);
+    expect(result.csmShadowTargetBinds).toBe(0);
+    expect(result.restoredPolicies).toEqual([
+        { autoUpdate: true, needsUpdate: true },
+        { autoUpdate: true, needsUpdate: true }
+    ]);
     expect(result.suppressed).toEqual({ city: false, bus: true, verified: true });
     expect(result.restored).toEqual({ city: true, bus: true });
     expect(result.programs).toBeGreaterThan(0);
