@@ -126,6 +126,15 @@ The Coach is inserted into the actual gameplay scene and both vehicles are
 registered through `GameEngine`; no separate lab scene or substitute geometry
 is used for that before/current and after/hybrid comparison.
 
+The real-game receiver proof also selects a genuine Big City 2 tree and places
+the tree, Coach, and player bus along the production sun ray. Static-visibility
+debug output shows the cached foliage occlusion on the bus receivers. A
+dynamic-visibility A/B pair moves only the Coach 16 m laterally: 3,394 of
+16,875 pixels (20.11%) in the player-bus side region change by more than 16/255,
+while a player-front control region changes by zero pixels. The final-color
+set includes a second angle with the buses behind the tree. These remain
+human-verification captures from `game_mode`, not inputs to runtime correction.
+
 Production whole-frame, CPU/GPU shadow timing, load, and variance metrics are
 not measured for AI 532 because other processes share the machine and GPU. The
 browser fixtures prove behavior, not production performance. AI 536 retains the

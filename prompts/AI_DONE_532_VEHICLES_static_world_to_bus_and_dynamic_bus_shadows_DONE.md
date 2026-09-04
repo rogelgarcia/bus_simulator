@@ -39,9 +39,17 @@ both through `GameEngine.registerDynamicIlluminationObject`.
   `tests/artifacts/screens/illumination_532/`, including the full Big City 2
   gameplay comparison at `gameplay/before_current.png` and
   `gameplay/after_hybrid.png` with the player City Bus and a second Coach
-  registered in the shared field. Dynamic A-to-B masks and moving static-cache
-  receiver states remain lower-level evidence. Captures are not runtime or
-  corrective inputs.
+  registered in the shared field. The same test also selects an actual Big
+  City 2 tree, grounds both real bus models from their measured bounds, and
+  arranges tree -> Coach -> player along the cache sun ray. It emits
+  `tree_bus_current.png`, `tree_bus_hybrid.png`,
+  `tree_bus_static_visibility.png`, `bus_to_bus_dynamic_visibility.png`,
+  `bus_to_bus_dynamic_visibility_control.png`, and
+  `behind_tree_hybrid.png`. The control moves only the Coach 16 m laterally;
+  3,394 of 16,875 pixels (20.11%) in the player-bus side region change by more
+  than 16/255 while the player-front control region changes by exactly zero
+  pixels. Dynamic A-to-B masks and moving static-cache receiver states remain
+  lower-level evidence. Captures are not runtime or corrective inputs.
 
 The current renderer is still the startup/default path. Merely registering a
 moving object allocates no shadow target and changes no caster flag. The hybrid
@@ -71,6 +79,7 @@ Validation results:
 |---|---:|
 | AI 532 plus affected AI 531 focused Node tests | 24/24 passed |
 | AI 532/531 WebGL2 adapter, visual, and lifecycle tests | 6/6 passed |
+| Real-game tree-to-bus and bus-to-bus production-package capture | 1/1 passed |
 | Repository-wide Node unit suite | 774 passed, 6 failed, 3 skipped |
 
 The six repository-wide failures are unrelated existing/rebased work in facade
@@ -115,6 +124,15 @@ sample count/statistic, and timing variance are `not measured` for that reason.
 - The first fixed-world-cache fixture moved across the wrong light-space axis.
   The deterministic fixture was corrected to exercise an actual cache boundary;
   no runtime patch or per-map correction was added.
+- The first real-tree evidence angle placed a valid gameplay camera inside a
+  nearby building, and resetting both anchors to raw terrain height partially
+  sank the player bus. The capture now scores all real Big City 2 trees and
+  both camera sides against scene bounds, then grounds each bus from its own
+  measured world bounds. Two initially strict clearance assertions were
+  removed because a large concave courtyard building has a rectangular world
+  AABB that covers its genuinely open courtyard. These were capture-test
+  corrections only; no shader, cache, tree, building, or map-specific runtime
+  patch was introduced.
 - Production timing was intentionally not collected because shared-machine/GPU
   contention would make the result misleading. AI 536 retains that gate.
 - The repository-wide unit run retains six unrelated failures listed in the
