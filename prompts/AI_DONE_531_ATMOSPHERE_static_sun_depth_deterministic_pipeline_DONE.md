@@ -6,7 +6,8 @@ AI 531 Part A is complete as a deterministic, authenticated development
 pipeline. The user reviewed representative Current/cache evidence and approved
 the retained 128/197 strict-result baseline as the Part A boundary. The strict
 production report remains honestly failed with 69 visual-only cases; this is
-not release certification, and the cases transfer unchanged to AI 546.
+not release certification. AI 546 subsequently closed the cases through an
+explicit user-approved below-0.5% defer without changing the strict result.
 
 - The resumable finishing driver is
   [`tools/static_sun_depth/finish_part_a.mjs`](../tools/static_sun_depth/finish_part_a.mjs),
@@ -24,10 +25,10 @@ not release certification, and the cases transfer unchanged to AI 546.
 - Current mode remains the default and has no baked-asset dependency. Cache
   activation remains development-only and disabled by default; no release
   certificate was issued.
-- AI 546 owns the frozen failure inventory, any independently justified
-  source/generic-pipeline work, final strict visual closure or explicit defer,
-  and release certification. AI 532 may now consume the stable world sampler
-  for development-only bus integration.
+- [`AI_DONE_546_ATMOSPHERE_static_sun_depth_visual_parity_refinement_DONE.md`](AI_DONE_546_ATMOSPHERE_static_sun_depth_visual_parity_refinement_DONE.md)
+  records the frozen failure inventory's explicit defer. No source/generic
+  pipeline changes or release certificate were produced. AI 532 may now consume
+  the stable world sampler for development-only bus integration.
 
 Same-condition workload evidence from 197 paired views at 1280x720 on
 WebGL2/ANGLE and an RTX 3060:
@@ -239,10 +240,10 @@ Acceptance requirements:
 ## Part split and dependency boundary — 2026-09-03
 
 - This prompt is **Part A: deterministic pipeline and development readiness**.
-- `AI_546_ATMOSPHERE_static_sun_depth_visual_parity_refinement.md` is **Part B**
-  and owns human display of deferred visual cases, independently justified
-  source/generic-pipeline remediation, strict 197/197 closure, and final
-  static-sun release certification.
+- `AI_DONE_546_ATMOSPHERE_static_sun_depth_visual_parity_refinement_DONE.md` is
+  **Part B** and records the completed human verification plus explicit defer.
+  No source/generic-pipeline remediation ran, strict 197/197 was not claimed,
+  and no static-sun release certificate was issued.
 - Existing code schemas, artifact roots, reports, and compiler identities keep
   the `AI 531` name. The split changes prompt ownership, not binary identity.
 - AI 532 may depend on completed Part A because the sampler and fallback remain

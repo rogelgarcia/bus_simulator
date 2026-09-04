@@ -55,22 +55,27 @@ AI 526 is closed because its analysis, engine choice, system boundaries, and ord
 | Step | Descendant | Depends on | Exclusive outcome |
 | ---: | --- | --- | --- |
 | 1 | `AI_DONE_527_ATMOSPHERE_illumination_composition_architecture_and_baselines_DONE.md` | AI 526 | **Complete.** Linear composition/specification, engine/profile/coordinate contracts, current-engine baselines, budgets, and render-hook ownership. |
-| 2 | `AI_528_TOOLS_resolved_city_bake_export_and_source_hash.md` | AI 527 | Evaluated city export, stable IDs/provenance, material/alpha semantics, canonical source identity, and round-trip validation. |
-| 3 | `AI_529_TOOLS_blender_cycles_headless_bake_compiler.md` | AI 527–528 | Exact Blender/Cycles pin, clean scripted reconstruction, deterministic proof bakes, repeatability, and compiler signatures. |
-| 4 | `AI_530_TOOLS_illumination_binary_package_and_runtime_loader.md` | AI 527–529 | Versioned binary/chunk transport, integrity/freshness validation, async optional loading, lifecycle, and programmatic Current/Baked/Auto controller. |
+| 2 | `AI_DONE_528_TOOLS_resolved_city_bake_export_and_source_hash_DONE.md` | AI 527 | **Complete.** Evaluated city export, stable IDs/provenance, material/alpha semantics, canonical source identity, and round-trip validation. |
+| 3 | `AI_DONE_529_TOOLS_blender_cycles_headless_bake_compiler_DONE.md` | AI 527–528 | **Complete.** Exact Blender/Cycles pin, clean scripted reconstruction, deterministic proof bakes, repeatability, and compiler signatures. |
+| 4 | `AI_DONE_530_TOOLS_illumination_binary_package_and_runtime_loader_DONE.md` | AI 527–529 | **Complete.** Versioned binary/chunk transport, integrity/freshness validation, async optional loading, lifecycle, and programmatic Current/Baked/Auto controller. |
 | 5 | `AI_DONE_531_ATMOSPHERE_static_sun_depth_deterministic_pipeline_DONE.md` | AI 527–530 | **Complete.** Part A: tiled static sun depth, exact alpha silhouettes, deterministic/resumable production and triage, stable world sampling, and user-approved development-readiness evidence. |
 | 6 | `AI_532_VEHICLES_static_world_to_bus_and_dynamic_bus_shadows.md` | AI 527–531 | Static-world shadows received per bus fragment plus a separate bus-only dynamic self/world shadow layer; supersedes overlapping AI 498 bus-map work. |
 | 7 | `AI_533_MATERIAL_baked_direct_and_indirect_illumination.md` | AI 527–532 | Deterministic receiver/atlas mapping, separate Cycles direct/indirect channels, linear PBR integration, and measured ship/defer decisions. |
 | 8 | `AI_534_MATERIAL_baked_gi_and_ambient_occlusion_migration.md` | AI 527–533 | Measured static AO/SSAO/GTAO/contact disposition, double-darkening prevention, and AI 323/524/525 migration status. |
-| 9 | `AI_546_ATMOSPHERE_static_sun_depth_visual_parity_refinement.md` | AI 531; scheduled after AI 534 | Part B: deterministic triage consumption, focused manual refinement, strict static-sun 197/197 closure, and exact-eight release certification or explicit defer decision. |
+| 9 | `AI_DONE_546_ATMOSPHERE_static_sun_depth_visual_parity_refinement_DONE.md` | AI 531; disposition accepted before AI 532 | **Complete by explicit user-approved defer.** All 69 visual-only cases are below the accepted 0.5% affected-area ceiling; the unchanged 128/197 strict report remains failed, no certificate was issued, and runtime activation remains disabled by default. |
 | 10 | `AI_535_UI_optional_baked_illumination_runtime_modes_and_diagnostics.md` | AI 527–534, AI 546 | Runtime Options, Current/Baked/Auto switching, profile availability, transactional settings, diagnostics, and offline-workflow visibility. |
 | 11 | `AI_536_TESTS_illumination_framework_release_validation.md` | AI 527–535, AI 546 | End-to-end visual, hash/corruption, absence/fallback, memory/loading, performance, rollback, and promotion/default gate. |
 
 Required execution order:
 
-`527 → 528 → 529 → 530 → 531 (Part A) → 532 → 533 → 534 → 546 (Part B) → 535 → 536`
+`527 → 528 → 529 → 530 → 531 (Part A) → 546 (Part B defer) → 532 → 533 → 534 → 535 → 536`
 
-Each descendant is created and pending. Its execution gate requires every earlier dependency to carry DONE naming before implementation begins.
+AI 546 was satisfied early through its explicit user-approved defer path; no
+visual refinement or new bake lineage ran. The remaining executable order is
+`532 → 533 → 534 → 535 → 536`.
+
+Each descendant exists. A pending descendant's execution gate requires every
+earlier dependency to carry DONE naming before implementation begins.
 
 # Request
 

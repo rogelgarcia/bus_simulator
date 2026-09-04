@@ -364,9 +364,10 @@ package/publication bytes unchanged, requires Lab 8/8, and preserves the
 user-approved 128/197 baseline with no more than 69 visual-only failures in the
 unchanged 197-case production catalog. It accepts no nonvisual failure and can
 reauthenticate/reassess a completed report after a workflow-policy update
-without rerunning the GPU catalog. Remaining visual cases transfer to AI 546; Part A
-completion neither activates gameplay by default nor issues a release
-certificate.
+without rerunning the GPU catalog. On 2026-09-03 AI 546 closed those cases by an
+explicit user-approved defer because every affected-area result was below 0.5%
+(maximum 0.486896749%). This does not change the strict report, activate
+gameplay by default, or issue a release certificate.
 
 ## Current evidence and promotion gate
 
@@ -397,5 +398,7 @@ current/cache comparisons, zero missing occluders, strict numeric and image
 tolerances, and the complete performance table requested by AI 531. The Part A
 report does not meet those release gates. Its separately approved 128/197
 development-readiness boundary permits downstream development while the runtime
-stays disabled by default with current-engine fallback and AI 546 retains the
-69 visual cases for strict closure or explicit defer.
+stays disabled by default with current-engine fallback. AI 546 is complete by
+explicit defer: all 69 visual-only cases are accepted for the development
+workflow because their affected area is below 0.5%, while the strict 128/197
+status remains failed and uncertified.
