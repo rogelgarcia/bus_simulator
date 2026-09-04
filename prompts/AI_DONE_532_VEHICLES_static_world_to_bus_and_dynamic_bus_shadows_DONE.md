@@ -33,9 +33,11 @@ both through `GameEngine.registerDynamicIlluminationObject`.
   [`dynamic_sun_shadow_graphics_contract.test.js`](../tests/node/unit/dynamic_sun_shadow_graphics_contract.test.js),
   and
   [`illumination_dynamic_sun_shadow_layer.pwtest.js`](../tests/headless/e2e/illumination_dynamic_sun_shadow_layer.pwtest.js).
-  The last test generates human-verification captures under
-  `tests/artifacts/screens/illumination_532/` for dynamic A-to-B and moving
-  static-cache receiver states. Captures are not runtime or corrective inputs.
+  The suite generates human-verification captures under
+  `tests/artifacts/screens/illumination_532/`, including the full-color
+  `two_movers_before_current.png` and `two_movers_after_hybrid.png` comparison,
+  dynamic A-to-B masks, and moving static-cache receiver states. Captures are
+  not runtime or corrective inputs.
 
 The current renderer is still the startup/default path. Merely registering a
 moving object allocates no shadow target and changes no caster flag. The hybrid
@@ -64,7 +66,7 @@ Validation results:
 | Suite | Result |
 |---|---:|
 | AI 532 plus affected AI 531 focused Node tests | 24/24 passed |
-| AI 532/531 WebGL2 adapter and lifecycle tests | 5/5 passed |
+| AI 532/531 WebGL2 adapter, visual, and lifecycle tests | 6/6 passed |
 | Repository-wide Node unit suite | 774 passed, 6 failed, 3 skipped |
 
 The six repository-wide failures are unrelated existing/rebased work in facade
