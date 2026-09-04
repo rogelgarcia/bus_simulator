@@ -11,7 +11,9 @@ resource activation, fallback, and disposal.
 
 The feature is internal/development opt-in. `current` remains the permanent
 fallback and performs no package request, shader mutation, or caster handoff.
-AI 532 owns bus sampling and AI 535 owns player-facing Options behavior.
+AI 532 extends this sampler to generic registered moving receivers and composes
+one shared dynamic moving-caster field. AI 535 owns player-facing Options
+behavior. See [`dynamic_sun_shadow.md`](dynamic_sun_shadow.md).
 
 The AI 528 semantic source is
 `bus-sim-illumination-bake-input-v2` with `schemaVersion: 2` and semantic
@@ -221,7 +223,9 @@ without becoming dark decals.
 
 Supported debug variants are normal, cache visibility, tile layer, reconstructed
 depth, receiver coordinates, residency/domain, applied bias, out-of-range,
-seam proximity, and absolute current-versus-cache visibility difference.
+seam proximity, absolute current-versus-cache visibility difference, dynamic
+visibility/depth/projection/bias, composed visibility, and absolute
+current-versus-hybrid difference.
 Debug selection participates in the program cache key and is prewarmed before
 activation. The comparison variant deliberately retains current static caster
 submission while the cache hook is active; returning to a non-comparison
@@ -267,6 +271,14 @@ before rendering. Live provenance, scene traversal, light transforms, and
 receiver checks are exception-contained; an accessor/proxy/traversal failure is
 an identity failure that restores current ownership instead of escaping with
 casters suppressed.
+
+AI 532 prepares one receiver set containing the static city plus every generic
+registered moving receiver root. The moving vertex supplies its current
+render-pose world position before static-cache geometric bias, so a shadow edge
+can cross individual roof, body, wheel, or compatible glass fragments without
+whole-object darkening. The dynamic field has its own projection and bias and
+multiplies the same named sun visibility; it never changes this static channel's
+payload or freshness identity.
 
 ## Production exact-parity sizing decision
 

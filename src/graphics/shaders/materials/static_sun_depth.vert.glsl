@@ -1,4 +1,5 @@
 varying highp vec3 vStaticSunWorldPosition;
+varying highp vec3 vDynamicSunWorldPosition;
 uniform highp vec4 staticSunDepthBiasPolicy;
 
 void staticSunDepthTransferWorldPosition(
@@ -13,6 +14,7 @@ void staticSunDepthTransferWorldPosition(
         worldPosition = instanceMatrix * worldPosition;
     #endif
     highp vec3 receiverWorldPosition = ( modelMatrix * worldPosition ).xyz;
+    vDynamicSunWorldPosition = receiverWorldPosition;
     if ( staticSunDepthBiasPolicy.w > 0.5 ) {
         highp vec3 geometricWorldNormal = normalize(
             inverseTransformDirection( transformedNormal, viewMatrix )

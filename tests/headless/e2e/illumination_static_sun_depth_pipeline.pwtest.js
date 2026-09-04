@@ -164,6 +164,12 @@ test('AI 531 static-sun pipeline activates only a verified complete set and roll
             return originalRendererInitTexture(texture);
         };
         const pipeline = new graphics.StaticSunDepthPipeline(engine, {
+            dynamicShadow: {
+                mapSize: 64,
+                worldUnitsPerTexel: 0.25,
+                paddingTexels: 2,
+                depthPaddingMeters: 1
+            },
             fetchPackage: async (request) => {
                 fetchCount += 1;
                 const source = request.url.endsWith('/invalid-tile')
@@ -198,7 +204,14 @@ test('AI 531 static-sun pipeline activates only a verified complete set and roll
         const busMaterial = new THREE.MeshStandardMaterial({ color: 0xe0b34b });
         const busMesh = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 1.6), busMaterial);
         busMesh.castShadow = true;
+        busMesh.receiveShadow = true;
         busMesh.position.set(3, 0, 0);
+        const dynamicRegistration = pipeline.registerDynamicShadowObject({
+            id: 'vehicle.player',
+            root: busMesh,
+            cast: true,
+            receive: true
+        });
         const sun = new THREE.DirectionalLight(0xffffff, 2);
         sun.position.set(0, 8, 0);
         sun.castShadow = true;
@@ -405,6 +418,7 @@ test('AI 531 static-sun pipeline activates only a verified complete set and roll
             controller: pipeline.getDiagnostics().runtime.controller
         };
         engine.context.city = previousCity ?? null;
+        dynamicRegistration.unregister();
         await pipeline.dispose();
         root.removeFromParent();
         busMesh.removeFromParent();
@@ -469,11 +483,17 @@ test('AI 531 static-sun pipeline activates only a verified complete set and roll
     expect(result.cityCompileCasterStates.length).toBeGreaterThanOrEqual(2);
     expect(result.cityCompileCasterStates.every((value) => value === true)).toBe(true);
     expect(result.active.caster).toBe(false);
-    expect(result.active.bus).toBe(true);
+    expect(result.active.bus).toBe(false);
     expect(result.active.diagnostics.active).not.toBeNull();
     expect(result.active.diagnostics.runtime.controller.effectiveMode).toBe('baked');
+    expect(result.active.diagnostics.dynamicShadows.sharedInteractionMap).toBe(true);
+    expect(result.active.diagnostics.dynamicShadows.registrations).toEqual([{
+        id: 'vehicle.player',
+        cast: true,
+        receive: true
+    }]);
     expect(result.comparison).toEqual({ caster: true, bus: true, active: true });
-    expect(result.afterComparison).toEqual({ caster: false, bus: true, active: true });
+    expect(result.afterComparison).toEqual({ caster: false, bus: false, active: true });
     expect(result.receiverDriftFallback.caster).toBe(true);
     expect(result.receiverDriftFallback.bus).toBe(true);
     expect(result.receiverDriftFallback.active).toBe(false);

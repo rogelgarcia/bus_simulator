@@ -158,6 +158,7 @@ export class GameplayState {
 
         // Vehicle (from factory)
         this.vehicle = null;
+        this._dynamicIlluminationRegistration = null;
 
         // Scene objects (compatibility aliases)
         this.city = null;
@@ -354,6 +355,7 @@ export class GameplayState {
                 o.receiveShadow = true;
             }
         });
+        this._registerDynamicIlluminationVehicle();
 
         // Compute camera params
         this._chase = computeChaseParams(this.vehicle);
@@ -384,6 +386,7 @@ export class GameplayState {
             sim.physics?.addVehicle?.(this.vehicle.id, this.vehicle.config, this.busAnchor, this.vehicle.api);
             this.vehicleController?.setVehicleApi?.(this.vehicle.api, this.busAnchor);
             this._applyGameplayPoseVehicleVisuals();
+            this._registerDynamicIlluminationVehicle();
             this._debugPanel?.setContext?.({
                 vehicleId: this.vehicle.id,
                 physics: sim.physics,
@@ -424,6 +427,8 @@ export class GameplayState {
 
         // Unsubscribe from events
         this._unsubFrame?.();
+        this._dynamicIlluminationRegistration?.unregister?.();
+        this._dynamicIlluminationRegistration = null;
 
         // Dispose game loop (disposes controllers and input)
         this.gameLoop?.dispose();
@@ -476,6 +481,18 @@ export class GameplayState {
         this.city = null;
 
         this.engine.clearScene();
+    }
+
+    _registerDynamicIlluminationVehicle() {
+        this._dynamicIlluminationRegistration?.unregister?.();
+        this._dynamicIlluminationRegistration = null;
+        if (!this.busAnchor || !this.vehicle?.id) return;
+        this._dynamicIlluminationRegistration = this.engine.registerDynamicIlluminationObject?.({
+            id: `vehicle.${this.vehicle.id}`,
+            root: this.busAnchor,
+            cast: true,
+            receive: true
+        }) ?? null;
     }
 
     pause({ nextName = null } = {}) {

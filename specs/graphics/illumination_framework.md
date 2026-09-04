@@ -16,7 +16,7 @@ The audit is against code, not prompt filenames.
 |---|---|---|
 | AI 323 static AO visibility | Open. A vertex `staticAo` path exists and is default-off, but AI 323's visibility/repair work is not complete. Its built-in-material patch also predates the shader-file policy. | Preserve in `current`; AI 534 owns any migration, reduction, or removal. It is not a bake-source contract. |
 | AI 497 shadow cost reduction | Partially shipped. Visible-region caster culling, merged building/prop casters, one shadow build per frame, and the current single/cascade presets are live. Remaining AI 497 work is still open. | These are the `current` shadow oracle and fallback. Do not copy their camera-relative culling decisions into an offline sun cache. |
-| AI 498 bus shadow upgrade | Open. The runtime imports Three.js 0.183.2 and has no dedicated bus-only production shadow map. | AI 532 supersedes the overlapping bus-map portion. A Three.js upgrade remains independent work. |
+| AI 498 bus shadow upgrade | Its bus-map and cascade-retuning phases are superseded. The runtime remains on audited Three.js 0.183.2. | AI 532 shipped one generic shared moving-object map. A Three.js upgrade remains independent work. |
 | AI 520 color PVS | Shipped for buildings, traffic controls, and trees with canonical freshness checks and fail-open behavior. It restores color-hidden roots for shadow and auxiliary passes. | Reuse its deterministic/fail-open lessons only. Its camera-color visibility masks, hashes, and payload are forbidden as sun-shadow data. |
 | AI 524 AO exclusion depth reuse | Shipped. Retained visible-scene depth plus excluded-receiver-only rendering is the production path, with a correct legacy fallback. | Keep unchanged until AI 534 makes an evidence-backed AO decision. |
 | AI 525 AO architecture experiment | Complete experiment. Stencil and packed-alpha candidates were rejected; AI 524 remains production. | No MRT/stencil assumption enters the illumination design. |
@@ -74,7 +74,7 @@ This is a logical ownership equation, not a requirement to merge all lobes into 
 |---|---|---|---|
 | `LsunDirect` | PBR material lighting for the named sun profile | A direct-receiver bake may replace direct diffuse only for mapped static receivers. | Live direct specular/clearcoat and supported direct transmission remain runtime terms. No lobe is both live and baked for the same receiver. |
 | `VstaticSun` | Static-world sun-depth channel | Yes, AI 531 supplies it. | Multiplies only live lobes from the named sun. A baked direct-diffuse texel already contains static visibility and must not multiply it a second time. It never multiplies base color, final color, IBL, emission, environment reflection, AO, or post effects. |
-| `VdynamicSun` | Dynamic caster layer | Yes, AI 532 supplies bus self/world visibility. | Combines with static visibility for the same sun, normally by multiplication/min visibility. The static cache excludes dynamic casters. |
+| `VdynamicSun` | Dynamic caster layer | Yes, AI 532 supplies self/world and mover-to-mover visibility for registered dynamic objects. | Multiplies static visibility for the same sun. All registered casters share one interaction field; the static cache excludes them. |
 | Other direct lights | Current live renderer unless a future separately named channel exists | No channel in AI 526 may silently absorb them. | Each light retains its own visibility and BRDF term. |
 | `LindirectDiffuse` | Either current hemisphere/IBL diffuse or compatible baked indirect irradiance | AI 533 may replace overlapping current diffuse environment energy on mapped static receivers. | A profile must declare replacement or residual weighting. Unqualified addition of baked GI on top of the same live ambient/IBL energy is forbidden. |
 | Indirect specular/reflection | Current live environment/reflection system | Not by the initial diffuse irradiance bake. | Static AO may currently affect it in `current`; that compatibility behavior is audited by AI 534, not silently copied. |
@@ -211,8 +211,8 @@ The generic AI 530 container may carry independently optional channels, but a na
 
 | Capability profile | Required data/runtime capability | Optional additions | Exposure |
 |---|---|---|---|
-| `development.static_sun_v1` | `static_sun_depth` and compatible static-receiver shader path | none | Internal AI 531 validation only; not player-selectable because bus composition is incomplete |
-| `baked.hybrid_sun_v1` | `static_sun_depth`, AI 532 static-world sampling on the bus, and AI 532 dynamic bus self/world shadow layer | AO policy selected by AI 534 | Minimum player-selectable baked profile after AI 532 |
+| `development.static_sun_v1` | `static_sun_depth` and compatible static-receiver shader path | AI 532 registered moving-object composition in internal builds | Internal validation only; not player-selectable |
+| `baked.hybrid_sun_v1` | `static_sun_depth`, AI 532 static-world sampling on registered moving receivers, and AI 532 shared dynamic self/world/mover shadow layer | AO policy selected by AI 534 | Minimum player-selectable baked profile after later promotion gates pass |
 | `baked.hybrid_sun_indirect_v1` | `baked.hybrid_sun_v1`, receiver mapping, and `indirect_irradiance` | AO/bent normal selected by AI 534 | Player-selectable only after channel validation |
 | `baked.hybrid_sun_direct_indirect_v1` | previous profile plus receiver mapping and `direct_receiver` | AO/bent normal selected by AI 534 | Player-selectable only if AI 533 promotes direct baking |
 
@@ -234,8 +234,9 @@ promotion while other processes share the machine and GPU.
 
 This development allowance does not satisfy the player-selectable gates below:
 the modeled package exceeds the normal 256 MiB promoted disk target and needs
-reduction or streaming before promotion, in addition to the missing bus
-composition owned by AI 532.
+reduction or streaming before promotion. AI 532 supplies the missing generic
+moving-object composition, but does not waive the size, performance, AO, UI,
+or release-validation gates.
 
 Direct-only or indirect-only packages remain valid transport fixtures, but they cannot activate the final player-facing `baked` mode. A receiver mapping is required whenever a receiver channel is required. Unknown required channels reject the profile; absent optional channels do not change ownership of a term.
 
@@ -462,7 +463,7 @@ The final AI 536 promotion decision includes disk, download, decode, upload, ste
 | 529 Blender compiler | 527 toolchain + 528 validated export | Exact archive/build signature, clean scripted reconstruction, Cycles CPU proof bakes, repeatability report, raw channel intermediates | Runtime package/loader, EEVEE promotion, manual `.blend` authority |
 | 530 package/loader/controller | Validated source/compiler/channel records | Versioned manifest/binary chunks, integrity validation, async staging, lifecycle controller implementing requested/effective modes programmatically | User Options UI, channel shading algorithms, partial unsafe activation |
 | 531 static sun depth | Static-depth descriptor, 528 source, 529/530 compiler/package | Tiled depth generation, alpha silhouettes, sampling/filter/bias/streaming, static receiver integration and debug views | Color PVS reuse, bus dynamic caster ownership, final-color decal |
-| 532 bus shadows | 531 static depth and controller hooks | Static-world visibility on bus fragments plus bus-only dynamic self/world shadow layer using render pose | Static city rerender, baked receiver lightmaps, overlapping AI 498 bus-map implementation |
+| 532 dynamic-object shadows | 531 static depth and controller hooks | Static-world visibility on registered moving receivers plus one shared dynamic self/world/mover-to-mover shadow layer using render pose | Static city rerender, per-entity isolated maps, baked receiver lightmaps, overlapping AI 498 bus-map implementation |
 | 533 direct/indirect | Receiver/source mappings and stable shadow composition | Separate light-only direct and indirect channels, atlas/chunk integration, measured promote/defer decisions | Shared base PBR texture mutation, AO policy, tone mapping in bake |
 | 534 AO migration | All prior lighting/shadow channels and current AO evidence | Per-mode AO/contact policy, overlap measurements, AI 323/524/525 migration decision | Unmeasured AO removal or hidden double-darkening |
 | 535 runtime Options/diagnostics | Complete programmatic controller and channel states | Persisted Current/Baked/Auto UI, transactional Save/Cancel/Reset, availability/fallback diagnostics | Loader internals or making baked assets mandatory |

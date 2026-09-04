@@ -1,3 +1,16 @@
+# Disposition (AI 532)
+
+The Phase 2 bus-specific map and Phase 3 cascade retuning in this prompt are
+superseded by AI 532. Do not implement them as a parallel shadow system. AI 532
+ships one generic shared moving-object map so two or more registered movers can
+self-shadow, shadow the world, and shadow one another. Its current-engine
+fallback remains authoritative.
+
+Phase 0, upgrading Three.js beyond the audited runtime pin of 0.183.2, remains
+independent and open. AI 532 verified its shader anchors and RGBA depth packing
+against r183; it did not silently perform or require an upgrade. Phase 1 lab
+ideas remain reusable validation input, not an implementation mandate.
+
 #Problem
 
 Cascaded shadows cost ~8.5 ms over `off` at bus level, and the cost is

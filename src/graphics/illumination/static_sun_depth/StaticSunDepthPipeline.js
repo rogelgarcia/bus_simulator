@@ -7,6 +7,7 @@ import {
     validateStaticSunDepthTileSetDescriptor
 } from '../../../app/illumination/static_sun_depth/index.js';
 import { createIlluminationRuntime } from '../runtime/index.js';
+import { DynamicSunShadowLayer } from '../dynamic_sun_shadow/index.js';
 import { StaticSunDepthCasterController } from './StaticSunDepthCasterController.js';
 import {
     STATIC_SUN_DEPTH_DEBUG_MODES,
@@ -44,6 +45,7 @@ export class StaticSunDepthPipeline {
         this.renderer = engine.renderer;
         this._materials = new StaticSunDepthMaterialSet();
         this._casters = new StaticSunDepthCasterController(engine);
+        this._dynamicShadows = new DynamicSunShadowLayer(this.renderer, options.dynamicShadow);
         this._active = null;
         this._lastError = null;
         this._disposed = false;
@@ -98,6 +100,19 @@ export class StaticSunDepthPipeline {
         return this.runtime.load(request);
     }
 
+    registerDynamicShadowObject(descriptor) {
+        if (this._disposed) throw new Error('StaticSunDepthPipeline is disposed.');
+        if (this._active) this._fallbackNow('dynamic_shadow_registry_changed');
+        const registration = this._dynamicShadows.register(descriptor);
+        return Object.freeze({
+            id: registration.id,
+            unregister: () => {
+                if (this._active) this._fallbackNow('dynamic_shadow_registry_changed');
+                return registration.unregister();
+            }
+        });
+    }
+
     frameBegin() {
         if (this._disposed) return;
         if (this._active && !this._activeLiveIdentityMatches()) {
@@ -108,6 +123,11 @@ export class StaticSunDepthPipeline {
         }
         if (this._active && this._shouldSuppressCasters() && !this._casters.verifySuppressed()) {
             this._fallbackNow('static_caster_ownership_lost');
+        }
+        if (this._active && this._shouldUseDynamicLayer()
+            && this._dynamicShadows.getRegistrationCount() > 0
+            && !this._dynamicShadows.verifyOwnership()) {
+            this._fallbackNow('dynamic_caster_ownership_lost');
         }
         try {
             this.runtime.commitFrameBoundary();
@@ -121,6 +141,13 @@ export class StaticSunDepthPipeline {
     shadowPrepare() {
         if (this._active && this._shouldSuppressCasters() && !this._casters.verifySuppressed()) {
             this._fallbackNow('static_caster_reenabled_before_shadow');
+        }
+        if (!this._active || !this._shouldUseDynamicLayer()) return;
+        try {
+            this._renderDynamicLayer(this._active.binding);
+        } catch (error) {
+            this._lastError = error;
+            this._fallbackNow('dynamic_shadow_render_failed');
         }
     }
 
@@ -150,6 +177,12 @@ export class StaticSunDepthPipeline {
                         ? 'validation_live_final_shadow_retained'
                         : 'comparison_current_shadow_retained'
                 );
+            }
+            if (this._shouldUseDynamicLayer()) {
+                this._renderDynamicLayer(this._active.binding);
+            } else {
+                this._dynamicShadows.deactivate();
+                this._active.binding.setDynamicShadowState(null);
             }
         } catch (error) {
             this._lastError = error;
@@ -197,6 +230,7 @@ export class StaticSunDepthPipeline {
             fences: this._fenceTracker.getSnapshot(),
             materials: this._materials.getDiagnostics(),
             casters: this._casters.getDiagnostics(),
+            dynamicShadows: this._dynamicShadows.getDiagnostics(),
             runtime: this.runtime.getDiagnostics()
         });
     }
@@ -219,6 +253,7 @@ export class StaticSunDepthPipeline {
         for (const dispose of [
             () => this._materials.dispose(),
             () => this._casters.dispose(),
+            () => this._dynamicShadows.dispose(),
             () => this._fenceTracker.dispose()
         ]) {
             try {
@@ -326,9 +361,11 @@ export class StaticSunDepthPipeline {
         const city = this.engine?.context?.city;
         this._restoreCurrent('baked_replacement');
         try {
-            this._materials.prepare(city.group, binding, { outsideRoot: this.engine.scene });
+            const receiverRoots = [city.group, ...this._dynamicShadows.getReceiverRoots()];
+            this._materials.prepareRoots(receiverRoots, binding, { outsideRoot: this.engine.scene });
             this._materials.activate();
             binding.updateCamera(this.engine.camera);
+            if (this._shouldUseDynamicLayer()) this._renderDynamicLayer(binding);
             this._compileExactCityVariants();
             if (this._shouldSuppressCasters()) this._casters.activate(city);
             this._active = Object.freeze({
@@ -353,6 +390,11 @@ export class StaticSunDepthPipeline {
             this._casters.deactivate(reason);
         } catch (error) {
             firstError = error;
+        }
+        try {
+            this._dynamicShadows.deactivate();
+        } catch (error) {
+            firstError ??= error;
         }
         try {
             this._materials.dispose();
@@ -442,7 +484,35 @@ export class StaticSunDepthPipeline {
         const mode = debugModeValue(this._debugMode);
         return mode !== STATIC_SUN_DEPTH_DEBUG_MODES.currentDifference
             && mode !== STATIC_SUN_DEPTH_DEBUG_MODES.liveFinal
-            && mode !== STATIC_SUN_DEPTH_DEBUG_MODES.signedDifference;
+            && mode !== STATIC_SUN_DEPTH_DEBUG_MODES.signedDifference
+            && mode !== STATIC_SUN_DEPTH_DEBUG_MODES.hybridDifference;
+    }
+
+    _shouldUseDynamicLayer() {
+        const mode = debugModeValue(this._debugMode);
+        return this._shouldSuppressCasters()
+            || mode === STATIC_SUN_DEPTH_DEBUG_MODES.hybridDifference;
+    }
+
+    _renderDynamicLayer(binding) {
+        if (this._dynamicShadows.getRegistrationCount() === 0) {
+            binding.setDynamicShadowState(null);
+            return;
+        }
+        const suppressCurrentCasters = this._shouldSuppressCasters();
+        const diagnostics = this._dynamicShadows.getDiagnostics();
+        if (diagnostics.active
+            && diagnostics.suppressesCurrentCasters !== suppressCurrentCasters) {
+            this._dynamicShadows.deactivate();
+        }
+        if (!this._dynamicShadows.getDiagnostics().active) {
+            this._dynamicShadows.activate({ suppressCurrentCasters });
+        }
+        const state = this._dynamicShadows.render(
+            binding.descriptor.identity.sunPointDirectionWorld
+        );
+        binding.setDynamicShadowState(state);
+        binding.updateCamera(this.engine.camera);
     }
 
     _capabilities() {
@@ -481,7 +551,7 @@ function requireDebugMode(value) {
 }
 
 function debugModeValue(value) {
-    if (Number.isSafeInteger(value) && value >= 0 && value <= 9) return value;
+    if (Number.isSafeInteger(value) && value >= 0 && value <= 17) return value;
     if (typeof value === 'string' && Object.prototype.hasOwnProperty.call(STATIC_SUN_DEPTH_DEBUG_MODES, value)) {
         return STATIC_SUN_DEPTH_DEBUG_MODES[value];
     }

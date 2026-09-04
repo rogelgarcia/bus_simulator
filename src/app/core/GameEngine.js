@@ -25,6 +25,25 @@ function resolveThreeToneMapping(mode) {
     return THREE.ACESFilmicToneMapping;
 }
 
+function normalizeDynamicIlluminationObject(descriptor) {
+    if (!descriptor || typeof descriptor !== 'object' || Array.isArray(descriptor)) {
+        throw new TypeError('[GameEngine] Dynamic illumination object descriptor must be an object.');
+    }
+    const id = descriptor.id;
+    if (typeof id !== 'string' || !id || id.trim() !== id || /[\u0000-\u001f\u007f]/.test(id)) {
+        throw new TypeError('[GameEngine] Dynamic illumination object id must be a stable non-empty string.');
+    }
+    if (!descriptor.root?.isObject3D) {
+        throw new TypeError('[GameEngine] Dynamic illumination object root must be an Object3D.');
+    }
+    const cast = descriptor.cast ?? true;
+    const receive = descriptor.receive ?? true;
+    if (typeof cast !== 'boolean' || typeof receive !== 'boolean' || (!cast && !receive)) {
+        throw new TypeError('[GameEngine] Dynamic illumination cast/receive flags must be boolean and at least one must be true.');
+    }
+    return Object.freeze({ id, root: descriptor.root, cast, receive });
+}
+
 export class GameEngine {
     constructor({
         canvas,
@@ -110,6 +129,8 @@ export class GameEngine {
         };
 
         this._illuminationPipeline = null;
+        this._dynamicIlluminationObjects = new Map();
+        this._dynamicIlluminationBindings = new Map();
         this._disposalPromise = null;
         this._disposed = false;
 
@@ -1086,13 +1107,66 @@ export class GameEngine {
                 || typeof next.uninstall !== 'function')) {
             throw new TypeError('[GameEngine] Illumination pipeline must implement frameBegin, shadowPrepare, frameEnd, and uninstall.');
         }
-        previous?.uninstall(next === null ? 'pipeline_removed' : 'pipeline_replaced');
+        const stagedBindings = this._bindDynamicIlluminationObjects(next);
+        try {
+            previous?.uninstall(next === null ? 'pipeline_removed' : 'pipeline_replaced');
+        } catch (error) {
+            for (const binding of stagedBindings.values()) binding.unregister?.();
+            throw error;
+        }
+        for (const binding of this._dynamicIlluminationBindings.values()) binding.unregister?.();
+        this._dynamicIlluminationBindings = stagedBindings;
         this._illuminationPipeline = next;
         return previous;
     }
 
     getIlluminationPipeline() {
         return this._illuminationPipeline;
+    }
+
+    registerDynamicIlluminationObject(descriptor) {
+        if (this._disposed) throw new Error('[GameEngine] Cannot register a dynamic illumination object after disposal.');
+        this._dynamicIlluminationObjects ??= new Map();
+        this._dynamicIlluminationBindings ??= new Map();
+        const record = normalizeDynamicIlluminationObject(descriptor);
+        if (this._dynamicIlluminationObjects.has(record.id)) {
+            throw new Error(`[GameEngine] Dynamic illumination object '${record.id}' is already registered.`);
+        }
+        const pipelineBinding = this._illuminationPipeline?.registerDynamicShadowObject?.(record) ?? null;
+        this._dynamicIlluminationObjects.set(record.id, record);
+        if (pipelineBinding) this._dynamicIlluminationBindings.set(record.id, pipelineBinding);
+        let removed = false;
+        return Object.freeze({
+            id: record.id,
+            unregister: () => {
+                if (removed) return false;
+                const binding = this._dynamicIlluminationBindings.get(record.id);
+                binding?.unregister?.();
+                this._dynamicIlluminationBindings.delete(record.id);
+                removed = this._dynamicIlluminationObjects.delete(record.id);
+                return removed;
+            }
+        });
+    }
+
+    getDynamicIlluminationObjects() {
+        return Object.freeze([...(this._dynamicIlluminationObjects?.values?.() ?? [])]
+            .sort((left, right) => left.id.localeCompare(right.id)));
+    }
+
+    _bindDynamicIlluminationObjects(pipeline) {
+        this._dynamicIlluminationBindings ??= new Map();
+        const bindings = new Map();
+        if (!pipeline || typeof pipeline.registerDynamicShadowObject !== 'function') return bindings;
+        try {
+            for (const record of this.getDynamicIlluminationObjects()) {
+                bindings.set(record.id, pipeline.registerDynamicShadowObject(record));
+            }
+            return bindings;
+        } catch (error) {
+            for (const binding of bindings.values()) binding.unregister?.();
+            throw error;
+        }
     }
 
     resize() {
@@ -1320,6 +1394,8 @@ export class GameEngine {
         if (this._post) this._post.pipeline = null;
         const illuminationPipeline = this._illuminationPipeline;
         this._illuminationPipeline = null;
+        this._dynamicIlluminationBindings?.clear?.();
+        this._dynamicIlluminationObjects?.clear?.();
         const renderer = this.renderer ?? null;
         this.renderer = null;
         const finishDisposal = () => {

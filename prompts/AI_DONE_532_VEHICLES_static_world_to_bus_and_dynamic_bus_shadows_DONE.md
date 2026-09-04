@@ -1,0 +1,178 @@
+# DONE
+
+## Completion summary — 2026-09-03
+
+AI 532 is complete as a generic moving-object extension to the optional static
+sun cache. The bus is the first gameplay registration, not an implementation
+special case. Any stable `Object3D` root can register as a caster, receiver, or
+both through `GameEngine.registerDynamicIlluminationObject`.
+
+- [`DynamicSunShadowProjection.js`](../src/app/illumination/dynamic_sun_shadow/DynamicSunShadowProjection.js)
+  deterministically fits a fixed-density, texel-snapped projection to every
+  registered caster and its complete low-sun ground tail.
+- [`DynamicSunShadowLayer.js`](../src/graphics/illumination/dynamic_sun_shadow/DynamicSunShadowLayer.js)
+  renders all registered movers into one shared RGBA8 depth field. That shared
+  nearest-depth field provides self-shadowing, mover-to-world shadows, and
+  mover A-to-mover B interaction without rendering the static city.
+- [`StaticSunDepthMaterialAdapter.js`](../src/graphics/illumination/static_sun_depth/StaticSunDepthMaterialAdapter.js)
+  and the dedicated static/dynamic GLSL sources compose
+  `Vcurrent * VstaticSun * VdynamicSun` only inside the matched directional
+  sun's direct-light evaluation.
+- [`StaticSunDepthPipeline.js`](../src/graphics/illumination/static_sun_depth/StaticSunDepthPipeline.js)
+  owns the atomic static and dynamic caster handoff, receiver preparation,
+  render-pose update, debug state, restoration, and current fallback.
+- [`GameplayState.js`](../src/states/GameplayState.js) registers the active bus
+  through the same generic engine API future traffic, pedestrians, or moving
+  props can use.
+- [`dynamic_sun_shadow.md`](../specs/graphics/dynamic_sun_shadow.md) records the
+  interaction, transparency, capacity, lifecycle, fallback, and debug
+  contracts. AI 498 now explicitly marks its competing bus-map/cascade phases
+  superseded; its independent Three.js-upgrade phase remains open.
+- Deterministic coverage lives in
+  [`dynamic_sun_shadow_projection.test.js`](../tests/node/unit/dynamic_sun_shadow_projection.test.js),
+  [`dynamic_sun_shadow_graphics_contract.test.js`](../tests/node/unit/dynamic_sun_shadow_graphics_contract.test.js),
+  and
+  [`illumination_dynamic_sun_shadow_layer.pwtest.js`](../tests/headless/e2e/illumination_dynamic_sun_shadow_layer.pwtest.js).
+  The last test generates human-verification captures under
+  `tests/artifacts/screens/illumination_532/` for dynamic A-to-B and moving
+  static-cache receiver states. Captures are not runtime or corrective inputs.
+
+The current renderer is still the startup/default path. Merely registering a
+moving object allocates no shadow target and changes no caster flag. The hybrid
+path exists only when the optional static-sun pipeline is explicitly installed
+and successfully activated. Missing/stale assets, projection overflow,
+unsupported inventory, ownership drift, context loss, replacement, and
+disposal all restore the existing live shadow path and release the add-on map.
+
+### Progress and acceptance
+
+- Generic stable-ID registration and pipeline rebinding: complete.
+- Two registered moving casters in one interaction map: complete.
+- Moving receivers sample fixed world-cache positions per fragment: complete.
+- Render-pose update, low/high-sun deterministic fitting, and texel snapping:
+  complete.
+- Opaque/alpha-tested casting, blended/transmissive non-casting, material-array
+  indexing, instanced/skinned basics, and audited custom depth: complete.
+- Current/baked/debug transitions and exact caster restoration: complete.
+- Debug visibility, depth, projection, bias, composition, and hybrid-difference
+  modes: complete.
+- Production promotion and default enablement: intentionally deferred to the
+  later AO, Options, and release-validation AIs.
+
+Validation results:
+
+| Suite | Result |
+|---|---:|
+| AI 532 plus affected AI 531 focused Node tests | 24/24 passed |
+| AI 532/531 WebGL2 adapter and lifecycle tests | 5/5 passed |
+| Repository-wide Node unit suite | 774 passed, 6 failed, 3 skipped |
+
+The six repository-wide failures are unrelated existing/rebased work in facade
+attachments, missing low-cut-grass assets, markings debugger registration,
+texture correction profiles, and wall-decorator expectations. None touches an
+AI 532 source or affected test. They are reported rather than folded into this
+change.
+
+### Performance and footprint evidence
+
+The machine had other processes using the GPU, as noted by the user. AI 532
+therefore does not promote unstable timing samples. Unavailable timing metrics
+are explicitly marked `not measured`; the exact workload and allocation
+counters below remain useful.
+
+| Metric | Current | Full hybrid | Change / status |
+|---|---:|---:|---|
+| Static-city shadow calls per AI 531 same-condition 1280x720 view | 70–332 | 0 | -100%; unchanged by AI 532 |
+| Static-city shadow triangles per same view | 236,069–1,909,836 | 0 | -100%; unchanged by AI 532 |
+| Dynamic-map fixture work, two box movers | folded into current map | 2 calls / 24 triangles | exact browser-fixture counter; not a production-bus estimate |
+| Dynamic target allocation at production defaults | 0 B | 33,554,432 B estimated | 2048² RGBA8 plus depth, 32 MiB |
+| Dynamic disk/network payload | 0 B | 0 B | runtime render target only |
+| Static baked payload | 0 B | unchanged from AI 531 | AI 532 adds no baked files |
+| Whole-frame calls/triangles with production movers | not measured | not measured | no controlled production route run |
+| Frame time / FPS | not measured | not measured | concurrent processes and shared GPU |
+| CPU / GPU shadow time and variance | not measured | not measured | concurrent processes and shared GPU |
+| Load/decode/upload time | not measured | not measured | dynamic target is runtime-created; static loading unchanged |
+
+Validation used the repository's deterministic WebGL2 Playwright harness at
+960x540 with post-processing disabled for isolated correctness, 64/128 test
+targets, and the host RTX 3060. The production default is 2048 at 0.025
+m/texel. The motion script compares identical two-mover endpoints sampled at
+15 Hz and 120 Hz under 8-degree and 45-degree sun elevations. This is a
+correctness run, not a same-condition performance route; warm-up count, timing
+sample count/statistic, and timing variance are `not measured` for that reason.
+
+### Issues encountered
+
+- Three r183 RGBA depth packing changed channel significance relative to the
+  older formula initially used. The browser A-to-B test exposed it; the shader
+  now uses r183's red-most-significant unpack coefficients and the test passes.
+- The first fixed-world-cache fixture moved across the wrong light-space axis.
+  The deterministic fixture was corrected to exercise an actual cache boundary;
+  no runtime patch or per-map correction was added.
+- Production timing was intentionally not collected because shared-machine/GPU
+  contention would make the result misleading. AI 536 retains that gate.
+- The repository-wide unit run retains six unrelated failures listed in the
+  validation table. AI 532's focused and browser suites are green.
+
+# Problem
+
+The static sun-depth cache from AI 531 is incomplete until arbitrary moving
+objects can receive shadows from buildings, trees, overhangs, and other static
+objects. Conversely, the immutable static cache cannot contain those movers.
+At least two movers may interact, so isolated object-specific maps are not
+sufficient.
+
+# Request
+
+Integrate generic moving objects with the optional static sun cache and
+implement one shared dynamic directional shadow layer. The bus is the first
+registered gameplay client. Preserve the current shadow engine as the complete
+runtime fallback and do not implement a competing bus-shadow system from AI
+498.
+
+## Execution gate
+
+- AI 527 through AI 531 and the user-approved AI 546 disposition are DONE.
+- Three.js remains pinned to audited r183.2; no silent upgrade is part of this
+  work.
+- AI 532 supersedes AI 498's overlapping bus-map and cascade-retuning phases.
+
+## Implemented requirements
+
+- Register any moving `Object3D` through a stable generic engine API with
+  explicit cast/receive flags.
+- Sample cached static depth per compatible moving-object fragment without
+  whole-object binary darkening.
+- Preserve stock Standard/Physical material behavior and attenuate only direct
+  energy from the named sun.
+- Render all registered moving casters into one shared dynamic field so one
+  mover can shadow itself, the world, and another mover.
+- Exclude the static city from the dynamic field.
+- Fit the union of registered casters and complete low-sun cast tails at fixed
+  density; texel-snap the projection and use current render-pose matrices.
+- Fail closed to current when the interaction set exceeds fixed capacity rather
+  than omitting an object or lowering quality silently.
+- Treat blended/transmissive parts as non-casting by default, preserve
+  alpha-tested silhouettes, and support audited `MeshDepthMaterial` overrides.
+- Keep the bus contact-shadow rig unchanged for AI 534's measured decision.
+- Allocate no optional dynamic resources in current mode and restore every
+  original caster flag on fallback or teardown.
+- Expose dynamic visibility, depth, projection, bias, composed visibility,
+  hybrid-difference, interaction inventory, and workload diagnostics.
+- Validate deterministic two-mover motion at low/high rates and sun elevations,
+  per-fragment mover-to-mover occlusion, fixed-cache sampling at moving poses,
+  integrated pipeline transitions, and current restoration.
+
+## Acceptance result
+
+- Static shadow boundaries are sampled from each moving fragment's world
+  position.
+- Multiple registered movers share one authoritative dynamic depth field and
+  interact correctly.
+- No static-world geometry is submitted to that field.
+- Projection fitting uses the visible render pose without prior-frame lag and
+  includes low-sun tails.
+- Current remains unchanged, default, asset-independent, and recoverable in the
+  same frame-boundary lifecycle.
+- Exactly one generic moving-object dynamic shadow implementation is
+  authoritative after migration.

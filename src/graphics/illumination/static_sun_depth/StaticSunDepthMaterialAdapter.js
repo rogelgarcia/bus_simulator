@@ -27,6 +27,14 @@ const SHADER_PAYLOAD = createShaderPayload({
     shaderId: 'illumination.static_sun_depth.v1',
     sourceSet: SHADER_SOURCES
 });
+const DYNAMIC_SHADER_SOURCES = await loadShaderSourceSet({
+    vertexPath: 'materials/dynamic_sun_shadow.vert.glsl',
+    fragmentPath: 'materials/dynamic_sun_shadow.frag.glsl'
+});
+const DYNAMIC_SHADER_PAYLOAD = createShaderPayload({
+    shaderId: 'illumination.dynamic_sun_shadow.v1',
+    sourceSet: DYNAMIC_SHADER_SOURCES
+});
 let bindingVariantSerial = 0;
 
 export const STATIC_SUN_DEPTH_DEBUG_MODES = Object.freeze({
@@ -41,7 +49,13 @@ export const STATIC_SUN_DEPTH_DEBUG_MODES = Object.freeze({
     seam: 8,
     currentDifference: 9,
     liveFinal: 10,
-    signedDifference: 11
+    signedDifference: 11,
+    dynamicVisibility: 12,
+    dynamicDepth: 13,
+    dynamicProjection: 14,
+    dynamicBias: 15,
+    composedVisibility: 16,
+    hybridDifference: 17
 });
 
 function replaceExactlyOnce(source, anchor, replacement, label) {
@@ -71,7 +85,7 @@ function dot(left, right) {
 }
 
 function debugModeValue(value) {
-    if (Number.isSafeInteger(value) && value >= 0 && value <= 11) return value;
+    if (Number.isSafeInteger(value) && value >= 0 && value <= 17) return value;
     if (typeof value === 'string' && Object.prototype.hasOwnProperty.call(STATIC_SUN_DEPTH_DEBUG_MODES, value)) {
         return STATIC_SUN_DEPTH_DEBUG_MODES[value];
     }
@@ -84,6 +98,7 @@ export function createStaticSunDepthShaderBinding({ descriptor, texture, debugMo
     const layout = validated.identity.layout;
     const pointDirectionWorld = new THREE.Vector3(...validated.identity.sunPointDirectionWorld).normalize();
     const pointDirectionView = pointDirectionWorld.clone();
+    const dynamicPointDirectionWorld = pointDirectionWorld.clone();
     const bias = validated.identity.sampling.bias;
     const pcf = validated.identity.sampling.pcf;
     const geometricBias = bias.model
@@ -109,6 +124,7 @@ export function createStaticSunDepthShaderBinding({ descriptor, texture, debugMo
         'static-sun-depth-v2',
         'three-r' + STATIC_SUN_DEPTH_THREE_REVISION,
         SHADER_PAYLOAD.variantKey,
+        DYNAMIC_SHADER_PAYLOAD.variantKey,
         validated.identity.encoding.id,
         'binding-' + bindingVariantSerial
     ].join(':');
@@ -160,7 +176,13 @@ export function createStaticSunDepthShaderBinding({ descriptor, texture, debugMo
         },
         staticSunDepthSourceMapRightLight: { value: sourceMapRightLight },
         staticSunDepthSourceMapUpLight: { value: sourceMapUpLight },
-        staticSunDepthDebugMode: { value: debugModeValue(debugMode) }
+        staticSunDepthDebugMode: { value: debugModeValue(debugMode) },
+        dynamicSunShadowMap: { value: null },
+        dynamicSunShadowWorldToClip: { value: new THREE.Matrix4() },
+        dynamicSunShadowMapSizeBias: { value: new THREE.Vector4(1, 1, 0, 0) },
+        dynamicSunShadowDepthRangeMeters: { value: 1 },
+        dynamicSunShadowPointDirectionWorld: { value: dynamicPointDirectionWorld },
+        dynamicSunShadowEnabled: { value: 0 }
     });
     return {
         descriptor: validated,
@@ -169,6 +191,31 @@ export function createStaticSunDepthShaderBinding({ descriptor, texture, debugMo
         variantKey,
         updateCamera(camera) {
             pointDirectionView.copy(pointDirectionWorld).transformDirection(camera.matrixWorldInverse);
+        },
+        setDynamicShadowState(state) {
+            if (!state?.enabled) {
+                uniforms.dynamicSunShadowEnabled.value = 0;
+                uniforms.dynamicSunShadowMap.value = null;
+                return;
+            }
+            if (!state.texture?.isTexture || !state.worldToClip?.isMatrix4) {
+                throw new TypeError('Dynamic sun-shadow binding state is incomplete.');
+            }
+            const direction = new THREE.Vector3(...state.pointDirectionWorld).normalize();
+            if (direction.dot(pointDirectionWorld) < 0.999999) {
+                throw new Error('Dynamic and static sun-shadow directions do not match.');
+            }
+            dynamicPointDirectionWorld.copy(direction);
+            uniforms.dynamicSunShadowMap.value = state.texture;
+            uniforms.dynamicSunShadowWorldToClip.value.copy(state.worldToClip);
+            uniforms.dynamicSunShadowMapSizeBias.value.set(
+                state.mapSize,
+                state.mapSize,
+                state.constantBiasMeters,
+                state.normalBiasMeters
+            );
+            uniforms.dynamicSunShadowDepthRangeMeters.value = state.depthRangeMeters;
+            uniforms.dynamicSunShadowEnabled.value = 1;
         },
         setDebugMode(mode) {
             uniforms.staticSunDepthDebugMode.value = debugModeValue(mode);
@@ -187,7 +234,7 @@ export function applyStaticSunDepthShaderPatch(shader, binding) {
     shader.vertexShader = replaceExactlyOnce(
         shader.vertexShader,
         '#include <common>',
-        `#include <common>\n${SHADER_PAYLOAD.vertexSource}`,
+        `#include <common>\n${SHADER_PAYLOAD.vertexSource}\n${DYNAMIC_SHADER_PAYLOAD.vertexSource}`,
         'vertex common'
     );
     shader.vertexShader = replaceExactlyOnce(
@@ -199,7 +246,7 @@ export function applyStaticSunDepthShaderPatch(shader, binding) {
     shader.fragmentShader = replaceExactlyOnce(
         shader.fragmentShader,
         '#include <lights_pars_begin>',
-        `#include <lights_pars_begin>\n${SHADER_PAYLOAD.fragmentSource}`,
+        `#include <lights_pars_begin>\n${SHADER_PAYLOAD.fragmentSource}\n${DYNAMIC_SHADER_PAYLOAD.fragmentSource}`,
         'fragment lighting declarations'
     );
     shader.fragmentShader = replaceExactlyOnce(
@@ -229,14 +276,22 @@ export class StaticSunDepthMaterialSet {
         this._binding = null;
         this._enabled = false;
         this._unsupported = [];
-        this._root = null;
+        this._roots = [];
         this._outsideRoot = null;
     }
 
     prepare(root, binding, { outsideRoot = null } = {}) {
-        if (!root?.traverse) throw new TypeError('Static-sun receiver root must be an Object3D subtree.');
-        const outsideMaterials = collectOutsideMaterials(outsideRoot, root);
-        const materials = collectMaterials(root);
+        return this.prepareRoots([root], binding, { outsideRoot });
+    }
+
+    prepareRoots(roots, binding, { outsideRoot = null } = {}) {
+        if (!Array.isArray(roots) || roots.length === 0
+            || roots.some((root) => !root?.traverse)) {
+            throw new TypeError('Static-sun receiver roots must be non-empty Object3D subtrees.');
+        }
+        const uniqueRoots = [...new Set(roots)];
+        const outsideMaterials = collectOutsideMaterials(outsideRoot, uniqueRoots);
+        const materials = collectMaterialsFromRoots(uniqueRoots);
         const unsupported = [];
         for (const material of materials) {
             if (!isSupportedReceiverMaterial(material)) {
@@ -270,7 +325,7 @@ export class StaticSunDepthMaterialSet {
         }
         this._binding = binding;
         this._unsupported = unsupported;
-        this._root = root;
+        this._roots = uniqueRoots;
         this._outsideRoot = outsideRoot;
         return Object.freeze({ supportedMaterialCount: this._handles.size, unsupported: Object.freeze(unsupported.slice()) });
     }
@@ -317,9 +372,9 @@ export class StaticSunDepthMaterialSet {
      * @returns {boolean}
      */
     verifyPreparedOwnership() {
-        if (!this._root?.traverse) return false;
+        if (this._roots.length === 0 || this._roots.some((root) => !root?.traverse)) return false;
         const current = new Set();
-        for (const material of collectMaterials(this._root)) {
+        for (const material of collectMaterialsFromRoots(this._roots)) {
             if (!isLitMaterial(material)) continue;
             if (!isSupportedReceiverMaterial(material)) return false;
             current.add(material);
@@ -328,7 +383,7 @@ export class StaticSunDepthMaterialSet {
         for (const material of current) {
             if (!this._handles.has(material)) return false;
         }
-        const outside = collectOutsideMaterials(this._outsideRoot, this._root);
+        const outside = collectOutsideMaterials(this._outsideRoot, this._roots);
         for (const material of this._handles.keys()) {
             if (outside.has(material)) return false;
         }
@@ -338,6 +393,7 @@ export class StaticSunDepthMaterialSet {
     getDiagnostics() {
         return Object.freeze({
             enabled: this._enabled,
+            rootCount: this._roots.length,
             materialCount: this._handles.size,
             unsupported: Object.freeze(this._unsupported.slice()),
             registries: Object.freeze([...this._handles.keys()].map((material) => getMaterialShaderHookRegistrySnapshot(material)))
@@ -350,7 +406,7 @@ export class StaticSunDepthMaterialSet {
         this._binding = null;
         this._enabled = false;
         this._unsupported = [];
-        this._root = null;
+        this._roots = [];
         this._outsideRoot = null;
     }
 }
@@ -365,11 +421,20 @@ function collectMaterials(root) {
     return materials;
 }
 
-function collectOutsideMaterials(scene, excludedRoot) {
+function collectMaterialsFromRoots(roots) {
+    const materials = new Set();
+    for (const root of roots) {
+        for (const material of collectMaterials(root)) materials.add(material);
+    }
+    return materials;
+}
+
+function collectOutsideMaterials(scene, excludedRoots) {
     const materials = new Set();
     if (!scene) return materials;
+    const excluded = new Set(excludedRoots);
     const visit = (object) => {
-        if (object === excludedRoot) return;
+        if (excluded.has(object)) return;
         const value = object?.material;
         if (Array.isArray(value)) value.forEach((material) => material && materials.add(material));
         else if (value) materials.add(value);

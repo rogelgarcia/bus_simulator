@@ -132,6 +132,48 @@ test('pipeline replacement and removal transfer ownership before assignment', ()
     assert.equal(engine.installIlluminationPipeline(undefined), null);
 });
 
+test('generic engine registry transfers two moving objects to one illumination pipeline', () => {
+    const events = [];
+    const engine = makeEngine(events, null);
+    const rootA = { isObject3D: true };
+    const rootB = { isObject3D: true };
+    const handleB = engine.registerDynamicIlluminationObject({
+        id: 'vehicle.b',
+        root: rootB,
+        cast: true,
+        receive: true
+    });
+    const handleA = engine.registerDynamicIlluminationObject({
+        id: 'vehicle.a',
+        root: rootA,
+        cast: true,
+        receive: true
+    });
+    assert.deepEqual(
+        engine.getDynamicIlluminationObjects().map((entry) => entry.id),
+        ['vehicle.a', 'vehicle.b']
+    );
+
+    const pipeline = lifecyclePipeline(events, null, 'hybrid');
+    pipeline.registerDynamicShadowObject = (record) => {
+        events.push('bind:' + record.id);
+        return { unregister: () => events.push('unbind:' + record.id) };
+    };
+    engine.installIlluminationPipeline(pipeline);
+    assert.deepEqual(events, ['bind:vehicle.a', 'bind:vehicle.b']);
+
+    assert.equal(handleA.unregister(), true);
+    assert.equal(handleA.unregister(), false);
+    assert.equal(handleB.unregister(), true);
+    assert.deepEqual(events, [
+        'bind:vehicle.a',
+        'bind:vehicle.b',
+        'unbind:vehicle.a',
+        'unbind:vehicle.b'
+    ]);
+    assert.deepEqual(engine.getDynamicIlluminationObjects(), []);
+});
+
 test('invalid replacement or failed uninstall preserves the installed owner', () => {
     const events = [];
     const original = lifecyclePipeline(events, 'uninstall', 'old');

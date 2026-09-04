@@ -16,6 +16,17 @@ uniform highp vec2 staticSunDepthSourceMapRightLight;
 uniform highp vec2 staticSunDepthSourceMapUpLight;
 uniform int staticSunDepthDebugMode;
 
+void dynamicSunShadowApplyDirectional(
+    inout IncidentLight directLight,
+    highp vec3 receiverNormal
+);
+highp vec3 dynamicSunShadowDebugColor(
+    highp vec3 normalColor,
+    highp vec3 receiverNormal,
+    highp float staticVisibility,
+    highp float currentVisibility
+);
+
 highp vec2 staticSunDepthDecodedDepth( highp vec4 packedDepth ) {
     if ( staticSunDepthEncodingMode == 1 ) {
         if ( packedDepth.a < 0.5 ) return vec2( 0.0, 0.0 );
@@ -249,10 +260,17 @@ void staticSunDepthApplyDirectional(
         abs( staticSunDepthCurrentVisibility - staticSunDepthCacheVisibility )
     );
     directLight.color *= staticSunDepthCacheVisibility;
+    dynamicSunShadowApplyDirectional( directLight, receiverNormal );
 }
 
 highp vec3 staticSunDepthDebugColor( highp vec3 normalColor, highp vec3 receiverNormal ) {
     if ( staticSunDepthDebugMode == 0 || staticSunDepthDebugMode == 10 ) return normalColor;
+    if ( staticSunDepthDebugMode >= 12 ) return dynamicSunShadowDebugColor(
+        normalColor,
+        receiverNormal,
+        staticSunDepthCacheVisibility,
+        staticSunDepthCurrentVisibility
+    );
     if ( ! receiveShadow ) {
         if ( staticSunDepthDebugMode == 1 ) return vec3( 1.0 );
         if ( staticSunDepthDebugMode == 8 ) return vec3( 0.0, 0.0, 1.0 );
