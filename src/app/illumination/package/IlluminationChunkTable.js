@@ -2,6 +2,7 @@
 // @ts-check
 
 import {
+    isSupportedIlluminationMip,
     ILLUMINATION_CHUNK_TABLE_SCHEMA,
     ILLUMINATION_MAX_CHUNKS,
     ILLUMINATION_MAX_CHUNK_BYTES,
@@ -103,8 +104,8 @@ export function validateIlluminationChunkTable(value, options = {}) {
         stableId(entry.encoding, `chunk '${entry.id}' encoding`);
         stableId(entry.precision, `chunk '${entry.id}' precision`);
         stableId(entry.rowOrigin, `chunk '${entry.id}' rowOrigin`);
-        if (entry.mipLevel !== 0) {
-            failIlluminationPackage('chunk_mip_level_unsupported', 'V1 illumination chunks require mip level zero.', {
+        if (!isSupportedIlluminationMip(entry)) {
+            failIlluminationPackage('chunk_mip_level_unsupported', 'Unsupported illumination mip descriptor.', {
                 id: entry.id,
                 mipLevel: entry.mipLevel ?? null
             });

@@ -39,6 +39,15 @@ export const ILLUMINATION_MAX_CHUNKS = 65535;
 export const ILLUMINATION_AGGREGATE_HASH_OFFSET = 168;
 export const ILLUMINATION_AGGREGATE_HASH_LENGTH = 32;
 
+export function isSupportedIlluminationMip(chunk) {
+    return chunk.mipLevel === 0 || (Number.isInteger(chunk.mipLevel) && chunk.mipLevel > 0 && chunk.mipLevel <= 3
+        && ['direct_receiver', 'indirect_irradiance'].includes(chunk.channelId)
+        && chunk.resourceType === 'texture_2d' && ((chunk.encoding === 'rgba16f_le'
+        && chunk.coordinateTransform?.schema === 'bus-sim-receiver-lightmap-page-v1')
+        || (chunk.encoding === 'rgba8_unorm' && chunk.coordinateTransform?.schema === 'bus-sim-directional-lightmap-page-v1'
+            && chunk.requiredRuntimeCapabilities?.includes('receiver_directional_sampling_v1'))));
+}
+
 export const ILLUMINATION_HEADER_OFFSETS = Object.freeze({
     magic: 0,
     major: 8,

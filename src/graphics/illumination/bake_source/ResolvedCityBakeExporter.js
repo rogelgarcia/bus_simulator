@@ -72,10 +72,11 @@ function mappingRange(geometry, group, groupIndex) {
     };
 }
 
-async function captureLightingProfiles(inputProfiles) {
+async function captureLightingProfiles(inputProfiles, signal) {
     const profiles = [];
     const buffers = [];
     for (const input of inputProfiles ?? []) {
+        signal?.throwIfAborted();
         const profile = { ...cloneCanonicalJson(input) };
         const source = normalizeProjectUrl(profile.source);
         if (profile.type === 'environment_ibl' && profile.enabled !== false && !source) {
@@ -84,7 +85,7 @@ async function captureLightingProfiles(inputProfiles) {
             });
         }
         if (profile.type === 'environment_ibl' && profile.enabled !== false && source) {
-            const response = await fetch(profile.source);
+            const response = await fetch(profile.source, { signal });
             if (!response.ok) {
                 failBakeSource('lighting_profile_source_missing', `Lighting profile '${profile.id}' source could not be fetched.`, {
                     id: profile.id,
@@ -552,9 +553,29 @@ function createSizeReport(manifest, packageByteLength, channelSourceContext) {
 /**
  * Exports one fully resolved, prewarmed gameplay city. It does not attach the city or mutate gameplay lighting.
  */
-export async function exportResolvedCityBakeSource({ city, profile, readiness = {}, sourceEqualityVerified = false } = {}) {
+export function exportResolvedCityBakeSource(options = {}) {
+    return resolveCityBakeSource({ ...options, identityOnly: false });
+}
+
+/** Computes the same authenticated source identity without serializing an offline bake package. */
+export function exportResolvedCityBakeIdentity(options = {}) {
+    return resolveCityBakeSource({ ...options, identityOnly: true });
+}
+
+async function resolveCityBakeSource({ city, profile, readiness = {}, sourceEqualityVerified = false, includeLiveReferences = false,
+    identityOnly = false, onProgress = () => {}, signal, textureConcurrency = 1 } = {}) {
     if (!city?.cityId || !profile?.id) failBakeSource('export_context_missing', 'Resolved city export requires a city and explicit export profile.');
     const started = performance.now();
+    const phaseTimings = {};
+    let previousPhase, phaseStarted = started;
+    const progress = (phase) => {
+        signal?.throwIfAborted();
+        const now = performance.now();
+        if (previousPhase) phaseTimings[previousPhase] = now - phaseStarted;
+        previousPhase = phase; phaseStarted = now;
+        onProgress({ phase, elapsedMs: now - started, phaseTimings: { ...phaseTimings } });
+    };
+    progress('extracting_scene');
     city.group.updateWorldMatrix(true, true);
     const sourceBefore = createResolvedCitySourceRecord(city);
     const roots = collectResolvedCityBakeRoots(city);
@@ -563,11 +584,15 @@ export async function exportResolvedCityBakeSource({ city, profile, readiness = 
             hashBytes: (bytes) => sha256Hex(RESOLVED_CITY_BAKE_GEOMETRY_BUFFER_DOMAIN, bytes),
             matrixHelpers: { validateAffineTransform, convertThreeMatrixToBlender }
         }),
-        createBakeMaterialCatalog(roots),
-        captureLightingProfiles(profile.lightProfiles)
+        createBakeMaterialCatalog(roots, { signal, textureConcurrency, onProgress: (counts) => onProgress({
+            phase: 'checking_textures', ...counts, elapsedMs: performance.now() - started,
+            phaseTimings: { ...phaseTimings }
+        }) }),
+        captureLightingProfiles(profile.lightProfiles, signal)
     ]);
 
     const sourceAfter = createResolvedCitySourceRecord(city);
+    progress('mapping_receivers');
     if (canonicalJsonStringify(sourceBefore) !== canonicalJsonStringify(sourceAfter)) {
         failBakeSource('source_mutated_during_export', 'Resolved city source provenance changed during extraction.');
     }
@@ -651,6 +676,7 @@ export async function exportResolvedCityBakeSource({ city, profile, readiness = 
         semanticConflicts: mappings.semanticConflicts,
         receiverMappings: mappings.receiverMappings
     });
+    progress('hashing_source');
     const hashSet = await buildBakeSourceHashSet({
         resolvedSource: resolvedSourceFreshness,
         geometry: geometryFreshness,
@@ -671,6 +697,7 @@ export async function exportResolvedCityBakeSource({ city, profile, readiness = 
         alphaInputs: alphaCatalog.records,
         lightingProfiles: capturedLighting.profiles
     };
+    progress('hashing_channels');
     const channelSources = await buildChannelSourceHashes(channelProfiles, hashSet, channelSourceContext);
     const manifest = {
         format: RESOLVED_CITY_BAKE_INPUT_FORMAT,
@@ -725,6 +752,13 @@ export async function exportResolvedCityBakeSource({ city, profile, readiness = 
         buffers: semanticBuffers,
         hashes: { ...hashSet, channelSources }
     };
+    if (identityOnly) {
+        progress('source_ready');
+        return { manifest, sourceIdentity: manifest.hashes,
+            ...(includeLiveReferences ? { liveObjectReferences: getBakeSourceObjectReferences(geometryExtraction) } : {}),
+            metrics: { identityTimeMs: performance.now() - started, phaseTimings } };
+    }
+    progress('packaging_source');
     const packageBuffers = registerPackageBuffers(
         geometryExtraction.buffers,
         materialCatalog.buffers,
@@ -733,6 +767,7 @@ export async function exportResolvedCityBakeSource({ city, profile, readiness = 
     );
     const packageBytes = await buildBakeSourcePackage({ manifest, buffers: packageBuffers });
     const packageSha256 = await sha256Hex(RESOLVED_CITY_BAKE_FILE_DOMAIN, packageBytes);
+    progress('validating_package');
     const validated = await validateResolvedCityBakePackage(packageBytes, {
         resolvedSource: {
             manifest,
@@ -744,6 +779,7 @@ export async function exportResolvedCityBakeSource({ city, profile, readiness = 
     return {
         packageBytes,
         manifest,
+        ...(includeLiveReferences ? { liveObjectReferences: getBakeSourceObjectReferences(geometryExtraction) } : {}),
         packageSha256,
         sourceIdentity: manifest.hashes,
         reports: {

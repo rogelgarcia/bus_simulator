@@ -12,12 +12,13 @@ export const BAKED_LIGHTING_DEFAULTS = Object.freeze({
     shadows: Object.freeze({
         enabled: true,
         dynamicResolution: BAKED_DYNAMIC_SHADOW_RESOLUTIONS.high
-    })
+    }),
+    receivers: Object.freeze({ direct: false, indirect: false, linked: true, enhanced: false, debug: 'final' })
 });
 
 /**
  * @param {unknown} input
- * @returns {{shadows: {enabled: boolean, dynamicResolution: 'medium' | 'high'}}}
+ * @returns {{shadows: {enabled: boolean, dynamicResolution: 'medium' | 'high'}, receivers: {direct: boolean, indirect: boolean, linked: boolean, enhanced: boolean, debug: string}}}
  */
 export function sanitizeBakedLightingSettings(input) {
     const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
@@ -27,7 +28,12 @@ export function sanitizeBakedLightingSettings(input) {
     const dynamicResolution = shadows.dynamicResolution === BAKED_DYNAMIC_SHADOW_RESOLUTIONS.high
         ? BAKED_DYNAMIC_SHADOW_RESOLUTIONS.high
         : BAKED_DYNAMIC_SHADOW_RESOLUTIONS.medium;
-    return { shadows: { enabled: shadows.enabled === true, dynamicResolution } };
+    const receivers = source.receivers ?? {};
+    const debugModes = ['final', 'direct', 'indirect', 'combined', 'uv', 'pages', 'unmapped', 'difference', 'mip'];
+    return { shadows: { enabled: shadows.enabled === true, dynamicResolution },
+        receivers: { direct: receivers.direct === true, indirect: receivers.indirect === true,
+            linked: receivers.linked !== false, enhanced: receivers.enhanced === true,
+            debug: debugModes.includes(receivers.debug) ? receivers.debug : 'final' } };
 }
 
 export function loadSavedBakedLightingSettings() {

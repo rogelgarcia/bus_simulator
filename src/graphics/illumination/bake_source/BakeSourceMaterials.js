@@ -8,6 +8,8 @@ import {
 import { failBakeSource } from './BakeSourceErrors.js';
 import { activeMaterialSlotEntries, collectResolvedRootMeshes } from './BakeSourceScene.js';
 import { createBakeTextureCatalog } from './BakeSourceTextures.js';
+import { getMaterialShaderBaseContract } from '../../shaders/core/MaterialShaderHookRegistry.js';
+import { getAuthoredMaterialShadowSide } from '../../lighting/MaterialShadowSideState.js';
 
 export const BAKE_MATERIAL_SEMANTICS_DOMAIN = 'bus-simulator/illumination/bake-source/material-semantics/v1';
 
@@ -199,7 +201,7 @@ function textureBindings(material, bindingByTexture) {
         const texture = material?.[slot] ?? null;
         if (!texture) continue;
         const binding = bindingByTexture.get(texture);
-        if (!binding) failBakeSource('texture_binding_missing', `Material texture slot '${slot}' has no captured binding.`);
+        if (!binding) failBakeSource('texture_binding_missing', `Material '${material.name || material.type}' texture slot '${slot}' has no captured binding (${texture.name || texture.uuid}).`);
         result[slot] = binding.id;
     }
     return result;
@@ -294,11 +296,11 @@ function materialRecord(material, bindingByTexture) {
     if (!material?.isMaterial) failBakeSource('invalid_material', 'A mesh references a missing or non-Three material.');
     const bindings = textureBindings(material, bindingByTexture);
     const customTags = CUSTOM_SHADER_TAGS.filter((key) => material.userData?.[key] !== undefined);
-    const hasOwnShaderPatch = Object.prototype.hasOwnProperty.call(material, 'onBeforeCompile')
-        && typeof material.onBeforeCompile === 'function';
+    const shaderContract = getMaterialShaderBaseContract(material);
+    const hasOwnShaderPatch = shaderContract.hasOwnShaderPatch || shaderContract.hookIds.some((id) =>
+        !['city.cascaded_shadows', 'illumination.static_sun_depth', 'illumination.receiver_lightmaps'].includes(id));
     if (hasOwnShaderPatch && customTags.length === 0) customTags.push('unadapted_onBeforeCompile');
-    const hasOwnProgramKey = Object.prototype.hasOwnProperty.call(material, 'customProgramCacheKey')
-        && typeof material.customProgramCacheKey === 'function';
+    const hasOwnProgramKey = shaderContract.hasOwnProgramKey;
     if (hasOwnProgramKey && customTags.length === 0) customTags.push('unadapted_customProgramCacheKey');
     const customSemantics = {};
     for (const key of USER_DATA_KEYS) {
@@ -307,6 +309,13 @@ function materialRecord(material, bindingByTexture) {
         if (value !== null) customSemantics[key] = value;
     }
     const customAdapters = resolveCustomShaderAdapters(customTags, customSemantics);
+    // Cascade selection changes runtime visibility, not the authored BSDF.
+    const defines = { ...material.defines };
+    if (shaderContract.hookIds.includes('city.cascaded_shadows')) {
+        delete defines.USE_CSM;
+        delete defines.CSM_CASCADES;
+        delete defines.CSM_FADE;
+    }
     const alpha = alphaSemantics(material, bindings, customAdapters.adapters, customSemantics);
     const hasNormalMap = Boolean(bindings.normalMap);
     const normalMapType = hasNormalMap
@@ -360,7 +369,7 @@ function materialRecord(material, bindingByTexture) {
         aoMapIntensity: finite(material.aoMapIntensity, 'material.aoMapIntensity', 1),
         lightMapIntensity: finite(material.lightMapIntensity, 'material.lightMapIntensity', 1),
         side: finite(material.side, 'material.side', 0),
-        shadowSide: material.shadowSide === null ? null : finite(material.shadowSide, 'material.shadowSide', 0),
+        shadowSide: getAuthoredMaterialShadowSide(material),
         preserveShadowSide: material.userData?.preserveShadowSide === true,
         isFoliage: material.userData?.isFoliage === true,
         vertexColors: material.vertexColors === true,
@@ -377,13 +386,13 @@ function materialRecord(material, bindingByTexture) {
         customShaderTags: customTags,
         customShaderAdapters: customAdapters.adapters,
         unsupportedCustomShaderTags: customAdapters.unsupportedTags,
-        defines: semanticJson(material.defines ?? {}, 'material.defines', bindingByTexture),
+        defines: semanticJson(defines, 'material.defines', bindingByTexture),
         customSemantics,
         channelSupport: channelSupport(material, alpha, customAdapters.unsupportedTags)
     };
 }
 
-export async function createBakeMaterialCatalog(rootEntries) {
+export async function createBakeMaterialCatalog(rootEntries, { signal, onProgress, textureConcurrency = 1 } = {}) {
     const meshMaterials = new Map();
     const materialObjects = new Set();
     const textures = new Set();
@@ -406,10 +415,11 @@ export async function createBakeMaterialCatalog(rootEntries) {
             }
         }
     }
-    const textureCatalog = await createBakeTextureCatalog(textures);
+    const textureCatalog = await createBakeTextureCatalog(textures, { signal, onProgress, concurrency: textureConcurrency });
     const materialByObject = new Map();
     const materialById = new Map();
     for (const material of materialObjects) {
+        signal?.throwIfAborted();
         const record = materialRecord(material, textureCatalog.bindingByTexture);
         const hash = await hashCanonicalJsonSha256(BAKE_MATERIAL_SEMANTICS_DOMAIN, record);
         const identified = { id: `material:${hash}`, ...record };

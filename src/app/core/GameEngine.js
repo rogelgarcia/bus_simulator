@@ -17,7 +17,7 @@ import { getOrCreateGpuFrameTimer } from '../../graphics/engine3d/perf/GpuFrameT
 import { getResolvedVehicleMotionDebugSettings, sanitizeVehicleMotionDebugSettings } from '../vehicle/VehicleMotionDebugSettings.js';
 import { BusContactShadowRig } from '../../graphics/visuals/vehicles/BusContactShadowRig.js';
 import { StaticAoRuntime } from '../../graphics/visuals/static_ao/StaticAoRuntime.js';
-import { BakedShadowRuntime } from '../../graphics/illumination/baked_lighting/index.js';
+import { BakedLightingRuntime } from '../../graphics/illumination/baked_lighting/index.js';
 
 function resolveThreeToneMapping(mode) {
     const key = sanitizeToneMappingMode(mode, 'aces');
@@ -132,7 +132,7 @@ export class GameEngine {
         this._illuminationPipeline = null;
         this._dynamicIlluminationObjects = new Map();
         this._dynamicIlluminationBindings = new Map();
-        this._bakedLighting = new BakedShadowRuntime(this);
+        this._bakedLighting = new BakedLightingRuntime(this);
         this._disposalPromise = null;
         this._disposed = false;
 
@@ -1301,6 +1301,7 @@ export class GameEngine {
         let gpuFrameBegun = false;
         try {
             illuminationPipeline?.frameBegin?.({ engine: this, dt: stepDt, nowMs: now });
+            this._bakedLighting?.frameBegin?.();
             this._updateStaticAo();
             this._updateBusContactShadow(stepDt);
             gpuTimer?.beginFrame?.();

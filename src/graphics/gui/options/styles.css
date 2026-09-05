@@ -520,6 +520,48 @@
     cursor: default;
 }
 
+.options-illumination-toggles {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 32px 44px;
+    gap: 8px 10px;
+    align-items: center;
+}
+
+.options-illumination-toggles > .options-row {
+    display: contents;
+}
+
+.options-illumination-toggles .options-row-label {
+    grid-column: 1;
+}
+
+.options-illumination-toggles .options-row-control {
+    grid-column: 3;
+}
+
+.options-illumination-toggles .options-illumination-link {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 8px;
+}
+
+.options-illumination-link[aria-pressed="true"] {
+    color: #eaf7ff;
+    background: rgba(100, 210, 255, 0.22);
+    border-color: rgba(100, 210, 255, 0.5);
+}
+
+.options-illumination-link:focus-visible {
+    outline: 2px solid rgba(100, 210, 255, 0.7);
+    outline-offset: 2px;
+}
+
 .options-range {
     max-width: 100%;
     min-width: 160px;

@@ -1,0 +1,1 @@
+outgoingLight = receiverDebugColor(outgoingLight);

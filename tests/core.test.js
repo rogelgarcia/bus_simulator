@@ -2017,7 +2017,8 @@ async function runTests() {
         buildWindowHeaderSurroundGeometry
     } = await import('/src/graphics/engine3d/buildings/window_mesh/WindowDecorationSurroundGeometry.js');
     const {
-        __portalOrnamentTestOnly
+        __portalOrnamentTestOnly,
+        getPortalOrnamentTemplate
     } = await import('/src/graphics/assets3d/generators/building_fabrication/PortalOrnamentParts.js');
     const {
         normalizePortalFabricationDef,
@@ -15333,7 +15334,7 @@ async function runTests() {
             map.finalize({ seed: 't' });
 
             const config = createGeneratorConfig({ render: { roadMode: 'normal' } });
-            const materials = getCityMaterials();
+            const materials = getCityMaterials({ isolated: true });
             const roads = createRoadEngineRoads({ map, config, materials });
 
             assertTrue(roads?.group?.isGroup === true, 'Expected roads.group to be a THREE.Group.');
@@ -15408,7 +15409,7 @@ async function runTests() {
                 buildings: []
             };
 
-            const city = new City({ size: 120, tileMeters: 2, mapTileSize: 24, seed: 't', mapSpec, generatorConfig: { render: { treesEnabled: false } } });
+            const city = new City({ materials: getCityMaterials({ isolated: true }), size: 120, tileMeters: 2, mapTileSize: 24, seed: 't', mapSpec, generatorConfig: { render: { treesEnabled: false } } });
             assertEqual(city?.roads?.debug?.source, 'road_engine', 'Expected City roads to come from RoadEngine pipeline.');
             assertTrue((city?.roads?.debug?.derived?.segments?.length ?? 0) > 0, 'Expected City to have derived RoadEngine segments.');
         });
@@ -15429,12 +15430,14 @@ async function runTests() {
                 scene: new THREE.Scene(),
                 camera: new THREE.PerspectiveCamera(),
                 renderer: { capabilities: { maxTextureSize: 2048 } },
+                shadowSettings: { type: 'off' },
                 lightingSettings: { ibl: { setBackground: false } },
                 atmosphereSettings: { sky: { horizonColor: '#abcdef' } }
             };
             engine.scene.fog = baselineFog;
 
             const city = new City({
+                materials: getCityMaterials({ isolated: true }),
                 size: 120,
                 tileMeters: 2,
                 mapTileSize: 24,
@@ -20532,12 +20535,18 @@ async function runTests() {
         const dummyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.517, 0.4), new THREE.MeshStandardMaterial());
         dummyMesh.geometry.translate(0, 0.2585, 0);
         dummy.add(dummyMesh);
+        const previousTemplate = getPortalOrnamentTemplate('foliate_capital');
         __portalOrnamentTestOnly._injectTemplateForTests('foliate_capital', dummy);
 
-        const parts = buildAi510PortalParts({
-            portal: { enabled: true, defId: 'portal_test_510' },
-            portalDefinitions: { items: [AI510_TEST_PORTAL_DEF] }
-        });
+        let parts;
+        try {
+            parts = buildAi510PortalParts({
+                portal: { enabled: true, defId: 'portal_test_510' },
+                portalDefinitions: { items: [AI510_TEST_PORTAL_DEF] }
+            });
+        } finally {
+            __portalOrnamentTestOnly._injectTemplateForTests('foliate_capital', previousTemplate);
+        }
         const boxes = balconyMeshesByRole(parts, 'portal_box');
         const levels = balconyMeshesByRole(parts, 'portal_level');
         const rings = balconyMeshesByRole(parts, 'portal_order');
@@ -20660,30 +20669,36 @@ async function runTests() {
         const dummyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.517, 0.4), new THREE.MeshStandardMaterial());
         dummyMesh.geometry.translate(0, 0.2585, 0);
         dummy.add(dummyMesh);
+        const previousTemplate = getPortalOrnamentTemplate('foliate_capital');
         __portalOrnamentTestOnly._injectTemplateForTests('foliate_capital', dummy);
 
-        const parts = buildAi510PortalParts({
-            portal: { enabled: true, defId: 'portal_pilaster_510' },
-            portalDefinitions: {
-                items: [{
-                    id: 'portal_pilaster_510',
-                    box: { sideMarginMeters: 0.2, topMarginMeters: 0.2, projectionMeters: 0.1 },
-                    levels: [
-                        {
-                            frameWidthMeters: 0.3,
-                            depthMeters: 0.4,
-                            arch: true,
-                            ring: { widthMeters: 0.2, projectionMeters: 0.08, profile: 'band', jambs: 'stop' }
-                        }
-                    ],
-                    impost: { heightMeters: 0.14, projectionMeters: 0.05, profile: 'flat' },
-                    colonettes: { enabled: true, shape: 'pilaster', countPerSide: 1, widthMeters: 0.6, projectionMeters: 0.16, top: 'arch_crown' },
-                    steps: { count: 0 },
-                    custom: [{ part: 'foliate_capital', anchor: 'capital', scaleMeters: 0.5, offsetMeters: { x: 0, y: 0, out: 0 } }],
-                    palette: { box: { mode: 'pbr', materialId: 'pbr.limestone_smooth' } }
-                }]
-            }
-        });
+        let parts;
+        try {
+            parts = buildAi510PortalParts({
+                portal: { enabled: true, defId: 'portal_pilaster_510' },
+                portalDefinitions: {
+                    items: [{
+                        id: 'portal_pilaster_510',
+                        box: { sideMarginMeters: 0.2, topMarginMeters: 0.2, projectionMeters: 0.1 },
+                        levels: [
+                            {
+                                frameWidthMeters: 0.3,
+                                depthMeters: 0.4,
+                                arch: true,
+                                ring: { widthMeters: 0.2, projectionMeters: 0.08, profile: 'band', jambs: 'stop' }
+                            }
+                        ],
+                        impost: { heightMeters: 0.14, projectionMeters: 0.05, profile: 'flat' },
+                        colonettes: { enabled: true, shape: 'pilaster', countPerSide: 1, widthMeters: 0.6, projectionMeters: 0.16, top: 'arch_crown' },
+                        steps: { count: 0 },
+                        custom: [{ part: 'foliate_capital', anchor: 'capital', scaleMeters: 0.5, offsetMeters: { x: 0, y: 0, out: 0 } }],
+                        palette: { box: { mode: 'pbr', materialId: 'pbr.limestone_smooth' } }
+                    }]
+                }
+            });
+        } finally {
+            __portalOrnamentTestOnly._injectTemplateForTests('foliate_capital', previousTemplate);
+        }
         const ornaments = balconyMeshesByRole(parts, 'portal_ornament');
         const colonettes = balconyMeshesByRole(parts, 'portal_colonette');
         const rings = balconyMeshesByRole(parts, 'portal_order');

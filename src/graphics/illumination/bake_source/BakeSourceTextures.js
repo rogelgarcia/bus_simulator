@@ -211,7 +211,7 @@ async function coverageChannelFingerprints(source, width, height) {
     return { records, buffers };
 }
 
-async function captureTextureSource(texture) {
+function requireTextureSource(texture) {
     const unsupportedKind = [
         'isCompressedTexture',
         'isCompressedArrayTexture',
@@ -242,6 +242,11 @@ async function captureTextureSource(texture) {
         });
     }
 
+    return { source, width, height };
+}
+
+async function captureTextureSource(texture, signal) {
+    const { source, width, height } = requireTextureSource(texture);
     let bytes;
     let storage;
     let componentType = 'uint8';
@@ -249,7 +254,7 @@ async function captureTextureSource(texture) {
     let mimeType = null;
     const sourceUrl = source.currentSrc ?? source.src ?? null;
     if (typeof sourceUrl === 'string' && sourceUrl && !sourceUrl.startsWith('blob:') && !sourceUrl.startsWith('data:')) {
-        const response = await fetch(sourceUrl);
+        const response = await fetch(sourceUrl, { signal });
         if (!response.ok) {
             failBakeSource('texture_fetch_failed', 'A used texture source could not be fetched.', {
                 url: normalizeSourceUrl(sourceUrl),
@@ -387,16 +392,31 @@ function textureSamplingRecord(texture, sourceId) {
     };
 }
 
-export async function createBakeTextureCatalog(textures) {
+export async function createBakeTextureCatalog(textures, { signal, onProgress = () => {}, concurrency = 1 } = {}) {
+    if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error('Texture capture concurrency must be 1–4');
     const list = Array.from(textures ?? []);
     const sourceByContent = new Map();
     const bindingById = new Map();
     const bindingByTexture = new Map();
     const buffersById = new Map();
     const coverageBuffersById = new Map();
-    for (const texture of list) {
+    const capturesBySource = new Map();
+    let completed = 0;
+    async function capture(texture) {
+        signal?.throwIfAborted();
         if (!texture?.isTexture) failBakeSource('invalid_texture_reference', 'Material texture input is not a Three.js texture.');
-        const captured = await captureTextureSource(texture);
+        const { source, width, height } = requireTextureSource(texture);
+        const variants = capturesBySource.get(source) ?? new Map();
+        const variant = JSON.stringify([finite(texture.format ?? 0, 'texture.format'), finite(texture.type ?? 0, 'texture.type'),
+            texture.internalFormat == null ? null : String(texture.internalFormat),
+            texture.source?.version ?? 0, width, height, finite(source.depth ?? 1, 'texture.depth'), source.currentSrc ?? source.src ?? null]);
+        let pending = variants.get(variant);
+        if (!pending) {
+            pending = captureTextureSource(texture, signal);
+            variants.set(variant, pending);
+            capturesBySource.set(source, variants);
+        }
+        const captured = await pending;
         sourceByContent.set(captured.record.id, captured.record);
         buffersById.set(captured.buffer.id, captured.buffer);
         for (const buffer of captured.coverageBuffers) coverageBuffersById.set(buffer.id, buffer);
@@ -405,6 +425,16 @@ export async function createBakeTextureCatalog(textures) {
         const binding = { id: `texture-binding:${hash}`, ...sampling };
         bindingById.set(binding.id, binding);
         bindingByTexture.set(texture, binding);
+        onProgress({ completed: ++completed, total: list.length });
+    }
+    if (concurrency === 1) for (const texture of list) await capture(texture);
+    else {
+        let next = 0;
+        const outcomes = await Promise.allSettled(Array.from({ length: Math.min(concurrency, list.length) }, async () => {
+            while (next < list.length) await capture(list[next++]);
+        }));
+        const failure = outcomes.find((v) => v.status === 'rejected');
+        if (failure) throw failure.reason;
     }
     return {
         sources: Array.from(sourceByContent.values()).sort((a, b) => compareCanonicalStrings(a.id, b.id)),

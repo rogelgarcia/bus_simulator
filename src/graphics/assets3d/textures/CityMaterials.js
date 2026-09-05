@@ -12,8 +12,8 @@ function applyPolygonOffset(mat, { factor = -2, units = -2 } = {}) {
     return mat;
 }
 
-export function getCityMaterials() {
-    if (_cached) return _cached;
+export function getCityMaterials({ isolated = false } = {}) {
+    if (_cached && !isolated) return _cached;
 
     const road = new THREE.MeshStandardMaterial({
         color: 0x2b2b2b,
@@ -81,6 +81,7 @@ export function getCityMaterials() {
     if (!laneYellow.userData) laneYellow.userData = {};
     laneYellow.userData.bloomExclude = true;
 
+    if (isolated) return { road, roadEdgeWear, sidewalk, sidewalkEdgeDirt, curb, laneWhite, laneYellow };
     _cached = { road, roadEdgeWear, sidewalk, sidewalkEdgeDirt, curb, laneWhite, laneYellow };
     return _cached;
 }

@@ -742,6 +742,14 @@ export class OptionsUI {
             els.state.textContent = `${state}${phase}${reason}`;
         }
         if (els.profile) els.profile.textContent = status?.profileId ?? 'No exact baked profile selected';
+        if (els.receivers) {
+            const receiver = info?.receiverLightmaps;
+            const elapsed = receiver?.state === 'loading' && Number.isFinite(receiver.loadingElapsedMs)
+                ? ` · ${Math.floor(receiver.loadingElapsedMs / 1000)} s` : '';
+            const counts = receiver?.state === 'loading' && Number.isFinite(receiver.progress?.total)
+                ? ` ${receiver.progress.completed}/${receiver.progress.total}` : '';
+            els.receivers.textContent = `${receiver?.state ?? 'current'}${receiver?.reason ? ' · ' + receiver.reason.replaceAll('_', ' ') : ''}${counts}${elapsed}`;
+        }
     }
 
     _ensureDraftAsphaltNoise() {

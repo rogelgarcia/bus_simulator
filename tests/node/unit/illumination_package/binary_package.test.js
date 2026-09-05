@@ -24,6 +24,17 @@ function rejectsCode(code) {
     };
 }
 
+test('Receiver channels authenticate explicit half-float mips while other layouts remain base-only', async () => {
+    const options = baseBuildOptions();
+    options.chunks[1] = { ...options.chunks[1], id: 'direct.mip1', encoding: 'rgba16f_le', precision: 'float16', mipLevel: 1,
+        coordinateTransform: { schema: 'bus-sim-receiver-lightmap-page-v1', page: 0 } };
+    const built = await buildIlluminationBinaryPackage(options);
+    const parsed = await parseIlluminationBinaryPackage(built.bytes);
+    assert.equal(parsed.chunks.find((v) => v.descriptor.id === 'direct.mip1').descriptor.mipLevel, 1);
+    options.chunks[1].channelId = 'static_sun_depth';
+    await assert.rejects(buildIlluminationBinaryPackage(options), rejectsCode('build_chunk_mip_level_unsupported'));
+});
+
 test('builder emits deterministic canonical bytes with a fixed aligned header and relative chunk offsets', async () => {
     const left = await buildPackageFixture();
     const reversed = baseBuildOptions();

@@ -34,17 +34,17 @@ function makeIndex() {
 }
 
 test('BakedLightingSettings: defaults enable the high-resolution moving-object map', () => {
-    const defaults = { shadows: { enabled: true, dynamicResolution: 'high' } };
+    const defaults = { shadows: { enabled: true, dynamicResolution: 'high' }, receivers: { direct: false, indirect: false, linked: true, enhanced: false, debug: 'final' } };
     assert.deepEqual(BAKED_LIGHTING_DEFAULTS, defaults);
     assert.deepEqual(getDefaultResolvedBakedLightingSettings(), defaults);
     assert.deepEqual(sanitizeBakedLightingSettings({ shadows: { enabled: 'true' } }), {
-        shadows: { enabled: false, dynamicResolution: 'medium' }
+        shadows: { enabled: false, dynamicResolution: 'medium' }, receivers: defaults.receivers
     });
     assert.deepEqual(sanitizeBakedLightingSettings({ shadows: { enabled: true, dynamicResolution: 'ultra' } }), {
-        shadows: { enabled: true, dynamicResolution: 'medium' }
+        shadows: { enabled: true, dynamicResolution: 'medium' }, receivers: defaults.receivers
     });
     assert.deepEqual(sanitizeBakedLightingSettings({ shadows: { enabled: true, dynamicResolution: 'high' } }), {
-        shadows: { enabled: true, dynamicResolution: 'high' }
+        shadows: { enabled: true, dynamicResolution: 'high' }, receivers: defaults.receivers
     });
 });
 
@@ -64,16 +64,26 @@ test('BakedLightingSettings: saves and restores baked-shadow intent only', () =>
             future: 'ignored'
         }), true);
         assert.deepEqual(getResolvedBakedLightingSettings(), {
-            shadows: { enabled: true, dynamicResolution: 'high' }
+            shadows: { enabled: true, dynamicResolution: 'high' }, receivers: { direct: false, indirect: false, linked: true, enhanced: false, debug: 'final' }
         });
+        saveBakedLightingSettings({ receivers: { direct: true, indirect: false, linked: false } });
+        assert.deepEqual(getResolvedBakedLightingSettings().receivers,
+            { direct: true, indirect: false, linked: false, enhanced: false, debug: 'final' });
         assert.equal(clearSavedBakedLightingSettings(), true);
         assert.deepEqual(getResolvedBakedLightingSettings(), {
-            shadows: { enabled: true, dynamicResolution: 'high' }
+            shadows: { enabled: true, dynamicResolution: 'high' }, receivers: { direct: false, indirect: false, linked: true, enhanced: false, debug: 'final' }
         });
     } finally {
         if (previousWindow === undefined) delete globalThis.window;
         else globalThis.window = previousWindow;
     }
+});
+
+test('BakedLightingSettings: receiver channels are strict independent opt-ins', () => {
+    assert.deepEqual(sanitizeBakedLightingSettings({ receivers: { direct: true, indirect: 'true', debug: 'unknown' } }).receivers,
+        { direct: true, indirect: false, linked: true, enhanced: false, debug: 'final' });
+    assert.deepEqual(sanitizeBakedLightingSettings({ receivers: { indirect: true, debug: 'difference' } }).receivers,
+        { direct: false, indirect: true, linked: true, enhanced: false, debug: 'difference' });
 });
 
 test('BakedShadowProfile: selects only an exact matching city and sun profile', () => {

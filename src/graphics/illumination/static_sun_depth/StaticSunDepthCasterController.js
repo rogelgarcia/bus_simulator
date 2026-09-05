@@ -182,6 +182,11 @@ export class StaticSunDepthCasterController {
         return true;
     }
 
+    /** @param {any} object */
+    getOriginalCasterState(object) {
+        return this._active && this._snapshot.has(object) ? this._snapshot.get(object) : object.castShadow === true;
+    }
+
     _captureAndSuppress() {
         const city = this.city;
         if (!city?.group?.traverse) throw new Error('Static-sun city disappeared during caster transaction.');

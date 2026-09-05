@@ -1,0 +1,158 @@
+import test, { expect } from '@playwright/test';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { existsSync } from 'node:fs';
+const chrome = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+if (existsSync(chrome)) test.use({ launchOptions: { executablePath: chrome, args: ['--use-angle=d3d11'] } });
+
+for (const layout of [null, 'flat-first-rgb-v1']) test(`AI 548: directional diffuse and original restoration (${layout ?? 'original layout'})`, async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
+    await page.goto('/tests/headless/harness/index.html');
+    const result = await page.evaluate(async (layout) => {
+        const THREE = await import('three');
+        const { registerMaterialShaderHook } = await import('/src/graphics/shaders/core/MaterialShaderHookRegistry.js');
+        const { installEnhancedReceiverBindings } = await import('/src/graphics/illumination/receiver_lightmaps/EnhancedReceiverMaterialAdapter.js');
+        const { installReceiverLightmapBindings } = await import('/src/graphics/illumination/receiver_lightmaps/ReceiverLightmapMaterialAdapter.js');
+        const { hasFlatReceiverNormals } = await import('/src/graphics/illumination/receiver_lightmaps/EnhancedReceiverFlatNormals.js');
+        const renderer = new THREE.WebGLRenderer(); renderer.setSize(128, 128); renderer.toneMapping = THREE.NoToneMapping;
+        const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(45, 1, .1, 10); camera.position.z = 3;
+        const normal = new THREE.DataTexture(new Float32Array([.5, .5, 1, 1]), 1, 1, THREE.RGBAFormat, THREE.FloatType); normal.needsUpdate = true;
+        const material = new THREE.MeshStandardMaterial({ color: 0xffffff, normalMap: normal });
+        const originalBeforeRender = material.onBeforeRender;
+        const original = new THREE.PlaneGeometry(2, 2), object = new THREE.Mesh(original, material); scene.add(object);
+        const coordinates = new Float32Array(7 * 4);
+        for (let i = 0; i < 6; i++) { const index = original.index.getX(i); coordinates.set([original.attributes.uv.getX(index), original.attributes.uv.getY(index), 0, 1], (i + 1) * 4); }
+        const table = new THREE.DataTexture(coordinates, 7, 1, THREE.RGBAFormat, THREE.FloatType); table.needsUpdate = true;
+        const atlas = new THREE.DataArrayTexture(new Float32Array(layout
+            ? [1, .5, .25, .4, .5, -.4, 0, .2, 0, 0, 0, 0]
+            : [.6, .5, 0, .4, .3, -.4, 0, .2, .25, 0, 0, 0]), 1, 1, 3);
+        atlas.type = THREE.FloatType; atlas.needsUpdate = true;
+        const directAtlas = new THREE.DataArrayTexture(new Float32Array([1, .5, 0, 1]), 1, 1, 1);
+        directAtlas.type = THREE.FloatType; directAtlas.needsUpdate = true;
+        const uniforms = { receiverAtlasMapping: { value: table }, receiverDirectAtlas: { value: directAtlas }, receiverIndirectAtlas: { value: atlas },
+            receiverDirectEnabled: { value: 0 }, receiverIndirectEnabled: { value: 1 }, receiverDebugMode: { value: 0 }, receiverMaxMip: { value: 0 }, receiverAtlasEnabled: { value: 1 } };
+        for (const channel of ['Direct', 'Indirect']) for (const kind of ['Scale', 'Bias']) uniforms[`receiver${channel}${kind}`] = {
+            value: Array.from({ length: 24 }, () => new THREE.Vector4().setScalar(kind === 'Scale' ? 1 : 0)) };
+        const mapping = { profile: { directional: 'chart-affine-irradiance-v1', coefficientLayout: layout }, objects: [{ id: 'plane', referenceCount: 6, base: 1 }] };
+        const binding = installEnhancedReceiverBindings(mapping, new Map([['plane', object]]), uniforms, coordinates);
+        const indexed = !!object.geometry.index;
+        const target = new THREE.WebGLRenderTarget(64, 64, { type: THREE.FloatType });
+        renderer.setRenderTarget(target);
+        const read = () => { renderer.render(scene, camera); const value = new Float32Array(4); renderer.readRenderTargetPixels(target, 32, 32, 1, 1, value); return Array.from(value); };
+        const flat = read(); normal.image.data.set([.8, .5, .9, 1]); normal.needsUpdate = true;
+        const tilted = read();
+        const heights = new Float32Array(32 * 4);
+        for (let i = 0; i < 32; i++) heights.set([i / 31, 0, 0, 1], i * 4);
+        const bump = new THREE.DataTexture(heights, 32, 1, THREE.RGBAFormat, THREE.FloatType);
+        bump.minFilter = THREE.LinearFilter; bump.magFilter = THREE.LinearFilter; bump.needsUpdate = true;
+        material.normalMap = null; material.bumpMap = bump; material.bumpScale = 0; material.needsUpdate = true;
+        const bumpFlat = read(); material.bumpScale = 10; const bumpTilted = read();
+        material.bumpMap = null; material.normalMap = normal; material.needsUpdate = true;
+        const ambient = new THREE.HemisphereLight(0xffffff, 0xffffff, 12); scene.add(ambient);
+        const withAmbient = read();
+        uniforms.receiverIndirectEnabled.value = 0; const disabled = read();
+        scene.remove(ambient);
+        const visibility = { value: .25 };
+        const hybrid = registerMaterialShaderHook(material, { id: 'test.hybrid_contract', priority: 200, apply(shader) {
+            shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nuniform int staticSunDepthEnabled; uniform vec3 staticSunDepthPointDirectionView; uniform float dynamicSunShadowVisibility; void staticSunDepthApplyDirectional() {}');
+            shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_begin>', THREE.ShaderChunk.lights_fragment_begin);
+            Object.assign(shader.uniforms, { staticSunDepthEnabled: { value: 1 }, staticSunDepthPointDirectionView: { value: new THREE.Vector3(0, 0, 1) }, dynamicSunShadowVisibility: visibility });
+        } });
+        const sun = new THREE.DirectionalLight(0xffffff, 1); sun.position.set(0, 0, 3); scene.add(sun);
+        uniforms.receiverDirectEnabled.value = 1;
+        const direct = read(); visibility.value = 0; const specular = read(); hybrid.remove();
+        binding.restore(); const restored = object.geometry === original;
+        scene.remove(sun);
+        read();
+        const legacyUniforms = Object.fromEntries(Object.entries(uniforms).map(([key, uniform]) => [key, { value: uniform.value }]));
+        legacyUniforms.receiverDirectEnabled.value = 0; legacyUniforms.receiverIndirectEnabled.value = 1;
+        const legacyBinding = installReceiverLightmapBindings(mapping, new Map([['plane', object]]), legacyUniforms);
+        read(); legacyBinding.restore();
+        const cachedBinding = installEnhancedReceiverBindings(mapping, new Map([['plane', object]]), uniforms, coordinates);
+        uniforms.receiverDirectEnabled.value = 0; uniforms.receiverIndirectEnabled.value = 1; uniforms.receiverDebugMode.value = 6;
+        const cachedDebug = read();
+        uniforms.receiverDebugMode.value = 0; uniforms.receiverIndirectEnabled.value = 0;
+        const cachedDisabled = read(); cachedBinding.restore();
+        scene.remove(object);
+        material.emissive.setRGB(.01, .02, .03);
+        const instances = new THREE.InstancedMesh(original, material, 2);
+        instances.setMatrixAt(0, new THREE.Matrix4().makeRotationZ(Math.PI / 2).scale(new THREE.Vector3(.5, .5, .5)).setPosition(-1, 0, 0));
+        instances.setMatrixAt(1, new THREE.Matrix4().makeScale(.5, .5, .5).setPosition(1, 0, 0));
+        scene.add(instances);
+        const unmapped = new THREE.Mesh(original, material); unmapped.scale.setScalar(.4); unmapped.position.y = 1.2; scene.add(unmapped);
+        const instanceCoordinates = new Float32Array(13 * 4);
+        // Perspective interpolation can round a constant page slightly below its integer.
+        for (let n = 0; n < 2; n++) for (let i = 0; i < 6; i++) instanceCoordinates.set([...coordinates.slice((i + 1) * 4, (i + 1) * 4 + 2), n === 1 ? 1 - 1e-7 : 0, 1], (1 + n * 6 + i) * 4);
+        const instanceTable = new THREE.DataTexture(instanceCoordinates, 13, 1, THREE.RGBAFormat, THREE.FloatType); instanceTable.needsUpdate = true;
+        const instanceAtlas = new THREE.DataArrayTexture(new Float32Array(layout
+            ? [1, .5, .25, 0, .5, -.4, 0, 0, 0, 0, 0, 0, 2, 1, .25, 0, .5, -.4, 0, 0, 0, 0, 0, 0]
+            : [1, .5, 0, 0, .5, -.4, 0, 0, .25, 0, 0, 0, 2, .5, 0, 0, 1, -.4, 0, 0, .25, 0, 0, 0]), 1, 1, 6);
+        instanceAtlas.type = THREE.FloatType; instanceAtlas.needsUpdate = true;
+        uniforms.receiverAtlasMapping.value = instanceTable; uniforms.receiverIndirectAtlas.value = instanceAtlas;
+        uniforms.receiverIndirectEnabled.value = 1; uniforms.receiverDirectEnabled.value = 0;
+        const instancedBinding = installEnhancedReceiverBindings({ ...mapping, objects: [{ id: 'instances', referenceCount: 6, base: 1, instances: [0, 1] }] }, new Map([['instances', instances]]), uniforms, instanceCoordinates);
+        const ortho = new THREE.OrthographicCamera(-2, 2, 2, -2, .1, 10); ortho.position.z = 3;
+        renderer.render(scene, ortho);
+        const left = new Float32Array(4), right = new Float32Array(4), sharedUnmapped = new Float32Array(4);
+        renderer.readRenderTargetPixels(target, 16, 32, 1, 1, left); renderer.readRenderTargetPixels(target, 48, 32, 1, 1, right);
+        renderer.readRenderTargetPixels(target, 32, 51, 1, 1, sharedUnmapped);
+        scene.add(ambient);
+        renderer.render(scene, ortho);
+        const unmappedAmbient = new Float32Array(4), originalAmbient = new Float32Array(4);
+        renderer.readRenderTargetPixels(target, 32, 51, 1, 1, unmappedAmbient);
+        instancedBinding.restore();
+        renderer.render(scene, ortho);
+        renderer.readRenderTargetPixels(target, 32, 51, 1, 1, originalAmbient);
+        scene.remove(instances, unmapped);
+        const flatMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
+        const flatObject = new THREE.Mesh(original.clone(), flatMaterial); scene.add(flatObject); flatObject.updateMatrixWorld(true);
+        const classification = { flat: hasFlatReceiverNormals(flatObject, mapping.objects[0], coordinates) };
+        flatObject.geometry.attributes.normal.setXYZ(0, .6, 0, .8);
+        classification.smooth = hasFlatReceiverNormals(flatObject, mapping.objects[0], coordinates);
+        flatObject.geometry.attributes.normal.setXYZ(0, 0, 0, 1);
+        flatObject.scale.x = -1; flatObject.updateMatrixWorld(true);
+        classification.mirrored = hasFlatReceiverNormals(flatObject, mapping.objects[0], coordinates);
+        flatObject.scale.x = 1; flatObject.updateMatrixWorld(true);
+        const sheared = new THREE.InstancedMesh(original, flatMaterial, 1);
+        sheared.setMatrixAt(0, new THREE.Matrix4().makeShear(.3, 0, 0, 0, 0, 0));
+        classification.sheared = hasFlatReceiverNormals(sheared, mapping.objects[0], coordinates);
+        uniforms.receiverAtlasMapping.value = table; uniforms.receiverIndirectAtlas.value = atlas;
+        const flatBinding = installEnhancedReceiverBindings(mapping, new Map([['plane', flatObject]]), uniforms, coordinates);
+        const flatWithoutMap = read(); flatBinding.restore(); flatObject.geometry.dispose(); flatMaterial.dispose();
+        instanceTable.dispose(); instanceAtlas.dispose();
+        const error = renderer.getContext().getError();
+        target.dispose(); normal.dispose(); bump.dispose(); table.dispose(); atlas.dispose(); directAtlas.dispose(); material.dispose(); original.dispose(); renderer.dispose();
+        return { flat, flatWithoutMap, classification, tilted, bumpFlat, bumpTilted, withAmbient, disabled, direct, specular, restored, indexed, error, cachedDebug, cachedDisabled,
+            unmappedAmbient: Array.from(unmappedAmbient), originalAmbient: Array.from(originalAmbient),
+            callbacksRestored: material.onBeforeRender === originalBeforeRender,
+            sharedUnmapped: Array.from(sharedUnmapped), instances: [Array.from(left), Array.from(right)], instancesRestored: instances.geometry === original };
+    }, layout);
+    expect(errors).toEqual([]);
+    expect(result.indexed).toBe(true); expect(result.restored).toBe(true); expect(result.error).toBe(0);
+    expect(result.flat[0]).toBeCloseTo(1 / Math.PI, 3);
+    expect(result.classification).toEqual({ flat: true, smooth: false, mirrored: false, sheared: false });
+    for (let channel = 0; channel < 3; channel++) expect(result.flatWithoutMap[channel]).toBeCloseTo(result.flat[channel], 4);
+    expect(result.tilted[0]).toBeCloseTo(1.22 / Math.PI, 3);
+    expect(result.tilted[1]).toBeCloseTo(.22 / Math.PI, 3);
+    expect(result.tilted[2]).toBeCloseTo(result.flat[2], 4);
+    expect(result.bumpFlat[0]).toBeCloseTo(result.flat[0], 4);
+    expect(result.bumpTilted[0]).toBeLessThan(result.bumpFlat[0] - .01);
+    expect(result.bumpTilted[1]).toBeGreaterThan(result.bumpFlat[1] + .01);
+    expect(result.bumpTilted[2]).toBeCloseTo(result.bumpFlat[2], 4);
+    expect(result.withAmbient[0]).toBeCloseTo(result.tilted[0], 4);
+    expect(result.cachedDebug.slice(0, 3)).toEqual([0, 1, 0]);
+    expect(result.cachedDisabled.slice(0, 3)).toEqual([0, 0, 0]);
+    expect(result.disabled[0]).toBeGreaterThan(result.withAmbient[0]);
+    for (let channel = 0; channel < 3; channel++) expect(result.unmappedAmbient[channel]).toBeCloseTo(result.originalAmbient[channel], 4);
+    for (let channel = 0; channel < 3; channel++) expect(result.sharedUnmapped[channel]).toBeCloseTo((channel + 1) * .01, 4);
+    expect(result.direct[0] - result.specular[0]).toBeCloseTo(.8 * .25 / Math.PI, 4);
+    expect(result.direct[1] - result.specular[1]).toBeCloseTo(.5 * .8 * .25 / Math.PI, 4);
+    expect(result.instancesRestored).toBe(true);
+    expect(result.callbacksRestored).toBe(true);
+    expect(result.instances[0][0]).toBeCloseTo(1.3 / Math.PI + .01, 3);
+    expect(result.instances[1][0]).toBeCloseTo(2.3 / Math.PI + .01, 3);
+    const root = path.resolve('tests/artifacts/screens/illumination_548'); await mkdir(root, { recursive: true });
+    await writeFile(path.join(root, layout ? 'directional-material-flat-first.json' : 'directional-material.json'), JSON.stringify(result, null, 2));
+});

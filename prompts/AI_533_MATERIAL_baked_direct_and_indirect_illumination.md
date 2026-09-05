@@ -8,6 +8,87 @@ Baked direct illumination may offer little benefit beyond the static depth cache
 
 Implement optional, independently switchable static direct and indirect illumination channels for static world receivers using the AI 529 Cycles compiler and AI 530 payload system. Integrate them into the linear PBR lighting composition from AI 527 without changing shared base PBR textures or the dynamic bus-shadow contract.
 
+## User clarification — September 4, 2026
+
+- Preserve the current renderer and expose separate configuration-menu opt-ins.
+- Blender brightness and color are intentionally allowed to differ; do not retune
+  illumination to match the current renderer.
+- Start with high-resolution maps at the baked-shadow texel density where useful.
+- Use a moderate first bake for engine assessment, then increase samples later.
+- Use the existing Blender installation; headless is preferred. Do not download Blender.
+
+## First implementation pass
+
+This remains an assessment preview, not a completed production acceptance record.
+The implementation and current limitations are documented in
+[`receiver_lightmaps.md`](../specs/graphics/receiver_lightmaps.md).
+
+- [x] Deterministic planar charts, per-instance coordinates, padding and explicit mips.
+- [x] Independent Cycles direct and indirect compiler outputs with receiver albedo excluded.
+- [x] Linear PBR material integration, independent Options toggles, safe current-renderer fallback.
+- [x] Runtime source/profile validation, staging, geometry restoration and resource disposal.
+- [x] Shader views and offline atlas/occupancy/padding/provenance/precision inspection.
+- [x] Exact source agreement between two clean exports and an independent live city,
+  including runtime shadow-hook isolation, authored shadow-sidedness, ornament readiness,
+  and idempotent material-variation normalization.
+- [x] Finish the corrected 64-sample assessment bake and install validated assets.
+- [x] Record five-mode city measurements, captures and separate direct/indirect decisions.
+- [ ] Complete broader route/seam/material/instance and bus-shadow validation.
+- [ ] Complete high-sample reference comparison and expanded-coverage residency policy.
+
+First-pass evidence: [assessment report](../tests/artifacts/screens/illumination_533/report.md).
+The installed 64-sample bake took 800.59 seconds. All five real-city modes,
+source-change fallback, release on disable, 52 focused Node checks, material/mip
+GPU checks and the Options UI passed. Indirect remains opt-in for assessment;
+direct remains experimental, with promotion deferred because this sparse sunny
+view does not establish a quality or performance benefit beyond cached shadows.
+The prompt stays open for the remaining acceptance work above.
+
+### Loading correction — September 4, 2026
+
+- [x] Replace runtime offline-package generation with exact identity extraction,
+  share pending source checks across channel toggles, deduplicate shared texture
+  source captures, propagate cancellation, and expose bounded validation progress.
+- [x] Verify real Options activation, cancellation and saved-toggle startup with
+  both installed channels active; retain exact source compatibility checks.
+
+The corrected source checks took approximately 9-12 seconds in the recorded runs;
+map preparation is reported separately and can take longer. These are diagnostic
+observations, not the controlled benchmarks requested by AI 548. Evidence is under
+`tests/artifacts/screens/illumination_533/loading/`, with 54 passing focused Node
+checks and separate menu/startup browser checks. The previously open user's scene
+could not be inspected directly; a reload is required to pick up corrected code.
+
+- [x] Fix default-page source mismatch caused by automatic core tests leaving a
+  dummy ornament in the live template cache; restore test overrides in `finally`
+  and cover ordinary Welcome/bus-selection/Options activation with core tests on.
+
+The default-flow reproduction isolated four substituted capital meshes. Restoring
+the real ornament produced the original direct and indirect channel identities
+and both channels activated. Existing maps and compatibility checks are preserved.
+
+### Disabled-map caching — user follow-up
+
+- [x] Keep loaded direct and indirect maps in CPU/GPU memory when both controls
+  are disabled, like the shadow cache. Restore normal geometry/shading while off;
+  reuse compatible maps and validated source identity on re-enable. Cancel
+  unfinished work and retain cleanup on invalidation, city change, context loss
+  and final disposal. This supersedes the earlier release-on-disable behavior.
+
+The default-page off/on regression retained the same two GPU resources with no
+new map requests or source exports; re-enabling took 1.1 seconds in that run.
+The separate cache lifecycle regression passed cancellation and teardown cleanup.
+Evidence: `tests/artifacts/screens/illumination_533/loading/cache-reuse.json` and
+`tests/artifacts/screens/illumination_533/cache-lifecycle-validation.log`.
+
+### Linked illumination controls — user follow-up
+
+- [x] Add a chain-link icon centered beside the direct and indirect switches,
+  enabled by default. While linked, either switch sets both values in one update;
+  unlinking restores independent control. Relinking uses the top indirect value.
+- [x] Persist the link preference with lighting settings/presets, restore linking
+  on Reset, and verify keyboard interaction, Save/Cancel behavior and placement.
+
 ## Execution gate
 
 - Do not start until AI 527 through AI 532 are DONE.

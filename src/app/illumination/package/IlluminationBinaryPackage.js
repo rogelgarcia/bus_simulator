@@ -2,6 +2,7 @@
 // @ts-check
 
 import {
+    isSupportedIlluminationMip,
     ILLUMINATION_AGGREGATE_HASH_LENGTH,
     ILLUMINATION_AGGREGATE_HASH_OFFSET,
     ILLUMINATION_BYTE_ORDER,
@@ -346,8 +347,8 @@ async function normalizeChunks(values) {
         }
         stableId(input.precision, `chunk '${input.id}' precision`);
         stableId(input.rowOrigin, `chunk '${input.id}' rowOrigin`);
-        if (input.mipLevel !== 0) {
-            failIlluminationPackage('build_chunk_mip_level_unsupported', 'V1 illumination chunks require mip level zero.', {
+        if (!isSupportedIlluminationMip(input)) {
+            failIlluminationPackage('build_chunk_mip_level_unsupported', 'Unsupported illumination mip descriptor.', {
                 id: input.id,
                 mipLevel: input.mipLevel ?? null
             });

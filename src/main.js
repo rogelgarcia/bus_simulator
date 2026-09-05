@@ -27,6 +27,7 @@ import { installViewportContextMenuBlocker } from './graphics/gui/shared/utils/v
 import { readGameplayPoseFromSearch } from './app/gameplay/GameplayPose.js';
 import { getBusSpec } from './app/vehicle/buses/BusCatalog.js';
 import { createBus } from './graphics/assets3d/factories/BusFactory.js';
+import { preloadPortalOrnamentParts } from './graphics/assets3d/generators/building_fabrication/PortalOrnamentParts.js';
 
 function isEditableTarget(target) {
     const el = target && typeof target === 'object' ? target : null;
@@ -37,6 +38,8 @@ function isEditableTarget(target) {
 }
 
 const perfBar = ensureGlobalPerfBar();
+// Resolve synchronous city ornament inputs before the first state can build a city.
+await preloadPortalOrnamentParts();
 
 const canvas = document.getElementById('game-canvas');
 const viewport = document.getElementById('game-viewport');

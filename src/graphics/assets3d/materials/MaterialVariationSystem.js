@@ -254,7 +254,8 @@ function makeVector3(value, fallback) {
     const z = Number.isFinite(src?.z) ? Number(src.z) : (Number.isFinite(fz) ? fz : 0);
     const v = new THREE.Vector3(x, y, z);
     const len = v.length();
-    if (len > EPS) v.multiplyScalar(1 / len);
+    // Keep repeated configuration normalization byte-stable for bake identity.
+    if (len > EPS && Math.abs(len - 1) > 1e-12) v.multiplyScalar(1 / len);
     return v;
 }
 

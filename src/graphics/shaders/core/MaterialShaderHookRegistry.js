@@ -261,3 +261,15 @@ export function getMaterialShaderHookRegistrySnapshot(material) {
         })))
     });
 }
+
+export function getMaterialShaderBaseContract(material) {
+    requireMaterial(material);
+    const state = REGISTRIES.get(material);
+    return Object.freeze({
+        hasOwnShaderPatch: state ? state.hadOwnOnBeforeCompile && typeof state.previousOnBeforeCompile === 'function'
+            : Object.hasOwn(material, 'onBeforeCompile') && typeof material.onBeforeCompile === 'function',
+        hasOwnProgramKey: state ? state.hadOwnCustomProgramCacheKey && typeof state.previousCustomProgramCacheKey === 'function'
+            : Object.hasOwn(material, 'customProgramCacheKey') && typeof material.customProgramCacheKey === 'function',
+        hookIds: Object.freeze((state?.ordered ?? []).map((hook) => hook.id))
+    });
+}

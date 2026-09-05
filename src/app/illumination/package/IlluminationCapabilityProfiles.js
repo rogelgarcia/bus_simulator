@@ -10,6 +10,22 @@ import { failIlluminationPackage } from './IlluminationPackageError.js';
 const KNOWN = new Set(ILLUMINATION_KNOWN_CHANNELS);
 
 const CATALOG = Object.freeze({
+    'development.directional_direct_v1': profile({
+        id: 'development.directional_direct_v1', requiredChannels: ['direct_receiver', 'receiver_mapping'],
+        optionalChannels: [], requiredRuntimeCapabilities: ['receiver_directional_sampling_v1'], exposure: 'internal_validation_only'
+    }),
+    'development.directional_indirect_v1': profile({
+        id: 'development.directional_indirect_v1', requiredChannels: ['indirect_irradiance', 'receiver_mapping'],
+        optionalChannels: [], requiredRuntimeCapabilities: ['receiver_directional_sampling_v1'], exposure: 'internal_validation_only'
+    }),
+    'development.receiver_direct_v1': profile({
+        id: 'development.receiver_direct_v1', requiredChannels: ['direct_receiver', 'receiver_mapping'],
+        optionalChannels: [], requiredRuntimeCapabilities: ['receiver_lightmap_sampling_v1'], exposure: 'internal_validation_only'
+    }),
+    'development.receiver_indirect_v1': profile({
+        id: 'development.receiver_indirect_v1', requiredChannels: ['indirect_irradiance', 'receiver_mapping'],
+        optionalChannels: [], requiredRuntimeCapabilities: ['receiver_lightmap_sampling_v1'], exposure: 'player_selectable_after_channel_validation'
+    }),
     'transport.fixture_v1': profile({
         id: 'transport.fixture_v1',
         requiredChannels: [],

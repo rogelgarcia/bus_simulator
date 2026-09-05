@@ -262,6 +262,10 @@ export class OptionsState {
         });
 
         this._ui.mount();
+        this._receiverDraftKey = this._nonBakedDraftKey(this._ui.getDraft());
+        this._receiverOnlyEdits = true;
+        this._enhancedEdited = bakedLighting.receivers.enhanced === true
+            || this.engine.getBakedLightingDebugInfo?.()?.receiverImplementations?.enhanced?.cached === true;
         window.addEventListener('keydown', this._onKeyDown, { passive: false, capture: true });
     }
 
@@ -311,11 +315,30 @@ export class OptionsState {
     _restoreOriginal() {
         const src = this._original && typeof this._original === 'object' ? this._original : null;
         if (!src) return;
+        if (this._enhancedEdited && this._receiverOnlyEdits) {
+            void this.engine.setBakedLightingSettings(src.bakedLighting);
+            return;
+        }
         this._applyDraft(src);
+    }
+
+    _nonBakedDraftKey(draft) {
+        const { bakedLighting: ignored, ...settings } = draft ?? {};
+        return JSON.stringify(settings);
     }
 
     _applyDraft(draft) {
         const d = draft && typeof draft === 'object' ? draft : null;
+        const receiverDraftKey = this._nonBakedDraftKey(d);
+        const receiverOnly = receiverDraftKey === this._receiverDraftKey;
+        this._receiverOnlyEdits &&= receiverOnly;
+        this._receiverDraftKey = receiverDraftKey;
+        const enhanced = d?.bakedLighting?.receivers.enhanced === true || this.engine?.bakedLightingSettings?.receivers.enhanced === true;
+        this._enhancedEdited ||= enhanced;
+        if (this._enhancedEdited && receiverOnly) {
+            void this.engine.setBakedLightingSettings(d.bakedLighting);
+            return;
+        }
         const lighting = d?.lighting ?? null;
         const atmosphere = d?.atmosphere ?? null;
         const shadows = d?.shadows ?? null;

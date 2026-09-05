@@ -91,7 +91,8 @@ export function instantiatePortalOrnamentPart(partId, { material = null } = {}) 
 
 export const __portalOrnamentTestOnly = Object.freeze({
     _injectTemplateForTests(partId, object3d) {
-        templates.set(partId, object3d);
+        if (object3d) templates.set(partId, object3d);
+        else templates.delete(partId);
     },
     _clearTemplatesForTests() {
         templates.clear();

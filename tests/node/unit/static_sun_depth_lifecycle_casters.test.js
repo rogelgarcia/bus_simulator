@@ -46,6 +46,9 @@ test('activation suppresses only City.group and deactivation restores exact merg
     assert.equal(city._staticSunDepthCasterController, controller);
     assert.equal(city._staticSunDepthCacheActive, true);
     assert.equal(controller.verifySuppressed(), true);
+    assert.equal(controller.getOriginalCasterState(source), true);
+    assert.equal(controller.getOriginalCasterState(instanced), false);
+    assert.equal(controller.getOriginalCasterState(bus), true);
 
     controller.deactivate('current');
     assert.deepEqual([source.castShadow, merged.castShadow, instanced.castShadow], [true, true, false]);
@@ -53,6 +56,7 @@ test('activation suppresses only City.group and deactivation restores exact merg
     assert.equal(city._staticSunDepthCasterController, null);
     assert.equal(city._staticSunDepthCacheActive, false);
     assert.equal(controller.getDiagnostics().lastReason, 'current');
+    assert.equal(controller.getOriginalCasterState(source), true);
 });
 
 test('idempotent deactivation records the latest live ownership reason', () => {

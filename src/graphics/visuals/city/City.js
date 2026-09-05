@@ -48,7 +48,7 @@ import {
 } from '../../../app/city/visibility/index.js';
 import { CityStaticVisibility } from './CityStaticVisibility.js';
 
-const MATERIAL_SHADOW_SIDE_ORIGINAL = new WeakMap();
+import { getAuthoredMaterialShadowSide, overrideMaterialShadowSide, restoreMaterialShadowSide } from '../../lighting/MaterialShadowSideState.js';
 
 // How often the cascaded-shadow material repair pass runs, in frames. ~2 s at
 // 60 fps: often enough that a wrong cascade count self-corrects before it is
@@ -69,20 +69,16 @@ function applyShadowSideToObject(root, useStaticSunDepthCasterSidedness) {
         for (const mat of mats) {
             if (!mat || typeof mat !== 'object' || !('shadowSide' in mat)) continue;
             if (useStaticSunDepthCasterSidedness && o.castShadow) {
-                if (!MATERIAL_SHADOW_SIDE_ORIGINAL.has(mat)) MATERIAL_SHADOW_SIDE_ORIGINAL.set(mat, mat.shadowSide ?? null);
-                mat.shadowSide = resolveStaticSunDepthEffectiveShadowSide({
+                overrideMaterialShadowSide(mat, resolveStaticSunDepthEffectiveShadowSide({
                     side: mat.side,
-                    shadowSide: MATERIAL_SHADOW_SIDE_ORIGINAL.get(mat),
+                    shadowSide: getAuthoredMaterialShadowSide(mat),
                     preserveShadowSide: mat.userData?.preserveShadowSide === true,
                     isFoliage: mat.userData?.isFoliage === true
-                }, STATIC_SUN_DEPTH_CASTER_SIDEDNESS);
+                }, STATIC_SUN_DEPTH_CASTER_SIDEDNESS));
                 continue;
             }
 
-            if (MATERIAL_SHADOW_SIDE_ORIGINAL.has(mat)) {
-                mat.shadowSide = MATERIAL_SHADOW_SIDE_ORIGINAL.get(mat);
-                MATERIAL_SHADOW_SIDE_ORIGINAL.delete(mat);
-            }
+            restoreMaterialShadowSide(mat);
         }
     });
 }
@@ -224,7 +220,7 @@ export class City {
             }
         });
 
-        this.materials = getCityMaterials();
+        this.materials = options.materials ?? getCityMaterials();
         this.roads = createRoadEngineRoads({ map: this.map, config: this.generatorConfig, materials: this.materials });
         const trafficControlPlacements = computeTrafficControlPlacements({
             map: this.map,
@@ -866,7 +862,7 @@ export class City {
         }
         this.group?.traverse?.((object) => {
             if (object?.isMesh && !authored.has(object)) {
-                authored.set(object, object.castShadow === true);
+                authored.set(object, this._staticSunDepthCasterController?.getOriginalCasterState(object) ?? object.castShadow === true);
             }
         });
         return Object.freeze(
@@ -878,9 +874,7 @@ export class City {
     /** Return authored shadowSide even while live two-sided casting is active. */
     getStaticSunDepthAuthoredMaterialShadowSide(material) {
         if (!material || typeof material !== 'object') return null;
-        return MATERIAL_SHADOW_SIDE_ORIGINAL.has(material)
-            ? MATERIAL_SHADOW_SIDE_ORIGINAL.get(material)
-            : material.shadowSide ?? null;
+        return getAuthoredMaterialShadowSide(material);
     }
 
     enableStaticVisibility(engine, settings = null) {

@@ -98,7 +98,7 @@ The separate canonical table schema is `bus-sim-illumination-chunk-table-v1`. Ea
 - encoding, component precision, logical dimensions, row origin, mip level, and explicit coordinate metadata;
 - the exact runtime capabilities needed to decode or upload that representation.
 
-Chunks are strictly sorted by ID. V1 stores them in the same order, aligned to 16 bytes, with `compression = none`, so stored and decoded bytes/hashes are equal. The distinction remains mandatory so a later version can add bounded independent decompression without changing integrity semantics. V1 accepts only `mipLevel = 0`; later versions may define separately hashed explicit mip chunks. Runtime mip generation is forbidden.
+Chunks are strictly sorted by ID. V1 stores them in the same order, aligned to 16 bytes, with `compression = none`, so stored and decoded bytes/hashes are equal. The distinction remains mandatory so a later version can add bounded independent decompression without changing integrity semantics. Base formats accept only `mipLevel = 0`. The AI 533 preview also accepts independently hashed levels 1-3 for `bus-sim-receiver-lightmap-page-v1` texture_2d RGBA16F direct/indirect descriptors; other formats remain base-only (see `receiver_lightmaps.md`). Runtime mip generation is forbidden.
 
 Channel-output integrity is SHA-256 over the canonical ordered inventory of that channel's chunk IDs, decoded lengths, and decoded hashes. It is independent of physical packing and of the whole-artifact aggregate.
 

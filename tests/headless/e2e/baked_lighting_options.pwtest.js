@@ -95,7 +95,7 @@ test('Gameplay: baked shadows have a safe fallback and preserve legacy shadow se
     await clickTab(page, 'Baked lighting');
     await expect(page.locator('.options-body')).toContainText('precomputed map lighting');
     await expect(page.locator('.options-body')).toContainText('should improve performance');
-    await expect(page.locator('.options-body')).toContainText('Direct and indirect baked-light controls will be added here later.');
+    await expect(page.locator('.options-body')).toContainText('Blender illumination (preview)');
     await expect(page.locator('.options-row', { hasText: 'Enable baked shadows' }).locator('input')).toBeChecked();
     expect(await getMovingShadowResolution(page)).toBe('High');
     expect(await page.evaluate(() => window.__busSim.engine.bakedLightingSettings.shadows.dynamicResolution)).toBe('high');

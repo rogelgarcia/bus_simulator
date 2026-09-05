@@ -59,8 +59,10 @@ The exporter constructs two independent, fully prewarmed production gameplay
 cities by default and requires their canonical manifests, inventories, source
 hashes, and complete package bytes to match. The already-running city supplies
 the canonical configuration/source-record check and evaluated lighting-profile
-provenance; its geometry is not exported because optional ornament preload can
-complete after its synchronous construction.
+provenance. AI 533 now awaits ornament preload before the first application
+state and ignores registered runtime visibility hooks when identifying authored
+materials. The exporter still uses independent clean rebuilds; receiver
+activation separately verifies the actual live geometry and material hashes.
 
 The browser-side semantic pass parses the built package and compares its
 canonical manifest and every logical buffer byte with the fully prewarmed
