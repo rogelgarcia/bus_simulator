@@ -85,10 +85,21 @@ approximation, not dynamic path tracing or GI on the bus.
 The corrected enhanced bake preserves fading sidewalk-dirt and asphalt-edge
 coverage. `validate_coverage.py`, run through the installed Blender with an artifact
 directory after `--`, checks actual transparency and coefficient-layout equivalence.
+The v3 profile also preserves per-face source materials while rebuilding Blender
+slots and denoises all four indirect directions inside isolated chart rectangles
+before fitting coefficients. Raw samples remain available for comparison. Direct
+lighting remains unfiltered. `validate_target_materials.py` checks material ownership;
+`validate_denoise.py -- <artifact-directory>` checks linear HDR energy, chart
+isolation and noise reduction. Run these scripts through the installed Blender
+with `--python-exit-code 1` so assertion failures fail the command.
 To publish a repaired bake stored elsewhere under workspace artifacts, use
 `publish.mjs --enhanced --from tests/artifacts/screens/illumination_repair/bake`.
 `measure_precision.mjs --root tests/artifacts/screens/illumination_repair` compares
 its encoded pages with the corresponding full-precision output.
+`receiver_toggle_stability.pwtest.js` records real-game startup blends, repeated
+off/on and original/enhanced switches, bounded shader/geometry/texture counts and
+map-request reuse. `RECEIVER_UNPUBLISHED=1` selects the candidate under
+`tests/artifacts/screens/illumination_optimization/bake` for validation before publication.
 `receiver_illumination_repair.pwtest.js` captures the default city's curb with
 each illumination channel isolated. Set `REPAIR_RUN=after` for a distinct artifact
 directory and `REPAIR_UNPUBLISHED=1` to test repaired maps before publication.

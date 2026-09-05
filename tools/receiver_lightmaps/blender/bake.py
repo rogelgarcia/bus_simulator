@@ -88,6 +88,8 @@ def install_targets(package, atlas, images):
             raise RuntimeError('Reconstructed triangle ordering does not match the resolved source: ' + stable_id)
         polygons = dict(zip(offsets, obj.data.polygons))
         original_slots = [slot.material for slot in obj.material_slots]
+        # Clearing Blender's slot list resets every polygon index to zero.
+        source_materials = [original_slots[polygon.material_index] for polygon in obj.data.polygons]
         obj.data.materials.clear()
         local_slots = {}
         uv = obj.data.uv_layers.new(name='AI533_Bake')
@@ -96,7 +98,7 @@ def install_targets(package, atlas, images):
         for offset, polygon in polygons.items():
             target = targets.get(offset)
             page = target[0]['page'] if target else -1
-            source_material = original_slots[polygon.material_index]
+            source_material = source_materials[polygon.index]
             key = (source_material.name, page)
             if key not in materials:
                 mat = source_material.copy()

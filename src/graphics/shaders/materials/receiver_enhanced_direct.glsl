@@ -11,7 +11,7 @@
     #endif
     #endif
     vec3 previousDiffuse = reflectedLight.directDiffuse;
-    if (replaceSun && receiverDebugMode != 7) {
+    if (replaceSun && receiverDebugMode != 7 && receiverLightingBlend >= 1.0) {
         PhysicalMaterial specularMaterial = material;
         specularMaterial.diffuseContribution = vec3(0.0);
         RE_Direct(directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, specularMaterial, reflectedLight);
@@ -22,7 +22,7 @@
     if (replaceSun) {
         vec3 replacement = receiverDirectValue * receiverSunFactor * BRDF_Lambert(material.diffuseColor) * dynamicSunShadowVisibility;
         if (receiverDebugMode == 7) receiverDiffuseDifference += previousDiffuse + replacement - reflectedLight.directDiffuse;
-        reflectedLight.directDiffuse = previousDiffuse + replacement;
+        reflectedLight.directDiffuse = mix(reflectedLight.directDiffuse, previousDiffuse + replacement, receiverLightingBlend);
     }
     #endif
 }

@@ -9,6 +9,7 @@ uniform int receiverDirectEnabled;
 uniform int receiverIndirectEnabled;
 uniform int receiverDebugMode;
 uniform float receiverMaxMip;
+uniform float receiverLightingBlend;
 vec3 receiverDiffuseDifference = vec3(0.0);
 vec3 receiverIndirectValue = vec3(0.0);
 vec3 receiverDirectValue = vec3(0.0);

@@ -45,7 +45,7 @@ const profile = { ...RECEIVER_LIGHTMAP_PROFILE,
 if (!Number.isInteger(profile.samples) || profile.samples < 1 || profile.samples > 4096) throw new Error('Samples must be 1–4096.');
 profile.id = `ai533.cycles.diffuse.preview${profile.samples}.v1`;
 if (args.get('--enhanced') === 'true') Object.assign(profile, {
-    id: `ai548.cycles.directional.preview${profile.samples}.v2`, directional: 'chart-affine-irradiance-v1', coefficientLayout: 'flat-first-rgb-v1',
+    id: `ai548.cycles.directional.preview${profile.samples}.v3`, directional: 'chart-affine-irradiance-v1', coefficientLayout: 'flat-first-rgb-v1', denoise: 'isolated-chart-oidn-v1',
     patchSizeMeters: 24, minimumChartArea: .5, focus: [-140, 0, 80], compact: true
 });
 const atlas = createReceiverAtlas(parsed, profile);

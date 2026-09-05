@@ -5,25 +5,30 @@ import { registerMaterialShaderHook } from '../../shaders/core/MaterialShaderHoo
 import { enhancedReceiverShaders as source } from '../../shaders/materials/EnhancedReceiverShaderLoader.js';
 import { STATIC_SUN_DEPTH_DIRECT_ANCHOR as ANCHOR } from '../static_sun_depth/StaticSunDepthShaderContract.js';
 import { hasFlatReceiverNormals } from './EnhancedReceiverFlatNormals.js';
+import { bindReceiverUniforms } from './ReceiverUniformBinding.js';
+import { omitPartialReceiverSurfaces } from './EnhancedReceiverCoverage.js';
 
 /** @param {any} mapping @param {Map<string, any>} references
  * @param {Record<string, {value: any}>} uniforms @param {Float32Array} coordinates */
 export function installEnhancedReceiverBindings(mapping, references, uniforms, coordinates) {
     const geometries = [], hooks = [], materials = new Set(), nonFlatMaterials = new Set();
+    const coverage = { omittedTriangles: 0, boundObjects: 0 };
     function restore() {
         for (const item of geometries) { if (item.object.geometry === item.geometry) item.object.geometry = item.original; item.geometry.dispose(); }
         for (const item of hooks) {
             item.registration?.remove(); item.material.defaultAttributeValues = item.defaults;
-            if (item.material.onBeforeRender === item.render) {
-                if (item.hadRender) item.material.onBeforeRender = item.previousRender;
-                else delete item.material.onBeforeRender;
-            }
+            item.restoreUniforms();
         }
     }
     try {
         for (const record of mapping.objects) {
             const object = references.get(record.id), original = object?.geometry;
             if (!original) throw new Error('Missing enhanced receiver ' + record.id);
+            const localCoordinates = object.isInstancedMesh ? null
+                : coordinates.slice(record.base * 4, (record.base + record.referenceCount) * 4);
+            const omittedTriangles = localCoordinates ? omitPartialReceiverSurfaces(original, localCoordinates) : 0;
+            coverage.omittedTriangles += omittedTriangles;
+            if (localCoordinates && !localCoordinates.some((value, i) => i % 4 === 3 && value > .5)) continue;
             if (!hasFlatReceiverNormals(object, record, coordinates)) {
                 for (const material of Array.isArray(object.material) ? object.material : [object.material]) nonFlatMaterials.add(material);
             }
@@ -33,10 +38,10 @@ export function installEnhancedReceiverBindings(mapping, references, uniforms, c
                 indexedCoordinates = new Float32Array(count * 4);
                 const assigned = new Uint8Array(count);
                 for (let i = 0; i < record.referenceCount; i++) {
-                    const vertex = original.index.getX(i), offset = (record.base + i) * 4;
+                    const vertex = original.index.getX(i), offset = i * 4;
                     if (assigned[vertex]) {
-                        if ([0, 1, 2, 3].some((c) => indexedCoordinates[vertex * 4 + c] !== coordinates[offset + c])) { indexedCoordinates = null; break; }
-                    } else { indexedCoordinates.set(coordinates.subarray(offset, offset + 4), vertex * 4); assigned[vertex] = 1; }
+                        if ([0, 1, 2, 3].some((c) => indexedCoordinates[vertex * 4 + c] !== localCoordinates[offset + c])) { indexedCoordinates = null; break; }
+                    } else { indexedCoordinates.set(localCoordinates.subarray(offset, offset + 4), vertex * 4); assigned[vertex] = 1; }
                 }
             }
             const geometry = original.index && !indexedCoordinates ? original.toNonIndexed() : original.clone();
@@ -46,27 +51,15 @@ export function installEnhancedReceiverBindings(mapping, references, uniforms, c
                 geometry.setAttribute('receiverAtlasInstance', new THREE.InstancedBufferAttribute(Float32Array.from({ length: object.count }, (_, i) => i * record.referenceCount), 1));
             } else {
                 geometry.setAttribute('receiverAtlasCoordinate', new THREE.Float32BufferAttribute(indexedCoordinates
-                    ?? coordinates.slice(record.base * 4, (record.base + record.referenceCount) * 4), 4));
+                    ?? localCoordinates, 4));
             }
-            geometries.push({ object, original, geometry });
+            geometries.push({ object, original, geometry, omittedTriangles });
             for (const material of Array.isArray(object.material) ? object.material : [object.material]) if (material.isMeshStandardMaterial) materials.add(material);
         }
         for (const material of materials) {
             const flatNormal = !nonFlatMaterials.has(material) && !material.normalMap && !material.bumpMap && material.side === THREE.FrontSide;
             const defaults = material.defaultAttributeValues;
-            const item = { material, defaults, registration: null, hadRender: Object.hasOwn(material, 'onBeforeRender'),
-                previousRender: material.onBeforeRender, render: null }; hooks.push(item);
-            item.render = function (renderer, ...args) {
-                item.previousRender.call(material, renderer, ...args);
-                // Three r183 caches programs but keeps one uniform table per material.
-                // A cached program may therefore still point at the legacy bank's table.
-                const properties = renderer.properties.get(material);
-                if (properties.uniforms && properties.uniforms.receiverAtlasEnabled !== uniforms.receiverAtlasEnabled) {
-                    Object.assign(properties.uniforms, uniforms);
-                    properties.uniformsList = null;
-                }
-            };
-            material.onBeforeRender = item.render;
+            const item = { material, defaults, registration: null, restoreUniforms: bindReceiverUniforms(material, uniforms) }; hooks.push(item);
             material.defaultAttributeValues = { ...defaults, receiverAtlasVertex: [0], receiverAtlasInstance: [0], receiverAtlasCoordinate: [0, 0, 0, 0] };
             item.registration = registerMaterialShaderHook(material, { id: 'illumination.receiver_lightmaps', priority: 300,
                 variantKey: source.variantKey + ':' + String(mapping.profile.directional ?? 'scalar') + ':' + String(mapping.profile.coefficientLayout ?? 'rgb-coefficients') + ':' + flatNormal,
@@ -86,11 +79,12 @@ export function installEnhancedReceiverBindings(mapping, references, uniforms, c
                         if (!shader.fragmentShader.includes(ANCHOR)) throw new Error('Enhanced direct-light shader anchor missing');
                         shader.fragmentShader = '#define RECEIVER_ATLAS_HYBRID_SUN\n' + shader.fragmentShader.replaceAll(ANCHOR, source.direct);
                     }
-                    Object.assign(shader.uniforms, uniforms);
+                    Object.assign(shader.uniforms, { receiverLightingBlend: { value: 1 } }, uniforms);
                 }
             });
         }
         for (const item of geometries) item.object.geometry = item.geometry;
-        return { geometries, restore };
+        coverage.boundObjects = geometries.length;
+        return { geometries, restore, coverage };
     } catch (error) { restore(); throw error; }
 }

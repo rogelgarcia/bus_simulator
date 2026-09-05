@@ -32,7 +32,7 @@ for (const layout of [null, 'flat-first-rgb-v1']) test(`AI 548: directional diff
         const directAtlas = new THREE.DataArrayTexture(new Float32Array([1, .5, 0, 1]), 1, 1, 1);
         directAtlas.type = THREE.FloatType; directAtlas.needsUpdate = true;
         const uniforms = { receiverAtlasMapping: { value: table }, receiverDirectAtlas: { value: directAtlas }, receiverIndirectAtlas: { value: atlas },
-            receiverDirectEnabled: { value: 0 }, receiverIndirectEnabled: { value: 1 }, receiverDebugMode: { value: 0 }, receiverMaxMip: { value: 0 }, receiverAtlasEnabled: { value: 1 } };
+            receiverDirectEnabled: { value: 0 }, receiverIndirectEnabled: { value: 1 }, receiverDebugMode: { value: 0 }, receiverMaxMip: { value: 0 }, receiverAtlasEnabled: { value: 1 }, receiverLightingBlend: { value: 1 } };
         for (const channel of ['Direct', 'Indirect']) for (const kind of ['Scale', 'Bias']) uniforms[`receiver${channel}${kind}`] = {
             value: Array.from({ length: 24 }, () => new THREE.Vector4().setScalar(kind === 'Scale' ? 1 : 0)) };
         const mapping = { profile: { directional: 'chart-affine-irradiance-v1', coefficientLayout: layout }, objects: [{ id: 'plane', referenceCount: 6, base: 1 }] };
@@ -62,7 +62,11 @@ for (const layout of [null, 'flat-first-rgb-v1']) test(`AI 548: directional diff
         } });
         const sun = new THREE.DirectionalLight(0xffffff, 1); sun.position.set(0, 0, 3); scene.add(sun);
         uniforms.receiverDirectEnabled.value = 1;
-        const direct = read(); visibility.value = 0; const specular = read(); hybrid.remove();
+        const direct = read();
+        uniforms.receiverLightingBlend.value = 0; const directLive = read();
+        uniforms.receiverLightingBlend.value = .5; const directHalf = read();
+        uniforms.receiverLightingBlend.value = 1;
+        visibility.value = 0; const specular = read(); hybrid.remove();
         binding.restore(); const restored = object.geometry === original;
         scene.remove(sun);
         read();
@@ -124,7 +128,7 @@ for (const layout of [null, 'flat-first-rgb-v1']) test(`AI 548: directional diff
         instanceTable.dispose(); instanceAtlas.dispose();
         const error = renderer.getContext().getError();
         target.dispose(); normal.dispose(); bump.dispose(); table.dispose(); atlas.dispose(); directAtlas.dispose(); material.dispose(); original.dispose(); renderer.dispose();
-        return { flat, flatWithoutMap, classification, tilted, bumpFlat, bumpTilted, withAmbient, disabled, direct, specular, restored, indexed, error, cachedDebug, cachedDisabled,
+        return { flat, flatWithoutMap, classification, tilted, bumpFlat, bumpTilted, withAmbient, disabled, direct, directLive, directHalf, specular, restored, indexed, error, cachedDebug, cachedDisabled,
             unmappedAmbient: Array.from(unmappedAmbient), originalAmbient: Array.from(originalAmbient),
             callbacksRestored: material.onBeforeRender === originalBeforeRender,
             sharedUnmapped: Array.from(sharedUnmapped), instances: [Array.from(left), Array.from(right)], instancesRestored: instances.geometry === original };
@@ -148,6 +152,7 @@ for (const layout of [null, 'flat-first-rgb-v1']) test(`AI 548: directional diff
     for (let channel = 0; channel < 3; channel++) expect(result.unmappedAmbient[channel]).toBeCloseTo(result.originalAmbient[channel], 4);
     for (let channel = 0; channel < 3; channel++) expect(result.sharedUnmapped[channel]).toBeCloseTo((channel + 1) * .01, 4);
     expect(result.direct[0] - result.specular[0]).toBeCloseTo(.8 * .25 / Math.PI, 4);
+    for (let channel = 0; channel < 3; channel++) expect(result.directHalf[channel]).toBeCloseTo((result.direct[channel] + result.directLive[channel]) / 2, 4);
     expect(result.direct[1] - result.specular[1]).toBeCloseTo(.5 * .8 * .25 / Math.PI, 4);
     expect(result.instancesRestored).toBe(true);
     expect(result.callbacksRestored).toBe(true);

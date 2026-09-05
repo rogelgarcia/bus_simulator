@@ -601,7 +601,7 @@ export class DynamicSunShadowLayer {
         const previousXrEnabled = renderer.xr?.enabled;
         try {
             if (renderer.xr) renderer.xr.enabled = false;
-            renderer.autoClear = true;
+            renderer.autoClear = false;
             renderer.setRenderTarget(this._target);
             renderer.setClearColor(0xffffff, 1);
             renderer.clear(true, true, true);

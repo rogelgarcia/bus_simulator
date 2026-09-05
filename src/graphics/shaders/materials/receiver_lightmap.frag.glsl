@@ -5,6 +5,7 @@ uniform int receiverDirectEnabled;
 uniform int receiverIndirectEnabled;
 uniform int receiverDebugMode;
 uniform float receiverMaxMip;
+uniform float receiverLightingBlend;
 vec3 receiverDiffuseDifference = vec3(0.0);
 
 vec3 receiverIrradiance(highp sampler2DArray atlas) {

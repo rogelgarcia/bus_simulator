@@ -4,11 +4,11 @@ import * as THREE from 'three';
 import { registerMaterialShaderHook } from '../../shaders/core/MaterialShaderHookRegistry.js';
 import { getReceiverLightmapShaderPayload } from '../../shaders/materials/ReceiverLightmapShaderLoader.js';
 import { STATIC_SUN_DEPTH_DIRECT_ANCHOR as ANCHOR } from '../static_sun_depth/StaticSunDepthShaderContract.js';
+import { bindReceiverUniforms } from './ReceiverUniformBinding.js';
 
 const sources = getReceiverLightmapShaderPayload();
 const { indirect, direct } = sources;
 const HOOK = 'illumination.receiver_lightmaps';
-let bindingSerial = 0;
 
 /** @param {any} shader @param {Record<string, {value: any}>} uniforms */
 export function patchReceiverLightmapShader(shader, uniforms) {
@@ -28,7 +28,7 @@ export function patchReceiverLightmapShader(shader, uniforms) {
         shader.fragmentShader = '#define RECEIVER_ATLAS_HYBRID_SUN\n' + shader.fragmentShader.slice(0, begin)
             + chunk.replaceAll(ANCHOR, direct) + shader.fragmentShader.slice(end);
     }
-    Object.assign(shader.uniforms, uniforms);
+    Object.assign(shader.uniforms, { receiverLightingBlend: { value: 1 } }, uniforms);
 }
 
 /**
@@ -40,10 +40,10 @@ export function installReceiverLightmapBindings(mapping, references, uniforms) {
     const materials = new Set();
     const geometries = [];
     const hooks = [];
-    const variantKey = sources.variantKey + ':binding-' + (++bindingSerial);
+    const variantKey = sources.variantKey;
     function restore() {
         for (const entry of geometries) { if (entry.object.geometry === entry.geometry) entry.object.geometry = entry.original; entry.geometry.dispose(); }
-        for (const entry of hooks) { entry.registration?.remove(); entry.material.defaultAttributeValues = entry.defaults; }
+        for (const entry of hooks) { entry.registration?.remove(); entry.restoreUniforms(); entry.material.defaultAttributeValues = entry.defaults; }
     }
     try {
         for (const record of mapping.objects) {
@@ -66,7 +66,7 @@ export function installReceiverLightmapBindings(mapping, references, uniforms) {
         }
         for (const material of materials) {
             const defaults = material.defaultAttributeValues;
-            const entry = { material, defaults, registration: null };
+            const entry = { material, defaults, registration: null, restoreUniforms: bindReceiverUniforms(material, uniforms) };
             hooks.push(entry);
             material.defaultAttributeValues = { ...defaults, receiverAtlasVertex: [0], receiverAtlasInstance: [0] };
             const registration = registerMaterialShaderHook(material, { id: HOOK, priority: 300, variantKey,

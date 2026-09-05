@@ -13,6 +13,7 @@ import bpy
 import numpy as np
 from mathutils import Vector
 from directional_coverage import apply_directional_coverage
+from denoise import ChartDenoiser
 
 NORMALS = [(0, 0, 1), (math.sqrt(2 / 3), 0, 1 / math.sqrt(3)),
            (-1 / math.sqrt(6), 1 / math.sqrt(2), 1 / math.sqrt(3)),
@@ -40,6 +41,8 @@ def install_directional_targets(package, atlas, images):
             raise RuntimeError('Directional receiver triangle ordering mismatch: ' + instance)
         targets = {t['offset']: (chart, t) for chart in charts_by_instance[instance] for t in chart['triangles']}
         old_slots = [slot.material for slot in obj.material_slots]
+        # Preserve per-face transport before Blender resets indices during clear().
+        source_materials = [old_slots[polygon.material_index] for polygon in obj.data.polygons]
         obj.data.materials.clear()
         uv = obj.data.uv_layers.new(name='AI548_Bake')
         for value in uv.data:
@@ -47,7 +50,7 @@ def install_directional_targets(package, atlas, images):
         materials = {}
         for offset, polygon in zip(offsets, obj.data.polygons):
             target = targets.get(offset)
-            source = old_slots[polygon.material_index]
+            source = source_materials[polygon.index]
             key = (source.name, target[0]['id'] if target else '')
             if key not in materials:
                 material = source.copy()
@@ -122,8 +125,14 @@ def assemble_directions(stage, atlas):
     if any(part['jobSha256'] != job_hash for part in parts):
         raise RuntimeError('Directional checkpoint belongs to another compiler job')
     outputs = list(parts[0]['outputs'])
+    denoise_started = time.monotonic()
+    denoiser = ChartDenoiser(stage, atlas['profile']['threads']) if atlas['profile'].get('denoise') == 'isolated-chart-oidn-v1' else None
     for page in range(atlas['pageCount']):
         samples = [np.load(stage / f'sample.{d}.bounce.{page}.npy') + np.load(stage / f'sample.{d}.sky.{page}.npy') for d in range(4)]
+        if denoiser:
+            print('AI548_DENOISE page ' + str(page), flush=True)
+            charts = [chart for chart in atlas['charts'] if chart['page'] == page]
+            samples = [denoiser.apply(sample, charts) for sample in samples]
         fitted = flat_first_coefficients(samples) if atlas['profile'].get('coefficientLayout') == 'flat-first-rgb-v1' else coefficients(samples)
         for color in range(3):
             write_levels(stage, 'indirect_irradiance', page * 3 + color, fitted[:, :, color, :], atlas['profile'], outputs)
@@ -132,6 +141,10 @@ def assemble_directions(stage, atlas):
         'seconds': sum(part['seconds'] for part in parts),
         'passes': {key: value for part in parts for key, value in part['passes'].items()},
         'execution': 'isolated_direction_processes', 'outputs': outputs}
+    if denoiser:
+        receipt['denoise'] = {'method': atlas['profile']['denoise'], 'seconds': time.monotonic() - denoise_started,
+                             'scope': 'independent_chart_rectangles_including_padding', 'directions': 4}
+        receipt['seconds'] += receipt['denoise']['seconds']
     (stage / 'receipt.json').write_text(json.dumps(receipt, sort_keys=True))
 
 

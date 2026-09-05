@@ -82,7 +82,16 @@ test('AI 532 renders two interacting moving objects into one texel-snapped dynam
         const handleB = layer.register({ id: 'vehicle.b', root: objectB });
         layer.activate();
         const activeCasterFlags = [meshA.castShadow, meshB.castShadow, glass.castShadow];
+        const renderer = engine.renderer, originalClear = renderer.clear;
+        const clearFlags = [renderer.autoClearColor, renderer.autoClearDepth, renderer.autoClearStencil];
+        const originalAutoClear = renderer.autoClear;
+        let clearCount = 0;
+        renderer.clear = function (...args) { clearCount++; return originalClear.apply(this, args); };
+        renderer.autoClearColor = renderer.autoClearDepth = renderer.autoClearStencil = false;
         const binding = layer.render([0.25, 1, 0.2]);
+        const clearStateRestored = renderer.autoClear === originalAutoClear && !renderer.autoClearColor && !renderer.autoClearDepth && !renderer.autoClearStencil;
+        renderer.clear = originalClear;
+        [renderer.autoClearColor, renderer.autoClearDepth, renderer.autoClearStencil] = clearFlags;
         const target = layer.getDebugRenderTarget();
         const pixels = new Uint8Array(64 * 64 * 4);
         engine.renderer.readRenderTargetPixels(target, 0, 0, 64, 64, pixels);
@@ -125,6 +134,7 @@ test('AI 532 renders two interacting moving objects into one texel-snapped dynam
 
         return {
             activeCasterFlags,
+            clearCount, clearStateRestored,
             bindingEnabled: binding.enabled,
             nonClearPixels,
             first: {
@@ -155,6 +165,8 @@ test('AI 532 renders two interacting moving objects into one texel-snapped dynam
     });
 
     expect(result.activeCasterFlags).toEqual([false, false, false]);
+    expect(result.clearCount).toBe(1);
+    expect(result.clearStateRestored).toBe(true);
     expect(result.bindingEnabled).toBe(true);
     expect(result.nonClearPixels).toBeGreaterThan(0);
     expect(result.first).toEqual({

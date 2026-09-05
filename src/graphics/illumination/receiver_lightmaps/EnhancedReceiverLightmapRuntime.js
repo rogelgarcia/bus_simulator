@@ -6,6 +6,7 @@ import { createEnhancedReceiverLoader } from './EnhancedReceiverResources.js';
 import { installEnhancedReceiverBindings } from './EnhancedReceiverMaterialAdapter.js';
 import { createEnhancedSourceWatch, enhancedLightingKey } from './EnhancedReceiverFreshness.js';
 import { collectResolvedCityBakeRoots } from '../bake_source/BakeSourceScene.js';
+import { installEnhancedReceiverRenderOptimizations } from './EnhancedReceiverRenderOptimizations.js';
 
 export class EnhancedReceiverLightmapRuntime extends ReceiverLightmapRuntime {
     /** @param {any} engine */
@@ -27,7 +28,8 @@ export class EnhancedReceiverLightmapRuntime extends ReceiverLightmapRuntime {
             this.updateDecodeUniforms();
             const binding = installEnhancedReceiverBindings(mapping, references, uniforms, uniforms.receiverAtlasMapping.value.image.data);
             this.watch?.setGeometryOverrides?.(binding.geometries);
-            return binding;
+            const restoreRender = installEnhancedReceiverRenderOptimizations(engine);
+            return { ...binding, restore() { restoreRender(); binding.restore(); } };
         };
     }
     updateDecodeUniforms() {
@@ -55,6 +57,7 @@ export class EnhancedReceiverLightmapRuntime extends ReceiverLightmapRuntime {
         return { ...result, implementation: 'AI548', residentGpuBytes: resources.reduce((sum, v) => sum + v.metrics.gpuBytes, sharedBytes),
             residentCpuBytes: resources.reduce((sum, v) => sum + v.metrics.cpuBytes, sharedBytes),
             sourceValidationPolicy: 'exact_field_watch', sourceWatch: this.watch?.statistics,
+            runtimeCoverage: this.bindings?.coverage ?? null,
             residencyPolicy: 'bounded_publication_cached_until_invalidation' };
     }
     release() { super.release(); this.cachedIndex = null; }

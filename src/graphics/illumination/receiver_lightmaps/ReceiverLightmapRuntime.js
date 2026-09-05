@@ -9,6 +9,7 @@ import { installReceiverLightmapBindings } from './ReceiverLightmapMaterialAdapt
 const INDEX = '/assets/baked_lighting/receivers/package_index.json';
 const CHANNELS = { direct: 'direct_receiver', indirect: 'indirect_irradiance' };
 const SOURCE_TIMEOUT_MS = 180_000;
+const FIRST_ACTIVATION_BLEND_MS = 400;
 
 function waitWithAbort(task, signal) {
     signal.throwIfAborted();
@@ -67,7 +68,7 @@ export class ReceiverLightmapRuntime {
         empty.type = THREE.HalfFloatType; empty.needsUpdate = true; this.empty = empty;
         this.uniforms = { receiverAtlasMapping: { value: null }, receiverDirectAtlas: { value: empty },
             receiverIndirectAtlas: { value: empty }, receiverDirectEnabled: { value: 0 }, receiverIndirectEnabled: { value: 0 },
-            receiverDebugMode: { value: 0 }, receiverMaxMip: { value: 0 }, receiverAtlasEnabled: { value: 0 } };
+            receiverDebugMode: { value: 0 }, receiverMaxMip: { value: 0 }, receiverAtlasEnabled: { value: 0 }, receiverLightingBlend: { value: 1 } };
         this.onContextLost = () => {
             this.generation++; this.abort?.abort(); this.release();
             this.status = { state: 'fallback', reason: 'webgl_context_lost' };
@@ -120,7 +121,8 @@ export class ReceiverLightmapRuntime {
         this.abort?.abort();
         this.abort = new AbortController();
         const signal = this.abort.signal;
-        this.pending = false;
+        this.pending = undefined;
+        let loadedChannel = false;
         if (!this.settings.direct && !this.settings.indirect) {
             this.deactivate();
             this.status = { state: 'current', reason: Object.keys(this.resources).length ? 'disabled_cached' : 'disabled' };
@@ -157,7 +159,7 @@ export class ReceiverLightmapRuntime {
                     descriptor, channel, sourceHash, cityId: city.cityId, profileId: index.profileId, renderer: this.engine.renderer, signal });
                 if (signal.aborted || generation !== this.generation) { resource.dispose(); return this.getDiagnostics(); }
                 if (this.mappingKey && this.mappingKey !== JSON.stringify(resource.mapping)) { resource.dispose(); throw new Error('channel_mapping_mismatch'); }
-                this.mappingKey = JSON.stringify(resource.mapping); this.resources[channel] = resource;
+                this.mappingKey = JSON.stringify(resource.mapping); this.resources[channel] = resource; loadedChannel = true;
                 } catch (error) { channelFailures[channel] = error.message; }
             }
             if (signal.aborted || generation !== this.generation) return this.getDiagnostics();
@@ -172,6 +174,7 @@ export class ReceiverLightmapRuntime {
             this.status = { state: 'loading', reason: 'preparing_shaders' };
             await this.engine.renderer.compileAsync(this.engine.scene, this.engine.camera);
             if (generation !== this.generation) return this.getDiagnostics();
+            this.pendingFade = loadedChannel && !this.active;
             this.pending = true; this.status = { state: 'loading', reason: 'ready_to_commit', profileId: index.profileId, channelFailures };
             this.timings.prewarmMs = performance.now() - compileStarted;
             this.timings.lastRefreshMs = performance.now() - refreshStarted;
@@ -182,7 +185,7 @@ export class ReceiverLightmapRuntime {
         return this.getDiagnostics();
     }
 
-    frameBegin() {
+    frameBegin(nowMs = performance.now()) {
         let compatible = !this.city || this.engine.context?.city === this.city;
         if (this.city && (this.active || this.pending)) {
             try { compatible = this.engine.context?.city === this.city && this.watch()
@@ -196,8 +199,11 @@ export class ReceiverLightmapRuntime {
         }
         if (this.pending !== undefined) {
             this.active = this.pending; this.pending = undefined;
+            this.blendStarted = this.active && this.pendingFade ? nowMs : null; this.pendingFade = false;
             if (this.active) this.status = { ...this.status, state: 'active', reason: null };
         }
+        this.uniforms.receiverLightingBlend.value = this.blendStarted == null ? 1
+            : Math.min(1, Math.max(0, (nowMs - this.blendStarted) / FIRST_ACTIVATION_BLEND_MS));
         const active = this.active === true;
         const hybrid = active && this.settings.direct
             && this.engine.getIlluminationPipeline?.()?.runtime?.getSnapshot?.()?.effectiveMode === 'baked';
@@ -214,6 +220,7 @@ export class ReceiverLightmapRuntime {
         return { ...this.status, effective: { direct: !!this.uniforms.receiverDirectEnabled.value,
             indirect: !!this.uniforms.receiverIndirectEnabled.value },
             loadingElapsedMs: this.status.state === 'loading' ? performance.now() - this.loadingStarted : null,
+            activationBlend: this.uniforms.receiverLightingBlend.value,
             channels: Object.fromEntries(Object.entries(this.resources).map(([id, v]) => [id, v.metrics])),
             timings: { ...this.timings }, coverage: (this.resources.indirect_irradiance ?? this.resources.direct_receiver)?.mapping.statistics ?? null };
     }
@@ -228,6 +235,7 @@ export class ReceiverLightmapRuntime {
         this.sourceJob?.abort.abort(new Error('source_validation_cancelled'));
         this.sourceJob = null;
         this.active = false; this.pending = false;
+        this.blendStarted = null; this.pendingFade = false;
         this.uniforms.receiverDirectEnabled.value = 0; this.uniforms.receiverIndirectEnabled.value = 0; this.uniforms.receiverDebugMode.value = 0;
         this.uniforms.receiverAtlasEnabled.value = 0;
         this.bindings?.restore(); this.bindings = null;

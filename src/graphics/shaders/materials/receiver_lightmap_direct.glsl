@@ -6,7 +6,7 @@
         && dot(normalize(directLight.direction), normalize(staticSunDepthPointDirectionView)) > 0.9995) {
         vec3 replacement = receiverIrradiance(receiverDirectAtlas) * BRDF_Lambert(material.diffuseColor) * dynamicSunShadowVisibility;
         receiverDiffuseDifference += receiverPreviousDirect + replacement - reflectedLight.directDiffuse;
-        reflectedLight.directDiffuse = receiverPreviousDirect + replacement;
+        reflectedLight.directDiffuse = mix(reflectedLight.directDiffuse, receiverPreviousDirect + replacement, receiverLightingBlend);
     }
     #endif
 }

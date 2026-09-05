@@ -386,6 +386,79 @@ The rooftop view has 3.16% mapped pixels and a modest visible indirect change;
 shaded-surface coverage should be expanded before a quality decision. Indirect
 remains an opt-in assessment preview; direct promotion is deferred.
 
+## Runtime stability and image corrections
+
+### Program cache and activation transition
+
+Receiver program keys describe shader variants only. Rebinding the same original
+or enhanced bank does not append a unique activation serial. The material render
+callback restores the selected bank's uniform references when Three r183 reuses
+a cached program. Compatible programs and maps remain resident while disabled;
+program count stabilizes after warming the selected variants and is released with
+material disposal. It is not expected to return to the initial cold count on every
+toggle. Actual WebGL regressions cover repeated bindings and final disposal.
+
+First activation of newly loaded maps blends live and baked diffuse lighting over
+400 ms. Existing diffuse lighting remains available during that transition,
+including in the enhanced shader's optimized paths. Compatible resident toggles
+activate immediately. Refreshing one channel does not disable an already active
+bank while awaiting the package index or shader compilation. Source invalidation
+still falls back immediately; a fade never permits stale source data to remain active.
+
+### Enhanced pass and coverage corrections
+
+While enhanced bindings are installed, a reversible wrapper around the postprocessing
+render call hides inactive shadow-only merge helpers. Active live casters remain
+available. With the existing separate GTAO blend pass, GTAO evaluates its texture
+without the redundant diffuse-color copy or buffer swap. AO diagnostics and cached
+update modes retain their existing behavior. Every temporary visibility/output
+change is restored in `finally`; disabling enhanced bindings removes the wrapper.
+The shared dynamic-shadow layer uses one explicit clear with automatic clearing
+disabled for that draw, preserving clear behavior independently of renderer flags.
+
+For non-instanced enhanced receivers, connected faces within one degree and one
+material slot must have complete atlas coverage to replace live illumination.
+Incomplete groups remain live, avoiding diagonal boundaries caused by page or
+small-chart budgets. Disconnected surfaces, creases, and material boundaries are
+independent. The filter changes only copied runtime coordinates, preserves the
+authenticated package, and runs during binding. Instanced coverage is unchanged.
+`runtimeCoverage` reports omitted triangles and bound objects separately from
+offline atlas coverage. This conservatively reduces coverage; it does not fill gaps.
+
+### Enhanced v3 bake correction
+
+The v3 profile preserves each polygon's source material before rebuilding Blender
+material slots; clearing those slots resets polygon indices to zero. The installed
+Blender regression includes object-linked overrides and shared source geometry.
+
+All four linear indirect irradiance directions are denoised before coefficient
+fitting using Blender's HDR denoiser. Each chart rectangle, including its padding,
+is processed independently with a reflected 32-pixel outer guard that is discarded
+afterward. Charts never sample neighboring atlas charts. Direct irradiance remains
+unfiltered. The profile records `isolated-chart-oidn-v1`; compiler hashes and the
+receipt record the processing. Denoising reduces sampling noise, not angular-fit
+error, incomplete coverage, or unsupported transport. The original AI 533 package
+and the enhanced preview warning remain unchanged.
+
+The published v3 identity is
+`41ee1d3ead9e50419a590ce2445490a438e8033adf3bd18aafa95dd283e0d8bb`.
+Baking/denoising took 2295.52 seconds, including 82.70 seconds of chart processing.
+Combined transfer size is 46,970,345 bytes (43.05% below v2), with unchanged resident
+texture storage. Packing normalized RMS error is 0.1759% direct and 0.5516% indirect.
+The localhost:8001 publication was checked against the exact candidate bytes and
+the current runtime source. The original receiver index hash remained unchanged.
+
+Eight alternating 210-frame GPU windows at 3520×1624 on the RTX 3060/D3D11 path
+compare this same enhanced scene with only pass pruning disabled/enabled. Mean GPU
+time falls from 24.7491 to 23.2622 ms (6.01%); calls fall from 1799 to 1782 and
+triangle submissions from 1,888,223 to 1,485,026. All eight full-frame pixel hashes
+match, with no disjoint timer events. This is a same-view GPU measurement, not a
+whole-route FPS guarantee or an enhanced-versus-original lighting comparison.
+The candidate also passed cold blending, repeated bank switches, bounded GPU
+resource/program counts, and cached-download checks before publication. See the
+[follow-up evidence](../../tests/artifacts/screens/illumination_optimization/report.md)
+for captures, raw measurements, coverage reductions and remaining image limits.
+
 ## Linked illumination controls
 
 Options includes a chain-link button beside the direct/indirect switches. Linking
