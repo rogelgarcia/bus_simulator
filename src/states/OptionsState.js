@@ -1,5 +1,6 @@
 // src/states/OptionsState.js
 // In-game options overlay state (tabbed, persisted settings).
+// Compare UI snapshots for live edits; Cancel restores engine values only for edited groups.
 
 import { OptionsUI } from '../graphics/gui/options/OptionsUI.js';
 import { applyAsphaltRoadVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltRoadVisuals.js';
@@ -262,10 +263,8 @@ export class OptionsState {
         });
 
         this._ui.mount();
-        this._receiverDraftKey = this._nonBakedDraftKey(this._ui.getDraft());
-        this._receiverOnlyEdits = true;
-        this._enhancedEdited = bakedLighting.receivers.enhanced === true
-            || this.engine.getBakedLightingDebugInfo?.()?.receiverImplementations?.enhanced?.cached === true;
+        this._appliedDraft = this._ui.getDraft();
+        this._initialDraft = this._appliedDraft;
         window.addEventListener('keydown', this._onKeyDown, { passive: false, capture: true });
     }
 
@@ -315,30 +314,13 @@ export class OptionsState {
     _restoreOriginal() {
         const src = this._original && typeof this._original === 'object' ? this._original : null;
         if (!src) return;
-        if (this._enhancedEdited && this._receiverOnlyEdits) {
-            void this.engine.setBakedLightingSettings(src.bakedLighting);
-            return;
-        }
-        this._applyDraft(src);
+        this._applyDraft(src, this._initialDraft);
     }
 
-    _nonBakedDraftKey(draft) {
-        const { bakedLighting: ignored, ...settings } = draft ?? {};
-        return JSON.stringify(settings);
-    }
-
-    _applyDraft(draft) {
-        const d = draft && typeof draft === 'object' ? draft : null;
-        const receiverDraftKey = this._nonBakedDraftKey(d);
-        const receiverOnly = receiverDraftKey === this._receiverDraftKey;
-        this._receiverOnlyEdits &&= receiverOnly;
-        this._receiverDraftKey = receiverDraftKey;
-        const enhanced = d?.bakedLighting?.receivers.enhanced === true || this.engine?.bakedLightingSettings?.receivers.enhanced === true;
-        this._enhancedEdited ||= enhanced;
-        if (this._enhancedEdited && receiverOnly) {
-            void this.engine.setBakedLightingSettings(d.bakedLighting);
-            return;
-        }
+    _applyDraft(draft, comparisonDraft = draft) {
+        const d = Object.fromEntries(Object.entries(draft ?? {}).filter(([key]) =>
+            JSON.stringify(comparisonDraft?.[key]) !== JSON.stringify(this._appliedDraft?.[key])));
+        this._appliedDraft = JSON.parse(JSON.stringify(comparisonDraft ?? {}));
         const lighting = d?.lighting ?? null;
         const atmosphere = d?.atmosphere ?? null;
         const shadows = d?.shadows ?? null;
@@ -354,18 +336,18 @@ export class OptionsState {
         const staticVisibility = d?.staticVisibility ?? null;
         const bakedLighting = d?.bakedLighting ?? null;
 
-        this.engine?.setShadowSettings?.(shadows ?? null);
-        this.engine?.setLightingSettings?.(lighting ?? null);
+        if (shadows) this.engine?.setShadowSettings?.(shadows);
+        if (lighting) this.engine?.setLightingSettings?.(lighting);
         if (antiAliasing) this.engine?.setAntiAliasingSettings?.(antiAliasing);
         if (ambientOcclusion) this.engine?.setAmbientOcclusionSettings?.(ambientOcclusion);
-        this.engine?.setAtmosphereSettings?.(atmosphere ?? null);
+        if (atmosphere) this.engine?.setAtmosphereSettings?.(atmosphere);
         if (bloom) this.engine?.setBloomSettings?.(bloom);
         if (sunBloom) this.engine?.setSunBloomSettings?.(sunBloom);
         if (grading) this.engine?.setColorGradingSettings?.(grading);
         if (vehicleMotionDebug) this.engine?.setVehicleMotionDebugSettings?.(vehicleMotionDebug);
         const desiredProbeVisible = lighting?.ibl?.showProbeSphere !== undefined ? !!lighting.ibl.showProbeSphere : false;
         const probe = this.engine?.scene?.getObjectByName?.('ibl_probe_sphere') ?? null;
-        if (probe) probe.visible = desiredProbeVisible;
+        if (probe && lighting) probe.visible = desiredProbeVisible;
 
         const city = this.engine?.context?.city ?? null;
         if (staticVisibility) city?.setStaticVisibilitySettings?.(staticVisibility);
@@ -374,7 +356,7 @@ export class OptionsState {
             if (city?.setSunIntensity) city.setSunIntensity(lighting.sunIntensity);
             else if (city?.sun) city.sun.intensity = lighting.sunIntensity;
         }
-        if (city?.applyShadowSettings) city.applyShadowSettings(this.engine);
+        if (shadows && city?.applyShadowSettings) city.applyShadowSettings(this.engine);
         if (bakedLighting) void this.engine?.setBakedLightingSettings?.(bakedLighting);
         if (sunFlare && city?.sunFlare?.setSettings) {
             city.sunFlare.setSettings(sunFlare);

@@ -35,11 +35,15 @@ Reversible property accessors and per-property reader columns were measured and
 rejected because they slowed the renderer. The original generic watch also regressed
 frame cost; the follow-up replaces it with the schema readers described above.
 
-Enhanced-only Options edits apply baked-lighting settings without reapplying
-unrelated material settings. Cancel restores the original selection through the
-same narrow path when no other settings were edited. This preserves cached source
-objects, including when reopening Options with the original preview selected and
-an enhanced cache retained. Default-page tests use isolated temporary city materials and shadow-free
+Options applies only changed settings groups for every live edit, including AO,
+anti-aliasing and baked illumination. Screen AO (Off/SSAO/GTAO) is independent of
+baked indirect illumination and sky occlusion. Changing it must not reapply road
+materials, invalidate receiver sources, dispose cached maps or disable AI 548.
+Cancel compares the initial UI snapshot with the applied UI snapshot, then restores
+original engine values only for edited groups; hidden engine fields must not make
+unchanged groups appear edited. Save, reopening Options, switching implementations
+and toggling channels retain compatible maps. Actual source edits still require
+the existing exact freshness checks. Default-page tests use isolated temporary city materials and shadow-free
 fog fixtures so the automatic core suite cannot alter gameplay textures or CSM.
 These fixture changes do not change the default material factory or game lighting.
 ### Directional representation
