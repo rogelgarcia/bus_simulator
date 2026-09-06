@@ -1,8 +1,8 @@
 // Verifies, bakes, and packages optional receiver irradiance using AI 528/529/530.
-import { readFile, writeFile, mkdir, copyFile, readdir, rename } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, copyFile, readdir, rename, link } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, createReadStream } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,15 +17,16 @@ import { runBlenderProcess } from '../illumination_bake_compiler/src/BlenderProc
 import { writeReceiverAtlas, receiverAtlasHashes, verifyReceiverAtlasFiles } from './AtlasFiles.mjs';
 import { encodeReceiverRgb9e5 } from '../../src/app/illumination/receiver_lightmaps/ReceiverHdrEncoding.js';
 import { readReceiverNpy, extendReceiverPage, downsampleReceiverPage } from './ReceiverPagePadding.mjs';
+import { createReceiverHiddenTexelMasks } from './ReceiverSurfaceOverlap.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const args = new Map();
 for (let i = 2; i < process.argv.length; i += 2) args.set(process.argv[i], process.argv[i + 1]);
 if (args.has('--help')) {
-    console.log('Usage: node tools/receiver_lightmaps/run.mjs [--enhanced true --layout receiver-layout.json --device CPU|OPTIX] [--atlas-only true] [--input source.bsib] [--output tests/artifacts/.../bake] [--pages 4] [--samples 64] [--blender existing-blender.exe] [--archive existing-blender.zip | --installed true] [--resume partial-directory]');
+    console.log('Usage: node tools/receiver_lightmaps/run.mjs [--enhanced true --layout receiver-layout.json --device CPU|OPTIX] [--atlas-only true] [--input source.bsib] [--output tests/artifacts/.../bake] [--pages 4] [--samples 64] [--blender existing-blender.exe] [--archive existing-blender.zip | --installed true] [--resume partial-directory | --reprocess recovered-publication-directory]');
     process.exit(0);
 }
-for (const [key, value] of args) if (!['--input', '--output', '--pages', '--samples', '--blender', '--archive', '--resume', '--enhanced', '--atlas-only', '--installed', '--layout', '--device'].includes(key) || !value) throw new Error('Unknown or incomplete option: ' + key);
+for (const [key, value] of args) if (!['--input', '--output', '--pages', '--samples', '--blender', '--archive', '--resume', '--reprocess', '--enhanced', '--atlas-only', '--installed', '--layout', '--device'].includes(key) || !value) throw new Error('Unknown or incomplete option: ' + key);
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const json = (value) => JSON.stringify(value);
 const input = path.resolve(args.get('--input') ?? 'tests/artifacts/illumination_528/ai533_v3/bigcity2.bsib');
@@ -46,8 +47,9 @@ const profile = { ...RECEIVER_LIGHTMAP_PROFILE,
 if (!Number.isInteger(profile.samples) || profile.samples < 1 || profile.samples > 4096) throw new Error('Samples must be 1–4096.');
 profile.id = `ai533.cycles.diffuse.complete${profile.samples}.v2`;
 if (args.get('--enhanced') === 'true') Object.assign(profile, {
-    id: `ai553.cycles.surface.complete${profile.samples}.v3`, irradianceRepresentation: 'surface-diffuse-v1',
+    id: `ai553.cycles.surface.complete${profile.samples}.v4`, irradianceRepresentation: 'surface-diffuse-v1',
     worldDirection: 'outward-blender-z-up-v1',
+    environmentSun: 'single-authored-sun-v1', environmentSunRadiusDegrees: 4,
     directRepresentation: 'hybrid-sun-visibility-v1', transportPolicy: RECEIVER_ALPHA_TRANSPORT,
     chartLayout: 'blender-smart-project-v1', packing: 'height-shelves-v1',
     coordinateLayout: 'row-chunks-v1',
@@ -93,25 +95,52 @@ const verified = installed ? {
         sha256: contract.blender.executableSha256, byteLength: contract.blender.executableByteLength } })
 } : await verifyBlenderToolchain({ archivePath, executablePath, contract });
 const resume = args.get('--resume');
+const reprocess = args.get('--reprocess');
+if(reprocess && (resume || !surface))throw new Error('Reprocessing requires a complete enhanced bake, without --resume.');
 const stage = resume ? path.resolve(resume) : path.join(output, `staging-${Date.now()}.partial`);
 if (!stage.startsWith(output + path.sep) || !stage.endsWith('.partial')) throw new Error('Staging directory must be a .partial child of the output root.');
 await mkdir(stage, { recursive: true });
 if (surface) for (const name of ['optix-cache','cuda-cache']) await mkdir(path.join(stage,name),{recursive:true});
 const { coordinates, ...atlasDescriptor } = atlas;
-const scripts = {};
+let scripts = {};
 for (const dir of ['tools/illumination_bake_compiler/blender', 'tools/receiver_lightmaps/blender']) {
     for (const file of (await readdir(path.join(root, dir))).filter((v) => v.endsWith('.py')).sort()) {
         scripts[`${dir}/${file}`] = sha(await readFile(path.join(root, dir, file)));
     }
 }
-const job = { packageSha256: sha(bytes), archiveSha256: verified.archive.sha256,
+let job = { packageSha256: sha(bytes), archiveSha256: verified.archive.sha256,
     executableSha256: verified.executable.sha256, scripts,
     toolchainVerification: installed ? 'installed_executable_sha256_and_runtime_signature' : 'archive_and_executable_sha256',
     archiveVerification: installed ? 'source_reference_only' : 'sha256', isolatedPythonCache: true,
     ...(surface ? { layoutSha256: sha(await readFile(path.resolve(args.get('--layout')))), profileSha256: sha(Buffer.from(json(profile))),
         ...receiverAtlasHashes(atlasDescriptor) } : {}) };
 const started = performance.now();
-if (resume) {
+let reprocessing;
+if(reprocess) {
+    const source=path.resolve(reprocess);
+    if(!source.startsWith(output+path.sep)||!/^[a-f0-9]{64}$/.test(path.basename(source)))throw new Error('Reprocessing source must be a completed publication under the output root.');
+    const indexBytes=await readFile(path.join(source,'package_index.json'));
+    if(sha(indexBytes)!==path.basename(source))throw new Error('Reprocessing publication identity mismatch');
+    const originalJob=JSON.parse(await readFile(path.join(source,'job.json')));
+    const {scripts:oldScripts,...oldInputs}=originalJob,{scripts:currentScripts,...newInputs}=job;
+    if(json(oldInputs)!==json(newInputs))throw new Error('Reprocessing requires unchanged source, atlas, profile and Blender identity');
+    await verifyReceiverAtlasFiles(source,originalJob);
+    const receiptBytes=await readFile(path.join(source,'receipt.json')), receipt=JSON.parse(receiptBytes);
+    const passFiles=receipt.recovery?.samples;
+    if(receipt.recovery?.jobSha256!==sha(await readFile(path.join(source,'job.json')))
+        ||passFiles?.length!==atlas.pageCount*2)throw new Error('Reprocessing requires authenticated recovered pass files');
+    for(const pass of passFiles) {
+        if(!/^(sky|bounce)\.[0-9]+\.npy$/.test(pass.file))throw new Error('Invalid recovered pass path');
+        const hash=createHash('sha256');let count=0;
+        for await(const bytes of createReadStream(path.join(source,pass.file))){hash.update(bytes);count+=bytes.length;}
+        if(count!==pass.bytes||hash.digest('hex')!==pass.sha256)throw new Error('Recovered pass changed: '+pass.file);
+        await link(path.join(source,pass.file),path.join(stage,pass.file));
+    }
+    for(const name of ['source.bsib','job.json','atlas.json','charts.ndjson','receipt.json','direct_receiver.0.mip0.f32'])await link(path.join(source,name),path.join(stage,name));
+    job=originalJob;scripts=oldScripts;
+    reprocessing={sourcePublication:path.basename(source),receiptSha256:sha(receiptBytes),
+        scriptSha256:sha(await readFile(fileURLToPath(import.meta.url)))};
+} else if (resume) {
     if (json(JSON.parse(await readFile(path.join(stage, 'job.json')))) !== json(job)
         || (!surface && json(JSON.parse(await readFile(path.join(stage, 'atlas.json')))) !== json(atlasDescriptor))
         || sha(await readFile(path.join(stage, 'source.bsib'))) !== job.packageSha256) throw new Error('Resume inputs or compiler do not match the completed bake.');
@@ -121,7 +150,7 @@ if (resume) {
     await writeFile(path.join(stage, 'job.json'), json(job));
 }
 if (surface) await verifyReceiverAtlasFiles(stage, job);
-const directions = profile.directional ? ['0', '1', '2', '3', 'assemble'] : (resume ? [] : [null]);
+const directions = reprocess ? [] : profile.directional ? ['0', '1', '2', '3', 'assemble'] : (resume ? [] : [null]);
 for (const direction of directions) {
     const checkpoint = direction && direction !== 'assemble' ? path.join(stage, `direction.${direction}.json`) : null;
     if (checkpoint && existsSync(checkpoint)) {
@@ -155,23 +184,27 @@ for (const direction of directions) {
     }
 }
 if (surface) await verifyReceiverAtlasFiles(stage, job);
-for (const [file, hash] of Object.entries(scripts)) if (sha(await readFile(path.join(root, file))) !== hash) throw new Error('Compiler script changed during bake: ' + file);
+if(!reprocess)for (const [file, hash] of Object.entries(scripts)) if (sha(await readFile(path.join(root, file))) !== hash) throw new Error('Compiler script changed during bake: ' + file);
 if (sha(await readFile(input)) !== job.packageSha256) throw new Error('Input changed during bake.');
 const receipt = JSON.parse(await readFile(path.join(stage, 'receipt.json')));
 const { charts, ...mapping } = atlasDescriptor;
 let pageProcessing;
 if (surface) {
-    pageProcessing = { policy: 'chart-isolated-nearest-sample-v1', scripts: {} };
-    for (const file of ['tools/receiver_lightmaps/ReceiverPagePadding.mjs', 'src/app/illumination/receiver_lightmaps/ReceiverHdrEncoding.js']) {
+    const overlap=createReceiverHiddenTexelMasks(interpretedSource,charts,profile);
+    console.log(JSON.stringify({phase:'receiver_surface_overlap',...overlap.report}));
+    pageProcessing = { policy: 'chart-isolated-nearest-sample-v1', overlap:overlap.report, ...(reprocessing ? {reprocessing} : {}), scripts: {} };
+    for (const file of ['tools/receiver_lightmaps/ReceiverPagePadding.mjs', 'tools/receiver_lightmaps/ReceiverSurfaceOverlap.mjs', 'src/app/illumination/receiver_lightmaps/ReceiverHdrEncoding.js']) {
         pageProcessing.scripts[file] = sha(await readFile(path.join(root, file)));
     }
     const pages = [];
     for (let page = 0; page < atlas.pageCount; page++) {
-        const raw = await readFile(path.join(stage, `indirect_irradiance.${page}.mip0.f32`));
-        let data = new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4);
         const sky = await readReceiverNpy(path.join(stage, `sky.${page}.npy`), profile.pageSize);
         const bounce = await readReceiverNpy(path.join(stage, `bounce.${page}.npy`), profile.pageSize);
-        const report = extendReceiverPage(data, sky, bounce, page, charts, profile);
+        // Reassemble from the verified Cycles passes, including during offline
+        // reprocessing. Never trust an interrupted assembled output by length alone.
+        let data=new Float32Array(sky.length);
+        for(let i=0;i<data.length;i++)data[i]=i%4===3 ? 1 : Math.fround(sky[i]+bounce[i])*Math.fround(Math.PI);
+        const report = extendReceiverPage(data, sky, bounce, page, charts, profile,overlap.masks.get(page));
         report.mips = [];
         for (let mip = 0; mip < profile.mipLevels; mip++) {
             const encoded = encodeReceiverRgb9e5(data);
@@ -259,6 +292,15 @@ for (const channel of ['direct_receiver', 'indirect_irradiance']) {
         source: { resolvedSourceSha256: parsed.manifest.hashes.resolvedSource, sourcePackageSha256: job.packageSha256,
             ...(receiverPageShards.length ? { receiverPageShards } : {}) },
         compilerDescriptor: { signature: receipt.signature, executableSha256: job.executableSha256, scripts, profile,
+            ...(receipt.recovery ? { recovery: {
+                policy: receipt.recovery.policy, scriptSha256: receipt.recovery.scriptSha256,
+                jobSha256: receipt.recovery.jobSha256,
+                passFiles: receipt.recovery.samples.map(({ file, bytes, sha256 }) => ({ file, bytes, sha256 })),
+                ...(receipt.recovery.resumedSky ? {
+                    resumedSkyScriptSha256: receipt.recovery.resumedSky.scriptSha256,
+                    referenceJobSha256: receipt.recovery.resumedSky.referenceJobSha256
+                } : {})
+            } } : {}),
             ...(pageProcessing ? { pageProcessing } : {}) },
         channels: [{ id: channel, required: true, sourceSha256: sourceHash, profileSha256: profileHash },
             { id: 'receiver_mapping', required: true, sourceSha256: mappingHash, profileSha256: profileHash }], chunks:selectedChunks });

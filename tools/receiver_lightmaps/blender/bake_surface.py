@@ -1,6 +1,8 @@
 """Complete diffuse receivers; direct sun visibility remains in the shared high-resolution cache."""
+import gc
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -59,6 +61,38 @@ def install_surface_targets(package, atlas, images):
     return selected
 
 
+def write_durable(file, writer):
+    temporary = file.with_suffix(file.suffix + '.partial')
+    with temporary.open('wb') as output:
+        writer(output)
+        output.flush()
+        os.fsync(output.fileno())
+    os.replace(temporary, file)
+
+
+def save_surface_pass(stage, name, images):
+    for page, image in enumerate(images):
+        data = pixels([image])[0]
+        write_durable(stage / f'{name}.{page}.npy', lambda output: np.save(output, data))
+        del data
+
+
+def assemble_surface_outputs(stage, profile, page_count):
+    outputs = []
+    for page in range(page_count):
+        data = np.load(stage / f'bounce.{page}.npy') + np.load(stage / f'sky.{page}.npy')
+        data[:, :, :3] *= math.pi; data[:, :, 3] = 1
+        for mip in range(profile['mipLevels']):
+            file = f'indirect_irradiance.{page}.mip{mip}.f32'
+            write_durable(stage / file, lambda output: data.astype('<f4').tofile(output))
+            outputs.append({'channel': 'indirect_irradiance', 'page': page, 'mip': mip, 'file': file, 'width': data.shape[1], 'height': data.shape[0]})
+            if mip+1 < profile['mipLevels']: data = data.reshape(data.shape[0]//2, 2, data.shape[1]//2, 2, 4).mean(axis=(1,3))
+    # Authenticated channel metadata selects shared visibility; there is no second sun atlas to sample.
+    write_durable(stage / 'direct_receiver.0.mip0.f32', lambda output: np.zeros((1,1,4), dtype='<f4').tofile(output))
+    outputs.append({'channel': 'direct_receiver', 'page': 0, 'mip': 0, 'file': 'direct_receiver.0.mip0.f32', 'width': 1, 'height': 1})
+    return outputs
+
+
 def main():
     stage = Path(sys.argv[sys.argv.index('--') + 1]).resolve()
     job = json.loads((stage / 'job.json').read_text())
@@ -88,37 +122,35 @@ def main():
         reconstruction = reconstruct_resolved_city(package, stage, 'indirect_irradiance', EnhancedTransportMaterialAdapter)
         reconstruction['alphaTransportMaterials'] = promoted
         reconstruction['proceduralCoverageMaterials'] = apply_directional_coverage(bpy.data.materials)
-        sun, background = lighting(package, stage)
+        sun, background = lighting(package, stage, profile.get('environmentSunRadiusDegrees'))
         images = [bpy.data.images.new('AI553_Page_' + str(i), profile['pageSize'], profile['pageSize'], alpha=True, float_buffer=True)
                   for i in range(atlas['pageCount'])]
         for image in images: image.colorspace_settings.name = 'Non-Color'
         selected = install_surface_targets(package, atlas, images)
         reconstruction['receiverBatch'] = batch_surface_targets(selected)
+        # UVs now live in the joined mesh. Discard the offline chart inventory
+        # and orphaned pre-join meshes before Cycles allocates its render data.
+        del atlas['charts']
+        gc.collect()
+        for mesh in list(bpy.data.meshes):
+            if mesh.users == 0: bpy.data.meshes.remove(mesh)
         times = {}
         for name, direct, indirect, sun_visible in [('bounce', False, True, True), ('sky', True, False, False)]:
             scene.render.bake.use_pass_direct = direct; scene.render.bake.use_pass_indirect = indirect
             sun.hide_render = not sun_visible
             before = time.monotonic()
-            (stage / 'progress.json').write_text(json.dumps({'pass': name, 'elapsed': before-started}))
+            write_durable(stage / 'progress.json', lambda output: output.write(json.dumps({'pass': name, 'elapsed': before-started}).encode()))
             print('AI553_BAKE ' + name, flush=True)
             bpy.ops.object.bake(type='DIFFUSE', uv_layer='AI533_Bake')
-            for page, data in enumerate(pixels(images)): np.save(stage / f'{name}.{page}.npy', data)
+            save_surface_pass(stage, name, images)
             times[name] = time.monotonic()-before
-        outputs = []
-        for page in range(atlas['pageCount']):
-            data = np.load(stage / f'bounce.{page}.npy') + np.load(stage / f'sky.{page}.npy')
-            data[:, :, :3] *= math.pi; data[:, :, 3] = 1
-            for mip in range(profile['mipLevels']):
-                file = f'indirect_irradiance.{page}.mip{mip}.f32'
-                data.astype('<f4').tofile(stage / file)
-                outputs.append({'channel': 'indirect_irradiance', 'page': page, 'mip': mip, 'file': file, 'width': data.shape[1], 'height': data.shape[0]})
-                if mip+1 < profile['mipLevels']: data = data.reshape(data.shape[0]//2, 2, data.shape[1]//2, 2, 4).mean(axis=(1,3))
-        # Authenticated channel metadata selects shared visibility; there is no second sun atlas to sample.
-        np.zeros((1,1,4), dtype='<f4').tofile(stage / 'direct_receiver.0.mip0.f32')
-        outputs.append({'channel': 'direct_receiver', 'page': 0, 'mip': 0, 'file': 'direct_receiver.0.mip0.f32', 'width': 1, 'height': 1})
-        receipt = {'schema': 'bus-sim-receiver-bake-receipt-v1', 'signature': signature, 'reconstruction': reconstruction,
-                   'seconds': time.monotonic()-started, 'passes': times, 'outputs': outputs, 'devices': devices, 'backend': profile['device']}
-        (stage / 'receipt.json').write_text(json.dumps(receipt, sort_keys=True))
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    del images, selected, package
+    gc.collect()
+    outputs = assemble_surface_outputs(stage, profile, atlas['pageCount'])
+    receipt = {'schema': 'bus-sim-receiver-bake-receipt-v1', 'signature': signature, 'reconstruction': reconstruction,
+               'seconds': time.monotonic()-started, 'passes': times, 'outputs': outputs, 'devices': devices, 'backend': profile['device']}
+    write_durable(stage / 'receipt.json', lambda output: output.write(json.dumps(receipt, sort_keys=True).encode()))
 
 
 if __name__ == '__main__': main()

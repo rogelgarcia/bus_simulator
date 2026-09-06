@@ -79,8 +79,10 @@ export function installEnhancedReceiverBindings(mapping, references, uniforms, c
                         + (mapping.profile.directRepresentation === 'hybrid-sun-visibility-v1' ? '#define RECEIVER_SHARED_SUN\n' : '')
                         + (flatNormal ? '#define RECEIVER_FLAT_NORMAL\n' : '')
                         + (mapping.profile.coefficientLayout === 'flat-first-rgb-v1' ? '#define RECEIVER_FLAT_FIRST\n' : '') + shader.fragmentShader;
+                    const prepareAnchor = '#include <clearcoat_normal_fragment_begin>';
+                    if (!shader.fragmentShader.includes(prepareAnchor)) throw new Error('Enhanced receiver preparation anchor missing');
                     shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\n' + source.fragment)
-                        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + source.prepare)
+                        .replace(prepareAnchor, source.prepare + '\n' + prepareAnchor)
                         .replace('#include <lights_fragment_end>', THREE.ShaderChunk.lights_fragment_end.replace(/RE_IndirectDiffuse\s*\([^;]+;/, source.ambient) + '\n' + source.indirect)
                         .replace('#include <opaque_fragment>', source.fragmentApply + '\n#include <opaque_fragment>');
                     if (shader.fragmentShader.includes('void staticSunDepthApplyDirectional(')) {

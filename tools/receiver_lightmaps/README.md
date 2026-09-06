@@ -202,6 +202,67 @@ cameras with the previous complete bake, checks that direct-only lighting remain
 unchanged, and checks map/program reuse after toggling. Captures and numerical
 reports stay under `tests/artifacts/screens/illumination_quality/validation/`.
 
+`validate_environment_sun.py` checks the enhanced v4 diffuse-environment solar
+separation with a synthetic bright disc and a uniform-sky negative control.
+The default photograph's four-degree disc/halo cap is replaced by the surrounding
+sky mean; the original HDRI remains untouched. `environment-sun.json` records the
+derived direction, removed radiance and replacement sky. Source sunlight stays
+in the shared high-resolution shadow path and contributes offline bounce.
+`validate_shaded_bounce.py` uses the production sun orientation in a small CPU
+bake: a downward-facing white surface must receive zero direct sunlight, green
+bounce from a lit ground plane, and zero bounce when that plane is removed.
+
+For the longer refinement run use `--samples 896 --device OPTIX --installed true`
+with the complete layout and a fresh output root. This targets approximately
+30 minutes from the preceding run's measurements; report `receipt.seconds`,
+not the estimate, after completion. `receiver_refinement.pwtest.js` checks fixed
+facade, platform, sidewalk and cornice poses, channel isolation and cached
+toggles. `RECEIVER_CAPTURE` names a capture subdirectory under
+`tests/artifacts/screens/illumination_refinement/`; `RECEIVER_TOPICS` optionally
+restricts the comma-separated poses during diagnosis.
+Set `RECEIVER_BAKE_ROOT` to an artifact bake root containing `latest.json` to
+validate an unpublished candidate. Omit it to test the installed maps.
+
+After an interrupted surface bake, `recover_surface_outputs.py -- <partial>`
+validates the original source, atlas, compiler and every saved pass before
+reassembling. It rejects unwritten or truncated pass data. If the sky pass was
+lost, `resume_surface_sky.py -- <partial> <validated-reference-directory>` keeps
+bounce only after its raster coverage matches an existing bake with the same
+source and chart layout, then recomputes sky with the original profile. It writes
+and flushes one page at a time and releases the scene before assembly. Use the
+existing Blender CLI with `--python-exit-code 1`; after recovery, use the original
+`run.mjs` arguments plus `--resume <partial>` to validate and package the result.
+Recovery scripts live outside the frozen baking-script directory so their use
+does not change the compiler that produced the surviving bounce pass. Package
+provenance authenticates both scripts and pass hashes. Recovered receipts keep
+the lost original timing and reconstruction fields null, with separate recovery
+measurements and an explicitly labeled timing estimate.
+
+Normal complete-surface bakes also discard the chart inventory and orphaned
+meshes after joining receivers, save one image copy at a time, flush each output
+before replacing its target, and release the scene before CPU mip assembly.
+`validate_surface_outputs.py -- <artifact-directory>` checks exact float output,
+mip values, bounded page reads and preservation of an existing file when a write
+is interrupted. Run it with the existing Blender CLI and `--python-exit-code 1`.
+
+`ReceiverSurfaceOverlap.mjs` builds offline hidden-texel masks for near-coincident
+opaque receiver layers. Exact projected geometry and a declared 2 mm maximum gap
+select the hidden lower samples; chart extension borrows only from the same
+chart's exposed samples. This prevents the dark hidden city floor from bleeding
+into its visible edge beside a grass tile. Real gaps and shaded exposed texels
+are preserved, including on rotated surfaces. Node coverage lives in
+`receiver_surface_overlap.test.js`; the refinement browser test checks irradiance
+on opposite sides of the actual floor/tile boundary.
+
+To process an already completed recovered bake with a newer padding algorithm,
+repeat its original `run.mjs` arguments using `--reprocess <publication-directory>`
+instead of `--resume`. The source directory must be a content-addressed child of
+the output root, and recovered pass hashes, profile, source and atlas must match.
+This creates a new publication from the verified pass files without another
+Cycles run. Baking-script provenance remains unchanged; the new processor and
+source-publication identity are authenticated separately. For large complete-city
+atlases, allow Node an 8 GiB heap with `--max-old-space-size=8192`.
+
 Select `receiver_directional_material.pwtest.js` for GPU normal-response and
 dynamic-shadow composition checks. `receiver_lightmaps_548.pwtest.js` records
 three alternating runs of 300 frames per mode, separate synchronized timings,

@@ -34,22 +34,37 @@ function distanceTransform(values,n,distance,nearest,vertices,borders) {
     }
 }
 
-export function extendReceiverPage(data,sky,bounce,page,charts,profile) {
+export function extendReceiverPage(data,sky,bounce,page,charts,profile,hidden=null) {
     const size=profile.pageSize;
     if([data,sky,bounce].some(a=>!(a instanceof Float32Array)||a.length!==size*size*4))throw new Error('Invalid receiver padding input');
+    if(hidden && (!(hidden instanceof Uint8Array)||hidden.length!==size*size))throw new Error('Invalid hidden receiver mask');
+    // Lighting passes share the same receiver raster. A lost disk-write block
+    // must fail publication, not be mistaken for an ordinary UV padding gap.
+    for(let i=3;i<data.length;i+=4)if((sky[i]>.5)!==(bounce[i]>.5))throw new Error('Receiver pass raster coverage differs on page '+page);
     const length=size+1, f=new Float64Array(length),d=new Float64Array(length),nearest=new Int32Array(length),v=new Int32Array(length),z=new Float64Array(length+1);
     let rows=new Float64Array(0),xs=new Int32Array(0),seedMask=new Uint8Array(0);
-    const report={page,charts:0,triangles:0,extendedPixels:0,rawMissingCenters:0,rawMissingBoundarySamples:0,maximumReceiverExtensionTexels:0};
+    const report={page,charts:0,triangles:0,extendedPixels:0,hiddenSamples:0,fullyHiddenCharts:0,rawMissingCenters:0,rawMissingBoundarySamples:0,maximumReceiverExtensionTexels:0};
     for(const chart of charts) {
         if(chart.page!==page)continue;
         const {width:w,height:h,x:ox,y:oy}=chart,count=w*h;
         if(ox<0||oy<0||ox+w>size||oy+h>size)throw new Error('Receiver padding escaped its page');
         if(rows.length<count){rows=new Float64Array(count);xs=new Int32Array(count);seedMask=new Uint8Array(count);}
+        let exposed=0;
+        if(hidden)for(let y=0;y<h;y++)for(let x=0;x<w;x++) {
+            const pixel=(oy+y)*size+ox+x;
+            if(sky[pixel*4+3]>.5&&!hidden[pixel])exposed++;
+        }
+        // A wholly covered chart has no exposed boundary to filter. Preserve it;
+        // partial charts extend only their own exposed, actually baked samples.
+        const excludeHidden=hidden&&exposed>0;
+        if(hidden&&!exposed)report.fullyHiddenCharts++;
         let seeds=0;
         for(let y=0;y<h;y++) {
             for(let x=0;x<w;x++) {
                 const index=((oy+y)*size+ox+x)*4;
-                const valid=sky[index+3]>.5&&bounce[index+3]>.5;
+                const masked=excludeHidden&&hidden[index/4];
+                const valid=sky[index+3]>.5&&bounce[index+3]>.5&&!masked;
+                if(masked&&sky[index+3]>.5)report.hiddenSamples++;
                 seedMask[y*w+x]=Number(valid);seeds+=Number(valid);f[x]=valid?0:Infinity;
             }
             distanceTransform(f,w,d,nearest,v,z);

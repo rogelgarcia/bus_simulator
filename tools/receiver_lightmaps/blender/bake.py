@@ -16,7 +16,7 @@ import numpy as np
 from mathutils import Vector
 
 
-def lighting(package, stage):
+def lighting(package, stage, environment_sun_radius=None):
     profiles = {p["id"]: p for p in package.manifest["lightingProfiles"]}
     sun_profile = profiles["sun.default"]
     sun_data = bpy.data.lights.new("AI533_Sun", "SUN")
@@ -57,6 +57,14 @@ def lighting(package, stage):
         file = stage / 'environment.hdr'
         file.write_bytes(package.get_buffer_bytes(ref['bufferId']))
         texture = nodes.new('ShaderNodeTexEnvironment'); texture.image = bpy.data.images.load(str(file))
+        if environment_sun_radius is not None:
+            from environment_sun import separate_environment_sun
+            source = pixels([texture.image])[0]
+            separated, report = separate_environment_sun(source, environment_sun_radius)
+            texture.image = bpy.data.images.new('DiffuseEnvironment', source.shape[1], source.shape[0], alpha=True, float_buffer=True)
+            texture.image.colorspace_settings.name = 'Non-Color'
+            texture.image.pixels.foreach_set(separated.ravel())
+            (stage / 'environment-sun.json').write_text(json.dumps(report, indent=2))
         links.new(outward.outputs[0], texture.inputs['Vector'])
         add = nodes.new('ShaderNodeMixRGB'); add.blend_type = 'ADD'; add.inputs[0].default_value = environment['intensity']
         links.new(color, add.inputs[1]); links.new(texture.outputs[0], add.inputs[2]); color = add.outputs[0]

@@ -18,6 +18,8 @@ test('Complete surface lighting replaces ambient once and retains shared sun vis
         const scene = new T.Scene(), camera = new T.PerspectiveCamera(45,1,.1,10); camera.position.z=3;
         const normal = new T.DataTexture(new Float32Array([.5,.5,1,1]),1,1,T.RGBAFormat,T.FloatType); normal.needsUpdate=true;
         const material = new T.MeshStandardMaterial({color:0xffffff,roughness:1,normalMap:normal});
+        const { applyMaterialVariationToMeshStandardMaterial } = await import('/src/graphics/assets3d/materials/MaterialVariationSystem.js');
+        applyMaterialVariationToMeshStandardMaterial(material, { config: { enabled: true, globalIntensity: 0 } });
         const original = new T.PlaneGeometry(2,2), object = new T.Mesh(original,material); scene.add(object);
         const ambient = new T.HemisphereLight(0xffffff,0xffffff,12); scene.add(ambient);
         const sun = new T.DirectionalLight(0xffffff,4); sun.position.z=3;

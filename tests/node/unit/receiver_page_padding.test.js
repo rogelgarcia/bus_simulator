@@ -13,5 +13,14 @@ test('Chart extension preserves dark samples and cannot borrow a neighboring cha
     assert.deepEqual(rgb(0,0),[0,0,0]);assert.deepEqual(rgb(7,7),[3,0,0]);assert.deepEqual(rgb(8,7),[0,0,10]);
     assert.equal(report.charts,2);assert.equal(report.triangles,2);assert.equal(report.extendedPixels,125);
     assert.equal(downsampleReceiverPage(data,size).length,8*8*4);
-    assert.throws(()=>extendReceiverPage(new Float32Array(data.length),new Float32Array(data.length),mask,0,[chart('empty',0)],{pageSize:size,padding:2}),/no actual baked samples/);
+    assert.throws(()=>extendReceiverPage(new Float32Array(data.length),new Float32Array(data.length),new Float32Array(data.length),0,[chart('empty',0)],{pageSize:size,padding:2}),/no actual baked samples/);
+});
+
+test('A partially unwritten lighting pass is rejected before chart padding can hide the loss',()=>{
+    const size=8,data=new Float32Array(size*size*4),bounce=new Float32Array(data.length);
+    bounce[3]=bounce[7]=1;
+    const sky=bounce.slice();sky[7]=0;
+    const original=data.slice();
+    assert.throws(()=>extendReceiverPage(data,sky,bounce,0,[],{pageSize:size,padding:2}),/pass raster coverage differs/);
+    assert.deepEqual(data,original);
 });

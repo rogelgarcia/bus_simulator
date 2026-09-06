@@ -670,6 +670,77 @@ The original AI 533 mode measured 28.95 ms. This does not establish a new
 enhancement speedup or a whole-route FPS guarantee. Full measurements and
 remaining limitations are in `tests/artifacts/screens/illumination_553/report-final.md`.
 
+## AI 554: facade sampling and one authored sun
+
+Enhanced receiver preparation runs after normal-map evaluation and before the
+clearcoat normal stage. It must not be injected into the normal-map include:
+material variation retains that include only in its disabled preprocessor branch.
+A rendered test with the real variation module verifies nonzero irradiance,
+normal response, and single ambient replacement. The original material code is
+unchanged and removing the receiver hook restores it.
+
+The complete surface v4 profile declares `single-authored-sun-v1`. Its diffuse
+environment separates the upper-hemisphere HDRI solar peak and its photographic
+halo (a declared four-degree radius for the current default HDRI), replacing that
+cap with the solid-angle-weighted sky radiance in the surrounding four-to-eight
+degree annulus. This is an explicit environment transport choice, not receiver
+selection or per-surface brightness adjustment. Other environment pixels and the
+source HDRI remain unchanged. The extracted direction, energy, sky radiance and
+pixel count are saved in the bake receipt's artifact directory. The separate
+authored sun supplies surface sunlight through the existing high-resolution
+shadow cache and contributes offline bounce. The HDRI's photographed sun must
+not introduce a second hard shadow through the indirect atlas.
+
+This changes enhanced diffuse transport only. Live specular reflections, glass,
+moving objects, and the original preview retain their existing behavior. The
+four-degree radius describes the default photograph's disc plus halo, not the
+physical angular diameter of the authored sun (0.53 degrees). Higher samples
+reduce sampling noise; they do not increase the atlas's spatial resolution.
+
+The refinement run requests 896 samples per pass, targeting roughly 30 minutes
+from measured scene preparation and 256-sample timings. Actual elapsed time and
+fixed-camera evidence belong under `tests/artifacts/screens/illumination_refinement/`.
+The shaded-bounce regression uses a downward-facing white receiver and a lit
+green ground plane. Direct sunlight must be zero; indirect green bounce must
+remain positive and disappear within numerical tolerance when the ground is
+removed. A shaded underside being brighter than the live ambient approximation
+is not, on its own, evidence of reversed direct shadows.
+
+Recovery validates complete pass files before assembly. Sky and bounce must have
+identical written-pixel masks: a mismatch is rejected before chart extension,
+because filling a partially unwritten file would disguise data lost in a crash.
+The recovery path preserves source/chart/compiler hashes, durably writes pages,
+releases the reconstructed scene before CPU assembly, and authenticates recovery
+script and pass hashes in the package. A missing original receipt is recorded
+explicitly; replacement-pass measurements must not be presented as the lost
+original timer.
+
+The ordinary complete-surface writer uses the same bounded memory lifecycle:
+discard chart data and orphaned meshes once UVs are installed, copy one image
+page at a time, and release the reconstructed scene before assembling CPU mips.
+Passes, assembled pages, progress and receipt files are flushed before atomic
+replacement. The small output regression checks exact radiance/mip values and
+that an interrupted write leaves the previous target intact.
+
+Near-coincident opaque layers require visibility-aware filter padding. The city
+floor is 1 mm below its grass tiles; texels on the hidden floor are correctly
+dark in Cycles, but interpolating them at an exposed floor/tile boundary creates
+a false dark stripe. Offline processing identifies same-facing parallel receiver
+triangles separated by more than 1 micrometre and at most 2 mm, proves projected
+overlap in world space, and masks only the hidden lower texels. Partial charts
+extend their own exposed baked samples into that mask before mip generation.
+Entirely hidden charts remain unchanged. Real gaps, opposing faces, nonoverlap
+and exposed dark samples remain unchanged. Selection uses geometry, never object
+names, cell indices or material-specific exceptions. The policy and processor
+hashes are authenticated in the packages and add no runtime work.
+
+`run.mjs --reprocess <completed-publication>` can apply a revised offline filter
+to recovered passes without running Cycles again. It requires an unchanged
+source, profile, atlas and Blender identity, verifies every recovered pass hash,
+and writes a new content-addressed publication. The original baking-script hashes
+remain the bake provenance; new processing hashes are recorded separately.
+The original recovered files are read-only inputs to this operation.
+
 ## Linked illumination controls
 
 Options includes a chain-link button beside the direct/indirect switches. Linking
