@@ -22,7 +22,7 @@ void receiverPrepare(vec3 shadingNormal) {
     vec2 size = vec2(textureSize(receiverIndirectAtlas, 0).xy);
     if (receiverIndirectEnabled == 0) size = vec2(textureSize(receiverDirectAtlas, 0).xy);
     receiverLod = clamp(.5 * log2(max(max(dot(dx * size, dx * size), dot(dy * size, dy * size)), 1.0)), 0.0, receiverMaxMip);
-    #ifndef RECEIVER_FLAT_NORMAL
+    #if !defined(RECEIVER_FLAT_NORMAL) && !defined(RECEIVER_SHARED_SUN)
     vec3 px = dFdx(-vViewPosition), py = dFdy(-vViewPosition);
     float orientation = sign(dx.x * dy.y - dx.y * dy.x);
     vec3 right = normalize(px * dy.y - py * dx.y) * orientation;
@@ -56,7 +56,9 @@ void receiverPrepare(vec3 shadingNormal) {
         receiverIndirectValue = (textureLod(receiverIndirectAtlas, vReceiverAtlas.xyz, receiverLod) * receiverIndirectScale[page] + receiverIndirectBias[page]).rgb;
         #endif
     }
+    #ifndef RECEIVER_SHARED_SUN
     if (receiverDirectEnabled != 0) receiverDirectValue = (textureLod(receiverDirectAtlas, vReceiverAtlas.xyz, receiverLod) * receiverDirectScale[page] + receiverDirectBias[page]).rgb;
+    #endif
 }
 
 vec3 receiverDebugColor(vec3 color) {

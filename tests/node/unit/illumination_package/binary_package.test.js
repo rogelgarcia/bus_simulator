@@ -15,6 +15,7 @@ import {
 } from '../../../../src/app/illumination/package/index.js';
 import { rawSha256Hex, sha256HexToBytes } from '../../../../src/app/illumination/package/RawSha256.js';
 import { HASHES, baseBuildOptions, buildPackageFixture, mutableJson } from './package_fixture.js';
+import { encodeReceiverRgb9e5 } from '../../../../src/app/illumination/receiver_lightmaps/ReceiverHdrEncoding.js';
 
 function rejectsCode(code) {
     return (error) => {
@@ -23,6 +24,21 @@ function rejectsCode(code) {
         return true;
     };
 }
+
+test('HDR receiver mips authenticate packed RGB9E5 and reject a runtime without the capability',async()=>{
+    const options=baseBuildOptions(), data=encodeReceiverRgb9e5(new Float32Array([.001,.002,.003,1]));
+    options.chunks[1]={...options.chunks[1],data,encoding:'rgb9e5_le',precision:'shared_exponent_rgb9',mipLevel:1,
+        dimensions:{width:1,height:1,depth:1,components:1},coordinateTransform:{schema:'bus-sim-rgb9e5-lightmap-page-v1',page:0},
+        requiredRuntimeCapabilities:['receiver_rgb9e5_sampling_v1']};
+    const built=await buildIlluminationBinaryPackage(options);
+    const accepted=await parseIlluminationBinaryPackage(built.bytes,{runtimeCapabilities:['receiver_rgb9e5_sampling_v1']});
+    assert.equal(accepted.compatibility.compatible,true);
+    assert.deepEqual(accepted.chunks.find(c=>c.descriptor.id===options.chunks[1].id).data,data);
+    const rejected=await parseIlluminationBinaryPackage(built.bytes,{runtimeCapabilities:[]});
+    assert.equal(rejected.compatibility.compatible,false);
+    options.chunks[1].requiredRuntimeCapabilities=[];
+    await assert.rejects(buildIlluminationBinaryPackage(options),rejectsCode('build_chunk_mip_level_unsupported'));
+});
 
 test('Receiver channels authenticate explicit half-float mips while other layouts remain base-only', async () => {
     const options = baseBuildOptions();

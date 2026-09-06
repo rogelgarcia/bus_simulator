@@ -8,7 +8,7 @@ export function renderBakedLightingTab() {
     const intro = makeEl(
         'div',
         'options-note',
-        'Baked lighting reuses precomputed map lighting instead of rendering every static effect each frame, which should improve performance. If baked data for the current map is unavailable or out of date, the game safely uses legacy lighting and may run slower.'
+        'Baked lighting reuses precomputed shadows and illumination. Performance depends on map coverage and texture cost. If the current map or lighting profile does not match the bake, the game uses live lighting.'
     );
 
     const sectionShadows = makeEl('div', 'options-section');
@@ -107,8 +107,8 @@ export function renderBakedLightingTab() {
     enhanced.toggle.setAttribute('aria-description', warning.title);
     enhanced.row.querySelector('.options-row-label').append('\u00a0', warning);
     illumination.appendChild(enhanced.row);
-    illumination.appendChild(makeEl('div', 'options-note', 'Enables directional lighting for mapped normal/bump surfaces, revised coverage and compact maps. Turn off to compare with the original preview. Each version retains its loaded maps in memory.'));
-    illumination.appendChild(makeEl('div', 'options-note', 'Blender lighting can change brightness and color. The first bake covers selected static surfaces; other surfaces and the moving bus keep live lighting. Direct illumination is experimental and requires active baked shadows.'));
+    illumination.appendChild(makeEl('div', 'options-note', 'Adds baked indirect light and sky occlusion to opaque surfaces, including ground tiles, platform sides and buildings. It uses the existing baked sun shadows, so enabling it does not increase sun-shadow resolution. Turn off to compare with the original preview. Each version retains its loaded maps in memory.'));
+    illumination.appendChild(makeEl('div', 'options-note', 'Blender lighting can change brightness and color. The original preview covers selected static surfaces. The enhanced bake covers supported opaque surfaces; glass and the moving bus keep live lighting. Direct illumination is experimental and requires active baked shadows.'));
     illumination.appendChild(makeEl('div', 'options-note', 'This preview uses the default city lighting profile. The status below shows the current check or map-loading step and elapsed time. Existing lighting continues while it loads. Loaded maps stay cached in memory when disabled.'));
     illumination.appendChild(makeChoiceRow({ label: 'Illumination view', value: baked.receivers.debug,
         options: ['final', 'direct', 'indirect', 'combined', 'uv', 'pages', 'unmapped', 'difference', 'mip'].map((id) => ({ id, label: id[0].toUpperCase() + id.slice(1) })),

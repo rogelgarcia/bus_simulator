@@ -7,12 +7,14 @@ import { STATIC_SUN_DEPTH_DIRECT_ANCHOR as ANCHOR } from '../static_sun_depth/St
 import { hasFlatReceiverNormals } from './EnhancedReceiverFlatNormals.js';
 import { bindReceiverUniforms } from './ReceiverUniformBinding.js';
 import { omitPartialReceiverSurfaces } from './EnhancedReceiverCoverage.js';
+import { repairEnhancedReceiverCoplanarGeometry } from './EnhancedReceiverCoplanarGeometry.js';
 
 /** @param {any} mapping @param {Map<string, any>} references
  * @param {Record<string, {value: any}>} uniforms @param {Float32Array} coordinates */
 export function installEnhancedReceiverBindings(mapping, references, uniforms, coordinates) {
+    const surface = mapping.profile.irradianceRepresentation === 'surface-diffuse-v1';
     const geometries = [], hooks = [], materials = new Set(), nonFlatMaterials = new Set();
-    const coverage = { omittedTriangles: 0, boundObjects: 0 };
+    const coverage = { omittedTriangles: 0, boundObjects: 0, overlappingTriangles: 0, removedOverlapArea: 0 };
     function restore() {
         for (const item of geometries) { if (item.object.geometry === item.geometry) item.object.geometry = item.original; item.geometry.dispose(); }
         for (const item of hooks) {
@@ -26,10 +28,10 @@ export function installEnhancedReceiverBindings(mapping, references, uniforms, c
             if (!original) throw new Error('Missing enhanced receiver ' + record.id);
             const localCoordinates = object.isInstancedMesh ? null
                 : coordinates.slice(record.base * 4, (record.base + record.referenceCount) * 4);
-            const omittedTriangles = localCoordinates ? omitPartialReceiverSurfaces(original, localCoordinates) : 0;
+            const omittedTriangles = localCoordinates && !surface ? omitPartialReceiverSurfaces(original, localCoordinates) : 0;
             coverage.omittedTriangles += omittedTriangles;
             if (localCoordinates && !localCoordinates.some((value, i) => i % 4 === 3 && value > .5)) continue;
-            if (!hasFlatReceiverNormals(object, record, coordinates)) {
+            if (!surface && !hasFlatReceiverNormals(object, record, coordinates)) {
                 for (const material of Array.isArray(object.material) ? object.material : [object.material]) nonFlatMaterials.add(material);
             }
             let indexedCoordinates = null;
@@ -44,7 +46,7 @@ export function installEnhancedReceiverBindings(mapping, references, uniforms, c
                     } else { indexedCoordinates.set(localCoordinates.subarray(offset, offset + 4), vertex * 4); assigned[vertex] = 1; }
                 }
             }
-            const geometry = original.index && !indexedCoordinates ? original.toNonIndexed() : original.clone();
+            let geometry = original.index && !indexedCoordinates ? original.toNonIndexed() : original.clone();
             if (object.isInstancedMesh) {
                 if (object.count !== record.instances.length) throw new Error('Enhanced receiver instance inventory changed');
                 geometry.setAttribute('receiverAtlasVertex', new THREE.Float32BufferAttribute(Float32Array.from({ length: record.referenceCount }, (_, i) => record.base + i), 1));
@@ -53,22 +55,28 @@ export function installEnhancedReceiverBindings(mapping, references, uniforms, c
                 geometry.setAttribute('receiverAtlasCoordinate', new THREE.Float32BufferAttribute(indexedCoordinates
                     ?? localCoordinates, 4));
             }
+            if(surface && !object.isInstancedMesh) {
+                const repaired=repairEnhancedReceiverCoplanarGeometry(geometry,original,mapping);
+                geometry=repaired.geometry;coverage.overlappingTriangles+=repaired.overlappingTriangles;
+                coverage.removedOverlapArea+=repaired.removedArea;
+            }
             geometries.push({ object, original, geometry, omittedTriangles });
             for (const material of Array.isArray(object.material) ? object.material : [object.material]) if (material.isMeshStandardMaterial) materials.add(material);
         }
         for (const material of materials) {
-            const flatNormal = !nonFlatMaterials.has(material) && !material.normalMap && !material.bumpMap && material.side === THREE.FrontSide;
+            const flatNormal = surface || (!nonFlatMaterials.has(material) && !material.normalMap && !material.bumpMap && material.side === THREE.FrontSide);
             const defaults = material.defaultAttributeValues;
             const item = { material, defaults, registration: null, restoreUniforms: bindReceiverUniforms(material, uniforms) }; hooks.push(item);
             material.defaultAttributeValues = { ...defaults, receiverAtlasVertex: [0], receiverAtlasInstance: [0], receiverAtlasCoordinate: [0, 0, 0, 0] };
             item.registration = registerMaterialShaderHook(material, { id: 'illumination.receiver_lightmaps', priority: 300,
-                variantKey: source.variantKey + ':' + String(mapping.profile.directional ?? 'scalar') + ':' + String(mapping.profile.coefficientLayout ?? 'rgb-coefficients') + ':' + flatNormal,
+                variantKey: source.variantKey + ':' + String(mapping.profile.directional ?? 'scalar') + ':' + String(mapping.profile.coefficientLayout ?? 'rgb-coefficients') + ':' + String(mapping.profile.directRepresentation ?? 'atlas') + ':' + flatNormal,
                 apply(shader) {
                     if (THREE.REVISION !== '183') throw new Error('Enhanced receiver shader requires audited Three r183');
                     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\n' + source.vertex)
                         .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + source.vertexApply);
                     shader.fragmentShader = '#define RECEIVER_DIRECT_LAYERS 24\n#define RECEIVER_INDIRECT_LAYERS 24\n'
                         + (mapping.profile.directional ? '#define RECEIVER_DIRECTIONAL\n' : '')
+                        + (mapping.profile.directRepresentation === 'hybrid-sun-visibility-v1' ? '#define RECEIVER_SHARED_SUN\n' : '')
                         + (flatNormal ? '#define RECEIVER_FLAT_NORMAL\n' : '')
                         + (mapping.profile.coefficientLayout === 'flat-first-rgb-v1' ? '#define RECEIVER_FLAT_FIRST\n' : '') + shader.fragmentShader;
                     shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\n' + source.fragment)

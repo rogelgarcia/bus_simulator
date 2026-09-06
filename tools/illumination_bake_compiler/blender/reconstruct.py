@@ -27,7 +27,7 @@ THREE_MIRRORED_REPEAT = 1002
 NEAREST_FILTERS = frozenset((1003, 1004, 1005))
 
 
-def reconstruct_resolved_city(package: BsibPackage, output_root: Path, channel_id: str) -> dict[str, Any]:
+def reconstruct_resolved_city(package: BsibPackage, output_root: Path, channel_id: str, material_adapter_type=None) -> dict[str, Any]:
     import bpy
     from mathutils import Matrix
 
@@ -61,7 +61,7 @@ def reconstruct_resolved_city(package: BsibPackage, output_root: Path, channel_i
     collection["bus_sim_channel_id"] = channel_id
     collection["bus_sim_source_hash"] = manifest["hashes"]["resolvedSource"]
     bpy.context.scene.collection.children.link(collection)
-    adapter = _MaterialAdapter(package, output_root, material_by_id, alpha_by_id, texture_by_id)
+    adapter = (material_adapter_type or _MaterialAdapter)(package, output_root, material_by_id, alpha_by_id, texture_by_id)
     mesh_cache: dict[tuple[str, tuple[tuple[int, int, int], ...]], Any] = {}
     object_count = 0
     normal_check_count = 0
@@ -78,6 +78,7 @@ def reconstruct_resolved_city(package: BsibPackage, output_root: Path, channel_i
         mesh = mesh_cache.get(mesh_key)
         if mesh is None:
             mesh, checks = _build_mesh(package, geometry, ranges)
+            adapter.prepare_mesh(mesh, geometry)
             mesh_cache[mesh_key] = mesh
             normal_check_count += checks["normalChecks"]
             uv_check_count += checks["uvChecks"]
@@ -226,6 +227,10 @@ def _copy_custom_attributes(package: BsibPackage, geometry: dict[str, Any], mesh
 
 
 class _MaterialAdapter:
+    def prepare_mesh(self, mesh, geometry):
+        """Optional transport extensions prepare source attributes through the injected adapter."""
+        pass
+
     def __init__(self, package: BsibPackage, output_root: Path, materials: dict[str, dict[str, Any]], alpha_inputs: dict[str, dict[str, Any]], textures: dict[str, dict[str, Any]]) -> None:
         self.package = package
         self.output_root = output_root

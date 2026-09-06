@@ -620,9 +620,14 @@ Rules:
   needs colonettes, else warns and falls back to springing). The building
   generator is synchronous, so parts MUST be preloaded
   (`preloadPortalOrnamentParts()`) before a deterministic scene builds —
-  the PBR-calibration cold-start contract; City kicks the preload
-  fire-and-forget, the showcase scenario awaits it. An un-preloaded part
-  warns and skips.
+  the PBR-calibration cold-start contract. Application startup initializes
+  the renderer and welcome input before loading ornaments. A single startup
+  scene gate waits for required ornament templates before entering another
+  scene; loading and failure/retry status remain visible on welcome. Each
+  asset load has a 30-second deadline, and failed loads can be retried without
+  accepting incomplete city geometry. Standalone City callers may still kick
+  optional preloading fire-and-forget; the showcase scenario awaits it. An
+  un-preloaded part in those optional callers warns and skips.
 - **Palette**: `palette` names part materials (box/level/ring/impost/panel/
   base/colonettes/frieze/recess/steps/custom) in the zone dialect with
   `slot` support (resolved in the AI 491 pre-pass). Unset part materials

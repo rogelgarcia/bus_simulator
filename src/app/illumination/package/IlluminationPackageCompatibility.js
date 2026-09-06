@@ -15,6 +15,7 @@ const TEXTURE_ENCODINGS = new Set([
     'r8_unorm',
     'rg8_unorm',
     'rgba8_unorm',
+    'rgb9e5_le',
     'rgba16f_le',
     'rgba32f_le'
 ]);

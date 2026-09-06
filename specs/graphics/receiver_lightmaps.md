@@ -269,6 +269,71 @@ is still pending. AO, base PBR assets and the moving bus's live lighting remain.
 
 ## Mapping
 
+### Complete coverage contract for new bakes
+
+New scalar v2 and enhanced v4 compiler jobs use `complete-eligible-v1`.
+The resolved source receiver inventory and material capabilities determine
+eligibility. All nondegenerate triangles of every eligible material range and
+every placement must receive coordinates. Tops, bevels, sides, small faces and
+neighboring instances are subject to the same requirement. There are no camera
+focus, distance, orientation or minimum-area selection rules. Chart partitioning
+and packing affect layout only; they cannot decide which eligible faces survive.
+
+The original scalar material restrictions remain explicit: unsupported channel
+semantics, perturbed shading normals, displacement, custom shading, alpha and
+metallic receivers stay live. Directional receivers support normal/bump maps but
+retain the other restrictions. These are representation limitations, not atlas
+budget exclusions. A disabled source receiver channel is also recorded explicitly.
+`coverage-report.json` identifies every excluded receiver range and its reason.
+
+An oversized triangle/chart, insufficient pages, or unsupported transport prevents
+the entire new bake from starting. No partial atlas is returned or published.
+The report records every eligible range's expected/planned triangle counts,
+oversized charts, required pages, source hash and full profile. Density and page
+size are not silently lowered. Zero-area triangles are counted separately.
+Packing order and input discovery order do not change eligibility or completeness.
+
+Bake participation is separate from runtime lightmap reception. Reconstruction
+consumes the full static participant/receiver/caster inventories before assigning
+atlas targets. A supported static non-receiver retains its authored material and
+geometry for occlusion and colored bounce; disabling runtime baked lighting does
+not remove it from the bake scene. The moving bus is outside this static source
+and keeps live lighting/shadows. A material without transport support must be
+implemented or explicitly resolved at the source contract; silently omitting it
+does not produce a complete bake. Unsupported transport now fails preflight even
+when that object needs no lightmap. The report distinguishes unsupported transport
+from an eligible transport participant that intentionally has no lightmap.
+
+The compiler writes a coverage report before invoking Blender. `--atlas-only true`
+performs source validation and planning without requiring Blender verification or
+launch. A failed coverage plan exits nonzero and writes no usable atlas/package.
+New publications must pass the complete-coverage gate. Historical partial packages
+remain readable for the installed comparison modes; their runtime, cached toggle
+behavior and shader paths are unchanged by this offline contract. Historical
+profiles remain available to the atlas API for reproducing old layouts, but the
+compiler and publisher no longer generate/promote those partial previews.
+
+The current city audit at 0.04150390625 m/texel plans the starting platform's
+40/40 triangles and all 448 ground-tile placements (896/896 triangles).
+It rejects publication: 712 pages are required by the current planar layout,
+578 triangles across nine receiver ranges exceed a page, and 14 material
+definitions lack participant transport support. The page requirement excludes
+those oversized charts and is therefore not a complete-city capacity estimate.
+The enhanced runtime currently supports eight atlas pages (24 indirect layers),
+with a 512 MiB per-channel package bound. Increasing `--pages` beyond those limits
+does not start a bake that the current runtime cannot load. Efficient UV/chart
+layout, oversized geometry handling, residency/streaming and missing transport
+adapters remain necessary before a complete replacement city bake can be shipped.
+No new city maps were published as part of this contract change.
+
+Validation includes complete bevel/instance coverage, order invariance, budget
+rejection, source opt-out, unsupported transport and publication rejection tests.
+`validate_transport_participants.py` reconstructs a floor receiver and a red wall
+with no receiver/caster mapping, then uses both actual target installers in the
+pinned Blender. The wall remains unselected, contributes red bounced light and
+occludes sky light; hiding it removes both effects. This verifies supported opaque
+transport independently of lightmap selection, not glass or full-city GI fidelity.
+
 `ReceiverAtlas.js` groups coplanar triangles per resolved receiver and instance,
 retains receiver/object/instance/chunk provenance, uses fixed rotation and stable
 shelf packing, and assigns distinct coordinates to repeated instances. Runtime
@@ -458,6 +523,152 @@ The candidate also passed cold blending, repeated bank switches, bounded GPU
 resource/program counts, and cached-download checks before publication. See the
 [follow-up evidence](../../tests/artifacts/screens/illumination_optimization/report.md)
 for captures, raw measurements, coverage reductions and remaining image limits.
+
+## World-direction and sampling correction
+
+The enhanced `ai553.cycles.surface.complete<SAMPLES>.v3` profile uses
+`worldDirection: outward-blender-z-up-v1` and defaults to 256 samples per pass.
+Three positions/directions are reconstructed as Blender `(x, -z, y)`. Blender's
+World Texture Coordinate Normal points inward, so it must be negated before
+evaluating sky elevation. The outward direction feeds the environment texture
+without another axis remap. This preserves Three's equirectangular convention
+`u = 0.5 + atan2(z, x) / (2*pi)`, `v = 0.5 + asin(y) / pi`.
+
+Earlier complete maps used an inverted sky/ground gradient and a rotated HDRI.
+Those maps require rebaking; a runtime brightness adjustment cannot repair their
+occlusion or bounce directions. `validate_environment_orientation.py` checks
+actual Cycles reference pixels against the direction equations, distinct sky and
+ground colors, and analytic direct-sun irradiance on differently oriented faces.
+An intentionally inverted reference proves the hemisphere test catches the fault.
+
+The correction changes offline radiance and sampling, retaining the same eligible
+triangles, atlas coordinates, page dimensions, encoding and runtime shader path.
+Only the enhanced publication is replaced; the original preview remains available.
+The 256-sample integration reduces noise without increasing runtime map allocation.
+This scalar bake supplies indirect diffuse light and sky occlusion. Direct sun
+continues to use the existing static/moving visibility cache, so the enhancement
+does not increase direct-shadow resolution. Broad blocked-sky darkening is distinct
+from a direct-sun shadow and may occur on the sun-facing side of an occluder.
+
+`receiver_environment_quality.pwtest.js` compares the previous and replacement
+maps at five fixed cameras, checks direct-only image stability, complete coverage,
+and resident texture/program reuse through repeated toggles. Generated evidence
+belongs under `tests/artifacts/screens/illumination_quality/`.
+
+The corrected 256-sample candidate is installed as
+`96120628c34410b3c539d295ba2c10bff5dfb91f3846a3a5d098fbd219abfbdc`.
+Its OptiX bake took 845.82 seconds. It retains the previous complete allocation
+and coverage. Fixed-camera captures show reduced platform color mottling and
+ground patchiness; direct-only images remain unchanged. The material diagnostic
+also confirms that the Modern Bank's authored near-black burnt-cement base is
+dark under both live and baked lighting despite valid indirect samples.
+See `tests/artifacts/screens/illumination_quality/research.md` for numerical
+direction checks, material isolation, remaining scalar-map limits and captures.
+
+## AI 553 complete surface repair
+
+The replacement candidate uses profile `ai553.cycles.surface.complete64.v2` behind
+the existing AI 548 toggle. The original bank and historical directional package
+reader remain independent. Complete reception follows resolved static roles and
+material support: every eligible nondegenerate opaque triangle must have an atlas
+address. Alpha surfaces remain live receivers but stay in the offline scene as
+occluders and bounce participants. Moving objects are not static participants.
+Missing transport semantics or insufficient atlas capacity fail the entire plan.
+
+Blender Smart Project produces connected islands in transformed world units. The
+compiler verifies source identity, unique face ownership, finite UVs, nonzero UV
+area and full triangle coverage. A singular projection receives a deterministic
+triangle projection; it is never discarded. Packing uses stable height/width/id
+ordering and at least two interior texels along each island axis. Both the layout
+and the emitted chart inventory are authenticated, including on resume.
+
+The candidate covers 1,904,820 triangles: all 448 ground instances and all 40 faces
+of the starting slab, including sides and bevels. The 233,232 alpha triangles have
+an explicit live-receiver exclusion. Nine 4096² pages use a nominal 0.5 m indirect
+texel density, increased for small islands, with two explicit mip levels. This is
+a density choice for smooth indirect illumination; the existing approximately
+4 cm static sun-depth cache remains responsible for sharp sunlight visibility.
+
+The scalar surface bake samples a white diffuse primary receiver using its true
+geometric normal. Secondary rays see the original PBR material, color textures,
+vertex color, roughness, metalness, tangent normal/bump and declared alpha coverage.
+Depth-only opaque alpha proxies do not override the material's bounce coverage.
+Two 64-sample, four-diffuse-bounce passes capture indirect transport and visible sky.
+There is no directional coefficient fit or duplicate direct-sun irradiance atlas.
+Supported normal/bump maps still affect the runtime direct PBR response. Indirect
+normal-map directionality is intentionally absent from this scalar representation.
+
+Offline receiver objects are joined for baking, with all UV channels and materials
+preserved. Negative-determinant instances receive the face-orientation correction
+required to preserve their pre-join lighting. The triangle inventory must match
+before and after joining; a Cycles fixture checks both ordinary and mirrored cases.
+The profile records batching and CPU/OptiX backend, and the receipt records the
+actual device and timing. No Blender installation or shared preferences are changed.
+
+RGB9E5 preserves nonnegative HDR irradiance in four bytes per texel. Explicit mips
+remain linear and hardware filtered. Exact RGBA32F coordinate rows are transported
+in bounded chunks and shared between the channels. The direct reference is one
+zero texel whose authenticated profile selects existing static/moving visibility;
+its value is never sampled for sunlight. Three r183's public texture upload callback
+uploads the extra RGB9E5 array mip levels; a GPU test verifies the sampled mip.
+
+The page allocation is 720 MiB, plus 97.875 MiB shared coordinates and a 4-byte
+direct reference. These figures exclude receiver geometry and the rest of the
+renderer. Full-source compatibility includes alpha transport contributors even
+when a historical channel hash omitted unsupported alpha materials. Disabling
+the toggle restores original geometry and shaders while retaining compatible maps.
+
+The initial three-page candidate failed actual raster acceptance on narrow details
+despite complete UV inventory. A seven-page revision exposed a second defect:
+neighboring faces could satisfy the raster predicate and then be split away.
+The final planner requires each face's centroid cell to lie strictly inside that
+same face. It reserves independent charts otherwise, and aligns those charts'
+centroids to pixel centers. It keeps source face
+attribution and increases local density instead of excluding the face. Cropping
+remaining islands preserves their pixel grid. Raster guards account for float32
+UV precision and do not treat edge-only samples as guaranteed coverage.
+
+Unwritten texels are extended only from actual samples within their own chart;
+valid dark samples are preserved, and a completely empty chart fails publication.
+The explicit mips are regenerated from the padded base level. The authenticated
+mapping records raster coverage and each encoded mip's hash, checked against the
+actual parsed chunks at publication and runtime. UV completeness alone is insufficient.
+
+The final plan uses nine pages (720 MiB) plus the shared coordinates, for
+817.875 MiB before geometry and other renderer resources. A root package
+authenticates extra page-package descriptors in its source descriptor. Each package
+retains the 512 MiB container limit, exact source/profile identity, per-chunk hashes,
+and no nested packages. The runtime stages all pages before activation and shares
+one coordinate texture. It releases staged data on failure and retains successfully
+loaded textures through ordinary toggles. Legacy publications use their existing
+single-package path.
+
+For non-instanced mapped meshes, the enhanced adapter resolves same-material,
+same-facing coplanar overlaps by stable source-triangle ownership. Subtraction
+preserves the union and interpolates all vertex attributes, including lightmap
+coordinates. It changes only the private enhanced geometry; source meshes and
+the original renderer are restored on disable. Alpha/live surfaces and distinct
+material boundaries are not merged. This removes coincident sidewalk receivers
+instead of adjusting their illumination to hide depth conflicts.
+
+The validated replacement is installed as
+`20744ee4a1a8f9bccf5837f64f49b4e2f5e0366074e3c01290dd85d279697898`.
+All 1,757,473 charts contain real samples and every eligible triangle center is
+written. Boundary padding fills 20,707 raw boundary samples without altering valid
+lighting. The 64-sample OptiX bake took 633.77 seconds. Deep-shade mottling and
+coarse/anisotropic indirect detail remain first-quality preview limitations;
+the warning stays visible. Acute chart tips can require substantial nearest-sample
+extension; this is not a high-quality per-corner irradiance result.
+
+The reported curb point changes from two coincident source hits to one enhanced
+hit. Matched curb, ground, platform and facade captures, channel isolation, saved
+startup and six cached toggle cycles pass, including a fresh installed-URL run.
+At 3520×1624 on RTX 3060/D3D11 with default lighting and high moving shadows,
+three alternating 240-frame samples after 60-frame warmups measured mean GPU
+times of 27.20 ms for the previous enhancement and 27.44 ms for this repair.
+The original AI 533 mode measured 28.95 ms. This does not establish a new
+enhancement speedup or a whole-route FPS guarantee. Full measurements and
+remaining limitations are in `tests/artifacts/screens/illumination_553/report-final.md`.
 
 ## Linked illumination controls
 

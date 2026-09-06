@@ -4,28 +4,81 @@ Optional AI 533 Cycles diffuse atlas compiler. It consumes the validated AI 528
 export, reuses AI 529's pinned reconstruction, and produces independent AI 530
 direct and indirect packages. It never downloads or installs Blender.
 
+New runs require **complete eligible coverage and supported scene transport**.
+The AI 553 repair uses the existing AI 548 toggle and a connected UV layout:
+
 ```
-node tools/receiver_lightmaps/run.mjs --input tests/artifacts/illumination_528/ai533_v3/bigcity2.bsib --pages 4 --samples 64
+node tools/receiver_lightmaps/unwrap.mjs path/to/source.bsib tests/artifacts/screens/receiver_unwrap path/to/existing/blender.exe
+node tools/receiver_lightmaps/run.mjs --enhanced true --layout tests/artifacts/screens/receiver_unwrap/receiver-layout.json --atlas-only true --input path/to/source.bsib --output tests/artifacts/screens/receiver_preflight
+```
+
+`coverage-report.json` lists eligibility reasons, per-range triangle counts,
+required pages, oversized charts and unsupported transport. No face is selected
+by location, area or remaining capacity. Any missing eligible triangle rejects
+the complete plan. The current city requires nine 4096² pages at a nominal
+0.5 m per indirect-light texel, with extra density on narrow faces. Every triangle
+must own an interior raster sample; another face's sample cannot satisfy that rule.
+The existing high-resolution shadow cache remains unchanged. `--atlas-only` never
+launches or verifies Blender. All ordinary commands below now apply this contract.
+
+```
+node tools/receiver_lightmaps/run.mjs --enhanced true --layout tests/artifacts/screens/receiver_unwrap/receiver-layout.json --input path/to/source.bsib --output tests/artifacts/screens/receiver_bake --samples 256 --installed true --device OPTIX
+node tools/receiver_lightmaps/publish.mjs --enhanced --from tests/artifacts/screens/receiver_bake
 ```
 
 `--blender` and `--archive` locate the exact existing 5.2.1 distribution. Defaults
 use the sibling main workspace's verified distribution. Jobs run offline with
-factory startup, CPU, 12 fixed threads and isolated configuration/temp paths.
+factory startup and isolated configuration, Python, OptiX/CUDA cache and temp paths.
+The complete enhanced bake supports explicit `CPU` (default, 12 threads) or `OPTIX`;
+an unavailable requested device fails instead of silently choosing another backend.
 The interactive Blender session remains untouched.
 
 `--output` must be below `tests/artifacts/`. Attempts use new `.partial` directories;
 complete results are promoted by rename. `--resume <partial-directory>` packages a
-completed bake without rebaking, after checking source, atlas, toolchain and scripts.
+completed bake without rebaking, after checking source, layout/profile, toolchain and scripts.
+Large offline charts live in `charts.ndjson`; they are not downloaded by the game.
 `bake/latest.json` identifies the last promoted result. After city validation,
 `node tools/receiver_lightmaps/publish.mjs` authenticates both packages again,
 copies them under `assets/baked_lighting/receivers/<identity>/`, and switches the
 runtime index last. The shared asset junction can require filesystem approval.
 
-The preview has four 2048-square pages, 680/16384 metres/texel, 16-pixel padding,
+The historical preview has four 2048-square pages, 680/16384 metres/texel, 16-pixel padding,
 four explicit mips, and 64 samples. `--samples 256` increases integration time;
-`--pages` changes the coverage budget. Neither resolves scalar-normal limitations.
-Each channel is an independent `.ilpkg.gz`, with linear RGBA16F irradiance and an
-exact RGBA32F coordinate table. Gzip is lossless transport around the AI 530 container.
+`--pages` changes the capacity budget, never which eligible faces get selected.
+An insufficient budget or oversized chart now fails before baking. Neither flag
+resolves scalar-normal limitations. New publications reject incomplete historical
+preview packages; existing installed packages remain available for comparison.
+Each channel is an independent `.ilpkg.gz`. Historical scalar maps use RGBA16F.
+The complete enhanced maps use hardware-filtered RGB9E5 HDR (4 bytes/texel), without
+page-wide exposure quantization. Exact RGBA32F coordinates are split into authenticated
+row chunks below the container's 64 MiB chunk limit. Gzip is lossless transport.
+Direct illumination uses the shared static/moving sun visibility and the live PBR
+normal response; its package contains metadata and a 1×1 reference, not a duplicate
+sun atlas. The direct toggle does not add another sun map in this profile.
+
+`ReceiverPagePadding.mjs` extends unwritten pixels from the nearest actual sample
+in the same chart. It preserves valid black samples, rejects empty charts and
+regenerates explicit mips. The authenticated mapping includes raster counts and
+hashes of the processed page bytes; both publication and runtime validate them.
+`validate_surface_pixels.py` separately audits the unprocessed Cycles outputs;
+boundary gaps in those raw images require chart padding before publication.
+The complete bank uses 720 MiB of HDR pages plus 97.875 MiB of shared coordinates,
+excluding geometry and other renderer allocations. Extra pages use authenticated
+child packages, with the existing 512 MiB per-container limit unchanged.
+
+`validate_surface_transport.py` runs both historical participant tests and the new
+white-receiver/fractional-opacity tests; add `--optix` after its artifact directory
+to verify the GPU backend. Static alpha surfaces remain transport participants
+while keeping live shading at runtime. Forced-opaque depth-proxy flags do not override
+their declared opacity for diffuse bounce. Complete packages additionally validate
+the full resolved-source identity, since old channel hashes excluded those materials.
+
+Select `tests/headless/e2e/receiver_complete_city.pwtest.js` to inspect an unpublished
+candidate under `tests/artifacts/screens/illumination_553/bake/`. It captures the
+reported platform, ground and curb views with isolated channels, checks saved startup
+and repeated cached toggles, and compares fixed-camera GPU/frame costs.
+Set `AI553_INSTALLED=1` for a fresh installed-URL verification and matched captures
+against the historical enhancement; this run skips the repeated benchmark.
 
 `inspect_atlas.py <promoted-directory> <artifact-output-directory>` uses NumPy/Pillow to
 write full atlas previews, island/padding/occupancy overlays, receiver provenance
@@ -47,7 +100,7 @@ consolidates the measurements into the artifact `report.md` and `summary.json`.
 
 See [the specification](../../specs/graphics/receiver_lightmaps.md).
 
-## AI 548 opt-in implementation
+## Historical AI 548 directional implementation
 
 Options → Baked lighting → **Enhanced baked illumination (AI 548)** selects a
 separate implementation and publication. It defaults off; the original preview
@@ -55,12 +108,7 @@ and its assets remain available. Both implementations retain compatible maps
 while inactive. No AI 548 shader modules or enhanced packages load with the new
 toggle off before first use.
 
-```
-node tools/receiver_lightmaps/run.mjs --enhanced true --pages 4 --samples 64 --output tests/artifacts/screens/illumination_548/bake
-node tools/receiver_lightmaps/publish.mjs --enhanced
-```
-
-The enhanced bake runs each direction in an isolated headless process and writes
+Historical directional bakes ran each direction in an isolated headless process and wrote
 hashed checkpoints. After an interrupted run, repeat the same command with
 `--resume <staging-directory>` to reuse complete directions; source, atlas,
 compiler and output hashes must still match. Python uses a task-local cache path,
@@ -70,7 +118,7 @@ archive is unavailable or fails verification. It verifies executable bytes and
 the running Blender build, and explicitly records that the archive hash is only
 the source contract reference. It never downloads or installs Blender.
 
-The enhanced compiler captures four primary directions and fits an affine indirect
+The historical enhanced compiler captured four primary directions and fitted an affine indirect
 irradiance function. Its v2 layout stores flat RGB irradiance in the first layer,
 with directional coefficients in the remaining components of three RGBA layers.
 Flat surfaces therefore use one indirect sample; normal/bump surfaces retain the
@@ -107,7 +155,30 @@ directory and `REPAIR_UNPUBLISHED=1` to test repaired maps before publication.
 implementation at the saved gameplay camera and 3520×1624 viewport, matching
 the reported screen size. Run timing after Blender exits.
 
-`--atlas-only true` writes a coverage inventory without launching Blender.
+`--atlas-only true` writes a coverage report without launching Blender. Successful
+plans also write `atlas.json` and a streamed `charts.ndjson` inventory. New profiles are scalar
+`ai533.cycles.diffuse.complete<SAMPLES>.v2` and enhanced
+`ai553.cycles.surface.complete<SAMPLES>.v3`; they reject the old focus/minimum-area
+selection options. Old v1/v3 checkpoints cannot resume under this new profile.
+Receiver exclusions do not remove static participants from reconstruction.
+Unsupported participant materials fail the complete plan and require a transport
+adapter; they cannot simply disappear from the bounce/occlusion scene.
+
+The complete enhanced surface compiler joins receiver targets while preserving UV
+channels, materials and mirrored-instance orientation. Run
+`validate_surface_batching.py -- <artifact-directory>` through the pinned Blender
+to compare joined and separate target lighting. `validate_surface_transport.py`
+checks geometric-normal irradiance and declared-alpha static contributors. The
+complete compiler authenticates both emitted atlas files before/after baking and
+on resume. It does not accept a changed chart inventory under an old job identity.
+
+Run `validate_transport_participants.py -- <artifact-directory>` through the pinned
+Blender with `--python-exit-code 1` to verify that a non-lightmapped red wall still
+contributes colored bounce and sky occlusion through both target installers. Use
+task-local `BLENDER_USER_CONFIG`, `BLENDER_USER_EXTENSIONS` and
+`PYTHONPYCACHEPREFIX` directories to isolate the test. The report is
+`transport-participants.json` beneath the specified artifact directory.
+
 `repack.mjs` converts the **unchanged** AI 533 bake into a separate artifact-only
 compact fixture for controlled performance/precision comparisons. It does not
 publish over the original maps.
@@ -116,6 +187,20 @@ Run `calibrate_directional.py` through the pinned headless Blender executable
 for analytic sun-direction checks. `validate_directional.py` measures the angular
 fit against independent 256-sample Cycles bakes of a colored wall and overhang.
 Pass the artifact JSON destination after Blender's `--` separator.
+
+Run `validate_environment_orientation.py -- <artifact-directory>` through the
+same isolated Blender invocation to render an equirectangular direction reference
+and a red-sky/blue-ground hemisphere. It compares actual Cycles pixels with the
+Three direction equations and verifies that an intentionally reversed hemisphere
+fails. World coordinates must be outward Blender Z-up directions: World Normal
+points inward, and remapping it to Three axes rotates the environment twice.
+The enhanced v3 profile records this convention and defaults to 256 samples per
+pass; the map dimensions, formats and runtime shaders are unchanged.
+Select `receiver_environment_quality.pwtest.js` after a candidate exists under
+`tests/artifacts/screens/illumination_quality/bake/`. It compares five fixed city
+cameras with the previous complete bake, checks that direct-only lighting remains
+unchanged, and checks map/program reuse after toggling. Captures and numerical
+reports stay under `tests/artifacts/screens/illumination_quality/validation/`.
 
 Select `receiver_directional_material.pwtest.js` for GPU normal-response and
 dynamic-shadow composition checks. `receiver_lightmaps_548.pwtest.js` records

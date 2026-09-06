@@ -1,5 +1,7 @@
 // Builds stable, per-instance planar receiver charts without modifying base UVs.
 // @ts-check
+import { ReceiverCoverageAudit } from './ReceiverCoverageContract.js';
+import { createRasterReceiverCharts } from './ReceiverRasterCharts.js';
 
 export const RECEIVER_ATLAS_SCHEMA = 'bus-sim-receiver-atlas-v1';
 export const RECEIVER_LIGHTMAP_PROFILE = Object.freeze({
@@ -24,6 +26,21 @@ export function scalarReceiverExclusion(material) {
     return null;
 }
 
+/** @param {any} mapping @param {any} material @param {any} profile */
+export function receiverMappingExclusion(mapping, material, profile) {
+    if (profile.coverage && (!mapping.channelRelevance.direct_receiver || !mapping.channelRelevance.indirect_irradiance)) return 'source_channel_disabled';
+    if (profile.irradianceRepresentation === 'surface-diffuse-v1') {
+        if (!material.channelSupport.indirect_irradiance.supported || !material.channelSupport.direct_receiver.supported) return 'unsupported_material';
+        if (material.alpha.mode !== 'opaque') return 'alpha_surface';
+        if (material.textureBindings.displacementMap) return 'runtime_displacement';
+        return null;
+    }
+    let reason = scalarReceiverExclusion(material);
+    if (profile.directional && reason === 'runtime_shading_normal') reason = scalarReceiverExclusion({ ...material,
+        textureBindings: { ...material.textureBindings, normalMap: null, bumpMap: null } });
+    return reason;
+}
+
 function accessorReader(parsed, accessor) {
     const bytes = parsed.getBuffer(accessor.bufferId);
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -46,13 +63,31 @@ const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a
 const normalize = (a) => a.map((v) => v / Math.hypot(...a));
 
 /** The parsed input must already have passed the AI 528 semantic validator. */
-export function createReceiverAtlas(parsed, profile = RECEIVER_LIGHTMAP_PROFILE) {
+export function createReceiverAtlas(parsed, profile = RECEIVER_LIGHTMAP_PROFILE, layout = null) {
     const { pageSize, texelSizeMeters, padding, maxPages } = profile;
     if (!Number.isInteger(pageSize) || pageSize < 64 || pageSize > 4096 || (pageSize & (pageSize - 1))
         || !Number.isInteger(profile.mipLevels) || profile.mipLevels < 1 || profile.mipLevels > 4
         || !(texelSizeMeters > 0) || !Number.isInteger(padding) || padding < 2 ** (profile.mipLevels - 1)
         || padding * 2 >= pageSize || !Number.isInteger(maxPages) || maxPages < 1) throw new Error('Invalid receiver atlas profile.');
     const manifest = parsed.manifest;
+    if (profile.chartLayout && (profile.chartLayout !== 'blender-smart-project-v1'
+        || profile.irradianceRepresentation !== 'surface-diffuse-v1' || !profile.coverage
+        || layout?.schema !== profile.chartLayout || layout.sourceHash !== manifest.hashes.resolvedSource)) throw new Error('Receiver layout/source mismatch.');
+    if (profile.packing && (profile.packing !== 'height-shelves-v1' || !profile.coverage)) throw new Error('Unsupported complete atlas packing.');
+    if (profile.rasterCoverage && (profile.rasterCoverage !== 'independent-triangle-centroids-v1' || !profile.chartLayout)) throw new Error('Unsupported receiver raster coverage.');
+    const layoutCharts = new Map(), layoutDegenerates = new Map();
+    const mappingIds = new Set(manifest.receiverMappings.map(m => m.id)), chartIds = new Set();
+    for (const chart of layout?.charts ?? []) {
+        if (!mappingIds.has(chart.mappingId) || chartIds.has(chart.id)) throw new Error('Receiver layout inventory mismatch.');
+        chartIds.add(chart.id);
+        const list = layoutCharts.get(chart.mappingId) ?? [];
+        list.push(chart); layoutCharts.set(chart.mappingId, list);
+    }
+    for (const entry of layout?.degenerates ?? []) {
+        if (!mappingIds.has(entry.mappingId) || layoutDegenerates.has(entry.mappingId)) throw new Error('Invalid degenerate receiver inventory.');
+        layoutDegenerates.set(entry.mappingId, entry.offsets);
+    }
+    const coverageAudit = profile.coverage ? new ReceiverCoverageAudit(manifest, profile) : null;
     const geometries = new Map(manifest.geometries.map((v) => [v.id, v]));
     const materials = new Map(manifest.materials.map((v) => [v.id, v]));
     const instances = new Map(manifest.meshInstances.map((v) => [v.id, v]));
@@ -62,16 +97,15 @@ export function createReceiverAtlas(parsed, profile = RECEIVER_LIGHTMAP_PROFILE)
     let tableEntries = 1;
     for (const mapping of [...manifest.receiverMappings].sort((a, b) => a.id.localeCompare(b.id, 'en'))) {
         const material = materials.get(mapping.materialId);
-        let reason = scalarReceiverExclusion(material);
-        if (profile.directional && reason === 'runtime_shading_normal') {
-            reason = scalarReceiverExclusion({ ...material, textureBindings: { ...material.textureBindings, normalMap: null, bumpMap: null } });
-        }
+        const reason = receiverMappingExclusion(mapping, material, profile);
+        coverageAudit?.recordMapping(mapping, reason);
         if (reason) { exclusions[reason] = (exclusions[reason] ?? 0) + mapping.count / 3; continue; }
         const instance = instances.get(mapping.meshInstanceId);
         const geometry = geometries.get(mapping.geometryId);
         let object = objects.get(mapping.objectId);
         if (!object) {
-            const placements = manifest.meshInstances.filter((v) => v.objectId === mapping.objectId);
+            const placements = manifest.meshInstances.filter((v) => v.objectId === mapping.objectId)
+                .sort((a, b) => (a.sourceIndex ?? 0) - (b.sourceIndex ?? 0) || a.id.localeCompare(b.id, 'en'));
             object = { id: mapping.objectId, geometryId: mapping.geometryId, base: tableEntries,
                 referenceCount: geometry.referenceCount, instances: placements.map((v) => ({ id: v.id, sourceIndex: v.sourceIndex ?? 0 })) };
             tableEntries += geometry.referenceCount * placements.length;
@@ -79,12 +113,49 @@ export function createReceiverAtlas(parsed, profile = RECEIVER_LIGHTMAP_PROFILE)
         }
         const read = accessorReader(parsed, geometry.attributes.position);
         const index = geometry.index ? accessorReader(parsed, geometry.index) : (i) => i;
+        if (profile.chartLayout) {
+            const seen = new Set();
+            const areaAt = (offset) => {
+                if (!Number.isInteger(offset) || offset % 3 || offset < mapping.start || offset + 3 > mapping.start + mapping.count || seen.has(offset)) throw new Error('Receiver layout triangle inventory mismatch: ' + mapping.id);
+                seen.add(offset);
+                const p = [0, 1, 2].map(c => worldPoint(read, index(offset + c), instance.matrixThreeWorld));
+                return Math.hypot(...cross(sub(p[1], p[0]), sub(p[2], p[0]))) / 2;
+            };
+            for (const offset of layoutDegenerates.get(mapping.id) ?? []) {
+                if (areaAt(offset) !== 0) throw new Error('Receiver layout discarded a nondegenerate triangle.');
+                coverageAudit.recordDegenerate(mapping.id);
+            }
+            for (const supplied of layoutCharts.get(mapping.id) ?? []) {
+                const chart = { ...supplied, objectId: object.id, instanceId: instance.id, chunkId: mapping.chunkId,
+                    triangles:supplied.triangles.map(t=>({...t})), min: [Infinity, Infinity], max: [-Infinity, -Infinity], area: 0 };
+                for (const triangle of chart.triangles) {
+                    const area = areaAt(triangle.offset);
+                    if (!(area > 0) || triangle.uv.length !== 3 || triangle.uv.some(p => p.length !== 2 || !p.every(Number.isFinite))) throw new Error('Invalid receiver UV triangle.');
+                    const [a, b, c] = triangle.uv;
+                    if ((b[0]-a[0])*(c[1]-a[1]) === (b[1]-a[1])*(c[0]-a[0])) throw new Error('Singular receiver UV triangle.');
+                    chart.area += area;
+                    triangle.area = area;
+                    for (const uv of triangle.uv) for (let c = 0; c < 2; c++) {
+                        chart.min[c] = Math.min(chart.min[c], uv[c]); chart.max[c] = Math.max(chart.max[c], uv[c]);
+                    }
+                }
+                // Keep even a tiny bevel island rasterizable; this increases its density, never removes a face.
+                chart.texelsPerMeter = chart.max.map((v, c) => Math.max(2, (v-chart.min[c])/texelSizeMeters)/(v-chart.min[c]));
+                for (const raster of profile.rasterCoverage ? createRasterReceiverCharts(chart,texelSizeMeters) : [chart]) {
+                    raster.width = Math.ceil((raster.max[0]-raster.min[0])*raster.texelsPerMeter[0])+ (raster.pixelOffset ? 2 : 1) + padding*2;
+                    raster.height = Math.ceil((raster.max[1]-raster.min[1])*raster.texelsPerMeter[1])+ (raster.pixelOffset ? 2 : 1) + padding*2;
+                    if (raster.width > pageSize || raster.height > pageSize) coverageAudit.recordOversized(raster);
+                    else charts.push(raster);
+                }
+            }
+            continue;
+        }
         const planes = new Map();
         for (let offset = mapping.start; offset < mapping.start + mapping.count; offset += 3) {
             const points = [0, 1, 2].map((corner) => worldPoint(read, index(offset + corner), instance.matrixThreeWorld));
             const normalRaw = cross(sub(points[1], points[0]), sub(points[2], points[0]));
             const area = Math.hypot(...normalRaw) / 2;
-            if (area < 1e-10) continue;
+            if (coverageAudit ? area === 0 : area < 1e-10) { coverageAudit?.recordDegenerate(mapping.id); continue; }
             const normal = normalize(normalRaw);
             const plane = [...normal.map((v) => Math.round(v * 1e5)), Math.round(dot(normal, points[0]) * 1e4)].join(',');
             let chart = planes.get(plane);
@@ -102,9 +173,9 @@ export function createReceiverAtlas(parsed, profile = RECEIVER_LIGHTMAP_PROFILE)
             for (const point of uv) for (let c = 0; c < 2; c++) {
                 chart.min[c] = Math.min(chart.min[c], point[c]); chart.max[c] = Math.max(chart.max[c], point[c]);
             }
-            chart.triangles.push(profile.directional ? { offset, uv, area } : { offset, uv }); chart.area += area;
+            chart.triangles.push(profile.directional || coverageAudit ? { offset, uv, area } : { offset, uv }); chart.area += area;
         }
-        const candidates = profile.directional ? [...planes.values()].flatMap((chart) => partitionChart(chart,
+        const candidates = profile.directional || coverageAudit ? [...planes.values()].flatMap((chart) => partitionChart(chart,
             Math.min(profile.patchSizeMeters ?? Infinity, (pageSize - padding * 2 - 1) * texelSizeMeters))) : [...planes.values()];
         for (const chart of candidates) {
             if (profile.directional && chart.area < (profile.minimumChartArea ?? 0)) {
@@ -114,6 +185,7 @@ export function createReceiverAtlas(parsed, profile = RECEIVER_LIGHTMAP_PROFILE)
             chart.width = Math.max(2, Math.ceil((chart.max[0] - chart.min[0]) / texelSizeMeters) + 1) + padding * 2;
             chart.height = Math.max(2, Math.ceil((chart.max[1] - chart.min[1]) / texelSizeMeters) + 1) + padding * 2;
             if (chart.width > pageSize || chart.height > pageSize) {
+                coverageAudit?.recordOversized(chart);
                 exclusions.chart_exceeds_page = (exclusions.chart_exceeds_page ?? 0) + chart.triangles.length;
                 continue;
             }
@@ -134,8 +206,21 @@ export function createReceiverAtlas(parsed, profile = RECEIVER_LIGHTMAP_PROFILE)
     const pages = [];
     const accepted = [];
     for (const chart of charts) {
-        if (profile.directional) {
-            const placement = placeRectangle(chart, pages, pageSize, maxPages);
+        if (profile.packing === 'height-shelves-v1') {
+            let page = pages.at(-1);
+            if (!page || page.y + chart.height > pageSize) {
+                page = { index: pages.length, x: 0, y: 0, rowHeight: 0 }; pages.push(page);
+            }
+            if (page.x + chart.width > pageSize) { page.y += page.rowHeight; page.x = 0; page.rowHeight = 0; }
+            if (page.y + chart.height > pageSize) {
+                page = { index: pages.length, x: 0, y: 0, rowHeight: 0 }; pages.push(page);
+            }
+            accepted.push({ ...chart, page: page.index, x: page.x, y: page.y });
+            page.x += chart.width; page.rowHeight = Math.max(page.rowHeight, chart.height);
+            continue;
+        }
+        if (profile.directional || coverageAudit) {
+            const placement = placeRectangle(chart, pages, pageSize, coverageAudit ? Infinity : maxPages);
             if (placement) accepted.push({ ...chart, ...placement });
             else exclusions.preview_page_budget = (exclusions.preview_page_budget ?? 0) + chart.triangles.length;
             continue;
@@ -158,6 +243,7 @@ export function createReceiverAtlas(parsed, profile = RECEIVER_LIGHTMAP_PROFILE)
         }
         accepted.push({ ...chart, ...placement });
     }
+    const coverage = coverageAudit?.finish(accepted, pages.length);
     if (!accepted.length) throw new Error('No eligible scalar receivers fit this atlas profile.');
     const usedObjects = new Set(accepted.map((v) => v.objectId));
     if (profile.directional) {
@@ -177,13 +263,13 @@ export function createReceiverAtlas(parsed, profile = RECEIVER_LIGHTMAP_PROFILE)
         const instance = instances.get(chart.instanceId);
         for (const triangle of chart.triangles) for (let corner = 0; corner < 3; corner++) {
             const at = (object.base + (instance.sourceIndex ?? 0) * object.referenceCount + triangle.offset + corner) * 4;
-            const uv = triangle.uv[corner].map((v, c) => ((v - chart.min[c]) / texelSizeMeters + padding + 0.5 + (c ? chart.y : chart.x)) / pageSize);
+            const uv = triangle.uv[corner].map((v, c) => ((v - chart.min[c]) * (chart.texelsPerMeter?.[c] ?? 1/texelSizeMeters) + padding + (chart.pixelOffset?.[c] ?? 0.5) + (c ? chart.y : chart.x)) / pageSize);
             coordinates.set([...uv, chart.page, 1], at);
         }
     }
     return { schema: RECEIVER_ATLAS_SCHEMA, profile: { ...profile }, pageCount: pages.length,
         tableWidth, tableHeight, objects: [...objects.values()].filter((v) => usedObjects.has(v.id)),
-        charts: accepted, coordinates,
+        charts: accepted, coordinates, ...(coverage ? { coverage } : {}),
         statistics: { charts: accepted.length, triangles: accepted.reduce((s, c) => s + c.triangles.length, 0),
             exclusions, surfaceArea: accepted.reduce((s, c) => s + c.area, 0),
             occupancy: accepted.reduce((s, c) => s + c.area / texelSizeMeters ** 2, 0) / (pages.length * pageSize ** 2),

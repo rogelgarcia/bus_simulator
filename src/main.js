@@ -18,7 +18,6 @@ import { RoadDebuggerState } from './states/RoadDebuggerState.js';
 import { MeshFabricationState } from './states/MeshFabricationState.js';
 import { OptionsState } from './states/OptionsState.js';
 import {
-    prehideWelcomeForDirectLaunch,
     readLaunchScreenFromLocation,
     syncLaunchScreenParam
 } from './states/LaunchScreenParam.js';
@@ -28,6 +27,7 @@ import { readGameplayPoseFromSearch } from './app/gameplay/GameplayPose.js';
 import { getBusSpec } from './app/vehicle/buses/BusCatalog.js';
 import { createBus } from './graphics/assets3d/factories/BusFactory.js';
 import { preloadPortalOrnamentParts } from './graphics/assets3d/generators/building_fabrication/PortalOrnamentParts.js';
+import { createStartupSceneGate } from './states/StartupSceneGate.js';
 
 function isEditableTarget(target) {
     const el = target && typeof target === 'object' ? target : null;
@@ -38,8 +38,6 @@ function isEditableTarget(target) {
 }
 
 const perfBar = ensureGlobalPerfBar();
-// Resolve synchronous city ornament inputs before the first state can build a city.
-await preloadPortalOrnamentParts();
 
 const canvas = document.getElementById('game-canvas');
 const viewport = document.getElementById('game-viewport');
@@ -51,7 +49,8 @@ perfBar.setRenderer(engine.renderer);
 engine.addFrameListener((frame) => perfBar.onFrame(frame));
 const sm = new StateMachine();
 window.__busSim = { engine, sm };
-sm.register('welcome', new WelcomeState(engine, sm));
+const welcome = new WelcomeState(engine, sm);
+sm.register('welcome', welcome);
 sm.register('setup', new SetupState(engine, sm));
 sm.register('bus_select', new BusSelectState(engine, sm));
 sm.register('test_mode', new TestModeState(engine, sm));
@@ -68,10 +67,15 @@ sm.register('mesh_fabrication', new MeshFabricationState(engine, sm));
 sm.register('options', new OptionsState(engine, sm));
 
 const rawGo = sm.go.bind(sm);
-sm.go = (name, params = {}) => {
-    rawGo(name, params);
-    syncLaunchScreenParam(name);
-};
+const startup = createStartupSceneGate({
+    load: () => preloadPortalOrnamentParts(null, { required: true }),
+    go: (name, params) => {
+        rawGo(name, params);
+        syncLaunchScreenParam(name);
+    },
+    onStatus: (status, error) => welcome.setStartupStatus(status, error)
+});
+sm.go = startup.go;
 
 const launchPose = readGameplayPoseFromSearch(window.location.search);
 if (launchPose) {
@@ -83,10 +87,11 @@ if (launchPose) {
 }
 
 const launchStateName = launchPose ? 'game_mode' : readLaunchScreenFromLocation();
-prehideWelcomeForDirectLaunch(launchStateName);
-
 engine.setStateMachine(sm);
 engine.start();
+// Render and bind welcome immediately; no city can build until its inputs are ready.
+rawGo('welcome');
+startup.preload();
 sm.go(launchStateName ?? 'welcome');
 
 window.addEventListener('keydown', (e) => {

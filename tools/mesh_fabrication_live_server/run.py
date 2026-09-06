@@ -49,6 +49,14 @@ class MeshFabricationHandler(SimpleHTTPRequestHandler):
         self._mesh_file = mesh_file
         super().__init__(*args, directory=directory, **kwargs)
 
+    def handle(self) -> None:
+        try:
+            super().handle()
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            # Reloads and cancelled asset downloads can close an active response.
+            self.close_connection = True
+            self.log_message("Client disconnected before the request completed.")
+
     def do_GET(self) -> None:  # noqa: N802 (stdlib signature)
         parsed = urlparse(self.path)
         if parsed.path == MESH_ENDPOINT:

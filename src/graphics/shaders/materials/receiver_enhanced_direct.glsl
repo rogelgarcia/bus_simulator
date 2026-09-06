@@ -1,4 +1,11 @@
 {
+    #ifdef RECEIVER_SHARED_SUN
+    RE_Direct(directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
+    if (receiverDirectEnabled != 0 && vReceiverAtlas.w > .5
+        && dot(normalize(directLight.direction), normalize(staticSunDepthPointDirectionView)) > .9995) {
+        receiverDirectValue += directLight.color * max(dot(geometryNormal, directLight.direction), 0.0);
+    }
+    #else
     bool replaceSun = false;
     float receiverSunFactor = 1.0;
     #ifdef RECEIVER_ATLAS_HYBRID_SUN
@@ -24,5 +31,6 @@
         if (receiverDebugMode == 7) receiverDiffuseDifference += previousDiffuse + replacement - reflectedLight.directDiffuse;
         reflectedLight.directDiffuse = mix(reflectedLight.directDiffuse, previousDiffuse + replacement, receiverLightingBlend);
     }
+    #endif
     #endif
 }

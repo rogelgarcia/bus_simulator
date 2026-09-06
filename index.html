@@ -38,6 +38,7 @@
         <h1 class="splash-title">SIMULATION BUS</h1>
         <div class="splash-subtitle">Drive the city. Master the routes. Build your fleet.</div>
         <button id="btn-start" class="start-btn" autofocus>Press Start</button>
+        <div id="startup-status" class="hint" role="status" aria-label="Startup status" hidden></div>
         <div class="hint">Enter / Space</div>
         <div class="hint">Q: Setup</div>
     </div>
@@ -112,7 +113,8 @@
 	    })();
 	    const shouldRun = forced ?? isDevHost;
 	    if (shouldRun) {
-	        import('./tests/core.test.js').catch((err) => {
+	        // Browser tests inspect application DOM; do not race the app bootstrap.
+	        import('./src/main.js').then(() => import('./tests/core.test.js')).catch((err) => {
 	            console.error('[CoreTests] Failed to load tests/core.test.js', err);
 	            const message = err?.message ?? String(err);
 	            if (!Array.isArray(window.__testFatals)) window.__testFatals = [];

@@ -37,6 +37,11 @@ Useful URLs:
   - `If-None-Match`
   - `If-Modified-Since`
 
+Browser reloads, closed tabs, and cancelled downloads may disconnect during a
+response. The server logs these connection resets/aborts and broken pipes as a
+single `Client disconnected` message and continues serving. Other exceptions
+retain their normal traceback. Server code changes take effect on its next restart.
+
 ## Optional args
 
 ```bash

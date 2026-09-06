@@ -33,8 +33,15 @@ def lighting(package, stage):
     nodes, links = world.node_tree.nodes, world.node_tree.links
     background = nodes.get("Background")
     texcoord = nodes.new("ShaderNodeTexCoord")
+    # World Normal points toward the camera; lighting needs the outward ray.
+    # Three (x,y,z) is reconstructed as Blender (x,-z,y). Blender's native
+    # equirectangular lookup already accounts for that convention: do not
+    # convert the direction back to Three axes inside the world shader.
+    outward = nodes.new('ShaderNodeVectorMath'); outward.operation = 'SCALE'
+    outward.inputs['Scale'].default_value = -1
+    links.new(texcoord.outputs['Normal'], outward.inputs[0])
     separate = nodes.new("ShaderNodeSeparateXYZ")
-    links.new(texcoord.outputs["Normal"], separate.inputs[0])
+    links.new(outward.outputs[0], separate.inputs[0])
     remap = nodes.new("ShaderNodeMath"); remap.operation = 'MULTIPLY_ADD'
     remap.inputs[1].default_value = 0.5; remap.inputs[2].default_value = 0.5
     links.new(separate.outputs['Z'], remap.inputs[0])
@@ -50,13 +57,7 @@ def lighting(package, stage):
         file = stage / 'environment.hdr'
         file.write_bytes(package.get_buffer_bytes(ref['bufferId']))
         texture = nodes.new('ShaderNodeTexEnvironment'); texture.image = bpy.data.images.load(str(file))
-        combine = nodes.new('ShaderNodeCombineXYZ')
-        negative = nodes.new('ShaderNodeMath'); negative.operation = 'MULTIPLY'; negative.inputs[1].default_value = -1
-        links.new(separate.outputs['Y'], negative.inputs[0])
-        links.new(separate.outputs['X'], combine.inputs['X'])
-        links.new(separate.outputs['Z'], combine.inputs['Y'])
-        links.new(negative.outputs[0], combine.inputs['Z'])
-        links.new(combine.outputs[0], texture.inputs['Vector'])
+        links.new(outward.outputs[0], texture.inputs['Vector'])
         add = nodes.new('ShaderNodeMixRGB'); add.blend_type = 'ADD'; add.inputs[0].default_value = environment['intensity']
         links.new(color, add.inputs[1]); links.new(texture.outputs[0], add.inputs[2]); color = add.outputs[0]
     links.new(color, background.inputs['Color'])
@@ -64,7 +65,7 @@ def lighting(package, stage):
     return sun, background
 
 
-def install_targets(package, atlas, images):
+def install_targets(package, atlas, images, mapping_ranges=None):
     instance_records = {i['id']: i for i in package.manifest['meshInstances']}
     geometry_records = {g['id']: g for g in package.manifest['geometries']}
     by_instance = {}
@@ -79,7 +80,7 @@ def install_targets(package, atlas, images):
             continue
         obj.data = obj.data.copy()
         geometry = geometry_records[instance_records[stable_id]['geometryId']]
-        ranges = sorted({(m['start'], m['count'], m['materialIndex'])
+        ranges = mapping_ranges[stable_id] if mapping_ranges is not None else sorted({(m['start'], m['count'], m['materialIndex'])
                          for inventory in ['participantMappings', 'receiverMappings', 'casterMappings']
                          for m in package.manifest[inventory]
                          if m['meshInstanceId'] == stable_id and m['channelRelevance'].get('indirect_irradiance')})
@@ -112,8 +113,8 @@ def install_targets(package, atlas, images):
             if target:
                 chart, triangle = target
                 for loop, point in zip(polygon.loop_indices, triangle['uv']):
-                    uv.data[loop].uv = tuple(((point[c] - chart['min'][c]) / atlas['profile']['texelSizeMeters']
-                        + atlas['profile']['padding'] + .5 + (chart['y'] if c else chart['x'])) / atlas['profile']['pageSize'] for c in range(2))
+                    uv.data[loop].uv = tuple(((point[c] - chart['min'][c]) * chart.get('texelsPerMeter', [1 / atlas['profile']['texelSizeMeters']] * 2)[c]
+                        + atlas['profile']['padding'] + chart.get('pixelOffset',[.5,.5])[c] + (chart['y'] if c else chart['x'])) / atlas['profile']['pageSize'] for c in range(2))
         obj.data.uv_layers.active = uv
         selected.append(obj)
     bpy.ops.object.select_all(action='DESELECT')

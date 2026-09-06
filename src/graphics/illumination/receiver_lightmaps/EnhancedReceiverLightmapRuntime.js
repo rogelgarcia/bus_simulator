@@ -13,7 +13,14 @@ export class EnhancedReceiverLightmapRuntime extends ReceiverLightmapRuntime {
     constructor(engine) {
         super(engine);
         this.indexUrl = '/assets/baked_lighting/receivers/enhanced/package_index.json';
-        this.loadChannel = createEnhancedReceiverLoader(engine.renderer);
+        const load = createEnhancedReceiverLoader(engine.renderer);
+        this.loadChannel = (request) => {
+            // Alpha contributors were unsupported in the historical per-channel source hash.
+            // New transport therefore authenticates the complete, unmodified source identity too.
+            if (this.cachedIndex?.mapping.profile.transportPolicy === 'declared-alpha-coverage-v1'
+                && this.source?.hashes.resolvedSource !== this.cachedIndex.sourceHash) throw new Error('complete_receiver_source_mismatch');
+            return load({ ...request, resolvedSourceHash: this.source?.hashes.resolvedSource });
+        };
         this.lightingKey = enhancedLightingKey;
         this.makeWatch = (references) => {
             const entries = collectResolvedCityBakeRoots(this.engine.context.city);

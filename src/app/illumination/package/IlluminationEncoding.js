@@ -12,6 +12,7 @@ export const ILLUMINATION_ENCODING_LAYOUTS = Object.freeze({
     r8_unorm: Object.freeze({ bytesPerComponent: 1, components: 1, precision: 'unorm8' }),
     rg8_unorm: Object.freeze({ bytesPerComponent: 1, components: 2, precision: 'unorm8' }),
     rgba8_unorm: Object.freeze({ bytesPerComponent: 1, components: 4, precision: 'unorm8' }),
+    rgb9e5_le: Object.freeze({ bytesPerComponent: 4, components: 1, precision: 'shared_exponent_rgb9' }),
     rgba16f_le: Object.freeze({ bytesPerComponent: 2, components: 4, precision: 'float16' }),
     rgba32f_le: Object.freeze({ bytesPerComponent: 4, components: 4, precision: 'float32' }),
     uint32_le: Object.freeze({ bytesPerComponent: 4, components: 1, precision: 'uint32' })

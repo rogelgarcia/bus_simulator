@@ -35,9 +35,10 @@ export function getPortalOrnamentPartDef(partId) {
 /**
  * Loads part templates into the module cache. Safe to call repeatedly;
  * unknown ids are ignored. Resolves when every requested part settled
- * (failures are logged and leave the part unavailable).
+ * (failures are logged and leave the part unavailable). Required callers reject
+ * on failure, so deterministic scenes can retry rather than omit geometry.
  */
-export function preloadPortalOrnamentParts(partIds = null) {
+export function preloadPortalOrnamentParts(partIds = null, { required = false, timeoutMs = 30_000 } = {}) {
     const ids = Array.isArray(partIds) && partIds.length ? partIds : Object.keys(PART_DEFS);
     const jobs = [];
     for (const id of ids) {
@@ -45,19 +46,41 @@ export function preloadPortalOrnamentParts(partIds = null) {
         if (!def || templates.has(id)) continue;
         let job = pending.get(id);
         if (!job) {
-            const loader = new GLTFLoader();
-            job = loader.loadAsync(def.url).then((gltf) => {
+            job = loadPart(def.url, timeoutMs).then((gltf) => {
                 templates.set(id, gltf.scene);
-            }).catch((err) => {
-                console.error(`Portal ornament part "${id}" failed to load`, err);
             }).finally(() => {
                 pending.delete(id);
             });
             pending.set(id, job);
         }
-        jobs.push(job);
+        jobs.push(required ? job : job.catch(err => {
+            console.error(`Portal ornament part "${id}" failed to load`, err);
+        }));
     }
     return Promise.all(jobs).then(() => undefined);
+}
+
+async function loadPart(url, timeoutMs) {
+    const controller = new AbortController();
+    let timer;
+    const deadline = new Promise((resolve, reject) => {
+        timer = setTimeout(() => {
+            reject(new Error(`Portal ornament load timed out after ${timeoutMs} ms: ${url}`));
+            controller.abort();
+        }, timeoutMs);
+    });
+    try {
+        const work = fetch(url, { signal: controller.signal }).then(async response => {
+            if (!response.ok) throw new Error(`Portal ornament HTTP ${response.status}: ${url}`);
+            const data = await response.arrayBuffer();
+            return new GLTFLoader().parseAsync(data, new URL('.', url).href);
+        });
+        // Only the winning load may enter the template cache, even if parsing
+        // finishes after the timeout and the user has already retried.
+        return await Promise.race([work, deadline]);
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 /** Synchronous template access for the generator; null when not preloaded. */

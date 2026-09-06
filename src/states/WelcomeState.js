@@ -17,6 +17,8 @@ export class WelcomeState {
         this.canvas = engine.canvas;
 
         this.uiWelcome = document.getElementById('ui-welcome');
+        this.startButton = document.getElementById('btn-start');
+        this.startupStatus = document.getElementById('startup-status');
         this.uiSelect = document.getElementById('ui-select');
         this.uiSetup = document.getElementById('ui-setup');
         this.testErrorWidget = document.getElementById('ui-test-errors');
@@ -39,17 +41,30 @@ export class WelcomeState {
 
         window.addEventListener('keydown', this._onKeyDown, { passive: false });
         this.canvas?.addEventListener?.('pointerdown', this._onPointerDown);
+        this.startButton?.addEventListener('click', this._onPointerDown);
         this._startTestErrorWidget();
     }
 
     exit() {
         window.removeEventListener('keydown', this._onKeyDown);
         this.canvas?.removeEventListener?.('pointerdown', this._onPointerDown);
+        this.startButton?.removeEventListener('click', this._onPointerDown);
         this._stopTestErrorWidget();
     }
 
     _start() {
         this.sm.go('bus_select');
+    }
+
+    setStartupStatus(status, error) {
+        if (!this.startupStatus || !this.startButton) return;
+        this.startupStatus.hidden = status === 'ready';
+        this.startupStatus.textContent = status === 'error'
+            ? 'City assets could not load. Press Start to retry.'
+            : 'Loading city assets…';
+        this.startButton.textContent = status === 'error' ? 'Retry Start' : 'Press Start';
+        this.startupStatus.title = error?.message ?? '';
+        if (error) console.error('[Startup] City assets failed to load:', error);
     }
 
     _garage() {

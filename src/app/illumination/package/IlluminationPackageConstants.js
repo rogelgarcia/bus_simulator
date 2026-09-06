@@ -28,6 +28,7 @@ export const ILLUMINATION_SUPPORTED_ENCODINGS = Object.freeze([
     'r8_unorm',
     'rg8_unorm',
     'rgba8_unorm',
+    'rgb9e5_le',
     'rgba16f_le',
     'rgba32f_le',
     'uint32_le'
@@ -44,6 +45,8 @@ export function isSupportedIlluminationMip(chunk) {
         && ['direct_receiver', 'indirect_irradiance'].includes(chunk.channelId)
         && chunk.resourceType === 'texture_2d' && ((chunk.encoding === 'rgba16f_le'
         && chunk.coordinateTransform?.schema === 'bus-sim-receiver-lightmap-page-v1')
+        || (chunk.encoding === 'rgb9e5_le' && chunk.coordinateTransform?.schema === 'bus-sim-rgb9e5-lightmap-page-v1'
+            && chunk.requiredRuntimeCapabilities?.includes('receiver_rgb9e5_sampling_v1'))
         || (chunk.encoding === 'rgba8_unorm' && chunk.coordinateTransform?.schema === 'bus-sim-directional-lightmap-page-v1'
             && chunk.requiredRuntimeCapabilities?.includes('receiver_directional_sampling_v1'))));
 }
