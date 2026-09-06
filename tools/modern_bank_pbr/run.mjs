@@ -17,9 +17,11 @@ import { deflateSync } from 'node:zlib';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { materialArguments } from '../bake_materials/Arguments.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PBR_DIR = path.join(ROOT, 'assets', 'public', 'pbr');
+const invocation = materialArguments(ROOT, ['burnt_cement_panel', 'bronze_anodized_panel']);
+const PBR_DIR = invocation.output;
 const SIZE = 1024;
 
 // ---------------------------------------------------------------------------
@@ -358,5 +360,5 @@ function bakeBronzeAnodizedPanel() {
     writeMaterialConfig({ slug: 'bronze_anodized_panel', label: 'Bronze Anodized Panel', classId: 'metal', tileMeters: 2.0 });
 }
 
-bakeBurntCementPanel();
-bakeBronzeAnodizedPanel();
+const generators = { burnt_cement_panel: bakeBurntCementPanel, bronze_anodized_panel: bakeBronzeAnodizedPanel };
+for (const id of invocation.selected) generators[id]();

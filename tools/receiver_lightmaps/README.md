@@ -1,5 +1,11 @@
 # Receiver lightmaps
 
+Preferred entry: `node tools/bake_lighting/illumination/run.mjs`. The
+[bake framework](../baking/README.md) provides shared local Blender configuration,
+separate sky/bounce passes, options, checkpoints and logs. Commands below remain
+the underlying implementation and compatibility interfaces.
+
+
 Optional AI 533 Cycles diffuse atlas compiler. It consumes the validated AI 528
 export, reuses AI 529's pinned reconstruction, and produces independent AI 530
 direct and indirect packages. It never downloads or installs Blender.
@@ -301,3 +307,18 @@ identity survives runtime shadow suppression.
 `receiver_shadow_overlap_548.pwtest.js` delays the shadow-package response by
 20 seconds and checks receiver activation while shadows are loading. The default
 loading test records any rejected shadow identity and stops on dependency fallback.
+## Coplanar chart seams
+
+Narrow receivers can occupy separate triangle charts. Their independent sampling
+and padding may reveal diagonal boundaries on otherwise continuous flat surfaces,
+especially in shade. Packaging stitches the bilinear filter footprints along
+proven shared coplanar edges before HDR encoding, independently at every mip.
+The edge inventory follows enhanced geometry's coplanar ownership planner, so
+overlapping sidewalk strips also join along their clipped, partial boundaries.
+The source geometry determines adjacency; names, brightness thresholds and city
+locations do not select repairs. Creases, gaps and opposite-facing surfaces retain
+independent lighting. Texels outside seam filter footprints retain their bake values.
+
+Use the framework's `lighting/illumination/reprocess` maintenance leaf to apply
+this packaging repair to unchanged authenticated samples. Increasing Cycles samples
+reduces noise, but cannot remove a discontinuity between independently filtered charts.

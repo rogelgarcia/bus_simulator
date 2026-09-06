@@ -2,8 +2,18 @@
 
 Registry of scripts under `tools/`. When adding a new tool, register it here.
 
+For offline baking, start with **`node tools/bake.mjs`**. See
+[`tools/baking/README.md`](tools/baking/README.md) for setup, the full inventory,
+individual leaf commands, scoped parameters and recovery, and
+[`specs/tools/bake_framework.md`](specs/tools/bake_framework.md) for extension rules.
+
 | Name | Path | Purpose | Run |
 |---|---|---|---|
+| bakeFramework | `tools/bake.mjs`, `tools/baking/` | Parameter-free master, shared local Blender configuration, dependency planning, verified checkpoints and progress | `node tools/bake.mjs`; `node tools/bake.mjs --dry-run` |
+| receiverReprocess | `tools/bake_lighting/illumination/reprocess/` | Refilter authenticated sky/bounce samples, including coplanar UV seam correction, through the shared bake framework | See its README for original publication/layout parameters; unchanged source and raw-pass proof required |
+| bakeLighting | `tools/bake_lighting/` | Owns source preparation, shadow/cutout, separate sky occlusion, direct/indirect illumination and consolidation entry points | `node tools/bake_lighting/run.mjs`; see framework README for leaves |
+| bakeVisibility | `tools/bake_visibility/` | Stages and validates the existing PVS bake before optional publication | `node tools/bake_visibility/run.mjs` |
+| bakeMaterials | `tools/bake_materials/` | Grass and individually callable existing procedural PBR recipes | `node tools/bake_materials/run.mjs`; `node tools/bake_materials/brownstone/run.mjs` |
 | compareBusModels | `tools/compareBusModels.mjs` | Compare coach/city bus model offsets from wheel centers | `node tools/compareBusModels.mjs` |
 | computeTreeConfig | `tools/computeTreeConfig.mjs` | Compute tree orientation/size metadata and write `TreeConfig.js` | `node tools/computeTreeConfig.mjs` |
 | verifyTreeModels | `tools/verify_tree_models.mjs` | Verify tree model base alignment offline | `node tools/verify_tree_models.mjs` |

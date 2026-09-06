@@ -14,6 +14,7 @@ from directional_coverage import apply_directional_coverage
 from batch_surface import batch_surface_targets
 import bpy
 import numpy as np
+from pass_files import save_pass
 
 
 def configure_surface_device(scene, profile):
@@ -95,6 +96,10 @@ def assemble_surface_outputs(stage, profile, page_count):
 
 def main():
     stage = Path(sys.argv[sys.argv.index('--') + 1]).resolve()
+    arguments = sys.argv[sys.argv.index('--') + 2:]
+    selected_pass = arguments[1] if len(arguments) == 2 and arguments[0] == '--pass' else None
+    if arguments and selected_pass not in ['bounce', 'sky']:
+        raise ValueError('Expected --pass bounce|sky')
     job = json.loads((stage / 'job.json').read_text())
     atlas = json.loads((stage / 'atlas.json').read_text()); profile = atlas['profile']
     if atlas.get('chartFile') != 'charts.ndjson': raise ValueError('Unsupported chart inventory')
@@ -136,6 +141,8 @@ def main():
             if mesh.users == 0: bpy.data.meshes.remove(mesh)
         times = {}
         for name, direct, indirect, sun_visible in [('bounce', False, True, True), ('sky', True, False, False)]:
+            if selected_pass and selected_pass != name:
+                continue
             scene.render.bake.use_pass_direct = direct; scene.render.bake.use_pass_indirect = indirect
             sun.hide_render = not sun_visible
             before = time.monotonic()
@@ -144,6 +151,11 @@ def main():
             bpy.ops.object.bake(type='DIFFUSE', uv_layer='AI533_Bake')
             save_surface_pass(stage, name, images)
             times[name] = time.monotonic()-before
+            if selected_pass:
+                save_pass(stage, name, (np.load(stage / f'{name}.{page}.npy') for page in range(atlas['pageCount'])),
+                          {'signature': signature, 'reconstruction': reconstruction, 'seconds': time.monotonic()-started,
+                           'devices': devices, 'backend': profile['device']})
+                return
     bpy.ops.wm.read_factory_settings(use_empty=True)
     del images, selected, package
     gc.collect()

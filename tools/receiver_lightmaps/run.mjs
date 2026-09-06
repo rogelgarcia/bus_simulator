@@ -18,6 +18,7 @@ import { writeReceiverAtlas, receiverAtlasHashes, verifyReceiverAtlasFiles } fro
 import { encodeReceiverRgb9e5 } from '../../src/app/illumination/receiver_lightmaps/ReceiverHdrEncoding.js';
 import { readReceiverNpy, extendReceiverPage, downsampleReceiverPage } from './ReceiverPagePadding.mjs';
 import { createReceiverHiddenTexelMasks } from './ReceiverSurfaceOverlap.mjs';
+import { receiverChartSeams, stitchReceiverPageFiles } from './ReceiverSeamStitching.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const args = new Map();
@@ -26,7 +27,7 @@ if (args.has('--help')) {
     console.log('Usage: node tools/receiver_lightmaps/run.mjs [--enhanced true --layout receiver-layout.json --device CPU|OPTIX] [--atlas-only true] [--input source.bsib] [--output tests/artifacts/.../bake] [--pages 4] [--samples 64] [--blender existing-blender.exe] [--archive existing-blender.zip | --installed true] [--resume partial-directory | --reprocess recovered-publication-directory]');
     process.exit(0);
 }
-for (const [key, value] of args) if (!['--input', '--output', '--pages', '--samples', '--blender', '--archive', '--resume', '--reprocess', '--enhanced', '--atlas-only', '--installed', '--layout', '--device'].includes(key) || !value) throw new Error('Unknown or incomplete option: ' + key);
+for (const [key, value] of args) if (!['--input', '--output', '--pages', '--samples', '--blender', '--archive', '--resume', '--reprocess', '--enhanced', '--atlas-only', '--installed', '--layout', '--device', '--prepare-only'].includes(key) || !value) throw new Error('Unknown or incomplete option: ' + key);
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const json = (value) => JSON.stringify(value);
 const input = path.resolve(args.get('--input') ?? 'tests/artifacts/illumination_528/ai533_v3/bigcity2.bsib');
@@ -64,7 +65,7 @@ const surface = profile.irradianceRepresentation === 'surface-diffuse-v1';
 if (surface && !['CPU','OPTIX'].includes(profile.device)) throw new Error('Complete receiver device must be CPU or OPTIX.');
 if (!surface && args.has('--device')) throw new Error('--device is supported only for the complete enhanced bake.');
 if (surface && !args.has('--layout')) throw new Error('Complete enhanced baking requires --layout from tools/receiver_lightmaps/unwrap.mjs.');
-const layout = surface ? JSON.parse(await readFile(path.resolve(args.get('--layout')))) : null;
+let layout = surface ? JSON.parse(await readFile(path.resolve(args.get('--layout')))) : null;
 const interpretedSource = surface ? { ...parsed, manifest: resolveReceiverTransport(parsed.manifest) } : parsed;
 await mkdir(output, { recursive: true });
 let atlas;
@@ -79,6 +80,7 @@ try {
 }
 await writeFile(path.join(output, 'coverage-report.json'), JSON.stringify({ sourceHash: parsed.manifest.hashes.resolvedSource, profile, ...atlas.coverage }, null, 2));
 console.log(JSON.stringify({ phase: 'atlas', pages: atlas.pageCount, ...atlas.statistics }));
+layout = null;
 if (args.get('--atlas-only') === 'true') {
     await mkdir(output, { recursive: true });
     const { coordinates: ignored, ...description } = atlas;
@@ -150,6 +152,11 @@ if(reprocess) {
     await writeFile(path.join(stage, 'job.json'), json(job));
 }
 if (surface) await verifyReceiverAtlasFiles(stage, job);
+if (args.get('--prepare-only') === 'true') {
+    if (resume || reprocess) throw new Error('--prepare-only cannot resume or reprocess');
+    await writeFile(path.join(output, 'prepared.json'), JSON.stringify({ stage, job }));
+    process.exit(0);
+}
 const directions = reprocess ? [] : profile.directional ? ['0', '1', '2', '3', 'assemble'] : (resume ? [] : [null]);
 for (const direction of directions) {
     const checkpoint = direction && direction !== 'assemble' ? path.join(stage, `direction.${direction}.json`) : null;
@@ -193,7 +200,7 @@ if (surface) {
     const overlap=createReceiverHiddenTexelMasks(interpretedSource,charts,profile);
     console.log(JSON.stringify({phase:'receiver_surface_overlap',...overlap.report}));
     pageProcessing = { policy: 'chart-isolated-nearest-sample-v1', overlap:overlap.report, ...(reprocessing ? {reprocessing} : {}), scripts: {} };
-    for (const file of ['tools/receiver_lightmaps/ReceiverPagePadding.mjs', 'tools/receiver_lightmaps/ReceiverSurfaceOverlap.mjs', 'src/app/illumination/receiver_lightmaps/ReceiverHdrEncoding.js']) {
+    for (const file of ['tools/receiver_lightmaps/ReceiverPagePadding.mjs', 'tools/receiver_lightmaps/ReceiverSurfaceOverlap.mjs', 'tools/receiver_lightmaps/ReceiverSeamStitching.mjs', 'tools/receiver_lightmaps/ReceiverVisibleSeams.mjs', 'src/app/illumination/receiver_lightmaps/ReceiverCoplanarOwnership.js', 'src/app/illumination/receiver_lightmaps/ReceiverHdrEncoding.js']) {
         pageProcessing.scripts[file] = sha(await readFile(path.join(root, file)));
     }
     const pages = [];
@@ -207,21 +214,33 @@ if (surface) {
         const report = extendReceiverPage(data, sky, bounce, page, charts, profile,overlap.masks.get(page));
         report.mips = [];
         for (let mip = 0; mip < profile.mipLevels; mip++) {
-            const encoded = encodeReceiverRgb9e5(data);
-            const bytes = Buffer.from(encoded.buffer, encoded.byteOffset, encoded.byteLength);
-            await writeFile(path.join(stage, `processed.${page}.mip${mip}.u32`), bytes);
-            report.mips.push({ mip, sha256: sha(bytes), bytes: bytes.length });
+            await writeFile(path.join(stage, `seam-input.${page}.mip${mip}.f32`), Buffer.from(data.buffer, data.byteOffset, data.byteLength));
             if (mip + 1 < profile.mipLevels) data = downsampleReceiverPage(data, profile.pageSize >> mip);
         }
         pages.push(report);
         console.log(JSON.stringify({ phase: 'receiver_page_extension', ...report }));
+    }
+    const seams = receiverChartSeams(interpretedSource, charts, profile);
+    console.log(JSON.stringify({ phase: 'receiver_seams', sharedCoplanarEdges: seams.length }));
+    // Atlas geometry is already authenticated on disk. The solve and package
+    // need only filter edges and coordinate rows, not millions of source charts.
+    charts.length = 0;
+    overlap.masks.clear();
+    pageProcessing.seams = await stitchReceiverPageFiles(stage, seams, profile, atlas.pageCount);
+    for (const report of pageProcessing.seams) console.log(JSON.stringify({ phase: 'receiver_seam_stitching', ...report }));
+    for (let page = 0; page < atlas.pageCount; page++) for (let mip = 0; mip < profile.mipLevels; mip++) {
+        const source = await readFile(path.join(stage, `seam-input.${page}.mip${mip}.f32`));
+        const encoded = encodeReceiverRgb9e5(new Float32Array(source.buffer, source.byteOffset, source.byteLength/4));
+        const bytes = Buffer.from(encoded.buffer, encoded.byteOffset, encoded.byteLength);
+        await writeFile(path.join(stage, `processed.${page}.mip${mip}.u32`), bytes);
+        pages[page].mips.push({ mip, sha256: sha(bytes), bytes: bytes.length });
     }
     // This report is inside the authenticated mapping in every channel package.
     // Source atlas files remain unchanged and can still verify a resumed bake.
     mapping.coverage = { ...mapping.coverage, raster: {
         schema: 'bus-sim-receiver-raster-coverage-v1', policy: pageProcessing.policy,
         triangles: pages.reduce((n, p) => n + p.triangles, 0), charts: pages.reduce((n, p) => n + p.charts, 0),
-        emptyCharts: 0, missingReceiverSamples: 0, pages
+        emptyCharts: 0, missingReceiverSamples: 0, seams: pageProcessing.seams, pages
     } };
     assertCompleteReceiverCoverage(mapping);
     await writeFile(path.join(stage, 'processed-coverage.json'), JSON.stringify(mapping.coverage.raster, null, 2));
@@ -292,6 +311,7 @@ for (const channel of ['direct_receiver', 'indirect_irradiance']) {
         source: { resolvedSourceSha256: parsed.manifest.hashes.resolvedSource, sourcePackageSha256: job.packageSha256,
             ...(receiverPageShards.length ? { receiverPageShards } : {}) },
         compilerDescriptor: { signature: receipt.signature, executableSha256: job.executableSha256, scripts, profile,
+            ...(receipt.independentPasses ? { independentPasses: receipt.independentPasses } : {}),
             ...(receipt.recovery ? { recovery: {
                 policy: receipt.recovery.policy, scriptSha256: receipt.recovery.scriptSha256,
                 jobSha256: receipt.recovery.jobSha256,

@@ -142,6 +142,10 @@ def pixels(images):
 
 def main():
     stage = Path(sys.argv[sys.argv.index('--') + 1]).resolve()
+    arguments = sys.argv[sys.argv.index('--') + 2:]
+    selected_pass = arguments[1] if len(arguments) == 2 and arguments[0] == '--pass' else None
+    if arguments and selected_pass not in ['direct_receiver', 'bounce', 'sky']:
+        raise ValueError('Expected --pass direct_receiver|bounce|sky')
     job = json.loads((stage / 'job.json').read_text())
     atlas = json.loads((stage / 'atlas.json').read_text())
     profile = atlas['profile']
@@ -174,12 +178,19 @@ def main():
             ('direct_receiver', True, False, True, 0),
             ('bounce', False, True, True, 1),
             ('sky', True, False, False, 1)]:
+            if selected_pass and selected_pass != name:
+                continue
             scene.render.bake.use_pass_direct = direct; scene.render.bake.use_pass_indirect = indirect
             sun.hide_render = not sun_visible; background.inputs['Strength'].default_value = world_strength
             before = time.monotonic(); print('AI533_BAKE ' + name, flush=True)
             (stage / 'progress.json').write_text(json.dumps({'pass': name, 'elapsed': before - started}))
             bpy.ops.object.bake(type='DIFFUSE', uv_layer='AI533_Bake')
             passes[name] = {'pixels': pixels(images), 'seconds': time.monotonic() - before}
+            if selected_pass:
+                from pass_files import save_pass
+                save_pass(stage, name, passes[name]['pixels'], {'signature': signature,
+                    'reconstruction': reconstruction, 'seconds': time.monotonic()-started, 'devices': ['CPU'], 'backend': 'CPU'})
+                return
         outputs = []
         for channel in ['direct_receiver', 'indirect_irradiance']:
             channel_pixels = passes[channel]['pixels'] if channel == 'direct_receiver' else [a + b for a, b in zip(passes['bounce']['pixels'], passes['sky']['pixels'])]

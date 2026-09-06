@@ -1,5 +1,10 @@
 # Static visibility baker
 
+Preferred entry: `node tools/bake_visibility/run.mjs`. The
+[bake framework](../baking/README.md) adds staging, authenticated checkpoints,
+shared configuration and optional publication to this existing baker.
+
+
 Builds the deterministic `bigcity2` static potential-visibility set used by gameplay. The bake includes only independently hideable building, traffic-light, traffic-sign, and tree roots. Roads, markings, curbs, sidewalks, slabs, and ground surfaces are deliberately excluded.
 
 Run from the repository root:

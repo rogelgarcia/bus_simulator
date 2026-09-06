@@ -1,5 +1,10 @@
 # Natural Maintained-Grass V2 Baker
 
+Preferred entry: `node tools/bake_materials/grass/run.mjs`. The
+[bake framework](../baking/README.md) uses the configured existing Blender and
+preserves this tool's asset-proposal review boundary.
+
+
 `blender_bake.py` deterministically derives the V2 far-surface maps and two
 physically framed cutout-atlas families from ambientCG Grass 004. It also writes
 an inspectable Blender source and a provenance manifest with per-file SHA-256

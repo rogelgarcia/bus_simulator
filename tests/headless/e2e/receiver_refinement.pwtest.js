@@ -62,6 +62,9 @@ test('Receiver refinement: facade and sidewalk channel comparison', async ({ pag
         ['lowrise-shadow', [18, 15, 120], [43, 1, 143]],
         ['platform', [-35, 18, 39], [-47, 1, 21]],
         ['sidewalk', [-36, 10, 41], [-23, .2, 32]],
+        ['sidewalk-mainstreet-west', [6, 14, 40], [15, .2, 31]],
+        ['sidewalk-mainstreet-east', [65, 14, 40], [55, .2, 31]],
+        ['sidewalk-mainstreet-north', [-67, 14, -29], [-59, .2, -38]],
         ['tower', [-191, 12, 45], [-169, 30, 23]],
         ['cornice', [-24, 29, 171], [-24, 41, 191]]
     ]) {
@@ -90,6 +93,71 @@ test('Receiver refinement: facade and sidewalk channel comparison', async ({ pag
             }
         }
         await page.evaluate(() => window.refinementMode({ direct: true, indirect: true }));
+        if (topic === 'sidewalk-mainstreet-east') {
+            // The crossing strips overlap. Their visible boundary is created by
+            // coplanar clipping, rather than a shared original triangle edge.
+            const seams = await page.evaluate(async () => {
+                const T = await import('three'), e = window.__busSim.engine;
+                const uniforms = e._bakedLighting.receiverModes.enhanced.uniforms;
+                const camera = new T.OrthographicCamera(-.00005, .00005, .00005, -.00005, .1, 10);
+                camera.up.set(0,0,-1);
+                const rt = new T.WebGLRenderTarget(16,16,{type:T.FloatType});
+                const oldTarget = e.renderer.getRenderTarget(), tone = e.renderer.toneMapping, debug = uniforms.receiverDebugMode.value;
+                const samples = [];
+                try {
+                    uniforms.receiverDebugMode.value = 2; e.renderer.toneMapping = T.NoToneMapping;
+                    for (const [x,z,axis] of [[55,30.719999313354492,1],[55.918+(.48/1.875)*.0613823,31.2,0]]) {
+                        const pair = [];
+                        for (const side of [-1,1]) {
+                            const point = [x,z]; point[axis] += side*.0002;
+                            camera.position.set(point[0],5,point[1]); camera.lookAt(point[0],.191,point[1]); camera.updateMatrixWorld(true);
+                            e.renderer.setRenderTarget(rt); e.renderer.render(e.scene,camera);
+                            const pixel = new Float32Array(4); e.renderer.readRenderTargetPixels(rt,8,8,1,1,pixel);
+                            pair.push(Array.from(pixel.slice(0,3)));
+                        }
+                        samples.push({point:[x,z],pair,relativeDifference:Math.max(...[0,1,2].map(c=>Math.abs(pair[0][c]-pair[1][c])/Math.max(.001,pair[0][c],pair[1][c])))});
+                    }
+                } finally {
+                    uniforms.receiverDebugMode.value = debug; e.renderer.toneMapping = tone;
+                    e.renderer.setRenderTarget(oldTarget); rt.dispose(); e.updateFrame(0);
+                }
+                return samples;
+            });
+            await writeFile(path.join(root,'sidewalk-seam-irradiance.json'),JSON.stringify(seams,null,2));
+            expect(Math.max(...seams.map(s=>s.relativeDifference))).toBeLessThan(.04);
+        }
+        if (topic === 'lowrise-north') {
+            // This flat lintel surround is split along a diagonal into two UV
+            // charts. Probe both sides of that artificial edge in linear HDR.
+            const seams = await page.evaluate(async () => {
+                const T = await import('three'), e = window.__busSim.engine;
+                const uniforms = e._bakedLighting.receiverModes.enhanced.uniforms;
+                const camera = new T.OrthographicCamera(-.00005, .00005, .00005, -.00005, .1, 10);
+                const rt = new T.WebGLRenderTarget(16, 16, { type: T.FloatType });
+                const oldTarget = e.renderer.getRenderTarget(), tone = e.renderer.toneMapping, debug = uniforms.receiverDebugMode.value;
+                const samples = [];
+                try {
+                    uniforms.receiverDebugMode.value = 2; e.renderer.toneMapping = T.NoToneMapping;
+                    for (const t of [.1, .3, .5, .7, .9]) {
+                        const pair = [];
+                        for (const side of [-1, 1]) {
+                            const x = 44.10599899291992+1.5*t, y = 11.491999809265137+.40000009536743164*t+side*.0002;
+                            camera.position.set(x, y, 137); camera.lookAt(x, y, 139.8939971923828); camera.updateMatrixWorld(true);
+                            e.renderer.setRenderTarget(rt); e.renderer.render(e.scene, camera);
+                            const pixel = new Float32Array(4); e.renderer.readRenderTargetPixels(rt, 8, 8, 1, 1, pixel);
+                            pair.push(Array.from(pixel.slice(0, 3)));
+                        }
+                        samples.push({ t, pair, relativeDifference: Math.max(...[0,1,2].map(c => Math.abs(pair[0][c]-pair[1][c])/Math.max(.001, pair[0][c], pair[1][c]))) });
+                    }
+                } finally {
+                    uniforms.receiverDebugMode.value = debug; e.renderer.toneMapping = tone;
+                    e.renderer.setRenderTarget(oldTarget); rt.dispose(); e.updateFrame(0);
+                }
+                return samples;
+            });
+            await writeFile(path.join(root, 'lintel-seam-irradiance.json'), JSON.stringify(seams, null, 2));
+            expect(Math.max(...seams.map(s => s.relativeDifference))).toBeLessThan(.04);
+        }
         if (topic === 'lowrise-shadow') {
             const irradiance = await page.evaluate(async () => {
                 const T = await import('three'), e = window.__busSim.engine;

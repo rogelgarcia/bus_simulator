@@ -85,6 +85,8 @@ export function parseNativeFieldParityArguments(argv) {
         }
         index += 1;
         switch (flag) {
+            case '--blender': options.executablePath = path.resolve(repoRoot, value); break;
+            case '--archive': options.archivePath = path.resolve(repoRoot, value); break;
             case '--input': options.inputPath = path.resolve(repoRoot, value); break;
             case '--profile-id': options.profileId = value; break;
             case '--output-root': options.outputRoot = assertArtifactChild(value); break;

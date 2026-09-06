@@ -1,5 +1,7 @@
 # Agent Notes
 
+- Offline baking: use `node tools/bake.mjs` and the hierarchy documented in `tools/baking/README.md` and `specs/tools/bake_framework.md`. New bake processes must register a domain/leaf there, reuse the shared gitignored `tools/baking/blender.local.json` configuration, and preserve existing validation/publication gates. Do not add another standalone machine-specific bake command.
+
 - Follow `ai_rules/PROJECT_RULES.md` (and root-level `PROJECT_RULES.local.md` when pushing code to github) for repo structure, coding style, comments, commits, and asset rules.
 - Generated screenshots and debug captures go under `tests/artifacts/screens/<topic>/` (gitignored). Never save them into `screens/` or next to source code (see `ai_rules/TESTING_RULES.md`, "Artifacts and baselines").
 - New-building modeling/fabrication requests MUST follow `ai_rules/PROJECT_RULES.md` → "New building modeling / fabrication". Target Building Fabrication 2, inspect its canonical specs under `specs/buildings/`, and use the building showcase harness/capture workflow identified there.

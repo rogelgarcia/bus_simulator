@@ -1,0 +1,3 @@
+// Standalone materials/red_sandstone_block bake entry; prerequisites use the shared framework.
+import { runBakeCli } from '../../baking/cli.mjs';
+await runBakeCli('materials/red_sandstone_block');

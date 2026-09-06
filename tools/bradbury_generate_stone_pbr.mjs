@@ -14,9 +14,11 @@ import { deflateSync } from 'node:zlib';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { materialArguments } from './bake_materials/Arguments.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PBR_DIR = path.join(ROOT, 'assets', 'public', 'pbr');
+const invocation = materialArguments(ROOT, ['red_sandstone_block', 'red_sandstone_noise', 'terracotta_smooth']);
+const PBR_DIR = invocation.output;
 const SIZE = 1024;
 
 // ---------------------------------------------------------------------------
@@ -346,6 +348,5 @@ function bakeTerracottaSmooth() {
     writeMaterialConfig({ slug: 'terracotta_smooth', label: 'Terracotta Smooth', classId: 'stone', tileMeters: 4.0 });
 }
 
-bakeRedSandstoneBlock();
-bakeRedSandstoneNoise();
-bakeTerracottaSmooth();
+const generators = { red_sandstone_block: bakeRedSandstoneBlock, red_sandstone_noise: bakeRedSandstoneNoise, terracotta_smooth: bakeTerracottaSmooth };
+for (const id of invocation.selected) generators[id]();

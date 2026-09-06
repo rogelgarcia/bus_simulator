@@ -60,6 +60,8 @@ export function parseAlphaCutoutNativeFieldArguments(argv) {
         }
         index += 1;
         switch (flag) {
+            case '--blender': options.executablePath = path.resolve(repoRoot, value); break;
+            case '--archive': options.archivePath = path.resolve(repoRoot, value); break;
             case '--input':
                 options.inputPath = path.resolve(repoRoot, value);
                 break;
@@ -135,6 +137,8 @@ async function run(argv = process.argv.slice(2)) {
         const request = createProductionStaticSunRequest(profile);
         const authority = await prepareProductionAuthority({
             ...PRODUCTION_STATIC_SUN_DEFAULTS,
+            ...(options.executablePath ? {executablePath: options.executablePath} : {}),
+            ...(options.archivePath ? {archivePath: options.archivePath} : {}),
             inputPath: options.inputPath
         });
         const candidate = await authenticateCandidateRoot({
@@ -625,6 +629,14 @@ async function captureProfile(options) {
                 engine.waitForLightingReady?.(),
                 city.world?.trees?.readyPromise
             ].filter(Boolean));
+            // Native capture authenticates the single-high oracle, independently
+            // of the game's current cascade/baked-shadow defaults.
+            await engine.setBakedLightingSettings({
+                ...engine.bakedLightingSettings,
+                shadows: {...engine.bakedLightingSettings?.shadows, enabled: false}
+            });
+            engine.setShadowSettings({...engine.shadowSettings, type: 'single', quality: 'high'});
+            city.applyShadowSettings(engine);
             const direction = input.profile.directionThree;
             const elevationDeg = THREE.MathUtils.radToDeg(Math.asin(direction[1]));
             const azimuthDeg = THREE.MathUtils.radToDeg(

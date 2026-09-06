@@ -1,5 +1,10 @@
 # Illumination bake-input exporter
 
+Preferred shared entry: `node tools/bake_lighting/source/run.mjs`. The
+[bake framework](../baking/README.md) runs this exporter once for all compatible
+children and authenticates its result before downstream work.
+
+
 Exports the fully resolved gameplay city into the deterministic, self-describing
 AI 528 illumination bake-input container. The exporter inspects the evaluated
 Three.js scene in Chromium, after required asynchronous content is ready. It

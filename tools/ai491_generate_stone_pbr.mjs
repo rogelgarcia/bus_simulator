@@ -11,9 +11,11 @@ import { deflateSync } from 'node:zlib';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { materialArguments } from './bake_materials/Arguments.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PBR_DIR = path.join(ROOT, 'assets', 'public', 'pbr');
+const invocation = materialArguments(ROOT, ['rusticated_ashlar', 'limestone_smooth', 'brownstone']);
+const PBR_DIR = invocation.output;
 const SIZE = 1024;
 
 // ---------------------------------------------------------------------------
@@ -362,7 +364,6 @@ function bakeBrownstone() {
     writeMaterialConfig({ slug: 'brownstone', label: 'Brownstone', classId: 'stone', tileMeters: 4.0 });
 }
 
-bakeRusticatedAshlar();
-bakeLimestoneSmooth();
-bakeBrownstone();
+const generators = { rusticated_ashlar: bakeRusticatedAshlar, limestone_smooth: bakeLimestoneSmooth, brownstone: bakeBrownstone };
+for (const id of invocation.selected) generators[id]();
 console.log('done');

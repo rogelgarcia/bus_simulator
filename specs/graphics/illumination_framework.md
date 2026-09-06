@@ -510,3 +510,29 @@ The final AI 536 promotion decision includes disk, download, decode, upload, ste
 | 536 release validation | 527 cases/budgets plus all implementation outputs | End-to-end truth/performance/corruption/absence/switch/rollback report and default-promotion decision | Relaxing gates without an explicit spec revision and evidence |
 
 AI 528 may begin when AI 527 is DONE because every architectural input it needs is fixed here. Later AIs remain gated by the ordered DONE chain from AI 526.
+
+## Continuous indirect-light chart filtering
+
+Independent raster coverage of a narrow triangle is not sufficient evidence of
+visual continuity. Adjacent coplanar faces split into different UV charts must
+agree under the runtime bilinear filter at their shared geometric edge, including
+every shipped mip. The enhanced receiver packager applies deterministic linear
+continuity constraints to those filter footprints before RGB9E5 encoding. It
+records before/after residuals and affected texel counts in authenticated metadata.
+
+Adjacency requires a coincident full or partial edge, matching geometric normals
+and triangles on opposite sides of the edge. The offline boundary inventory uses
+the same coplanar ownership planner as enhanced runtime geometry. Clipped overlap
+boundaries retain original barycentric UV interpolation; partial collinear edges
+must be joined, including the T-junctions created where sidewalk strips intersect.
+Numerical position buckets only shortlist
+candidates; the geometric checks decide. Opposite faces, creases and physical gaps
+must not be stitched. This is offline filtering: the source/runtime geometry,
+direct-sun visibility, material response and non-seam samples are unchanged.
+No building name, city coordinate, brightness cutoff or per-object allowlist may
+select repairs. More Cycles samples do not repair independently filtered UV seams.
+
+Regression evidence must isolate indirect irradiance in linear HDR across the
+reproduced facade seam, inspect shaded sidewalks and preserve unrelated channel
+and toggle behavior. Use `receiver_seam_stitching.test.js` for geometric and filter
+invariants and `receiver_refinement.pwtest.js` for installed/candidate city checks.

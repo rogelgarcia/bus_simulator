@@ -777,10 +777,18 @@ export async function captureLiveEvidence(options) {
             }
         });
         await page.goto(`${baseUrl}/?pose=civic_center_curve_front&coreTests=0&visibilityMap=0`);
-        await page.waitForFunction(() => (
-            window.__busSim?.sm?.currentName === 'game_mode'
-            && window.__busSim?.sm?.current?.city?.cityId === 'bigcity2'
-        ), null, {timeout: 180_000});
+        try {
+            await page.waitForFunction(() => (
+                window.__busSim?.sm?.currentName === 'game_mode'
+                && window.__busSim?.sm?.current?.city?.cityId === 'bigcity2'
+            ), null, {timeout: 180_000});
+        } catch (error) {
+            const state = await page.evaluate(() => ({
+                state: window.__busSim?.sm?.currentName,
+                city: window.__busSim?.sm?.current?.city?.cityId
+            })).catch(() => null);
+            throw new Error(`Native parity gameplay launch failed: ${error.message}; state ${JSON.stringify(state)}; diagnostics ${JSON.stringify(diagnostics)}`);
+        }
         const result = await page.evaluate(async ({
             coverageDomain,
             descriptor,
@@ -803,6 +811,14 @@ export async function captureLiveEvidence(options) {
                 engine.waitForLightingReady?.(),
                 city.world?.trees?.readyPromise
             ].filter(Boolean));
+            // The parity oracle requires the certified single-high live map,
+            // independently of the game's current cascade/baked-shadow defaults.
+            await engine.setBakedLightingSettings({
+                ...engine.bakedLightingSettings,
+                shadows: {...engine.bakedLightingSettings?.shadows, enabled: false}
+            });
+            engine.setShadowSettings({...engine.shadowSettings, type: 'single', quality: 'high'});
+            city.applyShadowSettings(engine);
             const direction = profile.directionThree;
             const elevationDeg = THREE.MathUtils.radToDeg(Math.asin(direction[1]));
             const azimuthDeg = (

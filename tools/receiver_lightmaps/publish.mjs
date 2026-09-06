@@ -9,7 +9,8 @@ import { assertCompleteReceiverCoverage, assertReceiverRasterPage } from '../../
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const enhanced = process.argv.slice(2).includes('--enhanced');
-const args = process.argv.slice(2).filter((v) => v !== '--enhanced');
+const validateOnly = process.argv.slice(2).includes('--validate-only');
+const args = process.argv.slice(2).filter((v) => v !== '--enhanced' && v !== '--validate-only');
 if (args.length && (args.length !== 2 || args[0] !== '--from')) throw new Error('Supported options: --enhanced --from <bake-root>');
 const bakeRoot = args.length ? await realpath(path.resolve(args[1])) : path.join(root, `tests/artifacts/screens/illumination_${enhanced ? '548' : '533'}/bake`);
 if (!bakeRoot.startsWith(path.join(root, 'tests', 'artifacts') + path.sep)) throw new Error('Bake source must be inside workspace test artifacts');
@@ -56,6 +57,10 @@ for (const [channel, descriptor] of Object.entries(index.channels)) {
         for (const chunk of child.chunks) assertReceiverRasterPage(mapping, chunk.descriptor);
         extraFiles.push(shard.url);
     }
+}
+if (validateOnly) {
+    console.log(JSON.stringify({ state: 'validated', source, channels: Object.keys(index.channels) }));
+    process.exit(0);
 }
 const version = path.join(destination, latest.directory);
 await mkdir(version, { recursive: true });

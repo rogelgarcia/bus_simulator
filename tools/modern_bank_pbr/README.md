@@ -1,5 +1,10 @@
 # modernBankPbr
 
+Preferred entries: `node tools/bake_materials/burnt_cement_panel/run.mjs` and
+`node tools/bake_materials/bronze_anodized_panel/run.mjs`. See the
+[bake framework](../baking/README.md) for staging, checkpoints and publication.
+
+
 Generates the two procedural PBR sets the `modern_bank` catalog building is
 made of, matching `downloads/buildings_references/10 front.png`:
 

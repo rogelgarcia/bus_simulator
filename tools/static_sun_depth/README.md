@@ -1,5 +1,11 @@
 # Static-sun depth fixture compiler
 
+Preferred production entry: `node tools/bake_lighting/shadows/run.mjs`. The
+[bake framework](../baking/README.md) prepares current source and candidate geometry,
+captures the maintained native foliage fields, and packages a development candidate.
+It preserves the certification and release boundaries documented below.
+
+
 This offline AI 531 tool converts one strictly validated AI 529
 `static_sun_depth` intermediate from canonical lower-left RGBA32F
 `(light-space x, light-space y, positive depth, occupancy)` into a guarded,

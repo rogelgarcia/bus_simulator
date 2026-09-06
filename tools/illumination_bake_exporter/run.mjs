@@ -29,9 +29,9 @@ function parseArgs(argv) {
 
 function assertArtifactOutput(filePath) {
     const resolved = path.resolve(repoRoot, filePath);
-    const relative = path.relative(artifactRoot, resolved);
+    const relative = path.relative(path.join(repoRoot, 'tests/artifacts'), resolved);
     if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
-        throw new Error(`Output must stay below ${path.relative(repoRoot, artifactRoot)}.`);
+        throw new Error('Output must stay below tests/artifacts.');
     }
     return resolved;
 }
