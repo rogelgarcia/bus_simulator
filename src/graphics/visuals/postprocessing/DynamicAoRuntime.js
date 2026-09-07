@@ -20,9 +20,10 @@ export class DynamicAoRuntime {
             dynamicAoBounds: { value: null },
             dynamicAoMap: { value: null }, dynamicAoStaticMap: { value: null }, dynamicAoGeneric: { value: 0 },
             dynamicAoProjection: { value: new THREE.Matrix4() },
-            dynamicAoViewInverse: { value: new THREE.Matrix4() }
+            dynamicAoViewInverse: { value: new THREE.Matrix4() },
+            dynamicAoReachMin: { value: new THREE.Vector3() }, dynamicAoReachMax: { value: new THREE.Vector3() }
         };
-        this.diagnostics = { enabled: false, method: 'gtao-with-analytic-underbody', calls: 0, triangles: 0, cpuMs: 0, targetBytes: 0, activeTargetBytes: 0 };
+        this.diagnostics = { enabled: false, method: 'inactive', calls: 0, triangles: 0, cpuMs: 0, targetBytes: 0, activeTargetBytes: 0 };
     }
 
     patch(material) {
@@ -116,7 +117,7 @@ export class DynamicAoRuntime {
         const start = performance.now(), uniforms = this.uniforms;
         this.restoreBindings();
         uniforms.dynamicAoEnabled.value = 0;
-        Object.assign(this.diagnostics, { enabled: !!enabled, calls: 0, triangles: 0, cpuMs: 0, activeTargetBytes: 0 });
+        Object.assign(this.diagnostics, { enabled: !!enabled, method: 'inactive', calls: 0, triangles: 0, cpuMs: 0, activeTargetBytes: 0 });
         if (!enabled) return;
         scene.updateMatrixWorld(true); camera.updateMatrixWorld(true);
         const roots = participants.filter(p => p.root?.parent && (p.cast || p.receive));
@@ -160,6 +161,8 @@ export class DynamicAoRuntime {
         const reach = new THREE.Box3();
         bounds.forEach((box, i) => { if (!box.isEmpty()) reach.union(box.clone().applyMatrix4(roots[i].root.matrixWorld)); });
         reach.expandByScalar(settings.dynamic.radius);
+        uniforms.dynamicAoReachMin.value.copy(reach.min);
+        uniforms.dynamicAoReachMax.value.copy(reach.max);
         for (const item of meshes) {
             if (!item.mats) continue;
             this.participant(item.mesh, item.receive ? item.id : (item.mats.some(m => this.materials.has(m)) || item.id ? -1 : 0));
@@ -175,7 +178,11 @@ export class DynamicAoRuntime {
             if (bounds[i].isEmpty()) bounds[i].set(new THREE.Vector3(), new THREE.Vector3());
             bounds[i].min.toArray(data, i*36+16); bounds[i].max.toArray(data, i*36+20);
             data[i*36+19] = roots[i].cast ? 1 : 0;
-            if (analytic[i]) { data.set(p.aoUnderbody.min, i*36+16); data.set(p.aoUnderbody.max, i*36+20); }
+            if (analytic[i]) {
+                data.set(p.aoUnderbody.min, i*36+16); data.set(p.aoUnderbody.max, i*36+20);
+                // Audited floor footprint with height from the loaded opaque body.
+                data[i*36+21] = Math.max(p.aoUnderbody.min[1], bounds[i].max.y);
+            }
             data[i*36+23] = analytic[i] ? 1 : 0;
             const axes = p.root.matrixWorld.elements;
             for (let column = 0; column < 3; column++) data.set(axes.slice(column*4,column*4+4), i*36+24+column*4);
@@ -227,7 +234,8 @@ export class DynamicAoRuntime {
         Object.assign(this.diagnostics, { calls: renderer.info.render.calls-before.calls, triangles: renderer.info.render.triangles-before.triangles,
             cpuMs: performance.now()-start, participants: roots.length, targetBytes: this.target.width*this.target.height*24*(this.staticTarget ? 2 : 1)+data.byteLength,
             activeTargetBytes: this.target.width*this.target.height*24*(hasGeneric ? 2 : 1)+data.byteLength,
-            method: 'gtao-with-analytic-underbody', analyticUnderbodies: analytic.filter(Boolean).length, genericCasters: hasGeneric,
+            method: analytic.some(Boolean) ? 'analytic-bus-volume-with-gtao-detail' : 'generic-dynamic-gtao',
+            analyticUnderbodies: analytic.filter(Boolean).length, genericCasters: hasGeneric,
             intensity: settings.dynamic.intensity, factorRange: [Math.max(.1, 1-settings.dynamic.intensity), 1],
             staticToStatic: false, depthSize: [this.target.width, this.target.height] });
     }

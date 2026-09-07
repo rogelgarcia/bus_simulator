@@ -605,7 +605,7 @@ export function renderGraphicsTab() {
     dynamicGroup.appendChild(makeChoiceRow({ label: 'Bus grounding', value: ao.dynamic.busMethod ?? 'analytic',
         options: [{ id: 'analytic', label: 'Underbody' }, { id: 'gtao', label: 'GTAO' }],
         onChange: v => { ao.dynamic.busMethod = v; emit(); } }).row);
-    dynamicGroup.appendChild(makeEl('div', 'options-note', 'Underbody uses the bus floor for a stable footprint. GTAO handles visible dynamic detail and other objects. Supplementary AO fades out in direct light.'));
+    dynamicGroup.appendChild(makeEl('div', 'options-note', 'Underbody uses the bus body for stable ground and wall contact. GTAO handles visible dynamic detail and other objects. AO reduces indirect light; direct sunlight is preserved.'));
     for (const [key, label, min, max] of [['intensity', 'Dynamic AO intensity', 0, 2], ['radius', 'Dynamic AO radius (m)', .1, 5]]) {
         const control = makeNumberSliderRow({ label, value: ao.dynamic[key], min, max, step: .01, digits: 2,
             onChange: v => { ao.dynamic[key] = v; emit(); } });

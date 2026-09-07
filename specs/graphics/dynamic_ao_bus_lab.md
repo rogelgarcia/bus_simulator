@@ -1,5 +1,11 @@
 # Dynamic AO: bus grounding correction and lab
 
+**Historical floor-only checkpoint.** The definition and implementation below
+have been superseded by hemisphere-clipped bus-volume contact and removal of the
+sunlight-dependent fade. See [the current AO contract](ambient_occlusion.md#ai-534-scope-selection)
+and [current validation](illumination_534_ao.md#validation). The old tables are
+retained as historical evidence, not measurements of the current implementation.
+
 September 7, 2026. This corrects the contact implementation committed in
 `a77656a`, following user captures of a broad black halo, contact spilling onto
 walls, and AO darkening sunlit ground. It preserves the accepted AI 533/548

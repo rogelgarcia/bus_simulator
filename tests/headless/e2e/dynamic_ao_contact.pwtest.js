@@ -41,8 +41,9 @@ test('Dynamic contact affects ambient only and follows parked, moving and off-sc
         vehicle.rotation.y=0;
         body.position.y=1;
         participants[0].aoUnderbody={min:[-1,0,-4],max:[1,0,4]};
-        const touching=render(true,false), shoulder=read(1.3,0);
+        const touching=render(true,false), shoulder=read(1.3,0), beyondReach=read(2.6,0);
         body.position.y=1.3;participants[0].aoUnderbody={min:[-1,.3,-4],max:[1,.3,4]};
+        vehicle.position.y=.7;const elevated=render(true,false);vehicle.position.y=0;
         camera.position.set(1.2,.2,0);camera.lookAt(4,0,0);camera.updateMatrixWorld(true);
         render(true,false);const offscreen=read(1.6,0);
         const frustum=new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse));
@@ -52,27 +53,39 @@ test('Dynamic contact affects ambient only and follows parked, moving and off-sc
         const wall=new T.Mesh(new T.PlaneGeometry(8,6),new T.MeshStandardMaterial({color:0xffffff,roughness:1}));
         wall.rotation.y=-Math.PI/2;wall.position.set(1.3,3,0);scene.add(wall);
         render(false,false);const wallBaseline=read(1.3,0,1);
-        render(true,false);const wallContact=read(1.3,0,1);wall.visible=false;
+        render(true,false);const wallContact=read(1.3,0,1);
+        wall.position.x=2;render(false,false);const farWallBaseline=read(2,0,1);
+        render(true,false);const farWallContact=read(2,0,1);wall.visible=false;
+        const methodA=render(true,false);
+        settings.dynamic.busMethod='gtao';const methodB=render(true,false), genericMethod=runtime.diagnostics.method;
+        settings.dynamic.busMethod='analytic';const methodRestored=render(true,false);
         const programs=[];for(let i=0;i<4;i++){render(false);render(true);programs.push(renderer.info.programs.length);}
         const diagnostics={...runtime.diagnostics};
         vehicle.visible=true; runtime.dispose(); const geometryRestored=body.geometry===originalGeometry;
         const glError=renderer.getContext().getError(); renderer.dispose();target.dispose();
-        return {baseline,contact,ambientContact,ambientBaseline,moved,restored,away,rotated,rotatedTip,touching,shoulder,offscreen,offscreenCaster,noCaster,wallBaseline,wallContact,programs,diagnostics,geometryRestored,glError};
+        return {baseline,contact,ambientContact,ambientBaseline,moved,restored,away,rotated,rotatedTip,touching,shoulder,beyondReach,elevated,offscreen,offscreenCaster,noCaster,wallBaseline,wallContact,farWallBaseline,farWallContact,methodA,methodB,methodRestored,genericMethod,programs,diagnostics,geometryRestored,glError};
     });
     await mkdir('tests/artifacts/screens/illumination_534',{recursive:true});
     await writeFile('tests/artifacts/screens/illumination_534/dynamic-contact.json',JSON.stringify({result,errors},null,2));
     expect(errors).toEqual([]); expect(result.glError).toBe(0); expect(result.geometryRestored).toBe(true);
     for(let i=0;i<3;i++) {
         expect(result.ambientContact[i]).toBeLessThan(result.ambientBaseline[i]*.75);
-        expect(result.contact[i]).toBeCloseTo(result.baseline[i],4);
+        // Adding sunlight must add the same direct energy with AO on or off.
+        expect(result.contact[i]-result.ambientContact[i]).toBeCloseTo(result.baseline[i]-result.ambientBaseline[i],4);
+        expect(result.elevated[i]).toBeGreaterThan(result.ambientContact[i]);
         expect(result.restored[i]).toBeCloseTo(result.ambientContact[i],5);
         expect(result.moved[i]).toBeCloseTo(result.ambientBaseline[i],5);
     }
     expect(result.away).toBeCloseTo(result.ambientBaseline[0],5);
     expect(result.rotatedTip).toBeLessThan(result.ambientBaseline[0]*.75);
     expect(result.touching.every(v=>v<result.ambientBaseline[0]*.25)).toBe(true);
-    expect(result.shoulder).toBeGreaterThan(result.ambientBaseline[0]*.99);
+    expect(result.shoulder).toBeGreaterThan(result.touching[1]);
+    expect(result.beyondReach).toBeCloseTo(result.ambientBaseline[0],5);
     expect(result.offscreenCaster).toBe(true);expect(result.offscreen).toBeLessThan(result.noCaster*.99);
-    expect(result.wallContact).toBeCloseTo(result.wallBaseline,5);
+    expect(result.wallContact).toBeLessThan(result.wallBaseline*.8);
+    expect(result.farWallContact/result.farWallBaseline).toBeGreaterThan(result.wallContact/result.wallBaseline);
+    expect(result.genericMethod).toBe('generic-dynamic-gtao');
+    expect(Math.max(...result.methodA.map((v,i)=>Math.abs(v-result.methodB[i])))).toBeGreaterThan(.05);
+    result.methodA.forEach((v,i)=>expect(result.methodRestored[i]).toBeCloseTo(v,5));
     expect(new Set(result.programs).size).toBe(1);
 });

@@ -14,7 +14,7 @@ dynamic contact, while preserving the current engine and both baked channels.
 | Baked direct and shared sun visibility | Retained | Retained, never multiplied by the new AO factor |
 | Separate Cycles AO / bent-normal channel | Not installed | Not added: accepted indirect already supplies broad static occlusion |
 | Static vertex / instance AO | Existing setting and implementation | Suppressed in effective settings; intent preserved for returning to All |
-| SSAO / GTAO | Existing methods, parameters, cadence, denoise and exclusions | Bounded-depth Three GTAO for visible dynamic detail; analytic bus ground contact |
+| SSAO / GTAO | Existing methods, parameters, cadence, denoise and exclusions | Bounded-depth Three GTAO for visible dynamic detail; analytic bus ground/wall contact |
 | Exclusion mask | Retained AI 524 depth reuse, with its supported fallback | No mask render: receiver exclusion is resolved before ambient composition |
 | Legacy bus contact rig | Available; heading, loaded extent and full chassis length corrected | Suppressed to avoid stacking a black overlay on dynamic AO |
 | Dynamic directional bus shadow / self-shadow | Retained | Retained independently; represents blocked sun rather than ambient contact |
@@ -35,13 +35,17 @@ are installed only during the render and restored in `finally`. Runtime shader
 hooks are excluded from authored bake-material classification; unrelated custom
 hooks still require an adapter. A regression checks both hashes and source watches.
 
-The original oriented bounding-volume contact was rejected after user captures
-showed a broad dark halo. The corrected **bus floor rectangle** integrates its
-cosine-weighted solid angle, with clearance/lateral falloff and an upward-facing
-receiver constraint. It covers the center and works without an on-screen bus,
-but does not paint an enclosing-volume halo onto walls. A registry descriptor
-selects this bus-specific approximation; other objects use generic GTAO. It can
-overestimate wheel-well gaps and does not model all undercarriage equipment.
+The earlier nearest-point volume approximation produced a broad halo. Its floor-only
+replacement missed wall contact. The current method integrates the visible faces
+of a **closed bus box**, clipping each face to the receiving hemisphere. The
+audited floor supplies its footprint; the opaque body supplies the top. This is
+angular visibility, not a nearest-point normal heuristic. Distance attenuates the
+finite-range approximation; no ground-only gate or manually connected gap is used.
+A registry descriptor selects this bus-specific approximation; other objects use
+generic GTAO. It can overestimate wheel-well gaps and does not model all
+undercarriage equipment, multiple-bounce illumination or directional sky radiance.
+Some soft occlusion outside the bus contour is physically plausible. Closing gaps
+strengthens the contact; larger clearance weakens it without a hard contour cutoff.
 Dynamic self/world detail uses actual Three GTAO on scene depth and respects alpha cutouts, but retains ordinary
 screen-space limitations: occluders entirely outside the camera view or hidden
 behind the nearest depth layer may be missed. Increasing sample quality does not
@@ -102,12 +106,40 @@ entire ground factor is visible.
   retained baked resources, camera motion and FXAA/MSAA/TAA/Off.
 
 The synthetic linear-output probes measure equal static ambient outside dynamic
-reach and strongly direct-lit output agrees within 0.0001 with AO enabled/disabled.
-The corrected direct-light policy additionally leaves strongly sunlit pixels
-equal to AO Off, fading only the supplementary indirect occlusion. It does not
-remove physical sun shadows or modify the baked channels.
+reach. Adding sunlight contributes the same direct energy with AO enabled or
+disabled (within 0.0001); AO no longer disappears in sunlight. Near walls darken
+more than distant walls, raising the bus weakens ground contact, and switching
+Underbody / GTAO / Underbody restores the same sampled output. The independent
+`dynamic_ao_visibility.pwtest.js` compares GPU polygon integration with 32,768
+cosine-weighted ray samples per ground, wall and tilted-receiver probe.
+Matched real-city captures use `dynamic_ao_physical_city.pwtest.js` and live under
+`tests/artifacts/screens/illumination_534/physical_city/{before,after}/`. Both
+baked channels remain active through the method and Off/On round trips.
 The controlled shelf fixture distinguishes dynamic self and world-to-dynamic
 contact and returns factor 1 through fully transparent cutout texels.
+
+### Physical-contact comparison, September 7, 2026
+
+The matched 1600×900 city views cover asphalt near spawn and the west facade of
+`building_9`. The after run reuses the before run's saved bus and camera positions.
+`context.json` and `result.json` record placement, effective AO method and active
+baked channels. The neutral 1280×720 lab additionally exposes wall contact without
+the city's dark materials; before images are in `physical_before_lab/`, after
+images in `contact_lab/`, under `tests/artifacts/screens/illumination_534/`.
+
+Seven focused browser tests passed: contact/method restoration, independent
+hemisphere visibility, generic interactions, canonical bake source, settings UI,
+the installed city capture and the bus lab. The visibility comparison covers
+eight ground/wall/tilted probes with an absolute factor tolerance of 0.012.
+
+Lab GPU full-frame time for Underbody was 3.17 ± 0.46 ms before and 3.30 ± 1.18 ms
+after (160 samples each, RTX 3060 / ANGLE D3D11, Medium, radius 1.5 m). These runs
+do **not** establish a speedup or a reliable incremental AO cost: control and
+generic-GTAO timings varied strongly between rounds despite zero reported
+disjoint events. Raw timers and CPU submission/completion samples are retained
+in the two lab `results.json` files. The new reach rejection avoids unrelated
+receiver work, but the hybrid still runs depth, GTAO and denoise for bus detail.
+No blanket performance improvement or physically complete dynamic GI is claimed.
 
 ## Original checkpoint measurements (superseded contact algorithm)
 

@@ -12,7 +12,7 @@ The AO section has **Scope: All / Dynamic Only**. All retains Off / SSAO / GTAO,
 static AO and the legacy contact-blob controls. Dynamic Only has an Off / On
 control for **Dynamic AO**, its own intensity, radius, GTAO quality and factor
 view, plus the common alpha policy. **Bus grounding: Underbody / GTAO** selects
-the analytic floor approximation or the generic screen-space path for the bus.
+the analytic bus-volume approximation or the generic screen-space path for the bus.
 
 Compatible indirect lighting selects Dynamic Only after its channel is effective
 and the first-activation fade completes. Loading, rejected data, and direct-only
@@ -29,7 +29,7 @@ The existing `bus_sim.ambientOcclusion.v1` record now also stores:
 - `dynamic`: `busMethod: 'analytic'`, intensity `1`, radius `1.5 m`, quality
   `medium`, debug view `false`. `busMethod: 'gtao'` enables the comparison path.
   Low / Medium / High request 8 / 16 / 32 GTAO samples (Three rounds these into
-  complete directional steps); the analytic rectangle does not use sample rays.
+  complete directional steps); the analytic volume does not use sample rays.
 
 The existing `mode` remains the master enable and All method. Scope selection
 never enables Off. All and Dynamic parameter banks are independent. Save, preset
@@ -40,12 +40,14 @@ current effective scope and explains which lighting context owns its preference.
 Dynamic classification comes from `getDynamicIlluminationObjects()`, including
 the parked bus, rather than velocity or mesh names. The method composes:
 
-- Bus-to-ground contact from the cosine-weighted form factor of an explicit
-  downward floor rectangle in root-local coordinates. Ground clearance and
-  lateral distance fade the term. It remains stable off screen and does not
-  project the whole bus volume onto nearby walls. The optional `aoUnderbody`
-  registry descriptor is fitted from the loaded bus floor; it is not inferred
-  for arbitrary registered objects.
+- Bus-to-ground and bus-to-wall contact from the cosine-weighted form factor of
+  the visible faces of an oriented box. The audited `aoUnderbody` floor provides
+  its footprint and bottom; loaded opaque geometry provides its height. Faces
+  are clipped to each receiver's hemisphere before integration. This remains
+  stable off screen and treats vertical, horizontal and sloped receivers alike.
+  The optional descriptor is not inferred for arbitrary registered objects.
+  Nearest distance to the box gives a smooth finite-radius attenuation; radius
+  is an approximation control, not the distance light can physically travel.
 - Actual Three GTAO plus Poisson denoise on half-resolution, alpha-aware depth
   for dynamic self/world contact. Non-bus objects use this generic method.
   Geometry outside expanded participant bounds is omitted from depth rendering.
@@ -55,10 +57,22 @@ the parked bus, rather than velocity or mesh names. The method composes:
   when only analytic bus casters are present.
 - The maximum of these terms, normalized by intensity and clamped to a remaining
   ambient factor of `[0.1, 1]`. This multiplies indirect diffuse/specular after
-  authored material AO. As requested, supplementary AO fades out when direct
-  diffuse dominates indirect diffuse (ratio 0.1 to 0.5). This is an artistic
-  direct-light-priority policy, not a claim that physical occlusion vanishes in
-  sunlight. Direct sunlight, sun visibility and emission are unchanged.
+  authored material AO. Direct sunlight, sun visibility and emission are
+  unchanged. Indirect occlusion remains present when sunlight is added: the
+  previous artistic fade based on the direct/indirect ratio has been removed.
+
+Closing a gap strengthens contact continuously. Greater ground clearance weakens
+the dark core while a faint outer influence can remain. The wall and ground use
+the same occluding volume; no distance threshold connects painted shadows.
+Small, soft influence outside the bus contour is valid. This is still an AO
+approximation: it neither transports reflected bounces nor computes exact union
+visibility across overlapping participants or differently lit hemispheres.
+It does not force narrow cavities to black. Scalar specular attenuation remains
+an approximation rather than a directional reflection-visibility calculation.
+
+Receiver fragments outside participant reach skip AO texture reads/integration.
+Diagnostics distinguish `analytic-bus-volume-with-gtao-detail` from
+`generic-dynamic-gtao`; neither method retains temporal AO history.
 
 Dynamic Only suppresses the legacy broad static AO and contact blobs in the
 **effective** configuration, preserving their saved settings. It uses bounded
