@@ -1,3 +1,36 @@
+# DONE — AI 534: dynamic ambient occlusion composition
+
+## Completion — September 7, 2026
+
+- Added All / Dynamic Only scopes with separate parameters, explicit Off,
+  active-indirect defaults, saved overrides and restoration after fallback.
+- Added ambient-only dynamic self/world contact from the mobility registry;
+  static receivers receive bus contact without extra static-to-static AO.
+  Direct sunlight and both accepted baked channels remain unchanged.
+- Corrected the legacy chassis contact extent and heading. Fifteen real-model
+  ray probes confirmed an existing closed floor; no model edit was needed.
+- Verified UI Save/Cancel, presets, source hashes/watches, warm toggles, alpha
+  cutouts, motion, off-screen ground contact and FXAA/MSAA/TAA/Off. Existing
+  receiver-material and AI 548 render-optimization regressions pass.
+- AI 323 remains independent. AI 524 is retained for All; completed AI 525's
+  retained-depth choice is preserved. No stencil/MRT experiments or separate
+  static Cycles AO channel were added.
+
+The [composition and measurement record](../specs/graphics/illumination_534_ao.md)
+contains contribution dispositions, exact settings, limitations, tests, artifact
+paths and matched performance/image-change tables. The
+[AO contract](../specs/graphics/ambient_occlusion.md#ai-534-scope-selection) is the
+canonical settings/UI reference. Dynamic contact uses an oriented bounds
+approximation for ground/wall receivers plus screen-depth self/world detail;
+it does not claim ray-traced dynamic GI or hidden/off-screen self occlusion.
+
+In the recorded RTX 3060, 1280×720 MSAA 8× view, GI + Dynamic used 503 calls /
+843,357 triangles and 8.78 ± 1.21 ms GPU frame time; GI + All GTAO used 963 calls /
+1,551,450 triangles and 12.78 ± 1.50 ms. Synchronized frame means were 23.16 and
+25.09 ms (43.18 / 39.85 equivalent FPS), with overlapping variation. The record
+also includes GI alone/current baselines, CPU cost, memory and unavailable
+metrics. This is a scene-specific result, not a universal FPS guarantee.
+
 # Problem
 
 Directional shadow caching and direct lightmaps do not replace ambient occlusion. High-quality baked indirect illumination may already contain much of the static contact and crevice information that static AO or GTAO currently approximates, but low-resolution lightmaps can still miss small features and the moving bus still needs dynamic grounding.
@@ -14,51 +47,50 @@ Use the accepted baked indirect lighting for static environmental occlusion and
 target supplementary runtime AO at dynamic interactions. This is the preferred
 composition to implement and validate, rather than stacking full-scene AO over
 the same baked static shading. Preserve baked direct, baked indirect, AI 548 and
-the current engine. This update defines the next implementation; it does not
-claim that Dynamic Only already exists.
+the current engine. The checklist below records the completed implementation.
 
-- [ ] Add an AO **Scope** selector, **All / Dynamic Only**, within the existing
+- [x] Add an AO **Scope** selector, **All / Dynamic Only**, within the existing
   AO section. Prefer one segmented toggle over two separate tabs. Keep scope
   separate from the AO method/enable control (`Off / SSAO / GTAO`, or the measured
   supported dynamic implementation). Show only controls relevant to the selected
   scope; retain independent All and Dynamic Only parameter sets.
-- [ ] When compatible baked indirect illumination becomes effective, select
+- [x] When compatible baked indirect illumination becomes effective, select
   Dynamic Only by default. Drive the automatic choice from actual channel
   activation/coverage, not a requested checkbox during loading or fallback.
   Direct-only baking does not trigger this switch. Preserve an explicit AO Off
   choice; changing scope must not turn AO back on.
-- [ ] Preserve the prior current-engine/All configuration and restore it when
+- [x] Preserve the prior current-engine/All configuration and restore it when
   indirect lighting is disabled, rejected or invalidated. Keep an explicit All
   override for comparison while indirect is active, without destroying either
   scope's saved parameters. Define how the override survives Save/Cancel,
   presets and reload; display the effective scope without a hidden override.
-- [ ] Dynamic Only must include bus self-occlusion, world-to-bus occlusion and
+- [x] Dynamic Only must include bus self-occlusion, world-to-bus occlusion and
   bus-to-world contact on nearby ground/walls. At least one participant in the
   added interaction must be dynamic. Static geometry must remain available to
   occlude dynamic receivers; static receivers must still receive occlusion from
   the bus. Excluding all static meshes from AO, masking only bus pixels, or
   applying ordinary full AO in a region around the bus is not sufficient.
-- [ ] Classify dynamic participants using authoritative object mobility/registry
+- [x] Classify dynamic participants using authoritative object mobility/registry
   data, including a stationary bus. Do not use mesh names, ad-hoc receiver lists
   or a velocity threshold. Extend the same policy to future registered vehicles,
   pedestrians and movable props.
-- [ ] In Dynamic Only, suppress redundant broad static AO where valid indirect
+- [x] In Dynamic Only, suppress redundant broad static AO where valid indirect
   coverage already supplies it. Audit material AO separately rather than deleting
   authored microdetail. Document handling of unbaked/excluded receivers and
   coverage loss. Keep direct sun visibility independent and prevent bus contact
   blobs, dynamic AO and directional shadows from duplicating the same darkening.
-- [ ] Reuse the retained-depth/exclusion infrastructure and bus contact path when
+- [x] Reuse the retained-depth/exclusion infrastructure and bus contact path when
   appropriate, but validate contribution-level separation. Do not claim a
   performance gain from a final-output mask while retaining all expensive passes.
   Measure whether bounded dynamic work or a dedicated contact solution is better.
-- [ ] Test GI alone, GI plus Dynamic Only, GI plus All, and the current engine's
+- [x] Test GI alone, GI plus Dynamic Only, GI plus All, and the current engine's
   preserved AO. Cover bus wheels/underside, nearby walls, intersections, stationary
   camera with moving bus, stationary bus, camera movement, off-screen participants,
   alpha cutouts and scope/channel toggles. No lingering history or indirect-light
   disablement may result from an AO change.
 
-The planned scope/lifecycle contract is documented in
-[Ambient Occlusion](../specs/graphics/ambient_occlusion.md#planned-ai-534-scope-selection).
+The implemented scope/lifecycle contract is documented in
+[Ambient Occlusion](../specs/graphics/ambient_occlusion.md#ai-534-scope-selection).
 
 ## Execution gate
 

@@ -1783,7 +1783,7 @@ export class PostProcessingPipeline {
         }
     }
 
-    render(deltaTime = undefined) {
+    render(deltaTime = undefined, prepareAmbientOcclusion = null) {
         const info = this.renderer?.info ?? null;
         const canCapture = !!info && typeof info.reset === 'function' && 'autoReset' in info;
         const prevAutoReset = canCapture ? info.autoReset : null;
@@ -1886,10 +1886,12 @@ export class PostProcessingPipeline {
 
         try {
             if (!wantsPipeline) {
+                prepareAmbientOcclusion?.();
                 this.renderer.render(this.scene, this.camera);
                 return;
             }
 
+            prepareAmbientOcclusion?.();
             if (globalBloomOn) this._renderGlobalBloom(deltaTime);
             const sunBloomRendered = sunBloomOn ? this._renderSunBloom(deltaTime) : false;
             // Avoid running the composite pass when both bloom layers are disabled;

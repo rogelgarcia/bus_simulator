@@ -394,6 +394,7 @@ export class OptionsUI {
     }
 
     _renderTab() {
+        this._refreshAoScope = null;
         this._iblDebugEls = null;
         this._postDebugEls = null;
         this._aaDebugEls = null;
@@ -423,6 +424,7 @@ export class OptionsUI {
     }
 
     _refreshDebug() {
+        this._refreshAoScope?.();
         this._refreshIblDebug();
         this._refreshPostProcessingDebug();
         this._refreshAntiAliasingDebug();
@@ -568,6 +570,8 @@ export class OptionsUI {
                 const mode = String(ao.mode ?? 'off');
                 if (mode === 'off') {
                     els.ao.textContent = 'Off';
+                } else if (mode === 'dynamic-contact') {
+                    els.ao.textContent = `Dynamic Only · contact AO (intensity ${Number(ao.dynamic?.intensity ?? 0).toFixed(2)})`;
                 } else if (mode === 'ssao') {
                     const s = ao.ssao ?? null;
                     const quality = String(s?.quality ?? 'medium');
@@ -923,6 +927,10 @@ export class OptionsUI {
         const d = this._draftAntiAliasing;
 
         if (d.mode === undefined) d.mode = defaults.mode;
+        d.allMethod ??= d.mode === 'ssao' ? 'ssao' : 'gtao';
+        d.scope ??= defaults.scope;
+        d.indirectScope ??= defaults.indirectScope;
+        d.dynamic = { ...defaults.dynamic, ...d.dynamic };
 
         if (!d.msaa || typeof d.msaa !== 'object') d.msaa = { ...defaults.msaa };
         if (d.msaa.samples === undefined) d.msaa.samples = defaults.msaa.samples;
@@ -1301,6 +1309,10 @@ export class OptionsUI {
                 }
             },
             ambientOcclusion: {
+                scope: ambientOcclusion.scope,
+                allMethod: ambientOcclusion.allMethod,
+                indirectScope: ambientOcclusion.indirectScope,
+                dynamic: { ...ambientOcclusion.dynamic },
                 mode: String(ambientOcclusion?.mode ?? 'off'),
                 alpha: {
                     handling: String(ambientOcclusion?.alpha?.handling ?? 'alpha_test'),

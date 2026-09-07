@@ -101,6 +101,12 @@ export function renderGraphicsTab() {
 
     const updateAoStatus = () => {
         const mode = String(ao?.mode ?? 'off');
+        const receiver = this._getBakedLightingDebugInfo?.()?.receiverLightmaps;
+        const effective = receiver?.state === 'active' && receiver.effective?.indirect && receiver.activationBlend >= 1;
+        if ((effective ? ao.indirectScope : ao.scope) === 'dynamic') {
+            status.ao.text.textContent = mode === 'off' ? 'Off · Dynamic Only' : 'Dynamic Only · contact AO';
+            return;
+        }
         const bits = [];
         bits.push(mode === 'off' ? 'Off' : mode.toUpperCase());
         const staticOn = String(ao?.staticAo?.mode ?? 'off') !== 'off';
@@ -579,6 +585,34 @@ export function renderGraphicsTab() {
 
     const sectionAo = makeEl('div', 'options-section');
     sectionAo.appendChild(makeEl('div', 'options-section-title', 'Ambient Occlusion'));
+    const effectiveIndirect = () => {
+        const receiver = this._getBakedLightingDebugInfo?.()?.receiverLightmaps;
+        return receiver?.state === 'active' && receiver?.effective?.indirect === true && receiver?.activationBlend >= 1;
+    };
+    let indirect = effectiveIndirect();
+    const scopeKey = () => indirect ? 'indirectScope' : 'scope';
+    const scope = () => ao[scopeKey()] ?? (indirect ? 'dynamic' : 'all');
+    const scopeChoice = makeChoiceRow({ label: 'Scope', value: scope(), options: [
+        { id: 'all', label: 'All' }, { id: 'dynamic', label: 'Dynamic Only' }
+    ], onChange: v => { ao[scopeKey()] = v; emit(); syncAoControls(); } });
+    const scopeNote = makeEl('div', 'options-note');
+    sectionAo.appendChild(scopeChoice.row); sectionAo.appendChild(scopeNote);
+    const dynamicGroup = makeEl('div', 'options-section');
+    const dynamicMode = makeChoiceRow({ label: 'Dynamic contact AO', value: ao.mode === 'off' ? 'off' : 'on',
+        options: [{ id: 'off', label: 'Off' }, { id: 'on', label: 'On' }],
+        onChange: v => { ao.mode = v === 'off' ? 'off' : ao.allMethod; emit(); syncAoControls(); } });
+    dynamicGroup.appendChild(dynamicMode.row);
+    for (const [key, label, min, max] of [['intensity', 'Dynamic AO intensity', 0, 2], ['radius', 'Dynamic AO radius (m)', .1, 5]]) {
+        const control = makeNumberSliderRow({ label, value: ao.dynamic[key], min, max, step: .01, digits: 2,
+            onChange: v => { ao.dynamic[key] = v; emit(); } });
+        dynamicGroup.appendChild(control.row);
+    }
+    dynamicGroup.appendChild(makeChoiceRow({ label: 'Dynamic AO quality', value: ao.dynamic.quality,
+        options: [{ id: 'low', label: 'Low' }, { id: 'medium', label: 'Medium' }, { id: 'high', label: 'High' }],
+        onChange: v => { ao.dynamic.quality = v; emit(); } }).row);
+    dynamicGroup.appendChild(makeToggleRow({ label: 'Dynamic AO factor view', value: ao.dynamic.debugView,
+        onChange: v => { ao.dynamic.debugView = v; emit(); } }).row);
+    sectionAo.appendChild(dynamicGroup);
 
 	        const aoMode = makeChoiceRow({
 	            label: 'Mode',
@@ -590,6 +624,7 @@ export function renderGraphicsTab() {
 	            ],
 	            onChange: (v) => {
 	                ao.mode = v;
+	                if (v !== 'off') ao.allMethod = v;
 	                emit();
 	                syncAoControls();
 	                updateAoStatus();
@@ -986,8 +1021,25 @@ export function renderGraphicsTab() {
 	                ctrl.range.disabled = !contactShadowOn;
 	                ctrl.number.disabled = !contactShadowOn;
 	            }
+                const dynamic = scope() === 'dynamic';
+                scopeChoice.setValue(scope());
+                dynamicMode.setValue(ao.mode === 'off' ? 'off' : 'on');
+                dynamicGroup.classList.toggle('hidden', !dynamic);
+                for (const element of [aoParamsStack, staticAoGroup, busContactShadowGroup]) {
+                    if (dynamic) element.classList.add('hidden');
+                }
+                for (const element of [aoMode.row, staticAoMode.row, busContactShadowMode.row, aoNote]) element.classList.toggle('hidden', dynamic);
+                scopeNote.textContent = indirect
+                    ? 'Indirect bake active. This scope preference is saved for baked indirect lighting. Dynamic Only adds contact around moving objects, including parked vehicles.'
+                    : 'Live lighting scope. Compatible indirect lighting uses its own saved scope preference. Dynamic Only adds vehicle contact; static surroundings keep their existing lighting.';
+                updateAoStatus();
 	        };
 	        syncAoControls();
+        this._refreshAoScope = () => {
+            const active = effectiveIndirect();
+            if (active === indirect) return;
+            indirect = active; syncAoControls();
+        };
 
     this.body.appendChild(sectionStatus);
     this.body.appendChild(sectionToneMapping);

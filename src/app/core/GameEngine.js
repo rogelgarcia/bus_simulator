@@ -7,6 +7,8 @@ import { getResolvedShadowSettings, getShadowQualityPreset, sanitizeShadowSettin
 import { getResolvedAtmosphereSettings, sanitizeAtmosphereSettings } from '../../graphics/visuals/atmosphere/AtmosphereSettings.js';
 import { getResolvedAntiAliasingSettings, sanitizeAntiAliasingSettings } from '../../graphics/visuals/postprocessing/AntiAliasingSettings.js';
 import { getResolvedAmbientOcclusionSettings, sanitizeAmbientOcclusionSettings } from '../../graphics/visuals/postprocessing/AmbientOcclusionSettings.js';
+import { resolveAmbientOcclusionScope } from '../../graphics/visuals/postprocessing/AmbientOcclusionScope.js';
+import { DynamicAoRuntime } from '../../graphics/visuals/postprocessing/DynamicAoRuntime.js';
 import { getResolvedBloomSettings, sanitizeBloomSettings } from '../../graphics/visuals/postprocessing/BloomSettings.js';
 import { PostProcessingPipeline } from '../../graphics/visuals/postprocessing/PostProcessingPipeline.js';
 import { getResolvedColorGradingSettings, sanitizeColorGradingSettings } from '../../graphics/visuals/postprocessing/ColorGradingSettings.js';
@@ -387,12 +389,17 @@ export class GameEngine {
     }
 
     getAmbientOcclusionDebugInfo() {
+        const policy = this._resolveAoScope();
+        if (policy.scope === 'dynamic') return { scope: policy.scope, indirectEffective: policy.indirectEffective,
+            mode: policy.enabled ? 'dynamic-contact' : 'off', dynamic: { ...this._dynamicAo?.diagnostics },
+            staticAo: 'suppressed', contactBlob: 'suppressed', directSun: 'unchanged' };
         const s = this._ambientOcclusion?.settings ?? null;
         const mode = s?.mode ?? 'off';
         if (!this._post?.pipeline) {
             const gtao = s?.gtao ?? null;
             return {
                 mode,
+                scope: policy.scope, indirectEffective: policy.indirectEffective,
                 alpha: s?.alpha ? { ...s.alpha, frameStats: null } : null,
                 gtao: mode === 'gtao'
                     ? {
@@ -417,6 +424,7 @@ export class GameEngine {
         const gtao = ao?.gtao ?? null;
         return {
             mode: activeMode,
+            scope: policy.scope, indirectEffective: policy.indirectEffective,
             alpha: ao?.alpha ? {
                 handling: ao.alpha.handling ?? (s?.alpha?.handling ?? 'alpha_test'),
                 threshold: ao.alpha.threshold ?? (s?.alpha?.threshold ?? 0.5),
@@ -708,9 +716,47 @@ export class GameEngine {
         if (!this._ambientOcclusion) return;
         const next = sanitizeAmbientOcclusionSettings(settings);
         this._ambientOcclusion.settings = next;
+        this._effectiveAoScope = this._resolveAoScope().scope;
         this._syncPostProcessingPipeline();
-        this._syncBusContactShadowSettings(next?.busContactShadow ?? null);
-        this._syncStaticAoSettings(next);
+        const effective = this._resolveAoScope().pipeline;
+        this._syncBusContactShadowSettings(effective.busContactShadow);
+        this._syncStaticAoSettings(effective);
+    }
+
+    _resolveAoScope() {
+        const receiver = this._bakedLighting?.receivers;
+        const indirectEffective = receiver?.active === true && receiver?.uniforms?.receiverIndirectEnabled?.value > 0
+            && receiver?.uniforms?.receiverLightingBlend?.value >= 1;
+        return resolveAmbientOcclusionScope(this._ambientOcclusion?.settings ?? { mode: 'off' }, indirectEffective);
+    }
+
+    _syncAoScope() {
+        const policy = this._resolveAoScope();
+        if (policy.scope === this._effectiveAoScope) return;
+        this._effectiveAoScope = policy.scope;
+        this._syncPostProcessingPipeline();
+        this._syncStaticAoSettings(policy.pipeline);
+        this._syncBusContactShadowSettings(policy.pipeline.busContactShadow);
+    }
+
+    _prepareDynamicAo() {
+        const policy = this._resolveAoScope();
+        const enabled = policy.scope === 'dynamic' && policy.enabled;
+        if (enabled) this._dynamicAo ??= new DynamicAoRuntime();
+        this._dynamicAo?.update({ renderer: this.renderer, scene: this.scene, camera: this.camera,
+            participants: this.getDynamicIlluminationObjects(), settings: this._ambientOcclusion.settings, enabled });
+    }
+
+    _renderAoFrame(dt) {
+        if (this._post?.pipeline) {
+            try { this._post.pipeline.render(dt, () => this._prepareDynamicAo()); }
+            finally { this._dynamicAo?.restoreBindings(); }
+            return;
+        }
+        const info = this.renderer.info, autoReset = info.autoReset;
+        info.autoReset = false; info.reset();
+        try { this._prepareDynamicAo(); this.renderer.render(this.scene, this.camera); }
+        finally { info.autoReset = autoReset; this._dynamicAo?.restoreBindings(); }
     }
 
     _syncStaticAoSettings(ambientOcclusionSettings) {
@@ -852,7 +898,7 @@ export class GameEngine {
         const aaMode = typeof aa?.mode === 'string' ? aa.mode : 'off';
         const aaWantsPipeline = aaMode === 'fxaa' || aaMode === 'smaa' || aaMode === 'taa';
 
-        const ao = this._ambientOcclusion?.settings ?? null;
+        const ao = this._resolveAoScope().pipeline;
         const aoMode = typeof ao?.mode === 'string' ? ao.mode : 'off';
         const aoWantsPipeline = aoMode === 'ssao' || aoMode === 'gtao';
 
@@ -872,7 +918,7 @@ export class GameEngine {
                 scene: this.scene,
                 camera: this.camera,
                 bloom: this._bloom?.settings ?? null,
-                ambientOcclusion: this._ambientOcclusion?.settings ?? null,
+                ambientOcclusion: this._resolveAoScope().pipeline,
                 sunBloom: this._sunBloom?.settings ?? null,
                 antiAliasing: this._antiAliasing?.settings ?? null
             });
@@ -884,7 +930,7 @@ export class GameEngine {
             bloom: this._bloom?.settings ?? null,
             sunBloom: this._sunBloom?.settings ?? null
         });
-        this._post.pipeline.setAmbientOcclusion(this._ambientOcclusion?.settings ?? null);
+        this._post.pipeline.setAmbientOcclusion(this._resolveAoScope().pipeline);
         this._post.pipeline.setAntiAliasing(this._antiAliasing?.settings ?? null);
         this._post.pipeline.setColorGrading({
             lutTexture: this._colorGrading?.lut ?? null,
@@ -1302,13 +1348,13 @@ export class GameEngine {
         try {
             illuminationPipeline?.frameBegin?.({ engine: this, dt: stepDt, nowMs: now });
             this._bakedLighting?.frameBegin?.();
+            this._syncAoScope();
             this._updateStaticAo();
             this._updateBusContactShadow(stepDt);
             gpuTimer?.beginFrame?.();
             gpuFrameBegun = !!gpuTimer;
             illuminationPipeline?.shadowPrepare?.({ engine: this, dt: stepDt, nowMs: now });
-            if (this._post?.pipeline) this._post.pipeline.render(stepDt);
-            else this.renderer.render(this.scene, this.camera);
+            this._renderAoFrame(stepDt);
         } finally {
             try {
                 if (gpuFrameBegun) {
@@ -1369,7 +1415,7 @@ export class GameEngine {
         const runtime = state.runtime ?? null;
         if (!runtime) return;
 
-        const ao = this._ambientOcclusion?.settings ?? null;
+        const ao = this._resolveAoScope().pipeline;
         const enabled = ao?.staticAo?.mode && ao.staticAo.mode !== 'off';
         if (!enabled) {
             if (state.lastCity !== null) state.lastCity = null;
@@ -1403,9 +1449,10 @@ export class GameEngine {
         const nowMs = performance.now();
         try {
             illuminationPipeline?.frameBegin?.({ engine: this, dt: 0, nowMs });
+            this._bakedLighting?.frameBegin?.();
+            this._syncAoScope();
             illuminationPipeline?.shadowPrepare?.({ engine: this, dt: 0, nowMs });
-            if (this._post?.pipeline) this._post.pipeline.render();
-            else this.renderer.render(this.scene, this.camera);
+            this._renderAoFrame(0);
         } finally {
             illuminationPipeline?.frameEnd?.({ engine: this, dt: 0, nowMs });
         }
@@ -1415,6 +1462,8 @@ export class GameEngine {
         if (this._disposalPromise) return this._disposalPromise;
         if (this._disposed) return undefined;
         this._disposed = true;
+        this._dynamicAo?.dispose();
+        this._dynamicAo = null;
         this.stop();
         if (this._autoResize) window.removeEventListener('resize', this._onResize);
         this.simulation?.dispose?.();

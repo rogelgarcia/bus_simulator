@@ -202,10 +202,13 @@ export class BusContactShadowRig {
         const pivots = collectWheelPivots(wheelRig);
 
         const same = wheelRig === this._wheelRig
+            && model === this._layoutModel && model?.userData?.ready === this._layoutReady
             && pivots.length === this._wheelPivots.length
             && pivots.every((p, i) => p === this._wheelPivots[i]);
         if (same) return;
 
+        this._layoutModel = model;
+        this._layoutReady = model?.userData?.ready;
         this._wheelRig = wheelRig;
         this._wheelPivots = pivots;
         this._wheelRadius = clamp(wheelRig?.wheelRadius, 0.05, 5, 0.55);
@@ -234,7 +237,7 @@ export class BusContactShadowRig {
         const center = bounds.getCenter(this._tmpBoundsCenter);
 
         const halfWidth = clamp(size.x * 0.46, 0.55, 2.4, 1.3);
-        const halfLength = clamp(size.z * 0.36, 1.25, 5.5, 3.2);
+        const halfLength = Math.max(1.25, size.z * 0.5);
         const anchorY = bounds.min.y + Math.max(0.2, this._wheelRadius * 1.1);
 
         this._chassisAnchorLocal.set(center.x, anchorY, center.z);
@@ -423,6 +426,10 @@ export class BusContactShadowRig {
             mesh.position.copy(blob.smoothPos);
             this._tmpQuat.setFromUnitVectors(this._up, blob.smoothNormal);
             mesh.quaternion.copy(this._tmpQuat);
+            if (blob.kind === 'chassis') {
+                this._tmpNormal.set(0, 0, 1).transformDirection(busModel.matrixWorld).applyQuaternion(this._tmpQuat.clone().invert());
+                mesh.rotateY(Math.atan2(this._tmpNormal.x, this._tmpNormal.z));
+            }
             mesh.scale.set(blobRadiusX * 2, 1, blobRadiusZ * 2);
             mesh.visible = true;
             any = true;

@@ -6,6 +6,10 @@ const STORAGE_KEY = 'bus_sim.ambientOcclusion.v1';
 
 export const AMBIENT_OCCLUSION_DEFAULTS = Object.freeze({
     mode: 'gtao',
+    allMethod: 'gtao',
+    scope: 'all',
+    indirectScope: 'dynamic',
+    dynamic: { intensity: 1, radius: 1.5, quality: 'medium', debugView: false },
     alpha: {
         handling: 'exclude',
         threshold: 0.36
@@ -126,6 +130,7 @@ export function sanitizeAmbientOcclusionSettings(input) {
     const busContactShadow = src.busContactShadow && typeof src.busContactShadow === 'object' ? src.busContactShadow : {};
     const ssao = src.ssao && typeof src.ssao === 'object' ? src.ssao : {};
     const gtao = src.gtao && typeof src.gtao === 'object' ? src.gtao : {};
+    const dynamic = src.dynamic && typeof src.dynamic === 'object' ? src.dynamic : {};
 
     const staticAoQuality = sanitizeQuality(staticAo.quality, AMBIENT_OCCLUSION_DEFAULTS.staticAo.quality);
     const ssaoQuality = sanitizeQuality(ssao.quality, AMBIENT_OCCLUSION_DEFAULTS.ssao.quality);
@@ -133,6 +138,15 @@ export function sanitizeAmbientOcclusionSettings(input) {
 
     return {
         mode: sanitizeMode(src.mode),
+        allMethod: src.mode === 'ssao' || src.mode === 'gtao' ? src.mode : src.allMethod === 'ssao' ? 'ssao' : 'gtao',
+        scope: src.scope === 'dynamic' ? 'dynamic' : 'all',
+        indirectScope: src.indirectScope === 'all' ? 'all' : 'dynamic',
+        dynamic: {
+            intensity: clamp(dynamic.intensity, 0, 2, 1),
+            radius: clamp(dynamic.radius, 0.1, 5, 1.5),
+            quality: sanitizeQuality(dynamic.quality, 'medium'),
+            debugView: dynamic.debugView === true
+        },
         alpha: {
             handling: sanitizeAlphaHandling(alpha.handling),
             threshold: clamp(alpha.threshold, 0.01, 0.99, AMBIENT_OCCLUSION_DEFAULTS.alpha.threshold)

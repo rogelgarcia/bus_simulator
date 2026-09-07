@@ -6,52 +6,54 @@
 - `ssao`: Screen-space ambient occlusion (cheaper)
 - `gtao`: Ground-truth ambient occlusion (cleaner; optional denoise)
 
-## Planned AI 534 scope selection
+## AI 534 scope selection
 
-Status: requested design, not implemented. See
-[AI 534](../../prompts/AI_534_MATERIAL_baked_gi_and_ambient_occlusion_migration.md).
-The accepted direct/indirect channels, AI 548 and existing engine are retained.
+The AO section has **Scope: All / Dynamic Only**. All retains Off / SSAO / GTAO,
+static AO and the legacy contact-blob controls. Dynamic Only has an Off / On
+control for the dedicated **dynamic contact AO** method, its own intensity,
+radius, quality and factor view, plus the common alpha policy.
 
-The AO section will distinguish **Scope: All / Dynamic Only** from the AO
-method/enable control. A segmented selector uses the same section, with only the
-selected scope's controls shown and each scope's settings preserved separately.
-Off continues to disable supplementary AO; an automatic scope change must not
-enable it. Do not expose a method in Dynamic Only unless its implementation
-actually supports the promised separation.
+Compatible indirect lighting selects Dynamic Only after its channel is effective
+and the first-activation fade completes. Loading, rejected data, and direct-only
+lighting keep the live scope. Losing indirect coverage restores that scope and
+its unchanged controls. Both baked channels, AI 548 and the current engine remain
+available. AO never changes their settings, resource identity or source hashes.
 
-| Scope | Additional runtime occlusion |
-|---|---|
-| All | Existing full-scene AO behavior, respecting alpha/receiver exclusions and the selected method. |
-| Dynamic Only | Dynamic self-occlusion and dynamic/world interactions in both directions: the world can occlude the bus, and the bus can occlude nearby pavement or walls. No additional static-to-static occlusion. |
+The existing `bus_sim.ambientOcclusion.v1` record now also stores:
 
-Valid, effective baked indirect lighting selects Dynamic Only by default.
-Requested-but-loading, failed or incompatible indirect data must not prematurely
-remove current AO. Direct-only baking does not select Dynamic Only. Disabling or
-losing indirect coverage restores the preserved current-engine configuration.
-All remains available as an explicit comparison override while indirect is
-active. Implementation must define and test the persisted override lifecycle,
-Options Save/Cancel/Reset, presets and reloading; the UI reports effective scope.
+- `scope`: live/direct-only scope, default `all`.
+- `indirectScope`: effective-indirect scope, default `dynamic`. Choosing All while
+  indirect is active changes this preference, so it survives Save and reload.
+- `allMethod`: last enabled All method, retained across Dynamic Off / On.
+- `dynamic`: intensity `1`, radius `1.5 m`, quality `medium`, debug view `false`.
+  Low / Medium / High use 8 / 12 / 24 samples on dynamic receivers.
 
-Dynamic classification comes from authoritative mobility/registration, not
-velocity or mesh-name heuristics. A parked bus is still dynamic. Static scene
-depth/geometry remains available as an occluder for dynamic receivers, and static
-receivers still accept dynamic contact. A bus-only receiver mask would omit ground
-contact; a screen region filled with ordinary full AO would still duplicate static
-occlusion. The existing receiver exclusion renderer is reusable infrastructure,
-not by itself a Dynamic Only implementation.
+The existing `mode` remains the master enable and All method. Scope selection
+never enables Off. All and Dynamic parameter banks are independent. Save, preset
+export/import and reload serialize both preferences and banks. Cancel restores
+the entry snapshot; Reset restores the defaults above. The UI displays the
+current effective scope and explains which lighting context owns its preference.
 
-The default target is baked static indirect light plus supplementary dynamic
-grounding. Validate that static creases and thresholds are adequately represented;
-record unbaked/material-detail exceptions rather than masking bake deficiencies
-with broad static AO. Audit static AO, material AO and the existing bus contact
-blobs for overlap. AO affects the approved ambient/indirect composition and must
-not add another sun shadow or disable either baked illumination channel.
+Dynamic classification comes from `getDynamicIlluminationObjects()`, including
+the parked bus, rather than velocity or mesh names. The method composes:
 
-Compare GI alone, GI + Dynamic Only, GI + All and current-engine AO at matched
-poses/settings. Measure the complete depth/mask/AO/composition cost, not only
-the smaller visible output area. Check moving-bus updates even with a stationary
-camera, neighborhood contacts, off-screen limits, alpha handling, coverage loss,
-history reset and repeated toggles before claiming quality or performance gains.
+- Dynamic-to-world contact from oriented bounds of registered opaque geometry,
+  evaluated in world space. The full underside footprint remains represented
+  when its occluder is off screen. Nearby walls can also receive the contact.
+- Dynamic self-occlusion and world-to-dynamic contact from a half-resolution depth
+  pass. Geometry outside the registered objects' expanded AO bounds is omitted.
+  Static receivers never evaluate this screen-depth term.
+- The maximum of these terms, normalized by intensity and clamped to a remaining
+  ambient factor of `[0.1, 1]`. This multiplies indirect diffuse/specular after
+  authored material AO. Direct sunlight, sun visibility and emission are unchanged.
+
+Dynamic Only suppresses the legacy broad static AO and contact blobs in the
+**effective** configuration, preserving their saved settings. It does not run a
+hidden full-scene SSAO/GTAO pass or exclusion-mask pass. All keeps the shipped
+AI 524 retained-depth mask and its AI 525 selected architecture.
+
+See [AI 534 composition and validation](illumination_534_ao.md) for limitations,
+contribution disposition, tests, bus geometry audit, captures and measurements.
 
 ## GTAO denoise + debug visualization
 
@@ -107,11 +109,11 @@ Composition with SSAO/GTAO:
 - Static AO is applied first (material ambient occlusion).
 - When Static AO is enabled, SSAO/GTAO intensities are automatically scaled down to reduce double-darkening.
 
-The optional baked-illumination composition and migration boundary is defined in `specs/graphics/illumination_framework.md`. A directional sun-depth cache or direct-light bake does not replace AO. AI 534 owns the measured decision for static AO, baked GI contact information, SSAO/GTAO, and bus grounding; until then `current` mode preserves this behavior exactly.
+The optional baked-illumination composition is defined in [AI 534](illumination_534_ao.md). A directional sun-depth cache or direct-light bake does not replace AO. All retains the existing static AO path; Dynamic Only suppresses it and relies on accepted indirect lighting for broad static occlusion.
 
 ## Bus contact shadow
 
-The bus contact shadow is a cheap, bus-only grounding cue rendered as a small set of soft blobs under the wheels and chassis. It is independent of the AO mode and can be used even when `ambientOcclusion.mode = off`.
+The bus contact shadow is a cheap, bus-only grounding cue rendered as a small set of soft blobs under the wheels and chassis. In All scope it is independent of the AO mode and can be used even when `ambientOcclusion.mode = off`. Dynamic Only suppresses this overlay and uses ambient-only dynamic contact instead.
 
 Setting: `ambientOcclusion.busContactShadow`
 

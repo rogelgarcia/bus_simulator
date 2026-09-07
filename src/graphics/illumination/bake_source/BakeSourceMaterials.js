@@ -298,7 +298,7 @@ function materialRecord(material, bindingByTexture) {
     const customTags = CUSTOM_SHADER_TAGS.filter((key) => material.userData?.[key] !== undefined);
     const shaderContract = getMaterialShaderBaseContract(material);
     const hasOwnShaderPatch = shaderContract.hasOwnShaderPatch || shaderContract.hookIds.some((id) =>
-        !['city.cascaded_shadows', 'illumination.static_sun_depth', 'illumination.receiver_lightmaps'].includes(id));
+        !['city.cascaded_shadows', 'illumination.static_sun_depth', 'illumination.receiver_lightmaps', 'ao.dynamic_contact'].includes(id));
     if (hasOwnShaderPatch && customTags.length === 0) customTags.push('unadapted_onBeforeCompile');
     const hasOwnProgramKey = shaderContract.hasOwnProgramKey;
     if (hasOwnProgramKey && customTags.length === 0) customTags.push('unadapted_customProgramCacheKey');
