@@ -6,6 +6,53 @@
 - `ssao`: Screen-space ambient occlusion (cheaper)
 - `gtao`: Ground-truth ambient occlusion (cleaner; optional denoise)
 
+## Planned AI 534 scope selection
+
+Status: requested design, not implemented. See
+[AI 534](../../prompts/AI_534_MATERIAL_baked_gi_and_ambient_occlusion_migration.md).
+The accepted direct/indirect channels, AI 548 and existing engine are retained.
+
+The AO section will distinguish **Scope: All / Dynamic Only** from the AO
+method/enable control. A segmented selector uses the same section, with only the
+selected scope's controls shown and each scope's settings preserved separately.
+Off continues to disable supplementary AO; an automatic scope change must not
+enable it. Do not expose a method in Dynamic Only unless its implementation
+actually supports the promised separation.
+
+| Scope | Additional runtime occlusion |
+|---|---|
+| All | Existing full-scene AO behavior, respecting alpha/receiver exclusions and the selected method. |
+| Dynamic Only | Dynamic self-occlusion and dynamic/world interactions in both directions: the world can occlude the bus, and the bus can occlude nearby pavement or walls. No additional static-to-static occlusion. |
+
+Valid, effective baked indirect lighting selects Dynamic Only by default.
+Requested-but-loading, failed or incompatible indirect data must not prematurely
+remove current AO. Direct-only baking does not select Dynamic Only. Disabling or
+losing indirect coverage restores the preserved current-engine configuration.
+All remains available as an explicit comparison override while indirect is
+active. Implementation must define and test the persisted override lifecycle,
+Options Save/Cancel/Reset, presets and reloading; the UI reports effective scope.
+
+Dynamic classification comes from authoritative mobility/registration, not
+velocity or mesh-name heuristics. A parked bus is still dynamic. Static scene
+depth/geometry remains available as an occluder for dynamic receivers, and static
+receivers still accept dynamic contact. A bus-only receiver mask would omit ground
+contact; a screen region filled with ordinary full AO would still duplicate static
+occlusion. The existing receiver exclusion renderer is reusable infrastructure,
+not by itself a Dynamic Only implementation.
+
+The default target is baked static indirect light plus supplementary dynamic
+grounding. Validate that static creases and thresholds are adequately represented;
+record unbaked/material-detail exceptions rather than masking bake deficiencies
+with broad static AO. Audit static AO, material AO and the existing bus contact
+blobs for overlap. AO affects the approved ambient/indirect composition and must
+not add another sun shadow or disable either baked illumination channel.
+
+Compare GI alone, GI + Dynamic Only, GI + All and current-engine AO at matched
+poses/settings. Measure the complete depth/mask/AO/composition cost, not only
+the smaller visible output area. Check moving-bus updates even with a stationary
+camera, neighborhood contacts, off-screen limits, alpha handling, coverage loss,
+history reset and repeated toggles before claiming quality or performance gains.
+
 ## GTAO denoise + debug visualization
 
 Setting: `ambientOcclusion.gtao`

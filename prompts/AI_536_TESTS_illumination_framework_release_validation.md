@@ -12,6 +12,17 @@ Run the integrated release validation for the complete AI 526 descendant chain, 
 - Verify that every child completion summary links raw artifacts and states its measured limitations. Do not replace missing child evidence with projections.
 - Freeze the exact source, compiler, payload, browser, graphics, and route profiles used by the final run.
 
+## AI 533 accepted-feature handoff
+
+Read [AI 533 acceptance](../specs/graphics/illumination_533_acceptance.md). The user
+retains both baked channels, AI 548 and the current engine. That feature decision
+does not certify default-tier memory or independent CPU-reference convergence.
+Before a default/Auto promotion, explicitly resolve the 657.8125 MiB enhanced
+texture tier, historical original-map source mismatch, independent high-sample
+CPU reference, constrained-device behavior, swap peaks and the broader route/
+profile matrix. Preserve accepted optional behavior while recording those gates;
+do not infer a passed numerical threshold from subjective approval or 896 samples.
+
 Tasks:
 - Build a full traceability matrix from every AI 526 requirement to a child implementation, specification, automated test, visual case, benchmark, or documented deferment.
 - Validate these deployment/runtime matrices:

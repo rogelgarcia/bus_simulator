@@ -1,3 +1,42 @@
+# DONE — Accepted optional direct and indirect illumination
+
+## Completion — September 7, 2026
+
+- Retain both baked direct and indirect channels, independent/linked controls,
+  the AI 548 enhancement and the existing engine, as explicitly accepted by the user.
+- Preserve exact source/profile validation, independent channel loading, cached
+  switching, single-sun material composition and the moving-bus shadow contract.
+- Accept the installed complete-surface 896-sample result and record its actual
+  657.8125 MiB texture tier, bake/load costs and coverage in the
+  [acceptance record](../specs/graphics/illumination_533_acceptance.md).
+- Pass broader installed-city coverage: 12 cardinal route views, 16 bus positions,
+  2,700 measured frames and four stable off/on cycles; pass four additional
+  material, shard-lifecycle and render-optimization browser checks.
+- Preserve the historical original channel implementations and assets; their
+  current source mismatch correctly falls back. The compatible AI 548 bank is the
+  accepted city configuration. No stale-map bypass, default change or engine removal.
+- Leave independent CPU-reference convergence and default-tier release
+  qualification explicitly with AI 536. AI 534 can now consume the retained channels.
+
+Same-session final mode comparison (pooled medians; current configuration is not
+certified as identical shadow coverage to cached modes):
+
+| Mode | Frame ms | Equivalent FPS | GPU mean ms | Mean calls | Mean triangles |
+|---|---:|---:|---:|---:|---:|
+| Current engine | 29.10 | 34.36 | 31.80 | 1452 | 2954452 |
+| Cached sun, receivers off | 20.10 | 49.75 | 16.68 | 1195 | 1554424 |
+| Enhanced direct | 28.40 | 35.21 | 17.16 | 1173 | 1360786 |
+| Enhanced indirect | 28.70 | 34.84 | 17.36 | 1173 | 1360786 |
+| Enhanced both | 28.80 | 34.72 | 17.24 | 1173 | 1360786 |
+
+RTX 3060, Ryzen 5 9600X, Windows, Chrome 151/D3D11, 1280×720 at DPR 1,
+three fixed regions, three alternating rounds, 30 warm-up and 60 synchronized
+frames per window. Equivalent FPS excludes RAF waits. The acceptance record
+contains exact cameras/settings, p90/variance, allocation, container/load metrics,
+Blender signature, visual evidence and unmeasured limits. These results retain
+the enhanced quality option; they do not claim it is faster than cached sun alone.
+No production code or assets changed in this closing pass.
+
 # Problem
 
 Static sun visibility solves recurring shadow-caster work but does not provide bounced illumination. Cycles can bake direct and indirect diffuse contributions for static receivers, yet careless lightmap integration would paint shared materials, double-apply sun shadows, bake tone-mapped final color, lose PBR response, create atlas seams, or incorrectly imply that surface lightmaps can illuminate the moving bus.
@@ -17,10 +56,28 @@ Implement optional, independently switchable static direct and indirect illumina
 - Use a moderate first bake for engine assessment, then increase samples later.
 - Use the existing Blender installation; headless is preferred. Do not download Blender.
 
+## User acceptance — September 7, 2026
+
+The user is satisfied with the current result, reports better visuals and
+performance with AI 548, and explicitly requests keeping **baked direct and baked
+indirect lighting**, the AI 548 optimizations, and the current engine. Finish the
+remaining acceptance record and close this implementation prompt. Do not remove
+either baked channel, change saved/default settings, retune the engine to match
+Blender, or remove the original renderer.
+
+Completion is acceptance of the retained optional feature. Independent CPU
+convergence/default-tier certification remains AI 536 release work; it must be
+reported as unmeasured rather than inferred from sample count or user approval.
+The expanded-coverage policy must record actual allocation, cache lifetime and
+the optional desktop quality tier. The original historical comparison assets
+retain exact source validation and must fall back when the current city differs.
+See [acceptance record](../specs/graphics/illumination_533_acceptance.md).
+
 ## First implementation pass
 
-This remains an assessment preview, not a completed production acceptance record.
-The implementation and current limitations are documented in
+This section records the earlier assessment preview; the completion and user
+acceptance above supersede its open-status and ship/defer wording. The
+implementation and current limitations are documented in
 [`receiver_lightmaps.md`](../specs/graphics/receiver_lightmaps.md).
 
 - [x] Deterministic planar charts, per-instance coordinates, padding and explicit mips.
@@ -33,8 +90,9 @@ The implementation and current limitations are documented in
   and idempotent material-variation normalization.
 - [x] Finish the corrected 64-sample assessment bake and install validated assets.
 - [x] Record five-mode city measurements, captures and separate direct/indirect decisions.
-- [ ] Complete broader route/seam/material/instance and bus-shadow validation.
-- [ ] Complete high-sample reference comparison and expanded-coverage residency policy.
+- [x] Complete broader route/seam/material/instance and bus-shadow validation.
+- [x] Record the accepted 896-sample result, explicit reference-comparison limits,
+  and expanded-coverage residency policy under the September 7 retention decision.
 
 First-pass evidence: [assessment report](../tests/artifacts/screens/illumination_533/report.md).
 The installed 64-sample bake took 800.59 seconds. All five real-city modes,
@@ -42,7 +100,8 @@ source-change fallback, release on disable, 52 focused Node checks, material/mip
 GPU checks and the Options UI passed. Indirect remains opt-in for assessment;
 direct remains experimental, with promotion deferred because this sparse sunny
 view does not establish a quality or performance benefit beyond cached shadows.
-The prompt stays open for the remaining acceptance work above.
+That first pass left the acceptance work open; it is now completed under the
+September 7 retention decision and the explicitly recorded release limits.
 
 ### Loading correction — September 4, 2026
 

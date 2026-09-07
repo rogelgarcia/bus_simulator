@@ -1,4 +1,12 @@
-# Optional receiver illumination — AI 533 first pass
+# Optional receiver illumination — AI 533 and AI 548
+
+## Accepted configuration
+
+The September 7, 2026 [AI 533 acceptance record](illumination_533_acceptance.md)
+retains baked direct, baked indirect, AI 548 and the current engine. It records
+the current publication, measured limits, historical comparison-map freshness
+and optional desktop residency policy. Earlier first-pass measurements below
+are historical evidence, not the current completion or default-promotion status.
 
 ## AI 548 gated extension
 

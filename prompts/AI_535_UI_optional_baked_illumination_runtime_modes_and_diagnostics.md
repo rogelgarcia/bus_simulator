@@ -8,6 +8,11 @@ Expose the optional illumination capability through runtime Options, profile/sta
 
 ## Execution gate
 
+AI 533 is accepted with both baked channels, independent/linked controls and
+AI 548 retained; see its [acceptance record](../specs/graphics/illumination_533_acceptance.md).
+Integrate the existing controls into this mode workflow rather than recreating
+them. Preserve the current engine and the accepted optional configuration.
+
 - Do not start until AI 527 through AI 534 and AI 546 are DONE.
 - Use the lifecycle/mode controller from AI 530, AI 531 Part A's deterministic
   channel/package contract, AI 546's final static-sun visual disposition, and
@@ -27,8 +32,8 @@ direct/indirect lighting and the complete Current/Baked/Auto workflow.
 - [x] Keep baked shadows off by default so normal startup has no package fetch or baked-asset dependency.
 - [x] Move the staged shadow package index and generator output to `assets/baked_lighting/shadows/`, while keeping evidence under `tests/artifacts/`.
 - [x] Retain a validated/uploaded/compiled exact shadow publication while the user toggle is off, then re-enable it through a uniform-only cached apply with no repeat fetch, decode, upload, or city-shader compilation.
-- [ ] Add direct baked-light controls after AI 533 records its promote/defer decision.
-- [ ] Add indirect baked-light and AO policy controls after AI 533/534 are complete.
+- [ ] Integrate the retained AI 533 direct control into the final mode/preset workflow.
+- [ ] Integrate the retained indirect control with the AO policy decided by AI 534.
 - [ ] Complete the original Current/Baked/Auto diagnostics, reload/revalidate, lifecycle matrix, screenshots, and performance measurements below.
 
 Focused validation for this slice passes: 21 settings/preset/engine-lifecycle

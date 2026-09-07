@@ -44,7 +44,7 @@ configuration-menu opt-ins working throughout.
 
 ## Starting evidence
 
-Read [AI 533](AI_533_MATERIAL_baked_direct_and_indirect_illumination.md),
+Read [AI 533](AI_DONE_533_MATERIAL_baked_direct_and_indirect_illumination_DONE.md),
 the [receiver specification](../specs/graphics/receiver_lightmaps.md), and the
 [first-pass assessment](../tests/artifacts/screens/illumination_533/report.md).
 Reproduce the relevant baseline from current code before making comparisons.
