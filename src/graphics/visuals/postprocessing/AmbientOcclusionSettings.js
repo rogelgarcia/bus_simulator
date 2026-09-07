@@ -9,7 +9,7 @@ export const AMBIENT_OCCLUSION_DEFAULTS = Object.freeze({
     allMethod: 'gtao',
     scope: 'all',
     indirectScope: 'dynamic',
-    dynamic: { intensity: 1, radius: 1.5, quality: 'medium', debugView: false },
+    dynamic: { intensity: 1, radius: 1.5, quality: 'medium', debugView: false, busMethod: 'analytic' },
     alpha: {
         handling: 'exclude',
         threshold: 0.36
@@ -142,6 +142,7 @@ export function sanitizeAmbientOcclusionSettings(input) {
         scope: src.scope === 'dynamic' ? 'dynamic' : 'all',
         indirectScope: src.indirectScope === 'all' ? 'all' : 'dynamic',
         dynamic: {
+            busMethod: dynamic.busMethod === 'gtao' ? 'gtao' : 'analytic',
             intensity: clamp(dynamic.intensity, 0, 2, 1),
             radius: clamp(dynamic.radius, 0.1, 5, 1.5),
             quality: sanitizeQuality(dynamic.quality, 'medium'),

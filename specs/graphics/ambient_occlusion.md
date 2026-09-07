@@ -10,8 +10,9 @@
 
 The AO section has **Scope: All / Dynamic Only**. All retains Off / SSAO / GTAO,
 static AO and the legacy contact-blob controls. Dynamic Only has an Off / On
-control for the dedicated **dynamic contact AO** method, its own intensity,
-radius, quality and factor view, plus the common alpha policy.
+control for **Dynamic AO**, its own intensity, radius, GTAO quality and factor
+view, plus the common alpha policy. **Bus grounding: Underbody / GTAO** selects
+the analytic floor approximation or the generic screen-space path for the bus.
 
 Compatible indirect lighting selects Dynamic Only after its channel is effective
 and the first-activation fade completes. Loading, rejected data, and direct-only
@@ -25,8 +26,10 @@ The existing `bus_sim.ambientOcclusion.v1` record now also stores:
 - `indirectScope`: effective-indirect scope, default `dynamic`. Choosing All while
   indirect is active changes this preference, so it survives Save and reload.
 - `allMethod`: last enabled All method, retained across Dynamic Off / On.
-- `dynamic`: intensity `1`, radius `1.5 m`, quality `medium`, debug view `false`.
-  Low / Medium / High use 8 / 12 / 24 samples on dynamic receivers.
+- `dynamic`: `busMethod: 'analytic'`, intensity `1`, radius `1.5 m`, quality
+  `medium`, debug view `false`. `busMethod: 'gtao'` enables the comparison path.
+  Low / Medium / High request 8 / 16 / 32 GTAO samples (Three rounds these into
+  complete directional steps); the analytic rectangle does not use sample rays.
 
 The existing `mode` remains the master enable and All method. Scope selection
 never enables Off. All and Dynamic parameter banks are independent. Save, preset
@@ -37,19 +40,29 @@ current effective scope and explains which lighting context owns its preference.
 Dynamic classification comes from `getDynamicIlluminationObjects()`, including
 the parked bus, rather than velocity or mesh names. The method composes:
 
-- Dynamic-to-world contact from oriented bounds of registered opaque geometry,
-  evaluated in world space. The full underside footprint remains represented
-  when its occluder is off screen. Nearby walls can also receive the contact.
-- Dynamic self-occlusion and world-to-dynamic contact from a half-resolution depth
-  pass. Geometry outside the registered objects' expanded AO bounds is omitted.
-  Static receivers never evaluate this screen-depth term.
+- Bus-to-ground contact from the cosine-weighted form factor of an explicit
+  downward floor rectangle in root-local coordinates. Ground clearance and
+  lateral distance fade the term. It remains stable off screen and does not
+  project the whole bus volume onto nearby walls. The optional `aoUnderbody`
+  registry descriptor is fitted from the loaded bus floor; it is not inferred
+  for arbitrary registered objects.
+- Actual Three GTAO plus Poisson denoise on half-resolution, alpha-aware depth
+  for dynamic self/world contact. Non-bus objects use this generic method.
+  Geometry outside expanded participant bounds is omitted from depth rendering.
+- Generic dynamic-to-static contact uses paired GTAO results with and without
+  generic casters. Their visibility ratio removes existing static-to-static AO.
+  Both passes use identical denoise noise. The extra depth/GTAO pair is skipped
+  when only analytic bus casters are present.
 - The maximum of these terms, normalized by intensity and clamped to a remaining
   ambient factor of `[0.1, 1]`. This multiplies indirect diffuse/specular after
-  authored material AO. Direct sunlight, sun visibility and emission are unchanged.
+  authored material AO. As requested, supplementary AO fades out when direct
+  diffuse dominates indirect diffuse (ratio 0.1 to 0.5). This is an artistic
+  direct-light-priority policy, not a claim that physical occlusion vanishes in
+  sunlight. Direct sunlight, sun visibility and emission are unchanged.
 
 Dynamic Only suppresses the legacy broad static AO and contact blobs in the
-**effective** configuration, preserving their saved settings. It does not run a
-hidden full-scene SSAO/GTAO pass or exclusion-mask pass. All keeps the shipped
+**effective** configuration, preserving their saved settings. It uses bounded
+depth with fullscreen GTAO evaluation and no exclusion-mask pass. All keeps the shipped
 AI 524 retained-depth mask and its AI 525 selected architecture.
 
 See [AI 534 composition and validation](illumination_534_ao.md) for limitations,

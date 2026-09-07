@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 const chrome = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 if (existsSync(chrome)) test.use({ launchOptions: { executablePath: chrome, args: ['--use-angle=d3d11'] } });
-const root = 'tests/artifacts/screens/illumination_534/city';
+const root = 'tests/artifacts/screens/illumination_534/city_contact';
 test('AI 534 real city: GI, scope, AO Off, parked/moving bus and restoration', async ({ page }) => {
     test.setTimeout(600000);
     await mkdir(root,{recursive:true});
@@ -68,9 +68,10 @@ test('AI 534 real city: GI, scope, AO Off, parked/moving bus and restoration', a
     await page.evaluate(()=>window.ao534.bake(true));
     const warmRequestCount=requests.length;
     expect(await page.evaluate(()=>window.ao534.e.getAmbientOcclusionDebugInfo().scope)).toBe('dynamic');
-    for(let round=0;round<2;round++)for(const mode of ['off','dynamic','all']){
+    for(let round=0;round<2;round++)for(const mode of ['off','dynamic','generic','all']){
         await page.evaluate(mode=>{const{e}=window.ao534;e.setAmbientOcclusionSettings({...e.ambientOcclusionSettings,
-            mode:mode==='off'?'off':'gtao',indirectScope:mode==='all'?'all':'dynamic'});},mode);
+            mode:mode==='off'?'off':'gtao',indirectScope:mode==='all'?'all':'dynamic',
+            dynamic:{...e.ambientOcclusionSettings.dynamic,busMethod:mode==='generic'?'gtao':'analytic'}});},mode);
         measures.push(await page.evaluate(id=>window.ao534.measure(id),`gi-${mode}-${round}`));
         await page.screenshot({path:`${root}/gi-${mode}.png`});
         await writeFile(`${root}/measurements.json`,JSON.stringify({context,measures,errors},null,2));

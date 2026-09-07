@@ -44,7 +44,13 @@ function normalizeDynamicIlluminationObject(descriptor) {
     if (typeof cast !== 'boolean' || typeof receive !== 'boolean' || (!cast && !receive)) {
         throw new TypeError('[GameEngine] Dynamic illumination cast/receive flags must be boolean and at least one must be true.');
     }
-    return Object.freeze({ id, root: descriptor.root, cast, receive });
+    const underbody = descriptor.aoUnderbody ?? null;
+    if (underbody && (!['min','max'].every(key => Array.isArray(underbody[key]) && underbody[key].length === 3 && underbody[key].every(Number.isFinite))
+        || underbody.min[1] !== underbody.max[1] || underbody.min[0] >= underbody.max[0] || underbody.min[2] >= underbody.max[2])) {
+        throw new TypeError('[GameEngine] AO underside must be a finite horizontal rectangle in root coordinates.');
+    }
+    const aoUnderbody = underbody ? Object.freeze({ min: Object.freeze([...underbody.min]), max: Object.freeze([...underbody.max]) }) : null;
+    return Object.freeze({ id, root: descriptor.root, cast, receive, aoUnderbody });
 }
 
 export class GameEngine {

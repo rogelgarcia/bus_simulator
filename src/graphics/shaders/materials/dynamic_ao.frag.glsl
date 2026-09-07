@@ -4,65 +4,61 @@ uniform float dynamicAoEnabled;
 uniform float dynamicAoIntensity;
 uniform float dynamicAoRadius;
 uniform float dynamicAoDebug;
-uniform int dynamicAoSamples;
 uniform int dynamicAoCount;
 uniform sampler2D dynamicAoBounds;
-uniform sampler2D dynamicAoDepth;
+uniform sampler2D dynamicAoMap;
+uniform sampler2D dynamicAoStaticMap;
+uniform float dynamicAoGeneric;
 uniform mat4 dynamicAoProjection;
-uniform mat4 dynamicAoProjectionInverse;
 uniform mat4 dynamicAoViewInverse;
 
-vec3 dynamicAoViewPoint(vec2 uv, float depth) {
-    vec4 p = dynamicAoProjectionInverse * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
-    return p.xyz / p.w;
+// Vector form factor of a polygon edge: integrates cosine-weighted sky coverage.
+vec3 dynamicAoEdge(vec3 a, vec3 b) {
+    vec3 edge = cross(a,b);
+    float lengthEdge = length(edge);
+    return lengthEdge < 0.000001 ? vec3(0.0) : edge * (atan(lengthEdge, dot(a,b)) / lengthEdge);
 }
 
 float dynamicAoWorldContact(vec3 p, vec3 n) {
     float blocked = 0.0;
     for (int i = 0; i < dynamicAoCount; i++) {
         if (abs(vDynamicAoParticipant - float(i + 1)) < 0.25) continue;
+        vec4 lower = texelFetch(dynamicAoBounds,ivec2(4,i),0);
+        vec4 upper = texelFetch(dynamicAoBounds,ivec2(5,i),0);
+        if (lower.w < 0.5 || upper.w < 0.5) continue;
         mat4 inv = mat4(texelFetch(dynamicAoBounds, ivec2(0,i),0), texelFetch(dynamicAoBounds,ivec2(1,i),0),
             texelFetch(dynamicAoBounds,ivec2(2,i),0),texelFetch(dynamicAoBounds,ivec2(3,i),0));
-        vec4 lower = texelFetch(dynamicAoBounds,ivec2(4,i),0);
-        if (lower.w < 0.5) continue;
-        vec3 lo = lower.xyz;
-        vec3 hi = texelFetch(dynamicAoBounds,ivec2(5,i),0).xyz;
-        if (any(lessThanEqual(hi-lo,vec3(0.00001)))) continue;
+        mat3 axes = mat3(texelFetch(dynamicAoBounds,ivec2(6,i),0).xyz,
+            texelFetch(dynamicAoBounds,ivec2(7,i),0).xyz,texelFetch(dynamicAoBounds,ivec2(8,i),0).xyz);
         vec3 local = (inv * vec4(p,1.0)).xyz;
-        vec3 delta = clamp(local,lo,hi) - local;
-        mat3 axes = mat3(inverse(inv));
-        vec3 worldDelta = axes * delta;
-        float d = length(worldDelta);
-        if (d < 0.001) { blocked = 1.0; continue; }
-        if (d >= dynamicAoRadius) continue;
-        vec3 extent = (hi-lo) * 0.5;
-        float areaRadius = max(0.05, min(extent.x, min(extent.y, extent.z)));
-        vec3 facingPoint = clamp(local + normalize(mat3(inv) * n) * areaRadius, lo, hi);
-        vec3 facingDelta = axes * (facingPoint - local);
-        float facing = max(0.0, dot(n, normalize(facingDelta)));
-        float coverage = areaRadius * areaRadius / (d*d + areaRadius*areaRadius);
-        blocked = max(blocked, facing * coverage * (1.0-smoothstep(0.0,dynamicAoRadius,d)));
+        vec3 up = normalize(axes[1]);
+        // The cheap underside term is for supporting surfaces, never a wall-volume halo.
+        float groundFacing = smoothstep(0.5, 0.95, dot(n,up));
+        float clearance = (lower.y-local.y) * length(axes[1]);
+        if (groundFacing == 0.0 || clearance < -0.01 || clearance > dynamicAoRadius) continue;
+        local.y = min(local.y, lower.y-0.005);
+        vec3 lo = lower.xyz, hi = upper.xyz;
+        vec2 outside = max(max(lo.xz-local.xz,local.xz-hi.xz),vec2(0.0));
+        float lateral = length(vec2(outside.x*length(axes[0]),outside.y*length(axes[2])));
+        if (lateral >= dynamicAoRadius) continue;
+        vec3 a = axes * (vec3(lo.x,lo.y,lo.z)-local);
+        vec3 b = axes * (vec3(hi.x,lo.y,lo.z)-local);
+        vec3 c = axes * (vec3(hi.x,lo.y,hi.z)-local);
+        vec3 d = axes * (vec3(lo.x,lo.y,hi.z)-local);
+        float coverage = abs(dot(n, dynamicAoEdge(a,b)+dynamicAoEdge(b,c)+dynamicAoEdge(c,d)+dynamicAoEdge(d,a))) / 6.28318530718;
+        float fade = (1.0-smoothstep(0.0,dynamicAoRadius,lateral)) * (1.0-smoothstep(0.0,dynamicAoRadius,clearance));
+        blocked = max(blocked, clamp(coverage,0.0,1.0)*fade*groundFacing);
     }
     return blocked;
 }
 
-float dynamicAoSurfaceContact(vec3 p, vec3 n) {
+float dynamicAoSurfaceContact(vec3 p) {
     vec4 clip = dynamicAoProjection * vec4(p,1.0);
     vec2 uv = clip.xy / clip.w * 0.5 + 0.5;
-    float footprint = dynamicAoRadius * dynamicAoProjection[1][1] / max(0.1,-p.z) * 0.5;
-    float blocked = 0.0;
-    for (int i = 0; i < 24; i++) {
-        if (i >= dynamicAoSamples) break;
-        float phase = float(i) * 2.39996323;
-        float distanceFraction = sqrt((float(i)+0.5) / float(dynamicAoSamples));
-        vec2 q = uv + vec2(cos(phase)*dynamicAoProjection[0][0]/dynamicAoProjection[1][1],sin(phase)) * footprint * distanceFraction;
-        if (any(lessThan(q,vec2(0.0))) || any(greaterThan(q,vec2(1.0)))) continue;
-        float depth = texture2D(dynamicAoDepth,q).x;
-        if (depth >= 1.0) continue;
-        vec3 delta = dynamicAoViewPoint(q,depth) - p;
-        float d = length(delta);
-        if (d < 0.015 || d >= dynamicAoRadius) continue;
-        blocked += max(0.0, dot(n, delta/d)-0.08) * (1.0-smoothstep(0.0,dynamicAoRadius,d));
-    }
-    return min(1.0, blocked * 3.0 / float(dynamicAoSamples));
+    float visibility = texture2D(dynamicAoMap,uv).r;
+    if (vDynamicAoParticipant > 0.5) return clamp(1.0-visibility,0.0,1.0);
+    if (dynamicAoGeneric < 0.5) return 0.0;
+    // Static-to-static occlusion is already represented by the bake.
+    float staticVisibility = texture2D(dynamicAoStaticMap,uv).r;
+    return clamp(1.0-visibility/max(staticVisibility,0.01),0.0,1.0);
 }

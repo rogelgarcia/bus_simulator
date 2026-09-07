@@ -10,6 +10,7 @@
  * - PhysicsController via SimulationContext
  */
 import * as THREE from 'three';
+import { findVehicleUnderbodyOccluder } from '../graphics/visuals/vehicles/VehicleUnderbodyOccluder.js';
 import { getSharedCity } from '../graphics/visuals/city/City.js';
 import { createBigCitySpec } from '../app/city/specs/BigCitySpec.js';
 import { createBigCity2Spec } from '../app/city/specs/BigCity2Spec.js';
@@ -491,6 +492,7 @@ export class GameplayState {
         this._dynamicIlluminationRegistration = this.engine.registerDynamicIlluminationObject?.({
             id: `vehicle.${this.vehicle.id}`,
             root: this.busAnchor,
+            aoUnderbody: findVehicleUnderbodyOccluder(this.busAnchor),
             cast: true,
             receive: true
         }) ?? null;

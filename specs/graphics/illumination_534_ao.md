@@ -14,7 +14,7 @@ dynamic contact, while preserving the current engine and both baked channels.
 | Baked direct and shared sun visibility | Retained | Retained, never multiplied by the new AO factor |
 | Separate Cycles AO / bent-normal channel | Not installed | Not added: accepted indirect already supplies broad static occlusion |
 | Static vertex / instance AO | Existing setting and implementation | Suppressed in effective settings; intent preserved for returning to All |
-| SSAO / GTAO | Existing methods, parameters, cadence, denoise and exclusions | Not executed; dedicated dynamic contact method instead |
+| SSAO / GTAO | Existing methods, parameters, cadence, denoise and exclusions | Bounded-depth Three GTAO for visible dynamic detail; analytic bus ground contact |
 | Exclusion mask | Retained AI 524 depth reuse, with its supported fallback | No mask render: receiver exclusion is resolved before ambient composition |
 | Legacy bus contact rig | Available; heading, loaded extent and full chassis length corrected | Suppressed to avoid stacking a black overlay on dynamic AO |
 | Dynamic directional bus shadow / self-shadow | Retained | Retained independently; represents blocked sun rather than ambient contact |
@@ -35,11 +35,14 @@ are installed only during the render and restored in `finally`. Runtime shader
 hooks are excluded from authored bake-material classification; unrelated custom
 hooks still require an adapter. A regression checks both hashes and source watches.
 
-Dynamic-to-world contact is an **oriented opaque bounding-volume approximation**,
-not a ray-traced silhouette or a new sun shadow. It supplies a continuous underside
-footprint, including at wheel/floor contact, and works without an on-screen bus.
-It can overestimate contact around large holes or appendages. Dynamic self/world
-detail uses real scene depth and respects alpha cutouts, but retains ordinary
+The original oriented bounding-volume contact was rejected after user captures
+showed a broad dark halo. The corrected **bus floor rectangle** integrates its
+cosine-weighted solid angle, with clearance/lateral falloff and an upward-facing
+receiver constraint. It covers the center and works without an on-screen bus,
+but does not paint an enclosing-volume halo onto walls. A registry descriptor
+selects this bus-specific approximation; other objects use generic GTAO. It can
+overestimate wheel-well gaps and does not model all undercarriage equipment.
+Dynamic self/world detail uses actual Three GTAO on scene depth and respects alpha cutouts, but retains ordinary
 screen-space limitations: occluders entirely outside the camera view or hidden
 behind the nearest depth layer may be missed. Increasing sample quality does not
 recover unavailable layers. The technique does not promise Blender-quality
@@ -98,12 +101,19 @@ entire ground factor is visible.
   current engine, moving bus with stationary camera, Off/On, direct-only switch,
   retained baked resources, camera motion and FXAA/MSAA/TAA/Off.
 
-The synthetic linear-output probes measured equal static ambient outside dynamic
-reach; the direct-light delta agrees within 0.0001 with AO enabled/disabled.
+The synthetic linear-output probes measure equal static ambient outside dynamic
+reach and strongly direct-lit output agrees within 0.0001 with AO enabled/disabled.
+The corrected direct-light policy additionally leaves strongly sunlit pixels
+equal to AO Off, fading only the supplementary indirect occlusion. It does not
+remove physical sun shadows or modify the baked channels.
 The controlled shelf fixture distinguishes dynamic self and world-to-dynamic
 contact and returns factor 1 through fully transparent cutout texels.
 
-## Matched performance and visual evidence
+## Original checkpoint measurements (superseded contact algorithm)
+
+The following table records commit `a77656a` before the user's halo correction.
+It must not be used as performance evidence for the current hybrid. Current
+results and limitations are in [the bus contact lab](dynamic_ao_bus_lab.md).
 
 Final run data and captures are under
 `tests/artifacts/screens/illumination_534/city/`. Measurements use the same initial

@@ -104,7 +104,7 @@ export function renderGraphicsTab() {
         const receiver = this._getBakedLightingDebugInfo?.()?.receiverLightmaps;
         const effective = receiver?.state === 'active' && receiver.effective?.indirect && receiver.activationBlend >= 1;
         if ((effective ? ao.indirectScope : ao.scope) === 'dynamic') {
-            status.ao.text.textContent = mode === 'off' ? 'Off · Dynamic Only' : 'Dynamic Only · contact AO';
+            status.ao.text.textContent = mode === 'off' ? 'Off · Dynamic Only' : 'Dynamic Only · GTAO + bus grounding';
             return;
         }
         const bits = [];
@@ -598,10 +598,14 @@ export function renderGraphicsTab() {
     const scopeNote = makeEl('div', 'options-note');
     sectionAo.appendChild(scopeChoice.row); sectionAo.appendChild(scopeNote);
     const dynamicGroup = makeEl('div', 'options-section');
-    const dynamicMode = makeChoiceRow({ label: 'Dynamic contact AO', value: ao.mode === 'off' ? 'off' : 'on',
+    const dynamicMode = makeChoiceRow({ label: 'Dynamic AO', value: ao.mode === 'off' ? 'off' : 'on',
         options: [{ id: 'off', label: 'Off' }, { id: 'on', label: 'On' }],
         onChange: v => { ao.mode = v === 'off' ? 'off' : ao.allMethod; emit(); syncAoControls(); } });
     dynamicGroup.appendChild(dynamicMode.row);
+    dynamicGroup.appendChild(makeChoiceRow({ label: 'Bus grounding', value: ao.dynamic.busMethod ?? 'analytic',
+        options: [{ id: 'analytic', label: 'Underbody' }, { id: 'gtao', label: 'GTAO' }],
+        onChange: v => { ao.dynamic.busMethod = v; emit(); } }).row);
+    dynamicGroup.appendChild(makeEl('div', 'options-note', 'Underbody uses the bus floor for a stable footprint. GTAO handles visible dynamic detail and other objects. Supplementary AO fades out in direct light.'));
     for (const [key, label, min, max] of [['intensity', 'Dynamic AO intensity', 0, 2], ['radius', 'Dynamic AO radius (m)', .1, 5]]) {
         const control = makeNumberSliderRow({ label, value: ao.dynamic[key], min, max, step: .01, digits: 2,
             onChange: v => { ao.dynamic[key] = v; emit(); } });

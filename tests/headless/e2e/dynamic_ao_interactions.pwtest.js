@@ -28,7 +28,7 @@ test('Dynamic self and world interactions preserve static receivers and cutout h
             settings.dynamic.debugView=true;runtime.uniforms.dynamicAoDebug.value=1;renderer.render(scene,camera);return pixels();};
         const plain=render(false,false),self=render(true,false),world=render(false,true),both=render(true,true);
         const sample=(data,x,y,z)=>{const p=new T.Vector3(x,y,z).project(camera);const ix=Math.floor((p.x*.5+.5)*256),iy=Math.floor((p.y*.5+.5)*256);return data[(iy*256+ix)*4];};
-        const results={plain:sample(plain,0,1.35,.11),self:sample(self,0,1.35,.11),
+        const results={plain:sample(plain,0,1.75,.11),self:sample(self,0,1.75,.11),
             worldPlain:sample(plain,0,2.3,.11),world:sample(world,0,2.3,.11),both:sample(both,0,2.3,.11)};
         const beforeExcluded=render(false,true);panel.userData.excludeFromAmbientOcclusionReceiver=true;const excluded=render(false,true);
         results.excluded=sample(excluded,0,2.3,.11);results.beforeExcluded=sample(beforeExcluded,0,2.3,.11);
@@ -36,6 +36,14 @@ test('Dynamic self and world interactions preserve static receivers and cutout h
         const texture=new T.DataTexture(new Uint8Array([255,255,255,0]),1,1,T.RGBAFormat);texture.needsUpdate=true;
         worldShelf.material=new T.MeshStandardMaterial({map:texture,alphaTest:.5,side:T.DoubleSide});settings.alpha.handling='alpha_test';
         const cutout=render(false,true);results.cutout=sample(cutout,0,2.3,.11);
+        // Keep the panel static: only the registered shelf may add supplemental AO.
+        runtime.restoreBindings();scene.attach(panel);worldShelf.material=mat;
+        const genericContact=render(true,false);results.genericToStatic=sample(genericContact,0,1.75,.11);
+        root.position.x=3;
+        const staticCorner=render(true,true);results.staticCorner=sample(staticCorner,-.5,2.3,.11);
+        const map=runtime.gtao.pass.pdRenderTarget,uv=new T.Vector3(-.5,2.3,.11).project(camera),raw=new Uint16Array(4);
+        renderer.readRenderTargetPixels(map,Math.floor((uv.x*.5+.5)*map.width),Math.floor((uv.y*.5+.5)*map.height),1,1,raw);
+        results.staticCornerRawGtao=T.DataUtils.fromHalfFloat(raw[0]);
         results.materialPatched=runtime.materials.size;results.glError=renderer.getContext().getError();
         runtime.dispose();target.dispose();renderer.dispose();return results;
     });
@@ -45,4 +53,6 @@ test('Dynamic self and world interactions preserve static receivers and cutout h
     expect(result.plain).toBeGreaterThan(.99);expect(result.self).toBeLessThan(result.plain-.01);
     expect(result.world).toBeLessThan(result.worldPlain-.01);expect(result.excluded).toBeGreaterThan(.99);
     expect(result.cutout).toBeCloseTo(result.worldPlain,3);
+    expect(result.genericToStatic).toBeLessThan(.98);
+    expect(result.staticCornerRawGtao).toBeLessThan(.99);expect(result.staticCorner).toBeGreaterThan(.995);
 });

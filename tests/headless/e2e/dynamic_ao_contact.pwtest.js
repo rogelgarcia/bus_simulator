@@ -21,10 +21,10 @@ test('Dynamic contact affects ambient only and follows parked, moving and off-sc
         const ambient=new T.HemisphereLight(0xffffff,0xffffff,2); scene.add(ambient);
         const sun=new T.DirectionalLight(0xffffff,2); sun.position.set(0,10,2); scene.add(sun);
         const runtime=new DynamicAoRuntime(), settings=sanitizeAmbientOcclusionSettings({scope:'dynamic'});
-        const participants=[{id:'vehicle',root:vehicle,cast:true,receive:true}];
+        const participants=[{id:'vehicle',root:vehicle,cast:true,receive:true,aoUnderbody:{min:[-1,.3,-4],max:[1,.3,4]}}];
         const target=new T.WebGLRenderTarget(256,256,{type:T.FloatType}); renderer.setRenderTarget(target);
-        const read = (x=0,z=0) => {
-            const uv=new T.Vector3(x,0,z).project(camera), pixel=new Float32Array(4);
+        const read = (x=0,z=0,y=0) => {
+            const uv=new T.Vector3(x,y,z).project(camera), pixel=new Float32Array(4);
             renderer.readRenderTargetPixels(target,Math.floor((uv.x*.5+.5)*256),Math.floor((uv.y*.5+.5)*256),1,1,pixel);return pixel[0];
         };
         const render = (enabled, direct=true) => {
@@ -40,32 +40,39 @@ test('Dynamic contact affects ambient only and follows parked, moving and off-sc
         vehicle.rotation.y=Math.PI/2; const rotated=render(true,false); const rotatedTip=read(3,0);
         vehicle.rotation.y=0;
         body.position.y=1;
+        participants[0].aoUnderbody={min:[-1,0,-4],max:[1,0,4]};
         const touching=render(true,false), shoulder=read(1.3,0);
+        body.position.y=1.3;participants[0].aoUnderbody={min:[-1,.3,-4],max:[1,.3,4]};
         camera.position.set(1.2,.2,0);camera.lookAt(4,0,0);camera.updateMatrixWorld(true);
         render(true,false);const offscreen=read(1.6,0);
         const frustum=new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse));
         const offscreenCaster=!frustum.intersectsBox(new T.Box3().setFromObject(body));
         participants[0].cast=false;render(true,false);const noCaster=read(1.6,0);
         camera.position.set(0,12,9);camera.lookAt(0,0,0);participants[0].cast=true;
+        const wall=new T.Mesh(new T.PlaneGeometry(8,6),new T.MeshStandardMaterial({color:0xffffff,roughness:1}));
+        wall.rotation.y=-Math.PI/2;wall.position.set(1.3,3,0);scene.add(wall);
+        render(false,false);const wallBaseline=read(1.3,0,1);
+        render(true,false);const wallContact=read(1.3,0,1);wall.visible=false;
         const programs=[];for(let i=0;i<4;i++){render(false);render(true);programs.push(renderer.info.programs.length);}
         const diagnostics={...runtime.diagnostics};
         vehicle.visible=true; runtime.dispose(); const geometryRestored=body.geometry===originalGeometry;
         const glError=renderer.getContext().getError(); renderer.dispose();target.dispose();
-        return {baseline,contact,ambientContact,ambientBaseline,moved,restored,away,rotated,rotatedTip,touching,shoulder,offscreen,offscreenCaster,noCaster,programs,diagnostics,geometryRestored,glError};
+        return {baseline,contact,ambientContact,ambientBaseline,moved,restored,away,rotated,rotatedTip,touching,shoulder,offscreen,offscreenCaster,noCaster,wallBaseline,wallContact,programs,diagnostics,geometryRestored,glError};
     });
     await mkdir('tests/artifacts/screens/illumination_534',{recursive:true});
     await writeFile('tests/artifacts/screens/illumination_534/dynamic-contact.json',JSON.stringify({result,errors},null,2));
     expect(errors).toEqual([]); expect(result.glError).toBe(0); expect(result.geometryRestored).toBe(true);
     for(let i=0;i<3;i++) {
         expect(result.ambientContact[i]).toBeLessThan(result.ambientBaseline[i]*.75);
-        expect(result.baseline[i]-result.ambientBaseline[i]).toBeCloseTo(result.contact[i]-result.ambientContact[i],4);
+        expect(result.contact[i]).toBeCloseTo(result.baseline[i],4);
         expect(result.restored[i]).toBeCloseTo(result.ambientContact[i],5);
         expect(result.moved[i]).toBeCloseTo(result.ambientBaseline[i],5);
     }
     expect(result.away).toBeCloseTo(result.ambientBaseline[0],5);
     expect(result.rotatedTip).toBeLessThan(result.ambientBaseline[0]*.75);
     expect(result.touching.every(v=>v<result.ambientBaseline[0]*.25)).toBe(true);
-    expect(result.shoulder).toBeLessThan(result.ambientBaseline[0]*.95);
-    expect(result.offscreenCaster).toBe(true);expect(result.offscreen).toBeLessThan(result.noCaster*.95);
+    expect(result.shoulder).toBeGreaterThan(result.ambientBaseline[0]*.99);
+    expect(result.offscreenCaster).toBe(true);expect(result.offscreen).toBeLessThan(result.noCaster*.99);
+    expect(result.wallContact).toBeCloseTo(result.wallBaseline,5);
     expect(new Set(result.programs).size).toBe(1);
 });

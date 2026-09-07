@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { registerMaterialShaderHook } from '../../shaders/core/MaterialShaderHookRegistry.js';
 import { dynamicAoShader as source } from '../../shaders/materials/DynamicAoShader.js';
 import { isWholeObjectAoExcludedReceiver, shouldApplyAoAlphaCutout } from './AoAlphaCutoutSupport.js';
+import { DynamicGtaoPass } from './DynamicGtaoPass.js';
 
 export class DynamicAoRuntime {
     constructor() {
@@ -15,12 +16,13 @@ export class DynamicAoRuntime {
         this.target.depthTexture = new THREE.DepthTexture(1, 1, THREE.UnsignedIntType);
         this.uniforms = {
             dynamicAoEnabled: { value: 0 }, dynamicAoIntensity: { value: 1 }, dynamicAoRadius: { value: 1.5 },
-            dynamicAoDebug: { value: 0 }, dynamicAoSamples: { value: 12 }, dynamicAoCount: { value: 0 },
-            dynamicAoBounds: { value: null }, dynamicAoDepth: { value: this.target.depthTexture },
-            dynamicAoProjection: { value: new THREE.Matrix4() }, dynamicAoProjectionInverse: { value: new THREE.Matrix4() },
+            dynamicAoDebug: { value: 0 }, dynamicAoCount: { value: 0 },
+            dynamicAoBounds: { value: null },
+            dynamicAoMap: { value: null }, dynamicAoStaticMap: { value: null }, dynamicAoGeneric: { value: 0 },
+            dynamicAoProjection: { value: new THREE.Matrix4() },
             dynamicAoViewInverse: { value: new THREE.Matrix4() }
         };
-        this.diagnostics = { enabled: false, method: 'dynamic-contact', calls: 0, triangles: 0, cpuMs: 0, targetBytes: 0 };
+        this.diagnostics = { enabled: false, method: 'gtao-with-analytic-underbody', calls: 0, triangles: 0, cpuMs: 0, targetBytes: 0, activeTargetBytes: 0 };
     }
 
     patch(material) {
@@ -114,7 +116,7 @@ export class DynamicAoRuntime {
         const start = performance.now(), uniforms = this.uniforms;
         this.restoreBindings();
         uniforms.dynamicAoEnabled.value = 0;
-        Object.assign(this.diagnostics, { enabled: !!enabled, calls: 0, triangles: 0, cpuMs: 0 });
+        Object.assign(this.diagnostics, { enabled: !!enabled, calls: 0, triangles: 0, cpuMs: 0, activeTargetBytes: 0 });
         if (!enabled) return;
         scene.updateMatrixWorld(true); camera.updateMatrixWorld(true);
         const roots = participants.filter(p => p.root?.parent && (p.cast || p.receive));
@@ -123,10 +125,12 @@ export class DynamicAoRuntime {
         const rows = Math.max(1, roots.length);
         if (this.boundsTexture?.image.height !== rows) {
             this.boundsTexture?.dispose();
-            this.boundsTexture = new THREE.DataTexture(new Float32Array(rows * 24), 6, rows, THREE.RGBAFormat, THREE.FloatType);
+            this.boundsTexture = new THREE.DataTexture(new Float32Array(rows * 36), 9, rows, THREE.RGBAFormat, THREE.FloatType);
             this.boundsTexture.needsUpdate = true; uniforms.dynamicAoBounds.value = this.boundsTexture;
         }
         const bounds = roots.map(() => new THREE.Box3()), inverse = roots.map(p => p.root.matrixWorld.clone().invert());
+        const analytic = roots.map(p => p.aoUnderbody && settings.dynamic.busMethod !== 'gtao');
+        const hasGeneric = roots.some((p,i) => p.cast && !analytic[i]);
         const meshes = [], keepGeometry = new Set();
         scene.traverseVisible(mesh => {
             if (mesh.isLine || mesh.isPoints || mesh.isSprite) { meshes.push({ mesh, hidden: true }); return; }
@@ -167,20 +171,22 @@ export class DynamicAoRuntime {
         }
         const data = this.boundsTexture.image.data;
         roots.forEach((p, i) => {
-            inverse[i].toArray(data, i * 24);
+            inverse[i].toArray(data, i * 36);
             if (bounds[i].isEmpty()) bounds[i].set(new THREE.Vector3(), new THREE.Vector3());
-            bounds[i].min.toArray(data, i*24+16); bounds[i].max.toArray(data, i*24+20);
-            data[i*24+19] = roots[i].cast ? 1 : 0;
+            bounds[i].min.toArray(data, i*36+16); bounds[i].max.toArray(data, i*36+20);
+            data[i*36+19] = roots[i].cast ? 1 : 0;
+            if (analytic[i]) { data.set(p.aoUnderbody.min, i*36+16); data.set(p.aoUnderbody.max, i*36+20); }
+            data[i*36+23] = analytic[i] ? 1 : 0;
+            const axes = p.root.matrixWorld.elements;
+            for (let column = 0; column < 3; column++) data.set(axes.slice(column*4,column*4+4), i*36+24+column*4);
         });
         this.boundsTexture.needsUpdate = true;
         uniforms.dynamicAoCount.value = roots.length;
         uniforms.dynamicAoProjection.value.copy(camera.projectionMatrix);
-        uniforms.dynamicAoProjectionInverse.value.copy(camera.projectionMatrixInverse);
         uniforms.dynamicAoViewInverse.value.copy(camera.matrixWorld);
         uniforms.dynamicAoIntensity.value = settings.dynamic.intensity;
         uniforms.dynamicAoRadius.value = settings.dynamic.radius;
         uniforms.dynamicAoDebug.value = settings.dynamic.debugView ? 1 : 0;
-        uniforms.dynamicAoSamples.value = { low: 8, medium: 12, high: 24 }[settings.dynamic.quality];
         const size = renderer.getDrawingBufferSize(new THREE.Vector2());
         this.target.setSize(Math.max(1, Math.ceil(size.x/2)), Math.max(1, Math.ceil(size.y/2)));
         const previousTarget = renderer.getRenderTarget(), background = scene.background, override = scene.overrideMaterial;
@@ -198,6 +204,18 @@ export class DynamicAoRuntime {
                 else item.mesh.material = Array.isArray(item.mesh.material) ? item.depth.map(m => m ?? hiddenDepth) : item.depth[0];
             }
             renderer.setRenderTarget(this.target); renderer.setClearColor(0xffffff, 1); renderer.render(scene, camera);
+            this.gtao ??= new DynamicGtaoPass(scene, camera, this.target.depthTexture);
+            uniforms.dynamicAoMap.value = this.gtao.render(renderer, camera, this.target, settings.dynamic, reach);
+            uniforms.dynamicAoStaticMap.value = uniforms.dynamicAoMap.value;
+            uniforms.dynamicAoGeneric.value = hasGeneric ? 1 : 0;
+            if (hasGeneric) {
+                this.staticTarget ??= this.target.clone();
+                this.staticTarget.setSize(this.target.width, this.target.height);
+                for (const item of meshes) if (item.id && roots[item.id-1].cast && !analytic[item.id-1]) item.mesh.visible = false;
+                renderer.setRenderTarget(this.staticTarget); renderer.setClearColor(0xffffff, 1); renderer.render(scene, camera);
+                this.staticGtao ??= new DynamicGtaoPass(scene, camera, this.staticTarget.depthTexture, this.gtao.pass.pdNoiseTexture);
+                uniforms.dynamicAoStaticMap.value = this.staticGtao.render(renderer, camera, this.staticTarget, settings.dynamic, reach);
+            }
         } finally {
             for (const [mesh, material, visible] of saved) { mesh.material = material; mesh.visible = visible; }
             scene.background = background; scene.overrideMaterial = override;
@@ -207,7 +225,9 @@ export class DynamicAoRuntime {
         }
         uniforms.dynamicAoEnabled.value = 1;
         Object.assign(this.diagnostics, { calls: renderer.info.render.calls-before.calls, triangles: renderer.info.render.triangles-before.triangles,
-            cpuMs: performance.now()-start, participants: roots.length, targetBytes: this.target.width*this.target.height*8+data.byteLength,
+            cpuMs: performance.now()-start, participants: roots.length, targetBytes: this.target.width*this.target.height*24*(this.staticTarget ? 2 : 1)+data.byteLength,
+            activeTargetBytes: this.target.width*this.target.height*24*(hasGeneric ? 2 : 1)+data.byteLength,
+            method: 'gtao-with-analytic-underbody', analyticUnderbodies: analytic.filter(Boolean).length, genericCasters: hasGeneric,
             intensity: settings.dynamic.intensity, factorRange: [Math.max(.1, 1-settings.dynamic.intensity), 1],
             staticToStatic: false, depthSize: [this.target.width, this.target.height] });
     }
@@ -217,7 +237,8 @@ export class DynamicAoRuntime {
         for (const [mesh, record] of this.geometries) { if (mesh.geometry === record.geometry) mesh.geometry = record.original; record.geometry.dispose(); }
         this.geometries.clear();
         for (const material of this.depthMaterials.values()) { material.userData.release(); material.dispose(); } this.depthMaterials.clear();
-        this.hiddenDepth?.dispose(); this.target.dispose(); this.boundsTexture?.dispose();
+        this.hiddenDepth?.dispose(); this.target.dispose(); this.staticTarget?.dispose(); this.boundsTexture?.dispose();
+        this.gtao?.dispose(); this.staticGtao?.dispose();
     }
 
     restoreBindings() {

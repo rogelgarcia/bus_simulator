@@ -21,6 +21,9 @@ test('Only effective indirect switches AO scope, preserving Off and both banks',
     const edited = sanitize({ ...settings, dynamic: { intensity: .4, radius: 2, quality: 'high' } });
     assert.deepEqual(edited.gtao, settings.gtao);
     assert.equal(edited.dynamic.intensity, .4);
+    assert.equal(edited.dynamic.busMethod, 'analytic');
+    assert.equal(sanitize({ dynamic: { busMethod: 'gtao' } }).dynamic.busMethod, 'gtao');
+    assert.equal(sanitize({ dynamic: { busMethod: 'unknown' } }).dynamic.busMethod, 'analytic');
     const ssao = sanitize({ mode: 'ssao' });
     assert.equal(sanitize({ ...ssao, mode: 'off' }).allMethod, 'ssao');
 });

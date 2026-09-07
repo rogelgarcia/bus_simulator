@@ -10,6 +10,7 @@ test('City bus underside geometry and contact footprint cover the chassis when t
         const T = await import('three');
         const { createCityBus } = await import('/src/graphics/assets3d/models/buses/CityBus.js');
         const { BusContactShadowRig } = await import('/src/graphics/visuals/vehicles/BusContactShadowRig.js');
+        const { findVehicleUnderbodyOccluder } = await import('/src/graphics/visuals/vehicles/VehicleUnderbodyOccluder.js');
         const bus = createCityBus({ id: 'underside-audit' }); await bus.userData.readyPromise;
         bus.updateMatrixWorld(true);
         const bounds = new T.Box3().setFromObject(bus), size = bounds.getSize(new T.Vector3());
@@ -32,10 +33,14 @@ test('City bus underside geometry and contact footprint cover the chassis when t
             const forward = new T.Vector3(0, 0, 1).transformDirection(bus.matrixWorld);
             poses.push({ yaw, agreement: Math.abs(axis.dot(forward)), visible: chassis.mesh.visible, length: chassis.mesh.scale.z, width: chassis.mesh.scale.x });
         }
-        rig.dispose(); return { bounds: [bounds.min.toArray(), bounds.max.toArray()], size: size.toArray(), rays, poses };
+        bus.rotation.y=0;scene.updateMatrixWorld(true);
+        const diagnostics={},underbody=findVehicleUnderbodyOccluder(bus,diagnostics);
+        rig.dispose(); return { underbody, diagnostics, bounds: [bounds.min.toArray(), bounds.max.toArray()], size: size.toArray(), rays, poses };
     });
     const root = path.resolve('tests/artifacts/screens/illumination_534'); await mkdir(root, { recursive: true });
     await writeFile(path.join(root, 'bus-underside-audit.json'), JSON.stringify(audit, null, 2));
+    expect(audit.underbody).not.toBeNull();
+    expect(audit.underbody.min[1]).toBeCloseTo(audit.rays[0].hits[0].y,3);
     for (const ray of audit.rays) {
         expect(ray.hits.length).toBeGreaterThan(0);
         expect(ray.hits[0].normal[1]).toBeLessThan(-.99);
