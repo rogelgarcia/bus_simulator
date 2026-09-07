@@ -1,5 +1,6 @@
 // src/app/road_decoration/sidewalks/RoadSidewalkBuilder.js
 // Generates sidewalk mesh data by offsetting road boundary loops (optionally starting from curb outer edges).
+import { collapseSidewalkOffsetLobes } from './SidewalkOffsetTopology.js';
 
 const EPS = 1e-9;
 
@@ -261,10 +262,12 @@ function offsetLoop(points, offset, { miterLimit = 4, epsilon = 1e-6 } = {}) {
         out.push({ x: (Number(curr?.x) || 0) + m.x * len, z: (Number(curr?.z) || 0) + m.z * len });
     }
 
-    return out;
+    return collapseSidewalkOffsetLobes(pts, out, eps);
 }
 
 function pushTri(positions, a, b, c) {
+    const ab=[b.x-a.x,b.y-a.y,b.z-a.z],ac=[c.x-a.x,c.y-a.y,c.z-a.z];
+    if(Math.hypot(ab[1]*ac[2]-ab[2]*ac[1],ab[2]*ac[0]-ab[0]*ac[2],ab[0]*ac[1]-ab[1]*ac[0])<=EPS)return;
     positions.push(
         Number(a?.x) || 0, Number(a?.y) || 0, Number(a?.z) || 0,
         Number(b?.x) || 0, Number(b?.y) || 0, Number(b?.z) || 0,
@@ -414,8 +417,7 @@ export function buildRoadSidewalkMeshDataFromRoadEnginePrimitives(primitives, {
             const b = inner[(i + 1) % pts.length];
             const ao = outer[i];
             const bo = outer[(i + 1) % pts.length];
-            if (distSq(a, b) <= EPS) continue;
-            if (distSq(ao, bo) <= EPS) continue;
+            if (distSq(a, b) <= EPS && distSq(ao, bo) <= EPS) continue;
 
             const aTop = { x: a.x, y: topY, z: a.z };
             const bTop = { x: b.x, y: topY, z: b.z };

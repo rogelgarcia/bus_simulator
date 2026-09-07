@@ -524,7 +524,16 @@ Adjacency requires a coincident full or partial edge, matching geometric normals
 and triangles on opposite sides of the edge. The offline boundary inventory uses
 the same coplanar ownership planner as enhanced runtime geometry. Clipped overlap
 boundaries retain original barycentric UV interpolation; partial collinear edges
-must be joined, including the T-junctions created where sidewalk strips intersect.
+must be joined, including the T-junctions created where sidewalk strips intersect
+and ordinary authored T-junctions where window openings meet uninterrupted wall
+strips. Partial-edge discovery must not depend on an overlap having been clipped.
+Exposed boundaries also join across distinct source mesh instances when the same
+geometric adjacency checks pass. Mesh identity must not introduce an irradiance
+discontinuity between a building slab and its neighboring sidewalk. Internal
+edges remain scoped to their source mesh to keep the city boundary pass bounded.
+A closed solid's top edge remains exposed within its plane even when a vertical
+side shares the same vertices. Store the city boundary inventory in compact
+numeric blocks and match one plane at a time, within the standard Node heap.
 Numerical position buckets only shortlist
 candidates; the geometric checks decide. Opposite faces, creases and physical gaps
 must not be stitched. This is offline filtering: the source/runtime geometry,
@@ -536,3 +545,40 @@ Regression evidence must isolate indirect irradiance in linear HDR across the
 reproduced facade seam, inspect shaded sidewalks and preserve unrelated channel
 and toggle behavior. Use `receiver_seam_stitching.test.js` for geometric and filter
 invariants and `receiver_refinement.pwtest.js` for installed/candidate city checks.
+The city regression includes the north facade of Stone Lowrise 2 (`building_49_d`),
+asserts the captured building identity, and samples the wall-strip junction in HDR.
+The starting-block sidewalk fixture also captures the actual geometry in wireframe.
+Its slab/sidewalk probes must hit different named meshes and sample each uploaded
+GPU mip at the exact barycentrically interpolated receiver coordinate; changing
+camera size is not a reliable substitute for an explicit mip probe.
+
+Physical slab/sidewalk gaps are geometry defects, governed by
+`specs/graphics/building_slab_geometry.md`. Fixing those changes the resolved
+source and requires fresh compatible bakes; seam reprocessing must not relabel
+old geometry samples as current.
+
+The enhanced surface profile v5 uses `continuous-planar-surfaces-v1` raster
+allocation. A connected, consistently oriented coplanar island with one verified
+affine UV projection retains that projection and a single sampling lattice across
+all its triangles. A thin triangulation wedge does not need a separate lighting
+region merely because its centroid misses a pixel. The whole island remains a
+receiver, including subtexel faces; a subpixel island receives a common raster
+phase that guarantees an interior sample. The existing written-sample and mip
+validation gates still apply. Creases, disconnected islands, overlapping faces,
+and non-affine projections do not qualify for this shared allocation.
+
+The historical independent-triangle policy remains readable for authenticated
+older packages. New layouts change profile identity and require fresh sky and
+bounce passes. Edge-only color checks are insufficient: regression coverage must
+also check triangle interiors and affine mapping across differently triangulated
+flat fans (`receiver_surface_charts.test.js`). Natural smooth occlusion near a
+wall is retained; no constant-color override is applied to shaded surfaces.
+
+Independent-pass coverage must agree over the base-level receiver bilinear
+footprint. Blender-generated outer margins may have different fractional alpha;
+only discrepancies proven outside every triangle's sampling footprint may be
+discarded while rebuilding chart padding from common valid samples. Missing
+surface data, unknown-chart coverage and empty charts still block publication.
+Per-page reports authenticate the count of discarded margin differences. Mips
+are generated after this padding step. `receiver_page_padding.test.js` covers
+both permitted external margins and rejected surface/boundary data loss.

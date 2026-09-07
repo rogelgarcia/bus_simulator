@@ -4,6 +4,7 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { receiverChartSeams, receiverSeamConstraints, stitchReceiverSeams, receiverSeamComponents, stitchReceiverPageFiles } from '../../../tools/receiver_lightmaps/ReceiverSeamStitching.mjs';
+import { createReceiverBoundaryInventory } from '../../../tools/receiver_lightmaps/ReceiverVisibleSeams.mjs';
 
 function fixture(raised = 0, back = false) {
     const coordinates = [0,0,0, 2,0,0, 0,2,0, 2,2,raised, 0,2,raised, 2,0,raised];
@@ -27,6 +28,47 @@ test('UV seams join coplanar neighbors, including translated surfaces, but prese
     // A crease shares its edge yet requires a different irradiance on either face.
     const original = f.parsed.getBuffer(); new Float32Array(original.buffer)[11] = 1;
     assert.equal(receiverChartSeams(f.parsed, f.charts, f.profile).length, 0);
+});
+
+test('A continuous surface joins across separate meshes, including partial edges, without joining gaps or overlaps', () => {
+    const f = fixture();
+    const instance = f.parsed.manifest.meshInstances[0];
+    f.parsed.manifest.meshInstances.push({ ...instance, id: 'second' });
+    f.charts[1].instanceId = 'second';
+    assert.equal(receiverChartSeams(f.parsed, f.charts, f.profile).length, 1);
+    instance.matrixThreeWorld = [...instance.matrixThreeWorld];
+    instance.matrixThreeWorld[14] += .001;
+    assert.equal(receiverChartSeams(f.parsed, f.charts, f.profile).length, 0);
+    instance.matrixThreeWorld[14] -= .001;
+    const coordinates = new Float32Array([0,0,0, 1,0,0, 1,2,0, 1,0,0, 2,0,0, 1,1,0]);
+    f.parsed.getBuffer = () => new Uint8Array(coordinates.buffer);
+    assert.equal(receiverChartSeams(f.parsed, f.charts, f.profile).length, 1, 'Short mesh edge meets part of the other mesh edge');
+    coordinates[12] = .5;
+    assert.equal(receiverChartSeams(f.parsed, f.charts, f.profile).length, 0, 'Overlapping interiors are not a shared boundary');
+});
+
+test('A closed slab still exposes its top boundary for continuity with the neighboring mesh', () => {
+    const f = fixture();
+    f.parsed.manifest.meshInstances.push({ ...f.parsed.manifest.meshInstances[0], id:'second' });
+    f.charts[1].instanceId = 'second';
+    const coordinates = new Float32Array([...new Float32Array(f.parsed.getBuffer().buffer), 0,2,0, 2,0,0, 0,2,-1]);
+    f.parsed.getBuffer = () => new Uint8Array(coordinates.buffer);
+    f.charts.push({ ...f.charts[0], id:'side', triangles:[{offset:6,uv:[[0,0],[2,0],[0,2]]}] });
+    const seams = receiverChartSeams(f.parsed, f.charts, f.profile);
+    assert.equal(seams.length, 1, 'The vertical side must not hide the flat top boundary');
+    assert.ok(seams.every(s => s.a.chart !== 'side' && s.b.chart !== 'side'));
+});
+
+test('Compact city boundary blocks preserve all seams across allocation boundaries', () => {
+    const inventory = createReceiverBoundaryInventory();
+    for (let i=0;i<2500;i++) for (const side of [-1,1]) inventory.add({
+        chart:{id:i+'/'+side,instanceId:String(side),page:0},normal:[0,0,1],
+        points:[[i*2,0,0],[i*2,1,0]],pixels:[[i*2,0],[i*2,1]],third:[i*2+side,.5,0]
+    });
+    const seams = [...inventory.seams()];
+    assert.equal(seams.length,2500);
+    assert.equal(new Set(seams.map(s=>s.a.chart.split('/')[0])).size,2500);
+    for (const seam of seams) assert.deepEqual(seam.a.pixels,seam.b.pixels);
 });
 
 test('Disconnected surfaces solve independently and cross-page mip files preserve all non-seam samples', async () => {
@@ -60,6 +102,20 @@ test('Disconnected surfaces solve independently and cross-page mip files preserv
             }
         }
     }
+});
+
+test('Unclipped facade T-junctions join each shorter edge to the uninterrupted wall strip', () => {
+    const f = fixture(), points = [[0,0,0],[1,0,0],[1,2,0], [1,0,0],[2,0,0],[1,1,0], [1,1,0],[2,2,0],[1,2,0]];
+    const bytes = new Uint8Array(new Float32Array(points.flat()).buffer);
+    f.parsed.getBuffer = () => bytes;
+    f.charts = [0,1,2].map(i => ({ ...f.charts[0], id:'strip'+i, page:i,
+        triangles:[{offset:i*3,uv:points.slice(i*3,i*3+3).map(p=>p.slice(0,2))}] }));
+    const seams = receiverChartSeams(f.parsed,f.charts,f.profile);
+    assert.equal(seams.length,2,'Both wall segments must meet the same long edge without being clipped first');
+    for (const seam of seams) assert.deepEqual(seam.a.pixels,seam.b.pixels);
+    const reversed = receiverChartSeams(f.parsed,f.charts.toReversed(),f.profile);
+    assert.equal(reversed.length,2,'Shorter edges encountered first must still match the long edge exactly once');
+    for (const seam of reversed) assert.deepEqual(seam.a.pixels,seam.b.pixels);
 });
 
 test('Overlapping coplanar quads stitch the partial boundaries exposed by runtime ownership', () => {

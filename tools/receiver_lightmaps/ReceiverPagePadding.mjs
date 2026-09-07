@@ -12,6 +12,43 @@ export async function readReceiverNpy(file, size) {
     return new Float32Array(bytes.buffer,bytes.byteOffset+prefix+length,size*size*4);
 }
 
+// Blender's generated margins can differ between passes (including fractional
+// alpha). Require identical coverage over the base-level receiver bilinear
+// footprint; outer padding and mips are rebuilt from common, authenticated samples.
+function validatePassCoverage(sky,bounce,page,charts,profile) {
+    const size=profile.pageSize,differences=new Uint8Array(size*size);
+    let remaining=0;
+    for(let i=0;i<differences.length;i++)if((sky[i*4+3]>.5)!==(bounce[i*4+3]>.5)){differences[i]=1;remaining++;}
+    const total=remaining;
+    const fail=()=>{throw new Error('Receiver pass raster coverage differs on page '+page);};
+    for(const chart of charts) {
+        if(!remaining)break;
+        if(chart.page!==page)continue;
+        const {x:ox,y:oy,width:w,height:h}=chart;
+        if(ox<0||oy<0||ox+w>size||oy+h>size)throw new Error('Receiver padding escaped its page');
+        let triangles;
+        for(let y=oy;y<oy+h;y++)for(let x=ox;x<ox+w;x++) {
+            const index=y*size+x;
+            if(!differences[index])continue;
+            triangles??=chart.triangles.map(t=>t.uv.map(uv=>uv.map((v,c)=>(v-chart.min[c])*chart.texelsPerMeter[c]
+                +profile.padding+(chart.pixelOffset?.[c]??.5)+(c?oy:ox))));
+            // A bilinear texel influences coordinates up to one texel from its
+            // center. SAT tests that support square against each UV triangle.
+            for(const p of triangles) {
+                const cx=x+.5,cy=y+.5;
+                if(cx+1<Math.min(...p.map(v=>v[0]))||cx-1>Math.max(...p.map(v=>v[0]))
+                    ||cy+1<Math.min(...p.map(v=>v[1]))||cy-1>Math.max(...p.map(v=>v[1])))continue;
+                const sign=Math.sign((p[1][0]-p[0][0])*(p[2][1]-p[0][1])-(p[1][1]-p[0][1])*(p[2][0]-p[0][0]));
+                if(p.every((a,i)=>{const b=p[(i+1)%3],dx=b[0]-a[0],dy=b[1]-a[1];
+                    return sign*(dx*(cy-a[1])-dy*(cx-a[0]))>=-Math.abs(dx)-Math.abs(dy);}))fail();
+            }
+            differences[index]=0;remaining--;
+        }
+    }
+    if(remaining)fail(); // Stray coverage outside every declared chart is invalid.
+    return total;
+}
+
 // Exact one-dimensional squared Euclidean distance transform. Infinite entries
 // have no seed; deterministic ties choose the earlier seed.
 function distanceTransform(values,n,distance,nearest,vertices,borders) {
@@ -38,12 +75,10 @@ export function extendReceiverPage(data,sky,bounce,page,charts,profile,hidden=nu
     const size=profile.pageSize;
     if([data,sky,bounce].some(a=>!(a instanceof Float32Array)||a.length!==size*size*4))throw new Error('Invalid receiver padding input');
     if(hidden && (!(hidden instanceof Uint8Array)||hidden.length!==size*size))throw new Error('Invalid hidden receiver mask');
-    // Lighting passes share the same receiver raster. A lost disk-write block
-    // must fail publication, not be mistaken for an ordinary UV padding gap.
-    for(let i=3;i<data.length;i+=4)if((sky[i]>.5)!==(bounce[i]>.5))throw new Error('Receiver pass raster coverage differs on page '+page);
+    const passMarginDifferences=validatePassCoverage(sky,bounce,page,charts,profile);
     const length=size+1, f=new Float64Array(length),d=new Float64Array(length),nearest=new Int32Array(length),v=new Int32Array(length),z=new Float64Array(length+1);
     let rows=new Float64Array(0),xs=new Int32Array(0),seedMask=new Uint8Array(0);
-    const report={page,charts:0,triangles:0,extendedPixels:0,hiddenSamples:0,fullyHiddenCharts:0,rawMissingCenters:0,rawMissingBoundarySamples:0,maximumReceiverExtensionTexels:0};
+    const report={page,charts:0,triangles:0,passMarginDifferences,extendedPixels:0,hiddenSamples:0,fullyHiddenCharts:0,rawMissingCenters:0,rawMissingBoundarySamples:0,maximumReceiverExtensionTexels:0};
     for(const chart of charts) {
         if(chart.page!==page)continue;
         const {width:w,height:h,x:ox,y:oy}=chart,count=w*h;

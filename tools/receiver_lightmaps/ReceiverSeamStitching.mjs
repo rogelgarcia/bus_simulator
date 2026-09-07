@@ -1,9 +1,9 @@
 // Constrains lightmap filtering to agree across UV seams on the same physical plane.
 import { open } from 'node:fs/promises';
 import path from 'node:path';
-import { receiverVisiblePieces, receiverClippedEdgeSeams } from './ReceiverVisibleSeams.mjs';
+import { receiverVisiblePieces, receiverClippedEdgeSeams, createReceiverBoundaryInventory } from './ReceiverVisibleSeams.mjs';
 
-export const RECEIVER_SEAM_POLICY = 'visible-coplanar-bilinear-seam-constraints-v2';
+export const RECEIVER_SEAM_POLICY = 'visible-coplanar-bilinear-seam-constraints-v4';
 const sub = (a, b) => a.map((v, c) => v - b[c]);
 const dot = (a, b) => a.reduce((sum, v, c) => sum + v * b[c], 0);
 const cross = (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
@@ -25,7 +25,7 @@ export function receiverChartSeams(parsed, charts, profile) {
         if (!groups.has(chart.instanceId)) groups.set(chart.instanceId, []);
         groups.get(chart.instanceId).push(chart);
     }
-    const seams = [];
+    const seams = [], boundaries = createReceiverBoundaryInventory();
     // Keep only one source object's edge inventory resident at a time. Source
     // triangles retain identity across batching and private runtime clipping.
     for (const [id, members] of groups) {
@@ -45,7 +45,7 @@ export function receiverChartSeams(parsed, charts, profile) {
                     const next = (c+1)%3, reverse = keys[c] > keys[next], order = reverse ? [next, c] : [c, next];
                     const key = order.map(i => keys[i]).join('/');
                     const edge = { chart, normal, points: order.map(i => p[i]), pixels: order.map(i => pixels[i]), third: p[(c+2)%3], clipped: pieces.has(triangle.offset) };
-                    if (pieces.size) visibleEdges.push(edge);
+                    visibleEdges.push(edge);
                     const previous = edges.get(key) ?? [];
                     for (const other of previous) {
                         if (other.chart === chart || dot(normal, other.normal) < 1-1e-10
@@ -58,8 +58,15 @@ export function receiverChartSeams(parsed, charts, profile) {
                 }
             }
         }
-        if (pieces.size) seams.push(...receiverClippedEdgeSeams(visibleEdges));
+        seams.push(...receiverClippedEdgeSeams(visibleEdges));
+        // Keep boundaries of each plane, including the top of a closed slab.
+        // Its vertical side shares vertices but must not hide the top edge.
+        // Internal triangulation and UV edges were handled within the mesh.
+        for (const entries of edges.values()) for (const edge of entries) {
+            if (!entries.some(other => other !== edge && dot(edge.normal, other.normal) > 1-1e-10)) boundaries.add(edge);
+        }
     }
+    for (const seam of boundaries.seams()) seams.push(seam);
     return seams;
 }
 

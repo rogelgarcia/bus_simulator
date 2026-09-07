@@ -2,6 +2,7 @@
 // @ts-check
 import { ReceiverCoverageAudit } from './ReceiverCoverageContract.js';
 import { createRasterReceiverCharts } from './ReceiverRasterCharts.js';
+import { canShareReceiverSurface } from './ReceiverSurfaceCharts.js';
 
 export const RECEIVER_ATLAS_SCHEMA = 'bus-sim-receiver-atlas-v1';
 export const RECEIVER_LIGHTMAP_PROFILE = Object.freeze({
@@ -74,7 +75,7 @@ export function createReceiverAtlas(parsed, profile = RECEIVER_LIGHTMAP_PROFILE,
         || profile.irradianceRepresentation !== 'surface-diffuse-v1' || !profile.coverage
         || layout?.schema !== profile.chartLayout || layout.sourceHash !== manifest.hashes.resolvedSource)) throw new Error('Receiver layout/source mismatch.');
     if (profile.packing && (profile.packing !== 'height-shelves-v1' || !profile.coverage)) throw new Error('Unsupported complete atlas packing.');
-    if (profile.rasterCoverage && (profile.rasterCoverage !== 'independent-triangle-centroids-v1' || !profile.chartLayout)) throw new Error('Unsupported receiver raster coverage.');
+    if (profile.rasterCoverage && (!['independent-triangle-centroids-v1','continuous-planar-surfaces-v1'].includes(profile.rasterCoverage) || !profile.chartLayout)) throw new Error('Unsupported receiver raster coverage.');
     const layoutCharts = new Map(), layoutDegenerates = new Map();
     const mappingIds = new Set(manifest.receiverMappings.map(m => m.id)), chartIds = new Set();
     for (const chart of layout?.charts ?? []) {
@@ -141,7 +142,9 @@ export function createReceiverAtlas(parsed, profile = RECEIVER_LIGHTMAP_PROFILE,
                 }
                 // Keep even a tiny bevel island rasterizable; this increases its density, never removes a face.
                 chart.texelsPerMeter = chart.max.map((v, c) => Math.max(2, (v-chart.min[c])/texelSizeMeters)/(v-chart.min[c]));
-                for (const raster of profile.rasterCoverage ? createRasterReceiverCharts(chart,texelSizeMeters) : [chart]) {
+                const continuous=profile.rasterCoverage==='continuous-planar-surfaces-v1'&&canShareReceiverSurface(chart,
+                    t=>[0,1,2].map(c=>worldPoint(read,index(t.offset+c),instance.matrixThreeWorld)));
+                for (const raster of profile.rasterCoverage ? createRasterReceiverCharts(chart,texelSizeMeters,continuous) : [chart]) {
                     raster.width = Math.ceil((raster.max[0]-raster.min[0])*raster.texelsPerMeter[0])+ (raster.pixelOffset ? 2 : 1) + padding*2;
                     raster.height = Math.ceil((raster.max[1]-raster.min[1])*raster.texelsPerMeter[1])+ (raster.pixelOffset ? 2 : 1) + padding*2;
                     if (raster.width > pageSize || raster.height > pageSize) coverageAudit.recordOversized(raster);

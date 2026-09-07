@@ -45,9 +45,16 @@ function faceChart(chart, triangle, texelSize) {
     return result;
 }
 
-export function createRasterReceiverCharts(chart, texelSize) {
+export function createRasterReceiverCharts(chart, texelSize, continuousSurface = false) {
     const initial=bounds(chart,texelSize), broad=[],narrow=[];
     const covered=rasterCoverage(initial);
+    if(continuousSurface) {
+        if(!covered.some(Boolean))initial.pixelOffset=[0,1].map(c=>{
+            const centroid=initial.triangles[0].uv.reduce((sum,p)=>sum+(p[c]-initial.min[c])*initial.texelsPerMeter[c],0)/3;
+            return 1.5-(centroid-Math.floor(centroid));
+        });
+        return [initial];
+    }
     for (let index=0;index<chart.triangles.length;index++) {
         const triangle=chart.triangles[index];
         if (!covered[index]) narrow.push(faceChart(chart,triangle,texelSize));

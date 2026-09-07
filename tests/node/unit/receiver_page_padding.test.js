@@ -24,3 +24,24 @@ test('A partially unwritten lighting pass is rejected before chart padding can h
     assert.throws(()=>extendReceiverPage(data,sky,bounce,0,[],{pageSize:size,padding:2}),/pass raster coverage differs/);
     assert.deepEqual(data,original);
 });
+
+test('Generated pass margins may differ only outside the receiver bilinear footprint',()=>{
+    const size=16,data=new Float32Array(size*size*4),bounce=new Float32Array(data.length);
+    const index=(x,y)=>(y*size+x)*4;
+    const chart={id:'plane',page:0,x:0,y:0,width:8,height:8,min:[0,0],texelsPerMeter:[1,1],
+        triangles:[{uv:[[0,0],[2,0],[0,2]]},{uv:[[2,0],[2,2],[0,2]]}]};
+    const profile={pageSize:size,padding:2};
+    bounce[index(3,3)+3]=1;const sky=bounce.slice();
+    data.set([.2,.3,.4,1],index(3,3));
+    bounce[index(6,3)+3]=1; // Outside geometry and every bilinear sampling footprint.
+    const report=extendReceiverPage(data,sky,bounce,0,[chart],profile);
+    assert.equal(report.passMarginDifferences,1);
+    assert.deepEqual([...data.slice(index(6,3),index(6,3)+4)],[...data.slice(index(3,3),index(3,3)+4)]);
+    for(const [x,y] of [[3,3],[5,3]]) {
+        const badSky=sky.slice(),badBounce=bounce.slice();
+        badSky[index(x,y)+3]=0;badBounce[index(x,y)+3]=1;
+        const untouched=data.slice();
+        assert.throws(()=>extendReceiverPage(data,badSky,badBounce,0,[chart],profile),/pass raster coverage differs/);
+        assert.deepEqual(data,untouched);
+    }
+});

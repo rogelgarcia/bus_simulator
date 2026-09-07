@@ -76,6 +76,14 @@ identity checks. It does not run Cycles or participate in the default full tree.
 Fresh bakes and maintenance reprocessing share the same packager and publication
 gate; neither overwrites the original raw samples.
 
+When independent sky and bounce passes completed but packaging failed, the same
+maintenance leaf accepts their original `.partial` staging directory instead of
+a publication. Both pass receipts and every raw page must authenticate against
+the same job, atlas and Blender build. Consolidation is rebuilt in a fresh stage;
+the current compiler then checks source, layout and profile identity before
+packaging. Incomplete passes cannot use this recovery path. The standard receiver
+publication gates still apply.
+
 The default invocation produces validated candidates. Explicit `--publish` applies
 only where the existing domain release policy allows it. Receiver indexes switch
 last after channel authentication. Visibility publishes only after zero-miss native

@@ -48,7 +48,7 @@ const profile = { ...RECEIVER_LIGHTMAP_PROFILE,
 if (!Number.isInteger(profile.samples) || profile.samples < 1 || profile.samples > 4096) throw new Error('Samples must be 1–4096.');
 profile.id = `ai533.cycles.diffuse.complete${profile.samples}.v2`;
 if (args.get('--enhanced') === 'true') Object.assign(profile, {
-    id: `ai553.cycles.surface.complete${profile.samples}.v4`, irradianceRepresentation: 'surface-diffuse-v1',
+    id: `ai553.cycles.surface.complete${profile.samples}.v5`, irradianceRepresentation: 'surface-diffuse-v1',
     worldDirection: 'outward-blender-z-up-v1',
     environmentSun: 'single-authored-sun-v1', environmentSunRadiusDegrees: 4,
     directRepresentation: 'hybrid-sun-visibility-v1', transportPolicy: RECEIVER_ALPHA_TRANSPORT,
@@ -56,7 +56,7 @@ if (args.get('--enhanced') === 'true') Object.assign(profile, {
     coordinateLayout: 'row-chunks-v1',
     indirectEncoding: 'rgb9e5_le',
     device: args.get('--device') ?? 'CPU',
-    targetBatching: 'joined-receivers-v1', rasterCoverage: 'independent-triangle-centroids-v1',
+    targetBatching: 'joined-receivers-v1', rasterCoverage: 'continuous-planar-surfaces-v1',
     pageTransport: 'bounded-page-shards-v1',
     pageSize: 4096, texelSizeMeters: .5, padding: 2, mipLevels: 2, compact: true,
     maxPages: Number(args.get('--pages') ?? 9)

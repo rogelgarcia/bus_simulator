@@ -277,14 +277,14 @@ test('RoadSidewalkBuilder: grass source and onset share one canonical point topo
     );
 });
 
-test('RoadSidewalkBuilder: Grass Lab fixes its junction input without changing shared sidewalk builders', () => {
+test('RoadSidewalkBuilder: both tight city corners and wider Grass Lab corners have simple boundaries', () => {
     const historical = buildGrassLabSidewalkBoundaryFixture({
         filletRadiusFactor: ROAD_DEFAULTS.junctions.filletRadiusFactor
     });
     const lab = buildGrassLabSidewalkBoundaryFixture({ filletRadiusFactor: 1.0 });
 
     assert.equal(historical.renderedSourceLoops.length, 1);
-    assert.ok(findProperNonAdjacentSelfIntersections(historical.renderedSourceLoops[0]).length > 0);
+    assert.deepEqual(findProperNonAdjacentSelfIntersections(historical.renderedSourceLoops[0]), []);
     assert.equal(lab.renderedSourceLoops.length, 1);
     assert.deepEqual(findProperNonAdjacentSelfIntersections(lab.renderedSourceLoops[0]), []);
     assert.ok(lab.renderedSourceLoops[0].length > historical.renderedSourceLoops[0].length);

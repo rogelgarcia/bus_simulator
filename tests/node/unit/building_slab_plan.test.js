@@ -67,8 +67,9 @@ test('BuildingSlabPlan: a sidewalk within reach gets an exact flush cut', () => 
     assert.equal(plans.length, 1);
     const plan = plans[0];
 
-    const flushPoints = plan.top.filter((p) => Math.abs(p.x - 8.5) < 0.08 && Math.abs(p.z) < 5);
+    const flushPoints = plan.top.filter((p) => Math.abs(p.x - 8.5) < 0.08);
     assert.ok(flushPoints.length >= 2, `expected flush points on the boundary, got ${flushPoints.length}`);
+    assert.ok(Math.min(...flushPoints.map(p => p.z)) < -4 && Math.max(...flushPoints.map(p => p.z)) > 4);
     assert.ok(plan.edgeModes.includes(SLAB_EDGE_MODE.CONNECT));
 
     const b = loopBounds(plan.top);
@@ -176,4 +177,16 @@ test('BuildingSlabPlan: pockets enclosed by slabs and sidewalk fill up', () => {
 test('BuildingSlabPlan: degenerate input yields no plans', () => {
     assert.deepEqual(planBuildingSlabs({ footprintLoops: [] }), []);
     assert.deepEqual(planBuildingSlabs({ footprintLoops: [[{ x: 0, z: 0 }]] }), []);
+});
+
+test('BuildingSlabPlan: flush street corner reconstructs the exact intersection after grid sampling',()=>{
+    const boundary=[[[-20,8.72],[8.72,8.72],[8.72,-20],[20,-20],[20,20],[-20,20]].map(([x,z])=>({x,z}))];
+    const plans=planBuildingSlabs({footprintLoops:[rect(-5,-5,7.914,8.041)],sidewalkBoundaries:boundary});
+    assert.ok(plans[0].top.some(p=>Math.hypot(p.x-8.72,p.z-8.72)<1e-9),'Sampled diagonal must meet the exact street corner');
+    const top = plans[0].top;
+    for (let i = 0; i < top.length; i++) {
+        const a = top[(i + top.length - 1) % top.length], b = top[i], c = top[(i + 1) % top.length];
+        const area = Math.abs((b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x));
+        assert.ok(area > 1e-9, 'Aligned boundary must not leave collinear ears for float32 triangulation');
+    }
 });

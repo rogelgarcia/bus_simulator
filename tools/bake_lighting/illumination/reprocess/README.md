@@ -19,3 +19,12 @@ without that record is rejected, even if its files have the expected names.
 It stages new packages in the framework run directory; add `--publish` to install
 them through the existing receiver publication validator. Original samples remain
 unchanged. Ordinary full bakes use the same filtering automatically.
+
+If both independent passes finished but final packaging failed, use
+`:staging=<original-consolidating.partial>` instead of `:publication`, with the
+same `:layout` option. The leaf authenticates every sky/bounce page against its
+pass receipt and original job/atlas, rejects incomplete or mixed-build passes,
+and reconstructs consolidation in a new staging directory. It then requires the
+current source, layout, profile and compiler identity to match before packaging.
+This runs Blender only to combine saved arrays; it does not run Cycles. The
+original partial directory and its raw samples remain unchanged.

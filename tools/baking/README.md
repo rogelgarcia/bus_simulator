@@ -63,6 +63,9 @@ represent the complete current city: the audit requires 303 pages, has eight
 unmappable ranges and 14 unsupported transport materials. It therefore remains an
 explicit compatibility/fixture target and fails closed on the current full-city
 source. The framework does not reinstate the old partial-selection heuristics.
+Enhanced surface profile v5 preserves a continuous sampling lattice for verified
+flat connected UV islands. Topology or allocation changes require fresh sky and
+bounce samples; `reprocess` cannot convert older triangle-isolated maps to v5.
 Every material has its
 own callable `run.mjs` under `tools/bake_materials/<material>/`. `--target <job/id>`
 is equivalent to that entry point and also works for registered preparation jobs.

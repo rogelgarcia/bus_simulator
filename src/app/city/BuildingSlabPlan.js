@@ -16,6 +16,8 @@
 // sidewalk geometry; contour parts on the sidewalk boundary are vertical
 // joints, everything else gets a bevel skirt.
 
+import { alignBuildingSlabBoundary } from './BuildingSlabBoundary.js';
+
 const EPS = 1e-9;
 
 export const BUILDING_SLAB_DEFAULTS = Object.freeze({
@@ -664,7 +666,10 @@ export function planBuildingSlabs({
 
         for (const raw of rawLoops) {
             if (Math.abs(signedAreaXZ(raw)) < BUILDING_SLAB_DEFAULTS.minLoopAreaSqMeters) continue;
-            const outline = simplifyLoop(raw, BUILDING_SLAB_DEFAULTS.simplifyToleranceMeters);
+            const outline = simplifyLoop(alignBuildingSlabBoundary(
+                simplifyLoop(raw, BUILDING_SLAB_DEFAULTS.simplifyToleranceMeters), swNear,
+                BUILDING_SLAB_DEFAULTS.flushToleranceMeters, Math.SQRT2*cell+BUILDING_SLAB_DEFAULTS.simplifyToleranceMeters
+            ), 1e-8);
             if (outline.length < 3) continue;
 
             const count = outline.length;
