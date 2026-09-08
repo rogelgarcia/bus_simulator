@@ -1,5 +1,6 @@
 // src/graphics/gui/gameplay/GameplayDebugPanel.js
 // Lightweight gameplay debug overlay (DOM only).
+import { applyMaterialSymbolToButton } from '../shared/materialSymbols.js';
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
@@ -13,7 +14,8 @@ const HELP = {
     buttons: {
         logs: 'Toggles the right column (logs + tree).\n\nOn: shows logs and tree view.\nOff: hides them to save space.',
         clear: 'Clears the log output (does not affect the simulation).',
-        close: 'Closes the gameplay debug overlay (does not affect the simulation).'
+        close: 'Closes the gameplay debug overlay (does not affect the simulation).',
+        copy: 'Copies the current bus and camera positions and orientations as a replayable gameplay pose.'
     },
     keys: {
         title: 'Shows which keyboard inputs are currently pressed.\n\nThis is what the input layer sees before it is mapped into the physics/vehicle controller.',
@@ -163,9 +165,18 @@ function makeValueRow(label, { tooltip = null } = {}) {
 function makeDraggable(wrap, handle) {
     if (!wrap || !handle) return;
     handle.classList.add('gpd-draggable');
+    let stopDrag = null;
+    const constrain = () => {
+        if (wrap.classList.contains('is-minimized')) return;
+        const rect = wrap.getBoundingClientRect();
+        wrap.style.left = `${clamp(rect.left, 8, Math.max(8, window.innerWidth - rect.width - 8))}px`;
+        wrap.style.top = `${clamp(rect.top, 8, Math.max(8, window.innerHeight - rect.height - 8))}px`;
+    };
 
     const onPointerDown = (event) => {
-        if (event.button !== 0) return;
+        if (event.button !== 0 || wrap.classList.contains('is-minimized')) return;
+        if (event.target.closest('button, select, input, textarea, a')) return;
+        stopDrag?.();
         event.preventDefault();
         const rect = wrap.getBoundingClientRect();
         const offsetX = event.clientX - rect.left;
@@ -179,6 +190,7 @@ function makeDraggable(wrap, handle) {
         const onPointerMove = (moveEvent) => {
             wrap.style.left = `${moveEvent.clientX - offsetX}px`;
             wrap.style.top = `${moveEvent.clientY - offsetY}px`;
+            constrain();
         };
 
         const onPointerUp = () => {
@@ -186,7 +198,9 @@ function makeDraggable(wrap, handle) {
             window.removeEventListener('pointermove', onPointerMove);
             window.removeEventListener('pointerup', onPointerUp);
             window.removeEventListener('pointercancel', onPointerUp);
+            stopDrag = null;
         };
+        stopDrag = onPointerUp;
 
         window.addEventListener('pointermove', onPointerMove);
         window.addEventListener('pointerup', onPointerUp);
@@ -194,6 +208,15 @@ function makeDraggable(wrap, handle) {
     };
 
     handle.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('resize', constrain);
+    const observer = new ResizeObserver(constrain);
+    observer.observe(wrap);
+    return () => {
+        stopDrag?.();
+        observer.disconnect();
+        window.removeEventListener('resize', constrain);
+        handle.removeEventListener('pointerdown', onPointerDown);
+    };
 }
 
 function makeSmallLabel(text) {
@@ -208,8 +231,11 @@ function isPlainObject(v) {
 }
 
 export class GameplayDebugPanel {
-    constructor({ events } = {}) {
+    constructor({ events, getGameplayPose = null } = {}) {
         this.events = events ?? null;
+        this._getGameplayPose = getGameplayPose;
+        this._minimized = false;
+        this._copyFeedbackTimer = null;
         this._expanded = true;
         this._destroyed = false;
         this._maxLogLines = 350;
@@ -237,10 +263,19 @@ export class GameplayDebugPanel {
 
         this.btnToggleLogs = makeBtn('Logs', HELP.buttons.logs);
         this.btnClear = makeBtn('Clear', HELP.buttons.clear);
-        this.btnClose = makeBtn('✕', HELP.buttons.close);
+        this.btnCopyPose = makeBtn('Copy camera position', HELP.buttons.copy);
+        this.btnCopyPose.setAttribute('aria-label', 'Copy camera position');
+        this.btnCopyPose.disabled = !getGameplayPose;
+        this.btnMinimize = makeBtn('');
+        this.btnMinimize.classList.add('gpd-window-button');
+        applyMaterialSymbolToButton(this.btnMinimize, { name: 'minimize', label: 'Minimize debug panel' });
+        this.btnClose = makeBtn('');
+        applyMaterialSymbolToButton(this.btnClose, { name: 'close', label: 'Close debug panel' });
 
+        btnRow.appendChild(this.btnCopyPose);
         btnRow.appendChild(this.btnToggleLogs);
         btnRow.appendChild(this.btnClear);
+        btnRow.appendChild(this.btnMinimize);
         btnRow.appendChild(this.btnClose);
 
         this.header.appendChild(title);
@@ -553,7 +588,9 @@ export class GameplayDebugPanel {
         this.logs.className = 'gpd-logs';
         this.logsWrap.appendChild(this.logs);
 
-        makeDraggable(this.root, this.header);
+        this._disposeDrag = makeDraggable(this.root, this.header);
+        this.btnMinimize.addEventListener('click', () => this.setMinimized(!this._minimized));
+        this.btnCopyPose.addEventListener('click', () => void this._copyGameplayPose());
 
         this.btnToggleLogs.addEventListener('click', () => {
             this.setExpanded(!this._expanded);
@@ -577,7 +614,6 @@ export class GameplayDebugPanel {
     attach(parent = document.body) {
         if (this._destroyed) return;
         if (!this.root.isConnected) parent.appendChild(this.root);
-        this._scheduleMinHeightRefresh();
     }
 
     destroy() {
@@ -585,6 +621,8 @@ export class GameplayDebugPanel {
         this._destroyed = true;
         this._unsubInput?.();
         this._unsubInput = null;
+        this._disposeDrag?.();
+        clearTimeout(this._copyFeedbackTimer);
         if (this.root.isConnected) this.root.remove();
     }
 
@@ -600,7 +638,63 @@ export class GameplayDebugPanel {
         this._expanded = !!expanded;
         this.root.classList.toggle('is-expanded', this._expanded);
         this.btnToggleLogs.textContent = this._expanded ? 'Logs: On' : 'Logs: Off';
-        this._scheduleMinHeightRefresh();
+    }
+
+    /** @param {boolean} minimized Whether to dock the panel at the bottom left. */
+    setMinimized(minimized) {
+        if (this._destroyed) return;
+        this._minimized = !!minimized;
+        this.root.classList.toggle('is-minimized', this._minimized);
+        applyMaterialSymbolToButton(this.btnMinimize, {
+            name: this._minimized ? 'open_in_full' : 'minimize',
+            label: this._minimized ? 'Restore debug panel' : 'Minimize debug panel'
+        });
+        if (!this._minimized) this._refreshTree({ force: true });
+        this.btnMinimize.focus({ preventScroll: true });
+    }
+
+    async _copyGameplayPose() {
+        if (this._destroyed || this.btnCopyPose.disabled) return;
+        this.btnCopyPose.disabled = true;
+        clearTimeout(this._copyFeedbackTimer);
+        try {
+            const pose = this._getGameplayPose?.();
+            if (!pose) throw new Error('Bus and camera are not ready yet.');
+            const text = JSON.stringify(pose, null, 2);
+            try {
+                await navigator.clipboard.writeText(text);
+            } catch {
+                const field = document.createElement('textarea');
+                field.className = 'gpd-clipboard-buffer';
+                field.value = text;
+                field.setAttribute('aria-label', 'Gameplay pose');
+                const focused = document.activeElement;
+                this.root.appendChild(field);
+                try {
+                    field.select();
+                    if (!document.execCommand('copy')) throw new Error('Clipboard unavailable. Check browser clipboard permissions and retry.');
+                } finally {
+                    field.remove();
+                    focused?.focus?.({ preventScroll: true });
+                }
+            }
+            if (this._destroyed) return;
+            this.btnCopyPose.textContent = 'Copied';
+            this.log('Copied bus and camera pose.');
+        } catch (error) {
+            if (this._destroyed) return;
+            this.btnCopyPose.textContent = 'Copy failed — retry';
+            this.btnCopyPose.title = error.message;
+            this.log(`Copy failed: ${error.message}`);
+        } finally {
+            if (!this._destroyed) {
+                this.btnCopyPose.disabled = false;
+                this._copyFeedbackTimer = setTimeout(() => {
+                    this.btnCopyPose.textContent = 'Copy camera position';
+                    this.btnCopyPose.title = HELP.buttons.copy;
+                }, 3000);
+            }
+        }
     }
 
     log(message) {
@@ -733,7 +827,7 @@ export class GameplayDebugPanel {
         this._lastSpinDeg = radToDeg(debug.locomotion?.wheelSpinAccum ?? 0);
         this._syncWheelCells(wheels);
 
-        if (this._treeAuto) {
+        if (this._treeAuto && !this._minimized && this._expanded) {
             this._treeUpdateAccum += this._treeUpdateSec;
             this._refreshTree({ force: false });
         }
@@ -844,7 +938,6 @@ export class GameplayDebugPanel {
                 this._wheelCells.push({ ...left, wheelId: g.left?.id ?? null, row });
                 this._wheelCells.push({ ...right, wheelId: g.right?.id ?? null, row });
             }
-            this._scheduleMinHeightRefresh();
         }
 
         const wheelById = new Map();
@@ -908,7 +1001,6 @@ export class GameplayDebugPanel {
             this._treeExpanded = !this._treeExpanded;
             this.btnTreeToggle.textContent = this._treeExpanded ? 'Tree: On' : 'Tree: Off';
             this.treeBody.classList.toggle('hidden', !this._treeExpanded);
-            this._scheduleMinHeightRefresh();
         });
 
         this.btnTreeAuto = makeBtn('Auto: On', HELP.tree.auto);
@@ -1088,23 +1180,6 @@ export class GameplayDebugPanel {
         };
     }
 
-    _scheduleMinHeightRefresh() {
-        if (this._destroyed) return;
-        if (typeof requestAnimationFrame !== 'function') {
-            this._refreshMinHeight();
-            return;
-        }
-        requestAnimationFrame(() => this._refreshMinHeight());
-    }
-
-    _refreshMinHeight() {
-        if (this._destroyed || !this.root.isConnected) return;
-        const headerH = this.header.getBoundingClientRect().height || 0;
-        const leftH = this.left.scrollHeight || 0;
-        const pad = 6;
-        const minH = Math.max(0, Math.ceil(headerH + leftH + pad));
-        this.root.style.minHeight = `${minH}px`;
-    }
 }
 
 function q(v) {

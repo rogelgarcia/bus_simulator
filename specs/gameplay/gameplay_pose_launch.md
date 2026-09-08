@@ -2,6 +2,14 @@
 
 Gameplay poses make reproducible gameplay framing a first-class launch feature. Supplying a valid pose URL parameter skips the welcome and bus-selection screens, creates the requested bus, selects the requested city, and enters gameplay at that pose.
 
+## Copying the current view
+
+Open gameplay with `debug=true` and choose **Copy camera position** in the Gameplay Debug header. This copies JSON containing the city, bus model, bus anchor world position and quaternion, and camera world position, quaternion and field of view. Paste the JSON into a bug report or pass it as the URL-encoded `gameplayPose` parameter. Captured poses launch paused with the camera locked so simulation and camera following do not move the view during inspection. This captures placement and orientation, not a full simulation/lighting-settings save; use the same viewport dimensions for identical framing.
+
+Copied buses use `bus.transform: { position: { x, y, z }, quaternion: { x, y, z, w } }`. This exact world-space anchor transform takes precedence over legacy ground-contact `bus.position`/`yawDeg` and bypasses ground snapping, including after asynchronous model loading. Both transform fields are required. `camera.quaternion` takes precedence over looking at `camera.target`, preserving camera roll. Quaternions are normalized on import; nonfinite, incomplete and zero-length quaternions are rejected. Existing preset and ground-contact pose formats continue to work.
+
+The debug panel has a **Minimize** button that docks its header at the bottom left and a matching **Restore** button that restores its previous size and position. Logs, tree expansion and telemetry scroll position survive minimizing. The separate **Close** button removes the overlay. Telemetry and tree/log panels scroll inside the resizable window; narrow windows stack the panels vertically. Header controls remain usable without starting a window drag.
+
 ## Named presets
 
 Named poses live in `src/app/gameplay/GameplayPoseCatalog.js` and launch through the short `pose` query parameter:

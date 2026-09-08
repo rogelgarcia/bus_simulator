@@ -29,7 +29,8 @@ import { SetupUIController } from '../graphics/gui/setup/SetupUIController.js';
 import {
     normalizeGameplayCityId,
     readGameplayPoseFromSearch,
-    resolveGameplayPoseCamera
+    resolveGameplayPoseCamera,
+    sanitizeGameplayPose
 } from '../app/gameplay/GameplayPose.js';
 import {
     getQMenuGroupMenuItems,
@@ -281,7 +282,10 @@ export class GameplayState {
 
         this._debugEnabled = params.get('debug') === 'true';
         if (this._debugEnabled) {
-            this._debugPanel = new GameplayDebugPanel({ events: sim.events });
+            this._debugPanel = new GameplayDebugPanel({
+                events: sim.events,
+                getGameplayPose: () => this._captureGameplayPose()
+            });
             this._debugPanel.attach(document.body);
             this._debugPanel.log(`selectedBus: ${this.engine.context.selectedBusId ?? this.engine.context.selectedBus?.userData?.id ?? '—'}`);
         }
@@ -328,7 +332,8 @@ export class GameplayState {
             busPosition?.z ?? busStart?.position?.z ?? 0
         );
         this.busAnchor.rotation.set(0, THREE.MathUtils.degToRad(busPose?.yawDeg ?? busStart?.yawDeg ?? 0), 0);
-        snapToGroundY(this.busAnchor, poseGroundY);
+        if (busPose?.transform) this._applyGameplayPoseVehicleTransform();
+        else snapToGroundY(this.busAnchor, poseGroundY);
         this.engine.scene.add(this.busAnchor);
         // Bus materials must receive scene sun shadows (no-op unless cascaded
         // shadow maps are active).
@@ -383,7 +388,8 @@ export class GameplayState {
         readyPromise?.then?.(() => {
             if (!this.busAnchor || !this.vehicle?.id) return;
             this._debugPanel?.log('readyPromise: bus model loaded');
-            snapToGroundY(this.busAnchor, roadY);
+            if (busPose?.transform) this._applyGameplayPoseVehicleTransform();
+            else snapToGroundY(this.busAnchor, poseGroundY);
             sim.physics?.removeVehicle?.(this.vehicle.id);
             sim.physics?.addVehicle?.(this.vehicle.id, this.vehicle.config, this.busAnchor, this.vehicle.api);
             this.vehicleController?.setVehicleApi?.(this.vehicle.api, this.busAnchor);
@@ -648,6 +654,43 @@ export class GameplayState {
         this.hud?.setVisibilityMapDiagnostics?.(this.city?.getStaticVisibilityDiagnostics?.());
     }
 
+    _captureGameplayPose() {
+        const anchor = this.busAnchor;
+        const camera = this.engine?.camera;
+        if (!anchor || !camera) return null;
+        const position = (node) => {
+            const v = node.getWorldPosition(new THREE.Vector3());
+            return { x: v.x, y: v.y, z: v.z };
+        };
+        const quaternion = (node) => {
+            const q = node.getWorldQuaternion(new THREE.Quaternion());
+            return { x: q.x, y: q.y, z: q.z, w: q.w };
+        };
+        return sanitizeGameplayPose({
+            version: 1,
+            city: this.city.cityId,
+            bus: {
+                modelId: this.engine.context.selectedBusId ?? this.busModel?.userData?.id,
+                transform: { position: position(anchor), quaternion: quaternion(anchor) }
+            },
+            camera: {
+                position: position(camera),
+                quaternion: quaternion(camera),
+                fovDeg: camera.fov,
+                locked: true
+            },
+            simulation: { paused: true }
+        });
+    }
+
+    _applyGameplayPoseVehicleTransform() {
+        const transform = this._gameplayPose?.bus?.transform;
+        if (!transform || !this.busAnchor) return;
+        this.busAnchor.position.copy(transform.position);
+        this.busAnchor.quaternion.copy(transform.quaternion);
+        this.busAnchor.updateMatrixWorld(true);
+    }
+
     _configureGameplayPoseCamera() {
         const pose = this._gameplayPose;
         if (!pose?.camera) {
@@ -672,6 +715,7 @@ export class GameplayState {
         this._poseCamera = {
             position: new THREE.Vector3(resolved.position.x, resolved.position.y, resolved.position.z),
             target: new THREE.Vector3(resolved.target.x, resolved.target.y, resolved.target.z),
+            quaternion: resolved.quaternion ? new THREE.Quaternion().copy(resolved.quaternion) : null,
             fovDeg: resolved.fovDeg,
             locked: resolved.locked
         };
@@ -683,7 +727,8 @@ export class GameplayState {
         const camera = this.engine?.camera;
         if (!poseCamera || !camera) return;
         camera.position.copy(poseCamera.position);
-        camera.lookAt(poseCamera.target);
+        if (poseCamera.quaternion) camera.quaternion.copy(poseCamera.quaternion);
+        else camera.lookAt(poseCamera.target);
         if (poseCamera.fovDeg !== undefined && camera.fov !== poseCamera.fovDeg) {
             camera.fov = poseCamera.fovDeg;
             camera.updateProjectionMatrix?.();

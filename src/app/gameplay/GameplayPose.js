@@ -56,6 +56,21 @@ function normalizeAngleDeg(value) {
     return normalized > 180 ? normalized - 360 : normalized;
 }
 
+function sanitizeQuaternion(value, label) {
+    if (value === undefined) return undefined;
+    const input = requiredObject(value, label);
+    const values = ['x', 'y', 'z', 'w'].map((key) => {
+        const number = input[key];
+        if (typeof number !== 'number' || !Number.isFinite(number)) {
+            throw new TypeError(`${label}.${key} must be a finite number.`);
+        }
+        return number;
+    });
+    const length = Math.hypot(...values);
+    if (length < 1e-8 || !Number.isFinite(length)) throw new RangeError(`${label} must have a nonzero finite length.`);
+    return { x: values[0] / length, y: values[1] / length, z: values[2] / length, w: values[3] / length };
+}
+
 export function normalizeGameplayCityId(value) {
     if (typeof value !== 'string') return null;
     const key = value.trim().toLowerCase().replaceAll('_', '').replaceAll('-', '');
@@ -123,6 +138,13 @@ export function sanitizeGameplayPose(value, { presetId = null } = {}) {
         }
         const position = sanitizeVector(busInput.position, 'Gameplay pose bus.position', { yOptional: true });
         if (position) bus.position = position;
+        if (busInput.transform !== undefined) {
+            const transform = requiredObject(busInput.transform, 'Gameplay pose bus.transform');
+            const position = sanitizeVector(transform.position, 'Gameplay pose bus.transform.position');
+            const quaternion = sanitizeQuaternion(transform.quaternion, 'Gameplay pose bus.transform.quaternion');
+            if (!position || !quaternion) throw new TypeError('Gameplay pose bus.transform requires position and quaternion.');
+            bus.transform = { position, quaternion };
+        }
         const yawDeg = optionalNumber(busInput.yawDeg, 'Gameplay pose bus.yawDeg', -360_000, 360_000);
         if (yawDeg !== undefined) bus.yawDeg = normalizeAngleDeg(yawDeg);
         const steeringWheelDeg = optionalNumber(
@@ -144,6 +166,8 @@ export function sanitizeGameplayPose(value, { presetId = null } = {}) {
         const target = sanitizeVector(cameraInput.target, 'Gameplay pose camera.target');
         if (position) camera.position = position;
         if (target) camera.target = target;
+        const quaternion = sanitizeQuaternion(cameraInput.quaternion, 'Gameplay pose camera.quaternion');
+        if (quaternion) camera.quaternion = quaternion;
         const yawDeg = optionalNumber(cameraInput.yawDeg, 'Gameplay pose camera.yawDeg', -360_000, 360_000);
         const pitchDeg = optionalNumber(cameraInput.pitchDeg, 'Gameplay pose camera.pitchDeg', -89, 89);
         const distance = optionalNumber(cameraInput.distance, 'Gameplay pose camera.distance', 0.5, 10_000);
@@ -210,7 +234,7 @@ export function readGameplayPoseFromSearch(search, { warn = console.warn } = {})
  * Resolves an explicit or orbit-style camera pose into world-space vectors.
  * @param {object|null} pose
  * @param {{x:number,y:number,z:number}} fallbackTarget
- * @returns {{position:{x:number,y:number,z:number},target:{x:number,y:number,z:number},fovDeg?:number,locked:boolean}|null}
+ * @returns {{position:{x:number,y:number,z:number},target:{x:number,y:number,z:number},quaternion?:{x:number,y:number,z:number,w:number},fovDeg?:number,locked:boolean}|null}
  */
 export function resolveGameplayPoseCamera(pose, fallbackTarget) {
     const camera = pose?.camera;
@@ -231,6 +255,7 @@ export function resolveGameplayPoseCamera(pose, fallbackTarget) {
     return {
         position,
         target,
+        ...(camera.quaternion ? { quaternion: { ...camera.quaternion } } : {}),
         ...(camera.fovDeg === undefined ? {} : { fovDeg: camera.fovDeg }),
         locked: camera.locked !== false
     };
