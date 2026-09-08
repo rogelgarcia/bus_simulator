@@ -749,6 +749,17 @@ export class OptionsUI {
                 : `${state}${status?.causeState ? ' · ' + status.causeState : ''}${phase}${reason}`;
         }
         if (els.profile) els.profile.textContent = status?.profileId ?? 'No exact baked profile selected';
+        if (els.bus) {
+            const bus = info?.busLighting;
+            const preferences = info?.settings?.bus;
+            const reflections = [['glassReflections', 'Glass'], ['bodyReflections', 'Body'], ['rimShine', 'Rims']]
+                .filter(([key]) => preferences?.[key]).map(([, label]) => label);
+            els.bus.textContent = preferences?.enabled
+                ? `${reflections.length ? reflections.join(', ') + ' · ' : ''}Experimental materials · probes ${bus?.state ?? 'off'}${bus?.reason ? ' · ' + bus.reason.replaceAll('_', ' ') : ''}`
+                : reflections.length ? `${reflections.join(', ')} · global HDRI` : 'Original materials';
+            if (bus?.transitionState === 'failed') els.bus.textContent = `Change unavailable · keeping previous appearance · ${bus.transitionError}`;
+            else if (bus?.transitionState) els.bus.textContent = 'Preparing bus lighting · keeping current appearance';
+        }
         if (els.details && els.developer?.open) els.details.textContent = JSON.stringify(info,
             (key, value) => key === 'registries' && Array.isArray(value) ? { count: value.length } : value, 2);
         if (els.receivers) {

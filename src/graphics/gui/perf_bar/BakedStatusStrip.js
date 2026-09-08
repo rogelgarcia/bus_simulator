@@ -4,6 +4,7 @@
 const ITEMS = Object.freeze([
     { id: 'shadows', label: 'Shadows' },
     { id: 'indirect', label: 'Indirect' },
+    { id: 'busIndirect', label: 'Bus indirect' },
     { id: 'visibility', label: 'Visibility' }
 ]);
 const PHASES = Object.freeze({

@@ -32,7 +32,7 @@ test('PerfBar: bake states keep their slots and each Applied expires independent
     const slots = () => page.locator('.ui-perf-bake').evaluateAll(nodes => nodes.map(node => {
         const r = node.getBoundingClientRect(); return { x: r.x, width: r.width };
     }));
-    expect(await states()).toEqual(['Loading', 'Validating', 'Disabled']);
+    expect(await states()).toEqual(['Loading', 'Validating', 'Off', 'Disabled']);
     const positions = await slots();
     await expect(page.locator('[data-bake="visibility"]')).toHaveAttribute('title', /camera pitch unsupported/);
     await expect(page.locator('[data-bake="shadows"] .ui-perf-bake-label')).toHaveCSS('color', 'rgb(203, 208, 213)');
@@ -47,14 +47,14 @@ test('PerfBar: bake states keep their slots and each Applied expires independent
         };
         window.statusBar.onFrame({ dt: 1 / 60, nowMs: 2000 });
     });
-    expect(await states()).toEqual(['Off', 'Preparing', 'Ready']);
+    expect(await states()).toEqual(['Off', 'Preparing', 'Off', 'Ready']);
     expect(await slots()).toEqual(positions);
     await page.locator('#ui-perf-bar').screenshot({ path: `${artifacts}/off-preparing-ready.png` });
     await page.evaluate(() => {
-        window.bakeSnapshot = Object.fromEntries(['shadows', 'indirect', 'visibility'].map(id => [id, { state: 'active', revision: 1 }]));
+        window.bakeSnapshot = Object.fromEntries(['shadows', 'indirect', 'busIndirect', 'visibility'].map(id => [id, { state: 'active', revision: 1 }]));
         window.statusBar.onFrame({ dt: 1 / 60, nowMs: 10000 });
     });
-    expect(await states()).toEqual(['Applied', 'Applied', 'Applied']);
+    expect(await states()).toEqual(['Applied', 'Applied', 'Applied', 'Applied']);
     await page.locator('#ui-perf-bar').screenshot({ path: `${artifacts}/applied.png` });
     await page.evaluate(() => {
         window.statusBar.onFrame({ dt: 1 / 60, nowMs: 12999 });
@@ -102,7 +102,7 @@ test('Bake status: selected channels stay unapplied until atomic commit and reta
         const shadows = { getSnapshot: () => snapshot, getDiagnostics() { throw new Error('Full diagnostics must not be polled'); } };
         const receivers = { status: { state: 'loading', reason: 'source_validation' }, pending: false, active: false };
         const runtime = new BakedLightingRuntime({ context: { city: {} } }, { shadows, receivers });
-        runtime.settings = { mode: 'auto', shadows: { enabled: true }, receivers: { indirect: true } };
+        runtime.settings = { bus: { enabled: false }, mode: 'auto', shadows: { enabled: true }, receivers: { indirect: true } };
         runtime.loading = true;
         const preparing = runtime.getStatus();
         runtime.effectiveMode = 'baked'; runtime.loading = false;
@@ -128,7 +128,7 @@ test('Bake status: selected channels stay unapplied until atomic commit and reta
 
 test('PerfBar: the game connects live bake status without enabling debug diagnostics', async ({ page }) => {
     await page.goto('/index.html?coreTests=0');
-    await expect(page.locator('.ui-perf-bake')).toHaveCount(3);
+    await expect(page.locator('.ui-perf-bake')).toHaveCount(4);
     await page.evaluate(async () => {
         await window.__busSim.engine.setBakedLightingSettings({ mode: 'current' });
     });

@@ -314,6 +314,7 @@ export class StaticSunDepthMaterialSet {
                     priority: HOOK_PRIORITY,
                     enabled: false,
                     variantKey: binding.variantKey,
+                    uniforms: () => state.binding.uniforms,
                     apply(shader) {
                         applyStaticSunDepthShaderPatch(shader, state.binding);
                     }
@@ -353,6 +354,33 @@ export class StaticSunDepthMaterialSet {
             this._enabled = false;
             throw error;
         }
+    }
+
+    /** Prebind detached replacements while the active receiver set keeps rendering. */
+    stageReplacement(root) {
+        if (!this.verifyOwnership()) throw new Error('Cannot stage replacement for an inactive receiver set.');
+        const binding = this._binding, staged = new Map();
+        for (const material of collectMaterials(root)) {
+            if (this._handles.has(material) || !isSupportedReceiverMaterial(material)) continue;
+            const state = { binding };
+            const handle = registerMaterialShaderHook(material, { id: HOOK_ID, priority: HOOK_PRIORITY,
+                variantKey: binding.variantKey, uniforms: () => state.binding.uniforms,
+                apply: shader => applyStaticSunDepthShaderPatch(shader, state.binding) });
+            staged.set(material, { handle, state });
+        }
+        let finished = false;
+        return {
+            commit: () => {
+                if (finished || this._binding !== binding || !this._enabled) throw new Error('Receiver replacement became stale.');
+                const current = collectMaterialsFromRoots(this._roots);
+                for (const [material, entry] of staged) this._handles.set(material, entry);
+                for (const [material, entry] of this._handles) if (!current.has(material)) {
+                    entry.handle.remove(); this._handles.delete(material);
+                }
+                finished = true;
+            },
+            dispose: () => { if (!finished) for (const entry of staged.values()) entry.handle.remove(); finished = true; }
+        };
     }
 
     deactivate() {

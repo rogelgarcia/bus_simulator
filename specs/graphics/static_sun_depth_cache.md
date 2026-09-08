@@ -391,6 +391,15 @@ gameplay by default, or issue a release certificate.
 
 ## Current evidence and promotion gate
 
+Bus appearance changes can stage replacement receiver materials against the
+already active binding without deactivating this cache. The pipeline validates
+unchanged alpha/depth/caster semantics, prewarms the candidate shaders, then adopts
+receiver hooks and moving-caster material references synchronously with the mesh
+swap. The existing depth texture and dynamic shadow target remain resident and
+active. Failed or canceled candidates discard only their staged hooks. This
+appearance-only transaction does not bypass source/profile validation or change
+publication gates; see [vehicle lighting](vehicle_diffuse_probes.md).
+
 The deterministic fixture compiler and checked artifact prove strict AI 529
 input validation, RG8 quantization, guard generation, content addressing, and
 CPU/runtime sampling. They do not prove production city coverage:

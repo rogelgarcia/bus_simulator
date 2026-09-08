@@ -40,6 +40,18 @@ Recommended conventions for new loader modules:
 - Keep uniform schemas with type/range defaults and let loader boundary validation normalize runtime inputs.
 - Attach metadata with `attachShaderMetadata(...)` for compile/debug visibility.
 
+## Material hook uniform ownership
+
+Material hooks registered through `MaterialShaderHookRegistry` may declare
+`uniforms` as a stable uniform dictionary or a provider returning one. Keep its
+schema and uniform cells stable; update `.value` to change runtime data, or have
+the provider return a replacement dictionary when ownership changes. The registry
+rebinds these custom uniforms before a draw when Three r183 reuses a cached program
+with a different uniform dictionary. This prevents stale sampler-type bindings
+after variant changes. Existing material `onBeforeRender` callbacks are chained
+and restored when the last hook is removed. Shader compilation still assigns the
+same declared uniforms to `shader.uniforms`.
+
 ## Migration Policy
 
 - Inline shader strings should not be introduced in `.js`/`.mjs` source files.

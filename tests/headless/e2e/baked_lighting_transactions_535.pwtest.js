@@ -5,6 +5,66 @@ import { mkdir } from 'node:fs/promises';
 const chrome='C:/Program Files/Google/Chrome/Application/chrome.exe';
 if(existsSync(chrome))test.use({launchOptions:{executablePath:chrome}});
 
+test('Bus changes keep the baked world active through preparation, supersession and failure', async ({page}) => {
+    await page.goto('/tests/headless/harness/index.html');
+    const result = await page.evaluate(async () => {
+        const {BakedLightingRuntime} = await import('/src/graphics/illumination/baked_lighting/BakedLightingRuntime.js');
+        const {sanitizeBakedLightingSettings} = await import('/src/app/illumination/runtime/index.js');
+        const pending = [], events = [], frames = [];
+        let applied = 'original', shadowSuspends = 0;
+        const bus = {
+            ready:false, state:'off', cancelStaging(){}, suspend(){}, configure(){},
+            validateFrame:()=>true, frameBegin(){},
+            getDiagnostics(){return {state:this.state, transitionState:this.transitionState};},
+            stage(settings) {
+                return new Promise((resolve,reject) => pending.push({settings,reject,resolve:() => resolve({
+                    commit(){applied=settings.glassReflections?'glass':'body';events.push('commit:'+applied);},
+                    dispose(){events.push('dispose');}
+                })}));
+            }
+        };
+        const shadows = {getSnapshot:()=>({effectiveMode:'baked'}),
+            getDiagnostics:()=>({status:{}}), commitCurrent(){}, suspend(){shadowSuspends++;}};
+        const receivers = {settings:{}, status:{}, active:true, validateFrame:()=>true,
+            frameBegin(){}, suspend(){this.active=false;}, getDiagnostics:()=>({})};
+        const runtime = new BakedLightingRuntime({context:{city:{}}},{bus,shadows,receivers});
+        runtime.settings = sanitizeBakedLightingSettings({mode:'baked',shadows:{enabled:true},receivers:{indirect:true}});
+        runtime.started = true; runtime.ready = true; runtime.effectiveMode = 'baked';
+        const set = flags => runtime.setSettings({...runtime.settings,bus:{...runtime.settings.bus,...flags}});
+        const frame = () => {runtime.prepareFrame();runtime.frameBegin();frames.push([runtime.effectiveMode,receivers.active,applied]);};
+        const first = set({glassReflections:true}); await Promise.resolve();frame();
+        const second = set({glassReflections:false,bodyReflections:true});frame();
+        pending[0].resolve();await first;await Promise.resolve();frame();
+        pending[1].resolve();await second;
+        const beforeCommit=applied;frame();const afterCommit=applied;
+        const failed = set({enabled:true,probes:true,glassReflections:true});await Promise.resolve();
+        const preparingStatus=runtime.getStatus();
+        pending[2].reject(new Error('compile_failed'));await failed;frame();
+        const failure={state:bus.transitionState,error:bus.transitionError,applied};
+        const failedStatus=runtime.getStatus();
+        const next = set({glassReflections:false,bodyReflections:false});await Promise.resolve();
+        const queued = set({rimShine:true});
+        window.dispatchEvent(new Event('pagehide'));
+        pending[3].resolve();await next;await queued;frame();
+        const pageHideCancelled = pending.length === 4 && runtime.pendingBus === null;
+        await runtime.setSettings({...runtime.settings,mode:'current'});
+        runtime.prepareFrame();
+        return {frames,events,beforeCommit,afterCommit,failure,shadowSuspends,preparingStatus,failedStatus,
+            pageHideCancelled,finalMode:runtime.effectiveMode,staleCommit:events.includes('commit:glass')};
+    });
+    expect(result.frames.every(([mode,indirect])=>mode==='baked'&&indirect)).toBe(true);
+    expect(result.frames.slice(0,3).every(([, ,appearance])=>appearance==='original')).toBe(true);
+    expect(result.beforeCommit).toBe('original');expect(result.afterCommit).toBe('body');
+    expect(result.failure).toEqual({state:'failed',error:'compile_failed',applied:'body'});
+    expect(result.preparingStatus.busIndirect.state).toBe('loading');
+    expect(result.failedStatus.busIndirect).toMatchObject({state:'fallback',causeState:'failed',reason:'compile_failed'});
+    expect(result.failedStatus.shadows.state).toBe('active');expect(result.failedStatus.indirect.state).toBe('active');
+    expect(result.events.filter(v=>v.startsWith('commit:'))).toEqual(['commit:body']);
+    expect(result.shadowSuspends).toBe(1); // Only the explicit switch to Current suspended shadows.
+    expect(result.finalMode).toBe('current');expect(result.staleCommit).toBe(false);
+    expect(result.pageHideCancelled).toBe(true);
+});
+
 test('AI 535: an index failure after a previous bake retains its actual fallback reason',async({page})=>{
     await page.goto('/tests/headless/harness/index.html');
     const status=await page.evaluate(async()=>{
@@ -52,6 +112,9 @@ test('AI 535: delayed channels and stale requests never produce a partial baked 
         const loading=runtime.getDiagnostics();
         resolveIndirect();await work;frame();
         const active=runtime.getDiagnostics();
+        const dormantLoads=loads;
+        await runtime.setSettings({...settings,bus:{enabled:false,materials:false,probes:true}});frame();
+        const dormantPreserved=loads===dormantLoads&&runtime.effectiveMode==='baked';
         await runtime.setSettings({...settings,mode:'current'});frame();
         const current=runtime.getDiagnostics();
         work=runtime.setSettings({...settings,mode:'auto'});await Promise.resolve();
@@ -62,10 +125,11 @@ test('AI 535: delayed channels and stale requests never produce a partial baked 
         shadowFailure='unsupported_device';await runtime.refresh();frame();const unsupported=runtime.getDiagnostics();
         shadowFailure='corrupt_payload';await runtime.reload();frame();const corrupt=runtime.getDiagnostics();
         runtime.dispose(); runtime.dispose();
-        return {events,loading,active,current,cancelled,stale,unsupported,corrupt,loads};
+        return {events,loading,active,current,cancelled,stale,unsupported,corrupt,loads,dormantPreserved};
     });
     expect(result.loading.status.state).toBe('loading');
     expect(result.active.status.effectiveMode).toBe('baked');
+    expect(result.dormantPreserved).toBe(true);
     expect(result.active.settings.receivers).toMatchObject({direct:false,indirect:true,enhanced:true});
     expect(result.current.settings.receivers.indirect).toBe(true);
     expect(result.cancelled.status.effectiveMode).toBe('current');
@@ -96,7 +160,7 @@ test('AI 535: Options mode transactions retain separate preferences and remove r
         const {OptionsState}=await import('/src/states/OptionsState.js');
         const settings=await import('/src/app/illumination/runtime/index.js');
         let reloads=0;
-        const original=settings.sanitizeBakedLightingSettings({mode:'baked',shadows:{enabled:true,dynamicResolution:'high'},receivers:{indirect:true,direct:true,enhanced:false}});
+        const original=settings.sanitizeBakedLightingSettings({mode:'baked',shadows:{enabled:true,dynamicResolution:'high'},receivers:{indirect:true,direct:true,enhanced:false},bus:{enabled:true,materials:true,probes:false}});
         const ui=new OptionsUI({initialBakedLighting:original,reloadBakedLighting:()=>reloads++,getBakedLightingDebugInfo:()=>({status:{state:'active',effectiveMode:'baked',requestedMode:'baked'},receiverLightmaps:{effective:{indirect:true}}})});
         ui.mount();ui._tab='bakedLighting';ui._renderTab();
         // Select the public tab ID used by the UI, then dispatch its real controls.
@@ -118,4 +182,6 @@ test('AI 535: Options mode transactions retain separate preferences and remove r
     expect(result.labels).not.toContain('AI 548');expect(result.labels).not.toContain('Enable baked direct');expect(result.labels).not.toContain('buggy');
     expect(result.edited).toMatchObject({mode:'current',shadows:{enabled:true},receivers:{indirect:true,direct:false,enhanced:true}});
     expect(result.saved).toEqual(result.edited);expect(result.restored.mode).toBe('baked');expect(result.reloads).toBe(1);
+    expect(result.saved.bus).toEqual({enabled:true,materials:true,probes:false,glassReflections:false,bodyReflections:false,rimShine:false});
+    expect(result.restored.bus).toEqual(result.saved.bus);
 });

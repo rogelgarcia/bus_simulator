@@ -196,6 +196,12 @@ export class BakedShadowRuntime {
 
     getSnapshot() { return this._pipeline?.runtime.getSnapshot() ?? null; }
 
+    stageBusMaterials(candidate) {
+        return this._pipeline?.getDiagnostics().runtime.controller.effectiveMode === 'baked'
+            ? this._pipeline.stageReceiverMaterials(candidate)
+            : { commit: candidate.commit, dispose() {} };
+    }
+
     commitCurrent() {
         if (this.getSnapshot()?.pendingTransition === 'current') this._pipeline.runtime.commitFrameBoundary();
     }

@@ -100,6 +100,13 @@ existing certification; the native cutout proof alone does not grant release.
 
 ## Verification
 
+AI 550 adds `lighting/diffuse-probes` to the lighting domain. It depends on the
+same authenticated static-city source and owns separate prepare, sky and bounce
+jobs. The parent validates the two irradiance passes and visibility data before
+atomic publication. Layout and quality are tracked in its `defaults.json`; all
+entrypoints reuse the shared ignored Blender configuration. See
+`specs/graphics/vehicle_diffuse_probes.md` for the consumer contract.
+
 `tests/node/unit/bake_framework.test.js` covers bootstrap, option inheritance,
 graph errors, hashes/reuse, child failure, cancellation and terminal behavior.
 Use the standard selected-test runner. Integration evidence and production run

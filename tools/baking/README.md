@@ -15,6 +15,7 @@ After setup, the master needs no flags or intermediate filenames:
 node tools/bake.mjs
 node tools/bake.mjs --dry-run
 node tools/bake_lighting/run.mjs
+node tools/bake_lighting/diffuse_probes/run.mjs --samples 256 --publish
 node tools/bake_lighting/shadows/run.mjs
 node tools/bake_lighting/occlusion/run.mjs --samples 64 --device OPTIX
 node tools/bake_lighting/illumination/run.mjs --samples 896 --device OPTIX
@@ -30,6 +31,11 @@ as execution but launches no Blender/browser process. It prints and saves the
 resolved plan, including dependencies, settings, declared outputs and job identities.
 
 ## Hierarchy and inventory
+
+Vehicle spatial diffuse lighting lives in `tools/bake_lighting/diffuse_probes/`
+and is included by the lighting/master jobs. Its independently callable children
+are `prepare`, `sky` and `bounce`; the parent consolidates and optionally publishes.
+See that folder's README for tracked coverage defaults and runtime compatibility.
 
 `registry.mjs` registers domain-owned definitions. The master contains no domain
 conditions. Each independently callable script enters the same planner; dependencies

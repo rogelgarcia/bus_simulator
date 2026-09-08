@@ -753,6 +753,11 @@ export class GameEngine {
             participants: this.getDynamicIlluminationObjects(), settings: this._ambientOcclusion.settings, enabled });
     }
 
+    prepareSceneMaterialReplacement(assignments) {
+        this._dynamicAo?.prepareMaterials(assignments, this.getDynamicIlluminationObjects(), this._ambientOcclusion.settings);
+        return this._post?.pipeline?.getSceneMaterialRenderTarget() ?? null;
+    }
+
     _renderAoFrame(dt) {
         if (this._post?.pipeline) {
             try { this._post.pipeline.render(dt, () => this._prepareDynamicAo()); }

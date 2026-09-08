@@ -1,0 +1,16 @@
+{
+  "schema": "bus-sim-diffuse-probe-layout-v1",
+  "samples": 256,
+  "device": "CPU",
+  "threads": 4,
+  "diffuseBounces": 4,
+  "tileSize": 4,
+  "depthSize": 8,
+  "maxDistance": 8,
+  "regions": [
+    { "id": "civic_route", "origin": [-168, 0.7, 24], "spacing": [4, 1.5, 4], "size": [27, 4, 11] },
+    { "id": "east_route", "origin": [24, 0.7, 24], "spacing": [4, 1.5, 4], "size": [11, 4, 11] },
+    { "id": "north_route", "origin": [56, 0.7, 160], "spacing": [4, 1.5, 4], "size": [11, 4, 11] },
+    { "id": "park_route", "origin": [-168, 0.7, 208], "spacing": [4, 1.5, 4], "size": [11, 4, 11] }
+  ]
+}

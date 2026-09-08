@@ -94,7 +94,7 @@ body.perf-bar-enabled .ui-picker-overlay {
 
 .ui-perf-bake {
     display: grid;
-    grid-template-columns: 9ch 9ch;
+    grid-template-columns: minmax(9ch, max-content) 9ch;
     gap: 5px;
     flex: 0 0 auto;
     white-space: nowrap;
@@ -103,7 +103,7 @@ body.perf-bar-enabled .ui-picker-overlay {
 }
 
 .ui-perf-bake[data-bake="visibility"] {
-    grid-template-columns: 10ch 9ch;
+    grid-template-columns: minmax(10ch, max-content) 9ch;
 }
 
 .ui-perf-bake-value { color: #999fa9; }

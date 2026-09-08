@@ -1783,6 +1783,15 @@ export class PostProcessingPipeline {
         }
     }
 
+    getSceneMaterialRenderTarget() {
+        const ao = this._ambientOcclusion?.mode;
+        const usesComposer = this._globalBloom?.enabled && this._globalBloom.strength > 0
+            || this._sunBloom?.enabled && this._sunBloom.strength > 0
+            || ao === 'ssao' || ao === 'gtao' || this._colorGrading?.enabled
+            || (this._antiAliasing?.activeMode ?? 'off') !== 'off';
+        return usesComposer ? this.composer.readBuffer : null;
+    }
+
     render(deltaTime = undefined, prepareAmbientOcclusion = null) {
         const info = this.renderer?.info ?? null;
         const canCapture = !!info && typeof info.reset === 'function' && 'autoReset' in info;
@@ -1843,12 +1852,11 @@ export class PostProcessingPipeline {
                 this._scanSceneForAoAlphaHooks();
             }
         }
-        const gradeOn = !!this._colorGrading?.enabled;
         const aaMode = this._antiAliasing?.activeMode ?? 'off';
         const taa = aaMode === 'taa' ? (this._antiAliasing?.requested?.taa ?? null) : null;
         const taaJitterStrength = taa ? clamp(taa.jitter, 0, 1, 0) : 0;
         const jitterApplied = aaMode === 'taa' && taaJitterStrength > 0;
-        const wantsPipeline = globalBloomOn || sunBloomOn || aoOn || gradeOn || aaMode !== 'off';
+        const wantsPipeline = this.getSceneMaterialRenderTarget() !== null;
 
         if (aoMode === 'gtao') this._syncGtaoFrameRuntime();
 

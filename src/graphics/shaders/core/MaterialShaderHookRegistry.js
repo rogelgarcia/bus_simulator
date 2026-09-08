@@ -3,8 +3,9 @@
 
 /**
  * @typedef {(shader: any, renderer: any, material: any) => void} MaterialShaderHookApply
- * @typedef {{id: string, priority?: number, enabled?: boolean, variantKey?: string, apply: MaterialShaderHookApply}} MaterialShaderHookDescriptor
- * @typedef {{id: string, priority: number, enabled: boolean, variantKey: string, apply: MaterialShaderHookApply}} MaterialShaderHookEntry
+ * @typedef {Record<string, {value:any}> | (() => Record<string, {value:any}>)} MaterialShaderUniforms
+ * @typedef {{id: string, priority?: number, enabled?: boolean, variantKey?: string, apply: MaterialShaderHookApply, uniforms?: MaterialShaderUniforms}} MaterialShaderHookDescriptor
+ * @typedef {{id: string, priority: number, enabled: boolean, variantKey: string, apply: MaterialShaderHookApply, uniforms: MaterialShaderUniforms | null, uniformSource?:any, uniformEntries?:any}} MaterialShaderHookEntry
  * @typedef {{
  *   material: any,
  *   hooks: Map<string, MaterialShaderHookEntry>,
@@ -13,13 +14,16 @@
  *   previousOnBeforeCompile: any,
  *   hadOwnCustomProgramCacheKey: boolean,
  *   previousCustomProgramCacheKey: any,
+ *   hadOwnOnBeforeRender: boolean,
+ *   previousOnBeforeRender: any,
+ *   renderWrapper?: any,
  *   compileWrapper: (shader: any, renderer: any) => void,
  *   cacheKeyWrapper: () => any
  * }} MaterialShaderHookState
  */
 
 const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/;
-const DESCRIPTOR_KEYS = new Set(['id', 'priority', 'enabled', 'variantKey', 'apply']);
+const DESCRIPTOR_KEYS = new Set(['id', 'priority', 'enabled', 'variantKey', 'apply', 'uniforms']);
 const UPDATE_KEYS = new Set(['priority', 'enabled', 'variantKey', 'apply']);
 /** @type {WeakMap<object, MaterialShaderHookState>} */
 const REGISTRIES = new WeakMap();
@@ -57,6 +61,14 @@ function normalizeEnabled(value = true) {
 
 function requireApply(value) {
     if (typeof value !== 'function') throw new TypeError('Material shader hook apply must be a function.');
+    return value;
+}
+
+function requireUniforms(value) {
+    if (value === undefined || value === null) return null;
+    if (typeof value !== 'function' && (typeof value !== 'object' || Array.isArray(value))) {
+        throw new TypeError('Material shader hook uniforms must be a dictionary or provider.');
+    }
     return value;
 }
 
@@ -123,6 +135,8 @@ function installRegistry(material) {
         previousOnBeforeCompile: material.onBeforeCompile,
         hadOwnCustomProgramCacheKey: Object.prototype.hasOwnProperty.call(material, 'customProgramCacheKey'),
         previousCustomProgramCacheKey: material.customProgramCacheKey,
+        hadOwnOnBeforeRender: Object.hasOwn(material, 'onBeforeRender'),
+        previousOnBeforeRender: material.onBeforeRender,
         compileWrapper: () => {},
         cacheKeyWrapper: () => ''
     };
@@ -138,9 +152,32 @@ function installRegistry(material) {
         const variant = activeVariantKey(state);
         return variant === null ? base : `${String(base)}|material_shader_hooks:${variant}`;
     };
+    // r183 reuses programs without restoring their custom uniform dictionary.
+    // Rebind active owners before a draw so old sampler layouts cannot survive
+    // a return to a cached shader variant.
+    state.renderWrapper = function materialShaderHookRender(renderer, ...args) {
+        state.previousOnBeforeRender?.call(material, renderer, ...args);
+        const properties = renderer.properties.get(material);
+        if (!properties.uniforms) return;
+        for (const hook of state.ordered) {
+            if (!hook.enabled || !hook.uniforms) continue;
+            const uniforms = typeof hook.uniforms === 'function' ? hook.uniforms() : hook.uniforms;
+            if (hook.uniformSource !== uniforms) {
+                hook.uniformSource = uniforms; hook.uniformEntries = Object.entries(uniforms);
+            }
+            const first = hook.uniformEntries[0];
+            if (first && properties.uniforms[first[0]] === first[1]) continue;
+            for (const [name, uniform] of hook.uniformEntries) {
+                if (properties.uniforms[name] === uniform) continue;
+                properties.uniforms[name] = uniform;
+                properties.uniformsList = null;
+            }
+        }
+    };
 
     material.onBeforeCompile = state.compileWrapper;
     material.customProgramCacheKey = state.cacheKeyWrapper;
+    material.onBeforeRender = state.renderWrapper;
     REGISTRIES.set(material, state);
     return state;
 }
@@ -150,6 +187,9 @@ function uninstallRegistry(state) {
     const material = state.material;
     restoreProperty(material, 'onBeforeCompile', state.hadOwnOnBeforeCompile, state.previousOnBeforeCompile);
     restoreProperty(material, 'customProgramCacheKey', state.hadOwnCustomProgramCacheKey, state.previousCustomProgramCacheKey);
+    if (material.onBeforeRender === state.renderWrapper) {
+        restoreProperty(material, 'onBeforeRender', state.hadOwnOnBeforeRender, state.previousOnBeforeRender);
+    }
     REGISTRIES.delete(material);
 }
 
@@ -167,7 +207,8 @@ export function registerMaterialShaderHook(material, descriptor) {
         priority: normalizePriority(descriptor.priority),
         enabled: normalizeEnabled(descriptor.enabled),
         variantKey: normalizeVariantKey(descriptor.variantKey),
-        apply: requireApply(descriptor.apply)
+        apply: requireApply(descriptor.apply),
+        uniforms: requireUniforms(descriptor.uniforms)
     };
     const state = installRegistry(material);
     if (state.hooks.has(entry.id)) throw new Error(`Material shader hook '${entry.id}' is already registered.`);

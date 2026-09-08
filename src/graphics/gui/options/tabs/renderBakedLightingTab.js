@@ -38,8 +38,34 @@ export function renderBakedLightingTab() {
     const receiverStatus = makeValueRow({ label: 'Illumination status', value: '-' });
     channels.appendChild(receiverStatus.row);
 
+    const bus = makeEl('div', 'options-section');
+    bus.appendChild(makeEl('div', 'options-section-title', 'Bus lighting'));
+    for (const [key, label] of [['glassReflections', 'Glass reflections'], ['bodyReflections', 'Body reflections'], ['rimShine', 'Rim shine']]) {
+        const control = makeToggleRow({ label, value: baked.bus[key],
+            onChange: value => { baked.bus[key] = value; this._emitLiveChange(); }
+        });
+        control.toggle.setAttribute('aria-label', label);
+        bus.appendChild(control.row);
+    }
+    bus.appendChild(makeEl('div', 'options-note', 'Uses the global HDRI on the existing materials. Glass and painted body reflections are independent; black trim is preserved. Rim shine keeps the City Bus rims gray. These controls work with Current and baked lighting.'));
+    const busStatus = makeValueRow({ label: 'Bus lighting status', value: '-' });
+    bus.appendChild(busStatus.row);
     const developer = makeEl('details', 'options-section');
     developer.appendChild(makeEl('summary', 'options-section-title', 'Developer diagnostics'));
+    const busToggle = makeToggleRow({ label: 'Enhanced bus lighting', value: baked.bus.enabled,
+        onChange: value => { baked.bus.enabled = value; this._emitLiveChange(); }
+    });
+    busToggle.toggle.setAttribute('aria-label', 'Enhanced bus lighting');
+    developer.appendChild(busToggle.row);
+    developer.appendChild(makeEl('div', 'options-note', 'Experimental material conversion and baked bus diffuse lighting. Leave Enhanced bus lighting off to preserve the original shading; the reflection controls above work independently.'));
+    for (const [key, label] of [['materials', 'Enhanced bus materials'], ['probes', 'Baked bus diffuse probes']]) {
+        const control = makeToggleRow({ label, value: baked.bus[key],
+            onChange: value => { baked.bus[key] = value; this._emitLiveChange(); }
+        });
+        control.toggle.setAttribute('aria-label', label);
+        developer.appendChild(control.row);
+    }
+    developer.appendChild(makeEl('div', 'options-note', 'These two preferences apply while Enhanced bus lighting is on. Legacy Phong materials cannot receive probes; keep enhanced materials on for the City Bus. Probe coverage is bounded and fades to live diffuse lighting outside its regions.'));
     developer.appendChild(makeChoiceRow({ label: 'Illumination view', value: baked.receivers.debug,
         options: ['final', 'indirect', 'uv', 'pages', 'unmapped', 'difference', 'mip'].map(id => ({ id, label: id[0].toUpperCase() + id.slice(1) })),
         onChange: value => { baked.receivers.debug = value; this._emitLiveChange(); }
@@ -57,8 +83,8 @@ export function renderBakedLightingTab() {
     const details = makeEl('pre', 'options-note options-baked-diagnostics');
     developer.appendChild(details);
     this._bakedLightingDebugEls = { path: status.path.text, state: status.state.text, profile: status.profile.text,
-        receivers: receiverStatus.text, details, developer };
+        receivers: receiverStatus.text, bus: busStatus.text, details, developer };
     developer.addEventListener('toggle', () => this._refreshBakedLightingDebug());
-    this.body.append(mode, channels, developer);
+    this.body.append(mode, channels, bus, developer);
     this._refreshBakedLightingDebug();
 }

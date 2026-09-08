@@ -80,8 +80,10 @@ that prompt is implemented and this interaction contract is updated.
 
 ## Diagnostics and offline workflow
 
-The performance bar's right side has fixed slots for baked Shadows, Indirect
-and Visibility. Labels are soft white; state text uses muted colors: Loading
+The performance bar's right side has fixed slots for Shadows, Indirect,
+Bus indirect and Visibility. Label columns fit their full text with a separate
+gap before the fixed-width status column, so longer labels cannot overlap values.
+Labels are soft white; state text uses muted colors: Loading
 (light blue), Validating (blue), Disabled (red), Off (gray), Applied (green).
 Waiting, Preparing and Ready distinguish queued work, resource/shader preparation
 and waiting for atomic activation. Missing, stale, unsupported or failed data

@@ -594,3 +594,18 @@ surface data, unknown-chart coverage and empty charts still block publication.
 Per-page reports authenticate the count of discarded margin differences. Mips
 are generated after this padding step. `receiver_page_padding.test.js` covers
 both permitted external margins and rejected surface/boundary data loss.
+
+## Vehicle diffuse lighting (AI 550)
+
+The optional bus material and spatial diffuse probe path is specified in
+[vehicle_diffuse_probes.md](vehicle_diffuse_probes.md). Its bake jobs are children
+of the shared lighting domain; live sunlight, reflections and dynamic AO remain
+separate. The Baked Lighting tab provides independent Glass reflections, Body
+reflections and Rim shine controls on the authored materials. The earlier material
+conversion and diffuse-probe master remains default-off in Developer diagnostics.
+Bus-only changes prepare in the background and commit together at a frame boundary,
+preserving the active world bake and previous appearance while loading or on failure.
+
+The separate unwanted static indirect shadow at the supplied civic-route pose is
+tracked in [AI 561](../../prompts/AI_graphics_561_ATMOSPHERE_unwanted_baked_indirect_shadow_at_civic_route.md).
+It remains an investigation and is distinct from the corrected bus-toggle lifecycle.

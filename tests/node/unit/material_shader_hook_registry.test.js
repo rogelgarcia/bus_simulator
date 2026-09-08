@@ -43,6 +43,25 @@ function compile(material) {
     return shader.source;
 }
 
+test('MaterialShaderHookRegistry: restores active sampler owners after a cached program loses its uniform dictionary', () => {
+    const { material } = createMaterial();
+    const sampler = { value: { isDataArrayTexture: true } }, enabled = { value: 1 };
+    const previous = () => {}; material.onBeforeRender = previous;
+    const hook = registerMaterialShaderHook(material, { id: 'lighting.fixture', apply() {},
+        uniforms: { atlas: sampler, enabled } });
+    const properties = { uniforms: { unrelated: { value: 2 } }, uniformsList: ['stale'] };
+    const renderer = { properties: { get: () => properties } };
+    material.onBeforeRender(renderer);
+    assert.equal(properties.uniforms.atlas, sampler);
+    assert.equal(properties.uniforms.enabled, enabled);
+    assert.equal(properties.uniformsList, null);
+    properties.uniforms = { unrelated: { value: 3 } }; properties.uniformsList = ['cached'];
+    material.onBeforeRender(renderer);
+    assert.equal(properties.uniforms.atlas, sampler);
+    assert.equal(properties.uniformsList, null);
+    hook.remove(); assert.equal(material.onBeforeRender, previous);
+});
+
 test('MaterialShaderHookRegistry: runs enabled hooks by priority then id', () => {
     const { material } = createMaterial();
     registerMaterialShaderHook(material, { id: 'z', priority: 20, variantKey: 'z1', apply: (shader) => shader.source.push('z') });

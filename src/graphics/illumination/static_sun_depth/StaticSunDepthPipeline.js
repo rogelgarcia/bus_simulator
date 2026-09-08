@@ -171,6 +171,21 @@ export class StaticSunDepthPipeline {
         this._materials.updateCamera(this.engine.camera);
     }
 
+    /** Prewarm replacement receiver materials without touching the live bake or depth target. */
+    stageReceiverMaterials(candidate) {
+        if (!this._active) throw new Error('Baked shadows are not active for a material handoff.');
+        const active = this._active;
+        const stage = this._materials.stageReplacement(candidate.scene);
+        return {
+            commit: () => {
+                if (this._active !== active || !this._materials.verifyOwnership()) throw new Error('Baked material handoff became stale.');
+                const updateCasters = this._dynamicShadows.prepareMaterialReplacement(candidate.assignments);
+                candidate.commit(); updateCasters(); stage.commit();
+            },
+            dispose: stage.dispose
+        };
+    }
+
     shadowPrepare() {
         if (this._active && this._shouldSuppressCasters() && !this._casters.verifySuppressed()) {
             this._fallbackNow('static_caster_reenabled_before_shadow');

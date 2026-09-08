@@ -471,6 +471,32 @@ export class DynamicSunShadowLayer {
         return this._target;
     }
 
+    /** A material-only handoff can retain the depth proxies when caster semantics match. */
+    prepareMaterialReplacement(assignments) {
+        if (!this._active) return () => {};
+        if (!this.verifyOwnership()) throw new Error('Dynamic shadow ownership changed during material preparation.');
+        const updates = [];
+        for (const record of this._records) {
+            if (!assignments.has(record.source)) continue;
+            const material = assignments.get(record.source), materials = materialArray(material);
+            const previous = materialArray(record.material);
+            if (materials.length !== previous.length || materials.some((value, i) =>
+                !materialSemanticsMatch(value, captureMaterialSemantics(previous[i])))) {
+                throw new Error('Bus material replacement changed shadow caster semantics.');
+            }
+            updates.push({ record, material, materials });
+        }
+        return () => {
+            for (const { record, material, materials } of updates) {
+                record.material = material;
+                if (record.proxy) {
+                    record.sourceMaterials = materials;
+                    record.materialStates = materials.map(captureMaterialSemantics);
+                }
+            }
+        };
+    }
+
     verifyOwnership() {
         if (!this._active) return false;
         const current = [];

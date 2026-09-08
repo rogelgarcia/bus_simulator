@@ -66,6 +66,29 @@ export class DynamicAoRuntime {
         this.materials.set(material, record);
     }
 
+    patchReceiver(mesh, materials, alpha) {
+        for (const material of materials) {
+            if (material.transparent || shouldApplyAoAlphaCutout(material, mesh) && alpha.handling === 'exclude') continue;
+            this.patch(material);
+        }
+    }
+
+    // Detached candidates retain the live mesh's receiver ancestry, without a
+    // depth render or changing the visible material/geometry during preparation.
+    prepareMaterials(assignments, participants, settings) {
+        const roots = new Map(participants.filter(p => p.root?.parent && (p.cast || p.receive)).map(p => [p.root, p]));
+        for (const [mesh, material] of assignments) {
+            let participant = null, excluded = isWholeObjectAoExcludedReceiver(mesh);
+            for (let owner = mesh; owner; owner = owner.parent) {
+                participant ??= roots.get(owner);
+                if (owner.userData.excludeFromAmbientOcclusion === true || owner.userData.isContactShadow === true) excluded = true;
+            }
+            if (!excluded && (!participant || participant.receive)) {
+                this.patchReceiver(mesh, Array.isArray(material) ? material : [material], settings.alpha);
+            }
+        }
+    }
+
     participant(mesh, id) {
         let record = this.geometries.get(mesh);
         if (!record && !id) return;
@@ -155,10 +178,7 @@ export class DynamicAoRuntime {
             const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
             const receive = !receiverExcluded && (!id || roots[id-1].receive);
             keepGeometry.add(mesh);
-            if (receive) for (const material of mats) {
-                if (material.transparent || shouldApplyAoAlphaCutout(material, mesh) && settings.alpha.handling === 'exclude') continue;
-                this.patch(material);
-            }
+            if (receive) this.patchReceiver(mesh, mats, settings.alpha);
             if (excluded) { meshes.push({ mesh, hidden: true, receive, id, mats }); return; }
             if (id && mats.some(m => !m.transparent && !shouldApplyAoAlphaCutout(m, mesh))) {
                 if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
