@@ -71,6 +71,53 @@ body.perf-bar-enabled .ui-picker-overlay {
 
 .ui-perf-bar-right {
     justify-content: flex-end;
+    flex-shrink: 0;
+    max-width: calc(100% - 60px);
+}
+
+.ui-perf-bakes {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.ui-perf-bakes::-webkit-scrollbar {
+    display: none;
+}
+
+.ui-perf-bake-label {
+    color: #cbd0d5;
+}
+
+.ui-perf-bake {
+    display: grid;
+    grid-template-columns: 9ch 9ch;
+    gap: 5px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+    line-height: 20px;
+    transition: opacity 180ms ease;
+}
+
+.ui-perf-bake[data-bake="visibility"] {
+    grid-template-columns: 10ch 9ch;
+}
+
+.ui-perf-bake-value { color: #999fa9; }
+.ui-perf-bake[data-state="loading"] .ui-perf-bake-value { color: #9bb8c9; }
+.ui-perf-bake[data-state="validating"] .ui-perf-bake-value,
+.ui-perf-bake[data-state="preparing"] .ui-perf-bake-value { color: #819ec7; }
+.ui-perf-bake[data-state="ready"] .ui-perf-bake-value { color: #9eabb9; }
+.ui-perf-bake[data-state="disabled"] .ui-perf-bake-value { color: #bc8785; }
+.ui-perf-bake[data-state="applied"] .ui-perf-bake-value { color: #8aaf97; }
+.ui-perf-bake.is-settled:not(:hover):not(:focus-visible) { opacity: 0; }
+.ui-perf-bake:focus-visible { outline: 1px solid #819ec7; outline-offset: -1px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .ui-perf-bake { transition: none; }
 }
 
 .ui-perf-bar-item {
@@ -79,6 +126,8 @@ body.perf-bar-enabled .ui-picker-overlay {
 }
 
 .ui-perf-bar-btn {
+    flex-shrink: 0;
+    overflow: hidden;
     height: 22px;
     width: 30px;
     border-radius: 10px;

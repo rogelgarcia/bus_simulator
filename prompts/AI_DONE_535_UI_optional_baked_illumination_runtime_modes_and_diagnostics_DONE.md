@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 The baked illumination framework is an optional add-on and may have no payload for the current city or sun profile. Players still need the existing engine to work normally, and they need a clear runtime choice without restarting the page. A half-loaded or stale baked state must never leave the scene partially lit or silently change the user's current shadow/AO settings.
@@ -32,9 +34,9 @@ direct/indirect lighting and the complete Current/Baked/Auto workflow.
 - [x] Keep baked shadows off by default so normal startup has no package fetch or baked-asset dependency.
 - [x] Move the staged shadow package index and generator output to `assets/baked_lighting/shadows/`, while keeping evidence under `tests/artifacts/`.
 - [x] Retain a validated/uploaded/compiled exact shadow publication while the user toggle is off, then re-enable it through a uniform-only cached apply with no repeat fetch, decode, upload, or city-shader compilation.
-- [ ] Integrate the retained AI 533 direct control into the final mode/preset workflow.
-- [ ] Integrate the retained indirect control with the AO policy decided by AI 534.
-- [ ] Complete the original Current/Baked/Auto diagnostics, reload/revalidate, lifecycle matrix, screenshots, and performance measurements below.
+- [x] Disable baked direct in the player workflow and migrate legacy saved/preset intent, retaining live sunlight (2026-09-07 user decision).
+- [x] Integrate the retained indirect control with the AO policy decided by AI 534.
+- [x] Complete the original Current/Baked/Auto diagnostics, reload/revalidate, lifecycle matrix, screenshots, and performance measurements below.
 
 Focused validation for this slice passes: 21 settings/preset/engine-lifecycle
 tests and the real-gameplay Baked lighting Options test (about 39 seconds).
@@ -67,6 +69,23 @@ legacy sun-shadow target binds in a steady baked frame. A separate pinned-Three
 browser check passes with two real CSM cascades: both targets remain unbound in
 the steady baked render and both original per-light update policies are restored
 for Current.
+
+## Final implementation policy — 2026-09-07
+
+The user requested completion of AI 535 and revised the channel disposition:
+AI 548 is the standard baked indirect implementation, with no separate toggle
+or warning. Baked direct is disabled at the settings boundary, including old
+saved settings and imported presets; live sunlight and its selected shadow path
+remain. This supersedes the earlier direct-control integration requirement,
+without deleting the accepted renderer or reopening completed AI 533/548 work.
+The existing default shadow preference remains enabled with Auto selection;
+indirect remains an explicit opt-in. Current preserves those inactive preferences.
+
+- [x] Verify Lighting-tab interactions: exposure, tone mapping, sky/background and
+  postprocessing remain live; changes to baked sunlight, hemisphere or IBL
+  sources invalidate the whole requested selection and revalidate exact profiles.
+- [x] Preserve effective-indirect-driven AO scope and independent Current/baked
+  AO settings through changes and fallback.
 
 ## Implementation issues — 2026-09-03
 
@@ -141,3 +160,25 @@ Acceptance requirements:
 - Do not move it to `prompts/archive/` automatically.
 - Add a concise completion summary linking UI/runtime modules, lifecycle/status model, offline workflow documentation, diagnostics, tests, and screenshots for every state.
 - Include same-condition Current-active, Baked-active, Auto-current, Auto-baked, loading, and fallback timing/memory results: frame time/FPS, switch latency, fetch/hash/decode/upload time, peak/resident CPU/GPU memory, hardware/browser, resolution/settings, warm-up, sample count, statistic, and variance. Mark unavailable metrics as `not measured` with a reason.
+
+## Completion — 2026-09-07
+
+Implemented Current/Baked/Auto with complete selected-channel activation, retained
+inactive preferences, exact source/profile revalidation, Current fallback and
+developer reload. AI 548 is standard indirect illumination; its separate toggle
+and warning are removed. Saved/preset baked direct is disabled while live sunlight,
+the accepted engine, indirect lighting and AI 534 AO composition remain.
+
+The [runtime mode contract](../specs/graphics/illumination_runtime_modes.md)
+documents Lighting-tab compatibility, channel ownership, cache policy and offline
+workflow. The [completion report](../specs/graphics/illumination_535_validation.md)
+links runtime/UI modules, lifecycle/diagnostic tests, every required mode/status
+capture, same-condition timing/memory results and measurement limitations.
+
+Validation passes: 91 settings/preset/resource/controller tests; real-city mode
+and Lighting-tab transitions; Current baseline comparison; Options transactions;
+cache/cancellation/context-loss/resize checks; CSM restoration; and AO/AA/bus
+contact regression runs. Current before/after images are pixel-identical.
+Final review also fixed a stale reason masking a missing shadow index and texture
+slot exhaustion from unused direct/AO samplers. The final full-city AO/AA run
+and matched asphalt/building method round trips pass without shader errors.

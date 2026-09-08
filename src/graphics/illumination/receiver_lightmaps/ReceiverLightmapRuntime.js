@@ -73,7 +73,7 @@ export class ReceiverLightmapRuntime {
             this.generation++; this.abort?.abort(); this.release();
             this.status = { state: 'fallback', reason: 'webgl_context_lost' };
         };
-        this.onContextRestored = () => { void this.refresh(); };
+        this.onContextRestored = () => { void (this.requestRefresh?.() ?? this.refresh()); };
         engine.renderer.domElement.addEventListener('webglcontextlost', this.onContextLost);
         engine.renderer.domElement.addEventListener('webglcontextrestored', this.onContextRestored);
     }
@@ -137,6 +137,7 @@ export class ReceiverLightmapRuntime {
             const index = await this.fetchIndex(signal);
             if (signal.aborted || generation !== this.generation) return this.getDiagnostics();
             if (index.schema !== 'bus-sim-receiver-lightmap-index-v1' || index.cityId !== city.cityId) throw new Error('city_profile_mismatch');
+            this.validateLightingProfile?.(index, city);
             if (Object.entries(this.resources).some(([channel, resource]) => resource.identity.profileId !== index.profileId
                 || resource.identity.aggregateSha256 !== index.channels[channel]?.aggregateSha256)) this.release();
             if (!this.source) {
@@ -185,7 +186,7 @@ export class ReceiverLightmapRuntime {
         return this.getDiagnostics();
     }
 
-    frameBegin(nowMs = performance.now()) {
+    validateFrame() {
         let compatible = !this.city || this.engine.context?.city === this.city;
         if (this.city && (this.active || this.pending)) {
             try { compatible = this.engine.context?.city === this.city && this.watch()
@@ -197,9 +198,14 @@ export class ReceiverLightmapRuntime {
             if (this.watch?.lastChange) this.timings.sourceInvalidation = this.watch.lastChange;
             this.generation++; this.abort?.abort(); this.release(); this.status = { state: 'fallback', reason: 'source_or_profile_changed' };
         }
-        if (this.pending !== undefined) {
+        return compatible;
+    }
+
+    frameBegin(nowMs = performance.now(), allowActivation = true, validate = true) {
+        if (validate) this.validateFrame();
+        if (this.pending !== undefined && (!this.pending || allowActivation)) {
             this.active = this.pending; this.pending = undefined;
-            this.blendStarted = this.active && this.pendingFade ? nowMs : null; this.pendingFade = false;
+            this.blendStarted = this.active && this.pendingFade && !this.atomicActivation ? nowMs : null; this.pendingFade = false;
             if (this.active) this.status = { ...this.status, state: 'active', reason: null };
         }
         this.uniforms.receiverLightingBlend.value = this.blendStarted == null ? 1
@@ -222,6 +228,7 @@ export class ReceiverLightmapRuntime {
             loadingElapsedMs: this.status.state === 'loading' ? performance.now() - this.loadingStarted : null,
             activationBlend: this.uniforms.receiverLightingBlend.value,
             channels: Object.fromEntries(Object.entries(this.resources).map(([id, v]) => [id, v.metrics])),
+            publications: Object.fromEntries(Object.entries(this.resources).map(([id, v]) => [id, v.identity])),
             timings: { ...this.timings }, coverage: (this.resources.indirect_irradiance ?? this.resources.direct_receiver)?.mapping.statistics ?? null };
     }
 
@@ -240,6 +247,13 @@ export class ReceiverLightmapRuntime {
         this.uniforms.receiverAtlasEnabled.value = 0;
         this.bindings?.restore(); this.bindings = null;
     }
+
+    suspend(reason = 'current_requested') {
+        this.generation++; this.abort?.abort(); this.deactivate();
+        this.status = { state: 'current', reason };
+    }
+
+    invalidate() { this.suspend('explicit_revalidation'); this.release(); }
 
     release() {
         this.deactivate();

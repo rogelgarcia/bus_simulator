@@ -138,3 +138,14 @@ test('OptionsPreset: ambient occlusion GTAO debug view parses loose booleans', (
     assert.equal(preset.settings.ambientOcclusion.gtao.denoise, true);
     assert.equal(preset.settings.ambientOcclusion.gtao.debugView, false);
 });
+
+test('OptionsPreset: legacy direct and enhancement settings migrate without replacing Current preferences', () => {
+    const preset = parseOptionsPresetJson(JSON.stringify({ bakedLighting: {
+        mode: 'current', shadows: { enabled: true, dynamicResolution: 'high' },
+        receivers: { direct: true, indirect: true, enhanced: false, linked: true }
+    } }));
+    const next = applyOptionsPresetToDraft({ lighting: { exposure: 1.4 }, shadows: { quality: 'low' } }, preset);
+    assert.equal(next.bakedLighting.mode, 'current');
+    assert.equal(next.bakedLighting.shadows.enabled, true);
+    assert.deepEqual(next.bakedLighting.receivers, { direct: false, indirect: true, enhanced: true, linked: false, debug: 'final' });
+});

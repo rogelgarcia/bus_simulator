@@ -46,6 +46,11 @@ if (viewport) installViewportContextMenuBlocker(viewport);
 
 const engine = new GameEngine({ canvas });
 perfBar.setRenderer(engine.renderer);
+perfBar.setBakedStatusProvider(() => ({
+    ...engine.getBakedLightingStatus(),
+    visibility: engine.context.city?.getStaticVisibilityStatus?.(),
+    scope: engine.context.city
+}));
 engine.addFrameListener((frame) => perfBar.onFrame(frame));
 const sm = new StateMachine();
 window.__busSim = { engine, sm };

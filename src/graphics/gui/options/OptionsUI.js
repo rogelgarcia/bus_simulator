@@ -13,7 +13,7 @@ import { getDefaultResolvedAsphaltNoiseSettings } from '../../visuals/city/Aspha
 import { getDefaultResolvedSunFlareSettings } from '../../visuals/sun/SunFlareSettings.js';
 import { getDefaultResolvedAtmosphereSettings } from '../../visuals/atmosphere/AtmosphereSettings.js';
 import { getDefaultResolvedStaticVisibilitySettings } from '../../../app/city/visibility/index.js';
-import { getDefaultResolvedBakedLightingSettings } from '../../../app/illumination/runtime/index.js';
+import { getDefaultResolvedBakedLightingSettings, sanitizeBakedLightingSettings } from '../../../app/illumination/runtime/index.js';
 import {
     applyOptionsPresetToDraft,
     createOptionsPresetFromDraft,
@@ -107,6 +107,7 @@ export class OptionsUI {
         getAntiAliasingDebugInfo = null,
         getVehicleMotionDebugInfo = null,
         getBakedLightingDebugInfo = null,
+        reloadBakedLighting = null,
         titleText = 'Options',
         subtitleText = '0 opens options · Esc closes',
         onCancel = null,
@@ -121,6 +122,7 @@ export class OptionsUI {
         this._getAntiAliasingDebugInfo = typeof getAntiAliasingDebugInfo === 'function' ? getAntiAliasingDebugInfo : null;
         this._getVehicleMotionDebugInfo = typeof getVehicleMotionDebugInfo === 'function' ? getVehicleMotionDebugInfo : null;
         this._getBakedLightingDebugInfo = typeof getBakedLightingDebugInfo === 'function' ? getBakedLightingDebugInfo : null;
+        this._reloadBakedLighting = typeof reloadBakedLighting === 'function' ? reloadBakedLighting : null;
         this._iblDebugEls = null;
         this._postDebugEls = null;
         this._aaDebugEls = null;
@@ -268,7 +270,7 @@ export class OptionsUI {
             ? JSON.parse(JSON.stringify(initialStaticVisibility))
             : null;
         this._draftBakedLighting = initialBakedLighting && typeof initialBakedLighting === 'object'
-            ? JSON.parse(JSON.stringify(initialBakedLighting))
+            ? sanitizeBakedLightingSettings(initialBakedLighting)
             : null;
         this._lightingControls = null;
         this._markingsCalibration = (() => {
@@ -738,14 +740,17 @@ export class OptionsUI {
         const info = this._getBakedLightingDebugInfo() ?? null;
         const status = info?.status ?? null;
         const bakedActive = status?.effectiveMode === 'baked';
-        if (els.path) els.path.textContent = bakedActive ? 'Baked shadows' : 'Legacy shadows';
+        if (els.path) els.path.textContent = `${status?.requestedMode ?? 'auto'} → ${bakedActive ? 'Baked' : 'Current'}`;
         if (els.state) {
             const state = String(status?.state ?? 'current');
             const phase = typeof status?.phase === 'string' && status.phase ? ` · ${status.phase.replaceAll('_', ' ')}` : '';
             const reason = typeof status?.reason === 'string' && status.reason ? ` · ${status.reason.replaceAll('_', ' ')}` : '';
-            els.state.textContent = `${state}${phase}${reason}`;
+            els.state.textContent = status?.requestedMode === 'current' ? 'Current lighting'
+                : `${state}${status?.causeState ? ' · ' + status.causeState : ''}${phase}${reason}`;
         }
         if (els.profile) els.profile.textContent = status?.profileId ?? 'No exact baked profile selected';
+        if (els.details && els.developer?.open) els.details.textContent = JSON.stringify(info,
+            (key, value) => key === 'registries' && Array.isArray(value) ? { count: value.length } : value, 2);
         if (els.receivers) {
             const receiver = info?.receiverLightmaps;
             const elapsed = receiver?.state === 'loading' && Number.isFinite(receiver.loadingElapsedMs)

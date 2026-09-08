@@ -87,5 +87,5 @@ test('Physical contact city: asphalt and building matched views retain GI and re
     }
     await writeFile(`${output}/result.json`,JSON.stringify({context,records,errors},null,2));
     expect(errors).toEqual([]);
-    expect(records.every(r=>r.baked.direct&&r.baked.indirect)).toBe(true);
+    expect(records.every(r=>!r.baked.direct&&r.baked.indirect)).toBe(true);
 });

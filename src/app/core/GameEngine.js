@@ -1190,8 +1190,16 @@ export class GameEngine {
         return this._bakedLighting?.refresh?.() ?? Promise.resolve(null);
     }
 
+    reloadBakedLighting() {
+        return this._bakedLighting?.reload?.() ?? Promise.resolve(null);
+    }
+
     getBakedLightingDebugInfo() {
         return this._bakedLighting?.getDiagnostics?.() ?? null;
+    }
+
+    getBakedLightingStatus() {
+        return this._bakedLighting?.getStatus() ?? null;
     }
 
     registerDynamicIlluminationObject(descriptor) {
@@ -1352,14 +1360,15 @@ export class GameEngine {
         const gpuTimer = this._gpuFrameTimer;
         let gpuFrameBegun = false;
         try {
+            this._bakedLighting?.prepareFrame?.();
             illuminationPipeline?.frameBegin?.({ engine: this, dt: stepDt, nowMs: now });
+            gpuTimer?.beginFrame?.();
+            gpuFrameBegun = !!gpuTimer;
+            illuminationPipeline?.shadowPrepare?.({ engine: this, dt: stepDt, nowMs: now });
             this._bakedLighting?.frameBegin?.();
             this._syncAoScope();
             this._updateStaticAo();
             this._updateBusContactShadow(stepDt);
-            gpuTimer?.beginFrame?.();
-            gpuFrameBegun = !!gpuTimer;
-            illuminationPipeline?.shadowPrepare?.({ engine: this, dt: stepDt, nowMs: now });
             this._renderAoFrame(stepDt);
         } finally {
             try {
@@ -1454,10 +1463,11 @@ export class GameEngine {
         const illuminationPipeline = this._illuminationPipeline;
         const nowMs = performance.now();
         try {
+            this._bakedLighting?.prepareFrame?.();
             illuminationPipeline?.frameBegin?.({ engine: this, dt: 0, nowMs });
+            illuminationPipeline?.shadowPrepare?.({ engine: this, dt: 0, nowMs });
             this._bakedLighting?.frameBegin?.();
             this._syncAoScope();
-            illuminationPipeline?.shadowPrepare?.({ engine: this, dt: 0, nowMs });
             this._renderAoFrame(0);
         } finally {
             illuminationPipeline?.frameEnd?.({ engine: this, dt: 0, nowMs });

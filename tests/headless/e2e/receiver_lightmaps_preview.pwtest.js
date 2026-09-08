@@ -8,11 +8,11 @@ if (existsSync(chrome)) test.use({ launchOptions: { executablePath: chrome, args
 
 const artifactRoot = path.resolve('tests/artifacts/screens/illumination_533');
 
-test('Receiver illumination: independent opt-in controls preserve current rendering when a package is absent', async ({ page }) => {
+test('Receiver illumination: standard indirect control preserves Current when a package is absent', async ({ page }) => {
     test.setTimeout(180_000);
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.route('**/receivers/package_index.json', (route) => route.fulfill({ status: 404, body: 'missing fixture' }));
+    await page.route('**/receivers/enhanced/package_index.json', (route) => route.fulfill({ status: 404, body: 'missing fixture' }));
     await page.goto('/?pose=civic_center_curve_front&coreTests=0&ibl=0&bloom=0');
     await page.waitForFunction(() => window.__busSim?.sm?.currentName === 'game_mode', null, { timeout: 120_000 });
     const before = await page.evaluate(() => {
@@ -20,18 +20,18 @@ test('Receiver illumination: independent opt-in controls preserve current render
         engine.stop();
         return { settings: engine.bakedLightingSettings, sun: engine.lightingSettings.sunIntensity };
     });
-    expect(before.settings.receivers).toEqual({ direct: false, indirect: false, linked: true, enhanced: false, debug: 'final' });
+    expect(before.settings.receivers).toEqual({ direct: false, indirect: false, linked: false, enhanced: true, debug: 'final' });
     await page.keyboard.press('0');
     await page.locator('.options-tab', { hasText: /^Baked lighting$/i }).click();
     await expect(page.locator('.options-row', { hasText: 'Enable baked indirect illumination' }).locator('input')).not.toBeChecked();
-    await expect(page.locator('.options-row', { hasText: 'Enable baked direct illumination' }).locator('input')).not.toBeChecked();
+    await expect(page.locator('.options-row', { hasText: 'Enable baked direct illumination' }).locator('input')).toHaveCount(0);
     await page.evaluate(async () => {
         const engine = window.__busSim.engine;
         await engine.setBakedLightingSettings({ ...engine.bakedLightingSettings, receivers: { indirect: true } });
         engine.updateFrame(0);
     });
     const after = await page.evaluate(() => window.__busSim.engine.getBakedLightingDebugInfo());
-    expect(after.receiverLightmaps.state).toBe('fallback');
+    expect(after.status.state).toBe('fallback');
     expect(after.receiverLightmaps.effective.indirect).toBe(false);
     expect(after.settings.receivers.direct).toBe(false);
     await mkdir(artifactRoot, { recursive: true });

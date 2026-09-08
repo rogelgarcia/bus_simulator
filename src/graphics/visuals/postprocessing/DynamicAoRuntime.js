@@ -7,6 +7,7 @@ import { DynamicGtaoPass } from './DynamicGtaoPass.js';
 
 export class DynamicAoRuntime {
     constructor() {
+        this.shaderFlags = '#define DYNAMIC_AO_ANALYTIC\n#define DYNAMIC_AO_GENERIC\n';
         this.materials = new Map();
         this.geometries = new Map();
         this.depthMaterials = new Map();
@@ -29,7 +30,8 @@ export class DynamicAoRuntime {
     patch(material) {
         if (this.materials.has(material) || !(material.isMeshStandardMaterial || material.isMeshPhongMaterial)) return;
         const uniforms = this.uniforms;
-        const hook = registerMaterialShaderHook(material, { id: 'ao.dynamic_contact', priority: 400, variantKey: source.variantKey,
+        const runtime = this;
+        const hook = registerMaterialShaderHook(material, { id: 'ao.dynamic_contact', priority: 400, variantKey: source.variantKey + this.shaderFlags.replaceAll('\n', '|'),
             apply(shader) {
                 Object.assign(shader.uniforms, uniforms);
                 shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\n' + source.vertex)
@@ -37,6 +39,7 @@ export class DynamicAoRuntime {
                 shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\n' + source.fragment)
                     .replace('#include <aomap_fragment>', '#include <aomap_fragment>\n' + source.apply)
                     .replace('#include <opaque_fragment>', source.debug + '\n#include <opaque_fragment>');
+                shader.fragmentShader = runtime.shaderFlags + shader.fragmentShader;
             }
         });
         const previous = material.onBeforeRender, had = Object.hasOwn(material, 'onBeforeRender');
@@ -132,6 +135,12 @@ export class DynamicAoRuntime {
         const bounds = roots.map(() => new THREE.Box3()), inverse = roots.map(p => p.root.matrixWorld.clone().invert());
         const analytic = roots.map(p => p.aoUnderbody && settings.dynamic.busMethod !== 'gtao');
         const hasGeneric = roots.some((p,i) => p.cast && !analytic[i]);
+        const flags = (roots.some((p,i) => p.cast && analytic[i]) ? '#define DYNAMIC_AO_ANALYTIC\n' : '')
+            + (hasGeneric ? '#define DYNAMIC_AO_GENERIC\n' : '');
+        if (flags !== this.shaderFlags) {
+            this.shaderFlags = flags;
+            for (const record of this.materials.values()) record.hook.update({ variantKey: source.variantKey + flags.replaceAll('\n', '|') });
+        }
         const meshes = [], keepGeometry = new Set();
         scene.traverseVisible(mesh => {
             if (mesh.isLine || mesh.isPoints || mesh.isSprite) { meshes.push({ mesh, hidden: true }); return; }

@@ -72,6 +72,13 @@ a future texture contains broad lighting instead of local material detail.
 
 ## Bus underside audit
 
+Planned refinement: [AI 558](../../prompts/AI_graphics_558_VEHICLES_bus_ao_contact_softness_and_cycles_reference.md)
+investigates the harsh underbody boundary and apparent rear cutoff on the raised
+spawn platform. It requests matched Cycles visibility/diffuse-lighting references,
+an actual-mesh versus analytic-proxy audit, and a small measured runtime correction.
+This work is pending; it does not supersede the current physical-contact contract
+or establish that a new bus model or static city bake is needed.
+
 The installed CityBus has a closed downward-facing floor at all 15 tested points
 across its center and length. Its floor is approximately 0.304 m above wheel-bottom
 height. No replacement model or additional floor panel is necessary.

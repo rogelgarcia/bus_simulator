@@ -12,7 +12,7 @@ export function renderGraphicsTab() {
     const ao = this._draftAmbientOcclusion;
     const shadows = this._draftShadows;
     const staticVisibility = this._draftStaticVisibility;
-    const bakedShadowsEnabled = this._draftBakedLighting.shadows.enabled === true;
+    const bakedShadowsEnabled = this._draftBakedLighting.mode !== 'current' && this._draftBakedLighting.shadows.enabled === true;
     const emit = () => this._emitLiveChange();
 
     const info = this._getAntiAliasingDebugInfo?.() ?? null;

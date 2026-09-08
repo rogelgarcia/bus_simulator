@@ -93,14 +93,14 @@ test('Gameplay: baked shadows have a safe fallback and preserve legacy shadow se
     await openOptions(page);
 
     await clickTab(page, 'Baked lighting');
-    await expect(page.locator('.options-body')).toContainText('precomputed map lighting');
-    await expect(page.locator('.options-body')).toContainText('should improve performance');
-    await expect(page.locator('.options-body')).toContainText('Blender illumination (preview)');
+    await expect(page.locator('.options-body')).toContainText('Current uses live lighting');
+    await expect(page.locator('.options-body')).toContainText('All selected channels activate together');
+    await expect(page.locator('.options-body')).toContainText('Baked preferences');
     await expect(page.locator('.options-row', { hasText: 'Enable baked shadows' }).locator('input')).toBeChecked();
     expect(await getMovingShadowResolution(page)).toBe('High');
     expect(await page.evaluate(() => window.__busSim.engine.bakedLightingSettings.shadows.dynamicResolution)).toBe('high');
     await expect(page.locator('.options-row', { hasText: 'Map / sun profile' })).toContainText('ai527.sun.az045.el35');
-    await expect(page.locator('.options-row', { hasText: 'Active path' })).toContainText('Legacy shadows');
+    await expect(page.locator('.options-row', { hasText: 'Active path' })).toContainText('Current');
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'baked-lighting-safe-fallback.png') });
 
     await clickTab(page, 'Graphics');

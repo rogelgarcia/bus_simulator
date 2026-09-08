@@ -9,16 +9,17 @@ export const BAKED_DYNAMIC_SHADOW_RESOLUTIONS = Object.freeze({
 });
 
 export const BAKED_LIGHTING_DEFAULTS = Object.freeze({
+    mode: 'auto',
     shadows: Object.freeze({
         enabled: true,
         dynamicResolution: BAKED_DYNAMIC_SHADOW_RESOLUTIONS.high
     }),
-    receivers: Object.freeze({ direct: false, indirect: false, linked: true, enhanced: false, debug: 'final' })
+    receivers: Object.freeze({ direct: false, indirect: false, linked: false, enhanced: true, debug: 'final' })
 });
 
 /**
  * @param {unknown} input
- * @returns {{shadows: {enabled: boolean, dynamicResolution: 'medium' | 'high'}, receivers: {direct: boolean, indirect: boolean, linked: boolean, enhanced: boolean, debug: string}}}
+ * @returns {{mode: 'current' | 'baked' | 'auto', shadows: {enabled: boolean, dynamicResolution: 'medium' | 'high'}, receivers: {direct: boolean, indirect: boolean, linked: boolean, enhanced: boolean, debug: string}}}
  */
 export function sanitizeBakedLightingSettings(input) {
     const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
@@ -29,10 +30,14 @@ export function sanitizeBakedLightingSettings(input) {
         ? BAKED_DYNAMIC_SHADOW_RESOLUTIONS.high
         : BAKED_DYNAMIC_SHADOW_RESOLUTIONS.medium;
     const receivers = source.receivers ?? {};
-    const debugModes = ['final', 'direct', 'indirect', 'combined', 'uv', 'pages', 'unmapped', 'difference', 'mip'];
-    return { shadows: { enabled: shadows.enabled === true, dynamicResolution },
-        receivers: { direct: receivers.direct === true, indirect: receivers.indirect === true,
-            linked: receivers.linked !== false, enhanced: receivers.enhanced === true,
+    const debugModes = ['final', 'indirect', 'uv', 'pages', 'unmapped', 'difference', 'mip'];
+    // Preserve legacy channel intent. Current keeps the inactive baked preferences;
+    // obsolete direct/enhancement switches cannot resurrect the retired preview.
+    const mode = ['current', 'baked', 'auto'].includes(source.mode) ? source.mode
+        : shadows.enabled === true || receivers.indirect === true ? 'auto' : 'current';
+    return { mode, shadows: { enabled: shadows.enabled === true, dynamicResolution },
+        receivers: { direct: false, indirect: receivers.indirect === true,
+            linked: false, enhanced: true,
             debug: debugModes.includes(receivers.debug) ? receivers.debug : 'final' } };
 }
 

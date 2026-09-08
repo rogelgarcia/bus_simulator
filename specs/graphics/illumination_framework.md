@@ -8,6 +8,12 @@ The existing Three.js renderer is the permanent compatibility oracle and is call
 
 AI 527 is specification and measurement only. It changes no production rendering behavior.
 
+The current player workflow is specified in [Runtime illumination modes (AI 535)](illumination_runtime_modes.md):
+Current/Baked/Auto, complete-channel activation, AI 548 as standard baked indirect,
+disabled baked direct, exact Lighting-tab compatibility, AO policy and developer
+reload/diagnostics. That dated policy supersedes the historical preview controls
+and default-off rollout descriptions below; offline channel contracts remain intact.
+
 ## Existing implementation audit
 
 The audit is against code, not prompt filenames.
@@ -222,10 +228,10 @@ The generic AI 530 container may carry independently optional channels, but a na
 
 | Capability profile | Required data/runtime capability | Optional additions | Exposure |
 |---|---|---|---|
-| `development.static_sun_v1` | `static_sun_depth` and compatible static-receiver shader path | AI 532 registered moving-object composition in internal builds | AI 535 staged opt-in for baked shadows; default off, exact-match only, and not eligible for default/release promotion |
+| `development.static_sun_v1` | `static_sun_depth` and compatible static-receiver shader path | AI 532 registered moving-object composition in internal builds | AI 535 exact-match player selection with retained shadow preferences; this development tier is not a release promotion |
 | `baked.hybrid_sun_v1` | `static_sun_depth`, AI 532 static-world sampling on registered moving receivers, and AI 532 shared dynamic self/world/mover shadow layer | AO policy selected by AI 534 | Minimum player-selectable baked profile after later promotion gates pass |
 | `baked.hybrid_sun_indirect_v1` | `baked.hybrid_sun_v1`, receiver mapping, and `indirect_irradiance` | AO/bent normal selected by AI 534 | Player-selectable only after channel validation |
-| `baked.hybrid_sun_direct_indirect_v1` | previous profile plus receiver mapping and `direct_receiver` | AO/bent normal selected by AI 534 | Player-selectable only if AI 533 promotes direct baking |
+| `baked.hybrid_sun_direct_indirect_v1` | previous profile plus receiver mapping and `direct_receiver` | AO/bent normal selected by AI 534 | Offline/low-level contract retained; player baked direct disabled by the 2026-09-07 AI 535 policy |
 
 `development.static_sun_v1` is the only capability profile with the AI 531
 high-memory static-sun validation tier. The immutable package cap remains
@@ -249,12 +255,13 @@ reduction or streaming before promotion. AI 532 supplies the missing generic
 moving-object composition, but does not waive the size, performance, AO, UI,
 or release-validation gates.
 
-AI 535 exposes this development cache through a default-off baked-shadow toggle
-at the user's explicit staged-integration request. It is not a release
-promotion: an absent index/package, unsupported city or sun, failed validation,
-or identity drift retains or restores Current atomically. The legacy shadow
-settings remain stored and are never rewritten by the baked toggle. Direct and
-indirect player controls remain gated on AI 533/534 outputs.
+AI 535 exposes this cache through Current/Baked/Auto and independent shadow and
+standard indirect preferences. Existing Auto/high-resolution shadow defaults are
+retained; indirect is opt-in and includes AI 548. This is not a release promotion:
+an absent index/package, unsupported city or sun, failed validation, or identity
+drift retains or restores the complete Current selection atomically. The legacy
+shadow settings remain stored and are never rewritten by mode changes. Baked
+direct is disabled, including migrated saved settings and presets.
 
 The staged runtime authority is
 `assets/baked_lighting/shadows/package_index.json`, with profile publications
@@ -278,7 +285,12 @@ lighting branches. Returning to Current restores each captured per-light
 `autoUpdate` policy and forces `needsUpdate=true` so live maps rebuild with the
 restored casters on the next render.
 
-Direct-only or indirect-only packages remain valid transport fixtures, but they cannot activate the final player-facing `baked` mode. A receiver mapping is required whenever a receiver channel is required. Unknown required channels reject the profile; absent optional channels do not change ownership of a term.
+Transport channels remain independently valid. AI 535 activates the complete
+player-requested channel set: shadow-only, indirect-only with live shadows, or
+shadows plus indirect. Direct is disabled in that player workflow. A receiver
+mapping is required whenever a receiver channel is required. Unknown required
+channels reject the profile; absent optional channels do not change ownership
+of a term. These player preferences do not waive release-promotion gates.
 
 ## Baking toolchain decision
 

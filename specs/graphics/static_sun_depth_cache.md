@@ -221,6 +221,14 @@ IBL/environment reflection, ambient light, or any other light. Road markings
 therefore receive the same named-sun visibility as other compatible materials
 without becoming dark decals.
 
+Planned investigation: [AI 559](../../prompts/AI_graphics_559_MATERIAL_shared_specular_visibility_and_grazing_shadow_leakage.md)
+traces the reported grazing-angle asphalt sheen inside bus shadows and compares
+it with the earlier grass issue. It will distinguish direct-sun leakage from
+environment reflection or missing specular visibility before selecting a shared
+correction. The existing separation of named-sun visibility and environment
+reflection above remains authoritative; this pending task does not authorize
+multiplying all reflected or final color by a sun-shadow mask.
+
 Supported debug variants are normal, cache visibility, tile layer, reconstructed
 depth, receiver coordinates, residency/domain, applied bias, out-of-range,
 seam proximity, absolute current-versus-cache visibility difference, dynamic

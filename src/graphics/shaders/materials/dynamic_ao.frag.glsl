@@ -47,6 +47,7 @@ float dynamicAoQuad(vec3 a, vec3 b, vec3 c, vec3 d, vec3 n) {
 
 float dynamicAoWorldContact(vec3 p, vec3 n) {
     float blocked = 0.0;
+    #ifdef DYNAMIC_AO_ANALYTIC
     for (int i = 0; i < dynamicAoCount; i++) {
         if (abs(vDynamicAoParticipant - float(i + 1)) < 0.25) continue;
         vec4 lower = texelFetch(dynamicAoBounds,ivec2(4,i),0);
@@ -83,6 +84,7 @@ float dynamicAoWorldContact(vec3 p, vec3 n) {
         float fade = 1.0-smoothstep(0.0,dynamicAoRadius,distanceToBox);
         blocked = max(blocked, clamp(coverage,0.0,1.0)*fade);
     }
+    #endif
     return blocked;
 }
 
@@ -91,8 +93,11 @@ float dynamicAoSurfaceContact(vec3 p) {
     vec2 uv = clip.xy / clip.w * 0.5 + 0.5;
     float visibility = texture2D(dynamicAoMap,uv).r;
     if (vDynamicAoParticipant > 0.5) return clamp(1.0-visibility,0.0,1.0);
-    if (dynamicAoGeneric < 0.5) return 0.0;
+    #ifdef DYNAMIC_AO_GENERIC
     // Static-to-static occlusion is already represented by the bake.
     float staticVisibility = texture2D(dynamicAoStaticMap,uv).r;
     return clamp(1.0-visibility/max(staticVisibility,0.01),0.0,1.0);
+    #else
+    return 0.0;
+    #endif
 }

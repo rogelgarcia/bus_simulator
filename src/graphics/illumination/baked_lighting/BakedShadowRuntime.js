@@ -98,6 +98,7 @@ export class BakedShadowRuntime {
                 reason: error instanceof Error ? error.message : String(error),
                 effectiveMode: 'current'
             });
+            this._pipeline?.deactivate(this._status.reason);
             console.warn('[BakedShadowRuntime] Baked shadows unavailable; retaining current shadows.', error);
             return this.getDiagnostics();
         });
@@ -161,7 +162,8 @@ export class BakedShadowRuntime {
             packageUrl
         });
         const live = selection.liveIdentity;
-        await pipeline.setMode('auto', {
+        pipeline.canActivate = () => this.canActivate?.() !== false;
+        await pipeline.setMode(this._settings.mode === 'baked' ? 'baked' : 'auto', {
             url: packageUrl,
             expectations: {
                 cityId: live.cityId,
@@ -184,6 +186,24 @@ export class BakedShadowRuntime {
             });
         }
         return this._indexPromise;
+    }
+
+    suspend(reason = 'current_requested', retainResources = true) {
+        this._generation++;
+        this._requestKey = null;
+        this._pipeline?.runtime.deactivate(reason, { retainResources });
+    }
+
+    getSnapshot() { return this._pipeline?.runtime.getSnapshot() ?? null; }
+
+    commitCurrent() {
+        if (this.getSnapshot()?.pendingTransition === 'current') this._pipeline.runtime.commitFrameBoundary();
+    }
+
+    invalidate() {
+        this.suspend('explicit_revalidation', false);
+        this._indexPromise = null;
+        this._liveIdentity = null;
     }
 
     _ensurePipeline() {

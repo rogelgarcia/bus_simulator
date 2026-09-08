@@ -257,6 +257,7 @@ export class OptionsState {
             getAntiAliasingDebugInfo: () => this.engine?.getAntiAliasingDebugInfo?.() ?? null,
             getVehicleMotionDebugInfo: () => this._getVehicleMotionDebugInfo(),
             getBakedLightingDebugInfo: () => this.engine?.getBakedLightingDebugInfo?.() ?? null,
+            reloadBakedLighting: () => this.engine?.reloadBakedLighting?.(),
             onCancel: () => this._cancel(),
             onLiveChange: (draft) => this._applyDraft(draft),
             onSave: (draft) => this._save(draft)

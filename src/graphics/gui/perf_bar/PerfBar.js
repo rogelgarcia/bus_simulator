@@ -4,6 +4,7 @@
 
 import { applyMaterialSymbolToButton } from '../shared/materialSymbols.js';
 import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
+import { BakedStatusStrip } from './BakedStatusStrip.js';
 
 const GLOBAL_CLASS_ENABLED = 'perf-bar-enabled';
 const GLOBAL_CLASS_HIDDEN = 'perf-bar-hidden';
@@ -131,6 +132,8 @@ export class PerfBar {
         };
 
         this._forceUpdate = false;
+        this._bakedStatusProvider = null;
+        this._bakedStatusStrip = null;
 
         this._els = {
             fpsText: null,
@@ -161,6 +164,22 @@ export class PerfBar {
 
     requestUpdate() {
         this._forceUpdate = true;
+    }
+
+    /** @param {(() => object) | null} provider */
+    setBakedStatusProvider(provider) {
+        if (provider !== null && typeof provider !== 'function') throw new TypeError('Bake status provider must be a function or null.');
+        this._bakedStatusProvider = provider;
+        this._bakedStatusStrip?.destroy();
+        this._bakedStatusStrip = null;
+        if (provider && this.root) this._mountBakedStatus();
+        this.requestUpdate();
+    }
+
+    _mountBakedStatus() {
+        this._bakedStatusStrip = new BakedStatusStrip();
+        this._els.btnToggle.before(this._bakedStatusStrip.root);
+        this._bakedStatusStrip.update(this._bakedStatusProvider(), performance.now());
     }
 
     mount(parent = document.body) {
@@ -248,6 +267,7 @@ export class PerfBar {
         this._els.iconToggle = iconToggle;
         this._els.btnDockToggle = btnDockToggle;
         this._els.iconDockToggle = iconDockToggle;
+        if (this._bakedStatusProvider) this._mountBakedStatus();
 
         btnToggle.addEventListener('click', () => this.setHidden(!this.isHidden()), { passive: true });
         btnDockToggle.addEventListener('click', () => this.setHidden(false), { passive: true });
@@ -263,6 +283,9 @@ export class PerfBar {
     destroy() {
         if (!this.root) return;
         window.removeEventListener('keydown', this._onDocKeyDown, { capture: true });
+        this._bakedStatusStrip?.destroy();
+        this._bakedStatusStrip = null;
+        this._bakedStatusProvider = null;
         this.root.remove();
         this._els.btnDockToggle?.remove();
         this.root = null;
@@ -317,6 +340,7 @@ export class PerfBar {
         if (!this._forceUpdate && now - this._frame.lastUpdateMs < this._updateIntervalMs) return;
         this._forceUpdate = false;
         this._frame.lastUpdateMs = now;
+        this._bakedStatusStrip?.update(this._bakedStatusProvider(), now);
         this._renderLive();
     }
 

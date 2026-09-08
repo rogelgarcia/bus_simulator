@@ -159,7 +159,11 @@ export class StaticSunDepthPipeline {
             this._fallbackNow('dynamic_caster_ownership_lost');
         }
         try {
-            this.runtime.commitFrameBoundary();
+            // The player-mode coordinator may hold a prepared sun package until
+            // the requested indirect channel is also ready. Current never waits.
+            if (this.runtime.getSnapshot().pendingTransition !== 'baked' || this.canActivate?.() !== false) {
+                this.runtime.commitFrameBoundary();
+            }
         } catch (error) {
             this._lastError = error;
             this._restoreCurrent('frame_commit_failed');

@@ -1,4 +1,4 @@
-// Owns the opt-in AI 548 runtime; the legacy receiver runtime remains independently cached.
+// Supplies the standard baked indirect path, including AI 548 coverage and optimizations.
 // @ts-check
 import * as THREE from 'three';
 import { ReceiverLightmapRuntime } from './ReceiverLightmapRuntime.js';
@@ -7,6 +7,7 @@ import { installEnhancedReceiverBindings } from './EnhancedReceiverMaterialAdapt
 import { createEnhancedSourceWatch, enhancedLightingKey } from './EnhancedReceiverFreshness.js';
 import { collectResolvedCityBakeRoots } from '../bake_source/BakeSourceScene.js';
 import { installEnhancedReceiverRenderOptimizations } from './EnhancedReceiverRenderOptimizations.js';
+import { createResolvedIlluminationExportProfile } from '../bake_source/IlluminationExportProfile.js';
 
 export class EnhancedReceiverLightmapRuntime extends ReceiverLightmapRuntime {
     /** @param {any} engine */
@@ -51,6 +52,21 @@ export class EnhancedReceiverLightmapRuntime extends ReceiverLightmapRuntime {
     }
     async refresh() {
         const result = await super.refresh(); this.updateDecodeUniforms(); return result;
+    }
+    validateLightingProfile(index, city) {
+        const live = createResolvedIlluminationExportProfile({ engine: this.engine, city });
+        for (const id of ['sun.default', 'hemisphere.current', 'environment.default']) {
+            const expected = index.sourceProfiles?.find(profile => profile.id === id);
+            const actual = live.lightProfiles.find(profile => profile.id === id);
+            if (actual.source) {
+                const source = new URL(actual.source, location.href);
+                // Match the source exporter's same-origin project URL identity.
+                actual.source = source.origin === location.origin ? source.pathname : source.href;
+            }
+            if (!expected || Object.keys(actual).some(key => JSON.stringify(actual[key]) !== JSON.stringify(expected[key]))) {
+                throw new Error(`lighting_profile_mismatch:${id}`);
+            }
+        }
     }
     async fetchIndex(signal) {
         if (this.cachedIndex) return this.cachedIndex;

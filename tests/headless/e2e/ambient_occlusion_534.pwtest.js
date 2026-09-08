@@ -26,6 +26,11 @@ test('AI 534 real city: GI, scope, AO Off, parked/moving bus and restoration', a
         const {engine:e,sm}=window.__busSim;
         await Promise.all([e.waitForLightingReady(),sm.current.busModel?.userData?.readyPromise,sm.current.city?.world?.trees?.readyPromise].filter(Boolean));
         e.stop(); sm.current.gameLoop.paused=true;
+        window.aoShaderFailures=[];
+        e.renderer.debug.onShaderError=(gl,program,vertex,fragment)=>{
+            window.aoShaderFailures.push({phase:window.aoPhase,log:gl.getProgramInfoLog(program),fragment:gl.getShaderSource(fragment)});
+            console.error('AI534 shader error',gl.getProgramInfoLog(program));
+        };
         sm.current.update=()=>{e.context.city.update(e);e.context.city.updateStaticVisibility(e.camera);};
         e.setViewportSize(1280,720); e.renderer.setPixelRatio(1);e.renderer.setSize(1280,720,false);
         e.camera.aspect=1280/720;e.camera.updateProjectionMatrix();
@@ -36,12 +41,14 @@ test('AI 534 real city: GI, scope, AO Off, parked/moving bus and restoration', a
             let done=false;const work=e.setBakedLightingSettings({shadows:{enabled:true,dynamicResolution:'high'},receivers:{enhanced:true,indirect,direct,linked:false}}).finally(()=>done=true);
             const start=performance.now();
             while(true){e.updateFrame(0);await new Promise(requestAnimationFrame);
-                const d=e.getBakedLightingDebugInfo().receiverLightmaps;
-                if(done&&d.state==='fallback') throw new Error(d.reason);
-                if(done&&d.state==='active'&&d.effective.indirect===indirect&&d.activationBlend===1) break;
+                const lighting=e.getBakedLightingDebugInfo(), d=lighting.receiverLightmaps;
+                if(done&&lighting.status.causeState) throw new Error(lighting.status.reason);
+                if(done&&lighting.status.effectiveMode==='baked'&&d.effective.indirect===indirect
+                    &&(!indirect||d.activationBlend===1)) break;
                 if(performance.now()-start>300000) throw new Error('Lighting activation timeout');
             } await work;
         },async measure(id){
+            window.aoPhase=id;
             const samples=[],gpu=e._gpuFrameTimer;let dynamic=[];
             for(let f=0;f<45;f++){
                 if(f===15)gpu?.resetSamples();
@@ -95,14 +102,14 @@ test('AI 534 real city: GI, scope, AO Off, parked/moving bus and restoration', a
             aa.push({mode,scope:e.getAmbientOcclusionDebugInfo().scope,error:e.renderer.getContext().getError()});
         }
         await window.ao534.bake(false);
-        const directOnly=e.getAmbientOcclusionDebugInfo();
+        const shadowsOnly=e.getAmbientOcclusionDebugInfo();
         await window.ao534.bake(true);
-        return{moving,off,returned,directOnly,aa,final:e.getAmbientOcclusionDebugInfo(),parametersPreserved:original===JSON.stringify(e.ambientOcclusionSettings.gtao),
+        return{moving,off,returned,shadowsOnly,aa,final:e.getAmbientOcclusionDebugInfo(),parametersPreserved:original===JSON.stringify(e.ambientOcclusionSettings.gtao),
             baked:e.getBakedLightingDebugInfo().receiverLightmaps.effective};
     });
     expect(lifecycle.off.mode).toBe('off');expect(lifecycle.returned.mode).toBe('dynamic-contact');
-    expect(lifecycle.directOnly.scope).toBe('all');expect(lifecycle.final.scope).toBe('dynamic');
-    expect(lifecycle.parametersPreserved).toBe(true);expect(lifecycle.baked).toEqual({direct:true,indirect:true});
+    expect(lifecycle.shadowsOnly.scope).toBe('all');expect(lifecycle.final.scope).toBe('dynamic');
+    expect(lifecycle.parametersPreserved).toBe(true);expect(lifecycle.baked).toEqual({direct:false,indirect:true});
     expect(lifecycle.moving.every(d=>d.dynamic.enabled&&d.dynamic.participants>0)).toBe(true);
     expect(lifecycle.aa.every(a=>a.scope==='dynamic'&&a.error===0)).toBe(true);
     expect(requests.length).toBe(warmRequestCount);
@@ -115,6 +122,7 @@ test('AI 534 real city: GI, scope, AO Off, parked/moving bus and restoration', a
         e.updateFrame(0);e._prepareDynamicAo();bus.visible=false;e.renderer.shadowMap.autoUpdate=false;
         e.renderer.render(e.scene,e.camera);e._dynamicAo.restoreBindings();});
     await page.screenshot({path:`${root}/dynamic-footprint-debug.png`});
+    await writeFile(`${root}/shader-failures.json`,JSON.stringify(await page.evaluate(()=>window.aoShaderFailures),null,2));
     await writeFile(`${root}/result.json`,JSON.stringify({context,measures,lifecycle,requests,errors},null,2));
     expect(errors).toEqual([]);
 });

@@ -1,5 +1,7 @@
 varying highp vec4 vReceiverAtlas;
+#ifndef RECEIVER_SHARED_SUN
 uniform highp sampler2DArray receiverDirectAtlas;
+#endif
 uniform highp sampler2DArray receiverIndirectAtlas;
 uniform vec4 receiverDirectScale[RECEIVER_DIRECT_LAYERS];
 uniform vec4 receiverDirectBias[RECEIVER_DIRECT_LAYERS];
@@ -20,7 +22,9 @@ void receiverPrepare(vec3 shadingNormal) {
     if (vReceiverAtlas.w < .5) return;
     vec2 dx = dFdx(vReceiverAtlas.xy), dy = dFdy(vReceiverAtlas.xy);
     vec2 size = vec2(textureSize(receiverIndirectAtlas, 0).xy);
+    #ifndef RECEIVER_SHARED_SUN
     if (receiverIndirectEnabled == 0) size = vec2(textureSize(receiverDirectAtlas, 0).xy);
+    #endif
     receiverLod = clamp(.5 * log2(max(max(dot(dx * size, dx * size), dot(dy * size, dy * size)), 1.0)), 0.0, receiverMaxMip);
     #if !defined(RECEIVER_FLAT_NORMAL) && !defined(RECEIVER_SHARED_SUN)
     vec3 px = dFdx(-vViewPosition), py = dFdy(-vViewPosition);

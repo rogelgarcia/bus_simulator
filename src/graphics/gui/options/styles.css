@@ -889,3 +889,7 @@
         justify-content: stretch;
     }
 }
+.options-baked-diagnostics {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}

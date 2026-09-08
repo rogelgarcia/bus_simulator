@@ -300,12 +300,23 @@ test('AI 531 static-sun pipeline activates only a verified complete set and roll
         };
         rejectNextCityCompile = false;
         await pipeline.setMode('auto', { url: '/fixture/valid', expectations });
+        pipeline.canActivate = () => false;
+        engine.renderFrame();
+        const heldForIndirect = { caster: cityMesh.castShadow,
+            mode: pipeline.getDiagnostics().runtime.controller.effectiveMode,
+            pending: pipeline.getDiagnostics().runtime.controller.pendingTransition };
+        pipeline.canActivate = () => true;
         engine.renderFrame();
         const active = {
             caster: cityMesh.castShadow,
             bus: busMesh.castShadow,
             diagnostics: pipeline.getDiagnostics()
         };
+        const oldSize = engine.renderer.getSize(new THREE.Vector2());
+        engine.renderer.setSize(420, 320, false);
+        engine.renderFrame();
+        const afterResize = pipeline.getDiagnostics().runtime.controller.effectiveMode;
+        engine.renderer.setSize(oldSize.x, oldSize.y, false);
         const staticUploadsBeforeDynamicResolutionChange = staticSunUploadCount;
         const dynamicResolutionChanged = pipeline.setDynamicShadowResolution({
             mapSize: 128,
@@ -464,6 +475,8 @@ test('AI 531 static-sun pipeline activates only a verified complete set and roll
             readyBeforeCommit,
             rejectedCityCompile,
             cityCompileCasterStates,
+            heldForIndirect,
+            afterResize,
             active,
             afterDynamicResolutionChange,
             comparison,
@@ -514,6 +527,8 @@ test('AI 531 static-sun pipeline activates only a verified complete set and roll
     // rollback above proves a rejected compile restores their authored state.
     expect(result.cityCompileCasterStates.every((value) => value === false)).toBe(true);
     expect(result.active.caster).toBe(false);
+    expect(result.heldForIndirect).toEqual({ caster: true, mode: 'current', pending: 'baked' });
+    expect(result.afterResize).toBe('baked');
     expect(result.active.bus).toBe(false);
     expect(result.active.diagnostics.active).not.toBeNull();
     expect(result.active.diagnostics.runtime.controller.effectiveMode).toBe('baked');

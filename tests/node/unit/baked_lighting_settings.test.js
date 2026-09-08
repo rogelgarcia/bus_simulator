@@ -34,17 +34,17 @@ function makeIndex() {
 }
 
 test('BakedLightingSettings: defaults enable the high-resolution moving-object map', () => {
-    const defaults = { shadows: { enabled: true, dynamicResolution: 'high' }, receivers: { direct: false, indirect: false, linked: true, enhanced: false, debug: 'final' } };
+    const defaults = { mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high' }, receivers: { direct: false, indirect: false, linked: false, enhanced: true, debug: 'final' } };
     assert.deepEqual(BAKED_LIGHTING_DEFAULTS, defaults);
     assert.deepEqual(getDefaultResolvedBakedLightingSettings(), defaults);
     assert.deepEqual(sanitizeBakedLightingSettings({ shadows: { enabled: 'true' } }), {
-        shadows: { enabled: false, dynamicResolution: 'medium' }, receivers: defaults.receivers
+        mode: 'current', shadows: { enabled: false, dynamicResolution: 'medium' }, receivers: defaults.receivers
     });
-    assert.deepEqual(sanitizeBakedLightingSettings({ shadows: { enabled: true, dynamicResolution: 'ultra' } }), {
-        shadows: { enabled: true, dynamicResolution: 'medium' }, receivers: defaults.receivers
+    assert.deepEqual(sanitizeBakedLightingSettings({ mode: 'auto', shadows: { enabled: true, dynamicResolution: 'ultra' } }), {
+        mode: 'auto', shadows: { enabled: true, dynamicResolution: 'medium' }, receivers: defaults.receivers
     });
-    assert.deepEqual(sanitizeBakedLightingSettings({ shadows: { enabled: true, dynamicResolution: 'high' } }), {
-        shadows: { enabled: true, dynamicResolution: 'high' }, receivers: defaults.receivers
+    assert.deepEqual(sanitizeBakedLightingSettings({ mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high' } }), {
+        mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high' }, receivers: defaults.receivers
     });
 });
 
@@ -60,18 +60,18 @@ test('BakedLightingSettings: saves and restores baked-shadow intent only', () =>
     };
     try {
         assert.equal(saveBakedLightingSettings({
-            shadows: { enabled: true, dynamicResolution: 'high' },
+            mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high' },
             future: 'ignored'
         }), true);
         assert.deepEqual(getResolvedBakedLightingSettings(), {
-            shadows: { enabled: true, dynamicResolution: 'high' }, receivers: { direct: false, indirect: false, linked: true, enhanced: false, debug: 'final' }
+            mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high' }, receivers: { direct: false, indirect: false, linked: false, enhanced: true, debug: 'final' }
         });
-        saveBakedLightingSettings({ receivers: { direct: true, indirect: false, linked: false } });
+        saveBakedLightingSettings({ receivers: { direct: false, indirect: false, linked: false } });
         assert.deepEqual(getResolvedBakedLightingSettings().receivers,
-            { direct: true, indirect: false, linked: false, enhanced: false, debug: 'final' });
+            { direct: false, indirect: false, linked: false, enhanced: true, debug: 'final' });
         assert.equal(clearSavedBakedLightingSettings(), true);
         assert.deepEqual(getResolvedBakedLightingSettings(), {
-            shadows: { enabled: true, dynamicResolution: 'high' }, receivers: { direct: false, indirect: false, linked: true, enhanced: false, debug: 'final' }
+            mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high' }, receivers: { direct: false, indirect: false, linked: false, enhanced: true, debug: 'final' }
         });
     } finally {
         if (previousWindow === undefined) delete globalThis.window;
@@ -81,9 +81,9 @@ test('BakedLightingSettings: saves and restores baked-shadow intent only', () =>
 
 test('BakedLightingSettings: receiver channels are strict independent opt-ins', () => {
     assert.deepEqual(sanitizeBakedLightingSettings({ receivers: { direct: true, indirect: 'true', debug: 'unknown' } }).receivers,
-        { direct: true, indirect: false, linked: true, enhanced: false, debug: 'final' });
+        { direct: false, indirect: false, linked: false, enhanced: true, debug: 'final' });
     assert.deepEqual(sanitizeBakedLightingSettings({ receivers: { indirect: true, debug: 'difference' } }).receivers,
-        { direct: false, indirect: true, linked: true, enhanced: false, debug: 'difference' });
+        { direct: false, indirect: true, linked: false, enhanced: true, debug: 'difference' });
 });
 
 test('BakedShadowProfile: selects only an exact matching city and sun profile', () => {
@@ -106,4 +106,24 @@ test('BakedShadowProfile: selects only an exact matching city and sun profile', 
         cityConfigHash: '314e44319dd7a5b9',
         atmosphere: { sun: { azimuthDeg: 45, elevationDeg: 35 } }
     }), { ok: false, reason: 'city_map_not_current', profileId: 'ai527.sun.az045.el35' });
+});
+
+
+test('BakedLightingSettings: migrate legacy presets and retain inactive channel preferences', () => {
+    const input = { mode: 'current', shadows: { enabled: true, dynamicResolution: 'high' },
+        receivers: { direct: true, indirect: true, enhanced: false, linked: true, debug: 'direct' } };
+    const settings = sanitizeBakedLightingSettings(input);
+    assert.equal(settings.mode, 'current');
+    assert.equal(settings.shadows.enabled, true);
+    assert.equal(settings.receivers.indirect, true);
+    assert.equal(settings.receivers.direct, false);
+    assert.equal(settings.receivers.enhanced, true);
+    assert.equal(settings.receivers.linked, false);
+    assert.equal(settings.receivers.debug, 'final');
+    assert.deepEqual(sanitizeBakedLightingSettings(settings), settings);
+    for (const mode of ['current', 'baked', 'auto']) {
+        assert.equal(sanitizeBakedLightingSettings({ ...input, mode }).mode, mode);
+    }
+    assert.equal(sanitizeBakedLightingSettings({ receivers: { indirect: true, enhanced: false } }).mode, 'auto');
+    assert.equal(sanitizeBakedLightingSettings({ receivers: { direct: true } }).mode, 'current');
 });
