@@ -3,6 +3,7 @@ import bpy, math, json, sys
 import numpy as np
 from pathlib import Path
 from mathutils import Vector
+from lighting_scales import scale_emission
 
 Y709=np.array([.2126,.7152,.0722])
 def image_array(image):
@@ -63,6 +64,9 @@ def setup_environments(scene, source, lighting, output):
     return result
 
 def apply_lighting(scene,source,config,preset,calibration):
+    radiance_scale=preset.get('radianceScale',1)
+    environment_scale=preset.get('environmentMultiplier',1)*radiance_scale
+    scale_emission(radiance_scale)
     for obj in list(scene.objects):
         if obj.type=='LIGHT':bpy.data.objects.remove(obj,do_unlink=True)
     world=bpy.data.worlds.new('World_'+preset['id']);world.use_nodes=True;scene.world=world
@@ -88,13 +92,16 @@ def apply_lighting(scene,source,config,preset,calibration):
             scale=nodes.new('ShaderNodeVectorMath');scale.operation='SCALE';scale.inputs[3].default_value=source['lighting']['ibl']['envMapIntensity']
             links.new(texture.outputs['Color'],scale.inputs[0]);links.new(scale.outputs[0],mix.inputs[1]);links.new(mix.outputs[0],background.inputs['Color']);background.inputs['Strength'].default_value=1
         else:background.inputs['Strength'].default_value=target/calibration['overcastIrradiance' if kind=='overcast' else 'hdrIrradiance']
+    background.inputs['Strength'].default_value*=environment_scale
     if preset['sun']!='none':
         light=bpy.data.lights.new('Single Sun','SUN');obj=bpy.data.objects.new('Single Sun',light);scene.collection.objects.link(obj)
         obj.rotation_euler=(-sun).to_track_quat('-Z','Y').to_euler();light.energy=source['lighting']['sunIntensity'] if preset['sun']=='source' else config['calibration']['sunReference']
         light.angle=math.radians(preset.get('sunDiameterDegrees',.53));light.color=(1,1,1)
+        light.energy*=preset.get('sunMultiplier',1)*radiance_scale
     if kind=='source':
         camera_texture=nodes.new('ShaderNodeTexEnvironment');camera_texture.image=bpy.data.images[calibration['images']['sourceCamera']]
         camera_background=nodes.new('ShaderNodeBackground');links.new(camera_texture.outputs['Color'],camera_background.inputs['Color'])
+        camera_background.inputs['Strength'].default_value=environment_scale
         path=nodes.new('ShaderNodeLightPath');mix=nodes.new('ShaderNodeMixShader');links.new(path.outputs['Is Camera Ray'],mix.inputs[0]);links.new(background.outputs[0],mix.inputs[1]);links.new(camera_background.outputs[0],mix.inputs[2]);links.new(mix.outputs[0],output.inputs['Surface'])
     return {'preset':preset,'skyHorizontalTargetRelative':target,'sunEnergyRelative':0 if preset['sun']=='none' else light.energy,
         'sunDirectionBlender':list(sun),'skyStrength':background.inputs['Strength'].default_value,

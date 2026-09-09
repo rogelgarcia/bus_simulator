@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "reference": "S01",
+  "uniformControl": "U04",
+  "baseExposure": 1.02,
+  "exposureOffsets": [-0.5, 0, 0.5],
+  "render": {"width": 1920, "height": 1080, "samples": 256, "minimumSamples": 32, "noiseThreshold": 0.02},
+  "variants": [
+    {"id": "S01", "label": "Source balance", "sunMultiplier": 1, "environmentMultiplier": 1, "radianceScale": 1},
+    {"id": "S02", "label": "Sun 2x / sky 1x", "sunMultiplier": 2, "environmentMultiplier": 1, "radianceScale": 1},
+    {"id": "S04", "label": "Sun 4x / sky 1x", "sunMultiplier": 4, "environmentMultiplier": 1, "radianceScale": 1},
+    {"id": "S08", "label": "Sun 8x / sky 1x", "sunMultiplier": 8, "environmentMultiplier": 1, "radianceScale": 1},
+    {"id": "F04", "label": "Sun 4x / sky 1.5x", "sunMultiplier": 4, "environmentMultiplier": 1.5, "radianceScale": 1},
+    {"id": "U04", "label": "Control: all radiance 4x", "sunMultiplier": 1, "environmentMultiplier": 1, "radianceScale": 4}
+  ],
+  "tones": [
+    {"id": "aces", "label": "ACESFilmic", "type": "three_aces_filmic", "exposureMultiplier": 1},
+    {"id": "agx", "label": "AgX", "type": "ocio", "view": "AgX", "look": "None"}
+  ],
+  "regions": {
+    "pose_02": [
+      {"id": "red_facade_shade", "box": [0.03, 0.23, 0.38, 0.40]},
+      {"id": "ground_floor_shade", "box": [0.035, 0.47, 0.38, 0.51]},
+      {"id": "road", "box": [0.30, 0.76, 0.43, 0.87]}
+    ],
+    "pose_03": [
+      {"id": "sunlit_masonry", "box": [0.84, 0.18, 0.94, 0.26]},
+      {"id": "canopy_and_shop", "box": [0.84, 0.43, 0.94, 0.59]}
+    ]
+  },
+  "uniformDisplayRmseLimit": 0.012,
+  "policy": "Relative radiance, not SI daylight calibration. One global exposure per lighting configuration from the same horizontal gray card; no pose fitting. Camera sky scales with environment; emission scales only in the uniform control. Grading off."
+}

@@ -12,6 +12,12 @@ Implement and execute an iterative, reproducible workflow that brings the game t
 
 The user authorizes a simple Blender-compatible replacement for unsupported window interior materials: deterministic fake room silhouettes and restrained gray/beige surfaces are sufficient. The user also authorizes restoring baked direct lighting **if measured evidence shows that it helps**. Preserve the accepted indirect engine and AI 548 coverage/optimizations, original bus appearance, independent reflection controls and complete runtime fallback.
 
+## Calibration coordination
+
+- [ ] Consume the physical calibration roadmap in `specs/graphics/lighting_calibration.md`: AI 564 establishes independent fixtures and the color contract; AI 565 calibrates coherent daylight; AI 566 audits materials/export equivalence; AI 567 supplies the executed candidate comparisons and integration handoff. Independent renderer diagnosis can proceed before those tasks finish, but final scene tuning must use their validated inputs and disclose unresolved uncertainty.
+- [ ] Retain all frozen targets below as visual comparisons while also generating corrected references with calibrated light/material inputs. Do not force the game to reproduce an unverified sky color, material placeholder or exporter artifact. Preserve the user's desired sunny appearance and readable shaded facades within the validated profile; physical checks and aesthetic preference have separate results.
+- [ ] Own the final production exporter/window-proxy, renderer, bake and shadow changes. Reuse AI 566's material-equivalence contract and AI 567's profile/receipts; avoid a second calibration implementation. Resolve the handoff's supported-renderer failures, regenerate compatible bakes and verify actual game images, toggle stability and runtime cost before declaring this AI complete. Keep all final/progress evidence in this prompt's existing ignored artifact directory.
+
 ## Frozen evidence and target identity
 
 The original attachments have already been copied byte-for-byte to the following gitignored directory:

@@ -36,6 +36,21 @@ Each exporter/renderer/processor/analyzer/reporter also has a standalone entry.
 The image stages require `pythonExecutable` with NumPy/OpenImageIO/OCIO; device
 selection uses `renderDevice` in the same machine configuration.
 
+AI 563 registers `lighting/experiments/sun-sky-ratios` and its `/review` leaf.
+The main job authenticates an explicit existing AI 560 scene/source, reuses its
+cameras and geometry, and renders relative sun/sky multipliers through the same
+Cycles backend. It derives one card-based exposure per configuration, shared by
+all poses and the ACESFilmic/AgX transforms. A uniform radiance control verifies
+exposure invariance. `/review` authenticates saved images and only starts Python
+and a report browser. Both reject publication and are outside production defaults.
+Tracked recipes/scripts are documented in the
+[ratio experiment README](../../tools/bake_lighting/experiments/sun_sky_ratios/README.md);
+all generated evidence stays under `tests/artifacts/screens/ai563_sun_sky_ratios/`.
+The ratio review supports selecting exact saved images across configurations,
+poses and tone/exposure choices, a paged 2×2 grid, and a single-image carousel
+with a bottom configuration menu and thumbnails. Optional artifact-local visual
+references are hash-checked, labeled uncalibrated and excluded from measurements.
+
 Jobs may declare `codePaths` to scope implementation checkpoints and input-stability
 checks to their algorithm and adapters. Shared `tools/baking` code is always included.
 Jobs without a scope retain the original complete framework/domain code inventory.
@@ -118,6 +133,16 @@ native foliage parity evidence, then production packing. Every phase is a separa
 job with authenticated prerequisites. Alternative texture-gradient reconstruction
 and promotion stay in the research tools. A full release still requires its
 existing certification; the native cutout proof alone does not grant release.
+
+## Planned physical calibration experiments
+
+The planned AI 564-567 calibration suite is specified in
+`specs/graphics/lighting_calibration.md`. Its independent fixture, daylight,
+material, capture/render, analysis and orchestration stages must register in this
+hierarchy as explicit experiments, reuse the shared Blender configuration and
+preserve all publication gates. They are not yet implemented and must not enter
+the default production bake tree. AI 562 owns application of their validated
+results to the actual game and production bake pipeline.
 
 ## Verification
 

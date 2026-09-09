@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI 563 · Sun and sky comparisons</title><link rel="stylesheet" href="gallery.css"></head>
+<body><header><h1>Sun and sky · Cycles comparisons</h1>
+<p>Same city, materials and cameras. Grading off. Exposure matched with one neutral card per lighting setup, shared across every pose.</p>
+<div class="controls"><label>Pose <select id="pose"></select></label><label>Exposure <select id="mode"><option value="matched">Match sunlit calibration card</option><option value="fixed">Fixed 0 EV · show brightness change</option></select></label><a href="metrics.csv">Measurements CSV</a><a href="summary.json">Configuration and checks</a></div>
+<div class="columns"><label><strong>ACESFilmic</strong><span>Three.js r183 transform · base 1.02</span><span>Adjustment <input id="aces-ev" type="range" min="-0.5" max="0.5" step="0.5" value="0"><output id="aces-value">0 EV</output></span></label><label><strong>AgX</strong><span>Blender OCIO · base Look · base 1.02</span><span>Adjustment <input id="agx-ev" type="range" min="-0.5" max="0.5" step="0.5" value="0"><output id="agx-value">0 EV</output></span></label></div></header>
+<main id="gallery"></main><footer><p>The camera sky scales with the environment. Stronger sun with compensated exposure can therefore darken the sky and shaded surfaces. Values are relative radiance, not a lux calibration. Window interiors and grass reflectivity retain the saved export's limitations.</p></footer>
+<aside id="selection-bar" aria-label="Selected comparisons"><span id="selection-count" role="status">0 selected</span><span class="hint">Select images to compare their saved configurations and exposure.</span><button id="compare-grid" disabled>Compare grid</button><button id="compare-single" disabled>One at a time</button><button id="clear-selection" disabled>Clear</button></aside>
+<dialog id="lightbox" aria-labelledby="viewer-title">
+<div class="modal-bar"><h2 id="viewer-title">Image comparison</h2><label>View <select id="layout"><option value="single">One at a time</option><option value="grid">Grid · 2 × 2</option></select></label><button id="close">Close ×</button></div>
+<div id="comparison-stage"><img id="large" alt="Expanded lighting comparison"><div id="comparison-grid" hidden></div></div>
+<div class="comparison-dock">
+<div class="dock-controls"><button id="previous" aria-label="Previous image">← Previous</button><span id="caption" role="status"></span><button id="next" aria-label="Next image">Next →</button></div>
+<div class="dock-controls"><label class="configuration-label">Configuration <select id="configuration"></select></label><button id="viewer-select">Select image</button><span id="viewer-count"></span></div>
+<div id="thumbnails" aria-label="Comparison thumbnails"></div>
+</div></dialog>
+<script id="data" type="application/json">__DATA__</script><script src="gallery.js"></script></body></html>

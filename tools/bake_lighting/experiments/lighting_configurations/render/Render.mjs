@@ -6,16 +6,17 @@ import { readJson, TOOL } from '../Inputs.mjs';
 import { digest, writeJson, hashFile, listFiles } from '../../../../baking/Files.mjs';
 import { runHeadlessBake } from '../../../../baking/Blender.mjs';
 
-export async function renderComparisons(ctx,run) {
+export async function renderComparisons(ctx,run,settings={}) {
     const scenePath=ctx.options.scene??(await readJson(path.join(run.runRoot,'scene.json'))).manifest;
     const scene=await authenticated(path.resolve(ctx.root,scenePath));
     if(scene.source!==run.source.sha256)throw new Error('Scene source differs from prepared run');
-    const lighting=await config(ctx,run,'lighting'),profiles=await config(ctx,run,'render_profiles');
+    const lighting=settings.lighting?{value:settings.lighting}:await config(ctx,run,'lighting');
+    const profiles=settings.profiles?{value:settings.profiles}:await config(ctx,run,'render_profiles');
     const quality=ctx.options.quality??'pilot';let lights=lighting.value.configurations.map(item=>item.id);
     if(quality==='final'&&!ctx.options.lights)lights=['L00',...(await authenticated(path.join(run.runRoot,'analysis/pilot/analysis_manifest.json'))).shortlist];
     lights=selectIds(lights,ctx.options.lights,'lights');
     const poses=selectIds(run.poses.map(item=>item.id),ctx.options.poses,'poses');
-    const code=await codeIdentity(ctx.root,['render/Render.mjs','render/render_scene.py','render/lighting.py','render/calibration.py']);
+    const code=await codeIdentity(ctx.root,['render/Render.mjs','render/render_scene.py','render/lighting.py','render/lighting_scales.py','render/calibration.py']);
     const environmentAlgorithm=await hashFile(path.join(ctx.root,'tools/receiver_lightmaps/blender/environment_sun.py'));
     const profile={...profiles.value[quality]};if(ctx.options.samples)profile.samples=ctx.options.samples;
     if(ctx.options.resolution){const [w,h]=ctx.options.resolution.split('x').map(Number);if(!Number.isInteger(w)||!Number.isInteger(h)||w<64||h<64)throw new Error('resolution must be WIDTHxHEIGHT');profile.width=w;profile.height=h;}

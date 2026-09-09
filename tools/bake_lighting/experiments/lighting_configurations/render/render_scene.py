@@ -29,7 +29,7 @@ calibration=setup_environments(scene,source,lighting,root/'environments')
 calibration['cards']=render_cards(scene,source,lighting,calibration,root/'calibration')
 (root/'calibration.json').write_text(json.dumps(calibration,indent=2))
 # A ready-to-render reference scene supplements the neutral transport export.
-apply_lighting(scene,source,lighting,next(p for p in lighting['configurations'] if p['id']=='L01'),calibration)
+apply_lighting(scene,source,lighting,next((p for p in lighting['configurations'] if p['id']=='L01'),lighting['configurations'][0]),calibration)
 scene.camera=bpy.data.objects['pose_01']
 for reference_layer in scene.view_layers:reference_layer.use=reference_layer.name=='pose_01'
 scene.cycles.samples=profiles['pilot']['samples'];scene.cycles.adaptive_threshold=profiles['pilot']['noiseThreshold']
