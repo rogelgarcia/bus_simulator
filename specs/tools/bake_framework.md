@@ -134,15 +134,21 @@ job with authenticated prerequisites. Alternative texture-gradient reconstructio
 and promotion stay in the research tools. A full release still requires its
 existing certification; the native cutout proof alone does not grant release.
 
-## Planned physical calibration experiments
+## Physical calibration experiments
 
-The planned AI 564-567 calibration suite is specified in
-`specs/graphics/lighting_calibration.md`. Its independent fixture, daylight,
-material, capture/render, analysis and orchestration stages must register in this
-hierarchy as explicit experiments, reuse the shared Blender configuration and
-preserve all publication gates. They are not yet implemented and must not enter
-the default production bake tree. AI 562 owns application of their validated
-results to the actual game and production bake pipeline.
+The AI 564-567 calibration suite is specified in
+`specs/graphics/lighting_calibration.md`. AI 564 registers
+`lighting/experiments/physical-calibration` with independently callable
+`references`, `prepare`, `capture`, `render` and `analyze` stages. It uses the shared
+configuration, reusable isolated Blender scenes, actual native renderer captures,
+authenticated raw data and predefined analytical/display checks. The shared
+`runBlenderStage` supports isolated headed execution; existing `runHeadlessBake`
+callers retain their behavior. Calibration never publishes or enters production
+defaults. Its framework `validated` state authenticates evidence, not a universal
+physical pass; consumers must inspect `report/contract.json` and individual results.
+AI 565-567 remain planned. AI 562 owns application of validated results to the game
+and production bake pipeline. See the calibration tool README for reference
+eligibility, CIE subset, numeric scale and renderer limitations.
 
 ## Verification
 

@@ -1,5 +1,6 @@
 // Scenario registry for the deterministic harness.
 import { scenarioEmpty } from './scenario_empty.js';
+import { scenarioPhysicalLightingCalibration } from './scenario_physical_lighting_calibration.js';
 import { scenarioCityStraightRoad } from './scenario_city_straight_road.js';
 import { scenarioCityCrossing } from './scenario_city_crossing.js';
 import { scenarioRoadSurfaceVariationCompare } from './scenario_road_surface_variation_compare.js';
@@ -28,6 +29,7 @@ import {
 } from './scenario_ai516_burban.js';
 
 const REGISTRY = new Map([
+    [scenarioPhysicalLightingCalibration.id, scenarioPhysicalLightingCalibration],
     [scenarioEmpty.id, scenarioEmpty],
     [scenarioCityStraightRoad.id, scenarioCityStraightRoad],
     [scenarioCityCrossing.id, scenarioCityCrossing],

@@ -20,6 +20,11 @@ export async function verifyBakeToolchain(config, root, needsArchive) {
 
 /** @param {any} ctx @param {string} script @param {string[]} args */
 export async function runHeadlessBake(ctx, script, args) {
+    return runBlenderStage(ctx, script, args);
+}
+
+/** @param {any} ctx @param {string} script @param {string[]} args @param {{background?:boolean}} options */
+export async function runBlenderStage(ctx, script, args, {background = true} = {}) {
     const runtime = path.join(ctx.stage, 'blender-runtime');
     await mkdir(runtime, { recursive: true });
     const previous = ctx.env;
@@ -28,7 +33,7 @@ export async function runHeadlessBake(ctx, script, args) {
         PYTHONPYCACHEPREFIX: path.join(runtime, 'python-cache'), PYTHONDONTWRITEBYTECODE: '1',
         OPTIX_CACHE_PATH: path.join(runtime, 'optix-cache'), CUDA_CACHE_PATH: path.join(runtime, 'cuda-cache') };
     try {
-        return await ctx.process(ctx.config.executable, ['--python-use-system-env', '--background', '--factory-startup',
+        return await ctx.process(ctx.config.executable, ['--python-use-system-env', ...(background ? ['--background'] : []), '--factory-startup',
             '--disable-autoexec', '--offline-mode', '--python-exit-code', '1', '--python', path.join(ctx.root, script), '--', ...args]);
     } finally { ctx.env = previous; }
 }

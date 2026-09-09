@@ -1,6 +1,6 @@
 # Physical lighting calibration
 
-Status: **planned**. This document defines the calibration work requested after the AI 563 sun/sky experiment. It does not certify the current renderer, change production lighting defaults or announce an implemented calibrator.
+Status: **AI 564 implemented and executed; AI 565–567 planned**. The [executed calibration results](physical_calibration_results.md) provide independent fixture and color-path evidence, explicit renderer failures and measured-reference limitations. This does not certify the production city or change its lighting defaults.
 
 ## Goal and scope
 
@@ -12,7 +12,7 @@ An attractive image cannot uniquely identify exposure, illumination, reflectance
 
 | AI | Responsibility | Prerequisites | Deliverable |
 | --- | --- | --- | --- |
-| [564](../../prompts/AI_graphics_564_TESTS_physical_lighting_calibration_harness.md) | Analytical/measured harness and color-pipeline validation | Existing deterministic game and Cycles tools | Executed fixture results, coverage and shared calibration contract |
+| [564](../../prompts/AI_DONE_graphics_564_TESTS_physical_lighting_calibration_harness_DONE.md) | Analytical/measured harness and color-pipeline validation | Existing deterministic game and Cycles tools | Implemented: follow-up finite-sun fix passes 38/38 transport checks and 6/6 input/display checks; [results and limitations](physical_calibration_results.md) |
 | [565](../../prompts/AI_graphics_565_ATMOSPHERE_coherent_daylight_and_sky_calibration.md) | Coherent sun, sky, background and reflection calibration | 564 | Daylight profiles with physical conditions and unit mappings |
 | [566](../../prompts/AI_graphics_566_MATERIAL_measured_material_calibration_and_export_parity.md) | Material audit and calibrated export-equivalence profiles | 564; final verification with 565 | Evidence-based material candidates and documented approximations |
 | [567](../../prompts/AI_graphics_567_TOOLS_automated_lighting_calibration_and_reference_handoff.md) | Automated bounded search, comparison and handoff | 564, 565, 566 | Executed comparisons and validated candidate configuration |

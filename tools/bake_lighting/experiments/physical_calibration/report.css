@@ -1,0 +1,12 @@
+body { margin: 24px auto; padding: 0 24px; max-width: 1200px; background: #111921; color: #d5dde3; font: 15px/1.5 system-ui, sans-serif; }
+a { color: #9ac5dd; }
+table { border-collapse: collapse; width: 100%; }
+td, th { padding: 6px 12px; text-align: left; border-bottom: 1px solid #34414b; }
+.pass { color: #a0c3a9; }
+.fail { color: #d89b93; }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px; }
+figure { margin: 0; }
+img { width: 100%; display: block; background: black; }
+figcaption { padding: 6px 0; color: #afbbc5; }
+section { margin: 28px 0; }
+@media (max-width: 650px) { body { padding: 0 8px; } .grid { gap: 5px; } td, th { padding: 4px; } }

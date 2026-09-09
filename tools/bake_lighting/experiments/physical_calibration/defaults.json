@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "width": 192,
+  "samples": 256,
+  "seed": 564,
+  "threads": 4,
+  "orthoScale": 2,
+  "exposure": 1,
+  "tolerances": {
+    "linearRelative": 0.015,
+    "linearAbsolute": 0.0005,
+    "displayAbsolute": 0.0045,
+    "shadowRmse": 0.035,
+    "noiseSigmaMultiplier": 4,
+    "noiseMaximumRelative": 0.01
+  },
+  "vectors": [[0,0,0],[0.0031308,0.0031308,0.0031308],[0.18,0.18,0.18],[1,1,1],[4,4,4],[16,16,16],[0.6,0.04,0.02],[0.02,0.5,0.04],[0.02,0.05,0.8]],
+  "fixtures": [
+    {"id":"sun_gray18","source":"sun","color":[0.18,0.18,0.18],"irradiance":3.141592653589793,"angleDeg":0},
+    {"id":"sun_gray04","source":"sun","color":[0.04,0.04,0.04],"irradiance":3.141592653589793,"angleDeg":0},
+    {"id":"sun_gray50","source":"sun","color":[0.5,0.5,0.5],"irradiance":3.141592653589793,"angleDeg":0},
+    {"id":"sun_gray90","source":"sun","color":[0.9,0.9,0.9],"irradiance":3.141592653589793,"angleDeg":0},
+    {"id":"sun_red","source":"sun","color":[0.6,0.04,0.02],"irradiance":3.141592653589793,"angleDeg":0},
+    {"id":"sun_green","source":"sun","color":[0.02,0.5,0.04],"irradiance":3.141592653589793,"angleDeg":0},
+    {"id":"sun_blue","source":"sun","color":[0.02,0.05,0.8],"irradiance":3.141592653589793,"angleDeg":0},
+    {"id":"sun_cos60","source":"sun","color":[0.18,0.18,0.18],"irradiance":3.141592653589793,"angleDeg":60},
+    {"id":"srgb_texture","source":"sun","textureBytes":[118,70,190],"color":[1,1,1],"irradiance":3.141592653589793,"angleDeg":0},
+    {"id":"point_2m","source":"point","color":[0.18,0.18,0.18],"intensity":12.566370614359172,"height":2},
+    {"id":"point_4m","source":"point","color":[0.18,0.18,0.18],"intensity":12.566370614359172,"height":4},
+    {"id":"cie171_5_2_axis","source":"point","color":[0.18,0.18,0.18],"intensity":1000,"height":3},
+    {"id":"uniform_environment","source":"environment","color":[0.18,0.18,0.18],"radiance":0.4},
+    {"id":"hard_visibility","source":"shadow","color":[0.5,0.5,0.5],"irradiance":3.141592653589793,"occluderHeight":0.5,"angularDiameter":0},
+    {"id":"finite_sun_near","source":"shadow","color":[0.5,0.5,0.5],"irradiance":3.141592653589793,"occluderHeight":0.3,"angularDiameter":0.12},
+    {"id":"finite_sun_far","source":"shadow","color":[0.5,0.5,0.5],"irradiance":3.141592653589793,"occluderHeight":1,"angularDiameter":0.12},
+    {"id":"finite_sun_middle","source":"shadow","color":[0.5,0.5,0.5],"irradiance":3.141592653589793,"occluderHeight":0.6,"angularDiameter":0.06},
+    {"id":"finite_sun_wide","source":"shadow","color":[0.5,0.5,0.5],"irradiance":3.141592653589793,"occluderHeight":0.7,"angularDiameter":0.18},
+    {"id":"finite_sun_small","source":"shadow","color":[0.5,0.5,0.5],"irradiance":3.141592653589793,"occluderHeight":1,"angularDiameter":0.00925}
+  ]
+}

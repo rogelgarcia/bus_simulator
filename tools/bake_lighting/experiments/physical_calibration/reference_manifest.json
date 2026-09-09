@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "revision": "2026-09-09",
+  "cornell": {
+    "url": "https://bowers.cornell.edu/computer-graphics/data",
+    "role": "Measured geometry and spectral reflectance; relative light spectrum",
+    "parsedDataSha256": "25cac99a962d45c65f1f1252e8c7c22d6a685210a8ec971c34b75d166d81c2aa",
+    "geometryUnits": "millimetres, converted to metres without idealizing the geometry",
+    "cameraUnits": "Position in millimetres; focal length and sensor dimensions in metres",
+    "normalization": "Published relative emission spectrum unchanged; no per-image exposure fitting. 450, 550 and 650 nm simulations remain monochromatic, not an RGB reconstruction.",
+    "license": "The source offers the data for public use. No SPDX redistribution license established; retain bulk downloads in ignored local research artifacts and preserve attribution.",
+    "assets": [
+      {"id":"measured_exr","suffix":"box_exr.zip","kind":"zip","sha256":"a08c5e4da5607f1192ff076be021ab8827cfd5673fc85575c62a792f22aec200"},
+      {"id":"source_response","suffix":"boxsource.mat","kind":"mat","sha256":"d48989001fab14903cc174807a70dc678b86573f0833bc48c8ecfedb86619a1e"},
+      {"id":"camera_response","suffix":"camera.mat","kind":"mat","sha256":"0eff3b97c930e187d2ee3cf601bea709e48802f4760cdfa6e3a17607d18753bd"},
+      {"id":"filters","suffix":"filters.mat","kind":"mat","sha256":"dd03d7042cbc5c76d172ccf4f30273b73c4c11a7a9cde9ea9a5dcb4c0290861b"},
+      {"id":"lens","suffix":"lens.mat","kind":"mat","sha256":"f3dbed079b516ce4c14911f2e69212fdd77ae074f9f1cdf066bf5cff798e82f0"}
+    ],
+    "pairedMeasurementEligibility": "Unverified: downloaded camera photos appear to contain a reflective tall block and a different camera framing from the published diffuse-scene table. Camera response/filter/lens spectra are available, but these are not sufficient to infer missing material/camera identities. Do not score these as paired images."
+  },
+  "cie171": {
+    "edition": "CIE 171:2006",
+    "isbn": "9783901906473",
+    "url": "https://www.cie.co.at/publications/test-cases-assess-accuracy-lighting-computer-programs",
+    "publicImplementationReference": "https://www.agi32.com/Downloads/TechnicalDocs/Report%20on%20AGI%2032%20validation%20of%20CIE%20171_Compiled_070620.pdf",
+    "source": "Dau Design & Consulting, Report on AGi32 validation of CIE 171:2006, June 20 2007; section 5.2, Table 7, printed page 18 (PDF page 18).",
+    "implemented": "5.2 on-axis A only: I=1000 cd, d=3 m, incidence 0 degrees, E=1000/9 lx. Uses an isotropic source sharing the reported on-axis intensity. Other photometries and off-axis points are not reproduced.",
+    "errata": "No authoritative complete errata set was established from accessible sources. The public implementation report discusses reference discrepancies in other cases; those cases are omitted. No complete conformity or certification claim.",
+    "omitted": "All other 5.2 points/photometries and the remaining analytical/experimental CIE cases; full normative definitions and conditions not reproduced. No paid source required for this subset."
+  },
+  "analyticAuthority": {
+    "lambert": "L = rho E cos(theta) / pi; E is specified on a plane normal to the beam",
+    "point": "E(x,y) = I h / (x*x+y*y+h*h)^(3/2); fixed isotropic radiant-intensity scale",
+    "environment": "Uniform radiance Lenv gives diffuse outgoing radiance rho Lenv",
+    "visibility": "Integrate cosine-weighted visibility over a uniform solid-angle disc independently of either renderer; a black half-plane gives a known straight shadow boundary",
+    "spectralUnits": "Analytical fixtures use independent scalar/RGB transport. The CIE axis verifies the geometric factor E/I, not an undocumented conversion of RGB watts into photometric lux."
+  }
+}

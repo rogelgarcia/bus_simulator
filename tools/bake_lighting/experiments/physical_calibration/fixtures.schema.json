@@ -1,0 +1,36 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "title":"Physical calibration fixture input v1",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["schemaVersion","width","samples","seed","threads","orthoScale","exposure","tolerances","vectors","fixtures"],
+  "properties":{
+    "schemaVersion":{"const":1},
+    "width":{"type":"integer","minimum":64,"maximum":1024},
+    "samples":{"type":"integer","minimum":16,"maximum":4096},
+    "seed":{"type":"integer","minimum":0},
+    "threads":{"type":"integer","minimum":1,"maximum":8},
+    "orthoScale":{"type":"number","exclusiveMinimum":0},
+    "exposure":{"const":1},
+    "tolerances":{"type":"object","additionalProperties":false,"required":["linearRelative","linearAbsolute","displayAbsolute","shadowRmse","noiseSigmaMultiplier","noiseMaximumRelative"],"properties":{
+      "linearRelative":{"type":"number","exclusiveMinimum":0},"linearAbsolute":{"type":"number","exclusiveMinimum":0},
+      "displayAbsolute":{"type":"number","exclusiveMinimum":0},"shadowRmse":{"type":"number","exclusiveMinimum":0},
+      "noiseSigmaMultiplier":{"type":"number","exclusiveMinimum":0},"noiseMaximumRelative":{"type":"number","exclusiveMinimum":0}
+    }},
+    "vectors":{"type":"array","minItems":9,"maxItems":9,"items":{"$ref":"#/$defs/rgb"}},
+    "fixtures":{"type":"array","minItems":1,"items":{"type":"object","additionalProperties":false,"required":["id","source","color"],"properties":{
+      "id":{"type":"string","pattern":"^[a-z0-9_]+$"},"source":{"enum":["sun","point","environment","shadow"]},
+      "color":{"type":"array","minItems":3,"maxItems":3,"items":{"type":"number","minimum":0,"maximum":1}},
+      "textureBytes":{"type":"array","minItems":3,"maxItems":3,"items":{"type":"integer","minimum":0,"maximum":255}},
+      "irradiance":{"type":"number","minimum":0},"radiance":{"type":"number","minimum":0},"intensity":{"type":"number","minimum":0},
+      "angleDeg":{"type":"number","minimum":0,"maximum":89},"height":{"type":"number","exclusiveMinimum":0},
+      "occluderHeight":{"type":"number","exclusiveMinimum":0},"angularDiameter":{"type":"number","minimum":0,"maximum":0.2}
+    },"allOf":[
+      {"if":{"properties":{"source":{"const":"sun"}}},"then":{"required":["irradiance","angleDeg"]}},
+      {"if":{"properties":{"source":{"const":"point"}}},"then":{"required":["intensity","height"]}},
+      {"if":{"properties":{"source":{"const":"environment"}}},"then":{"required":["radiance"]}},
+      {"if":{"properties":{"source":{"const":"shadow"}}},"then":{"required":["irradiance","occluderHeight","angularDiameter"]}}
+    ]}}
+  },
+  "$defs":{"rgb":{"type":"array","minItems":3,"maxItems":3,"items":{"type":"number","minimum":0}}}
+}
