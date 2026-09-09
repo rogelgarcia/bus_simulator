@@ -58,4 +58,9 @@ progress captures. The user's game comparison already has grading Off; it must
 not be confused with the original Vivid G00 baseline. The two original supplied
 images and checksums are preserved under
 `tests/artifacts/screens/ai562_acesfilmic_reference_matching/references/`.
+An additional user-designated `pose_02` / `bus_shared_01_02` target uses ACESFilmic
+at +0.5 EV and specifically tests overly dark shaded facades/storefronts. Its
+original game/target attachments and provenance are preserved in the `pose_02/`
+subdirectory. AI 562 must retain both target comparisons and separate exposure
+effects from illumination corrections.
 This is planned work; AI 560 outputs and the production lighting are unchanged.

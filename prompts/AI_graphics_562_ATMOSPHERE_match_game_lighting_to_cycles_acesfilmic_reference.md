@@ -25,6 +25,22 @@ The original attachments have already been copied byte-for-byte to the following
 
 Use `references/manifest.json` as the saved provenance record. Preserve the originals; crops, alignment previews and annotations are separate derivatives. These differently sized screenshots must not be compared numerically as if their image rectangles were aligned camera captures.
 
+### Additional target: pose 02 · bus_shared_01_02
+
+The user explicitly adds this second comparison to the acceptance set because the game's shaded areas are too dark. It supplements the first target. The supplied game caption is `Game · aces · off`; the Cycles target caption is **`ACESFilmic · +0.5 EV`**. Both captions identify 1920 × 1080 source images, while the saved attachments include scaled gallery framing.
+
+Original attachments are preserved in `references/pose_02/`, with a separate immutable provenance record in `references/pose_02/manifest.json`:
+
+| File | Original attachment resolution | SHA-256 |
+| --- | --- | --- |
+| `user_game_aces_grading_off.png` | 1476 × 920 | `d37a71960e947ea4f844632a2f7e5c6e10f569f04791e29d876dd1e95f1c3526` |
+| `user_cycles_target_aces_plus_0_5_ev.png` | 1146 × 712 | `95093847a68b5814c14ea08bac75286e0f5559f3a1f50844f3ca9cc951705669` |
+
+- [ ] Include the user-designated `pose_02` / `bus_shared_01_02` as an explicit primary acceptance comparison alongside the original target. Resolve its full camera transform, shared bus placement, scene-light recipe and source EXR from the tracked poses and AI 560 receipts; cross-check the supplied view against the gallery identity and report any discrepancy instead of silently assigning a different camera. The target's +0.5 EV is known from its caption; the lighting configuration is not.
+- [ ] Add fixed measurements and full-resolution crops for the shaded red-brick facade and ground-floor storefronts on the left, the shaded building on the right, and bus paint/trim in this view. Recover readable material detail and plausible shaded radiance toward the selected reference while preserving real recess/contact darkness, sunlight highlights and the original bus appearance. Measure linear illumination and displayed color separately; do not treat every near-black pixel as an error.
+- [ ] Keep the selected +0.5-EV Cycles target visible throughout iteration. Also compare game and Cycles at matched exposure, with grading Off, to separate exposure changes from sun/sky/bounce/material corrections. A global exposure adjustment may be retained if it improves the full acceptance set; no pose-specific exposure, lifted-black overlay or local brightness patch. Validate retained changes against both selected targets and all five poses so brighter shaded walls do not wash out the original bright facade.
+- [ ] Preserve chronological game captures for this target in every retained candidate iteration, with its own baseline/target/final columns and diagnostic crops. Show the actual EV and source-light identity next to every image. White window placeholders and glossy grass in the exported target remain documented material/export limitations; matching their artifacts is not an acceptance goal.
+
 Existing experiment:
 
 - Tools and tracked defaults: `tools/bake_lighting/experiments/lighting_configurations/`.

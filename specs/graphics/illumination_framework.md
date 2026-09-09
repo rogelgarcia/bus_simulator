@@ -14,6 +14,11 @@ disabled baked direct, exact Lighting-tab compatibility, AO policy and developer
 reload/diagnostics. That dated policy supersedes the historical preview controls
 and default-off rollout descriptions below; offline channel contracts remain intact.
 
+The [lighting enhancement reference](lighting_enhancement_reference.md) records the
+dated baked/runtime feasibility comparison, AI implementation dispositions, visual
+benefit estimates, and daytime planning shortlist. It is an informative planning
+reference; the contracts and owning implementation specs remain authoritative.
+
 ## Existing implementation audit
 
 The audit is against code, not prompt filenames.

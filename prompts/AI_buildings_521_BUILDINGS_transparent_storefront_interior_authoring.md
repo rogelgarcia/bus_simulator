@@ -67,7 +67,23 @@ Tasks:
   placement, material/lighting persistence, and LOD selection. Add browser
   captures of a two-storey curved storefront in HDRI and neutral lighting from
   the exact same camera, plus a gameplay-like performance comparison after
-  warm-up.
+  warm-up. Save generated captures, diagnostics and reports under
+  `tests/artifacts/screens/ai521_storefront_interiors/`. Newly modeled/catalog
+  buildings must also follow the project building-showcase requirements,
+  including three distinct UHD 4K poses with HDRI as both background and
+  environment, and labeled source references under
+  `tests/artifacts/screens/buildings/<building-id>/references/`.
+
+## Daylight scenario follow-up and geometry review
+
+The user added a staged daylight reference/LOD/parallax request in
+[AI 552](AI_graphics_552_BUILDINGS_daylight_interior_reference_lods_and_parallax.md).
+For the overlapping storefront geometry and representation work, prepare that
+prompt's concrete geometry/LOD/parallax strategy and stop for explicit user
+approval before implementation. Reuse this prompt's BF2 authoring model; do not
+create two competing interior systems. Completion of AI 552's bounded scenario
+does not close this prompt's unrelated authoring requirements. Night-focused
+features are outside the current AI 549 -> 550 -> 551 -> 552 daytime sequence.
 
 ## On completion
 
