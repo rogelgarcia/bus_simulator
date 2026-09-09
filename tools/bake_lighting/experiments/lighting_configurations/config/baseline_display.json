@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "tones": ["aces", "agx", "neutral"],
+  "grades": ["vivid", "off", "warm", "cool"],
+  "exposure": 1.02,
+  "gradeIntensity": 0.65,
+  "policy": "Capture the native game renderer with installed bakes. Only tone mapping and grading change. Preserve the original G00 references separately. Native ACES is Three.js ACESFilmic, not full ACES 2.0."
+}

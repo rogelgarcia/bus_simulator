@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "seed": 560,
+  "pilot": {"width": 1920, "height": 1080, "samples": 256, "minimumSamples": 32, "noiseThreshold": 0.02},
+  "final": {"width": 3840, "height": 2160, "samples": 1024, "minimumSamples": 64, "noiseThreshold": 0.005},
+  "transport": {"max_bounces": 12, "diffuse_bounces": 4, "glossy_bounces": 4, "transmission_bounces": 8, "transparent_max_bounces": 16, "volume_bounces": 2, "sample_clamp_direct": 0, "sample_clamp_indirect": 0, "blur_glossy": 0, "caustics_reflective": false, "caustics_refractive": false, "use_fast_gi": false},
+  "denoiser": "OPENIMAGEDENOISE",
+  "denoisingPrefilter": "ACCURATE",
+  "timeLimitSeconds": 0,
+  "qualityChecks": {"pose": "pose_03", "light": "L01", "independentSeed": 561, "sampleMultiplier": 2, "diffuseBounces": 8, "glossyBounces": 8, "maxBounces": 16},
+  "notes": ["No motion blur, depth of field, exposure adaptation, AO approximation or energy clamps.", "Caustics disabled: not a caustic reference. Raw and denoised passes retained; sample budget does not prove convergence."]
+}

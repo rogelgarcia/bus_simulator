@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "calibration": {"policy": "relative radiance; not a measured SI lux conversion", "sunReference": 7, "skyIrradianceTarget": 1.05, "referenceExposureStops": 0, "whiteBalance": "D65", "trialLuxOnly": {"directNormal": 80000, "diffuseHorizontal": 12000}},
+  "hdri": {"path": "assets/public/lighting/hdri/german_town_street_2k.hdr", "source": "https://polyhaven.com/a/german_town_street", "license": "CC0-1.0", "solarRemovalRadiusDegrees": 3},
+  "configurations": [
+    {"id": "L00", "label": "Current-source Cycles", "environment": "source", "sun": "source", "skyScale": 1, "weather": "source reconstruction"},
+    {"id": "L01", "label": "Clear daylight", "environment": "nishita", "sun": "calibrated", "sunDiameterDegrees": 0.53, "skyScale": 1, "weather": "clear"},
+    {"id": "L02", "label": "Clear / half sky", "environment": "nishita", "sun": "calibrated", "sunDiameterDegrees": 0.53, "skyScale": 0.5, "weather": "clear sensitivity"},
+    {"id": "L03", "label": "Clear / double sky", "environment": "nishita", "sun": "calibrated", "sunDiameterDegrees": 0.53, "skyScale": 2, "weather": "clear sensitivity"},
+    {"id": "L04", "label": "Photographic daylight", "environment": "hdri", "sun": "calibrated", "sunDiameterDegrees": 0.53, "skyScale": 1, "weather": "photographic"},
+    {"id": "L05", "label": "Soft overcast", "environment": "overcast", "sun": "none", "skyScale": 3, "weather": "overcast / separate weather"}
+  ]
+}

@@ -25,7 +25,6 @@ export async function executeBakes(plan, settings, context) {
                 code.push({ file: path.relative(context.root, file), ...await hashFile(file) });
             }
         }
-        const codeHash = digest(code);
         for (const job of plan) {
             currentJob = job.id; currentStarted = Date.now();
             context.signal.throwIfAborted();
@@ -36,6 +35,11 @@ export async function executeBakes(plan, settings, context) {
             await mkdir(stage, { recursive: true });
             const ctx = { ...context, id: job.id, options, stage, base, dependencies, processCount: 0,
                 result: id => { if (!results.has(id)) throw new Error(`Unsatisfied dependency ${id}`); return results.get(id).result; } };
+            const jobCode = job.codePaths ? code.filter(entry => ['tools/baking', ...job.codePaths].some(prefix => {
+                const file = entry.file.replaceAll('\\', '/');
+                return file === prefix || file.startsWith(prefix + '/');
+            })) : code;
+            const codeHash = digest(jobCode);
             ctx.process = (exe, args) => runBakeProcess(exe, args, ctx);
             ctx.node = (script, args = []) => ctx.process(process.execPath, [path.join(ctx.root, script), ...args.map(String)]);
             const inputs = job.inputs ? await job.inputs(ctx) : [];
@@ -46,7 +50,7 @@ export async function executeBakes(plan, settings, context) {
             ctx.key = key;
             ctx.assertInputsStable = async () => {
                 context.signal.throwIfAborted();
-                for (const entry of [...code, ...inputHashes]) {
+                for (const entry of [...jobCode, ...inputHashes]) {
                     const current = await hashFile(path.resolve(context.root, entry.file));
                     if (current.sha256 !== entry.sha256 || current.bytes !== entry.bytes) throw new Error(`Bake input changed during execution: ${entry.file}`);
                 }

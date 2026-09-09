@@ -1,0 +1,225 @@
+{
+  "schemaVersion": 1,
+  "experimentId": "illumination_560",
+  "source": "User-supplied Copy camera position payloads, 2026-09-07",
+  "coordinateSystem": "Three.js world space, meters, Y up; quaternions use x/y/z/w",
+  "originalViewport": null,
+  "comparisonViewport": {
+    "width": 1920,
+    "height": 1080,
+    "pixelAspect": 1,
+    "assumed": true
+  },
+  "finalViewport": {
+    "width": 3840,
+    "height": 2160,
+    "pixelAspect": 1
+  },
+  "poses": [
+    {
+      "id": "pose_01",
+      "pose": {
+        "version": 1,
+        "city": "bigcity2",
+        "bus": {
+          "modelId": "city",
+          "transform": {
+            "position": {
+              "x": -107.10667388916016,
+              "y": 1.7035786161894098,
+              "z": 42.647422790527344
+            },
+            "quaternion": {
+              "x": 0,
+              "y": -0.6948783429914962,
+              "z": 0,
+              "w": 0.7191273103153519
+            }
+          }
+        },
+        "camera": {
+          "position": {
+            "x": -118.98739641828959,
+            "y": 2.8164996302368595,
+            "z": 46.97752256108899
+          },
+          "quaternion": {
+            "x": -0.0004185723018374499,
+            "y": -0.5733978952053874,
+            "z": -0.00029295160782764093,
+            "w": 0.8192768718514001
+          },
+          "fovDeg": 55,
+          "locked": true
+        },
+        "simulation": {
+          "paused": true
+        }
+      }
+    },
+    {
+      "id": "pose_02",
+      "pose": {
+        "version": 1,
+        "city": "bigcity2",
+        "bus": {
+          "modelId": "city",
+          "transform": {
+            "position": {
+              "x": -111.12090301513672,
+              "y": 1.70357861618941,
+              "z": 42.49835205078125
+            },
+            "quaternion": {
+              "x": 0,
+              "y": -0.46745612688275184,
+              "z": 0,
+              "w": 0.8840162721578018
+            }
+          }
+        },
+        "camera": {
+          "position": {
+            "x": -129.8467871273507,
+            "y": 3.4494314583231884,
+            "z": 48.6168181746064
+          },
+          "quaternion": {
+            "x": -0.01326405608946302,
+            "y": -0.587041083593968,
+            "z": -0.009620248979961533,
+            "w": 0.8093913032634087
+          },
+          "fovDeg": 55,
+          "locked": true
+        },
+        "simulation": {
+          "paused": true
+        }
+      }
+    },
+    {
+      "id": "pose_03",
+      "pose": {
+        "version": 1,
+        "city": "bigcity2",
+        "bus": {
+          "modelId": "city",
+          "transform": {
+            "position": {
+              "x": 43.21368264770508,
+              "y": 1.70357861618941,
+              "z": 41.514739990234375
+            },
+            "quaternion": {
+              "x": 0,
+              "y": 0.6950635333147163,
+              "z": 0,
+              "w": 0.7189483184875408
+            }
+          }
+        },
+        "camera": {
+          "position": {
+            "x": 58.863162720018984,
+            "y": 2.79840830029203,
+            "z": 53.47829195978014
+          },
+          "quaternion": {
+            "x": 0.00011764952246445241,
+            "y": 0.44309637184111866,
+            "z": -0.00005815012816942476,
+            "w": 0.8964739751037893
+          },
+          "fovDeg": 55,
+          "locked": true
+        },
+        "simulation": {
+          "paused": true
+        }
+      }
+    },
+    {
+      "id": "pose_04",
+      "pose": {
+        "version": 1,
+        "city": "bigcity2",
+        "bus": {
+          "modelId": "city",
+          "transform": {
+            "position": {
+              "x": 77.64125061035156,
+              "y": 1.70357861618941,
+              "z": 177.13464672851563
+            },
+            "quaternion": {
+              "x": 0,
+              "y": -0.007072382142782312,
+              "z": 0,
+              "w": 0.9999749903926729
+            }
+          }
+        },
+        "camera": {
+          "position": {
+            "x": 61.261676907734575,
+            "y": 4.6750204494531875,
+            "z": 187.55253173299226
+          },
+          "quaternion": {
+            "x": -0.04210622509033511,
+            "y": -0.4807575345229718,
+            "z": -0.023120541380274306,
+            "w": 0.8755368064075427
+          },
+          "fovDeg": 55,
+          "locked": true
+        },
+        "simulation": {
+          "paused": true
+        }
+      }
+    },
+    {
+      "id": "pose_05",
+      "pose": {
+        "version": 1,
+        "city": "bigcity2",
+        "bus": {
+          "modelId": "city",
+          "transform": {
+            "position": {
+              "x": -149.6728057861328,
+              "y": 1.70357861618941,
+              "z": 231.16934204101562
+            },
+            "quaternion": {
+              "x": 0,
+              "y": -0.5546042921376437,
+              "z": 0,
+              "w": 0.8321142224133073
+            }
+          }
+        },
+        "camera": {
+          "position": {
+            "x": -129.97369704099222,
+            "y": 3.6455266653003706,
+            "z": 232.23481817033417
+          },
+          "quaternion": {
+            "x": -0.015480521101161935,
+            "y": 0.6875902917573187,
+            "z": 0.014665839066841829,
+            "w": 0.7257856827686721
+          },
+          "fovDeg": 55,
+          "locked": true
+        },
+        "simulation": {
+          "paused": true
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "definitions": {"displayBlack": 0.003, "displayHighlight": 0.995, "saturationWarning": 0.95, "fireflyMultipleOfP99": 30, "noiseMetric": "absolute RMS raw minus denoised; includes denoising bias and is not an independent ground truth", "luminance": "Rec.709 coefficients on scene-linear or decoded display RGB; never encoded sRGB averages"},
+  "shortlist": {"count": 2, "candidates": ["L01","L02","L03","L04"], "referenceTransform": "T1", "referenceExposure": 0, "rule": "Across all five views, minimize four times clipped fraction plus high saturation fraction; tie-break by light id. Provisional diagnostic ranking, not a photorealism score. L00 always final; L05 weather is separate."},
+  "regions": {"sky":[0.35,0.02,0.3,0.15], "foregroundRoad":[0.35,0.82,0.3,0.12], "sceneCenter":[0.25,0.32,0.5,0.4]},
+  "regionPolicy": "Normalized image rectangles are diagnostic crops, not semantic segmentation. Bus/material masks come from Cycles IndexMA/IndexOB and source material names. Sun/sky leakage requires pass evidence, not darkness alone."
+}

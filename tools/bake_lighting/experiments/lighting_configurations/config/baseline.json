@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "G00_existing_baked",
+  "settingsPolicy": "Repository-resolved runtime defaults in an isolated browser, with accepted baked shadows and enhanced indirect enabled; original bus materials. Personal Chrome preferences are not imported.",
+  "expectedSunProfile": "ai527.sun.az045.el35",
+  "readinessTimeoutSeconds": 240,
+  "settleFrames": 60,
+  "storage": {
+    "bus_sim.bakedLighting.v1": {
+      "busAppearanceVersion": 2,
+      "mode": "auto",
+      "shadows": {
+        "enabled": true,
+        "dynamicResolution": "high"
+      },
+      "receivers": {
+        "indirect": true
+      },
+      "bus": {
+        "enabled": false,
+        "glassReflections": false,
+        "bodyReflections": false,
+        "rimShine": false
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "workingSpace": "Linear Rec.709",
+  "display": "sRGB",
+  "transforms": [
+    {"id": "T0", "label": "Three.js ACESFilmic r183", "type": "three_aces_filmic", "exposureMultiplier": 1.02},
+    {"id": "T1", "label": "AgX / base", "type": "ocio", "view": "AgX", "look": "None"},
+    {"id": "T2", "label": "ACES 2.0", "type": "ocio", "view": "ACES 2.0", "look": "None"}
+  ],
+  "exposureStops": [-1, -0.5, 0, 0.5, 1],
+  "finalExposureStops": [-1, -0.5, 0, 0.5, 1],
+  "grades": [{"id":"neutral","rgbGain":[1,1,1],"saturation":1}, {"id":"warm","rgbGain":[1.025,1,0.975],"saturation":1}, {"id":"cool","rgbGain":[0.975,1,1.025],"saturation":1}, {"id":"restrained","rgbGain":[1,1,1],"saturation":0.9}, {"id":"soft_contrast","rgbGain":[1,1,1],"saturation":1,"look":"AgX - Medium Low Contrast"}],
+  "policy": "Transport is saved once. Exposure and white-balance gain precede the view transform; saturation grade follows in linear display RGB. sRGB encoding is applied once. T0 is the runtime approximation, not full ACES."
+}

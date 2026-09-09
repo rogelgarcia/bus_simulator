@@ -53,7 +53,10 @@ export async function runBakeCli(target = 'all', argv = process.argv.slice(2)) {
         if (options.flags.help) { process.stdout.write(BAKE_HELP); return; }
         const plan = planBakes(bakeJobs, options.values.target ?? target);
         const settings = resolveBakeOptions(plan, options);
-        const config = await loadBakeConfiguration();
+        const configurationPaths = plan.every(job => Array.isArray(job.configurationPaths))
+            ? [...new Set(plan.flatMap(job => job.configurationPaths))] : null;
+        const config = await loadBakeConfiguration(REPO_ROOT, configurationPaths
+            ? { requiredPaths: configurationPaths, checkedPaths: configurationPaths } : undefined);
         log.line('all', `Blender configuration: ${config.path}`);
         for (const job of plan) log.line(job.id, `${job.description ?? ''}; settings ${JSON.stringify(settings.get(job.id))}; dependencies ${[...job.dependencies ?? [], ...job.children ?? []].join(', ') || 'none'}; outputs ${(job.outputs ?? []).join(', ') || 'child results'}`);
         const planPath = path.join(REPO_ROOT, 'tests/artifacts/screens/ai556_bake_framework/last-plan.json');

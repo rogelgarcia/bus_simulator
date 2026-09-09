@@ -21,6 +21,27 @@ not conflict and the graph must have no cycles or missing jobs. Register a new
 domain in `tools/baking/registry.mjs`; do not add domain conditions to the planner.
 Every public entry uses `runBakeCli`, including standalone leaves.
 
+Explicit browser-only diagnostic plans may declare `configurationPaths` on every
+selected job. The shared loader then requires and checks only that union of machine
+paths. Jobs without this declaration retain the existing Blender configuration
+requirements. AI 560's `lighting/experiments/configurations` branch uses this for
+preparation and G00 game baseline capture; it is excluded from production defaults
+and rejects publication. Its tracked poses, immutable run artifacts, readiness,
+identity checks and measured timing are documented in the
+[lighting experiment README](../../tools/bake_lighting/experiments/lighting_configurations/README.md).
+The master runs preparation, G00 capture, export, pilot rendering, postprocessing,
+analysis, 4K G00 capture, final rendering and reporting. It reports
+`experiment_complete` only with the 30 pilot/15 final/10 game image inventory.
+Each exporter/renderer/processor/analyzer/reporter also has a standalone entry.
+The image stages require `pythonExecutable` with NumPy/OpenImageIO/OCIO; device
+selection uses `renderDevice` in the same machine configuration.
+
+Jobs may declare `codePaths` to scope implementation checkpoints and input-stability
+checks to their algorithm and adapters. Shared `tools/baking` code is always included.
+Jobs without a scope retain the original complete framework/domain code inventory.
+Each domain must include the relevant imported algorithms in its own artifact key;
+scoping must not permit changed image/scene inputs to pass authenticated reuse.
+
 ## Provenance and lifecycle
 
 The shared source export waits for complete current runtime assets and validates

@@ -6,6 +6,8 @@ Configure `executable` with the **existing** Blender executable and `archive` wi
 the existing pinned archive required by the shadow compiler. Optionally configure
 `browserExecutable` with an installed Chrome/Chromium executable. Paths can be
 absolute or repository-relative and may contain spaces. No installation is downloaded.
+Image experiments additionally use `pythonExecutable` (NumPy/OpenImageIO/OCIO) and
+`renderDevice` (`CPU` or `OPTIX`). Standalone image processing does not require Blender.
 The exact local file is gitignored; `blender.example.json` is the shareable template.
 Never put machine paths in tracked defaults or documentation.
 
@@ -59,6 +61,7 @@ The first implementation executes sequentially, including Blender and browser jo
 | `lighting/illumination` | Consolidate sky and bounce, pad/encode maps, package and authenticate | Existing receiver package format and runtime switches preserved |
 | `lighting/illumination/reprocess` | Refilter authenticated completed sky/bounce samples | Explicit maintenance leaf; requires unchanged current source, original UV layout/profile and toolchain; see [reprocess](../bake_lighting/illumination/reprocess/README.md) |
 | `lighting/preview-reference` | Authenticate installed historical comparison packages | Read-only; no claim of current-source coverage |
+| `lighting/experiments/configurations` | AI 560 game baselines, city export, Cycles matrix, display variants, analysis, 4K shortlist and pose-first gallery | Explicit diagnostic target, outside production defaults; standalone stages validate only their shared tool paths; [workflow](../bake_lighting/experiments/lighting_configurations/README.md) |
 | `lighting/illumination/preview/...` | Compatibility-only scalar preparation, direct sunlight and bounce | Explicit target, outside the default production tree; strict coverage checks retained |
 | `lighting/occlusion/preview` | Compatibility-only original sky irradiance | Explicit target, outside default tree |
 | `visibility` | Conservative BigCity2 PVS table | Existing view sampling, repair and native-resolution zero-miss validation |

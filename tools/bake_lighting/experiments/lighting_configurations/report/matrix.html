@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lighting lab · pose comparisons</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined">
+<style>/*STYLES*/</style>
+</head>
+<body>
+<header class="page-header"><div><h1>Lighting lab</h1><p>One camera. Three view transforms. Independent display settings.</p></div><span id="run-name"></span></header>
+<nav class="toolbar" aria-label="Comparison selection">
+<label>Pose <select id="pose"></select></label>
+<label>Resolution <select id="quality"></select></label>
+<label>Game tone mapping <select id="baseline-tone"></select></label>
+<label>Game grading <select id="baseline-grade"></select></label>
+</nav>
+<p class="reference-note">The original game reference uses ACESFilmic, exposure 1.02 and Vivid grading at 65%. Game grading is separate from the AgX look. Display changes below reuse the same ray-traced lighting.</p>
+<div id="tone-settings" class="tone-settings"></div>
+<main id="comparisons"></main>
+<footer id="provenance"></footer>
+<dialog id="viewer" aria-label="Image comparison carousel">
+<header class="viewer-header"><div><strong id="viewer-title"></strong><span id="viewer-detail"></span></div><button id="viewer-close" aria-label="Close comparison"><span class="ui-icon" aria-hidden="true">close</span></button></header>
+<div class="viewer-stage"><button id="viewer-previous" aria-label="Previous image"><span class="ui-icon" aria-hidden="true">chevron_left</span></button><img id="viewer-image" alt="" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="><button id="viewer-next" aria-label="Next image"><span class="ui-icon" aria-hidden="true">chevron_right</span></button></div>
+<nav id="viewer-tabs" aria-label="Comparison images"></nav>
+</dialog>
+<script>const DATA=/*DATA*/;</script><script>/*SCRIPT*/</script>
+</body></html>

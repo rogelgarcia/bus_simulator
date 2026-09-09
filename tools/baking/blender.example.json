@@ -1,5 +1,7 @@
 {
   "executable": "",
   "archive": "",
-  "browserExecutable": ""
+  "browserExecutable": "",
+  "pythonExecutable": "",
+  "renderDevice": "CPU"
 }

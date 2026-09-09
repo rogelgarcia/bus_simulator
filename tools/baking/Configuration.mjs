@@ -6,15 +6,17 @@ import { fileURLToPath } from 'node:url';
 
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const CONFIG_PATH = 'tools/baking/blender.local.json';
-export const CONFIG_TEMPLATE = Object.freeze({ executable: '', archive: '', browserExecutable: '' });
+export const CONFIG_TEMPLATE = Object.freeze({ executable: '', archive: '', browserExecutable: '', pythonExecutable: '', renderDevice: 'CPU' });
+const PATH_FIELDS = ['executable', 'archive', 'browserExecutable', 'pythonExecutable'];
 
-/** @param {string} [root] @returns {Promise<{executable:string,archive:string,browserExecutable:string,path:string}>} */
-export async function loadBakeConfiguration(root = REPO_ROOT) {
+/** @param {string} [root] @param {{requiredPaths?:string[], checkedPaths?:string[]}} [requirements]
+ * @returns {Promise<{executable:string,archive:string,browserExecutable:string,pythonExecutable:string,renderDevice:string,path:string}>} */
+export async function loadBakeConfiguration(root = REPO_ROOT, {requiredPaths = ['executable'], checkedPaths = PATH_FIELDS} = {}) {
     const file = path.join(root, CONFIG_PATH);
     await mkdir(path.dirname(file), { recursive: true });
     try {
         await writeFile(file, JSON.stringify(CONFIG_TEMPLATE, null, 2) + '\n', { flag: 'wx' });
-        throw Object.assign(new Error(`Bake setup required. Created ${file}. Set executable to your existing Blender executable and archive to its pinned archive. browserExecutable is optional. Nothing was baked.`), { exitCode: 2 });
+        throw Object.assign(new Error(`Bake setup required. Created ${file}. Configure ${requiredPaths.join(', ') || 'the paths required by your selected stage'}. Nothing was baked.`), { exitCode: 2 });
     } catch (error) {
         if (error.code !== 'EEXIST') throw error;
     }
@@ -24,14 +26,16 @@ export async function loadBakeConfiguration(root = REPO_ROOT) {
     if (!value || Array.isArray(value) || typeof value !== 'object') throw new Error(`Expected an object in ${file}`);
     for (const key of Object.keys(value)) if (!Object.hasOwn(CONFIG_TEMPLATE, key)) throw new Error(`Unknown configuration field ${key} in ${file}`);
     const result = { ...CONFIG_TEMPLATE, path: file };
-    for (const key of Object.keys(CONFIG_TEMPLATE)) {
+    if (value.renderDevice !== undefined && !['CPU', 'OPTIX'].includes(value.renderDevice)) throw new Error(`${file}: renderDevice must be CPU or OPTIX`);
+    result.renderDevice = value.renderDevice ?? 'CPU';
+    for (const key of PATH_FIELDS) {
         if (typeof value[key] !== 'string' && value[key] !== undefined) throw new Error(`${file}: ${key} must be a path string`);
         if (!value[key]) {
-            if (key === 'executable') throw Object.assign(new Error(`Bake setup required: configure executable in ${file}`), { exitCode: 2 });
+            if (requiredPaths.includes(key)) throw Object.assign(new Error(`Bake setup required: configure ${key} in ${file}`), { exitCode: 2 });
             continue;
         }
         result[key] = path.resolve(root, value[key]);
-        if (!(await stat(result[key]).catch(() => null))?.isFile()) throw Object.assign(new Error(`${file}: ${key} does not name an existing file: ${result[key]}`), { exitCode: 2 });
+        if (checkedPaths.includes(key) && !(await stat(result[key]).catch(() => null))?.isFile()) throw Object.assign(new Error(`${file}: ${key} does not name an existing file: ${result[key]}`), { exitCode: 2 });
     }
     return Object.freeze(result);
 }
