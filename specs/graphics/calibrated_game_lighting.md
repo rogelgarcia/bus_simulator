@@ -652,3 +652,34 @@ Evidence is under the gitignored
 That run took 1.8 minutes: the first calibrated load took 56.5 seconds;
 the other switches took 8–15 seconds, including resource/shader preparation.
 These are transition timings from the test machine, not steady-frame costs.
+
+### Following game defaults
+
+Options has a **Use defaults** footer action. It applies all current Options
+defaults, clears the saved overrides for the fourteen Options settings groups,
+and closes the panel. It waits for lighting replacement before clearing storage;
+if Cancel supersedes the pending load, the saved overrides are retained. Other
+browser storage (vehicle selection, poses, etc.) is untouched.
+
+With no saved override, each group's resolver reads its source defaults on the
+next game load. Editing a defaults file therefore takes effect after a reload;
+this is not hot reloading into an already running game. Existing URL overrides
+still take precedence where supported.
+
+Save now persists only groups changed during the Options session. Opening
+Options and saving without edits does not freeze the defaults again. Explicitly
+edited groups remain saved snapshots, while untouched groups keep following
+defaults. Reset remains a preview of today's values; Reset followed by Save
+explicitly saves that complete snapshot. Cancel does not change persistence.
+
+The default-inheritance browser regression clears all fourteen groups, retains
+unrelated storage, verifies an unchanged Save, serves a changed source exposure
+on reload, and verifies both inherited and custom values. It also checks Reset,
+Cancel during loading, and non-overlapping footer buttons at a narrow viewport.
+The Options entry path now passes the live environment ID and sun color into
+its draft; the missing fields previously changed to calibrated values on reopen.
+All eleven browser checks for defaults, live editing, daylight presets and the
+full city pass. Full-city evidence, including the Use defaults footer, is in
+`tests/artifacts/screens/daylight_presets/1789086435934/`; the city run took
+2.4 minutes. The defaults-file reload test changes only the served test response,
+leaving the repository's calibrated source values unchanged.

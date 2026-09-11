@@ -746,6 +746,10 @@
     flex-wrap: wrap;
 }
 
+.options-persistence-status {
+    flex-basis: 100%;
+}
+
 .options-btn {
     padding: 8px 10px;
     border-radius: 10px;

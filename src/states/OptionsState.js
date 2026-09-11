@@ -3,30 +3,22 @@
 // Compare UI snapshots for live edits; Cancel restores engine values only for edited groups.
 
 import { OptionsUI } from '../graphics/gui/options/OptionsUI.js';
+import { saveOptionsDraft, clearSavedOptionsSettings } from '../graphics/gui/options/OptionsPersistence.js';
 import { applyAsphaltRoadVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltRoadVisuals.js';
 import { applyAsphaltEdgeWearVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltEdgeWearVisuals.js';
 import { applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltMarkingsNoiseVisuals.js';
 import { applySidewalkEdgeDirtStripVisualsToMeshStandardMaterial, getSidewalkEdgeDirtStripConfig } from '../graphics/visuals/city/SidewalkEdgeDirtStripVisuals.js';
-import { saveLightingSettings } from '../graphics/lighting/LightingSettings.js';
-import { getResolvedShadowSettings, saveShadowSettings } from '../graphics/lighting/ShadowSettings.js';
-import { saveAntiAliasingSettings } from '../graphics/visuals/postprocessing/AntiAliasingSettings.js';
-import { saveAmbientOcclusionSettings } from '../graphics/visuals/postprocessing/AmbientOcclusionSettings.js';
-import { saveBloomSettings } from '../graphics/visuals/postprocessing/BloomSettings.js';
-import { saveSunBloomSettings } from '../graphics/visuals/postprocessing/SunBloomSettings.js';
-import { getResolvedAsphaltNoiseSettings, saveAsphaltNoiseSettings } from '../graphics/visuals/city/AsphaltNoiseSettings.js';
-import { getResolvedBuildingWindowVisualsSettings, sanitizeBuildingWindowVisualsSettings, saveBuildingWindowVisualsSettings } from '../graphics/visuals/buildings/BuildingWindowVisualsSettings.js';
+import { getResolvedShadowSettings } from '../graphics/lighting/ShadowSettings.js';
+import { getResolvedAsphaltNoiseSettings } from '../graphics/visuals/city/AsphaltNoiseSettings.js';
+import { getResolvedBuildingWindowVisualsSettings, sanitizeBuildingWindowVisualsSettings } from '../graphics/visuals/buildings/BuildingWindowVisualsSettings.js';
 import { applyBuildingWindowVisualsToCityMeshes } from '../graphics/visuals/buildings/BuildingWindowVisualsRuntime.js';
-import { saveColorGradingSettings } from '../graphics/visuals/postprocessing/ColorGradingSettings.js';
-import { getResolvedSunFlareSettings, saveSunFlareSettings } from '../graphics/visuals/sun/SunFlareSettings.js';
-import { saveAtmosphereSettings } from '../graphics/visuals/atmosphere/AtmosphereSettings.js';
-import { getResolvedVehicleMotionDebugSettings, saveVehicleMotionDebugSettings } from '../app/vehicle/VehicleMotionDebugSettings.js';
+import { getResolvedSunFlareSettings } from '../graphics/visuals/sun/SunFlareSettings.js';
+import { getResolvedVehicleMotionDebugSettings } from '../app/vehicle/VehicleMotionDebugSettings.js';
 import {
-    getResolvedStaticVisibilitySettings,
-    saveStaticVisibilitySettings
+    getResolvedStaticVisibilitySettings
 } from '../app/city/visibility/index.js';
 import {
-    getResolvedBakedLightingSettings,
-    saveBakedLightingSettings
+    getResolvedBakedLightingSettings
 } from '../app/illumination/runtime/index.js';
 
 function isEditableTarget(target) {
@@ -117,7 +109,9 @@ export class OptionsState {
                     toneMapping: lighting.toneMapping,
                     hemiIntensity: lighting.hemiIntensity,
                     sunIntensity: lighting.sunIntensity,
+                    sunColorLinear: lighting.sunColorLinear,
                     ibl: {
+                        iblId: lighting.ibl?.iblId,
                         enabled: lighting.ibl?.enabled,
                         envMapIntensity: lighting.ibl?.envMapIntensity,
                         setBackground: lighting.ibl?.setBackground,
@@ -260,7 +254,8 @@ export class OptionsState {
             reloadBakedLighting: () => this.engine?.reloadBakedLighting?.(),
             onCancel: () => this._cancel(),
             onLiveChange: (draft) => this._applyDraft(draft),
-            onSave: (draft) => this._save(draft)
+            onUseDefaults: (draft) => this._useDefaults(draft),
+            onSave: (draft, options) => this._save(draft, options)
         });
 
         this._ui.mount();
@@ -290,22 +285,25 @@ export class OptionsState {
         this.sm.go(this._returnTo || 'welcome');
     }
 
-    async _save(draft) {
+    async _save(draft, options) {
         if (await this._applyDraft(draft) === false) return;
-        saveLightingSettings(draft?.lighting ?? null);
-        saveShadowSettings(draft?.shadows ?? null);
-        saveAntiAliasingSettings(draft?.antiAliasing ?? null);
-        saveAmbientOcclusionSettings(draft?.ambientOcclusion ?? null);
-        saveAtmosphereSettings(draft?.atmosphere ?? null);
-        saveBloomSettings(draft?.bloom ?? null);
-        saveSunBloomSettings(draft?.sunBloom ?? null);
-        saveColorGradingSettings(draft?.colorGrading ?? null);
-        saveBuildingWindowVisualsSettings(draft?.buildingWindowVisuals ?? null);
-        saveSunFlareSettings(draft?.sunFlare ?? null);
-        saveAsphaltNoiseSettings(draft?.asphaltNoise ?? null);
-        saveVehicleMotionDebugSettings(draft?.vehicleMotionDebug ?? null);
-        saveStaticVisibilitySettings(draft?.staticVisibility ?? null);
-        saveBakedLightingSettings(draft?.bakedLighting ?? null);
+        if (!saveOptionsDraft(draft, this._initialDraft, options)) {
+            this._ui?.showPersistenceError('Settings could not be saved in this browser.');
+            return;
+        }
+        this._close();
+    }
+
+    async _useDefaults(draft) {
+        if (await this._applyDraft(draft) === false) return;
+        if (!clearSavedOptionsSettings()) {
+            this._ui?.showPersistenceError('Saved overrides could not be cleared. Try Use defaults again.');
+            return;
+        }
+        this._close();
+    }
+
+    _close() {
         if (this._overlay) {
             this.sm.popOverlay();
             return;

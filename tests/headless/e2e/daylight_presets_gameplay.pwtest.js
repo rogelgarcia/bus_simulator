@@ -94,15 +94,31 @@ test('Previous and Calibrated switch the real game without displaying incomplete
     }
     await page.locator('.options-footer').getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.locator('#ui-options')).toHaveCount(0);
-    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('bus_sim.lighting.v1')));
+    const saved = await page.evaluate(async () => {
+        const { getResolvedLightingSettings } = await import('/src/graphics/lighting/LightingSettings.js');
+        return getResolvedLightingSettings({ includeUrlOverrides: false });
+    });
     expect(saved.ibl.iblId).toBe('ibl.calibrated.clear_afternoon_55');
     expect(saved.sunColorLinear).toEqual(records.at(-1).lighting.sunColorLinear);
+    expect(await page.evaluate(() => localStorage.getItem('bus_sim.lighting.v1'))).toBeNull();
     await openLighting(page);
     await row.getByRole('button', { name: 'Previous', exact: true }).click();
     await waitPreset(page, 'current');
     await page.locator('.options-footer').getByRole('button', { name: 'Cancel', exact: true }).click();
     await waitPreset(page, 'baked');
     expect(await page.evaluate(() => window.__busSim.engine.lightingSettings.ibl.iblId)).toBe('ibl.calibrated.clear_afternoon_55');
+    await openLighting(page);
+    await page.screenshot({ path: path.join(output, '5-use-defaults-button.png') });
+    await page.getByRole('button', { name: 'Use defaults', exact: true }).click();
+    await expect(page.locator('#ui-options')).toHaveCount(0);
+    const defaults = await page.evaluate(async () => {
+        const { getDefaultResolvedBakedLightingSettings } = await import('/src/app/illumination/runtime/index.js');
+        return { baked: window.__busSim.engine.bakedLightingSettings, expected: getDefaultResolvedBakedLightingSettings(),
+            savedBaked: localStorage.getItem('bus_sim.bakedLighting.v1'), savedLighting: localStorage.getItem('bus_sim.lighting.v1') };
+    });
+    expect(defaults.baked).toEqual(defaults.expected);
+    expect(defaults.savedBaked).toBeNull();
+    expect(defaults.savedLighting).toBeNull();
     expect(errors).toEqual([]);
     await writeFile(path.join(output, 'transitions.json'), JSON.stringify({ records, saved, errors }, null, 2));
     console.log('Daylight preset evidence:', output);

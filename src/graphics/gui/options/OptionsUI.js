@@ -14,6 +14,7 @@ import { getDefaultResolvedSunFlareSettings } from '../../visuals/sun/SunFlareSe
 import { getDefaultResolvedAtmosphereSettings } from '../../visuals/atmosphere/AtmosphereSettings.js';
 import { getDefaultResolvedStaticVisibilitySettings } from '../../../app/city/visibility/index.js';
 import { getDefaultResolvedBakedLightingSettings, sanitizeBakedLightingSettings } from '../../../app/illumination/runtime/index.js';
+import { getDefaultResolvedVehicleMotionDebugSettings } from '../../../app/vehicle/VehicleMotionDebugSettings.js';
 import {
     applyOptionsPresetToDraft,
     createOptionsPresetFromDraft,
@@ -112,10 +113,12 @@ export class OptionsUI {
         subtitleText = '0 opens options · Esc closes',
         onCancel = null,
         onLiveChange = null,
+        onUseDefaults = null,
         onSave = null
     } = {}) {
         this.onCancel = onCancel;
         this.onLiveChange = onLiveChange;
+        this.onUseDefaults = onUseDefaults;
         this.onSave = onSave;
         this._getIblDebugInfo = typeof getIblDebugInfo === 'function' ? getIblDebugInfo : null;
         this._getPostProcessingDebugInfo = typeof getPostProcessingDebugInfo === 'function' ? getPostProcessingDebugInfo : null;
@@ -190,6 +193,9 @@ export class OptionsUI {
 
         this.footer = makeEl('div', 'options-footer');
         this.resetBtn = makeEl('button', 'options-btn', 'Reset');
+        this.useDefaultsBtn = makeEl('button', 'options-btn', 'Use defaults');
+        this.useDefaultsBtn.type = 'button';
+        this.useDefaultsBtn.title = 'Apply and keep using game defaults. Future default changes apply after reloading. Clears saved Options overrides.';
         this.importBtn = makeEl('button', 'options-btn', 'Import');
         this.exportBtn = makeEl('button', 'options-btn', 'Export');
         this.cancelBtn = makeEl('button', 'options-btn', 'Cancel');
@@ -201,16 +207,26 @@ export class OptionsUI {
         this.saveBtn.type = 'button';
 
         this.resetBtn.addEventListener('click', () => this.resetToDefaults());
+        this.useDefaultsBtn.addEventListener('click', () => {
+            this.resetToDefaults({ emit: false });
+            this._resetAllRequested = false;
+            this.onUseDefaults?.(this.getDraft());
+        });
         this.importBtn.addEventListener('click', () => this._importPresetFromFile());
         this.exportBtn.addEventListener('click', () => this._exportPreset());
         this.cancelBtn.addEventListener('click', () => this.onCancel?.());
-        this.saveBtn.addEventListener('click', () => this.onSave?.(this.getDraft()));
+        this.saveBtn.addEventListener('click', () => this.onSave?.(this.getDraft(), { reset: !!this._resetAllRequested }));
 
         this.footer.appendChild(this.resetBtn);
+        if (this.onUseDefaults) this.footer.appendChild(this.useDefaultsBtn);
         this.footer.appendChild(this.importBtn);
         this.footer.appendChild(this.exportBtn);
         this.footer.appendChild(this.cancelBtn);
         this.footer.appendChild(this.saveBtn);
+        this.persistenceStatus = makeEl('div', 'options-note options-persistence-status');
+        this.persistenceStatus.setAttribute('role', 'status');
+        this.persistenceStatus.hidden = true;
+        this.footer.appendChild(this.persistenceStatus);
 
         this.panel.appendChild(header);
         this.panel.appendChild(this.tabs);
@@ -1162,7 +1178,13 @@ export class OptionsUI {
         return renderLightingTab.call(this);
     }
 
-    resetToDefaults() {
+    showPersistenceError(message) {
+        this.persistenceStatus.hidden = false;
+        this.persistenceStatus.textContent = message;
+    }
+
+    resetToDefaults({ emit = true } = {}) {
+        this._resetAllRequested = true;
         const d = getDefaultResolvedLightingSettings();
         this._draftLighting = {
             exposure: d.exposure,
@@ -1235,24 +1257,11 @@ export class OptionsUI {
 	            livedIn: JSON.parse(JSON.stringify(asphaltNoise.livedIn ?? {}))
 	        };
 
-        this._draftVehicleMotionDebug = {
-            enabled: false,
-            overlay: true,
-            logSpikes: false,
-            logCameraCatchup: false,
-            logCameraLag: false,
-            logCameraEvents: false,
-            camera: { freeze: false },
-            backStep: { minProjMeters: 0.05 },
-            cameraCatchup: { minDfwdMeters: 0.05, minCameraMoveMeters: 0.01, minCamBusDistDropMeters: 0.05 },
-            cameraLag: { minBusStepMeters: 0.2, maxCamStepRatio: 0.55 },
-            spike: { maxDistMeters: 0.9, maxYawDeg: 25, maxScreenPx: 18 },
-            syntheticDt: { enabled: false, pattern: 'off', mode: 'stall', stallMs: 34 }
-        };
+        this._draftVehicleMotionDebug = JSON.parse(JSON.stringify(getDefaultResolvedVehicleMotionDebugSettings()));
         this._draftStaticVisibility = JSON.parse(JSON.stringify(getDefaultResolvedStaticVisibilitySettings()));
         this._draftBakedLighting = JSON.parse(JSON.stringify(getDefaultResolvedBakedLightingSettings()));
         this._renderTab();
-        this._emitLiveChange();
+        if (emit) return this._emitLiveChange();
     }
 
     getDraft() {
