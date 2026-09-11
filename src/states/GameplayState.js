@@ -23,6 +23,7 @@ import { InputManager } from '../app/input/InputManager.js';
 import { createVehicleFromBus } from '../app/vehicle/createVehicle.js';
 import { RESERVATION_TYPE, findReservationByType } from '../app/city/placement/index.js';
 import { GameplayDebugPanel } from '../graphics/gui/gameplay/GameplayDebugPanel.js';
+import { GameplayFrameRecorder } from '../graphics/gui/gameplay/GameplayFrameRecorder.js';
 import { VehicleMotionDebugOverlay } from '../graphics/gui/debug/VehicleMotionDebugOverlay.js';
 import { Q_MENU_GROUP } from './SceneShortcutRegistry.js';
 import { SetupUIController } from '../graphics/gui/setup/SetupUIController.js';
@@ -282,8 +283,10 @@ export class GameplayState {
 
         this._debugEnabled = params.get('debug') === 'true';
         if (this._debugEnabled) {
+            this._frameRecorder = new GameplayFrameRecorder({ engine:this.engine, state:this });
             this._debugPanel = new GameplayDebugPanel({
                 events: sim.events,
+                recorder: this._frameRecorder,
                 getGameplayPose: () => this._captureGameplayPose()
             });
             this._debugPanel.attach(document.body);
@@ -457,6 +460,8 @@ export class GameplayState {
         this._vehicleMotionDebugOverlay = null;
 
         this._debugPanel?.destroy();
+        this._frameRecorder?.destroy();
+        this._frameRecorder = null;
         this._debugPanel = null;
         this._debugEnabled = false;
 
@@ -774,7 +779,7 @@ export class GameplayState {
             });
         }
 
-        if (this._debugEnabled && this._debugPanel) {
+        if (this._debugEnabled && this._debugPanel?.isTelemetryVisible) {
             this._debugPanel.setContext?.({
                 vehicleId: 'player',
                 physics: this.engine.simulation?.physics,

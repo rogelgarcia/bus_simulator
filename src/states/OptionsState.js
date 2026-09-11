@@ -492,6 +492,7 @@ export class OptionsState {
                 : 0.25;
             applyBuildingWindowVisualsToCityMeshes(city.buildings.group, sanitized, { iblEnabled, baseEnvMapIntensity });
         }
+        this.engine.simulation?.events?.emit('options:applied', comparisonDraft);
     }
 
     _getVehicleMotionDebugInfo() {

@@ -54,6 +54,8 @@ perfBar.setBakedStatusProvider(() => ({
 }));
 engine.addFrameListener((frame) => perfBar.onFrame(frame));
 const sm = new StateMachine();
+perfBar.setDebugPoseProvider(() => sm.current?._debugEnabled
+    ? {camera:engine.camera,bus:sm.current.busAnchor} : null);
 window.__busSim = { engine, sm };
 const welcome = new WelcomeState(engine, sm);
 sm.register('welcome', welcome);

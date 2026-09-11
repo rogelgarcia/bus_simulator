@@ -18,6 +18,8 @@ Copied buses use `bus.transform: { position: { x, y, z }, quaternion: { x, y, z,
 
 The debug panel has a **Minimize** button that docks its header at the bottom left and a matching **Restore** button that restores its previous size and position. Logs, tree expansion and telemetry scroll position survive minimizing. The separate **Close** button removes the overlay. Telemetry and tree/log panels scroll inside the resizable window; narrow windows stack the panels vertically. Header controls remain usable without starting a window drag.
 
+For a route or intermittent slowdown, use **Record** beside **Copy camera position**. It minimizes the panel and captures each frame's transforms, frame ID, CPU/GPU measurements and resolved settings. **Stop** in the widget above the dock copies a compressed recording. The second debug stats row shows the same hexadecimal frame IDs for correlating videos with the trace. See [Gameplay frame recording](frame_recording.md) for the format, limits and decoder.
+
 ## Named presets
 
 Named poses live in `src/app/gameplay/GameplayPoseCatalog.js` and launch through the short `pose` query parameter:

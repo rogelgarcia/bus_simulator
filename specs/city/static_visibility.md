@@ -57,8 +57,14 @@ The normal Three.js frustum remains active. For a supported gameplay camera, run
 1. rounds world X/Z to the BigCity2 cell;
 2. finds the two 12-direction bins bracketing the camera yaw;
 3. ORs their pre-expanded masks;
-4. retains the previous output for a 250 ms boundary grace period;
+4. retains each root for 250 ms after it leaves the raw union mask; later cell/yaw
+   changes do not extend an already absent root's deadline;
 5. changes only roots whose output bit changed.
+
+Reappearing roots become visible immediately and receive a new grace period on
+their next departure. Payload/settings changes and fail-open recovery clear
+retention history. The grace duration and conservative baked masks are unchanged;
+the runtime must not recursively retain accumulated output across boundaries.
 
 Per-category settings can bypass the PVS for buildings, traffic lights, traffic signs, or trees independently. Global disable and every error state restore all roots immediately. Cameras outside the map or outside the baked FOV, near/far, aspect, or pitch envelope also fail open. Debug/editor cities and unsupported city IDs never load the BigCity2 map. Asynchronous trees must finish with exactly the baked placement/root count before activation.
 

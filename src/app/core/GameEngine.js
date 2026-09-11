@@ -200,6 +200,7 @@ export class GameEngine {
         this._running = false;
         this._lastT = 0;
         this._frameListeners = new Set();
+        this.frameIndex = 0;
 
         this._frameTiming = {
             nowMs: 0,
@@ -1369,6 +1370,8 @@ export class GameEngine {
     }
 
     updateFrame(dt, { render = true, nowMs = null, rawDt = null } = {}) {
+        const cpuStart = performance.now();
+        if (render) this.frameIndex++;
         const stepDt = Number.isFinite(dt) ? dt : 0;
         const now = Number.isFinite(nowMs) ? nowMs : performance.now();
         // Real elapsed time, before the simulation clamp. Only for measurement:
@@ -1436,9 +1439,11 @@ export class GameEngine {
         }
 
         if (!this._frameListeners.size) return;
+        const cpuMs = performance.now() - cpuStart;
         for (const fn of this._frameListeners) {
             try {
-                fn({ dt: stepDt, rawDt: measuredDt, nowMs: now, renderer: this.renderer, engine: this, rendered });
+                fn({ dt: stepDt, rawDt: measuredDt, nowMs: now, renderer: this.renderer, engine: this, rendered,
+                    frameIndex: this.frameIndex, cpuMs, gpuSubmitted: gpuFrameBegun });
             } catch (err) {
                 console.warn('[GameEngine] Frame listener error:', err);
                 this._frameListeners.delete(fn);

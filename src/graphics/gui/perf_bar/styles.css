@@ -9,6 +9,10 @@ body.perf-bar-enabled {
     --global-top-bar-height: 24px;
 }
 
+body.perf-bar-enabled.perf-bar-debug {
+    --global-top-bar-height: 48px;
+}
+
 body.perf-bar-enabled.perf-bar-hidden {
     --global-top-bar-height: 0px;
 }
@@ -26,10 +30,12 @@ body.perf-bar-enabled .ui-picker-overlay {
 
 .ui-perf-bar {
     height: var(--global-top-bar-height);
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-auto-rows: 24px;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    column-gap: 10px;
     padding: 0 10px;
     box-sizing: border-box;
     position: relative;
@@ -43,6 +49,17 @@ body.perf-bar-enabled .ui-picker-overlay {
     font-variant-numeric: tabular-nums;
     user-select: none;
 }
+
+.ui-perf-debug-line {
+    grid-column: 1 / -1;
+    white-space: pre;
+    overflow-x: auto;
+    scrollbar-width: none;
+    font-family: ui-monospace, monospace;
+    color: #bac4ce;
+}
+
+.ui-perf-debug-line[hidden] { display: none; }
 
 .ui-perf-bar.is-warn {
     background: rgba(44, 16, 16, 0.85);

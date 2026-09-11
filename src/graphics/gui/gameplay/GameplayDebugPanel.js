@@ -1,6 +1,7 @@
 // src/graphics/gui/gameplay/GameplayDebugPanel.js
 // Lightweight gameplay debug overlay (DOM only).
 import { applyMaterialSymbolToButton } from '../shared/materialSymbols.js';
+import { GameplayRecordingControls } from './GameplayRecordingControls.js';
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
@@ -231,7 +232,7 @@ function isPlainObject(v) {
 }
 
 export class GameplayDebugPanel {
-    constructor({ events, getGameplayPose = null } = {}) {
+    constructor({ events, getGameplayPose = null, recorder = null } = {}) {
         this.events = events ?? null;
         this._getGameplayPose = getGameplayPose;
         this._minimized = false;
@@ -263,6 +264,8 @@ export class GameplayDebugPanel {
 
         this.btnToggleLogs = makeBtn('Logs', HELP.buttons.logs);
         this.btnClear = makeBtn('Clear', HELP.buttons.clear);
+        this.btnRecord = makeBtn('Record', 'Record every frame for reproduction (up to 36,000 frames). Stop copies a compressed recording.');
+        this.btnRecord.disabled = !recorder;
         this.btnCopyPose = makeBtn('Copy camera position', HELP.buttons.copy);
         this.btnCopyPose.setAttribute('aria-label', 'Copy camera position');
         this.btnCopyPose.disabled = !getGameplayPose;
@@ -272,6 +275,7 @@ export class GameplayDebugPanel {
         this.btnClose = makeBtn('');
         applyMaterialSymbolToButton(this.btnClose, { name: 'close', label: 'Close debug panel' });
 
+        btnRow.appendChild(this.btnRecord);
         btnRow.appendChild(this.btnCopyPose);
         btnRow.appendChild(this.btnToggleLogs);
         btnRow.appendChild(this.btnClear);
@@ -281,6 +285,7 @@ export class GameplayDebugPanel {
         this.header.appendChild(title);
         this.header.appendChild(btnRow);
         this.root.appendChild(this.header);
+        if (recorder) this._recordingControls = new GameplayRecordingControls(this, recorder);
 
         this.body = document.createElement('div');
         this.body.className = 'gpd-body';
@@ -599,6 +604,7 @@ export class GameplayDebugPanel {
             this.logs.innerHTML = '';
         });
         this.btnClose.addEventListener('click', () => {
+            if (recorder?.active || recorder?.stopping) { this.setMinimized(true); return; }
             this.destroy();
         });
 
@@ -622,6 +628,7 @@ export class GameplayDebugPanel {
         this._unsubInput?.();
         this._unsubInput = null;
         this._disposeDrag?.();
+        this._recordingControls?.destroy();
         clearTimeout(this._copyFeedbackTimer);
         if (this.root.isConnected) this.root.remove();
     }
@@ -632,6 +639,10 @@ export class GameplayDebugPanel {
         this._ctx.anchor = anchor ?? this._ctx.anchor;
         this._ctx.api = api ?? this._ctx.api;
         this._ctx.model = model ?? this._ctx.model;
+    }
+
+    get isTelemetryVisible() {
+        return !this._destroyed && !this._minimized;
     }
 
     setExpanded(expanded) {
@@ -733,6 +744,7 @@ export class GameplayDebugPanel {
         this._input.brake = Number.isFinite(input.brake) ? input.brake : this._input.brake;
         this._input.handbrake = Number.isFinite(input.handbrake) ? input.handbrake : this._input.handbrake;
         this._input.headlights = !!input.headlights;
+        if (this._minimized) return;
 
         const s = clamp(this._input.steering, -1, 1);
         this.steerVal.textContent = fmt(s, 2);

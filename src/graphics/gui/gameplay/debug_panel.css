@@ -48,6 +48,34 @@
     min-width: 0;
     min-height: 0;
     resize: none;
+    overflow: visible;
+}
+
+.gpd-recording {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px;
+    background: #18212a;
+    border: 1px solid #657585;
+    border-radius: 10px;
+    color: #cbd3db;
+    font-size: 12px;
+}
+
+.gpd-recording[hidden], .gpd-recording [hidden] { display: none; }
+.gpd-recording .gpd-btn { color: #cbd3db; border-color: #657585; }
+.gpd-recording.is-recording .gpd-recording-status { color: #cea5a1; }
+.gpd-recording-status { flex: 1 0 100%; }
+
+#hud-gameplay-debug.is-minimized .gpd-recording {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    width: max-content;
+    min-width: 290px;
+    max-width: calc(100vw - 32px);
 }
 
 #hud-gameplay-debug.is-minimized .gpd-header {

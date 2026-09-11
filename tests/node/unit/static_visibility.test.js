@@ -194,6 +194,47 @@ test('runtime unions two yaw bins, preserves the previous mask briefly, and chan
     assert.deepEqual(changes, [[0, false]]);
 });
 
+test('runtime expires each departed root even while other cell boundaries keep changing', () => {
+    const units = [0, 1, 2].map(id => ({ id: `building:${id}`, category: 'buildings' }));
+    const table = new Uint32Array(4 * STATIC_VISIBILITY_PROFILE.directionCount);
+    for (let cell = 0; cell < 4; cell++) {
+        table.fill(cell < 3 ? 1 << cell : 0, cell * 12, (cell + 1) * 12);
+    }
+    const runtime = new StaticVisibilityRuntime({
+        map: { width: 4, height: 1, tileSize: 24, originX: 0, originZ: 0 },
+        units, onVisibilityChange() {}, graceMs: 250
+    });
+    const decoded = { ok: true, table, wordsPerMask: 1 };
+    runtime.setPayload(decoded);
+    const step = (cell, nowMs) => runtime.update({ x: cell * 24, z: 0, yaw: 0, nowMs });
+    step(0, 0);
+    step(1, 100);
+    step(2, 200);
+    step(3, 300);
+    assert.deepEqual([...runtime.getVisibleFlags()], [1, 1, 1]);
+    step(3, 350);
+    assert.deepEqual([...runtime.getVisibleFlags()], [0, 1, 1]);
+    step(3, 450);
+    assert.deepEqual([...runtime.getVisibleFlags()], [0, 0, 1]);
+    step(3, 550);
+    assert.deepEqual([...runtime.getVisibleFlags()], [0, 0, 0]);
+    // Reappearing roots are immediately visible and receive a fresh grace period on departure.
+    step(0, 600);
+    step(3, 700);
+    step(0, 800);
+    step(3, 900);
+    step(3, 1000);
+    assert.deepEqual([...runtime.getVisibleFlags()], [1, 0, 0]);
+    step(3, 1150);
+    assert.deepEqual([...runtime.getVisibleFlags()], [0, 0, 0]);
+    step(0, 1200);
+    runtime.setFallback('test');
+    assert.deepEqual([...runtime.getVisibleFlags()], [1, 1, 1]);
+    runtime.setPayload(decoded);
+    step(3, 1250);
+    assert.deepEqual([...runtime.getVisibleFlags()], [0, 0, 0]);
+});
+
 test('runtime category opt-out, disabled setting, and invalid pose all fail open', () => {
     const units = [{ id: 'trees:000', category: STATIC_VISIBILITY_CATEGORY.TREES }];
     const table = new Uint32Array(STATIC_VISIBILITY_PROFILE.directionCount);

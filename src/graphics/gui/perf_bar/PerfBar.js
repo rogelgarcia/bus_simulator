@@ -134,6 +134,7 @@ export class PerfBar {
         this._forceUpdate = false;
         this._bakedStatusProvider = null;
         this._bakedStatusStrip = null;
+        this._debugTransform = null;
 
         this._els = {
             fpsText: null,
@@ -164,6 +165,10 @@ export class PerfBar {
 
     requestUpdate() {
         this._forceUpdate = true;
+    }
+
+    setDebugPoseProvider(provider) {
+        this._debugPoseProvider = provider;
     }
 
     /** @param {(() => object) | null} provider */
@@ -243,6 +248,10 @@ export class PerfBar {
 
         root.appendChild(left);
         root.appendChild(right);
+        this._debugLine = document.createElement('div');
+        this._debugLine.className = 'ui-perf-debug-line';
+        this._debugLine.hidden = true;
+        root.appendChild(this._debugLine);
         right.appendChild(btnToggle);
 
         const first = host.firstChild;
@@ -286,6 +295,9 @@ export class PerfBar {
         this._bakedStatusStrip?.destroy();
         this._bakedStatusStrip = null;
         this._bakedStatusProvider = null;
+        this._debugPoseProvider = null;
+        this._debugTransform = null;
+        document.body.classList.remove('perf-bar-debug');
         this.root.remove();
         this._els.btnDockToggle?.remove();
         this.root = null;
@@ -317,9 +329,33 @@ export class PerfBar {
         this._renderStatic();
     }
 
-    onFrame({ dt, rawDt, nowMs, renderer } = {}) {
+    _formatDebugTransform(node) {
+        if (!node) return '—';
+        const transform = this._debugTransform ??= {
+            position: node.position.clone(), quaternion: node.quaternion.clone(),
+            scale: node.scale.clone(), rotation: node.rotation.clone()
+        };
+        node.matrixWorld.decompose(transform.position, transform.quaternion, transform.scale);
+        transform.rotation.setFromQuaternion(transform.quaternion, 'YXZ');
+        const p = transform.position, r = transform.rotation;
+        const degrees = radians => (radians * 180 / Math.PI).toFixed(1);
+        return `XYZ (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}) Y/P/R° (${degrees(r.y)}, ${degrees(r.x)}, ${degrees(r.z)})`;
+    }
+
+    onFrame({ dt, rawDt, nowMs, renderer, frameIndex } = {}) {
         const now = Number.isFinite(nowMs) ? nowMs : performance.now();
         if (renderer) this.setRenderer(renderer);
+        const pose = this._debugPoseProvider?.();
+        if (this._debugLine) {
+            if (this._debugLine.hidden === !!pose) {
+                this._debugLine.hidden = !pose;
+                document.body.classList.toggle('perf-bar-debug', !!pose);
+                requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+            }
+            if (pose && !this._hidden) {
+                this._debugLine.textContent = `Frame: 0x${(frameIndex ?? 0).toString(16).toUpperCase().padStart(8,'0')}    Camera: ${this._formatDebugTransform(pose.camera)}    Bus: ${this._formatDebugTransform(pose.bus)}`;
+            }
+        }
 
         // Prefer the unclamped delta. `dt` is clamped for the simulation (a
         // long frame must not advance physics by a huge step), and that ceiling

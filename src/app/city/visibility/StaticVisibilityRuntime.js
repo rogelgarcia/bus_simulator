@@ -30,12 +30,11 @@ export class StaticVisibilityRuntime {
         this._graceMs = Math.max(0, Number(graceMs) || 0);
         this._decoded = null;
         this._currentMask = new Uint32Array(Math.ceil(units.length / 32));
-        this._outputMask = new Uint32Array(this._currentMask.length);
         this._previousMask = new Uint32Array(this._currentMask.length);
+        this._retainedUntilMs = new Float64Array(units.length);
         this._visible = new Uint8Array(units.length);
         this._visible.fill(1);
         this._lastKey = null;
-        this._graceUntilMs = 0;
         this._status = 'loading';
         this._fallbackReason = 'loading';
         this._diagnostics = this._createDiagnostics();
@@ -56,6 +55,12 @@ export class StaticVisibilityRuntime {
         };
     }
 
+    _resetHistory() {
+        this._lastKey = null;
+        this._previousMask.fill(0);
+        this._retainedUntilMs.fill(0);
+    }
+
     setPayload(decoded) {
         if (!decoded?.ok || !(decoded.table instanceof Uint32Array)) {
             this.setFallback(decoded?.reason ?? 'payload_invalid');
@@ -64,8 +69,7 @@ export class StaticVisibilityRuntime {
         this._decoded = decoded;
         this._status = this._settings.enabled ? 'active' : 'disabled';
         this._fallbackReason = this._settings.enabled ? null : 'disabled';
-        this._lastKey = null;
-        this._graceUntilMs = 0;
+        this._resetHistory();
         if (!this._settings.enabled) this._applyAllVisible();
         this._syncDiagnostics(0, null, null);
         return true;
@@ -73,8 +77,7 @@ export class StaticVisibilityRuntime {
 
     setSettings(settings) {
         this._settings = sanitizeStaticVisibilitySettings(settings);
-        this._lastKey = null;
-        this._graceUntilMs = 0;
+        this._resetHistory();
         if (!this._settings.enabled) {
             this._status = 'disabled';
             this._fallbackReason = 'disabled';
@@ -93,8 +96,7 @@ export class StaticVisibilityRuntime {
     setFallback(reason) {
         this._status = this._settings.enabled ? 'fallback' : 'disabled';
         this._fallbackReason = this._settings.enabled ? String(reason || 'unknown') : 'disabled';
-        this._lastKey = null;
-        this._graceUntilMs = 0;
+        this._resetHistory();
         this._applyAllVisible();
         this._syncDiagnostics(0, null, null);
     }
@@ -144,20 +146,23 @@ export class StaticVisibilityRuntime {
 
         const key = `${cellIndex}:${lower}:${upper}`;
         if (this._lastKey !== key) {
-            this._previousMask.set(this._outputMask);
-            this._graceUntilMs = nowMs + this._graceMs;
+            // Only a departure from the raw PVS starts grace. Carrying the
+            // previous output forward rearmed old roots at every boundary.
+            for (let index = 0; index < this.units.length; index += 1) {
+                const word = index >>> 5, bit = (1 << (index & 31)) >>> 0;
+                if (this._currentMask[word] & bit) this._retainedUntilMs[index] = 0;
+                else if (this._previousMask[word] & bit) this._retainedUntilMs[index] = nowMs + this._graceMs;
+            }
+            this._previousMask.set(this._currentMask);
             this._lastKey = key;
-        }
-        const keepPrevious = nowMs < this._graceUntilMs;
-        for (let word = 0; word < words; word += 1) {
-            this._outputMask[word] = this._currentMask[word] | (keepPrevious ? this._previousMask[word] : 0);
         }
 
         let changed = 0;
         for (let index = 0; index < this.units.length; index += 1) {
             const unit = this.units[index];
             const categoryEnabled = this._settings.categories[unit.category] !== false;
-            const maskVisible = (this._outputMask[index >>> 5] & ((1 << (index & 31)) >>> 0)) !== 0;
+            const maskVisible = (this._currentMask[index >>> 5] & ((1 << (index & 31)) >>> 0)) !== 0
+                || nowMs < this._retainedUntilMs[index];
             const visible = !categoryEnabled || maskVisible;
             const next = visible ? 1 : 0;
             if (this._visible[index] === next) continue;

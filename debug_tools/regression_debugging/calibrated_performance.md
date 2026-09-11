@@ -137,3 +137,89 @@ alone do not establish that it is the sole cause of every reported slow period.
 - The recurring whole-game slowdown is not established as fixed. Reproducing
   the user's exact stationary/driving conditions and timing remains necessary;
   the connected browser tool exposes no tab for their existing Chrome session.
+
+## BUSREC1 route supplied September 11
+
+The user supplied 3,095 exact bus/camera frames, `443–1059` hex, spanning
+70.045 seconds. Evidence is under `tests/artifacts/screens/recorded_slowdown/`.
+The recording uses the current authored defaults, calibrated 55-degree sun,
+ACES with grading off, **3520×1540 drawing buffer and 8× MSAA**. This is over
+three times the pixels of the earlier approximate route tests. Baked mode stays
+active at generation 2 throughout; all GPU samples have submission provenance.
+
+| Original frame range | GPU median | GPU p95 | GPU maximum | Frame intervals over 25 ms |
+| --- | ---: | ---: | ---: | ---: |
+| B00–BFF | 19.12 ms | 19.87 ms | 21.78 ms | 50 / 256 |
+| D00–DFF | 19.03 ms | 27.61 ms | 32.64 ms | 61 / 256 |
+| 700–7FF | 24.29 ms | 28.17 ms | 31.12 ms | 141 / 256 |
+| F00–FFF | 23.69 ms | 28.12 ms | 31.81 ms | 147 / 256 |
+
+`Bxx` misses display deadlines despite relatively steady work. `D98–DAB` has
+a sharper workload increase: main-scene draws reach approximately 1,200 and
+total frame draws approximately 1,260, then drop toward 660. Six exact visual
+passes across two separate hardware Chrome processes reproduce the costly
+section. The first process has Dxx GPU p95 of 28.90 / 28.32 / 29.24 ms. The
+second has 28.92 / 36.76 / 33.62 ms and also exhibits transient slow periods
+elsewhere. These are actual RTX 3060 results; an initial software-renderer
+attempt was stopped and excluded. The user's normal browser was untouched.
+
+A separate diagnostic pass attributes the extra draws to the main city render,
+including low-rise roots `building_47_c/d`, `building_48/c/d` and `building_49_*`.
+The dynamic AO scene pass stays at 25 draws; sun bloom reports `irrelevant` and
+does not render its occlusion/bloom passes. Main render CPU rises from roughly
+7–8 ms to 16.5 ms. The unchanged bake-source validation costs approximately
+5.5–6 ms per frame. GL error polling costs about 0.8–1 ms in this diagnostic.
+The diagnostic's first scene-pass draw delta predates a counter-reset fix and
+must not be used; its main city draw counts are valid.
+
+Other isolated hitches remain distinct: `6AB` records 79 ms CPU / 69 ms GPU
+with three newly observed textures; `8FF` records 78 ms CPU with ten new shader
+programs and thirteen textures. These correlations warrant first-use upload/
+compilation investigation, not an assertion that all hitches share one cause.
+
+### Visibility retention defect
+
+`StaticVisibilityRuntime` copied its previous **output** into a global grace
+mask and restarted the 250 ms timer on every cell/yaw-key change. Successive
+boundaries therefore prolonged roots absent from multiple successive raw masks.
+A deterministic regression failed: a root that departed at 100 ms remained
+visible past its 350 ms deadline after unrelated transitions at 200/300 ms.
+
+Retention now has a deadline per root. Only departure from the raw PVS mask
+starts grace; unrelated transitions cannot renew it. Reappearance is immediate
+and the next departure gets a fresh 250 ms. Fallback, settings and payload
+changes clear history. All eleven Node visibility tests pass, including the
+new regression and shadow/auxiliary-camera visibility isolation.
+
+Replaying the original timestamps through old/new runtimes identifies 63
+affected frames in eight short sections. `DA2–DAB` retains up to eleven excess
+roots before the fix, including three expensive low-rise buildings. This fix
+addresses unnecessary retention; it does not remove legitimate visible-scene
+load, the bake-validation CPU cost or the separate first-use hitches.
+
+Paired full-resolution captures using the original timestamp-derived visibility
+flags confirm the reduction without changing pixels:
+
+| Frame | Draw calls before | Draw calls after | Changed RGB pixels |
+| --- | ---: | ---: | ---: |
+| DA4 | 1263 | 981 | 0 |
+| DA7 | 1257 | 972 | 0 |
+| DAB | 1244 | 959 | 0 |
+
+This is approximately 23% fewer calls at these frames with the same materials,
+lighting, AA and geometry. PNG pairs and `visibility-comparison.json` are under
+`bounded-grace-01/`. Its three replay passes pass the config/pixel/bake checks,
+but two have substantial unrelated timing fluctuations (including unchanged
+B/C ranges). They cannot establish a whole-game FPS improvement. The final
+pass returns to Dxx GPU median 18.40 ms / p95 26.57 ms. Report the draw reduction
+as confirmed and the remaining timing variability separately.
+
+The second fresh process after the fix (`bounded-grace-02`) completes three more
+passes: Dxx GPU p95 **28.35 / 25.97 / 26.61 ms**, medians 18.84 / 18.31 / 18.31 ms.
+Thus twelve full selected-range passes ran across four fresh browser processes
+(six before, six after), plus one short draw-diagnostic pass. All retained baked
+mode and generation, had no page errors, and matched the recording's configuration
+and resolution. The production visibility payload validation also passes.
+This supports the bounded retention fix and a small improvement in the cleaner
+Dxx runs; it does not establish that the intermittent whole-game slowdown is
+fully resolved. No graphics quality or lighting setting was reduced.
