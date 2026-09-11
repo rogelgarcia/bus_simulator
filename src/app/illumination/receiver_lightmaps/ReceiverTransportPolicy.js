@@ -1,6 +1,8 @@
 // Derives supported alpha-coverage transport without modifying authenticated source records.
 // @ts-check
-export const RECEIVER_ALPHA_TRANSPORT = 'declared-alpha-coverage-v1';
+export const RECEIVER_ALPHA_TRANSPORT = 'declared-alpha-coverage-uv-raw-v3';
+// Historical packages remain readable without being relabeled as corrected bakes.
+export const SUPPORTED_RECEIVER_TRANSPORTS = Object.freeze(['declared-alpha-coverage-v1', 'declared-alpha-coverage-uv-v2', RECEIVER_ALPHA_TRANSPORT]);
 
 /** @param {any} manifest */
 export function resolveReceiverTransport(manifest) {

@@ -321,8 +321,8 @@ class _MaterialAdapter:
         links.new(less.outputs[0], keep.inputs[1])
         return keep.outputs[0]
 
-    def _texture_node(self, material: Any, binding_id: str, role: str, geometry: dict[str, Any]) -> Any:
-        binding = self.bindings[binding_id]
+    def _texture_node(self, material: Any, binding_id: str, role: str, geometry: dict[str, Any], binding_override=None) -> Any:
+        binding = binding_override if binding_override is not None else self.bindings[binding_id]
         source = self.sources[binding["sourceId"]]
         channel = role.split(":", 1)[1] if role.startswith("coverage:") else "source"
         image = self._image(source, channel)
@@ -348,6 +348,7 @@ class _MaterialAdapter:
         cached = self.image_cache.get(key)
         if cached is not None:
             return cached
+        color_space = "Non-Color" if channel != "source" else ("sRGB" if any(binding.get("colorSpace") == "srgb" for binding in self.bindings.values() if binding["sourceId"] == source["id"]) else "Non-Color")
         if channel != "source":
             buffer_id = f"{source['id']}:coverage:{channel}"
             data = self.package.get_buffer_bytes(buffer_id)
@@ -373,19 +374,23 @@ class _MaterialAdapter:
             components = len(data) // (width * height * component_width)
             if components < 1 or components > 4 or width * height * components * component_width != len(data):
                 fail("source_texture_shape_invalid", "Raw texture bytes do not match declared dimensions and component type.", textureSourceId=source["id"])
-            image = _raw_image(bpy, source, data, components, _diagnostic_name("IMG", source["id"]))
+            image = _raw_image(bpy, source, data, components, _diagnostic_name("IMG", source["id"]), color_space)
         image.name = _diagnostic_name("IMG", source["id"] + ":" + channel)
-        image.colorspace_settings.name = "Non-Color" if channel != "source" else ("sRGB" if any(binding.get("colorSpace") == "srgb" for binding in self.bindings.values() if binding["sourceId"] == source["id"]) else "Non-Color")
+        # Changing colorspace reloads generated images and discards their pixels.
+        # Raw float buffers are linearized before population below.
+        if channel == "source" and source["storage"] == "encoded_source":
+            image.colorspace_settings.name = color_space
         image["bus_sim_texture_source_id"] = source["id"]
         image["bus_sim_channel"] = channel
         self.image_cache[key] = image
         return image
 
 
-def _raw_image(bpy: Any, source: dict[str, Any], data: bytes, components: int, name: str) -> Any:
+def _raw_image(bpy: Any, source: dict[str, Any], data: bytes, components: int, name: str, color_space: str = "Non-Color") -> Any:
     width = source["width"]
     height = source["height"]
     image = bpy.data.images.new(name, width=width, height=height, alpha=True, float_buffer=True, is_data=True)
+    image.colorspace_settings.name = "Non-Color"
     component_type = source.get("componentType")
     values = _decode_texture_components(data, component_type)
     rgba = [0.0] * (width * height * 4)
@@ -399,9 +404,15 @@ def _raw_image(bpy: Any, source: dict[str, Any], data: bytes, components: int, n
             color = (source_values[0], source_values[1], source_values[2], 1.0)
         else:
             color = tuple(source_values)
+        if color_space == "sRGB":
+            color = (*(value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4 for value in color[:3]), color[3])
+        elif color_space != "Non-Color":
+            raise ValueError("Unsupported raw image color space: " + color_space)
         rgba[pixel * 4:(pixel + 1) * 4] = color
     image.pixels.foreach_set(rgba)
     image.update()
+    # Preserve generated transport inputs when saving reusable diagnostic scenes.
+    image.pack()
     return image
 
 

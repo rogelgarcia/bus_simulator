@@ -1,0 +1,9 @@
+{
+ "$schema":"https://json-schema.org/draft/2020-12/schema","title":"AI566 runtime material audit","type":"object","required":["schemaVersion","threeRevision","records","textures","baked"],
+ "properties":{
+  "schemaVersion":{"const":1},"threeRevision":{"type":"string"},
+  "records":{"type":"array","items":{"type":"object","required":["id","name","type","scope","inputs","textures","userData","geometry","worldMatrix"],"properties":{"id":{"type":"string","pattern":"^MAT_[0-9]+_"},"scope":{"enum":["city","bus","scene"]},"inputs":{"type":"object"},"textures":{"type":"object","additionalProperties":{"type":"string"}},"worldMatrix":{"type":"array","minItems":16,"maxItems":16,"items":{"type":"number"}}}}},
+  "textures":{"type":"array","items":{"type":"object","required":["id","colorSpace","repeat","offset"],"properties":{"id":{"type":"string"},"statisticsUnavailable":{"type":"string"},"linearMean":{"type":"array","minItems":3,"maxItems":3}}}},
+  "baked":{"type":"object"}
+ }
+}

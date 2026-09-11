@@ -26,6 +26,7 @@ import {
     getActiveSceneShadowSystem
 } from '../../lighting/SceneShadowMaterials.js';
 import { CityCascadedShadows } from './CityCascadedShadows.js';
+import { CALIBRATED_DAYLIGHT } from '../../lighting/CalibratedDaylight.js';
 import { ShadowCasterCuller } from '../../lighting/ShadowCasterCulling.js';
 import {
     STATIC_SUN_DEPTH_CASTER_SIDEDNESS,
@@ -139,10 +140,11 @@ export class City {
         this.sunRef = {
             direction: new THREE.Vector3(80, 140, 60).normalize(),
             intensity: lighting.sunIntensity,
-            color: new THREE.Color(0xffffff)
+            color: new THREE.Color().fromArray(lighting.sunColorLinear)
         };
 
         this.sun = new THREE.DirectionalLight(this.sunRef.color.getHex(), this.sunRef.intensity);
+        this.sun.color.copy(this.sunRef.color);
         this.sun.position.set(80, 140, 60);
         this.sun.castShadow = true;
         this.sun.shadow.mapSize.set(2048, 2048);
@@ -719,7 +721,10 @@ export class City {
             ? Math.max(0.5, Math.min(2.5, settings.splitScale))
             : 1;
 
+        const angularDiameterDegrees = engine?.lightingSettings?.ibl?.iblId === CALIBRATED_DAYLIGHT.environmentId
+            ? CALIBRATED_DAYLIGHT.angularDiameterDeg : 0;
         if (this._csm && (this._csm.cascades !== cascades
+            || this._csm.angularDiameterDegrees !== angularDiameterDegrees
             || this._csm.mapSize !== mapSize
             || this._csm.splitScale !== splitScale)) {
             this._deactivateCascadedShadows();
@@ -734,6 +739,7 @@ export class City {
             cascades,
             mapSize,
             splitScale,
+            angularDiameterDegrees,
             // Cascades scale off the base size, so the hardware cap is enforced
             // there rather than by the base-size clamp above.
             maxTextureSize: engine?.renderer?.capabilities?.maxTextureSize ?? 0
@@ -912,6 +918,10 @@ export class City {
     }
 
     update(engine) {
+        this.updateVisuals(engine);
+    }
+
+    updateVisuals(engine) {
         this._applyAtmosphere(engine);
         if (this._csm) {
             // Cull before the cascades fit: castShadow flags are read during

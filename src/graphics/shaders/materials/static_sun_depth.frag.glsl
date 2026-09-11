@@ -178,7 +178,33 @@ highp vec4 staticSunDepthLookup( highp vec3 worldPosition, highp vec3 receiverNo
     highp float comparisonDepth = lightPosition.z - receiverBias;
     highp float seamRadius;
 
-    if ( staticSunDepthFilterPolicy.x > 0.5 ) {
+    if ( staticSunDepthFilterPolicy.w > 0.0 && staticSunDepthDebugMode == 0 ) {
+        // Finite angular source: estimate receiver/blocker separation in metres.
+        // Receiver-plane correction prevents sloped surfaces shadowing themselves.
+        highp vec3 geometricNormal = normalize(cross(dFdx(worldPosition), dFdy(worldPosition)));
+        highp vec3 lightNormal = mat3( staticSunDepthWorldToLight ) * geometricNormal;
+        highp vec2 slope = abs(lightNormal.z) > 0.001 ? -lightNormal.xy / lightNormal.z : vec2(0.0);
+        highp float searchRadius = max(texelSizeMeters, (comparisonDepth - staticSunDepthDepthRange.x) * staticSunDepthFilterPolicy.w);
+        highp float separation = 0.0;
+        highp float blockers = 0.0;
+        for (int i = 0; i < 8; i++) {
+            highp vec2 offset = i == 0 ? vec2(0.0) : staticSunDepthVogelDiskSample(i - 1, 7, 0.0) * searchRadius;
+            highp float occupied = 0.0;
+            highp float depth = invalidDepth;
+            highp float receiver = comparisonDepth + dot(offset, slope);
+            highp float visible = staticSunDepthCompareGlobalTexel(ivec2(floor(globalCoordinate + offset / texelSizeMeters)), receiver, occupied, depth);
+            if (occupied > 0.0 && visible < 0.5) {separation += receiver - depth; blockers += 1.0;}
+        }
+        if (blockers < 0.5) return vec4(1.0, invalidDepth, layer, 0.0);
+        highp float radius = max(texelSizeMeters * 0.5, separation / blockers * staticSunDepthFilterPolicy.w);
+        for (int i = 0; i < 12; i++) {
+            highp vec2 offset = staticSunDepthVogelDiskSample(i, 12, 0.0) * radius;
+            visibleSamples += staticSunDepthLinearCompare(globalCoordinate + offset / texelSizeMeters,
+                comparisonDepth + dot(offset, slope), occupiedSamples, reconstructedDepth);
+        }
+        tapSamples = 12.0;
+        seamRadius = ceil(radius / texelSizeMeters + 0.5);
+    } else if ( staticSunDepthFilterPolicy.x > 0.5 ) {
         highp float sourceWorldRadius = staticSunDepthFilterPolicy.y
             * staticSunDepthSourceMapSizeAndExtent.z
             / staticSunDepthSourceMapSizeAndExtent.x;

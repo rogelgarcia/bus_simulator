@@ -8,6 +8,7 @@ import { createEnhancedSourceWatch, enhancedLightingKey } from './EnhancedReceiv
 import { collectResolvedCityBakeRoots } from '../bake_source/BakeSourceScene.js';
 import { installEnhancedReceiverRenderOptimizations } from './EnhancedReceiverRenderOptimizations.js';
 import { createResolvedIlluminationExportProfile } from '../bake_source/IlluminationExportProfile.js';
+import { SUPPORTED_RECEIVER_TRANSPORTS } from '../../../app/illumination/receiver_lightmaps/ReceiverTransportPolicy.js';
 
 export class EnhancedReceiverLightmapRuntime extends ReceiverLightmapRuntime {
     /** @param {any} engine */
@@ -18,7 +19,7 @@ export class EnhancedReceiverLightmapRuntime extends ReceiverLightmapRuntime {
         this.loadChannel = (request) => {
             // Alpha contributors were unsupported in the historical per-channel source hash.
             // New transport therefore authenticates the complete, unmodified source identity too.
-            if (this.cachedIndex?.mapping.profile.transportPolicy === 'declared-alpha-coverage-v1'
+            if (SUPPORTED_RECEIVER_TRANSPORTS.includes(this.cachedIndex?.mapping.profile.transportPolicy)
                 && this.source?.hashes.resolvedSource !== this.cachedIndex.sourceHash) throw new Error('complete_receiver_source_mismatch');
             return load({ ...request, resolvedSourceHash: this.source?.hashes.resolvedSource });
         };

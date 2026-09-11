@@ -1,8 +1,9 @@
 // src/app/core/GameEngine.js
 import * as THREE from 'three';
 import { SimulationContext } from './SimulationContext.js';
-import { applyIBLIntensity, applyIBLToScene, getIBLBackgroundTexture, loadIBLBackgroundTexture, loadIBLTexture } from '../../graphics/lighting/IBL.js';
+import { applyIBLIntensity, applyIBLToScene, getIBLConfig, getIBLBackgroundTexture, loadIBLBackgroundTexture, loadIBLTexture } from '../../graphics/lighting/IBL.js';
 import { getResolvedLightingSettings, LIGHTING_LIMITS, sanitizeToneMappingMode } from '../../graphics/lighting/LightingSettings.js';
+import { CALIBRATED_DAYLIGHT } from '../../graphics/lighting/CalibratedDaylight.js';
 import { getResolvedShadowSettings, getShadowQualityPreset, sanitizeShadowSettings } from '../../graphics/lighting/ShadowSettings.js';
 import { getResolvedAtmosphereSettings, sanitizeAtmosphereSettings } from '../../graphics/visuals/atmosphere/AtmosphereSettings.js';
 import { getResolvedAntiAliasingSettings, sanitizeAntiAliasingSettings } from '../../graphics/visuals/postprocessing/AntiAliasingSettings.js';
@@ -20,6 +21,7 @@ import { getResolvedVehicleMotionDebugSettings, sanitizeVehicleMotionDebugSettin
 import { BusContactShadowRig } from '../../graphics/visuals/vehicles/BusContactShadowRig.js';
 import { StaticAoRuntime } from '../../graphics/visuals/static_ao/StaticAoRuntime.js';
 import { BakedLightingRuntime } from '../../graphics/illumination/baked_lighting/index.js';
+import { prepareLightingView } from '../../graphics/illumination/baked_lighting/LightingViewPreparation.js';
 
 function resolveThreeToneMapping(mode) {
     const key = sanitizeToneMappingMode(mode, 'aces');
@@ -247,19 +249,55 @@ export class GameEngine {
         };
 
         const next = {
-            exposure: clamp(src?.exposure ?? prev.exposure, 0.1, 5, prev.exposure),
+            exposure: clamp(src?.exposure ?? prev.exposure, LIGHTING_LIMITS.exposureMin, 5, prev.exposure),
             toneMapping: sanitizeToneMappingMode(src?.toneMapping ?? prev.toneMapping, prev.toneMapping ?? 'aces'),
             hemiIntensity: clamp(src?.hemiIntensity ?? prev.hemiIntensity, 0, LIGHTING_LIMITS.hemiIntensityMax, prev.hemiIntensity),
             sunIntensity: clamp(src?.sunIntensity ?? prev.sunIntensity, 0, LIGHTING_LIMITS.sunIntensityMax, prev.sunIntensity),
-            ibl: {
+            sunColorLinear: [...(src?.sunColorLinear ?? prev.sunColorLinear)],
+            ibl: getIBLConfig({
                 ...(prev.ibl ?? {}),
+                ...(src?.ibl ?? {}),
+                hdrUrl: src?.ibl?.hdrUrl ?? (src?.ibl?.iblId && src.ibl.iblId !== prev.ibl?.iblId ? null : prev.ibl?.hdrUrl),
                 enabled: src?.ibl?.enabled !== undefined ? !!src.ibl.enabled : !!prev.ibl?.enabled,
                 envMapIntensity: clamp(src?.ibl?.envMapIntensity ?? prev.ibl?.envMapIntensity, 0, 5, prev.ibl?.envMapIntensity ?? 0.25),
                 setBackground: src?.ibl?.setBackground !== undefined ? !!src.ibl.setBackground : !!prev.ibl?.setBackground
-            }
+            }, { includeUrlOverrides: false })
         };
 
+        const request = Symbol('lighting request');
+        this._pendingLightingRequest = request;
+        if (this._ibl && next.ibl.hdrUrl !== this._ibl.config?.hdrUrl && (next.ibl.enabled || next.ibl.setBackground)) {
+            // Keep the complete old profile visible until its replacement environment is ready.
+            const promise = Promise.all([
+                loadIBLTexture(this.renderer, next.ibl),
+                next.ibl.setBackground ? loadIBLBackgroundTexture(next.ibl.hdrUrl) : null
+            ]).then(([envMap, background]) => {
+                if (this._pendingLightingRequest !== request) return null;
+                if (next.ibl.enabled && !envMap) throw new Error('Requested lighting environment did not load');
+                this._ibl = { ...this._ibl, config: next.ibl, envMap };
+                if (envMap && background) {
+                    envMap.userData.iblBackgroundTexture = background;
+                    envMap.__iblBackgroundTexture = background;
+                }
+                this.setLightingSettings(next);
+                return envMap;
+            }).catch(error => {
+                console.warn('[IBL] Replacement profile was not applied:', error);
+                return null;
+            });
+            this._iblPromise = promise;
+            return promise;
+        }
+        if (this._ibl && next.ibl.hdrUrl !== this._ibl.config?.hdrUrl) this._ibl = { ...this._ibl, config: next.ibl, envMap: null };
         this._lighting = next;
+        const city = this.context?.city;
+        city?.sunRef?.color?.fromArray(next.sunColorLinear);
+        city?.sun?.color?.fromArray(next.sunColorLinear);
+        if (prev.ibl?.iblId !== next.ibl.iblId) {
+            this._bakedLighting?.requestViewPreparation();
+            this._applyShadowSettings(this.shadowSettings);
+            city?.applyShadowSettings?.(this);
+        }
         this.renderer.toneMapping = resolveThreeToneMapping(next.toneMapping);
         this.renderer.toneMappingExposure = next.exposure;
         this._post?.pipeline?.setToneMapping?.({
@@ -699,7 +737,10 @@ export class GameEngine {
 
         const preset = getShadowQualityPreset(next);
         const enabled = !!preset.enabled;
-        const type = preset.shadowMapType === 'pcf' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+        const lighting = this._lighting ?? getResolvedLightingSettings();
+        const finiteSun = next.type === 'cascade' && lighting.ibl?.iblId === CALIBRATED_DAYLIGHT.environmentId;
+        const type = finiteSun ? THREE.BasicShadowMap
+            : preset.shadowMapType === 'pcf' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 
         if (this.renderer.shadowMap.enabled !== enabled) {
             this.renderer.shadowMap.enabled = enabled;
@@ -758,7 +799,19 @@ export class GameEngine {
         return this._post?.pipeline?.getSceneMaterialRenderTarget() ?? null;
     }
 
+    prepareLightingView(signal) {
+        try {
+            this._prepareDynamicAo();
+            return prepareLightingView(this.renderer, this.scene, this.camera,
+                this._post?.pipeline?.getSceneMaterialRenderTarget() ?? null, signal);
+        } finally { this._dynamicAo?.restoreBindings(); }
+    }
+
     _renderAoFrame(dt) {
+        if (this._bakedLighting?.shouldHoldView()) {
+            this._bakedLighting.prepareView();
+            return;
+        }
         if (this._post?.pipeline) {
             try { this._post.pipeline.render(dt, () => this._prepareDynamicAo()); }
             finally { this._dynamicAo?.restoreBindings(); }
@@ -965,21 +1018,23 @@ export class GameEngine {
             scanIntervalMs: 500,
             scanDurationMs: 2000
         };
+        const owner = this._ibl;
 
 	        this._iblPromise = loadIBLTexture(this.renderer, config).then((envMap) => {
+	            if (this._ibl !== owner) return null;
 	            this._ibl.envMap = envMap;
 	            if (envMap) {
-	                applyIBLToScene(this.scene, envMap, config);
+	                applyIBLToScene(this.scene, envMap, this._ibl.config);
 	                const now = performance.now();
 	                this._ibl.scanUntilMs = now + this._ibl.scanDurationMs;
 	                this._ibl.nextScanMs = 0;
-	                applyIBLIntensity(this.scene, config, { force: true });
+	                applyIBLIntensity(this.scene, this._ibl.config, { force: true });
 	                this._ensureIblBackground();
 	            }
 	            return envMap;
 	        }).catch((err) => {
             console.warn('[IBL] Failed to load HDR environment map:', err);
-            this._ibl.envMap = null;
+            if (this._ibl === owner) this._ibl.envMap = null;
             return null;
         });
     }
@@ -1041,18 +1096,7 @@ export class GameEngine {
     }
 
     reloadLightingSettings() {
-        this._lighting = getResolvedLightingSettings();
-        this.renderer.toneMapping = resolveThreeToneMapping(this._lighting.toneMapping);
-        this.renderer.toneMappingExposure = this._lighting.exposure;
-        this._post?.pipeline?.setToneMapping?.({
-            toneMapping: this.renderer.toneMapping,
-            exposure: this.renderer.toneMappingExposure
-        });
-        this.scene.environment = null;
-        this.scene.background = null;
-        this._ibl = null;
-        this._iblPromise = null;
-        this._initIBL();
+        return this.setLightingSettings(getResolvedLightingSettings());
     }
 
     reloadShadowSettings() {

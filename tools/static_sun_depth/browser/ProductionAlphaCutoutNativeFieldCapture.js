@@ -5,6 +5,7 @@ import {resolveThreeR183ShadowAlphaTest, resolveThreeR183ShadowSide} from
     '../src/ThreeShadowSide.mjs';
 import {captureNativeShadowDepthTexture} from './NativeShadowDepthTextureCapture.js';
 import {createRuntimeTreeCasterId} from './ProductionAlphaCutoutSamplePlan.js';
+import {productionNativeFieldProjection} from './ProductionNativeFieldProjection.js';
 
 export const PRODUCTION_ALPHA_CUTOUT_NATIVE_FIELD_SCHEMA =
     'ai531-production-alpha-cutout-native-field-session-v2';
@@ -97,6 +98,8 @@ export function beginProductionAlphaCutoutNativeFieldCapture(options) {
         throw new Error('native cutout field tile exceeds the fixed capture bound');
     }
     const gl = renderer.getContext();
+    const fullProjection = layout.basis.policy === 'three-r183-source-lattice-v2'
+        ? productionNativeFieldProjection(layout, cameraOriginDepthMeters) : null;
     const target = new THREE.WebGLRenderTarget(tileWidth, tileHeight, {
         depthBuffer: true,
         format: THREE.RGBAFormat,
@@ -109,7 +112,7 @@ export function beginProductionAlphaCutoutNativeFieldCapture(options) {
     target.texture.generateMipmaps = false;
     target.depthTexture = new THREE.DepthTexture(
         tileWidth,
-        tileHeight,
+        target.height,
         THREE.UnsignedIntType
     );
     target.depthTexture.format = THREE.DepthFormat;
@@ -147,8 +150,25 @@ export function beginProductionAlphaCutoutNativeFieldCapture(options) {
         layout,
         lightingProfileId,
         renderer,
-        target
+        target,
+        fullProjection
     };
+    if (fullProjection) {
+        const light = new THREE.DirectionalLight(0xffffff, 0);
+        light.castShadow = true;
+        light.position.fromArray(fullProjection.position);
+        light.target.position.fromArray(fullProjection.target);
+        light.shadow.mapSize.set(...fullProjection.mapSize);
+        Object.assign(light.shadow.camera, {
+            left: -fullProjection.extent[0] / 2, right: fullProjection.extent[0] / 2,
+            bottom: -fullProjection.extent[1] / 2, top: fullProjection.extent[1] / 2,
+            near: cameraNearMeters, far: cameraFarMeters
+        });
+        light.shadow.camera.updateProjectionMatrix();
+        cutoutScene.scene.add(light, light.target);
+        cutoutScene.useNativeShadowMaterials();
+        activeSession.nativeLight = light;
+    }
     return {
         schema: PRODUCTION_ALPHA_CUTOUT_NATIVE_FIELD_SCHEMA,
         method: PRODUCTION_ALPHA_CUTOUT_NATIVE_FIELD_METHOD,
@@ -196,22 +216,23 @@ export function captureProductionAlphaCutoutNativeFieldTile(options) {
     try {
         configureCameraForTile(session, tile);
         session.renderer.xr.enabled = false;
-        session.renderer.shadowMap.enabled = false;
+        session.renderer.shadowMap.enabled = !!session.nativeLight;
         session.renderer.autoClear = true;
         session.renderer.sortObjects = false;
         session.renderer.setRenderTarget(session.target);
-        session.renderer.setViewport(
-            0,
-            0,
-            session.target.width,
-            session.target.height
-        );
+        session.renderer.setViewport(0, 0, session.target.width, session.target.height);
         session.renderer.setScissorTest(false);
         session.renderer.setClearColor(0x000000, 0);
         session.renderer.clear(true, true, false);
-        session.renderer.render(session.cutoutScene.scene, session.camera);
+        if (!session.nativeLight || !session.nativeLight.shadow.map) {
+            // Use the same full-map projection, depth shader and rasterizer as
+            // the independent live oracle; only readback is tiled.
+            session.renderer.shadowMap.needsUpdate = true;
+            session.renderer.render(session.cutoutScene.scene, session.camera);
+        }
         session.gl.finish();
-        const handles = resolveNativeTarget(session.renderer, session.target);
+        const depthTarget = session.nativeLight?.shadow.map ?? session.target;
+        const handles = resolveNativeTarget(session.renderer, depthTarget);
         capture = captureNativeShadowDepthTexture({
             depthTexture: handles.depthTexture,
             framebuffer: handles.framebuffer,
@@ -219,8 +240,9 @@ export function captureProductionAlphaCutoutNativeFieldTile(options) {
             label: `${session.lightingProfileId}-${tile.id}`,
             maximumTexels: MAXIMUM_TILE_TEXELS,
             renderer: session.renderer,
-            textureHeight: session.target.height,
-            textureWidth: session.target.width
+            textureHeight: depthTarget.height,
+            textureWidth: depthTarget.width,
+            ...(session.nativeLight ? {region: session.fullProjection.region(tile.coordinates)} : {})
         });
         session.capturedTileIndices.add(tileIndex);
     } catch (error) {
@@ -280,6 +302,7 @@ export function endProductionAlphaCutoutNativeFieldCapture() {
     const capturedTileCount = session.capturedTileIndices.size;
     try {
         session.target.dispose();
+        session.nativeLight?.shadow.dispose();
         session.cutoutScene.dispose();
     } finally {
         session.renderer.renderLists?.dispose?.();
@@ -298,6 +321,7 @@ function createCutoutScene(THREE, city) {
     const casterIds = [];
     const materials = new Map();
     const clones = [];
+    const sourceMaterialsByClone = new Map();
     const textures = new Set();
     const discard = new THREE.MeshBasicMaterial();
     discard.visible = false;
@@ -375,6 +399,7 @@ function createCutoutScene(THREE, city) {
         clone.receiveShadow = false;
         scene.add(clone);
         clones.push(clone);
+        sourceMaterialsByClone.set(clone, source.material);
         meshCount += 1;
     });
     casterIds.sort(compareStrings);
@@ -389,6 +414,12 @@ function createCutoutScene(THREE, city) {
         scene,
         textureIdentity: describeTexture([...textures][0]),
         materials: [...materials.values()],
+        useNativeShadowMaterials() {
+            for (const clone of clones) {
+                clone.material = sourceMaterialsByClone.get(clone);
+                clone.castShadow = true;
+            }
+        },
         dispose() {
             for (const clone of clones) clone.removeFromParent();
             for (const material of materials.values()) material.dispose();
@@ -440,6 +471,14 @@ function createNativeFoliageDepthMaterial(THREE, source, usesCutoutCoverage) {
 }
 
 function configureCameraForTile(session, tile) {
+    if(session.fullProjection) {
+        const camera=session.camera, projection=session.fullProjection;
+        camera.left=-projection.extent[0]/2;camera.right=projection.extent[0]/2;
+        camera.top=projection.extent[1]/2;camera.bottom=-projection.extent[1]/2;
+        camera.position.fromArray(projection.position);camera.up.set(0,1,0);camera.updateMatrix();
+        camera.lookAt(...projection.target);camera.updateMatrix();camera.updateMatrixWorld(true);camera.updateProjectionMatrix();
+        return;
+    }
     const bounds = tile.interiorBoundsLightMeters;
     const centerRight = (bounds.min[0] + bounds.max[0]) * 0.5;
     const centerUp = (bounds.min[1] + bounds.max[1]) * 0.5;
@@ -490,6 +529,7 @@ function snapshotRendererState(THREE, renderer) {
         scissor: renderer.getScissor(new THREE.Vector4()).clone(),
         scissorTest: renderer.getScissorTest(),
         shadowEnabled: renderer.shadowMap.enabled,
+        shadowNeedsUpdate: renderer.shadowMap.needsUpdate,
         sortObjects: renderer.sortObjects,
         viewport: renderer.getViewport(new THREE.Vector4()).clone(),
         xrEnabled: renderer.xr.enabled
@@ -504,6 +544,7 @@ function restoreRendererState(renderer, state) {
     );
     renderer.autoClear = state.autoClear;
     renderer.shadowMap.enabled = state.shadowEnabled;
+    renderer.shadowMap.needsUpdate = state.shadowNeedsUpdate;
     renderer.sortObjects = state.sortObjects;
     renderer.xr.enabled = state.xrEnabled;
     renderer.setClearColor(state.clearColor, state.clearAlpha);

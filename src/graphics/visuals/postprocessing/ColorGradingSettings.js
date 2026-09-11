@@ -15,8 +15,8 @@ const LEGACY_COLOR_GRADING_DEFAULTS_V2 = Object.freeze({
 });
 
 export const COLOR_GRADING_DEFAULTS = Object.freeze({
-    preset: 'vivid',
-    intensity: 0.65
+    preset: 'off',
+    intensity: 0
 });
 
 function clamp(value, min, max, fallback) {

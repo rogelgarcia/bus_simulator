@@ -132,9 +132,11 @@ test('material export ignores runtime illumination wrappers while retaining unkn
     const cascades = registerMaterialShaderHook(material, { id: 'city.cascaded_shadows', apply() {} });
     material.defines = { USE_CSM: 1, CSM_CASCADES: 4, CSM_FADE: '' };
     assert.deepEqual((await createBakeMaterialCatalog(roots)).materials, original);
+    const finite = registerMaterialShaderHook(material, { id: 'city.finite_sun', apply() {} });
+    assert.deepEqual((await createBakeMaterialCatalog(roots)).materials, original);
     const authored = registerMaterialShaderHook(material, { id: 'unknown.authored_effect', apply() {} });
     assert.equal((await createBakeMaterialCatalog(roots)).materials[0].channelSupport.indirect_irradiance.supported, false);
-    authored.remove(); runtime.remove(); cascades.remove();
+    authored.remove(); runtime.remove(); cascades.remove(); finite.remove();
 });
 
 test('material catalog preserves map-alpha and alphaMap-green exact coverage channels', async () => {

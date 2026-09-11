@@ -1,0 +1,33 @@
+{
+  "schemaVersion":1,
+  "revision":"ai567.calibration.v1",
+  "publication":"experiment-only",
+  "concurrency":1,
+  "threads":4,
+  "samples":128,
+  "seed":567,
+  "width":1920,
+  "height":1080,
+  "training":["pose_01","pose_04","pose_05"],
+  "heldOut":["pose_02","pose_03"],
+  "daylights":["D01","D02","D03"],
+  "materials":["conversion","plausible"],
+  "exposureOffsets":[-0.5,0,0.5],
+  "grade":"off",
+  "environmentIntent":"Sunny clear daylight. D02 is a haze alternative; D03 is an overcast stress case, not a sunny candidate.",
+  "selectionOrder":["fewest training display guard violations","clear daylight condition preference","smallest absolute global EV offset","lower EV on a tie"],
+  "physicalTolerances":{"rawFinite":true,"finalMeanRelative":0.03,"finalP95AbsoluteExposed":0.06,"cardRelative":0.07},
+  "displayGuards":{"surfaceWhiteClipFraction":0.04,"facadeCrushFraction":0.4,"skyMedianBlueMinusRedMin":0.025},
+  "uncertainty":"Display guards are broad artistic review thresholds, not measured truth. Geometry-aligned region averages include textures and dark windows. No city albedo, sun scale, sky tint, grade or local exposure is fitted.",
+  "regions":{
+    "pose_01":{"facade":[0.05,0.10,0.46,0.44],"asphalt":[0.1,0.76,0.85,0.95]},
+    "pose_02":{"facade":[0.05,0.15,0.40,0.45],"rightFacade":[0.80,0.2,0.96,0.45],"asphalt":[0.1,0.72,0.8,0.95]},
+    "pose_03":{"facade":[0.62,0.08,0.94,0.32],"canopy":[0.73,0.36,0.97,0.56],"asphalt":[0.1,0.73,0.85,0.95]},
+    "pose_04":{"facade":[0.10,0.10,0.4,0.4],"asphalt":[0.1,0.75,0.85,0.95]},
+    "pose_05":{"facade":[0.60,0.12,0.90,0.4],"asphalt":[0.1,0.75,0.85,0.95]}
+  },
+  "tones":[
+    {"id":"aces","label":"ACESFilmic · Three.js r183","type":"three_aces_filmic","exposureMultiplier":1},
+    {"id":"agx","label":"AgX · Blender 5.2.1 · None","type":"ocio","view":"AgX"}
+  ]
+}

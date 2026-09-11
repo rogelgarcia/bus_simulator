@@ -3,6 +3,8 @@ import bpy, sys, json, math, shutil, hashlib
 from pathlib import Path
 from mathutils import Matrix, Vector, Quaternion
 from bpy_extras.object_utils import world_to_camera_view
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]/'illumination_bake_compiler/blender'))
+from uv_tiling import insert_gltf_tiling
 
 source = Path(sys.argv[sys.argv.index('--')+1]); data=json.loads(source.read_text())
 output=Path(data['output']); bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -72,6 +74,12 @@ if 'ViewLayer' in scene.view_layers:scene.view_layers.remove(scene.view_layers['
 for index,obj in enumerate(o for o in scene.objects if o.type=='MESH'):obj.pass_index=(index%32766)+1
 material_masks={}
 for index,mat in enumerate(bpy.data.materials):mat.pass_index=index+1;material_masks[str(index+1)]=mat.name
+uv_tiling_nodes = 0
+for record in data['materials']:
+    if not record.get('uvTiling'): continue
+    material = bpy.data.materials.get(record['id'])
+    if not material: raise RuntimeError('Imported UV override material missing: '+record['id'])
+    uv_tiling_nodes += insert_gltf_tiling(material, record['uvTiling'])
 # Explicit repair for Three's signed tangent-space normal scale where glTF keeps X only.
 for record in data['materials']:
     scale=record.get('normalScale')
@@ -95,7 +103,7 @@ text=bpy.data.texts.new('Experiment_manifest.json');text.write(json.dumps({'pose
 bpy.ops.file.pack_all()
 blend=output/'bigcity2_lighting_lab.blend';bpy.ops.wm.save_as_mainfile(filepath=str(blend),compress=True)
 receipt={'schemaVersion':1,'status':'validated','blender':bpy.app.version_string,'build':bpy.app.build_hash.decode(),'cameras':cameras,'busPlacements':list(bus_roots),
-    'objects':len(bpy.data.objects),'meshes':len(bpy.data.meshes),'materials':len(bpy.data.materials),'images':len(bpy.data.images),
+    'objects':len(bpy.data.objects),'meshes':len(bpy.data.meshes),'materials':len(bpy.data.materials),'images':len(bpy.data.images),'uvTilingTextureNodes':uv_tiling_nodes,
     'projection':{'maximumPixelError':max(errors),'checks':len(errors),'basis':'Three(x,y,z) -> Blender(x,-z,y)','resolution':[1920,1080]},
     'colorManagement':{'config':str(ocio_target/'config.ocio'),'files':ocio_files},'materialMasks':material_masks,
     'resources':'glTF images packed; OCIO bundled next to blend; original HDRI sibling file'}

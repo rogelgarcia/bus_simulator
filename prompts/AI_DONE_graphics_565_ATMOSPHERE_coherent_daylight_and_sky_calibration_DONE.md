@@ -1,0 +1,45 @@
+DONE
+
+# Problem
+
+The current sun 7, hemisphere 1.22 and HDRI 0.28 are artistic inputs with no established physical equivalence. The AI 563 4x-sun candidate has promising contrast but a dark, grayish visible sky. Its separate sky background and ambient approximations can disagree with scene illumination and reflections. Adjusting exposure or only the visible sky can conceal this disagreement.
+
+# Request
+
+After AI 564 establishes the calibration contract, implement and execute a coherent daylight experiment that relates the sun, sky, ground bounce, visible background and reflections to documented physical conditions. Preserve existing production defaults while generating validated candidates for AI 567 and AI 562. Follow `specs/graphics/lighting_calibration.md`.
+
+Tasks:
+
+- [x] Audit the current game's light units, source spectra/colors, sun direction/angular size, hemisphere contribution, HDRI normalization and visible sky. Record how the exporter approximates each contribution. Preserve the existing 7/1.22/0.28 and AI 563 ratio experiments as labeled legacy controls; do not present their numeric values as SI measurements.
+- [x] Define a small, tracked daylight matrix covering clear sunny conditions, a hazier sky and overcast conditions. Pin the atmospheric/sky model and implementation version, solar geometry, elevation/altitude and supported atmospheric parameters. Choose documented physical measurements or model conditions for validation, including absolute scale where known. Reconcile photometric and radiometric quantities with explicit spectral assumptions instead of assigning a universal watts-to-lux factor.
+- [x] Use a physically motivated sky model available in the pinned toolchain, and validate its distribution and color separately. Use the [CIE Standard General Sky](https://www.cie.co.at/publications/spatial-distribution-daylight-cie-standard-general-sky-0) only within its defined scope: relative sky luminance distribution, with a specified absolute normalization. Verify the applicable published edition; a draft must be labeled as such. CIE sky distributions alone do not define spectral blue sky color, solar power or a complete atmosphere.
+- [x] Produce a consistent environment for camera rays, diffuse lighting and reflections. Account for the solar disc exactly once in illumination when a directional sun is also present. Test the hemisphere light as a legacy approximation and remove duplicate sky energy from the physical candidate. Preserve physically caused horizon/zenith and directional color differences. If a camera-only blue-sky adjustment is explored, label it an artistic variant and exclude it from physical validation.
+- [x] Verify game-to-Blender axis conversion, solar direction, irradiance on horizontal and vertical receivers, angular source size and scale. Use calibrated neutral cards in sunlight and shade, a diffuse sphere and a reflective sphere. Compare sky-only, sun-only and combined transport, including sunlit/shaded ratios, sky chromaticity, reflection orientation and near/far shadow profiles. Do not compensate a wrong material with stronger lighting.
+- [x] Separate lighting selection from display selection. Preserve raw scene-linear EXRs and show ACESFilmic and AgX with pinned transforms, neutral grading and explicit exposure. Use one declared exposure policy across the evaluation set; no per-pose brightness fitting. The user's bright-blue-sky reference is visual direction, not measured atmospheric evidence.
+- [x] Reuse the AI 560 city export only when geometry/material/source identities still match. Render all five canonical poses and their shared bus placements, emphasizing pose 02 shaded facades and pose 03 bright facade, sky, canopy and asphalt. Include a neutral-material diagnostic version so lighting errors can be assessed independently of unverified city materials. Recheck final candidates with AI 566's calibrated material profile when available.
+- [x] Register standalone preparation, render and analysis stages within the existing bake experiment hierarchy; reuse the shared Blender configuration and current receipt/reuse rules. Track scripts, physical parameter defaults and conversion contracts. Save every candidate, raw pass, reusable scene, screenshot and report under `tests/artifacts/screens/ai565_daylight_calibration/`. Generate compatible candidate data when transport changes; never silently reuse an incompatible bake.
+- [x] Execute the matrix and deliver a measured daylight profile, uncertainty/limitations, comparison images and the mapping required for game integration. Identify residual differences that need renderer work under AI 562. Update specs and tool documentation. Do not publish a production lighting change solely because a beauty image looks better.
+
+## On completion
+
+- Mark the first line DONE and rename in `prompts/` to `AI_DONE_graphics_565_ATMOSPHERE_coherent_daylight_and_sky_calibration_DONE.md` only after executing the comparisons. Do not archive automatically.
+- Add one high-level summary per completed change, the chosen physical conditions and alternatives, links to evidence, and measured stage/total run times.
+- If runtime or performance behavior changes, include comparable before/after frame time, FPS and relevant CPU/GPU/memory metrics with hardware, resolution, settings, camera, warm-up, sample count and statistic. Mark unavailable metrics with reasons; projections do not count as final measurements.
+
+## Completed implementation and execution — 2026-09-09
+
+- Audited and preserved the original 7 / 1.22 / 0.28 game inputs, ten baked-game baselines and sixty AI 563 artistic controls with their original exposures and identities.
+- Added tracked clear, hazy and CIE overcast conditions using pinned Blender 5.2.1, explicit spectra, metre/axis conversion, 45° azimuth, 35° elevation, 0.53° sun diameter and 100 m altitude. Clear/hazy aerosol multipliers are 0.25/2; overcast is normalized to 10,000 lux with assumed D65 color.
+- Verified published CIE S011/E:2003 / ISO15469:2004 scope and labeled the 2024 DIS as a draft. Measured model distribution, color and independent spectral quadrature separately from unmeasured atmospheric accuracy.
+- Used one atmospheric world for Cycles background, diffuse and reflected illumination. Derived a disc-free native environment plus one measured directional sun; retained hemisphere fill only as a labeled legacy diagnostic.
+- Executed cardinal receivers, solar centroid/integral, additive source tests, smooth diffuse/reflective spheres and near/far shadows. All 86 checks passed and all three negative controls were detected. Visual reflection orientation agrees; missing native local reflections and slightly wider near-contact shadows are documented limitations.
+- Retained raw EXRs and generated ACESFilmic r183 / pinned AgX-None views with grading off and one global exposure multiplier 0.03613327709602517. No per-pose fitting was used.
+- Authenticated and reused the AI 560 city export; rendered all five canonical cameras and four bus placements in three daylight conditions and two material modes (30 city renders / 60 display variants). Material validation and the final recheck with AI 566 remain downstream work, as requested.
+- Registered independently callable prepare, render, capture, fixture-revision and analysis stages plus the master workflow under the shared bake framework. Scripts/defaults are tracked; all generated artifacts remain under the ignored AI 565 topic.
+- Delivered the comparison viewer, five pose sheets, reusable city/corrected fixture Blender scenes, measured daylight profile and game integration mapping. Updated calibration/framework/tool documentation. No production lighting or bake publication occurred.
+
+Evidence: [executed results and limitations](../specs/graphics/daylight_calibration_results.md), [comparison viewer](../tests/artifacts/screens/ai565_daylight_calibration/runs/daylight-07/report/index.html), [pose 02](../tests/artifacts/screens/ai565_daylight_calibration/runs/daylight-07/report/pose_02_daylight_comparison.png), [pose 03](../tests/artifacts/screens/ai565_daylight_calibration/runs/daylight-07/report/pose_03_daylight_comparison.png).
+
+Measured stage work: preparation 6.73 s; city renders 583.13 s; corrected fixtures 29.85 s; native captures 4.21 s; analysis/display 16.73 s; viewer captures 5.41 s. Sum: **646.07 s (10 min 46 s)**, excluding process startup, investigation and repeated validation. This execution used separate stages and fixture revisions; an uninterrupted fresh master-run wall clock was not measured. The master records that duration for future runs.
+
+Validation used RTX 3060 / OPTIX, four CPU threads, 1920×1080 city images, 128 maximum city samples, 512 undenoised fixture samples and Chrome 151.0.7922.176 / Three.js r183. Four focused pipeline/math tests passed. Game FPS/CPU/GPU/memory before/after deltas are not applicable because the implementation changes offline experiments and an isolated test scenario only.

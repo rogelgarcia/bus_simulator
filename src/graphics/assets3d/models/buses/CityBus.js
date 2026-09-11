@@ -98,7 +98,10 @@ function applyMaterialSettings(root) {
                 if (mat.color) mat.color.setHex(color);
                 if (mat.emissive) mat.emissive.setHex(color);
                 if ('emissiveIntensity' in mat) mat.emissiveIntensity = 0.0;
-                if ('toneMapped' in mat) mat.toneMapped = false;
+                // Lit lamps participate in the same camera exposure as the body.
+                // A composer applies this transform globally; bypassing it here
+                // made the direct render path disagree when AO was disabled.
+                if ('toneMapped' in mat) mat.toneMapped = true;
                 if (!mat.userData) mat.userData = {};
                 mat.userData.noTune = true;
             }
@@ -304,7 +307,7 @@ function setEmissive(list, colorHex) {
             if (!mat || mat.emissive === undefined) continue;
             mat.emissive.setHex(colorHex);
             mat.emissiveIntensity = 0.0;
-            if ('toneMapped' in mat) mat.toneMapped = false;
+            if ('toneMapped' in mat) mat.toneMapped = true;
             mat.needsUpdate = true;
         }
     }

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { parseIlluminationBinaryPackage } from '../../../app/illumination/package/index.js';
 import { receiverCoordinateChunks } from '../../../app/illumination/receiver_lightmaps/ReceiverCoordinateTransport.js';
 import { createReceiverHdrTexture } from './ReceiverHdrTexture.js';
+import { SUPPORTED_RECEIVER_TRANSPORTS } from '../../../app/illumination/receiver_lightmaps/ReceiverTransportPolicy.js';
 import { assertCompleteReceiverCoverage, assertReceiverRasterPage } from '../../../app/illumination/receiver_lightmaps/ReceiverCoverageContract.js';
 
 /** @param {THREE.WebGLRenderer} renderer */
@@ -29,7 +30,7 @@ export function createEnhancedReceiverLoader(renderer) {
         if (!mapping || mapping.schema !== 'bus-sim-receiver-atlas-v1' || mapping.profile.id !== profileId) throw new Error('Directional mapping/profile mismatch');
         if (mapping.profile.irradianceRepresentation === 'surface-diffuse-v1') {
             assertCompleteReceiverCoverage(mapping);
-            if (mapping.profile.transportPolicy !== 'declared-alpha-coverage-v1'
+            if (!SUPPORTED_RECEIVER_TRANSPORTS.includes(mapping.profile.transportPolicy)
                 || parsed.manifest.source.resolvedSourceSha256 !== resolvedSourceHash) throw new Error('Complete receiver source mismatch');
         }
         if (mapping.profile.directional && !directional) throw new Error('Unsupported directional representation');

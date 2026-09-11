@@ -18,6 +18,7 @@ import * as THREE from 'three';
 import { CSM } from 'three/addons/csm/CSM.js';
 import { isLitMaterial } from '../../lighting/SceneShadowMaterials.js';
 import { registerMaterialShaderHook } from '../../shaders/core/MaterialShaderHookRegistry.js';
+import { CascadedFiniteSun } from '../../lighting/CascadedFiniteSun.js';
 
 // Texel density the shadow presets' normalBias values are tuned for: the
 // single fitted map (110 m radius -> 220 m box) at 4096 px = ~0.054 m/texel.
@@ -98,7 +99,7 @@ function padBreaks(arr) {
 }
 
 export class CityCascadedShadows {
-    constructor({ camera, parent, sunRef, preset, cascades = 3, mapSize = 2048, splitScale = 1, maxTextureSize = 0 }) {
+    constructor({ camera, parent, sunRef, preset, cascades = 3, mapSize = 2048, splitScale = 1, maxTextureSize = 0, angularDiameterDegrees = 0 }) {
         if (!camera) throw new Error('[CityCascadedShadows] camera is required');
         if (!parent) throw new Error('[CityCascadedShadows] parent is required');
         if (!sunRef?.direction?.isVector3) throw new Error('[CityCascadedShadows] sunRef is required');
@@ -179,6 +180,9 @@ export class CityCascadedShadows {
         this.csm.fade = true;
         this.csm.updateFrustums();
         this._applyPresetToLights();
+        this.angularDiameterDegrees = angularDiameterDegrees;
+        this._finiteSun = angularDiameterDegrees > 0 ? new CascadedFiniteSun(this.csm, angularDiameterDegrees) : null;
+        this._finiteHooks = new Map();
 
         /** @type {Map<any, { remove: () => boolean }>} */
         this._registered = new Map();
@@ -238,6 +242,7 @@ export class CityCascadedShadows {
         csm.shaders.set(material, null);
 
         this._registered.set(material, hook);
+        if (this._finiteSun) this._finiteHooks.set(material, this._finiteSun.attach(material));
     }
 
     /**
@@ -316,6 +321,7 @@ export class CityCascadedShadows {
             this.setIntensity(intensity);
         }
         csm.update();
+        this._finiteSun?.update();
         // csm.update() re-truncates every array to the live cascade count, so
         // this has to run after it, every frame.
         this.padCascadeUniforms();
@@ -378,6 +384,8 @@ export class CityCascadedShadows {
     dispose() {
         if (this._disposed) return;
         this._disposed = true;
+        for (const hook of this._finiteHooks.values()) hook.remove();
+        this._finiteHooks.clear();
 
         for (const [material, hook] of this._registered) {
             hook.remove();

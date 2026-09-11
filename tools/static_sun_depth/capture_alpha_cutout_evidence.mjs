@@ -692,7 +692,8 @@ export async function captureLiveTextureGradEvidence(options) {
                 }
             });
             city.update(engine);
-            engine.renderFrame();
+            const {renderProductionPreparedFrame} = await import('./tools/static_sun_depth/browser/ProductionPreparedFrame.js');
+            await renderProductionPreparedFrame(engine);
             engine.renderer.getContext().finish();
             return probe.captureProductionAlphaCutoutTextureGradSamples({
                 city,
@@ -793,7 +794,8 @@ export async function captureLiveEvidence(options) {
             coverageDomain,
             descriptor,
             expectedCasterIds,
-            profile
+            profile,
+            nativeFieldCamera
         }) => {
             const THREE = await import('three');
             const planner = await import(
@@ -815,10 +817,18 @@ export async function captureLiveEvidence(options) {
             // independently of the game's current cascade/baked-shadow defaults.
             await engine.setBakedLightingSettings({
                 ...engine.bakedLightingSettings,
+                mode: 'current',
                 shadows: {...engine.bakedLightingSettings?.shadows, enabled: false}
             });
             engine.setShadowSettings({...engine.shadowSettings, type: 'single', quality: 'high'});
             city.applyShadowSettings(engine);
+            // The independent native camera must use the candidate's authenticated
+            // world extent. E55 uses 960 m to keep complete coverage within 512 MiB.
+            const expectedExtent = descriptor.identity.sampling.pcf.shadowMapWorldExtentMeters;
+            const {getProductionStaticSunGrid} = await import('./src/app/illumination/static_sun_depth/StaticSunDepthContract.js');
+            const grid = getProductionStaticSunGrid(profile.directionThree);
+            if (JSON.stringify(expectedExtent) !== JSON.stringify(grid.worldExtentMeters)) throw new Error('Unexpected native reference extent');
+            city._sunShadowFocus.radiusMeters = expectedExtent[0] / 2;
             const direction = profile.directionThree;
             const elevationDeg = THREE.MathUtils.radToDeg(Math.asin(direction[1]));
             const azimuthDeg = (
@@ -834,7 +844,16 @@ export async function captureLiveEvidence(options) {
                 }
             });
             city.update(engine);
-            engine.renderFrame();
+            if (nativeFieldCamera && descriptor.identity.basis.policy === 'three-r183-source-lattice-v2') {
+                const {productionNativeFieldProjection} = await import('./tools/static_sun_depth/browser/ProductionNativeFieldProjection.js');
+                const projection=productionNativeFieldProjection(descriptor.identity,nativeFieldCamera.originDepthMetersInCacheBasis);
+                city.sun.position.fromArray(projection.position);city.sun.target.position.fromArray(projection.target);
+                city.sun.updateMatrixWorld();city.sun.target.updateMatrixWorld();
+                city.sun.shadow.camera.near=nativeFieldCamera.nearMeters;city.sun.shadow.camera.far=nativeFieldCamera.farMeters;
+                city.sun.shadow.camera.updateProjectionMatrix();
+            }
+            const {renderProductionPreparedFrame} = await import('./tools/static_sun_depth/browser/ProductionPreparedFrame.js');
+            await renderProductionPreparedFrame(engine);
             engine.renderer.getContext().finish();
             const candidates = planner.createProductionAlphaCutoutCandidatePlan({
                 THREE,
@@ -895,7 +914,8 @@ export async function captureLiveEvidence(options) {
             coverageDomain: options.coverageDomain ?? 'cutout_groups',
             descriptor: options.descriptor,
             expectedCasterIds: options.expectedCasterIds,
-            profile: options.profile
+            profile: options.profile,
+            nativeFieldCamera: options.nativeFieldCamera
         });
         if (diagnostics.length > 0) {
             throw new Error(`Live capture emitted blocking diagnostics: ${JSON.stringify(diagnostics)}`);

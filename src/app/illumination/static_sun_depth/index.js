@@ -6,6 +6,8 @@ export {
     STATIC_SUN_DEPTH_CHANNEL_VERSION,
     STATIC_SUN_DEPTH_TILE_SET_SCHEMA,
     createStableStaticSunDepthBasis,
+    createProductionStaticSunDepthBasis,
+    getProductionStaticSunGrid,
     createThreeR183DirectionalShadowFilterAxes,
     lookupStaticSunDepthTile,
     staticSunDepthIdentityEquals,

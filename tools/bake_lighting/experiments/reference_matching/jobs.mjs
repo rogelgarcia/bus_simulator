@@ -1,0 +1,31 @@
+// Explicit AI562 production-reference workflow; never enters no-argument baking.
+import {TARGET,TOOL,baseline} from './Baseline.mjs';
+import {sourceSky} from './SourceSky.mjs';
+import {capture} from './Capture.mjs';
+import {reference} from './Reference.mjs';
+import {transportReference} from './TransportReference.mjs';
+import {transportTextures} from './TransportTextures.mjs';
+import {diagnostics} from './Diagnostics.mjs';
+import {transportDiagnostics} from './TransportDiagnostics.mjs';
+import {review} from './Review.mjs';
+import {workflow,productionWorkflow} from './Workflow.mjs';
+import {nativeValidation} from './NativeValidation.mjs';
+import {install} from './Install.mjs';
+import {shadowDiagnostic,cutoutDiagnostic} from './ShadowDiagnostic.mjs';
+import {bakeOption} from '../../../baking/Options.mjs';
+export const referenceMatchingJobs=[
+    {id:TARGET+'/transport-textures',always:true,blender:true,codePaths:[TOOL,'tools/illumination_bake_compiler/blender'],options:{output:String},description:'Check native raw color/data texture interpretation against linear reference values',run:transportTextures},
+    {id:TARGET+'/transport-reference',always:true,blender:true,codePaths:[TOOL,'tools/receiver_lightmaps/blender','tools/illumination_bake_compiler/blender'],configurationPaths:['executable','pythonExecutable','renderDevice'],options:{input:String,capture:String,output:String,'candidate-run':String,'reconstruct-source':String},description:'Isolate primary geometric diffuse transport in a reused Cycles scene; diagnostic only, no publication',run:transportReference},
+    {id:TARGET+'/transport-diagnostics',always:true,codePaths:[TOOL],configurationPaths:['browserExecutable'],options:{output:String,'candidate-run':String,'profile-modes':String},description:'Isolate candidate bus radiance and diagnose Current transitions without publication',run:transportDiagnostics},
+    {id:TARGET+'/cutout-diagnostic',always:true,blender:true,codePaths:[TOOL],options:{input:String,'candidate-root':String},description:'Inspect a foliage field tile against the failed native sample',run:cutoutDiagnostic},
+    {id:TARGET+'/shadow-diagnostic',always:true,blender:true,codePaths:[TOOL],options:{input:String,'production-root':String,'native-cutout-root':String},description:'Preserve failed native shadow parity evidence; never certifies or publishes',run:shadowDiagnostic},
+    {id:TARGET+'/install',always:true,codePaths:[TOOL],options:{output:String,capture:String,native:String,'candidate-run':String},description:'Install validated 55-degree development caches after native and actual-game transition checks',run:install},
+    {id:TARGET+'/production',dependencies:['lighting/shadows','lighting/illumination'],blender:true,always:true,codePaths:[TOOL],configurationPaths:['browserExecutable','executable','pythonExecutable','renderDevice'],defaults:{mode:'baked'},options:{output:String,baseline:String,history:String,'source-run':String,mode:bakeOption.choice(['baked','auto']),'blender-mode':bakeOption.choice(['headed','background']),quality:bakeOption.choice(['pilot','final'])},description:'Build or authenticate compatible production bakes, capture the actual game, render Cycles and assemble comparisons',run:productionWorkflow},
+    {id:TARGET+'/native-validation',always:true,codePaths:[TOOL],configurationPaths:['pythonExecutable','browserExecutable'],options:{output:String,'source-run':String},description:'Verify native 55-degree sun, sky, additivity and contact-hardening against the authenticated afternoon source',run:nativeValidation},
+    {id:TARGET,blender:true,always:true,codePaths:[TOOL],configurationPaths:['browserExecutable','executable','pythonExecutable','renderDevice'],options:{output:String,baseline:String,history:String,'source-run':String,mode:bakeOption.choice(['current','baked','auto']),'blender-mode':bakeOption.choice(['headed','background']),quality:bakeOption.choice(['pilot','final'])},description:'Capture, export, render and review one immutable calibrated iteration with authenticated resume',run:workflow},
+    {id:TARGET+'/review',always:true,codePaths:[TOOL],configurationPaths:['pythonExecutable'],options:{output:String,iterations:String,rejected:String,reference:String,references:String},description:'Analyze authenticated images and assemble a pose-grouped progress gallery',run:review},
+    {id:TARGET+'/baseline',always:true,codePaths:[TOOL],configurationPaths:['browserExecutable'],options:{output:String},description:'Freeze and capture five original game views with installed bakes and runtime performance',run:baseline},
+    {id:TARGET+'/sky',always:true,codePaths:[TOOL],configurationPaths:['pythonExecutable'],options:{output:String,'source-run':String},description:'Validate and optionally install the measured disc-free afternoon HDR sky',run:sourceSky},
+    {id:TARGET+'/capture',always:true,codePaths:[TOOL,'tools/bake_lighting/experiments/lighting_configurations/capture_baselines'],configurationPaths:['browserExecutable'],options:{output:String,replay:String,'uncalibrated-from':String,'candidate-run':String,mode:bakeOption.choice(['current','baked','auto']),quality:bakeOption.choice(['pilot','final'])},description:'Capture immutable calibrated game iteration or replay frozen original for CPU/GPU comparison',run:capture},
+    {id:TARGET+'/reference',blender:true,always:true,codePaths:[TOOL,'tools/bake_lighting/experiments/lighting_configurations','tools/bake_lighting/experiments/daylight_calibration','tools/illumination_bake_compiler/blender/uv_tiling.py'],configurationPaths:['browserExecutable','executable','renderDevice'],options:{output:String,capture:String,'source-run':String,mode:bakeOption.choice(['headed','background']),quality:bakeOption.choice(['pilot','final'])},description:'Export the revised actual city and render calibrated Cycles references',run:reference},
+    {id:TARGET+'/diagnostics',always:true,codePaths:[TOOL],configurationPaths:['browserExecutable'],options:{output:String,pose:String},description:'Isolate live sun, sky, shadow and normal-map response at a saved pose',run:diagnostics}];

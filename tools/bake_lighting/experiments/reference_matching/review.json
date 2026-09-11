@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "tone": "Three r183 ACESFilmic",
+  "grade": "off",
+  "target": "Calibrated clear afternoon, 55 degrees, 0.53 degree solar diameter",
+  "comparisonPolicy": "Match pose, resolution and display for quantitative comparisons. Historical 35-degree targets remain visual context, never numerical truth for the new sunlight.",
+  "regions": {
+    "pose_02": {
+      "brick_facade_shadow": [0.04, 0.16, 0.39, 0.34],
+      "right_shaded_facade": [0.77, 0.19, 0.98, 0.47],
+      "storefront_interiors": [0.07, 0.44, 0.39, 0.55],
+      "asphalt": [0.55, 0.68, 0.72, 0.85],
+      "bus": [0.45, 0.46, 0.59, 0.67]
+    },
+    "pose_03": {
+      "lit_facade": [0.65, 0.12, 0.87, 0.35],
+      "canopy_and_interiors": [0.68, 0.38, 0.95, 0.65],
+      "asphalt_shadow": [0.02, 0.60, 0.19, 0.71],
+      "bus": [0.38, 0.43, 0.68, 0.71],
+      "distant_shadows": [0.01, 0.49, 0.31, 0.72]
+    }
+  },
+  "iterationNotes": {
+    "000_baseline": "Preserved original; CPU measurement unavailable (inactive entry point). See 005 for original CPU measurement.",
+    "001_calibrated_current": "Rejected diagnostic: paused city did not refresh shadow/light uniforms.",
+    "002_paused_lighting_fixed": "Paused visual updates corrected; original shadow filtering.",
+    "003_finite_current": "Finite sunlight filtering; Current mode diagnostic, no baked indirect.",
+    "005_original_replay_streamed": "Frozen original source and bake replay, with corrected CPU measurement.",
+    "006_calibrated_baked": "Rejected: bus bypassed exposure in the direct display path; Current switch did not complete.",
+    "007_calibrated_bus_preserved": "Rejected despite the provisional name: narrowing the sky hook did not fix the bus display defect; Current switch did not complete.",
+    "008_display_and_current_restore": "Bus display transform corrected; five poses and all reflection/mode transitions passed. First Current/Auto switches still require substantial preparation.",
+    "009_calibrated_current": "Current mode with calibrated diffuse sky independent of reflection strength; all five poses.",
+    "010_calibrated_baked_4k": "UHD before authored-UV bake correction; mode responsiveness was not measured.",
+    "011_authored_uv_bake": "Corrected bake and images; rejected for publication after discovering 23–24 second main-thread stalls on full lighting mode changes.",
+    "012_shader_preparation": "City shaders prepare before the view changes. Current max frame gap 0.571s; Auto 0.934s; Auto to Baked 0.036s. Reflection controls remain responsive, with zero world dropouts.",
+    "013_raw_texture_bake": "Corrected raw color, normal and alpha inputs in the bake compiler; new indirect transport. Calibrated light and exposure unchanged.",
+    "014_installed_4k": "Actual installed calibrated packages; no candidate index routing. Final UHD and two rounds of full-mode transition verification."
+  },
+  "metrics": ["display luminance percentiles", "clipped display pixels", "near-black display pixels", "linearized display RMSE", "regional crops", "CPU/GPU frame times"],
+  "limits": "Display error is diagnostic, not a photorealism score. Fake room interiors, Phong versus Principled BRDF, screen-space effects and shadow reconstruction remain different representations. Generated evidence stays untracked."
+}

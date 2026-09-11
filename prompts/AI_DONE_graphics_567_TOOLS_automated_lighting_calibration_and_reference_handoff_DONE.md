@@ -1,0 +1,40 @@
+# DONE
+
+The experiment tools generate useful images, but choosing lighting by eye or optimizing a final screenshot can compensate one incorrect input with another. Lighting scale, exposure, albedo and tone mapping are partly ambiguous when fitted simultaneously. A useful automatic calibrator must first validate known behavior, constrain the unknowns and retain reproducible evidence.
+
+# Request
+
+After AI 564, AI 565 and AI 566, implement and execute an automated calibration workflow that produces defensible lighting/material candidates and aligned game/reference comparisons. Deliver a validated configuration and explicit integration requirements to AI 562, which owns the changes needed to bring the actual game to the target. Follow `specs/graphics/lighting_calibration.md` and reuse the existing AI 560/563 tools.
+
+Tasks:
+
+- [x] Provide a master workflow with independently callable stages for prerequisite validation, game baseline capture, scene export/preparation, calibration renders, candidate search, analysis and review generation. Register it in the existing `node tools/bake.mjs` experiment hierarchy; keep production bakes/publication separate. Scripts, schemas, default poses, parameter bounds, objectives, tolerances and recipes remain tracked. Blender paths stay in the shared ignored configuration.
+- [x] Start by running AI 564's independent checks and verifying source/material/daylight identities. Distinguish a valid reference generator from known game-renderer limitations. Block candidate promotion on invalid references, mismatched caches or calibration failures; expose unsupported cases and AI 562 integration blockers rather than silently skipping them. A successful optimizer exit is not proof of physical correctness.
+- [x] Calibrate in identifiable stages: verify transport/color handling; establish daylight with known neutral receivers; lock material inputs using measured/plausible references; then evaluate exposure and display preference. Keep parameters bounded and report sensitivity, uncertainty and unresolved ambiguity. Do not freely fit light power, exposure, material albedo and sky color together to a JPEG. Do not use per-pose exposure, local brightness masks or hidden grades to improve the score.
+- [x] Separate physical validation objectives from aesthetic selection. Use raw linear irradiance/radiance and material/visibility measurements for physical checks. Compare displayed color, clipping, highlight rolloff, shadow readability and sky appearance afterward. Keep pinned ACESFilmic as the primary display and pinned AgX as an alternative, with tone-specific controls only. Preserve a neutral grade and label each image with its actual transform, exposure and light/material identity.
+- [x] Use all five canonical poses and existing shared bus placements, preserving one shared bus for overlapping poses 01/02. Fix calibration and held-out validation cases before search. Require a global candidate to generalize, including pose 02's dark facades and pose 03's bright facade, sky, asphalt and canopy. Preserve the old Cycles targets and user's bright-blue-sky generated image as labeled visual references; do not score their altered geometry/materials as measured truth.
+- [x] Capture a fresh immutable game baseline using the installed baked data before changing any inputs. Record requested/effective lighting and material controls, active package identities and readiness. Keep every candidate iteration, rejected result and reason, including game/reference captures, settings, raw passes and measurements. Generate corrected Cycles targets when source materials or lighting change without overwriting legacy targets.
+- [x] Reuse compatible exported `.blend` files and raw results by authenticated identity. Exploit linear light-group recombination only when the unchanged transport and recorded groups justify it; verify finalists with actual full renders. Any geometry/material/visibility change invalidates affected reuse. Exposure-only display processing cannot substitute for a new bake after changed illumination.
+- [x] Provide a review page grouped by pose with baseline, fixed visual targets and candidates. Retain multi-image selection, side-by-side/2x2 comparison and a keyboard/thumbnail carousel. Show physical-check results, uncertainty, source identities and actual settings beside images; avoid presenting a single opaque realism score as authority. Save artifacts under `tests/artifacts/screens/ai567_automated_calibration/` and keep generated datasets, reports and `.blend` files ignored.
+- [x] Bound CPU/GPU concurrency and memory, support cancellation/resume and ensure all task-owned browser/renderer/worker processes terminate. Preserve user-owned sessions. Report measured stage and total runtimes and resource peaks; do not reintroduce the earlier toggle freezes or leave background render jobs running after cancellation.
+- [x] Execute the workflow and deliver a versioned calibration profile containing source/material/daylight/display contracts, physical assumptions and units, actual engine/exporter mappings, expected raw/display outputs, compatible bake requirements, artifact hashes and remaining renderer discrepancies. Give AI 562 a concrete integration and regression checklist; restoring direct baked light remains conditional on evidence there. Update AI 562 and specs with the handoff without marking its production work complete.
+
+## On completion
+
+- Mark the first line DONE and rename in `prompts/` to `AI_DONE_graphics_567_TOOLS_automated_lighting_calibration_and_reference_handoff_DONE.md` only after executing the automated workflow and preserving comparisons. Do not archive automatically.
+- Add one high-level summary per completed change, the selected candidates and alternatives, evidence links and an explicit list of AI 562 integration work still required.
+- Include measured stage/total durations and a same-condition before/after performance table for optimization work: frame time/FPS where applicable, CPU/GPU time, memory and workload, with hardware, resolution, settings, camera, warm-up, sample count and statistic. Mark unavailable metrics with reasons rather than projections.
+
+## Executed outcome
+
+- Registered eight standalone stages and a resumable master, with frozen inputs, failed-attempt history, source validation and production publication disabled.
+- Reran the independent AI564 checks and authenticated AI565/566; captured a fresh five-pose installed-bake game baseline with ACESFilmic and grading Off.
+- Evaluated 18 bounded candidates using a fixed training/held-out split and separate physical/display criteria; retained every candidate and legacy visual target.
+- Selected D01 clear daylight at +0.5EV presentation offset for conversion and optional plausible materials; D02/+0.5 is a passing haze alternative. This is a display preference, not a solar-power calibration error.
+- Independently rendered both finalists across all five poses: 10/10 checks pass; generated the 218-image report with multi-selection, 2x2 and keyboard/thumbnail carousel.
+- Added six passing Node regressions and one passing actual-report browser test, including immutable partial-baseline retry preservation.
+- Delivered the profile and explicit AI562 mapping, including the current game's exposure minimum conflict. Actual game material/light/bake integration remains pending in AI562.
+
+Accepted evidence: `tests/artifacts/screens/ai567_automated_calibration/runs/calibration-02/`.
+Results, stage times, sampled resource peaks, limitations and production before/after measurement availability: `specs/graphics/automated_lighting_calibration_results.md`.
+The successful master took 511 seconds (8m31s); production frame-time/FPS/CPU/GPU were not measured because the production path was unchanged. The failed network-restricted attempt is retained separately.

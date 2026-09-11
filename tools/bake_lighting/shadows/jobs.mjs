@@ -7,7 +7,7 @@ import { bakeOption } from '../../baking/Options.mjs';
 import { listFiles, writeJson } from '../../baking/Files.mjs';
 
 const ids = selectProductionStaticSunProfiles().map(v => v.id);
-const settings = { defaults: { profile: 'all' }, options: { profile: bakeOption.choice(['all', ...ids]) } };
+const settings = { codePaths:['tools/bake_lighting/shadows'], defaults: { profile: 'all' }, options: { profile: bakeOption.choice(['all', ...ids]) } };
 const selected = options => options.profile === 'all' ? ids : [options.profile];
 const nativeRoot = ctx => path.join(ctx.root, 'tests/artifacts/illumination_531/ai556',
     `${ctx.id.split('/').at(-1)}-${Date.now()}-${process.pid}`);
@@ -17,7 +17,7 @@ const artifactFiles = async root => (await listFiles(root)).filter(file => !file
     && !file.includes(`${path.sep}.staging${path.sep}`) && !file.endsWith('.log'));
 async function inputs(ctx) {
     return [...await listFiles(path.join(ctx.root, 'tools/static_sun_depth')),
-        ...await listFiles(path.join(ctx.root, 'tools/illumination_bake_compiler'))].filter(file => /\.(mjs|py|json)$/.test(file));
+        ...await listFiles(path.join(ctx.root, 'tools/illumination_bake_compiler'))].filter(file => /\.(js|mjs|py|json)$/.test(file));
 }
 export const shadowJobs = [{
     id: 'lighting/shadows/candidates', description: 'Authenticated Blender candidate lattice for native foliage capture',

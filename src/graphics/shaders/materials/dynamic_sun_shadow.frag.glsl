@@ -4,6 +4,7 @@ uniform highp sampler2D dynamicSunShadowMap;
 uniform highp mat4 dynamicSunShadowWorldToClip;
 uniform highp vec4 dynamicSunShadowMapSizeBias;
 uniform highp float dynamicSunShadowDepthRangeMeters;
+uniform highp float dynamicSunAngularTangent;
 uniform highp vec3 dynamicSunShadowPointDirectionWorld;
 uniform int dynamicSunShadowEnabled;
 
@@ -50,6 +51,37 @@ highp vec4 dynamicSunShadowLookup(
     highp vec2 texel = 1.0 / dynamicSunShadowMapSizeBias.xy;
     highp float visibility = 0.0;
     highp float minimumDepth = 1.0;
+    if (dynamicSunAngularTangent > 0.0 && staticSunDepthDebugMode == 0) {
+        highp vec3 rowX = vec3(dynamicSunShadowWorldToClip[0][0],dynamicSunShadowWorldToClip[1][0],dynamicSunShadowWorldToClip[2][0]);
+        highp vec3 rowY = vec3(dynamicSunShadowWorldToClip[0][1],dynamicSunShadowWorldToClip[1][1],dynamicSunShadowWorldToClip[2][1]);
+        highp vec3 rowZ = vec3(dynamicSunShadowWorldToClip[0][2],dynamicSunShadowWorldToClip[1][2],dynamicSunShadowWorldToClip[2][2]);
+        highp vec2 uvPerMeter = vec2(length(rowX),length(rowY)) * 0.5;
+        highp vec3 geometricNormal = normalize(cross(dFdx(worldPosition),dFdy(worldPosition)));
+        highp vec3 lightNormal = vec3(dot(geometricNormal,normalize(rowX)),dot(geometricNormal,normalize(rowY)),dot(geometricNormal,normalize(rowZ)));
+        highp vec2 slope = abs(lightNormal.z)>0.001 ? -lightNormal.xy/lightNormal.z : vec2(0.0);
+        highp float searchRadius = comparisonDepth * dynamicSunShadowDepthRangeMeters * dynamicSunAngularTangent;
+        highp float separation = 0.0;
+        highp float blockers = 0.0;
+        for(int i=0;i<8;i++) {
+            highp vec2 offset = i == 0 ? vec2(0.0) : staticSunDepthVogelDiskSample(i-1,7,0.0) * searchRadius;
+            highp vec2 sampleUv = uv + offset * uvPerMeter;
+            if(any(lessThan(sampleUv,vec2(0.0)))||any(greaterThan(sampleUv,vec2(1.0))))continue;
+            highp float depth = dynamicSunShadowUnpackDepth(texture2D(dynamicSunShadowMap,sampleUv));
+            highp float receiver = comparisonDepth + dot(offset,slope)/dynamicSunShadowDepthRangeMeters;
+            if(depth < receiver) {separation += (receiver-depth)*dynamicSunShadowDepthRangeMeters;blockers += 1.0;}
+        }
+        if(blockers<0.5)return vec4(1.0,1.0,1.0,receiverDepth);
+        highp float radius = separation/blockers*dynamicSunAngularTangent;
+        for(int i=0;i<16;i++) {
+            highp vec2 offset = staticSunDepthVogelDiskSample(i,16,0.0) * radius;
+            highp vec2 sampleUv = uv + offset * uvPerMeter;
+            if(any(lessThan(sampleUv,vec2(0.0)))||any(greaterThan(sampleUv,vec2(1.0)))){visibility+=1.0;continue;}
+            highp float depth=dynamicSunShadowUnpackDepth(texture2D(dynamicSunShadowMap,sampleUv));
+            minimumDepth=min(minimumDepth,depth);
+            visibility+=step(comparisonDepth+dot(offset,slope)/dynamicSunShadowDepthRangeMeters,depth);
+        }
+        return vec4(visibility/16.0,minimumDepth,1.0,receiverDepth);
+    }
     for ( int y = -1; y <= 1; y ++ ) {
         for ( int x = -1; x <= 1; x ++ ) {
             highp vec2 sampleUv = clamp(

@@ -12,7 +12,8 @@ import {
     STATIC_SUN_DEPTH_CHANNEL_ID,
     STATIC_SUN_DEPTH_CHANNEL_VERSION,
     STATIC_SUN_DEPTH_TILE_SET_SCHEMA,
-    createStableStaticSunDepthBasis,
+    createProductionStaticSunDepthBasis,
+    getProductionStaticSunGrid,
     createThreeR183DirectionalShadowFilterAxes,
     validateStaticSunDepthTileSetDescriptor
 } from '../../../src/app/illumination/static_sun_depth/StaticSunDepthContract.js';
@@ -1221,6 +1222,7 @@ function validateRawAssumptions(value, contract) {
 }
 
 function validateRawRequest(request) {
+    const grid = getProductionStaticSunGrid(request.sunPointDirectionWorld);
     requireExactKeys(request, [
         'boundsMarginMeters', 'casterSidedness', 'guardPixels', 'interiorPixels',
         'lightingProfileId', 'maxPayloadBytes', 'phasePolicy', 'sampling',
@@ -1236,8 +1238,8 @@ function validateRawRequest(request) {
         maxPayloadBytes: ILLUMINATION_MAX_PACKAGE_BYTES,
         phasePolicy: PRODUCTION_PHASE_POLICY,
         schema: PRODUCTION_REQUEST_SCHEMA,
-        texelSizeMeters: PRODUCTION_TEXEL_SIZE_METERS,
-        tileSizeMeters: PRODUCTION_TILE_SIZE_METERS
+        texelSizeMeters: grid.texelSizeMeters,
+        tileSizeMeters: PRODUCTION_INTERIOR_PIXELS.map(value => value * grid.texelSizeMeters)
     };
     for (const [key, expected] of Object.entries(pinned)) {
         if (canonicalJsonStringify(request[key])
@@ -1250,7 +1252,7 @@ function validateRawRequest(request) {
         }
     }
     if (canonicalJsonStringify(request.sourceShadowCapability)
-            !== canonicalJsonStringify(PRODUCTION_SOURCE_SHADOW_CAPABILITY)) {
+            !== canonicalJsonStringify({id:grid.id,mapSizeTexels:grid.mapSizeTexels,worldExtentMeters:grid.worldExtentMeters})) {
         failStaticSunDepth(
             'static_sun_depth_production_layout_invalid',
             'Raw production request changed the effective source-shadow capability.',
@@ -1290,14 +1292,14 @@ function validateRawLayout(layoutRecord, request, contract) {
     ], 'Blender receipt.layout.layout');
     if (canonicalJsonStringify(layoutRecord.sunPointDirectionWorld)
         !== canonicalJsonStringify(request.sunPointDirectionWorld)
-        || layoutRecord.basis.policy !== 'least-aligned-world-axis-v1') {
+        || layoutRecord.basis.policy !== createProductionStaticSunDepthBasis(request.sunPointDirectionWorld).policy) {
         failStaticSunDepth(
             'static_sun_depth_production_layout_invalid',
             'Raw layout sun identity or basis policy differs from the request.',
             {}
         );
     }
-    const stableBasis = createStableStaticSunDepthBasis(
+    const stableBasis = createProductionStaticSunDepthBasis(
         layoutRecord.sunPointDirectionWorld,
         layoutRecord.basis.originWorld
     );
@@ -1570,7 +1572,7 @@ function validateRawPhaseAlignment(value, basis, boundsMinimum, request) {
     if (value.policy !== request.phasePolicy
         || value.policy !== PRODUCTION_PHASE_POLICY
         || value.texelSizeMeters !== request.texelSizeMeters
-        || value.texelSizeMeters !== PRODUCTION_TEXEL_SIZE_METERS
+        || value.texelSizeMeters !== getProductionStaticSunGrid(request.sunPointDirectionWorld).texelSizeMeters
         || !vectorsNearlyEqual(originProjection, expectedProjection)) {
         failStaticSunDepth(
             'static_sun_depth_production_layout_invalid',
@@ -2196,7 +2198,7 @@ function validateChannel(channel) {
             { actual: maximum, expected: expectedMaximum }
         );
     }
-    const basis = createStableStaticSunDepthBasis(
+    const basis = createProductionStaticSunDepthBasis(
         channel.sunPointDirectionWorld,
         channel.originWorld
     );
@@ -2208,7 +2210,7 @@ function validateChannel(channel) {
         const phase = (entry + originProjection[axis]) / channel.texelSizeMeters;
         return Math.abs(phase - Math.round(phase));
     }));
-    if (channel.texelSizeMeters !== PRODUCTION_TEXEL_SIZE_METERS
+    if (channel.texelSizeMeters !== getProductionStaticSunGrid(channel.sunPointDirectionWorld).texelSizeMeters
         || maximumPhaseError > 1e-9) {
         failStaticSunDepth(
             'static_sun_depth_production_layout_invalid',
@@ -2259,13 +2261,14 @@ function validateProductionSamplingPolicy(sampling, direction, label) {
         'sourceMapUpAxisWorld'
     ], `${label}.pcf`);
     const pcf = sampling.pcf;
+    const grid = getProductionStaticSunGrid(direction);
     if (pcf.hardwareComparison !== 'linear-four-compare-taps-v1'
         || pcf.model !== 'three-r183-vogel-5-linear-compare-v1'
         || pcf.radiusTexels !== 1.5
         || pcf.sampleCount !== 5
         || pcf.screenRotation !== 'interleaved-gradient-noise-gl-fragcoord-v1'
         || canonicalJsonStringify(pcf.shadowMapSizeTexels) !== '[16384,16384]'
-        || canonicalJsonStringify(pcf.shadowMapWorldExtentMeters) !== '[680,680]') {
+        || canonicalJsonStringify(pcf.shadowMapWorldExtentMeters) !== canonicalJsonStringify(grid.worldExtentMeters)) {
         throw new Error(`${label}.pcf must match the effective Three r183 production filter`);
     }
     const right = requireFiniteVector(pcf.sourceMapRightAxisWorld, 3, `${label}.pcf.sourceMapRightAxisWorld`);
@@ -2278,8 +2281,8 @@ function validateProductionSamplingPolicy(sampling, direction, label) {
     const worldRadius = pcf.radiusTexels
         * pcf.shadowMapWorldExtentMeters[0]
         / pcf.shadowMapSizeTexels[0];
-    if (worldRadius !== PRODUCTION_FILTER_WORLD_RADIUS_METERS) {
-        throw new Error(`${label}.pcf effective world radius must be ${PRODUCTION_FILTER_WORLD_RADIUS_METERS}`);
+    if (worldRadius !== 1.5 * grid.texelSizeMeters) {
+        throw new Error(`${label}.pcf effective world radius must be ${1.5 * grid.texelSizeMeters}`);
     }
 }
 
@@ -2560,7 +2563,7 @@ function createLayerDescriptors(payload, channel, contract) {
 /** @param {any} receipt @param {readonly any[]} layers */
 function createDescriptor(receipt, layers, contract) {
     const { channel, sampling, source } = receipt;
-    const basis = createStableStaticSunDepthBasis(channel.sunPointDirectionWorld, channel.originWorld);
+    const basis = createProductionStaticSunDepthBasis(channel.sunPointDirectionWorld, channel.originWorld);
     const tileWidthMeters = channel.interiorTexels[0] * channel.texelSizeMeters;
     const tileHeightMeters = channel.interiorTexels[1] * channel.texelSizeMeters;
     return validateStaticSunDepthTileSetDescriptor({

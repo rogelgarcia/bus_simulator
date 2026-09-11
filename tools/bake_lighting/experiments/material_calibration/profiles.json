@@ -1,0 +1,35 @@
+{
+  "schemaVersion":1,
+  "revision":"ai566.material-candidates.v2",
+  "publication":"experiment-only",
+  "conversion": {
+    "role":"Verified generated-normal component and normal-incidence F0 corrections; legacy BRDF approximation remains",
+    "generatedAsphaltNormal":{"texturePrefix":"AsphaltFineNormal_","sourceOrder":"XZY; green is the surface normal","tangentOrder":[0,2,1],"reason":"Generator writes (-dhx,1,-dhy), but tangent-space mapping requires (-dhx,-dhy,1). Swap G/B only for these identified generated textures; retain sampling/strength."},
+    "phongF0":"preserve original linear specular RGB through derived IOR and normalized tint; never multiply it by another default dielectric F0",
+    "roughness":"preserve existing export mapping; Phong and GGX highlight shapes are not identical",
+    "baseColor":"unchanged",
+    "windowInterior":"unchanged"
+  },
+  "plausible": {
+    "role":"Optional bounded dry-surface/dielectric proposal; not measured asset truth",
+    "baseColor":"preserve bus, facade and terrain colors/textures/instance tints; metallic glazing's white specular color becomes reflection tint with a black diffuse proxy",
+    "grassRoughnessRemap":[0.65,0.30],
+    "buildingGlazing":{"color":[0,0,0],"metalness":0,"ior":1.5,"specularIntensity":1,"roughness":0.18},
+    "bus":{
+      "paint":{"roughness":0.32,"f0":0.04},
+      "glass":{"roughness":0.18,"f0":0.04},
+      "frontglass":{"roughness":0.18,"f0":0.04},
+      "glossy":{"roughness":0.62,"f0":0.02},
+      "plastic":{"roughness":0.62,"f0":0.02},
+      "rimmetal":{"roughness":0.30,"f0":0.11}
+    },
+    "reasons":{
+      "grass":"Retain texture variation while testing a dry rough surface; source mean roughness is approximately 0.26. Moisture/species and map authoring remain unmeasured.",
+      "glazing":"Ordinary glass is dielectric; source white metallic color is a specular tint, not white diffuse paint. Use black diffuse with neutral reflection, retain source opacity/cutout, and do not invent transmission. This is an opaque reflection-layer approximation.",
+      "bus":"Retain blue/black/gray identity. Gray rim uses a coated-surface approximation, not measured bare aluminum. Keep runtime toggles independent and unchanged."
+    },
+    "windowInterior":"gray-beige-silhouette-v1"
+  },
+  "bounds":{"roughness":[0.04,1],"dielectricF0":[0.01,0.16],"metalness":[0,1]},
+  "bakeInvalidation":"Source material, texture, shader, profile or visibility changes invalidate exported material caches and affected indirect-light bakes. No production promotion is performed."
+}

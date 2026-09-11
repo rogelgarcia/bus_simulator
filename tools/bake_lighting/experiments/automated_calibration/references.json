@@ -1,0 +1,9 @@
+{
+  "schemaVersion":1,
+  "policy":"Fixed artistic references, excluded from numerical optimization; never silently replace or color-adjust them.",
+  "images":[
+    {"id":"legacy_pose03","pose":"pose_03","label":"Original user Cycles target · recipe unresolved","file":"tests/artifacts/screens/ai562_acesfilmic_reference_matching/references/user_cycles_target.png","sha256":"bee2fe32333a6091005ced7f3c7a6dac76dba93c7a8f6d0ca93ad75f09f8df72"},
+    {"id":"legacy_pose02","pose":"pose_02","label":"Original user Cycles target · +0.5 EV · lighting unresolved","file":"tests/artifacts/screens/ai562_acesfilmic_reference_matching/references/pose_02/user_cycles_target_aces_plus_0_5_ev.png","sha256":"95093847a68b5814c14ea08bac75286e0f5559f3a1f50844f3ca9cc951705669"},
+    {"id":"blue_sky_direction","pose":"pose_03","label":"Generated blue-sky visual direction · altered scene · uncalibrated","file":"tests/artifacts/screens/ai563_sun_sky_ratios/80139a28552c2fdd/references/pose03_visual_target.png","sha256":"85033275a4e1d749cbfabb274dea12e494b2148abc5a07d9f0bdcc380f606bc4"}
+  ]
+}

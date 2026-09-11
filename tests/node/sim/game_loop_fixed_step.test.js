@@ -68,3 +68,12 @@ test('GameLoop: paused loop emits frame with dt=0 and does not advance frameCoun
     assert.equal(last.dt, 0);
 });
 
+test('GameLoop: paused camera captures update visual light transforms without advancing the world', () => {
+    const engine = { camera: {} }, calls = [];
+    const loop = new GameLoop({ events: new EventBus(), physics: { update: () => calls.push('physics') } }, { engine });
+    loop.world = { update: () => calls.push('world'), updateVisuals: value => calls.push(value) };
+    loop.pause();
+    loop.update(1 / 60);
+    assert.deepEqual(calls, [engine]);
+    assert.equal(loop.getFrameCount(), 0);
+});

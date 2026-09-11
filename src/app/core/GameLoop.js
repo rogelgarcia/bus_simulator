@@ -161,6 +161,7 @@ export class GameLoop {
      */
     update(dt) {
         if (this.paused) {
+            if (this.engine) this.world?.updateVisuals?.(this.engine);
             this.events.emit('gameloop:frame', { dt: 0, paused: true });
             return;
         }
@@ -251,4 +252,3 @@ export class GameLoop {
         this.events.emit('gameloop:disposed');
     }
 }
-

@@ -10,9 +10,10 @@ import {
     ILLUMINATION_COMPILER_REFERENCE
 } from '../../../../tools/illumination_bake_exporter/profile.mjs';
 
-test('AI 531 export profile declares the exact nine point suns and bounded tiled layout', () => {
+test('Shadow profiles include the calibrated afternoon and preserve the bounded tiled layout', () => {
     const profiles = createAi531StaticSunLightProfiles();
-    assert.equal(profiles.length, 9);
+    assert.equal(profiles.length, 10);
+    assert.ok(profiles.some(p => p.id === 'ai527.sun.az045.el55'));
     assert.deepEqual(
         profiles.map((entry) => entry.id),
         AI531_STATIC_SUN_PROFILE_ANGLES.map(({ azimuthDeg, elevationDeg }) =>

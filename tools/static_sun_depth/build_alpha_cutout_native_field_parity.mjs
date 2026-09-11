@@ -149,6 +149,7 @@ async function run(argv = process.argv.slice(2)) {
         throw new Error('Provisional production output and native cutout authority differ');
     }
     const live = await captureLiveEvidence({
+        nativeFieldCamera: nativeField.receipt.session?.begin?.camera,
         baseUrl: options.baseUrl,
         coverageDomain: 'mixed_foliage_meshes',
         descriptor: provisional.descriptor,

@@ -361,7 +361,8 @@ export class OptionsUI {
     }
 
     _emitLiveChange() {
-        this.onLiveChange?.(this.getDraft());
+        this._refreshDaylightPreset?.();
+        return this.onLiveChange?.(this.getDraft());
     }
 
     mount() {
@@ -396,6 +397,7 @@ export class OptionsUI {
     }
 
     _renderTab() {
+        this._refreshDaylightPreset = null;
         this._refreshAoScope = null;
         this._iblDebugEls = null;
         this._postDebugEls = null;
@@ -426,6 +428,7 @@ export class OptionsUI {
     }
 
     _refreshDebug() {
+        this._refreshDaylightPreset?.();
         this._refreshAoScope?.();
         this._refreshIblDebug();
         this._refreshPostProcessingDebug();
@@ -900,7 +903,9 @@ export class OptionsUI {
                 toneMapping: d.toneMapping,
                 hemiIntensity: d.hemiIntensity,
                 sunIntensity: d.sunIntensity,
+                sunColorLinear: [...d.sunColorLinear],
                 ibl: {
+                    iblId: d.ibl.iblId,
                     enabled: d.ibl.enabled,
                     envMapIntensity: d.ibl.envMapIntensity,
                     setBackground: d.ibl.setBackground
@@ -914,7 +919,9 @@ export class OptionsUI {
         if (lighting.toneMapping === undefined) lighting.toneMapping = d.toneMapping;
         if (lighting.hemiIntensity === undefined) lighting.hemiIntensity = d.hemiIntensity;
         if (lighting.sunIntensity === undefined) lighting.sunIntensity = d.sunIntensity;
+        if (lighting.sunColorLinear === undefined) lighting.sunColorLinear = [...d.sunColorLinear];
         if (!lighting.ibl || typeof lighting.ibl !== 'object') lighting.ibl = {};
+        if (lighting.ibl.iblId === undefined) lighting.ibl.iblId = d.ibl.iblId;
         if (lighting.ibl.enabled === undefined) lighting.ibl.enabled = d.ibl.enabled;
         if (lighting.ibl.envMapIntensity === undefined) lighting.ibl.envMapIntensity = d.ibl.envMapIntensity;
         if (lighting.ibl.setBackground === undefined) lighting.ibl.setBackground = d.ibl.setBackground;
@@ -1162,7 +1169,9 @@ export class OptionsUI {
             toneMapping: d.toneMapping,
             hemiIntensity: d.hemiIntensity,
             sunIntensity: d.sunIntensity,
+            sunColorLinear: [...d.sunColorLinear],
             ibl: {
+                iblId: d.ibl.iblId,
                 enabled: d.ibl.enabled,
                 envMapIntensity: d.ibl.envMapIntensity,
                 setBackground: d.ibl.setBackground,
@@ -1281,7 +1290,9 @@ export class OptionsUI {
                 toneMapping: String(d.toneMapping ?? 'aces'),
                 hemiIntensity: d.hemiIntensity,
                 sunIntensity: d.sunIntensity,
+                sunColorLinear: [...d.sunColorLinear],
                 ibl: {
+                    iblId: d.ibl.iblId,
                     enabled: !!d.ibl.enabled,
                     envMapIntensity: d.ibl.envMapIntensity,
                     setBackground: !!d.ibl.setBackground,

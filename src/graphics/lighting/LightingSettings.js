@@ -2,6 +2,7 @@
 // Global lighting resolution (L1 defaults + L2 persisted overrides + optional calibration snapshot replacement).
 
 import { getIBLConfig, IBL_DEFAULTS } from '../content3d/lighting/IBLConfig.js';
+import { CALIBRATED_DAYLIGHT } from './CalibratedDaylight.js';
 
 const STORAGE_KEY = 'bus_sim.lighting.v1';
 
@@ -38,18 +39,21 @@ const LEGACY_LIGHTING_DEFAULTS_V2 = Object.freeze({
 });
 
 export const LIGHTING_DEFAULTS = Object.freeze({
-    exposure: 1.02,
+    exposure: CALIBRATED_DAYLIGHT.exposure,
     toneMapping: 'aces',
-    hemiIntensity: 1.22,
-    sunIntensity: 7,
+    hemiIntensity: CALIBRATED_DAYLIGHT.hemisphereIntensity,
+    sunIntensity: CALIBRATED_DAYLIGHT.sunNormalRgb[0],
+    sunColorLinear: Object.freeze(CALIBRATED_DAYLIGHT.sunNormalRgb.map(v => v / CALIBRATED_DAYLIGHT.sunNormalRgb[0])),
     ibl: {
         enabled: true,
-        envMapIntensity: 0.28,
-        setBackground: false
+        iblId: CALIBRATED_DAYLIGHT.environmentId,
+        envMapIntensity: CALIBRATED_DAYLIGHT.environmentIntensity,
+        setBackground: true
     }
 });
 
 export const LIGHTING_LIMITS = Object.freeze({
+    exposureMin: .001,
     hemiIntensityMax: 30,
     sunIntensityMax: 200
 });
@@ -94,11 +98,14 @@ export function sanitizeLightingSettings(input) {
     const ibl = src.ibl && typeof src.ibl === 'object' ? src.ibl : {};
 
     return {
-        exposure: clamp(src.exposure ?? LIGHTING_DEFAULTS.exposure, 0.1, 5),
+        exposure: clamp(src.exposure ?? LIGHTING_DEFAULTS.exposure, LIGHTING_LIMITS.exposureMin, 5),
         toneMapping: sanitizeToneMappingMode(src.toneMapping, LIGHTING_DEFAULTS.toneMapping),
         hemiIntensity: clamp(src.hemiIntensity ?? LIGHTING_DEFAULTS.hemiIntensity, 0, LIGHTING_LIMITS.hemiIntensityMax),
         sunIntensity: clamp(src.sunIntensity ?? LIGHTING_DEFAULTS.sunIntensity, 0, LIGHTING_LIMITS.sunIntensityMax),
+        sunColorLinear: Array.isArray(src.sunColorLinear) && src.sunColorLinear.length === 3
+            ? src.sunColorLinear.map(v => clamp(v, 0, 1)) : [...LIGHTING_DEFAULTS.sunColorLinear],
         ibl: {
+            iblId: typeof ibl.iblId === 'string' ? ibl.iblId : LIGHTING_DEFAULTS.ibl.iblId,
             enabled: ibl.enabled !== undefined ? !!ibl.enabled : LIGHTING_DEFAULTS.ibl.enabled,
             envMapIntensity: clamp(ibl.envMapIntensity ?? LIGHTING_DEFAULTS.ibl.envMapIntensity, 0, 5),
             setBackground: ibl.setBackground !== undefined ? !!ibl.setBackground : LIGHTING_DEFAULTS.ibl.setBackground
@@ -123,7 +130,12 @@ export function isCompleteLightingSnapshot(input) {
 
 export function resolveCalibrationReplacementLightingSettings(snapshot) {
     if (!isCompleteLightingSnapshot(snapshot)) return null;
-    return sanitizeLightingSettings(snapshot);
+    return sanitizeLightingSettings(withLegacySourceIdentity(snapshot));
+}
+
+function withLegacySourceIdentity(input) {
+    if (input.ibl?.iblId || !['exposure', 'sunIntensity', 'hemiIntensity'].some(key => Number.isFinite(input[key]))) return input;
+    return { ...input, ibl: { ...input.ibl, iblId: IBL_DEFAULTS.iblId }, sunColorLinear: input.sunColorLinear ?? [1, 1, 1] };
 }
 
 export function loadSavedLightingSettings() {
@@ -133,7 +145,8 @@ export function loadSavedLightingSettings() {
     const raw = storage.getItem(STORAGE_KEY);
     if (!raw) return null;
     try {
-        const saved = sanitizeLightingSettings(JSON.parse(raw));
+        const parsed = withLegacySourceIdentity(JSON.parse(raw));
+        const saved = sanitizeLightingSettings(parsed);
         const isLegacyDefault = (saved.exposure === LEGACY_LIGHTING_DEFAULTS_V2.exposure
                 && saved.hemiIntensity === LEGACY_LIGHTING_DEFAULTS_V2.hemiIntensity
                 && saved.sunIntensity === LEGACY_LIGHTING_DEFAULTS_V2.sunIntensity
@@ -217,7 +230,7 @@ export function getResolvedLightingSettings({
 
     if (useUrlOverrides && typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
-        exposure = readUrlParamNumber(params, 'exposure', exposure, { min: 0.1, max: 5 });
+        exposure = readUrlParamNumber(params, 'exposure', exposure, { min: LIGHTING_LIMITS.exposureMin, max: 5 });
         toneMapping = sanitizeToneMappingMode(params.get('toneMapping'), toneMapping);
         hemiIntensity = readUrlParamNumber(params, 'hemiIntensity', hemiIntensity, { min: 0, max: LIGHTING_LIMITS.hemiIntensityMax });
         sunIntensity = readUrlParamNumber(params, 'sunIntensity', sunIntensity, { min: 0, max: LIGHTING_LIMITS.sunIntensityMax });
@@ -233,6 +246,7 @@ export function getResolvedLightingSettings({
         toneMapping,
         hemiIntensity,
         sunIntensity,
+        sunColorLinear: merged.sunColorLinear,
         ibl
     };
 }
@@ -262,6 +276,7 @@ export function getDefaultResolvedLightingSettings() {
         toneMapping: LIGHTING_DEFAULTS.toneMapping,
         hemiIntensity: LIGHTING_DEFAULTS.hemiIntensity,
         sunIntensity: LIGHTING_DEFAULTS.sunIntensity,
+        sunColorLinear: [...LIGHTING_DEFAULTS.sunColorLinear],
         ibl
     };
 }

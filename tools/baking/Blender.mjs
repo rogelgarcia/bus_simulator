@@ -1,7 +1,8 @@
 // Verifies the installed pinned toolchain and isolates each headless Blender invocation.
 // @ts-check
 import path from 'node:path';
-import { readFile, mkdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { verifyBlenderExecutable, verifyBlenderArchive } from '../illumination_bake_compiler/src/BlenderToolchain.mjs';
 
 /** @param {any} config @param {string} root @param {boolean} needsArchive */
@@ -23,10 +24,17 @@ export async function runHeadlessBake(ctx, script, args) {
     return runBlenderStage(ctx, script, args);
 }
 
+/** Keep Cycles tile filenames below Windows legacy limits without sharing job state. */
+export function blenderRuntimePath(root, stage) {
+    const id = createHash('sha256').update(path.resolve(stage)).digest('hex').slice(0, 16);
+    return path.join(root, 'tests/artifacts/screens/baking_tmp', id);
+}
+
 /** @param {any} ctx @param {string} script @param {string[]} args @param {{background?:boolean}} options */
 export async function runBlenderStage(ctx, script, args, {background = true} = {}) {
-    const runtime = path.join(ctx.stage, 'blender-runtime');
+    const runtime = blenderRuntimePath(ctx.root, ctx.stage);
     await mkdir(runtime, { recursive: true });
+    await writeFile(path.join(ctx.stage, 'blender-runtime.json'), JSON.stringify({ stage: ctx.stage, runtime }, null, 2) + '\n');
     const previous = ctx.env;
     ctx.env = { ...ctx.env, TEMP: runtime, TMP: runtime, TMPDIR: runtime, BLENDER_USER_CONFIG: path.join(runtime, 'config'),
         BLENDER_USER_EXTENSIONS: path.join(runtime, 'extensions'), PYTHONPATH: '', PYTHONHOME: '',

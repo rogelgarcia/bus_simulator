@@ -1,6 +1,10 @@
 // Directional PCSS: orthographic world distances, not the perspective area-light formula.
 #if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0 && !defined( SHADOWMAP_TYPE_PCF ) && !defined( SHADOWMAP_TYPE_VSM )
 uniform vec4 uFiniteSunGeometry; // inverse frustum width/height, depth range, tan(angular radius)
+#ifndef FINITE_SUN_BLOCKER_SAMPLES
+#define FINITE_SUN_BLOCKER_SAMPLES 32
+#define FINITE_SUN_FILTER_SAMPLES 64
+#endif
 
 vec2 finiteSunDisk( int index, int count ) {
     float radius = sqrt( ( float( index ) + 0.5 ) / float( count ) );
@@ -16,7 +20,7 @@ vec2 finiteSunReceiverGradient( vec3 coordinate ) {
     return vec2( dx.z * dy.y - dy.z * dx.y, dy.z * dx.x - dx.z * dy.x ) / determinant;
 }
 
-float getFiniteSunShadow( sampler2D shadowMap, vec2 shadowMapSize, float shadowIntensity,
+float getFiniteSunShadowForGeometry( vec4 geometry, sampler2D shadowMap, vec2 shadowMapSize, float shadowIntensity,
     float shadowBias, float shadowRadius, vec4 shadowCoord ) {
     vec3 coordinate = shadowCoord.xyz / shadowCoord.w;
     // Derivatives must execute before non-uniform control flow. Compensating the
@@ -24,19 +28,19 @@ float getFiniteSunShadow( sampler2D shadowMap, vec2 shadowMapSize, float shadowI
     vec2 gradient = finiteSunReceiverGradient( coordinate );
     coordinate.z += shadowBias;
     if ( any( lessThan( coordinate, vec3( 0.0 ) ) ) || any( greaterThan( coordinate, vec3( 1.0 ) ) ) ) return 1.0;
-    if ( uFiniteSunGeometry.w == 0.0 ) {
+    if ( geometry.w == 0.0 ) {
         return mix( 1.0, step( coordinate.z, texture2D( shadowMap, coordinate.xy ).r ), shadowIntensity );
     }
 
     // The shadow near plane bounds the maximum possible blocker separation.
-    vec2 searchRadius = coordinate.z * uFiniteSunGeometry.z * uFiniteSunGeometry.w * uFiniteSunGeometry.xy;
+    vec2 searchRadius = coordinate.z * geometry.z * geometry.w * geometry.xy;
     float separationSum = 0.0;
     float blockers = 0.0;
     // A half texel slope bound excludes self intersections caused by sampling
     // discrete depths. The user light bias remains the ordinary native bias.
     float planeBias = dot( abs( gradient ), 0.5 / shadowMapSize ) + 1e-6;
-    for ( int i = 0; i < 32; i ++ ) {
-        vec2 offset = finiteSunDisk( i, 32 ) * searchRadius;
+    for ( int i = 0; i < FINITE_SUN_BLOCKER_SAMPLES; i ++ ) {
+        vec2 offset = (i == 0 ? vec2(0.0) : finiteSunDisk( i - 1, FINITE_SUN_BLOCKER_SAMPLES - 1 )) * searchRadius;
         vec2 uv = coordinate.xy + offset;
         if ( any( lessThan( uv, vec2( 0.0 ) ) ) || any( greaterThan( uv, vec2( 1.0 ) ) ) ) continue;
         float receiverDepth = coordinate.z + dot( gradient, offset );
@@ -47,10 +51,10 @@ float getFiniteSunShadow( sampler2D shadowMap, vec2 shadowMapSize, float shadowI
         }
     }
     if ( blockers == 0.0 ) return 1.0;
-    vec2 filterRadius = ( separationSum / blockers ) * uFiniteSunGeometry.z * uFiniteSunGeometry.w * uFiniteSunGeometry.xy;
+    vec2 filterRadius = ( separationSum / blockers ) * geometry.z * geometry.w * geometry.xy;
     float visibility = 0.0;
-    for ( int i = 0; i < 64; i ++ ) {
-        vec2 offset = finiteSunDisk( i, 64 ) * filterRadius;
+    for ( int i = 0; i < FINITE_SUN_FILTER_SAMPLES; i ++ ) {
+        vec2 offset = finiteSunDisk( i, FINITE_SUN_FILTER_SAMPLES ) * filterRadius;
         vec2 uv = coordinate.xy + offset;
         if ( any( lessThan( uv, vec2( 0.0 ) ) ) || any( greaterThan( uv, vec2( 1.0 ) ) ) ) {
             visibility += 1.0;
@@ -59,6 +63,10 @@ float getFiniteSunShadow( sampler2D shadowMap, vec2 shadowMapSize, float shadowI
             visibility += step( receiverDepth, texture2D( shadowMap, uv ).r );
         }
     }
-    return mix( 1.0, visibility / 64.0, shadowIntensity );
+    return mix( 1.0, visibility / float(FINITE_SUN_FILTER_SAMPLES), shadowIntensity );
+}
+float getFiniteSunShadow( sampler2D shadowMap, vec2 shadowMapSize, float shadowIntensity,
+    float shadowBias, float shadowRadius, vec4 shadowCoord ) {
+    return getFiniteSunShadowForGeometry(uFiniteSunGeometry,shadowMap,shadowMapSize,shadowIntensity,shadowBias,shadowRadius,shadowCoord);
 }
 #endif

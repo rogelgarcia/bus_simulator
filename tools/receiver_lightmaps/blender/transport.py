@@ -1,8 +1,9 @@
 """Enhanced source transport for declared alpha coverage and authored PBR inputs."""
 from copy import deepcopy
 from reconstruct import _MaterialAdapter, accessor_values
+from uv_tiling import binding_with_tiling
 
-POLICY = 'declared-alpha-coverage-v1'
+POLICY = 'declared-alpha-coverage-uv-raw-v3'
 
 
 def resolve_transport(package):
@@ -27,6 +28,17 @@ def resolve_transport(package):
 
 
 class EnhancedTransportMaterialAdapter(_MaterialAdapter):
+    def _texture_node(self, material, binding_id, role, geometry):
+        record = self.materials[material['bus_sim_stable_material_id']]
+        config = record.get('customSemantics', {}).get('uvTilingConfig')
+        bindings = record.get('textureBindings', {})
+        # The runtime override affects map alpha, but not the separate alphaMap.
+        slots = ['map'] if role == 'coverage:a' else [] if role.startswith('coverage:') else [
+            'map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap']
+        override = binding_with_tiling(self.bindings[binding_id], config) if config and any(
+            bindings.get(slot) == binding_id for slot in slots) else None
+        return super()._texture_node(material, binding_id, role, geometry, binding_override=override)
+
     def prepare_mesh(self, mesh, geometry):
         if 'color' not in geometry['attributes']:
             return

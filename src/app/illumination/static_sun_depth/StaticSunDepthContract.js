@@ -179,6 +179,37 @@ export function createThreeR183DirectionalShadowFilterAxes(sunPointDirectionWorl
 }
 
 /**
+ * Keep historical production lattices when their axes already coincide with
+ * the native grid. Otherwise align the cache to the source camera, preserving
+ * a right-handed basis by reversing its right axis. Resampling a rotated grid
+ * cannot provide the exact texel-center parity required for cutout coverage.
+ * @param {readonly number[]} direction
+ * @param {readonly number[]} [originWorld]
+ */
+export function createProductionStaticSunDepthBasis(direction, originWorld = [0, 0, 0]) {
+    const stable = createStableStaticSunDepthBasis(direction, originWorld);
+    const source = createThreeR183DirectionalShadowFilterAxes(direction);
+    const axes = [source.rightAxisWorld, source.upAxisWorld];
+    if ([stable.rightAxisWorld, stable.upAxisWorld].every(axis =>
+        axes.some(other => Math.abs(Math.abs(dot3(axis, other)) - 1) <= 1e-9))) return stable;
+    return cloneCanonicalJson({
+        policy: 'three-r183-source-lattice-v2',
+        originWorld: stable.originWorld,
+        rightAxisWorld: source.rightAxisWorld.map(value => cleanZero(-value)),
+        upAxisWorld: source.upAxisWorld,
+        depthAxisWorld: stable.depthAxisWorld
+    });
+}
+
+/** Production density is versioned with the aligned lattice, within the 512 MiB container budget. */
+export function getProductionStaticSunGrid(direction) {
+    const aligned = createProductionStaticSunDepthBasis(direction).policy === 'three-r183-source-lattice-v2';
+    const extent = aligned ? 960 : 680;
+    return {id: aligned ? 'three-r183-calibrated-960m-16384-v1' : 'three-r183-single-high-effective-16384-v1',
+        mapSizeTexels:[16384,16384],worldExtentMeters:[extent,extent],texelSizeMeters:extent/16384};
+}
+
+/**
  * Rejects unknown fields and returns an owned, deeply frozen canonical copy.
  * All grid, tile, basis, encoding, alpha and sampler invariants are checked
  * before the returned value can be used.
@@ -366,7 +397,7 @@ function normalizeBasis(value, sunPointDirectionWorld) {
         'rightAxisWorld',
         'upAxisWorld'
     ], 'identity.basis');
-    if (source.policy !== 'least-aligned-world-axis-v1') {
+    if (!['least-aligned-world-axis-v1', 'three-r183-source-lattice-v2'].includes(source.policy)) {
         throw new Error('identity.basis.policy is unsupported');
     }
     const originWorld = requireVector3(source.originWorld, 'identity.basis.originWorld');
@@ -382,11 +413,14 @@ function normalizeBasis(value, sunPointDirectionWorld) {
     if (!vectorsNearlyEqual(handedDepth, depthAxisWorld, ORTHONORMAL_TOLERANCE)) {
         throw new Error('identity.basis must be right handed');
     }
-    const stable = createStableStaticSunDepthBasis(sunPointDirectionWorld, originWorld);
-    if (!vectorsNearlyEqual(stable.rightAxisWorld, rightAxisWorld, ORTHONORMAL_TOLERANCE)
+    const stable = source.policy === 'three-r183-source-lattice-v2'
+        ? createProductionStaticSunDepthBasis(sunPointDirectionWorld, originWorld)
+        : createStableStaticSunDepthBasis(sunPointDirectionWorld, originWorld);
+    if (stable.policy !== source.policy
+        || !vectorsNearlyEqual(stable.rightAxisWorld, rightAxisWorld, ORTHONORMAL_TOLERANCE)
         || !vectorsNearlyEqual(stable.upAxisWorld, upAxisWorld, ORTHONORMAL_TOLERANCE)
         || !vectorsNearlyEqual(stable.depthAxisWorld, depthAxisWorld, ORTHONORMAL_TOLERANCE)) {
-        throw new Error('identity.basis does not match the stable V1 sun basis');
+        throw new Error('identity.basis does not match its declared sun basis policy');
     }
     requireWorldToLightTranslationFloat32(
         rightAxisWorld,
@@ -404,7 +438,7 @@ function normalizeBasis(value, sunPointDirectionWorld) {
         'identity.basis depth-axis world-to-light translation'
     );
     return {
-        policy: 'least-aligned-world-axis-v1',
+        policy: source.policy,
         originWorld,
         rightAxisWorld,
         upAxisWorld,

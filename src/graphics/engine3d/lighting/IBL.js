@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { updateCalibratedDiffuseIbl } from './CalibratedDiffuseIbl.js';
 const DEFAULT_ENV_MAP_INTENSITY = 0.25;
 const _cacheByRenderer = new WeakMap();
 const _backgroundByHdrUrl = new Map();
@@ -263,7 +264,7 @@ function markMaterialsForEnvMapUpdate(root) {
     });
 }
 
-function syncMaterialEnvMapFromScene(root, envMap) {
+function syncMaterialEnvMapFromScene(root, envMap, settings) {
     const nextEnv = envMap ?? null;
     const environmentRotation = root?.isScene ? root.environmentRotation : null;
     root?.traverse?.((obj) => {
@@ -272,6 +273,7 @@ function syncMaterialEnvMapFromScene(root, envMap) {
         const mats = Array.isArray(mat) ? mat : [mat];
         for (const entry of mats) {
             if (!entry) continue;
+            updateCalibratedDiffuseIbl(entry, nextEnv, settings);
             if (!('envMapIntensity' in entry) || !('envMap' in entry)) continue;
             const userData = entry.userData ?? (entry.userData = {});
             const managed = !!userData._iblManagedEnvMap;
@@ -315,7 +317,7 @@ export function applyIBLToScene(scene, envMap, overrides = {}) {
         const changed = !!scene.environment;
         if (scene.environment) scene.environment = null;
         if (scene.background) scene.background = null;
-        syncMaterialEnvMapFromScene(scene, null);
+        syncMaterialEnvMapFromScene(scene, null, overrides);
         if (changed) markMaterialsForEnvMapUpdate(scene);
         return;
     }
@@ -334,7 +336,7 @@ export function applyIBLToScene(scene, envMap, overrides = {}) {
         envMap.__iblBackgroundTexture = backgroundTex;
     }
     scene.background = backgroundTex && backgroundTex.isTexture ? backgroundTex : null;
-    syncMaterialEnvMapFromScene(scene, envMap);
+    syncMaterialEnvMapFromScene(scene, envMap, overrides);
     if (changed) markMaterialsForEnvMapUpdate(scene);
 }
 
@@ -348,8 +350,12 @@ export function applyIBLIntensity(root, overrides = {}, { force = false } = {}) 
         if (!obj?.isMesh) return;
         const mat = obj.material ?? null;
         if (Array.isArray(mat)) {
-            for (const entry of mat) applyEnvMapIntensityToMaterial(entry, intensity, { force, envMap });
+            for (const entry of mat) {
+                updateCalibratedDiffuseIbl(entry, envMap, overrides);
+                applyEnvMapIntensityToMaterial(entry, intensity, { force, envMap });
+            }
         } else {
+            updateCalibratedDiffuseIbl(mat, envMap, overrides);
             applyEnvMapIntensityToMaterial(mat, intensity, { force, envMap });
         }
     });

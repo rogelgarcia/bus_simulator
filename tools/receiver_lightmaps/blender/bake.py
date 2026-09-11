@@ -57,7 +57,7 @@ def lighting(package, stage, environment_sun_radius=None):
         file = stage / 'environment.hdr'
         file.write_bytes(package.get_buffer_bytes(ref['bufferId']))
         texture = nodes.new('ShaderNodeTexEnvironment'); texture.image = bpy.data.images.load(str(file))
-        if environment_sun_radius is not None:
+        if environment_sun_radius is not None and environment.get('sunDiscIncluded') is not False:
             from environment_sun import separate_environment_sun
             source = pixels([texture.image])[0]
             separated, report = separate_environment_sun(source, environment_sun_radius)

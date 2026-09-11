@@ -2,6 +2,7 @@
 // Defines stable IBL/HDRI environment catalog entries.
 
 export const IBL_ID = Object.freeze({
+    CALIBRATED_AFTERNOON_55: 'ibl.calibrated.clear_afternoon_55',
     GERMAN_TOWN_STREET_2K: 'ibl.hdri.german_town_street_2k'
 });
 
@@ -11,6 +12,12 @@ const HDRI_GERMAN_TOWN_STREET_2K_URL = new URL(
 ).toString();
 
 export const IBL_CATALOG = Object.freeze([
+    Object.freeze({
+        id: IBL_ID.CALIBRATED_AFTERNOON_55,
+        label: 'Calibrated clear afternoon (55°)',
+        hdrUrl: new URL('../../../../assets/public/lighting/calibrated/clear-afternoon-55.hdr', import.meta.url).toString(),
+        previewUrl: null
+    }),
     Object.freeze({
         id: IBL_ID.GERMAN_TOWN_STREET_2K,
         label: 'German town street (2k)',
@@ -27,5 +34,6 @@ export function getIblOptions() {
 
 export function getIblEntryById(iblId) {
     const id = typeof iblId === 'string' ? iblId : '';
-    return IBL_CATALOG.find((entry) => entry.id === id) ?? IBL_CATALOG[0] ?? null;
+    return IBL_CATALOG.find((entry) => entry.id === id)
+        ?? IBL_CATALOG.find((entry) => entry.id === DEFAULT_IBL_ID) ?? null;
 }

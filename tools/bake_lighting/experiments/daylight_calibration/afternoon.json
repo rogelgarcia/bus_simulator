@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "intent": "Bright mid-afternoon daylight, not a geolocated 15:00 solar calculation. Peak solar elevation occurs at solar noon.",
+  "elevationsDeg": [55, 65],
+  "preferredElevationDeg": 55,
+  "material": "plausible",
+  "samples": 128,
+  "threads": 4,
+  "seed": 567,
+  "exposurePolicy": "Freeze the source D01 plausible finalist's global exposure across all elevations, poses and tones. Report neutral-card exposure separately; do not fit image brightness or white balance.",
+  "preserved": ["sun azimuth", "0.53 degree solar diameter", "clear aerosol density", "air and ozone", "geometry", "materials", "cameras", "bus placements", "grading off"],
+  "publication": "experiment-only"
+}

@@ -146,11 +146,56 @@ authenticated raw data and predefined analytical/display checks. The shared
 callers retain their behavior. Calibration never publishes or enters production
 defaults. Its framework `validated` state authenticates evidence, not a universal
 physical pass; consumers must inspect `report/contract.json` and individual results.
-AI 565-567 remain planned. AI 562 owns application of validated results to the game
-and production bake pipeline. See the calibration tool README for reference
+AI 565 registers `lighting/experiments/daylight-calibration`.
+`lighting/experiments/daylight-calibration/afternoon` additionally authenticates an
+AI567 finalist and compares higher solar elevations using a copied scene, physical
+receiver checks and ten new city renders. Its output is experiment-only and never
+publishes or replaces a prior calibration. See the daylight tool README.
+
+The original AI565 branch provides standalone
+`prepare`, `render`, `capture`, `fixtures` and `analyze` leaves. Preparation
+authenticates the reusable city and passing AI 564 prerequisite; solar/receiver
+preflight precedes city rendering. Versioned fixture revisions preserve city
+transport only while atmospheric inputs remain unchanged. The report separates
+model checks, native approximations and legacy artistic controls. See
+`specs/graphics/daylight_calibration.md` and its executed results for scope.
+
+AI 566 registers `lighting/experiments/material-calibration` and standalone
+`audit`, `prepare`, `capture`, `render`, `analyze` leaves. They authenticate the
+passing AI 565 daylight source and use the shared Blender configuration. Material
+profiles, original runtime inputs, export adapters and scene identities are frozen
+before rendering. All outputs remain under the ignored AI 566 screen-artifact
+directory. Routine `all`/production lighting jobs exclude this experiment and it
+does not publish material assets or bakes. See `specs/graphics/material_calibration.md`.
+AI 567 registers `lighting/experiments/automated-calibration` and independent
+`validate`, `baseline`, `prepare`, `calibrate`, `search`, `render`, `analyze`, `review`
+stages. It reruns independent reference checks, captures fresh installed-bake game
+baselines, searches authenticated unchanged transport, verifies finalists with new
+full renders and emits an experiment-only AI562 handoff. See
+`specs/graphics/automated_lighting_calibration.md`.
+AI 562 owns application of validated results to the game
+and production bake pipeline. See the calibration tool READMEs for reference
 eligibility, CIE subset, numeric scale and renderer limitations.
 
+AI562 registers `lighting/experiments/reference-matching`, with independent
+`baseline`, `sky`, `capture`, `reference`, `native-validation`, `diagnostics` and
+`review` leaves. Captures assert the actual effective Current/Baked mode and the
+55° profile. Original source/assets can be replayed through streamed local URLs;
+validated candidate indexes can be routed in an isolated browser without changing
+installed indexes. Receiver publication and native package validation remain
+mandatory. Updated reference scenes use the versioned window/Phong translation
+policy and preserve previous Cycles targets. The controller resumes complete
+stages only when source, settings and recipe identity match. See
+`tools/bake_lighting/experiments/reference_matching/README.md`.
+
 ## Verification
+
+AI562 also registers `lighting/experiments/reference-matching/transport-reference`
+and `transport-textures`. They isolate the primary diffuse transport model and
+test raw texture values through native Cycles, respectively. Both require new
+artifact directories, use the shared Blender configuration, never publish, and
+remain outside no-argument production baking. Scene reconstruction uses a short
+workspace staging path for encoded texture loading on Windows.
 
 AI 550 adds `lighting/diffuse-probes` to the lighting domain. It depends on the
 same authenticated static-city source and owns separate prepare, sky and bounce

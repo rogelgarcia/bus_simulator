@@ -14,7 +14,7 @@ test('finite sun follows separation and angle, preserves hooks, and reports GPU 
         await window.__testHooks.unloadScenario();
         return runFiniteSunShadowFixture(window.__testHooks.getEngine());
     });
-    const directory = path.resolve('tests/artifacts/screens/ai564_physical_calibration/finite_sun_fix');
+    const directory = path.resolve(process.env.FINITE_SUN_TEST_OUTPUT ?? 'tests/artifacts/screens/ai564_physical_calibration/finite_sun_fix');
     await mkdir(directory, {recursive:true});
     await writeFile(path.join(directory, 'runtime.json'), JSON.stringify(result, null, 2) + '\n');
     expect(errors).toEqual([]);

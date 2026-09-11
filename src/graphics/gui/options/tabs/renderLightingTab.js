@@ -1,6 +1,7 @@
 import { getColorGradingPresetOptions } from '../../../visuals/postprocessing/ColorGradingPresets.js';
 import { getSunFlarePresetById, getSunFlarePresetOptions } from '../../../visuals/sun/SunFlarePresets.js';
 import { LIGHTING_LIMITS } from '../../../lighting/LightingSettings.js';
+import { renderDaylightPresetControls } from './DaylightPresetControls.js';
 import { makeChoiceRow, makeColorRow, makeEl, makeNumberSliderRow, makeToggleRow, makeValueRow } from '../OptionsUiControls.js';
 
 export function renderLightingTab() {
@@ -56,10 +57,10 @@ export function renderLightingTab() {
         exposure: makeNumberSliderRow({
             label: 'Tone mapping exposure',
             value: d.exposure,
-            min: 0.1,
+            min: LIGHTING_LIMITS.exposureMin,
             max: 5,
-            step: 0.01,
-            digits: 2,
+            step: 0.001,
+            digits: 3,
             onChange: (v) => { d.exposure = v; emit(); }
         }),
         hemi: makeNumberSliderRow({
@@ -565,6 +566,7 @@ export function renderLightingTab() {
     const note = makeEl('div', 'options-note');
     note.textContent = 'URL params override saved settings (e.g. ibl, iblIntensity, iblBackground, bloom, sunFlare, grade). Bloom affects only bright pixels; raise threshold to reduce glow.';
 
+    if (showAtmosphereSection) this.body.appendChild(renderDaylightPresetControls(this));
     this.body.appendChild(sectionIbl);
     if (iblStatusSection) this.body.appendChild(iblStatusSection);
     this.body.appendChild(sectionLighting);

@@ -173,7 +173,8 @@ export class ReceiverLightmapRuntime {
             this.bindings ??= this.installBindings(resource.mapping, this.source.references, this.uniforms);
             const compileStarted = performance.now();
             this.status = { state: 'loading', reason: 'preparing_shaders' };
-            await this.engine.renderer.compileAsync(this.engine.scene, this.engine.camera);
+            if (this.atomicActivation) this.engine._bakedLighting?.requestViewPreparation();
+            else await this.engine.renderer.compileAsync(this.engine.scene, this.engine.camera);
             if (generation !== this.generation) return this.getDiagnostics();
             this.pendingFade = loadedChannel && !this.active;
             this.pending = true; this.status = { state: 'loading', reason: 'ready_to_commit', profileId: index.profileId, channelFailures };

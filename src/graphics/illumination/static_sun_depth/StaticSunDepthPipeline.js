@@ -2,6 +2,7 @@
 // @ts-check
 
 import * as THREE from 'three';
+import { CALIBRATED_DAYLIGHT } from '../../lighting/CalibratedDaylight.js';
 import {
     validateOwnedStaticSunDepthTileArrayIntegrity,
     validateStaticSunDepthTileSetDescriptor
@@ -362,6 +363,7 @@ export class StaticSunDepthPipeline {
         const binding = createStaticSunDepthShaderBinding({
             descriptor: validated,
             texture: resource?.texture,
+            angularDiameterDegrees: this.engine.lightingSettings?.ibl?.iblId === CALIBRATED_DAYLIGHT.environmentId ? CALIBRATED_DAYLIGHT.angularDiameterDeg : 0,
             debugMode: this._debugMode
         });
         await this._prewarmMaterialVariants(binding);
@@ -440,6 +442,7 @@ export class StaticSunDepthPipeline {
                 this._active = Object.freeze({ ...cached, generation: snapshot.generation });
                 this._cachedActivation = null;
                 this._cacheActivationCount += 1;
+                this.engine._bakedLighting?.requestViewPreparation();
                 return true;
             } catch (error) {
                 this._lastError = error;
@@ -507,10 +510,16 @@ export class StaticSunDepthPipeline {
             firstError ??= error;
         }
         this._active = null;
+        this.engine._bakedLighting?.requestViewPreparation();
         if (firstError) throw firstError;
     }
 
     _compileExactCityVariants() {
+        if (this.engine._bakedLighting) {
+            this.engine._bakedLighting.requestViewPreparation();
+            this._exactCityCompileCount += 1;
+            return;
+        }
         const shaderDiagnostics = createShaderDiagnosticGuard(this.renderer);
         try {
             this.renderer.compile(this.engine.scene, this.engine.camera);
@@ -529,7 +538,7 @@ export class StaticSunDepthPipeline {
             && cached.city === city
             && cached.cityGroup === city?.group
             && cached.cityParent === city?.group?.parent
-            && this._materials.getDiagnostics().shaderHooksEnabled
+            && (this._materials.getDiagnostics().shaderHooksEnabled || this._materials.getDiagnostics().suspended)
             && this._materials.verifyPreparedOwnership()
         );
     }

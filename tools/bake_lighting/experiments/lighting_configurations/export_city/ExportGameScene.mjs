@@ -2,13 +2,17 @@
 export async function exportGameScene(poses) {
     const THREE=await import('three');
     const {GLTFExporter}=await import('three/addons/exporters/GLTFExporter.js');
+    const {translatePhongF0,createInteriorTexture,translateWindowInterior,captureUvTiling}=await import('/tools/bake_lighting/experiments/lighting_configurations/export_city/MaterialEquivalence.js');
+    const contractResponse=await fetch('/tools/bake_lighting/experiments/material_calibration/export_contract.json');
+    if(!contractResponse.ok)throw new Error('Material equivalence contract unavailable');
+    const materialContract=await contractResponse.json(),interiorTexture=createInteriorTexture(materialContract);
     const {engine:e,sm}=window.__busSim,s=sm.current;
     s.city.disableStaticVisibility();e.scene.updateMatrixWorld(true);
     const exportScene=new THREE.Scene(),city=new THREE.Group(),bus=new THREE.Group();
     city.name='CITY_SOURCE';bus.name='BUS_SOURCE';exportScene.add(city,bus);
     const materialCache=new Map(),geometryCache=new Map(),audit=[],omitted=[],landmarks=[];
     const inverseBus=s.busAnchor.matrixWorld.clone().invert();
-    function material(source) {
+    function material(source,scope) {
         if(materialCache.has(source.uuid))return materialCache.get(source.uuid);
         if(source.isShaderMaterial)throw new Error(`Untranslated source shader ${source.name}; uniforms ${Object.keys(source.uniforms??{}).join(',')}`);
         let target;
@@ -20,18 +24,21 @@ export async function exportGameScene(poses) {
             }
             target.roughness=source.isMeshPhongMaterial?Math.max(.12,Math.min(.95,Math.sqrt(2/((source.shininess??30)+2)))):.8;
             target.metalness=0;
-            if(source.specular)target.specularColor.copy(source.specular);
+            if(source.isMeshPhongMaterial)translatePhongF0(target,source);
             if(source.isMeshBasicMaterial && /sign|lamp|light|emissive/i.test(source.name)) {
                 target.emissive.copy(source.color);target.emissiveMap=source.map;target.emissiveIntensity=1;
             }
         }
         target.name=`MAT_${materialCache.size}_${source.name||source.type}`;
+        const interiorProxy=translateWindowInterior(target,source,scope,materialContract,interiorTexture);
+        const uvTiling=interiorProxy ? null : captureUvTiling(source);
+        if (uvTiling && source.alphaMap) throw new Error('UV override plus independent alphaMap needs a slot-specific glTF adapter');
         const hooks=Object.keys(source.userData??{}).filter(key=>/shader|injected|variation|window|grass|asphalt/i.test(key));
-        audit.push({id:target.name,originalName:source.name,sourceType:source.type,translatedType:target.type,
+        audit.push({id:target.name,originalName:source.name,sourceType:source.type,translatedType:target.type,interiorProxy,uvTiling,sourceSpecularF0:source.specular?.toArray(),translatedIor:target.ior,
             color:source.color?.toArray(),roughness:target.roughness,metalness:target.metalness,opacity:target.opacity,
             normalScale:source.normalScale?.toArray(),bumpScale:source.bumpScale,hadBumpMap:!!source.bumpMap,
             removedLighting:{lightMap:!!source.lightMap,aoMap:!!source.aoMap},untranslatedProceduralHooks:hooks,
-            approximation:source.isMeshPhongMaterial?'Phong shininess mapped to GGX roughness; specular color retained':source.isMeshBasicMaterial?'Unlit color translated to diffuse except authored luminous signs':null});
+            approximation:source.isMeshPhongMaterial?'Phong shininess approximated with GGX; source F0 converted to IOR and normalized tint':source.isMeshBasicMaterial?'Unlit color translated to diffuse except authored luminous signs':null});
         target.userData={};target.onBeforeCompile=()=>{};target.customProgramCacheKey=()=>'';
         target.lightMap=null;target.aoMap=null;target.envMap=null;target.polygonOffset=false;
         materialCache.set(source.uuid,target);return target;
@@ -55,7 +62,7 @@ export async function exportGameScene(poses) {
                 omitted.push({name:object.name,reason:'Screen-space sun glare is an optical effect, not a light-blocking surface'});return;
             }
             if(!object.layers.test(e.camera.layers)||materials.every(m=>!m.visible||!m.colorWrite)) {omitted.push({name:object.name,reason:'not a camera-renderable surface'});return;}
-            const mat=materials.map(material),g=geometry(object.geometry);
+            const mat=materials.map(source=>material(source,destination===bus?'bus':'city')),g=geometry(object.geometry);
             const count=object.isInstancedMesh?object.count:1;
             for(let i=0;i<count;i++) {
                 const matrix=object.matrixWorld.clone();
@@ -95,8 +102,8 @@ export async function exportGameScene(poses) {
         lights,lighting:e.lightingSettings,atmosphere:e.atmosphereSettings,poses,
         limitations:['Procedural shader hooks listed per material are not executed in Cycles; source texture/PBR inputs are retained.',
             'Phong materials use a documented GGX approximation; no new glass transmission is invented for opaque source windows.',
-            'Shader-only parallax/interior rooms and grass animation are not geometry; no room is fabricated.',
+            'Tagged city window interiors use gray-beige-silhouette-v1 opaque non-emissive UV proxies; they approximate appearance, not measured room geometry. Grass animation is omitted.',
             'Bump maps omitted by glTF are reported per material; normal maps are retained.',
             'Copied poses omit suspension and wheel steering state; loaded default rig is frozen.'],
-        sourcesPolicy:'Actual unculled city and rendered bus mesh; lighting/AO/env hooks removed only on export clones'};
+        materialContract,sourcesPolicy:'Actual unculled city and rendered bus mesh; lighting/AO/env hooks removed only on export clones'};
 }

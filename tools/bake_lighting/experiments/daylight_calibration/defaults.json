@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "blenderVersion": "5.2.1",
+  "skyModel": "MULTIPLE_SCATTERING",
+  "sun": {"azimuthDeg": 45, "elevationDeg": 35, "angularDiameterDeg": 0.53},
+  "altitudeMeters": 100,
+  "airDensity": 1,
+  "ozoneDensity": 1,
+  "modelGroundAlbedo": 0.3,
+  "profiles": [
+    {"id": "D01", "name": "Clear daylight", "model": "atmosphere", "aerosolDensity": 0.25},
+    {"id": "D02", "name": "Hazy daylight", "model": "atmosphere", "aerosolDensity": 2},
+    {"id": "D03", "name": "CIE overcast · D65 assumption", "model": "cie_overcast", "horizontalIlluminanceLux": 10000}
+  ],
+  "exposurePolicy": "One multiplier: pi / clear-profile horizontal RGB-Y irradiance. Maps the clear 18% Lambertian card to linear Y=0.18 before either display transform. Freeze across every profile, material mode and pose; no fitted offsets.",
+  "width": 1920,
+  "height": 1080,
+  "samples": 128,
+  "fixtureSamples": 512,
+  "environmentWidth": 1024,
+  "seed": 565,
+  "threads": 4,
+  "tolerances": {"cardRelative": 0.07, "nativeRelative": 0.1, "sunQuadratureRelative": 0.015, "overcastRelative": 0.003, "sunDirectionDeg": 0.04, "additivityRelative": 0.025},
+  "limitations": [
+    "Documented model conditions, not a measured local weather station. Aerosol scale is model-specific, not turbidity or measured AOD.",
+    "Four-wavelength spectral quadrature and fitted multiple scattering; fixed model ground albedo 0.3. Surface materials are not yet calibrated under AI 566.",
+    "CIE S011/E:2003 / ISO15469:2004 overcast luminance law only; D65 RGB chromaticity and 10000 lux are explicit experiment assumptions. The 2024 DIS is a draft.",
+    "683 multiplies the model's CIE-Y spectral integral to obtain estimated photometric illuminance, never arbitrary RGB watts. Sun-disc limb darkening in pinned Blender reduces its integral by approximately 0.8.",
+    "Cycles owns sunlight entirely in the atmospheric world. Game candidate uses a disc-free environment plus one finite directional sun; uniform angular sun approximates the model's limb-darkened disc."
+  ]
+}

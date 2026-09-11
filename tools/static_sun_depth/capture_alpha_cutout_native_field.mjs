@@ -39,6 +39,7 @@ const runnerPath = fileURLToPath(import.meta.url);
 const producerPaths = Object.freeze([
     runnerPath,
     path.join(here, 'browser/ProductionAlphaCutoutNativeFieldCapture.js'),
+    path.join(here, 'browser/ProductionNativeFieldProjection.js'),
     path.join(here, 'browser/NativeShadowDepthTextureCapture.js'),
     path.join(here, 'browser/ProductionAlphaCutoutSamplePlan.js'),
     path.join(here, 'src/ThreeShadowSide.mjs')

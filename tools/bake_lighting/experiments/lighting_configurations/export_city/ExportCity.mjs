@@ -11,7 +11,8 @@ import { runHeadlessBake } from '../../../../baking/Blender.mjs';
 
 export async function exportCity(ctx,run) {
     const lighting=await config(ctx,run,'lighting');
-    const code=await codeIdentity(ctx.root,['export_city/ExportGameScene.mjs','export_city/ExportCity.mjs','export_city/build_scene.py']);
+    const code={exporter:await codeIdentity(ctx.root,['export_city/ExportGameScene.mjs','export_city/MaterialEquivalence.js','../material_calibration/export_contract.json','export_city/ExportCity.mjs','export_city/build_scene.py']),
+        uvTiling:await hashFile(path.join(ctx.root,'tools/illumination_bake_compiler/blender/uv_tiling.py'))};
     const supplied=ctx.options.source?await readJson(artifactPath(ctx.root,ctx.options.source)):null;
     if(supplied && (supplied.source!==run.source.sha256||digest(supplied.poses)!==digest(run.poses)||(await hashFile(supplied.raw)).sha256!==supplied.sourceGlb.sha256))throw new Error('Explicit source export no longer matches this run');
     const key=digest({source:run.source.sha256,poses:run.poses,bakes:run.bakes.identity,code,raw:supplied?.sourceGlb,toolchain:ctx.toolchain?.executableSha256});
@@ -48,8 +49,11 @@ export async function exportCity(ctx,run) {
         });
     } finally {await fd?.close();}
     await verifyFiles(ctx.root,[...run.source.files,...run.bakes.files]);
-    const hdri=path.join(output,'german_town_street_2k.hdr');
-    await copyFile(path.join(ctx.root,lighting.value.hdri.path),hdri);
+    const hdri=path.join(output,'environment.hdr');
+    const runtimeEnvironment=new URL(metadata.lighting.ibl.hdrUrl);
+    const environmentPath=decodeURIComponent(runtimeEnvironment.pathname).slice(1);
+    if(!environmentPath.startsWith('assets/')||environmentPath.split('/').includes('..'))throw new Error('Export requires a repository-owned runtime environment');
+    await copyFile(path.join(ctx.root,environmentPath),hdri);
     const input=path.join(output,'source_manifest.json');
     await writeJson(input,{...metadata,evidence,raw,hdri,source:run.source.sha256,sourceGlb:await hashFile(raw),baselineSettings:run.baseline,lightingConfig:lighting.value,output,
         exportStagePolicy:'Independent export browser uses Current to avoid loading unused baked atlases; G00 captures and lighting source settings remain unchanged.'});

@@ -290,7 +290,8 @@ export class OptionsState {
         this.sm.go(this._returnTo || 'welcome');
     }
 
-    _save(draft) {
+    async _save(draft) {
+        if (await this._applyDraft(draft) === false) return;
         saveLightingSettings(draft?.lighting ?? null);
         saveShadowSettings(draft?.shadows ?? null);
         saveAntiAliasingSettings(draft?.antiAliasing ?? null);
@@ -315,13 +316,44 @@ export class OptionsState {
     _restoreOriginal() {
         const src = this._original && typeof this._original === 'object' ? this._original : null;
         if (!src) return;
-        this._applyDraft(src, this._initialDraft);
+        return this._applyDraft(src, this._initialDraft);
     }
 
-    _applyDraft(draft, comparisonDraft = draft) {
+    async _applyDraft(draft, comparisonDraft = draft) {
+        const request = Symbol('options lighting transaction');
+        this._draftRequest = request;
         const d = Object.fromEntries(Object.entries(draft ?? {}).filter(([key]) =>
             JSON.stringify(comparisonDraft?.[key]) !== JSON.stringify(this._appliedDraft?.[key])));
+        if (d.lighting || this._lightingDraftPending) {
+            const pending = this.engine?.setLightingSettings?.(draft.lighting);
+            if (pending?.then) {
+                this._lightingDraftPending = true;
+                if (this._ui) {
+                    this._ui._lightingPresetPending = true;
+                    this._ui._lightingPresetError = null;
+                    this._ui._refreshDaylightPreset?.();
+                }
+                const loaded = await pending;
+                if (this._draftRequest !== request) return false;
+                if (loaded === null) {
+                    this._lightingDraftPending = false;
+                    if (this._ui) {
+                        this._ui._setDraftFromFullDraft(this._appliedDraft);
+                        this._ui._lightingPresetPending = false;
+                        this._ui._lightingPresetError = 'Lighting could not load. Previous settings retained.';
+                        this._ui._renderTab();
+                    }
+                    return false;
+                }
+            }
+            this._lightingDraftPending = false;
+        }
         this._appliedDraft = JSON.parse(JSON.stringify(comparisonDraft ?? {}));
+        if (this._ui) {
+            this._ui._lightingPresetPending = false;
+            this._ui._lightingPresetError = null;
+            this._ui._refreshDaylightPreset?.();
+        }
         const lighting = d?.lighting ?? null;
         const atmosphere = d?.atmosphere ?? null;
         const shadows = d?.shadows ?? null;
@@ -338,7 +370,6 @@ export class OptionsState {
         const bakedLighting = d?.bakedLighting ?? null;
 
         if (shadows) this.engine?.setShadowSettings?.(shadows);
-        if (lighting) this.engine?.setLightingSettings?.(lighting);
         if (antiAliasing) this.engine?.setAntiAliasingSettings?.(antiAliasing);
         if (ambientOcclusion) this.engine?.setAmbientOcclusionSettings?.(ambientOcclusion);
         if (atmosphere) this.engine?.setAtmosphereSettings?.(atmosphere);

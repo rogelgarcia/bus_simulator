@@ -127,5 +127,6 @@ export function receiverJobs(enhanced) {
         }
     };
     return [prepare, direct, makePass(bounceId, 'bounce', 'Bake indirect diffuse bounce from the complete participating scene'),
-        makePass(occlusionId, 'sky', 'Bake occluded sky irradiance; consumed by receiver indirect lighting'), parent];
+        makePass(occlusionId, 'sky', 'Bake occluded sky irradiance; consumed by receiver indirect lighting'), parent]
+        .map(job=>({...job,codePaths:['tools/bake_lighting/illumination']}));
 }

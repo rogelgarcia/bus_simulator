@@ -1589,10 +1589,8 @@ def _validate_native_cutout_field_session(
             expectedCamera=expected_camera,
             expectedLayout=expected_session_layout,
         )
-    expected_axis_transform = _derive_live_source_to_cache_light_axis_transform(
-        basis, request
-    )
     if receipt_schema == NATIVE_IMPLICIT_GRADIENT_FIELD_RECEIPT_SCHEMA:
+        expected_axis_transform = _derive_live_source_to_cache_light_axis_transform(basis, request)
         if begin.get("liveSourceToCacheLightAxisTransform") != expected_axis_transform:
             fail(
                 "production_native_cutout_field_axis_transform_mismatch",
@@ -1741,7 +1739,11 @@ def _validate_native_cutout_field_outputs(
         capture_counts = _validate_native_cutout_field_capture(
             output["nativeCapture"], expected_byte_length, texel_count,
             resolution_x, resolution_y, receipt_schema,
-            _derive_live_source_to_cache_light_axis_transform(basis, request),
+            _derive_live_source_to_cache_light_axis_transform(basis, request)
+            if receipt_schema == NATIVE_IMPLICIT_GRADIENT_FIELD_RECEIPT_SCHEMA else None,
+            _native_full_map_capture_plan(request, tile["coordinates"])
+            if receipt_schema == NATIVE_CUTOUT_FIELD_RECEIPT_SCHEMA
+            and basis["basis"]["policy"] == "three-r183-source-lattice-v2" else None,
         )
         for key, value in capture_counts.items():
             native_capture_totals[key] += value
@@ -1771,6 +1773,21 @@ def _validate_native_cutout_field_outputs(
     return by_tile_id, projection, native_capture_totals
 
 
+def _native_full_map_capture_plan(request: dict[str, Any], coordinates: list[int]) -> dict[str, Any]:
+    width, height = request["interiorPixels"]
+    map_width, map_height = request["sourceShadowCapability"]["mapSizeTexels"]
+    x, y = map_width - (coordinates[0] + 1) * width, coordinates[1] * height
+    if x < 0 or y < 0 or x + width > map_width or y + height > map_height:
+        fail("production_native_cutout_region_invalid", "Native foliage region exceeds its authenticated source map.")
+    return {
+        "byteLength": width * height * 4,
+        "order": "x-fastest-bottom-row-first-v1",
+        "region": {"height": height, "width": width, "x": x, "y": y},
+        "texelCount": width * height,
+        "textureSize": [map_width, map_height],
+    }
+
+
 def _validate_native_cutout_field_capture(
     capture: Any,
     byte_length: int,
@@ -1779,6 +1796,7 @@ def _validate_native_cutout_field_capture(
     height: int,
     receipt_schema: str,
     expected_axis_transform: list[list[int]],
+    expected_native_plan: dict[str, Any] | None = None,
 ) -> dict[str, int]:
     if receipt_schema in NATIVE_COMPOSED_FIELD_SCHEMAS:
         capture_keys = {"direct", "method", "textureGrad"}
@@ -1957,13 +1975,13 @@ def _validate_native_cutout_field_capture(
             "residualCorrectedTexelCount": 0,
         }
     if (
-        capture.get("plan") != {
+        capture.get("plan") != (expected_native_plan or {
             "byteLength": byte_length,
             "order": "x-fastest-bottom-row-first-v1",
             "region": {"height": height, "width": width, "x": 0, "y": 0},
             "texelCount": texel_count,
             "textureSize": [width, height],
-        }
+        })
         or capture.get("sourceProof") != {
             "attachment": "DEPTH_ATTACHMENT",
             "attachmentDepthBits": 24,
@@ -1972,7 +1990,7 @@ def _validate_native_cutout_field_capture(
             "attachmentObjectType": "TEXTURE",
             "framebufferStatus": "FRAMEBUFFER_COMPLETE",
             "sampledTextureObjectIdentity": "same-object-v1",
-            "sourceTextureCompareMode": 0,
+            "sourceTextureCompareMode": 34894 if expected_native_plan else 0,
             "temporarySamplerCompareMode": "NONE",
         }
         or capture.get("stateRestoration") != {"gl": "verified", "renderer": "verified"}
@@ -2066,17 +2084,20 @@ def _validate_request(value: Any) -> dict[str, Any]:
         "request.sourceShadowCapability",
     )
     direction = _unit_vector(value["sunPointDirectionWorld"], "request.sunPointDirectionWorld")
+    aligned_grid = _production_sun_axes(direction)[3] == "three-r183-source-lattice-v2"
+    world_extent = [960, 960] if aligned_grid else SOURCE_SHADOW_MAP_WORLD_EXTENT_METERS
+    texel_pitch = world_extent[0] / SOURCE_SHADOW_MAP_SIZE_TEXELS[0]
     if value["casterSidedness"] != CASTER_SIDEDNESS:
         fail("production_caster_sidedness_unsupported", "The authenticated caster-sidedness policy changed.", actual=value["casterSidedness"])
     pinned = {
-        "tileSizeMeters": PRODUCTION_TILE_SIZE_METERS,
+        "tileSizeMeters": [value * texel_pitch for value in PRODUCTION_INTERIOR_PIXELS],
         "interiorPixels": PRODUCTION_INTERIOR_PIXELS,
         "guardPixels": 4,
         "boundsMarginMeters": 2,
         "casterSidedness": CASTER_SIDEDNESS,
         "maxPayloadBytes": MAX_PRODUCTION_PAYLOAD_BYTES,
         "phasePolicy": PRODUCTION_PHASE_POLICY,
-        "texelSizeMeters": EXACT_TEXEL_SIZE_METERS,
+        "texelSizeMeters": texel_pitch,
     }
     if value.get("schema") != REQUEST_SCHEMA:
         fail("production_request_schema_unsupported", "The production request schema is unsupported.", actual=value.get("schema"))
@@ -2086,9 +2107,9 @@ def _validate_request(value: Any) -> dict[str, Any]:
         if value.get(field) != expected_value:
             fail("production_request_value_unsupported", "A pinned production layout value changed.", field=field, expected=expected_value, actual=value.get(field))
     expected_capability = {
-        "id": SOURCE_SHADOW_CAPABILITY_ID,
+        "id": "three-r183-calibrated-960m-16384-v1" if aligned_grid else SOURCE_SHADOW_CAPABILITY_ID,
         "mapSizeTexels": SOURCE_SHADOW_MAP_SIZE_TEXELS,
-        "worldExtentMeters": SOURCE_SHADOW_MAP_WORLD_EXTENT_METERS,
+        "worldExtentMeters": world_extent,
     }
     if value["sourceShadowCapability"] != expected_capability:
         fail(
@@ -2112,7 +2133,7 @@ def _validate_request(value: Any) -> dict[str, Any]:
         "sampleCount": 5,
         "screenRotation": "interleaved-gradient-noise-gl-fragcoord-v1",
         "shadowMapSizeTexels": SOURCE_SHADOW_MAP_SIZE_TEXELS,
-        "shadowMapWorldExtentMeters": SOURCE_SHADOW_MAP_WORLD_EXTENT_METERS,
+        "shadowMapWorldExtentMeters": world_extent,
     }
     for field, expected_value in expected_pcf.items():
         if pcf.get(field) != expected_value:
@@ -2134,11 +2155,11 @@ def _validate_request(value: Any) -> dict[str, Any]:
             actual={"rightAxisWorld": right, "upAxisWorld": up},
         )
     world_radius = pcf["radiusTexels"] * pcf["shadowMapWorldExtentMeters"][0] / pcf["shadowMapSizeTexels"][0]
-    if world_radius != SOURCE_SHADOW_FILTER_WORLD_RADIUS_METERS:
+    if world_radius != SOURCE_SHADOW_FILTER_RADIUS_TEXELS * texel_pitch:
         fail(
             "production_request_filter_radius_mismatch",
             "The effective source-shadow filter world radius changed.",
-            expected=SOURCE_SHADOW_FILTER_WORLD_RADIUS_METERS,
+            expected=SOURCE_SHADOW_FILTER_RADIUS_TEXELS * texel_pitch,
             actual=world_radius,
         )
     return {
@@ -2146,13 +2167,13 @@ def _validate_request(value: Any) -> dict[str, Any]:
         "casterSidedness": CASTER_SIDEDNESS,
         "lightingProfileId": value["lightingProfileId"],
         "sunPointDirectionWorld": direction,
-        "tileSizeMeters": PRODUCTION_TILE_SIZE_METERS,
+        "tileSizeMeters": [value * texel_pitch for value in PRODUCTION_INTERIOR_PIXELS],
         "interiorPixels": PRODUCTION_INTERIOR_PIXELS,
         "guardPixels": 4,
         "boundsMarginMeters": 2,
         "maxPayloadBytes": MAX_PRODUCTION_PAYLOAD_BYTES,
         "phasePolicy": PRODUCTION_PHASE_POLICY,
-        "texelSizeMeters": EXACT_TEXEL_SIZE_METERS,
+        "texelSizeMeters": texel_pitch,
         "sampling": {
             "bias": expected_bias,
             "pcf": {
@@ -2710,6 +2731,23 @@ def _verified_source_map_receiver_domain(
     }
 
 
+def _production_sun_axes(point_direction):
+    depth = [_clean_zero(-value) for value in _normalize(point_direction)]
+    references = ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0])
+    reference = min(enumerate(references), key=lambda item: (abs(_dot(item[1], depth)), item[0]))[1]
+    right = _normalize(_cross(reference, depth))
+    up = _normalize(_cross(depth, right))
+    policy = "least-aligned-world-axis-v1"
+    source = _derive_three_r183_filter_axes(point_direction)
+    native_axes = [source["rightAxisWorld"], source["upAxisWorld"]]
+    # Exact alpha parity requires coincident texel lattices, not rotated grids.
+    if not all(any(abs(abs(_dot(axis, other)) - 1.0) <= 1e-9 for other in native_axes) for axis in (right, up)):
+        right = [_clean_zero(-value) for value in source["rightAxisWorld"]]
+        up = source["upAxisWorld"]
+        policy = "three-r183-source-lattice-v2"
+    return right, up, depth, policy
+
+
 def _derive_basis_and_bounds(
     collection: Any,
     request: dict[str, Any],
@@ -2734,12 +2772,7 @@ def _derive_basis_and_bounds(
     maximum = [max(point[index] for point in corners) for index in range(3)]
     origin = [_clean_zero((minimum[index] + maximum[index]) * 0.5) for index in range(3)]
     point_direction = request["sunPointDirectionWorld"]
-    normalized_point_direction = _normalize(point_direction)
-    depth = [_clean_zero(-value) for value in normalized_point_direction]
-    references = ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0])
-    reference = min(enumerate(references), key=lambda item: (abs(_dot(item[1], depth)), item[0]))[1]
-    right = _normalize(_cross(reference, depth))
-    up = _normalize(_cross(depth, right))
+    right, up, depth, basis_policy = _production_sun_axes(point_direction)
     caster_projected = [
         [_dot(_subtract(point, origin), axis) for axis in (right, up, depth)]
         for point in caster_corners
@@ -2816,7 +2849,7 @@ def _derive_basis_and_bounds(
         "basis": {
             "depthAxisWorld": depth,
             "originWorld": origin,
-            "policy": "least-aligned-world-axis-v1",
+            "policy": basis_policy,
             "rightAxisWorld": right,
             "upAxisWorld": up,
         },

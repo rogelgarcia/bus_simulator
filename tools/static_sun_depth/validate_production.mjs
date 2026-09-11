@@ -16,6 +16,7 @@ import {
 import {canonicalJsonStringify} from '../../src/app/illumination/bake_source/CanonicalJson.js';
 import {
     createThreeR183DirectionalShadowFilterAxes,
+    getProductionStaticSunGrid,
     validateStaticSunDepthTileSetDescriptor
 } from '../../src/app/illumination/static_sun_depth/StaticSunDepthContract.js';
 import {
@@ -253,6 +254,7 @@ export function validateProductionDescriptorFilterIdentity(value) {
     const expectedAxes = createThreeR183DirectionalShadowFilterAxes(
         descriptor.identity.sunPointDirectionWorld
     );
+    const grid = getProductionStaticSunGrid(descriptor.identity.sunPointDirectionWorld);
     const expected = {
         bias: {
             constantDepthReliefMeters: 0.0697915,
@@ -269,7 +271,7 @@ export function validateProductionDescriptorFilterIdentity(value) {
             sampleCount: 5,
             screenRotation: 'interleaved-gradient-noise-gl-fragcoord-v1',
             shadowMapSizeTexels: [16384, 16384],
-            shadowMapWorldExtentMeters: [680, 680],
+            shadowMapWorldExtentMeters: grid.worldExtentMeters,
             sourceMapRightAxisWorld: expectedAxes.rightAxisWorld,
             sourceMapUpAxisWorld: expectedAxes.upAxisWorld
         }
@@ -300,7 +302,7 @@ export function validateProductionDescriptorFilterIdentity(value) {
             !== canonicalJsonStringify({...expected, pcf: expectedPcfWithoutAxes})
         || maximumAxisError > 1e-12
         || sampling.pcf.radiusTexels * sampling.pcf.shadowMapWorldExtentMeters[0]
-            / sampling.pcf.shadowMapSizeTexels[0] !== 0.062255859375) {
+            / sampling.pcf.shadowMapSizeTexels[0] !== 1.5 * grid.texelSizeMeters) {
         throw new Error(
             'production descriptor must match the effective Three r183 16384 filter identity'
         );

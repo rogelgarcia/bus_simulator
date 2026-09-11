@@ -2,6 +2,7 @@
 // @ts-check
 
 import { createHash } from 'node:crypto';
+import { getProductionStaticSunGrid } from '../../../src/app/illumination/static_sun_depth/StaticSunDepthContract.js';
 import {
     canonicalJsonStringify,
     cloneCanonicalJson,
@@ -53,6 +54,10 @@ export const AI531_PRODUCTION_RELEASE_PROFILE_IDS = Object.freeze([
     'ai527.sun.az315.el08',
     'ai527.sun.az315.el35'
 ]);
+export const AI531_PRODUCTION_AVAILABLE_PROFILE_IDS = Object.freeze([
+    ...AI531_PRODUCTION_RELEASE_PROFILE_IDS,
+    'ai527.sun.az045.el55'
+].sort());
 
 export const AI531_PRODUCTION_CASTER_INVENTORY = Object.freeze({
     categoryCounts: Object.freeze({
@@ -775,7 +780,8 @@ function requireReleaseSamplingPolicy(descriptor, receipt, lightingProfileId) {
         throw new Error('Authenticated receipt request is not the final profile-owned request');
     }
     const identity = requirePlainObject(descriptor.identity, 'authenticated descriptor identity');
-    const exactTexelSizeMeters = 680 / 16384;
+    const grid = getProductionStaticSunGrid(identity.sunPointDirectionWorld);
+    const exactTexelSizeMeters = grid.texelSizeMeters;
     requireCanonicalMatch(
         [1870, 1821],
         request.interiorPixels,
@@ -863,9 +869,9 @@ function requireReleaseSamplingPolicy(descriptor, receipt, lightingProfileId) {
         || pcf.sampleCount !== 5
         || pcf.screenRotation !== 'interleaved-gradient-noise-gl-fragcoord-v1'
         || canonicalJsonStringify(pcf.shadowMapSizeTexels) !== '[16384,16384]'
-        || canonicalJsonStringify(pcf.shadowMapWorldExtentMeters) !== '[680,680]'
+        || canonicalJsonStringify(pcf.shadowMapWorldExtentMeters) !== canonicalJsonStringify(grid.worldExtentMeters)
         || pcf.radiusTexels * pcf.shadowMapWorldExtentMeters[0]
-            / pcf.shadowMapSizeTexels[0] !== 0.062255859375) {
+            / pcf.shadowMapSizeTexels[0] !== 1.5 * grid.texelSizeMeters) {
         throw new Error('Authenticated descriptor differs from the effective Three r183 16384 filter');
     }
     const expectedAxes = deriveThreeR183FilterAxes(direction);
@@ -932,9 +938,9 @@ function requireReleaseSamplingPolicy(descriptor, receipt, lightingProfileId) {
         );
     }
     requireCanonicalMatch({
-        id: 'three-r183-single-high-effective-16384-v1',
-        mapSizeTexels: [16384, 16384],
-        worldExtentMeters: [680, 680]
+        id: grid.id,
+        mapSizeTexels: grid.mapSizeTexels,
+        worldExtentMeters: grid.worldExtentMeters
     }, request.sourceShadowCapability, 'authenticated request source-shadow capability');
 }
 
@@ -2845,7 +2851,7 @@ function requireCanonicalMatch(expected, actual, label) {
 function requireReleaseProfileId(value, label) {
     if (typeof value !== 'string'
         || !PROFILE_ID_PATTERN.test(value)
-        || !AI531_PRODUCTION_RELEASE_PROFILE_IDS.includes(value)) {
+        || !AI531_PRODUCTION_AVAILABLE_PROFILE_IDS.includes(value)) {
         throw new TypeError(`${label} must be one of the exact eight release profiles`);
     }
     return value;

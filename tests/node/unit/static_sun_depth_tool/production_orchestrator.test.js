@@ -70,12 +70,13 @@ test('production orchestrator independently authenticates v4 derivative axes', (
     );
 });
 
-test('production request inventory uses the exact eight non-lab release profiles', () => {
+test('production request inventory includes the calibrated afternoon profile', () => {
     const profiles = selectProductionStaticSunProfiles();
-    assert.equal(profiles.length, 8);
+    assert.equal(profiles.length, 9);
     assert.deepEqual(profiles.map((entry) => entry.id), [
         'ai527.sun.az045.el08',
         'ai527.sun.az045.el35',
+        'ai527.sun.az045.el55',
         'ai527.sun.az135.el08',
         'ai527.sun.az135.el35',
         'ai527.sun.az225.el08',
@@ -83,9 +84,10 @@ test('production request inventory uses the exact eight non-lab release profiles
         'ai527.sun.az315.el08',
         'ai527.sun.az315.el35'
     ]);
-    assert.equal(createAi531StaticSunLightProfiles().length, 9);
+    assert.equal(createAi531StaticSunLightProfiles().length, 10);
 
     for (const profile of profiles) {
+        const calibrated = profile.id === 'ai527.sun.az045.el55';
         const request = createProductionStaticSunRequest(profile);
         const filterAxes = createThreeR183DirectionalShadowFilterAxes(
             profile.directionThree
@@ -115,20 +117,20 @@ test('production request inventory uses the exact eight non-lab release profiles
                     sampleCount: 5,
                     screenRotation: 'interleaved-gradient-noise-gl-fragcoord-v1',
                     shadowMapSizeTexels: [16384, 16384],
-                    shadowMapWorldExtentMeters: [680, 680],
+                    shadowMapWorldExtentMeters: calibrated ? [960, 960] : [680, 680],
                     sourceMapRightAxisWorld: filterAxes.rightAxisWorld,
                     sourceMapUpAxisWorld: filterAxes.upAxisWorld
                 }
             },
             schema: 'ai531-static-sun-production-request-v4',
             sourceShadowCapability: {
-                id: 'three-r183-single-high-effective-16384-v1',
+                id: calibrated ? 'three-r183-calibrated-960m-16384-v1' : 'three-r183-single-high-effective-16384-v1',
                 mapSizeTexels: [16384, 16384],
-                worldExtentMeters: [680, 680]
+                worldExtentMeters: calibrated ? [960, 960] : [680, 680]
             },
             sunPointDirectionWorld: profile.directionThree,
-            texelSizeMeters: 0.04150390625,
-            tileSizeMeters: [77.6123046875, 75.57861328125]
+            texelSizeMeters: calibrated ? 0.05859375 : 0.04150390625,
+            tileSizeMeters: calibrated ? [109.5703125, 106.69921875] : [77.6123046875, 75.57861328125]
         });
     }
 });
@@ -428,7 +430,7 @@ test('dependency injection selects profiles, executes repeats, resumes peers, an
         { id: 'ai527.sun.az225.el35', repeatIndex: 1 },
         { id: 'ai527.sun.az225.el35', repeatIndex: 2 }
     ]);
-    assert.equal(calls.existing.length, 6);
+    assert.equal(calls.existing.length, 7);
     assert.equal(calls.published.length, 1);
     assert.deepEqual(
         Object.keys(calls.published[0].index.profiles),

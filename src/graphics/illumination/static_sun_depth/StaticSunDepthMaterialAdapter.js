@@ -92,7 +92,8 @@ function debugModeValue(value) {
     throw new TypeError(`Unknown static-sun-depth debug mode '${String(value)}'.`);
 }
 
-export function createStaticSunDepthShaderBinding({ descriptor, texture, debugMode = 'final' }) {
+export function createStaticSunDepthShaderBinding({ descriptor, texture, debugMode = 'final', angularDiameterDegrees = 0 }) {
+    if(!Number.isFinite(angularDiameterDegrees)||angularDiameterDegrees<0||angularDiameterDegrees>5)throw new Error('Invalid finite sun diameter');
     const validated = validateStaticSunDepthTileSetDescriptor(descriptor);
     if (!texture?.isDataArrayTexture) throw new TypeError('Static-sun depth requires a Three DataArrayTexture.');
     const layout = validated.identity.layout;
@@ -163,7 +164,7 @@ export function createStaticSunDepthShaderBinding({ descriptor, texture, debugMo
                 threeR183Filter ? 1 : 0,
                 pcf.radiusTexels,
                 threeR183Filter ? pcf.sampleCount : 0,
-                0
+                Math.tan(angularDiameterDegrees * Math.PI / 360)
             )
         },
         staticSunDepthSourceMapSizeAndExtent: {
@@ -182,6 +183,7 @@ export function createStaticSunDepthShaderBinding({ descriptor, texture, debugMo
         dynamicSunShadowWorldToClip: { value: new THREE.Matrix4() },
         dynamicSunShadowMapSizeBias: { value: new THREE.Vector4(1, 1, 0, 0) },
         dynamicSunShadowDepthRangeMeters: { value: 1 },
+        dynamicSunAngularTangent: { value: Math.tan(angularDiameterDegrees * Math.PI / 360) },
         dynamicSunShadowPointDirectionWorld: { value: dynamicPointDirectionWorld },
         dynamicSunShadowEnabled: { value: 0 }
     });
@@ -395,6 +397,10 @@ export class StaticSunDepthMaterialSet {
             throw new Error('Static-sun material set must be active before it can be suspended.');
         }
         this._binding.setEnabled(false);
+        // Keep the verified resources and registry ownership, but compile the
+        // Current shader without the inactive static/dynamic visibility loops.
+        // Combining those loops with every CSM branch can stall compilation.
+        for (const { handle } of this._handles.values()) handle.update({ enabled: false });
         this._suspended = true;
     }
 
@@ -438,7 +444,7 @@ export class StaticSunDepthMaterialSet {
     getDiagnostics() {
         return Object.freeze({
             enabled: this._enabled && !this._suspended,
-            shaderHooksEnabled: this._enabled,
+            shaderHooksEnabled: this._enabled && !this._suspended,
             suspended: this._suspended,
             rootCount: this._roots.length,
             materialCount: this._handles.size,

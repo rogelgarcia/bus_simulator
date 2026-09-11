@@ -1,0 +1,4 @@
+{
+ "$schema":"https://json-schema.org/draft/2020-12/schema","title":"AI566 experiment-only material profiles","type":"object","required":["schemaVersion","revision","publication","conversion","plausible","bounds","bakeInvalidation"],
+ "properties":{"schemaVersion":{"const":1},"revision":{"type":"string"},"publication":{"const":"experiment-only"},"conversion":{"type":"object","required":["role","phongF0","baseColor"]},"plausible":{"type":"object","required":["role","grassRoughnessRemap","buildingGlazing","bus","windowInterior"],"properties":{"bus":{"type":"object","additionalProperties":{"type":"object","required":["roughness","f0"],"properties":{"roughness":{"type":"number","minimum":0.04,"maximum":1},"f0":{"type":"number","minimum":0.01,"maximum":0.16}}}}}}}
+}

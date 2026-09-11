@@ -35,7 +35,7 @@ for module, enhanced in [(bake_surface, True), (bake, False)]:
     stage = destination / ('enhanced' if enhanced else 'preview')
     stage.mkdir(exist_ok=True)
     profile = {'pageSize': 64, 'padding': 4, 'texelSizeMeters': 2/55, 'threads': 2, 'samples': 64,
-               'diffuseBounces': 4, 'mipLevels': 2, 'device': 'CPU', 'transportPolicy': 'declared-alpha-coverage-v1',
+               'diffuseBounces': 4, 'mipLevels': 2, 'device': 'CPU', 'transportPolicy': 'declared-alpha-coverage-uv-v2',
                'directRepresentation': 'hybrid-sun-visibility-v1'}
     if enhanced:
         profile['irradianceRepresentation'] = 'surface-diffuse-v1'

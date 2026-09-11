@@ -30,7 +30,8 @@ export class BakedLightingRuntime {
         this.reason = 'waiting_for_gameplay_city';
         this.timings = {};
         this.busRevision = 0; this.busQueue = Promise.resolve();
-        this.onPageHide = () => this.cancelBusTransition();
+        this.viewRevision = 0; this.viewDirty = false; this.viewPreparing = false;
+        this.onPageHide = () => { this.cancelBusTransition(); this.viewAbort?.abort(); };
         globalThis.addEventListener?.('pagehide', this.onPageHide);
     }
 
@@ -44,7 +45,9 @@ export class BakedLightingRuntime {
         const busChanged = previous.bus.enabled !== next.bus.enabled || (next.bus.enabled
             && (previous.bus.materials !== next.bus.materials || previous.bus.probes !== next.bus.probes))
             || ['glassReflections', 'bodyReflections', 'rimShine'].some(key => previous.bus[key] !== next.bus[key]);
-        const worldChanged = previous.mode !== next.mode || previous.shadows.enabled !== next.shadows.enabled
+        const sameBakedMode = previous.mode !== 'current' && next.mode !== 'current'
+            && this.ready && !this.loading && this.effectiveMode === 'baked';
+        const worldChanged = (previous.mode !== next.mode && !sameBakedMode) || previous.shadows.enabled !== next.shadows.enabled
             || previous.receivers.indirect !== next.receivers.indirect;
         if (busChanged && !worldChanged && this.started && !this.loading
             && previous.shadows.dynamicResolution === next.shadows.dynamicResolution
@@ -105,6 +108,7 @@ export class BakedLightingRuntime {
 
     async refresh() {
         if (this.disposed) return this.getDiagnostics();
+        this.requestViewPreparation();
         this.cancelBusTransition();
         this.started = true;
         const generation = ++this.generation;
@@ -151,6 +155,29 @@ export class BakedLightingRuntime {
     shadowReady() {
         const state = this.shadows.getSnapshot();
         return state?.pendingTransition === 'baked' || state?.effectiveMode === 'baked';
+    }
+
+    requestViewPreparation() {
+        this.viewRevision++; this.viewDirty = true; this.viewError = null;
+        this.viewAbort?.abort();
+    }
+
+    shouldHoldView() {
+        return this.loading || this.viewDirty || this.viewPreparing || !!this.viewError;
+    }
+
+    prepareView() {
+        if (this.disposed || this.loading || this.viewPreparing || !this.viewDirty) return;
+        const revision = this.viewRevision, started = performance.now();
+        this.viewAbort = new AbortController();
+        this.viewDirty = false; this.viewPreparing = true;
+        this.engine.prepareLightingView(this.viewAbort.signal).then(() => {
+            if (revision === this.viewRevision) this.timings.viewPreparationMs = performance.now() - started;
+        }).catch(error => {
+            if (revision !== this.viewRevision || this.disposed || this.viewAbort.signal.aborted) return;
+            this.viewError = error.message;
+            console.error('[BakedLightingRuntime] Lighting view preparation failed.', error);
+        }).finally(() => { this.viewPreparing = false; });
     }
 
     fallback(reason) {
@@ -254,6 +281,8 @@ export class BakedLightingRuntime {
         const pipeline = shadow.pipeline?.runtime?.controller;
         const active = this.effectiveMode === 'baked';
         return { ...shadow, settings: this.getSettings(),
+            view: { ready: !this.shouldHoldView(), preparing: this.viewPreparing || this.viewDirty,
+                error: this.viewError ?? null },
             status: { requested: this.settings.mode !== 'current', requestedMode: this.settings.mode,
                 effectiveMode: this.effectiveMode, state: active ? 'active' : this.loading ? 'loading' : 'fallback',
                 causeState: this.failure, reason: this.reason,
@@ -276,6 +305,7 @@ export class BakedLightingRuntime {
     dispose(options) {
         if (this.disposed) return;
         this.disposed = true; this.generation++; this.ready = false;
+        this.viewAbort?.abort();
         globalThis.removeEventListener?.('pagehide', this.onPageHide);
         this.cancelBusTransition();
         this.bus.suspend();

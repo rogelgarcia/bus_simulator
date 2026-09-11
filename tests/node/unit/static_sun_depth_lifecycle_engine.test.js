@@ -44,10 +44,10 @@ test('updateFrame calls one captured pipeline exactly once around renderer and p
         engine.updateFrame(0.25, {render: true, nowMs: 123, rawDt: 0.5});
         assert.deepEqual(events, [
             'begin:123',
-            'staticAo',
-            'busShadow',
             'gpuBegin',
             'shadow:123',
+            'staticAo',
+            'busShadow',
             usePost ? 'postRender:0.25' : 'rendererRender',
             'gpuEnd',
             'gpuPoll',
@@ -68,7 +68,7 @@ test('renderFrame calls one captured pipeline exactly once and reuses one timest
         const timestamp = events[0].slice('begin:'.length);
         assert.equal(events[1], 'shadow:' + timestamp);
         assert.equal(events[3], 'end:' + timestamp);
-        assert.equal(events[2], usePost ? 'postRender:undefined' : 'rendererRender');
+        assert.equal(events[2], usePost ? 'postRender:0' : 'rendererRender');
     }
 });
 
@@ -536,8 +536,10 @@ function makeEngine(events, pipeline, options = {}) {
         },
         scene: {},
         camera: {},
-        renderer: {render: () => render('rendererRender')},
+        renderer: {render: () => render('rendererRender'), info: {autoReset: true, reset() {}}},
         _ensureIblBackground() {},
+        _syncAoScope() {},
+        _prepareDynamicAo() {},
         _updateStaticAo() {
             events.push('staticAo');
             if (options.throwStaticAo) throw new Error('staticAo failed');

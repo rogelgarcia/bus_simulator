@@ -296,7 +296,8 @@ test('graphics source keeps registry updates stable, current exact, and prewarm 
         adapter.indexOf('    suspend() {'),
         adapter.indexOf('    updateCamera(camera)', adapter.indexOf('    suspend() {'))
     );
-    assert.doesNotMatch(suspendBody, /handle\.update|needsUpdate/);
+    assert.match(suspendBody, /handle\.update\(\{ enabled: false \}\)/);
+    assert.doesNotMatch(suspendBody, /handle\.remove|dispose\(/);
     const cacheActivationBranch = pipeline.slice(
         pipeline.indexOf('        if (this._canReuseCachedActivation(binding, city)) {'),
         pipeline.indexOf("        this._restoreCurrent('baked_replacement');")

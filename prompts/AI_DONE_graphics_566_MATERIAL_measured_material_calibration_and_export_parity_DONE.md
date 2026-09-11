@@ -1,0 +1,38 @@
+DONE
+
+# Problem
+
+Asphalt, building textures, grass, bus surfaces and window materials have not been validated independently of illumination. A wrong albedo, color-space conversion, roughness or exporter approximation can be mistaken for a lighting problem. The earlier bus material changes also showed that a more reflective shader can unintentionally wash out paint, lift black trim or turn gray rims black.
+
+# Request
+
+Use AI 564's calibrated fixtures to audit and calibrate representative city and bus materials, preserving the accepted appearance while correcting demonstrable physical or export errors. Validate the final material profile under AI 565's daylight cases. Follow `specs/graphics/lighting_calibration.md`; supply versioned candidates to AI 567 and AI 562 rather than silently retuning the production scene.
+
+Tasks:
+
+- [x] Inventory representative dry asphalt, road markings, concrete/sidewalks, grass, brick/stone facades, glazing, bus paint, black trim and gray rims. Record source asset/material IDs, author tints, final shader inputs, texture roles, units, UV scale and renderer/exporter behavior. Inspect effective values after all runtime multipliers and shader patches, not just texture thumbnails.
+- [x] Audit sRGB versus scene-linear base color, data-map decoding, normal orientation/strength, roughness versus glossiness, metallic/dielectric classification, Fresnel/specular response and duplicated AO or illumination in color maps. Distinguish textured diffuse reflectance from the displayed image. An 18% linear reflectance swatch is not an sRGB code value of 0.18.
+- [x] Establish material-specific reference data with provenance, measurement conditions, uncertainty and license/access notes. Prefer measured reflectance/BRDF data and primary PBR documentation, such as [Cornell optical data](https://bowers.cornell.edu/computer-graphics/data), [Filament material definitions](https://google.github.io/filament/main/materials.html) and [Epic's measured base-color examples](https://dev.epicgames.com/documentation/en-us/unreal-engine/physically-based-materials-in-unreal-engine). Published asphalt/grass examples are plausibility references for those samples, not universal values for all wear, moisture, species or textures. Mark assets without measured identity as plausible approximations.
+- [x] Build matched swatch and sphere/plane comparisons under known neutral illumination, with separately measured diffuse and specular responses, several viewing/incidence angles and sunlight/shade cases. Compare game and Cycles using equivalent material semantics. Analyze grazing-angle asphalt/grass brightness in separated direct-specular and environment terms; legitimate sky reflections must not be mistaken for leaked direct sunlight. Hand shader visibility failures to AI 559/562 instead of hiding them with roughness or albedo changes.
+- [x] Calibrate supported material parameters only within defensible bounds. Retain a reversible, tracked material profile with reasons and before/after values, keeping original assets intact. Avoid stripping all specular from dielectrics or treating painted bodywork as exposed metal. Preserve blue bus paint, dark trim and gray rims; retain independent Glass reflections, Body reflections and Rim shine behavior, including stable repeated toggles. Additional city-local reflection work remains AI 551's scope.
+- [x] Define export parity for custom/procedural materials, transparent/cutout surfaces and unsupported shaders. Record approximations explicitly. Coordinate with AI 562's window-interior replacement: establish a shared deterministic gray/beige silhouette/material contract here and let AI 562 own its production exporter integration. Keep transport opacity and reflection semantics explicit; no emissive interior shortcut or white placeholder used as a calibration reference.
+- [x] Validate the resulting profile under the neutral fixtures and AI 565's selected daylight cases across all five city poses. Check material-to-material brightness ratios, highlight shape, sun/shade color and consistency of detail. Separate retained corrections from optional aesthetic variants; do not brighten every facade to match a generated target.
+- [x] Track scripts, audit schema, defaults, material profiles and exporter-equivalence definitions. Register executable stages in the existing bake hierarchy and reuse `tools/baking/blender.local.json`. Save original/candidate swatches, raw passes, reusable scenes, screenshots and analysis under `tests/artifacts/screens/ai566_material_calibration/`. Include source/material/profile identity in cache and bake invalidation; an albedo change can change bounced light elsewhere.
+- [x] Execute the audit and comparisons, then provide a correction report distinguishing verified bugs, chosen plausible materials, unresolved measurements and production integration work. Update relevant material/export specs and the calibration roadmap. Do not overwrite or auto-publish production material/bake assets.
+
+## On completion
+
+- Mark the first line DONE and rename in `prompts/` to `AI_DONE_graphics_566_MATERIAL_measured_material_calibration_and_export_parity_DONE.md` after implementation and execution. Do not archive automatically.
+- Add one high-level summary per completed change and links to the measured swatches, material profiles and unresolved limitations.
+- For changes to runtime/performance behavior, report same-condition before/after frame time, FPS and relevant CPU/GPU/workload/memory metrics, including hardware, resolution, settings, camera, warm-up, sample count and statistic. Mark unmeasured metrics with a reason. Also report actual offline stage durations.
+
+
+## Implementation and execution
+
+- Inventoried 2,054 matching source/runtime materials and 2,734 texture objects, with final GPU input probes, encoding/normal/roughness/F0 and AO/alpha diagnostics.
+- Added measured-reference provenance and uncertainty, plus versioned isolated candidates: verified generated asphalt normal-channel and Phong F0 corrections, separate optional grass/glazing/bus responses, and the deterministic opaque non-emissive interior contract.
+- Registered audit, prepare, capture, render, analyze and full workflow stages in the bake hierarchy. Preserved original source assets, shared toolchain configuration, immutable render identity and production publication boundaries.
+- Executed 19-material neutral comparisons and 30 candidate city renders across all five poses and three AI565 daylights; retained original game/Cycles references, ACESFilmic/AgX views and earlier iterations.
+- Passed 209 automated checks, five Node tests, 24 detached bus reflection combinations and all 30 comparison-page selections. Twelve grazing-angle material comparisons exceed the review band and remain explicitly unresolved renderer differences.
+- The final successful stages took approximately 13.1 minutes with authenticated audit reuse, or 15.3 minutes including the measured initial audit. Production runtime costs are unmeasured because no production rendering behavior changed.
+- [Executed results and handoff](../specs/graphics/material_calibration_results.md), [material/export contract](../specs/graphics/material_calibration.md), [workflow](../tools/bake_lighting/experiments/material_calibration/README.md), [tracked profiles](../tools/bake_lighting/experiments/material_calibration/profiles.json), [comparison report](../tests/artifacts/screens/ai566_material_calibration/runs/material-08/report/index.html), [neutral swatches and limitations](../tests/artifacts/screens/ai566_material_calibration/runs/material-08/report/fixture_metrics.json).

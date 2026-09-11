@@ -3,7 +3,7 @@
 // @ts-check
 import * as THREE from 'three';
 
-const VERSION = 1;
+const VERSION = 2;
 const QUANT = 1000;
 const MAX_CACHE_ENTRIES = 32;
 
@@ -247,8 +247,9 @@ export function getAsphaltFineTextures({
             const dhx = (height[row + xp] - height[row + xm]) * derivScale;
             const dhy = (height[yp + x] - height[ym + x]) * derivScale;
             const nx = -dhx;
-            const ny = 1.0;
-            const nz = -dhy;
+            // Tangent-space Z is the outward surface normal; X/Y encode the slopes.
+            const ny = -dhy;
+            const nz = 1.0;
             const invLen = 1.0 / Math.max(1e-6, Math.hypot(nx, ny, nz));
             const r = Math.round((nx * invLen * 0.5 + 0.5) * 255);
             const g = Math.round((ny * invLen * 0.5 + 0.5) * 255);

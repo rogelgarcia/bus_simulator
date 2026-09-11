@@ -1,13 +1,14 @@
 // src/graphics/visuals/atmosphere/AtmosphereSettings.js
 // Persisted atmosphere (analytic sky + sun placement) settings.
 // @ts-check
+import { CALIBRATED_DAYLIGHT } from '../../lighting/CalibratedDaylight.js';
 
 const STORAGE_KEY = 'bus_sim.atmosphere.v1';
 
 export const ATMOSPHERE_DEFAULTS = Object.freeze({
     sun: Object.freeze({
-        azimuthDeg: 45,
-        elevationDeg: 35
+        azimuthDeg: CALIBRATED_DAYLIGHT.azimuthDeg,
+        elevationDeg: CALIBRATED_DAYLIGHT.elevationDeg
     }),
     sky: Object.freeze({
         horizonColor: '#A8D2EE',

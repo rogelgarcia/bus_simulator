@@ -8,6 +8,8 @@ import {ILLUMINATION_VALIDATION_CASES} from '../../../../src/app/illumination/va
 import {rawSha256Hex} from '../../../../src/app/illumination/package/index.js';
 import {
     createStableStaticSunDepthBasis,
+    createProductionStaticSunDepthBasis,
+    getProductionStaticSunGrid,
     createStaticSunDepthLayerWindowEnvelope,
     createThreeR183DirectionalShadowFilterAxes
 } from '../../../../src/app/illumination/static_sun_depth/index.js';
@@ -208,8 +210,33 @@ test('production validator rejects legacy, stale-size, pitch, phase, and axis dr
     ]);
     assert.throws(
         () => validateProductionDescriptorFilterIdentity(nonPermutationAxes),
-        /source\/cache light axes are not a signed permutation/
+        /effective Three r183 16384 filter identity/
     );
+});
+
+test('high-sun production grids align with native texels while old compatible grids are unchanged', () => {
+    for (const elevation of [8, 35, 55, 65, 80]) {
+        const el = elevation * Math.PI / 180;
+        const direction = [Math.cos(el) / Math.sqrt(2), Math.sin(el), Math.cos(el) / Math.sqrt(2)];
+        const descriptor = makeProductionDescriptor(direction);
+        const grid = getProductionStaticSunGrid(direction), pitch = grid.texelSizeMeters;
+        descriptor.identity.basis = createProductionStaticSunDepthBasis(direction);
+        descriptor.identity.sampling.pcf.shadowMapWorldExtentMeters = grid.worldExtentMeters;
+        descriptor.identity.layout.texelSizeMeters = pitch;
+        descriptor.identity.layout.boundsLightMeters.max = [pitch*2,pitch*2];
+        descriptor.tiles[0].interiorBoundsLightMeters.max = [pitch*2,pitch*2];
+        assert.doesNotThrow(() => validateProductionDescriptorFilterIdentity(descriptor));
+        if (elevation < 40) assert.deepEqual(descriptor.identity.basis, createStableStaticSunDepthBasis(direction));
+        else assert.equal(descriptor.identity.basis.policy, 'three-r183-source-lattice-v2');
+        const axes = descriptor.identity.sampling.pcf;
+        const evidence = createProductionLiveTexelPhaseEvidence({descriptor,
+            sourceCameraBoundsMeters: {bottom: -grid.worldExtentMeters[0]/2, left: -grid.worldExtentMeters[0]/2,
+                right: grid.worldExtentMeters[0]/2, top: grid.worldExtentMeters[0]/2},
+            sourceCameraCenterWorld: [0, 0, 0],
+            sourceMapRightAxisWorld: axes.sourceMapRightAxisWorld,
+            sourceMapUpAxisWorld: axes.sourceMapUpAxisWorld});
+        assert.ok(evidence.maximumPhaseIndexError < 1e-9);
+    }
 });
 
 test('live texel phase evidence rejects stale axes and shifted camera grids', () => {

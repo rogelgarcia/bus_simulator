@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "ai566.materials.v1",
+  "angles": [20, 35, 80],
+  "samples": 64,
+  "fixtureSamples": 128,
+  "threads": 4,
+  "seed": 566,
+  "cityVariants": ["conversion", "plausible"],
+  "materials": [
+    {"id":"gray18","label":"18% neutral","fixture":{"color":[0.18,0.18,0.18],"roughness":1,"metalness":0,"ior":1.5,"specularIntensity":0}},
+    {"id":"asphalt","source":"MAT_4_MeshStandardMaterial","label":"Dry asphalt"},
+    {"id":"grass","source":"MAT_0_MeshStandardMaterial","label":"Grass"},
+    {"id":"marking","source":"MAT_9_MeshStandardMaterial","label":"White marking"},
+    {"id":"concrete","source":"MAT_7_MeshStandardMaterial","label":"Sidewalk"},
+    {"id":"brick","source":"MAT_48_MeshStandardMaterial","label":"Red brick"},
+    {"id":"stone","source":"MAT_81_MeshStandardMaterial","label":"Pale masonry"},
+    {"id":"glazing","source":"MAT_50_MeshPhysicalMaterial","label":"Building glazing"},
+    {"id":"interior","source":"MAT_101_MeshStandardMaterial","label":"Interior substitute"},
+    {"id":"paint","source":"MAT_2040_paint","label":"Blue paint"},
+    {"id":"trim","source":"MAT_2041_glossy","label":"Black trim"},
+    {"id":"rim","source":"MAT_2039_rimmetal","label":"Gray rim"},
+    {"id":"bus_glass","source":"MAT_2046_glass","label":"Bus glass"}
+  ],
+  "tolerances":{"neutralRelative":0.06,"lobeRelative":0.03,"directShadowFraction":0.005,"fixtureComparisonReviewRelative":0.2}
+}

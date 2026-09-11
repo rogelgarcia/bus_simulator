@@ -1,0 +1,25 @@
+{
+  "schemaVersion":1,
+  "id":"ai566.export-equivalence.v1",
+  "workingSpace":"linear Rec.709",
+  "units":"metres; Three(x,y,z) -> Blender(x,-z,y)",
+  "baseColor":"Decode sRGB once, then apply linear material/vertex/instance tint and procedural variations. Do not include AO or lightmap illumination.",
+  "dataMaps":{"roughness":"linear green channel; perceptual GGX","metalness":"linear blue channel","ao":"linear red channel; indirect visibility, not base color","normal":"linear RGB tangent normal, preserve handedness and both signed strengths","alpha":"linear opacity/mask, preserve cutoff and sidedness"},
+  "unsupported":"Unknown custom shaders fail or are explicitly unavailable. World-space wear, parallax, grass variation, anisotropic normal strength and omitted bump maps require adapters. Texture-only export is not shader parity.",
+  "windowInterior":{
+    "id":"gray-beige-silhouette-v1",
+    "selectorKeys":["windowInterior","windowFakeDepth"],
+    "size":64,
+    "seed":566,
+    "backgroundLinear":[0.18,0.16,0.13],
+    "alternateLinear":[0.12,0.12,0.12],
+    "silhouetteLinear":[0.035,0.033,0.03],
+    "roughness":0.8,
+    "ior":1.5,
+    "opacity":1,
+    "transmission":0,
+    "emission":0,
+    "semantics":"Opaque UV-tiled muted room silhouette, deterministic by UV cell. Visual substitute, not measured interiors; no emissive fill or white placeholder.",
+    "owner":"AI562 production exporter; AI566 isolated laboratory adapter"
+  }
+}

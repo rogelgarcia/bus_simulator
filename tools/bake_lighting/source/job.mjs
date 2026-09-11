@@ -7,6 +7,7 @@ import { listFiles } from '../../baking/Files.mjs';
 
 export const sourceJob = {
     id: 'lighting/source', always: true, outputs: ['source/current-city.bsib'],
+    codePaths: ['tools/bake_lighting/source'],
     description: 'Resolve current BigCity2, wait for textures, export and validate twice',
     async inputs(ctx) { return [...await listFiles(path.join(ctx.root, 'src')),
         ...await listFiles(path.join(ctx.root, 'tools/illumination_bake_exporter'))]

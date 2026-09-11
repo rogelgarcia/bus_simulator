@@ -7,19 +7,29 @@ import { assertAppliedBaseline, assertPoseMatches, verifyFiles } from '../Inputs
 import { withGameBrowser } from './GameBrowser.mjs';
 import { readGameEvidence, setGamePose, settleGameFrames } from './GameEvidence.mjs';
 
-export async function captureBaselines(ctx, prepared) {
+export async function captureBaselines(ctx, prepared, {collectMetrics=null,configurePage=null,afterCaptures=null,resourceOverrides={},validateEvidence=null}={}) {
     const started=Date.now(),{runRoot,baseline,viewport,poses}=prepared;
     const output=path.join(runRoot,'runtime',baseline.id,`${viewport.width}x${viewport.height}`);
     await mkdir(output,{recursive:true});
     const manifest={schemaVersion:1,status:'capturing',baseline:baseline.id,preparedRun:prepared.runId,
         engineRevision:prepared.engineRevision,source:prepared.source.sha256,settingsPolicy:baseline.settingsPolicy,
-        viewport,installedBakes:prepared.bakes,images:[],diagnostics:[],resourceFiles:[],startedAt:new Date(started).toISOString()};
+        viewport,installedBakes:prepared.bakes,images:[],diagnostics:[],resourceFiles:[],servedResourceOverrides:[],startedAt:new Date(started).toISOString()};
     const manifestPath=path.join(output,'baseline_manifest.json'),files=[];
+    const assertState=record=>{
+        if(validateEvidence)validateEvidence(record);
+        if(baseline.expectedMode!=='current')return assertAppliedBaseline(record,baseline.expectedSunProfile);
+        if(record.baked.status.effectiveMode!=='current'||record.baked.receiverLightmaps.effective.indirect===true)throw new Error('Current comparison retained baked indirect');
+    };
     let hashing=Promise.resolve();const seen=new Set(),pending=new Set();
     try {
         await withGameBrowser(ctx,viewport,async(page,url,browserVersion)=>{
+            if(configurePage)await configurePage(page,url);
             manifest.browserVersion=browserVersion;
-            page.on('pageerror',error=>manifest.diagnostics.push({kind:'pageerror',message:error.message}));
+            page.on('pageerror',error=>{
+                manifest.diagnostics.push({kind:'pageerror',message:error.stack??error.message});
+                // Persist render-loop failures even if a later frame wait cannot finish.
+                hashing=hashing.then(()=>writeJson(manifestPath,manifest));
+            });
             page.on('console',message=>{if(/GL_INVALID_OPERATION|INVALID_OPERATION|too many errors/i.test(message.text()))manifest.diagnostics.push({kind:'gpu-error',message:message.text()});});
             page.on('request',request=>{
                 const resource=new URL(request.url());
@@ -27,6 +37,7 @@ export async function captureBaselines(ctx, prepared) {
                 pending.add(request);
                 const relative=decodeURIComponent(resource.pathname).slice(1);
                 if(seen.has(relative))return;seen.add(relative);
+                if(resourceOverrides[relative]){manifest.servedResourceOverrides.push(resourceOverrides[relative]);return;}
                 if(relative.split('/').includes('..'))throw new Error('Unexpected resource path');
                 hashing=hashing.then(async()=>{
                     try {manifest.resourceFiles.push({file:relative,...await hashFile(path.join(ctx.root,relative))});}
@@ -43,8 +54,8 @@ export async function captureBaselines(ctx, prepared) {
             const deadline=Date.now()+baseline.readinessTimeoutSeconds*1000;
             while(true) {
                 ctx.signal.throwIfAborted();
-                const status=await page.evaluate(()=>{const e=window.__busSim.engine,d=e.getBakedLightingDebugInfo();
-                    return {ready:d.status.effectiveMode==='baked'&&d.receiverLightmaps.activationBlend===1&&!d.busLighting.transitionState,reason:d.status.reason};});
+                const status=await page.evaluate(mode=>{const e=window.__busSim.engine,d=e.getBakedLightingDebugInfo();
+                    return {ready:(mode==='current'?d.status.effectiveMode==='current':d.status.effectiveMode==='baked'&&d.receiverLightmaps.activationBlend===1)&&!d.busLighting.transitionState&&d.view?.ready!==false,reason:d.view?.error??d.status.reason};},baseline.expectedMode);
                 if(status.ready&&pending.size===0)break;
                 if(Date.now()>deadline)throw new Error(`Baseline did not become ready: ${JSON.stringify(status)}; ${pending.size} resource requests pending`);
                 await delay(250,undefined,{signal:ctx.signal});
@@ -66,7 +77,7 @@ export async function captureBaselines(ctx, prepared) {
                 const evidence=await page.evaluate(readGameEvidence);
                 manifest.lastCaptureEvidence={id:item.id,...evidence};
                 await writeJson(manifestPath,manifest);
-                assertAppliedBaseline(evidence,baseline.expectedSunProfile);assertPoseMatches(item.pose,evidence.actualPose);
+                assertState(evidence);assertPoseMatches(item.pose,evidence.actualPose);
                 if(!evidence.placement.completelyInFrame)throw new Error(`${item.id}: bus is clipped by the supplied camera; shared placement requires review`);
                 if(!evidence.placement.buildingsChecked)throw new Error('Building collision validation had no building bounds');
                 if(evidence.placement.buildingBoundsIntersections.length)throw new Error(`${item.id}: possible building intersection ${evidence.placement.buildingBoundsIntersections.join(', ')}`);
@@ -75,13 +86,15 @@ export async function captureBaselines(ctx, prepared) {
                 const image=path.join(output,`${item.id}.png`);
                 await page.locator('canvas').first().screenshot({path:image});
                 const after=await page.evaluate(readGameEvidence);
-                assertAppliedBaseline(after,baseline.expectedSunProfile);assertPoseMatches(item.pose,after.actualPose);
+                assertState(after);assertPoseMatches(item.pose,after.actualPose);
                 const record={id:item.id,busId:item.busId,requestedPose:item.pose,...evidence,
                     image:path.relative(runRoot,image).replaceAll('\\','/'),...await hashFile(image),seconds:(Date.now()-poseStart)/1000};
+                if(collectMetrics)record.performance=await collectMetrics(page,item);
                 const evidencePath=path.join(output,`${item.id}.json`);
                 await writeJson(evidencePath,record);files.push(image,evidencePath);manifest.images.push(record);
                 await writeJson(manifestPath,manifest);
             }
+            if(afterCaptures)await afterCaptures(page);
             await hashing;
         });
         await verifyFiles(ctx.root,[...prepared.bakes.files,...prepared.source.files,...prepared.configuration,...manifest.resourceFiles]);

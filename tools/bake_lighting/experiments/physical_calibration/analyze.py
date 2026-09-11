@@ -34,8 +34,8 @@ def main():
     game=json.loads((root/'game.json').read_text(encoding='utf8'))
     cycles=json.loads((root/'cycles.json').read_text(encoding='utf8'))
     refs=json.loads((root/'references/manifest.json').read_text(encoding='utf8'))
-    output=root/'report'
-    output.mkdir(exist_ok=True)
+    output=Path(sys.argv[2]) if len(sys.argv)>2 else root/'report'
+    output.mkdir(parents=True,exist_ok=True)
     available={entry['id']:entry['status']=='available' for entry in refs['downloads']}
     measurement=audit(root/'references',output,write_png,three_aces) if all(available.values()) else {'status':'unavailable','dataAcquired':False,'reason':'Missing authenticated original images or response spectra; see reference manifest','decodedImages':[]}
     save_json(output/'measured_reference.json',measurement)

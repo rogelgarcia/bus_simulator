@@ -7,11 +7,11 @@ import { encodeReceiverRgb9e5 } from '../../../src/app/illumination/receiver_lig
 
 test.use({launchOptions:{executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',args:['--use-angle=d3d11']}});
 
-async function fixture({wrongSource=false}={}) {
+async function fixture({wrongSource=false,transportPolicy='declared-alpha-coverage-v1'}={}) {
     const hash='1'.repeat(64),profileHash='2'.repeat(64),mappingHash='3'.repeat(64);
     const mapping={schema:'bus-sim-receiver-atlas-v1',pageCount:2,tableWidth:1,tableHeight:1,objects:[],
         profile:{id:'fixture.complete.v1',coverage:'complete-eligible-v1',irradianceRepresentation:'surface-diffuse-v1',
-            transportPolicy:'declared-alpha-coverage-v1',directRepresentation:'hybrid-sun-visibility-v1',
+            transportPolicy,directRepresentation:'hybrid-sun-visibility-v1',
             pageTransport:'bounded-page-shards-v1',indirectEncoding:'rgb9e5_le',pageSize:1,mipLevels:1,maxPages:2},
         statistics:{triangles:2,charts:2},coverage:{schema:'bus-sim-receiver-coverage-v1',policy:'complete-eligible-v1',complete:true,
             eligibleTriangles:2,mappedTriangles:2,requiredPages:2,transport:{complete:true,excludedParticipantMappings:0},missingReceivers:[],failures:[]}};
@@ -37,8 +37,9 @@ async function fixture({wrongSource=false}={}) {
         channel:'indirect_irradiance',sourceHash:hash,resolvedSourceHash:hash,cityId:'fixture.city',profileId:mapping.profile.id}};
 }
 
-test('Page packages require authenticated source identity and release their combined GPU allocation',async({page})=>{
-    const good=await fixture(),bad=await fixture({wrongSource:true});
+for(const transportPolicy of ['declared-alpha-coverage-v1','declared-alpha-coverage-uv-v2','declared-alpha-coverage-uv-raw-v3'])
+test('Page packages authenticate source and release GPU allocation: '+transportPolicy,async({page})=>{
+    const good=await fixture({transportPolicy}),bad=await fixture({wrongSource:true,transportPolicy});
     for(const [name,data] of [['good',good],['bad',bad]])await page.route(`**/shards/${name}/*.ilpkg.gz`,route=>route.fulfill({
         body:route.request().url().includes('.part1.')?data.childBytes:data.rootBytes,contentType:'application/octet-stream'}));
     await page.goto('/tests/headless/harness/index.html');

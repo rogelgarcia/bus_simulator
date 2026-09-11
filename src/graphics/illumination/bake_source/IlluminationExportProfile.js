@@ -3,12 +3,15 @@
 import {
     STATIC_SUN_DEPTH_CASTER_SIDEDNESS
 } from '../../lighting/EffectiveShadowSide.js';
+import { CALIBRATED_DAYLIGHT } from '../../lighting/CalibratedDaylight.js';
 
 export const ILLUMINATION_EXPORT_PROFILE_SCHEMA = 'bus-sim-illumination-export-profile-v1';
 
 export const AI531_STATIC_SUN_PROFILE_ANGLES = Object.freeze([
     Object.freeze({ azimuthDeg: 45, elevationDeg: 8 }),
     Object.freeze({ azimuthDeg: 45, elevationDeg: 35 }),
+    // Pinned decimal direction avoids browser/Node libm last-bit divergence in hashes.
+    Object.freeze({ azimuthDeg: 45, elevationDeg: 55, directionThree: Object.freeze([0.405579787672639, 0.819152044288992, 0.405579787672639]) }),
     Object.freeze({ azimuthDeg: 135, elevationDeg: 8 }),
     Object.freeze({ azimuthDeg: 135, elevationDeg: 35 }),
     Object.freeze({ azimuthDeg: 225, elevationDeg: 8 }),
@@ -59,14 +62,14 @@ function colorArray(color, label) {
 }
 
 export function createAi531StaticSunLightProfiles() {
-    return Object.freeze(AI531_STATIC_SUN_PROFILE_ANGLES.map(({ azimuthDeg, elevationDeg }) => {
+    return Object.freeze(AI531_STATIC_SUN_PROFILE_ANGLES.map(({ azimuthDeg, elevationDeg, directionThree }) => {
         const azimuth = azimuthDeg * Math.PI / 180;
         const elevation = elevationDeg * Math.PI / 180;
         const horizontal = Math.cos(elevation);
         return Object.freeze({
             id: `ai527.sun.az${String(azimuthDeg).padStart(3, '0')}.el${String(elevationDeg).padStart(2, '0')}`,
             type: 'directional_sun',
-            directionThree: Object.freeze([
+            directionThree: directionThree ?? Object.freeze([
                 Math.cos(azimuth) * horizontal,
                 Math.sin(elevation),
                 Math.sin(azimuth) * horizontal
@@ -149,6 +152,7 @@ export function createResolvedIlluminationExportProfile({ city, engine }) {
             enabled: iblEnabled,
             intensity: finite(iblSettings?.envMapIntensity ?? 0, 'ibl.envMapIntensity'),
             source: iblSource,
+            sunDiscIncluded: iblSettings?.iblId === CALIBRATED_DAYLIGHT.environmentId ? false : null,
             sourceKind: environment ? 'resolved_runtime_environment' : 'none'
         }],
         channelConfigurations: {

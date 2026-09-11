@@ -1,6 +1,6 @@
 # Physical lighting calibration
 
-Status: **AI 564 implemented and executed; AI 565–567 planned**. The [executed calibration results](physical_calibration_results.md) provide independent fixture and color-path evidence, explicit renderer failures and measured-reference limitations. This does not certify the production city or change its lighting defaults.
+Status: **AI 564–567 implemented and executed**. The [fixture/color results](physical_calibration_results.md), [daylight results](daylight_calibration_results.md), [material results](material_calibration_results.md) and [automated calibration results](automated_lighting_calibration_results.md) provide independent checks, selected candidates and the AI562 integration handoff. This does not certify the production city or change its lighting defaults.
 
 ## Goal and scope
 
@@ -13,9 +13,9 @@ An attractive image cannot uniquely identify exposure, illumination, reflectance
 | AI | Responsibility | Prerequisites | Deliverable |
 | --- | --- | --- | --- |
 | [564](../../prompts/AI_DONE_graphics_564_TESTS_physical_lighting_calibration_harness_DONE.md) | Analytical/measured harness and color-pipeline validation | Existing deterministic game and Cycles tools | Implemented: follow-up finite-sun fix passes 38/38 transport checks and 6/6 input/display checks; [results and limitations](physical_calibration_results.md) |
-| [565](../../prompts/AI_graphics_565_ATMOSPHERE_coherent_daylight_and_sky_calibration.md) | Coherent sun, sky, background and reflection calibration | 564 | Daylight profiles with physical conditions and unit mappings |
-| [566](../../prompts/AI_graphics_566_MATERIAL_measured_material_calibration_and_export_parity.md) | Material audit and calibrated export-equivalence profiles | 564; final verification with 565 | Evidence-based material candidates and documented approximations |
-| [567](../../prompts/AI_graphics_567_TOOLS_automated_lighting_calibration_and_reference_handoff.md) | Automated bounded search, comparison and handoff | 564, 565, 566 | Executed comparisons and validated candidate configuration |
+| [565](../../prompts/AI_DONE_graphics_565_ATMOSPHERE_coherent_daylight_and_sky_calibration_DONE.md) | Coherent sun, sky, background and reflection calibration | 564 | Implemented: 86 checks, three daylight profiles, all five city poses with original/neutral materials, ACESFilmic/AgX and runtime mappings; [results](daylight_calibration_results.md) |
+| [566](../../prompts/AI_DONE_graphics_566_MATERIAL_measured_material_calibration_and_export_parity_DONE.md) | Material audit and calibrated export-equivalence profiles | 564; final verification with 565 | Implemented: 209 checks, 2,054 materials audited, generated road-normal/F0 corrections, 30 city candidate renders and documented approximation limits; [results](material_calibration_results.md) |
+| [567](../../prompts/AI_DONE_graphics_567_TOOLS_automated_lighting_calibration_and_reference_handoff_DONE.md) | Automated bounded search, comparison and handoff | 564, 565, 566 | Implemented: 18 candidates, fresh five-pose baseline, 10 independent final renders, 218-image report and explicit AI562 mapping |
 | [562](../../prompts/AI_graphics_562_ATMOSPHERE_match_game_lighting_to_cycles_acesfilmic_reference.md) | Actual game/exporter/bake/shadow integration and convergence | Consume the calibration results for final tuning | Verified game improvements, compatible bakes and final comparisons |
 
 AI 566 can begin neutral-fixture work after 564 while daylight work proceeds; its final validation uses 565. AI 562's independent diagnosis can proceed earlier, but it must consume the calibrated inputs before final appearance tuning. AI 567 must not depend on AI 562 already having solved every discrepancy that its handoff is intended to expose.

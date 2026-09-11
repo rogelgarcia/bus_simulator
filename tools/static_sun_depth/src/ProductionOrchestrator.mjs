@@ -25,7 +25,8 @@ import {
     verifyIlluminationBinaryPackage
 } from '../../../src/app/illumination/package/index.js';
 import {
-    createThreeR183DirectionalShadowFilterAxes
+    createThreeR183DirectionalShadowFilterAxes,
+    getProductionStaticSunGrid
 } from '../../../src/app/illumination/static_sun_depth/StaticSunDepthContract.js';
 import { validateResolvedCityBakePackage } from '../../../src/graphics/illumination/bake_source/index.js';
 import {
@@ -56,7 +57,7 @@ import {
 } from './ProductionArtifact.mjs';
 import { buildProductionStaticSunDepthPackage } from './ProductionPackage.mjs';
 import {
-    AI531_PRODUCTION_RELEASE_PROFILE_IDS,
+    AI531_PRODUCTION_AVAILABLE_PROFILE_IDS,
     buildProductionProfileReleaseCertification,
     deriveProductionAlphaCutoutCoverageIdentity,
     validateProductionProfileReleaseCertification
@@ -129,6 +130,7 @@ const REQUIRED_PUBLICATION_FILES = Object.freeze([
 export function createProductionStaticSunRequest(profile) {
     requireProfile(profile);
     const filterAxes = createThreeR183DirectionalShadowFilterAxes(profile.directionThree);
+    const grid = getProductionStaticSunGrid(profile.directionThree);
     return cloneCanonicalJson({
         boundsMarginMeters: 2,
         casterSidedness: STATIC_SUN_DEPTH_CASTER_SIDEDNESS,
@@ -150,10 +152,10 @@ export function createProductionStaticSunRequest(profile) {
                 sampleCount: 5,
                 screenRotation: 'interleaved-gradient-noise-gl-fragcoord-v1',
                 shadowMapSizeTexels: [
-                    ...PRODUCTION_STATIC_SUN_EFFECTIVE_SHADOW_CAPABILITY.mapSizeTexels
+                    ...grid.mapSizeTexels
                 ],
                 shadowMapWorldExtentMeters: [
-                    ...PRODUCTION_STATIC_SUN_EFFECTIVE_SHADOW_CAPABILITY.worldExtentMeters
+                    ...grid.worldExtentMeters
                 ],
                 sourceMapRightAxisWorld: [...filterAxes.rightAxisWorld],
                 sourceMapUpAxisWorld: [...filterAxes.upAxisWorld]
@@ -161,24 +163,24 @@ export function createProductionStaticSunRequest(profile) {
         },
         schema: PRODUCTION_STATIC_SUN_REQUEST_SCHEMA,
         sourceShadowCapability: {
-            id: PRODUCTION_STATIC_SUN_EFFECTIVE_SHADOW_CAPABILITY.id,
+            id: grid.id,
             mapSizeTexels: [
-                ...PRODUCTION_STATIC_SUN_EFFECTIVE_SHADOW_CAPABILITY.mapSizeTexels
+                ...grid.mapSizeTexels
             ],
             worldExtentMeters: [
-                ...PRODUCTION_STATIC_SUN_EFFECTIVE_SHADOW_CAPABILITY.worldExtentMeters
+                ...grid.worldExtentMeters
             ]
         },
         sunPointDirectionWorld: [...profile.directionThree],
-        texelSizeMeters: AI531_STATIC_SUN_DEPTH_PRODUCTION_LAYOUT.texelSizeMeters,
-        tileSizeMeters: [...AI531_STATIC_SUN_DEPTH_PRODUCTION_LAYOUT.tileSizeMeters]
+        texelSizeMeters: grid.texelSizeMeters,
+        tileSizeMeters: AI531_STATIC_SUN_DEPTH_PRODUCTION_LAYOUT.interiorPixels.map(value => value * grid.texelSizeMeters)
     });
 }
 
 /** @param {readonly string[] | undefined} selectedIds */
 export function selectProductionStaticSunProfiles(selectedIds) {
     const profiles = createAi531StaticSunLightProfiles().filter((profile) =>
-        AI531_PRODUCTION_RELEASE_PROFILE_IDS.includes(profile.id));
+        AI531_PRODUCTION_AVAILABLE_PROFILE_IDS.includes(profile.id));
     if (selectedIds === undefined) return Object.freeze(profiles);
     if (!Array.isArray(selectedIds) || selectedIds.length === 0) {
         throw new TypeError('profiles must be a non-empty array when specified');
