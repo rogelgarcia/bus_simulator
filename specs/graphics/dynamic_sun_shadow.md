@@ -49,6 +49,15 @@ caster and the endpoint of each bound corner's ray on
 world shadows. A stable light basis is derived from the named static-cache sun,
 and the projection center is snapped to the configured world-space texel grid.
 
+Rigid leaf meshes reuse their geometry's local bounding box, transformed by the
+current render matrix each frame. Changing the position attribute or its upload
+version rebuilds that box (including interleaved attributes). Fitting must not
+scan every rigid vertex on every frame. The transformed box is conservative;
+world-space texel density, shadow geometry, filtering and bias stay unchanged.
+Skinned, morphing, instanced and nested mesh hierarchies retain the existing
+detailed bounds path. Regression coverage verifies bounded vertex work, complete
+coverage through translation/rotation, and refresh after geometry deformation.
+
 The v1 defaults are:
 
 | Setting | Value |

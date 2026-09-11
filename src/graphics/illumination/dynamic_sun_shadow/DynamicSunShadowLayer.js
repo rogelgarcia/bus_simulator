@@ -417,7 +417,15 @@ export class DynamicSunShadowLayer {
             for (const record of this._records) {
                 if (record.registration !== registration || !record.proxy
                     || !worldVisible(record.source, registration.root)) continue;
-                box.expandByObject(record.source, true);
+                const source = record.source, position = source.geometry.attributes.position;
+                const precise = source.isSkinnedMesh || source.isInstancedMesh
+                    || source.morphTargetInfluences?.length > 0 || source.children.length > 0;
+                const version = position?.data?.version ?? position?.version;
+                if (!precise && (record.boundsAttribute !== position || record.boundsVersion !== version)) {
+                    source.geometry.computeBoundingBox();
+                    record.boundsAttribute = position; record.boundsVersion = version;
+                }
+                box.expandByObject(source, precise);
             }
             if (box.isEmpty()) continue;
             if (!finiteBox(box)) {
@@ -482,7 +490,7 @@ export class DynamicSunShadowLayer {
             const previous = materialArray(record.material);
             if (materials.length !== previous.length || materials.some((value, i) =>
                 !materialSemanticsMatch(value, captureMaterialSemantics(previous[i])))) {
-                throw new Error('Bus material replacement changed shadow caster semantics.');
+                throw new Error('Material replacement changed shadow caster semantics.');
             }
             updates.push({ record, material, materials });
         }

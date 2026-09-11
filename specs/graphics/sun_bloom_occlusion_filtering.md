@@ -34,6 +34,14 @@ fall back to full-viewport relevance.
 
 ## Compatibility and diagnostics
 
+The authored sun-bloom defaults are strength 2.74, radius 0.49, HDR threshold
+1.10, visual disc radius 5.10 degrees, intensity 91.2 and falloff 0.85.
+Starburst is enabled with intensity 2.64, size 214 px, 17 rays, length 0.32,
+length jitter 0.14, base width 1.20 degrees and tip width 0.00 degrees.
+These visual disc parameters do not change the calibrated sun's physical
+lighting or shadow angular diameter. Saved overrides remain overrides;
+Use defaults follows the authored settings.
+
 Filtering does not change authored bloom strength, radius, threshold, disc,
 rays, shadows, static visibility, scene color visibility, or alpha-cutout
 thresholds. Camera layers, object materials, and temporary visibility changes
