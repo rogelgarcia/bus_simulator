@@ -1,0 +1,26 @@
+/* Full black cover while the first gameplay frame is prepared. */
+.gameplay-loading {
+    position: fixed;
+    inset: 0;
+    z-index: 1000000;
+    background: #000;
+    color: #b8bec5;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 28px 32px;
+    box-sizing: border-box;
+    font-size: 16px;
+}
+
+.gameplay-loading-back {
+    color: inherit;
+    background: #171b20;
+    border: 1px solid #454c55;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font: inherit;
+    cursor: pointer;
+}

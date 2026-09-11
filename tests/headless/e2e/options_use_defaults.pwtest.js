@@ -48,6 +48,7 @@ test('Use defaults clears only Options overrides and follows changed source defa
     await mkdir(output, { recursive: true });
     const button = page.getByRole('button', { name: 'Use defaults', exact: true });
     await expect(button).toBeVisible();
+    await expect(page.locator('.options-footer button').first()).toHaveText('Use defaults');
     await page.screenshot({ path: path.join(output, 'use-defaults-button.png') });
     await page.setViewportSize({ width: 600, height: 800 });
     await expect(button).toBeInViewport();
@@ -59,12 +60,21 @@ test('Use defaults clears only Options overrides and follows changed source defa
         const a = boxes[i], b = boxes[j];
         expect(a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height).toBe(false);
     }
+    page.once('dialog', async dialog => {
+        expect(dialog.type()).toBe('confirm');
+        expect(dialog.message()).toContain('clear your saved Options settings');
+        await dialog.accept();
+    });
     await button.click();
     await expect(page.locator('#ui-options')).toHaveCount(0);
     expect(await page.evaluate(() => ({ ...localStorage }))).toEqual({ 'defaults-test-unrelated': 'keep' });
 
     // Reopening and saving without edits must not pin today's defaults again.
     await openOptions(page);
+    await page.evaluate(() => window.defaultsOptions._ui.setTab('baked_lighting'));
+    for (const label of ['Enable baked indirect illumination', 'Glass reflections', 'Body reflections', 'Rim shine']) {
+        await expect(page.getByRole('checkbox', { name: label, exact: true })).toBeChecked();
+    }
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.locator('#ui-options')).toHaveCount(0);
     expect(await page.evaluate(() => localStorage.length)).toBe(1);
@@ -86,6 +96,26 @@ test('Use defaults clears only Options overrides and follows changed source defa
     await page.reload();
     await openOptions(page);
     expect(await page.evaluate(() => window.defaultsOptions._ui.getDraft().lighting.exposure)).toBe(.25);
+});
+
+test('dismissing Use defaults confirmation leaves saved, preview and unsaved settings intact', async ({ page }) => {
+    await page.goto('/tests/headless/harness/index.html');
+    await openOptions(page);
+    const before = await page.evaluate(async () => {
+        const ui = window.defaultsOptions._ui;
+        localStorage.setItem('bus_sim.lighting.v1', JSON.stringify({ exposure: .7 }));
+        ui._draftLighting.exposure = .4;
+        await ui._emitLiveChange();
+        return { saved: { ...localStorage }, draft: ui.getDraft(), lighting: window.__testHooks.getEngine().lightingSettings };
+    });
+    let confirmed = false;
+    page.once('dialog', async dialog => { confirmed = true; await dialog.dismiss(); });
+    await page.getByRole('button', { name: 'Use defaults', exact: true }).click();
+    expect(confirmed).toBe(true);
+    await expect(page.locator('#ui-options')).toHaveCount(1);
+    const after = await page.evaluate(() => ({ saved: { ...localStorage }, draft: window.defaultsOptions._ui.getDraft(),
+        lighting: window.__testHooks.getEngine().lightingSettings }));
+    expect(after).toEqual(before);
 });
 
 test('Reset stays a preview until Save, while Cancel preserves saved settings', async ({ page }) => {

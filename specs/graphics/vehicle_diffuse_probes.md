@@ -1,7 +1,7 @@
 # Vehicle materials and spatial diffuse lighting (AI 550)
 
 The Baked Lighting tab exposes independent **Glass reflections**, **Body
-reflections**, and **Rim shine** controls, default off. These use the shared global
+reflections**, and **Rim shine** controls, default on. These use the shared global
 HDRI on the existing shading model. They preserve the original base color, diffuse
 fill, direct lighting, opacity, textures and black trim. Rim shine applies to the
 City Bus's named rim material without turning its gray diffuse color into a dark

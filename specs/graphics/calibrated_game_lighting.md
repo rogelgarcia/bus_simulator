@@ -655,7 +655,10 @@ These are transition timings from the test machine, not steady-frame costs.
 
 ### Following game defaults
 
-Options has a **Use defaults** footer action. It applies all current Options
+Options has a **Use defaults** action at the far left of its footer. A
+confirmation dialog explains that saved Options overrides and unsaved edits
+will be cleared. Dismissing it leaves storage, the draft and the live preview
+untouched. On confirmation it applies all current Options
 defaults, clears the saved overrides for the fourteen Options settings groups,
 and closes the panel. It waits for lighting replacement before clearing storage;
 if Cancel supersedes the pending load, the saved overrides are retained. Other

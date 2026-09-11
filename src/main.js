@@ -28,6 +28,7 @@ import { getBusSpec } from './app/vehicle/buses/BusCatalog.js';
 import { createBus } from './graphics/assets3d/factories/BusFactory.js';
 import { preloadPortalOrnamentParts } from './graphics/assets3d/generators/building_fabrication/PortalOrnamentParts.js';
 import { createStartupSceneGate } from './states/StartupSceneGate.js';
+import { GameplayLoadingScreen } from './graphics/gui/gameplay/GameplayLoadingScreen.js';
 
 function isEditableTarget(target) {
     const el = target && typeof target === 'object' ? target : null;
@@ -72,11 +73,18 @@ sm.register('mesh_fabrication', new MeshFabricationState(engine, sm));
 sm.register('options', new OptionsState(engine, sm));
 
 const rawGo = sm.go.bind(sm);
+const gameplayLoading = new GameplayLoadingScreen(engine);
 const startup = createStartupSceneGate({
     load: () => preloadPortalOrnamentParts(null, { required: true }),
     go: (name, params) => {
-        rawGo(name, params);
-        syncLaunchScreenParam(name);
+        gameplayLoading.cancel();
+        const enter = () => {
+            rawGo(name, params);
+            syncLaunchScreenParam(name);
+            return sm.current;
+        };
+        if (name === 'game_mode') void gameplayLoading.show(enter, () => sm.go('bus_select'));
+        else enter();
     },
     onStatus: (status, error) => welcome.setStartupStatus(status, error)
 });
@@ -100,6 +108,7 @@ startup.preload();
 sm.go(launchStateName ?? 'welcome');
 
 window.addEventListener('keydown', (e) => {
+    if (gameplayLoading.active) return;
     if (isEditableTarget(e.target)) return;
     const code = e.code;
     const key = e.key;

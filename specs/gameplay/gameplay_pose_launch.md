@@ -2,6 +2,14 @@
 
 Gameplay poses make reproducible gameplay framing a first-class launch feature. Supplying a valid pose URL parameter skips the welcome and bus-selection screens, creates the requested bus, selects the requested city, and enters gameplay at that pose.
 
+## Gameplay loading
+
+Selecting a bus with Enter, Space, a pointer, or the garage gameplay shortcut runs the garage camera-focus animation, then fades completely to black. Only after the fade completes does the muted **Loading…** label appear at the bottom right. The loading cover paints before synchronous city construction begins. Direct pose launches use the same loading cover without a garage animation.
+
+The cover stays until the bus model, city world assets and environment lighting are ready and the engine reports an actual rendered gameplay frame. A frame held for shader preparation does not dismiss it. Keyboard and pointer gameplay input are blocked while covered. Leaving the transition cancels its callbacks; a construction or preparation failure keeps the cover and offers **Back to garage**.
+
+Baked shadow/indirect downloads and validation do not gate this first view. Gameplay initially uses complete live lighting while those resources load, then applies compatible baked channels together at a frame boundary. Subsequent lighting-setting transactions retain their existing coherent-frame hold. Generated loading/live/baked screenshots belong under `tests/artifacts/screens/gameplay_loading/`.
+
 ## Copying the current view
 
 Open gameplay with `debug=true` and choose **Copy camera position** in the Gameplay Debug header. This copies JSON containing the city, bus model, bus anchor world position and quaternion, and camera world position, quaternion and field of view. Paste the JSON into a bug report or pass it as the URL-encoded `gameplayPose` parameter. Captured poses launch paused with the camera locked so simulation and camera following do not move the view during inspection. This captures placement and orientation, not a full simulation/lighting-settings save; use the same viewport dimensions for identical framing.

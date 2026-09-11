@@ -15,8 +15,8 @@ export const BAKED_LIGHTING_DEFAULTS = Object.freeze({
         enabled: true,
         dynamicResolution: BAKED_DYNAMIC_SHADOW_RESOLUTIONS.high
     }),
-    receivers: Object.freeze({ direct: false, indirect: false, linked: false, enhanced: true, debug: 'final' }),
-    bus: Object.freeze({ enabled: false, materials: true, probes: true, glassReflections: false, bodyReflections: false, rimShine: false })
+    receivers: Object.freeze({ direct: false, indirect: true, linked: false, enhanced: true, debug: 'final' }),
+    bus: Object.freeze({ enabled: false, materials: true, probes: true, glassReflections: true, bodyReflections: true, rimShine: true })
 });
 
 /**

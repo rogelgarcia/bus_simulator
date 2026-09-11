@@ -750,6 +750,10 @@
     flex-basis: 100%;
 }
 
+.options-use-defaults {
+    margin-right: auto;
+}
+
 .options-btn {
     padding: 8px 10px;
     border-radius: 10px;

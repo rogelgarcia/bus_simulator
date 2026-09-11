@@ -106,8 +106,9 @@ export class BakedLightingRuntime {
         return { city, key: `${key}|${sun?.azimuthDeg}|${sun?.elevationDeg}` };
     }
 
-    async refresh() {
+    async refresh({ background = false } = {}) {
         if (this.disposed) return this.getDiagnostics();
+        this.backgroundLoading = background;
         this.requestViewPreparation();
         this.cancelBusTransition();
         this.started = true;
@@ -163,11 +164,11 @@ export class BakedLightingRuntime {
     }
 
     shouldHoldView() {
-        return this.loading || this.viewDirty || this.viewPreparing || !!this.viewError;
+        return (this.loading && !this.backgroundLoading) || this.viewDirty || this.viewPreparing || !!this.viewError;
     }
 
     prepareView() {
-        if (this.disposed || this.loading || this.viewPreparing || !this.viewDirty) return;
+        if (this.disposed || (this.loading && !this.backgroundLoading) || this.viewPreparing || !this.viewDirty) return;
         const revision = this.viewRevision, started = performance.now();
         this.viewAbort = new AbortController();
         this.viewDirty = false; this.viewPreparing = true;
@@ -181,6 +182,7 @@ export class BakedLightingRuntime {
     }
 
     fallback(reason) {
+        this.backgroundLoading = false;
         this.ready = false; this.loading = false; this.failure = causeFor(reason); this.reason = reason;
         this.receivers.suspend(reason);
         this.bus.suspend(reason);
@@ -204,9 +206,10 @@ export class BakedLightingRuntime {
         const changed = this.observed && (observed.city !== this.observed.city || observed.key !== this.observed.key);
         this.observed = observed;
         if (changed) {
+            const background = this.backgroundLoading;
             this.fallback('source_or_profile_changed');
             // Revalidate once per changed lighting configuration, never per frame.
-            void this.refresh();
+            void this.refresh({ background });
             return;
         }
         if (this.settings.receivers.indirect && !compatible) this.fallback('source_or_profile_changed');
@@ -224,6 +227,7 @@ export class BakedLightingRuntime {
         this.receivers.frameBegin(performance.now(), allow, false);
         this.bus.frameBegin(allow);
         if (allow && (!settings.receivers.indirect || this.receivers.active)) {
+            if (this.backgroundLoading) { this.backgroundLoading = false; this.requestViewPreparation(); }
             if (this.effectiveMode !== 'baked') this.timings.activationMs = performance.now() - this.loadStarted;
             this.effectiveMode = 'baked'; this.loading = false; this.reason = null;
         }

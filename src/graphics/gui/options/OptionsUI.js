@@ -193,7 +193,7 @@ export class OptionsUI {
 
         this.footer = makeEl('div', 'options-footer');
         this.resetBtn = makeEl('button', 'options-btn', 'Reset');
-        this.useDefaultsBtn = makeEl('button', 'options-btn', 'Use defaults');
+        this.useDefaultsBtn = makeEl('button', 'options-btn options-use-defaults', 'Use defaults');
         this.useDefaultsBtn.type = 'button';
         this.useDefaultsBtn.title = 'Apply and keep using game defaults. Future default changes apply after reloading. Clears saved Options overrides.';
         this.importBtn = makeEl('button', 'options-btn', 'Import');
@@ -208,6 +208,7 @@ export class OptionsUI {
 
         this.resetBtn.addEventListener('click', () => this.resetToDefaults());
         this.useDefaultsBtn.addEventListener('click', () => {
+            if (!window.confirm('Use game defaults?\n\nThis will clear your saved Options settings and discard unsaved edits. Future changes to game defaults will apply after reloading.')) return;
             this.resetToDefaults({ emit: false });
             this._resetAllRequested = false;
             this.onUseDefaults?.(this.getDraft());
@@ -217,8 +218,8 @@ export class OptionsUI {
         this.cancelBtn.addEventListener('click', () => this.onCancel?.());
         this.saveBtn.addEventListener('click', () => this.onSave?.(this.getDraft(), { reset: !!this._resetAllRequested }));
 
-        this.footer.appendChild(this.resetBtn);
         if (this.onUseDefaults) this.footer.appendChild(this.useDefaultsBtn);
+        this.footer.appendChild(this.resetBtn);
         this.footer.appendChild(this.importBtn);
         this.footer.appendChild(this.exportBtn);
         this.footer.appendChild(this.cancelBtn);

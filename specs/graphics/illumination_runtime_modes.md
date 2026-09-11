@@ -15,8 +15,12 @@ Options → Baked lighting offers Current, Baked and Auto:
 Baked preferences (shadow enablement, moving-shadow resolution and indirect
 illumination) survive Current mode, Save/Cancel/Reset and preset export/import.
 Current lighting/shadow settings and both AO parameter banks remain separate.
-Defaults retain the existing high-resolution baked-shadow preference under Auto;
-indirect remains an explicit opt-in. A distribution without packages works normally.
+Defaults select Auto with baked shadows, High moving-object shadow resolution,
+and baked indirect illumination enabled. Glass reflections, Body reflections
+and Rim shine also default on; these use the global HDRI on the existing bus
+materials. Saved custom overrides remain honored. Use defaults clears those
+overrides and follows this recipe. A distribution without compatible packages
+falls back to Current normally.
 
 The accepted AI 548 implementation is now the **only baked indirect path**. Its
 surface coverage and render optimizations are part of indirect illumination;
@@ -34,9 +38,14 @@ runtime. It reuses AI 530's existing mode/resource controller, package validatio
 shadow cache and frame ownership; there is no second renderer or resource loader.
 The shadow pipeline holds prepared activation until every selected channel is
 ready. Receiver activation follows successful shadow preparation in the same
-frame, before AO composition and visible rendering. Complete Current rendering
-continues through loading. Changing intent cancels old generations and restores
-Current before starting a new asynchronous transaction.
+frame, before AO composition and visible rendering. Gameplay entry requests
+background preparation: complete Current rendering continues through bake
+loading after the live scene's shaders are ready. The black gameplay loading
+cover waits for that first live frame, not for baked items. Baked activation
+prepares the new shaders before displaying them. Later setting changes retain
+the last coherent frame while preparing their replacement; changing intent
+cancels old generations and restores Current internally before starting a new
+asynchronous transaction.
 
 A failure or source/profile change restores the complete Current selection; a
 shadow package cannot remain active on its own when requested indirect failed.

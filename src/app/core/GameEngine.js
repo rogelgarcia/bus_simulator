@@ -810,17 +810,18 @@ export class GameEngine {
     _renderAoFrame(dt) {
         if (this._bakedLighting?.shouldHoldView()) {
             this._bakedLighting.prepareView();
-            return;
+            return false;
         }
         if (this._post?.pipeline) {
             try { this._post.pipeline.render(dt, () => this._prepareDynamicAo()); }
             finally { this._dynamicAo?.restoreBindings(); }
-            return;
+            return true;
         }
         const info = this.renderer.info, autoReset = info.autoReset;
         info.autoReset = false; info.reset();
         try { this._prepareDynamicAo(); this.renderer.render(this.scene, this.camera); }
         finally { info.autoReset = autoReset; this._dynamicAo?.restoreBindings(); }
+        return true;
     }
 
     _syncStaticAoSettings(ambientOcclusionSettings) {
@@ -1235,8 +1236,8 @@ export class GameEngine {
         return this._bakedLighting?.setSettings?.(settings) ?? Promise.resolve(null);
     }
 
-    refreshBakedLighting() {
-        return this._bakedLighting?.refresh?.() ?? Promise.resolve(null);
+    refreshBakedLighting(options) {
+        return this._bakedLighting?.refresh?.(options) ?? Promise.resolve(null);
     }
 
     reloadBakedLighting() {
@@ -1408,6 +1409,7 @@ export class GameEngine {
         const illuminationPipeline = this._illuminationPipeline;
         const gpuTimer = this._gpuFrameTimer;
         let gpuFrameBegun = false;
+        let rendered = false;
         try {
             this._bakedLighting?.prepareFrame?.();
             illuminationPipeline?.frameBegin?.({ engine: this, dt: stepDt, nowMs: now });
@@ -1418,7 +1420,7 @@ export class GameEngine {
             this._syncAoScope();
             this._updateStaticAo();
             this._updateBusContactShadow(stepDt);
-            this._renderAoFrame(stepDt);
+            rendered = this._renderAoFrame(stepDt);
         } finally {
             try {
                 if (gpuFrameBegun) {
@@ -1436,7 +1438,7 @@ export class GameEngine {
         if (!this._frameListeners.size) return;
         for (const fn of this._frameListeners) {
             try {
-                fn({ dt: stepDt, rawDt: measuredDt, nowMs: now, renderer: this.renderer, engine: this });
+                fn({ dt: stepDt, rawDt: measuredDt, nowMs: now, renderer: this.renderer, engine: this, rendered });
             } catch (err) {
                 console.warn('[GameEngine] Frame listener error:', err);
                 this._frameListeners.delete(fn);

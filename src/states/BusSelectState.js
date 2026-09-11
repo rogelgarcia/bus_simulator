@@ -12,10 +12,8 @@ import { tuneBusMaterials } from '../graphics/assets3d/factories/tuneBusMaterial
 import { fadeOut } from '../graphics/gui/shared/utils/screenFade.js';
 
 const TRANSITION = {
-    shuffleSec: 1.4,
     focusSec: 1.8,
-    fadeOutSec: 1.2,
-    fadeTimeoutMs: 3000
+    fadeOutSec: 1.2
 };
 
 const GARAGE = {
@@ -76,10 +74,6 @@ function makeVehicleAnchor(model) {
     }
 
     return anchor;
-}
-
-function wait(ms) {
-    return new Promise((r) => setTimeout(r, ms));
 }
 
 function tweenPromise(opts) {
@@ -368,11 +362,7 @@ export class BusSelectState {
 
     _selectBusToGameplay(bus) {
         if (this._isSelecting) return;
-        this._isSelecting = true;
-
-        this.engine.context.selectedBus = bus;
-
-        this.sm.go('game_mode');
+        this._selectBus(bus);
     }
 
     _moveActive(delta) {
@@ -462,12 +452,7 @@ export class BusSelectState {
 
     async _runSelectionSequence(bus) {
         await this._focusCameraOn(bus);
-
-        await Promise.race([
-            fadeOut({ duration: TRANSITION.fadeOutSec }),
-            wait(TRANSITION.fadeTimeoutMs)
-        ]);
-
+        await fadeOut({ duration: TRANSITION.fadeOutSec });
         this.sm.go('game_mode');
     }
 

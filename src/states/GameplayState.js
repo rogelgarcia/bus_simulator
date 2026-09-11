@@ -296,7 +296,7 @@ export class GameplayState {
 
         if (!this.vehicle) {
             console.warn('[GameplayState] No selectedBus. Did BusSelectState set it?');
-            void this.engine.refreshBakedLighting?.();
+            void this.engine.refreshBakedLighting?.({ background: true });
             this._updateChaseCamera(999);
             window.addEventListener('keydown', this._onKeyDown, { passive: false });
             fadeIn({ duration: 1.2 });
@@ -502,7 +502,7 @@ export class GameplayState {
             cast: true,
             receive: true
         }) ?? null;
-        void this.engine.refreshBakedLighting?.();
+        void this.engine.refreshBakedLighting?.({ background: true });
     }
 
     pause({ nextName = null } = {}) {

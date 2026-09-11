@@ -109,6 +109,7 @@ test('Previous and Calibrated switch the real game without displaying incomplete
     expect(await page.evaluate(() => window.__busSim.engine.lightingSettings.ibl.iblId)).toBe('ibl.calibrated.clear_afternoon_55');
     await openLighting(page);
     await page.screenshot({ path: path.join(output, '5-use-defaults-button.png') });
+    page.once('dialog', dialog => dialog.accept());
     await page.getByRole('button', { name: 'Use defaults', exact: true }).click();
     await expect(page.locator('#ui-options')).toHaveCount(0);
     const defaults = await page.evaluate(async () => {
