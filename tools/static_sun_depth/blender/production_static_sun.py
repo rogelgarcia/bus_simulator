@@ -2085,13 +2085,14 @@ def _validate_request(value: Any) -> dict[str, Any]:
     )
     direction = _unit_vector(value["sunPointDirectionWorld"], "request.sunPointDirectionWorld")
     aligned_grid = _production_sun_axes(direction)[3] == "three-r183-source-lattice-v2"
-    world_extent = [960, 960] if aligned_grid else SOURCE_SHADOW_MAP_WORLD_EXTENT_METERS
+    world_extent = [864, 864] if aligned_grid else SOURCE_SHADOW_MAP_WORLD_EXTENT_METERS
+    interior_pixels = [2040, 2040] if aligned_grid else PRODUCTION_INTERIOR_PIXELS
     texel_pitch = world_extent[0] / SOURCE_SHADOW_MAP_SIZE_TEXELS[0]
     if value["casterSidedness"] != CASTER_SIDEDNESS:
         fail("production_caster_sidedness_unsupported", "The authenticated caster-sidedness policy changed.", actual=value["casterSidedness"])
     pinned = {
-        "tileSizeMeters": [value * texel_pitch for value in PRODUCTION_INTERIOR_PIXELS],
-        "interiorPixels": PRODUCTION_INTERIOR_PIXELS,
+        "tileSizeMeters": [value * texel_pitch for value in interior_pixels],
+        "interiorPixels": interior_pixels,
         "guardPixels": 4,
         "boundsMarginMeters": 2,
         "casterSidedness": CASTER_SIDEDNESS,
@@ -2107,7 +2108,7 @@ def _validate_request(value: Any) -> dict[str, Any]:
         if value.get(field) != expected_value:
             fail("production_request_value_unsupported", "A pinned production layout value changed.", field=field, expected=expected_value, actual=value.get(field))
     expected_capability = {
-        "id": "three-r183-calibrated-960m-16384-v1" if aligned_grid else SOURCE_SHADOW_CAPABILITY_ID,
+        "id": "three-r183-calibrated-864m-16384-v2" if aligned_grid else SOURCE_SHADOW_CAPABILITY_ID,
         "mapSizeTexels": SOURCE_SHADOW_MAP_SIZE_TEXELS,
         "worldExtentMeters": world_extent,
     }
@@ -2167,8 +2168,8 @@ def _validate_request(value: Any) -> dict[str, Any]:
         "casterSidedness": CASTER_SIDEDNESS,
         "lightingProfileId": value["lightingProfileId"],
         "sunPointDirectionWorld": direction,
-        "tileSizeMeters": [value * texel_pitch for value in PRODUCTION_INTERIOR_PIXELS],
-        "interiorPixels": PRODUCTION_INTERIOR_PIXELS,
+        "tileSizeMeters": [value * texel_pitch for value in interior_pixels],
+        "interiorPixels": interior_pixels,
         "guardPixels": 4,
         "boundsMarginMeters": 2,
         "maxPayloadBytes": MAX_PRODUCTION_PAYLOAD_BYTES,

@@ -1,5 +1,30 @@
 # Offline bake framework
 
+The explicit `lighting/shadows/streamed/five-pose-review` diagnostic reuses the
+five authored AI560 camera poses and their shared bus placement. It holds current
+calibrated lighting and indirect illumination fixed while comparing Single/High,
+parent-only baked shadows and fine baked shadows. Two fresh sequential browsers
+and balanced repeated passes produce immutable game captures, per-frame CPU/GPU
+records, p1/p99 thresholds, draw counters and logical shadow-allocation estimates.
+GPU query results must be associated with their original submission rather than
+repeated as a last-known sample. Generated data and images stay under
+`tests/artifacts/screens/`; this diagnostic cannot publish assets or change defaults.
+
+AI 547 adds explicit `lighting/shadows/streamed/prototype` and `/review` leaves.
+They share the configured browser, keep artifacts under
+`tests/artifacts/screens/illumination_547/`, and cannot publish. The prototype
+authenticates the installed complete parent and independently resolves current
+static source identity before capturing actual three-times-density native depth.
+See `tools/bake_lighting/shadows/streamed/README.md` for parameters and remaining
+full-city/performance acceptance gates.
+
+Calibrated static sun bakes default to the versioned864m/16384 source lattice
+(5.2734375cm/texel),2040-square tile interiors and four guard texels per edge.
+The historical680m lattice remains unchanged. Shadow-only candidates can be
+tested and installed with an existing validated receiver run through the
+reference-matching `shadow-run` option; all source, coverage, native parity,
+memory, actual-game capture and installation checks remain enforced.
+
 The canonical entry point is `node tools/bake.mjs`. User setup, complete supported
 inventory, commands and recovery are documented in
 [`tools/baking/README.md`](../../tools/baking/README.md).
@@ -190,6 +215,13 @@ stages only when source, settings and recipe identity match. See
 
 ## Verification
 
+`lighting/experiments/reference-matching/pose-comparison` accepts a single exact
+paused gameplay pose, a new artifact output directory and an authenticated
+afternoon source. It reuses baseline readiness/pose checks and the scene export
+projection check, with camera and bus counts matched to the supplied pose set.
+The canonical five-view resolver and publication gates remain mandatory for
+production. This leaf never publishes and emits two images without a gallery.
+
 AI562 also registers `lighting/experiments/reference-matching/transport-reference`
 and `transport-textures`. They isolate the primary diffuse transport model and
 test raw texture values through native Cycles, respectively. Both require new
@@ -203,6 +235,13 @@ jobs. The parent validates the two irradiance passes and visibility data before
 atomic publication. Layout and quality are tracked in its `defaults.json`; all
 entrypoints reuse the shared ignored Blender configuration. See
 `specs/graphics/vehicle_diffuse_probes.md` for the consumer contract.
+
+Enhanced surface preparation also accepts scoped `texel-size` values `0.5`
+(default), `0.33`, and `0.25` metres. Finer profiles permit eleven atlas pages,
+subject to complete receiver coverage and the unchanged 1 GiB runtime budget;
+individual package shards remain below 512 MiB. Resolution is authenticated in
+the shared pass profile and retained by reprocessing. Samples remain independent
+of spatial resolution. Static sun depth retains its certified source lattice.
 
 `tests/node/unit/bake_framework.test.js` covers bootstrap, option inheritance,
 graph errors, hashes/reuse, child failure, cancellation and terminal behavior.

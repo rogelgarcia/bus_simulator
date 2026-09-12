@@ -72,14 +72,24 @@ is checked against the source grid; this avoids a separate tile rasterizer's
 alpha-edge discrepancies. Diagnostic jobs never mint a production certificate.
 
 At55°, the production basis uses `three-r183-source-lattice-v2` to align the
-cache with the native shadow camera. Its960m/16384 grid has a5.859375cm pitch,
-with unchanged512MiB container and64MiB chunk limits. Existing compatible
+cache with the native shadow camera. Its default864m/16384 grid has a5.2734375cm
+pitch, with2040-square tile interiors and2048-square stored tiles. This replaces
+the960m/16384 grid (5.859375cm pitch); full-city coverage, the512MiB container and
+64MiB chunk limits remain enforced. Existing compatible
 low-angle profiles retain their680m/16384 grid and original basis. Native
 validation derives its grid from the same authenticated profile contract.
 
 The `production` parent adds the bake dependencies to the same shared runner;
 it does not start a nested bake process or bypass the lock. Installation is a
 separate final step so rejected candidates cannot replace the installed indexes.
+
+For a shadow-only rebake, `capture` and `install` accept `shadow-run` alongside
+`candidate-run`. The former supplies a completed framework shadow run; the latter
+supplies the existing validated receiver run. Both summaries and package indexes
+are hashed into the capture receipt. The receiver publication validator, exact
+runtime source matching, five-pose capture, native validation and transition gates
+remain required. This lets a shadow-density change reuse the installed-quality
+indirect maps without rerendering their independent light transport.
 
 Every iteration uses a new immutable directory. An interrupted stage is preserved;
 choose a new iteration instead of overwriting partial images. Complete receipts

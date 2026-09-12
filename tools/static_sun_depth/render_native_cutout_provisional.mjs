@@ -149,7 +149,7 @@ async function run(argv = process.argv.slice(2)) {
                 '--native-cutout-field-receipt-sha256', nativeField.sha256,
                 '--allow-unpromoted-native-cutout-field',
                 '--output-encoding', 'rg8',
-                '--row-strip-pixels', '1821'
+                '--row-strip-pixels', String(request.interiorPixels[1])
             ],
             timeoutMs: options.timeoutMs
         });

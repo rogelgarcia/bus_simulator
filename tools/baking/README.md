@@ -50,10 +50,11 @@ The first implementation executes sequentially, including Blender and browser jo
 | `materials/grass` | Grass V2 far maps and separate blade/clump atlases, including their AO maps | Existing calibrated 1024px recipe; validated proposal, existing gameplay review retained |
 | `lighting/source` | Current BigCity2 resolved source, ready textures and repeated deterministic BSIB export | Always refresh; once for the requested tree |
 | `lighting/shadows/candidates` | Authenticated Blender candidate lattices | Shared preparation for native foliage capture |
+| `lighting/shadows/streamed/city`, `/prototype`, `/review`, `/publish`, `/parent-control`, `/filter-review`, `/toggle-review` | Authenticated native 3x detail pages, bounded complete-city generation, route and shader comparisons | Explicit leaves; generation stages only, publication requires complete coverage and a matching cold/warm review; complete installed parent and its gates retained; [workflow](../bake_lighting/shadows/streamed/README.md) |
 | `lighting/shadows/cutouts` | Source-derived direct Depth24 foliage fields needed by the shadow compiler | Maintained accepted-caster pipeline; all eight certified sun profiles by default |
 | `lighting/shadows/provisional` | Compose opaque depth and native foliage into validation descriptors | Intermediate only; prepares parity evidence |
 | `lighting/shadows/parity` | Authenticate native foliage against the live reference | Required proof for mipmapped/anisotropic cutouts before packing |
-| `lighting/shadows` | Static sun depth maps | Existing 16384/680m production contract, CPU, one sample; validated development candidate, strict release gate retained |
+| `lighting/shadows` | Static sun depth maps | 16384 source map: 680m historical grid, 864m calibrated high-sun grid; CPU, one sample; validated development candidate, strict release gate retained |
 | `lighting/illumination/prepare` | Complete opaque-surface UV layout and receiver atlas | 4096px pages, 0.5m texels, up to nine pages, unchanged complete-coverage contract |
 | `lighting/occlusion` | Sun-free occluded sky irradiance | Separate independently authenticated Cycles pass; consumed by enhanced indirect lighting |
 | `lighting/illumination/indirect` | Indirect diffuse bounce from all contributing static surfaces | 896 samples, CPU by default; excludes runtime-only receivers according to existing transport rules |
@@ -118,7 +119,18 @@ node tools/bake.mjs --timeout-seconds 1800
 
 Cycles samples (1–4096) and resolution are separate controls. Samples do not change
 the fixed shadow-depth lattice. The enhanced backend supports CPU or OPTIX;
-unsupported devices fail rather than silently falling back. Cycles settings belong
+unsupported devices fail rather than silently falling back.
+`--set lighting/illumination:texel-size=0.33` selects 33 cm surface texels instead
+of the default 50 cm. The 25 cm option is also available for cities that fit.
+Finer layouts permit at most eleven 4096² pages; complete coverage
+and the existing 1 GiB runtime allocation / 512 MiB per-container limits must
+still pass before rendering. For example, use `--target lighting/illumination
+--samples 512 --device OPTIX --set lighting/illumination:texel-size=0.33
+--set lighting/shadows:profile=ai527.sun.az045.el55` to create a calibrated
+candidate. Validate it through reference-matching capture/native-validation and
+install gates before switching live indexes. Reprocessing preserves the original
+texel size and page budget.
+Cycles settings belong
 to the preparation job because sibling passes share its authenticated profile.
 Pass entry points accept common options, and parent scopes apply to preparation.
 Conflicting or unused leaf-specific overrides are rejected, not ignored.
@@ -175,6 +187,15 @@ another baking process. Legacy commands remain compatibility interfaces to the
 same implementations; the hierarchy is the preferred entry point.
 
 ## Verification
+
+For a supplied gameplay pose, use `lighting/experiments/reference-matching/pose-comparison`
+with leaf options `pose=<pose.json>`, `source-run=<authenticated afternoon run>` and
+`output=tests/artifacts/screens/ai562_acesfilmic_reference_matching/<new-name>`.
+It captures current game defaults with applied 55-degree bakes, exports the actual
+city and bus, and renders one matching 1920x1080 Cycles image with ACESFilmic.
+The two images are `game.png` and `cycles.png`; no gallery is generated. Its
+diagnostic receipt cannot authorize publication or replace the five-view gates.
+It uses an isolated background Blender process and the shared local toolchain.
 
 Select `tests/node/unit/bake_framework.test.js` in `tests/.selected_test`, then run
 `node tools/run_selected_test/run.mjs`. Related suites are

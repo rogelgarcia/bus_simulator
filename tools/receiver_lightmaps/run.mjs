@@ -27,7 +27,8 @@ if (args.has('--help')) {
     console.log('Usage: node tools/receiver_lightmaps/run.mjs [--enhanced true --layout receiver-layout.json --device CPU|OPTIX] [--atlas-only true] [--input source.bsib] [--output tests/artifacts/.../bake] [--pages 4] [--samples 64] [--blender existing-blender.exe] [--archive existing-blender.zip | --installed true] [--resume partial-directory | --reprocess recovered-publication-directory]');
     process.exit(0);
 }
-for (const [key, value] of args) if (!['--input', '--output', '--pages', '--samples', '--blender', '--archive', '--resume', '--reprocess', '--enhanced', '--atlas-only', '--installed', '--layout', '--device', '--prepare-only'].includes(key) || !value) throw new Error('Unknown or incomplete option: ' + key);
+for (const [key, value] of args) if (!['--input', '--output', '--pages', '--samples', '--blender', '--archive', '--resume', '--reprocess', '--enhanced', '--atlas-only', '--installed', '--layout', '--device', '--prepare-only', '--texel-size'].includes(key) || !value) throw new Error('Unknown or incomplete option: ' + key);
+if (args.has('--texel-size') && (args.get('--enhanced') !== 'true' || !['0.5', '0.33', '0.25'].includes(args.get('--texel-size')))) throw new Error('Enhanced texel size must be 0.5, 0.33 or 0.25 metres.');
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const json = (value) => JSON.stringify(value);
 const input = path.resolve(args.get('--input') ?? 'tests/artifacts/illumination_528/ai533_v3/bigcity2.bsib');
@@ -58,7 +59,7 @@ if (args.get('--enhanced') === 'true') Object.assign(profile, {
     device: args.get('--device') ?? 'CPU',
     targetBatching: 'joined-receivers-v1', rasterCoverage: 'continuous-planar-surfaces-v1',
     pageTransport: 'bounded-page-shards-v1',
-    pageSize: 4096, texelSizeMeters: .5, padding: 2, mipLevels: 2, compact: true,
+    pageSize: 4096, texelSizeMeters: Number(args.get('--texel-size') ?? .5), padding: 2, mipLevels: 2, compact: true,
     maxPages: Number(args.get('--pages') ?? 9)
 });
 const surface = profile.irradianceRepresentation === 'surface-diffuse-v1';

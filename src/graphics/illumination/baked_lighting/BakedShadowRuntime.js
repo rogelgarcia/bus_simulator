@@ -78,6 +78,7 @@ export class BakedShadowRuntime {
         const enabledChanged = next.shadows.enabled !== this._settings.shadows.enabled;
         const resolutionChanged = next.shadows.dynamicResolution !== this._settings.shadows.dynamicResolution;
         this._settings = next;
+        this._pipeline?.setStreamedDetailEnabled(next.shadows.streamedDetail);
         if (resolutionChanged && this._pipeline) {
             this._pipeline.setDynamicShadowResolution(dynamicShadowResolutionFor(next));
         }
@@ -153,6 +154,7 @@ export class BakedShadowRuntime {
         this._requestKey = requestKey;
         this._liveIdentity = selection.liveIdentity;
         const pipeline = this._ensurePipeline();
+        pipeline.setStreamedDetailEnabled(this._settings.shadows.streamedDetail);
         this._status = freezeStatus({
             requested: true,
             state: 'loading',

@@ -56,7 +56,8 @@ export class BakedLightingRuntime {
         }
         const intentChanged = worldChanged || busChanged;
         if (intentChanged || !this.started) return this.refresh();
-        if (previous.shadows.dynamicResolution !== next.shadows.dynamicResolution) {
+        if (previous.shadows.dynamicResolution !== next.shadows.dynamicResolution
+            || previous.shadows.streamedDetail !== next.shadows.streamedDetail) {
             try { await this.shadows.setSettings(this.childSettings()); }
             catch (error) { this.fallback(error.message); }
         }

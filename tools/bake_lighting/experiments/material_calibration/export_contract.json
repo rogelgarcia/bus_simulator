@@ -6,6 +6,26 @@
   "baseColor":"Decode sRGB once, then apply linear material/vertex/instance tint and procedural variations. Do not include AO or lightmap illumination.",
   "dataMaps":{"roughness":"linear green channel; perceptual GGX","metalness":"linear blue channel","ao":"linear red channel; indirect visibility, not base color","normal":"linear RGB tangent normal, preserve handedness and both signed strengths","alpha":"linear opacity/mask, preserve cutoff and sidedness"},
   "unsupported":"Unknown custom shaders fail or are explicitly unavailable. World-space wear, parallax, grass variation, anisotropic normal strength and omitted bump maps require adapters. Texture-only export is not shader parity.",
+  "dryGrass":{
+    "id":"city-dry-grass-aggregate-v1",
+    "selector":"TerrainGenerator CityFloor and GroundTiles meshes only, with Standard/Physical source materials.",
+    "minimumRoughness":0.9,
+    "semantics":"Offline dry lawn aggregate approximation. Remap effective linear roughness into [0.9,1], preserve map variation, UVs, base color and normal maps; nonmetallic. Replaces runtime environment suppression with a broad physical lobe, not measured blade-scale BRDF parity."
+  },
+  "legacyBus":{
+    "id":"city-bus-restrained-ggx-v1",
+    "selector":"Exact legacy Phong material names on bus meshes only; authored Standard/Physical materials are preserved.",
+    "semantics":"Offline appearance approximation. Phong highlight coefficients are not measured dielectric reflectance. Preserve all authored color, texture, alpha and emission inputs; use restrained GGX lobes instead of promoting bright Phong highlights to mirror-like reflection. City materials are unaffected.",
+    "materials":{
+      "paint":{"roughness":0.34,"ior":1.5,"specularIntensity":0.625},
+      "glossy":{"roughness":0.62,"ior":1.5,"specularIntensity":0.15},
+      "plastic":{"roughness":0.7,"ior":1.5,"specularIntensity":0.15},
+      "tire":{"roughness":0.88,"ior":1.5,"specularIntensity":0.5},
+      "rimmetal":{"roughness":0.3,"ior":1.5,"specularIntensity":1}
+    },
+    "preserved":"Glass and mirrors retain their separate existing translations. No invented clearcoat, transmission or emissive fill. Rim base color stays gray.",
+    "basis":"Paint roughness/F0 and restrained black-trim response follow the runtime bus reflection/material profiles; this does not claim equality between Phong, global HDRI reflection and scene-dependent Cycles reflection."
+  },
   "windowInterior":{
     "id":"gray-beige-silhouette-v1",
     "selectorKeys":["windowInterior","windowFakeDepth"],

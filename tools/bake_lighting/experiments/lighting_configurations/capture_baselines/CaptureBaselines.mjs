@@ -105,9 +105,9 @@ export async function captureBaselines(ctx, prepared, {collectMetrics=null,confi
         manifest.status='validated';manifest.captureSeconds=(Date.now()-started)/1000;
         manifest.totalSeconds=(Date.now()-Date.parse(prepared.startedAt))/1000;manifest.finishedAt=new Date().toISOString();
         await writeJson(manifestPath,manifest);
-        await writeJson(path.join(runRoot,'manifest.json'),{...prepared,status:'baseline_complete',livePlacementValidation:'passed all five views',baselineManifest:manifestPath,
+        await writeJson(path.join(runRoot,'manifest.json'),{...prepared,status:'baseline_complete',livePlacementValidation:`passed all ${poses.length} views`,baselineManifest:manifestPath,
             totalSeconds:manifest.totalSeconds,completedStages:['prepare','capture_baselines'],pendingStages:['export_city','render','postprocess','analyze','report']});
-        ctx.log.line(ctx.id,`Five baselines validated in ${manifest.totalSeconds.toFixed(1)}s including preparation; ${manifest.captureSeconds.toFixed(1)}s capture stage. ${manifestPath}`,'success');
+        ctx.log.line(ctx.id,`${poses.length} baselines validated in ${manifest.totalSeconds.toFixed(1)}s including preparation; ${manifest.captureSeconds.toFixed(1)}s capture stage. ${manifestPath}`,'success');
         return {state:'validated',manifest:manifestPath,files:[...files,manifestPath,path.join(runRoot,'manifest.json')]};
     } catch(error) {
         await hashing.catch(()=>{});manifest.status='failed';manifest.error=error.message;manifest.elapsedSeconds=(Date.now()-started)/1000;

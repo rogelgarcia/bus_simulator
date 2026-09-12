@@ -96,6 +96,7 @@ highp float staticSunDepthCompareGlobalTexel(
         decoded.x - staticSunDepthQuantizationSafetyMargin ) );
 }
 
+highp vec2 staticSunDepthPlaneSlopeTexels = vec2(0.0);
 highp float staticSunDepthLinearCompare(
     highp vec2 globalCoordinate,
     highp float comparisonDepth,
@@ -105,27 +106,52 @@ highp float staticSunDepthLinearCompare(
     highp vec2 linearPosition = globalCoordinate - 0.5;
     highp ivec2 base = ivec2( floor( linearPosition ) );
     highp vec2 fraction = fract( linearPosition );
+    // Production RG8 path: resolve the page once for all four comparisons.
+    // Authenticated guards contain the adjacent texels, including tile seams.
+    highp ivec2 interior = ivec2(staticSunDepthLayout.xy);
+    highp ivec2 globalSize = interior * ivec2(staticSunDepthTileCount);
+    if (staticSunDepthEncodingMode == 0 && staticSunDepthDebugMode == 0
+        && staticSunDepthLayout.z >= 1.0 && all(greaterThanEqual(base, ivec2(0)))
+        && all(lessThan(base + 1, globalSize))) {
+        highp ivec2 tile = base / interior;
+        highp ivec2 local = base - tile * interior + ivec2(staticSunDepthLayout.zz);
+        int layer = tile.y * int(staticSunDepthTileCount.x) + tile.x;
+        highp vec2 unpack = vec2(65280.0, 255.0);
+        highp vec4 codes = floor(vec4(
+            dot(texelFetch(staticSunDepthTiles, ivec3(local, layer), 0).rg, unpack),
+            dot(texelFetch(staticSunDepthTiles, ivec3(local + ivec2(1,0), layer), 0).rg, unpack),
+            dot(texelFetch(staticSunDepthTiles, ivec3(local + ivec2(0,1), layer), 0).rg, unpack),
+            dot(texelFetch(staticSunDepthTiles, ivec3(local + ivec2(1,1), layer), 0).rg, unpack)
+        ) + 0.5);
+        highp float plane = comparisonDepth + dot(vec2(base) + 0.5 - globalCoordinate, staticSunDepthPlaneSlopeTexels);
+        highp vec4 receivers = plane + vec4(0.0, staticSunDepthPlaneSlopeTexels.x,
+            staticSunDepthPlaneSlopeTexels.y, staticSunDepthPlaneSlopeTexels.x + staticSunDepthPlaneSlopeTexels.y);
+        highp vec4 thresholds = (receivers - staticSunDepthDepthRange.x)
+            * (65534.0 / (staticSunDepthDepthRange.y - staticSunDepthDepthRange.x)) + 0.375;
+        highp vec4 visible = max(step(thresholds, codes), step(vec4(65534.5), codes));
+        return mix(mix(visible.x, visible.y, fraction.x), mix(visible.z, visible.w, fraction.x), fraction.y);
+    }
     highp float lowerLeft = staticSunDepthCompareGlobalTexel(
         base,
-        comparisonDepth,
+        comparisonDepth + dot(vec2(base) + 0.5 - globalCoordinate, staticSunDepthPlaneSlopeTexels),
         occupiedSamples,
         reconstructedDepth
     );
     highp float lowerRight = staticSunDepthCompareGlobalTexel(
         base + ivec2( 1, 0 ),
-        comparisonDepth,
+        comparisonDepth + dot(vec2(base) + vec2(1.5, 0.5) - globalCoordinate, staticSunDepthPlaneSlopeTexels),
         occupiedSamples,
         reconstructedDepth
     );
     highp float upperLeft = staticSunDepthCompareGlobalTexel(
         base + ivec2( 0, 1 ),
-        comparisonDepth,
+        comparisonDepth + dot(vec2(base) + vec2(0.5, 1.5) - globalCoordinate, staticSunDepthPlaneSlopeTexels),
         occupiedSamples,
         reconstructedDepth
     );
     highp float upperRight = staticSunDepthCompareGlobalTexel(
         base + ivec2( 1, 1 ),
-        comparisonDepth,
+        comparisonDepth + dot(vec2(base) + 1.5 - globalCoordinate, staticSunDepthPlaneSlopeTexels),
         occupiedSamples,
         reconstructedDepth
     );
@@ -137,6 +163,7 @@ highp float staticSunDepthLinearCompare(
 }
 
 highp vec4 staticSunDepthLookup( highp vec3 worldPosition, highp vec3 receiverNormal ) {
+    staticSunDepthPlaneSlopeTexels = vec2(0.0);
     highp vec3 lightPosition = staticSunDepthReceiverCoordinates( worldPosition );
     highp float invalidDepth = staticSunDepthDepthRange.x - 1.0;
     if ( lightPosition.z < staticSunDepthDepthRange.x || lightPosition.z > staticSunDepthDepthRange.y ) {
@@ -184,18 +211,27 @@ highp vec4 staticSunDepthLookup( highp vec3 worldPosition, highp vec3 receiverNo
         highp vec3 geometricNormal = normalize(cross(dFdx(worldPosition), dFdy(worldPosition)));
         highp vec3 lightNormal = mat3( staticSunDepthWorldToLight ) * geometricNormal;
         highp vec2 slope = abs(lightNormal.z) > 0.001 ? -lightNormal.xy / lightNormal.z : vec2(0.0);
+        staticSunDepthPlaneSlopeTexels = slope * texelSizeMeters;
         highp float searchRadius = max(texelSizeMeters, (comparisonDepth - staticSunDepthDepthRange.x) * staticSunDepthFilterPolicy.w);
         highp float separation = 0.0;
         highp float blockers = 0.0;
-        for (int i = 0; i < 8; i++) {
-            highp vec2 offset = i == 0 ? vec2(0.0) : staticSunDepthVogelDiskSample(i - 1, 7, 0.0) * searchRadius;
+        for (int i = 0; i < 9; i++) {
+            // Search near contacts before wider penumbras. A remote blocker
+            // outside its solar cone must not widen a nearby ledge's shadow.
+            highp float probeRadius = min(searchRadius, texelSizeMeters * (i < 5 ? 2.0 : 6.0));
+            highp float angle = float(i - 1) * (PI * 0.5);
+            highp vec2 offset = i == 0 ? vec2(0.0) : vec2(cos(angle), sin(angle)) * probeRadius;
             highp float occupied = 0.0;
             highp float depth = invalidDepth;
-            highp float receiver = comparisonDepth + dot(offset, slope);
+            highp float receiver = comparisonDepth + dot(floor(globalCoordinate + offset / texelSizeMeters) + 0.5 - globalCoordinate, staticSunDepthPlaneSlopeTexels);
             highp float visible = staticSunDepthCompareGlobalTexel(ivec2(floor(globalCoordinate + offset / texelSizeMeters)), receiver, occupied, depth);
-            if (occupied > 0.0 && visible < 0.5) {separation += receiver - depth; blockers += 1.0;}
+            if (i == 0 && occupied > 0.0 && visible < 0.5) searchRadius = min(searchRadius, max(texelSizeMeters, (receiver - depth) * staticSunDepthFilterPolicy.w));
+            if (occupied > 0.0 && visible < 0.5 && length(offset) <= (receiver - depth) * staticSunDepthFilterPolicy.w + texelSizeMeters) {
+                separation += receiver - depth; blockers += 1.0;
+            }
         }
-        if (blockers < 0.5) return vec4(1.0, invalidDepth, layer, 0.0);
+        if (blockers < 0.5) return vec4(staticSunDepthLinearCompare(globalCoordinate, comparisonDepth,
+            occupiedSamples, reconstructedDepth), invalidDepth, layer, 0.0);
         highp float radius = max(texelSizeMeters * 0.5, separation / blockers * staticSunDepthFilterPolicy.w);
         for (int i = 0; i < 12; i++) {
             highp vec2 offset = staticSunDepthVogelDiskSample(i, 12, 0.0) * radius;

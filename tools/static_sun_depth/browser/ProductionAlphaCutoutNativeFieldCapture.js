@@ -13,7 +13,7 @@ export const PRODUCTION_ALPHA_CUTOUT_NATIVE_FIELD_METHOD =
     'three-r183-production-lattice-mixed-foliage-depth24-native-readback-v2';
 const NATIVE_FOLIAGE_COVERAGE =
     'all-visible-material-groups-of-authenticated-cutout-meshes-v1';
-const MAXIMUM_TILE_TEXELS = 4_000_000;
+const MAXIMUM_TILE_TEXELS = 2048 * 2048;
 
 let activeSession = null;
 

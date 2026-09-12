@@ -431,3 +431,198 @@ stays disabled by default with current-engine fallback. AI 546 is complete by
 explicit defer: all 69 visual-only cases are accepted for the development
 workflow because their affected area is below 0.5%, while the strict 128/197
 status remains failed and uncertified.
+
+## Calibrated high-sun density default (September 2026)
+
+The high-sun source-aligned grid now uses capability
+`three-r183-calibrated-864m-16384-v2`: 16384-square source depth over864m,
+5.2734375cm/texel,2040-square interiors and four guard texels on each side.
+Stored tiles are2048-square RG8. This replaces the calibrated960m grid
+(5.859375cm/texel), increasing linear sample density by11.11% without removing
+city receivers or casters. The historical680m low-sun grid remains unchanged.
+
+Full-city BigCity2 bounds require8x7 tiles at the new density. Their logical
+payload is448MiB versus366.88MiB previously. The512MiB container ceiling,
+64MiB chunk ceiling, native16K region bounds, exact pixel phase, foliage parity,
+source identity and publication gates remain enforced. Baking sample count does
+not change these nearest-occluder depth maps. Runtime moving-object High remains
+4096-square at1.25cm/texel and is independent of this static bake.
+
+This is a denser default for the calibrated candidate, not a certification of
+the historical aggregate release. The earlier35-degree bake had4.15cm texels;
+matching that density at55degrees requires more than the current16K native
+capture can cover over the full city, so this change does not promise that match.
+
+## AI 547 streamed detail experiment
+
+The first prototype uses the installed calibrated 55-degree descriptor as its
+authenticated parent. Its static shadow layer remains complete while optional
+detail pages arrive. Detail is true native Depth24 capture at three times the
+parent density (1.7578125 cm per texel), packed into nearest-depth RG8 with
+authenticated gzip transport. It is not an upscaled copy of the parent map.
+
+The 1020-texel page interiors have 141-texel guards at the current depth range,
+covering the finite-sun blocker search. Adjacent native viewport edge rounding
+is reconciled using the nearest measured blocker at the identical world texel.
+The original disagreements, corrections and exact post-consolidation overlap
+checks are retained. Empty-page metadata is authenticated against all-empty
+bytes. Unlisted, late, corrupt and evicted pages use the complete parent.
+
+The initial package covers approximately 110 metres around one reference pose.
+Runtime owns a bounded 16-layer pool, two worker requests and one upload per
+frame. Arrival and retirement fades blend decoded visibility. Per-fragment
+projected footprint selects detail; selection includes projected frustum bounds,
+filtering guards and predicted mover travel. The complete parent plus detail
+pool occupies approximately 500 MiB of logical GPU texture storage. Physical
+VRAM allocation is not exposed by WebGL and is not claimed as measured.
+
+This experiment does not yet replace full-parent residency with a coarse/far
+pyramid, modify dynamic interaction clusters or certify all sun profiles.
+Normal gameplay includes the detail sampler and defaults the independent
+`shadows.streamedDetail` preference on (Options: **Fine building shadows**).
+Explicit saved `false` remains off. The optional published streaming index must
+match the installed parent descriptor exactly; missing or invalid detail keeps
+the complete parent. `streamedShadowPrototype=0` disables the extension for
+diagnostic comparisons. A custom gitignored experiment index still requires an
+explicit `streamedShadowPrototype=1` URL. See the tool README and active AI 547
+prompt for generation, publication gates and remaining broader milestones.
+
+## Calibrated shadow filtering regression (September 11)
+
+Calibration introduced finite-sun PCSS independently of the depth-map density.
+The filter now corrects receiver depth at the actual texel centre for every
+blocker and bilinear comparison. Correcting only the continuous sample position
+could invent blockers on a sloping surface. The legacy point-source/debug path
+keeps its existing comparison policy.
+
+When the centre ray is blocked, its measured separation bounds the subsequent
+blocker search. A nearby ledge must not acquire a broad penumbra merely because
+an unrelated distant blocker lies in the original full-depth-range search disk.
+The sun diameter, baked maps, bias contract and direct/indirect intensities are
+unchanged. Both normal gameplay and optional streamed detail use the correction.
+This remains a PCSS approximation. Filtering corrections and the separate native
+detail-map generation must be evaluated independently.
+
+The actual-GLSL regression in
+`tests/headless/e2e/static_sun_receiver_plane.pwtest.js` covers unobstructed slopes,
+a nearby blocker beside a distant blocker, and the broader penumbra expected
+from a distant blocker. Before correction a clear sloping receiver produced
+visibility as low as 106/255, and an opaque contact region leaked 13/255 light.
+The isolated game before/after capture is registered as
+`lighting/shadows/streamed/filter-review`; artifacts live under
+`tests/artifacts/screens/shadow_filter_quality/`.
+
+Research outcome: `review-01` isolated and corrected receiver-plane sampling;
+`review-02` added the measured centre-blocker search bound; `review-03` repeated
+the final pair and disabled the hybrid shadow hook. That diagnostic bypasses both
+static and moving-object composition, despite its original `without-static-shadows`
+filename; it is not an isolated static-only pass. `diagnostics-04`
+compared the pre-calibration filter at exactly the current map density. The
+older filter makes distant edges narrower but retains visible ledge artifacts;
+turning it back on is not equivalent to restoring lost depth-map detail.
+Normal gameplay retains the calibrated finite sun rather than changing its
+diameter or substituting point-source shadows.
+
+In the last matched pair, three GPU medians were 13.06/12.81/12.79 ms before
+and 13.01/12.87/13.00 ms after. Earlier pairs showed up to about 0.4 ms higher
+GPU cost; these shared-hardware observations are not a performance win claim.
+No allocation or baked-channel default changes were made for the filter fix.
+
+### Historical image and player-toggle follow-up
+
+The September 11 historical review confirms that the finer streamed image has
+visible bands inside the large platform shadow's penumbra. Its sampled 10–90%
+display-luma width is still about 12–17 pixels, similar to the parent and Cycles;
+the defect is the transition shape rather than simply its width. The nearby
+right-hand ledge remains streaky with both the current and legacy filters on
+the installed map. Finer map generation alone has not passed visual acceptance.
+
+`lighting/shadows/streamed/toggle-review` validates baked on/off/on with the
+same pose and indirect illumination. The shadow shader hooks really deactivate,
+live casting resumes, and the restored baked capture is pixel-identical. That
+initial off capture uses the repository's Cascade/High preference, not Single.
+With `benchmark=true` the leaf explicitly selects Single/High and measures two
+fresh browsers with three alternating passes per configuration. At 1920x1080
+on RTX 3060, median-of-pass GPU times were 11.55 ms for Single/High with baked
+indirect, 13.23 ms for baked finite-sun shadows, and 9.34 ms for the old filter
+on the same current maps. The respective pass ranges were 10.53–21.72,
+12.67–17.68 and 9.20–17.43 ms. These shared-machine stationary measurements
+contain substantial spikes and do not certify route performance. Full Current
+without baked indirect measured 14.95 ms median, with a 14.61–33.10 ms range;
+its ambient/AO path differs, so it is not an isolated shadow-filter comparison.
+
+Evidence and all pass summaries are under
+`tests/artifacts/screens/shadow_filter_quality/benchmark-06/`;
+`historical-review-07/` contains the research log and native-pixel crops.
+The calibration filter is a demonstrated cost increase; replacing it globally
+with hard shadows would also remove desired distance-dependent softness. Repair
+the ledge representation/filtering and preserve smooth broad penumbras within
+the older sampling budget before approving streaming. Existing synthetic shader
+tests are insufficient image-level coverage for these two reported defects.
+
+### Fine shadow rollout and filter cost recovery
+
+The RG8 production sampler resolves a page once for each four-tap bilinear
+comparison, uses authenticated guard texels across tile boundaries, and compares
+the four packed depth codes together. Debug/other encodings retain the scalar
+path. The finite-source path uses a centre probe plus two four-probe rings;
+blockers outside their possible solar cone are rejected. A centre-blocked ray
+bounds the search by its measured separation. Even a clear centre receives the
+minimum bilinear edge comparison, avoiding a discontinuous lit-side early exit.
+Twelve fixed-angle bilinear visibility taps preserve broad smooth transitions.
+
+The detail pass uses the minor projected footprint to retain resolution on
+foreshortened walls. Broad penumbras transition to the complete parent map;
+sampling sparse high-resolution depth taps there produced visible bands without
+adding useful detail. This does not change the calibrated 0.53-degree sun,
+exposure, illumination intensity, or baked indirect maps.
+
+The registered `/city` job generates all 2,016 detail cells for the matching
+55-degree city profile at 0.017578125 m per texel, versus the installed parent's
+0.052734375 m. Capture preserves the source's effective shadow sidedness and
+reconciles guards in two bounded rows rather than loading every page into RAM.
+The candidate has 809 nonempty payloads totalling 88,868,024 compressed bytes.
+Runtime retains 16 pages (54,278,784 bytes including the page table) beside the
+448 MiB parent: about 499.76 MiB of logical static texture storage. Detail is
+three times denser along each axis, not an upsampled version of the parent.
+
+`lighting/shadows/streamed/publish` requires complete matching source coverage,
+authenticated payloads/guards, two fresh browsers with three repeated timing
+passes, intact baked indirect lighting, corrupt-page fallback, and exact hashes
+of the reviewed shadow shaders. It authenticates the installed copy before
+atomically updating the optional detail index. Parent package publication and
+identity gates remain unchanged. Other sun profiles use their complete parent
+until a separately matching detail bake is available. The wider AI 547 work on
+far-parent reduction and dynamic clustering remains open.
+
+Published fine-detail manifest:
+`2528f4de63eb625a3a611f21aa079bf4dbc6e49c69121abc349955f9d10733ca`.
+The installed parent descriptor hash remains
+`be8b97862f1fa4551386aa2d687d755be82098608fbe497604ed527acb787c58`.
+Generation took approximately 5m22s; the final paired/route review took 9m01s.
+At 1920x1080 on RTX 3060, six stationary fine-shadow passes had GPU medians
+11.26-11.48 ms (middle sample 11.44 ms), and six route passes 11.41-11.62 ms
+(middle sample 11.51 ms). The corrected parent-only path measured 10.36-10.53 ms
+stationary and 10.69-10.79 ms on the route. These are measured whole-render
+times, not isolated shader times or guaranteed performance on other hardware.
+The older filter's same-map stationary reference measured 12.97-13.29 ms.
+
+The left platform's measured display-luma transition remains 12/15/17 pixels
+at the three fixed rows, versus 13/15/17 before; its smooth broad shadow is
+preserved. The close right ledge fringe is narrower, but native texel aliasing
+is still visible at very close inspection. This rollout does not claim analytic
+or ray-traced subpixel silhouette reconstruction. Review artifacts:
+`tests/artifacts/screens/illumination_547/city-review-16/`; original/corrected
+native crops: `tests/artifacts/screens/shadow_filter_quality/final/comparison.png`.
+
+Installed normal-game verification (`shadow_filter_quality/installed-17`) uses
+Single/High as the retained live preference, identical indirect illumination,
+two fresh browsers and three alternating passes each. GPU pass medians were
+10.34-10.45 ms for fine baked shadows and 10.36-10.44 ms for Single/High.
+This matched run demonstrates cost parity at this pose, not a statistically
+meaningful speed advantage. All baked passes loaded 16 installed detail pages
+without experiment-index routing. The difference from the earlier 11.4 ms run
+is why cross-run timing comparisons are not treated as isolated measurements.
+The white-building pose also passed installed baked/live/baked restoration in
+`shadow_filter_quality/reference-18`; the initial and restored baked PNGs have
+identical SHA-256 hashes and indirect illumination stayed enabled throughout.

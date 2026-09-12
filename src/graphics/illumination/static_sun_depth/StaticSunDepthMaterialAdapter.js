@@ -2,6 +2,7 @@
 // @ts-check
 
 import * as THREE from 'three';
+import { streamedShadowPrototypeOptions } from '../../../app/illumination/static_sun_depth/StreamedShadowPages.js';
 import { validateStaticSunDepthTileSetDescriptor } from '../../../app/illumination/static_sun_depth/index.js';
 import { isLitMaterial } from '../../lighting/SceneShadowMaterials.js';
 import {
@@ -23,9 +24,16 @@ const SHADER_SOURCES = await loadShaderSourceSet({
     vertexPath: 'materials/static_sun_depth.vert.glsl',
     fragmentPath: 'materials/static_sun_depth.frag.glsl'
 });
+const STREAMED_PROTOTYPE = streamedShadowPrototypeOptions(globalThis.location?.search).enabled;
+const STREAMED_SHADER_SOURCES = STREAMED_PROTOTYPE ? await loadShaderSourceSet({
+    vertexPath: 'materials/static_sun_depth.vert.glsl',
+    fragmentPath: 'materials/streamed_sun_depth.frag.glsl'
+}) : null;
 const SHADER_PAYLOAD = createShaderPayload({
     shaderId: 'illumination.static_sun_depth.v1',
-    sourceSet: SHADER_SOURCES
+    sourceSet: !STREAMED_PROTOTYPE ? SHADER_SOURCES : {...SHADER_SOURCES, fragmentSource: SHADER_SOURCES.fragmentSource
+        .replace('highp vec4 staticSunDepthLookup(', 'highp vec4 staticSunDepthLookupBase(')
+        .replace('highp float staticSunDepthMaxComponent(', STREAMED_SHADER_SOURCES.fragmentSource + '\n highp float staticSunDepthMaxComponent(')}
 });
 const DYNAMIC_SHADER_SOURCES = await loadShaderSourceSet({
     vertexPath: 'materials/dynamic_sun_shadow.vert.glsl',
@@ -179,6 +187,12 @@ export function createStaticSunDepthShaderBinding({ descriptor, texture, debugMo
         staticSunDepthSourceMapUpLight: { value: sourceMapUpLight },
         staticSunDepthDebugMode: { value: debugModeValue(debugMode) },
         staticSunDepthEnabled: { value: 1 },
+        staticSunStreamEnabled: { value: 0 },
+        staticSunStreamTiles: { value: null },
+        staticSunStreamTable: { value: null },
+        staticSunStreamLayout: { value: new THREE.Vector4(1, 1, 0, 1) },
+        staticSunStreamTileCount: { value: new THREE.Vector2(1, 1) },
+        staticSunStreamTime: { value: 0 },
         dynamicSunShadowMap: { value: null },
         dynamicSunShadowWorldToClip: { value: new THREE.Matrix4() },
         dynamicSunShadowMapSizeBias: { value: new THREE.Vector4(1, 1, 0, 0) },
@@ -192,6 +206,7 @@ export function createStaticSunDepthShaderBinding({ descriptor, texture, debugMo
         texture,
         uniforms,
         variantKey,
+        streamedShaderAvailable: STREAMED_PROTOTYPE,
         updateCamera(camera) {
             pointDirectionView.copy(pointDirectionWorld).transformDirection(camera.matrixWorldInverse);
         },

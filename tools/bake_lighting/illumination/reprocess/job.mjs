@@ -55,6 +55,7 @@ export const receiverReprocessJob = {
         }
         await ctx.node('tools/receiver_lightmaps/run.mjs', ['--input', ctx.result('lighting/source').source, '--output', output,
             '--enhanced', 'true', '--layout', layout, '--samples', profile.samples, '--device', profile.device,
+            '--texel-size', String(profile.texelSizeMeters), '--pages', profile.maxPages,
             '--blender', ctx.config.executable, '--installed', 'true', ctx.options.staging?'--resume':'--reprocess', original]);
         await ctx.assertInputsStable();
         await ctx.node('tools/receiver_lightmaps/publish.mjs', ['--enhanced', '--from', output, ...ctx.publish ? [] : ['--validate-only']]);

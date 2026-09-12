@@ -20,6 +20,15 @@ import { selectProductionStaticSunProfiles } from '../../../tools/static_sun_dep
 const evidence = path.join(REPO_ROOT, 'tests/artifacts/screens/ai556_bake_framework/unit');
 await mkdir(evidence, { recursive: true });
 const temporary = () => mkdtemp(path.join(evidence, 'fixture-'));
+
+test('Enhanced resolution reaches shared preparation and rejects unsupported density', () => {
+    const jobs = planBakes(bakeJobs, 'lighting/illumination');
+    const settings = resolveBakeOptions(jobs, parseBakeOptions(['--samples', '512', '--device', 'OPTIX', '--set', 'lighting/illumination:texel-size=0.25']));
+    assert.deepEqual(settings.get('lighting/illumination/prepare'), { samples: 512, device: 'OPTIX', 'texel-size': '0.25' });
+    assert.equal(resolveBakeOptions(jobs, parseBakeOptions([])).get('lighting/illumination/prepare')['texel-size'], '0.5');
+    assert.throws(() => resolveBakeOptions(jobs, parseBakeOptions(['--set', 'lighting/illumination:texel-size=0.01'])), /Expected one of/);
+    assert.throws(() => resolveBakeOptions(planBakes(bakeJobs, 'lighting/illumination/preview'), parseBakeOptions(['--set', 'lighting/illumination/preview:texel-size=0.25'])), /No selected job consumes/);
+});
 function logger(isTTY = false, env = {}) {
     const lines = [];
     return { lines, log: createBakeLog({ stream: { isTTY, write: text => lines.push(text) }, env, now: () => 1000 }) };
@@ -92,7 +101,7 @@ test('Independent bake entries select their real prerequisite tree and forward m
     const jobs = planBakes(bakeJobs, 'lighting/illumination/indirect');
     assert.deepEqual(jobs.map(job => job.id), ['lighting/source', 'lighting/illumination/prepare', 'lighting/illumination/indirect']);
     const options = resolveBakeOptions(jobs, parseBakeOptions(['--samples', '32', '--device', 'OPTIX']));
-    assert.deepEqual(options.get('lighting/illumination/prepare'), { samples: 32, device: 'OPTIX' });
+    assert.deepEqual(options.get('lighting/illumination/prepare'), { samples: 32, device: 'OPTIX', 'texel-size': '0.5' });
     for (const parse of [parseTextureGradFieldArguments, parseAlphaCutoutNativeFieldArguments]) {
         const parsed = parse(['--blender', 'Existing Blender/blender.exe', '--archive', 'Existing Blender/archive.zip',
             '--output-root', 'tests/artifacts/illumination_531/ai556/parser-fixture']);

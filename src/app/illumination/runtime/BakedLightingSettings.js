@@ -13,6 +13,7 @@ export const BAKED_LIGHTING_DEFAULTS = Object.freeze({
     mode: 'auto',
     shadows: Object.freeze({
         enabled: true,
+        streamedDetail: true,
         dynamicResolution: BAKED_DYNAMIC_SHADOW_RESOLUTIONS.high
     }),
     receivers: Object.freeze({ direct: false, indirect: true, linked: false, enhanced: true, debug: 'final' }),
@@ -37,7 +38,7 @@ export function sanitizeBakedLightingSettings(input) {
     // obsolete direct/enhancement switches cannot resurrect the retired preview.
     const mode = ['current', 'baked', 'auto'].includes(source.mode) ? source.mode
         : shadows.enabled === true || receivers.indirect === true ? 'auto' : 'current';
-    return { mode, shadows: { enabled: shadows.enabled === true, dynamicResolution },
+    return { mode, shadows: { enabled: shadows.enabled === true, streamedDetail: shadows.streamedDetail !== false, dynamicResolution },
         receivers: { direct: false, indirect: receivers.indirect === true,
             linked: false, enhanced: true,
             debug: debugModes.includes(receivers.debug) ? receivers.debug : 'final' },

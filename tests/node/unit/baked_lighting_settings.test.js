@@ -50,19 +50,21 @@ function makeIndex() {
 }
 
 test('BakedLightingSettings: defaults enable all player bake channels and selective bus reflections', () => {
-    const defaults = { bus: { enabled: false, materials: true, probes: true, glassReflections: true, bodyReflections: true, rimShine: true }, mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high' }, receivers: { direct: false, indirect: true, linked: false, enhanced: true, debug: 'final' } };
+    assert.equal(sanitizeBakedLightingSettings({shadows:{enabled:true}}).shadows.streamedDetail,true);
+    assert.equal(sanitizeBakedLightingSettings({shadows:{enabled:true,streamedDetail:false}}).shadows.streamedDetail,false);
+    const defaults = { bus: { enabled: false, materials: true, probes: true, glassReflections: true, bodyReflections: true, rimShine: true }, mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high', streamedDetail: true }, receivers: { direct: false, indirect: true, linked: false, enhanced: true, debug: 'final' } };
     assert.deepEqual(BAKED_LIGHTING_DEFAULTS, defaults);
     assert.deepEqual(getDefaultResolvedBakedLightingSettings(), defaults);
     const omitted = { receivers: { ...defaults.receivers, indirect: false },
         bus: { ...defaults.bus, glassReflections: false, bodyReflections: false, rimShine: false } };
     assert.deepEqual(sanitizeBakedLightingSettings({ shadows: { enabled: 'true' } }), {
-        mode: 'current', shadows: { enabled: false, dynamicResolution: 'medium' }, ...omitted
+        mode: 'current', shadows: { enabled: false, dynamicResolution: 'medium', streamedDetail: true }, ...omitted
     });
     assert.deepEqual(sanitizeBakedLightingSettings({ mode: 'auto', shadows: { enabled: true, dynamicResolution: 'ultra' } }), {
-        mode: 'auto', shadows: { enabled: true, dynamicResolution: 'medium' }, ...omitted
+        mode: 'auto', shadows: { enabled: true, dynamicResolution: 'medium', streamedDetail: true }, ...omitted
     });
-    assert.deepEqual(sanitizeBakedLightingSettings({ mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high' } }), {
-        mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high' }, ...omitted
+    assert.deepEqual(sanitizeBakedLightingSettings({ mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high', streamedDetail: true } }), {
+        mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high', streamedDetail: true }, ...omitted
     });
 });
 
@@ -78,18 +80,18 @@ test('BakedLightingSettings: saves and restores baked-shadow intent only', () =>
     };
     try {
         assert.equal(saveBakedLightingSettings({
-            mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high' },
+            mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high', streamedDetail: true },
             future: 'ignored'
         }), true);
         assert.deepEqual(getResolvedBakedLightingSettings(), {
-            bus: { enabled: false, materials: true, probes: true, glassReflections: false, bodyReflections: false, rimShine: false }, mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high' }, receivers: { direct: false, indirect: false, linked: false, enhanced: true, debug: 'final' }
+            bus: { enabled: false, materials: true, probes: true, glassReflections: false, bodyReflections: false, rimShine: false }, mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high', streamedDetail: true }, receivers: { direct: false, indirect: false, linked: false, enhanced: true, debug: 'final' }
         });
         saveBakedLightingSettings({ receivers: { direct: false, indirect: false, linked: false } });
         assert.deepEqual(getResolvedBakedLightingSettings().receivers,
             { direct: false, indirect: false, linked: false, enhanced: true, debug: 'final' });
         assert.equal(clearSavedBakedLightingSettings(), true);
         assert.deepEqual(getResolvedBakedLightingSettings(), {
-            bus: { enabled: false, materials: true, probes: true, glassReflections: true, bodyReflections: true, rimShine: true }, mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high' }, receivers: { direct: false, indirect: true, linked: false, enhanced: true, debug: 'final' }
+            bus: { enabled: false, materials: true, probes: true, glassReflections: true, bodyReflections: true, rimShine: true }, mode: 'auto', shadows: { enabled: true, dynamicResolution: 'high', streamedDetail: true }, receivers: { direct: false, indirect: true, linked: false, enhanced: true, debug: 'final' }
         });
     } finally {
         if (previousWindow === undefined) delete globalThis.window;
@@ -128,7 +130,7 @@ test('BakedShadowProfile: selects only an exact matching city and sun profile', 
 
 
 test('BakedLightingSettings: migrate legacy presets and retain inactive channel preferences', () => {
-    const input = { mode: 'current', shadows: { enabled: true, dynamicResolution: 'high' },
+    const input = { mode: 'current', shadows: { enabled: true, dynamicResolution: 'high', streamedDetail: true },
         receivers: { direct: true, indirect: true, enhanced: false, linked: true, debug: 'direct' } };
     const settings = sanitizeBakedLightingSettings(input);
     assert.equal(settings.mode, 'current');

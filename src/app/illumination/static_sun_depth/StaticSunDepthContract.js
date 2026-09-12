@@ -204,9 +204,10 @@ export function createProductionStaticSunDepthBasis(direction, originWorld = [0,
 /** Production density is versioned with the aligned lattice, within the 512 MiB container budget. */
 export function getProductionStaticSunGrid(direction) {
     const aligned = createProductionStaticSunDepthBasis(direction).policy === 'three-r183-source-lattice-v2';
-    const extent = aligned ? 960 : 680;
-    return {id: aligned ? 'three-r183-calibrated-960m-16384-v1' : 'three-r183-single-high-effective-16384-v1',
-        mapSizeTexels:[16384,16384],worldExtentMeters:[extent,extent],texelSizeMeters:extent/16384};
+    const extent = aligned ? 864 : 680;
+    return {id: aligned ? 'three-r183-calibrated-864m-16384-v2' : 'three-r183-single-high-effective-16384-v1',
+        mapSizeTexels:[16384,16384],worldExtentMeters:[extent,extent],texelSizeMeters:extent/16384,
+        interiorPixels: aligned ? [2040, 2040] : [1870, 1821]};
 }
 
 /**

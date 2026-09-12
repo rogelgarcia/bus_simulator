@@ -20,6 +20,37 @@ export function translatePhongF0(target,source){
     target.specularColor.setRGB(...rgb.map(v=>peak>0?v/peak:1));
 }
 
+// Legacy highlight strength is not a physical surface measurement. Restrict the
+// appearance adapter to known bus roles instead of changing city transport.
+export function translateLegacyBus(target,source,scope,contract){
+    if(scope!=='bus'||!source.isMeshPhongMaterial)return null;
+    const profile=contract.legacyBus?.materials[source.name.toLowerCase()];
+    if(!profile)return null;
+    target.roughness=profile.roughness;target.metalness=0;
+    target.ior=profile.ior;target.specularIntensity=profile.specularIntensity;
+    target.specularColor.setRGB(1,1,1);target.clearcoat=0;
+    return contract.legacyBus.id;
+}
+
+// Flattened lawns need a dry aggregate lobe; their runtime reflection suppression
+// cannot be represented by glTF. Apply only to explicitly selected terrain clones.
+export function translateDryGrass(target,source,role,contract){
+    if(role!=='dry-grass'||!source.isMeshStandardMaterial)return null;
+    const c=contract.dryGrass;
+    target.metalness=0;target.metalnessMap=null;
+    if(source.roughnessMap){
+        const input=source.roughnessMap,canvas=document.createElement('canvas');
+        canvas.width=input.image.width;canvas.height=input.image.height;
+        const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(input.image,0,0);
+        const pixels=context.getImageData(0,0,canvas.width,canvas.height);
+        for(let i=1;i<pixels.data.length;i+=4)pixels.data[i]=Math.round(255*(c.minimumRoughness+(1-c.minimumRoughness)*Math.min(1,pixels.data[i]/255*source.roughness)));
+        context.putImageData(pixels,0,0);
+        target.roughnessMap=input.clone();target.roughnessMap.source=new THREE.Source(canvas);
+        target.roughnessMap.colorSpace=THREE.NoColorSpace;target.roughnessMap.needsUpdate=true;target.roughness=1;
+    }else target.roughness=Math.max(c.minimumRoughness,source.roughness);
+    return c.id;
+}
+
 export function createInteriorTexture(contract){
     const c=contract.windowInterior,n=c.size,canvas=document.createElement('canvas');canvas.width=n;canvas.height=n;
     const context=canvas.getContext('2d'),pixels=context.createImageData(n,n);

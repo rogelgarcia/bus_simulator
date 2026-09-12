@@ -23,6 +23,7 @@ import {
 } from './StaticSunDepthPlanContract.js';
 import { createThreeStaticSunDepthResourceFactory } from './ThreeStaticSunDepthResources.js';
 import { StaticSunDepthFenceTracker } from './StaticSunDepthFenceTracker.js';
+import { StreamedShadowResidency } from './StreamedShadowResidency.js';
 import { STATIC_SUN_DEPTH_RUNTIME_DEFAULTS } from './StaticSunDepthRuntimeLimits.js';
 
 const PREPARED_BINDING_ID = 'static_sun_depth.prepared_binding.v1';
@@ -49,6 +50,8 @@ export class StaticSunDepthPipeline {
         this._dynamicShadows = new DynamicSunShadowLayer(this.renderer, options.dynamicShadow);
         this._active = null;
         this._cachedActivation = null;
+        this._streamedDetailEnabled = false;
+        this._streamedBindings = new Set();
         this._exactCityCompileCount = 0;
         this._cacheActivationCount = 0;
         this._lastError = null;
@@ -90,6 +93,7 @@ export class StaticSunDepthPipeline {
         });
         this._contextEventTarget = this.renderer.domElement ?? null;
         this._onContextLost = () => {
+            for (const binding of this._streamedBindings) void binding.streamedDetail.setEnabled(false);
             if (!this._disposed) this._fallbackNow('webgl_context_lost');
         };
         this._contextEventTarget?.addEventListener?.('webglcontextlost', this._onContextLost);
@@ -170,6 +174,16 @@ export class StaticSunDepthPipeline {
             this._restoreCurrent('frame_commit_failed');
         }
         this._materials.updateCamera(this.engine.camera);
+        const detail = this._active?.binding?.streamedDetail;
+        if (detail) {
+            if (detail.enabled !== this._streamedDetailEnabled) void detail.setEnabled(this._streamedDetailEnabled);
+            if (this._streamedDetailEnabled) detail.update(this.engine.camera, performance.now() / 1000, this._dynamicShadows.getReceiverRoots()[0] ?? null);
+        }
+    }
+
+    setStreamedDetailEnabled(enabled) {
+        this._streamedDetailEnabled = enabled === true;
+        if (!enabled) for (const binding of this._streamedBindings) void binding.streamedDetail.setEnabled(false);
     }
 
     /** Prewarm replacement receiver materials without touching the live bake or depth target. */
@@ -301,6 +315,7 @@ export class StaticSunDepthPipeline {
             materials: this._materials.getDiagnostics(),
             casters: this._casters.getDiagnostics(),
             dynamicShadows: this._dynamicShadows.getDiagnostics(),
+            streamedShadows: this._active?.binding?.streamedDetail?.diagnostics() ?? {state: 'off'},
             runtime: this.runtime.getDiagnostics()
         });
     }
@@ -366,7 +381,10 @@ export class StaticSunDepthPipeline {
             angularDiameterDegrees: this.engine.lightingSettings?.ibl?.iblId === CALIBRATED_DAYLIGHT.environmentId ? CALIBRATED_DAYLIGHT.angularDiameterDeg : 0,
             debugMode: this._debugMode
         });
-        await this._prewarmMaterialVariants(binding);
+        binding.streamedDetail = new StreamedShadowResidency(binding, this.renderer);
+        this._streamedBindings.add(binding);
+        try { await this._prewarmMaterialVariants(binding); }
+        catch (error) { binding.streamedDetail.dispose(); this._streamedBindings.delete(binding); throw error; }
         context.registerResource(PREPARED_BINDING_ID, Object.freeze({
             resource: Object.freeze({
                 binding,
@@ -478,6 +496,7 @@ export class StaticSunDepthPipeline {
 
     _restoreCurrent(reason, { retainPreparedMaterials = false } = {}) {
         const previous = this._active;
+        for (const binding of this._streamedBindings) void binding.streamedDetail.setEnabled(false);
         let firstError = null;
         try {
             this._dynamicShadows.deactivate();
@@ -547,6 +566,7 @@ export class StaticSunDepthPipeline {
         if (this._active?.binding === binding) {
             throw new Error('Cannot dispose the active static-sun shader binding.');
         }
+        binding.streamedDetail?.dispose(); this._streamedBindings.delete(binding);
         if (this._cachedActivation?.binding !== binding) return;
         this._materials.dispose();
         this._materials = new StaticSunDepthMaterialSet();

@@ -15,6 +15,7 @@ import {uncalibrated55Baseline,assertUncalibrated55} from './Uncalibrated55.mjs'
 
 export async function capture(ctx){
     if(ctx.publish||!ctx.options.output)throw new Error('New capture output required; no publication');
+    if(ctx.options['shadow-run']&&!ctx.options['candidate-run'])throw new Error('A separate shadow run requires a validated receiver candidate-run');
     const runRoot=outputPath(ctx.root,ctx.options.output);await mkdir(path.dirname(runRoot),{recursive:true});await mkdir(runRoot);
     const read=async file=>JSON.parse(await readFile(file,'utf8'));
     let baseline=await read(path.join(ctx.root,'tools/bake_lighting/experiments/lighting_configurations/config/baseline.json'));

@@ -12,20 +12,21 @@ export async function candidateInputs(ctx, input) {
         shadowIndex = shadow.index;
         receiverIndex = path.join(receiver.folder, 'package_index.json');
     } else {
-        const run = path.resolve(ctx.root, input), base = path.join(ctx.root, 'tests/artifacts/screens/ai556_bake_framework');
-        if (!run.startsWith(base + path.sep)) throw new Error('Candidate must be an existing bake framework run');
-        const summaryPath = path.join(run, 'summary.json'), summary = JSON.parse(await readFile(summaryPath, 'utf8'));
-        if (!summary.completed) throw new Error('Candidate bake has unfinished or failed stages');
-        const indexFor = id => {
+        const indexFor = async (id, directory) => {
+            const run = path.resolve(ctx.root, directory), base = path.join(ctx.root, 'tests/artifacts/screens/ai556_bake_framework');
+            if (!run.startsWith(base + path.sep)) throw new Error('Candidate must be an existing bake framework run');
+            const summaryPath = path.join(run, 'summary.json'), summary = JSON.parse(await readFile(summaryPath, 'utf8'));
+            if (!summary.completed) throw new Error('Candidate bake has unfinished or failed stages');
             const job = summary.jobs.find(job => job.id === id);
             if (!job || !['success', 'reused'].includes(job.status) || !['validated', 'published'].includes(job.state)) throw new Error('Candidate stage is not validated: ' + id);
             const files = job.outputs.filter(file => path.basename(file) === 'package_index.json');
             const file = files.find(file => file.startsWith(run + path.sep)) ?? files[0];
             if (!file || !path.resolve(file).startsWith(ctx.root + path.sep)) throw new Error('Candidate index must stay in this workspace');
+            if (!provenance.includes(summaryPath)) provenance.push(summaryPath);
             return file;
         };
-        shadowIndex = indexFor('lighting/shadows'); receiverIndex = indexFor('lighting/illumination');
-        provenance.push(summaryPath);
+        shadowIndex = await indexFor('lighting/shadows', ctx.options['shadow-run'] ?? input);
+        receiverIndex = await indexFor('lighting/illumination', input);
     }
     // Re-run the package/coverage/publication validator without installing anything.
     await ctx.node('tools/receiver_lightmaps/publish.mjs', ['--enhanced', '--validate-only', '--from', path.dirname(path.dirname(receiverIndex))]);

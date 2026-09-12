@@ -100,7 +100,7 @@ test('production request inventory includes the calibrated afternoon profile', (
                 twoSidedCasting: true
             },
             guardPixels: 4,
-            interiorPixels: [1870, 1821],
+            interiorPixels: calibrated ? [2040, 2040] : [1870, 1821],
             lightingProfileId: profile.id,
             maxPayloadBytes: 536_870_912,
             phasePolicy: 'absolute-stable-basis-texel-edge-lattice-v1',
@@ -117,20 +117,20 @@ test('production request inventory includes the calibrated afternoon profile', (
                     sampleCount: 5,
                     screenRotation: 'interleaved-gradient-noise-gl-fragcoord-v1',
                     shadowMapSizeTexels: [16384, 16384],
-                    shadowMapWorldExtentMeters: calibrated ? [960, 960] : [680, 680],
+                    shadowMapWorldExtentMeters: calibrated ? [864, 864] : [680, 680],
                     sourceMapRightAxisWorld: filterAxes.rightAxisWorld,
                     sourceMapUpAxisWorld: filterAxes.upAxisWorld
                 }
             },
             schema: 'ai531-static-sun-production-request-v4',
             sourceShadowCapability: {
-                id: calibrated ? 'three-r183-calibrated-960m-16384-v1' : 'three-r183-single-high-effective-16384-v1',
+                id: calibrated ? 'three-r183-calibrated-864m-16384-v2' : 'three-r183-single-high-effective-16384-v1',
                 mapSizeTexels: [16384, 16384],
-                worldExtentMeters: calibrated ? [960, 960] : [680, 680]
+                worldExtentMeters: calibrated ? [864, 864] : [680, 680]
             },
             sunPointDirectionWorld: profile.directionThree,
-            texelSizeMeters: calibrated ? 0.05859375 : 0.04150390625,
-            tileSizeMeters: calibrated ? [109.5703125, 106.69921875] : [77.6123046875, 75.57861328125]
+            texelSizeMeters: calibrated ? 0.052734375 : 0.04150390625,
+            tileSizeMeters: calibrated ? [107.578125, 107.578125] : [77.6123046875, 75.57861328125]
         });
     }
 });

@@ -17,7 +17,8 @@ const scripts = async ctx => (await listFiles(path.join(ctx.root, 'tools/receive
 function argumentsFor(ctx, preparation, output) {
     return ['--input', preparation.source, '--output', output, '--samples', preparation.samples,
         '--blender', ctx.config.executable, '--installed', 'true',
-        ...(preparation.enhanced ? ['--enhanced', 'true', '--layout', preparation.layout, '--device', preparation.device] : [])];
+        ...(preparation.enhanced ? ['--enhanced', 'true', '--layout', preparation.layout, '--device', preparation.device,
+            '--texel-size', preparation['texel-size'], '--pages', preparation['texel-size'] === '0.5' ? '9' : '11'] : [])];
 }
 
 async function copyPreparation(prepared, stage) {
@@ -53,8 +54,8 @@ export function receiverJobs(enhanced) {
         id: prepareId, dependencies: ['lighting/source'], blender: true,
         outputs: [`${base}/atlas`], inputs: scripts,
         description: enhanced ? 'Complete opaque receiver UV layout and atlas' : 'Original scalar preview atlas',
-        options: { samples: bakeOption.samples, ...(enhanced ? { device: bakeOption.device } : {}) },
-        defaults: { samples: enhanced ? 896 : 64, ...(enhanced ? { device: 'CPU' } : {}) },
+        options: { samples: bakeOption.samples, ...(enhanced ? { device: bakeOption.device, 'texel-size': bakeOption.choice(['0.5', '0.33', '0.25']) } : {}) },
+        defaults: { samples: enhanced ? 896 : 64, ...(enhanced ? { device: 'CPU', 'texel-size': '0.5' } : {}) },
         async run(ctx) {
             const source = ctx.result('lighting/source').source;
             let layout;

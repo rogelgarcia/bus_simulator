@@ -783,12 +783,12 @@ function requireReleaseSamplingPolicy(descriptor, receipt, lightingProfileId) {
     const grid = getProductionStaticSunGrid(identity.sunPointDirectionWorld);
     const exactTexelSizeMeters = grid.texelSizeMeters;
     requireCanonicalMatch(
-        [1870, 1821],
+        grid.interiorPixels,
         request.interiorPixels,
         'authenticated request rectangular interior'
     );
     requireCanonicalMatch(
-        [1870 * exactTexelSizeMeters, 1821 * exactTexelSizeMeters],
+        grid.interiorPixels.map(value => value * exactTexelSizeMeters),
         request.tileSizeMeters,
         'authenticated request rectangular tile size'
     );

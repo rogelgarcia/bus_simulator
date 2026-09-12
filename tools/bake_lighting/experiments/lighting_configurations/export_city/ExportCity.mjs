@@ -28,7 +28,7 @@ export async function exportCity(ctx,run) {
         await withGameBrowser(ctx,run.viewport,async(page,url)=>{
             const errors=[];page.on('pageerror',error=>errors.push(error.message));
             const exportStorage=structuredClone(run.baseline.storage);
-            exportStorage['bus_sim.bakedLighting.v1'].mode='current';
+            exportStorage['bus_sim.bakedLighting.v1']={...exportStorage['bus_sim.bakedLighting.v1'],mode:'current'};
             await page.addInitScript(storage=>{for(const [key,value]of Object.entries(storage))localStorage.setItem(key,JSON.stringify(value));},exportStorage);
             await page.goto(`${url}/?coreTests=0&gameplayPose=${encodeURIComponent(JSON.stringify(run.poses[0].pose))}`,{timeout:240000});
             await page.waitForFunction(()=>!!window.__busSim?.sm?.current?.busModel,null,{timeout:240000});
@@ -59,7 +59,7 @@ export async function exportCity(ctx,run) {
         exportStagePolicy:'Independent export browser uses Current to avoid loading unused baked atlases; G00 captures and lighting source settings remain unchanged.'});
     await runHeadlessBake(ctx,`${TOOL}/export_city/build_scene.py`,[input]);
     const build=await readJson(path.join(output,'build_receipt.json'));
-    if(build.projection.maximumPixelError>1||build.cameras.length!==5||build.busPlacements.length!==4)throw new Error('Blender scene parity/placement count failed');
+    if(build.projection.maximumPixelError>1||build.cameras.length!==run.poses.length||build.busPlacements.length!==new Set(run.poses.map(p=>p.busId)).size)throw new Error('Blender scene parity/placement count failed');
     const blend=path.join(output,'bigcity2_lighting_lab.blend');
     const result=await receipt(manifestPath,key,{scene:blend,sourceManifest:input,source:run.source.sha256,build,seconds:(Date.now()-started)/1000,
         limitations:metadata.limitations,materialAudit:metadata.materials,viewport:run.viewport},[blend,raw,input,hdri,path.join(output,'build_receipt.json'),...build.colorManagement.files]);

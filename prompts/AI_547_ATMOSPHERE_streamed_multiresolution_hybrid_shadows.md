@@ -43,6 +43,90 @@ same-condition measurements before using it as a performance baseline.
 
 ## Execution boundaries
 
+### Implemented prototype — 2026-09-11
+
+- Added native detail-page generation, conservative shared-guard consolidation,
+  integrity checks, recorded-route review and an original-shader control under
+  `tools/bake_lighting/shadows/streamed/`, registered with `node tools/bake.mjs`.
+- The calibrated 55-degree prototype has 56 pages around the supplied camera/bus
+  pose, 1.7578125 cm texels, 1020-square interiors and 141-texel guards. Seven
+  pages are empty. Its compressed payload is 8,257,797 bytes; generation took
+  31.6 seconds. All 35,614,908 post-consolidation shared samples agree exactly.
+- Added a bounded 16-layer GPU pool, two fetch/decode worker requests, one upload
+  per frame, hashed compressed/raw data, receiver-footprint selection, predicted
+  travel, retirement/arrival fades, valid parent fallback and lifecycle cleanup.
+- The complete parent remains resident in this first prototype. The detail pool
+  adds approximately 51.8 MiB, for approximately 500 MiB combined logical static
+  texture storage. This is **not yet** the planned smaller coarse/far residency.
+- Normal gameplay compiles the original shader. An explicit
+  `streamedShadowPrototype=1` session exposes the experimental toggle. Local
+  experiment packages can be selected with `streamedShadowIndex`; no streaming
+  package has been installed into the production asset index.
+- The stationary and recorded-route harness compares three paired passes in each
+  of two fresh browsers and deliberately corrupts page responses. It uses current
+  defaults for both variants and joins route GPU timings by submission number.
+- Current evidence lives under `tests/artifacts/screens/illumination_547/`.
+  `pages-02` is the validated native package. The first filtering version was
+  rejected for jagged wall edges; it was replaced by bilinear visibility filtering.
+  Initial corrected route measurements show a GPU/frame-submission regression,
+  so this is not a production performance win or a completed AI 547.
+
+Remaining acceptance work: improve route cost; evaluate and integrate the smaller
+coarse/far parent; compare Current single/high and filtered silhouette quality;
+cover two movers, dynamic fitting/clustering, context loss and moving LOD image
+continuity; then decide whether the full-city/profile production bake is warranted.
+
+Final prototype validation: `tests/artifacts/screens/illumination_547/review-04/`
+and framework run `run-1789152991662-1876-05019b17` passed with source files held
+fixed. Six paired 929-frame route laps across two fresh Chrome sessions measured
+the following means of per-lap medians at 1920 x 1080 on the RTX 3060:
+
+| Mode | Whole-render GPU | Frame-submission CPU wall time | Frame interval |
+| --- | ---: | ---: | ---: |
+| Existing baked map | 12.88 ms | 17.15 ms | 18.23 ms |
+| Streamed detail | 13.38 ms | 17.28 ms | 18.38 ms |
+
+These are paired whole-frame measurements on shared hardware, not isolated shadow
+pass times or a certified win over Current single/high. Individual page upload
+submission was at most 0.6 ms in the stationary checks. Detail textures returned
+from 104 to 102 after disabling; corrupted page data left baked mode active with
+zero corrupt resident pages. The complete parent still consumes 448 MiB.
+
+A decoded-page queue regression was reproduced and fixed: pages now wait for
+protected slots instead of being discarded and fetched again. Across the same
+six laps, request increments fell from 803–826 to 32–39. The browser regression
+test and normal parent-shader render test pass, as do 25 focused unit/framework
+checks. Generation took 31.6 seconds; final repeated runtime validation took
+470.3 seconds. Normal gameplay retains its original shader and streaming is off.
+
+### September 11 calibration follow-up
+
+Additional quality investigation: the regular calibrated map remains 5.2734375 cm
+per texel versus the historical 35-degree map's 4.150390625 cm. The user explicitly
+wants finer shadow detail restored. Two actual-GLSL regressions were reproduced
+and corrected in the parent and streamed filters: per-texel receiver-plane
+comparisons and a centre-blocker bound on the contact-shadow search. Clear-slope,
+near-blocker and distant-penumbra browser checks pass. Evidence and research notes
+are in `specs/graphics/static_sun_depth_cache.md` and
+`tests/artifacts/screens/shadow_filter_quality/`. These filtering fixes apply in
+normal gameplay, but they do not complete the finer-map rollout or change this
+prompt's remaining acceptance work. Do not report the normal game's map as 1.76 cm;
+that resolution remains confined to the explicit prototype.
+
+The user requested implementation after the calibrated shadow-density review.
+Use the exact calibrated 55-degree sun as the first prototype. The installed
+shadow package and its authenticated descriptor are the baseline authority;
+historical 35-degree dimensions below are planning history, not current inputs.
+Keep the existing non-streamed baked mode available for comparisons. Add a
+separate prototype toggle and retain a complete authenticated coarse fallback
+before making any fine page visible. Do not make streaming the default before
+the image, lifecycle, residency and repeated route benchmarks pass.
+
+The first prototype must bake true finer static depth; splitting or upscaling
+the existing image alone does not improve silhouette resolution. Reuse the
+existing indirect maps. Store all new tools under the shared bake hierarchy and
+all prototype evidence under `tests/artifacts/screens/illumination_547/`.
+
 - Build on the existing static/dynamic visibility composition. Do not rebake
   moving objects; their positions are runtime state.
 - Keep the legacy single/CSM shadow-map pass disabled while baked mode owns the
@@ -256,6 +340,30 @@ Acceptance requirements:
   baked mode without an explicitly approved quality/performance tradeoff.
 
 ## On completion
+
+September 11 follow-up acceptance work:
+
+- [x] Remove the visible bands within the left building's broad shadow in the
+  streamed platform pose; retain the smooth Cycles/previous-parent transition.
+- [ ] Correct the right building ledge's streaks without hiding them with broad
+  blur. Both legacy filtering and finer pages still exhibit this defect.
+- [x] Recover the shadow-filter performance budget before promotion. The
+  registered `/toggle-review` with `benchmark=true` isolates Single/High,
+  finite-sun baked and old-filter baked on identical current maps. Preserve
+  all passes and report shared-machine timing spikes. Evidence is under
+  `tests/artifacts/screens/shadow_filter_quality/benchmark-06/` and
+  `historical-review-07/`. This is not a historical-checkout benchmark.
+
+September 11 rollout: complete 55-degree native detail is installed, with 1.76 cm
+texels and a bounded 16-page pool. Filter/guard/source/publication evidence is in
+`tests/artifacts/screens/illumination_547/city-12/` and `city-review-16/`; published
+manifest `2528f4de63eb625a3a611f21aa079bf4dbc6e49c69121abc349955f9d10733ca`.
+Six fresh/warm stationary passes measured 11.26-11.48 ms GPU with detail, versus
+12.97-13.29 ms for the older same-map filter reference. Six recorded route passes
+measured 11.41-11.62 ms. Broad shadow bands are removed; very close ledge texel
+aliasing remains visible despite the substantially narrower fringe. Keep the
+ledge item and broader far-parent/dynamic-cluster milestones open. This is not
+completion of the full AI 547 scope.
 
 - Mark the AI document as DONE in the first line.
 - Rename it to

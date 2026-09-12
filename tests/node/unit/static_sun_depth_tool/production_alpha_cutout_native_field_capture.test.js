@@ -35,7 +35,7 @@ test('native cutout field is bounded, isolated, Depth24, and state restoring', a
     assert.match(source, /new THREE\.Scene\(\)/);
     assert.match(source, /new THREE\.DepthTexture/);
     assert.match(source, /THREE\.UnsignedIntType/);
-    assert.match(source, /MAXIMUM_TILE_TEXELS = 4_000_000/);
+    assert.match(source, /MAXIMUM_TILE_TEXELS = 2048 \* 2048/);
     assert.match(source, /captureNativeShadowDepthTexture/);
     assert.match(source, /createRuntimeTreeCasterId/);
     assert.match(source, /all-visible-material-groups-of-authenticated-cutout-meshes-v1/);

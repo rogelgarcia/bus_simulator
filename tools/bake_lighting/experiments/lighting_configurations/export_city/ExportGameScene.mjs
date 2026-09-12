@@ -2,7 +2,7 @@
 export async function exportGameScene(poses) {
     const THREE=await import('three');
     const {GLTFExporter}=await import('three/addons/exporters/GLTFExporter.js');
-    const {translatePhongF0,createInteriorTexture,translateWindowInterior,captureUvTiling}=await import('/tools/bake_lighting/experiments/lighting_configurations/export_city/MaterialEquivalence.js');
+    const {translatePhongF0,translateLegacyBus,translateDryGrass,createInteriorTexture,translateWindowInterior,captureUvTiling}=await import('/tools/bake_lighting/experiments/lighting_configurations/export_city/MaterialEquivalence.js');
     const contractResponse=await fetch('/tools/bake_lighting/experiments/material_calibration/export_contract.json');
     if(!contractResponse.ok)throw new Error('Material equivalence contract unavailable');
     const materialContract=await contractResponse.json(),interiorTexture=createInteriorTexture(materialContract);
@@ -12,8 +12,9 @@ export async function exportGameScene(poses) {
     city.name='CITY_SOURCE';bus.name='BUS_SOURCE';exportScene.add(city,bus);
     const materialCache=new Map(),geometryCache=new Map(),audit=[],omitted=[],landmarks=[];
     const inverseBus=s.busAnchor.matrixWorld.clone().invert();
-    function material(source,scope) {
-        if(materialCache.has(source.uuid))return materialCache.get(source.uuid);
+    function material(source,scope,role) {
+        const cacheKey=scope+':'+role+':'+source.uuid;
+        if(materialCache.has(cacheKey))return materialCache.get(cacheKey);
         if(source.isShaderMaterial)throw new Error(`Untranslated source shader ${source.name}; uniforms ${Object.keys(source.uniforms??{}).join(',')}`);
         let target;
         if(source.isMeshStandardMaterial)target=source.clone();
@@ -30,18 +31,20 @@ export async function exportGameScene(poses) {
             }
         }
         target.name=`MAT_${materialCache.size}_${source.name||source.type}`;
+        const busProxy=translateLegacyBus(target,source,scope,materialContract);
+        const grassProxy=translateDryGrass(target,source,role,materialContract);
         const interiorProxy=translateWindowInterior(target,source,scope,materialContract,interiorTexture);
         const uvTiling=interiorProxy ? null : captureUvTiling(source);
         if (uvTiling && source.alphaMap) throw new Error('UV override plus independent alphaMap needs a slot-specific glTF adapter');
         const hooks=Object.keys(source.userData??{}).filter(key=>/shader|injected|variation|window|grass|asphalt/i.test(key));
-        audit.push({id:target.name,originalName:source.name,sourceType:source.type,translatedType:target.type,interiorProxy,uvTiling,sourceSpecularF0:source.specular?.toArray(),translatedIor:target.ior,
+        audit.push({id:target.name,originalName:source.name,scope,role,sourceType:source.type,translatedType:target.type,interiorProxy,busProxy,grassProxy,uvTiling,sourceSpecularF0:source.specular?.toArray(),translatedIor:target.ior,translatedSpecularIntensity:target.specularIntensity,
             color:source.color?.toArray(),roughness:target.roughness,metalness:target.metalness,opacity:target.opacity,
             normalScale:source.normalScale?.toArray(),bumpScale:source.bumpScale,hadBumpMap:!!source.bumpMap,
             removedLighting:{lightMap:!!source.lightMap,aoMap:!!source.aoMap},untranslatedProceduralHooks:hooks,
-            approximation:source.isMeshPhongMaterial?'Phong shininess approximated with GGX; source F0 converted to IOR and normalized tint':source.isMeshBasicMaterial?'Unlit color translated to diffuse except authored luminous signs':null});
+            approximation:busProxy?'Restrained legacy bus GGX appearance proxy; authored base colors/textures preserved':source.isMeshPhongMaterial?'Phong shininess approximated with GGX; source F0 converted to IOR and normalized tint':source.isMeshBasicMaterial?'Unlit color translated to diffuse except authored luminous signs':null});
         target.userData={};target.onBeforeCompile=()=>{};target.customProgramCacheKey=()=>'';
         target.lightMap=null;target.aoMap=null;target.envMap=null;target.polygonOffset=false;
-        materialCache.set(source.uuid,target);return target;
+        materialCache.set(cacheKey,target);return target;
     }
     function geometry(source) {
         if(geometryCache.has(source.uuid))return geometryCache.get(source.uuid);
@@ -62,7 +65,8 @@ export async function exportGameScene(poses) {
                 omitted.push({name:object.name,reason:'Screen-space sun glare is an optical effect, not a light-blocking surface'});return;
             }
             if(!object.layers.test(e.camera.layers)||materials.every(m=>!m.visible||!m.colorWrite)) {omitted.push({name:object.name,reason:'not a camera-renderable surface'});return;}
-            const mat=materials.map(source=>material(source,destination===bus?'bus':'city')),g=geometry(object.geometry);
+            const role=destination===city&&['CityFloor','GroundTiles'].includes(object.name)?'dry-grass':'authored';
+            const mat=materials.map(source=>material(source,destination===bus?'bus':'city',role)),g=geometry(object.geometry);
             const count=object.isInstancedMesh?object.count:1;
             for(let i=0;i<count;i++) {
                 const matrix=object.matrixWorld.clone();
@@ -102,6 +106,8 @@ export async function exportGameScene(poses) {
         lights,lighting:e.lightingSettings,atmosphere:e.atmosphereSettings,poses,
         limitations:['Procedural shader hooks listed per material are not executed in Cycles; source texture/PBR inputs are retained.',
             'Phong materials use a documented GGX approximation; no new glass transmission is invented for opaque source windows.',
+            'Known legacy bus paint/trim/rubber/rim materials use the restrained GGX appearance proxy, not measured Phong-to-physical equivalence.',
+            'CityFloor/GroundTiles use the documented dry-grass aggregate roughness adapter; runtime reflection suppression is not a glTF material property.',
             'Tagged city window interiors use gray-beige-silhouette-v1 opaque non-emissive UV proxies; they approximate appearance, not measured room geometry. Grass animation is omitted.',
             'Bump maps omitted by glTF are reported per material; normal maps are retained.',
             'Copied poses omit suspension and wheel steering state; loaded default rig is frozen.'],

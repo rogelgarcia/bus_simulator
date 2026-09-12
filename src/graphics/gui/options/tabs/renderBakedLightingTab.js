@@ -1,5 +1,6 @@
 // Player mode controls and on-demand developer diagnostics for optional bakes.
 import { makeChoiceRow, makeEl, makeToggleRow, makeValueRow } from '../OptionsUiControls.js';
+import { streamedShadowPrototypeOptions } from '../../../../app/illumination/static_sun_depth/StreamedShadowPages.js';
 
 export function renderBakedLightingTab() {
     this._ensureDraftBakedLighting();
@@ -28,6 +29,13 @@ export function renderBakedLightingTab() {
         options: [{ id: 'medium', label: 'Medium' }, { id: 'high', label: 'High' }],
         onChange: value => { baked.shadows.dynamicResolution = value; this._emitLiveChange(); }
     }).row);
+    if (streamedShadowPrototypeOptions(globalThis.location?.search).enabled) {
+        const streamed = makeToggleRow({label: 'Fine building shadows', value: baked.shadows.streamedDetail,
+            onChange: value => { baked.shadows.streamedDetail = value; this._emitLiveChange(); }});
+        streamed.toggle.setAttribute('aria-label', 'Fine building shadows');
+        channels.appendChild(streamed.row);
+        channels.appendChild(makeEl('div', 'options-note', 'Loads finer static shadows for visible surfaces when a matching detail bake exists. Missing detail keeps the complete baked shadow map.'));
+    }
     const indirect = makeToggleRow({ label: 'Enable baked indirect illumination', value: baked.receivers.indirect,
         onChange: value => { baked.receivers.indirect = value; this._emitLiveChange(); }
     });

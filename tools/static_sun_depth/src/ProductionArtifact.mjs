@@ -1234,12 +1234,12 @@ function validateRawRequest(request) {
     const pinned = {
         boundsMarginMeters: 2,
         guardPixels: FIXED_GUARD_TEXELS,
-        interiorPixels: PRODUCTION_INTERIOR_PIXELS,
+        interiorPixels: grid.interiorPixels,
         maxPayloadBytes: ILLUMINATION_MAX_PACKAGE_BYTES,
         phasePolicy: PRODUCTION_PHASE_POLICY,
         schema: PRODUCTION_REQUEST_SCHEMA,
         texelSizeMeters: grid.texelSizeMeters,
-        tileSizeMeters: PRODUCTION_INTERIOR_PIXELS.map(value => value * grid.texelSizeMeters)
+        tileSizeMeters: grid.interiorPixels.map(value => value * grid.texelSizeMeters)
     };
     for (const [key, expected] of Object.entries(pinned)) {
         if (canonicalJsonStringify(request[key])

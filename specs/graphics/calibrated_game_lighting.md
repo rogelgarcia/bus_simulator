@@ -55,9 +55,10 @@ use actual exported game geometry, verified camera projection and the E55 source
   the camera display transform in either path; base colors remain unchanged.
   A neutral0.18 surface under uniform0.5 radiance measures0.09 with reflections
   still disabled; repeated calibrated/legacy switches pass the browser regression.
-- Exported Phong materials now preserve their actual specular F0 through
-  Principled IOR and normalized tint. This is a BRDF approximation; it does not
-  make Phong and Principled identical.
+- Generic exported Phong materials translate their authored specular coefficient
+  through Principled IOR and normalized tint. The coefficient is not a measured
+  physical F0, and the translation is a BRDF approximation. Known legacy City
+  Bus materials use the scoped appearance adapter described below.
 - Tagged opaque city window-interior materials receive a deterministic gray/beige
   silhouette texture with seed566 and no emission/transmission. Bus materials,
   window frames and unrelated black trim are excluded. These are opaque textured
@@ -686,3 +687,96 @@ full city pass. Full-city evidence, including the Use defaults footer, is in
 `tests/artifacts/screens/daylight_presets/1789086435934/`; the city run took
 2.4 minutes. The defaults-file reload test changes only the served test response,
 leaving the repository's calibrated source values unchanged.
+
+## Single-pose legacy bus export correction
+
+The September 11 supplied-pose reference exposed a legacy Phong translation
+limit: paint became roughness 0.12 with F0 0.214 (IOR 2.72), while black trim
+became similarly smooth. Those authored highlight coefficients do not establish
+physical paint/plastic reflectance. The exported bus looked like polished metal
+although the original color textures remained intact.
+
+The export-only `city-bus-restrained-ggx-v1` contract now uses paint roughness
+0.34 and F0 0.025, black trim roughness 0.62 / F0 0.006, plastic roughness 0.70,
+and rubber roughness 0.88. Rims keep their original gray base and use roughness
+0.30. Glass/mirrors keep separate translations. No clearcoat or transmission is
+invented. This is an explicit appearance approximation, not measured material
+calibration or exact equality with the runtime HDRI-only reflection hook.
+Only named legacy Phong bus surfaces are adapted; authored PBR and city surfaces
+are preserved. The material cache includes scene scope so a shared source cannot
+accidentally apply a bus profile to a city mesh. The browser regression checks
+original material preservation, role isolation and the serialized glTF fields.
+
+### Supplied-pose diagnosis (September 11)
+
+Evidence lives under `tests/artifacts/screens/ai562_acesfilmic_reference_matching/`:
+`pose_comparison_20260911_bus_corrected` is the corrected Cycles pair;
+`pose_diagnostics_20260911/measurements.json` contains 17x17-pixel scene-linear
+regions, native combined/ambient/no-material-AO passes and Cycles lobe values.
+These are local image measurements, not a full-city calibration certificate.
+
+At the left wall sample (560,420), native ambient luminance is 0.042345 and
+Cycles diffuse is 0.043731. Cycles also has glossy luminance 0.181357, accounting
+for about 81% of its combined 0.224741. The game material has reflection intensity
+zero. Removing material AO only raises native ambient to 0.044162. Consequently
+this sample's large beauty-image difference is primarily reflection/material
+policy, not missing diffuse sky or a wrong sunlight exposure. The farther wall
+sample retains a smaller diffuse deficit (native no-AO 0.672608 versus Cycles
+diffuse 0.733731), so this result does not establish universal scene agreement.
+
+At the time of that diagnosis, the installed v6 indirect package was complete for all 1,903,239 eligible
+triangles, with no missing receiver entries, seven 4096-square pages, nominal
+0.5-metre texels, 128 samples per sky/bounce pass and four diffuse bounces.
+The surface backend disables adaptive sampling and denoising. Full coverage
+therefore does not imply converged or high-resolution lighting. Its static sun
+depth data has 0.05859375-metre texels; it is nearest-occluder depth, independent
+of Cycles indirect sample count. Runtime finite-source filtering uses eight
+blocker-search samples and twelve filtered static visibility samples. Thin
+contact detail and filtering/bias remain finite-resolution approximations.
+The installed per-profile certification found no omitted casters in its checks;
+a specific missing-shadow location has not been isolated by this diagnostic.
+No game defaults, shaders or baked packages were changed by this export fix.
+
+## Dry-grass reference and finer indirect bake (September 11)
+
+The following refinement adds `city-dry-grass-aggregate-v1` to the exporter.
+Only TerrainGenerator's `CityFloor` and `GroundTiles` receive it. Their effective
+roughness texture is remapped into [0.9,1] to represent a dry aggregate lawn,
+preserving variation, UV transforms, base color and normal maps. The adapter
+uses a separate texture Source so a shared ORM image cannot be modified through
+a clone. This is an offline appearance approximation for the runtime's suppressed
+environment reflections, not measured blade-scale material equivalence. Other
+city surfaces and the live game's grass material are unchanged.
+
+The higher-resolution calibrated game bake is installed from framework run
+`run-1789108808411-23184-bf6b3e2c`. It uses ten 4096-square pages, 0.33-metre
+texels, 512 samples per sky/bounce pass, four diffuse bounces and the same v3
+alpha/UV/raw-texture transport. All 1,903,239 eligible triangles remain covered;
+runtime omitted triangles are zero. A preliminary 0.25-metre layout required
+fourteen pages and was rejected before rendering. The accepted layout preserves
+the existing 1 GiB allocation and 512 MiB per-container limits.
+
+The complete successful pipeline took 3,873.3 seconds (64.6 minutes). Resident
+receiver GPU memory is 941,424,640 bytes, up by 251,658,240 bytes (240 MiB) from
+the seven-page bake. The shadow package was rebuilt and validated at its existing
+16K source lattice / 0.05859375-metre pitch; indirect density and sample count do
+not change direct-shadow resolution, bias or filtering. Denoising remains off in
+the surface baker. Finer maps do not resolve the independent reflection-policy
+differences identified above.
+
+Evidence under `tests/artifacts/screens/ai562_acesfilmic_reference_matching/`:
+`high_resolution_capture_20260911` has five fully applied poses, zero lighting
+dropouts, stable program/texture/geometry counts and a maximum measured transition
+frame of 846.1 ms. `high_resolution_native_20260911` passes all fourteen native
+checks. `high_resolution_install_20260911` authenticates installation and retains
+the previous package indexes for rollback. This is the existing validated
+development-cache publication, not a new aggregate release certification.
+
+`pose_comparison_20260911_high_resolution/game.png` and `cycles.png` are the final
+1920x1080 supplied-pose pair. The capture asserts the installed 512-sample profile,
+indirect blend 1, sun elevation 55 degrees and exposure 0.0511001705221839. Cycles
+uses the two dry-grass adapters and the restrained bus adapters; the grazing lawn
+no longer appears as a wet reflective plane. Camera projection error remains
+0.000265 pixels. The complete pair took 202.5 seconds, including game loading,
+fresh export and the Cycles render. Material/reflection differences remain visible
+on buildings and glass; these images are not a claim of complete renderer parity.

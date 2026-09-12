@@ -135,7 +135,7 @@ export function createProductionStaticSunRequest(profile) {
         boundsMarginMeters: 2,
         casterSidedness: STATIC_SUN_DEPTH_CASTER_SIDEDNESS,
         guardPixels: 4,
-        interiorPixels: [...AI531_STATIC_SUN_DEPTH_PRODUCTION_LAYOUT.interiorPixels],
+        interiorPixels: [...grid.interiorPixels],
         lightingProfileId: profile.id,
         maxPayloadBytes: ILLUMINATION_MAX_PACKAGE_BYTES,
         phasePolicy: AI531_STATIC_SUN_DEPTH_PRODUCTION_LAYOUT.phasePolicy,
@@ -173,7 +173,7 @@ export function createProductionStaticSunRequest(profile) {
         },
         sunPointDirectionWorld: [...profile.directionThree],
         texelSizeMeters: grid.texelSizeMeters,
-        tileSizeMeters: AI531_STATIC_SUN_DEPTH_PRODUCTION_LAYOUT.interiorPixels.map(value => value * grid.texelSizeMeters)
+        tileSizeMeters: grid.interiorPixels.map(value => value * grid.texelSizeMeters)
     });
 }
 
@@ -606,7 +606,7 @@ export async function executeProductionProfile(context, deps = {}) {
                 '--native-cutout-field-receipt-sha256',
                 nativeCutoutField.sha256,
                 '--output-encoding', 'rg8',
-                '--row-strip-pixels', String(context.options.rowStripPixels)
+                '--row-strip-pixels', String(request.interiorPixels[1])
             ],
             cwd: path.dirname(context.options.executablePath),
             env: isolated.env,
@@ -1617,7 +1617,7 @@ export async function loadProductionNativeCutoutField(context, deps = {}) {
         || receipt.outputs.length !== layerCount
         || canonicalJsonStringify(interiorPixels)
             !== canonicalJsonStringify(
-                AI531_STATIC_SUN_DEPTH_PRODUCTION_LAYOUT.interiorPixels
+                createProductionStaticSunRequest(context.profile).interiorPixels
             )
         || !Array.isArray(tileCount)
         || tileCount.length !== 2
