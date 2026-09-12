@@ -791,3 +791,29 @@ restore the previous template in `finally`, including restoring an absent entry.
 Leaving the dummy capital in the shared template cache changes four city meshes
 and invalidates both lightmap channels even with default lighting settings. The
 fix restores the real scene; it does not relax source hashes or require a rebake.
+
+## Responsive package preparation (2026-09-11)
+
+Browser identity extraction yields between geometry hashes. Hashing the extracted
+source and channel snapshots runs in a cancellable module worker; it uses the same
+hash functions as the offline exporter. Exact source checks at activation and on
+each frame remain required.
+
+Receiver packages are fetched, inflated and authenticated in a worker, including
+the same manifest, capability, decoded-value and chunk-hash checks. Compressed and
+expanded lengths remain bounded; byte buffers are transferred back without an
+additional full-package copy. Shards retain complete-coverage and shared-mapping
+validation. Cancellation, failure and success terminate the worker.
+
+Receiver geometry is prepared privately with cooperative yields between objects.
+Only the completed binding installs material hooks and swaps live geometry. An
+aborted or superseded generation disposes its private geometry. The synchronous
+installer remains available to fixtures. Atlas assembly yields between layers;
+GPU texture upload remains on the rendering thread. Resolution, sampling and
+publication identity are unchanged.
+
+The status remains Loading / preparing shaders until the selected view is ready.
+An internally committed channel is not reported Applied while presentation is
+still held for shader preparation. Tests cover cancellation, transferred ownership,
+corrupt packages, identical source hashes and atomic geometry installation in
+`receiver_background_preparation.pwtest.js` and `lighting_view_preparation.pwtest.js`.

@@ -36,6 +36,7 @@ import {
     validateIlluminationEncodedBytes
 } from './IlluminationEncoding.js';
 import { failIlluminationPackage } from './IlluminationPackageError.js';
+import { verifyPackageInBackground } from './IlluminationPackageBackground.js';
 import {
     requireExactKeys,
     requireObject,
@@ -230,14 +231,16 @@ export function transferIlluminationPackageOwnership(value) {
     return lease;
 }
 
-/** @param {object} lease @param {{expectations?: Record<string, unknown>, runtimeCapabilities?: Iterable<string>}} [options] */
+/** @param {object} lease @param {{expectations?: Record<string, unknown>, runtimeCapabilities?: Iterable<string>, background?: boolean, signal?: AbortSignal}} [options] */
 export async function parseTransferredIlluminationBinaryPackage(lease, options = {}) {
     const bytes = OWNED_PACKAGE_LEASES.get(lease);
     if (!(bytes instanceof Uint8Array)) {
         throw new TypeError('Transferred illumination package lease is invalid or already consumed');
     }
     OWNED_PACKAGE_LEASES.delete(lease);
-    const parsed = await parsePackageBytes(bytes, options);
+    const parsed = options.background
+        ? await verifyPackageInBackground(bytes, { expectations: options.expectations, runtimeCapabilities: options.runtimeCapabilities }, options.signal)
+        : await parsePackageBytes(bytes, options);
     OWNED_PACKAGE_PARSES.add(parsed);
     return parsed;
 }

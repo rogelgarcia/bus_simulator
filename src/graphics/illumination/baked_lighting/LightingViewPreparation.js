@@ -11,7 +11,7 @@ export async function prepareLightingView(renderer, scene, camera, target, signa
         renderer.setRenderTarget(target);
         materials = renderer.compile(scene, camera);
     } finally { renderer.setRenderTarget(previous); }
-    const programs = new Set([...materials].flatMap(material => [...renderer.properties.get(material).programs.values()]));
+    const programs = new Set([...materials].map(material => renderer.properties.get(material).currentProgram));
     const deadline = performance.now() + 90000;
     while ([...programs].some(program => !program.isReady())) {
         signal.throwIfAborted();

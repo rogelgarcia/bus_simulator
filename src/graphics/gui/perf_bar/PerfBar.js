@@ -344,7 +344,7 @@ export class PerfBar {
 
     onFrame({ dt, rawDt, nowMs, renderer, frameIndex } = {}) {
         const now = Number.isFinite(nowMs) ? nowMs : performance.now();
-        if (renderer) this.setRenderer(renderer);
+        if (renderer && renderer !== this._renderer) this.setRenderer(renderer);
         const pose = this._debugPoseProvider?.();
         if (this._debugLine) {
             if (this._debugLine.hidden === !!pose) {

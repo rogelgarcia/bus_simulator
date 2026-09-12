@@ -12,6 +12,30 @@ import { repairEnhancedReceiverCoplanarGeometry } from './EnhancedReceiverCoplan
 /** @param {any} mapping @param {Map<string, any>} references
  * @param {Record<string, {value: any}>} uniforms @param {Float32Array} coordinates */
 export function installEnhancedReceiverBindings(mapping, references, uniforms, coordinates) {
+    const preparation = prepareEnhancedReceiverBindings(mapping, references, uniforms, coordinates);
+    let result; do { result = preparation.next(); } while (!result.done);
+    return result.value;
+}
+
+/** @param {any} mapping @param {Map<string, any>} references @param {any} uniforms
+ * @param {Float32Array} coordinates @param {AbortSignal} signal */
+export async function installEnhancedReceiverBindingsAsync(mapping, references, uniforms, coordinates, signal) {
+    const preparation = prepareEnhancedReceiverBindings(mapping, references, uniforms, coordinates);
+    let started = performance.now();
+    try {
+        while (true) {
+            signal.throwIfAborted();
+            const result = preparation.next();
+            if (result.done) return result.value;
+            if (performance.now() - started >= 4) {
+                await (globalThis.scheduler?.yield() ?? new Promise(resolve => setTimeout(resolve, 0)));
+                started = performance.now();
+            }
+        }
+    } catch (error) { preparation.throw(error); throw error; }
+}
+
+function* prepareEnhancedReceiverBindings(mapping, references, uniforms, coordinates) {
     const surface = mapping.profile.irradianceRepresentation === 'surface-diffuse-v1';
     const geometries = [], hooks = [], materials = new Set(), nonFlatMaterials = new Set();
     const coverage = { omittedTriangles: 0, boundObjects: 0, overlappingTriangles: 0, removedOverlapArea: 0 };
@@ -62,6 +86,7 @@ export function installEnhancedReceiverBindings(mapping, references, uniforms, c
             }
             geometries.push({ object, original, geometry, omittedTriangles });
             for (const material of Array.isArray(object.material) ? object.material : [object.material]) if (material.isMeshStandardMaterial) materials.add(material);
+            yield;
         }
         for (const material of materials) {
             const flatNormal = surface || (!nonFlatMaterials.has(material) && !material.normalMap && !material.bumpMap && material.side === THREE.FrontSide);

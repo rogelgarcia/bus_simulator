@@ -90,3 +90,17 @@ test('GPU frame timer documents unsupported and disjoint query states without CP
     assert.equal(timer.getDiagnostics().sampleCount, 0);
     assert.equal(timer.getLastMs(), null);
 });
+
+test('GPU timing does not drain driver errors on every frame after validating query setup', () => {
+    const gl = createFakeWebGl2(); let reads = 0;
+    gl.getError = () => { reads++; return gl.NO_ERROR; };
+    const timer = getOrCreateGpuFrameTimer({getContext: () => gl});
+    timer.beginFrame(); timer.endFrame(); timer.poll();
+    const setupReads = reads;
+    for (let i=0; i<100; i++) { timer.beginFrame(); timer.endFrame(); timer.poll(); }
+    assert.equal(reads, setupReads);
+    assert.equal(timer.getDiagnostics().sampleCount, 101);
+    gl.setDisjoint(true); timer.beginFrame(); timer.endFrame(); timer.poll();
+    assert.equal(timer.getLastMs(), null);
+    assert.equal(timer.getDiagnostics().disjointCount, 1);
+});

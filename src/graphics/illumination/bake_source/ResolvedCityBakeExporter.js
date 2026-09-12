@@ -14,6 +14,7 @@ import {
     convertThreeMatrixToBlender
 } from '../../../app/illumination/bake_source/index.js';
 import { failBakeSource } from './BakeSourceErrors.js';
+import { buildSourceIdentityInBackground } from './BakeSourceIdentityLoading.js';
 import {
     collectResolvedCityBakeRoots,
     createOriginalCasterResolver,
@@ -579,9 +580,17 @@ async function resolveCityBakeSource({ city, profile, readiness = {}, sourceEqua
     city.group.updateWorldMatrix(true, true);
     const sourceBefore = createResolvedCitySourceRecord(city);
     const roots = collectResolvedCityBakeRoots(city);
+    let extractionYield = performance.now();
     const [geometryExtraction, materialCatalog, capturedLighting] = await Promise.all([
         extractBakeSourceGeometry(roots, {
-            hashBytes: (bytes) => sha256Hex(RESOLVED_CITY_BAKE_GEOMETRY_BUFFER_DOMAIN, bytes),
+            hashBytes: async (bytes) => {
+                signal?.throwIfAborted();
+                if (identityOnly && performance.now() - extractionYield >= 4) {
+                    await (globalThis.scheduler?.yield() ?? new Promise(resolve => setTimeout(resolve, 0)));
+                    extractionYield = performance.now(); signal?.throwIfAborted();
+                }
+                return sha256Hex(RESOLVED_CITY_BAKE_GEOMETRY_BUFFER_DOMAIN, bytes);
+            },
             matrixHelpers: { validateAffineTransform, convertThreeMatrixToBlender }
         }),
         createBakeMaterialCatalog(roots, { signal, textureConcurrency, onProgress: (counts) => onProgress({
@@ -677,14 +686,14 @@ async function resolveCityBakeSource({ city, profile, readiness = {}, sourceEqua
         receiverMappings: mappings.receiverMappings
     });
     progress('hashing_source');
-    const hashSet = await buildBakeSourceHashSet({
+    const hashInput = {
         resolvedSource: resolvedSourceFreshness,
         geometry: geometryFreshness,
         usedMaterials: usedMaterialsFreshness,
         profiles: capturedLighting.profiles,
         channels: channelProfiles,
         compiler: compilerReferences
-    });
+    };
     const channelSourceContext = {
         objects: mappings.objects,
         meshInstances: mappings.meshInstances,
@@ -697,8 +706,14 @@ async function resolveCityBakeSource({ city, profile, readiness = {}, sourceEqua
         alphaInputs: alphaCatalog.records,
         lightingProfiles: capturedLighting.profiles
     };
-    progress('hashing_channels');
-    const channelSources = await buildChannelSourceHashes(channelProfiles, hashSet, channelSourceContext);
+    let hashSet, channelSources;
+    if (identityOnly && typeof Worker === 'function') {
+        ({ hashSet, channelSources } = await buildSourceIdentityInBackground(hashInput, channelSourceContext, signal, progress));
+    } else {
+        hashSet = await buildBakeSourceHashSet(hashInput);
+        progress('hashing_channels');
+        channelSources = await buildChannelSourceHashes(channelProfiles, hashSet, channelSourceContext);
+    }
     const manifest = {
         format: RESOLVED_CITY_BAKE_INPUT_FORMAT,
         schemaVersion: 2,

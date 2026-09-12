@@ -161,7 +161,9 @@ function createQueryTimer(gl, {
                 const query = createQuery();
                 if (!query) return;
                 const nextSubmissionSequence = submissionSequence + 1;
-                const started = glCallHasNoError(gl, () => beginQuery(query));
+                // Validate setup once. Repeated getError calls serialize the driver
+                // while the asynchronous query is meant to leave rendering queued.
+                const started = submissionSequence === 0 ? glCallHasNoError(gl, () => beginQuery(query)) : (beginQuery(query), true);
                 if (!started) {
                     deleteRecord({ query });
                     disableTimer('timer-query-begin-failed');
@@ -182,7 +184,9 @@ function createQueryTimer(gl, {
                 disableTimer('timer-query-extension-became-unavailable');
                 return;
             }
-            const ended = glCallHasNoError(gl, () => endQuery());
+            let ended;
+            try { ended = submissionSequence === 1 ? glCallHasNoError(gl, () => endQuery()) : (endQuery(), true); }
+            catch { ended = false; }
             if (ended) {
                 pending.push(record);
                 while (pending.length > MAX_PENDING_QUERIES) deleteRecord(pending.shift());
@@ -204,7 +208,7 @@ function createQueryTimer(gl, {
                 disableTimer('timer-query-disjoint-read-failed');
                 return;
             }
-            if (!hasNoGlError(gl)) {
+            if (sampleSequence === 0 && !hasNoGlError(gl)) {
                 disableTimer('timer-query-disjoint-gl-error');
                 return;
             }
@@ -224,7 +228,7 @@ function createQueryTimer(gl, {
                     disableTimer('timer-query-availability-read-failed');
                     return;
                 }
-                if (!hasNoGlError(gl)) {
+                if (sampleSequence === 0 && !hasNoGlError(gl)) {
                     disableTimer('timer-query-availability-gl-error');
                     return;
                 }
@@ -232,7 +236,7 @@ function createQueryTimer(gl, {
                 pending.shift();
                 try {
                     const ns = Number(getResult(record.query));
-                    if (!hasNoGlError(gl)) {
+                    if (sampleSequence === 0 && !hasNoGlError(gl)) {
                         disableTimer('timer-query-result-gl-error');
                         return;
                     }

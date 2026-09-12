@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { ReceiverLightmapRuntime } from './ReceiverLightmapRuntime.js';
 import { createEnhancedReceiverLoader } from './EnhancedReceiverResources.js';
-import { installEnhancedReceiverBindings } from './EnhancedReceiverMaterialAdapter.js';
+import { installEnhancedReceiverBindingsAsync } from './EnhancedReceiverMaterialAdapter.js';
 import { createEnhancedSourceWatch, enhancedLightingKey } from './EnhancedReceiverFreshness.js';
 import { collectResolvedCityBakeRoots } from '../bake_source/BakeSourceScene.js';
 import { installEnhancedReceiverRenderOptimizations } from './EnhancedReceiverRenderOptimizations.js';
@@ -33,9 +33,9 @@ export class EnhancedReceiverLightmapRuntime extends ReceiverLightmapRuntime {
         for (const channel of ['Direct', 'Indirect']) for (const kind of ['Scale', 'Bias']) {
             this.uniforms[`receiver${channel}${kind}`] = { value: Array.from({ length: 24 }, () => new THREE.Vector4(0, 0, 0, 0)) };
         }
-        this.installBindings = (mapping, references, uniforms) => {
+        this.installBindings = async (mapping, references, uniforms, signal) => {
             this.updateDecodeUniforms();
-            const binding = installEnhancedReceiverBindings(mapping, references, uniforms, uniforms.receiverAtlasMapping.value.image.data);
+            const binding = await installEnhancedReceiverBindingsAsync(mapping, references, uniforms, uniforms.receiverAtlasMapping.value.image.data, signal);
             this.watch?.setGeometryOverrides?.(binding.geometries);
             const restoreRender = installEnhancedReceiverRenderOptimizations(engine);
             return { ...binding, restore() { restoreRender(); binding.restore(); } };

@@ -1,7 +1,7 @@
 // Loads AI 548 directional pages with linear per-component quantization and shared coordinates.
 // @ts-check
 import * as THREE from 'three';
-import { parseIlluminationBinaryPackage } from '../../../app/illumination/package/index.js';
+import { loadReceiverPackage } from './ReceiverPackageLoading.js';
 import { receiverCoordinateChunks } from '../../../app/illumination/receiver_lightmaps/ReceiverCoordinateTransport.js';
 import { createReceiverHdrTexture } from './ReceiverHdrTexture.js';
 import { SUPPORTED_RECEIVER_TRANSPORTS } from '../../../app/illumination/receiver_lightmaps/ReceiverTransportPolicy.js';
@@ -12,16 +12,9 @@ export function createEnhancedReceiverLoader(renderer) {
     const mappings = new Map();
     return async function load({ url, descriptor, channel, sourceHash, resolvedSourceHash, cityId, profileId, signal }) {
         const start = performance.now();
-        const response = await fetch(url, { signal });
-        if (!response.ok) throw new Error('Directional lightmap HTTP ' + response.status);
-        const packed = await response.arrayBuffer(), downloaded = performance.now();
-        if (packed.byteLength !== descriptor.compressedBytes || descriptor.bytes > 512 * 1024 * 1024) throw new Error('Directional transport budget or length mismatch');
-        const raw = await new Response(new Blob([packed]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
-        const inflated = performance.now();
-        if (raw.byteLength !== descriptor.bytes) throw new Error('Directional package length mismatch');
-        const parsed = await parseIlluminationBinaryPackage(raw, { expectations: { cityId, lightingProfileId: profileId,
+        const { parsed, timings } = await loadReceiverPackage({ url, descriptor, signal, options: { expectations: { cityId, lightingProfileId: profileId,
             aggregateSha256: descriptor.aggregateSha256, profileSha256: descriptor.profileSha256 },
-            runtimeCapabilities: ['receiver_lightmap_sampling_v1', 'receiver_directional_sampling_v1', 'receiver_directional_flat_first_v1', 'receiver_rgb9e5_sampling_v1'] });
+            runtimeCapabilities: ['receiver_lightmap_sampling_v1', 'receiver_directional_sampling_v1', 'receiver_directional_flat_first_v1', 'receiver_rgb9e5_sampling_v1'] } });
         if (!parsed.compatibility.compatible || parsed.manifest.channels.find((v) => v.id === channel)?.sourceSha256 !== sourceHash) throw new Error('Directional package source or capability mismatch');
         signal.throwIfAborted();
         const coordinates = parsed.chunks.find((v) => v.descriptor.id === 'mapping.coordinates' || v.descriptor.id === 'mapping.coordinates.0000');
@@ -40,21 +33,17 @@ export function createEnhancedReceiverLoader(renderer) {
         const reference = sharedSun && channel === 'direct_receiver';
         const hdr = channel === 'indirect_irradiance' && mapping.profile.indirectEncoding === 'rgb9e5_le';
         const pageChunks=parsed.chunks.filter(v=>v.descriptor.channelId===channel);
-        let compressedBytes=packed.byteLength;
+        let compressedBytes=descriptor.compressedBytes;
         const shards=parsed.manifest.source.descriptor.receiverPageShards ?? [];
         if(!Array.isArray(shards)||shards.length>5 || (shards.length && mapping.profile.pageTransport!=='bounded-page-shards-v1')) throw new Error('Unsupported receiver page transport');
         for(const shard of shards) {
             if(!new RegExp('^'+channel+'\\.part[1-9][0-9]*\\.ilpkg\\.gz$').test(shard.url)
                 ||!Number.isInteger(shard.bytes)||shard.bytes<1||shard.bytes>512*1024*1024) throw new Error('Invalid receiver page package');
-            const response=await fetch(new URL(shard.url,url),{signal});
-            if(!response.ok)throw new Error('Receiver page package HTTP '+response.status);
-            const packed=await response.arrayBuffer();compressedBytes+=packed.byteLength;
-            if(packed.byteLength!==shard.compressedBytes)throw new Error('Receiver page transport length mismatch');
-            const raw=await new Response(new Blob([packed]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
-            if(raw.byteLength!==shard.bytes)throw new Error('Receiver page package length mismatch');
-            const child=await parseIlluminationBinaryPackage(raw,{expectations:{cityId,lightingProfileId:profileId,
+            const {parsed:child,timings:childTimings}=await loadReceiverPackage({url:new URL(shard.url,url).href,descriptor:shard,signal,options:{expectations:{cityId,lightingProfileId:profileId,
                 aggregateSha256:shard.aggregateSha256,profileSha256:descriptor.profileSha256},
-                runtimeCapabilities:['receiver_lightmap_sampling_v1','receiver_rgb9e5_sampling_v1']});
+                runtimeCapabilities:['receiver_lightmap_sampling_v1','receiver_rgb9e5_sampling_v1']}});
+            compressedBytes+=shard.compressedBytes;
+            for(const key of Object.keys(timings)) timings[key]+=childTimings[key];
             if(!child.compatibility.compatible || child.manifest.source.descriptor.receiverPageShards
                 ||child.manifest.source.resolvedSourceSha256!==resolvedSourceHash
                 ||child.manifest.channels.find(v=>v.id===channel)?.sourceSha256!==sourceHash
@@ -93,6 +82,7 @@ export function createEnhancedReceiverLoader(renderer) {
                 if (mip === 0) { scale.push(new THREE.Vector4(...decode.scale)); bias.push(new THREE.Vector4(...decode.bias)); }
                 else if (!scale[layer].equals(new THREE.Vector4(...decode.scale)) || !bias[layer].equals(new THREE.Vector4(...decode.bias))) throw new Error('Directional mip decoding range changed');
                 data.set(hdr ? new Uint32Array(chunk.data.buffer,chunk.data.byteOffset,chunk.data.byteLength/4) : chunk.data, layer * size * size * (hdr ? 1 : 4));
+                await new Promise(resolve => setTimeout(resolve, 0)); signal.throwIfAborted();
             }
             levels.push({ data, width: size, height: size, depth: layers });
         }
@@ -131,8 +121,8 @@ export function createEnhancedReceiverLoader(renderer) {
         const pageBytes = levels.reduce((sum, v) => sum + v.data.byteLength, 0);
         return { mapping, mappingTexture: shared.texture, texture, scale, bias, directional,
             identity: { aggregateSha256: descriptor.aggregateSha256, profileId }, dispose,
-            metrics: { downloadMs: downloaded - start, inflateMs: inflated - downloaded,
-                validateDecodeMs: decoded - inflated, uploadMs: performance.now() - decoded,
+            metrics: { downloadMs: timings.downloadMs, inflateMs: timings.inflateMs, workerValidationMs: timings.validateMs,
+                validateDecodeMs: decoded - start - timings.downloadMs - timings.inflateMs, uploadMs: performance.now() - decoded,
                 gpuBytes: pageBytes, cpuBytes: pageBytes, sharedMappingBytes: shared.texture.image.data.byteLength,
                 compressedBytes, layers, encoding: hdr ? 'rgb9e5_hdr' : 'linear_rgba8_per_component' } };
     };

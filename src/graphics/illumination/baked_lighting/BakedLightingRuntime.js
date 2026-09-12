@@ -266,6 +266,7 @@ export class BakedLightingRuntime {
                         ?? 'preparing_shaders';
                 }
             }
+            else if (this.effectiveMode === 'baked' && this.shouldHoldView()) { state = 'loading'; phase = 'preparing_shaders'; }
             else if (this.effectiveMode === 'baked') state = 'active';
             else if (this.loading) {
                 phase = channel.ready ? 'ready_to_commit' : channel.phase;
@@ -284,14 +285,14 @@ export class BakedLightingRuntime {
         const shadow = this.shadows.getDiagnostics();
         const receiver = this.receivers.getDiagnostics();
         const pipeline = shadow.pipeline?.runtime?.controller;
-        const active = this.effectiveMode === 'baked';
+        const active = this.effectiveMode === 'baked' && !this.shouldHoldView();
         return { ...shadow, settings: this.getSettings(),
             view: { ready: !this.shouldHoldView(), preparing: this.viewPreparing || this.viewDirty,
                 error: this.viewError ?? null },
             status: { requested: this.settings.mode !== 'current', requestedMode: this.settings.mode,
-                effectiveMode: this.effectiveMode, state: active ? 'active' : this.loading ? 'loading' : 'fallback',
+                effectiveMode: this.effectiveMode, state: active ? 'active' : this.loading || this.shouldHoldView() ? 'loading' : 'fallback',
                 causeState: this.failure, reason: this.reason,
-                phase: active ? 'committed' : this.loading ? this.ready ? 'ready_to_commit'
+                phase: active ? 'committed' : this.viewPreparing || this.viewDirty ? 'preparing_shaders' : this.loading ? this.ready ? 'ready_to_commit'
                     : receiver.state === 'loading' ? receiver.reason : pipeline?.phase ?? 'locating' : null,
                 profileId: receiver.publications?.indirect_irradiance?.profileId ?? shadow.status.profileId },
             receiverLightmaps: receiver, busLighting: this.bus.getDiagnostics(),

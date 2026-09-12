@@ -247,7 +247,7 @@ export function createIlluminationRuntime(options) {
                     parsed = transferredPackageLease
                         ? await parseTransferredIlluminationBinaryPackage(
                             transferredPackageLease,
-                            parseOptions
+                            { ...parseOptions, background: typeof Worker === 'function', signal: hooks.signal }
                         )
                         : await parseIlluminationBinaryPackage(packageBytes, parseOptions);
                 } catch (error) {

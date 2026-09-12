@@ -170,7 +170,12 @@ export class ReceiverLightmapRuntime {
             this.uniforms.receiverDirectAtlas.value = this.resources.direct_receiver?.texture ?? this.empty;
             this.uniforms.receiverIndirectAtlas.value = this.resources.indirect_irradiance?.texture ?? this.empty;
             this.uniforms.receiverMaxMip.value = resource.mapping.profile.mipLevels - 1;
-            this.bindings ??= this.installBindings(resource.mapping, this.source.references, this.uniforms);
+            if (!this.bindings) {
+                this.status = { state: 'loading', reason: 'preparing_receivers' };
+                const binding = await this.installBindings(resource.mapping, this.source.references, this.uniforms, signal);
+                if (signal.aborted || generation !== this.generation) { binding.restore(); return this.getDiagnostics(); }
+                this.bindings = binding;
+            }
             const compileStarted = performance.now();
             this.status = { state: 'loading', reason: 'preparing_shaders' };
             if (this.atomicActivation) this.engine._bakedLighting?.requestViewPreparation();

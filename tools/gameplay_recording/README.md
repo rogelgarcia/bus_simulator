@@ -57,6 +57,18 @@ per-frame CPU phases and GPU samples joined by submission, and region summaries.
 root and visibility cell/yaw key. Use this separately from benchmark runs because
 collecting render lists adds work.
 
+`REPLAY_PROFILE_STARTUP=1` writes `startup.cpuprofile` and `startup.json`, containing
+main-thread long tasks, changes in activation/preparation phase, and final channel
+diagnostics. Use the CPU profile to attribute pauses between game frames: the
+recorded CPU column measures the game update call, whereas the frame interval also
+includes asynchronous work before that call. Startup profiling adds overhead and
+must be identified when comparing timing results.
+
+Per-frame replay output also includes streaming update CPU time, cumulative page
+requests/uploads/evictions, and shader/resource counts. GPU samples are joined to
+their originating submission; missing samples stay null. Region summaries use
+the hexadecimal frame ranges present in the input rather than fixed route labels.
+
 The current replay supports this debug HUD's 48 px height at device scale 2 and
 unchanged current defaults: other settings fail the configuration equality check
 instead of producing a misleading comparison. It pauses the physics solver and

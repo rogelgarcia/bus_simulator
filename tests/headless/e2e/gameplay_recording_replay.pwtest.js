@@ -7,7 +7,7 @@ test.use({ video: 'off', trace: 'off', deviceScaleFactor: 2 });
 
 test('Recorded route: repeated exact visual poses retain baked lighting and expose frame costs', async ({ page }) => {
     test.skip(!process.env.REPLAY_INPUT, 'Set REPLAY_INPUT to a captured .busrec file.');
-    test.setTimeout(360_000);
+    test.setTimeout(600_000);
     const recording = await decodeFrameRecording(await readFile(process.env.REPLAY_INPUT, 'utf8'));
     const c = recording.columns;
     const first = Number(process.env.REPLAY_FIRST || '0xA80'), last = Number(process.env.REPLAY_LAST || '0xE20');
@@ -16,6 +16,22 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
     const output = `tests/artifacts/screens/recorded_slowdown/${process.env.REPLAY_NAME || 'replay'}`;
     await mkdir(output, {recursive:true});
     const errors = []; page.on('pageerror', error => errors.push(error.message));
+    const profiler = process.env.REPLAY_PROFILE_STARTUP === '1' ? await page.context().newCDPSession(page) : null;
+    if (profiler) {
+        await profiler.send('Profiler.enable'); await profiler.send('Profiler.start');
+        await page.addInitScript(() => {
+            window.startupLongTasks = [];
+            window.startupPhases = []; let previous = '';
+            window.startupPhaseTimer = setInterval(() => {
+                const e = window.__busSim?.engine, b = e?._bakedLighting; if (!b) return;
+                const phase = [b.generation,b.loading,b.ready,b.effectiveMode,b.viewRevision,b.viewPreparing,b.viewDirty,b.receivers.status.reason];
+                const key = phase.join('|'); if (key === previous) return; previous = key;
+                window.startupPhases.push({now:performance.now(),phase,renderFrame:e.renderer.info.render.frame});
+            }, 25);
+            new PerformanceObserver(list => window.startupLongTasks.push(...list.getEntries().map(e => ({start:e.startTime,ms:e.duration}))))
+                .observe({type:'longtask',buffered:true});
+        });
+    }
     await page.setViewportSize({width:c.width[indices[0]]/2, height:c.height[indices[0]]/2+48});
     const pose = recordingFramePose(recording, indices[0]);
     await page.goto('/?debug=true&coreTests=0&gameplayPose='+encodeURIComponent(JSON.stringify(pose)));
@@ -23,6 +39,14 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
         const b = window.__busSim?.engine?._bakedLighting;
         return b?.effectiveMode === 'baked' && !b.shouldHoldView() && !document.querySelector('.gameplay-loading');
     }, null, {timeout:150_000});
+    if (profiler) {
+        const profile = await profiler.send('Profiler.stop'); await profiler.detach();
+        await writeFile(`${output}/startup.cpuprofile`, JSON.stringify(profile.profile));
+        await writeFile(`${output}/startup.json`, JSON.stringify(await page.evaluate(() => {
+            clearInterval(window.startupPhaseTimer);
+            return {longTasks: window.startupLongTasks, phases:window.startupPhases,baked: window.__busSim.engine._bakedLighting.getDiagnostics()};
+        })));
+    }
     const input = indices.map(i => ({frame:c.frame[i],
         bus:[c.busX[i],c.busY[i],c.busZ[i],c.busQx[i],c.busQy[i],c.busQz[i],c.busQw[i]],
         camera:[c.cameraX[i],c.cameraY[i],c.cameraZ[i],c.cameraQx[i],c.cameraQy[i],c.cameraQz[i],c.cameraQw[i]],
@@ -50,6 +74,8 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
         wrap(e,'_renderAoFrame','render');
         wrap(e,'_prepareDynamicAo','ao');
         wrap(e._post.pipeline,'_renderSunBloom','sunBloom');
+        const detail = e._illuminationPipeline._active?.binding?.streamedDetail;
+        if (detail) wrap(detail,'update','streaming');
         let passes = [];
         if (diagnostics) {
             wrap(gl,'getError','glError');
@@ -113,6 +139,8 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
                 submission:e._gpuFrameTimer.getDiagnostics().submissionSequence,
                 bloom:bloom.outcome,bloomCalls:bloom.passCalls,bloomCandidates:bloom.retainedOccluderCount,
                 mode:e._bakedLighting.effectiveMode,generation:e._bakedLighting.generation,
+                streamingRequests:detail?.metrics.requests,streamingUploads:detail?.metrics.uploadMs,
+                streamingEvictions:detail?.residency.evictions,
                 ...(diagnostics ? {passes,visibilityKey:s.city.staticVisibility._runtime?._lastKey,
                     visibility:s.city.staticVisibility.getStatus()} : {})});
             cursor++; return result;
@@ -131,7 +159,7 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
     expect(normalize(initial.settings)).toEqual(normalize(config.usesDefaultValues ? recording.metadata.defaults : config.settings));
     await writeFile(`${output}/environment.json`,JSON.stringify(initial,null,2));
     console.log('Replaying',input.length,'poses at',initial.width,initial.height);
-    await page.waitForFunction(()=>window.recordedReplay.done(),null,{timeout:180_000});
+    await page.waitForFunction(()=>window.recordedReplay.done(),null,{timeout:300_000});
     await page.waitForTimeout(500);
     if (process.env.REPLAY_COMPARE_VISIBILITY) {
         const cases = JSON.parse(await readFile(process.env.REPLAY_COMPARE_VISIBILITY,'utf8'));
@@ -176,7 +204,8 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
     for(const f of result.frames)f.gpu=gpu.get(f.submission)??null;
     await writeFile(`${output}/frames.json`,JSON.stringify(result));
     const summaries=[];
-    for(const lap of [...new Set(result.frames.map(f=>f.lap))])for(const region of [0xb00,0xc00,0xd00]){
+    const regions = [...new Set(input.map(f=>Math.floor(f.frame/256)*256))];
+    for(const lap of [...new Set(result.frames.map(f=>f.lap))])for(const region of regions){
         const frames=result.frames.filter(f=>f.lap===lap&&f.sourceFrame>=region&&f.sourceFrame<region+256);
         if (!frames.length) continue;
         const q=(key,p)=>{const a=frames.map(f=>f[key]).filter(Number.isFinite).sort((a,b)=>a-b);return a[Math.floor(a.length*p)];};

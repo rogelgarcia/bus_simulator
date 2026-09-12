@@ -219,7 +219,7 @@ function validateGuards(descriptor, payload, bytesPerLayer) {
         const tile = descriptor.tiles[tileIndex];
         for (let storedY = 0; storedY < storedHeight; storedY += 1) {
             for (let storedX = 0; storedX < storedWidth; storedX += 1) {
-                if (isInterior(storedX, storedY, guard, interiorWidth, interiorHeight)) continue;
+                if (isInterior(storedX, storedY, guard, interiorWidth, interiorHeight)) { storedX = guard + interiorWidth - 1; continue; }
                 const globalX = tile.coordinates[0] * interiorWidth + storedX - guard;
                 const globalY = tile.coordinates[1] * interiorHeight + storedY - guard;
                 const ownerGlobalX = Math.min(globalWidth - 1, Math.max(0, globalX));

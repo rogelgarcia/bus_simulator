@@ -626,3 +626,16 @@ is why cross-run timing comparisons are not treated as isolated measurements.
 The white-building pose also passed installed baked/live/baked restoration in
 `shadow_filter_quality/reference-18`; the initial and restored baked PNGs have
 identical SHA-256 hashes and indirect illumination stayed enabled throughout.
+
+## Background authentication (2026-09-11)
+
+The browser runtime can transfer its exclusive package-storage lease to a module
+worker for the existing package parser. The returned result receives the same
+private ownership brand as local parsing only after authenticated completion;
+structured descriptor objects are frozen again after transfer. Node and offline
+parsing retain the local path. Abort or completion terminates the verifier.
+
+Guard-band validation visits the complete perimeter, including corners and seams,
+without iterating over authenticated interior texels merely to skip them. Chunk
+hashes still authenticate every byte. No publication, format or memory-budget gate
+is bypassed.
