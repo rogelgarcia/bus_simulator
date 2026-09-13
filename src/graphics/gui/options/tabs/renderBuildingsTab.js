@@ -8,9 +8,15 @@ export function renderBuildingsTab() {
     sectionBuildings.appendChild(makeEl('div', 'options-section-title', 'Buildings'));
 
     const d = this._draftBuildingWindowVisuals;
+    const surfaces = d.surfaces ?? (d.surfaces = { reflections: false });
     const glass = d.reflective.glass ?? (d.reflective.glass = {});
     const emit = () => this._emitLiveChange();
     const controls = {
+        surfaces: makeToggleRow({
+            label: 'Opaque building reflections (experimental)',
+            value: surfaces.reflections,
+            onChange: (v) => { surfaces.reflections = v; emit(); }
+        }),
         reflective: makeToggleRow({
             label: 'Reflective building windows',
             value: d.reflective.enabled,
@@ -63,6 +69,8 @@ export function renderBuildingsTab() {
         })
     };
 
+    sectionBuildings.appendChild(controls.surfaces.row);
+    sectionBuildings.appendChild(makeEl('div', 'options-note', 'Uses the global environment on opaque walls and roofs, keeping their textures, roughness and AO. Independent of window reflections.'));
     sectionBuildings.appendChild(controls.reflective.row);
     sectionBuildings.appendChild(controls.glassEnvMapIntensity.row);
     sectionBuildings.appendChild(controls.glassRoughness.row);
@@ -98,4 +106,3 @@ export function renderBuildingsTab() {
     this.body.appendChild(sectionBuildings);
     this.body.appendChild(note);
 }
-

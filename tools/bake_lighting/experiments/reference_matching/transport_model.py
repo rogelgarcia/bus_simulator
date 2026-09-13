@@ -28,6 +28,7 @@ def apply_primary_diffuse_control(scene):
     count=0
     for material in bpy.data.materials:
         if not material.use_nodes:continue
+        material.cycles.use_bump_map_correction=False
         nodes,links=material.node_tree.nodes,material.node_tree.links
         for principled in [node for node in nodes if node.type=='BSDF_PRINCIPLED']:
             outgoing=list(principled.outputs['BSDF'].links)

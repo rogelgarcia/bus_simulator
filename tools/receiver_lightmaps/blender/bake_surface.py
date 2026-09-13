@@ -17,6 +17,12 @@ import numpy as np
 from pass_files import save_pass
 
 
+def configure_surface_irradiance(scene):
+    # White irradiance must scale linearly when the runtime applies material albedo.
+    scene.cycles.sample_clamp_direct = 0
+    scene.cycles.sample_clamp_indirect = 0
+
+
 def configure_surface_device(scene, profile):
     device = profile.get('device','CPU')
     if device == 'CPU':
@@ -110,6 +116,7 @@ def main():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene; scene.render.engine = 'CYCLES'; scene.cycles.device = 'CPU'
     devices = configure_surface_device(scene, profile)
+    configure_surface_irradiance(scene)
     scene.render.threads_mode = 'FIXED'; scene.render.threads = profile['threads']
     scene.cycles.samples = profile['samples']; scene.cycles.seed = 553
     scene.cycles.use_adaptive_sampling = False; scene.cycles.use_denoising = False

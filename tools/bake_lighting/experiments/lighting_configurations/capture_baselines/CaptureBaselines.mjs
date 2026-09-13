@@ -17,6 +17,8 @@ export async function captureBaselines(ctx, prepared, {collectMetrics=null,confi
     const manifestPath=path.join(output,'baseline_manifest.json'),files=[];
     const assertState=record=>{
         if(validateEvidence)validateEvidence(record);
+        if(baseline.expectedFallback && (record.baked.status.state!=='fallback'||record.baked.status.reason!==baseline.expectedFallback))
+            throw new Error(`Expected explicit game fallback ${baseline.expectedFallback}; got ${JSON.stringify(record.baked.status)}`);
         if(baseline.expectedMode!=='current')return assertAppliedBaseline(record,baseline.expectedSunProfile);
         if(record.baked.status.effectiveMode!=='current'||record.baked.receiverLightmaps.effective.indirect===true)throw new Error('Current comparison retained baked indirect');
     };
@@ -54,14 +56,16 @@ export async function captureBaselines(ctx, prepared, {collectMetrics=null,confi
             const deadline=Date.now()+baseline.readinessTimeoutSeconds*1000;
             while(true) {
                 ctx.signal.throwIfAborted();
-                const status=await page.evaluate(mode=>{const e=window.__busSim.engine,d=e.getBakedLightingDebugInfo();
-                    return {ready:(mode==='current'?d.status.effectiveMode==='current':d.status.effectiveMode==='baked'&&d.receiverLightmaps.activationBlend===1)&&!d.busLighting.transitionState&&d.view?.ready!==false,reason:d.view?.error??d.status.reason};},baseline.expectedMode);
+                const status=await page.evaluate(({mode,expectedFallback})=>{const e=window.__busSim.engine,d=e.getBakedLightingDebugInfo();
+                    return {ready:(mode==='current'?d.status.effectiveMode==='current':d.status.effectiveMode==='baked'&&d.receiverLightmaps.activationBlend===1)
+                        &&(!expectedFallback||(d.status.state==='fallback'&&d.status.reason===expectedFallback))
+                        &&!d.busLighting.transitionState&&d.view?.ready!==false,reason:d.view?.error??d.status.reason};},{mode:baseline.expectedMode,expectedFallback:baseline.expectedFallback});
                 if(status.ready&&pending.size===0)break;
                 if(Date.now()>deadline)throw new Error(`Baseline did not become ready: ${JSON.stringify(status)}; ${pending.size} resource requests pending`);
                 await delay(250,undefined,{signal:ctx.signal});
             }
             manifest.startupSeconds=(Date.now()-loadStart)/1000;
-            ctx.log.line(ctx.id,`Game and installed bakes ready after ${manifest.startupSeconds.toFixed(1)}s`);
+            ctx.log.line(ctx.id,`Game ${baseline.expectedFallback?`fallback (${baseline.expectedFallback})`:'and installed bakes'} ready after ${manifest.startupSeconds.toFixed(1)}s`);
             await page.evaluate(async()=>{
                 const {ensureGlobalPerfBar}=await import('/src/graphics/gui/perf_bar/PerfBar.js');
                 ensureGlobalPerfBar().setHidden(true);

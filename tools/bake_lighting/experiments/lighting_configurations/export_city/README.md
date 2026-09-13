@@ -13,3 +13,11 @@ tools are configured Chrome and pinned Blender. Outputs live under
 `scene/<export-id>/`; the run's `scene.json` points to the authenticated manifest.
 Source changes, missing assets, incompatible source manifests or projection errors
 fail the stage. A lighting-config change alone does not rebuild city geometry.
+
+GroundTiles are coplanar with asphalt in the runtime and rely on polygon offset.
+Cycles cannot reproduce that raster ownership. The exporter subtracts the actual
+asphalt triangle footprint from coplanar GroundTiles, preserving interpolated
+positions, normals and UV payloads on export clones. It uses a spatial index,
+records removed area and triangle counts in `groundCoverage`, and includes this
+adapter in the export cache identity. Lower CityFloor geometry remains intact.
+Game geometry and installed bake data are not changed by this reference repair.

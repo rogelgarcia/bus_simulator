@@ -11,7 +11,7 @@ import { runHeadlessBake } from '../../../../baking/Blender.mjs';
 
 export async function exportCity(ctx,run) {
     const lighting=await config(ctx,run,'lighting');
-    const code={exporter:await codeIdentity(ctx.root,['export_city/ExportGameScene.mjs','export_city/MaterialEquivalence.js','../material_calibration/export_contract.json','export_city/ExportCity.mjs','export_city/build_scene.py']),
+    const code={exporter:await codeIdentity(ctx.root,['export_city/ExportGameScene.mjs','export_city/GroundRoadCoverage.js','export_city/MaterialEquivalence.js','../material_calibration/export_contract.json','export_city/ExportCity.mjs','export_city/build_scene.py']),
         uvTiling:await hashFile(path.join(ctx.root,'tools/illumination_bake_compiler/blender/uv_tiling.py'))};
     const supplied=ctx.options.source?await readJson(artifactPath(ctx.root,ctx.options.source)):null;
     if(supplied && (supplied.source!==run.source.sha256||digest(supplied.poses)!==digest(run.poses)||(await hashFile(supplied.raw)).sha256!==supplied.sourceGlb.sha256))throw new Error('Explicit source export no longer matches this run');

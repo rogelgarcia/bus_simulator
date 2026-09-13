@@ -29,7 +29,7 @@ Defines the road decoration strip rendered where sidewalks transition into grass
 
 Stored under `asphaltNoise.livedIn.sidewalkGrassEdgeStrip`:
 
-- `enabled` (bool)
+- `enabled` (bool, defaults to `false`)
 - `width` (meters)
 - `opacity`
 - `roughness`
@@ -42,3 +42,7 @@ Stored under `asphaltNoise.livedIn.sidewalkGrassEdgeStrip`:
 - A `Grass` tab exposes an `enabled` toggle for the strip:
   - `Sidewalk grass-edge dirt strip`
 - Toggle updates live visibility and persists through options save.
+- The strip participates in offline diffuse light transport. Changing its enabled
+  state changes the resolved bake source; installed indirect maps must match that
+  state. Do not ignore the strip in source validation or reuse a strip-enabled
+  bake under strip-disabled source hashes.

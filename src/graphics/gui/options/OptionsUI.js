@@ -898,6 +898,7 @@ export class OptionsUI {
         if (this._draftBuildingWindowVisuals) return;
         const d = getDefaultResolvedBuildingWindowVisualsSettings();
         this._draftBuildingWindowVisuals = {
+            surfaces: { ...d.surfaces },
             reflective: {
                 enabled: d.reflective.enabled,
                 glass: {
@@ -1236,6 +1237,7 @@ export class OptionsUI {
 
         const windowVisuals = getDefaultResolvedBuildingWindowVisualsSettings();
         this._draftBuildingWindowVisuals = {
+            surfaces: { ...windowVisuals.surfaces },
             reflective: {
                 enabled: windowVisuals.reflective.enabled,
                 glass: {
@@ -1465,6 +1467,7 @@ export class OptionsUI {
                 }
             },
             buildingWindowVisuals: {
+                surfaces: { reflections: windowVisuals.surfaces?.reflections === true },
                 reflective: {
                     enabled: !!windowVisuals.reflective.enabled,
                     glass: {

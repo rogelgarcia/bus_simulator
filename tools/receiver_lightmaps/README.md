@@ -322,3 +322,20 @@ independent lighting. Texels outside seam filter footprints retain their bake va
 Use the framework's `lighting/illumination/reprocess` maintenance leaf to apply
 this packaging repair to unchanged authenticated samples. Increasing Cycles samples
 reduces noise, but cannot remove a discontinuity between independently filtered charts.
+
+## Linear irradiance and sample clamping
+
+Enhanced surface profiles from `ai553.cycles.surface.complete*.v7` explicitly
+disable Cycles direct and indirect sample clamping (`disabled-irradiance-v1`).
+The white receiver bake must remain linear before the runtime multiplies by
+material albedo. Blender's inherited indirect clamp of 10 suppressed bright bounce
+paths differently from a colored camera render, darkening shaded buildings.
+Existing v6 installed packages are unchanged; correcting them requires new bake
+samples and all normal validation/publication gates. Reprocessing old pixels
+cannot recover discarded light. Unclamped sampling can require more samples to
+control noise; do not replace the lost-light fix with an exposure multiplier.
+
+The shared framework's `lighting/experiments/reference-matching/irradiance-fixture`
+tests the native setup against ray-rendered sky and bright bounce. Its
+`irradiance-wall` diagnostic repeats the check on one original city chart. See the
+reference-matching README and `debug_tools/regression_debugging/receiver_irradiance_delivery.md`.

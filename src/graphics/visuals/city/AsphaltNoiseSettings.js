@@ -107,7 +107,7 @@ export const ASPHALT_NOISE_DEFAULTS = Object.freeze({
             scale: 0.55
         }),
         sidewalkGrassEdgeStrip: Object.freeze({
-            enabled: true,
+            enabled: false,
             width: 0.65,
             opacity: 0.45,
             roughness: 1,

@@ -8,6 +8,8 @@ export async function exportGameScene(poses) {
     const materialContract=await contractResponse.json(),interiorTexture=createInteriorTexture(materialContract);
     const {engine:e,sm}=window.__busSim,s=sm.current;
     s.city.disableStaticVisibility();e.scene.updateMatrixWorld(true);
+    const {createGroundRoadCoverage}=await import('/tools/bake_lighting/experiments/lighting_configurations/export_city/GroundRoadCoverage.js');
+    const groundCoverage=createGroundRoadCoverage(s.city.roads.asphalt,THREE);
     const exportScene=new THREE.Scene(),city=new THREE.Group(),bus=new THREE.Group();
     city.name='CITY_SOURCE';bus.name='BUS_SOURCE';exportScene.add(city,bus);
     const materialCache=new Map(),geometryCache=new Map(),audit=[],omitted=[],landmarks=[];
@@ -72,14 +74,16 @@ export async function exportGameScene(poses) {
                 const matrix=object.matrixWorld.clone();
                 if(object.isInstancedMesh) {const local=new THREE.Matrix4();object.getMatrixAt(i,local);matrix.multiply(local);instances++;}
                 if(transform)matrix.premultiply(transform);
-                const mesh=new THREE.Mesh(g,Array.isArray(object.material)?mat:mat[0]);
+                const resolvedGeometry=object.name==='GroundTiles'?groundCoverage.clip(g,matrix):g;
+                if(!resolvedGeometry.attributes.position.count)continue;
+                const mesh=new THREE.Mesh(resolvedGeometry,Array.isArray(object.material)?mat:mat[0]);
                 mesh.name=`${destination.name}_${meshCount}_${object.name||'mesh'}`;
                 mesh.matrix.copy(matrix);mesh.matrix.decompose(mesh.position,mesh.quaternion,mesh.scale);mesh.matrixAutoUpdate=false;
                 if(object.instanceColor) {
                     const c=new THREE.Color().fromBufferAttribute(object.instanceColor,i);
                     const tinted=mat.map(m=>{const copy=m.clone();copy.color.multiply(c);return copy;});mesh.material=Array.isArray(object.material)?tinted:tinted[0];
                 }
-                destination.add(mesh);meshCount++;triangles+=(g.index?.count??g.attributes.position.count)/3;
+                destination.add(mesh);meshCount++;triangles+=(resolvedGeometry.index?.count??resolvedGeometry.attributes.position.count)/3;
                 if(destination===city&&landmarks.length<60&&object.userData.staticVisibility===undefined) {
                     const v=new THREE.Vector3().fromBufferAttribute(g.attributes.position,0).applyMatrix4(matrix);
                     if(Math.abs(v.x)<300&&Math.abs(v.z)<300)landmarks.push({object:mesh.name,positionThree:v.toArray()});
@@ -102,7 +106,7 @@ export async function exportGameScene(poses) {
         await window.__writeSceneChunk(btoa(binary));
     }
     return {schemaVersion:1,status:'exported',threeRevision:THREE.REVISION,bytes:data.length,meshCount,instances,triangles,
-        materials:audit,omitted,landmarks,busBounds:{min:busBounds.min.toArray(),max:busBounds.max.toArray()},
+        materials:audit,omitted,landmarks,groundCoverage:groundCoverage.audit,busBounds:{min:busBounds.min.toArray(),max:busBounds.max.toArray()},
         lights,lighting:e.lightingSettings,atmosphere:e.atmosphereSettings,poses,
         limitations:['Procedural shader hooks listed per material are not executed in Cycles; source texture/PBR inputs are retained.',
             'Phong materials use a documented GGX approximation; no new glass transmission is invented for opaque source windows.',

@@ -144,6 +144,7 @@ export class OptionsState {
                 : null,
             initialBuildingWindowVisuals: buildingWindowVisuals && typeof buildingWindowVisuals === 'object'
                 ? {
+                    surfaces: { ...buildingWindowVisuals.surfaces },
                     reflective: {
                         enabled: buildingWindowVisuals.reflective?.enabled,
                         glass: {
@@ -318,6 +319,8 @@ export class OptionsState {
     }
 
     async _applyDraft(draft, comparisonDraft = draft) {
+        const buildingWindowsChanged = JSON.stringify(comparisonDraft?.buildingWindowVisuals?.reflective)
+            !== JSON.stringify(this._appliedDraft?.buildingWindowVisuals?.reflective);
         const request = Symbol('options lighting transaction');
         this._draftRequest = request;
         const d = Object.fromEntries(Object.entries(draft ?? {}).filter(([key]) =>
@@ -490,7 +493,7 @@ export class OptionsState {
             const baseEnvMapIntensity = Number.isFinite(this.engine?.lightingSettings?.ibl?.envMapIntensity)
                 ? this.engine.lightingSettings.ibl.envMapIntensity
                 : 0.25;
-            applyBuildingWindowVisualsToCityMeshes(city.buildings.group, sanitized, { iblEnabled, baseEnvMapIntensity });
+            applyBuildingWindowVisualsToCityMeshes(city.buildings.group, sanitized, { iblEnabled, baseEnvMapIntensity, applyWindows: buildingWindowsChanged });
         }
         this.engine.simulation?.events?.emit('options:applied', comparisonDraft);
     }

@@ -29,9 +29,12 @@ export async function poseComparison(ctx) {
     const runRoot = path.join(output, 'game');
     await mkdir(runRoot);
     const baseline = {
-        id: 'game_defaults', expectedMode: 'baked', expectedSunProfile: 'ai527.sun.az045.el55',
+        id: 'game_defaults', expectedMode: ctx.options['expected-fallback'] ? 'current' : 'baked', expectedSunProfile: 'ai527.sun.az045.el55',
+        expectedFallback: ctx.options['expected-fallback'] ?? null,
         readinessTimeoutSeconds: 240, settleFrames: 60, storage: {},
-        settingsPolicy: 'Current repository defaults in a fresh browser; all installed baked channels must finish applying. Personal preferences are not imported.'
+        settingsPolicy: ctx.options['expected-fallback']
+            ? `Current repository defaults in a fresh browser; require the actual fallback reason ${ctx.options['expected-fallback']}. No runtime setting override or incompatible bake activation.`
+            : 'Current repository defaults in a fresh browser; all installed baked channels must finish applying. Personal preferences are not imported.'
     };
     const source = await snapshotFiles(ctx.root, await sourceFiles(ctx.root));
     const run = {

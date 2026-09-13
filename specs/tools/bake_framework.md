@@ -1,5 +1,25 @@
 # Offline bake framework
 
+The `lighting/experiments/reference-matching/material-diagnostics` leaf measures
+material AO and diffuse shading at an authenticated single-pose comparison.
+It requires the installed indirect bake to be fully active and game/reference
+exposure to match. Temporary shader output selectors retain lighting computation,
+isolate diffuse or base color, and restore all hooks, material AO values and
+renderer state. Separate original/restored captures validate static regions.
+Scene-linear EXR lobes and eroded material masks are used for numerical analysis;
+the diagnostic cannot publish or modify production settings.
+Its `material-analysis` sibling can independently reprocess saved captures into
+a new output directory after checking their errors, active bake and preserved
+state. Captures must use the reference's exact canvas dimensions; hiding HUD
+pixels without removing the performance bar's layout offset is insufficient.
+
+The explicit `lighting/experiments/reference-matching/pose-comparison` diagnostic
+normally requires fully applied installed bakes. An `expected-fallback` option may
+instead name an exact observed failure reason to capture the actual default game
+state. The capture must wait for that terminal fallback, verify indirect lighting
+is inactive before and after the screenshot, and retain the failure in its evidence.
+It does not alter runtime settings, bypass bake compatibility or permit publication.
+
 The explicit `lighting/shadows/streamed/five-pose-review` diagnostic reuses the
 five authored AI560 camera poses and their shared bus placement. It holds current
 calibrated lighting and indirect illumination fixed while comparing Single/High,
@@ -249,3 +269,31 @@ Use the standard selected-test runner. Integration evidence and production run
 summaries belong in `tests/artifacts/screens/ai556_bake_framework/`, never in source
 or tracked screenshot folders. See the framework README for the existing-domain
 regression tests and release limitations.
+
+Opaque building parity experiments use explicit `reference-matching/building-review-capture`,
+`building-review-render` and `building-review-analysis` leaves. The capture validates
+repeated fresh-browser reflection A/B measurements and bake continuity. The exporter
+resolves coplanar grass/asphalt ownership geometrically; the renderer compares full
+Cycles with a reused-scene primary geometric Lambert control. Analysis authenticates
+poses/exposure and outputs image sheets, material metrics and timings. These leaves
+are diagnostic-only and never install packages or change publication gates.
+
+`reference-matching/irradiance-trace` verifies the original installed bake's
+raw passes, processed HDR pages, GPU atlas samples and diffuse composition at
+the custom pose. It creates evidence only and cannot publish or rebake assets.
+
+The independent `irradiance-analysis` leaf validates preserved captures, original
+pass hashes and restoration, including when an earlier analysis rejected boundary
+coverage. `irradiance-reference` compares the exported world and authenticated
+native static source scene separately. `irradiance-fixture` tests quantitative
+bake/render lobe parity through the native surface setup; `irradiance-wall`
+rebakes one original chart with clamping enabled/disabled and checks it against
+the unchanged source-scene render. `replay` authenticates retained wall samples
+for new analyses without running Blender again. All outputs remain diagnostic,
+immutable and gitignored; none of these leaves installs a package.
+
+Enhanced surface bake profile v7 records `sampleClamping: disabled-irradiance-v1`
+and explicitly uses zero direct/indirect sample clamping. Irradiance must be
+linear in albedo; inherited radiance clamping violates white-bake versus colored
+render parity. Old v6 samples require a new bake, not repackaging or a runtime
+gain. Existing production validation and publication requirements still apply.

@@ -1,5 +1,13 @@
 # Calibrated game / Cycles comparison (AI562)
 
+For a single exact pose, use the `pose-comparison` stage with `pose`, `output`
+and `source-run`. It produces `game.png`, `cycles.png` and authenticated evidence.
+It requires applied installed bakes by default. To document an already observed
+game fallback, explicitly supply `expected-fallback` with the exact failure reason.
+This waits for that terminal state and checks it before and after capture; it
+does not override the game settings or activate an incompatible bake. Such an image
+must be labeled as live fallback lighting, not as a baked-lighting comparison.
+
 All stages use `node tools/bake.mjs --target lighting/experiments/reference-matching/<stage>`
 and the shared ignored `tools/baking/blender.local.json`. These explicit experiment
 jobs never enter the no-argument production bake set. Supply leaf options with
@@ -142,3 +150,106 @@ stall; initial world preparation is still visible and is reported separately.
 Report grids and thumbnails use 640px previews; the carousel opens original
 full-resolution images. Raw measurements retain separate named-sun, ambient,
 material-AO-off and Cycles diffuse-ambient values.
+
+`lighting/experiments/reference-matching/material-diagnostics` accepts
+`input=<authenticated pose-comparison directory>`, `output=<new AI562 directory>`
+and `regions=<JSON of named normalized [left,top,right,bottom] rectangles>`.
+It loads that exact pose in a fresh browser with repository defaults, requires
+fully applied compatible indirect lighting and the reference's unchanged exposure,
+then captures scene-linear beauty, material AO off, diffuse-only, diffuse without
+material AO, and base color. The original raw capture is repeated to verify that
+the static regions restore. Settings, pose, source hashes, material ray samples,
+browser errors and before/after bake state are retained. The diagnostic shader
+hook is loaded only by this harness and is removed after capture.
+
+The analyser reuses the existing multilayer Cycles EXR, reconstructing diffuse
+radiance as `(Diffuse Direct + Diffuse Indirect) * Diffuse Color`. Eroded material
+masks and named regions quantify the difference before display transformation.
+PNG comparisons use the same ACESFilmic exposure; base-color images are explicitly
+unlit sRGB diagnostics. This job creates evidence only: it cannot change defaults,
+rebake, install assets, or certify production parity. Raw game views bypass
+postprocessing, and material texture AO must not be confused with screen/contact AO.
+
+`material-analysis` accepts `input=<saved material diagnostic>` and a new `output`
+directory to rerun analysis and assemble comparison PNGs without loading the game.
+It rejects browser errors, changed settings and inactive bakes. Raw dimensions,
+finite values, fixed exposure and static-region restoration must also pass.
+The analyser uses the shared Python/OpenImageIO runtime; captioned comparison
+images use the configured isolated browser, without requiring Pillow or publishing
+a viewing page. The capture hides the layout-affecting performance bar and checks
+the actual canvas size before rendering.
+
+## Opaque building material review
+
+The independent `lighting/experiments/reference-matching/building-review-capture`
+leaf takes `output=<new AI562 artifact directory>` and optionally `pose=<exact
+paused pose JSON>`. It captures the canonical five poses plus that custom pose,
+compares opaque environment reflections on/off, and measures four passes per
+variant across two fresh sequential browsers (60 warmup + 240 measured frames).
+GPU samples are completed asynchronous queries joined by submission ID, not the
+last displayed timer value. Settings, bake identities, material identity and
+shader versions must remain unchanged. The custom pose also gets raw diffuse,
+AO-off and albedo diagnostics. Outputs are authenticated and never published.
+
+`building-review-render` takes `capture=<capture directory>`,
+`source-run=<authenticated afternoon source>` and `output=<new directory>`.
+It exports a fresh reusable scene, resolving coplanar grass/road coverage, renders
+all captured poses in Cycles, then reuses that scene for primary geometric-normal
+Lambert controls. Both use identical exposure and the calibrated atmosphere.
+The control is diagnostic only and cannot replace the full target or certify a bake.
+
+`building-review-analysis` takes `capture`, `reference=<render directory>` and
+`output`. It verifies inputs/poses/exposure, creates three-column image sheets
+(Game original / Game reflections / full Cycles), a raw diffuse control sheet,
+material-mask measurements, and a timing table. No viewing page is required.
+The custom pose also reports reflection on/off RGB error against the full target
+on eroded opaque material masks. These are display-image errors, separate from
+the scene-linear diffuse ratios; neither is a full-scene photorealism score.
+All three leaves use `node tools/bake.mjs --target <leaf> --set <leaf>:<key>=<value>`
+and the shared local Blender/browser/Python configuration. Run them in that order;
+rendering and GPU benchmarking must not run concurrently.
+
+`irradiance-trace` takes `capture=<building review capture>`,
+`reference=<building review render>`, `bake-dir=<original installed bake directory>`
+and `output=<new AI562 directory>`. It verifies that the installed mapping and
+package match the offline bake, captures actual GPU atlas coordinates/LOD,
+irradiance and separate diffuse lobes, then samples the original Cycles passes,
+processed float pages and authenticated RGB9E5 pages at those same addresses.
+The report separates padding, quantization, GPU interpolation and Lambert
+composition. It preserves and checks restoration of the original static image.
+This diagnostic does not rebake, install or change production lighting.
+
+`irradiance-analysis` takes `input=<preserved GPU trace>`, `output=<new directory>`
+and optionally `control=<authenticated irradiance-reference directory>`. It checks
+capture restoration and original pass/page hashes again. The optional control
+adds separate sky/bounce comparisons with the same source-scene Cycles render.
+It can validate a preserved capture whose original analysis failed, without
+rewriting or certifying that failed run. Cross-renderer material-mask pixels
+without receiver coordinates are counted separately and excluded from sampling.
+
+`irradiance-reference` takes `input=<validated irradiance-analysis directory>` and
+`output`. It first renders the exported scene with the bake's exact source world,
+then reconstructs the static source package and repeats the render. Both use a
+primary geometric-normal Lambert diagnostic. The dynamic bus is absent from the
+static-source control; neither control is a replacement for the full target.
+
+`irradiance-fixture` takes `input=<irradiance-reference directory>` and `output`.
+It records inherited Cycles settings and checks sky and sun-bounce bake/render
+parity in a 64-pixel fixture. The comparison multiplies white receiver irradiance
+by the rendered material's albedo and checks linear radiance, without exposure.
+The default uses the native surface setup. `sample-clamp=10` intentionally
+reproduces the historical bright-bounce failure; it must not pass the parity gate.
+
+`irradiance-wall` takes the same inputs. It selects an original brick chart visible
+in the GPU trace, reuses its exact geometry and UV coordinates in the authenticated
+static scene, and rebakes only that chart with indirect sample clamps 10 and 0.
+It reports reproduction of the stored bake and the isolated clamp effect. These
+tiny diagnostic bakes never replace production assets or skip publication gates.
+`replay=<accepted wall directory>` reuses authenticated samples in a new output
+directory. Analysis checks original page hashes, requires the control to reproduce
+the stored chart within 6% (different sample counts/batching), and requires both
+unclamped lobes to agree with Cycles within 2.5%. These local limits do not certify
+the entire city. Existing v6 maps require a full validated v7 rebake after the
+fix; reprocessing cannot restore paths discarded by sample clamping. The full
+bake, installation and remaining game/Cycles differences are recorded in
+`debug_tools/regression_debugging/receiver_irradiance_delivery.md`.

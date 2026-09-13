@@ -49,7 +49,8 @@ const profile = { ...RECEIVER_LIGHTMAP_PROFILE,
 if (!Number.isInteger(profile.samples) || profile.samples < 1 || profile.samples > 4096) throw new Error('Samples must be 1–4096.');
 profile.id = `ai533.cycles.diffuse.complete${profile.samples}.v2`;
 if (args.get('--enhanced') === 'true') Object.assign(profile, {
-    id: `ai553.cycles.surface.complete${profile.samples}.v6`, irradianceRepresentation: 'surface-diffuse-v1',
+    id: `ai553.cycles.surface.complete${profile.samples}.v7`, irradianceRepresentation: 'surface-diffuse-v1',
+    sampleClamping: 'disabled-irradiance-v1',
     worldDirection: 'outward-blender-z-up-v1',
     environmentSun: 'single-authored-sun-v1', environmentSunRadiusDegrees: 4,
     directRepresentation: 'hybrid-sun-visibility-v1', transportPolicy: RECEIVER_ALPHA_TRANSPORT,

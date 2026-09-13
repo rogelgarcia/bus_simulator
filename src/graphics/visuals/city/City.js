@@ -35,6 +35,7 @@ import {
 import { buildMergedShadowCasters, collectInstancedShadowCasters, setInstancedShadowCastersEnabled, setMergedShadowCastersEnabled, summarizeMergedShadowCasters } from '../../lighting/ShadowCasterMerge.js';
 import { azimuthElevationDegToDir } from '../atmosphere/SunDirection.js';
 import { getResolvedBuildingWindowVisualsSettings } from '../buildings/BuildingWindowVisualsSettings.js';
+import { applyBuildingSurfaceReflections } from '../buildings/BuildingSurfaceReflections.js';
 import { getResolvedSunFlareSettings } from '../sun/SunFlareSettings.js';
 import { SunFlareRig } from '../sun/SunFlareRig.js';
 import { SunBloomRig } from '../sun/SunBloomRig.js';
@@ -532,6 +533,8 @@ export class City {
         engine.camera.updateProjectionMatrix();
 
         engine.scene.add(this.group);
+        applyBuildingSurfaceReflections(this.buildings?.group, getResolvedBuildingWindowVisualsSettings().surfaces.reflections,
+            engine.lightingSettings?.ibl?.enabled ? engine.lightingSettings.ibl.envMapIntensity : 0);
         try {
             this.applyShadowSettings(engine);
             this._attached = true;

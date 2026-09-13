@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { updateCalibratedDiffuseIbl } from './CalibratedDiffuseIbl.js';
+import { updateBuildingSurfaceReflectionIntensity } from '../../visuals/buildings/BuildingSurfaceReflections.js';
 const DEFAULT_ENV_MAP_INTENSITY = 0.25;
 const _cacheByRenderer = new WeakMap();
 const _backgroundByHdrUrl = new Map();
@@ -201,6 +202,8 @@ export function getIBLBackgroundTexture(envMap, overrides = {}) {
 function applyEnvMapIntensityToMaterial(mat, intensity, { force = false, envMap = undefined } = {}) {
     if (!mat || !('envMapIntensity' in mat)) return;
     const userData = mat.userData ?? (mat.userData = {});
+
+    if (updateBuildingSurfaceReflectionIntensity(mat, envMap === null ? 0 : intensity)) return;
 
     if (userData.iblNoAutoEnvMapIntensity) return;
 

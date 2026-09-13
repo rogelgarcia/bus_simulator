@@ -1,6 +1,9 @@
 // src/graphics/visuals/buildings/BuildingWindowVisualsRuntime.js
 // Applies reflective window-glass settings to existing building window meshes.
 // @ts-check
+import { applyBuildingSurfaceReflections } from './BuildingSurfaceReflections.js';
+
+const glassSettings = new WeakMap();
 
 function isObject(value) {
     return !!value && typeof value === 'object';
@@ -37,6 +40,9 @@ function applyGlassMaterialSettings(mat, settings, { iblEnabled, baseEnvMapInten
 
     const reflective = isObject(settings?.reflective) ? settings.reflective : {};
     const glass = isObject(reflective?.glass) ? reflective.glass : {};
+    const signature = JSON.stringify([glass, iblEnabled, baseEnvMapIntensity]);
+    if (glassSettings.get(mat) === signature) return;
+    glassSettings.set(mat, signature);
 
     const colorHex = Number.isFinite(glass.colorHex) ? ((Number(glass.colorHex) >>> 0) & 0xffffff) : 0xffffff;
     const metalness = Number.isFinite(glass.metalness) ? Math.max(0, Math.min(1, Number(glass.metalness))) : 0.0;
@@ -75,8 +81,10 @@ function applyGlassMaterialSettings(mat, settings, { iblEnabled, baseEnvMapInten
     mat.needsUpdate = true;
 }
 
-export function applyBuildingWindowVisualsToCityMeshes(root, settings, { iblEnabled = false, baseEnvMapIntensity = 0.25 } = {}) {
+export function applyBuildingWindowVisualsToCityMeshes(root, settings, { iblEnabled = false, baseEnvMapIntensity = 0.25, applyWindows = true } = {}) {
     if (!root?.traverse) return { glassMeshes: 0, glassMaterials: 0 };
+    applyBuildingSurfaceReflections(root, settings?.surfaces?.reflections === true, iblEnabled ? baseEnvMapIntensity : 0);
+    if (!applyWindows) return { glassMeshes: 0, glassMaterials: 0 };
 
     const reflective = isObject(settings?.reflective) ? settings.reflective : {};
     const reflectiveEnabled = reflective.enabled !== undefined ? !!reflective.enabled : true;

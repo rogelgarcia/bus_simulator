@@ -7,6 +7,7 @@
 const STORAGE_KEY = 'bus_sim.buildingWindowVisuals.v1';
 
 export const BUILDING_WINDOW_VISUALS_DEFAULTS = Object.freeze({
+    surfaces: Object.freeze({ reflections: false }),
     reflective: Object.freeze({
         enabled: true,
         glass: Object.freeze({
@@ -76,6 +77,7 @@ export function sanitizeBuildingWindowVisualsSettings(input) {
     const glass = reflective.glass && typeof reflective.glass === 'object' ? reflective.glass : {};
 
     return {
+        surfaces: { reflections: src.surfaces?.reflections === true },
         reflective: {
             enabled: reflective.enabled !== undefined ? !!reflective.enabled : BUILDING_WINDOW_VISUALS_DEFAULTS.reflective.enabled,
             glass: {
