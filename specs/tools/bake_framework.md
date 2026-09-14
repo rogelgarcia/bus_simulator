@@ -319,9 +319,12 @@ poses/exposure and outputs image sheets, material metrics and timings. These lea
 are diagnostic-only and never install packages or change publication gates.
 
 `reference-matching/material-response-capture` extends that capture workflow with
-an authenticated fixed-display input and a 2x2 opaque-reflections/material-AO
+optional `pose-ids` (validated comma-separated subset) and `browser-runs` (1–10,
+default 2) for focused fresh-browser timing repeats. Each browser retains two
+balanced passes per condition with the existing 240 measured frames.
+It uses an authenticated fixed-display input and a 2x2 opaque-reflections/material-AO
 matrix on poses 02/03. Validation retains authored AO and repeats reflection A/B
-on all five poses. Two fresh browsers and balanced passes preserve uniquely
+on all five poses by default. Fresh browsers and balanced passes preserve uniquely
 matched GPU timings. Temporary AO changes exist only during synchronous render
 calls and are restored before bake freshness checks. `material-response-analysis`
 authenticates a prior current/Cycles comparison's masks and controls, measures

@@ -33,9 +33,16 @@ export async function buildingReviewCapture(ctx) {
         await authenticated(path.join(input,'capture_receipt.json'));
         sourcePrepared=JSON.parse(await readFile(path.join(input,'prepared.json'),'utf8'));
     }
-    const poses=materialStudy?sourcePrepared.poses.filter(p=>validation||['pose_02','pose_03'].includes(p.id))
+    let poses=materialStudy?sourcePrepared.poses.filter(p=>validation||['pose_02','pose_03'].includes(p.id))
         :resolvePoses(JSON.parse(await readFile(path.join(ctx.root,'tools/bake_lighting/experiments/lighting_configurations/config/poses.json'),'utf8')));
     if(ctx.options.pose) poses.push({id:'pose_custom',busId:'bus_custom',pose:JSON.parse(await readFile(path.resolve(ctx.root,ctx.options.pose),'utf8'))});
+    if(ctx.options['pose-ids']){
+        const selected=ctx.options['pose-ids'].split(',').map(id=>id.trim());
+        if(selected.some(id=>!poses.some(p=>p.id===id))||new Set(selected).size!==selected.length)throw new Error('Unknown or duplicate pose ID');
+        poses=poses.filter(p=>selected.includes(p.id));
+    }
+    const browserRuns=ctx.options['browser-runs']??2;
+    if(!Number.isInteger(browserRuns)||browserRuns<1||browserRuns>10)throw new Error('browser-runs must be an integer from 1 to 10');
     const baseline=materialStudy?structuredClone(sourcePrepared.baseline):{id:'defaults',expectedMode:'baked',expectedSunProfile:'ai527.sun.az045.el55',readinessTimeoutSeconds:240,settleFrames:120,storage:{},
         settingsPolicy:'Repository lighting defaults, opaque reflections Off control, ACESFilmic, identical exposure/AO/textures/roughness. No publication.'};
     if(materialStudy){
@@ -50,7 +57,7 @@ export async function buildingReviewCapture(ctx) {
     const prepared={schemaVersion:1,experimentId:'building-reflection-review',runId:path.basename(output),runRoot:output,baseline,poses,
         viewport:{width:1920,height:1080},source:{files:source,sha256:digest(source)},bakes:await baselineInputs(ctx.root,baseline),configuration:[],
         engineRevision:execFileSync('git',['rev-parse','HEAD'],{cwd:ctx.root,encoding:'utf8'}).trim(),startedAt:new Date(started).toISOString()};
-    const report={schemaVersion:1,poses,variants,materialStudy,validation,runs:[],conditions:'Two fresh sequential browsers; two balanced passes per variant/browser; 60 warmup and 240 measured frames. Completed GPU queries joined by submission ID. Shader compilation and streaming settle before timing.',
+    const report={schemaVersion:1,poses,variants,materialStudy,validation,browserRuns,runs:[],conditions:`${browserRuns} fresh sequential browsers; two balanced passes per variant/browser; 60 warmup and 240 measured frames. Completed GPU queries joined by submission ID. Shader compilation and streaming settle before timing.`,
         memoryPolicy:'No new textures, geometry or render targets; reuses the resident global PMREM. Counts and shader programs measured after warmup; driver allocation is not measured.'};
     let common=null,identity=null;
     async function measure(page,item,cold) {
@@ -115,9 +122,11 @@ export async function buildingReviewCapture(ctx) {
     }
     await writeJson(path.join(output,'prepared.json'),prepared);
     await captureBaselines(ctx,prepared,{collectMetrics:(page,item)=>measure(page,item,0)});
-    await withGameBrowser(ctx,prepared.viewport,async(page,url)=>{
+    for(let cold=1;cold<browserRuns;cold++)await withGameBrowser(ctx,prepared.viewport,async(page,url)=>{
         const errors=[];page.on('pageerror',error=>errors.push(error.message));
-        const ordered=[...poses].filter(p=>p.id!=='pose_custom').reverse();
+        const ordered=[...poses].filter(p=>p.id!=='pose_custom');
+        if(cold%2)ordered.reverse();
+        if(!ordered.length)throw new Error('Repeated browsers require at least one canonical pose');
         await page.addInitScript(storage=>{for(const [key,value]of Object.entries(storage))localStorage.setItem(key,JSON.stringify(value));},baseline.storage);
         await page.goto(`${url}/?coreTests=0&gameplayPose=${encodeURIComponent(JSON.stringify(ordered[0].pose))}`);
         await page.waitForFunction(()=>{const d=window.__busSim?.engine?.getBakedLightingDebugInfo();return d?.status.effectiveMode==='baked'&&d.receiverLightmaps.activationBlend===1&&d.view?.ready!==false;});
@@ -126,7 +135,7 @@ export async function buildingReviewCapture(ctx) {
             const canvas=window.__busSim.engine.canvas;
             for(const el of document.body.querySelectorAll('*'))if(el!==canvas&&!el.contains(canvas)&&!['SCRIPT','STYLE','LINK'].includes(el.tagName))el.style.visibility='hidden';canvas.style.visibility='visible';
         });
-        for(const item of ordered){await page.evaluate(setGamePose,item.pose);await page.evaluate(settleGameFrames,120);await measure(page,item,1);}
+        for(const item of ordered){await page.evaluate(setGamePose,item.pose);await page.evaluate(settleGameFrames,120);await measure(page,item,cold);}
         if(errors.length)throw new Error(errors.join('\n'));
     });
     report.summary=poses.flatMap(pose=>variants.map(({id:variant})=>{

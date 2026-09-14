@@ -185,3 +185,49 @@ appearance pairs, ten diagnostic wall sheets, all inset metrics and receipts are
 preserved. Pose 04 diffuse and pose 05 specular retain separate residuals; no 99%
 whole-scene claim. Twenty focused/shared-framework unit tests pass. Production AO,
 variation, source lighting and installed v7 bake remain unchanged. No commit.
+
+## Pose 04 GPU tail repeat (2026-09-13)
+
+After commit `43e7e50`, the user requested three repeats of the earlier pose-04
+GPU p99 anomaly (Off 10.425ms / On 16.781ms). The existing registered
+`material-response-capture` leaf now accepts an explicit pose subset and fresh
+browser count. No production rendering or settings were changed for this retest.
+
+Run with `node tools/bake.mjs --target
+lighting/experiments/reference-matching/material-response-capture`, using scoped
+options on that target: `capture=tests/artifacts/screens/ai562_acesfilmic_reference_matching/material_validation_20260913_01`,
+`phase=validation`, `pose-ids=pose_04`, `browser-runs=3`, and a new `output`.
+The accepted output is
+`tests/artifacts/screens/ai562_acesfilmic_reference_matching/ai568_pose04_perf_retest_20260913_01/`.
+The adjacent `ai568_pose04_perf_retest_20260913_01_summary.json` retains pooled
+repeat/per-pass statistics and the cache-history limitation. Original evidence
+and receipts are unchanged; generated outputs remain ignored.
+
+Three isolated browsers ran sequentially. Each used both Off/On and On/Off
+orders, with 240 measured frames per condition/pass and the original warmup.
+All 12 passes / 2,880 measured frames and GPU-query validation passed. Total time
+was 476.44 seconds, including three fresh game/bake loads. The pose, bake hashes,
+lighting/AO/display settings and 1920x1080 viewport match the prior measurement.
+Draw workload stayed at 791 calls / 833,705 triangles. Reflection On/Off resource
+counts matched within each repeat, and authored material identity was preserved.
+
+| Fresh-browser repeat | Off median GPU ms | On median GPU ms | Off GPU p99 ms | On GPU p99 ms |
+|---|---:|---:|---:|---:|
+| 1 | 8.411 | 8.605 | 11.440 | 11.568 |
+| 2 | 8.486 | 8.395 | 11.384 | 11.549 |
+| 3 | 8.261 | 8.449 | 11.211 | 11.502 |
+
+Each row pools both passes (480 samples per condition), rather than averaging
+percentiles. No On pass reproduced the former 16.8ms p99. The largest median
+On increase was 0.195ms (2.3%); the largest p99 increase was 0.291ms (2.6%).
+Repeat 3 nevertheless had one 16.861ms frame with reflections Off; On maxima
+were 12.259/11.922/11.914ms. This argues against a repeatable large steady-state
+reflection cost, but does not identify the source of intermittent GPU stalls.
+
+These focused browsers start directly at pose 04. The earlier five-pose run
+visited other views first; its resident cache counts differ (104 textures / 2044
+geometries / 131 programs versus the first new pass's 76 / 1287 / 134). Therefore
+this does not reproduce the old traversal's exact cache/streaming history, nor
+prove route-related stalls are fixed. Existing user applications were not closed.
+There was no concurrent diagnostic Blender render. Syntax, staged-independent
+diff whitespace and the authenticated capture receipt passed validation.

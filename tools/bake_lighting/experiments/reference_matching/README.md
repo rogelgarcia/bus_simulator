@@ -234,6 +234,12 @@ retained. Both modes use two fresh sequential browsers and two balanced passes
 per condition/browser, 240 matched GPU samples per pass. The source capture's
 display, bloom, bus, lighting and baked preferences are retained explicitly.
 
+For a focused timing repeat, validation accepts `pose-ids=pose_04` (or a
+comma-separated subset) and `browser-runs=3`. Each repeat owns a fresh sequential
+browser, uses both off/on and on/off pass orders, and retains all 240 measured
+frames per condition/pass. Defaults remain all five poses and two browsers.
+Unknown/duplicate pose IDs and browser counts outside 1–10 are rejected.
+
 `material-response-analysis` takes `capture=<material-response capture>`,
 `control=<authenticated current/Cycles bake-progress-review directory>`, and
 `output`. It rejects changed poses, exposure, lighting, graphics or bake identity,
