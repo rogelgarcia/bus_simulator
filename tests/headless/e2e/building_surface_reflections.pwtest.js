@@ -18,28 +18,28 @@ test('Opaque building reflection toggle preserves baked illumination and authore
         sm.pushOverlay('options');
     });
     await page.getByRole('button',{name:'Buildings',exact:true}).click();
-    const toggle=page.locator('.options-row').filter({hasText:'Opaque building reflections (experimental)'}).locator('input');
-    await expect(toggle).not.toBeChecked();
+    const toggle=page.locator('.options-row').filter({hasText:'Opaque building reflections'}).locator('input');
+    await expect(toggle).toBeChecked();
     for(let i=0;i<8;i++){
-        await toggle.evaluate((el,value)=>{el.checked=value;el.dispatchEvent(new Event('change',{bubbles:true}));},i%2===0);
+        await toggle.evaluate((el,value)=>{el.checked=value;el.dispatchEvent(new Event('change',{bubbles:true}));},i%2!==0);
         const states=await page.evaluate(()=>new Promise(resolve=>{const states=[];let remaining=12;function frame(){const d=window.__busSim.engine.getBakedLightingDebugInfo();states.push([d.status.effectiveMode,d.receiverLightmaps.activationBlend]);if(--remaining)requestAnimationFrame(frame);else resolve(states);}requestAnimationFrame(frame);}));
         expect(states.every(s=>s[0]==='baked'&&s[1]===1)).toBe(true);
     }
     expect(await page.evaluate(()=>window.__buildingMaterialSnapshot()===window.__buildingBefore)).toBe(true);
-    await toggle.evaluate(el=>{el.checked=true;el.dispatchEvent(new Event('change',{bubbles:true}));});
-    await page.getByRole('button',{name:'Save',exact:true}).click();
-    expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('bus_sim.buildingWindowVisuals.v1')).surfaces.reflections)).toBe(true);
-    await page.evaluate(()=>window.__busSim.sm.pushOverlay('options'));
-    await page.getByRole('button',{name:'Buildings',exact:true}).click();await expect(toggle).toBeChecked();
     await toggle.evaluate(el=>{el.checked=false;el.dispatchEvent(new Event('change',{bubbles:true}));});
+    await page.getByRole('button',{name:'Save',exact:true}).click();
+    expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('bus_sim.buildingWindowVisuals.v1')).surfaces.reflections)).toBe(false);
+    await page.evaluate(()=>window.__busSim.sm.pushOverlay('options'));
+    await page.getByRole('button',{name:'Buildings',exact:true}).click();await expect(toggle).not.toBeChecked();
+    await toggle.evaluate(el=>{el.checked=true;el.dispatchEvent(new Event('change',{bubbles:true}));});
     await page.getByRole('button',{name:'Cancel',exact:true}).click();
     const reflected=await page.evaluate(()=>{const m=[];window.__busSim.sm.current.city.buildings.group.traverse(o=>{for(const v of Array.isArray(o.material)?o.material:[o.material])if(v?.userData?.iblNoAutoEnvMapIntensity&&v.isMeshStandardMaterial&&!v.transparent)m.push(v.envMapIntensity);});return m.some(v=>v>0);});
-    expect(reflected).toBe(true);
+    expect(reflected).toBe(false);
     await page.evaluate(()=>window.__busSim.sm.pushOverlay('options'));
     page.once('dialog',dialog=>dialog.accept());
     await page.getByRole('button',{name:'Use defaults',exact:true}).click();
     expect(await page.evaluate(()=>localStorage.getItem('bus_sim.buildingWindowVisuals.v1'))).toBe(null);
     await page.evaluate(()=>window.__busSim.sm.pushOverlay('options'));
-    await page.getByRole('button',{name:'Buildings',exact:true}).click();await expect(toggle).not.toBeChecked();
+    await page.getByRole('button',{name:'Buildings',exact:true}).click();await expect(toggle).toBeChecked();
     expect(errors).toEqual([]);
 });

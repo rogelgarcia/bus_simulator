@@ -10,6 +10,9 @@ import {TOOL,outputPath} from './Baseline.mjs';
 
 export async function reference(ctx){
     if(ctx.publish||!ctx.options.capture||!ctx.options['source-run']||!ctx.options.output)throw new Error('capture, source-run and new output required; no publication');
+    // Material-matching references resolve native variation unless a source-only
+    // diagnostic is explicitly requested. The general city exporter stays opt-in.
+    ctx={...ctx,options:{...ctx.options,'surface-materials':ctx.options['surface-materials']??'on'}};
     const capture=outputPath(ctx.root,ctx.options.capture);await authenticated(path.join(capture,'capture_receipt.json'));
     const run=JSON.parse(await readFile(path.join(capture,'prepared.json'),'utf8'));
     const source=path.resolve(ctx.root,ctx.options['source-run']);await authenticated(path.join(source,'afternoon_receipt.json'));
@@ -20,6 +23,7 @@ export async function reference(ctx){
     await copyFile(scene.scene,path.join(output,'source_city.blend'));
     const request={output,source,poses:run.poses,exportManifest:exported.manifest,defaults:input.defaults,exposureEv:input.exposureEv,ocioConfig:input.ocioConfig,device:ctx.config.renderDevice,width:ctx.options.quality==='final'?3840:1920,height:ctx.options.quality==='final'?2160:1080,samples:ctx.options.quality==='final'?256:128};
     request.defaults.sun.elevationDeg=55;
+    request.allContributions=ctx.options['surface-materials']==='on';
     await writeJson(path.join(output,'request.json'),request);
     if(ctx.options.mode!=='background')await ctx.process('powershell.exe',['-NoProfile','-Command',"if (@(Get-Process -Name blender -ErrorAction SilentlyContinue).Count) { Write-Error 'Blender is occupied'; exit 1 }"]);
     await runBlenderStage(ctx,TOOL+'/render_reference.py',[output],{background:ctx.options.mode==='background'});

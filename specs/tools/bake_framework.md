@@ -1,5 +1,45 @@
 # Offline bake framework
 
+AI568 `/reference:surface-materials=on` resolves opaque building shader inputs in
+native surface atlases at an explicit 16/32/64 pixels per metre. The reusable
+Blender scene imports color, roughness, metalness and world normals, retaining
+authored texture AO as a separate comparison AOV. No illumination is stored in
+those maps. Unsupported view-dependent/animated inputs fail rather than becoming
+certified equivalents. Surface density, source shaders and generated inputs are
+part of the authenticated export. This is an offline option with no runtime GPU
+allocation; appearance acceptance still requires independent pose and density checks.
+The reference-matching `/reference` stage defaults to native surfaces at 32px/m;
+explicit `surface-materials=off` retains the labeled source-texture diagnostic.
+The general city exporter remains opt-in. Export planning must reject the declared
+160M texel budget before GPU atlas evaluation, never silently reduce density.
+
+`reference-matching/specular-fixture` checks actual view/normal angles, camera
+projection, uniform illumination and the calibrated HDR/analytic sky source.
+Independent visible-GGX integration separates Fresnel and environment-filter
+approximations; both sample counts and numerical limits are recorded. This is an
+explicit experiment leaf, never an automatic production bake or asset publisher.
+`surface-analysis` may add an authenticated density (`previous`) and glossy
+transport (`transport`) control. Its optional authored-AO-equivalent wall images
+must be labeled artistic controls; physical Cycles images cannot be overwritten
+or replaced with those images when claiming lighting parity.
+
+AI568 `material-parity-capture:phase=source` records five frozen poses with
+production, texture-AO-off and exporter-equivalent source-material controls.
+`material-parity-analysis` authenticates them and separates appearance deficits
+from scene-linear diffuse/specular differences. No publication is allowed. New
+city exports retain omitted procedural input metadata in `comparisonContract`
+and in the saved Blender materials. An unmatched beauty image must never be
+treated as an isolated irradiance acceptance test; reports expose that limitation
+per material, including older authenticated exports.
+
+The explicit `lighting/experiments/reference-matching/bake-progress-review` leaf
+authenticates a current game capture and one fixed Cycles reference. Its default
+output has two columns; an optional previous capture adds a third history column.
+It requires five identical camera/bus poses, effective display/material controls,
+and fully applied indirect bakes. It preserves recorded source differences and
+generates comparison sheets, regional masks and fixed-display error measurements
+using the shared Python runtime. It neither renders nor publishes bake assets.
+
 The `lighting/experiments/reference-matching/material-diagnostics` leaf measures
 material AO and diffuse shading at an authenticated single-pose comparison.
 It requires the installed indirect bake to be fully active and game/reference
@@ -278,6 +318,36 @@ Cycles with a reused-scene primary geometric Lambert control. Analysis authentic
 poses/exposure and outputs image sheets, material metrics and timings. These leaves
 are diagnostic-only and never install packages or change publication gates.
 
+`reference-matching/material-response-capture` extends that capture workflow with
+an authenticated fixed-display input and a 2x2 opaque-reflections/material-AO
+matrix on poses 02/03. Validation retains authored AO and repeats reflection A/B
+on all five poses. Two fresh browsers and balanced passes preserve uniquely
+matched GPU timings. Temporary AO changes exist only during synchronous render
+calls and are restored before bake freshness checks. `material-response-analysis`
+authenticates a prior current/Cycles comparison's masks and controls, measures
+each condition, and emits only current game/Cycles pairs for final validation.
+Facade pairs must visibly exclude unmeasured pixels, including window materials
+and frames. Retain the frozen Cycles wall-ID masks, game selection overlays, and
+additional 3/6-pixel inset metrics/counts to expose boundary sensitivity. Label
+these as Cycles-derived masks applied to aligned game captures, not independent
+cross-renderer material-ID intersections. Do not fold glass into the wall score.
+Neither stage changes the bake, display calibration, or publication gates.
+
+AI568 `reference-matching/material-parity-capture` and `material-parity-analysis`
+continue with authenticated fixed-pose raw material controls. Capture requires a
+material-validation input, a frozen current/Cycles control and a new output;
+analysis requires that capture and a new output. Preserve production texture AO,
+apply diagnostic AO bypass synchronously, and verify restoration and fully active
+bakes. Freeze the engine frame across the raw sequence, resume its prior running
+state in `finally`, and reject changed frame identity or restored wall radiance.
+Wait for requested shadow detail to finish loading and uploading before freezing.
+Separate native sun diffuse from sky/bounce using the existing sun-only
+Cycles Direct pass, not all Cycles Direct. Demodulated pass color is restored once.
+Retain wall masks, inset sensitivity, term means, closure checks and wall-only
+images. Label diffuse-color normalization as a material diagnostic rather than
+certified irradiance. These explicit leaves neither render new Cycles assets nor
+enter the default production bake or publication path.
+
 `reference-matching/irradiance-trace` verifies the original installed bake's
 raw passes, processed HDR pages, GPU atlas samples and diffuse composition at
 the custom pose. It creates evidence only and cannot publish or rebake assets.
@@ -297,3 +367,10 @@ and explicitly uses zero direct/indirect sample clamping. Irradiance must be
 linear in albedo; inherited radiance clamping violates white-bake versus colored
 render parity. Old v6 samples require a new bake, not repackaging or a runtime
 gain. Existing production validation and publication requirements still apply.
+# AI568 material transport diagnostic
+
+`lighting/experiments/reference-matching/material-transport-control` is an
+explicit, non-publishing Blender leaf. It authenticates a saved reference and
+produces local/global glossy and primary-normal controls in a new artifact
+directory. `material-parity-capture:phase=reflections` records corresponding game
+lobes with a frozen engine frame and restored uniforms.

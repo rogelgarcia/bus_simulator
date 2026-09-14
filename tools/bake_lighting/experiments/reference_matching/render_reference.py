@@ -48,7 +48,7 @@ for pose in r['poses']:
 if source_sun:source_background.inputs['Strength'].default_value=0
 else:scene.world=world(r['defaults'],r['defaults']['profiles'][0],'sun')
 contributions=[]
-for pose in [p for p in r['poses'] if not r.get('skipContributions') and p['id'] in ['pose_02','pose_03']]:
+for pose in [p for p in r['poses'] if not r.get('skipContributions') and (r.get('allContributions') or p['id'] in ['pose_02','pose_03'])]:
     scene.camera=bpy.data.objects[pose['id']]
     for layer in scene.view_layers:layer.use=layer.name==pose['id']
     raw=render(scene,root/'contributions'/(pose['id']+'_sun.exr'),device,pose['id'])

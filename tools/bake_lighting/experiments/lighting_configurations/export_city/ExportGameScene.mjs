@@ -1,8 +1,11 @@
 // Runs inside the real game; copies renderable source inputs without lighting hooks.
-export async function exportGameScene(poses) {
+export async function exportGameScene(input) {
+    const poses=Array.isArray(input)?input:input.poses;
+    const surfaceOptions=Array.isArray(input)?null:input.surfaces;
     const THREE=await import('three');
     const {GLTFExporter}=await import('three/addons/exporters/GLTFExporter.js');
     const {translatePhongF0,translateLegacyBus,translateDryGrass,createInteriorTexture,translateWindowInterior,captureUvTiling}=await import('/tools/bake_lighting/experiments/lighting_configurations/export_city/MaterialEquivalence.js');
+    const {describeSourceMaterial}=await import('/tools/bake_lighting/experiments/lighting_configurations/export_city/SourceMaterialContract.js');
     const contractResponse=await fetch('/tools/bake_lighting/experiments/material_calibration/export_contract.json');
     if(!contractResponse.ok)throw new Error('Material equivalence contract unavailable');
     const materialContract=await contractResponse.json(),interiorTexture=createInteriorTexture(materialContract);
@@ -13,6 +16,7 @@ export async function exportGameScene(poses) {
     const exportScene=new THREE.Scene(),city=new THREE.Group(),bus=new THREE.Group();
     city.name='CITY_SOURCE';bus.name='BUS_SOURCE';exportScene.add(city,bus);
     const materialCache=new Map(),geometryCache=new Map(),audit=[],omitted=[],landmarks=[];
+    const surfaceJobs=[],surfaceMaterials=[];
     const inverseBus=s.busAnchor.matrixWorld.clone().invert();
     function material(source,scope,role) {
         const cacheKey=scope+':'+role+':'+source.uuid;
@@ -43,6 +47,7 @@ export async function exportGameScene(poses) {
             color:source.color?.toArray(),roughness:target.roughness,metalness:target.metalness,opacity:target.opacity,
             normalScale:source.normalScale?.toArray(),bumpScale:source.bumpScale,hadBumpMap:!!source.bumpMap,
             removedLighting:{lightMap:!!source.lightMap,aoMap:!!source.aoMap},untranslatedProceduralHooks:hooks,
+            comparisonContract:describeSourceMaterial(source,{busProxy,grassProxy,interiorProxy}),
             approximation:busProxy?'Restrained legacy bus GGX appearance proxy; authored base colors/textures preserved':source.isMeshPhongMaterial?'Phong shininess approximated with GGX; source F0 converted to IOR and normalized tint':source.isMeshBasicMaterial?'Unlit color translated to diffuse except authored luminous signs':null});
         target.userData={};target.onBeforeCompile=()=>{};target.customProgramCacheKey=()=>'';
         target.lightMap=null;target.aoMap=null;target.envMap=null;target.polygonOffset=false;
@@ -84,6 +89,10 @@ export async function exportGameScene(poses) {
                     const tinted=mat.map(m=>{const copy=m.clone();copy.color.multiply(c);return copy;});mesh.material=Array.isArray(object.material)?tinted:tinted[0];
                 }
                 destination.add(mesh);meshCount++;triangles+=(resolvedGeometry.index?.count??resolvedGeometry.attributes.position.count)/3;
+                if(surfaceOptions && destination===city && materials.some(m=>m.userData?.materialVariationConfig)) {
+                    let building=false;for(let a=object;a;a=a.parent)if(a===s.city.buildings.group)building=true;
+                    if(building)surfaceJobs.push({source:object,target:mesh,materials:mat});
+                }
                 if(destination===city&&landmarks.length<60&&object.userData.staticVisibility===undefined) {
                     const v=new THREE.Vector3().fromBufferAttribute(g.attributes.position,0).applyMatrix4(matrix);
                     if(Math.abs(v.x)<300&&Math.abs(v.z)<300)landmarks.push({object:mesh.name,positionThree:v.toArray()});
@@ -94,6 +103,22 @@ export async function exportGameScene(poses) {
     collect(s.city.group,city,null);collect(s.busAnchor,bus,inverseBus);
     // Traffic signals and other scene-owned static objects live outside city.group.
     collect(e.scene,city,null,[s.city.group,s.busAnchor]);
+    if(surfaceJobs.length){
+        const {createSurfaceMaterialExporter}=await import('/tools/bake_lighting/experiments/lighting_configurations/export_city/SurfaceMaterialExport.js');
+        const exporter=await createSurfaceMaterialExporter(e.renderer),running=e._running;e.stop();
+        const plans=[];
+        try {
+            for(const [index,job]of surfaceJobs.entries())plans.push(exporter.plan(job.source,'surface_'+index,surfaceOptions.pixelsPerMeter));
+            const pixels=plans.reduce((sum,p)=>sum+p.atlas.width*p.atlas.height,0);
+            await window.__surfaceExportPlan({surfaces:plans.length,pixels,rawBytes:pixels*48,pixelsPerMeter:surfaceOptions.pixelsPerMeter});
+            if(pixels>160*1024*1024)throw new Error('Surface set exceeds 160M texel budget; select a lower explicit density');
+            for(const [index,job]of surfaceJobs.entries()){
+                const record=await exporter.evaluate(job.source,job.target,job.materials,'surface_'+index,plans[index]);
+                surfaceMaterials.push(record);
+                await window.__surfaceExportProgress(index+1,surfaceJobs.length,record);
+            }
+        } finally {for(const plan of plans)plan.geometry.dispose();if(running)e.start();}
+    }
     exportScene.updateMatrixWorld(true);
     const busBounds=new THREE.Box3().setFromObject(bus);
     const lights=[];e.scene.traverse(object=>{if(object.isLight)lights.push({name:object.name,type:object.type,intensity:object.intensity,
@@ -106,9 +131,11 @@ export async function exportGameScene(poses) {
         await window.__writeSceneChunk(btoa(binary));
     }
     return {schemaVersion:1,status:'exported',threeRevision:THREE.REVISION,bytes:data.length,meshCount,instances,triangles,
-        materials:audit,omitted,landmarks,groundCoverage:groundCoverage.audit,busBounds:{min:busBounds.min.toArray(),max:busBounds.max.toArray()},
+        materials:audit,surfaceMaterials,omitted,landmarks,groundCoverage:groundCoverage.audit,busBounds:{min:busBounds.min.toArray(),max:busBounds.max.toArray()},
         lights,lighting:e.lightingSettings,atmosphere:e.atmosphereSettings,poses,
-        limitations:['Procedural shader hooks listed per material are not executed in Cycles; source texture/PBR inputs are retained.',
+        limitations:[surfaceMaterials.length
+            ? 'Native surface records resolve procedural opaque-building color, roughness, metalness and world normal at the declared texel density. Original material contracts describe the source-texture fallback; authored AO remains separate. Other surfaces retain their listed limitations.'
+            : 'Procedural shader hooks listed per material are not executed in Cycles; source texture/PBR inputs are retained.',
             'Phong materials use a documented GGX approximation; no new glass transmission is invented for opaque source windows.',
             'Known legacy bus paint/trim/rubber/rim materials use the restrained GGX appearance proxy, not measured Phong-to-physical equivalence.',
             'CityFloor/GroundTiles use the documented dry-grass aggregate roughness adapter; runtime reflection suppression is not a glTF material property.',

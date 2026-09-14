@@ -1,25 +1,31 @@
 // Standalone actual-game export and reusable Blender scene construction.
 import path from 'node:path';
-import { mkdir, open, copyFile } from 'node:fs/promises';
+import { mkdir, open, copyFile, appendFile, writeFile, stat } from 'node:fs/promises';
 import { withGameBrowser } from '../capture_baselines/GameBrowser.mjs';
 import { readGameEvidence, setGamePose, settleGameFrames } from '../capture_baselines/GameEvidence.mjs';
 import { exportGameScene } from './ExportGameScene.mjs';
 import { assertAppliedBaseline, assertPoseMatches, verifyFiles, TOOL, readJson } from '../Inputs.mjs';
 import { config, cache, receipt, codeIdentity, resultFiles, artifactPath } from '../StageInputs.mjs';
-import { writeJson, digest, hashFile } from '../../../../baking/Files.mjs';
+import { writeJson, digest, hashFile, listFiles } from '../../../../baking/Files.mjs';
 import { runHeadlessBake } from '../../../../baking/Blender.mjs';
 
 export async function exportCity(ctx,run) {
     const lighting=await config(ctx,run,'lighting');
-    const code={exporter:await codeIdentity(ctx.root,['export_city/ExportGameScene.mjs','export_city/GroundRoadCoverage.js','export_city/MaterialEquivalence.js','../material_calibration/export_contract.json','export_city/ExportCity.mjs','export_city/build_scene.py']),
+    const code={exporter:await codeIdentity(ctx.root,['export_city/ExportGameScene.mjs','export_city/GroundRoadCoverage.js','export_city/MaterialEquivalence.js','export_city/SourceMaterialContract.js','../material_calibration/export_contract.json','export_city/ExportCity.mjs','export_city/build_scene.py']),
         uvTiling:await hashFile(path.join(ctx.root,'tools/illumination_bake_compiler/blender/uv_tiling.py'))};
     const supplied=ctx.options.source?await readJson(artifactPath(ctx.root,ctx.options.source)):null;
     if(supplied && (supplied.source!==run.source.sha256||digest(supplied.poses)!==digest(run.poses)||(await hashFile(supplied.raw)).sha256!==supplied.sourceGlb.sha256))throw new Error('Explicit source export no longer matches this run');
-    const key=digest({source:run.source.sha256,poses:run.poses,bakes:run.bakes.identity,code,raw:supplied?.sourceGlb,toolchain:ctx.toolchain?.executableSha256});
-    const output=path.join(ctx.root,'tests/artifacts/screens/illumination_560/scene',key.slice(0,16));
-    const manifestPath=path.join(output,'scene_manifest.json');
+    const surfaces=ctx.options['surface-materials']==='on'?{pixelsPerMeter:Number(ctx.options['surface-density']??32)}:null;
+    if(surfaces&&![16,32,64].includes(surfaces.pixelsPerMeter))throw new Error('Surface density must be 16, 32 or 64 pixels/m');
+    if(surfaces&&supplied)throw new Error('Resolved surface export must evaluate the current shader; supplied source unsupported');
+    if(surfaces)code.surfaces=await codeIdentity(ctx.root,['export_city/SurfaceAtlas.js','export_city/SurfaceMaterialExport.js','export_city/surface_materials.py']);
+    const key=digest({source:run.source.sha256,poses:run.poses,bakes:run.bakes.identity,code,surfaces,raw:supplied?.sourceGlb,toolchain:ctx.toolchain?.executableSha256});
+    let output=path.join(ctx.root,'tests/artifacts/screens/illumination_560/scene',key.slice(0,16));
+    let manifestPath=path.join(output,'scene_manifest.json');
     const previous=await cache(manifestPath,key);
     if(previous){ctx.log.line(ctx.id,'Reusing authenticated Blender scene');await writeJson(path.join(run.runRoot,'scene.json'),{manifest:manifestPath});return resultFiles(previous,manifestPath);}
+    try {await stat(output);output+='-'+Date.now();manifestPath=path.join(output,'scene_manifest.json');}
+    catch(error){if(error.code!=='ENOENT')throw error;}
     await mkdir(output,{recursive:true});const started=Date.now(),raw=path.join(output,'source.glb');
     let fd,metadata;const evidence=supplied?.evidence??[];
     if(supplied){await copyFile(supplied.raw,raw);metadata=supplied;ctx.log.line(ctx.id,'Rebuilding from the explicitly supplied, hash-verified game export');}
@@ -43,8 +49,24 @@ export async function exportCity(ctx,run) {
             }
             await page.evaluate(setGamePose,run.poses[0].pose);await page.evaluate(settleGameFrames,30);
             await page.exposeFunction('__writeSceneChunk',async encoded=>{await fd.write(Buffer.from(encoded,'base64'));if(++chunks%64===0)ctx.log.line(ctx.id,`Exported ${chunks} MiB of scene geometry/textures`);});
+            if(surfaces){
+                await mkdir(path.join(output,'surface_materials'));
+                await page.exposeFunction('__writeSurfaceChunk',async(name,encoded,first)=>{
+                    if(!/^surface_\d+_(color|orm|normal)\.rgba32f$/.test(name))throw new Error('Invalid surface output');
+                    const file=path.join(output,'surface_materials',name),bytes=Buffer.from(encoded,'base64');
+                    if(first)await writeFile(file,bytes,{flag:'wx'});else await appendFile(file,bytes);
+                });
+                await page.exposeFunction('__surfaceExportPlan',async plan=>{
+                    await writeJson(path.join(output,'surface_materials','plan.json'),plan);
+                    ctx.log.line(ctx.id,`Surface plan: ${plan.surfaces} objects, ${(plan.pixels/1048576).toFixed(1)}M texels, ${(plan.rawBytes/1073741824).toFixed(2)} GiB raw`);
+                });
+                await page.exposeFunction('__surfaceExportProgress',async(index,total,record)=>{
+                    await writeJson(path.join(output,'surface_materials',record.id+'.json'),record);
+                    ctx.log.line(ctx.id,`Resolved material surfaces ${index}/${total}`);
+                });
+            }
             ctx.log.line(ctx.id,'Exporting unculled game meshes and source material inputs');
-            metadata=await page.evaluate(exportGameScene,run.poses);
+            metadata=await page.evaluate(exportGameScene,{poses:run.poses,surfaces});
             if(errors.length)throw new Error(`Game export errors: ${errors.join('; ')}`);
         });
     } finally {await fd?.close();}
@@ -62,7 +84,7 @@ export async function exportCity(ctx,run) {
     if(build.projection.maximumPixelError>1||build.cameras.length!==run.poses.length||build.busPlacements.length!==new Set(run.poses.map(p=>p.busId)).size)throw new Error('Blender scene parity/placement count failed');
     const blend=path.join(output,'bigcity2_lighting_lab.blend');
     const result=await receipt(manifestPath,key,{scene:blend,sourceManifest:input,source:run.source.sha256,build,seconds:(Date.now()-started)/1000,
-        limitations:metadata.limitations,materialAudit:metadata.materials,viewport:run.viewport},[blend,raw,input,hdri,path.join(output,'build_receipt.json'),...build.colorManagement.files]);
+        limitations:metadata.limitations,materialAudit:metadata.materials,viewport:run.viewport},[blend,raw,input,hdri,path.join(output,'build_receipt.json'),...build.colorManagement.files,...(surfaces?await listFiles(path.join(output,'surface_materials')):[])]);
     await writeJson(path.join(run.runRoot,'scene.json'),{manifest:manifestPath});
     return resultFiles(result,manifestPath);
 }

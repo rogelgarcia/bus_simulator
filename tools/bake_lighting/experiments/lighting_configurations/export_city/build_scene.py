@@ -75,7 +75,18 @@ for index,obj in enumerate(o for o in scene.objects if o.type=='MESH'):obj.pass_
 material_masks={}
 for index,mat in enumerate(bpy.data.materials):mat.pass_index=index+1;material_masks[str(index+1)]=mat.name
 uv_tiling_nodes = 0
+comparison_contracts = {}
+unused_comparison_contracts = []
 for record in data['materials']:
+    contract = record.get('comparisonContract')
+    if contract:
+        material = bpy.data.materials.get(record['id'])
+        if material:
+            material['bus_sim_material_comparison'] = json.dumps(contract)
+            comparison_contracts[record['id']] = contract
+        else:
+            # Instanced tint clones / clipped geometry can leave unused source materials.
+            unused_comparison_contracts.append(record['id'])
     if not record.get('uvTiling'): continue
     material = bpy.data.materials.get(record['id'])
     if not material: raise RuntimeError('Imported UV override material missing: '+record['id'])
@@ -92,6 +103,9 @@ for record in data['materials']:
         separate=mat.node_tree.nodes.new('ShaderNodeSeparateColor');combine=mat.node_tree.nodes.new('ShaderNodeCombineColor');invert=mat.node_tree.nodes.new('ShaderNodeMath');invert.operation='SUBTRACT';invert.inputs[0].default_value=1
         links=mat.node_tree.links;links.new(source_socket,separate.inputs[0]);links.new(separate.outputs['Green'],invert.inputs[1]);links.new(separate.outputs['Red'],combine.inputs['Red']);links.new(invert.outputs[0],combine.inputs['Green']);links.new(separate.outputs['Blue'],combine.inputs['Blue']);links.new(combine.outputs[0],node.inputs['Color'])
 ocio_source=Path(bpy.utils.resource_path('LOCAL'))/'datafiles'/'colormanagement';ocio_target=output/'color_management'
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+from surface_materials import apply_surface_materials
+surface_audit=apply_surface_materials(data.get('surfaceMaterials',[]),output/'surface_materials')
 shutil.copytree(ocio_source,ocio_target,dirs_exist_ok=True)
 ocio_files=[str(p) for p in ocio_target.rglob('*') if p.is_file()]
 scene.camera=bpy.data.objects[cameras[0]];scene.render.engine='CYCLES';scene.view_settings.view_transform='AgX';scene.view_settings.look='None';scene.render.film_transparent=False
@@ -106,6 +120,9 @@ receipt={'schemaVersion':1,'status':'validated','blender':bpy.app.version_string
     'objects':len(bpy.data.objects),'meshes':len(bpy.data.meshes),'materials':len(bpy.data.materials),'images':len(bpy.data.images),'uvTilingTextureNodes':uv_tiling_nodes,
     'projection':{'maximumPixelError':max(errors),'checks':len(errors),'basis':'Three(x,y,z) -> Blender(x,-z,y)','resolution':[1920,1080]},
     'colorManagement':{'config':str(ocio_target/'config.ocio'),'files':ocio_files},'materialMasks':material_masks,
+    'materialComparisonContracts':comparison_contracts,
+    'nativeSurfaceMaterials':surface_audit,
+    'unusedSourceComparisonContracts':unused_comparison_contracts,
     'resources':'glTF images packed; OCIO bundled next to blend; original HDRI sibling file'}
 (output/'build_receipt.json').write_text(json.dumps(receipt,indent=2))
 print('AI560_SCENE_READY='+json.dumps({k:v for k,v in receipt.items() if k not in ['materialMasks','colorManagement']}),flush=True)

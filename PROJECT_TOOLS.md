@@ -2,6 +2,13 @@
 
 Registry of scripts under `tools/`. When adding a new tool, register it here.
 
+AI568 source-material controls: `lighting/experiments/reference-matching/material-parity-capture`
+with `phase=source`, then `material-parity-analysis`, run through `tools/bake.mjs`.
+The five-pose output separates production appearance from matched source-material
+lighting. `export_city/SourceMaterialControl.js`, `SourceMaterialContract.js` and
+`reference_matching/source_material_analysis.py` own the reversible controls,
+export omission audit and analysis; see the reference-matching README.
+
 For offline baking, start with **`node tools/bake.mjs`**. See
 [`tools/baking/README.md`](tools/baking/README.md) for setup, the full inventory,
 individual leaf commands, scoped parameters and recovery, and
@@ -19,7 +26,7 @@ individual leaf commands, scoped parameters and recovery, and
 | daylightCalibration | `tools/bake_lighting/experiments/daylight_calibration/` | AI 565 coherent atmospheric sun/sky, native receiver checks and all-pose Cycles comparisons; bright-afternoon elevation comparison | `node tools/bake.mjs --target lighting/experiments/daylight-calibration`; standalone prepare/render/fixtures/capture/analyze and afternoon (authenticated AI567 source); see its README |
 | materialCalibration | `tools/bake_lighting/experiments/material_calibration/` | AI 566 runtime material audit, neutral diffuse/specular fixtures and reversible daylight export candidates | `node tools/bake.mjs --target lighting/experiments/material-calibration`; standalone audit/prepare/capture/render/analyze; shared local Blender config, ignored evidence and no publication |
 | automatedCalibration | `tools/bake_lighting/experiments/automated_calibration/` | AI 567 validated reference inputs, fresh game baselines, bounded candidates, independent full renders and integration handoff | `node tools/bake.mjs --target lighting/experiments/automated-calibration`; standalone validate/baseline/prepare/calibrate/search/render/analyze/review; no production publication |
-| calibratedReferenceMatching | `tools/bake_lighting/experiments/reference_matching/` | AI562 actual calibrated game capture, candidate-package isolation, updated Cycles export, native E55 validation and chronological pose comparisons | `node tools/bake.mjs --target lighting/experiments/reference-matching`; independent baseline/sky/capture/reference/native-validation/diagnostics/material-diagnostics/transport-diagnostics/transport-reference/transport-textures/review, building-review-capture/render/analysis, irradiance-trace/analysis/reference/fixture/wall, production orchestration and gated install; see its README for source and output options |
+| calibratedReferenceMatching | `tools/bake_lighting/experiments/reference_matching/` | AI562 actual calibrated game capture, candidate-package isolation, updated Cycles export, native E55 validation and chronological pose comparisons; AI568 incremental opaque material parity | `node tools/bake.mjs --target lighting/experiments/reference-matching`; independent baseline/sky/capture/reference/native-validation/diagnostics/material-diagnostics/transport-diagnostics/transport-reference/transport-textures/review/bake-progress-review, building-review-capture/render/analysis, material-response-capture/analysis, material-parity-capture/analysis, irradiance-trace/analysis/reference/fixture/wall, production orchestration and gated install; see its README for source and output options |
 | sunSkyRatios | `tools/bake_lighting/experiments/sun_sky_ratios/` | AI 563 saved-city stronger-sun matrix, card-matched exposure, ACESFilmic/AgX images and pose comparisons | `node tools/bake_lighting/experiments/sun_sky_ratios/run.mjs --set lighting/experiments/sun-sky-ratios:source-run=<AI560 run>`; see its README |
 | bakeVehicleDiffuseProbes | `tools/bake_lighting/diffuse_probes/` | Export static city, prepare spatial receivers, bake separate sky/bounce fields and authenticate optional publication | `node tools/bake_lighting/diffuse_probes/run.mjs --publish`; see its README for quality and coverage |
 | bakeVisibility | `tools/bake_visibility/` | Stages and validates the existing PVS bake before optional publication | `node tools/bake_visibility/run.mjs` |
@@ -55,3 +62,21 @@ individual leaf commands, scoped parameters and recovery, and
 | grassMaterialBaker | `tools/grass_material_baker/` | Deterministically bake the matched low-cut grass surface maps, cluster atlas, manifest, and Blender source | `blender --background --python tools/grass_material_baker/blender_bake.py -- <Grass004 folder> <output folder>` |
 | grassLabCapture | `tools/grass_lab_capture/` | Capture deterministic UI-free native-4K Grass Lab PNG evidence and cost/camera metadata | `node tools/grass_lab_capture/run.mjs --phase=before` |
 | receiverLightmaps | `tools/receiver_lightmaps/` | Build complete receiver UV layouts, bake Cycles irradiance with CPU/OptiX, audit transport and publish authenticated maps | Start with `unwrap.mjs`, then `run.mjs --enhanced true --layout ... --atlas-only true`; see README for complete coverage, transport, environment orientation/solar separation, crash recovery, hidden-surface padding, shaded-bounce proofs and unpublished city checks |
+# AI568 material parity controls
+
+Use `node tools/bake.mjs --target lighting/experiments/reference-matching/material-transport-control`
+with leaf options `input` and `output` to isolate glossy transport and primary
+normals in an existing authenticated reference. The companion
+`material-parity-capture` leaf accepts `phase=reflections`. See
+`tools/bake_lighting/experiments/reference_matching/README.md` and AI568.
+# AI568 native surface material comparison
+
+Registered under `node tools/bake.mjs --target lighting/experiments/reference-matching`:
+`reference` defaults to native opaque building material inputs at 32px/m;
+explicit `surface-materials=off` retains the source-only diagnostic.
+`surface-reference` validates/reuses the resulting saved scene;
+`surface-analysis` authenticates controls and produces current/Cycles input and
+appearance measurements, including explicitly labeled authored-AO wall controls.
+`specular-fixture` validates uniform-light and sky reflection response against
+independent visible-GGX quadrature. See the reference-matching README for inputs,
+optional independent poses, density/transport controls and numerical limits.

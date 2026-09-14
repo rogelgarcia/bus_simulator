@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "policy": "Rectangles selected on the fixed Cycles images before measuring game error. Use the dominant nonzero reference material in each facade rectangle. Road rectangles select visible sunlit/shadow interiors; material IDs separate asphalt from white markings. Erode by two pixels and save all masks for inspection. These are local image samples, not whole-surface light classifications.",
+  "facades": {
+    "pose_01": { "shaded_facade": [0.02, 0.08, 0.39, 0.40], "sunlit_facade": [0.46, 0.16, 0.54, 0.39] },
+    "pose_02": { "shaded_facade": [0.04, 0.16, 0.39, 0.39], "sunlit_facade": [0.46, 0.22, 0.53, 0.41] },
+    "pose_03": { "shaded_facade": [0.30, 0.39, 0.37, 0.50], "sunlit_facade": [0.66, 0.12, 0.87, 0.38] },
+    "pose_04": { "shaded_facade": [0.83, 0.20, 0.98, 0.50], "sunlit_facade": [0.10, 0.03, 0.27, 0.25] },
+    "pose_05": { "shaded_facade": [0.23, 0.31, 0.27, 0.48], "sunlit_facade": [0.07, 0.28, 0.21, 0.50] }
+  },
+  "road": { "asphalt": "MAT_4_MeshStandardMaterial", "white_markings": "MAT_8_MeshStandardMaterial" },
+  "roadAreas": {
+    "pose_01": { "sunlit": [0.64, 0.67, 0.98, 0.98], "shadow": [0.15, 0.85, 0.43, 0.89] },
+    "pose_02": { "sunlit": [0.62, 0.70, 0.98, 0.98], "shadow": [0.43, 0.637, 0.51, 0.65] },
+    "pose_03": { "sunlit": [0.12, 0.78, 0.90, 0.98], "shadow": [0.015, 0.57, 0.115, 0.66] },
+    "pose_04": { "sunlit": [0.08, 0.80, 0.92, 0.98], "shadow": [0.40, 0.656, 0.57, 0.675] },
+    "pose_05": { "sunlit": [0.77, 0.68, 0.98, 0.96], "shadow": [0.02, 0.69, 0.38, 0.80] }
+  },
+  "minimumPixels": 100,
+  "erosionPixels": 2
+}

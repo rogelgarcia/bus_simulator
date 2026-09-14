@@ -1,5 +1,38 @@
 # Calibrated game / Cycles comparison (AI562)
 
+AI568 distinguishes **production appearance** from **source-material lighting
+controls**. The current glTF export omits procedural wall variation and texture
+AO. Each new exported material retains a `comparisonContract`, including the
+original variation parameters, and the reusable Blender material carries the
+same metadata. These omissions prevent an appearance deficit from being reported
+as isolated missing illumination. Existing authenticated references are retained.
+
+`material-parity-capture` with `phase=source`, authenticated `capture`, `control`
+and new `output` captures all five poses. It keeps original/restored game beauty,
+AO-only bypass and source-material controls. Source controls temporarily remove
+the same procedural layers omitted by glTF, retain source texture/factor/UV inputs,
+and restore uniforms in `finally`. They never change production preferences or
+installed bakes. `material-parity-analysis` automatically recognizes these captures
+and writes all-five-pose current/Cycles pairs, three-column wall-only controls,
+scene-linear lobe ratios, material/AO attribution and 3px/6px inset sensitivity.
+The diagnostic image is explicitly labeled and is never called the current game.
+
+`bake-progress-review` takes `current=<capture>`, `reference=<Cycles reference>`
+and `output=<new artifact directory>`. It produces two-column current game/Cycles
+comparisons. Optional `previous=<capture>` adds a previous-bake column and change
+measurements; omit it to keep the images and report focused on current parity. It reuses
+authenticated images and EXR material passes without launching Blender or the
+game. An isolated browser adds captions to the image sheets. All five poses,
+projection, exposure, graphics, material controls and fully
+applied bakes must match before analysis. Source revision differences remain
+explicit in the request. It creates five captioned previous/current/Cycles PNG
+sheets (two columns without a previous capture), original-resolution images,
+facade crops, inspectable eroded masks and
+regional measurements. `bake_progress_regions.json` records the fixed regions.
+The metrics measure displayed images, not raw irradiance or photorealism. Glass,
+bus materials and reference convergence remain limitations; no publication or
+defaults change occurs.
+
 For a single exact pose, use the `pose-comparison` stage with `pose`, `output`
 and `source-run`. It produces `game.png`, `cycles.png` and authenticated evidence.
 It requires applied installed bakes by default. To document an already observed
@@ -191,6 +224,52 @@ last displayed timer value. Settings, bake identities, material identity and
 shader versions must remain unchanged. The custom pose also gets raw diffuse,
 AO-off and albedo diagnostics. Outputs are authenticated and never published.
 
+`material-response-capture` takes `capture=<authenticated fixed-display game capture>`,
+`phase=matrix|validation`, and `output=<new directory>`. Matrix mode tests poses 02
+and 03 with opaque reflections off/on crossed with authored material AO on/off.
+AO is bypassed only synchronously inside rendering and restored before another
+engine update, so the bake freshness check never sees a changed source material.
+Validation mode tests reflection off/on across all five poses with material AO
+retained. Both modes use two fresh sequential browsers and two balanced passes
+per condition/browser, 240 matched GPU samples per pass. The source capture's
+display, bloom, bus, lighting and baked preferences are retained explicitly.
+
+`material-response-analysis` takes `capture=<material-response capture>`,
+`control=<authenticated current/Cycles bake-progress-review directory>`, and
+`output`. It rejects changed poses, exposure, lighting, graphics or bake identity,
+then reuses the control's fixed eroded material masks. It writes regional image
+errors and repeated timing statistics. Validation produces only current game /
+Cycles image pairs. Both modes also write `facades/` wall-only image pairs with
+unmeasured pixels (including windows/frames) replaced by gray, plus game overlays
+showing the selected wall pixels. Additional 3/6-pixel insets measure boundary
+sensitivity and retain pixel counts in the JSON and Markdown report. These are
+Cycles material-ID masks applied to aligned game captures, not independently
+intersected game/Cycles ID passes. These leaves do not bake or publish assets. AO-off is a
+diagnostic, not an automatic recommendation to remove authored material detail.
+
+AI568 continues the opaque-wall study through two independent diagnostic leaves.
+`material-parity-capture` takes `capture=<authenticated material validation>`,
+`control=<current/Cycles bake-progress-review>`, and a new `output`. It retains
+the calibrated v7 controls, sets opaque reflections On in an isolated browser,
+and captures scene-linear AO-on/off beauty and diffuse, AO-off live-sun diffuse,
+sky/bounce diffuse, albedo and a restored beauty for poses 02/03. Texture-AO
+changes exist only inside a synchronous render. This is not a timed benchmark.
+The engine is stopped for the raw pass sequence and resumed afterward: pausing
+the simulation alone does not stop renderer/streaming updates. Frame identity
+and restored wall radiance must pass before the analysis is accepted. Requested
+shadow-detail pages must finish loading/uploading before freezing the frame.
+`material-parity-analysis` takes that `capture` and a new `output`. It authenticates
+the existing Cycles reference, reuses its full and sun-only EXRs, and compares
+raw lobes on the frozen wall masks plus 3/6px insets. Outputs include albedo and
+AO-off/diffuse wall-only pairs, term ratios and restoration/reconstruction checks.
+Cycles Direct includes sky, so named-sun diffuse comes from the sun-only Direct
+pass; full diffuse minus that term is compared to the game's sky/bounce diffuse.
+Cycles Diffuse Color includes BSDF diffuse weighting: its ratio with game
+diffuseColor and the color-normalized diffuse result are diagnostics, not exact
+albedo/irradiance certification. No new Blender render or asset publication is
+required. The incremental plan and evidence inventory live in
+`prompts/AI_DONE_graphics_568_MATERIAL_game_cycles_opaque_surface_parity_DONE.md`.
+
 `building-review-render` takes `capture=<capture directory>`,
 `source-run=<authenticated afternoon source>` and `output=<new directory>`.
 It exports a fresh reusable scene, resolving coplanar grass/road coverage, renders
@@ -253,3 +332,59 @@ the entire city. Existing v6 maps require a full validated v7 rebake after the
 fix; reprocessing cannot restore paths discarded by sample clamping. The full
 bake, installation and remaining game/Cycles differences are recorded in
 `debug_tools/regression_debugging/receiver_irradiance_delivery.md`.
+# AI568 causal reflection controls
+
+`material-parity-capture` accepts `phase=reflections` for direct/environment
+specular and primary flat-normal passes. Original material values and the engine
+frame are restored; this does not change production settings.
+
+`material-transport-control` accepts authenticated `input` (a reference directory)
+and a new `output`. It reuses `calibrated_city.blend` to compare local versus
+unoccluded glossy transport, with and without primary normal maps. Outputs are
+diagnostic EXRs/PNGs and an authenticated receipt. It does not publish bakes.
+# Native surface-material reference (AI568)
+
+`/surface-reference` reuses an authenticated resolved `/reference` output (`input`,
+new `output`) and validates the native atlas UV convention before rerendering.
+`/surface-analysis` takes an authenticated raw material `capture`, the new
+`reference`, and new `output`; it checks controls, input color/roughness and
+wall-only radiance, and creates current-game/Cycles pairs. Both are standalone,
+registered framework stages and cannot publish.
+
+The existing `/reference` stage defaults to `surface-materials=on` and
+`surface-density=32`; explicit `off` retains the original source-only diagnostic.
+It accepts `surface-density=16|32|64` (pixels/metre) and evaluates opaque building
+materials on camera-independent planar charts and imports their linear color,
+roughness/metalness and world normals into Blender. Generated atlases remain
+gitignored and are packed into the reusable blend. Texture AO is an independent
+AOV, never baked into Base Color. View-distance blending and unsupported animated
+or instanced surfaces fail explicitly. Fixed-density derivative filtering remains
+an approximation and requires density/convergence validation. This option changes
+the offline reference only; it neither changes the game nor publishes light maps.
+
+`material-parity-capture:phase=resolved` captures all five poses with native
+material values, world normal, authored AO and separate diffuse/specular lobes.
+Optional `pose=<tracked pose JSON>` appends an independent close-up. The tracked
+`material_validation_closeup.json` contains the user's additional brick view.
+`surface-reference:capture=<resolved capture>` adds unmatched saved poses to the
+reused scene and isolates their bus copies with view layers.
+
+`surface-analysis:previous=<reference>` measures declared density convergence;
+`transport=<material-transport-control output>` adds a same-reference glossy
+visibility control. Use `material-transport-control:phase=global-only` to retain
+all five poses with city meshes hidden from glossy rays only. The analyzer writes
+physical current-game/Cycles pairs, input/lobe metrics and 0/3/6px wall-mask
+sensitivity. It also writes explicitly labeled **Cycles + authored AO** wall-only
+controls. These multiply sky/bounce diffuse by the exported AO and environment
+specular by Three's roughness/view-dependent occlusion formula. Named sunlight,
+Base Color and the physical reference remain unchanged. This artistic control
+explains mismatched material policy; it is not a substitute physical reference.
+
+`specular-fixture` takes an authenticated resolved `input`, native `capture`, and
+new `output`. It isolates roughness and view angle under white and disc-free sky.
+Actual geometry/projection checks precede rendering. `specular_integral.py`
+independently integrates visible GGX with exact dielectric and Schlick Fresnel,
+checks sample convergence and compares white-normalized angular response.
+The job checks the analytic sky against the actual HDR file, retains native
+shader source and records explicit engineering tolerances. It changes no game
+shader, creates no production lookup texture and permits no publication.

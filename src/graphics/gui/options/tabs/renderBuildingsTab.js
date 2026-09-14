@@ -8,12 +8,12 @@ export function renderBuildingsTab() {
     sectionBuildings.appendChild(makeEl('div', 'options-section-title', 'Buildings'));
 
     const d = this._draftBuildingWindowVisuals;
-    const surfaces = d.surfaces ?? (d.surfaces = { reflections: false });
+    const surfaces = d.surfaces;
     const glass = d.reflective.glass ?? (d.reflective.glass = {});
     const emit = () => this._emitLiveChange();
     const controls = {
         surfaces: makeToggleRow({
-            label: 'Opaque building reflections (experimental)',
+            label: 'Opaque building reflections',
             value: surfaces.reflections,
             onChange: (v) => { surfaces.reflections = v; emit(); }
         }),

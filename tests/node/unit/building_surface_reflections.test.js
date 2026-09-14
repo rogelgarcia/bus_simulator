@@ -25,8 +25,11 @@ test('Opaque reflections exclude glass, window groups and authored environment m
     assert.equal(JSON.stringify(materials),original);
 });
 
-test('Building reflection preference defaults off and survives settings sanitization', () => {
-    assert.equal(sanitizeBuildingWindowVisualsSettings({}).surfaces.reflections,false);
+test('Building reflections default on without overriding an explicit saved off preference', () => {
+    assert.equal(sanitizeBuildingWindowVisualsSettings({}).surfaces.reflections,true);
+    assert.equal(sanitizeBuildingWindowVisualsSettings({reflective:{enabled:false}}).surfaces.reflections,true);
+    const disabled=sanitizeBuildingWindowVisualsSettings({surfaces:{reflections:false}});
+    assert.equal(sanitizeBuildingWindowVisualsSettings(JSON.parse(JSON.stringify(disabled))).surfaces.reflections,false);
     const enabled=sanitizeBuildingWindowVisualsSettings({surfaces:{reflections:true}});
     assert.equal(sanitizeBuildingWindowVisualsSettings(JSON.parse(JSON.stringify(enabled))).surfaces.reflections,true);
 });
