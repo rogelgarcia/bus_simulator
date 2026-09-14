@@ -3,7 +3,7 @@ import path from 'node:path';
 import {mkdir,open} from 'node:fs/promises';
 import {writeJson} from '../../../baking/Files.mjs';
 
-export async function rawRadiance(page, output, {materialDiagnostics = false, receiverTrace = false, materialParity = false, reflectionParity = false, sourceParity = false, resolvedParity = false} = {}) {
+export async function rawRadiance(page, output, {materialDiagnostics = false, receiverTrace = false, materialParity = false, reflectionParity = false, sourceParity = false, resolvedParity = false, primaryControls = false, geometryAudit = false, environmentReference = null} = {}) {
     if (receiverTrace && !materialDiagnostics) throw new Error('Receiver tracing requires diagnostic material outputs');
     if (materialParity && (!materialDiagnostics || receiverTrace)) throw new Error('Material parity requires diagnostic materials without receiver tracing');
     await mkdir(output);
@@ -25,6 +25,8 @@ export async function rawRadiance(page, output, {materialDiagnostics = false, re
                 apply(shader){
                     if(!shader.fragmentShader.includes('#include <opaque_fragment>'))throw new Error('Missing diagnostic output anchor');
                     Object.assign(shader.uniforms,uniforms);
+                    if(!shader.vertexShader.includes('#include <project_vertex>'))throw new Error('Missing diagnostic position anchor');
+                    shader.vertexShader=source.vertexDeclarations+shader.vertexShader.replace('#include <project_vertex>',source.position);
                     shader.fragmentShader=source.declarations+shader.fragmentShader.replace('#include <opaque_fragment>',source.apply);
                 }
             }));
@@ -36,7 +38,29 @@ export async function rawRadiance(page, output, {materialDiagnostics = false, re
             semantics:'Native scene render before display and postprocessing; combined and ambient retain material AO. Sun is combined minus ambient. The separate ambient_no_material_ao pass sets only material aoMapIntensity to zero and restores it before another frame. Ambient includes sky, baked diffuse, reflections and emission; it is not Cycles diffuse-indirect.'};
     },materialDiagnostics);
     try {
-        const passes=resolvedParity
+        if(primaryControls||geometryAudit)metadata.primaryControls=await page.evaluate(async()=>{
+            const {primarySurfaceControl}=await import('/tools/bake_lighting/experiments/reference_matching/PrimarySurfaceControl.js');
+            const control=primarySurfaceControl(window.__busSim.sm.current.city.buildings.group);
+            window.__ai562Raw.primaryControl=control;
+            return {materials:control.materials,roughness:0.85,normal:'nonPerturbedNormal',secondaryTransport:'existing immutable bake'};
+        });
+        if(environmentReference){
+            metadata.environmentReference=await page.evaluate(async config=>{
+                const {referenceEnvironmentControl,buildingReferenceMaterials}=await import('/tools/bake_lighting/experiments/reference_matching/ReferenceEnvironmentControl.js');
+                const materials=buildingReferenceMaterials(window.__busSim.sm.current.city.buildings.group);
+                window.__ai562Raw.environmentControl=referenceEnvironmentControl(materials,config.whiteCells,config.samples);
+                return {materials:materials.length,samples:config.samples,energyFixture:config.fixture,
+                    policy:'Diagnostic specular only; F0 .04 opaque buildings. Native authored AO retained. Global PMREM reused; no local visibility. Toggle changes a uniform only.'};
+            },environmentReference);
+        }
+        const passes=geometryAudit
+            ? ['combined','geometric__normal','geometric__position','geometric__face_normal','combined_restored']
+            : primaryControls
+            ? ['combined','combined_no_material_ao','diffuse_no_material_ao','indirect_no_material_ao','direct_no_material_ao','environment_specular_no_material_ao','normal','albedo','roughness','receiver_atlas','receiver_irradiance','receiver_lod',
+                ...['geometric','geometric_constant','normal_constant'].flatMap(v=>['diffuse_no_material_ao','environment_specular_no_material_ao','normal','roughness'].map(p=>v+'__'+p)),'combined_restored']
+            : environmentReference
+            ? ['combined','reference_combined','reference_environment_specular_no_material_ao','combined_restored']
+            : resolvedParity
             ? ['combined','combined_no_material_ao','diffuse','diffuse_no_material_ao','direct_no_material_ao','indirect_no_material_ao','direct_specular_no_material_ao','environment_specular_no_material_ao','normal','albedo','roughness','texture_ao','combined_restored']
             : sourceParity
             ? ['combined','combined_no_material_ao','albedo','roughness','source_combined_no_material_ao','source_diffuse_no_material_ao','source_albedo','source_roughness','combined_restored']
@@ -68,16 +92,19 @@ export async function rawRadiance(page, output, {materialDiagnostics = false, re
                 });
                 let source;
                 try {
+                    const parts=pass.split('__');
+                    window.__ai562Raw.primaryControl?.set(parts.length===2?parts[0]:'native');
                     if(pass.startsWith('source_')) {
                         const {sourceMaterialControl}=await import('/tools/bake_lighting/experiments/lighting_configurations/export_city/SourceMaterialControl.js');
                         source=sourceMaterialControl(engine.scene);
                         window.__ai562Raw.sourceMaterialAudit=source.variation;
                     }
                     if(pass.startsWith('ambient'))for(const [light] of lights)light.intensity=0;
-                    const key=pass.replace(/^(flat|source)_/, '');
+                    window.__ai562Raw.environmentControl?.setEnabled(pass.startsWith('reference_'));
+                    const key=parts[parts.length-1].replace(/^(flat|source|reference)_/, '');
                     uniforms.lightingDiagnosticOutput.value=({albedo:2,receiver_atlas:3,receiver_irradiance:4,receiver_lod:5,
                         indirect_no_material_ao:6,direct_no_material_ao:7,direct_specular_no_material_ao:8,
-                        environment_specular_no_material_ao:9,normal:10,roughness:11,texture_ao:12})[key]??(key.startsWith('diffuse')?1:0);
+                        environment_specular_no_material_ao:9,normal:10,roughness:11,texture_ao:12,position:13,face_normal:14})[key]??(key.startsWith('diffuse')?1:0);
                     for(const material of materials.keys())material.aoMapIntensity=0;
                     for(const material of normals.keys())material.normalScale.set(0,0);
                     renderer.toneMapping=THREE.NoToneMapping;renderer.outputColorSpace=THREE.LinearSRGBColorSpace;
@@ -87,6 +114,8 @@ export async function rawRadiance(page, output, {materialDiagnostics = false, re
                     return pixels.byteLength;
                 } finally {
                     source?.restore();
+                    window.__ai562Raw.primaryControl?.set('native');
+                    window.__ai562Raw.environmentControl?.setEnabled(false);
                     for(const [material,intensity] of materials)material.aoMapIntensity=intensity;
                     for(const [material,scale] of normals)material.normalScale.copy(scale);
                     for(const [light,intensity] of lights)light.intensity=intensity;
@@ -112,7 +141,7 @@ export async function rawRadiance(page, output, {materialDiagnostics = false, re
         }
         if(sourceParity)metadata.sourceMaterialAudit=await page.evaluate(()=>window.__ai562Raw.sourceMaterialAudit);
     } finally {
-        await page.evaluate(()=>{for(const hook of window.__ai562Raw.registrations)hook.remove();window.__ai562Raw.target.dispose();delete window.__ai562Raw;});
+        await page.evaluate(()=>{window.__ai562Raw.primaryControl?.dispose();window.__ai562Raw.environmentControl?.dispose();for(const hook of window.__ai562Raw.registrations)hook.remove();window.__ai562Raw.target.dispose();delete window.__ai562Raw;});
     }
     await writeJson(path.join(output,'metadata.json'),metadata);
 }

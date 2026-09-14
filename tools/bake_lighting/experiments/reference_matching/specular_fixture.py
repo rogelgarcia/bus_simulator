@@ -89,13 +89,15 @@ for index,cell in enumerate(integrals):
         sky_y=np.array(sky['cells'][index][renderer])@Y;white_y=np.array(white['cells'][index][renderer])@Y
         return float((sky_y/white_y)/((np.array(integral['sky'])@Y)/integral['white']))
     cell['cyclesAngularToExact']=angular('cycles',fine)
-    cell['nativeAngularToSchlick']=angular('game',cell['fine']['schlick'])
-    cycles_angular.append(abs(cell['cyclesAngularToExact']-1));native_angular.append(abs(cell['nativeAngularToSchlick']-1))
-checks={'maxQuadratureRelativeChange':max(convergence),'maxCyclesAngularRelativeError':max(cycles_angular),'maxNativeAngularRelativeError':max(native_angular),
+    key='prototypeAngularToExact' if r.get('referenceWhiteCells') else 'nativeAngularToSchlick'
+    cell[key]=angular('game',cell['fine']['exact' if r.get('referenceWhiteCells') else 'schlick'])
+    cycles_angular.append(abs(cell['cyclesAngularToExact']-1));native_angular.append(abs(cell[key]-1))
+checks={'maxQuadratureRelativeChange':max(convergence),'maxCyclesAngularRelativeError':max(cycles_angular),'maxEvaluatedAngularRelativeError':max(native_angular),
+        'evaluatedFresnelReference':'exact' if r.get('referenceWhiteCells') else 'schlick',
         'projectionToleranceNormalized':1e-5,'sourceQuantizationP99Tolerance':.035,'quadratureTolerance':.005,'cyclesAngularTolerance':.04}
 # Engineering validation limits, not a photorealism score. The angular budget
 # includes RGBE source quantization (.035), finite sky sampling and render noise.
 if max(convergence)>.005 or max(cycles_angular)>.04:raise RuntimeError('Independent integral did not validate: '+str(checks))
 if abs(integrals[0]['fine']['exact']['white']-.04)>1e-5:raise RuntimeError('Normal-incidence Fresnel anchor failed')
-save_json(root/'quadrature.json',{'sourceCheck':source_check,'checks':checks,'cells':integrals,'policy':'Independent single-scatter visible GGX integral. Exact dielectric versus Schlick; normalized sky/white isolates angular filtering. No fitted response or production shader change.'})
+save_json(root/'quadrature.json',{'sourceCheck':source_check,'checks':checks,'cells':integrals,'policy':'Independent single-scatter visible GGX integral. Exact dielectric versus Schlick; normalized sky/white isolates angular filtering. The optional prototype uses fitted white energy, separately held-out sky and exact Fresnel. No production shader change.'})
 print(json.dumps({'skySourceCheck':source_check}),flush=True)

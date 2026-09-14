@@ -231,3 +231,57 @@ this does not reproduce the old traversal's exact cache/streaming history, nor
 prove route-related stalls are fixed. Existing user applications were not closed.
 There was no concurrent diagnostic Blender render. Syntax, staged-independent
 diff whitespace and the authenticated capture receipt passed validation.
+
+## AI569 AO and view-dependent reflection audit (2026-09-14)
+
+See `prompts/AI_DONE_graphics_569_MATERIAL_ao_and_environment_response_parity_DONE.md`
+for the full experiment, rejected candidates, numerical tables and commands.
+AO is not duplicated in the production bake: the texture term is separate, and
+the source mortar displacement has no calibrated depth. Explicit geometric
+relief and direct/bounce closure controls support retaining its authored shading.
+
+A 256-sample view-dependent specular integration improves the independent sky
+fixture's average absolute ratio error from 15.23% to 1.59%, but does not produce
+consistent city improvements. Shaded brick at pose 02 improves only 0.54 points;
+pose 04 worsens. GPU median changes roughly 10.3–11.5ms to 21.0–25.4ms across three
+balanced 120-frame pairs. Calls/triangles/resource counts match within each pair.
+It is rejected for production and remains an offline diagnostic toggle.
+
+Final actual-game capture: `ai569_environment_capture_20260914_02` (418.5s).
+Final analysis: `ai569_environment_analysis_20260914_01` (24.9s), under the existing
+`tests/artifacts/screens/ai562_acesfilmic_reference_matching/` root. Six sheets
+show current game / diagnostic prototype / physical Cycles. Native and restored
+wall radiance are exactly identical to the original control. No runtime defaults,
+production assets, bus materials or bake profiles changed in this experiment.
+## AI570: primary controls and pose 04 delivery
+
+Use `material-parity-capture:phase=primary-controls`, then registered
+`primary-surface-reference` and `primary-surface-analysis` leaves. The completed
+AI570 prompt records the commands' inputs, accepted runs and failed controls.
+Brick normal-map removal / constant roughness do not close the diffuse gap;
+normal-angle tails remain even with maps off, so inspect geometry and smoothing
+correspondence before diagnosing texture amplitude. Do not confuse Cycles True
+Normal with Three's interpolated nonPerturbedNormal in a normal-map-only test.
+Frozen Cycles material masks can contain partial anti-aliased edge coverage;
+a known constant-material AOV excludes 0.279% of the brick wall consistently.
+Pose 04 neutral Lambert remains 8.21% below Cycles: raw bake is 6.37% low and
+processing reduces it a further 1.97% relative to raw. GPU sampling agrees with
+packed values to 0.0391% relative RMS; composition is irradiance*albedo/pi.
+All selected pixels use LOD 0. Investigate bake-scene transport and page 3
+reconstruction independently; changing global exposure cannot resolve this cause.
+## AI571: geometry sampling and atlas density
+
+See `prompts/AI_graphics_571_MATERIAL_surface_transport_and_geometry_parity.md`.
+The brick normal tail was a measurement fault: Cycles face-normal AOVs average
+perpendicular faces within antialiased pixels. Normalizing that average before
+comparing it to a single game fragment produces a false angular error. Report
+mixed-face pixels separately; preserve full-mask radiance metrics. Comparable
+pose 02/04 mesh normals now agree exactly.
+
+Pose 04 page processing is isolated: extension +0.337%, overlap unchanged,
+seams -2.296% relative to extension on the installed map. A matched source-scene
+control plus spatial convergence shows 8.25cm receivers reach 99.56% of neutral
+wall irradiance after local internal seam solving. The original processed map
+is 93.92% against that control. These are regional diffuse-control figures,
+not full-image parity or a production improvement already installed. Full-city
+packing/cross-object seams, five-pose validation and GPU cost remain required.

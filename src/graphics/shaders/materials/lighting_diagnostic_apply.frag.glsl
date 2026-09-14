@@ -5,6 +5,8 @@ if (lightingDiagnosticOutput == 7) outgoingLight = reflectedLight.directDiffuse;
 if (lightingDiagnosticOutput == 8) outgoingLight = reflectedLight.directSpecular;
 if (lightingDiagnosticOutput == 9) outgoingLight = reflectedLight.indirectSpecular;
 if (lightingDiagnosticOutput == 10) outgoingLight = inverseTransformDirection(normal, viewMatrix) * .5 + .5;
+if (lightingDiagnosticOutput == 13) outgoingLight = diagnosticWorldPosition;
+if (lightingDiagnosticOutput == 14) outgoingLight = normalize(cross(dFdx(diagnosticWorldPosition), dFdy(diagnosticWorldPosition)));
 if (lightingDiagnosticOutput == 11) {
     #ifdef STANDARD
     outgoingLight = vec3(material.roughness);

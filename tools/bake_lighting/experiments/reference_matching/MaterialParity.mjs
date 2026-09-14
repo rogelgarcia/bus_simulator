@@ -10,6 +10,7 @@ import { readGameEvidence, settleGameFrames } from '../lighting_configurations/c
 import { withGameBrowser } from '../lighting_configurations/capture_baselines/GameBrowser.mjs';
 import { writeJson, digest, listFiles } from '../../../baking/Files.mjs';
 import { rawRadiance } from './RawRadiance.mjs';
+import { environmentBenchmark } from './EnvironmentBenchmark.mjs';
 import { TOOL, outputPath } from './Baseline.mjs';
 
 const read = async file => JSON.parse(await readFile(file, 'utf8'));
@@ -40,16 +41,24 @@ export async function materialParityCapture(ctx) {
     baseline.storage['bus_sim.buildingWindowVisuals.v1'] = { ...baseline.storage['bus_sim.buildingWindowVisuals.v1'], surfaces: { reflections: true } };
     baseline.settingsPolicy = 'AI568: fixed v7 light/display controls; opaque reflections On; texture AO bypassed only during diagnostic renders.';
     const source = await snapshotFiles(ctx.root, await sourceFiles(ctx.root));
-    const allPoses = ['source','resolved'].includes(ctx.options.phase);
+    const allPoses = ['source','resolved','environment'].includes(ctx.options.phase);
+    let environmentReference=null;
+    if(ctx.options.phase==='environment'){
+        if(!ctx.options['energy-fixture'])throw new Error('Authenticated white energy fixture required');
+        const fixture=outputPath(ctx.root,ctx.options['energy-fixture']);
+        await authenticated(path.join(fixture,'specular_fixture_receipt.json'));
+        environmentReference={fixture,samples:Number(ctx.options['integration-samples']??256),
+            whiteCells:(await read(path.join(fixture,'analysis.json'))).results.find(x=>x.world==='white').cells};
+    }
     const prepared = { ...original, runId: baseline.id, runRoot: output, baseline,
-        poses: original.poses.filter(pose => allPoses || ['pose_02', 'pose_03'].includes(pose.id)),
+        poses: original.poses.filter(pose => allPoses || (['primary-controls','geometry'].includes(ctx.options.phase)?['pose_02','pose_04']:['pose_02', 'pose_03']).includes(pose.id)),
         source: { files: source, sha256: digest(source) }, bakes: await baselineInputs(ctx.root, baseline),
         engineRevision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ctx.root, encoding: 'utf8' }).trim(),
         startedAt: new Date(started).toISOString() };
     if (prepared.poses.length !== (allPoses ? 5 : 2)) throw new Error('Required control poses missing');
     if(ctx.options.pose)prepared.poses.push({id:'pose_custom',busId:'bus_custom',pose:await read(path.resolve(ctx.root,ctx.options.pose))});
     await writeJson(path.join(output, 'prepared.json'), prepared);
-    await writeJson(path.join(output, 'request.json'), { capture, control, poses: prepared.poses, reference: previous.reference });
+    await writeJson(path.join(output, 'request.json'), { capture, control, poses: prepared.poses, reference: previous.reference, environmentReference });
     await captureBaselines(ctx, prepared, { collectMetrics: async (page, item) => {
         await page.waitForFunction(() => {
             const detail = window.__busSim.engine._bakedLighting.shadows.getDiagnostics().pipeline.streamedShadows;
@@ -78,12 +87,16 @@ export async function materialParityCapture(ctx) {
         });
         try {
             await rawRadiance(page, path.join(output, item.id), { materialDiagnostics: true, materialParity: true,
-                reflectionParity: ctx.options.phase === 'reflections', sourceParity: ctx.options.phase === 'source', resolvedParity: ctx.options.phase === 'resolved' });
+                reflectionParity: ctx.options.phase === 'reflections', sourceParity: ctx.options.phase === 'source', resolvedParity: ctx.options.phase === 'resolved', primaryControls:ctx.options.phase==='primary-controls', geometryAudit:ctx.options.phase==='geometry', environmentReference });
             if (await page.evaluate(() => window.__busSim.engine.frameIndex) !== frozen.frame) throw new Error('Engine advanced during material snapshot');
         } finally {
             if (frozen.running) await page.evaluate(() => window.__busSim.engine.start());
         }
         await page.evaluate(settleGameFrames, 12);
+        if(environmentReference&&item.id==='pose_02'){
+            ctx.log.line(ctx.id,'pose_02: three balanced prototype GPU timing repeats');
+            await writeJson(path.join(output,item.id,'performance.json'),await environmentBenchmark(page,environmentReference));
+        }
         const after = await page.evaluate(readGameEvidence);
         assertControls(after, before, item.id);
         if (comparable(before.savedSettings) !== comparable(after.savedSettings)) throw new Error('Diagnostic changed saved settings');

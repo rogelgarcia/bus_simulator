@@ -377,3 +377,36 @@ explicit, non-publishing Blender leaf. It authenticates a saved reference and
 produces local/global glossy and primary-normal controls in a new artifact
 directory. `material-parity-capture:phase=reflections` records corresponding game
 lobes with a frozen engine frame and restored uniforms.
+
+# AI569 material response diagnostics
+
+`reference-matching/ao-response-study` authenticates resolved native radiance,
+physical Cycles and independent specular fixtures before attributing AO on fixed
+opaque masks. `ao-geometry-fixture` checks known metric relief, a flat Lambertian
+anchor and direct/bounce closure; unmeasured source texture depth is not inferred.
+`specular-fixture` optionally evaluates `method=view-ggx` using an authenticated
+white-energy fixture and 64/256 samples. White is training data; sky is held out.
+`material-parity-capture:phase=environment` applies a reversible uniform-only
+diagnostic hook to eligible opaque building dielectrics, captures native/restored
+controls and measures balanced GPU repeats. `environment-analysis` validates
+unchanged inputs and fixed wall masks and retains physical/reference-AO scores
+separately. All stages require immutable new outputs and prohibit publication.
+They do not join default production bake dependencies or install runtime settings.
+# Primary surface diagnostics (AI570)
+
+Reference-matching leaves `primary-surface-reference` and `primary-surface-analysis`
+reuse authenticated input scenes, actual-game captures and installed-package
+identities. Primary normal/roughness controls retain secondary-ray transport;
+pose 04 neutral Lambert separates irradiance from material response. They reject
+publication and write to new ignored artifact directories. The capture phase
+`primary-controls` uses poses 02/04 and restores all temporary uniforms.
+## AI571 surface transport leaf
+
+`lighting/experiments/reference-matching/surface-transport` is an explicit diagnostic
+leaf, never a no-argument bake dependency. It authenticates prior primary-surface
+receipts and preserves immutable artifacts while separating map processing from
+Cycles transport. `phase`, `input` and a new `output` are required; publication is rejected.
+Geometry analysis requires its geometry receipt; spatial/refined phases require
+matching processing and transport receipts. Refined pilots preserve all geometry
+but repack only one receiver's charts and solve only its internal seams. Their
+receipts certify reproducibility, not full-city quality, memory, or publication.

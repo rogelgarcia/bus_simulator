@@ -17,11 +17,19 @@ export async function specularFixture(ctx){
     const recipe={roughness:[.05,.2,.4,.6,.78,.85,1],noV:[1,.9,.75,.6,.45,.3,.15,.05],cellSize:64,worlds:['white','sky'],hdr,hdrFile:path.join(ctx.root,hdr.slice(1)),
         defaults:request.defaults,device:ctx.config.renderDevice,samples:2048,seed:568,
         policy:'Black dielectric Base Color, metalness 0, F0=.04 / IOR1.5. Orthographic actual tilted planes, no normal maps or AO, no other glossy/shadow geometry, linear output. Sky is disc-free.'};
+    if(ctx.options.method==='view-ggx'){
+        if(!ctx.options['energy-fixture'])throw new Error('White energy fixture required');
+        const energy=outputPath(ctx.root,ctx.options['energy-fixture']);await authenticated(path.join(energy,'specular_fixture_receipt.json'));
+        recipe.referenceWhiteCells=JSON.parse(await readFile(path.join(energy,'analysis.json'),'utf8')).results.find(x=>x.world==='white').cells;
+        recipe.referenceSamples=Number(ctx.options['integration-samples']??64);
+        recipe.policy+=` Diagnostic ${recipe.referenceSamples}-sample visible-GGX integration with an independently measured white-energy LUT; no city fitting.`;
+    }
     await mkdir(output);await writeJson(path.join(output,'request.json'),recipe);
     const html=await readFile(path.join(ctx.root,'index.html'),'utf8');
     const importMap=html.match(/<script\b[^>]*type=["']importmap["'][^>]*>[\s\S]*?<\/script>/i)?.[0];
     if(!importMap)throw new Error('Game import map missing');
     await withGameBrowser(ctx,{width:448,height:512},async(page,url)=>{
+        const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
         await page.route(url+'/ai568-specular-fixture',route=>route.fulfill({contentType:'text/html',body:'<!doctype html>'+importMap}));
         await page.goto(url+'/ai568-specular-fixture');
         const measured=await page.evaluate(async recipe=>{
@@ -44,8 +52,14 @@ export async function specularFixture(ctx){
                 mesh.geometry.computeBoundingBox();const p=mesh.geometry.boundingBox.getCenter(new THREE.Vector3());
                 return {normal:n.toArray(),noV:n.z,projectedCenter:p.project(camera).toArray()};
             });
-            const results=[];
-            for(const world of recipe.worlds){
+            let control;
+            if(recipe.referenceWhiteCells){
+                const {referenceEnvironmentControl}=await import('/tools/bake_lighting/experiments/reference_matching/ReferenceEnvironmentControl.js');
+                control=referenceEnvironmentControl(scene.children.map(x=>x.material),recipe.referenceWhiteCells,recipe.referenceSamples);
+            }
+            const results=[],nativeResults=[];
+            for(const enabled of control?[false,true]:[false])for(const world of recipe.worlds){
+                control?.setEnabled(enabled);
                 scene.environment=world==='white'?whiteTarget.texture:await loadIBLTexture(renderer,{enabled:true,hdrUrl:recipe.hdr});
                 renderer.setRenderTarget(target);renderer.clear();renderer.render(scene,camera);
                 const pixels=new Float32Array(width*height*4);renderer.readRenderTargetPixels(target,0,0,width,height,pixels);
@@ -57,11 +71,13 @@ export async function specularFixture(ctx){
                     }
                     cells.push({roughness:recipe.roughness[col],noV:recipe.noV[row],rgb:rgb.map(x=>x/count)});
                 }
-                results.push({world,cells});
+                (control&&!enabled?nativeResults:results).push({world,cells});
             }
-            renderer.setRenderTarget(null);target.dispose();whiteTarget.dispose();renderer.dispose();
-            return {threeRevision:THREE.REVISION,results,geometryChecks,shader:THREE.ShaderChunk.lights_physical_pars_fragment,environmentShader:THREE.ShaderChunk.envmap_physical_pars_fragment};
+            control?.dispose();renderer.setRenderTarget(null);target.dispose();whiteTarget.dispose();renderer.dispose();
+            return {threeRevision:THREE.REVISION,results,nativeResults,geometryChecks,shader:THREE.ShaderChunk.lights_physical_pars_fragment,environmentShader:THREE.ShaderChunk.envmap_physical_pars_fragment};
         },recipe);
+        if(errors.length)throw new Error(errors.join('\n'));
+        if(measured.results.some(w=>w.cells.some(c=>c.rgb.some(v=>!Number.isFinite(v)||v<0)||c.rgb.every(v=>v===0))))throw new Error('Invalid fixture radiance');
         await writeJson(path.join(output,'game.json'),measured);
     });
     await runBlenderStage(ctx,TOOL+'/specular_fixture.py',[output],{background:true});

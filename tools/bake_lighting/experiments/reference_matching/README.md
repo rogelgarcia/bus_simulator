@@ -1,5 +1,22 @@
 # Calibrated game / Cycles comparison (AI562)
 
+AI570 primary-surface tests use `material-parity-capture:phase=primary-controls`
+for poses 02 and 04. A uniform-only diagnostic bypasses primary normal mapping
+and/or fixes effective roughness at 0.85. Native/restored beauty and receiver
+coordinates, irradiance and LOD are retained. No baked transport or setting changes.
+`primary-surface-reference` takes authenticated `input`, frozen-mask `control`
+and new `output`, reuses
+the saved resolved Blender scene, changes camera-ray material inputs only and
+renders the same factorial plus a gray Lambert pose 04 full/sun control. Only
+MAT396/MAT1624 primary inputs are changed. A padded wall render region retains
+full camera dimensions and all secondary-ray geometry, and native region renders
+are compared with the previous full-frame native reference.
+`primary-surface-analysis` takes `capture`, `reference`, `bake-dir`, `output`;
+it verifies that the offline bake matches the installed package, traces packed
+mips against actual GPU sampling, checks Lambert composition and measures fixed
+glass-excluded wall masks with 0/3/6px additional insets. These are diagnostic
+stages, never publication. All commands run through `node tools/bake.mjs`.
+
 AI568 distinguishes **production appearance** from **source-material lighting
 controls**. The current glTF export omits procedural wall variation and texture
 AO. Each new exported material retains a `comparisonContract`, including the
@@ -394,3 +411,71 @@ checks sample convergence and compares white-normalized angular response.
 The job checks the analytic sky against the actual HDR file, retains native
 shader source and records explicit engineering tolerances. It changes no game
 shader, creates no production lookup texture and permits no publication.
+
+# AI569 AO and environment response
+
+All stages below are explicit leaves beneath
+`lighting/experiments/reference-matching`, invoked through `node tools/bake.mjs`
+with `--set <leaf>:<option>=<value>`. They use the shared Blender/browser/Python
+configuration, require a new output directory and reject publication.
+
+- `ao-response-study`: authenticated `capture` (resolved material passes),
+  `reference`, white/sky `fixture`, and `output`. Attributes authored AO loss on
+  the five frozen opaque wall masks and tests a white-only energy correction
+  against held-out sky. Diagnostic AO bypass does not certify removal of AO.
+- `ao-geometry-fixture`: `output`. Renders metric mortar relief under a neutral
+  white world, checks direct/bounce closure and compares deliberately duplicated
+  geometric AO. The source brick height is uncalibrated; fixture relief is not
+  an inferred production material height. EXR passes must be interleaved.
+- `specular-fixture:method=view-ggx`: additionally requires `energy-fixture`, an
+  authenticated previous fixture. `integration-samples=64|256` controls visible
+  GGX quadrature; white energy is the fit set and the disc-free sky is held out.
+  This diagnostic is limited to F0 .04 dielectrics. The existing native method
+  stays the default. Runtime hooks exist only in experiment pages.
+- `material-parity-capture:phase=environment`: uses `capture`, `control`,
+  `energy-fixture`, `output`, optional `pose=.../material_validation_closeup.json`
+  and `integration-samples=64|256` (city default 256). Captures native/prototype/
+  restored raw radiance for five poses and the optional close-up. The temporary
+  control affects only opaque, nonmetallic Standard building materials, excludes
+  windows, and retains authored AO. Pose 02 receives three balanced 120-frame
+  whole-frame GPU timing repeats after warmup; no Blender process runs alongside
+  this benchmark. All bakes, settings, camera and bus controls are checked.
+- `environment-analysis`: `capture` (prototype), `original` (resolved native
+  capture), `reference` (five Cycles views), `closeup` (Cycles custom view),
+  `output`. Authenticates all inputs, tests restoration/native radiance drift,
+  and writes full-resolution images, compact three-column sheets and opaque-wall
+  measurements. Sheet order is current game / diagnostic prototype / physical
+  Cycles. The optional AO-matched Cycles score is separately labeled artistic.
+
+The experiment adds one 896-byte white-energy texture and reuses resident PMREM.
+Driver shader allocations are unknown. Shader compilation is excluded from warm
+GPU timing and must be considered separately before any promotion. The prototype
+is intentionally absent from game defaults, Options and production baking.
+AI569 records rejected candidates and the promotion decision; a validated tool
+receipt certifies reproducibility, not visual superiority or acceptable cost.
+## AI571 surface transport continuation
+
+`surface-transport` authenticates AI570 analysis via `input`, requires a new `output`,
+and supports `phase=processing` to replay page 3 extension and hidden-sample replacement
+before comparing archived seam results, or `phase=transport` for controlled Cycles
+reconstruction. Additional phases:
+
+- `geometry`: also requires the authenticated `capture` from
+  `material-parity-capture:phase=geometry`. Captures actual world positions and
+  face normals, then compares to camera-matched Cycles AOVs and ray-hit records.
+- `geometry-analysis`: requires `geometry`, the preceding geometry stage output.
+  Rejects the misleading practice of normalizing mixed-face antialiasing AOVs
+  before comparing them to single game fragments. Reports all pixels and
+  comparable surface pixels separately; full-wall radiance scores remain intact.
+- `spatial`: requires `processing` and `transport` outputs. Rebakes the seven
+  measured charts at 0.33m joined/unjoined, 0.165m and 0.0825m. The full city
+  remains present for secondary rays; new UVs map back to exact captured addresses.
+- `refined`: uses those same inputs, includes every chart of the measured receiver,
+  and compares baseline, narrow-axis refinement and full 0.0825m detail with
+  the existing seam solver. Seams across other receiver objects are not part of
+  this bounded pilot. It is not a production-package or city-wide memory test.
+
+All phases require the same AI570 analysis `input` and a new `output`. Artifacts
+remain under the experiment screenshot root; no publication. Example option
+prefix: `--set lighting/experiments/reference-matching/surface-transport:phase=refined`.
+The shared local toolchain supplies Blender, Python and device paths.

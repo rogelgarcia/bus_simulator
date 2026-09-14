@@ -80,3 +80,28 @@ appearance measurements, including explicitly labeled authored-AO wall controls.
 `specular-fixture` validates uniform-light and sky reflection response against
 independent visible-GGX quadrature. See the reference-matching README for inputs,
 optional independent poses, density/transport controls and numerical limits.
+
+# AI569 material response experiments
+
+Registered reference-matching leaves `ao-response-study`, `ao-geometry-fixture`
+and `environment-analysis` audit AO attribution, explicit geometric relief and
+actual five-pose reflection prototypes. `specular-fixture:method=view-ggx` checks
+an independent white-calibrated, direction-dependent reflection integrator;
+`material-parity-capture:phase=environment` captures native/prototype/restored
+views and three balanced GPU repeats. See the reference-matching README for
+authenticated inputs and options. These are offline diagnostic controls, not
+new game defaults, and cannot publish bakes.
+# AI570 primary-surface parity tests
+
+Registered `lighting/experiments/reference-matching/primary-surface-reference`
+and `primary-surface-analysis`, plus `material-parity-capture:phase=primary-controls`.
+Camera-only normal/roughness controls and pose 04 neutral-Lambert/receiver delivery
+audit. See `tools/bake_lighting/experiments/reference_matching/README.md`.
+## AI571 surface parity audit
+
+`node tools/bake.mjs --target lighting/experiments/reference-matching/surface-transport`
+continues the authenticated AI570 measurements with explicit `input`, `output` and
+`phase=processing|transport|geometry|geometry-analysis|spatial|refined` options.
+Geometry and spatial phases require the additional authenticated inputs documented
+in the reference-matching tool README. Includes actual-game geometry capture,
+mixed-face normal measurement correction and a bounded wall-density/seam pilot.
