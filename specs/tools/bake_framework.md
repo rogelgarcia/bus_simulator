@@ -1,5 +1,18 @@
 # Offline bake framework
 
+AI571 adds opt-in `lighting/illumination:facade-detail=8cm` and the explicit
+read-only `lighting/illumination/facade-plan` leaf. Versioned policy
+`opaque-building-walls-8cm-v1` selects source-tagged rough opaque wall materials
+on near-vertical building geometry, independent of camera, building ID or color.
+Both atlas axes use 8.25cm texels; other surfaces retain their base density.
+Per-chart density feeds raster coverage, Cycles UVs, coordinate rows, extension
+and seam processing. Source/profile/atlas authentication includes the policy;
+reprocessing must preserve it. The complete 11-page/1-GiB gates, all participants,
+two mip levels and RGB9E5 contract remain unchanged. No runtime shader variant
+or extra texture fetch is introduced. Planning cannot publish, and generated
+artifacts remain ignored. Candidate adoption still requires five actual game
+poses, native checks, transitions and repeated performance measurements.
+
 AI568 `/reference:surface-materials=on` resolves opaque building shader inputs in
 native surface atlases at an explicit 16/32/64 pixels per metre. The reusable
 Blender scene imports color, roughness, metalness and world normals, retaining
@@ -410,3 +423,20 @@ Geometry analysis requires its geometry receipt; spatial/refined phases require
 matching processing and transport receipts. Refined pilots preserve all geometry
 but repack only one receiver's charts and solve only its internal seams. Their
 receipts certify reproducibility, not full-city quality, memory, or publication.
+# Receiver refinement validation
+
+`lighting/experiments/reference-matching/bake-performance` compares two validated
+receiver runs with one fixed shadow run. It requires an authenticated capture for
+the original pose and display controls. Each version gets three fresh, sequential
+browser sessions in balanced order; each of the five poses gets 120 warmup and
+360 measured frames per session. GPU queries must match the actual frame
+submission and cover at least 99% of samples, without a disjoint timer event.
+Report per-session and pooled timings, fastest/slowest 1% means, calls, triangles,
+textures, geometries and programs. Logical atlas/coordinate bytes and compressed
+storage are separate from unmeasured driver overhead.
+
+The stage never installs either candidate. Production promotion still requires
+the existing candidate capture, transition and native-calibration gates. The
+`material-parity-capture` leaf also accepts `candidate-run` and `shadow-run` for
+isolated raw lobe captures before installation; fixed masks and display controls
+remain authenticated.

@@ -7,7 +7,7 @@ import { assertAppliedBaseline, assertPoseMatches, verifyFiles } from '../Inputs
 import { withGameBrowser } from './GameBrowser.mjs';
 import { readGameEvidence, setGamePose, settleGameFrames } from './GameEvidence.mjs';
 
-export async function captureBaselines(ctx, prepared, {collectMetrics=null,configurePage=null,afterCaptures=null,resourceOverrides={},validateEvidence=null}={}) {
+export async function captureBaselines(ctx, prepared, {collectMetrics=null,configurePage=null,beforeCapture=null,afterCaptures=null,resourceOverrides={},validateEvidence=null}={}) {
     const started=Date.now(),{runRoot,baseline,viewport,poses}=prepared;
     const output=path.join(runRoot,'runtime',baseline.id,`${viewport.width}x${viewport.height}`);
     await mkdir(output,{recursive:true});
@@ -78,6 +78,7 @@ export async function captureBaselines(ctx, prepared, {collectMetrics=null,confi
                 ctx.log.line(ctx.id,`Capturing ${item.id} (${manifest.images.length+1}/${poses.length}); bus ${item.busId}`);
                 await page.evaluate(setGamePose,item.pose);
                 await page.evaluate(settleGameFrames,baseline.settleFrames);
+                if(beforeCapture)await beforeCapture(page,item);
                 const evidence=await page.evaluate(readGameEvidence);
                 manifest.lastCaptureEvidence={id:item.id,...evidence};
                 await writeJson(manifestPath,manifest);

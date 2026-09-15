@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { parseBakeSourcePackage } from '../../src/app/illumination/bake_source/index.js';
 import { validateResolvedCityBakePackage } from '../../src/graphics/illumination/bake_source/BakeSourceValidation.js';
 import { createReceiverAtlas, RECEIVER_LIGHTMAP_PROFILE } from '../../src/app/illumination/receiver_lightmaps/ReceiverAtlas.js';
+import { RECEIVER_FACADE_DENSITY } from '../../src/app/illumination/receiver_lightmaps/ReceiverFacadeDensity.js';
 import { COMPLETE_RECEIVER_COVERAGE, assertCompleteReceiverCoverage } from '../../src/app/illumination/receiver_lightmaps/ReceiverCoverageContract.js';
 import { resolveReceiverTransport, RECEIVER_ALPHA_TRANSPORT } from '../../src/app/illumination/receiver_lightmaps/ReceiverTransportPolicy.js';
 import { buildIlluminationBinaryPackage } from '../../src/app/illumination/package/index.js';
@@ -27,7 +28,8 @@ if (args.has('--help')) {
     console.log('Usage: node tools/receiver_lightmaps/run.mjs [--enhanced true --layout receiver-layout.json --device CPU|OPTIX] [--atlas-only true] [--input source.bsib] [--output tests/artifacts/.../bake] [--pages 4] [--samples 64] [--blender existing-blender.exe] [--archive existing-blender.zip | --installed true] [--resume partial-directory | --reprocess recovered-publication-directory]');
     process.exit(0);
 }
-for (const [key, value] of args) if (!['--input', '--output', '--pages', '--samples', '--blender', '--archive', '--resume', '--reprocess', '--enhanced', '--atlas-only', '--installed', '--layout', '--device', '--prepare-only', '--texel-size'].includes(key) || !value) throw new Error('Unknown or incomplete option: ' + key);
+for (const [key, value] of args) if (!['--input', '--output', '--pages', '--samples', '--blender', '--archive', '--resume', '--reprocess', '--enhanced', '--atlas-only', '--installed', '--layout', '--device', '--prepare-only', '--texel-size', '--facade-detail'].includes(key) || !value) throw new Error('Unknown or incomplete option: ' + key);
+if (args.has('--facade-detail') && (args.get('--enhanced') !== 'true' || !['off','8cm'].includes(args.get('--facade-detail')))) throw new Error('Enhanced facade detail must be off or 8cm.');
 if (args.has('--texel-size') && (args.get('--enhanced') !== 'true' || !['0.5', '0.33', '0.25'].includes(args.get('--texel-size')))) throw new Error('Enhanced texel size must be 0.5, 0.33 or 0.25 metres.');
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const json = (value) => JSON.stringify(value);
@@ -64,6 +66,7 @@ if (args.get('--enhanced') === 'true') Object.assign(profile, {
     maxPages: Number(args.get('--pages') ?? 9)
 });
 const surface = profile.irradianceRepresentation === 'surface-diffuse-v1';
+if (args.get('--facade-detail') === '8cm') profile.facadeDensity = RECEIVER_FACADE_DENSITY;
 if (surface && !['CPU','OPTIX'].includes(profile.device)) throw new Error('Complete receiver device must be CPU or OPTIX.');
 if (!surface && args.has('--device')) throw new Error('--device is supported only for the complete enhanced bake.');
 if (surface && !args.has('--layout')) throw new Error('Complete enhanced baking requires --layout from tools/receiver_lightmaps/unwrap.mjs.');

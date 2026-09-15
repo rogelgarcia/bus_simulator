@@ -3,6 +3,7 @@
 import { ReceiverCoverageAudit } from './ReceiverCoverageContract.js';
 import { createRasterReceiverCharts } from './ReceiverRasterCharts.js';
 import { canShareReceiverSurface } from './ReceiverSurfaceCharts.js';
+import { RECEIVER_FACADE_DENSITY, receiverFacadeTexelSize } from './ReceiverFacadeDensity.js';
 
 export const RECEIVER_ATLAS_SCHEMA = 'bus-sim-receiver-atlas-v1';
 export const RECEIVER_LIGHTMAP_PROFILE = Object.freeze({
@@ -76,6 +77,7 @@ export function createReceiverAtlas(parsed, profile = RECEIVER_LIGHTMAP_PROFILE,
         || layout?.schema !== profile.chartLayout || layout.sourceHash !== manifest.hashes.resolvedSource)) throw new Error('Receiver layout/source mismatch.');
     if (profile.packing && (profile.packing !== 'height-shelves-v1' || !profile.coverage)) throw new Error('Unsupported complete atlas packing.');
     if (profile.rasterCoverage && (!['independent-triangle-centroids-v1','continuous-planar-surfaces-v1'].includes(profile.rasterCoverage) || !profile.chartLayout)) throw new Error('Unsupported receiver raster coverage.');
+    if (profile.facadeDensity && (profile.facadeDensity !== RECEIVER_FACADE_DENSITY || !profile.chartLayout)) throw new Error('Unsupported receiver facade density.');
     const layoutCharts = new Map(), layoutDegenerates = new Map();
     const mappingIds = new Set(manifest.receiverMappings.map(m => m.id)), chartIds = new Set();
     for (const chart of layout?.charts ?? []) {
@@ -141,10 +143,13 @@ export function createReceiverAtlas(parsed, profile = RECEIVER_LIGHTMAP_PROFILE,
                     }
                 }
                 // Keep even a tiny bevel island rasterizable; this increases its density, never removes a face.
-                chart.texelsPerMeter = chart.max.map((v, c) => Math.max(2, (v-chart.min[c])/texelSizeMeters)/(v-chart.min[c]));
+                const chartTexelSize = profile.facadeDensity ? receiverFacadeTexelSize(mapping, material,
+                    chart.triangles.map(t => [0,1,2].map(c => worldPoint(read,index(t.offset+c),instance.matrixThreeWorld))), texelSizeMeters) : texelSizeMeters;
+                if (chartTexelSize < texelSizeMeters) chart.facadeDetail = true;
+                chart.texelsPerMeter = chart.max.map((v, c) => Math.max(2, (v-chart.min[c])/chartTexelSize)/(v-chart.min[c]));
                 const continuous=profile.rasterCoverage==='continuous-planar-surfaces-v1'&&canShareReceiverSurface(chart,
                     t=>[0,1,2].map(c=>worldPoint(read,index(t.offset+c),instance.matrixThreeWorld)));
-                for (const raster of profile.rasterCoverage ? createRasterReceiverCharts(chart,texelSizeMeters,continuous) : [chart]) {
+                for (const raster of profile.rasterCoverage ? createRasterReceiverCharts(chart,chartTexelSize,continuous) : [chart]) {
                     raster.width = Math.ceil((raster.max[0]-raster.min[0])*raster.texelsPerMeter[0])+ (raster.pixelOffset ? 2 : 1) + padding*2;
                     raster.height = Math.ceil((raster.max[1]-raster.min[1])*raster.texelsPerMeter[1])+ (raster.pixelOffset ? 2 : 1) + padding*2;
                     if (raster.width > pageSize || raster.height > pageSize) coverageAudit.recordOversized(raster);
@@ -274,8 +279,11 @@ export function createReceiverAtlas(parsed, profile = RECEIVER_LIGHTMAP_PROFILE,
         tableWidth, tableHeight, objects: [...objects.values()].filter((v) => usedObjects.has(v.id)),
         charts: accepted, coordinates, ...(coverage ? { coverage } : {}),
         statistics: { charts: accepted.length, triangles: accepted.reduce((s, c) => s + c.triangles.length, 0),
+            ...(profile.facadeDensity ? {facadeDetail: {charts: accepted.filter(c=>c.facadeDetail).length,
+                surfaceArea: accepted.reduce((s,c)=>s+(c.facadeDetail?c.area:0),0),
+                rectanglePixels: accepted.reduce((s,c)=>s+(c.facadeDetail?c.width*c.height:0),0)}} : {}),
             exclusions, surfaceArea: accepted.reduce((s, c) => s + c.area, 0),
-            occupancy: accepted.reduce((s, c) => s + c.area / texelSizeMeters ** 2, 0) / (pages.length * pageSize ** 2),
+            occupancy: accepted.reduce((s, c) => s + (profile.facadeDensity ? c.area*c.texelsPerMeter[0]*c.texelsPerMeter[1] : c.area / texelSizeMeters ** 2), 0) / (pages.length * pageSize ** 2),
             ...(profile.directional ? { normalMappedTriangles: accepted.filter((c) => c.normalMapped).reduce((s, c) => s + c.triangles.length, 0) } : {}) } };
 }
 

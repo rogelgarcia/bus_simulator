@@ -105,3 +105,16 @@ continues the authenticated AI570 measurements with explicit `input`, `output` a
 Geometry and spatial phases require the additional authenticated inputs documented
 in the reference-matching tool README. Includes actual-game geometry capture,
 mixed-face normal measurement correction and a bounded wall-density/seam pilot.
+## Facade illumination planning
+
+- `tools/bake_lighting/illumination/facade_refinement/`: registered
+  `lighting/illumination/facade-plan` memory/coverage plan for opt-in fine facade
+  lightmaps. Uses the production atlas builder; no render or publication.
+## Receiver bake performance comparison
+
+Run `node tools/bake.mjs --target lighting/experiments/reference-matching/bake-performance`
+with leaf options `capture`, `previous-run`, `candidate-run`, `shadow-run`, and a
+new gitignored `output`. This compares all five saved poses in three fresh browser
+sessions per receiver candidate, retaining frame-matched CPU/GPU/counter records,
+timing distributions, logical memory allocations, compressed storage and images.
+See `tools/bake_lighting/experiments/reference_matching/README.md`.

@@ -9,6 +9,7 @@ import {authenticated,receipt,resultFiles} from '../lighting_configurations/Stag
 import {measureGamePerformance} from './Performance.mjs';
 import {outputPath} from './Baseline.mjs';
 import {candidateInputs} from './CandidateInputs.mjs';
+import {waitForShadowTiles} from './CaptureReadiness.mjs';
 import {lightingTransitions} from './Transitions.mjs';
 import {rawRadiance} from './RawRadiance.mjs';
 import {uncalibrated55Baseline,assertUncalibrated55} from './Uncalibrated55.mjs';
@@ -62,6 +63,7 @@ export async function capture(ctx){
         engineRevision:execFileSync('git',['rev-parse','HEAD'],{cwd:ctx.root,encoding:'utf8'}).trim(),startedAt:new Date().toISOString()};
     await writeJson(path.join(runRoot,'prepared.json'),prepared);
     await captureBaselines(ctx,prepared,{configurePage,resourceOverrides,
+        beforeCapture:baseline.expectedMode!=='current'?waitForShadowTiles:null,
         validateEvidence:comparison?record=>assertUncalibrated55(record,baseline):null,
         collectMetrics:async(page,item)=>{
         const performance=await page.evaluate(measureGamePerformance);

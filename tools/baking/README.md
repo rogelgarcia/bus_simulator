@@ -130,6 +130,13 @@ still pass before rendering. For example, use `--target lighting/illumination
 candidate. Validate it through reference-matching capture/native-validation and
 install gates before switching live indexes. Reprocessing preserves the original
 texel size and page budget.
+
+Optional `--set lighting/illumination:facade-detail=8cm` gives tagged, rough,
+opaque building walls 8.25cm texels while retaining base density elsewhere.
+Use the explicit `lighting/illumination/facade-plan` leaf with authenticated
+`input`, `layout` and new `output` first to check complete-city memory allocation.
+The default remains off until candidate image/performance validation. See
+`tools/bake_lighting/illumination/facade_refinement/README.md`.
 Cycles settings belong
 to the preparation job because sibling passes share its authenticated profile.
 Pass entry points accept common options, and parent scopes apply to preparation.

@@ -12,6 +12,8 @@ import { writeJson, digest, listFiles } from '../../../baking/Files.mjs';
 import { rawRadiance } from './RawRadiance.mjs';
 import { environmentBenchmark } from './EnvironmentBenchmark.mjs';
 import { TOOL, outputPath } from './Baseline.mjs';
+import {candidateInputs} from './CandidateInputs.mjs';
+import {waitForShadowTiles} from './CaptureReadiness.mjs';
 
 const read = async file => JSON.parse(await readFile(file, 'utf8'));
 const comparable = value => JSON.stringify(value).replace(/http:\/\/127\.0\.0\.1:\d+/g, 'http://localhost');
@@ -41,6 +43,8 @@ export async function materialParityCapture(ctx) {
     baseline.storage['bus_sim.buildingWindowVisuals.v1'] = { ...baseline.storage['bus_sim.buildingWindowVisuals.v1'], surfaces: { reflections: true } };
     baseline.settingsPolicy = 'AI568: fixed v7 light/display controls; opaque reflections On; texture AO bypassed only during diagnostic renders.';
     const source = await snapshotFiles(ctx.root, await sourceFiles(ctx.root));
+    const candidate=ctx.options['candidate-run']?await candidateInputs(ctx,ctx.options['candidate-run']):null;
+    if(ctx.options['shadow-run']&&!candidate)throw new Error('shadow-run requires candidate-run');
     const allPoses = ['source','resolved','environment'].includes(ctx.options.phase);
     let environmentReference=null;
     if(ctx.options.phase==='environment'){
@@ -52,18 +56,14 @@ export async function materialParityCapture(ctx) {
     }
     const prepared = { ...original, runId: baseline.id, runRoot: output, baseline,
         poses: original.poses.filter(pose => allPoses || (['primary-controls','geometry'].includes(ctx.options.phase)?['pose_02','pose_04']:['pose_02', 'pose_03']).includes(pose.id)),
-        source: { files: source, sha256: digest(source) }, bakes: await baselineInputs(ctx.root, baseline),
+        source: { files: source, sha256: digest(source) }, bakes: candidate?{files:candidate.files,shadowIndex:candidate.shadowIndex,receiverIndex:candidate.receiverIndex}:await baselineInputs(ctx.root, baseline),
         engineRevision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ctx.root, encoding: 'utf8' }).trim(),
         startedAt: new Date(started).toISOString() };
     if (prepared.poses.length !== (allPoses ? 5 : 2)) throw new Error('Required control poses missing');
     if(ctx.options.pose)prepared.poses.push({id:'pose_custom',busId:'bus_custom',pose:await read(path.resolve(ctx.root,ctx.options.pose))});
     await writeJson(path.join(output, 'prepared.json'), prepared);
     await writeJson(path.join(output, 'request.json'), { capture, control, poses: prepared.poses, reference: previous.reference, environmentReference });
-    await captureBaselines(ctx, prepared, { collectMetrics: async (page, item) => {
-        await page.waitForFunction(() => {
-            const detail = window.__busSim.engine._bakedLighting.shadows.getDiagnostics().pipeline.streamedShadows;
-            return detail.state === 'off' || (detail.state === 'ready' && detail.pending === 0 && detail.queued === 0 && detail.selectionFallbacks === 0);
-        }, null, { timeout: 60000 });
+    await captureBaselines(ctx, prepared, {configurePage:candidate?.configurePage,resourceOverrides:candidate?.resourceOverrides,beforeCapture:waitForShadowTiles, collectMetrics: async (page, item) => {
         await page.evaluate(settleGameFrames, 60);
         const samePose=previous.poses.find(pose => pose.id === item.id);
         const expected = (samePose??previous.poses[0]).records[previous.sources.findIndex(source => source.role === 'current')];

@@ -6,6 +6,7 @@ import { resolveReceiverTransport } from '../../../src/app/illumination/receiver
 import { receiverCoordinateChunks } from '../../../src/app/illumination/receiver_lightmaps/ReceiverCoordinateTransport.js';
 import { encodeReceiverRgb9e5 } from '../../../src/app/illumination/receiver_lightmaps/ReceiverHdrEncoding.js';
 import { createRasterReceiverCharts } from '../../../src/app/illumination/receiver_lightmaps/ReceiverRasterCharts.js';
+import { RECEIVER_FACADE_DENSITY } from '../../../src/app/illumination/receiver_lightmaps/ReceiverFacadeDensity.js';
 
 const profile = { ...RECEIVER_LIGHTMAP_PROFILE, coverage: 'complete-eligible-v1',
     directional: 'chart-affine-irradiance-v1', pageSize: 64, padding: 2, mipLevels: 1,
@@ -146,6 +147,31 @@ test('Connected layouts cover every normal-mapped side and give tiny islands a r
     }
     layout.charts.reverse();
     assert.deepEqual(createReceiverAtlas(source, complete, layout), atlas);
+});
+
+test('Facade refinement reaches raster samples and coordinate rows without removing any receiver', () => {
+    const {source,complete,layout}=unwrappedFixture();
+    Object.assign(source.manifest.materials[0],{roughness:.85,transmission:0,
+        customSemantics:{materialVariationConfig:{normalized:{root:'wall'}}}});
+    source.manifest.receiverMappings.forEach(m=>m.category='buildings');
+    layout.charts.forEach(c=>c.triangles[0].uv=[[0,0],[2,0],[0,2]]);
+    const base={...complete,texelSizeMeters:.33,rasterCoverage:'continuous-planar-surfaces-v1'};
+    const before=createReceiverAtlas(source,base,layout);
+    const after=createReceiverAtlas(source,{...base,facadeDensity:RECEIVER_FACADE_DENSITY},layout);
+    assert.equal(after.coverage.mappedTriangles,before.coverage.mappedTriangles);
+    assert.equal(after.coordinates.byteLength,before.coordinates.byteLength);
+    for(const chart of after.charts){
+        const old=before.charts.find(c=>c.id===chart.id);
+        if(chart.facadeDetail)assert.ok(Math.abs(chart.texelsPerMeter[0]/old.texelsPerMeter[0]-4)<1e-9);
+        else assert.deepEqual(chart.texelsPerMeter,old.texelsPerMeter);
+        const object=after.objects.find(o=>o.id===chart.objectId),triangle=chart.triangles[0];
+        const instance=object.instances.find(i=>i.id===chart.instanceId);
+        const row=(object.base+instance.sourceIndex*object.referenceCount+triangle.offset+1)*4;
+        const expected=((triangle.uv[1][0]-chart.min[0])*chart.texelsPerMeter[0]+base.padding+(chart.pixelOffset?.[0]??.5)+chart.x)/base.pageSize;
+        assert.ok(Math.abs(after.coordinates[row]-expected)<1e-6);
+    }
+    assert.equal(after.statistics.facadeDetail.charts,4);
+    assert.throws(()=>createReceiverAtlas(source,{...base,facadeDensity:'unknown'},layout),/facade density/);
 });
 
 test('A complete UV inventory cannot publish without matching raster and mip evidence', () => {

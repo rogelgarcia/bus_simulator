@@ -1,5 +1,17 @@
 # Calibrated game / Cycles comparison (AI562)
 
+`bake-performance` compares receiver candidates using `capture` (authenticated
+baseline controls), `previous-run`, `candidate-run`, a shared `shadow-run`, and
+new `output`. Six fresh sequential browsers run in balanced before/after order,
+three per candidate. Each of five poses has 120 warmup and 360 measured frames;
+GPU samples are matched to submissions. It records p1/p99 and tail means, CPU,
+draw calls, triangles, texture/geometry/program counts, logical atlas/coordinate
+allocations, compressed package sizes and all frames. It never changes installed
+indexes. Use the normal `capture` and native/install stages for publication gates.
+`material-parity-capture` also accepts `candidate-run` and optional `shadow-run`
+to route authenticated candidate maps into the same raw, glass-excluded diagnostic
+workflow before installation; lighting, source and restoration assertions remain.
+
 AI570 primary-surface tests use `material-parity-capture:phase=primary-controls`
 for poses 02 and 04. A uniform-only diagnostic bypasses primary normal mapping
 and/or fixes effective roughness at 0.85. Native/restored beauty and receiver

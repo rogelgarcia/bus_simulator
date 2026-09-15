@@ -4,6 +4,7 @@ import { mkdir, readFile, link } from 'node:fs/promises';
 import { listFiles, hashFile } from '../../../baking/Files.mjs';
 import { runHeadlessBake } from '../../../baking/Blender.mjs';
 import { validateReceiverPass } from '../ReceiverJobs.mjs';
+import { RECEIVER_FACADE_DENSITY } from '../../../../src/app/illumination/receiver_lightmaps/ReceiverFacadeDensity.js';
 
 export async function validateUnpublishedReceiverBake(from) {
     const atlas=JSON.parse(await readFile(path.join(from,'atlas.json')));
@@ -56,6 +57,7 @@ export const receiverReprocessJob = {
         await ctx.node('tools/receiver_lightmaps/run.mjs', ['--input', ctx.result('lighting/source').source, '--output', output,
             '--enhanced', 'true', '--layout', layout, '--samples', profile.samples, '--device', profile.device,
             '--texel-size', String(profile.texelSizeMeters), '--pages', profile.maxPages,
+            ...(profile.facadeDensity === RECEIVER_FACADE_DENSITY ? ['--facade-detail','8cm'] : []),
             '--blender', ctx.config.executable, '--installed', 'true', ctx.options.staging?'--resume':'--reprocess', original]);
         await ctx.assertInputsStable();
         await ctx.node('tools/receiver_lightmaps/publish.mjs', ['--enhanced', '--from', output, ...ctx.publish ? [] : ['--validate-only']]);
