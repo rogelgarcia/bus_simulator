@@ -16,7 +16,7 @@ individual leaf commands, scoped parameters and recovery, and
 
 | Name | Path | Purpose | Run |
 |---|---|---|---|
-| gameplayRecording | `tools/gameplay_recording/` | Decode compressed debug frame recordings and extract a hexadecimal HUD frame as a replay pose | `node tools/gameplay_recording/decode.mjs capture.busrec`; see its README |
+| gameplayRecording | `tools/gameplay_recording/` | Decode compressed debug frame recordings, extract replay poses, and analyze repeated hardware replays for frame hitches | `node tools/gameplay_recording/decode.mjs capture.busrec`; `analyze_replay.mjs <artifact-output> <frames.json> [...]`; see its README |
 | bakeFramework | `tools/bake.mjs`, `tools/baking/` | Parameter-free master, shared local Blender configuration, dependency planning, verified checkpoints and progress | `node tools/bake.mjs`; `node tools/bake.mjs --dry-run` |
 | receiverReprocess | `tools/bake_lighting/illumination/reprocess/` | Refilter authenticated sky/bounce samples, including coplanar UV seam correction, through the shared bake framework | See its README for original publication/layout parameters; unchanged source and raw-pass proof required |
 | bakeLighting | `tools/bake_lighting/` | Owns source preparation, shadow/cutout, separate sky occlusion, direct/indirect illumination and consolidation entry points | `node tools/bake_lighting/run.mjs`; see framework README for leaves |

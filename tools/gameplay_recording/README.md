@@ -69,9 +69,41 @@ requests/uploads/evictions, and shader/resource counts. GPU samples are joined t
 their originating submission; missing samples stay null. Region summaries use
 the hexadecimal frame ranges present in the input rather than fixed route labels.
 
-The current replay supports this debug HUD's 48 px height at device scale 2 and
-unchanged current defaults: other settings fail the configuration equality check
-instead of producing a misleading comparison. It pauses the physics solver and
+The replay supports this debug HUD's 48 px height at device scale 2. Its default
+`REPLAY_SETTINGS=recorded` requires equality with the recording's settings.
+`REPLAY_SETTINGS=current-defaults` explicitly checks today's authored defaults
+instead, retaining both settings snapshots in `environment.json`. Use that mode
+to investigate a historical route after defaults change; it is not a historical
+before/after configuration match. `REPLAY_HOLD_FRAME=0x700` holds that recorded
+pose for every sample as a stationary control while retaining the requested lap
+and frame counts. Neither option modifies the game defaults.
+
+`REPLAY_STATIONARY_AFTER_FIRST=0x300` runs the route once, then holds that
+previously visited pose for subsequent laps. `REPLAY_PROFILE_RESOURCES=1` adds
+timed WebGL texture/buffer upload, mip generation, shader compilation/linking and
+driver-query events. This is a diagnostic intervention; keep its timings separate
+from the ordinary benchmark. All wrappers are restored when replay finishes.
+For a diagnostic blocked by the existing shader deadline,
+`REPLAY_RETRY_PREPARATION=1` permits one retry of already-submitted programs via
+the runtime's existing preparation request. `environment.json` records whether
+it happened. This does not change the production timeout, and a retried run is
+not evidence of successful first-attempt startup.
+
+Each result includes actual update intervals, main-thread long tasks, page
+visibility and initial/final GPU disjoint diagnostics. Compare repeated runs:
+
+```powershell
+node tools/gameplay_recording/analyze_replay.mjs tests/artifacts/screens/recorded_slowdown/analysis tests/artifacts/screens/recorded_slowdown/fresh-01/frames.json tests/artifacts/screens/recorded_slowdown/fresh-02/frames.json
+```
+
+The analyzer reports distributions and excursions exceeding both 1.75 times the
+local median and that median plus 10 ms. Its centred window contains up to 61
+frames within the same lap. Recurrence uses 32-source-frame bins; inspect the
+individual events before concluding that a location causes a stall. CPU phases
+overlap and must not be summed. `frameMs` measures start-to-start update intervals;
+the frame after an expensive update will expose that delay.
+
+The test pauses the physics solver and
 applies one recorded visual bus/camera transform per rendered frame. It preserves
 pose order, not original wall-clock pacing; temporal grace can therefore expire
 at a different frame on faster/slower runs. It does not restore wheel/other-actor

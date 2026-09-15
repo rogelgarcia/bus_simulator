@@ -135,3 +135,7 @@ the gitignored `tests/artifacts/screens/<topic>/` directory.
 - `tests/headless/e2e/gameplay_recording_replay.pwtest.js`: opt-in repeated hardware
   replay, exact bus/camera transforms, render-size/config matching and GPU sample
   provenance. See the tool README for limits and environment arguments.
+  Recorded-settings equality remains the default. Explicit current-defaults replay
+  retains both snapshots; a held source frame provides a stationary control.
+  Replay evidence also records start-to-start intervals, long tasks and disjoint
+  diagnostics for occasional-hitch analysis, without changing the BUSREC1 schema.
