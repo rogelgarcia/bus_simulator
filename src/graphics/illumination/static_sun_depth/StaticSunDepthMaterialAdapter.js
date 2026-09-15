@@ -205,7 +205,7 @@ export function createStaticSunDepthShaderBinding({ descriptor, texture, debugMo
         descriptor: validated,
         texture,
         uniforms,
-        variantKey,
+        get variantKey() { return variantKey + (uniforms.staticSunDepthDebugMode.value === 0 ? ':final' : ':diagnostic'); },
         streamedShaderAvailable: STREAMED_PROTOTYPE,
         updateCamera(camera) {
             pointDirectionView.copy(pointDirectionWorld).transformDirection(camera.matrixWorldInverse);
@@ -248,6 +248,7 @@ export function applyStaticSunDepthShaderPatch(shader, binding) {
     if (!shader || typeof shader.vertexShader !== 'string' || typeof shader.fragmentShader !== 'string') {
         throw new TypeError('A compiled Three shader is required.');
     }
+    if (binding.uniforms.staticSunDepthDebugMode.value === 0) shader.fragmentShader = '#define STATIC_SUN_FINAL 1\n' + shader.fragmentShader;
     const directional = patchStaticSunDepthDirectionalChunk(
         String(THREE.ShaderChunk?.lights_fragment_begin ?? ''),
         THREE.REVISION
@@ -424,7 +425,10 @@ export class StaticSunDepthMaterialSet {
     }
 
     setDebugMode(mode) {
+        const previous = this._binding?.variantKey;
         this._binding?.setDebugMode(mode);
+        for (const { handle } of this._handles.values()) handle.update({ variantKey: this._binding.variantKey });
+        return previous !== this._binding?.variantKey;
     }
 
     /** @returns {boolean} */

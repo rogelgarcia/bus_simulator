@@ -126,16 +126,27 @@ test('AI 531 static-sun adapter compiles on pinned Three and preserves current/c
         engine.scene.add(sun, sun.target);
 
         const binding = graphics.createStaticSunDepthShaderBinding({ descriptor: validated, texture });
+        const authoredDefines = JSON.stringify(material.defines);
         const materials = new graphics.StaticSunDepthMaterialSet();
         materials.prepare(root, binding, { outsideRoot: engine.scene });
         materials.activate();
         binding.updateCamera(engine.camera);
         engine.renderer.compile(engine.scene, engine.camera);
         engine.renderer.render(engine.scene, engine.camera);
+        if (JSON.stringify(material.defines) !== authoredDefines) throw new Error('Shader preparation changed authenticated material defines');
         const activeSnapshot = registry.getMaterialShaderHookRegistrySnapshot(material);
         const activeKey = material.customProgramCacheKey();
         materials.setDebugMode('seam');
+        if (material.customProgramCacheKey() === activeKey) throw new Error('Diagnostics must select their own shader variant');
         engine.renderer.render(engine.scene, engine.camera);
+        materials.setDebugMode('visibility');
+        const diagnosticKey = material.customProgramCacheKey();
+        materials.setDebugMode('seam');
+        if (material.customProgramCacheKey() !== diagnosticKey) throw new Error('Diagnostic modes must share their shader variant');
+        materials.setDebugMode('final');
+        if (material.customProgramCacheKey() !== activeKey) throw new Error('Final mode must restore the cached production variant');
+        if (JSON.stringify(material.defines) !== authoredDefines) throw new Error('Diagnostic switching changed authenticated material defines');
+        materials.setDebugMode('seam');
         const csm = new CityCascadedShadows({
             camera: engine.camera,
             parent: engine.scene,

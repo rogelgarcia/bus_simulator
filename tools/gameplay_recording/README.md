@@ -89,6 +89,17 @@ the runtime's existing preparation request. `environment.json` records whether
 it happened. This does not change the production timeout, and a retried run is
 not evidence of successful first-attempt startup.
 
+`REPLAY_SHADER_LOGS=1` saves shader/program logs and available source translations
+after startup readiness; `REPLAY_ASSERT_SHADER_LOGS=1` rejects ANGLE X3595/X4000.
+These diagnostic driver queries run outside the replay measurement. Startup
+fallback/error states fail with saved diagnostics instead of waiting for the route.
+`REPLAY_CAPTURE_FINAL=1` saves the rendered canvas after the measured frames.
+The baked-loading investigation's `REPLAY_SHADER_BASELINE=1` serves the explicitly
+saved source files listed in `tests/artifacts/screens/baked_shader_loading/before-src/files.json`
+from that directory, preserving paths relative to the repository. It does not
+modify the checkout. The environment records whether that snapshot was used;
+see `debug_tools/regression_debugging/baked_shader_loading.md` for its revision.
+
 Each result includes actual update intervals, main-thread long tasks, page
 visibility and initial/final GPU disjoint diagnostics. Compare repeated runs:
 

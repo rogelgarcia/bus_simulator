@@ -1,5 +1,21 @@
 # Static Directional Sun-Depth Cache
 
+## Shader preparation and diagnostics
+
+Final rendering uses a `STATIC_SUN_FINAL` shader variant with debug mode fixed to
+zero at compilation. Diagnostic modes share a separate uniform-driven variant.
+Switching across that boundary invalidates the material hook's program key and
+requests asynchronous view preparation through the existing baked runtime. Returning
+to Final reuses its program. Inject the specialization into shader source only;
+material defines are authenticated bake source metadata and must remain unchanged.
+
+Depth filters sample the unmipped dynamic shadow map at explicit LOD zero. Static
+bilinear comparison and streamed visibility return explicitly initialized results
+through one exit to avoid ANGLE's undefined-return warnings. Depth comparisons,
+tap counts, page resolution, penumbra widths, bias and diagnostic behavior stay the
+same. Parent/detail physical fixtures compare specialized and uniform Final output
+pixel-for-pixel; adapter tests cover diagnostic variant switching and cache reuse.
+
 ## Status and authority
 
 This is the AI 531 authority for the optional `static_sun_depth` channel,

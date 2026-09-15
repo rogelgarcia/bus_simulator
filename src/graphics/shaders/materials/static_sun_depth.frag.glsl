@@ -14,7 +14,11 @@ uniform highp vec4 staticSunDepthFilterPolicy;
 uniform highp vec4 staticSunDepthSourceMapSizeAndExtent;
 uniform highp vec2 staticSunDepthSourceMapRightLight;
 uniform highp vec2 staticSunDepthSourceMapUpLight;
+#ifdef STATIC_SUN_FINAL
+const int staticSunDepthDebugMode = 0;
+#else
 uniform int staticSunDepthDebugMode;
+#endif
 uniform int staticSunDepthEnabled;
 
 void dynamicSunShadowApplyDirectional(
@@ -110,6 +114,7 @@ highp float staticSunDepthLinearCompare(
     // Authenticated guards contain the adjacent texels, including tile seams.
     highp ivec2 interior = ivec2(staticSunDepthLayout.xy);
     highp ivec2 globalSize = interior * ivec2(staticSunDepthTileCount);
+    highp float visibility = 1.0;
     if (staticSunDepthEncodingMode == 0 && staticSunDepthDebugMode == 0
         && staticSunDepthLayout.z >= 1.0 && all(greaterThanEqual(base, ivec2(0)))
         && all(lessThan(base + 1, globalSize))) {
@@ -129,37 +134,39 @@ highp float staticSunDepthLinearCompare(
         highp vec4 thresholds = (receivers - staticSunDepthDepthRange.x)
             * (65534.0 / (staticSunDepthDepthRange.y - staticSunDepthDepthRange.x)) + 0.375;
         highp vec4 visible = max(step(thresholds, codes), step(vec4(65534.5), codes));
-        return mix(mix(visible.x, visible.y, fraction.x), mix(visible.z, visible.w, fraction.x), fraction.y);
+        visibility = mix(mix(visible.x, visible.y, fraction.x), mix(visible.z, visible.w, fraction.x), fraction.y);
+    } else {
+        highp float lowerLeft = staticSunDepthCompareGlobalTexel(
+            base,
+            comparisonDepth + dot(vec2(base) + 0.5 - globalCoordinate, staticSunDepthPlaneSlopeTexels),
+            occupiedSamples,
+            reconstructedDepth
+        );
+        highp float lowerRight = staticSunDepthCompareGlobalTexel(
+            base + ivec2( 1, 0 ),
+            comparisonDepth + dot(vec2(base) + vec2(1.5, 0.5) - globalCoordinate, staticSunDepthPlaneSlopeTexels),
+            occupiedSamples,
+            reconstructedDepth
+        );
+        highp float upperLeft = staticSunDepthCompareGlobalTexel(
+            base + ivec2( 0, 1 ),
+            comparisonDepth + dot(vec2(base) + vec2(0.5, 1.5) - globalCoordinate, staticSunDepthPlaneSlopeTexels),
+            occupiedSamples,
+            reconstructedDepth
+        );
+        highp float upperRight = staticSunDepthCompareGlobalTexel(
+            base + ivec2( 1, 1 ),
+            comparisonDepth + dot(vec2(base) + 1.5 - globalCoordinate, staticSunDepthPlaneSlopeTexels),
+            occupiedSamples,
+            reconstructedDepth
+        );
+        visibility = mix(
+            mix( lowerLeft, lowerRight, fraction.x ),
+            mix( upperLeft, upperRight, fraction.x ),
+            fraction.y
+        );
     }
-    highp float lowerLeft = staticSunDepthCompareGlobalTexel(
-        base,
-        comparisonDepth + dot(vec2(base) + 0.5 - globalCoordinate, staticSunDepthPlaneSlopeTexels),
-        occupiedSamples,
-        reconstructedDepth
-    );
-    highp float lowerRight = staticSunDepthCompareGlobalTexel(
-        base + ivec2( 1, 0 ),
-        comparisonDepth + dot(vec2(base) + vec2(1.5, 0.5) - globalCoordinate, staticSunDepthPlaneSlopeTexels),
-        occupiedSamples,
-        reconstructedDepth
-    );
-    highp float upperLeft = staticSunDepthCompareGlobalTexel(
-        base + ivec2( 0, 1 ),
-        comparisonDepth + dot(vec2(base) + vec2(0.5, 1.5) - globalCoordinate, staticSunDepthPlaneSlopeTexels),
-        occupiedSamples,
-        reconstructedDepth
-    );
-    highp float upperRight = staticSunDepthCompareGlobalTexel(
-        base + ivec2( 1, 1 ),
-        comparisonDepth + dot(vec2(base) + 1.5 - globalCoordinate, staticSunDepthPlaneSlopeTexels),
-        occupiedSamples,
-        reconstructedDepth
-    );
-    return mix(
-        mix( lowerLeft, lowerRight, fraction.x ),
-        mix( upperLeft, upperRight, fraction.x ),
-        fraction.y
-    );
+    return visibility;
 }
 
 highp vec4 staticSunDepthLookup( highp vec3 worldPosition, highp vec3 receiverNormal ) {

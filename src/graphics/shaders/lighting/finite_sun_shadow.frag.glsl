@@ -29,7 +29,7 @@ float getFiniteSunShadowForGeometry( vec4 geometry, sampler2D shadowMap, vec2 sh
     coordinate.z += shadowBias;
     if ( any( lessThan( coordinate, vec3( 0.0 ) ) ) || any( greaterThan( coordinate, vec3( 1.0 ) ) ) ) return 1.0;
     if ( geometry.w == 0.0 ) {
-        return mix( 1.0, step( coordinate.z, texture2D( shadowMap, coordinate.xy ).r ), shadowIntensity );
+        return mix( 1.0, step( coordinate.z, textureLod( shadowMap, coordinate.xy, 0.0 ).r ), shadowIntensity );
     }
 
     // The shadow near plane bounds the maximum possible blocker separation.
@@ -44,7 +44,7 @@ float getFiniteSunShadowForGeometry( vec4 geometry, sampler2D shadowMap, vec2 sh
         vec2 uv = coordinate.xy + offset;
         if ( any( lessThan( uv, vec2( 0.0 ) ) ) || any( greaterThan( uv, vec2( 1.0 ) ) ) ) continue;
         float receiverDepth = coordinate.z + dot( gradient, offset );
-        float separation = receiverDepth - texture2D( shadowMap, uv ).r;
+        float separation = receiverDepth - textureLod( shadowMap, uv, 0.0 ).r;
         if ( separation > planeBias ) {
             separationSum += separation;
             blockers += 1.0;
@@ -60,7 +60,7 @@ float getFiniteSunShadowForGeometry( vec4 geometry, sampler2D shadowMap, vec2 sh
             visibility += 1.0;
         } else {
             float receiverDepth = coordinate.z + dot( gradient, offset ) - planeBias;
-            visibility += step( receiverDepth, texture2D( shadowMap, uv ).r );
+            visibility += step( receiverDepth, textureLod( shadowMap, uv, 0.0 ).r );
         }
     }
     return mix( 1.0, visibility / float(FINITE_SUN_FILTER_SAMPLES), shadowIntensity );

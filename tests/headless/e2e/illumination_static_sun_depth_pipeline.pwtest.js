@@ -19,6 +19,11 @@ test('AI 531 static-sun pipeline activates only a verified complete set and roll
         const staticSun = await import('/src/app/illumination/static_sun_depth/index.js');
         const graphics = await import('/src/graphics/illumination/static_sun_depth/index.js');
         const engine = window.__testHooks.getEngine();
+        // This fixture injects synchronous compilation failures into the standalone
+        // pipeline. The full-game asynchronous coordinator is covered separately
+        // in lighting_view_preparation and the recorded-route acceptance tests.
+        const previousBakedLighting = engine._bakedLighting;
+        engine._bakedLighting = null;
         engine.setPostProcessingEnabled?.(false);
         engine.renderer.shadowMap.enabled = true;
 
@@ -450,6 +455,7 @@ test('AI 531 static-sun pipeline activates only a verified complete set and roll
         engine.renderer.compile = originalRendererCompile;
         engine.renderer.initTexture = originalRendererInitTexture;
         engine.installIlluminationPipeline(previousPipeline ?? null);
+        engine._bakedLighting = previousBakedLighting;
         const uninstallFallback = {
             caster: cityMesh.castShadow,
             bus: busMesh.castShadow,

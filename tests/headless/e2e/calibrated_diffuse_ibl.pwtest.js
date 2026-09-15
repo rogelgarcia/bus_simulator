@@ -5,7 +5,7 @@ test('calibrated diffuse skylight survives disabled reflections and restores leg
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await page.goto('/tests/headless/harness/index.html?ibl=0');
     await page.waitForFunction(() => !!window.__testHooks);
-    const values = await page.evaluate(async () => {
+    const {values,logs} = await page.evaluate(async () => {
         const THREE = await import('three');
         const { applyIBLToScene, applyIBLIntensity } = await import('/src/graphics/engine3d/lighting/IBL.js');
         const renderer = window.__testHooks.getEngine().renderer;
@@ -28,7 +28,8 @@ test('calibrated diffuse skylight survives disabled reflections and restores leg
                 const pixels = new Float32Array(4); renderer.readRenderTargetPixels(target,16,16,1,1,pixels);
                 result.push({id,rgb:[...pixels.slice(0,3)],reflectionIntensity:material.envMapIntensity});
             }
-            return result;
+            const gl = renderer.getContext();
+            return {values:result,logs:renderer.info.programs.map(program=>gl.getProgramInfoLog(program.program))};
         } finally {
             renderer.setRenderTarget(previous); target.dispose(); geometry.dispose(); material.dispose();
             environment.dispose(); generator.dispose();
@@ -39,5 +40,6 @@ test('calibrated diffuse skylight survives disabled reflections and restores leg
         for (const value of entry.rgb) expect(Math.abs(value - (entry.id === 'legacy' ? 0 : .09))).toBeLessThan(.006);
     }
     expect(values[1].rgb).toEqual(values[3].rgb);
+    expect(logs.filter(log=>/X3595|X4000/.test(log))).toEqual([]);
     expect(errors).toEqual([]);
 });

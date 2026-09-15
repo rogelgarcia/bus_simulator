@@ -45,18 +45,23 @@ highp vec2 staticSunStreamVisibility(vec3 light, vec2 localTexel, int layer, vec
             separation += plane - depth.x; blockers += 1.0;
         }
     }
-    if (blockers < 0.5) return vec2(staticSunStreamLinearCompare(localTexel, layer, receiver, slope * pitch), 1.0);
-    float radius = max(pitch * 0.5, separation / blockers * staticSunDepthFilterPolicy.w);
-    // A broad penumbra needs smooth visibility rather than more depth texels.
-    // The parent already resolves it; avoid sparse fine-tap bands and extra work.
-    float detailWeight = 1.0 - smoothstep(1.0, 2.0, radius / staticSunDepthLayout.w);
-    if (detailWeight <= 0.0) return vec2(1.0, 0.0);
-    float visible = 0.0;
-    for (int i = 0; i < 12; i++) {
-        vec2 offset = staticSunDepthVogelDiskSample(i, 12, 0.0) * radius;
-        visible += staticSunStreamLinearCompare(localTexel + offset / pitch, layer, receiver + dot(offset, slope), slope * pitch);
+    vec2 result = vec2(1.0, 0.0);
+    if (blockers < 0.5) result = vec2(staticSunStreamLinearCompare(localTexel, layer, receiver, slope * pitch), 1.0);
+    else {
+        float radius = max(pitch * 0.5, separation / blockers * staticSunDepthFilterPolicy.w);
+        // A broad penumbra needs smooth visibility rather than more depth texels.
+        // The parent already resolves it; avoid sparse fine-tap bands and extra work.
+        float detailWeight = 1.0 - smoothstep(1.0, 2.0, radius / staticSunDepthLayout.w);
+        if (detailWeight > 0.0) {
+            float visible = 0.0;
+            for (int i = 0; i < 12; i++) {
+                vec2 offset = staticSunDepthVogelDiskSample(i, 12, 0.0) * radius;
+                visible += staticSunStreamLinearCompare(localTexel + offset / pitch, layer, receiver + dot(offset, slope), slope * pitch);
+            }
+            result = vec2(visible / 12.0, detailWeight);
+        }
     }
-    return vec2(visible / 12.0, detailWeight);
+    return result;
 }
 highp vec2 staticSunStreamLookup(highp vec3 worldPosition) {
     // Derivatives are evaluated before nonuniform residency decisions.

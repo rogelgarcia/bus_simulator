@@ -38,6 +38,15 @@ for (const streamed of [false, true]) test(`finite sun preserves clear slopes an
                 '\nvoid main(){vec2 xy=(vUv-0.5)*3.0;vec3 p=vec3(xy,dot(xy,slope));float v=staticSunDepthLookup(p,vec3(0,0,-1)).x;gl_FragColor=vec4(vec3(v),1.0);}' });
         const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material), scene = new THREE.Scene(); scene.add(quad);
         const target = new THREE.WebGLRenderTarget(192, 192), pixels = new Uint8Array(192 * 192 * 4);
+        const specialized = material.clone(); specialized.uniforms = material.uniforms; specialized.defines.STATIC_SUN_FINAL = 1;
+        const reference = new Uint8Array(pixels.length); let specializationDifference = 0;
+        const capture = () => {
+            quad.material = material; renderer.render(scene, new THREE.Camera());
+            renderer.readRenderTargetPixels(target, 0, 0, 192, 192, reference);
+            quad.material = specialized; renderer.render(scene, new THREE.Camera());
+            renderer.readRenderTargetPixels(target, 0, 0, 192, 192, pixels);
+            for (let i = 0; i < pixels.length; i++) specializationDifference = Math.max(specializationDifference, Math.abs(pixels[i] - reference[i]));
+        };
         const results = [];
         for (const slope of [[0, 0], [1, .3], [-.7, 1.8]]) {
             for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
@@ -46,8 +55,7 @@ for (const streamed of [false, true]) test(`finite sun preserves clear slopes an
                 bytes[i] = q >> 8; bytes[i + 1] = q & 255;
             }
             texture.needsUpdate = true; uniforms.slope.value.set(...slope);
-            renderer.setRenderTarget(target); renderer.render(scene, new THREE.Camera());
-            renderer.readRenderTargetPixels(target, 0, 0, 192, 192, pixels);
+            renderer.setRenderTarget(target); capture();
             let minimum = 255, mean = 0;
             for (let i = 0; i < pixels.length; i += 4) { minimum = Math.min(minimum, pixels[i]); mean += pixels[i]; }
             results.push({ slope, minimum, mean: mean / (192 * 192) });
@@ -60,8 +68,7 @@ for (const streamed of [false, true]) test(`finite sun preserves clear slopes an
             bytes[i] = q >> 8; bytes[i + 1] = q & 255;
         }
         texture.needsUpdate = true;
-        renderer.render(scene, new THREE.Camera());
-        renderer.readRenderTargetPixels(target, 0, 0, 192, 192, pixels);
+        capture();
         let contactMaximum = 0;
         for (let y = 32; y < 160; y++) for (let x = 88; x <= 90; x++) contactMaximum = Math.max(contactMaximum, pixels[(y * 192 + x) * 4]);
         let clearMinimum = 255;
@@ -76,14 +83,14 @@ for (const streamed of [false, true]) test(`finite sun preserves clear slopes an
             const z = x < size / 2 ? -40 : 0, q = Math.round((z - depthMin) / (depthMax - depthMin) * 65534), i = (y * size + x) * 2;
             bytes[i] = q >> 8; bytes[i + 1] = q & 255;
         }
-        texture.needsUpdate = true; renderer.render(scene, new THREE.Camera());
-        renderer.readRenderTargetPixels(target, 0, 0, 192, 192, pixels);
+        texture.needsUpdate = true; capture();
         const distantWidth = transitionWidth();
-        target.dispose(); quad.geometry.dispose(); material.dispose(); texture.dispose(); table.dispose(); renderer.dispose();
-        return { planes: results, contactMaximum, clearMinimum, contactWidth, distantWidth };
+        target.dispose(); quad.geometry.dispose(); material.dispose(); specialized.dispose(); texture.dispose(); table.dispose(); renderer.dispose();
+        return { planes: results, contactMaximum, clearMinimum, contactWidth, distantWidth, specializationDifference };
     }, streamed);
     for (const result of results.planes) expect(result.minimum, JSON.stringify(result)).toBeGreaterThanOrEqual(253);
     expect(results.contactMaximum, 'A nearby blocker remains opaque regardless of distant blockers behind its edge').toBeLessThanOrEqual(2);
     expect(results.clearMinimum, 'A distant blocker outside the solar cone cannot spread the nearby contact shadow onto clear ground').toBeGreaterThanOrEqual(253);
     expect(results.distantWidth, 'A distant blocker still produces a broader physical penumbra').toBeGreaterThan(results.contactWidth + 4);
+    expect(results.specializationDifference, 'Final specialization must match the uniform diagnostic shader at every pixel').toBe(0);
 });

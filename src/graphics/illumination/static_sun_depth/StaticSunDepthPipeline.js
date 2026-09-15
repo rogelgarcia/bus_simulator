@@ -230,7 +230,8 @@ export class StaticSunDepthPipeline {
 
     setDebugMode(mode) {
         const validatedMode = requireDebugMode(mode);
-        this._materials.setDebugMode(validatedMode);
+        const variantChanged = this._materials.setDebugMode(validatedMode);
+        if (variantChanged) this.engine._bakedLighting?.requestViewPreparation();
         this._debugMode = validatedMode;
         if (!this._active) return;
         try {

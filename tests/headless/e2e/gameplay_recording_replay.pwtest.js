@@ -17,6 +17,12 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
     expect(indices.length).toBeGreaterThan(0);
     const output = `tests/artifacts/screens/recorded_slowdown/${process.env.REPLAY_NAME || 'replay'}`;
     await mkdir(output, {recursive:true});
+    if (process.env.REPLAY_SHADER_BASELINE === '1') {
+        const root='tests/artifacts/screens/baked_shader_loading/before-src/';
+        const files=JSON.parse(await readFile(root+'files.json','utf8'));
+        for(const file of files) await page.route('**/'+file,async route=>route.fulfill({
+            contentType:file.endsWith('.js')?'text/javascript':'text/plain',body:await readFile(root+file,'utf8')}));
+    }
     const errors = []; page.on('pageerror', error => { errors.push(error.message); console.log('Page error:',error.message); });
     page.on('console', message => { if (message.type()==='error' || message.text().startsWith('Replay lap')) console.log('Browser:',message.text().slice(0,500)); });
     const profiler = process.env.REPLAY_PROFILE_STARTUP === '1' ? await page.context().newCDPSession(page) : null;
@@ -48,7 +54,8 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
             window.replayPreparationRetried={at:performance.now(),reason:b.viewError};
             b.requestViewPreparation();
         }
-        return b?.effectiveMode === 'baked' && !b.shouldHoldView() && !document.querySelector('.gameplay-loading');
+        return b?.failure || (b?.viewError && (!allowRetry || window.replayPreparationRetried))
+            || (b?.effectiveMode === 'baked' && !b.shouldHoldView() && !document.querySelector('.gameplay-loading'));
     }, process.env.REPLAY_RETRY_PREPARATION==='1', {timeout:process.env.REPLAY_RETRY_PREPARATION==='1'?280_000:150_000});
     await readiness.dispose();
     if (profiler) {
@@ -58,6 +65,20 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
             clearInterval(window.startupPhaseTimer);
             return {longTasks: window.startupLongTasks, phases:window.startupPhases,baked: window.__busSim.engine._bakedLighting.getDiagnostics()};
         })));
+    }
+    const startupState = await page.evaluate(() => window.__busSim.engine._bakedLighting.getDiagnostics());
+    if (!startupState.view.ready || startupState.status.effectiveMode !== 'baked') await writeFile(`${output}/startup-failure.json`,JSON.stringify(startupState,null,2));
+    expect({ready:startupState.view.ready,mode:startupState.status.effectiveMode}, JSON.stringify(startupState)).toEqual({ready:true,mode:'baked'});
+    if (process.env.REPLAY_SHADER_LOGS === '1') {
+        const shaders = await page.evaluate(() => {
+            const renderer = window.__busSim.engine.renderer, gl = renderer.getContext();
+            const translator = gl.getExtension('WEBGL_debug_shaders');
+            return renderer.info.programs.map(program => ({id:program.id, log:gl.getProgramInfoLog(program.program),
+                shaders:(gl.getAttachedShaders(program.program) || []).map(shader => ({type:gl.getShaderParameter(shader,gl.SHADER_TYPE),
+                    log:gl.getShaderInfoLog(shader), source:gl.getShaderSource(shader), translated:translator?.getTranslatedShaderSource(shader)}))}));
+        });
+        await writeFile(`${output}/shaders.json`, JSON.stringify(shaders));
+        if (process.env.REPLAY_ASSERT_SHADER_LOGS === '1') expect(shaders.flatMap(p=>[p.log,...p.shaders.map(s=>s.log)]).filter(s=>/X3595|X4000/.test(s))).toEqual([]);
     }
     const holdIndex = process.env.REPLAY_HOLD_FRAME ? Array.from(c.frame).indexOf(Number(process.env.REPLAY_HOLD_FRAME)) : null;
     if (holdIndex !== null) expect(holdIndex).toBeGreaterThanOrEqual(0);
@@ -190,6 +211,7 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
     const recordedSettings=config.usesDefaultValues ? recording.metadata.defaults : config.settings;
     expect(normalize(initial.settings)).toEqual(normalize(settingsPolicy==='current-defaults'?initial.defaults:recordedSettings));
     initial.settingsPolicy=settingsPolicy;
+    initial.shaderSourceSnapshot=process.env.REPLAY_SHADER_BASELINE==='1'?'baked_shader_loading/before-src':'working-tree';
     initial.recordedSettings=recordedSettings;
     initial.heldSourceFrame=holdIndex===null?null:c.frame[holdIndex];
     initial.stationaryAfterFirst=stationaryAfterFirst;
@@ -238,6 +260,7 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
         expect(comparisons.every(row=>row.changedFraction<0.001),JSON.stringify(comparisons)).toBe(true);
     }
     const result=await page.evaluate(()=>window.recordedReplay.finish());
+    if (process.env.REPLAY_CAPTURE_FINAL === '1') await page.locator('canvas').first().screenshot({path:`${output}/final.png`});
     const gpu=new Map(result.samples.map(s=>[s.submissionSequence,s.ms]));
     for(const f of result.frames)f.gpu=gpu.get(f.submission)??null;
     await writeFile(`${output}/frames.json`,JSON.stringify(result));

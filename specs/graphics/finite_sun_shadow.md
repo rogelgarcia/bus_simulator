@@ -14,6 +14,10 @@ This is a sampled PCSS approximation, not general finite-source ray tracing. Thi
 
 ## Runtime API
 
+The unmipped native depth texture is sampled with explicit LOD zero, including
+within blocker/filter loops. This preserves its sampling/filtering while avoiding
+implicit derivatives under divergent control flow on ANGLE/D3D11.
+
 The caller owns its renderer configuration and light. Explicitly select `THREE.BasicShadowMap`, whose native depth texture is readable without a comparison sampler. Create `new FiniteSunShadow({renderer, scene, light, angularDiameter})`, `attach(material)` to receiving native Lambert/Phong/Standard/Physical materials, and call `update()` before rendering after changes to the angle, shadow frustum, zoom or map size. `setAngularDiameter(radians)` updates a uniform through `update()`, without changing the shader variant.
 
 `update()` validates one visible shadow-casting directional light, a forward-depth orthographic camera, and supported map dimensions. It resizes an existing native map when `mapSize` changes; Three otherwise changes the viewport without resizing its existing target. `detach(material)` restores other registered hooks, and `dispose()` removes only this adapter's hooks. Repeated attachment is idempotent; a second owner is rejected. The caller restores the renderer's previous shadow type when leaving this mode. The calibration scenario does so on disposal.
