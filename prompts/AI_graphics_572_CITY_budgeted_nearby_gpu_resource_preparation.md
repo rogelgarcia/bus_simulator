@@ -150,6 +150,79 @@ artifact-root restriction. Track only code, specs and concise findings in Git.
   shadows, textures, scene geometry and visibility remain visually equivalent.
   No new bake or Blender render is needed for this resource scheduling change.
 
+## Additional recording: left turn, September 14/15
+
+The user supplied a second recording after commit `0873f2b` and described a subtle
+slow/release pattern just after starting to drive and turning left. The trace
+confirms distinct first-use stalls; three fresh-browser replays of the new turn,
+three laps each, reproduced all four events at exactly the same source frames.
+They disappear on warm laps. Update this task rather than creating duplicate
+tickets for each resource-upload frame.
+
+Input: `tests/artifacts/screens/recording_left_turn_20260914/route.busrec`.
+Original attachment: `C:/Users/rogel/.codex/attachments/ef8e0f13-8b94-4060-ad12-cdd66662c408/pasted-text.txt`.
+SHA-256: `47e1ca96c62f5b4f92088cec745f2f97b301834fde3ef9d8c60cf923fa316ae6`.
+The 9,836-frame capture spans 0x132–0x279D and 214.216 seconds. First sustained
+throttle is at 109.376 seconds; timestamps below are from recording start.
+
+| Frame | Time (s) | Original CPU / GPU (ms) | New Geo / Tex / Progs | Three fresh cold CPU / GPU ranges (ms) |
+|---|---:|---:|---:|---:|
+| 1326 | 112.851 | 78.30 / 68.99 | 3 / 3 / 0 | 73.4–76.0 / 66.13–75.37 |
+| 133F | 113.444 | 78.90 / 58.43 | 12 / 3 / 0 | 63.3–64.6 / 63.31–65.39 |
+| 136E | 114.412 | 104.40 / 70.31 | 384 / 0 / 0 | 85.2–87.5 / 51.78–58.67 |
+| 145B | 119.335 | 46.20 / 29.03 | 188 / 0 / 0 | 50.7–53.3 / 26.43–34.17 |
+
+New replay range: `REPLAY_FIRST=0x12AB`, `REPLAY_LAST=0x14A0`,
+`REPLAY_LAPS=3`, `REPLAY_SETTINGS=recorded`. Conditions: RTX 3060 / D3D11,
+3390x1540, device scale 2, exact recorded defaults, 90 stationary warm-up frames
+without pre-driving the turn. All 4,518 measured frames retain baked mode and
+generation 2, with valid GPU samples and no hidden-page or disjoint event.
+Artifacts: `tests/artifacts/screens/recorded_slowdown/left-turn-20260915-fresh-01/`,
+`left-turn-20260915-fresh-02/` and `left-turn-20260915-fresh-03/`.
+
+The expensive frames spend 43–80 ms in the rendering phase. No new shader programs
+appear at those four points. Sun bloom is irrelevant and emits zero draws there;
+shadow-stream upload cost is zero except individual 0.3/0.4 ms overlaps. This
+supports the existing first-use resource attribution rather than a new shadow
+filter or bake-reactivation issue. Warm event CPU times are approximately
+19–30 ms and GPU times 15–22 ms; removing these spikes alone will not guarantee
+60 FPS. AI 575 covers the remaining recurring cost.
+
+Also retain these new investigation cases within the resource-preparation work:
+
+- First visible baked frame 0x1224 initializes 702 geometries and three textures
+  in the original capture (256.1 ms CPU, 612.98 ms GPU). The following frames
+  include another two textures and a separate 524.5 ms CPU stall. Coordinate
+  first-visible resource readiness with AI 574, which owns the long loading hold;
+  do not solve this by moving an unbounded upload burst into startup.
+- At 0x25CE (200.095 s), the original capture adds one geometry, 13 textures and
+  10 shader programs, with 96.6 ms CPU / 30.30 ms GPU. Identify the owning pass
+  before attributing it to buildings; resource counts alone cannot distinguish
+  scene assets from effect targets/programs. Track bounded preparation of its
+  actual dependencies if it shares the first-use cause. Keep that isolated spike
+  separate from the sustained heavier view before and after it (AI 575).
+  Three fresh replays starting at 0x25B0 did NOT reproduce this particular
+  0x25CE allocation/program event: CPU was 33.4–36.1 ms on cold laps, with no
+  new resources or bloom draws at that frame. Starting near the destination
+  changes preparation and prior route history, so this does not disprove the
+  original event. Reproduce its preceding route before assigning a cause.
+- Frame 0x19F2 (147.002 s) adds 95 geometries and reaches 40.9 ms CPU / 31.63 ms
+  GPU in the original trace. It is an additional route coverage point, not yet
+  independently replayed in this follow-up.
+
+The later short replay, 0x25B0–0x26C0, also exposes cold-only first-use costs at
+0x25B6 (+6 geometries, +3 textures), 0x25C1 (+164 geometries) and 0x25C5
+(+192 geometries). Across three fresh processes their CPU costs were
+64.0–65.1, 57.7–58.4 and 69.3–78.1 ms; warm laps remove those resource increments
+and costs fall to 20.1–24.5, 29.2–33.1 and 32.9–36.8 ms respectively. These are
+additional preparation coverage for this task, not reproduced original-recording
+stalls: the short replay has a different resource history from driving the full
+route. Programs stay at 135 and bloom emits zero draws throughout the late replay.
+
+Full interpretation, limitations and later-view replay findings are maintained
+in `debug_tools/regression_debugging/recording_left_turn_20260914.md`.
+The previously documented route remains required; the new turn supplements it.
+
 ## On completion
 
 - Mark the document `DONE` in the first line and rename it to
