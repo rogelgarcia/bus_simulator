@@ -33,7 +33,7 @@ import {
     encodeRgba32fLittleEndian,
     encodeUint32LittleEndian,
     getIlluminationDecodedByteLength,
-    validateIlluminationEncodedBytes
+    validateOwnedIlluminationEncodedBytes
 } from './IlluminationEncoding.js';
 import { failIlluminationPackage } from './IlluminationPackageError.js';
 import { verifyPackageInBackground } from './IlluminationPackageBackground.js';
@@ -280,8 +280,8 @@ async function parsePackageBytes(bytes, options) {
         }
         const data = payload.subarray(entry.offset, end);
         await requireHash(data, entry.sha256, 'chunk_hash_mismatch', 'Stored chunk SHA-256 does not match its descriptor.', { id: entry.id });
-        await requireHash(data, entry.decodedSha256, 'chunk_decoded_hash_mismatch', 'Decoded chunk SHA-256 does not match its descriptor.', { id: entry.id });
-        validateIlluminationEncodedBytes(data, entry.encoding);
+        // The validated V1 table requires compression=none and identical stored/decoded digests.
+        validateOwnedIlluminationEncodedBytes(data, entry.encoding);
         chunks.push(Object.freeze({ descriptor: entry, data }));
         payloadCursor = end;
     }
@@ -373,7 +373,7 @@ async function normalizeChunks(values) {
         if (data.byteLength === 0 || data.byteLength > ILLUMINATION_MAX_CHUNK_BYTES) {
             failIlluminationPackage('build_chunk_size_exceeded', 'Build chunk byte length is outside V1 limits.', { id: input.id, byteLength: data.byteLength });
         }
-        validateIlluminationEncodedBytes(data, input.encoding);
+        validateOwnedIlluminationEncodedBytes(data, input.encoding);
         const sha256 = await rawSha256Hex(data);
         const requiredRuntimeCapabilities = [...(input.requiredRuntimeCapabilities ?? [])].sort(compareCanonicalStrings);
         validateIdArray(requiredRuntimeCapabilities, `chunk '${input.id}' requiredRuntimeCapabilities`);

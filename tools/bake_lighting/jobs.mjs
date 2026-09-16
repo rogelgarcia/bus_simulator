@@ -1,6 +1,7 @@
 // Declares lighting children; orchestration remains domain-independent.
 // @ts-check
 import { sourceJob } from './source/job.mjs';
+import { cityInputsJob } from './city_inputs/job.mjs';
 import { shadowJobs } from './shadows/jobs.mjs';
 import { streamedShadowJobs } from './shadows/streamed/jobs.mjs';
 import { receiverJobs } from './illumination/ReceiverJobs.mjs';
@@ -19,3 +20,4 @@ export const lightingJobs = [sourceJob, facadePlanJob, ...streamedShadowJobs, ..
     id: 'lighting', description: 'Shadows, sky occlusion, surface illumination and vehicle diffuse probes',
     children: ['lighting/preview-reference', 'lighting/shadows', 'lighting/illumination', 'lighting/diffuse-probes']
 }];
+lightingJobs.push(cityInputsJob);

@@ -73,8 +73,8 @@ export class DynamicAoRuntime {
         }
     }
 
-    // Detached candidates retain the live mesh's receiver ancestry, without a
-    // depth render or changing the visible material/geometry during preparation.
+    // Use the live receiver ancestry for either detached material candidates or
+    // hidden live receivers, without a depth render or geometry replacement.
     prepareMaterials(assignments, participants, settings) {
         const roots = new Map(participants.filter(p => p.root?.parent && (p.cast || p.receive)).map(p => [p.root, p]));
         for (const [mesh, material] of assignments) {
@@ -87,6 +87,18 @@ export class DynamicAoRuntime {
                 this.patchReceiver(mesh, Array.isArray(material) ? material : [material], settings.alpha);
             }
         }
+    }
+
+    setShaderParticipants(roots, settings) {
+        const analytic = roots.map(p => p.aoUnderbody && settings.dynamic.busMethod !== 'gtao');
+        const hasGeneric = roots.some((p, i) => p.cast && !analytic[i]);
+        const flags = (roots.some((p, i) => p.cast && analytic[i]) ? '#define DYNAMIC_AO_ANALYTIC\n' : '')
+            + (hasGeneric ? '#define DYNAMIC_AO_GENERIC\n' : '');
+        if (flags !== this.shaderFlags) {
+            this.shaderFlags = flags;
+            for (const record of this.materials.values()) record.hook.update({ variantKey: source.variantKey + flags.replaceAll('\n', '|') });
+        }
+        return { analytic, hasGeneric };
     }
 
     participant(mesh, id) {
@@ -139,7 +151,7 @@ export class DynamicAoRuntime {
         this.worldBounds.set(mesh, cached); return box;
     }
 
-    update({ renderer, scene, camera, participants, settings, enabled }) {
+    update({ renderer, scene, camera, participants, settings, enabled, prepareAllMaterials = false }) {
         const start = performance.now(), uniforms = this.uniforms;
         this.restoreBindings();
         uniforms.dynamicAoEnabled.value = 0;
@@ -156,13 +168,17 @@ export class DynamicAoRuntime {
             this.boundsTexture.needsUpdate = true; uniforms.dynamicAoBounds.value = this.boundsTexture;
         }
         const bounds = roots.map(() => new THREE.Box3()), inverse = roots.map(p => p.root.matrixWorld.clone().invert());
-        const analytic = roots.map(p => p.aoUnderbody && settings.dynamic.busMethod !== 'gtao');
-        const hasGeneric = roots.some((p,i) => p.cast && !analytic[i]);
-        const flags = (roots.some((p,i) => p.cast && analytic[i]) ? '#define DYNAMIC_AO_ANALYTIC\n' : '')
-            + (hasGeneric ? '#define DYNAMIC_AO_GENERIC\n' : '');
-        if (flags !== this.shaderFlags) {
-            this.shaderFlags = flags;
-            for (const record of this.materials.values()) record.hook.update({ variantKey: source.variantKey + flags.replaceAll('\n', '|') });
+        const { analytic, hasGeneric } = this.setShaderParticipants(roots, settings);
+        // View preparation includes hidden city materials. Give them the same
+        // receiver recipe they acquire before becoming visible, rather than
+        // compiling an unused variant without AO. This does not draw them or
+        // allocate their participant geometry/depth resources.
+        if (prepareAllMaterials) {
+            const assignments = [];
+            scene.traverse(mesh => {
+                if (mesh.isMesh && mesh.geometry?.attributes.position) assignments.push([mesh, mesh.material]);
+            });
+            this.prepareMaterials(assignments, participants, settings);
         }
         const meshes = [], keepGeometry = new Set();
         scene.traverseVisible(mesh => {

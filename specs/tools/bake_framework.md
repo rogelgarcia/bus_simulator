@@ -288,6 +288,15 @@ stages only when source, settings and recipe identity match. See
 
 ## Verification
 
+`lighting/city-inputs` is an explicit browser/Node CPU precomputation leaf for
+AI574. It records actual slab and coplanar receiver inputs, independently
+recomputes plans in Node, and validates the candidate in a second fresh game.
+Publication requires complete reuse, identical live source hashes and identical
+final city geometry. It switches a content-addressed plan index last and preserves
+prior payloads. The runtime independently authenticates planner code and exact
+call inputs; the plans never authorize bake compatibility. Existing receiver and
+shadow publication gates remain intact. See `tools/bake_lighting/city_inputs/README.md`.
+
 `lighting/experiments/reference-matching/pose-comparison` accepts a single exact
 paused gameplay pose, a new artifact output directory and an authenticated
 afternoon source. It reuses baseline readiness/pose checks and the scene export

@@ -2,7 +2,7 @@
 // @ts-check
 
 import { canonicalJsonBytes } from './CanonicalJson.js';
-import { bytesToHex, concatBytes, copyBytes } from './internal/ByteArrays.js';
+import { bytesToHex, concatBytes } from './internal/ByteArrays.js';
 
 export const BAKE_SOURCE_SHA256_PROTOCOL = 'bus-simulator/illumination/bake-source/sha256-framing/v1';
 
@@ -46,7 +46,11 @@ export async function sha256Digest(domain, value) {
         throw new TypeError('SHA-256 domain must be a non-empty string');
     }
     const domainBytes = new TextEncoder().encode(domain);
-    const valueBytes = copyBytes(value, 'SHA-256 input');
+    if (!(value instanceof ArrayBuffer) && !ArrayBuffer.isView(value)) {
+        throw new TypeError('SHA-256 input must be an ArrayBuffer or ArrayBuffer view');
+    }
+    const valueBytes = value instanceof ArrayBuffer ? new Uint8Array(value)
+        : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
     if (domainBytes.byteLength > UINT32_MAX || valueBytes.byteLength > UINT32_MAX) {
         throw new RangeError('SHA-256 framed domain or input exceeds the uint32 byte-length limit');
     }
@@ -54,6 +58,7 @@ export async function sha256Digest(domain, value) {
     const view = new DataView(lengths.buffer);
     view.setUint32(0, domainBytes.byteLength, true);
     view.setUint32(4, valueBytes.byteLength, true);
+    // Framing itself closes the snapshot boundary before the first await.
     const framed = concatBytes([PROTOCOL_BYTES, lengths, domainBytes, valueBytes]);
     const subtle = globalThis.crypto?.subtle;
     if (!subtle) throw new Error('WebCrypto SubtleCrypto is required for illumination bake-source hashing');

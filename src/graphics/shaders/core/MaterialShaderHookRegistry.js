@@ -314,3 +314,35 @@ export function getMaterialShaderBaseContract(material) {
         hookIds: Object.freeze((state?.ordered ?? []).map((hook) => hook.id))
     });
 }
+
+/** Clone a compile-only owner; retain authored patches and snapshot registry recipes.
+ * Textures and uniform values remain borrowed. Dispose the clone after cache handoff.
+ * @param {any} material @param {string[]} [exclude] */
+export function cloneMaterialShaderContract(material, exclude = []) {
+    requireMaterial(material);
+    const state = REGISTRIES.get(material);
+    // Material.clone JSON-serializes userData, including legacy uniform caches.
+    // Compilation borrows those inputs; it must neither copy their texture data
+    // nor replace the caches that still belong to the displayed material.
+    const input = Object.create(Object.getPrototypeOf(material), Object.getOwnPropertyDescriptors(material));
+    input.userData = {};
+    const clone = new material.constructor().copy(input);
+    clone.userData = material.userData;
+    if (material.defines) clone.defines = { ...material.defines };
+    if (material.extensions) clone.extensions = { ...material.extensions };
+    const baseKey = state ? callPreviousCacheKey(state) : material.customProgramCacheKey();
+    const compile = state?.previousOnBeforeCompile ?? material.onBeforeCompile;
+    const owners = [material.userData, ...Object.values(material.userData)].filter(value => value && typeof value === 'object');
+    clone.onBeforeCompile = function(shader, renderer) {
+        const caches = owners.map(owner => [owner, Object.hasOwn(owner, 'shaderUniforms'), owner.shaderUniforms]);
+        try { compile.call(clone, shader, renderer); }
+        finally { for (const [owner, had, value] of caches) restoreProperty(owner, 'shaderUniforms', had, value); }
+    };
+    clone.customProgramCacheKey = () => baseKey;
+    for (const hook of state?.ordered ?? []) {
+        if (exclude.includes(hook.id)) continue;
+        registerMaterialShaderHook(clone, { id: hook.id, priority: hook.priority, enabled: hook.enabled,
+            variantKey: hook.variantKey, apply: hook.apply, uniforms: hook.uniforms });
+    }
+    return clone;
+}

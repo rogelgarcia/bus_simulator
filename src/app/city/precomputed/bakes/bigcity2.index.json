@@ -1,0 +1,13 @@
+{
+  "schema": "city-input-plans-v1",
+  "file": "bigcity2.d1f7892130cda877c3a9ef721187609738e5b2cc74cadb9a5883a6d3802d0b39.json.gz",
+  "sha256": "d1f7892130cda877c3a9ef721187609738e5b2cc74cadb9a5883a6d3802d0b39",
+  "bytes": 1110361,
+  "decodedBytes": 11637303,
+  "algorithms": {
+    "src/app/city/BuildingSlabPlan.js": "1118270510db3dc72134a92088e86dab355ed48ace9c0466b92fbd44c3623124",
+    "src/app/city/BuildingSlabBoundary.js": "40bf8133544ecb4abf79d755d5ebf026f2ecc9792b5c6874e9a445e4320403a8",
+    "src/app/illumination/receiver_lightmaps/ReceiverCoplanarOwnership.js": "129619e8fbfd4e86bc1397a344e9b417346d8f5fa2cfea3affc7f0e8916f45fe",
+    "src/app/city/precomputed/CityInputPlans.js": "f4f8fac5d33b83f1350e92126a4cac57661c0c8bde73bbac0bc2ecbbe59ca32a"
+  }
+}

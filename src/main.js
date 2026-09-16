@@ -29,6 +29,7 @@ import { createBus } from './graphics/assets3d/factories/BusFactory.js';
 import { preloadPortalOrnamentParts } from './graphics/assets3d/generators/building_fabrication/PortalOrnamentParts.js';
 import { createStartupSceneGate } from './states/StartupSceneGate.js';
 import { GameplayLoadingScreen } from './graphics/gui/gameplay/GameplayLoadingScreen.js';
+import { loadCityInputPlans } from './app/city/precomputed/CityInputLoader.js';
 
 function isEditableTarget(target) {
     const el = target && typeof target === 'object' ? target : null;
@@ -77,7 +78,10 @@ sm.register('options', new OptionsState(engine, sm));
 const rawGo = sm.go.bind(sm);
 const gameplayLoading = new GameplayLoadingScreen(engine);
 const startup = createStartupSceneGate({
-    load: () => preloadPortalOrnamentParts(null, { required: true }),
+    load: () => Promise.all([
+        preloadPortalOrnamentParts(null, { required: true }),
+        loadCityInputPlans().then(plans => { engine.context.cityInputs = plans; })
+    ]),
     go: (name, params) => {
         gameplayLoading.cancel();
         const enter = () => {

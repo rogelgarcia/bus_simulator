@@ -16,6 +16,7 @@ individual leaf commands, scoped parameters and recovery, and
 
 | Name | Path | Purpose | Run |
 |---|---|---|---|
+| cityInputs | `tools/bake_lighting/city_inputs/` | Precompute exact slab and receiver ownership plans, validate fresh-game geometry/source parity, optionally publish the reusable CPU cache | `node tools/bake.mjs --target lighting/city-inputs --publish`; see its README |
 | gameplayRecording | `tools/gameplay_recording/` | Decode compressed debug frame recordings, extract replay poses, and analyze repeated hardware replays for frame hitches | `node tools/gameplay_recording/decode.mjs capture.busrec`; `analyze_replay.mjs <artifact-output> <frames.json> [...]`; see its README |
 | bakeFramework | `tools/bake.mjs`, `tools/baking/` | Parameter-free master, shared local Blender configuration, dependency planning, verified checkpoints and progress | `node tools/bake.mjs`; `node tools/bake.mjs --dry-run` |
 | receiverReprocess | `tools/bake_lighting/illumination/reprocess/` | Refilter authenticated sky/bounce samples, including coplanar UV seam correction, through the shared bake framework | See its README for original publication/layout parameters; unchanged source and raw-pass proof required |

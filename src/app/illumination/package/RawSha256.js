@@ -8,7 +8,13 @@ import { bytesToHex, copyBytes, hexToBytes } from './internal/ByteArrays.js';
  * @returns {Promise<Uint8Array>}
  */
 export async function rawSha256Digest(value) {
-    return rawSha256OwnedDigest(copyBytes(value, 'SHA-256 input'));
+    if (!(value instanceof ArrayBuffer) && !ArrayBuffer.isView(value)) {
+        throw new TypeError('SHA-256 input must be an ArrayBuffer or ArrayBuffer view');
+    }
+    const bytes = value instanceof ArrayBuffer ? new Uint8Array(value)
+        : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    // WebCrypto synchronously snapshots ordinary BufferSource inputs. Shared storage still needs a copy.
+    return rawSha256OwnedDigest(bytes.buffer instanceof ArrayBuffer ? bytes : copyBytes(bytes));
 }
 
 /**

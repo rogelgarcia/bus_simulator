@@ -231,7 +231,7 @@ export class StaticSunDepthPipeline {
     setDebugMode(mode) {
         const validatedMode = requireDebugMode(mode);
         const variantChanged = this._materials.setDebugMode(validatedMode);
-        if (variantChanged) this.engine._bakedLighting?.requestViewPreparation();
+        if (variantChanged) this.engine._bakedLighting?.requestViewPreparation('shadow_variant');
         this._debugMode = validatedMode;
         if (!this._active) return;
         try {
@@ -397,7 +397,10 @@ export class StaticSunDepthPipeline {
             gpuBytes: 0,
             dispose: () => this._releasePreparedBinding(binding)
         }));
+        this._preparedShaderBinding = binding;
     }
+
+    getPreparedShaderBinding() { return this._preparedShaderBinding ?? null; }
 
     async _prewarmMaterialVariants(binding) {
         const scene = new THREE.Scene();
@@ -461,7 +464,7 @@ export class StaticSunDepthPipeline {
                 this._active = Object.freeze({ ...cached, generation: snapshot.generation });
                 this._cachedActivation = null;
                 this._cacheActivationCount += 1;
-                this.engine._bakedLighting?.requestViewPreparation();
+                this.engine._bakedLighting?.requestViewPreparation('shadow_cache_activation');
                 return true;
             } catch (error) {
                 this._lastError = error;
@@ -530,13 +533,13 @@ export class StaticSunDepthPipeline {
             firstError ??= error;
         }
         this._active = null;
-        this.engine._bakedLighting?.requestViewPreparation();
+        this.engine._bakedLighting?.requestViewPreparation('shadow_restore:' + reason);
         if (firstError) throw firstError;
     }
 
     _compileExactCityVariants() {
         if (this.engine._bakedLighting) {
-            this.engine._bakedLighting.requestViewPreparation();
+            this.engine._bakedLighting.requestViewPreparation('shadow_activation');
             this._exactCityCompileCount += 1;
             return;
         }
@@ -567,6 +570,7 @@ export class StaticSunDepthPipeline {
         if (this._active?.binding === binding) {
             throw new Error('Cannot dispose the active static-sun shader binding.');
         }
+        if (this._preparedShaderBinding === binding) this._preparedShaderBinding = null;
         binding.streamedDetail?.dispose(); this._streamedBindings.delete(binding);
         if (this._cachedActivation?.binding !== binding) return;
         this._materials.dispose();

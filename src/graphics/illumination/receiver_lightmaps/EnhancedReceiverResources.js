@@ -4,13 +4,15 @@ import * as THREE from 'three';
 import { loadReceiverPackage } from './ReceiverPackageLoading.js';
 import { receiverCoordinateChunks } from '../../../app/illumination/receiver_lightmaps/ReceiverCoordinateTransport.js';
 import { createReceiverHdrTexture } from './ReceiverHdrTexture.js';
+import { prepareReceiverTexture } from './ReceiverTexturePreparation.js';
+import { createReceiverBufferAssembly } from './ReceiverBufferAssembly.js';
 import { SUPPORTED_RECEIVER_TRANSPORTS } from '../../../app/illumination/receiver_lightmaps/ReceiverTransportPolicy.js';
 import { assertCompleteReceiverCoverage, assertReceiverRasterPage } from '../../../app/illumination/receiver_lightmaps/ReceiverCoverageContract.js';
 
 /** @param {THREE.WebGLRenderer} renderer */
 export function createEnhancedReceiverLoader(renderer) {
     const mappings = new Map();
-    return async function load({ url, descriptor, channel, sourceHash, resolvedSourceHash, cityId, profileId, signal }) {
+    return async function load({ url, descriptor, channel, sourceHash, resolvedSourceHash, cityId, profileId, signal, onMappingReady }) {
         const start = performance.now();
         const { parsed, timings } = await loadReceiverPackage({ url, descriptor, signal, options: { expectations: { cityId, lightingProfileId: profileId,
             aggregateSha256: descriptor.aggregateSha256, profileSha256: descriptor.profileSha256 },
@@ -32,6 +34,25 @@ export function createEnhancedReceiverLoader(renderer) {
         if (mapping.profile.directRepresentation && (!sharedSun || mapping.profile.irradianceRepresentation !== 'surface-diffuse-v1')) throw new Error('Unsupported receiver sun representation');
         const reference = sharedSun && channel === 'direct_receiver';
         const hdr = channel === 'indirect_irradiance' && mapping.profile.indirectEncoding === 'rgb9e5_le';
+        const layers = reference ? 1 : mapping.pageCount * (channel === 'indirect_irradiance' && directional ? 3 : 1);
+        const pageSize = reference ? 1 : mapping.profile.pageSize;
+        const mipLevels = reference ? 1 : mapping.profile.mipLevels;
+        const gl = renderer.getContext(), maximum = renderer.capabilities.maxTextureSize;
+        if (!Number.isInteger(mapping.pageCount) || mapping.pageCount < 1 || layers > 24 || layers > gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS)
+            || mapping.profile.pageSize > maximum || mapping.tableWidth > maximum || mapping.tableHeight > maximum
+            || (!mapping.profile.coordinateLayout && coordinates.data.byteLength !== mapping.tableWidth * mapping.tableHeight * 16)
+            || !Number.isInteger(mapping.profile.mipLevels) || mapping.profile.mipLevels < 1 || mapping.profile.mipLevels > 4) throw new Error('Directional atlas exceeds supported device budget');
+        const key = parsed.manifest.channels.find((v) => v.id === 'receiver_mapping').sourceSha256;
+        if (mapping.profile.coordinateLayout && mapping.profile.coordinateLayout !== 'row-chunks-v1') throw new Error('Unsupported receiver coordinates');
+        const coordinateRows = mapping.profile.coordinateLayout ? receiverCoordinateChunks(parsed.chunks, mapping) : [coordinates];
+        const coordinateHash = coordinateRows.map(c => c.descriptor.decodedSha256).join('/');
+        const assembly = createReceiverBufferAssembly(signal);
+        const coordinateData = new Float32Array(mapping.tableWidth*mapping.tableHeight*4);
+        for (const row of coordinateRows) {
+            await assembly.copy(new Uint8Array(coordinateData.buffer), row.data,
+                (row.descriptor.coordinateTransform.firstRow ?? 0)*mapping.tableWidth*16);
+        }
+        onMappingReady?.({ mapping, coordinates: coordinateData });
         const pageChunks=parsed.chunks.filter(v=>v.descriptor.channelId===channel);
         let compressedBytes=descriptor.compressedBytes;
         const shards=parsed.manifest.source.descriptor.receiverPageShards ?? [];
@@ -51,14 +72,6 @@ export function createEnhancedReceiverLoader(renderer) {
             signal.throwIfAborted();pageChunks.push(...child.chunks.filter(v=>v.descriptor.channelId===channel));
         }
         if (mapping.profile.indirectEncoding && mapping.profile.indirectEncoding !== 'rgb9e5_le') throw new Error('Unsupported receiver HDR encoding');
-        const layers = reference ? 1 : mapping.pageCount * (channel === 'indirect_irradiance' && directional ? 3 : 1);
-        const pageSize = reference ? 1 : mapping.profile.pageSize;
-        const mipLevels = reference ? 1 : mapping.profile.mipLevels;
-        const gl = renderer.getContext(), maximum = renderer.capabilities.maxTextureSize;
-        if (!Number.isInteger(mapping.pageCount) || mapping.pageCount < 1 || layers > 24 || layers > gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS)
-            || mapping.profile.pageSize > maximum || mapping.tableWidth > maximum || mapping.tableHeight > maximum
-            || (!mapping.profile.coordinateLayout && coordinates.data.byteLength !== mapping.tableWidth * mapping.tableHeight * 16)
-            || !Number.isInteger(mapping.profile.mipLevels) || mapping.profile.mipLevels < 1 || mapping.profile.mipLevels > 4) throw new Error('Directional atlas exceeds supported device budget');
         const scale = [], bias = [], levels = [];
         const entries = new Map();
         for (const chunk of pageChunks) {
@@ -81,31 +94,22 @@ export function createEnhancedReceiverLoader(renderer) {
                     || decode.scale.some((v) => v < 0)) throw new Error('Invalid directional decoding range');
                 if (mip === 0) { scale.push(new THREE.Vector4(...decode.scale)); bias.push(new THREE.Vector4(...decode.bias)); }
                 else if (!scale[layer].equals(new THREE.Vector4(...decode.scale)) || !bias[layer].equals(new THREE.Vector4(...decode.bias))) throw new Error('Directional mip decoding range changed');
-                data.set(hdr ? new Uint32Array(chunk.data.buffer,chunk.data.byteOffset,chunk.data.byteLength/4) : chunk.data, layer * size * size * (hdr ? 1 : 4));
+                await assembly.copy(new Uint8Array(data.buffer), chunk.data, layer * size * size * 4);
                 await new Promise(resolve => setTimeout(resolve, 0)); signal.throwIfAborted();
             }
             levels.push({ data, width: size, height: size, depth: layers });
         }
-        const key = parsed.manifest.channels.find((v) => v.id === 'receiver_mapping').sourceSha256;
-        if (mapping.profile.coordinateLayout && mapping.profile.coordinateLayout !== 'row-chunks-v1') throw new Error('Unsupported receiver coordinates');
-        const coordinateRows = mapping.profile.coordinateLayout ? receiverCoordinateChunks(parsed.chunks, mapping) : [coordinates];
-        const coordinateHash = coordinateRows.map(c => c.descriptor.decodedSha256).join('/');
         let shared = mappings.get(key);
         if (shared && (shared.hash !== coordinateHash || shared.description !== JSON.stringify(mapping))) throw new Error('Shared directional coordinate mismatch');
         if (!shared) {
-            const data = new Float32Array(mapping.tableWidth*mapping.tableHeight*4);
-            for (const row of coordinateRows) {
-                const values = new Float32Array(row.data.buffer, row.data.byteOffset, row.data.byteLength/4);
-                data.set(values, (row.descriptor.coordinateTransform.firstRow ?? 0)*mapping.tableWidth*4);
-            }
-            const texture = new THREE.DataTexture(data, mapping.tableWidth, mapping.tableHeight, THREE.RGBAFormat, THREE.FloatType);
+            const texture = new THREE.DataTexture(coordinateData, mapping.tableWidth, mapping.tableHeight, THREE.RGBAFormat, THREE.FloatType);
             texture.minFilter = THREE.NearestFilter; texture.magFilter = THREE.NearestFilter; texture.generateMipmaps = false; texture.needsUpdate = true;
             shared = { texture, references: 0, hash: coordinateHash, description: JSON.stringify(mapping) };
             mappings.set(key, shared);
         }
         shared.references++;
         let texture;
-        const decoded = performance.now(); let disposed = false;
+        const decoded = performance.now(); let disposed = false, preparation;
         function dispose() {
             if (disposed) return; disposed = true; texture?.dispose();
             if (--shared.references === 0) { shared.texture.dispose(); mappings.delete(key); }
@@ -115,7 +119,13 @@ export function createEnhancedReceiverLoader(renderer) {
                 : new THREE.CompressedArrayTexture(levels, pageSize, pageSize, layers, THREE.RGBAFormat, THREE.UnsignedByteType);
             texture.minFilter = mipLevels > 1 ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter; texture.magFilter = THREE.LinearFilter;
             texture.generateMipmaps = false; texture.needsUpdate = true;
-            signal.throwIfAborted(); renderer.initTexture(shared.texture); renderer.initTexture(texture);
+            signal.throwIfAborted();
+            if (!shared.prepared) {
+                await prepareReceiverTexture(renderer, shared.texture, [shared.texture.image], signal);
+                shared.prepared = true;
+            }
+            if (hdr) preparation = await prepareReceiverTexture(renderer, texture, levels, signal);
+            else renderer.initTexture(texture);
             if (gl.getError() !== gl.NO_ERROR) throw new Error('Directional GPU upload failed');
         } catch (error) { dispose(); throw error; }
         const pageBytes = levels.reduce((sum, v) => sum + v.data.byteLength, 0);
@@ -124,6 +134,6 @@ export function createEnhancedReceiverLoader(renderer) {
             metrics: { downloadMs: timings.downloadMs, inflateMs: timings.inflateMs, workerValidationMs: timings.validateMs,
                 validateDecodeMs: decoded - start - timings.downloadMs - timings.inflateMs, uploadMs: performance.now() - decoded,
                 gpuBytes: pageBytes, cpuBytes: pageBytes, sharedMappingBytes: shared.texture.image.data.byteLength,
-                compressedBytes, layers, encoding: hdr ? 'rgb9e5_hdr' : 'linear_rgba8_per_component' } };
+                compressedBytes, layers, preparation, assembly: { ...assembly.metrics }, encoding: hdr ? 'rgb9e5_hdr' : 'linear_rgba8_per_component' } };
     };
 }

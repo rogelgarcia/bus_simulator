@@ -295,7 +295,7 @@ export class GameEngine {
         city?.sunRef?.color?.fromArray(next.sunColorLinear);
         city?.sun?.color?.fromArray(next.sunColorLinear);
         if (prev.ibl?.iblId !== next.ibl.iblId) {
-            this._bakedLighting?.requestViewPreparation();
+            this._bakedLighting?.requestViewPreparation('environment_changed');
             this._applyShadowSettings(this.shadowSettings);
             city?.applyShadowSettings?.(this);
         }
@@ -787,12 +787,12 @@ export class GameEngine {
         this._syncBusContactShadowSettings(policy.pipeline.busContactShadow);
     }
 
-    _prepareDynamicAo() {
+    _prepareDynamicAo(prepareAllMaterials = false) {
         const policy = this._resolveAoScope();
         const enabled = policy.scope === 'dynamic' && policy.enabled;
         if (enabled) this._dynamicAo ??= new DynamicAoRuntime();
         this._dynamicAo?.update({ renderer: this.renderer, scene: this.scene, camera: this.camera,
-            participants: this.getDynamicIlluminationObjects(), settings: this._ambientOcclusion.settings, enabled });
+            participants: this.getDynamicIlluminationObjects(), settings: this._ambientOcclusion.settings, enabled, prepareAllMaterials });
     }
 
     prepareSceneMaterialReplacement(assignments) {
@@ -800,11 +800,11 @@ export class GameEngine {
         return this._post?.pipeline?.getSceneMaterialRenderTarget() ?? null;
     }
 
-    prepareLightingView(signal) {
+    prepareLightingView(signal, progress) {
         try {
-            this._prepareDynamicAo();
+            this._prepareDynamicAo(true);
             return prepareLightingView(this.renderer, this.scene, this.camera,
-                this._post?.pipeline?.getSceneMaterialRenderTarget() ?? null, signal);
+                this._post?.pipeline?.getSceneMaterialRenderTarget() ?? null, signal, progress);
         } finally { this._dynamicAo?.restoreBindings(); }
     }
 

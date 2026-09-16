@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { planReceiverCoplanarOwnership } from '../../../src/app/illumination/receiver_lightmaps/ReceiverCoplanarOwnership.js';
+import { planReceiverCoplanarOwnership, prepareReceiverCoplanarOwnership } from '../../../src/app/illumination/receiver_lightmaps/ReceiverCoplanarOwnership.js';
 
 test('Coplanar ownership removes only overlap and retains source interpolation, material boundaries and raised faces',()=>{
     const triangle=[0,0,0, 2,0,0, 0,0,2];
@@ -18,6 +18,20 @@ test('Coplanar ownership removes only overlap and retains source interpolation, 
     assert.ok(Math.abs(area-1.5)<1e-9);assert.deepEqual(positions,before);
     assert.deepEqual([...planReceiverCoplanarOwnership(new Float32Array([...triangle,...triangle]),new Int32Array([0,0])).patches],[[1,[]]]);
     assert.equal(planReceiverCoplanarOwnership(new Float32Array([...triangle,...triangle]),new Int32Array([0,-1])).patches.size,0);
+});
+
+test('Large coplanar work can pause and cancel without mutating source coordinates',()=>{
+    const positions = new Float32Array(Array.from({length:600},(_,i)=>{
+        const x=Math.floor(i/2)*3;return [x,0,0,x+2,0,0,x,0,2];
+    }).flat());
+    const original=positions.slice(),materials=new Int32Array(600);
+    const work=prepareReceiverCoplanarOwnership(positions,materials);
+    for(let i=0;i<8;i++)assert.equal(work.next().done,false);
+    work.return();assert.deepEqual(positions,original);
+    const resumed=prepareReceiverCoplanarOwnership(positions,materials);let result,pauses=0;
+    do{result=resumed.next();pauses++;}while(!result.done);
+    assert.ok(pauses>600);assert.equal(result.value.patches.size,300);
+    assert.ok(Math.abs(result.value.removedArea-600)<1e-9);assert.deepEqual(positions,original);
 });
 
 test('Overlapping triangle subtraction preserves the covered region without double coverage',()=>{

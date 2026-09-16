@@ -805,15 +805,48 @@ expanded lengths remain bounded; byte buffers are transferred back without an
 additional full-package copy. Shards retain complete-coverage and shared-mapping
 validation. Cancellation, failure and success terminate the worker.
 
-Receiver geometry is prepared privately with cooperative yields between objects.
+Receiver geometry is prepared privately with cooperative yields between objects
+and inside indexed-coordinate, coplanar ownership and reconstruction loops.
 Only the completed binding installs material hooks and swaps live geometry. An
 aborted or superseded generation disposes its private geometry. The synchronous
 installer remains available to fixtures. Atlas assembly yields between layers;
-GPU texture upload remains on the rendering thread. Resolution, sampling and
-publication identity are unchanged.
+GPU texture upload remains on the rendering thread. HDR receiver atlas and
+coordinate uploads use row strips of at most 2 MiB, yielding after 8 MiB or
+4 ms of submission work. A single driver call/allocation is indivisible and can
+exceed the CPU budget. This is a scheduling budget, not a GPU execution deadline.
+All authenticated layers and explicit mip levels are retained. Resolution,
+sampling and publication identity are unchanged.
+
+The staged upload is audited against pinned Three r183. Storage is initialized
+with `source.dataReady=false`, then strips are submitted using Three's cached
+texture binding. It avoids per-strip `getParameter` calls, which caused repeated
+synchronous GPU waits in the public copy API during investigation. No temporary
+atlas is allocated. Completed uploads remain version-current; interrupted
+borrowed textures are invalidated so partial content cannot be reused as ready.
+Owner disposal/cancellation is unchanged. Legacy non-HDR arrays retain their
+existing upload path.
 
 The status remains Loading / preparing shaders until the selected view is ready.
+AI574 may reuse an offline coplanar ownership plan after independently checking
+the installed planner code and hashing actual float32 corners and eligible
+material groups in reference order. The engine owns this optional cache.
+Changed geometry/order/eligibility cannot reuse a different plan; missing or
+stale data runs the original cooperative algorithm. Cached barycentric plans
+are cloned, and private attribute reconstruction, cancellation cleanup and atomic
+installation remain unchanged. Live source/material/texture validation is never
+replaced with assertions from the precomputed catalog.
 An internally committed channel is not reported Applied while presentation is
 still held for shader preparation. Tests cover cancellation, transferred ownership,
 corrupt packages, identical source hashes and atomic geometry installation in
 `receiver_background_preparation.pwtest.js` and `lighting_view_preparation.pwtest.js`.
+
+
+### Bounded CPU array assembly (AI574 Step 4)
+
+After package authentication, coordinate and page/mip views are copied into private
+staging arrays in at most 1 MiB operations. Assembly yields after 8 MiB or 4 ms of
+copy CPU work and checks cancellation on resumption. A single native copy remains
+indivisible. The byte layout, all layers/mips, GPU storage and publication gates
+are unchanged; no package backing buffer is detached or mutated. Mapping-ready
+notification is sent only after coordinate assembly completes. Diagnostics expose
+copied bytes, batch count, copy CPU time and maximum individual copy duration.

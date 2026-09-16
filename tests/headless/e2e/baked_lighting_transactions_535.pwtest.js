@@ -72,7 +72,7 @@ test('AI 535: an index failure after a previous bake retains its actual fallback
         const engine={renderer:{isWebGLRenderer:true},context:{city:{cityId:'fixture',group:{}}}};
         const shadows=new BakedShadowRuntime(engine,{fetchIndex:async()=>{throw new Error('Package index HTTP 404');}});
         const controller={effectiveMode:'current',state:'fallback',reason:'current_requested'};
-        shadows._pipeline={getDiagnostics:()=>({runtime:{controller}}),deactivate:reason=>controller.reason=reason};
+        shadows._pipeline={setStreamedDetailEnabled(){},getDiagnostics:()=>({runtime:{controller}}),deactivate:reason=>controller.reason=reason};
         await shadows.setSettings({...shadows.getSettings(),shadows:{...shadows.getSettings().shadows,enabled:true}});
         return shadows.getDiagnostics().status;
     });

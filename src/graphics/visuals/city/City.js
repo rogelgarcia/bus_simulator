@@ -459,7 +459,8 @@ export class City {
                         ? sidewalkSurfaceY
                         : (slabGroundY + 0.17),
                     groundY: slabGroundY,
-                    material: this.materials.sidewalk
+                    material: this.materials.sidewalk,
+                    cityInputs: options.cityInputs
                 });
                 for (const slab of slabMeshes) slabsGroup.add(slab);
                 buildingsGroup.add(slabsGroup);
@@ -672,6 +673,10 @@ export class City {
         return true;
     }
 
+    getBakedShaderLighting() {
+        return { sun: this.sun, excluded: this._csm?.csm.lights ?? [] };
+    }
+
     /** @returns {boolean} whether the active caster set changed. */
     _applyShadowCasterMerge(settings) {
         if (!this._shadowMerge?.length) return false;
@@ -761,22 +766,20 @@ export class City {
             registerObjectForSceneShadows(this.group);
             for (const root of this._extraShadowRoots) registerObjectForSceneShadows(root);
 
-            // Force the new defines to become real programs before anything
-            // renders. CSM_CASCADES is baked into each material, while the
-            // CSM_cascades uniform array is resized to the live cascade count every
-            // frame — so a material still holding a program from a different count
-            // gets an array of the wrong length and three crashes inside
-            // flatten() ("cannot read properties of undefined (reading
-            // 'toArray')"). Reproduced by changing the cascade count at runtime.
-            try {
-                engine?.renderer?.compile?.(engine.scene, engine.camera);
-            } catch {
-                // A failed pre-compile only costs us the guarantee, not correctness.
+            // The coordinator prepares the actual scene-color target gradually.
+            // Compiling here against the default framebuffer creates unused
+            // tone-mapped CSM variants and competes with the programs we need.
+            if (engine?._bakedLighting) {
+                engine._bakedLighting.requestViewPreparation('cascade_activation');
+            } else {
+                try {
+                    engine?.renderer?.compile?.(engine.scene, engine.camera);
+                } catch {
+                    // Standalone hosts still rely on uniform padding below.
+                }
             }
-            // compile() only reaches visible in-scene variants, so some materials
-            // can still hold a program from the previous cascade count. Pad the
-            // uniform arrays now rather than waiting for the first updateFrame, so
-            // even a render that beats the next city.update() is safe.
+            // Cached programs may declare more cascades than the new live count.
+            // Pad immediately, including a render before the next city.update().
             this._csm.padCascadeUniforms();
 
             // Index the static city only. The bus and anything else registered as a
@@ -1055,6 +1058,6 @@ export class City {
 }
 
 export function getSharedCity(engine, options = {}) {
-    engine.context.city ??= new City(options);
+    engine.context.city ??= new City({ cityInputs: engine.context.cityInputs, ...options });
     return engine.context.city;
 }

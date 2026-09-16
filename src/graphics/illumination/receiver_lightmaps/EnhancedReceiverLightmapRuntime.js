@@ -35,7 +35,7 @@ export class EnhancedReceiverLightmapRuntime extends ReceiverLightmapRuntime {
         }
         this.installBindings = async (mapping, references, uniforms, signal) => {
             this.updateDecodeUniforms();
-            const binding = await installEnhancedReceiverBindingsAsync(mapping, references, uniforms, uniforms.receiverAtlasMapping.value.image.data, signal);
+            const binding = await installEnhancedReceiverBindingsAsync(mapping, references, uniforms, uniforms.receiverAtlasMapping.value.image.data, signal, engine.context.cityInputs);
             this.watch?.setGeometryOverrides?.(binding.geometries);
             const restoreRender = installEnhancedReceiverRenderOptimizations(engine);
             return { ...binding, restore() { restoreRender(); binding.restore(); } };
@@ -51,8 +51,8 @@ export class EnhancedReceiverLightmapRuntime extends ReceiverLightmapRuntime {
             }
         }
     }
-    async refresh() {
-        const result = await super.refresh(); this.updateDecodeUniforms(); return result;
+    async refresh(options) {
+        const result = await super.refresh(options); this.updateDecodeUniforms(); return result;
     }
     validateLightingProfile(index, city) {
         const live = createResolvedIlluminationExportProfile({ engine: this.engine, city });

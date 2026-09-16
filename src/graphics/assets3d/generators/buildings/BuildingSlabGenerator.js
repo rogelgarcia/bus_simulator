@@ -115,9 +115,11 @@ export function createBuildingSlabMeshes({
     sidewalkBoundaries,
     topY,
     groundY,
-    material
+    material,
+    cityInputs = null
 }) {
-    const plans = planBuildingSlabs({ footprintLoops, sidewalkBoundaries });
+    const input = { footprintLoops, sidewalkBoundaries };
+    const plans = cityInputs ? cityInputs.slabs(input, planBuildingSlabs) : planBuildingSlabs(input);
     const meshes = [];
     for (const plan of plans) {
         const mesh = createBuildingSlabMesh({ plan, topY, groundY, material });

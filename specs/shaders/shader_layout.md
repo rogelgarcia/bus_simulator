@@ -57,3 +57,16 @@ same declared uniforms to `shader.uniforms`.
 - Inline shader strings should not be introduced in `.js`/`.mjs` source files.
 - Inline migration is allowed only in tests/mocks intentionally validating loader behavior.
 - New shaders must add both source files and loader modules in the same change.
+
+
+## Compile-only material snapshots
+
+`cloneMaterialShaderContract` creates a temporary material owner for compilation.
+It retains the material class accessors, authored defines/extensions, base cache
+identity and ordered registry recipes, with explicit exclusions for hooks being
+replaced by the staged view. It borrows user-data inputs and uniforms without
+JSON-serializing texture data. Audited legacy `userData.*.shaderUniforms` cache
+cells are restored synchronously after authored compile callbacks so the visible
+material keeps its uniform owner. This helper is for compilation, not material
+replacement or independent rendered clones. Dispose temporary materials only
+after their live counterparts acquire the program, or when staging is cancelled.

@@ -114,7 +114,8 @@ export class ReceiverLightmapRuntime {
         return job.promise;
     }
 
-    async refresh() {
+    /** @param {{beforeBindings?: () => Promise<unknown>, onMappingReady?: (value:any) => void}} [options] */
+    async refresh({ beforeBindings, onMappingReady } = {}) {
         const refreshStarted = performance.now();
         this.loadingStarted = this.sourceJob?.started ?? refreshStarted;
         const generation = ++this.generation;
@@ -157,7 +158,9 @@ export class ReceiverLightmapRuntime {
                 if (sourceHash !== descriptor.sourceSha256) throw new Error(channel + '_source_mismatch');
                 this.status = { state: 'loading', reason: 'loading_' + setting + '_maps' };
                 const resource = await this.loadChannel({ url: new URL(descriptor.url, new URL(this.indexUrl, location.href)).href,
-                    descriptor, channel, sourceHash, cityId: city.cityId, profileId: index.profileId, renderer: this.engine.renderer, signal });
+                    descriptor, channel, sourceHash, cityId: city.cityId, profileId: index.profileId, renderer: this.engine.renderer, signal, onMappingReady: onMappingReady ? value => {
+                        signal.throwIfAborted(); onMappingReady({ ...value, references: this.source.references, uniforms: this.uniforms });
+                    } : undefined });
                 if (signal.aborted || generation !== this.generation) { resource.dispose(); return this.getDiagnostics(); }
                 if (this.mappingKey && this.mappingKey !== JSON.stringify(resource.mapping)) { resource.dispose(); throw new Error('channel_mapping_mismatch'); }
                 this.mappingKey = JSON.stringify(resource.mapping); this.resources[channel] = resource; loadedChannel = true;
@@ -166,6 +169,11 @@ export class ReceiverLightmapRuntime {
             if (signal.aborted || generation !== this.generation) return this.getDiagnostics();
             const resource = this.resources.indirect_irradiance ?? this.resources.direct_receiver;
             if (!resource) throw new Error(Object.values(channelFailures).join('; ') || 'no_receiver_channels');
+            if (beforeBindings) await waitWithAbort(beforeBindings(), signal);
+            if (signal.aborted || generation !== this.generation) return this.getDiagnostics();
+            if (!this.watch(true) || this.engine.context.city !== city || this.lightingKey(this.engine, city) !== key) {
+                throw new Error('source_or_profile_changed');
+            }
             this.uniforms.receiverAtlasMapping.value = resource.mappingTexture;
             this.uniforms.receiverDirectAtlas.value = this.resources.direct_receiver?.texture ?? this.empty;
             this.uniforms.receiverIndirectAtlas.value = this.resources.indirect_irradiance?.texture ?? this.empty;
@@ -178,7 +186,7 @@ export class ReceiverLightmapRuntime {
             }
             const compileStarted = performance.now();
             this.status = { state: 'loading', reason: 'preparing_shaders' };
-            if (this.atomicActivation) this.engine._bakedLighting?.requestViewPreparation();
+            if (this.atomicActivation) this.engine._bakedLighting?.requestViewPreparation('receiver_bindings');
             else await this.engine.renderer.compileAsync(this.engine.scene, this.engine.camera);
             if (generation !== this.generation) return this.getDiagnostics();
             this.pendingFade = loadedChannel && !this.active;

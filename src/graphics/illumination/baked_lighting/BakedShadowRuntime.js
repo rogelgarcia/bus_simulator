@@ -198,6 +198,8 @@ export class BakedShadowRuntime {
 
     getSnapshot() { return this._pipeline?.runtime.getSnapshot() ?? null; }
 
+    getPreparedShaderBinding() { return this._pipeline?.getPreparedShaderBinding() ?? null; }
+
     stageBusMaterials(candidate) {
         return this._pipeline?.getDiagnostics().runtime.controller.effectiveMode === 'baked'
             ? this._pipeline.stageReceiverMaterials(candidate)

@@ -231,3 +231,26 @@ The Node fixture builder produces small containers for valid, missing optional c
 ## Descendant boundary
 
 AI 531 may define and sample `static_sun_depth`; AI 532 may add bus sampling and dynamic shadow composition; AI 533 may define receiver mappings/direct/indirect representations; AI 534 owns AO overlap policy; AI 535 owns persisted Options UI. Those steps consume the immutable committed resource snapshot. They do not bypass package validation, invent primary lifecycle states, or mutate current-mode settings.
+
+
+## Validation buffer ownership (AI574 Step 4)
+
+The package parser and builder validate their already-owned byte views without
+another encoding-sized snapshot. The public encoding validator still returns
+an independent copy. The authenticated V1 chunk table requires `compression=none`
+and equal stored/decoded lengths and digests; a single computed chunk digest is
+therefore checked against that identity. Manifest/table, padding, channel output,
+full payload, aggregate, source/profile and finite/canonical value checks remain
+mandatory. This does not authorize reusing a digest for different or mutable data.
+
+Domain-separated source hashing snapshots the input while assembling its existing
+framed message, before yielding. Raw hashing uses WebCrypto's synchronous snapshot
+of ordinary BufferSource inputs instead of making an extra JavaScript copy first.
+Shared-memory views still get an explicit private snapshot. Both functions retain
+exact byte offsets/lengths and never transfer or detach caller-owned buffers.
+Native digest snapshots still allocate and can stall; this optimization does not
+claim zero-copy hashing or cache verification results across mutations.
+
+Borrowed package views keep their existing lifetimes. No additional worker transfer
+is permitted merely because a view is being validated: its backing storage may
+also contain other chunks needed by live or pending consumers.

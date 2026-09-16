@@ -46,14 +46,17 @@ test('Page packages authenticate source and release GPU allocation: '+transportP
     const result=await page.evaluate(async ({good,bad})=>{
         const T=await import('three'),{createEnhancedReceiverLoader}=await import('/src/graphics/illumination/receiver_lightmaps/EnhancedReceiverResources.js');
         const renderer=new T.WebGLRenderer(),loader=createEnhancedReceiverLoader(renderer),signal=new AbortController().signal;
-        const resource=await loader({...good,url:new URL('/shards/good/indirect_irradiance.ilpkg.gz',location.href).href,signal});
+        const mappingStages=[];
+        const onMappingReady=({mapping,coordinates})=>mappingStages.push({pages:mapping.pageCount,coordinates:coordinates.length,textures:renderer.info.memory.textures});
+        const resource=await loader({...good,url:new URL('/shards/good/indirect_irradiance.ilpkg.gz',location.href).href,signal,onMappingReady});
         const levels=[...resource.texture.image.data],memory={...renderer.info.memory};
         resource.dispose();const after={...renderer.info.memory};let failure='';
-        try{await loader({...bad,url:new URL('/shards/bad/indirect_irradiance.ilpkg.gz',location.href).href,signal});}catch(error){failure=error.message;}
+        try{await loader({...bad,url:new URL('/shards/bad/indirect_irradiance.ilpkg.gz',location.href).href,signal,onMappingReady});}catch(error){failure=error.message;}
         const failedMemory={...renderer.info.memory},glError=renderer.getContext().getError();renderer.dispose();
-        return {levels,memory,after,failedMemory,failure,glError};
+        return {levels,memory,after,failedMemory,failure,glError,mappingStages};
     },{good:good.request,bad:bad.request});
     expect(result.levels).toHaveLength(2);expect(result.levels[0]).not.toBe(result.levels[1]);
     expect(result.memory.textures).toBe(2);expect(result.after.textures).toBe(0);
     expect(result.failedMemory.textures).toBe(0);expect(result.failure).toBe('Receiver page package source mismatch');expect(result.glError).toBe(0);
+    expect(result.mappingStages).toEqual([{pages:2,coordinates:4,textures:0},{pages:2,coordinates:4,textures:0}]);
 });

@@ -5,6 +5,7 @@ import { EnhancedReceiverLightmapRuntime } from '../receiver_lightmaps/EnhancedR
 import { enhancedLightingKey } from '../receiver_lightmaps/EnhancedReceiverFreshness.js';
 import { BusDiffuseProbeRuntime } from '../diffuse_probes/BusDiffuseProbeRuntime.js';
 import { getResolvedBakedLightingSettings, sanitizeBakedLightingSettings } from '../../../app/illumination/runtime/index.js';
+import { prepareBakedShaderStage } from './BakedShaderStage.js';
 
 function causeFor(reason) {
     if (/mismatch|changed|drift|stale|not_exact|not_current/.test(reason)) return 'stale';
@@ -20,6 +21,7 @@ export class BakedLightingRuntime {
         this.shadows = dependencies.shadows ?? new BakedShadowRuntime(engine);
         this.receivers = dependencies.receivers ?? new EnhancedReceiverLightmapRuntime(engine);
         this.bus = dependencies.bus ?? new BusDiffuseProbeRuntime(engine, this.receivers);
+        this.prepareShaderStage = dependencies.prepareShaderStage ?? prepareBakedShaderStage;
         this.receivers.atomicActivation = true;
         this.receivers.requestRefresh = () => this.reload();
         this.shadows.canActivate = () => this.ready && !this.failure && this.settings.mode !== 'current';
@@ -31,7 +33,8 @@ export class BakedLightingRuntime {
         this.timings = {};
         this.busRevision = 0; this.busQueue = Promise.resolve();
         this.viewRevision = 0; this.viewDirty = false; this.viewPreparing = false;
-        this.onPageHide = () => { this.cancelBusTransition(); this.viewAbort?.abort(); };
+        this.viewEvents = [];
+        this.onPageHide = () => { this.cancelBusTransition(); this.cancelShaderStage(); this.requestViewPreparation('page_hidden'); };
         globalThis.addEventListener?.('pagehide', this.onPageHide);
     }
 
@@ -109,8 +112,10 @@ export class BakedLightingRuntime {
 
     async refresh({ background = false } = {}) {
         if (this.disposed) return this.getDiagnostics();
+        this.cancelShaderStage();
+        this.timings.shaderOverlap = null;
         this.backgroundLoading = background;
-        this.requestViewPreparation();
+        this.requestViewPreparation('lighting_refresh');
         this.cancelBusTransition();
         this.started = true;
         const generation = ++this.generation;
@@ -134,13 +139,19 @@ export class BakedLightingRuntime {
         }
         this.loading = true; this.reason = 'locating'; this.loadStarted = performance.now();
         try {
-            // Serial preparation avoids competing material ownership changes.
-            await this.shadows.setSettings(settings);
-            if (generation !== this.generation || this.disposed) return this.getDiagnostics();
-            if (settings.shadows.enabled && !this.shadowReady()) {
-                throw new Error(this.shadows.getDiagnostics().status.reason ?? 'shadow_package_unavailable');
-            }
-            if (settings.receivers.indirect) await this.receivers.refresh();
+            // Load independent resources together; only the verified shadow
+            // boundary permits receiver material/geometry ownership changes.
+            const shadowPreparation = this.shadows.setSettings(settings).then(() => {
+                if (generation !== this.generation || this.disposed) throw new Error('baked_preparation_replaced');
+                if (settings.shadows.enabled && !this.shadowReady()) {
+                    throw new Error(this.shadows.getDiagnostics().status.reason ?? 'shadow_package_unavailable');
+                }
+            });
+            await Promise.all([shadowPreparation, settings.receivers.indirect
+                ? this.receivers.refresh({
+                    onMappingReady: settings.shadows.enabled ? value => this.startShaderStage(value, shadowPreparation, generation) : undefined,
+                    beforeBindings: () => shadowPreparation
+                }) : null]);
             if (generation !== this.generation || this.disposed) return this.getDiagnostics();
             if (settings.receivers.indirect && !this.receivers.pending && !this.receivers.active) {
                 throw new Error(this.receivers.status.reason ?? 'indirect_package_unavailable');
@@ -159,8 +170,49 @@ export class BakedLightingRuntime {
         return state?.pendingTransition === 'baked' || state?.effectiveMode === 'baked';
     }
 
-    requestViewPreparation() {
+    startShaderStage(value, shadowPreparation, generation) {
+        if (generation !== this.generation || this.disposed || this.shaderStage) return;
+        const stage = { generation, abort: new AbortController(), result: null, error: null, promise: null };
+        this.shaderStage = stage;
+        const metrics = { phase: 'waiting_for_shadows', mappingReadyMs: performance.now() - this.loadStarted };
+        this.timings.shaderOverlap = metrics;
+        stage.promise = (async () => {
+            await shadowPreparation;
+            stage.abort.signal.throwIfAborted();
+            const binding = this.shadows.getPreparedShaderBinding();
+            if (!binding) throw new Error('prepared_shadow_binding_unavailable');
+            metrics.startedMs = performance.now() - this.loadStarted;
+            const result = await this.prepareShaderStage({ ...value, engine: this.engine, binding, signal: stage.abort.signal,
+                progress: progress => {
+                    metrics.phases ??= [];
+                    metrics.phases.push({ timeMs: performance.now() - this.loadStarted, ...progress });
+                    Object.assign(metrics, progress);
+                } });
+            if (stage.abort.signal.aborted || this.shaderStage !== stage) { result?.dispose(); return; }
+            stage.result = result;
+            Object.assign(metrics, { phase: result ? 'ready' : 'deferred_profile', completedMs: performance.now() - this.loadStarted,
+                programs: result?.programCount ?? 0 });
+        })().catch(error => {
+            stage.error = error;
+            Object.assign(metrics, { phase: stage.abort.signal.aborted ? 'cancelled' : 'failed', reason: error.message });
+        });
+    }
+
+    cancelShaderStage() {
+        const stage = this.shaderStage; this.shaderStage = null;
+        if (!stage) return;
+        stage.abort.abort(); stage.result?.dispose();
+    }
+
+    recordViewEvent(type, details = {}) {
+        this.viewEvents.push({ timeMs: performance.now(), revision: this.viewRevision, type, ...details });
+        if (this.viewEvents.length > 128) this.viewEvents.shift();
+    }
+
+    requestViewPreparation(cause = 'lighting_changed') {
+        if (!this.viewDirty && !this.viewPreparing) this.viewWaitStarted = performance.now();
         this.viewRevision++; this.viewDirty = true; this.viewError = null;
+        this.recordViewEvent('requested', { cause });
         this.viewAbort?.abort();
     }
 
@@ -170,19 +222,40 @@ export class BakedLightingRuntime {
 
     prepareView() {
         if (this.disposed || (this.loading && !this.backgroundLoading) || this.viewPreparing || !this.viewDirty) return;
-        const revision = this.viewRevision, started = performance.now();
-        this.viewAbort = new AbortController();
+        const revision = this.viewRevision, started = performance.now(), controller = new AbortController();
+        this.viewAbort = controller;
+        this.viewProgress = null;
         this.viewDirty = false; this.viewPreparing = true;
-        this.engine.prepareLightingView(this.viewAbort.signal).then(() => {
-            if (revision === this.viewRevision) this.timings.viewPreparationMs = performance.now() - started;
+        this.recordViewEvent('started');
+        controller.signal.addEventListener('abort', () => this.recordViewEvent('cancelled', { revision }), { once: true });
+        this.engine.prepareLightingView(controller.signal, progress => {
+            if (revision !== this.viewRevision || controller.signal.aborted || this.disposed) return;
+            this.viewProgress = { ...this.viewProgress, ...progress };
+            this.recordViewEvent('phase', progress);
+        }).then(async () => {
+            const stage = this.effectiveMode === 'baked' ? this.shaderStage : null;
+            if (stage) await stage.promise;
+            if (revision !== this.viewRevision || controller.signal.aborted || this.disposed) return;
+            if (stage?.error) throw stage.error;
+            if (this.effectiveMode === 'baked' && this.shaderStage?.result) {
+                Object.assign(this.timings.shaderOverlap, this.shaderStage.result.dispose(), { phase: 'released' });
+                this.shaderStage = null;
+            }
+            this.timings.viewPreparationMs = performance.now() - started;
+            this.timings.viewWaitMs = performance.now() - this.viewWaitStarted;
+            this.recordViewEvent('completed');
         }).catch(error => {
-            if (revision !== this.viewRevision || this.disposed || this.viewAbort.signal.aborted) return;
+            if (revision !== this.viewRevision || this.disposed || controller.signal.aborted) return;
             this.viewError = error.message;
+            this.recordViewEvent('failed', { reason: error.message });
             console.error('[BakedLightingRuntime] Lighting view preparation failed.', error);
-        }).finally(() => { this.viewPreparing = false; });
+        }).finally(() => {
+            if (this.viewAbort === controller) { this.viewPreparing = false; this.viewAbort = null; }
+        });
     }
 
     fallback(reason) {
+        this.cancelShaderStage();
         this.backgroundLoading = false;
         this.ready = false; this.loading = false; this.failure = causeFor(reason); this.reason = reason;
         this.receivers.suspend(reason);
@@ -228,7 +301,7 @@ export class BakedLightingRuntime {
         this.receivers.frameBegin(performance.now(), allow, false);
         this.bus.frameBegin(allow);
         if (allow && (!settings.receivers.indirect || this.receivers.active)) {
-            if (this.backgroundLoading) { this.backgroundLoading = false; this.requestViewPreparation(); }
+            if (this.backgroundLoading) { this.backgroundLoading = false; this.requestViewPreparation('baked_activation'); }
             if (this.effectiveMode !== 'baked') this.timings.activationMs = performance.now() - this.loadStarted;
             this.effectiveMode = 'baked'; this.loading = false; this.reason = null;
         }
@@ -288,7 +361,7 @@ export class BakedLightingRuntime {
         const active = this.effectiveMode === 'baked' && !this.shouldHoldView();
         return { ...shadow, settings: this.getSettings(),
             view: { ready: !this.shouldHoldView(), preparing: this.viewPreparing || this.viewDirty,
-                error: this.viewError ?? null },
+                error: this.viewError ?? null, progress: this.viewProgress ?? null, events: this.viewEvents.slice() },
             status: { requested: this.settings.mode !== 'current', requestedMode: this.settings.mode,
                 effectiveMode: this.effectiveMode, state: active ? 'active' : this.loading || this.shouldHoldView() ? 'loading' : 'fallback',
                 causeState: this.failure, reason: this.reason,
@@ -311,6 +384,7 @@ export class BakedLightingRuntime {
     dispose(options) {
         if (this.disposed) return;
         this.disposed = true; this.generation++; this.ready = false;
+        this.cancelShaderStage();
         this.viewAbort?.abort();
         globalThis.removeEventListener?.('pagehide', this.onPageHide);
         this.cancelBusTransition();

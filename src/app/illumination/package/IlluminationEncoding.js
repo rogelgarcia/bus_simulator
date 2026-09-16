@@ -121,7 +121,13 @@ export function encodeUint32LittleEndian(values) {
  * @returns {Uint8Array}
  */
 export function validateIlluminationEncodedBytes(value, encoding) {
-    const bytes = copyBytes(value, 'Illumination encoded bytes');
+    return validateOwnedIlluminationEncodedBytes(copyBytes(value, 'Illumination encoded bytes'), encoding);
+}
+
+/** Validates parser-owned bytes synchronously without copying or exposing another allocation.
+ * @param {Uint8Array} bytes @param {string} encoding */
+export function validateOwnedIlluminationEncodedBytes(bytes, encoding) {
+    if (!(bytes instanceof Uint8Array)) throw new TypeError('Owned illumination bytes must be a Uint8Array');
     if (encoding === 'rgba32f_le') {
         if (bytes.byteLength % 4 !== 0) throw new TypeError('RGBA32F byte length must be divisible by four');
         const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);

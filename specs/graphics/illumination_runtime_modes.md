@@ -47,6 +47,46 @@ the last coherent frame while preparing their replacement; changing intent
 cancels old generations and restores Current internally before starting a new
 asynchronous transaction.
 
+### View preparation (AI 574)
+
+Shadow package preparation and receiver source/map loading start concurrently.
+Receiver preparation may stage authenticated resources while shadows are still
+loading, but its uniform/material/geometry installation waits for successful
+shadow preparation in the same lighting generation. Failure, cancellation or
+replacement cannot commit the staged receiver view. Verified cached resources
+retain the existing bounded lifetime and are released on invalidation/disposal.
+Final scene shader submission and presentation still follow complete channel
+activation; this scheduling change does not make provisional variants visible.
+
+Preparation submits the requested scene/material variants in cooperative 4 ms
+CPU batches, then polls only those programs for completion. It resolves uniform
+and attribute reflection before drawing and prepares visible geometry/textures
+in batches. Temporary dynamic-AO material assignments are snapshotted before the
+first yield and restored after every use; objects are not reparented or cloned.
+
+Program readiness alone does not establish first-draw readiness. Once resource
+preparation finishes, the scene is rendered into the post pipeline's existing
+offscreen scene target at its actual resolution. A zero-timeout GPU fence is
+polled asynchronously before releasing presentation. This prepares driver
+pipelines and the full view's resource accesses. The displayed canvas remains
+unchanged until the coherent frame can be composed. Without a post scene target,
+a temporary full-resolution target is disposed on completion or cancellation.
+No lighting, map, filtering or shadow-quality reduction is used.
+
+Preparation requests carry monotonically increasing revisions and causes.
+Superseded, page-hidden, context-lost or disposed work cannot release a newer
+view. A bounded 128-event diagnostic history records requests, starts, phases,
+cancellations, failures and completions. `viewPreparationMs` measures the last
+successful job; `viewWaitMs` includes time waiting for it from the first request
+in that continuous hold. These overlap resource/activation timers and must not
+be added together as if they were sequential phases.
+
+`tests/headless/e2e/baked_startup_profile.pwtest.js` measures actual garage Enter,
+the first live and baked frames, optional viewport changes and warm reactivation.
+The full startup has residual construction/authentication and initial live-shadow
+costs; completion of this preparation pass is not a claim that all loading work
+is nonblocking. See `debug_tools/regression_debugging/ai574_baked_startup.md`.
+
 A failure or source/profile change restores the complete Current selection; a
 shadow package cannot remain active on its own when requested indirect failed.
 An indirect-only selection is supported with live shadows. Empty selections stay
@@ -122,3 +162,98 @@ only supported workflow. Options never invokes Blender.
 Validation evidence and same-condition measurements are recorded in the
 [AI 535 completion report](illumination_535_validation.md) and
 `tests/artifacts/screens/illumination_535/final/`.
+
+
+## Exact shader preparation during loading (AI 574 Step 1b)
+
+Once the root receiver package and mapping coordinates are authenticated, the
+current surface-diffuse publication can prepare city shader programs while the
+remaining page packages and GPU uploads continue. This stage also waits for the
+actual verified shadow binding; it never fabricates a binding identity. The city
+supplies its future sun light inventory so Current CSM cascades are excluded from
+this isolated compile. Receiver coverage, authored material patches, physical
+material accessors and the future dynamic-AO recipe match final activation.
+
+Only temporary material owners and shallow object snapshots are created. They
+borrow existing buffers/textures and never become visible, replace live geometry,
+or use live objects as prototypes. Compile submission yields between batches;
+a single driver call can still exceed the scheduling budget. Staging does not
+render, allocate an extra atlas, or authorize any resource for use.
+
+Receiver installation still requires all selected packages, source/profile and
+shadow validation. Shader staging is not a prerequisite for installation; the
+existing final-view shader/resource/raster readiness gate owns presentation.
+Temporary program owners remain until that final view acquires the programs,
+then are disposed. Refresh, cancellation, fallback, page hide and teardown abort
+and release the stage. Source/profile freshness is checked again before receiver
+bindings are installed. Unsupported historical receiver representations use the
+existing final preparation path.
+
+`timings.shaderOverlap` reports mapping readiness, submission/readiness phases,
+maximum submission batch time and the number of staged programs reused at handoff.
+It does not embed shader source or program-cache strings. Tests:
+`baked_shader_staging`, `baked_startup_overlap`, `receiver_page_shards` and the
+same-condition `baked_startup_profile` fixture. Evidence is under the existing
+ignored `tests/artifacts/screens/ai574_baked_startup/` directory.
+
+### Avoiding unused startup variants (AI 574 Step 2)
+
+When the lighting coordinator is available, city CSM activation requests final
+view preparation instead of synchronously compiling the entire scene against
+the current framebuffer. Preparation must use the post pipeline's scene-color
+target, whose shader tone-mapping recipe differs from the display framebuffer.
+Standalone hosts retain their direct compile path. CSM uniform arrays must still
+be padded immediately on activation and after updates; deferred compilation
+must not reintroduce cached-program failures when reducing cascade count.
+
+Final preparation covers hidden city objects as well as visible objects. When
+dynamic AO is effective, give eligible hidden receivers the same shader recipe
+that the normal AO update applies before their first visible draw. Respect
+receiver ancestry, participant policy, transparent and alpha-cutout exclusions.
+This preparation does not change visibility or allocate hidden meshes' AO
+participant geometry/depth resources. The normal per-frame update still visits
+only visible objects, and an inactive AO policy does not acquire new AO hooks.
+
+Regression coverage: `lighting_shader_variants.pwtest.js` checks real-target
+compilation, CSM downshifts, hidden-receiver program reuse, exclusions and source
+geometry restoration. Opt-in `BakedShaderProfile.js` captures compile calls,
+link/readiness/reflection and first-use diagnostics separately from unprofiled
+startup benchmarks. Shader source/cache keys are diagnostic artifacts only.
+
+The startup fixture also supports longer settled sampling through
+`BAKED_STARTUP_STEADY_FRAMES` (180 by default). `BAKED_STARTUP_SETTLED_PROFILE`
+enables a CPU profile after 300 rendered baked frames; the independent
+`BAKED_STARTUP_UNIFORM_PROFILE` records named vec4-array upload counts, lengths
+and CPU duration through `BakedUniformProfile.js`. Both settled diagnostics
+require at least 900 frames. They are opt-in test instrumentation, restored at
+capture completion, and must not be mixed into unprofiled performance medians.
+
+`BAKED_STARTUP_GPU_TELEMETRY=1` records read-only NVIDIA clock, utilization,
+temperature, power and whole-device memory samples in the artifact directory.
+The capture includes `performance.timeOrigin` so host samples can be aligned to
+cold/warm settled windows. No power policy or unrelated process is changed.
+This requires `nvidia-smi`; missing telemetry is an explicit test failure.
+Rows also stream to `gpu-telemetry.jsonl` with available host memory so an
+interrupted test can retain partial evidence. Incomplete runs are not benchmark
+results, and comparisons across a host reboot belong to separate cohorts.
+
+`BAKED_STARTUP_PASS_PROFILE=1` installs `BakedPassProfile.js` after 300 visible
+baked frames (requires at least 900). It records GPU elapsed time per outer
+renderer render, actual draws/bindings/uploads, drawn shader sources and CPU
+scope totals. The normal whole-frame GPU query is suppressed during capture:
+elapsed queries cannot nest, and whole-frame GPU values are marked missing.
+Disjoint and pending query samples remain missing, never zero. Teardown releases
+owned queries and restores methods and the original timer, including on a draw
+failure. Per-pass means must use completed samples rather than treating pending
+samples as zero. Diagnostic timings cannot establish ordinary-run FPS overhead.
+`baked_pass_profile.test.js` checks query ownership, missing/disjoint handling,
+upload accounting and restoration.
+
+`BAKED_STARTUP_LIFECYCLE=1` adds a separate diagnostic after ordinary captures:
+four Current-to-Auto activations, each with 900 visible frames and main-renderer
+heap/backing-storage endpoints. `lifecycle.json` retains complete captures and
+resource counts. One explicit garbage collection occurs only after all timed
+windows, in the isolated test browser, to distinguish retained storage from
+uncollected garbage. It is never used to improve reported ordinary timings or
+to claim whole-process/worker/GPU memory usage. Lifecycle cohorts stay separate
+from cold-start and single-warm-activation comparisons.

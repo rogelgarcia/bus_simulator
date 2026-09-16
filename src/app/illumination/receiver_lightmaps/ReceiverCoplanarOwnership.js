@@ -35,9 +35,17 @@ function subtract(polygon, triangle, tolerance) {
 
 /** Positions are triangle corners in source-reference order; negative groups opt out. */
 export function planReceiverCoplanarOwnership(positions, groups) {
+    const work = prepareReceiverCoplanarOwnership(positions, groups);
+    let result; do { result = work.next(); } while (!result.done);
+    return result.value;
+}
+
+/** Resumable equivalent; preserves the exact source-order ownership and arithmetic. */
+export function* prepareReceiverCoplanarOwnership(positions, groups) {
     if(!(positions instanceof Float32Array)||positions.length!==groups.length*9)throw new Error('Invalid coplanar receiver inventory');
     const planes=new Map(),patches=new Map(); let removedArea=0;
     for(let triangle=0;triangle<groups.length;triangle++) {
+        if (triangle % 128 === 0) yield;
         if(groups[triangle]<0)continue;
         const p=[0,1,2].map(c=>Array.from(positions.subarray(triangle*9+c*3,triangle*9+c*3+3)));
         const a=p[1].map((v,c)=>v-p[0][c]),b=p[2].map((v,c)=>v-p[0][c]);
@@ -59,6 +67,7 @@ export function planReceiverCoplanarOwnership(positions, groups) {
         const resolution=Math.min(64,Math.ceil(Math.sqrt(entries.length)));
         const step=bounds.map(b=>Math.max(1e-6,(b[1]-b[0])/resolution)),grid=new Map();
         for(const entry of entries) {
+            yield;
             const cells=entry.bounds.map((b,c)=>b.map(v=>Math.min(resolution-1,Math.floor((v-bounds[c][0])/step[c]))));
             const candidates=new Set(),keys=[];
             for(let y=cells[1][0];y<=cells[1][1];y++)for(let x=cells[0][0];x<=cells[0][1];x++) {
@@ -68,6 +77,7 @@ export function planReceiverCoplanarOwnership(positions, groups) {
             const originalArea=area(original),tolerance=Math.max(1e-12,originalArea*1e-10);
             let pieces=[original],changed=false;
             for(const other of [...candidates].sort((a,b)=>a.triangle-b.triangle)) {
+                yield;
                 if(entry.bounds.some((b,c)=>b[0]>=other.bounds[c][1]||b[1]<=other.bounds[c][0]))continue;
                 // Quantized plane buckets only accelerate discovery; actual geometry
                 // must agree before a face may take ownership of another's area.
