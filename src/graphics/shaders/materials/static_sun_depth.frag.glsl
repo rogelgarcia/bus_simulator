@@ -68,6 +68,9 @@ highp vec2 staticSunDepthVogelDiskSample(
     return vec2( cos( theta ), sin( theta ) ) * radius;
 }
 
+// Mixed-depth reconstruction separates blocker bands for each shared sun direction.
+highp vec2 staticSunDepthSeparationBand = vec2(0.0, 1e20);
+bool staticSunDepthSeparationBandEnabled = false;
 highp float staticSunDepthCompareGlobalTexel(
     highp ivec2 globalTexel,
     highp float comparisonDepth,
@@ -89,6 +92,8 @@ highp float staticSunDepthCompareGlobalTexel(
         texelFetch( staticSunDepthTiles, ivec3( storedTexel, layer ), 0 )
     );
     if ( decoded.y < 0.5 ) return 1.0;
+    highp float separation = comparisonDepth - decoded.x;
+    if (staticSunDepthSeparationBandEnabled && (separation < staticSunDepthSeparationBand.x || separation >= staticSunDepthSeparationBand.y)) return 1.0;
     occupiedSamples += 1.0;
     reconstructedDepth = reconstructedDepth < staticSunDepthDepthRange.x
         ? decoded.x
@@ -134,6 +139,10 @@ highp float staticSunDepthLinearCompare(
         highp vec4 thresholds = (receivers - staticSunDepthDepthRange.x)
             * (65534.0 / (staticSunDepthDepthRange.y - staticSunDepthDepthRange.x)) + 0.375;
         highp vec4 visible = max(step(thresholds, codes), step(vec4(65534.5), codes));
+        if (staticSunDepthSeparationBandEnabled) {
+            highp vec4 gaps = receivers - mix(vec4(staticSunDepthDepthRange.x), vec4(staticSunDepthDepthRange.y), codes / 65534.0);
+            visible = max(visible, max(vec4(1.0) - step(vec4(staticSunDepthSeparationBand.x), gaps), step(vec4(staticSunDepthSeparationBand.y), gaps)));
+        }
         visibility = mix(mix(visible.x, visible.y, fraction.x), mix(visible.z, visible.w, fraction.x), fraction.y);
     } else {
         highp float lowerLeft = staticSunDepthCompareGlobalTexel(
@@ -170,6 +179,7 @@ highp float staticSunDepthLinearCompare(
 }
 
 highp vec4 staticSunDepthLookup( highp vec3 worldPosition, highp vec3 receiverNormal ) {
+    staticSunDepthSeparationBandEnabled = false;
     staticSunDepthPlaneSlopeTexels = vec2(0.0);
     highp vec3 lightPosition = staticSunDepthReceiverCoordinates( worldPosition );
     highp float invalidDepth = staticSunDepthDepthRange.x - 1.0;
@@ -222,6 +232,7 @@ highp vec4 staticSunDepthLookup( highp vec3 worldPosition, highp vec3 receiverNo
         highp float searchRadius = max(texelSizeMeters, (comparisonDepth - staticSunDepthDepthRange.x) * staticSunDepthFilterPolicy.w);
         highp float separation = 0.0;
         highp float blockers = 0.0;
+        highp vec2 gaps = vec2(1e20, 0.0);
         for (int i = 0; i < 9; i++) {
             // Search near contacts before wider penumbras. A remote blocker
             // outside its solar cone must not widen a nearby ledge's shadow.
@@ -233,6 +244,7 @@ highp vec4 staticSunDepthLookup( highp vec3 worldPosition, highp vec3 receiverNo
             highp float receiver = comparisonDepth + dot(floor(globalCoordinate + offset / texelSizeMeters) + 0.5 - globalCoordinate, staticSunDepthPlaneSlopeTexels);
             highp float visible = staticSunDepthCompareGlobalTexel(ivec2(floor(globalCoordinate + offset / texelSizeMeters)), receiver, occupied, depth);
             if (i == 0 && occupied > 0.0 && visible < 0.5) searchRadius = min(searchRadius, max(texelSizeMeters, (receiver - depth) * staticSunDepthFilterPolicy.w));
+            if (occupied > 0.0 && visible < 0.5) gaps = vec2(min(gaps.x, receiver - depth), max(gaps.y, receiver - depth));
             if (occupied > 0.0 && visible < 0.5 && length(offset) <= (receiver - depth) * staticSunDepthFilterPolicy.w + texelSizeMeters) {
                 separation += receiver - depth; blockers += 1.0;
             }
@@ -240,12 +252,26 @@ highp vec4 staticSunDepthLookup( highp vec3 worldPosition, highp vec3 receiverNo
         if (blockers < 0.5) return vec4(staticSunDepthLinearCompare(globalCoordinate, comparisonDepth,
             occupiedSamples, reconstructedDepth), invalidDepth, layer, 0.0);
         highp float radius = max(texelSizeMeters * 0.5, separation / blockers * staticSunDepthFilterPolicy.w);
-        for (int i = 0; i < 12; i++) {
-            highp vec2 offset = staticSunDepthVogelDiskSample(i, 12, 0.0) * radius;
-            visibleSamples += staticSunDepthLinearCompare(globalCoordinate + offset / texelSizeMeters,
+        bool mixed = gaps.x * staticSunDepthFilterPolicy.w < texelSizeMeters && gaps.y * staticSunDepthFilterPolicy.w > 2.0 * texelSizeMeters;
+        staticSunDepthSeparationBandEnabled = mixed;
+        float nearRadius = mixed ? max(texelSizeMeters * 0.5, gaps.x * staticSunDepthFilterPolicy.w) : radius;
+        float split = (gaps.x + gaps.y) * 0.5;
+        float nearVisibility = 1.0;
+        int comparisons = mixed ? 24 : 12;
+        // Pair the same angular ray in one bounded loop, avoiding duplicated unrolled PCF bodies.
+        for (int i = 0; i < comparisons; i++) {
+            bool farBand = mixed && (i % 2 == 1);
+            vec2 direction = staticSunDepthVogelDiskSample(mixed ? i / 2 : i, 12, 0.0);
+            vec2 offset = direction * (farBand ? gaps.y * staticSunDepthFilterPolicy.w : nearRadius);
+            staticSunDepthSeparationBand = farBand ? vec2(split, 1e20) : vec2(0.0, split);
+            float visibility = staticSunDepthLinearCompare(globalCoordinate + offset / texelSizeMeters,
                 comparisonDepth + dot(offset, slope), occupiedSamples, reconstructedDepth);
+            if (!mixed) visibleSamples += visibility;
+            else if (farBand) visibleSamples += min(nearVisibility, visibility);
+            else nearVisibility = visibility;
         }
         tapSamples = 12.0;
+        staticSunDepthSeparationBandEnabled = false;
         seamRadius = ceil(radius / texelSizeMeters + 0.5);
     } else if ( staticSunDepthFilterPolicy.x > 0.5 ) {
         highp float sourceWorldRadius = staticSunDepthFilterPolicy.y
@@ -297,6 +323,8 @@ highp float staticSunDepthMaxComponent( highp vec3 value ) {
     return max( value.x, max( value.y, value.z ) );
 }
 
+#include <shaderlib:shadows/small_caster_shadow>
+
 highp float staticSunDepthCacheVisibility = 1.0;
 highp float staticSunDepthCurrentVisibility = 1.0;
 highp float staticSunDepthMaximumVisibilityDifference = 0.0;
@@ -326,6 +354,7 @@ void staticSunDepthApplyDirectional(
     staticSunDepthCurrentVisibility = clamp( staticSunDepthMaxComponent( directLight.color ) / denominator, 0.0, 1.0 );
     staticSunDepthDebugSample = staticSunDepthLookup( vStaticSunWorldPosition, receiverNormal );
     staticSunDepthCacheVisibility = staticSunDepthDebugSample.x;
+    if (staticSunDepthDebugMode == 0) staticSunDepthCacheVisibility = min(staticSunDepthCacheVisibility, smallSunShadowVisibility(vStaticSunWorldPosition));
     staticSunDepthMaximumVisibilityDifference = max(
         staticSunDepthMaximumVisibilityDifference,
         abs( staticSunDepthCurrentVisibility - staticSunDepthCacheVisibility )

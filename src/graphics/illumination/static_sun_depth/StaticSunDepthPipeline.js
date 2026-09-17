@@ -24,6 +24,7 @@ import {
 import { createThreeStaticSunDepthResourceFactory } from './ThreeStaticSunDepthResources.js';
 import { StaticSunDepthFenceTracker } from './StaticSunDepthFenceTracker.js';
 import { StreamedShadowResidency } from './StreamedShadowResidency.js';
+import { SmallCasterShadowCache, SMALL_CASTER_MEMORY_RESERVATION } from './SmallCasterShadowCache.js';
 import { STATIC_SUN_DEPTH_RUNTIME_DEFAULTS } from './StaticSunDepthRuntimeLimits.js';
 
 const PREPARED_BINDING_ID = 'static_sun_depth.prepared_binding.v1';
@@ -86,7 +87,7 @@ export class StaticSunDepthPipeline {
             },
             baselineMemory: options.baselineMemory,
             residentCpuPolicy: 'retain',
-            prewarmMemory: { cpuBytes: 0, gpuBytes: 0 },
+            prewarmMemory: SMALL_CASTER_MEMORY_RESERVATION,
             maximumPackageBytes: options.maximumPackageBytes
                 ?? STATIC_SUN_DEPTH_RUNTIME_DEFAULTS.maximumPackageBytes,
             now: options.now
@@ -317,6 +318,7 @@ export class StaticSunDepthPipeline {
             casters: this._casters.getDiagnostics(),
             dynamicShadows: this._dynamicShadows.getDiagnostics(),
             streamedShadows: this._active?.binding?.streamedDetail?.diagnostics() ?? {state: 'off'},
+            smallCasterShadows: this._active?.binding?.smallCasters?.metrics ?? {state: 'off'},
             runtime: this.runtime.getDiagnostics()
         });
     }
@@ -383,9 +385,12 @@ export class StaticSunDepthPipeline {
             debugMode: this._debugMode
         });
         binding.streamedDetail = new StreamedShadowResidency(binding, this.renderer);
+        binding.smallCasters = new SmallCasterShadowCache(binding, this.renderer);
         this._streamedBindings.add(binding);
-        try { await this._prewarmMaterialVariants(binding); }
-        catch (error) { binding.streamedDetail.dispose(); this._streamedBindings.delete(binding); throw error; }
+        try {
+            await binding.smallCasters.prepare(this.engine.context?.city?.trafficControls?.group?.children ?? [], { signal: context.signal });
+            await this._prewarmMaterialVariants(binding);
+        } catch (error) { binding.smallCasters.dispose(); binding.streamedDetail.dispose(); this._streamedBindings.delete(binding); throw error; }
         context.registerResource(PREPARED_BINDING_ID, Object.freeze({
             resource: Object.freeze({
                 binding,
@@ -393,8 +398,7 @@ export class StaticSunDepthPipeline {
                 tileIntegrity,
                 resourceId: resourceDescriptor.id
             }),
-            cpuBytes: 0,
-            gpuBytes: 0,
+            ...SMALL_CASTER_MEMORY_RESERVATION,
             dispose: () => this._releasePreparedBinding(binding)
         }));
         this._preparedShaderBinding = binding;
@@ -572,6 +576,7 @@ export class StaticSunDepthPipeline {
         }
         if (this._preparedShaderBinding === binding) this._preparedShaderBinding = null;
         binding.streamedDetail?.dispose(); this._streamedBindings.delete(binding);
+        binding.smallCasters?.dispose();
         if (this._cachedActivation?.binding !== binding) return;
         this._materials.dispose();
         this._materials = new StaticSunDepthMaterialSet();

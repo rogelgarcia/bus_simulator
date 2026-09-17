@@ -58,8 +58,9 @@ export class StreamedShadowResidency {
             const size = manifest.interiorTexels + 2 * manifest.guardTexels;
             this.pageBytes = size * size * 2;
             const parentBytes = this.binding.texture.image.data.byteLength;
+            const smallCasterBytes = this.binding.smallCasters?.metrics.gpuBytes ?? 0;
             const tableBytes = manifest.tileCount[0] * manifest.tileCount[1] * 16;
-            const slots = Math.min(LIMITS.slots, Math.floor((512 * 1024 * 1024 - parentBytes - tableBytes) / this.pageBytes));
+            const slots = Math.min(LIMITS.slots, Math.floor((512 * 1024 * 1024 - parentBytes - tableBytes - smallCasterBytes) / this.pageBytes));
             if (slots < 1) throw new Error('Detail pool exceeds the 512 MiB static shadow budget');
             this.residency = new ShadowPageResidency(slots);
             this.pool = new THREE.DataArrayTexture(new Uint8Array(this.pageBytes * slots), size, size, slots);

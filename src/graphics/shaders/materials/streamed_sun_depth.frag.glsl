@@ -22,7 +22,9 @@ highp vec2 staticSunStreamDepth(vec2 texel, int layer) {
 highp float staticSunStreamCompare(vec2 texel, int layer, float receiver) {
     vec2 depth = staticSunStreamDepth(texel, layer);
     float safety = (staticSunDepthDepthRange.y - staticSunDepthDepthRange.x) * 0.375 / 65534.0;
-    return depth.y < 0.5 ? 1.0 : step(receiver, depth.x - safety);
+    float separation = receiver - depth.x;
+    bool outsideBand = staticSunDepthSeparationBandEnabled && (separation < staticSunDepthSeparationBand.x || separation >= staticSunDepthSeparationBand.y);
+    return depth.y < 0.5 || outsideBand ? 1.0 : step(receiver, depth.x - safety);
 }
 highp float staticSunStreamLinearCompare(vec2 texel, int layer, float receiver, vec2 slopeTexels) {
     vec2 base = floor(texel - 0.5), f = fract(texel - 0.5);
@@ -30,10 +32,12 @@ highp float staticSunStreamLinearCompare(vec2 texel, int layer, float receiver, 
         mix(staticSunStreamCompare(base + vec2(0,1), layer, receiver + dot(base + vec2(0.5,1.5) - texel, slopeTexels)), staticSunStreamCompare(base + vec2(1,1), layer, receiver + dot(base + 1.5 - texel, slopeTexels)), f.x), f.y);
 }
 highp vec2 staticSunStreamVisibility(vec3 light, vec2 localTexel, int layer, vec2 slope) {
+    staticSunDepthSeparationBandEnabled = false;
     float pitch = staticSunStreamLayout.w;
     float receiver = light.z - staticSunDepthBiasPolicy.x;
     float search = max(pitch, (receiver - staticSunDepthDepthRange.x) * staticSunDepthFilterPolicy.w);
     float separation = 0.0, blockers = 0.0;
+    vec2 gaps = vec2(1e20, 0.0);
     for (int i = 0; i < 9; i++) {
         float probeRadius = min(search, staticSunDepthLayout.w * (i < 5 ? 2.0 : 6.0));
         float angle = float(i - 1) * (PI * 0.5);
@@ -41,6 +45,7 @@ highp vec2 staticSunStreamVisibility(vec3 light, vec2 localTexel, int layer, vec
         vec2 depth = staticSunStreamDepth(localTexel + offset / pitch, layer);
         float plane = receiver + dot(floor(localTexel + offset / pitch) + 0.5 - localTexel, slope * pitch);
         if (i == 0 && depth.y > 0.5 && depth.x < plane) search = min(search, max(pitch, (plane - depth.x) * staticSunDepthFilterPolicy.w));
+        if (depth.y > 0.5 && depth.x < plane) gaps = vec2(min(gaps.x, plane - depth.x), max(gaps.y, plane - depth.x));
         if (depth.y > 0.5 && depth.x < plane && length(offset) <= (plane - depth.x) * staticSunDepthFilterPolicy.w + pitch) {
             separation += plane - depth.x; blockers += 1.0;
         }
@@ -49,15 +54,32 @@ highp vec2 staticSunStreamVisibility(vec3 light, vec2 localTexel, int layer, vec
     if (blockers < 0.5) result = vec2(staticSunStreamLinearCompare(localTexel, layer, receiver, slope * pitch), 1.0);
     else {
         float radius = max(pitch * 0.5, separation / blockers * staticSunDepthFilterPolicy.w);
-        // A broad penumbra needs smooth visibility rather than more depth texels.
-        // The parent already resolves it; avoid sparse fine-tap bands and extra work.
-        float detailWeight = 1.0 - smoothstep(1.0, 2.0, radius / staticSunDepthLayout.w);
+        bool mixed = gaps.x * staticSunDepthFilterPolicy.w < staticSunDepthLayout.w && gaps.y * staticSunDepthFilterPolicy.w > 2.0 * staticSunDepthLayout.w;
+        // Broad single-depth penumbras stay on the parent; mixed edges retain the fine caster.
+        float detailWeight = mixed ? 1.0 : 1.0 - smoothstep(1.0, 2.0, radius / staticSunDepthLayout.w);
         if (detailWeight > 0.0) {
-            float visible = 0.0;
-            for (int i = 0; i < 12; i++) {
-                vec2 offset = staticSunDepthVogelDiskSample(i, 12, 0.0) * radius;
-                visible += staticSunStreamLinearCompare(localTexel + offset / pitch, layer, receiver + dot(offset, slope), slope * pitch);
+            staticSunDepthSeparationBandEnabled = mixed;
+            float visible = 0.0, occupied = 0.0, depth = staticSunDepthDepthRange.x - 1.0;
+            vec2 parentCoordinate = (light.xy - staticSunDepthGridOrigin) / staticSunDepthLayout.w;
+            staticSunDepthPlaneSlopeTexels = slope * staticSunDepthLayout.w;
+            float nearRadius = mixed ? max(pitch * 0.5, gaps.x * staticSunDepthFilterPolicy.w) : radius;
+            float split = (gaps.x + gaps.y) * 0.5;
+            float nearVisibility = 1.0;
+            int comparisons = mixed ? 24 : 12;
+            for (int i = 0; i < comparisons; i++) {
+                bool farBand = mixed && (i % 2 == 1);
+                vec2 direction = staticSunDepthVogelDiskSample(mixed ? i / 2 : i, 12, 0.0);
+                vec2 offset = direction * (farBand ? gaps.y * staticSunDepthFilterPolicy.w : nearRadius);
+                staticSunDepthSeparationBand = farBand ? vec2(split, 1e20) : vec2(0.0, split);
+                float visibility = 1.0;
+                if (farBand) visibility = staticSunDepthLinearCompare(parentCoordinate + offset / staticSunDepthLayout.w,
+                    receiver + dot(offset, slope), occupied, depth);
+                else visibility = staticSunStreamLinearCompare(localTexel + offset / pitch, layer, receiver + dot(offset, slope), slope * pitch);
+                if (!mixed) visible += visibility;
+                else if (farBand) visible += min(nearVisibility, visibility);
+                else nearVisibility = visibility;
             }
+            staticSunDepthSeparationBandEnabled = false;
             result = vec2(visible / 12.0, detailWeight);
         }
     }

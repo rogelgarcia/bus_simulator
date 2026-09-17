@@ -2,6 +2,7 @@
 // @ts-check
 
 import * as THREE from 'three';
+import { smallCasterUniforms } from './SmallCasterShadowCache.js';
 import { streamedShadowPrototypeOptions } from '../../../app/illumination/static_sun_depth/StreamedShadowPages.js';
 import { validateStaticSunDepthTileSetDescriptor } from '../../../app/illumination/static_sun_depth/index.js';
 import { isLitMaterial } from '../../lighting/SceneShadowMaterials.js';
@@ -138,6 +139,7 @@ export function createStaticSunDepthShaderBinding({ descriptor, texture, debugMo
         'binding-' + bindingVariantSerial
     ].join(':');
     const uniforms = Object.freeze({
+        ...smallCasterUniforms(),
         staticSunDepthTiles: { value: texture },
         staticSunDepthWorldToLight: { value: matrixFromDescriptor(validated) },
         staticSunDepthPointDirectionWorld: { value: pointDirectionWorld },

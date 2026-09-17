@@ -2,6 +2,91 @@
 
 ## Shader preparation and diagnostics
 
+### Mixed near and distant blockers (AI 573)
+
+The finite-source filter classifies the depth range of its existing nine probes
+separately from their contribution to the blocker-radius estimate. A shallow
+blocker outside its own solar cone cannot widen that radius, but it still needs
+to be classified: the subsequent broad filter may land on its depth texels.
+Previously those texels were treated as if they belonged to the distant building,
+and a broad radius could also fade away the fine sign representation.
+
+When the probe range contains both a sub-parent-texel angular footprint and a
+footprint larger than two parent texels, visibility uses two distance bands.
+For each of the same 12 sun-disc directions, the filter projects separate near
+and far offsets, accepts depths from the corresponding band, and combines the
+occlusion for that direction before averaging. This is not the minimum or product
+of two independently blurred images. The split is the midpoint of the observed
+separation range; the near/far radii use its extrema. The streamed path samples
+near visibility from detail and broad visibility from the complete parent, so
+the broad component remains smooth without discarding the small caster.
+The directions are evaluated in one bounded loop: 12 comparisons for ordinary
+receivers, or 24 alternating near/far comparisons for mixed receivers. Sharing
+the comparison body avoids duplicated unrolled PCF code in CSM/diagnostic variants.
+
+Single-distance receivers retain the previous filter. Receiver-plane correction,
+centre-blocker search bounds, cone rejection during radius estimation, bilinear
+comparison, quantization safety, page guards/fades and the sun diameter remain
+in force. Parent fallback has the same reconstruction at its original density;
+it cannot restore silhouettes lost at that density. Static and moving receivers
+share this lookup. Moving-caster map filtering itself is unchanged.
+
+This remains a two-band approximation to a single front-depth field. By itself it cannot
+recover geometry hidden behind the first depth, or integrate arbitrary overlapping
+depth layers exactly. Do not present it as a replacement for area-light ray tracing.
+Simply treating out-of-cone taps as lit was rejected: it reduced the fixture error
+but opened leaks on city surfaces, where rejecting one depth does not establish
+that the ray is unoccluded.
+
+Correctness coverage lives in `static_sun_small_caster.pwtest.js` (production GLSL
+against an independent 512-direction ray/plane oracle),
+`static_sun_receiver_plane.pwtest.js`, and the fixed-pose capture
+`static_sun_small_caster_gameplay.pwtest.js`. AI 573's active prompt records evidence
+and deferred Cycles/performance sign-off. The two-band filter allocates no new maps,
+geometry, render targets, or passes. A mixed lookup uses 24 rather than 12 bilinear
+comparisons (96 rather than 48 depth fetches); the ordinary path retains its tap
+count and adds probe classification/branch arithmetic. Whole-frame cost must be
+measured, not inferred as a percentage from this local worst case.
+
+### Independently retained traffic-prop depth (AI 573 follow-up)
+
+A building can hide half a sign in the central-direction depth map even though
+some rays across the sun disc see that half. No filter can reconstruct the
+missing geometry from that single depth. The original adjacent-silhouette test
+missed this case; the overlapping test now checks the hidden half's umbra directly.
+
+`SmallCasterShadowCache` retains a separate 256-square RG8 depth layer per traffic
+control root (signs and traffic lights), derived from its actual opaque triangles
+in the authenticated sun basis. It does not use object names, a particular camera,
+or the stop-sign pose to invent a silhouette. Geometry is rasterized in a worker;
+one completed layer is uploaded per animation frame during preparation. There
+are no extra per-frame shadow render passes or geometry submissions. Warm
+reactivation reuses the prepared binding; release/cancellation owns its worker
+and textures. Current lighting and zero angular diameter do not apply this layer.
+
+An 8-metre light-space grid indexes conservative prop bounds in one RGBA32F
+metadata texture. Fragments outside those bounds do no prop-depth filtering;
+inside, twelve disc directions use bilinear comparisons from the independent
+layer. Visibility is bounded by both the existing scene visibility and this
+prop visibility. This minimum of filtered visibilities is an approximation where
+both penumbras partially overlap; it restores fully occluded sign interiors but
+does not claim exact ray-wise union for arbitrary layered geometry. The sun,
+building filter, bake textures, dynamic shadows and material lighting are retained.
+
+The cache supports opaque, undisplaced static traffic-prop meshes; unsupported
+coverage or geometry fails preparation rather than silently dropping a caster.
+It is independent of view/PVS visibility. Other mesh families are not registered
+automatically. Layer resolution limits and the existing single-depth broad filter
+remain relevant, especially to thin distant poles and unregistered hidden geometry.
+
+Memory planning reserves 32 MiB each for CPU/GPU preparation ownership, bounds
+actual allocation plus worker input to that cap, and reports actual retained
+bytes separately in `smallCasterShadows`. Streamed page capacity subtracts the
+actual prop bytes from its combined 512 MiB static-shadow budget. Storage on disk
+is unchanged. Two additional texture samplers and spatial-index reads are required;
+an intersecting prop footprint costs up to 48 extra depth texel fetches per pixel.
+Performance and shader-preparation timing must be measured in a clean run.
+
 Final rendering uses a `STATIC_SUN_FINAL` shader variant with debug mode fixed to
 zero at compilation. Diagnostic modes share a separate uniform-driven variant.
 Switching across that boundary invalidates the material hook's program key and
