@@ -137,3 +137,16 @@ and must not be mixed into a gameplay-equivalent recurrence verdict. Environment
 metadata records the selected stage. `REPLAY_PROBE_FRAMES=0x98E,0x98F,0x990` adds
 pose/lighting snapshots at chosen source frames; first/last poses are always
 checked. The test asserts exact camera/bus placement at these probes.
+
+For isolated resource-preparation comparisons, `REPLAY_ARTIFACT_ROOT` may name a
+single topic folder below `tests/artifacts/screens/`. `REPLAY_SOURCE_SNAPSHOT`
+may name an artifact subdirectory containing `files.json` and repository-relative
+JavaScript source files. These override only the benchmark page's requests;
+the checkout is not rewritten. The environment records the snapshot and startup
+ready time. Keep snapshots immutable during a cohort.
+
+`REPLAY_CAPTURE_FRAMES=0x2E5,0x30B` captures exact fixed poses after the measured
+laps, before restoring the replay camera hook. These captures do not enter timing
+statistics. The preparation diagnostic appears on each frame when available.
+Resource profiling additionally records first-draw geometry owners and material
+texture URLs; keep this instrumented run separate from timing cohorts.

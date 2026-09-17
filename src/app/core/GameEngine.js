@@ -22,6 +22,7 @@ import { BusContactShadowRig } from '../../graphics/visuals/vehicles/BusContactS
 import { StaticAoRuntime } from '../../graphics/visuals/static_ao/StaticAoRuntime.js';
 import { BakedLightingRuntime } from '../../graphics/illumination/baked_lighting/index.js';
 import { prepareLightingView } from '../../graphics/illumination/baked_lighting/LightingViewPreparation.js';
+import { NearbyGpuPreparation } from '../../graphics/visuals/preparation/NearbyGpuPreparation.js';
 
 function resolveThreeToneMapping(mode) {
     const key = sanitizeToneMappingMode(mode, 'aces');
@@ -225,6 +226,7 @@ export class GameEngine {
         }
 
         this._gpuFrameTimer = getOrCreateGpuFrameTimer(this.renderer);
+        this._nearbyGpuPreparation = new NearbyGpuPreparation(this.renderer);
     }
 
     get shadowSettings() {
@@ -809,6 +811,7 @@ export class GameEngine {
     }
 
     _renderAoFrame(dt) {
+        this._contextProxy?.city?.sunBloom?.update(this);
         if (this._bakedLighting?.shouldHoldView()) {
             this._bakedLighting.prepareView();
             return false;
@@ -1331,6 +1334,7 @@ export class GameEngine {
     }
 
     clearScene() {
+        this._nearbyGpuPreparation?.reset(null);
         while (this.scene.children.length) this.scene.remove(this.scene.children[0]);
     }
 
@@ -1414,6 +1418,7 @@ export class GameEngine {
         let gpuFrameBegun = false;
         let rendered = false;
         try {
+            this._nearbyGpuPreparation?.syncCity(this._contextProxy?.city ?? null);
             this._bakedLighting?.prepareFrame?.();
             illuminationPipeline?.frameBegin?.({ engine: this, dt: stepDt, nowMs: now });
             gpuTimer?.beginFrame?.();
@@ -1424,6 +1429,10 @@ export class GameEngine {
             this._updateStaticAo();
             this._updateBusContactShadow(stepDt);
             rendered = this._renderAoFrame(stepDt);
+            this._nearbyGpuPreparation?.update(this._contextProxy?.city ?? null, this.camera, {
+                elapsedMs: performance.now() - cpuStart, ready: rendered, gpuMs: gpuTimer?.getLastMs(),
+                pipeline: this._post?.pipeline, scene: this.scene
+            });
         } finally {
             try {
                 if (gpuFrameBegun) {
@@ -1534,6 +1543,8 @@ export class GameEngine {
         if (this._disposalPromise) return this._disposalPromise;
         if (this._disposed) return undefined;
         this._disposed = true;
+        this._nearbyGpuPreparation?.dispose();
+        this._nearbyGpuPreparation = null;
         this._dynamicAo?.dispose();
         this._dynamicAo = null;
         this.stop();

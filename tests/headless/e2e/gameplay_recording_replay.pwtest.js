@@ -20,7 +20,9 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
     const first = Number(process.env.REPLAY_FIRST || '0xA80'), last = Number(process.env.REPLAY_LAST || '0xE20');
     const indices = Array.from({length:recording.count}, (_,i) => i).filter(i => c.frame[i] >= first && c.frame[i] <= last);
     expect(indices.length).toBeGreaterThan(0);
-    const output = `tests/artifacts/screens/recorded_slowdown/${process.env.REPLAY_NAME || 'replay'}`;
+    const artifactRoot = process.env.REPLAY_ARTIFACT_ROOT || 'tests/artifacts/screens/recorded_slowdown';
+    expect(artifactRoot).toMatch(/^tests\/artifacts\/screens\/[a-zA-Z0-9_-]+$/);
+    const output = `${artifactRoot}/${process.env.REPLAY_NAME || 'replay'}`;
     await mkdir(output, {recursive:true});
     const telemetryStream = process.env.REPLAY_GPU_TELEMETRY === '1' ? createWriteStream(`${output}/gpu-telemetry.jsonl`) : null;
     const telemetryWritten = telemetryStream ? finished(telemetryStream) : null;
@@ -33,6 +35,15 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
         return data;
     });
     page.once('close', finishTelemetry);
+    if (process.env.REPLAY_SOURCE_SNAPSHOT) {
+        const root = process.env.REPLAY_SOURCE_SNAPSHOT;
+        expect(root).toMatch(/^tests\/artifacts\/screens\/[a-zA-Z0-9_/-]+$/);
+        expect(root).not.toContain('..');
+        const files = JSON.parse(await readFile(`${root}/files.json`, 'utf8'));
+        for (const file of files) await page.route('**/' + file, async route => route.fulfill({
+            contentType: 'text/javascript', body: await readFile(`${root}/${file}`, 'utf8')
+        }));
+    }
     if (process.env.REPLAY_SHADER_BASELINE === '1') {
         const root='tests/artifacts/screens/baked_shader_loading/before-src/';
         const files=JSON.parse(await readFile(root+'files.json','utf8'));
@@ -137,6 +148,29 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
                 finally{resourceEvents.push({operation:key,ms:performance.now()-t,bytes:args.find(v=>ArrayBuffer.isView(v))?.byteLength??null});}};
             restore.push(()=>gl[key]=original);
         }
+        if (profileResources) {
+            const seen = new WeakSet(), draw = e.renderer.renderBufferDirect;
+            e.renderer.renderBufferDirect = function(camera, scene, geometry, material, object, group) {
+                let root = object;
+                while (root.parent && !root.userData.staticVisibility) root = root.parent;
+                const owner = root.userData.staticVisibility?.id || root.name || root.type;
+                if (!seen.has(geometry)) {
+                    seen.add(geometry);
+                    const arrays = new Set(Object.values(geometry.attributes).map(a => (a.data || a).array));
+                    if (geometry.index) arrays.add(geometry.index.array);
+                    resourceEvents.push({operation:'firstGeometryDraw',owner,object:object.name,geometry:geometry.uuid,
+                        bytes:[...arrays].reduce((sum,array)=>sum+array.byteLength,0)});
+                }
+                for (const [slot,texture] of Object.entries(material)) if (texture?.isTexture &&
+                    e.renderer.properties.get(texture).__version !== texture.version) {
+                    resourceEvents.push({operation:'firstMaterialTexture',owner,object:object.name,material:material.name,slot,
+                        texture:texture.uuid,width:texture.image?.width,height:texture.image?.height,
+                        source:texture.image?.src?.startsWith('data:')?'data-url':texture.image?.src || texture.name});
+                }
+                return draw.call(this,camera,scene,geometry,material,object,group);
+            };
+            restore.push(()=>e.renderer.renderBufferDirect=draw);
+        }
         if (diagnostics) {
             wrap(gl,'getError','glError');
             const roots = new Map();
@@ -221,6 +255,7 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
                 mode:e._bakedLighting.effectiveMode,generation:e._bakedLighting.generation,hidden:document.hidden,
                 streamingRequests:detail?.metrics.requests,streamingUploads:detail?.metrics.uploadMs,
                 streamingEvictions:detail?.residency.evictions,
+                ...(e._nearbyGpuPreparation ? { preparation: e._nearbyGpuPreparation.diagnostics() } : {}),
                 ...(profileResources?{resourceEvents}:{}),
                 ...(diagnostics ? {passes,visibilityKey:s.city.staticVisibility._runtime?._lastKey,
                     visibility:s.city.staticVisibility.getStatus()} : {})});
@@ -244,6 +279,8 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
     expect(normalize(initial.settings)).toEqual(normalize(settingsPolicy==='current-defaults'?initial.defaults:recordedSettings));
     initial.settingsPolicy=settingsPolicy;
     initial.cameraStage=cameraStage;
+    initial.sourceSnapshot=process.env.REPLAY_SOURCE_SNAPSHOT || 'working-tree';
+    initial.startupReadyMs=await page.evaluate(()=>performance.now());
     initial.shaderSourceSnapshot=process.env.REPLAY_SHADER_BASELINE==='1'?'baked_shader_loading/before-src':'working-tree';
     initial.recordedSettings=recordedSettings;
     initial.heldSourceFrame=holdIndex===null?null:c.frame[holdIndex];
@@ -292,6 +329,16 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
         await writeFile(`${output}/visibility-comparison.json`,JSON.stringify(comparisons,null,2));
         expect(comparisons.every(row=>row.changedFraction<0.001),JSON.stringify(comparisons)).toBe(true);
     }
+    if (process.env.REPLAY_CAPTURE_FRAMES) for (const frame of process.env.REPLAY_CAPTURE_FRAMES.split(',').map(Number)) {
+        const png = await page.evaluate(frame => {
+            const e = window.__busSim.engine;
+            window.recordedReplay.show(frame);
+            // One ordinary update refreshes view-dependent uniforms and culling before the fixed pose capture.
+            e.updateFrame(1 / 60); e.renderFrame();
+            return e.renderer.domElement.toDataURL('image/png');
+        }, frame);
+        await writeFile(`${output}/pose-${frame.toString(16)}.png`,Buffer.from(png.split(',')[1],'base64'));
+    }
     const result=await page.evaluate(()=>window.recordedReplay.finish());
     if (process.env.REPLAY_CAPTURE_FINAL === '1') await page.locator('canvas').first().screenshot({path:`${output}/final.png`});
     const gpu=new Map(result.samples.map(s=>[s.submissionSequence,s.ms]));
@@ -319,6 +366,11 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
     expect(new Set(result.frames.map(f=>f.submission)).size).toBe(result.frames.length);
     expect(result.frames.every(f=>!f.hidden)).toBe(true);
     expect(result.frames.filter(f=>f.gpu!==null).length/result.frames.length).toBeGreaterThan(.95);
+    const preparations = result.frames.map(f => f.preparation).filter(Boolean);
+    expect(preparations.every(p => p.failures === 0)).toBe(true);
+    expect(preparations.every(p => p.frame.bytes <= p.limits.uploadBytes && p.frame.steps <= 16
+        && p.frame.pending <= p.limits.maxJobs && p.stagingBytes <= p.limits.stagingBytes
+        && p.extraBytes + (p.bloom?.extraBytes ?? 0) <= p.limits.extraBytes + 1)).toBe(true);
     const telemetryResult = await finishTelemetry();
     if (telemetry) {
         expect(telemetryResult.errors).toEqual([]);
