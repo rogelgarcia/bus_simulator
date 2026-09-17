@@ -224,6 +224,11 @@ test('Baked startup: garage transition, preparation and first visible frames', a
     expect(visible.slice(-Math.min(600, steadyFrames)).every(f => f.width === c.width[0])).toBe(true);
     expect(result.finalTimer.disjointCount).toBe(result.initialTimer.disjointCount);
     if (process.env.BAKED_STARTUP_WARM === '1') {
+        const warmProfile = process.env.BAKED_STARTUP_WARM_PROFILE === '1';
+        if (warmProfile) await page.evaluate(async () => {
+            const { profileBakedCpuPhases } = await import('/tests/headless/harness/BakedCpuPhaseProfile.js');
+            window.bakedCpuPhaseProfile = profileBakedCpuPhases(window.__busSim.engine);
+        });
         await page.evaluate(async () => {
             const engine=window.__busSim.engine;
             await engine.setBakedLightingSettings({...engine._bakedLighting.getSettings(),mode:'current'});
@@ -234,10 +239,26 @@ test('Baked startup: garage transition, preparation and first visible frames', a
             const engine=window.__busSim.engine;
             await engine.setBakedLightingSettings({...engine._bakedLighting.getSettings(),mode:'auto'});
         });
+        if (warmProfile) {
+            if (steadyFrames < 1800) throw new Error('Warm profiling requires 1800 frames for before/during/after windows');
+            await page.waitForFunction(() => window.bakedStartup.readyFrames >= 600, null, { timeout: 90_000 });
+            const session = await page.context().newCDPSession(page);
+            try {
+                await session.send('Profiler.enable');
+                await session.send('Profiler.start');
+                await page.evaluate(() => window.bakedStartup.event('warm-profile-start', { visibleFrames: window.bakedStartup.readyFrames }));
+                await page.waitForFunction(() => window.bakedStartup.readyFrames >= 1200, null, { timeout: 90_000 });
+                const { profile } = await session.send('Profiler.stop');
+                await page.evaluate(() => window.bakedStartup.event('warm-profile-end', { visibleFrames: window.bakedStartup.readyFrames }));
+                await writeFile(`${output}/warm.cpuprofile`, JSON.stringify(profile));
+            } finally { await session.detach(); }
+        }
         await page.waitForFunction(count=>window.bakedStartup.readyFrames>=count,steadyFrames,{timeout:150_000});
         await page.waitForTimeout(200);
         const warm=await page.evaluate(()=>window.bakedStartup.finish());
-        warm.conditions = { ...result.conditions, activation: 'warm' };
+        if (warmProfile) await writeFile(`${output}/warm-cpu-phases.json`,
+            JSON.stringify(await page.evaluate(() => window.bakedCpuPhaseProfile.finish())));
+        warm.conditions = { ...result.conditions, activation: 'warm', warmProfile };
         warm.memoryEnd = memorySession ? await (async () => {
             const session = await page.context().newCDPSession(page);
             try { return await session.send('Runtime.getHeapUsage'); }

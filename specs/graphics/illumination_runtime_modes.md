@@ -257,3 +257,21 @@ windows, in the isolated test browser, to distinguish retained storage from
 uncollected garbage. It is never used to improve reported ordinary timings or
 to claim whole-process/worker/GPU memory usage. Lifecycle cohorts stay separate
 from cold-start and single-warm-activation comparisons.
+
+`BAKED_STARTUP_WARM_PROFILE=1` requires at least 1,800 frames and records a
+separate warm diagnostic: 600 frames before CPU sampling, 600 during sampling,
+then at least 600 after sampling. Exact profile boundaries are capture events.
+`BakedCpuPhaseProfile.js` records low-frequency method scopes across these
+windows without wrapping WebGL calls. Nested CPU phases overlap; do not sum
+them or equate their wall time with GPU execution. The diagnostic cohort is
+excluded from ordinary benchmark medians, even for its unprofiled portions.
+
+On Windows, `tests/headless/harness/BakedHostTelemetry.ps1` can independently
+sample process CPU deltas and working sets once per second for a bounded
+duration. Pass `-Output tests/artifacts/screens/<topic>/<name>.jsonl` and
+`-Seconds <duration>`; create the artifact directory first. It reads processes
+without changing them, streams each row immediately, and never closes user
+applications. First samples and unavailable/reset counters retain null CPU
+deltas. Working sets are not total committed memory, and process totals alone
+cannot attribute GPU contention. Align timestamps with capture time origins;
+retain runs overlapping other rendering jobs separately from idle confirmations.

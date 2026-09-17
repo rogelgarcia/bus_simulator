@@ -127,6 +127,29 @@ and effective settings. Keep per-run numbers and cold/warm results distinct.
   persists after the first-use resource stalls disappear. Root-cause profiling
   and the optimization remain open.
 
+## September 16 recording: distinguish confirmed hitch from sustained cost
+
+The new user capture suspected slowdowns around 0x900-0x9FF. Investigation is
+recorded in `debug_tools/regression_debugging/recording_9xx_20260916.md` and AI572.
+Three fresh processes/two complete laps each reproduce an isolated 0x98F hitch
+(CPU 72.2-83.5ms, GPU 52.46-64.42ms cold; CPU 12.5-12.9ms, GPU 17.41-18.62ms warm).
+It is an unnecessary sun-bloom activation caused by previous-camera emitter
+transforms crossing the new camera's near plane, plus first-use effect resources.
+AI572 now owns that fix alongside texture/geometry preparation. Baked lighting
+stays active at generation 2 throughout; do not attribute it to reactivation.
+
+The replay harness needed correction: apply the camera at the normal gameplay
+camera update point, after world visuals (`REPLAY_CAMERA_STAGE=state`, default).
+The old before-world order masked the bloom event despite matching final poses.
+Use the corrected order in future sustained-cost tests too, and identify old-order
+results explicitly; equal final poses do not guarantee equal pass selection.
+
+Across six corrected-order laps, 9xx median CPU is 12.8-14.4ms and median GPU
+15.11-16.00ms. This run therefore confirms a large isolated hitch, not a sustained
+periodic slowdown throughout 9xx. Remaining warm CPU outliers occur at different
+frames across runs (e.g. 0x90B, 0x53E, 0x55A); their causes remain unproven. Preserve
+this task's repeatability requirement before proposing another general fix.
+
 ## On completion
 
 - Mark DONE in the first line and rename to

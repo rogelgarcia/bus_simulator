@@ -1,6 +1,9 @@
 // Replays recorded camera/bus frames repeatedly with matching pixels and diagnostic CPU phases.
 import { test, expect } from '@playwright/test';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
+import { finished } from 'node:stream/promises';
+import { startBakedGpuTelemetry } from '../harness/BakedGpuTelemetry.js';
 import { decodeFrameRecording, recordingFramePose } from '../../../src/app/gameplay/recording/FrameRecording.js';
 
 test.use({ video: 'off', trace: 'off', deviceScaleFactor: 2 });
@@ -12,11 +15,24 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
     const c = recording.columns;
     const settingsPolicy = process.env.REPLAY_SETTINGS || 'recorded';
     expect(['recorded', 'current-defaults']).toContain(settingsPolicy);
+    const cameraStage = process.env.REPLAY_CAMERA_STAGE || 'state';
+    expect(['state', 'before-world']).toContain(cameraStage);
     const first = Number(process.env.REPLAY_FIRST || '0xA80'), last = Number(process.env.REPLAY_LAST || '0xE20');
     const indices = Array.from({length:recording.count}, (_,i) => i).filter(i => c.frame[i] >= first && c.frame[i] <= last);
     expect(indices.length).toBeGreaterThan(0);
     const output = `tests/artifacts/screens/recorded_slowdown/${process.env.REPLAY_NAME || 'replay'}`;
     await mkdir(output, {recursive:true});
+    const telemetryStream = process.env.REPLAY_GPU_TELEMETRY === '1' ? createWriteStream(`${output}/gpu-telemetry.jsonl`) : null;
+    const telemetryWritten = telemetryStream ? finished(telemetryStream) : null;
+    telemetryWritten?.catch(() => {});
+    const telemetry = telemetryStream ? startBakedGpuTelemetry({ onRow: row => telemetryStream.write(JSON.stringify(row) + '\n') }) : null;
+    let telemetryFinished;
+    const finishTelemetry = () => telemetryFinished ??= telemetry?.stop().then(async data => {
+        telemetryStream.end(); await telemetryWritten;
+        await writeFile(`${output}/gpu-telemetry.json`, JSON.stringify(data));
+        return data;
+    });
+    page.once('close', finishTelemetry);
     if (process.env.REPLAY_SHADER_BASELINE === '1') {
         const root='tests/artifacts/screens/baked_shader_loading/before-src/';
         const files=JSON.parse(await readFile(root+'files.json','utf8'));
@@ -88,7 +104,7 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
         projection:[c.fov[i],c.zoom[i],c.near[i],c.far[i]]}; });
     const stationaryAfterFirst=process.env.REPLAY_STATIONARY_AFTER_FIRST?Number(process.env.REPLAY_STATIONARY_AFTER_FIRST):null;
     if(stationaryAfterFirst!==null)expect(input.some(p=>p.frame===stationaryAfterFirst)).toBe(true);
-    const initial = await page.evaluate(async ({input,laps,diagnostics,profileResources,stationaryAfterFirst}) => {
+    const initial = await page.evaluate(async ({input,laps,diagnostics,profileResources,stationaryAfterFirst,cameraStage,probeFrames}) => {
         const {engine:e,sm} = window.__busSim, s = sm.current;
         const gl = e.renderer.getContext(), debugGpu = gl.getExtension('WEBGL_debug_renderer_info');
         const gpuRenderer = gl.getParameter(debugGpu ? debugGpu.UNMASKED_RENDERER_WEBGL : gl.RENDERER);
@@ -161,12 +177,20 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
         const observer = new PerformanceObserver(list => longTasks.push(...list.getEntries().map(task => ({start:task.startTime,ms:task.duration}))));
         observer.observe({type:'longtask'});
         let cursor=0, seq=initialTimer.sampleSequence, warmup=90, previousStart=0;
-        const apply = p => {
-            s.busAnchor.position.fromArray(p.bus); s.busAnchor.quaternion.fromArray(p.bus,3);
+        const applyCamera = p => {
             e.camera.position.fromArray(p.camera); e.camera.quaternion.fromArray(p.camera,3);
             [e.camera.fov,e.camera.zoom,e.camera.near,e.camera.far]=p.projection;
             e.camera.updateProjectionMatrix();
         };
+        let pendingPose = input[0];
+        const poseChecks = [];
+        const probeSet = new Set([input[0].frame, input.at(-1).frame, ...probeFrames]);
+        const apply = p => {
+            pendingPose = p;
+            s.busAnchor.position.fromArray(p.bus); s.busAnchor.quaternion.fromArray(p.bus,3);
+            if (cameraStage === 'before-world') applyCamera(p);
+        };
+        if (cameraStage === 'state') s._applyGameplayPoseCamera = () => applyCamera(pendingPose);
         const drain = () => {
             const fresh=e._gpuFrameTimer.getSamplesSince(seq); samples.push(...fresh);
             if(fresh.length)seq=fresh.at(-1).sequence;
@@ -178,6 +202,13 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
             for(const key in phases)phases[key]=0;
             const t=performance.now(), result=originalFrame.call(this,dt,options);
             const cpu=performance.now()-t; drain();
+            if (warmup === 0 && probeSet.has(p.frame)) {
+                poseChecks.push({sourceFrame:p.frame,lap:Math.floor(cursor/input.length),
+                    expectedCamera:p.camera,actualCamera:[...e.camera.position.toArray(),...e.camera.quaternion.toArray()],
+                    expectedBus:p.bus,actualBus:[...s.busAnchor.position.toArray(),...s.busAnchor.quaternion.toArray()],
+                    bloom:{...e._post.pipeline._sunBloomOcclusion.frameStats},
+                    sunDirection:s.city.sunRef.direction.toArray()});
+            }
             const frameMs=previousStart?t-previousStart:null; previousStart=t;
             if(warmup>0) {warmup--; return result;}
             const bloom=e._post.pipeline._sunBloomOcclusion.frameStats;
@@ -198,19 +229,21 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
             return result;
         };
         window.recordedReplay = {frames,input,done:()=>cursor>=input.length*laps,
-            show(frame){apply(input.find(p=>p.frame===frame));},
+            show(frame){const p=input.find(p=>p.frame===frame);apply(p);applyCamera(p);},
             finish(){e.updateFrame=originalFrame;restore.reverse().forEach(fn=>fn());s._applyGameplayPoseCamera=originalCamera;observer.disconnect();
-                return {frames,samples,longTasks,initialTimer,finalTimer:e._gpuFrameTimer.getDiagnostics(),baked:e._bakedLighting.getDiagnostics(),visibility:s.city.getStaticVisibilityDiagnostics(),settings:{lighting:e.lightingSettings,
+                return {frames,samples,longTasks,poseChecks,initialTimer,finalTimer:e._gpuFrameTimer.getDiagnostics(),baked:e._bakedLighting.getDiagnostics(),visibility:s.city.getStaticVisibilityDiagnostics(),settings:{lighting:e.lightingSettings,
                     shadows:e.shadowSettings,ao:e.ambientOcclusionSettings,aa:e.antiAliasingSettings,baked:e.bakedLightingSettings},
                     width:e.renderer.domElement.width,height:e.renderer.domElement.height};}};
-        return {width:e.renderer.domElement.width,height:e.renderer.domElement.height,gpuRenderer,settings,defaults:configuration.defaults};
-    }, {input,laps:Number(process.env.REPLAY_LAPS || 3),diagnostics:process.env.REPLAY_DIAGNOSTICS==='1',profileResources:process.env.REPLAY_PROFILE_RESOURCES==='1',stationaryAfterFirst});
+        return {timeOriginMs:performance.timeOrigin,width:e.renderer.domElement.width,height:e.renderer.domElement.height,gpuRenderer,settings,defaults:configuration.defaults};
+    }, {input,laps:Number(process.env.REPLAY_LAPS || 3),diagnostics:process.env.REPLAY_DIAGNOSTICS==='1',profileResources:process.env.REPLAY_PROFILE_RESOURCES==='1',stationaryAfterFirst,cameraStage,
+        probeFrames:(process.env.REPLAY_PROBE_FRAMES || '').split(',').filter(Boolean).map(Number)});
     expect(initial).toMatchObject({width:c.width[indices[0]],height:c.height[indices[0]]});
     const normalize = value => JSON.parse(JSON.stringify(value, (key,v) => typeof v==='string' && /^https?:/.test(v) ? new URL(v).pathname : v));
     const config = recording.metadata.configurations.findLast(event=>event.sampleIndex<=indices[0]);
     const recordedSettings=config.usesDefaultValues ? recording.metadata.defaults : config.settings;
     expect(normalize(initial.settings)).toEqual(normalize(settingsPolicy==='current-defaults'?initial.defaults:recordedSettings));
     initial.settingsPolicy=settingsPolicy;
+    initial.cameraStage=cameraStage;
     initial.shaderSourceSnapshot=process.env.REPLAY_SHADER_BASELINE==='1'?'baked_shader_loading/before-src':'working-tree';
     initial.recordedSettings=recordedSettings;
     initial.heldSourceFrame=holdIndex===null?null:c.frame[holdIndex];
@@ -264,6 +297,9 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
     const gpu=new Map(result.samples.map(s=>[s.submissionSequence,s.ms]));
     for(const f of result.frames)f.gpu=gpu.get(f.submission)??null;
     await writeFile(`${output}/frames.json`,JSON.stringify(result));
+    for (const check of result.poseChecks) for (const subject of ['Camera','Bus']) {
+        expect(check['actual'+subject].every((value,i)=>Math.abs(value-check['expected'+subject][i])<1e-9),JSON.stringify(check)).toBe(true);
+    }
     const summaries=[];
     const regions = [...new Set(input.map(f=>Math.floor(f.frame/256)*256))];
     for(const lap of [...new Set(result.frames.map(f=>f.lap))])for(const region of regions){
@@ -283,4 +319,9 @@ test('Recorded route: repeated exact visual poses retain baked lighting and expo
     expect(new Set(result.frames.map(f=>f.submission)).size).toBe(result.frames.length);
     expect(result.frames.every(f=>!f.hidden)).toBe(true);
     expect(result.frames.filter(f=>f.gpu!==null).length/result.frames.length).toBeGreaterThan(.95);
+    const telemetryResult = await finishTelemetry();
+    if (telemetry) {
+        expect(telemetryResult.errors).toEqual([]);
+        expect(telemetryResult.rows.length).toBeGreaterThan(0);
+    }
 });

@@ -103,6 +103,14 @@ see `debug_tools/regression_debugging/baked_shader_loading.md` for its revision.
 Each result includes actual update intervals, main-thread long tasks, page
 visibility and initial/final GPU disjoint diagnostics. Compare repeated runs:
 
+`REPLAY_GPU_TELEMETRY=1` additionally streams read-only NVIDIA clocks,
+utilization, temperature, power and device memory, plus available host RAM, to
+`gpu-telemetry.jsonl` and the completed `gpu-telemetry.json`. It requires
+`nvidia-smi`; sampler errors fail the test. `environment.json` includes the
+page's `timeOriginMs`, so each frame's `startMs` can be aligned with independent
+host process telemetry. This does not identify per-process GPU scheduling;
+keep runs with competing render jobs separate from idle confirmations.
+
 ```powershell
 node tools/gameplay_recording/analyze_replay.mjs tests/artifacts/screens/recorded_slowdown/analysis tests/artifacts/screens/recorded_slowdown/fresh-01/frames.json tests/artifacts/screens/recorded_slowdown/fresh-02/frames.json
 ```
@@ -120,3 +128,12 @@ pose order, not original wall-clock pacing; temporal grace can therefore expire
 at a different frame on faster/slower runs. It does not restore wheel/other-actor
 history or reproduce first-use costs before the selected range. Use the E2E
 runner: the `perf` runner forces a software renderer, which this test rejects.
+
+Camera replay defaults to `REPLAY_CAMERA_STAGE=state`: the bus pose is set before
+the world update, and the camera pose is applied at GameplayState's camera step,
+after world visuals, matching normal gameplay order. `before-world` retains the
+older diagnostic behavior; it can hide view-dependent sun-emitter transitions
+and must not be mixed into a gameplay-equivalent recurrence verdict. Environment
+metadata records the selected stage. `REPLAY_PROBE_FRAMES=0x98E,0x98F,0x990` adds
+pose/lighting snapshots at chosen source frames; first/last poses are always
+checked. The test asserts exact camera/bus placement at these probes.

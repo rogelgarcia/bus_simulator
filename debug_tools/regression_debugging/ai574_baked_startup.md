@@ -1282,3 +1282,110 @@ sweep without a reproducible signal. No speculative production change or transfe
 to AI575. Full individual results, memory data and limitations:
 `tests/artifacts/screens/ai574_baked_startup/step6-resume-report.md`,
 `step6-resume-comparison.json`, and `step6-lifecycle-comparison.json`.
+
+### Repeated slowdown investigation — 2026-09-16
+
+User requested multiple repeats to avoid attributing an isolated slow run to a
+regression. At `da256fe`, ran three alternating original/current pairs in six
+fresh Chrome processes, one at a time. Each records 1,800 cold and warm frames;
+final 1,500 per activation are measured (18,000 frames, 20 GPU samples explicitly
+unavailable). Kept per-300-frame windows, final-600 summaries, all individual
+results, continuous GPU/RAM telemetry and source fingerprints. Same pose,
+recorded settings/resize sequence, 3390x1540/DPR2, RTX3060/ANGLE D3D11/Chrome151.
+No profiles/GL wrappers/trace/video in this primary cohort. Duration 16m45s.
+
+Warm CPU medians original: 23.9, 25.2, 20.2 ms; current: 20.2, 27.1, 26.6 ms.
+The ordering changes between pairs. All calls/triangles/geometries stay at
+915/849361/1677; generation is stable within each capture. No warnings or
+disjoints. Loaded sources match, and 12 image comparisons have maximum RGB MAE
+0.000667/255 with at most eight pixels over four levels. No quality change.
+
+During the tests, other work repeatedly started headless Blender jobs from the
+buildings workspace. An initial spot check found high CPU load; subsequent
+process inspection identified background Blender separately from the user's
+long-running GUI session. Added continuous per-process CPU/working-set sampling
+and Windows CPU-performance/load/paging counters without altering those jobs.
+Sampling begins during current repeat 2. Current 2/3 warm bins all overlap
+roughly one core of Blender work, while game CPU is 26.05–27.2 ms and GPU around
+23.4 ms. Additional activity overlaps current 3 startup bins up to 29.1 ms CPU.
+Original 3 drops back to roughly 20 ms once that activity subsides. GPU boost
+clocks do not collapse; CPU performance counters remain around 134% of nominal
+in the sampled intervals. Do not infer an exact scheduling mechanism from this.
+
+Separate diagnostic current run: cold capture is near 20 ms CPU while Blender
+is idle. New opt-in warm CPU-phase and sampling diagnostics retain before,
+during and after windows: CPU medians 21.6/24.2/25.3 ms, GPU22.15/24.10/24.33 ms.
+New Blender work starts in the middle and persists afterwards. Validation,
+rendering and AO scopes all lengthen; the hot functions remain freshness watch,
+matrix updates, renderer updates and uniforms. This is not proof of a new
+game hotspot: both profiling and external work affect this diagnostic cohort.
+Do not pool its frames with ordinary results. Nested CPU scopes overlap.
+
+The next diagnostic was not launched: a five-minute idle guard could not find
+a 20-second gap between background Blender jobs. This is a deferred experiment,
+not a failed application check. Asked user asynchronously to pause the other
+task after its current render; no answer assumed, no unrelated process stopped.
+
+Conclusion: the new large slowdowns are repeatable, and concurrent Blender work
+is a measured confounder and strongly supported contributor. There is still no
+clean, repeatable version penalty. Historical Step-5 samples and unmonitored
+early runs remain unattributed. No runtime fix or DONE rename is justified.
+Next: three fresh confirmations with continuously verified idle conditions;
+if the issue persists, profile the affected idle session and bisect that signal.
+
+Changed test infrastructure: `BakedCpuPhaseProfile.js`, opt-in warm profiling
+with exact capture events, bounded Windows `BakedHostTelemetry.ps1`, and two
+passing node tests covering nested counts, preserved results, exceptions and
+restoration. All six ordinary runs and one diagnostic pass existing functional
+gates. No production JS/GLSL, bake data, quality, driver/power/affinity settings
+or unrelated caches changed. Selected test restored to the frame-recording test;
+owned telemetry stopped after verifying its process identity. No benchmark
+Chrome, NVIDIA sampler or typeperf process remains. No commit requested for
+this investigation.
+
+Full results: `tests/artifacts/screens/ai574_baked_startup/step6-repeat-report.md`,
+`step6-repeat-comparison.json`, `step6-repeat-image-comparison.json`,
+`step6-repeat-host-correlation.json`, `step6-repeat-host.jsonl`,
+`step6-idle-host.jsonl`, `step6-repeat-system.csv`,
+`step6-warmdiag-analysis.json`, `step6-warmdiag-host-correlation.json`.
+
+### Idle confirmations after user paused other renders — 2026-09-16
+
+Three fresh current-only Chrome processes passed, with a 20-second idle guard
+before each and continuous process/GPU/RAM telemetry. Unchanged recorded pose,
+settings and resize/warm sequence; 3390x1540/DPR2, Chrome151/RTX3060/ANGLE D3D11.
+No CPU/GL profiler, system cache purge or production changes. Total 7m35s with
+guards, 6m34s in tests. Final 1,500 of 1,800 settled frames per activation:
+
+| Run | Cold CPU/GPU ms | Warm CPU/GPU ms | Warm FPS |
+|---|---:|---:|---:|
+| 1 | 18.7 / 18.75 | 19.2 / 19.70 | 49.69 |
+| 2 | 19.2 / 19.63 | 18.8 / 18.74 | 50.64 |
+| 3 | 19.3 / 19.43 | 20.0 / 20.19 | 47.69 |
+
+No sustained slowdown in 36 300-frame bins. No overlapping headless Blender;
+only GUI PID20524, 0.000-0.022 mean CPU cores per bin. The large slowdowns from
+the mixed-contention cohort disappear when the other task is paused, supporting
+external contention as a contributor to this episode. This current-only cohort
+does not assign every historical Step-5 penalty or driving hitch to that cause.
+
+All gates passed; source fingerprints match. Stable 915 calls / 849361 tris /
+1677 geometries / 107 textures; 101 programs cold and 123 warm, generations 2/4.
+Six image comparisons against preceding current reference: max MAE0.000656/255,
+max three pixels >4 levels. 11/9000 summarized GPU samples unavailable, zero
+disjoints/hidden frames. No CPU/GPU sample >50 ms in these settled summaries.
+Five isolated intervals >50 ms (four50.1, one66.6) have CPU19.0-24.1/GPU17.34-22.82
+ms and no recorded long task within100ms; no causal scheduling attribution.
+First visible frames under resize stress still reach CPU33.6-39.5ms and
+GPU16.28-72.16ms. Do not claim all startup hitches disappeared.
+
+Decision: no runtime patch or speculative milestone sweep. Preserve the earlier
+slow runs; AI574 sign-off remains open for historical attribution. Next capture
+an actual slow idle state with continuous host telemetry, then use same-session
+CPU/pass diagnostics before repeated version bisection. Benchmarks and all owned
+samplers exited; the user's Blender session was untouched. Selected test restored.
+
+Artifacts: `tests/artifacts/screens/ai574_baked_startup/step6-idle-confirm-report.md`,
+`step6-idle-confirm-comparison.json`, `step6-idle-confirm-host-correlation.json`,
+`step6-idle-confirm-host.jsonl`, `step6-idle-confirm-image-comparison.json`, ledger
+and individual startup/warm captures. No commit requested in this continuation.

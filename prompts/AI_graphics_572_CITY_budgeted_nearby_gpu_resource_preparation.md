@@ -223,6 +223,79 @@ Full interpretation, limitations and later-view replay findings are maintained
 in `debug_tools/regression_debugging/recording_left_turn_20260914.md`.
 The previously documented route remains required; the new turn supplements it.
 
+## Additional recording: confirmed 0x98F sun-bloom initialization, September 16
+
+The user identified slowdowns around hexadecimal 9xx in a new capture. Read
+`debug_tools/regression_debugging/recording_9xx_20260916.md` for the complete
+experiment, numerical projection check, limitations and artifact inventory.
+Input: `tests/artifacts/screens/recording_9xx_20260916/route.busrec`.
+Original attachment:
+`C:/Users/rogel/.codex/attachments/41e3b4fd-9626-431b-886c-69ec1c5ad95d/pasted-text.txt`.
+SHA-256: `258a60fc29c1a76c15281e5c367841901497842666b12c2f345b15ca72d874c4`.
+Replay full range 0x302-0xC50, recorded settings, 3390x1540/DPR2, two laps in each
+of three fresh private Chrome processes. All 14,298 frames pass the validity gates.
+
+**A replay-order defect previously masked this event.** Normal gameplay updates
+world visuals before the camera; the old test applied the camera first. The
+replayer now defaults to `REPLAY_CAMERA_STAGE=state`, applying the recorded camera
+through GameplayState's normal camera update point. `before-world` remains a
+diagnostic control. First/last and requested poses are asserted exactly; use
+`REPLAY_PROBE_FRAMES=0x98E,0x98F,0x990` to retain sun/bloom snapshots too.
+Three earlier fresh processes/nine laps using the old order failed to reproduce
+98F; preserve them as controls, not evidence against the user's recording.
+
+| 0x98F timing | Original | Fresh1 | Fresh2 | Fresh3 |
+|---|---:|---:|---:|---:|
+| Cold CPU / GPU (ms) | 75.8 / 65.91 | 72.2 / 64.42 | 72.9 / 55.17 | 83.5 / 52.46 |
+| Warm CPU / GPU (ms) | Not captured | 12.6 / 17.41 | 12.9 / 18.62 | 12.5 / 17.51 |
+
+This event recurs at exactly 0x98F in every fresh process, adding 11 programs,
+13 textures and 3 geometries. The sun-bloom CPU phase costs 55.5-65.5ms cold versus
+1.8-2.2ms warm; both visits issue 40 bloom draws. A separate GL diagnostic confirms
+22 compileShader, 11 linkProgram, 12 texImage2D and 14 bufferData calls at that frame.
+The renderer texture increment is 13; these are different counters. Raw API
+submission time does not account for all deferred driver/first-draw cost.
+
+The responsible activation trigger is identified: `GameLoop.update` calls
+`City.updateVisuals` and `SunBloomRig.update` using the previous camera, then
+GameplayState updates the camera. `SunBloomOcclusionFilter._projectMeshBounds`
+projects the stale billboard through the new camera. At 98F its corners span view
+depth -1.152542 to +2.109684, crossing near 0.5. The conservative branch expands the
+effect to the entire viewport, retaining 105 occluders and issuing 40 bloom draws
+/84,576 triangles even though the sun is offscreen. Updating that same billboard
+with the final camera keeps every corner at depth 0.620153 and entirely offscreen
+in NDC. Numerical reconstruction matches the runtime diagnostics.
+
+Add these pending requirements to the existing preparation work:
+
+- [ ] Fix stale sun-emitter/camera ordering, preserving correct clipping for
+  genuinely visible and near-plane cases. Do not disable bloom, reduce its
+  configured size/quality, or arbitrarily discard conservative bounds. Keep
+  emitter/camera synchronization within the rendering lifecycle and cover both
+  ordinary driving and restored/locked poses.
+- [ ] Cover actual first-use bloom shader/target dependencies with measured,
+  bounded preparation for legitimate onscreen activation. Avoid simply moving
+  the hitch to the next real sun appearance. Coordinate with resource ownership,
+  resize, cancellation and disposal; distinguish CPU submission from GPU cost.
+- [ ] Validate this route in three fresh processes with cold/warm laps after the
+  fix, plus visible/partially occluded sun, fast turns, large discs, teleports and
+  resize. Save image evidence and preserve lighting/shadow quality. Revisit the
+  older 0x25CE full approach with corrected replay order; similar resource counts
+  alone do not establish that it has the same cause.
+
+Two other events on this recording recur in all three cold runs and disappear
+on warm laps: 0x672 adds 2 geometries/3 textures (CPU 69.5-73.4ms; GPU 55.63-73.93ms),
+and 0x689 adds 39 geometries/3 textures (CPU 60.8-64.1ms; GPU 56.42-60.85ms). Neither
+adds programs or bloom draws. Trace their asset ownership under this task's
+existing budgeted resource preparation requirements. Baked mode/generation 2
+stays stable; this is not evidence of a repeated baked-light activation.
+
+No production fix has been implemented in this follow-up. The harness, its
+README and frame-recording spec were corrected, and all ordinary confirmations
+plus the separate resource diagnostic passed. Artifacts use the
+`9xx-20260916-ordered-01` through `03` and `ordered-diag-01` directories under
+`tests/artifacts/screens/recorded_slowdown/`.
+
 ## On completion
 
 - Mark the document `DONE` in the first line and rename it to

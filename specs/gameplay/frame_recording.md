@@ -139,3 +139,12 @@ the gitignored `tests/artifacts/screens/<topic>/` directory.
   retains both snapshots; a held source frame provides a stationary control.
   Replay evidence also records start-to-start intervals, long tasks and disjoint
   diagnostics for occasional-hitch analysis, without changing the BUSREC1 schema.
+  `REPLAY_GPU_TELEMETRY=1` streams optional NVIDIA/host-memory samples and checks
+  sampler errors. The replay environment's `timeOriginMs` aligns per-frame
+  `startMs` with host telemetry. Sampling is read-only and the owned sampler
+  stops when the test finishes or its page closes; no game defaults change.
+  Camera placement defaults to the GameplayState camera step after world visuals,
+  preserving the production update order. The opt-in `before-world` stage is a
+  diagnostic control, not gameplay-equivalent evidence for view-dependent effects.
+  First/last and optional `REPLAY_PROBE_FRAMES` snapshots assert camera/bus poses
+  and retain sun direction/bloom selection, without modifying the recording schema.
