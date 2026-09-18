@@ -86,12 +86,14 @@ COL_OUT = BRICK_OUT + COL_RELIEF  # and the building's edges COL_RELIEF proud of
 # (to come) takes the B45_STEPS_H over the capitals, the top cornice (to come) B45_TOPC_H on the band's top, and the
 # fifth floor's sills stand on that: everything from the game's mid cornice up is lifted UPPER_LIFT for it, and the
 # raised bays' wall of floors 2 to 4 runs on up to the band's top to close the gap the lift opens beside the band.
-B45_STEP = 0.06                                    # = RECESS_D, the window recess (asserted where that is defined)
+B45_STEP = 0.06                                    # = BAY_D, the bay inset's depth (asserted where that is defined); the window recess itself was halved later
 B45_FRONT = COL_OUT - B45_STEP                     # +0.14: the band's face
 B45_STEPS_H = 0.18                                 # the moulding over the capitals and the brackets (user 2026-09-17, photo of the bracket course): a
                                                    # taller band 0.10, a step 0.03, a smaller step 0.02 and an edge ring 0.03 (C45_*, with the cornices);
                                                    # a thin plate under it was tried and taken out again (user), the moulding let down onto the brackets
-B45_H = 0.55                                       # the band itself over the moulding (photos 1, 4, 5: about 0.3 of the fourth floor's window height)
+B45_FIELD_H = 0.55                                 # the ornament field (photos 1, 4, 5: about 0.3 of the fourth floor's window height)
+B45_MARGIN = 0.06                                  # a plain margin round the field, the same on all four sides (user 2026-09-17)
+B45_H = B45_FIELD_H + 2 * B45_MARGIN               # 0.67: the band itself over the moulding, grown for the margin, not the field shrunk
 B45_TOPC_H = 0.28                                  # the top cornice on it: dentils, a small step, a convex curve, an edge
 B45_Z0 = WALL24_TOP                                # 15.632: the band's foot, on the capitals' top
 B45_Z1 = B45_Z0 + B45_STEPS_H + B45_H              # 16.362: the band's top, the top cornice's foot, the raised bays' wall extension's top
@@ -1530,8 +1532,10 @@ print(f"top floor: {len(holes)} holes cut in the plain wall ({len(W21.data.polyg
 # on those floors, 1 cm inside the frame's edges so the frame hides behind the reveal. It takes the game's brick material
 # and the texture scale of the old wall, mapped along each face and up, and the game's wall__8 goes.
 WALL_T = 0.25
-RECESS_D, RECESS_ABOVE = 0.06, 0.30                            # the recessed panel around each window set: its depth, how far it runs above the frames; as wide as the sill
-assert abs(B45_STEP - RECESS_D) < 1e-9, "the band between floors 4 and 5 steps back from the raised bays by the window recess's depth"
+RECESS_D, RECESS_ABOVE = 0.03, 0.30                            # the recessed panel around each window set: its depth (halved from 0.06, user 2026-09-18: the window's own step inside the bay inset), how far it runs above the frames; as wide as the sill
+BAY_D = 0.06                                                   # the bay inset's depth (user 2026-09-18): the window recess's depth as it was when the inset was asked for; the window's own step was halved afterwards, the inset keeps this
+assert abs(B45_STEP - BAY_D) < 1e-9, "the band between floors 4 and 5 steps back from the raised bays by the bay inset's depth"
+BAY_OUT = BRICK_OUT - BAY_D                                    # -0.16: the inset walls' plane inside their bay panels
 COL_W = 0.80                                                   # a brick column's width: the pier blocks' (a bit more than the pilasters' 0.725)
 # The storefronts flanking each portal, and the one span the three tiers over the pier each of them shares with the bay
 # beyond all take: the edge capital, the break the entablature makes over it and (on the Broadway face) the brick column
@@ -1562,6 +1566,21 @@ def column_spans(fi):
         if hit(a, b, taken) or hit(a, b, out_stretches(fi)): continue
         c = (a + b) / 2; out.append((c - COL_W / 2, c + COL_W / 2))
     return sorted(out)
+def bay_spans(fi):
+    # the bays of an inset wall: the runs between what stands proud of it -- its corner and centre stretches and its
+    # columns -- each one a window area the second recess frames (user 2026-09-18). The stretches reach past the
+    # face's ends, so a sweep from 0 to L finds nothing before the first block or after the last.
+    L = FACES[fi][3]; out = []; s = 0.0
+    for a, b in sorted(out_stretches(fi) + column_spans(fi)):
+        if a - s > 0.3: out.append((s, a))
+        s = max(s, b)
+    if L - s > 0.3: out.append((s, L))
+    return out
+def over_portal(fi, s0, s1):
+    # a run centred on a portal. The crown jogs out there with the portal's band, so its top ledge does not reach behind
+    # the wall as it does everywhere else (E_IN 0.44 back from its base, to -0.24): the bay and the window panel over a
+    # portal close their own foot, and nowhere else, where such a face would lie in the crown's top's own plane.
+    return fi in PORTAL_S and abs((s0 + s1) / 2 - PORTAL_S[fi]) < P_HALF
 # The game set the frames of the end bays 0.20 nearer the street than the others, to match its proud end piers; on the one
 # wall plane every window gets the same reveal: those frames and their glass, bars and backdrops go back to the common depth.
 FRAME_FRONT = -0.41                                              # the frames' front behind the hull, as the middle bays have it
@@ -1611,7 +1630,7 @@ def brick_uvs(me, su, sv, swapped):
             else: u, v = d_ * su, q.z * sv
             uv[li].uv = (v, u) if swapped else (u, v)
         pl.use_smooth = False
-def reveal_faces(o, F, x0, x1, y0, y1, z0, z1):
+def reveal_faces(o, F, x0, x1, y0, y1, z0, z1, bottom=True):
     # the recess's reveal, added to a window panel: four faces standing from its front (y0) out to the wall's plane
     # (y1) around the hole, each wound so it faces into the recess (a new face's normal is not computed yet, so the
     # winding is worked out from the corners themselves rather than read back off the face)
@@ -1620,6 +1639,7 @@ def reveal_faces(o, F, x0, x1, y0, y1, z0, z1):
                       (((x1, y0, z0), (x1, y0, z1), (x1, y1, z1), (x1, y1, z0)), (-1, 0, 0)),
                       (((x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0)), (0, 0, 1)),
                       (((x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)), (0, 0, -1))):
+        if inward == (0, 0, 1) and not bottom: continue            # no foot: a ledge below is that face already (the crown's top)
         c = [Vector(v) for v in q]
         if (c[1] - c[0]).cross(c[2] - c[1]).dot(Vector(inward)) < 0: c.reverse()
         f = bm.faces.new([bm.verts.new(F @ v) for v in c]); f.smooth = False
@@ -1670,6 +1690,64 @@ def build_upper_wall(old):
     for o, fi in corner.values():
         o.matrix_world = Matrix.Translation(FACES[fi][2] * (COL_OUT - BRICK_OUT)) @ o.matrix_world
     print(f"the corners and centre pavilions of floors 2 to 4 out to {COL_OUT:+.2f}: {len(corner)} parts came with them")
+    # The bay recess (user 2026-09-18, two photos, a screenshot, a third photo, a second screenshot): on the inset
+    # walls the window area of each bay -- its window sets, which stand one over the other on the three floors, and
+    # the wall between them, from the crown's foot up to the capitals' foot -- steps back BAY_D, the window recess's
+    # depth again, and its windows, their panels and sills go back with it, so a window now stands two steps into the
+    # wall. The user's picture of it: take the windows and the wall between them out, which leaves a rectangular hole
+    # three floors tall; make an inset round that hole; put the windows and the wall back in it. So the inset is
+    # exactly as wide as the window sets (the sills give the extent) and its edge runs down the sets' own edges with
+    # no padding; the field between it and the columns stays standing. A first cut had recessed each run from column
+    # to column, which folded into the columns' returns and showed nothing new; a second framed the sets with 0.20 of
+    # wall, which the user marked as padding. The raised corner and centre stretches keep their windows where they
+    # are; a blank bay, one without window sets, gets no inset. The wall's own front inside the inset goes and comes
+    # back BAY_D deeper, with its reveal round it: the top one, facing down, under the strip the brackets hang from;
+    # the two sides, facing into the inset, in the same planes as the window panels' own side reveals, which continue
+    # them a step further in; and at the foot nothing, since the crown's top ledge at FOOT_TOP is that face already
+    # (it reaches E_IN back from its base, to -0.24), so a face there would lie in the same plane and fight it --
+    # except over the portals, where the crown jogs out and its ledge stops short of the wall (over_portal).
+    bays = {}; up = Vector((0.0, 0.0, 1.0))
+    for fi in range(len(FACES)):
+        A, d = FACES[fi][0], FACES[fi][1]; A2, t2 = Vector((A.x, A.y)), Vector((d.x, d.y))
+        for r0, r1 in bay_spans(fi):
+            ext = []
+            for sl in parts_between(fi, r0, r1, 6.0, 15.2, ("sill_",)):                   # the sills say where the window area is
+                ss = [(Vector(((sl.matrix_world @ v.co).x, (sl.matrix_world @ v.co).y)) - A2).dot(t2) for v in sl.data.vertices]
+                ext.append((min(ss), max(ss)))
+            if not ext: continue
+            w0, w1 = min(e[0] for e in ext), max(e[1] for e in ext)
+            spread = max(max(e[0] for e in ext) - w0, w1 - min(e[1] for e in ext))     # how far the floors' sets disagree
+            assert spread < 0.03, f"face {fi} run {r0:.2f}..{r1:.2f}: the sets' edges differ by {spread:.3f}"
+            bays.setdefault(fi, []).append((w0, w1, r0, r1))
+    def in_bay(fi, sv): return any(a - 1e-6 < sv < b + 1e-6 for a, b, r0, r1 in bays.get(fi, []))
+    bm = bmesh.new(); bm.from_mesh(wall.data); n_bay = n_foot = 0
+    for fi, spans in bays.items():
+        A, d, nrm = FACES[fi][0], FACES[fi][1], FACES[fi][2]
+        def P(sv, dv, zv): return A + d * sv + nrm * dv + Vector((0.0, 0.0, zv))
+        def quad(c, want):
+            pts = [P(*q) for q in c]
+            if (pts[1] - pts[0]).cross(pts[2] - pts[1]).dot(want) < 0: pts.reverse()
+            f = bm.faces.new([bm.verts.new(q) for q in pts]); f.smooth = False
+        for s0, s1, r0, r1 in spans:
+            bmesh.ops.delete(bm, geom=wall_faces_in(bm, fi, s0, s1, FOOT_TOP, cap_bot, BRICK_OUT - 0.02, BRICK_OUT + 0.02), context='FACES')
+            quad([(s0, BAY_OUT, FOOT_TOP), (s1, BAY_OUT, FOOT_TOP), (s1, BAY_OUT, cap_bot), (s0, BAY_OUT, cap_bot)], nrm)
+            quad([(s0, BAY_OUT, cap_bot), (s1, BAY_OUT, cap_bot), (s1, BRICK_OUT, cap_bot), (s0, BRICK_OUT, cap_bot)], -up)
+            if over_portal(fi, s0, s1): quad([(s0, BAY_OUT, FOOT_TOP), (s1, BAY_OUT, FOOT_TOP), (s1, BRICK_OUT, FOOT_TOP), (s0, BRICK_OUT, FOOT_TOP)], up); n_foot += 1
+            quad([(s0, BAY_OUT, FOOT_TOP), (s0, BRICK_OUT, FOOT_TOP), (s0, BRICK_OUT, cap_bot), (s0, BAY_OUT, cap_bot)], d)
+            quad([(s1, BAY_OUT, FOOT_TOP), (s1, BRICK_OUT, FOOT_TOP), (s1, BRICK_OUT, cap_bot), (s1, BAY_OUT, cap_bot)], -d)
+            n_bay += 1
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    bm.to_mesh(wall.data); bm.free(); wall.data.update()
+    inbay = {}
+    for fi, spans in bays.items():
+        for s0, s1, r0, r1 in spans:
+            for o in parts_between(fi, s0, s1, 6.0, 15.2, ("mesh__", "bf2_", "sill_")): inbay.setdefault(o.name, (o, fi))
+    for o, fi in inbay.values():
+        o.matrix_world = Matrix.Translation(FACES[fi][2] * -BAY_D) @ o.matrix_world
+    print(f"the bay recess: {n_bay} bay insets on the inset walls step back {BAY_D:.2f} to {BAY_OUT:+.2f}, from the crown's foot {FOOT_TOP:.3f} to the capitals' foot {cap_bot:.3f}, "
+          f"each exactly its window sets' width; {len(inbay)} window parts went back with them; the field left beside the columns, per inset: "
+          + ", ".join(f"{PORTAL_TAG.get(fi, fi)}: " + " ".join(f"{a - r0:.2f}|{r1 - b:.2f}" for a, b, r0, r1 in sp) for fi, sp in bays.items())
+          + f"; the crown's top is the ledge under {n_bay - n_foot} of them, the {n_foot} over the portals close their own foot")
     # The window sets (user 2026-09-12): the wall keeps only a rectangular hole per set, from the sill's top to a lintel's
     # height over the frames and a little past the sill's ends; a separate panel mesh sits in each hole, set RECESS_D into
     # it and filling the rest of the wall's thickness, with the set's window holes cut through it 1 cm inside the frames.
@@ -1691,19 +1769,19 @@ def build_upper_wall(old):
         s0, s1, z_top = min(ss), max(ss), b.z                                          # the hole exactly as wide as the sill
         mine = [(k, h) for k, h in enumerate(holes) if h[0] == fi and s0 < (h[1] + h[2]) / 2 < s1 and abs(h[3] - z_top) < 0.05]
         if not mine: continue
-        fr = COL_OUT if in_corner(fi, (s0 + s1) / 2) else BRICK_OUT       # the wall's plane there: the field, or a corner's
+        fr = COL_OUT if in_corner(fi, (s0 + s1) / 2) else (BAY_OUT if in_bay(fi, (s0 + s1) / 2) else BRICK_OUT)   # the wall's plane there: a corner's, the bay panel's, or the field
         drop = z_top - FOOT_TOP if z_top < FOOT_TOP + 1.0 else 0.0                 # the second floor comes down onto the foot
         sets.append((fi, s0, s1, z_top - drop, max(h[4] for k, h in mine) + RECESS_ABOVE, mine, sl.name, fr, drop))
     bm = bmesh.new(); bm.from_mesh(wall.data)
     for fi, s0, s1, z_top, z1p, mine, nm, fr, drop in sets:
-        bmesh.ops.delete(bm, geom=wall_faces_in(bm, fi, s0, s1, z_top, z1p, BRICK_OUT - WALL_T - 0.05, fr + 0.05), context='FACES')
+        bmesh.ops.delete(bm, geom=wall_faces_in(bm, fi, s0, s1, z_top, z1p, BRICK_OUT - WALL_T - 0.05, fr + 0.02), context='FACES')   # + 0.02, not 0.05: the bay's reveals, centred 0.03 out from its plane, stay
     bm.to_mesh(wall.data); bm.free(); wall.data.update()
     for fi, s0, s1, z_top, z1p, mine, nm, fr, drop in sets:
         F = rh_frame(fi)
         panel = frame_box("panel_" + nm.split("_")[-1], F, -s1, -s0, BRICK_OUT - WALL_T, fr - RECESS_D, z_top, z1p, mat)
         for k, (f2, sa, sb, za, zb, _) in mine:
             cut_world_box(panel, -(sb - 0.01), -(sa + 0.01), BRICK_OUT - WALL_T - 0.05, fr - RECESS_D + 0.05, za - drop + 0.005, zb - 0.005, frame=F); covered.add(k)
-        reveal_faces(panel, F, -s1, -s0, fr - RECESS_D, fr, z_top, z1p)
+        reveal_faces(panel, F, -s1, -s0, fr - RECESS_D, fr, z_top, z1p, bottom=(drop <= 0.0 or over_portal(fi, s0, s1)))   # let down onto the foot: the crown's top is its foot face
         panels.append(panel)
     for k, (fi, sa, sb, za, zb, _) in enumerate(holes):                                # a window outside any panel keeps a plain hole
         if k in covered: continue
@@ -2196,24 +2274,236 @@ print(f"a capital on each of the {n_cap} brick columns: the portal's own, scaled
 # it steps with them and not past them. Separate geometry from the wall (user), in the wall's own brick for now, its
 # courses mapped like the wall's. The raised bays carry none: their wall runs on up behind it (build_upper_wall).
 B45_MAT = wall_upper.data.materials[0] if wall_upper.data.materials else None
+B45_COL_W = B45_FIELD_H * 4.0 / 3.0 / 4.0          # one medallion column: the 4:3 field is four columns wide
+def band_panel(name, fi, a, b, back, front, z0, z1, mat):
+    # the band run as a framed panel (user 2026-09-17): the ornament field sits inside a plain margin B45_MARGIN on all
+    # four sides, exactly the same size at the ends as above and below. Along the run the field's UVs are scaled by the
+    # nearest whole number of medallion columns over its length -- a stretch of under half a column in a hundred, which
+    # the eye cannot see -- so no medallion is cut at the ends either and the margin stays B45_MARGIN. The front is
+    # nine faces, the field (material slot 0, with UVs in metres from its own corner) and eight margin faces (slot 1),
+    # and the box's other five faces are slot 1 too. The slots are filled once the materials exist, below.
+    A, d, nrm = FACES[fi][0], FACES[fi][1], FACES[fi][2]; up = Vector((0.0, 0.0, 1.0))
+    L = b - a; ms = B45_MARGIN; fw = L - 2 * ms; n_cols = max(1, round(fw / B45_COL_W)); k = n_cols * B45_COL_W / fw
+    ss = [a, a + ms, b - ms, b]; zs = [z0, z0 + B45_MARGIN, z1 - B45_MARGIN, z1]
+    def P(sv, dv, zv): return A + d * sv + nrm * dv + Vector((0.0, 0.0, zv))
+    bm = bmesh.new(); uvl = bm.loops.layers.uv.new("UVMap")
+    def quad(c, want, slot, uv=None):
+        pts = [P(*q) for q in c]
+        if (pts[1] - pts[0]).cross(pts[2] - pts[1]).dot(want) < 0: pts.reverse(); c = c[::-1]
+        f = bm.faces.new([bm.verts.new(q) for q in pts]); f.material_index = slot; f.smooth = False
+        for l, q in zip(f.loops, c): l[uvl].uv = uv(q) if uv else (0.0, 0.0)
+    for i in range(3):
+        for j in range(3):
+            field = (i == 1 and j == 1)
+            quad([(ss[i], front, zs[j]), (ss[i + 1], front, zs[j]), (ss[i + 1], front, zs[j + 1]), (ss[i], front, zs[j + 1])], nrm,
+                 0 if field else 1, (lambda q: ((q[0] - ss[1]) * k, q[2] - zs[1])) if field else None)
+    quad([(a, back, z0), (b, back, z0), (b, back, z1), (a, back, z1)], -nrm, 1)
+    quad([(a, back, z1), (b, back, z1), (b, front, z1), (a, front, z1)], up, 1)
+    quad([(a, back, z0), (b, back, z0), (b, front, z0), (a, front, z0)], -up, 1)
+    quad([(a, back, z0), (a, front, z0), (a, front, z1), (a, back, z1)], -d, 1)
+    quad([(b, back, z0), (b, front, z0), (b, front, z1), (b, back, z1)], d, 1)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
+    me = bpy.data.meshes.new(name); bm.to_mesh(me); bm.free(); me.materials.append(mat); me.materials.append(mat)
+    o = bpy.data.objects.new(name, me); FIT.objects.link(o); o["band_cols"] = n_cols; o["band_side_margin"] = ms; o["band_stretch"] = k; return o
 n_b45 = []
 for fi in range(len(FACES)):
     outs = out_stretches(fi); F = rh_frame(fi); tag = PORTAL_TAG.get(fi, fi)
     for k in range(1, len(outs)):
         a, b = outs[k - 1][1], outs[k][0]
         if b - a < 0.05: continue
-        o = frame_box(f"ge_band45_{tag}_{k}", F, -b, -a, BRICK_OUT - WALL_T, B45_FRONT, B45_Z0, B45_Z1, B45_MAT)
-        brick_uvs(o.data, *BRICK_UV); n_b45.append(f"{tag}:{a:.2f}..{b:.2f}")
-print(f"the band between floors 4 and 5: {len(n_b45)} runs {B45_Z0:.3f}..{B45_Z1:.3f} at {B45_FRONT:+.2f} ({B45_STEP:.2f} behind the raised bays, "
-      f"{B45_FRONT - BRICK_OUT:.2f} proud of the field): " + ", ".join(n_b45))
-# the entablature in the portal's own stone (the frieze band's material, no ashlar joint lines), now that the link brought it in
-band = bpy.data.objects.get("frieze_band")
-portal_stone = band.data.materials[0] if band and band.data.materials else None
-if portal_stone:
-    for o in list(GCOLL.objects) + [f for f in FIT.objects if f.name.startswith(("fit_band_top", "fit_pier_", "fit_inset", "fit_bar", "fit_cap_", "fit_zone_"))]:
-        o.data.materials.clear(); o.data.materials.append(portal_stone)
-else:
-    print("WARNING: the portal's frieze_band material was not found; the entablature keeps the ashlar material")
+        o = band_panel(f"ge_band45_{tag}_{k}", fi, a, b, BRICK_OUT - WALL_T, B45_FRONT, B45_Z0 + B45_STEPS_H, B45_Z1, B45_MAT)
+        n_b45.append(f"{tag}:{a:.2f}..{b:.2f}")
+print(f"the band between floors 4 and 5: {len(n_b45)} runs {B45_Z0 + B45_STEPS_H:.3f}..{B45_Z1:.3f} at {B45_FRONT:+.2f} ({B45_STEP:.2f} behind the raised bays, "
+      f"{B45_FRONT - BRICK_OUT:.2f} proud of the field), the field {B45_FIELD_H:.2f} tall in a {B45_MARGIN:.2f} margin: " + ", ".join(n_b45))
+# The game's own Bradbury textures (user 2026-09-17): its `pbr.bradbury_wall_terracotta_brick_tileable` on every brick
+# surface -- the export had drawn them all in the generic red brick -- and its `pbr.bradbury_top_band_terracotta_ornament`
+# on the band. Each is a PBR material built here from the catalog's own files (base colour, OpenGL normal, and the
+# packed AO / roughness / metal map, read as the game reads them) with paths relative to the .blend, tiled by the
+# catalog's tileMeters on the metre-based UVs every brick surface already carries. The ornament is no repeat vertically
+# -- the central field of medallions, four columns by three rows on a 4:3 patch, meant for clamped band placement --
+# so it is mapped once over the band's field, B45_FIELD_H tall inside the band's margin, and repeats every 4/3 of that
+# along it, which keeps the medallions round; the bricks tile at the catalog's BRICK_TILE_M both ways (1.26: the 1.4 m
+# tile made the bricks 10% too big, user 2026-09-17). The catalog's height maps are not used, as the game does not use
+# them. The brick is tiled in bands (user 2026-09-17, to fight the repeat): every row of tiles, one tile tall, is
+# shifted along the wall by its own whole number of strips -- a hash of the row -- so the bond runs on unbroken (a
+# strip is a quarter of the tile) but the tile's repeats no longer line up from one row to the next.
+PBR_DIR = os.path.join(ROOT, "assets", "public", "pbr")
+BRICK_TILE_M = 1.26                                # the brick set's tileMeters (kept in step with its pbr.material.config.js)
+def pbr_material(name, folder, tile_u, tile_v, v0=0.0, clamp=False, band_shift=0):
+    d = os.path.join(PBR_DIR, folder)
+    m = bpy.data.materials.new(name); m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
+    out = nt.nodes.new('ShaderNodeOutputMaterial'); out.location = (600, 0)
+    bsdf = nt.nodes.new('ShaderNodeBsdfPrincipled'); bsdf.location = (300, 0); nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    uv = nt.nodes.new('ShaderNodeUVMap'); uv.location = (-900, 0)
+    mp = nt.nodes.new('ShaderNodeMapping'); mp.location = (-700, 0)
+    mp.inputs["Scale"].default_value = (1.0 / tile_u, 1.0 / tile_v, 1.0); mp.inputs["Location"].default_value = (0.0, -v0 / tile_v, 0.0)
+    nt.links.new(uv.outputs["UV"], mp.inputs["Vector"]); vec = mp.outputs["Vector"]
+    if band_shift:
+        # in tile units now: the row of tiles is floor(v); a white-noise hash of it picks 0..band_shift-1 strips, and that
+        # many quarter tiles are added to u
+        sp = nt.nodes.new('ShaderNodeSeparateXYZ'); sp.location = (-640, 200); nt.links.new(vec, sp.inputs["Vector"])
+        fl = nt.nodes.new('ShaderNodeMath'); fl.operation = 'FLOOR'; fl.location = (-560, 320); nt.links.new(sp.outputs["Y"], fl.inputs[0])
+        wn = nt.nodes.new('ShaderNodeTexWhiteNoise'); wn.noise_dimensions = '1D'; wn.location = (-480, 320); nt.links.new(fl.outputs[0], wn.inputs["W"])
+        m1 = nt.nodes.new('ShaderNodeMath'); m1.operation = 'MULTIPLY'; m1.inputs[1].default_value = float(band_shift); m1.location = (-400, 320)
+        nt.links.new(wn.outputs["Value"], m1.inputs[0])
+        f2 = nt.nodes.new('ShaderNodeMath'); f2.operation = 'FLOOR'; f2.location = (-320, 320); nt.links.new(m1.outputs[0], f2.inputs[0])
+        m2 = nt.nodes.new('ShaderNodeMath'); m2.operation = 'MULTIPLY'; m2.inputs[1].default_value = 1.0 / band_shift; m2.location = (-240, 320)
+        nt.links.new(f2.outputs[0], m2.inputs[0])
+        ad = nt.nodes.new('ShaderNodeMath'); ad.operation = 'ADD'; ad.location = (-160, 260); nt.links.new(sp.outputs["X"], ad.inputs[0]); nt.links.new(m2.outputs[0], ad.inputs[1])
+        cb = nt.nodes.new('ShaderNodeCombineXYZ'); cb.location = (-80, 200)
+        nt.links.new(ad.outputs[0], cb.inputs["X"]); nt.links.new(sp.outputs["Y"], cb.inputs["Y"]); nt.links.new(sp.outputs["Z"], cb.inputs["Z"])
+        vec = cb.outputs["Vector"]
+    if clamp:
+        # one field vertically, a repeat along the band: V is clamped to the image and U left to repeat (an image's own
+        # extension mode clamps both axes at once, which smeared the ornament's edge column along the whole band)
+        sp = nt.nodes.new('ShaderNodeSeparateXYZ'); sp.location = (-640, -220); nt.links.new(vec, sp.inputs["Vector"])
+        cl = nt.nodes.new('ShaderNodeClamp'); cl.location = (-560, -220); nt.links.new(sp.outputs["Y"], cl.inputs["Value"])
+        cb = nt.nodes.new('ShaderNodeCombineXYZ'); cb.location = (-480, -220)
+        nt.links.new(sp.outputs["X"], cb.inputs["X"]); nt.links.new(cl.outputs["Result"], cb.inputs["Y"]); nt.links.new(sp.outputs["Z"], cb.inputs["Z"])
+        vec = cb.outputs["Vector"]
+    def tex(fn, cs, y):
+        fp = os.path.join(d, fn); assert os.path.exists(fp), fp
+        im = bpy.data.images.load(fp, check_existing=True); im.name = f"pbr_{folder}_{os.path.splitext(fn)[0]}"
+        im.colorspace_settings.name = cs; im.filepath = bpy.path.relpath(fp)                   # relative to the .blend, like the game's other maps
+        t = nt.nodes.new('ShaderNodeTexImage'); t.image = im; t.location = (-450, y); t.extension = 'REPEAT'
+        nt.links.new(vec, t.inputs["Vector"]); return t
+    base = tex("basecolor.jpg", 'sRGB', 300); arm = tex("arm.png", 'Non-Color', 0); nrm = tex("normal_gl.png", 'Non-Color', -300)
+    sep = nt.nodes.new('ShaderNodeSeparateColor'); sep.location = (-150, 0); nt.links.new(arm.outputs["Color"], sep.inputs["Color"])
+    mix = nt.nodes.new('ShaderNodeMix'); mix.data_type = 'RGBA'; mix.blend_type = 'MULTIPLY'; mix.location = (50, 250)
+    mix.inputs["Factor"].default_value = 1.0                                                   # the packed AO darkens the base colour
+    nt.links.new(base.outputs["Color"], next(i for i in mix.inputs if i.identifier == "A_Color"))
+    nt.links.new(sep.outputs["Red"], next(i for i in mix.inputs if i.identifier == "B_Color"))
+    nt.links.new(next(o for o in mix.outputs if o.identifier == "Result_Color"), bsdf.inputs["Base Color"])
+    nt.links.new(sep.outputs["Green"], bsdf.inputs["Roughness"]); nt.links.new(sep.outputs["Blue"], bsdf.inputs["Metallic"])
+    nm = nt.nodes.new('ShaderNodeNormalMap'); nm.location = (50, -300); nm.inputs["Strength"].default_value = 1.0
+    nt.links.new(nrm.outputs["Color"], nm.inputs["Color"]); nt.links.new(nm.outputs["Normal"], bsdf.inputs["Normal"])
+    return m
+def band_uvs(me, fi):
+    # the band's own mapping: metres along its face and metres up, for the material's mapping to place the ornament on
+    A, t, nrm = face_frame(fi); uv = me.uv_layers.active.data
+    for pl in me.polygons:
+        for li in pl.loop_indices:
+            q = me.vertices[me.loops[li].vertex_index].co; uv[li].uv = ((Vector((q.x, q.y)) - A).dot(t), q.z)
+BRICK_PBR = pbr_material("PBR_bradbury_wall_terracotta_brick_tileable", "bradbury_wall_terracotta_brick_tileable", BRICK_TILE_M, BRICK_TILE_M, band_shift=4)
+BAND_PBR = pbr_material("PBR_bradbury_top_band_terracotta_ornament", "bradbury_top_band_terracotta_ornament", B45_FIELD_H * 4.0 / 3.0, B45_FIELD_H,
+                        v0=0.0, clamp=True)                             # the field's UVs start at its own corner
+old_brick = [m for m in bpy.data.materials if m.node_tree and any(n.type == 'TEX_IMAGE' and n.image and "red_brick" in n.image.filepath.replace("\\", "/")
+                                                                 for n in m.node_tree.nodes)]
+n_brick, done_me = 0, set()
+for o in bpy.data.objects:
+    if o.type != 'MESH' or o.data.name in done_me: continue
+    done_me.add(o.data.name)
+    for i, m in enumerate(o.data.materials):
+        if m in old_brick: o.data.materials[i] = BRICK_PBR; n_brick += 1
+n_band = 0
+for o in [q for q in bpy.data.objects if q.name.startswith("ge_band45")]:
+    o.data.materials[0] = BAND_PBR; n_band += 1                          # the field; the margins take the trim below
+# The trim -- the band's two mouldings with their dentils and brackets, and every window sill -- in the band's own
+# colour (user 2026-09-17): the band's own mean colour, measured in linear light from its file, as the base, with the
+# normal and ORM maps of the game's `terracotta_smooth` set, the material the game's config already gives the sills,
+# for the surface (its base colour is not used: nearly flat, it still carried soft patches that showed on the ledges
+# once gained up). A slight tone variation goes over it the way terracotta varies: piece by piece, since the trim is
+# made of blocks each fired a little differently -- a cell noise TRIM_CELL_M across gives every piece its own tone,
+# TRIM_VAR_CELL either way -- with a fine grain over that (a metre-scale noise was tried first and read as blobs,
+# user 2026-09-17). Its maps are box-projected on object coordinates, so the swept mouldings, which carry no UVs,
+# take it as the sills do; and it is tiled every TRIM_TILE_M, closer than the catalog's 4 m, so its surface detail
+# shows at a moulding's scale.
+TRIM_TILE_M = 2.0
+TRIM_CELL_M, TRIM_VAR_CELL = 0.7, 0.015           # the pieces, and their tone either way (0.04 still showed as patches, user)
+TRIM_GRAIN_PER_M, TRIM_VAR_GRAIN = 40.0, 0.008     # the grain's frequency, and its tone either way
+def linear_mean(im):
+    # the mean of an sRGB image in linear light, from its own pixels (bpy hands them over as the raw bytes over 255)
+    import numpy as _np
+    a = _np.empty(im.size[0] * im.size[1] * 4, dtype=_np.float32); im.pixels.foreach_get(a); a = a.reshape(-1, 4)[:, :3].astype(_np.float64)
+    return _np.where(a <= 0.04045, a / 12.92, ((a + 0.055) / 1.055) ** 2.4).mean(0)
+def trim_material(name, folder, tile, target_linear, cell_var=None, grain_var=None):
+    cell_var = TRIM_VAR_CELL if cell_var is None else cell_var; grain_var = TRIM_VAR_GRAIN if grain_var is None else grain_var
+    d = os.path.join(PBR_DIR, folder)
+    m = bpy.data.materials.new(name); m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
+    out = nt.nodes.new('ShaderNodeOutputMaterial'); out.location = (600, 0)
+    bsdf = nt.nodes.new('ShaderNodeBsdfPrincipled'); bsdf.location = (300, 0); nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    tc = nt.nodes.new('ShaderNodeTexCoord'); tc.location = (-900, 0)
+    mp = nt.nodes.new('ShaderNodeMapping'); mp.location = (-700, 0); mp.inputs["Scale"].default_value = (1.0 / tile, 1.0 / tile, 1.0 / tile)
+    nt.links.new(tc.outputs["Object"], mp.inputs["Vector"])
+    def tex(fn, cs, y):
+        fp = os.path.join(d, fn); assert os.path.exists(fp), fp
+        im = bpy.data.images.load(fp, check_existing=True); im.name = f"pbr_{folder}_{os.path.splitext(fn)[0]}"
+        im.colorspace_settings.name = cs; im.filepath = bpy.path.relpath(fp)
+        t = nt.nodes.new('ShaderNodeTexImage'); t.image = im; t.location = (-450, y); t.projection = 'BOX'; t.projection_blend = 0.25
+        nt.links.new(mp.outputs["Vector"], t.inputs["Vector"]); return t, im
+    # the colour is the band's own mean, flat: the set's base colour, nearly flat itself, still carried soft patches
+    # that showed on the ledges once gained up (user 2026-09-17), so only its normal and ORM maps are used
+    arm, _ = tex("arm.png", 'Non-Color', 0); nrm, _ = tex("normal_gl.png", 'Non-Color', -300)
+    g = nt.nodes.new('ShaderNodeRGB'); g.location = (-450, 300)
+    g.outputs[0].default_value = (float(target_linear[0]), float(target_linear[1]), float(target_linear[2]), 1.0)
+    gain = target_linear
+    # the tone variation, on the same object coordinates (in tile units here): one tone per piece from a cell noise, a
+    # fine grain over it, each remapped to 1 -/+ its own spread and multiplied in
+    vo = nt.nodes.new('ShaderNodeTexVoronoi'); vo.location = (-450, 700); vo.feature = 'F1'; vo.inputs["Scale"].default_value = tile / TRIM_CELL_M
+    nt.links.new(mp.outputs["Vector"], vo.inputs["Vector"])
+    vs = nt.nodes.new('ShaderNodeSeparateColor'); vs.location = (-300, 700); nt.links.new(vo.outputs["Color"], vs.inputs["Color"])
+    r1 = nt.nodes.new('ShaderNodeMath'); r1.operation = 'MULTIPLY_ADD'; r1.location = (-150, 700)
+    r1.inputs[1].default_value = 2.0 * cell_var; r1.inputs[2].default_value = 1.0 - cell_var; nt.links.new(vs.outputs["Red"], r1.inputs[0])
+    nz = nt.nodes.new('ShaderNodeTexNoise'); nz.location = (-450, 520); nz.inputs["Scale"].default_value = TRIM_GRAIN_PER_M * tile; nz.inputs["Detail"].default_value = 2.0
+    nt.links.new(mp.outputs["Vector"], nz.inputs["Vector"])
+    r2 = nt.nodes.new('ShaderNodeMath'); r2.operation = 'MULTIPLY_ADD'; r2.location = (-150, 520)
+    r2.inputs[1].default_value = 2.0 * grain_var; r2.inputs[2].default_value = 1.0 - grain_var; nt.links.new(nz.outputs["Fac"], r2.inputs[0])
+    both = nt.nodes.new('ShaderNodeMath'); both.operation = 'MULTIPLY'; both.location = (0, 600); nt.links.new(r1.outputs[0], both.inputs[0]); nt.links.new(r2.outputs[0], both.inputs[1])
+    v = nt.nodes.new('ShaderNodeMix'); v.data_type = 'RGBA'; v.blend_type = 'MULTIPLY'; v.location = (-50, 450); v.inputs["Factor"].default_value = 1.0
+    nt.links.new(g.outputs[0], next(i for i in v.inputs if i.identifier == "A_Color"))
+    nt.links.new(both.outputs[0], next(i for i in v.inputs if i.identifier == "B_Color"))
+    sep = nt.nodes.new('ShaderNodeSeparateColor'); sep.location = (-150, 0); nt.links.new(arm.outputs["Color"], sep.inputs["Color"])
+    ao = nt.nodes.new('ShaderNodeMix'); ao.data_type = 'RGBA'; ao.blend_type = 'MULTIPLY'; ao.location = (50, 250); ao.inputs["Factor"].default_value = 1.0
+    nt.links.new(next(o for o in v.outputs if o.identifier == "Result_Color"), next(i for i in ao.inputs if i.identifier == "A_Color"))
+    nt.links.new(sep.outputs["Red"], next(i for i in ao.inputs if i.identifier == "B_Color"))
+    nt.links.new(next(o for o in ao.outputs if o.identifier == "Result_Color"), bsdf.inputs["Base Color"])
+    nt.links.new(sep.outputs["Green"], bsdf.inputs["Roughness"]); nt.links.new(sep.outputs["Blue"], bsdf.inputs["Metallic"])
+    nm = nt.nodes.new('ShaderNodeNormalMap'); nm.location = (50, -300); nm.inputs["Strength"].default_value = 1.0
+    nt.links.new(nrm.outputs["Color"], nm.inputs["Color"]); nt.links.new(nm.outputs["Normal"], bsdf.inputs["Normal"])
+    return m, gain
+_band_im = next(n.image for n in BAND_PBR.node_tree.nodes if n.type == 'TEX_IMAGE' and n.image.colorspace_settings.name == 'sRGB')
+TRIM_PBR, _trim_gain = trim_material("PBR_bradbury_terracotta_trim", "terracotta_smooth", TRIM_TILE_M, linear_mean(_band_im))
+n_sill = 0
+for o in [q for q in bpy.data.objects if q.type == 'MESH' and q.name.startswith("sill_")]:
+    o.data.materials.clear(); o.data.materials.append(TRIM_PBR); n_sill += 1
+n_capm = 0
+for o in [q for q in bpy.data.objects if q.type == 'MESH' and q.name.startswith("ge_capital")]:   # the capitals too (user 2026-09-17)
+    o.data.materials.clear(); o.data.materials.append(TRIM_PBR); n_capm += 1
+for o in [q for q in bpy.data.objects if q.name.startswith("ge_band45")]:                         # the band's margins and its other faces
+    o.data.materials[1] = TRIM_PBR
+print("the band's margins: " + ", ".join(f"{o.name} {o['band_cols']} columns, side margins {o['band_side_margin']:.3f}, the columns stretched {(o['band_stretch'] - 1) * 100:+.2f}%" for o in bpy.data.objects if o.name.startswith("ge_band45")))
+# The ground floor's stone (user 2026-09-17, a photo of the corner): the moulding under the brick -- the entablature,
+# the band strip, the zone above it with its blocks, the crown -- and the storefront piers are one smooth red-brown
+# sandstone in the reference, darker and redder than the brick and with no patches, where the model had them in the
+# portal's pink ashlar and the piers in a darker, noisier stone. The colour is set against the brick's, GROUND_RATIO
+# of its sRGB mean per channel (the photo: about two thirds of its brightness, redder), as a flat base with a whisper
+# of per-block and grain variation; the surface comes from the game's `brownstone` set, the smoothest stone in the
+# catalog (its base colour is not used). The catalog's red sandstones were both dark and patchy. The linked portal
+# keeps its own stone.
+GROUND_RATIO = (0.64, 0.60, 0.74)
+def srgb_to_linear(c): return _np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+import numpy as _np
+_brick_im = next(n.image for n in BRICK_PBR.node_tree.nodes if n.type == 'TEX_IMAGE' and n.image.colorspace_settings.name == 'sRGB')
+_a = _np.empty(_brick_im.size[0] * _brick_im.size[1] * 4, dtype=_np.float32); _brick_im.pixels.foreach_get(_a)
+_brick_srgb = _a.reshape(-1, 4)[:, :3].astype(_np.float64).mean(0)
+GROUND_LINEAR = srgb_to_linear(_brick_srgb * _np.array(GROUND_RATIO))
+STONE_PBR, _ = trim_material("PBR_bradbury_ground_stone", "brownstone", 3.0, GROUND_LINEAR, cell_var=0.01, grain_var=0.005)
+n_gs = 0
+for o in list(GCOLL.objects) + [f for f in FIT.objects if f.name.startswith(("fit_band_top", "fit_pier_", "fit_inset", "fit_bar", "fit_cap_", "fit_zone_", "fit_piers"))]:
+    if o.type != 'MESH': continue
+    o.data.materials.clear(); o.data.materials.append(STONE_PBR); n_gs += 1
+print(f"the ground floor's stone: sRGB about {tuple(int(round(v * 255)) for v in _brick_srgb * _np.array(GROUND_RATIO))} (the brick's {tuple(int(round(v * 255)) for v in _brick_srgb)} "
+      f"times {GROUND_RATIO}), brownstone's surface, on {n_gs} meshes: the entablature, the strip, the zone and its blocks, the crown, the piers")
+print(f"the trim terracotta: the band's mean colour ({_trim_gain[0]:.3f}, {_trim_gain[1]:.3f}, {_trim_gain[2]:.3f} linear) with terracotta_smooth's normal and ORM, "
+      f"a tone per {TRIM_CELL_M} m piece (+-{TRIM_VAR_CELL:.1%}) and a grain (+-{TRIM_VAR_GRAIN:.1%}), box-projected every {TRIM_TILE_M} m; "
+      f"on {n_sill} sills and {n_capm} capitals now, and on the band's mouldings, dentils and brackets below")
+print(f"the game's Bradbury textures: the terracotta brick on {n_brick} meshes in place of {len(old_brick)} red-brick materials "
+      f"({', '.join(sorted(m.name for m in old_brick))}), tiled every {BRICK_TILE_M} m in rows shifted by whole strips; the ornament on {n_band} band runs, "
+      f"{B45_H:.2f} tall from {B45_Z0 + B45_STEPS_H:.3f}, repeating every {B45_H * 4 / 3:.3f} m")
+# The entablature used to take the portal's own stone here (the frieze band's material, no ashlar joint lines) once the
+# link had brought it in. That handed the pink back to everything the ground floor's stone had just been put on, which
+# is why builds v64 and v65 still rendered the entablature pink (found 2026-09-18): the ground floor keeps
+# PBR_bradbury_ground_stone, and only the linked portal itself is in its own stone.
 # The brackets under the band (user 2026-09-17, photos 4 and 5; "dentils"): consoles hanging from the band's soffit
 # between the brick columns only -- nine over a three-window bay, six over a two-window bay, three over a single --
 # spaced evenly across the bay from column face to column face; none over the raised bays, which carry no band. Each
@@ -2240,7 +2530,7 @@ def add_bracket(bm, sc):
     n = len(prof)
     for i in range(n): bm.faces.new((L[i], L[(i + 1) % n], R[(i + 1) % n], R[i]))
     bm.faces.new(L[::-1]); bm.faces.new(R)                                       # the sides are planar: the taper is linear in z
-BRK_MAT = _me.materials[0] if _me.materials else (portal_stone or CARVED)
+BRK_MAT = TRIM_PBR                                 # the band's own terracotta (user 2026-09-17); the capitals keep the portal's stone
 n_brk, brk_bays = 0, []
 for fi in range(len(FACES)):
     outs = out_stretches(fi); cols = column_spans(fi); tag = PORTAL_TAG.get(fi, fi)
@@ -2293,7 +2583,7 @@ T45_OVOLO_OUT, T45_OVOLO_H, T45_OVOLO_BULGE = 0.08, 0.12, 0.035   # the convex c
 T45_EDGE_OUT, T45_EDGE_H = 0.02, 0.04              # the edge on top
 T45_H = T45_TOOTH_H + T45_STEP_H + T45_OVOLO_H + T45_EDGE_H       # 0.26
 assert T45_H < B45_TOPC_H, "the top cornice is taller than the room left for it under the fifth floor's sills"
-C45_MAT = portal_stone or STONE
+C45_MAT = TRIM_PBR                                 # the band's own terracotta (user 2026-09-17), not the portal's stone
 def silhouette_jogs(off):
     # every raised stretch of every face as a jog `off` out: a corner stretch opens at the face's start or closes at its
     # end, which is what makes `loop` mitre that corner at the offset
@@ -2350,7 +2640,7 @@ for fi in range(len(FACES)):
             c = A + d * (x + T45_TOOTH_W / 2) + nrm * (off + (T45_TOOTH_FACE - 0.01) / 2)
             M.translation = Vector((c.x, c.y, B45_Z1 + T45_TOOTH_H / 2))
             bmesh.ops.transform(bm, matrix=M @ Matrix.Diagonal((T45_TOOTH_W, T45_TOOTH_FACE + 0.01, T45_TOOTH_H + 0.004, 1)), verts=r["verts"])
-mesh_from_bm("ge_teeth45", bm, portal_stone or CARVED, FIT)
+mesh_from_bm("ge_teeth45", bm, TRIM_PBR, FIT)
 print(f"the cornices of the band between floors 4 and 5: the bottom moulding {B45_Z0:.3f}..{B45_Z0 + B45_STEPS_H:.3f} "
       f"and the top cornice {B45_Z1:.3f}..{B45_Z1 + T45_H:.3f}, both on the band's outline, "
       f"one mitred sweep each round {len(band45_path)} points; {n_teeth} dentils at pitch {pitch45:.2f}")

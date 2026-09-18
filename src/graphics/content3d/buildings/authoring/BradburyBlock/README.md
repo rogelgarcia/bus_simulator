@@ -609,6 +609,142 @@ brick between the brackets and capitals at 15.45, the taller band +0.145 (+0.205
 not move (the same 4 and 23 as before the band), no slivers at twelve heights, no open junction. Each moulding is one
 ring of 31 path points; 1460 dentils.
 
+The game's own Bradbury textures (user 2026-09-17): the export had drawn every brick surface in the generic
+`pbr.red_brick`, but the catalog carries `pbr.bradbury_wall_terracotta_brick_tileable` (Roman terracotta brick,
+tileable both ways, `tileMeters` 1.4) and `pbr.bradbury_top_band_terracotta_ornament` (the frieze's medallion field).
+`pbr_material` builds each as a Principled material from the catalog's own files -- `basecolor.jpg` in sRGB, multiplied
+by the packed map's red channel (AO); `arm.png`'s green to roughness and blue to metallic, as the game reads it;
+`normal_gl.png` through a normal map at strength 1 -- with every image path relative to the .blend
+(`bpy.path.relpath`, the same `//../../../../../assets/public/pbr/...` form the relinked maps use). The brick goes on
+every mesh that used a red-brick material (`PBR_bradbury_wall_terracotta_brick_tileable`, 1.4 m tiles on the
+metre-based UVs the walls and panels already carry; the export's six red-brick materials -- the walls, the panels, the
+top floor, two roof strips and a few window parts, 167 meshes -- are left unused). The ornament is not a repeat vertically -- the catalog
+notes say so: the central field only, four columns by three rows on a 4:3 patch, for clamped band placement, and
+"keep the mapped band 4:3 or the medallions go oval" -- so the band boxes get their own metre UVs (`band_uvs`) and a
+mapping that spans the image once from the moulding's top to the band's top (`B45_H` 0.55) and repeats it every 4/3
+of that, 0.733 m, along the band: three rows of round medallions 0.18 m across, which is what the photos show. V is
+clamped in the node tree (separate, clamp, combine) and U left to repeat: an image's own extension mode clamps both
+axes at once, and a first cut that used it smeared the ornament's edge column along the whole band. The catalog's
+height maps are not wired, as the game does not use them.
+
+The two base colours retouched at the source (user 2026-09-17, with a reference photo: brick-to-brick variation, and a
+band in the brick's own tone): the catalog's `basecolor.jpg` of both sets is rewritten by the scratchpad's
+`retouch_bradbury_pbr.py`, which reads the originals from its backup (the source archives in `downloads/` keep them
+too). The brick tile was one flat colour per strip repeated 72 times, which read as a pattern; every strip now carries
+its own tint -- lightness drawn uniformly in 0.93..1.07 (no distribution tails: the first passes drew from a normal
+with an 8.5% and then a 5% spread, and it was their tails, strips at 0.80 or 0.88, that stood out and "fought with
+each other"), a warm/cool drift of up to 2% and a saturation of 1.0 to 1.05, never below the source's -- with the 16
+course grooves and the joints
+read off `height.png` and left untouched, so the wrap rows and joint columns are exactly as they were and the tile
+still tiles (a strip that runs across the side wrap is one strip and gets one tint). The band's base colour, which was
+lighter and more orange than the brick, is moved by three per-channel gains onto the retouched brick's mean times
+0.88, the brick's tone a little darker, with no clipping. Both configs' `albedoNotes` record the retouch. Note that
+`assets/` in this worktree is the main checkout's folder, so the retouched files are the one shared copy.
+
+The bricks were 10% too big (user 2026-09-17): the brick set's `tileMeters` is 1.26 now, in its config and in the
+material (`BRICK_TILE_M`). And the brick is tiled in bands to fight the repeat (user): in the material, every row of
+tiles, one tile tall, is shifted along the wall by its own whole number of strips -- a white-noise hash of the row
+picks 0 to 3, and that many quarter tiles are added to u -- so the bond runs on unbroken while the tile's repeats no
+longer line up from one row to the next. That is a shader-side offset the game's material system has no field for;
+the tile itself still repeats every 1.26 m within a row, and only a wider map with more independently tinted strips
+would lengthen that.
+
+The joints get more accent, in all four maps (user 2026-09-17): every course groove and joint is widened by 2 px on
+each side with a third at half strength (about 2 mm a side at 1.26 m per 1254 px), and in that zone the base colour is
+painted with the groove's own colour made 18% darker, the height is cut to the groove's floor less 10, the roughness is
+raised by 0.10 and the AO taken down to 85%, and the normal map is recomputed from the new height in a band a pixel
+wider than the zone, with its strength matched by amplitude to the original normal in that same zone -- the spread
+of the original's x and y components over the spread of the original height's gradients, one factor per axis, OpenGL
++Y; a least-squares fit collapses because the AI-estimated normal's features sit a pixel or so off the height's -- so
+the recomputed edges read as strongly as the untouched ones, and the tile stays periodic (every edit rolls round the
+wrap). Everything is re-derived from the backed-up originals each time
+`retouch_bradbury_pbr.py` runs.
+
+The strip faces read as wood, not clay (user 2026-09-17): the AI drew every strip with fine horizontal streaks -- in a
+strip the detail varies three times more across the rows than along them, in the colour, the normal and the roughness
+alike -- which is grain. Each face is rebuilt as clay instead, in `retouch_bradbury_pbr.py` before the tints: from its
+own mean colour, a soft mottle (periodic noise blurred to a 14 px blotch, +-1.5% lightness; a first cut at 3.5% read
+as a dark pattern, user), a fine isotropic grain (+-1.0%) and sparse pits (one per 1400 px, 6% darker at the
+centre); the height gets the same three at a shallow
+relief and the roughness too (pits rougher and darker in the AO), and the normal map is now computed from that height
+over the whole tile, joints and faces alike, so no grain survives anywhere. All the noise is made periodic through an
+FFT blur, so the tile still wraps. The original maps are unchanged in the backup and the source zip.
+
+The trim in the band's own colour (user 2026-09-17): the band's two mouldings with their dentils and brackets, and
+every window sill (117 of them, which the export had in thirteen copies of the game's `terracotta_smooth` material,
+rendering dark brown), and the capitals (user, third round), now share one material, `PBR_bradbury_terracotta_trim`
+(`trim_material`). Its colour is the band's own mean, taken in linear light from the band file's pixels
+(`linear_mean`; bpy hands an sRGB image's pixels over as raw bytes), as a flat base; the surface comes from the
+normal and ORM maps of the game's `terracotta_smooth` set, the material the config gives the sills. Over the flat
+base goes a slight variation the way terracotta varies -- piece by piece, the trim being blocks each fired a little
+differently: a cell noise (Voronoi F1) about 0.7 m across gives every piece its own tone, +-1.5%, with a fine grain
+over it (a noise at 40 per metre, +-0.8%). Three earlier cuts all showed as a pattern on the cornice's ledges: one
+metre-scale noise at +-8% read as blobs; cells at +-4% still read as patches; and the set's own base colour, gained
+up 2x onto the band's tone, carried soft patches of its own, so it is no longer used. Its maps are box-projected on
+object coordinates (`projection = 'BOX'`), so the swept
+mouldings, which have no UVs, take it as the sills do, tiled every 2 m rather than the catalog's 4 so the surface
+detail shows at a moulding's scale.
+
+The band as a framed panel (user 2026-09-17): the ornament field sits inside a plain margin `B45_MARGIN` 0.06 on all
+four sides, in the trim's terracotta. The field keeps its size (`B45_FIELD_H` 0.55, the medallions 0.18) and the band
+grows for the margin instead, `B45_H` 0.67, so the band's top, the top cornice, the sills and everything above rise
+0.12 with it (`UPPER_LIFT` 0.772). Each run is built by `band_panel`: the front is nine faces, the field in material
+slot 0 with UVs in metres from its own corner (so the ornament's mapping needs no offset and clamps at the field's
+edges), the eight margin faces and the box's other five in slot 1, the trim. The margin is `B45_MARGIN` at the two
+ends of a run as well, exactly the size it is above and below: a first cut gave the field whole medallion columns and
+the rest of the run to the side margins, which came out anywhere from 0.061 to 0.135, not the same size on all four
+sides as asked. Instead the field's UVs along the run are scaled by the nearest whole number of medallion columns over
+its length, a stretch of at most half a column spread over a run's 68 to 137 columns (under 0.7%, printed at the
+build), so no medallion is cut at the ends either. The probes' heights above the band rose 0.12 again.
+
+The ground floor's stone (user 2026-09-17, a photo of the corner): the moulding under the brick -- the entablature
+with its teeth, the band strip, the zone above it with its blocks, bars and openings, the crown -- and the storefront
+piers are one smooth red-brown sandstone in the reference, darker and redder than the brick and without patches; the
+model had them in the portal's pink ashlar (`PORTAL_sandstone`) and the piers in a darker, noisier stone
+(`Sandstone_Pier`). They now share `PBR_bradbury_ground_stone`, built by `trim_material` like the trim: a flat colour
+set against the brick's, `GROUND_RATIO` (0.64, 0.60, 0.74) of its sRGB mean per channel -- the photo has the stone at
+about two thirds of the brick's brightness and redder -- with the smallest variation (+-1% per block, +-0.5% grain),
+and the surface from the game's `brownstone` set, the smoothest stone in the catalog; its base colour is not used,
+and the catalog's two red sandstones were both dark and patchy. The linked portal keeps its own stone. A block further down, from before this change, gave the entablature the portal's frieze band's stone once the
+link had brought it in, and so handed the pink back to all of it but the piers: builds v64 and v65 rendered the
+entablature pink for that reason. The block is gone (2026-09-18); the ground floor keeps its stone, and only the
+linked portal is in its own.
+
+The bay recess (user 2026-09-18, two photos of the inset bays, then a screenshot, a third photo and a second
+screenshot): on the inset walls the window area of each bay -- its window sets, which stand one over the other on the
+three floors, and the wall between them, from the crown's foot (`FOOT_TOP` 6.292) up to the capitals' foot (15.242,
+where the window recesses end) -- steps back `BAY_D` 0.06, the window recess's own depth, to `BAY_OUT` -0.16, and its
+windows, their recess panels and sills go back with it, so a window now stands two steps into the wall, the bay's and
+then its own. The user's picture of it: take the windows and the wall between them out, which leaves a rectangular
+hole three floors tall; make an inset round that hole; put the windows and the wall back in it. So the inset is
+exactly as wide as the window sets (the sills in the run give the extent, and the floors' sets are asserted to agree
+within 3 cm), its edge runs down the sets' own edges with no padding, and the field between it and the columns stays
+standing, 0.25 to 0.56 wide; a blank bay gets no inset. The raised corner and centre stretches are not touched, as
+asked. Two earlier cuts were wrong: build v66 recessed each run from column to column, `bay_spans`, the runs between
+what stands proud of a face (`out_stretches` + `column_spans`), and that step folded into the columns' own returns,
+which merely grew from 0.30 to 0.36, so the user's first screenshot rightly saw nothing new; build v68 framed the
+window area with 0.20 of wall, which the second screenshot marked as incorrect padding, the photo's edge running down
+the jambs. In `build_upper_wall`, once the corners are out and before the window sets are cut, the wall's front skin
+inside each inset is taken out with `wall_faces_in` (its depth window a hair either side of `BRICK_OUT`, so only the
+skin goes) and put back `BAY_D` deeper with its reveals: the top one, facing down, right under the 5 cm strip the
+brackets hang from; the two sides, facing into the inset, in the same planes as the window panels' own side reveals,
+which continue them a step further in on the window floors; and at the foot none, because the crown's top ledge at
+6.292 is that face already (the crown reaches `E_IN` 0.44 back from its base, to -0.24), so a foot face there lies in
+the crown's own plane and fights it. A first cut built it and the ledge probe showed the two trading hits along every
+bay; the same coincidence had been there under the second floor's window panels since they were let down onto the
+foot, so `reveal_faces` now takes `bottom=False` for those too. Over the three portals the crown jogs out with the
+portal's band and its ledge stops short of the wall, so there (`over_portal`) the inset and the panel over it keep a
+foot face of their own. The window parts in the insets then move back `BAY_D`, and a set inside an inset takes `fr =
+BAY_OUT`, so its own panel and reveals sit a step behind it; the deletion window for a set's hole is `fr + 0.02`
+rather than `fr + 0.05`, so the inset's reveals, whose centres lie 0.03 out from its plane, are not swept away with
+the set's rectangle. The planes now read on the model: column +0.20, field -0.10, inset -0.16, window recess -0.22.
+
+The window recess halved (user 2026-09-18, a screenshot of a window panel's reveal): `RECESS_D` is 0.03, from 0.06,
+for the window sets of floors 2 to 4 -- the window's own step inside the bay inset -- so a window now stands 0.09
+into the field rather than 0.12. The inset keeps `BAY_D` 0.06, the recess's depth when the inset was asked for, and
+the band's step behind the raised bays, `B45_STEP` 0.06, which had been asserted equal to the window recess, is
+asserted equal to the inset now. The top floor's windows, which have no inset, are not touched.
+
 Probe caveats again: the probes' heights rose with the extra 0.352 (backfaces `ZS` and the downward bands, the sliver
 heights, the junction probe's window), and three single hits at z 19.5 on `wall__21`'s back are a 1 mm hairline in
 the game's own arch reveals of `top_panel_1976` and two others -- the fine arc of the panel face against the coarser
