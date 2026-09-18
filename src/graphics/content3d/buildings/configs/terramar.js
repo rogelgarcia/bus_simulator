@@ -156,7 +156,7 @@ function openingPlacement(defId, {
     verticalOffsetMeters = 0.15,
     paddingMeters = 0.08,
     depthMeters = 0.24,
-    interior = 'shop'
+    interior = 'none'
 }) {
     const assetWidth = Math.max(0.1, width - paddingMeters * 2);
     return {
@@ -222,7 +222,7 @@ function groundFrontFacade() {
                 assetType: 'storefront',
                 verticalOffsetMeters: 0.08,
                 paddingMeters: 0.12,
-                interior: 'shop'
+                interior: 'none'
             }), { kind: 'slot', id: 'stone' }),
             depth: { left: ENTRANCE_PROJECTION, right: ENTRANCE_PROJECTION, linked: true }
         },
@@ -314,7 +314,7 @@ function projectingBalconyBay(id, width, defId) {
         verticalOffsetMeters: 0.22,
         paddingMeters: 0.28,
         depthMeters: 0.2,
-        interior: 'res'
+        interior: 'none'
     });
     return {
         ...openingBay(id, width, window, { kind: 'slot', id: 'wood' }),
@@ -406,7 +406,7 @@ function glazedPenthouseFacade(prefix, faceLength, defId, {
             verticalOffsetMeters: 0.22,
             paddingMeters: 0.18,
             depthMeters: 0.2,
-            interior: 'res'
+            interior: 'none'
         }), { kind: 'slot', id: 'wood' }),
         fixedBay(`${prefix}_pier_end`, pierWidth, { material: { kind: 'slot', id: 'stone' }, projection: 0.05 })
     ]);

@@ -273,6 +273,10 @@ an intermediate roof while preserving the same zero-height stack rule.
   one, IOR 1.52, environment multiplier one, roughness 0.07 / 0.055 and effective
   normal-incidence reflectance 0.05 / 0.14. Existing balcony guard materials,
   straight facade topology and frames remain unchanged.
+- **Window interiors:** all opening placements use `visual.interior: 'none'`.
+  Shop/residential parallax image panels are disabled throughout Terra & Mar,
+  including its inherited recessed-balcony variant. Physical floor interiors
+  and the architectural glass remain enabled.
 
 Heavy grime, brick coursing, coarse ashlar joints and high-contrast procedural
 wear are not appropriate.

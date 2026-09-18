@@ -8,6 +8,8 @@ import { bootHarness } from './_harness_visual_helpers.js';
 import { loadBakeConfiguration } from '../../../../tools/baking/Configuration.mjs';
 
 const phase = process.env.GLASS_PHASE || 'after';
+const captureLabel = process.env.GLASS_CAPTURE_LABEL || phase;
+if (!/^[a-z0-9-]+$/.test(captureLabel)) throw new Error('GLASS_CAPTURE_LABEL must contain lowercase letters, digits or hyphens');
 const environment = process.env.GLASS_ENV || 'daylight';
 const viewport = { width: 1920, height: 1080 };
 const root = path.resolve('tests/artifacts/screens/buildings');
@@ -42,9 +44,9 @@ for (const buildingId of (process.env.GLASS_BUILDING ? [process.env.GLASS_BUILDI
         }
         await bootHarness(page, { query: '' });
         await page.setViewportSize(viewport);
-        const out = path.join(root, buildingId, 'ai549', `${phase}-${environment}`);
+        const out = path.join(root, buildingId, 'ai549', `${captureLabel}-${environment}`);
         await fs.mkdir(out, { recursive: true });
-        const report = { phase, buildingId, viewport, cpu: os.cpus()[0]?.model, shots: [], errors };
+        const report = { phase, captureLabel, buildingId, viewport, cpu: os.cpus()[0]?.model, shots: [], errors };
         for (const shot of [...shots, ...(buildingId === 'burban' ? sweep : [])]) {
             await page.evaluate(async ({ buildingId, shot, viewport, environment }) => {
                 const hooks = window.__testHooks;
@@ -70,8 +72,10 @@ for (const buildingId of (process.env.GLASS_BUILDING ? [process.env.GLASS_BUILDI
                 const hooks = window.__testHooks, engine = hooks.getEngine();
                 hooks.step(5, { render: true });
                 const materials = new Map(), geometry = [];
+                let parallaxInteriorMeshes = 0;
                 engine.scene.traverse(object => {
                     for (const mat of [].concat(object.material || [])) {
+                        if (mat.userData?.windowInterior) parallaxInteriorMeshes++;
                         if (!mat.userData?.windowGlass && !mat.userData?.buildingWindowGlass) continue;
                         materials.set(mat.uuid, {
                             tint: mat.color.getHexString(), metalness: mat.metalness, roughness: mat.roughness,
@@ -89,7 +93,7 @@ for (const buildingId of (process.env.GLASS_BUILDING ? [process.env.GLASS_BUILDI
                             minNormal, maxNormal, castShadow: object.castShadow, scale: object.scale.toArray() });
                     }
                 });
-                return { metrics: hooks.getMetrics(), materials: [...materials.values()], geometry,
+                return { metrics: hooks.getMetrics(), materials: [...materials.values()], geometry, parallaxInteriorMeshes,
                     settings: { lighting: engine.lightingSettings, shadows: engine.shadowSettings, ao: engine.ambientOcclusionSettings,
                         aa: engine.antiAliasingSettings, bloom: engine.bloomSettings, grading: engine.colorGradingSettings } };
             });
