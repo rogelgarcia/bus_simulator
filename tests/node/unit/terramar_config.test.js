@@ -476,10 +476,12 @@ test('Terra & Mar calibrates pale limestone, warm soffits and cool transmissive 
         const definition = windowDefinition(id);
         assert.ok(definition, `missing window definition ${id}`);
         const glass = definition.settings?.glass;
-        assert.ok(glass.opacity >= 0.82 && glass.opacity <= 0.94);
+        assert.equal(glass.opacity, 1);
         assert.ok(glass.reflection?.roughness <= 0.09);
-        assert.ok(glass.reflection?.transmission >= 0.35 && glass.reflection.transmission <= 0.65);
-        assert.ok(glass.reflection?.envMapIntensity >= 2.5);
+        assert.equal(glass.reflection?.transmission, 1);
+        assert.equal(glass.reflection?.envMapIntensity, 1);
+        assert.equal(glass.reflection?.metalness, 0);
+        assert.equal(glass.reflection?.coatingReflectance, 0.14);
         const tint = glass.tintHex;
         const red = (tint >> 16) & 0xff;
         const blue = tint & 0xff;

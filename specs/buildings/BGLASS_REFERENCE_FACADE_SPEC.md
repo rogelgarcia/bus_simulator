@@ -102,10 +102,12 @@ balcony stacks.
   the equal left/right balcony width and depth contract.
 
 The central and outer tower glazing is blue-dominant, highly reflective and
-partially transmissive. It must visibly receive the showcase HDRI. A suitable
-starting range is opacity `0.75..0.94`, metalness at least `0.55`, roughness no
-greater than `0.09`, transmission `0.12..0.45`, IOR `1.4..2.0`, and environment
-intensity at least `2.0`. Mullions are slender dark blue-gray or charcoal metal
+partially transmissive. It must visibly receive the showcase HDRI. AI 549 replaces
+the former metallic/alpha approximation with a thin coated dielectric: metalness
+zero, opacity and transmission one, IOR 1.52, environment multiplier one and
+normal-incidence coating reflectance 0.20 (tower) / 0.06 (lobby). Transmission
+tints are `0x92BACF` and `0xD4E4EB`; roughness remains 0.055 / 0.045. Reflection
+energy is governed by Fresnel rather than by a bulk-metal tint. Mullions are slender dark blue-gray or charcoal metal
 and remain subordinate to the glass field.
 
 ## Crown and roof

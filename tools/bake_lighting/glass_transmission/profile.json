@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "model": "parallel-thin-sheet",
+  "sunDirection": [0, 0.7071067811865476, 0.7071067811865476],
+  "receiver": { "id": "ai549-static-porch", "bounds": [-5, -6, 5, 2], "y": 0 },
+  "panes": [
+    { "id": "amber", "bounds": [-3.6, 0.4, -1.25, 3.6], "z": 0, "transmittance": [0.82, 0.32, 0.07], "f0": 0.043 },
+    { "id": "clear", "bounds": [-1.15, 0.4, 1.15, 3.6], "z": 0, "transmittance": [0.82, 0.90, 0.92], "f0": 0.043 },
+    { "id": "blue", "bounds": [1.25, 0.4, 3.6, 3.6], "z": 0, "transmittance": [0.08, 0.38, 0.78], "f0": 0.043 }
+  ]
+}

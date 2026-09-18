@@ -286,6 +286,7 @@ export function detectWindowGlassPresetId(glass, { epsilon = 1e-6 } = {}) {
     if (!src) return null;
 
     const reflection = src.reflection && typeof src.reflection === 'object' ? src.reflection : src;
+    if (reflection.coatingReflectance !== undefined && reflection.coatingReflectance !== null) return null;
     const tintHex = normalizeHexColor(src.tintHex ?? src.tint ?? src.colorHex ?? src.color, -1);
     if (tintHex < 0) return null;
 
@@ -395,6 +396,7 @@ export function detectWindowGlassPresetId(glass, { epsilon = 1e-6 } = {}) {
 
 /**
  * @typedef {Object} WindowMeshGlassReflectionSettings
+ * @property {number|null} coatingReflectance
  * @property {number} metalness
  * @property {number} roughness
  * @property {number} transmission
@@ -793,6 +795,7 @@ export function sanitizeWindowMeshSettings(input) {
     const transmission = clamp(reflSrc.transmission, 0.0, 1.0, WINDOW_MESH_DEFAULTS.glass.reflection.transmission);
     const ior = clamp(reflSrc.ior ?? reflSrc.indexOfRefraction, 1.0, 2.5, WINDOW_MESH_DEFAULTS.glass.reflection.ior);
     const envMapIntensity = clamp(reflSrc.envMapIntensity, 0.0, 8.0, WINDOW_MESH_DEFAULTS.glass.reflection.envMapIntensity);
+    const coatingReflectance = reflSrc.coatingReflectance == null ? null : clamp(reflSrc.coatingReflectance, 0.02, 0.35, 0.04);
     const zOffset = Math.round(clamp(glassSrc.zOffset, -0.25, 0.25, WINDOW_MESH_DEFAULTS.glass.zOffset) * 100) / 100;
 
     const shadeSrc = src.shade && typeof src.shade === 'object' ? src.shade : {};
@@ -978,7 +981,7 @@ export function sanitizeWindowMeshSettings(input) {
         glass: {
             opacity: glassOpacity,
             tintHex: glassTintHex,
-            reflection: { metalness, roughness, transmission, ior, envMapIntensity },
+            reflection: { metalness, roughness, transmission, ior, envMapIntensity, ...(coatingReflectance === null ? {} : { coatingReflectance }) },
             zOffset
         },
         shade: {

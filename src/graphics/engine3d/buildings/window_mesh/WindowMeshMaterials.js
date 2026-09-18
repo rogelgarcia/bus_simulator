@@ -8,6 +8,8 @@ import {
     WINDOW_HANDLE_MATERIAL_MODE
 } from '../../../../app/buildings/window_mesh/WindowMeshSettings.js';
 import { getWindowInteriorAtlasById } from '../../../content3d/catalogs/WindowInteriorAtlasCatalog.js';
+import { registerMaterialShaderHook } from '../../../shaders/core/MaterialShaderHookRegistry.js';
+import { architecturalGlassShader, architecturalGlassDeclarations } from '../../../shaders/materials/ArchitecturalGlassShaderLoader.js';
 
 const QUANT = 1000;
 
@@ -566,17 +568,18 @@ export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
     }
 
     const glassRefl = s.glass.reflection;
+    const architectural = glassRefl.coatingReflectance != null;
     const glassMat = new THREE.MeshPhysicalMaterial({
         color: s.glass.tintHex,
-        metalness: glassRefl.metalness,
+        metalness: architectural ? 0 : glassRefl.metalness,
         roughness: glassRefl.roughness,
-        transmission: glassRefl.transmission,
+        transmission: architectural ? 1 : glassRefl.transmission,
         ior: glassRefl.ior,
-        thickness: 0.01,
-        opacity: s.glass.opacity,
-        transparent: true
+        thickness: architectural ? 0 : 0.01,
+        opacity: architectural ? 1 : s.glass.opacity,
+        transparent: !architectural
     });
-    glassMat.depthWrite = false;
+    glassMat.depthWrite = architectural;
     glassMat.shadowSide = THREE.DoubleSide;
     glassMat.polygonOffset = true;
     glassMat.polygonOffsetFactor = -1;
@@ -584,6 +587,23 @@ export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
     glassMat.userData = glassMat.userData ?? {};
     glassMat.userData.iblEnvMapIntensityScale = glassRefl.envMapIntensity;
     glassMat.userData.windowGlass = true;
+    if (architectural) {
+        const uniforms = { architecturalGlassF0: { value: glassRefl.coatingReflectance } };
+        glassMat.userData.architecturalGlass = { coatingReflectance: glassRefl.coatingReflectance, model: 'thin-coated-dielectric-v1' };
+        glassMat.userData.buildingWindowMergeSafeShader = 'architectural_glass_v1';
+        registerMaterialShaderHook(glassMat, {
+            id: 'materials.architectural_glass', priority: 10,
+            variantKey: architecturalGlassShader.variantKey + architecturalGlassDeclarations.variantKey,
+            uniforms,
+            apply(shader) {
+                Object.assign(shader.uniforms, uniforms);
+                const anchor = '#include <lights_physical_fragment>';
+                if (!shader.fragmentShader.includes(anchor)) throw new Error('Architectural glass physical shader anchor changed.');
+                shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\n' + architecturalGlassDeclarations.fragmentSource)
+                    .replace(anchor, anchor + '\n' + architecturalGlassShader.fragmentSource);
+            }
+        });
+    }
 
     const shadeMat = new THREE.MeshStandardMaterial({
         color: s.shade.colorHex,

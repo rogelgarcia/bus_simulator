@@ -11,6 +11,7 @@ import { computeFrameDistanceForSphere } from '/src/graphics/engine3d/camera/Too
 import { PbrTextureLoaderService } from '/src/graphics/content3d/materials/PbrTexturePipeline.js';
 import { preloadPortalOrnamentParts } from '/src/graphics/assets3d/generators/building_fabrication/PortalOrnamentParts.js';
 import { createHarnessCitySpec } from './ScenarioCitySpec.js';
+import { createThinGlassShowcaseFixture } from './ThinGlassShowcaseFixture.js';
 
 const DEFAULT_SIZE = 240;
 const DEFAULT_MAP_TILE_SIZE = 24;
@@ -289,6 +290,7 @@ export const scenarioBuildingShowcase = {
         if (hdriOptions) {
             showcaseIblConfig = getIBLConfig({
                 ...(engine.lightingSettings?.ibl ?? {}),
+                ...(hdriOptions.iblId ? { hdrUrl: null } : {}),
                 ...hdriOptions,
                 enabled: true,
                 setBackground: true
@@ -386,11 +388,14 @@ export const scenarioBuildingShowcase = {
         engine.camera.updateProjectionMatrix();
 
         const iblExpected = !!showcaseIblConfig?.enabled || getResolvedLightingSettings()?.ibl?.enabled === true;
+        const glassTransport = options?.glassTransportUrl ? await createThinGlassShowcaseFixture({ engine, THREE, url: options.glassTransportUrl }) : null;
+        if (glassTransport) engine.context.glassTransportFixture = glassTransport;
 
         return {
             update(dt) {
                 void dt;
                 city.update(engine);
+                glassTransport?.update();
             },
             getMetrics() {
                 return {
@@ -434,6 +439,8 @@ export const scenarioBuildingShowcase = {
                 };
             },
             dispose() {
+                glassTransport?.dispose();
+                if (glassTransport) delete engine.context.glassTransportFixture;
                 for (const entry of groundMaterialRestore) {
                     entry.mesh.material = entry.original;
                     entry.visibleMaterial.dispose();

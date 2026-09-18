@@ -268,9 +268,11 @@ an intermediate roof while preserving the same zero-height stack rule.
 - **Warm soffit/reveal:** stable warm material near `0xB77948`.
 - **Frames and rails:** charcoal or dark bronze near `0x343233`, slender and
   subordinate.
-- **Glass:** neutral cool blue-gray near `0x4F6572`, opacity approximately
-  `0.82..0.94`, roughness no greater than `0.09`, transmission
-  approximately `0.35..0.65`, HDR environment intensity at least `2.5`.
+- **Glass:** thin dielectric storefront/residential glazing with cool transmission
+  tints `0xD3E4E4` / `0xA2C4C7`. AI 549 uses metalness zero, opacity/transmission
+  one, IOR 1.52, environment multiplier one, roughness 0.07 / 0.055 and effective
+  normal-incidence reflectance 0.05 / 0.14. Existing balcony guard materials,
+  straight facade topology and frames remain unchanged.
 
 Heavy grime, brick coursing, coarse ashlar joints and high-contrast procedural
 wear are not appropriate.

@@ -614,3 +614,12 @@ preserving the active world bake and previous appearance while loading or on fai
 The separate unwanted static indirect shadow at the supplied civic-route pose is
 tracked in [AI 561](../../prompts/AI_graphics_561_ATMOSPHERE_unwanted_baked_indirect_shadow_at_civic_route.md).
 It remains an investigation and is distinct from the corrected bus-toggle lifecycle.
+# AI 549 supported thin-pane sun modulation
+
+See [`architectural_glass.md`](architectural_glass.md) for the bounded parallel
+thin-sheet domain. On that receiver, `LsunDirect` retains runtime PBR and opaque
+static/dynamic visibility and is multiplied once by a baked RGB transmission
+coefficient. Represented glass casters are omitted from the opaque shadow mask
+only while the profile is valid. Indirect/emissive/environment terms are not
+multiplied. Stale profiles restore ordinary opaque-pane shadows. This limited
+extension does not claim full-city colored shadows or refractive caustics.

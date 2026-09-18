@@ -276,13 +276,12 @@ test('B Glass tower openings use blue reflective, partially transmissive glass',
     const reflectiveDefinitions = usedDefinitions.filter((definition) => {
         const glass = definition.settings?.glass;
         const reflection = glass?.reflection;
-        return glass?.opacity >= 0.7
-            && glass.opacity < 1
-            && reflection?.metalness >= 0.55
+        return glass?.opacity === 1
+            && reflection?.metalness === 0
             && reflection?.roughness <= 0.09
-            && reflection?.transmission >= 0.12
-            && reflection.transmission <= 0.45
-            && reflection?.envMapIntensity >= 2;
+            && reflection?.transmission === 1
+            && reflection.coatingReflectance === 0.2
+            && reflection?.envMapIntensity === 1;
     });
 
     assert.ok(reflectiveDefinitions.length >= 1);

@@ -29,34 +29,29 @@ const NO_ARCH = Object.freeze({
 });
 
 const CURTAIN_GLASS = Object.freeze({
-    opacity: 0.84,
-    // Let the environment, rather than a saturated diffuse tint, supply most
-    // of the colour. The remaining blue-grey is only an accent.
-    tintHex: 0x485965,
+    opacity: 1,
+    tintHex: 0x8b9fad,
     reflection: {
-        metalness: 0.72,
-        // Three's physical shader clamps below this effective floor.
+        metalness: 0,
         roughness: 0.035,
-        transmission: 0.26,
-        ior: 1.7,
-        envMapIntensity: 3.4
+        transmission: 1,
+        ior: 1.52,
+        envMapIntensity: 1,
+        coatingReflectance: 0.22
     },
     zOffset: -0.025
 });
 
 const LOWER_GLASS = Object.freeze({
-    // Clear storefront glass with enough HDR reflection to remain visibly a
-    // pane in front of the room, without becoming an opaque upper-floor mirror.
-    opacity: 0.88,
-    tintHex: 0x687b83,
+    opacity: 1,
+    tintHex: 0xd8e5e6,
     reflection: {
-        // A modest metallic contribution makes the HDR scene legible while
-        // the high transmission still leaves both podium levels see-through.
-        metalness: 0.38,
+        metalness: 0,
         roughness: 0.025,
-        transmission: 0.68,
-        ior: 1.7,
-        envMapIntensity: 5.0
+        transmission: 1,
+        ior: 1.52,
+        envMapIntensity: 1,
+        coatingReflectance: 0.043
     },
     zOffset: -0.035
 });

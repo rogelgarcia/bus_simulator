@@ -119,3 +119,8 @@ new gitignored `output`. This compares all five saved poses in three fresh brows
 sessions per receiver candidate, retaining frame-matched CPU/GPU/counter records,
 timing distributions, logical memory allocations, compressed storage and images.
 See `tools/bake_lighting/experiments/reference_matching/README.md`.
+# Bounded glass sunlight
+
+`tools/bake_lighting/glass_transmission/` — AI 549 analytic fixed-sun thin-pane
+transport, invoked through `node tools/bake.mjs --target lighting/illumination/glass-transmission`.
+Uses the shared bake configuration and rejects city publication; see its README.

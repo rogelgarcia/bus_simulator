@@ -258,11 +258,11 @@ test('Burban upper glazing has dark edge panels and transmissive blue mirror gla
         { enabled: true, mode: 'match', heightMeters: 0.22 }
     );
     assert.ok(upper.settings.glass.reflection.roughness <= 0.055);
-    assert.ok(upper.settings.glass.reflection.metalness >= 0.7);
-    assert.ok(upper.settings.glass.opacity < 1);
-    assert.ok(upper.settings.glass.reflection.transmission >= 0.1);
-    assert.ok(upper.settings.glass.reflection.transmission <= 0.35);
-    assert.ok(upper.settings.glass.reflection.envMapIntensity >= 2);
+    assert.equal(upper.settings.glass.reflection.metalness, 0);
+    assert.equal(upper.settings.glass.opacity, 1);
+    assert.equal(upper.settings.glass.reflection.transmission, 1);
+    assert.equal(upper.settings.glass.reflection.coatingReflectance, 0.22);
+    assert.equal(upper.settings.glass.reflection.envMapIntensity, 1);
     assert.ok(blue > red);
     assert.equal(upper.settings.interior.enabled, false);
     assert.equal(upper.layers.interior, false);
@@ -277,10 +277,11 @@ test('all Burban lower glass is transmissive, reflective and has no parallax bac
         'storefront_burban_second_sign'
     ]) {
         const lower = windowDefinition(id);
-        assert.ok(lower.settings.glass.opacity >= 0.8 && lower.settings.glass.opacity <= 0.95);
-        assert.ok(lower.settings.glass.reflection.transmission >= 0.6);
-        assert.ok(lower.settings.glass.reflection.metalness >= 0.3);
-        assert.ok(lower.settings.glass.reflection.envMapIntensity >= 3.5);
+        assert.equal(lower.settings.glass.opacity, 1);
+        assert.equal(lower.settings.glass.reflection.transmission, 1);
+        assert.equal(lower.settings.glass.reflection.metalness, 0);
+        assert.equal(lower.settings.glass.reflection.coatingReflectance, 0.043);
+        assert.equal(lower.settings.glass.reflection.envMapIntensity, 1);
         assert.equal(lower.settings.interior.enabled, false);
         assert.equal(lower.layers.interior, false);
     }

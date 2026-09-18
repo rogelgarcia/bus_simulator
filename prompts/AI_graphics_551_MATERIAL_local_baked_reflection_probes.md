@@ -67,7 +67,7 @@ Tasks:
 ## Starting references
 
 - [Lighting reference](../specs/graphics/lighting_enhancement_reference.md), [illumination composition](../specs/graphics/illumination_framework.md), and [IBL integration](../src/graphics/engine3d/lighting/IBL.js).
-- [AI 549 glass appearance](AI_graphics_549_WINDOWS_architectural_glass_appearance_and_baked_transmitted_sunlight.md) and [AI 550 bus GI/materials](AI_DONE_graphics_550_VEHICLES_baked_diffuse_probes_and_bus_material_readiness_DONE.md).
+- [AI 549 glass appearance](AI_DONE_graphics_549_WINDOWS_architectural_glass_appearance_and_baked_transmitted_sunlight_DONE.md) and [AI 550 bus GI/materials](AI_DONE_graphics_550_VEHICLES_baked_diffuse_probes_and_bus_material_readiness_DONE.md).
 - [Window materials](../specs/windows/WINDOWS_MATERIALS_AND_FINISH_SPEC.md) and [runtime window material construction](../src/graphics/engine3d/buildings/window_mesh/WindowMeshMaterials.js).
 
 ## On completion

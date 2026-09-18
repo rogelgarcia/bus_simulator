@@ -7,11 +7,30 @@ Non-goals: Final shader authoring, PBR correctness tuning, or final UI visual de
 This spec defines the canonical **materials and finish parameters** for window features and how they relate to feature enablement, per-face overrides, and UV mapping behavior.
 
 Related specs:
+- Architectural runtime glazing and bounded daylight transport: `specs/graphics/architectural_glass.md`.
 - Builder tabs and control reuse: `specs/windows/WINDOWS_BUILDER_TABS_AND_CONTROL_REUSE_SPEC.md`
 - Sizes and positioning parameters (including UV adjustment object shape): `specs/windows/WINDOWS_SIZE_AND_POSITIONING_SPEC.md`
 - Balcony feature details: `specs/windows/WINDOWS_BALCONY_SPEC.md`
 
 ---
+
+## Architectural glazing (AI 549)
+
+Authored `glass.reflection.coatingReflectance` selects a thin dielectric model
+and survives JSON/settings round trips. The optional normal-incidence reflectance
+is clamped to `0.02..0.35`; absence preserves legacy material behavior. Burban,
+B Glass and Terra & Mar use it explicitly. The physical material has metalness
+zero, transmission one, opacity one, depth writing and no alpha blending. Tint
+attenuates transmitted light; roughness and Fresnel control reflections. Zero
+optical thickness represents the thin-pane approximation and avoids treating a
+single facade surface as a solid refractive bottle. This is an effective coating
+response, not a spectral thin-film or multi-layer insulating-glass simulation.
+
+Global legacy-window settings must not overwrite authored BF2 glass. Curved
+panes retain the existing analytic arc normals and subdivision; planar buildings
+remain planar. The per-material coating uniform is included in merge identity,
+bound on first compilation and restored on cached-program reuse. No extra scene
+transmission pass is introduced. Existing alpha-glass presets are unchanged.
 
 ## 1. Goals
 

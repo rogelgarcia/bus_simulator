@@ -100,27 +100,29 @@ const NO_ARCH = Object.freeze({
 });
 
 const STOREFRONT_GLASS = Object.freeze({
-    opacity: 0.88,
-    tintHex: 0x78979d,
+    opacity: 1,
+    tintHex: 0xd3e4e4,
     reflection: Object.freeze({
-        metalness: 0.28,
+        metalness: 0,
         roughness: 0.07,
-        transmission: 0.66,
+        transmission: 1,
         ior: 1.52,
-        envMapIntensity: 2.8
+        envMapIntensity: 1,
+        coatingReflectance: 0.05
     }),
     zOffset: -0.035
 });
 
 const RESIDENTIAL_GLASS = Object.freeze({
-    opacity: 0.84,
-    tintHex: 0x3f6670,
+    opacity: 1,
+    tintHex: 0xa2c4c7,
     reflection: Object.freeze({
-        metalness: 0.58,
+        metalness: 0,
         roughness: 0.055,
-        transmission: 0.42,
-        ior: 1.6,
-        envMapIntensity: 3.5
+        transmission: 1,
+        ior: 1.52,
+        envMapIntensity: 1,
+        coatingReflectance: 0.14
     }),
     zOffset: -0.03
 });

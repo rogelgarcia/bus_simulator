@@ -1,5 +1,12 @@
 # Offline bake framework
 
+AI 549 registers the explicit `lighting/illumination/glass-transmission` leaf.
+It validates a bounded thin-sheet profile, uses the common configuration and
+receipts, writes ignored evidence and rejects publication. The analytic CPU
+solver needs no Blender executable; `configurationPaths: []` expresses that
+requirement without introducing another machine configuration. It does not run
+as a production parent child. See `tools/bake_lighting/glass_transmission/README.md`.
+
 AI571 adds opt-in `lighting/illumination:facade-detail=8cm` and the explicit
 read-only `lighting/illumination/facade-plan` leaf. Versioned policy
 `opaque-building-walls-8cm-v1` selects source-tagged rough opaque wall materials

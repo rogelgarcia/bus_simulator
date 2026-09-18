@@ -850,3 +850,11 @@ indivisible. The byte layout, all layers/mips, GPU storage and publication gates
 are unchanged; no package backing buffer is detached or mutated. Mapping-ready
 notification is sent only after coordinate assembly completes. Diagnostics expose
 copied bytes, batch count, copy CPU time and maximum individual copy duration.
+# AI 549 bounded direct transmission
+
+The explicit thin-glass transport extension is documented in
+[`architectural_glass.md`](architectural_glass.md). It stores linear sun
+transmittance for a bounded static receiver, multiplies its existing direct
+lighting once and leaves receiver albedo, indirect GI and AO live. It rejects
+already mapped direct-light receivers rather than multiplying an unrelated
+direct bake. This does not expand the general city bake's glass coverage.

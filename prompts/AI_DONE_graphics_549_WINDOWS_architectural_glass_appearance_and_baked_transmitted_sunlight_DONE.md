@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 The user reports that architectural glazing looks like plastic bottles. The
@@ -106,3 +108,44 @@ Tasks:
   resolution, graphics settings, workload/camera, warm-up, sample count and
   statistic. Label unavailable metrics `not measured` with a reason; projections
   do not replace measurements.
+
+## Completed — 2026-09-18
+
+- Replaced the three named buildings' mixed metallic/alpha glass with explicit coated/clear dielectric response through the existing HDRI path; preserved geometry and legacy materials elsewhere.
+- Verified Burban's curved radii and analytic normals, retained planar B Glass/Terra & Mar topology, and kept sparse-interior work assigned to AI 552.
+- Registered a bounded analytic thin-pane sunlight bake in the shared framework, with light-only data, one receiver owner, ordinary moving shadows and stale-profile fallback.
+- Demonstrated clear/amber/blue transmitted sun beside Burban; parallel thin sheets do not concentrate caustics, and general curved/thick glass and city-wide transport remain unsupported.
+- Preserved 72 matched wide/close facade images, lower/upper Burban sweeps, original reference copies, four transport views and raw measurements in the [comparison gallery](../tests/artifacts/screens/buildings/burban/ai549/review.html).
+- Updated affected material/building/illumination/tool specs and documented [the implementation](../specs/graphics/architectural_glass.md) and [full validation with evidence](../specs/graphics/architectural_glass_validation.md).
+- Passed 88 focused Node checks, browser material/geometry integration, twelve facade capture cases, transport loading/invalidation and actual gameplay compatibility capture; gallery selectors/reference links passed browser QA.
+
+### Same-condition performance
+
+Before is `ebec743`. Ryzen 5 9600X, RTX 3060, Windows Chrome/ANGLE D3D11;
+1280×720 performance viewport, 30 warm-up frames and 90 measured frames per run.
+MSAA 8×, high cascades/GTAO, bloom and grading off, ACES, ordinary calibrated
+daylight exposure 0.051100170522. Burban uses `sweep-upper-2`; the others use
+`grazing-close`, matched exactly within pairs. Captures are 1920×1080.
+Frame time is mean submission plus `gl.finish()` completion. FPS below is
+uncapped reciprocal-mean workload throughput, not displayed gameplay FPS.
+
+| Building | Frame ms before → after | FPS | CPU submit ms | Draw calls | Triangles | Textures | Geometries | JS heap MiB |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Burban | 1.59 → 1.31 | 628.05 → 765.96 | 1.59 → 1.30 | 226 → 226 | 367320 → 367320 | 160 → 160 | 534 → 534 | 142.28 → 112.02 |
+| B Glass | 2.37 → 2.54 | 421.94 → 393.01 | 2.37 → 2.54 | 398 → 398 | 370962 → 370962 | 79 → 79 | 344 → 344 | 87.65 → 87.86 |
+| Terra & Mar | 1.76 → 1.74 | 569.26 → 574.35 | 1.75 → 1.74 | 302 → 302 | 220552 → 220552 | 93 → 93 | 248 → 248 | 91.67 → 91.97 |
+
+Per-pass CPU/GPU time: **not measured**; the harness brackets aggregate CPU
+submission and GPU completion without individual timer queries. Total GPU
+memory bytes: **not measured**; WebGL counters expose counts, not driver bytes.
+The bounded map adds exactly 256 KiB and no scene render. B Glass and Terra & Mar
+each retain one extra shader program; Burban program count is unchanged.
+
+Actual BigCity2 gameplay control: 10.95 → 11.71 ms, 91.36 → 85.37 throughput FPS,
+1,468 calls and 2,619,340 triangles in both runs. It contains none of the three
+changed models, so it is explicitly an unaffected compatibility control.
+Transport fixture glass-only → combined: 3.70 → 1.26 ms, 322 → 310 calls,
+367,608 → 367,584 triangles; the three panes stop casting into four cascades
+when their transmitted sunlight is represented by the map. Short-run timings
+and heap snapshots are not evidence of an optimization. The full validation
+report records p95, memory, camera/settings, limitations and reproduction.

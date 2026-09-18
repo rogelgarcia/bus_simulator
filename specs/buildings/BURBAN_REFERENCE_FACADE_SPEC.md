@@ -44,7 +44,12 @@ On face `A`, the entrance span uses `prefer_expand` and must never duplicate. Th
 - The recurring upper floor separator is 0.56 high—twice its earlier thickness—and projects 0.12.
 - Dark 0.22 metal panels appear above and below each upper window row.
 - The upper glass is dark, highly reflective, partially transmissive mirror glass with a restrained blue tint and no parallax backing.
-- Lower glass remains highly transmissive but carries a darker metallic reflection under the HDR environment.
+- Lower glass is a clear thin dielectric with normal-incidence reflectance 0.043,
+  linear-transmission tint authored as sRGB `0xD8E5E6`, IOR 1.52 and environment
+  multiplier 1. Upper coated glass uses reflectance 0.22 and tint `0x8B9FAD`.
+  Both use metalness zero and physical transmission without alpha blending.
+  Existing curvature, pane tessellation, pillars and room shells remain intact.
+  Sparse room contents remain AI 552 work; they are not concealed by opaque glass.
 - Pillars, concrete separators and upper wall strips use the same calibrated rough-concrete PBR slot. Its 0.35 texture tiling and subdued 0.35 normal strength keep the grain fine rather than coarse; the shared wall-base calibration prevents belts from rendering as a different texture.
 - The roof edge is plain: no projecting cornice, crown molding, coping stack or dentil/teeth ornament.
 

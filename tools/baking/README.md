@@ -217,3 +217,10 @@ on two objects, checks exact assembly, and rejects corrupted or incompatible pas
 data. Pass an output directory under `tests/artifacts/screens/ai556_bake_framework/`
 after Blender's `--` separator. This fixture does not replace full-city coverage
 validation or shadow release certification.
+# Bounded glass sunlight
+
+`node tools/bake.mjs --target lighting/illumination/glass-transmission` validates
+the explicit AI 549 parallel thin-pane sunlight fixture. It uses the shared
+configuration and framework, needs no Blender process, writes ignored evidence
+and cannot publish production assets. See
+[`glass_transmission/README.md`](../bake_lighting/glass_transmission/README.md).

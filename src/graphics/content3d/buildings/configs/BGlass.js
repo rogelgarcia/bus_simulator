@@ -64,27 +64,29 @@ const NO_ARCH = Object.freeze({
 });
 
 const TOWER_GLASS = Object.freeze({
-    opacity: 0.84,
-    tintHex: 0x6389a3,
+    opacity: 1,
+    tintHex: 0x92bacf,
     reflection: Object.freeze({
-        metalness: 0.64,
+        metalness: 0,
         roughness: 0.055,
-        transmission: 0.34,
-        ior: 1.62,
-        envMapIntensity: 3.8
+        transmission: 1,
+        ior: 1.52,
+        envMapIntensity: 1,
+        coatingReflectance: 0.2
     }),
     zOffset: -0.03
 });
 
 const LOBBY_GLASS = Object.freeze({
-    opacity: 0.9,
-    tintHex: 0x7897a8,
+    opacity: 1,
+    tintHex: 0xd4e4eb,
     reflection: Object.freeze({
-        metalness: 0.44,
+        metalness: 0,
         roughness: 0.045,
-        transmission: 0.56,
-        ior: 1.58,
-        envMapIntensity: 3.2
+        transmission: 1,
+        ior: 1.52,
+        envMapIntensity: 1,
+        coatingReflectance: 0.06
     }),
     zOffset: -0.035
 });
