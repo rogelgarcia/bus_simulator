@@ -63,7 +63,7 @@ KEY_W0, KEY_W1 = 0.20, 0.30                                  # keystone width at
 KEY_Z0 = 3.62                    # the console's bottom sits over the ring band (band 1.48 .. 1.60, crowns 3.73 .. 3.85); photo 3.64
 KEY_H = 0.48; KEY_Z1 = KEY_Z0 + KEY_H   # 4.10 = the spandrel panels' top edge, just under the band
 KEY_GROOVE_W, KEY_GROOVE_D = 0.008, 0.004
-BLOCK_TOP = 4.13                 # the band bottom (piece 08 Z0): the block fills the wall up to it; pilaster capital tops (piece 07) sit at 4.16
+BLOCK_TOP = 4.16                 # the band bottom (piece 08 Z0) = the pilaster capital tops (piece 07): the block fills the wall up to it
 # 3. soffit panel: (depth into the soffit, margin from the chamfer and from the back edge, arc margin from the springing),
 #    edged with the pilasters' three-part molding SOFFIT_MLD_W wide
 SOFFIT = (0.04, 0.10, 0.02); SOFFIT_MLD_W = 0.06                 # the soffit panel starts where the curve starts (0.02 in), not at the impost

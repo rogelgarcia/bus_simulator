@@ -20,7 +20,7 @@ exec(compile(open(LIB, encoding="utf-8").read(), LIB, "exec"))
 
 BAND_HALF = 2.33                 # ends with the pilasters' outer edges (piece 07 X1)
 Y_FACE, Y_BACK = -2.90, -2.05    # flush with the pilasters
-Z0, Z1 = 4.13, 4.80              # on the arch block / capitals (piece 06/07 tops) up to the cornice line (reference overlay)
+Z0, Z1 = 4.16, 4.83              # right above the pilaster capitals (piece 07 CAP_TOP) and the arch block (piece 06), 0.67 tall as measured on the reference
 ZC = (Z0 + Z1) / 2
 CAP_H = 0.36                     # letter height
 TEXT_MAX_W = 2.30
@@ -153,6 +153,9 @@ def decal(cx, cz, tag):
             tip = (P[0] + nx*0.06 + d[0]*0.03, P[1] + nz*0.06 + d[1]*0.03)
             mid = leaf_xz(bm, P, tip, 0.048, 0.010*side, Y_FACE, H, lobes=3)
             ribbon_xz(bm, mid, taper(0.008, 0.003, len(mid)), Y_FACE, H + 0.006)
+    # keep the panel inside the band: its outer leaves overshoot the end otherwise (4.6 cm on the left); slide it inward
+    over = max(abs(v.co.x) for v in bm.verts) - (BAND_HALF - 0.03)
+    if over > 0: bmesh.ops.translate(bm, verts=bm.verts, vec=(-math.copysign(over, cx), 0.0, 0.0))
     mesh_from_bm(f"frieze_decal_{tag}", bm, STONE, COLL)
 decal(-PANEL_X, ZC, "L"); decal(PANEL_X, ZC, "R")
 

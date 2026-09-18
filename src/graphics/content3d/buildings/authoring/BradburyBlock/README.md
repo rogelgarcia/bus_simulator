@@ -5,6 +5,7 @@
 > `tests/artifacts/blender/bradbury/portal_project/`, renders and overlays in `tests/artifacts/screens/bradbury_fix/portal_project/`.
 > Regenerate everything with `blender -b -P rebuild_portal.py -- 01 02 03 04 05 06 07 08` after
 > `blender -b -P ornaments/capital.py` and `blender -b -P ornaments/arch_leaf.py`; or open the generated blend and rerun single pieces.
+> The whole building with this portal in place: `blender -b -P assemble_building.py` (see the last section).
 > Backups of earlier states remain under `tests/artifacts/blender/bradbury/portal_project_backups/`.
 
 # Bradbury portal — standalone project (piece by piece)
@@ -257,3 +258,477 @@ Bead-and-reel (`arch_beads`, 2026-09-11): on the band's tiny inner step, a 25 mm
 Archivolt -10% (2026-09-11, user): band 0.1125 wide (fifth = 22.5 mm: outer step, risers, balls), plain strip to the notched edge 0.099; the band keeps touching the pilasters (outer edge 1.605), so the opening radius grew to 1.3635 (apex 3.61) and the piers are 0.2365 wide.
 
 Leaf-and-tongue motif (`ornaments/arch_leaf.py` -> `arch_leaf.blend`, linked; 2026-09-11): a relief heightfield of the user's reference (cap bar, three stems, side leaves curling out, inner lobes, tongue), 27 x 59.5 mm with 12 mm of relief, instanced along the band's middle step at a 33 mm pitch with the cap at the outer edge.
+
+## Whole building: `assemble_building.py`
+
+`blender -b -P assemble_building.py [-- --no-render] [--samples N]` opens the game baseline
+(`tests/artifacts/blender/bradbury/before/bradbury_block_before.blend`), removes the game's portal
+parts, doors and steps on both portal faces (C, the Broadway entry looking +x at x 12.529, and E, the
+game's mirrored copy looking -x at x -36.529), gives the ground floor the pink sandstone (as
+build_portal_v3 did), fills the game's 5.6 m opening down to the 4.66 m this portal needs above the storefronts (collection
+`PORTAL_FIT`), lays the storefronts out between EQUAL PIERS all around (user, 2026-09-12: the pier width is the
+portal's pilaster shaft 0.725 plus the 0.08 strip on both sides = 0.885, `PIER_W`; the game's bays are read off
+each hull face in order and, between two fixed edges (a building corner, whose column shows a 0.885 face on each
+street, or the strip beside a portal pilaster, which the storefront runs straight into), scaled by one common
+factor so the piers take exactly that width; the game's mirrored copy left a 4 m blank on each side of the
+square NW corner, so a copy of the E face's standard bay fills it, `EXTRA_BAYS`; and the 3rd Street face A gets a
+third portal, `PORTAL_A`, as far from the west corner as B's is from its north corner, with B's composition read
+from that far corner, `MIRROR`: 2-glass, 3-glass, 2-glass, portal, 2-glass, 3-glass, then 2-glass fillers and the
+door bay at the chamfer, the bays left over removed, so A equals B by construction, the portal itself a linked
+instance; user 2026-09-12), the ground-floor piers
+`fit_piers` are one ring on the wall plane with every storefront and both portals cut out (piers between
+storefronts, corner piers with two street faces, narrow strips beside the portal pilasters), each bay's game
+parts (fascia, transom, glass, frame, backdrops, divider) are stretched onto their opening in the bay's own
+frame and moved out of the game's deep recess to the bay's inset behind the pier face (`INSET` 0.20; the
+three-pane storefronts, the game's 4.06 bays, twice as deep, `INSET_WIDE` 0.40; the glazing frame 1 cm behind
+the sign band's plane), raised so the transom ends on the band strip, and the game's wall and
+interior shell (both hidden for now) are carved open around them (bisect + delete, since an exact boolean on
+the game's open wall shell is unreliable), LINKS this project's `PORTAL` collection from
+`bradbury_portal.blend` as two collection instances (`PORTAL_C`, `PORTAL_E` in `BRADBURY_PORTAL`; the
+building always shows the portal's latest saved state, so rerun a piece and reopen) and builds the
+ground-floor entablature around the building (`GROUND_ENTABLATURE`, from the photos and the user's review: a
+small half-round bead 0.03, the teeth right above it standing on the wall itself (88 flush across the band, 44
+from each edge to the middle of the lettering, gaps 60% of a tooth: 0.033 wide, 0.06 tall, 0.04 deep, pitch
+0.053, the same around the building and on the jog's returns), a small 0.03 band flush with the teeth faces
+that they connect to, a gentle convex molding (a shallow arc 0.12 tall and 0.10 out) on it, a thin squared
+step 0.025 with a 6 mm round on its outer edges, top and bottom; 0.265 m in all, 0.16 m out; over the portal a block
+(`fit_band_top_*`) carries the band's face and ends up to the cornice; all of it in the portal's own
+frieze-band stone, no ashlar joint lines) on the
+frieze band's top (world z 5.151), jogging out 0.20 over the band on both portal faces and stepping BACK 0.20
+(`RECESS`: the portal band's step, and the three-pane storefront's own extra inset, so the edge over it reads like
+the two-pane bays'; user 2026-09-12, reference) over every three-pane
+storefront together with the band strip, the zone wall and the crown (the game's band wall is carved away over
+those bays and the pocket lined, `fit_recess_*`, in the ashlar stone; teeth on the recess returns too, at the
+regular pitch); the band's own strip
+(`ge_band_strip`, 4.481 .. 5.156, 2 cm proud and 0.55 into the wall like the pier ring, past the deepest
+storefront inset, the portal's stone) continues around the building under the bead; the game's two
+ground-floor cornices (4.572 .. 4.842 and 5.842 .. 6.092) are removed, so are its flat cap planes on the wall top
+(`roof__5`, `roof__6`, zero-thickness rings at 4.572 that showed as a lip inside the recess pockets), and its plain
+band is stretched from the wall top (4.572) to the second floor (6.092); the game's ground-floor wall `wall__0` is hidden (eye + render), not
+deleted: the wall is to be replaced by pillars later; the game's interior shells (`interior__*`, every floor) are
+removed: the windows carry their own backdrops and the shells showed as white strips above each floor line (user
+2026-09-12). The brick wall of floors 2 to 4 is rebuilt from scratch (`wall_floors_2_4`, user 2026-09-12): one closed
+ring around the hull on the elevation's plane (`WALL_OUT` 0.20 out from it) and 0.25 thick (`WALL_T`), with a brick column on each side
+of the pair over the Broadway and E portals unioned into it (`COL_W` 0.80 like the pier blocks it stands on,
+flush with them, from the crown to the mid cornice) and two more of the same block on the Broadway face, over the
+first storefront pier out from the portal on each side (user 2026-09-14, and the reference's own facade, which
+carries a pilaster over every pier): same width, same height and the same front plane, so all four columns of the
+face stand together (user), clear of the ground floor's crown, which reaches 0.365 out. One rectangular hole per window set (from the sill's
+top to `RECESS_ABOVE` 0.30 over the frames, exactly as wide as the sill, which runs `RECESS_SIDE` 0.03 past the
+set's boxes on each side); a separate panel mesh
+per set (`panel_*`) sits in each hole, `RECESS_D` 0.06 in, filling the rest of the thickness, with the set's
+window holes cut through it 1 cm inside the frames. The recess belongs to the window, not to the wall (user
+2026-09-14, the way the top floor is built): the hole is cut out of the wall's own faces instead of bored
+through it, so the wall keeps no reveal, and the panel brings its own -- four faces standing from its front out
+to the wall's plane (`reveal_faces`) -- so a window and its recess are one object to pick up and move. Wall and
+panels carry the game's brick material with the old wall's texture scale mapped along each face and up; the game's `wall__8` with its proud columns, end piers,
+stepped capitals (`bay_capital__*`), recessed panels and separator strips is removed; the end bays' sills and
+the chamfer bay's window parts come onto the field's depths first, and the end bays' windows, which the game
+set 0.20 nearer the street to match its proud piers, go back to the common frame depth so every window has
+the same reveal; the corner's three single windows get the same margin from the corner edge (the chamfer's,
+centred on its face, sets it; the two end-bay windows slide to match). A window plus two margins from each chamfer
+corner is where the corner's wall area ends, on the fourth pier (user 2026-09-12; a red marker line stood there
+while that was being planned and was taken down once it was settled, user 2026-09-15); the corner is re-planned to
+that line (user 2026-09-13): the two door bays beside the
+chamfer become single-glass storefronts as wide as the chamfer bay (`CORNER_BAY_W` 2.231: copies of the nearest
+two-pane storefront without the divider between its panes, held at that width by the layout), so corner pier, bay
+and fourth pier span the marker distance; everything beyond the fourth pier moves toward the corner by `SHRINK`
+0.502 on both faces and the outline follows (`HULL`: the north and west faces moved in, `HULL_GAME` the game's;
+the game's geometry is moved onto it first thing, object by object, or vertex by vertex for the meshes that run
+around the building, where a 0.502 strip of excess along each moving face is squeezed shut, slid per mesh so its
+ends fall between the cornices' modillion blocks, the blocks inside it removed; the far faces' storefronts are laid
+out again over the shorter faces); on the top floor the
+corner's single windows and their arched holes in `wall__21` slide toward the corner to centre over the windows
+below, like the chamfer's, and the flush pilaster closing each corner bay (the game's 3.929 .. 4.429, with its
+impost and the parapet pedestal over it) moves whole to end on the marker; each upper-floor window's rearmost backdrop plane, a photo atlas of furnished rooms hidden behind the grey pane
+over the glass, is removed with its image (user 2026-09-13; the atlas is found as the one image whose users are all
+flat four-vertex planes and which is not the dark shop silhouette behind the storefront glass); the top floor's
+panes, which the game tinted near white where floors 2 to 4 tint the same texture nearly black, take the material of
+the floors below so every window above the storefronts reads alike (user 2026-09-13); and
+the game's `wall__8` with its proud columns, end piers, stepped capitals
+(`bay_capital__*`), recessed panels and separator strips is removed; the end bays' sills and the chamfer bay's
+window parts come onto the field's depths first, and the end bays' windows, which the game set 0.20 nearer the street
+to match its proud piers, go back to the common frame depth so every window has the same reveal. Every window sill box (`bf2_window_decoration__*`) is replaced in place by a
+molded sill (`sill_*`, 0.10 tall, 0.05 out: a convex curve leaving the bottom at 10 degrees on a large radius into
+a concave cove rising more than it projects and ending at 15 degrees, rounded into a vertical fillet, then a cap
+overhanging it by 1 cm with two softly rounded front edges), one sill per set of windows spanning its two or three
+boxes, its top at the frames' bottom; above every portal the windows the game happened to leave there go and a copy
+of the nearest pair (frames, glass, backdrops, sill and, on the top floor, the panel) sits centred on the portal, the
+rebuilt wall taking its holes from them (user 2026-09-12, every face and every floor above the storefronts);
+user 2026-09-12, reference). Above the
+cornice, up to the second floor: over the portal a pier block (`fit_pier_*`, 0.80 wide, flush with the band's
+outer end) stands above each pilaster on the band plane and the zone between them (`fit_inset_*`) is inset 0.12
+behind the block faces, with a small bar (`fit_bar_*`, 0.08 x 0.03) under the crown and a row of eleven rectangular
+openings (0.18 x 0.34, 0.25 deep, the first and last starting right at the pier blocks) cut into the inset face
+right below it; a crown molding `ge_crown`
+runs around the building at its
+top, about 0.17 tall to 0.15 out under a square edge 0.06. Its curve is an S (user 2026-09-16): a hollow sweeping up
+out of the wall and a small convex crest rolling over into the square edge, the turn between them `M_S_TURN` 0.70 of
+the way up the chord, so most of it is the hollow. `M_HOLLOW` 0.028 is how far the sweep hollows in from its own
+chord, `M_BULGE` 0.015 how far the crest bellies out of its own -- the crest's round came down in the user's steps,
+0.05 halved and then 40% off that again, while the arc kept its reach and its rise. The stack is built bottom-up from
+the cornice step: the openings start
+right on it, the bar sits on the openings, the crown on the bar, and the crown's square edge lands on the second
+floor line (6.092): nothing of the plain wall band shows above it (user), the brick sits right on the edge. A foot
+`M_FOOT_H` 0.20 tall then stands on that edge, the entablature's last member (user 2026-09-16): a square band taking
+`M_FOOT_TAKE` 60% of the crown's projection, so 40% of the top ledge still shows outside it, with its top `M_FOOT_R`
+2 cm rounded over convex. It rises past the floor line, against the foot of the brick rather than under it, and the
+second floor's windows stand on it (user 2026-09-16): the foot is their sill, so they have none of their own and each
+is 0.35 taller than it was, its head where it was and its feet let down onto `FOOT_TOP` 6.292. Only what is below the
+meeting rail moves, so every rail keeps its thickness and the lower sash alone grows; the set is read and its panel
+cut where the game left it and `drop` says how far that one comes down, because a bounding box is cached and editing
+a mesh does not refresh it. Each window takes a copy of its mesh first: the game's windows share theirs, and without
+that every floor moved 46 times over. The same row runs over the two storefronts beside the portal
+(user 2026-09-12, reference): an edge capital (`fit_cap_*`, the pier plus the blocks' extra width inward, only
+0.08 proud since the cornice ledge is 0.16 deep there) stands over the pier each of them shares with the
+three-pane bay, the zone from the portal's block to it is a slab at the wall plane (`fit_zone_*`) with its own bar
+and a row of openings at the portal row's pitch, and the crown jogs out over the edge capitals.
+
+Every part of that zone is one solid, built the same way (user 2026-09-15: the edge capitals were a thin front
+plate with the game's wall still standing behind it and a small backing plate beside it to cover the end of the
+openings row -- "a side wall with a top cover, and another wall underneath"). The run from one edge capital to the
+other is tiled by boxes that all reach `ZONE_IN` 0.30 into the wall -- capital, side slab, pier block, inset, pier
+block, side slab, capital -- so each one closes the 5 mm overcut of its neighbour's end opening by itself and none
+of them needs a lid. The game's band wall is carved out of that whole volume in one pass (`carve_faces` on `w7`
+over the run, capitals included) instead of a pocket behind the openings only, so nothing of the game's is left
+under them. Where an edge capital stands against a three-pane bay's recess, the capital's own outer face is the
+pocket's side wall for its height, and the liner's side there (`fit_recess_*_L/R`) stops at the zone's bottom: the
+crown's step closes the pocket above, and two stone walls in the same plane would fight.
+
+Placement: the portal's spandrel face (y -2.70) goes on the wall plane, its sidewalk (z -0.12) on the
+building base (z 0.201), so its threshold lands on the game's step top (0.321) and its frieze top at
+5.121; local +x runs along the face to the viewer's right (a rotation, so the lettering reads correctly
+on both faces). Output: `tests/artifacts/blender/bradbury/portal_project/bradbury_block.blend` (links
+`//bradbury_portal.blend`; open it in Blender to see the whole block) and review renders
+(`block_portal`, `block_portal_quarter`, `block_entablature`, `block_corner`, `block_back_portal`) in
+`tests/artifacts/screens/bradbury_fix/portal_project/building/`.
+
+Every window set on floors 2 to 5 is centred on the storefront bay below it (user 2026-09-13): the ground floor's
+layout is the rhythm and the sets, which the game had spaced evenly, slide along their face to sit over it. A set is a
+sill and everything standing on it. Sets and bays are paired in order along each face by the pairing that moves the
+least in total, so a face with more bays than sets leaves one blank, which is what happens at the extra bay by the NW
+corner. Each set goes to a bay of its own size (user 2026-09-15): the three-window set over the three-pane
+storefront, the pair over a two-pane one, the single over a corner bay, and only among the bays that fit does the
+pairing take the one that moves least (`pair_up`, a bitmask assignment rather than an in-order one). It is not
+ordered along the face: on the 3rd Street face the game's triple stood before its three-pane bay and crosses the pair
+to reach it. The sets standing over a portal travel together, centred on it, and where they cannot fit between their
+neighbours (`MIN_PIER` 0.40 of wall on each side) the one furthest from the portal goes. Over each portal every floor
+above the storefronts carries one copied pair, on all three entrances.
+
+The game's three fire escapes, all on the 3rd Street face, stayed where it hung them while the window sets moved onto
+the bays, leaving one over blank wall: the middle one is removed and each of the others slides onto the set nearest
+it, so a stair always stands in front of windows (user 2026-09-15).
+
+The whole elevation stands on one plane, `WALL_OUT` = `JOG` = 0.20 out from the hull (user 2026-09-15). It had been
+layered: the brick field of floors 2 to 4 sat 0.20 *behind* the hull and the top floor's 0.08 behind it, while the
+corner bays, the game's own cornices and the portal's band stood 0.20 in front, so the wall over every storefront
+was a step behind the wall at the corners and the ground floor's stone hung out over both. Now the field walls come
+forward onto the corners' plane (floors 2 to 4 by 0.40, the top floor by 0.28, their windows, sills and panels
+travelling with them so every reveal keeps its depth), the ground floor's stone follows -- pier ring and band strip
+`STRIP_OUT` 0.02 proud of it, bead, dentils, cornice and crown on it, the game's band wall `wall__7` pushed out to
+it as the wall above the storefronts that it is -- and the portal goes forward the same 0.20, so its band still
+jogs `JOG` ahead of the wall and its four brick columns stay flush with it. Only the storefronts stay where the game
+left them, which makes them 0.20 deeper behind their piers (user: fix later if needed). The corner projection is
+gone with it: there is nothing left for a corner to project from, so `CORNER_OUT`, `end_stretches`, `in_corner` and
+the corner jog in `jogs_of` are all gone, and `loop` instead takes a `base` -- the whole loop offset -- and mitres
+every corner with it (`corner_reach` still gives how far a run carries on past a corner to reach the mitre, and
+`full_face` uses it for the dentil runs and the top floor's slabs). The top floor's wall is now one plain slab per
+face, corner to corner.
+
+The game's two cornice bands and its parapet come out the same 0.20 (user 2026-09-15), or the mid cornice -- whose
+cap already sat at exactly 0.20 -- would have finished flush with the wall it caps and the top one would have lost
+as much of its reach. Each is one mesh wrapping the building, so `push_out` moves it vertex by vertex: every polygon
+is assigned to a face by its centre (`face_at`), a vertex takes the faces of the polygons that use it, and one that
+two adjacent faces share goes to where their two offset planes cross (`mitre_out`) instead of being dragged back to
+the corner by one of them. Vertices are matched by position rather than by index, since the runs are not welded
+where they meet, and a run that stops just short of or just past a corner is mitred too: without that the bands tore
+open at the chamfer, a 0.15 slot in the bracket course. The band wall is first pulled back onto the hull, because
+the game set its chamfer run 0.05 proud of it (as it did that bay's window parts, `CHAMFER_OUT`), which had buried
+the band strip and the whole dentil course on that face.
+
+The brick of floors 2 to 5 sits `BRICK_BACK` 0.30 behind that plane (`BRICK_OUT` -0.10), and its columns and the
+building's edges stand `COL_RELIEF` 0.30 proud of it (`COL_OUT` +0.20) (user 2026-09-16): the ground floor's stone
+reads as the base it is, each course standing further out than the wall it carries -- brick at -0.10 with its columns
+at +0.20, then the field cornice at +0.330 and crown at +0.365 over them, then the portal's own at +0.530 and +0.565.
+It came back in three steps: 0.10, then 0.10 more with the columns held (which is why `COL_OUT` was briefly a plane of
+its own), then 0.10 with everything together. The whole mass now moves on `BRICK_BACK` alone and the relief on
+`COL_RELIEF`, independently. Before the first step the columns reached 0.035 PAST the crown's square edge they stand
+on, an overhang that predated the one-plane move; they now clear it by 0.165, and by 0.245 where the crown breaks over
+an edge capital. The whole wall moves, not just its face -- the columns are unioned into the ring and every window
+reveal is measured from its plane -- so the windows, sills and panels of floors 2 to 4 and of the top floor travel
+with it; every one of the 144 panels lands on the wall plane.
+
+The building's edges come out to the columns' plane too (user 2026-09-16): `end_stretches` gives, for every face, the
+stretch from each corner back to the second pier the ground floor has there -- the pillar the extrusion starts at --
+and the wall of floors 2 to 4 and of the top floor projects across it to `COL_OUT` +0.30, the same depth the columns
+have, with the windows, sills and panels standing in it coming out the same 0.30. Each stretch is carried past the
+corner by `corner_reach` to where the two faces' projecting planes cross, so an edge reads as one mitred mass and not
+a step; on floors 2 to 4 the stretch is unioned into the ring, on the top floor it is a slab of its own (corner,
+field, corner). The chamfer is one bay wide, so the whole of that face is corner. Nothing under them has to move: the
+crown's square edge already reaches +0.365 in the field, so a corner at +0.30 lands on it.
+
+Each long face has a centre pavilion that behaves the same way (user 2026-09-16). The game gives the middle of the
+3rd Street and north faces the treatment it gives a corner -- the wall standing proud and three parapet pedestals on
+it, the outer two deep and the middle one shallow -- but putting the top floor back as one slab per face had
+flattened it, leaving a plain wall under its own crown. `game_mids` reads it again off the game's wall (`wall_runs`,
+the proud runs that are not the face's own ends) before the top floor is rebuilt, and `mid_stretches` lays it on
+`MID_BAY` 6, the seventh bay in from the start of the face, running from the far edge of the pillar on one side to the
+far edge of the pillar on the other (user 2026-09-16) -- the bays' own edges, `targets`, not the window groups' -- so
+its returns stand on the pillars under them instead of half way across them, the way a corner stretch ends on its
+pier, and it still breaks between two window groups and never across one. `out_stretches` is then
+the corners and the pavilion together, and everything that was written for the corners -- the union into the ring on
+floors 2 to 4, the slab per stretch on the top floor (now any number of them, not just corner-field-corner), the
+plane each panel is measured from -- follows without a special case. The game's own s is no use for placing it: the
+window sets have since moved onto the ground floor's bays and left it standing in the gap between two of them, and on
+the 3rd Street face the pairing crosses, so `wall_warp` is skipped there and the wall could not even follow its sets.
+Bay 6 is what the north face's wall does land on where it can follow, and it is the bay the user marked on 3rd
+Street. The three pedestals then slide onto it, keeping the spacing the game gave them.
+
+The building is one bay longer than the game shipped it (user 2026-09-16, and the reference's own facade): a new
+two-window column on each long face, between the 3rd Street pavilion and the bay the fire escape hangs on. It is let
+in before anything is measured off the geometry -- everything east of the cut moves out `BAY_GROW` 4.465 and the runs
+that wrap the building stretch with it, vertex by vertex -- so the outline, the excess strips, the bay layout and
+every ring built later simply follow the two longer faces (45.73 -> 50.19 and 48.56 -> 53.02). The two faces' window
+rhythms are staggered and no single x is clear on both, so each takes its own cut in its own gap (`BAY_CUT_S` -2.43,
+`BAY_CUT_N` -0.87) and the runs take a third between them (`BAY_CUT_X` -1.60), slid per mesh until it lands clear of
+that mesh's own small elements -- the same trick the excess strips use. A run's vertices take their own face's cut,
+not the mesh's one: the wrapping runs carry both faces, and a single cut that is clear on 3rd Street falls inside a
+window bay on the north face. `wall__21` was stretched that way once and the panel it stretched came out lopsided --
+its left half 2 cm shallower than its right, its rim tighter than its own lights, and the wall's cut left standing on
+the glass. Cut per face, that panel now matches its neighbours layer for layer.
+
+The gap is then filled with a copy of the two-window column just west of it, one bay east: its storefront only, since
+that is what makes the layout count one more bay. The windows come from a general step at the end of the set move --
+any bay with no set of its own takes a copy of the nearest set of its size, slid onto it, on every band alike -- so
+the new column carries the same two windows on every floor, and the spare bay by the NW corner, blank since the
+beginning, is filled too. The fire escape is left out of both copies. `column_spans` then gives the new pier its own
+brick column without being told.
+
+Two probe caveats, both the same kind: the probes carry their own copy of `HULL`, so they had to grow with the
+building (11911 false backfaces and slivers at every height until they did), and `probe_backfaces`'s bands are
+absolute heights, so the two upper ones had to rise with `UPPER_LIFT`.
+
+The mid cornice's ornament is off for now, to come back with a different design (user 2026-09-16): the carved band
+between the top floor and the one below it, on the mid cornice (`cornice_ornament__2466`, z 15.09..15.33). It is
+picked by height, not by name, so a rebuild finds it wherever the game's numbering lands; the top cornice keeps its
+own, the rich course at the head of the building under the parapet.
+
+A capital stands at the top of every brick column (user 2026-09-16): the portal's own pilaster capital, `CAP_SRC`,
+scaled whole -- 0.951, so the carving keeps its proportions. It starts where the window recess ends, `CAP_BOT` 15.242
+(the panels' own top, read off them), and the column stops there too rather than running past it. Its base sits on the
+column's face at `COL_OUT`, which puts its front at +0.312 and its flare proud of the shaft; it is 0.919 wide on a
+0.80 column, centred on its span, its back running on into the wall where nothing sees it. The mesh comes from the
+linked portal, so the capitals are built after the link, not with the wall.
+
+The room for them is made by lifting everything from the mid cornice up -- that cornice, the top floor with its
+windows, the top cornice, the parapet and the roof -- by `CAP_LIFT` 0.300 (user 2026-09-16; since 2026-09-17 the
+first 0.300 of `UPPER_LIFT`, see the band below). The brick of floors 2
+to 4 is built to the lifted underside, `WALL24_TOP` 15.632, so the band the lift opens over the fourth floor's windows
+is plain wall and not a hole, and so is the band the removed ornament leaves. `roof__18`, `roof__19` and `roof__20`
+are dropped with it: they were unused and put a lip over the fourth floor's window heads.
+
+A probe caveat: `probe_backfaces`'s bands are absolute heights, so the two upper ones had to rise with the lift
+(15.80 -> 16.10, 21.00 -> 21.30). Left where they were, they start inside the lifted cornice and every downward ray
+hits its underside -- 8072 false backfaces, none of them real.
+
+The band between floors 4 and 5 (user 2026-09-17, photos 1-3 of the reference; the brackets and the two cornices of
+photos 4-7 are still to come): a rectangular band, `ge_band45_<face>_<k>`, on every deep run of every face -- the
+field from a corner stretch's end to the centre pavilion and from the pavilion to the far corner, six runs in all --
+standing on the capitals' top, `B45_Z0` = `WALL24_TOP` 15.632, up to `B45_Z1` 16.362. Its face is `B45_FRONT` +0.14:
+`B45_STEP` 0.06 behind the raised bays' plane, the depth of the window recess (`RECESS_D`, asserted equal; photo 2's
+"same depth"), so it makes a small step with them and never stands past them, and 0.24 proud of the field. It is
+separate geometry from the wall (user), one box per run with its back in the wall (`BRICK_OUT - WALL_T`), in the
+wall's own brick with the same course mapping, `BRICK_UV`, for now. The raised bays -- the corners and the centre
+pavilions, "where the wall is less deep" -- carry none of it: their wall of floors 2 to 4 runs on up past 15.632 to
+the band's top (the `out_stretches` union boxes reach `B45_Z1`), and the top floor's raised slabs start there rather
+than at the floor line, so the gap the lift opens beside the band is closed by their own brick and the one seam is at
+the band's top, where the top cornice will sit. The field slabs still start at `TOP_Z0`, their feet hidden behind the
+band. The game's mid cornice, `cornice__2465` (picked by height, like its ornament), goes: the band takes its place
+and new cornices at the band's foot and head are to come.
+
+The band's stack is decided now so the lift is done once (user: the fifth floor has to move up for it): over the
+capitals' top, `B45_STEPS_H` 0.08 for the bottom cornice's two steps and edge (the band box covers that strip until
+the cornice is built), `B45_H` 0.65 of band (photos 1, 4 and 5: about 0.3 of the fourth floor's window height),
+`B45_TOPC_H` 0.28 for the top cornice, and the fifth floor's sills stand on that at `B45_TOP` 16.642. Everything from
+the mid cornice up is therefore lifted `UPPER_LIFT` = `B45_TOP` - `SILL5_GAME` (the sills' underside as the game has
+them, 15.990, asserted at the lift) = 0.652, of which the first 0.300 is the capitals' room. Sections through the
+band at 15.70, 16.00 and 16.30 read +0.14 on every deep run and +0.20 on every raised stretch, no misses; at 16.45 and
+16.55 the plain top-floor wall shows above it (-0.10 field, +0.20 raised) and at 16.70 the sills; six sliver heights
+through the band and the lifted top floor are clean and all twelve plane changes on the top floor still read a return
+`-0.42..+0.20`. Not decided by the photos: whether "the window recess" is the 0.06 panel recess taken here or the
+0.21 from the wall face to the frame, which would put the band's face at -0.01, only 0.09 proud of the field.
+
+The brackets under the band (user 2026-09-17, photos 4 and 5, "dentils"): consoles hanging from the band's soffit
+between the brick columns only -- nine over a three-window bay, six over a two-window bay, three over the single
+window of the spare bay by the NW corner (`BRK_N`, the count read off the fourth floor's frames with `n_windows`) --
+spaced evenly from column face to column face, none over the raised bays, which carry no band; 186 in 28 bays. Each is
+`BRK_H` 0.34 tall, 0.14 wide at its head and 0.10 at its foot, flush with the band's face: a rectangular head only
+`BRK_HEAD` 0.04 tall (user, second round: "a few cm", the first cut's 55% was far too much), then a hollow taper
+back and down to a foot still `BRK_FOOT` 0.05 out; in the capitals' stone
+(`PORTAL_sandstone_carved`, procedural, no UVs needed), one mesh per bay (`ge_bracket45_<face>_<run>_<bay>`), its
+top on the band's foot. The capitals' abaci, 0.312 out, still stand past the band's face (+0.14): the capital is the
+portal's own at the user's request and was not touched.
+
+The cornices at the band's foot and head (user 2026-09-17, photos 6 and 7). Both go right round the building, over the
+raised bays as well, and follow the silhouette: they are swept on the wall's own outline at their height, stepping out
+over every raised stretch (`silhouette_jogs`, the `out_stretches` as jogs for `loop`, a corner stretch opening at its
+face's start or closing at its end so the corner is mitred at the offset), so neither is interrupted where the band
+ends. The bottom moulding (user 2026-09-17, second round, with a photo of the bracket course and one of a corner;
+two earlier cuts had the wrong stack -- a strip down the whole capital zone, then steps rising straight from the
+brackets' heads), bottom to top on a deep bay: the brackets; then, right on their tops (a thin plate between the two
+was tried and taken out again at the user's request, the moulding let down the 2 cm it took), on the band's
+outline (the band's face and the raised bays' wall, 0.06 apart), a taller band `C45_BAND_H` 0.10 only `C45_BAND`
+0.5 cm proud of the wall it is on, a step 0.03 out and tall, a smaller step (0.045 out, 0.02 tall) and an edge ring
+(0.06 out, 0.03 tall) with its outer corners rounded `E_EDGE_R` like the ground cornice's (`ge_cornice45_bottom`,
+`moulding45_profile`); then the frieze. On the recessed bays "that band is extruded": the band box is the extrusion,
+standing on the brackets' and capitals' tops at 15.632, the moulding's members on its foot and the ornament above
+them; on a pavilion the same members stand on the wall, a plain band with a small ledge over it. `B45_STEPS_H` 0.18
+for the moulding, `B45_H` 0.55 for the frieze, the band's top and the lift unchanged. The top cornice, on the band's top (`ge_cornice45_top`): a course of dentils 0.07 wide, 0.08
+tall, 0.05 out at a 0.12 pitch on a backing plate 0.5 cm proud of the band (`ge_teeth45`, boxes along every run of the
+band's outline with a 3 cm margin at each break and corner, as the ground floor's teeth are laid), a very small step
+over them (to 0.06), a convex curve (0.08 out, 0.12 up, the ground cornice's gentle arc) and a square edge (0.02 out,
+0.04 tall); 0.26 in all, the fifth floor's sills 2 cm over it, its edge 0.30 out on the field and 0.36 on the raised
+bays.
+
+Both mouldings are one mitred sweep each round the band's outline (`band45_path`: `loop` on `B45_FRONT` with
+`silhouette_jogs` of 0.06 over the raised stretches), so at every break the profile turns the corner with the wall,
+twice, a double L in plan (user 2026-09-17, third round, with a photo of a break: they must not end at the wall's edge
+as two disconnected pieces). A first cut had built them as capped pieces per run -- a deep piece at the band's face
+and a raised piece at `COL_OUT` meeting at the wall's return -- out of respect for the crown's fold at the edge
+capitals. Working that fold through, it is not the shallow break that folds a mitred sweep but a *segment shorter than
+the mitre reaches of the two corners bounding it*: a ring at a corner of turn t carries a profile point |o| along the
+path by |o| tan(t/2), so between two same-sense corners closer than the sum of those reaches the back points cross
+and the quad between them turns inside out -- the 0.80 edge capital against the crown's 0.44 back, whose soffit is
+what showed black. A break's 0.06 return is bounded by a concave and a convex corner, whose mitres shift the same way
+and never cross, and the raised and deep runs on either side are metres long; the mouldings' backs reach 0.30. The
+backface probe, run at nine heights through the two mouldings, finds no first-hit backface at any break. Sections through the stack read, on every face, the
+brick between the brackets and capitals at 15.45, the taller band +0.145 (+0.205 on the raised bays) at 15.64 and
+15.70, the step +0.17 (+0.23) at 15.75, the smaller step +0.185 (+0.245) at 15.77, the edge ring +0.20 (+0.26) at
+15.80, the band +0.14 at 16.00 and 16.30, the dentils at 16.40, the curve +0.24 (+0.30) at 16.50, the edge
++0.30 (+0.36) at 16.60, the plain wall at 16.63 and the sills at 16.70, with no miss anywhere; the backface count did
+not move (the same 4 and 23 as before the band), no slivers at twelve heights, no open junction. Each moulding is one
+ring of 31 path points; 1460 dentils.
+
+Probe caveats again: the probes' heights rose with the extra 0.352 (backfaces `ZS` and the downward bands, the sliver
+heights, the junction probe's window), and three single hits at z 19.5 on `wall__21`'s back are a 1 mm hairline in
+the game's own arch reveals of `top_panel_1976` and two others -- the fine arc of the panel face against the coarser
+arc of its reveal -- reached only because the probe height now falls in that 15 cm over the arches; not new.
+
+The parapet carries no pedestals (user 2026-09-16, and HABS CA-334's general view, `refs/loc`): the game stood a
+1.10 m square post with a 1.22 m coping slab on it at each end and in the middle of every corner stretch and every
+pavilion, and each reached 0.48 m back over the roof deck, so from above they read as boxes left standing on the roof.
+The real building's parapet is a plain band under one straight coping from corner to corner, which is what is left
+once all 68 of them go (`parapet_block*`; they were doubled as well, a second post and coping 8 cm behind the first,
+hidden on every side but the top, where the two lids were coincident and rendered as a black patch). The crown above
+each pavilion therefore no longer marks it -- `game_mids` reads the pavilions off the game's wall, not off the
+parapet, so nothing else depends on them.
+
+A bay is deep, and the stone zone over it steps back, when it is one of the game's three-pane storefronts -- or when
+`DEEP_BAYS` names it (user 2026-09-16). It names bays 6 and 7 of the 3rd Street face, the two two-pane fillers
+between the centre pavilion and the corner bay, counted along the face in the order the bays stand (`BAY_ORDER`).
+Only their depth changes: they keep their two panes and the pair of windows over them, their storefront moves from
+`INSET` 0.20 to `INSET_WIDE` 0.40 behind the pier face like a three-pane one, and being in `recesses` is what makes
+the band strip, the band above it and the ground floor's entablature step back `RECESS` 0.15 over them. That face now
+carries four recesses instead of two. The 0.885 pier left standing proud between the two of them breaks the
+entablature and the dentil course cleanly, the same way the pier beside a three-pane bay does.
+
+Every storefront pier carries a brick column up the wall of floors 2 to 4, so each column stands on the pillar under
+it (user 2026-09-16). `column_spans` gives them, and three kinds are already standing before it counts: the pair that
+continues a portal's pilasters, at the portal's own edges; the pier beside each of the two storefronts flanking a
+portal, which takes the capitals' span (`CAP_SPANS`, below) so the three tiers over it line up; and any pier the wall
+is already proud over -- inside a corner stretch or under a centre pavilion -- where that mass is the column, which is
+the exception on the 3rd Street face, where the pavilion's two-window section covers both of its piers. Every pier
+left over gets a column of its own, `COL_W` wide, centred on it. On the Broadway face the rule adds nothing at all,
+which is what made it the model to read the rule off; it gave 3rd Street the five it was missing, and 5 and 6 to the
+E and north faces, which had only their portal's pair or none.
+
+The top floor's slabs are laid after the game's wall is cleared, not one at a time (user 2026-09-16). Clearing a run
+took out the return the run before it had just built on their shared edge -- `wall_faces_in` reaches a little past the
+rectangle it is given, as it must to cut the game's floor-tall triangles -- so the wall stood open for its whole 4 m
+height wherever the plane changes, and from above one looked straight through it to the roof. All the clearing is
+done first, then all the slabs, and every slab is given the same back, the deepest (`BRICK_OUT - TOP_T`), so a step's
+return closes the whole end of the thinner slab beside it rather than only the part in front of it. The building's 12
+plane changes on that floor all read a return `-0.42..+0.20` deep now.
+
+The three tiers over the pier each storefront beside a portal shares with the bay beyond -- the edge capital, the
+break the entablature makes over it and the brick column above -- are all `COL_W` 0.80 wide and
+take one span, `CAP_SPANS`, worked out once (user 2026-09-16). It runs out to the pier's far edge, where the recess
+beside it begins, so the capital meets that recess in a single step: centring the 0.80 block on the 0.885 pier instead
+left a 4 cm strip of pier between the two, which the cornice then had to break across twice a few centimetres apart,
+deforming it, and which needed a little cap of its own to fill. No caps: the span reaches the edge.
+
+The wall of each level is one swept ring, and the two meet rather than overlap (user 2026-09-16). `ge_band_strip`
+carries the band and its own crown -- the bead, the course of teeth and the cornice all stand on the band, so the wall
+behind them belongs to it (user 2026-09-16) -- running `BAND_BOTTOM` .. `E_TOP` - 0.005 and stepping back from its
+`STRIP_OUT` face to the wall plane at the band's top, which keeps the teeth's full 4 cm of relief against it instead of
+the 2 cm they would have had against the strip's own face. `ge_upper_band` takes it from there (`E_TOP` - 0.005 ..
+`FLOOR2_BOTTOM`), the zone above the cornice. Both run on `hull_path` and are `ZONE_IN` deep. The game's `wall__7` did both jobs at once and overlapped
+the strip by 0.58, so it goes. Because the ring steps back over the three-pane storefronts on the same path as the
+strip, each recess pocket is part of the two rings themselves: the plate-plus-two-slivers lining that used to be
+fitted into the game's wall (`fit_recess_*_back/_L/_R`) is gone, and with it the rule that trimmed a sliver where an
+edge capital shared its plane. Over the three central bays of a portal face the blocks and slabs are the wall, so the
+ring is cut away there -- across the zone's own height only, since the course of teeth below still stands against it.
+
+Known: where a moulding breaks forward by less than its own projection -- the crown reaches 0.165 out but an edge
+capital breaks it only `CAP_OUT` 0.08 -- the mitre cannot wrap it. A mitre carries a profile point |o| from the path
+|o|*tan(half the turn) along it as well, so on a break that shallow the point lands past the next ring and folds a
+sliver of the strip inside out, a centimetre or two of black at each corner of the break. Tried and rejected:
+butting re-entrant corners instead of mitring them (either sign leaves gaps worse than the folds, since this profile
+straddles the path); capping the mitre's reach to the run (removes the folds but the pinch blends the whole way to
+the next corner, squashing the crown from 0.365 to 0.322); the same cap with guard rings a centimetre either side of
+each corner (keeps the profile exactly but the guard ring is then the one the mitre overshoots). The real fixes are
+to break the crown by at least its own projection, or to build the breaks as separate mitred blocks rather than as
+jogs in one sweep.
+
+A path point in line with its neighbours and going the same way is dropped before a loop is swept (user 2026-09-15):
+it adds a ring whose profile lies flat along the path, and where an edge capital's return runs straight on into the
+recess's beside it -- both jogs step back to the wall plane at the same place, so the path went 0.28, 0.20, 0.05 at
+one `s` -- that ring sat between two mitred ones and its outer point fell *behind* both of them, folding the sweep
+and tearing a triangular hole in the crown's top ledge at all six edge capitals. `probe_backfaces.py` looks for the
+whole class: it sweeps every face horizontally at 27 heights and downward over all four ledges, and reports any
+first surface met that faces away from the ray, which is exactly what renders black.
+
+`ge_cornice` reaches `E_CORNICE_OUT` 0.05 further out than the course of teeth it covers (user 2026-09-16). Its whole
+front moves with that -- soffit, small band, ovolo and top step alike, each keeping its own shape -- and only its back
+stays where it was, so the moulding is 5 cm deeper rather than 5 cm further away: it now oversails the dentils instead
+of sitting flush with them. Measured top to bottom, every height of it moved +0.050 and nothing else moved at all; its
+top ledge, which the edge capitals and the portal's pier blocks stand on, is 0.13 deeper in front of them than before.
+
+`RECESS`, how far the stone zone steps back over a three-pane storefront, is capped at 0.15 (it used to be the
+storefront's own extra inset, 0.20): on one wall plane the crown has to carry the brick over the pocket as well, so
+its square edge now stands 0.015 proud of the brick instead of 0.065 behind it, where it left a shadow slot the
+length of every recess. An assert keeps it under the crown's own reach.
+
+The top floor is put together like the floors below it (user 2026-09-14): the wall is just the wall, and every window
+set sits in a hole of its own with the recess, the arch rings and the stepped reveals on a panel of its own
+(`top_panel_*`). The game had built all of that into `wall__21`, so each set's piece of that wall is cut out into a
+panel object -- the rectangle it steps back over, measured against the wall's own plane, which the end and centre
+pavilions stand 0.08 proud of -- plain brick closes the wall behind it, and a hole is cut again wherever the set
+finally stands: `wall__21` keeps about 1,300 faces of plain wall where it carried 20,000 of window. A set -- sill,
+frames, glass, panel -- then travels as one piece, which is what lets the windows over a portal be swapped for a
+copied pair like the floors below; a panel that moves takes its u with it, so its brick still runs on into the wall's
+courses. The wall still follows the sets, one rigid band per set and a linear ramp between, anchored at the corners
+where it may not move, so its pavilions stay over their sets and the brick is neither stretched nor sheared. The
+arcade's impost band -- a course of blocks at the springing of the arches, broken only by the openings -- is taken
+down before anything moves and laid again at the end, one block per stretch between openings at the depth the wall
+has there (`impost_band_*`), so no block is left stranded where a window used to be.
+
+Textures (`link_game_textures.py`): every map the glTF export packed into the file is pointed back at the game's
+own asset under `assets/public/pbr`, with a path relative to the .blend (user 2026-09-13). The tool runs inside the
+assembly and stands alone for any exported building:
+`blender -b <file.blend> -P link_game_textures.py` relinks that file and saves it in place (`-- --dry-run` to look
+first). It has been run on the baseline `bradbury_block_before.blend`, which went from 36 MB to 6.3 MB, so the
+images now arrive already linked and the assembly's own pass finds nothing left to do. Those are the six materials the
+building's config names (`red_brick`, `brownstone`, `terracotta_smooth`, `red_sandstone_block`,
+`red_sandstone_noise`, `rough_concrete`) plus the `painted_plaster_wall` of the floor plates, 21 maps in all.
+Each packed image is matched to its file by its own pixels rather than by name, and is then replaced by that file,
+the packed copy deleted; nothing is written, which the script confirms from the size and date of every asset it read
+(Blender's own unpack writes the packed pixels back to disk instead of using the file, so it is not used). The exporter had flipped every
+image vertically, the glTF convention, so each texture node that now reads a file gets a mapping with V mirrored:
+the same texel lands in the same place and the render is unchanged. The three maps the game draws at runtime and
+never ships as files, the storefront silhouette and the two window maps, stay packed (the baseline also keeps the
+interior photo atlas the assembly deletes). The block drops from 33 MB to 3.5 MB.
+
+Collections in `bradbury_portal.blend`: `PORTAL` holds the piece collections (what the building links);
+`RIG` (cameras, sun) and `PROPS` (the sidewalk slab of piece 05) are review-only and stay at the scene
+root, outside the link.

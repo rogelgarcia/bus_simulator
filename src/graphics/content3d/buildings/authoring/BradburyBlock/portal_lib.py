@@ -9,12 +9,24 @@ import bpy, os, os, bmesh, math
 from mathutils import Vector, Matrix
 
 # ---------------------------------------------------------------- scene / collections
+ROOT_COLLECTIONS = ("RIG", "PROPS")   # review-only collections (cameras/sun, sidewalk context) stay at the scene root
+def portal_root():
+    # `PORTAL` holds every piece collection: it is what the building file (assemble_building.py) links and instances
+    root = bpy.data.collections.get("PORTAL")
+    if not root:
+        root = bpy.data.collections.new("PORTAL"); bpy.context.scene.collection.children.link(root)
+    return root
 def ensure_collection(name):
     c = bpy.data.collections.get(name)
     if c:
         for o in list(c.objects): bpy.data.objects.remove(o, do_unlink=True)
     else:
-        c = bpy.data.collections.new(name); bpy.context.scene.collection.children.link(c)
+        c = bpy.data.collections.new(name)
+    parent = bpy.context.scene.collection if name in ROOT_COLLECTIONS else portal_root()
+    if c.name not in parent.children:
+        for p in [bpy.context.scene.collection] + list(bpy.data.collections):   # older files had every piece at the scene root
+            if p is not parent and c.name in p.children: p.children.unlink(c)
+        parent.children.link(c)
     return c
 
 def purge_orphans():
