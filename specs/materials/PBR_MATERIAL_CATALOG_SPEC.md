@@ -101,6 +101,29 @@ export default {
     // UV texture rotation in degrees, applied in calibration view only.
     uvRotationDegrees: 0
   },
+
+  // Optional provenance record: where the texture set came from.
+  // Passed through verbatim by the runtime adapter and readable via
+  // getPbrMaterialMeta(materialId).provenance.
+  provenance: {
+    schema: 'bus-simulator.pbr-material-provenance',
+    version: 1,
+    source: {
+      asset: 'Human description of the source set',
+      url: 'https://...',   // null when there is no public page
+      license: 'CC0 1.0',
+      archive: 'downloads/<source>.zip'   // when imported from an archive
+    },
+    generation: {
+      tool: 'Blender 5.2.0 LTS',          // or the generator, e.g. 'ChatGPT (OpenAI)'
+      recipe: 'tools/<baker>/run.mjs',    // when produced by a repo script
+      seed: '<deterministic seed>',       // when the recipe is seeded
+      lightingInBaseColor: false,
+      prompts: 'assets/public/pbr/<slug>/generation_prompts.json', // or null
+      readme: 'assets/public/pbr/<slug>/README.txt'
+    },
+    importedOn: 'YYYY-MM-DD'
+  },
 };
 ```
 
@@ -115,6 +138,7 @@ Field rules:
 - `allMapFiles` is optional and may include every image file path in the material folder for tooling/auditing.
 - `normalization` is optional and may contain placeholders (strings) until later phases enforce validation.
 - `calibration` is optional and currently supports `uvRotationDegrees` (used only by the Material Calibration tool).
+- `provenance` is optional and records where the set came from. The adapter passes the object through unchanged, so the sub-keys are a convention rather than a validated schema. The `schema` / `version` / `source.{asset,url,license}` / `generation.{recipe,tool,seed,lightingInBaseColor}` keys follow the grass asset families in `src/graphics/content3d/catalogs/LowCutGrassMaterialCatalog.js`, which were the first entries to carry `provenance`; `source.archive`, `generation.{prompts,readme}` and `importedOn` were added for sets imported from a downloaded archive. Grass entries additionally carry bake-specific keys — extra domain keys are fine, but keep the shared ones named as above so entries stay comparable. Populate `provenance` for any set not authored in-repo, and always for third-party or AI-generated sets, where the licensing position has to stay auditable. Do not invent a `license`: copy it from the source, or state that it is unspecified.
 - Calibration-only catalog entries are allowed by setting both `buildingEligible` and `groundEligible` to `false`.
 - Calibration-only entries may reuse another material folder by using relative `mapFiles` paths (for example `../plastered_wall_02/basecolor.jpg`) and must not duplicate texture assets.
 
