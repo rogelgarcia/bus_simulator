@@ -160,17 +160,61 @@ def mat_oak_light():
     if "Coat Weight" in bsdf.inputs: bsdf.inputs["Coat Weight"].default_value = 0.25
     return m
 
-def mat_sandstone(name="PORTAL_sandstone", joints=False):
-    m, bsdf = _base(name)
-    if not bsdf: return m
-    nt = m.node_tree; tc = nt.nodes.new("ShaderNodeTexCoord")
-    noise = nt.nodes.new("ShaderNodeTexNoise"); noise.inputs["Scale"].default_value = 0.9; noise.inputs["Detail"].default_value = 8; noise.inputs["Roughness"].default_value = 0.62
-    nt.links.new(tc.outputs["Object"], noise.inputs["Vector"])
-    ramp = nt.nodes.new("ShaderNodeValToRGB")
-    ramp.color_ramp.elements[0].position = 0.35; ramp.color_ramp.elements[0].color = (0.33, 0.17, 0.11, 1)
-    ramp.color_ramp.elements[1].position = 0.70; ramp.color_ramp.elements[1].color = (0.60, 0.36, 0.25, 1)
-    nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
-    col = ramp.outputs["Color"]
+# The portal's stone (user 2026-09-18): the block's dressed-sandstone PBR set, assets/public/pbr/bradbury_sandstone_dressed
+# (made by make_sandstone_pbr.py next to this file), box-projected on object coordinates and gained per channel onto
+# SANDSTONE_SRGB, the tone of the block's ground-floor moulding (assemble_building.py, STONE_RATIO on the brick's mean),
+# with the set's roughness, occlusion and normal map. The pieces exec this file, so the repository is found from the
+# piece's LIB path, from __file__ when there is one, or from the open .blend's place under tests/artifacts; if the set
+# is not there, the old noise ramp stands in, about the same tone.
+SANDSTONE_SRGB = (178, 111, 86)
+def _repo_root():
+    cands = []
+    g = globals()
+    if "__file__" in g: cands.append(os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(g["__file__"])), *([".."] * 6))))
+    if "LIB" in g: cands.append(os.path.abspath(os.path.join(os.path.dirname(g["LIB"]), *([".."] * 6))))
+    if bpy.data.filepath: cands.append(os.path.abspath(os.path.join(os.path.dirname(bpy.data.filepath), *([".."] * 5))))
+    for c in cands:
+        if os.path.isdir(os.path.join(c, "assets", "public", "pbr")): return c
+    return cands[-1] if cands else os.getcwd()
+def sandstone_dir(): return os.path.join(_repo_root(), "assets", "public", "pbr", "bradbury_sandstone_dressed")
+def _srgb_to_lin(c): return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+def fill_sandstone(m, joints=False):
+    # builds the material's nodes afresh (also used to rebuild an existing material in place)
+    nt = m.node_tree; nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial"); bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled"); nt.links.new(bsdf.outputs[0], out.inputs[0])
+    tc = nt.nodes.new("ShaderNodeTexCoord"); d = sandstone_dir(); target = tuple(_srgb_to_lin(v / 255.0) for v in SANDSTONE_SRGB)
+    if os.path.exists(os.path.join(d, "basecolor.jpg")):
+        mp = nt.nodes.new("ShaderNodeMapping"); mp.inputs["Scale"].default_value = (0.5, 0.5, 0.5)     # the set is 2 m a side
+        nt.links.new(tc.outputs["Object"], mp.inputs["Vector"])
+        def tex(fn, cs):
+            fp = os.path.join(d, fn); im = bpy.data.images.load(fp, check_existing=True); im.name = "pbr_bradbury_sandstone_dressed_" + os.path.splitext(fn)[0]
+            im.colorspace_settings.name = cs
+            try: im.filepath = bpy.path.relpath(fp)
+            except ValueError: pass
+            tn = nt.nodes.new("ShaderNodeTexImage"); tn.image = im; tn.projection = 'BOX'; tn.projection_blend = 0.25
+            nt.links.new(mp.outputs["Vector"], tn.inputs["Vector"]); return tn, im
+        base, base_im = tex("basecolor.jpg", 'sRGB'); arm, _ = tex("arm.png", 'Non-Color'); nrm, _ = tex("normal_gl.png", 'Non-Color')
+        import numpy as np
+        a = np.empty(base_im.size[0] * base_im.size[1] * 4, dtype=np.float32); base_im.pixels.foreach_get(a); a = a.reshape(-1, 4)[:, :3].astype(np.float64)
+        mean = np.where(a <= 0.04045, a / 12.92, ((a + 0.055) / 1.055) ** 2.4).mean(0)
+        g = nt.nodes.new("ShaderNodeMix"); g.data_type = 'RGBA'; g.blend_type = 'MULTIPLY'; g.inputs["Factor"].default_value = 1.0
+        nt.links.new(base.outputs["Color"], next(i for i in g.inputs if i.identifier == "A_Color"))
+        next(i for i in g.inputs if i.identifier == "B_Color").default_value = (float(target[0] / mean[0]), float(target[1] / mean[1]), float(target[2] / mean[2]), 1.0)
+        sep = nt.nodes.new("ShaderNodeSeparateColor"); nt.links.new(arm.outputs["Color"], sep.inputs["Color"])
+        ao = nt.nodes.new("ShaderNodeMix"); ao.data_type = 'RGBA'; ao.blend_type = 'MULTIPLY'; ao.inputs["Factor"].default_value = 1.0
+        nt.links.new(next(o for o in g.outputs if o.identifier == "Result_Color"), next(i for i in ao.inputs if i.identifier == "A_Color"))
+        nt.links.new(sep.outputs["Red"], next(i for i in ao.inputs if i.identifier == "B_Color"))
+        col = next(o for o in ao.outputs if o.identifier == "Result_Color")
+        nt.links.new(sep.outputs["Green"], bsdf.inputs["Roughness"]); nt.links.new(sep.outputs["Blue"], bsdf.inputs["Metallic"])
+        nm = nt.nodes.new("ShaderNodeNormalMap"); nm.inputs["Strength"].default_value = 1.0
+        nt.links.new(nrm.outputs["Color"], nm.inputs["Color"]); nt.links.new(nm.outputs["Normal"], bsdf.inputs["Normal"])
+    else:
+        noise = nt.nodes.new("ShaderNodeTexNoise"); noise.inputs["Scale"].default_value = 0.9; noise.inputs["Detail"].default_value = 8; noise.inputs["Roughness"].default_value = 0.62
+        nt.links.new(tc.outputs["Object"], noise.inputs["Vector"])
+        ramp = nt.nodes.new("ShaderNodeValToRGB")
+        ramp.color_ramp.elements[0].position = 0.35; ramp.color_ramp.elements[0].color = (target[0] * 0.75, target[1] * 0.75, target[2] * 0.75, 1)
+        ramp.color_ramp.elements[1].position = 0.70; ramp.color_ramp.elements[1].color = (target[0] * 1.25, target[1] * 1.25, target[2] * 1.25, 1)
+        nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"]); col = ramp.outputs["Color"]; bsdf.inputs["Roughness"].default_value = 0.88
     if joints:
         brick = nt.nodes.new("ShaderNodeTexBrick"); brick.inputs["Scale"].default_value = 1.0; brick.inputs["Mortar Size"].default_value = 0.006
         brick.inputs["Color1"].default_value = (1, 1, 1, 1); brick.inputs["Color2"].default_value = (0.96, 0.96, 0.96, 1); brick.inputs["Mortar"].default_value = (0.45, 0.45, 0.45, 1)
@@ -178,8 +222,14 @@ def mat_sandstone(name="PORTAL_sandstone", joints=False):
         nt.links.new(tc.outputs["Object"], brick.inputs["Vector"])
         jm = nt.nodes.new("ShaderNodeMixRGB"); jm.blend_type = 'MULTIPLY'; jm.inputs["Fac"].default_value = 1.0
         nt.links.new(col, jm.inputs["Color1"]); nt.links.new(brick.outputs["Color"], jm.inputs["Color2"]); col = jm.outputs["Color"]
-    nt.links.new(col, bsdf.inputs["Base Color"]); bsdf.inputs["Roughness"].default_value = 0.88
+    nt.links.new(col, bsdf.inputs["Base Color"])
+    m.diffuse_color = (target[0], target[1], target[2], 1.0)
     return m
+def mat_sandstone(name="PORTAL_sandstone", joints=False):
+    m = bpy.data.materials.get(name)
+    if m: return m
+    m = bpy.data.materials.new(name); m.use_nodes = True
+    return fill_sandstone(m, joints)
 
 # ---------------------------------------------------------------- bmesh primitives (world coordinates)
 def mesh_from_bm(name, bm, mat, coll, smooth=False):

@@ -522,6 +522,7 @@ STOREFRONT_SPLAY = 0.125                                       # the game's reve
 INSET, INSET_WIDE = 0.20, 0.40                                 # the storefront's front plane (sign band, transom, glazing frame) behind the pier face: doubled from 0.10 (user), and twice that again for the three-pane storefronts
 WIDE_BAY = 3.5                                                 # the game's three-pane storefronts: fascias wider than this (4.06; the others 2.86 and the door bays 2.10)
 GLAZING_BEHIND = 0.01                                          # the glazing's frame just behind the sign band's plane; glass, backdrops and divider keep the game's spacing behind it
+SF_BORDER = 0.01                                               # the transom's metal border stands this much proud of the storefront plane, and the sign band stands out with it (user 2026-09-18)
 PILASTER_W = 0.725                                             # the portal's pilaster shaft (piece 07, PW): the widest pillar of the portal
 PIER_W = PILASTER_W + 2 * TINY_W                               # 0.885: every pier between the storefronts, and each street face of the corner columns (user)
 STRUCTURE = tuple(k for k in KEEP if k != "storefront")       # the storefront parts are exactly what we move here
@@ -699,11 +700,12 @@ for fi in range(len(FACES)):
             targets[n] = (cur, cur + w); cur += w + PIER_W
         assert abs((cur - PIER_W if kb == "portal" else cur) - sb) < 1e-6
         print(f"face {fi} {sa:7.3f} .. {sb:7.3f}: {len(run)} bays x{k:.3f}, openings " + ", ".join(f"{w:.2f}" for w in widths) + f", piers {PIER_W:.3f}")
-# A three-pane storefront stands on the deep plane and the stone zone over it steps back with it. Two of the 3rd
-# Street face's two-pane fillers do the same (user 2026-09-16): the pair between the centre pavilion and the corner
-# bay. Only the depth changes -- they keep their two panes and the pair of windows over them -- so they are named
-# here by where they stand, counting the bays along the face in order.
-DEEP_BAYS = {0: (6, 7)}
+# A three-pane storefront stands on the deep plane and the stone zone over it steps back with it. The 3rd Street
+# face's two-pane fillers between the centre pavilion and the corner bay do the same: the pair nearest the pavilion
+# (user 2026-09-16) and, since 2026-09-18, the third one beside the corner bay too, whose moulding had no recess where
+# its two neighbours' did (user, a viewport screenshot). Only the depth changes -- they keep their two panes and the
+# pair of windows over them -- so they are named here by where they stand, counting the bays along the face in order.
+DEEP_BAYS = {0: (6, 7, 8)}
 BAY_ORDER = {fi: sorted((n for n in bays if bays[n][0] == fi), key=lambda n: targets[n][0]) for fi in range(len(FACES))}
 for fi, ks in DEEP_BAYS.items():
     assert max(ks) < len(BAY_ORDER[fi]), f"face {fi} has {len(BAY_ORDER[fi])} bays, not {max(ks) + 1}"
@@ -711,6 +713,7 @@ DEEP = {BAY_ORDER[fi][k] for fi, ks in DEEP_BAYS.items() for k in ks}
 for n in sorted(DEEP, key=lambda q: targets[q][0]):
     print(f"face {bays[n][0]}: the bay at {targets[n][0]:.2f}..{targets[n][1]:.2f} ({bay_type(n)}) set as deep as a three-pane storefront")
 recesses = {}                                                  # face -> [(t0, t1, F, tu0, tu1)]: the storefronts the stone zone above steps back over (user)
+bay_inset = {}                                                 # fascia name -> its storefront's inset (its front is WALL_OUT + inset behind the pier face: the piers' joints run back to it)
 n_bays = 0
 for name, (fi, s0, s1, F, u0, u1, v0, v1, parts) in bays.items():
     inv = F.inverted(); A, d = FACES[fi][0], FACES[fi][1]; t0, t1 = targets[name]
@@ -720,13 +723,17 @@ for name, (fi, s0, s1, F, u0, u1, v0, v1, parts) in bays.items():
     # from the fascia's extents onto the opening, then up into the band. Each part moves by its own front (the wall plane is where
     # the face's hull line sits in the frame); the glazing parts move together, keeping the game's spacing behind their frame.
     inset = INSET_WIDE if (s1 - s0) > WIDE_BAY or name in DEEP else INSET
+    bay_inset[name] = inset
     if inset == INSET_WIDE: recesses.setdefault(fi, []).append((t0, t1, F, tu0, tu1))
     v_front = (inv @ FACES[fi][0]).y + STRIP_OUT - inset
     def front(o): return max((inv @ (o.matrix_world @ v.co)).y for v in o.data.vertices)
     glazing = [o for o in parts if not o.name.startswith("storefront_")]
     g_front = front(max(glazing, key=lambda o: wbbox(o)[1].z - wbbox(o)[0].z)) if glazing else v_front   # the tallest part's front (the frame), not a handle sticking out of a door leaf
     for o in parts:
-        dv = (v_front - front(o)) if o.name.startswith("storefront_") else (v_front - GLAZING_BEHIND - g_front)
+        # the sign band comes SF_BORDER further out than the storefront plane, flush with the transom's metal border
+        # above it (user 2026-09-18: the black panel sat a centimetre deeper than the white panel's border, and the
+        # pier's return showed the step between them); the transom itself stays on the plane, its border stands proud
+        dv = (v_front + (SF_BORDER if o.name.startswith("storefront_fascia") else 0.0) - front(o)) if o.name.startswith("storefront_") else (v_front - GLAZING_BEHIND - g_front)
         o.matrix_world = F @ (Matrix.Translation((tu0 - ku * u0, dv, 0)) @ Matrix.Diagonal((ku, 1, 1, 1))) @ inv @ o.matrix_world
     for o in parts: o.matrix_world = MZ @ o.matrix_world
     # the game's wall and interior shell opened over the old opening and the new one, so nothing of them shows in the bay
@@ -751,7 +758,7 @@ for name, (fi, s0, s1, F, u0, u1, v0, v1, parts) in bays.items():
             b = 0.04
             fbox(f"sf_glass_{n_bays:02d}", tu0 + b, tu1 - b, vf - 0.008, vf - 0.002, tz0 + b, tz1 - b, SF_GLASS)
             for nm, (x0, x1, z0, z1) in (("top", (tu0, tu1, tz1 - b, tz1)), ("bottom", (tu0, tu1, tz0, tz0 + b)), ("left", (tu0, tu0 + b, tz0 + b, tz1 - b)), ("right", (tu1 - b, tu1, tz0 + b, tz1 - b))):
-                fbox(f"sf_frame_{n_bays:02d}_{nm}", x0, x1, vf - 0.005, vf + 0.01, z0, z1, SF_METAL)
+                fbox(f"sf_frame_{n_bays:02d}_{nm}", x0, x1, vf - 0.005, vf + SF_BORDER, z0, z1, SF_METAL)
     for t in (wall, shell):
         carve_faces(t, lo, hi, v0 - 0.4, v1 + 0.4, STOREFRONT_TOP - 0.0005, BAND_BOTTOM + 0.003, frame=F)
     n_bays += 1
@@ -759,7 +766,7 @@ for name, (fi, s0, s1, F, u0, u1, v0, v1, parts) in bays.items():
 for tag, yc, xw, s in (("C", YC, W_C, 1), ("E", YE, W_E, -1)):
     for side in (-1, 1):
         carve_faces(wall, *sorted((xw - s * 0.25, xw + s * 0.06)), *sorted((yc + side * (GAME_HALF + 0.02), yc + side * P_HALF)), STOREFRONT_TOP - 0.0005, WALL_TOP + 0.01)   # 2 cm past the cutout edge: its reveal face sits exactly there
-print(f"{n_bays} storefronts laid out between {PIER_W:.3f} piers, {INSET} / {INSET_WIDE} (three-pane) behind the pier face, raised to the band strip, their lintels carved")
+print(f"{n_bays} storefronts laid out between {PIER_W:.3f} piers, {INSET} / {INSET_WIDE} (three-pane) behind the pier face, raised to the band strip, their lintels carved; the sign bands {SF_BORDER * 100:.0f} cm proud with the transom borders")
 # the entablature now ends at 5.861: the game's upper cornice (5.842 .. 6.092) goes, the plain band continues up to the second floor
 # and the game's lower cornice (4.572 .. 4.842) does not exist on the real building either (user): the plain band also extends down to the wall top
 w7 = bpy.data.objects["wall__7"]                  # the game's band wall; `ge_upper_band` replaces it further down
@@ -831,16 +838,18 @@ caps = [o for o in bpy.data.objects if o.name.startswith("bay_capital")]
 print("removing the columns' capitals:", len(caps)); remove(caps)
 # The game's window sills (bf2_window_decoration__*: a plain box under every window) are each replaced in place by a
 # molded sill of the same length and position (user 2026-09-12, reference photo; per window for now). The profile, from
-# the bottom: a convex bulge running into a concave cove that rises more than it projects, a short vertical fillet and
-# the square top edge; its top at the frame's bottom like the box's, its back on the wall plane the box floated 1.1 cm off.
+# the bottom (user 2026-09-18): a small square edge with a half-round bead on it, a plain face straight up, a cove opening
+# out under the cap and the cap's square edge; its top at the frame's bottom like the box's, its back on the wall plane the box floated 1.1 cm off.
 SILL_OUT = 0.05                                                # the cap's projection from the wall: the top edge stands furthest out (user)
-SILL_STEP = 0.01                                               # the cap overhangs the fillet below it by this
 RECESS_SIDE = 0.03                                             # the sill runs this much past the set's boxes on each side; the recess around the set is exactly as wide as the sill (user)
-SILL_A0, SILL_A1, SILL_A2 = 10.0, 70.0, 15.0                   # tangent angles from horizontal: the convex starts at 10 degrees, not flat; the curves meet at 70; the cove ends at 15, short of flat (user)
-SILL_M, SILL_B = (0.028, 0.032), (SILL_OUT - SILL_STEP, 0.065) # where the convex turns concave, where the cove ends (under the cap's overhang)
-SILL_FILLET, SILL_FILLET2 = 0.015, 0.02                        # the vertical fillet over the cove, the cap's own rise to the top edge
-SILL_JOIN_R, SILL_EDGE_R = 0.005, 0.004                        # small rounds: where the cove meets the fillet (user: bevelled, not pointy) and on the cap's two front edges
-SILL_H = SILL_B[1] + SILL_FILLET + SILL_FILLET2                # 0.10
+SILL_LISTEL, SILL_LISTEL_H = 0.012, 0.008                      # the small square edge at the bottom (user 2026-09-18)
+SILL_BEAD_R = 0.014                                            # the half-round bead on it: the convex part, at the very bottom
+SILL_FASCIA_H = 0.02                                           # the plain face straight up over the bead
+SILL_COVE_R = 0.024                                            # the cove at the top, a quarter circle opening out under the cap
+SILL_CAP_H = 0.02                                              # the cap's square edge over the cove, overhanging it: a small edge like the one at the bottom
+SILL_EDGE_R = 0.004                                            # small rounds on the cap's two front edges
+SILL_H = SILL_LISTEL_H + 2 * SILL_BEAD_R + SILL_FASCIA_H + SILL_COVE_R + SILL_CAP_H   # 0.10, as before: nothing above or below the sills moves
+assert SILL_OUT > SILL_LISTEL + SILL_COVE_R, "the cap must overhang the cove"
 def round_corner(prev, corner, nxt, r, n=3):
     # the sharp corner prev -> corner -> nxt replaced by an arc of radius r tangent to both segments
     d_in = (corner - prev).normalized(); d_out = (nxt - corner).normalized()
@@ -849,17 +858,18 @@ def round_corner(prev, corner, nxt, r, n=3):
     a0 = math.atan2(p_in.y - C.y, p_in.x - C.x)
     return [C + Vector((math.cos(a0 + turn * i / n), math.sin(a0 + turn * i / n))) * r for i in range(n + 1)]
 def sill_profile():
-    # closed (o outward from the wall face, z up from the sill's bottom): bottom, convex, concave, fillet, the cap stepping out, top; the back closes it on the wall plane
-    def cubic(P0, a0, P3, a3, n=6):
-        # a cubic from P0 to P3 leaving at a0 degrees and arriving at a3 degrees from horizontal (handles 40% of the chord: gentle, large-radius arcs)
-        d0 = Vector((math.cos(math.radians(a0)), math.sin(math.radians(a0)))); d3 = Vector((math.cos(math.radians(a3)), math.sin(math.radians(a3))))
-        h = 0.4 * (P3 - P0).length; P1, P2 = P0 + d0 * h, P3 - d3 * h
-        return [(1 - t) ** 3 * P0 + 3 * (1 - t) ** 2 * t * P1 + 3 * (1 - t) * t * t * P2 + t ** 3 * P3 for t in (i / n for i in range(1, n + 1))]
-    A, M, B = Vector((0.0, 0.0)), Vector(SILL_M), Vector(SILL_B); z1 = B.y + SILL_FILLET; z2 = z1 + SILL_FILLET2
-    nodes = [(A, 0.0)]                                                                   # the back on the wall plane: nothing of the sill inside the wall (user: reduced depth)
-    nodes += [(q, 0.0) for q in cubic(A, SILL_A0, M, SILL_A1)]                          # convex: rising from the start, on a large radius
-    cove = cubic(M, SILL_A1, B, SILL_A2); nodes += [(q, 0.0) for q in cove[:-1]] + [(cove[-1], SILL_JOIN_R)]   # concave, ending short of flat, rounded into the fillet
-    nodes += [(Vector((B.x, z1)), 0.0), (Vector((SILL_OUT, z1)), SILL_EDGE_R), (Vector((SILL_OUT, z2)), SILL_EDGE_R), (Vector((0.0, z2)), 0.0)]
+    # closed (o outward from the wall face, z up from the sill's bottom), bottom to top (user 2026-09-18): a small
+    # square edge, a half-round bead on it -- the convex part, at the very bottom -- a plain face straight up, a cove
+    # opening out under the cap, and the cap's square edge overhanging it, a small edge like the one at the bottom;
+    # the back closes it on the wall plane. The earlier cut had a big convex belly turning into the cove (too convex).
+    def arc(c, r, a0, a1, n):
+        return [Vector((c[0] + r * math.cos(math.radians(a0 + (a1 - a0) * i / n)), c[1] + r * math.sin(math.radians(a0 + (a1 - a0) * i / n)))) for i in range(1, n + 1)]
+    b = SILL_LISTEL; z_bead = SILL_LISTEL_H + 2 * SILL_BEAD_R; z_fascia = z_bead + SILL_FASCIA_H; z_cove = z_fascia + SILL_COVE_R; z2 = z_cove + SILL_CAP_H
+    nodes = [(Vector((0.0, 0.0)), 0.0), (Vector((b, 0.0)), 0.0), (Vector((b, SILL_LISTEL_H)), 0.0)]
+    nodes += [(q, 0.0) for q in arc((b, SILL_LISTEL_H + SILL_BEAD_R), SILL_BEAD_R, -90.0, 90.0, 8)]        # the bead: out and back, convex
+    nodes += [(Vector((b, z_fascia)), 0.0)]                                                                # straight up
+    nodes += [(q, 0.0) for q in arc((b + SILL_COVE_R, z_fascia), SILL_COVE_R, 180.0, 90.0, 6)]             # the cove: concave, opening out
+    nodes += [(Vector((SILL_OUT, z_cove)), SILL_EDGE_R), (Vector((SILL_OUT, z2)), SILL_EDGE_R), (Vector((0.0, z2)), 0.0)]
     P = []
     for i, (q, r) in enumerate(nodes):
         P += round_corner(nodes[i - 1][0], q, nodes[i + 1][0], r) if r else [q]
@@ -2029,6 +2039,7 @@ mesh_from_bm("ge_band_strip", bm, STONE, GCOLL)
 # depth, from the ground to the band. One ring around the hull with every storefront and both portals cut out of it: the
 # piers between storefronts, the corner piers with a face on each street, and the narrow strips beside the portal
 # pilasters (the storefronts stop TINY_W short of the pilasters) all come out of it.
+# the pier ring: a plain rectangle swept round the loop; its joints are grooved into it below, once the openings are cut
 bm = bmesh.new(); sweep(bm, loop({}), [(-STRIP_IN, 0.0), (STRIP_OUT, 0.0), (STRIP_OUT, BAND_BOTTOM + 0.005 - Z_GROUND), (-STRIP_IN, BAND_BOTTOM + 0.005 - Z_GROUND)], Z_GROUND)
 piers = mesh_from_bm("fit_piers", bm, PIER_STONE, FIT)
 for fascia in [o for o in bpy.data.collections["Collection"].all_objects if o.type == 'MESH' and o.name.startswith("storefront_fascia")]:
@@ -2040,6 +2051,51 @@ for fi, F in PF.items():
     carve_faces(wall, -P_HALF - 0.02, P_HALF + 0.02, -3.0, 0.06, Z_GROUND - 0.02, WALL_TOP + 0.01, frame=F)
     carve_faces(shell, -P_HALF - 0.02, P_HALF + 0.02, -3.0, 0.06, 0.3005, 4.1305, frame=F)
 print("pier ring:", len(piers.data.polygons), "faces after the openings")
+# The piers' joints (user 2026-09-18, a photo of a storefront pier, then a screenshot): the real piers are clad in
+# horizontal stone panels with a joint between them. The joints wrap each pier -- its front and both returns into the
+# storefronts -- as a square groove PIER_JOINT_H tall and PIER_JOINT_D deep, at the five course lines (six courses over
+# the ring's height) and once more right under the band strip, so a pier reads as stacked panels parted from the
+# moulding above. A first cut had V-notches in the ring's own profile, on the fronts only and too shallow. These are
+# booleans on the ring now that its openings exist, a box at a time, one exact boolean each (a cutter of many boxes in
+# one boolean, overlapping where a front box met its return boxes and at the corners, left the exact solver only their
+# intersection: the ring came out as a slab one joint tall) -- a front box over each pier, running on past a hull
+# corner as far as the front does, so the groove turns the corner with it, and along each
+# return that meets a storefront a box back to that storefront's plane, where its frame covers the groove's end. The
+# returns against the portals' pilasters, which stand proud of the piers, get none. The top groove lies wholly in the
+# ring's last centimetre, so its ceiling is the strip's own underside.
+PIER_COURSES, PIER_JOINT_H, PIER_JOINT_D = 6, 0.010, 0.015
+PIER_FRONT = WALL_OUT + STRIP_OUT                  # the ring's front, out from the HULL the cutter frames stand on (the ring's own profile is on the wall plane, WALL_OUT out from it; v81 measured the boxes from the hull with STRIP_OUT alone and cut 696 voids inside the ring)
+PIER_H = BAND_BOTTOM + 0.005 - Z_GROUND
+joint_bands = [(Z_GROUND + k * PIER_H / PIER_COURSES - PIER_JOINT_H / 2, Z_GROUND + k * PIER_H / PIER_COURSES + PIER_JOINT_H / 2) for k in range(1, PIER_COURSES)]
+joint_bands.append((BAND_BOTTOM - PIER_JOINT_H, BAND_BOTTOM + 0.01))
+pier_runs = []                                     # (face, a, b, the inset of the storefront at a or None, the same at b)
+for fi in range(len(FACES)):
+    L = FACES[fi][3]
+    opens = sorted((targets[n][0], targets[n][1], bay_inset[n]) for n in bays if bays[n][0] == fi)
+    if fi in PORTAL_S: opens = sorted(opens + [(PORTAL_S[fi] - P_HALF, PORTAL_S[fi] + P_HALF, None)])   # the pilasters stand proud: no reveal
+    prev_end, prev_ins = 0.0, None
+    for a, b, ins in opens + [(L, L, None)]:
+        if a - prev_end > 0.03: pier_runs.append((fi, prev_end, a, prev_ins, ins))
+        prev_end, prev_ins = b, ins
+n_boxes = 0
+for zb0, zb1 in joint_bands:
+    boxes = []
+    for fi, s0, s1, ins0, ins1 in pier_runs:
+        F = rh_frame(fi); L = FACES[fi][3]
+        e0 = corner_reach(fi, False, PIER_FRONT) - 0.005 if s0 <= 1e-6 else s0 - 0.02       # past the hull corner as far as the front runs, or a little into the opening
+        e1 = L + corner_reach(fi, True, PIER_FRONT) + 0.005 if s1 >= L - 1e-6 else s1 + 0.02
+        boxes.append((F, -e1, -e0, PIER_FRONT - PIER_JOINT_D, PIER_FRONT + 0.02, zb0, zb1))
+        # the return boxes run back to the storefront's front plane, hull + STRIP_OUT - inset as the layout places it
+        # (v_front above): WALL_OUT + inset behind the pier face, the storefronts having stayed where the game left them
+        # when the wall plane moved out. v82 took them back by the inset alone and stopped halfway along the exposed return.
+        if ins0 is not None: boxes.append((F, -(s0 + PIER_JOINT_D), -(s0 - 0.02), STRIP_OUT - ins0, PIER_FRONT + 0.02, zb0, zb1))
+        if ins1 is not None: boxes.append((F, -(s1 + 0.02), -(s1 - PIER_JOINT_D), STRIP_OUT - ins1, PIER_FRONT + 0.02, zb0, zb1))
+    for bx in boxes: cut_world_box(piers, *bx[1:], frame=bx[0])
+    n_boxes += len(boxes)
+print(f"the piers' joints: {len(pier_runs)} piers, square grooves {PIER_JOINT_H * 1000:.0f} mm tall and {PIER_JOINT_D * 1000:.0f} mm deep at "
+      + ", ".join(f"{(a + b) / 2:.3f}" for a, b in joint_bands[:-1]) + f" and under the strip at {BAND_BOTTOM:.3f}, wrapping the fronts and the storefront returns back to the storefronts' fronts ({WALL_OUT + INSET:.2f} / {WALL_OUT + INSET_WIDE:.2f} behind the pier face): "
+      f"{n_boxes} boxes cut one by one; the ring {len(piers.data.polygons)} faces")
+assert len(piers.data.polygons) > 2000, f"the pier ring has only {len(piers.data.polygons)} faces after its joints: the cuts went wrong"
 # Over each three-pane storefront the wall steps back with the mouldings: the band strip and the ring above it both jog
 # there on the same path, so the pocket is part of each of them and needs no lining of its own.
 print("recesses over the deep storefronts:", {fi: len(rs) for fi, rs in recesses.items()})
@@ -2072,6 +2128,8 @@ assert RECESS < M_OUT + M_EDGE_STEP + BRICK_BACK, "the stone zone steps back fur
 # M_BULGE is how far the crest bellies out of its own chord (0.05 to start, halved, then 40% off that again, all user);
 # M_HOLLOW is how far the sweep below hollows in from its own.
 M_S_TURN, M_HOLLOW, M_BULGE = 0.70, 0.028, 0.015
+M_BEAD_OUT, M_BEAD_R = 0.022, 0.012                # the lip at the foot (user 2026-09-18): its reach, and the round at its bottom corner
+M_HOLLOW_RISE = 0.05                               # the hollow leaves the round straight up: its first handle's length (the second is the old control point's, at the turn)
 # A foot stands on the crown's top, the last member of the ground-floor entablature (user 2026-09-16): a square band
 # 0.20 tall taking 60% of the crown's projection, so 40% of the top ledge still shows outside it, with its top 2 cm
 # rounded over convex. It rises past the second floor line, standing against the foot of the brick rather than under it.
@@ -2080,11 +2138,19 @@ M_FOOT_OUT = M_FOOT_TAKE * (M_OUT + M_EDGE_STEP)
 def crown_profile():
     # closed (outward o, z up from M_BOTTOM): an S -- a long hollow out of the wall, a short convex crest over it --
     # then the square edge, the top ledge, the foot standing on it, and back into the wall
-    P = [(-E_IN, 0.0), (0.0, 0.0)]
-    A = Vector((0.0, 0.0)); B = Vector((M_OUT, M_CURVE_H)); T = A + (B - A) * M_S_TURN      # the S turns at T
-    ch = T - A; C1 = (A + T) / 2 + Vector((-ch.y, ch.x)).normalized() * M_HOLLOW            # control point inward-up: concave
+    # a small convex edge at the foot (user 2026-09-18, three times): a lip M_BEAD_OUT proud whose bottom corner is
+    # the convex part, the underside rounding up on M_BEAD_R to the vertical, and the hollow leaving the top of the
+    # round straight up, tangent to it, bending outward as it rises: convex running into concave with no step between.
+    # A first cut put a square step at the corner with the round on top; a second put the round at the corner but a
+    # short face and a shelf over it, from which the hollow rose -- a step above the convex curve (the user's red line).
+    P = [(-E_IN, 0.0), (M_BEAD_OUT - M_BEAD_R, 0.0)]
+    for i in range(1, 5):
+        a = -math.pi / 2 + (i / 4) * (math.pi / 2); P.append((M_BEAD_OUT - M_BEAD_R + M_BEAD_R * math.cos(a), M_BEAD_R + M_BEAD_R * math.sin(a)))
+    A = Vector((M_BEAD_OUT, M_BEAD_R)); B = Vector((M_OUT, M_CURVE_H)); T = A + (B - A) * M_S_TURN   # the S turns at T
+    ch = T - A; Cq = (A + T) / 2 + Vector((-ch.y, ch.x)).normalized() * M_HOLLOW            # the old control point, inward-up (concave): it still sets the tangent into the turn
+    H1 = A + Vector((0.0, M_HOLLOW_RISE)); H2 = T + (Cq - T) * (2.0 / 3.0)                  # a cubic: straight up off the round, into the turn as before
     for i in range(1, 9):
-        t = i / 8; Q = (1 - t) ** 2 * A + 2 * (1 - t) * t * C1 + t * t * T; P.append((Q.x, Q.y))
+        t = i / 8; Q = (1 - t) ** 3 * A + 3 * (1 - t) ** 2 * t * H1 + 3 * (1 - t) * t * t * H2 + t ** 3 * T; P.append((Q.x, Q.y))
     ch2 = B - T; C2 = (T + B) / 2 + Vector((ch2.y, -ch2.x)).normalized() * M_BULGE          # control point outward-down: convex
     for i in range(1, 5):
         t = i / 4; Q = (1 - t) ** 2 * T + 2 * (1 - t) * t * C2 + t * t * B; P.append((Q.x, Q.y))
@@ -2472,28 +2538,75 @@ for o in [q for q in bpy.data.objects if q.type == 'MESH' and q.name.startswith(
 for o in [q for q in bpy.data.objects if q.name.startswith("ge_band45")]:                         # the band's margins and its other faces
     o.data.materials[1] = TRIM_PBR
 print("the band's margins: " + ", ".join(f"{o.name} {o['band_cols']} columns, side margins {o['band_side_margin']:.3f}, the columns stretched {(o['band_stretch'] - 1) * 100:+.2f}%" for o in bpy.data.objects if o.name.startswith("ge_band45")))
-# The ground floor's stone (user 2026-09-17, a photo of the corner): the moulding under the brick -- the entablature,
-# the band strip, the zone above it with its blocks, the crown -- and the storefront piers are one smooth red-brown
-# sandstone in the reference, darker and redder than the brick and with no patches, where the model had them in the
-# portal's pink ashlar and the piers in a darker, noisier stone. The colour is set against the brick's, GROUND_RATIO
-# of its sRGB mean per channel (the photo: about two thirds of its brightness, redder), as a flat base with a whisper
-# of per-block and grain variation; the surface comes from the game's `brownstone` set, the smoothest stone in the
-# catalog (its base colour is not used). The catalog's red sandstones were both dark and patchy. The linked portal
-# keeps its own stone.
-GROUND_RATIO = (0.64, 0.60, 0.74)
+# A stone with a real surface (user 2026-09-18: "a pbr texture on the moulding and portal, so it behaves according to
+# light"): the dressed-sandstone set made for this block (assets/public/pbr/bradbury_sandstone_dressed, from
+# authoring/BradburyBlock/make_sandstone_pbr.py) box-projected on object coordinates -- its albedo, with its mottle,
+# grain and specks, gained per channel onto the tone asked for; its roughness and occlusion from arm.png; its normal
+# map as is -- where the flat colour over brownstone's maps read as paint.
+STONE_SET, STONE_SET_TILE = "bradbury_sandstone_dressed", 2.0
+def stone_material(name, target_linear):
+    d = os.path.join(PBR_DIR, STONE_SET)
+    m = bpy.data.materials.new(name); m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
+    out = nt.nodes.new('ShaderNodeOutputMaterial'); out.location = (600, 0)
+    bsdf = nt.nodes.new('ShaderNodeBsdfPrincipled'); bsdf.location = (300, 0); nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    tc = nt.nodes.new('ShaderNodeTexCoord'); tc.location = (-900, 0)
+    mp = nt.nodes.new('ShaderNodeMapping'); mp.location = (-700, 0); mp.inputs["Scale"].default_value = (1.0 / STONE_SET_TILE,) * 3
+    nt.links.new(tc.outputs["Object"], mp.inputs["Vector"])
+    def tex(fn, cs, y):
+        fp = os.path.join(d, fn); assert os.path.exists(fp), fp
+        im = bpy.data.images.load(fp, check_existing=True); im.name = f"pbr_{STONE_SET}_{os.path.splitext(fn)[0]}"
+        im.colorspace_settings.name = cs; im.filepath = bpy.path.relpath(fp)
+        t = nt.nodes.new('ShaderNodeTexImage'); t.image = im; t.location = (-450, y); t.projection = 'BOX'; t.projection_blend = 0.25
+        nt.links.new(mp.outputs["Vector"], t.inputs["Vector"]); return t, im
+    base, base_im = tex("basecolor.jpg", 'sRGB', 300); arm, _ = tex("arm.png", 'Non-Color', 0); nrm, _ = tex("normal_gl.png", 'Non-Color', -300)
+    gain = target_linear / linear_mean(base_im)
+    g = nt.nodes.new('ShaderNodeMix'); g.data_type = 'RGBA'; g.blend_type = 'MULTIPLY'; g.location = (-150, 300); g.inputs["Factor"].default_value = 1.0
+    nt.links.new(base.outputs["Color"], next(i for i in g.inputs if i.identifier == "A_Color"))
+    next(i for i in g.inputs if i.identifier == "B_Color").default_value = (float(gain[0]), float(gain[1]), float(gain[2]), 1.0)
+    sep = nt.nodes.new('ShaderNodeSeparateColor'); sep.location = (-150, 0); nt.links.new(arm.outputs["Color"], sep.inputs["Color"])
+    ao = nt.nodes.new('ShaderNodeMix'); ao.data_type = 'RGBA'; ao.blend_type = 'MULTIPLY'; ao.location = (50, 250); ao.inputs["Factor"].default_value = 1.0
+    nt.links.new(next(o for o in g.outputs if o.identifier == "Result_Color"), next(i for i in ao.inputs if i.identifier == "A_Color"))
+    nt.links.new(sep.outputs["Red"], next(i for i in ao.inputs if i.identifier == "B_Color"))
+    nt.links.new(next(o for o in ao.outputs if o.identifier == "Result_Color"), bsdf.inputs["Base Color"])
+    nt.links.new(sep.outputs["Green"], bsdf.inputs["Roughness"]); nt.links.new(sep.outputs["Blue"], bsdf.inputs["Metallic"])
+    nm = nt.nodes.new('ShaderNodeNormalMap'); nm.location = (50, -300); nm.inputs["Strength"].default_value = 1.0
+    nt.links.new(nrm.outputs["Color"], nm.inputs["Color"]); nt.links.new(nm.outputs["Normal"], bsdf.inputs["Normal"])
+    m.diffuse_color = (float(target_linear[0]), float(target_linear[1]), float(target_linear[2]), 1.0)
+    return m, gain
+# The ground floor's stone (user 2026-09-17, a photo of the corner; 2026-09-18, a photo of the portal): the moulding
+# under the brick -- the entablature, the band strip, the zone above it with its blocks, the crown, the band tops over
+# the portals -- is a smooth sandstone in the reference, pale, a little pinker and brighter than the brick, and the
+# portal's stone is the same; the storefront piers are a darker red-brown. A first cut (2026-09-17) put the whole
+# ground floor in one dark red-brown, which the user found too dark against the brick. So two flat colours now, each
+# set against the brick's own sRGB mean per channel: STONE_RATIO lifts the moulding above the brick and toward it,
+# PIER_RATIO keeps the piers red-brown but a fifth lighter than that first cut (the pillars are the pier ring alone;
+# the six fit_pier_* boxes are the zone's blocks beside the pilasters, at the zone's height, and so moulding). Both take the game's `brownstone`
+# surface, the smoothest stone in the catalog (its base colour is not used), as a flat base with a whisper of
+# per-block and grain variation. The linked portal's own sandstone is retuned to the moulding's tone in portal_lib.
+# The tones (user 2026-09-18, two more photos): the moulding and the portal are the same stone, a little darker than
+# the brick and redder, not a paler beige; the piers are the same stone again, only fresher, so a touch lighter and no
+# stronger in colour than the rest. A second cut had the moulding paler than the brick (1.08, 1.22, 1.36) and the
+# piers a strong dark red (0.77, 0.72, 0.89), which read as two different materials.
+# The order (user 2026-09-18, once more): the moulding and the portal stand above the piers in brightness, not below
+# them, all three still under the brick -- a third cut had them the other way round.
+STONE_RATIO = (1.005, 0.965, 1.04)                 # the moulding: sRGB about (178, 111, 86) from the brick's (177, 115, 83), the brick's own tone a hair redder, 2% under it
+PIER_RATIO = (0.94, 0.835, 0.94)                   # the piers: about (166, 96, 78), the same stone a tenth darker than the moulding
 def srgb_to_linear(c): return _np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
 import numpy as _np
 _brick_im = next(n.image for n in BRICK_PBR.node_tree.nodes if n.type == 'TEX_IMAGE' and n.image.colorspace_settings.name == 'sRGB')
 _a = _np.empty(_brick_im.size[0] * _brick_im.size[1] * 4, dtype=_np.float32); _brick_im.pixels.foreach_get(_a)
 _brick_srgb = _a.reshape(-1, 4)[:, :3].astype(_np.float64).mean(0)
-GROUND_LINEAR = srgb_to_linear(_brick_srgb * _np.array(GROUND_RATIO))
-STONE_PBR, _ = trim_material("PBR_bradbury_ground_stone", "brownstone", 3.0, GROUND_LINEAR, cell_var=0.01, grain_var=0.005)
-n_gs = 0
-for o in list(GCOLL.objects) + [f for f in FIT.objects if f.name.startswith(("fit_band_top", "fit_pier_", "fit_inset", "fit_bar", "fit_cap_", "fit_zone_", "fit_piers"))]:
+STONE_PBR, _ = stone_material("PBR_bradbury_ground_stone", srgb_to_linear(_brick_srgb * _np.array(STONE_RATIO)))
+PIER_PBR, _ = stone_material("PBR_bradbury_pier_stone", srgb_to_linear(_brick_srgb * _np.array(PIER_RATIO)))
+n_gs = n_gp = 0
+for o in list(GCOLL.objects) + [f for f in FIT.objects if f.name.startswith(("fit_band_top", "fit_inset", "fit_bar", "fit_cap_", "fit_zone_", "fit_pier_"))]:   # fit_pier_*: the zone's blocks beside the pilasters, in the moulding
     if o.type != 'MESH': continue
     o.data.materials.clear(); o.data.materials.append(STONE_PBR); n_gs += 1
-print(f"the ground floor's stone: sRGB about {tuple(int(round(v * 255)) for v in _brick_srgb * _np.array(GROUND_RATIO))} (the brick's {tuple(int(round(v * 255)) for v in _brick_srgb)} "
-      f"times {GROUND_RATIO}), brownstone's surface, on {n_gs} meshes: the entablature, the strip, the zone and its blocks, the crown, the piers")
+for o in [f for f in FIT.objects if f.type == 'MESH' and f.name == "fit_piers"]:                          # the pier ring alone is the pillars
+    o.data.materials.clear(); o.data.materials.append(PIER_PBR); n_gp += 1
+def _srgb(ratio): return tuple(int(round(v * 255)) for v in _brick_srgb * _np.array(ratio))
+print(f"the ground floor's stone: the moulding sRGB about {_srgb(STONE_RATIO)} on {n_gs} meshes (the entablature, the strip, the zone and its blocks, the crown, the band tops), "
+      f"the piers about {_srgb(PIER_RATIO)} on {n_gp}; the brick's {tuple(int(round(v * 255)) for v in _brick_srgb)}, the {STONE_SET} set's surface on both, tiled every {STONE_SET_TILE} m")
 print(f"the trim terracotta: the band's mean colour ({_trim_gain[0]:.3f}, {_trim_gain[1]:.3f}, {_trim_gain[2]:.3f} linear) with terracotta_smooth's normal and ORM, "
       f"a tone per {TRIM_CELL_M} m piece (+-{TRIM_VAR_CELL:.1%}) and a grain (+-{TRIM_VAR_GRAIN:.1%}), box-projected every {TRIM_TILE_M} m; "
       f"on {n_sill} sills and {n_capm} capitals now, and on the band's mouldings, dentils and brackets below")
@@ -2504,6 +2617,51 @@ print(f"the game's Bradbury textures: the terracotta brick on {n_brick} meshes i
 # link had brought it in. That handed the pink back to everything the ground floor's stone had just been put on, which
 # is why builds v64 and v65 still rendered the entablature pink (found 2026-09-18): the ground floor keeps
 # PBR_bradbury_ground_stone, and only the linked portal itself is in its own stone.
+# The wall's hidden faces in flat colours (user 2026-09-18): the wall of floors 2 to 4 is a solid ring, and from inside
+# its thickness its inner skin looked just like its outer one. So the faces that never show from outside carry solid
+# colours near the brick's own tone, each kind its own, to be told apart at a glance in the viewport: the ring's
+# inner skin a shade darker, the ring's top and bottom (under the band and inside the crown) a shade lighter, and the
+# window panels' backs and box sides, which sit between the two skins, a shade pinker. Everything that shows -- the
+# outer skin, the insets, every reveal and jamb, the panels' fronts -- keeps the brick. The colour is set on the
+# node tree and on the material's viewport colour, so the solid viewport shows it as well as a render.
+def flat_material(name, srgb):
+    m = bpy.data.materials.new(name); m.use_nodes = True
+    lin = tuple(float(v) for v in srgb_to_linear(_np.array(srgb, dtype=float) / 255.0)) + (1.0,)
+    bsdf = m.node_tree.nodes["Principled BSDF"]; bsdf.inputs["Base Color"].default_value = lin; bsdf.inputs["Roughness"].default_value = 0.9
+    m.diffuse_color = lin
+    return m
+HIDE_INNER = flat_material("WALL_inner_skin", (152, 100, 76))      # the brick's mean is about (177, 115, 83)
+HIDE_TOPBOT = flat_material("WALL_top_bottom", (196, 132, 98))
+HIDE_PANEL = flat_material("WALL_panel_hidden", (172, 116, 104))
+def hide_faces(o, pick):
+    # pick(centre, normal), both in world space, names the material a face takes, or None to leave it
+    me = o.data; names = [q.name if q else None for q in me.materials]
+    for m in (HIDE_INNER, HIDE_TOPBOT, HIDE_PANEL):
+        if m.name not in names: me.materials.append(m); names.append(m.name)
+    R = o.matrix_world.to_3x3(); n = 0
+    for pl in me.polygons:
+        k = pick(o.matrix_world @ pl.center, (R @ pl.normal).normalized())
+        if k: pl.material_index = names.index(k); n += 1
+    return n
+def wall_pick(c, nrm):
+    if abs(nrm.z) > 0.9:
+        return HIDE_TOPBOT.name if (abs(c.z - WALL24_TOP) < 0.002 or abs(c.z - FLOOR2_BOTTOM) < 0.002) else None
+    fi = on_face(c); sv, dv = face_sd(fi, c)
+    return HIDE_INNER.name if (dv < BRICK_OUT - WALL_T + 0.02 and nrm.dot(FACES[fi][2]) < -0.5) else None
+n_hide_wall = hide_faces(wall_upper, wall_pick)
+def panel_pick(o):
+    cs = [o.matrix_world @ Vector(q) for q in o.bound_box]; fi = on_face(sum(cs, Vector()) / 8); nf = FACES[fi][2]
+    ss = [face_sd(fi, q)[0] for q in cs]; ds = [face_sd(fi, q)[1] for q in cs]; zs = [q.z for q in cs]
+    s0, s1, z0, z1, dback, dfront = min(ss), max(ss), min(zs), max(zs), min(ds), max(ds)
+    def pick(c, nrm):
+        sv, dv = face_sd(fi, c)
+        if nrm.dot(nf) < -0.5 and dv < dback + 0.02: return HIDE_PANEL.name                              # the back, on the inner skin's plane
+        on_rim = min(abs(sv - s0), abs(sv - s1), abs(c.z - z0), abs(c.z - z1)) < 0.002
+        if on_rim and abs(nrm.dot(nf)) < 0.5 and dv < dfront - RECESS_D - 0.001: return HIDE_PANEL.name  # a box side between the skins, not a reveal
+        return None
+    return pick
+n_hide_panel = sum(hide_faces(o, panel_pick(o)) for o in window_panels)
+print(f"the wall's hidden faces coloured: {n_hide_wall} on the wall (inner skin, top and bottom), {n_hide_panel} on the {len(window_panels)} window panels (backs and box sides)")
 # The brackets under the band (user 2026-09-17, photos 4 and 5; "dentils"): consoles hanging from the band's soffit
 # between the brick columns only -- nine over a three-window bay, six over a two-window bay, three over a single --
 # spaced evenly across the bay from column face to column face; none over the raised bays, which carry no band. Each
