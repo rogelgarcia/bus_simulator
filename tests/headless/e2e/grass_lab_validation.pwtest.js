@@ -59,7 +59,7 @@ async function bootGrassLab(page) {
     });
     await installV2AssetOverride(page);
     await page.setViewportSize({ width: 1280, height: 720 });
-    await page.goto('/debug_tools/grass_debug.html');
+    await page.goto('/debug_tools/grass_debug_v1.html');
     await page.waitForTimeout(5000);
     const startup = await page.evaluate(() => ({ ready: document.body.dataset.grassLabReady ?? null, hasApi: !!window.__grassLab }));
     expect(errors, `Grass Lab startup errors: ${errors.join('\n')}`).toEqual([]);

@@ -625,7 +625,7 @@ export class GrassDebuggerUI {
         this.panel = makeEl('div', 'ui-panel is-interactive options-panel');
 
         const header = makeEl('div', 'options-header');
-        const title = makeEl('div', 'options-title', 'Grass Lab');
+        const title = makeEl('div', 'options-title', 'Grass Debug v1');
         const subtitle = makeEl('div', 'options-subtitle', 'Canonical GrassEngine runtime · deterministic offline fixtures · no gameplay integration');
         header.appendChild(title);
         header.appendChild(subtitle);

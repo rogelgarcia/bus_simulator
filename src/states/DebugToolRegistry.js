@@ -61,9 +61,9 @@ export const DEBUG_TOOL_REGISTRY = Object.freeze([
     Object.freeze({
         id: 'grass_lod_debug',
         key: 'G',
-        label: 'Grass Lab',
-        description: 'Canonical offline GrassEngine fixtures, approval, and performance baseline',
-        href: 'debug_tools/grass_debug.html'
+        label: 'Grass Debug v2',
+        description: 'Big City terrain, game assets, and grass performance baseline',
+        href: 'debug_tools/grass_debug_v2.html'
     }),
     Object.freeze({
         id: 'lab_scene',

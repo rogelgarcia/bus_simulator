@@ -53,13 +53,14 @@ function distanceToLoop(point, loop) {
     }));
 }
 
-test('Grass Lab has one registered canonical URL and the former URL redirects to it', () => {
+test('Grass Debug menu selects v2 while the historical lab and LOD URL retain v1', () => {
     const entry = DEBUG_TOOL_REGISTRY.find((tool) => tool?.id === 'grass_lod_debug');
     assert.ok(entry);
-    assert.equal(entry.label, 'Grass Lab');
-    assert.equal(entry.href, GRASS_LAB_CANONICAL_URL);
+    assert.equal(entry.label, 'Grass Debug v2');
+    assert.equal(entry.href, 'debug_tools/grass_debug_v2.html');
+    assert.equal(GRASS_LAB_CANONICAL_URL, 'debug_tools/grass_debug_v1.html');
     const redirect = readFileSync(`${REPO_ROOT}/debug_tools/grass_lod_debug.html`, 'utf8');
-    assert.match(redirect, /window\.location\.replace\('\.\/grass_debug\.html'\)/);
+    assert.match(redirect, /window\.location\.replace\('\.\/grass_debug_v1\.html'\)/);
     assert.doesNotMatch(redirect, /grass_debugger\/main\.js/);
 });
 

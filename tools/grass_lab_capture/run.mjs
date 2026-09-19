@@ -3408,7 +3408,7 @@ async function run(options) {
                 runtimeErrors.push(`request failed: ${request.url()} · ${request.failure()?.errorText ?? '?'}`);
             }
         });
-        await page.goto(new URL('/debug_tools/grass_debug.html', options.baseUrl).toString(), { waitUntil: 'domcontentloaded', timeout: 60_000 });
+        await page.goto(new URL('/debug_tools/grass_debug_v1.html', options.baseUrl).toString(), { waitUntil: 'domcontentloaded', timeout: 60_000 });
         try {
             await page.waitForFunction(() => document.body.dataset.grassLabReady === 'true' && !!window.__grassLab, null, { timeout: 60_000 });
         } catch (error) {

@@ -1,5 +1,9 @@
 # Grass Lab Capture
 
+This historical capture workflow targets `debug_tools/grass_debug_v1.html`.
+The separate Grass Debug v2 infrastructure uses `window.__grassDebugV2` and is
+not a replacement for the v1 approval/capture API.
+
 Captures deterministic, UI-free Grass Lab comparison evidence as lossless PNGs from an actual `3840x2160` WebGL drawing buffer at renderer pixel ratio `1`.
 
 The runner uses the Lab's supported `window.__grassLab` evidence API. Before every screenshot it records the exact camera position and target, focus/pose, lighting, exposure, quality preset, active representation, grass triangles, logical grass draw calls, total renderer draw calls, CPU/GPU measurements, viewport, canvas, and drawing-buffer dimensions. It measures color from the saved compositor PNG rather than attempting to read back the non-preserved WebGL canvas.

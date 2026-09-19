@@ -1,0 +1,52 @@
+/* Sectioned control dock for the Grass Debug v2 baseline. */
+.grass-debug-v2 { --grass-v2-panel-width: min(240px, 40vw); }
+body.grass-debug-v2 #game-canvas {
+    left: var(--grass-v2-panel-width);
+    width: calc(100% - var(--grass-v2-panel-width));
+}
+.grass-v2-panel {
+    position: fixed;
+    top: var(--global-top-bar-height, 0px);
+    left: 0;
+    bottom: 0;
+    z-index: 2;
+    width: var(--grass-v2-panel-width);
+    min-width: 0;
+    max-width: none;
+    overflow-y: auto;
+    padding: 18px 16px;
+    border: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 0;
+    background: #10171e;
+    backdrop-filter: none;
+    box-shadow: none;
+    color: #e5eceb;
+    font-size: 12px;
+}
+.grass-v2-panel p { margin: 0 0 12px; color: #bac7c8; }
+.grass-v2-section + .grass-v2-section {
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.grass-v2-section .ui-section-label { margin-bottom: 12px; }
+.grass-v2-controls { display: grid; gap: 8px; }
+.grass-v2-panel button, .grass-v2-panel a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid #596b6e;
+    border-radius: 4px;
+    padding: 9px 10px;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-decoration: none;
+    cursor: pointer;
+}
+.grass-v2-panel button:hover, .grass-v2-panel a:hover { background: #35464b; }
+.grass-v2-panel :focus-visible { outline: 2px solid #bbdcae; outline-offset: 2px; }
+.grass-v2-panel button:disabled { opacity: 0.45; cursor: wait; }
+.grass-v2-panel kbd { margin-left: 4px; color: #a8c3a0; }
+.grass-v2-panel [role="alert"] { color: #ffb5a5; overflow-wrap: anywhere; }

@@ -16,7 +16,7 @@ import {
 } from '../../content3d/catalogs/LowCutGrassMaterialCatalog.js';
 
 export const GRASS_LAB_CONTRACT_VERSION = 10;
-export const GRASS_LAB_CANONICAL_URL = 'debug_tools/grass_debug.html';
+export const GRASS_LAB_CANONICAL_URL = 'debug_tools/grass_debug_v1.html';
 export const GRASS_LAB_DEFAULT_SEED = 'grass-lab-baseline-v1';
 
 function finite(value, fallback = 0) {

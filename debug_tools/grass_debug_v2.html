@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Grass Debug v2</title>
+    <link rel="icon" href="../favicon.ico" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    <link rel="stylesheet" href="../src/graphics/gui/shared/styles.css" />
+    <link rel="stylesheet" href="../src/graphics/gui/perf_bar/styles.css" />
+    <link rel="stylesheet" href="../src/graphics/gui/grass_debugger_v2/styles.css" />
+</head>
+<body class="grass-debug-v2">
+<div id="game-viewport"><canvas id="game-canvas" aria-label="Grass Debug v2 scene"></canvas></div>
+<aside class="ui-panel is-interactive grass-v2-panel" aria-label="Grass controls">
+    <p id="scene-status" role="status" hidden></p>
+    <section class="grass-v2-section" aria-labelledby="camera-heading">
+        <h2 class="ui-section-label is-tight" id="camera-heading">Camera</h2>
+        <div class="grass-v2-controls">
+            <button type="button" id="bus-view">Bus camera <kbd>1</kbd></button>
+            <button type="button" id="overview">Overview <kbd>2</kbd></button>
+            <button type="button" id="copy-camera" title="Copy camera X Y Z and yaw pitch roll (degrees)" aria-live="polite">Copy</button>
+        </div>
+    </section>
+</aside>
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/"
+    }
+}
+</script>
+<script type="module" src="../src/graphics/gui/grass_debugger_v2/main.js"></script>
+</body>
+</html>

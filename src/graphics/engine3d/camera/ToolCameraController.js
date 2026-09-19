@@ -108,6 +108,7 @@ export class ToolCameraController {
         zoomSpeed = 1.0,
         minDistance = 0.1,
         maxDistance = 1e6,
+        minHeight = -Infinity,
         minPolarAngle = 0.0,
         maxPolarAngle = Math.PI,
         orbitMouseButtons = [2],
@@ -126,6 +127,8 @@ export class ToolCameraController {
         this.zoomSpeed = clamp(zoomSpeed, 0.01, 10.0);
         this.minDistance = Math.max(0.01, Number(minDistance) || 0.1);
         this.maxDistance = Math.max(this.minDistance, Number(maxDistance) || 1e6);
+        if (minHeight !== -Infinity && !Number.isFinite(minHeight)) throw new TypeError('Camera minHeight must be finite or -Infinity.');
+        this.minHeight = minHeight;
         this.minPolarAngle = clamp(minPolarAngle, 0.0, Math.PI);
         this.maxPolarAngle = clamp(maxPolarAngle, this.minPolarAngle, Math.PI);
         this._orbitMouseButtons = normalizeMouseButtons(orbitMouseButtons, [2]);
@@ -587,8 +590,17 @@ export class ToolCameraController {
 
     _applyCamera() {
         if (!this.camera) return;
+        if (this.minHeight !== -Infinity) {
+            const lift = Math.max(0, this.minHeight - this._spherical.radius - this.target.y);
+            this.target.y += lift;
+            this._targetEnd.y += lift;
+            const maxPhi = Math.acos(clamp((this.minHeight - this.target.y) / this._spherical.radius, -1, 1));
+            this._spherical.phi = Math.min(this._spherical.phi, maxPhi);
+            this._sphericalEnd.phi = Math.min(this._sphericalEnd.phi, maxPhi);
+        }
         this._tmpV3.setFromSpherical(this._spherical);
         this.camera.position.copy(this.target).add(this._tmpV3);
+        this.camera.position.y = Math.max(this.minHeight, this.camera.position.y);
         this.camera.lookAt(this.target);
         this.camera.updateMatrixWorld?.();
     }
