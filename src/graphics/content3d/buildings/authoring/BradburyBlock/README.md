@@ -1091,3 +1091,104 @@ their meshes and UVs stay: behind the moulding's field face and still past the p
 game's deck outline is not a plan offset of the hull -- its chamfer corner already stands 0.080 inside the east face --
 so pushing each corner back off the faces it stands over leaves that face's edge slanting 0.19 over its 32 m, and the
 parapet open behind it.)
+
+## The render scene: `build_scene.py`
+
+`assemble_building.py` stays a model builder: it writes `bradbury_block.blend` and nothing else. The scene a ray-traced
+still needs is a second file beside it (user 2026-09-20: "lets create a separate scene just for the render, and lets
+start with the hdri", "keep it a separate scene/file"), written by
+
+```
+blender -b -P build_scene.py -- [key=value ...] [view ...]
+```
+
+into `bradbury_scene.blend`. Keys: `hdri` (the sky's strength, 1.0), `rot` (the sky turned about z, degrees), `sun` (a
+lamp on the map's own sun, 0 = none), `ground` (`street` | `catch` | `none`), `exposure`, `samples`, `pct`, `res`; the
+bare words are view names, and each one named is rendered into
+`tests/artifacts/screens/bradbury_fix/portal_project/scene/`. The scene **links** the block instead of appending it
+(`bpy.data.libraries.load(BLOCK, link=True, relative=True)`, 2194 objects into a `BRADBURY_BLOCK` collection), so the
+block can go on being rebuilt and the scene picks the new geometry up the moment it is opened again; the model file's
+own inspection cameras and lights are unlinked, the scene bringing its own five (`st_corner`, `st_portal`, `st_along`,
+`st_up` at a standing eye `Z_GROUND + EYE`, and `hero_3q`), Cycles on OptiX, AgX, 16:10.
+
+The sky is the game's own — `assets/public/lighting/hdri/german_town_street_2k.hdr`, the default entry of
+`IBLCatalog.js` — so a Cycles still and the engine light the block from the same sky. Where that sky's sun stands is
+measured rather than guessed: `hdri_sun_direction` inverts Blender's equirectangular mapping (`u = (atan2(y, -x) + pi)
+/ 2pi`, `v = (atan2(z, hypot(x, y)) + pi/2) / pi`, pixel rows bottom up), takes the brightest 0.005% of texels and
+averages them as directions. This map reads **18.7 degrees up at azimuth 143.9** (105 texels, peak 95351 against a
+mean of 0.70), and `sun=` puts a lamp there, on the map's own sun, for shadows crisper than a 2k image can throw.
+
+### Before and after from one pose (2026-09-20)
+
+`block=game` stands the **untouched game export** in the same scene, on the same cameras, under the same sky (user:
+"can you generate a second screen, same pose, but using that version?"). It links
+`tests/artifacts/blender/bradbury/before/bradbury_block_before.blend` -- the very file `assemble_building.py` opens, so
+there is nothing to keep in step by hand -- and writes its own `bradbury_scene_before.blend` and its own shot folder,
+`screens/.../portal_project/scene_before/`, so neither clobbers the other. The only thing that follows the block is the
+ground: `SHRINK` and `BAY_GROW` are zero for the export, so the pavement is laid on the game's own outline (its far
+kerbs land at x -53.73 / 29.73 against the built block's -53.23 / 34.19 -- the corner shrink and the extra bay, exactly).
+The export reads 0.194 to **20.612** with 70 parts on `Z_GROUND`, so the same assert covers it.
+
+`scene_compare/` holds the pairs side by side.
+
+### Turning the sky (2026-09-20)
+
+The map's own contents are scenery, and scenery at infinity has no scale. Its worst offender is a roadside sapling:
+measured off the panorama it runs from -15.5 to +34.1 degrees of elevation, **49.6 degrees of sky**, which back from a
+tripod at about 1.6 m makes it a **5.5 m tree standing 5.8 m from the camera** (its planting stake is visible beside
+it). An environment texture keeps that angular size for ever and never shifts as the camera moves, so it fills 49.6
+degrees while the whole 20.5 m block fills **29.8** from `st_corner` at 36.6 m: to look right where it appears to
+stand, behind the block, it would have to be a **35 m tree** (user: "the tree behind the building, it is giant").
+Nothing about the environment can be scaled -- it has no size -- so the only lever is which part of the map stands
+behind the block.
+
+`sweep_rot.py` (scratchpad) answers that by measurement: it opens the saved scene once and turns only the world's
+Mapping node between frames, so a whole circle at 15 degrees costs 24 renders and no rebuilds (about 30 seconds). The
+map has one clean stretch, the open field its own camera looked across, and `st_corner`'s frame is 65.5 degrees wide,
+so it only fits between **rot 250 and 262**; `st_along` (54.4 degrees) wants **245 or less**; `hero_3q` (46.4) is happy
+from 245 to 270. **250** is where all five views agree, and it lands the map's sun at azimuth **33.9** -- over
+Broadway's shoulder, lighting that facade and shading 3rd Street's. It is now the default, with `sun` 8 and `hdri`
+0.75 (the map's own sun is hazy: `sun=3` moved a frame by 1.86 grey levels on average, so the lamp carries the
+modelling and the sky is pulled back to make room for it). `rot=0 sun=0 hdri=1` gives the plain map back.
+
+### The ground (2026-09-20)
+
+An HDRI is a picture at infinity: it lights the block beautifully but gives it nothing to meet and nothing to take its
+shadow, so on the map alone the block floats (user: "the hdri makes the building to float, is there a strategy to land
+it?"). Both halves of the cure are in the scene ("do both in one pass"). A **shadow catcher** renders as whatever lies
+behind it and is still darkened by everything the block hides, sun and sky alike, so the map's own road takes the
+contact shadow; and **real ground** — pavement, kerb and roadway — is laid from the block's own outline, which is what
+puts the base at the right height and in the right perspective and gives the near field reflections that move with the
+camera.
+
+`ground=street`, the default, lays the real ground: `HULL` (the same outline `assemble_building.py` lays the walls on)
+pushed out `PAVE_W` 4.20 m by `offset_poly` and **filled, not left as a ring** — filled, it runs on under the walls and
+closes the floor of every recessed shopfront, whose glass starts at 0.194, 7 mm under the pavement; `scn_kerb` drops
+the outline's `PAVE_H` 0.201 (the block's own base height) to the roadway at z 0; `scn_road` is one `clean_asphalt`
+square out to `GND_R` 150 m; and the pavement on the far side of both streets, `ST_W` 13.0 m kerb to kerb, carries on
+to the same edge as **a pinwheel of four rectangles** (south full width, then east, north and west each stopping at the
+previous one's line) so they tile the outside of the streets without ever overlapping and z-fighting. The far kerbs
+land at x -53.23 / 34.19 and y -35.08 / 34.58, which puts `st_corner` on a real pavement and `st_portal` out in
+Broadway. Past 150 m there is no geometry at all: at that distance the map's own ground is a blur on the horizon and
+the seam does not read. The materials are the catalog's, read the way the game reads them (base colour, the packed
+AO / roughness / metal, the OpenGL normal) and tiled at each set's own `tileMeters` 4.0 over UVs that are metres:
+`clean_asphalt`, `concrete_pavement`, `concrete` for the kerb. A 4 m tile over a street shows its repeat from any wide
+lens, so a slow noise (22 m for the road, 14 m for the pavement) lifts and drops the tone by a tenth, which breaks the
+grid without touching the surface.
+
+The catcher lies at z -0.050 out to 600 m, just under the roadway, so in street mode it shows only past the real
+ground's edge. `ground=catch` drops the street and stands the catcher at the block's own pavement level instead, where
+the map's road shows through it and takes the shadow — the quick version, and the one to use when the map's own street
+should be the street. `ground=none` is the bare block. The block's base is asserted before any of it is laid: 71 of its
+parts stand within 3 cm of `Z_GROUND` 0.201 (it reads 0.194 at its lowest and 20.732 at its highest), so ground laid at
+that height meets it. The measurement has to come after `view_layer.update()` — a freshly linked object still carries
+the `matrix_world` it had in the library, and before the update the block reads -1.498 with one part on the pavement.
+
+The ground does take the block's shadow, and the proof is in the sun lamp rather than the eye: on the near ground of
+`hero_3q`, adding `sun=20` at `rot=0` moves the mean from 96.4 to 96.6 — nothing, because that ground is in the block's
+shadow — while at `rot=-84` it moves from 89.6 to 128.4, because there it is in the sun. What the default view does
+**not** show is a shadow one can see, and that is the map's doing, not the ground's: its sun stands 18.7 degrees up, so
+the block throws a 61 m shadow, and unrotated that shadow runs south-east, straight over everything the camera sees.
+Both street facades are then backlit and the whole near field lies inside one shadow, which reads as flat light. A sun
+across the frame is what shows the block standing on something: `rot=-84 sun=8 hdri=0.75` puts the map's sun in the
+north-east, lights Broadway's facade, shades 3rd Street's and lays the shadow edge across the pavement at the corner.
