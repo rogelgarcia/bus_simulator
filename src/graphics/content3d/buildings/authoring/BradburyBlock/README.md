@@ -845,9 +845,8 @@ frames, glass, panel -- then travels as one piece, which is what lets the window
 copied pair like the floors below; a panel that moves takes its u with it, so its brick still runs on into the wall's
 courses. The wall still follows the sets, one rigid band per set and a linear ramp between, anchored at the corners
 where it may not move, so its pavilions stay over their sets and the brick is neither stretched nor sheared. The
-arcade's impost band -- a course of blocks at the springing of the arches, broken only by the openings -- is taken
-down before anything moves and laid again at the end, one block per stretch between openings at the depth the wall
-has there (`impost_band_*`), so no block is left stranded where a window used to be.
+game's impost band -- its course of blocks at the springing of the arches -- is taken down before anything moves and
+not laid again: the impost course is swept afresh at the end (below, with the top floor's windows).
 
 Textures (`link_game_textures.py`): every map the glTF export packed into the file is pointed back at the game's
 own asset under `assets/public/pbr`, with a path relative to the .blend (user 2026-09-13). The tool runs inside the
@@ -1001,3 +1000,94 @@ border 1 cm proud of the storefront plane, the black sign band under it sat on t
 beside them showed the step between the two. The band now comes out with the border: `SF_BORDER` is the border's
 projection, and the fascia is placed that much further out than the plane the transom keeps, so the two fronts are
 flush and the return reads as one surface past them.
+
+The top floor's impost course (user 2026-09-18, points 3 and 6 of the top windows; photos 011973, 011982, Highsmith:
+the band hangs under the springing with its top edge on it, runs along every wall and round the corner piers, stops
+at each window and returns into its reveal, and is missing on the narrow piers between grouped arches, which carry a
+foliate capital as tall as it): `impost_course5`, one moulding `IMP_H` 0.32 tall (0.30 W) with its top on the
+springing `TOP_SPRING` (17.300 game, 18.052 world), swept along the wall's own outline at that height --
+`loop(silhouette_jogs(COL_OUT - BRICK_OUT), BRICK_OUT)`, the field at -0.10, the pavilions at +0.20, corners and jogs
+mitred as the band's cornices are -- and cut at every window set's masonry span (first jamb to last: the narrow
+piers inside a set carry none). Each piece returns `IMP_RET` 0.30 into the two outer jamb reveals it stops at, to a
+centimetre before the frame, and `sweep(..., caps=True)` closes its ends. The profile, bottom up (user): a very small
+square edge (20 x 12 mm), a face straight up 10 mm proud, a second small edge (35 x 15), the tall face 25 mm proud
+(0.14), an edge rising on a convex bevel (a 60 x 55 mm quarter ellipse) and the top edge ring 100 mm proud, 48 mm
+tall, its front corners rounded 4 mm; the back 40 mm in the wall; terracotta trim. Every narrow pier between two of a
+set's windows carries the portal's capital (`ge_capital5`, the `ge_capital` mesh) with its neck as wide as the pier
+(0.36 / 0.34), `CAP5_H` = `IMP_H` tall with its top on the springing, its neck flush with the pier's face, its abacus
+0.036 proud and its back 0.30 in, inside the panel. The game's block course (`impost_band_*`, `BAND_Z`) is gone with its two readers.
+
+The top floor's windows rebuilt, and the top floor made shorter (user 2026-09-18, four reference photos of the fifth
+floor with a sketched impost silhouette): the game's top window was two square lights and a segmental arch over a
+transom, in a hole with three stepped rings, on a sill of its own two centimetres over the band's top cornice, in a
+floor 3.6 m tall above that cornice. The photos (HABS CA-334 011973 and 011982, Highsmith) show one rectangular light
+under a true semicircular arch, one ring of brick stepping back once into a deep reveal, the sash standing straight on
+the string course, and a floor about 2.2 opening-widths tall. So every set's panel (`top_panel_*`) is built again where
+it finally stands, before the wall takes its hole: a plain box on its stretch's plane carrying the slab's own brick
+courses, one opening per window cut through it (`cut_world_prism`: a rectangle from a 2 mm ledge over the cornice's
+top `TOP_FOOT` up to the springing `TOP_SPRING` 1.31 above it, and a half circle of the window's own width, 1.05 or
+1.00, over that), and one ring `RING_W` 0.15 wide let `RING_D` 0.08 into the wall round the arch alone, its floor a lip
+over the springing where the impost course and the capitals end. Behind the plain 0.31 reveal stand a new frame of the
+same shape (`mesh__t5_*_frame`, 0.06 wide, 0.08 deep, its outer edge buried 5 mm), a transom bar with its top 0.14
+under the springing, the glass and the backdrop pane; the game's parts and the sills go, and the lift is measured from
+the new frames, which stand where the game's sills' underside was. The band's top cornice is `B45_TOPC_H` 0.26 tall now
+(= `T45_H`), so its very top is `B45_TOP` 16.742 and the frames stand on it; nothing on floors 2 to 4 changes. The
+height: `TOP_HEAD_GAME` 19.592 is the game's wall head (asserted), `TOP_DROP` 1.242 the one lever, `TOP_Z1` their
+difference, cross-checked against the head the windows ask for (`TOP_SPRING` + half the widest window + `TOP_OVER`
+0.525 = 18.350); the two readers of the game wall's head use `TOP_HEAD_GAME`, and the lift moves the head group (the
+roof deck, the dentil course, the top cornice, the parapet band and its coping, the eight objects from the game's head
+up) by `UPPER_LIFT - TOP_DROP`, so the shorter wall stays closed against them: the block's top comes from 21.064 to
+19.802. The coping, which the parapet push-out had left behind the band it caps, comes out with it; the rebuilt
+panels' backs and box sides take the hidden-face colour like the other floors' panels. A review of the built block (2026-09-19) found three small things the shorter floor brings closer to the eye and
+they are fixed with it: the roof deck's three planes, pushed out to the pavilions' face, lay in the parapet band's foot
+plane and their backfaces fought the band's soffit seen from below between the dentils (they now ride `DECK_LIFT` 3 mm
+above it, inside the band's solid); the game's top cornice carried a few smooth-shaded polygons among flat ones, a dark
+triangle at the pavilion's jog (all flat now); and the narrow piers' capitals stood with their necks a millimetre
+proud of the brick (`CAP5_SINK` 5 mm inside it now).
+
+The roof crown (user 2026-09-19, the reference photos): the game's crown above the top floor's wall head -- its cornice
+`cornice__2636`, its dentil course `cornice_ornament__2637`, the parapet band `mesh__2635` and the coping
+`parapet_coping__2730` -- is taken down right after the lift (so the push-out, the head group's assert and the deck
+lift above all still see the eight objects they were written for), and four courses are built in its place at the end
+of the file: a two-step corbelled moulding `RC_M_H` 0.230 on the wall head `RC_Z0` 19.102, a frieze of flower tiles
+`RC_FR_H` 0.550, a dentil course of a 0.100 plinth and 0.230 teeth, and a cornice of three fasciae (0.145, 0.135,
+0.155) with a straight angular edge 0.085 on top. `RC_H` is 1.630, about 1.55 of the top floor's widest window, and the
+block's top comes from 19.802 to **20.732**. The frieze is 0.550 because the installed set
+(`assets/public/pbr/bradbury_flower_tiles`, its albedo already on the building's tone) is a seamless 2:1 image of two
+square tiles repeating every 1.100 m, so at half the repeat the tiles are exactly square and a whole one fills the
+course; its UVs are metres along each polygon's own horizontal tangent and metres up from the frieze's foot
+(`crown_frieze_uvs`, `band_uvs` generalised so the chamfer and every jog return get their own plane).
+
+It is built as **seven thin swept rings plus the teeth**, all in `FIT`, all `TRIM_PBR` but the frieze. `sweep` mitres a
+break by carrying a profile point `|o|` ALONG the path as well as out (probed on this file's own band cornices:
+`ge_cornice45_top`, max `o` 0.160, breaks at y 12.068 where `wall__21` breaks at 12.225), so one deep sweep projecting
+0.620 would put its break 0.62 m off the wall's silhouette and the four courses would stagger against each other.
+Each ring instead rides its own `loop` base (`front`, 0.000 to 0.500) and projects at most 0.120 over it, and `rc_jogs`
+pads every raised stretch's free ends so that each course returns where it should where the wall changes depth; a
+corner stretch's outer end is left alone, since that is what makes `loop` mitre the corner. The padding follows ONE
+rule for the whole crown (user 2026-09-20, after three passes): `pad = RC_ANCHOR - front`, so a face projecting `p`
+beyond the wall returns at the wall's corner offset outward by `p - RC_ANCHOR`, with `RC_ANCHOR` the corbel's first
+step, 0.045. The corbel's first step therefore lands on the wall's own line, each course's foot lands on the face it
+stands on (step two and the frieze together at 0.045, the plinth at 0.135, the bed at 0.275, the middle fascia at
+0.365, the top fascia at 0.455) and every proud lip oversails the break by just what it projects, as a cornice does.
+Padding each ring by its own outermost point instead -- the first cut -- anchored every ring on a different face, so
+the top fascia sat 0.12 behind the two below it and the corbel's first step 0.045 behind the wall, and each of those
+recesses read as a gap at the break.
+`rc_jogs(0)` is `silhouette_jogs(RC_JOG)` exactly, asserted. Every profile's back is `-(front + RC_IN)`, so all seven
+reach `RC_IN` 0.30 behind the field's wall plane whatever their front and the stack is one 0.280-thick parapet closed
+on top by the cornice's own top face -- no separate parapet object. The dentils reuse the band cornice's generator
+(`crown_teeth`, pitch 0.340, 0.110 proud of the coffer, 0.03 clear of each run's ends, corners carried by the raised
+runs). Where the wall changes depth the rings' inner faces needed one more cut (user 2026-09-20): the same mitre that puts
+each outer face on the wall's line carries each ring's back, `front + RC_IN` from its own path, that much further along
+it, so the seven courses stepped onto a raised stretch at seven lines 0.39 apart (measured at the east break, whose
+wall steps at y 12.230: the moulding and the frieze at 12.620, up to the cornice's top at 13.150) and the raised part
+of each course looked as though it started late. The outer faces cannot move, so the overshoot is subtracted instead:
+at every free jog, the material behind that stretch's own inner plane `RC_BACK_IN` -0.10 is cut from each ring over
+the 0.90 m inside the jog that the deepest back can reach. The rings' shading is set again afterwards, since a boolean
+returns a plain mesh. The roof deck stays and is the only thing closing the top: the game's planes lay at the pavilion outline, which
+the 0.460-thick parapet band used to bury, so the wall head's 0.080 cap ring (`roof__26`, `roof__27`) goes with that
+band and the two deck planes are laid again on the hull's own outline at `RC_DECK_OUT` -0.0775, corner for corner, so
+their meshes and UVs stay: behind the moulding's field face and still past the parapet's back over a pavilion. (The
+game's deck outline is not a plan offset of the hull -- its chamfer corner already stands 0.080 inside the east face --
+so pushing each corner back off the faces it stands over leaves that face's edge slanting 0.19 over its 32 m, and the
+parapet open behind it.)
