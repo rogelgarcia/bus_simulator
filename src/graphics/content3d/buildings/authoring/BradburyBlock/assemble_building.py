@@ -1069,7 +1069,44 @@ TOP_FOOT = SILL5_GAME                              # the top floor's frames' foo
 TOP_LIP = 0.002                                    # the ledge under a frame and a ring's floor sit this over the cornice's top and over the springing: no coincident faces with the cornice, the impost band or the capitals
 TOP_RECT_H = 1.31                                  # the cornice's top to the springing (HABS 011973, the chamfer window: 214 px on a 171 px opening, 1.25 W)
 TOP_SPRING = TOP_FOOT + TOP_RECT_H                 # 17.300 game: the springing, the impost band's top, the arches' centre
-RING_W, RING_D = 0.15, 0.08                        # the one ring of brick round each arch, springing to springing: its width, and how far its face sits behind the wall
+# The ring of brick round each arch, springing to springing: how wide it is, and how far its face sits behind the
+# wall. That face is FLUSH (user 2026-09-22, with it selected: "arc around the window, should be at the same level of
+# the wall; you need to bring it forward") -- the voussoirs are laid in the wall's own plane and only the opening
+# behind them is recessed. RING_D is not quite zero because the cut is what SPLITS the ring's faces off the wall's for
+# their own mapping and material, and a boolean needs volume to do it; 2 mm is a mortar joint's depth and reads flush.
+RING_W, RING_D = 0.15, 0.002
+# The ring's brick follows the arch (user 2026-09-21). The wall's set carries exactly 8 bricks and 16 courses in its
+# 1.26 m tile -- measured off the file by FFT, not assumed -- so a brick is 0.1575 long and 0.0788 high, and RING_W
+# 0.15 is one brick deep to within 5%. Mapped in polar about the arch's centre, u out from it and v along the arc,
+# that one image reads as a rowlock ring of voussoirs radiating from the opening, which is what the photograph shows.
+RING_BRICK_L, RING_BRICK_H = 1.26 / 8.0, 1.26 / 16.0
+def arch_voussoirs(W):
+    # how many voussoirs the half circle takes at the brick's own course height -- and the number of facets the ring
+    # and the opening are cut with, so one facet is one voussoir: the bond's half brick stagger is then constant
+    # across a facet and the step it needs falls on the joint between voussoirs, where nothing can see it
+    return max(4, int(round(math.pi * (W / 2.0 + RING_W / 2.0) / (RING_BRICK_H * ARCH_RING_SCALE))))
+ARCH_RING_TONE = (1.06, 1.05, 0.86)                # brighter, and yellower than the wall: green held, blue pulled back
+ARCH_RING_FLAT = 0.45                              # and part of the way to its own mean: an arch ring reads even
+ARCH_RING_SCALE = 0.70                             # the voussoirs against the wall's own brick: smaller, as the reference has them
+# The archivolt: a stepped band following each arch, outside its ring. Its silhouette is read from the arch's centre
+# outward -- a small edge, a short flat, another edge, the long straight, and the same two steps back down -- and it
+# is barely proud of the wall, one centimetre at each edge, two at the flat.
+AV_EDGE = 0.010                                    # each edge's rise: 1 cm, the user's own figure
+AV_STEP_W = 0.018                                  # each short flat: the two below the long straight and the one above it
+AV_FLAT_W = 0.095                                  # the long straight in the middle -- "the center area"
+AV_W = 3 * AV_STEP_W + AV_FLAT_W                   # 0.149: the whole band, radially
+AV_N = 64                                          # facets round the half circle
+def archivolt_profile():
+    # (radially out from the band's inner edge, out from the wall), closed. It only ever CLIMBS going outward (user
+    # 2026-09-22, having selected the outermost ring of faces: "the faces selected in the ide should be raised above
+    # the center area ... from center to outward this decoration only increase heigh"). Four edges of AV_EDGE: two up
+    # to the long straight, then two more above it, the last forming the rim. The first rise stands at the ring's own
+    # outer boundary but entirely ABOVE the wall plane, so it never meets the ring's recess wall, which runs below it.
+    w1, wL, e = AV_STEP_W, AV_FLAT_W, AV_EDGE
+    r1, r2, r3, r4 = w1, w1 + wL, w1 + wL + w1, w1 + wL + w1 + w1
+    return [(0.0, 0.0), (0.0, e), (r1, e), (r1, 2 * e),
+            (r2, 2 * e), (r2, 3 * e), (r3, 3 * e), (r3, 4 * e), (r4, 4 * e), (r4, 0.0)]        # and a little brighter than the wall, and this far toward its own mean: the ring reads paler and more even in the photograph
+ARCH_RING_MAT = bpy.data.materials.new("PBR_bradbury_arch_ring_brick")   # filled once the wall's brick is built
 REVEAL_D = 0.31                                    # the wall's plane to the frame's front, a plain reveal (the game's 0.309: FRAME_FRONT behind the hull, BRICK_OUT taken off)
 TOP_OVER = 0.525                                   # the arch's intrados apex to the wall's head (011973: 85-90 px on 171): the head the top floor is to have
 TOP_W_MAX = 1.05                                   # the widest window: the pairs' and the singles' (the triples' are 1.00), asserted where the panels are rebuilt
@@ -1077,7 +1114,16 @@ TOP_HEAD_WANT = TOP_SPRING + TOP_W_MAX / 2 + TOP_OVER   # 18.350 game: the head 
 assert TOP_DROP == 0.0 or abs(TOP_Z1 - TOP_HEAD_WANT) < 1e-6, f"TOP_DROP {TOP_DROP:.3f} puts the top floor's head at {TOP_Z1:.3f}, the windows ask for {TOP_HEAD_WANT:.3f}"
 FRAME_D, FRAME_W, FRAME_BURY = 0.08, 0.06, 0.005   # the new frame: its depth, the width of its face, and how far its outer edge is buried in the reveal (no light round it)
 TRANSOM_H, TRANSOM_BELOW = 0.16, 0.14              # the transom bar, and its top under the springing (the photos: a thick dentilled bar 0.13-0.2 W under it)
-TOP_GLASS_IN, TOP_PANE_IN = 0.06, 0.12             # the glass and the backdrop pane behind the frame's front, as the game spaced them (the glass inside the frame's depth)
+TOP_GLASS_IN, TOP_PANE_IN = 0.06, 0.07             # the glass and the backdrop pane behind the frame's front (user 2026-09-22: the pane was at the game's 0.12, a 6 cm void behind the glass one could see past)
+# A window's reveal has to hold the whole window, not just meet its face. TOP_T is the wall's thickness, and the frame
+# alone is REVEAL_D + FRAME_D = 0.39 deep, so a panel only TOP_T thick left the frame's last 7 cm, the glass and the
+# pane standing in open air behind the wall: from any oblique angle the eye went past the reveal's back edge and
+# straight through the building (user 2026-09-22: "between the wall and window ... increase the depth of the window
+# margin so it touches the window"). The panels alone go deeper -- the plain wall beside them and the capitals, which
+# scale with TOP_T, are left where they are.
+TOP_PANEL_T = REVEAL_D + FRAME_D + 0.01            # 0.40: a centimetre past the frame's back
+assert TOP_PANEL_T > REVEAL_D + FRAME_D and TOP_PANEL_T > REVEAL_D + TOP_PANE_IN, "a top-floor panel must be deeper than the window it holds"
+assert TOP_GLASS_IN < TOP_PANE_IN < FRAME_D, "the pane sits behind the glass and inside the frame's own depth"
 RIM_MARGIN = 0.15                                  # the brick a panel keeps beside its outer windows and over their rings: its rim; = RING_W, so an outer window's ring reaches the rim's edge exactly
 def face_sd(fi, q):
     A, d, nrm = FACES[fi][0], FACES[fi][1], FACES[fi][2]; return (q - A).dot(d), (q - A).dot(nrm)
@@ -1552,20 +1598,86 @@ def slab_brick(fi, sv, pl):
         if not (TOP_Z[0] < sum(w.z for w in q) / len(q) < TOP_Z[1]): continue
         li = p.loop_indices[0]; return uv[li].uv[0] - au * ss[0], uv[li].uv[1] - av * q[0].z
     assert False, f"face {fi}: no slab front at s {sv:.2f} on the plane {pl:+.2f} to read the brick from"
-def top_uvs(me, fi, cu, cv):
+n_arch_ring = [0]; n_av = [0]; n_av_merge = [0]
+def ring_slot(me):
+    # the arch ring's own material slot on a panel, made once
+    for i, m in enumerate(me.materials):
+        if m is ARCH_RING_MAT: return i
+    me.materials.append(ARCH_RING_MAT); return len(me.materials) - 1
+def top_uvs(me, fi, cu, cv, wins=()):
     # a rebuilt panel's brick, the wall's own mapping (brick_uvs' structure with the slab's offsets in place of a scale
     # read off the game's wall): along the face and up on its wall faces and the ring's face, across the reveal and up
     # on the reveals and the ring's arc, along and across on the flats (the ledge, the ring's floor, the caps)
     nrm = FACES[fi][2]; au, av = BRICK[fi]
     lay = me.uv_layers.get("UVMap") or me.uv_layers.new(name="UVMap"); me.uv_layers.active = lay; uv = lay.data
+    # each window's ring, as an annulus about its own centre: (centre along the face, inner and outer radius, the
+    # scale that makes the half circle a whole number of courses, and the radial stretch that makes it one brick deep)
+    rings = []
+    for w in wins:
+        sc, W = w[0], w[1]
+        r_in = W / 2.0; r_out = r_in + RING_W; r_mid = (r_in + r_out) / 2.0
+        arc = math.pi * r_mid
+        n_vou = arch_voussoirs(W)
+        # HALF a brick across the ring, not a whole one: the set is a running bond, so every other course carries its
+        # joint half a brick along, and a whole brick's width of it put that joint down the MIDDLE of every second
+        # voussoir -- as a groove in the normal map, which no amount of flattening the colour can reach, so the ring
+        # read as a light-dark chain. Half a brick lands the joint on the ring's own inner or outer edge instead,
+        # where its own geometry already is. The brick simply reads twice as long, which over 0.15 m is what a
+        # voussoir is.
+        rings.append((sc, r_in, r_out, r_mid * (n_vou * RING_BRICK_H * ARCH_RING_SCALE / arc),
+                      0.5 * RING_BRICK_L * ARCH_RING_SCALE / RING_W, n_vou))
+    def ring_of(pl):
+        # every vertex inside one annulus and at or above the springing: the ring's face, its soffit and its outer side
+        for R in rings:
+            sc, r_in, r_out = R[0], R[1], R[2]
+            ok = True
+            for vi in pl.vertices:
+                q = me.vertices[vi].co; sv, _ = face_sd(fi, q)
+                r = math.hypot(sv - sc, q.z - TOP_SPRING)
+                if not (r_in - 0.02 <= r <= r_out + 0.02) or q.z < TOP_SPRING - 0.01: ok = False; break
+            if ok: return R
+        return None
+    n_ring = 0; _ring_faces = []
     for p in me.polygons:
         nn = p.normal
+        R = ring_of(p) if rings else None
+        if R is not None:
+            sc, r_in, r_out, v_k, u_k, n_vou = R
+            face_on = abs(Vector((nn.x, nn.y, 0.0)).dot(nrm)) > 0.7
+            # v runs on around the arc, scaled so the half circle is a whole number of the set's own courses: each
+            # course becomes a voussoir and every joint lands on one. It cannot be done a facet at a time -- the
+            # boolean leaves the ring's whole face as one n-gon (a 50-gon on a 24 voussoir arch), so there is no facet
+            # to hang a per-voussoir choice on. The set's brick to brick spread then puts a light-dark jumble round
+            # the curve, which ARCH_RING_FLAT damps: an arch ring reads even, and this one is 80% of the way to its
+            # own mean colour.
+            for li in p.loop_indices:
+                q = me.vertices[me.loops[li].vertex_index].co; sv, dv = face_sd(fi, q)
+                th = math.atan2(q.z - TOP_SPRING, sv - sc)
+                # v runs along the arc, so a course of the texture becomes a voussoir; u runs out from the centre on
+                # the ring's face and into the wall on its curved sides, so the brick lies radially either way
+                uv[li].uv = (u_k * (math.hypot(sv - sc, q.z - TOP_SPRING) - r_in) if face_on else dv, th * v_k)
+            p.material_index = ring_slot(me)
+            _ring_faces.append(p.index)
+            n_ring += 1
+            p.use_smooth = False
+            continue
         for li in p.loop_indices:
             q = me.vertices[me.loops[li].vertex_index].co; sv, dv = face_sd(fi, q)
             if abs(nn.z) > 0.5: uv[li].uv = (au * sv + cu, av * dv)
             elif abs(Vector((nn.x, nn.y, 0.0)).dot(nrm)) > 0.7: uv[li].uv = (au * sv + cu, av * q.z + cv)
             else: uv[li].uv = (au * dv + cu, av * q.z + cv)
         p.use_smooth = False
+    # The boolean leaves the ring's whole face as one n-gon -- a 50-gon on a 24 voussoir arch -- and a renderer
+    # interpolates UVs linearly inside each triangle of it. Polar coordinates are not linear, so the texture's
+    # straight joints came out KINKED, doglegging wherever the n-gon's triangulation ran. Triangulating those faces
+    # ourselves, after the UVs are written from the exact polar function, puts the interpolation on triangles that
+    # span one facet instead of half the arch, and the joints run straight.
+    if _ring_faces:
+        bm = bmesh.new(); bm.from_mesh(me); bm.faces.ensure_lookup_table()
+        big = [f for f in bm.faces if f.index in set(_ring_faces) and len(f.verts) > 4]
+        if big: bmesh.ops.triangulate(bm, faces=big, quad_method='BEAUTY', ngon_method='BEAUTY')
+        bm.to_mesh(me); bm.free()
+    return n_ring
 def part_uvs(me, x0, y0, z0):
     # a window part's mapping in its own frame: metres from the part's corner on each side, as the game's frames carry
     uv = me.uv_layers.new(name="UVMap").data
@@ -1593,6 +1705,9 @@ def top_window(F, name, sc, W, pl, frame_mat, glass_mat):
     # outline TOP_GLASS_IN behind its front, in the frame's own depth; the backdrop pane TOP_PANE_IN behind it
     xc = -sc; R = W / 2; yf = pl - REVEAL_D; yb = yf - FRAME_D; ins = FRAME_W + FRAME_BURY
     outer = arch_outline(xc, R + FRAME_BURY, TOP_FOOT, TOP_SPRING, 24); inner = arch_outline(xc, R - FRAME_W, TOP_FOOT + ins, TOP_SPRING, 24)
+    # the pane's own outline, out to FRAME_BURY inside the opening's edge: FRAME_W wider all round than the glass, so
+    # its rim is buried in the frame's body and cannot be seen past however oblique the view (user 2026-09-22)
+    back = arch_outline(xc, R - FRAME_BURY, TOP_FOOT + FRAME_BURY, TOP_SPRING, 24)
     n = len(outer); bm = bmesh.new()
     Of = [bm.verts.new((x, yf, z)) for x, z in outer]; If = [bm.verts.new((x, yf, z)) for x, z in inner]
     Ob = [bm.verts.new((x, yb, z)) for x, z in outer]; Ib = [bm.verts.new((x, yb, z)) for x, z in inner]
@@ -1605,8 +1720,8 @@ def top_window(F, name, sc, W, pl, frame_mat, glass_mat):
     transom = mesh_from_bm(name + "_transom", bm, frame_mat, FIT)
     parts = [frame, transom]
     for q in parts: part_uvs(q.data, xc - R, yb, TOP_FOOT)
-    for suffix, y, mat in (("_glass", yf - TOP_GLASS_IN, glass_mat), ("_pane", yf - TOP_PANE_IN, PANE)):
-        bm = bmesh.new(); bm.faces.new([bm.verts.new((x, y, z)) for x, z in inner[::-1]])
+    for suffix, y, mat, line in (("_glass", yf - TOP_GLASS_IN, glass_mat, inner), ("_pane", yf - TOP_PANE_IN, PANE, back)):
+        bm = bmesh.new(); bm.faces.new([bm.verts.new((x, y, z)) for x, z in line[::-1]])
         q = mesh_from_bm(name + suffix, bm, mat, FIT); plane_uvs(q.data); parts.append(q)
         if q.data.polygons[0].normal.y < 0: q.data.flip_normals()          # a lone face: wound to look outward
     for q in parts: q.matrix_world = F
@@ -1639,23 +1754,49 @@ for o in sorted([x for x in bpy.data.objects if x.name.startswith("top_panel")],
     z_p1 = TOP_SPRING + w_max / 2 + RING_W + RIM_MARGIN                  # the rim over the widest ring
     remove(parts + sills); n_gone += len(parts) + len(sills)
     old_me = o.data; mats = list(old_me.materials)
-    bm = bmesh.new(); cube(bm, -r1, -r0, pl - TOP_T, pl, z_p0, z_p1); tf(bm, bm.verts[:], F)
+    bm = bmesh.new(); cube(bm, -r1, -r0, pl - TOP_PANEL_T, pl, z_p0, z_p1); tf(bm, bm.verts[:], F)
     me = bpy.data.meshes.new(o.name + "_box"); bm.to_mesh(me); bm.free()
     for m in mats: me.materials.append(m)
     o.data = me; o.matrix_world = Matrix.Identity(4)
     if old_me.users == 0: bpy.data.meshes.remove(old_me)
     me.name = o.name
     for sc, W, fmat, gmat in wins:                 # the reveal first, then the ring: the two cutters share the arch's centre and never touch
-        cut_world_prism(o, arch_outline(-sc, W / 2, TOP_FOOT + TOP_LIP, TOP_SPRING), pl - TOP_T - 0.05, pl + 0.05, F)
-        cut_world_prism(o, ring_outline(-sc, W / 2 + RING_W, TOP_SPRING, TOP_SPRING + TOP_LIP, -r1, -r0), pl - RING_D, pl + 0.05, F)
-    top_uvs(o.data, fi, *slab_brick(fi, (r0 + r1) / 2, pl))
+        _nv = arch_voussoirs(W)
+        cut_world_prism(o, arch_outline(-sc, W / 2, TOP_FOOT + TOP_LIP, TOP_SPRING, _nv), pl - TOP_PANEL_T - 0.05, pl + 0.05, F)
+        cut_world_prism(o, ring_outline(-sc, W / 2 + RING_W, TOP_SPRING, TOP_SPRING + TOP_LIP, -r1, -r0, _nv), pl - RING_D, pl + 0.05, F)
+    n_arch_ring[0] += top_uvs(o.data, fi, *slab_brick(fi, (r0 + r1) / 2, pl), wins=wins)
+    # the archivolts. Each is a closed solid swept round its own arch from the ring's outer edge, built in the panel's
+    # frame and laid in the world by it. Where two are close enough to overlap they are both cut on the vertical plane
+    # halfway between their centres: every point of that plane is the same distance from both centres, so the two
+    # profiles meet there exactly and the bands merge into one, as they do on the building.
+    _prof = archivolt_profile()
+    for k, (sc, W, fmat, gmat) in enumerate(wins):
+        rb = W / 2 + RING_W                                  # the ring's outer edge is the band's inner one
+        bm = bmesh.new(); rows = []
+        for i in range(AV_N + 1):
+            th = math.pi * i / AV_N; ct, st = math.cos(th), math.sin(th)
+            rows.append([bm.verts.new((-sc + (rb + dr) * ct, pl + dy, TOP_SPRING + (rb + dr) * st)) for dr, dy in _prof])
+        m = len(_prof)
+        for i in range(AV_N):
+            for j in range(m):
+                bm.faces.new((rows[i][j], rows[i + 1][j], rows[i + 1][(j + 1) % m], rows[i][(j + 1) % m]))
+        bm.faces.new(rows[0][::-1]); bm.faces.new(rows[AV_N])          # the two ends, on the springing
+        tf(bm, bm.verts[:], F)
+        av = mesh_from_bm(f"ge_archivolt_{o.name[len('top_panel_'):]}_{k}", bm, None, FIT)
+        n_av[0] += 1
+        for j, (sc2, W2, _f2, _g2) in enumerate(wins):
+            if j == k: continue
+            if abs(sc2 - sc) > (W / 2 + RING_W + AV_W) + (W2 / 2 + RING_W + AV_W): continue   # they never meet
+            b = (sc + sc2) / 2.0; n_av_merge[0] += 1
+            if sc2 > sc: cut_world_box(av, -1e3, -b, pl - 0.2, pl + 0.2, TOP_SPRING - 0.2, TOP_SPRING + W / 2 + RING_W + AV_W + 0.2, frame=F)
+            else:        cut_world_box(av, -b, 1e3, pl - 0.2, pl + 0.2, TOP_SPRING - 0.2, TOP_SPRING + W / 2 + RING_W + AV_W + 0.2, frame=F)
     for k, (sc, W, fmat, gmat) in enumerate(wins):
         top_window(F, f"mesh__t5_{o.name[len('top_panel_'):]}_{k}", sc, W, pl, fmat, gmat); n_t5 += 1
     TOP_WINDOWS.append((fi, o.name, pl, [(w[0], w[1]) for w in wins]))
 assert abs(max(w for fi, nm, pl, ws in TOP_WINDOWS for s, w in ws) - TOP_W_MAX) < 0.002, "the widest top-floor window is not TOP_W_MAX"
 print(f"the top floor's windows rebuilt: {len(TOP_WINDOWS)} panels as plain boxes with {n_t5} arched openings "
       f"(W {', '.join(f'{w:.2f}' for w in sorted({round(w, 2) for fi, nm, pl, ws in TOP_WINDOWS for s, w in ws}, reverse=True))}), "
-      f"a ring {RING_W:.2f} wide {RING_D:.2f} into the wall round each arch, the frames' feet on the cornice's top at {TOP_FOOT:.3f} "
+      f"a ring {RING_W:.2f} wide flush with the wall ({RING_D * 1000:.0f} mm, only so the boolean can split its faces off) round each arch, the frames' feet on the cornice's top at {TOP_FOOT:.3f} "
       f"(no sills), the springing at {TOP_SPRING:.3f}, the arches' apexes at {TOP_SPRING + TOP_W_MAX / 2:.3f}; {n_gone} game parts and sills removed")
 
 # The top floor's wall now takes a hole for every panel where it finally stands.
@@ -1729,6 +1870,14 @@ def over_portal(fi, s0, s1):
 # The game set the frames of the end bays 0.20 nearer the street than the others, to match its proud end piers; on the one
 # wall plane every window gets the same reveal: those frames and their glass, bars and backdrops go back to the common depth.
 FRAME_FRONT = -0.41                                              # the frames' front behind the hull, as the middle bays have it
+# Every window on these floors then travels with the wall it stands in -- the field's, a bay inset's, a corner's --
+# so its frame always sits the same WIN_IN behind whatever plane its own wall has there, and WIN_IN + WIN_D24 behind
+# it at the back. The recess panel that carries the reveal was built to the wall's own thickness instead, which on the
+# bay insets ended 2 cm SHORT of the frame's face and everywhere else 10 cm short of its back: the gap the user
+# marked on 2026-09-22. It now runs past the frame wherever it stands.
+WIN_IN = -FRAME_FRONT - FIELD_IN                                 # 0.21: the wall's plane there to the frame's front
+WIN_D24 = 0.08                                                   # the game's frame boxes are this deep
+PANEL_T24 = WIN_IN + WIN_D24 + 0.01                              # 0.30: the panel's own depth, a centimetre past the frame's back
 def unify_window_depths():
     moved = 0
     for fi, s0, s1, za, zb, d_front in frame_boxes():
@@ -1923,9 +2072,12 @@ def build_upper_wall(old):
     bm.to_mesh(wall.data); bm.free(); wall.data.update()
     for fi, s0, s1, z_top, z1p, mine, nm, fr, drop in sets:
         F = rh_frame(fi)
-        panel = frame_box("panel_" + nm.split("_")[-1], F, -s1, -s0, BRICK_OUT - WALL_T, fr - RECESS_D, z_top, z1p, mat)
+        for k, (f2, sa, sb, za, zb, d_front) in mine:
+            assert abs(d_front - (fr - WIN_IN)) < 0.02, f"{nm}: a frame's face at {d_front:+.3f}, not WIN_IN behind the wall's {fr:+.3f}"
+        p_back = min(BRICK_OUT - WALL_T, fr - PANEL_T24)          # the wall's own back, or past the frame, whichever is deeper
+        panel = frame_box("panel_" + nm.split("_")[-1], F, -s1, -s0, p_back, fr - RECESS_D, z_top, z1p, mat)
         for k, (f2, sa, sb, za, zb, _) in mine:
-            cut_world_box(panel, -(sb - 0.01), -(sa + 0.01), BRICK_OUT - WALL_T - 0.05, fr - RECESS_D + 0.05, za - drop + 0.005, zb - 0.005, frame=F); covered.add(k)
+            cut_world_box(panel, -(sb - 0.01), -(sa + 0.01), p_back - 0.05, fr - RECESS_D + 0.05, za - drop + 0.005, zb - 0.005, frame=F); covered.add(k)
         reveal_faces(panel, F, -s1, -s0, fr - RECESS_D, fr, z_top, z1p, bottom=(drop <= 0.0 or over_portal(fi, s0, s1)))   # let down onto the foot: the crown's top is its foot face
         panels.append(panel)
     for k, (fi, sa, sb, za, zb, _) in enumerate(holes):                                # a window outside any panel keeps a plain hole
@@ -1955,6 +2107,52 @@ wall_upper, window_panels, n_loose = build_upper_wall(w8)
 print(f"wall of floors 2 to 4 rebuilt: one ring with {len(window_panels)} set holes and {n_loose} single window holes, {len(wall_upper.data.polygons)} faces; {len(window_panels)} window panels; the game's wall__8 removed")
 BRICK_UV = uv_scale_of(w8)                         # the brick's texture scale, for the band between floors 4 and 5 below
 remove([w8])
+
+# The backing pane behind each window's glass on floors 2 to 4 (user 2026-09-22, the second of the two gaps: "between
+# window glass and background. (increase the background size and maybe bring it closer to the glass"). The game cut
+# every one of them to the glass's own outline and set it PANE_WAS behind it, so a ray through the glass near its edge
+# clears the pane and goes on through the hollow building; measured over all 150, the offset and the outline were
+# identical on every one. Each now goes out to its frame's rebate, PANE_HIDE inside the frame's outer face, where the
+# frame's own body hides its rim, and forward to PANE_BEHIND of the glass, which leaves no angle wide enough to see
+# past it that the reveal does not already block.
+PANE_WAS, PANE_BEHIND, PANE_HIDE = 0.05, 0.01, 0.005
+def _fsd(fi, q): return (q - FACES[fi][0]).dot(FACES[fi][1]), (q - FACES[fi][0]).dot(FACES[fi][2])
+def _ext(o):
+    # a part's (face, s0, s1, d0, d1, z0, z1) from its VERTICES: the bounding boxes are stale after the second floor was let down
+    ws = [o.matrix_world @ v.co for v in o.data.vertices]; c = sum(ws, Vector()) / len(ws)
+    fi = max(range(len(FACES)), key=lambda i: _fsd(i, c)[1])
+    sd = [_fsd(fi, q) for q in ws]
+    return (fi, min(q[0] for q in sd), max(q[0] for q in sd), min(q[1] for q in sd), max(q[1] for q in sd),
+            min(q.z for q in ws), max(q.z for q in ws))
+_frames, _panes = [], []
+for o in bpy.data.objects:
+    if o.type != 'MESH' or not o.name.startswith("mesh__") or not o.data.materials: continue
+    e = _ext(o)
+    if not (6.0 < e[5] and e[6] < 15.2) or e[6] - e[5] < 1.5: continue
+    if 0.05 < e[4] - e[3] < 0.12: _frames.append(e)
+    elif e[4] - e[3] < 0.002 and o.data.materials[0] is PANE: _panes.append((o, e))
+n_pane_fix = 0
+for o, e in _panes:
+    fi, s0, s1, z0, z1 = e[0], e[1], e[2], e[5], e[6]
+    mine = [f for f in _frames if f[0] == fi and f[1] - 0.05 < (s0 + s1) / 2 < f[2] + 0.05 and f[5] - 0.05 < (z0 + z1) / 2 < f[6] + 0.05]
+    assert len(mine) == 1, f"{o.name}: {len(mine)} frames round the pane at s {(s0 + s1) / 2:.2f}, z {(z0 + z1) / 2:.2f}"
+    f = mine[0]
+    ts0, ts1, tz0, tz1 = f[1] + PANE_HIDE, f[2] - PANE_HIDE, f[5] + PANE_HIDE, f[6] - PANE_HIDE   # the frame's rebate
+    A, d, nrm = FACES[fi][0], FACES[fi][1], FACES[fi][2]
+    if o.data.users > 1: o.data = o.data.copy()                  # the game's panes share their meshes, some over forty windows each: edited in place, one would take every window's move
+    mw = o.matrix_world; inv = mw.inverted()
+    for v in o.data.vertices:
+        q = mw @ v.co; sv, dv = _fsd(fi, q)
+        sn = ts0 if sv < (s0 + s1) / 2 else ts1
+        zn = tz0 if q.z < (z0 + z1) / 2 else tz1
+        v.co = inv @ (A + d * sn + nrm * (dv + PANE_WAS - PANE_BEHIND) + Vector((0.0, 0.0, zn)))
+    o.data.update(); n_pane_fix += 1
+for o, e in _panes:                                                # every pane where it was meant to go, measured again after all the edits
+    e2 = _ext(o)
+    assert abs(e2[3] - (e[3] + PANE_WAS - PANE_BEHIND)) < 1e-4 and e2[4] - e2[3] < 1e-4, f"{o.name}: its pane at {e2[3]:+.4f}, meant for {e[3] + PANE_WAS - PANE_BEHIND:+.4f}"
+print(f"floors 2 to 4, the backing panes: {n_pane_fix} of {len(_panes)} brought forward to {PANE_BEHIND * 1000:.0f} mm behind their glass "
+      f"(the game had {PANE_WAS * 1000:.0f}) and out to their frames' rebate, {PANE_HIDE * 1000:.0f} mm inside the frame's outer face, "
+      f"against {len(_frames)} frames")
 
 # The mid cornice's ornament is off for now, to come back with a different design (user 2026-09-16): the carved band
 # between the top floor and the one below it, on the mid cornice at floor five's foot. The top cornice keeps its own,
@@ -2559,7 +2757,7 @@ print(f"the band between floors 4 and 5: {len(n_b45)} runs {B45_Z0 + B45_STEPS_H
 # strip is a quarter of the tile) but the tile's repeats no longer line up from one row to the next.
 PBR_DIR = os.path.join(ROOT, "assets", "public", "pbr")
 BRICK_TILE_M = 1.26                                # the brick set's tileMeters (kept in step with its pbr.material.config.js)
-def pbr_material(name, folder, tile_u, tile_v, v0=0.0, clamp=False, band_shift=0):
+def pbr_material(name, folder, tile_u, tile_v, v0=0.0, clamp=False, band_shift=0, tone=(1.0, 1.0, 1.0), flatten=0.0):
     d = os.path.join(PBR_DIR, folder)
     m = bpy.data.materials.new(name); m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
     out = nt.nodes.new('ShaderNodeOutputMaterial'); out.location = (600, 0)
@@ -2598,10 +2796,28 @@ def pbr_material(name, folder, tile_u, tile_v, v0=0.0, clamp=False, band_shift=0
         t = nt.nodes.new('ShaderNodeTexImage'); t.image = im; t.location = (-450, y); t.extension = 'REPEAT'
         nt.links.new(vec, t.inputs["Vector"]); return t
     base = tex("basecolor.jpg", 'sRGB', 300); arm = tex("arm.png", 'Non-Color', 0); nrm = tex("normal_gl.png", 'Non-Color', -300)
+    col = base.outputs["Color"]
+    if flatten > 0.0:
+        # toward the image's own mean, in linear light: the brick to brick variation damped, nothing else touched
+        import numpy as _n
+        _b = _n.empty(base.image.size[0] * base.image.size[1] * 4, dtype=_n.float32); base.image.pixels.foreach_get(_b)
+        _a = _b.reshape(-1, 4)[:, :3].astype(_n.float64)          # a byte image hands its pixels back sRGB ENCODED,
+        _m = _n.where(_a <= 0.04045, _a / 12.92, ((_a + 0.055) / 1.055) ** 2.4).mean(0)   # and the node wants linear
+        fl = nt.nodes.new('ShaderNodeMix'); fl.data_type = 'RGBA'; fl.blend_type = 'MIX'; fl.location = (-60, 560)
+        fl.inputs["Factor"].default_value = 1.0 - flatten
+        next(i for i in fl.inputs if i.identifier == "A_Color").default_value = (float(_m[0]), float(_m[1]), float(_m[2]), 1.0)
+        nt.links.new(col, next(i for i in fl.inputs if i.identifier == "B_Color"))
+        col = next(o for o in fl.outputs if o.identifier == "Result_Color")
+    if any(abs(t - 1.0) > 1e-6 for t in tone):
+        tn = nt.nodes.new('ShaderNodeMix'); tn.data_type = 'RGBA'; tn.blend_type = 'MULTIPLY'; tn.location = (-60, 420)
+        tn.inputs["Factor"].default_value = 1.0
+        nt.links.new(col, next(i for i in tn.inputs if i.identifier == "A_Color"))
+        next(i for i in tn.inputs if i.identifier == "B_Color").default_value = (tone[0], tone[1], tone[2], 1.0)
+        col = next(o for o in tn.outputs if o.identifier == "Result_Color")
     sep = nt.nodes.new('ShaderNodeSeparateColor'); sep.location = (-150, 0); nt.links.new(arm.outputs["Color"], sep.inputs["Color"])
     mix = nt.nodes.new('ShaderNodeMix'); mix.data_type = 'RGBA'; mix.blend_type = 'MULTIPLY'; mix.location = (50, 250)
     mix.inputs["Factor"].default_value = 1.0                                                   # the packed AO darkens the base colour
-    nt.links.new(base.outputs["Color"], next(i for i in mix.inputs if i.identifier == "A_Color"))
+    nt.links.new(col, next(i for i in mix.inputs if i.identifier == "A_Color"))
     nt.links.new(sep.outputs["Red"], next(i for i in mix.inputs if i.identifier == "B_Color"))
     nt.links.new(next(o for o in mix.outputs if o.identifier == "Result_Color"), bsdf.inputs["Base Color"])
     nt.links.new(sep.outputs["Green"], bsdf.inputs["Roughness"]); nt.links.new(sep.outputs["Blue"], bsdf.inputs["Metallic"])
@@ -2617,6 +2833,17 @@ def band_uvs(me, fi):
 BRICK_PBR = pbr_material("PBR_bradbury_wall_terracotta_brick_tileable", "bradbury_wall_terracotta_brick_tileable", BRICK_TILE_M, BRICK_TILE_M, band_shift=4)
 BAND_PBR = pbr_material("PBR_bradbury_top_band_terracotta_ornament", "bradbury_top_band_terracotta_ornament", B45_FIELD_H * 4.0 / 3.0, B45_FIELD_H,
                         v0=0.0, clamp=True)                             # the field's UVs start at its own corner
+_ring_pbr = pbr_material("PBR_bradbury_arch_ring", "bradbury_wall_terracotta_brick_tileable", BRICK_TILE_M, BRICK_TILE_M,
+                         tone=ARCH_RING_TONE, flatten=ARCH_RING_FLAT)   # no band shift: the ring is mapped round the arch
+n_ring_mat = 0
+for o in bpy.data.objects:
+    if o.type != 'MESH': continue
+    for i, m in enumerate(o.data.materials):
+        if m is ARCH_RING_MAT: o.data.materials[i] = _ring_pbr; n_ring_mat += 1
+print(f"the arch rings: {n_arch_ring[0]} faces mapped in polar about their own centres -- half a brick of the set stretched over one voussoir "
+      f"({RING_W * 1000:.0f} mm) deep radially, a whole number of voussoirs of {RING_BRICK_H * 1000:.1f} mm round each half circle -- "
+      f"on {n_ring_mat} meshes, in the wall's own image at {ARCH_RING_SCALE:.2f} of its size, "
+      f"x({ARCH_RING_TONE[0]:.2f}, {ARCH_RING_TONE[1]:.2f}, {ARCH_RING_TONE[2]:.2f}) and {ARCH_RING_FLAT:.0%} toward its mean")
 old_brick = [m for m in bpy.data.materials if m.node_tree and any(n.type == 'TEX_IMAGE' and n.image and "red_brick" in n.image.filepath.replace("\\", "/")
                                                                  for n in m.node_tree.nodes)]
 n_brick, done_me = 0, set()
@@ -2696,6 +2923,14 @@ TRIM_PBR, _trim_gain = trim_material("PBR_bradbury_terracotta_trim", "terracotta
 n_sill = 0
 for o in [q for q in bpy.data.objects if q.type == 'MESH' and q.name.startswith("sill_")]:
     o.data.materials.clear(); o.data.materials.append(TRIM_PBR); n_sill += 1
+n_av_mat = 0
+for o in [q for q in bpy.data.objects if q.type == 'MESH' and q.name.startswith("ge_archivolt")]:
+    o.data.materials.clear(); o.data.materials.append(TRIM_PBR); n_av_mat += 1
+print(f"the archivolts: {n_av[0]} bands round the top floor's arches, {AV_W * 1000:.0f} mm wide radially and "
+      f"{2 * AV_EDGE * 1000:.0f} mm proud at the long straight and {4 * AV_EDGE * 1000:.0f} at the rim, climbing "
+      f"outward over four edges of {AV_EDGE * 1000:.0f} mm, swept over "
+      f"{AV_N} facets from each ring's outer edge; {n_av_merge[0]} of them cut on a neighbour's bisector so the bands "
+      f"merge where two windows meet; the trim's terracotta on {n_av_mat}")
 n_capm = 0
 for o in [q for q in bpy.data.objects if q.type == 'MESH' and q.name.startswith("ge_capital")]:   # the capitals too (user 2026-09-17)
     o.data.materials.clear(); o.data.materials.append(TRIM_PBR); n_capm += 1
@@ -2993,8 +3228,21 @@ IMP_RING_OUT, IMP_RING_H = 0.100, 0.048            # the top edge ring, its two 
 IMP_EDGE_R = 0.004
 IMP_H = IMP_LISTEL_H + IMP_FACE1_H + IMP_EDGE2_H + IMP_FACE2_H + IMP_OVOLO_H + IMP_RING_H   # 0.320: 0.30 W (the photos read 0.28..0.37 W)
 IMP_RET = REVEAL_D - 0.01                          # the return along each outer jamb's reveal: to a centimetre before the frame
+# How far the moulding may reach into a window's opening past its jamb (user 2026-09-22, a red line drawn on the
+# springing): over the frame's face, never onto the glass. A return carries the whole profile round the jamb, so its
+# top ring stood IMP_RING_OUT 0.10 into the opening; the red line, read against the arch's own scale in the screenshot
+# (the archivolt's outer edge 0.824 from the centre gives 650 px/m), sits 0.055..0.06 in at the ring and on the
+# moulding's own tall face below it -- the frame's width.
+IMP_CLIP = FRAME_W
+assert IMP_FACE2_OUT < IMP_CLIP < FRAME_W + FRAME_BURY, "the clipped return keeps the moulding's tall face whole and stops on the frame, short of the glass"
 CAP5_H = IMP_H                                     # the narrow piers' capitals are as tall as the moulding (photo)
-CAP5_SINK = 0.005                                  # the neck stands this much inside the pier's face: no face of it within a millimetre of the brick (review 2026-09-19)
+# The narrow piers' capitals (user 2026-09-22: "behind the wall in some areas"). Measured slice by slice, the capital's
+# foot was exactly the pier's width -- flush with both jambs -- and 5 mm inside the pier's face (the old CAP5_SINK),
+# and its neck dipped 3.4 mm back behind the brick again above the astragal, so the brick showed through the capital
+# there. Widening alone cannot reach the front, so both: the foot CAP5_WIDEN wider than the pier, and CAP5_OUT proud
+# of its face, which leaves no part of the capital's front less than 5 mm clear of the brick.
+CAP5_WIDEN = 0.015                                 # 7.5 mm past each jamb at the foot, more above it
+CAP5_OUT = 0.005                                   # the foot's front this far in front of the pier's face (it was 5 mm behind it)
 IMP_Z0 = TOP_SPRING + UPPER_LIFT - IMP_H           # the moulding's foot, world: 17.732, up to the springing 18.052
 assert IMP_FACE2_OUT + IMP_OVOLO_OUT < IMP_RING_OUT and IMP_RING_OUT < IMP_RET < REVEAL_D, "the ring must overhang the bevel, the return be longer than the ring's projection and stop short of the frame"
 def impost_profile():
@@ -3064,7 +3312,23 @@ imp_pieces = impost_pieces(imp_path, imp_spans)
 bm = bmesh.new(); imp_prof = impost_profile()
 for piece in imp_pieces: sweep(bm, piece, imp_prof, IMP_Z0, caps=True)
 o = mesh_from_bm("impost_course5", bm, TRIM_PBR, FIT, smooth=True)
+# The returns cut back (user 2026-09-22): one box per set, from IMP_CLIP inside its first jamb to IMP_CLIP inside its
+# last, takes off everything of the moulding reaching further into the openings. No moulding runs inside a set
+# otherwise -- its narrow piers carry capitals -- so only the returns are touched: their ring and bevel end flat on
+# the frame, and the lower edges, all within IMP_EDGE2_OUT of the jamb, keep their profile.
+n_imp_clip = 0
+for fi, spans in imp_spans.items():
+    for s0, s1, pl in spans:
+        cut_world_box(o, -(s1 - IMP_CLIP), -(s0 + IMP_CLIP), pl - IMP_RET - 0.05, pl + IMP_RING_OUT + 0.05,
+                      IMP_Z0 - 0.01, IMP_Z0 + IMP_H + 0.01, frame=rh_frame(fi)); n_imp_clip += 1
+for p_ in o.data.polygons: p_.use_smooth = True
 if hasattr(o.data, "set_sharp_from_angle"): o.data.set_sharp_from_angle(angle=math.radians(40.0))
+_iw = [o.matrix_world @ v.co for v in o.data.vertices]
+for fi, spans in imp_spans.items():                # nothing of the moulding more than IMP_CLIP inside any set's span
+    for s0, s1, pl in spans:
+        inside = [face_sd(fi, q)[0] for q in _iw if on_face(q) == fi and abs(face_sd(fi, q)[1] - pl) < 0.5 and s0 < face_sd(fi, q)[0] < s1]
+        worst = max([min(sv - s0, s1 - sv) for sv in inside], default=0.0)
+        assert worst < IMP_CLIP + 1e-4, f"face {fi}: the moulding reaches {worst:.3f} into the set at {s0:.2f}..{s1:.2f}"
 cap_me = bpy.data.meshes["ge_capital"]             # the brick columns' capital: x across, y from the abacus's front into the wall, z up from its foot
 cap_foot = [v.co for v in cap_me.vertices if v.co.z < 0.02]
 CAP_NECK, CAP_BACK = 2 * max(abs(q.x) for q in cap_foot), min(q.y for q in cap_foot)   # the neck's width (0.733) and how far behind the abacus's front it stands (0.117)
@@ -3074,13 +3338,14 @@ for fi, pname, pl, ws in imp_sets:
     A, d, nrm, L = FACES[fi]
     for (sa, wa), (sb, wb) in zip(ws, ws[1:]):
         a, b = sa + wa / 2, sb - wb / 2            # the narrow pier between two of the set's windows, jamb to jamb
-        kx, ky, kz = (b - a) / CAP_NECK, (TOP_T - 0.02) / CAP_D, CAP5_H / CAP_H   # the neck as wide as the pier; the back inside the panel; as tall as the moulding
+        kx, ky, kz = (b - a + CAP5_WIDEN) / CAP_NECK, (TOP_T - 0.02) / CAP_D, CAP5_H / CAP_H   # the foot CAP5_WIDEN wider than the pier; the back inside the panel; as tall as the moulding
         o = bpy.data.objects.new("ge_capital5", cap_me); FIT.objects.link(o)
-        base = A + d * ((a + b) / 2) + nrm * (pl + ky * CAP_BACK - CAP5_SINK)  # the neck's front just inside the pier's face (its setback behind the abacus scales with the depth, ky): the abacus ky * CAP_BACK proud, the neck flush with the shaft it stands on
+        base = A + d * ((a + b) / 2) + nrm * (pl + ky * CAP_BACK + CAP5_OUT)   # the foot's front CAP5_OUT proud of the pier's face (its setback behind the abacus scales with the depth, ky): the abacus ky * CAP_BACK + CAP5_OUT proud
         o.matrix_world = Matrix(((d.x * kx, -nrm.x * ky, 0.0, base.x), (d.y * kx, -nrm.y * ky, 0.0, base.y), (0.0, 0.0, kz, IMP_Z0), (0.0, 0.0, 0.0, 1.0)))
         n_cap5 += 1
 print(f"the top floor's impost course: one moulding {IMP_Z0:.3f}..{IMP_Z0 + IMP_H:.3f} on the wall's outline ({len(imp_path)} points), cut at "
-      f"{len(imp_sets)} window sets into {len(imp_pieces)} pieces returning {IMP_RET:.2f} into their reveals; {n_cap5} capitals on the narrow piers, "
+      f"{len(imp_sets)} window sets into {len(imp_pieces)} pieces returning {IMP_RET:.2f} into their reveals, cut back to {IMP_CLIP:.3f} inside the jambs at {n_imp_clip} sets; "
+      f"{n_cap5} capitals on the narrow piers, {CAP5_WIDEN * 1000:.0f} mm wider than their piers and their feet {CAP5_OUT * 1000:.0f} mm proud, "
       f"{CAP5_H:.2f} tall with their tops on the springing")
 # ---------------------------------------------------------------- the roof crown (user 2026-09-19, the reference photos)
 # Four courses on the top floor's wall head, in the place of the game's crown (taken down with the lift, above): a
@@ -3105,6 +3370,11 @@ RC_M_S1_H, RC_M_S1_O = 0.105, 0.045                # course 1, the lower corbell
 RC_M_S2_H, RC_M_S2_O = 0.125, 0.090                # the upper step; its face IS the frieze's plane, so the frieze sits straight on it
 RC_M_H = RC_M_S1_H + RC_M_S2_H                     # 0.230
 RC_ANCHOR = RC_M_S1_O                              # 0.045: the projection the whole crown's returns are anchored on -- the corbel's first step, which lands on the wall's own line where the wall changes depth
+# How far a course is allowed to run past the wall's break before it turns. Anchoring alone (K = 1) sends the top
+# course 0.530 past it, which the user marked as too much at the jog (2026-09-22, three ticks drawn on the return):
+# they put the staircase at roughly two thirds of that. K scales the whole stagger without moving the anchor, so the
+# corbel's first step still lands on the wall's own line and the order of the returns is unchanged.
+RC_JOG_K = 0.65
 RC_FR_H = 0.550                                    # course 2, the flower frieze (user 2026-09-19)
 RC_FR_F = RC_M_S2_O                                # 0.090: it stands on the moulding's top step
 RC_FR_TILE_U = 2.0 * RC_FR_H                       # 1.100: the set is a seamless 2:1 image of two square tiles, and 1.100 is its catalog tileMeters
@@ -3210,7 +3480,7 @@ def crown_ring(name, front, prof, z_local, mat=None, pad=None):
     # each proud lip -- the corbel's upper step, the plinth, the cornice's weathered edge -- oversails the break by
     # just what it projects, as a cornice does. Padding each ring by its own outermost point instead (the first cut)
     # anchored every ring on a different face and left each course's foot recessed behind what it sat on.
-    if pad is None: pad = RC_ANCHOR - front
+    if pad is None: pad = (RC_ANCHOR - front) * RC_JOG_K
     bm = bmesh.new(); sweep(bm, rc_path(front, pad), prof, RC_Z0 + z_local)
     o = mesh_from_bm(name, bm, mat or TRIM_PBR, FIT, smooth=True)
     o["rc_out"] = BRICK_OUT + front + max(q for (q, z) in prof)   # the ring's outermost face on a field stretch: where its tongue is cut off

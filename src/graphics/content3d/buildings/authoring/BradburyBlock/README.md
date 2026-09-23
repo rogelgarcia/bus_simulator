@@ -32,7 +32,7 @@ at y = 0; the facade pieces will be built further out at negative y.
 
 | 07 | Side pilasters: one each side of the arch block (x 1.605 .. 2.405), standing on the sidewalk (z -0.12), face 0.20 proud of the arch (y -2.90), back overlapping the recess wall ends (y -2.05); the piers' stepped plinth (top at 0.44) in the same pink stone, shaft with a sunken panel whose edge is a three-part molding (small square step at the face, convex quarter-round curving outward, small square step down to the field) running straight up to the capital, the linked capital ornament (ornaments/capital.blend; the old `capital_volute` build is kept in portal_lib for reference) (`capital_volute`: a row of edged acanthus leaves, bold snail volutes at the corners rising on the diagonal, a crown on each face curling into small snails at the top corners with a bud and a small palmette, plain two-tier abacus with a boss; 0.80 m) whose top (4.08) matches the top of the arch block | `pieces/07_pilasters.py` | `PILASTERS` | built 2026-09-10 |
 
-| 08 | BRADBURY frieze band: plain stone band over the arch block and the pilaster capitals (x +/-2.405, y -2.90 .. -2.05, z 4.08 .. 4.50), flush with the pilasters and ending at their outer edges; the letters "BRADBURY." (Arial Black, a bold wide sans with no serifs like the reference; 0.28 m capitals, row 2.30 m wide) extruded 1.2 cm out of the band, with a 5 mm half-round rim along each letter's outline raised from the letter face (set just inside the edge); above each pilaster a foliage panel of leaves on curved branchlets in layered relief (leaves 2 cm, branches 2.6 cm, rosette to 3.8 cm): a small rosette, a wavy main branch to each side with three curling branchlets, edged leaves along the branches and at the branchlet ends; no dentil course or cornice yet | `pieces/08_frieze.py` | `FRIEZE` | built 2026-09-10 |
+| 08 | BRADBURY frieze band: plain stone band over the arch block and the pilaster capitals (x +/-2.405, y -2.90 .. -2.05, z 4.08 .. 4.50), flush with the pilasters and ending at their outer edges; the inscription "BRADBURY." as the lettering PBR decal (`assets/public/pbr/bradbury_lettering`, 2026-09-22; it replaced extruded Arial Black letters with a rim), its letters respaced in the image (`make_lettering_pbr.py`), 2.64 m wide and 0.368 tall with its ends 0.165 inside the capitals below, 1 mm proud of the band on a mesh that follows the letters; above each pilaster a foliage panel of leaves on curved branchlets in layered relief (leaves 2 cm, branches 2.6 cm, rosette to 3.8 cm): a small rosette, a wavy main branch to each side with three curling branchlets, edged leaves along the branches and at the branchlet ends; no dentil course or cornice yet | `pieces/08_frieze.py` | `FRIEZE` | built 2026-09-10 |
 
 Piece 05 update: the step now spans only between the pilasters (x +/-1.60).
 
@@ -1073,6 +1073,13 @@ stands on (step two and the frieze together at 0.045, the plinth at 0.135, the b
 Padding each ring by its own outermost point instead -- the first cut -- anchored every ring on a different face, so
 the top fascia sat 0.12 behind the two below it and the corbel's first step 0.045 behind the wall, and each of those
 recesses read as a gap at the break.
+How far a course may run past the break before it turns is scaled by `RC_JOG_K` 0.65 (user 2026-09-22, three ticks
+drawn on the return: "i want it to stop at the red lines"). Anchoring alone sends the top course 0.530 past the wall's
+line; the marks, read back by projecting the crown's own vertices into that same viewport, put the staircase at about
+two thirds of it. K multiplies the stagger without moving the anchor, so the corbel's first step still lands on the
+wall's own line and the order of the returns is unchanged: the weathered edge now runs 0.345 past the break instead of
+0.530, c3 0.296, c2 0.237, c1 0.179, the plinth 0.088, the coffer 0.055.
+
 `rc_jogs(0)` is `silhouette_jogs(RC_JOG)` exactly, asserted. Every profile's back is `-(front + RC_IN)`, so all seven
 reach `RC_IN` 0.30 behind the field's wall plane whatever their front and the stack is one 0.280-thick parapet closed
 on top by the cornice's own top face -- no separate parapet object. The dentils reuse the band cornice's generator
@@ -1092,6 +1099,194 @@ game's deck outline is not a plan offset of the hull -- its chamfer corner alrea
 so pushing each corner back off the faces it stands over leaves that face's edge slanting 0.19 over its 32 m, and the
 parapet open behind it.)
 
+## The arch rings follow the arch (2026-09-21)
+
+From a photograph of the real top-floor window: "the texture inside and around the arc should follow its format; and
+the color is a bit brighter and uniform, can this adjustment be done without an extra texture?" It can, and it needs
+no new asset and no new geometry -- only the same image read in polar coordinates, and a second material off it.
+
+**What was wrong.** `top_uvs` sorted every face by its normal alone: facing the street it took the wall's
+`(along, up)`, facing sideways the reveal's `(depth, up)`. Nothing in it knew there was an arch, so the ring's face
+wore the wall's horizontal coursing clipped to a curve and the soffit stretched badly toward the crown. The radiating
+lines visible in the renders were not bricks at all -- they were the ring's 32 facets, flat-shaded.
+
+**The mapping.** Any polygon whose vertices all lie in a window's ring annulus and at or above the springing now
+takes polar UVs about that arch's centre: `u` out from the centre on the ring's face and into the wall on its soffit
+and its outer side, `v` along the arc. The numbers come off the texture rather than out of the air -- an FFT of the
+albedo says the set carries **exactly 8 bricks and 16 courses** in its 1.26 m tile, so a brick is 157.5 by 78.8 mm:
+
+- `v` is scaled so the half circle is a whole number of those courses. At mid-radius 0.60 m the arc is 1.885 m, which
+  is **24 voussoirs**, and every joint lands on one.
+- `arch_voussoirs(W)` now drives the facet count of both cuts, the opening's and the ring's, so a facet is a voussoir.
+- `u` spans **half a brick** across `RING_W` 0.15, not a whole one -- see the traps below.
+
+**The colour** is a second material built from the same file: `pbr_material` gained `tone` and `flatten`, which mixes
+the albedo toward its own mean. `ARCH_RING_TONE` 1.04 and `ARCH_RING_FLAT` 0.45 give the paler, evener ring the
+photograph shows. The panels carry it as a fifth material slot, assigned by `top_uvs` as it maps.
+
+**Three traps, in the order they bit, so they are not walked into again.**
+
+1. **A whole brick across the ring is wrong.** The set is a running bond, so every other course carries its joint half
+   a brick along; a whole brick's width of that put the joint down the **middle** of every second voussoir and the ring
+   read as a light-dark chain. It survived flattening the colour to 80% of the mean, which is the tell: the joint is a
+   groove in the **normal map**, and no amount of evening the albedo can reach it. Half a brick across lands that joint
+   on the ring's own inner or outer edge, where its geometry already is. The brick then reads twice as long, which
+   over 0.15 m is exactly what a voussoir is.
+2. **There is no facet to hang a per-voussoir choice on.** Giving each voussoir its own whole brick looked like the
+   tidy answer, but the boolean leaves the ring's whole face as a single n-gon -- a 50-gon on a 24-voussoir arch --
+   so a per-polygon index applies to the entire ring at once. `v` has to run on around the arc.
+3. **The flatten target must be linear.** A byte image hands its pixels back **sRGB encoded**, so averaging them raw
+   and feeding that to a shader node as a colour gives a target twice as bright as the texture really is; the ring
+   came out chalk white. `linear_mean` elsewhere in this file already converts, and the new code does the same.
+
+### The retune, and the archivolt (2026-09-22)
+
+On the first cut: "the tiles arround the windows also need to be smaller and more yellowish. and they are kind of
+broken." The first two are constants -- `ARCH_RING_SCALE` 0.70, which the voussoir count follows, and `ARCH_RING_TONE`
+now per channel at (1.06, 1.05, 0.86), green held and blue pulled back. **Broken was a fourth trap**, and a good one:
+the voussoir joints were *kinked*, doglegging partway along. A renderer interpolates UVs **linearly** inside each
+triangle, polar coordinates are not linear, and the ring's face is one n-gon whose triangulation ran clean across half
+the arch. `top_uvs` now triangulates those faces itself (BEAUTY) after writing the exact polar UVs, so interpolation
+happens over one facet and the joints run straight.
+
+The ring's face is **flush with the wall** (user 2026-09-22, with those 67 faces selected: "arc around the window,
+should be at the same level of the wall; you need to bring it forward"). It had been `RING_D` 80 mm back -- the panel
+read 17779 at the wall, 17699 at the ring, 17459 at the reveal. Only the opening behind the voussoirs is recessed;
+the voussoirs themselves are laid in the wall's own plane. `RING_D` is 2 mm rather than 0 because that cut is what
+splits the ring's faces off the wall's so they can take their own mapping and material, and a boolean needs volume to
+do it. The panel now reads 17779 wall, 17777 ring.
+
+**The archivolt** (same day, a marked photo): "arround the arc, there is a decoration ... from center to out. it
+starts with a small edge, then another small step, a longer straight line, then another step and the edge ... 1 cm on
+each edge is fine", and "when there are multiple windows the decorations merge in the center when they meet".
+
+`archivolt_profile()` is that silhouette read radially out from the band's inner edge, and it **only ever climbs**
+(user, having selected the outermost ring of 64 faces: "the faces selected in the ide should be raised above the center
+area ... from center to outward this decoration only increase heigh"). The first cut read the silhouette as
+symmetric -- up, up, the straight, down, down -- which put the rim back at the height of the inner step. It is four
+edges of `AV_EDGE` 0.010 instead: two up to the long straight `AV_FLAT_W` 0.095, which is the centre area at 20 mm
+proud, then two more above it, the last forming the rim at 40 mm. `AV_STEP_W` 0.018 is each short flat, 0.149 wide
+over all. The first rise stands at the ring's own outer boundary but entirely above the wall plane, so it never meets
+the ring's recess wall, which runs below it. It is swept as a **closed solid**
+over `AV_N` 64 facets from each ring's outer edge, built in the panel's own frame and laid in the world by it, and it
+wears the building's own `TRIM_PBR`.
+
+The merge needs no union. Where two arches are close enough for their bands to overlap, both are cut on the
+**vertical plane halfway between their centres** -- and because every point of that plane is the same distance from
+both centres, the profile (which depends only on radius) is identical on each side, so the two bands meet there
+exactly and read as one. 81 bands, 84 such cuts.
+
+## The windows' two gaps (2026-09-22)
+
+From a Solid-viewport screenshot of a floor-4 pair, two arrows: "we observe 2 gaps: 1) between the wall and window
+(needs to increase the depth of the window margin so it touches the window) 2) between window glass and background.
+(increase the background size and maybe bring it closer to the glass". Both are one fault seen from two places -- a
+line of sight past the window into the hollow building -- and both were on **every** window above the storefronts,
+the top floor's included.
+
+**The reveal ended short of the window.**
+
+- The top floor's panels were `TOP_T` 0.32 deep, but a frame is `REVEAL_D` + `FRAME_D` = 0.39: its last 7 cm, the
+  glass and the pane stood in open air behind the wall.
+- On floors 2 to 4 every frame sits the same `WIN_IN` 0.21 behind its own wall's plane, whichever wall that is (field,
+  bay inset or raised corner); measured identical on all the regular panels, and now asserted per frame at build
+  time. The recess panel carrying the reveal was built to the wall's own back instead, which on the 84 bay-inset
+  panels ended **1.9 cm in front of the frame's face** and 9.9 cm short of its back. The 24 corner and pavilion panels
+  were deep enough already.
+- Fix: `TOP_PANEL_T` = `REVEAL_D` + `FRAME_D` + 0.01 (0.40) for the top floor's panels alone, and `PANEL_T24` =
+  `WIN_IN` + `WIN_D24` + 0.01 (0.30) behind the wall's plane for the recess panels, or the wall's own back where that
+  is deeper. `TOP_T` itself stays: the plain wall beside the panels keeps it, and so do the capitals, whose depth is
+  scaled from it -- changing it would have pushed every capital further out.
+
+**The pane was the glass's own size, 5 cm behind it** -- all 150 of the game's, identically. Near the glass's edge
+the eye cleared it. Each now sits **1 cm behind its glass** and reaches into the frame, so its rim is buried in the
+frame's body: on the top floor `TOP_PANE_IN` 0.12 -> 0.07 with an outline of its own out to `FRAME_BURY` inside the
+opening's edge; on floors 2 to 4 `PANE_BEHIND` 0.01 and out to the frame's rebate, `PANE_HIDE` 5 mm inside the
+frame's outer face. At 1 cm the angle needed to see past its rim is steeper than any the reveal leaves open.
+
+**Trap: the game's panes share their meshes**, one over some forty windows. Edited object by object, each window's
+4 cm move landed on the same mesh again, and the first build put the floor 3 and 4 panes **1.8 m in front of the
+wall**. Each pane now takes its own copy first, as the second floor's windows already did, and the pass measures
+every pane again afterwards and fails the build if one is not exactly where it was sent.
+
+**Proof, and where to look.** A ray probe fires 259,200 rays at a window from 36 oblique poses, lets them through the
+glass, and counts those that get into the building:
+
+| window | before | after |
+|---|---|---|
+| top floor (panel 1980) | 4,414 | 0 |
+| floor 4, bay inset | 9,485 | 0 |
+| floor 4, centre pavilion | 4,040 | 0 |
+
+A **Cycles render does not show either gap**: the glass is dark and the building's inside unlit, so what shows through
+is more dark (zero pixels changed at the worst pose). The Solid viewport lights every face alike and draws the panels'
+hidden backs in their brown viewport colour, which is what was seen through the gaps -- check window work in Solid.
+
+## The impost returns and the narrow-pier capitals (2026-09-22)
+
+**The returns**, from a Solid screenshot with a red line on the springing: "reduce the inner part of the molding in
+the top floor; the part that turns into the window. the red line shows the limit." A return carries the moulding's
+whole profile round the jamb, so its top ring stood `IMP_RING_OUT` 0.10 into the opening, over the frame and onto
+the glass. The red line was read against the arch's own scale in the screenshot -- the archivolt's outer edge, 0.824
+from the arch's centre, gives 650 px/m -- and sits 0.055..0.06 in at the ring and on the moulding's own tall face
+below it: the frame's width. So `IMP_CLIP` = `FRAME_W`: the moulding may cover the frame's face, never the glass.
+One box per set, from `IMP_CLIP` inside its first jamb to `IMP_CLIP` inside its last, takes off everything reaching
+further in. Nothing else of the moulding runs inside a set -- its narrow piers carry capitals -- so only the returns
+are touched: the ring and the bevel end flat on the frame, and the lower edges, all within `IMP_EDGE2_OUT` of the
+jamb, keep their profile. The build measures the moulding afterwards and fails if any of it reaches further in.
+
+**The capitals**, from a close-up with two arrows: "behind the wall in some areas, we need to 1) increase the size
+just a bit so it overcome the sides (1-2cm might be enough); and 2) bring it forward a bit if #1 is not enough".
+Measured slice by slice, the foot was exactly the pier's width -- flush with both jambs -- and 5 mm inside the pier's
+face (the `CAP5_SINK` of 2026-09-19), and the neck above the astragal dipped 3.4 mm back behind the brick again, so
+the brick showed through there. Widening cannot reach the front, so both were needed: the foot `CAP5_WIDEN` 15 mm
+wider than its pier and `CAP5_OUT` 5 mm proud of its face. No part of the front now stands less than 4.9 mm clear
+of the brick, the foot clears each jamb by 7.4 mm, and the abacus stands 41 mm proud (it was 31).
+
+## The inscription: the lettering PBR decal (2026-09-22)
+
+"is there a bradbury pbr texture in the downloads? if so, replace the writing with that pbr image." There was:
+`downloads/bradbury_lettering_PBR.zip`, an inscription decal -- "BRADBURY." on a transparent 2172 x 724 canvas, every
+map sharing one byte-identical alpha, the relief (bevelled edges, a raised rim, a slightly sunk clay face) baked into
+a normal map differentiated from its own 16-bit height. `make_lettering_pbr.py` (next to this file; `python
+make_lettering_pbr.py` from anywhere) installs it from `downloads/` as `assets/public/pbr/bradbury_lettering` in the
+catalog's layout: `basecolor.png` keeps the alpha (the catalog's rule: PNG only where a cutout needs it),
+`normal_gl.png`, `arm.png` (AO, roughness, metalness 0), `height.png`, the pack's README, prompts and alignment
+report, a `pbr.material.config.js` with its provenance (`buildingEligible: false`: a decal, not a wall material), and
+an entry in `_manifest.json`. The data maps drop the alpha safely -- outside the letters they hold flat values -- and
+the base colour is installed as delivered, not retinted. Note that `assets/` in a worktree is a junction to the main
+checkout's, so the set lands in the one shared store, beside the other Bradbury sets.
+
+**Respaced and enlarged** (same day: "edit the image to increase the space between the letters a bit" and "make it
+bigger. it must shorten the distance to the capitals underneath by 50% (horizontal distance)"). The spacing is done
+in the image, on every map alike: the nine glyphs are found as separate 8-connected shapes in the alpha, and the n-th
+from the left moves `LETTER_SPACING_PX` 20 texels times n to the right, so every gap opens by the same 20 (6.6% of the
+cap height) and the maps stay registered texel for texel; the canvas grows from 2172 to 2332. Empty columns cannot
+split them -- R, A and D, and R, Y and the stop, overlap in their column projections -- and at any alpha at all the
+R's and the A's faint rims, a texel apart, touch, so the glyphs are told apart above `CORE_ALPHA` 32 and each fainter
+rim texel then joins the glyph it touches. The size is set from the pilaster capitals under the band: their tops
+overhang the shafts, so their inner edges (x +-1.4842) are read off their own vertices, and the row's ends stand
+`CAP_GAP` inside them -- half the 0.331 the first decal left. The row is 2.638 m wide and, at the respaced aspect of
+7.18, 0.368 tall, 0.15 clear of the band's edges and 0.20 of the foliage panels; the piece asserts both.
+
+`pieces/08_frieze.py` lays it where the extruded Arial Black letters and their rims were, centred in the band. The material cuts the letters out on the base colour's alpha at 0.5, as the pack's README
+asks, and takes its relief from the normal map. The mesh under it follows the letters rather than being one quad: the
+alpha is sampled on a `CELL_PX` 3-texel (3.4 mm) grid, kept wherever a letter shows, grown one cell, and merged into
+12 flat faces. The texture, not the mesh, draws the edge in a render. A quad would render the same, but it draws as a
+solid rectangle in the Solid viewport; this way the letters show there in their own mean colour. The object keeps the
+name `frieze_letters`, so the overlay tools that measure it still find it. All three portal instances carry it.
+
+**Tinted onto the wall** (2026-09-23: "adjust the tinting of the font so it matches better the color of the wall").
+The image is warm terracotta, sRGB mean (200, 119, 71), against the band's (178, 111, 86): redder and short of
+blue. The material gains it per channel, in linear light, onto the wall's own `SANDSTONE_SRGB`, the same way the
+band's stone texture is gained onto it, so the letters are the same stone with the texture's variation and relief
+kept (`LETTER_TONE` scales the target). Measured in the close-up render, letter faces against the band beside them:
+11.9 sRGB levels apart before (+9 red, -6 blue), 2.7 after. In the Solid viewport the decal is drawn a shade (x0.8)
+under the wall's colour, since a flat decal in exactly the band's colour would vanish there.
+
+**Trap: new bmesh faces carry no normal until `bm.normal_update()`.** `dissolve_limit` compares face normals, so
+without it the merge silently did nothing and the decal shipped as 53,277 quads; with it, 12 faces.
+
 ## The render scene: `build_scene.py`
 
 `assemble_building.py` stays a model builder: it writes `bradbury_block.blend` and nothing else. The scene a ray-traced
@@ -1107,7 +1302,12 @@ lamp on the map's own sun, 0 = none), `ground` (`street` | `catch` | `none`), `e
 bare words are view names, and each one named is rendered into
 `tests/artifacts/screens/bradbury_fix/portal_project/scene/`. The scene **links** the block instead of appending it
 (`bpy.data.libraries.load(BLOCK, link=True, relative=True)`, 2194 objects into a `BRADBURY_BLOCK` collection), so the
-block can go on being rebuilt and the scene picks the new geometry up the moment it is opened again; the model file's
+block can go on being rebuilt and the scene picks its geometry up the moment it is opened again -- **but only for the
+objects it already links.** A linked scene stores its object list BY NAME, resolved when it was built, so a rebuild
+that changes existing objects' geometry or materials flows through, while objects the rebuild ADDS are simply absent.
+That is how 81 new archivolts rendered as nothing at all (2026-09-22) while the ring's retune, which only changed
+existing meshes and their material, showed up fine. Anything that adds objects needs `build_scene.py` run again; the
+model file's
 own inspection cameras and lights are unlinked, the scene bringing its own five (`st_corner`, `st_portal`, `st_along`,
 `st_up` at a standing eye `Z_GROUND + EYE`, and `hero_3q`), Cycles on OptiX, AgX, 16:10.
 
