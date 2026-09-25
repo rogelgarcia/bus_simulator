@@ -1,4 +1,4 @@
-// Four, six, twelve and twenty-four fitted cards share the source projection; the flat-top layout remains a benchmark reference.
+// Authoring cards share a broad upper span and refit lower dividers to the curve; historical benchmark fits stay independent.
 // @ts-check
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -34,8 +34,8 @@ function describeSide(stations, maximumProfileDeviation) {
     return Object.freeze({ stations: Object.freeze(stations), anglesDegrees: Object.freeze(anglesDegrees), maximumProfileDeviation });
 }
 
-function mergeLowerCards(side, points) {
-    const stations = [side.stations[0], ...side.stations.slice(-2)];
+function selectStations(side, points, indices) {
+    const stations = indices.map(index => side.stations[index]);
     const maximumProfileDeviation = Math.max(...points.map(point => {
         const index = stations.findIndex((end, i) => i > 0
             && Math.abs(point.z) <= Math.abs(end.z));
@@ -43,6 +43,17 @@ function mergeLowerCards(side, points) {
         return Math.abs(point.y - THREE.MathUtils.lerp(start.y, end.y, (point.z - start.z) / (end.z - start.z)));
     }));
     return describeSide(stations, maximumProfileDeviation);
+}
+
+function splitProfileSegment(side, points, segment) {
+    const [start, end] = side.stations.slice(segment, segment + 2);
+    const inside = points.filter(point => Math.abs(point.z) > Math.abs(start.z) && Math.abs(point.z) < Math.abs(end.z));
+    const candidates = inside.map(point => selectStations({ stations: [start, point, end] }, inside, [0, 1, 2]));
+    if (!candidates.length) throw new Error('Card span has no interior profile samples.');
+    const best = candidates.reduce((a, b) => a.maximumProfileDeviation <= b.maximumProfileDeviation ? a : b);
+    const stations = [...side.stations];
+    stations.splice(segment + 1, 0, best.stations[1]);
+    return selectStations({ stations }, points, stations.map((_, index) => index));
 }
 
 function fitSide(points, sign, extent, rootY, segmentCount) {
@@ -76,8 +87,8 @@ function fitSide(points, sign, extent, rootY, segmentCount) {
     return describeSide(fitted, bestError);
 }
 
-/** @param {PlantCardSource} plant */
-export function createGrassDebugV2PlantCardLayout(plant) {
+/** @param {PlantCardSource} plant @param {{nested?: boolean}} options */
+export function createGrassDebugV2PlantCardLayout(plant, { nested = false } = {}) {
     const bounds = new THREE.Box3().setFromObject(plant.group);
     const frame = { minX: bounds.min.x - 0.002, maxX: bounds.max.x + 0.002,
         minZ: bounds.min.z - 0.002, maxZ: bounds.max.z + 0.002 };
@@ -89,18 +100,26 @@ export function createGrassDebugV2PlantCardLayout(plant) {
     const negative = Math.min(...reaches) * vReachFraction, positive = Math.max(...reaches) * vReachFraction;
     const heightAt = z => rootY + (topHeight - rootY) * Math.min(1, z / (z < 0 ? negative : positive));
     const baselineMaxDeviation = Math.max(...profiles.flatMap(profile => profile.centerline).map(p => Math.abs(heightAt(p.z) - p.y)));
-    const fitSides = count => Object.freeze({
-        negative: fitSide(samples.find(points => points.at(-1).z < 0), -1, -frame.minZ, rootY, count),
-        positive: fitSide(samples.find(points => points.at(-1).z > 0), 1, frame.maxZ, rootY, count)
-    });
-    const sides = fitSides(GRASS_V2_PLANT_CARD_PROFILE.segmentsPerSide);
-    // Preserve both tip planes through the 6-to-4 transition; only merge the lower two cards.
-    const splitSides = Object.freeze({
-        negative: mergeLowerCards(sides.negative, samples.find(points => points.at(-1).z < 0)),
-        positive: mergeLowerCards(sides.positive, samples.find(points => points.at(-1).z > 0))
-    });
-    const detailedSides = fitSides(GRASS_V2_PLANT_CARD_PROFILE.detailedSegmentsPerSide);
-    const refinedSides = fitSides(GRASS_V2_PLANT_CARD_PROFILE.refinedSegmentsPerSide);
+    const sideDefinitions = [['negative', -1, -frame.minZ], ['positive', 1, frame.maxZ]]
+        .filter(([, sign]) => samples.some(points => Math.sign(points.at(-1).z) === sign));
+    const fitSides = count => Object.freeze(Object.fromEntries(sideDefinitions.map(([name, sign, extent]) =>
+        [name, fitSide(samples.find(points => Math.sign(points.at(-1).z) === sign), sign, extent, rootY, count)])));
+    const masterSides = fitSides(GRASS_V2_PLANT_CARD_PROFILE.refinedSegmentsPerSide);
+    const selectSides = (source, indices) => Object.freeze(Object.fromEntries(sideDefinitions.map(([name, sign]) =>
+        [name, selectStations(source[name], samples.find(points => Math.sign(points.at(-1).z) === sign), indices)])));
+    const refinedSides = nested ? selectSides(masterSides, [0, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12]) : masterSides;
+    const referenceSixSides = nested ? selectSides(masterSides, [0, 2, 4, 7, 10, 11, 12])
+        : fitSides(GRASS_V2_PLANT_CARD_PROFILE.detailedSegmentsPerSide);
+    const referenceFiveSides = nested ? selectSides(referenceSixSides, [0, 2, 3, 4, 5, 6]) : null;
+    const splitSidesAtProfile = (source, segment) => Object.freeze(Object.fromEntries(sideDefinitions.map(([name, sign]) =>
+        [name, splitProfileSegment(source[name], samples.find(points => Math.sign(points.at(-1).z) === sign), segment)])));
+    // Combine the old five-card tip pair. Spend its divider in the curved middle;
+    // lower levels retain that broader upper span instead of the tiny final card.
+    const detailedSides = nested ? splitSidesAtProfile(selectSides(referenceFiveSides, [0, 1, 2, 3, 5]), 2) : referenceSixSides;
+    const upperSpanSides = nested ? selectSides(referenceFiveSides, [0, 3, 5]) : null;
+    const sides = nested ? splitSidesAtProfile(upperSpanSides, 0) : fitSides(GRASS_V2_PLANT_CARD_PROFILE.segmentsPerSide);
+    const splitSides = nested ? upperSpanSides : selectSides(sides, [0, 2, 3]);
+    const hierarchy = nested ? Object.freeze({ masterSides, referenceSixSides, referenceFiveSides }) : null;
     const definitions = {
         leftV: [negative, 0, topHeight, rootY, 0],
         rightV: [0, positive, rootY, topHeight, 0],
@@ -146,7 +165,9 @@ export function createGrassDebugV2PlantCardLayout(plant) {
     const fittedArea = fittedSides => width * Object.values(fittedSides).reduce((sum, side) => sum + side.stations.slice(1).reduce((area, point, i) =>
         area + Math.hypot(point.z - side.stations[i].z, point.y - side.stations[i].y), 0), 0);
     return Object.freeze({ frame: Object.freeze(frame), negative, positive, topHeight, rootY, baselineMaxDeviation,
-        maxDeviation: Math.max(...Object.values(sides).map(side => side.maximumProfileDeviation)), profile: GRASS_V2_PLANT_CARD_PROFILE,
+        maxDeviation: Math.max(...Object.values(sides).map(side => side.maximumProfileDeviation)),
+        profile: nested ? Object.freeze({ ...GRASS_V2_PLANT_CARD_PROFILE, refinedSegmentsPerSide: 10, detailedSegmentsPerSide: 5 }) : GRASS_V2_PLANT_CARD_PROFILE,
+        hierarchy,
         splitMaxDeviation: Math.max(...Object.values(splitSides).map(side => side.maximumProfileDeviation)),
         detailedMaxDeviation: Math.max(...Object.values(detailedSides).map(side => side.maximumProfileDeviation)),
         refinedMaxDeviation: Math.max(...Object.values(refinedSides).map(side => side.maximumProfileDeviation)),

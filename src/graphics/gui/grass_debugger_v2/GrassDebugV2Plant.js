@@ -14,13 +14,13 @@ export const GRASS_V2_PLANT = Object.freeze({
     ])
 });
 
-function makeLeaf(definition) {
+function makeLeaf(definition, bodySegments) {
     const { acrossSegments, sheathSegments, collarSegments, collarJoin, rootDepthMeters } = GRASS_V2_PLANT;
     const sample = createGrassDebugV2DetailedBladeSampler();
     const rows = [];
     for (let j = 0; j <= sheathSegments; j++) rows.push({ sheath: j / sheathSegments, collar: 0, t: 0 });
     for (let j = 1; j <= collarSegments; j++) rows.push({ sheath: 1, collar: j / collarSegments, t: collarJoin * j / collarSegments });
-    for (let j = 1; j <= 32; j++) rows.push({ sheath: 1, collar: 1, t: collarJoin + (0.72 - collarJoin) * j / 32 });
+    for (let j = 1; j <= bodySegments; j++) rows.push({ sheath: 1, collar: 1, t: collarJoin + (0.72 - collarJoin) * j / bodySegments });
     for (let j = 1; j <= 16; j++) rows.push({ sheath: 1, collar: 1, t: 0.72 + 0.28 * Math.sin(j / 16 * Math.PI / 2) });
     const positions = [], colors = [], uvs = [], indices = [];
     const point = new THREE.Vector3(), ribbon = new THREE.Vector3(), color = new THREE.Color();
@@ -77,12 +77,13 @@ function makeLeaf(definition) {
     return geometry;
 }
 
-/** @param {{material: THREE.MeshStandardMaterial}} options */
-export function createGrassDebugV2Plant({ material }) {
+/** @param {{material: THREE.MeshStandardMaterial, bodySegments?: number}} options */
+export function createGrassDebugV2Plant({ material, bodySegments = 32 }) {
     if (!material.isMeshStandardMaterial || !material.vertexColors) throw new Error('Grass plant requires a standard vertex-color leaf material.');
+    if (!Number.isInteger(bodySegments) || bodySegments < 32 || bodySegments > 256) throw new Error('Plant body segments must be an integer from 32 to 256.');
     const group = new THREE.Group(); group.name = 'GrassV2PairedPlant';
     const leaves = GRASS_V2_PLANT.leaves.map((definition, index) => {
-        const mesh = new THREE.Mesh(makeLeaf(definition), material);
+        const mesh = new THREE.Mesh(makeLeaf(definition, bodySegments), material);
         mesh.name = `GrassV2PlantLeaf${index}`;
         mesh.castShadow = mesh.receiveShadow = true;
         group.add(mesh);
@@ -95,7 +96,7 @@ export function createGrassDebugV2Plant({ material }) {
     crown.name = 'GrassV2PlantCrown'; crown.castShadow = crown.receiveShadow = true; group.add(crown);
     const bounds = new THREE.Box3().setFromObject(group);
     return Object.freeze({ group, leaves: Object.freeze(leaves), crown,
-        getSnapshot: () => ({ definition: GRASS_V2_PLANT, leaves: leaves.length,
+        getSnapshot: () => ({ definition: { ...GRASS_V2_PLANT, bodySegments }, leaves: leaves.length,
             leafTriangles: leaves.reduce((sum, mesh) => sum + mesh.geometry.index.count / 3, 0),
             crownTriangles: crownGeometry.index.count / 3, bounds: { min: bounds.min.toArray(), max: bounds.max.toArray() } }),
         dispose: () => { for (const leaf of leaves) leaf.geometry.dispose(); crownGeometry.dispose(); crownMaterial.dispose(); }

@@ -348,37 +348,214 @@ nondegenerate triangles, normalized normals, both buried roots in the same
 compact crown, full-width emergence without soil reentry, bounded height and
 clean asset loading. The original single-blade capture also remains valid.
 
+## Single-tuft editor (default)
+
+`debug_tools/grass_plant_study.html` opens one **four-leaf tuft arranged as two
+V-shaped pairs pointing to the same side**. Each pair has two original blades emerging from the
+same buried root position and one shared crown. The two roots are at X = ±26 mm,
+52 mm apart. Both pairs retain the original forward blade's curvature and dimensions, without random transforms.
+
+The earlier `revision` query parameter does not select a layout, so existing
+editor links also open this tuft. Explicit `?layout=tuft` selects the same view.
+The paired source uses two root instances for four leaves and two crowns.
+
+Both leaves in a pair now share one enlarged, concentric root. The inner and
+outer sheath radius parameters are 2.15 and 2.30 mm respectively; the outer sheath
+wraps the inner one, with positive clearance around their soil-level rings.
+The common crown is enlarged horizontally by 1.9×. The closed sheaths stay
+centered on the shared root instead of drifting into two separate tubes.
+
+All four leaves retain the original full length and common body depth curve.
+Sideways opening eases from blade coordinate 0.025 to 0.15, after the sheath
+starts unrolling. A smooth collar narrowing reaches 45% at coordinate 0.07 and
+returns to full width by 0.20. The lateral offset approaches a 5.8 mm shoulder
+with a 10 mm vertical easing length, followed by a four-degree outward fan.
+The outer leaf approaches 0.35 mm below its partner. This authoring source uses
+96 body segments to resolve the smooth collar opening and contact transition;
+historical row and patch sources retain their original 32 body segments.
+
+Before atlas generation, `GrassDebugV2LeafContact.js` resolves each lower source
+blade against the upper blade in the common authoring frame. It clips the triangles'
+XZ projections and constrains the lower surface below the upper surface at all
+intersection-polygon vertices, including contacts that do not contain a mesh
+vertex. Only the lower blade moves, along Y. Required clearance is distributed
+over each triangle's movable corners without accumulating exaggerated dents.
+Contact displacement blends out over 4 mm and leaves a 0.03 mm clearance to
+avoid coplanar flickering. The tuft's height-field contact region starts at
+4 mm above soil; vertices at or below 3 mm remain pinned. The closed, nested
+sheaths below this region are checked separately with actual triangle
+intersection tests. This is a static authoring deformation for these aligned
+blades, not a runtime general-purpose physics solver.
+
+Surface and facing normals are recomputed after deformation. The source snapshot
+reports contact constraints, deformed vertex count, displacement and penetration
+before/after the solve. The shared LOD card strip is rebaked from the contact-shaped
+leaves, retaining its triangle counts and adding no per-frame collision work.
+
+LOD0 counts **4 leaves / 37,632 triangles**: 35,712 leaf triangles plus 1,920
+crown triangles. LOD3 bakes all four blades into one shared card strip, with
+**10 / 5 / 3 / 2 cards** and **20 / 10 / 6 / 4 triangles** total.
+There are no separate rotated or overlapping card strips for the two blade sets.
+
+The current tuft uses a twelve-card reference fit with dividers numbered 0–12
+from root to tip. The ten-card level removes dividers 1 and 3, merging original
+cards 1–2 and 3–4. The previous five-card arrangement is retained as
+`hierarchy.referenceFiveSides` with dividers 0, 4, 7, 10, 11, 12 for comparison.
+
+The lower levels merge that reference's two small upper cards (10–11 and
+11–12) into one longer upper card (10–12). The five-card level spends the freed
+card on an intermediate split within reference span 7–10. The three-card level
+splits the root-to-10 span once, and the two-card level keeps that span as one
+card. Each added split is selected from the source contour samples to minimize
+the maximum profile deviation within its span; it need not coincide with a
+divider of another LOD.
+
+| Level | Reference dividers and fitted splits |
+| --- | --- |
+| 10 | 0, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12 |
+| 5 | 0, 4, 7, fitted split between 7 and 10, 10, 12 |
+| 3 | 0, fitted split between 0 and 10, 10, 12 |
+| 2 | 0, 10, 12 |
+
+The longer upper card is identical across levels 5, 3 and 2, preserving the
+overall tip span without reserving a separate card for the very short end.
+Root and tip positions remain fixed. Interior splits favor the source shape
+over a strictly nested hierarchy. Adjacent cards still share exact positions
+and UVs, and all levels remain inclined and use one shared atlas/material.
+Counts come from the generated geometry.
+
+This hierarchy is enabled for `layout=tuft`. The independent-fit `layout=row`
+and `layout=patch` benchmark references retain their previous card counts and
+positions so saved benchmark results remain comparable.
+Normal facing, alpha coverage, card bounds and camera controls remain available.
+Square bounds start hidden and are centered on the displayed tuft.
+Far, 2m and 4m retain square-framing behavior. Root soil remains disabled.
+
+The 400-leaf randomized experiment stays at `?layout=patch`, retaining its
+five-leaf single-sided tufts, variation ratios and overlap setting. `?layout=row`
+retains the historical twenty-leaf paired source. The default study's API exposes
+the four leaves directly through `plant` and the shared card layouts through `cards`;
+`patch` is null outside the field view.
+
+The editor regression checks four visible blades, two shared root positions,
+two crowns, same-side tips, concentric enlarged root rings, positive sheath
+clearance, zero above-ground triangle crossings between paired leaves, contact-only
+deformation, independently sampled surface clearance, root-opening tangent continuity,
+shape-fitted dividers and shared upper span, one shared strip per LOD,
+counts, controls and camera actions. Root close-up captures verify the U-shaped
+opening without the previous lateral bulges.
+A separate contact fixture checks triangle-interior collisions with no contained
+vertices, unchanged upper/noncontact geometry, and repeat-solve stability. Captures are under
+`tests/artifacts/screens/grass_debug_v2/four_leaf_same_side_tuft/`; earlier single-sided
+tuft captures remain under `single_tuft_editor/`.
+
+## Random single-sided 400-leaf patch
+
+`debug_tools/grass_plant_study.html?layout=patch` displays **80 independent five-leaf
+tufts**, totaling **400 leaves**, inside the centered 1 m × 1 m square. Both former
+sides are separate sources, with 40 tufts of each. All tufts retain five leaves at
+the existing 44 mm root pitch before size variation.
+
+The patch mixes two new, straighter curvature variants equally:
+- **Gentle:** 65% of the original arch above the root-to-tip chord.
+- **Straighter:** 30% of the original arch.
+
+Each curvature occupies **40 tufts / 200 leaves**. The original curved geometry
+remains the canonical atlas and `?layout=row` authoring source. The patch also uses
+two lengths: **48 full-length tufts / 240 leaves (60%)**, and **32 short tufts /
+160 leaves (40%)** at **60% of the original root-to-tip length**. Each curvature
+has 24 full-length tufts and 16 short tufts; both source sides are equally
+represented within every curvature/length combination.
+
+`GrassDebugV2PlantShapeSources.js` applies these variations with a shared affine
+transform around the buried root line. Straightening reduces deviation from the
+root-to-tip chord while preserving the root and tip. Length scaling reduces reach
+and height, with lateral shear keeping the tip displacement at the exact length
+ratio. The transform fixes all root positions and leaves the transverse X axis
+unchanged, preserving row spacing rather than uniformly shrinking the whole tuft.
+The source's cross-section follows the same affine transform.
+
+The same matrix transforms LOD0 and every LOD3 card. Cards change their slope and
+reach without rebaking, adding subdivisions, changing UVs, or adding texture
+samples. Variations retain two shared blade geometries and two shared card
+geometries per LOD, with one shared card material/atlas set. The renderer's
+inverse-transpose normal matrix transforms baked surface and facing normals.
+Matrices are assigned directly rather than decomposed into rotation and scale,
+which would lose their shear. Shape variation adds no per-frame CPU deformation
+or extra draw calls relative to the same number of tufts.
+
+`GrassDebugV2PlantPatchLayout.js` generates the layout during initialization
+instead of storing accepted positions. A seeded random stream (default 20260925)
+shuffles the eight source shape combinations and samples each tuft's position and
+full-circle yaw. At that fixed pose, up to 24 independently sampled size,
+inclination and burial combinations are tried. A new pose is drawn only when
+all shape trials fail. Earlier accepted tufts remain fixed. Shape sampling uses
+a separate random stream so retries do not shift the position/yaw sequence.
+**Blade intersections are currently allowed** via `allowIntersections: true`.
+Candidates are accepted as soon as they fit inside the square; collision queries
+and collision-grid insertion are skipped. The retained rejection code can be
+restored by setting that flag to false. No rows, orientation bands, nearest-neighbor
+alignment, or manually selected positions are imposed.
+
+Additional placement variation remains limited to uniform size **0.80–1.05**,
+inclination **0.95–1.20** relative to the selected source root-to-tip elevation,
+and root burial **1.00–1.05** times the existing 6 mm depth. Extra burial is at
+most 0.3 mm. Size and pitch act around the buried root line, preserving the
+burial limit independently of scale. Variation acts per tuft so all five leaves
+fit its atlas. Leaves within a tuft retain their parallel source arrangement.
+Square containment can bias orientations near the boundary even though proposed
+positions and rotations are uniformly random.
+
+For every trial, consecutive source blade cross-sections are bounded after
+curvature, length, size, pitch and burial, then rotated and translated into the
+patch. Candidate prisms, inflated by 0.21 mm, must remain inside the square.
+When collision rejection is enabled, a spatial hash and separating-axis checks
+reject intersecting blade bodies while allowing gaps and transparent card areas
+to interleave. In the current overlap mode those checks are bypassed entirely.
+The search fails explicitly if 4,000 poses cannot place a tuft rather than
+reducing the requested count. Snapshots include the overlap setting, distribution
+counts and pose/shape trials.
+Packing runs only during initialization.
+
+The paired five-root source is baked once and split into positive/negative card
+meshes. Button labels count cards per single-sided tuft: **LOD3 · 12 / 6 / 3 / 2**,
+corresponding to the former paired 24 / 12 / 6 / 4. Totals are **960 / 480 / 240 /
+160 cards** and **1,920 / 960 / 480 / 320 triangles**. LOD0 has 1,932,800 leaf
+triangles and 384,000 crown triangles (2,316,800 total). Counts exclude soil.
+All 400 roots feed the retained soil contact surface. Root soil remains disabled
+by `ROOT_SOIL_ENABLED = false`: the contact mesh is hidden and the original flat
+terrain plane renders with the Brown Earth material.
+
+The blue square starts visible; 3/4, Side, Top and Far frame the full patch,
+while Base inspects a placed crown. **2m** and **4m** retain Far's horizontal
+viewing direction and target. Camera Y positions are 2 m and 4 m above the flat
+soil, with horizontal radii Far + 1 m and Far + 2 m. Each click recomputes Far
+framing for the current aspect ratio before applying the offset; orbit distance
+limits expand to accommodate the exact positions. Camera order is 3/4, Side,
+Top, Base, Far, 2m, 4m. The study API exposes the paired ten-leaf bake source
+through `plant` / `cards`, and displayed instances, shape distributions,
+permitted ranges, packing diagnostics and aggregate counts through `patch`.
+`?layout=row` still selects the historical twenty-leaf source and paired
+24 / 12 / 6 / 4 layouts.
+
+`grass_debug_v2_patch.pwtest.js` independently checks every rendered leaf vertex
+against the square and actual root depth against the permitted range. It records
+leaves whose conservative body prisms overlap earlier leaves and verifies that
+overlap occurs while collision rejection is disabled. These are overlapping
+bounds, not an exact triangle-intersection count. The prisms come from the actual
+scene geometry and are inflated by 0.2 mm. A duplicated-leaf control must trigger
+the overlap detector. Validation also
+checks exact curvature/length shares, length and arch ratios, fixed root lines,
+geometry/material sharing, deterministic regeneration, all LOD matrices/counts,
+cameras, disabled root soil and correction controls.
+
+Captures and validation data are saved under
+`tests/artifacts/screens/grass_debug_v2/overlapping_400/`. The earlier collision-free
+curvature/length patch remains under `curvature_lengths_300/`. Earlier packing
+captures remain under `curvature_mix_300/`, `random_pose_packing_300/`,
+`random_pose_packing/`, `half_tufts_300/`, and `six_tufts/` as history.
+
 ## Twenty-leaf card comparison
-
-The default `debug_tools/grass_plant_study.html` now displays six copies of the
-twenty-leaf tuft inside the centered 1 m × 1 m square: 120 leaves, at their original
-size. `GrassDebugV2PlantPatch.js` stores deterministic randomly sampled translations
-and yaw rotations (seed 39818). Tuft footprints may overlap and blades can pass
-through gaps in adjacent tufts; blade bodies from different tufts must not intersect.
-The accepted layout uses approximately 0.861 m × 0.987 m, centered in the square.
-No blades are moved individually, resized, removed or recolored.
-
-The same transforms apply to LOD0 and every LOD3 variant. Geometry, materials and
-baked atlases are shared. Displayed totals are 637,440 triangles in LOD0;
-144 / 72 / 36 / 24 cards and 288 / 144 / 72 / 48 triangles in LOD3 · 24 / 12 / 6 / 4.
-The counts exclude soil. The blue square starts visible; 3/4, Side, Top and Far
-frame the patch, while Base inspects a placed crown. Shadow bounds cover the patch.
-All 60 rotated root positions feed one continuous soil surface with world-aligned
-UVs and local crown displacement, avoiding overlapping ground planes.
-
-`?layout=row` preserves the original inline authoring view. Historical regression
-tests and benchmarks select it explicitly so their source size, lighting bounds,
-cameras and leaf counts stay unchanged. The study API keeps `plant` and `cards`
-as the canonical twenty-leaf sources; `patch` exposes the displayed clones,
-placements and aggregate counts (null in row mode).
-
-`grass_debug_v2_patch.pwtest.js` checks every displayed leaf vertex against the
-square and source transform, and tests all pairs of tufts using conservative 3D
-prisms enclosing consecutive blade cross-sections, inflated by 0.4 mm on each
-local axis. Shared sheaths inside an original paired plant are unchanged; the
-clearance constraint applies between tufts. Tests also check all LOD placements,
-bounds/correction toggles, soil contact and counts. Captures and validation data
-live under `tests/artifacts/screens/grass_debug_v2/six_tufts/`.
 
 The 1,000-leaf spike experiment remains inactive, with captures and material tuning
 preserved. The single row at `debug_tools/grass_plant_study.html?layout=row`
@@ -573,7 +750,7 @@ All product UI remains in English, regardless of the language of task requests.
 The review page orders its buttons as **LOD0**, **LOD3 · 24**,
 **LOD3 · 12**, **LOD3 · 6**, **LOD3 · 4**,
 leaf and triangle counts,
-optional purple card boundaries, orbit controls and five camera presets framing
+optional purple card boundaries, orbit controls and seven camera presets framing
 the row or its central roots. **Far** starts from **3/4** and applies the same
 square-fitting calculation as enabling **Square bounds**, including its center
 and framing margin for the current viewport. It preserves both overlay toggles.

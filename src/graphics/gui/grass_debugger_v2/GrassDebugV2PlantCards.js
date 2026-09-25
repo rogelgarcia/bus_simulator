@@ -1,4 +1,4 @@
-// A paired-leaf row compares two, three, six and twelve inclined cards per side, retaining the flat-top benchmark baseline.
+// Shared blade atlases support nested authoring cards and the historical benchmark fits.
 // @ts-check
 import * as THREE from 'three';
 import { createGrassDebugV2PlantCardLayout } from './GrassDebugV2PlantCardLayout.js';
@@ -9,13 +9,13 @@ import { grassPlantCoverageShader } from '../../shaders/materials/grass/GrassPla
 import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
 import { registerMaterialShaderHook, updateMaterialShaderHook } from '../../shaders/core/MaterialShaderHookRegistry.js';
 
-/** @param {THREE.WebGLRenderer} renderer @param {import('./GrassDebugV2PlantCardLayout.js').PlantCardSource} plant */
-export function createGrassDebugV2PlantCards(renderer, plant) {
+/** @param {THREE.WebGLRenderer} renderer @param {import('./GrassDebugV2PlantCardLayout.js').PlantCardSource} plant @param {{nested?: boolean}} options */
+export function createGrassDebugV2PlantCards(renderer, plant, { nested = false } = {}) {
     if (plant.leaves.length < 2 || plant.leaves.length % 2 || !plant.leaves.every(leaf => leaf.geometry.attributes.uv && leaf.material.isMeshStandardMaterial
         && leaf.position.y === 0 && leaf.position.z === 0 && leaf.rotation.x === 0 && leaf.rotation.y === 0 && leaf.rotation.z === 0)) {
         throw new Error('Plant cards require paired source leaves aligned along X, with UVs and standard materials.');
     }
-    const layout = createGrassDebugV2PlantCardLayout(plant);
+    const layout = createGrassDebugV2PlantCardLayout(plant, { nested });
     let atlas;
     try { atlas = createGrassDebugV2PlantCardAtlas(renderer, plant, layout); }
     catch (error) { layout.dispose(); throw error; }
@@ -62,11 +62,13 @@ export function createGrassDebugV2PlantCards(renderer, plant) {
     const detailed = makeVariant(layout.detailed, layout.detailedCards);
     const refined = makeVariant(layout.refined, layout.refinedCards);
     const joined = Object.freeze({ mesh: new THREE.Mesh(layout.joined, material) });
+    const sideCount = Object.keys(layout.sides).length;
+    const counts = geometry => ({ cards: geometry.index.count / 6, cardsPerSide: geometry.index.count / (6 * sideCount), triangles: geometry.index.count / 3 });
     return Object.freeze({ split, curved, detailed, refined, joined, atlas, layout, material, setNormalFacing, setAlphaCoverage,
-        getSnapshot: () => ({ specimens: plant.leaves.length / 2, sourceLeaves: plant.leaves.length,
+        getSnapshot: () => ({ specimens: plant.leaves.length / 2, sourceLeaves: plant.leaves.length, sameSide: sideCount === 1,
             corrections: { normalFacing, alphaCoverage },
-            variants: { split: { cards: 4, cardsPerSide: 2, triangles: 8 }, curved: { cards: 6, cardsPerSide: 3, triangles: 12 },
-                detailed: { cards: 12, cardsPerSide: 6, triangles: 24 }, refined: { cards: 24, cardsPerSide: 12, triangles: 48 } },
+            variants: { split: counts(layout.split), curved: counts(layout.curved), detailed: counts(layout.detailed), refined: counts(layout.refined) },
+            hierarchy: layout.hierarchy,
             atlas: atlas.definition, maximumHeight: layout.curved.boundingBox.max.y, sides: layout.sides,
             splitSides: layout.splitSides, splitMaximumHeight: layout.split.boundingBox.max.y, splitMaximumProfileDeviation: layout.splitMaxDeviation,
             detailedSides: layout.detailedSides, detailedMaximumHeight: layout.detailed.boundingBox.max.y,

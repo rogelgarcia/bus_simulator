@@ -10,15 +10,15 @@
     <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/"}}</script>
 </head>
 <body>
-    <canvas id="plant-canvas" aria-label="Twenty grass leaves comparing LOD0 and LOD3 cards"></canvas>
+    <canvas id="plant-canvas" aria-label="One four-leaf grass tuft with two same-side shared-root V pairs comparing LOD0 and LOD3 cards"></canvas>
     <aside class="ui-panel is-interactive plant-study-panel">
         <h1>LOD3 Study</h1>
         <div class="plant-study-buttons" role="group" aria-label="Representation">
             <button type="button" data-mode="LOD0" aria-pressed="true" disabled>LOD0</button>
-            <button type="button" data-mode="refined" aria-pressed="false" title="Twelve inclined cards per side" disabled>LOD3 · 24</button>
-            <button type="button" data-mode="detailed" aria-pressed="false" title="Six inclined cards per side" disabled>LOD3 · 12</button>
-            <button type="button" data-mode="curved" aria-pressed="false" title="Three inclined cards per side" disabled>LOD3 · 6</button>
-            <button type="button" data-mode="split" aria-pressed="false" title="Two inclined cards per side" disabled>LOD3 · 4</button>
+            <button type="button" data-mode="refined" aria-pressed="false" title="Ten shared cards" disabled>LOD3 · 10</button>
+            <button type="button" data-mode="detailed" aria-pressed="false" title="Five shared cards" disabled>LOD3 · 5</button>
+            <button type="button" data-mode="curved" aria-pressed="false" title="Three shared cards" disabled>LOD3 · 3</button>
+            <button type="button" data-mode="split" aria-pressed="false" title="Two shared cards" disabled>LOD3 · 2</button>
         </div>
         <output id="plant-counts"></output>
         <div class="plant-study-overlays" role="group" aria-label="LOD3 corrections">
@@ -35,6 +35,8 @@
             <button type="button" data-pose="elevated" disabled>Top</button>
             <button type="button" data-pose="crown_close" disabled>Base</button>
             <button type="button" data-pose="far" title="3/4 view framing the full 1 m square" disabled>Far</button>
+            <button type="button" data-pose="two_meters" title="2 m above soil; 1 m farther horizontally than Far" disabled>2m</button>
+            <button type="button" data-pose="four_meters" title="4 m above soil; 1 m farther horizontally than 2m" disabled>4m</button>
         </div>
     </aside>
     <div id="plant-loading" role="status">Loading...</div>
