@@ -1289,6 +1289,8 @@ without it the merge silently did nothing and the decal shipped as 53,277 quads;
 
 ## The render scene: `build_scene.py`
 
+Since AI 563 the scene links the **worn** block (`wear/bradbury_block_worn.blend`, written by `wear_layer.py`) by default and sets the wear layer's controls on itself; `wear=off` links the block itself exactly as described here. See "The wear layer (AI 563)" at the end.
+
 `assemble_building.py` stays a model builder: it writes `bradbury_block.blend` and nothing else. The scene a ray-traced
 still needs is a second file beside it (user 2026-09-20: "lets create a separate scene just for the render, and lets
 start with the hdri", "keep it a separate scene/file"), written by
@@ -1392,3 +1394,4485 @@ the block throws a 61 m shadow, and unrotated that shadow runs south-east, strai
 Both street facades are then backlit and the whole near field lies inside one shadow, which reads as flat light. A sun
 across the frame is what shows the block standing on something: `rot=-84 sun=8 hdri=0.75` puts the map's sun in the
 north-east, lights Broadway's facade, shades 3rd Street's and lays the shadow edge across the pavement at the corner.
+
+## The wear layer (AI 563)
+
+The block rendered as if it were finished yesterday, and two weathering passes had already been rejected for it: a
+noise mottle on the trim (2026-09-17) and a whole-surface pass (2026-09-20), both "fake dark spot that looks hand made".
+The user's rule #1 for this layer: **wear is never noise placed at random positions.** Every mark comes from a physical
+source found on the model (a sill's end, a ledge's drip edge, an overhang, the pavement, an iron anchor) and follows a
+physical path from it (down the wall, into shelter, up from the ground); the irregularity inside a mark comes from the
+surface's own maps (the brick's joints, the stone's grain) or from its source's shape. AI 563 is the shared layer the
+ten features (AI 564 to 573) plug into; it carries no wear of its own at its defaults, only a probe that proves it works.
+
+It is a post-pass. `wear_layer.py` reads the built block and the portal and never writes them; it writes worn copies
+beside them in `portal_project/wear/`, and `build_scene.py` links the worn block instead of the block. With the layer off
+the scene links the untouched block, so "renders exactly as today" holds by construction, and it was checked anyway
+(below). A rebuild takes about five seconds: no three-minute block rebuild per iteration.
+
+### Commands
+
+```
+blender -b -P wear_layer.py --                       # the layer: masks, node library, worn portal, worn block, manifest
+blender -b -P wear_layer.py -- features=runoff       # rebuild these features' masks, the rest from the cache
+blender -b -P wear_layer.py -- elevations=1          # also draw each face square on with every feature's mask over it
+
+blender -b -P build_scene.py --                      # bradbury_scene.blend: wear on at the default strengths (canonical)
+blender -b -P build_scene.py -- wear=off             # bradbury_scene_wear_off.blend: the untouched block, as before AI 563
+blender -b -P build_scene.py -- wear=debug           # bradbury_scene_wear_debug.blend: every mark in its feature's colour
+blender -b -P build_scene.py -- wear_runoff=0.5 st_up    # any strength; view names render as before
+
+blender -b -P render_wear.py -- wear=debug view=st_up                  # any mode, from the saved scene, no rebuild
+blender -b -P render_wear.py -- wear=on wear_probe=1 cam=21,-3.35,9.2:16.8,-3.35,9.4:50 pct=50 samples=32
+
+python wear_compare.py side OUT.png off.png on.png debug.png --labels "off|on|debug" --scale 0.5
+python wear_compare.py diff before.png after.png --heat diff_x8.png
+python wear_compare.py regions photo.jpg clean:x0,y0,x1,y1 mark:x0,y0,x1,y1
+python wear_compare.py lighter feature_off.png feature_on.png [--again feature_on_2.png] --heat lighter.png
+```
+
+`render_wear.py` opens `bradbury_scene.blend` (or `scene=`), sets the controls, frames `view=` (one of the five cameras)
+or `cam=x,y,z:tx,ty,tz:lens` (a camera at x,y,z looking at tx,ty,tz, as `VIEWS` is written), and writes one still to
+`out=` or `tests/artifacts/screens/bradbury_wear/render_wear/<view>_<mode>.png`; `pct`, `samples`, `res`, `exposure`
+as in `build_scene.py`. Nothing is saved back. `devices=gpu` (added by AI 570's critique fix, 2026-09-24) renders on
+OptiX alone, which repeats to within one 8-bit level at every pixel; the default, `hybrid`, renders on OptiX and the
+CPU together as the scene is set, and two such stills of one state differ wherever the two devices disagree (see "The
+arch's black hairline" under edge wear). Compare two states of the layer with `devices=gpu`. `wear_compare.py` is
+plain Python with Pillow (not Blender's).
+`lighter` (added by AI 565's critique fix, 2026-09-24) is a deposit's check: a deposit darkens what it lies on and
+never lights it up, so it lists the 8 px blocks of linear luminance the still with the feature on is lighter in than
+the still with it off, by more than 2% and by more than 0.003, and exits with status 1 if there is any (`--again`, the
+on still rendered a second time, leaves out the blocks the renderer itself does not repeat; `--heat` paints the lighter
+blocks orange and the darker ones blue).
+
+### What it writes, all in `portal_project/wear/`
+
+| file | what |
+|---|---|
+| `masks/<feature>.png` | the feature's mask: the five faces unrolled side by side (the atlas, below), 16-bit grey or up to four channels |
+| `wear_nodes.blend` | the `WEAR_layer` node group, its `WEAR_frame` and one `WEAR_F_<feature>` group per feature, with the mask images |
+| `bradbury_portal_worn.blend` | the portal with `WEAR_layer` in its materials; the ornaments' linked materials worn as object-level copies |
+| `bradbury_block_worn.blend` | the block with `WEAR_layer` in its materials, linking the worn portal; plus the debug view's source markers and whatever geometry a feature adds |
+| `wear_manifest.json` | the source files' sha256, the atlas, per feature its label, default strength, controls, colour, counts and mask hash; `build_scene.py` reads it |
+| `cache/<feature>.pkl` | a feature's sources, marks, paths, fields and apply data, for `features=` rebuilds |
+
+Every path in them is relative (`//bradbury_portal_worn.blend`, `//wear_nodes.blend`, `//masks/...`,
+`//../ornaments/...`, `//../../../../../../assets/...`), so a copy of `portal_project/` at the same depth renders the
+same. The masks are derived from the model's geometry alone and are byte-identical from one build to the next (a
+rebuild was checked against the manifest's hash). `build_scene.py` refuses a worn block older than the block, the portal
+or the ornaments it was built from (their hashes are in the manifest): rerun `wear_layer.py`, or pass `wear_stale=ok`.
+Note that a block with unsaved changes in an open Blender is not the block on disk, and the layer reads the disk.
+
+### The switch and the controls
+
+The controls are not in the materials. They are **custom properties of the scene that renders**, which every worn
+material reads with Attribute nodes of type View Layer (looked up on the view layer, the scene, then the world; an
+absent property reads 0):
+
+- `wear`: 0 off, 1 on, 2 debug. The one switch.
+- `wear_<feature>`: that feature's strength. 1.0 is its calibrated look (its module holds the absolute amounts), 0 turns
+  it off alone, anything between or above scales it. The defaults come from each module's `DEFAULT_STRENGTH`.
+- `wear_<feature>_<control>`: any extra control a feature declares (`CONTROLS`), e.g. an optional film, off by default.
+
+`wear/controls.py` applies them all at once to a scene (`build_scene.py` at build time, `render_wear.py` before a
+render): the properties, and the visibility of the scene's wear-only collections: `WEAR_SOURCES` (the source markers,
+debug only, one child `WEAR_SRC_<feature>` per feature, shown only while that feature is on), `WEAR_GEO_<feature>`
+(objects a geometry feature adds or substitutes, shown while it is on) and `WEAR_ORIG_<feature>` (the originals those
+replace, shown while it is off). Every output of the layer is mixed from its untouched input by a factor that is 0 when
+the layer is off, and a mix by 0 returns its first input exactly, so off is today's shading bit for bit. The render still
+pays for the lookups when off.
+
+Proof, every render at the scene's defaults (1920x1200, 128 spp, OptiX, AgX), against the pre-wear renders made from a
+frozen copy of the project (`tests/artifacts/screens/bradbury_wear/series/final/before/`): the mean absolute difference in
+8-bit levels over the whole frame, and the share of pixels off by more than 2. The noise floor is the untouched block
+rendered again: two renders of the same scene differ too. That is the CPU, not the GPU: the stills render on OptiX and
+the CPU together, Cycles gives the CPU a band of rows at the top of the frame that ends at another row every time, and
+the two devices disagree at a few places (AI 570's critique fix, 2026-09-24, measured it); on OptiX alone
+(`render_wear.py -- devices=gpu`) two renders differ by one 8-bit level at most, at any pixel. As of 2026-09-25 the
+renderer no longer repeats the stills of `series/final/before/`: the same frozen pre-wear scene rendered again differs
+from them by 0.27 to 0.38 levels, so render `wear_before/bradbury_scene.blend` again for an off-state check (AI 565's
+second critique fix measured it; see its evidence).
+
+| camera | noise floor (untouched block again) | worn scene, switched off | worn scene, on at defaults |
+|---|---|---|---|
+| hero_3q | 0.0165, 0.006% | 0.0163, 0.006% | 0.0165, 0.006% |
+| st_corner | 0.0310, 0.055% | 0.0346, 0.072% | 0.0319, 0.057% |
+| st_along | 0.0067, 0.004% | 0.0065, 0.003% | 0.0066, 0.003% |
+| st_up | 0.0067, 0.003% | 0.0064, 0.001% | 0.0070, 0.003% |
+| st_portal | 0.0162, 0.025% | 0.0161, 0.025% | 0.0162, 0.025% |
+
+### The debug view
+
+`wear=debug` turns every worn surface into clay grey (glass opaque, so a pane's marks show; metal matte since AI 568, so
+a mark on the ironwork shows in its own colour), paints every mark in its feature's colour (only features whose strength
+is above 0), and shows the sources: an octahedron for a point source, a square tube along a line source or an area's
+outline, and a thinner tube along a mark's path (a streak's centre line), emissive in the feature's colour. A mark
+cannot exist without a source: `paint()` needs a mark, a mark needs one of the feature's own sources, and the build
+fails if any mask texel was painted outside every mark's box. The build prints the per-feature counts of sources, marks
+and paths, and the manifest keeps them.
+
+Colours, suggested so the ten read apart (a feature sets its own `DEBUG_COLOR`): 564 runoff blue (0.10, 0.35, 1.00), 565
+soiling violet (0.55, 0.20, 0.95), 566 washed cyan (0.10, 0.95, 0.95), 567 street grime yellow (1.00, 0.85, 0.05), 568
+rust orange (1.00, 0.40, 0.00), 569 efflorescence pink (1.00, 0.55, 0.75), 570 edge wear green (0.15, 0.85, 0.15), 571
+glass grime teal (0.00, 0.55, 0.45), 572 pigeon red (1.00, 0.10, 0.10), 573 mortar erosion lime (0.60, 1.00, 0.20); the
+probe is magenta.
+
+### Where a mark lies: the faces and the atlas
+
+The block's outline is five straight faces, the `HULL` every wall is laid on; each is a frame with `s` along it (left to
+right as the street sees it), `d` out of the hull plane toward the street and `z` up. A point belongs to the face whose
+plane it stands furthest in front of, so the corners split on their bisectors, and tops, soffits and returns belong to
+the face they sit on.
+
+| face | street | length | runs | out |
+|---|---|---|---|---|
+| S | 3rd Street | 50.19 | west to east | -y |
+| SE | the chamfer | 4.00 | | +x -y |
+| E | Broadway | 32.43 | south to north | +x |
+| N | north face | 53.02 | east to west | +y |
+| W | west face | 35.26 | north to south | -x |
+
+Depths for orientation: the brick field at d -0.10, the bay insets -0.16, the columns and raised stretches +0.20, the
+band's face +0.14, the piers' stone +0.22; the crown and the portals' bands reach about +0.8.
+
+A feature's mask is one image, the **atlas**: the five faces side by side in (s, z) metres, each over s from -1.6 to its
+length + 1.6 (corners, mitres, the crown's reach), z from 0 to 21.2, 192.4 m by 21.2 m in all (9620 x 1060 at the 2 cm
+default). Every offset and size is a multiple of 0.2 m, so a feature may pick 1, 2, 4, 5, 10 or 20 cm (`MASK = dict(res=,
+channels=1..4, bits=8|16)`) and one (u, v) serves every mask. At render time the shading point is projected onto its
+face's plane and each feature's mask is read there: a mark painted at (s, z) lies on whatever surface the street sees at
+that spot, and the brick's own joints, not the mask, give it its grain. 2 cm is plenty for a streak's edge, which the
+joints draw; smooth fields (shelter, exposure) are happy at 5 or 10 cm and cost a quarter or a twenty-fifth.
+
+The projection's one trait: every surface at (s, z) reads the mask there, so a column's return, a reveal's side or a
+sill's top next to a mark takes the mark's edge value over its whole depth. A feature says which surfaces it means with
+the face-frame normal: `g.facing()` (walls and fronts), `g.upward()` (tops), `g.downward()` (soffits), or `Nt`, `Nd`,
+`Nz` and the depth `D` directly. The probe shows the pattern: its band stops at the sill's end, and without
+`g.facing()` the column return beside that end turned magenta for its whole depth.
+
+`elevations=1` draws each face square on at 5 cm, coloured by material class, and every feature's mask over it in the
+feature's colour, into `tests/artifacts/screens/bradbury_wear/elevations/`: a check of where marks land before any render.
+
+### What a material hands the layer
+
+`WEAR_layer` stands between each exterior material's texture reads and its Principled BSDF: **Color** and **Roughness**
+always, **Normal** where the material has a normal map (the map's output goes in and comes out, so relief is kept and a
+feature may add to it), **Alpha** and **Transmission** on glass, **Metallic** on metal (added by AI 568: rust is an
+oxide, not a metal), **Specular** on glass (the BSDF's Specular IOR Level, added by AI 571's rework: where dust covers a
+pane there is no glass to reflect). Three more inputs come from the material's own maps: **Joint** (1 in a mortar joint, 0 on a brick's
+face: from the brick set's `height.png`, read with the brick's own coordinates, its faces at the median and its joints
+in the low tail; or a procedural Brick Texture's mortar factor), **Grain** (the set's own height or packed AO, spread
+over about 0..1) and **Bed** (added by AI 564: 1 in a bed joint and on the lip of brick just under it, `BED_LIP` 12% of
+a course deep, where water hanging at a bed joint spreads along it; the joint map read a second time a little higher in
+the texture, so a head joint, vertical, does not widen; the set's 16 courses are counted in its own height map, so the
+lip is a share of a course whatever the tile) and **Joint Wide** (added by AI 573: the joint grown `JOINT_GROW` 2.5% of
+a course, 2 mm on the wall, past every edge; the set's joints are a one-pixel step in its height map, so no remapping of
+Joint can widen them, and the map is read twice more, a little up and along and a little down and back, which widens bed
+and head joints alike on both sides). Materials without them get Joint 0, Grain 0.5, Bed 0 and Joint Wide 0; a
+procedural Brick Texture hands its mortar factor as Bed and Joint Wide too. A packed AO that is flat (the terracotta trim's reads 0.984 to 0.985)
+gives Grain 0.5: spread over 0..1 it had turned the map's last-bit quantisation into a speckle (fixed in AI 564). Note
+that the dressed sandstone's Grain is a cloud with no joints in it: a feature that holds a deposit in its hollows will
+draw blotches.
+
+Each material has a **class** (`wear/classes.py`), which is what a feature's response keys on: brick (the wall, the arch
+rings), terracotta (the trim of sills, band, impost, crown, capitals, archivolts; the band's ornament; the crown's flower
+tiles), stone (the ground floor's moulding and piers, the portal's sandstone, carved and granite, the lettering), glass
+(the game's window glass, the storefront transoms, the portal's door glass), metal (the fire escapes, the storefront
+frames, the doors' bronze hardware, the portal's iron and brass), paint (the game's window frames, the white transom panels), wood (the portal's
+doors and ceilings), glazed (the portal recess's glazed brick and tiles), and none (the wall's hidden faces, the
+backdrop panes behind the glass, the roof deck, the lamp globes), which the layer leaves alone. The build prints the
+table. 66 materials are worn: 48 in the block, 18 in the portal.
+
+A calibration trap: the scene's AgX view compresses a sunlit wall's tones, so an albedo change reads much smaller in the
+picture. The probe's first cut took 45% off the brick's albedo and moved the rendered pixels by 6% (221 to 208 in red).
+Judge a feature in rendered pixels, not in albedo.
+
+### Plugging in a feature
+
+A feature is one module in `wear/features/` and one line in `wear/registry.py` (`MODULES = [probe, runoff, ...]`). The
+probe (`wear/features/probe.py`) is the smallest complete one. A module holds:
+
+```
+NAME = "runoff"                  # scene property wear_runoff, mask masks/runoff.png, node group WEAR_F_runoff
+AI = 564
+LABEL = "runoff streaks below ledges"
+ORDER = 220                      # shader chain position, lowest first (see below)
+NEEDS = ("soiling",)             # built after these, whose published fields it reads (optional)
+DEFAULT_STRENGTH = 1.0           # the scene's default; the calibrated amounts live in the module
+DEBUG_COLOR = (0.10, 0.35, 1.00)
+MASK = dict(res=0.02, channels=1, bits=16)   # or leave MASK out for a feature without an atlas mask
+CONTROLS = {"film": 0.0}         # optional extra scene controls, wear_<name>_<control>
+
+def build(ctx): ...              # the geometry side, run on the built block
+def shader(g): ...               # the shading side, run once into WEAR_F_<name>
+def apply(actx): ...             # optional: attributes or geometry in the worn block
+def apply_portal(actx): ...      # optional: the same in the worn portal
+def elevation(canvas): ...      # optional: what the elevation images draw of its mask, (H, W) (channel 0 if absent)
+```
+
+**build(ctx)** finds sources on the model and paints marks. `ctx.block` is the open file's render-visible geometry
+(portal instances included) in one world BVH:
+
+- `block.instances(prefix)` gives instance records (`name`, `object`, `instancer`, `matrix`, `i`); `block.points(rec)`,
+  `block.bbox(rec)` and `block.triangles(rec)` (world corners, unit normals, areas, classes) read one of them.
+- `block.ray(origin, direction)`, `block.front(f, s, z)` (the first surface the street sees at (s, z) of face f) and
+  `block.front_near(f, s, z, d)` return a `Hit`: point, normal, instance name, material, class, face and its (s, d, z).
+- `block.front_map(f, res)` is `front` over a whole face (depth, class, normal z and instance per texel; cached;
+  300,000 rays in 0.8 s); `block.front_grid(f, S, Z)` over any arrays.
+- `block.trace_down(f, s, z_top)` follows a film of water down the face from just below z_top until something projecting
+  catches it (`caught`, `ground`) or the surface ends (`opening`, `step back`, `step forward`); pass a larger `tol` to
+  let it run over a shallow reveal. Below the Broadway sills it stops after 0.29 m, where the lower window's 3 cm
+  recess begins.
+- `geometry.FACADES[f]` (`.sdz(x, y, z)`, `.world(s, d, z)`, `.t`, `.n`, `.L`), `geometry.facade_of(x, y)`,
+  `geometry.Z_GROUND` (0.201).
+
+and `ctx` itself:
+
+- `ctx.source(id, kind, points, facade, **info)`: a physical source, `point`, `line` or `area`, drawn in the debug view.
+- `ctx.mark(source, facade, **info)`: one mark from it.
+- `ctx.grid(f, s0, s1, z0, z1)`: the mask's texel centres (S, Z) over that part of face f.
+- `ctx.paint(mark, values, s0, s1, z0, z1, channel=0, op="max")`: values (an array over the grid, or a function of S, Z)
+  combined into the mask (max, add, screen, set, min).
+- `ctx.path(mark, points)`: a polyline the debug view draws for the mark.
+- `ctx.publish(key, value)` and `ctx.field(feature, key)`: share what one feature derives with the features that NEED it
+  (the rain-exposure measure 565 computes and 566 and 573 use; the runoff paths 564 traces and 566, 569 and 573 follow;
+  567's splash zone). Share at build time and paint your own mask from it; a feature's shader reads only its own mask.
+- `ctx.stash`: plain data for the feature's `apply()`.
+
+**shader(g)** writes the feature's node group with `g`, a small expression builder (`wear/nodes.py`, class `G`). The
+group starts as a pass-through and the feature rewires what it changes. Inputs, `g.i(name)`: the state `Color`,
+`Roughness`, `Normal`, `Alpha`, `Transmission`, `Metallic`, `Specular`; `Mask` (its atlas sample as a colour) and `Mask Alpha`;
+`Attr` (its mesh attribute `wear_<name>`, 0 where absent); `Strength`; `Class`, `Joint`, `Grain`, `Bed`, `Joint Wide`; `Facade`, `S`,
+`D`, `Z`, `H` (height above the pavement), `U`, `V`, `Nt`, `Nd`, `Nz`, `Position`, `True Normal`; `Clean Color` and
+`Clean Roughness` (added by AI 566: the surface as the deposits find it, the state entering the first feature at ORDER
+200 or later, for a feature that takes deposits off again; before the deposits it is the feature's own input). Outputs,
+`g.o(name, value)`: the state, and `Debug` (how much of the mark is here, 0..1, not scaled by strength). `g.result` is
+the feature's own build `Result` (its sources, marks, fields and stash; fresh, or from the cache in a `features=`
+rebuild), for a shader whose constants are what its build found (added by AI 572's rework: its roosts' blocks, and their
+drips' curtains). Helpers: `add sub mul div mn mx pow absf gt lt eq one_minus clamp map smooth math`,
+`mix(a, b, t, 'FLOAT'|'RGBA'|'VECTOR', blend)`,
+`rgb sep scale_rgb lum vec xyz vmath dot`, `attr image`, `is_class(...)`, `facing upward downward`, `control(name)`, and
+`node(idname)` / `set(socket, value)` for anything else (a Bump node for the mortar's relief). Two rules keep the switch
+exact: change the state only through `mix(input, changed, amount)` with `g.i("Strength")` a factor of `amount`, so
+strength 0 hands the input on untouched; and never produce NaN or infinity (Cycles divides safely, but a power of a
+negative number does not).
+
+**apply(actx)** runs in the worn block before it is saved: `actx.object(name)`, `actx.own_mesh(obj)` (the game shares
+meshes between windows: copy first), `actx.set_attribute(obj, values, domain)` (the float attribute the shader reads as
+`Attr`), and `actx.add_object(name, mesh, replaces=None)` (an object of the feature's own, shown while the feature is on,
+with `replaces` shown instead while it is off; a chipped copy of the pier ring, say). The portal is one collection
+instanced three times, so nothing inside it can be switched per feature from the scene: geometry for the portals goes
+into the block as objects placed with `PORTAL_A`, `PORTAL_C` and `PORTAL_E`'s transforms; masks and attributes on the
+portal are fine.
+
+**ORDER and NEEDS.** `ORDER` is the chain the looks are laid in; `NEEDS` is the build's dependency order. Suggested
+chain: mortar erosion 100, edge wear 110, then the deposits, soiling 200, washed 210, runoff 220, street grime 230,
+efflorescence 240, rust 250, pigeon 260, then glass 300 (the probe is 900). Suggested needs: washed on soiling and
+runoff; efflorescence on runoff and rust; mortar erosion on soiling, runoff and street grime; pigeon on soiling, for
+shelter. The AI numbers already build in that order. As built, washed stands at 225, after runoff: it takes the
+soiling and a stream's deposit off again, so it must come after both (see its section).
+
+### Calibration
+
+The references are on disk in `tests/artifacts/screens/bradbury_fix/references/`: the 1960 HABS CA-334 photos
+(`loc_habs_ca0212_001_corner_public_domain.jpg`, the corner; `loc_habs_ca0212_010_entrance_bays_public_domain.jpg`) and
+current colour photos (`commons_*`). `wear_compare.py regions` measures named pixel boxes and gives each one's linear
+luminance as a ratio of the first: measure a clean patch and a mark in the photo, render the same element in the same
+light, measure the same pair, and tune the feature's constants until the ratios agree. Compare like with like: under the
+crown the 1960 photo reads 0.26 of the open brick, and most of that is the cornice's own shadow, not soiling. Keep
+`DEFAULT_STRENGTH` at 1.0 and put the calibration in the module, so the strength stays a plain dial.
+
+### The probe, and the evidence for AI 563
+
+The layer ships one feature of its own, `probe`, **off** (`DEFAULT_STRENGTH` 0): the band below one Broadway sill
+(`sill_1016`, floor 3, the one nearest y -5), found on the model, followed down the wall with `trace_down` for 0.29 m to
+the lower window's recess, painted as wide as the sill, darkening masonry that faces the street; magenta in the debug
+view with the sill's drip edge and the band's path drawn. `wear_probe=1` turns it on. It exists to prove the plumbing end
+to end and to be the template.
+
+Evidence in `tests/artifacts/screens/bradbury_wear/framework/`: `<camera>_off_on_debug.png` for the five cameras (off |
+on at the defaults | on with the probe | debug with the probe, 50%), `renders/` (the full-size stills), `diff/` (the
+difference images, x8), `offstate_pixel_diff.txt` and `.json` (the table above, with the probe's footprint too), and
+`renders/closeup/` (the probe's sill square on: off, on, debug).
+
+## Runoff streaks below ledges (AI 564)
+
+The first real wear feature, `wear/features/runoff.py` (`wear_runoff`, blue in the debug view): the dark streaks rain
+draws down the facade below the places where its ledges shed water. Rain collects on a projection and leaves it at
+particular places; on the way down the wall it picks up the dirt that settled there and leaves it behind ("dirt
+washing"). A projection without a proper drip lets its water creep back along its underside to the wall, the most common
+reason for dirt marks on facades (Blocken & Carmeliet 2013, citing Robinson & Baker; Dorsey, Pedersen & Hanrahan 1996
+simulated these flow stains). Every streak has a source found on the built model and a path followed from it; nothing is
+placed by noise, and the mask is byte-identical from one build to the next. Since the rework of 2026-09-23 each source
+sheds its own share of the water ("One source at a time", below), so no two sill ends, brackets or capitals shed the
+same streak; since the critique of 2026-09-25 a capital's water leaves its foot by a few drips of its own, each a narrow
+streak, instead of as a sheet ("A capital's drips", below).
+
+```
+blender -b -P wear_layer.py -- features=runoff                 # rebuild its mask alone (about 7 s), the rest cached
+blender -b -P render_wear.py -- wear=on wear_runoff=0 view=st_up    # off; 1 is the calibrated default, 2 twice as heavy
+blender -b -P render_wear.py -- wear=debug view=st_up
+```
+
+### The sources
+
+| kind | on the model | count | where the water goes | where it stops |
+|---|---|---|---|---|
+| sill end | both ends of every `sill_*` (floors 3 and 4) | 156 (6 shed nothing) | down the jamb's inside corner (112, the deep field) or straddling the end (44, raised stretches) | the part beyond the strip's 12 cm margin at the window head 0.59 m down; the corner channel runs on beside the lower window and fades (0.4 to 2.5 m, by the end's water) |
+| bracket | the foot of each console under the band (the 28 `ge_bracket45_*` bay meshes split at gaps along the face) | 186 (7 shed nothing) | from the part of the foot its water leaves over, 0.06 to 0.10 m wide | a window head 0.35 m down (111), or down a mullion or pier (68, 0.4 to 1.6 m) |
+| column capital | the foot of each `ge_capital.*` under the band: its drips, 1 to 3 (30 in all) | 22 (6 shed nothing) | from each drip, at a corner of the foot or along its front, a narrow streak down the column's face, widening as it falls | fades after 0.5 to 2.3 m |
+| springing capital | the foot of each `ge_capital5.*` at the top floor's springing: its drips (37 in all) | 42 (14 shed nothing) | from each drip a narrow streak down the mullion | caught by the band's top cornice 0.99 m down (21), or fades before it (16) |
+| crown cornice | the underside of `ge_crown_moulding` (19.10), the whole of each face | 5 runs | down the top floor's wall | caught by an arch ring (0.2 m) or the impost course (1.05 m) |
+| impost course | the underside of `impost_course5` (17.73) | 44 runs | down the piers | fades after 0.64 to 0.90 m |
+| band 4-5 | the underside of `ge_cornice45_bottom` (15.63), between brackets and capitals | 213 runs | over the wall and the window strip's 9 cm head | a window head (117) or fades (96, 0.8 to 1.8 m) |
+| ground floor crown | the underside of `ge_crown` (5.86) | 5 runs | down the upper band | caught by the string course 0.44 m down |
+| string course | the underside of `ge_cornice` (5.24) | 8 runs | down the band strip | the storefront heads 0.76 m down; down the piers it fades |
+| portal crown moulding | `ge_cornice` where it breaks forward over a portal's frieze band (A, C, E) | 3 runs | down the BRADBURY frieze | the arch block's 20 cm step back, 0.76 m down |
+
+The second floor has no sills: its windows stand on the ground floor crown's foot (6.292), a continuous ledge 0.4 m
+deep. Their water spreads over it and leaves with the crown's own over the crown's drip line, so the second floor sheds
+as part of that curtain, and the curtain is heavier below each window (glass sheds all the rain it takes), by that
+window's own draw (`WINDOW_GAIN`, 0.15 to 1.05 more, 0.6 in the middle, spread 0.2 m over the ledge), rather than as
+pairs from sill ends. Nor do the top floor's windows have sills: they stand on the band's top cornice, which the prompt
+does not list, and which sheds onto the band's own frieze.
+
+The courses' curtains are found, not listed by position: for each course and face, the columns where the course is what
+the street sees just above its lower edge and a masonry wall what it sees just below, set back no more than `DRIP_MAX`
+0.35 and not a bracket or a capital (those shed their own streak), grouped into runs.
+
+### The path
+
+Each column of a streak follows the film of water down the elevation, the face as the street sees it, cast lazily on the
+mask's 2 cm texels (2.1 million level rays, the fire escapes looked through: they hang up to 0.85 m out from 3rd Street's
+wall and the film runs on behind them). The film runs over a step back of up to `CREEP` 0.10 (the window strips' 9 cm
+heads are crept round) and over a step forward of up to `CATCH` 0.03 (a bead); it stops where a surface standing further
+out takes it on its top (the sill, the band or the string course below, an arch ring: "caught"), where an edge throws it
+off (a window head, an opening, a recess deeper than 0.10: "edge"), or at glass, a frame or metal. So no streak runs
+through an opening and none lies on glass or metal; the shader keys on the class as well. With nothing to stop it, a
+streak is gone `LEN_CAP` 3 e-folds below its source.
+
+A deep-field sill sits inside its recessed window strip, which runs from floor to floor with a 12 cm margin of recessed
+panel between the jamb and the window's frame. The water off the sill gathers at its ends, where the strip's jambs meet
+it, and runs down that inside corner: the streak hugs the jamb, most of it runs on beside the window below, and only its
+inner part reaches the window head. On the raised stretches the spandrel is flush with the wall, so the streak falls
+from the sill's end and straddles it.
+
+### Strength and length: the water each source collects
+
+- a sill end: the sill's own length `L` (its window sheds onto it), each end half of it: value `0.85 sqrt(L / 2.735)` times
+  the height's exposure (wind-driven rain is heaviest at a facade's top edge: 0.6 at the pavement rising to 1 at 20.73),
+  e-fold `0.55 sqrt(L / 2.735)` m, width at the source `0.07 sqrt(L / 2.735)` m. So a single window's sill (1.38) sheds a
+  shorter, fainter streak than a pair's (2.74) and a triple's (3.89) a longer one; floor 4's are a little stronger than
+  floor 3's.
+- a course's curtain, per column: `0.60 sqrt(reach / 0.40) exp(-soffit / 0.35)`, where `reach` is how far the course
+  stands out over the wall it sheds onto (its most projecting member, sampled every 4 cm up it) and `soffit` how far its
+  lower edge stands out from the wall below it, the water that creeps back rather than dripping clear. No height factor:
+  a course takes what runs down the facade above it as well as its own rain. So the band's deep runs, whose 0.245 m
+  soffit throws most of their water clear, carry a faint curtain (0.30) while its brackets, which touch both band and
+  wall, carry the water down in streaks (0.55); on the raised stretches, where its moulding sits on the wall, the band's
+  curtain is 0.37; the crown, the top and the furthest out, sheds the heaviest (0.66).
+- brackets 0.55 (e-fold 0.45); a capital 0.40 (0.60) under the band and 0.40 (0.45) at the springing, for its whole
+  water leaving by one drip (each drip takes its share of it: "A capital's drips", below).
+
+A streak widens `SPREAD` 0.14 m per metre of descent. That is the geometry's measure, the same for every source of one
+kind; each source then sheds its own share of it.
+
+### One source at a time (rework 2026-09-23)
+
+Every sill, bracket and capital on this building is the same shape, so the measure above shed the same streak from each:
+156 sill ends in 78 matching pairs, 186 matching bracket streaks, 64 matching capital curtains, the same mark stamped at
+every window of a facade of identical windows (user 2026-09-23, reviewing the layer: marks must not repeat identically
+from one instance to the next; noise inside a mark stays out, as before). What makes one streak differ from the next on a
+real front is what the model does not carry: a sill set a few millimetres out of level, a sound or an open joint where it
+meets the jamb, a window its tenant keeps clean, a band that drips clear over one bracket and not over the next. So each
+source draws its own share of the water the geometry gives it, and the water sets the streak as the geometry did: its
+value, its e-fold and a sill end's width all go as the water's square root (as a sill's length sets them), so a trickle
+is faint, short and thin and a heavy end long, dark and broad.
+
+| source | drawn | bounds |
+|---|---|---|
+| sill | its fall along its length: the share of its ends' water its left end takes, so its two ends differ | 0.5 ± 0.30 (`SILL_SPLIT`) |
+| sill | the share of its water that runs along it to its ends rather than off its front | 0.55 to 1.15 (`SILL_FALL`) |
+| sill | the dirt that water carries (a window and sill its tenant keeps clean): the value only | 0.75 to 1.10 (`SILL_DIRT`) |
+| sill end | what its joint with the jamb lets into the corner: sound for about one end in six (`SOUND_P` 0.18) | sound 0 to 0.30, else 0.70 to 1.30 |
+| bracket | the water it carries: the band drips clear over about one in seven (`DRY_P` 0.15) | dry 0 to 0.30, else 0.50 to 1.40 |
+| bracket | the part of its foot the water leaves over, anywhere across the foot | 0.55 to 1.00 of its width (`EXIT`) |
+| capital | its water and the drips it leaves its foot by: since the critique of 2026-09-25, see "A capital's drips" | |
+| run of the band, the impost or a portal's moulding | its curtain's value, and its e-fold | 0.70 to 1.15, 0.80 to 1.20 |
+| window on the ground floor crown | its extra water over the ledge | 0.15 to 1.05 (0.6 before) |
+
+A sill end's water is `2 x split x fall x joint`, 1 being what each end took before (half the sill's). A source whose water
+is under `WATER_MIN` 0.06 sheds nothing: its marker stays in the debug view, with no mark and no entry in the published
+lists. The square root is held to `K_MAX` 1.3 (a failed joint, the heaviest). Where a range is given, the value is the
+mean of two uniforms, the middle likelier than the ends. The seed is the source's own name or place (`draw`: the sha256
+of `runoff:` and a key, two bytes to a uniform): the sill's object and its end, the bracket's bay mesh and its index, the
+capital's object, a run's kind, face, span and height, a window's face and span. A rebuild draws the same values (the
+mask's sha256 is the same from one build to the next), and a change elsewhere on the model reshuffles nothing. The crown
+and the string course run whole along each face, one element each and a continuous band rather than a stamp: they keep
+the geometry's measure, and so do the paths, the stopping rules, the joint-following edges and the look.
+
+As built (the build prints it, `runoff drawn ...`):
+
+| source | water | shed nothing | value | e-fold | runs |
+|---|---|---|---|---|---|
+| sill end | 0.78 (0.01..1.70): a quarter below 0.54, a quarter above 1.00, 7 above 1.3 | 6 of 156 | 0.55 (0.14..1.00), was 0.71 (0.47..0.85) | 0.48 m (0.14..0.82), was 0.55 | 1.47 m (0.44..2.48), was 1.68 (1.20..2.00) |
+| bracket | 0.91 (0.00..1.34), 3 above 1.3 | 7 of 186 | 0.53 (0.14..0.64), was 0.55 | 0.43 m (0.11..0.52), was 0.45 | to a window head 0.35 m (111); down a mullion 0.41 to 1.61 m (68) |
+| column capital | 0.98 (0.07..1.26); since the critique 0.67 (0 to 1.59) | none of 22; since the critique 6 | 0.40 (0.11..0.45), was 0.40; since the critique per drip 0.22 (0.10..0.49) | 0.59 m (0.16..0.67), was 0.60; since the critique 0.33 m (0.15..0.74) | 1.81 m (0.52..2.06), was 1.82; since the critique 1.02 m (0.48..2.26) |
+| springing capital | 0.92 (0.03..1.36), 2 above 1.3; since the critique 0.53 (0 to 1.55) | 1 of 42; since the critique 14 | 0.40 (0.15..0.48), was 0.41; since the critique per drip 0.33 (0.12..0.52) | 0.43 m (0.16..0.52), was 0.45; since the critique 0.35 m (0.13..0.56) | to the band's top cornice 0.99 m (35), or 0.53 to 0.77 m (6); since the critique (21) and 0.43 to 0.95 m (16) |
+| band run | its share 0.93 (0.73..1.13) | | 0.28 (0.22..0.41), was 0.30 | 0.49 m (0.26..0.58), was 0.50 | to a window head (117), or 0.82 to 1.78 m (96) |
+| impost run | its share 0.94 (0.74..1.04) | | 0.27 (0.21..0.30), was 0.29 | 0.24 m (0.20..0.29), was 0.25 | 0.64 to 0.90 m, was 0.78 |
+| portal moulding | shares 1.06 (3rd Street), 0.77 (Broadway), 0.83 (the west face) | | 0.34, 0.24, 0.26, was 0.32 | 0.28, 0.34, 0.35 m, was 0.31 | 0.76 m, the arch block's step |
+| ground crown window | its gain 0.58 (0.26..0.99), 81 windows | | the curtain 0.46 (0.36..0.47), was 0.48 | | |
+
+Most sources shed a little less than the geometry's measure (the median sill end's value is 0.78 of what it was, the
+tenants' dirt included), about one in four more, a few next to nothing and 14 nothing at all (33 since the critique of
+2026-09-25, 20 of them capitals). The published fields keep their keys and formats, so the features that follow take
+the variation up on their rebuild (see "Published", below).
+
+### A capital's drips (critique 2026-09-25)
+
+The fresh-eyes review of the rework found the capitals still one stamp. Shed as a sheet over part of its foot (`EXIT`,
+0.55 to 1.00 of it), every column capital hung the same flat-topped panel on its shaft: about 0.5 m wide on a 0.78 m
+face, at full strength across its width, with straight sides that followed no geometry (the sheet's inside-ness was 1
+across it, so the shader's joint-following edge had nothing to reach along), fading over about 1.8 m. Its water, the
+mean of two uniforms under a square root, left 18 of the 22 at a value of 0.35 to 0.45 and a width of 0.46 to 0.67 m. On
+the review's 4K elevations, runoff on against off in a box 0.1 to 0.7 m under each foot read 0.82 to 0.85 on 3rd Street
+(in shade), 0.94 to 0.96 on Broadway and the north face (in sun) and 0.85 to 0.86 on the west face: 19 of the 22 alike.
+The 42 springing capitals hung the same rectangle inside their mullions, weaker and more varied in strength.
+
+The water that runs down a capital's bell does not leave its foot as a sheet. It gathers into rivulets, where the bell's
+sides bring their water down to the foot's corners and where the front edge happens to sit a little low, and leaves by
+those; the streaks under a capital start at those points, narrow, and widen as they fall. So each capital draws its own
+(`capital_draw`, the sha256 of `runoff:` and the capital's object and what is drawn, two bytes to a uniform):
+
+| per capital | drawn | bounds |
+|---|---|---|
+| its water | nothing: what drips onto it falls clear | column capitals 30% of the time, springing 25% (`CAP_DRY_P`) |
+| | otherwise one uniform over a wide range: a trace as likely as a heavy stream | 0.15 to 1.60 (`CAP_WATER`) |
+| its drips | how many rivulets the water leaves the foot by | 1, 2 or 3: 40, 40, 20% (column capitals), 60, 30, 10% (springing, half the foot) (`DRIPS_P`) |
+| each drip | its share of the water, flat over every way of splitting it | one may take most of it, another next to nothing |
+| each drip | where it leaves: at a corner of the foot (a free one) | half the time (`CORNER_P`) |
+| | otherwise anywhere along the front edge | uniform |
+
+The drips leave from the part of the foot that stands on the shaft or the mullion under it (the surface there within
+`CATCH` of the foot's depth): the column capitals' feet stand 5 cm inside their shafts, the springing capitals' overhang
+their mullions over the windows' frames by a centimetre. Drips nearer than `DRIP_GAP` 0.08 m are one rivulet, with both
+shares; one whose water is under `WATER_MIN` 0.06 sheds nothing, and a capital none of whose drips sheds keeps its
+foot's marker with no mark. Each drip sheds a streak of its own, as a bracket's foot does: with k the square root of its
+own water (held to `K_MAX`), its value is `0.40 k` times the height's exposure (`CAPITAL_AMP`, `SPRING_AMP`), its e-fold
+`0.60 k` (`0.45 k` at the springing) and its width at the foot `DRIP_W0 0.07 k`; it widens `SPREAD` 0.14 m per metre
+with the lateral profile, so the shader breaks its edges on the bed joints as it does every streak's, and it starts at
+its drip, not along a line across the foot. It keeps to the face it leaves onto: its columns are the ones whose surface
+stands within `CATCH` of the drip's own, so past the shaft's or the mullion's arris its water does not reach the wall
+0.3 m behind. Two that widen into each other merge (painted with max, as everywhere). The paths, the stops, the shader
+and the look are unchanged.
+
+As built (the build prints it, `runoff drawn ...` and `runoff drips ...`):
+
+| | capitals | shed nothing | drips | 1, 2, 3 drips | at a corner, along the front | a drip's water | value | e-fold | runs |
+|---|---|---|---|---|---|---|---|---|---|
+| column capital | 22 | 6 | 30 | 6, 6, 4 | 10, 20 | 0.30 (0.06..1.53) | 0.22 (0.10..0.49) | 0.33 m (0.15..0.74) | 1.02 m (0.48..2.26) |
+| springing capital | 42 | 14 | 37 | 20, 7, 1 | 20, 17 | 0.60 (0.08..1.55) | 0.33 (0.12..0.52) | 0.35 m (0.13..0.56) | to the band's top cornice 0.99 m (21), or 0.43 to 0.95 m (16) |
+
+A drip's width at the foot is 3.8 cm at the median under the band and 5.5 cm at the springing (1.7 to 8.7): where the
+sheet was 0.46 to 0.67 m and 0.21 to 0.36 m. Measured on the review's 4K elevations, rendered again before and after at
+64 samples (`rework/runoff/critique_r2/wide/`): the runoff on against off in a box 0.1 to 0.7 m under each foot and
+across all of it, and the darkest 3 cm wide strip in that box, a stream's core:
+
+| face | before: box | after: box | after: darkest strip, capital by capital along the face |
+|---|---|---|---|
+| 3rd Street (shade) | 0.87 to 0.90 (0.97 at s 10.2) | 0.97 to 1.00 | nothing, 0.80, 0.84, 0.93, nothing, 0.91 |
+| Broadway (sun) | 0.95 to 0.97 | 0.99 to 1.00 | 0.98, 0.93, nothing, 0.97 |
+| north face (sun) | 0.95 to 0.97 | 0.99 to 1.00 | nothing, 0.99, 0.96, 0.96, nothing, 0.93, 0.96 |
+| west face | 0.89 to 0.99 | 0.98 to 1.00 | nothing, 0.98, 0.84, 0.94, 0.95 |
+
+So on every face one shaft carries a clear streak, a few a trace and some nothing, and no two alike: a single stream
+down the middle of one shaft, a corner stream down the side of the next, three faint ones on another. The springing
+capitals likewise (3rd Street's twelve: nothing, 0.88, 0.94, 0.85, 0.95, 0.84, 0.85, nothing, 0.91, 0.86, 0.93, nothing;
+before, 0.80 to 0.97 as twelve rectangles). The west face drew 6 of its 9 springing capitals dry, a run of the dice of
+about 1 in 100 that was left as drawn (no seed was picked): its top floor reads clean but for three mullions.
+
+### The look
+
+The mask (`masks/runoff.png`) has two 16-bit channels, both smooth: R, the deposit a streak leaves (its value along its
+length times its profile across), and A, how far inside its width a point is (1 on its axis, falling to 0 past its
+edge). Both are painted with max, so overlapping marks combine as the heavier of the two. The shader cuts a crisp edge on
+a brick's face where A passes 0.5, lets it reach `EDGE_LIP` 0.35 further out along a bed joint and the lip under it (the
+layer's Bed), and lets the joints hold it longer down its length (`R ** 0.5` there): water hangs at the bed joints and
+spreads along them, and mortar holds the dirt, so a streak's edges and its end break up course by course, and an
+ashlar's joints do the same on stone. The stone's and terracotta's Grain is deliberately not used: the dressed
+sandstone's relief is a cloud with no joints in it, and a deposit held in its hollows read as blotches.
+
+Where it lies, the colour goes `0.85 x value` of the way toward DIRT (the masonry's own colour, 55% greyed toward its own
+grey, at 40% of its brightness), and the roughness to at least 0.85: darker, a little greyer, matte, the brick pattern
+still under it and the normal map untouched. It never touches a ledge's top or a soffit (every point of an underside
+reads one row of the mask, so a drip line's value would lie flat across the whole soffit), nor glass or metal.
+
+### Calibration
+
+Measured in rendered pixels, the linear luminance of the streak's core against the same box with `wear_runoff=0`, on the
+full-size close-ups at the scene's defaults:
+
+| sill end | top 20 cm | 0.2 to 0.5 m below |
+|---|---|---|
+| 3rd Street, in shade | 0.64 | 0.76 |
+| Broadway, in sun | 0.84 | 0.90 |
+| Broadway, in a column's shadow | 0.74 | 0.78 |
+
+The references: the 1960 HABS photo of the Broadway bays (`loc_habs_ca0212_010`) shows that facade in sun with clean
+spandrels at the sill ends, so a sill streak must stay under about 10% contrast at its 3 cm per pixel (a 7 cm streak of
+16% blurs to about that over its two pixels); the Commons colour photo of the Broadway portal shows real streaks under the
+cornice on the BRADBURY frieze at 0.75 to 0.8 of the stone beside them, and the curtains are set a little lighter than
+that, a maintained building. The same albedo change reads much less in sun than in shade, because AgX compresses the
+sunlit walls (see the framework's calibration trap): on sunlit Broadway the streaks are faint, on 3rd Street plain.
+`AMOUNT` 0.85 carries the calibration; `DEFAULT_STRENGTH` stays 1.0.
+
+Since the rework the table holds for a source that draws the geometry's measure (water 1, dirt 1), and the rest spread
+round it. Measured the same way on the rework's close-up, eight sill ends of 3rd Street's south-west bays on floors 3 and
+4, in shade, the runoff alone against no wear at all: before, all eight read 0.53 to 0.66 over their top 20 cm and ran
+1.3 to 1.6 m; now they read 0.57 to 0.81 and run 0.3 to 1.6 m, and one sheds nothing. The typical streak is lighter than
+before and a few are darker, so most spandrels read as clean as the HABS photo's, with a heavier one here and there. The
+Broadway portal's moulding drew 0.77, so the frieze curtain the Commons photo measures is a value of 0.24 where it was
+0.32: lighter still than the photo's streaks, a maintained building.
+
+The capitals' drips (critique 2026-09-25) keep the capitals' own constants: a drip carrying a whole capital's water at
+the geometry's measure takes the value the sheet had, 0.40, in a stream about 7 cm wide at the foot. On the review's 7 m
+close-up of 3rd Street (in shade) the heaviest one, a single stream down the middle of the shaft at s 14.6 (water 1.48),
+reads 0.80 of the wall without the runoff in its core, about as dark as the sheet's 0.82 there, which lay across half a
+metre; on the sunlit faces the heaviest read 0.93. The rest spread down to traces of 0.96 to 0.99 and to nothing (the
+table in "A capital's drips").
+
+### The debug view
+
+Blue: every mark's footprint at full colour from a quarter of the most a streak can hold, so the faint curtains read as
+plainly as the sill ends; an octahedron at each sill's end (at its front-bottom corner), a square tube along each drip
+line, bracket foot and capital foot, and a thin tube down each streak's centre line to where it stops (about one a metre
+along a curtain): 684 sources, 670 marks, 1267 paths. The 14 sources that shed nothing keep their marker and draw no
+streak; a bracket's or a capital's path runs down the middle of its exit, not of its foot. Since the critique of
+2026-09-25 a capital that sheds shows an octahedron at each of its drips (on the foot's front edge) and a path down
+each, and one that sheds nothing keeps its foot's square tube: 707 sources, 674 marks, 1271 paths, 33 of the sources
+shedding nothing.
+
+### Published for the features that follow
+
+`ctx.field("runoff", key)` for a feature that NEEDS runoff (566 washes along these paths, 569 blooms below the sill ends
+and where runoff crosses a trim's edge, 573 erodes the joints along them):
+
+- `sources`: every source that sheds, `dict(id, kind, facade, s0, s1, z, d, amp, efold)` (a sill end has `s0 == s1`).
+- `streaks`: every mark, `dict(mark, source, kind, facade, axis, side, s0, s1, z_top, z_stop, amp, efold, stop)`; `side`
+  is `corner`, `centred` or `curtain`; `z_stop` is where the axis column (the median column for a curtain) stops.
+- `drip_lines`: every course's run, `dict(kind, facade, s0, s1, z, d_edge, d_wall, reach, soffit)`: where the runoff
+  leaves a trim's edge.
+- `field`: `dict(res=0.04, z0, data, atlas, note)`, the mask's R channel max-pooled to 4 cm as a float16 array over the
+  whole atlas, rows from z0 up: the deposit, 0..1, to paint from.
+
+The kinds: `sill_end`, `bracket`, `capital`, `springing`, `crown`, `impost`, `band`, `ground_crown`, `string_course`,
+`portal_moulding`.
+
+Since the rework (2026-09-23) `sources` and `streaks` hold the sources that shed (670 of the 684; one whose water is under
+`WATER_MIN` is left out), and a bracket's or a capital's `s0`, `s1` and `axis` are its exit, the part of its foot the water
+leaves over, which 566 and 573 take as the stream's width at its source as they took the whole foot before. A sill end's
+width at its source is still `SILL_W0 x efold / SILL_EFOLD`: its width and its e-fold go together. The keys and formats
+are unchanged, and `drip_lines` is the same list. On the rework's rebuild the three features that follow took the
+variation up:
+
+- 566 (washed): 187 rinsed streams, from 194 (179 brackets and the 8 sill ends under 3rd Street's fire escapes): the dry
+  brackets' streams are gone and each rinsed core narrows with its exit (its rinse covers 25,064 texels, from 32,904);
+  its wash of the exposed zones is untouched (that channel is byte-identical).
+- 569 (efflorescence): the wetness under the trim follows each stream, so the bloom's amount and reach vary from source to
+  source: under the sills wet up to 0.57 (0.28..0.96), from 0.64 (0.37..0.83); under a bracket's foot 0.46 (0.01..0.58),
+  from 0.50 (0.49..0.50); under a springing capital 0.36 (0.00..0.45), from 0.38. Its course grid is untouched.
+- 573 (mortar erosion): 653 streaks walked, from 668, each as long as its own e-fold and as wide as its exit: the sill
+  ends' erosion covers 19.5 m2 (from 26.8), the brackets' 11.2 (15.9), the column capitals' 15.2 (20.7), the springing
+  capitals' 9.0 (13.6). 573 takes a capital's water from 564's constants rather than from `amp`, so its capitals follow
+  the rework in length and width, not in strength (until 573's own rework, the same day, which reads each capital's
+  drawn water off its e-fold: see its section).
+
+Since the critique of 2026-09-25 a capital publishes one source and one streak per drip, with the same keys: the id
+`<capital>:<j>` (j counts its drips from the left), `side` `centred`, `axis` the drip's middle and `s0`..`s1` its width
+at the foot (`DRIP_W0 k`), `efold` its own (`0.60 k`, `0.45 k` at the springing); a capital that sheds nothing publishes
+none (674 sources and streaks in all). So each follower reads a drip as the stream it is, with no change to its code:
+566 takes a centred stream's width and profile as it takes a bracket's, 573 walks it as a capital's with its drawn water
+(its e-fold over the kind's), and 569 lays a capital's bloom on the drip nearest the foot's middle. On the rebuild,
+every change lies under the capitals (checked texel by texel), and every feature that does not follow the runoff is
+byte-identical:
+
+- 566 (washed): its rinse is unchanged, the same 159 streams (no capital's stream crosses a zone soiled enough to rinse;
+  two springing drips now reach one's edge and are logged as too light), and its wash; only the mask's A, 564's deposit
+  where the wash brightens a streak rather than taking it off, follows the drips (75,254 texels).
+- 569 (efflorescence): the same 40 blooms, the 5 at capitals among them (column capitals `ge_capital.008` on Broadway
+  and `.015` on the north face, springing capitals `ge_capital5.005`, `.031` and `.014`); their wet and their middles
+  follow the drips (at `ge_capital.015` wet 0.48 from 0.42, at `ge_capital5.031` 0.18 from 0.31). Its mask changed in
+  2,331 texels, all at those capitals.
+- 573 (mortar erosion): 625 streaks walked, from 652. A drip's water erodes the joints only down its own narrow core: 12
+  of the 30 column-capital drips erode any brick (0.43 m2, where the 21 sheets eroded 14.7) and 23 of the 37 springing
+  drips (0.61 m2, from 8.5); the flat panels of eroded joints under the capitals are gone with the sheets. Its drops,
+  corners, zones and splash are unchanged.
+
+### What it changed in the framework
+
+Backward compatible, and the probe still builds byte-identically (mask sha `37806c0b...`): `wear/nodes.py` hands every
+material a fourth surface signal, **Bed** (above), and a flat packed AO no longer becomes a speckled Grain;
+`wear/registry.py` lists `runoff`. The worn block keeps 2279 objects (2275 and the four markers), and the off switch and
+`wear_runoff=0` still render as before the layer (`st_up` 0.0089 and 0.0071 mean levels, `st_corner` 0.0315 and 0.0318,
+against a noise floor of 0.0067 and 0.0310).
+
+### Evidence
+
+In `tests/artifacts/screens/bradbury_wear/runoff_streaks/`: `<view>_off_on_debug.png` (runoff off | on at its default |
+the debug view, 50%) for `st_corner`, `st_along`, `st_up`, `closeup_sill_pair_3rd`, `closeup_band_drip_3rd`, their
+Broadway counterparts in sun and `medium_3rd`; `renders/` (the full-size stills, and the off-state checks
+`st_up_wear_off.png`, `st_corner_wear_off.png`); `diff/` (off against on, x8, with the numbers as json, and the off-state
+checks against the pre-wear renders).
+
+The rework (2026-09-23), in `tests/artifacts/screens/bradbury_wear/rework/runoff/`: `<camera>_before_after.png` for the
+five cameras and `closeup_` and `medium_before_after.png` (the whole layer before this pass, from
+`tests/artifacts/blender/bradbury/wear_snap_rework_before/`, and after it); `closeup_` and `medium_off_on_debug.png`
+(runoff off, on, and the debug view with the runoff alone); `closeup_` and `medium_runoff_alone_before_after.png` (no
+wear, then the runoff alone before and after); `elevations/` (the layer's own `runoff_<face>.png`, and
+`runoff_<face>_before_after_2cm.png`, each face's whole mask before and after); `crops/` (1:1: the close-up's sill ends,
+runoff off and on and the runoff alone before and after, and the medium view's band with its brackets and column
+capitals); `renders/` (the full-size stills, the off-state checks `<camera>_wear_off.png` among them); `diff/` (x8 heat
+maps, `rework_numbers.json`, and `byte_identity.json`: every feature's cache and mask hash before and after, and the
+worn files' changed meshes, only the debug markers of 564, 566, 569 and 573). The close-up is a camera at (-31.0, -26.6,
+10.6) looking at (-31.0, -17.9, 10.6) with a 35 mm lens; the medium view at (-26.5, -34.0, 10.0) looking at (-26.5,
+-17.9, 12.4), 35 mm.
+
+The capitals' drips (critique 2026-09-25), in `tests/artifacts/screens/bradbury_wear/rework/runoff/critique_r2/`, every
+still at 1920x1200 and 128 samples on OptiX alone (`devices=gpu`), the "before" from a copy of the layer as it stood
+before the fix (kept, gitignored, as `portal_project/wear_runoff_r2_before/` with its scene
+`portal_project/bradbury_scene_runoff_r2_before.blend`, which links it): `closeup_` and `medium_before_after.png` (the
+whole layer before and after, and the runoff's own change x6 in each), `closeup_` and `medium_off_on_debug.png` (after:
+runoff off, on, the debug view with the runoff alone), `closeup_` and `medium_debug_before_after.png`, and
+`<camera>_before_after.png` for the five cameras; `wide/` (the review's four 4K elevations, before and after, runoff on
+and off, 64 samples); `crops/` (every column capital of each face and the springing capitals of 3rd Street and the north
+face from those elevations, x2: runoff off, on and its change, before and after; the review's own close-ups of 3rd
+Street's and Broadway's columns at 1:1 and of 3rd Street's springing capitals at x2; the close-up's three shafts at 1:1,
+one with nothing, one with a clear stream, one with a corner stream; `N_cap15_followers_before_after.png`, a north-face
+capital whose efflorescence bloom now sits on its drip); `elevations/` (the layer's `runoff_<face>.png` and
+`runoff_<face>_before_after_2cm.png`, each face's mask as the shader cuts it, before over after); `diff/`
+(`capital_streaks_measured.json`, the table in "A capital's drips" for every capital; `byte_identity.json`, every
+feature's cache and mask hash and the worn files compared datablock by datablock; `followers_changed.txt`, what changed
+in 566, 569 and 573 and where; the off switch against the pre-wear block rendered again,
+`<camera>_wear_off_vs_prewear.json`: 0.005 levels on average and 1 at most, on `st_up` and `st_corner`); `renders/` (the
+stills); `audit/` (the measuring scripts and `runoff.py` as it stood before the fix). The close-up is a camera at
+(-21.627, -27.579, 14.0) looking at (-21.627, -17.879, 14.0), 35 mm (3rd Street's shafts at s 10.2, 14.6 and 18.4); the
+medium view at (-20.0, -36.0, 11.0) looking at (-20.0, -17.879, 13.0), 35 mm.
+
+## Sheltered soiling under overhangs (AI 565)
+
+`wear/features/soiling.py` (`wear_soiling`, violet in the debug view): the soft darkening a city leaves wherever the
+building's own geometry keeps the rain off. Soot and dust settle on every surface of a facade; rain rinses them off the
+open ones and the surfaces it cannot reach keep them (the ICOMOS-ISCS glossary's black crust "developing generally on
+areas protected against direct rainfall or water runoff"; Blocken & Carmeliet 2013's "reduced rainwash"; Miller 1994's
+dirt where accessibility is low). Los Angeles's smog is not coal soot, so it reads as soiling, a dulling and darkening
+of each material's own colour, never as a black crust. Every value comes from a measure of how much rain the geometry
+keeps off, texel by texel; nothing is placed by noise, and the mask is byte-identical from one build to the next. Since
+the rework of 2026-09-23 each discrete element -- a window head, an arch, a sill, a storefront, a fire escape platform,
+a portal -- takes its own seeded share of that soiling and its own reach, so no two identical heads are soiled exactly
+alike, and the crown's top lip, which the run-off of the whole top washes, takes none (see "One element at a time" and
+"The top's run-off" below). Since the critique of 2026-09-24 the deposit never lightens anything: a smooth finish keeps
+its own gloss and bare metal is left polished (see "The look" and "Never lighter"). Since the critique of 2026-09-25
+nothing the street sees only through glass is soiled: the storefronts' white transom panels, the portals' vestibules,
+the parts of window and door frames that run on behind their panes (see "Behind glass").
+
+```
+blender -b -P wear_layer.py -- features=soiling                      # its mask alone (about 7 s), the rest cached
+blender -b -P render_wear.py -- wear=on wear_soiling=0 view=st_up    # off; 1 is the calibrated default
+blender -b -P render_wear.py -- wear=debug wear_runoff=0 view=st_up  # its marks alone, violet, with their drip edges
+```
+
+### The rain-exposure measure
+
+**The rain** is wind-driven: seven inclinations off the vertical (`RAIN_THETA`, 10 to 70 degrees) times eleven
+azimuths off each face's normal (`RAIN_PHI`, -75 to +75), every direction the same share of the rain. A wall facing
+the street intercepts a direction's share times sin(theta) cos(phi), its horizontal component. A direction is kept off
+a point when the ray from the point back toward the rain meets the building.
+
+**The elevation** it is measured on is the facade as the street sees it on the mask's 5 cm texels: the depth of the
+first surface a level ray meets (1.6 million rays in 3.3 s). The fire escapes are looked through (their open ironwork
+shelters nothing and the wall behind them is the facade), and their six platforms are laid back in as the slabs they
+are, 0.88 m deep from the wall to their front edge. Seen from the rain's side this depth map is the building's envelope:
+a ray from a surface point is blocked exactly when, somewhere above it, the envelope stands further out than the ray
+has got by then. One sweep down the whole atlas per direction finds that for every texel at once -- a horizon map,
+the maximum of the envelope minus the ray's own advance carried row by row along a digital line whose column offsets
+are global, so the line above any texel is its own and one running maximum per row serves them all -- and the 77
+directions cost half a second. A grazing ray is blocked by degrees over 1 cm of depth (`SOFT`), so edges do not alias.
+
+**Shelter** (`shelter`) is the share of the rain the building's OVERHANGS keep off the surface the street sees at
+(s, z): 0 in the open, 1 right under a deep projection. A surface overhangs where it stands `OVH_MIN` 2 cm further out
+than a surface below it within `OVH_LOOK` 2.5 m, before anything below stands further out than it and carries it (so
+the second floor's wall does not overhang the storefronts under the ground floor's crown). Under a long projection p
+deep, the rain model keeps off
+
+| below the edge | 0.25 p | 0.5 p | p | 1.5 p | 2 p | 3 p | 4 p |
+|---|---|---|---|---|---|---|---|
+| shelter | 1.00 | 0.86 | 0.52 | 0.35 | 0.22 | 0.14 | 0.08 |
+
+so the overhang's own depth sets how far down its shelter reaches, and the built model agrees: under the band's
+0.245 m soffit the brick reads 1.0 right under it, 0.55 a fifth of a metre down and 0.36 at 0.3 m; the storefront
+heads, 0.44 m deep, keep 0.45 of the rain off the transom 0.45 m below them; a sill's 3 to 5 cm, a few centimetres.
+
+Only overhangs count here. A pier standing proud beside a recessed wall also keeps some slanting rain off the wall's
+inside corner -- the full exposure keeps 0.44 off right beside a column standing 0.30 m proud of the field, 0.23 at
+17 cm, 0.10 at a third of a metre -- and counting it put a darker band down every pier: open brick darkened by
+something that is not shelter from above, the "fake ambient occlusion" the user rejected twice. The overhang shelter
+there is 0.003. The corner's share is measured all the same, in the full exposure below, for the washed zones.
+
+**Exposure** (`exposure`) is the same sweep with every surface blocking: `open`, the share of the rain that reaches the
+surface past everything that stands out (overhangs, proud piers, recess sides), against an open wall facing the street;
+times `catch`, the wind's catch across the face (Blocken & Carmeliet: most at the top edge and the top corners, then
+down the side edges): 564's height law (0.6 at the pavement to 1 at the crown's top), raised by up to `CATCH_EDGE` 35%
+in the top 3 m and within 3 m of a corner (the chamfer's 135 degree corners half of that), normalised to 1 at an open
+top corner (`catch_ratio()`). `data` = `open` x `catch`. The soiling itself does not use `catch`: an open wall stays
+clean wherever it is; where the rain is heavier is the washed zones' business (566), and the two agree because both
+come out of the same sweep: where `shelter` is high, `open` is low.
+
+### Undersides
+
+A surface that faces down takes no rain at all, whatever stands above it: the soffits of the crown, its coffers and
+dentils, the undersides of the band and its brackets and of the impost course, the window heads and arch soffits, the
+portal's vault, the storefront heads and the fire escapes' platforms. A single atlas value at (s, z) cannot tell a
+soffit from the wall below it -- every point of a soffit reads one row of the mask, the row of the projection's front
+edge -- but the normal can. The shader soils a face by its own tilt as the rain model does: an open face tilted down
+receives `(1 + Nz) ** 1.8` of an open wall's rain (within 0.03 of the model's sums: 0.54 at Nz -0.3, 0.31 at -0.5, 0.06
+at -0.8), so its shelter is `1 - (1 + Nz) ** 1.8`, taken on faces turned more down than out (ramping in from Nz -0.30 to
+-0.60, so a sill's front or a moulding's face barely tilted down is left to the mask). Since the rework the underside
+term is multiplied by the share its element carries in the mask at that row (the drip edge's own row), so a head's
+soffit is as heavy or as light as its head, and the crown's top lip, which faces 55 degrees down, takes none of it.
+
+### The sources and the marks
+
+The sources are the overhangs themselves: every **drip edge** on the elevation, an overhanging masonry texel (or a
+platform) whose surface below steps back at least `EDGE_MIN` 3 cm, traced into runs of one family (8-connected) along
+the edge; a run shorter than `RUN_MIN` 0.15 m (a dentil, an ornament's lobe) belongs to the overhang above it. Each run
+is a line source along its lower front edge, and every sheltered texel is one mark from one run: the first drip edge
+above it in its column, within that edge's reach (8 times its projection, at least 0.5 m), or, in the lateral penumbra
+beside a projection's end or under a cove's own crest, the nearest labelled neighbour's. Only the texels a face's own
+shading points read are painted -- those whose surface belongs to it by the bisector rule, not the next face seen
+obliquely past a corner.
+
+| family | on the model | runs | projection (median, range) | shelter reaches (median, range) |
+|---|---|---|---|---|
+| crown cornice | `ge_crown_*`: corbel, frieze, plinth, coffers, teeth, the three fasciae | 440 | 0.060 (0.040..0.190) | 0.10 (0.10..0.70) |
+| band 4-5 | `ge_cornice45_*`, `ge_band45*`, `ge_teeth45` | 218 | 0.245 (0.040..0.245) | 0.40 (0.10..1.30) |
+| band bracket | `ge_bracket45*` | 178 | 0.035 (0.035..0.057) | 0.25 (0.05..0.60) |
+| impost course | `impost_course5` | 44 | 0.051 | 0.25 |
+| window sill | `sill_*` | 74 | 0.033 | 0.15 |
+| window head | `panel_*`, the bay insets' heads in `wall_floors_2_4` | 362 | 0.179 (0.030..0.180) | 1.35 (0.05..1.90) |
+| arched window head | `top_panel_*`, `ge_archivolt*` | 81 | 0.308 | 1.93 (1.90..1.95) |
+| ground floor crown | `ge_crown` | 5 | 0.056 | 0.45 (0.15..0.45) |
+| string course | `ge_cornice`, `ge_bead`, `ge_teeth*` | 5 | 0.058 | 0.45 (0.45..0.50) |
+| storefront head | `ge_band_strip`, `fit_*` over the storefronts | 45 | 0.390 (0.250..0.440) | 1.45 (0.45..3.40) |
+| fire escape platform | `attachment_fire_escape_*`, 3 per stair | 6 | 0.960 (0.960..1.239) | 0.30 (0.30..0.55) |
+| portal | the three portals' arch block, frieze and ornament | 21 | 0.037 (0.036..2.156) | 0.10 (0.05..3.50) |
+
+1479 sources, 1479 marks, 1474 paths (the five runs of the crown's top lip, one per face, have nothing under them to
+soil: see "The top's run-off"). "Reaches" is how far down the run's middle column its shelter stays above 0.10 (a
+window head's reaches down its glass, which the soiling leaves alone). Build: about 6.5 s for the mask, and 18 s more
+for what stands behind glass (see "Behind glass").
+
+### One element at a time (rework 2026-09-23)
+
+The user's review of the finished layer (2026-09-23) rejected marks that repeat identically from one instance to the
+next ("the pigeon marker looks like a pattern, it was placed at the same position in all windows"; "check the other
+features for pattern like results"). The shelter is the geometry's, and every window head, arch, sill, storefront,
+fire escape platform and portal on this building is the same shape, so the measure alone soils each one exactly alike.
+At the facade scale that reads as consistent shading rather than a stamp (the soiling follows the shade the geometry
+already casts, and the 1960 HABS photos show the heads and arches evenly dark), but side by side at 1:1 every head
+soffit and every arch intrados was the same tone to the pixel. What differs between them on a real front is what the
+model does not carry -- a sound or a failed drip, a lintel reset, a window washed down with its frame, a tenant who
+keeps the shop front clean -- so each of those **elements** now takes its own share of the soiling and its own
+**stretch** of the reach (`VARY`), each the mean of two seeded uniforms between bounds, so the middle is likelier than
+the ends:
+
+| family | elements | share: bounds; drawn (median, range) | stretch: bounds; drawn (range) |
+|---|---|---|---|
+| window head (each opening, and each bay inset's head) | 362 | 0.70..1.15; 0.93 (0.71..1.13), 73 above 1 | 0.80..1.25; 0.84..1.22 |
+| arched window head | 81 | 0.70..1.15; 0.92 (0.73..1.07), 19 above 1 | 0.80..1.25; 0.86..1.25 |
+| window sill | 74 | 0.70..1.15; 0.94 (0.75..1.14) | 0.80..1.25; 0.84..1.22 |
+| storefront head (a shop's tenant cleans its front, or not) | 45 | 0.55..1.15; 0.87 (0.61..1.10) | 0.80..1.25; 0.84..1.18 |
+| fire escape platform | 6 | 0.70..1.15; 0.90 (0.89..0.98) | 0.80..1.25; 1.00..1.15 |
+| portal (its drip edges together; times `PORTAL_KEEP` 0.70) | 3 | 0.62, 0.68, 0.75 | 0.92..1.08 |
+
+The seed is the element's own place -- `sha256` of its family, face, span and height, or for a portal its instance
+(`PORTAL_A`, `_C`, `_E`) -- so every rebuild draws the same values and a change elsewhere on the model reshuffles
+nothing. The portals are the building's doors, washed down with the entrance; `PORTAL_KEEP` is that, and it is what
+takes the vault from 0.55 of its clean luminance to 0.70 (see Calibration). The continuous courses -- the crown, the
+band with the brackets under it, the impost, the string course, the ground floor's crown -- keep the whole measure:
+each runs the length of its face as one element, and a bracket's underside is the band's own soiling (drawn bracket by
+bracket it would read as a checker along the band).
+
+A share and a stretch are **smooth fields, not labels** (`blend_elements`): at each texel, the elements' values weighted
+by the shelter each would give there alone (`shelter_law`, the rain model's own fall-off under a long projection, down
+the element's span and over its own lateral penumbra). The first cut painted each mark's texels with its own drip
+edge's values, and under a fire escape platform, whose shelter lies over the window heads, inset heads and sills below
+it, the marks' frontiers (the first edge above each texel, grown sideways into the penumbra) turned into angular steps
+in the middle of one continuous shelter (`rework/soiling/audit/elevcmp_S_fire.png` is that first cut,
+`rework/soiling/elevations/walls_S_fire_escape_before_after.png` the field as built). Weighted by shelter, the platform
+leads where it shelters most and a value changes only where the shelter does. The one place an element's own value is
+set outright is its drip edge's own row: a soffit reads that row and the one below it, so the edge row carries its
+element's share and the soffit takes it -- unless the wall there is soiled by an overhang above it, whose share that
+wall keeps. The stretch is `R ** (1 / stretch)`, which moves a gradient's foot up or down the wall as a longer or
+shorter projection would, taken in from `SHOWN` to twice that so a mark's own margin still fades to nothing.
+
+### The top's run-off (rework 2026-09-23)
+
+The crown's top sheds its rain over its front arris, and its top 9 cm lean outward (`ge_crown_c3`: a face from d +0.40
+at z 20.645 to +0.52 at the top, 20.732, facing 55 degrees down). By the rain alone that lip reads fully sheltered --
+it faces down, and its upper part overhangs its lower -- so it was soiled by both terms (the mask read 0.68 there, the
+underside term 0.95) and drew a dark line along the building's skyline: the lip rendered at 0.64 of its clean
+luminance. But it carries the run-off of the whole top: with no drip at the arris, the water that goes over it runs
+back along the lip's underside, which slopes down toward the wall, and down the fascia under it to the next arris, and
+drips from that; and it is the building's most rain-beaten line (the catch above). The 1960 HABS crown
+(`loc_habs_ca0212_001`) reads light along its top edge and dark only under the corona. So `top_runoff` follows that
+film down every column of every face from the column's highest surface: on down a face while it steps less than
+`TOP_TOL` 5 mm from one row to the next, back along an underside leaning out (Nz between -0.94 and -0.20, at most
+`LIP_STEP` 0.15 m per row), and sideways along a wetted face for up to `TOP_SPREAD` 8 texels (under the return of a
+corner pavilion's crown, where a column's own top is something else), until the surface steps back further (an arris
+the water drips from) or out. On the crown it wets the lip and the fascia under it, 18,090 texels (45.2 m2, 0.25 m all
+round the building), and stops at the fascia's bottom arris: the soffit under that arris, the next fasciae, the coffers,
+the dentils and the frieze stay as they were. The lower cornices (the band's top, the ground floor's crown, the string
+course) have a vertical fascia at the top whose 1.6 to 2 cm undercut drips before their bed mouldings, which stay
+sheltered; the film is followed from the building's own top only.
+
+### The mask
+
+`masks/soiling.png` is 5 cm (3848 x 424, 26 MB of VRAM as float RGBA), four 16-bit channels (two before the rework):
+R the shelter of the surface the street sees there as its element's soiling counts it (stretched by the element's
+reach, and 0 where the top's run-off runs); G and B that element's share, G above 1 as (share - 1) / `UP_SPAN` 0.5 and
+B below 1 as 1 - share, so a texel outside every mark (both 0) keeps the whole measure and one where the top's run-off
+runs (B = 1) takes none; A that surface's depth (d from -3.0 to +1.5 over 0..1). The depth lets the shader tell
+the recorded surface from something standing well in front of it: a point more than 0.10 to 0.25 m in front of the
+recorded depth is not that surface (the fire escapes' bars, which were looked through, and the lowest centimetres of a
+deep projection's front edge, which would otherwise take the wall's shelter from the texel below). Each mark carries a
+two-texel margin so the depth is whole wherever the lookup filters. Tops take none of the mask (a ledge takes the rain
+on its face whatever shelters the wall behind it).
+
+### The look
+
+Where the soiling lies, the colour goes toward DIRT -- the material's own colour 45% greyed toward a warm grey-brown
+(its own luminance times (1.00, 0.95, 0.88): smog and dust, not soot), kept at 45% of its brightness -- by
+`AMOUNT` 0.62 x the soiling x the strength, and on brick, terracotta and stone (`MATTE_ON`, the porous fabric the
+deposit lodges in) the roughness goes to at least 0.80: darker, duller and matte, the material's own pattern still
+under it and its normal map untouched. A smooth finish -- paint, metal, the varnished oak, the glaze -- keeps its own
+gloss and only darkens (see "Never lighter" below). The soiling is the shelter through a smoothstep from
+0.03 to 0.55 (an open wall stays clean), or the underside term, whichever is more, times the element's share read from
+G and B (1 + 0.5 G - B: the underside term takes it too, which is how a soffit comes to differ from its neighbour's,
+and the top's run-off takes the lip's to nothing). The mortar joints hold 35% more of it
+than a brick's face (the layer's Joint, from the brick set's own height map), so the deposit keeps the brick's pattern
+rather than lying over it like a shadow; the stone's cloudy Grain is not used (see runoff). Each class takes its
+share: brick, terracotta and stone in full; painted metal (the storefront frames and fascia, the fire escapes, the
+portal's iron door pulls) and paint (the window frames, the storefronts' white transom panels) 0.6; the portal's glazed
+brick 0.4 and its oak 0.35, which hold less and are wiped by hand (the portal as a whole also takes `PORTAL_KEEP`);
+bare metal none: a metal whose own metallic is 0.90 or more (`BARE`, fading in from 0.75) -- the portal's brass
+kickplates and bronze lamps (1.0), the doors' bronze hardware (0.92) -- is polished by hand, as the user's photo of the
+Broadway entrance shows its kickplates, while the game's painted iron and steel read 0.6 to 0.7 and keep their share;
+glass none (AI 571 is the glass's), and nothing the street sees only through glass either, behind its pane (see
+"Behind glass").
+
+### Never lighter (critique 2026-09-24)
+
+The fresh-eyes critique of the rework found the soiling making the Broadway portal's sunlit brass kickplates LIGHTER:
+1.44 of their clean luminance in the close-up from the pavement (1.71 at the brightest), a flat pale gold panel where
+the user's photo shows polished brass, and the floor tiles that mirror them 1.28, while the same portal's shaded
+kickplates darkened to 0.82. The cause was the matte: every class went to a roughness of at least `MATTE` 0.80, and on
+a smooth finish that spreads the finish's own gloss. A polished metal's whole look is its reflection, so roughened in
+the low sun its lobe took in the sun itself. Checked over the whole building, the same happened, more faintly, to the
+portal's varnished oak in sun (1.03 to 1.04) and to the storefronts' black metal fascias and frames in sun (up to 1.38
+seen along Broadway from the crossing, 1.07 square on, 1.10 on the north face). No deposit here should do that: it
+is a dark smog film, and the layer cannot dim a gloss (the specular level is routed on glass alone), only spread it. So
+the matte is now the porous fabric's alone (`MATTE_ON`), where the deposit lodges in the pores and dulls the sheen --
+seen along a sunlit facade it makes the sheltered bands darker, not lighter -- and every smooth finish keeps its gloss
+while its colour (for a metal, the colour of its reflection) darkens as before; and bare metal takes none at all
+(`BARE`, above).
+
+The check is `wear_compare.py lighter` (see the framework's commands): a still with the soiling off against the same
+still with it on, 8 px blocks of linear luminance, and any block lighter by more than 2% and by more than 0.003 fails;
+`--again` (the on still rendered twice) leaves out the blocks the renderer itself does not repeat. On the full-size
+stills, every other feature on (`rework/soiling/critique_r1/lighter/`), blocks lighter with the soiling on:
+
+| still | before the fix | after |
+|---|---|---|
+| the Broadway portal from the pavement, 4.8 m (21.794, 0.880, 1.801) to (16.994, 0.880, 2.200) at 35 mm, in sun | 1558 | 0 (1 block not repeatable, left out) |
+| the Broadway storefronts from the pavement, 10 m | 190 | 0 |
+| Broadway's elevation at 4K, 36 m | 383 | 0 |
+| the north face's elevation at 4K, 54 m, in sun | 162 | 0 |
+| the north door and its bronze hardware, 5 m, in sun | 0 | 0 |
+| `hero_3q`, `st_corner`, `st_along`, `st_up`, `st_portal` | 12, 58, 302, 0, 207 | 0, 0, 0, 0, 0 |
+
+and in the portal close-up, the soiling's on / off:
+
+| where | light | before the fix | after |
+|---|---|---|---|
+| the brass kickplates; the other door pair's | sun; shade | 1.44; 0.82 | 1.00; 1.00 |
+| the floor tiles mirroring the sunlit kickplates | sun | 1.28 | 1.00 |
+| the doors' oak panels; the rail over them | sun | 1.03; 1.04 | 0.94; 0.94 |
+| the other pair's oak panels | shade | 0.92 | 0.96 |
+| the recess's glazed brick side, seen edge-on | sun | 0.96 | 0.96 |
+| the vault at its crown; open pier stone | shade; sun | 0.75; 1.00 | 0.75; 1.00 |
+
+On the 4K elevation the portal's foot (the 6,294 pixels that read lighter) went from 1.34 to 1.00. The masonry's
+numbers above and in the calibration are unchanged: on brick, terracotta and stone the shader computes exactly what
+it did. One caution for the check: at half size and 32 spp it flagged three blocks along the sunlit return of the
+Broadway pilaster, a sub-pixel edge seen almost edge-on. A variant with no roughness change at all flags the same
+blocks, and rendered with 1024 fixed samples and no denoiser the edge's pixels move both ways (8 lighter and 18
+darker by more than 0.01, no block over the margins): the renderer's edge noise, since the Principled BSDF picks its
+lobes by their albedo and a darker colour draws different paths, which `--again` cannot see because a still repeats
+exactly. Judge the check at full size.
+
+### Behind glass (critique 2026-09-25)
+
+The second fresh-eyes critique found the soiling on surfaces behind glass. The storefronts' white transom panels
+(`Storefront_White_Paper`, class paint) stand 2.2 cm behind their transom glass: the glass from d -0.182 to -0.188 and
+the panel's face at -0.21 (-0.382, -0.388 and -0.41 on the deeper storefronts). The mask records the first surface a
+level ray meets, which is the glass, with the storefront head's shelter; the depth gate only rejects a point standing
+in front of the recorded surface; so every panel took the head's shelter gradient at paint's share of 0.6, heaviest
+at its top: 0.79 of its clean luminance at the top and 0.88 at the foot on 3rd Street, 0.77 to 0.85 across the west
+face, where they were the most darkened surfaces on the face -- an even grey veil over every transom, and heaviest at
+the top, against glass grime's own film (AI 571), which gathers toward the bottom rail. Neither street dust nor the
+rain the shelter measure models reaches them. A probe of what the review poses see through glass found the same
+behind the portals' doors (the vestibule's oak ceiling, beams and medallion, which the underside term mixed 0.10 to
+0.24 of the way to the deposit) and on the parts of window and door frames and heads that run on behind their panes (a
+display window's frame runs from 3 cm in front of its glass to 9 cm behind it, and its inner faces took the head's
+shelter all through; a window head's brick reveal behind its pane, up to 0.5 of the way).
+
+The mask cannot tell a panel from the pane in front of it: they share their texels, and its four channels are all in
+use. So what the street sees only through glass is found on the model at build time (`indoors`) and carried by the
+faces themselves:
+
+1. **What each pane shows** (`pane_views`): from points `PANE_STEP` 0.30 m apart on each pane's street face, rays into
+   the building over the fan a viewer in the street looks along (`PANE_EL` -30 to 60 degrees, `PANE_AZ` -60 to 60 off
+   the face's inward normal), past the pane's own two faces to the first surface behind it; a second pane ends the
+   ray, since what lies beyond it is not this pane's to show. 2.0 million rays, 3.5 s.
+2. **Looked at from the street** (`_sight`): each face so seen, from its centre, from near each of its corners
+   (`CORNER` 0.95) and from the first point a pane showed of each of its triangles (`PANE_HITS`: the vestibule's
+   ceiling is seen between its beams, where neither its centre nor its corners are), along sight lines to 80
+   viewpoints in front of its face (`VIEW_D` 0.6, 2, 8 and 25 m out; `VIEW_Z` 0.4, 1.6, 8 and 16 m up; `VIEW_S` 0, 4
+   and 15 m along either way). A clear line counts only when most of 4 lines `SLIT` 2 cm beside it are clear too: the
+   model leaves gaps of a few millimetres to over a centimetre between a pane and its door or frame (the Broadway
+   portal's medallion is visible from the pavement through the slit beside a door's glass), which nobody sees the
+   street through. A line that passes nothing but glass names the pane it is seen through: the plane of the first face
+   of glass it meets that turns to the street (`BROAD`; not a pane's 6 mm edge).
+3. **Judged in facets**, the faces of one plane that share a corner (a quad is two triangles, and one side of a bar
+   must not come out half one way and half the other). A facet is indoors behind its pane when a point of it is seen
+   through glass, the panes its points are seen through are one plane (within `PLANE_COS`, `PLANE_TOL`), and its points
+   behind that plane are seen from the street through glass or not at all -- all but the odd one (`VETO_SHARE` a
+   quarter: the chamfer's transom panel shows one corner past its frame, where the frame leaves the pier's slanted side
+   open, while a recessed entrance behind a pane's plane would show most of its points). Points in FRONT of the plane
+   may be seen: they are the part of the face the soiling keeps. A mesh with a facet indoors has every facet that
+   reaches behind that pane looked at, in every object that draws it (the export shares one display window's frame
+   between 15 windows), up to `TEST_ALL` 400 faces; and a mesh lying wholly behind the one pane its facets are seen
+   through, none of them seen from the street without glass, is indoors whole, its hidden faces too.
+
+Each face indoors carries its pane in its object's own space (`apply()` and `apply_portal()`): the normal toward the
+street in the face attribute `wear_soiling_pane`, the offset in `wear_soiling`, which the shader reads as Attr. In the
+object's own space one mesh serves every window it frames and all three portals, so the attributes are written in place
+-- no mesh is copied and every object stays an instance of its mesh. The shader takes the soiling off a point standing
+behind its face's pane, in the object's own space (Texture Coordinate: Object), from 1 mm behind the plane to all of it
+at 3 mm (`PANE_GAP`; the panels stand 22 mm behind the back of their glass), and so cuts a frame's inner face where the
+glass meets it: its outer 3 cm keep their soiling. Everywhere else the factor is exactly 1.
+
+As built, 5,708 faces of 286 meshes (47 of them whole), on 370 objects of the block and 24 of the portal, in 18 s; 2
+faces seen through two panes that are not one plane are left as they are:
+
+| where | objects | faces | what |
+|---|---|---|---|
+| storefront transom panels | 36 | 432 | every panel whole, the chamfer's included |
+| the top floor's arched windows | 162 | 2,106 | each frame's faces that run on behind its glass (25 of 108) and one face of each transom bar, cut at the glass |
+| the export's other window and door frames | 153 | 1,100 | the display windows', the sashes', the mullions' and three doors' frames: the faces behind their glass (2 to 16 each), cut at the glass |
+| brick window heads (`panel_*`) | 15 | 70 | a head's soffit and reveals where they run on behind the pane, cut at the glass |
+| a fascia, two transom bars, a face of the piers | 4 | 5 | faces tucked behind the transom glass |
+| the portal's vestibule (in all three portals) | 17 | 2,742 | medallion, lamp, arch, beams, cornice, ceiling, floors, jambs whole; its side walls and bases where they reach behind the door's plane |
+| the portal's doors, their frame, post and post panel | 7 | 15 | the faces behind the door glass |
+
+Checked from a much denser street: an audit (`rework/soiling/critique_r2/`, see Evidence) looked at 41,978 points
+behind their panes on 11,984 faces (each portal counted three times) from 210 viewpoints (0.6 to 25 m out, 0.4 to 18 m
+up, up to 20 m along) and the 17 cameras and review poses: the only points seen without glass are within 11 cm of the
+chamfer transom panel's left end. No mesh was copied (the 394 objects keep the meshes the block gives them; the export's
+shared window frames take the attributes once, 16 meshes), and with the soiling off the stills repeat the critique's to
+one 8-bit level: the attributes change nothing but this feature's look. The one face of the piers (`fit_piers`, hidden
+behind a transom) is on the object edge wear (AI 570) renders a chipped copy of while it is on: the copy, made before
+this feature's apply, does not carry it, which changes nothing that can be seen.
+
+Measured, full size, the soiling on against off (`wear_soiling=0`, every other feature on), at the panels' top band (z
+4.30 to 4.40) and foot band (3.62 to 3.72), 0.10 m in from each side; and all on against wear off:
+
+| still | panels | soiling on / off, top; foot: before, after | all on / wear off, top: before, after |
+|---|---|---|---|
+| 3rd Street from the pavement, 10 m, shade | 3 | 0.79..0.82; 0.90..0.93 -> 0.98..0.99; 1.00 | 0.64..0.71 -> 0.78..0.88 |
+| Broadway from the pavement, 10 m, sun | 2 | 0.80..0.83; 0.98 -> 0.97; 1.00 | 0.77 -> 0.90..0.94 |
+| the north face from the pavement, 10 m, sun | 3 | 0.83..0.89; 0.98 -> 0.97..0.99; 1.00 | 0.78..0.85 -> 0.91..0.95 |
+| the west face at 4K, 38 m | 7 | 0.69..0.78; 0.86..0.94 -> 0.99; 1.00 | 0.62..0.74 -> 0.89..0.96 |
+| 3rd Street at 4K, 52 m | 10 | 0.75..0.83; 0.87..0.93 -> 0.99..1.01; 1.00..1.01 | 0.57..0.72 -> 0.75..0.90 |
+
+What is left at a panel's top is light, not deposit: the soiled head and frame bar just above it return less of the sky
+onto it (the shader's factor is 0 on the panel, and its foot reads 1.00). All on against wear off the panels now read
+as glass grime alone makes them: 0.90 to 0.98 on the west face (0.945 at the median, as the critique expected) and
+0.75 to 0.91 on 3rd Street (0.83), whose sheltered transom glass glass grime keeps dustier; an even film, no longer
+heaviest at the top.
+
+What is not covered: a face the pane rays never meet keeps its soiling (they sample each pane every 0.30 m over 20
+directions, and a mesh with a face indoors has all its faces looked at, so only a whole object hidden from them all
+could slip through); a face seen from the building's hollow inside, back toward its own facade, lies in front of the
+pane it is seen through and keeps its soiling (the backs of the storefronts' fascias, seen through a portal's doors past
+its vestibule: black in every still); the 2 faces seen through two panes that are not one plane keep theirs; an object
+whose modifiers change its faces would be skipped (none on this block); and the elevation images (`elevations=1`) still
+draw the mask at the glass's texels, since the mask is as it was. A probe of the 17 poses (`diff/behind_glass_probe.json`,
+the shader emulated on a 320 by 200 grid of camera rays through glass) counts the pixels seen through glass that the
+soiling darkens by more than 0.02: see Evidence.
+
+### Calibration
+
+Measured in rendered pixels on the full-size evidence stills at the scene's defaults: the linear luminance of a box
+with the soiling on, against the same box with `wear_soiling=0` (runoff on in both), `diff/calibration.json`:
+
+| where | light | on / off |
+|---|---|---|
+| under the crown: the frieze of flower tiles, its top 5 cm under the plinth | sun | 0.83 |
+| the same frieze at its foot, 0.5 m down | sun | 0.97 |
+| the brick just under the corbel | the crown's shade | 0.84 |
+| the brick 0.5 m under the crown; open brick between the arches | sun | 0.99; 0.99 |
+| a fascia soffit of the crown | shade | 0.80 |
+| the top floor's arch soffit; the portal's vault at its crown, near its springing | sun, shade | 0.60; 0.55, 0.58 |
+| a coffer between the crown's dentils | deep shade | 0.47 |
+| the band strip just under the string course; 0.2 m and 0.5 m lower | sun | 0.89; 0.97, 1.00 |
+| a white transom panel under a storefront head: its top; its middle (behind glass: none since 2026-09-25, "Behind glass") | shade; sun | 0.71; 0.93 |
+| the portal recess's oak ceiling | deep shade | 0.84 |
+| open pier stone between two joints; open brick on the third floor | sun | 1.00; 1.00 |
+
+The references: the Commons colour photos of the Broadway portal show the zone under each cornice, the coffers and
+the arch's vault plainly darker than the open stone, and runoff (AI 564) measured the streaks on the BRADBURY frieze at
+0.75 to 0.8 of the stone beside them; the sheltered walls here are set a little lighter than that, 0.83 to 0.89, a
+maintained building. The deep cavities go further, 0.47 to 0.60, because there the change compounds: a coffer is lit
+by light off its own soiled walls. The 1960 HABS corner (`loc_habs_ca0212_001`) has the crown's frieze at 0.26 of the
+open brick, mostly the cornice's own shadow on a sunlit facade plus 1960's soot; in the crown close-up, in sun, the
+frieze's top goes from 0.79 of the open brick to 0.66 with the soiling on, the same direction and well short of it. As
+the framework found, AgX compresses the sunlit walls, so the same deposit reads more in the shade. `AMOUNT` 0.62 and
+`DIRT_DARK` 0.45 carry the calibration; `DEFAULT_STRENGTH` stays 1.0.
+
+**After the rework (2026-09-23)**, measured the same way at 128 spp on the same crown close-up camera (26, -2, 2) to
+(17, -2, 19.2) at 70 mm, on `st_portal`, and square under the Broadway portal (19.6, 1.4, 1.1) to (16.6, 1.4, 3.9) at
+20 mm, every other feature on; "before" is the frozen state before this pass against the same `wear_soiling=0` still
+(`rework/soiling/diff/rework_numbers.json`):
+
+| where | light | before | after |
+|---|---|---|---|
+| the crown's top lip | facing down | 0.64 | 1.00 |
+| the fascia under it | sun | 0.91 | 1.00 |
+| the soffit under that fascia, below the drip | shade | 0.50 | 0.58 |
+| four neighbouring top floor arch soffits | sun | 0.55, 0.54, 0.53, 0.57 | 0.58, 0.54, 0.60, 0.57 |
+| three neighbouring fourth floor head soffits | shade | 0.54, 0.54, 0.55 | 0.57, 0.59, 0.56 |
+| the portal's intrados at the crown; near the springing; the architrave soffit over it | sun; shade; shade | 0.55; 0.92; 0.78 | 0.70; 0.95; 0.87 |
+| a white transom panel's top (one storefront; none since 2026-09-25, "Behind glass") | shade | 0.71 | 0.71 |
+| the frieze's top; a fascia soffit; a coffer; the band strip under the string course | | 0.83; 0.84; 0.48; 0.89 | unchanged |
+
+The spread between neighbouring arches and heads before the rework was the light alone (each arch's position against
+the sun); after it, each carries its own share on top. The deep cavities were flagged as possibly strong for a
+maintained building: the one at street level, the portal's vault, is where the rework acts (the entrance is washed
+down), and the vault now keeps the warm orange-brown the Commons photographs show instead of greying. The coffers
+between the crown's dentils stay at 0.48: they are lit only by light off their own soiled walls, so the same deposit
+compounds there, their absolute change is small (linear luminance 0.043 to 0.021, deep shade either way), and the
+1960 photograph has that whole dentil band dark. The arch soffits, spread from 0.54 to 0.60, are a little lighter on
+average than before (0.57 against 0.55), as the shares' median of 0.92 has them.
+
+### The debug view
+
+Violet: every soiled surface at full colour where its soiling is full, the sheltered walls fading with their shelter,
+every underside, an element's own share fading it further (a lighter head is a paler violet); a square tube along each
+drip edge and a thin tube down each run's middle to where the shelter its element's soiling counts falls below 0.10,
+so a deep projection's path is visibly longer than a thin one's and a stretched element's longer than its neighbour's.
+The crown's top lip shows no violet and its five drip edges no path, nor do the bare metals (the portal's brass
+kickplates and bronze lamps, the doors' bronze hardware) since the critique of 2026-09-24, nor anything behind glass
+since the critique of 2026-09-25 (though the debug view's glass, opaque, hides most of it). `wear=debug wear_runoff=0`
+shows the soiling alone; with runoff on, its blue lies over the violet where both are.
+
+### Published for the features that follow
+
+`ctx.field("soiling", key)` for a feature that NEEDS soiling (566 washes where the rain reaches, 572 wants shelter for
+its perches, 573 erodes the joints where the rain beats). The fields are float16 arrays over the whole atlas at 5 cm,
+(424, 3848), rows from `z0` up, columns as every 5 cm mask (the atlas's own layout, `atlas`); `soiling.sample(field, f,
+s, z, key="data")` reads one bilinearly at face f's (s, z), numpy arrays welcome, so a feature at another resolution
+samples it at its own texel centres (`ctx.grid`). Values past a face's corner bisector are the next face seen
+obliquely: sample a face at its own points.
+
+- `shelter`: `dict(res, z0, atlas, data, note)`, the overhang shelter above (0..1).
+- `exposure`: `dict(res, z0, atlas, data, open, catch, note)`: `data` the wind-driven rain the surface receives (0..1,
+  1 at an open top corner), `open` its geometric share (all blocking), `catch` the wind's share across the face.
+- `front`: `dict(res, z0, atlas, depth, cls, note)`, the elevation the measure was taken on: the depth of the first
+  surface (nan where nothing, the fire escapes looked through) and its material class (-1 where nothing).
+- `overhangs`: every source, `dict(id, kind, facade, s0, s1, z, d_edge, d_below, projection, object, element, share,
+  stretch, reach, soiled_reach, texels)`: the drip edge's span, height and front, the surface below it, how far it
+  stands out over that, its element (None for the continuous courses) with the share and stretch drawn for it, and its
+  reach, the geometry's and as its element's soiling counts it.
+
+All of these stay the geometry's measure of the rain; the elements' shares and the top's run-off are this feature's own
+look and live only in its mask, so the features that NEED this one (566, 569, 571, 572, 573) rebuilt byte-identically
+after the rework.
+- `rain`: `dict(theta, phi, weights, ovh_min, ovh_look, platforms, note)`: the rain model and the fire escape platforms
+  laid into the envelope.
+
+How the others should read them, so the cleanest and the most soiled places agree: 566 washes by `exposure["data"]`
+(or by `open` and `catch` apart: `open` is what makes a pier's front cleaner than the recessed wall beside it, `catch`
+the top edge and corners), and keeps off wherever `shelter` is above about 0.05, which is where this feature starts; 573
+erodes by `exposure["data"]` with runoff's paths and 567's splash zone, never where `shelter` is above about 0.2; 572
+reads how sheltered a perch is from above as the `shelter` of the surface just above the ledge's back edge (and, to
+count an inside corner or a pier's return beside it too, `1 - open` there), or finds what hangs over it in `overhangs`.
+
+### What it changed in the framework
+
+Nothing but `wear/registry.py`, which lists `soiling`. It builds first (ORDER 200, NEEDS nothing) and its shader stands
+first in the chain, so runoff's streaks lie over the soiled colour. The probe and runoff masks build byte-identically
+(`37806c0b...` and `4fa13d0c...`, as before), and the worn block keeps 2281 objects (2275 and six markers). The rework
+changed nothing outside `soiling.py`: rebuilt whole, every other feature's mask and cache came out byte-identical to the
+state before it, the worn block and the worn portal differ only in the soiling's own debug paths, and the worn block
+keeps its 2697 objects (2275, 22 markers and the 400 of the geometry features). The critique's fix (2026-09-24) is the
+shader alone, plus a check in `wear_compare.py` (`lighter`): rebuilt whole, every mask and cache is byte-identical to
+the state before it, and so are the manifest's features, materials and objects; against a control build with the old
+shader the worn block (2697 objects, 83 materials) and the worn portal (460 objects, 21 materials) are identical object
+by object and material by material; of the node library's 13 groups only `WEAR_F_soiling` differs. No feature reads
+the soiling's look at build time, so every other feature rebuilt byte-identically; in the render the only one laid over
+a finish whose soiling changed is rust on the fire escapes' painted iron (its roughness under the platforms is now the
+paint's own), and 3rd Street's first stair renders within 7 levels of before (mean 0.04, no pixel past 8).
+The second critique's fix (2026-09-25) changes nothing in the framework either: the feature gained an `apply()` and an
+`apply_portal()`, which write its two face attributes (the framework's `Attr` input carries the pane's offset, and the
+shader reads `wear_soiling_pane` with an Attribute node of its own), and the build keeps what they write in its stash;
+the mask and the published fields are as they were. Rebuilt whole, every mask and every other feature's cache is
+byte-identical to the state before it; of the worn block's 2697 objects only the 370 indoors differ, in their mesh data
+alone (the attributes; no mesh copied), of the worn portal's 460 only the 24 indoors, and of the node library's 13
+groups only `WEAR_F_soiling`. The features that NEED soiling (566, 569, 571, 572, 573) read only the published fields,
+and rebuilt byte-identically.
+
+### Evidence
+
+In `tests/artifacts/screens/bradbury_wear/sheltered_soiling/`: `<view>_off_on_debug.png` (soiling off | on at its
+default | the debug view with the soiling alone, 50%) for `hero_3q`, `st_up`, `st_portal`, `crown_closeup` (under the
+crown), `portal_inside` (the vault and the recess), `medium_broadway` and `fire_escape_3rd` (the platforms' shelter on
+3rd Street, in shade); `renders/` (the full-size stills, and `<camera>_wear_off.png` for all five cameras); `diff/` (off
+against on, x8, with the numbers as json; the off-state checks; `calibration.json`); `references/` (the reference crops
+compared). Off against on, mean 8-bit levels over the frame and the share of pixels moved more than 8: `hero_3q` 1.17,
+7.3%; `st_up` 2.36, 14.3%; `st_portal` 3.03, 15.0%; `crown_closeup` 6.15, 36.5%; `portal_inside` 3.53, 20.6%;
+`medium_broadway` 3.04, 17.5%; `fire_escape_3rd` 0.71, 6.0%.
+
+The off switch still renders as before the layer: the worn scene with `wear=off` against the pre-wear renders
+(`series/final/before/`), mean levels and share of pixels off by more than 2, `hero_3q` 0.0134, 0.004%; `st_corner`
+0.0282, 0.047%; `st_along` 0.0078, 0.009%; `st_up` 0.0101, 0.010%; `st_portal` 0.0141, 0.020% (the noise floor is
+0.0067 to 0.0310). With `wear_soiling=0` the canonical scene is AI 564's: `st_up` against 564's own still, 0.0091,
+0.010%.
+
+The rework's evidence (2026-09-23) is in `tests/artifacts/screens/bradbury_wear/rework/soiling/`: `<view>_before_after.png`
+(the state before this pass | after | the change, blue darker and orange lighter, full at 25%) for the five cameras,
+`closeup` (the crown and the top floor arcade from the pavement, the pose above), `medium` (the upper Broadway front) and
+`vault` (the Broadway portal from under it); `closeup_off_on_debug.png` and `medium_off_on_debug.png`; `crop_*_1to1.png`
+(the crown's top edge; the arches and heads; the heads from `st_up`; the storefronts from `st_along`); `elevations/`
+(each face's walls, the smoothstep of the mask times the share, before and after, and the fire escape zone the first
+cut split into steps); `renders/` (the full-size stills, `<camera>_wear_off.png` included); `diff/` (the change maps,
+x8 differences and `rework_numbers.json`); `audit/` (the audit's own renders). Before against after over the whole
+frame, mean 8-bit levels and the share of pixels moved more than 8: `hero_3q` 0.13, 0.46%; `st_corner` 0.13, 0.46%;
+`st_along` 0.20, 0.74%; `st_up` 0.22, 0.78%; `st_portal` 0.31, 1.17%; the close-up 0.52, 2.28%; the vault 0.95, 8.6%.
+The worn scene switched off against the pre-wear renders: `hero_3q` 0.0166, 0.007%; `st_corner` 0.0319, 0.058%;
+`st_along` 0.0066, 0.004%; `st_up` 0.0061, 0.001%; `st_portal` 0.0161, 0.025%, the noise floor.
+
+The critique fix's evidence (2026-09-24) is in `rework/soiling/critique_r1/`: `E_portal_off_before_after.png` (the
+Broadway portal from the pavement: soiling off | on before the fix | on after it), `E_portal_doors_change.png` (the
+doors' foot at 1:1 with both change maps), `E_portal_change_before_after.png`, `E_portal_reference_kickplates.png` (the
+user's photo of the entrance's kickplates beside the render), `E_storefronts_fascia.png` and `st_along_storefronts.png`
+(the sunlit fascias); `lighter/` (the check's heat maps, orange where the soiling lightens, before and after, and
+`lighter.json`); `diff/` (before against after for the five cameras and the extra stills, change x8, and the off-state
+json); `renders/` (the full-size stills; the soiling-off stills serve before and after alike, since at strength 0 the
+shader hands its input on exactly). Before against after, mean 8-bit levels and the share of pixels moved more than
+8: `hero_3q` 0.03, 0.006%; `st_corner` 0.04, 0.017%; `st_along` 0.07, 0.054%; `st_up` 0.03, 0.002%; `st_portal`
+0.11, 0.070%; the portal close-up 0.76, 2.1%. The worn scene switched off against the pre-wear renders: `hero_3q`
+0.0165, 0.007%; `st_corner` 0.0319, 0.058%; `st_along` 0.0066, 0.003%; `st_up` 0.0060, 0.001%; `st_portal` 0.0161,
+0.025%, the noise floor.
+
+The second critique fix's evidence (2026-09-25) is in `rework/soiling/critique_r2/` (OptiX alone, `devices=gpu`, at the
+scene's defaults; "before" is the critique's own stills in `rework/critique_round2/`, rendered the same way from the
+state before the fix): `crops/W_wide_transoms_1to1.png` and `crops/S_wide_transoms_1to1.png` (the west face and 3rd
+Street at 4K, 1:1 over their transoms: wear off | soiling off | all on before the fix | after it | after against before
+x6 | after against wear off x6), `S_storefronts_before_after.png`, `E_storefronts_before_after.png` and
+`N_piers_before_after.png` (the critique's storefront poses: soiling off | before | after | after against before | the
+soiling's own change after), `<camera>_before_after.png` for the five cameras, `closeup_E_storefront_off_on.png` (a
+Broadway storefront from the pavement, 5 m: off | on | the change | the debug view) and `medium_W_portal_off_on.png`
+(the west portal and its storefronts, 14 m); `renders/` (the full-size stills, soiling off and wear off beside each;
+`prewear_now/`, the frozen pre-wear scene rendered again the same day); `diff/` (the transoms measured, as json; before
+against after for the five cameras, x8; the off-state json; `behind_glass_probe.json`); `lighter/` (the never-lighter
+check on the 10 new stills: no block lighter in any); `audit/` (the dense audit's result and the scripts that measured
+all this). Before against after, mean 8-bit levels and the share of pixels moved more than 2: `st_corner` 0.084, 1.05%;
+`st_portal` 0.39, 5.17%; `st_along` 0.21, 3.47%; `st_up` 0.008, 0.002%; `hero_3q` 0.083, 0.96%; every moved pixel
+lighter, 88 to 91% of them on the transom panels' faces as projected and the rest on the same panels' ends past their
+frames. The probe of the 17 poses counts the pixels seen through glass that the soiling darkens by more than 0.02, on a
+320 by 200 grid: 3rd Street's storefronts 6,269 before and 0 after, Broadway's 6,306 and 3, the north face's 6,379
+and 4, the four faces' 4K poses 1,046 to 1,433 and 0 to 15, `st_portal` 3,923 and 23; the portals' close-ups keep
+some 300 each (5,600 to 5,800 before), all deep in the dark vestibule and beyond it (the fascias' backs, see "What is
+not covered"). With the soiling off the stills repeat the critique's to within one level (max 1).
+
+The worn scene switched off against the frozen pre-wear scene rendered again the same day (`renders/prewear_now/`,
+OptiX and the CPU as the scene is set), mean levels and share of pixels off by more than 2: `hero_3q` 0.0088, 0.0008%;
+`st_corner` 0.0060, 0.0003%; `st_along` 0.0068, 0.0019%; `st_up` 0.0062, 0.0008%; `st_portal` 0.0081, 0.0015%, the
+noise floor. Against the stills of 2026-09-23 in `series/final/before/` both differ alike, by 0.27 to 0.38 levels (1.7
+to 4.9% of the pixels past 2): the renderer no longer repeats those stills (the machine had been restarted after a
+crash), so an off-state check renders the frozen pre-wear scene (`wear_before/bradbury_scene.blend`) again first.
+Rendered once more from the final build and its rebuilt scenes (`renders/final_check/`): switched off, `st_portal`
+0.0073 and `hero_3q` 0.0088 against that pre-wear scene (max 5 levels, none past 8); on, the Broadway close-up repeats
+its evidence still to within one level at every pixel.
+
+## Rain-washed exposed zones (AI 566)
+
+`wear/features/washed.py` (`wear_washed`, cyan in the debug view): the parts of the facade the rain keeps cleaner than
+the rest, and the light streaks runoff rinses into soiled surfaces -- the washed counterpart of the sheltered soiling
+(AI 565). Dirt from the air settles on a facade fairly evenly; what makes one place cleaner or dirtier than another is
+the rain. The runoff review (Blocken & Carmeliet 2013, after Robinson & Baker) puts it in one line: "runoff can locally
+rinse away deposited dirt". Wind-driven rain hits a facade hardest at its top edge and top corners, and it reaches the
+fronts of whatever stands out past nothing, so those keep less of the deposit; where a stream of runoff runs through a
+soiled zone it rinses its path light ("white washing"), the counterpart of 564's dirt washing. Every value comes from
+565's rain-exposure sweep or from 564's streams; nothing is placed by noise, and the mask is byte-identical from one
+build to the next. Since the rework of 2026-09-23 each stream rinses as its own water and its own line say ("One stream
+at a time", below), so no two brackets carry the same tongue and the ones the band drips clear over carry none; the
+wash of the exposed fronts, a continuous field of the geometry's, was audited and left as it was.
+
+```
+blender -b -P wear_layer.py -- features=washed                           # its mask alone (about 1.5 s), the rest cached
+blender -b -P render_wear.py -- wear=on wear_washed=0 view=st_up         # off; 1 is the calibrated default
+blender -b -P render_wear.py -- wear=on wear_washed_film=1 view=hero_3q  # with the optional atmospheric film
+blender -b -P render_wear.py -- wear=debug wear_runoff=0 view=hero_3q    # washed cyan against the soiling's violet
+```
+
+### The exposure: 565's measure, refined for the projecting fronts
+
+The measure is 565's own (`ctx.field("soiling", "exposure")`): `open`, the share of the wind-driven rain that reaches
+the surface the street sees past everything that stands out, times `catch`, the wind's catch across the face (the
+height law, raised by up to 35% in the top 3 m and within 3 m of the block's corners). It is refined in one respect, in
+this feature's own copy: a front standing proud of the recessed brick field catches up to `PROUD_GAIN` 35% more of the
+rain than the field does (the catch rises at the edges of whatever stands out as it does at the block's own; the same
+35% as 565's edge term), from none at 5 cm in front of the field (d -0.10, checked on the model at build time) to all of
+it from 25 cm. So the fronts of the projecting piers, columns, corner pavilions, the band and the crown measure as more
+exposed than the recessed bays between them. 565's mask and fields are untouched; the refined measure is published as
+this feature's own `exposure`.
+
+### The wash: a matter of degree against the general facade
+
+The materials as they are drawn are the general facade. A deposit settles at the balance between what the air brings,
+the same everywhere, and what the rain rinses off, so the dirt a surface keeps goes as 1 / E; against the general facade
+-- the median exposure of the open masonry the street sees (sheltered less than 565's 0.03), 0.544 of the most exposed
+surface -- a surface receiving E is cleaner by 1 - E_gen / E, normalised to 1 at the most exposed masonry there is (an
+open, proud top corner). At or below the general level nothing changes. On Broadway (the other faces read alike):
+
+| where | E / E_gen | wash |
+|---|---|---|
+| a column's front, floor 2 (7.5 to 8.5 m) | 1.01 to 1.04 | 0.02 to 0.08 |
+| a column's front, floor 3 (10 to 12 m) | 1.08 to 1.13 | 0.16 to 0.25 |
+| a column's front, floor 4 (13 to 15 m) | 1.16 to 1.18 | 0.30 to 0.34 |
+| a corner pavilion, floors 2 / 3 / 4 | 1.08 / 1.13 to 1.19 / 1.23 to 1.26 | 0.15 / 0.25 to 0.34 / 0.42 to 0.45 |
+| a corner pavilion, 0.3 m from the corner, floor 4 | 1.27 | 0.46 |
+| a corner pavilion, top floor | 1.28 to 1.29 | 0.48 to 0.49 |
+| the crown's exposed fascias (20.0 to 20.6 m) | 1.14 to 1.26 | 0.27 to 0.45 |
+| a recessed bay's spandrel; the recessed top floor | 0.80; 0.93 to 0.96 | 0 |
+
+A third of the masonry is washed at all (35% from 0.05), a fifth from 0.25, 4.7% from 0.5 and 0.4% from 0.75: the
+fronts of the upper floors, the corner pavilions, the crown. The field is smooth and the geometry's own.
+
+### Where the wash meets the soiling
+
+565 soils by the share of the rain the OVERHANGS keep off, and does not use the wind's catch ("where the rain is heavier
+is the washed zones' business"). The two meet at the crown: its members each stand under the one above, which keeps a
+fifth to a third of the rain off their fascias (shelter 0.16 to 0.37), so 565 soils them a little; yet up at the top
+edge the wind drives so much more rain that those fascias still take more of it than the general facade (the table's
+1.14 to 1.26), and by the same balance a surface that takes more rain than the general facade cannot hold more dirt. So
+the wash takes 565's soiling back off in proportion to how washed a surface is: it goes toward its clean look of the
+surface as the deposits found it. Where the shelter is heavy -- under the corona, under the band and the heads, every
+soffit (turned down, never washed) -- the exposure is well below the general level and the soiling stands whole, so the
+cleanest and the most soiled places come out of one sweep and never disagree. 565's calibrated soiled places are among
+them: the frieze under the plinth, the brick under the corbel, the soffits and coffers, the vault and the transoms keep
+their soiling exactly (the frieze's foot, half a metre lower, takes a wash of 0.09).
+
+### White washing and dirt washing: the rinse
+
+The review's Fig. 10 (Robinson & Baker) draws both on one wall: under a band, the soiled wall with white-washed fingers
+where the water runs down it, and dirt-washed edges and tips where the water slows and soaks in. So each has its own
+reason for where it lies. DIRT WASHING (564) is where runoff lays down what it carries: on open or lightly sheltered
+wall, which the rain keeps cleaner than the water arriving from a ledge's top. WHITE WASHING (here) is where a stream --
+the water one conduit sheds from one place: a sill's end, a bracket's foot, a capital -- runs through a zone 565 soils
+heavily: the wall there is dirtier than anything the water brings, the flow keeps it wet and moving, and the dirt it
+takes is left at the stream's edges and below the zone. A curtain -- 564's thin spread flow along a whole drip line --
+carries too little water per metre to rinse and soaks into the dry sheltered wall instead (the dark streaks under the
+portal's cornice in the colour photos, which 564 calibrated against), so it stays 564's.
+
+Found on the model: every one of 564's streams (`ctx.field("runoff", "streaks")`, kinds `sill_end`, `bracket`,
+`capital`, `springing`) whose path starts inside a zone 565 soils at least about half as heavily as it gets
+(`RINSE_SOIL`: 565's own smoothstep of the shelter from 0.45 to 0.85), rinsed from its source down its path while the
+zone stays soiled for the water it carries and no further (a soiled zone lower down, a window's head, is not its to
+rinse), and up over the conduit that brings it the water: a bracket's own front, up to the drip line of the band it
+hangs from (564's `drip_lines`, within 0.6 m). The core is a ramp inside the stream's visible width (564's own profile:
+its cut `VIS`, 0.4 of its width, either side of the axis, widening by `SPREAD`), clean out to one share of that
+half-width and rinsing nothing past another, so 564's deposit stays at the stream's rims; the shader cuts a soft edge
+inside the ramp, reaching further along a bed joint and the lip under it. Which streams can rinse is the zone's: the
+band's 179 brackets that shed at all (the zone under the band is the one 565 soils heaviest: shelter 0.5 to 0.9 at a
+bracket's foot) and 8 sill ends on 3rd Street, whose streams run about 1 m through the shelter of the fire escapes'
+platforms. How clean, how far and how broad each one rinses is its own ("One stream at a time", below): 152 brackets
+rinse, 0.20 m down the wall at the median (0.04 to 0.30) below 0.35 m of bracket, and 7 of the sill ends, 0.76 to
+1.14 m. The other sill ends cross only their sill's own shelter, soiled at most about half as heavily, and stay 564's
+classic dark streaks; the capitals' streams start in the open.
+
+### One stream at a time (rework 2026-09-23)
+
+The user's review of the finished layer (2026-09-23) rejected marks that repeat identically from one instance to the
+next ("the pigeon marker looks like a pattern, it was placed at the same position in all windows"; "check the other
+features for pattern like results"); noise inside a mark stays out, as before. This feature's audit found one stamp and
+one field.
+
+**The rinse was a stamp.** Every bracket under the band is the same shape, so the rule rinsed the same light tongue with
+the same dark rims under every one of them: before this pass 186 alike. 564's rework drew each bracket's water and the
+part of its foot the water leaves over, which took the 7 dry brackets' tongues away and narrowed the rest with their
+exits, but the rinse took nothing else from the water: every stream still rinsed its core in full from the drip line
+down to where the zone's soiling fell under `RINSE_SOIL`, 113 of the 179 to the same 0.24 m below the same 0.35 m of
+bracket front, so a trickle of water 0.12 rinsed as clean a tongue as a stream of 1.33. The conduit on each bracket's
+front had become a stripe as narrow as the exit and set off the front's middle wherever the exit lay, and it read in the
+sun as a painted highlight on every console. And the core's edge was cut as a streak's is, over 3 mm, with 564's own
+crisp edge a centimetre further out: every tongue had two hard lines down each side (`crops/closeup_*_1to1.png`,
+`crops/broadway_brackets_sun.png`).
+
+**The wash of the fronts is a field, not a stamp, and was left as it was.** It is 565's rain exposure refined for the
+proud fronts: a smooth function of height, of the nearness of the block's corners and top edge, and of how far a surface
+stands proud. Identical columns under identical exposure wash alike, exactly as they are lit alike; the field has no
+step inside a front (it rises smoothly up each column from the second floor to the band,
+`elevations/washed_<face>.png`), and its only edges are the fronts' own arrises, where the surface already turns (a
+corner pavilion's top floor against the recessed top floor beside it). Seen whole it reads as the upper floors, the
+corners and the crown a shade cleaner, +3% in sun and +9% in shade at floor 4, not as a mark repeated per column
+(`audit/third_wide_fronts_off_on.png`, `audit/bway_wide_fronts_off_on.png`, and at 1:1
+`crops/fronts_columns_*_1to1.png`); a draw per front would have no reason on this building (the fronts' exposure is the
+geometry's) and would put a step where two fronts of one pier meet. Its channels (R, and A) are byte-identical.
+
+**What sets one rinse apart from the next now.** Two things, one found and one drawn:
+
+- **Its water**, which 564 draws per source. A stream's e-fold over its kind's is its water's scale `k` (564 sets the
+  e-fold by the square root of the water a source drew, and a sill end's by its sill's length too), held to 564's
+  `K_MAX`. How clean the stream keeps its core is its `POWER`, the smoothstep of `k` over 0.30 to 1.15: 0.92 at `k` 1,
+  the geometry's measure, 0.47 at `k` 0.71 (water 0.5, the least a wet source draws). How far it rinses is where the
+  zone's soiling, counted as soiling x its water (`k` squared: the dirt a stream can carry off goes with the water
+  itself) x its line's keep (below), still passes `RINSE_SOIL`, normalised at the zone's heart: a heavy, steady stream
+  rinses on into the zone's fringe, a light or a wandering one only its heart. A stream whose water cannot outdo the
+  zone's dirt anywhere (its water times its keep under `RINSE_SOIL`'s 0.45: every trickle 564 draws for a bracket the
+  band drips clear over, one light and wandering bracket stream, and one sill end) rinses nothing, and 564's streak is
+  all it has.
+- **Its line**, which nothing on the model says: whether its water holds one line down the wall from rain to rain or
+  shifts about (a foot that drips from one point or from several, a joint that channels it). It is drawn per stream,
+  the mean of two uniforms from the sha256 of `washed:rinse:` and 564's source id (two bytes each, as 564 draws), 0
+  wandering to 1 steady, so every rebuild draws the same and nothing drawn for one stream moves when another changes. A
+  steady stream is clean out to `CORE_STEADY` 0.45 of the streak's visible half-width and rinses nothing past 0.85; a
+  wandering one out to `CORE_WANDER` 0.20 and nothing past 1.00, broader and softer, keeping its core `WANDER_KEEP` 0.75
+  as clean; linear between.
+
+The core's edge is a ramp in the mask (B: 1 where the core is clean, 0 where it rinses nothing), inside which the shader
+cuts a soft edge (`RIM`: B from 0.85 down to 0.25) that reaches `RIM_LIP` 0.20 further out along a bed joint and the lip
+under it: 564's deposit at the rims deepens toward the streak's own edge instead of lying there as a band with two hard
+sides. The conduit is the bracket's whole front, which the film of its water covers: clean at the drip line across the
+foot's width (`CONDUIT_CORE`: out to 0.35 of its half-width, nothing past the console's arrises) as the stream's power
+keeps it, gathering down the front into the stream's own core at the exit on the foot. The foot is found on the model
+(`bracket_feet`: the brackets grouped along each bay mesh as 564 groups them, 564's source id for each).
+
+As built (the build prints it, `washed rinse ...`):
+
+| | rinsed | none | down the wall | its core as clean as | line |
+|---|---|---|---|---|---|
+| bracket | 152 of the 179 that shed | 27, too little water (and 564's 7 dry brackets shed nothing) | 0.20 m (0.04..0.30; 10% under 0.08, 10% over 0.24) | 0.77 (0.17..0.95), a quarter under 0.71 and over 0.82 | 0.51 (0.06..0.98) |
+| sill end | 7 of 8 | 1 | 0.82 m (0.76..1.14) | 0.73 (0.61..0.92) | 0.39 (0.22..0.88) |
+
+Before this pass all 186 brackets rinsed at 1.0, and after 564's rework 113 of the 179 still to the same 0.24 m; now no
+two neighbouring brackets are alike (none of the 151 neighbouring pairs within 0.02 of each other's strength, the same
+length and within 0.1 of each other's line), about one in six shows none, and the heaviest steady streams keep the old
+look. The rinse covers 4.9 m2 of brick face (6.5 before this pass, 4.9 after 564's rework: the softer edges make up for
+the tongues gone), and amounts to 3.0 m2 of full rinse (5.6 and 4.2).
+
+### The sources and the marks
+
+| kind | on the model | sources | marks |
+|---|---|---|---|
+| projecting front | each run of proud masonry at one depth (4-connected within 3 cm): a pier, a column, a pavilion below or above the band, a stretch of the band, a crown member; 20 texels (0.05 m2) at least | 328 | 328 |
+| corner | the block's five corners, up the arris at the fronts' depth (the chamfer's two at half sharpness) | 5 | 10, one per face beside it |
+| top edge | each face's top edge, along the crown's front | 5 | 5 |
+| rinsed stream | one of 564's streams through a heavily soiled zone, with water enough to rinse it: 152 brackets, 7 sill ends | 159 | 159, each with its path |
+
+497 sources, 502 marks, 159 paths (532, 537 and 194 before the rework). Every washed texel belongs to the source whose
+rain makes it washed: a projecting front it lies on, else the block's corner it is near (within 565's 3 m, below the top
+edge's zone), else its face's top edge (the catch rising toward the top of the face; a front smaller than 20 texels, a
+dentil, goes there too). Build: about 1.5 s.
+
+### The mask
+
+`masks/washed.png` is 2 cm with four 8-bit channels: R the wash (565's 5 cm field, sampled bilinearly), G how much of
+the soiling a stream rinses there (its own: its power, its line's keep and how far its water carries it), B how far
+inside its rinsed core (a ramp: 1 where the core is clean, falling to 0 where the stream rinses nothing; up a bracket's
+front, across the foot's width at the drip line), A how far inside one of 564's streaks (564's published deposit field,
+grown one texel), where the wash brightens what it finds instead of taking it off. 2 cm because the rinsed cores are a
+few centimetres wide and their edges follow 564's; 8 bits because every channel
+is a smooth 0..1 amount, which keeps the image at 41 MB of VRAM as bytes, a quarter of a 16-bit mask at this resolution.
+
+### The look
+
+Washed masonry goes toward its own colour a little brighter (`BRIGHT` 25% at a full wash) and a little more saturated
+(`SAT` 6%): the deposit that greys and dulls it rinsed off; the mortar joints keep `JOINT_KEEP` 40% of theirs, so the
+brick reads crisper rather than bleached. It goes toward that look of the surface as the deposits found it -- the
+framework's `Clean Color`, which takes 565's soiling off as above -- but inside one of 564's streaks (the mask's alpha)
+it brightens what it finds instead, so a streak keeps its contrast on a washed wall. The crown's upper faces take the
+rain square on whatever the elevation shows (every point of a top reads the row of the front below it), so the shader
+washes the tops within the crown's own height (19.10 to 20.73) by their orientation, as 565 soils the undersides by
+theirs; a sill's or the band's top below it keeps the dust 564's streams carry off it. The rinse takes a stream's core
+`RINSE` 90% of the way back to the surface as the deposits found it at a full rinse (G 1), soiling and the stream's own
+deposit alike, and its roughness with it; each stream as far as its G, inside the soft edge `RIM` cuts in its ramp.
+Masonry only: glass, metal, paint and wood keep theirs. So the feature stands at ORDER 225, after soiling (200) and
+runoff (220): it takes their deposits off, and must come after them.
+
+### The optional film
+
+`wear_washed_film` (0 by default, 1 in full): a very light, uniform atmospheric film over everything the rain does not
+rinse -- the colour 35% of the way toward itself 35% greyed toward a dust grey at 80% of its brightness, and at least
+0.75 rough -- which the wash takes off in proportion to how washed a surface is and the rinse wholly. Uniform: it has no
+position of its own, never mottles, and settles as the soiling does (masonry in full, painted metal and paint 0.6, the
+portal's glazed brick 0.4 and oak 0.35, glass not at all). It gives a dirtier general facade with something to wash off;
+at 1 it moves `hero_3q` by 1.1 levels on average and `medium_3rd` by 1.6.
+
+### Calibration
+
+Measured in rendered pixels on the full-size evidence stills at the scene's defaults, the linear luminance of a box
+with the wash on against the same box with `wear_washed=0` (soiling and runoff on in both), `diff/calibration.json`:
+
+| where | light | on / off |
+|---|---|---|
+| a column's front and a corner pavilion, floor 4 | sun (Broadway) | 1.03 |
+| the corner pavilion's top floor; the band's frieze | sun | 1.04; 1.02 |
+| a column's front, floor 2 | sun; shade | 1.00; 1.01 |
+| a column's front and a corner pavilion, floor 4 | shade (3rd Street) | 1.09 |
+| the corner pavilion's top floor; the crown's front | shade | 1.10; 1.10 |
+| a recessed spandrel; the recessed top floor | both | 1.00 |
+| a rinsed stream's core under the band, against the soiled wall beside it | shade | 0.63 off, 1.25 on (before the rework) |
+| a bracket's front (the rinsed conduit) | shade | 1.32 (before the rework) |
+| since the rework: a rinsed core just under its bracket's foot, against the soiled wall 10 cm beside it | shade | 0.80 to 1.05 off, 1.25 to 1.75 on |
+| since the rework: a bracket's front | shade | 1.24 to 1.31 where its stream rinses, 1.00 where it does not |
+
+The reference is the 1960 HABS photo of the Broadway bays (`loc_habs_ca0212_010`), in sun: a pier's front reads 1.04
+to 1.06 of the recessed spandrels beside it (`references/habs_ca0212_010_piers_vs_spandrels_boxes.png`). In the render
+the light alone gives a column's front 1.04 to 1.07 of the spandrel (it sees more sky); with the wash the floors 2 and
+3 stay there (1.07) and floor 4, where the wind-driven rain is heavier, reaches 1.07 to 1.10 -- the photo's order and a
+little over it at the top, for a maintained building in a city that hardly rains. As the framework found, AgX compresses
+the sunlit walls, so the same change reads about three times as much in the shade. A full rinse takes a core back to
+the surface as the deposits found it, so under the band it reads as light as 565's soiling there is dark (the calibrated
+0.80 to 0.84), the inverse of it. `BRIGHT` 0.25, `SAT` 0.06 and `RINSE` 0.90 carry the calibration; `DEFAULT_STRENGTH`
+stays 1.0.
+
+Since the rework each stream goes as far as its own water and line take it. Measured on the rework's close-ups of 3rd
+Street's band (in shade; the poses under "Evidence"), with the other features on in all three states: of the 10 rinsed
+brackets there, the 8 whose rinse reaches the box just under the foot read 1.25 to 1.75 of the soiled wall 10 cm beside
+them (0.80 to 1.05 with the wash off: 564's streaks are lighter since its own rework) and 1.54 to 1.67 of themselves
+with the wash off; the 2 whose rinse stops within 8 cm of the foot, 1.12 and 1.14. Before this pass the same boxes read
+1.46 to 2.20 wherever the rinse reached them, and 1.32 to 1.75 under the 4 brackets in view that now carry too little
+water to rinse (1.00 now: 564's faint streak, or none). A bracket's front reads 1.24 to 1.31 of itself unwashed where
+its stream rinses and 1.00 where it does not, against 1.31 to 1.44 on every bracket before. So the typical tongue is a
+little lighter-handed than the old one, the heaviest as strong, and the rest spread between (`diff/calibration.json`,
+the boxes drawn in `diff/<view>_calibration_boxes.png`).
+
+### The debug view
+
+Cyan: the wash at full colour from half of the most there is (`DEBUG_GAIN` 2), so its gradient up the fronts shows, and
+every rinsed core as strongly as its stream rinses it (a light stream's paler, a trickle's absent); an outline around
+each projecting front, a tube up each corner and along each face's top edge, a tube at each rinsed stream's source and a
+thin one down its path. `wear=debug wear_runoff=0` sets the wash against the soiling's violet, the contrast between
+shelter and wash. In the sun, on Broadway, the debug cyan reads pale (AgX again); 3rd Street, in the shade, shows it
+plainly. The elevations (`elevations=1`) draw the wash and, through `elevation()`, each stream's rinse as the shader
+cuts it on a brick's face, so the streams read apart there too.
+
+### Published for the features that follow
+
+`ctx.field("washed", key)` for a feature that NEEDS washed (573 erodes the mortar where the rain beats):
+
+- `exposure`: `dict(res=0.05, z0, atlas, data, open, catch, proud, general, note)`: 565's measure with the projecting
+  fronts refined (`data` = open x catch, normalised to 1 at the most exposed masonry; `catch` 565's times the proud
+  term; `proud` 0..1; `general` the open masonry's median, 0.544 in `data`'s units).
+- `wash`: `dict(res=0.05, z0, atlas, data, note)`: the wash above, 0..1 (the crown's upper faces are washed in the
+  shader, not here).
+- `rinse`: every rinsed stream, `dict(id, source, kind, facade, axis, side, s0, s1, z_head, z_top, z_end, width,
+  soil, water, power, line, core, peak, conduit)`: 564's source it comes from, its conduit's top, its source and the
+  lower end of its rinse; since the rework also its water scale `k`, its power, its line, its core's clean and edge
+  shares, the most it rinses below its source, and a bracket's foot (the conduit's width), None for a sill end. 159
+  streams, from 187 after 564's rework and 194 before it.
+- `fronts`: every projecting front, `dict(id, facade, s0, s1, z0, z1, depth, texels, wash)`.
+
+The rework changed only `rinse`: `exposure`, `wash` and `fronts` are the same, so 573, the one feature that NEEDS this
+one (it reads `exposure` and the helpers `owned_texels` and `label_fronts`, and walks 564's streaks itself rather than
+this feature's rinse), rebuilt byte-identically.
+
+How 573 should read them: erode by `exposure["data"]` against its `general` (the joints of the washed fronts, the crown
+and the corners), with runoff's paths; never where 565's `shelter` is above about 0.2; a rinsed stream is a path where
+the water runs heaviest, so its joints erode first.
+
+### What it changed in the framework
+
+Backward compatible, and the probe, runoff and soiling masks build byte-identically (`37806c0b...`, `4fa13d0c...`,
+`6517dd79...`): `wear/nodes.py` hands every feature two more inputs, `Clean Color` and `Clean Roughness`, the state
+entering the first feature at `DEPOSITS` 200 or later in the chain (the surface as the deposits find it, after the
+fabric features mortar erosion and edge wear); `wear/registry.py` lists `washed`. The worn block keeps 2283 objects
+(2275 and eight markers). With `wear_washed=0` the canonical scene renders as 565 left it: against 565's own stills,
+`hero_3q` 0.0081 and `st_up` 0.0082 mean levels. The rework changed nothing outside `washed.py`: rebuilt whole, every
+other feature's mask and cache (573's included) came out byte-identical to the state before it, the worn portal is the
+same object for object, the worn block differs only in this feature's own debug markers, and it keeps its 2697 objects
+(2275, 22 markers and the 400 of the geometry features).
+
+### Evidence
+
+In `tests/artifacts/screens/bradbury_wear/rain_washed/`: `<view>_off_on_debug.png` (washed off with soiling and runoff
+on | on at its default | the debug view with the wash and the soiling | for the three street cameras, the debug view
+with every feature, 50%) for `hero_3q`, `st_corner`, `st_up`, `medium_3rd` (3rd Street's east end in the shade, the
+washed fronts), `closeup_band_3rd` (the rinsed streams under the band), `crown_closeup` (Broadway's crown in sun),
+`bway_square` and `third_square` (the calibration views); `hero_3q_film.png` and `medium_3rd_film.png` (the optional
+film); `renders/` (the full-size stills, and `<camera>_wear_off.png` for all five cameras); `diff/` (off against on, x8,
+with the numbers as json; the off-state checks; `calibration.json`; `summary.json`); `references/` (the HABS photo and
+the boxes measured on it). Off against on, mean 8-bit levels over the frame and the share of pixels moved more than 2:
+`hero_3q` 0.46, 10.4%; `st_corner` 0.34, 7.5%; `st_up` 0.33, 5.2%; `medium_3rd` 0.73, 20.6%; `closeup_band_3rd` 0.79,
+26.0%; `crown_closeup` 0.80, 12.9%.
+
+The off switch still renders as before the layer: the worn scene with `wear=off` against the pre-wear renders
+(`series/final/before/`), mean levels and share of pixels off by more than 2, `hero_3q` 0.0138, 0.004%; `st_corner`
+0.0279, 0.046%; `st_along` 0.0075, 0.008%; `st_up` 0.0100, 0.011%; `st_portal` 0.0140, 0.020% (the noise floor is
+0.0067 to 0.0310).
+
+The rework (2026-09-23), in `tests/artifacts/screens/bradbury_wear/rework/washed/`: `<view>_before_after.png` (the
+whole layer before this review pass, from `tests/artifacts/blender/bradbury/wear_snap_rework_before/`, after it, and the
+change, orange lighter and blue darker, full at 25%) for the five cameras and the rework's poses;
+`<pose>_off_on_debug.png` (washed off with every other feature on, on at its default, the debug view with the wash
+alone) for the poses; `crops/` (1:1 and x2: the close-ups' brackets before this pass, after 564's rework and after this
+one, and with the wash off; seven wet brackets in a row; Broadway's band in sun, where the old conduit stripes read
+plainest; the fire escapes' sill ends; the medium view's band; and the fronts: neighbouring columns on both streets, off
+and on); `elevations/` (the layer's own `washed_<face>.png`, now with each stream's rinse drawn, and
+`rinse_band_<face>_before_after_2cm.png` and `rinse_fire_escapes_S_before_after_2cm.png`, the rinse along each face's
+band and under the fire escapes at the mask's 2 cm, before this pass, after 564's rework and after this one); `audit/`
+(the fronts' audit: 3rd Street in shade and Broadway in sun square on, washed off and on, and the wash's change;
+`iterations/`, the rework's cuts); `renders/` (the full-size stills, `<camera>_wear_off.png` among them); `diff/` (the
+change maps and x8 differences, `rework_numbers.json`, `calibration.json` with its boxes drawn, and
+`byte_identity.json`). The poses are cameras at x, y, z looking at x, y, z with a lens in mm, as `VIEWS` is written: the
+close-up (-13.8, -25.2, 14.7) to (-13.8, -17.9, 15.0), 50 mm (3rd Street's band in shade, eight brackets and a column);
+`band_close2` the same 4.2 m east; `fire_close` (3.9, -26.0, 10.9) to (3.9, -17.9, 10.9), 35 mm; the medium view (4.0,
+-34.0, 2.5) to (4.0, -17.9, 13.0), 35 mm; `crown_up` (26.0, -2.0, 2.0) to (17.0, -2.0, 19.2), 70 mm; `third_wide`
+(-11.0, -60.0, 10.5) to (-11.0, -17.9, 10.5), 35 mm; `bway_wide` (55.0, 1.2, 10.5) to (17.0, 1.2, 10.5), 35 mm. The
+wash switched on against off: the close-up 0.59 mean levels and 21% of its pixels moved more than 2 (0.79 and 26% in the
+old `closeup_band_3rd`), the medium view 0.67 and 20%. The worn scene switched off against the pre-wear renders:
+`hero_3q` 0.0166, 0.006%; `st_corner` 0.0320, 0.058%; `st_along` 0.0070, 0.005%; `st_up` 0.0063, 0.002%; `st_portal`
+0.0161, 0.024%, the noise floor.
+
+## Street-level grime band (AI 567)
+
+`wear/features/street_grime.py` (`wear_street_grime`, yellow in the debug view): the darker foot of the building. Rain
+splashes back off the pavement onto the lowest part of the stone, traffic and pedestrians leave their grime on it, and
+damp rises from the ground (the ICOMOS-ISCS glossary lists rising damp among the causes of darkened "moist areas"). The
+band is darkest at the pavement and fades upward with a soft top edge, one height all along a run; it lies only on the
+stone that faces the pavement and the street, runs round each pier onto the jambs of the openings and stops at the
+glass and the doors. Its sources are the ground itself, found on the model with the band's reach into each recess;
+each run and each corner draws its own share of it (since the rework of 2026-09-23, below); nothing is placed by noise,
+and the mask is byte-identical from one build to the next.
+
+```
+blender -b -P wear_layer.py -- features=street_grime                  # its mask alone (about 3.5 s), the rest cached
+blender -b -P render_wear.py -- wear=on wear_street_grime=0 view=st_corner   # off; 1 is the calibrated default
+blender -b -P render_wear.py -- wear=debug wear_soiling=0 wear_runoff=0 wear_washed=0 wear_edge_wear=0 view=st_along   # the band alone
+```
+
+### The street level
+
+The feature casts its own elevation of every face on its 2 cm texels from 0.10 to 1.40 m, as the street sees it: the
+depth, material, owner and normal of the first surface a level ray meets (622,700 rays, about a second). Nothing under
+the pavement counts (the level rays at 0.19 find the granite fill under a portal's recess floor, which the scene's
+pavement hides). What stands there is all stone:
+
+- the pier ring (`fit_piers`, its front at d 0.22, the modal depth of the stone at the pavement, measured at build
+  time): the 0.885 m storefront piers, the corner piers that wrap the block's corners with a face on each street (the
+  chamfer's two turn 45 degrees), and the narrow strips beside the portal pilasters. Its returns run back 0.40 into the
+  two-pane storefronts and 0.60 into the three-pane ones and the deep fillers, to the frames, and about 0.45 to the
+  chamfer's door and the north face's door by its west corner: they are the openings' jambs;
+- the three portals: the pilaster plinths, standing 0.24 proud of the ring (0.46); the granite step between them,
+  0.12 tall with a rounded nose; the paired portal piers standing on the step at the mouth (their fronts at 0.25, 0.20
+  behind the plinths), the portal's own jambs; and behind them the recess with its dark stone base and the doors, 2.2 m
+  in.
+
+The storefronts are glazed down to a 6 cm frame rail on the pavement: there is no stone under them, so what the prompt
+calls the stone under the storefronts is, on this model, their jambs. A texel whose stone faces the street (its normal
+at least 0.7 out of the face) is a **front**; any other stone texel (a moulding's profile, the step's rounded nose) takes
+the band's values but stands on nothing and has no corners of its own.
+
+### The ground, and how far the splash reaches
+
+Splash is thrown by rain that lands on the ground, so the sources are the ground: the pavement, which the render scene
+lays under the whole outline (it closes the floor of every recessed storefront too), and the portals' step. Every stone
+texel finds the ground it stands on by a ray straight down from just in front of it: a top no more than `STEP_MAX` 0.20
+over the pavement is a ground (the step, 0.321), anything else leaves the pavement (0.201). So a pier's band is measured
+from the pavement and a portal pier's from the step's top.
+
+How far back the wet ground runs in front of each column is measured with 565's own rain: every other one of its
+inclinations and azimuths (20, 40, 60 degrees off the vertical; -75 to +75 by 30 off the face's normal), each taken by
+a ground point by its vertical component, cos theta, and blocked where the ray from the point toward the rain meets the
+building. The ground is probed every 5 cm along every other column, from 0.10 in front of the street line (the most
+forward base within 2 m along the face) back to the first surface over the step (53,423 points, about 1.3 s). The open
+pavement in front of the piers takes all of it (1.000); the ground is **wet** while it takes at least `WET` 40% of that,
+and a surface loses the band over `REACH` 0.45, the splash's reach, behind the wet ground's back edge.
+
+| where | the rain the ground takes | the wet ground runs back to |
+|---|---|---|
+| in front of a pier | 1.00 | the pier's face |
+| a storefront recess, in its middle; beside a jamb | 0.76 to 1.00; 0.50 to 0.67 | the frames: its jambs take the band whole |
+| a portal: the step in front of the mouth; under the arch block | 1.00; 0.86 | |
+| a portal's recess floor, in its middle | 0.67 from d -0.05, 0.52 from -0.70, 0.38 from -1.10, 0.19 from -1.20 | d -1.08 |
+| beside the portal piers | 0.50 back to d -0.35, 0.40, then 0.33 from -0.45 | d -0.38 to -0.43: their inner sides stand in it |
+| behind the portal piers, the recess walls' dark stone base | | nothing: the portal piers' own faces; the base takes none |
+
+A jamb stands exactly at its front's edge, so each column takes the deepest wet edge of its neighbours within `BLEED` 3
+texels: the storefront's floor, not the pier's face, is what lies in front of a storefront jamb.
+
+### The band
+
+At a height H above its ground a front takes
+
+    band = 0.25 exp(-H / 0.10) + 0.75 (1 - smoothstep(0, TOP, H)),   TOP 0.65, 0 above it
+
+| H | 0 | 0.05 | 0.10 | 0.20 | 0.30 | 0.40 | 0.50 | 0.60 |
+|---|---|---|---|---|---|---|---|---|
+| band | 1.00 | 0.89 | 0.79 | 0.62 | 0.43 | 0.25 | 0.10 | 0.01 |
+
+darkest at the ground, fading upward with a soft top edge: splash reaches about half a metre. The top edge is one height
+all along a run. Each run takes the band times its own amount, with H over its own reach, and each corner its own gain,
+zone and rubbing marks (see "One pier and one corner at a time", below); beyond those draws the band varies only with the
+geometry:
+
+- **Corners.** The convex vertical arrises that stand on the ground at the street front: a front whose neighbour along
+  the face stands back at least `ARRIS_STEP` 0.06 (a return into an opening, a plinth's side) or is open air (the block's
+  90 degree corners), or turns away from the street by `ARRIS_TURN` 0.30 (the chamfer's 135 degree corners, at half
+  sharpness). Their texels are joined up their height; a run resting on another (a pilaster's shaft on its plinth,
+  within 0.08 along the face and 0.12 above it) carries on as the same corner, which must stand at least 0.30 tall. Within
+  its zone (`CORNER_W` 0.20 at the geometry's measure) of an arris, on both of its faces, the band is stronger (up to
+  `CORNER_GAIN` 20% at the geometry's measure): a convex corner takes splash from more of the ground round it. Where
+  hands and bags rub a corner, faint rubbing marks run on above the band to hand height (`CONTACT` 0.32 of the band's
+  full value at the geometry's measure). On the arris's own front the zone falls off along the face; on its jamb it falls
+  off with how far back from the arris a point stands (over `CORNER_W`), and a concave neighbour standing behind it (the
+  pier strip beside a plinth) takes none.
+- **Plinths.** A base standing in front of the pier ring (from 0.05, fully from 0.20: the portal plinths, the step) takes
+  `PLINTH_GAIN` 12% more.
+- **Openings.** The band lies on stone only, so it stops at the glass, the frames and the doors. Each front's values
+  reach 3 texels past its edge into the opening, for its jamb, which reads them there.
+- **Recesses.** Behind the wet ground it fades over the splash's reach (above).
+
+### One pier and one corner at a time (rework 2026-09-23)
+
+The pier ring is one stone repeated round the block, and the band above read only its geometry, so it stamped the same
+mark on every pier. All 38 pier fronts (the storefront piers, and each face of the corner piers) took the same band, one
+height and one strength, and all 100 corners took the same splash gain and the same rubbing marks, full to 0.70 m and
+gone by 1.10. At 1:1 every pier carried the same U, and in shade on 3rd Street its horns read 0.83 of the clean stone at
+0.70 m, the same at every arris (user 2026-09-23, reviewing
+the layer: marks must not repeat identically from one instance to the next; noise inside a mark stays out, as before).
+What makes one pier's foot differ from the next on a real street is what the model does not carry: a tenant who scrubs
+the frontage, a paving slab that falls toward one pier and ponds at its foot, the doors people use and the corners they
+turn, where hands, bags and shoulders touch the stone. So each run and each corner draws its own share of what the
+geometry gives it, led by how busy the pavement in front of it is.
+
+**How busy.** The pavement's entrances and the block's corners, where people turn in, turn the corner and wait to cross.
+The entrances are each portal's mouth (its step run) and each door: an opening of the pier ring at least `OPENING_MIN`
+1.0 wide with a pull at hand height in it. The build finds three, as 570 does: the chamfer's, the north face's by its
+west corner and the west face's by its north corner. `busy` is 1 at them and falls off along the pavement with an e-fold
+of `T_REACH` 2.0 (570's traffic is its base share plus the rest times this). An entrance's jambs (the arrises within
+`MOUTH_PAD` 0.10 of its opening) and the block's corners count 1. Elsewhere, keep right: the flow nearest the wall keeps
+it on its right and meets each pier's right-hand arris first, which takes the pavement's `busy` in full, the left-hand
+one `LEAD_TRAIL` 0.70 of it.
+
+| what | drawn | bounds |
+|---|---|---|
+| run | its amount, times the band (its tenant's care, how its paving drains) | 0.78 to 1.12 (`RUN_AMOUNT`), and up to 15% more on the busiest pavement (`RUN_TRAFFIC`) |
+| run | scrubbed not long ago, about one in twelve (`SCRUB_P` 0.08): its amount instead | 0.40 to 0.65 (`SCRUB`) |
+| run | its reach: the band's height over its ground, times this | 0.85 to 1.18 (`RUN_REACH`) |
+| corner | its splash gain, times `CORNER_GAIN` | 0.40 to 1.40 (`GAIN`) |
+| corner | its zone's reach along each face, times `CORNER_W` | 0.65 to 1.35 (`WIDTH`) |
+| corner | whether hands and bags rub it at all: 4% on the quietest pavement, 75% at an entrance's jambs and the block's corners | linear in `busy` (`RUB_P`) |
+| rubbed corner | its marks, times `CONTACT` | 0.50 to 1.30 (`RUB_AMOUNT`), times 0.70 on the quietest pavement up to 1 on the busiest (`RUB_LEAD`) |
+| rubbed corner | full from the band up to this height over the pavement, then gone this much higher | 0.50 to 0.80 (`RUB_FULL`); 0.20 to 0.35 (`RUB_FADE`) |
+| rubbed corner | the share of its marks its jamb takes; at an entrance's jambs, where the hands go | 0.25 to 0.75 (`JAMB`); 0.80 to 1.20 (`MOUTH_JAMB`) |
+
+Where a range is given, the value is the mean of two uniforms, the middle likelier than the ends. The seed is the run's
+or the corner's own place (`draw`: the sha256 of `street_grime:` and a key, two bytes to a uniform): a run's kind, face,
+span and ground, a corner's face, place and side. A corner pier's two faces are one stone and one frontage, so both of
+its runs draw from the block corner they wrap. A block corner, listed once for each street it fronts, draws once, and a
+shaft resting on its plinth draws with it. A rebuild draws the same values (the mask's sha256 is the same from one build
+to the next), and a change elsewhere on the model reshuffles nothing.
+
+As built (the build prints it, `street_grime drawn ...`):
+
+| | drawn | as built |
+|---|---|---|
+| runs | amount | 1.01 (0.49..1.20); one scrubbed, the pier at s 41.72 on 3rd Street (0.49) |
+| runs | reach | 1.01 (0.87..1.16): a storefront pier's band tops out (where it falls to 0.10) at 0.44 to 0.58 m; it was 0.50 on every one |
+| corners | gain; zone | 0.18 (0.10..0.27), was 0.20 at every corner; 0.20 m (0.14..0.26), was 0.20 |
+| block corners | rubbed | 4 of the 5 (8 of the 10 listings): contact 0.26 to 0.39, gone by 0.90 to 1.00 m |
+| portal jambs | rubbed | 10 of 12 (the plinths' inner corners and the portal piers): contact 0.23 to 0.41, gone by 0.84 to 1.06 m, the jamb 0.88 to 1.15 |
+| door jambs | rubbed | 2 of 6 (the chamfer door's jamb on the 3rd Street side, the north door's east one): contact 0.33, 0.34 |
+| near an entrance or a corner | rubbed | 11 of 22 (`busy` 0.45 to 0.66): contact 0.18 to 0.33 |
+| the quiet rows of shop windows | rubbed | 5 of 50 (`busy` under 0.21): contact 0.18 to 0.30, gone by 0.82 to 0.98 m |
+
+36 of the 100 listed corners (32 of the 95 arrises) carry rubbing marks, where every one did before, no two alike; the
+other 64 carry only their own splash gain. The rubbed ones cluster where people are: the portals, the corner at the
+crossing and the block's other corners. Along the quiet rows of shop windows a pier carries its own band and nothing up
+its corners, with one arris in ten rubbed.
+
+### The sources and the marks
+
+| kind | on the model | sources | marks |
+|---|---|---|---|
+| pier run | the foot of each pier's front on the pavement (the strips beside the pilasters included) | 44 (35.52 m) | 44 |
+| plinth run | each portal pilaster's plinth | 6 (4.94 m) | 6 |
+| step run | each portal's granite step | 3 (9.34 m) | 3 |
+| portal pier run | each portal pier's front, on the step's top | 6 (1.46 m) | 6 |
+| corner | the exposed arrises: the piers' at every opening 72, the plinths' 12, the portal piers' 6, the block's 10 (the chamfer's four at half sharpness); 36 of them rubbed | 100 | 100 |
+
+159 sources, 159 marks, 59 paths. A run is a line source along its foot (a front's lowest texel standing within 0.12 of
+its ground, with nothing of the same part under it), joined along the face at one depth and one ground; its band is one
+mark, and every band texel belongs to the run whose foot stands highest under it in its column. A corner is a line source
+up its arris to where its zone falls to 0.10: its rubbing marks' top where hands rub it, the band's top where they do
+not. Its zone is one mark. Build: about 3.5 s.
+
+### The mask
+
+`masks/street_grime.png` is 2 cm with four 8-bit channels (41 MB of VRAM as bytes), painted only from 0.10 to 1.40 m:
+- R: the band a front takes there, over `R_SCALE` 1.5: its run's amount, measured up from its own ground over its reach,
+  with a plinth's gain in. A heavy run's plinth reaches 1.24. Before the rework, R held the band itself and the plinths'
+  feet clipped at 1.0 in 4,531 texels.
+- G: what a corner adds to the band there, the most of two: its splash gain (its gain x its zone x the band), or, where
+  it is rubbed, its rubbing marks less the band (their amount x `CONTACT` x its zone, the jamb's share on the jamb, x
+  their own profile up the arris). The zone is the corner's sharpness, falling to 0 at its own reach along the front.
+- B and A: the street front's depth there and the wet ground's back edge (both d over -1.40 .. +0.60).
+
+The two depths let the shader tell each point where it stands: `d_wet - D` is how far behind the wet ground (the
+recess's fall-off, 0 on anything in front of it), `d_ref - D` how far back from the front's arris (a jamb's corner zone,
+over `CORNER_W`). The shader takes `(R_SCALE R + G near) att`, near `1 - smoothstep(0, CORNER_W, d_ref - D)` and att the
+recess's fall-off: on a front, the band and its corner's extra; on a jamb, the corner's extra fading with its depth.
+The rows under the pavement repeat the lowest row, so the lookup at the foot filters against itself. B and A are
+byte-identical to what they were before the rework.
+
+### The look
+
+Where the band lies, the colour goes `AMOUNT` 0.78 x the band x the strength of the way toward DIRT: the stone's own
+colour 10% greyed toward a warm grey (its luminance times (1.00, 0.94, 0.87)), at `DIRT_DARK` 40% of its brightness; and
+the roughness goes to at least 0.80. Darker, a little duller and rougher, the stone's own texture under it and its
+normal map untouched. Masonry only -- on this block the pier stone, the portal's sandstone, its granite step and dark
+stone -- and only on walls and jambs (|Nz| under 0.55 in full, gone by 0.85: no tops, no soffits), never on what faces
+into the building. It stands at ORDER 230, after the washed zones: a deposit laid over whatever the rain left.
+
+### Calibration
+
+Measured in rendered pixels on full-size square-on stills at the scene's defaults: the linear luminance of a box with
+the band on against the same box with `wear_street_grime=0` (the other features on in both), `diff/calibration.json`:
+
+| where | light | 0-5 cm | 5-15 | 15-25 | 25-35 | 35-45 | 45-55 | 55-65 |
+|---|---|---|---|---|---|---|---|---|
+| a pier, mid-run | shade (3rd Street) | 0.50 | 0.57 | 0.66 | 0.76 | 0.86 | 0.94 | 0.99 |
+| a pier, mid-run | sun (Broadway) | 0.71 | 0.77 | 0.83 | 0.89 | 0.94 | 0.98 | 1.00 |
+| a portal plinth, mid-run | shade | 0.45 | 0.51 | 0.61 | 0.72 | 0.83 | 0.93 | 0.99 |
+| a portal plinth, mid-run | sun | 0.72 | 0.76 | 0.83 | 0.89 | 0.94 | 0.98 | 1.00 |
+
+| at the arris | light | 0-10 cm | 30-40 cm | 60-80 cm (rubbing) | 85-100 cm |
+|---|---|---|---|---|---|
+| a pier | shade; sun | 0.44; 0.67 | 0.77; 0.90 | 0.83; 0.93 | 0.93; 0.97 |
+| a portal plinth | shade; sun | 0.39; 0.65 | 0.74; 0.90 | 0.91; 0.92 | 0.99; 0.93 |
+
+The reference is the user's photo of the Broadway portal (`references/user_entrance_frontal_plinth_boxes.png`, in
+shade): the plinth blocks read 0.48, 0.48 and 0.43 (left) and 0.57, 0.55 and 0.43 (right) of the pilaster's shaft
+above them, top to foot. That is mostly the plinths' own darker, redder stone and finish, which the model does not have,
+and the grime on top of it; the band meets the photo at the foot (0.45 to 0.50 in shade) and fades above it, a
+maintained building. The 1960 HABS photo of the same portal (`references/habs_ca0212_010_plinth_boxes.png`, in sun, 3 cm
+a pixel) shows no band at all: its plinths read lighter toward the pavement (1.09 to 1.18 of the shaft), the bright
+pavement's bounce on a washed building. As the framework found, AgX compresses the sunlit stone, so the same band reads
+at 0.71 in the sun on Broadway and 0.50 in the shade on 3rd Street. `AMOUNT` 0.78 and `DIRT_DARK` 0.40 carry the
+calibration; `DEFAULT_STRENGTH` stays 1.0.
+
+The tables above are the geometry's measure, and since the rework (2026-09-23) a run drawn at 1 with an unrubbed corner
+still reads them. Square-on stills at 1:1 (`rework/street_grime/audit/`) give the on/off ratio at the foot mid-pier and
+at 0.70 m just inside each arris:
+- 3rd Street, in shade: the piers at s 32.8 and 37.26 are both drawn 1.01. Their feet read 0.51 and 0.52, as before;
+  their four arrises read 1.00 at 0.70 m, where all four read 0.835 before.
+- Broadway, in sun: the piers at s 21.72 and 27.28 (drawn 0.92 and 0.87) read 0.755 and 0.79, where both read 0.73 and
+  0.74 before; their arrises 1.00, where they read 0.93.
+- The north face, in its grazing sun: the piers at s 18.08 and 22.28 (drawn 0.86 and 0.97) read 0.81 and 0.76, where
+  both read 0.75 to 0.77 before.
+
+In the medium still on 3rd Street, the scrubbed pier's foot reads 0.85 against 0.60 to 0.71 for its neighbours. Up a
+rubbed arris at 0.70 m, the portal's plinths, piers and the strip beside them read 0.85 to 0.93 in shade.
+
+### The debug view
+
+Yellow: the band at full colour from a quarter of its foot (`DEBUG_GAIN` 4), and the rubbing marks at the corners that
+carry them; a square tube along each run's foot, a tube up each corner's arris to where its zone falls to 0.10 (to hand
+height at a rubbed corner, to the band's top at the rest), and a thin line along each run's top edge, where its band
+falls to 0.10, which rises only at the rubbed corners. `wear=debug` with every other feature at 0 shows it alone (the
+edge wear's green bands lie on the same arrises).
+
+### Published for the features that follow
+
+`ctx.field("street_grime", key)` for a feature that NEEDS street_grime (573 erodes the joints in the splash zone; 570
+wears the corners on the pavement's path):
+
+- `zone`: `dict(res=0.04, z0, atlas, data, note)`, the splash zone: the band as the street fronts take it, each run's
+  and each corner's own (the run's amount and reach, the corner's gain and, where it is rubbed, its rubbing marks, and
+  the recess fall-off in; 1 at the pavement mid-run at the geometry's measure, up to 1.5 at the foot of a heavy plinth's
+  corner, the west portal's), max-pooled to 4 cm, float16 over the whole atlas, rows from `z0` up;
+  `soiling.sample(field, f, s, z)` reads it.
+- `runs`: every source run, `dict(id, facade, kind, object, s0, s1, d, z_ground, top, texels, amount, reach, busy,
+  scrubbed)`; `kind` is `pier`, `plinth`, `step` or `portal pier`; `top` is its band's top edge over its ground, where
+  the band falls to 0.10 (the median along the run: 0.44 to 0.58 on a storefront pier, 0.48 to 0.54 on a plinth, higher
+  on a strip beside a pilaster, all corner); `amount` and `reach` its draws, `busy` the pavement in front of it,
+  `scrubbed` whether it drew a scrubbed amount.
+- `corners`: every exposed arris, `dict(id, facade, kind, side, s, d, z_ground, z0, z1, sharpness, object, gain, width,
+  rubbed, contact, hand, jamb, busy, mouth)`; `kind` is `pier`, `plinth`, `portal pier` or `block corner`; `side` is the
+  face the arris is on the right or left end of; `gain` its splash gain and `width` its zone's reach (both absolute);
+  `rubbed` whether hands and bags rub it, and then `contact` its marks against the band's full value, `hand` the heights
+  over the pavement they are full to and gone by, and `jamb` its jamb's share (`contact` 0, `hand` and `jamb` None where
+  it is not rubbed); `busy` how busy it is, `mouth` the entrance whose jamb it is, if any.
+- `entrances`: the portals' mouths and the doors, `dict(id, kind, facade, s0, s1, object)`.
+- `ground`: `dict(res=0.02, e_open, wet, reach, d_ring, faces, note)`: per face and 2 cm column, `line` (the street
+  line) and `d_wet` (how far back the wet ground runs, -1.40 past the block's corners).
+- `profile`: the band's constants at the geometry's measure and its formula; `rub_full` and `rub_fade` are the bounds
+  the rubbed corners draw their heights from (`hand`, the fixed 0.70 to 1.10, is gone with the rework).
+
+For 573: the splash zone lies on stone under 1.2 m. No brick is within it on this block -- the brick starts at the
+ground floor's crown, 6.29 m -- and the pier ring's first joint groove is at 0.915, above the band's top, so the
+"lowest courses above the stone base" need another reason than the splash (564's ground-crown curtain, 566's exposure).
+573 reads `profile`'s `top`, `foot_w`, `foot_e` and `reach`, the geometry's measure, which the rework left as they were.
+For 570: `corners` are exactly the convex arrises standing on the pavement at the street front, with their sharpness;
+a corner set back in a recess stands behind `ground.d_wet` at its column. 570 reads the step runs' spans, the corners'
+places and kinds and `d_ring`, all as they were; `rubbed`, `contact`, `busy` and `mouth` say where hands and bags touch
+each corner, for a wear that should agree with them.
+
+Since the rework (2026-09-23) both rebuild byte-identical, because what they read is unchanged: 573's mask, and both
+features' caches (their stashes and published fields with them).
+
+### What it changed in the framework
+
+Nothing but `wear/registry.py`, which lists `street_grime`. The probe, runoff, soiling and washed masks build
+byte-identically (`37806c0b...`, `4fa13d0c...`, `6517dd79...`, `6c9963ea...`), the street grime mask is the same on a
+rebuild (`16d42806...`), and the worn block keeps 2285 objects (2275 and ten markers).
+
+The rework (2026-09-23) changed only this module. Its mask is the same on a rebuild (`79618df9...`). Every other
+feature's mask and cache rebuilt byte-identically, 570's and 573's included (the fields they read are unchanged), and
+the worn block keeps its 2697 objects (2275 and the layer's 422).
+
+### Evidence
+
+In `tests/artifacts/screens/bradbury_wear/street_grime/`: `<view>_off_on_debug.png` (street grime off | on at its
+default | the debug view with the band alone | for the street cameras, the debug view with every feature, 50%) for
+`st_corner`, `st_along` and `st_portal`, `closeup_pier_3rd` and `closeup_pier_bway` (one pier base with its jamb, in shade
+and in sun), `closeup_plinths_bway` and `closeup_plinths_3rd` (the portal plinths, the step and the portal piers),
+`closeup_chamfer` and `medium_chamfer` (the corner piers and the door jambs in the chamfer's grazing light);
+`hero_3q_off_on.png`, `st_up_off_on.png`; `renders/` (the full-size stills, the square-on calibration stills `cal_*`,
+and `<camera>_wear_off.png` for all five cameras); `diff/` (off against on, x8, with the numbers in `summary.json`; the
+off-state checks; `calibration.json`); `references/` (the photos and the boxes measured on them). Off against on, mean
+8-bit levels over the frame and the share of pixels moved more than 2: `st_corner` 0.074, 0.70%; `st_along` 0.057,
+0.59%; `hero_3q` 0.076, 0.72%; the close-ups 0.76 to 1.85, 9 to 14%; `medium_chamfer` 0.48, 5.0%. `st_portal` and `st_up`
+do not move (0.014, 0.006): their frames start 2.3 m up the wall and above the pavement.
+
+The off switch still renders as before the layer: the worn scene with `wear=off` against the pre-wear renders
+(`series/final/before/`), mean levels and share of pixels off by more than 2, `hero_3q` 0.0135, 0.004%; `st_corner`
+0.0277, 0.046%; `st_along` 0.0075, 0.008%; `st_up` 0.0109, 0.014%; `st_portal` 0.0139, 0.020% (the noise floor is
+0.0067 to 0.0310). With `wear_street_grime=0` the canonical scene renders as 566 left it: against 566's own stills,
+`hero_3q` 0.0070, `st_up` 0.0053 and `st_corner` 0.0074 mean levels.
+
+The rework (2026-09-23), in `tests/artifacts/screens/bradbury_wear/rework/street_grime/`. "Before" is the frozen state
+before this review pass (`wear_snap_rework_before/`); "after" is the canonical scene. The poses are cameras at loc
+looking at tgt, as `VIEWS` is written:
+
+| pose | loc; tgt; lens | what |
+|---|---|---|
+| `closeup` | -23.6,-21.2,1.1; -20.4,-18.2,0.6; 28 | 3rd Street's portal, its west plinth, the strip beside it, the step and a portal pier, in shade |
+| `medium` | -28.0,-27.0,1.7; -19.5,-18.1,1.0; 24 | 3rd Street toward its portal, the storefront piers on either side |
+| `along_3rd` | -41.5,-23.0,1.7; -24.0,-18.1,1.0; 30 | along 3rd Street from the south-west corner pier |
+| `pair_N` | -3.6,21.6,1.0; -3.6,17.6,0.75; 24 | two quiet piers of the north face, square on, 1:1 |
+| `door_N` | -33.9,21.5,1.4; -33.9,17.6,0.8; 24 | the north face's door and its jambs |
+| `chamfer` | 21.2,-22.1,1.45; 15.6,-16.5,0.8; 28 | the chamfer's corner piers and its door |
+
+What the folder holds:
+- `<pose>_before_after.png` and `<pose>_off_on_debug.png` (street grime off | on | the debug view with the band alone).
+- For `closeup`, `medium` and `along_3rd`: `<pose>_debug_before_after.png` (the band alone, before and after) and
+  `<pose>_ratio_before_after.png` (the mark alone as the on/off luminance ratio: the same U on every pier before, each
+  pier's own band after).
+- `<camera>_before_after.png` for the five cameras.
+- `audit/`: the square-on pier pairs at 1:1 on 3rd Street, the north face and Broadway (`pairs_ratio_before_after.png`
+  and the stills), and the published zone per face (`zone_strips_before.png` and `_after.png`).
+- `elevations/` (the 5 cm elevations), `renders/` (the full-size stills), `ratio/`, and `diff/` (x8,
+  `rework_numbers.json`, `byte_identity.json`).
+
+Off against on at the default, mean 8-bit levels and the share of pixels moved more than 2: `closeup` 0.65, 8.0%;
+`medium` 0.13, 1.7%; `along_3rd` 0.21, 2.7%; `pair_N` 0.67, 6.0%; `door_N` 0.73, 6.6%; `chamfer` 0.49, 4.8%. The
+worn scene switched off still renders as before the layer against `series/final/before/`: `hero_3q` 0.0167, 0.006%;
+`st_corner` 0.0319, 0.058%; `st_along` 0.0065, 0.003%; `st_portal` 0.0160, 0.024%; `st_up` 0.0060, 0.001%, within
+the noise floor above.
+
+## Rust stains from the fire escapes (AI 568)
+
+`wear/features/rust.py` (`wear_rust`, orange in the debug view): what the two iron fire escapes on 3rd Street do to
+themselves and to the wall they are fixed into. Iron rusts where it enters masonry and where water sits on it; the water
+that runs off the ironwork carries the rust down the wall below (Chen et al. 2005's "stain bleeding", modelled from a
+point source), and a corroding fixing can burst the masonry round it (the ICOMOS-ISCS glossary's "bursting"). The
+sources are found on the fire escapes' own geometry: the points where they are fixed into the wall, and the free lower
+edges of the platforms and the stair stringers, where water drips off the iron. Every stain has a source and a path from
+it; nothing is placed by noise, and the mask and the ironwork's attributes are the same from one build to the next. No
+two fixings, members, joints or platforms rust alike: each draws its own share from a seed of its own name (see "One at
+a time").
+
+```
+blender -b -P wear_layer.py -- features=rust,efflorescence        # its mask and attributes, and 569's, which reads
+                                                                  # them (about 13 s); the rest cached
+blender -b -P render_wear.py -- wear=on wear_rust=0 view=hero_3q  # off; 1 is the calibrated default
+blender -b -P render_wear.py -- wear=debug wear_soiling=0 wear_runoff=0 wear_washed=0 wear_street_grime=0 view=hero_3q
+```
+
+### The ironwork, read from its own mesh
+
+The two stairs are `attachment_fire_escape__2463` (3rd Street, s 19.35 to 22.05) and `__2464` (s 38.59 to 41.29),
+1932 triangles each, every face of every box split from its neighbours by the export. The feature welds the triangles
+back into members, pairs them into faces and names each member by its shape, per stair:
+
+| member | count | what it is |
+|---|---|---|
+| platform | 3 | a slab 2.70 x 0.88 m, 6 cm thick, at floors 2, 3 and 4 (6.58, 9.58, 12.58), L-shaped round the hatch the drop ladder comes up through |
+| stringer | 2 | the inclined sides of the two flights, their feet on a platform |
+| handrail | 6 | inclined, their feet in the air |
+| tread | 26 | 0.26 x 0.64 m plates between the stringers |
+| post | 98 | the balusters, the front posts, the handrail posts and the ladder's rails |
+| rail | 9 | the top rails: the front one and the two side ones on each platform |
+| other | 14 | the ladder's rungs |
+
+Each stair stands inside its window strip, jamb to jamb. Its back plane, where the ironwork stops toward the wall
+(d -0.080), lies 2 cm in front of the piers (-0.10), 6 cm in front of the terracotta sills (-0.14) and 11 cm in front
+of the strip's recessed panel (-0.19): the stair is carried by fixings that bridge that gap.
+
+### The anchors
+
+Only nine members per stair reach the back plane: the three platforms and their six side top rails. They are what is
+fixed into the wall, each where masonry stands straight behind it within `ANCHOR_REACH` 0.20: a side top rail at its
+rear end (it runs back to the wall with no post under that end), a platform at both ends of its rear edge (a plate is
+carried at its corners, and along the rest of that edge the windows' glass stands behind it). Nothing else is an anchor:
+the flights, the ladder and the posts stand on the platforms, and the model has no brackets under them (the 1960 HABS
+photo shows the real stairs had). 24 anchors, 12 per stair: on each floor and each side, a rail's end and a platform's
+corner in one column, 3 cm in from the stair's end. The stain and the run below are the geometry's measure, what a
+fixing of that kind sheds with every one of its draws at 1 (all 24 did before the rework); each fixing's own is in "One
+at a time".
+
+| anchor | height | the masonry behind it | gap | stain | runs | stops |
+|---|---|---|---|---|---|---|
+| a side top rail's end, floors 2, 3, 4 | 7.62, 10.62, 13.62 | the strip's panel (brick) | 0.110 | 0.76 to 0.85 | 0.92 m | fades, or the sill below takes it |
+| a platform's corner, floors 3, 4 | 9.61, 12.61 | the sill's front (terracotta) | 0.062 | 0.71, 0.92 | 1.23 m | fades |
+| a platform's corner, floor 2 | 6.61 | the strip's panel | 0.110 | 0.69 | 0.31 m | caught by the ground floor's crown |
+
+### The streaks
+
+From each anchor the film of water is followed down the elevation exactly as runoff (AI 564) follows it -- its
+`Elevation` and `walk`, 2 cm texels, the fire escapes looked through -- on the masonry behind the fixing: over a step
+back of up to 10 cm (a sill's foot is crept round), until a surface standing further out takes it on its top (a sill
+below, the ground floor's crown), an edge throws it off, or it fades out. The stain at the anchor is `AMP` 0.85 for a
+rail's end and 1.0 for a platform's corner, which carries the deck's water, times the rain its member takes (below); it
+falls off down the streak as runoff's streaks do, and a streak is gone three e-folds down (`EFOLD` 0.30 and 0.40 m). It
+is `W0` 3 cm wide at the anchor and widens `SPREAD` 5 cm per metre, with a halo round the fixing, up to 1.5 cm wider
+within 4 cm of it and reaching 2 cm above it: the rust spreading in the wet masonry round a fixing. That is the
+geometry's measure; each fixing scales it by its own draws ("One at a time"), and a sound one sheds next to nothing.
+
+The mask (`masks/rust.png`, 2 cm, four 8-bit channels, 41 MB of VRAM) does not paint a streak's width, which at 2 cm
+would be a texel and a half; it paints where the streak is and where its axis runs. R is the stain down its length, G
+the offset of its axis from the texel's centre, s_axis - s, and B its half-width there. The offset is linear in s, so
+the lookup's bilinear filtering returns the exact offset at every shading point, and the shader cuts the streak's edge
+analytically, crisp at any distance. The edge reaches `EDGE_LIP` 35% further along a bed joint and the lip of brick
+under it, and the joints hold the stain further down (`JOINT_GAMMA`), as runoff's streaks do; the axis is a third
+darker than the edges (`CORE`). G at 0 means no streak here. A footprint on a masonry top (below) uses R, B and A
+instead; the shader reads the streak channels on walls and the footprint channels on tops.
+
+### The drips and their footprints
+
+Water leaves the iron at the free lower arrises of the platforms (their L-shaped outline, round the hatch too) and of
+the stringers, and falls straight down. Drops are cast every 2 cm along those edges, each carrying its share of the rain
+its member catches on its upper faces (their area facing up, times the rain it takes), spread over its drip edges -- a
+stringer's evenly, a platform's more toward the side its deck falls to ("One at a time"):
+
+| drip edge | length | catch | where the drops land |
+|---|---|---|---|
+| a floor-4 platform | 5.81 m | 1.61 m2 | the floor-3 platform (294 drops): its front top rail, its deck's edges |
+| a floor-3 platform | 5.81 m | 1.23 m2 | the floor-2 platform (270); the pavement through its hatch (20 to 24); 4 on masonry |
+| a floor-2 platform | 5.81 m | 1.21 m2 | the ground floor's crown (170 to 184), the pavement (108 to 122) |
+| a stringer | 7.52 m | 0.04 to 0.05 m2 | the platform and the treads under its flight (376 to 378) |
+
+A drop that lands on the ironwork rusts the face it lands on: within `FP_EDGE` 3 cm of an edge it widens that edge's
+band, elsewhere, or on a face narrower than 8 cm (a rail's top), it rusts the whole face. So the upper platform's front
+edge drips its whole length onto the front top rail below, whose top rusts from end to end, and its back and side edges
+drip onto the lower deck's edges. A drop that lands on masonry is painted as a footprint on the top it lands on: per
+texel column its catch (R) and the band of depth the drops fell in (A its centre, B its half-depth, with 1.5 cm of
+splash), which the shader reads on surfaces facing up. Under each lowest platform that is a rust-brown U on the ground
+floor's crown (6.29): the drip line of the platform's back edge and the two of its sides, as far out as the crown
+reaches; a few drops fall past it onto the crown's lower steps and the string course. 8 footprints, 8 marks. The drops
+that pass everything land on the pavement, which belongs to the render scene, not to the layer, and is left as it is.
+Each U is heavier toward its own platform's low side: along its back line under stair 2463 it runs from 0.82 at the
+west end to 0.41 at the east, under 2464 from 0.51 to 0.84 (both were 0.74 all along); its sides stay full.
+
+### The iron's own rust
+
+The ironwork's rust is not in the atlas: it lies on the ironwork's own mesh, as attributes the worn block carries per
+face corner (`apply()`, on both stairs' meshes): `wear_rust` (the layer's `Attr`, the face's rust all over) and six
+linear fields in two vectors, `wear_rust_e` and `wear_rust_f`: a band along each of the face's four edges and, on a
+platform's faces at a fixing, a diamond round that corner. A band's field is p - d / R, d the distance to its edge (or,
+for a diamond, the sum of the distances to the corner's two edges): linear over a planar face, so the renderer's
+interpolation returns it exactly anywhere on the export's plain boxes, and the shader takes smoothstep(0, 1, field),
+full to (p - 1) R from the edge, gone at p R. Each face edge is sorted by what it is:
+
+| edge | how it is found | band (peak p, gone at) |
+|---|---|---|
+| joint | the member ends against another along the whole edge: three probes 3 mm past it all land inside another member (a rung's end in its rail, a post's top in its rail) or find another member's surface just beyond, facing back at it (a baluster's end under its rail, a tread's end at its stringer) | 3.0, 4 cm |
+| wall | a rear member's end at the back plane, round one of its fixings | 4.0, 6 cm |
+| upper arris | the edges of a face turned up, the top edge of a vertical face | 1.4, 1.2 cm, at most a fifth of the face |
+| drip edge | the edges of a face turned down, the bottom edge of a vertical face | 1.8, 1.8 cm, at most a quarter of the face |
+| vertical arris | the rest | none: it sheds its water |
+| interior | the member's own face continues past it in the same plane (the platform's L is three quads) | none |
+
+An edge that runs along a bar's length (its principal axis) is never a joint, and a member that only runs past or
+beside another (a stringer crossing a baluster, a baluster 4 mm from a post) is not joined to it. An arris's peak is
+scaled by the rain its member takes, and a downhill arris (a stringer's, a handrail's) keeps a third of it (`SLOPE`):
+it sheds. The drips that land along an edge add to its peak (`FP_EDGE_GAIN` 1.5), those inside a face to its rust all
+over (`FP_FACE_GAIN` 0.8). A face turned up holds standing water: `A_UP` 0.45 times the rain all over it. The rear end
+of a rail at its fixing is rust all over, as far as its fixing has gone. Vertical faces keep their paint but for their
+edges. Those are the geometry's measure: every band and every face's rust all over is also scaled by its member's
+paint, a joint's band by its own joint's state and a fixing's band and diamond by the fixing's ("One at a time").
+
+The rain a member takes is 565's wind-driven rain (every inclination and azimuth of its model, from the street side),
+cast from the member's upper faces against the whole block and the ironwork itself: the share that reaches them, and the
+rust scales with `WET_FLOOR` 0.40 + 0.60 x that. The top platform takes 0.87 of it, the lower ones about half, under
+the platforms above: the upper stairs rust more. 8.8% of stair 2463's area and 9.2% of 2464's is rusty past half (tops
+11.8% and 12.2%, vertical faces 7.4% and 7.9%, undersides 8.0%): the rails' tops under the drip lines, the platforms'
+edges, the open joints. Before the rework both stairs had 11% (tops 15%, vertical faces 9%, undersides 11%).
+
+### One at a time (rework 2026-09-23)
+
+The user, reviewing the finished layer on 2026-09-23, rejected identical repetition as the opposite failure of noise:
+the pigeon marks stood at the same place in every window, and every other feature was to be checked for "pattern like
+results". This one had them. The two stairs are one mesh placed twice, and every fixing, member and joint on them is the
+same shape, so the rules above stamped the same rust everywhere: the two stairs' band fields were byte-identical, the 24
+streaks were four identical chains down the stairs' margins (the same stain and run at every floor, W and E, on both
+stairs), and every baluster carried the same tick of rust at its head and at its foot, a dotted line along every
+railing (`rework/rust/audit/`). What makes one fixing or joint differ from the next on a real fire escape is what the
+model does not carry -- a fixing whose joint with the wall has held and one that has opened, a member repainted and one
+left, a crevice the paint has bridged, a plate set a few millimetres out of level -- so each draws its own, within
+bounds, from the sha256 of `"rust:"` and its own name, two bytes to a uniform, as runoff does: a rebuild draws the same
+values, and nothing drawn for one moves when another changes. A range is drawn as the mean of two uniforms, the middle
+likelier than the ends. 1 is the geometry's measure, what every one had before.
+
+| what | seeded by | draws |
+|---|---|---|
+| a fixing's water: the share of its member's water it lets through | its anchor's id, `anchor:2463:4W:rail` | sound `SOUND_P` 40% of the time, `SOUND` 0 to 0.12; otherwise `LEAK` 0.35 to 1.50 |
+| the rust that water carries | the same | `LOAD` 0.80 to 1.15, the stain's value only |
+| how far down the wall it carries it | the same | `STRETCH` 0.60 to 1.50, the e-fold only |
+| how fast the film spreads below it | the same | `FAN` 0.60 to 1.60, times `SPREAD` |
+| the rust round the fixing itself | the same | `HALO` 0.50 to 1.40, times k, never past 1 |
+| a member's paint | `member:<stair>:<member index>` | `PAINT` 0.55 to 1.30 |
+| a joint's crevice, sealed or open | `joint:<stair>:<i>:<j>`, the two members it joins | sealed `JOINT_SOUND_P` 40% of the time, 0 to 0.30; otherwise `JOINT_OPEN` 0.45 to 1.50 |
+| a platform's fall | `platform:<stair>:<floor>` | toward any side, and `FALL` 0.30 to 1.20 |
+
+A fixing's water sets its streak as the geometry did, through k, its square root (as a sill's length sets runoff's):
+the stain is `AMP` x rain x k x load, the e-fold `EFOLD` x k x stretch, the width at the fixing `W0` x k, the widening
+`SPREAD` x fan, and the halo round the fixing k x halo of its most (`HALO_W`, `HALO_R`, `UP`), never past it: 569 keeps
+its bloom off the most. A fixing that lets through less than `WATER_MIN` 0.06 sheds no streak: its marker stays, with
+no mark and no path. Every
+streak keeps its fixing's axis: the rail's end and the platform's corner below it share a column, and where their pads
+meet the mask's axis channel is combined by max, so a streak shifted to one side would kink the halo under it.
+
+The iron round a fixing rusts with it: its band and its plate's diamond are times `WALL_FLOOR` 0.40 + 0.60 k (a sound
+fixing's crevice still holds some water), and a rail's rear end rusts all over to its paint times that, at most 1.
+Every band on a member and its rust all over are times its paint, and a joint's band is times its joint's state as
+well, the drips that land along an edge added on top of that. One draw serves a joint whichever member's band it is, so
+the two rails meeting at a corner show the same state; 19 of the 249 member ends that carry a joint band per stair (a
+corner post under two rails, a tread's end between a handrail and a post) touch two members and show two states, one
+per face. A platform's deck falls toward one side: each drop off its drip edges carries its share of the catch times
+exp(fall x), x its place along the fall from -1 on the high side to 1 on the low, the catch kept whole.
+
+As built, the fixings (the draws' leak, then the streak's stain at the fixing, its width there and its run; "the sill"
+and "the crown" where a ledge below takes it; a stain above 1 is held to 1 in the mask):
+
+| fixing | stair 2463 | stair 2464 |
+|---|---|---|
+| floor 4 W, rail's end (13.62) | 0.63: 0.63, 2.4 cm, 0.80 m | 1.18: 1.04, 3.3 cm, 0.98 m, the sill |
+| floor 4 E, rail's end | 0.73: 0.81, 2.6 cm, 0.98 m, the sill | 0.69: 0.63, 2.5 cm, 0.58 m |
+| floor 4 W, platform's corner (12.61) | 1.11: 0.87, 3.2 cm, 1.25 m | sound, 0.06: 0.25, 0.8 cm, 0.31 m |
+| floor 4 E, platform's corner | 1.10: 0.92, 3.1 cm, 1.43 m | 1.42: 1.16, 3.6 cm, 1.11 m |
+| floor 3 W, rail's end (10.62) | 1.27: 0.90, 3.4 cm, 0.86 m | sound, 0.07: 0.18, 0.8 cm, 0.30 m |
+| floor 3 E, rail's end | 0.61: 0.65, 2.4 cm, 0.98 m, the sill | 1.37: 0.98, 3.5 cm, 0.94 m |
+| floor 3 W, platform's corner (9.61) | 0.45: 0.45, 2.0 cm, 0.97 m | sound, 0.01: no streak |
+| floor 3 E, platform's corner | 0.68: 0.54, 2.5 cm, 1.25 m | sound, 0.05: no streak |
+| floor 2 W, rail's end (7.62) | 0.76: 0.76, 2.6 cm, 0.76 m | 1.04: 0.78, 3.1 cm, 0.94 m |
+| floor 2 E, rail's end | 1.20: 0.82, 3.3 cm, 1.32 m | 1.29: 0.91, 3.4 cm, 0.92 m |
+| floor 2 W, platform's corner (6.61) | sound, 0.04: no streak | 0.81: 0.57, 2.7 cm, 0.31 m, the crown |
+| floor 2 E, platform's corner | 0.52: 0.52, 2.1 cm, 0.31 m, the crown | 1.12: 0.66, 3.2 cm, 0.31 m, the crown |
+
+5 of the 24 are sound: 3 shed nothing and 2 a faint 30 cm trickle. The 19 that leak let through 0.45 to 1.42 (median
+1.04; 10 of them more than the geometry's measure, 4 more than 1.25). Their stains run 0.45 to 1.16, 0.77 on average
+(0.69 to 0.92 before, 0.79 on average), 2.0 to 3.6 cm wide (all 3 cm before), for 0.58 to 1.43 m where they fade or a
+sill takes them (0.92 and 1.23 m before) and 0.31 m where the crown does. So the wall carries 21 streaks where it had
+24, 2 of them barely there, and the rest about as strong on average, each its own: the mask covers 5.96 m2, from 7.43.
+Stair 2464's west margin on floors 3 and 4 is now nearly clean, where its east margin carries the two heaviest; 2463
+streaks down both margins, each fixing to its own length. On the iron, the paint runs 0.59 to 1.26 on 2463 (median
+0.95) and 0.56 to 1.27 on 2464 (0.90), and 102 and 98 of each stair's 256 joints are sealed, so along a railing a
+baluster's head or foot is clean, lightly or heavily rusted in no order: along stair 2463's third-floor front the head
+joints draw 0.24, 1.26, 1.14, 1.15, 0.93, 0.06, 0.05, 0.94 and so on. The platforms fall toward 178, 280 and 80
+degrees on 2463 (floors 2, 3 and 4; 0 is east along the face, 90 toward the street) and toward 4, 305 and 350 on 2464,
+by 0.63 to 0.98. `AMP`, `EFOLD`, `W0`, `SPREAD`, the halo, the bands and the look are unchanged: a fixing whose draws
+are all 1 sheds the streak it shed before.
+
+### The look
+
+On masonry the stain is a filter, not a paint: the colour goes `AMOUNT` 1.0 x the stain of the way to itself times
+`FILTER` (0.58, 0.36, 0.22), a warm filter that darkens and reddens the brick and turns the grey mortar orange-brown,
+the mortar joints taking `JOINT_HOLD` 30% more, and the roughness goes to at least 0.85. The brick's pattern stays under
+it and its normal map is untouched. Walls only (tops and soffits take the footprints' reading, never a streak's). On the
+ironwork the paint fails: where its rust passes from `LOSS` 0.20 to 0.55 the surface turns from the black paint to rust,
+thin rust (`RUST_DARK`, a dark brown) turning to bare oxide (`RUST_LIGHT`, an orange-brown) as it thickens, matte
+(0.92) and no longer metallic -- rust is an oxide, a dielectric -- which is why the layer now routes Metallic on metal
+(below). Metal only, and only where the attributes are: the storefront frames and the portal's bronze keep theirs.
+
+### Calibration
+
+Measured in rendered pixels on the full-size evidence stills at the scene's defaults: the linear luminance of a box on
+the streak's core with the rust on, against the same box with `wear_rust=0` (every other feature on in both),
+`diff/calibration.json` and `diff/calibration_boxes.png`. The view is `street_anchor_streak`, from the street up at the
+west margin of stair 2464 below its floor-3 platform's corner, in 3rd Street's shade:
+
+| where | on / off |
+|---|---|
+| the stain round the platform corner's fixing, seen through the gap over the platform's rear edge | 0.66 |
+| the streak below the platform, its first 20 cm in view; then about every 18 cm down it | 0.72; 0.78, 0.85, 0.90 |
+
+The reference is 564's own streaks under the sill ends on 3rd Street in shade (0.64 in their top 20 cm, 0.76 from 0.2 to
+0.5 m): a rust streak from a fixing reads as strongly as a dirt streak from a sill end, narrower (3 cm against 7) and
+orange-brown rather than grey, fading within a metre -- narrow and moderate, a maintained building in a dry climate. No
+photograph shows the Bradbury's own fire escapes close enough to measure: the 1960 HABS corner has them about 20 px
+tall. The streaks lie in the window strips' recessed margins, in the shade of 3rd Street and of the platforms, behind
+the side railings, whose balusters stand in the fixings' own plane, and each platform hides the wall above it from the
+pavement: from the street they are narrow darker lines, plainest below each platform's corner. The debug view and the
+diagnostic render with the ironwork taken out (`anchor_streak_no_ironwork_*`) show them whole. On the ironwork the rust
+reads plainly against the black paint: 11% of its area was rusty past half, the rails' tops under the drip lines, the
+platforms' edges and the joints. `AMP`, `EFOLD`, `FILTER` and `AMOUNT` carry the wall's calibration, `BAND`, `A_UP`,
+`LOSS` and the rust colours the iron's; `DEFAULT_STRENGTH` stays 1.0. The strength scales the stain on the masonry and
+widens the bands on the iron (their fields are multiplied by it), so 0 is off and 2 twice the paint loss.
+
+That calibration is the geometry's measure, and the rework left it as it was: a fixing whose draws are all 1 sheds the
+streak measured above. The calibration view's own fixing, the floor-3 platform's west corner on stair 2464, now draws
+as sound and sheds nothing, and the rail's end above it a faint 30 cm trickle; the fixings that leak stain the wall 0.77
+at the fixing on average against 0.79 before, so the measured strength holds on average, from a fixing that is nearly
+clean to one a little heavier than before. The iron is a little cleaner: 8.8% and 9.2% of the two stairs' area is rusty
+past half, against 11%, since two joints in five are now sealed.
+
+### The debug view
+
+Orange: the stains on the masonry at full colour from a quarter of their most (`DEBUG_GAIN` 4), the streaks and the
+footprints, and the ironwork where its paint is going. An octahedron marks each anchor, on the masonry behind its
+fixing, with a short tube along the fixing from the iron to the wall; a square tube runs round each platform's drip
+edges and along each stringer's. The streak's own path is not drawn down it: the tube would hide a stain barely wider
+than itself, which the debug colour shows. `wear=debug wear_soiling=0 wear_runoff=0 wear_washed=0 wear_street_grime=0`
+shows the rust alone. Since this feature the debug view's clay is matte on metal too (`Metallic` 0), so a mark on the
+ironwork reads in its own colour. A sound fixing that sheds nothing keeps its octahedron and has no tube (the tube is
+its streak's path): 24 octahedra, 21 tubes. The debug colour is full from a quarter of a stain, so it shows where the
+streaks lie and how far they run more than how strong each one is; the build's log lists every fixing's draws.
+
+### Published for the features that follow
+
+`ctx.field("rust", key)` for a feature that NEEDS rust (569 blooms round the anchors, where water gets into the wall):
+
+- `anchors`: every fixing, `dict(id, fire_escape, member, anchor, floor, side, facade, s, z, d_iron, d_wall, gap, wall,
+  wall_class, rain, leak, sound, wet)`: where it is (s, z on face `facade`; `d_wall` the masonry's surface it is fixed
+  into, `d_iron` the back plane), what it fixes (`anchor` rail or platform), what is behind it (`wall`, `wall_class`),
+  the rain its member takes (`rain`), the share of that water the fixing lets through (`leak`, and `sound` if it drew as
+  sound) and so the water it lets into the wall: `wet` = rain x leak, at most 1 (before the rework `wet` was the rain).
+- `streaks`: the streak of every fixing that sheds one (21), `dict(mark, source, facade, axis, z_top, z_stop, amp,
+  efold, width, spread, halo, stop)`, each with its own `amp`, `efold`, `width` (at the fixing), `spread` (per metre)
+  and `halo` (the share of `HALO_W`, `HALO_R` and `UP` it reaches, at most 1).
+- `drips`: every drip edge, `dict(id, fire_escape, member, floor, facade, length, catch, drops, landed, fall)`; `fall`
+  is a platform's, `dict(toward, strength)` (degrees in the face's plane, 0 along s, 90 toward the street), None for a
+  stringer.
+- `footprints`: every footprint on masonry, `dict(mark, source, onto, facade, s0, s1, z, d0, d1, amount, catch, drops)`.
+- `iron`: per stair its members, faces, rear members, anchors, back plane, the count of each edge kind, the rain it
+  takes, its members' paint (`min`, `median`, `max`), its joints (`n`, `sealed`) and the share of its area rusty past
+  half.
+- `field`: `dict(res=0.04, z0, data, atlas, note)`, the masonry stains (the mask's R), max-pooled to 4 cm, float16,
+  rows from z0 up.
+
+For 569: the wall is wet round every fixing that leaks, and the water enters it there; bloom below each anchor's
+`(s, z)` on the masonry at `d_wall` (the sill's front on floors 3 and 4, the strip's panel elsewhere) as wet as its
+`wet`, and read `field` or `streaks` to keep off the rust itself. The rework changed 569 with no change to its code: its
+blooms round the fixings into brick (16) follow each fixing's water, 0.03 to 1.00 where they were 0.69 to 1.00, so a
+sound fixing has next to none; 3 of its 8 fixings into sills (stair 2464's floor-3 corners and its floor-4 west
+corner, all sound) no longer wet their sill past the runoff's own water, so it has 633 sources where it had 636; and it
+keeps its bloom off each streak as the streak is now drawn. Its mask's depth and course channels are byte-identical,
+and its amount and e-fold channels changed only within the two stairs' strips (3,387 and 6,103 texels).
+
+### What it changed in the framework
+
+Backward compatible: `wear/nodes.py` routes a sixth state, **Metallic**, through the layer on the metal class only
+(`STATE`, `wear_material`'s routes, `build_layer`'s mix), because rust turns painted iron into an oxide, and "rust" on a
+0.7-metallic surface reads as copper. Off, a mix by 0 returns the input exactly; a feature that does not touch it passes
+it through; the debug view's clay sets it to 0. `wear/registry.py` lists `rust`. The probe, runoff, soiling, washed and
+street grime masks build byte-identically (`37806c0b...`, `4fa13d0c...`, `6517dd79...`, `6c9963ea...`, `16d42806...`),
+the rust mask is the same on a rebuild (`a1865e1b...`), and the worn block keeps 2287 objects (2275 and twelve markers).
+
+The rework (2026-09-23) changed nothing outside `rust.py`. Every other feature's mask and cache builds byte-identically
+but efflorescence's, which reads rust; the rust mask (`f3437ed7...`) and cache are the same on a rebuild; the worn block
+keeps its 2697 objects, and object for object against the frozen state before this review pass only the two stairs,
+the rust and efflorescence markers and the markers of the features reworked before it differ.
+
+### Evidence
+
+In `tests/artifacts/screens/bradbury_wear/rust_stains/`: `<view>_off_on_debug.png` (rust off | on at its default |
+the debug view with the rust alone, 50%) for `hero_3q`, `st_corner`, `medium_fire_escape` (stair 2464 from across 3rd
+Street, a little above), `closeup_anchor` (the rail's end fixed into the east margin at floor 4, the platform's corner
+below it and the streak between), `closeup_platform_above` (the floor-3 platform from above: its rails' tops rusted by
+the drips of the platform over it, its deck's edges, the joints) and `closeup_platform_below` (the floor-2 platform
+from the street: the drip edges and the balusters' feet); `street_anchor_streak_off_on.png` (the calibration view);
+`anchor_streak_no_ironwork_off_on_debug.png` (a diagnostic: the west margin of stair 2464 at floor 3 with the fire
+escapes taken out of the render, the streak whole); `renders/` (the full-size stills, and `<camera>_wear_off.png` for
+all five cameras); `diff/` (off against on, x8, with the numbers as json; `summary.json`; `calibration.json`);
+`poses.json`. Off against on, mean 8-bit levels over the frame and the share of pixels moved more than 2: `hero_3q`
+0.025, 0.21%; `st_corner` 0.017, 0.14%; `medium_fire_escape` 0.30, 2.8%; `closeup_anchor` 0.75, 6.9%;
+`closeup_platform_above` 0.95, 9.5%; `closeup_platform_below` 0.40, 3.9%. The fire escapes are small in the two street
+cameras' frames, so the rust barely moves them.
+
+The off switch still renders as before the layer: the worn scene with `wear=off` against the pre-wear renders
+(`series/final/before/`), mean levels and share of pixels off by more than 2, `hero_3q` 0.0135, 0.004%; `st_corner`
+0.0283, 0.047%; `st_along` 0.0074, 0.008%; `st_up` 0.0084, 0.006%; `st_portal` 0.0143, 0.020% (the noise floor is
+0.0067 to 0.0310). With `wear_rust=0` the canonical scene renders as 567 left it: against 567's own stills, `hero_3q`
+0.0069 and `st_corner` 0.0061 mean levels.
+
+The rework's evidence is in `tests/artifacts/screens/bradbury_wear/rework/rust/`. `audit/` holds the state it found:
+the same anchor close-up on both stairs, identical; the decoded streaks, four identical columns. Then, each on both
+stairs, before this review pass and after it (the "before" is the frozen `wear_snap_rework_before`, whose soiling and
+runoff predate their own reworks): `closeup_before_after.png` and `closeup_railing_crop.png` (568's `closeup_anchor`
+pose: the dotted row of identical ticks under the top rail broken up, each baluster's head its own),
+`medium_before_after.png` (`medium_fire_escape`), `above_before_after.png` (`closeup_platform_above`),
+`street_before_after.png` (`street_anchor_streak`) and `wide_before_after.png` (both stairs from across 3rd Street);
+`closeup_off_on_debug.png` and `medium_off_on_debug.png` (stair 2464 now: off | on | debug); the streaks with the
+ironwork taken out and the rust alone: `streaks_heat_before_after.png` (the rendered stain against no wear at all, x8:
+eight identical streaks per stair before, each its own after, and stair 2464's floor-3 west margin clean),
+`streaks_debug_before_after.png`, `streaks_no_ironwork_before_after.png` and `streaks_margins_before_after.png`;
+`mask_streaks_before_after.png` (the mask decoded at 5 mm, the streaks as the shader cuts them); `elevations/` (the
+rust on 3rd Street at 5 cm, before and after); `downstream/` (569 alone round the fixings, before and after);
+`renders/` (the full-size stills; `off/` the worn scene switched off on the five cameras); `diff/` (x8 heat maps and
+json); `poses.json`. Before against after, mean 8-bit levels and the share of pixels moved more than 2 (the soiling
+and runoff reworks included): `closeup` 0.38, 6.0% (2464) and 0.38, 5.4% (2463); `medium` 0.21, 3.5% and 0.17, 2.0%;
+`above` 0.48, 10.4% and 0.31, 3.6%; `street` 0.19, 2.6% and 0.16, 1.6%; `wide` 0.25, 4.0%. Off against on at the
+default, stair 2464: `closeup` 0.57, 5.5%; `medium` 0.31, 3.6%. The worn scene switched off against the pre-wear
+renders: `hero_3q` 0.0165, 0.006%; `st_corner` 0.032, 0.058%; `st_along` 0.0070, 0.006%; `st_up` 0.0060, 0.001%;
+`st_portal` 0.016, 0.024%, the noise floor as before.
+
+## Efflorescence below trim (AI 569)
+
+`wear/features/efflorescence.py` (`wear_efflorescence`, pink in the debug view): the faint white salt bloom brickwork
+shows just below the stone and terracotta trim set into it. The Brick Industry Association's Technical Note 23A names
+caps, copings, sills and lintels as trim that "may contain soluble salts": water carries them out of the trim into the
+brick below, where they crystallise on its face as it dries. The ICOMOS-ISCS glossary adds that efflorescence comes from
+the material itself, unlike the deposits the air brings, and that it follows the evaporation front. Los Angeles is dry,
+so the bloom is faint. Every mark has a source found on the model (a place where water gets in under a trim's lower
+edge, a fire escape's fixing) and runs down the wall from it; its lower boundary is drawn on the brick's own courses;
+nothing is placed by noise, and the mask is byte-identical from one build to the next. Since the rework of 2026-09-23
+it blooms at a minority of the places where water could get in, each bloom its own ("One site at a time", below): most
+trim shows none. Since the critique of 2026-09-24 each bloom is a bell hanging from its leak, a wide bloom is a faint
+one, one wet stretch shows one bloom, and the salt comes out under the deposits instead of lifting a soiled band back
+toward clean ("Its outline and its strength", below).
+
+```
+blender -b -P wear_layer.py -- features=efflorescence                    # its mask alone (about 6 s), the rest cached
+blender -b -P render_wear.py -- wear=on wear_efflorescence=0 view=st_up  # off; 1 is the calibrated default
+blender -b -P render_wear.py -- wear=debug wear_soiling=0 wear_runoff=0 wear_washed=0 wear_street_grime=0 wear_rust=0 view=st_corner
+```
+
+### The sources
+
+The feature casts the facade on 2 cm texels as runoff does (its `Elevation`, the fire escapes looked through), recording
+each texel's material as well, where 565's published 5 cm `front` shows trim over brick. An edge column is a texel of
+trim (terracotta or stone) standing directly over a texel of brick, set into it: the trim's front between 3 cm behind
+the brick and `DRIP_MAX` 0.35 in front of it (the band's soffit is 0.25 deep), the brick on the wall's level courses
+(below), and the brick running on at least `MIN_DROP` 0.10 under the edge, so a sliver of wall caught right under the
+band's edge beside a column's capital (64 columns) is not one. Columns of one trim family whose edges stay within 3 cm of
+each other make a run; its edge's height is settled by a ray straight up from the brick to the trim's underside. Each
+run is split into its sites, the places along it where water could get into the brick (next section), and only a site
+that leaks is a source.
+
+| kind | on the model | runs | length | its sites | wet (median) | bloom |
+|---|---|---|---|---|---|---|
+| window sill | `sill_*` on floors 3 and 4 (their undersides at 9.54 and 12.54), over the spandrel's brick: the window strip's recessed panel, or the wall on the raised stretches | 78 | 218.3 m | its two ends (156) and its bed (78) | 0.51 at an end | 10 ends, no bed |
+| band 4-5 | the underside of `ge_cornice45_bottom` (15.63) between its brackets and capitals; on the raised pavilions also `ge_cornice45_top` (16.48), which sits there on the brick | 224 | 185.1 m | 294 units | 0.27 (0 under the top cornice, which 564 does not shed from) | 7 |
+| bracket's foot | each `ge_bracket45*` console's foot (15.29) | 186 | 19.5 m | 186 | 0.47 | 6 |
+| column capital's foot | each `ge_capital.*` under the band, over its brick column (15.24) | 33 | 16.0 m | 33 | 0.36 | 2 |
+| springing capital | each `ge_capital5*` at the top floor's springing (17.73) | 42 | 14.8 m | 42 | 0.36 | 3 |
+| impost course | the underside of `impost_course5` (17.73), over the top floor's piers | 44 | 77.8 m | 44 | 0.26 | 3 |
+| crown's base | the underside of `ge_crown_moulding` (19.10), round the whole block | 5 | 176.4 m | 147 units | 0.64 | 6 leak, 5 bloom (one joins its neighbour's) |
+| fixing into brick | AI 568's anchors on the window strip's brick panel: the side rails' ends on floors 2 to 4, the floor-2 platforms' corners | | | 16 | 0.71 | 3 |
+| fixing into a sill | AI 568's floor-3 and floor-4 platform corners, fixed to the sills' fronts: wetter brick under the sill there | | | 8 | 0.32 | 1 |
+
+The archivolts over the top floor's arches stand over the arch rings (5,218 edge columns, 104 m): the rings are laid
+round the arch and their courses are not level, and the bloom's lower boundary is drawn on level courses, so the rings
+are left out. 612 runs of edge and 24 fixings make 1,004 sites; 41 leak, and one of them joins its neighbour's bloom:
+40 sources, 40 marks, 40 paths (636, 636 and 1,082 before the rework, 41 of each before the critique); about 6 s and
+1.28 million rays.
+
+### One site at a time (rework 2026-09-23)
+
+The user, reviewing the layer on 2026-09-23, rejected identical repetition as the opposite failure of noise (the pigeon
+marks stood at the same place in every window) and asked for every feature to be checked for "pattern like results".
+This one was the plainest case: every edge above was a source, and the same pale band lay under all 78 sills, under
+every bracket's and capital's foot and along the whole band, impost and crown, 636 sources stamped alike (the render's
+off-against-on difference, `rework/efflorescence/audit/third_wide_effl_off_vs_on_x8.png`, is one identical line under
+every sill of 3rd Street). Real efflorescence is patchy between elements. Salt needs water inside the wall to carry it
+out, and water gets in at a few places only -- a sill's joint with its jamb that has opened, a bed joint under a sill
+whose drip has failed, an open joint between two units of a course, the hole round a fixing -- while most trim stays
+sound and the brick under it shows nothing. Which it is, the model does not carry. So each run is split into SITES,
+the places where water could get in, and each site draws from its own seed whether it leaks at all and, if it does, its
+own bloom (`site_draw`: the sha256 of `efflorescence:` and the site's key, two bytes to a uniform; a range is the mean
+of two uniforms, the middle likelier than the ends). A rebuild draws the same values, and nothing drawn for one site
+moves when another changes. Noise inside a mark stays out, as before.
+
+| site | seeded by | where its leak (the bloom's deepest point) lies |
+|---|---|---|
+| a sill's end: its joint with the jamb, where 564's water off the window gathers | `sill_end:<sill>:<L\|R>` | within `END_IN` 0.06 of 564's stream from that end |
+| a sill's bed: water tracking back under a sill whose drip has failed | `sill_bed:<sill>` | anywhere along the sill that keeps its bloom, `BED_SHARE` 0.55 to 1.00 of the sill's length, on the sill |
+| a bracket's, a column capital's or a springing capital's foot | its kind, face, object and foot's middle | on the part of the foot 564's stream leaves over (the middle third of a foot that sheds none) |
+| the impost over one pier | `impost:<face>:<s0>:<s1>` | anywhere along the pier's middle three fifths |
+| a unit of the band, the crown or any other course: a run in lengths of about `UNIT` 1.2 m, the terracotta's units, whose joints are what open | its kind, face, object, height and the unit's start | anywhere along the unit |
+| a fire escape's fixing, into brick or into a sill | `fixing:<568's anchor id>` | at the fixing |
+
+A site leaks with the chance `SITE_P` of its kind where it is wettest, and `LEAD_FLOOR` 0.25 of that where it is dry,
+the smoothstep of its water over 0.10 to 0.90 between (`lead`): the water is 564's published deposit just under the
+edge, over the site (at a sill's end over 10 cm either side of its stream; a sill's bed takes the mean of its ends), or
+the water 568 lets in through a fixing (`wet`; 0.8 of it into a sill). So the wet paths lead -- a sill end that sheds
+564's heaviest stream is four times as likely to leak as one that sheds nothing -- and still most sites stay sound. A
+fixing has no floor: 568 has already drawn the water it lets in, and one it drew as sound lets in none. A site that
+leaks draws its bloom:
+
+| draw | bounds |
+|---|---|
+| the amount of salt: times the geometry's `A_BASE` + `A_WET` x wet (the edge's water, then the runoff's down the wall, as before) | `LEAK_AMOUNT` 0.55 to 1.15 |
+| how far down it reaches: times the e-fold | `LEAK_REACH` 0.70 to 1.35 |
+| its half-width along the edge, the mean of its two sides | `HALF_W`: a sill's end 0.08 to 0.22, a bracket's foot 0.05 to 0.14, a column capital's 0.12 to 0.34, a springing capital's 0.08 to 0.18, the impost 0.15 to 0.50, a band unit 0.15 to 0.45, a crown unit 0.25 to 0.75, a fixing 0.06 to 0.14 m |
+| where its leak lies | as in the table above, uniform |
+| how far it reaches to either side of the leak (since the critique) | (1 -+ `ASYM` 0.45 x a uniform from -1 to 1) x its half-width: it leans |
+| how round its lower boundary is | `ROUND` 0.60 (a broad, rounded bottom) to 1.40 (a pointed one); 0.35 to 1.25 before the critique |
+
+Across its width a bloom is a bell hanging from its leak (since the critique of 2026-09-24; before it, whole to 0.65 of
+its half-width and fading to its ends only there, which drew a rectangle): the wall is wettest under the leak, so the
+bloom is deepest and strongest there, and its lower boundary, still stepping down the courses, comes up a course at a
+time to meet the trim on either side and leans toward the leak ("Its outline and its strength", below). It spreads
+through the wall past its own trim's columns onto brick standing within `DEPTH_TOL` 3 cm of its own and on the same
+courses, walked down from its edge: a sill's end onto the flush wall beside it on a raised stretch, a band's unit past
+a bracket onto the next run (the bracket's own columns are terracotta), never onto a pier standing forward of the panel.
+Where two blooms meet, each texel takes the one that blooms more there as its joints take it.
+
+As built (the build prints every bloom, `efflorescence bloom ...`): 1,004 sites, 45.7 blooms expected, 41 drawn, 40
+blooms (one crown unit joins its neighbour's, below). The amount is at the leak, with the width share of the critique.
+
+| site | sites | chance to leak | expected | bloom | amount | its sides from the leak | joints reach |
+|---|---|---|---|---|---|---|---|
+| sill's end | 156 | 0.025 to 0.100 | 9.6 | 10 | 0.50 to 0.89 | 0.07 to 0.22 m | 0.17 to 0.35 m |
+| sill's bed | 78 | 0.010 to 0.038 | 1.9 | 0 | | | |
+| fixing into a sill | 8 | 0 to 0.43 | 1.5 | 1 | 0.94 | 0.12, 0.06 m | 0.26 m |
+| bracket's foot | 186 | 0.020 to 0.059 | 8.0 | 6 | 0.43 to 0.72 | 0.04 to 0.18 m | 0.19 to 0.30 m |
+| column capital's foot | 33 | 0.030 to 0.065 | 1.5 | 2 | 0.34, 0.39 | 0.16 to 0.32 m | 0.16, 0.20 m |
+| springing capital | 42 | 0.025 to 0.055 | 1.8 | 3 | 0.60 to 0.64 | 0.06 to 0.21 m | 0.24 to 0.26 m |
+| band unit | 294 | 0.018 to 0.033 | 6.9 | 7 | 0.29 to 0.50 | 0.13 to 0.47 m | 0.16 to 0.26 m |
+| impost | 44 | 0.035 to 0.084 | 2.1 | 3 | 0.43 to 0.49 | 0.20 to 0.43 m | 0.19 to 0.29 m |
+| crown unit | 147 | 0.049 to 0.057 | 7.3 | 6, 5 blooms | 0.33 to 0.49 | 0.20 to 1.37 m | 0.27 to 0.34 m |
+| fixing into brick | 16 | 0 to 0.45 | 5.3 | 3 | 0.28 to 0.35 | 0.05 to 0.13 m | 0.23 to 0.35 m |
+
+By face: 3rd Street 14 (4 of them at the fire escapes' fixings, 3 under the crown), the chamfer 3, Broadway 7, the
+north face 9, the west face 7. One sill end in sixteen blooms, one bracket's foot in thirty; no two blooms are alike
+(`rework/efflorescence/bloom_gallery.png` draws each one decoded from the mask as the rework left it,
+`rework/efflorescence/critique_r1/bloom_gallery_*.png` each one before and after the critique). The draws left a few
+coincidences, kept as drawn: the same jamb blooms on floors 3 and 4 twice (3rd Street s 27.8, Broadway s 4.6; a jamb
+whose brick is wet through shows it at both sills; each bloom leans and reaches its own way), and three units of the
+pavilions' top cornice leak though 564 sheds no water there (0.7 expected: that ledge takes the top floor's rain, which
+564 does not model). Two neighbouring units of 3rd Street's crown leak too (s 37.1 and 38.3, above an impost and a
+springing capital that bloom as well: that stretch of the top floor reads as its wettest); since the critique they show
+as one bloom, not two dashes side by side. The mask covers 13.9 m2 (34,724 texels): 548.4 m2 before the rework and
+18.4 m2 (46,022 texels) before the critique. Since 564's critique fix (2026-09-25) a capital sheds by its drips, each a
+narrow stream: the same 40 blooms, the five at capitals now lying on the drip nearest the foot's middle, with their wet
+read there (the column capitals' chance to leak 0.030 to 0.072, amounts 0.34 and 0.40; the springing capitals' 0.025 to
+0.061, amounts 0.54 to 0.64), and the mask covers 13.7 m2 (34,256 texels).
+
+### Its outline and its strength (critique 2026-09-24)
+
+The fresh-eyes review of the reworked layer found the course units' blooms -- the crown's, less so the band's -- drawn
+as pale grey-white rectangles one or two courses deep, flat along the moulding, with near-vertical ends and bright
+white joints. On Broadway in the sun the crown's bloom at s 19.7 to 21.1 measured 1.12 of the brick beside it over its
+first two courses (1.008 with the wear off), well past the few per cent the sill ends are calibrated to from the HABS
+photo; it lifted the soiled band under the crown back toward clean, so it read as a cleaned or whitewashed patch; and
+3rd Street's two neighbouring crown units, which both leaked with look-alike draws (amount 0.68 and 0.74, reach 0.26 and
+0.32, half-width 0.55 and 0.63), read from the far pavement as a pair of matching pale dashes. The sill ends', brackets'
+and fixings' blooms were faint and fine. Four changes, all in `efflorescence.py`:
+
+- **A bell, not a band.** A bloom used to be whole to 0.65 of its half-width and to keep 0.30 of its depth and 0.55 of
+  its amount at its ends, so the course the trim's edge cuts bloomed nearly whole across it and the ends stood as short
+  vertical cuts. Now it is a bell hanging from its leak (`bell`): (1 - smoothstep(|x|)) ** power, x running from 0 at
+  the leak to 1 at each end, each side as long as its own draw (`ASYM`: the two sides are (1 -+ 0.45 u) of the
+  half-width), with no flat part. Its e-fold goes as the bell ** `ROUND` (0.60, a broad rounded bottom, to 1.40, a
+  pointed one: at least 0.6, so the side comes up a course at a time over several centimetres rather than in a cut), so
+  the lower boundary, still on the courses, climbs to meet the trim on either side and leans toward the leak; its
+  amount goes as the bell ** (`FADE` 0.5 x round, at least 0.5), a little wider, so along the course the edge cuts the
+  bloom fades out beyond the courses under it and comes to nothing along a slope.
+- **A wide bloom is a faint one.** The water one leak lets in spreads over its bloom: a bloom whose half-width is
+  wider than `W_REF` 0.18 m takes (0.18 / half) ** `W_POW` 0.5 of its amount (`spread`). As built the crown's units take
+  0.54 to 0.72 of it, the band's 0.70 to 0.93, the impost's 0.68 to 0.88, the column capitals' 0.79 and 0.86; the sill
+  ends 0.94 or all of it, the brackets, springing capitals and fixings all of it.
+- **One wet stretch, one bloom.** Of the units of one course that leak (`COURSE_KINDS`: the band, the crown, any other
+  course), neighbours at most `JOIN_GAP` 0.35 m apart (a bracket between two runs of the band) are one stretch; the unit
+  that draws the most salt keeps its bloom and its side toward the other's leak reaches `JOIN_REACH` 0.55 to 0.95 of the
+  way there, drawn from its own seed (`join`); the other draws none. On 3rd Street the unit at s 38.3 keeps its bloom,
+  leak at s 39.25, reaching 0.36 m east and 1.37 m west toward the other's leak at s 37.41: one bloom from s 37.9 to
+  39.6, deepest near its east end, where two matching dashes stood. It is the only join as built.
+- **The salt comes out under the deposits, half of its lift along the brick's hue** (the look, below). The veil's lift
+  is what it gives the clean brick; each channel of it is dimmed as the square root of how far the soiling, the streaks
+  and the grime dimmed that channel of the clean brick (`UNDER_POW` 0.5: the crystals grow through the dirt, so they show
+  a little more than the brick under it), so a bloom keeps the crown's soiled band soiled instead of lifting it back
+  toward clean; and `SALT_HUE` 0.5 of the lift follows the brick's own hue (the same rise in luminance with its colour
+  kept), which keeps the joints from turning blue-grey in the sun.
+
+What did not change: which sites leak (the same 41, from the same draws), each bloom's amount, reach, half-width and
+place draws (their uniforms are the rework's; the old skew's uniform now draws the lean), the profile down the wall,
+the courses, the look's amounts, the mask's channels and the shader's course lookup.
+
+Measured on full-size stills at the scene's defaults, every other feature on (`critique_r1/diff/bloom_ratios_start_after.json`):
+what efflorescence adds to the linear luminance of the brick over each box, against the same still with it off, and
+the box over the brick beside it on the same courses:
+
+| bloom | box | before the critique | after |
+|---|---|---|---|
+| Broadway's crown (sun) | the critic's: s 19.74 to 21.14, the first two courses | +12.8%; 1.12 of the brick beside | +3.4%; 1.03 |
+| | its own extent (s 20.10 to 21.12), two courses | +14.1% | +4.6% |
+| | round its leak (0.4 m), two courses | +18.0% | +7.9% |
+| 3rd Street's crown pair, now one bloom (shade) | both units, s 36.66 to 40.10 | +16.7%; 1.15 of the brick beside | +2.8%; 1.01 |
+| | round its leak, two courses | +26.8% | +9.8% |
+| 3rd Street's impost (shade) | its extent, the first 20 cm | +7.3% | +3.0% |
+| Broadway's band unit (shade under the band) | its extent, the first 20 cm | +5.9% | +1.0% |
+| Broadway's sill ends at s 4.6 (sun) | by the jamb, the first two courses, floor 4 and floor 3 | +8.3%, +6.1% | +5.6%, +3.0% |
+| 3rd Street's `sill_1629` right end (shade) | by the jamb, the first two courses | +8.5% | +4.4% |
+
+So a sunlit course bloom now stays within the few per cent the sill ends show, the soiled band under it stays soiled,
+and the sill ends keep their look a little fainter where they lie over their own runoff streaks: the salt comes out
+under that streak's deposit rather than over it. The band's units, drier (wet 0.24 to 0.32 against the crown's 0.64)
+and under the band's soiled soffit, are now the faintest blooms, seen only close to. Iterating on these numbers (half
+size, 32 samples, `critique_r1/it1` to `it5` and `diff/bloom_ratios_it*.json`): the salt wholly under the deposits
+(`UNDER_POW` 1) left 3rd Street's crown bloom +8% at its leak and hard to see at all in the shade; a gentler dimming
+(`UNDER_POW` 0.25) with a gentler width law (`W_POW` 0.35) took Broadway's crown to +5.8% over its extent and +9.9% at
+its leak, past the few per cent; `SALT_HUE` moves the chroma only (0 and 0.4 give the same luminance to 0.3%), and at 0
+the joints turn blue-grey in the sun.
+
+### The level courses
+
+The lower boundary has to follow the joints, and the joints are the brick set's, so the feature measures where they are.
+The wall's brick (`PBR_bradbury_wall_terracotta_brick_tileable`) is mapped in world metres: on floors 2 to 4 its
+texture's V is the world z, on the top floor (`wall__21` and the `top_panel_*` walls) it is -z + b, the texture upside
+down. Its Mapping node scales by 1 / 1.26 m, and the set's height map holds 16 bed joints to a tile, 7 mm tall and
+within 1.1 mm of even spacing, so the bed joints lie on level courses 7.875 cm apart, at z = (k + phase) 7.875 cm. The
+phase is measured per object from its own UVs and the height map: 0.008 on floors 2 to 4, 0.792 on the top floor (158
+objects). The build asserts the course and the joints' height, so a remapped brick fails loudly instead of drawing its
+bloom off the joints. Here a course is a brick row and the bed joint under it. The arch rings (`PBR_bradbury_arch_ring`,
+39 objects) are mapped round the arch and fit no level grid.
+
+The shader finds the course a shading point lies in from its world z and the phase (the mask's alpha), and reads its own
+mask a second time, at the centre of that course's top joint: every brick of the course, its head joints and the bed
+joint under it take one value. So the bloom steps down the wall course by course and always ends at a bed joint, on
+every face and every floor, at any distance, whatever the mask's resolution.
+
+### The bloom
+
+Per course, with t the depth of its top joint below the trim's edge (the course the edge cuts has t < 0 and blooms in
+full), where a site leaks:
+
+- the amount is its draw (0.55 to 1.15) x (`A_BASE` 0.50 + `A_WET` 0.50 x wet), times its width share (`spread`) and
+  the bell across it ** (`FADE` x round, at least 0.5) (above);
+- a brick's face blooms as exp(-t / e), e = `E_BASE` 0.08 x (1 + wet) m times its reach draw (0.70 to 1.35) and the
+  bell across it ** round, down to the course where that falls below `CUT_FACE` 0.30;
+- the joints bloom as exp(-t / (1.6 e)) (`JOINT_REACH`), down to the course where that falls below `CUT_JOINT` 0.25, and
+  never more than `REACH_MAX` 0.45 m below the edge: the salts travel through the mortar and deposit there first;
+- each cut comes in over its value to 1.5 times it (`CUT_SOFT`), so where a wet path widens the bloom it fades out
+  sideways rather than along a line through a brick; down the wall every change still falls on a bed joint.
+
+At a bloom's deepest point, with its reach draw at 1 (the draw stretches these by 0.70 to 1.35):
+
+| wet | where | faces bloom to t | joints bloom to t |
+|---|---|---|---|
+| 0 | the pavilions' top cornice | 0.096 m: the course the edge cuts and the next | 0.18 m: about three courses more |
+| 0.3 | the band's and the impost course's curtains | 0.13 m | 0.23 m |
+| 0.5 | a bracket's foot, a sill's end | 0.14 m | 0.27 m |
+| 0.8 | a sill's wettest ends; the crown's base | 0.17 m | 0.32 m |
+
+Wet is AI 564's runoff: its published deposit (`field`), read at each texel, so the bloom follows a stream down and out
+as it widens: under a sill's end 0.51 at the top (0 to 0.96, each end's own since 564's rework), a bracket's foot 0.47,
+a capital's 0.36, the curtains of the band (0.27), the impost course (0.26) and the crown (0.64, 0.78 at most). A fire
+escape's fixing (AI 568's `anchors`) lets water into the wall as well, as much as 568 drew for it (`wet`): a platform's
+corner fixed to a sill's front wets the brick under that sill, 0.8 times that water, falling off as wide as its bloom
+and over 0.30 m down; a rail's end or a floor-2 platform's corner fixed into the strip's brick panel wets the brick
+round it, from 4 cm above the fixing and falling off over 0.20 m down (sideways, both as the bloom's bell). There is
+no trim there, so the salt is the brick's own and the amount is the water's alone (its draw x 0.5 x wet). The bloom
+keeps off 568's rust streaks, drawn from their published axis, width, spread and halo with 1.5 cm to spare, so it lies
+beside the stain and never on it.
+
+### The mask
+
+`masks/efflorescence.png` is 2 cm with four 8-bit channels (41 MB of VRAM as bytes): R the amount, G the depth below the
+trim's edge (-0.20 to 0.80 m: linear in z, so exact between texels), B the e-fold (0 to 0.40 m) and A the phase of the
+brick's courses there. Each column of a bloom is painted over the brick it runs on, followed down the elevation as
+runoff's film is (a surface standing 3 cm further out stops it, a step back of up to 10 cm is crept round, anything but
+level brick of the same course grid ends it; 0.58 m at most): caught 136 columns, edge 49, length 610. The six rows
+above the edge carry the site's values too, for the course the edge cuts, whose top joint lies above it; every mark is
+padded two texels for the lookup's filter. Where the walk stops, the bloom stops (the shader gates on the local
+amount). Where two blooms would share a texel the one that blooms more there takes it (none do as built). The mask
+covers 34,724 texels, 13.9 m2 (1.37 million, 548 m2, before the rework; 46,022, 18.4 m2, before the critique).
+
+### The look
+
+A veil, not a paint: it lightens the brick and takes a little of its saturation, the brick's own pattern still under
+it. Its lift is what it gives the clean brick (the layer's Clean Color, the surface before any deposit): half of it
+toward `SALT` (0.78, 0.76, 0.72), a white a little warm with the city's dust, and `SALT_HUE` half of it along the
+brick's own hue, the same rise in luminance with the brick's colour kept, since a thin film of crystals lets the brick
+through (until the critique of 2026-09-24 all of it went toward `SALT`, which turned the joints blue-grey in the sun).
+The salt comes out under the deposits: each channel of the lift is dimmed as the square root of how far the soiling,
+the streaks and the grime dimmed that channel of the clean brick (`UNDER_POW` 0.5; the crystals grow through the dirt,
+so they show a little more than the brick under it), and never takes more than the clean brick does, so a bloom keeps
+the crown's soiled band soiled (laid over it at full strength it lifted the band back toward clean, a cleaned patch).
+Its amount:
+
+- on a brick's face `FACE_AMOUNT` 0.10 x the amount (at most `FACE_CAP` 0.55: the salt a wet path brings shows in the
+  joints) x the face's profile x the brick's porosity;
+- in a mortar joint `JOINT_AMOUNT` 0.30 x the amount x the joints' profile, so the joints turn from dark lines to
+  paler ones. The joint is the layer's Joint (the brick set's own height map), and the lip of brick under each bed joint
+  (`LIP` 12% of a course, found on the course grid, so under the joint on every floor, even where the texture is upside
+  down) takes `LIP_SHARE` half of it: the salt spreading out of the joint;
+- the porosity is each brick's own, read from its own tone as the material draws it (the layer's Clean Color): the
+  lighter, less fired bricks of a wall are the more porous and take 1.45 times the bloom, the darker, harder ones 0.55
+  (the set's faces run 0.195 to 0.288 in luminance, p10 to p90). So the bloom varies brick by brick with the bricks.
+
+The roughness goes to at least 0.90 by the same amount (salt is matte); the normal map is untouched. Brick only, walls
+and returns (never a top, a soffit, the trim itself, the stone, glass or metal). It stands at ORDER 240, after the
+street grime and before the rust: in the chain it comes after the soiling and the streaks, and it lightens them only
+as far as the salt shows through them.
+
+### Calibration
+
+Measured course by course in rendered pixels on the full-size evidence stills at the scene's defaults: the linear
+luminance of the bloom with `wear_efflorescence` at 1 against 0 (every other feature on), over the brick faces and over
+the joints apart, the joints found as the dark lines of the off still (`diff/calibration.json`):
+
+| where | light | the course the edge cuts | 1st course under it | 2nd | 3rd |
+|---|---|---|---|---|---|
+| a sill's span (dry) | shade (3rd Street) | 1.17, 2.45 | 1.12, 2.38 | 1.01, 1.66 | 1.00, 1.00 |
+| a sill's end by the jamb (wet) | shade | | 1.15, 2.15 | 1.14, 3.68 | 1.02, 2.61 |
+| a sill's span (dry) | sun (Broadway) | 1.07, 1.97 | 1.05, 1.81 | 1.01, 1.51 | 1.00, 1.00 |
+| a sill's end by the jamb (wet) | sun | 1.13, 2.80 | 1.08, 2.43 | 1.04, 2.12 | 1.01, 1.62 |
+| the band, between two brackets | shade, under its soffit | | 1.20, 2.40 | 1.02, 2.56 | 1.00, 1.11 |
+| under a bracket's foot | shade | 1.16, 1.15 | 1.11, 2.27 | 1.09, 2.76 | 1.01, 1.95 |
+| the crown's base | shade, under the crown | 1.34, 5.4 | 1.21, 4.56 | 1.04, 2.96 | |
+
+Each cell is the brick faces' ratio, then the joints'. The brick faces lighten a little, for a course or two; the
+joints, dark lines in the brick set, turn pale for a course or two further; below that nothing changes, course for
+course. The reference is the 1960 HABS photo of the Broadway bays (`loc_habs_ca0212_010`), in sun at about 3 cm a pixel
+(`references/habs_ca0212_010_sills_boxes_x3.png` and `.json`): the two courses right under its sills read 0.99 to 1.03
+of the spandrel's middle, 1.007 on average, once the first row, a sharpening halo off the sill's shadow, is left out. So
+in sun the bloom must stay within a few per cent there on average: in the render the first two courses under a Broadway
+sill average 1.08 and 1.03 over faces and joints together, faint, at the edge of what that photo resolves. As the
+framework found, AgX compresses the sunlit wall, so the same salt reads about twice as much in the shade of 3rd Street,
+and more again under the crown, where 565's soiling and 564's crown curtain have already darkened the brick: a white
+veil shows most on dark brick, as salt does. `FACE_AMOUNT`, `JOINT_AMOUNT`, `FACE_CAP` and the profile's constants carry
+the calibration; `DEFAULT_STRENGTH` stays 1.0.
+
+That table measured the bloom before the rework, when every edge carried one. The rework left the look and the profile
+as they were, so a bloom where a site leaks is measured the same way. On the rework's close-up (3rd Street, floor 4, in
+shade: the right end of `sill_1629`, the one of its ends that leaks, `rework/efflorescence/diff/calibration_closeup_*.json`),
+faces then the joint under each course: by the jamb, at the bloom's deepest point, 1.27, 3.19; 1.23, 2.88; 1.14, 1.97;
+1.01, 1.79, and nothing below; 10 cm out along the sill 1.14, 2.19; 1.10, 2.03; 1.03, 1.56; 1.00, 1.34; 25 cm out 1.00
+throughout. That is the old wet end's strength, now at one sill end in sixteen, fading sideways, where every sill used
+to carry the band: the HABS photo's clean sills are what the render shows at almost every sill (on Broadway 2 ends of
+28 bloom, one jamb on floors 3 and 4).
+
+The critique (2026-09-24) recalibrated the course units against that measure: a sunlit patch must stay within the few
+per cent the sill ends show. Course by course at the leak, faces then the joint under each course, before the critique
+and after it (`critique_r1/diff/calibration_*.json`): Broadway's crown bloom (sun) 1.17, 3.56; 1.09, 2.48; 1.03, 2.01
+then 1.09, 2.23; 1.05, 1.77; 1.01, 1.48; 3rd Street's crown bloom (shade) 1.19, 2.32; 1.04, 2.35 then 1.09, 1.48; 1.01,
+1.50; Broadway's floor-4 sill end at s 4.6 (sun) 1.10, 2.39; 1.08, 2.42; 1.05, 2.15; 1.01, 1.98 then 1.07, 2.09; 1.06,
+2.12; 1.03, 1.82; 1.01, 1.59. Over two courses the crown's bloom now reads 1.03 of the brick beside it in the sun (1.12
+before), about what the sill ends give (the table in "Its outline and its strength").
+
+### The debug view
+
+Pink: the bloom at full colour from a third of its most (`DEBUG_GAIN` 3), course by course, faces and joints, so the
+joints running on below the faces show. Since the rework only the sites that leak are sources: an octahedron at a point
+site (a sill's end, a foot, a fixing) and a square tube along the stretch of edge a course's, the impost's or a bed's
+bloom spans, just in front of the brick under it, and one thin tube per bloom, down from the edge at its deepest point
+(its leak) to where its joints stop: 40 of each, where the 636 runs used to draw a tube along every sill and course
+(41 before the critique; 3rd Street's joined crown bloom draws one tube along both its units). Since the critique the
+pink of a course's bloom thins out along the trim toward both ends and is faint where the bloom is wide.
+`wear=debug wear_soiling=0 wear_runoff=0 wear_washed=0 wear_street_grime=0 wear_rust=0` shows the bloom alone. In the
+sun on Broadway the pink reads pale (AgX again); 3rd Street, in the shade, shows it plainly. `elevations=1` draws each
+face's blooms through the feature's own `elevation()`, as its joints take them (the debug view's gain), not the brick
+each mark was walked over.
+
+### Published for the features that follow
+
+`ctx.field("efflorescence", key)` for a feature that NEEDS efflorescence (none does yet; salts crystallising in the
+joints are one of the ways mortar decays):
+
+- `sources`: every site that leaks and blooms, `dict(id, kind, facade, s0, s1, z, d_edge, d_wall, phase, wet, amp,
+  reach, half, half_l, half_r, middle, deepest, round, lean, leak, joins, object, wall)` (a fixing also its rust
+  `anchor`): `s0`..`s1` the bloom's extent as laid, `amp` its amount at its leak, `reach` how far its joints reach
+  there, `half` its drawn half-width, `half_l` and `half_r` how far it reaches to either side of its leak `deepest`,
+  `middle` the middle of that, `lean` its asymmetry draw, `leak` its amount, reach and width shares (`spread`), `joins`
+  (only where there are any) the neighbouring units whose leaks it took in; `kind` is `sill_end`, `sill_bed`,
+  `bracket`, `capital`, `springing`, `impost`, `band`, `crown`, `trim`, `anchor` (a fixing into brick) or `anchor_sill`
+  (a fixing into a sill). Before the rework it held every run; the critique added `half_l`, `half_r`, `lean`, `joins`
+  and the width share.
+- `sites`: every site, `dict(key, kind, facade, s0, s1, z, wet, p, leaks, laid)` (and `joined`, the keeper's key, for a
+  unit whose leak joined its neighbour's bloom): where its leak may lie, its water, its chance to leak, whether it did
+  and whether it laid a bloom of its own.
+- `courses`: `dict(course, joint_half, phases, materials, note)`: the wall's level course grid, the bed joints at z = (k
+  + phase) x course with the phase per `"object|material"`; a feature that works on the joints can find every bed joint
+  in world z with it.
+- `field`: `dict(res=0.04, z0, data, atlas, note)`: the bloom as the joints take it (0..1: the amount times the joints'
+  per-course profile), max-pooled to 4 cm, float16, rows from `z0` up.
+
+### What it changed in the framework
+
+Nothing but `wear/registry.py`, which lists `efflorescence`. The feature reads its own mask a second time, inside its
+own node group (the mask image it is given); the layer is untouched. The probe, runoff, soiling, washed, street grime
+and rust masks build byte-identically (`37806c0b...`, `4fa13d0c...`, `6517dd79...`, `6c9963ea...`, `16d42806...`,
+`a1865e1b...`), so do the rust attributes (568's cache is byte-identical), the efflorescence mask is the same on a
+rebuild (`ee8ba631...`), and the worn block keeps 2289 objects (2275 and fourteen markers).
+
+The rework (2026-09-23) changed nothing outside `efflorescence.py`, whose shader is untouched, and added its
+`elevation()` hook. A full rebuild with nothing from the cache gives every other feature's mask and cache
+byte-identically to the start of the rework; the efflorescence mask (`4e671621...`, from `a296ba59...`) and cache come
+out the same from one build to the next; the worn block keeps its 2697 objects, and object for object only
+efflorescence's two marker meshes differ from the start of the rework (`rework/efflorescence/diff/byte_identity.json`).
+No feature NEEDS efflorescence, so nothing downstream changed.
+
+The critique (2026-09-24) changed nothing outside `efflorescence.py` either: its build (the bell, the width share, the
+join) and its shader's colour (the lift under the deposits, half along the brick's hue); the mask's channels, the
+course lookup and the `elevation()` hook are as they were. Two full rebuilds with nothing from the cache give every
+other feature's mask and cache byte-identically to the start of the critique fix; the efflorescence mask (`2452c80b...`,
+from `4e671621...`) and cache (`b1b0a8a6...`) come out the same from a full build and a `features=efflorescence`
+rebuild; the worn block keeps its 2697 objects and the worn portal its 460, and object for object only efflorescence's
+two marker meshes differ (`critique_r1/diff/byte_identity.json`). The scenes link the same objects as before (2697, 21
+markers, 401 geometry objects and the 400 originals they replace; 2275 with `wear=off`).
+
+### Evidence
+
+In `tests/artifacts/screens/bradbury_wear/efflorescence/`: `<view>_off_on_debug.png` (efflorescence off | on at its
+default | the debug view with the bloom alone | for the two street cameras, the debug view with every feature, 50%) for
+`st_corner` and `st_up`, `closeup_sill_3rd` (under one floor-4 sill on 3rd Street, in shade: its dry span and its wet
+end by the jamb), `closeup_band_3rd` (under the band: the wall between its brackets and their feet),
+`closeup_sill_end_3rd` (a sill's wet end at the jamb, closer), `closeup_sill_bway` (a Broadway sill in sun),
+`closeup_crown_3rd` (the crown's base), `medium_top_3rd` (3rd Street's top floor from across the street: the crown's
+base and the impost course), `medium_sills_3rd` (3rd Street's floors 3 and 4) and `closeup_fixing` (a rail's fixing in
+the window strip's panel, 568's `closeup_anchor` pose; the bloom there is mostly behind the ironwork);
+`hero_3q_off_on.png`; `renders/` (the full-size stills, and `<camera>_wear_off.png` for all five cameras); `diff/` (off
+against on, x8, with the numbers as json; `summary.json` with the off-state checks; `calibration.json`); `references/`
+(the HABS photo's sills and the boxes measured on it); `poses.json`. Off against on, mean 8-bit levels over the frame
+and the share of pixels moved more than 2: `st_corner` 0.089, 1.2%; `st_up` 0.167, 2.1%; `hero_3q` 0.130, 1.7%;
+`closeup_sill_3rd` 0.74, 10.5%; `closeup_band_3rd` 0.68, 10.1%; `closeup_sill_end_3rd` 0.93, 13.2%; `closeup_sill_bway`
+1.27, 10.9%; `closeup_crown_3rd` 1.34, 14.3%; `medium_top_3rd` 0.43, 4.8%; `medium_sills_3rd` 0.15, 1.9%;
+`closeup_fixing` 0.024, 0.2%. From the street the bloom is a faint line under each trim; close up it is the pale joints
+and the lighter first courses.
+
+The off switch still renders as before the layer: the worn scene with `wear=off` against the pre-wear renders
+(`series/final/before/`), mean levels and share of pixels off by more than 2, `hero_3q` 0.0134, 0.004%; `st_corner`
+0.0278, 0.046%; `st_along` 0.0076, 0.008%; `st_up` 0.0097, 0.009%; `st_portal` 0.0140, 0.020% (the noise floor is 0.0067
+to 0.0310). With `wear_efflorescence=0` the canonical scene renders as 568 left it: against 568's own stills,
+`st_corner` 0.0059, `hero_3q` 0.0072 and its `closeup_anchor` 0.0073 mean levels.
+
+The rework's evidence is in `tests/artifacts/screens/bradbury_wear/rework/efflorescence/`. `audit/` holds the state it
+found: 3rd Street whole, efflorescence off and on and their difference x8 (one identical line under every sill, the
+band dashed at every bracket, the impost and the crown's base whole), the debug view with the bloom alone, and the top
+floor and a medium view of the sills. Then: `<camera>_before_after.png` for the five cameras, `closeup_`, `medium_` and
+`sills_row_before_after.png` (the whole layer before this review pass, from `wear_snap_rework_before`, and after it);
+`closeup_off_on_debug.png` and `medium_off_on_debug.png` (off | on | the debug view with the bloom alone | with every
+feature); `closeup_`, `medium_` and `third_wide_debug_start_after.png` (the debug view with the bloom alone at the start
+of this rework and after it); `diff/<view>_efflorescence_alone_start_after_x8.png` (what efflorescence adds to the
+render, |on - off| x8, at the start of the rework and after it, for the five cameras and the two poses) and
+`diff/sills_row_efflorescence_alone_before_after_x8.png`; `bloom_gallery.png` (every bloom decoded from the mask as the
+shader steps it, drawn 2.5 times over on a plain bond, labelled with its draws); `kinds/` (off and on under a bracket's
+foot, a run of the band, a sill's end in the south-west bay, a fixing into a sill, and the crown's base at 1:1);
+`crops/` (the close-up's bloom at 1:1 before, off and after; six neighbouring sill ends before and after, x2);
+`elevations/` (`efflorescence_<face>_start_after.png`: each face's blooms at the start and after, both through
+`elevation()`; `start/` and `after/` the layer's own images); `renders/` (the full-size stills: `before/`, `after/`,
+`off/`, `start/`, `debug/`, and `wear_off/` the worn scene switched off); `diff/` (x8 heat maps, `rework_numbers.json`,
+`calibration_closeup_*.json`, `byte_identity.json`); `poses.json`. The close-up is a camera at (-8.2, -20.6, 12.35)
+looking at (-8.2, -17.72, 12.3) with a 50 mm lens; the medium view at (2.27, -26.0, 18.6) looking at (2.27, -17.9, 18.5),
+35 mm.
+
+What efflorescence adds to the render, off against on, the share of pixels moved more than 2 levels at the start of the
+rework and after it: `st_corner` 1.16% and 0.05%; `st_portal` 0.68% and 0.00%; `st_along` 0.41% and 0.02%; `st_up`
+2.03% and 0.08%; `hero_3q` 1.64% and 0.07%; the close-up 4.73% and 1.33%; the medium view 4.60% and 1.13%. The whole
+layer before this review pass against after it (the earlier reworks included): `st_corner` 0.223 mean levels, 3.1%;
+`st_portal` 0.426, 5.6%; `st_along` 0.272, 3.9%; `st_up` 0.399, 5.9%; `hero_3q` 0.272, 3.5%; the close-up 0.360, 4.4%;
+the medium view 0.779, 10.3%. The worn scene switched off against the pre-wear renders: `hero_3q` 0.0164, 0.006%;
+`st_corner` 0.0322, 0.058%; `st_along` 0.0065, 0.003%; `st_up` 0.0064, 0.002%; `st_portal` 0.0160, 0.024%, the noise
+floor as before.
+
+The critique fix's evidence (2026-09-24) is in `tests/artifacts/screens/bradbury_wear/rework/efflorescence/critique_r1/`,
+the critic's own in `rework/critique_round1/fresh/`. At full size, the scene's defaults, `start` the state the fix began
+from and `after` the fix: `crownE_start_after_1to1.png` (Broadway's crown bloom in the sun, the critic's pose: off, on
+at the start, on after, and what efflorescence adds x8 at the start and after), `wettopS_start_after_1to1.png` (3rd
+Street's crown pair, now one bloom, in shade), `wettopS_street_start_after_x2.png` (the same from the far pavement, 85
+mm), `bandE_start_after_x2.png` (a band unit between two brackets), `sillsE_f4_start_after_x3.png` and
+`sillS_start_after_1to1.png` (two sill ends, which keep their look), `medium_start_after.png` (the rework's medium view);
+`<camera>_start_after.png` for the five cameras (every feature on, and what efflorescence adds x8, at the start and
+after); `cu_crownE_off_on_debug.png`, `cu_crownE_1to1_off_on.png` (the close-up: Broadway's crown bloom from 3.2 m),
+`cu_crownS_off_on_debug.png`, `medium_off_on_debug.png` and `mediumE_off_on_debug.png` (off | on | the debug view with
+the bloom alone); `bloom_gallery_courses.png` and `bloom_gallery_points.png` (every bloom decoded from the mask as the
+shader steps it, the start's above and the new one below over the same stretch of wall, 2.5 times over);
+`elevations/efflorescence_<face>_start_after.png`; `it1/` to `it5/` (the iterations' crops); `renders/` (`start/`,
+`after/` with efflorescence on, off (`_noeffl`) and the debug view with the bloom alone, the five cameras also with the
+wear off, and the iterations at half size); `diff/` (`bloom_ratios_*.json`, `calibration_*.json`,
+`cameras_efflorescence_alone.json`, `poses_efflorescence_alone.json`, `offstate.json` with its x8 heat maps,
+`byte_identity.json`); `poses.json`. The close-up is a camera at (20.194, 5.5, 18.85) looking at (16.994, 5.5, 18.85)
+with a 35 mm lens; the critic's pose, used as the medium view, at (21.994, 5.35, 18.9) looking at (16.994, 5.35, 18.9),
+35 mm.
+
+What efflorescence adds to the render, off against on, the share of pixels moved more than 2 levels before the critique
+and after it: `st_corner` 0.051% and 0.018%; `st_portal` 0.001% and 0.001%; `st_along` 0.015% and 0.007%; `st_up` 0.084%
+and 0.037%; `hero_3q` 0.073% and 0.024%; the critic's crown pose 1.34% and 0.56%; 3rd Street's top 1.74% and 0.46%; the
+rework's close-up 1.35% and 0.61%; its medium view 1.13% and 0.29%. With `wear_efflorescence=0` the canonical scene
+renders as it did at the start of the fix (mean levels 0.006 to 0.012, at most 0.003% of pixels off by more than 2, on
+all twelve poses). The worn scene switched off against the pre-wear renders: `hero_3q` 0.0166, 0.006%; `st_corner`
+0.0318, 0.057%; `st_along` 0.0063, 0.002%; `st_up` 0.0060, 0.002%; `st_portal` 0.0159, 0.025%, the noise floor as before.
+
+## Edge wear and chips at street level (AI 570)
+
+`wear/features/edge_wear.py` (`wear_edge_wear`, green in the debug view): what people, bags, carts, doors and wheels do
+to the corners of the stone within their reach. The ICOMOS-ISCS glossary names both results: rounding, "preferential
+erosion of originally angular stone edges leading to a distinctly rounded profile", and chipping, small pieces broken
+off a block's edges. Along every convex arris of the street-level stone the pavement reaches, the stone is abraded -- a
+little lighter, rougher, its edge turned round -- as much as the traffic that passes it, the height and the arris's own
+share of the knocks say; and here and there a piece has come off: a real chip cut out of the mesh, fresh pale stone
+inside, at one of the geometry's weak points (a joint, a plinth's corner, the ground) or anywhere along an arris within
+reach of a knock. The arrises are read from the stone's own meshes and their exposure measured with rays from the block;
+nothing is placed by noise. Which of the like places took a knock, how many each portal, door and corner lost and where,
+and each chip's size, outline and age are drawn from seeds made of each place's own identity (the rework of 2026-09-23,
+below), so the attributes and the chipped meshes are the same from one build to the next.
+
+```
+blender -b -P wear_layer.py -- features=edge_wear                  # its fields and chips (about 4 s), the rest cached
+blender -b -P render_wear.py -- cam=18.00,0.30,1.25:17.22,-0.47,1.05:45                     # on, at its default
+blender -b -P render_wear.py -- wear_edge_wear=0 cam=18.00,0.30,1.25:17.22,-0.47,1.05:45    # off: the originals
+blender -b -P render_wear.py -- wear=debug wear_soiling=0 wear_runoff=0 wear_washed=0 wear_street_grime=0 wear_rust=0 wear_efflorescence=0 wear_mortar_erosion=0 wear_pigeon=0 wear_glass_grime=0 view=st_along
+```
+
+It is the first feature that is not a mask. Its marks lie on the stone's own meshes, as attributes the shader reads (as
+568's iron does), and in geometry of its own that the switch shows and hides (the framework's `add_object(...,
+replaces=...)`): so it has no atlas image and costs no VRAM for one.
+
+### The arrises
+
+Every mesh with stone in it that reaches below `REACH_TOP` 2 m over the pavement is read edge by edge: the pier ring
+(`fit_piers`) and, in the portal (read once, measured in each of its three instances), the pilasters' stepped plinths,
+their shafts and panel mouldings, the portal piers, the granite step and the recess's dark stone base (17 objects). An
+edge between two faces turning at least `TURN_MIN` 30 degrees, convex, is an arris; one turning 12 to 30 degrees is a facet
+of a nose already rounded (the step's), worn but not rounded further. Edges are joined into lines by the pair of face
+planes they lie between (two planes meet in one line), their runs merged along it, so an arris broken by the pier ring's
+joint grooves is one line with a gap at each groove. 1711 convex lines; 222 are worn, because the street can reach them:
+
+- not inside another solid (a probe 3 mm out along the arris's bisector, and a ray from it, find no solid round it: the
+  portal pier's outer arris is buried in the plinth);
+- not on the ground (a ledge's lower edge on the pavement) and not a joint groove's lip (a probe into the groove from
+  the ledge meets the groove's opposite lip within 3 cm: the pier ring's grooves are 10 mm tall and 15 mm deep);
+- open: rays leave it in at least `OPEN_MIN` 45% of its outward directions within 0.35 m (a groove's inner corner is
+  shut in by its lips); an arris partly hidden (a plinth's side edge running back into the pier ring) is worn where it
+  shows, its exposure 0 where it does not;
+- exposed enough to wear: some point of it reaches `K_MIN` 0.06 (below), in the mean of its instances.
+
+567's 100 corners are all among them (it lists each of the block's five corners once for each street it fronts).
+
+### Exposure: the traffic an arris takes
+
+The wear of an arris is its exposure, times its own draw (below: one at a time), times the height's share of the
+knocks. The exposure is measured along each arris every 5 cm, from the block itself, in each instance:
+
+| factor | what | on the model |
+|---|---|---|
+| traffic | the pavement's traffic along its stretch: `T_BASE` 0.45 everywhere, rising to 1 at an entrance or a block corner, where people turn, slow and carry things in and out, over `T_REACH` 2 m (e-fold) along the pavement round the block | entrances: the portals' mouths (567's step runs) and the doors, found as openings of the pier ring with a pull at hand height in them: the chamfer's (SE 0.88..3.12), the north face's (N 49.64..52.14) and the west face's (W 4.86..7.20) |
+| street | how open it is toward the street: level and rising rays over the pavement side that get 1.5 m clear | 1 on a street front; 0.5 on a portal pier's side facing into the mouth behind the plinth |
+| depth | how far it stands back behind the street line (the most forward stone within 0.6 m along the face at 0.3 m over the pavement): exp(-setback / `SET_E` 0.35); inside an entrance's mouth, exp(-setback / `IN_E` 1.2), where the people walking in reach it | a pier strip beside a plinth, 0.24 behind it: 0.50; the portal piers, 0.21 behind the plinths in the mouth: 0.85; the recess's base, 1.8 m in: 0.15 |
+| sharpness | the turn over 90 degrees | 1 at a square corner, 0.5 at the chamfer's 135 degree corners |
+| lead | Los Angeles walks on the right, so the flow nearest a facade keeps it on its right hand and runs toward the face's left end as the street sees it: each pier's right-hand arris meets it first and takes the knocks head on, the other `LEAD_TRAIL` 0.7 | block corners and entrance jambs meet flows both ways: 1 |
+| orientation | an edge running with a flow is grazed, one across it struck: along the pavement `ALONG` 0.45 of it (a moulding's ledge along the facade); in a mouth the flow walks in, across the step's nose | vertical arrises and edges running back from the facade 1 |
+
+At a height H over the pavement the knocks take (`knocks`): 0.55 at the foot (feet, wheels, brooms), all of them from
+cart and knee height (0.35) to hip and bag height (1.10), none from `REACH_TOP` 2 m:
+
+| H | 0 | 0.2 | 0.35 | 0.7 | 1.1 | 1.4 | 1.6 | 1.8 | 2.0 |
+|---|---|---|---|---|---|---|---|---|---|
+| knocks | 0.55 | 0.82 | 1.00 | 1.00 | 1.00 | 0.74 | 0.42 | 0.13 | 0 |
+
+The worn arrises by their exposure (the block's 77, and one portal's 145: the three portals measure alike, within 0.01,
+and each then wears them its own way):
+
+| arrises | count | exposure |
+|---|---|---|
+| the doors' jambs: the chamfer's (SE 0.88, 3.12), the north face's (N 49.63, 52.14), the west face's (W 4.86, 7.20) | 6 | 1.00 |
+| the block's corners: the SW, NW and NE, and the chamfer's two at half sharpness | 5 | 0.94; 0.49 |
+| the piers' arrises at the storefronts, meeting the flow first | 33 | 0.26 .. 0.80, median 0.49 |
+| the same, meeting it last | 33 | 0.18 .. 0.56, median 0.34 |
+| a portal's plinths up their shafts (567's plinth corners): the 8 at the mouth; the outer ones, 4 leading and 4 trailing | 16 | 0.95 .. 1.00; 0.72 .. 0.81, 0.50 .. 0.57 |
+| the plinths' ledge edges (the cap and its steps) | 18 | 0.61 .. 1.00 |
+| the pilasters' panel mouldings, to 2 m (their rims, the facets of their quarter rounds, the lower rims' ledges) | 30 | 0.32 .. 0.83 |
+| the portal piers at the mouth: their front arrises; set back into the recess, their other arrises and ledges | 8; 60 | 0.71 .. 0.75; 0.10 .. 0.75, median 0.41 |
+| the step's nose (7 facets) and its top edge | 9 | 1.00; 0.42 .. 1.00 |
+| the recess's dark stone base, 1.8 m in | 4 | 0.10 .. 0.13 |
+
+### The wear: lighter, rougher, rounded
+
+The shader reads, per face corner, the distances to the nearest `FIELDS` 2 worn arrises (`wear_edge_d`: in the face's
+own plane, linear over it, so exact at any distance; for a nose facet the distance to its edge), each one's wear along
+it (`wear_edge_k`: its exposure times its own draw, held within `K_CAP` 1) and the direction from it into the face, as
+long as the tangent of half its turn (`wear_edge_u0`, `wear_edge_u1`: the mesh's coordinates, turned into the world per
+instance). A pier's front carries its two arrises; a plinth's 4 cm cap face, which touches four, the two it wears most.
+With w the wear times the knocks at the shading point:
+
+- **the abraded band**: w times the square of a smoothstep falling from the arris to `BAND_W` 1 cm x sqrt(w) onto each
+  face, most of it in the first few millimetres. The stone there goes `LIGHT_GAIN` 1.5 times lighter and 20% paler
+  toward its own grey (its weathered skin rubbed off), and at least 0.85 rough;
+- **the rounding**: within `ROUND_R` 5 mm x w of the arris the shading normal turns over the edge as a round's would:
+  toward the arris by the stored tangent times u squared, u the share of that radius still to go, so 45 degrees at a
+  square arris itself (the faces meet in a round) easing to nothing at the radius. Added to the material's own normal
+  map, so its grain stays. Only materials that route a normal take it (the dressed sandstones of the pier ring and the
+  portal; the granite step and the dark stone base have no normal map, and the step's nose is round already);
+- **the chips' broken stone** (`wear_edge_wear`, the layer's `Attr`: on a chip's scar faces, how fresh that scar still
+  is, 0.55 to 1): the stone's colour 35% paler toward a warm grey and lifted toward `FRESH_L` 0.34 in luminance (fresh
+  sandstone is pale whatever its skin), by a gain held within 1.25..2.6: 1.6 times the pink portal sandstone, 2.3 times
+  the darker pier stone; at least 0.92 rough; all of it as far as the scar is fresh, an old scar partly back toward its
+  stone's weathered colour.
+
+Masonry only; everything mixes from the input by the strength, so 0 hands the input on exactly. It stands at ORDER 110,
+before the deposits (soiling 200, runoff 220, washed 225, street grime 230...), which lie over the abraded arrises in
+proportion, so their contrast with the stone beside them stays; the washed zones' `Clean Color` includes it.
+
+### The chips
+
+A chip is an event: a piece knocked off an arris. The geometry says where one can come off and how often:
+
+- **weak points**, found on the geometry. **Joints**, where a joint meets a vertical arris: the pier ring's grooves (a
+  gap in the arris line, 10 mm) at 0.915 and 1.629 m (H 0.71 and 1.43), a pilaster shaft's foot on its plinth (H 0.68), a
+  portal pier on its base (H 0.64 to 0.68); weakness 0.9. At a groove the chip takes the corner of the block nearer the height
+  where the knocks gather (`H_PEAK` 0.75), the block above a joint below it and the block below a joint above it, three
+  times in four (`TOWARD_PEAK`), and the other block otherwise. **Corners**, where three worn arrises meet: a corner of a
+  plinth's stepped cap or of a portal pier's base (H 0.60 to 0.67); weakness 1. **Feet**, an arris's foot on the pavement
+  or on the step; weakness 1, with 0.55 of the knocks there;
+- **stretches**: every worn arris between its weak points, sample by sample (5 cm), where a cart's wheel, a dolly or the
+  corner of a case can catch it; weakness 0.7 (`WEAK`), a stretch of arris being held on both sides.
+
+Each place has a risk: its arris's wear x the knocks at its height x its weakness (x `GRANITE` 0.5 on the granite step).
+The risk sets its rate of chips: none below `R_LO` 0.30, rising as a smoothstep to `RATE` 0.40 at a corner, 0.38 at a
+joint and 0.22 at a foot from `R_HI` 0.95 on; along a stretch, to `KNOCK_RATE` 0.40 per metre.
+
+The chips are counted per **element** and placed within it. The elements are each portal as a whole; on the pier ring,
+each entrance's and each block corner's zone (its arrises within `ZONE` 1.5 m of the opening or of the corner, along the
+pavement; the nearest wins), and the rest of each face. An element took its places' expected count (their rates summed)
+times its own draw within `COUNT` 0.6..1.4, rounded up or down by one more draw (`N_CAP` 12 at most). Each chip fell on
+one of its places by their rates: a weak point once at most; a stretch at one of its samples, anywhere within it, the
+scar running on to each side. Then the strongest first, a chip yields to a stronger one on the same stone within
+`CHIP_SPACING` 12 cm, or with its cutter against the other's.
+
+A chip's size follows its risk: `CHIP_LEN` 1.2 to 4.8 cm along the arris and `CHIP_DEPTH` 0.4 to 1.7 cm into each face
+from `R_LO` to a risk of 1, times its own size (0.70..1.40) and aspect (0.75..1.30: longer and shallower, or shorter and
+deeper; x `KNOCK_SIZE` 0.8 for a knock), held within 1.0..6.0 cm and 0.35..2.2 cm. Its shape is its own:
+
+| drawn | bounds |
+|---|---|
+| which face loses more: the one turned to the street, by | -0.30..0.55 (`ASYM`; on a corner chip, its two sides) |
+| how that share changes from one end of the chip to the other | -0.35..0.35 (`TILT`) |
+| the scar's section across the arris: a superellipse bulging a little into the stone, a shallow conchoidal fracture | 1.1..1.8 (`Q`: 1 would be flat across the corner, 2 an elliptic scoop) |
+| how each end runs out along the arris: (1 - u^p)^(1/p) of its depth at u of the way | p 0.9..3.2 (`END`), drawn evenly: a pointed end, a round one, or a blunt break (a hinge) |
+| from a joint or a foot, how far it runs at full depth before it runs out | 0..0.35 of its length (`PEAK`) |
+| a knock's run behind its deepest point | 0.35..0.90 of its length ahead (`BACK`), the run's ends kept 20% clear |
+| its facets, across and along; each facet's corner in or out by; each section's depth along it by | 2..4 and 3..5 (`ARC_SEG`, `LEN_SEG`); up to 18% (`JITTER`); up to 15% (`JITTER_ALONG`) |
+| how fresh the scar still is | 0.55..1.00 (`FRESH`): a recent break, or one the weather has had for years |
+
+A range is the mean of two uniforms (the middle likelier than the ends) unless it says evenly. The cutter is the convex
+hull of those points: in sections along the arris for an edge chip (from a joint, `EXT_JOINT` 4 mm on into the groove;
+from a foot, `EXT_FOOT` 10 mm under the ground), an octant of a superellipsoid for a corner chip; it reaches `MARGIN` 4 mm
+outside the stone, tapering toward the arris, so it crosses the faces cleanly and a corner chip at a moulding's step does
+not notch the block it sits on. One exact boolean per object with every chip's cutter (disjoint convex hulls); the scar
+faces keep the stone's material and carry their chip's freshness. As built, element by element (the build prints it):
+
+| element | expected | drawn | the chips: face and s, height over the pavement, length x depth |
+|---|---|---|---|
+| the 3rd Street portal (A, use 0.93) | 3.75 | 4 | the right plinth's foot (S 18.05, 0, 2.1 x 0.9 cm); two knocks up the right shaft's outer arris (S 18.11, 1.14 and 1.27, 2.6 x 0.5, 2.9 x 0.7); a knock on its panel moulding's rim (S 18.29, 1.24, 2.3 x 0.4) |
+| the Broadway portal (C, use 0.95) | 3.95 | 5 | a knock on the left plinth's cap (E 14.35, 0.64, 4.4 x 1.0); the left portal pier: both corners of its base at the mouth (E 14.60, 0.67, 3.4 x 0.9 and 1.7 x 0.4) and a knock up its front arris (E 14.56, 1.07, 2.3 x 0.5); the right plinth's outer cap corner (E 18.32, 0.60, 2.4 x 0.7) |
+| the west portal (E, use 1.06) | 5.81 | 6 (one knock yielded to a stronger chip 8 cm away) | both plinths' caps at the mouth (W 17.21 and 20.30, 0.60, 4.0 x 1.1, 4.2 x 1.3); the left portal pier's base (W 17.45, 0.60, 3.4 x 1.1); the right portal pier's foot on the step (W 20.07, 0.12, 3.1 x 0.8); the right shaft's foot on its plinth (W 20.36, 0.68, 2.8 x 0.7) |
+| the chamfer door | 1.43 | 1 | its south jamb above the lower groove (SE 0.89, 0.71, 5.3 x 1.6) |
+| the north door | 1.88 | 1 | a knock on its west jamb (N 52.14, 0.85, 4.2 x 0.9) |
+| the west door | 2.42 | 2 | its south jamb above the lower groove (W 7.20, 0.71, 5.1 x 1.9); a knock on its north jamb (W 4.86, 1.14, 4.2 x 0.6) |
+| the SW corner | 1.89 | 2 | on the corner pier's other arris: a knock (S 0.89, 0.74, 4.4 x 0.8) and below the upper groove (S 0.89, 1.43, 2.6 x 1.1) |
+| the NE corner | 1.13 | 1 | the corner above the lower groove (E 32.65, 0.71, 4.9 x 1.3) |
+| the NW corner | 0.58 | 1 | the corner above the lower groove (N 53.24, 0.71, 3.8 x 1.1) |
+| the chamfer's east corner | 0.89 | 1 | the next pier's arris below the upper groove (E 0.89, 1.43, 3.0 x 0.9) |
+| the chamfer's south corner | 0.08 | 0 | |
+| the rest of 3rd Street, Broadway, the west face | 0.34, 0.05, 0.03 | 0 | |
+| the rest of the north face | 0.17 | 1 | a small one above the lower groove (N 27.36, 0.71, 1.3 x 0.4) |
+
+24 chips (24.4 expected): 10 on the pier ring, 4, 5 and 5 on the portals; 8 at joints, 6 at corners, 2 at feet, 8
+knocks; 1.3 to 5.3 cm long (median 3.2), 0.35 to 1.9 cm deep (median 0.9), their scars 0.60 to 0.99 fresh (median 0.82).
+Of the 359 weak points (231 on the pier ring, 128 over the portals) and the 455 stretches between them, 23 took chips
+(one stretch two) and one knock yielded. 536
+sources (512 worn arrises over the instances, 24 chips), 536 marks, 24 paths. Build: about 4 s and 0.6 million rays.
+
+### One at a time (rework 2026-09-23)
+
+The user, reviewing the finished layer on 2026-09-23, found the pigeon marks "placed at the same position in all
+windows" and asked to "check the other features for pattern like results". Edge wear had that pattern in its chips (44
+of them) and in its portals' arrises:
+
+- the portal is one collection instanced three times, so the three portals' chips and worn arrises were one set shown
+  three times: 8 chips per portal at the same 8 places (the plinths' caps and the shafts' feet at the mouth, the portal
+  piers' bases), and always the right-hand plinth and shaft on the outer side, which meet the flow first (keep right);
+- on the pier ring a chip came off wherever the risk passed 0.6, so every door jamb chipped at both joint grooves (4.2
+  x 1.5 cm at H 0.71, 2.2 x 0.7 cm at 1.43: twelve alike, and each door's two jambs a mirror of each other), the three
+  sharp block corners at 0.71 (3.9 x 1.3 cm) and the five arrises beside them at 0.71 (2.9 x 1.0 cm).
+
+Which of the like places lost a piece is decided by what the model does not carry: a cart that caught one jamb, a flaw
+in one block, a portal used more than another, a restoration that dressed one plinth again. So each draws its own:
+
+| what | drawn | bounds |
+|---|---|---|
+| portal | its use: all its arrises' wear and their places' risk, times this | 0.80..1.20 (`USE`) |
+| arris, per instance | its share of the knocks its exposure says: its band, its rounding, its places' risk | 0.60..1.20 (`WEAR`), times its portal's use, the wear held within `K_CAP` 1 (the calibrated most) |
+| element | how many chips it took: its places' expected count times this, rounded by one more draw | 0.60..1.40 (`COUNT`) |
+| element | where each fell: one of its places, by their rates | the places' rates |
+| groove | which block the chip takes | the one toward the knocks' peak, 3 in 4 (`TOWARD_PEAK`) |
+| chip | size, aspect, outline, section, facets and freshness | above |
+
+The seed is each place's own: `draw` takes the sha256 of `edge_wear:` and a key, two bytes to a uniform (a longer run
+carries on in the sha256 of the key and `#1`, `#2`...). The keys are the instance (`block`, `PORTAL_A`...), the object
+and the place in the object's coordinates to the millimetre: an arris by its worn middle, a weak point by its point, a
+stretch's sample by its index; an element by its name (`chips:door:W:4.86`), a portal by its instancer
+(`portal:PORTAL_A`). A rebuild draws the same values (the cache is the same, byte for byte, from one full build to the
+next), and a change elsewhere reshuffles nothing.
+
+As built:
+
+| | before the rework | after |
+|---|---|---|
+| chips | 44: 20 on the pier ring, 8 on each portal at the same 8 places | 24: 10 on the pier ring, 4, 5 and 5 on the portals, each where its own draw put it (above) |
+| door jambs | all six chipped at both grooves, alike | 4 chips on 4 of the 6 jambs: two at a lower groove, two knocks at 0.85 and 1.14 m; no door is a mirror |
+| block corners | the three sharp ones at the lower groove, alike | the NE and NW at the lower groove (4.9 x 1.3, 3.8 x 1.1 cm), the SW's next arris by a knock and at the upper groove |
+| heights | 0.60 to 0.71 (the caps, the feet, the lower groove) and 1.43 | 0 and 0.12 (feet), 0.60 to 0.71 (caps, bases, shafts' feet, the lower groove), 0.74 to 1.27 (knocks), 1.43 |
+| sizes | 10 sizes for 44 chips | every chip its own: 1.3 to 5.3 x 0.35 to 1.9 cm, its own outline, section and facets |
+| an arris's wear | its exposure, the mean of the three portals' | its exposure times its own draw: 0.57..1.21 (median 0.87, half within 0.80..0.97); 15 of the 512 at the cap; a portal arris differs between the three portals by 0.11 at the median, 0.37 at most, none alike |
+
+The chips at street level stay few, and more of the stone's knocks show as its worn arrises than as its chips; a
+continuous field that follows the geometry (the knocks by height, the traffic along the pavement) is not a pattern in
+itself, and each arris's own draw breaks the one repetition it had, the same line on every pier.
+
+### Where the chips live: the switch
+
+The pier ring's chipped copy, `WEAR_edge_fit_piers` (4168 faces to 4470), stands in for `fit_piers` while the feature is
+on. The portal is one collection instanced three times, so its pieces cannot be switched per feature, nor told apart per
+instance: the worn portal holds, for each instance, its own copy of each of the 13 worn stone pieces (the plinths, shafts
+and panel mouldings, the four portal piers, the step and the recess's two bases) carrying that instance's fields and
+chips (`WEAR_edge_PORTAL_A_pilaster_L_plinth`...), and a copy of the PORTAL collection with them in place of the
+originals (`WEAR_edge_PORTAL_A`, `_C`, `_E`; a child collection holding none of them is shared as it is). The worn block
+instances each in place of `PORTAL_A`, `_C`, `_E` while the feature is on (the framework's `WEAR_GEO_edge_wear` /
+`WEAR_ORIG_edge_wear`). The originals are left exactly as the portal has them, with no fields of this feature's, so with
+the feature off -- `wear_edge_wear=0`, or the layer off -- the scene renders the untouched ring and portal. The worn
+block has 2697 objects: 2275, 21 markers and 401 of the geometry features (571's 396 glass copies, and this feature's
+five: the ring's copy, the three portals' instancers and their twin, below); 2698 and 22 markers until 571's rework
+dropped its drying lines' head-path marker.
+
+Two things keep a portal switched on rendering exactly as the original does, but for the wear:
+
+- **the same place, bit for bit**: a copy takes its original's parent and stored transform value by value
+  (`_same_place`), and the build checks it (`_check_place`). An assigned `matrix_world` is decomposed again, and the
+  quarter turns of PORTAL_C and PORTAL_E came back an ulp off (1.2e-7), so every ray entered the portal's space a hair
+  apart from where it did.
+- **a second instance of each copy** (`WEAR_edge_PORTAL_twins`): Cycles bakes an object's transform into a mesh it
+  renders only once (a final render's static BVH), and the portal's own pieces are each rendered three times, so they
+  stay in the portal's space. A copy rendered once is baked into the world, its vertices rounded another way round the
+  quarter turn, and the portal's pieces, which touch and interpenetrate at coplanar faces (the portal piers' pair, the
+  panel mouldings 3 mm into the shafts), z-fight there into dashes and open hairline cracks: in a close view of the
+  Broadway portal, a dashed seam between its paired piers and a black line along a panel's frame, both gone with the
+  twin. So one empty, `TWIN_Z` 1 km under the block and seen by volume scatter rays alone (there are no volumes),
+  instances all three copies a second time.
+
+The first build had the first of these (its one copy of the collection was instanced three times, so the second did not
+arise), and measured it as the swap's tie-break: `st_portal`, whose frame starts
+above the wear's reach, moved 0.046 levels on average with edge wear on, 0.17% of its pixels by more than 2, in
+one-pixel lines along the pilasters' panel rims, the arch's mouldings and the doors' meeting stiles. Now it moves 0.0097
+levels and 0.0025% of its pixels, under the noise of rendering it again (0.016, 0.025%).
+
+### The arch's black hairline (critique 2026-09-24)
+
+The fresh-eyes review of 2026-09-24 found a black hairline along the Broadway portal's intrados, about 3.6 m up, that
+changed length from one still to the next with edge wear on: two identical stills differed in 295 pixels by more than 8
+levels there, against 36 with it off (`rework/critique_round1/fresh/look/cu_E_portal_arch_seam_4renders_x2.png`). The
+line is not the swap's. It is the portal's own model, and its length is the renderer's:
+
+- **The model.** The soffit panel is carved into the arch block and edged with the three-part moulding
+  (`pieces/06_arch.py`, `portal_lib.three_part_profile`), whose tiny step at the face has its riser exactly in the
+  carved panel's wall. So the two objects (`soffit_molding` and `arch_block`, in ARCH) have faces lying in the panel's
+  two walls, facing the same way: in the plane y -2.070 of the portal's space 68 faces of the moulding and 78 of the
+  block, in y -2.570 60 and 75, over the whole intrados from the springing to the crown (x -1.40..1.40, z 2.27..3.65).
+  Two surfaces in one plane z-fight and shadow each other: rays from the review's camera through the line's pixels
+  land on those faces, on one object or the other from one pixel to the next (`seam_coplanar_model.png`: one flat
+  colour per object, ragged where they meet). The line is in `bradbury_portal.blend` itself and in the stills made
+  before the wear layer existed (`series/final/before/st_portal.png`). ARCH holds none of the worn pieces, so the
+  per-portal copies share it as it is. The pilasters' panel mouldings (`pieces/07_pilasters.py`) take the same profile
+  against their shafts' panel walls, and the thin dark lines along the pilasters' panels are the same thing.
+- **The renderer.** The stills render on OptiX and the CPU together (`render_wear.py` and `build_scene.py` enable
+  both, as the review's stills did). Cycles splits each frame between the two devices by rows and moves the split while
+  it renders, by how long each device took: the CPU's share of the upper rows shrinks as the render goes on, to the
+  top 100 to 160 rows of the 1200 (the rows it gave up keep the few samples it took there), and where its band ends
+  differs from one render to the next. The two devices resolve the coplanar faces differently: in the review's pose
+  OptiX draws the line the whole way up the intrados's left side, the CPU only where the sun reaches it. The line's
+  upper end lies in those rows, so it stops wherever the CPU's band ended that time, with edge wear on or off
+  (`seam_C_hybrid.png`; below the band the CPU's few samples only lift the line from black to 5 to 15 levels).
+
+Measured in the review's pose (`cam=21.794,0.880,1.801:16.994,0.880,2.200:35`, full size, the scene's defaults) in a
+box round the line's upper end (x 440..760, y 60..320), and over the frame above the wear's reach (rows 0..560):
+
+| rendered on | edge wear on vs on again | off vs off again | on vs off |
+|---|---|---|---|
+| OptiX alone (`devices=gpu`), two stills of each state from a driver and two from `render_wear.py` | 0 px over 2 levels, the whole frame too (at most 1 level anywhere) | 0 | 1 px over 2 (5 levels) in the box; above the reach 84 over 2 and 2 over 8 (14 levels) |
+| the CPU alone (an 800 x 280 window) | - | - | 1 px over 2 (5 levels) in the box |
+| OptiX and the CPU, as the scene is set: four stills of each state, alternating | 96 to 565 px over 8 in the box; the CPU's band ending at rows 109, 112, 118, 161 | 24 to 543; rows 116, 118, 119, 127 | - |
+
+On one device the switch is exact: the portal switched on renders as the original does wherever the wear does not
+reach. What moves above the reach is the light the worn arrises and chips below bounce, a few levels at scattered
+pixels, and a few specks along the right pilaster's dark line. The 3rd Street and west portals, the same pose in each
+one's own frame (`seam_A.png`, `seam_E.png`): on OptiX alone on and off differ in 0 px over 2 levels in the box, and in
+63 and 13 over the frame above the reach (5 and 6 levels at most); both lie in shade, where the line is dark on dark.
+At the west portal two stills on both devices, one on and one off, differed in 247 pixels by more than 8 levels, all
+in rows 113 to 141, the edge of the CPU's band; on OptiX alone, on and off differ nowhere above the reach by more than
+8 levels.
+
+Nothing in edge wear changed. The line goes when the moulding's step riser and the panel's wall stop sharing a plane: a
+fix for the portal's own pieces (06, the arch; 07, the pilasters), which the wear layer reads as they are, not for a
+wear feature. For stills that repeat, and so for comparing two states of the layer anywhere in the frame,
+`render_wear.py` now takes `devices=gpu`: OptiX alone, no slower here (31 to 36 s a full-size still, against 33 to 47 s
+on both devices). The default stays the scene's own, OptiX and the CPU together.
+
+### Calibration
+
+Measured on the first build, in rendered pixels, in linear luminance, on the full-size stills (`diff/calibration.json`
+in `edge_wear/`), against the user's own photo of the Broadway portal's left pilaster in shade
+(`references/user_zoom_left_pilaster.png`): there the plinth's worn arris reads 1.18 to 1.41 times the face beside it (a
+4 px box straddling the line) and its chips 2.35 to 3.10 times. The look's constants are unchanged by the rework: a
+worn arris reads as it did at the same wear (the arrises now wear 0.87 of their exposure at the median, so a little less
+on the whole), and a chip as fresh as 1 as the chips did then, an older scar less.
+
+| where | light | worn arris: vs the same pixels unworn; vs the face beside | chips vs the face beside (median; 90th percentile) |
+|---|---|---|---|
+| the photo: the left pilaster's plinth | shade | -; 1.18 .. 1.41 | 2.35 .. 3.10 |
+| `plinth_corner_bway`: a plinth at the Broadway portal's mouth | sun | 1.34; 1.38 | 1.32; 1.37 |
+| `pier_corner_ne`: the NE block corner's pier | sun | 1.39; 1.40 | 1.60; 1.65 |
+| `plinth_corner_3rd`: a plinth at the 3rd Street portal's mouth | shade | 1.76; 1.01 | 0.99; 1.54 |
+| `door_jamb_se`: the chamfer door's jamb, front in shade, return in sun | both | 2.39; 2.94 | - |
+
+In sun the worn line sits inside the photo's range. In shade it is 1.76 times the same stone unworn, and level with the
+face measured beside it, the brighter of the plinth's two faces there. The door jamb's line is its rounding: the round
+turns the shaded front's arris toward the sun on the return, and it catches the light as a rounded arris does. The chips
+stay short of the photo, 1.3 to 1.65 times the face against 2.35 to 3.10: the photo's stone is darker and redder than
+the model's, so the same pale fresh stone stands out further from it. Lifting the scars further toward white on the
+model's lighter stone read too white in the trials (white crescents), so the lift stops at `FRESH_L` 0.34 in luminance,
+and the scars read as fractures by their facets and their shading.
+
+### The debug view
+
+Green: the nearest worn arris's band at full colour from 0.4 of wear, drawn 3.5 cm wide on each face so it reads from
+the street, fading up to 2 m with the knocks; every chip's scar in full, however fresh. A square tube runs 10 cm off each
+worn arris along its bisector, over its worn length; an octahedron stands 20 cm off each chip with a thin tube pointing
+at it. The command above (every other feature at 0) shows the edge wear alone.
+
+### Published for the features that follow
+
+`ctx.field("edge_wear", key)` for a feature that NEEDS edge_wear:
+
+- `arrises`: every worn arris per instance, `dict(id, object, instance, kind, facade, s, d, x, y, z0, z1, turn, nose,
+  vertical, exposure, draw, wear, open, street, traffic, depth, lead, orient, mouth)`; `exposure` is the instance's own
+  measure, `draw` its own share times its portal's use, `wear` the most it wears (the two, held within 1); `kind` is
+  567's corner kind where it is one (pier, block corner, plinth, portal pier), else the stone and the edge (`portal pier
+  ledge edge`, `step nose`, ...).
+- `chips`: every chip per instance, `dict(id, key, object, instance, kind, facade, s, d, z, H, risk, length, depth,
+  fresh, side, shape)`: `kind` joint, corner, foot or knock; `side` the block a groove's chip took (above, below);
+  `shape` its section, ends, facets, asymmetry and tilt.
+- `sites`: every weak point and every stretch per instance, `dict(key, object, instance, element, kind, facade, s, d, z,
+  H, risk, rate, fate)`, `fate` chip, none or spaced out.
+- `elements`: each element's expected and drawn count, `dict(id, expected, drawn)`.
+- `entrances`: the portals' mouths and the doors, `dict(id, kind, facade, s0, s1, object, p0, p1)` (p along the
+  perimeter).
+- `profile`: the knocks' constants and formula, the band, the rounding, the weaknesses, rates and draws' bounds.
+
+Notes for the features that follow: `fit_piers` and the portal instances are replaced while edge wear is on. The worn
+copies are made in this feature's `apply` and `apply_portal` from the originals as they stand then (ORDER 110): an
+attribute that a feature earlier in the chain (ORDER below 110) sets on `fit_piers` or on a portal piece is carried over
+(the exact boolean keeps a target's attributes; the scar faces take 0), but one set by a later feature must be set on
+`WEAR_edge_fit_piers` and on each portal's `WEAR_edge_PORTAL_<X>_` pieces too. The copies carry the attributes
+`wear_edge_*` (the originals no longer do): a feature must not reuse those names.
+
+### What it changed in the framework
+
+Nothing but `wear/registry.py`, which lists `edge_wear`; nor did its rework. The probe, runoff, soiling, washed, street
+grime, rust and efflorescence masks and caches build byte-identically (`37806c0b...`, `4fa13d0c...`, `6517dd79...`,
+`6c9963ea...`, `16d42806...`, `a1865e1b...`, `ee8ba631...`; rust's attributes with its cache), and this feature's cache,
+chipped meshes and attributes are the same on a rebuild. After the rework every other feature's mask and cache is
+byte-identical to the build before it, and every other object in the worn block and the worn portal, its mesh,
+materials, attributes and place, is the same object by object. Its critique fix changed no build: it added `devices=`
+to `render_wear.py` (`gpu`: OptiX alone, for stills that repeat; the default unchanged).
+
+### Evidence
+
+The first build's evidence, before the rework, is under `tests/artifacts/screens/bradbury_wear/edge_wear/`: full-size
+stills at the scene's defaults in `renders/`, each sheet at half size, left to right: edge wear off (`wear_edge_wear=0`,
+every other feature on), on at its default, and the debug view with the other features off:
+
+- `st_portal_off_on_debug.png` and `st_along_off_on_debug.png`: the prompt's two street views. `st_portal` looks up at
+  the Broadway portal from across the street, its frame starting about 2.4 m up the portal, above the wear's reach: it
+  shows the switch's tie-break (above), nothing else. `st_along`: the storefront piers up Broadway and the portal's base
+  down the street;
+- `pier_corner_ne_off_on_debug.png`: one pier corner at street level, the NE block corner in sun, its arris worn and
+  chipped at the lower joint groove;
+- `door_jamb_se_off_on_debug.png`: the chamfer door's jamb, its rounding and its chip at the joint groove;
+- `plinth_corner_bway_off_on_debug.png`, `portal_bway_medium_off_on_debug.png`: the Broadway portal's plinths at the
+  mouth, close and from the pavement; `plinth_corner_3rd_off_on.png`: the 3rd Street portal's, in shade;
+- `st_corner_off_on.png`, `st_up_off_on.png`, `hero_3q_off_on.png`: the scene's own views, where the feature is a matter
+  of millimetres at 2 m and under;
+- `diff/summary.json` and its heat maps (x8), `diff/calibration.json`; `references/`: the photos, unaltered, with
+  labelled crops and what was measured on them (`references.json`); `poses.json`.
+
+| camera | off vs on: mean; share over 2 levels; over 8 | the layer off vs the pre-wear still | edge wear at 0 vs 569's still |
+|---|---|---|---|
+| `st_portal` | 0.046; 0.17%; 0.08% (the swap's tie-break) | 0.016; 0.025% | - |
+| `st_along` | 0.018; 0.11%; 0.026% | 0.007; 0.003% | - |
+| `st_corner` | 0.012; 0.039%; 0.003% | 0.031; 0.056% | 0.010; 0.009% |
+| `st_up` | 0.007; 0.002%; 0.0001% | 0.006; 0.002% | 0.009; 0.015% |
+| `hero_3q` | 0.016; 0.057%; 0.004% | 0.017; 0.007% | 0.011; 0.002% |
+
+The layer off (`bradbury_scene_wear_off.blend`) renders the pre-wear stills (`series/final/before/<cam>.png`) to within
+render noise, and so does edge wear at 0 with 569's evidence stills: the switch is exact. Cost: 1 to 2 s on a 12 to 23 s
+still (5 to 10%), for the attribute reads and the rounding; the chipped copies add 605 faces to the pier ring and 165 to
+each portal.
+
+The rework's evidence is under `tests/artifacts/screens/bradbury_wear/rework/edge_wear/`, full-size stills at the scene's
+defaults in `renders/` (`_on`, `_edgeoff`, `_debug`; `_before` and `_beforedebug` from the frozen state before the
+rework, `wear_snap_rework_before/`), sheets at half size:
+
+- `chipmap_before.png`, `chipmap_after.png`: the whole building at once, every face unrolled at street level with its
+  worn arrises (as bright as their wear) and chips (as big as their length), and the three portals side by side in their
+  own coordinates: before, three identical portal panels and every door jamb chipped at the same two heights; after,
+  each its own;
+- `portals_before_after.png`, `portals_debug_before_after.png`: the three portals from the same pose in each one's own
+  frame (3rd Street and the west face in shade, Broadway in sun), before and after, and in the debug view (the
+  octahedra are the chips);
+- `doors_before_after.png`, `doors_debug.png`, `corners_before_after.png`: the three doors and the block's three sharp
+  corners, before and after;
+- `closeup_pier_bway_off_on_debug.png` and `_before_after.png`: the Broadway portal's left pier at the mouth, in sun,
+  its worn arrises, the two chips at its base's corners and a knock up its front arris;
+  `medium_portal_bway_off_on_debug.png` and `_before_after.png`: that portal's base from the pavement;
+- `chips_contact_sheet.png` (and `chips/`): every one of the 24 chips, 0.55 m out along its arris's bisector, no two
+  alike;
+- `st_along_off_on.png`, `st_corner_off_on.png`; `diff/`: the heat maps (x8) and figures below; `references/`: the
+  user's photo of the Broadway portal's left pilaster and its plinth crop, unaltered.
+
+| camera | edge wear off vs on: mean; share over 2 levels; over 8 | the layer off vs the pre-wear still |
+|---|---|---|
+| `st_portal` | 0.0097; 0.0025%; 0% (no tie-break now) | 0.016; 0.024% |
+| `st_along` | 0.012; 0.044%; 0.002% | 0.0065; 0.003% |
+| `st_corner` | 0.011; 0.023%; 0.001% | 0.032; 0.058% |
+| `st_up` | 0.0066; 0.001%; 0% | 0.0059; 0.001% |
+| `hero_3q` | 0.013; 0.027%; 0.001% | 0.0165; 0.006% |
+| the close-up | 0.57; 4.8%; 2.7% | - |
+| the Broadway portal from the pavement | 0.13; 1.1%; 0.45% | - |
+
+The critique's evidence (the arch's black hairline, above) is under `rework/edge_wear/critique_r1/`, at the review's
+pose, full size and the scene's defaults, sheets at twice the pixels of the box round the line's upper end:
+
+- `seam_critic_stills.png`: the review's four stills (off, off again, on, on again);
+- `seam_C_single_device.png`: OptiX alone, edge wear on, on again, off and off again, the same to within a level; the
+  CPU alone, on and off, the same; the line to the top on OptiX, only in the sun on the CPU;
+- `seam_C_hybrid.png`: four stills of each state on both devices, the CPU's band's edge dashed: the line stops there;
+  `seam_C_cpu_band.png`: the whole frame, the pixels a still on both devices differs in from one on OptiX alone: the
+  lines of coplanar faces, where the CPU's samples lie;
+- `seam_coplanar_model.png`: one flat colour per object (Workbench), the soffit moulding in the arch block's carved
+  panel, ragged where their faces share a plane, and the pre-wear `st_portal` with the line already there;
+- `seam_A.png`, `seam_E.png`: the 3rd Street and west portals, the same pose in each one's frame;
+- `renders/` (`C/`, `A/`, `E/`: `gp_` OptiX alone, `hy_` both devices; `C_window/`: the 800 x 280 window, `cp_` the CPU
+  alone; `render_wear_gpu/`: `render_wear.py -- devices=gpu`, each still its own process; `workbench/`) and
+  `numbers.json`.
+
+## Glass grime on the panes (AI 571)
+
+`wear/features/glass_grime.py` (`wear_glass_grime`, teal in the debug view): the dust film a window pane gathers between
+two cleanings. Dust settles out of the city's air over the whole pane, so the film is fairly even; only a pane the rain
+reaches has water running down it, and that gathers a little more along its bottom rail and in its lower corners, where
+the water dries. From the street a dusty pane reads a little duller, greyer and hazier than a clean one: its reflection
+weaker and flatter, a faint grey veil over it, less of the room behind showing through; no lighter (the dust acts on
+the pane's contrast, not on its brightness: "No lighter (critique 2026-09-24)", below), and never opaque. What sets
+one pane apart from the next is mostly not the building but its tenant: windows are cleaned at different times, so each
+window draws when it was last cleaned (reworked 2026-09-23, below), and the storefronts and the doors, washed from the
+pavement, stay nearly clean. Nothing is placed by noise: every draw comes from a seed of the window's own, and the
+attributes are the same from one build to the next.
+
+```
+blender -b -P wear_layer.py -- features=glass_grime                    # its lights and copies (about 8 s), the rest cached
+blender -b -P render_wear.py -- wear_glass_grime=0 cam=20.9,9.89,7.65:16.99,9.89,7.65:30   # off; 1 is the default
+blender -b -P render_wear.py -- wear=debug wear_soiling=0 wear_runoff=0 wear_washed=0 wear_street_grime=0 wear_rust=0 wear_efflorescence=0 wear_edge_wear=0 wear_mortar_erosion=0 wear_pigeon=0 view=st_up
+```
+
+The close-up is three second-floor windows on Broadway, in sun: a neglected one, one cleaned this week and one whose
+upper light the last cleaning missed.
+
+Like edge wear it is not a mask: its marks lie on the glass's own meshes, as attributes the shader reads, so it has no
+atlas image and costs no VRAM for one. The atlas would not do here: a mark painted at an (s, z) lands on whatever
+stands there, the frame's bars and the backdrop behind the glass included, and a light's film must stop at its frame.
+
+### The lights
+
+Every glass the block renders is read as the street sees it: 411 instances, the block's 396 glass objects and the
+portal's 5 (three times). Each one's plane and outline come from its own triangles; its **lights** -- the glass its frame
+leaves open -- are found with short rays cast from `FRONT` 12 cm in front of it, in front of the frame's bars (2 to 6 cm
+proud of the glass) but behind a wall's reveal (0.3 m and more) and the portal's arch (1.45 m), so only the window's own
+frame bounds a light. Five scan lines each way at 1 cm find the bars (a run of positions where no scan line sees the
+glass, with glass on both sides), and each light's edges are refined to 0.5 mm along its centre lines:
+
+| window | lights | bars between them |
+|---|---|---|
+| the sashes of floors 2 to 4 (243 windows) | a lower and an upper light, 0.88 to 1.03 wide; floor 2's lower light 1.41 tall (its sash was let down 0.35), the rest 1.06 | the meeting rail, 6 cm |
+| the top floor (81) | a rectangle 0.94 tall and an arch-headed light 0.60 tall to its crown | the transom bar, 16 cm |
+| the storefronts (33 glass objects) | two or three lights, 1.34 to 2.15 wide, 2.73 tall | the dividers, 6 cm |
+| the chamfer's, the north face's and the west face's doors (3) | two leaves each, 0.77 to 0.87 wide, 2.09 tall | the meeting stiles, 39 cm |
+| the storefront transoms (36) | one light each, 2.15 to 4.93 wide, 0.86 tall | none |
+| the portal's doors (4, three times) | one light each, 0.49 x 1.40 | none |
+| the portal's transom (1, three times) | two lights, 1.36 x 1.10 | the door post, 27 cm |
+
+780 lights over all instances. An arch-headed light's top edge falls toward its stiles; the frame's inner edge is
+fitted there as a circle through nine measured points (within 0.8 mm on every top-floor window) and its centre is
+asserted to stand on the light's axis. The lights of one mesh's three portal instances are asserted to agree to 3 mm.
+
+### What each light takes
+
+From 565's measure over the light's own texels -- only those whose recorded surface is the glass itself: where the
+street sees something in front of it (the portal's arch before its transom lights, a fire escape's platform) the
+measure is that surface's, not the glass's, and a light none of whose texels are its own takes its other instances',
+its window's other lights' or its kind's -- and from its height:
+
+- **its cleaning**, by the height of its middle over the pavement: `CLEAN_HAND` 0.18 of an upper window's dust where a
+  hand reaches from the pavement (to `CLEAN_REACH` 2 m), rising through a smoothstep to all of it at `CLEAN_TOP` 6 m,
+  above which nothing is washed from the street: the storefronts and the doors keep 0.18, the portal's transom lights
+  0.38, the storefront transoms 0.53, every window from the second floor up all of it;
+- **the rain kept off it**, 1 - 565's `open` (its reveal, its head, its jambs, its neighbours): a light the rain rarely
+  rinses keeps a little more of its dust, `SHELTER_KEEP` 0.85 of its window's at 0.15 (a lower sash) rising through a
+  smoothstep to 1.25 at 0.80 (the portal): a lower sash 0.85, an upper sash 0.91 to 0.95, a top-floor arched light 1.19;
+- **the rain on it**, the mean of 565's `exposure` data over the light, in units of `RAIN_REF` 0.50 (the most exposed
+  lights', floor 4's lower sashes, 0.46 to 0.56): the water that runs down it to its rail, which sets how much it
+  gathers there (below). The portal's glass, 2 m into its vestibule, takes next to none.
+
+| lights | count | size (median) | cleaning | rain kept off | keeps | rain | film: median (range) | under 0.15 | over 0.8 |
+|---|---|---|---|---|---|---|---|---|---|
+| floor 2 sash, lower; upper | 81; 81 | 0.98 x 1.41; 0.98 x 1.06 | 1.00 | 0.18; 0.32 | 0.85; 0.91 | 0.45; 0.38 | 0.54 (0.00..1.18); 0.71 (0.00..1.30) | 10; 7 | 11; 35 |
+| floor 3 sash, lower; upper | 81; 81 | 0.98 x 1.06 | 1.00 | 0.19; 0.34 | 0.85; 0.93 | 0.48; 0.40 | 0.50 (0.00..1.14); 0.66 (0.02..1.26) | 12; 7 | 12; 23 |
+| floor 4 sash, lower; upper | 81; 81 | 0.98 x 1.06 | 1.00 | 0.22; 0.36 | 0.86; 0.95 | 0.49; 0.41 | 0.43 (0.03..1.16); 0.67 (0.02..1.24) | 12; 9 | 10; 34 |
+| top floor, lower; arched | 81; 81 | 0.93 x 0.94; 0.87 x 0.60 | 1.00 | 0.33; 0.64 | 0.93; 1.19 | 0.46; 0.26 | 0.53 (0.03..1.18); 0.94 (0.03..1.35) | 11; 5 | 16; 45 |
+| storefront | 72 | 1.56 x 2.73 | 0.18 | 0.12 | 0.85 | 0.41 | 0.07 (0.01..0.21) | 65 | 0 |
+| storefront transom | 36 | 3.30 x 0.86 | 0.53 | 0.52 | 1.09 | 0.24 | 0.32 (0.04..0.81) | 6 | 1 |
+| door (chamfer, north, west) | 6 | 0.81 x 2.09 | 0.18 | 0.17 | 0.85 | 0.39 | 0.07 (0.00..0.08) | 6 | 0 |
+| portal door | 12 | 0.49 x 1.40 | 0.18 | 0.79 | 1.25 | 0.10 | 0.05 (0.00..0.23) | 8 | 0 |
+| portal transom | 6 | 1.36 x 1.10 | 0.38 | 0.99 | 1.25 | 0.01 | 0.32 (0.01..0.49) | 2 | 0 |
+
+The film is in units of the dust one cleaning cycle leaves on an upper window. Within a kind the geometry's measure
+hardly varies (behind the fire escapes and beside the block's corners); the films' ranges are the windows' own draws,
+their tops saturated (below: the arched lights' 1.81 is 1.35).
+
+### One window at a time (rework 2026-09-23)
+
+The first cut laid the grime out by each pane's frame and the rain alone: a tide line and a soft gradient along every
+bottom rail (in sun about twice the clean glass's luminance in the rail's first 3 cm), pale lower corners, and drying
+lines hanging at a 7.5 cm pitch from every head; the middle of a light took next to nothing. On a block whose windows
+are all alike that stamped the same pale band at every window, and the user rejected it: *"the windows dirt on the
+bottom, it doesn't look realistic; i don't remember seeing such a dirty whitening pattern on a window"* (2026-09-23; the
+review also asked every feature for marks that repeat identically from one instance to the next). The photos agree. In
+the Commons colour photo of a portal and the floor above it (`commons_304_frontal_6.jpg`) the second floor's windows
+each read a little different -- one a flat grey-blue haze, its neighbour a clear reflection of the sky and a tree,
+others the blinds behind them -- and no rail carries a band; in the 1960 HABS photos the windows differ by their blinds
+and curtains, not by any mark on the glass. What sets one pane apart from the next is what the model does not carry:
+when its tenant last cleaned it. So each window draws its own cleaning, and the physics above only modulates it:
+
+| drawn | for | bounds |
+|---|---|---|
+| when it was last cleaned, as a share of the dust a cycle leaves: anywhere in its cycle, evenly (a window cleaned last week beside one due next week) | each window: a glass object; a portal's glass, cleaned as one by the building's staff | 0 to 1 |
+| neglected: a tenant who does not clean (a vacant office or shop), `NEGLECT_P` 0.08 of the tenants' windows; never an entrance | each window | older than a cycle, 1.00 to 1.40 (`NEGLECT`) |
+| whether that cleaning missed the light that is hard to reach, which then keeps part of the cycle before's dust as well | each window | a sash's upper light 0.25 (a tenant barely reaches its outside from within), a top-floor arched light 0.35 (fixed), a portal's transom lights 0.35 (behind the arch, 3 m up) (`MISS_P`); then 0.35 to 0.90 more (`MISS_EXTRA`) |
+| its own share of its window's dust: one cleaning leaves each pane a little different | each light | 0.85 to 1.15 (`JITTER`) |
+| its gathering at the rail, at full rain | each light | 0.10 to 0.50 of its film (`GATHER`) |
+| how far up the gathering reaches | each light | 0.10 to 0.26 m times the square root of its height, at most 0.40 of it (`REACH`) |
+| each lower corner's extra share of the gathering, and the corners' width | each light | 0 to 0.70 each (`CORNER`), 4 to 10 cm (`CORNER_W`) |
+
+A light's film = its cleaning x its age (its window's, plus the cycle before's where the cleaning missed it, at most
+`AGE_MAX` 1.40) x what its shelter keeps x its own share, and then saturated (added by the critique of 2026-09-24): a
+film is itself up to `FILM_KNEE` 1.0 and grows ever more slowly above it toward `FILM_MAX` 1.40, exponentially and as
+steeply as below at the knee (1.2 becomes 1.16, 1.5 becomes 1.29, 1.8 becomes 1.35), since past about a cycle's dust a
+pane sheds, to the wind and to what rain reaches it, about as much as settles on it. It caps what a neglected window,
+a missed light and an arched light's deep reveal (its shelter keeps 1.19) add up to: 101 of the 780 lights were above
+1.0, the arched lights up to 1.81, and none now passes 1.35; below the knee nothing moved. Where a range is given, the
+value is the mean of two uniforms, the middle likelier than the ends. The seed is the sha256 of `glass_grime:` and a key, two bytes a uniform:
+`window:<object>` (a portal's glass: `window:PORTAL_A`), `light:<object>:<index>` (`light:PORTAL_A:<object>:<index>`) and
+`shape:<object>:<index>`. A rebuild draws the same (the cache is byte-identical from one build to the next), and a
+change elsewhere on the model reshuffles nothing.
+
+The portal is one collection seen three times, so its glass cannot differ by its attributes alone. Its three portals
+stand on three faces (3rd Street, Broadway, the west face; the build asserts it), so each light's film is written once
+per face of the block and the shader reads the one for the face the shading point stands on: each portal's glass keeps
+its own.
+
+As built (the build prints it, `glass_grime windows ...`, the kinds and `glass_grime neighbours ...`):
+
+- 399 windows: 324 upper windows, 33 storefronts, 36 transoms, 3 doors, 3 portals. Last cleaned 0.56 of a cycle ago
+  (median; 0.00 to 1.35). 31 neglected: 9 on floor 4, 7 on the top floor, 6 on floor 2, 3 on floor 3, 3 storefronts, 3
+  transoms. 87 hard-to-reach lights missed: 24, 17 and 19 upper sashes on floors 2, 3 and 4, 25 arched lights, and the
+  3rd Street portal's transom.
+- The 648 upper lights: film 0.59 (median; a quarter under 0.30, a quarter over 0.84); 73 under 0.15, 186 over 0.8, 44
+  over 1.2 (57 before the films saturated), none over 1.35. By window: 29 of the 324 clean (under 0.15), 101 lightly
+  dusty (to 0.5), 91 moderately (to 0.8), 103 dusty. The upper lights take a little more than the lower (their shelter,
+  and the cleanings that miss them).
+- Neighbours: of 608 pairs of upper lights side by side in a row (one face, one kind), the films differ by 0.33
+  (median; 0.35 before they saturated), and 41 pairs lie within 0.05 of each other. `critique_r1/filmmap/filmmap_all.png`
+  draws every light on the five faces.
+- The portals: 3rd Street (A) last cleaned 0.23 of a cycle ago, its transom missed: doors 0.05, transom 0.31 and 0.33;
+  Broadway (C) 0.01: all of it near 0; the west face (E) 0.92: doors 0.20 to 0.23, transom 0.45 and 0.49.
+
+The drying lines are gone. They hung at one pitch from every head, a ruled pattern at every window, nothing in the photos
+shows them, and a pane set back in its reveal takes no rain at its head to start a rivulet from anyway.
+
+### The film on a light
+
+In the light's own frame, x from its left stile and y up from its bottom rail, the grime is its film, even over it,
+lifted mildly toward the bottom rail and the lower corners:
+
+    grime = film x (1 + gather x b(y) x (1 + left x c(x) + right x c(W - x)))
+
+b falls from 1 at the rail to 0 at the gathering's reach and c from 1 at a stile to 0 at the corner's width, both
+smoothsteps, flat where they start: no tide line along the rail and no hot spot in a corner. The gathering is as much as
+the rain on the light: 0.28 (median; at most 0.49) on the lower sashes, 0.23 to 0.26 on the upper, 0.15 on the arched
+lights, 0.00 to 0.06 on the portal's glass; its reach 0.17 to 0.21 m on a sash, 0.30 m on a storefront. In the renders
+it barely shows (the rail's first centimetres sit in the sash's own shadow): it keeps a dusty pane from being a flat
+card, never more.
+
+### The look
+
+The dust covers a share of the pane in proportion to its grime, `COVER` 0.12 of it at a grime of 1 (strength 1) and
+never more than `COVER_MAX` 0.45, whatever the strength. On that share the pane is dust, not glass:
+
+- less of the room behind shows through: Alpha rises by the cover's share of the see-through (the game's window glass,
+  0.82, to 0.84 at a grime of 1), Transmission falls by it;
+- the covered share of what the pane itself shows (cover / Alpha') does not reflect: the BSDF's Specular IOR Level
+  falls by it, 14% at a grime of 1 on the window glass, so the reflection weakens. The layer routes Specular on glass
+  since the rework (see "What it changed in the framework");
+- the covered share takes the dust's own colour (since the critique of 2026-09-24, in full: there it is dust, not
+  glass): `DUST` (0.054, 0.051, 0.046), a sooty warm grey as dark as the game's window glass's own colour (luminance
+  0.051), which is the tone the clean pane renders in sun, so the pane turns greyer and flatter but no lighter (see "No
+  lighter" below). On a clear pane (the transoms, the portal's glass), whose colour is its transmission's tint, the
+  colour moves by the same share, so the light it lets through dims with the dust;
+- the roughness stays the glass's own: the glass between the dust's grains still mirrors sharply, and what the grains
+  scatter is the covered share's grey. The rework raised it (`BLUR`, 0.06 of the way toward 0.40 at a grime of 1) to
+  soften the reflection, and it spread the sun's glint over a dusty pane near the sun's mirror direction as a white
+  sheet: at 0.15 (its first value) over the whole light, at 0.06 still over the upper half, at twice the clean pane's
+  light (`critique_r1/glare_bway_blur.png`). The critique of 2026-09-24 took it out (see "No lighter").
+
+Never opaque: at the cap the game's window glass keeps 55% of its see-through (Alpha 0.90 at most) and a clear pane 55%
+of its transmission; `renders/closeup_strength3.png` shows strength 3. Glass only, and only where a light's attributes
+are. It stands at ORDER 300, after every deposit on the masonry; glass is no other feature's.
+
+### No lighter (critique 2026-09-24)
+
+The fresh-eyes critique of the rework found the glass still whitening. The band was gone, but in sun a dusty pane
+rendered lighter than its clean self, the more so the dustier it was: on Broadway's 4K elevation the upper lights read,
+by film, +4% (under 0.3), +9% (0.3-0.6), +16% (0.6-0.9), +23% (0.9-1.2), +29% (1.2-1.5) and +46% (one arched light at
+1.81), about half the sunlit upper panes 15 to 30% paler and milkier, and from `st_portal` every pane sampled read 6 to
+27% lighter than the pre-wear still. That contradicts the reference the rework cites, where the hazy pane reads a little
+darker than its clear neighbour (0.44 against 0.47 of the brick). A dusty pane was not duller, it was whiter: what the
+user had rejected.
+
+The cause was the dust's colour. Half of it (`VEIL` 0.5) stood in for the glass's on the covered share, a light warm grey
+(0.17 in luminance) against the game's window glass's 0.051, 3.3 times brighter, and in sun that colour is lit like a
+wall. Its lost reflection and lost see-through hardly count there: the sunlit pane is its own colour lit, the sky's
+reflection a small part of it. Three renders of each elevation at 32 spp -- the colour left unchanged, the old dust, a
+black dust -- fit every light's on/off ratio as a straight line in the dust's brightness, and they say the same: with the
+colour unchanged Broadway's panes read 1.00 to 1.02 by film (1.08 on the one arched light at 1.81), so the whitening
+was the colour.
+
+So the dust acts on the pane's contrast, not on its brightness:
+
+- **its colour is as dark as the glass it hides**: `DUST` (0.054, 0.051, 0.046), a sooty warm grey of the window glass's
+  own luminance, which is the tone the clean pane renders in sun. The covered share takes it whole -- the coverage
+  model's own words, there it is dust, not glass -- so `VEIL` and `TINT` are gone. The dusty pane turns greyer (on
+  Broadway's panes with a film of 0.9 to 1.5 its blue falls against its red from 39 to 33 sRGB levels, as far as the
+  rework's dust took it) and flatter (what reflection and room it showed are covered), but no lighter;
+- **the lost reflection and the lost see-through stay**, the cue the critique asked to keep; **the blur does not**. The
+  critique asked to keep it too, but its one visible effect besides was a whitening: from `glare_bway`, a floor-4 pane
+  on Broadway near the sun's mirror direction (`mesh__1613`'s upper light, film 0.99) read 2.06 of clean with it, the
+  sun's glint spread over its upper half as a white sheet (in the rework too, 2.13), and 1.43, 1.16 and 1.02 with
+  `BLUR` at 0.03, 0.015 and 0. Physically the dust does not roughen the glass: the glass between the grains mirrors
+  sharply and the grains scatter into the covered share's grey. Without it the reflection over a dusty pane in shade
+  still loses 6 to 10% of its contrast (with it 14 to 17%), so the reflection reads weaker and flatter, not blurred.
+  With the new dust and the blur the north face's lightest pane read 1.11 (now 1.04), and the blur's glints were most
+  of the lighter blocks the `lighter` check found with it (below);
+- **a film saturates**, `FILM_KNEE` 1.0 toward `FILM_MAX` 1.40 (see "One window at a time"): the arched lights' 1.81 is
+  1.35, and no light passes it;
+- **a clear pane follows the same share**: its colour, its transmission's tint too, moves to the dust by the covered
+  share, no longer three times as fast (`TINT`). The 3rd Street transoms, over their white panels in shade, the darkest
+  glass the rework drew (0.62 of clean at a film of 0.81), now read 0.75; Broadway's in sun 0.96 to 0.99.
+
+On the full-size stills (4K for the two sunlit elevations, 128 spp), each light's middle on against glass grime off,
+linear luminance, every other feature on (`critique_r1/numbers.json`):
+
+| elevation | light on it | film under 0.3 | 0.3-0.6 | 0.6-0.9 | 0.9-1.2 | 1.2-1.5 | lightest; darkest |
+|---|---|---|---|---|---|---|---|
+| Broadway, before | sun | 1.040 (33) | 1.089 (25) | 1.164 (36) | 1.226 (18) | 1.290 (7), 1.464 (1 over 1.5) | 1.464; 1.000 |
+| Broadway, after | sun | 1.002 | 1.005 | 1.007 | 1.011 | 1.010 (8) | 1.024; 0.961 |
+| north face, before | sun, low across it | 1.022 | 1.090 | 1.122 | 1.151 | 1.254, 1.177 (6 over 1.5) | 1.426; 0.999 |
+| north face, after | sun, low across it | 1.000 | 1.003 | 0.995 | 0.987 | 0.985 | 1.037; 0.933 |
+| 3rd Street, before | shade | 1.003 | 1.008 | 1.052 | 0.971 | 0.997, 0.997 (10 over 1.5) | 1.271; 0.805 |
+| 3rd Street, after | shade | 0.987 | 0.966 | 0.942 | 0.902 | 0.883 | 0.998; 0.824 |
+
+(the median by film, with the count of lights; "before" bins the rework's films, "after" the saturated ones). On
+Broadway no pane is lighter by more than 2.4% now (66 of 120 were by more than 10%), and on the north face none by more
+than 3.7% (82 of 200 were); in 8-bit sRGB their dustiest panes (film 0.9 to 1.5) moved +9.6 and +8.9 levels before,
++0.4 and -0.5 now, their blue against their red down 6 levels either way. In shade the lost reflection is all the dust
+does: a pane that mirrors the bright sky dims by the share the dust covers, so 3rd Street's dustiest panes read 0.88 to
+0.90 of clean -- 2 sRGB levels on panes that dark (4.5 at the most), the weaker reflection the critique asked to keep --
+and none is lighter. Halving the specular loss would have held them at 0.94 to 0.96 and halved the cue; it was kept
+whole.
+
+From `st_portal`, every upper light it sees (27) against the pre-wear still, all wear on: the rework's read 1.13 (1.01
+to 1.27; 23 over +5%), now 1.00 (0.99 to 1.00). The layer's other features do not touch the glass: glass grime off
+reads 1.00 there too.
+
+`wear_compare.py lighter` (8 px blocks of linear luminance lighter by more than 2% and 0.003, glass grime on against
+off; a deposit's check, which the glass does not have to pass block by block): Broadway's 4K elevation 16,512 blocks
+lighter with the rework, 734 with the new dust and the blur, 18 now; the north face's 14,308, 1,744 and 394; the
+close-up 7,906, 334 and 88; `glare_bway` 6,960, 522 and 1; 3rd Street's 1 and 0. What is left is the flattening: where
+a pane showed a dark reflection (its head's, the street's) the dust's even tone lies over it, as it darkens the same
+pane where its reflection was bright (2,098 blocks darker on Broadway, 3,902 on the north face); no pane as a whole is
+more than 4% lighter.
+
+### Where the grime lives: the copies and the switch
+
+A pane is cut along its bars' centre lines, behind the bars, so that every face lies in one light and its face corners
+can carry that light's own coordinates (`wear_glass_grime_p`: x, y in metres, linear over the planar glass, so exact at
+any distance), its size (`_l`: width, height), its gathering (`_k`: gather, reach, the corners' width; `_c`: the left and
+the right lower corner's shares), and its film on each face of the block (`_f`: S, SE, E; `_g`: N, W; the block's glass
+carries its one film on all five), and the layer's `Attr`, `wear_glass_grime`: the light's film (the portal's glass:
+its three portals' mean), which gates the shader.
+
+The cutting is done on a COPY of each of the block's glass objects, `WEAR_glass_<name>`, which renders in the original's
+place while the feature is on (the framework's `add_object(..., replaces=...)`, like edge wear's pier ring): 396
+copies, 355 of them cut, 1506 faces. The originals stay exactly as they were. Measured, this matters: with the cuts made
+in place the layer switched off rendered the glass a little differently (a cut planar pane is the same surface, but the
+renderer samples a differently triangulated, no longer instanced, alpha-blended pane a little differently: 2.4 times the
+noise floor on the glass pixels, 1-level changes); with the copies the off switch is exact again. The portal's glass needs
+no cut -- each door's glass and each transom light is its own box -- and carries its attributes in place;
+`apply_portal` asserts that no face of it straddles a bar, since the portal cannot be switched per feature. Edge wear's
+copies of the portal collection link the same glass objects (its DOOR and VESTIBULE collections), so the portal's glass
+shows the grime with edge wear on and off. The worn block has 2697 objects: 2275, 21 markers, edge wear's 5 and these
+396 (the first cut's head-path marker, drawn for its drying lines, is gone).
+
+### Calibration
+
+Measured in rendered pixels on the full-size stills at the scene's defaults: a light's middle with the feature on
+against the same box with `wear_glass_grime=0` (every other feature on in both), as a share of the brick beside it
+(`critique_r1/numbers.json`, `calibration`; the boxes are the rework's, in `iter/closeup_boxes.png` and
+`iter/shade_boxes.png`); "the rework" is the look the critique of 2026-09-24 reviewed, rendered from this build with the
+rework's module:
+
+| light (film) | light on it | off | on | change | the rework |
+|---|---|---|---|---|---|
+| Broadway floor 2, `mesh__687` (neglected): upper (1.12, 1.15 before it saturated); lower (1.03) | sun | 0.198; 0.205 | 0.201; 0.207 | +1%; +1% | 0.250; 0.251 (+26%; +22%) |
+| `mesh__688` (cleaned this week, 0.003): upper; lower | sun | 0.182; 0.207 | 0.182; 0.207 | none | none |
+| `mesh__689`: upper, missed (0.73); lower (0.23) | sun | 0.195; 0.216 | 0.196; 0.216 | +1%; none | 0.225; 0.225 (+16%; +4%) |
+| 3rd Street floor 3, `mesh__964`: upper (0.63); lower (0.55) | shade | 0.207; 0.147 | 0.196; 0.142 | -5%; -3% | 0.210; 0.153 (+1%; +4%) |
+| `mesh__965`: upper (0.84); lower (0.93) | shade | 0.248; 0.160 | 0.229; 0.150 | -8%; -6% | 0.248; 0.169 (none; +6%) |
+
+In sun a dusty pane reads as light as a clean one, and greyer: `mesh__687`'s upper light goes from (68, 93, 110) to
+(73, 93, 108) in sRGB, its red up and its blue down, where the rework took it to a quarter lighter. It is flatter too:
+the reflection's detail over that light falls by 7% (the standard deviation of its pixels, 3.6 to 3.3 levels). In
+shade the street it reflects loses 6 to 10% of its contrast (5.3 to 5.0 and 4.6 to 4.2 levels; the rework's blur took
+a sixth), and with it a little of its light: the dusty panes read 3 to 8% darker. A clean pane is untouched, and the
+brick beside it too.
+
+The reference: in that Commons photo of a portal and the floor above it (`references/frontal6_floor2_mid_pair.png`, a
+crop of `commons_304_frontal_6.jpg`) a hazy second-floor window, a flat grey-blue sheet with the room behind barely
+showing, reads 0.44 of the sunlit brick and its clear neighbour, reflecting the sky and a tree, 0.47
+(`references/references.json`): what the dust takes is the reflection's detail and the view in, not the pane's darkness
+(the hazy pane is 0.94 of the clear one), and no rail carries a band. The render now brackets that: a dusty pane in sun
+reads 1.00 to 1.01 of clean, in shade 0.86 to 0.97 (see "No lighter"). The render's panes are darker than the photo's
+(0.18 to 0.21 of the brick clean, the photo's processed and brighter), which is why the dust must not be lighter than
+the glass: on a pane this dark a light dust is all that shows. The storefronts stay at 0.07 (median) and read as they
+did. `COVER` and `DUST` carry the calibration; `DEFAULT_STRENGTH` stays 1.0, and `wear_glass_grime` 0.5 halves it.
+
+### The debug view
+
+Teal: the grime at full colour from 1 / `DEBUG_GAIN` (0.75) of it -- a dusty window full teal, a clean one clay grey, each
+window its own -- and a square tube along each light's bottom rail, on the frame's face 3 cm in front of the glass. 780
+sources and 780 marks; no paths (the first cut drew its drying lines' head). `wear=debug` with every other feature at 0
+shows it alone (the command above). The portal's glass sits deep in its vestibule's shade: `portals_debug_exposure.png`
+shows the three portals' glass at +2.5 stops, each its own.
+
+### Published for the features that follow
+
+`ctx.field("glass_grime", key)` for a feature that NEEDS glass_grime (none does):
+
+- `lights`: every light per instance, `dict(id, object, instance, window, kind, facade, s0, s1, z0, z1, width, height,
+  arch, cleaning, kept, shelter, rain, measured, age, neglected, missed, keep, jitter, raw, film, gather, reach, corners,
+  corner_w)`: where it is, its size, its cleaning, 565's measure over it, its window's draw and its own, its film before
+  it saturates (`raw`, added by the critique of 2026-09-24) and after, and its gathering;
+- `windows`: every window's draw, `dict(window, instance, objects, lights, tenant, age, neglected)`;
+- `profile`: the constants and the formula (the critique added `film`, the knee and the ceiling, and took `veil`,
+  `tint`, `blur`, `dust_rough` and `blur_max` out of `look`).
+
+Notes for the features that follow: while this feature is on, each of the block's glass objects is replaced by its
+`WEAR_glass_<name>` copy; an attribute a later feature sets on the block's glass must be set on the copies too. The
+attributes `wear_glass_grime*` are this feature's (the rework redefined `_l`, `_k` and `_c`, added `_f` and `_g` and
+dropped `_r`).
+
+### What it changed in the framework
+
+The first cut: nothing but `wear/registry.py`, which lists `glass_grime`. The rework adds one route: the Principled
+BSDF's **Specular IOR Level** passes through `WEAR_layer` on the glass class (`wear/nodes.py`: `Specular` in `STATE`, one
+more route in `wear_material`), so a feature can weaken a pane's reflection; on every other material the group's new
+`Specular` socket stands unconnected, and like every output it returns its input exactly while the layer or the feature
+is off. Measured: a full rebuild reproduces every other feature's mask and cache byte for byte (their sha256 are those
+of the start of the rework); and hashing the worn block and the worn portal object by object (geometry, every attribute,
+materials, transforms, visibility, custom properties; the materials' node trees by socket name) against a build with the
+first cut's module and `nodes.py`, all 3676 objects and materials that are not glass grime's are identical -- rust's and
+edge wear's attributes, edge wear's chipped copies and every other worn material included -- the 18 glass materials
+differ only in the new route, and the first cut's head-path marker is gone. The glass copies' cut geometry is unchanged
+too. Cost: none measurable. The critique of 2026-09-24 changed nothing in the framework: the rebuild reproduces every
+other feature's mask and cache byte for byte, and of the worn files' objects, node groups and materials only the 84
+glass copies whose lights' films saturated and the `WEAR_F_glass_grime` group differ (the portal's glass, whose films
+are all under 1, is unchanged).
+
+### Evidence
+
+The critique of 2026-09-24's evidence is in `tests/artifacts/screens/bradbury_wear/rework/glass_grime/critique_r1/`,
+from full-size stills at the scene's defaults (1920x1200, the sunlit elevations at 3840x2400, 128 spp, AgX), every
+other feature on throughout; "before" is the rework's look, rendered from this build with the rework's module (its
+masks and caches reproduced byte for byte), "off" is `wear_glass_grime=0`:
+
+- `closeup_before_off_after_debug.png` and `medium_before_off_after_debug.png`: before | off | after | the debug view
+  with glass grime alone;
+- `cu_E_f34_glass_1to1.png`, `cu_E_top_glass_1to1.png` (with the changes x6), `cam_st_portal_windows_1to1.png` (the
+  pre-wear still | before | after), `N_mid_1to1_stack.png`, `S_mid_1to1_stack.png`: the critique's own crops again;
+- `glare_bway_blur.png`: the sun's glint on `mesh__1613`, off | the rework | the new dust with the rework's blur |
+  after;
+- `<pose>_before_off_after.png`: `arched_bway`, `E_f34`, `E_top`, `glare_bway`, `shade_3rd`, `medium_3rd`,
+  `storefront_3rd`, `transoms_3rd`, `portal_bway` and the five cameras;
+- `numbers.json`: the per-light ratios by film on the three elevations (`lights`), the st_portal lights against the
+  pre-wear still, the glare, the calibration boxes, the difference stats, the layer off against the pre-wear stills
+  and the `lighter` counts; `E4k_lights_after.png`: Broadway's 120 upper lights boxed where they were measured, each
+  with its film and its on/off ratio; `filmmap/`: every light's film on the five faces, saturated; `poses.json`;
+- `renders/` (`before/`, `off/`, `after/`, `wearoff/` the layer switched off, `debug/`, and `iter_blur006/` the new
+  dust with the rework's blur), `diff/` (off against after and before against after x8, and the `lighter` heat maps).
+
+| camera | off vs on: mean; share over 2 levels | before vs after | the layer off vs the pre-wear still |
+|---|---|---|---|
+| `st_up` | 0.126; 3.1% | 0.422; 7.1% | 0.0059; 0.002% |
+| `st_along` | 0.138; 1.7% | 0.212; 2.5% | 0.0065; 0.003% |
+| `hero_3q` | 0.111; 1.4% | 0.197; 2.6% | 0.0169; 0.006% |
+| `st_corner` | 0.092; 1.2% | 0.127; 1.7% | 0.0321; 0.059% |
+| `st_portal` | 0.415; 9.7% | 0.990; 14.9% | 0.0162; 0.025% |
+
+The layer switched off renders the pre-wear stills at the noise floor on all five cameras (the framework's table: the
+untouched block rendered again differs from them by 0.0067 to 0.0310). On the close-ups, off vs on: `closeup` 0.41,
+15.0%; `medium` 0.33, 9.8%; `shade_3rd` 0.44, 2.8%; `arched_bway` 0.57, 20.3%; `glare_bway` 0.33, 9.9% (the rework's
+blur: 16 levels at most now, 103 before); `storefront_3rd` 0.053, 0.012%. The Broadway portal's arch-moulding flip
+(below) is still there, the renderer's tie-break, not the glass.
+
+The rework's evidence, in `tests/artifacts/screens/bradbury_wear/rework/glass_grime/` (the first cut's stays in
+`tests/artifacts/screens/bradbury_wear/glass_grime/`), sheets at half size from full-size stills at the scene's defaults
+(1920x1200, 128 spp, AgX); "before" is the first cut, rendered from the frozen `wear_snap_rework_before/` scene (every
+other feature as it was before the review too):
+
+- `closeup_before_after_off_debug.png`: the close-up above, before | glass grime off | after | the debug view with glass
+  grime alone; `closeup_strengths.png`: 0 | 1 | 3; `closeup_debug_alone_all.png`;
+- `medium_before_after_off_debug.png`: Broadway's floors 2 to 4 square on, every window its own, the close-up's three at
+  the bottom middle; `medium_debug_alone_all.png`;
+- `<pose>_before_off_on.png`: `shade_3rd` (3rd Street in shade), `arched_bway` (the top floor), `storefront_3rd` (nearly
+  clean), `portal_bway`, `glare_bway` (the sun's glint on a dusty pane), `medium_3rd`, and the five cameras;
+- `portals_debug_exposure.png`: the three portals' glass in the debug view at +2.5 stops, each its own film;
+  `iter_glare_blur_specular.png`: the glint at `BLUR` 0.15, 0.06, and 0.06 with the weaker specular;
+- `filmmap/`: every light's film on the five faces at the debug view's gain, a whole facade at a glance;
+- `references/`: the colour photos (unaltered), the crops, `references.json`; `poses.json`;
+- `renders/` (the full-size stills, the layer off and the untouched block again for the five cameras), `diff/` (off
+  against on and before against after, x8, `summary.json`), `iter/` (the iterations: the first look, whose blur erased
+  the reflections, the cover, veil and blur sweeps, the glare and specular tests).
+
+| camera | off vs on: mean; share over 2 levels | before vs after | the layer off vs the pre-wear still | the untouched block again vs the pre-wear still |
+|---|---|---|---|---|
+| `st_up` | 0.443; 7.9% | 0.739; 12.6% | 0.0065; 0.002% | 0.0086; 0.005% |
+| `st_along` | 0.285; 4.9% | 0.378; 5.7% | 0.0065; 0.003% | 0.0066; 0.004% |
+| `hero_3q` | 0.237; 3.0% | 0.460; 6.0% | 0.0165; 0.006% | 0.0161; 0.006% |
+| `st_corner` | 0.170; 2.1% | 0.322; 4.3% | 0.0299; 0.049% | 0.0318; 0.057% |
+| `st_portal` | 1.157; 16.9% | 1.341; 20.9% | 0.0161; 0.024% | 0.0161; 0.024% |
+
+On the close-ups, off vs on: `closeup` 1.57, 20.4%; `medium` 1.23, 18.0%; `shade_3rd` 0.40, 4.5%; `arched_bway` 1.91,
+26.7%; `storefront_3rd` 0.073, 0.011%; `medium_3rd` 0.29, 3.4%. The layer switched off renders the pre-wear stills at the
+noise floor on all five cameras (the untouched block rendered again differs from them as much). One known flip, not the
+feature's: in `portal_bway` 60 pixels of the Broadway portal's arch moulding (a slot's end, where two of the portal's
+faces are coplanar) change between glass grime off and on, whose glass copies change the scene's objects and so the
+renderer's tie-break there; the first cut's toggle flipped the same spot, and the portal's own glass there is clean. Cost:
+about 1 s on a still of 15 to 30 s, as before.
+
+## Pigeon marks on perching ledges (AI 572)
+
+`wear/features/pigeon.py` (`wear_pigeon`, red in the debug view): the droppings of the few feral pigeons that roost on
+the block. Pigeons use an ornate old facade's horizontal surfaces -- cornice tops, window sills, the tops of string
+courses and capitals -- the more so where the surface is high above the street, deep enough to stand on, sheltered from
+above, or tucked into an inner corner against a return (buildingconservation.com, "Bird damage"). Their droppings are
+whitish: drops heaped where the bird sits and spattered round it, and short drips that run over the edge onto the face
+below; under a heavy deposit the uric acid etches the stone ("Behaviour of Pigeon Excreta on Masonry Surfaces"). The
+Commons photos of the Broadway portal show a pigeon on the portal's crown moulding and anti-perching spikes along it and
+along the floor 2 ledge: the perches are used, and the building is kept. So the block carries two or three roosts, each
+on a perch found on the ledge geometry, each composed of droppings of its own, with one to three drips over its edge,
+each composed on the moulding it runs down; nothing is noise, and every rebuild reproduces them exactly.
+
+```
+blender -b -P wear_layer.py -- features=pigeon                          # its ledges, roosts, drips and mask (about 25 s), the rest cached
+blender -b -P render_wear.py -- wear_pigeon=0 cam=18.10,6.30,5.62:17.38,6.46,5.34:50   # off; 1 is the default
+blender -b -P render_wear.py -- wear=debug wear_soiling=0 wear_runoff=0 wear_washed=0 wear_street_grime=0 wear_rust=0 wear_efflorescence=0 wear_edge_wear=0 wear_glass_grime=0 wear_mortar_erosion=0 cam=18.10,6.30,5.62:17.38,6.46,5.34:50
+```
+
+### One roost at a time (rework 2026-09-23)
+
+The first build marked every perch it found by one rule: a pile at every return, a drip or two from every pile, a veil
+along every used edge and a thin line along the whole crown top -- 1249 roosts, 360 drips and 50,762 veil columns, the
+same heap and the same drips at the same corner of every window. The user saw a pattern: *"the pigeon marker looks like
+a pattern, it was placed at the same position in all windows. there could be 2 or 3 in the entire building, and they
+should be put at different positions and different shape"* (2026-09-23; the review asked every feature for marks that do
+not repeat identically from one instance to the next). A kept building has a few birds that keep to a few spots, for
+reasons the model does not carry: where a bird happened to settle, where the spikes are not, a sill nobody reaches to
+clean. So the perches the scan finds are only candidates now, and the build chooses two or three of them and composes
+each roost's deposit on its own. The veil, the crown's line and the per-window piles are gone.
+
+Every draw comes from `draw()`: the sha256 of `pigeon:` and a key, two bytes a uniform (more than sixteen carry on in
+the sha256 of the key and `#1`, `#2`, ...). A range is the mean of two uniforms, the middle likelier than the ends. The
+keys are stable ids: `count`; `roost:<face>:<the return's s>:<the ledge's height>` for each candidate corner
+(`E:21.34:5.42`); `drip counts`; and, under a chosen roost's id, `:bird`, `:drop:<i>`, `:stray:<i>`, `:drips` and, under
+a drip's `:drip:<i>`, its own `:try:<t>`, `:head`, `:shape`, `:arris:<k>` and `:tail`. A change elsewhere on the model
+reshuffles nothing drawn for a place that stays.
+
+| drawn | for | bounds |
+|---|---|---|
+| how many roosts the building holds | the building | three with `COUNT_P3` 0.50, two otherwise |
+| its key, `u ** (1 / p)`: a draw in which a corner's chance follows its plausibility p, and which never moves when another corner comes or goes | each candidate corner | 0 to 1 |
+| where the bird sits tucked in (its pile): along the ledge from the return, and in front of the back wall | each roost | 5 to 16 cm (`ROOST_X`); 4 to 11 cm, at most half the standing depth (`ROOST_Y`) |
+| where it stands to watch the street (its perch): along from the pile, and behind the outer edge | each roost | -12 to +28 cm (`PERCH_DX`: in front of the return's end too, where the ledge runs on); 6 to 15 cm, at most half the depth (`PERCH_Y`) |
+| the share of its droppings in the pile, the rest round the perch | each roost | 0.40 to 0.85 (`PILE_SHARE`) |
+| how many droppings it leaves | each roost | 60 to 160 (`DROPS`) times 0.5 + p: a better perch is used more |
+| how widely they spread (sd) round the pile, along and across | each roost | 2.2 to 5.0 cm, 1.6 to 3.5 cm (`PILE_SPREAD`) |
+| ... and round the perch | each roost | 3.0 to 8.0 cm, 1.4 to 3.0 cm (`PERCH_SPREAD`) |
+| the share of smears (trodden or rain-dragged along the ledge), of fresh droppings still showing their dark core, how many strays lie further along | each roost | 0.08 to 0.30 (`SMEAR`), 0.15 to 0.55 (`CORE`), 1 to 5 (`STRAYS`) |
+| a dropping's place | each dropping | a normal round its pile or perch, drawn again (`TRIES` 10) while it falls off the ledge's top |
+| its age, 0 fresh to 1 weathered, which sets its thickness (fresh thick and white, old a thin grey-beige film) | each dropping | even over 0 to 1 (`AGE`); a stray 0.40 to 1.00; thickness 1.00 to 0.25 (`AMOUNT`), give or take 15% |
+| its half-length (a log-normal), elongation and turn | each dropping | median 6.5 mm, log-spread 0.60, held within 2.5 to 18 mm (`SIZE`, `SIZE_LIM`); 1.1 to 2.0 (`ASPECT`); any turn |
+| a lobe or two off its outline, satellites thrown round it, a smear's length, width and angle | each dropping | 0.80 have lobes 0.35 to 0.75 of it, 0.45 to 1.05 of it off its middle (`LOBES`, `LOBE_R`, `LOBE_D`); 0.35 splash satellites (`SPLASH`, `SAT_R`, `SAT_D`); smears 2.5 to 6 half-lengths long, within 0.5 rad of the ledge (`SMEAR_*`) |
+| its drips: how many, where, how far and how each is composed | the building, each roost, each drip | see "Its drips, one at a time" below |
+
+What the geometry leads: which corners are candidates at all and their plausibility, where the ledge lets a dropping
+lie (its back wall and returns, its outer edge), where the edge lets a drip go over and how far the face below lets it
+run.
+
+As built (the build prints it, `pigeon: ...`, one `pigeon roost ...` line each and one line per drip):
+
+- 1288 perch sites (52 more too narrow or too low), 1041 candidate corners: sill 362, crown foot 250 (floor 2's reveal
+  floors among them), band top 174 (the top floor's reveals among them), openings row 144, portal crown moulding 66,
+  cornice 34, impost course 11. The draw gave two roosts.
+- **E:21.34:5.42**, a pocket of the openings row over the storefront just north of the Broadway portal (5.4 m up, H
+  5.21), p 0.40, the best key of the 140 corners round the portal. The bird sits in the pocket (its pile 13 cm from the
+  pocket's side, against its back) and stands on the cornice's top in front of it, 18 cm along, 49% of its droppings in
+  the pile: 79 droppings (30 piled, 49 at the perch; 14 smears, 70 lobes, 31 satellites, 6 dark cores, 3 strays), 111
+  cm2 of droppings (15 cm2 built up), 138 cm2 with the film round them; one drip down the cornice's moulding (below).
+  Its block: 445 x 209 texels at 2.3 mm.
+- **S:36.70:16.74**, the band's top in front of a top-floor window on 3rd Street, against the pier's side (16.7 m up, in
+  shade), p 0.86, the best key of the 415 corners that differ from the first in family, face and storey. Its pile lies
+  in the corner against the window 8 cm from the pier, its perch at the band's edge 19 cm along, 66% piled: 174
+  droppings (121 piled, 53 at the perch; 28 smears, 153 lobes, 70 satellites, 17 dark cores, 4 strays), 196 cm2 of
+  droppings (40 built up), 257 cm2 with the film; two drips down the band's cornice, merged under one head (below). Its
+  block: 293 x 209 texels at 3.5 mm (the reveal is 0.71 m deep, so its stretch needs the coarser texel to fit).
+- On the five faces' elevations the droppings' facade texels went from 227,910 in the first build to 94 in the rework
+  and 41 since the drips' critique: 3rd Street 65,324, 58 and 25; Broadway 42,542, 36 and 16; the chamfer, the north
+  and the west face none (`elevations/`).
+
+### Its drips, one at a time (critique 2026-09-24)
+
+The fresh-eyes critique of the rework found the two roosts different on their ledges but alike from the street: *"Each
+shows a pair of straight, parallel, even-width pale lines about 9 cm apart, running down the moulding below the ledge
+and ending at the same height"* -- 8.7 cm apart at Broadway, both cut 14 cm down at the moulding's step (z 5.28 and
+5.28), 9.4 cm apart on 3rd Street (16.52 and 16.56); close up the Broadway pair read as two painted white bars, and from
+the pavement, where the droppings on a top cannot be seen, that ruled pair was all the street saw of a roost. Three
+things made it: the count (1 + 0.5 to 4.99 times the perch's lead) came out two at both roosts; the rule that kept drips
+apart (`DRIP_GAP` 8 cm and the columns each drip's codes owned) set both pairs at its floor; and the facade's 2 cm rows
+held a drip only as a straight axis with one width per row, cut flat where its value fell through a threshold, walked
+in 2 cm steps that ended each at the moulding's step or a texel from it. A drip is now composed on the surface it runs
+down, millimetre by millimetre, and kept in a block of its own (the curtain, under "The mask"); and the building's drips
+are drawn so that no two roosts show the same thing:
+
+- **How many.** The building's roosts take their drip counts from 1, 2 and 3 shuffled (`DRIP_COUNTS`, the key `drip
+  counts`): each count is as likely for any roost, and no two roosts carry the same.
+- **Where along the edge.** Round the perch, where the bird faces in with its tail over the edge: a normal with the
+  roost's own spread, `DRIP_SPREAD` 1.5 to 18 cm (sd). A bird that always faces in at one spot leaves drips that merge,
+  one that wanders along the ledge leaves them more than 20 cm apart. A place where the lip starts no path is drawn
+  again (`TRIES`).
+- **How far each runs.** A roost's n drips take one n-th of `DRIP_L` 4 to 30 cm each, in a drawn order (stratified): of
+  two, one runs under 17 cm and one over; three split the range in thirds. The run is along the surface, the paste's and
+  its tail's together.
+- **The rest** each drip draws for itself (the table below): its heaviness and age, the paste's width, its head, flare,
+  taper, neck, slugs and bends, whether it ends in a bulb or a thin tail, and how far it holds to an underside.
+
+**Its path** (`trace_drip`), walked as runoff's film is, by level rays from the street every `PROFILE_DZ` 1 mm down its
+axis to `PROFILE_H` 45 cm: it starts on the ledge's own front (masonry within `FRONT_TOL` 3 cm of the edge's depth, at
+or under the top) and runs on over masonry while a step stands no more than `CATCH_P` 3 cm out (further, a surface
+standing out catches it on its top: `caught`) and no more than `CREEP_P` 4.5 cm back (a bead, a cove, a fillet's rounded
+arris are crept round; deeper, it drips off the edge: `edge`), to its run along the surface (`length`), or until the
+masonry ends (`surface`). Its paste hangs off an underside that faces down further than its cling (`CLING` 0.72 to 0.98,
+its normal's z) for `HANG_MIN` 6 mm on end; the rounding of an arris it creeps round is no underside. Its thin liquid
+tail follows whatever surface the path does. The path notes the arrises it crosses: a step of more than `ARRIS_STEP` 4
+mm, or a turn of the surface by more than `ARRIS_DEG` 20 degrees over two samples; convex where it turns further down,
+concave where it turns back. On both roosts' mouldings the path crosses a fillet or fascia, a crept step of 1.4 to 2 cm,
+and a bed moulding's ovolo whose foot faces down at 0.89 (Broadway) and 0.83 (3rd Street). Broadway's ovolo ends on a
+2.4 cm fillet over a 5 cm step back to its teeth (9 cm between them), where a drip drips off; 3rd Street's on a 2 cm
+fillet over teeth only 1 cm back, which a drip creeps onto and runs down, to drip off their foot 5 cm over the band (or
+off the fillet, 5.5 cm over the gap between two teeth).
+
+**Its shapes** (`drip_shapes`), in (s, t), t down the surface along its path:
+
+- the **head**, the dropping that went over the lip: an ellipse `HEAD_W` 1.7 to 3.0 times the paste's half-width wide
+  and `HEAD_H` 3.5 to 9 mm tall (half), its middle `HEAD_AT` 1 to 4 mm under the lip, turned by up to `HEAD_TILT` 0.3
+  rad, with one to three lobes (`LOBE_P` 1, 0.6, 0.25; `HEAD_LOBE` 0.30 to 0.65 of it, 0.5 to 1.0 of it off its middle,
+  along the lip or down: within `LOBE_TURN` 0.85 half-turns of straight down, never up past the lip) and up to `SPATTER`
+  two spatters round it (1.5 to 2.5 mm, 1.3 to 2.3 of it off its middle). Its part on the top lies among the droppings:
+  a splat 0.9 of the head's width along the edge and `LIP_D` 3 to 8 mm deep (half), reaching the edge, set off along it
+  by up to 0.3 of the head.
+- the **paste's run**, a chain of round segments every `DRIP_SEG` 1.5 mm: its half-width `DRIP_W` 2.5 to 6 mm where it
+  leaves the head, `FLARE` 30 to 90% wider right under it (e-fold `FLARE_E` 1.2 cm), thinning to `DRIP_THIN` 40 to 75%
+  of that at the paste's end as (t / its run) ** `DRIP_TAPER` 0.5 to 1.3; in three drips of four (`NECK_P`) a neck, to
+  `NECK_D` 50 to 85% over `NECK_L` 0.5 to 1.5 cm (e-fold) at `NECK_AT` 25 to 70% of the run; up to `SLUGS` three slugs,
+  swellings where the paste paused on its way down (`SLUG_W` 1.25 to 1.85 times wider and thicker, e-fold `SLUG_L` 0.6
+  to 1.5 cm, at 15 to 95% of the run); thinned to `ARRIS_NECK` 70 to 92% over a convex arris (stretched over it) and
+  gathered to `ARRIS_POOL` 105 to 125% in a concave one (e-fold `ARRIS_E` 4 mm). Its axis leans by up to `LEAN` 1.5% of
+  its run, bends `BENDS` one to three times by `BEND_A` 1.5 to 4.5 mm either way (each over `BEND_L` 1 to 3 cm, at 10 to
+  90% of the run) and slips `ARRIS_SHIFT` 0.4 to 2.5 mm sideways under each arris: a meander of a few millimetres that
+  follows the moulding.
+- its **end**: a *pendant*, `PENDANT` 1.5 to 2.3 times the half-width there, where the paste hangs off an underside or
+  the surface under it ends; else, at its own run, a *bulb* (`END_BULB`, half the drips: `BULB_R` 1.25 to 2 times the
+  half-width there, at least `BULB_MIN` 2 mm, `BULB_LONG` 1 to 1.45 times as long as wide), or a *tail* (the other half:
+  its paste runs `PASTE` 35 to 75% of its run, and the liquid the rest, `TAIL_W` 0.9 to 1.6 mm half-width, `TAIL_V` 12
+  to 30% of the head's deposit, broken into `TAIL_DASH` two to four dashes with gaps of `TAIL_GAP` 15 to 45% of a dash
+  between them, thinning, ending in a `DROPLET` 1.2 to 2.2 mm). A tail runs on where the paste could not, round a
+  moulding's underside and over its foot onto the next member.
+
+The deposit (thickness): the head 0.95 of the drip's heaviness (`DRIP_V` 0.40 to 1.00), its lobes 0.80, the spatter
+0.70, the run 0.75 at the head falling to 0.50 at its end (`BODY_V`, times the square root of what the neck, slugs and
+arrises make of its width: thicker in a slug, thinner in a neck), a bulb 0.90, a pendant 0.95; a dome across each shape,
+the chain's segments counted once. Each drip's age (`DRIP_AGE` 0 to 0.85) sets its tone.
+
+| drawn | for | bounds |
+|---|---|---|
+| the drip counts | the building | 1, 2 and 3 shuffled among the roosts (`drip counts`) |
+| how widely its drips spread along the edge round the perch; the film's blur round them | each roost | 1.5 to 18 cm (sd, `DRIP_SPREAD`); 3 to 5 mm (`HALO_DE`) |
+| the order its drips take the shares of `DRIP_L` | each roost | a drawn order |
+| its place along the edge (and again, `:try:<t>`, where the lip starts no path) | each drip | a normal round the perch |
+| its run; heaviness; age | each drip | its share of 4 to 30 cm; 0.40 to 1.00; 0 to 0.85 |
+| the paste's half-width, flare, thinning and taper | each drip | 2.5 to 6 mm; 30 to 90%; to 40 to 75%; 0.5 to 1.3 |
+| its head: width, height, depth under the lip, turn; lobes and spatter | each drip (`:head` for lobes and spatter) | 1.7 to 3.0 half-widths; 3.5 to 9 mm; 1 to 4 mm; +-0.3 rad; one to three lobes, none to two spatters |
+| its neck, slugs and bends; its lean | each drip (`:shape` for slugs and bends) | as above |
+| its slip and its thinning or gathering at each arris | each arris it crosses (`:arris:<k>`) | 0.4 to 2.5 mm either way; 70 to 92% (convex), 105 to 125% (concave) |
+| its end: bulb or tail; the paste's share of a tailed run; a bulb's, a pendant's size | each drip | half and half; 35 to 75%; as above |
+| its cling | each drip | 0.72 to 0.98 of straight down |
+| its tail's width, deposit, dashes, gaps and droplet | each drip (`:tail`) | as above |
+| where its head's part on the top lies | each drip | 3 to 8 mm behind the edge, +-0.3 of the head along it |
+
+As built (the build prints one line per drip; published as `drips`):
+
+| roost | drip | run drawn | paste | end | reaches (along the surface) | stops at z | what it looks like |
+|---|---|---|---|---|---|---|---|
+| Broadway, E:21.34:5.42 (one drip, spread 4.8 cm) | s 21.482 | 14.4 cm, the whole range its stratum | 14.4 cm, its own | a bulb | 14.6 cm | 5.302, 11.4 cm under the lip, 3 cm above the ovolo's foot | fresh (age 0.07), heaviness 0.59; a head 10.3 x 6.1 mm with two lobes and a spatter; 4.0 mm half-width, necked to 0.63, three slugs, bends of 2.6, 1.9 and 3.3 mm; it crosses the fillet, creeps round its 1.4 cm step and runs three quarters of the way down the ovolo |
+| 3rd Street, S:36.70:16.74 (two drips 9 mm apart, spread 9.8 cm) | s 36.569 | 20.5 cm, the upper half | 18.1 cm: it hangs off the ovolo's foot (facing down 0.83, its cling 0.78) | a pendant | 18.6 cm | 16.594, 1.4 cm above the fillet | age 0.51, heaviness 0.67; a head 12.4 x 7.9 mm with two lobes; 4.6 mm, necked to 0.64, three slugs, bends of 3.5 and 3.6 mm |
+| | s 36.578 | 11.0 cm, the lower half | 11.0 cm, its own | a bulb | 11.3 cm | 16.649, halfway down the ovolo | older (0.78), heaviness 0.68; a head 11.8 x 4.9 mm with a lobe and a spatter, merged with the first's into one; 5.2 mm, necked to 0.71, one slug, a bend of 3.3 mm |
+
+So from the pavement Broadway shows one drip, a white head on the lip and a narrowing run with a bulb three quarters of
+the way down the moulding, and 3rd Street a broad grey head over a fork: one short run with a bulb, one longer with a
+pendant at the moulding's foot. Neither runs over the step onto the next member in this draw -- Broadway's stops above
+it on its own run, 3rd Street's longer paste hangs at it; tails and the higher clings do. The drips' draws salted 24
+ways over the same two roosts (a check, not the build) gave counts of one, two and three about
+equally at each (9, 9 and 6 at Broadway; 7, 8 and 9 on 3rd Street), 48 tails and 47 bulbs of 95 drips, 79 pastes that
+stopped on their own, 14 that hung off an underside and 2 at an edge, 28 drips running over the ovolo's foot onto the
+fillet (and on 3rd Street onto the teeth), and neighbours from 2 mm (merged) to 27 cm apart: 11 of 47 pairs merged
+under 1.5 cm, 3 over 20 cm, the median 3.5 cm.
+
+### The ledges
+
+Found on the model, not listed, as the first build found them. The flat masonry tops at least `H_MIN` 4.4 m over the
+pavement give the heights to scan (their triangles facing up, binned by 5 mm, bins within 1.2 cm cast as one: a sill's
+cap and the reveal floor 5 mm above it). At each height, every 2 cm along each face (every third column first, then
+every column near what that finds), a level ray from the street just above the height and one just below it: where the
+surface below stands at least `STEP_MIN` 6.5 cm in front of the one above, a ray straight down between them confirms a
+flat masonry top at that height, and its **standing depth** runs from what stands on it (a wall, a pier, a window frame:
+the upper ray's hit) to its outer edge (the lower ray's). A top with nothing on it (the crown's) runs back to its own
+inner edge, found by halving (to 6 mm). Tops a few millimetres apart whose depths touch are one surface (a sill's cap
+and the window reveal's floor behind it; the ground floor crown's foot and floor 2's reveal floors). The fire escapes
+are looked through, as runoff's elevation does. 460,247 rays, about 22 s. Each ledge keeps its footprint per 2 cm column
+-- its back's and edge's depth and the heights found -- which a roost's deposit lies on.
+
+| ledge | height | sites | length | standing depth | use: median, max |
+|---|---|---|---|---|---|
+| the ground floor cornice | 5.42 | 112 | 150.7 m | 0.21 | 0.17, 0.56 |
+| the portals' crown mouldings | 5.42 | 69 | 14.0 m | 0.33 | 0.22, 0.56 |
+| the openings row beside them (the openings' floors) | 5.42 | 72 | 13.0 m | 0.46 | 0.49, 0.49 |
+| the ground floor crown's foot: its shelf; the rest | 6.09; 6.29 | 19; 216 | 70.5; 89.8 m | 0.07; 0.34 | 0.00, 0.21; 0.17, 0.54 |
+| floor 2's reveal floors, on the crown | 6.29 | 81 | 85.3 m | 0.51 | 0.22, 0.59 |
+| floor 3's sills: before the windows; before the mullions | 9.64 | 81; 93 | 85.3; 17.7 m | 0.26; 0.08 | 0.23, 0.42; 0.02, 0.03 |
+| floor 4's sills, the same | 12.64 | 81; 120 | 85.3; 23.8 m | 0.26; 0.08 | 0.35, 0.58; 0.03, 0.04 |
+| the capitals' abaci | 15.63 | 22 | 19.6 m | 0.14 | 0.36, 0.39 |
+| the band's top between floors 4 and 5 | 16.74 | 104 | 93.7 m | 0.40 | 0.44, 0.88 |
+| the band's top in the top floor's window reveals | 16.74 | 81 | 83.8 m | 0.71 | 0.74, 1.00 |
+| the impost course | 18.05 | 132 | 76.4 m | 0.10 | 0.14, 0.82 |
+| the crown's top | 20.73 | 5 | 181.0 m | 0.90 | 0.56, 0.56 |
+
+What the scan leaves is as telling: the crown's dentil shelf and the band's moulding step less than 6.5 cm (no standing
+room), the portal's keystone and capitals stand at 4.2 m (under `H_MIN`), and a pocket or a mitre narrower than
+`SITE_MIN` 10 cm (a bird's width) is a sliver.
+
+### The sites, their use and the candidates
+
+Along a ledge a **site** is a stretch with one wall behind it; it ends where that wall steps by `RETURN_MIN` 3 cm or
+more. Stepping forward, the step is a **return**: an inner corner a bird tucks into (a window reveal's jamb, a pier's
+side, a pier block standing on the cornice, an opening's side), which tucks it in as deep as the step or the ledge,
+whichever is less; stepping back, or where the ledge ends, it is none. Per column, a site offers standing room (a
+smoothstep of its standing depth from `DEPTH` 6.5 to 15 cm, and `ROOM_GAIN` 60% more from `ROOM` 0.25 to 0.60 m), height
+(none under `H_MIN`, `HEIGHT_FLOOR` 0.35 at 5 m, all of it from 15 m: the low ledges are within a ladder's reach and
+kept clean) and protection over the space a bird occupies (565's `shelter`, or `ENCLOSE` 0.60 of its `1 - open`; an
+exposed run keeps `EXPOSED` 0.35), their product its **use**, at most 1.
+
+A **candidate** is a return at least `TUCK` 3 cm deep: its plausibility p is the site's use at that end times the
+smoothstep of the tuck from 3 to 15 cm; a corner under `P_MIN` 0.10 is none. The crown's top has no returns, so no
+roost. The choice (`choose`):
+
+- the **first** roost is the best key among the corners on the Broadway front (`FRONT`) within `FRONT_REACH` 8 m of the
+  Broadway portal's axis (found from the portal instances' extent: `PORTAL_C` at s 15.93) and under `FRONT_H` 15 m over
+  the pavement. It is where the Commons photo shows a pigeon on the portal's crown moulding, and where the street views
+  look: from the pavement a top above eye level cannot be seen, so the street sees a roost by its drips, and under the
+  band they are near enough to read;
+- **each next** is the best key among the corners that differ from every roost chosen in family (the ledge the bird
+  stands on: sill, crown foot, band top, openings row, portal crown moulding, cornice, impost course, abacus, crown top;
+  a window's sill is named for its ledge, so a top-floor reveal is the band top and floor 2's reveal floor the crown's
+  foot), in face, and by `STOREY` 2.5 m in height.
+
+### A roost's deposit
+
+A roost's deposit lies on its **stretch**: its ledge's columns from `X_BEHIND` 25 cm past its return (in front of the
+return's own wall, where the ledge runs on) to `X_OUT` 75 cm into its site, as far as the ledge runs unbroken. The bird
+has two places (the table above): tucked into the corner facing out, its droppings falling behind it into a pile
+against the back wall; and at the edge in front, watching the street, its droppings falling a few centimetres behind
+the edge, and when it turns to face in, over it (the drips). On a shallow sill the two nearly meet; in a deep reveal
+they lie half a metre apart. Each dropping draws its own place round one of them, its age, size, elongation, turn, lobes
+and satellites, or is a smear; a fresh one may show its dark core; a dropping drawn off the top (behind a wall, past the
+edge, where the ledge ends) is drawn again. The walls cut a dropping that lands against them and the edge one that
+overhangs it: the ledge's own geometry gives the outline there. Each drip's head adds its part on the top at the edge.
+
+Each dropping is an ellipse (or a capsule for a smear), a dome `1 - q^2` across it. They are rasterised on the roost's
+**block**, its stretch unrolled in (s, depth) at `TAU` 2 mm a texel (coarser where the stretch would not fit the atlas's
+free rows or its face's region), into four fields:
+
+- the **outline** of their union, as the signed distance to its edge (0.5 on it, over `SDF_SPAN` 8 mm to either side):
+  the lookup's bilinear filter keeps a curved edge smooth and crisp at any texel, where a thresholded coverage turns to
+  texel staircases (the first cut of this rework showed them);
+- the **deposit**, `1 - exp(-SAT x the domes' sum)` (`SAT` 1.25): where droppings overlap it builds up, and round the
+  whole the `HALO` 0.25 film, the deposit blurred 1.2 to 2.5 cm (drawn per roost);
+- the dark **cores**' outline, as the droppings';
+- their **age**, each dropping's weighted by its dome (the roost's mean at a rim, where a dome thins to nothing).
+
+Nothing inside a mark is noise: its irregularity is its droppings', their outlines cut by the ledge.
+
+### The mask
+
+`masks/pigeon.png`, 2 cm, four 8-bit channels (9620 x 1060, 41 MB of VRAM). Everything the shader reads lies in
+**blocks** in the atlas's free rows under `Z_DRIP` 4.5 m (rows 0.1 to 4.4 m, where no drip is), each ringed with
+`BLOCK_PAD` 3 empty texels, in its own face's region, one atlas texel per block texel at the block's own scale:
+
+- **a roost's top block**, its stretch in (s, depth) (above): R the droppings' outline, G their deposit, B the cores'
+  outline, A their age;
+- **a roost's curtain block**, the face under its edge in (s, z) at `TAU_C` 2 mm (coarser only where it would not fit),
+  from `CURTAIN_UP` 6 mm over the lip (its arris) to 1.5 cm under the lowest drip's shapes and 2.5 cm past them along
+  the face (`CURTAIN_PAD`). A drip's shapes lie in (s, t) along its own path, so each texel is filled at the t where its
+  drip's path passes that height (`t_along`: over the lip on up the arris, under its end on down at its last slope), and
+  a drip on a moulding's underside is as long as its paste ran there however little height that takes. R the outline of
+  the heads', runs', bulbs' and pendants' union as a signed distance (a tail and its droplet are deposit only: soft);
+  G their deposit, `1 - exp(-SAT x the sum)` with the `HALO_D` 0.30 film round it, blurred 3 to 5 mm; B the depth of the
+  surface the drip nearest the texel ran on at that height, over its whole box (`enc_d`, -0.70 .. +1.00), so the
+  lookup's filter is exact at an edge; A their age, each drip's weighted by its deposit. As built 43 x 68 texels
+  (Broadway) and 43 x 85 (3rd Street).
+
+A ledge's top is one row of the atlas (every point of it stands at one height) and a drip's outline needs millimetres,
+so the shader cannot read either where it lies. It holds each block as constants instead -- the `roosts[i].top` and
+`roosts[i].curtain` its build published, which it reads as `g.result` -- and reads them with two lookups:
+
+- a surface facing up (`upward` 0.85 to 0.95), of masonry, on a top's face, within 6 mm of the heights its stretch was
+  found at (plus half their spread; 3 mm soft) and inside its extent reads the top block at `u = (off + c0 x 2 cm + (S -
+  s_lo) x 2 cm / tau) / W`, `v = (r0 x 2 cm + (D - d_lo) x 2 cm / tau) / H`;
+- any other masonry surface on a curtain's face inside its extent (s_lo .. s_hi, z_lo .. z_hi) reads the curtain block
+  at the same u and `v = (r0 x 2 cm + (Z - z_lo) x 2 cm / tau) / H`, and takes it where its depth D lies within 1.5 cm
+  of the depth the block holds (fading to 3 cm): the lip's arris, a fascia, a moulding's underside, the next member,
+  but not the wall behind the lip nor a return beside a drip.
+
+The facade's own rows (above `Z_DRIP`) hold only each drip's deposit pooled to 2 cm in R, for the published field and
+the layer's elevation images (`elevation(canvas)` draws it grown by a texel to either side, so the elevations' 5 cm grid
+does not fall between a centimetre-wide drip's texels); the shader does not read them. 16 texels on Broadway and 25 on
+3rd Street (the rework's facade rows held 36 and 58).
+
+### The look
+
+Inside a dropping's outline (its edge within `EDGE_W` 0.05 of the code's 0.5, about a millimetre) its crust covers
+`CRUST_RIM` 0.30 at its thin rim and all of `CRUST_COVER` 0.88 where its deposit passes 0.05 to 0.60 (`CRUST`; never
+more than `COVER_MAX` 0.94). Its colour is its age's: `FRESH_COL` (0.62, 0.61, 0.57) linear, an off-white, while it is
+younger than `TONE` 0.15, weathering to `OLD_COL` (0.26, 0.245, 0.21), a grey-beige, by 0.85; where droppings build up
+(`WHITE` 0.60 to 0.95 of deposit) it whitens by up to `BUILD` 0.35. A fresh dropping's core, where it shows, is
+`CORE_COL` (0.10, 0.095, 0.075) at `CORE_COVER` 0.55. Round the droppings the film is a grey-brown stain, `STAIN` (0.21,
+0.20, 0.18), from `THIN` 0.03 to 0.20 of deposit, at most `STAIN_COVER` 0.45, held `JOINT_FILM` 60% longer in a brick
+top's joints; where the film round the heaviest runs `ETCH_T` 0.08 to 0.25 the surface is etched, `ETCH` 0.35 toward its
+own colour `ETCH_GREY` 0.30 greyed and tinted `ETCH_TINT` (1.12, 1.09, 1.02). A dropping stands `RELIEF` 0.6 mm proud
+where its deposit is whole: a Bump node on the surface's own normal, which the renderer reads again at its offsets (2
+mm, the first try, tilted every rim toward the sun and turned the weathered droppings white).
+
+A drip is urates carried over the edge, translucent and chalky where it thins: inside its outline it covers `DRIP_RIM`
+30% of `DRIP_COVER` 0.82 where its deposit is thin and all of it where the deposit passes `DRIP_T` 0.20 to 0.75 -- a
+film the stone shows through along its run, a crust at its head, slugs, bulb and pendant; outside its outline its tail
+and the film round it cover up to `FILM_D` 0.35 from `FILM_T` 0.04 to 0.25 of deposit. Its tone is `DUNG` (0.40, 0.385,
+0.35), a chalky warm grey, where it is thin or old, toward `FRESH_COL` where it is both thick and young (its age as a
+dropping's, whitened where it builds up); it is etched round its heaviest as the droppings' film is, and stands
+`RELIEF_D` 0.4 mm proud where its deposit is whole. Everything either covers turns at least `MATTE` 0.90 rough. It
+stands at ORDER 260, over the other deposits (soiling 200 .. rust 250), under the glass (300); every change is mixed
+from the chain's input by an amount with the strength a factor, so strength 0 renders exactly what came in.
+
+### Calibration
+
+Measured in rendered pixels at the scene's defaults: the linear luminance over the pixels the pigeon changes (by more
+than 3% and by more than 0.004, 0.002 in shade), against the same pixels with `wear_pigeon=0` (every other feature on in
+both), in a box round the drips for the face-on and street views and over the whole frame for the close-ups from above
+(`critique_r1/diff/calibration.json`; in brackets the rework's, measured the same way on the same poses):
+
+| | the Broadway roost, sun | the 3rd Street roost, shade |
+|---|---|---|
+| from above, the droppings on the top and the drips' heads: 10th percentile, median, 90th; the brightest 6 px box (a heap) | 1.09, 1.38, 1.71; 2.37 (1.09, 1.36, 1.70; 2.37) | 1.31, 1.86, 4.08; 6.35 (1.28, 1.78, 4.08; 6.37) |
+| the drips face on, from under the cornice: 10th percentile, median, 90th; the brightest box (a head) | 1.08, 1.25, 1.49; 2.34 (1.08, 1.23, 1.54; 2.40) | 1.32, 1.72, 2.56; 5.02 (1.20, 1.58, 1.93; 2.40) |
+| the drips from the far pavement (100 and 135 mm): median; the brightest box; pixels changed | 1.21; 1.35; 181 (1.19; 1.32; 408) | 1.67; 2.32; 323 (1.51; 1.60; 472) |
+
+The droppings read as the rework's did (the tops changed only at the drips' heads). A drip's paste reads as bright as
+the rework's bars did in sun, its thin parts a little fainter and its head a little whiter; in shade the merged pair's
+broad head reads five times the dark terracotta, as a heap on a top does. From the pavement each roost now changes about
+half the pixels it did, one drip or one forked mark where there was a ruled pair. The first build's calibration, on a
+floor 4 sill's heap, was 1.88 in sun and 4.96 in shade: a dropping reads about as it did, and what changed is where and
+how many. The references (`references/`, unaltered, as the first build studied them) bound the amount rather than
+measure it: the Commons photos, about 0.5 cm a pixel on the portal's crown moulding, show a pigeon standing on that
+moulding in front of a pier block, spikes along the moulding and the floor 2 ledge, and no whitewash on the spiked tops
+or the unspiked ones. So the building holds two or three roosts, each a lived-in spot rather than a stain: plain close
+up, a small white patch from across the street and, from the pavement, one drip under the Broadway roost's cornice, a
+white head and a thin run (in `st_portal` a faint tick right of the portal, 32 pixels over 5 levels where the rework's
+pair made 68). `DEFAULT_STRENGTH` stays 1.0; `wear_pigeon` 0.5 halves the covers, 2 doubles them up to their caps.
+
+### The debug view
+
+Red: every dropping in full (its outline) and its deposit from 1 / `DEBUG_GAIN` (a quarter) of the most, and every
+drip in full with its film. Each roost is marked by a line along its stretch's back edge `MARK_UP` 20 cm over the top,
+clear of the deposit on it, and an octahedron `ROOST_UP` 20 cm over its pile; each drip by a short path under where it
+stops (2 to 8 cm below it, in front of the surface). 4 sources (2 lines, 2 roosts), 4 marks (each roost's deposit and
+its drips), 3 paths. The perches that were not chosen are not drawn: they are candidates, listed in the published data,
+not marks. `wear=debug` with every other feature at 0 shows it alone (the command above).
+
+### Published
+
+No feature NEEDS pigeon (573's NEEDS are soiling, runoff, washed and street grime). `ctx.field("pigeon", key)`:
+
+- `sites`: every perch site, `dict(id, kind, family, facade, s0, s1, z, H, depth, edge, back, open, protection, use,
+  use_max, ends, top, behind)`;
+- `candidates`: every corner considered, `dict(id, site, family, facade, side, s, z, H, tuck, gap, p, key, chosen)`;
+- `roosts`: the chosen, `dict(id, site, family, kind, facade, side, s, z, H, tuck, gap, p, key, rule, pool, bird,
+  counts, drips, stretch, deposit, top, curtain)`: `bird` holds its draws (the pile's and the perch's place and spread,
+  the pile share, the droppings' count, the smear and core shares, the film's blur, its drips' count, spread and film
+  blur), `counts` what was composed, `deposit` its areas in cm2, and `top` and `curtain` what the shader reads;
+- `drips`: `dict(roost, facade, k, slot, s, z_top, z_stop, run, paste, tail, reach, end, paste_end, stop, hang, value,
+  age, w0, head, lobes, spatter, slugs, bends, cling, lean, neck, arrises)`: its draws and what its path made of them
+  (`paste_end`: own, hung, edge, caught or surface; `stop`: why its path ended);
+- `field`: the drips on the faces (0 .. 1), max-pooled to 4 cm, rows from `z0` up: `dict(res, z0, data, atlas, note)`;
+  the tops' deposit lies in each roost's block, the drips' own in its curtain;
+- `profile`: the choice's and the drips' constants and the rule.
+
+### What it changed in the framework
+
+`wear/nodes.py`: `build_feature_group(spec, result)` hands a feature's shader its own build `Result` as `g.result`
+(fresh, or loaded from the cache in a `features=` rebuild; `None` elsewhere): this feature's shading constants are what
+its build found. `build_library` passes `results.get(spec.NAME)`; every other feature's shader ignores it, and its
+masks, caches and objects are byte-identical (below). Before the rework, `wear/registry.py` listed `pigeon` and
+`wear/elevation.py` took a feature's own `elevation(canvas)`, as before. The drips' critique (2026-09-24) changed no
+framework file: the curtains are more blocks, read with a second lookup in the feature's own shader.
+
+Proved: the first build's code, run again with every other feature from the cache, reproduced the session's starting
+mask and cache exactly (`d4b01dc3...`); against that state the rework's full rebuild keeps every other mask and cache
+sha256-identical (`a2188273...` mortar erosion, `4e671621...` efflorescence, `f3437ed7...` rust, `026f11b4...` runoff,
+`aa9607ec...` soiling, `79618df9...` street grime, `e4b1f976...` washed, `37806c0b...` probe, and the edge wear and
+glass grime caches), and a per-object hash of the worn files (mesh, every attribute, material slots, transform,
+instancing, custom properties) differs only in the pigeon's own markers `wear_src_pigeon` and `wear_path_pigeon`: 2697
+objects in the worn block (2275 of the block, 21 markers, 401 geometry objects), 460 in the worn portal. The drips'
+critique fix, against the state it started from: a full from-scratch rebuild changes only `masks/pigeon.png`
+(`9f5c40ae...` to `8f9146e1...`), `cache/pigeon.pkl`, the object `wear_path_pigeon` (the drips' paths) and the node
+group `WEAR_F_pigeon`; every other mask and cache, every other object of the worn block and the worn portal (2697 and
+460) and every other node tree hash the same, and a `features=pigeon` rebuild reproduces the mask and cache byte for
+byte. Cost: about 23 s of build (22 s the ledge scan, 1,365 rays for the drips' paths); the shader reads a top block
+and a curtain block, two lookups for all roosts.
+
+### Evidence
+
+In `tests/artifacts/screens/bradbury_wear/rework/pigeon/`, the sheets at half size from full-size stills at the scene's
+defaults; "before" is the first build's pigeon with every other feature as it now is (its code run again, with the
+rest from the cache), "snapshot" the frozen state before this review pass (`wear_snap_rework_before/`):
+
+- `closeup_*` (the Broadway roost from above, the rework's close-up), `medium_*` (the same in context), `r2_close_*`
+  and `r2_medium_*` (the 3rd Street roost): `_before_after`, `_off_on_debug` (off | on | debug with the pigeon alone),
+  `_snapshot_after`;
+- `sills_bway_before_after.png`: Broadway's floor 4 sills from 7 m out, where the first build's pattern showed (a heap
+  and drips at every window), now clean, with both debug views; `st_up_debug_before_after.png`: every perch marked, then
+  the two roosts;
+- `<camera>_before_after.png` for the five cameras (off | before | after), and `st_portal_crop_x4.png`, the Broadway
+  roost's two drips as the street saw them;
+- `elevations/`: each face's droppings before and after (`pigeon_<face>_before_after.png`, the roosts circled), the
+  rework's `pigeon_E.png` and `pigeon_S.png`, and the first build's stale N, SE and W images (the layer does not delete
+  a feature's elevation that it no longer draws);
+- `blocks/`: each roost's top block drawn top-down, unlit, as stored;
+- `renders/` (the full-size stills), `diff/` (the heat images, `summary.json` with each camera's footprint, the first
+  build's against the rework's, `calibration.json`), `references/`, `poses.json`, `audit/` (the roosts and candidates).
+
+The drips' critique fix, in `critique_r1/`, the same way; "before" is the rework's pigeon (its code run again, which
+reproduced its mask `9f5c40ae...`, with every other feature as it now is), and every still was rendered in one sitting
+after the GPU driver was reinstalled (below):
+
+- `closeup_off_before_after_debug.png` (the report's close-up: the Broadway roost's droppings on the cornice top and its
+  drip; off | before | after | debug with the pigeon alone) and `S_close_off_before_after_debug.png` (the 3rd Street
+  roost the same way);
+- `E_face_off_before_after_debug.png`, `S_face_off_before_after_debug.png` (each roost's drips from under its cornice)
+  and their crops `E_face_crop_x2.png`, `S_face_crop_x2.png`;
+- `street_E_x4.png`, `street_S_x4.png` (the critique's far-pavement views, 100 and 135 mm, cropped round the drips: off
+  | before | after), `street_both_before_x4.png` and `street_both_after_x4.png` (the two roosts side by side: the same
+  ruled pair twice, then one drip against a fork);
+- `st_portal_off_before_after.png` and `st_portal_crop_x8.png` (the Broadway drip as the street camera sees it),
+  `<camera>_off_after.png` for the other four cameras, `medium_off_before_after.png`, `r2_medium_off_before_after.png`,
+  and the rework's poses from above, `old_closeup_before_after.png` and `r2_close_before_after.png`;
+- `blocks/`: each roost's curtain as stored (deposit grey, outline red, rows up the face, the depth code beside it);
+  `variety/`: the drips' draws salted 24 ways over the same two roosts (a check of the rule, not the build: salt 0 is
+  the build), a sheet of the first twelve and one line per drip; `elevations/`: this build's `pigeon_E.png` and
+  `pigeon_S.png`;
+- `renders/` (`before/`, `before2/` the rework at the two new close-ups, `after/`, `off/` the pigeon at 0, `layer_off/`
+  the scene switched off, `prewear_again/` the frozen pre-wear project rendered again), `diff/` (`footprint.json`,
+  `calibration.json`, `layer_off_check.json`), `poses.json`; `crashed_run/` holds three half-size framing stills from a
+  first attempt at this fix that a crash cut off, not evidence.
+
+| camera | the pigeon on vs at 0: mean; share over 2 levels | the layer off vs the frozen pre-wear project rendered again | that render vs the pre-wear still of 2026-09-23 |
+|---|---|---|---|
+| `st_portal` | 0.0094; 0.003% (the rework's 0.0105; 0.008%) | 0.0077; 0.0004% | 0.295; 1.72% |
+| `st_corner` | 0.0073; 0.004% | 0.0087; 0.005% | 0.295; 2.09% |
+| `st_along` | 0.0077; 0.002% | 0.0069; 0.002% | 0.384; 4.89% |
+| `st_up` | 0.0072; 0.004% | 0.0058; 0.0001% | 0.272; 2.12% |
+| `hero_3q` | 0.0108; 0.003% | 0.0097; 0.001% | 0.355; 2.47% |
+
+Only `st_portal` changes a pixel by more than 8 levels (0.0016%, the Broadway drip; the rework's pair 0.0033%). The
+layer switched off no longer sits at the noise floor of the pre-wear stills (`series/final/before/`, 2026-09-23): it
+differs from them by 0.27 to 0.38 levels, 1.7 to 4.9% of pixels by more than 2. So does the frozen pre-wear project
+itself (`tests/artifacts/blender/bradbury/wear_before/bradbury_scene.blend`, rendered again now from its own cameras),
+by the same amounts, and the layer switched off matches that fresh render at the noise floor (0.006 to 0.010). The
+renderer changed, not the scene: every file the frozen scene reads predates its stills, and the NVIDIA display driver
+(617.14) was installed again on 2026-09-24 at 22:23, after the computer crashed; the shift lies on the building and not
+on the sky, as a changed denoiser's would. Until the pre-wear stills are rendered again, the layer off is checked
+against `critique_r1/renders/prewear_again/`.
+
+## Mortar joint erosion at exposed courses (AI 573)
+
+`wear/features/mortar_erosion.py` (`wear_mortar_erosion`, lime in the debug view): the brick's mortar joints recessed
+where water reaches the wall most, flush where it is sheltered. Rain and runoff wash the binder out of the mortar, the
+joint's face sinks back from the brick's and the arrises it covered are laid bare, so the joint reads deeper, a little
+wider and catches shadow; the ICOMOS-ISCS glossary files it under erosion, the loss of material from a surface.
+Wind-driven rain beats hardest on a facade's top edge and top corners (Blocken & Carmeliet 2013), and concentrated
+runoff below ledges and splash above a base wet the wall again and again. Every eroded joint lies where one of three
+measures of that water puts it, each found on the model by an earlier feature; how far the erosion has got differs from
+one drop of the facade and one corner of the block to the next, drawn from seeds (the rework of 2026-09-23, below); the
+change follows the brick set's own joints and leaves the brick faces as they are; nothing is placed by noise, and the
+mask is the same from one build to the next.
+
+```
+blender -b -P wear_layer.py -- features=mortar_erosion      # its mask alone (about 9 s), the rest cached
+blender -b -P render_wear.py -- wear_mortar_erosion=0 cam=16.55,19.25,13.6:16.55,17.577,13.5:50   # off; 1 is the default
+blender -b -P render_wear.py -- wear=debug wear_soiling=0 wear_runoff=0 wear_washed=0 wear_street_grime=0 wear_rust=0 wear_efflorescence=0 wear_edge_wear=0 wear_glass_grime=0 wear_pigeon=0 view=hero_3q
+```
+
+It NEEDS soiling, runoff, washed and street_grime, whose published fields it reads, and stands first in the shader
+chain (ORDER 100).
+
+### The water: three sources
+
+| source | measured by | on this block | sources | share of the eroded texels |
+|---|---|---|---|---|
+| the wind-driven rain | 566's refined exposure against its general level, gated by 565's shelter | the corner pavilions' upper floors, strongest on their top floor and near the block's corners; the middle pavilions' top floor; the arch rings round the pavilions' top-floor windows | 109 exposed fronts | 55% |
+| the runoff | 564's streaks, each walked down the elevation as 564 walks it | the crown's curtain on the top courses under it; the streams from the sill ends and the feet of the brackets and capitals; faintly under the band and the impost course | 652 streaks | 35% |
+| the splash | 567's splash profile, measured up from the base's top | the lowest courses of brick on the ground floor crown's top (6.29 m) | 86 runs of ledge | 10% |
+
+847 sources, 847 marks, 737 paths. They combine as the most of the three at each texel, and each is taken as far as the
+mortar of the drop it lies on has got (below). About three tenths of the brick the street sees is eroded at all (376 m2
+of 1253 from 0.05, on 565's 5 cm elevation of the brick) and an eighth more than half (154 m2; 394 and 195 m2 before the
+rework); the rest keeps its joints as the texture draws them.
+
+### The rain
+
+The measure is 566's own (`ctx.field("washed", "exposure")`): 565's sweep of the wind-driven rain, `open` times the
+wind's `catch`, with the projecting fronts' catch raised, and its `general` level, the open masonry's median (0.544). A
+joint erodes where its surface takes clearly more rain than the general facade: by a smoothstep of E / E_gen from `X`
+1.15 to 1.35, so the zone's edges fade with the measure itself, and never where 565's overhangs keep the rain off
+(`SHELTER`: gone from a shelter of 0.10 to 0.25; 566's advice was never above about 0.2). Over the brick, by floor
+(medians, 2 cm texels of brick, windows left out; the measure alone, before each drop's mortar and each corner's wetting
+take it, below):
+
+| where | E / E_gen | floor 2 | floor 3 | floor 4 | top floor |
+|---|---|---|---|---|---|
+| the pavilions at the block's SW, NW and NE corners, both faces | 1.1 to 1.48 | 0 | 0 (0.78 at p90) | 0.24 (1.0 at p90) | 0.84 |
+| within a metre of the SW corner; 3 to 5 m in from it | | 0.05; 0 | 0.58; 0 | 1.0; 0.05 | 1.0; 0.64 |
+| the chamfer's pavilion and its neighbours (SE) | 1.1 to 1.32 | 0 | 0 | 0.40 | 0.78 |
+| the middle pavilions (N, S) | 1.2 to 1.34 | 0 | 0 | 0.05 | 0.65 |
+| the recessed bays, the top floor's recessed wall | 0.80 to 0.96 | 0 | 0 | 0 | 0 |
+
+So the erosion is strongest at the top corners and down the block's corner arrises, as the review has it, and within a
+zone every joint takes about the same (a pavilion's top floor is a plateau at its drop's depth). The zones are traced as
+566 traces its fronts: 4-connected texels of like depth, 20 texels (0.05 m2) at least (79 slivers of one to three
+texels are left out). Each is one area source, its outline in the debug view, and names the drop it lies on.
+
+### The runoff
+
+Each of 564's streaks (`ctx.field("runoff", "streaks")` with its `sources`) is walked down the elevation from its source
+exactly as 564 walks it -- its `Elevation` and `walk` on 2 cm texels, the fire escapes looked through, its shape across
+the streak (`lateral`, `SPREAD`, a sill end's jamb-hugging profile, a curtain's soft ends), a capital's creep-back and
+first columns -- so every stream stops where 564's film stops: caught by a surface further out, thrown off by an edge,
+or at `LEN_CAP` of its deposit's e-folds. The water runs `WATER_K` 2 times as far as the dirt it drops (its value falls
+as exp(-t / (2 e-fold)), cut where 564's streak ends), and the joints erode by a smoothstep of it from `RUN` 0.10 to
+0.45. Each stream carries the water 564 drew for its source (564's rework): its value, and for a capital, whose value
+573 works out from 564's constants and its creep-back, the square root of its drawn water, read off its e-fold as 566
+reads it (before the rework every capital eroded at 0.93 whatever 564 drew). A curtain spreads its course's water along
+a whole drip line and counts `CURTAIN_SHARE` 0.6 of a stream's. As built, each stream also taken as far as the mortar of
+the drop it runs on has got (below; 1 off the drops, which is where most streams run):
+
+| streak | count | 564's value | erosion at the source | runs | area |
+|---|---|---|---|---|---|
+| sill end, down the jamb's inside corner | 149 | 0.55 (0.14 to 1.00) | 1.00 (0.00 to 1.02) | 1.46 m (0.44 to 2.48) | 19.5 m2 |
+| bracket's foot (566's rinsed streams) | 179 | 0.53 (0.14 to 0.64) | 1.00 (0.02 to 1.00) | 0.35 m to the window head (to 1.61 down a mullion) | 11.2 m2 |
+| column capital's foot | 21 | 0.40 (0.16 to 0.45) | 0.76 (0.06 to 1.00) | 1.82 m (0.76 to 2.06) | 14.7 m2 |
+| springing capital's foot | 41 | 0.40 (0.15 to 0.48) | 0.92 (0.04 to 1.04) | 0.99 m (0.53 to 0.99), to the band's top cornice | 8.5 m2 |
+| the crown's curtain | 5 runs | 0.66 | 0.92 (0.18 on the repointed chamfer, 1.02 under a heavy top lift) | 0.22 to 1.04 m, to an arch ring or the impost course | 102.8 m2 |
+| the band's curtain | 213 runs | 0.28 (0.22 to 0.41) | 0.09 (0.02 to 0.36) | 0.70 m (0.70 to 1.78) | 50.5 m2 |
+| the impost course's curtain | 44 runs | 0.27 (0.21 to 0.30) | 0.07 (0.01 to 0.13) | 0.76 m (0.64 to 0.90) | 15.6 m2 |
+
+Before 564's rework the table read 156 sill ends at 0.47 to 0.85 (1.68 m, 26.8 m2), 186 brackets at 0.55 (15.9 m2), 22
+column and 42 springing capitals at 0.40 (20.7 and 13.6 m2) and the band's and the impost's curtains at 0.30 and 0.29
+(59.1 and 18.1 m2). A stream at or above `RUN`'s top erodes in full, so most sill ends and brackets keep the calibrated
+look at their source and differ in how far down and how wide they erode; the light ones, which 564 now draws, erode less.
+Since 564's critique fix (2026-09-25) a capital sheds by one to three drips, each a narrow stream of its own, and 573
+walks each drip as it walked the capital's sheet, as wide as the drip at the foot: 12 of the 30 column-capital drips
+erode any brick (0.43 m2 in all) and 23 of the 37 springing ones (0.61 m2), where the rows above read 14.7 and 8.5 m2;
+the flat panels of eroded joints under the capitals went with the sheets (see "A capital's drips" in 564's section).
+
+The crown's curtain is what erodes the top courses under the crown: 565's shelter keeps the direct rain off them (the
+recessed top floor takes 0.89 to 0.96 of the general facade's), but the water that creeps back along the crown's
+underside runs down them, and so the rain's shelter gate is not applied to the runoff. The ground floor crown's, the
+string course's and the portals' mouldings' curtains (16 runs) run over stone only and are left out.
+
+### The splash above the base
+
+567's splash zone (`ctx.field("street_grime", "zone")`) lies on the stone under 1.2 m, and no brick stands in it: the
+brick begins at 6.29 m, on the ground floor crown's broad top, the top of the stone base (the pier ring's first joint
+groove, 0.915 m, is above the band's top as well, and its joints are geometry, not a brick set's). That top is ground
+too: the rain that lands on it splashes back onto the lowest courses of brick standing on it, and the water the ledge
+holds wets their foot. Found on the model: every 2 cm column whose lowest brick (565's 5 cm front) stands on masonry
+standing at least `LEDGE_MIN` 5 cm out in front of it; a ray straight down from just in front of the brick finds the
+ledge's top, runoff's elevation just under it the ledge's front, and 567's own rain (`rain_dirs`, `rain_share`) cast from
+the ledge's middle how much of the rain it takes. The splash is 567's profile (`ctx.field("street_grime", "profile")`:
+`top` 0.65, `foot_w` 0.25, `foot_e` 0.10) up from the ledge's top, times that rain and the ledge's depth against 567's
+`reach` 0.45, through a smoothstep from 0 to `SPLASH` 0.60. On this block: 86 runs, 88.6 m of the crown's top under
+brick (all at 6.292), 0.10 to 0.57 deep (median 0.34), taking all of the rain (median 1.00) but under the fire escapes'
+platforms on 3rd Street (0.04 to 0.3). A pier on a 0.34 m ledge erodes in full up its first 0.2 m, half at 0.3 m, none
+from 0.5 m: the lowest four courses. Only the base's top: the same splash off the band's top under the top floor's
+piers is not what the prompt asks for, and is left alone. At a pavilion's foot the splash is taken as far as the
+pavilion's drop has got, like everything else on it (below).
+
+### One drop and one corner at a time (rework 2026-09-23)
+
+The corner pavilions are all the same shape and the rain's measure is the same at every corner of the block, so the rule
+alone eroded the same zone on each: the top floor in full and a fade down the corner arris, mirrored on the two faces of
+each corner. Measured on the mask (`audit/`), the windows 5.6 m wide at the block's square corners (both faces of the SW,
+NE and NW corners, floors 2 to the crown, the corner at one side) differed by 0.006 to 0.031 in the mean of the
+erosion's difference, with 1 to 8% of their texels off by more than 0.1 (the north face's at the NW corner, whose
+windows are single lights, by about 0.05); the chamfer's pavilion stood the same on its 3rd Street and Broadway faces
+(0.011); and the 22 pier fronts under the band carried one faint gradient each, all alike (peak 0.148, 730 texels). The
+same band stamped on every pavilion (user 2026-09-23, reviewing the layer: marks must not repeat identically from one
+instance to the next; noise inside a mark stays out, as before). The streams already follow 564's draws, but a
+capital's ignored the water 564 drew for it (fixed above); the crown's curtain and the splash run whole along each face,
+continuous height bands rather than stamps, and stay the measure's.
+
+What sets one pavilion's joints apart from the next on a real front is what the model does not carry. **The mortar**: a
+facade is pointed drop by drop, the vertical strip one scaffold or cradle covers, with its own batches and its own
+weather while they cured, and a maintained front is repointed in campaigns and spot repairs, the top lift under the
+parapet more often than the rest. So each **drop** -- 566's projecting fronts of brick at the pavilions' depth, 0.20 ±
+0.03 (the crown's members stand as far out and are left out by their class): each pavilion's face and each pier front,
+in two **lifts** divided by the band's top cornice (`LIFT_Z` 16.6 m), the body below and the top floor above -- draws
+how far its erosion has got and how readily its mortar gives to the rain. **The wetting**: which side of a corner the weather comes from, a crown joint that leaks down
+one arris, the neighbours that break the wind. So each **corner** of the block draws, on each of its two faces, how
+strongly its catch rises at the arris and how far into the face it runs: soiling's catch law (`catch_ratio`) with the
+corner's own side zone, the rain's measure times its catch over the law's.
+
+| drawn | for | bounds |
+|---|---|---|
+| depth: how far the erosion has got, against the calibrated look | each drop and lift | 0.65 to 1.15 (`DEPTH_DRAW`); or, one in seven (`REPOINT_P` 0.15), repointed since: 0.15 to 0.40 (`REPOINTED`) |
+| give: the exposure its mortar erodes at, the measure times this | each drop and lift | 0.96 to 1.04 (`GIVE`) |
+| gain: the corner catch's rise at the arris | each corner, on each face | 0.50 to 1.40 (`CORNER_GAIN`) |
+| reach: how far into the face the corner's catch runs, times `CATCH_SIDE` 3 m | each corner, on each face | 0.70 to 1.30 (`CORNER_REACH`) |
+
+The exposure stays the lead: the draws move where along its gradient a zone ends and how deep its joints are, never where
+it lies, and a pier front whose exposure is barely above the general facade's erodes or not by its give. A drop's depth
+holds for all the water on it, the streams and the splash as well as the rain, so a repointed pavilion's sill streams
+and top courses are fresh too; off the drops the mortar is the measure's (depth and give 1), which is where most streams
+run. The depth past 1 is why the mask holds the erosion over `SCALE` 1.25 (below). Where a range is given the value is
+the mean of two uniforms, the middle likelier than the ends; a repointed depth is one uniform. The seeds (`draw`: the
+sha256 of `mortar_erosion:` and a key, two bytes to a uniform) are the drop's face, span and lift
+(`drop:N:-0.20:5.10:top`) and the corner's face and end (`corner:E:end`), so a rebuild draws the same values and nothing
+drawn for one moves when another changes. The corners' catch is checked against `soiling.catch_ratio` at build time:
+with its gain and reach at 1 it must be the law.
+
+As built (the build prints it, `mortar_erosion drops ...`): 44 drops, 33 bodies (11 pavilion faces, 22 pier fronts) and
+11 top lifts, depth 0.87 in the body (0.17 to 1.06; 6 repointed, 5 past the calibrated look) and 0.92 on top (0.20 to
+1.11; 3 repointed, 2 past it). The pavilions:
+
+| pavilion | face | body: depth, give | top: depth, give | its corner's gain, reach |
+|---|---|---|---|---|
+| SW | 3rd Street | **0.38 repointed**, 0.978 | 0.99, 1.000 | 0.93, 1.07 |
+| SW | west face | 1.00, 1.011 | 1.05, 1.004 | 0.81, 0.81 |
+| SE | 3rd Street | 1.02, 1.007 | 0.81, 0.990 | 0.94, 1.03 (135 degrees) |
+| SE | the chamfer | **0.32 repointed**, 1.012 | **0.20 repointed**, 0.997 | 0.89, 1.03; 1.11, 0.94 |
+| SE | Broadway | 0.87, 0.991 | 0.93, 1.006 | 1.02, 1.05 (135 degrees) |
+| NE | Broadway | 1.02, 1.023 | 1.11, 1.016 | **1.27**, 0.89 |
+| NE | north face | 0.89, 1.032 | **0.30 repointed**, 0.995 | **0.63**, 0.97 |
+| NW | north face | 0.79, 1.003 | **0.29 repointed**, 0.975 | 0.73, 0.84 |
+| NW | west face | 0.85, 1.006 | 0.98, 1.001 | 1.00, 0.93 |
+| middle | 3rd Street | 0.90, 1.023 | 0.86, 0.988 | |
+| middle | north face | 0.83, 0.975 | 0.92, 0.992 | |
+
+So the NE corner erodes hardest on Broadway, where its catch runs strong and its fade reaches the second floor (0.89 at
+9 m by the arris, 0.34 before), and lightly on the north face (0.10 at 9 m, 0.46 at 11 m), whose top floor was
+repointed; the chamfer, repointed in both lifts, reads nearly flush between its two eroded flanks; the SW corner's 3rd
+Street body is fresh under a top floor eroded in full. The pier fronts' gradients, 0.148 on every one before, now peak
+from 0.004 to 0.37: seven under 0.03 (three of the four repointed among them), four up to 0.10, ten from 0.10 to 0.22
+and one, at s 14.15 on 3rd Street, at 0.37 down to 11.7 m. The same six square-corner windows now differ by 0.048 to
+0.19 (15 pairs; 14 to 38% of their texels off by more than 0.1). Over 40 seeds (the built one and 39 others, the rain's
+field alone), the pairs' median difference is 0.077 against the measure's 0.025, and one pair in 25 comes out under
+0.03 against two in three. The west face's two pavilions, both eroded in full on top, and the north face's, both
+repointed on top, are the likest pairs as built (0.048 and 0.064): the draws, not a rule, make them alike, and they
+still differ in depth and in how far their corners reach. Over the brick the street sees, 376 m2 is eroded from 0.05
+and 154 m2 more than half (394 and 195 m2 before): the drops sit a little under the calibrated look, as a maintained
+front does.
+
+### The mask
+
+`masks/mortar_erosion.png`: 2 cm, one 8-bit channel (9620 x 1060; 10 MB as bytes, a quarter of an RGBA mask): the erosion
+over `SCALE` 1.25 (a drop may go past the calibrated look, to 1.11 as built; the shader multiplies it back), the most of
+the three sources at each texel, laid only on the brick the 2 cm elevation sees and grown `PAD` 2 texels into what is
+not brick beside it (a window, the trim), so the lookup's filter keeps the brick's value to its edge and a reveal's
+return, which reads the column at its edge, takes the front's value; brick beside a mark keeps its own zero. The rain's
+zones are sampled bilinearly from the 5 cm measure, their values first grown two 5 cm texels into the non-brick round
+them for the same reason. The elevation images draw the erosion itself (`elevation()`: the mask times `SCALE`).
+
+### The look
+
+Only the joints change, and only on brick walls and returns (the wall and the arch rings; never a top, a soffit, the
+terracotta or the stone). The joints are the brick set's own: the layer's `Joint`, and `Joint Wide`, the joint grown
+2 mm past each edge (new in the framework, below). With a the erosion (the mask times `SCALE`) times the strength:
+
+- **the relief**: a Bump node on the joints, added to the brick's own normal map (its `Normal` input is the state's
+  normal): the mortar sunk `DEPTH` 3 mm x a and the exposed arris ring round it half as far, so the groove is deeper
+  and 2 mm wider on each side. Its height is the brick set's own (Joint, Joint Wide), which Cycles reads again at its
+  offsets for the slope, while the erosion scales the node's distance, so the slope follows the joints and never the
+  zone's gradient. In Cycles the walls turned from the light go dark while those turned toward a grazing light
+  brighten only a little: in a controlled test (a wall lit 79 degrees off its normal, 18.7 up, as the scene's sun rakes
+  the chamfer) a 45 degree facet turned toward the light read 1.27 times the flat wall where the cosine law says 1.96,
+  and the one turned away read black -- the renderer bends a bumped normal back where its reflection would dip under
+  the surface, and dims the light a bump turns toward it. So under a raking sun the groove reads as a shadow line with
+  a faint lit lower lip, which is what deep joints look like at a distance;
+- **the arris ring** (Joint Wide less Joint) keeps `ARRIS_KEEP` 0.70 ^ a of its brightness, in the groove's shade: the
+  joint reads wider;
+- **the mortar** keeps `MORTAR_KEEP` 0.62 ^ a of its brightness after going `SAND_GREY` 0.35 x a toward a sand grey
+  (its own luminance times (1.00, 0.93, 0.80): the binder washed out, the sand left), and turns at least `MATTE` 0.90
+  rough.
+
+The factors are powers of a, so the strength scales them past 1 as it does below (2 is twice the erosion), and a = 0
+hands the input on exactly. The brick faces (Joint Wide 0) keep their colour, roughness and normal. It stands at ORDER
+100, the first in the chain: a change in the fabric, which every deposit after it lies over; 566's `Clean Color`
+includes it, so the wash and the rinse leave it.
+
+### Calibration
+
+Measured in rendered pixels, in linear luminance, on the full-size stills at the scene's defaults (`diff/calibration.json`
+and `summary.json`): per bed joint, its visible width (the rows darker than half the brick faces round it) and its
+darkness against the faces, and the faces themselves (the middles of the bricks, 6 mm clear of every joint), off against
+on:
+
+| pose | light | joint width | joint's mean / faces | its darkest row / faces | faces on / off |
+|---|---|---|---|---|---|
+| `corner_top_raking`: the chamfer's top floor at 1.4 m, 0.53 mm a pixel | sun, 79 degrees off the normal | 7.4 to 10.5 mm | 0.22 to 0.17 | 0.15 to 0.04 | 1.000 |
+| `corner_top_raking_n`: the NE pavilion's top floor, north face | sun, 56 degrees | 4.2 to 7.4 mm | 0.44 to 0.27 | 0.41 to 0.07 | 1.000 |
+| `sheltered_raking_n`: the north face's recessed top floor wall | the same sun | 4.2 to 4.2 mm | 0.43 to 0.43 | 0.41 to 0.41 | 1.000 |
+| `corner_top_medium`: the chamfer's top floor from 5 m, 1.9 mm a pixel | sun, 79 degrees | 5.6 to 9.4 mm | 0.23 to 0.21 | 0.18 to 0.09 | 1.000 |
+
+Over a whole zone the wall darkens a little, since only its joints do: 0.95 to 0.96 in the raking close-ups, 0.97 from 5 m,
+0.98 on 3rd Street's pavilion in shade from across the street (`third_pavilion`, 4.4 mm a pixel), 0.99 over the lowest
+courses on Broadway in sun (`base_splash`). From the scene's cameras the joints are under a pixel and the change is a
+faint crisping of the brick's pattern in the zones (0.05 to 0.10 levels on average, 0.6 to 1.4% of the pixels by more
+than 2). The reference is the Commons colour photo of the Broadway portal (`references/`, unaltered, with
+`commons_304_brick_courses_x3.png` and `references.json`): at about 4 mm a pixel the real joints are thin reddish
+lines, 0.94 to 1.00 of the brick in a row mean, and the lowest courses above the portal's pier block on the ground
+floor's crown read like the ones above them: tight, flush joints on a maintained, repointed frontage, and no photograph
+shows the top corners close enough to see a joint. So the look is a judgement for a maintained building: plain close up
+in a raking light, where the joints of the most exposed brick read as recessed shadow lines about 3 mm wider than
+flush, and faint from the street. `DEPTH`, `ARRIS_KEEP`, `MORTAR_KEEP` and `SAND_GREY` carry it; `DEFAULT_STRENGTH`
+stays 1.0, 0.5 halves it and 2 doubles it (`corner_top_raking_strengths.png`: 2.6, 4.3 and 6.5 levels on average over
+the frame).
+
+That calibration is the look at an erosion of 1, and it stands: the rework changed where and how far the joints have
+got, not what an eroded joint looks like. A drop at depth 1 renders the table's joints; the drops as built sit at 0.87
+(the bodies) and 0.92 (the tops) in the median, a few at 1.02 to 1.11, and the repointed ones at 0.17 to 0.38, their
+joints within a few tenths of a millimetre of flush. The chamfer, where `corner_top_raking` and `corner_top_medium` were
+measured, drew repointed in both lifts (0.32, 0.20), so those poses now show its joints nearly as the texture draws
+them; the rework's close-up is the north face by the NE corner, in the same sun at 58 degrees (below).
+
+### The debug view
+
+Lime: the erosion at full colour from half of it (`DEBUG_GAIN` 2), on the brick walls and returns; an outline round
+each exposed front, a square tube along each streak's source (an octahedron at a sill's end) and a thin one down its
+path to where its water leaves the wall, a square tube along each run of the base's ledge and a thin one up its middle
+to where the splash falls below a tenth. The joints' relief shows in the debug view too (the clay replaces the colour,
+not the normal). `wear=debug` with every other feature at 0 shows it alone (the command above). In the sun on Broadway
+the lime reads pale (AgX again); 3rd Street's shade shows it plainly.
+
+### Published
+
+`ctx.field("mortar_erosion", key)`, for any feature that follows: `field` (the erosion on the brick, 4 cm max-pooled,
+float16, rows from `z0` up; 1 the calibrated look, to 1.11 as built), `zones` (every exposed front: `dict(id, facade, s0,
+s1, z0, z1, depth, texels, peak, mean, ratio, drop)`, `drop` the key of the drop it lies on), `streams` (every streak
+eroded: `dict(id, source, kind, facade, axis, s0, s1, z_top, z_stop, water, peak, texels)`), `splash` (every run of the
+base's ledge: `dict(id, facade, s0, s1, z, d_wall, depth, rain, rain_min, wet, peak, columns)`), `drops` (added by the
+rework: every drop and lift, `dict(key, facade, s0, s1, lift, depth, give, repointed)`), `corners` (added by the rework:
+each corner of the block on each face, `dict(key, facade, end, gain, reach)`) and `profile` (the constants, the draws'
+bounds and the formula). Nothing reads them yet.
+
+### What it changed in the framework
+
+`wear/nodes.py` hands every material a fifth surface signal, **Joint Wide** (`SURFACE`, `JOINT_GROW`, `_wide_signal`;
+`surface_signals` returns four values and `wear_material` wires the fourth): the brick set's joint grown 2 mm past
+every edge. The set's joints are a one-pixel step in its height map (faces at 0.655, the joint floor at 0.420, one
+pixel between them: `Joint` goes 0, 0.45, 1), so no remapping of Joint could widen them; the map is read twice more, at
+plus and minus 2.5% of a course along both U and V (a bed joint does not change along U nor a head joint along V, so
+one diagonal pair widens both, on both sides), and the most of the three is the widened joint. Brick only; everything
+else gets 0. Backward compatible: no earlier feature reads it, and a mix by 0 still returns the input exactly.
+`wear/registry.py` lists `mortar_erosion`. A full rebuild reproduces every earlier mask and cache byte for byte
+(`37806c0b...`, `4fa13d0c...`, `6517dd79...`, `6c9963ea...`, `16d42806...`, `a1865e1b...`, `ee8ba631...`, `d4b01dc3...`
+and the ten caches), every earlier feature's mesh data hashes the same as before AI 573 (rust's and edge wear's
+attributes, edge wear's chipped meshes, glass grime's 396 copies and attributes: 4679 meshes and objects in the worn
+block, 514 in the worn portal), and this feature's mask and cache are the same on a rebuild (`fa8945fc...`,
+`c3148c32...`). The worn block has 2697 objects: 2275, 22 markers, edge wear's 4 and glass grime's 396. Cost: about 9 s
+of build (2.4 million rays, most of them the streaks' walks), 10 MB for the mask, and two more height-map reads per brick
+shading point plus the Bump node's two offset evaluations: `st_up` 18 s a still, `st_portal` 30 s (572 measured 15 to
+16 and 25 to 28), the same with the feature off.
+
+The rework of 2026-09-23 changed no framework file: only `wear/features/mortar_erosion.py` (the drops and corners, the
+capitals' water, the mask over `SCALE` and its `elevation()` hook). No feature NEEDS mortar erosion. A full rebuild
+reproduces every other feature's mask and cache byte for byte, and object by object the worn block (2697 objects), the
+worn portal (460) and the node library differ from a build with the code before the rework only in this feature's own
+debug markers (`wear_src_mortar_erosion`, `wear_path_mortar_erosion`) and its node group (`WEAR_F_mortar_erosion`, the
+mask times `SCALE`); this feature's mask and cache are the same on every rebuild (`47cc181b...`, `0307da10...`; the code
+before the rework rebuilds its `a2188273...` exactly).
+
+### Evidence
+
+In `tests/artifacts/screens/bradbury_wear/mortar_erosion/`, the sheets at half size from full-size stills at the
+scene's defaults (1920x1200, 128 spp, AgX, the scene's own sun and sky; no extra lamp):
+
+- `st_up_off_on_debug.png`, `hero_3q_off_on_debug.png`: mortar erosion off | on at its default | the debug view with the
+  erosion alone | the debug view with every feature; `st_up_off_on.png`, `hero_3q_off_on.png` at full size;
+  `st_corner_off_on.png`, `st_portal_off_on.png`, `st_along_off_on.png`;
+- `corner_top_raking_off_on_debug.png`: the raking close-up of a top corner, the SE corner pavilion's top floor on the
+  chamfer at 1.4 m, the scene's sun raking it 79 degrees off its normal; `corner_top_raking_strengths.png`: 0 | 0.5 |
+  1 | 2; `corner_top_medium_off_on_debug.png`: the same wall from 5 m;
+- `raking_top_corner_vs_sheltered_n.png`: the contrast, both on and in the same sun (56 degrees on the north face): the
+  NE corner pavilion's top floor (eroded) against the north face's recessed top floor wall (sheltered, its joints as the
+  texture draws them); `corner_top_raking_n_off_on_debug.png`, `sheltered_raking_n_off_on_debug.png` (identical off and
+  on: 0.015 levels, the noise floor);
+- `base_splash_off_on_debug.png` (Broadway's floor 2 on the ground floor crown, in sun: the lowest courses),
+  `third_pavilion_off_on_debug.png` (3rd Street's east pavilion from across the street, in shade),
+  `stream_sill_3rd_off_on_debug.png` (a floor 4 sill on 3rd Street: its ends' streams down the jambs' inside corners);
+- `renders/` (the full-size stills, and `<camera>_wear_off.png` for the five cameras), `diff/` (off against on, x8; the
+  layer off against the pre-wear stills; the feature at 0 against 572's; `summary.json`, `calibration.json`),
+  `references/` (the photo, unaltered, the crop measured, `references.json`), `poses.json`.
+
+| camera | off vs on: mean; share over 2 levels | the layer off vs the pre-wear still | the erosion at 0 vs 572's still |
+|---|---|---|---|
+| `st_up` | 0.080; 0.81% | 0.0062; 0.002% | 0.0065 |
+| `hero_3q` | 0.102; 1.36% | 0.0163; 0.006% | 0.0082 |
+| `st_corner` | 0.076; 0.94% | 0.0317; 0.058% | 0.0057 |
+| `st_portal` | 0.083; 0.72% | 0.0161; 0.025% | 0.0064 |
+| `st_along` | 0.054; 0.63% | 0.0061; 0.001% | 0.0058 |
+
+On the close-ups: `corner_top_raking` 4.29, 18.7%; `corner_top_raking_n` 6.52, 18.0%; `corner_top_medium` 2.26,
+12.8%; `third_pavilion` 0.81, 7.9%; `base_splash` 0.38, 1.9%; `stream_sill_3rd` 0.11, 1.3%; `sheltered_raking_n`
+0.015, 0.01%. The layer off (the worn scene switched off) renders the pre-wear stills and the erosion at 0 renders
+572's to within render noise (the floor is 0.0067 to 0.0310; `st_corner`'s layer-off still has sat at 0.028 to 0.032
+since 567). The canonical scene, rebuilt last, renders `corner_top_medium` and `corner_top_raking` through
+`render_wear.py` to 0.0145 and 0.0115 of their evidence stills.
+
+The rework's evidence is in `tests/artifacts/screens/bradbury_wear/rework/mortar_erosion/`, full-size stills at the
+scene's defaults, the sheets at half size:
+
+- `pavilions_before_after.png`: every corner pavilion's face square on from 20 m, the same pose on each
+  (`pavilion_poses.json`; a face's far end mirrored, so the corner is always on the left): the erosion's effect (on
+  against off) before this pass | after it, and the render after. Before, the six square corners and the chamfer's two
+  flanks read as one mark; after, each its own;
+- `closeup_off_on_debug.png`, `closeup_before_after.png`: the north face by the NE corner at floor 4 from 1.7 m, in the
+  sun at 58 degrees; `medium_off_on_debug.png`, `medium_before_after.png`, `medium_debug_before_after.png`: the NE
+  corner from 12 m, Broadway eroded down its arris and on its top floor, the north face only near the arris, its top
+  floor repointed (`poses.json`);
+- `<camera>_before_after.png` for the five cameras (the whole layer as this pass left it against before it) and
+  `hero_3q_debug_before_after.png` (the erosion alone in the debug view, before | after: the chamfer repointed, every
+  pavilion its own);
+- `elevations/elev_<face>.png`: each face at 5 cm, the mask after 564's rework | after this one; `audit/`: the corner
+  windows cut from the mask (`before/` and `after/corner_windows.png`; the pair differences quoted above in
+  `corner_pairs_before.txt` and `corner_pairs_after.txt`), the band rows at 2 cm (`crop_band_rows_start_vs_after.png`:
+  the capitals' streams now each their own; `crop_S_bays_before_vs_start.png`: 564's rework reaching the streams),
+  `streams_after_vs_before_pass.txt` (the streams by kind, now and before this pass);
+- `renders/`, `diff/` (the x8 differences and `summary.json`), `iter/` (the working renders at half size).
+
+| camera | the erosion off vs on: mean; share over 2 levels | this pass's whole layer, before vs after | the layer off vs the pre-wear still |
+|---|---|---|---|
+| `st_up` | 0.068; 0.62% | 0.79; 13.5% | 0.0061; 0.002% |
+| `hero_3q` | 0.088; 1.00% | 0.51; 6.8% | 0.0167; 0.006% (a first still 0.0216; the two differ by 0.0232) |
+| `st_corner` | 0.062; 0.64% | 0.35; 4.7% | 0.0317; 0.057% |
+| `st_portal` | 0.062; 0.54% | 1.40; 22.1% | 0.0161; 0.025% |
+| `st_along` | 0.047; 0.54% | 0.40; 6.0% | 0.0067; 0.004% |
+
+The close-up moves 5.74 levels on average with the erosion on (18.5% of its pixels by more than 2), the medium view
+0.64 (5.5%; 0.66 and 5.8% before the rework on the same pose). From the pavilion poses the erosion moved every square
+corner's face by 0.215 to 0.294 levels before (2.7 to 3.3% of the pixels) and moves them by 0.137 to 0.334 after
+(`diff/pavilions_off_vs_on.json`): the SW corner's 3rd Street face the least, the NE corner's Broadway face the most.
+Two stills of the same scene switched off differ by as much as the first `hero_3q` did from the pre-wear still: the
+GPU is not bit-deterministic, and the band's ornament is where it shows. The canonical scene, rebuilt last, renders the
+close-up through `render_wear.py` to 0.0075 of its evidence still.

@@ -36,7 +36,17 @@
 #
 #   keys: hdri (strength, 0.75), rot (the map turned about z, degrees, 250), sun (a lamp on the map's own sun, 8),
 #         ground (street | catch | none), block (fixed | game: the untouched export, its own scene and shots),
-#         exposure, samples, pct, res, views listed by name (see VIEWS).
+#         wear (on | off | debug, see below), wear_<feature> (that wear feature's strength, 1 = its calibrated look,
+#         0 = off), exposure, samples, pct, res, views listed by name (see VIEWS).
+#
+# THE WEAR LAYER (AI 563, the README's "The wear layer"). wear=on, the default, links the WORN block that wear_layer.py
+# writes (wear/bradbury_block_worn.blend) instead of the block itself and sets the layer's controls on this scene: the
+# custom properties every worn material reads (`wear`, `wear_<feature>`) and the wear-only collections (the debug
+# view's source markers, geometry a feature adds). wear=off links the untouched block exactly as before the layer
+# existed and writes bradbury_scene_wear_off.blend; wear=debug colours every mark by its feature over clay-grey
+# surfaces, shows the sources, and writes bradbury_scene_wear_debug.blend. The canonical bradbury_scene.blend is the
+# wear=on scene. A worn block older than the block or portal it was built from is refused (rerun wear_layer.py, or
+# pass wear_stale=ok to render it anyway). render_wear.py flips a saved scene between the modes without a rebuild.
 import bpy, os, sys, math, time
 from mathutils import Vector, Matrix
 
@@ -54,8 +64,13 @@ GROUND = args.get("ground", "street").lower()
 BLOCK_KIND = args.get("block", "fixed").lower()
 assert BLOCK_KIND in ("fixed", "game"), f"block: fixed | game, not {BLOCK_KIND}"
 assert GROUND in ("street", "catch", "none"), f"ground: street | catch | none, not {GROUND}"
+WEAR = args.get("wear", "on" if BLOCK_KIND == "fixed" else "off").lower()
+assert WEAR in ("on", "off", "debug"), f"wear: on | off | debug, not {WEAR}"
+assert BLOCK_KIND == "fixed" or WEAR == "off", "block=game is the untouched game export: it has no wear layer (wear=off)"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path: sys.path.insert(0, HERE)
+from wear import paths as wear_paths, controls as wear_controls
 ROOT = os.path.normpath(os.path.join(HERE, "..", "..", "..", "..", "..", ".."))   # the repo (worktree) root, as assemble_building.py finds it
 # block=game stands the UNTOUCHED game export in the same scene, on the same cameras, for a before and after from one
 # pose. It is the file assemble_building.py itself opens, so nothing has to be kept in step by hand; it writes its own
@@ -68,6 +83,20 @@ SCENE = os.path.join(ART, "bradbury_scene.blend" if BLOCK_KIND == "fixed" else "
 HDRI = os.path.join(ROOT, "assets", "public", "lighting", "hdri", "german_town_street_2k.hdr")
 SHOTS = os.path.join(ROOT, "tests", "artifacts", "screens", "bradbury_fix", "portal_project",
                      "scene" if BLOCK_KIND == "fixed" else "scene_before")
+if BLOCK_KIND == "fixed" and WEAR != "on":           # the canonical scene and shot folder are the worn ones
+    SCENE = os.path.join(ART, f"bradbury_scene_wear_{WEAR}.blend")
+    SHOTS = SHOTS + f"_wear_{WEAR}"
+if WEAR != "off":
+    # the worn block, as wear_layer.py last wrote it, and only while it still matches what it was built from
+    assert os.path.isfile(wear_paths.MANIFEST) and os.path.isfile(wear_paths.WORN_BLOCK), \
+        "no worn block yet: run  blender -b -P wear_layer.py  first (or build with wear=off)"
+    WEAR_MANIFEST = wear_controls.read_manifest()
+    old = wear_controls.stale(WEAR_MANIFEST)
+    if old and args.get("wear_stale", "").lower() != "ok":
+        raise SystemExit(f"the worn block is older than {', '.join(old)}: rerun  blender -b -P wear_layer.py  "
+                         f"(or pass wear_stale=ok to use it as it is)")
+    WEAR_MODE, WEAR_STRENGTHS = wear_controls.parse(args, WEAR_MANIFEST, mode_default=WEAR)
+    BLOCK = wear_paths.WORN_BLOCK
 for p in (BLOCK, HDRI): assert os.path.isfile(p), f"missing: {p}"
 os.makedirs(SHOTS, exist_ok=True)
 
@@ -101,6 +130,12 @@ print(f"the block linked from {os.path.basename(BLOCK)}: {n_link} objects (linke
 # the model file carries an inspection rig of its own; the scene lights and frames the block itself
 for o in list(linked.objects):
     if o.type in {'CAMERA', 'LIGHT'}: linked.objects.unlink(o)
+if WEAR != "off":
+    # the worn block's own objects (the debug view's source markers, geometry a wear feature adds) go into child
+    # collections that the layer's controls show and hide; everything else stays as the block has it
+    n_file = WEAR_MANIFEST["objects"]["worn_block_local"]
+    assert n_link == n_file, f"linked {n_link} objects of the worn block's {n_file}"
+    wear_controls.organise(linked)
 
 # ---------------------------------------------------------------- the ground: a shadow catcher, and a real street
 # The block's own outline, as assemble_building.py lays it out, is the thing everything here is measured from: the
@@ -327,8 +362,11 @@ S.view_settings.view_transform = 'AgX'; S.view_settings.exposure = EXPO; S.view_
 try: S.view_settings.look = 'AgX - Medium High Contrast'
 except Exception as e: print("look not set:", e)
 
+if WEAR != "off":
+    wear_controls.apply(S, WEAR_MODE, WEAR_STRENGTHS)
 bpy.ops.wm.save_as_mainfile(filepath=SCENE, compress=True, relative_remap=True)
-print(f"SCENE SAVED {SCENE} | {len(VIEWS)} cameras: {', '.join(VIEWS)} | ground: {GROUND} | block: {BLOCK_KIND}")
+print(f"SCENE SAVED {SCENE} | {len(VIEWS)} cameras: {', '.join(VIEWS)} | ground: {GROUND} | block: {BLOCK_KIND} | "
+      f"wear: {WEAR}")
 
 for nm in names:
     if nm not in cams: print(f"  no such view: {nm} (have {', '.join(VIEWS)})"); continue

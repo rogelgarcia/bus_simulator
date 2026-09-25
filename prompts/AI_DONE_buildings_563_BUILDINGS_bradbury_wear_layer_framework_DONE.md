@@ -1,3 +1,5 @@
+# DONE — AI 563: the Bradbury wear layer framework
+
 # Problem
 
 The Bradbury block (the Blender authoring project in
@@ -84,3 +86,17 @@ Features that plug into this layer:
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change
+
+## Completion summary
+
+- Added the wear layer post-pass `wear_layer.py` and its `wear/` package: it reads the built block and portal, never writes them, and writes worn copies, a node library, per-feature masks and a manifest into `portal_project/wear/` in about five seconds.
+- Added the facade atlas: the five hull faces unrolled side by side in (s, z) metres, one mask image per feature at 1 to 20 cm, read at render time by projecting each shading point onto its face.
+- Added the `WEAR_layer` node group between the texture reads and the BSDF of every exterior material (66: 48 in the block, 18 in the portal, the ornaments' as object-level copies): colour and roughness, the normal where a normal map exists, alpha and transmission on glass, with Joint and Grain signals from each material's own maps and a material class.
+- Added the one switch and the per-feature strengths as scene custom properties read through View Layer attributes (`wear`, `wear_<feature>`, `wear_<feature>_<control>`), applied by `wear/controls.py`; off returns every material's own inputs exactly.
+- Added `build_scene.py`'s `wear=on|off|debug` key (on by default; off links the untouched block; a stale worn block is refused) and `render_wear.py` to render any mode, strength and pose from the saved scene.
+- Added the debug view: clay-grey surfaces, every mark in its feature's colour, sources and paths drawn as camera-only markers, each feature's markers shown only while it is on.
+- Added the feature API: sources, marks and paint through `FeatureContext` (no mark without a source, nothing painted outside a mark), published fields between features with `NEEDS`, the block's BVH helpers (`front`, `front_map`, `trace_down`, `triangles`), the shader expression builder, `apply` hooks for attributes and switched geometry substitutes, and a registry with `ORDER`, `NEEDS` and `CONTROLS`.
+- Added the framework probe, one real source-driven test mark below one Broadway sill, shipped off, as the end-to-end proof and the template for the features.
+- Added `wear_compare.py` (side-by-side sheets, pixel differences, calibration regions) and `elevations=1` mask overlays on class elevations.
+- Proved the off state and the defaults at the render noise floor against the pre-wear renders on all five cameras, the masks byte-identical across rebuilds, and a copy of `portal_project/` self-contained; evidence in `tests/artifacts/screens/bradbury_wear/framework/`.
+- Documented the layer in the BradburyBlock README: the switch, the controls, the debug view, the atlas, what materials hand a feature, how a feature plugs in, and calibration.
