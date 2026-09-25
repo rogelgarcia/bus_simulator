@@ -12,6 +12,7 @@
 </head>
 <body class="grass-debug-v2">
 <div id="game-viewport"><canvas id="game-canvas" aria-label="Grass Debug v2 scene"></canvas></div>
+<div id="scene-loading" class="grass-v2-loading" role="status">Loading...</div>
 <aside class="ui-panel is-interactive grass-v2-panel" aria-label="Grass controls">
     <p id="scene-status" role="status" hidden></p>
     <section class="grass-v2-section" aria-labelledby="camera-heading">
@@ -19,13 +20,49 @@
         <div class="grass-v2-controls">
             <button type="button" id="bus-view">Bus camera <kbd>1</kbd></button>
             <button type="button" id="overview">Overview <kbd>2</kbd></button>
+            <button type="button" id="grass-view">Grass comparison</button>
             <button type="button" id="copy-camera" title="Copy camera X Y Z and yaw pitch roll (degrees)" aria-live="polite">Copy</button>
         </div>
+    </section>
+    <section class="grass-v2-section" aria-labelledby="grass-heading">
+        <h2 class="ui-section-label is-tight" id="grass-heading">Grass</h2>
+        <div class="grass-v2-modes" role="group" aria-label="Grass detail">
+            <button type="button" data-grass-mode="OFF" aria-pressed="false" disabled>OFF</button>
+            <button type="button" data-grass-mode="LOD0" aria-pressed="true" disabled>LOD0</button>
+            <button type="button" data-grass-mode="LOD3" aria-pressed="false" disabled>LOD3</button>
+            <div class="grass-v2-mix-row">
+                <button type="button" data-grass-mode="MIXED" aria-pressed="false" title="Four 1 m blocks with 0.5 m gaps. LOD0 row nearest the road; LOD3 row farther out. Each block has one line of 16 identical blades." disabled>MIX</button>
+                <label class="grass-v2-card-bounds" title="Show LOD3 alpha card boundaries in purple">
+                    <input type="checkbox" id="mixed-card-bounds" disabled /> Card bounds
+                </label>
+            </div>
+        </div>
+        <output id="grass-counts" class="grass-v2-counts" tabindex="0" aria-live="polite"></output>
+    </section>
+    <section class="grass-v2-section" aria-labelledby="land-heading">
+        <h2 class="ui-section-label is-tight" id="land-heading">Land</h2>
+        <div class="grass-v2-modes grass-v2-land" role="group" aria-label="Land substrate">
+            <button type="button" data-land-surface="gravelly_sand" aria-pressed="true" title="Current game substrate · Gravelly Sand" disabled>Gravelly Sand</button>
+            <button type="button" data-land-surface="forest_ground_06" aria-pressed="false" title="Planter substrate · Forest Ground 06" disabled>Forest Soil</button>
+            <button type="button" data-land-surface="brown_mud" aria-pressed="false" title="Moist fine earth · Poly Haven Brown Mud · 1.3 m scale" disabled>Brown Earth</button>
+        </div>
+    </section>
+    <section class="grass-v2-section" aria-labelledby="benchmark-heading">
+        <h2 class="ui-section-label is-tight" id="benchmark-heading">Benchmark</h2>
+        <div class="grass-v2-controls">
+            <button type="button" id="run-benchmark" disabled>Run</button>
+        </div>
+        <output id="benchmark-status" class="grass-v2-benchmark-result" tabindex="0" aria-live="polite" hidden></output>
+        <div id="benchmark-results" role="list" aria-label="Benchmark results" aria-live="polite"></div>
     </section>
 </aside>
 <script type="importmap">
 {
     "imports": {
+        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Tuft.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Tuft.js?v=green-gradient-1",
+        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Scene.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Scene.js?v=land-catalog-1",
+        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Land.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Land.js?v=moist-earth-1",
+        "../assets/public/pbr/_catalog_index.js": "../assets/public/pbr/_catalog_index.js?v=brown-earth-1",
         "three": "https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js",
         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/"
     }

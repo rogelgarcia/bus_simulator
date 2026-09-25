@@ -9,7 +9,7 @@ import { createGeneratorConfig, ROAD_DEFAULTS } from '../../assets3d/generators/
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { createRoadEngineRoads } from '../../visuals/city/RoadEngineRoads.js';
 import { ASPHALT_NOISE_DEFAULTS } from '../../visuals/city/AsphaltNoiseSettings.js';
-import { applyTextureColorSpace } from '../../content3d/materials/PbrTexturePipeline.js';
+import { createGrassDebugV2Land } from './GrassDebugV2Land.js';
 import dirtDefinition from '../../../../assets/public/pbr/gravelly_sand/pbr.material.config.js';
 
 export const GRASS_V2_TERRAIN = Object.freeze({
@@ -25,31 +25,6 @@ const TREE_PLACEMENTS = Object.freeze([
     [-34, 92, 14], [32, 120, 11], [-60, 155, 13], [63, 190, 12],
     [-115, 58, 12], [108, -50, 14], [-150, -145, 11], [152, 130, 13]
 ]);
-
-async function createDirtPlane(renderer) {
-    const loader = new THREE.TextureLoader();
-    const keys = ['baseColor', 'normal', 'orm'];
-    const textures = await Promise.all(keys.map(async (key) => {
-        const texture = await loader.loadAsync(new URL(`../../../../${dirtDefinition.allMapFiles[key]}`, import.meta.url).href);
-        applyTextureColorSpace(texture, { srgb: key === 'baseColor' });
-        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-        texture.repeat.set(GRASS_V2_TERRAIN.width / dirtDefinition.tileMeters, GRASS_V2_TERRAIN.depth / dirtDefinition.tileMeters);
-        texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-        return texture;
-    }));
-    const [map, normalMap, orm] = textures;
-    const material = new THREE.MeshStandardMaterial({
-        map, normalMap, aoMap: orm, roughnessMap: orm, metalnessMap: orm,
-        roughness: 1, metalness: 0, side: THREE.DoubleSide
-    });
-    const geometry = new THREE.PlaneGeometry(GRASS_V2_TERRAIN.width, GRASS_V2_TERRAIN.depth);
-    geometry.rotateX(-Math.PI / 2);
-    const ground = new THREE.Mesh(geometry, material);
-    ground.name = 'GrassV2DirtTerrain';
-    ground.position.set(GRASS_V2_TERRAIN.centerX, 0, GRASS_V2_TERRAIN.centerZ);
-    ground.receiveShadow = true;
-    return ground;
-}
 
 function createRoad() {
     const map = {
@@ -99,7 +74,6 @@ async function createTrees() {
     return trees;
 }
 
-/** @returns {Promise<{ground: THREE.Mesh, road: object, bus: THREE.Group, trees: THREE.Group}>} */
 export async function createGrassDebugV2Scene(scene, renderer) {
     const road = createRoad();
     scene.add(road.group);
@@ -107,12 +81,12 @@ export async function createGrassDebugV2Scene(scene, renderer) {
     bus.name = 'GrassV2CityBus';
     bus.position.set(-ROAD_DEFAULTS.laneWidth / 2, ROAD_DEFAULTS.surfaceY, 0);
     scene.add(bus);
-    const [ground, trees] = await Promise.all([
-        createDirtPlane(renderer), createTrees(), bus.userData.readyPromise
+    const [land, trees] = await Promise.all([
+        createGrassDebugV2Land(renderer, GRASS_V2_TERRAIN), createTrees(), bus.userData.readyPromise
     ]);
     const bounds = new THREE.Box3().setFromObject(bus);
     if (bounds.getSize(new THREE.Vector3()).z < 10) throw new Error('The full city bus model did not load.');
     bus.position.y += ROAD_DEFAULTS.surfaceY - bounds.min.y;
-    scene.add(ground, trees);
-    return { ground, road, bus, trees };
+    scene.add(land.ground, trees);
+    return { ground: land.ground, land, road, bus, trees };
 }

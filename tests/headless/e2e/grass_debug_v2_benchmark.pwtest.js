@@ -1,0 +1,114 @@
+// Verifies flight geometry, actual tangent tracking, timing collection and interruption recovery.
+import test, { expect } from '@playwright/test';
+import { mkdir, writeFile } from 'node:fs/promises';
+
+test('Grass Debug benchmark follows the route and reports a compact result', async ({ page }) => {
+    test.setTimeout(120_000);
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+    const artifacts = 'tests/artifacts/screens/grass_debug_v2/benchmark';
+    await mkdir(artifacts, { recursive: true });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/debug_tools/grass_debug_v2.html');
+    await page.waitForFunction(() => !!window.__grassDebugV2);
+    await page.evaluate(() => window.__grassDebugV2.readiness);
+    const routeChecks = await page.evaluate(async () => {
+        const THREE = await import('three');
+        const { createBenchmarkRoute, createBenchmarkFlightTiming } = await import('/src/graphics/gui/grass_debugger_v2/GrassDebugV2BenchmarkRoute.js');
+        const start = window.__grassDebugV2.getSnapshot().camera.position;
+        const route = createBenchmarkRoute(new THREE.Vector3(...start));
+        const total = route.getLength();
+        const ends = route.getCurveLengths().map(length => route.getPoint(length / total).toArray());
+        const lowStart = route.getCurveLengths().at(-3);
+        const lowPoints = Array.from({ length: 11 }, (_, index) => route.getPoint((lowStart + index) / total).toArray());
+        window.benchmarkRoute = route;
+        window.benchmarkTiming = createBenchmarkFlightTiming(route);
+        const busFraction = route.getCurveLengths()[0] / total;
+        return { ends, lowPoints, busPosition: start, overviewPosition: route.getPoint(0).toArray(), busTangentDot: route.getTangent(busFraction - 1e-5).dot(route.getTangent(busFraction + 1e-5)), flightMs: window.benchmarkTiming.durationMs, minY: Math.min(...Array.from({ length: 1001 }, (_, i) => route.getPoint(i / 1000).y)) };
+    });
+    const waypoints = [routeChecks.busPosition, [-2.4, 6.883, 5.421], [-8.012, 1.258, 14.806], [-8.012, 1.258, 24.806], [14.39, 8.247, 48.256]];
+    expect(routeChecks.overviewPosition).toEqual([19, 22, -22]);
+    expect(routeChecks.busTangentDot).toBeGreaterThan(0.99999);
+    routeChecks.ends.forEach((point, i) => point.forEach((value, axis) => expect(value).toBeCloseTo(waypoints[i][axis], 4)));
+    routeChecks.lowPoints.forEach((point, i) => {
+        expect(point[0]).toBeCloseTo(-8.012, 4);
+        expect(point[1]).toBeCloseTo(1.258, 4);
+        expect(point[2]).toBeCloseTo(14.806 + i, 3);
+    });
+    expect(routeChecks.minY).toBeGreaterThan(1.25);
+    const run = page.getByRole('button', { name: 'Run', exact: true });
+    await page.getByRole('button', { name: 'Overview', exact: false }).click();
+    const overview = await page.evaluate(() => window.__grassDebugV2.getSnapshot().camera);
+    await page.getByRole('button', { name: 'Bus camera' }).click();
+    await run.click();
+    const initialCamera = await page.evaluate(() => window.__grassDebugV2.getSnapshot().camera);
+    expect(initialCamera.position).toEqual(overview.position);
+    initialCamera.direction.forEach((value, axis) => expect(value).toBeCloseTo(overview.direction[axis], 4));
+    await page.screenshot({ path: `${artifacts}/overview-start.png` });
+    await expect(page.getByRole('button', { name: 'Bus camera' })).toBeDisabled();
+    await page.waitForFunction(() => window.__grassDebugV2.getSnapshot().benchmark.phase === 'running');
+    await page.keyboard.press('2');
+    await page.keyboard.down('w');
+    const alignment = await page.evaluate(async () => {
+        const snapshots = [];
+        return new Promise(resolve => {
+            const sample = () => {
+                const snapshot = window.__grassDebugV2.getSnapshot();
+                if (!['running', 'holding'].includes(snapshot.benchmark.phase)) return resolve(snapshots);
+                const t = window.benchmarkTiming.distanceAtTime(snapshot.benchmark.elapsedMs);
+                const position = window.benchmarkRoute.getPoint(t);
+                const direction = window.benchmarkRoute.getTangent(t);
+                snapshots.push({ progress: snapshot.benchmark.progress, error: Math.hypot(...snapshot.camera.position.map((v, i) => v - position.toArray()[i])), dot: direction.toArray().reduce((sum, v, i) => sum + v * snapshot.camera.direction[i], 0) });
+                setTimeout(sample, 300);
+            };
+            sample();
+        });
+    });
+    await page.keyboard.up('w');
+    expect(alignment.length).toBeGreaterThan(50);
+    expect(Math.max(...alignment.map(sample => sample.error))).toBeLessThan(0.001);
+    expect(Math.min(...alignment.map(sample => sample.dot))).toBeGreaterThan(0.99999);
+    await expect.poll(() => page.evaluate(() => window.__grassDebugV2.getSnapshot().benchmark.phase)).toBe('complete');
+    const snapshot = await page.evaluate(() => window.__grassDebugV2.getSnapshot());
+    const result = snapshot.benchmark.result;
+    snapshot.camera.position.forEach((value, axis) => expect(value).toBeCloseTo(waypoints.at(-1)[axis], 4));
+    expect(result.durationMs).toBeGreaterThanOrEqual(routeChecks.flightMs + 1000);
+    expect(result.durationMs).toBeLessThan(routeChecks.flightMs + 2000);
+    expect(result.holdMs).toBeGreaterThanOrEqual(1000);
+    expect(result.frame.count).toBe(result.renderedFrames - 1);
+    expect(result.cpu.count).toBe(result.renderedFrames);
+    expect(result.frame.averageMs).toBeGreaterThan(0);
+    expect(result.frame.p99Ms).toBeGreaterThan(0);
+    if (snapshot.gpu.active) {
+        expect(result.gpu.count).toBeGreaterThan(result.renderedFrames * 0.95);
+        expect(result.gpu.averageMs).toBeGreaterThan(0);
+    }
+    const results = page.locator('#benchmark-results output');
+    const outcome = results.first();
+    await expect(results).toHaveCount(1);
+    await expect(outcome).toHaveText(/^LOD0 · (?:GPU|Frame) [\d.]+ avg · [\d.]+ p99 ms$/);
+    await expect(outcome).toHaveAttribute('title', /Frame interval \(includes VSync\)/);
+    expect(await outcome.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await expect(page.getByRole('button', { name: 'Bus camera' })).toBeEnabled();
+    await page.getByRole('button', { name: 'LOD3', exact: true }).click();
+    const firstText = await outcome.textContent();
+    await run.click();
+    await expect(outcome).toHaveText(firstText);
+    await page.waitForFunction(() => window.__grassDebugV2.getSnapshot().benchmark.results.length === 2, null, { timeout: 45_000 });
+    await expect(results).toHaveCount(2);
+    await expect(outcome).toHaveText(firstText);
+    await expect(results.last()).toHaveText(/^LOD3 · (?:GPU|Frame) [\d.]+ avg · [\d.]+ p99 ms$/);
+    await page.screenshot({ path: `${artifacts}/complete.png` });
+    await writeFile(`${artifacts}/result.json`, JSON.stringify({ result, alignment, routeChecks }, null, 2));
+    await run.click();
+    await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+    await expect(page.locator('#benchmark-status')).toHaveText('Cancelled · Window lost focus');
+    await expect(results).toHaveCount(2);
+    await expect(outcome).toHaveText(firstText);
+    await page.getByRole('button', { name: 'Bus camera' }).click();
+    await page.keyboard.down('e');
+    await expect.poll(() => page.evaluate(() => window.__grassDebugV2.getSnapshot().camera.position[1])).toBeGreaterThan(7);
+    await page.keyboard.up('e');
+    expect(errors).toEqual([]);
+});

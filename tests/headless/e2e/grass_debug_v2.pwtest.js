@@ -25,7 +25,7 @@ test('Grass Debug v2 loads game assets, exposes stats and preserves the v1 entry
     expect(snapshot.busReady).toBe(true);
     expect(snapshot.camera.fov).toBe(55);
     expect(snapshot.render.calls).toBeGreaterThan(0);
-    expect(snapshot.grass).toEqual({ implemented: false, incrementalGpuMs: null, targetGpuMs: 1 });
+    expect(snapshot.grass).toMatchObject({ implemented: true, mode: 'LOD0', leaves: 294912, triangles: 4128768, incrementalGpuMs: null, targetGpuMs: 1 });
     await expect(page.locator('.ui-perf-bar')).toBeVisible();
     await expect(page.locator('.ui-perf-debug-line')).toContainText('Camera: XYZ');
     await expect(page.locator('.ui-perf-debug-line')).toContainText('Bus: XYZ');

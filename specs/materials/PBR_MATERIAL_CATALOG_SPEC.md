@@ -20,6 +20,20 @@ Canonical files:
 Notes:
 - `assets/public/pbr/_manifest.json` is **not** the runtime source of truth. It may still exist for download/probe/asset tooling.
 - Where a branch tracks the catalog (`_catalog_index.js` and the per-material `pbr.material.config.js`, `pbr.material.correction.config.js` and `pbr.landscape.config.json` files), they are ordinary Git content, never Git LFS pointers: `.gitattributes` lifts the `assets/public/**` LFS rule for exactly these paths and keeps their bytes unconverted (`-text`), because landscape appearance provenance records each config by SHA-256. Texture images stay out of Git. `tests/node/unit/pbr_config_storage.test.js` guards this.
+- `pbr.forest_ground_06` is a ground-eligible surface entry for Poly Haven's CC0
+  Forest Ground 06 (Charlotte Baglioni). Its official 2K diffuse JPG, OpenGL normal
+  PNG and packed ARM PNG live under `assets/public/pbr/forest_ground_06/`, with
+  source URLs/checksums and license provenance. The catalog tile width is 2.1 m;
+  Grass Debug v2 uses an explicit local 2.5 m repeat to match Planter. The shared
+  catalog entry is used by ground pickers and the debug scene without embedded
+  HTML texture payloads or a second copy of the texture set.
+- `pbr.brown_mud` (Brown Earth) is a ground-eligible surface entry for Poly Haven's
+  CC0 Brown Mud by Rob Tuytel. Official, unmodified 4K diffuse JPG, OpenGL normal
+  PNG and packed ARM PNG are stored under `assets/public/pbr/brown_mud/`, with
+  source metadata, URLs, verified MD5 checksums and SHA-256 hashes. Its physical
+  tile width is 1.3 m. Grass Debug v2 exposes it beside the two previous substrates;
+  the detailed leaf study uses it to replace the coarse forest-floor debris with
+  finer bare earth. The existing local 3D soil lip shares this same material.
 
 ---
 
@@ -61,6 +75,10 @@ export default {
 
   // Default tiling (meters per repeat in UV-space meters)
   tileMeters: 4.0,
+
+  // Optional resolution metadata (defaults to 1k when omitted)
+  preferredVariant: '1k',
+  variants: ['1k'],
 
   // Filenames (relative to the folder)
   mapFiles: {

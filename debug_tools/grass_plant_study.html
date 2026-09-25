@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Grass · Card Study</title>
+    <link rel="icon" href="../favicon.ico" />
+    <link rel="stylesheet" href="../src/graphics/gui/shared/styles.css" />
+    <link rel="stylesheet" href="../src/graphics/gui/grass_debugger_v2/plant_study.css" />
+    <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/"}}</script>
+</head>
+<body>
+    <canvas id="plant-canvas" aria-label="Twenty grass leaves comparing LOD0 and LOD3 cards"></canvas>
+    <aside class="ui-panel is-interactive plant-study-panel">
+        <h1>LOD3 Study</h1>
+        <div class="plant-study-buttons" role="group" aria-label="Representation">
+            <button type="button" data-mode="LOD0" aria-pressed="true" disabled>LOD0</button>
+            <button type="button" data-mode="refined" aria-pressed="false" title="Twelve inclined cards per side" disabled>LOD3 · 24</button>
+            <button type="button" data-mode="detailed" aria-pressed="false" title="Six inclined cards per side" disabled>LOD3 · 12</button>
+            <button type="button" data-mode="curved" aria-pressed="false" title="Three inclined cards per side" disabled>LOD3 · 6</button>
+            <button type="button" data-mode="split" aria-pressed="false" title="Two inclined cards per side" disabled>LOD3 · 4</button>
+        </div>
+        <output id="plant-counts"></output>
+        <div class="plant-study-overlays" role="group" aria-label="LOD3 corrections">
+            <label title="LOD3: smoothly blend top and underside lighting at grazing angles."><input id="normal-facing" type="checkbox" checked disabled /> Normal facing</label>
+            <label title="LOD3: preserve leaf coverage in smaller texture mipmaps. Uncheck to compare the original filtering."><input id="alpha-coverage" type="checkbox" checked disabled /> Alpha coverage</label>
+        </div>
+        <div class="plant-study-overlays">
+            <label><input id="card-bounds" type="checkbox" disabled /> Card bounds</label>
+            <label title="Show the blue 1 m × 1 m footprint and zoom out to fit."><input id="square-bounds" type="checkbox" disabled /> Square bounds</label>
+        </div>
+        <div class="plant-study-buttons" role="group" aria-label="Camera">
+            <button type="button" data-pose="three_quarter" disabled>3/4</button>
+            <button type="button" data-pose="side" disabled>Side</button>
+            <button type="button" data-pose="elevated" disabled>Top</button>
+            <button type="button" data-pose="crown_close" disabled>Base</button>
+            <button type="button" data-pose="far" title="3/4 view framing the full 1 m square" disabled>Far</button>
+        </div>
+    </aside>
+    <div id="plant-loading" role="status">Loading...</div>
+    <script type="module" src="../src/graphics/gui/grass_debugger_v2/GrassDebugV2PlantStudy.js"></script>
+</body>
+</html>

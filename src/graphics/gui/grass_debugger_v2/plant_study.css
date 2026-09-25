@@ -1,0 +1,12 @@
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+#plant-canvas { display: block; width: 100%; height: 100%; }
+.plant-study-panel { position: absolute; top: 16px; left: 16px; padding: 12px; width: 270px; display: grid; gap: 10px; }
+.plant-study-panel h1 { margin: 0; font-size: 14px; font-weight: 600; }
+.plant-study-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.plant-study-overlays { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+#square-bounds { accent-color: #348fff; }
+.plant-study-buttons button { padding: 6px 8px; cursor: pointer; }
+.plant-study-buttons button[aria-pressed="true"] { background: #465c38; color: #fff; }
+#plant-counts, .plant-study-panel label { font: 12px/1.4 system-ui, sans-serif; }
+#plant-loading { position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%); color: #fff; background: #18211ed9; padding: 8px 16px; font: 14px system-ui, sans-serif; }
+[hidden] { display: none !important; }

@@ -246,6 +246,8 @@ function normalizeCatalogEntry(entry) {
         buildingEligible,
         groundEligible,
         tileMeters,
+        preferredVariant: normalizeVariant(src.preferredVariant),
+        variants: Array.isArray(src.variants) ? Object.freeze(src.variants.map(normalizeVariant).filter(Boolean)) : null,
         mapFiles,
         auxiliaryMapFiles,
         calibration: normalizeCalibrationMeta(src.calibration),

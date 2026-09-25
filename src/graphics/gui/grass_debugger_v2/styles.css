@@ -4,6 +4,18 @@ body.grass-debug-v2 #game-canvas {
     left: var(--grass-v2-panel-width);
     width: calc(100% - var(--grass-v2-panel-width));
 }
+.grass-v2-loading {
+    position: fixed;
+    left: var(--grass-v2-panel-width);
+    right: 0;
+    bottom: 24px;
+    z-index: 3;
+    text-align: center;
+    font-size: 14px;
+    color: #e5eceb;
+    text-shadow: 0 1px 4px #000;
+    pointer-events: none;
+}
 .grass-v2-panel {
     position: fixed;
     top: var(--global-top-bar-height, 0px);
@@ -50,3 +62,33 @@ body.grass-debug-v2 #game-canvas {
 .grass-v2-panel button:disabled { opacity: 0.45; cursor: wait; }
 .grass-v2-panel kbd { margin-left: 4px; color: #a8c3a0; }
 .grass-v2-panel [role="alert"] { color: #ffb5a5; overflow-wrap: anywhere; }
+.grass-v2-benchmark-result {
+    display: block;
+    margin-top: 8px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: help;
+    color: #bac7c8;
+}
+.grass-v2-benchmark-result[hidden] { display: none; }
+.grass-v2-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.grass-v2-modes button { justify-content: center; }
+.grass-v2-mix-row { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; align-items: center; }
+.grass-v2-card-bounds { grid-column: span 2; display: flex; align-items: center; gap: 5px; color: #d291ff; font-size: 11px; cursor: pointer; }
+.grass-v2-card-bounds input { margin: 0; accent-color: #ba55ff; }
+.grass-v2-card-bounds:has(input:disabled) { opacity: 0.45; cursor: default; }
+.grass-v2-modes button[aria-pressed="true"] { border-color: #bbdcae; background: #304639; color: #dcf5d2; }
+.grass-v2-land { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grass-v2-land button { min-width: 0; padding-inline: 6px; }
+.grass-v2-counts {
+    display: block;
+    margin-top: 8px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    white-space: pre-line;
+    color: #bac7c8;
+    cursor: help;
+}

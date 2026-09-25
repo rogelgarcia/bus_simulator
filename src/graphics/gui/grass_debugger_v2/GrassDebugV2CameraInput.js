@@ -19,6 +19,7 @@ export class GrassDebugV2CameraInput {
         this._right = new THREE.Vector3();
         this._clear = () => this._keys.clear();
         this._onKeyDown = event => {
+            if (!this.controls.enabled) return;
             if (event.ctrlKey || event.altKey || event.metaKey || event.isComposing || isEditing(event.target)) {
                 this._clear();
                 return;
@@ -61,6 +62,10 @@ export class GrassDebugV2CameraInput {
         window.removeEventListener('blur', this._clear);
         document.removeEventListener('visibilitychange', this._onVisibilityChange);
         document.removeEventListener('focusin', this._onFocusIn);
+        this._clear();
+    }
+
+    clear() {
         this._clear();
     }
 }
