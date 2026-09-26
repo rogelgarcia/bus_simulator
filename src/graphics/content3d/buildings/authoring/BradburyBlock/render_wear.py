@@ -9,7 +9,8 @@
 #   blender -b -P render_wear.py -- wear=debug wear_probe=1 view=st_up
 #   blender -b -P render_wear.py -- wear=debug cam=19.5,-3.2,8.4:16.9,-3.2,9.2:50 pct=50 samples=32
 #
-# view= is one of the scene's cameras (st_corner, st_portal, st_along, st_up, hero_3q); cam= is a camera at x,y,z
+# view= is one of the scene's cameras (st_corner, st_portal, st_along, st_up, hero_3q, ref_3q -- the last in its own
+# 3:2 frame); cam= is a camera at x,y,z
 # looking at tx,ty,tz with a lens in mm, as build_scene.py's VIEWS are written. Strengths not given keep the scene's
 # own. The still goes to out=, or to tests/artifacts/screens/bradbury_wear/render_wear/<view>_<mode>.png. Nothing is
 # saved back into the scene.
@@ -60,6 +61,8 @@ if "samples" in args: S.cycles.samples = int(args["samples"])
 if "pct" in args: S.render.resolution_percentage = int(args["pct"])
 if "res" in args:
     S.render.resolution_x = int(args["res"]); S.render.resolution_y = int(int(args["res"]) * 10 / 16)
+fw, fh = S.camera.get("frame", (16, 10))       # a view's own frame (build_scene.py's VIEWS: ref_3q is 3:2), else the scene's 16:10
+S.render.resolution_y = int(S.render.resolution_x * fh / fw)
 if "exposure" in args: S.view_settings.exposure = float(args["exposure"])
 devices = args.get("devices", "hybrid").lower()
 assert devices in ("hybrid", "gpu"), f"devices: hybrid | gpu, not {devices}"

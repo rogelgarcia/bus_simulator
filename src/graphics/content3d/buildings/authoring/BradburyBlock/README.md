@@ -1310,8 +1310,9 @@ that changes existing objects' geometry or materials flows through, while object
 That is how 81 new archivolts rendered as nothing at all (2026-09-22) while the ring's retune, which only changed
 existing meshes and their material, showed up fine. Anything that adds objects needs `build_scene.py` run again; the
 model file's
-own inspection cameras and lights are unlinked, the scene bringing its own five (`st_corner`, `st_portal`, `st_along`,
-`st_up` at a standing eye `Z_GROUND + EYE`, and `hero_3q`), Cycles on OptiX, AgX, 16:10.
+own inspection cameras and lights are unlinked, the scene bringing its own six (`st_corner`, `st_portal`, `st_along`,
+`st_up` at a standing eye `Z_GROUND + EYE`, `hero_3q`, and since AI 574 `ref_3q`, the reference photo's stand, in its
+own 3:2 frame -- see "The reference camera (AI 574)" at the end), Cycles on OptiX, AgX, 16:10.
 
 The sky is the game's own — `assets/public/lighting/hdri/german_town_street_2k.hdr`, the default entry of
 `IBLCatalog.js` — so a Cycles still and the engine light the block from the same sky. Where that sky's sun stands is
@@ -1319,6 +1320,8 @@ measured rather than guessed: `hdri_sun_direction` inverts Blender's equirectang
 / 2pi`, `v = (atan2(z, hypot(x, y)) + pi/2) / pi`, pixel rows bottom up), takes the brightest 0.005% of texels and
 averages them as directions. This map reads **18.7 degrees up at azimuth 143.9** (105 texels, peak 95351 against a
 mean of 0.70), and `sun=` puts a lamp there, on the map's own sun, for shadows crisper than a 2k image can throw.
+
+That reading was mirrored (AI 574 item 9, 2026-09-25): Cycles maps u = 0.5 - atan2(y, x) / 2pi, and the Mapping node turns the lookup, so a texel at azimuth a is seen at a - rot; this map's sun stands at azimuth 74 at rot 250, not 33.9. The lamp was moved to the photo's sun and put back the same day at the user's request; it stands on the mirrored reading on purpose. See "The sun lamp (AI 574 item 9)" at the end.
 
 ### Before and after from one pose (2026-09-20)
 
@@ -1377,6 +1380,8 @@ AO / roughness / metal, the OpenGL normal) and tiled at each set's own `tileMete
 `clean_asphalt`, `concrete_pavement`, `concrete` for the kerb. A 4 m tile over a street shows its repeat from any wide
 lens, so a slow noise (22 m for the road, 14 m for the pavement) lifts and drops the tone by a tenth, which breaks the
 grid without touching the surface.
+
+Since AI 574 item 3 (2026-09-25) the pavement's corners are curb returns, its kerb a swept profile with a rolled edge and a gutter, and the far pavement eight blocks with the streets running on between them; see "The kerb and the sidewalk corners (AI 574 item 3)" at the end. The paragraph above describes the ground as it was first laid.
 
 The catcher lies at z -0.050 out to 600 m, just under the roadway, so in street mode it shows only past the real
 ground's edge. `ground=catch` drops the street and stands the catcher at the block's own pavement level instead, where
@@ -5876,3 +5881,434 @@ corner's face by 0.215 to 0.294 levels before (2.7 to 3.3% of the pixels) and mo
 Two stills of the same scene switched off differ by as much as the first `hero_3q` did from the pre-wear still: the
 GPU is not bit-deterministic, and the band's ornament is where it shows. The canonical scene, rebuilt last, renders the
 close-up through `render_wear.py` to 0.0075 of its evidence still.
+
+## The reference camera (AI 574, 2026-09-25)
+
+The scene is now judged against one photo: an aerial three-quarter view of the corner on a clear afternoon, the block
+standing in a low-rise city (the user's reference of 2026-09-25, copied to
+`tests/artifacts/screens/bradbury_scene/review_2026-09-25/reference_corner_aerial.png`; the review of the scene against
+it, eight numbered gaps with arrows on both pictures, is `scene_review_reference_vs_ours.png` beside it). Every scene
+item of AI 574 is compared from the photo's own stand, so that stand is a scene camera, `ref_3q`, the sixth in
+`VIEWS`, and the first with a frame of its own: `(from, to, lens, frame)`, the frame `(3, 2)` kept on the camera object
+as `frame` so `render_wear.py` renders it 3:2 as well (the other five stay 16:10).
+
+Where the photo stands was read off the photo and then calibrated on the render. Its horizon lies 32% from the top --
+the eye is at the height of the top-floor string course, about 16 m over the pavement; the chamfer corner stands at
+44% of the width; the block fills 88% of the width; Broadway is seen squarer than 3rd Street (680 px for its 33 m
+against 530 for 3rd Street's 50 m), so the camera stands 34 degrees south of east from the corner, not on the diagonal.
+With 35 mm on the 36 mm sensor that puts the eye 40 m from the chamfer's midpoint `(15.58, -16.46)`, at
+`(48.74, -38.83, 16.2)`, aimed 3 m to the camera's right of the corner and down to z 11.4 (6.8 degrees), so the horizon
+falls a third down. Checked by blending the photo over the render at 50% with the photo's cornice top, base, horizon
+and corner column drawn as lines (`tests/artifacts/screens/bradbury_scene/item6_camera/`): the cornice, the corner
+column, the base and both facade ends land on the photo's own; 38 m made the block a tenth too wide, 42 m a tenth too
+narrow. The block's proportions are not the photo's (the photo's building is a generic one), so the match is at the
+corner and the extents, not window for window.
+
+```
+blender -b -P build_scene.py -- ref_3q            # rebuild, and render the reference view (1920x1280)
+blender -b -P render_wear.py -- view=ref_3q       # the saved scene, from the same stand
+```
+
+**Measured, not eyeballed (AI 574 item 12, 2026-09-25; the user: "the camera still needs adjustments to match the
+reference").** The overlay had matched the corner and the cornice but left the block 6% too low in the frame and its
+right end 4% short. A hue mask of the brick (H under 32 or over 335 degrees, S over 0.30, V over 0.18) read from both
+pictures, below the horizon so the background cannot pollute it, gives five numbers as fractions of the frame: the
+wall ends at the base, the cornice top, the corner base and the corner column (the last two hand-read in the photo,
+where the sunlit sidewalk passes the mask). Photo: 0.055 / 0.930 / 0.085 / 0.860 / 0.443. Ten candidate stands were
+rendered at 40% and measured (`review_2026-09-25/scripts/measure_ours.py`, `hdri_test.py` with `cam_*`); what moved
+each number: the eye height sets where the horizon crosses the block (it crosses at 14.4 m, a floor lower than
+16); the tilt puts the horizon a third down; the distance sets the column height; the azimuth trades the two faces'
+widths; and only a longer lens from further back lengthens both wall ends at once, since it compresses the
+perspective (35 mm at 40 m left the right end 2% short, 40 mm at 44.5 m lands both). The stand that matches all five
+within 0.007: eye 14.4 m over the pavement at (54.12, -38.71), 44.5 m from the chamfer's midpoint at azimuth -30,
+40 mm, aimed 3.8 m to the camera's right of the corner and down to z 9.76. The block's proportions are not the
+photo's building's, so a closer match than this is not a camera matter.
+
+## The kerb and the sidewalk corners (AI 574 item 3, 2026-09-25)
+
+The reference's kerb sweeps round the corner in one arc, and its kerb is a real curb: a rolled top edge, a face lighter
+than the road, a dark gutter line along its foot (the user: "round the curbside in the corner and bevel it"). The
+ground was laid with a sharp mitred kerb following the chamfer and a plain vertical ribbon for the kerb; now:
+
+- **Curb returns.** `fillet` replaces every convex corner of a pavement polygon that stands inside the field with an
+  arc of `KERB_R` 5.0 m tangent to both edges (the tangent points `r * tan(turn / 2)` back from the corner, `ARC_STEP`
+  0.30 m sampling, so 27 segments to a quarter). The block's pavement is its kerb lines' rectangle (x -40.23 / 21.19,
+  y -22.08 / 21.58), not the chamfered outline, so at the chamfer the kerb is one arc tangent to both streets and the
+  pavement is widest there -- 5.9 m from the chamfer wall against `PAVE_W` 4.2 along the faces -- which is what the
+  photo shows: a wider corner apron. (A single arc tangent to the chamfer kerb as well would need a 9.0 m radius and
+  no apron; the photo's is about 5 m.) The arc's centre (16.19, -17.08) is 2.2 m from either end of the chamfer, so the
+  pavement still runs on under the walls there.
+- **The kerb profile.** `KERB_PROFILE` is swept round the kerb line by `kerbed_pavement`: from the pavement's edge a
+  quarter round of `KERB_ROUND` 5 cm (four segments, shaded smooth), the face on the kerb line down to its foot, then
+  the gutter pan `GUTTER_W` 0.35 m out to the asphalt seam, lying `GUTTER_Z` 2 mm over the road plane (Cycles never
+  z-fights, but coplanar faces would). The pavement polygon is the kerb line pulled in by the rolled edge
+  (`outward_normals`: the mitre of each vertex's two edge normals, scaled to move each edge by one unit), so the two
+  meshes share their edge exactly. UVs are metres along the kerb and along the profile.
+- **Grime.** The kerb mesh carries a float attribute `grime` (0.6 at the foot, 0.45 halfway across the pan, 0 at the
+  seam and from 45% up the face) that `ground_material(grime=(name, strength))` multiplies into the base colour:
+  the kerb material darkens by 0.40 of it, the gutter's by 0.60 -- the dark line along the foot. The kerb wears the
+  pavement's own light set (`concrete_pavement`), so its face stands lighter than the asphalt as the photo's does (the
+  plain `concrete` set, tried first, read as dark as the road); the gutter pan wears the plain set, darker.
+- **Eight far blocks.** The far pavement was a pinwheel of four rectangles closing a moat of road round the block; now
+  both streets run on to the field's edge and the pavement beyond them is eight blocks (`s`, `n`, `e`, `w` across from
+  the faces, `se`, `ne`, `nw`, `sw` in the quadrants), each with the same kerb and curb returns at every corner that
+  faces a crossing, and none at the field's edge. `st_corner` still stands on the `se` block's pavement.
+
+Evidence: `tests/artifacts/screens/bradbury_scene/item3_kerb/` (the photo | before | after from `ref_3q`, the corner
+crops, and close-ups of the return and the profile from a standing eye, before and after).
+
+**The gutter pan went the same day** (AI 574 item 11; the user, pointing at the strip along the kerb foot: "decal").
+A 0.35 m concrete pan lying on the asphalt along the kerb, however dark its set and its grime, is a light stripe
+painted along the road from the reference camera's height. The profile now ends at the kerb's foot on the road
+plane (an edge on the plane, not a coplanar face); the grime at the foot of the face stays. The photo's dark line
+along the kerb is dirt on the asphalt, which is item 5's.
+
+## The sun lamp (AI 574 item 9, 2026-09-25)
+
+The user saw "a strange decal on the street" in the reference view: a hard-edged dark wedge across 3rd Street at the
+bottom left of the frame, and a lit wedge beside it. It was the block's own shadow. The lamp stood on what
+`hdri_sun_direction` read as the map's sun, azimuth 33.9 and 18.7 degrees up -- north-east and low -- so the block
+threw a 60 m shadow south-west across the street toward the camera, and with the hazy sky giving the walls no
+modelling to explain it, the shadow's edge read as a mark painted on the road. Two things were wrong:
+
+- The reading was mirrored. `hdri_sun_direction` inverted u as `(atan2(y, -x) + pi) / 2pi` and then applied +rot;
+  Cycles maps `u = 0.5 - atan2(y, x) / 2pi` (the image's centre column faces +x) and the world's Mapping node turns
+  the lookup vector, so a texel at azimuth a is seen at a - rot. Poly Haven maps keep their sun near u = 0.6, i.e.
+  azimuth -36 before any turn; this map's, at rot 250, stands at 74. Verified by render on 2026-09-25 (a pure-sky map
+  turned by the corrected rule lit the block exactly as predicted; by the old one the sun landed behind it). The
+  function now reads and turns the right way.
+- The map's sun is the wrong sun anyway. The photo's stands high behind the reference camera's left shoulder, so
+  `sun_az` / `sun_el` (default -60 / 45) put the lamp there and the block's shadow falls behind it, out of the frame;
+  `sun_az=map` gives the old behaviour on the corrected reading. The sky is not turned to follow the lamp: at
+  strength 0.75 through this map's haze nothing in the frame betrays where its disc is, and the sky item replaces
+  the map.
+
+Evidence: `tests/artifacts/screens/bradbury_scene/item9_sun/` (`ref_3q` before | after, and `st_corner`).
+
+**Reverted the same day** (AI 574 item 10; the user, on seeing the result: "revert the illumination"). The lamp is
+back on the map's sun as the mirrored reading gives it, azimuth 33.9 and 18.7 degrees up, so the scene's light is
+what it has been since 2026-09-20, block shadow across 3rd Street and all; `sun_az` / `sun_el` stay as an option
+(`sun_az=map` is the default). `hdri_sun_direction` keeps its mirrored formula on purpose, documented in place: the
+correct convention above is what the sky item will use when it replaces the map and places the lamp explicitly.
+
+## The road (AI 574 item 5, 2026-09-25)
+
+The photo's asphalt is old and sun-bleached: a warm pale grey -- about sRGB 150/136/125 in the sun against the
+kerb's 220, where ours read 112 neutral -- with alligator cracking over most of it, repairs paler and darker than
+the field, and a dirt line along the kerb. The road had been `clean_asphalt` tiled at 4 m with a slow mottle: dark,
+even and cool. Of the four asphalt sets in `assets/public/pbr` only `asphalt_02` is pale (mean sRGB 90 against
+clean_asphalt's 69) and it carries two long cracks per tile, so `road_material` builds on it, in metres over the
+road's UVs:
+
+- **Anti-tiling.** The set's colour is read twice, once as it tiles and once turned a quarter, offset and scaled
+  by 1.13, and the two trade places over a 9 m noise, so neither the 4 m repeat nor the set's own cracks line up
+  across the street. Normal and roughness come from the first sample.
+- **Bleaching.** The colour is tinted `ROAD_TINT` (1.08, 1.02, 0.94) and lifted `ROAD_LIFT` 1.12. In the reference
+  view the road now reads 135-140 warm where the photo has 127-150.
+- **Repairs.** A Manhattan Voronoi of `ROAD_PATCH_M` 9 m cells: the lowest fifth of cells go to 0.88 of the tone,
+  the top fifth to 1.07, the rest stay; a 2.5 m noise across each cell keeps its edge from being dead straight. A
+  first pass at 7 m and 0.80 / 1.12 read as painted rhombs and was softened.
+- **Alligator cracking.** Two Voronoi networks (`ROAD_CRACK_M` 0.7 m and 1.7 times that) on an input warped by a
+  1.4 m noise, their distance-to-edge thresholded to `ROAD_CRACK_W` 3 cm, darkening by `ROAD_CRACK_DARK` 0.40;
+  a 0.25 m noise opens gaps along about a third of every crack, and the band out to three widths pales by
+  `ROAD_CRACK_RIM` 0.10 (the crushed aggregate beside a real crack); only where a 16 m noise says the surface is
+  cracked, `ROAD_CRACK_COVER` 0.62 of it. One network at 0.9 m with unbroken 5 cm cracks read as a honeycomb.
+- **The kerb's dirt line.** An Ambient Occlusion node (4 samples, `ROAD_DIRT_M` 0.6 m) reads how much the kerb's own
+  0.2 m face shades the road; one minus that, broken up by a 0.9 m noise, darkens the road by up to `ROAD_DIRT`
+  0.50 at the foot. It follows every curb return by itself; at 4 samples it costs the reference view nothing
+  measurable (30 s at 1920x1280 and 128 spp against 27 s before; a first pass at 8 samples and half size took twice
+  as long as it should have).
+- The slow 22 m mottle every ground set has stays.
+
+Evidence: `tests/artifacts/screens/bradbury_scene/item5_asphalt/` (photo | before | after from `ref_3q`; the three
+road regions of the photo beside ours at full size, v1 to v3; a street-level view down 3rd Street before and after).
+Not done here: tire tracks (faint in the photo), the crown, lane paint (the photo has none in view).
+
+**Randomised (AI 574 item 13, later the same day; the user: "cracks on the asphalt are good, but they read
+pattern").** Two things repeated: the set's own long cracks, every 4 m tile in one direction, and the network's
+cells, all one size. Now the set is laid per random cell: a Voronoi of `ROAD_TILE_M` 7 m gives every cell a feature
+point and a random number, and `random_tile` samples the set turned about that point by the cell's own angle and
+slid by its own offset, so no crack of the set repeats or shares a direction with its neighbour's; the two layouts
+blended by the 9 m noise hide the cell seams (a crack ending at a seam reads as a crack ending). The networks skip
+`ROAD_CRACK_SKIP` 22% of their cells (a second Voronoi, F1, at the same scale and input gives the same cells' random
+numbers), every crack has its own strength (`ROAD_CRACK_VARY` 0.6 to 1 over a 2.2 m noise), the regions are ragged by
+a 5 m noise on top of the 16 m one, and a sparse third network of `ROAD_BLOCK_M` 3.5 m block cracks (`ROAD_BLOCK_DARK`
+0.30) lies over everything; the width went to 4.5 cm and the darkening to 0.55 to keep the network as visible as
+before from the reference stand, where a crack is a fraction of a pixel and its width is its visibility. What did
+not work: drifting the cells' size by feeding a 6 m noise into the Voronoi's Scale -- the scale multiplies world
+metres, so 30 m from the origin the cells swirl into specks or stretch to 4 m and the network vanishes; three passes
+went by before `debug_cracks.py` (the crack factor rendered top-down over a 12 m patch) showed it. Evidence in
+`tests/artifacts/screens/bradbury_scene/item13_cracks/`.
+
+## Tire wear and the curbs (AI 574 items 14 and 15, 2026-09-25)
+
+**Tire wear** (the user: "add the tire wear threads as well"). Every lane of every street wears two wheel paths where
+the tires run, a shade darker (rubber) and smoother (polish) than the field. `road_material` takes the streets'
+lane bands, `LANES` -- for each of the four streets its axis, its centre line and its two kerb lines -- and for a
+street along x reads the offset from the nearest lane centre off y: `wrap(y - centre - lane/2, -lane/2, lane/2)`
+with `ROAD_LANE_M` 3.25 (four lanes in `ST_W` 13 m), folded about the track's half width (`ROAD_TRACK_M` 1.8) and
+thresholded to a soft band `ROAD_WEAR_W` 0.34 m wide; the band's own kerb lines bound it (fading over 0.6 m), the
+four streets take their maximum so the paths cross in the crossings, and an 8 m noise (`ROAD_WEAR_VARY_M`) lets the
+wear come and go along the road between 0.4 and 1. The paths darken the colour by `ROAD_WEAR_DARK` 0.16 and lower
+the set's roughness by `ROAD_WEAR_SMOOTH` 0.25; 0.12 and 0.18 were too faint from the reference stand. The wear is
+applied before the kerb's dirt line and the packed AO, in the same chain.
+
+**Reworked as bands of use (AI 574 item 16, 2026-09-26; the user: "it should look like bands of more usage, not a
+single tire thread; where the tires usually go it has a different texture").** The stripes above read as a pattern.
+Now each band is `ROAD_WEAR_W` 1.35 m wide with soft edges (solid over its middle half), so a lane's two paths nearly
+merge into one worn zone with a less-worn centre; the coordinate is pushed sideways by a 12 m noise
+(`ROAD_WEAR_WANDER` +-0.35 m) so the zones wander along the street; the lane index (the offset to the centre line
+over `ROAD_LANE_M`, floored) gives the outer two lanes `ROAD_WEAR_OUTER` 0.4 of the inner two's use; and a 20 m noise
+lets the use fall to 0.2 on some stretches. Inside the zone the surface is polished rather than darkened: the colour
+is mixed `ROAD_POLISH_FLAT` 0.30 toward one flat tone (`ROAD_POLISH_TONE`, the road's own mean) and lightened
+`ROAD_POLISH_LIGHT` 1.05, the roughness drops by `ROAD_WEAR_SMOOTH` 0.35 and the normal map's strength by
+`ROAD_WEAR_FLATTEN` 0.60 (the Normal Map node's Strength input). A first pass at 1.1 m, 1.08 lighter and no lane
+weighting still read as eight even stripes. Evidence: `tests/artifacts/screens/bradbury_scene/item16_wear_bands/`.
+
+**The curbs** (the user: "implement the curbs", read as: make the kerb read as the photo's concrete curb, which
+ours did not -- a smooth continuous rim in the sidewalk's texture where the photo's kerb is poured in segments with
+joints and its own tone). `kerb_material` replaces `ground_material` on the kerb: the pavement's light set tiled
+along the kerb mesh's UVs (u metres along the kerb line, v metres down the profile); a joint every `KERB_JOINT_M`
+1.5 m, a dark line `KERB_JOINT_W` 2 cm wide (darkening `KERB_JOINT_DARK` 0.45) at the distance to the nearest joint
+read off u wrapped to the segment; every segment its own tone, a white noise of the segment's index mapped to
++-`KERB_SEG_VARY` 7%; the face (v past the rolled edge, `KERB_ROUND` * 1.2) at `KERB_FACE_TONE` 0.90 of the top,
+which is worn paler; and the foot's grime from the mesh's attribute as before (0.60 at the foot). The joints run
+round the curb returns with the kerb line. Evidence: `tests/artifacts/screens/bradbury_scene/item14_tire_wear/`
+and `item15_curbs/`.
+
+## Street widths from the photo, and the wear per street (AI 574 items 17 and 18, 2026-09-26)
+
+The user, on the wear bands: "you didn't take into consideration the width of the street; there probably space for
+just one car there" -- and the photo bears it out. Its 3rd Street's far kerb shows at the frame's bottom left;
+unprojected through the measured `ref_3q` camera onto the ground it stands about 5.3 m from the block's kerb (the
+same unprojection puts the photo's block kerb 3.9 m outside ours, so the photo's sidewalks are wider too; that is
+left alone). Its Broadway's far kerb is beyond the frame: at least 8 m. So `ST_W` became two widths, `ST_W_EW` 6.0 m
+for 3rd Street and its northern twin and `ST_W_NS` 13.0 m for Broadway and its western twin; the far kerbs, the
+eight far blocks and their curb returns follow, and in the reference view the far pavement of 3rd Street now shows
+at the bottom left as the photo has it.
+
+The wear is laid per street from what its width holds. `LANES` carries, for each of the four streets, its two kerb
+lines, its travel-lane count and its parking strip: 3rd Street one lane and no parking (one car: one worn zone down
+the middle), Broadway two lanes between `ROAD_PARK_M` 2.4 m parking strips (a zone each way, the strips clean). The
+loop wraps the across-street coordinate to the lane width inside the travel zone, so the offset from the nearest
+lane centre folds about the track's half width as before.
+
+And the bands hold still (the user: "the tire wear also doesn't look like an S or as if the markings are dancing.
+They are more stable, with some parts maybe wider, but really smooth changes"). The wander of item 16 is gone. Two
+noises of the ALONG-street coordinate alone -- so nothing varies across the band -- drift each band's width by
++-`ROAD_WEAR_WIDTH_VARY` 25% over `ROAD_WEAR_WIDTH_M` 25 m and its strength between 0.4 and 1 over `ROAD_WEAR_VARY_M`
+30 m; the Map Range that cuts the band takes its From Min / From Max from the width noise. Evidence:
+`tests/artifacts/screens/bradbury_scene/item17_18_streets_wear/`.
+
+## The road surface (AI 574 item 19, 2026-09-26)
+
+The user: "the asphalt geometry is too flat; there should be small irregularities". The road had been one quad on
+the plane z = 0. Now, near the block, it is a surface: `road_mesh` lays a 550x550 grid of `ROAD_GRID_M` 0.20 m cells
+over the square of half extent `ROAD_GRID_R` 55 m -- every street the reference view sees -- and `road_height` sets
+every vertex:
+
+- **Undulation** at four scales, Perlin noise each on its own offset: `ROAD_UNDULATE` 18 m / 3 cm (settlement
+  waves), 4 m / 2.2 cm (sags), 1.5 m / 1.1 cm and 0.6 m / 4.5 mm (the small irregularities; the grid carries the
+  last with three cells to a wavelength).
+- **A crown** across every street band the point lies in, parabolic, `ROAD_CROWN` 1.5 cm per metre of half width
+  (10 cm at Broadway's centre line, 4.5 cm at 3rd Street's); at a crossing the higher wins.
+- **Ruts** `ROAD_RUT` 1.2 cm deep along the wheel bands of item 18 (the same lane arithmetic), varying with the use.
+- **A dip toward the gutter**, `ROAD_GUTTER_DIP` 1 cm over `ROAD_GUTTER_M` 0.7 m from each kerb.
+- **Repair patches that sit proud or sunk.** A Manhattan Voronoi of `ROAD_PATCH_M` 9 m cells (mathutils' 3D one,
+  sliced at z = 0, which also varies the cells' sizes); a number fixed by the cell's feature point puts the
+  darker fifth of cells `ROAD_PATCH_SUNK` 8-15 mm down and the palest fifth `ROAD_PATCH_PROUD` 5-10 mm up, the step
+  softening toward the cell's edge over `ROAD_PATCH_EDGE`. The cell's tone -- the same darker or paler, softened
+  across the cell by a 2.5 m noise as the shader used to -- goes into the mesh's `ptone` float attribute, which
+  `road_material` now reads in place of its own Voronoi, so colour and step coincide.
+- **Settled utility trenches**, `ROAD_TRENCH_N` 3 per street from a fixed seed, `ROAD_TRENCH_W` 1 m wide, sunk
+  `ROAD_TRENCH_DEPTH` 1.6 cm, their fill darker (`ROAD_TRENCH_TONE` 0.90, folded into `ptone`): on 3rd Street at
+  x -16.6, 4.3 and -35.1, on Broadway at y -7.2, 18.1 and 29.3.
+- All of it fades to nothing over `ROAD_GRID_FADE` 10 m inside the grid's edge, where four flat quads
+  (`scn_road_far`, `ptone` 1) carry the road on to the field's edge on the plane.
+
+The kerb profile gained a buried foot, `KERB_BURY` 8 cm under the plane, so the road may dip beside it without
+opening a slit; the shadow catcher lies at -12 cm, under the deepest dip. Below the grid the shader adds
+`ROAD_BUMP`, two noises as a Bump node on top of the set's normal (1.5 mm over 25 cm, 0.6 mm over 8 cm), worn
+down in the wheel bands with the normal map; and the set's roughness is eased by `ROAD_ROUGH_SCALE` 0.85 (the
+asphalt_02 set's mean 0.77 becomes 0.65; clean_asphalt's was 0.66), which is what lets the surface reflect the sky
+enough for its waves to show -- the way a real road shows them.
+
+Three passes. The first, 0.35 m cells and 2.5 / 0.8 / 0.3 cm, was invisible at street level: a road lit by a hazy
+sky barely registers a one-percent slope, and the finest scale could not live on that grid. The second added the
+0.2 m grid, the patches and the trenches; the steps showed, the waves still did not. The third raised the
+amplitudes and added the bump and the eased roughness, and the view toward the sun across the crossing -- the
+sheen of a flat plane against the same sheen broken into waves and patch edges -- is the proof
+(`glare_crossing_before_flat.png` | `glare_crossing_after.png`). The grid costs about 20 s of build time and nothing
+measurable at render. `debug_height.py` (the review's `scripts/`) renders the height about the plane top-down in
+false colour with a contour per centimetre; `height_map_topdown_40m.png` shows the crowns, the patch steps and the
+trenches at once. Evidence: `tests/artifacts/screens/bradbury_scene/item19_road_surface/`.
+
+## The wear as a field, and the street width restored (AI 574 items 20 and 21, 2026-09-26)
+
+The user, on the wheel bands of items 16-18: "still too abrupt, and very bright; I don't know about their size; on
+the curved streets there should be curved markings, merging all of them in the center; the markings fade away more
+naturally in reality" -- and on item 17: "you also shrunk the street width; that was not the objective; make the
+side street larger".
+
+**The width first.** `ST_W_EW` is 13.0 m again (item 17 had read the photo's far kerb and cut it to 6); both streets
+carry a lane each way between `ROAD_PARK_M` 2.2 m parking strips (`LANES`).
+
+**The wear left the shader.** `road_wear(x, y, lanes, crossings)` computes the field, 0..1, and `road_height` hands it
+to `road_mesh`, which stores it on the grid as the `wear` float attribute the material reads (as it reads `ptone`),
+so the ruts of item 19 now follow the wear exactly and the shader has no lane arithmetic left. What the field is:
+
+- **Wheel paths without an edge.** Every travel lane wears two paths `ROAD_TRACK_M` 1.8 m apart, each a Gaussian
+  across with `ROAD_WEAR_SIGMA` 0.55 m: half strength 0.65 m out, a tenth 1.2 m out; a lane's two meet at about a
+  quarter between them, so a lane reads as one soft zone with two stronger lines, and the outer path's tail dies
+  in the parking strip. They run dead straight; their strength drifts between 0.6 and 1 over `ROAD_WEAR_VARY_M`
+  30 m and their width by +-`ROAD_WEAR_WIDTH_VARY` 25% over 25 m, from noises of the along-street coordinate alone.
+- **One merged zone per crossing.** `road_crossings` pairs every x-street with every y-street (four crossings);
+  over each crossing's middle -- a rounded square, the cubic superellipse of the offsets over the half widths,
+  full inside `ROAD_MERGE_IN` 0.25 and gone at `ROAD_MERGE_OUT` 1.1 -- the wear is at least `ROAD_MERGE_STRENGTH`
+  0.6 and the straight paths give way to it by `ROAD_MERGE_FADE` 0.5, so the paths coming in dissolve into one
+  worn area rather than crossing as a grid.
+- **Turning paths round every curb return.** At each of a crossing's four corners the return's centre is the corner
+  moved `KERB_R` out on both axes, and a right turn's two wheel paths run as arcs concentric with the kerb,
+  `ROAD_TURN_IN` 0.9 m and a track further outside it, over the kerb's quadrant and fading `ROAD_TURN_FADE` 15
+  degrees past each end so they run into the straight paths of both streets, at `ROAD_TURN_STRENGTH` 0.5.
+- **Fading.** The field is scaled by the grid's edge fade like the geometry, so the paths die out over 10 m toward
+  the field's edge instead of stopping; the far ring carries wear 0.
+
+**The polish, darker.** `ROAD_POLISH_LIGHT` is 0.92 (it had been 1.05: the bands read as bright stripes), the colour
+flattened `ROAD_POLISH_FLAT` 0.25 toward the road's mean, the roughness lowered by `ROAD_WEAR_SMOOTH` 0.2 and the
+normal map's strength by `ROAD_WEAR_FLATTEN` 0.5 at full wear. The wear now reads as slightly darker, smoother
+zones -- most clearly from a low sun -- and its strength is the one knob to push if it should read more.
+
+A first pass had the merged zone square (a box metric) and the polish so faint it vanished from above; the second
+rounded it and deepened the polish. `debug_wear.py` (the review's `scripts/`) renders the `wear` attribute top-down;
+`wear_field_topdown_44m.png` shows the paths, the arcs and the merged zone over the south-east crossing at once.
+Evidence: `tests/artifacts/screens/bradbury_scene/item20_21_wear_field/`.
+
+## The road graded, and the kerb raised (AI 574 items 22 and 23, 2026-09-26)
+
+The user, on the height map of item 19: "the asphalt irregularities look like islands. That's not how it should
+work. The asphalt should be higher at the center, but also, at the corner it should wave, make bellies, very
+subtle and smooth" -- and: "the height of the sidewalk is correct? It looks a little thin to me."
+
+**Graded like a road.** The islands were the two fine noise scales and the patch steps: closed cells and blobs.
+Both are gone (`ROAD_UNDULATE` keeps 18 m / 3 cm and 8 m / 1.5 cm; `ROAD_PATCH_SUNK` and `ROAD_PATCH_PROUD` are
+zero, the tone patches stay). What is left is how a street is graded:
+
+- **The crown dominates**, parabolic, `ROAD_CROWN` 1.5 cm per metre of half width: 10 cm at each centre line.
+- **Bellies at the corners.** Where the point lies in two street bands -- the crossing -- the crowns are combined
+  by a softmax with temperature `ROAD_CROWN_SMOOTH` 3 cm: the larger where they differ, their mean where they
+  meet, so the sharp valley a plain max left along the crossing's diagonals is now a smooth one, and the four
+  corner quadrants belly gently down from both centre lines into the returns.
+- **Waves pinned to the gutter.** The gutter line is a fixed grade, so the waves are multiplied by a pin that
+  rises from 0 at any kerb to 1 at `ROAD_PIN_M` 2 m out. The distance to the kerb comes from `_pad_dist`: every
+  pavement as a rectangle with its corners rounded to `KERB_R`, so the distance follows the curb returns (a
+  per-band distance would have drawn spurious lines across the crossings' openings); `PADS` lists the block's
+  pavement and the eight far blocks'.
+- **The gutter** falls `ROAD_GUTTER_DIP` 2.5 cm over `ROAD_GUTTER_M` 1 m from that same distance, round the
+  returns too; the ruts are `ROAD_RUT` 1 cm times the wear field; the trenches 1.2 m wide and 1 cm deep.
+
+**The kerb raised.** From the matched `ref_3q` stand the photo's kerb face at the corner spans about three ticks
+of 5 pixels against under two of ours, with the photo's kerb standing a little further off (its sidewalk is
+wider): the photo's kerb reads about twice ours. `ROAD_Z` is -0.08 -- the block's base is fixed at `Z_GROUND`
+0.201, so the plane sets the kerb's height -- which makes the kerb 28 cm, a tall downtown stone-block kerb, with
+the gutter falling a further 2.5 cm into it; `KERB_JOINT_M` is 1.0 m, the length of the photo's blocks. Every
+far kerb, the catcher (`ROAD_Z` - 0.12) and the kerb profile follow the plane. `debug_height.py` takes `plane=`
+so the height map is read about the moved plane. Evidence:
+`tests/artifacts/screens/bradbury_scene/item22_23_grading_kerb/` -- the height map before and after is the one
+to look at first.
+
+## The crossing's wear as the traffic's movements (AI 574 item 24, 2026-09-26)
+
+The user drew over the wear field: "all lanes should go in all possible other lanes, and the curves should continue
+from the straight line; the red lines show the bands' limits, the markings should mostly be inside them; make the
+fading wider, more subtle; at the center, all sorts of combinations." Item 20's turning arcs had hugged the curb
+returns, concentric with the kerb, outside the lanes' envelope and joined to nothing.
+
+**Movements.** `road_crossings` now writes, for each crossing, the traffic's turns. Right-hand traffic: on the
+street along x the south lane runs east and the north lane west; on the street along y the east lane runs north
+and the west lane south. Each of the four arms brings one lane in, and that lane turns right into the lane leaving
+on its right and left into the lane leaving on its left (straight through is the lane's own band). A turn is the
+fillet between the incoming lane line and the outgoing one: for directions d1 in and d2 out meeting at P, the arc
+of radius r has its centre at P - r d1 + r d2 and runs from the tangent point r before P to the one r after it, a
+quarter circle from direction -d2 to direction d1 about the centre. Tangent at both ends is the point: the turn's
+wheel paths leave the straight wheel paths and rejoin the next street's without a break, which is what "the
+curves should continue from the straight line" asks. `ROAD_TURN_R_RIGHT` 7 m keeps a right turn's outer wheel
+path well inside the envelope (about 4 m off the pavement corner); `ROAD_TURN_R_LEFT` 11 m sends every left turn
+through the crossing's middle, where the four of them cross the eight straight paths -- the combinations.
+`road_wear` lays each turn's two wheel paths as Gaussians of `ROAD_TURN_SIGMA` 0.8 (turning cars spread more than
+through ones) at `ROAD_TURN_RIGHT` 0.5 and `ROAD_TURN_LEFT` 0.4, over the arc's quadrant only; the quadrant's
+ends fall on the straight bands, which are stronger, so nothing shows a seam.
+
+**Softer.** The straight paths' sigma is `ROAD_WEAR_SIGMA` 0.65 (half strength 0.77 m out); the wear has its own
+edge fade, `ROAD_WEAR_FADE_M` 20 m inside the grid's edge (the geometry keeps 10), so the bands die out over a
+long stretch; the merged zone is `ROAD_MERGE_STRENGTH` 0.45, rising from 1.2 to 0.2 of the half width, the
+straight paths giving way to it by `ROAD_MERGE_FADE` 0.35. `road_crossings` asserts a lane each way; another lane
+count needs its own movement table. Evidence: `tests/artifacts/screens/bradbury_scene/item24_movements/` (the
+sketch is `user_sketch_movements.webp`; `wear_field_before.png` | `wear_field_after.png` is the comparison).
+
+## The wear's profile, and the asphalt's roughness (AI 574 item 25, 2026-09-26)
+
+The user: "reduce the strength of the tire wear; make the fading wider, and the peak narrower; and make the
+asphalt more rough in general; it is too plastic right now."
+
+**The profile.** A wheel path across is no longer one Gaussian but `_path`: a narrow peak on wide skirts --
+`ROAD_WEAR_PEAK` 0.55 of a Gaussian of `ROAD_WEAR_CORE` 0.45 times the sigma (0.29 m for the straight paths: half
+strength 0.34 m out) and the rest of one of `ROAD_WEAR_SKIRT` 2 times the sigma (1.3 m: a tenth 2.8 m out). A
+lane's two paths add, since their skirts overlap between them, so a lane reads as one long soft zone with two
+narrow lines in it; lanes, streets and the crossing's movements take the maximum as before. The whole field is
+scaled by `ROAD_WEAR_GAIN` 0.65, and the polish is milder (`ROAD_POLISH_FLAT` 0.15, `ROAD_POLISH_LIGHT` 0.95,
+`ROAD_WEAR_SMOOTH` 0.15, `ROAD_WEAR_FLATTEN` 0.3).
+
+**The roughness.** Item 19 had eased the asphalt_02 set's roughness by 0.85 (mean 0.77 to 0.65) so the sheen of a
+low sun would show the surface's waves; with the crown and the bellies of item 22 the surface shows without it,
+and that sheen is what read as plastic. `ROAD_ROUGH_SCALE` is 1.10 (mean 0.85), the set's normal map is
+strengthened by `ROAD_NORMAL_GAIN` 1.4 for the aggregate's grain, and `ROAD_BUMP` is deeper with a 2.5 cm grain
+added (2.5 mm over 25 cm, 1.2 over 8, 0.4 over 2.5). The view toward the sun is the proof: a glossy sheet
+before, a matte grain after. Evidence: `tests/artifacts/screens/bradbury_scene/item25_wear_profile_roughness/`.
+
+## The kerb's top (AI 574 item 26, 2026-09-26)
+
+The user: "the kerb seems to be thin, I don't see its border at the top of the sidewalk." The kerb of items 3, 15
+and 23 had only its 5 cm rolled edge between the slabs and the face: seen from above it was a line, and the
+photo's kerb is a course of stone blocks with a top of its own. `KERB_PROFILE` now begins at the slabs' edge,
+steps up `KERB_TOP_PROUD` 8 mm onto the kerb, runs `KERB_TOP_W` 0.30 m across its flat top, and only then rounds
+over the edge and drops down the face as before; `KERB_ROUND_FIRST` 2 marks where the round's quads start for
+smooth shading, and `kerbed_pavement` insets the slabs by the top's width plus the round, so the slabs end where
+the kerb begins. `kerb_material` gives the whole kerb `KERB_TONE` 0.88 of the slabs' set -- the photo's kerb is
+a darker stone than its sidewalk -- a dark joint along the slabs (`sjoint`: the step's face and the first
+centimetre of the top) and the face tone from `KERB_V_FACE`, past the top and the round; the metre joints of item
+23 run across the top, so the kerb reads as blocks from above. Evidence:
+`tests/artifacts/screens/bradbury_scene/item26_kerb_top/` (the photo's kerb beside ours at the same crop, before
+and after).
+
+## The kerb weathered (AI 574 item 27, 2026-09-26)
+
+The user: "make the kerbs dirty. Water lines, dirt at the bottom, irregular shapes, edge wear." `kerb_material`
+now ends in a weathering chain written in h, the height above the gutter's foot (0 there, the face's height at
+the round's end), and u, the run along the kerb, every feature varying along u by its own noise so that nothing
+repeats from block to block:
+
+- **Dirt at the foot.** A band up to `KERB_FOOT_H` 10 cm, its top edge wandering +-`KERB_FOOT_VARY` 5 cm over
+  1.7 m with a finer 0.3 m raggedness on top, darkest at the foot (`KERB_FOOT_DARK` 0.5), mottled at 8 cm, and
+  heavier on some 4 m stretches than others.
+- **Tide lines.** Two, from standing water, at `KERB_TIDE_H` 10 and 16 cm wobbling +-3 cm along the kerb, each
+  sharp above and fading down over `KERB_TIDE_FADE` 4 cm, darkening `KERB_TIDE_DARK` 0.5, present on about two
+  thirds of the length (a 3 m noise thresholded at 0.42-0.50: Perlin's Fac lives near 0.5, so a threshold of 0.6
+  is almost never met -- the first pass showed no lines at all for that reason).
+- **Grime over the face**, `KERB_GRIME` 0.3, in irregular patches from a 0.18 m noise gated by a 0.9 m one,
+  heavier low down.
+- **Drip streaks** down the face on `KERB_STREAK_P` 15% of the blocks (the block's own white noise picks them and
+  places the streak within the block), `KERB_STREAK_W` 2 cm, broken along their length by a 5 cm noise.
+- **The arris worn** pale by `KERB_EDGE_WEAR` 0.25 over `KERB_EDGE_BAND` 4 cm either side of the round where a
+  0.9 m noise says it is worn, coming and going along the kerb; the roughness drops there. **Chips** on
+  `KERB_CHIP_P` 10% of 0.25 m cells along the arris, `KERB_CHIP_R` 3 cm with a ragged outline, paler by
+  `KERB_CHIP_LIGHT` 0.25.
+- **The dirt's colour.** The foot band and the tide lines go `KERB_DIRT_AMT` 0.85 of the way to
+  `KERB_DIRT_TINT`, a warm brown grime, rather than merely darker (a grey pass read as shadow); the roughness
+  rises with the dirt.
+
+Five passes. In the first the face's height was measured from the wrong end of the profile (`KERB_H_FACE` took
+the round's end as the top) and the coverage threshold sat above Perlin's range, so nothing showed;
+`debug_kerb.py` (the review's `scripts/`), which renders the weathering factor alone from any camera and can probe
+any node of the chain by its location (`at=x,y`), found both. Evidence:
+`tests/artifacts/screens/bradbury_scene/item27_kerb_weathering/`.
