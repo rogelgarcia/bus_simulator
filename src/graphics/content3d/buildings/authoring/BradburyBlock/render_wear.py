@@ -50,6 +50,9 @@ if "cam" in args:
     loc, tgt, lens = args["cam"].split(":")
     loc = Vector(tuple(float(v) for v in loc.split(","))); tgt = Vector(tuple(float(v) for v in tgt.split(",")))
     cd = bpy.data.cameras.new("wear_cam"); cd.lens = float(lens)
+    # as far as the scene's own cameras see: the ground runs kilometres (AI 574 item 2) and a new camera's default
+    # far clip of 1000 m would cut it off short of the horizon
+    cd.clip_end = max((o.data.clip_end for o in bpy.data.objects if o.type == 'CAMERA'), default=cd.clip_end)
     cam = bpy.data.objects.new("wear_cam", cd); S.collection.objects.link(cam)
     cam.location = loc; cam.rotation_euler = (tgt - loc).to_track_quat('-Z', 'Y').to_euler()
     S.camera = cam; view = view or "custom"
