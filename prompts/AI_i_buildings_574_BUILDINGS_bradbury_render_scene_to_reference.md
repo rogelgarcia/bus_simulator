@@ -25,30 +25,53 @@ and the fire escapes throw crisp shadows to the left; the kerb corner is a round
 sidewalk is scored into large slabs; the asphalt is a pale bleached grey with cracks and patches.
 
 ## Requirements Checklist
-- [ ] 1 Sky: a clear deep-blue sky with a few thin wisps, its own sun disc standing where the lamp of item 9
+- [x] 1 Sky: a clear deep-blue sky with a few thin wisps, its own sun disc standing where the lamp of item 9
       stands (the map turned to match, and the lamp's elevation matched to the map's sun). Sky candidates tested on
       2026-09-25 (2k copies in `tests/artifacts/blender/bradbury/hdri_candidates/`): `kloofendal_43d_clear_puresky`
       recommended, `qwantani_afternoon_puresky` a close second; every ground-level map fails like the current one.
-      The user picks the sky. At strength 1 the pure sky reads paler than the photo's blue: tune strength and
-      exposure against the reference. If the sky is imported into the game, add the 2k `.hdr` to
-      `assets/public/lighting/hdri/` and a catalog entry. (The sun lamp itself was split off as item 9.)
-- [ ] 2 Background at true scale: the horizon must hold content at real distance, as the photo has it -- a low
-      concrete retaining wall with trees on an embankment about 20 m behind the block on both sides, a vacant lot
-      across 3rd Street, white low-rise warehouses and tree lines 200-500 m off, a hazy hill on the horizon -- built
-      as geometry (or cards) in the scene, so nothing from a street-level map stands above the horizon and the
-      ground plane never ends in a visible seam. Haze toward the horizon.
+      Decided 2026-09-26 (the user: "update the AI with those steps"): `kloofendal_43d_clear_puresky` is the sky,
+      imported into the game -- the 2k `.hdr` in `assets/public/lighting/hdri/` with an `IBLCatalog.js` entry and
+      a `source.json` beside it naming the download page, URL, license, author and date; a 4k copy beside it for
+      the render's backdrop, since the reference stand sees 40 px per degree and a 2k map gives 6. The lamp stands
+      on the photo's sun, the map turned so its own disc stands there, the lamp's elevation the map's own, and
+      `hdri_sun_direction` reads the map with Cycles' real convention. The photo's sun, MEASURED while building
+      this (not the -60 / "3rd Street the brighter" of the Problem section, which was a misreading): azimuth about
+      +40, behind the camera's RIGHT shoulder -- the Broadway face is the sunlit one (hue-masked brick sRGB about
+      (196, 147, 115)), 3rd Street's is in shade ((101, 66, 51)) with no fire-escape shadows, and the dark half of
+      3rd Street's road is the block's own shadow, its edge running at azimuth -136 from the corner base; it is also
+      the light the user kept on 2026-09-25 when the -60 lamp was reverted. `SUN_AZ_PHOTO` is 40. At strength 1 the pure sky reads
+      paler than the photo's blue: the visible sky is graded on the camera-ray branch alone (Light Path) toward the
+      photo's -- top-left of the frame sRGB about (129, 176, 224) against ours (147, 166, 186), the same brightness
+      at half the blue -- so the lighting stays physical; a procedural Nishita sky is the fallback if no map reads
+      blue enough. (The sun lamp itself was split off as item 9.)
+- [x] 2 Ground to the horizon, with haze (narrowed 2026-09-26; what stands on it is items 28 and 29): a pure sky
+      is flat grey below the horizon, so the ground must run out for kilometres before anything stands on it -- a
+      dry vacant-lot ground of dirt and dry grass from the game's own sets beyond the streets, the far pavement
+      blocks becoming sidewalk strips round dry lots as the photo has them (a vacant lot across 3rd Street),
+      continuous to 3-4 km so the ground never ends in a visible seam, nothing from a street-level map standing
+      above the horizon; and a shared haze that mixes every far material toward the horizon's colour by camera
+      distance from about 150 m out, leaving the block untouched.
 - [x] 3 Kerb corner: the kerb at the chamfer corner (and the far corners) is a rounded arc of about 5 m radius,
       its top edge rolled/beveled, the kerb face lighter than the road, with a dark gutter line along its foot.
-- [ ] 4 Sidewalk: large scored slabs with joints (a fan at the corner), dirt and stains, a grime line along the
+- [x] 4 Sidewalk: large scored slabs with joints (a fan at the corner), dirt and stains, a grime line along the
       wall base, drain grates and vault covers near the kerb -- instead of one clean tiling texture.
 - [x] 5 Asphalt: a lighter bleached grey with tone changes, cracks, patches and tire tracks, a slight crown; and
       the far side of both streets is road with its own kerb and pavement, not the concrete plaza it is now.
 - [x] 6 Camera: a scene camera matched to the reference photo -- eye about 16 m up, the horizon a third from the
       top, the corner at 44% of the width, the block filling about 88% of a 3:2 frame, 35 mm -- so every later
       item is judged from the photo's own stand. Renders of it go beside the reference.
-- [ ] 7 Off-frame neighbour: a building's shadow crossing the road on the left, as in the photo, so the block
-      reads as standing in a street rather than on an empty plain.
-- [ ] 8 Street furniture at real scale: lamp posts, drains, a hydrant, placed as the photo has them.
+- [x] 7 Off-frame neighbour: a building's shadow crossing the road on the left, as in the photo, so the block
+      reads as standing in a street rather than on an empty plain. Re-read with the measured sun (2026-09-26): the
+      large shadow over 3rd Street's road is the block's OWN and comes with item 1; what remains is the second,
+      parallel shadow edge crossing the frame's bottom 7-8 m south-east of it, thrown by another building to the
+      north-east under the same sun (noted in `item1_sky/item1_numbers.md`) -- an off-frame neighbour on Broadway's
+      far side, sized and placed so its edge lands where the photo's does.
+- [x] 8 Street furniture at real scale: lamp posts, drains, a hydrant, placed as the photo has them -- the tall
+      lamp posts at the far kerbs (one at the left edge beyond the west street, one at the right edge on Broadway's
+      far side, a short black one on 3rd Street's far pavement), the vault covers on the pavement by the kerb and
+      the storm drains at the kerb foot, built as geometry in the scene builder (the game's own street lamps are
+      still a placeholder); a CC0 model may be downloaded for any of them, installed under `assets/props/<asset>/`
+      with a `source.json` naming its download page, URL, license, author and date (2026-09-26).
 - [x] 9 Sun lamp (the sun half of item 1, split off 2026-09-25 when the user saw "a strange decal on the street"):
       the lamp stands where the photo's sun is -- high behind the reference camera's left shoulder -- independent of
       the map, so the block's shadow falls behind it and the road in front of the camera is lit end to end; and the
@@ -123,6 +146,18 @@ sidewalk is scored into large slabs; the asphalt is a pale bleached grey with cr
       shapes, edge wear"): a brown dirt band at the foot with a ragged top edge, tide lines from standing water
       that come and go along the kerb, a grime mottle over the face, rare drip streaks, the arris worn pale with
       the odd chip; everything varying along the kerb by noise so nothing repeats.
+- [x] 28 Near context as geometry (split from item 2, 2026-09-26): what stands 20-100 m behind the block on both
+      sides, as the photo has it -- on the Broadway side a grey retaining wall with a chain-link fence along its top
+      and a hedge at its foot, a tan blank wall behind, trees between; on the 3rd Street side a low wall bounding
+      the vacant lot, dry grass tufts along it, a tan wall further off, trees behind the block's west end -- the
+      trees 8-12 m, from the game's own models (`assets/trees/Models/Desktop/SM_H_Tree_*.FBX` with the Realistic9
+      leaf and trunk textures) imported into the scene so they self-shadow and throw real shadows; bushes may be
+      cards. Nothing at this distance is a flat card: under a hard sun a card reads flat and its shadow is a sliver.
+- [x] 29 Far context as cards and boxes (split from item 2, 2026-09-26): the white low-rise warehouses and the row
+      of parked trailers a few hundred metres off as plain white boxes that take the sun and the haze, tree-line
+      strip cards behind them (rendered from the game's trees, or CC0 cutouts with a `source.json`), a skyline
+      strip card for the hazy far city and hill on the left horizon; every card faces the camera (a Track To on
+      the reference camera) so the street-level views never see one edge-on.
 
 Rules:
 - Do not edit text of completed items (`- [x]`).
@@ -130,6 +165,17 @@ Rules:
 - You may patch contradictory non-completed (`- [ ]`) items in place.
 
 ## Implementation Notes
+- (plan, 2026-09-26) The background series, as the user asked ("update the AI with those steps. spawn in sequence,
+  agents to implement each step, take a screenshot after each step; mark the progress in the AI file ... at the
+  end, show a before and after with all steps implemented"): one agent per step, in this order -- item 1 (the sky
+  and sun), item 2 (the ground to the horizon and haze), item 28 (the near context), item 29 (the far context),
+  item 8 (street furniture), item 7 (the off-frame neighbour's shadow), item 4 (the sidewalk) -- each rebuilding
+  the scene headless, rendering `ref_3q` at full size and shipping a reference | before | after composite
+  (`review_2026-09-25/scripts/compose_ref.py`) under `tests/artifacts/screens/bradbury_scene/item<N>_<topic>/`,
+  the item ticked here as it lands, and the whole series as one before | after in `ai574_background_final/`.
+  Downloads are allowed (CC0), installed in the game's own folders under `assets/` (a shared, gitignored junction),
+  each with a `source.json` beside it recording the download page, URL, license, author, date and files. The GUI
+  Blender held unsaved changes when the series started, so it is not reloaded with the rebuilt scene.
 - (cycle 1, 2026-09-25) Item 6, the camera. `build_scene.py` gains a sixth view, `ref_3q`, the photo's stand: eye
   16 m over the pavement at (48.74, -38.83), 40 m from the chamfer's midpoint at azimuth -34, 35 mm, aimed 3 m to the
   camera's right of the corner and down to z 11.4; `VIEWS` entries may now carry a fourth element, the view's frame
@@ -341,6 +387,243 @@ Rules:
   Evidence `tests/artifacts/screens/bradbury_scene/item27_kerb_weathering/` (the kerb close-up and from above
   before | after, the face along Broadway, square-on and the foot close, the reference stand before | after).
   README: "The kerb weathered (AI 574 item 27)". Scene rebuilt.
+- (cycle 18, 2026-09-26) Item 1, the sky and the sun (the first step of the background series; an agent per step,
+  the orchestrator ticking). `kloofendal_43d_clear_puresky` imported into the game: the 2k `.hdr` and a 4k copy in
+  `assets/public/lighting/hdri/` with one `kloofendal_43d_clear_puresky.source.json` beside them (Poly Haven, Greg
+  Zaal, CC0 1.0, page and download URLs, md5s, date, usedBy), an `IBLCatalog.js` entry
+  `KLOOFENDAL_43D_CLEAR_PURESKY_2K` (the default untouched; the assets test passes 2/2). `build_scene.py` takes the
+  4k copy by default (`SKIES` names kloofendal / kloofendal_2k / german, or a path; `hdri=<number>` still the
+  strength, `strength=` the plain key, `HDRI_STRENGTH` 1.0), reads the map in Cycles' real convention
+  (`hdri_sun_direction` returns the map's own sun: azimuth -36.2, elevation 42.9; the mirrored reading is gone),
+  turns it `rot=auto` so the disc stands at `sun_az` and puts the lamp (`sun` 8) on the disc (`sun_el=map`); the
+  map's sun 6.1 W/m2 plus the lamp against a sky of 1.27 gives 7.6:1 on the ground, the photo's about 8:1. The
+  camera's sky is graded on Light Path's Is Camera Ray alone (`SKY_GRADE`: `SKY_SAT` 1.55, `SKY_VAL` 2.4;
+  saturation alone collapsed the red, value plus saturation lands the top-left at (132, 182, 222) against the
+  photo's (130, 176, 225); a leak test shows the grade leaves the light untouched). Exposure stays 0: the sunlit
+  brick is already at the photo's level, the slabs' shortfall (173 against 214) is albedo, item 4's. Measuring the
+  photo showed its sun is NOT at -60 but at about +40, behind the camera's RIGHT shoulder: Broadway sunlit
+  (196, 147, 115), 3rd Street shaded (101, 66, 51) with no fire-escape shadows, the block's own shadow across 3rd
+  Street's road at azimuth -136 from the corner base; the -60 of the Problem section lit 3rd Street to
+  (211, 168, 149). Decided the same day by the orchestrator (the measured sun is the reference, and it is the side
+  the light came from in the scene the user kept at item 10): `SUN_AZ_PHOTO` 40.0 (rot -76.2), `sun_az=-60` kept
+  on demand; the shipped render gives 3rd Street (101, 64, 50) and Broadway (194, 150, 131), the photo's faces
+  within 2 levels, and the road's far half in the block's shadow (24, 30, 37) against the photo's (35, 39, 49).
+  Left alone: the photo's stronger paling toward the right of the sky (the map's own at 9 degrees up; Nishita not
+  needed); flat grey under the horizon beyond the real ground (item 2's); a second shadow edge parallel to the
+  block's, 7-8 m further south-east, from another caster to the north-east (item 7's). Evidence
+  `tests/artifacts/screens/bradbury_scene/item1_sky/` (`item1_reference_before_after.png`, `item1_sky_crop.png`,
+  `ref_3q_after.png`, `ref_3q_after_sun-60_rejected.png`, `item1_sun_alternative.png` photo | rejected -60 |
+  chosen +40, `item1_numbers.md`, `tune/`; the measuring scripts `sky_stats.py`, `sky_tune.py`, `measure_sky.py`,
+  `brick_mean.py`, `shadow_edge.py`, `unproject_ground.py` beside the review's). README "The sky (AI 574 item 1,
+  2026-09-26)". Scene rebuilt headless; the GUI Blender, holding unsaved changes, not reloaded.
+- (cycle 19, 2026-09-26) Item 2, the ground to the horizon and the haze. `GND_FAR` 3500 replaces `GND_R` 150: the
+  eight far blocks, their kerbs and the four streets' far road quads simply extend, at the same world-space tiling
+  (a plain taking over past 150 m would have left kerb and strip ends as seams of their own). The far blocks are
+  vacant lots: `kerbed_pavement(..., lot=(M_LOT, PAVE_W))` lays a 4.2 m sidewalk strip (a ring of quads) round an
+  interior in `lot_material` -- two of the game's sets laid per random Voronoi cell (`LOT_TILE_M` 9) and traded over
+  a `LOT_BLEND_M` 30 m noise (`LOT_BLEND` 0.44-0.56): `LOT_SETS` brown_mud (1.3 m tiles) and rock_ground (4 m),
+  picked by each candidate's albedo as it would render beside the photo's slabs (brown_mud (176, 156, 128) nearest
+  the photo's dirt (176, 164, 154) in tone, rock_ground nearest in greyness; gravelly_sand (244, 184, 129) far too
+  bright; no grass set is dry, so the tufts wait for item 28's wall); no tint, no mottle; the lot renders
+  (171, 164, 157) at the photo's spot. The haze: `scn_haze`, a node group made in the sky section (which now
+  precedes the ground section) and wrapped round every ground material by `hazed(m)`: Camera Data View Distance
+  mapped `HAZE_NEAR` 150 -> `HAZE_FAR` 3000, camera rays only, times Amount, mixing toward an Emission of the sky
+  looked up in the ray's own azimuth at the horizon (Incoming flattened, `HAZE_TURN` = the world's turn, the same
+  image, `HAZE_GRADE` = the camera grade) -- a constant colour was rejected because the horizon reads
+  (185, 195, 209) on the left of the frame and (200, 205, 213) on the right; emission sampling off on hazed
+  materials; the factor rendered as itself matches the design to three decimals and is 0 on the block. Found by
+  ray-casting the rows: the first pass still showed sky between the plain and the horizon because every camera had
+  Blender's default 1000 m clip, so `CAM_CLIP` = 2 x GND_FAR on every camera, and render_wear.py's `cam=` takes the
+  scene's. Rows 418-460 now grade from the sky's own (184, 194, 208) into the plain with no step at either edge; sky
+  and block ground points identical to step 1 within a level. For the record: the shaded 3rd Street face fell from
+  (101, 64, 50) to (85, 53, 42) -- bounce, not haze: the lots' albedo gives 6 levels and the old catcher's default
+  0.8-grey material (a bright plane beyond 150 m to every non-camera ray) the other 10 (`face_bounce.py`); item 4's
+  albedo and items 28 / 29 will move it again. Evidence `tests/artifacts/screens/bradbury_scene/item2_ground_horizon/`
+  (`item2_reference_before_after.png`, `item2_horizon_left.png`, `item2_horizon_right.png`,
+  `item2_along_3rd_street.png` a standing eye on 3rd Street looking west, before | after, `ref_3q_after.png`,
+  `item2_numbers.md`, `tune/`); scripts `lot_colours.py`, `debug_haze.py`, `probe_rows.py`, `face_bounce.py` beside
+  the review's. README "The ground to the horizon, and the haze (AI 574 item 2, 2026-09-26)". Scene rebuilt
+  headless; the GUI Blender not touched.
+- (cycle 20, 2026-09-26) Item 28, the near context as geometry. The photo's elements were read by column
+  (`column_edges.py`) and unprojected through the stand (`context_frame.py`): the right side lands -- the grey
+  wall's base falls on the N lot's strip edge, and a 2 m wall there projects to 0.562-0.600 against the photo's
+  0.565-0.61 -- the left cannot quite: the photo's low wall unprojects onto the block's own south pavement
+  (82-94 m; the photo's Bradbury has its lot against its west end) and the scene's 13 m west street puts the
+  nearest lot edge at 113 m, 0.02-0.06 higher in the frame (left as the streets give it: no scene dimension
+  changes). The game's 15 trees are imported once by the new `build_context.py` into
+  `tests/artifacts/blender/bradbury/portal_project/context_library.blend` (metres, z up, the trunk's foot on z 0,
+  `height` / `crown_z` / `radius` on each mesh, `ctx_leaf` with the TGA alpha cut-out on both faces,
+  `LEAF_TRANSLUCENT` 0.15 and a `LEAF_TINT` node, `ctx_trunk`; regenerate with `blender -b -P build_context.py --`,
+  about 40 s, `sheet=1` renders the fifteen in a row); `build_scene.py` (`context=on|off`) links them and places
+  29 from `TREES` as local objects sharing the linked meshes, with hazed local material copies as object slots
+  (`LEAF_TINT` (0.50, 0.42, 0.42): the game's foliage rendered (163, 172, 111) sunlit against the photo's
+  (110, 104, 63); now (116, 104, 72), the shaded side (59, 56, 24) against (52, 51, 31); translucency 0.30
+  glowed and was rejected). Walls as boxes in the game's sets, chosen by measured render (a sunlit east face takes
+  about 4.3x its albedo, a shaded south face about (0.28, 0.20, 0.16)x): the W lot ringed by `LOW_WALL_H` 1.2 dark
+  plaster, the `CREAM_YARD` with 3.5 m walls 2 m behind it so the cream rises from the low wall's top as the
+  photo's does (a 2.4 m wall 18 m in left a grey band under it, rejected), the N lot's `RET_WALL_H` 2.0 in
+  plastered_wall_02 lifted (1.45, 1.6, 1.8) ((130, 109, 101) against (135, 119, 107); rough_concrete and an even
+  lift rejected), `FENCE_H` 1.8 with posts, a rail and a procedural 6 cm diamond lattice card (12% veil),
+  `SHED_N` a 6 m tan warehouse whose top lands at 0.440 as the photo's. The hedge is trees 4 / 1 / 3 scaled to
+  `HEDGE_H` 1.3-1.7, sunk 0.3, every 0.5-0.7 m, `HEDGE_OFF` 2.1 inside the kerb (at the wall's foot it hid the
+  wall; sparser and taller it read as saplings); the tufts are 6370 blades in one mesh along the low wall. Roads,
+  pavements and sky identical to step 2 within a level: nothing new shadows the road or the block (every shadow
+  runs west-south-west at 1.08 x height). Caveats: the hedge is a third the photo's height in the frame (the
+  north street lies where the photo's hedge stands); the low wall's visible face is sunlit here where the photo's
+  is shaded. Evidence `tests/artifacts/screens/bradbury_scene/item28_near_context/`
+  (`item28_reference_before_after.png`, `item28_left.png`, `item28_right.png`, `item28_tree_closeup.png` a
+  standing eye among the N lot's trees, `ref_3q_after.png`, `item28_numbers.md`, `tune/` with the library sheet
+  and the wall-and-hedge close-up); scripts `context_frame.py`, `sample_points.py`, `probe_frame.py`,
+  `column_edges.py` beside the review's. README "The near context: walls, hedges and the game's trees (AI 574
+  item 28, 2026-09-26)". Scene rebuilt headless; the GUI Blender not touched.
+- (cycle 21, 2026-09-26) Item 29, the far context. The photo's far background read by column and at 6x (new
+  `zoom_crop.py`) and unprojected through the stand (`context_frame.py`): where an element's top and base both
+  show they agree (the trailers 346-354 m, the second tan wall 226-236 m), the brick stands in front of the white
+  (its foot hidden), and the "taller block" at x 0.01-0.03 has its top under the horizon, a 12 m block whose
+  distance sets its tone. Built as geometry only, no cards and so no Track To: `FAR_BOXES` (the brick in
+  `red_brick` tinted (0.45, 0.42, 0.42), the white in the plaster lifted (1.25, 1.27, 1.30), a cream one, a white
+  10 m sliver at 1.1 km, `tan2` 5.2 m at 231 m shallow and unparapeted with its own lift (1.9, 1.3, 0.78), `tall` a
+  matte near-black at 800 m), `TRAILERS` ten 2.5 x 12.5 x 2.6 m bodies on 1.3 m of wheels with east-west axes so
+  the stand sees sunlit ends (north-south showed only shaded ends: grey), the seventh blue, `FAR_TREE_ROWS` 501
+  instances in staggered pairs (`FAR_ROW_PAIR` 8) of models 1-10 with a darker leaf and bark (`FAR_LEAF_TINT`
+  (0.28, 0.25, 0.22), `FAR_TRUNK_TINT` (0.40, 0.38, 0.36)) at 360 / 520 / 700 m, a far line at 1.3 km behind the
+  skyline and two edge emergents at 600 m, scrub at 730-1030 m, and `SKYLINE_ROWS` 31 boxes at 1.2-2.1 km in
+  `FAR_PLAIN` white / grey 0.12 / dark 0.03. Two findings: (1) `hazed()` wrapped the leaf's transparent branch,
+  so every tree beyond 150 m rendered a pale ghost ((169, 169, 172) at 450 m) -- `hazed(at=)` now hazes inside
+  `LEAF_CUTOUT` and `FENCE_WIRE`, the line then reading (138, 139, 130) as predicted; (2) the film is AgX Medium
+  High Contrast, measured by the new `agx_curve.py` (0.2 -> 125, 0.5 -> 178, 1.0 -> 208, 2.0 -> 229), and a PNG's
+  sRGB curve is not its inverse: with the table the haze's floor is (129, 140, 162) at 1.2 km and the photo's far
+  hill (166, 175, 182) is 1.4-1.6 km of our haze, a sunlit east face takes 3.4 x albedo plus 0.06 of Principled
+  sun sheen, so the tall block moved from 1.2 km to 800 m (`FAR_SPEC` cuts its sheen) and the far line to 1.3 km;
+  the haze itself untouched. Item 28's W-wedge trees were re-graded to the photo's own rows (7.5-9 m at x
+  0-0.035, two narrow 13.5-14 m crowns with trunks behind the block's edge) because its 13-14 m crowns hid every
+  left box; nothing else of item 28 moved, and every road, pavement, block, sky and near-context point is
+  identical to the level. Results: every layer on the photo's row within 0.005 on both sides; tall block
+  (117, 130, 148) vs (111, 126, 138), white (225, 222, 218) vs (222, 218, 206), brick (171, 136, 122) vs
+  (165, 130, 105), trailers (204, 205, 207) vs (208, 208, 206), warehouse (130, 107, 90) vs (137, 110, 92);
+  residuals: the tree lines 20-35 levels paler than the photo's (the haze's floor at 360 m and 1.3 km), the
+  white's east face where the photo has a bluish pale wing. Rejected: trailers with north-south axes, the tall
+  block at 1.2 km, a 12 m white at 412 m, a 30 m deep warehouse, the 1.5 km tree row (pale pink bark), sparse
+  emergents (lollipops), one-row lines (pale saplings), the warm plaster for the skyline (pink). Cost: the far
+  section 0.03 s of a 7.6 s build, the full render 34 s. Evidence
+  `tests/artifacts/screens/bradbury_scene/item29_far_context/` (`item29_reference_before_after.png`,
+  `item29_left.png`, `item29_right.png`, `item29_horizon_band.png`, `ref_3q_after.png`, `item29_numbers.md`,
+  `tune/`); scripts `zoom_crop.py`, `agx_curve.py` beside the review's. README "The far context: boxes, tree lines
+  and the skyline (AI 574 item 29, 2026-09-26)". Scene rebuilt headless; the GUI Blender not touched.
+- (cycle 22, 2026-09-26) Item 8, street furniture. The photo's furniture measured before anything was placed (new
+  `pole_extent.py`, `find_covers.py`, `cover_size.py`, `post_height.py` beside the review's scripts;
+  `item8_furniture/item8_numbers.md`), and two readings overturned: both tall posts' heads stand ABOVE the horizon
+  (0.258 and 0.224 against 0.32), so they are higher than the eye whatever their distance -- high-mast lot lights
+  whose height is what the head's ray gives at the foot -- and neither foot shows: the west pole shows against the
+  sky, the white and brick boxes and through the crowns to 0.49 and never against the tan wall (so it stands
+  between that wall and the trees: inside `CREAM_YARD`, 123 m, 18.4 m, pale grey), the north pole is dark
+  ((43, 38, 39) across the trailers) and ends at the near warehouse's top with nothing against the tan wall below
+  (behind `SHED_N`, 149 m, 22.1 m; the brief's "base 0.67" was the far pavement at 74 m, our north street's road).
+  `LAMP_POSTS`, `tall_post` (a tapered 12-sided pole `POST_TALL_R` 0.11 -> 0.05 on a flange, `POST_BAR` 1.0 m
+  crossbar with a `POST_LUM` luminaire straddling each end, turned broadside, `POST_PAINT` grey 0.22 / dark
+  0.028 / head 0.03, matte). The black lantern post's foot unprojects into 3rd Street's roadway (the photo's far
+  pavement is our road, and the S lot's strip never enters the frame), so it stands on the block's own south
+  pavement on the same ray, 0.43 m inside the slabs, where the head's ray gives 3.96 m: Poly Haven's
+  `street_lamp_01` (Josh Dean, CC0 1.0, the photo's silhouette at 4x) at its own 3.87 m, installed at 1k in
+  `assets/props/street_lamp_01/` with `source.json` (page and download URLs, license, author, date, md5s, usedBy;
+  gitignored: `.gitignore:2:/assets`), imported by `build_context.py` (`PROPS`, images referenced not packed,
+  materials renamed `ctx_prop_*`, emission zeroed) and linked and placed by `build_scene.py` (`PROPS`,
+  `place_prop`, hazed material copies as object slots; `furniture=on|off`). Four covers, not three, found by
+  local contrast 0.06 lower than the brief's numbers and sized from their pixel boxes (0.7 x 0.5 to 0.9 x 0.6 m):
+  `COVERS`, two boxes each (`COVER_RIM` frame 1 mm proud as the hairline recess, plate 3 mm proud, nothing cut,
+  `COVER_GAP` 0.35 from the slabs' edge); Broadway's two unproject 1.7 / 3.3 m into the road (the photo's
+  Broadway pavement is wider toward the right edge) and stand at the gap on the photo's frame x; the steel took
+  three passes to a third of the pavement's albedo with the specular cut (`COVER_STEEL` (0.072, 0.055, 0.042),
+  `COVER_STEEL_SPEC` 0.25): plates 0.72-0.79 of the slabs against the photo's 0.64-0.75. No storm drain and no
+  hydrant: every kerb-foot mark zoomed and identified (kerb faces, gutter dirt, cracks, glass, plinths); none
+  stands. Rendered: heads at 0.2605 / 0.2245 (photo 0.258 / 0.224), poles at x 0.0361 / 0.9777, the lantern at
+  0.540 (0.5375); all 24 consistency points identical to the level; every shadow west-south-west onto the lots
+  and strips or outside the frame, none on the block. Left: the first cover sunlit where the photo's sits in the
+  block's shade (our shadow edge on the south pavement lies 1.2 m west of the photo's: the block's own geometry
+  and item 1's +-4 degrees); the black post's foot 0.026 higher and in shade; Broadway's covers 0.04-0.05 higher
+  (our kerb line against the photo's wider pavement). Evidence
+  `tests/artifacts/screens/bradbury_scene/item8_furniture/` (`item8_reference_before_after.png`, `item8_left.png`,
+  `item8_right.png`, `item8_pavement.png`, `item8_closeup.png` the lantern post from 8 m and a cover from 5 m,
+  `ref_3q_after.png`, `item8_numbers.md`, `tune/`). README "Street furniture (AI 574 item 8, 2026-09-26)".
+  Library and scene rebuilt headless; the GUI Blender not touched.
+- (cycle 23, 2026-09-26) Item 7, the off-frame neighbour's shadow. The photo's second shadow measured before
+  anything was placed (new `band_edge.py`, `ground_map.py`, `ground_intervals.py`, `fit_neighbour.py`,
+  `overlay_frame.py` beside the review's scripts; `item7_neighbour_shadow/item7_numbers.md`): its west edge on 21
+  columns (x 0.08-0.48) unprojects to one straight ground line from (22.4, -22) to (10.1, -30.5) at azimuth -144
+  (a sun at 36; the block's own edge read -136 in item 1, the scene's +40 stands), 0.16 m of scatter -- a vertical
+  edge's shadow, so another building's north-west corner north-east along the line, on the E lot across Broadway
+  -- and the band has no other edge in the frame: it runs to the frame's bottom and left edges (item 1's "x 0.3 to
+  0.75" was wrong: the left edge to x 0.52; the apparent south end at y -30.8 is the photo's far kerb of 3rd Street,
+  its pale pavement (116, 121, 131) concrete in the same shade, where our 13 m roadway runs on). The scene's line,
+  at the lamp's -140, slid across the points to the offset nearest the photo's edge on every column
+  (`NEIGHBOUR_EDGE` (19.38, -23.89)). The caster: `NEIGHBOUR_X` 42.5 (at 41.6 the tower's south-west vertical edge
+  passed through the frame's bottom-right corner; at 42.5 it clears it by 0.044 and all eight corners lie right of
+  the frame at every height), the north face y -4.49 computed from the edge and the lamp's azimuth, `NEIGHBOUR_S`
+  -17.0, `NEIGHBOUR_W` 26; the height is what carries the shadow to where the line leaves the frame's left edge,
+  (10.8, -31.1), 41.4 m from the corner at 1.08 x height: `NEIGHBOUR_STOREYS` 12 x `NEIGHBOUR_STOREY_H` 3.3 =
+  39.6 m, the class of building across Broadway from the real Bradbury (three to six storeys would have carried
+  the edge 11-22 m, to the frame's bottom edge at most: no band). Sun rays from the block's corners reach the
+  tower's west face 26-31 m up and north of its north face; the shadow's line passes 0.22 m south-east of the
+  pavement's corner and 2.3 m clear of the curb return: apron, kerb, shopfronts and Broadway's face stay sunlit.
+  Built by the far context's `building()` under `neighbour=on|off`: the tower in the cream plaster, a two-storey
+  `NEIGHBOUR_WING` (0.25, 0.5, 20, 20, 7.5) along Broadway in the far brick (set back and overlapping so no faces
+  coincide; its shadow ends on the E lot's strip 0.08 below the frame's corner); hazed; no camera sees either box
+  (st_corner 50 degrees off axis against a half field of 32.7, hero_3q 29+ against 23). Rendered: the edge at
+  -140.4 through the photo's centroid, within 0.005 of the photo's on x 0.18-0.36, 0.0125 at worst at x 0.08 (the
+  four degrees); the band (31, 36, 43) against the block's shadow (19, 26, 34), 1.6x as the photo's is 1.4x; the
+  block's own shadow unchanged; sky, horizons, north street, Broadway, walls, foliage, far context and the frame's
+  bottom-right corner identical to the level. What moved is the crossing's light: the shaded 3rd Street face's
+  brick mean (85, 53, 42) -> (79, 50, 40), the Broadway face (190, 147, 128) -> (189, 145, 126), the apron -2, the
+  road in the block's shadow -4, the grey wall +4 (bounce off the tower's sunlit north face) -- two thirds of the
+  asphalt that bounced into the shaded face is in the tower's shadow now, as in the photo, whose shaded face still
+  reads (101, 66, 51): the scene's shade budget (items 1-2), not the tower's. st_corner stands 1.1 m outside the
+  shadow and looks across a crossing whose south-east quarter is in shade. Evidence
+  `tests/artifacts/screens/bradbury_scene/item7_neighbour_shadow/` (`item7_reference_before_after.png`,
+  `item7_bottom_band.png`, `item7_from_above.png` with the stand's frame footprint drawn on, `ref_3q_after.png`,
+  `item7_numbers.md`, `tune/`). README "The off-frame neighbour's shadow (AI 574 item 7, 2026-09-26)". Scene
+  rebuilt headless; the GUI Blender not touched.
+- (cycle 24, 2026-09-26) Item 4, the sidewalk (the last step of the background series). The photo laid back onto
+  the slabs' plane through the stand as 3 cm top-down maps and profiled (new `pavement_map.py`,
+  `pavement_profiles.py`, `wall_base_tone.py` beside the review's; `item4_sidewalk/item4_numbers.md`): the
+  transverse pitch 2.0 m (Broadway's consecutive dips 1.95-2.0 apart; 3rd Street's strong dips about 4 m apart
+  with fainter ones between, the same scoring with alternating strength), the longitudinal joint 1.1 m inside the
+  kerb top (just inside cover C3), the fan five slabs to the quadrant with an arc joint continuing the
+  longitudinal one, the photo's Broadway pavement about 6 m wide with a kerb course reading 0.62-0.78 of the
+  slabs (nothing of the streets changed), the wall-base line 27-44 levels in its first decimetre and gone by
+  0.4-0.5 m. `pavement_material` replaces `ground_material` on the pavement: `kerbed_pavement` writes each piece's
+  kerb rectangle as the `pad_lo` / `pad_hi` object properties an Object Attribute node reads, and from world
+  metres the shader lays transverse joints at `PAVE_PITCH` 2.0 fitted to each side's run (26 slabs of 1.98 on the
+  block's south side, the returns' tangent lines being the first and last joints and the fans' first and last
+  radials), the longitudinal joint `PAVE_LONG` 1.1, on every corner square `PAVE_FAN_N` 5 radials about the
+  return's centre and the arc at `PAVE_ARC_R` 3.55, each joint a 12 mm groove (`PAVE_JOINT_W`, `PAVE_JOINT_DARK`
+  0.55) with chamfered lips in the normal (`PAVE_JOINT_BEVEL` 6 x 3 mm) and dirt over 5 cm (`PAVE_JOINT_DIRT_M`,
+  `PAVE_JOINT_DIRT` 0.35, roughness +0.2), the transverse and radial ones at their own strength
+  (`PAVE_JOINT_VARY` 0.45-1 from a white noise of the index), the kerb top's step with the same dark line and 5 cm
+  of dirt from the geometry, every slab its own tone (`PAVE_SLAB_VARY` 4% from a white noise of its indices), no
+  mottle, nothing cut. The set changed: with the joints over the paver set its own 0.65 m pavers showed as a
+  second grid (`debug_pave.py`, the albedo rendered as itself), so the slabs are `PAVE_SET` rough_concrete, the
+  game's one plain poured concrete (`tune/concrete_sets_sheet.png`), its grain halved (`PAVE_GRAIN` 0.45) and
+  normal at `PAVE_NORMAL` 0.35 (as it comes it read as stucco from 6 m); `PAVE_TINT` (0.96, 0.60, 0.41) by the AgX
+  table (the photo's (215, 192, 169) over the paver set's (192, 183, 173) is (1.85, 1.21, 0.92) linear, tempered
+  in red to keep the shaded slabs neutral, then (1.29, 1.26, 1.06) more after the set's packed AO rendered 9-12
+  short); exposure 0. The grime line is an Ambient Occlusion read of the walls and plinths (`PAVE_GRIME_M` 0.7)
+  mapped `PAVE_GRIME_OCC` 0.04-0.24 to `PAVE_GRIME` 0.6 toward `PAVE_GRIME_TINT` (0.50, 0.40, 0.31): the occlusion
+  rendered as itself reads 0.27 at a pier's foot and 0.19 at a shopfront's (the AO rays pass through the glass to
+  the recess floor), so the first mapping to 0.45 left 3 levels. Results: the apron's slabs (215-218, 190-195,
+  170-175) against the photo's (212-219, 189-196, 166-174) at four pure-slab points (the old "(0.44, 0.92)" point
+  is the kerb's rolled edge); the same profiles find our dips every 1.98 m at 3-11%, the fan search peaking at
+  the return's centre; the wall-base line 19-20 levels over the first 0.25 m, gone by 0.5; the kerb-top joint 15
+  levels within 5 cm; the shaded slabs (39, 34, 32) against the photo's (68, 71, 79), the scene's shade budget;
+  sky, horizons, roads, cornice, walls, foliage and far context identical to the level, the faces +3-4 red and
+  the N lot's grey wall +8 on the pavement's bounce. Left: the grime line is a plateau where the photo's is a
+  ramp; the kerb's top course 0.86 of the slabs against the photo's 0.62-0.78; the photo's fan centre is at its
+  chamfer foot where ours is the return's centre. Four passes (the second grid; stucco and 9-12 short; the grime
+  at 3 levels; shipped). Evidence `tests/artifacts/screens/bradbury_scene/item4_sidewalk/`
+  (`item4_reference_before_after.png`, `item4_pavement.png`, `item4_corner_zoom.png`, `item4_apron_closeup.png`
+  from a 6 m stand before | after, `item4_wall_base.png`, `ref_3q_after.png`, `item4_numbers.md`, `tune/`); the
+  step-6 scene kept as `bradbury_scene_pre_item4.blend`. README "The sidewalk: scored slabs, the fan and the
+  grime line (AI 574 item 4, 2026-09-26)". Scene rebuilt headless; the GUI Blender not touched. The series'
+  before | after with every step: `tests/artifacts/screens/bradbury_scene/ai574_background_final/`.
 
 ## On completion
 - Mark the AI document as DONE in the first line
