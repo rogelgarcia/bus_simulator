@@ -209,6 +209,10 @@ sidewalk is scored into large slabs; the asphalt is a pale bleached grey with cr
       incendio, aumente a exposicao em 1. renderize uma imagem para eu ver como ficou a escada"): render_flyover.py
       carries a per-shot exposure and the `escapes` shot renders at +1 over the scene's 0, every other shot as it
       was; one Cycles still of that shot at full size, at 0 and at +1, for the user to see the fire escape.
+- [x] 36 The background blur removed (user 2026-09-27, on the quick Cycles cut: "i think the blur is giving the
+      impression of a maquete; lets remove the blur and generate again, with same settings"): the depth-driven
+      blur off by default (`blur=0`; `blur=7` keeps the earlier look on demand) and the quick half-size cut
+      rendered again with everything else as it was.
 
 Rules:
 - Do not edit text of completed items (`- [x]`).
@@ -792,6 +796,12 @@ Rules:
   (`item35_numbers.md`). The Eevee preview re-rendered for item 34 carries the +1 on that shot. README: a
   paragraph "The fire-escape shot exposed a stop up (AI 574 item 35, 2026-09-27)" in the flyover section. No
   Cycles flyover run.
+- (cycle 30, 2026-09-27) Item 36, the background blur removed. On the first quick Cycles cut (half size, 32
+  samples, 26 min, `flyover/bradbury_flyover_quick_540x960_blur.mp4`) the user read the depth-driven softening as
+  a scale model, so `render_flyover.py`'s `BLUR_PX` defaults to 0 (the compositor then stays off; `blur=7` gives
+  the earlier look back) and the quick cut was rendered again with everything else as it was: 768 frames, 26 min,
+  `flyover/bradbury_flyover_quick_540x960.mp4` 9.7 MB, 32.0 s, `flyover_quick_sheet.png`. The full-size Cycles
+  cut of item 32 still waits on the user's word.
 
 ## On completion
 - Mark the AI document as DONE in the first line

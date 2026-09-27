@@ -212,7 +212,9 @@ for s in SHOTS:
           f"the last fifth of the move {lf:.3f}" + (f"; the tail's {n_frames(s) - N_MOVE} frames {tail:.3f}" if tail else "")
           + (f"; exposure {EXPOSURE_BY_SHOT[s[0]]:+.1f} over the scene's" if s[0] in EXPOSURE_BY_SHOT else ""))
 # the softening
-BLUR_PX = float(args.get("blur", 7.0))          # the Bokeh Blur's size where the mask is 1, pixels at 1080 wide (scaled with pct)
+BLUR_PX = float(args.get("blur", 0.0))          # the Bokeh Blur's size where the mask is 1, pixels at 1080 wide (scaled with pct);
+                                                # 0 since AI 574 item 36 (user 2026-09-27: the softened background "is giving the
+                                                # impression of a maquete"); blur=7 gives the earlier look back
 BLUR_START_M = 2.0                              # the mask starts this far past the block's farthest corner from the camera
 BLUR_FULL_M = 400.0                             # and is 1 this much further out: 500-600 m from the stands, the tree lines and lots
 MASK_SOFT_PX = 2.0                              # the mask blurred by this much: the Depth pass is one sample a pixel, its edge aliased
