@@ -198,6 +198,17 @@ sidewalk is scored into large slabs; the asphalt is a pale bleached grey with cr
       Street (the frame's left) stays open but its surface fixed, since the lot set's tiles read as a repeating
       pattern from the air; then a quick Eevee preview of the whole flyover (`engine=eevee` in render_flyover.py,
       with item 32's timing) handed to the user to check before any Cycles render is restarted.
+- [x] 34 The open block across 3rd Street furnished (user 2026-09-27, on the preview's first frame, the big open
+      parcel at the bottom of the screen: "esse quarteirao embaixo da tela esta muito vazio. adicione um muro, com
+      estacionamento e umas arvores. coisa baixa para nao afetar o predio"): the open parcels kept clear by item 33
+      within `CITY_OPEN_S` of 3rd Street become walled parking lots -- a low plaster wall round each with gate
+      openings on the street, asphalt with faint bay lines, low trees (about 5-7 m) in rows along the wall and in
+      islands -- nothing tall: no shadow on the block, nothing in the reference stand's wedges, nothing under the
+      flyover's path; the Eevee preview re-rendered for the user to check.
+- [x] 35 The fire-escape shot exposed a stop up (user 2026-09-27: "quando for fazer a tomada na escada de
+      incendio, aumente a exposicao em 1. renderize uma imagem para eu ver como ficou a escada"): render_flyover.py
+      carries a per-shot exposure and the `escapes` shot renders at +1 over the scene's 0, every other shot as it
+      was; one Cycles still of that shot at full size, at 0 and at +1, for the user to see the fire escape.
 
 Rules:
 - Do not edit text of completed items (`- [x]`).
@@ -747,6 +758,40 @@ Rules:
   scripts `census.py`, `set_means.py` beside the review's. README "The city filled in, and the Eevee preview
   (AI 574 item 33, 2026-09-27)" plus a paragraph in the flyover section. Scene rebuilt headless; the GUI Blender
   not touched.
+- (cycle 28, 2026-09-27) Item 34, the open block furnished. The parcels item 33 kept open within `CITY_OPEN_S` of
+  3rd Street (the first row south of it, thirteen across the fill, the S parcel under the approach's first frame
+  and the SE parcel with the stands among them) are walled parking lots now, by `open_lot()` in the city section
+  over the `open_cells` the parcel loop sets aside: a cream plaster wall `OPEN_WALL_H` 1.1 x `OPEN_WALL_T` 0.20
+  under a pale `OPEN_WALL_CAP` (0.30, 0.05), `OPEN_WALL_IN` 0.30 inside the parcel's edge in item 28's ring manner,
+  `OPEN_GATES` 2-3 gates of `OPEN_GATE_W` 6 m between `OPEN_GATE_POST` 0.35 x 1.5 posts; inside it an
+  `OPEN_STRIP_W` 1.5 m planting strip of the lot's own ground, the asphalt with the city's `CITY_BAY` lines and
+  `OPEN_ISLANDS` two islands a lot (four bays, two trees each); 591 trees of `OPEN_TREE_H` 5-7 m every
+  `OPEN_TREE_STEP` 8-12 m, none within `OPEN_CLEAR_R` 35 m of the reference stand's foot (the approach and the
+  pull-up settle there; st_corner now stands inside the SE lot's wall, its cap 18 degrees under that frame's
+  bottom); the open ground's secondary streets laid (354 segments). 13 lots, 85 wall runs, 33 gates, 26 islands;
+  the lots' shadows at least 17.8 m from the block's pavement and falling away from it (asserted with the
+  city's); the stand's wedges point the other way, and every consistency point of the reference view is
+  identical to the level (census 6,171 px, noise on the block's facades, mean 0.33); `check=1` unchanged; the
+  quarter first / middle / last frames of `air` and `close` show the lot filling the first frame's lower left and
+  only its corner wall and two or three low crowns at the bottom-left from frame 60 on. Both scenes rebuilt
+  headless; the Eevee preview re-rendered from the wear=off scene (768 frames, 24.2 min, 1.89 s a frame,
+  `bradbury_flyover_eevee_preview.mp4` 7.7 MB, 32.0 s; the previous kept as `_v1` with its sheet and log).
+  Evidence `tests/artifacts/screens/bradbury_scene/item34_open_block/` (`item34_reference_before_after.png`,
+  `item34_open_ground_60m.png`, `item34_open_ground_air.png`, `item34_first_frame.png` beside the user's marked
+  frame, `item34_close_end.png`, `ref_3q_after.png`, `item34_numbers.md`, `tune/`) and `flyover/` (the MP4,
+  `frames_eevee/`, `flyover_eevee_sheet.png`, `render_eevee.log`). README "The open block furnished (AI 574
+  item 34, 2026-09-27)". The GUI Blender not touched; no Cycles flyover run.
+- (cycle 29, 2026-09-27) Item 35, the fire-escape shot exposed a stop up. `render_flyover.py` carries
+  `EXPOSURE_BY_SHOT` = {"escapes": 1.0} (`expo=<shot>:<stops>` overrides for a run): the value goes onto
+  `scene.view_settings.exposure` over the scene's own 0 (`BASE_EXPOSURE`) for that shot's frames only and is put
+  back before the next shot, in both engines, printed with the PROFILE and FRAME lines; the encode untouched. The
+  user's still: frame 60 of `escapes` at 1080 x 1920 and 128 samples from the canonical worn scene (item 34's
+  rebuild), at 0 and at +1 (`item35_escapes_exposure/escapes_060_exposure0.png`, `escapes_060_exposure1.png`, side
+  by side `item35_escapes_0_vs_1.png`, 48 s a frame): the shaded brick beside the escape from 56 to 90 on the
+  film (p50), the escape's iron from 13 to 27, the sunlit shopfront band at the foot 74 to 116, unclipped
+  (`item35_numbers.md`). The Eevee preview re-rendered for item 34 carries the +1 on that shot. README: a
+  paragraph "The fire-escape shot exposed a stop up (AI 574 item 35, 2026-09-27)" in the flyover section. No
+  Cycles flyover run.
 
 ## On completion
 - Mark the AI document as DONE in the first line
