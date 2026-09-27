@@ -2,7 +2,11 @@
 // @ts-check
 import * as THREE from 'three';
 
-function createFieldFloorGeometry(chunkX, chunkZ, width, depth, chunkSize, border) {
+export const GRASS_V2_LARGE_FIELD_RECIPE = Object.freeze({
+    width: 20, depth: 30, chunkSize: 5, textureBorderMeters: 0.03, gapMultiplier: 2, sourceConfigurationId: 'hybrid1k'
+});
+
+function createFieldFloorGeometry(chunkX, chunkZ, width, depth, chunkSize, border, surfaceHeight) {
     const positions = [], normals = [], uvs = [], indices = [];
     for (let z = 0; z < chunkSize; z++) for (let x = 0; x < chunkSize; x++) {
         const left = x - 0.5 + (chunkX + x === 0 ? border : 0);
@@ -11,7 +15,7 @@ function createFieldFloorGeometry(chunkX, chunkZ, width, depth, chunkSize, borde
         const front = -z + 0.5 - (chunkZ + z === 0 ? border : 0);
         const first = positions.length / 3;
         for (const [px, pz] of [[left, back], [right, back], [left, front], [right, front]]) {
-            positions.push(px, 0.01, pz); normals.push(0, 1, 0);
+            positions.push(px, surfaceHeight, pz); normals.push(0, 1, 0);
             uvs.push(px - x + 0.5, 0.5 - (pz + z));
         }
         indices.push(first, first + 2, first + 1, first + 2, first + 3, first + 1);
@@ -24,19 +28,36 @@ function createFieldFloorGeometry(chunkX, chunkZ, width, depth, chunkSize, borde
     return geometry;
 }
 
-/** @param {{comparison:ReturnType<import('./GrassDebugV2FloorComparison.js').createGrassDebugV2FloorComparison>}} options */
-export function createGrassDebugV2LargeField({ comparison }) {
-    const width = 20, depth = 30, chunkSize = 5, gap = comparison.getSnapshot().gapMeters * 2;
+/** @param {{comparison:Awaited<ReturnType<import('./GrassDebugV2FloorComparison.js').createGrassDebugV2FloorComparison>>,recipe?:Partial<typeof GRASS_V2_LARGE_FIELD_RECIPE>}} options */
+export function createGrassDebugV2LargeField({ comparison, recipe = {} }) {
+    const config = Object.freeze({ ...GRASS_V2_LARGE_FIELD_RECIPE, ...recipe });
+    if (![config.width, config.depth, config.chunkSize].every(value => Number.isInteger(value) && value > 0)
+        || config.width % config.chunkSize || config.depth % config.chunkSize
+        || !Number.isFinite(config.textureBorderMeters) || !(config.textureBorderMeters >= 0 && config.textureBorderMeters < 0.5)
+        || !Number.isFinite(config.gapMultiplier) || config.gapMultiplier < 0
+        || typeof config.sourceConfigurationId !== 'string' || !config.sourceConfigurationId)
+        throw new Error('Large grass field requires positive tile dimensions divisible by chunk size and a valid source configuration.');
+    const configuration = comparison.configurations[config.sourceConfigurationId];
+    if (!configuration?.representations || !(configuration.field.textureLeaves > 0))
+        throw new Error('Large grass field source must contain texture and live leaves: ' + config.sourceConfigurationId);
+    const { width, depth, chunkSize, textureBorderMeters } = config, textureLeavesPerSquare = configuration.field.textureLeaves;
+    const gap = comparison.getSnapshot().gapMeters * config.gapMultiplier;
     const minX = comparison.bounds.max.x + gap, maxZ = comparison.bounds.max.z;
     const bounds = new THREE.Box3(new THREE.Vector3(minX, 0, maxZ - depth),
         new THREE.Vector3(minX + width, comparison.bounds.max.y, maxZ));
     const group = new THREE.Group(); group.name = 'GrassV2LargeField'; group.visible = false;
-    const modes = ['refined', 'detailed', 'curved', 'split'];
-    const sources = Object.fromEntries(modes.map(mode => [mode, comparison.hybrid[mode].children.filter(mesh => mesh.isInstancedMesh)]));
-    const tile = comparison.tiles.find(mesh => mesh.name === 'GrassV2Floor-hybrid1k');
+    const modes = Object.keys(configuration.representations).filter(level => level !== 'LOD0');
+    const sources = Object.fromEntries(modes.map(level => [level, configuration.representations[level].children.filter(mesh => mesh.isInstancedMesh)]));
+    const initialMode = modes.includes('refined') ? 'refined' : modes[0], initialSources = sources[initialMode];
+    if (!initialSources?.length || modes.some(level => sources[level].length !== initialSources.length
+        || sources[level].some((mesh, i) => !Number.isInteger(mesh.count) || mesh.count <= 0 || mesh.count !== initialSources[i].count
+            || !mesh.geometry.index || mesh.geometry.index.count <= 0 || mesh.geometry.index.count % 6 !== 0)))
+        throw new Error('Large field source LODs require matching indexed leaf instances: ' + config.sourceConfigurationId);
+    const tile = comparison.tiles.find(mesh => mesh.name === 'GrassV2Floor-' + config.sourceConfigurationId);
+    if (!tile) throw new Error('Missing large field source texture surface: ' + config.sourceConfigurationId);
+    const surfaceHeight = tile.position.y;
     const tilesPerChunk = chunkSize * chunkSize, matrix = new THREE.Matrix4(), chunkMeshes = [], floorGeometries = [];
-    const textureBorderMeters = 0.03;
-    const leafMatrices = sources.refined.map(source => {
+    const leafMatrices = initialSources.map(source => {
         const attribute = new THREE.InstancedBufferAttribute(new Float32Array(source.count * tilesPerChunk * 16), 16);
         for (let z = 0; z < chunkSize; z++) for (let x = 0; x < chunkSize; x++) for (let i = 0; i < source.count; i++) {
             source.getMatrixAt(i, matrix); matrix.elements[12] += x; matrix.elements[14] -= z;
@@ -55,11 +76,11 @@ export function createGrassDebugV2LargeField({ comparison }) {
     for (let z = 0; z < depth; z += chunkSize) for (let x = 0; x < width; x += chunkSize) {
         const chunk = new THREE.Group(); chunk.position.set(minX + 0.5 + x, 0, maxZ - 0.5 - z);
         chunk.name = 'GrassV2FieldChunk-' + x + '-' + z;
-        const floorGeometry = createFieldFloorGeometry(x, z, width, depth, chunkSize, textureBorderMeters);
+        const floorGeometry = createFieldFloorGeometry(x, z, width, depth, chunkSize, textureBorderMeters, surfaceHeight);
         floorGeometries.push(floorGeometry);
         const floor = new THREE.Mesh(floorGeometry, tile.material);
         floor.name = 'GrassV2FieldFloor'; floor.castShadow = false; floor.receiveShadow = true; chunk.add(floor);
-        const leaves = sources.refined.map((source, i) => {
+        const leaves = initialSources.map((source, i) => {
             const mesh = createInstances(source.geometry, source.material, leafMatrices[i]);
             mesh.name = 'GrassV2FieldLeaves-' + i; mesh.castShadow = true; chunk.add(mesh); return mesh;
         });
@@ -71,8 +92,8 @@ export function createGrassDebugV2LargeField({ comparison }) {
     ]);
     const outlineMaterial = new THREE.LineBasicMaterial({ color: '#348fff', depthTest: false, depthWrite: false, toneMapped: false });
     const outline = new THREE.LineLoop(outlineGeometry, outlineMaterial); outline.visible = false; outline.renderOrder = 11; group.add(outline);
-    let mode = 'refined';
-    const leavesPerSquare = sources.refined.reduce((sum, source) => sum + source.count, 0), tiles = width * depth;
+    let mode = initialMode;
+    const leavesPerSquare = initialSources.reduce((sum, source) => sum + source.count, 0), tiles = width * depth;
     const setMode = value => {
         // LOD0 is the small source study; retain the field's last runtime card level.
         if (value === 'LOD0') return;
@@ -92,22 +113,24 @@ export function createGrassDebugV2LargeField({ comparison }) {
             leavesByLod[label] = (leavesByLod[label] ?? 0) + source.count;
             leafTriangles += trianglesPerLeaf * source.count;
         }
-        return { column, row, textureLeaves: 4000, leavesByLod, leafTriangles, floorTriangles: 2, triangles: leafTriangles + 2 };
+        return { column, row, textureLeaves: textureLeavesPerSquare, leavesByLod, leafTriangles, floorTriangles: 2, triangles: leafTriangles + 2 };
     };
     return Object.freeze({
         group, bounds, setMode, getPatchDetails, setVisible: visible => { group.visible = !!visible; },
         setSquareBounds: visible => { outline.visible = !!visible; },
         getSnapshot: () => {
-            const cardsPerLeaf = sources[mode][0].geometry.index.count / 6;
-            return { visible: group.visible, widthMeters: width, depthMeters: depth, gapMeters: gap, tileSpacingMeters: 1, textureBorderMeters, tiles, textureLeavesPerSquare: 4000,
+            const cardsPerSquare = sources[mode].reduce((sum, mesh) => sum + mesh.count * mesh.geometry.index.count / 6, 0);
+            const cardsPerLeaf = cardsPerSquare / leavesPerSquare;
+            return { recipe: { ...config }, sourceConfigurationId: config.sourceConfigurationId, surfaceHeight, visible: group.visible,
+                widthMeters: width, depthMeters: depth, gapMeters: gap, tileSpacingMeters: 1, textureBorderMeters, tiles, textureLeavesPerSquare,
                 leavesPerSquare, leaves: tiles * leavesPerSquare, mode, cardsPerLeaf,
                 lods: [{ label: 'LOD0', leaves: 0, triangles: 0 }, ...modes.map(level => {
                     const meshes = sources[level], active = level === mode;
-                    return { label: 'LOD3 · ' + meshes[0].geometry.index.count / 6,
+                    return { label: [...new Set(meshes.map(mesh => 'LOD3 · ' + mesh.geometry.index.count / 6))].join(' + '),
                         leaves: active ? tiles * meshes.reduce((sum, mesh) => sum + mesh.count, 0) : 0,
                         triangles: active ? tiles * meshes.reduce((sum, mesh) => sum + mesh.count * mesh.geometry.index.count / 3, 0) : 0 };
                 })],
-                cards: tiles * leavesPerSquare * cardsPerLeaf, leafTriangles: tiles * leavesPerSquare * cardsPerLeaf * 2,
+                cards: tiles * cardsPerSquare, leafTriangles: tiles * cardsPerSquare * 2,
                 floorTriangles: tiles * 2, chunks: chunkMeshes.length, chunkSizeMeters: chunkSize,
                 bounds: { min: bounds.min.toArray(), max: bounds.max.toArray() } };
         },

@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 
 /** @typedef {{label:string,cards:number,cardsPerSide?:number,stripDepthMeters:number,leafFraction?:number,castShadow:boolean}} RingDetails */
-/** @typedef {{textureLeaves:number,leavesByLod:Record<string,number>,triangles:number,floorTriangles:number,rings?:RingDetails[]}} PatchDetails */
+/** @typedef {{textureLeaves:number,leavesByLod:Record<string,number>,triangles:number,floorTriangles:number,captures?:{obliqueViews:number,obliqueResolution:number,topResolution:number}|null,rings?:RingDetails[]}} PatchDetails */
 /** @typedef {{id:string,x:number,z:number,textureLeaves:number,surfaceHeight?:number,widthMeters?:number,depthMeters?:number,visible?:boolean,getPatchDetails?:(x:number,z:number)=>PatchDetails|null}} HoverField */
 /** @param {{canvas:HTMLCanvasElement, camera:THREE.Camera, fields:HoverField[]}} options */
 export function createGrassDebugV2PatchHover({ canvas, camera, fields }) {
@@ -40,6 +40,8 @@ export function createGrassDebugV2PatchHover({ canvas, camera, fields }) {
         const details = selectedField?.getPatchDetails?.(selectedHit.x, selectedHit.z);
         if (details) {
             lines.push('Texture: ' + (details.textureLeaves ? leafCountFormat.format(details.textureLeaves) : 'None'));
+            if (details.captures) lines.push('Views: ' + details.captures.obliqueViews + ' × ' + details.captures.obliqueResolution
+                + '² + top ' + details.captures.topResolution + '²');
             if (!Object.keys(details.leavesByLod).length) lines.push('Leaves: 0');
             for (const [lod, leaves] of Object.entries(details.leavesByLod))
                 lines.push(lod + ': ' + leafCountFormat.format(leaves));

@@ -6,33 +6,49 @@ import { createGrassDebugV2PlantCards } from './GrassDebugV2PlantCards.js';
 import { varyGrassDebugV2LeafBend } from './GrassDebugV2LeafBend.js';
 import { attachGrassDebugV2InstancedCardNormals } from './GrassDebugV2InstancedCards.js';
 
-const PROFILES = Object.freeze([
-    Object.freeze({ id: 'upright', share: 4, tipFraction: 0.76, upperBend: 0.15, length: [0.42, 0.52], width: [0.38, 0.52] }),
-    Object.freeze({ id: 'bowed', share: 4, tipFraction: 0.80, upperBend: 0.40, length: [0.44, 0.56], width: [0.38, 0.52] }),
-    Object.freeze({ id: 'relaxed', share: 2, tipFraction: 0.84, upperBend: 0.70, length: [0.48, 0.60], width: [0.38, 0.52] })
+export const GRASS_V2_FIELD_PROFILES = Object.freeze([
+    Object.freeze({ id: 'upright', share: 4, tipFraction: 0.76, upperBend: 0.15, length: Object.freeze([0.42, 0.52]), width: Object.freeze([0.38, 0.52]) }),
+    Object.freeze({ id: 'bowed', share: 4, tipFraction: 0.80, upperBend: 0.40, length: Object.freeze([0.44, 0.56]), width: Object.freeze([0.38, 0.52]) }),
+    Object.freeze({ id: 'relaxed', share: 2, tipFraction: 0.84, upperBend: 0.70, length: Object.freeze([0.48, 0.60]), width: Object.freeze([0.38, 0.52]) })
 ]);
 const MODES = Object.freeze(['refined', 'detailed', 'curved', 'split']);
 
 /**
  * @param {{renderer:THREE.WebGLRenderer, plant:ReturnType<import('./GrassDebugV2SingleLeaf.js').createGrassDebugV2SingleLeaf>,
  * cards:ReturnType<import('./GrassDebugV2PlantCards.js').createGrassDebugV2PlantCards>,
- * rootSoil:import('./GrassDebugV2CardRootSoil.js').CardRootSoil, count?:number}} options
+ * rootSoil:import('./GrassDebugV2CardRootSoil.js').CardRootSoil, count?:number,
+ * profiles?:typeof GRASS_V2_FIELD_PROFILES, seed?:number}} options
  */
-export async function createGrassDebugV2RandomLeafPatch({ renderer, plant, cards, rootSoil, count = 4000 }) {
+export async function createGrassDebugV2RandomLeafPatch({ renderer, plant, cards, rootSoil, count = 4000,
+    profiles = GRASS_V2_FIELD_PROFILES, seed = 9262026 }) {
     if (!Number.isInteger(count) || count <= 0 || count > 10000 || count % 10)
         throw new Error('Random leaf count must be a positive multiple of ten, at most 10,000.');
+    if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) throw new Error('Field seed must be an unsigned 32-bit integer.');
+    if (!Array.isArray(profiles) || !profiles.length || new Set(profiles.map(profile => profile.id)).size !== profiles.length
+        || !profiles.every(profile => typeof profile.id === 'string' && profile.id.length > 0
+            && Number.isFinite(profile.share) && profile.share > 0 && Number.isInteger(count * profile.share / 10)
+            && Number.isFinite(profile.tipFraction) && profile.tipFraction >= 0.5 && profile.tipFraction <= 1
+            && Number.isFinite(profile.upperBend) && profile.upperBend >= 0 && profile.upperBend <= 1
+            && [profile.length, profile.width].every(range => Array.isArray(range) && range.length === 2
+                && range.every(Number.isFinite) && range[0] > 0 && range[1] >= range[0]))
+        || Math.abs(profiles.reduce((sum, profile) => sum + profile.share, 0) - 10) > 1e-9)
+        throw new Error('Field profiles require unique IDs, valid shape ranges and shares totaling ten with whole-leaf allocations.');
+    profiles = Object.freeze(profiles.map(profile => Object.freeze({ ...profile,
+        length: Object.freeze([...profile.length]), width: Object.freeze([...profile.width]) })));
+    const leafSource = plant.getSnapshot();
     const lod0 = new THREE.Group(), representations = {}, sources = [], placements = [], shapeMetrics = [];
     lod0.name = 'GrassV2RandomLeafPatchLOD0';
     const boundaryMaterial = new THREE.LineBasicMaterial({ color: new THREE.Color('#cf55ff').multiplyScalar(1 / renderer.toneMappingExposure),
         depthTest: false, depthWrite: false, toneMapped: false });
     const boundaryPoints = Object.fromEntries(MODES.map(mode => [mode, []]));
     for (const mode of MODES) representations[mode] = { group: new THREE.Group(), boundaries: null };
-    let seed = 9262026;
-    const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+    let randomState = seed;
+    const random = () => { randomState = (Math.imul(randomState, 1664525) + 1013904223) >>> 0; return randomState / 4294967296; };
     const between = (a, b) => THREE.MathUtils.lerp(a, b, random());
     const transform = new THREE.Object3D(), bounds = new THREE.Box3(), vertex = new THREE.Vector3();
-    for (const profile of PROFILES) {
-        const source = createGrassDebugV2SingleLeaf({ material: plant.leaves[0].material, tipFraction: profile.tipFraction });
+    for (const profile of profiles) {
+        const source = createGrassDebugV2SingleLeaf({ material: plant.leaves[0].material, tipFraction: profile.tipFraction,
+            definition: leafSource.definition, shape: leafSource.shape });
         shapeMetrics.push({ ...profile, leaves: count * profile.share / 10,
             ...varyGrassDebugV2LeafBend(source, 1, { upperBend: profile.upperBend }) });
         const sourceCards = createGrassDebugV2PlantCards(renderer, source, { nested: true, rootSoil });
@@ -49,7 +65,7 @@ export async function createGrassDebugV2RandomLeafPatch({ renderer, plant, cards
         sources.push({ plant: source, cards: sourceCards, meshes, edges, bounds: sourceBounds, placed: 0 });
         await new Promise(resolve => requestAnimationFrame(resolve));
     }
-    const variants = PROFILES.flatMap((profile, index) => Array(count * profile.share / 10).fill(index));
+    const variants = profiles.flatMap((profile, index) => Array(count * profile.share / 10).fill(index));
     for (let i = variants.length - 1; i > 0; i--) {
         const other = Math.floor(random() * (i + 1));
         [variants[i], variants[other]] = [variants[other], variants[i]];
@@ -69,7 +85,7 @@ export async function createGrassDebugV2RandomLeafPatch({ renderer, plant, cards
         return distance;
     };
     for (const variant of variants) {
-        const profile = PROFILES[variant], source = sources[variant];
+        const profile = profiles[variant], source = sources[variant];
         const yaw = between(0, 360), pitch = between(-9, 9), roll = between(-5, 5);
         const scale = between(...profile.length), widthScale = between(...profile.width), burial = between(0, 0.0015);
         transform.position.set(0, -burial, 0);
@@ -123,7 +139,8 @@ export async function createGrassDebugV2RandomLeafPatch({ renderer, plant, cards
         setNormalFacing: enabled => sources.forEach(source => source.cards.setNormalFacing(enabled)),
         setAlphaCoverage: enabled => sources.forEach(source => source.cards.setAlphaCoverage(enabled)),
         getSnapshot: () => ({
-            layout: 'random', leaves: count, squareMeters: 1, seed: 9262026, placements, bends: shapeMetrics, distribution: 'even-independent', periodicRoots: true,
+            layout: 'random', leaves: count, squareMeters: 1, seed, sourceLeaf: { definition: leafSource.definition, shape: leafSource.shape },
+            placements, bends: shapeMetrics, distribution: 'even-independent', periodicRoots: true,
             bounds: { min: bounds.min.toArray(), max: bounds.max.toArray() },
             leafTriangles, crownTriangles,
             variants: Object.fromEntries(MODES.map(mode => [mode, {

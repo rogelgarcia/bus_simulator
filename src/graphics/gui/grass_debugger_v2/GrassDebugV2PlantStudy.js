@@ -13,9 +13,7 @@ import { createGrassDebugV2SingleLeaf } from './GrassDebugV2SingleLeaf.js';
 import { createGrassDebugV2PlantCards } from './GrassDebugV2PlantCards.js';
 import { createGrassDebugV2PlantPatch } from './GrassDebugV2PlantPatch.js';
 import { createGrassDebugV2Authoring } from './GrassDebugV2Authoring.js';
-import { createGrassDebugV2RandomLeafPatch } from './GrassDebugV2RandomLeafPatch.js';
-import { createGrassDebugV2FloorComparison } from './GrassDebugV2FloorComparison.js';
-import { createGrassDebugV2LargeField } from './GrassDebugV2LargeField.js';
+import { createGrassDebugV2StudyPipeline } from './GrassDebugV2StudyPipeline.js';
 import { createGrassDebugV2PatchHover } from './GrassDebugV2PatchHover.js';
 import { GrassDebugV2CameraInput } from './GrassDebugV2CameraInput.js';
 
@@ -73,23 +71,26 @@ async function start() {
         two_meters: { ...poses.two_meters, ...tuftQuarterPose },
         four_meters: { ...poses.four_meters, ...tuftQuarterPose }
     } : poses;
-    const plant = singleLeafLayout ? createGrassDebugV2SingleLeaf({ material: leafMaterial })
-        : createGrassDebugV2PlantRow({ material: leafMaterial, pairs: rowLayout ? 10 : singleTuftLayout ? 2 : 5, sameSide: singleTuftLayout });
-    const cards = createGrassDebugV2PlantCards(renderer, plant, { nested: singleTuftLayout || singleLeafLayout,
+    const generateAssets = (options = {}) => createGrassDebugV2StudyPipeline({ renderer, material: leafMaterial, ground: land.ground,
+        rootSoil: { material: land.ground.material, terrain }, shadowDirection: lighting.sunRef.direction, ...options });
+    const generated = randomLayout ? await generateAssets() : null;
+    const plant = generated?.plant ?? (singleLeafLayout ? createGrassDebugV2SingleLeaf({ material: leafMaterial })
+        : createGrassDebugV2PlantRow({ material: leafMaterial, pairs: rowLayout ? 10 : singleTuftLayout ? 2 : 5, sameSide: singleTuftLayout }));
+    const cards = generated?.cards ?? createGrassDebugV2PlantCards(renderer, plant, { nested: singleTuftLayout || singleLeafLayout,
         rootSoil: singleLeafLayout ? { material: land.ground.material, terrain } : null });
     const source = plant.getSnapshot();
-    const patch = randomLayout ? await createGrassDebugV2RandomLeafPatch({ renderer, plant, cards,
-        rootSoil: { material: land.ground.material, terrain } }) : fieldLayout ? createGrassDebugV2PlantPatch(plant, cards) : null;
-    const comparison = randomLayout ? await createGrassDebugV2FloorComparison({ renderer, patch, ground: land.ground, shadowDirection: lighting.sunRef.direction }) : null;
+    const patch = generated?.patch ?? (fieldLayout ? createGrassDebugV2PlantPatch(plant, cards) : null);
+    const comparison = generated?.comparison ?? null;
     if (comparison) scene.add(comparison.group);
-    const largeField = comparison ? createGrassDebugV2LargeField({ comparison }) : null;
+    const largeField = generated?.largeField ?? null;
     if (largeField) scene.add(largeField.group);
     document.querySelector('#field-cameras').hidden = !largeField;
     const hoverFields = comparison ? [...comparison.getSnapshot().fields.map(field => ({
         ...field, getPatchDetails: () => comparison.getPatchDetails(field.id)
     })), {
         id: 'large-field', x: largeField.bounds.getCenter(new THREE.Vector3()).x,
-        z: largeField.bounds.getCenter(new THREE.Vector3()).z, textureLeaves: 4000, widthMeters: 20, depthMeters: 30,
+        z: largeField.bounds.getCenter(new THREE.Vector3()).z, textureLeaves: largeField.getSnapshot().textureLeavesPerSquare,
+        widthMeters: largeField.getSnapshot().widthMeters, depthMeters: largeField.getSnapshot().depthMeters,
         get visible() { return largeField.group.visible; },
         getPatchDetails: (x, z) => largeField.getPatchDetails(x, z)
     }] : [];
@@ -319,13 +320,13 @@ async function start() {
         movementFrame = requestAnimationFrame(updateMovement);
     };
     movementFrame = requestAnimationFrame(updateMovement);
-    window.addEventListener('pagehide', () => { cancelAnimationFrame(movementFrame); cameraMovement.dispose(); patchHover?.dispose(); largeField?.dispose(); }, { once: true });
+    window.addEventListener('pagehide', () => { cancelAnimationFrame(movementFrame); cameraMovement.dispose(); patchHover?.dispose(); generated?.dispose(); }, { once: true });
     const resizeObserver = new ResizeObserver(resizeViewport); resizeObserver.observe(renderer.domElement);
     addEventListener('resize', resizeViewport); render();
     const capture = (value, pose, boundaries = false) => { setPose(pose); setBoundaries(boundaries); setMode(value); render(); return renderer.domElement.toDataURL('image/png'); };
     return Object.freeze({ renderer, scene, camera, lighting, controls, cameraMovement, plant, cards, patch, comparison, largeField, soil, squareBounds, capture, setMode, setPose, setFieldPose, setFieldVisible, setBoundaries, setSquareBounds,
-        setNormalFacing, setAlphaCoverage, authoring,
-        getSnapshot: () => ({ mode, layout, largeField: largeField?.getSnapshot() ?? null, comparison: comparison?.getSnapshot() ?? null, authoring: authoring?.getSnapshot() ?? null, ...(cards?.getSnapshot() ?? { specimens: 1, sourceLeaves: 1, variants: {} }), source, poses: activePoses, rootSoilEnabled: soil.group.visible, patch: patch?.getSnapshot() ?? null,
+        setNormalFacing, setAlphaCoverage, authoring, generateAssets, pipeline: generated?.pipeline ?? null,
+        getSnapshot: () => ({ mode, layout, pipeline: generated?.pipeline.getSnapshot() ?? null, largeField: largeField?.getSnapshot() ?? null, comparison: comparison?.getSnapshot() ?? null, authoring: authoring?.getSnapshot() ?? null, ...(cards?.getSnapshot() ?? { specimens: 1, sourceLeaves: 1, variants: {} }), source, poses: activePoses, rootSoilEnabled: soil.group.visible, patch: patch?.getSnapshot() ?? null,
             squareBounds: { visible: squareBounds.visible, sizeMeters: 1, center: squareBounds.position.toArray() },
             lighting: lighting.getSnapshot(), land: land.getSnapshot() }) });
 }

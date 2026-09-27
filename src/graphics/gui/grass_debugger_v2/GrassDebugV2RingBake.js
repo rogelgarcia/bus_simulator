@@ -13,13 +13,22 @@ const VIEWS = Object.freeze([
 
 /** @param {{renderer:THREE.WebGLRenderer,source:THREE.Group,bottomHeight:number,sourceHeight:number,inset:number,outset:number,stripDepth:number,capturePadding?:number,leafFraction?:number}} options */
 export async function createGrassDebugV2RingBake({ renderer, source, bottomHeight, sourceHeight, inset, outset, stripDepth, capturePadding = 0, leafFraction = 1 }) {
-    if (!(sourceHeight > bottomHeight && bottomHeight >= 0) || !(inset >= 0 && inset < 0.5) || !(outset >= 0)
-        || !(stripDepth > 0 && stripDepth + inset < 0.5) || !(capturePadding >= 0 && capturePadding <= 0.1)) throw new Error('Invalid grass ring dimensions.');
+    if (![sourceHeight, bottomHeight, inset, outset, stripDepth, capturePadding].every(Number.isFinite)
+        || !(sourceHeight > bottomHeight && bottomHeight >= 0) || !(inset >= 0 && inset < 0.5) || !(outset >= 0)
+        || !(stripDepth > 0 && stripDepth + inset < 0.5) || !(capturePadding >= 0)) throw new Error('Invalid grass ring dimensions.');
     if (!(leafFraction > 0 && leafFraction <= 1)) throw new Error('Ring leaf fraction must be greater than zero and at most one.');
     const width = 2048, height = 128;
     const verticalHeight = sourceHeight - bottomHeight, slantHeight = Math.hypot(verticalHeight, outset);
     const halfBottom = 0.5 - inset, halfTop = halfBottom + outset, captureHalfWidth = halfTop + capturePadding, span = captureHalfWidth * 2;
     const sources = source.children.filter(mesh => mesh.isInstancedMesh), matrix = new THREE.Matrix4();
+    if (!sources.length || sources.some(mesh => !mesh.geometry.index || mesh.geometry.index.count % 6 !== 0))
+        throw new Error('Grass ring bake requires indexed, instanced leaf cards.');
+    const sourceLeaves = sources.reduce((sum, mesh) => sum + mesh.count, 0);
+    const sourceLod = [...new Set(sources.map(mesh => 'LOD3 · ' + mesh.geometry.index.count / 6))].join(' + ');
+    const sourceBounds = new THREE.Box3().setFromObject(source);
+    const sourceRadius = Math.max(Math.abs(sourceBounds.min.x), Math.abs(sourceBounds.max.x), Math.abs(sourceBounds.min.z), Math.abs(sourceBounds.max.z));
+    const cameraDistance = Math.max(2, sourceRadius + captureHalfWidth + 0.1);
+    const cameraFar = Math.max(5, cameraDistance + sourceRadius + sourceHeight + captureHalfWidth);
     const target = new THREE.WebGLRenderTarget(width, height, { samples: 4, colorSpace: THREE.NoColorSpace });
     const channels = Object.fromEntries(['albedo', 'normal', 'roughness'].map(channel => [channel,
         new Map(sources.map(mesh => [mesh.material, createGrassDebugV2PatchBakeMaterial(mesh.material, channel, false)]))]));
@@ -55,8 +64,8 @@ export async function createGrassDebugV2RingBake({ renderer, source, bottomHeigh
             }
             const position = outward.clone().multiplyScalar(halfBottom + outset / 2).setY(bottomHeight + verticalHeight / 2);
             const normal = outward.clone().multiplyScalar(verticalHeight / slantHeight).add(new THREE.Vector3(0, -outset / slantHeight, 0));
-            const camera = new THREE.OrthographicCamera(-span / 2, span / 2, slantHeight / 2, -slantHeight / 2, 0.01, 5);
-            camera.position.copy(position).addScaledVector(normal, 2); camera.lookAt(position); camera.updateMatrixWorld(true);
+            const camera = new THREE.OrthographicCamera(-span / 2, span / 2, slantHeight / 2, -slantHeight / 2, 0.01, cameraFar);
+            camera.position.copy(position).addScaledVector(normal, cameraDistance); camera.lookAt(position); camera.updateMatrixWorld(true);
             const maps = {};
             try {
                 for (const [channel, materials] of Object.entries(channels)) {
@@ -88,7 +97,7 @@ export async function createGrassDebugV2RingBake({ renderer, source, bottomHeigh
     await new Promise(resolve => requestAnimationFrame(resolve));
     return Object.freeze({ views: Object.freeze(views), halfBottom, halfTop, captureHalfWidth, slantHeight,
         getSnapshot: () => ({ width, height, inset, outset, stripDepth, bottomHeight, sourceHeight, capturePadding, captureHalfWidth, leafFraction,
-            leanDegrees: THREE.MathUtils.radToDeg(Math.atan2(outset, verticalHeight)), sourceLod: 'LOD3 · 10',
+            leanDegrees: THREE.MathUtils.radToDeg(Math.atan2(outset, verticalHeight)), sourceLod, sourceLeaves,
             selection: 'deterministic subset across the full reference root strip', stripRadialRange: [halfBottom - stripDepth, halfBottom],
             views: views.map(view => ({ id: view.id, eligibleLeaves: view.eligibleLeaves, sourceLeaves: view.sourceLeaves })) }),
         dispose: () => textures.forEach(texture => texture.dispose())

@@ -24,11 +24,11 @@ function attachFade(material, surfaceHeight) {
     });
 }
 
-/** @param {{source:THREE.Group,surfaceHeight:number,x:number,z:number}} options */
-export function createGrassDebugV2EdgeLeaves({ source, surfaceHeight, x, z }) {
+/** @param {{source:THREE.Group,surfaceHeight:number,x:number,z:number,edgeDepth?:number}} options */
+export function createGrassDebugV2EdgeLeaves({ source, surfaceHeight, x, z, edgeDepth = 0.05 }) {
     if (!(surfaceHeight > 0) || !Number.isFinite(x) || !Number.isFinite(z)) throw new Error('Edge leaves require a valid raised patch.');
     const group = new THREE.Group(), matrix = new THREE.Matrix4(), root = new THREE.Vector3(), entries = [];
-    const edgeDepth = 0.05;
+    if (!(edgeDepth > 0 && edgeDepth < 0.5)) throw new Error('Invalid grass edge depth.');
     let leaves = 0;
     group.name = 'GrassV2EdgeLeaves'; group.position.set(x, 0, z);
     for (const original of source.children.filter(mesh => mesh.isInstancedMesh)) {

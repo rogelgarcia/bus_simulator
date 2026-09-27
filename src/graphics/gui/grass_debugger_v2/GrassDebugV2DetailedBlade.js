@@ -25,10 +25,11 @@ export function sampleGrassDebugV2DetailedBladeHalfWidth(t) {
 /**
  * @param {THREE.Curve<THREE.Vector3>|null} curve
  * @param {(t: number) => number} sampleHalfWidth
+ * @param {typeof GRASS_V2_DETAILED_BLADE} shape
  * @returns {(t: number, s: number, target: THREE.Vector3) => THREE.Vector3}
  */
-export function createGrassDebugV2DetailedBladeSampler(curve = null, sampleHalfWidth = sampleGrassDebugV2DetailedBladeHalfWidth) {
-    const { widthMeters, rootDepthMeters, transverseHalfAngle, midribHeightMeters, midribHalfWidthRatio, tipStart } = GRASS_V2_DETAILED_BLADE;
+export function createGrassDebugV2DetailedBladeSampler(curve = null, sampleHalfWidth = sampleGrassDebugV2DetailedBladeHalfWidth, shape = GRASS_V2_DETAILED_BLADE) {
+    const { widthMeters, rootDepthMeters, transverseHalfAngle, midribHeightMeters, midribHalfWidthRatio, tipStart } = shape;
     const root = new THREE.Vector3(0, -rootDepthMeters, 0);
     curve ??= new THREE.CubicBezierCurve3(
         root, new THREE.Vector3(0, 0.0255, 0.04),

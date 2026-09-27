@@ -27,8 +27,11 @@ export function createGrassDebugV2PlantCardAtlas(renderer, plant, layout, { root
     const soil = rootSoil ? createGrassDebugV2CardRootSoil(rootSoil, Object.values(layout.splitSides)[0]) : null;
     const { pageWidth: width, height } = GRASS_V2_PLANT_ATLAS;
     const { minX, maxX, minZ, maxZ } = layout.frame;
-    const camera = new THREE.OrthographicCamera(minX, maxX, -minZ, -maxZ, 0.01, 2);
-    camera.position.set(0, 1, 0); camera.up.set(0, 0, -1); camera.lookAt(0, 0, 0);
+    const bounds = new THREE.Box3().setFromObject(plant.group);
+    const margin = Math.max(0.01, (bounds.max.y - bounds.min.y) * 0.02);
+    const cameraHeight = Math.max(1, bounds.max.y + margin), far = Math.max(2, cameraHeight - bounds.min.y + margin);
+    const camera = new THREE.OrthographicCamera(minX, maxX, -minZ, -maxZ, 0.01, far);
+    camera.position.set(0, cameraHeight, 0); camera.up.set(0, 0, -1); camera.lookAt(0, 0, 0);
     const sourceMaterial = plant.leaves[0].material;
     const color = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, toneMapped: false });
     const normal = new THREE.MeshNormalMaterial({ normalMap: sourceMaterial.normalMap, normalScale: sourceMaterial.normalScale, side: THREE.DoubleSide });
@@ -88,6 +91,9 @@ export function createGrassDebugV2PlantCardAtlas(renderer, plant, layout, { root
         renderer.autoClear = previous.autoClear; renderer.toneMapping = previous.toneMapping;
         target.dispose(); color.dispose(); normal.dispose(); roughness.dispose();
     }
-    return Object.freeze({ ...maps, definition: soil ? Object.freeze({ ...GRASS_V2_PLANT_ATLAS, rootSoil: soil.getSnapshot() }) : GRASS_V2_PLANT_ATLAS,
+    const definition = Object.freeze({ ...GRASS_V2_PLANT_ATLAS,
+        capture: Object.freeze({ cameraHeight, near: camera.near, far, sourceMinHeight: bounds.min.y, sourceMaxHeight: bounds.max.y }),
+        ...(soil ? { rootSoil: soil.getSnapshot() } : {}) });
+    return Object.freeze({ ...maps, definition,
         dispose: () => Object.values(maps).forEach(map => map.dispose()) });
 }

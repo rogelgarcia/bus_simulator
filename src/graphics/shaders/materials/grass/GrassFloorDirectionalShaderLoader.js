@@ -1,4 +1,4 @@
-// Camera-dependent coverage from top, sun-facing and opposite oblique reference views.
+// Camera-dependent coverage from the top and two adjacent oblique reference views.
 import { createShaderPayload, loadShaderSourceSet } from '../../core/ShaderLoader.js';
 
 export const grassFloorDirectionalShader = createShaderPayload({

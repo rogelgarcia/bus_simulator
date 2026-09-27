@@ -18,7 +18,15 @@ export async function createGrassDebugV2SideBake({ renderer, source, edgeDepth =
         throw new Error('Side bake requires a positive depth up to one metre and an increasing height range within zero to one.');
     const width = 2048, height = minHeightFraction ? 128 : 256;
     const sourceBounds = new THREE.Box3().setFromObject(source), sourceHeight = sourceBounds.max.y;
-    if (!(sourceHeight > 0)) throw new Error('Grass side bake requires above-ground geometry.');
+    if (!Number.isFinite(sourceHeight) || !(sourceHeight > 0)) throw new Error('Grass side bake requires finite above-ground geometry.');
+    const sourceMeshes = source.children.filter(mesh => mesh.isInstancedMesh);
+    if (!sourceMeshes.length || sourceMeshes.some(mesh => !mesh.geometry.index || mesh.geometry.index.count % 6 !== 0))
+        throw new Error('Grass side bake requires indexed, instanced leaf cards.');
+    const sourceLeaves = sourceMeshes.reduce((sum, mesh) => sum + mesh.count, 0);
+    const sourceLod = [...new Set(sourceMeshes.map(mesh => 'LOD3 · ' + mesh.geometry.index.count / 6))].join(' + ');
+    const sourceLabel = (sourceLeaves % 1000 === 0 ? sourceLeaves / 1000 + 'K' : String(sourceLeaves)) + ' ' + sourceLod;
+    const sourceRadius = Math.max(Math.abs(sourceBounds.min.x), Math.abs(sourceBounds.max.x), Math.abs(sourceBounds.min.z), Math.abs(sourceBounds.max.z));
+    const cameraDistance = Math.max(2, sourceRadius + 1.1);
     const minHeight = sourceHeight * minHeightFraction, captureHeight = sourceHeight * maxHeightFraction - minHeight;
     const periodic = createGrassDebugV2PeriodicSource(source);
     const copies = periodic.group, scene = new THREE.Scene(); copies.visible = true; scene.add(copies);
@@ -39,9 +47,9 @@ export async function createGrassDebugV2SideBake({ renderer, source, edgeDepth =
     try {
         renderer.autoClear = true; renderer.toneMapping = THREE.NoToneMapping; renderer.shadowMap.enabled = false; renderer.setScissorTest(false);
         for (const view of VIEWS) {
-            const camera = new THREE.OrthographicCamera(-0.5, 0.5, captureHeight / 2, -captureHeight / 2, 1.5, 1.5 + edgeDepth);
+            const camera = new THREE.OrthographicCamera(-0.5, 0.5, captureHeight / 2, -captureHeight / 2, cameraDistance - 0.5, cameraDistance - 0.5 + edgeDepth);
             const center = new THREE.Vector3(0, minHeight + captureHeight / 2, 0), outward = new THREE.Vector3(...view.outward);
-            camera.position.copy(center).addScaledVector(outward, 2); camera.lookAt(center); camera.updateMatrixWorld(true);
+            camera.position.copy(center).addScaledVector(outward, cameraDistance); camera.lookAt(center); camera.updateMatrixWorld(true);
             const maps = {};
             for (const [channel, materials] of Object.entries(channels)) {
                 for (const { mesh, original } of meshes) mesh.material = materials.get(original);
@@ -81,7 +89,7 @@ export async function createGrassDebugV2SideBake({ renderer, source, edgeDepth =
     }
     await new Promise(resolve => requestAnimationFrame(resolve));
     return Object.freeze({ views: Object.freeze(views), sourceHeight, minHeight, captureHeight,
-        getSnapshot: () => ({ width, height, sourceHeight, minHeight, captureHeight, edgeDepth, minHeightFraction, maxHeightFraction, source: '4K LOD3 · 10', sourceLeaves: 4000,
+        getSnapshot: () => ({ width, height, sourceHeight, minHeight, captureHeight, edgeDepth, minHeightFraction, maxHeightFraction, source: sourceLabel, sourceLeaves, sourceLod,
             views: views.map(view => view.id), channels: ['albedo', 'normal', 'roughness', 'alpha'],
             normalSpace: 'wall-tangent-right-up-outward', sunBaked: false, shadowsBaked: false,
             periodic: periodic.getSnapshot(), clipFootprintMeters: 1,

@@ -26,7 +26,7 @@ test('Grass floor angular color follows the source patch', async ({ page }) => {
             const angle = heading + degrees * Math.PI / 180;
             const row = { distance, elevation, degrees };
             const pitch = elevation * Math.PI / 180, radius = distance * Math.cos(pitch);
-            for (const [name, id] of [['source', 'source'], ['floor', 'texture4k'], ['rings', 'rings4k']]) {
+            for (const [name, id] of [['source', 'source'], ['floor', 'texture4k'], ['rings', 'rings4k'], ['rings32', 'rings32']]) {
                 const field = fields.find(field => field.id === id), { x: centerX, z } = field;
                 const sampleY = name === 'source' ? 0.04 : field.surfaceHeight;
                 camera.position.set(centerX + Math.sin(angle) * radius, sampleY + distance * Math.sin(pitch), z + Math.cos(angle) * radius);
@@ -60,9 +60,10 @@ test('Grass floor angular color follows the source patch', async ({ page }) => {
         if (pose.elevation === 85) for (const channel of ['red', 'green', 'blue'])
             expect(Math.abs(pose.rings.leaves[channel] - pose.floor.leaves[channel])).toBeLessThan(3);
         expect(pose.floor.leaves.coverage).toBeGreaterThan(0.4);
-        // A 30-degree capture approximates very low views; at 10 m its mean brightness should remain near the live reference.
-        if (pose.distance === 10 && pose.elevation === 16.3)
-            expect(Math.abs(pose.rings.leaves.green - pose.source.leaves.green)).toBeLessThan(10);
+        // One fixed visibility view and 512px captures trade exact matching for storage.
+        // Keep low-angle mean color within 15% of the live patch and verify heading contrast below.
+        if (pose.distance === 10 && pose.elevation === 16.3) for (const name of ['rings', 'rings32'])
+            expect(Math.abs(pose[name].leaves.green / pose.source.leaves.green - 1), name + ' low-angle color').toBeLessThan(0.15);
         if (pose.distance === 1.4) {
             for (const channel of ['red', 'green', 'blue'])
                 expect(Math.abs(pose.floor.leaves[channel] - pose.source.leaves[channel]), channel + ' mismatch at ' + pose.degrees + '/' + pose.elevation).toBeLessThan(14);
@@ -73,6 +74,12 @@ test('Grass floor angular color follows the source patch', async ({ page }) => {
     const front = [results.poses[0], results.poses[1], results.poses[5]].reduce((sum, pose) => sum + pose.floor.leaves.green, 0) / 3;
     const rear = [results.poses[2], results.poses[3], results.poses[4]].reduce((sum, pose) => sum + pose.floor.leaves.green, 0) / 3;
     expect(rear).toBeLessThan(front * 0.9);
+    for (const name of ['rings', 'rings32']) {
+        const samples = results.poses.filter(pose => pose.distance === 10 && pose.elevation === 16.3);
+        const greens = samples.map(pose => pose[name].leaves.green);
+        expect(Math.max(...greens) - Math.min(...greens), name + ' view-dependent shade').toBeGreaterThan(5);
+        expect(Math.min(...greens) / Math.max(...greens), name + ' directional contrast').toBeLessThan(0.95);
+    }
     await page.addStyleTag({ content: '.plant-study-panel, .grass-comparison-label, .grass-patch-distance { display:none!important; }' });
     for (const [name, pose] of [['front', 'three_quarter'], ['rear', 'ten_meters_rear'], ['top', 'elevated']]) {
         await page.evaluate(pose => {

@@ -46,9 +46,11 @@ test('Grass floor comparisons preserve PBR normals, tile spacing and camera move
         ['reference', 'None', 'LOD3 · 10: 2K', '40,000'],
         ['texture2k', '2K', 'Leaves: 0', '18'],
         ['hybrid2k', '2K', 'LOD3 · 10: 2K', '40,002'],
-        ['rings4k', '4K', 'Leaves: 0', '26']
-    ]) await expectPatchTooltip(id, ['Texture: ' + texture, leaves,
-        ...(id === 'rings4k' ? ['Outer ring: 8 cards (2 per side) · 12 cm depth · 40% leaves · shadows on'] : []),
+        ['rings4k', '4K', 'Leaves: 0', '26'],
+        ['rings32', '4K', 'Leaves: 0', '26']
+    ]) await expectPatchTooltip(id, ['Texture: ' + texture,
+        ...(id === 'rings4k' ? ['Views: 1 × 1024² + top 1024²'] : id === 'rings32' ? ['Views: 32 × 512² + top 512²'] : []), leaves,
+        ...(id.startsWith('rings') ? ['Outer ring: 8 cards (2 per side) · 12 cm depth · 40% leaves · shadows on'] : []),
         'Triangles: ' + triangles]);
     await page.screenshot({ path: path.join(folder, 'rings-tooltip.png') });
     await page.screenshot({ path: path.join(folder, 'hybrid-tooltip.png') });
@@ -95,16 +97,18 @@ test('Grass floor comparisons preserve PBR normals, tile spacing and camera move
     await page.locator('[data-pose="three_quarter"]').click();
     expect(state.sourceLeaves).toBe(4000); expect(state.hybridLeaves).toBe(1000); expect(state.instanceLeaves).toBe(1000);
     expect(state.sharedMaps).toBe(true); expect(state.subset).toBe(true); expect(state.gapMeters).toBe(0.3);
-    expect(state.tiles.map(tile => tile.position)).toEqual([[-2.6, state.volume.surfaceHeight, -1.3], [0, 0.01, -2.6], [1.3, state.volume.surfaceHeight, -1.3], [1.3, 0.01, -2.6], [0, state.volume.surfaceHeight, -1.3], [-1.3, state.ringPatch.baseHeight, -1.3]]);
-    expect(state.fields.map(field => [field.geometryLeaves, field.textureLeaves])).toEqual([[4000, 0], [0, 4000], [1000, 4000], [2000, 0], [0, 2000], [2000, 2000], [state.edgeLeaves.leaves, 4000], [0, 4000]]);
+    expect(state.tiles.map(tile => tile.position)).toEqual([[-2.6, state.volume.surfaceHeight, -1.3], [0, 0.01, -2.6], [1.3, state.volume.surfaceHeight, -1.3], [1.3, 0.01, -2.6], [-1.3, state.ringPatch.baseHeight, -1.3], [0, state.ringPatch.baseHeight, -1.3]]);
+    expect(state.fields.map(field => [field.geometryLeaves, field.textureLeaves])).toEqual([[4000, 0], [0, 4000], [1000, 4000], [2000, 0], [0, 2000], [2000, 2000], [0, 4000], [0, 4000]]);
     expect(state.sharedSparseMaps).toBe(true); expect(state.referenceMatches).toBe(true); expect(state.complementMatches).toBe(true);
-    expect(state.totalGeometryLeaves).toBe(9000 + state.edgeLeaves.leaves);
-    expect(state.totalTriangles).toBe(70992076 + state.edgeLeaves.triangles);
+    expect(state.edgeLeaves).toBeNull();
+    expect(state.fields.some(field => field.id === 'edge4k')).toBe(false);
+    expect(state.totalGeometryLeaves).toBe(9000);
+    expect(state.totalTriangles).toBe(70992092);
     expect(state.sparseBake).toMatchObject({ sourceLeaves: 2000, sourceStride: 2, sourceOffset: 0, resolution: 2048, sourceView: 'top', projectionType: 'orthographic', sunBaked: false });
     expect(state.greenPixels[1]).toBeGreaterThan(10000); expect(state.greenPixels[1]).toBeLessThan(state.greenPixels[0]);
     await expect(page.locator('.grass-comparison-label')).toHaveCount(8);
     for (const [index, tile] of state.tiles.entries()) {
-        const inset = index === 1 || index === 3 ? 0.01 : index === 5 ? 0.005 : 0, size = 1 - 2 * inset;
+        const inset = index === 1 || index === 3 ? 0.01 : index >= 4 ? 0.005 : 0, size = 1 - 2 * inset;
         expect(tile.width).toBe(size); expect(tile.height).toBe(size); expect(tile.tangentNormals).toBe(true);
         [inset, 1 - inset, 1 - inset, 1 - inset, inset, inset, 1 - inset, inset]
             .forEach((value, i) => expect(tile.uv[i]).toBeCloseTo(value, 7));
@@ -128,7 +132,7 @@ test('Grass floor comparisons preserve PBR normals, tile spacing and camera move
         await page.locator('[data-pose="three_quarter"]').click();
         expect(hybrid.visible).toEqual([mode]); expect(hybrid.triangles).toBe(triangles);
         expect(hybrid.referenceVisible).toEqual([mode]); expect(hybrid.hybrid2KVisible).toEqual([mode]);
-        expect(hybrid.hybrid2KTriangles).toBe(triangles * 2); expect(hybrid.totalTriangles).toBe(triangles * 9 + 76 + state.edgeLeaves.triangles);
+        expect(hybrid.hybrid2KTriangles).toBe(triangles * 2); expect(hybrid.totalTriangles).toBe(triangles * 9 + 92);
         if (mode === 'refined') await page.screenshot({ path: path.join(folder, 'comparison-lod3-10.png') });
     }
     await page.locator('[data-mode="LOD0"]').click();

@@ -41,7 +41,7 @@ test('Experimental canopy joins a one-metre base to a cropped top and one connec
             distance: s.camera.position.distanceTo(s.controls.target),
             floor: { size: floor.geometry.parameters.width, scale: floor.scale.toArray(), uv: Array.from(floor.geometry.attributes.uv.array),
                 positions: Array.from(floor.geometry.attributes.position.array), castShadow: floor.castShadow,
-                originalMap: floor.material.map === c.bake.textures.albedo },
+                originalMap: floor.material.map === c.configurations.rings4k.bake.textures.albedo },
             walls: r.walls.map((mesh, i) => {
                 const frame = s.renderer.properties.get(mesh.material).uniforms.grassFloorCaptureToCard.value;
                 const sampleNormal = new THREE.Vector3(0.2, 0.5, 0.8).normalize();

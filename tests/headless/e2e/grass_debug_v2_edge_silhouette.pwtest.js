@@ -4,7 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 test.use({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1, video: 'off', trace: 'off' });
-test('Grass texture blocks have sliced alpha tips and an independent LOD3-2 edge comparison', async ({ page }) => {
+test('Opt-in LOD3-2 edge recipe preserves sliced tips and independent border leaves', async ({ page }) => {
     test.setTimeout(180000);
     const folder = path.resolve('tests/artifacts/screens/grass_debug_v2/edge_silhouettes');
     await mkdir(folder, { recursive: true });
@@ -14,6 +14,21 @@ test('Grass texture blocks have sliced alpha tips and an independent LOD3-2 edge
     await page.goto('/debug_tools/grass_plant_study.html?layout=random');
     await page.waitForFunction(() => !!window.__plantCardsReadiness);
     await page.evaluate(() => window.__plantCardsReadiness);
+    // The live-border comparison is no longer a default patch; exercise its opt-in recipe.
+    await page.evaluate(async () => {
+        const study = window.__plantCardsStudy;
+        const { GRASS_V2_PIPELINE_CONFIG } = await import('/src/graphics/gui/grass_debugger_v2/GrassDebugV2PipelineConfig.js');
+        const configurations = GRASS_V2_PIPELINE_CONFIG.configurations.filter(item => item.kind !== 'experiment');
+        configurations.push({ id: 'edge4k', kind: 'edge', x: 0, z: -1.3, texture: '4k', edgeDepth: 0.05 });
+        const generated = await study.generateAssets({ config: { configurations, textures: GRASS_V2_PIPELINE_CONFIG.textures.slice(0, 2) } });
+        study.scene.remove(study.comparison.group); study.scene.add(generated.comparison.group);
+        window.__plantCardsStudy = { ...study, comparison: generated.comparison, patch: generated.patch,
+            setMode(mode) { study.setMode(mode); generated.comparison.setMode(mode); },
+            setNormalFacing(value) { study.setNormalFacing(value); generated.comparison.setNormalFacing(value); },
+            setAlphaCoverage(value) { study.setAlphaCoverage(value); generated.comparison.setAlphaCoverage(value); }
+        };
+        generated.comparison.setMode('refined');
+    });
     const state = await page.evaluate(async () => {
         const THREE = await import('three'), s = window.__plantCardsStudy, c = s.comparison, v = c.volume;
         const matrix = new THREE.Matrix4();
@@ -44,7 +59,7 @@ test('Grass texture blocks have sliced alpha tips and an independent LOD3-2 edge
         };
     });
     const v = state.snapshot.volume;
-    expect(state.snapshot.fields).toHaveLength(8);
+    expect(state.snapshot.fields).toHaveLength(7);
     expect(v.silhouette).toMatchObject({ minHeightFraction: 0.8, edgeDepth: 0.05, source: '4K LOD3 · 10' });
     expect(v.walls).toBe(12); expect(v.silhouettes).toBe(8);
     expect(state.alphaDetails.triangles).toBe(18);
@@ -97,8 +112,10 @@ test('Grass texture blocks have sliced alpha tips and an independent LOD3-2 edge
         const source = new THREE.Group(), geometry = new THREE.PlaneGeometry(0.12, 0.02);
         const red = new THREE.MeshStandardMaterial({ color: 0xff0000, side: THREE.DoubleSide });
         const blue = new THREE.MeshStandardMaterial({ color: 0x0000ff, side: THREE.DoubleSide });
-        const outer = new THREE.Mesh(geometry, red), inner = new THREE.Mesh(geometry, blue);
-        outer.position.set(-0.2, 0.09, 0.48); inner.position.set(0.2, 0.09, 0.40); source.add(outer, inner);
+        const outer = new THREE.InstancedMesh(geometry, red, 1), inner = new THREE.InstancedMesh(geometry, blue, 1);
+        outer.setMatrixAt(0, new THREE.Matrix4().makeTranslation(-0.2, 0.09, 0.48));
+        inner.setMatrixAt(0, new THREE.Matrix4().makeTranslation(0.2, 0.09, 0.40));
+        outer.instanceMatrix.needsUpdate = inner.instanceMatrix.needsUpdate = true; source.add(outer, inner);
         const bake = await createGrassDebugV2SideBake({ renderer: window.__plantCardsStudy.renderer, source, edgeDepth: 0.05, minHeightFraction: 0.8 });
         const pixels = bake.views[0].textures.albedo.image.data;
         let redPixels = 0, bluePixels = 0;
@@ -106,13 +123,13 @@ test('Grass texture blocks have sliced alpha tips and an independent LOD3-2 edge
             if (pixels[i] > 100) redPixels++;
             if (pixels[i + 2] > 100) bluePixels++;
         }
-        bake.dispose(); geometry.dispose(); red.dispose(); blue.dispose();
+        bake.dispose(); outer.dispose(); inner.dispose(); geometry.dispose(); red.dispose(); blue.dispose();
         return { redPixels, bluePixels };
     });
     expect(sliceFixture.redPixels).toBeGreaterThan(1000); expect(sliceFixture.bluePixels).toBe(0);
     await page.evaluate(() => {
         const s = window.__plantCardsStudy, c = s.comparison;
-        s.patch.representations.refined.group.visible = false; c.ringPatch.group.visible = false;
+        s.patch.representations.refined.group.visible = false;
         c.tiles.forEach(tile => { tile.visible = ['GrassV2Floor-texture4k', 'GrassV2Floor-edge4k'].includes(tile.name); });
         for (const variants of [c.hybrid, c.hybrid2K, c.reference]) Object.values(variants).forEach(group => { group.visible = false; });
         for (const mesh of [...c.volume.walls, ...c.volume.silhouettes]) if (mesh.name.includes('texture2k')) mesh.visible = false;
