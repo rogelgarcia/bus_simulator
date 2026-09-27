@@ -2636,6 +2636,34 @@ CITY_PAINT = 0.35                               # the bay lines' grey, linear: f
 REF_BLOCK_X = (0.055, 0.930)                    # where the block's ends stand across the photo's frame at its base (the brief's reading):
                                                 # the stand's wedges run from the frame's edges to these
 REF_WEDGE_MARGIN = 0.4                          # degrees added either side of each wedge
+# THE OPEN BLOCK FURNISHED (AI 574 item 34; the user, on the Eevee preview's first frame, 2026-09-27: "esse quarteirao
+# embaixo da tela esta muito vazio. adicione um muro, com estacionamento e umas arvores. coisa baixa para nao afetar o
+# predio"). The parcels item 33 kept open across 3rd Street -- within CITY_OPEN_S of its far kerb, the S parcel under
+# the approach's first frame first of all -- are walled parking lots now, and low: a plaster wall OPEN_WALL_H tall
+# (item 28's low wall is 1.2 m) under a thin cap, ringing the parcel OPEN_WALL_IN inside its edge in item 28's ring
+# manner (the south and north runs the full width, the east and west between them), with OPEN_GATES gate openings on
+# as many of its street sides, each OPEN_GATE_W wide between two posts; inside it a planting strip of the lot's own
+# ground OPEN_STRIP_W wide where the trees stand, then the asphalt with the city's own bay lines (CITY_BAY) and
+# OPEN_ISLANDS planting islands taking a few bays each; the trees the bare-trunked models at OPEN_TREE_H, every
+# OPEN_TREE_STEP along the strip and on the islands. Nothing here affects the block: the lots lie south of 3rd
+# Street, so their shadows (7.5 m for a 7 m tree at this sun) fall away from it (the clearance is asserted with the
+# city's); every tree keeps OPEN_CLEAR_R off the reference stand's foot, because the approach settles onto that stand
+# 14.6 m up and the pull-up leaves from it, and the st_corner and hero_3q stands share the SE lot; the stand's wedges
+# point the other way (the lots stand behind the reference frame's left edge, at azimuths over 175 from the eye).
+# The open ground's streets are laid now too, since a lot needs a street to open onto. No cars: there is no model.
+OPEN_WALL_H, OPEN_WALL_T = 1.1, 0.20            # the lot's wall: this tall, this thick, in the near context's cream plaster ...
+OPEN_WALL_CAP = (0.30, 0.05)                    # ... under a cap this wide and this tall ...
+OPEN_CAP_GREY = (0.45, 0.44, 0.42)              # ... in a plain pale concrete, linear
+OPEN_WALL_IN = 0.30                             # the wall stands this far inside the parcel's edge (the lot's strip or the sidewalk band)
+OPEN_GATES = (2, 3)                             # gate openings per lot, on that many of its street sides, one each ...
+OPEN_GATE_W = 6.0                               # ... this wide ...
+OPEN_GATE_POST = (0.35, 1.5)                    # ... between two posts this square and this tall, astride the wall's line
+OPEN_GATE_MARGIN = 8.0                          # a gate keeps this far from the lot's corners
+OPEN_STRIP_W = 1.5                              # the planting strip inside the wall: the lot's own ground, where the trees stand
+OPEN_TREE_STEP = (8.0, 12.0)                    # a tree every so far along the strip ...
+OPEN_TREE_H = (5.0, 7.0)                        # ... this tall, low (item 34: nothing here is to affect the block)
+OPEN_ISLANDS = (2, 10.8, 2)                     # planting islands in the bay rows: how many a lot, each this long (four bays), trees each
+OPEN_CLEAR_R = 35.0                             # no tree within this of the reference stand's foot (the flyover's stands, see above)
 
 n_city = {}
 if CONTEXT == "on" and GROUND == "street" and CITY == "on":
@@ -2775,27 +2803,24 @@ if CONTEXT == "on" and GROUND == "street" and CITY == "on":
     x_gaps, y_gaps = gaps(x_streets, x_main, CITY_EXTENT[0], CITY_EXTENT[1]), gaps(y_streets, y_main, CITY_EXTENT[2], CITY_EXTENT[3])
     def open_zone(yc): return Y0 - LOT_IN - CITY_OPEN_S < yc < Y0         # the open ground: from 3rd Street's far kerb south
     ext = LOT_IN - INS                                                 # a street quad runs across a lot's strip to the kerb's top
-    roads = []
+    roads = []                                                         # the open ground's streets too (item 34: its lots open onto them)
     for xa, xb in x_streets:
         for ya, yb, ks, kn in y_gaps:
-            if open_zone((ya + yb) / 2.0): continue
             r = (xa, xb, ya - (ext if ks == "main" else 0.0), yb + (ext if kn == "main" else 0.0))
             if not hits(*r, 0.0, wedge=False): roads.append(r)
     for ya, yb in y_streets:
-        if open_zone((ya + yb) / 2.0): continue
         for xa, xb, kw, ke in x_gaps:
             r = (xa - (ext if kw == "main" else 0.0), xb + (ext if ke == "main" else 0.0), ya, yb)
             if not hits(*r, 0.0, wedge=False): roads.append(r)
     for xa, xb in x_streets:
         for ya, yb in y_streets:
-            if not open_zone((ya + yb) / 2.0) and not hits(xa, xb, ya, yb, 0.0, wedge=False): roads.append((xa, xb, ya, yb))
-    # ---- the parcels
-    cells = []
+            if not hits(xa, xb, ya, yb, 0.0, wedge=False): roads.append((xa, xb, ya, yb))
+    # ---- the parcels: the city's, and the open ground's across 3rd Street (item 34's walled lots)
+    cells, open_cells = [], []
     for xa, xb, kw, ke in x_gaps:
         for ya, yb, ks, kn in y_gaps:
             if abs(xa - (WX + LOT_IN)) < 0.01 and abs(ya - (SY + LOT_IN)) < 0.01: continue     # the block's own
-            if open_zone((ya + yb) / 2.0): continue
-            cells.append((xa, xb, ya, yb, {"W": kw, "E": ke, "S": ks, "N": kn}))
+            (open_cells if open_zone((ya + yb) / 2.0) else cells).append((xa, xb, ya, yb, {"W": kw, "E": ke, "S": ks, "N": kn}))
     def pick(palette):
         u = rng.random()
         for m, share in palette:
@@ -2931,6 +2956,87 @@ if CONTEXT == "on" and GROUND == "street" and CITY == "on":
         if sides["E"] == "street": line_trees((xb, ya), (xb, yb), (-1.0, 0.0), "street", boxes)
         if sides["S"] == "street": line_trees((xa, ya), (xb, ya), (0.0, 1.0), "street", boxes)
         if sides["N"] == "street": line_trees((xa, yb), (xb, yb), (0.0, -1.0), "street", boxes)
+    # ---- the open block furnished (item 34): the parcels across 3rd Street as walled parking lots
+    M_OPEN_WALL = M_WALL["cream"]
+    M_OPEN_CAP = hazed(plain_material("CTX_lot_cap", OPEN_CAP_GREY, rough=0.8))
+    islands = []
+    n_open = {"lots": 0, "runs": 0, "gates": 0, "trees": 0, "islands": 0}
+    def open_tree(x, y):
+        # a low tree of the bare-trunked models, unless it would stand within OPEN_CLEAR_R of the reference stand's
+        # foot, on something, or in a wedge
+        if math.hypot(x - r_eye[0], y - r_eye[1]) < OPEN_CLEAR_R: return
+        if hits(x - 0.3, x + 0.3, y - 0.3, y + 0.3, 1.0, kinds=("box", "tree", "row_x", "row_y", "road")): return
+        lo, hi = CITY_TREE_MODELS[0]
+        place_tree(f"city_open_tree_{n_open['trees']:04d}", x, y, rng.randint(lo, hi), rng.uniform(*OPEN_TREE_H), rng.uniform(0.0, 360.0), col=city)
+        n_open["trees"] += 1
+    def open_lot(xa, xb, ya, yb, sides):
+        # one walled parking lot on a parcel: its sidewalk bands as any parcel's, the wall ring with its gates and
+        # posts, the asphalt with its bays and islands, the trees; returns the lot's shadow clearance
+        xs0 = xa + (CITY_WALK if sides["W"] == "street" else 0.0); xs1 = xb - (CITY_WALK if sides["E"] == "street" else 0.0)
+        ys0 = ya + (CITY_WALK if sides["S"] == "street" else 0.0); ys1 = yb - (CITY_WALK if sides["N"] == "street" else 0.0)
+        if sides["W"] == "street": walks.append((xa, xs0, ya, yb))
+        if sides["E"] == "street": walks.append((xs1, xb, ya, yb))
+        if sides["S"] == "street": walks.append((xs0, xs1, ya, ys0))
+        if sides["N"] == "street": walks.append((xs0, xs1, ys1, yb))
+        t, (cw, ch), (pw, ph) = OPEN_WALL_T, OPEN_WALL_CAP, OPEN_GATE_POST; ex = (cw - t) / 2.0
+        wx0, wx1, wy0, wy1 = xs0 + OPEN_WALL_IN, xs1 - OPEN_WALL_IN, ys0 + OPEN_WALL_IN, ys1 - OPEN_WALL_IN
+        z0, z1 = z_foot, Z_GROUND + OPEN_WALL_H
+        # the ring: the south and north runs the full width, the east and west between them (2 cm into their ends, so
+        # no two faces coincide); the gates on a draw of the street sides, a post at each jamb
+        runs = {"S": (wx0, wx1), "N": (wx0, wx1), "W": (wy0 + t - 0.02, wy1 - t + 0.02), "E": (wy0 + t - 0.02, wy1 - t + 0.02)}
+        fixed = {"S": wy0, "N": wy1 - t, "W": wx0, "E": wx1 - t}
+        street_sides = [k for k in "WESN" if sides[k] != "edge"]
+        gates = {}
+        for k in rng.sample(street_sides, min(len(street_sides), rng.randint(*OPEN_GATES))):
+            a, b = runs[k]; g = rng.uniform(a + OPEN_GATE_MARGIN, b - OPEN_GATE_MARGIN - OPEN_GATE_W); gates[k] = (g, g + OPEN_GATE_W)
+        parts, slots = [], []
+        def wall_run(k, s0, s1):                                       # a run of the wall along side k, its cap over it
+            c = fixed[k]
+            if k in "SN": parts.extend([box(s0, s1, c, c + t, z0, z1), box(s0, s1, c - ex, c + t + ex, z1, z1 + ch)])
+            else: parts.extend([box(c, c + t, s0, s1, z0, z1), box(c - ex, c + t + ex, s0 + ex + 0.02, s1 - ex - 0.02, z1, z1 + ch)])
+            slots.extend([0, 1]); n_open["runs"] += 1
+        def post(k, s):                                                # a gate post at s along side k, astride the wall's line
+            c = fixed[k] + t / 2.0
+            parts.append(box(s - pw / 2.0, s + pw / 2.0, c - pw / 2.0, c + pw / 2.0, z0, Z_GROUND + ph) if k in "SN"
+                         else box(c - pw / 2.0, c + pw / 2.0, s - pw / 2.0, s + pw / 2.0, z0, Z_GROUND + ph)); slots.append(0)
+        for k, (a, b) in runs.items():
+            if k in gates:
+                g0, g1 = gates[k]
+                wall_run(k, a, g0 - pw / 2.0 + 0.02); wall_run(k, g1 + pw / 2.0 - 0.02, b); post(k, g0); post(k, g1); n_open["gates"] += 1
+            else: wall_run(k, a, b)
+        n_open["lots"] += 1
+        mesh_of(f"city_open_wall_{n_open['lots']:02d}", parts, [M_OPEN_WALL, M_OPEN_CAP], slots=slots, col=city)
+        # the asphalt inside the planting strip, its bay rows, and the islands taking a few bays of a row each
+        px0, px1, py0, py1 = wx0 + t + OPEN_STRIP_W, wx1 - t - OPEN_STRIP_W, wy0 + t + OPEN_STRIP_W, wy1 - t - OPEN_STRIP_W
+        parks.append((px0, px1, py0, py1))
+        pitch, depth, aisle, lw = CITY_BAY; y = py0 + 1.0; bands = []
+        while y + 2.0 * depth + aisle <= py1 - 1.0:
+            bands += [y, y + depth + aisle]; y += 2.0 * depth + aisle + CITY_ROWS_GAP
+        n_isl, il, it = OPEN_ISLANDS; isl = []
+        for band in rng.sample(bands, min(n_isl, len(bands))):
+            x0 = rng.uniform(px0 + 1.0, px1 - 1.0 - il); isl.append((x0, x0 + il, band, band + depth))
+        for band in bands:
+            x = px0 + 1.0
+            while x + lw <= px1 - 1.0:
+                if not any(i[0] - lw < x < i[1] + lw and i[2] <= band for i in isl if i[2] == band):
+                    lines.append((x - lw / 2.0, x + lw / 2.0, band, band + depth))
+                x += pitch
+        for x0, x1, y0, y1 in isl:
+            islands.append((x0, x1, y0, y1)); n_open["islands"] += 1
+            for i in range(it): open_tree(x0 + (x1 - x0) * (i + 0.5) / it, (y0 + y1) / 2.0)
+        # the trees along the strip, off the gates
+        for k, (a, b) in runs.items():
+            c = fixed[k] + (t + OPEN_STRIP_W / 2.0 if k in "SW" else -OPEN_STRIP_W / 2.0)   # the strip's centre line inside the wall
+            s = a + rng.uniform(3.0, 6.0)
+            while s < b - 3.0:
+                if not (k in gates and gates[k][0] - 3.0 < s < gates[k][1] + 3.0): open_tree(*((s, c) if k in "SN" else (c, s)))
+                s += rng.uniform(*OPEN_TREE_STEP)
+        return shadow_clearance(wx0, wx1, wy0, wy1, OPEN_TREE_H[1])       # the whole lot at its tallest tree: conservative
+    open_least = 1e9
+    for xa, xb, ya, yb, sides in open_cells:
+        clear = open_lot(xa, xb, ya, yb, sides)
+        if clear < open_least: open_least = clear
+        if clear < least_clear: least_clear, least_name = clear, f"the open lot at ({xa:.0f}..{xb:.0f}, {ya:.0f}..{yb:.0f}) with {OPEN_TREE_H[1]:.0f} m trees"
     # ---- the ground: the streets, the sidewalk bands, the parking lots and their lines, each one mesh
     def flat_quads(name, rects, z, mat, attrs=None):
         V, F = [], []
@@ -2943,6 +3049,7 @@ if CONTEXT == "on" and GROUND == "street" and CITY == "on":
         wk["pad_lo"] = (CITY_EXTENT[0], CITY_EXTENT[2], 0.0); wk["pad_hi"] = (CITY_EXTENT[1], CITY_EXTENT[3], 0.0)   # one pad: the joints' frame
     if parks: flat_quads("city_parking", parks, Z_GROUND + CITY_ROAD_LIFT, M_ROAD, {"ptone": 1.0, "wear": 0.0})
     if lines: flat_quads("city_bay_lines", lines, Z_GROUND + CITY_ROAD_LIFT + 0.002, M_CITY_PAINT)
+    if islands: flat_quads("city_islands", islands, Z_GROUND + CITY_ROAD_LIFT + 0.003, M_LOT)     # the lot's own ground over the asphalt
     # ---- the main streets' far strips: trees beyond the near context, CITY_STRIP_OFF inside the kerb, off the
     # street mouths (the road quads stand in occ as 'road' from here on)
     occ += [(x0, x1, y0, y1, "road") for x0, x1, y0, y1 in roads + parks]
@@ -2975,6 +3082,11 @@ if CONTEXT == "on" and GROUND == "street" and CITY == "on":
           + f"; {sum(n_trees.values())} trees ({n_trees['street']} along the streets, {n_trees['strip']} on the main streets' strips, {n_trees['yard']} in yards); "
           f"the stand's wedges {wedge_az[0][0]:.1f}-{wedge_az[0][1]:.1f} and {wedge_az[1][0]:.1f}-{wedge_az[1][1]:.1f} kept clear; the nearest shadow to the "
           f"block's pavement {least_clear:.1f} m off ({least_name}); built in {time.time() - t_city:.1f} s")
+    n_city["open"] = dict(n_open); n_city["open_least"] = open_least
+    print(f"the open block: {n_open['lots']} walled parking lots across 3rd Street ({', '.join(f'({xa:.0f}..{xb:.0f}, {ya:.0f}..{yb:.0f})' for xa, xb, ya, yb, s in open_cells)}): "
+          f"{OPEN_WALL_H:.1f} m walls in {n_open['runs']} runs with {n_open['gates']} gates, {n_open['islands']} islands, {n_open['trees']} trees of "
+          f"{OPEN_TREE_H[0]:.0f}-{OPEN_TREE_H[1]:.0f} m (none within {OPEN_CLEAR_R:.0f} m of the reference stand's foot); their shadows at least "
+          f"{open_least:.1f} m from the block's pavement")
 
 # ---------------------------------------------------------------- cameras, film, and the render
 CAM_CLIP = 2.0 * GND_FAR                        # every camera's far clip. Blender's default, 1000 m, cut the plain off at 1 km -- 0.6

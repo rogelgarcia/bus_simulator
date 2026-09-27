@@ -7132,6 +7132,20 @@ plain slabs that only the stand never saw, and a moving camera would; and the sc
   2026-09-27 at 50% (540 x 960) with 8 samples: 768 frames in 22.1 min, 1.73 s a frame (the approach 2.0, the close
   2.1, the four close-ups 1.5), the encode 8 s, the MP4 7.2 MB and 32.0 s (`render_eevee.log`,
   `flyover_eevee_sheet.png`: the approach's first frame and one frame a shot).
+- **The fire-escape shot exposed a stop up (AI 574 item 35, 2026-09-27).** The user, on the preview: "quando for
+  fazer a tomada na escada de incendio, aumente a exposicao em 1. renderize uma imagem para eu ver como ficou a
+  escada". The `escapes` shot looks at the shaded 3rd Street face, dark by the sun's own geometry (item 30 read the
+  iron at 14 on the film against the brick's 48), so `EXPOSURE_BY_SHOT` = {"escapes": 1.0} lifts that shot one stop
+  over the scene's own exposure (0, item 1) and every other shot keeps the scene's: the value goes onto
+  `scene.view_settings.exposure` for that shot's frames only and is put back before the next shot (`BASE_EXPOSURE`
+  read from the scene), in both engines, printed with the shot's `PROFILE` line and on each `FRAME` line;
+  `expo=<shot>:<stops>[,...]` overrides the table for one run. The encode reads display-referred PNGs on the Standard
+  view and is untouched. The still the user asked for: frame 60 of `escapes` at 1080 x 1920 and 128 samples from the
+  canonical worn scene, at 0 (`expo=escapes:0`) and at +1 (`item35_escapes_exposure/escapes_060_exposure0.png`,
+  `escapes_060_exposure1.png`, side by side in `item35_escapes_0_vs_1.png`; 48 s a frame): the shaded brick beside the
+  escape goes from luminance 56 to 90 on the film (p50), the escape's iron from 13 to 27, the sunlit shopfront band at
+  the frame's foot from 74 to 116 with its p90 at 144, unclipped (`item35_numbers.md`). The Eevee preview re-rendered
+  for item 34 carries the +1 on that shot.
 
 Evidence: `tests/artifacts/screens/bradbury_scene/item31_dressed_boxes/` (`item31_reference_before_after.png`,
 `item31_left.png`, `item31_right.png` -- photo | before | after at the far boxes --, `item31_tower_standing.png`,
@@ -7274,3 +7288,66 @@ timing frames (`eevee_timing/` the magenta block, `eevee50_s12/`, `eevee50_s24/`
 `frames_eevee/<shot>/`, `flyover_eevee_sheet.png`, `render_eevee.log`); the scenes
 `tests/artifacts/blender/bradbury/portal_project/bradbury_scene.blend` (rebuilt headless, the GUI Blender not
 touched) and `bradbury_scene_wear_off.blend`.
+
+## The open block furnished (AI 574 item 34, 2026-09-27)
+
+On the Eevee preview's first frame the user marked the big open parcel at the bottom of the screen -- the S parcel
+across 3rd Street, which item 33 had kept clear as flat dirt -- "esse quarteirao embaixo da tela esta muito vazio.
+adicione um muro, com estacionamento e umas arvores. coisa baixa para nao afetar o predio" (`item33_city_fill/
+user_mark_open_block.webp`). So the parcels item 33 kept open within `CITY_OPEN_S` of 3rd Street's far kerb -- the
+first row south of it across the fill's whole width, thirteen of them, the S parcel under the first frame and the SE
+parcel where the stands are among them -- are walled parking lots now, and everything on them is low. All of it is
+`open_lot()` in the city section of `build_scene.py`, run over the `open_cells` the parcel loop sets aside.
+
+- **The wall.** A plaster wall `OPEN_WALL_H` 1.1 m tall and `OPEN_WALL_T` 0.20 thick in the near context's cream
+  plaster (`M_WALL["cream"]`), ringing the parcel `OPEN_WALL_IN` 0.30 inside its edge (the lot's own strip on a
+  main street, the `CITY_WALK` band on a secondary one) in item 28's ring manner -- the south and north runs the full
+  width, the east and west between them, 2 cm into their ends so no two faces coincide -- under a cap
+  `OPEN_WALL_CAP` 0.30 wide and 0.05 tall in a plain pale concrete (`OPEN_CAP_GREY` (0.45, 0.44, 0.42)). Gate
+  openings on `OPEN_GATES` two or three of the parcel's street sides, one each, `OPEN_GATE_W` 6 m wide at least
+  `OPEN_GATE_MARGIN` 8 m from a corner, between two posts `OPEN_GATE_POST` 0.35 m square and 1.5 m tall astride the
+  wall's line (the runs end 2 cm inside the posts). 85 runs, 33 gates over the thirteen lots.
+- **The lot.** Inside the wall a planting strip `OPEN_STRIP_W` 1.5 m of the lot's own faded ground (item 33's
+  `lot_material`), then the asphalt in the road material with the city's own bay lines (`CITY_BAY`: 0.15 m lines
+  every 2.7 m in facing 5 m rows about a 7 m aisle, `CITY_ROWS_GAP` 6 m between pairs, in the faint grey
+  `CITY_PAINT`) and `OPEN_ISLANDS` two planting islands a lot, each 10.8 m long -- four bays of a row, whose lines are
+  not laid -- as quads of the lot's ground 3 mm over the asphalt with two trees each (26 islands). No cars: there is
+  no model.
+- **The trees.** The library's bare-trunked models (`CITY_TREE_MODELS[0]`, 11-15) at `OPEN_TREE_H` 5-7 m, every
+  `OPEN_TREE_STEP` 8-12 m along the strip's centre line on all four sides, 3-6 m from the corners and 3 m clear of
+  the gates, and on the islands: 591 trees. None stands within `OPEN_CLEAR_R` 35 m of the reference stand's foot
+  (54.12, -38.71), because the approach settles onto that stand 14.6 m up, the pull-up leaves from it, and the
+  st_corner and hero_3q stands share the SE lot (st_corner at (41, -41, 1.8) now stands inside that lot's wall, whose
+  cap at 1.15 m lies 18 degrees under its frame's bottom edge; hero_3q at (56, -50, 19) sees no tree within its
+  frame's bearings, every candidate there being inside the disc).
+- **Nothing affects the block.** The lots lie south of 3rd Street, so their shadows (7.5 m for a 7 m tree at this
+  sun, toward azimuth 220) fall away from it; the city's `shadow_clearance` is run over each lot's rectangle at its
+  tallest tree and the build asserts the least, 17.8 m from the pavement rectangle. The reference stand's two wedges
+  point north-west, and the lots stand behind the frame's left edge (azimuths 175-183 from the eye against the edge's
+  169.3) and under its bottom (the SE lot's wall 0.9 m south of the eye's foot and 13.5 m below it): every one of
+  item 31's consistency points is identical to the level or within one between item 33's `ref_3q_after.png` and this
+  one, and the census finds 6,171 pixels over 6 levels, 5,680 of them render noise on the block's own facades
+  (`item34_numbers.md`). `check=1` prints item 32's framing table unchanged; the quarter-size first, middle and last
+  frames of `air` and `close` (`tune/after_air_sheet.png`, `tune/after_close_sheet.png`) show the S lot's wall,
+  bays, islands and trees filling the first frame's lower left, and from frame 60 on only the lot's north-east corner
+  and two or three low crowns at the frame's bottom-left, under the block's base line.
+- **The streets.** The open ground's secondary streets are laid now too (the road segments item 33 left out there),
+  since a lot needs a street to open onto: 354 segments, were 321; the main streets' strip trees fell from 506 to
+  495 at the new mouths.
+- **From 60 m** (`item34_open_ground_60m.png`, the stand of item 33's before | after): the lot region's luminance
+  standard deviation goes from 0.5 (the faded dirt) to 11.2 (the wall's cap, the bay lines, the trees and their
+  shadows) at the same tone (152.5 to 154.8).
+- **The Eevee preview, re-rendered** at item 33's settings from the rebuilt wear=off scene (with item 35's +1 on the
+  fire-escape shot): 768 frames at 540 x 960 in 24.2 min, 1.89 s a frame (the approach 2.2, the close 2.3, the
+  close-ups 1.6-1.8), the encode 8 s, `flyover/bradbury_flyover_eevee_preview.mp4` 7.7 MB and 32.0 s, the previous
+  cut kept as `bradbury_flyover_eevee_preview_v1.mp4` (its sheet and log `_v1` too), a fresh
+  `flyover_eevee_sheet.png` and `render_eevee.log`. Cost of the lots: `ref_3q` at full size 50 s (was 49), a quarter
+  flyover frame 1.0-1.2 s after a 14 s sync, both scenes 13 s to build.
+
+Evidence: `tests/artifacts/screens/bradbury_scene/item34_open_block/` (`item34_reference_before_after.png` -- photo |
+item 33 | item 34 --, `item34_open_ground_60m.png` and `item34_open_ground_air.png` -- before | after from 60 m --,
+`item34_first_frame.png` -- the approach's first frame before | after beside the user's marked frame --,
+`item34_close_end.png` -- the pull-up's last frame before | after --, `ref_3q_after.png`, `item34_numbers.md`; under
+`tune/` the quarter frames and sheets, the half-size first frame, the befores, `numbers_raw.txt`); the scenes rebuilt
+headless, `bradbury_scene.blend` and `bradbury_scene_wear_off.blend` (the GUI Blender not touched); the Eevee preview
+re-rendered from the latter (the paragraph "The Eevee preview" in the flyover section, and item 35's below it).

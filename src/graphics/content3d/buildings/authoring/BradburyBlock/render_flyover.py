@@ -9,7 +9,7 @@
 #
 #   blender -b -P render_flyover.py -- [shot=all|air,cornice,...] [frames=all|first,mid,last|<a>-<b>] [pct=100]
 #                                      [engine=cycles|eevee] [samples=48] [blur=7] [debug=mask] [encode=1|0]
-#                                      [skip=1|0] [check=1] [out=<frames dir>] [mp4=<file>]
+#                                      [skip=1|0] [check=1] [out=<frames dir>] [mp4=<file>] [expo=<shot>:<stops>,...]
 #
 #   blender -b -P render_flyover.py -- check=1                       the shots' framing, printed, no render
 #   blender -b -P render_flyover.py -- frames=first,mid,last pct=25  every shot's first, middle and last frame at a quarter
@@ -40,6 +40,14 @@
 # framing without freezing (a true hold would read as a stuck frame; a 1% creep over 2 s moves the block's edges by
 # a few pixels). profile() integrates that velocity and hands each frame its p; the share of the path covered in
 # each quarter of a shot's time is printed at the head of every run and by check=1.
+#
+# THE EXPOSURE PER SHOT (AI 574 item 35; user 2026-09-27: "quando for fazer a tomada na escada de incendio, aumente a
+# exposicao em 1"). The fire-escape shot looks at the shaded 3rd Street face, dark by the sun's own geometry (the
+# escape's iron read 14 on the film against the brick's 48, item 30), so EXPOSURE_BY_SHOT lifts that shot one stop
+# over the scene's own exposure (0, item 1) and every other shot keeps the scene's. The value goes onto the scene's
+# view transform for that shot's frames only and is put back before the next shot, in both engines; expo=<shot>:<stops>
+# [,<shot>:<stops>] overrides the table for one run (how the item's 0-against-+1 stills were made). The encode reads
+# display-referred PNGs on the Standard view and is untouched.
 #
 # THE BACKGROUND SOFTENED, as the photo's is. Not depth of field: a 40 mm lens at f/2 blurs nothing at these
 # distances, and the photo's softness is not optical. A depth mask drives a Bokeh Blur in the compositor: the Depth
@@ -183,6 +191,12 @@ SHOTS = [
 N_MOVE = int(round(SECS * FPS))                 # frames of a move
 def n_frames(shot): return N_MOVE + int(round(shot[3] * FPS))   # a shot's frames: its move and its tail
 P = {s[0]: profile(n_frames(s), N_MOVE) for s in SHOTS}         # every frame's path parameter, by shot
+# the exposure per shot, stops over the scene's own (THE EXPOSURE PER SHOT above); expo=<shot>:<stops>,... overrides
+EXPOSURE_BY_SHOT = {"escapes": 1.0}
+for tok in args.get("expo", "").split(","):
+    if ":" in tok:
+        k, v = tok.split(":", 1); assert k in {s[0] for s in SHOTS}, f"expo: no such shot {k}"; EXPOSURE_BY_SHOT[k] = float(v)
+EXPOSURE_BY_SHOT = {k: v for k, v in EXPOSURE_BY_SHOT.items() if v != 0.0}
 def quarters(name):
     # the share of the path covered in each quarter of the shot's time, the last fifth of its move, and its tail
     ps, n = P[name], n_frames(next(s for s in SHOTS if s[0] == name))
@@ -195,7 +209,8 @@ print(f"PROFILE ease-in over {EASE_IN:.2f} of a move, ease-out exponent {EASE_OU
 for s in SHOTS:
     q, lf, tail = quarters(s[0])
     print(f"PROFILE {s[0]:8s} {n_frames(s):4d} frames: path per quarter of its time {q[0]:.3f} {q[1]:.3f} {q[2]:.3f} {q[3]:.3f}; "
-          f"the last fifth of the move {lf:.3f}" + (f"; the tail's {n_frames(s) - N_MOVE} frames {tail:.3f}" if tail else ""))
+          f"the last fifth of the move {lf:.3f}" + (f"; the tail's {n_frames(s) - N_MOVE} frames {tail:.3f}" if tail else "")
+          + (f"; exposure {EXPOSURE_BY_SHOT[s[0]]:+.1f} over the scene's" if s[0] in EXPOSURE_BY_SHOT else ""))
 # the softening
 BLUR_PX = float(args.get("blur", 7.0))          # the Bokeh Blur's size where the mask is 1, pixels at 1080 wide (scaled with pct)
 BLUR_START_M = 2.0                              # the mask starts this far past the block's farthest corner from the camera
@@ -338,18 +353,22 @@ want = args.get("shot", "all")
 shots = SHOTS if want == "all" else [s for s in SHOTS if s[0] in want.split(",")]
 assert shots, f"no such shot: {want} (have {', '.join(s[0] for s in SHOTS)})"
 skip = args.get("skip", "1") == "1"
+BASE_EXPOSURE = S.view_settings.exposure        # the scene's own (0, item 1); a shot's EXPOSURE_BY_SHOT goes on top of it
 t_all, n_done, n_skip, frames = time.time(), 0, 0, []
 for shot in shots:
     d = os.path.join(OUT, shot[0]); os.makedirs(d, exist_ok=True)
     n = n_frames(shot); frames = frame_list(args.get("frames", "all"), n)
+    expo = EXPOSURE_BY_SHOT.get(shot[0], 0.0); S.view_settings.exposure = BASE_EXPOSURE + expo
     for k in frames:
         fp = os.path.join(d, f"{shot[0]}_{k:04d}.png")
         if skip and os.path.isfile(fp): n_skip += 1; continue
         eye, aim, far = pose(shot, k)
         S.render.filepath = fp
         t = time.time(); bpy.ops.render.render(write_still=True); n_done += 1
-        print(f"FRAME {shot[0]} {k:4d}/{n}  {time.time() - t:5.1f} s  p {P[shot[0]][k - 1]:.3f}  eye ({eye[0]:.1f}, {eye[1]:.1f}, {eye[2]:.1f}) blur from {far + BLUR_START_M:.0f} m -> {fp}")
+        print(f"FRAME {shot[0]} {k:4d}/{n}  {time.time() - t:5.1f} s  p {P[shot[0]][k - 1]:.3f}  eye ({eye[0]:.1f}, {eye[1]:.1f}, {eye[2]:.1f}) blur from {far + BLUR_START_M:.0f} m"
+              + (f"  exposure {expo:+.1f}" if expo else "") + f" -> {fp}")
         sys.stdout.flush()
+    S.view_settings.exposure = BASE_EXPOSURE
 if frames:
     print(f"FRAMES DONE: {n_done} rendered, {n_skip} already there, {S.render.resolution_x * PCT // 100}x{S.render.resolution_y * PCT // 100} "
           f"{ENGINE} {SAMPLES} {'spp' if ENGINE == 'cycles' else 'samples'}, blur {BLUR_PX:g} px, {(time.time() - t_all) / 60.0:.1f} min "
