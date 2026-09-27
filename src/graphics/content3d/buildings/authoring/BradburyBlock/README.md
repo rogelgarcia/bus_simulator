@@ -7086,6 +7086,52 @@ plain slabs that only the stand never saw, and a moving camera would; and the sc
   the hour-and-a-half budget and left at 64 samples; the encode 16 s. The MP4: 14.97 MB, 432 frames, 18.0 s at
   24 fps, 1080 x 1920, H.264 HIGH, no audio; frames 1, 200 and 432 decoded back from it match their PNGs within
   1.6-1.8 levels on average with no shift in the means. The frames on disk take 1.2 GB (gitignored).
+- **The timing (AI 574 item 32, 2026-09-27).** The user asked that "on each pose it slows down towards the end,
+  stretch the very end like 2 seconds almost stopped at the final position", and to "extend the length of the video
+  if needed (it is needed)": every shot is `SECS` 5 s now, not 3, so the deceleration is not squeezed. The symmetric
+  smoothstep of the path parameter is gone: `profile()` integrates a velocity that eases in over `EASE_IN` 0.10 of a
+  move's time (smoothstep) and then decelerates on a power law (1 - x)^(`EASE_OUT_POW` - 1) whose exponent
+  `solve_pow()` finds by bisection so that the last 20% of a move's time covers 5% of its path (`EASE_OUT_LAST`
+  (0.20, 0.05); 1.922, the bare law's 1.861 lifted by the ease-in's share) -- the path per quarter of a shot's time is
+  0.369 / 0.345 / 0.208 / 0.078, the last fifth 0.051, where the smoothstep gave 0.156 / 0.344 / 0.344 / 0.156 and
+  0.104. The closing shot carries a tail of `TAIL_SECS` 2.0 s: its move covers the first 99% of the path and the
+  tail a constant crawl over the last `TAIL_SHARE` 1% (0.1-0.15 px a frame at 24 mm portrait, 3-7 px over the tail:
+  not frozen, all but stopped), so the video ends holding the final framing; its quarters read 0.517 / 0.369 /
+  0.105 / 0.009. `SHOTS` carries each shot's tail as a fourth field and `n_frames()` gives the close 168 frames, the
+  others 120: 768 frames, 32 s. Every run prints the profile's per-quarter shares (`PROFILE` lines) and `check=1` the
+  p of each frame it projects (`tune/check_item32.txt`; the first and last poses are the shipped ones, the middle
+  frames lie at p 0.70, and the quarter-size first/middle/last sheets under `tune/item32/` showed nothing new).
+  Paths, lenses, blur and film as shipped; the old 18 s video kept as `bradbury_flyover_portrait_1080x1920_v1.mp4`
+  (its log `render_full_v1.log`). The samples dropped to `SAMPLES` 48, the user having asked for the length and not
+  the samples: measured first (`tune/item32/timing64`, `timing48`), a wide frame renders in 7.1 s at 64 samples and
+  6.2 at 48, a close-up (the portal) in 17.9 and 13.3, and item 30's per-shot rates times the new counts put the
+  run at 158 min at 64 samples, past the two-and-a-half-hour cap, against about 123 min at 48; the OptiX denoiser
+  takes the difference. A first 3 s run of the new profile was stopped after its first shot, since nothing from
+  it was reusable at 5 s (`tune/item32/render_3s_aborted.log`). The 48-sample run itself was stopped by the user
+  after 211 frames so the city could be filled in first (item 33); it is to be rendered again, from the filled scene,
+  once the Eevee preview has been checked.
+- **The Eevee preview (AI 574 item 33, 2026-09-27).** `engine=eevee` renders the same shots, timing, compositor,
+  film and view transform on Blender 5.2's `BLENDER_EEVEE`, for a look at the whole cut in minutes before a Cycles
+  run is started (the user: "gere uma versao rapida (eevee is fine) para verificarmos"): `EEVEE_SAMPLES` 8 TAA
+  samples a frame (the samples are the cost, not the pixels: on the approach's frame 60, 3.1 s at 50% with 12
+  samples, 7.1 with 24, 5.5 at full size with 12), shadows on (`EEVEE_SHADOW_RAYS` 2, `EEVEE_SHADOW_STEPS` 6, an
+  `EEVEE_SHADOW_POOL` of 1024 MB for the thousands of crowns in the wide frames), screen-space ray tracing and the
+  horizon scan, the world's sun disc extracted into a shadowing sun light (`use_sun_shadow` over
+  `EEVEE_SUN_THRESHOLD` 10, so the map's sun throws a shadow here as it does in Cycles instead of lighting every
+  shaded face from the light probe), every local cut-out material (the leaves, the fence lattice) shadowing as a
+  cut-out; the frames go to `frames_eevee/<shot>/` and the MP4 to `bradbury_flyover_eevee_preview.mp4`, so nothing
+  of a Cycles run is touched. It opens the WEAR=OFF scene (`bradbury_scene_wear_off.blend`, which `build_scene.py --
+  wear=off` writes beside the canonical one: the untouched block, the same city, streets, sun and sky from the same
+  seeds), because the worn block's materials read more named attributes than an Eevee shader may ("uses too many
+  attributes", GPU_MAX_ATTR 15) and every one of them compiled to the error magenta -- the whole block rendered pink
+  on the first try. What the preview is not to be judged on: the block's wear (absent), the haze and the bounced
+  light (the light probe's flat sky under the plain, no bounce into the shaded 3rd Street face and the recesses,
+  which read near black in the fire-escape shot), the grime lines (the Ambient Occlusion node reads the horizon
+  scan, a screen-space guess), the glass (the panes reflect the screen or the probe, not the scene behind the
+  camera), the foliage's translucency, and the far cut-outs at a few pixels (dithered, not integrated). Rendered
+  2026-09-27 at 50% (540 x 960) with 8 samples: 768 frames in 22.1 min, 1.73 s a frame (the approach 2.0, the close
+  2.1, the four close-ups 1.5), the encode 8 s, the MP4 7.2 MB and 32.0 s (`render_eevee.log`,
+  `flyover_eevee_sheet.png`: the approach's first frame and one frame a shot).
 
 Evidence: `tests/artifacts/screens/bradbury_scene/item31_dressed_boxes/` (`item31_reference_before_after.png`,
 `item31_left.png`, `item31_right.png` -- photo | before | after at the far boxes --, `item31_tower_standing.png`,
@@ -7094,6 +7140,137 @@ Evidence: `tests/artifacts/screens/bradbury_scene/item31_dressed_boxes/` (`item3
 `flyover_shots_sheet.png` -- one full frame per shot --, `frames/<shot>/`, `flyover_numbers.md`, `render_full.log`,
 `tune/` with the quarter-size sheets of every pass, the mist and depth masks, the door stands); the scripts beside
 the review's: `flyover_sheet.py`, `door_angle.py`. Render it again with
-`blender -b -P src/graphics/content3d/buildings/authoring/BradburyBlock/render_flyover.py -- samples=64`
-(`check=1` prints the framing, `frames=first,mid,last pct=25` the quarter checks, `frames=none encode=1` the MP4
-from frames already on disk).
+`blender -b -P src/graphics/content3d/buildings/authoring/BradburyBlock/render_flyover.py --`
+(48 samples, the 32 s cut of item 32; `samples=64` for item 30's quality, `secs=3` for its 18 s length; `check=1`
+prints the profile and the framing, `frames=first,mid,last pct=25` the quarter checks, `frames=none encode=1` the
+MP4 from frames already on disk, `engine=eevee pct=50 encode=1` the Eevee preview of item 33 from the wear=off
+scene).
+
+## The city filled in, and the Eevee preview (AI 574 item 33, 2026-09-27)
+
+The user stopped item 32's Cycles run after 211 frames and, with a second aerial reference
+(`review_2026-09-25/reference_city_aerial.png`: the Bradbury from higher up), asked for the city to be completed so
+that nothing stays empty behind the block ("sao predios simples, caixas com janelas, e arvores"), for the first frame
+of the approach to have content in its background too, for the sidewalks on the left to stay as they are but be fixed
+("ela parece defeituosa"), and then for a quick Eevee version of the whole flyover to check before any Cycles run is
+started again. The reference sees the block surrounded on every side by a dense low-rise city: simple boxes of two to
+four storeys with rows of dark windows and flat pale roofs, cream, tan, white and brick, edge to edge on a street
+grid, trees along the streets and in the yards, a few open parking lots, taller blocks far off in the haze. Until this
+item the flyover's first frame, 60 m up and 100 m south of the block, showed the eight vacant lots running empty to
+item 29's tree lines and skyline, and the S lot under the camera as a tiling of 9 m cells that read as broken paving
+slabs. Everything here is the city section of `build_scene.py` (`city=on|off`, the last section built) and a
+distance fade in `lot_material`.
+
+- **The grid.** Secondary streets are walked out from the four main streets' interior edges along each axis, a
+  parcel's depth `CITY_PITCH` 80-120 m then a street `CITY_STREET_W` 12-14 m wide, aligned with the scene's streets,
+  out to `CITY_EXTENT` (-1060, 700, -700, 950): north and west to where item 29's rows take over (the skyline's first
+  row at y 1000, the far city at x -1130; the scrub lines at x -660 to -950 and the tall block at -750 are built
+  round), east and south, which no camera sees, to 700 m. A band that lands on something that stands moves past it;
+  a band parallel to a tree line snaps to the line's near side (`CITY_STREET_PAD` 2 m from its crowns), so item 29's
+  windbreaks at y 268, 400 and 560 and the scrub lines at x -660, -800 and -950 became tree-lined streets; a segment
+  that would cross anything is left out. The streets are flat quads in the road material on the lots' own ground,
+  `CITY_ROAD_LIFT` 5 mm proud so nothing is coplanar (no kerbs: the nearest stands 100 m from every camera), run
+  across the lots' strips to the main streets' kerb tops, one mesh with `ptone` 1 and `wear` 0 (the road material
+  multiplies by `ptone`: without the attribute the roads rendered black); 10 + 10 streets, 321 segments. Every cell
+  between bands is a parcel, 155 of them (the block's own cell and the open ground's skipped), with a `CITY_WALK` 3 m
+  sidewalk band in the pavement material along each of its secondary streets (one mesh, its `pad_lo` / `pad_hi` the
+  fill's extent: from the air the slabs' tone and the grime at the buildings' feet are what shows, not the joints).
+- **The boxes: `city_building()`.** A parcel is `buildings` (share 0.84), a `parking` lot (0.10) or a `yard` (0.06)
+  (`CITY_USE`). The buildable rectangle is cut into lots by halving its longer side at 40-60% until no side exceeds
+  `CITY_LOT_MAX` 45 m; a lot's box is set back `CITY_SETBACK` 0-1.5 m on a street side and 0.5-3.5 m toward a
+  neighbour, its footprint clamped to `CITY_FOOT` 12-44 m (a narrower lot stays vacant, `CITY_VACANT` 0.05 of the
+  rest too: dirt and a tree or two). Storeys by distance from the block's centre, `CITY_STOREYS`: within 250 m one /
+  two / three at 0.30 / 0.55 / 0.15, to 500 m 0.15 / 0.45 / 0.30 / 0.10, beyond 0.05 / 0.35 / 0.40 / 0.20. A
+  recipe for `facade_material` by storeys (`CITY_RECIPES`, `CITY_FACADES`: `flats` 3.1 m storeys of 1.3 x 1.5
+  windows on 2.9 m bays, `offices` 3.4 m of 1.9 x 1.9 on 3.3, `shops` a 3.8 m storey of 2.8 m openings under 3.3 m
+  storeys, `shed` one 5.5 m storey with clerestory lights), the roof plane at the storeys' height, `FAR_PARAPET` 0.7
+  over it in the wall's set, a `CITY_BULKHEAD` 3 x 3 x 2.4 m stair head and up to three `CITY_PLANT` boxes on roofs
+  over 15 m on their shorter side, all `CITY_ROOF_LIFT` 1 cm over the roof plane (nothing coplanar). The walls are
+  the game's sets (`CITY_SETS`: the far context's white plaster and darkened brick and the near context's cream and
+  ochre plaster shared, `CITY_SHARED`, plus painted_plaster_wall, beige_wall_001, plastered_wall_04 lifted,
+  brick_wall_13 and whitewashed_brick), each box in its own tint from the seeded random numbers (`CITY_TINT`: a
+  value 0.85-1.15, each channel +-0.05 more) through the new `tint_attr` of `facade_material`, an Object Attribute
+  `city_tint` multiplied under the wall's colour, so one facade material serves hundreds of boxes (35 materials,
+  made as (set, recipe) pairs are first needed); the roofs plain pale colours (`CITY_ROOFS`: pale 0.45, grey 0.25,
+  tan 0.15, dark 0.15 -- from 60 m up the roofs are half of what a city is, and the far context's near-black felt
+  on every one would have read as dark blocks). A parking lot is the parcel's asphalt in the road material with
+  `CITY_BAY` lines 0.15 m wide every 2.7 m in facing rows (5 m bays, a 7 m aisle, `CITY_ROWS_GAP` 6 m between pairs)
+  in a faint grey `CITY_PAINT` 0.35, 2 mm over the asphalt. Shipped: 1541 boxes (118 of one storey, 597 of two, 562
+  of three, 264 of four), 477 of 2018 lots vacant, 15 parking lots, 14 yards; the footprints cover 59% of the
+  parcels' ground within 250 m, 51% to 500 m, 59% beyond.
+- **The trees.** The game's own by `place_tree` (which takes a collection now; the city's objects live in `CITY`):
+  along every secondary street in the sidewalk band `CITY_TREE_IN` 1.2 m inside the street's edge every
+  `CITY_TREE_STEP` 10-15 m within `CITY_TREE_R` 500 m of the block and every 20-30 m beyond (`CITY_TREE_FAR`), the
+  bare-trunked models 11-15 at 6-9 m; in the yards one per `CITY_YARD_TREES` 400 m2 and one or two on each vacant
+  lot, any model at 5-9 m; and along the main streets' far strips `CITY_STRIP_OFF` 2.1 m inside the kerb (as the
+  hedge is) wherever the strip lies beyond `CITY_STRIP_R` 150 m of the block and outside the open ground, off the
+  street mouths. 4058 trees: 2737 along the streets, 506 on the strips, 815 in yards. No palms: Poly Haven's CC0
+  model catalog (`api.polyhaven.com/assets?t=models`, read 2026-09-27, 521 models) holds island trees, a jacaranda,
+  firs, pines and quiver trees, and no palm, so none was installed.
+- **What stood stays, and what stays clear.** An occupancy list of rectangles -- the far boxes, the tower and its
+  wing, the tan warehouse, the cream yard, the low wall's whole ring, the retaining wall, item 28's 29 trees
+  (`CITY_TREE_CROWN` 4.5 m round each trunk), the lamp posts, the trailers, the eight tree lines (with their pair
+  rows and jitter) and the five skyline rows -- keeps every new box `CITY_PAD` 2 m off them and every new tree 1 m
+  off; a lot whose box would touch one is halved along its longer side and each half tried, down to the smallest
+  footprint, so one crown or one post costs a box and not the whole lot (pass 2 had lost the N lot's first parcels
+  to item 28's north post and crowns that way). The reference stand's two wedges -- the columns left and right of the
+  block that items 28 and 29 tuned to the photo -- are triangles from its eye between the frame's edge and the
+  block's end (`REF_BLOCK_X` 0.055 / 0.930 of the frame at the base, through the stand's own 40 mm pinhole:
+  azimuths 166.5-169.7 and 120.5-124.4 with `REF_WEDGE_MARGIN` 0.4) out past the fill's edge, and nothing new stands
+  in them: the reference view keeps its background. The open ground across 3rd Street stays open: the S, SE and SW
+  parcels whose centres lie within `CITY_OPEN_S` 150 m of 3rd Street's far kerb hold nothing and get no streets or
+  strip trees, which also keeps every camera stand and the flyover's whole path in the open. Nothing shadows the
+  block: the sun at +40 / 42.9 up throws shadows 1.08 x height to the west-south-west, a box east of the block
+  reaches its pavement only from 21 m up at the E lot's edge and 27 m at the NE lot's, and the tallest box is 17 m
+  with its bulkhead; every box's shadow polygon (its footprint and the footprint carried along the sun's shadow,
+  their hull) is tested against the pavement rectangle anyway and the build asserts on the least distance: 16.4 m,
+  `city_bld_1009` at (40..62, 40..62), 9.3 m tall, on the NE lot.
+- **The open ground, fixed: the lot fades with distance.** The 9 m cells of `lot_material` (each with its own turn
+  of the 4 m gravel tile or the 1.3 m earth tile, item 2) read as broken paving from 60 m up. Over `LOT_FADE_M` 25 to
+  60 m of camera distance each set's colour now goes to its own mean -- `LOT_SET_MEANS`, the mean of its colour times
+  its packed AO over the whole map, measured with PIL: brown_mud (0.089, 0.075, 0.058), rock_ground (0.087, 0.075,
+  0.061), so the faded tone is the textured tone's own average -- its AO to 1, its roughness to its mean (0.965,
+  0.826) and the normal map's strength to nothing; the two sets still trade places over the 30 m noise, so a lot
+  keeps its patches of earth and gravel, and nothing of it is a mottle. From a standing eye the ground underfoot is
+  the set as it comes. Measured on a 60 m stand over the S lot (`item33_open_ground_60m.png`, the lot region x
+  0.15-0.55, y 0.35-0.75): the luminance's standard deviation fell from 8.4 to 0.5 (p5-p95 136-163 to 152-153) at the
+  same tone (149.6 to 152.5); the sunlit point (0.30, 0.40) reads (157, 148, 137) before and (159, 151, 141) after.
+- **Passes.** Pass 1 (`tune/pass1_*`): 7-12 m trees, one and two storeys within 250 m, 1-5 m side setbacks, 10% of
+  the lots vacant -- from the air a suburb under its trees, the crowns standing over the two-storey boxes where the
+  reference has boxes edge to edge (1497 boxes, 4842 trees). Pass 2: the trees 5-9 m and half as many in the yards,
+  a third storey within 250 m and a fourth to 500, the setbacks 0.5-3.5, 5% vacant, and the built coverage printed
+  by distance band (35% within 250 m: the N lot's first parcels empty, one obstacle voiding each 26 x 45 m lot).
+  Pass 3, shipped: lots halved round obstacles (59% within 250 m).
+- **The reference view, for the record.** Every one of item 31's consistency points is identical to the level
+  between item 31's `ref_3q_after.png` and this one -- the sky, both horizons, every road and pavement point, the
+  cornice, the shopfront, the cream and grey walls, the foliage, the far city, the trailers, the far line, the far
+  boxes' windows -- but two: the second warehouse's shaded clerestory row (0.965, 0.40), (127, 105, 87) to
+  (138, 112, 91), lifted by bounce off the new boxes' sunlit north faces south of it on the NW lot (the photo's
+  reads (134, 109, 93)), and the shaded 3rd Street face (0.30, 0.45), (42, 27, 23) to (44, 28, 23). The pixel census
+  (`tune/numbers_raw.txt`): 77,969 of 2,457,600 pixels differ by over 6 levels on a channel, 73,318 of them on the
+  block's own facades (x 0.06-0.93, y 0.10-0.66) and 70 on the ground -- render noise, not a shift: the two renders'
+  light paths differ wherever a bounce now meets a box, the OptiX denoiser resolves the noisy panes and ornament
+  differently, and the frame's mean absolute difference is 0.88 levels with no point moved. Nothing new shows in the
+  wedges (`item33_left.png`, `item33_right.png`), and nothing rises over the block (a 14 m box at 300 m stands under
+  the horizon, and the block's silhouette rises 7 degrees over it from the stand).
+- **Cost.** The city builds in 2.6 s of a 13 s build (the scene 14.4 MB, was 10.9); the full-size `ref_3q` renders
+  in 49 s (was 37); a quarter flyover frame in 1.0-2.9 s after a 12-16 s sync (was 10).
+- **The Eevee preview.** `render_flyover.py -- engine=eevee pct=50 encode=1` (the paragraph "The Eevee preview" in
+  the flyover section above has the settings and what Eevee renders differently): the whole 32 s cut of item 32 in
+  22.1 min at 1.73 s a frame on the wear=off scene, `flyover/bradbury_flyover_eevee_preview.mp4` (7.2 MB, 768
+  frames at 540 x 960, 24 fps), one frame a shot and the approach's first frame on `flyover/flyover_eevee_sheet.png`.
+  The first run, on the canonical scene, rendered the whole block magenta (every worn material over Eevee's
+  attribute limit), which is why the preview reads the wear=off build and shows the block clean. Item 32's Cycles
+  frames that the user stopped at 211 (air 120, cornice 91) were deleted: the scene has changed under them.
+
+Evidence: `tests/artifacts/screens/bradbury_scene/item33_city_fill/` (`item33_reference_before_after.png`,
+`item33_left.png`, `item33_right.png` -- photo | before | after, the frame and the two wedges --,
+`item33_city_reference.png` -- the new aerial reference beside the 16:10 air view of the shipped scene --,
+`item33_open_ground_60m.png` and `item33_open_ground_air.png` -- before | after from 60 m --, `item33_first_frame.png`
+-- the approach's first frame before | after and the stand's frame --, `ref_3q_after.png`, `item33_numbers.md`; under
+`tune/` the three passes' half and quarter frames with their sheets, the 60 m and air views of every pass, the Eevee
+timing frames (`eevee_timing/` the magenta block, `eevee50_s12/`, `eevee50_s24/`, `eevee100_s12/`),
+`numbers_raw.txt`); `tests/artifacts/screens/bradbury_scene/flyover/` (`bradbury_flyover_eevee_preview.mp4`,
+`frames_eevee/<shot>/`, `flyover_eevee_sheet.png`, `render_eevee.log`); the scenes
+`tests/artifacts/blender/bradbury/portal_project/bradbury_scene.blend` (rebuilt headless, the GUI Blender not
+touched) and `bradbury_scene_wear_off.blend`.

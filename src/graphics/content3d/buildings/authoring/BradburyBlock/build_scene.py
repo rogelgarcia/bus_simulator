@@ -30,7 +30,12 @@
 # The SIDEWALK itself (AI 574 item 4, pavement_material in the ground section) is poured concrete scored into slabs
 # from world metres -- transverse and longitudinal joints along the streets, a fan of radials with an arc joint on
 # every corner apron, every slab its own tone, dirt in the joints and a grime line along the wall base read off the
-# walls as occlusion -- lifted to the photo's warm sunlit tone.
+# walls as occlusion -- lifted to the photo's warm sunlit tone. Round all of it stands THE CITY (AI 574 item 33, the
+# city section, the last thing built): the lots filled out to the far context with a grid of parcels on secondary
+# streets, simple boxes of one to four storeys with window bays in the game's plaster, painted and brick sets, flat
+# roofs, parking lots and yards, and the game's trees along every street, as a second aerial reference has them --
+# built round everything above, keeping the reference stand's two background columns and the open ground across
+# 3rd Street clear, and throwing no shadow on the block.
 #
 # The environment is a sky from the game's own catalog: assets/public/lighting/hdri/kloofendal_43d_clear_puresky
 # (Poly Haven, CC0, provenance in the .source.json beside it; the 2k copy is the IBLCatalog.js entry, the 4k copy is
@@ -68,7 +73,8 @@
 #         none), context (on | off: the near context's walls, hedge, tufts and trees and the far context's boxes,
 #         tree lines and skyline, on the street ground only), furniture (on | off: the lamp posts and the vault
 #         covers, with the context), neighbour (on | off: the off-frame tower across Broadway whose shadow crosses
-#         the crossing, with the context),
+#         the crossing, with the context), city (on | off: the parcels, boxes and trees that fill the lots out to
+#         the far context, AI 574 item 33, with the context),
 #         block (fixed | game: the untouched export, its own scene and shots), wear (on | off | debug, see
 #         below), wear_<feature> (that wear feature's strength, 1 = its calibrated look, 0 = off), exposure, samples,
 #         pct, res, views listed by name (see VIEWS; ref_3q is the reference photo's own stand and renders in its
@@ -634,6 +640,17 @@ LOT_SETS = (("brown_mud", 1.3), ("rock_ground", 4.0))   # (the set, its tileMete
 LOT_TILE_M = 9.0                                # each set is laid per random cell this size, turned and slid per cell
 LOT_BLEND_M = 30.0                              # the two sets trade places over noise this size ...
 LOT_BLEND = (0.44, 0.56)                        # ... across this band of the noise (Perlin's Fac lives near 0.5): about half each
+# From the air that tiling reads as a pattern (AI 574 item 33; the user, on the flyover's first frame 60 m up over the
+# S lot: "conserte a calcada, ela parece defeituosa"): the 9 m cells, each with its own turn of the 4 m gravel tile or
+# the 1.3 m earth tile, read as broken paving slabs from 60-100 m, where the photo's lots are flat pale dirt. So the
+# lot FADES WITH DISTANCE: over LOT_FADE_M of camera distance each set's colour goes to its own mean -- the mean of
+# its colour times its packed AO over the whole map (LOT_SET_MEANS, measured with PIL), so the faded tone is the
+# textured tone's own average -- its AO to 1, its roughness to its mean, and the normal map's strength to nothing;
+# the two sets still trade places over the LOT_BLEND_M noise, so a lot keeps its patches of earth and gravel, and
+# nothing of it is a mottle. From a standing eye the ground underfoot is the set as it comes.
+LOT_SET_MEANS = {"brown_mud": ((0.089, 0.075, 0.058), 0.965),    # (the mean of colour x AO, linear; the mean roughness), each map
+                 "rock_ground": ((0.087, 0.075, 0.061), 0.826)}  # as a whole (item33_city_fill/item33_numbers.md)
+LOT_FADE_M = (25.0, 60.0)                       # the fade's camera distance: the set as it comes to here, its means from there
 
 bpy.context.view_layer.update()   # a freshly linked object still carries the matrix_world it had in the library
 bases = [min((o.matrix_world @ Vector(c)).z for c in o.bound_box) for o in linked.objects if o.type == 'MESH']
@@ -1203,18 +1220,41 @@ def lot_material(name):
     mr.inputs["From Min"].default_value = LOT_BLEND[0]; mr.inputs["From Max"].default_value = LOT_BLEND[1]
     mr.inputs["To Min"].default_value = 0.0; mr.inputs["To Max"].default_value = 1.0
     link(ns.outputs["Fac"], mr.inputs["Value"]); fac = mr.outputs["Result"]
-    def traded(x, y, a, b):   # the first set's map where the noise is low, the second's where it is high
-        n = node('ShaderNodeMix', x, y, data_type='RGBA', blend_type='MIX'); link(fac, n.inputs["Factor"]); link(a, sock(n, "A_Color")); link(b, sock(n, "B_Color"))
+    def traded(x, y, a, b):   # the first set's map where the noise is low, the second's where it is high; a or b may be a constant
+        n = node('ShaderNodeMix', x, y, data_type='RGBA', blend_type='MIX'); link(fac, n.inputs["Factor"])
+        for ident, v in (("A_Color", a), ("B_Color", b)):
+            if hasattr(v, "is_output"): link(v, sock(n, ident))
+            else: sock(n, ident).default_value = (*v, 1.0)
         return sock(n, "Result_Color")
+    def fmix(x, y, f, a, b):   # b where f is 1, a where 0; a or b may be a constant
+        n = node('ShaderNodeMix', x, y, data_type='FLOAT'); link(f, n.inputs["Factor"])
+        for ident, v in (("A_Float", a), ("B_Float", b)):
+            if hasattr(v, "is_output"): link(v, sock(n, ident))
+            else: sock(n, ident).default_value = v
+        return sock(n, "Result_Float")
     col = traded(-600, 500, maps[0][0].outputs["Color"], maps[1][0].outputs["Color"])
     armc = traded(-600, 200, maps[0][1].outputs["Color"], maps[1][1].outputs["Color"])
     nrmc = traded(-600, -100, maps[0][2].outputs["Color"], maps[1][2].outputs["Color"])
     out = node('ShaderNodeOutputMaterial', 700, 0); bsdf = node('ShaderNodeBsdfPrincipled', 420, 0); link(bsdf.outputs["BSDF"], out.inputs["Surface"])
     sep = node('ShaderNodeSeparateColor', -300, 200); link(armc, sep.inputs["Color"])
+    # the fade with distance (item 33): the camera's distance mapped over LOT_FADE_M takes the colour to the sets' own
+    # means (traded by the same noise), the AO to 1, the roughness to the sets' means and the normal map to nothing
+    cam = node('ShaderNodeCameraData', -1000, 1400)
+    fd = node('ShaderNodeMapRange', -800, 1400, clamp=True)
+    fd.inputs["From Min"].default_value = LOT_FADE_M[0]; fd.inputs["From Max"].default_value = LOT_FADE_M[1]
+    fd.inputs["To Min"].default_value = 0.0; fd.inputs["To Max"].default_value = 1.0
+    link(cam.outputs["View Distance"], fd.inputs["Value"]); fade = fd.outputs["Result"]
+    means = [LOT_SET_MEANS[folder] for folder, tile_m in LOT_SETS]
+    mean_col = traded(-600, 800, means[0][0], means[1][0])
+    fc = node('ShaderNodeMix', -300, 500, data_type='RGBA', blend_type='MIX'); link(fade, fc.inputs["Factor"])
+    link(col, sock(fc, "A_Color")); link(mean_col, sock(fc, "B_Color")); col = sock(fc, "Result_Color")
+    ao = fmix(-100, 100, fade, sep.outputs["Red"], 1.0)
+    rough = fmix(-100, -50, fade, sep.outputs["Green"], fmix(-300, -50, fac, means[0][1], means[1][1]))
     aoc = node('ShaderNodeMix', 200, 250, data_type='RGBA', blend_type='MULTIPLY'); aoc.inputs["Factor"].default_value = 1.0
-    link(col, sock(aoc, "A_Color")); link(sep.outputs["Red"], sock(aoc, "B_Color")); link(sock(aoc, "Result_Color"), bsdf.inputs["Base Color"])
-    link(sep.outputs["Green"], bsdf.inputs["Roughness"]); link(sep.outputs["Blue"], bsdf.inputs["Metallic"])
+    link(col, sock(aoc, "A_Color")); link(ao, sock(aoc, "B_Color")); link(sock(aoc, "Result_Color"), bsdf.inputs["Base Color"])
+    link(rough, bsdf.inputs["Roughness"]); link(sep.outputs["Blue"], bsdf.inputs["Metallic"])
     nm = node('ShaderNodeNormalMap', 200, -300); link(nrmc, nm.inputs["Color"]); link(nm.outputs["Normal"], bsdf.inputs["Normal"])
+    link(fmath('SUBTRACT', 0, -300, 1.0, fade), nm.inputs["Strength"])
     return m
 
 gnd = bpy.data.collections.new("GROUND"); S.collection.children.link(gnd)
@@ -1701,11 +1741,12 @@ elif CONTEXT == "on":
     tint = M_TREE["ctx_leaf"].node_tree.nodes.get("LEAF_TINT")
     assert tint is not None, "the library's leaf material has no LEAF_TINT node: rebuild it with build_context.py"
     next(i for i in tint.inputs if i.identifier == "B_Color").default_value = (*LEAF_TINT, 1.0)
-    def place_tree(name, x, y, model, height, turn, sink=TREE_SINK, mats=None):
+    def place_tree(name, x, y, model, height, turn, sink=TREE_SINK, mats=None, col=None):
         # mats: the object-level materials by library name, the scene's hazed copies unless another set is given
-        # (the far tree lines carry a darker leaf, item 29)
+        # (the far tree lines carry a darker leaf, item 29); col: the collection, the context's unless another is named
+        # (the city's, item 33)
         me = LIB[model]; s = height / me["height"]
-        ob = bpy.data.objects.new(name, me); ctx.objects.link(ob)
+        ob = bpy.data.objects.new(name, me); (col or ctx).objects.link(ob)
         ob.location = (x, y, Z_GROUND - sink); ob.scale = (s, s, s); ob.rotation_euler = (0.0, 0.0, math.radians(turn))
         for slot, lm in zip(ob.material_slots, me.materials):
             slot.link = 'OBJECT'; slot.material = (mats or M_TREE)[lm.name]
@@ -1782,13 +1823,14 @@ elif CONTEXT == "on":
         V = ring0 + ring1; F = [(i, (i + 1) % n, n + (i + 1) % n, n + i) for i in range(n)]
         F.append(tuple(range(n, 2 * n))); F.append(tuple(reversed(range(n))))
         return V, F, [(0.0, 0.0)] * len(V)
-    def mesh_of(name, parts, mats, slots=None):
-        # one mesh from a list of (verts, faces, uvs) parts; slots, if given, one material index per part
+    def mesh_of(name, parts, mats, slots=None, col=None):
+        # one mesh from a list of (verts, faces, uvs) parts; slots, if given, one material index per part; col the
+        # collection, the context's unless another is named
         V, F, U, SL = [], [], [], []
         for j, (v, f, u) in enumerate(parts):
             k = len(V); V.extend(v); U.extend(u); F.extend([tuple(i + k for i in face) for face in f])
             SL.extend([slots[j] if slots else 0] * len(f))
-        return ground_mesh(name, V, F, mats, U, slots=SL if slots else None, col=ctx)
+        return ground_mesh(name, V, F, mats, U, slots=SL if slots else None, col=col or ctx)
     z_foot = Z_GROUND - 0.05                                          # every wall's foot, a little under the ground
     def ring(x0, x1, y0, y1, t, h):
         # four walls of thickness t on the inside of a rectangle: the south and north run the full width, the east
@@ -2063,7 +2105,7 @@ if CONTEXT == "on" and GROUND == "street":
         ob = mesh_of(name, parts, mats, slots=slots)
         for j in range(len(parts)): ob.data.polygons[6 * j + 4].material_index = len(mats) - 1   # box() lays the top fifth
         return ob
-    def facade_material(base, storey_h, bay_w, window_w, window_h, sill_h, glass, ground=None, blind_share=FAC_BLIND_SHARE, name=None):
+    def facade_material(base, storey_h, bay_w, window_w, window_h, sill_h, glass, ground=None, blind_share=FAC_BLIND_SHARE, name=None, tint_attr=None):
         # A copy of a hazed set material with window bays cut into it in the shader (the paragraph at FAC_GLASS,
         # item 31). The box's Object metres and true normal give every point its coordinate along the face, u,
         # about the face's centre (from the fac_lo / fac_hi properties building() writes), and its height over the
@@ -2072,7 +2114,9 @@ if CONTEXT == "on" and GROUND == "street":
         # glass beyond; the trim bands lie just under and over it. A Bump of the reveal's ramp and the trim's step
         # goes under the set's normal map, the trim's tint under its base colour, and a Mix Shader hands the glass
         # its own BSDF before the haze group. ground = (height, window_w, window_h, sill_h) lays the ground storey
-        # its own way and starts the upper storeys above it.
+        # its own way and starts the upper storeys above it. tint_attr names an object property (a colour) that
+        # multiplies the wall's colour, so one material serves many boxes each in its own tint (the city, item 33;
+        # every object carrying the material must have the property, since a missing one reads as black).
         m = base.copy(); m.name = name or (base.name + "_facade"); nt = m.node_tree
         slot = [0]                                                        # the new nodes go in rows under the set's own
         def node(t, **props):
@@ -2149,6 +2193,13 @@ if CONTEXT == "on" and GROUND == "street":
         tn = node('ShaderNodeMix', data_type='RGBA', blend_type='MULTIPLY'); tn.name = tn.label = "FAC_TRIM"; link(trim, tn.inputs["Factor"])
         link(clk.from_socket, sock(tn, "A_Color")); sock(tn, "B_Color").default_value = (*FAC_TRIM_TINT, 1.0); nt.links.remove(clk)
         link(sock(tn, "Result_Color"), b.inputs["Base Color"])
+        if tint_attr:
+            # the box's own tint, an object property read as a colour, multiplied under the trim's
+            ta = node('ShaderNodeAttribute', attribute_type='OBJECT', attribute_name=tint_attr)
+            tm = node('ShaderNodeMix', data_type='RGBA', blend_type='MULTIPLY'); tm.name = tm.label = "CITY_TINT"; tm.inputs["Factor"].default_value = 1.0
+            link(sock(tn, "Result_Color"), sock(tm, "A_Color")); link(ta.outputs["Color"], sock(tm, "B_Color"))
+            nt.links.remove(next(l for l in nt.links if l.to_socket == b.inputs["Base Color"]))
+            link(sock(tm, "Result_Color"), b.inputs["Base Color"])
         wn = node('ShaderNodeTexWhiteNoise', noise_dimensions='3D'); link(key, wn.inputs["Vector"])
         blind = fm('LESS_THAN', wn.outputs["Value"], blind_share)
         gc = node('ShaderNodeMix', data_type='RGBA'); link(blind, gc.inputs["Factor"])
@@ -2475,6 +2526,455 @@ if CONTEXT == "on" and GROUND == "street" and FURNITURE == "on":
     print(f"the street furniture: {len(tall)} high-mast posts of {' and '.join(f'{p[5]:.1f}' for p in tall)} m and "
           f"{len(LAMP_POSTS) - len(tall)} lantern post from the library ({', '.join(sorted(PROPS))}), {n_fur['covers']} vault covers on "
           f"the block's pavement; no drains, no hydrant (the photo has none); every material hazed; built in {time.time() - t_fur:.2f} s")
+
+# ---------------------------------------------------------------- the city: parcels, boxes and trees out to the far context
+# The blocks round the Bradbury filled in (AI 574 item 33; the user, 2026-09-27, with a second aerial reference,
+# review_2026-09-25/reference_city_aerial.png: "tente completar a cidade com mais conteudo para nao ficar um vazio
+# atras ... sao predios simples, caixas com janelas, e arvores"). That reference sees the block from higher up,
+# surrounded on every side by a dense low-rise city: simple boxes of two to four storeys with rows of windows and
+# flat roofs, cream, tan, white and brick, on a street grid, trees along the streets and in the yards, a few open
+# parking lots, taller blocks far off in the haze. Until this item the flyover's first frame (60 m up, 100 m south of
+# the block) showed the eight vacant lots running empty to item 29's tree lines and skyline. The fill is a GRID OF
+# PARCELS: secondary streets a CITY_PITCH apart and CITY_STREET_W wide, aligned with the scene's four streets and
+# walked out from their far kerbs to CITY_EXTENT (where the far tree lines and the skyline take over), laid as flat
+# quads in the road material on the lots' own ground (no kerbs: the nearest stands 100 m from every camera) and run
+# across the lots' strips to the main streets' kerb tops; every cell between them is a parcel with a CITY_WALK
+# sidewalk band in the pavement material along its secondary streets (its main-street sides front the lot's own
+# strip) holding simple boxes built by city_building() -- one to four storeys by distance from the block
+# (CITY_STOREYS: one and two near it, up to four further out), footprints of CITY_FOOT, flat roofs behind parapets in
+# pale plain colours (CITY_ROOFS) with a stair bulkhead and a few plant boxes on the larger ones, the walls in the
+# game's plaster, painted and brick sets (CITY_SETS) dressed with window bays by facade_material (the CITY_FACADES
+# recipes) and each box in its own tint drawn from the seeded random numbers (the city_tint object property the
+# facade reads: a white noise per building, not a mottle) -- or is an asphalt parking lot with faint bay lines, or an
+# open yard. The trees are the game's own, by place_tree: along every secondary street every CITY_TREE_STEP within
+# CITY_TREE_R of the block and half as often beyond, along the main streets' far strips beyond the near context, in
+# the yards and on the vacant lots. Everything that stood before stands: an occupancy list of the near context's
+# walls, yard, warehouse and trees, the far context's boxes, trailers, tree lines and skyline rows, the neighbour
+# tower and wing and the lamp posts keeps every new box and tree off them (a street segment that would cross one is
+# left out; a street parallel to a tree line snaps to its side, so the line becomes that street's own trees), and
+# the reference stand's two wedges -- the columns left and right of the block that items 28 and 29 tuned to the
+# photo (REF_BLOCK_X, from the stand's own frame) -- stay clear of every new box and tree out to the fill's edge.
+# The open ground across 3rd Street stays open (the user: "nas calcadas do lado esquerdo nao precisa"): nothing
+# stands on the S, SE and SW parcels whose centres lie within CITY_OPEN_S of 3rd Street's far kerb, which also keeps
+# every camera stand and the flyover's path in the open. Nothing new shadows the block: the sun at +40 / 42.9 up
+# throws shadows 1.08 x height to the west-south-west, so a box east of the block reaches its pavement only from
+# 21 m up at the E lot's edge and from 27 m at the NE lot's, and the tallest box here is 17 m with its bulkhead;
+# every box's shadow polygon is tested against the block's pavement rectangle anyway and the nearest approach
+# printed. No palms: Poly Haven's CC0 model catalog (api.polyhaven.com/assets?t=models, read 2026-09-27: 521
+# models) holds none, so the streets have the game's trees alone.
+CITY = args.get("city", "on").lower()           # on | off: the city (with the context, on the street ground)
+assert CITY in ("on", "off"), f"city: on | off, not {CITY}"
+CITY_SEED = 33                                  # the city's random numbers, its own (steps 28 and 29 keep theirs)
+CITY_EXTENT = (-1060.0, 700.0, -700.0, 950.0)   # x0, x1, y0, y1: how far the fill runs. North and west to where item 29's rows take
+                                                # over (the skyline's first row at y 1000, the far city at x -1130; the scrub lines at
+                                                # x -660 to -950 and the tall block at -750 are built round); east and south, which no
+                                                # camera sees, to 700 m
+CITY_OPEN_S = 150.0                             # the S, SE and SW parcels whose centres lie within this of 3rd Street's far kerb stay
+                                                # open: the flyover's first frame's left and bottom-left, every stand, the flyover's path
+CITY_PITCH = (80.0, 120.0)                      # a parcel's depth between secondary streets
+CITY_STREET_W = (12.0, 14.0)                    # a secondary street's width
+CITY_STREET_PAD = 2.0                           # a street keeps this far from what stands (from a tree line's crowns)
+CITY_ROAD_LIFT = 0.005                          # the street quads, the sidewalk bands and the parking lots lie this much over the lot's
+                                                # ground, so nothing is coplanar; the bay lines 2 mm over the asphalt
+CITY_WALK = 3.0                                 # a parcel's sidewalk band along each of its secondary streets
+CITY_LOT_MAX = 45.0                             # a parcel is split into building lots until no lot's side exceeds this
+CITY_FOOT = (12.0, 44.0)                        # a box's footprint side, the least (a lot too narrow stays vacant) and the most
+CITY_SETBACK = ((0.0, 1.5), (0.5, 3.5))         # a box's setback from its lot's edge: on a street side, on a side toward a neighbour
+                                                # (1-5 m toward a neighbour left gaps of up to 10 m: from 60 m up the parcels read
+                                                # as scattered boxes among trees where the reference has them edge to edge)
+CITY_PAD = 2.0                                  # a box keeps this far from what stands
+CITY_USE = (("buildings", 0.84), ("parking", 0.10), ("yard", 0.06))   # what a parcel holds, by share
+CITY_VACANT = 0.05                              # the share of building lots left vacant: dirt and a tree or two
+CITY_STOREYS = ((250.0, (0.30, 0.55, 0.15, 0.0)),        # (out to this far from the block's centre, the shares of one, two, three and
+                (500.0, (0.15, 0.45, 0.30, 0.10)),       # four storeys): mostly one and two near the block, up to four further out, as
+                (1e9, (0.05, 0.35, 0.40, 0.20)))         # the reference has them (a first pass with no third storey within 250 m
+                                                         # and none of the fourth within 500 read as a suburb under its trees)
+CITY_ROOF_LIFT = 0.01                           # the parapet ring, the bulkhead and the plant boxes stand this much over the roof plane
+CITY_BULKHEAD = (3.0, 2.4, 15.0)                # a stair bulkhead: its side, its height, on roofs whose shorter side exceeds this
+CITY_PLANT = ((1.2, 0.9, 0.8), 3, 0.45)         # plant boxes on such roofs: a box's size, up to how many, their grey (linear)
+CITY_ROOFS = (("pale", (0.42, 0.40, 0.36), 0.45),        # (name, linear colour, share): the flat roofs the reference sees from the air
+              ("grey", (0.26, 0.26, 0.27), 0.25),        # are pale -- gravel, concrete, a tan felt -- with the odd dark one; the far
+              ("tan", (0.36, 0.30, 0.22), 0.15),         # context's near-black felt on every roof would have read as dark blocks from
+              ("dark", (0.07, 0.07, 0.07), 0.15))        # 60 m up
+# The walls' sets: (folder, tint, share). Four are the materials the near and far context already hazed (CITY_SHARED
+# names them: the far white, the near cream and ochre, the far brick), the rest the game's other plasters and bricks
+CITY_SETS = {"white":      ("plastered_wall_02", (1.25, 1.27, 1.30), 0.22),
+             "cream":      ("plastered_wall_02", None, 0.22),
+             "tan":        ("plastered_wall_02", (1.15, 0.95, 0.65), 0.14),
+             "paint":      ("painted_plaster_wall", None, 0.10),    # a painted wall, a pale warm grey
+             "beige":      ("beige_wall_001", None, 0.06),
+             "grey":       ("plastered_wall_04", (1.15, 1.15, 1.18), 0.06),   # a grey render, lifted a little
+             "brick":      ("red_brick", (0.45, 0.42, 0.42), 0.12),
+             "brick_pale": ("brick_wall_13", None, 0.04),
+             "whitewash":  ("whitewashed_brick", None, 0.04)}
+CITY_SHARED = {"white": ("far", "plaster"), "cream": ("wall", "cream"), "tan": ("wall", "tan"), "brick": ("far", "brick")}
+CITY_TINT = (0.85, 1.15, 0.05)                  # a box's own tint: its value in this range, then each channel a further +- this
+# (storey_h, bay_w, window_w, window_h, sill_h, ground, blind share), as facade_material takes them; and which
+# recipes a box of n storeys draws from, by share
+CITY_FACADES = {"flats":   (3.1, 2.9, 1.3, 1.5, 0.9, None, 0.25),
+                "offices": (3.4, 3.3, 1.9, 1.9, 0.8, None, 0.15),
+                "shops":   (3.3, 3.0, 1.4, 1.5, 0.9, (3.8, 2.6, 2.8, 0.3), 0.20),   # a shop storey of 2.8 m openings under the flats
+                "shed":    (5.5, 4.0, 1.4, 0.9, 3.0, None, 0.0)}                    # a warehouse: one tall storey, clerestory lights
+CITY_RECIPES = ((1, (("shed", 0.35), ("shops", 0.25), ("flats", 0.40))),
+                (2, (("shops", 0.35), ("flats", 0.40), ("offices", 0.25))),
+                (4, (("flats", 0.50), ("offices", 0.50))))
+CITY_TREE_STEP = (10.0, 15.0)                   # a street tree every so far ...
+CITY_TREE_R = 500.0                             # ... within this of the block's centre, and every CITY_TREE_FAR times that beyond
+CITY_TREE_FAR = 2.0
+CITY_TREE_IN = 1.2                              # a street tree stands this far inside the street's edge, in the sidewalk band
+CITY_TREE_H = ((6.0, 9.0), (5.0, 9.0))          # a street tree's height, a yard tree's: under the boxes' roofs, as the reference's are
+                                                # (at 7-12 m the crowns stood over the two-storey boxes and the city read as a wood)
+CITY_TREE_MODELS = ((11, 15), (1, 15))          # street trees are the library's bare-trunked models; yard trees any
+CITY_TREE_CROWN = 4.5                           # the near context's trees keep this much round their trunks
+CITY_YARD_TREES = 400.0                         # a yard's trees: one per this much area, and one or two on a vacant lot
+CITY_STRIP_R = 150.0                            # trees on the main streets' far strips only beyond this from the block's centre (the
+                                                # near context's walls, hedge and crowns stand there) ...
+CITY_STRIP_OFF = HEDGE_OFF                      # ... this far inside the kerb line, as the hedge is
+CITY_BAY = (2.7, 5.0, 7.0, 0.15)                # a parking lot's bays: pitch, depth, the aisle between two facing rows, a line's width
+CITY_ROWS_GAP = 6.0                             # a drive between one pair of rows and the next
+CITY_PAINT = 0.35                               # the bay lines' grey, linear: faint, not white
+REF_BLOCK_X = (0.055, 0.930)                    # where the block's ends stand across the photo's frame at its base (the brief's reading):
+                                                # the stand's wedges run from the frame's edges to these
+REF_WEDGE_MARGIN = 0.4                          # degrees added either side of each wedge
+
+n_city = {}
+if CONTEXT == "on" and GROUND == "street" and CITY == "on":
+    t_city = time.time()
+    rng = random.Random(CITY_SEED)
+    city = bpy.data.collections.new("CITY"); S.collection.children.link(city)
+    BLOCK_C = ((WX + EX) / 2.0, (SY + NY) / 2.0)                      # the block's centre, distances are measured from it
+    INS = KERB_ROUND + KERB_TOP_W                                      # the kerb top's inset from the kerb line
+    # ---- what stands already: (x0, x1, y0, y1, kind), kind 'box' or 'tree' (nothing new touches them), 'row_x' or
+    # 'row_y' (a tree line along x or y: nothing touches it, and a parallel street snaps to its side)
+    occ = [(x0, x1, y0, y1, "box") for name, x0, x1, y0, y1, h, mat, parapet, recipe in FAR_BOXES]
+    if NEIGHBOUR == "on":
+        back, lap, wd, wl, wh = NEIGHBOUR_WING
+        occ += [(NEIGHBOUR_X, NEIGHBOUR_X + NEIGHBOUR_W, NEIGHBOUR_S, nb_n, "box"),
+                (NEIGHBOUR_X + back, NEIGHBOUR_X + back + wd, nb_n - lap, nb_n + wl, "box")]
+    occ += [(*SHED_N[:4], "box"), (*CREAM_YARD, "box"), (W_E - LOT_W_DEPTH, W_E, W_S, W_N, "box"),   # the low wall's ring and all inside it
+            (N_W, N_E, N_S, N_S + RET_WALL_T, "box"), (N_E - RET_WALL_T, N_E, N_S, N_S + LOT_N_DEPTH, "box")]
+    occ += [(x - CITY_TREE_CROWN, x + CITY_TREE_CROWN, y - CITY_TREE_CROWN, y + CITY_TREE_CROWN, "tree") for x, y, model, height, turn in TREES]
+    occ += [(x - 1.5, x + 1.5, y - 1.5, y + 1.5, "box") for name, x, y, kind, paint, h, turn in LAMP_POSTS]
+    tx, ty, n_tr, pitch = TRAILERS; w_tr, L_tr, h_tr = TRAILER
+    occ.append((tx - L_tr, tx, ty, ty + n_tr * pitch + w_tr, "box"))
+    for (xa, ya), (xb, yb), step, hh in FAR_TREE_ROWS:
+        j = 0.3 * step + CITY_TREE_CROWN                               # the jitter off the line, and the crowns
+        if abs(xb - xa) > abs(yb - ya): occ.append((min(xa, xb) - j, max(xa, xb) + j, ya - j, ya + FAR_ROW_PAIR + j, "row_x"))   # its pair row north
+        else: occ.append((xa - FAR_ROW_PAIR - j, xa + j, min(ya, yb) - j, max(ya, yb) + j, "row_y"))                          # its pair row west
+    for axis, at, a, b, w01, g01, h01, palette in SKYLINE_ROWS:
+        occ.append((a, b, at, at + FAR_DEPTH[1], "box") if axis == "x" else (at - FAR_DEPTH[1], at, a, b, "box"))
+    # the reference stand's wedges: from its eye, the frame's edge to the block's end on each side, as triangles
+    r_eye, r_aim, r_lens = VIEWS["ref_3q"][:3]
+    r_bearing = math.degrees(math.atan2(r_aim[1] - r_eye[1], r_aim[0] - r_eye[0]))
+    def frame_az(fx): return r_bearing + math.degrees(math.atan((0.5 - fx) * 36.0 / r_lens))   # the azimuth seen at frame x (a 36 mm sensor across the 3:2 frame)
+    wedge_az = [(frame_az(REF_BLOCK_X[0]) - REF_WEDGE_MARGIN, frame_az(0.0) + REF_WEDGE_MARGIN),
+                (frame_az(1.0) - REF_WEDGE_MARGIN, frame_az(REF_BLOCK_X[1]) + REF_WEDGE_MARGIN)]
+    r_reach = max(math.hypot(x - r_eye[0], y - r_eye[1]) for x in CITY_EXTENT[:2] for y in CITY_EXTENT[2:]) + 50.0
+    WEDGES = [[(r_eye[0], r_eye[1])] + [(r_eye[0] + r_reach * math.cos(math.radians(a)), r_eye[1] + r_reach * math.sin(math.radians(a))) for a in (a0, a1)]
+              for a0, a1 in wedge_az]
+    def _rect_poly(x0, x1, y0, y1): return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+    def _overlap(A, B):
+        # two convex polygons overlap unless an edge of either separates them (the separating axis test)
+        for P, Q in ((A, B), (B, A)):
+            for i in range(len(P)):
+                ex, ey = P[(i + 1) % len(P)][0] - P[i][0], P[(i + 1) % len(P)][1] - P[i][1]
+                pa = [-ey * x + ex * y for x, y in P]; qa = [-ey * x + ex * y for x, y in Q]
+                if max(pa) < min(qa) or max(qa) < min(pa): return False
+        return True
+    def hits(x0, x1, y0, y1, pad, kinds=("box", "tree", "row_x", "row_y"), wedge=True, extra=()):
+        # whether a rectangle, grown by pad, touches anything of those kinds that stands (occ and extra), or a wedge
+        r = (x0 - pad, x1 + pad, y0 - pad, y1 + pad)
+        for ox0, ox1, oy0, oy1, k in occ:
+            if k in kinds and r[0] < ox1 and r[1] > ox0 and r[2] < oy1 and r[3] > oy0: return True
+        for ox0, ox1, oy0, oy1 in extra:
+            if r[0] < ox1 and r[1] > ox0 and r[2] < oy1 and r[3] > oy0: return True
+        if wedge:
+            P = _rect_poly(*r)
+            if any(_overlap(P, W) for W in WEDGES): return True
+        return False
+    # ---- the shadow test: a box's shadow polygon (its footprint and the footprint carried along the sun's shadow
+    # by 1 / tan(elevation) per metre of height) against the block's pavement rectangle, the least distance between
+    # the two convex polygons (0 when they touch)
+    c_az, c_el = (lamp_az, lamp_el) if SUN > 0.0 else (seen_az, map_el)
+    c_reach = 1.0 / math.tan(math.radians(c_el)); c_dir = (-math.cos(math.radians(c_az)), -math.sin(math.radians(c_az)))
+    PAVE_POLY = _rect_poly(WX, EX, SY, NY)
+    def _hull(pts):
+        pts = sorted(set(pts))
+        def half(seq):
+            h = []
+            for p in seq:
+                while len(h) >= 2 and (h[-1][0] - h[-2][0]) * (p[1] - h[-2][1]) - (h[-1][1] - h[-2][1]) * (p[0] - h[-2][0]) <= 0: h.pop()
+                h.append(p)
+            return h
+        lo, hi = half(pts), half(pts[::-1]); return lo[:-1] + hi[:-1]
+    def _seg_dist(p, a, b):
+        ax, ay = b[0] - a[0], b[1] - a[1]; L2 = ax * ax + ay * ay
+        t = 0.0 if L2 == 0.0 else max(0.0, min(1.0, ((p[0] - a[0]) * ax + (p[1] - a[1]) * ay) / L2))
+        return math.hypot(p[0] - (a[0] + t * ax), p[1] - (a[1] + t * ay))
+    def shadow_clearance(x0, x1, y0, y1, h):
+        pts = [(x, y) for x in (x0, x1) for y in (y0, y1)]
+        H = _hull(pts + [(x + c_dir[0] * c_reach * h, y + c_dir[1] * c_reach * h) for x, y in pts])
+        if _overlap(H, PAVE_POLY): return 0.0
+        return min(min(_seg_dist(p, A[i], A[(i + 1) % len(A)]) for A in (PAVE_POLY,) for i in range(len(A)) for p in H),
+                   min(_seg_dist(p, H[i], H[(i + 1) % len(H)]) for i in range(len(H)) for p in PAVE_POLY))
+    # ---- the materials: the walls' sets (four shared with the context), a facade per (set, recipe) made as needed,
+    # the roofs, the plant boxes and the bay lines in plain colours
+    M_CITY = {}
+    for k, (folder, tint, share) in CITY_SETS.items():
+        if k in CITY_SHARED: M_CITY[k] = (M_FAR if CITY_SHARED[k][0] == "far" else M_WALL)[CITY_SHARED[k][1]]
+        else: M_CITY[k] = hazed(ground_material("CTX_city_" + k, folder, tint=tint))
+    M_CITY_FACADE = {}
+    def city_facade(set_name, recipe):
+        if (set_name, recipe) not in M_CITY_FACADE:
+            sh, bw, ww, wh, sill, ground, blinds = CITY_FACADES[recipe]
+            M_CITY_FACADE[(set_name, recipe)] = facade_material(M_CITY[set_name], sh, bw, ww, wh, sill, FAC_GLASS, ground=ground, blind_share=blinds,
+                                                                name=f"CTX_city_{set_name}_{recipe}", tint_attr="city_tint")
+        return M_CITY_FACADE[(set_name, recipe)]
+    M_CITY_ROOF = {k: hazed(plain_material("CTX_city_roof_" + k, rgb)) for k, rgb, share in CITY_ROOFS}
+    M_CITY_PLANT = hazed(plain_material("CTX_city_plant", (CITY_PLANT[2],) * 3))
+    M_CITY_PAINT = hazed(plain_material("CTX_city_paint", (CITY_PAINT,) * 3, rough=0.8))
+    # ---- the streets: bands along each axis, walked out from the main streets' interior edges; a band that lands on
+    # something moves past it, or, for a tree line parallel to it, to the line's near side
+    def avoid_on(axis):
+        out, par = [], "row_y" if axis == "x" else "row_x"
+        for x0, x1, y0, y1, k in occ:
+            lo, hi = (x0, x1) if axis == "x" else (y0, y1)
+            if k == "box": out.append((lo - CITY_STREET_PAD, hi + CITY_STREET_PAD, False))
+            elif k == par: out.append((lo - CITY_STREET_PAD, hi + CITY_STREET_PAD, True))
+        return out
+    def walk(start, sign, stop, avoid):
+        bands, s0 = [], start
+        while True:
+            p, w = rng.uniform(*CITY_PITCH), rng.uniform(*CITY_STREET_W)
+            a = s0 + sign * p; band = (min(a, a + sign * w), max(a, a + sign * w))
+            for _ in range(12):
+                hit = next((iv for iv in avoid if band[0] < iv[1] and band[1] > iv[0]), None)
+                if hit is None: break
+                lo, hi, snap = hit
+                near, far_ = (lo, hi) if sign > 0 else (hi, lo)
+                if snap and sign * (near - s0) >= CITY_PITCH[0] * 0.6: band = (near - w, near) if sign > 0 else (near, near + w)   # to its near side
+                else: band = (far_, far_ + w) if sign > 0 else (far_ - w, far_)                                                  # past it
+            if (sign > 0 and band[1] > stop) or (sign < 0 and band[0] < stop): break
+            bands.append(band); s0 = band[1] if sign > 0 else band[0]
+        return bands
+    ax, ay = avoid_on("x"), avoid_on("y")
+    x_streets = sorted(walk(X0 - LOT_IN, -1, CITY_EXTENT[0], ax) + walk(X1 + LOT_IN, 1, CITY_EXTENT[1], ax))
+    y_streets = sorted(walk(Y0 - LOT_IN, -1, CITY_EXTENT[2], ay) + walk(Y1 + LOT_IN, 1, CITY_EXTENT[3], ay))
+    x_main = [(X0 - LOT_IN, WX + LOT_IN), (EX - LOT_IN, X1 + LOT_IN)]  # the main streets with their strips, interior edge to interior edge
+    y_main = [(Y0 - LOT_IN, SY + LOT_IN), (NY - LOT_IN, Y1 + LOT_IN)]
+    def gaps(streets, mains, lo, hi):
+        # the parcels' extents along one axis: what lies between consecutive bands, each with the kind of band on
+        # either side ('street', 'main', or 'edge' at the fill's limit)
+        bands = sorted([(a, b, "street") for a, b in streets] + [(a, b, "main") for a, b in mains])
+        out, prev, kind = [], lo, "edge"
+        for a, b, k in bands:
+            if a > prev + 1.0: out.append((prev, a, kind, k))
+            prev, kind = b, k
+        if hi > prev + 1.0: out.append((prev, hi, kind, "edge"))
+        return out
+    x_gaps, y_gaps = gaps(x_streets, x_main, CITY_EXTENT[0], CITY_EXTENT[1]), gaps(y_streets, y_main, CITY_EXTENT[2], CITY_EXTENT[3])
+    def open_zone(yc): return Y0 - LOT_IN - CITY_OPEN_S < yc < Y0         # the open ground: from 3rd Street's far kerb south
+    ext = LOT_IN - INS                                                 # a street quad runs across a lot's strip to the kerb's top
+    roads = []
+    for xa, xb in x_streets:
+        for ya, yb, ks, kn in y_gaps:
+            if open_zone((ya + yb) / 2.0): continue
+            r = (xa, xb, ya - (ext if ks == "main" else 0.0), yb + (ext if kn == "main" else 0.0))
+            if not hits(*r, 0.0, wedge=False): roads.append(r)
+    for ya, yb in y_streets:
+        if open_zone((ya + yb) / 2.0): continue
+        for xa, xb, kw, ke in x_gaps:
+            r = (xa - (ext if kw == "main" else 0.0), xb + (ext if ke == "main" else 0.0), ya, yb)
+            if not hits(*r, 0.0, wedge=False): roads.append(r)
+    for xa, xb in x_streets:
+        for ya, yb in y_streets:
+            if not open_zone((ya + yb) / 2.0) and not hits(xa, xb, ya, yb, 0.0, wedge=False): roads.append((xa, xb, ya, yb))
+    # ---- the parcels
+    cells = []
+    for xa, xb, kw, ke in x_gaps:
+        for ya, yb, ks, kn in y_gaps:
+            if abs(xa - (WX + LOT_IN)) < 0.01 and abs(ya - (SY + LOT_IN)) < 0.01: continue     # the block's own
+            if open_zone((ya + yb) / 2.0): continue
+            cells.append((xa, xb, ya, yb, {"W": kw, "E": ke, "S": ks, "N": kn}))
+    def pick(palette):
+        u = rng.random()
+        for m, share in palette:
+            u -= share
+            if u < 0.0: return m
+        return palette[-1][0]
+    def split(r):
+        # a rectangle cut into lots: the longer side split at 40-60% until no side exceeds CITY_LOT_MAX
+        x0, x1, y0, y1 = r; w, h = x1 - x0, y1 - y0
+        if max(w, h) <= CITY_LOT_MAX: return [r]
+        f = rng.uniform(0.4, 0.6)
+        if w >= h: m = x0 + w * f; return split((x0, m, y0, y1)) + split((m, x1, y0, y1))
+        m = y0 + h * f; return split((x0, x1, y0, m)) + split((x0, x1, m, y1))
+    n_trees = {"street": 0, "yard": 0, "strip": 0}
+    def city_tree(x, y, kind, extra=()):
+        # one of the game's trees, unless it would stand on something, in a wedge or off the fill; street trees are
+        # the bare-trunked models
+        if not (CITY_EXTENT[0] < x < CITY_EXTENT[1] and CITY_EXTENT[2] < y < CITY_EXTENT[3]): return
+        if hits(x - 0.3, x + 0.3, y - 0.3, y + 0.3, 1.0, kinds=("box", "tree", "row_x", "row_y", "road"), extra=extra): return
+        street = kind != "yard"
+        lo, hi = CITY_TREE_MODELS[0 if street else 1]; h0, h1 = CITY_TREE_H[0 if street else 1]
+        place_tree(f"city_tree_{sum(n_trees.values()):05d}", x, y, rng.randint(lo, hi), rng.uniform(h0, h1), rng.uniform(0.0, 360.0), col=city)
+        n_trees[kind] += 1
+    def tree_step(x, y):
+        return rng.uniform(*CITY_TREE_STEP) * (1.0 if math.hypot(x - BLOCK_C[0], y - BLOCK_C[1]) < CITY_TREE_R else CITY_TREE_FAR)
+    def line_trees(a, b, inward, kind, extra=()):
+        # trees along the line a-b, CITY_TREE_IN inside it (inward is the unit normal into the parcel or the strip)
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        if L < 6.0: return
+        d = ((b[0] - a[0]) / L, (b[1] - a[1]) / L); s = rng.uniform(2.0, 8.0)
+        while s < L - 2.0:
+            x, y = a[0] + d[0] * s + inward[0] * CITY_TREE_IN, a[1] + d[1] * s + inward[1] * CITY_TREE_IN
+            city_tree(x, y, kind, extra=extra); s += tree_step(x, y)
+    def city_building(name, x0, x1, y0, y1, zr, mat, roof, tint):
+        # a box of walls to the roof plane zr with a parapet ring over it, a stair bulkhead and plant boxes on the
+        # larger roofs (all a little over the roof plane, nothing coplanar), the ground line and the roof plane on
+        # the object as fac_lo / fac_hi for the facade, and the box's own tint
+        t, lift = FAR_PARAPET_T, CITY_ROOF_LIFT
+        parts = [box(x0, x1, y0, y1, z_foot, zr),
+                 box(x0, x1, y0, y0 + t, zr + lift, zr + FAR_PARAPET), box(x0, x1, y1 - t, y1, zr + lift, zr + FAR_PARAPET),
+                 box(x1 - t, x1, y0 + t, y1 - t, zr + lift, zr + FAR_PARAPET), box(x0, x0 + t, y0 + t, y1 - t, zr + lift, zr + FAR_PARAPET)]
+        slots, roof_tops = [0] * 5, [0]
+        if min(x1 - x0, y1 - y0) > CITY_BULKHEAD[2]:
+            s, hb = CITY_BULKHEAD[:2]
+            bx, by = rng.uniform(x0 + 2.0, x1 - 2.0 - s), rng.uniform(y0 + 2.0, y1 - 2.0 - s)
+            parts.append(box(bx, bx + s, by, by + s, zr + lift, zr + lift + hb)); slots.append(0); roof_tops.append(len(parts) - 1)
+            (pw, pd, ph), pn, pg = CITY_PLANT
+            for _ in range(rng.randint(0, pn)):
+                px, py = rng.uniform(x0 + 1.5, x1 - 1.5 - pw), rng.uniform(y0 + 1.5, y1 - 1.5 - pd)
+                if px < bx + s + 0.5 and px + pw > bx - 0.5 and py < by + s + 0.5 and py + pd > by - 0.5: continue   # not on the bulkhead
+                parts.append(box(px, px + pw, py, py + pd, zr + lift, zr + lift + ph)); slots.append(2)
+        ob = mesh_of(name, parts, [mat, roof, M_CITY_PLANT], slots=slots, col=city)
+        for j in roof_tops: ob.data.polygons[6 * j + 4].material_index = 1                 # box() lays the top fifth
+        ob["fac_lo"] = (float(x0), float(y0), float(Z_GROUND)); ob["fac_hi"] = (float(x1), float(y1), float(zr))
+        ob["city_tint"] = tuple(float(v) for v in tint)
+        return ob
+    walks, parks, lines, n_b, n_lots, n_vacant, n_parks, n_yards = [], [], [], 0, 0, 0, 0, 0
+    storeys_count = [0, 0, 0, 0]; sets_count = {k: 0 for k in CITY_SETS}
+    least_clear, least_name = 1e9, None
+    cover = {reach: [0.0, 0.0] for reach, sh in CITY_STOREYS}         # by distance band: the footprints' area, the parcels' inner area
+    for xa, xb, ya, yb, sides in cells:
+        xs0 = xa + (CITY_WALK if sides["W"] == "street" else 0.0); xs1 = xb - (CITY_WALK if sides["E"] == "street" else 0.0)
+        ys0 = ya + (CITY_WALK if sides["S"] == "street" else 0.0); ys1 = yb - (CITY_WALK if sides["N"] == "street" else 0.0)
+        band = next(reach for reach, sh in CITY_STOREYS if math.hypot((xa + xb) / 2.0 - BLOCK_C[0], (ya + yb) / 2.0 - BLOCK_C[1]) <= reach)
+        cover[band][1] += (xs1 - xs0) * (ys1 - ys0)
+        if sides["W"] == "street": walks.append((xa, xs0, ya, yb))
+        if sides["E"] == "street": walks.append((xs1, xb, ya, yb))
+        if sides["S"] == "street": walks.append((xs0, xs1, ya, ys0))
+        if sides["N"] == "street": walks.append((xs0, xs1, ys1, yb))
+        boxes = []                                                     # this parcel's own boxes, which its trees keep off
+        use = pick(CITY_USE)
+        if use == "parking" and min(xs1 - xs0, ys1 - ys0) > 30.0 and not hits(xs0, xs1, ys0, ys1, 0.0):
+            px0, px1, py0, py1 = xs0 + 1.0, xs1 - 1.0, ys0 + 1.0, ys1 - 1.0
+            parks.append((px0, px1, py0, py1)); boxes.append((px0, px1, py0, py1)); n_parks += 1
+            pitch, depth, aisle, lw = CITY_BAY; y = py0 + 1.0
+            while y + 2.0 * depth + aisle <= py1 - 1.0:
+                for band in (y, y + depth + aisle):
+                    x = px0 + 1.0
+                    while x + lw <= px1 - 1.0:
+                        lines.append((x - lw / 2.0, x + lw / 2.0, band, band + depth)); x += pitch
+                y += 2.0 * depth + aisle + CITY_ROWS_GAP
+        elif use == "yard" or use == "parking":
+            n_yards += 1
+            for _ in range(max(1, int((xs1 - xs0) * (ys1 - ys0) / CITY_YARD_TREES))):
+                city_tree(rng.uniform(xs0 + 2.0, xs1 - 2.0), rng.uniform(ys0 + 2.0, ys1 - 2.0), "yard")
+        else:
+            lots = split((xs0, xs1, ys0, ys1))
+            while lots:
+                lx0, lx1, ly0, ly1 = lots.pop()
+                front = {"W": abs(lx0 - xs0) < 0.01 and sides["W"] != "edge", "E": abs(lx1 - xs1) < 0.01 and sides["E"] != "edge",
+                         "S": abs(ly0 - ys0) < 0.01 and sides["S"] != "edge", "N": abs(ly1 - ys1) < 0.01 and sides["N"] != "edge"}
+                sb = {k: rng.uniform(*CITY_SETBACK[0 if front[k] else 1]) for k in front}
+                fx0, fx1, fy0, fy1 = lx0 + sb["W"], lx1 - sb["E"], ly0 + sb["S"], ly1 - sb["N"]
+                if fx1 - fx0 > CITY_FOOT[1]:                          # too wide: keep the front
+                    if front["W"] and not front["E"]: fx1 = fx0 + CITY_FOOT[1]
+                    elif front["E"] and not front["W"]: fx0 = fx1 - CITY_FOOT[1]
+                    else: c = (fx0 + fx1) / 2.0; fx0, fx1 = c - CITY_FOOT[1] / 2.0, c + CITY_FOOT[1] / 2.0
+                if fy1 - fy0 > CITY_FOOT[1]:
+                    if front["S"] and not front["N"]: fy1 = fy0 + CITY_FOOT[1]
+                    elif front["N"] and not front["S"]: fy0 = fy1 - CITY_FOOT[1]
+                    else: c = (fy0 + fy1) / 2.0; fy0, fy1 = c - CITY_FOOT[1] / 2.0, c + CITY_FOOT[1] / 2.0
+                narrow = min(fx1 - fx0, fy1 - fy0) < CITY_FOOT[0]
+                if not narrow and hits(fx0, fx1, fy0, fy1, CITY_PAD) and max(lx1 - lx0, ly1 - ly0) >= 2.0 * (CITY_FOOT[0] + 1.0):
+                    # the box would stand on something that stands (or in a wedge): the lot is halved along its longer
+                    # side and each half tried, so one crown or a post costs a box, not the whole lot
+                    if lx1 - lx0 >= ly1 - ly0: m = (lx0 + lx1) / 2.0; lots += [(lx0, m, ly0, ly1), (m, lx1, ly0, ly1)]
+                    else: m = (ly0 + ly1) / 2.0; lots += [(lx0, lx1, ly0, m), (lx0, lx1, m, ly1)]
+                    continue
+                n_lots += 1
+                vacant = narrow or rng.random() < CITY_VACANT or hits(fx0, fx1, fy0, fy1, CITY_PAD)
+                if vacant:
+                    n_vacant += 1
+                    for _ in range(rng.randint(1, 2)):
+                        city_tree(rng.uniform(lx0 + 2.0, lx1 - 2.0), rng.uniform(ly0 + 2.0, ly1 - 2.0), "yard", extra=boxes)
+                    continue
+                d = math.hypot((fx0 + fx1) / 2.0 - BLOCK_C[0], (fy0 + fy1) / 2.0 - BLOCK_C[1])
+                shares = next(sh for reach, sh in CITY_STOREYS if d <= reach)
+                n = 1 + int(pick(tuple((str(i), s) for i, s in enumerate(shares))))
+                recipe = pick(next(pal for most, pal in CITY_RECIPES if n <= most))
+                set_name = pick(tuple((k, share) for k, (folder, tint, share) in CITY_SETS.items()))
+                sh, bw, ww, wh, sill, ground, blinds = CITY_FACADES[recipe]
+                hz = (ground[0] + (n - 1) * sh) if ground else n * sh    # the roof plane over the ground line
+                v = rng.uniform(CITY_TINT[0], CITY_TINT[1]); tint = [max(0.5, v + rng.uniform(-CITY_TINT[2], CITY_TINT[2])) for _ in range(3)]
+                roof = pick(tuple((k, share) for k, rgb, share in CITY_ROOFS))
+                n_b += 1; storeys_count[n - 1] += 1; sets_count[set_name] += 1
+                city_building(f"city_bld_{n_b:04d}", fx0, fx1, fy0, fy1, Z_GROUND + hz, city_facade(set_name, recipe), M_CITY_ROOF[roof], tint)
+                boxes.append((fx0, fx1, fy0, fy1)); cover[band][0] += (fx1 - fx0) * (fy1 - fy0)
+                bulk = CITY_BULKHEAD[1] if min(fx1 - fx0, fy1 - fy0) > CITY_BULKHEAD[2] else 0.0
+                clear = shadow_clearance(fx0, fx1, fy0, fy1, hz + FAR_PARAPET + bulk)
+                if clear < least_clear: least_clear, least_name = clear, f"city_bld_{n_b:04d} ({fx0:.0f}..{fx1:.0f}, {fy0:.0f}..{fy1:.0f}, {hz + FAR_PARAPET + bulk:.1f} m)"
+        # the street trees, in the sidewalk bands, this parcel's own boxes kept clear
+        if sides["W"] == "street": line_trees((xa, ya), (xa, yb), (1.0, 0.0), "street", boxes)
+        if sides["E"] == "street": line_trees((xb, ya), (xb, yb), (-1.0, 0.0), "street", boxes)
+        if sides["S"] == "street": line_trees((xa, ya), (xb, ya), (0.0, 1.0), "street", boxes)
+        if sides["N"] == "street": line_trees((xa, yb), (xb, yb), (0.0, -1.0), "street", boxes)
+    # ---- the ground: the streets, the sidewalk bands, the parking lots and their lines, each one mesh
+    def flat_quads(name, rects, z, mat, attrs=None):
+        V, F = [], []
+        for x0, x1, y0, y1 in rects:
+            k = len(V); V += [(x0, y0, z), (x1, y0, z), (x1, y1, z), (x0, y1, z)]; F.append((k, k + 1, k + 2, k + 3))
+        return ground_mesh(name, V, F, mat, FLAT, attrs={a: [v] * len(V) for a, v in (attrs or {}).items()}, col=city)
+    if roads: flat_quads("city_roads", roads, Z_GROUND + CITY_ROAD_LIFT, M_ROAD, {"ptone": 1.0, "wear": 0.0})
+    if walks:
+        wk = flat_quads("city_walks", walks, Z_GROUND + CITY_ROAD_LIFT, M_PAVE)
+        wk["pad_lo"] = (CITY_EXTENT[0], CITY_EXTENT[2], 0.0); wk["pad_hi"] = (CITY_EXTENT[1], CITY_EXTENT[3], 0.0)   # one pad: the joints' frame
+    if parks: flat_quads("city_parking", parks, Z_GROUND + CITY_ROAD_LIFT, M_ROAD, {"ptone": 1.0, "wear": 0.0})
+    if lines: flat_quads("city_bay_lines", lines, Z_GROUND + CITY_ROAD_LIFT + 0.002, M_CITY_PAINT)
+    # ---- the main streets' far strips: trees beyond the near context, CITY_STRIP_OFF inside the kerb, off the
+    # street mouths (the road quads stand in occ as 'road' from here on)
+    occ += [(x0, x1, y0, y1, "road") for x0, x1, y0, y1 in roads + parks]
+    def strip_side(a, b, inward):
+        # the line clipped to the fill, the trees along it where the strip lies beyond CITY_STRIP_R and out of the open zone
+        L = math.hypot(b[0] - a[0], b[1] - a[1]); d = ((b[0] - a[0]) / L, (b[1] - a[1]) / L); s = rng.uniform(0.0, 6.0)
+        while s < L:
+            x, y = a[0] + d[0] * s + inward[0] * CITY_STRIP_OFF, a[1] + d[1] * s + inward[1] * CITY_STRIP_OFF
+            if math.hypot(x - BLOCK_C[0], y - BLOCK_C[1]) > CITY_STRIP_R and not open_zone(y): city_tree(x, y, "strip")
+            s += tree_step(x, y)
+    def clip(v, lo, hi): return max(lo, min(hi, v))
+    for nm, poly in far.items():
+        x0, x1 = min(q[0] for q in poly), max(q[0] for q in poly); y0, y1 = min(q[1] for q in poly), max(q[1] for q in poly)
+        cx0, cx1 = clip(x0 + KERB_R, *CITY_EXTENT[:2]), clip(x1 - KERB_R, *CITY_EXTENT[:2])
+        cy0, cy1 = clip(y0 + KERB_R, *CITY_EXTENT[2:]), clip(y1 - KERB_R, *CITY_EXTENT[2:])
+        if y0 > -GND_FAR + 1.0 and cx1 > cx0: strip_side((cx0, y0), (cx1, y0), (0.0, 1.0))      # its south side faces a street
+        if y1 < GND_FAR - 1.0 and cx1 > cx0: strip_side((cx0, y1), (cx1, y1), (0.0, -1.0))
+        if x0 > -GND_FAR + 1.0 and cy1 > cy0: strip_side((x0, cy0), (x0, cy1), (1.0, 0.0))
+        if x1 < GND_FAR - 1.0 and cy1 > cy0: strip_side((x1, cy0), (x1, cy1), (-1.0, 0.0))
+    coverage = {reach: (a / g if g > 0.0 else 0.0) for reach, (a, g) in cover.items()}
+    n_city = {"parcels": len(cells), "streets": len(x_streets) + len(y_streets), "roads": len(roads), "boxes": n_b, "lots": n_lots,
+              "vacant": n_vacant, "parking": n_parks, "yards": n_yards, "trees": dict(n_trees), "storeys": storeys_count, "sets": sets_count,
+              "facades": len(M_CITY_FACADE), "least_clear": least_clear, "least_name": least_name, "wedges": wedge_az, "coverage": coverage}
+    assert least_clear > 0.0, f"a city box's shadow reaches the block's pavement: {least_name}"
+    print(f"the city: {len(x_streets)} + {len(y_streets)} secondary streets ({len(roads)} segments), {len(cells)} parcels holding {n_b} boxes "
+          f"({', '.join(f'{c} of {i + 1}' for i, c in enumerate(storeys_count))} storeys; {n_vacant} of {n_lots} lots vacant, {n_parks} parking lots, "
+          f"{n_yards} yards) in {len(M_CITY_FACADE)} facade materials, the footprints covering "
+          + ", ".join(f"{100.0 * coverage[reach]:.0f}% of the parcels' ground {'within' if reach < 1e8 else 'beyond'} {reach if reach < 1e8 else CITY_STOREYS[-2][0]:.0f} m"
+                      for reach, sh in CITY_STOREYS)
+          + f"; {sum(n_trees.values())} trees ({n_trees['street']} along the streets, {n_trees['strip']} on the main streets' strips, {n_trees['yard']} in yards); "
+          f"the stand's wedges {wedge_az[0][0]:.1f}-{wedge_az[0][1]:.1f} and {wedge_az[1][0]:.1f}-{wedge_az[1][1]:.1f} kept clear; the nearest shadow to the "
+          f"block's pavement {least_clear:.1f} m off ({least_name}); built in {time.time() - t_city:.1f} s")
 
 # ---------------------------------------------------------------- cameras, film, and the render
 CAM_CLIP = 2.0 * GND_FAR                        # every camera's far clip. Blender's default, 1000 m, cut the plain off at 1 km -- 0.6
