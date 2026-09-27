@@ -213,6 +213,14 @@ sidewalk is scored into large slabs; the asphalt is a pale bleached grey with cr
       impression of a maquete; lets remove the blur and generate again, with same settings"): the depth-driven
       blur off by default (`blur=0`; `blur=7` keeps the earlier look on demand) and the quick half-size cut
       rendered again with everything else as it was.
+- [x] 37 The city's buildings taller (user 2026-09-27, on the sharp quick cut: "the buildings in the background are
+      disproportionally smaller; increase the height of them"; then "you need to just increase the height, not add
+      more floors. it seems that the current floors are small"): the fill's boxes read too low beside the
+      five-storey block because their storeys are 3.1-3.4 m where the block's floors are about 4 m, so the storey
+      height rises to about 4-4.5 m in every recipe with the windows scaled to suit, the storey counts unchanged,
+      the shadow test against the block's pavement still holding and the reference stand's wedges still clear;
+      both scenes rebuilt, the approach's first frame and the pull-up's last rendered first for the user, then
+      the quick cut again.
 
 Rules:
 - Do not edit text of completed items (`- [x]`).
@@ -802,6 +810,25 @@ Rules:
   the earlier look back) and the quick cut was rendered again with everything else as it was: 768 frames, 26 min,
   `flyover/bradbury_flyover_quick_540x960.mp4` 9.7 MB, 32.0 s, `flyover_quick_sheet.png`. The full-size Cycles
   cut of item 32 still waits on the user's word.
+- (cycle 31, 2026-09-27) Item 37, the city's buildings taller -- by their storeys' height, not their count (the
+  user: "you need to just increase the height, not add more floors. it seems that the current floors are small";
+  the block's five floors are 20.5 m, 4.1 m each, and item 33's 3.1-3.4 m storeys made a four-storey box 13 m).
+  `CITY_STOREYS` untouched (118 / 597 / 562 / 264 of one to four over the same 1541 boxes); `CITY_FACADES` lifted:
+  flats 3.1 -> 4.0 m (1.4 x 2.0 windows on 1.0), offices 3.4 -> 4.4 (2.0 x 2.4 on 0.9), shops 3.3 -> 4.2 under a
+  4.8 m shop storey of 2.8 x 3.6 openings, the shed 5.5 -> 6.5; a four-storey box 16.7-18.3 m to its parapet. New
+  `CITY_SHADOW_MIN` 1.0: a box is lowered a storey at a time until its shadow clears the block's pavement by that
+  much -- none needed it; the least clearance 14.5 m (city_bld_1009, NE lot, 11.1 m), the lots' 17.8 m, the wedges
+  clear, items 7 / 28 / 29 / 34 untouched. A first pass that raised the storey counts (the orchestrator's brief
+  before the user's correction) was reverted before any render. Both scenes rebuilt headless; the approach's
+  first and the pull-up's last frames at half size before | after (`item37_air_1_before_after.png`,
+  `item37_close_168_before_after.png`: the boxes behind the block rise by a third, the two-storey row across the
+  north street to half the block, the three- and four-storey ones to its cornice line); the reference view for
+  the record identical at every consistency point (census 13,130 px of pane noise, mean 0.35;
+  `item37_reference_before_after.png`, `_left`, `_right`, `ref_3q_after.png`, `item37_numbers.md`); the quick cut
+  rendered again as item 36's (768 frames, 29.2 min at 2.3 s, `flyover/bradbury_flyover_quick_540x960.mp4` 9.7 MB,
+  32 s, the previous as `_v2` with its frames, sheet and log) and `flyover_quick_sheet.png` regenerated. The Eevee
+  preview not re-rendered (it still shows item 34's storeys). README "The city's buildings taller (AI 574 item
+  37, 2026-09-27)". No full-size Cycles cut; the GUI Blender not touched.
 
 ## On completion
 - Mark the AI document as DONE in the first line

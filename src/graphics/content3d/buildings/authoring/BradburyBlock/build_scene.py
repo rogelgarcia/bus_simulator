@@ -2589,6 +2589,10 @@ CITY_STOREYS = ((250.0, (0.30, 0.55, 0.15, 0.0)),        # (out to this far from
                 (500.0, (0.15, 0.45, 0.30, 0.10)),       # four storeys): mostly one and two near the block, up to four further out, as
                 (1e9, (0.05, 0.35, 0.40, 0.20)))         # the reference has them (a first pass with no third storey within 250 m
                                                          # and none of the fourth within 500 read as a suburb under its trees)
+CITY_SHADOW_MIN = 1.0                           # a box's shadow keeps at least this far from the block's pavement, or the box loses a
+                                                # storey at a time until it does (item 37: only the E and NE lots' first row could meet
+                                                # it -- from the E lot's edge a box reaches the pavement at 21.2 m of height, from the
+                                                # NE lot's at 27.3, the shadow 1.076 x height toward azimuth 220 -- and none does)
 CITY_ROOF_LIFT = 0.01                           # the parapet ring, the bulkhead and the plant boxes stand this much over the roof plane
 CITY_BULKHEAD = (3.0, 2.4, 15.0)                # a stair bulkhead: its side, its height, on roofs whose shorter side exceeds this
 CITY_PLANT = ((1.2, 0.9, 0.8), 3, 0.45)         # plant boxes on such roofs: a box's size, up to how many, their grey (linear)
@@ -2611,10 +2615,17 @@ CITY_SHARED = {"white": ("far", "plaster"), "cream": ("wall", "cream"), "tan": (
 CITY_TINT = (0.85, 1.15, 0.05)                  # a box's own tint: its value in this range, then each channel a further +- this
 # (storey_h, bay_w, window_w, window_h, sill_h, ground, blind share), as facade_material takes them; and which
 # recipes a box of n storeys draws from, by share
-CITY_FACADES = {"flats":   (3.1, 2.9, 1.3, 1.5, 0.9, None, 0.25),
-                "offices": (3.4, 3.3, 1.9, 1.9, 0.8, None, 0.15),
-                "shops":   (3.3, 3.0, 1.4, 1.5, 0.9, (3.8, 2.6, 2.8, 0.3), 0.20),   # a shop storey of 2.8 m openings under the flats
-                "shed":    (5.5, 4.0, 1.4, 0.9, 3.0, None, 0.0)}                    # a warehouse: one tall storey, clerestory lights
+# The storeys are tall (AI 574 item 37; the user, on the sharp quick cut: "the buildings in the background are
+# disproportionally smaller ... it seems that the current floors are small"): the Bradbury's five floors stand
+# 20.5 m, about 4.1 m each, and item 33's 3.1-3.4 m storeys made a four-storey box 13 m beside it. Now a storey is
+# 4.0-4.5 m with its windows and sills scaled to suit (the shop storey taller still, the shed's clerestory higher),
+# so a four-storey box stands 16-18 m, the block's four floors; the counts (CITY_STOREYS) are item 33's.
+CITY_FACADES = {"flats":   (4.0, 2.9, 1.4, 2.0, 1.0, None, 0.25),                  # was (3.1, 2.9, 1.3, 1.5, 0.9)
+                "offices": (4.4, 3.3, 2.0, 2.4, 0.9, None, 0.15),                  # was (3.4, 3.3, 1.9, 1.9, 0.8)
+                "shops":   (4.2, 3.0, 1.5, 2.0, 1.0, (4.8, 2.8, 3.6, 0.3), 0.20),   # a shop storey of 3.6 m openings under the flats;
+                                                                                    # was (3.3, 3.0, 1.4, 1.5, 0.9, (3.8, 2.6, 2.8, 0.3))
+                "shed":    (6.5, 4.0, 1.6, 1.2, 3.8, None, 0.0)}                    # a warehouse: one tall storey, clerestory lights;
+                                                                                    # was (5.5, 4.0, 1.4, 0.9, 3.0)
 CITY_RECIPES = ((1, (("shed", 0.35), ("shops", 0.25), ("flats", 0.40))),
                 (2, (("shops", 0.35), ("flats", 0.40), ("offices", 0.25))),
                 (4, (("flats", 0.50), ("offices", 0.50))))
@@ -2878,7 +2889,7 @@ if CONTEXT == "on" and GROUND == "street" and CITY == "on":
         ob["city_tint"] = tuple(float(v) for v in tint)
         return ob
     walks, parks, lines, n_b, n_lots, n_vacant, n_parks, n_yards = [], [], [], 0, 0, 0, 0, 0
-    storeys_count = [0, 0, 0, 0]; sets_count = {k: 0 for k in CITY_SETS}
+    storeys_count = [0] * len(CITY_STOREYS[0][1]); sets_count = {k: 0 for k in CITY_SETS}; n_lowered = 0
     least_clear, least_name = 1e9, None
     cover = {reach: [0.0, 0.0] for reach, sh in CITY_STOREYS}         # by distance band: the footprints' area, the parcels' inner area
     for xa, xb, ya, yb, sides in cells:
@@ -2942,14 +2953,17 @@ if CONTEXT == "on" and GROUND == "street" and CITY == "on":
                 recipe = pick(next(pal for most, pal in CITY_RECIPES if n <= most))
                 set_name = pick(tuple((k, share) for k, (folder, tint, share) in CITY_SETS.items()))
                 sh, bw, ww, wh, sill, ground, blinds = CITY_FACADES[recipe]
-                hz = (ground[0] + (n - 1) * sh) if ground else n * sh    # the roof plane over the ground line
+                bulk = CITY_BULKHEAD[1] if min(fx1 - fx0, fy1 - fy0) > CITY_BULKHEAD[2] else 0.0
+                while True:                                            # lowered a storey at a time until its shadow clears the block's pavement (item 37)
+                    hz = (ground[0] + (n - 1) * sh) if ground else n * sh    # the roof plane over the ground line
+                    clear = shadow_clearance(fx0, fx1, fy0, fy1, hz + FAR_PARAPET + bulk)
+                    if clear >= CITY_SHADOW_MIN or n == 1: break
+                    n -= 1; n_lowered += 1
                 v = rng.uniform(CITY_TINT[0], CITY_TINT[1]); tint = [max(0.5, v + rng.uniform(-CITY_TINT[2], CITY_TINT[2])) for _ in range(3)]
                 roof = pick(tuple((k, share) for k, rgb, share in CITY_ROOFS))
                 n_b += 1; storeys_count[n - 1] += 1; sets_count[set_name] += 1
                 city_building(f"city_bld_{n_b:04d}", fx0, fx1, fy0, fy1, Z_GROUND + hz, city_facade(set_name, recipe), M_CITY_ROOF[roof], tint)
                 boxes.append((fx0, fx1, fy0, fy1)); cover[band][0] += (fx1 - fx0) * (fy1 - fy0)
-                bulk = CITY_BULKHEAD[1] if min(fx1 - fx0, fy1 - fy0) > CITY_BULKHEAD[2] else 0.0
-                clear = shadow_clearance(fx0, fx1, fy0, fy1, hz + FAR_PARAPET + bulk)
                 if clear < least_clear: least_clear, least_name = clear, f"city_bld_{n_b:04d} ({fx0:.0f}..{fx1:.0f}, {fy0:.0f}..{fy1:.0f}, {hz + FAR_PARAPET + bulk:.1f} m)"
         # the street trees, in the sidewalk bands, this parcel's own boxes kept clear
         if sides["W"] == "street": line_trees((xa, ya), (xa, yb), (1.0, 0.0), "street", boxes)
@@ -3075,7 +3089,8 @@ if CONTEXT == "on" and GROUND == "street" and CITY == "on":
               "facades": len(M_CITY_FACADE), "least_clear": least_clear, "least_name": least_name, "wedges": wedge_az, "coverage": coverage}
     assert least_clear > 0.0, f"a city box's shadow reaches the block's pavement: {least_name}"
     print(f"the city: {len(x_streets)} + {len(y_streets)} secondary streets ({len(roads)} segments), {len(cells)} parcels holding {n_b} boxes "
-          f"({', '.join(f'{c} of {i + 1}' for i, c in enumerate(storeys_count))} storeys; {n_vacant} of {n_lots} lots vacant, {n_parks} parking lots, "
+          f"({', '.join(f'{c} of {i + 1}' for i, c in enumerate(storeys_count) if c)} storeys, {n_lowered} lowered for the block's pavement; "
+          f"{n_vacant} of {n_lots} lots vacant, {n_parks} parking lots, "
           f"{n_yards} yards) in {len(M_CITY_FACADE)} facade materials, the footprints covering "
           + ", ".join(f"{100.0 * coverage[reach]:.0f}% of the parcels' ground {'within' if reach < 1e8 else 'beyond'} {reach if reach < 1e8 else CITY_STOREYS[-2][0]:.0f} m"
                       for reach, sh in CITY_STOREYS)

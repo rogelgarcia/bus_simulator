@@ -7351,3 +7351,44 @@ item 33 | item 34 --, `item34_open_ground_60m.png` and `item34_open_ground_air.p
 `tune/` the quarter frames and sheets, the half-size first frame, the befores, `numbers_raw.txt`); the scenes rebuilt
 headless, `bradbury_scene.blend` and `bradbury_scene_wear_off.blend` (the GUI Blender not touched); the Eevee preview
 re-rendered from the latter (the paragraph "The Eevee preview" in the flyover section, and item 35's below it).
+
+## The city's buildings taller (AI 574 item 37, 2026-09-27)
+
+On the sharp quick Cycles cut (item 36) the user found the fill's buildings "disproportionally smaller" beside the
+block, and, asked whether to add floors, said no: "you need to just increase the height, not add more floors. it
+seems that the current floors are small". They were: the Bradbury's five floors stand 20.5 m, about 4.1 m each, and
+item 33's recipes laid 3.1-3.4 m storeys, so a four-storey box beside it stood 13 m -- three of the block's floors.
+The storey COUNTS are untouched (`CITY_STOREYS` as item 33 set them: 118 of one, 597 of two, 562 of three, 264 of
+four over the same 1541 boxes); the storey HEIGHT rose in every `CITY_FACADES` recipe, with the windows and sills
+scaled to suit: `flats` 3.1 to 4.0 m (windows 1.3 x 1.5 to 1.4 x 2.0 on a 1.0 sill), `offices` 3.4 to 4.4 (1.9 x 1.9 to
+2.0 x 2.4 on 0.9), `shops` 3.3 to 4.2 under a shop storey 3.8 to 4.8 m of 2.8 x 3.6 openings (were 2.6 x 2.8), the
+`shed` 5.5 to 6.5 with its clerestory lights 1.6 x 1.2 on a 3.8 m sill. A four-storey box stands 16.7-18.3 m to its
+parapet now, the block's four floors; a two-storey one 8.7-9.5 m. The open lots' walls and trees (item 34) and
+everything of items 7, 28 and 29 are untouched, and the wedges stay clear (the fill never enters them).
+
+- **The shadow guard.** Every box's shadow polygon is still tested against the block's pavement rectangle and the
+  least clearance asserted; a new `CITY_SHADOW_MIN` 1.0 m rule lowers a box a storey at a time until its shadow
+  clears by that much, which only the E and NE lots' first row could ever meet (from the E lot's edge a box reaches
+  the pavement at 21.2 m of height, from the NE lot's at 27.3), and none did: 0 lowered, the least clearance 14.5 m
+  (`city_bld_1009` on the NE lot at (40..62, 40..62), 11.1 m tall now, was 9.3 and 16.4 m off). Nothing new shadows
+  the block.
+- **Checked first, as asked:** the approach's first frame and the pull-up's last, half size at 32 samples, before
+  (item 36's cut) | after -- `item37_air_1_before_after.png`, `item37_close_168_before_after.png`: the boxes behind
+  the block rise by a third, the two-storey row across the north street to about half the block's height and the
+  three- and four-storey ones beyond to its cornice line, the far skyline unchanged.
+- **The reference view, for the record** (`item37_reference_before_after.png`, `item37_left.png`, `item37_right.png`;
+  `item37_numbers.md`): every consistency point identical to the level or within two (the warehouse's clerestory row
+  (138, 112, 91) to (140, 113, 92)); the census finds 13,130 pixels over 6 levels, 12,943 of them on the block's own
+  rows (the panes' noise), 2 on the ground: the taller boxes stand behind the block or outside the wedges, and a
+  four-storey box at 500 m tops out 3.7 m over the eye, under the block's silhouette everywhere across its width.
+- **The quick cut, again** (`render_flyover.py -- pct=50 samples=32 out=flyover/frames_quick
+  mp4=flyover/bradbury_flyover_quick_540x960.mp4 encode=1`, the blur off as item 36 left it, the fire-escape shot at
+  +1): the previous cut kept as `bradbury_flyover_quick_540x960_v2.mp4` with its frames `frames_quick_v2/`, sheet and
+  log `_v2`; the new `flyover_quick_sheet.png` has the same seven panels (air 1, air 60, cornice 60, escapes 60,
+  up 60, portal 60, close 168). 768 frames in 29.2 min, 2.3 s a frame (the approach 1.9, the close 1.8, the
+  close-ups 2.4-2.8; item 36's cut took 28.6 min at 2.2), the encode 8 s, the MP4 9.7 MB and 32.0 s.
+
+Evidence: `tests/artifacts/screens/bradbury_scene/item37_taller_city/` (the two pairs, `item37_reference_before_after.png`,
+`item37_left.png`, `item37_right.png`, `ref_3q_after.png`, `item37_numbers.md`, `frames/`, `tune/numbers_raw.txt`);
+`flyover/` (`bradbury_flyover_quick_540x960.mp4`, `frames_quick/`, `flyover_quick_sheet.png`, `render_quick.log`);
+both scenes rebuilt headless, the GUI Blender not touched.
