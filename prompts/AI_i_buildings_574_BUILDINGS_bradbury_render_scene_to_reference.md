@@ -158,6 +158,23 @@ sidewalk is scored into large slabs; the asphalt is a pale bleached grey with cr
       strip cards behind them (rendered from the game's trees, or CC0 cutouts with a `source.json`), a skyline
       strip card for the hazy far city and hill on the left horizon; every card faces the camera (a Track To on
       the reference camera) so the street-level views never see one edge-on.
+- [x] 30 A flyover animation of the scene for a phone (user 2026-09-26: "create a flyover animation, vertical
+      orientation for cellphone, fullHD; if possible, blur the background a bit like the reference. make sure no
+      artifact that is only used for composing show up ugly in the rendering. export the video somewhere"; then
+      "make poses that show the entire building, but also make some that show details, and one pose that shows
+      bottom up; shows the facade looking at the sky"; "make one that shows the portal, in a way that we can see
+      the door inside"): portrait 1080 x 1920, a sequence of slow moving shots -- the entire building from the
+      air, a detail or two (the cornice and top band with the arched windows; the fire escapes), the facade from
+      its foot looking up at the sky, the Broadway portal from the pavement close enough that the door inside
+      the arch shows, and the whole block again to close -- with the far background softened a little as the
+      photo's is (a depth-driven blur that leaves the block sharp), no composing-only geometry (the neighbour
+      tower and wing, the far boxes, the library shelf, the catcher) reading as a plain box in any frame,
+      rendered headless by a script beside the builder that never saves the scene, exported as an H.264 MP4
+      under `tests/artifacts/` (gitignored) and handed to the user.
+- [x] 31 The neighbour tower, its wing and the mid-distance boxes dressed as buildings (a fix to item 7's and
+      item 29's plain boxes, needed by item 30's moving camera): storeys, window bays with dark glass, sills and
+      a parapet from a procedural facade material or simple geometry, in the same sets, so they read as buildings
+      from any stand; nothing changes where their shadows fall.
 
 Rules:
 - Do not edit text of completed items (`- [x]`).
@@ -624,6 +641,52 @@ Rules:
   step-6 scene kept as `bradbury_scene_pre_item4.blend`. README "The sidewalk: scored slabs, the fan and the
   grime line (AI 574 item 4, 2026-09-26)". Scene rebuilt headless; the GUI Blender not touched. The series'
   before | after with every step: `tests/artifacts/screens/bradbury_scene/ai574_background_final/`.
+- (cycle 25, 2026-09-26) Item 31, the composing-only boxes dressed as buildings. `facade_material` in the far
+  context section copies a hazed set material and cuts window bays into it in the shader: the box's Object metres
+  and true normal give the coordinate along the face (x-faces along y, y-faces along x) about the face's centre
+  and the height over the ground line, both read from the new `fac_lo` / `fac_hi` object properties `building()`
+  writes (the pavement's pad_lo / pad_hi pattern); whole windows only, `FAC_PIER_MIN` 0.5 from the corners,
+  nothing on a roof, a parapet or under the ground; dark bluish glass (`FAC_GLASS` (0.020, 0.032, 0.050),
+  `FAC_GLASS_ROUGH` 0.12, its own BSDF before the haze group) inside a masonry reveal `FAC_REVEAL_W` 0.15 tilted
+  in a Bump of `FAC_REVEAL_D` 0.12 under the set's normal map, sill and lintel bands `FAC_TRIM_H` 0.12 proud by
+  `FAC_TRIM_PROUD` in `FAC_TRIM_TINT` (1.12, 1.10, 1.06), blinds on `FAC_BLIND_SHARE` 0.28 of the windows by a
+  white noise of bay, storey and face; `FACADES` recipes `low` (3.0, 2.7, 1.3 x 1.5, 0.9) for the brick, white and
+  cream boxes (a ninth `FAR_BOXES` field) and `warehouse` (clerestory lights) for tan2; `NEIGHBOUR_FACADE` (3.6 m
+  bays, 1.6 x 1.7, the ground storey a lobby's 2.6 x 2.4 glazing) and `NEIGHBOUR_WING_FACADE` (a 3.6 m shop
+  storey under sash windows) dress the tower and wing; geometry untouched, shadows unchanged. Rejected: 3.0 m bays
+  (one column on an 8 m face), blinds at (0.30, 0.28, 0.25) (208 on the film against the plaster's 216, a boarded
+  opening). Reference view: every item 4 consistency point identical to the level; only the boxes' own pixels
+  moved (1383 of 2.46 M over 6 levels, the window rows at x < 0.08 and the clerestory row at x > 0.90). Evidence
+  `tests/artifacts/screens/bradbury_scene/item31_dressed_boxes/` (`item31_reference_before_after.png`,
+  `item31_left.png`, `item31_right.png`, `item31_tower_standing.png`, `item31_tower_60m.png`,
+  `item31_far_boxes_standing.png`, `ref_3q_after.png`, `item31_numbers.md`, `tune/`). README "The flyover, and
+  the boxes dressed (AI 574 items 30 and 31, 2026-09-26)". Scene rebuilt headless; the GUI Blender not touched.
+- (cycle 26, 2026-09-26) Item 30, the flyover. New `render_flyover.py` beside the builder (render_wear.py's
+  manner: opens the scene, adds the camera, the compositor and the output in memory, never saves): portrait
+  1080 x 1920, 24 fps, six 3 s shots eased in and out and cut hard -- `air` (24 mm, from (36, -103, 60) down onto
+  the reference stand's own framing: the one pose on that axis where the whole block fits and the tower clears
+  the frame, checked by `check=1`'s `world_to_camera_view` projections), `cornice` (50 mm dolly at the crown's
+  height 14 m off Broadway's face), `escapes` (40 mm rise on the shaded 3rd Street face), `up` (24 mm standing
+  eye 3.8 m from the wall tilting 58 to 68 degrees), `portal` (35 mm push-in from the roadway 3.5 to 2.1 m north
+  of the axis so all four leaves of the door show past the arch; from the south the near pilaster hid a leaf),
+  `close` (a pull-up from the reference framing to 30 m, swinging south so the tower stays out). Background
+  softened by a depth mask driving a Bokeh Blur (`BLUR_PX` 7, `BLUR_START_M` 2 past the block's farthest corner
+  per frame, `BLUR_FULL_M` 400, `MASK_SOFT_PX` 2): the Mist pass was rejected by rendering it (`debug=mist`, it
+  speckled on every pane, 98-117 of 255, throughput-weighted hits through the glass); the Depth pass reads 0 on
+  every probed block point; film untouched. Artifacts checked at a quarter size in every shot's first, middle
+  and last frame (`tune/pass1_*`, `pass2_*`): the approach's start moved from (30, -125, 75) to (36, -103, 60)
+  (the tower's base corner at x 0.93-0.98, the block small), an end 30 m over the stand rejected (tower at 0.90),
+  the pull-up capped at 30 m (the roof filled the frame at 40), the library shelf collection excluded on the view
+  layer (no prototype at the origin in any frame), catcher / tufts / fence / lot edges / hedge fine. Rendered 432
+  frames at 64 spp in 90.8 min (12.6 s a frame: 8-9 s on the wide shots, 13.5-16.5 s on the close-ups), encoded
+  through a sequencer-only scene (`media_type` VIDEO, H.264 HIGH, no audio, Standard view transform) to
+  `tests/artifacts/screens/bradbury_scene/flyover/bradbury_flyover_portrait_1080x1920.mp4`, 14.97 MB, 18.0 s;
+  decoded frames within 1.6-1.8 levels of their PNGs. Left: hard cuts (no crossfades); the fire-escape shot dark
+  by design (the shaded face); the approach's first frames show the lots' cell pattern and the block's flat white
+  roof (the scene's own ground and the model's own roof). Evidence `flyover/` (`flyover_shots_sheet.png`,
+  `frames/<shot>/`, `flyover_numbers.md`, `render_full.log`, `tune/` with the sheets, masks, door stands, 1:1
+  checks, decoded frames); scripts `flyover_sheet.py`, `door_angle.py` beside the review's. README as item 31's.
+  The scene never saved by the script; the GUI Blender not touched.
 
 ## On completion
 - Mark the AI document as DONE in the first line
