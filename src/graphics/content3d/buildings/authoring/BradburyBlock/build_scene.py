@@ -20,7 +20,8 @@
 # build_context.py writes once from the game's FBX pack) and placed from the TREES table; and beyond it the FAR
 # CONTEXT (AI 574 item 29, the far context section): the photo's white and brick buildings, its trailer row, its
 # tree lines and its hazy skyline, as grid-aligned boxes and more of the same trees out to 2 km, where the haze
-# turns them into the photo's pale silhouettes by distance alone; and the STREET FURNITURE (AI 574 item 8, the
+# turns them into the photo's pale silhouettes by distance alone (the boxes within 300 m dressed with window bays in
+# their shader, AI 574 item 31, so a moving camera reads them as buildings); and the STREET FURNITURE (AI 574 item 8, the
 # furniture section): the photo's three lamp posts -- two high-mast lot lights whose heads stand over the horizon
 # line, built here, and a black lantern post that is a CC0 model linked from the context library -- and its four
 # vault covers set into the block's pavement by the kerb, each where the photo's is, measured and unprojected; and
@@ -1890,7 +1891,9 @@ elif CONTEXT == "on":
 # shadow runs west-south-west at 1.08 times the height and every box stands far enough inside its lot that it falls
 # on the lot: nothing here shadows a strip, a road or the block. The trailers' wheels and the parapets are for the
 # record: from the reference stand the roofs are seen at a degree or two and vanish (the second warehouse has none,
-# and is shallow: a 30 m roof seen from 14 m up filled the rows where the trailers show).
+# and is shallow: a 30 m roof seen from 14 m up filled the rows where the trailers show). The boxes within 300 m and
+# the neighbour tower across Broadway are dressed as buildings in their shader (facade_material, item 31, the
+# paragraph at FAC_GLASS below): window bays per storey with dark glass, reveals and sills, the box's own set between.
 FAR_SEED = 29                                   # the tree lines' and the skyline's random numbers (their own, so step 28's stay)
 FAR_PARAPET, FAR_PARAPET_T = 0.7, 0.3           # a mid-distance building's parapet: the wall rises this much over its dark flat roof, this thick
 FAR_SETS = {"plaster": ("plastered_wall_02", (1.25, 1.27, 1.30)),   # the white buildings at 250 m: the photo's read (224-242, 221-235, 209-227) in sun;
@@ -1924,27 +1927,65 @@ FAR_LEAF_TINT = (0.28, 0.25, 0.22)              # the tree lines' leaf tint (LEA
                                                 # floor there being (74, 81, 95) for black
 FAR_TRUNK_TINT = (0.40, 0.38, 0.36)             # and their bark's: the game's crowns are airy, and the sunlit pale trunks showed through the
                                                 # line as light verticals from 360 m
-# The mid-distance boxes: (name, x0, x1, y0, y1, height, material, parapet), grid-aligned, each on a lot's interior
-# with its shadow inside it. Where the photo's element unprojects is in each comment; the left ones stand on the W lot
-# (its interior runs y -17.5 to 17.0) and past 420 m on the NW lot (y over 39.1), the right ones on the NW lot.
+# The mid-distance boxes: (name, x0, x1, y0, y1, height, material, parapet, facade), grid-aligned, each on a lot's
+# interior with its shadow inside it. Where the photo's element unprojects is in each comment; the left ones stand on
+# the W lot (its interior runs y -17.5 to 17.0) and past 420 m on the NW lot (y over 39.1), the right ones on the NW
+# lot. facade names a FACADES recipe (below) that dresses the box's set with window bays, or None for a plain box.
 FAR_BOXES = [
     # the left, front to back: the photo's brick stands in front of the white building (the white's foot is hidden by
     # the brick's top, 0.38); the white runs on west past the frame's edge, as the photo's pale wing does at x 0-0.012,
     # so its shaded south face never shows (it did, a grey patch at x 0.001-0.011, when the box began at y 8.8)
-    ("brick",  -184.0, -172.0,   -1.0,   7.7,  7.0, "brick", True),     # the red-brick low building, cut by the frame's left edge: x 0-0.02, top 0.38, 231 m
-    ("white",  -196.0, -186.0,    6.5,  14.5, 10.0, "plaster", True),   # the white two-storey building behind it: x 0-0.038, top 0.362 at 10 m, 245 m
-    ("cream",  -196.0, -186.0,   14.8,  17.0,  8.0, "cream", True),     # the cream one beside it, x 0.038-0.045 (the block hides the rest), its south face
-                                                                        # behind the white; the W lot's interior ends at y 17
-    ("white2", -1035.0, -1015.0, 183.0, 195.0, 10.0, "white", True),    # the white sliver over the scrub at x 0.025-0.035, y 0.33-0.335: 10 m at 1.1 km,
-                                                                        # its foot behind the scrub (12 m at 412 m showed a whole white wall where the
-                                                                        # photo has none)
-    ("tan2",    -92.0,  -60.0,  155.0, 163.0,  5.2, "tan2", False),     # the second warehouse on the right, its shaded south face x 0.93-1.0, y 0.395-0.43:
-                                                                        # 231 m, its east face just off the frame's right edge; shallow and without a
-                                                                        # parapet, since from 14 m up a 30 m roof and then the far parapet's inner face
-                                                                        # filled the rows where the trailers show
-    ("tall",   -750.0, -731.0,  106.0, 124.0, 12.0, "black", True),     # the darker taller block at x 0-0.02, its top 0.325 just under the horizon, its
-                                                                        # foot behind the scrub: 800 m (at 1.2 km the haze's floor alone read (160, 169, 180))
+    ("brick",  -184.0, -172.0,   -1.0,   7.7,  7.0, "brick", True, "low"),     # the red-brick low building, cut by the frame's left edge: x 0-0.02, top 0.38, 231 m
+    ("white",  -196.0, -186.0,    6.5,  14.5, 10.0, "plaster", True, "low"),   # the white two-storey building behind it: x 0-0.038, top 0.362 at 10 m, 245 m
+    ("cream",  -196.0, -186.0,   14.8,  17.0,  8.0, "cream", True, "low"),     # the cream one beside it, x 0.038-0.045 (the block hides the rest), its south face
+                                                                               # behind the white; the W lot's interior ends at y 17
+    ("white2", -1035.0, -1015.0, 183.0, 195.0, 10.0, "white", True, None),     # the white sliver over the scrub at x 0.025-0.035, y 0.33-0.335: 10 m at 1.1 km,
+                                                                               # its foot behind the scrub (12 m at 412 m showed a whole white wall where the
+                                                                               # photo has none)
+    ("tan2",    -92.0,  -60.0,  155.0, 163.0,  5.2, "tan2", False, "warehouse"),   # the second warehouse on the right, its shaded south face x 0.93-1.0, y 0.395-0.43:
+                                                                               # 231 m, its east face just off the frame's right edge; shallow and without a
+                                                                               # parapet, since from 14 m up a 30 m roof and then the far parapet's inner face
+                                                                               # filled the rows where the trailers show
+    ("tall",   -750.0, -731.0,  106.0, 124.0, 12.0, "black", True, None),      # the darker taller block at x 0-0.02, its top 0.325 just under the horizon, its
+                                                                               # foot behind the scrub: 800 m (at 1.2 km the haze's floor alone read (160, 169, 180))
 ]
+# THE FACADES (AI 574 item 31). A box placed for the reference stand alone is a plain slab to a camera that moves
+# (item 30's flyover): the neighbour tower and its wing stand 25 m across Broadway, the brick, white, cream and tan
+# boxes 230-250 m out. facade_material (in the section below) dresses a box's own set as a building, in the shader,
+# with the geometry untouched so every shadow falls where it did: window bays laid per storey from the box's Object
+# coordinates (the world's own metres, since every box is built in place) and its true normal -- an x-face lays its
+# bays along y, a y-face along x -- symmetric about each face's centre, so no window is cut at a corner
+# (FAC_PIER_MIN keeps the last one clear), and only between the ground line and the roof plane that building() writes
+# onto the object as fac_lo / fac_hi (read by Object Attribute nodes, as the pavement's pad_lo / pad_hi are), so
+# nothing lands on a roof, on a parapet or under the ground. An opening is dark bluish glass (FAC_GLASS at
+# FAC_GLASS_ROUGH: the sky's 4% reflection is what makes it read as glass) inside a masonry reveal FAC_REVEAL_W wide
+# whose sides tilt in the normal through a Bump of FAC_REVEAL_D -- the shaded reveal every real opening shows -- with
+# a sill and a lintel band FAC_TRIM_H tall, proud by FAC_TRIM_PROUD of that depth, in a lighter stone
+# (FAC_TRIM_TINT); a share of the windows (FAC_BLIND_SHARE, each drawn by a white noise of its own place) has a pale
+# blind down, so no storey repeats the next. The wall between the windows is the box's set as it was. A recipe is
+# (storey_h, bay_w, window_w, window_h, sill_h, ground); ground, when given, lays the ground storey its own way as
+# (height, window_w, window_h, sill_h) -- shop openings on the wing, a lobby's glazing on the tower -- and the upper
+# storeys start above it; the FACADES table adds each recipe's share of blinds.
+FAC_GLASS = (0.020, 0.032, 0.050)               # the glass, linear: dark, a touch of blue (an interior in shade behind a pane)
+FAC_GLASS_ROUGH = 0.12                          # its roughness: low, so the sky reflects in it
+FAC_BLIND = (0.16, 0.15, 0.135)                 # a blind or curtain down behind the pane: a warm mid grey (at (0.30, 0.28, 0.25) a sunlit
+                                                # one rendered 208 on the film, the plaster's own 216: a boarded opening, not a blind) ...
+FAC_BLIND_ROUGH = 0.6                           # ... matte ...
+FAC_BLIND_SHARE = 0.28                          # ... on this share of the windows unless the recipe says otherwise, each drawn by a white
+                                                # noise of its place
+FAC_REVEAL_W = 0.15                             # the masonry reveal round an opening: this wide, in the wall's own set
+FAC_REVEAL_D = 0.12                             # its depth as the Bump reads it: the reveal's sides tilt by atan(D / W), 39 degrees
+FAC_TRIM_H = 0.12                               # the sill and the lintel bands: this tall ...
+FAC_TRIM_OVER = 0.08                            # ... running this far past the opening on both sides ...
+FAC_TRIM_PROUD = 0.35                           # ... standing proud by this share of FAC_REVEAL_D (4 cm) in the Bump ...
+FAC_TRIM_TINT = (1.12, 1.10, 1.06)              # ... in a lighter stone than the wall
+FAC_PIER_MIN = 0.5                              # a window keeps at least this much wall from the box's corner
+# (storey_h, bay_w, window_w, window_h, sill_h, ground, blind share):
+FACADES = {"low":       (3.0, 2.7, 1.3, 1.5, 0.9, None, 0.12),   # the far brick, white and cream: two and three storeys of sash windows,
+                                                                 # three to a face (2.7 m bays: at 3.0 an 8 m face held one), mostly dark as
+                                                                 # the photo's white building has them; at 231-245 m a window is 13 x 15 px
+                                                                 # from the reference stand
+           "warehouse": (5.2, 4.0, 1.2, 0.9, 3.2, None, 0.0)}    # the second warehouse: one storey, a row of high clerestory lights
 TRAILERS = (-105.0, 200.0, 10, 3.0)             # the trailer row: the x of the east ends, the y of the southmost body's south side, how many,
                                                 # the pitch northward; 300 m from the stand, side by side with their long axes EAST-WEST, so
                                                 # the camera sees a row of sunlit east ends with a sliver of shaded side between (north-south
@@ -2022,8 +2063,114 @@ if CONTEXT == "on" and GROUND == "street":
         ob = mesh_of(name, parts, mats, slots=slots)
         for j in range(len(parts)): ob.data.polygons[6 * j + 4].material_index = len(mats) - 1   # box() lays the top fifth
         return ob
+    def facade_material(base, storey_h, bay_w, window_w, window_h, sill_h, glass, ground=None, blind_share=FAC_BLIND_SHARE, name=None):
+        # A copy of a hazed set material with window bays cut into it in the shader (the paragraph at FAC_GLASS,
+        # item 31). The box's Object metres and true normal give every point its coordinate along the face, u,
+        # about the face's centre (from the fac_lo / fac_hi properties building() writes), and its height over the
+        # ground line; the bays stand at k * bay_w, the storeys at s * storey_h; an opening is where the distance in
+        # from every edge of the window is positive, its masonry reveal the first FAC_REVEAL_W of that distance and
+        # glass beyond; the trim bands lie just under and over it. A Bump of the reveal's ramp and the trim's step
+        # goes under the set's normal map, the trim's tint under its base colour, and a Mix Shader hands the glass
+        # its own BSDF before the haze group. ground = (height, window_w, window_h, sill_h) lays the ground storey
+        # its own way and starts the upper storeys above it.
+        m = base.copy(); m.name = name or (base.name + "_facade"); nt = m.node_tree
+        slot = [0]                                                        # the new nodes go in rows under the set's own
+        def node(t, **props):
+            n = nt.nodes.new(t); n.location = (-2600 + 220 * (slot[0] % 16), -1000 - 260 * (slot[0] // 16)); slot[0] += 1
+            for k, v in props.items(): setattr(n, k, v)
+            return n
+        def link(a, b): nt.links.new(a, b)
+        def sock(n, ident): return next(sk for sk in (list(n.inputs) + list(n.outputs)) if sk.identifier == ident)
+        def fm(op, a=None, b=None):
+            n = node('ShaderNodeMath', operation=op)
+            for i, v in ((0, a), (1, b)):
+                if v is None: continue
+                if hasattr(v, "is_output"): link(v, n.inputs[i])
+                else: n.inputs[i].default_value = v
+            return n.outputs["Value"]
+        def fmix(fac, a, b):                                              # b where fac is 1, a where 0
+            n = node('ShaderNodeMix', data_type='FLOAT'); link(fac, n.inputs["Factor"])
+            for ident, v in (("A_Float", a), ("B_Float", b)):
+                if hasattr(v, "is_output"): link(v, sock(n, ident))
+                else: sock(n, ident).default_value = v
+            return sock(n, "Result_Float")
+        def both(a, b): return fm('MULTIPLY', a, b)                       # masks: and ...
+        def either(a, b): return fm('MAXIMUM', a, b)                      # ... or
+        tc = node('ShaderNodeTexCoord'); P = node('ShaderNodeSeparateXYZ'); link(tc.outputs["Object"], P.inputs["Vector"])
+        geo = node('ShaderNodeNewGeometry'); Nn = node('ShaderNodeSeparateXYZ'); link(geo.outputs["True Normal"], Nn.inputs["Vector"])
+        LO = node('ShaderNodeSeparateXYZ'); link(node('ShaderNodeAttribute', attribute_type='OBJECT', attribute_name="fac_lo").outputs["Vector"], LO.inputs["Vector"])
+        HI = node('ShaderNodeSeparateXYZ'); link(node('ShaderNodeAttribute', attribute_type='OBJECT', attribute_name="fac_hi").outputs["Vector"], HI.inputs["Vector"])
+        px, py, pz = P.outputs["X"], P.outputs["Y"], P.outputs["Z"]
+        nx, ny, nz = Nn.outputs["X"], Nn.outputs["Y"], Nn.outputs["Z"]
+        is_x = fm('GREATER_THAN', fm('ABSOLUTE', nx), 0.5)                # an x-face lays its bays along y, a y-face along x
+        side = fm('LESS_THAN', fm('ABSOLUTE', nz), 0.5)                   # never the roof, never the underside
+        along = fmix(is_x, px, py)
+        a_lo = fmix(is_x, LO.outputs["X"], LO.outputs["Y"]); a_hi = fmix(is_x, HI.outputs["X"], HI.outputs["Y"])
+        centre = fm('MULTIPLY', fm('ADD', a_lo, a_hi), 0.5); half = fm('MULTIPLY', fm('SUBTRACT', a_hi, a_lo), 0.5)
+        u = fm('SUBTRACT', along, centre)                                 # along the face, about its centre
+        zrel = fm('SUBTRACT', pz, LO.outputs["Z"]); ztop = fm('SUBTRACT', HI.outputs["Z"], LO.outputs["Z"])   # over the ground line; the roof plane
+        in_wall = both(side, both(fm('GREATER_THAN', zrel, 0.0), fm('LESS_THAN', zrel, ztop)))               # no parapet, nothing under the ground
+        face_key = fm('ADD', fm('MULTIPLY', nx, 2.0), ny)                 # which of the four faces, for the blinds' noise
+        def band(z0, sh, ww, wh, sill):
+            # the storeys from z0 up at pitch sh, windows ww by wh on sills sill: the opening mask, the distance in
+            # from the opening's nearest edge, the trim mask, and the window's own key for the white noise
+            zz = fm('SUBTRACT', zrel, z0)
+            s = fm('FLOOR', fm('DIVIDE', zz, sh)); zs = fm('SUBTRACT', zz, fm('MULTIPLY', s, sh))
+            c = fm('MULTIPLY', fm('FLOOR', fm('ADD', fm('DIVIDE', u, bay_w), 0.5)), bay_w); du = fm('ABSOLUTE', fm('SUBTRACT', u, c))
+            d_in = fm('MINIMUM', fm('SUBTRACT', ww / 2.0, du), fm('MINIMUM', fm('SUBTRACT', zs, sill), fm('SUBTRACT', sill + wh, zs)))
+            gates = both(fm('GREATER_THAN', s, -0.5),                                                         # no storey under z0
+                         both(fm('LESS_THAN', fm('ADD', fm('ABSOLUTE', c), ww / 2.0 + FAC_PIER_MIN), half),   # whole windows, clear of the corners
+                              fm('LESS_THAN', fm('ADD', fm('MULTIPLY', s, sh), z0 + sill + wh), ztop)))        # and under the roof plane
+            W = both(fm('GREATER_THAN', d_in, 0.0), gates)
+            wide = fm('LESS_THAN', du, ww / 2.0 + FAC_TRIM_OVER)
+            trim = both(gates, both(wide, either(both(fm('GREATER_THAN', zs, sill - FAC_TRIM_H), fm('LESS_THAN', zs, sill)),
+                                                 both(fm('GREATER_THAN', zs, sill + wh), fm('LESS_THAN', zs, sill + wh + FAC_TRIM_H)))))
+            key = node('ShaderNodeCombineXYZ'); link(fm('ADD', c, centre), key.inputs["X"]); link(fm('ADD', fm('MULTIPLY', s, sh), z0), key.inputs["Y"]); link(face_key, key.inputs["Z"])
+            return W, d_in, trim, key.outputs["Vector"]
+        g_h = ground[0] if ground else 0.0
+        W, d_in, trim, key = band(g_h, storey_h, window_w, window_h, sill_h)
+        if ground:
+            _, g_ww, g_wh, g_sill = ground
+            on_ground = fm('LESS_THAN', zrel, g_h)
+            Wg, dg, tg, kg = band(0.0, g_h, g_ww, g_wh, g_sill)
+            W, d_in, trim = fmix(on_ground, W, Wg), fmix(on_ground, d_in, dg), fmix(on_ground, trim, tg)
+            kmix = node('ShaderNodeMix', data_type='VECTOR'); link(on_ground, kmix.inputs["Factor"])
+            link(key, sock(kmix, "A_Vector")); link(kg, sock(kmix, "B_Vector")); key = sock(kmix, "Result_Vector")
+        W, trim = both(W, in_wall), both(trim, in_wall)
+        ramp = fm('MINIMUM', fm('MAXIMUM', fm('DIVIDE', d_in, FAC_REVEAL_W), 0.0), 1.0)   # 0 at the opening's edge, 1 past the reveal
+        glass_mask = both(W, fm('GREATER_THAN', d_in, FAC_REVEAL_W))
+        height = fm('ADD', fm('SUBTRACT', 1.0, both(W, ramp)), fm('MULTIPLY', trim, FAC_TRIM_PROUD))   # the wall at 1, the glass at 0, the trim proud
+        hz = nt.nodes["scn_haze"]; lk = next(l for l in nt.links if l.to_socket == hz.inputs["Shader"]); b = lk.from_node
+        bump = node('ShaderNodeBump'); bump.inputs["Distance"].default_value = FAC_REVEAL_D; link(height, bump.inputs["Height"])
+        nlk = next((l for l in nt.links if l.to_socket == b.inputs["Normal"]), None)
+        if nlk: link(nlk.from_socket, bump.inputs["Normal"]); nt.links.remove(nlk)
+        link(bump.outputs["Normal"], b.inputs["Normal"])
+        clk = next(l for l in nt.links if l.to_socket == b.inputs["Base Color"])
+        tn = node('ShaderNodeMix', data_type='RGBA', blend_type='MULTIPLY'); tn.name = tn.label = "FAC_TRIM"; link(trim, tn.inputs["Factor"])
+        link(clk.from_socket, sock(tn, "A_Color")); sock(tn, "B_Color").default_value = (*FAC_TRIM_TINT, 1.0); nt.links.remove(clk)
+        link(sock(tn, "Result_Color"), b.inputs["Base Color"])
+        wn = node('ShaderNodeTexWhiteNoise', noise_dimensions='3D'); link(key, wn.inputs["Vector"])
+        blind = fm('LESS_THAN', wn.outputs["Value"], blind_share)
+        gc = node('ShaderNodeMix', data_type='RGBA'); link(blind, gc.inputs["Factor"])
+        sock(gc, "A_Color").default_value = (*glass, 1.0); sock(gc, "B_Color").default_value = (*FAC_BLIND, 1.0)
+        gb = node('ShaderNodeBsdfPrincipled'); gb.name = gb.label = "FAC_GLASS"
+        link(sock(gc, "Result_Color"), gb.inputs["Base Color"]); link(fmix(blind, FAC_GLASS_ROUGH, FAC_BLIND_ROUGH), gb.inputs["Roughness"])
+        mix = node('ShaderNodeMixShader'); mix.name = mix.label = "FAC_MIX"; mix.location = (hz.location.x - 200, hz.location.y)
+        link(glass_mask, mix.inputs["Fac"]); link(lk.from_socket, mix.inputs[1]); nt.links.remove(lk)
+        link(gb.outputs["BSDF"], mix.inputs[2]); link(mix.outputs["Shader"], hz.inputs["Shader"])
+        return m
+    M_FACADE = {}
+    def facade(mat, recipe):
+        # the far set's facade material for a FACADES recipe, made once per (set, recipe); None is the plain set
+        if recipe is None: return M_FAR[mat]
+        if (mat, recipe) not in M_FACADE:
+            sh, bw, ww, wh, sill, ground, blinds = FACADES[recipe]
+            M_FACADE[(mat, recipe)] = facade_material(M_FAR[mat], sh, bw, ww, wh, sill, FAC_GLASS, ground=ground, blind_share=blinds, name=f"CTX_far_{mat}_{recipe}")
+        return M_FACADE[(mat, recipe)]
     def building(name, x0, x1, y0, y1, h, mat, parapet=True):
-        # a box of walls with a dark flat roof; with a parapet the roof lies FAR_PARAPET below the top inside a ring
+        # a box of walls with a dark flat roof; with a parapet the roof lies FAR_PARAPET below the top inside a ring.
+        # The ground line and the roof plane go onto the object as fac_lo / fac_hi, the frame a facade material
+        # lays its windows in (item 31); a plain material never reads them
         zr, t = Z_GROUND + h - (FAR_PARAPET if parapet else 0.0), FAR_PARAPET_T
         parts = [box(x0, x1, y0, y1, z_foot, zr)]
         if parapet:
@@ -2031,10 +2178,11 @@ if CONTEXT == "on" and GROUND == "street":
                       box(x1 - t, x1, y0 + t, y1 - t, zr, zr + FAR_PARAPET), box(x0, x0 + t, y0 + t, y1 - t, zr, zr + FAR_PARAPET)]
         ob = mesh_of(name, parts, [mat, M_FAR["roof"]], slots=[0] * len(parts))
         ob.data.polygons[4].material_index = 1                            # the walls' top is the roof; the parapet's tops stay wall
+        ob["fac_lo"] = (float(x0), float(y0), float(Z_GROUND)); ob["fac_hi"] = (float(x1), float(y1), float(zr))
         return ob
-    for name, x0, x1, y0, y1, h, mat, parapet in FAR_BOXES:
-        building("ctx_far_" + name, x0, x1, y0, y1, h, M_FAR[mat], parapet)
-    n_far["boxes"] = len(FAR_BOXES)
+    for name, x0, x1, y0, y1, h, mat, parapet, recipe in FAR_BOXES:
+        building("ctx_far_" + name, x0, x1, y0, y1, h, facade(mat, recipe), parapet)
+    n_far["boxes"] = len(FAR_BOXES); n_far["dressed"] = sum(1 for b in FAR_BOXES if b[8])
     # the trailers: a body on its wheels, one mesh, the blue one its own slot; the row runs north from the first
     # body's south side, every body's east end on x = tx
     tx, ty, n_tr, pitch = TRAILERS; w, L, h = TRAILER
@@ -2081,7 +2229,7 @@ if CONTEXT == "on" and GROUND == "street":
             else: parts.append(box(at - depth, at, s, s + w, z_foot, Z_GROUND + h))               # the east face at x = at
             slots.append(sky_names.index(pick(palette))); s += w + rng.uniform(g0, g1)
         boxes_mesh(f"ctx_far_skyline_{r + 1:02d}", parts, sky_mats, slots); n_far["skyline"] += len(parts)
-    print(f"the far context: {n_far['boxes']} boxes at 231 m to 1.1 km, {n_far['trailers']} trailers at 300 m, "
+    print(f"the far context: {n_far['boxes']} boxes at 231 m to 1.1 km ({n_far['dressed']} of them dressed with window bays, item 31), {n_far['trailers']} trailers at 300 m, "
           f"{n_far['trees']} more of the game's trees in {len(FAR_TREE_ROWS)} lines at 360 m to 1.3 km, {n_far['skyline']} skyline boxes in "
           f"{len(SKYLINE_ROWS)} rows at 1.2-2.1 km; no cards; every material hazed; built in {time.time() - t_far:.2f} s")
 
@@ -2114,9 +2262,12 @@ if CONTEXT == "on" and GROUND == "street":
 # as the photo has them. The stand itself sees the tower's shadow and not the tower. A two-storey wing along
 # Broadway north of the tower (NEIGHBOUR_WING) makes a building of it; its own 8 m shadow ends on the E lot's strip
 # 0.08 of the frame below the bottom-right corner. The tower wears the game's plaster as the cream yard does, the
-# wing the far brick; both hazed like everything on the lots. The st_corner stand, on the SE lot's interior, lies
-# 1 m outside the tower's shadow (its south-east line crosses y -41 at x 39.9) and looks across a crossing whose
-# south-east quarter is now in shade, as a street corner under a tall neighbour is.
+# wing the far brick; both hazed like everything on the lots, and both dressed as buildings by the far context's
+# facade_material (item 31: the flyover's camera sees them where the stand never did) -- the tower's twelve storeys
+# of window bays with a lobby's taller glazing on the ground storey, the wing's shop openings under a storey of sash
+# windows -- with the boxes themselves untouched, so the shadows fall as they did. The st_corner stand, on the SE
+# lot's interior, lies 1 m outside the tower's shadow (its south-east line crosses y -41 at x 39.9) and looks across
+# a crossing whose south-east quarter is now in shade, as a street corner under a tall neighbour is.
 NEIGHBOUR = args.get("neighbour", "on").lower()   # on | off: the tower and its wing (with the context, on the street ground)
 assert NEIGHBOUR in ("on", "off"), f"neighbour: on | off, not {NEIGHBOUR}"
 NEIGHBOUR_EDGE = (19.38, -23.89)                # a ground point on the photo's second shadow edge: the 21 columns' centroid (19.44, -23.97)
@@ -2129,6 +2280,13 @@ NEIGHBOUR_STOREYS, NEIGHBOUR_STOREY_H = 12, 3.3 # twelve storeys, 39.6 m to the 
                                                 # corner to leave the frame's left edge, and a shadow is 1.08 x height at this sun
 NEIGHBOUR_WING = (0.25, 0.5, 20.0, 20.0, 7.5)   # the wing along Broadway north of the tower: set back this far east of the tower's west face,
                                                 # overlapping the tower this far (no two faces coincide), this deep east, this long north, this tall
+# The facades (item 31), as facade_material takes them. The tower: (bay_w, window_w, window_h, sill_h, ground) at
+# NEIGHBOUR_STOREY_H -- 3.6 m bays (seven across its 26 m, three on its 12.5 m flanks) of 1.6 x 1.7 m windows on
+# 0.9 m sills, the ground storey a lobby's 2.6 x 2.4 m glazing on a 0.3 m plinth; the top storey's windows end 0.1 m
+# under the roof plane. The wing: (storey_h, bay_w, window_w, window_h, sill_h, ground) -- a 3.6 m shop storey of
+# 2.8 m openings on a 0.3 m plinth under one storey of 1.6 x 1.5 m sash windows, ending 0.8 m under its roof plane.
+NEIGHBOUR_FACADE = (3.6, 1.6, 1.7, 0.9, (NEIGHBOUR_STOREY_H, 2.6, 2.4, 0.3))
+NEIGHBOUR_WING_FACADE = (3.3, 3.6, 1.6, 1.5, 0.9, (3.6, 2.8, 2.8, 0.3))
 
 n_nb = {}
 if CONTEXT == "on" and GROUND == "street" and NEIGHBOUR == "on":
@@ -2137,16 +2295,20 @@ if CONTEXT == "on" and GROUND == "street" and NEIGHBOUR == "on":
     nb_h = NEIGHBOUR_STOREYS * NEIGHBOUR_STOREY_H
     nb_n = NEIGHBOUR_EDGE[1] + (NEIGHBOUR_X - NEIGHBOUR_EDGE[0]) * math.tan(math.radians(nb_az))   # the north face: the corner on the line
     assert NEIGHBOUR_S < nb_n, f"the tower's north face at y {nb_n:.2f} lies south of its south face {NEIGHBOUR_S}: the sun's azimuth moved the line"
-    building("ctx_neighbour_tower", NEIGHBOUR_X, NEIGHBOUR_X + NEIGHBOUR_W, NEIGHBOUR_S, nb_n, nb_h, M_WALL["cream"], True)
+    bw, ww, wh_, sill, ground = NEIGHBOUR_FACADE
+    M_TOWER = facade_material(M_WALL["cream"], NEIGHBOUR_STOREY_H, bw, ww, wh_, sill, FAC_GLASS, ground=ground, name="CTX_neighbour_tower")
+    building("ctx_neighbour_tower", NEIGHBOUR_X, NEIGHBOUR_X + NEIGHBOUR_W, NEIGHBOUR_S, nb_n, nb_h, M_TOWER, True)
     back, lap, wd, wl, wh = NEIGHBOUR_WING
-    building("ctx_neighbour_wing", NEIGHBOUR_X + back, NEIGHBOUR_X + back + wd, nb_n - lap, nb_n + wl, wh, M_FAR["brick"], True)
+    sh, bw, ww, wh_, sill, ground = NEIGHBOUR_WING_FACADE
+    M_WING = facade_material(M_FAR["brick"], sh, bw, ww, wh_, sill, FAC_GLASS, ground=ground, name="CTX_neighbour_wing")
+    building("ctx_neighbour_wing", NEIGHBOUR_X + back, NEIGHBOUR_X + back + wd, nb_n - lap, nb_n + wl, wh, M_WING, True)
     reach = nb_h / math.tan(math.radians(nb_el))
     tip = (NEIGHBOUR_X - reach * math.cos(math.radians(nb_az)), nb_n - reach * math.sin(math.radians(nb_az)))
     # how far the block's pavement corner stands north-west of the shadow's edge (positive: in the sun)
     clear = (EX - NEIGHBOUR_X) * -math.sin(math.radians(nb_az)) + (SY - nb_n) * math.cos(math.radians(nb_az))
     n_nb["tower"], n_nb["wing"] = nb_h, wh
     print(f"the off-frame neighbour: a {NEIGHBOUR_STOREYS}-storey tower {nb_h:.1f} m tall on the E lot, x {NEIGHBOUR_X:.1f}-{NEIGHBOUR_X + NEIGHBOUR_W:.1f}, "
-          f"y {NEIGHBOUR_S:.1f}-{nb_n:.2f}, with a {wh:.1f} m wing to y {nb_n + wl:.1f}; its north-west edge's shadow runs {reach:.1f} m at azimuth "
+          f"y {NEIGHBOUR_S:.1f}-{nb_n:.2f}, with a {wh:.1f} m wing to y {nb_n + wl:.1f}, both dressed with window bays (item 31); its north-west edge's shadow runs {reach:.1f} m at azimuth "
           f"{nb_az - 180.0:.0f} to ({tip[0]:.1f}, {tip[1]:.1f}), passing {clear:.2f} m south-east of the pavement's corner ({EX:.2f}, {SY:.2f})")
 
 # ---------------------------------------------------------------- the street furniture: lamp posts and vault covers

@@ -6980,3 +6980,120 @@ from the step-6 scene kept as `bradbury_scene_pre_item4.blend`; `ref_3q_after.pn
 the photo's 8x zooms of the apron and of Broadway's cover C3, the ground maps, views, polar unwraps and profile graphs
 under `tune/maps/`, the sets' sheet, the albedo, grime-factor and occlusion renders, the passes); the scripts beside
 the review's: `pavement_map.py`, `pavement_profiles.py`, `wall_base_tone.py`, `debug_pave.py`.
+
+## The flyover, and the boxes dressed (AI 574 items 30 and 31, 2026-09-26)
+
+The user asked for a flyover of the scene for a phone (2026-09-26): portrait full HD, a sequence of slow moves --
+the whole building from the air, a detail or two, the facade from its foot looking up at the sky, the portal close
+enough that the door inside the arch shows, the whole block again to close -- with the background blurred a bit as
+the photo's is, exported as a video, and with nothing that was placed for the reference stand alone showing up ugly.
+Two things stood in the way. The neighbour tower and its wing (item 7) and the mid-distance boxes (item 29) were
+plain slabs that only the stand never saw, and a moving camera would; and the scene had only ever rendered stills.
+
+- **Item 31: the boxes dressed, in the shader.** `facade_material(base, storey_h, bay_w, window_w, window_h, sill_h,
+  glass, ground=None, blind_share=FAC_BLIND_SHARE, name=None)` in the far context section copies a hazed set material
+  and cuts window bays into it: the box's Object coordinates (the world's own metres, since every box is built in
+  place) and its true normal give each point its coordinate along the face -- an x-face lays its bays along y, a
+  y-face along x -- about the face's centre, and its height over the ground line, both read from the `fac_lo` /
+  `fac_hi` properties `building()` now writes on the object (the pavement's `pad_lo` / `pad_hi` pattern, Object
+  Attribute nodes); the bays stand at k x `bay_w` symmetric about the centre so no window is cut at a corner
+  (`FAC_PIER_MIN` 0.5 m keeps the last one clear), the storeys at s x `storey_h` from the ground line, and nothing is
+  laid on a roof, a parapet or under the ground (the roof plane is `fac_hi.z`). An opening is dark bluish glass
+  (`FAC_GLASS` (0.020, 0.032, 0.050) at `FAC_GLASS_ROUGH` 0.12: the sky's 4% reflection is what makes it read as
+  glass, its own Principled BSDF handed in by a Mix Shader before the haze group) inside a masonry reveal
+  `FAC_REVEAL_W` 0.15 m wide in the wall's own set whose sides tilt in the normal through a Bump of `FAC_REVEAL_D`
+  0.12 under the set's normal map (atan(D / W), 39 degrees: the shaded reveal every real opening shows); a sill and a
+  lintel band `FAC_TRIM_H` 0.12 m, `FAC_TRIM_OVER` 0.08 past the opening, proud by `FAC_TRIM_PROUD` 0.35 of the
+  reveal's depth in the same Bump, in a lighter stone (`FAC_TRIM_TINT` (1.12, 1.10, 1.06) multiplied under the base
+  colour); and a share of the windows has a blind down (`FAC_BLIND` (0.16, 0.15, 0.135), `FAC_BLIND_ROUGH` 0.6, each
+  drawn by a white noise of the window's own bay, storey and face), so no storey repeats the next. The wall between
+  the windows is the set as it was; the geometry is untouched, so every shadow falls where it did. `FACADES` holds
+  the recipes (storey_h, bay_w, window_w, window_h, sill_h, ground, blind share): `low` (3.0, 2.7, 1.3 x 1.5, 0.9,
+  no ground storey, 0.12) for the brick, white and cream boxes, named in a ninth `FAR_BOXES` field, and `warehouse`
+  (5.2, 4.0, 1.2 x 0.9 clerestory lights on a 3.2 m sill, no blinds) for the second warehouse; `NEIGHBOUR_FACADE`
+  (3.6 m bays, 1.6 x 1.7 windows on 0.9 sills, the ground storey a lobby's 2.6 x 2.4 glazing on 0.3) at
+  `NEIGHBOUR_STOREY_H` dresses the tower, `NEIGHBOUR_WING_FACADE` (3.3, 3.6, 1.6 x 1.5, 0.9, a 3.6 m shop storey of
+  2.8 m openings on 0.3) the wing; `ground` starts the upper storeys above the ground storey's own height. Two
+  passes: at 3.0 m bays an 8 m face held one column (the corner clearance), and the pale blind (0.30, 0.28, 0.25)
+  rendered 208 on the film against the plaster's 216 (a boarded opening); 2.7 m bays hold three windows on every far
+  face, the darker blind reads as a lit interior. Verified from a standing eye on the Broadway crossing
+  (`item31_tower_standing.png`: seven and three bays a storey, twelve storeys, the lobby glazing, a plain parapet
+  band), from 60 m up (`item31_tower_60m.png`) and from the W lot (`item31_far_boxes_standing.png`); in the
+  reference view every one of item 4's consistency points is identical to the level and only the boxes' own pixels
+  moved (1383 of 2.46 million over 6 levels: the white's, brick's and cream's window rows at x < 0.08, y 0.363-0.426,
+  the warehouse's clerestory row at x > 0.90; `item31_numbers.md`).
+- **Item 30: `render_flyover.py`.** In `render_wear.py`'s manner: it opens `bradbury_scene.blend`, adds a camera, a
+  compositing node group and the output settings in memory, renders, and never saves the scene. Portrait 1080 x
+  1920 at 24 fps, six shots of 3 s (`SHOTS`: name, lens, a pose function of the eased time -- smoothstep, so every
+  move starts and ends at rest -- returning eye and aim in world metres; the lens is full-frame equivalent on the
+  frame's long side, as a phone's is: Blender's AUTO sensor fit puts the 36 mm across the height here, so 24 mm sees
+  73.7 degrees tall and 45.9 wide), cut hard. `check=1` projects the block's, the tower's and the door's boxes into
+  each shot's first, middle and last frame (`world_to_camera_view`) and prints where they land, which is how the
+  shots were placed (`flyover_numbers.md` has the table):
+
+  | shot | lens | the move | what it shows |
+  |---|---|---|---|
+  | `air` | 24 | from (36, -103, 60) aimed at (-17, -2, 8) down to the reference stand's own eye and aim | the whole block from the air, the sunlit Broadway face opening as the camera swings from the south-south-east to the stand; the block x 0.24-0.89 of the frame at the start, 0.002-1.002 at the end; the tower right of the frame's edge throughout (x 1.09 at worst) |
+  | `cornice` | 50 | a lateral dolly at z 19.6, 14 m off the Broadway face, from y -8 to -2, aimed 1.6 m down | the crown mouldings, the top band and the archivolt arches over the arched windows, the sky above |
+  | `escapes` | 40 | on 3rd Street's roadway 14 m south of the face at x 3.9, rising from z 4 to 9, the aim from 6 to 10.5 | the eastern fire escape and its window bays, in the block's shade as the photo has them (the escape's iron 14 on the film against the brick's 48) |
+  | `up` | 24 | a standing eye on Broadway's pavement 3.8 m from the wall at y -6, tilting from 58 to 68 degrees up while rising 0.5 m | the facade running up the frame from the shopfront band to the cornice and the sky |
+  | `portal` | 35 | a push-in from (29.2, 4.4, 2.2) to (25.2, 3.0, 1.9), aimed at the door 2 m inside the arch, 3.5 to 2.1 m north of the portal's axis | the Broadway portal with the door showing past the arch: all four leaves, the transom, the recess lamp and the lit vestibule floor (the door x 0.25-0.74, y 0.46-0.70 of the last frame) |
+  | `close` | 24 | a pull-up from the reference stand's framing: the eye swings from azimuth -30 to -42 about the chamfer's midpoint, 44.5 to 50 m out, 14.6 to 30 m up, the aim from the stand's to (-4.5, -1.5, 8) | the reference view rising into a view of the block and its shadow over the crossing, the far context soft behind |
+
+  The background softened, as the photo's is, not by depth of field (a 40 mm lens at f/2 blurs nothing at these
+  distances) but by a depth mask driving a Bokeh Blur in the compositor (`Scene.compositing_node_group` in Blender
+  5.2, a node group with a Group Output): the Depth pass mapped from `BLUR_START_M` 2 m past the block's farthest
+  corner from the camera -- set per frame, so the block is at 0 in every shot -- to `BLUR_FULL_M` 400 m further out,
+  softened by `MASK_SOFT_PX` 2 (the pass is one sample a pixel, its silhouette aliased), times `BLUR_PX` 7 into the
+  blur's per-pixel size (a rounded hexagon, `BOKEH_FLAPS` 6, `BOKEH_ROUND` 0.6): 0 on the block, at most 7 px at the
+  horizon at 1080 wide, so the trailers, the tree lines and the lots go a little soft while the block stays sharp.
+  The first design used the Mist pass and was rejected by rendering the pass itself (`debug=mist`, now `debug=mask`):
+  a window pane passes a share of the camera's samples through to whatever lies behind, and the mist pass writes
+  every hit weighted by its throughput, so it speckled on every pane (up to 0.45 with the mist starting past the
+  block) and the panes would have shimmered under the blur from frame to frame; the Depth pass is written once, at
+  the first hit whose alpha passes the film's threshold, and reads 0 on every probed point of the block, panes
+  included (`tune/mask_sheet.png`). The film stays the scene's (AgX, its look, exposure 0).
+  Render management: frames go to `flyover/frames/<shot>/<shot>_NNNN.png` and a frame already there is skipped, so a
+  crash loses nothing; persistent data keeps the scene on the device between frames; OptiX alone (repeatable, as
+  `render_wear.py` notes), the OptiX denoiser, adaptive sampling as the scene has it. Measured first: 7.2 s a frame
+  at 48 samples, 9.3 at 64, so 64 samples fit the hour (432 frames); the quarter-size checks render in a second a
+  frame. `encode=1` (the default of a full run) assembles the shots' frames in order into
+  `flyover/bradbury_flyover_portrait_1080x1920.mp4` through a sequencer-only scene: image strips, MPEG-4 container,
+  H.264 at the HIGH constant-rate quality, no audio (`image_settings.media_type = 'VIDEO'` first, or FFMPEG is not
+  offered); the strips are display-referred PNGs, so that scene's view transform is Standard and nothing is graded
+  twice (a four-frame round trip decoded back through a movie strip reads the source PNG within 1.65 levels on
+  average with no shift in the means).
+- **The composing-only artifacts, checked in every shot's first, middle and last frame** at a quarter size
+  (`tune/pass1_*_sheet.png`, `pass2_*`): the neighbour tower and wing (dressed now, and out of every wide frame by
+  the check: the approach was moved from (30, -125, 75) to (36, -103, 60), because from further back the tower's
+  base corner sat inside the right edge at x 0.93-0.98 and the block was small, and it ends on the reference stand
+  itself, the one pose on that axis where the whole block fits a 24 mm portrait frame and the tower clears it -- 30 m
+  over the stand the tilt brought the tower's base in at x 0.90, further back the block overflowed -- so the close is
+  the brief's other option, a pull-up, capped at 30 m so the block's flat roof does not fill the frame, swinging south
+  as it rises so the tower keeps clear); the far boxes (dressed; soft in the wide frames); the trailers (soft, the
+  top of the wide frames); the library shelf collection (`CONTEXT_LIBRARY`, `hide_render` already, and the view
+  layer excludes it in the script; no prototype stands at the origin in any frame, the block's roof is clean); the
+  shadow catcher (under the roadway, never seen); the tufts and the fence lattice (no low frame sees the lots'
+  walls); the far edges of the lots and roads (soft, hazed, no seam); the hedge trees (the crowns behind the N lot's
+  wall in the wide frames). The portal was rendered from three stands off its axis (`tune/door_angles_sheet.png`,
+  `door_angle.py`): from the south the near pilaster hid the door's south leaf, from the north all four leaves show
+  with the lit vestibule floor at their foot, so the push-in runs on the north side; the leaves read at luminance
+  p50 25 against the sunlit pilasters' 173 -- dark wood in a recess, as they are, and readable (exposure untouched).
+- **Cost.** 432 frames at 1080 x 1920 and 64 samples in 90.8 min of rendering (`render_full.log`): 8.0 s a frame on
+  the approach and 8.6 on the pull-up, 13.5 on the cornice, 13.7 on the bottom-up, 15.4 on the fire escapes and 16.5
+  on the portal -- the close shots fill the frame with the block's own shading, the wear layer, the glass and the
+  ornament, where the reference stand's 9.3 s a frame had promised 67 min -- 12.6 s a frame over all, at the top of
+  the hour-and-a-half budget and left at 64 samples; the encode 16 s. The MP4: 14.97 MB, 432 frames, 18.0 s at
+  24 fps, 1080 x 1920, H.264 HIGH, no audio; frames 1, 200 and 432 decoded back from it match their PNGs within
+  1.6-1.8 levels on average with no shift in the means. The frames on disk take 1.2 GB (gitignored).
+
+Evidence: `tests/artifacts/screens/bradbury_scene/item31_dressed_boxes/` (`item31_reference_before_after.png`,
+`item31_left.png`, `item31_right.png` -- photo | before | after at the far boxes --, `item31_tower_standing.png`,
+`item31_tower_60m.png`, `item31_far_boxes_standing.png`, `ref_3q_after.png`, `item31_numbers.md`, `tune/`);
+`tests/artifacts/screens/bradbury_scene/flyover/` (`bradbury_flyover_portrait_1080x1920.mp4`,
+`flyover_shots_sheet.png` -- one full frame per shot --, `frames/<shot>/`, `flyover_numbers.md`, `render_full.log`,
+`tune/` with the quarter-size sheets of every pass, the mist and depth masks, the door stands); the scripts beside
+the review's: `flyover_sheet.py`, `door_angle.py`. Render it again with
+`blender -b -P src/graphics/content3d/buildings/authoring/BradburyBlock/render_flyover.py -- samples=64`
+(`check=1` prints the framing, `frames=first,mid,last pct=25` the quarter checks, `frames=none encode=1` the MP4
+from frames already on disk).
