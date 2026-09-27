@@ -175,6 +175,29 @@ sidewalk is scored into large slabs; the asphalt is a pale bleached grey with cr
       item 29's plain boxes, needed by item 30's moving camera): storeys, window bays with dark glass, sills and
       a parapet from a procedural facade material or simple geometry, in the same sets, so they read as buildings
       from any stand; nothing changes where their shadows fall.
+- [ ] 32 The flyover's timing (user 2026-09-27: "update the sequence so that on each pose it slows down towards
+      the end, stretch the very end like 2 seconds almost stopped at the final position"; a change to item 30's
+      motion): every shot eases in briefly and then decelerates long into its end so the camera nearly settles
+      before the cut (the last fifth of a shot's time covering about a twentieth of its path), and the last shot
+      runs 2 s longer, almost stopped at its final framing (a barely perceptible creep, not a frozen frame); and
+      the video longer to give the deceleration room (user 2026-09-27: "extend the length of the video if needed
+      (it is needed)"): about 5 s a shot, about 32 s in all; re-rendered and re-encoded at the same size and
+      rate (fewer samples allowed if the render would otherwise run past about two and a half hours), the
+      previous cut kept as `_v1`.
+- [x] 33 The city filled in (user 2026-09-27, with a second aerial reference,
+      `tests/artifacts/screens/bradbury_scene/review_2026-09-25/reference_city_aerial.png`: "interrompa a geracao
+      atual e tente completar a cidade com mais conteudo para nao ficar um vazio atras; entao gere uma versao
+      rapida (eevee is fine) para verificarmos"; "sao predios simples, caixas com janelas, e arvores"; "o primeiro
+      quadro tambem precisa de conteudo no fundo; nas calcadas do lado esquerdo nao precisa, mas conserte a
+      calcada, ela parece defeituosa"): item 32's Cycles render stopped at 211 frames; the blocks around the
+      Bradbury filled as the new reference has them -- simple boxes with windows (the facade material) of one to
+      four storeys on a grid of parcels with secondary streets, flat roofs, the game's plaster and brick sets, open
+      parking lots here and there, trees along the streets and in the yards -- dense enough that no frame of the
+      flyover, the high first frame of the approach included, shows an empty plain behind the block, the near
+      and far context of items 28 and 29 and the tower of item 7 kept and built round; the open ground across 3rd
+      Street (the frame's left) stays open but its surface fixed, since the lot set's tiles read as a repeating
+      pattern from the air; then a quick Eevee preview of the whole flyover (`engine=eevee` in render_flyover.py,
+      with item 32's timing) handed to the user to check before any Cycles render is restarted.
 
 Rules:
 - Do not edit text of completed items (`- [x]`).
@@ -687,6 +710,43 @@ Rules:
   `frames/<shot>/`, `flyover_numbers.md`, `render_full.log`, `tune/` with the sheets, masks, door stands, 1:1
   checks, decoded frames); scripts `flyover_sheet.py`, `door_angle.py` beside the review's. README as item 31's.
   The scene never saved by the script; the GUI Blender not touched.
+- (cycle 27, 2026-09-27) Item 33, the city filled in, the open ground fixed, the Eevee preview. `build_scene.py`
+  gains a city section (`city=on|off`, the last thing built): secondary streets walked out from the main
+  streets' interior edges (`CITY_PITCH` 80-120, `CITY_STREET_W` 12-14, to `CITY_EXTENT` (-1060, 700, -700, 950))
+  as flat quads in the road material 5 mm over the lots (`CITY_ROAD_LIFT`; `ptone` 1, or they render black),
+  snapping beside item 29's tree lines so they became tree-lined streets, segments crossing anything left out;
+  155 parcels with `CITY_WALK` 3 m pavement bands, cut into lots of `CITY_LOT_MAX` 45 with `CITY_SETBACK` and
+  `CITY_FOOT` 12-44, halved round obstacles; 1541 boxes by `city_building()` -- storeys by distance
+  (`CITY_STOREYS`: 118 / 597 / 562 / 264 of one to four), `CITY_FACADES` recipes through `facade_material`'s
+  new `tint_attr` (`city_tint`, `CITY_TINT` 0.85-1.15 per box), nine sets (`CITY_SETS`, four shared with the
+  context), pale plain roofs (`CITY_ROOFS`) with bulkheads and plant boxes, parking lots with faint `CITY_BAY`
+  lines, 35 facade materials; 4058 of the game's trees (along the streets every 10-15 m within 500 m, half as
+  often beyond; on the main streets' strips beyond 150 m; in yards; no palms: Poly Haven's 521 CC0 models hold
+  none). An occupancy list keeps everything of items 7, 8, 28 and 29 standing and untouched; the reference
+  stand's two wedges (from its own frame, `REF_BLOCK_X`) stay clear of every new box and tree; the S / SE / SW
+  parcels within `CITY_OPEN_S` 150 m stay open (the user: the left side's pavements need no content); every
+  box's shadow polygon is tested against the block's pavement (the least 16.4 m off). The open ground:
+  `lot_material` fades with camera distance over `LOT_FADE_M` 25-60 m to the sets' own measured means
+  (`LOT_SET_MEANS`), AO 1, mean roughness, no normal: the S lot's 60 m luminance spread 8.4 -> 0.5 at the same
+  tone (the tiles had read as a defective pavement from the air). Three passes (a suburb under 7-12 m trees;
+  denser but the N lot's first parcels voided by one post; lots halved round obstacles, shipped: footprints
+  59 / 51 / 59% of the parcels' ground by band). The reference view: every consistency point identical except
+  the warehouse's clerestory row +11 red (bounce) and the shaded face +2; the wedges unchanged.
+  `render_flyover.py` gains `engine=eevee` (`EEVEE_SAMPLES` 8, shadows 2 x 6 in a 1024 MB pool, screen-space ray
+  tracing, the horizon scan, the world's sun extracted over `EEVEE_SUN_THRESHOLD` 10, cut-outs shadowing as
+  cut-outs, the same compositor and film); the worn block's materials exceed Eevee's per-shader attribute limit
+  and render magenta, so the preview opens the wear=off scene (`bradbury_scene_wear_off.blend`, built with
+  `wear=off`, the same city) and shows the block clean; at full size 5.5-6.1 s a frame, so 50%: 768 frames in
+  22.1 min (1.73 s a frame), `flyover/bradbury_flyover_eevee_preview.mp4` 7.2 MB, 32.0 s, `flyover_eevee_sheet.png`.
+  Not to be judged on the preview: the wear, the haze and bounce (the shaded face near black), the grime lines,
+  the glass, the translucency. Item 32's stale Cycles frames deleted; no Cycles run restarted (the user checks the
+  preview first); item 32's timing kept in the script. Evidence `tests/artifacts/screens/bradbury_scene/item33_city_fill/`
+  (`item33_reference_before_after.png`, `item33_left.png`, `item33_right.png`, `item33_city_reference.png`,
+  `item33_open_ground_60m.png`, `item33_open_ground_air.png`, `item33_first_frame.png`, `ref_3q_after.png`,
+  `item33_numbers.md`, `tune/`) and `flyover/` (the preview MP4, `frames_eevee/`, the sheet, `render_eevee.log`);
+  scripts `census.py`, `set_means.py` beside the review's. README "The city filled in, and the Eevee preview
+  (AI 574 item 33, 2026-09-27)" plus a paragraph in the flyover section. Scene rebuilt headless; the GUI Blender
+  not touched.
 
 ## On completion
 - Mark the AI document as DONE in the first line
