@@ -348,15 +348,148 @@ nondegenerate triangles, normalized normals, both buried roots in the same
 compact crown, full-width emergence without soil reentry, bounded height and
 clean asset loading. The original single-blade capture also remains valid.
 
-## Single-tuft editor (default)
+## Single-leaf shape study (default)
 
-`debug_tools/grass_plant_study.html` opens one **four-leaf tuft arranged as two
+`debug_tools/grass_plant_study.html` now opens a single LOD0 leaf. The previous
+`?layout=tuft` URL is an alias of `?layout=leaf`, including older `revision`
+query strings, so the active editor resets without restoring previous tufts.
+
+`GrassDebugV2SingleLeaf.js` creates one continuous blade rooted 6 mm into the
+Brown Earth surface. Its local cubic centerline uses points
+`(0, -0.006, 0)`, `(0, 0.068, 0.025)`, `(0, 0.142, 0.058)`, and
+`(0, 0.195, 0.105)`, in meters. The 22.82 cm blade rises to 19.5 cm with
+10.5 cm horizontal reach. Its tangent decreases gradually from 71.33° to
+48.44° above horizontal, maintaining upward growth throughout. Its display
+azimuth is 180°, placing the leaf's face toward the existing light and
+three-quarter camera.
+
+The source has 96 body spans, 16 rounded-tip spans and 32 transverse divisions.
+The first 32 body spans cover coordinates 0–0.13 to resolve the shorter sheath
+smoothly; the remaining 64 cover 0.13–0.72 without increasing the triangle count:
+**7,136 blade triangles plus 720 central-shoot triangles, 7,856 total**. It reuses
+the detailed blade's 15 mm maximum width, shallow concave channel, midrib,
+green gradient, vein normal map and roughness map. Its own width profile narrows
+continuously from longitudinal coordinate 0.35 to the end instead of retaining
+80% width until 0.72 and appending a broad rounded cap. With
+`q = clamp((t - 0.35) / 0.65, 0, 1)`, the taper multiplies the opened blade width
+by `(1 - 0.65 * q²) * sqrt(1 - q²)`. This keeps a smooth shoulder and a small
+rounded termination, with approximately 60%, 29% and 10% of maximum width at
+coordinates 0.75, 0.90 and 0.98. The shared surface sampler accepts this width
+profile; historical paired and field sources retain their existing silhouette.
+All current LOD atlases regenerate from the revised leaf geometry.
+
+The base is a continuous leaf sheath wrapping approximately 338° around a small
+central shoot. The sheath has a 1.75 mm radius at its buried base and retains
+that tubular profile through longitudinal coordinate 0.012. It gradually unrolls
+into the original blade by coordinate 0.11, approximately 18.4 mm above the soil
+plane (previously 42.6 mm). Projected width increases continuously through this
+opening, avoiding a bulging shoulder. The centerline and upper blade stay unchanged.
+The shoot has a 1.32 mm transverse radius and a 6 mm half-length, centered at
+coordinate 0.013 so most of it remains buried;
+both surfaces share the leaf material. There is no separate collar mesh.
+The atlas includes both blade/sheath and shoot, while LOD card counts stay fixed.
+Both bake inputs provide `grassFacingNormal`. The blade copies the final,
+azimuth-transformed center normal across each width station, including the tip;
+the volumetric shoot uses its own surface normals. The atlas rejects missing or
+mismatched facing attributes instead of baking an invalid front/back reference.
+
+The single-leaf source previously omitted this attribute, reversing the bright
+and dark faces when Normal facing was enabled. The dedicated
+`grass_debug_v2_single_leaf_facing.pwtest.js` checks source orientation, decoded
+atlas normals, and actual LOD0 versus all four LOD3 lighting responses from
+front, back and two oblique views. It also checks the on/off/on toggle remains
+reversible. Before/after captures and measurements are stored under
+`tests/artifacts/screens/grass_debug_v2/single_leaf_facing/`. The corrected
+baked reference has a minimum alignment of 0.99995 with the source center normal
+over the sampled blade body; the failing bake reached -0.91557.
+
+`GrassDebugV2LeafSoil.js` creates a continuous ground surface with a smooth shoulder
+approximately 1.9 mm high around the source root. Its rounded rise seats the
+shorter sheath in the terrain and fades to zero within 18 mm, using 48 local
+grid spans and soil UVs matching the surrounding terrain. It follows authored
+positions and scales; burial reduces its height, and deleting a leaf removes
+its shoulder. The raised soil renders only in LOD0, including edit mode. Every
+LOD3 variant hides that geometry and shows the original flat terrain instead;
+switching back restores the soil shoulder. Historical paired, row and patch
+layouts keep their previous disabled root-soil setting.
+
+`GrassDebugV2CardRootSoil.js` samples the existing Brown Earth albedo in ground
+UV coordinates, converts it to linear color and applies the material tint. During
+the card bake, it blends small soil particles into unpremultiplied albedo texels
+before edge padding and mip generation. A deterministic jittered grid uses
+0.38 mm grain spacing, soft particle edges and at most 72% opacity. Particle
+density and opacity fade smoothly between -0.3 and 2.4 mm in the two-card
+layout's height reference, leaving green visible between particles instead of
+a continuous brown band. This reference keeps some dirt above ground in every
+LOD3 level; differing card slopes put its measured upper extent at about
+10.2 / 8.5 / 5.5 / 2.0 mm in the 10 / 5 / 3 / 2-card layouts.
+
+The same atlas is used by all LOD3 levels and authored instances. Original LOD0
+geometry and vertex colors stay unchanged. The speckles change RGB only, keeping
+the leaf silhouette intact instead of punching alpha holes. This adds no runtime
+geometry, draw calls, shader samples or atlas textures. Alpha and upper-leaf
+pixels remain unchanged.
+
+`tests/headless/e2e/grass_debug_v2_leaf_root.pwtest.js` checks sheath diameter/opening,
+continuous widening, a blade opening below 20 mm, buried edges, upper-shape
+preservation, finite-area triangles, smooth normals and soil UV/boundary continuity.
+It also verifies raised-versus-flat terrain visibility on every LOD and compares
+the stained atlas against a clean bake to check localized RGB changes with
+identical alpha, visible soil particles on every LOD3, green gaps between them and
+an upper dirt extent below 12 mm. The authoring test checks soil movement, burial
+and LOD visibility.
+Base and three-quarter captures of all LODs are stored in
+`tests/artifacts/screens/grass_debug_v2/speckled_root/`.
+
+The panel is titled **Leaf Study** and shows the leaf/triangle count, camera
+presets and square bounds. The Edit drawer provides a single **Leaf** catalog
+entry from this source. LOD0 and **LOD3 · 10 / 5 / 3 / 2** remain available in
+both viewing and edit modes. The card generator fits this single leaf's actual
+geometry using the authoring hierarchy, and projects its color, normals,
+roughness and alpha into the shared atlas. Each variant contains one leaf and
+respectively 20 / 10 / 6 / 4 triangles. All four single-leaf levels share the
+complete final card, with identical positions and UVs. Its endpoint is anchored
+to the actual source tip rather than extrapolated through the atlas's 2 mm
+filtering margin. That margin remains in the texture, but creates no empty
+geometry above the blade or upward kink.
+
+From the twelve-segment master silhouette fit, the 10 / 5 / 3 / 2-card levels
+use station indices 0,2,3,4,5,6,7,8,9,10,12 / 0,3,5,7,10,12 /
+0,5,10,12 / 0,10,12 respectively. The common upper span is master stations
+10–12; lower levels remove dividers below it. The LOD0 source curve, atlas
+projection and card counts stay unchanged. This also applies to all three
+random turf profiles and placed single-leaf catalog instances. Historical
+paired, row and patch benchmark fits retain their separate hierarchy.
+
+`tests/headless/e2e/grass_debug_v2_card_tips.pwtest.js` verifies all four
+source profiles: actual and visible tip heights, matching final quad positions
+and UVs, card counts, and no upward turn at the final divider. Geometry
+measurements and low-angle patch captures are stored under
+`tests/artifacts/screens/grass_debug_v2/aligned_card_tips/`.
+Card bounds, normal facing and alpha
+coverage controls apply to these variants, including placed catalog instances. The previous four-leaf authoring experiment remains
+an explicit `?layout=paired` reference. Historical row/patch benchmark layouts
+continue to use their original source.
+
+`tests/headless/e2e/grass_debug_v2_single_leaf.pwtest.js` checks default and old
+tuft URLs, exactly one visible leaf, monotonically rising geometry, a gently
+decreasing tangent angle, buried roots, finite positions, nondegenerate triangles,
+all four card counts, visible LOD switching, and both correction toggles,
+normalized normals, continuous tip narrowing, camera controls and clean loading.
+Tip close-ups for LOD0, LOD3 · 10 and LOD3 · 3 are stored under
+`tests/artifacts/screens/grass_debug_v2/natural_tip/`. Review captures from
+three-quarter, side and top cameras live under
+`tests/artifacts/screens/grass_debug_v2/single_upright_leaf/`.
+
+## Retired four-leaf tuft reference
+
+`debug_tools/grass_plant_study.html?layout=paired` opens one **four-leaf tuft arranged as two
 V-shaped pairs pointing to the same side**. Each pair has two original blades emerging from the
 same buried root position and one shared crown. The two roots are at X = ±26 mm,
 52 mm apart. Both pairs retain the original forward blade's curvature and dimensions, without random transforms.
 
-The earlier `revision` query parameter does not select a layout, so existing
-editor links also open this tuft. Explicit `?layout=tuft` selects the same view.
+This retired layout is selected only by `?layout=paired`. The `revision` query
+parameter does not select a layout.
 The paired source uses two root instances for four leaves and two crowns.
 
 Both leaves in a pair now share one enlarged, concentric root. The inner and
@@ -366,13 +499,25 @@ The common crown is enlarged horizontally by 1.9×. The closed sheaths stay
 centered on the shared root instead of drifting into two separate tubes.
 
 All four leaves retain the original full length and common body depth curve.
-Sideways opening eases from blade coordinate 0.025 to 0.15, after the sheath
-starts unrolling. A smooth collar narrowing reaches 45% at coordinate 0.07 and
-returns to full width by 0.20. The lateral offset approaches a 5.8 mm shoulder
-with a 10 mm vertical easing length, followed by a four-degree outward fan.
+Sideways opening eases from blade coordinate 0.025 to the collar/body join
+at 0.07, after the sheath starts unrolling. There is no separate lateral shoulder:
+the 5.6-degree outward fan scales with forward distance, using a 10 mm vertical
+easing length at the root. Removing the delayed offset makes the lower rib
+continue into the root without the previous sideways S-bend. The original
+transverse blade width is preserved, with no collar waist or recovery taper.
+The boat-shaped cross-sections nest at the shared base, and only the lower
+blade's contact region receives the clearance deformation below.
 The outer leaf approaches 0.35 mm below its partner. This authoring source uses
 96 body segments to resolve the smooth collar opening and contact transition;
 historical row and patch sources retain their original 32 body segments.
+
+Before contact resolution, the same-side collar's height is fitted with a cubic
+curve from the halfway collar ring (blade coordinate 0.035) to the first body
+ring at or beyond 0.15. Each transverse sample preserves its endpoint heights
+and longitudinal tangents. X/Z coordinates and transverse widths stay unchanged.
+This spreads the root-to-body change in surface direction over a continuous
+join instead of concentrating it at coordinate 0.07; contact clearance is solved
+afterward. Source row and patch layouts keep their historical geometry.
 
 Before atlas generation, `GrassDebugV2LeafContact.js` resolves each lower source
 blade against the upper blade in the common authoring frame. It clips the triangles'
@@ -424,7 +569,7 @@ over a strictly nested hierarchy. Adjacent cards still share exact positions
 and UVs, and all levels remain inclined and use one shared atlas/material.
 Counts come from the generated geometry.
 
-This hierarchy is enabled for `layout=tuft`. The independent-fit `layout=row`
+This hierarchy is enabled for `layout=paired`. The independent-fit `layout=row`
 and `layout=patch` benchmark references retain their previous card counts and
 positions so saved benchmark results remain comparable.
 Normal facing, alpha coverage, card bounds and camera controls remain available.
@@ -433,21 +578,114 @@ Far, 2m and 4m retain square-framing behavior. Root soil remains disabled.
 
 The 400-leaf randomized experiment stays at `?layout=patch`, retaining its
 five-leaf single-sided tufts, variation ratios and overlap setting. `?layout=row`
-retains the historical twenty-leaf paired source. The default study's API exposes
+retains the historical twenty-leaf paired source. The paired reference's API exposes
 the four leaves directly through `plant` and the shared card layouts through `cards`;
 `patch` is null outside the field view.
 
 The editor regression checks four visible blades, two shared root positions,
 two crowns, same-side tips, concentric enlarged root rings, positive sheath
-clearance, zero above-ground triangle crossings between paired leaves, contact-only
-deformation, independently sampled surface clearance, root-opening tangent continuity,
+clearance, zero above-ground triangle crossings between paired leaves, bounded collar fitting and lower-only
+contact deformation, independently sampled surface clearance, preservation of the original
+blade width, root-opening tangent continuity,
 shape-fitted dividers and shared upper span, one shared strip per LOD,
 counts, controls and camera actions. Root close-up captures verify the U-shaped
 opening without the previous lateral bulges.
+The focused `grass_debug_v2_root_shape.pwtest.js` regression limits lateral
+deviation of each lower-body rib from its continuing body direction to 0.2 mm.
+It captures the frontal root silhouette under `root_continuity/`.
+Root-seam regression notes:
+- The band remained with the normal map and received shadows disabled.
+- Isolating the lower leaf before contact deformation retained the band, locating
+  the cause in the sheath/body transition.
+- A tangent-matched collar height fit reduced the largest adjacent normal turn
+  across the marked front surface from 3.22° to 1.65°. The focused
+  `grass_debug_v2_root_seam.pwtest.js` limits this to 2° over coordinates
+  0.056–0.084 and captures `root_seam/after.png`; diagnostics and the previous
+  shape are retained beside it. Intersection and straight-rib checks still apply.
+
 A separate contact fixture checks triangle-interior collisions with no contained
 vertices, unchanged upper/noncontact geometry, and repeat-solve stability. Captures are under
 `tests/artifacts/screens/grass_debug_v2/four_leaf_same_side_tuft/`; earlier single-sided
 tuft captures remain under `single_tuft_editor/`.
+
+### Tuft placement authoring
+
+The compact **Edit** tab sits 16 px from the left screen edge and opens a 112 px
+high bottom drawer upward, entering authoring mode. Clicking
+the same tab closes the drawer, hides the editing controls and on-map gizmos,
+and returns to viewing. The drawer is available for the single-leaf study and the
+`layout=paired` reference; historical `layout=row` and `layout=patch` views retain
+their benchmark behavior. It contains only catalog thumbnails and Export, with
+clipboard status shown after export. There are no numeric fields, help paragraphs,
+Tuft authoring heading or tuft-count label in the drawer.
+
+The first opening seeds the editable layout with one **Leaf** in the current study,
+or one **Original** tuft in the paired reference, at the source root `(0, 0, 0)`. It replaces the source's displayed
+representations without changing the canonical source geometry. Further openings
+retain the existing instances and selection. Closing the drawer keeps the authored
+tufts visible, and the regular LOD, card-boundary, normal-facing and alpha-coverage
+controls still apply to the layout. Counts sum the displayed instances.
+The layout lasts for the current page session; reloading does not restore edits.
+
+The single-leaf catalog contains only the current leaf. The paired reference
+catalog displays rendered thumbnails of two four-leaf tufts:
+
+| Catalog ID | Name | Height | Average blade length | Forward reach | Average body inclination | Total centerline turning |
+| --- | --- | --- | --- | --- | --- | --- |
+| `original` | Original | 9.82 cm | 22.39 cm | 21.12 cm | 23.36° | 44.53° |
+| `upright` | Upright | 9.82 cm | 15.87 cm | 13.09 cm | 36.86° | 24.51° |
+
+The measurements describe the source at unit scale with no placement inclination
+or additional burial. Blade length, inclination and turning are measured along
+the leaf-body centerline from the collar to the tip. Upright applies an invertible
+affine transformation around the buried root: it reduces the curved height
+contribution, adds forward-proportional rise, and shortens the forward extent.
+Its maximum height matches Original while its blades become shorter, straighter
+and more upright. The same static transform applies to LOD0 and every LOD3 card;
+both variants share geometry, PBR atlases and materials without another bake.
+They retain four leaves and the same 37,632 / 20 / 10 / 6 / 4 triangle counts
+for LOD0 and the 10 / 5 / 3 / 2-card levels respectively.
+
+Drag a thumbnail onto the ground to place a tuft. A translucent preview and root
+marker show the proposed placement, green when valid and red outside the
+1 m × 1 m authoring square. Validity checks the root position; leaves may extend
+past the square, and tuft overlap is not rejected. A click on a thumbnail followed
+by a click on the ground provides the same placement operation without dragging.
+Escape cancels placement. A successful placement selects the new instance.
+
+Click any placed tuft to select it and display its selection bounds and active
+geometry control. A compact **Move / Rotate / Size** switch and **Delete** action
+follow the selected root in screen space next to the smaller on-map handles.
+The switch stays inside the canvas, avoids the study panel, and hides when there
+is no selection, during placement/dragging, or when the selected root is off-screen.
+Move combines world X/Z movement (including an XZ plane handle) with Y burial.
+Rotate combines a world-Y turn ring with an X inclination ring aligned to the
+plant's heading. The gizmo frame follows yaw only so tilting the plant never tilts
+the yaw axis. Each ring edits only its own property. Size uses one uniform handle.
+Orbit controls are suspended while dragging a transform handle. Delete removes
+the selected instance; Delete/Backspace also work from the map.
+
+| Property | Allowed range | Units |
+| --- | --- | --- |
+| X and Z | Root inside the current 1 m square | Meters |
+| Rotation | Wrapped to [-180°, 180°) | Degrees |
+| Inclination | -45° to +75° | Degrees |
+| Burial | 0 to 0.06 m below the ground | Meters |
+| Size | 0.25× to 2×, uniform | Scale factor |
+
+**Export** copies a JSON configuration to the clipboard. The format is version
+`1`, type `grass-tuft-layout`, with `units: "meters"` and
+`angleUnits: "degrees"`. It includes the square's center/width/depth, catalog
+IDs and measured source shape metrics, and an ordered `tufts` array. Each tuft
+record contains `id`, `catalogId`, ground `position: [x, 0, z]`,
+`rotationDegrees` (yaw), `inclinationDegrees`, `burialMeters` and `scale`.
+Burial is separate from the ground position, so an exported record reconstructs
+the same root depth. Numeric placement values use up to six decimal places.
+The drawer reports clipboard success or failure. The authoring E2E test covers
+combined-axis drags, catalog placement, selection, clipboard export, and the
+single-leaf drawer at desktop and narrow widths. Captures are saved under
+`tests/artifacts/screens/grass_debug_v2/authoring/`. Export is a configuration
+handoff; it does not publish the layout into gameplay or provide an import UI.
 
 ## Random single-sided 400-leaf patch
 
@@ -649,8 +887,9 @@ Source translations are
 included in the projection, so all twenty leaves
 appear in the shared atlas. The normal map includes the detailed source's fine surface normal map;
 the roughness projection preserves its internal detail. Coverage uses 4× MSAA,
-with eight texels of RGB edge dilation, mipmaps, up to 8× anisotropy, alpha testing
-and alpha-to-coverage. Neither sunlight nor soil is baked into these channels.
+with full-page RGB edge dilation (alpha unchanged), mipmaps, up to 8× anisotropy, alpha testing
+and alpha-to-coverage. The historical row atlas contains neither sunlight nor
+soil; the single-leaf study adds only the localized soil-color stain described above.
 The separate crown mesh is not included in the leaf projection. This is a live
 debug atlas, not a published offline asset bake.
 
@@ -1154,3 +1393,935 @@ relaxes by more than 20° without abrupt changes or downward-facing ends. This
 check failed for the previous nearly straight shape and passes for the new arch.
 LOD0 and all LOD3 variants are captured from the same cameras. The test
 does not assert visual approval of the LOD0-to-LOD3 transition.
+
+## Randomized 10,000-leaf square comparison (2026-09-26)
+
+The opt-in `tests/headless/perf/specs/grass_random_leaves_10k.pwtest.js`
+uses `helpers/grass_random_leaves_10k_benchmark.js` to render 10,000 instances of
+the current single leaf inside a 1 m square. It runs in an isolated browser;
+the normal authoring page keeps its single-leaf setup.
+
+Seed 9262026 produces identical instance matrices in LOD0, LOD3 · 10 and
+LOD3 · 5. Variation includes azimuth 0–360°, inclination -15° to +20°,
+roll ±12°, uniform scale 80–115% and 0–3 mm extra burial. Five bending
+profiles scale forward curvature by 0.6 / 0.8 / 1 / 1.2 / 1.4; each is
+normalized to the original 0.228235 m arc length before instance scaling.
+Every representation's bounds fit in the square. Intersections are permitted.
+
+The five LOD0 source shapes retain full geometry and independently rebake their
+PBR card atlases through the existing card generator. Both LOD3 corrections
+are enabled. A test-only shader hook transforms object-space atlas normals
+by each instance's normal matrix; random rotations otherwise shade incorrectly.
+Geometry is instanced without per-instance culling: 10 grass draws for LOD0
+(blade plus central shoot per bend), five for each card representation.
+
+All captures use the same 1920 × 1080 camera, Brown Earth ground, game
+sun/environment and existing postprocessing. The root soil shoulder is omitted
+in every case. Three-quarter and top images are captured; timings use only the
+three-quarter camera. All leaves fit within the view, although many are
+occluded by the deliberately dense patch.
+
+RTX 3060, hardware Chrome/D3D11, three rotating rounds, 20 warmup frames and
+100 valid asynchronous GPU samples per case and round. The table reports full
+scene GPU mean / P99. Cached shadows model a stationary view; refreshed
+shadows rebuild the 4096 px sun shadow map each frame.
+
+| Representation | Cards | Grass triangles | Cached shadows mean / P99 | Refreshed shadows mean / P99 |
+| --- | ---: | ---: | ---: | ---: |
+| LOD0 | 0 | 78,560,000 | 35.223 / 37.203 ms | 54.145 / 56.815 ms |
+| LOD3 · 10 | 100,000 | 200,000 | 3.687 / 4.230 ms | 6.892 / 7.313 ms |
+| LOD3 · 5 | 50,000 | 100,000 | 4.270 / 5.138 ms | 6.708 / 7.012 ms |
+
+The empty scene averaged 1.835 ms. Cached-shadow means above that baseline
+were 33.388 / 1.853 / 2.435 ms respectively. P99 values are absolute.
+Triangle totals count grass geometry once; refreshing shadows draws it again.
+Measured submission totals, including scene/postprocessing, were 78,560,015 /
+200,015 / 100,015 triangles with cached shadows and 157,120,015 / 400,015 /
+200,015 with refreshed shadows.
+
+Fewer cards did not improve cached-shadow time in this dense view. This result
+does not isolate fragment overdraw, coverage, cache behavior or other GPU costs;
+it is an end-to-end representation comparison. GPU clocks and desktop load are
+not locked. Raw per-round timings and GPU telemetry are retained, and CPU
+submission time is distinguished from GPU elapsed time and RAF pacing.
+
+Artifacts: `tests/artifacts/screens/grass_debug_v2/random_leaves_10k/` contains
+`report.md`, `results.json`, `metadata.json`, `placements.json`, and
+`three_quarter-{lod0,lod10,lod5}.png` / `top-{lod0,lod10,lod5}.png`.
+Run with `GRASS_RANDOM_10K=1`, `PERF_BASE_URL=http://localhost:8001` and
+`PLAYWRIGHT_EXECUTABLE_PATH` set to hardware Chrome, using the selected-test
+runner. Setup, shader compilation, atlas baking and capture are excluded.
+
+## Interactive 4,000-leaf patch
+
+Open `debug_tools/grass_plant_study.html?layout=random` for the live 4,000-leaf
+square. It starts in LOD3 · 10, frames the full patch and retains LOD0 / LOD3 · 5 / 3 / 2,
+camera presets, card/square bounds, Normal facing and Alpha coverage controls.
+`?layout=leaf` and the earlier `?layout=tuft` continue to show the single-leaf
+authoring source. The random layout does not initialize the authoring drawer.
+
+`GrassDebugV2RandomLeafPatch.js` uses seed 9262026 and an evenly scattered,
+short field-grass distribution. Each blade has an independent 0–360° yaw;
+there are no shared fan origins or fan directions. For each blade, setup
+chooses the most separated of 24 random candidate roots using a spatial grid.
+This reduces clumps and empty patches without regular rows. Roots span the full
+1 m square with periodic spacing; blades may cross its borders for tileable
+baking. Placement work happens only during construction.
+
+The 1,600 upright / 1,600 bowed / 800 relaxed blades use upper-bend weights
+0.15 / 0.40 / 0.70. Their respective length scales are 42–52%, 44–56% and
+48–60%, with independent width scales of 38–52%. Pitch varies by ±9°,
+roll by ±5°, and extra burial by 0–1.5 mm. Profile order is shuffled before
+placement. This removes the isolated tall accents of the previous experiment.
+
+These patch sources use cut ends at 76%, 80% and 84% of the source curve
+parameter, respectively, giving a roughly 6–10 cm canopy. The blade ends
+retain their transverse width, replacing the long pointed tips with a mown
+silhouette. The rounded-corner experiment was reverted at user request.
+`GrassDebugV2SingleLeaf.js` accepts an optional `tipFraction`; its default
+remains the original full, pointed authoring leaf. Card fitting includes the
+final center sample for both pointed and cut ends. All three patch sources
+bake their own silhouettes and normal atlases.
+
+All blade profiles retain the same green gradient and material, without
+per-instance color tint. Their orientations and lighting expose dark faces;
+the cut also omits the lightest end of the original gradient.
+
+All representations share instance matrices on flat Brown Earth terrain.
+The counts are 31,552,000 triangles in LOD0 (28,672,000 blade triangles and
+2,880,000 shoot triangles); 40,000 / 20,000 / 12,000 / 8,000 cards and
+80,000 / 40,000 / 24,000 / 16,000 triangles at the respective LOD3 levels.
+Counts are derived from the actual source geometry. Correction checkboxes
+apply to every atlas material. Purple boundaries use one line mesh per LOD.
+The square camera fit includes blade height. At 4,000 leaves there is still
+visible soil; this is a blade/distribution study, not a fully covered pitch.
+
+`GrassDebugV2LeafBend.js` bends the source while preserving its complete
+curve length before trimming and instance scaling. Reported blade length
+and tip inclination account for the cut. `GrassDebugV2InstancedCards.js`
+and `GrassInstancedAtlasShaderLoader.js` transform baked object-space
+normals and Normal facing's structural normals for each rotated, nonuniformly
+scaled instance. Shader source stays in the dedicated shader hierarchy.
+
+Validation: `tests/headless/e2e/grass_debug_v2_random_leaf_patch.pwtest.js`
+checks matching placements, the 1,600/1,600/800 composition, coverage of all
+10 × 10 root regions, root spacing, direction distribution, finite-width cut
+ends, shared untinted blade colors, source dimensions, footprint bounds, all
+card counts, camera buttons, shader compilation and reversible correction
+toggles. Captures of LOD0 from three-quarter, low and top views plus each
+LOD3 are under `tests/artifacts/screens/grass_debug_v2/field_turf_4k/`.
+Earlier 3,000-leaf captures remain under `field_turf_3k/`.
+Earlier 1,000-leaf captures remain under `field_turf_restored_1k/`,
+`field_turf_1k/` and `rounded_turf_tips_1k/`
+in the same artifact directory.
+
+The earlier 10K benchmark above records the previous five-profile distribution,
+not this appearance. Previous fan-layout captures remain under
+`tests/artifacts/screens/grass_debug_v2/soft_leaf_patch_1k/`.
+
+## Overhead PBR floor comparison
+
+The random layout displays six 1 m × 1 m squares in two parallel rows.
+Both rows have centers at Z = 0, -1.3 and -2.6 m; their X positions are 0
+and 1.3 m. The clear gap is 0.3 m in both directions.
+
+| Row | Front | Middle | Back |
+| --- | --- | --- | --- |
+| X = 0 | 4,000 leaves | Texture baked from 4K leaves | Same 4K texture + 1K leaves |
+| X = 1.3 | 2,000-leaf subset | Texture baked from 2K leaves | Same 2K texture + 2K complementary leaves |
+
+The random comparison starts in **LOD3 · 10**, with **Square bounds off**.
+Other authoring layouts retain their LOD0 startup view, also with bounds off.
+Labels identify geometry and texture counts separately. **Patch labels** is a
+checked-by-default toggle alongside the bounds controls in the random comparison.
+It shows/hides all six labels independently of the LOD and camera; other study
+layouts hide this control. Hovering any patch shows **Distance: N.NN m**
+next to the pointer, independently of label visibility. This is the Euclidean
+(straight-line) distance to the hovered point on the patch footprint: soil at
+Y = 0 for geometry-only fields, the Y = 0.01 m floor for mixed fields, or the
+raised wall-top plane for texture-only fields.
+Six analytic plane/footprint checks avoid raycasting millions of leaf triangles;
+individual blade-tip heights are intentionally not part of this measurement.
+The tooltip updates during camera movement, hides over gaps/UI/outside the canvas
+and while dragging, and stays inside the viewport. Pointer motion updates only
+the overlay, without requesting another scene render. Square bounds toggles
+all six blue outlines. Camera presets frame the complete comparison except
+Base, which still targets a source leaf. The static sun shadow frustum covers
+all six squares.
+
+`GrassDebugV2FloorBake.js` runs a live, deterministic debug projection during
+scene loading, using the fixed LOD3 · 10 representation and Brown Earth ground.
+Two separate bakes use 4,000 leaves and an exact 2,000-leaf subset. Each creates
+2048 × 2048 linear albedo, tangent-space normal, and roughness maps.
+The source camera is orthographic, directly overhead at (0, 3, 0), looking at
+the origin with up = (0, 0, -1). Its -0.5 to +0.5 m bounds capture exactly the
+1 m square. The projection pass maps output floor UVs into that capture with
+no perspective enlargement or sideways displacement from blade height.
+Both 4K and 2K bakes use the same projection. Their snapshots report
+`sourceView: top`, `projectionType: orthographic` and `footprintMeters: 1`.
+
+Albedo retains material color plus the static canopy/soil occlusion described
+below; sunlight and directional cast shadows are not painted into it. Normal capture includes the surface normal
+maps, instanced rotations and nonuniform scales, and stores normals in the
+floor tangent frame (+X, -Z, +Y). Standard tangent-space mapping transforms
+them with the floor and camera at render time. Roughness retains source
+material/map values.
+
+`GrassDebugV2FloorMaterial.js` uses the existing grass PBR lighting with a
+dedicated view-facing shader. The captured tangent normal is transformed with
+the floor, then its dot product with the view direction smoothly blends the
+visible top/underside response over approximately ±6° at grazing angles.
+Diffuse lighting reuses the source normal and the existing 0.35 thin-leaf
+transmission; specular/environment shading uses the smoothly oriented normal.
+Thus camera orbit changes the visible-side response and highlights, while
+rotating a floor relative to the fixed sun correctly rotates its normal field.
+Directional lighting remains dynamic, and this requires no extra texture
+samples. This floor correction is always active; the UI Normal facing toggle
+continues to control the LOD3 cards.
+
+The floor also applies a cheap, empirical canopy visibility approximation to
+direct lighting, calibrated against LOD3 · 10 under the study lighting.
+Captured normals alone cannot reproduce the source patch's self-shadowing:
+without this correction, the individual floor blades remain too pale.
+A smooth green-dominance mask at bake resolution separates blades from exposed
+Brown Earth. Coverage and premultiplied soil color are retained separately
+through mip filtering; the distance-stability contract below defines their
+packed channels.
+Only blades receive the canopy attenuation and top/underside normal reorientation.
+Soil keeps its captured, statically shaded albedo and fixed surface normal,
+with the same opaque Lambert diffuse response as standard terrain.
+Its ordinary PBR reflections remain; orbiting the camera cannot apply the
+grass-facing color shift to the gaps. The previous 0.25 soil-light multiplier
+is removed. Mixed edge texels blend the two responses smoothly.
+The blade factor still combines camera elevation and horizontal sun/view
+alignment: low views favor the brighter outer canopy; raised views include
+more shaded interior. Sunward views remain brighter than opposing views,
+with a continuous transition.
+This attenuates lighting rather than tinting the maps or changing the source
+LODs. Indirect/environment light and the original PBR normals are retained.
+Both 4K and 2K texture materials use the same correction, including hybrid
+fields. It adds scalar/vector arithmetic, no texture samples or geometry.
+
+This is still a single-view flat approximation: it retains the overhead
+occlusion/silhouette and does not reconstruct parallax or newly visible blades
+as the camera moves. The canopy approximation is calibrated for this study,
+not a physical occlusion bake or a universal correction for other grass
+densities/lighting. A low camera sees more soil in the texture than in actual
+geometry, so matching leaf colors does not imply identical whole-square color.
+
+`GrassDebugV2FloorComparison.js` owns four 2-triangle horizontal meshes.
+Mixed fields remain 1 cm above the soil (Y = 0.01 m); texture-only fields use
+the top of the side-wall height described below. Both mixed fields
+crop 1 cm from every texture edge: their floor meshes are 0.98 m square and
+sample UVs 0.01–0.99. This removes the border without resizing the image;
+texture scale, alignment and live leaf positions remain unchanged. Texture-only
+fields retain their full 1 m floors. Each texture-only/hybrid pair shares its
+three texture objects. The existing
+1,000-leaf overlay remains every fourth instance from each source profile
+(400 upright / 400 bowed / 200 relaxed). The front-right 2K reference copies every other
+source instance, matching the subset used for the 2K bake. The 2K bake uses even instances, while its 2K live overlay
+uses odd instances: together they represent the original 4K placement without
+duplicating those leaves. Each half contains 800 upright / 800 bowed / 400
+relaxed leaves. The temporary bake subset is disposed after capture.
+
+All live copies share the source geometry, material and card atlases. LOD
+changes switch all four live fields; material correction toggles propagate
+through those shared materials. The main grass readout still describes the
+original 4,000-leaf source. Combined live grass totals are 9,000 leaves,
+70,992,000 LOD0 triangles, or 180,000 / 90,000 / 54,000 / 36,000 triangles in
+LOD3 · 10 / 5 / 3 / 2, plus eight horizontal and sixteen side-wall triangles. The comparison snapshot
+reports each field's geometry/texture leaf counts and triangle totals.
+
+The study reuses `GrassDebugV2CameraInput` through an OrbitControls adapter.
+WASD moves horizontally along the ground using the camera heading, regardless of
+camera pitch. Q/E alone controls downward/upward movement.
+Movement is 0.6 m/s with a 3× Shift boost, maintaining camera orientation and
+translating the orbit target with the camera. Camera Y is bounded at 0.01 m.
+Typing in editable controls, losing focus, and opening authoring mode suppress
+movement. The existing debug screen retains its 8 m/s and 24 m/s defaults.
+Camera motion does not request a shadow rebuild.
+
+Validation: `tests/headless/e2e/grass_debug_v2_floor_comparison.pwtest.js`
+checks full-size texture floors and cropped mixed floors/UVs, six fields, gaps, shared maps,
+the exact 1K subset, 2K reference and complementary 2K instance transforms.
+It verifies the LOD3 · 10/bounds-off startup, that the 2K bake has less green
+coverage than the 4K bake, all LOD counts, map variation, and all six movement
+directions. An
+independent rotated-instance fixture verifies linear albedo, roughness and
+the expected tangent normal numerically. A controlled rendered floor fixture
+checks front/back brightness, gradual grazing-angle blending, and rotation
+relative to a fixed light; rotating the floor, camera and light together must
+preserve brightness. A soil-only material fixture also compares the floor to
+standard terrain shading at 1°, 3°, 6°, 30° and 80° camera elevations, requiring
+the rendered soil brightness to match within one 8-bit level. This catches
+both the former darkening multiplier and erroneous underside blending on soil.
+Existing random-patch validation continues to cover correction toggles and
+matching source LODs.
+
+The angular-color regression,
+`tests/headless/e2e/grass_debug_v2_floor_angular_color.pwtest.js`, compares the
+displayed canvas (including the game tone mapping) for LOD3 · 10 and its 4K
+floor at six headings and three elevations: 16.3°, 45°, and 85°.
+It measures green blade pixels separately from soil coverage, requiring
+mean RGB channels within 14/255 and green brightness within 12% of the source.
+It also checks that the opposing-sun orbit stays darker than the sunward orbit.
+Its measurements and comparison capture are under
+`tests/artifacts/screens/grass_debug_v2/floor_angular_color/`.
+
+Artifacts under `tests/artifacts/screens/grass_debug_v2/floor_pbr_comparison/`:
+`albedo.png` (sRGB for external viewing), `normal.png` (OpenGL tangent-space),
+`roughness.png` (linear), and their `2k-` counterparts; `comparison-lod0.png`,
+`comparison-default.png`, `comparison-lod3-10.png`, `comparison-top.png`, `comparison-reverse.png`,
+and `validation.json`. These are debug captures,
+not published game assets or a new offline baking command. Reloading the page
+regenerates the maps from the current source; retained offline assets must use
+the registered materials branch of `tools/bake.mjs`.
+
+### LOD3 filtered-edge normal padding
+
+The live plant atlas propagates valid albedo, object-space normals and packed
+roughness/facing RGB through every transparent texel of each source page before
+packing and mip generation. Alpha is never dilated. All card counts share this
+atlas path; Normal facing and Alpha coverage remain independently switchable.
+
+The previous eight-texel RGB border left black normal data farther outside the
+silhouette. Wide mip and anisotropic filter footprints mixed that data into
+visible leaf edges, producing dark dotted lines. Disabling shadows, normal
+facing or coverage correction did not remove them; removing the normal map did.
+Full-page RGB propagation removed the reproduced edge speckles while retaining
+the leaf normals and cutout. This is atlas preparation only: no extra runtime
+samples, shader instructions, draw calls or triangles are introduced. Atlas
+generation uses a temporary per-page queue, released after each channel.
+
+Regression: `tests/headless/e2e/grass_debug_v2_card_edges.pwtest.js` checks valid
+unit normals throughout all three profile atlases, preserved transparent/opaque
+coverage, card counts, and shader errors. The test failed before the fix with
+3,051,836 invalid normal texels in the first atlas and passed with zero afterward.
+It captures every LOD3 mode, a farther view, and both corrections disabled under
+`tests/artifacts/screens/grass_debug_v2/card_edges/`.
+
+## Dynamic 30 m × 20 m field
+
+The random study adds a 20 m wide (X), 30 m deep (Z) field to the right of the
+six comparison squares. Its left edge is X = 2.4 m, giving a 0.6 m clear gap
+(double the comparison padding); its front aligns with the squares at Z = 0.5 m.
+It covers X = 2.4–22.4 m and Z = -29.5–0.5 m. The random-layout soil is extended
+to 100 m square to support the field and its camera views; single-leaf and
+historical layouts retain their existing terrain.
+
+`GrassDebugV2LargeField.js` repeats the existing 4K-texture + 1K-leaf hybrid
+source over 600 adjacent square-metre tiles. Each tile uses exactly the same
+1,000 instance transforms and three shape profiles as the small hybrid patch,
+with no rerandomization or rebake. The six-square comparison's materials,
+normal maps and albedo maps are shared. Tiles have a 1 m pitch with no internal
+padding or texture crop, including at chunk boundaries. Only the entire field's
+outer perimeter is cropped by 3 cm, yielding a 19.94 m × 29.94 m textured area
+at Y = 0.01 m. Edge and corner quads adjust both positions and UVs to cut the
+image without rescaling it; live leaves retain their full 20 m × 30 m footprint.
+The small comparison patches retain their independent 1 cm texture crop.
+
+There are 600,000 live leaves. At LOD3 · 10 this is 6,000,000 cards and 12,000,000
+leaf triangles, plus 1,200 floor triangles. LOD3 · 5 / 3 / 2 changes those totals
+to 6,000,000 / 3,600,000 / 2,400,000 leaf triangles. The runtime geometry can
+switch between these card levels while preserving all instance transforms and
+textures. LOD0 is limited to the small source/comparison patches; choosing it
+retains the large field's last selected LOD3 level. The field readout lists LOD0
+and each LOD3 level on separate lines, with actual assigned leaf and triangle
+counts. Inactive levels show zero; the active level currently contains all
+600,000 leaves. A separate Floor line reports its 1,200 triangles. These counts
+update when the field LOD changes, independently of the small study's readout.
+
+The field uses 24 chunks of 5 m × 5 m. Each chunk has three leaf instanced
+draws and one floor mesh draw; chunks outside the camera frustum can be
+culled. Chunk-local leaf instance buffers are shared across chunks, with group
+translations placing them. Each chunk's floor combines 25 separately mapped
+quads, applying the border crop only at the field perimeter. LOD changes swap borrowed card geometry
+without rebuilding instance buffers. Field disposal releases its instance and
+outline resources, preserving the comparison's geometry and materials.
+
+A separator under the existing camera buttons introduces **30 × 20 m field**
+with an unchecked **Show field** checkbox and **Overview**, **Top**, **2m**
+and **4m** camera buttons. The field starts hidden. Checking it restores the
+entire field, including its
+textures, leaves and outline, without rebuilding it or changing the camera/LOD.
+Visibility changes refresh cached shadows and suppress hover distance for the
+hidden field. Overview and Top fit the
+whole field; 2m and 4m view it from the front at the corresponding soil heights.
+The existing camera buttons still focus on the original six squares. Field
+views use a 0.1 m near plane for ground depth precision; source views restore
+0.001 m. The random camera's far plane and orbit range accommodate the field.
+Switching between source and field camera groups refits and refreshes the cached
+sun shadow map. Ordinary orbit/keyboard movement keeps those shadows cached.
+The Normal facing and Alpha coverage toggles propagate through shared leaf
+materials. Square bounds adds the field perimeter. Hovering a square-metre
+tile in the field shows separate lines for camera-to-pointer distance, its
+texture (4K initially), live leaf counts grouped by active LOD, and total tile
+triangles including the two floor triangles. At LOD3 · 10 the tile reports
+1,000 leaves and 20,002 triangles. The compact tooltip uses
+`Distance: N.NN m`, `Texture: 4K`, `LOD3 · 10: 1K`, and `Triangles: 20,002`
+on separate lines. It retains the centered-dot LOD separator, abbreviates
+leaf counts, and includes floor triangles in the total without a suffix.
+The metadata resolves the tile column/row
+analytically and reads the field's active source meshes, so LOD switches update
+the tooltip immediately, including when LOD0 is selected for the small studies.
+This avoids per-leaf raycasts and reports tile counts rather than field/chunk
+totals. The six 1 m comparison squares use the same compact tooltip, including
+texture count, live leaves by the currently selected LOD, and total patch
+triangles. Geometry-only squares show `Texture: None`; texture-only squares
+show `Leaves: 0` and include their two horizontal and eight wall triangles.
+Mixed squares report their texture and live-leaf counts separately. Metadata
+is read on hover/update so the LOD label and counts follow level changes.
+
+`tests/headless/e2e/grass_debug_v2_large_field.pwtest.js` checks field dimensions,
+padding, actual tile/leaf counts, source-transform equality, resource sharing,
+continuous internal floor coverage, perimeter-only crop and UV scale,
+all four camera presets, full-field framing and actual triangle counts across
+LOD switches. Captures and measurements are saved under
+`tests/artifacts/screens/grass_debug_v2/large_field/`.
+
+## Texture-only grass volumes
+
+The two texture-only comparison squares each have four vertical cutout walls.
+Wall height is 80% of the maximum above-ground height of the 4,000-leaf LOD3 · 10
+source (approximately 7.76 cm for the current source). Their bottoms touch
+Y = 0, and the horizontal overhead texture sits exactly at the wall top
+(approximately 7.76 cm). All faces retain the exact 1 m square footprint. Mixed texture/live
+patches and the large field retain their existing floor height and geometry.
+
+`GrassDebugV2SideBake.js` captures the full 4K-leaf LOD3 · 10 patch from +Z, +X,
+-Z and -X with orthographic cameras. Each direction produces a 2048 × 256
+linear albedo/alpha, normal, and roughness set. The capture includes the full
+above-ground height and compresses it vertically onto the 80%-height wall,
+preserving the irregular tips instead of cutting them off horizontally.
+Terrain and directional lighting are excluded from the side captures.
+Static lower-canopy occlusion is baked into RGB as described below; alpha
+preserves the original silhouette, including shaded leaf surfaces.
+Both texture-only patches reuse these four 4K-source views; their existing
+4K and 2K overhead textures remain distinct.
+
+Capture-camera right/up/outward vectors match the wall tangent frame. Normals
+include the LOD3 atlas normals and instance transforms, then rotate
+with each wall. Walls reuse the view-dependent grass PBR response so camera
+movement changes visible-side shading continuously. Albedo includes static
+canopy occlusion; directional lighting is evaluated at runtime. A 0.15 alpha cutoff, alpha-to-coverage,
+coverage-preserving alpha mipmaps and padded RGB avoid opaque rectangular
+tops and black fringes. `GrassDebugV2BakePadding.js` shares the existing
+MSAA unpremultiplication, normal renormalization and RGB dilation with card
+atlas baking without changing their alpha silhouettes.
+
+`GrassDebugV2TextureVolume.js` owns eight wall meshes across the two patches,
+sharing geometry with one joined material per wall. Each patch adds eight triangles (ten
+including its horizontal surface); the six-square comparison adds sixteen
+triangles overall. These are shallow surface proxies, not reconstructed
+interior blades: close views can still reveal the planar faces and corners.
+The top texture planes, side walls, hybrid texture floors and large-field
+texture floors receive shadows but do not cast them. Only live leaf geometry
+casts shadows; the proxies no longer add rectangular perimeter shadows.
+Their baked canopy shading remains part of the texture.
+
+`tests/headless/e2e/grass_debug_v2_texture_volume.pwtest.js` checks wall
+height and placement, unchanged hybrid floors, retained dark leaf surfaces,
+alpha coverage, unit normals,
+four distinct side captures, rendered front/back lighting response and the
+hidden-by-default field checkbox. It captures overview, front, reverse,
+overhead and low views under
+`tests/artifacts/screens/grass_debug_v2/texture_volumes/`.
+
+### Baked canopy shade and aligned wall tops
+
+Side alpha preserves the original LOD3 · 10 silhouette. Dark leaf surfaces are no
+longer removed according to the reference sun direction: that made the dense
+lower canopy see-through and exposed bright terrain at medium distances.
+The lower canopy instead receives a smooth, height-based occlusion bake in
+linear RGB. Visibility starts at 0.26 and eases to 1 between 3% and 65% of the
+captured height. RGB padding receives the same ramp, while original alpha,
+normal and roughness samples remain unchanged. Original empty tip gaps stay
+transparent; there is no new opaque backing geometry.
+
+The overhead bake also shades soil gaps according to surrounding grass
+coverage. Thirty-two periodic samples within 8 cm estimate local canopy
+density; soil visibility follows exp(-8 × density), with a 0.08 floor
+that retains soil hue instead of turning the gaps pure black. Open soil and leaf colors are unchanged. The baked soil keeps
+its original hue and remains separate from the view-dependent leaf response,
+including in mipmaps. Sampling wraps across all tile boundaries.
+
+These are static canopy-occlusion approximations, not ray-traced or
+sun-direction shadow bakes. Both snapshots expose `canopyShadeBaked: true`
+while `sunBaked` and `shadowsBaked` remain false. Normals still support
+runtime relighting. All extra shading work happens during the live study
+bake; runtime texture samples, materials, geometry and draw counts do not
+increase. Alpha testing, depth writes, alpha-to-coverage and
+coverage-preserving mipmaps remain in use. Texture surfaces do not cast
+shadows; real leaf geometry keeps its shadow casting.
+
+Only the two texture-only squares move their horizontal surface to
+`volume.surfaceHeight === volume.wallHeight`. Wall mesh centers remain at
+half-height; hybrid floors remain 1 cm above ground. Hover distances use
+the raised top plane. Triangle counts and the hidden large-field default
+are unchanged.
+
+`tests/headless/e2e/grass_debug_v2_canopy_shade.pwtest.js` reproduces the
+previous lower-canopy holes, verifies over 95% lower coverage through mip
+levels, checks retained upper transparency and a smooth shaded base, and
+uses a periodic leaf/soil fixture to verify shaded gaps, unchanged open
+soil, unchanged leaf albedo and packed soil contributions. It captures
+3 m, 6 m and 10 m views under
+`tests/artifacts/screens/grass_debug_v2/canopy_shade/`.
+
+### Continuous full-square top-to-wall joins
+
+Texture-only patches retain a full 1 m × 1 m top plane, full 0–1 UVs and
+zero border inset. Their geometry already met the wall planes; the apparent
+gap came from transparent rows near the tops of the side captures.
+
+`GrassDebugV2WallJoin.js` now connects each side to its own 4K or 2K top
+bake. For each side-image column, the top border continues down across the
+empty upper band and blends into the first solid blade over 8 mm. Albedo
+and roughness sample the corresponding border strip of the uncropped top
+image. Top normals are transformed into the wall tangent frame, keeping the
+world normal continuous across the corner. The uppermost alpha is opaque;
+side pixels below the join retain their baked canopy shading and original
+leaf-silhouette alpha byte-for-byte.
+
+The underlying four 4K-leaf side captures remain shared reference data.
+Joined material maps are separate for each patch so the 2K top receives its
+own matching edges. Texture sources are independent to avoid modifying the
+reference bake or the other patch. Mipmaps are rebuilt after joining. This
+adds bake-time work and texture storage, with the same meshes, triangle
+counts and runtime texture-sample count. The 1 cm hybrid crop and the hidden
+large field's existing perimeter handling are unrelated to these texture-only
+joins and remain unchanged.
+
+The texture-volume regression validates all eight edges: full top dimensions
+and UV range, coincident geometry, matching albedo and world normals, opaque
+upper-edge coverage, independent texture storage, and unchanged lower cutouts.
+Close, reverse and grazing captures are saved under
+`tests/artifacts/screens/grass_debug_v2/texture_volumes/`.
+
+### Periodic grass source and texture continuation
+
+Roots in the 4K random layout span the complete [-0.5, 0.5) metre square.
+Best-candidate spacing measures distance on a torus, including opposite-edge
+neighbors, so placement has no special sparse margin. Blades and LOD cards
+may extend outside the square; every LOD retains the same original transforms
+and leaf count.
+
+Both overhead bakes and the four side captures use
+`GrassDebugV2PeriodicSource.js`. It considers the center and all eight
+neighbor translations at X/Z offsets -1, 0 and +1 metres. A translated
+instance is included only when its transformed geometry bounds overlap the
+central square. Corner crossings include the diagonal continuation as well
+as the two side copies. Geometry, shape, UVs, material, rotation, scale and
+height remain unchanged. These extra instances exist only during baking;
+they add no geometry or per-frame shader work to the texture patches.
+
+The top camera crops the central 1 m square. Side cameras also clip depth
+to the same square, preventing off-tile portions from covering the central
+projection. Top color, normal and roughness textures use repeat sampling.
+The Brown Earth maps in the bake use an integer number of repetitions per
+metre so soil exposed between blades also tiles continuously; the live
+terrain material is unchanged. The 4K bake, its exact 2K subset and joined
+wall maps are regenerated together on scene load.
+
+The periodic-bake regression checks exact transformed continuations using
+a four-corner fixture, all eight neighbor directions, source-instance
+culling, edge versus interior pixel differences in all three PBR channels,
+and grass coverage near the border. A random corner need not contain a
+blade; copies are generated only where geometry crosses. Captures under
+`tests/artifacts/screens/grass_debug_v2/periodic_bake/` show the connected
+patch and a 3 × 3 repetition without interior walls.
+
+### Distance-stable texture color
+
+Mip filtering must retain separate leaf and soil contributions. Classifying
+only the already-filtered albedo shades a mixed texel as one surface and can
+make the canopy pale, especially when viewed from the shaded side.
+
+The top bake retains combined albedo with static canopy shade in RGB and packs grass coverage
+into the normal map's alpha. Roughness stays in G; its unused R/B/A channels
+store the premultiplied exposed-soil RGB contribution. Filtering these values
+together preserves the mixture. The floor shader subtracts the soil
+contribution to recover premultiplied grass color, lights the grass with the
+existing view-dependent canopy response, and lights the soil separately.
+Pure soil retains the ordinary PBR response; runtime view-dependent canopy
+attenuation does not apply to it. Static shade near grass is already baked. Side-wall joins decode the packed roughness channels back to
+their regular format.
+
+Filtered normals also lose directional variation. Diffuse leaf lighting
+retains their shortened magnitude, bounded at 0.35 for a broad unresolved
+distribution. Lost normal length increases squared roughness, capped at
+one, to prevent distant averaged normals from producing broad bright
+highlights. This adds arithmetic but no runtime texture, texture fetch,
+geometry, or camera-distance switch. The normal sample is reused for its
+RGB direction and alpha coverage. Existing textures without the packed
+metadata keep the color-based classification path.
+
+`grass_debug_v2_floor_distance_color.pwtest.js` compares both 4K and 2K
+textures with their LOD3 · 10 geometry at 1.4, 4, 8, 12 and 24 m, from the
+sunward and opposite headings at a fixed elevation. It checks resolved
+near grass-pixel color error below 12%, prevents excess grass brightness
+at all distances, and keeps total patch brightness within 4% above the
+matching geometry. Distant mixed grass/soil pixels may be darker because
+of the newly baked soil shade; their green-pixel selection also changes. The source geometry itself changes slightly
+with minification; exposed-soil coverage also differs from a flat overhead
+bake, so constant whole-image brightness is not the reference. Existing
+angular, pure-soil, wall-join and periodic-edge checks remain applicable.
+Captures and measurements are under
+`tests/artifacts/screens/grass_debug_v2/floor_distance_color/`.
+
+### LOD3 · 10 source and local bright-leaf detail
+
+Both overhead bakes and all four wall views now use the fixed LOD3 · 10
+source, regardless of the live LOD selected afterward. The 4K source contains
+4,000 leaf instances and 80,000 triangles; the 2K map uses the same even-instance
+subset as the live reference. Placement, shape and periodic copies are retained.
+
+`GrassDebugV2PatchBakeMaterial.js` preserves the card atlas alpha cutoff,
+alpha-to-coverage correction and PBR channels during capture. Object-space
+atlas normals use the same inverse-scale instance transform as live cards.
+Normal output removes camera-side flipping before converting to the receiving
+floor or wall frame. Roughness uses only the source map's G channel, leaving
+its packed structural normal data out of roughness color.
+
+Changing the source alone did not recover the brighter tips: the floor's
+uniform canopy factor compressed the range. The overhead bake now captures
+visible leaf height relative to the source maximum, including cutout coverage.
+Its temporary height target is disposed after packing the data into albedo A;
+normal A remains grass coverage and roughness R/B/A remain soil contributions.
+The floor is still opaque: albedo A is data, not surface transparency.
+
+Runtime lighting divides filtered height by filtered grass coverage so soil
+does not lower the canopy exposure during minification. A smooth height ramp
+between 10% and 85% of source height scales leaf exposure from 0.40 to 1.85,
+then caps direct-light visibility at 1. Raised views use this local exposure;
+grazing views blend toward the previous average correction. The 4K texture
+uses full local contrast; the half-density 2K texture uses half strength to
+avoid excessive darkening where fewer blades occlude one another. Exposed tips can
+be bright while lower leaf portions remain shaded. Normals continue to control
+the actual angular response; no bright spots are painted under a fixed sun.
+The shader reuses the existing albedo sample and adds no texture fetch,
+persistent texture, triangle or draw call.
+
+The focused `grass_debug_v2_lod10_texture.pwtest.js` compares the 4K texture
+with the 4K live LOD3 · 10 patch at 45° and 85°, from sunward and opposing
+directions. It checks source identity, cutout coverage, average leaf color,
+the upper brightness percentile and bright-to-dark range. Artifacts are saved
+under `tests/artifacts/screens/grass_debug_v2/lod10_texture/`.
+
+### Perimeter silhouette comparisons
+
+The existing texture-only 4K and 2K blocks retain their top surface at 80%
+of the source maximum height. Four additional vertical alpha cards extend
+each block from that height to 100%, at the same four square boundaries.
+Their four 2048 × 128 albedo/alpha, normal and roughness projections use the
+fixed periodic 4K LOD3 · 10 source. Each orthographic camera clips to just
+the outer 5 cm of its side, including corner/neighbor continuations; interior
+leaves cannot fill the silhouette. Clear texels stay transparent, with color
+padding and coverage-preserving mips. They receive lighting/shadows and cast
+no shadows. Each block has 18 triangles: 2 top, 8 lower walls, 8 silhouette.
+Only the taller leaves reach this band; shorter leaves are not stretched.
+
+A seventh square, `edge4k`, sits at (-1.3, -1.3) in X/Z, to the left of
+the original 4K texture, with the same 30 cm gap and full-size raised 4K top.
+It shares the lower-wall/top textures and has no upper alpha cards. Instead,
+759 original leaf roots in the outer 5 cm perimeter are retained, counting
+corners once. Their original transforms and two-card meshes are preserved:
+1,518 cards / 3,036 leaf triangles, plus 10 shell triangles = 3,046 total.
+These leaves stay at LOD3 · 2 when the main comparison LOD changes.
+
+A stable patch-local dither fades real edge geometry over the top surface.
+Inside the boundary, the low leaf portion fades into the raised texture,
+with a 2 mm below / 16 mm above surface ramp. An inward fade ends at 6.5 cm
+(its final ramp starts at 3.5 cm) so leaning blades do not end at a hard
+inner border. Outside the square leaves retain their natural shape. The
+same mask is applied in their directional shadow depth pass; only actual
+leaf geometry casts shadows, while the shell remains non-casting.
+Normal-facing and alpha-coverage toggles apply to these leaves as well.
+The hover tooltip, square bounds, labels and framing include the new patch.
+
+`grass_debug_v2_edge_silhouette.pwtest.js` validates the 80–100% height band,
+5 cm capture slab (a colored fixture rejects deeper geometry), alpha gaps,
+exact original instance selection, fixed LOD/counts and correction controls.
+Captures are under `tests/artifacts/screens/grass_debug_v2/edge_silhouettes/`.
+
+### 70% base with two strip rings
+
+The eighth comparison, `rings4k`, is at X/Z (-2.6, -1.3), 30 cm beyond
+the earlier real-edge-leaf patch. It uses the same 4K LOD3 · 10 top bake,
+lowered from 80% to 70% of maximum reference height (6.793 cm for the
+current 9.705 cm source). Its lower walls connect to that full-size top.
+Existing seven comparisons retain their geometry and material settings.
+
+Eight alpha cards form two independently captured rings:
+- Outer: bottom on the 1 m square at 10% source height (0.970 cm), top
+  flared out 2.5 cm on each side. Trapezoidal cards meet at the corners;
+  their UVs preserve the capture scale.
+- Inner: bottom at the same 1 m square boundary, starting 2 mm below the
+  70% base. Its top flares out 0.5 cm per side, giving a slight outward
+  inclination (about 9 degrees). The outer ring stays farther outward
+  throughout their shared height, so the two rings do not cross.
+- Both reach the original source maximum without fading away the upper tips.
+  Each adds eight triangles.
+- Each side uses reference roots in a 12 cm strip, doubled from the previous
+  6 cm capture to represent roughly twice as many leaves. Both rings select
+  radial roots in (0.38, 0.50] m and along-edge roots within ±0.50 m.
+  They share the source strip but are baked independently at their different
+  inclinations and height ranges. A leaf is included whole once selected,
+  so its outward overhang survives. Adjacent sides may project the same
+  corner leaf.
+- No periodic neighbor roots are added to these ring sources. The source
+  is the actual isolated 4K reference patch; the top remains periodically baked.
+- Four 2048 × 128 albedo/alpha, tangent-normal and roughness views per ring
+  are captured in the actual card inclination. No full-depth side capture
+  is used for these upper rings. Alpha coverage mips retain the gaps.
+- Both alpha-card rings cast and receive shadows. The shadow pass uses
+  their existing albedo alpha and 0.15 cutoff to retain the leaf cutouts.
+  The lower walls and top remain non-casting. There are no live leaves
+  on this patch: 2 top + 8 lower wall + 16 ring triangles = 26 visible
+  triangles, plus 8 shadow-only strip triangles = 34 total. The eight ring
+  cards and bottom strips contribute 24 triangles when the shadow map updates.
+  Static shadows remain cached while the camera moves.
+- Four opaque shadow-only strips span soil height to 10% source height at
+  the 1 m boundary, meeting the outer ring's bottom. They cast a continuous
+  base shadow but write neither color nor depth in the camera pass.
+  They use double-sided shadow casting and remain present in the shadow pass.
+
+The experimental patch now uses neutral leaf-color scale (1, 1, 1) for
+its top, walls and rings. Its overhead color matches the original 4K texture;
+its low-angle visibility now uses the directional captures described below.
+The earlier fixed (0.50, 0.92, 0.50) scale overfit a rear-view whole-patch
+average, which mixed different proportions of leaf and soil pixels. It
+halved red and blue at every viewpoint, making the patch too saturated
+from the front and above. That tint is removed; source albedo, captured
+normals, angle-dependent lighting, and separately filtered soil remain.
+
+The angular regression compares the live 4K source, original 4K texture
+and experimental patch at 1.4 m and 10 m, three elevations and six headings
+(36 views). It retains the original near-view source color limits and
+checks overhead experimental leaf RGB against the original texture within
+3 display levels at both distances. The directional version checks low-angle
+10 m green brightness within 10 display levels of the live source. Other
+view measurements are retained for comparison, without claiming exact
+reference matching. No fixed color tint compensates for visibility.
+Measurements and front/rear/top 10 m renders:
+`tests/artifacts/screens/grass_debug_v2/floor_angular_color/`.
+
+The `10m Rear` camera button reverses the usual 3/4 horizontal direction,
+retains its elevation, and sets exactly 10 m from the comparison bounds
+center. It does not apply the automatic fit that would change that distance.
+Individual hovered patch distances can differ from this center distance.
+Repeated clicks are stable and the large-field camera/shadow focus is cleared.
+
+`grass_debug_v2_two_rings.pwtest.js` checks strip populations, per-ring
+12 cm capture depth, shared boundary, 10% outer start, slight inner inclination, heights,
+invisible bottom strips participating in the shadow pass, 34-triangle tooltip, exact and
+repeatable rear camera distance, neutral albedo scaling, and increased
+soil occlusion in the new angled texture compared with the top-only baseline.
+The existing floor comparison also checks pure soil with the non-neutral
+leaf calibration to prevent tint leakage. Captures are saved under
+`tests/artifacts/screens/grass_debug_v2/two_rings/bottom_shadow/`.
+The original ring-only shadow capture is in `two_rings/ring_shadows/`.
+The previous 30% outer-start comparison is in `two_rings/edge_30_percent/`.
+The earlier 6 cm capture is retained under `two_rings/dense_edges/`, and
+initial 3 cm capture remains in the `two_rings/` parent directory.
+
+
+### Experimental wall capture height correction
+
+The `rings4k` wall now uses a dedicated side capture covering exactly
+0–70% of the source height. `createGrassDebugV2SideBake` accepts
+`maxHeightFraction` (default 1); projection framing and baked shade
+use the actual minimum-to-maximum height interval. Mapping the full
+0–100% image onto the shorter wall had compressed the sparse upper tips
+down into the dense lower canopy.
+
+This experimental wall no longer uses `GrassDebugV2WallJoin`: the old
+join copied the top texture's soil into the wall's empty upper band.
+The reproduced upper 15% of its wall maps contained 18–22% soil-colored
+opaque pixels. The corrected wall keeps side-leaf albedo, normals,
+roughness and alpha from the proper capture, with the same physical
+top/wall connection and 26 total triangles. Top soil and the existing
+baseline comparison joins are unchanged; the separate alpha rings still
+now start at 10% height / just below the 70% top.
+
+`grass_debug_v2_wall_height.pwtest.js` reproduces both defects: a colored
+height fixture verifies exclusion of source geometry above 70%, and real
+wall-map measurements check dense foliage without soil contamination.
+It failed on the old mapping and blend, then passed with the correction.
+Before/after close captures and measurements are in
+`tests/artifacts/screens/grass_debug_v2/wall_height/`.
+Updated ring and rear-distance renders are in
+`tests/artifacts/screens/grass_debug_v2/two_rings/wall_height_corrected/`.
+
+
+### Comparison patch reorder
+
+The three 4K texture experiments are cyclically reordered as requested.
+All stay on Z = -1.3 m, with their geometry, materials, labels and hover
+configuration moving together:
+
+| Patch | Previous X | Current X |
+| --- | ---: | ---: |
+| Texture · 4K + LOD3 · 2 edge | -1.3 m | 0 m |
+| Texture · 4K · 70% + two rings | -2.6 m | -1.3 m |
+| Texture · 4K + alpha edge | 0 m | -2.6 m |
+
+This places the two-ring experiment between the other two texture versions.
+From the rear viewpoint used in the annotated reference, the real-edge-leaf
+patch and two-ring patch each move one position left, and the plain 4K
+texture moves to the rightmost position. Other patches keep their positions.
+Patch centers remain 1.3 m apart; comparison bounds now start at X = -3.1 m.
+Existing position references above describe earlier layouts.
+
+Updated rear-view and close captures:
+`tests/artifacts/screens/grass_debug_v2/two_rings/reordered/`.
+
+
+### Directional canopy visibility
+
+The `rings4k` experiment now uses the unchanged top capture plus eight
+LOD3 · 10 captures of the same periodic 4,000-leaf source. Azimuths are
+0, 45, 90, 135, 180, 225, 270 and 315 degrees, all at **30 degrees above
+the soil** (the suggested angle is interpreted as degrees). Each 1024²
+capture is reprojected into the 1 m canopy's common UV frame at its
+70% surface height. Expanded periodic neighbors include the leaves hit
+by oblique rays outside the square, not just leaves crossing its border.
+
+Camera elevation blends smoothly from oblique-only at/below 35 degrees
+to top-only at/above 80 degrees. Azimuth blends adjacent captures,
+including the 315-to-0-degree wrap. Updating happens before the canopy
+draw, so orbiting, presets and WASD/QE all use the same selection.
+
+Each angled view captures albedo, source normals, roughness/soil
+contributions, canopy height and a separate sun-visibility map. Captured
+self-shadows replace the overhead lighting approximation as the angled
+views become visible. Albedo remains untinted and normal lighting still
+responds to the camera. Self-shadow visibility is baked for the study's
+current sun direction; changing that direction requires recapturing.
+Runtime camera movement only changes texture uniforms, not the bake.
+
+Measured raw leaf coverage is 64.2% in the overhead map and 92.7–94.6%
+in the eight angled maps. This changes which leaves hide the soil rather
+than just darkening or recoloring the exposed ground. Other comparison
+patches retain their top-only captures. Walls, rings and the invisible
+base shadow strips are unchanged: 26 visible triangles plus 8 shadow-only
+triangles. Texture storage/sampling and initial capture work increase;
+there are no additional live leaves or draw calls.
+
+`grass_debug_v2_directional_canopy.pwtest.js` checks all eight real
+captures, leaf coverage, lit/shadowed texels, elevation and azimuth
+selection (including wrap), shader compilation and unchanged triangles.
+The floor angular test retains the overhead color checks and records
+36 source/baseline/experiment comparisons. Ring and periodic tests cover
+the retained silhouette geometry and seam behavior.
+
+Renders and measured capture data:
+`tests/artifacts/screens/grass_debug_v2/directional_canopy/`.
+The 30-degree captures remain an approximation at other elevations;
+the patch is still a plane plus edge rings, with no full interior parallax.
+
+
+### Experimental outer-ring shadows and tooltip
+
+Only the four outer alpha cards of `rings4k` cast live shadows. The inner
+ring still renders and receives shadows; it no longer casts them. The
+lower walls and top remain non-casters. The old invisible 0–10% base
+strips are retained in code but hidden and excluded from shadow rendering.
+
+The experimental tooltip now identifies each ring's card count, reference
+capture depth and shadow setting: outer = 4 cards / 12 cm / shadows on,
+inner = 4 cards / 12 cm / shadows off. Active patch triangles are now
+26 (the disabled strips no longer contribute 8 shadow-only triangles).
+The directional texture's baked reference self-shadowing is unchanged.
+
+The ring regression verifies the actual shadow-pass draw list contains
+only outer cards. The comparison regression checks the rendered tooltip
+and corrected totals. Captures: `two_rings/outer_shadow_only/` and
+`floor_pbr_comparison/rings-tooltip.png` under
+`tests/artifacts/screens/grass_debug_v2/`.
+
+
+### Cropped block with one bent outer ring
+
+The experimental `rings4k` patch now replaces the two separate alpha
+rings with **one outer ring containing two connected cards per side**,
+similar to the two-segment shape of LOD3 · 2. There are eight alpha cards
+(16 triangles) around the four original 1 m borders. All eight cast and
+receive shadows; the block's top and lower walls only receive shadows.
+The former invisible base strips have been removed from this experiment.
+
+The block alone is cropped by **0.005 m on each edge**, giving a 0.99 m
+square. The top geometry uses UVs 0.005–0.995 on both axes; wall widths
+and their horizontal UVs use the same crop. No object/texture scale
+changes, and the existing top/eight angled textures are reused. Walls
+move inward to ±0.495 m, while the ring remains rooted at ±0.5 m.
+
+The two-card profile is:
+
+| Row | Source height | Outward offset from original border |
+| --- | ---: | ---: |
+| Bottom | 10% | 0 |
+| Shared hinge | 70% | 0.5 cm |
+| Tip | 100% | 2.5 cm |
+
+For the current source height these yield about 5° and 34° inclinations
+from upright. Both sides of every hinge have identical positions and UVs.
+Adjacent sides meet at the same square corner at each profile row.
+
+Each side uses **one continuous upright capture** of the actual reference
+leaves rooted in its 12 cm edge strip. The capture includes 2.5 cm of
+extra horizontal framing per end for overhanging tips. The two cards
+sample different portions of that same albedo/alpha, normal and roughness
+texture. Their normal maps are transformed from the shared capture frame
+into each card's tangent frame before shading, so bending the carrier
+does not introduce a false change in the captured leaf normals.
+
+The tooltip lists one outer ring, eight cards (two per side), 12 cm capture
+depth and shadows on. The entire experimental patch remains **26 triangles**:
+2 top, 8 walls, 16 ring. Other comparison patches are unchanged.
+
+The existing `grass_debug_v2_two_rings.pwtest.js` regression now checks this
+replacement: world/UV crop correspondence, original border position,
+two distinct inclinations, joined geometry and UVs, shared material maps,
+consistent source normals, actual shadow-pass draw calls, and the rear
+camera distance. `grass_debug_v2_floor_comparison.pwtest.js` checks the
+updated tooltip and cropped tile dimensions/UVs.
+Renders: `tests/artifacts/screens/grass_debug_v2/bent_outer_ring/`.
+
+
+### Grounded ring with a stronger lower bend
+
+The outer ring now starts exactly at soil height (0%), at the same
+original ±0.5 m border. Its lower card leans **20° outward from upright**
+instead of about 5°. The hinge remains at 70% of source height; its
+horizontal offset is computed from that height and the 20° inclination.
+
+The upper card retains its previous slope by extending another 2 cm
+outward from the moved hinge. With the current source this gives about
+2.47 cm at the hinge and 4.47 cm total overhang at the tip. Shared hinge
+vertices/UVs and captured normal frames remain continuous. Capture framing
+now follows that overhang and includes the leaf bases at soil level.
+
+The 99 cm cropped block, eight cards, 26-triangle total and ring shadow
+casting remain unchanged. The existing ring regression verifies ground
+contact, a lower inclination in the 15–25° range, and the connected upper
+card. Updated renders:
+`tests/artifacts/screens/grass_debug_v2/bent_outer_ring/grounded/`.
+
+### Experimental sun-facing / opposite captures and full-width base
+
+- The experimental patch uses three canopy captures: the existing overhead capture and two oblique captures at 30° elevation. The first oblique camera sits on the sun's horizontal bearing; the second is 180° opposite. All are captured from the 4K-leaf LOD3 · 10 reference.
+- Oblique views blend continuously with the camera's sun-relative heading (cosine weights). Camera elevations from 35° to 80° blend toward the top capture. This reduces the previous eight oblique captures to two; intermediate headings are a blend of these two views.
+- The canopy top retains its 99 × 99 cm geometry and cropped UV range 0.005–0.995. The four walls widen downward to a 100 × 100 cm footprint at soil level. Their lower UV edges cover the full reference width, while their upper edges meet the cropped top without resizing it.
+- Wall normal frames compensate for the inward slope, preserving the captured lighting response. The grounded two-card outer ring, its shadow casting, and the 26-triangle visible budget are unchanged.
+- Focused browser checks: `grass_debug_v2_directional_canopy.pwtest.js` validates captures, coverage, heading/elevation blending and wrap continuity; `grass_debug_v2_two_rings.pwtest.js` checks base/top dimensions, wall joins, crop UVs, normal frames and ring shadows.
+
+### Sparser ring with a lower hinge
+
+- The experimental outer ring now captures 40% of eligible reference leaves (a 60% reduction), sampled deterministically across the existing 12 cm root strip. It retains the full strip depth and source leaf colors. The current four sides keep 190/474, 198/496, 182/456 and 195/488 leaves, rounded to the nearest whole leaf per side.
+- The hinge moves from 70% to 50% of source leaf height. The lower card stays grounded at the original metre border and leans 15° outward rather than 20°, making it slightly more upright. The upper card retains its prior inclination and continues from the shared hinge without a UV break.
+- The block remains 1 m at its base and 99 cm at its top; the canopy height is still 70%. Eight ring cards cast shadows and the experimental patch remains 26 visible triangles.
+- The hover tooltip now includes the ring's retained leaf percentage. Geometry/density checks and renders live under `tests/artifacts/screens/grass_debug_v2/sparse_lower_ring/`.
+- A matched-strip HDR color comparison found that the floor-canopy visibility approximation also darkened the sparse perimeter ring, especially opposite the sun. Ring cards now use half-strength canopy occlusion; walls and top captures keep their existing shading. This changes visibility shading rather than tinting the baked leaf albedo.
+- `grass_debug_v2_ring_color.pwtest.js` compares the exact retained live leaves with their side captures under matching sun, hemisphere light and environment maps, using an unclipped half-float render target. The existing angular-color test continues to cover the patch interior at multiple elevations and distances.
+- Validation: the matched-strip test's worst mean linear-green difference falls from 20.64% to 11.54%; sun-opposite sides improve to -7.43% and -4.32%. This is a measured approximation, not exact multi-view leaf shading. The patch-interior angular-color check passes its existing limits.

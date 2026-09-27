@@ -22,11 +22,15 @@ export function sampleGrassDebugV2DetailedBladeHalfWidth(t) {
     return widthMeters * 0.5 * opening * taper * Math.sqrt(1 - cap * cap * cap);
 }
 
-/** @returns {(t: number, s: number, target: THREE.Vector3) => THREE.Vector3} */
-export function createGrassDebugV2DetailedBladeSampler() {
+/**
+ * @param {THREE.Curve<THREE.Vector3>|null} curve
+ * @param {(t: number) => number} sampleHalfWidth
+ * @returns {(t: number, s: number, target: THREE.Vector3) => THREE.Vector3}
+ */
+export function createGrassDebugV2DetailedBladeSampler(curve = null, sampleHalfWidth = sampleGrassDebugV2DetailedBladeHalfWidth) {
     const { widthMeters, rootDepthMeters, transverseHalfAngle, midribHeightMeters, midribHalfWidthRatio, tipStart } = GRASS_V2_DETAILED_BLADE;
     const root = new THREE.Vector3(0, -rootDepthMeters, 0);
-    const curve = new THREE.CubicBezierCurve3(
+    curve ??= new THREE.CubicBezierCurve3(
         root, new THREE.Vector3(0, 0.0255, 0.04),
         new THREE.Vector3(0.001, 0.064, 0.125), new THREE.Vector3(0.007, 0.0592, 0.22)
     );
@@ -37,7 +41,7 @@ export function createGrassDebugV2DetailedBladeSampler() {
         curve.getTangent(t, tangent).normalize();
         right.set(1, 0, 0).addScaledVector(tangent, -tangent.x).normalize();
         up.crossVectors(tangent, right).normalize();
-        const halfWidth = sampleGrassDebugV2DetailedBladeHalfWidth(t);
+        const halfWidth = sampleHalfWidth(t);
         const channelStrength = 1 - THREE.MathUtils.smoothstep(t, 0.08, 0.72);
         const midribTaper = 1 - THREE.MathUtils.smoothstep(t, tipStart, 1);
         const angle = s * transverseHalfAngle;

@@ -3,16 +3,16 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Grass · Card Study</title>
+    <title>Grass · Leaf Study</title>
     <link rel="icon" href="../favicon.ico" />
     <link rel="stylesheet" href="../src/graphics/gui/shared/styles.css" />
     <link rel="stylesheet" href="../src/graphics/gui/grass_debugger_v2/plant_study.css" />
     <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/"}}</script>
 </head>
 <body>
-    <canvas id="plant-canvas" aria-label="One four-leaf grass tuft with two same-side shared-root V pairs comparing LOD0 and LOD3 cards"></canvas>
+    <canvas id="plant-canvas" aria-label="One upright grass leaf for LOD0 shape authoring"></canvas>
     <aside class="ui-panel is-interactive plant-study-panel">
-        <h1>LOD3 Study</h1>
+        <h1>Leaf Study</h1>
         <div class="plant-study-buttons" role="group" aria-label="Representation">
             <button type="button" data-mode="LOD0" aria-pressed="true" disabled>LOD0</button>
             <button type="button" data-mode="refined" aria-pressed="false" title="Ten shared cards" disabled>LOD3 · 10</button>
@@ -28,6 +28,7 @@
         <div class="plant-study-overlays">
             <label><input id="card-bounds" type="checkbox" disabled /> Card bounds</label>
             <label title="Show the blue 1 m × 1 m footprint and zoom out to fit."><input id="square-bounds" type="checkbox" disabled /> Square bounds</label>
+            <label hidden><input id="patch-labels" type="checkbox" checked disabled /> Patch labels</label>
         </div>
         <div class="plant-study-buttons" role="group" aria-label="Camera">
             <button type="button" data-pose="three_quarter" disabled>3/4</button>
@@ -37,8 +38,25 @@
             <button type="button" data-pose="far" title="3/4 view framing the full 1 m square" disabled>Far</button>
             <button type="button" data-pose="two_meters" title="2 m above soil; 1 m farther horizontally than Far" disabled>2m</button>
             <button type="button" data-pose="four_meters" title="4 m above soil; 1 m farther horizontally than 2m" disabled>4m</button>
+            <button type="button" data-pose="ten_meters_rear" title="10 m from the comparison center, from the opposite 3/4 direction" disabled>10m Rear</button>
         </div>
+        <section id="field-cameras" hidden>
+            <hr />
+            <h2>30 × 20 m field</h2>
+            <label><input id="field-visible" type="checkbox" disabled /> Show field</label>
+            <div class="plant-study-buttons" role="group" aria-label="Field camera">
+                <button type="button" data-field-pose="overview" aria-pressed="false" disabled>Overview</button>
+                <button type="button" data-field-pose="top" aria-pressed="false" disabled>Top</button>
+                <button type="button" data-field-pose="two_meters" aria-pressed="false" disabled>2m</button>
+                <button type="button" data-field-pose="four_meters" aria-pressed="false" disabled>4m</button>
+            </div>
+            <output id="field-counts"></output>
+        </section>
     </aside>
+    <div id="grass-authoring-dock" class="grass-authoring-dock" hidden>
+        <button id="grass-authoring-tab" class="grass-authoring-tab" type="button" aria-expanded="false" aria-controls="grass-authoring-panel" disabled>Edit</button>
+        <section id="grass-authoring-panel" class="grass-authoring-panel" aria-hidden="true" inert></section>
+    </div>
     <div id="plant-loading" role="status">Loading...</div>
     <script type="module" src="../src/graphics/gui/grass_debugger_v2/GrassDebugV2PlantStudy.js"></script>
 </body>

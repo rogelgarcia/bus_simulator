@@ -1,4 +1,5 @@
 // Paired source leaves share a straight root line for one reusable card atlas; the historical default is ten pairs.
+// Tangent-matched collar heights remove the join crease without moving the blade ribs sideways.
 // @ts-check
 import * as THREE from 'three';
 import { createGrassDebugV2Plant, GRASS_V2_PLANT } from './GrassDebugV2Plant.js';
@@ -6,8 +7,8 @@ import { resolveGrassDebugV2LeafContact } from './GrassDebugV2LeafContact.js';
 
 export const GRASS_V2_PLANT_ROW = Object.freeze({ pairs: 10, spacingMeters: 0.044 });
 
-const SAME_SIDE_PAIR = Object.freeze({ spacingMeters: 0.052, shoulderMeters: 0.0058, openingHeightMeters: 0.010,
-    heightOffsetMeters: 0.00035, fanDegrees: 4, innerSheathRadiusMeters: 0.00215, outerSheathRadiusMeters: 0.00230 });
+const SAME_SIDE_PAIR = Object.freeze({ spacingMeters: 0.052, openingHeightMeters: 0.010,
+    heightOffsetMeters: 0.00035, fanDegrees: 5.6, innerSheathRadiusMeters: 0.00215, outerSheathRadiusMeters: 0.00230 });
 
 function makeSeparatedLeaf(source, sign) {
     const geometry = source.clone(), p = geometry.attributes.position;
@@ -18,17 +19,26 @@ function makeSeparatedLeaf(source, sign) {
         const rise = Math.max(0, p.getY(center) + rootDepth);
         const t = geometry.attributes.uv.getY(center);
         // Keep the closed sheaths concentric; open sideways only as they unroll.
-        const peel = THREE.MathUtils.smootherstep(t, 0.025, 0.15);
+        const peel = THREE.MathUtils.smootherstep(t, 0.025, 0.07);
         const opening = -Math.expm1(-rise / SAME_SIDE_PAIR.openingHeightMeters) * peel;
         const rootBlend = 1 - THREE.MathUtils.smootherstep(t, 0, GRASS_V2_PLANT.collarJoin);
         const radius = sign < 0 ? SAME_SIDE_PAIR.innerSheathRadiusMeters : SAME_SIDE_PAIR.outerSheathRadiusMeters;
         const radialScale = 1 + (radius / GRASS_V2_PLANT.leaves[0].sheathRadius - 1) * rootBlend;
-        const separation = (SAME_SIDE_PAIR.shoulderMeters + Math.max(0, p.getZ(center)) * fan) * opening;
-        const centerX = p.getX(center);
-        const width = 1 - 0.45 * THREE.MathUtils.smootherstep(t, 0.02, 0.07) * (1 - THREE.MathUtils.smootherstep(t, 0.07, 0.20));
+        const separation = Math.max(0, p.getZ(center)) * fan * opening;
         for (let i = start; i < start + count; i++)
-            p.setXYZ(i, (centerX + (p.getX(i) - centerX) * width) * radialScale + sign * separation,
+            p.setXYZ(i, p.getX(i) * radialScale + sign * separation,
                 p.getY(i) - (sign > 0 ? SAME_SIDE_PAIR.heightOffsetMeters * opening : 0), p.getZ(i) * radialScale);
+    }
+    const start = (GRASS_V2_PLANT.sheathSegments + GRASS_V2_PLANT.collarSegments / 2) * stride;
+    let end = start; while (geometry.attributes.uv.getY(end) < 0.15) end += stride;
+    for (let side = 0; side < stride; side++) {
+        const a = start + side, b = end + side, span = p.getZ(b) - p.getZ(a);
+        const slope = i => (p.getY(i + stride) - p.getY(i - stride)) / (p.getZ(i + stride) - p.getZ(i - stride));
+        const y0 = p.getY(a), y1 = p.getY(b), c0 = y0 + slope(a) * span / 3, c1 = y1 - slope(b) * span / 3;
+        for (let i = a + stride; i < b; i += stride) {
+            const u = (p.getZ(i) - p.getZ(a)) / span, v = 1 - u;
+            p.setY(i, v * v * v * y0 + 3 * v * v * u * c0 + 3 * v * u * u * c1 + u * u * u * y1);
+        }
     }
     geometry.computeVertexNormals();
     const facing = geometry.attributes.grassFacingNormal, normal = new THREE.Vector3();

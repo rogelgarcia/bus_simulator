@@ -1,49 +1,30 @@
 // Live debug projection, not a published offline bake. Both layouts share all PBR channels and texel density.
 // @ts-check
 import * as THREE from 'three';
+import { extendGrassBakeColors } from './GrassDebugV2BakePadding.js';
 import { grassCardNormalBakeShader } from '../../shaders/materials/grass/GrassCardNormalBakeShaderLoader.js';
 import { grassPlantSurfaceBakeShader } from '../../shaders/materials/grass/GrassPlantSurfaceBakeShaderLoader.js';
 import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
 import { registerMaterialShaderHook } from '../../shaders/core/MaterialShaderHookRegistry.js';
 import { createGrassAlphaCoverageMipmaps } from './GrassDebugV2AlphaCoverage.js';
+import { createGrassDebugV2CardRootSoil } from './GrassDebugV2CardRootSoil.js';
 
-export const GRASS_V2_PLANT_ATLAS = Object.freeze({ pageWidth: 2048, height: 2048, pages: 2, padding: 8 });
+export const GRASS_V2_PLANT_ATLAS = Object.freeze({ pageWidth: 2048, height: 2048, pages: 2, rgbDilation: 'full-page' });
 export const GRASS_V2_PLANT_ALPHA_TEST = 0.15;
-
-function extendColors(pixels, width, height, normal) {
-    // Undo coverage-weighted MSAA RGB, then extend edge colors without extending alpha.
-    const valid = new Uint8Array(width * height);
-    for (let i = 0; i < valid.length; i++) {
-        const o = i * 4, alpha = pixels[o + 3] / 255;
-        if (!alpha) continue;
-        valid[i] = 1;
-        for (let c = 0; c < 3; c++) pixels[o + c] = Math.min(255, Math.round(pixels[o + c] / alpha));
-        if (normal) {
-            const n = new THREE.Vector3().fromArray(pixels, o).multiplyScalar(2 / 255).subScalar(1).normalize();
-            for (let c = 0; c < 3; c++) pixels[o + c] = Math.round((n.getComponent(c) * 0.5 + 0.5) * 255);
-        }
-    }
-    for (let pass = 0; pass < GRASS_V2_PLANT_ATLAS.padding; pass++) {
-        const frontier = [];
-        for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-            const i = y * width + x;
-            if (valid[i]) continue;
-            const neighbor = [x > 0 ? i - 1 : -1, x + 1 < width ? i + 1 : -1, y > 0 ? i - width : -1, y + 1 < height ? i + width : -1]
-                .find(index => index >= 0 && valid[index]);
-            if (neighbor === undefined) continue;
-            pixels.set(pixels.subarray(neighbor * 4, neighbor * 4 + 3), i * 4);
-            frontier.push(i);
-        }
-        for (const i of frontier) valid[i] = 1;
-    }
-}
 
 /**
  * @param {THREE.WebGLRenderer} renderer
  * @param {import('./GrassDebugV2PlantCardLayout.js').PlantCardSource} plant
  * @param {ReturnType<import('./GrassDebugV2PlantCardLayout.js').createGrassDebugV2PlantCardLayout>} layout
+ * @param {{rootSoil?: import('./GrassDebugV2CardRootSoil.js').CardRootSoil|null}} options
  */
-export function createGrassDebugV2PlantCardAtlas(renderer, plant, layout) {
+export function createGrassDebugV2PlantCardAtlas(renderer, plant, layout, { rootSoil = null } = {}) {
+    const bakeMeshes = plant.bakeMeshes ?? plant.leaves;
+    if (bakeMeshes.some(mesh => !mesh.geometry.attributes.grassFacingNormal
+        || mesh.geometry.attributes.grassFacingNormal.count !== mesh.geometry.attributes.position.count))
+        throw new Error('Plant card atlas requires a structural facing normal for every source vertex.');
+    if (rootSoil && Object.keys(layout.splitSides).length !== 1) throw new Error('Card root soil requires a single-sided card layout.');
+    const soil = rootSoil ? createGrassDebugV2CardRootSoil(rootSoil, Object.values(layout.splitSides)[0]) : null;
     const { pageWidth: width, height } = GRASS_V2_PLANT_ATLAS;
     const { minX, maxX, minZ, maxZ } = layout.frame;
     const camera = new THREE.OrthographicCamera(minX, maxX, -minZ, -maxZ, 0.01, 2);
@@ -60,7 +41,7 @@ export function createGrassDebugV2PlantCardAtlas(renderer, plant, layout) {
         side: THREE.DoubleSide, toneMapped: false });
     attachShaderMetadata(roughness, grassPlantSurfaceBakeShader);
     const scene = new THREE.Scene();
-    for (const leaf of plant.leaves) {
+    for (const leaf of bakeMeshes) {
         const mesh = new THREE.Mesh(leaf.geometry, color); mesh.position.copy(leaf.position); scene.add(mesh);
     }
     const target = new THREE.WebGLRenderTarget(width, height, { samples: 4, colorSpace: THREE.NoColorSpace });
@@ -77,7 +58,8 @@ export function createGrassDebugV2PlantCardAtlas(renderer, plant, layout) {
             renderer.setRenderTarget(null);
             const page = new Uint8Array(width * height * 4);
             renderer.readRenderTargetPixels(target, 0, 0, width, height, page);
-            extendColors(page, width, height, name === 'normal');
+            extendGrassBakeColors(page, width, height, name === 'normal',
+                name === 'albedo' && soil ? pixels => soil.apply(pixels, width, height, layout.frame) : null);
             const packed = new Uint8Array(width * 2 * height * 4);
             for (let y = 0; y < height; y++) {
                 const row = page.subarray(y * width * 4, (y + 1) * width * 4);
@@ -106,6 +88,6 @@ export function createGrassDebugV2PlantCardAtlas(renderer, plant, layout) {
         renderer.autoClear = previous.autoClear; renderer.toneMapping = previous.toneMapping;
         target.dispose(); color.dispose(); normal.dispose(); roughness.dispose();
     }
-    return Object.freeze({ ...maps, definition: GRASS_V2_PLANT_ATLAS,
+    return Object.freeze({ ...maps, definition: soil ? Object.freeze({ ...GRASS_V2_PLANT_ATLAS, rootSoil: soil.getSnapshot() }) : GRASS_V2_PLANT_ATLAS,
         dispose: () => Object.values(maps).forEach(map => map.dispose()) });
 }

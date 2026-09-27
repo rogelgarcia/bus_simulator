@@ -5,8 +5,78 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
 .plant-study-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
 .plant-study-overlays { display: flex; flex-wrap: wrap; gap: 6px 12px; }
 #square-bounds { accent-color: #348fff; }
+#field-cameras { display: grid; gap: 8px; }
+#field-cameras hr { width: 100%; margin: 0; border: 0; border-top: 1px solid #81918770; }
+#field-cameras h2 { margin: 0; font: 600 12px/1.4 system-ui, sans-serif; }
+#field-counts { display: block; font: 11px/1.4 system-ui, sans-serif; white-space: pre-line; }
+.plant-study-panel { max-height: calc(100vh - 56px); overflow-y: auto; }
 .plant-study-buttons button { padding: 6px 8px; cursor: pointer; }
 .plant-study-buttons button[aria-pressed="true"] { background: #465c38; color: #fff; }
 #plant-counts, .plant-study-panel label { font: 12px/1.4 system-ui, sans-serif; }
 #plant-loading { position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%); color: #fff; background: #18211ed9; padding: 8px 16px; font: 14px system-ui, sans-serif; }
 [hidden] { display: none !important; }
+
+:root { --grass-authoring-height: 112px; }
+body.grass-authoring-open #plant-canvas { height: calc(100% - var(--grass-authoring-height)); }
+.grass-authoring-dock {
+    position: fixed; z-index: 20; bottom: 0; left: 0; width: 100%;
+    height: var(--grass-authoring-height); transform: translateY(100%);
+    transition: transform 220ms ease; color: #e9f2ff; font: 11px/1.4 system-ui, sans-serif;
+}
+.grass-authoring-dock.is-open { transform: translateY(0); }
+.grass-authoring-tab {
+    position: absolute; bottom: 100%; left: 16px; padding: 0 20px;
+    height: 28px; border: 1px solid #728164; border-bottom: 0;
+    border-radius: 8px 8px 0 0; background: #243027f2; color: #f1f7e9;
+    font: 600 11px system-ui, sans-serif; cursor: pointer;
+}
+.grass-authoring-tab[aria-expanded="true"] { background: #344730; }
+.grass-authoring-panel {
+    box-sizing: border-box; height: 100%; padding: 10px 16px; display: flex; align-items: flex-start; gap: 16px;
+    background: #17211cf5; border-top: 1px solid #6c805e80; box-shadow: 0 -4px 18px #0003;
+    backdrop-filter: blur(12px); overflow: auto; visibility: hidden; transition: visibility 0s 220ms;
+}
+.is-open .grass-authoring-panel { visibility: visible; transition-delay: 0s; }
+.grass-authoring-panel button, .grass-authoring-tools button {
+    border: 1px solid #80917a65; border-radius: 5px; background: #29372d; color: #edf5e7;
+    padding: 5px 8px; font: inherit; cursor: pointer; white-space: nowrap;
+}
+.grass-authoring-panel button:hover:not(:disabled), .grass-authoring-tools button:hover:not(:disabled) {
+    background: #3b5036; border-color: #93ba75;
+}
+.grass-authoring-tools button:disabled { opacity: .45; cursor: default; }
+.grass-authoring-panel button:focus-visible, .grass-authoring-tab:focus-visible, .grass-authoring-tools button:focus-visible {
+    outline: 2px solid #a9d27a; outline-offset: 2px;
+}
+.grass-authoring-actions { display: grid; justify-items: end; gap: 6px; margin-left: auto; }
+.grass-authoring-catalog { display: flex; gap: 8px; }
+.grass-authoring-catalog-item { width: 88px; display: grid; gap: 2px; text-align: left; }
+.grass-authoring-panel .grass-authoring-catalog-item { padding: 4px; cursor: grab; }
+.grass-authoring-catalog-item:active { cursor: grabbing; }
+.grass-authoring-catalog-item span { padding-left: 2px; }
+.grass-authoring-thumbnail { display: block; width: 78px; height: 54px; object-fit: contain; border-radius: 3px; background: #0d1711; }
+.grass-authoring-tools {
+    position: fixed; z-index: 15; display: flex; align-items: center; gap: 3px; padding: 4px;
+    border: 1px solid #80917a80; border-radius: 7px; background: #17211ced; box-shadow: 0 3px 12px #0004;
+    font: 11px/1.4 system-ui, sans-serif;
+}
+.grass-authoring-tools button[aria-pressed="true"] { border-color: #a0c776; background: #435b36; color: #fff; }
+.grass-authoring-tools .grass-authoring-delete { margin-left: 5px; background: transparent; color: #dec4b7; }
+.grass-authoring-status { max-width: 260px; text-align: right; color: #c4d7b4; font-size: 11px; }
+.grass-authoring-status:empty { display: none; }
+@media (prefers-reduced-motion: reduce) {
+    .grass-authoring-dock, .grass-authoring-panel { transition: none; }
+}
+
+.grass-comparison-label {
+    position: fixed; transform: translate(-50%, -50%); pointer-events: none;
+    padding: 3px 7px; border-radius: 4px; color: #eef4e7; background: #18211ed9;
+    font: 11px/1.4 system-ui, sans-serif; white-space: nowrap;
+}
+
+.grass-patch-distance {
+    position: fixed; z-index: 30; pointer-events: none;
+    padding: 6px 9px; border: 1px solid #80917a65; border-radius: 5px;
+    color: #eef4e7; background: #18211ef2; box-shadow: 0 2px 8px #0003;
+    font: 12px/1.4 system-ui, sans-serif; white-space: pre-line;
+}

@@ -252,14 +252,14 @@ test('Random pose packing allows overlapping 400 blades within the square', asyn
     await writeFile(path.join(folder, 'validation.json'), JSON.stringify({ ...validation, cameraPoses, leavesWithOverlappingBounds, prismInflationMeters: gap, errors }, null, 2));
 });
 
-test('Default editor shows four leaves pointing to the same side in two shared-root V pairs', async ({ page }) => {
+test('Reference paired editor shows four leaves pointing to the same side in two shared-root V pairs', async ({ page }) => {
     test.setTimeout(60000);
     const singleFolder = path.resolve('tests/artifacts/screens/grass_debug_v2/four_leaf_same_side_tuft');
     await mkdir(singleFolder, { recursive: true });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.goto('/debug_tools/grass_plant_study.html?revision=six-interleaved-tufts');
+    await page.goto('/debug_tools/grass_plant_study.html?layout=paired');
     await page.waitForFunction(() => !!window.__plantCardsReadiness);
     await page.evaluate(() => window.__plantCardsReadiness);
     await expect(page.locator('#plant-counts')).toHaveText('4 leaves · 37,632 tris');
@@ -402,6 +402,14 @@ test('Default editor shows four leaves pointing to the same side in two shared-r
         const { createGrassDebugV2Plant } = await import('/src/graphics/gui/grass_debugger_v2/GrassDebugV2Plant.js');
         const originalPlant = createGrassDebugV2Plant({ material: study.plant.leaves[0].material, bodySegments: study.plant.getSnapshot().definition.bodySegments });
         const originalPositions = originalPlant.leaves[0].geometry.attributes.position, stride = GRASS_V2_PLANT.acrossSegments + 1;
+        const bodyWidthRatios = [];
+        for (let start = 0; start + stride <= upperPositions.count; start += stride) {
+            const t = upperGeometry.attributes.uv.getY(start);
+            if (t < 0.07 || t > 0.35) continue;
+            const width = positions => Math.abs(positions.getX(start + stride - 1) - positions.getX(start));
+            bodyWidthRatios.push(width(upperPositions) / width(originalPositions));
+        }
+        const minimumBodyWidthRatio = Math.min(...bodyWidthRatios);
         const openingSlopes = [];
         for (let start = stride; start + stride < upperPositions.count; start += stride) {
             const current = start + Math.floor(stride / 2), previous = current - stride;
@@ -414,7 +422,7 @@ test('Default editor shows four leaves pointing to the same side in two shared-r
         const maximumOpeningTurnDegrees = Math.max(...openingSlopes.slice(1).map((angle, i) =>
             Math.abs(angle - openingSlopes[i]) * 180 / Math.PI));
         originalPlant.dispose();
-        return { snapshot: study.getSnapshot(), pairs, crossings, maximumOpeningTurnDegrees, overlappingBodyBounds, sampledMinimumGap, contactSamples, visibleLeafCount: visibleLeaves.length,
+        return { snapshot: study.getSnapshot(), pairs, crossings, minimumBodyWidthRatio, maximumOpeningTurnDegrees, overlappingBodyBounds, sampledMinimumGap, contactSamples, visibleLeafCount: visibleLeaves.length,
             crownCount: study.plant.crowns.length,
             identityTransforms: [study.plant.group, ...['refined', 'detailed', 'curved', 'split'].map(name => study.cards[name].group)]
                 .every(group => group.matrix.equals(new THREE.Matrix4())),
@@ -427,10 +435,17 @@ test('Default editor shows four leaves pointing to the same side in two shared-r
         controls.target.set(0, 0.023, 0.027); controls.update(); lighting.render(0);
     });
     await page.screenshot({ path: path.join(singleFolder, 'lod0-root-close.png') });
+    await page.evaluate(() => {
+        const { camera, controls, lighting } = window.__plantCardsStudy;
+        camera.position.set(-0.075, 0.092, -0.10);
+        controls.update(); lighting.render(0);
+    });
+    await page.screenshot({ path: path.join(singleFolder, 'lod0-root-close-reverse.png') });
     await page.getByRole('button', { name: '3/4', exact: true }).click();
     expect(validation.crossings.length, JSON.stringify(validation.crossings.slice(0, 5))).toBe(0);
-    expect(validation.maximumOpeningTurnDegrees).toBeLessThan(8);
-    expect(validation.snapshot.layout).toBe('tuft');
+    expect(validation.maximumOpeningTurnDegrees).toBeLessThan(3);
+    expect(validation.minimumBodyWidthRatio).toBeGreaterThan(0.99);
+    expect(validation.snapshot.layout).toBe('paired');
     expect(validation.snapshot.patch).toBeNull();
     expect(validation.snapshot.source).toMatchObject({ definition: { pairs: 2 }, specimens: 2, leaves: 4 });
     expect(validation.visibleLeafCount).toBe(4);
@@ -517,7 +532,7 @@ test('Default editor shows four leaves pointing to the same side in two shared-r
 });
 
 test('Leaf contact resolves triangle interiors and preserves disjoint leaves and upper geometry', async ({ page }) => {
-    await page.goto('/debug_tools/grass_plant_study.html?layout=tuft');
+    await page.goto('/debug_tools/grass_plant_study.html?layout=paired');
     await page.waitForFunction(() => !!window.__plantCardsReadiness);
     await page.evaluate(() => window.__plantCardsReadiness);
     const result = await page.evaluate(async () => {

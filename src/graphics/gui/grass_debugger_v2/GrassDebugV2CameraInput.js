@@ -10,9 +10,11 @@ function isEditing(target) {
 }
 
 export class GrassDebugV2CameraInput {
-    /** @param {import('../../engine3d/camera/ToolCameraController.js').ToolCameraController} controls */
-    constructor(controls) {
-        this.controls = controls;
+    /** @param {{camera:THREE.Camera, enabled:boolean, minHeight:number, panWorld:(x:number,y:number,z:number)=>void}} controls @param {{speed?:number,boostMultiplier?:number,horizontal?:boolean}} options */
+    constructor(controls, { speed = 8, boostMultiplier = 3, horizontal = false } = {}) {
+        if (!Number.isFinite(speed) || speed <= 0 || !Number.isFinite(boostMultiplier) || boostMultiplier <= 0) throw new Error('Camera speed must be positive.');
+        this.controls = controls; this.speed = speed; this.boostMultiplier = boostMultiplier;
+        this.horizontal = horizontal;
         this._keys = new Set();
         this._move = new THREE.Vector3();
         this._forward = new THREE.Vector3();
@@ -49,8 +51,15 @@ export class GrassDebugV2CameraInput {
         const camera = this.controls.camera;
         this._forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
         this._right.set(1, 0, 0).applyQuaternion(camera.quaternion);
+        if (this.horizontal) {
+            this._forward.y = 0;
+            // Keep a usable ground heading even when looking straight down.
+            if (this._forward.lengthSq() < 1e-8) this._forward.set(this._right.z, 0, -this._right.x);
+            this._forward.normalize();
+            this._right.set(-this._forward.z, 0, this._forward.x);
+        }
         this._move.set(0, up, 0).addScaledVector(this._forward, forward).addScaledVector(this._right, right);
-        const speed = this._keys.has('ShiftLeft') || this._keys.has('ShiftRight') ? 24 : 8;
+        const speed = this.speed * (this._keys.has('ShiftLeft') || this._keys.has('ShiftRight') ? this.boostMultiplier : 1);
         this._move.normalize().multiplyScalar(speed * dt);
         this._move.y = Math.max(this.controls.minHeight - camera.position.y, this._move.y);
         this.controls.panWorld(this._move.x, this._move.y, this._move.z);

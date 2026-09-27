@@ -1,4 +1,4 @@
-// Authoring cards share a broad upper span and refit lower dividers to the curve; historical benchmark fits stay independent.
+// Authoring card dividers favor the visible upper blade; historical benchmark fits stay independent.
 // @ts-check
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -6,14 +6,15 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 export const GRASS_V2_PLANT_CARD_PROFILE = Object.freeze({ rootHeightMeters: 0.003, segmentsPerSide: 3, splitSegmentsPerSide: 2,
     detailedSegmentsPerSide: 6, refinedSegmentsPerSide: 12, vReachFraction: 0.40, topHeightFraction: 0.78 });
 
-/** @typedef {{group: THREE.Group, leaves: readonly THREE.Mesh[]}} PlantCardSource */
+/** @typedef {{group: THREE.Group, leaves: readonly THREE.Mesh[], bakeMeshes?: readonly THREE.Mesh[]}} PlantCardSource */
 
 function sampleSilhouetteProfile(geometry) {
     const p = geometry.attributes.position, uv = geometry.attributes.uv;
     const indices = Array.from({ length: p.count }, (_, i) => i);
     const centerline = indices.filter(i => Math.abs(uv.getX(i) - 0.5) < 1e-5 && uv.getY(i) > 0.07)
         .map(i => ({ z: p.getZ(i), y: p.getY(i) }));
-    const edges = [0, 1].map(u => [...indices.filter(i => uv.getX(i) === u), p.count - 1]
+    const tipCenter = indices.findLast(i => Math.abs(uv.getX(i) - 0.5) < 1e-5);
+    const edges = [0, 1].map(u => [...indices.filter(i => uv.getX(i) === u), tipCenter]
         .map(i => ({ z: p.getZ(i), y: p.getY(i) })));
     const contour = centerline.map(({ z }) => {
         let height = -Infinity;
@@ -56,10 +57,10 @@ function splitProfileSegment(side, points, segment) {
     return selectStations({ stations }, points, stations.map((_, index) => index));
 }
 
-function fitSide(points, sign, extent, rootY, segmentCount) {
-    const stations = [{ distance: 0, y: rootY }, ...points.map(point => ({ distance: sign * point.z, y: point.y }))];
+function fitSide(points, sign, extent, rootY, segmentCount, tipY = null) {
+    const stations = [{ distance: 0, y: rootY }, ...points.filter(point => sign * point.z < extent).map(point => ({ distance: sign * point.z, y: point.y }))];
     const end = stations.at(-1), previous = stations.at(-2);
-    stations.push({ distance: extent, y: end.y + (extent - end.distance) * (end.y - previous.y) / (end.distance - previous.distance) });
+    stations.push({ distance: extent, y: tipY ?? end.y + (extent - end.distance) * (end.y - previous.y) / (end.distance - previous.distance) });
     const count = stations.length, errors = Array.from({ length: count }, () => new Float64Array(count).fill(Infinity));
     for (let a = 0; a < count - 1; a++) for (let b = a + 1; b < count; b++) {
         const first = stations[a], last = stations[b], reach = last.distance - first.distance;
@@ -92,7 +93,9 @@ export function createGrassDebugV2PlantCardLayout(plant, { nested = false } = {}
     const bounds = new THREE.Box3().setFromObject(plant.group);
     const frame = { minX: bounds.min.x - 0.002, maxX: bounds.max.x + 0.002,
         minZ: bounds.min.z - 0.002, maxZ: bounds.max.z + 0.002 };
-    const { rootHeightMeters: rootY, vReachFraction, topHeightFraction } = GRASS_V2_PLANT_CARD_PROFILE;
+    const { rootHeightMeters, vReachFraction, topHeightFraction } = GRASS_V2_PLANT_CARD_PROFILE;
+    const singleLeaf = plant.leaves.length === 1, alignTips = nested && singleLeaf;
+    const rootY = singleLeaf ? bounds.min.y : rootHeightMeters;
     const profiles = [...new Set(plant.leaves.map(leaf => leaf.geometry))].map(sampleSilhouetteProfile);
     const samples = profiles.map(profile => profile.contour);
     const topHeight = bounds.max.y * topHeightFraction;
@@ -103,22 +106,29 @@ export function createGrassDebugV2PlantCardLayout(plant, { nested = false } = {}
     const sideDefinitions = [['negative', -1, -frame.minZ], ['positive', 1, frame.maxZ]]
         .filter(([, sign]) => samples.some(points => Math.sign(points.at(-1).z) === sign));
     const fitSides = count => Object.freeze(Object.fromEntries(sideDefinitions.map(([name, sign, extent]) =>
-        [name, fitSide(samples.find(points => Math.sign(points.at(-1).z) === sign), sign, extent, rootY, count)])));
+        [name, fitSide(samples.find(points => Math.sign(points.at(-1).z) === sign), sign,
+            alignTips ? (sign < 0 ? -bounds.min.z : bounds.max.z) : extent, rootY, count, alignTips ? bounds.max.y : null)])));
     const masterSides = fitSides(GRASS_V2_PLANT_CARD_PROFILE.refinedSegmentsPerSide);
     const selectSides = (source, indices) => Object.freeze(Object.fromEntries(sideDefinitions.map(([name, sign]) =>
         [name, selectStations(source[name], samples.find(points => Math.sign(points.at(-1).z) === sign), indices)])));
-    const refinedSides = nested ? selectSides(masterSides, [0, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12]) : masterSides;
+    const refinedSides = alignTips ? selectSides(masterSides, [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12])
+        : nested ? selectSides(masterSides, [0, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12]) : masterSides;
     const referenceSixSides = nested ? selectSides(masterSides, [0, 2, 4, 7, 10, 11, 12])
         : fitSides(GRASS_V2_PLANT_CARD_PROFILE.detailedSegmentsPerSide);
     const referenceFiveSides = nested ? selectSides(referenceSixSides, [0, 2, 3, 4, 5, 6]) : null;
     const splitSidesAtProfile = (source, segment) => Object.freeze(Object.fromEntries(sideDefinitions.map(([name, sign]) =>
         [name, splitProfileSegment(source[name], samples.find(points => Math.sign(points.at(-1).z) === sign), segment)])));
-    // Combine the old five-card tip pair. Spend its divider in the curved middle;
-    // lower levels retain that broader upper span instead of the tiny final card.
-    const detailedSides = nested ? splitSidesAtProfile(selectSides(referenceFiveSides, [0, 1, 2, 3, 5]), 2) : referenceSixSides;
+    // Share the full upper span across single-leaf LODs; spend remaining dividers
+    // below it so simplification cannot move the visible tips.
+    const detailedSides = alignTips ? selectSides(refinedSides, [0, 2, 4, 6, 9, 10])
+        : nested ? splitSidesAtProfile(selectSides(referenceFiveSides, [0, 1, 2, 3, 5]), 2) : referenceSixSides;
     const upperSpanSides = nested ? selectSides(referenceFiveSides, [0, 3, 5]) : null;
-    const sides = nested ? splitSidesAtProfile(upperSpanSides, 0) : fitSides(GRASS_V2_PLANT_CARD_PROFILE.segmentsPerSide);
-    const splitSides = nested ? upperSpanSides : selectSides(sides, [0, 2, 3]);
+    const sides = alignTips ? selectSides(detailedSides, [0, 2, 4, 5]) : nested
+        ? splitSidesAtProfile(upperSpanSides, 0)
+        : fitSides(GRASS_V2_PLANT_CARD_PROFILE.segmentsPerSide);
+    const splitSides = alignTips ? selectSides(sides, [0, 2, 3]) : nested
+        ? upperSpanSides
+        : selectSides(sides, [0, 2, 3]);
     const hierarchy = nested ? Object.freeze({ masterSides, referenceSixSides, referenceFiveSides }) : null;
     const definitions = {
         leftV: [negative, 0, topHeight, rootY, 0],
@@ -166,7 +176,7 @@ export function createGrassDebugV2PlantCardLayout(plant, { nested = false } = {}
         area + Math.hypot(point.z - side.stations[i].z, point.y - side.stations[i].y), 0), 0);
     return Object.freeze({ frame: Object.freeze(frame), negative, positive, topHeight, rootY, baselineMaxDeviation,
         maxDeviation: Math.max(...Object.values(sides).map(side => side.maximumProfileDeviation)),
-        profile: nested ? Object.freeze({ ...GRASS_V2_PLANT_CARD_PROFILE, refinedSegmentsPerSide: 10, detailedSegmentsPerSide: 5 }) : GRASS_V2_PLANT_CARD_PROFILE,
+        profile: nested ? Object.freeze({ ...GRASS_V2_PLANT_CARD_PROFILE, rootHeightMeters: rootY, refinedSegmentsPerSide: 10, detailedSegmentsPerSide: 5 }) : GRASS_V2_PLANT_CARD_PROFILE,
         hierarchy,
         splitMaxDeviation: Math.max(...Object.values(splitSides).map(side => side.maximumProfileDeviation)),
         detailedMaxDeviation: Math.max(...Object.values(detailedSides).map(side => side.maximumProfileDeviation)),
