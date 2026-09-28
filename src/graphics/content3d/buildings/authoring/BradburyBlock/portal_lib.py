@@ -64,16 +64,32 @@ def mat_oak():
     if "Coat Weight" in bsdf.inputs: bsdf.inputs["Coat Weight"].default_value = 0.3
     return m
 
+# The glass (2026-09-28, the user: "there is still ghost in the glass"): the panes are closed 6 mm boxes and must be
+# glass through and through. They were Alpha 0.35 over a 0.9 transmission at IOR 1.5, an Eevee "blended" setup that
+# Cycles renders stochastically: at each of a pane's two faces a ray either passed straight on (the alpha's 65%) or was
+# refracted, so a ray refracted at one face and passed straight at the other left the pane bent by the IOR and saw the
+# lobby from a few degrees off -- a second, displaced image over the first. Now Alpha 1 and full transmission: every
+# ray is refracted in and out, parallel, one image, with the faces' own faint reflections. Nearly clear, a trace of
+# green-blue. The wear layer's grime raises the alpha toward 1 and lowers the transmission where dust covers the pane,
+# which this base keeps working. Rebuilt in place when the recipe changes, so every pane using it follows.
+GLASS_TINT = (0.95, 0.975, 0.975)
+GLASS_ROUGH = 0.02
 def mat_glass():
-    m, bsdf = _base("PORTAL_glass")
-    if not bsdf: return m
-    bsdf.inputs["Base Color"].default_value = (0.75, 0.82, 0.85, 1)
-    bsdf.inputs["Roughness"].default_value = 0.04
+    name = "PORTAL_glass"; recipe = f"clear glass: tint {GLASS_TINT} rough {GLASS_ROUGH} ior 1.5 transmission 1 alpha 1"
+    m = bpy.data.materials.get(name)
+    if m is not None and m.get("recipe") == recipe: return m
+    if m is None: m = bpy.data.materials.new(name)
+    m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial"); bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled"); nt.links.new(bsdf.outputs[0], out.inputs[0])
+    bsdf.inputs["Base Color"].default_value = (*GLASS_TINT, 1)
+    bsdf.inputs["Roughness"].default_value = GLASS_ROUGH
     bsdf.inputs["IOR"].default_value = 1.5
-    if "Transmission Weight" in bsdf.inputs: bsdf.inputs["Transmission Weight"].default_value = 0.9
-    bsdf.inputs["Alpha"].default_value = 0.35
-    try: m.surface_render_method = 'BLENDED'
+    if "Transmission Weight" in bsdf.inputs: bsdf.inputs["Transmission Weight"].default_value = 1.0
+    bsdf.inputs["Alpha"].default_value = 1.0
+    try: m.surface_render_method = 'DITHERED'
     except Exception: pass
+    m.diffuse_color = (0.55, 0.62, 0.64, 0.35)                     # the Solid view: a see-through blue-grey
+    m["recipe"] = recipe
     return m
 
 def mat_brass():

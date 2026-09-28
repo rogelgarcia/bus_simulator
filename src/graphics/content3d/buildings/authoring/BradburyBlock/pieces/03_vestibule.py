@@ -180,8 +180,10 @@ mesh_from_bm("vest_ceiling_medallion", bm, OAK_LIGHT_CEIL, COLL, smooth=True)
 # axis-line at the depth where the photo's frame still covers the opening up to the lintel across the hall's end (and
 # its walls are in frame); the stand-in closes at ROOM_CEIL_Z, under the block's own ground-floor ceiling.
 # The stand-in emits the photo at PHOTO_EMISSION -- 1.0 first, 0.4, then down again ("dial down the light even
-# further") -- lights nothing (invisible to diffuse rays, no shadow) and shows only its inner faces; the camera, the door
-# glass and the polished floor see it.
+# further") -- lights nothing (invisible to diffuse rays, no shadow) and shows only its inner faces. Nothing reflects it
+# either (user, same day: "there is still ghost in the glass; can't we simply mark the background to not reflect?"):
+# it is invisible to glossy rays, so no surface -- the ceiling, the glazed walls, the glass, the polished floor -- lays a
+# mirror image of the lobby over its own; the camera sees it directly and through the door glass (transmission).
 PHOTO_TEX = ("textures", "bradbury_portal", "lobby_atrium_photo_wide.png")
 PHOTO_CX, PHOTO_CY = 694.0, 517.0   # the photo's vanishing point, pixels from its top-left corner
 PHOTO_F = 1621.0                 # its focal length, pixels
@@ -195,7 +197,7 @@ ROOM_FAR_Y = 14.03               # the corridor's far wall (its base at row 639)
 PHOTO_SCALE = 2.0 * HW / (ROOM_XR - ROOM_XL)   # 1.513: the room as wide as the hall
 ROOM_CEIL_Z = 4.20               # the stand-in's ceiling over the floor: just under the block's ground-floor ceiling (4.25 here)
 LINTEL_Z = CORN_Z0               # the lintel across the hall's open end: its underside on the cornice's line
-PHOTO_EMISSION = 0.2             # the photo's own light (1.0, then 0.4, both too bright from the street)
+PHOTO_EMISSION = 0.12            # the photo's own light (1.0, 0.4, 0.2: each too bright from the street; "make it darker")
 PHOTO_MAT, photo_im = mat_photo_projection("PORTAL_lobby_photo", PHOTO_TEX, PHOTO_EMISSION, PHOTO_CX, PHOTO_CY, PHOTO_F)
 PW, PH = photo_im.size
 _s = PHOTO_SCALE
@@ -227,7 +229,7 @@ for fc in faces:
     if f.normal.dot(-c) < 0: f.normal_flip()                                      # every face looks toward the projector
 me = bpy.data.meshes.new("vest_lobby_room"); bm.to_mesh(me); bm.free(); me.materials.append(PHOTO_MAT)
 room = bpy.data.objects.new("vest_lobby_room", me); COLL.objects.link(room); room.location = proj
-room.visible_shadow = False; room.visible_diffuse = False                         # seen, reflected, seen through glass; lighting nothing
+room.visible_shadow = False; room.visible_diffuse = False; room.visible_glossy = False   # seen and seen through glass only: it lights nothing and nothing reflects it
 bm = bmesh.new(); cube(bm, -HW - 0.05, HW + 0.05, L - 0.12, L + 0.02, LINTEL_Z, ROOM_CEIL_Z + 0.02)   # the lintel over the opening
 mesh_from_bm("vest_end_lintel", bm, OAK_CEIL, COLL)
 print(f"the lobby: {PW}x{PH} projected from ({proj.x:.3f}, {proj.y:.3f}, {proj.z:.3f}) at {PHOTO_SCALE:.3f} times the photo's "

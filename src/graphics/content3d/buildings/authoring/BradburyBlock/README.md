@@ -1389,10 +1389,12 @@ photo's frame covers the opening up to the lintel across the end (`LINTEL_Z`, th
 are in frame. The stand-in (`vest_lobby_room`) is the floor, the two walls, the far wall 21.2 m out, a ceiling at
 `ROOM_CEIL_Z` 4.20 under the block's own ground-floor ceiling slab (4.25 in this frame, which bounds what can show),
 and the stair as a wedge: its flight from 7.55 to 13.18 m rising to 3.38 m, the wall over its top and its side toward the
-corridor. It emits the photo at `PHOTO_EMISSION` 0.2 (1.0, then 0.4) and lights nothing: invisible to diffuse rays and
-to shadow rays, while the camera, the door glass and the polished floor see it. From the street the door glass reads
-50 and 34 on the film where the dimmed card read 67 and 37 (the first card: 101 and 59), the transom 28 (40, 58), the
-sunlit facade unchanged at 191.
+corridor. It emits the photo at `PHOTO_EMISSION` 0.12 (1.0, 0.4, then 0.2; "make it darker") and lights nothing: invisible to diffuse rays and
+to shadow rays; and, since the user asked for it ("can't we simply mark the background to not reflect?"), invisible to
+glossy rays too, so nothing reflects it -- the camera sees it directly and through the door glass, and the polished
+floor, still shiny, no longer carries its image. From the street the door glass reads 50 and 34 on the film where the
+dimmed card read 67 and 37 (the first card: 101 and 59), the transom 28 (40, 58), the sunlit facade unchanged at 191;
+with the corrected glass below, 39 and 24, the transom 19; at 0.12, from 15 m out, the panes read 25 and 16 where 0.2 read 34 and 23.
 
 **The ghost** was the ceiling. The doors' and panels' varnished oak carries a clear coat (0.25 to 0.3 at the default
 coat roughness, 0.03), and the hall's ceiling, beams, medallion and cornice wore it too. Through the transom from the
@@ -1400,8 +1402,19 @@ street the ceiling is seen at about 80 degrees from its normal, where a coat ref
 lobby over its own dark coffers, beams and lamp -- two images at once. A ray cast through the transom proves it: every
 ray meets the ceiling before it could reach the lobby, yet the render showed the lobby there. The ceiling set now
 takes matte copies without the coat (`portal_lib.mat_matte_copy`: `PORTAL_oak_ceiling`, `PORTAL_oak_light_ceiling`,
-roughness 0.6; `wear/classes.py` wears them as wood); the transom now shows the ceiling, with only a soft sheen of the
-lit room at its most grazing edge. The door glass and the polished floor keep their reflections.
+roughness 0.6; `wear/classes.py` wears them as wood); the upper transom now shows the ceiling.
+
+**The ghost in the glass** outlived both that fix and the lobby's glossy invisibility -- the stills did not change by a
+level -- because it was the glass itself. `portal_lib.mat_glass` was Alpha 0.35 over a 0.9 transmission at IOR 1.5, an
+Eevee "blended" setup that Cycles renders stochastically, face by face: each pane is a closed 6 mm box, and a ray could
+be refracted at its front face and pass the back face on the alpha (or the other way round), leaving the pane bent by
+the IOR. Bent a few degrees, it met the lobby metres from where the straight rays did: a second image, displaced, over
+the first -- the sconces doubled, lamps floating over the iron stair. The glass is now Alpha 1 and full transmission
+(`GLASS_TINT` (0.95, 0.975, 0.975), `GLASS_ROUGH` 0.02), rebuilt in place by a recipe like the floor's, so every ray is
+refracted in and out, parallel: one image, crisper (the stochastic alpha's noise gone too), with the faces' own faint
+reflections of the street; the wear layer's grime still raises the alpha and lowers the transmission where dust
+covers a pane. The lower strip of the transom lights (2.62 to 3.73 m) looks under the lintel straight into the lobby;
+their upper part sees the hall's ceiling.
 
 With the room in place `HallToLobby` looks down the hall into the atrium; the stills and the flyover's portal push-in
 see the corridor and the stair shift against each other as the camera moves, where the card slid as one picture.
