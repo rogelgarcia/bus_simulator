@@ -3,15 +3,18 @@
 # (wear/controls.py: the switch, the strengths, the wear-only collections), frames the view and renders one still.
 #
 #   blender -b -P render_wear.py -- [scene=<file.blend>] [wear=on|off|debug] [wear_<feature>=<strength> ...]
-#                                   [view=<camera>] [cam=x,y,z:tx,ty,tz:lens] [pct=100] [samples=128] [res=1920]
-#                                   [exposure=0] [devices=hybrid|gpu] [out=<png>]
+#                                   [view=<camera>] [cam=x,y,z:tx,ty,tz:lens] [shift=<x>,<y>] [frame=<w>:<h>]
+#                                   [pct=100] [samples=128] [res=1920] [exposure=0] [devices=hybrid|gpu] [out=<png>]
 #
 #   blender -b -P render_wear.py -- wear=debug wear_probe=1 view=st_up
 #   blender -b -P render_wear.py -- wear=debug cam=19.5,-3.2,8.4:16.9,-3.2,9.2:50 pct=50 samples=32
 #
 # view= is one of the scene's cameras (st_corner, st_portal, st_along, st_up, hero_3q, ref_3q -- the last in its own
 # 3:2 frame); cam= is a camera at x,y,z
-# looking at tx,ty,tz with a lens in mm, as build_scene.py's VIEWS are written. Strengths not given keep the scene's
+# looking at tx,ty,tz with a lens in mm, as build_scene.py's VIEWS are written; shift= moves that camera's frame
+# (Blender's lens shift, in fractions of the frame's larger side) so a level camera can frame a facade above its eye
+# with the verticals kept vertical, as an architectural photograph does; frame= renders any view in that width:height
+# (res= stays the width). Strengths not given keep the scene's
 # own. The still goes to out=, or to tests/artifacts/screens/bradbury_wear/render_wear/<view>_<mode>.png. Nothing is
 # saved back into the scene.
 #
@@ -55,6 +58,7 @@ if "cam" in args:
     cd.clip_end = max((o.data.clip_end for o in bpy.data.objects if o.type == 'CAMERA'), default=cd.clip_end)
     cam = bpy.data.objects.new("wear_cam", cd); S.collection.objects.link(cam)
     cam.location = loc; cam.rotation_euler = (tgt - loc).to_track_quat('-Z', 'Y').to_euler()
+    if "shift" in args: cd.shift_x, cd.shift_y = (float(v) for v in args["shift"].split(","))
     S.camera = cam; view = view or "custom"
 elif view:
     S.camera = bpy.data.objects[view]
@@ -65,6 +69,7 @@ if "pct" in args: S.render.resolution_percentage = int(args["pct"])
 if "res" in args:
     S.render.resolution_x = int(args["res"]); S.render.resolution_y = int(int(args["res"]) * 10 / 16)
 fw, fh = S.camera.get("frame", (16, 10))       # a view's own frame (build_scene.py's VIEWS: ref_3q is 3:2), else the scene's 16:10
+if "frame" in args: fw, fh = (float(v) for v in args["frame"].split(":"))
 S.render.resolution_y = int(S.render.resolution_x * fh / fw)
 if "exposure" in args: S.view_settings.exposure = float(args["exposure"])
 devices = args.get("devices", "hybrid").lower()
