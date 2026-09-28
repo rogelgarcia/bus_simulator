@@ -16,7 +16,7 @@ NAME_RULES = [
     (r"^PBR_bradbury_(wall_terracotta_brick_tileable|arch_ring)" + _SUFFIX, BRICK),
     (r"^PBR_bradbury_(terracotta_trim|top_band_terracotta_ornament|flower_tiles)" + _SUFFIX, TERRACOTTA),
     (r"^PBR_bradbury_(ground_stone|pier_stone)" + _SUFFIX, STONE),
-    (r"^PORTAL_(sandstone_carved|sandstone|granite|dark_stone|lettering)" + _SUFFIX, STONE),
+    (r"^PORTAL_(sandstone_carved|sandstone|granite|dark_stone|lettering|frieze_flowers)" + _SUFFIX, STONE),
     (r"^Sandstone_Pink_Ashlar" + _SUFFIX, STONE),
     (r"^(PORTAL_glass|Storefront_Transom_Glass)" + _SUFFIX, GLASS),
     (r"^(PORTAL_(iron|brass|bronze)|Storefront_Black_Metal)" + _SUFFIX, METAL),

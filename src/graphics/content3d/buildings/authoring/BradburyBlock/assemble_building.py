@@ -62,7 +62,10 @@ HULL = [(-36.529 + SHRINK, -17.879), (9.7 + BAY_GROW, -17.879), (12.529 + BAY_GR
 # ---------------------------------------------------------------- the portal (bradbury_portal.blend frame: x across, y depth + into the building, z up from the threshold)
 P_SPANDREL_Y = -2.70              # the arch block's street face: goes on the wall plane
 P_FACE_Y = -2.90                  # pilasters and frieze band: 0.20 proud of the wall
-P_HALF = 2.33                     # frieze band / pilaster shafts half width (the portal is 4.66 m wide)
+P_HALF = 2.33                     # pilaster shafts half width (the portal is 4.66 m wide at its pilasters)
+P_FRIEZE_HALF = P_HALF + 0.05     # the BRADBURY band's half width (piece 08 BAND_HALF): 5 cm past the pilasters on each side since
+                                  # 2026-09-27 (user: "widen the frieze band just a bit, 5cm ... make sure the top molding follows");
+                                  # the entablature's jog, its teeth over the band and the block on the band's top follow it
 P_SIDEWALK_Z = -0.12              # the portal's sidewalk level (its own 12 cm step ends at the threshold, z = 0)
 P_FRIEZE_TOP = 4.83               # top of the BRADBURY band (piece 08 Z1): the entablature sits on it
 JOG = P_SPANDREL_Y - P_FACE_Y     # 0.20
@@ -2197,7 +2200,7 @@ print(f"the game's cornices and parapet brought out to {WALL_OUT:+.2f}: {push_ou
 # (2026-09-12: teeth at half size, no band over them, tiny top step); about 0.33 m in all.
 E_BEAD_H = 0.03                                                          # half-round on the frieze top (radius 0.015)
 E_TEETH_HALF, E_GAP_RATIO = 44, 0.6                                      # 44 teeth from the band's edge to the middle of the lettering; gaps 60% of a tooth (user count)
-E_TOOTH_W = 2 * P_HALF / (2 * E_TEETH_HALF + (2 * E_TEETH_HALF - 1) * E_GAP_RATIO)   # 0.033: 88 teeth flush across the 4.66 band, a gap centred on the lettering
+E_TOOTH_W = 2 * P_FRIEZE_HALF / (2 * E_TEETH_HALF + (2 * E_TEETH_HALF - 1) * E_GAP_RATIO)   # 0.034: 88 teeth flush across the 4.76 band, a gap centred on the lettering
 E_TOOTH_GAP = E_GAP_RATIO * E_TOOTH_W                                    # 0.020 (pitch 0.053), the same tooth and pitch around the building
 E_TOOTH_H = 0.06                                                         # the small course in the frontal photo (15 px at 240 px/m)
 E_TOOTH_FACE = 0.04                                                      # teeth faces; their backs are in the wall plane (over the portal: the band's face carried up by a block)
@@ -2246,14 +2249,16 @@ def cornice_profile():
 RECESS = 0.15                                                            # how far the stone zone over a three-pane storefront steps back: it used to be the storefront's own extra inset
                                                                          # (0.20), but on the one wall plane the crown has to carry the brick over the pocket too, so it is capped just
                                                                          # under the crown's own projection -- its square edge stands 1.5 cm proud of the brick instead of 6.5 cm behind it
-def portal_jog(sc, inner=None):
-    j = [(sc - P_HALF, 0.0), (sc - P_HALF, JOG)]
+def portal_jog(sc, inner=None, half=P_HALF):
+    j = [(sc - half, 0.0), (sc - half, JOG)]
     if inner: j += [(sc - inner[0], JOG), (sc - inner[0], inner[1]), (sc + inner[0], inner[1]), (sc + inner[0], JOG)]
-    return j + [(sc + P_HALF, JOG), (sc + P_HALF, 0.0)]
-def jogs_of(portal=True, recess=True, inner=None):
+    return j + [(sc + half, JOG), (sc + half, 0.0)]
+def jogs_of(portal=True, recess=True, inner=None, half=P_HALF):
+    # half: how far either side of the portal's centre the jog runs -- the frieze band's (P_FRIEZE_HALF) for the
+    # entablature that sits on it, the pilasters' (P_HALF) for the zone above
     J = {}
     if portal:
-        for fi, sc in PORTAL_S.items(): J.setdefault(fi, []).append(portal_jog(sc, inner))
+        for fi, sc in PORTAL_S.items(): J.setdefault(fi, []).append(portal_jog(sc, inner, half))
     if recess:
         for fi, rs in recesses.items(): J.setdefault(fi, []).extend([[(t0, 0.0), (t0, -RECESS), (t1, -RECESS), (t1, 0.0)] for (t0, t1, F, tu0, tu1) in rs])
     return {fi: sorted(js, key=lambda j: j[0][0]) for fi, js in J.items()}
@@ -2308,7 +2313,7 @@ def loop(J, base=WALL_OUT):
         keep.append(out[i])
     keep.append(out[-1])
     return keep[::-1]
-ENT_JOGS = jogs_of()
+ENT_JOGS = jogs_of(half=P_FRIEZE_HALF)             # the entablature jogs out over the whole frieze band, 5 cm past the pilasters
 segments = []                                  # (a, d, n, L, off, flush): the teeth runs along every face, split at the jogs
 returns = []                                   # (a, d, n, L, salient_at_end, flush): the jogs' short returns, teeth on them too (user)
 for fi in range(len(FACES)):
@@ -2316,7 +2321,7 @@ for fi in range(len(FACES)):
     s0_face, L = full_face(fi); s_ = s0_face                     # the run carries on round each corner to the mitre
     for jog in ENT_JOGS.get(fi, []):
         s0, s1, off = jog[0][0], jog[-1][0], jog[1][1]
-        flush = off > 0 and fi in PORTAL_S and abs(s0 - (PORTAL_S[fi] - P_HALF)) < 1e-6      # the portal's own band
+        flush = off > 0 and fi in PORTAL_S and abs(s0 - (PORTAL_S[fi] - P_FRIEZE_HALF)) < 1e-6      # the portal's own band
         wrap0, wrap1 = s0 <= s0_face + 1e-6, s1 >= L - 1e-6          # a run into a corner has no return there
         if s0 - s_ > 1e-6: segments.append((A + d * s_, d, n, s0 - s_, 0.0, False))
         segments.append((A + d * s0, d, n, s1 - s0, off, flush))
@@ -2437,7 +2442,7 @@ for name, prof, zb in (("ge_bead", bead_profile(), FRIEZE_TOP), ("ge_cornice", c
     if hasattr(o.data, "set_sharp_from_angle"): o.data.set_sharp_from_angle(angle=math.radians(40.0))
 # over the portal the band's face and end faces carry on up to the cornice: a block between the wall plane and the band plane
 for fi, F in PF.items():
-    world_box(f"fit_band_top_{PORTAL_TAG[fi]}", -P_HALF, P_HALF, -0.01, JOG, FRIEZE_TOP, Z_TEETH_TOP + 0.005, CARVED, wall, frame=F)
+    world_box(f"fit_band_top_{PORTAL_TAG[fi]}", -P_FRIEZE_HALF, P_FRIEZE_HALF, -0.01, JOG, FRIEZE_TOP, Z_TEETH_TOP + 0.005, CARVED, wall, frame=F)
 
 # ---------------------------------------------------------------- the zone above the cornice, up to the second floor (user 2026-09-12, reference crop)
 # The wall of this zone follows the ground floor's silhouette (proud over the portal, like the frieze band) and a crown

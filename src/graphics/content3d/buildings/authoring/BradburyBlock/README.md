@@ -32,7 +32,7 @@ at y = 0; the facade pieces will be built further out at negative y.
 
 | 07 | Side pilasters: one each side of the arch block (x 1.605 .. 2.405), standing on the sidewalk (z -0.12), face 0.20 proud of the arch (y -2.90), back overlapping the recess wall ends (y -2.05); the piers' stepped plinth (top at 0.44) in the same pink stone, shaft with a sunken panel whose edge is a three-part molding (small square step at the face, convex quarter-round curving outward, small square step down to the field) running straight up to the capital, the linked capital ornament (ornaments/capital.blend; the old `capital_volute` build is kept in portal_lib for reference) (`capital_volute`: a row of edged acanthus leaves, bold snail volutes at the corners rising on the diagonal, a crown on each face curling into small snails at the top corners with a bud and a small palmette, plain two-tier abacus with a boss; 0.80 m) whose top (4.08) matches the top of the arch block | `pieces/07_pilasters.py` | `PILASTERS` | built 2026-09-10 |
 
-| 08 | BRADBURY frieze band: plain stone band over the arch block and the pilaster capitals (x +/-2.405, y -2.90 .. -2.05, z 4.08 .. 4.50), flush with the pilasters and ending at their outer edges; the inscription "BRADBURY." as the lettering PBR decal (`assets/public/pbr/bradbury_lettering`, 2026-09-22; it replaced extruded Arial Black letters with a rim), its letters respaced in the image (`make_lettering_pbr.py`), 2.64 m wide and 0.368 tall with its ends 0.165 inside the capitals below, 1 mm proud of the band on a mesh that follows the letters; above each pilaster a foliage panel of leaves on curved branchlets in layered relief (leaves 2 cm, branches 2.6 cm, rosette to 3.8 cm): a small rosette, a wavy main branch to each side with three curling branchlets, edged leaves along the branches and at the branchlet ends; no dentil course or cornice yet | `pieces/08_frieze.py` | `FRIEZE` | built 2026-09-10 |
+| 08 | BRADBURY frieze band: plain stone band over the arch block and the pilaster capitals (x +/-2.405, y -2.90 .. -2.05, z 4.08 .. 4.50), flush with the pilasters and ending at their outer edges -- 5 cm past them since 2026-09-27 (`FRIEZE_WIDEN`), the entablature above following; the inscription "BRADBURY." as the lettering PBR decal (`assets/public/pbr/bradbury_lettering`, 2026-09-22; it replaced extruded Arial Black letters with a rim), its letters respaced in the image (`make_lettering_pbr.py`), 2.64 m wide and 0.368 tall with its ends 0.165 inside the capitals below, 1 mm proud of the band on a mesh that follows the letters; above each pilaster capital a flower panel, the frieze flowers PBR decal (`assets/public/pbr/bradbury_frieze_flowers`, 2026-09-27, `make_flowers_pbr.py`; it replaced a procedural foliage relief of leaves on curved branchlets), 0.911 x 0.397 m, a little taller than the letters, from 15 cm past them to the band's end, which its leaf tips touch, drawn 1.33 times taller than the pack's proportions, mirrored on the left and as delivered on the right; no dentil course or cornice yet | `pieces/08_frieze.py` | `FRIEZE` | built 2026-09-10 |
 
 Piece 05 update: the step now spans only between the pilasters (x +/-1.60).
 
@@ -289,12 +289,15 @@ building always shows the portal's latest saved state, so rerun a piece and reop
 ground-floor entablature around the building (`GROUND_ENTABLATURE`, from the photos and the user's review: a
 small half-round bead 0.03, the teeth right above it standing on the wall itself (88 flush across the band, 44
 from each edge to the middle of the lettering, gaps 60% of a tooth: 0.033 wide, 0.06 tall, 0.04 deep, pitch
-0.053, the same around the building and on the jog's returns), a small 0.03 band flush with the teeth faces
+0.053, the same around the building and on the jog's returns; 0.034 and 0.054 since the band widened, below), a small 0.03 band flush with the teeth faces
 that they connect to, a gentle convex molding (a shallow arc 0.12 tall and 0.10 out) on it, a thin squared
 step 0.025 with a 6 mm round on its outer edges, top and bottom; 0.265 m in all, 0.16 m out; over the portal a block
 (`fit_band_top_*`) carries the band's face and ends up to the cornice; all of it in the portal's own
 frieze-band stone, no ashlar joint lines) on the
-frieze band's top (world z 5.151), jogging out 0.20 over the band on both portal faces and stepping BACK 0.20
+frieze band's top (world z 5.151), jogging out 0.20 over the band on both portal faces -- over the band's own width,
+`P_FRIEZE_HALF`, which since 2026-09-27 is 5 cm more each side than the pilasters' `P_HALF` 2.33 (user: "widen the
+frieze band just a bit, 5cm; to allow more room ... make sure the top molding follows"; piece 08's `BAND_HALF` must
+match it; the zone above the cornice keeps the pilasters' width) -- and stepping BACK 0.20
 (`RECESS`: the portal band's step, and the three-pane storefront's own extra inset, so the edge over it reads like
 the two-pane bays'; user 2026-09-12, reference) over every three-pane
 storefront together with the band strip, the zone wall and the crown (the game's band wall is carved away over
@@ -1286,6 +1289,52 @@ under the wall's colour, since a flat decal in exactly the band's colour would v
 
 **Trap: new bmesh faces carry no normal until `bm.normal_update()`.** `dissolve_limit` compares face normals, so
 without it the merge silently did nothing and the decal shipped as 53,277 quads; with it, 12 faces.
+
+**The flower panels as a PBR decal** (2026-09-27: "in the download folder there is flowers_pbr, we should use that PBR
+in place of the current 3d flowers. the opposite side should be flipped horizontally"; then "add to the proper assets
+folder in the game, and create the jsons"). `downloads/flowers_pbr.zip` is one terracotta ornament -- two broad
+acanthus scrolls, a small flower in the left spiral and a flower cluster in the right -- on a transparent 2048 x 768
+canvas, every map computed from one relief master. `make_flowers_pbr.py` installs it as
+`assets/public/pbr/bradbury_frieze_flowers/`: the base colour with its alpha (PNG, the decal is a cutout), the OpenGL
+normal map, the pack's own ORM as `arm.png`, the 16-bit height, and the pack's `README.md`, `validation.json` and
+generation prompt beside them; a `pbr.material.config.js` with the provenance block (`buildingEligible: false`, a
+decal), an entry in `_manifest.json`, and -- unlike the lettering -- an import in `_catalog_index.js`, so the game's
+`PbrMaterialCatalog` loads it (the catalog has no alpha cut-out path yet, so the game would draw it as an opaque
+rectangle if anything used it). The importer re-checks the pack's own validation: one canvas, the opacity equal to
+the base colour's alpha, the ORM equal to the separate AO, roughness and metallic maps, metalness zero, the height 16
+bits. It is idempotent: a second run rewrites the set and leaves the index as it is.
+
+`pieces/08_frieze.py` builds the panels with the lettering's own two functions, now shared: `_decal_material` (the
+set's maps, the tint onto the wall's `SANDSTONE_SRGB` from the opaque texels' mean, AO multiplied in, the cut at 0.5)
+and `_decal_mesh` (the alpha sampled on a cell grid, grown a cell, merged into flat n-gons, 1 mm proud of the band).
+The inscription comes out as before, vertex for vertex (checked against the previous file). The panels were first
+sized to the span the old relief filled, the capital's inner edge (x +-1.4842) to 3 cm inside the band's end: 0.816 m
+wide and, at the pack's 3.05 aspect, 0.269 tall against the letters' 0.367. The same day the user asked for them as
+tall as the writing, "a bit higher actually": `FLOWER_HEIGHT_VS_LETTERS` 1.08 makes them 0.397 m tall, and they run
+from `FLOWER_LETTER_GAP` 5 cm past the letters to `FLOWER_END_MARGIN` 2 cm inside the band's end, 0.941 m wide. At the
+pack's own aspect that height would need 1.21 m of width where the band leaves 0.94, so the ornament is drawn 1.284
+times taller than its proportions (`_decal_mesh` takes a vertical scale of its own, `kz`); the largest undistorted
+size, 0.941 x 0.309, was rendered beside it for comparison (`frieze_flowers/size_v2_*`). The user took the stretch
+("distorted is ok, just make it really close to the edge; touching the edge"), so `FLOWER_END_MARGIN` is 0: the
+panels run to the band's ends, 0.961 m wide, 1.258 times taller than the pack's proportions, and `_decal_mesh`'s
+`clip_x` bisects each panel's mesh at the band's end so its dilated cells do not overhang it in the Solid view. They
+are centred on the band's height like the letters. Then "add a bit more padding to the writing; flip both images":
+`FLOWER_LETTER_GAP` 0.10 (0.911 m wide, 1.327 times taller than the proportions), and each panel faces the other way.
+Then "widen the frieze band just a bit, 5cm; to allow more room; then move the flowers to the corners; make sure the
+top molding follows": the band runs `FRIEZE_WIDEN` 5 cm past the pilasters on each side (`BAND_HALF` 2.38), the
+ground-floor entablature in `assemble_building.py` jogs out over the same width (`P_FRIEZE_HALF`: its bead, cornice,
+the 88 teeth flush across the band, 0.034 wide now, and the block on the band's top), and `FLOWER_LETTER_GAP` 0.15
+keeps the panels at 0.911 m, moved out to the band's new corners. Evidence `frieze_flowers/widen/` (the flyover's
+portal frame before | after, both band ends up close under the molding).
+The left panel, `frieze_flowers_L`, is now the image mirrored -- in the geometry, its UVs unchanged, so the tangent
+space follows the UVs and the relief mirrors with the picture -- and the right, `frieze_flowers_R`, the image as
+delivered: the scroll that ends in the tall curl stands at the band's ends on both sides (it first stood at the
+inscription). The material is `PORTAL_frieze_flowers`; `wear/classes.py` classes it as stone, as the lettering, so the wear
+layer weathers it (the old relief wore the band's own sandstone). Evidence
+`tests/artifacts/screens/bradbury_scene/frieze_flowers/` (the piece's band and close-up renders, and the flyover's
+portal frames 1 and 60, before and after). The flat decal reads as relief through its normal map but casts no
+shadow of its own, where the old prisms did; the height map is installed for a displacement or parallax pass if that
+is wanted.
 
 ## The render scene: `build_scene.py`
 
