@@ -175,7 +175,7 @@ sidewalk is scored into large slabs; the asphalt is a pale bleached grey with cr
       item 29's plain boxes, needed by item 30's moving camera): storeys, window bays with dark glass, sills and
       a parapet from a procedural facade material or simple geometry, in the same sets, so they read as buildings
       from any stand; nothing changes where their shadows fall.
-- [ ] 32 The flyover's timing (user 2026-09-27: "update the sequence so that on each pose it slows down towards
+- [x] 32 The flyover's timing (user 2026-09-27: "update the sequence so that on each pose it slows down towards
       the end, stretch the very end like 2 seconds almost stopped at the final position"; a change to item 30's
       motion): every shot eases in briefly and then decelerates long into its end so the camera nearly settles
       before the cut (the last fifth of a shot's time covering about a twentieth of its path), and the last shot
@@ -829,6 +829,14 @@ Rules:
   32 s, the previous as `_v2` with its frames, sheet and log) and `flyover_quick_sheet.png` regenerated. The Eevee
   preview not re-rendered (it still shows item 34's storeys). README "The city's buildings taller (AI 574 item
   37, 2026-09-27)". No full-size Cycles cut; the GUI Blender not touched.
+- (cycle 32, 2026-09-27) Item 32, the flyover's timing, rendered at full size at last ("regenerate the video in
+  high quality"): `render_flyover.py` as committed through item 37 -- five-second shots decelerating into their
+  ends (`EASE_IN` 0.10, `EASE_OUT_LAST` (0.20, 0.05)), the two-second creeping tail on the pull-up, no blur (item
+  36), the fire escape at +1 (item 35), the taller city (item 37), the walled lots (item 34) -- 768 frames at
+  1080 x 1920 and 48 samples with the OptiX denoiser, encoded to
+  `tests/artifacts/screens/bradbury_scene/flyover/bradbury_flyover_portrait_1080x1920.mp4` (30.2 MB, 32.0 s at
+  24 fps, H.264, no audio); the 18 s cut of item 30 kept beside it as `_v1`; `flyover_shots_sheet.png` regenerated
+  (air 1 and 60, cornice, escapes, up, portal, close 168). Render log `render_full.log`. The GUI Blender not touched.
 
 ## On completion
 - Mark the AI document as DONE in the first line
