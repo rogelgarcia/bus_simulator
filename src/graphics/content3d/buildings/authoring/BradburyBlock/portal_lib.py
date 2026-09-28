@@ -120,22 +120,82 @@ def mat_glazed_brick(name, along='Y'):
     if "Coat Weight" in bsdf.inputs: bsdf.inputs["Coat Weight"].default_value = 0.6
     return m
 
+# The tile floors (recess and vestibule): the project owner's octagon-and-dot tile image (user 2026-09-28: "one is the
+# floor texture to use ... do not distort the images; keep the floor shiny"), installed as
+# assets/public/textures/bradbury_portal/floor_octagon_tiles.png. It tiles seamlessly as a square of two octagons each
+# way, so it is laid in the floor objects' own metres at one scale on both axes, FLOOR_REPEAT_M a repeat: 0.20 m
+# octagons, read off the owner's atrium photo, whose octagons repeat at about the height of the staircase's bottom
+# step. The polish is the diagonal checker's that it replaced (a procedural checker at 0.15 m, turned 45 degrees).
+# The material is rebuilt IN PLACE when its recipe changes, so every floor already using it follows.
+FLOOR_TEX = ("textures", "bradbury_portal", "floor_octagon_tiles.png")
+FLOOR_REPEAT_M = 0.40            # the image's repeat in metres, both ways alike: two 0.20 m octagons
+FLOOR_ROUGH, FLOOR_COAT = 0.18, 0.5   # polished encaustic tile, as the checker had it
 def mat_tile_floor():
-    m, bsdf = _base("PORTAL_tile_floor")
-    if not bsdf: return m
-    nt = m.node_tree; tc = nt.nodes.new("ShaderNodeTexCoord")
-    mapping = nt.nodes.new("ShaderNodeMapping"); mapping.inputs["Rotation"].default_value = (0, 0, math.pi/4)
+    name = "PORTAL_tile_floor"; recipe = f"image {'/'.join(FLOOR_TEX)} repeat {FLOOR_REPEAT_M} rough {FLOOR_ROUGH} coat {FLOOR_COAT}"
+    m = bpy.data.materials.get(name)
+    if m is not None and m.get("recipe") == recipe: return m
+    if m is None: m = bpy.data.materials.new(name)
+    m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial"); bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled"); nt.links.new(bsdf.outputs[0], out.inputs[0])
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    mapping = nt.nodes.new("ShaderNodeMapping"); mapping.inputs["Scale"].default_value = (1.0 / FLOOR_REPEAT_M, 1.0 / FLOOR_REPEAT_M, 1.0)
     nt.links.new(tc.outputs["Object"], mapping.inputs["Vector"])
-    chk = nt.nodes.new("ShaderNodeTexChecker"); chk.inputs["Scale"].default_value = 1/0.15
-    chk.inputs["Color1"].default_value = (0.33, 0.11, 0.05, 1); chk.inputs["Color2"].default_value = (0.50, 0.27, 0.09, 1)
-    nt.links.new(mapping.outputs[0], chk.inputs["Vector"])
-    noise = nt.nodes.new("ShaderNodeTexNoise"); noise.inputs["Scale"].default_value = 2.0
-    nt.links.new(tc.outputs["Object"], noise.inputs["Vector"])
-    mix = nt.nodes.new("ShaderNodeMixRGB"); mix.blend_type = 'MULTIPLY'; mix.inputs["Fac"].default_value = 0.25
-    nt.links.new(chk.outputs["Color"], mix.inputs["Color1"]); nt.links.new(noise.outputs["Color"], mix.inputs["Color2"])
-    nt.links.new(mix.outputs["Color"], bsdf.inputs["Base Color"])
-    bsdf.inputs["Roughness"].default_value = 0.18
-    if "Coat Weight" in bsdf.inputs: bsdf.inputs["Coat Weight"].default_value = 0.5
+    fp = os.path.join(_repo_root(), "assets", "public", *FLOOR_TEX); assert os.path.isfile(fp), f"missing {fp}"
+    im = bpy.data.images.load(fp, check_existing=True); im.colorspace_settings.name = 'sRGB'
+    try: im.filepath = bpy.path.relpath(fp)
+    except ValueError: pass
+    tex = nt.nodes.new("ShaderNodeTexImage"); tex.image = im; tex.extension = 'REPEAT'; tex.interpolation = 'Cubic'
+    nt.links.new(mapping.outputs["Vector"], tex.inputs["Vector"]); nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+    bsdf.inputs["Roughness"].default_value = FLOOR_ROUGH
+    if "Coat Weight" in bsdf.inputs: bsdf.inputs["Coat Weight"].default_value = FLOOR_COAT
+    m.diffuse_color = (0.73, 0.57, 0.42, 1.0)                      # the Solid view: the image's mean colour, linear
+    m["recipe"] = recipe
+    return m
+
+def mat_photo_projection(name, rel, strength, cx, cy, f):
+    """A photograph projected from its own camera onto stand-in geometry: camera projection mapping, done per shaded
+    point so it stays exact on faces of any size. The object carrying it has its origin AT the photo's camera, its
+    local axes x right, y the viewing direction, z up, so a point's Object coordinates (x, y, z) image at pixel
+    u = cx + f x / y, v = cy - f z / y of the photo (from its top-left corner): the photo's vanishing point (cx, cy)
+    and focal length f in pixels. Emitted at strength, lit by nothing; back faces are transparent, so the stand-in
+    only shows from its own camera's side. rel is a path under assets/public. Rebuilt on every call."""
+    m = bpy.data.materials.get(name)
+    if m: bpy.data.materials.remove(m)
+    m = bpy.data.materials.new(name); m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
+    fp = os.path.join(_repo_root(), "assets", "public", *rel); assert os.path.isfile(fp), f"missing {fp}"
+    im = bpy.data.images.load(fp, check_existing=True); im.colorspace_settings.name = 'sRGB'
+    try: im.filepath = bpy.path.relpath(fp)
+    except ValueError: pass
+    W, H = im.size
+    tc = nt.nodes.new("ShaderNodeTexCoord"); sep = nt.nodes.new("ShaderNodeSeparateXYZ"); nt.links.new(tc.outputs["Object"], sep.inputs[0])
+    def op(kind, a, b):
+        n = nt.nodes.new("ShaderNodeMath"); n.operation = kind
+        for i, v in enumerate((a, b)):
+            if isinstance(v, (int, float)): n.inputs[i].default_value = float(v)
+            else: nt.links.new(v, n.inputs[i])
+        return n.outputs[0]
+    U = op('ADD', op('MULTIPLY', op('DIVIDE', sep.outputs["X"], sep.outputs["Y"]), f / W), cx / W)            # u / W
+    V = op('ADD', op('MULTIPLY', op('DIVIDE', sep.outputs["Z"], sep.outputs["Y"]), f / H), 1.0 - cy / H)      # 1 - v / H (Blender's V runs up)
+    uvw = nt.nodes.new("ShaderNodeCombineXYZ"); nt.links.new(U, uvw.inputs["X"]); nt.links.new(V, uvw.inputs["Y"])
+    tex = nt.nodes.new("ShaderNodeTexImage"); tex.image = im; tex.extension = 'EXTEND'; tex.interpolation = 'Cubic'
+    nt.links.new(uvw.outputs[0], tex.inputs["Vector"])
+    em = nt.nodes.new("ShaderNodeEmission"); nt.links.new(tex.outputs["Color"], em.inputs["Color"]); em.inputs["Strength"].default_value = strength
+    tr = nt.nodes.new("ShaderNodeBsdfTransparent"); geo = nt.nodes.new("ShaderNodeNewGeometry")
+    mix = nt.nodes.new("ShaderNodeMixShader"); nt.links.new(geo.outputs["Backfacing"], mix.inputs["Fac"])
+    nt.links.new(em.outputs[0], mix.inputs[1]); nt.links.new(tr.outputs[0], mix.inputs[2])
+    out = nt.nodes.new("ShaderNodeOutputMaterial"); nt.links.new(mix.outputs[0], out.inputs[0])
+    m.diffuse_color = (0.45, 0.30, 0.20, 1.0)
+    return m, im
+
+def mat_matte_copy(src, name, roughness):
+    """src with its clear coat taken off and its roughness raised: a satin finish that does not mirror at grazing
+    angles. Rebuilt on every call."""
+    m = bpy.data.materials.get(name)
+    if m: bpy.data.materials.remove(m)
+    m = src.copy(); m.name = name
+    b = next(n for n in m.node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
+    b.inputs["Roughness"].default_value = roughness
+    if "Coat Weight" in b.inputs: b.inputs["Coat Weight"].default_value = 0.0
     return m
 
 def mat_plain(name, color, roughness=0.5, metallic=0.0, coat=0.0):

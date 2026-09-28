@@ -21,9 +21,9 @@ NAME_RULES = [
     (r"^(PORTAL_glass|Storefront_Transom_Glass)" + _SUFFIX, GLASS),
     (r"^(PORTAL_(iron|brass|bronze)|Storefront_Black_Metal)" + _SUFFIX, METAL),
     (r"^Storefront_White_Paper" + _SUFFIX, PAINT),                 # the storefronts' white transom panels
-    (r"^PORTAL_(oak_light|oak)" + _SUFFIX, WOOD),
+    (r"^PORTAL_(oak_light|oak)(_ceiling)?" + _SUFFIX, WOOD),          # the vestibule's ceiling takes matte copies (_ceiling)
     (r"^PORTAL_(glazed_brick_side|glazed_brick_end|tile_floor|tile_border|tile_black)" + _SUFFIX, GLAZED),
-    (r"^PORTAL_(niche_dark|lamp_glass)" + _SUFFIX, NONE),           # the vestibule's niches and lamp globes
+    (r"^PORTAL_(niche_dark|lamp_glass|lobby_photo)" + _SUFFIX, NONE),   # the vestibule's niches and lamp globes, and the lobby photo past its end
     (r"^GND_.*", NONE),                                            # the render scene's own ground
 ]
 _GAME = re.compile(r"^MAT_\d+_Mesh(Standard|Physical)Material" + _SUFFIX)

@@ -23,9 +23,9 @@ at y = 0; the facade pieces will be built further out at negative y.
 |---|-------|--------|------------|--------|
 | 01 | Door set: four equal dark-oak leaves (2.50 m, the reference module) in two pairs (1+2, 3+4) meeting in the middle of each pair, a paneled column between the pairs topped by a small plain raised panel; each leaf has a glazed upper panel with a bolection molding, a carved foliage band on the top rail, a raised bottom panel with an oval boss in a molded frame, a brass kick plate and a black iron pull at mid-height on its meeting stile; one near-square transom light over each pair; head/top rails | `pieces/01_door.py` | `DOOR` | built 2026-09-10 |
 | 02 | Paired piers: two square stone piers (0.34 m) on each side of the door set, 0.12 m clear of the jambs, side by side in depth at y = -1.75 and -1.36; plinth/step/fillet base 0.44 m, sunken panels on the passage and street faces, necking fillet, the same linked capital ornament as the pilasters (ornaments/capital.blend) scaled to the pier width and turned to face the passage, 0.18 m tall, its top level with the door glass (2.35 m) | `pieces/02_pillars.py` | `PILLARS` | built 2026-09-10 |
-| 03 | Vestibule behind the doors: 5.90 x 7.00 m hall, glossy glazed-brick walls on a 0.35 m dark stone base, one round-arched opening (1.70 m, springing 2.30) in each side wall with a molded brick edge and a dark passage behind, street wall with oak paneling beside the door set (no arch inside: the ceiling starts at the top of the transom lights, 3.80 m), stepped oak cornice 3.80-4.10, coffered oak ceiling at 4.10 (side and end rows of 0.75 m coffers, a central molded panel with a round medallion), bronze pendant lamp with a lit globe, encaustic tile floor (diagonal checker) with a dark border; the +y end is open toward the lobby | `pieces/03_vestibule.py` | `VESTIBULE` | built 2026-09-10 |
+| 03 | Vestibule behind the doors: 5.90 x 7.00 m hall, glossy glazed-brick walls on a 0.35 m dark stone base, one round-arched opening (1.70 m, springing 2.30) in each side wall with a molded brick edge and a dark passage behind, street wall with oak paneling beside the door set (no arch inside: the ceiling starts at the top of the transom lights, 3.80 m), stepped oak cornice 3.80-4.10, coffered oak ceiling at 4.10 (side and end rows of 0.75 m coffers, a central molded panel with a round medallion), bronze pendant lamp with a lit globe, encaustic tile floor with a dark border (the owner's octagon-and-dot tile image since 2026-09-28, polished; it was a procedural diagonal checker); the +y end is open toward the lobby, and past it the owner's photo of the Bradbury's atrium stands on an emissive card (see "The tile floor and the lobby photo") | `pieces/03_vestibule.py` | `VESTIBULE` | built 2026-09-10 |
 
-| 04 | Entrance recess between the piers and the door: glazed-brick side walls running straight from the door set's edges (faces x = +/-1.60, no return beside the door) to the mouth at y = -2.10, with the piers standing against them and projecting into the recess; dark stone base, tile floor with a dark border, oak frieze above the door head, small oak cornice, coffered oak ceiling at 4.10 (border coffers around a central molded panel with a rosette), small bronze globe lamp near the mouth | `pieces/04_recess.py` | `RECESS` | built 2026-09-10 |
+| 04 | Entrance recess between the piers and the door: glazed-brick side walls running straight from the door set's edges (faces x = +/-1.60, no return beside the door) to the mouth at y = -2.10, with the piers standing against them and projecting into the recess; dark stone base, tile floor with a dark border (the same octagon tiles as the vestibule), oak frieze above the door head, small oak cornice, coffered oak ceiling at 4.10 (border coffers around a central molded panel with a rosette), small bronze globe lamp near the mouth | `pieces/04_recess.py` | `RECESS` | built 2026-09-10 |
 
 | 05 | Entrance slab: granite step 4.90 wide, 0.12 tall, from the recess mouth 0.75 m onto the sidewalk with a rounded front edge; plain sidewalk slab around it; granite fill under the recess floor | `pieces/05_slab.py` | `SLAB` | built 2026-09-10 |
 | 06 | Arch: one rectangular stone block continuing the piers' edges (x +/-1.60, y -2.70 .. -1.97, z 2.35 .. 4.08) resting on the pier capitals, square at its borders, with the semicircular arch (radius 1.26 = the piers' inner faces) cut through its centre; the capitals' abaci project past it. Street-face ornament, from the opening outward: (4) a continuous 45-degree chamfer along the arris (3 cm on the face, 3 cm on the soffit) with square notches subtracted from it (3 x 3 cm bites out of the corner, 3 cm long, 5.5 cm pitch), so the edge reads as a row of small squares; (2) a strip of three fine concentric steps rising outward close to the opening (R 1.40 .. 1.46), springing from the pier capitals' abaci and stopping at the keystone's outline, then a plain band; (1) two sunken spandrel panels (3 cm) edged with the three-part molding (tiny square step, convex quarter-round, tiny square step) whose curved edge follows the arch at R 1.56 and whose straight edges follow the block's side (0.08 in), the top border (3.98) and the keystone (0.06 off), tapering to a thin tip at z 2.69; (3) a sunken panel carved into the soffit (4 cm, single carve, margins 0.10) edged with the same three-part molding as the pilaster panels. Keystone as a corbel from the photo, inside the tapered outline the spandrels keep clear of (0.24 -> 0.30 wide, 3.71 .. 3.98): a chamfered top block with small ribs, a tapering half-cylinder (r 0.085 .. 0.115) wrapped in four inverted-V rows of edged leaves, a knob at the bottom | `pieces/06_arch.py` | `ARCH` | built 2026-09-10 |
@@ -1335,6 +1335,95 @@ layer weathers it (the old relief wore the band's own sandstone). Evidence
 portal frames 1 and 60, before and after). The flat decal reads as relief through its normal map but casts no
 shadow of its own, where the old prisms did; the height map is installed for a displacement or parallax pass if that
 is wanted.
+
+## The tile floor and the lobby photo (2026-09-28)
+
+The project owner supplied two images in `downloads/` (user: "one is the floor texture to use; and the other is a photo
+to use at the end of the portal entrance; do not distort the images; keep the floor shiny"). Both are copied byte for
+byte, neither resized nor cropped, into the game's texture store as `assets/public/textures/bradbury_portal/`, with a
+`source.json` recording where each came from, its size and md5, and what uses it (the folder is gitignored, as all of
+`assets/` is):
+
+- `floor_octagon_tiles.png` (from `bradbury_floor_texture.png`, 1254 x 1254): cream octagons with small terracotta
+  dots at their corners, two octagons each way, tiling without a seam (checked by tiling it 2 x 2).
+- `lobby_atrium_photo.png` (from `bradbury_internal.png`, 1086 x 1448): the Bradbury's atrium, the tiled corridor with
+  its sconces on the left and the marble staircase under its iron balustrades on the right. Superseded the same day by
+  the wider one below; kept.
+- `lobby_atrium_photo_wide.png` (from `bradbury_internal_2.png`, 1536 x 1024): the same view, wider -- the arcaded
+  corridor with its arched windows on the left, the staircase, the handrailed wall on the right.
+
+**The floor.** `portal_lib.mat_tile_floor` now lays the image in the floor objects' own metres at one scale on both
+axes, `FLOOR_REPEAT_M` 0.40 a repeat, so each octagon is 0.20 m -- the size the photo's own floor shows, whose octagons
+repeat at about the height of the staircase's bottom step -- and nothing is stretched. The polish is the checker's it
+replaced, `FLOOR_ROUGH` 0.18 under a `FLOOR_COAT` 0.5 clear coat. The material records its recipe on itself and is
+rebuilt in place when the recipe changes, so the recess floor (piece 04) follows the vestibule's without a rebuild of
+its own. The sheen shows where the floor has something bright to mirror: in the vestibule the lit lobby photo lies on
+it as a broad reflection (`03_vestibule_to_lobby.png`); in the recess, in direct sun with only the dark doors before it,
+the tiles read bright and even (the wear layer's glazed class, which the floor keeps, changes nothing there: the same
+view with `wear=off` matches).
+
+**The lobby photo, projected with parallax.** It first stood on a flat card just past the hall's open end, at its own
+3:4 and emitting at 1.0; the user found the inside "too illuminated" (the card was dimmed to 0.4 and made to light
+nothing), then asked for the wider photo, for parallax "if blender supports paralax and the image can be used for
+that", for less light again, and why the lobby looked "ghosted (2 overlaped images)".
+
+Blender has no parallax-mapping node, but Cycles does the real thing with *camera projection mapping*: the photo is
+projected from its own camera onto a stand-in of the room it shows, and every other viewpoint then sees the photo's
+content where it stands in depth. `portal_lib.mat_photo_projection` does it per shaded point: the stand-in object has
+its origin at the photo's camera and its axes along the camera's (x right, y the view, z up), so a point's Object
+coordinates image at `u = cx + f x / y`, `v = cy - f z / y`. Exact on faces of any size; back faces transparent.
+
+The wide photo can be used for it because it is a one-point perspective of a box-like room with a regular floor. Its
+camera was measured on the image: the wall bases meet at row 517 (the horizon); the floor's dot lattice (0.20 m tiles,
+as the hall's own) aligns on one vanishing column, 694 (lattice residual 0.045 of a pitch over 73 dots, against 0.36 at
+the wall lines' 744); the dot spacing across a row grows as 0.20 (v - 517) / h, which gives the camera 1.056 m over its
+floor, and the rows step 0.20 m in depth, which gives the focal length, 1621 px (about 38 mm); the bottom step's
+16 cm riser confirms both. The room follows from the image: wall bases at -1.72 and +2.18 m, the stair's left edge at
++0.055, its bottom step's front 4.99 m out, a 0.60 flight (31 degrees, assumed) to the top tread at row 298 (8.7 m out,
+2.23 m up), the corridor's far wall at 14.03 m (its base at row 639). A projection is unchanged by scaling the scene
+about its camera, so the whole of it is scaled by `PHOTO_SCALE` 1.513: the room is then exactly the hall's 5.90 m wide
+and continues its walls, the camera stands at eye height (1.60 m), and the photo's tiles are 0.30 m against the hall's
+0.20 -- which is why the hall's floor border now closes across its open end, a threshold between the two floors. The
+projector stands on the line of the room's centre, 6.71 m before the hall's end: the least distance at which the
+photo's frame covers the opening up to the lintel across the end (`LINTEL_Z`, the cornice's line, 3.73) and both walls
+are in frame. The stand-in (`vest_lobby_room`) is the floor, the two walls, the far wall 21.2 m out, a ceiling at
+`ROOM_CEIL_Z` 4.20 under the block's own ground-floor ceiling slab (4.25 in this frame, which bounds what can show),
+and the stair as a wedge: its flight from 7.55 to 13.18 m rising to 3.38 m, the wall over its top and its side toward the
+corridor. It emits the photo at `PHOTO_EMISSION` 0.2 (1.0, then 0.4) and lights nothing: invisible to diffuse rays and
+to shadow rays, while the camera, the door glass and the polished floor see it. From the street the door glass reads
+50 and 34 on the film where the dimmed card read 67 and 37 (the first card: 101 and 59), the transom 28 (40, 58), the
+sunlit facade unchanged at 191.
+
+**The ghost** was the ceiling. The doors' and panels' varnished oak carries a clear coat (0.25 to 0.3 at the default
+coat roughness, 0.03), and the hall's ceiling, beams, medallion and cornice wore it too. Through the transom from the
+street the ceiling is seen at about 80 degrees from its normal, where a coat reflects like a mirror: it laid the bright
+lobby over its own dark coffers, beams and lamp -- two images at once. A ray cast through the transom proves it: every
+ray meets the ceiling before it could reach the lobby, yet the render showed the lobby there. The ceiling set now
+takes matte copies without the coat (`portal_lib.mat_matte_copy`: `PORTAL_oak_ceiling`, `PORTAL_oak_light_ceiling`,
+roughness 0.6; `wear/classes.py` wears them as wood); the transom now shows the ceiling, with only a soft sheen of the
+lit room at its most grazing edge. The door glass and the polished floor keep their reflections.
+
+With the room in place `HallToLobby` looks down the hall into the atrium; the stills and the flyover's portal push-in
+see the corridor and the stair shift against each other as the camera moves, where the card slid as one picture.
+The stand-in is part of the portal, so every instance carries one: at the other two portals (3rd Street, the west
+face) the two rooms meet inside the block, where no camera looks through those doors. Evidence
+`tests/artifacts/screens/bradbury_scene/portal_stills/` (`parallax_front_before_after.png`,
+`parallax_right_before_after.png`, `parallax_flyover/push_in_card_vs_room.png`) and
+`tests/artifacts/screens/bradbury_scene/portal_floor_lobby/` (the floor).
+
+**Two stills of the Broadway portal** (same day: "render from the front door straight; and a position to the right with
+a small angle"), from the worn scene at a standing eye (1.62 m over the pavement) 8.6 m out from the pilasters' face,
+40 mm in a 4:5 frame. The camera stays level and `render_wear.py`'s new `shift=` lifts the frame (Blender's lens shift,
+0.204 of the frame's height) to take in the entablature, so the verticals stay vertical as in an architectural
+photograph; `frame=` sets the aspect. The second stands 15 degrees to the right (north), aimed back at the portal's
+centre line:
+
+```
+blender -b -P render_wear.py -- cam=25.99,0.88,1.82:17.39,0.88,1.82:40 shift=0,0.204 frame=4:5 res=1600 samples=128 devices=gpu out=.../portal_front_straight.png
+blender -b -P render_wear.py -- cam=25.70,3.11,1.82:17.39,0.88,1.82:40 shift=0,0.204 frame=4:5 res=1600 samples=128 devices=gpu out=.../portal_right_15deg.png
+```
+
+Both in `tests/artifacts/screens/bradbury_scene/portal_stills/`.
 
 ## The render scene: `build_scene.py`
 
