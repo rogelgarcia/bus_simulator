@@ -68,27 +68,44 @@ def mat_oak():
 # glass through and through. They were Alpha 0.35 over a 0.9 transmission at IOR 1.5, an Eevee "blended" setup that
 # Cycles renders stochastically: at each of a pane's two faces a ray either passed straight on (the alpha's 65%) or was
 # refracted, so a ray refracted at one face and passed straight at the other left the pane bent by the IOR and saw the
-# lobby from a few degrees off -- a second, displaced image over the first. Now Alpha 1 and full transmission: every
-# ray is refracted in and out, parallel, one image, with the faces' own faint reflections. Nearly clear, a trace of
-# green-blue. The wear layer's grime raises the alpha toward 1 and lowers the transmission where dust covers the pane,
-# which this base keeps working. Rebuilt in place when the recipe changes, so every pane using it follows.
+# lobby from a few degrees off -- a second, displaced image over the first. For Cycles it is now Alpha 1 and full
+# transmission: every ray is refracted in and out, parallel, one image, with the faces' own faint reflections. Nearly
+# clear, a trace of green-blue. The wear layer's grime raises the alpha toward 1 and lowers the transmission where dust
+# covers the pane, which this base keeps working (it wears the ACTIVE output's BSDF: the Cycles one).
+# Eevee, which the editor's Material Preview uses, cannot see through full transmission without ray-traced refraction
+# and showed the world's HDRI in the panes (the user: "in the editor, it now shows the environment reflection, before
+# it was a clear glass, which i preferred"), so the material has a second output for Eevee alone with the old
+# see-through setup: plain alpha blending at 0.25, no transmission (Eevee's approximate transmission speckled), which
+# in Eevee has no ghost. Each engine takes its
+# own output. Rebuilt in place when the recipe changes, so every pane using it follows.
 GLASS_TINT = (0.95, 0.975, 0.975)
 GLASS_ROUGH = 0.02
 def mat_glass():
-    name = "PORTAL_glass"; recipe = f"clear glass: tint {GLASS_TINT} rough {GLASS_ROUGH} ior 1.5 transmission 1 alpha 1"
+    name = "PORTAL_glass"
+    recipe = f"clear glass: cycles tint {GLASS_TINT} rough {GLASS_ROUGH} ior 1.5 transmission 1 alpha 1; eevee alpha 0.25 no transmission blended"
     m = bpy.data.materials.get(name)
     if m is not None and m.get("recipe") == recipe: return m
     if m is None: m = bpy.data.materials.new(name)
     m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
-    out = nt.nodes.new("ShaderNodeOutputMaterial"); bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled"); nt.links.new(bsdf.outputs[0], out.inputs[0])
-    bsdf.inputs["Base Color"].default_value = (*GLASS_TINT, 1)
-    bsdf.inputs["Roughness"].default_value = GLASS_ROUGH
-    bsdf.inputs["IOR"].default_value = 1.5
-    if "Transmission Weight" in bsdf.inputs: bsdf.inputs["Transmission Weight"].default_value = 1.0
-    bsdf.inputs["Alpha"].default_value = 1.0
-    try: m.surface_render_method = 'DITHERED'
+    # Cycles: real glass
+    out_c = nt.nodes.new("ShaderNodeOutputMaterial"); out_c.target = 'CYCLES'; out_c.location = (300, 200)
+    b = nt.nodes.new("ShaderNodeBsdfPrincipled"); b.location = (0, 200); nt.links.new(b.outputs[0], out_c.inputs[0])
+    b.inputs["Base Color"].default_value = (*GLASS_TINT, 1)
+    b.inputs["Roughness"].default_value = GLASS_ROUGH
+    b.inputs["IOR"].default_value = 1.5
+    if "Transmission Weight" in b.inputs: b.inputs["Transmission Weight"].default_value = 1.0
+    b.inputs["Alpha"].default_value = 1.0
+    # Eevee (the editor's Material Preview): plain see-through glass
+    out_e = nt.nodes.new("ShaderNodeOutputMaterial"); out_e.target = 'EEVEE'; out_e.location = (300, -300)
+    e = nt.nodes.new("ShaderNodeBsdfPrincipled"); e.location = (0, -300); nt.links.new(e.outputs[0], out_e.inputs[0])
+    e.inputs["Base Color"].default_value = (0.75, 0.82, 0.85, 1)
+    e.inputs["Roughness"].default_value = 0.04
+    e.inputs["IOR"].default_value = 1.5
+    e.inputs["Alpha"].default_value = 0.25                            # plain alpha blending: Eevee's own transmission speckles in the viewport
+    out_e.is_active_output = False; out_c.is_active_output = True        # the wear layer wears the active (Cycles) output's BSDF
+    try: m.surface_render_method = 'BLENDED'                             # Eevee only; Cycles ignores it
     except Exception: pass
-    m.diffuse_color = (0.55, 0.62, 0.64, 0.35)                     # the Solid view: a see-through blue-grey
+    m.diffuse_color = (0.55, 0.62, 0.64, 0.35)                          # the Solid view: a see-through blue-grey
     m["recipe"] = recipe
     return m
 

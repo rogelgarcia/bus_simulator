@@ -1413,7 +1413,11 @@ the first -- the sconces doubled, lamps floating over the iron stair. The glass 
 (`GLASS_TINT` (0.95, 0.975, 0.975), `GLASS_ROUGH` 0.02), rebuilt in place by a recipe like the floor's, so every ray is
 refracted in and out, parallel: one image, crisper (the stochastic alpha's noise gone too), with the faces' own faint
 reflections of the street; the wear layer's grime still raises the alpha and lowers the transmission where dust
-covers a pane. The lower strip of the transom lights (2.62 to 3.73 m) looks under the lintel straight into the lobby;
+covers a pane. Eevee -- the editor's Material Preview -- cannot see through full transmission without ray-traced
+refraction and showed the world's HDRI in the panes (the user preferred the clear glass there), so the material has
+a second output, target Eevee, with plain alpha blending at 0.25 and no transmission (Eevee's approximate
+transmission speckled); each engine takes its own output, and the wear layer wears the active one, Cycles'. The Cycles
+renders did not change (0.01 of a level over the doors). The lower strip of the transom lights (2.62 to 3.73 m) looks under the lintel straight into the lobby;
 their upper part sees the hall's ceiling.
 
 With the room in place `HallToLobby` looks down the hall into the atrium; the stills and the flyover's portal push-in
