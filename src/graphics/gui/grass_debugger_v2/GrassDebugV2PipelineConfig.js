@@ -12,8 +12,7 @@ export const GRASS_V2_PIPELINE_CONFIG = freeze({
     textures: [
         { id: '4k', stride: 1, offset: 0, canopyContrast: 1 },
         { id: '2k', stride: 2, offset: 0, canopyContrast: 0.5 },
-        { id: '4k-single', stride: 1, offset: 0, canopyContrast: 1, resolution: 1024 },
-        { id: '4k-multi32', stride: 1, offset: 0, canopyContrast: 1, resolution: 512 }
+        { id: '4k-single', stride: 1, offset: 0, canopyContrast: 1, resolution: 1024 }
     ],
     configurations: [
         { id: 'source', kind: 'reference', x: 0, z: 0, stride: 1, offset: 0 },
@@ -23,9 +22,7 @@ export const GRASS_V2_PIPELINE_CONFIG = freeze({
         { id: 'texture2k', kind: 'volume', x: 1.3, z: -1.3, texture: '2k' },
         { id: 'hybrid2k', kind: 'hybrid', x: 1.3, z: -2.6, texture: '2k', stride: 2, offset: 1 },
         { id: 'rings4k', kind: 'experiment', x: -1.3, z: -1.3, texture: '4k-single',
-            directional: { resolution: 1024, azimuthOffsetsDegrees: [0] } },
-        { id: 'rings32', kind: 'experiment', x: 0, z: -1.3, texture: '4k-multi32',
-            directional: { resolution: 512, azimuthOffsetsDegrees: Array.from({ length: 32 }, (_, index) => index * 11.25) } }
+            directional: { resolution: 1024, azimuthOffsetsDegrees: [0] } }
     ],
     volume: {}, ring: {}, directional: {}, field: {}
 });

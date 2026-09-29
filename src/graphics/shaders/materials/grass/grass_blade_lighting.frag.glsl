@@ -38,7 +38,11 @@ void RE_Direct_Grass(const in IncidentLight directLight, const in vec3 geometryP
     #ifdef GRASS_PLANT_FACING
         vec3 grassPreviousDiffuse = reflectedLight.directDiffuse;
     #endif
-    RE_Direct_Physical(canopyLight, geometryPosition, geometryNormal, geometryViewDir,
+    IncidentLight grassReflectedLight = canopyLight;
+    #ifdef GRASS_LEAF_TRANSLUCENCY
+        grassReflectedLight.color *= 0.72;
+    #endif
+    RE_Direct_Physical(grassReflectedLight, geometryPosition, geometryNormal, geometryViewDir,
         geometryClearcoatNormal, material, reflectedLight);
     #ifdef GRASS_PLANT_FACING
         float grassLightCosine = dot(grassFacingSourceNormal, directLight.direction);
@@ -47,6 +51,13 @@ void RE_Direct_Grass(const in IncidentLight directLight, const in vec3 geometryP
         reflectedLight.directDiffuse = grassPreviousDiffuse
             + mix(grassBackDiffuse, grassFrontDiffuse, grassFacingFrontWeight)
             * canopyLight.color * BRDF_Lambert(material.diffuseColor);
+    #elif defined(GRASS_LEAF_TRANSLUCENCY)
+        float grassBlade = smoothstep(0.12, 0.28, vUv.y);
+        float grassMargin = smoothstep(0.1, 0.8, abs(2.0 * vUv.x - 1.0));
+        float grassTransmission = mix(0.35, mix(0.50, 0.64, grassMargin), grassBlade);
+        vec3 grassTransmissionColor = material.diffuseColor * mix(vec3(1.0), vec3(1.12, 1.0, 0.70), grassBlade);
+        reflectedLight.directDiffuse += grassTransmission * saturate(dot(-geometryNormal, directLight.direction))
+            * canopyLight.color * BRDF_Lambert(grassTransmissionColor);
     #else
         reflectedLight.directDiffuse += 0.35 * saturate(dot(-geometryNormal, directLight.direction))
             * canopyLight.color * BRDF_Lambert(material.diffuseColor);

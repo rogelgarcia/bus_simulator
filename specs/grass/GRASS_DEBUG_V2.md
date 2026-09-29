@@ -65,7 +65,6 @@ Each configuration has its own `configuration/<id>` graph item:
 | `hybrid1k` | Full capture plus every fourth source leaf |
 | `hybrid2k` | Subset capture plus alternating source leaves |
 | `rings4k` | One oblique + top at 1024², cropped block and bent outer ring |
-| `rings32` | 32 oblique + top at 512², cropped block and bent outer ring |
 
 Names identify the current experiments; counts in labels, tooltips and snapshots
 are calculated from the actual generated instances. Subsets use deterministic
@@ -2463,7 +2462,7 @@ Ring geometry, shadow casting, source density, and the 26-triangle budget are
 unchanged. Directional regression captures are stored in
 `tests/artifacts/screens/grass_debug_v2/sixteen_oblique_canopy/`.
 
-### One high-resolution oblique view versus 32 smaller views
+### One high-resolution oblique view versus 32 smaller views (previous comparison)
 
 The default comparison now has two experimental patches derived from the same
 4,000-leaf LOD3 · 10 source:
@@ -2506,3 +2505,757 @@ range from 96.58–144.30 for the single-view variant and 113.84–151.59 for th
 32-view variant. Maximum relative differences from the live reference at those
 poses are 11.03% and 10.90%, respectively; this measures retained directional
 response, not exact visibility or color matching at every elevation.
+
+### Remove the 512-pixel comparison
+
+The default scene now contains seven patches. The `rings32` comparison and its
+`4k-multi32` texture recipe are removed, so its top capture, 32 oblique captures,
+walls and perimeter ring are no longer generated. Its former slot is left empty.
+The 1024² single-oblique-plus-top experiment remains unchanged.
+
+Sun-direction color adjustments, far-distance capture generation and source-leaf
+updates are deferred. This change only removes the rejected 512² comparison.
+
+
+### Soil-rooted leaf blades
+
+The `layout=shoot` study shows one straight reference leaf on the left and
+a paired specimen 35 mm to its right. All three meshes begin directly at the
+soil. The folded basal sheath, C-shaped wrap and opening/rotation transition
+have been removed. There is no separate stem, base mesh or axial twist.
+Definitions live in `GRASS_V2_RIBBON_SHOOT` in `GrassDebugV2RibbonShoot.js`.
+
+Each blade retains two flat cross-section halves meeting at a longitudinal
+crease, with separate coincident crease vertices for the shading normals.
+The cross-section has a fixed 160° included angle and 4.5 mm material width
+(about 4.43 mm projected width), continuing from the ground to the rounded-tip
+taper. The reference blade is 47 mm high and upright.
+
+The older paired blade retains uniform scale 1.05 and a 12° outward
+inclination. The second uses reference scale, the opposite inclination and
+reflection across local X. Paired blades retain the existing gentle backward
+curve along their centre spines, reaching an 11° tangent at the tip. Width
+directions stay parallel along the blade: there is no axial rotation or
+opening transition. The roots are placed far enough apart for a 0.2 mm
+horizontal clearance between the two projected blade bounds before the soil
+cut. There is no connecting geometry.
+
+The triangle budget is at most 50 per final leaf, including soil-cut faces.
+A source leaf uses 11 longitudinal segments (seven body, four rounded-tip
+segments) and two crosswise cells. This produces 20 quads plus a two-triangle
+tip fan: 42 triangles before clipping. The study displays 44 triangles per
+leaf, 132 total. `trimAtSoil` enforces the configured 50-triangle ceiling,
+and snapshots expose `trianglesPerLeaf`. Sheet normals follow the grid
+tangents independently on either side of the crease.
+
+The study retains its camera controls, two-sided daylight material and triangle
+overlay. Its title, per-leaf counts and overlay follow the selected LOD. The other `layout=leaf` primitive and random-field
+pipeline retain their sources. Shape tests verify fixed width directions,
+coincident creases, no sideways spine curvature, zero base meshes, matching
+soil contact, finite unit normals, nondegenerate faces and separated pairs.
+Budget checks include clipping every one of the 25 rigid backward-inclination
+variants from 0° to 45°. The lighting regression samples triangle interiors
+independently of tessellation density.
+
+Current shaded captures and validation:
+`tests/artifacts/screens/grass_debug_v2/soil_rooted_blades/`.
+Triangle-overlay captures:
+`tests/artifacts/screens/grass_debug_v2/triangle_wireframe/`.
+
+### Reference and LOD0 leaf comparison
+
+The shoot study and litter field label the original full-detail leaf **Reference**
+and the optimized leaf (previously Smart LOD0) **LOD0**. Their existing API keys
+remain `LOD0` and `LOD0_SMART`, respectively, so saved comparisons and benchmark
+scripts keep their original meaning. Other study layouts retain their own LOD
+names. Historical benchmark descriptions below use the names at capture time.
+
+The optional `LOD0_SMART` definition uses larger interior triangles and a
+reduced rim around the rounded cap. It omits the first intermediate cap rim
+vertex on each side (about 93.83% of the longitudinal parameter). The next
+rim corners move from 97.07% to 95.5%, lowering them and widening the outline
+along the original taper to compensate for the omitted subdivision. Position,
+UV, color and sheet normals follow the new station symmetrically. Leaf width
+and apex stay unchanged. Each cap wing uses three triangles. At the 90% station,
+the LOD0 shoulder corners are 3% wider on both sides to compensate for the long
+upper quad's earlier taper. This halves the initial 6% compensation to avoid an overly broad shoulder. The shared cross-section scales in width and depth,
+preserving its included angle and center spine. Vertices farther into the tip
+stay unchanged, and this adjustment adds no triangles.
+
+The center junction remains at the cap's 90% station. The body now has
+three longitudinal sections with mirrored quads on both wings. Each quad
+has two triangles, with a diagonal from its lower outer corner to the upper
+center junction. The lower section is longer; the upper two have equal
+center-spine arc lengths. The existing top section stays unchanged, and the
+boundary below it is solved from the spine-length mapping. Source stations
+are 0, 0.3907598799, 0.6428571429 and 0.9. At the 47 mm source scale, section
+lengths before soil clipping are 18.67694, 11.89190 and 11.89190 mm (about
+44% / 28% / 28% of the body). Tip-rim positions above the widened shoulders,
+colors and UVs remain unchanged; sheet normals follow the new sampling. Reference
+remains unchanged. The separate LOD1 and LOD2 refinements are described below.
+
+The source and soil-fitted leaf use 18 triangles: 12 in the body and six in
+the tip, with 54 total in the study. Root corners slide along the existing
+longitudinal edges to meet the soil without splitting the lower quads.
+The count stays at 18 for every field inclination, with an 18-triangle ceiling.
+A 96,000-leaf LOD0 field has 1,728,000 grass triangles; nine have 15,552,000.
+The All scene total is 1,728,688 for one complete field or 15,553,472 for nine.
+Both pages expose **Reference / LOD0 / LOD1 / LOD2**, preserving camera, layer
+and wireframe settings. Reference retains the previous default selection.
+
+`grass_debug_v2_smart_lod0.pwtest.js` verifies exactly three body sections,
+equal upper arc lengths, the longer bottom section, matching mirrored quads,
+three-percent symmetric shoulder widening, unchanged upper tip positions/colors/UVs,
+renamed controls, valid winding and area, and soil contact
+within budget for all 25 inclinations. It also compares Reference
+byte-for-byte against the prior source, checks all 96,000 field apex
+positions/colors, selectors and layer counts. Captures, validation and the
+prior source snapshot live under
+`tests/artifacts/screens/grass_debug_v2/root_fit/lod0/`.
+
+The historical `tests/headless/perf/specs/grass_smart_lod0_comparison.pwtest.js`
+compares original LOD0 with the first Smart LOD0 version: five upper triangles
+per side, all rim vertices and the lower center junction. That version saved
+eight triangles per leaf (36 in the study, 36–39 in the field). Its source and
+results are preserved under `tests/artifacts/screens/grass_debug_v2/smart_lod0/`;
+those timings do not measure the subsequent tip refinement. Enable
+`GRASS_SMART_LOD0_BENCHMARK=1`, set the hardware Chrome executable and
+`PERF_BASE_URL=http://localhost:8001`, and use the standard selected-test runner.
+Keep both `before_GrassDebugV2RibbonShoot.js` and
+`after_GrassDebugV2RibbonShoot.js` beside the report. The test routes the
+archived candidate into the live field builder and checks unchanged original
+LODs against the earlier snapshot. Both nine-field poses are measured: frame
+all nine, and frame one before enabling nine with the camera unchanged.
+At 1920 × 1080, DPR 1 and 4× MSAA, each LOD/pose receives 180 initial warmup
+frames and 12 alternating paired rounds of 30 warmup + 60 measured frames.
+The report includes 720 valid GPU samples per LOD/pose, mean/P99 GPU time,
+observed FPS, paired uncertainty, camera transforms, source hashes and matching
+screenshots. No outliers are discarded; the result measures full-scene GPU cost,
+with static shadow reuse and the cursor over the HUD.
+
+### LOD1 soil-rooted blades
+
+`GRASS_V2_RIBBON_LODS` supplies LOD0, Smart LOD0, LOD1 and LOD2 definitions to the shared ribbon
+generator. LOD1 has two body sections and a two-triangle tip. The center
+junction stays at 90% of the blade's longitudinal parameter, matching Reference.
+The intermediate outer shoulder vertices are no longer referenced. The two
+remaining tip corners move from 97.07% down to 94%, and their width/depth are
+1.12 times the taper envelope at that station (about 87.43% of full half-width).
+This narrows both upper corners by about 3.45% from the previous 1.16 scale,
+without moving their longitudinal stations or the center junction.
+Each upper body wing is a quad connecting the lower split to its raised outer
+corner and the 90% center junction; each cap wing is one triangle to the apex.
+The narrower corners retain the original ten-triangle topology.
+Only LOD1 moves its sampling rows. Its bottom section is lengthened so the
+middle section retains the previous center-spine arc length: 19.647301 mm
+for the 47 mm source leaf, before specimen scale. The lower split is solved
+from the existing longitudinal length mapping instead of stretching the
+middle section. LOD0 geometry and sampling remain unchanged. It retains both sides of the
+center crease, the same width, length, backward spine bend, leaf poses and
+material. Both sides retain independent crease normals; UVs, colors and
+lighting normals follow the relocated corners. The two-face tip retains a
+connected center crease, with coarser interpolation than Reference.
+Root fitting changes only the four bottom vertices without adding faces.
+The source and fitted leaf both have 10 triangles (eight body, two tip),
+30 total in the study; the same 10-triangle ceiling holds at every
+field inclination. Reference keeps its original tip subdivisions and soil clipping.
+
+The shoot study exposes Reference / LOD0 / LOD1 / LOD2 buttons. Switching preserves the camera and
+wireframe setting, displays only the selected meshes, and updates the total and
+individual counts. All LODs use the same soil and material. Other study layouts
+retain their existing representations.
+
+`GrassDebugV2FieldLod1.js` constructs a runtime LOD1 mesh from the existing
+field manifest's 48,000 paired placements. It reuses their exact translations,
+yaw, scale and backward inclinations, with the same seeded brightness/dryness
+and material. Every inclined template is checked against the 10-triangle budget.
+The current field uses 10 triangles for every leaf: 960,000 leaf triangles
+instead of Reference's 4,235,466. Geometry is built once during scene load and retained
+for immediate manual switching; no new offline export or texture bake is needed.
+
+`grass_debug_v2_lod1.pwtest.js` checks both selectors, fixed fitted-root counts over
+all 25 inclinations, contact with soil, finite unit normals, nondegenerate faces,
+leaf bounds, active wireframe and all three field layer modes. It also verifies
+the unchanged center junction, longer lower section and middle spine length,
+relocated outer corners, silhouette area within 2% of the earlier twelve-triangle shape,
+and unchanged Reference/LOD0 geometry. All 96,000 tip
+positions and colors are compared against the original exported LOD0 mesh.
+LOD0/LOD1 study, overview, rear and close-up captures plus validation data are in
+`tests/artifacts/screens/grass_debug_v2/lod1_narrow_tip/lod1/`.
+
+### Two-triangle LOD2
+
+LOD2 is a slanted-top quadrilateral made from exactly two full-length triangles.
+It has four spatial corners and six stored vertices: the two shared diagonal
+corners are duplicated so each triangle has its own constant lighting normal.
+The upper corners are 90% of the full leaf half-width, at longitudinal
+stations 1.0 and 0.94. There is no separate tip cap or center-column division.
+The high corner replaces the previous centered apex.
+
+The second face rotates 12 degrees around the common diagonal before root
+fitting. Both faces share the grass material; their distinct normals produce
+different light responses across the fold. LOD2 fits its two-row color gradient
+to the palette at 20% and 90% blade height, extrapolating those body colors to
+its root and upper vertices. This keeps the warmer tip color from spreading
+through the whole blade when intermediate color rows are removed. Both the
+study and seeded field palette use `sampleGrassDebugV2Lod2Color`; dryness and
+brightness variation remain shared with LOD1. No faces, shader work or textures
+are added.
+This approximates the leaf with two planes while preserving the paired
+placements, source width and long-edge height. Reference, LOD0 and LOD1
+retain their geometry.
+
+`GrassDebugV2RibbonLod2.js` fits all copies of both root corners to the soil
+in world space, preserving two triangles and a closed diagonal at every
+0–45 degree inclination. Root fitting can slightly change the fold angle.
+It assumes smooth ground between the two base corners, without adding
+subdivisions to follow arbitrary terrain. Normals are recomputed independently
+per face after fitting.
+
+The shared field builder in `GrassDebugV2FieldLod1.js` retains the recorded
+paired placements, seeded palette, material, shadows and field layout.
+LOD2 has 192,000 grass triangles per 96,000-leaf field and 1,728,000 across
+nine: 6,912,000 fewer than the current ten-triangle LOD1 (80%).
+All mode adds 688 triangles for one field or 1,472 for nine fully visible
+fields; Grass only retains 590 fixed soil/table triangles. Field copies share
+geometry, materials and textures.
+
+`grass_debug_v2_lod2.pwtest.js` verifies two nondegenerate faces, separate
+unit shading normals, a continuous shared diagonal, soil contacts, every
+inclination variant, unchanged Reference/LOD0 geometry, all 96,000 field
+root anchors and palette entries, selectors and nine-field layer counts.
+Captures and validation live under
+`tests/artifacts/screens/grass_debug_v2/lod2_two_triangles/`.
+
+`grass_debug_v2_lod_color.pwtest.js` samples barycentrically interpolated body
+colors at matching UV locations and captures LOD1/LOD2 in four identical field
+views, including sun and shade. The mean excess red-to-green ratio over LOD1
+falls from 10.21% to 2.15%; the leaf remains two triangles. Before captures and
+measurements are under `tests/artifacts/screens/grass_debug_v2/lod2_color/`,
+with corrected captures under its `after/` directory.
+
+The earlier five-triangle LOD2 captures and benchmark results remain under
+`tests/artifacts/screens/grass_debug_v2/lod2/`; those timings do not measure
+the current two-triangle geometry.
+
+`tests/headless/perf/specs/grass_lod2_comparison.pwtest.js` measures LOD1
+against LOD2 on the actual hardware renderer. Enable with
+`GRASS_LOD2_BENCHMARK=1`, set the hardware Chrome executable and
+`PERF_BASE_URL=http://localhost:8001`, then use the standard selected-test
+runner. The two camera configurations frame all nine fields or frame one
+before adding the other eight without moving. Both retain all nine fields,
+identical lighting and 4× MSAA at 1920 × 1080, DPR 1. It checks byte-for-byte
+unchanged LOD0/LOD1 geometry using the pre-LOD2 source snapshot saved beside
+the report. After 180 initial warmup frames per LOD and camera, 12 alternating
+pairs each use 30 warmup and 60 measured frames: 720 valid GPU samples per
+LOD and camera, without discarded outliers. Report mean/P99 GPU times,
+observed FPS, camera-visible counts, source hashes and paired uncertainty;
+browser cadence and unlocked desktop workloads limit conclusions.
+
+### Current LOD0 / LOD1 / LOD2 benchmark
+
+`tests/headless/perf/specs/grass_lod012_comparison.pwtest.js` compares the current
+18-triangle LOD0 (internal key `LOD0_SMART`), ten-triangle LOD1 with narrowed
+upper corners, and two-triangle folded LOD2. Reference is excluded. Enable
+`GRASS_LOD012_BENCHMARK=1`, set `PLAYWRIGHT_EXECUTABLE_PATH` to hardware Chrome
+and `PERF_BASE_URL=http://localhost:8001`, and run through the selected-test runner.
+
+Both poses retain nine 12 × 12 m fields, 1 m gaps and 864,000 leaves: frame all
+nine, or frame one before enabling nine without changing the camera. All mode
+keeps litter, soil and the table. Resolution is 1920 × 1080 at DPR 1 with 4× MSAA,
+static shadows and the cursor over the HUD. Software renderers are rejected.
+Each LOD/pose receives 180 initial warmup frames, followed by 12 rounds using
+all six LOD order permutations twice. Every block uses 30 warmup and 60 measured
+frames, totaling 720 GPU samples per LOD/pose. Query completeness, disjoint
+status, camera transforms, counts and source hashes are checked.
+
+Reports include mean/P99 GPU times, observed FPS, paired differences and
+approximate 95% intervals from round means. Measurements exclude shader
+compilation, LOD switching and shadow-map rebuilds; desktop GPU clocks and
+other workloads remain unlocked. Partially visible field meshes count in full.
+Captures, raw samples, source snapshots and the report are saved under
+`tests/artifacts/screens/grass_debug_v2/lod012_current/`.
+
+### Four-triangle tip benchmark
+
+`tests/headless/perf/specs/grass_tip_fan_9_fields.pwtest.js` is an opt-in
+hardware GPU comparison of the preserved six-face tip and the first four-face
+tip. Both revisions are frozen for this historical comparison; later profile
+edits are not mixed into its topology-only measurements. It swaps the shared LOD1 geometry on all nine fields in the same live
+scene, preserving the camera, placements, materials, shadows and post-processing.
+Every field must remain in view: 864,000 leaves, 13,825,472 scene triangles
+before and 12,097,472 after. The reduction is 1,728,000 grass triangles (12.5%).
+
+Before changing the generator, preserve its source and the field LOD1 factory
+under `tests/artifacts/screens/grass_debug_v2/tip_fan_9_fields/` as
+`before_GrassDebugV2RibbonShoot.js` and `before_GrassDebugV2FieldLod1.js`.
+Preserve the matching candidate generator as
+`after_GrassDebugV2RibbonShoot.js` before subsequent shape edits.
+The benchmark loads those snapshots through test-only routes; no legacy
+topology switch is added to the application. The report records both source
+hashes and verifies identical surviving vertex attributes and outer outlines.
+
+Set `GRASS_TIP_FAN_BENCHMARK=1`, `PERF_BASE_URL=http://localhost:8001`, and
+`PLAYWRIGHT_EXECUTABLE_PATH` to a hardware-accelerated Chrome executable.
+Select the spec through `node tools/run_selected_test/run.mjs --set`, then
+run `node tools/run_selected_test/run.mjs`. It uses a 1920 × 1080 viewport,
+DPR 1 and the full 4× MSAA scene. After 180 initial warmup frames per case,
+six alternating before/after rounds each use 60 warmup and 120 measured frames.
+GPU timer queries must supply all 720 valid measurements per case, without
+disjoint events. Frame intervals are recorded separately; displayed FPS can
+remain capped while GPU time changes. The comparison reports round-paired
+mean differences and an approximate 95% interval, rather than requiring a
+particular speedup. Raw samples, timing reports and identical-camera captures
+remain in the artifact directory. Preserve earlier trials when repeating a
+noisy run; disclose their variability alongside the final comparison.
+
+### LOD1 tip alignment and camera-distance comparison
+
+`tests/headless/perf/specs/grass_lod1_tip_profile.pwtest.js` compares three
+LOD1 versions: original 16-triangle tip, previous 14-triangle fan at 84%,
+and the current 14-triangle fan aligned to LOD0 at 90%. The prior fan source
+is preserved at
+`tests/artifacts/screens/grass_debug_v2/lod1_short_tip/before_GrassDebugV2RibbonShoot.js`.
+Enable with `GRASS_TIP_PROFILE_BENCHMARK=1` and select it through the standard
+test runner, using the same hardware Chrome and perf base URL settings above.
+
+Two poses use the same overview direction: frame all nine fields; and frame
+one field before adding the other eight without changing the camera. All nine
+fields remain loaded in both poses. Frustum-visible mesh counts are recorded
+separately from total leaves, with partly visible fields counted in full.
+The test asserts identical camera transforms before and after increasing the
+field count. It also checks that every LOD0 vertex attribute and index is
+byte-for-byte unchanged by the tip alignment.
+
+Each pose warms all three versions for 180 frames, then measures six balanced
+orders, 60 warmup and 120 measured frames per case/block: 720 valid GPU samples
+per version and camera. Reports retain all raw timings, camera transforms,
+counts, screenshots and source hashes under
+`tests/artifacts/screens/grass_debug_v2/lod1_short_tip/`. This comparison
+includes the newer profile adjustment; it does not claim pure topology
+isolation between the original and current leaves.
+
+### Triangle wireframe inspection
+
+In `layout=shoot`, the **Wireframe** checkbox overlays all three
+leaf blades. It starts unchecked and can be combined with
+any camera, including Base. The shaded surface stays visible underneath.
+
+`GrassDebugV2TriangleWireframe.js` reads the final soil-trimmed indexed meshes.
+Every triangle edge is shown, including internal diagonals, open boundaries,
+the soil cut and triangular tip fans. Coincident crease edges are drawn once
+per mesh. The overlay follows each mesh's transform, uses depth testing, and
+applies a reversible depth offset to the filled material to prevent flicker.
+It does not change mesh topology or leaf shading. GPU resources are released
+when the study closes.
+
+The panel retains the total and lists the final mesh count separately for
+Single leaf, Pair left and Pair right (Reference: 44 triangles each, 132 total;
+LOD0: 18 each, 54 total; LOD1: 10 each, 30 total; LOD2: 2 each, 6 total).
+Counts come from the actual leaf meshes, independently of the overlay state.
+The study HTML versions its entry-module and stylesheet URLs so browsers with
+cached earlier quad-overlay code fetch the triangle-overlay update.
+
+The focused triangle-wireframe browser test verifies both diagonals on two
+noncoplanar quads, individual counts, visibility through the checkbox,
+soil-cut alignment, unchanged source geometry metadata, restoration of fill
+settings and cleanup.
+Captures: `tests/artifacts/screens/grass_debug_v2/triangle_wireframe/`.
+
+### Soil cut and two-sided leaf translucency
+
+Before rendering or exposing bake meshes in `layout=shoot`, all three
+leaf blades meet `GrassDebugV2LeafSoil.getHeightAt`.
+Reference retains `GrassDebugV2SoilClip.js`, which clips crossing triangles
+and interpolates UVs, colors and normals.
+LOD0 and LOD1 use `GrassDebugV2RibbonRoot.js`: each of the four root vertices
+moves along its edge toward the next body row to intersect the soil. An edge
+can extend downward when an inclined root starts above ground. The two lower
+quads retain their topology, crease and boundary edges; attributes interpolate
+along those edges and normals remain unit length. All upper vertices stay
+unchanged. This removes the two study root splits without cutting holes in
+the sheet. Field templates fit again after inclination. The `edge-fit` recipe
+tag keeps archived clipped benchmark templates on their original path.
+LOD2 retains its existing two-corner fitting.
+
+`grass_debug_v2_root_fit.pwtest.js` checks 300 combinations of LOD, specimen,
+inclination and flat/uneven soil for root contact, boundary-edge preservation,
+unchanged upper attributes and indices, crease continuity, nondegenerate faces,
+unit normals and repeatable fitting. Before/after root captures and validation
+live under `tests/artifacts/screens/grass_debug_v2/lod1_ten_triangles/root_fit/`.
+
+The shoot material uses the same base color on both faces. A dedicated
+`GRASS_LEAF_TRANSLUCENCY` shader variant transmits shadowed direct light from
+the opposite side: 0.50 at the central fold, increasing to 0.64 toward the blade
+margins, with a linear RGB tint multiplier of (1.12, 1, 0.70). This is an
+art-directed thin-leaf approximation. The material's low-UV range retains 0.35 neutral
+transmission for compatibility; the current blades start at the blade UV range. No alpha transparency,
+emissive light, extra texture or per-frame CPU calculation is added. This
+variant applies to the shoot study while the existing grass/card materials
+retain their prior response.
+
+Directly reflected sunlight (diffuse and specular) is scaled to 0.72 for
+`GRASS_LEAF_TRANSLUCENCY` before adding the transmitted term. Transmission
+continues to use the original shadowed light, so it retains its previous
+strength and hue. This reduces the pale, dry-looking sunward-camera response
+while leaving indirect illumination, cast shadows and the source palette
+unchanged. Both viewing faces use the same rule; other grass shader variants
+retain their previous response. The standard PBR GLB does not encode this
+custom reflected/transmitted balance.
+
+The white-light regression requires backlit green response to remain between
+78% and 94% of front-lit response, preserving some natural variation. Measured
+linear 8-bit green samples change from 79/49 (front/back) to 57/49.
+Two-sided reciprocity, warmer transmitted hue, no light in darkness, external
+shadow blocking and backlit self-shadow checks must still pass. Saved
+before/after overview, opposite view and shade-boundary renders are under
+`tests/artifacts/screens/grass_debug_v2/direct_light_balance/`.
+
+For this two-sided sheet, the normal shadow offset is zero. A -0.00008 depth bias resolves both viewing directions: an authored-normal offset pushed the backlit sheet
+behind its own shadow and suppressed transmission. Cast shadows and reception
+of shadows from other geometry remain enabled.
+
+The shoot geometry test checks that trimmed vertices sit on or above the soil,
+all stored vertices are used, and the ground boundary contains cut vertices.
+The translucency test renders both viewing sides with equal front/back
+illumination, checks the warmer transmitted hue, darker fold/base, no light in
+darkness, and blocking by an external shadow caster. A backlit check on the
+actual leaf compares shadow reception on/off to catch self-shadow suppression.
+The authored shape and existing card/canopy checks remain in place.
+
+Final captures and lighting/geometry measurements:
+`tests/artifacts/screens/grass_debug_v2/soil_cut_translucency/`.
+
+Earlier folded-base captures remain in their existing artifact folders; the
+current model is described under Soil-rooted leaf blades.
+
+### Matte lawn appearance from photo references
+
+The soil-rooted study and offline paired-leaf captures use
+`GrassDebugV2ShootAppearance.js`. Its warmer olive-green palette runs from
+`#4b6825` at the root through `#5f8524` and `#68932a` to `#799b33` at the tip.
+These stops shift the original matte pass toward the brighter yellow-green
+crop supplied for the 12-metre field; the roughness and transmission remain unchanged.
+The references are the user-provided lawn photos `20260927_152325.jpg`,
+`20260927_152340.jpg` and `20260927_152406.jpg`; the color treatment is an
+art-directed daylight match, not a calibrated reflectance measurement.
+
+Material roughness is 1.0, with the existing longitudinal texture remapped
+into 0.86–0.94 (measured texture range approximately 0.87–0.92). This avoids
+the former multiplication of 0.7 material roughness by an approximately
+0.65–0.70 texture, which produced a much glossier surface. Normal-map strength
+is 0.12, preserving restrained fine relief. The two-sided transmission above
+is reduced and less yellow to retain green in backlit blades. Geometry,
+daylight exposure and the 50-triangle limit are unchanged.
+
+The offline field also samples a warm straw palette on 12% of blades; the
+remaining blades receive subtle dry-color variation. The dry tint strengthens
+toward the tip. A separate deterministic hash selects color variation without
+changing seeded shoot positions, heights, inclinations or camera poses.
+The three-leaf authoring study shows the green source palette. Other layout
+materials and their default surface textures retain their existing response.
+
+The lighting regression checks effective roughness, matching responses on
+both faces, restrained warm transmission, shadow blocking and no emission in
+darkness. Before/after close-up and six-metre comparisons and unmodified
+reference-photo copies are under
+`tests/artifacts/screens/grass_debug_v2/matte_reference/`.
+The retained 20,000-leaf gallery shows the first matte olive-green pass;
+the 96,000-leaf gallery uses the greener crop adjustment. Earlier 1,000- and
+10,000-leaf image sets remain historical captures. The GLB contains the new
+vertex colors, normal map and roughness map; its standard PBR material does
+not include the custom thin-leaf transmission shader.
+
+### Earlier offline 1,000-leaf scene
+
+The independent capture scenario
+`tests/headless/e2e/grass_debug_v2_thousand_leaves.pwtest.js` assembles only
+the double-leaf model: 500 shoots and exactly 1,000 leaf blades. The retained
+1,000- and 10,000-leaf images below predate the soil-rooted simplification;
+rerunning the capture uses the current source.
+It runs in its own headless browser and verifies SHA-256 hashes of the leaf
+HTML, study controller and ribbon geometry source before and after capture.
+The authoring page and its default specimen remain unchanged.
+
+Shoot roots occupy a jittered 25 × 20 layout over 1.0 × 0.8 m, with seed
+9272026 and random yaw. Each complete shoot uses one of 25 rigid backward
+inclinations from 0° to 45° about its root. The existing 11° blade-spine bend
+is retained; the varied inclination does not deform the leaves. Uniform
+scaling within each pair preserves the nested base and sets every leaf's
+actual vertical height above soil between 8 and 14 cm. Rotated roots are
+clipped against flat soil. The retained earlier 1,000-leaf capture used
+362,232 triangles before the latest mesh reduction.
+
+Six 3840 × 2160 renders use the study's soil, daylight and leaf transmission:
+a 35°/32° overview at 1.80 m, overhead at 2.15 m, a 215°/24° rear view at
+1.65 m, a 0°/7° low front view at 0.85 m, a 90°/12° side view at 1.00 m,
+and a 135°/25° close-up at 0.30 m. Angles are azimuth/elevation; distances
+are camera-to-target. The offline scene uses an 8192-pixel shadow map and
+the leaf study's -0.00008 depth bias.
+
+Artifacts are under
+`tests/artifacts/screens/grass_debug_v2/thousand_leaves/`: six PNG files,
+an offline `index.html` gallery, camera and placement data in `scene.json`,
+and `1000_leaves.glb` with embedded meshes and standard PBR textures.
+The PNGs use the custom thin-leaf lighting; GLB exports the standard PBR
+material representation. No asset bake or publication is performed.
+
+### Earlier offline 10,000-leaf scene
+
+The same capture test accepts `GRASS_CAPTURE_LEAVES=10000` (default: 1000).
+The retained capture has 5,000 double-leaf shoots and exactly 10,000 blades
+from the earlier reduced mesh. A jittered 100 × 50 layout fills the same 1.0 × 0.8 m footprint. Seed,
+height limits (8–14 cm), rigid backward inclinations (0–45°), random yaw and
+the existing 11° spine bend follow the 1,000-leaf scene. The resulting foliage
+and nested sheaths contain 1,212,527 triangles after clipping inclined bases
+against the soil.
+
+The six original camera poses are retained. A seventh view uses azimuth 35°,
+elevation 20° and a camera-to-target distance of exactly 6 m. The test measures
+the actual camera distance after OrbitControls updates, checks every requested
+distance, and records it as `actualDistanceMeters` in the manifest. All seven
+renders are 3840 × 2160.
+
+The offline terrain extends to 200 × 200 m so its boundary stays out of the
+6 m view; texture repeats preserve physical scale. The 10,000-leaf capture uses
+an 8192-pixel shadow map with -0.0002 depth bias and zero normal bias to limit
+self-shadow striping on inclined sheets. These settings apply only to the
+independent capture.
+
+Artifacts remain separate under
+`tests/artifacts/screens/grass_debug_v2/ten_thousand_leaves/`: seven PNGs,
+`index.html`, `scene.json`, `README.md`, and `10000_leaves.glb`. The GLB
+contains embedded geometry and standard PBR textures; the rendered PNGs retain
+the study's custom leaf transmission. Export bytes are transferred in chunks
+to avoid a large browser-protocol response. Source hashes verify that capture
+does not modify the authoring page, controller or leaf model; the 3× topology
+reduction is the only model update requested for the study in this pass.
+
+### Offline 20,000-leaf scene over 6 × 6 metres
+
+`GRASS_CAPTURE_LEAVES=20000` uses a separate recipe and output directory.
+It creates 10,000 paired shoots (20,000 leaves) on a jittered 100 × 100 grid
+over 36 square metres, about 555.56 leaves per square metre. The reduced
+source mesh, seed 9272026, 8–14 cm vertical heights, 0–45° rigid backward
+inclinations, random yaw and existing 11° blade bend are retained.
+
+At the edges, shoot positions are constrained using the rotated and scaled
+variant bounds so the entire foliage stays within X/Z = -3 to +3 metres.
+The capture checks both the requested footprint and the resulting mesh bounds;
+the occupied width and depth each exceed 5.95 m. The refreshed capture uses the soil-rooted blades, with no sheaths or twisting
+sections. Each clipped leaf has 44–47 triangles, below the 50-triangle cap;
+the complete foliage contains 882,382 triangles.
+
+Seven UHD 4K views comprise overview and overhead captures at 12 m, a rear
+view at 11 m, low front and side views at 1.1 m and 1.2 m from edge targets,
+a 0.35 m close-up, and a verified 6 m camera-to-centre view. The 6 m view uses
+azimuth 0°, elevation 40° and a 65° vertical field of view to fit the larger
+square; other views retain 35°. Camera distance and field of view are shown
+in the gallery. The daylight shadow camera covers the full patch with
+a 4.6 m half-extent, 20 m far plane, 8192-pixel map and -0.00008 depth bias.
+
+Artifacts: `tests/artifacts/screens/grass_debug_v2/twenty_thousand_leaves_6m/`.
+This includes seven PNGs, the offline HTML gallery, placement/camera manifest,
+README and `20000_leaves.glb` with embedded standard PBR textures. Existing
+1,000- and 10,000-leaf captures are preserved. The capture validates the
+50-triangle budget and records its measured per-leaf range. Hash checks confirm
+that rendering does not modify the current authoring page or leaf source.
+
+### Greener 96,000-leaf scene over 12 × 12 metres
+
+`GRASS_CAPTURE_LEAVES=96000` creates 48,000 paired shoots on a jittered
+240 × 200 grid in a 12 × 12 m footprint. Density is 666.67 leaves/m²:
+1.2 × the 20,000 / 36 m² recipe. Quadrupling the area while increasing
+density by 20% requires 96,000 leaves. Height (8–14 cm), rigid inclination
+(0–45°), seeded yaw and placement, 11° blade-spine bend, 12% straw variation,
+matte roughness and the 50-triangle limit remain in effect. Foliage uses
+4,235,466 triangles; individual clipped leaves use 44–47.
+
+Leaf parts are merged in batches of 2,000 before the final mesh to bound
+temporary object counts. Range measurements iterate over arrays instead of
+passing the enlarged field as function arguments. The capture checks exact
+leaf/shoot counts, density relative to the 6 m recipe, and mesh bounds inside
+X/Z = -6 to +6 m with occupied width and depth above 11.95 m.
+
+A neutral matte shade screen measuring 3.9 × 5.2 m stands 2.6 m above the
+grass on four posts. Three 0.65 m square openings leave sunlit spots within
+its broad cast shadow. It is real shadow-casting geometry, included in the
+GLB. The scene retains the existing sun, exposure and HDR environment, with
+hemisphere intensity 12 added only in this capture to approximate the diffuse
+fill from surroundings in the reference photograph. The game defaults and
+leaf authoring page lighting are unchanged. This level is recorded in the
+manifest. Sunlit and shaded grass share the same material; shadow receiving
+and direct-light transmission remain enabled.
+The user's `20260927_152233.jpg`, especially the fuller lawn farther back,
+guides the shaded-green comparison. No artificial dark tint is applied.
+
+Eight 3840 × 2160 views include overview/overhead at 24 m, rear at 22 m,
+edge views at 1.1/1.2 m, a 0.35 m close-up, a verified 6 m view at 16°
+elevation, and a 3.2 m shade-boundary view at 18°. The last two use 45° FOV
+to look below the screen; other views use 35°. Shadow coverage expands to
+9.2 m half-extent and 40 m far plane using the existing 8192-pixel map.
+
+Outputs live in
+`tests/artifacts/screens/grass_debug_v2/ninety_six_thousand_leaves_12m/`:
+eight PNGs, `index.html`, `scene.json`, `README.md`, and
+`96000_leaves.glb`. Reference copies are under its `references/` folder.
+The 6 × 6 m scene and earlier comparison artifacts remain available.
+
+### Dry-litter substrate below the 12 m field
+
+The 96,000-leaf capture uses the supplied `dry_litter_PBR_1K` material,
+registered as `pbr.dry_litter` under `assets/public/pbr/dry_litter/`.
+Original RGBA base color, OpenGL normal, packed ORM, coverage and height maps
+are retained at 1024 × 1024, with provenance and source notes alongside them.
+
+`GrassDebugV2LitterSubstrate.js` places the interior 0.005 m (0.5 cm) above
+the soil. A neutral 0.3 linear albedo multiplier darkens
+only the litter material; original maps and scene lighting remain unchanged.
+Authored maps repeat at 0.4 m. The interior
+tiles continuously, retaining the source material's natural alpha holes.
+Only the four perimeter strips and four corners receive additional masks:
+the supplied coverage and height detail vary the boundary by up to 0.025 m
+around a contour inset 0.05 m inside the planted patch, keeping litter back
+from the exposed soil edge. Interior
+and perimeter texture phase match. The strand-shaped fringe lies on the soil;
+a 0.02 m linear ramp starts just inside the full contour reach (0.075 m from
+the grass boundary) and rises to the flat interior. Corner ramps meet along
+diagonals without dips or cracks. Nine patches add 98 triangles total.
+
+These masks are generated during scene construction rather than through an
+offline bake job. The layer receives the existing scene shadows and uses
+standard PBR shading. The ramp is real mesh geometry; the supplied texture
+height map does not displace the interior. Polygon depth offset uses factor -1
+and units -1. The slope term separates the coplanar soil-contact fringe at shallow
+camera angles; a constant one-unit offset alone allowed patches to switch depth
+order as the camera moved. Contact vertices remain at soil height. The live
+viewer restores both offset terms after loading the GLB. The portable
+GLB multiplies perimeter masks into base-color alpha because glTF has no
+separate alpha-map slot; all resulting textures are embedded. Camera near
+planes increase with view distance (up to 0.1 m) to resolve the small separation
+resolvable in distant captures.
+
+`grass_debug_v2_litter_edge_flicker.pwtest.js` compares eight close edge/corner
+camera poses with a reference that temporarily disables soil depth writes.
+The previous offset reproduces the error; the corrected contour matches that
+reference with normal depth testing enabled. Before/after images and measurements
+are under `tests/artifacts/screens/grass_debug_v2/litter_edge_flicker/`.
+
+`grass_debug_v2_litter_substrate.pwtest.js` validates physical height,
+continuous tiling, contour variation, map resolution and shadow receiving.
+Ray samples check zero height at contact, 2.5 mm at the ramp midpoint and
+5 mm after 2 cm, on all four sides and the corner diagonals.
+Its isolated edge render, eight masks and review gallery are under
+`tests/artifacts/screens/grass_debug_v2/litter_substrate/`. The full-field
+capture checks the exported edge alpha as well as the existing leaf counts,
+dimensions and triangle budget. The standalone authoring page and earlier
+field recipes retain their original soil.
+
+### Navigable exported litter field
+
+`debug_tools/grass_litter_scene.html` opens the current 12 × 12 m,
+96,000-leaf scene from the gallery's `96000_leaves.glb` and `scene.json`.
+It retains the exported geometry and masked substrate, restores the shared
+grass transmission material, and reapplies the recorded sun, exposure,
+environment and shadow settings. It requires the existing local scene
+artifacts; a missing export produces a visible loading error.
+
+Drag the mouse to look in place. WASD translates relative to the camera;
+Q/E moves vertically down/up, Shift multiplies movement speed by five, and
+the wheel moves forward/back along the viewing direction (up = forward).
+Wheel travel follows the movement speed, which is set by the speed slider.
+The camera stops at
+8 mm above the soil. Eight saved viewpoints and a reset button return to
+the rendered camera poses; the selected view is reflected in the URL hash.
+Rendering runs continuously while the page is visible, with the static shadow
+map reused. The header counts camera-visible field leaves and mesh triangles
+(grass, litter, soil and shade screen; excluding repeated render passes).
+Counts use the renderer's bounding-sphere frustum test: a partially visible mesh
+is counted in full, and occluded triangles are not subtracted. They update while
+moving or turning the camera, resizing, or changing fields, LOD or layers.
+The complete single-field overview in Reference has 96,000 leaves / 4,236,154 triangles;
+the close-up excludes off-camera litter patches and table meshes.
+The LOD selector switches between Reference, LOD0, LOD1 and LOD2 without moving the camera or
+changing the All / Grass only / Soil choice. Only the selected LOD is rendered
+and casts shadows; selection refreshes shadow maps and resets telemetry samples.
+When the complete field is in view, LOD1 shows 1,344,688 scene triangles in All,
+1,344,590 in Grass only, and 590 in Soil. Reference remains the default.
+
+The Fields menu selects 1–9 copies of the original 12 × 12 m field, defaulting
+to one. The original stays at the origin. Additional cells fill the north,
+east, south, west, northeast, northwest, southeast and southwest positions of
+a fixed 3 × 3 grid, with 13 m centre spacing and a 1 m soil gap between field
+boundaries. Nine fields span 38 × 38 m, containing 864,000 leaves. Each copy
+shares all four LOD geometries, all materials and textures, and the litter meshes;
+only transforms and visibility are independent. The soil and shade table are
+single objects, not duplicated per field. LOD and layer selection apply to
+every field, including copies enabled later.
+
+Field selection preserves the camera. The Frame fields button fits all enabled
+fields from the original overview direction; saved viewpoints and Reset view
+still restore their original poses. The shadow frustum expands to cover the
+enabled grid and retains the original world-space depth bias. Returning to one
+field restores the original shadow extent, light position and bias.
+
+For all nine fields fully in view, All has 38,120,666 triangles at Reference,
+15,553,472 at LOD0, 8,641,472 at LOD1 and 1,729,472 at LOD2. Grass only removes 882 litter triangles; Soil retains only
+590 soil/table triangles. On-camera field counts exclude disabled and
+frustum-culled grass meshes. The snapshot reports both total configured
+geometry and camera-visible counts; the header displays the latter.
+
+`grass_debug_v2_field_layout.pwtest.js` verifies every count from 1–9, 1 m
+spacing, stable field positions and camera, shared geometry/material references,
+shadow coverage/bias, LOD and layer propagation, framing, counter changes when
+looking at one corner or away, and reversible selection. Screenshots and
+validation data are under `tests/artifacts/screens/grass_debug_v2/field_layout/`.
+The bottom readout shows FPS and GPU render time averaged over half-second
+windows. The shared asynchronous disjoint GPU timer wraps the complete lighting
+render, including post-processing and any shadow-map refresh. Unsupported or
+failed timer queries display "GPU unavailable"; CPU frame intervals are never
+substituted. Loading and hidden-tab gaps are excluded, and samples reset when
+changing viewpoints, resizing or switching scene visibility.
+
+After GPU time, the bottom readout shows **Distance** in metres from the camera
+to the visible surface under the mouse (straight-line distance, not camera-axis
+depth). It includes grass, litter, soil and the table, using the active LOD and
+visible layers. Empty background and leaving the canvas or hovering over controls
+show an em dash. The reading refreshes while navigating with a stationary pointer.
+The field page retains scene depth even when bloom is disabled. A pass immediately
+after the main scene render samples one depth texel, reconstructs camera-space
+position, and asynchronously reads a one-pixel distance at up to 10 Hz. It reuses
+the actual rendered depth, including alpha cutouts, without CPU triangle raycasts
+or a second scene render. Pending samples are invalidated by pointer departure,
+view/LOD/layer/field changes and resize. The sampling draw is included in GPU time.
+The `grass_debug_v2_cursor_distance.pwtest.js` browser check covers known soil and
+table distances, off-axis measurement, stationary-pointer navigation, grass LODs,
+additional fields, background/control clearing and resize. Captures go under
+`tests/artifacts/screens/grass_debug_v2/cursor_distance/`.
+
+The scene-layer radio group offers All (grass and litter), Grass only (grass
+without litter), and Soil (neither grass nor litter). The soil and shade table
+remain visible in every mode, including the table's cast shadow. Switching modes
+preserves the camera pose, resets telemetry samples and refreshes the shadow map.
+The complete single-field overview at Reference has 96,000 leaves / 4,236,154 triangles
+in All, 96,000 / 4,236,056 in Grass only, and 0 / 590 in Soil (soil plus table).
+Off-camera meshes are excluded from the header.
+The leaf-authoring page and offline gallery remain separate.
+
+`grass_debug_v2_litter_scene.pwtest.js` verifies the exported geometry count,
+5 mm litter interior, grounded ramp vertices, darkened albedo, restored grass shading, all six movement
+keys, mouse look, bidirectional wheel travel, speed adjustment, viewpoint reset,
+GPU telemetry and reversible
+layer modes with refreshed shadows and a persistent shade table. Review screenshots
+are under `tests/artifacts/screens/grass_debug_v2/litter_scene/`.
+
+The wide-field directional shadow uses a normalized depth bias of -0.0002
+with its 40 m shadow frustum and zero normal bias. The previous -0.00008
+produced repeated false self-shadow bands across near-camera leaves at the
+18.4 m-wide shadow coverage. The correction retains grass shadow casting and
+receiving, the screen's cast shade, leaf normals and the 50-triangle budget.
+The live page reads the same bias from the regenerated scene manifest.
+
+`grass_debug_v2_leaf_banding.pwtest.js` reproduces the old stripes on a fixed
+unoccluded leaf in the actual exported field, compares the correction with
+a temporary unshadowed reference, and separately verifies that the screen
+still darkens the grass. Before/after images and measured differences are
+under `tests/artifacts/screens/grass_debug_v2/leaf_banding/`.

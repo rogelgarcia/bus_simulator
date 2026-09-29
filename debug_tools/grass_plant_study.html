@@ -6,7 +6,7 @@
     <title>Grass · Leaf Study</title>
     <link rel="icon" href="../favicon.ico" />
     <link rel="stylesheet" href="../src/graphics/gui/shared/styles.css" />
-    <link rel="stylesheet" href="../src/graphics/gui/grass_debugger_v2/plant_study.css" />
+    <link rel="stylesheet" href="../src/graphics/gui/grass_debugger_v2/plant_study.css?v=lod2-color-1" />
     <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/"}}</script>
 </head>
 <body>
@@ -15,22 +15,28 @@
         <h1>Leaf Study</h1>
         <div class="plant-study-buttons" role="group" aria-label="Representation">
             <button type="button" data-mode="LOD0" aria-pressed="true" disabled>LOD0</button>
+            <button type="button" data-mode="LOD0_SMART" aria-pressed="false" hidden disabled>LOD0</button>
+            <button type="button" data-mode="LOD1" aria-pressed="false" hidden disabled>LOD1</button>
+            <button type="button" data-mode="LOD2" aria-pressed="false" hidden disabled>LOD2</button>
             <button type="button" data-mode="refined" aria-pressed="false" title="Ten shared cards" disabled>LOD3 · 10</button>
             <button type="button" data-mode="detailed" aria-pressed="false" title="Five shared cards" disabled>LOD3 · 5</button>
             <button type="button" data-mode="curved" aria-pressed="false" title="Three shared cards" disabled>LOD3 · 3</button>
             <button type="button" data-mode="split" aria-pressed="false" title="Two shared cards" disabled>LOD3 · 2</button>
         </div>
         <output id="plant-counts"></output>
+        <output id="leaf-counts" aria-label="Triangle count per leaf" hidden></output>
         <div class="plant-study-overlays" role="group" aria-label="LOD3 corrections">
             <label title="LOD3: smoothly blend top and underside lighting at grazing angles."><input id="normal-facing" type="checkbox" checked disabled /> Normal facing</label>
             <label title="LOD3: preserve leaf coverage in smaller texture mipmaps. Uncheck to compare the original filtering."><input id="alpha-coverage" type="checkbox" checked disabled /> Alpha coverage</label>
         </div>
         <div class="plant-study-overlays">
+            <label hidden title="Show every edge of the rendered triangles, including the soil cut and tips."><input id="leaf-wireframe" type="checkbox" disabled /> Wireframe</label>
             <label><input id="card-bounds" type="checkbox" disabled /> Card bounds</label>
             <label title="Show the blue 1 m × 1 m footprint and zoom out to fit."><input id="square-bounds" type="checkbox" disabled /> Square bounds</label>
             <label hidden><input id="patch-labels" type="checkbox" checked disabled /> Patch labels</label>
         </div>
         <div class="plant-study-buttons" role="group" aria-label="Camera">
+            <button type="button" data-pose="front" hidden disabled>Front</button>
             <button type="button" data-pose="three_quarter" disabled>3/4</button>
             <button type="button" data-pose="side" disabled>Side</button>
             <button type="button" data-pose="elevated" disabled>Top</button>
@@ -58,6 +64,6 @@
         <section id="grass-authoring-panel" class="grass-authoring-panel" aria-hidden="true" inert></section>
     </div>
     <div id="plant-loading" role="status">Loading...</div>
-    <script type="module" src="../src/graphics/gui/grass_debugger_v2/GrassDebugV2PlantStudy.js"></script>
+    <script type="module" src="../src/graphics/gui/grass_debugger_v2/GrassDebugV2PlantStudy.js?v=lod2-color-1"></script>
 </body>
 </html>

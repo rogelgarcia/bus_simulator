@@ -1,0 +1,20 @@
+/* Full-screen navigation for the exported grass and litter field. */
+:root { color-scheme: dark; font-family: system-ui, sans-serif; color: #e6ede7; background: #14201b; }
+body { margin: 0; overflow: hidden; }
+#scene-canvas { display: block; width: 100vw; height: 100vh; outline: none; touch-action: none; cursor: grab; }
+#scene-canvas:active { cursor: grabbing; }
+#scene-panel { position: fixed; left: 16px; top: 16px; right: 16px; width: fit-content; max-width: calc(100vw - 64px); padding: 14px 16px; border: 1px solid #60736077; border-radius: 10px; background: #14201be8; box-shadow: 0 4px 20px #0003; }
+h1 { font-size: 17px; font-weight: 600; margin: 0 0 7px; }
+h1 span { font-size: 13px; font-weight: 400; color: #b9cbbb; margin-left: 10px; }
+p { font-size: 13px; margin: 6px 0; }
+.scene-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 13px; margin-top: 10px; }
+.scene-controls label { display: flex; align-items: center; gap: 6px; }
+#scene-mode { display: flex; align-items: center; gap: 12px; padding-left: 12px; border-left: 1px solid #60736077; }
+select, button { color: inherit; background: #26382a; border: 1px solid #637966; border-radius: 5px; font: inherit; padding: 6px 8px; }
+input { accent-color: #b8dd91; }
+input[type="range"] { width: 90px; }
+a { color: #b8dd91; }
+output { min-width: 55px; font-variant-numeric: tabular-nums; }
+#scene-loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 18px 24px; border-radius: 10px; background: #14201bf2; max-width: 70vw; text-align: center; }
+#scene-performance { position: fixed; bottom: 16px; left: 16px; padding: 8px 12px; border: 1px solid #60736077; border-radius: 6px; background: #14201be8; font-size: 13px; font-variant-numeric: tabular-nums; pointer-events: none; }
+[hidden] { display: none !important; }

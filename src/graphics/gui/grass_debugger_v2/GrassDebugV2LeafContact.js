@@ -67,6 +67,27 @@ function constraintsFor(upper, lower, clearanceMeters, minimumHeightMeters) {
 }
 
 /**
+ * Measure one rigid offset along negative Y without deforming either sheet.
+ * Both indexed geometries must already be in the common contact frame.
+ */
+export function measureGrassDebugV2RigidLeafSeparation({ upper, lower, clearanceMeters = 0.00015, minimumHeightMeters = 0 }) {
+    if (!upper.index || !lower.index || !upper.attributes.position || !lower.attributes.position || upper === lower
+        || !Number.isFinite(clearanceMeters) || clearanceMeters <= 0 || !Number.isFinite(minimumHeightMeters) || minimumHeightMeters < 0)
+        throw new Error('Rigid leaf separation requires distinct indexed geometries and positive clearance.');
+    const p = lower.attributes.position;
+    const constraints = constraintsFor(upper, lower, clearanceMeters, minimumHeightMeters);
+    let offsetMeters = 0, minimumGapMeters = Infinity;
+    for (const constraint of constraints) {
+        const height = constraint.weights.reduce((sum, weight, i) => sum + weight * p.getY(constraint.ids[i]), 0);
+        const gap = constraint.limit + clearanceMeters - height;
+        minimumGapMeters = Math.min(minimumGapMeters, gap);
+        offsetMeters = Math.max(offsetMeters, clearanceMeters - gap);
+    }
+    return { offsetMeters, constraints: constraints.length,
+        minimumGapMeters: constraints.length ? minimumGapMeters + offsetMeters : null };
+}
+
+/**
  * Mutates only the lower geometry in the common authoring frame.
  * Vertices at least 1 mm below the contact region stay fixed, preserving nested root sheaths.
  * @param {{upper: THREE.BufferGeometry, lower: THREE.BufferGeometry, clearanceMeters?: number, blendRadiusMeters?: number, acrossSegments?: number, minimumHeightMeters?: number}} options

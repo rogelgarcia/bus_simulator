@@ -14,8 +14,8 @@ import { getResolvedSunBloomSettings } from '../../visuals/postprocessing/SunBlo
 import { PostProcessingPipeline } from '../../visuals/postprocessing/PostProcessingPipeline.js';
 
 export class GrassDebugV2Lighting {
-    /** @param {{renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera}} options */
-    constructor({ renderer, scene, camera }) {
+    /** @param {{renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, retainSceneDepth?: boolean}} options */
+    constructor({ renderer, scene, camera, retainSceneDepth = false }) {
         this.renderer = renderer;
         this.scene = scene;
         this.camera = camera;
@@ -49,7 +49,7 @@ export class GrassDebugV2Lighting {
         this.sunRays = new SunRaysRig({ sun: this.sunRef, sky: this.sky, settings: this.bloomSettings });
         this.sunFlare = new SunFlareRig({ sun: this.sunRef, settings: getResolvedSunFlareSettings() });
         scene.add(this.sun, this.sun.target, this.hemi, this.sky, this.sunBloom.group, this.sunRays.group, this.sunFlare.group);
-        this.pipeline = this.bloomSettings.enabled ? new PostProcessingPipeline({
+        this.pipeline = this.bloomSettings.enabled || retainSceneDepth ? new PostProcessingPipeline({
             renderer, scene, camera,
             sunBloom: this.bloomSettings,
             bloom: { enabled: false },

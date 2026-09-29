@@ -5,6 +5,7 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
 .plant-study-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
 .plant-study-overlays { display: flex; flex-wrap: wrap; gap: 6px 12px; }
 #square-bounds { accent-color: #348fff; }
+#leaf-counts { white-space: pre-line; }
 #field-cameras { display: grid; gap: 8px; }
 #field-cameras hr { width: 100%; margin: 0; border: 0; border-top: 1px solid #81918770; }
 #field-cameras h2 { margin: 0; font: 600 12px/1.4 system-ui, sans-serif; }
@@ -12,7 +13,7 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
 .plant-study-panel { max-height: calc(100vh - 56px); overflow-y: auto; }
 .plant-study-buttons button { padding: 6px 8px; cursor: pointer; }
 .plant-study-buttons button[aria-pressed="true"] { background: #465c38; color: #fff; }
-#plant-counts, .plant-study-panel label { font: 12px/1.4 system-ui, sans-serif; }
+#plant-counts, #leaf-counts, .plant-study-panel label { font: 12px/1.4 system-ui, sans-serif; }
 #plant-loading { position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%); color: #fff; background: #18211ed9; padding: 8px 16px; font: 14px system-ui, sans-serif; }
 [hidden] { display: none !important; }
 

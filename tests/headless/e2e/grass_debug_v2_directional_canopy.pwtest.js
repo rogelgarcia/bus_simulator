@@ -4,10 +4,10 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 test.use({ viewport: { width: 1600, height: 1100 }, deviceScaleFactor: 1, video: 'off', trace: 'off' });
-for (const { id, views, resolution } of [{ id: 'rings4k', views: 1, resolution: 1024 }, { id: 'rings32', views: 32, resolution: 512 }])
+for (const { id, views, resolution } of [{ id: 'rings4k', views: 1, resolution: 1024 }])
 test('Directional canopy ' + views + ' views at ' + resolution + ' preserves shading and blends continuously', async ({ page }) => {
     test.setTimeout(240000);
-    const folder = path.resolve('tests/artifacts/screens/grass_debug_v2/one_vs_32_canopy', id);
+    const folder = path.resolve('tests/artifacts/screens/grass_debug_v2/single_view_canopy', id);
     await mkdir(folder, { recursive: true });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -186,7 +186,7 @@ test('Directional canopy ' + views + ' views at ' + resolution + ' preserves sha
         }, pose);
         await page.screenshot({ path: path.join(folder, name + '-10m.png') });
     }
-    for (const elevation of [30, 85]) for (const id of ['source', 'rings4k', 'rings32']) {
+    for (const elevation of [30, 85]) for (const id of ['source', 'rings4k']) {
         await page.evaluate(async ({ elevation, id }) => {
             const THREE = await import('three'), s = window.__plantCardsStudy;
             const field = s.comparison.getSnapshot().fields.find(field => field.id === id);

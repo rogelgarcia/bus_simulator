@@ -61,7 +61,7 @@ test('Texture-only patches have relightable side walls from LOD3-10', async ({ p
         expect(wall.max[1]).toBeCloseTo(state.wallHeight, 7);
         expect(wall.triangles).toBe(2);
     }
-    expect(state.tiles.map(p => p[1])).toEqual([state.wallHeight, 0.01, state.wallHeight, 0.01, state.sourceHeight * 0.7, state.sourceHeight * 0.7]);
+    expect(state.tiles.map(p => p[1])).toEqual([state.wallHeight, 0.01, state.wallHeight, 0.01, state.sourceHeight * 0.7]);
     expect(new Set(state.maps.map(map => map.mapId)).size).toBe(4);
     for (const map of state.maps) {
         expect(map.clear).toBeGreaterThan(1000); expect(map.opaque).toBeGreaterThan(1000);

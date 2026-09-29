@@ -34,9 +34,12 @@ function createTexture(data, name) {
     return texture;
 }
 
-/** @returns {{normalMap: THREE.DataTexture, roughnessMap: THREE.DataTexture, dispose: () => void}} */
-export function createGrassDebugV2DetailedBladeSurface() {
-    const { width, height, lengthMeters, roughnessMin, roughnessMax } = GRASS_V2_DETAILED_BLADE_SURFACE;
+/** @param {{roughnessMin?: number, roughnessMax?: number}} [options] @returns {{normalMap: THREE.DataTexture, roughnessMap: THREE.DataTexture, dispose: () => void}} */
+export function createGrassDebugV2DetailedBladeSurface({ roughnessMin = GRASS_V2_DETAILED_BLADE_SURFACE.roughnessMin,
+    roughnessMax = GRASS_V2_DETAILED_BLADE_SURFACE.roughnessMax } = {}) {
+    if (![roughnessMin, roughnessMax].every(Number.isFinite) || roughnessMin < 0 || roughnessMax > 1 || roughnessMin > roughnessMax)
+        throw new Error('Leaf roughness range must lie within zero and one.');
+    const { width, height, lengthMeters } = GRASS_V2_DETAILED_BLADE_SURFACE;
     const normals = new Uint8Array(width * height * 4);
     const roughness = new Uint8Array(normals.length);
     const du = 1 / width, dv = 1 / height;
@@ -55,7 +58,8 @@ export function createGrassDebugV2DetailedBladeSurface() {
             normals[offset + 3] = 255;
             const rib = Math.exp(-(((2 * u - 1) / 0.16) ** 2));
             const relief = sampleRelief(u, v) / 0.000037;
-            const value = THREE.MathUtils.clamp(0.69 - 0.04 * rib + 0.015 * relief, roughnessMin, roughnessMax);
+            const profile = THREE.MathUtils.clamp((0.69 - 0.04 * rib + 0.015 * relief - 0.64) / 0.08, 0, 1);
+            const value = THREE.MathUtils.lerp(roughnessMin, roughnessMax, profile);
             roughness.fill(Math.round(value * 255), offset, offset + 3);
             roughness[offset + 3] = 255;
         }

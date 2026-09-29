@@ -156,7 +156,7 @@ test('Grass pipeline regenerates all configurations, captures and field geometry
     await writeFile(path.join(folder, 'validation.json'), JSON.stringify({ result, errors }, null, 2));
     expect(errors).toEqual([]);
     const { baseline, next } = result;
-    const configurationIds = ['source', 'texture4k', 'hybrid1k', 'reference', 'texture2k', 'hybrid2k', 'rings4k', 'rings32'];
+    const configurationIds = ['source', 'texture4k', 'hybrid1k', 'reference', 'texture2k', 'hybrid2k', 'rings4k'];
     expect(baseline.graph.items.filter(item => item.id.startsWith('configuration/')).map(item => item.id)).toEqual(
         configurationIds.map(id => 'configuration/' + id));
     for (const graph of [baseline.graph, next.graph]) {
@@ -167,7 +167,8 @@ test('Grass pipeline regenerates all configurations, captures and field geometry
         for (const id of ['texture4k', 'hybrid1k'])
             expect(byId['configuration/' + id].dependencies).toContain('texture/4k');
         expect(byId['directional/rings4k'].dependencies).toEqual(['capture-source/4k-single', 'texture/4k-single', 'ring/rings4k']);
-        expect(byId['directional/rings32'].dependencies).toEqual(['capture-source/4k-multi32', 'texture/4k-multi32', 'ring/rings32']);
+        expect(byId).not.toHaveProperty('directional/rings32');
+        expect(byId).not.toHaveProperty('texture/4k-multi32');
         expect(byId['field/30x20'].dependencies).toContain('configuration/hybrid1k');
     }
     expect(next.graph.sourceKey).not.toBe(baseline.graph.sourceKey);

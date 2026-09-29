@@ -6,10 +6,13 @@ import { GrassDebugV2Lighting } from './GrassDebugV2Lighting.js';
 import { createGrassDebugV2Land } from './GrassDebugV2Land.js';
 import { createGrassDebugV2Material } from './GrassDebugV2Material.js';
 import { createGrassDebugV2DetailedBladeSurface } from './GrassDebugV2DetailedBladeSurface.js';
+import { GRASS_V2_SHOOT_APPEARANCE } from './GrassDebugV2ShootAppearance.js';
 import { createGrassDebugV2SoilIntegration } from './GrassDebugV2SoilIntegration.js';
 import { createGrassDebugV2LeafSoil } from './GrassDebugV2LeafSoil.js';
 import { createGrassDebugV2PlantRow } from './GrassDebugV2PlantRow.js';
 import { createGrassDebugV2SingleLeaf } from './GrassDebugV2SingleLeaf.js';
+import { createGrassDebugV2RibbonShoot } from './GrassDebugV2RibbonShoot.js?v=lod2-color-1';
+import { createGrassDebugV2TriangleWireframe } from './GrassDebugV2TriangleWireframe.js';
 import { createGrassDebugV2PlantCards } from './GrassDebugV2PlantCards.js';
 import { createGrassDebugV2PlantPatch } from './GrassDebugV2PlantPatch.js';
 import { createGrassDebugV2Authoring } from './GrassDebugV2Authoring.js';
@@ -41,21 +44,31 @@ async function start() {
     const controls = new OrbitControls(camera, renderer.domElement); controls.minDistance = 0.012; controls.maxDistance = 3;
     const requestedLayout = new URLSearchParams(location.search).get('layout') ?? 'leaf';
     const layout = requestedLayout === 'tuft' ? 'leaf' : requestedLayout;
-    if (!['leaf', 'paired', 'patch', 'row', 'random'].includes(layout)) throw new Error('Unknown plant study layout.');
-    const randomLayout = layout === 'random';
+    if (!['leaf', 'shoot', 'paired', 'patch', 'row', 'random'].includes(layout)) throw new Error('Unknown plant study layout.');
+    const randomLayout = layout === 'random', shootLayout = layout === 'shoot';
     if (randomLayout) { camera.far = 2000; camera.updateProjectionMatrix(); controls.maxDistance = 150; }
     const terrain = { width: randomLayout ? 100 : 20, depth: randomLayout ? 100 : 20, centerX: 0, centerZ: 0.1 };
     const [land] = await Promise.all([createGrassDebugV2Land(renderer, terrain), lighting.loadEnvironment()]);
     land.setSurface('brown_mud');
-    const surface = createGrassDebugV2DetailedBladeSurface();
+    const surface = createGrassDebugV2DetailedBladeSurface(shootLayout ? GRASS_V2_SHOOT_APPEARANCE : undefined);
     for (const map of [surface.normalMap, surface.roughnessMap]) map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-    const leafMaterial = createGrassDebugV2Material({ vertexColors: true, normalMap: surface.normalMap, roughnessMap: surface.roughnessMap, roughness: 1 });
+    const leafMaterial = createGrassDebugV2Material({ vertexColors: true, normalMap: surface.normalMap,
+        ...(shootLayout ? { defines: { GRASS_LEAF_TRANSLUCENCY: 1, USE_UV: 1 } } : {}),
+        roughnessMap: surface.roughnessMap, roughness: shootLayout ? GRASS_V2_SHOOT_APPEARANCE.roughness : 1,
+        normalScale: new THREE.Vector2().setScalar(shootLayout ? GRASS_V2_SHOOT_APPEARANCE.normalStrength : 1) });
     const rowLayout = layout === 'row', fieldLayout = layout === 'patch' || randomLayout, singleTuftLayout = layout === 'paired', singleLeafLayout = layout === 'leaf' || randomLayout;
-    document.title = randomLayout ? 'Grass · 4K Leaf Patch' : singleLeafLayout ? 'Grass · Leaf Study' : 'Grass · Card Study';
-    document.querySelector('.plant-study-panel h1').textContent = randomLayout ? '4K Leaf Patch' : singleLeafLayout ? 'Leaf Study' : 'LOD3 Study';
+    document.title = shootLayout ? 'Grass · Leaf Growth' : randomLayout ? 'Grass · 4K Leaf Patch' : singleLeafLayout ? 'Grass · Leaf Study' : 'Grass · Card Study';
+    document.querySelector('.plant-study-panel h1').textContent = shootLayout ? 'Leaf Growth · Reference' : randomLayout ? '4K Leaf Patch' : singleLeafLayout ? 'Leaf Study' : 'LOD3 Study';
     const tuftQuarterPose = { position: [0.30, 0.36, 0.39], target: [0, 0.035, 0.012] };
     const leafQuarterPose = { position: [0.24, 0.23, 0.35], target: [0, 0.095, -0.045] };
-    const activePoses = singleLeafLayout && !randomLayout ? {
+    const activePoses = shootLayout ? {
+        ...poses,
+        front: { position: [0.0175, 0.050, 0.17], target: [0.0175, 0.032, 0] },
+        three_quarter: { position: [-0.05, 0.050, 0.15], target: [0.0175, 0.032, 0] },
+        side: { position: [0.15, 0.05, 0.085], target: [0.0175, 0.032, 0] },
+        elevated: { position: [0.0175, 0.19, 0], target: [0.0175, 0.032, 0], up: [0, 0, -1] },
+        crown_close: { position: [0.013, 0.03, 0.045], target: [0.035, 0.014, 0] }
+    } : singleLeafLayout && !randomLayout ? {
         ...poses, three_quarter: leafQuarterPose,
         side: { position: [0.42, 0.14, -0.045], target: [0, 0.095, -0.045] },
         elevated: { position: [0.01, 0.52, -0.055], target: [0, 0.06, -0.055], up: [0, 0, -1] },
@@ -74,11 +87,10 @@ async function start() {
     const generateAssets = (options = {}) => createGrassDebugV2StudyPipeline({ renderer, material: leafMaterial, ground: land.ground,
         rootSoil: { material: land.ground.material, terrain }, shadowDirection: lighting.sunRef.direction, ...options });
     const generated = randomLayout ? await generateAssets() : null;
-    const plant = generated?.plant ?? (singleLeafLayout ? createGrassDebugV2SingleLeaf({ material: leafMaterial })
+    const plant = generated?.plant ?? (shootLayout ? createGrassDebugV2RibbonShoot({ material: leafMaterial }) : singleLeafLayout ? createGrassDebugV2SingleLeaf({ material: leafMaterial })
         : createGrassDebugV2PlantRow({ material: leafMaterial, pairs: rowLayout ? 10 : singleTuftLayout ? 2 : 5, sameSide: singleTuftLayout }));
-    const cards = generated?.cards ?? createGrassDebugV2PlantCards(renderer, plant, { nested: singleTuftLayout || singleLeafLayout,
+    const cards = shootLayout ? null : generated?.cards ?? createGrassDebugV2PlantCards(renderer, plant, { nested: singleTuftLayout || singleLeafLayout,
         rootSoil: singleLeafLayout ? { material: land.ground.material, terrain } : null });
-    const source = plant.getSnapshot();
     const patch = generated?.patch ?? (fieldLayout ? createGrassDebugV2PlantPatch(plant, cards) : null);
     const comparison = generated?.comparison ?? null;
     if (comparison) scene.add(comparison.group);
@@ -96,11 +108,28 @@ async function start() {
     }] : [];
     const patchHover = comparison ? createGrassDebugV2PatchHover({ canvas: renderer.domElement, camera, fields: hoverFields }) : null;
     document.querySelector('#patch-labels').parentElement.hidden = !comparison;
+    const rootSoilEnabled = shootLayout || (singleLeafLayout && !randomLayout) || ROOT_SOIL_ENABLED;
+    const soil = singleLeafLayout || shootLayout ? createGrassDebugV2LeafSoil({ material: land.ground.material, terrain })
+        : createGrassDebugV2SoilIntegration({ material: land.ground.material, terrain, rootProfile: 'crown',
+            ...(patch ? { rootCenters: patch.roots } : { rootCentersX: plant.roots }) });
+    if (shootLayout) {
+        soil.setRoots(plant.roots.map(x => ({ x, z: 0, scale: 1, burialMeters: 0 })));
+        plant.trimAtSoil(soil.getHeightAt);
+    }
+    const shootLods = shootLayout ? Object.freeze({
+        LOD0: plant, ...Object.fromEntries(['LOD0_SMART', 'LOD1', 'LOD2'].map(lod => [lod, createGrassDebugV2RibbonShoot({ material: leafMaterial, lod })]))
+    }) : null;
+    if (shootLods) for (const lod of ['LOD0_SMART', 'LOD1', 'LOD2']) shootLods[lod].trimAtSoil(soil.getHeightAt);
+    const wireframes = Object.fromEntries(Object.entries(shootLods ?? {}).map(([lod, leaf]) =>
+        [lod, createGrassDebugV2TriangleWireframe({ meshes: leaf.bakeMeshes })]));
+    const source = plant.getSnapshot();
+    const perLeafCounts = document.querySelector('#leaf-counts');
+    perLeafCounts.hidden = !shootLayout;
     const displayed = patch?.getSnapshot() ?? source;
     const sourceTriangles = (displayed.leafTriangles + displayed.crownTriangles).toLocaleString('en-US');
     const leafLabel = displayed.leaves === 1 ? 'leaf' : 'leaves';
     const lod0 = patch?.lod0 ?? plant.group;
-    const representations = patch?.representations ?? (cards ? Object.freeze({ refined: cards.refined, detailed: cards.detailed, curved: cards.curved, split: cards.split }) : Object.freeze({}));
+    const representations = shootLayout ? Object.freeze(Object.fromEntries(['LOD0_SMART', 'LOD1', 'LOD2'].map(lod => [lod, { group: shootLods[lod].group, boundaries: [] }]))) : patch?.representations ?? (cards ? Object.freeze({ refined: cards.refined, detailed: cards.detailed, curved: cards.curved, split: cards.split }) : Object.freeze({}));
     const cardCounts = patch?.getSnapshot().variants ?? cards?.getSnapshot().variants ?? {};
     for (const [name, counts] of Object.entries(cardCounts)) {
         const button = document.querySelector('[data-mode="' + name + '"]');
@@ -108,14 +137,10 @@ async function start() {
         button.textContent = 'LOD3 · ' + total;
         button.title = total + (randomLayout ? ' cards per leaf' : patch ? ' inclined cards per five-leaf tuft' : ' cards for ' + source.leaves + (source.leaves === 1 ? ' leaf' : ' leaves'));
     }
-    const rootSoilEnabled = (singleLeafLayout && !randomLayout) || ROOT_SOIL_ENABLED;
-    const soil = singleLeafLayout ? createGrassDebugV2LeafSoil({ material: land.ground.material, terrain })
-        : createGrassDebugV2SoilIntegration({ material: land.ground.material, terrain, rootProfile: 'crown',
-            ...(patch ? { rootCenters: patch.roots } : { rootCentersX: plant.roots }) });
     soil.group.visible = rootSoilEnabled;
     land.ground.visible = !rootSoilEnabled;
     scene.add(soil.group, land.ground, lod0, ...Object.values(representations).map(variant => variant.group));
-    renderer.domElement.setAttribute('aria-label', randomLayout ? 'Eight grass comparison squares and a 20 m wide, 30 m deep field with a 4K grass texture and 1K live leaves per square metre' : singleLeafLayout ? 'One upright grass leaf for LOD0 shape authoring' : singleTuftLayout ? 'One four-leaf grass tuft with two same-side shared-root V pairs comparing LOD0 and LOD3 cards'
+    renderer.domElement.setAttribute('aria-label', shootLayout ? 'A straight reference leaf on the left and two outward-inclined blades on the right, emerging directly from the soil without a sheath or axial twist' : randomLayout ? 'Eight grass comparison squares and a 20 m wide, 30 m deep field with a 4K grass texture and 1K live leaves per square metre' : singleLeafLayout ? 'One upright grass leaf for LOD0 shape authoring' : singleTuftLayout ? 'One four-leaf grass tuft with two same-side shared-root V pairs comparing LOD0 and LOD3 cards'
         : fieldLayout ? 'Eighty randomly placed five-leaf grass tufts, 400 leaves in a one meter square' : 'Twenty grass leaves comparing LOD0 and LOD3 cards');
     const squareGeometry = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(-0.5, 0, -0.5), new THREE.Vector3(0.5, 0, -0.5),
@@ -140,7 +165,8 @@ async function start() {
         sun.position.copy(sun.target.position).addScaledVector(lighting.sunRef.direction, 5);
         Object.assign(sun.shadow.camera, { left: -2.2, right: 2.2, bottom: -2.2, top: 2.2, far: 9 });
     }
-    sun.shadow.camera.updateProjectionMatrix(); sun.shadow.normalBias = 0.0001; sun.shadow.bias = -0.00001;
+    if (shootLayout) Object.assign(sun.shadow.camera, { left: -0.08, right: 0.08, bottom: -0.08, top: 0.08 });
+    sun.shadow.camera.updateProjectionMatrix(); sun.shadow.normalBias = shootLayout ? 0 : 0.0001; sun.shadow.bias = shootLayout ? -0.00008 : -0.00001;
     renderer.shadowMap.autoUpdate = false; lighting.applyEnvironment(); lighting.resize(innerWidth, innerHeight);
     let mode = 'LOD0', authoring = null, fieldFocused = false;
     const render = () => { authoring?.updateOverlay(); comparison?.updateLabels(camera, renderer.domElement); patchHover?.update(); lighting.render(0); };
@@ -157,11 +183,17 @@ async function start() {
                 'Floor: ' + field.floorTriangles.toLocaleString('en-US') + ' tris'
             ].join('\n');
         }
-        soil.group.visible = rootSoilEnabled && mode === 'LOD0';
+        soil.group.visible = rootSoilEnabled && (shootLayout || mode === 'LOD0');
         land.ground.visible = !soil.group.visible;
         document.querySelectorAll('[data-mode]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.mode === mode)));
         const authored = authoring?.getCounts();
-        document.querySelector('#plant-counts').textContent = authored
+        const shoot = shootLods?.[mode].getSnapshot();
+        if (shoot) {
+            document.querySelector('.plant-study-panel h1').textContent = 'Leaf Growth · ' + (mode === 'LOD0' ? 'Reference' : mode === 'LOD0_SMART' ? 'LOD0' : mode);
+            perLeafCounts.textContent = shoot.trianglesPerLeaf
+                .map((count, index) => ['Single leaf', 'Pair left', 'Pair right'][index] + ': ' + count + ' tris').join('\n');
+        }
+        document.querySelector('#plant-counts').textContent = shoot ? shoot.leaves + ' leaves · ' + shoot.leafTriangles + ' tris' : authored
             ? (mode === 'LOD0' ? `${authored.leaves} ${authored.leaves === 1 ? 'leaf' : 'leaves'} · ${authored.triangles.toLocaleString('en-US')} tris`
                 : `${authored.leaves} ${authored.leaves === 1 ? 'leaf' : 'leaves'} · ${authored.cards} cards · ${authored.triangles} tris`)
             : (mode === 'LOD0' ? `${displayed.leaves} ${leafLabel} · ${sourceTriangles} tris`
@@ -266,6 +298,10 @@ async function start() {
         document.querySelector('#field-visible').checked = !!value;
         renderer.shadowMap.needsUpdate = true; sun.shadow.needsUpdate = true; render();
     };
+    const setWireframe = value => {
+        Object.values(wireframes).forEach(wireframe => wireframe.setVisible(value));
+        document.querySelector('#leaf-wireframe').checked = !!value; render();
+    };
     const setNormalFacing = value => {
         cards?.setNormalFacing(value); if (randomLayout) patch.setNormalFacing(value); comparison?.setNormalFacing(value); document.querySelector('#normal-facing').checked = !!value; render();
     };
@@ -273,18 +309,28 @@ async function start() {
         cards?.setAlphaCoverage(value); if (randomLayout) patch.setAlphaCoverage(value); comparison?.setAlphaCoverage(value); document.querySelector('#alpha-coverage').checked = !!value;
         renderer.shadowMap.needsUpdate = true; sun.shadow.needsUpdate = true; render();
     };
-    setPose('three_quarter'); setSquareBounds(false); setMode(randomLayout ? 'refined' : 'LOD0'); await renderer.compileAsync(scene, camera); render();
+    setPose(shootLayout ? 'front' : 'three_quarter'); setSquareBounds(false); setMode(randomLayout ? 'refined' : 'LOD0'); await renderer.compileAsync(scene, camera); render();
     controls.addEventListener('change', render);
     document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
     document.querySelectorAll('[data-pose]').forEach(button => button.addEventListener('click', () => setPose(button.dataset.pose)));
     document.querySelectorAll('[data-field-pose]').forEach(button => button.addEventListener('click', () => setFieldPose(button.dataset.fieldPose)));
     document.querySelector('#field-visible').addEventListener('change', event => setFieldVisible(event.target.checked));
+    document.querySelector('#leaf-wireframe').addEventListener('change', event => setWireframe(event.target.checked));
     document.querySelector('#card-bounds').addEventListener('change', event => setBoundaries(event.target.checked));
     document.querySelector('#square-bounds').addEventListener('change', event => setSquareBounds(event.target.checked));
     document.querySelector('#patch-labels').addEventListener('change', event => { comparison?.setLabelsVisible(event.target.checked); render(); });
     document.querySelector('#normal-facing').addEventListener('change', event => setNormalFacing(event.target.checked));
     document.querySelector('#alpha-coverage').addEventListener('change', event => setAlphaCoverage(event.target.checked));
     document.querySelectorAll('.plant-study-panel button, .plant-study-panel input').forEach(element => { element.disabled = false; });
+    if (shootLayout) {
+        document.querySelector('#leaf-wireframe').parentElement.hidden = false;
+        document.querySelector('[data-pose="front"]').hidden = false;
+        document.querySelector('[data-mode="LOD0"]').textContent = 'Reference';
+        for (const lod of ['LOD0_SMART', 'LOD1', 'LOD2']) document.querySelector('[data-mode="' + lod + '"]').hidden = false;
+        document.querySelectorAll('[data-mode]:not([data-mode="LOD0"]):not([data-mode="LOD1"]):not([data-mode="LOD2"]):not([data-mode="LOD0_SMART"])').forEach(button => { button.hidden = true; button.disabled = true; });
+        document.querySelector('[aria-label="LOD3 corrections"]').hidden = true;
+        document.querySelector('#card-bounds').parentElement.hidden = true;
+    }
     document.querySelector('#plant-loading').hidden = true;
     const resizeViewport = () => {
         const { width, height } = renderer.domElement.getBoundingClientRect();
@@ -320,13 +366,13 @@ async function start() {
         movementFrame = requestAnimationFrame(updateMovement);
     };
     movementFrame = requestAnimationFrame(updateMovement);
-    window.addEventListener('pagehide', () => { cancelAnimationFrame(movementFrame); cameraMovement.dispose(); patchHover?.dispose(); generated?.dispose(); }, { once: true });
+    window.addEventListener('pagehide', () => { cancelAnimationFrame(movementFrame); cameraMovement.dispose(); patchHover?.dispose(); Object.values(wireframes).forEach(wireframe => wireframe.dispose()); generated?.dispose(); if (shootLayout) Object.values(shootLods).forEach(leaf => leaf.dispose()); }, { once: true });
     const resizeObserver = new ResizeObserver(resizeViewport); resizeObserver.observe(renderer.domElement);
     addEventListener('resize', resizeViewport); render();
     const capture = (value, pose, boundaries = false) => { setPose(pose); setBoundaries(boundaries); setMode(value); render(); return renderer.domElement.toDataURL('image/png'); };
-    return Object.freeze({ renderer, scene, camera, lighting, controls, cameraMovement, plant, cards, patch, comparison, largeField, soil, squareBounds, capture, setMode, setPose, setFieldPose, setFieldVisible, setBoundaries, setSquareBounds,
-        setNormalFacing, setAlphaCoverage, authoring, generateAssets, pipeline: generated?.pipeline ?? null,
-        getSnapshot: () => ({ mode, layout, pipeline: generated?.pipeline.getSnapshot() ?? null, largeField: largeField?.getSnapshot() ?? null, comparison: comparison?.getSnapshot() ?? null, authoring: authoring?.getSnapshot() ?? null, ...(cards?.getSnapshot() ?? { specimens: 1, sourceLeaves: 1, variants: {} }), source, poses: activePoses, rootSoilEnabled: soil.group.visible, patch: patch?.getSnapshot() ?? null,
+    return Object.freeze({ renderer, scene, camera, lighting, controls, cameraMovement, plant, shootLods, cards, patch, comparison, largeField, soil, squareBounds, capture, setMode, setPose, setFieldPose, setFieldVisible, setBoundaries, setSquareBounds,
+        setNormalFacing, setAlphaCoverage, setWireframe, authoring, generateAssets, pipeline: generated?.pipeline ?? null,
+        getSnapshot: () => ({ mode, layout, wireframe: wireframes[mode]?.getSnapshot() ?? null, pipeline: generated?.pipeline.getSnapshot() ?? null, largeField: largeField?.getSnapshot() ?? null, comparison: comparison?.getSnapshot() ?? null, authoring: authoring?.getSnapshot() ?? null, ...(cards?.getSnapshot() ?? { specimens: source.specimens, sourceLeaves: source.leaves, variants: {} }), source: shootLods?.[mode].getSnapshot() ?? source, poses: activePoses, rootSoilEnabled: soil.group.visible, patch: patch?.getSnapshot() ?? null,
             squareBounds: { visible: squareBounds.visible, sizeMeters: 1, center: squareBounds.position.toArray() },
             lighting: lighting.getSnapshot(), land: land.getSnapshot() }) });
 }
