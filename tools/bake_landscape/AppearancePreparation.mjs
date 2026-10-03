@@ -7,6 +7,7 @@ import { readLandscapeFileManifest } from '../landscape_authoring/LandscapeFileI
 import { authoringFile, authoringHash, readAuthoringFile, writeImmutableAuthoringFile, atomicAuthoringWrite } from '../landscape_authoring/AuthoringFiles.mjs';
 import { validateLandscapeAppearanceManifest, LANDSCAPE_APPEARANCE_MANIFEST_LIMIT } from '../../src/app/landscape/index.js';
 import { runBakeProcess } from '../baking/Process.mjs';
+import { readAppearanceCompatibilitySnapshot, publishAppearanceBindingAlias } from './AppearanceCompatibility.mjs';
 
 const bytesOf = value => Buffer.from(JSON.stringify(value, null, 2) + '\n');
 function pbrFile(directory, relative) {
@@ -99,23 +100,32 @@ export async function validateAppearanceCandidate(prepared) {
     return { manifest, bytes, files };
 }
 
-/** @param {any} prepared @param {string} metadataDestination */
-export async function publishLandscapeAppearance(prepared, metadataDestination) {
+/** @param {any} prepared @param {string} metadataDestination @param {{compatibilitySnapshot?:string}} [options] */
+export async function publishLandscapeAppearance(prepared, metadataDestination, { compatibilitySnapshot } = {}) {
     const { manifest, bytes, files } = await validateAppearanceCandidate(prepared), installed = [];
     if (!(await readAuthoringFile(path.join(prepared.directory, 'manifest.json'), 1024 * 1024)).equals(prepared.inputManifestBytes)) throw new Error('Landscape changed during appearance preparation; retry against current terrain');
+    const destination = path.join(prepared.directory, 'appearance');
+    const compatibility = compatibilitySnapshot ? await readAppearanceCompatibilitySnapshot(prepared.directory, compatibilitySnapshot) : null;
+    if (compatibility && compatibility.manifest.landscapeId !== manifest.landscapeId) throw new Error('Appearance compatibility snapshot belongs to a different landscape');
+    let previous;
+    try {
+        previous = await readAuthoringFile(path.join(destination, 'manifest.json'), LANDSCAPE_APPEARANCE_MANIFEST_LIMIT);
+        validateLandscapeAppearanceManifest(JSON.parse(previous.toString('utf8')));
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
     for (const relative of prepared.metadata) {
         const payload = await readAuthoringFile(pbrFile(prepared.metadataDirectory, relative), 256 * 1024);
         const expected = manifest.provenance.sources.find(source => source.path === `pbr/${relative}`);
         if (authoringHash(payload) !== expected.sha256) throw new Error('PBR metadata changed during publication');
         const file = pbrFile(metadataDestination, relative); await writeImmutableAuthoringFile(file, payload); installed.push(file);
     }
-    const destination = path.join(prepared.directory, 'appearance');
     for (const [relative, page] of files) {
         const payload = await readAuthoringFile(authoringFile(prepared.outputDirectory, relative), page.byteLength);
         if (authoringHash(payload) !== page.sha256) throw new Error('Appearance page changed during publication');
         const file = authoringFile(destination, relative); await writeImmutableAuthoringFile(file, payload); installed.push(file);
     }
-    const snapshot = path.join(destination, `manifest.${authoringHash(bytes)}.json`); await writeImmutableAuthoringFile(snapshot, bytes); installed.push(snapshot);
+    if (previous) installed.push(...await publishAppearanceBindingAlias(destination, previous));
+    if (compatibility) installed.push(...await publishAppearanceBindingAlias(destination, compatibility.bytes));
+    installed.push(...await publishAppearanceBindingAlias(destination, bytes));
     await atomicAuthoringWrite(path.join(destination, 'manifest.json'), bytes); installed.push(path.join(destination, 'manifest.json'));
-    return installed;
+    return [...new Set(installed)];
 }

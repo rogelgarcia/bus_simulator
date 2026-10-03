@@ -6,6 +6,7 @@ import { estimateLandscapeMeshBuffers } from './LandscapeMeshBuffers.js';
 import { createLandscapeMesh } from './LandscapeMesh.js';
 import { LandscapeWorkerPool } from './LandscapeWorkerPool.js';
 import { computeLandscapeTileEdges } from './LandscapeTileEdges.js';
+import { landscapeNaturalPresentationBytes } from './LandscapeNaturalPresentation.js';
 
 const UPLOAD_BYTES_PER_FRAME = 8 * 1024 * 1024;
 const MORPH_SECONDS = .3;
@@ -63,7 +64,7 @@ export class LandscapeStreamer {
         this.degradationReason = null;
         this.disposed = false;
         this.poolKey = `${this.instance}/worker-context`;
-        const contextReservation = budget.reserve(this.poolKey, { cpuBytes: loaded.decodedBytes * 2, gpuBytes: 0, kind: 'worker-overview-copies', pinned: true });
+        const contextReservation = budget.reserve(this.poolKey, { cpuBytes: (loaded.decodedBytes + landscapeNaturalPresentationBytes(loaded.chunk.descriptor).workingBytes) * 2, gpuBytes: 0, kind: 'worker-overview-copies-and-natural-infill', pinned: true });
         if (!contextReservation.admitted) throw new Error(`Minimum terrain worker coverage cannot fit: ${contextReservation.reason}`);
         this.pool = new LandscapeWorkerPool({ manifest: this.manifest, manifestUrl: loaded.manifestUrl, root: loaded.chunk });
     }

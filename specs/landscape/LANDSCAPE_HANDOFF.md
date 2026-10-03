@@ -12,9 +12,11 @@ node tools/landscape_server/run.mjs
 
 Open `http://127.0.0.1:8002/screens/landscape_fabrication.html`, or use **Landscape Fabrication / shortcut 8** in the Fabrication menu. Port 8001 is reserved for other worktrees. Starting this loopback server does not open a browser or allocate GPU resources. Close inspection pages when finished.
 
-The screen uses the existing tool camera and shared live game performance bar. It supports perspective and orthographic navigation/zoom, focus/home and explicit poses, shaded/wireframe/combined inspection, grid/axes, resident LOD/chunk inspection, water reference, planning guides, named locations, saved camera bookmarks and elevation/contour/slope/water-depth views. Camera and display settings are separate from terrain ownership. Reload retains camera pose. Invalid new data leaves the last valid terrain visible with an error.
+The screen uses the shared first-person camera and live game performance bar. Arrows/WASD move horizontally, PageUp/PageDown change camera elevation, Shift moves faster, left-drag looks around and a plain click selects terrain. Game POV uses the game's 55° lens and bus inspection pose. It also supports perspective and orthographic navigation/zoom, focus/home and explicit poses, shaded/wireframe/combined inspection, grid/axes, resident LOD/chunk inspection, water reference, planning guides, named locations, saved camera bookmarks and elevation/contour/slope/water-depth views. Camera and display settings are separate from terrain ownership. Reload retains camera pose. Invalid new data leaves the last valid terrain visible with an error.
 
 Canonical current data is `assets/public/landscape/coastal-city/manifest.json`. Immutable `manifest.<sha256>.json` snapshots and content-addressed `payloads/` preserve previous source states. Appearance has its own `appearance/manifest.json` and independently loadable pages. No runtime request depends on the source ZIP, `downloads/`, preview OBJ or complete original rasters.
+
+The follow-up nature pass installs clean CC0 beach sand and replaces the visual pavement treatment with inferred natural ground while retaining source classifications. See [natural material provenance](LANDSCAPE_NATURE_MATERIALS.md) for the material-only revision, immutable appearance snapshot and source hashes. D7 measurements below remain historical; the nature pass is verified separately.
 
 ## Source and fidelity
 

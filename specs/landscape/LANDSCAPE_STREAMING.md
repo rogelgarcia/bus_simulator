@@ -70,7 +70,8 @@ camera resources, worker jobs and non-camera consumers. Its default profile is:
 | --- | ---: |
 | Controlled terrain CPU buffers and reservations | 128 MiB |
 | Estimated terrain GPU buffers and reservations | 64 MiB |
-| Concurrent fetch/decode/mesh workers | 2 |
+| Concurrent geometry fetch/decode/mesh workers | 2 |
+| Concurrent independent appearance worker | 1 |
 | Tile uploads per animation frame | 1 |
 | Upload bytes per animation frame | 8 MiB |
 | Geometric screen error goal | 1.5 pixels |
@@ -87,6 +88,13 @@ Reservations count old/new transition overlap and temporary fetch, decode, worke
 mesh construction, typed-array transfer and inspection resources. Decoded arrays
 retained after an upload continue to count toward CPU residency. Shared allocations
 have one entry and references rather than duplicated byte estimates.
+
+The natural presentation pass reserves each worker's bounded overview label grid
+and construction queue before initialization or replacement. Mesh workers reuse
+their existing overview source copies; the appearance worker's cover copy is
+separately accounted. The combined additional CPU reservation is 1,056,784 bytes
+for coastal 257² root pages; GPU mask capacity is unchanged. Details and exact
+semantic/display separation are in `LANDSCAPE_APPEARANCE_RUNTIME.md`.
 
 `acquireLease(key, {consumer,priority,accuracy})` returns an idempotent release
 handle. A resource with any lease cannot be evicted when the main camera turns
@@ -138,7 +146,7 @@ and captures belong in `tests/artifacts/screens/landscape/ai576/d3/`.
 The D3 browser gate uses a 1920×1080 viewport on the real coastal dataset. It
 exercises a close view, LOD/boundary inspection, combined wireframe, fixed-position
 perspective FOV change, orthographic zoom, two repeated full routes and teardown.
-Its controlled-buffer observations are:
+Its historical geometry-only controlled-buffer observations are:
 
 | Observation | Bytes / result |
 | --- | ---: |

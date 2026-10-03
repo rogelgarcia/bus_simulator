@@ -14,6 +14,7 @@ export function createLandscapeAppearanceUniforms() {
         uMaskBounds: { value: Array.from({ length: LANDSCAPE_MASK_SLOTS }, () => new THREE.Vector4()) },
         uMaskMeta: { value: Array.from({ length: LANDSCAPE_MASK_SLOTS }, () => new THREE.Vector4(-1, 0, 0, 0)) },
         uSoilScale: { value: Array.from({ length: LANDSCAPE_SOIL_SLOTS }, () => new THREE.Vector4(4, 1, 1, 0)) },
+        uSoilTiling: { value: Array.from({ length: LANDSCAPE_SOIL_SLOTS }, () => new THREE.Vector4(4, 16, 4 / 128, 4 / 16)) },
         uSoilAlbedo: { value: Array.from({ length: LANDSCAPE_SOIL_SLOTS }, () => new THREE.Vector4(1, 0, 0, 0)) },
         uSoilRoughness: { value: Array.from({ length: LANDSCAPE_SOIL_SLOTS }, () => new THREE.Vector4(0, 1, 1, 0)) },
         uSoilRange: { value: Array.from({ length: LANDSCAPE_SOIL_SLOTS }, () => new THREE.Vector4(0, 1, 1, 0)) },

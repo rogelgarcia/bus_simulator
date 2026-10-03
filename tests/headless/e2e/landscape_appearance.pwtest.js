@@ -8,7 +8,7 @@ import { copyLandscapePlanningSources } from '../../shared/landscape_fixture_fil
 
 const root = path.resolve('.');
 const source = path.join(root, 'assets/public/landscape/coastal-city');
-const artifacts = path.join(root, `tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'd4'}/appearance`);
+const artifacts = path.join(root, 'tests/artifacts/screens/landscape', process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'ai576/d4', 'appearance');
 const canonical = JSON.parse(await readFile(path.join(source, 'manifest.json'), 'utf8'));
 const overviewDescriptor = canonical.chunks.find(chunk => chunk.id === canonical.overviewId);
 const overviewCover = await readFile(path.join(source, overviewDescriptor.channels.landCover.url));
@@ -121,7 +121,7 @@ test('Landscape D4: retained cover aligns with soil materials and sea-level wate
     await page.evaluate(point => window.__landscapeTestHooks.setCamera({ position: [point.x + 100, 95, point.z - 140], target: [point.x, 2, point.z], projection: 'perspective', fov: 50 }), beach);
     const close = await settle(page);
     assertBudget(close);
-    expect(close.appearance.materials.some(item => item.materialId === 'pbr.coast_sand_rocks_02' && item.refCount > 0)).toBe(true);
+    expect(close.appearance.materials.some(item => item.materialId === 'pbr.aerial_beach_01' && item.refCount > 0)).toBe(true);
     await page.screenshot({ path: path.join(artifacts, '03-coastal-sand-water.png') });
     const seabed = coverPoints.find(point => point.coverId === 0);
     await page.evaluate(async point => {

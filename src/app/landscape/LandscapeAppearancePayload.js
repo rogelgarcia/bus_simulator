@@ -4,15 +4,27 @@ import { validateLandscapeManifest } from './LandscapeManifest.js';
 import { resolveLandscapeSoil } from './LandscapeSoil.js';
 import { requireCondition } from './internal/LandscapeValidation.js';
 import { readBoundedResponse, verifyLandscapeHash, resolveLandscapeUrl } from './internal/LandscapePayloadIO.js';
-import { LANDSCAPE_APPEARANCE_MANIFEST_LIMIT, LANDSCAPE_APPEARANCE_PAGE_LIMIT, validateLandscapeAppearanceManifest, validateLandscapeAppearancePage } from './LandscapeAppearanceManifest.js';
+import { LANDSCAPE_APPEARANCE_MANIFEST_LIMIT, LANDSCAPE_APPEARANCE_PAGE_LIMIT, LandscapeAppearanceBindingError, landscapeAppearanceBindingKey, validateLandscapeAppearanceManifest, validateLandscapeAppearancePage } from './LandscapeAppearanceManifest.js';
 
-/** @param {string|URL} url @param {{landscape?:any,fetchImpl?:typeof fetch,signal?:AbortSignal}} [options] */
-export async function loadLandscapeAppearanceManifest(url, { landscape, fetchImpl = globalThis.fetch, signal } = {}) {
+async function readAppearanceManifest(url, { landscape, fetchImpl, signal }) {
     signal?.throwIfAborted();
     const response = await fetchImpl(resolveLandscapeUrl(url), { signal, cache: 'no-store' });
     const bytes = await readBoundedResponse(response, LANDSCAPE_APPEARANCE_MANIFEST_LIMIT, false, 'appearance manifest');
     signal?.throwIfAborted();
     return validateLandscapeAppearanceManifest(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)), landscape);
+}
+
+/** @param {string|URL} url @param {{landscape?:any,fetchImpl?:typeof fetch,signal?:AbortSignal,resolveBindingFallback?:boolean}} [options] */
+export async function loadLandscapeAppearanceManifest(url, { landscape, fetchImpl = globalThis.fetch, signal, resolveBindingFallback = false } = {}) {
+    requireCondition(typeof resolveBindingFallback === 'boolean' && (!resolveBindingFallback || !!landscape), 'appearance binding fallback requires an explicit landscape');
+    try { return await readAppearanceManifest(url, { landscape, fetchImpl, signal }); }
+    catch (error) {
+        if (!resolveBindingFallback || !(error instanceof LandscapeAppearanceBindingError)) throw error;
+    }
+    signal?.throwIfAborted();
+    const key = await landscapeAppearanceBindingKey(landscape);
+    signal?.throwIfAborted();
+    return readAppearanceManifest(new URL(`binding.${key}.json`, resolveLandscapeUrl(url)), { landscape, fetchImpl, signal });
 }
 
 /** @param {any} input @param {{manifestUrl:string|URL,fetchImpl?:typeof fetch,signal?:AbortSignal,maxDecodedBytes?:number}} options */

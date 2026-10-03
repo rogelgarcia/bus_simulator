@@ -1,20 +1,19 @@
 // Fetches and validates raw material pages and rasterizes semantic masks away from the render thread.
-import { loadLandscapeAppearancePage, loadLandscapeCoverMask, rasterizeLandscapeSoilMask } from '../../../app/landscape/LandscapeAppearancePayload.js';
+import { loadLandscapeAppearancePage, loadLandscapeCoverMask } from '../../../app/landscape/LandscapeAppearancePayload.js';
+import { createLandscapeNaturalPresentation, rasterizeLandscapeDisplayMask } from './LandscapeNaturalPresentation.js';
 
 let context = null;
+let presentation = null;
 self.onmessage = async ({ data }) => {
-    if (data.type === 'initialize') { context = data; return; }
+    if (data.type === 'initialize') { context = data; presentation = createLandscapeNaturalPresentation(data.manifest, data.root); return; }
     const { id } = data;
     try {
         if (data.type === 'mask') {
             const mask = data.landCover
                 ? { descriptor: context.manifest.chunks.find(chunk => chunk.id === data.chunkId), landCover: data.landCover, sourceRevision: context.manifest.revision }
                 : await loadLandscapeCoverMask(context.manifest, data.chunkId, { manifestUrl: context.manifestUrl });
-            const soilIndices = mask.soilIndices ?? rasterizeLandscapeSoilMask(context.manifest, mask.descriptor, mask.landCover);
-            const pixels = new Uint8Array(mask.landCover.length * 2);
-            const soils = new Set();
-            for (let i = 0; i < soilIndices.length; i++) { pixels[i * 2] = soilIndices[i]; pixels[i * 2 + 1] = mask.landCover[i]; soils.add(soilIndices[i]); }
-            self.postMessage({ id, pixels, soils: [...soils].sort((a, b) => a - b), sourceRevision: mask.sourceRevision }, [pixels.buffer]);
+            const result = rasterizeLandscapeDisplayMask(presentation, mask.descriptor, mask.landCover);
+            self.postMessage({ id, ...result, sourceRevision: mask.sourceRevision }, [result.pixels.buffer]);
         } else if (data.type === 'material') {
             const options = { manifestUrl: context.appearanceUrl };
             const baseColor = await loadLandscapeAppearancePage(data.tier.channels.baseColor, options);

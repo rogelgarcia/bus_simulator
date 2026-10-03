@@ -15,6 +15,33 @@ key order. `preparedFromRevision` records preparation provenance; later height o
 soil edits do not invalidate reusable material pages. A different addressing
 frame, landscape ID, or semantic soil-to-material binding is rejected.
 
+`landscapeAppearanceBindingKey(landscapeOrAppearance)` hashes normalized required
+spatial numbers and the ordered `{soilId,materialId}` bindings with SHA-256.
+Terrain revision, height/cover contents, soil overrides and JSON key insertion
+order do not affect this compatibility key. The registered publisher keeps
+`appearance/binding.<key>.json` aliases beside canonical and immutable sidecars,
+so their `pages/...` URLs have the same base directory. Aliases are atomically
+replaceable with a newer compatible preparation; `manifest.<sha256>.json`
+snapshots and content-addressed pages remain immutable.
+
+The viewer's default lookup opts into
+`loadLandscapeAppearanceManifest(url,{landscape,resolveBindingFallback:true})`.
+It tries current metadata first and reads exactly one expected binding alias
+only if structurally valid metadata fails spatial/material compatibility.
+Each metadata request is capped at 256 KiB; no terrain payload is requested.
+Network errors, malformed/oversized metadata, invalid page descriptors and
+cancellation remain failures. Returned alias metadata must pass the complete
+schema and expected landscape binding checks. Explicit appearance URLs default
+to strict loading and do not silently select another sidecar.
+
+Publication preserves the previous valid current binding before switching to
+the new sidecar. For a pre-alias retained snapshot, the registered leaf accepts
+one optional `landscape/appearance:compatibility-snapshot=manifest.<sha256>.json`
+input from that landscape's appearance directory. It checks filename SHA-256,
+bounded metadata and all referenced page hashes before creating the alias;
+these inputs participate in framework stability checks. It never scans history
+or changes an older terrain manifest or city binding.
+
 Materials follow the landscape soil catalog order; those indices identify visual
 soil-mask samples. Each binding contains `soilId`, stable `materialId`, physical
 `tileMeters`, retained `calibration` (`presetId`, config hash and adjustments),
@@ -40,13 +67,16 @@ The prepared page URLs are bounded derivatives of those catalog map slots,
 not replacement material identities. BaseColor/normal/ORM are not loaded again
 through unbounded original map URLs.
 
-The six initial bindings remain unknown→ground_037, seabed→gravelly_sand,
-sand→coast_sand_rocks_02, loam→grass_004, forest→forrest_ground_01 and
+The current bindings are unknown→ground_037, seabed→gravelly_sand,
+sand→aerial_beach_01, loam→grass_004, forest→forrest_ground_01 and
 rock→rocky_terrain_02, all with the `pbr.` prefix. Imported planning classes 5–7
 retain their original urban/road/runway meaning and map to unknown substrate;
 they do not create physical pavement, roads, or city objects. Water class 0
 remains seabed substrate. The separate sea-level water reference is a visual
 inspection surface, never a replacement elevation channel or hydrology model.
+The beach replacement retains its 30-meter source scale and authenticated CC0
+provenance in [LANDSCAPE_NATURE_MATERIALS.md](LANDSCAPE_NATURE_MATERIALS.md).
+Older immutable material bindings remain part of their saved landscape snapshots.
 
 ## Spatial masks and semantic preservation
 
@@ -74,9 +104,17 @@ aligned native categorical samples and explicitly approximate visual coverage;
 exact native semantic queries stay camera independent. Visual transitions may
 blend rendered material responses while retaining both discrete input IDs.
 
+The renderer's `natural-overview-infill-v1` presentation leaves this domain mask
+unchanged. It derives a separate display soil from the bounded overview for
+`planningOnly` cover entries, then applies current explicit soil overrides. Exact
+queries continue to report the imported planning class and unknown substrate when
+no authored override exists. The shared worker helper, packed display mask,
+continuous material response and memory costs are specified in
+[LANDSCAPE_APPEARANCE_RUNTIME.md](LANDSCAPE_APPEARANCE_RUNTIME.md).
+
 ## Selection independent from geometry
 
-`createLandscapeAppearancePlanner(landscape,appearance).plan(camera,options)`
+`createLandscapeAppearancePlanner(landscape,appearance,configuration?).plan(camera,options)`
 uses metadata only. Camera fields match the geometry snapshot: projection,
 position, viewportHeight, zoom, frustumPlanes, perspective direction/FOV or
 orthographic height. Its geometric-error values are irrelevant: flat terrain
@@ -98,6 +136,17 @@ orthographic density includes zoom and viewport resolution. FOV changes can
 refine at fixed position. Coarsening uses 65% hysteresis. Native mask resolution
 and 512-pixel source-page capacity stop refinement; larger values are explicitly
 source-limited rather than invented source detail.
+
+Optional factory configuration `materialTiling` maps soil IDs to positive
+`nearTileMeters`, `macroTileMeters`, `blendStartMetersPerPixel` and
+`blendEndMetersPerPixel`; the footprint interval must increase. Without this
+configuration, source `tileMeters` retains its original planning behavior. The
+renderer supplies calibrated physical near periods and four-times-larger macro
+periods. Admission conservatively includes the macro period across the visible
+footprint bound so a change of projection, zoom or surface orientation cannot
+silently retain tiers selected only for the denser near repetition. This can
+request more detail than an individual fragment uses; residency and degradation
+still obey the same shared budget.
 
 ## Filtering, orientation and offline bounds
 

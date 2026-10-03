@@ -25,6 +25,7 @@ uniform sampler2DArray uBlendSurface;
 uniform int uMaterialBlendIndex;
 uniform float uMaterialBlend;
 uniform vec4 uSoilScale[6];
+uniform vec4 uSoilTiling[6];
 uniform vec4 uSoilAlbedo[6];
 uniform vec4 uSoilRoughness[6];
 uniform vec4 uSoilRange[6];
@@ -57,11 +58,9 @@ int maskAt(vec2 world) {
     return slot;
 }
 
-vec2 maskIds(int slot, vec2 world) {
-    vec4 bounds = uMaskBounds[slot];
-    vec2 uv = vec2((world.x - bounds.x) / (bounds.y - bounds.x), (bounds.w - world.y) / (bounds.w - bounds.z));
-    uv = (clamp(uv, 0.0, 1.0) * (uMaskDimensions - 1.0) + 0.5) / uMaskDimensions;
-    return floor(texture(uMaskPages, vec3(uv, float(slot))).rg * 255.0 + 0.5);
+int displaySoil(int slot, ivec2 sampleIndex) {
+    float encodedSoil = floor(texelFetch(uMaskPages, ivec3(sampleIndex, slot), 0).r * 255.0 + 0.5);
+    return int(floor(encodedSoil / 16.0));
 }
 
 void soilTextures(int soil, vec2 uv, vec2 dx, vec2 dy, out vec3 albedo, out vec3 detailNormal, out vec3 orm) {
@@ -108,19 +107,24 @@ vec3 correctedAlbedo(vec3 color, vec4 correction) {
     return max(vec3(0.0), color * correction.x);
 }
 
-SoilSurface maskSurface(int slot, vec2 world, vec2 worldDx, vec2 worldDy, vec3 normal) {
-    vec2 ids = maskIds(slot, world);
-    int soil = int(ids.x);
+SoilSurface soilSurface(int soil, vec2 world, vec2 worldDx, vec2 worldDy, vec3 normal) {
     vec4 scale = uSoilScale[soil], range = uSoilRange[soil], remap = uSoilRoughness[soil];
+    vec4 tiling = uSoilTiling[soil];
     float c = cos(range.w), s = sin(range.w);
     mat2 rotation = mat2(c, s, -s, c);
+    float footprint = max(length(worldDx), length(worldDy));
+    float macroWeight = smoothstep(tiling.z, tiling.w, footprint);
     vec3 albedo, detailNormal, orm;
-    soilTextures(soil, rotation * world / scale.x, rotation * worldDx / scale.x, rotation * worldDy / scale.x, albedo, detailNormal, orm);
-    albedo = correctedAlbedo(albedo, uSoilAlbedo[soil]);
-    if (soil == 0 && ids.y >= 5.0) {
-        vec3 planning = ids.y < 5.5 ? vec3(0.37, 0.39, 0.38) : ids.y < 6.5 ? vec3(0.11, 0.14, 0.15) : vec3(0.19, 0.23, 0.23);
-        albedo = mix(albedo, planning, 0.65);
+    float firstPeriod = macroWeight >= 1.0 ? tiling.y : tiling.x;
+    soilTextures(soil, rotation * world / firstPeriod, rotation * worldDx / firstPeriod, rotation * worldDy / firstPeriod, albedo, detailNormal, orm);
+    if (macroWeight > 0.0 && macroWeight < 1.0) {
+        vec3 macroAlbedo, macroNormal, macroOrm;
+        soilTextures(soil, rotation * world / tiling.y, rotation * worldDx / tiling.y, rotation * worldDy / tiling.y, macroAlbedo, macroNormal, macroOrm);
+        albedo = mix(albedo, macroAlbedo, macroWeight);
+        detailNormal = mix(detailNormal, macroNormal, macroWeight);
+        orm = mix(orm, macroOrm, macroWeight);
     }
+    albedo = correctedAlbedo(albedo, uSoilAlbedo[soil]);
     detailNormal = detailNormal * 2.0 - 1.0;
     detailNormal.xy = transpose(rotation) * detailNormal.xy * scale.y;
     vec3 tangent = normalize(vec3(normal.y, -normal.x, 0.0));
@@ -130,6 +134,30 @@ SoilSurface maskSurface(int slot, vec2 world, vec2 worldDx, vec2 worldDy, vec3 n
     if (remap.w > 0.5) roughness = 1.0 - roughness;
     roughness = mix(remap.x, remap.y, pow(roughness, remap.z)) * range.z;
     return SoilSurface(albedo, mapped, clamp(roughness, 0.05, 1.0), clamp(max(orm.b, scale.w), 0.0, 1.0), clamp(1.0 - (1.0 - orm.r) * scale.z, 0.0, 1.0));
+}
+
+SoilSurface maskSurface(int slot, vec2 world, vec2 worldDx, vec2 worldDy, vec3 normal) {
+    vec4 bounds = uMaskBounds[slot];
+    vec2 grid = clamp(vec2((world.x - bounds.x) / (bounds.y - bounds.x), (bounds.w - world.y) / (bounds.w - bounds.z)), 0.0, 1.0) * (uMaskDimensions - 1.0);
+    ivec2 cell = min(ivec2(floor(grid)), ivec2(uMaskDimensions) - 2);
+    vec2 fraction = smoothstep(vec2(0.0), vec2(1.0), grid - vec2(cell));
+    ivec4 ids = ivec4(displaySoil(slot, cell), displaySoil(slot, cell + ivec2(1, 0)), displaySoil(slot, cell + ivec2(0, 1)), displaySoil(slot, cell + ivec2(1, 1)));
+    if (ids.x == ids.y && ids.x == ids.z && ids.x == ids.w) return soilSurface(ids.x, world, worldDx, worldDy, normal);
+    vec4 weights = vec4((1.0 - fraction.x) * (1.0 - fraction.y), fraction.x * (1.0 - fraction.y), (1.0 - fraction.x) * fraction.y, fraction.x * fraction.y);
+    SoilSurface result = SoilSurface(vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    for (int soil = 0; soil < 6; soil++) {
+        float weight = 0.0;
+        for (int corner = 0; corner < 4; corner++) if (ids[corner] == soil) weight += weights[corner];
+        if (weight <= 0.0) continue;
+        SoilSurface part = soilSurface(soil, world, worldDx, worldDy, normal);
+        result.albedo += part.albedo * weight;
+        result.normal += part.normal * weight;
+        result.roughness += part.roughness * weight;
+        result.metalness += part.metalness * weight;
+        result.ao += part.ao * weight;
+    }
+    result.normal = normalize(result.normal);
+    return result;
 }
 
 SoilSurface transitioningMask(int slot, vec2 world, vec2 dx, vec2 dy, vec3 normal) {

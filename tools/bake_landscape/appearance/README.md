@@ -59,6 +59,29 @@ manifest is unchanged. The authoring mutation lock and framework input-stability
 gates prevent mixed source publication. An existing conflicting global config
 is rejected instead of overwritten. Repeating unchanged inputs is deterministic.
 
+Publication also retains the previous current sidecar under its deterministic
+`binding.<sha256>.json` compatibility alias, publishes the new binding alias,
+then switches current. Aliases share the appearance directory with snapshots
+and `pages/`, preserving relative URL resolution. Alias writes are atomic;
+content-addressed snapshots/pages are immutable. The key covers landscape ID,
+required bounds/grid values and ordered soil/material IDs, not terrain revision.
+
+To migrate one older retained sidecar that predates aliases, add this scoped
+option to the normal registered invocation:
+
+```sh
+node tools/bake.mjs --target landscape/appearance --set "landscape/appearance:compatibility-snapshot=manifest.<sha256>.json" --publish
+```
+
+The filename must be one `manifest.<64 lowercase hex digits>.json` in the selected
+landscape's appearance directory. The leaf admits at most 256 KiB of metadata,
+authenticates the filename digest and every referenced page sequentially, and
+includes them in input-stability checks. Other landscape IDs are refused at
+publication. There is no arbitrary history scan, terrain reimport, or temporary
+switch back to the older sidecar. Default runtime lookup can resolve a compatible
+alias after a valid binding mismatch; explicit URLs and corrupt/network failures
+remain strict. See [LANDSCAPE_APPEARANCE.md](../../../specs/landscape/LANDSCAPE_APPEARANCE.md).
+
 The receipt is `tests/artifacts/screens/landscape/ai576/d4/appearance-validation.json`.
 Focused tests are `landscape_appearance.test.js` and
 `landscape_appearance_preparation.test.js`. The latter creates isolated synthetic

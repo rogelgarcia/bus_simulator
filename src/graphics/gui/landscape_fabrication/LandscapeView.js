@@ -155,7 +155,7 @@ export class LandscapeView {
             this.panel.text('source', `${manifest.name} · ${(manifest.bounds.maxX - manifest.bounds.minX) / 1000} × ${(manifest.bounds.maxZ - manifest.bounds.minZ) / 1000} km`);
             this.panel.text('revision', `Revision ${manifest.revision} · ${manifest.chunks.length} prepared tiles · Native level ${manifest.grid.maxLevel}`);
             this.panel.text('status', 'Worker streaming ready · Soil PBR + independent masks · Y up / +Z north · Native queries independent of appearance');
-            this.panel.text('legend', `SURFACE REFERENCE\n${manifest.landCover.catalog.map(item => `${item.id}  ${item.label}`).join('\n')}\n\nPavement tint: planning reference over unknown soil\nWater: separate sea-level reference\nWorld grid: 200 m · Elevations: meters\nNative spacing: ${manifest.grid.spacingX.toFixed(3)} m`);
+            this.panel.text('legend', `IMPORTED SURFACE REFERENCE\n${manifest.landCover.catalog.map(item => `${item.id}  ${item.label}`).join('\n')}\n\nNatural ground display: planning areas infer nearby substrate\nImported cover and soil queries remain unchanged\nWater: separate sea-level reference\nWorld grid: 200 m · Elevations: meters\nNative spacing: ${manifest.grid.spacingX.toFixed(3)} m`);
             this.panel.notice('');
             if (this.selection) this.select(this.selection.position.x, this.selection.position.z);
             this.perfBar.requestUpdate();

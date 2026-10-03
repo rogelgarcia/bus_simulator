@@ -8,7 +8,7 @@
 export const LANDSCAPE_SOIL_CATALOG = Object.freeze([
     { id: 'unknown', label: 'Unspecified substrate', materialId: 'pbr.ground_037', biome: 'land' },
     { id: 'seabed', label: 'Seabed substrate', materialId: 'pbr.gravelly_sand', biome: 'land' },
-    { id: 'sand', label: 'Sand', materialId: 'pbr.coast_sand_rocks_02', biome: 'land' },
+    { id: 'sand', label: 'Sand', materialId: 'pbr.aerial_beach_01', biome: 'land' },
     { id: 'loam', label: 'Loam', materialId: 'pbr.grass_004', biome: 'grass' },
     { id: 'forest', label: 'Forest soil', materialId: 'pbr.forrest_ground_01', biome: 'land' },
     { id: 'rock', label: 'Exposed rock', materialId: 'pbr.rocky_terrain_02', biome: 'stone' }

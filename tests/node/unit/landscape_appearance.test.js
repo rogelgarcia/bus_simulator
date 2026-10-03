@@ -33,10 +33,11 @@ test('Appearance selection refines on flat terrain independently from geometry, 
     const overview = planner.plan(ortho), nearCamera = { ...ortho, orthoHeight: 32 }, near = planner.plan(nearCamera);
     assert.deepEqual(view.plan(nearCamera).desiredLeafIds, ['l0/c0/r0']);
     assert.equal(overview.desiredMaskIds.length, 1); assert.equal(overview.desiredTier, '32');
-    assert.equal(near.desiredMaskIds.length, 4); assert.equal(near.desiredTier, '128');
+    assert.equal(near.desiredMaskIds.length, 4); assert.equal(near.desiredTiers.loam, '128'); assert.equal(near.desiredTiers.sand, '512');
     assert.equal(planner.plan({ ...ortho, orthoHeight: 4 }).desiredTier, '512');
     assert.equal(planner.plan(nearCamera, { targetMaskPixels: 1000 }).desiredMaskIds.length, 1);
-    assert.equal(planner.plan(nearCamera, { targetMaskPixels: 1000 }).desiredTier, '128');
+    assert.equal(planner.plan(nearCamera, { targetMaskPixels: 1000 }).desiredTiers.loam, '128');
+    assert.equal(planner.plan(nearCamera, { targetMaskPixels: 1000 }).desiredTiers.sand, '512');
     const coarseMaterials = planner.plan(nearCamera, { targetTexelPixels: 1000 });
     assert.equal(coarseMaterials.desiredMaskIds.length, 4); assert.equal(coarseMaterials.desiredTier, '32');
     const away = planner.plan({ ...nearCamera, frustumPlanes: [{ x: 1, y: 0, z: 0, w: -100 }] });
@@ -54,6 +55,20 @@ test('Perspective appearance density responds to fixed-position FOV and viewport
     assert.equal(planner.plan({ ...camera, fovYRadians: .01 }).sourceLimited, true);
     assert.throws(() => planner.plan({ ...camera, direction: null }), /direction/);
     assert.throws(() => planner.plan(camera, { targetMaskPixels: 0 }), /positive/);
+});
+
+test('Appearance selection budgets texels for the macro UV period independently of fixed-position orthographic zoom', () => {
+    const { manifest } = createLandscapeModelFixture({ heightAt: () => 10 }), sidecar = appearance(manifest);
+    const profile = { nearTileMeters: 4, macroTileMeters: 16, blendStartMetersPerPixel: 4 / 128, blendEndMetersPerPixel: 4 / 16 };
+    const ordinary = createLandscapeAppearancePlanner(manifest, sidecar), tiling = createLandscapeAppearancePlanner(manifest, sidecar, { materialTiling: { loam: profile } });
+    const camera = { ...ortho, orthoHeight: 200 };
+    assert.equal(ordinary.plan(camera).desiredTiers.loam, '32');
+    assert.equal(tiling.plan(camera).desiredTiers.loam, '128');
+    assert.equal(tiling.plan({ ...camera, zoom: 20 }).desiredTiers.loam, '512');
+    profile.macroTileMeters = 1;
+    assert.equal(tiling.plan(camera).desiredTiers.loam, '128');
+    assert.throws(() => createLandscapeAppearancePlanner(manifest, sidecar, { materialTiling: { missing: profile } }), /unknown material/);
+    assert.throws(() => createLandscapeAppearancePlanner(manifest, sidecar, { materialTiling: { loam: { ...profile, nearTileMeters: 0 } } }), /positive/);
 });
 
 test('Material requests authenticate one bounded raw page and refuse budget, corrupt, oversized and stale work', async () => {

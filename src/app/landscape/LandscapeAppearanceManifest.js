@@ -1,10 +1,42 @@
 // Validates independent retained PBR page catalogs without binding material detail to geometry residency.
 // @ts-check
 import { clonePlainData, freezeData, requireCondition, requireId, requireInteger, requireFinite, requireRelativeUrl, requireSha256, requireBounds } from './internal/LandscapeValidation.js';
+import { validateLandscapeManifest } from './LandscapeManifest.js';
 
 export const LANDSCAPE_APPEARANCE_TIERS = Object.freeze([32, 128, 512]);
 export const LANDSCAPE_APPEARANCE_MANIFEST_LIMIT = 256 * 1024;
 export const LANDSCAPE_APPEARANCE_PAGE_LIMIT = 512 * 512 * 4;
+
+const BOUNDS_FIELDS = ['minX', 'maxX', 'minZ', 'maxZ'];
+const GRID_FIELDS = ['columns', 'rows', 'chunkIntervals', 'maxLevel', 'spacingX', 'spacingZ'];
+
+/** Identifies valid metadata that belongs to a different spatial/material binding. */
+export class LandscapeAppearanceBindingError extends Error {
+    constructor(message) { super(`[Landscape] ${message}`); this.name = 'LandscapeAppearanceBindingError'; }
+}
+
+function validateAppearanceBinding(value, landscape) {
+    if (!(value.landscapeId === landscape.id && BOUNDS_FIELDS.every(key => value.bounds[key] === landscape.bounds[key])
+        && GRID_FIELDS.every(key => value.grid[key] === landscape.grid[key]))) throw new LandscapeAppearanceBindingError('appearance spatial identity does not match landscape');
+    if (!(value.materials.length === landscape.soil.catalog.length && value.materials.every((material, i) => material.soilId === landscape.soil.catalog[i].id && material.materialId === landscape.soil.catalog[i].materialId))) {
+        throw new LandscapeAppearanceBindingError('appearance bindings do not match semantic soil catalog');
+    }
+}
+
+/** @param {any} input A terrain manifest or appearance sidecar. @returns {Promise<string>} */
+export async function landscapeAppearanceBindingKey(input) {
+    const landscape = input?.format === 'landscape';
+    const value = landscape ? validateLandscapeManifest(input) : validateLandscapeAppearanceManifest(input);
+    const identity = { landscapeId: landscape ? value.id : value.landscapeId,
+        bounds: Object.fromEntries(BOUNDS_FIELDS.map(key => [key, value.bounds[key]])),
+        grid: Object.fromEntries(GRID_FIELDS.map(key => [key, value.grid[key]])),
+        materials: landscape ? value.soil.catalog.map(soil => ({ soilId: soil.id, materialId: soil.materialId }))
+            : value.materials.map(material => ({ soilId: material.soilId, materialId: material.materialId })) };
+    requireCondition(!!globalThis.crypto?.subtle, 'Appearance binding identity requires Web Crypto');
+    const bytes = new TextEncoder().encode(JSON.stringify(identity));
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+    return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('');
+}
 
 /** @param {any} value @param {string} [label] */
 export function validateLandscapeAppearancePage(value, label = 'appearance page') {
@@ -53,10 +85,6 @@ export function validateLandscapeAppearanceManifest(input, landscape) {
     for (const source of value.provenance.sources) {
         requireRelativeUrl(source.path, 'appearance source path'); requireSha256(source.sha256, 'appearance source hash'); requireInteger(source.byteLength, 0, 32 * 1024 * 1024, 'appearance source bytes');
     }
-    if (landscape) {
-        requireCondition(value.landscapeId === landscape.id && ['minX', 'maxX', 'minZ', 'maxZ'].every(key => value.bounds[key] === landscape.bounds[key])
-            && ['columns', 'rows', 'chunkIntervals', 'maxLevel', 'spacingX', 'spacingZ'].every(key => value.grid[key] === landscape.grid[key]), 'appearance spatial identity does not match landscape');
-        requireCondition(value.materials.length === landscape.soil.catalog.length && value.materials.every((material, i) => material.soilId === landscape.soil.catalog[i].id && material.materialId === landscape.soil.catalog[i].materialId), 'appearance bindings do not match semantic soil catalog');
-    }
+    if (landscape) validateAppearanceBinding(value, landscape);
     return freezeData(value);
 }

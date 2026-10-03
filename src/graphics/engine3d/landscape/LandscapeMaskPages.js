@@ -144,7 +144,7 @@ export class LandscapeMaskPages {
         const column = Math.round((x - bounds.minX) / (bounds.maxX - bounds.minX) * (this.columns - 1));
         const row = Math.round((bounds.maxZ - z) / (bounds.maxZ - bounds.minZ) * (this.rows - 1));
         const index = record.slot * this.pageBytes + (row * this.columns + column) * 2;
-        return { soilId: this.manifest.soil.catalog[this.pixels[index]].id, coverId: this.pixels[index + 1], maskId: record.id, resolution: this.columns, level: record.descriptor.level, revision: record.sourceRevision, spacing: record.descriptor.sampleStride * this.manifest.grid.spacingX };
+        return { soilId: this.manifest.soil.catalog[this.pixels[index] & 15].id, displaySoilId: this.manifest.soil.catalog[this.pixels[index] >> 4].id, coverId: this.pixels[index + 1], maskId: record.id, resolution: this.columns, level: record.descriptor.level, revision: record.sourceRevision, spacing: record.descriptor.sampleStride * this.manifest.grid.spacingX };
     }
 
     interests(plan) {

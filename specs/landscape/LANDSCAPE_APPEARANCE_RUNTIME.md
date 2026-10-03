@@ -22,7 +22,7 @@ The normal profile has 17 mask slots, including retained ancestors. Profiles wit
 less than 8 MiB of appearance GPU capacity have five. This is a deliberate
 bounded working set, not an allocation for all 85 prepared masks.
 
-Materials receive interests from the soils referenced by visible mask tiles.
+Materials receive interests from the displayed soils referenced by visible mask tiles.
 An unresolved fine mask uses coarse materials until its detail is resident.
 Unrelated materials remain at their small 32-pixel fallback. Material identity
 is shared across tiles: each visible mask interest leases the currently used
@@ -37,8 +37,10 @@ with at most one appearance job running. No image decoder or soil-region scan
 runs in the render loop. The original full-resolution PBR imagery is not fetched.
 
 Cover masks load their own `landCover` channel without a height request. Each
-257 by 257 page is interleaved as unsigned-byte soil index and original cover ID.
-The soil index order is the validated soil catalog order. A GPU RG8 texture array
+257 by 257 page is interleaved as a packed soil byte and original cover ID.
+The low four soil bits identify the semantic soil; the high four identify the
+display soil. Both use validated catalog order; the current shader supports six
+bindings. A GPU RG8 texture array
 uses nearest filtering, no mipmaps, no color-space conversion and exact texel
 centers. Original cover bytes remain unchanged. Each record includes landscape
 revision, spatial ID, channel hash and the instance identity, so soil overrides
@@ -69,12 +71,25 @@ for physical tile size and UV calibration. `applyTextureColorSpace` assigns the
 base and data texture color spaces. Source-map URLs are resolved for metadata but
 are not passed to the global full-resolution image loader.
 
-World X/Z, divided by physical `tileMeters`, is the texture coordinate. +U points
+World X/Z, divided by physical `tileMeters`, is the near texture coordinate. +U points
 east and +V points north before the catalog UV rotation. Prepared material rows
 start in the south; `flipY` remains false. The same rotation applies to UV
 derivatives and the inverse rotation to tangent-space normal XY. Terrain masks
 retain the source's north-first rows. This mapping does not restart at mesh or
 mask boundaries.
+
+The second, macro coordinate uses a period four times the calibrated physical
+tile size. The shader samples these two stationary world lattices and blends
+their responses; it never animates or interpolates the UV scale itself. The
+blend uses `max(length(dFdx(worldXZ)),length(dFdy(worldXZ)))`, in meters per
+screen pixel, with smoothstep endpoints `tileMeters/128` and `tileMeters/16`.
+Thus perspective distance/FOV and fixed-position orthographic zoom all select
+detail consistently. Both derivatives scale with their sampled period. Fully
+near or fully macro fragments sample only one lattice; transition fragments
+sample both. Grass retains its calibrated four-meter near period and uses a
+16-meter macro period; the new sand retains 30 meters near and 120 meters macro.
+These artistic scales do not claim new source resolution. The planner receives
+the same periods and conservatively budgets texels for the larger one.
 
 The external terrain shader applies normal strength, AO intensity, metalness,
 albedo correction and roughness interval/gamma/inversion controls from the
@@ -83,6 +98,15 @@ source range at every tier. A constant input range preserves the raw scalar.
 The surface uses a GGX sun response and hemisphere ambient illumination. It does
 not introduce terrain displacement, extra measured elevation, an environment
 bake or gameplay lighting integration.
+
+Within a mask cell, the shader fetches four discrete display IDs and builds
+smoothstep corner weights. Equal IDs are coalesced before sampling a material;
+a uniform cell takes the single-material path. Albedo, roughness, metalness and
+AO responses blend by those weights, with normalized world-space normals.
+Category IDs are never linearly filtered or treated as numerical blend values.
+The transition spans one source mask cell, so it is narrower at finer mask LOD.
+Identical border IDs and world coordinates make equal-level boundaries continuous;
+the existing ancestor transition handles differing mask levels.
 
 New mask pages blend their visual material response from their resident parent
 over 0.3 seconds. IDs themselves are never interpolated. Coarsening reverses the
@@ -94,10 +118,34 @@ common-border gradient policy. Material tier changes blend the old and new PBR
 responses for 0.3 seconds; only one such transition runs at a time. The old tier
 is released after the replacement is ready and the transition completes.
 
-Planning covers 5, 6 and 7 retain distinct urban/road/runway tints over **unknown**
-substrate. These are planning references, not finished pavement geometry or soil
-composition. An explicit sand, rock or other known soil override displays that
-soil while the original planning cover ID remains available to inspection.
+## Natural presentation and imported reference data
+
+`LandscapeNaturalPresentation` uses the catalog's `planningOnly` flag; the coastal
+planning IDs are 5, 6 and 7. It removes their former pavement tint and distinct
+unknown-ground material silhouettes without editing imported cover or heights.
+The reference is one authenticated overview cover page, not an independently
+inferred result for every child tile. Every nonplanning root sample seeds its
+base soil into a deterministic four-neighbor flood fill. Seeds enter in row-major
+order and neighbors are visited north, west, east, south; this resolves equal
+Manhattan-distance ties reproducibly. If no natural seed exists, the explicit
+display fallback is loam when present, otherwise the declared default soil.
+
+Every planning sample at every LOD looks up the same nearest world-coordinate
+root label. The coastal reference spacing is 15.625 meters. Child arrival order,
+worker replacement and mask eviction therefore cannot choose different inferred
+substrates along a shared border. Nonplanning samples keep their semantic soil.
+The current ordered authored overrides apply last, including an explicit override
+to unknown; an overridden unknown is not mistaken for unassigned planning ground.
+The same pure helper creates fallback mesh colors and packed appearance masks.
+This keeps a failed or not-yet-ready appearance stream from restoring pavement
+colors. Native road grading shoulders remain in the retained height field.
+
+This is an inferred visual treatment, not an assertion that urban or road samples
+actually contain forest, grass, or sand. Queries, reports and saved source cover
+continue to expose the imported reference and authored semantic soil. There is
+no new durable full-terrain raster, terrain write, or unbounded neighborhood fetch.
+Display material interests use the inferred/overridden soil rather than unknown
+source semantics, so referenced fine pages are admitted and released correctly.
 
 ## Shared memory and frame-work limits
 
@@ -123,6 +171,16 @@ GPU accounting sums every mip of all three RGBA maps: one 512-pixel material is
 4,194,300 bytes including mips. Decode admissions reserve twice the material's
 raw bytes for worker, fetch/hash and assembly overlap. Mask decode reserves six
 bytes per sample before work starts; after upload only the shared array remains.
+
+Each worker's natural reference retains one 66,049-byte label array and builds
+it with a temporary 264,196-byte `Uint32Array` queue. Its 330,245-byte allowance
+stays reserved so terminated workers can be reconstructed safely. The two mesh
+workers already have accounted copies of the overview channels. Their context
+reservation adds two such allowances. The appearance worker additionally owns
+one 66,049-byte overview cover copy and reserves 396,294 bytes for that copy plus
+infill construction. Combined additional natural-presentation reservations are
+1,056,784 CPU bytes, including scratch; the packed masks add no GPU allocation.
+All context allowances are released only after their worker pool is disposed.
 
 The geometry adapter uploads first. Appearance receives only the remainder of
 the same **8 MiB per-frame** allowance. The initial mask array is uploaded once;
@@ -151,17 +209,28 @@ actual appearance CPU/GPU bytes and degradation alongside the shared performance
 bar. `snapshot().appearance` also exposes desired/resident masks, source revision,
 material interest counts, reserved credit, decode/upload state, errors and peak
 upload bytes. `appearanceSample(x,z)` reads the nearest resident categorical
-texel and reports soil ID, cover ID, spatial mask ID, level, spacing and revision.
+texel and reports semantic `soilId`, inferred/overridden `displaySoilId`, unchanged
+`coverId`, spatial mask ID, level, spacing and revision. `appearance.presentation`
+identifies the root-infill policy and reference spacing, while `materialTiling`
+reports the calibrated near/macro periods and footprint thresholds.
 It is an appearance inspection value; authoritative editing still uses native
 terrain queries. `setWater(boolean)` and `snapshot().water` expose the separate
 reference surface for deterministic verification.
 
 Pure budget transaction/mip tests live in
 `tests/node/unit/landscape_appearance_budget.test.js`. The browser acceptance suite
-is `tests/headless/e2e/landscape_appearance.pwtest.js`; its generated captures and
-measurements remain under `tests/artifacts/screens/landscape/ai576/d4/appearance/`.
+is `tests/headless/e2e/landscape_appearance.pwtest.js`; its default generated
+captures remain under `tests/artifacts/screens/landscape/ai576/d4/appearance/`.
+`LANDSCAPE_EVIDENCE_PHASE=nature` selects `landscape/nature/appearance/` without
+overwriting historical evidence. `landscape_natural_presentation.test.js` covers
+deterministic inference, shared boundaries, metadata-selected planning classes,
+explicit unknown overrides, fallback colors, source preservation and footprint
+weights. `landscape_nature.pwtest.js` captures the actual coastal overview, clean
+beach, 55-degree Game POV, forest planning area and fixed-position orthographic
+near/macro progression under `tests/artifacts/screens/landscape/nature/`.
 
-The initial six-test D4 browser run passed with no collected shader errors. Its
+The following are historical D4 observations, before the natural presentation
+and new sand material. The initial six-test D4 browser run passed with no collected shader errors. Its
 flat-height fixture retained one geometry leaf at both the overview and close
 poses. Mask residency changed from one root to four ancestor/native pages; only
 the referenced unknown/forest materials rose from 32 to 512 pixels. Actual

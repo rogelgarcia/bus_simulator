@@ -1,3 +1,4 @@
+import aerialBeach01 from './aerial_beach_01/pbr.material.config.js';
 import asphalt02 from './asphalt_02/pbr.material.config.js';
 import asphaltPitLane from './asphalt_pit_lane/pbr.material.config.js';
 import asphaltTrack from './asphalt_track/pbr.material.config.js';
@@ -67,6 +68,7 @@ import whitewashedBrick from './whitewashed_brick/pbr.material.config.js';
 import wornMossyPlasterwall from './worn_mossy_plasterwall/pbr.material.config.js';
 
 export const PBR_MATERIAL_CATALOG = Object.freeze([
+    aerialBeach01,
     asphalt02,
     asphaltPitLane,
     asphaltTrack,

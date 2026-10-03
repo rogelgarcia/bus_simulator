@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { applyTextureColorSpace, resolvePbrMaterialPipeline } from '../../content3d/materials/PbrTexturePipeline.js';
 import { getPbrTextureCalibrationResolver } from '../../content3d/materials/PbrTextureCalibrationResolver.js';
 import { landscapeTextureBytes } from './LandscapeAppearanceBudget.js';
+import { createLandscapeMaterialTiling } from './LandscapeMaterialTiling.js';
 
 export class LandscapeMaterialPages {
     /** @param {{appearance:any,budget:any,pool:any,renderer:any,uniforms:any,prefix:string}} options */
@@ -15,6 +16,7 @@ export class LandscapeMaterialPages {
         this.loaded = 0;
         this.evicted = 0;
         this.disposed = false;
+        this.tiling = {};
     }
 
     async initialize() {
@@ -26,7 +28,10 @@ export class LandscapeMaterialPages {
             material.pipeline = resolvePbrMaterialPipeline(definition.materialId, { calibrationOverrides: resolver.getCachedOverrides(definition.materialId), calibrationResolver: resolver });
             const effective = material.pipeline.overrides.effective;
             const remap = effective.roughnessRemap;
+            const tiling = createLandscapeMaterialTiling(effective.tileMeters);
+            this.tiling[definition.soilId] = tiling;
             this.uniforms.uSoilScale.value[index].set(effective.tileMeters, effective.normalStrength, effective.aoIntensity, effective.metalness);
+            this.uniforms.uSoilTiling.value[index].set(tiling.nearTileMeters, tiling.macroTileMeters, tiling.blendStartMetersPerPixel, tiling.blendEndMetersPerPixel);
             this.uniforms.uSoilAlbedo.value[index].set(effective.albedoBrightness, effective.albedoHueDegrees * Math.PI / 180, effective.albedoSaturation, effective.albedoTintStrength);
             this.uniforms.uSoilRoughness.value[index].set(remap?.min ?? 0, remap?.max ?? 1, remap?.gamma ?? 1, remap?.invertInput ? 1 : 0);
             const normalize = Number.isFinite(remap?.lowPercentile) && Number.isFinite(remap?.highPercentile);

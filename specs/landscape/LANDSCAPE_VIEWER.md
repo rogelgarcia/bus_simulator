@@ -102,9 +102,13 @@ test hooks are documented in `LANDSCAPE_APPEARANCE_RUNTIME.md`.
 Water toggles a separately owned translucent plane at the retained sea level.
 Terrain raycasts and native height/soil/submerged queries always use the actual
 heightfield. The water reference never converts seabed elevation into sea level.
-Planning urban/road/runway classes tint unknown substrate while retaining their
-categorical cover IDs. Assigning a known soil displays that material without
-changing the planning classification.
+Planning urban/road/runway classes now display nearby natural ground inferred
+from the shared overview. The legend labels those classes as imported surface
+references; semantic queries still report their original cover and unknown soil.
+Explicit soil assignments, including unknown, override the inferred appearance.
+Smooth material responses and stationary near/macro texture lattices respond to
+projected footprint, including fixed-position orthographic zoom. The new beach
+uses the calibrated CC0 sand documented in `LANDSCAPE_NATURE_MATERIALS.md`.
 
 ## D3 streamed geometry and inspection
 

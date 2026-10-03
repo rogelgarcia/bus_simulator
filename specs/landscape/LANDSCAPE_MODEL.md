@@ -127,12 +127,18 @@ A failed reload rejects its candidate without mutating a prior returned manifest
 | --- | --- | --- |
 | `unknown` | `pbr.ground_037` | `land` |
 | `seabed` | `pbr.gravelly_sand` | `land` |
-| `sand` | `pbr.coast_sand_rocks_02` | `land` |
+| `sand` | `pbr.aerial_beach_01` | `land` |
 | `loam` | `pbr.grass_004` | `grass` |
 | `forest` | `pbr.forrest_ground_01` | `land` |
 | `rock` | `pbr.rocky_terrain_02` | `stone` |
 
 The material ID is a visual binding, not a soil identity or traction implementation. D1 uses a small categorical color palette; resolving/loading material assets belongs to D4 and the graphics adapter. Existing catalog IDs are referenced without importing the graphics catalog into the domain. Humidity and vegetation are not inferred from this mapping.
+
+The follow-up beach material replaces the initial `pbr.coast_sand_rocks_02`
+binding in newly created manifests and the current coastal material-only
+revision. Original immutable snapshots retain their original binding. See
+[LANDSCAPE_NATURE_MATERIALS.md](LANDSCAPE_NATURE_MATERIALS.md) for source rights,
+hashes and publication details. Native soil IDs and cover mappings are unchanged.
 
 Land cover 0–4 maps respectively to seabed, sand, loam, forest, and rock. Classes 5–7 retain urban, road, and runway planning cover while mapping to unspecified substrate. Those classes do not create roads, prove pavement construction, or determine buried soil. Reference channels retain separately hashed originals with explicit roles. Imported roads retain XYZ elevations; future adapters must explicitly extract XZ for horizontal planning rather than confusing vertical Y with a legacy tile-Y coordinate.
 

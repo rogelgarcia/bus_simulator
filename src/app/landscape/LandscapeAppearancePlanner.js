@@ -51,9 +51,15 @@ function tierFor(required, previous) {
     return String(LANDSCAPE_APPEARANCE_TIERS[index]);
 }
 
-/** @param {any} input @param {any} appearanceInput */
-export function createLandscapeAppearancePlanner(input, appearanceInput) {
+/** @param {any} input @param {any} appearanceInput @param {{materialTiling?:Object<string,{nearTileMeters:number,macroTileMeters:number,blendStartMetersPerPixel:number,blendEndMetersPerPixel:number}>}} [configuration] */
+export function createLandscapeAppearancePlanner(input, appearanceInput, { materialTiling = {} } = {}) {
     const manifest = validateLandscapeManifest(input), appearance = validateLandscapeAppearanceManifest(appearanceInput, manifest);
+    for (const [id, tiling] of Object.entries(materialTiling)) {
+        requireCondition(appearance.materials.some(material => material.soilId === id), `unknown material tiling soil ${id}`);
+        requireCondition(['nearTileMeters', 'macroTileMeters', 'blendStartMetersPerPixel', 'blendEndMetersPerPixel'].every(key => Number.isFinite(tiling[key]) && tiling[key] > 0)
+            && tiling.blendEndMetersPerPixel > tiling.blendStartMetersPerPixel, 'appearance material tiling periods and footprint interval must be positive');
+    }
+    const tilings = Object.fromEntries(Object.entries(materialTiling).map(([id, value]) => [id, { ...value }]));
     const byId = new Map(manifest.chunks.map(chunk => [chunk.id, chunk])), children = new Map();
     for (const chunk of manifest.chunks) if (chunk.parentId && byId.get(chunk.parentId).level === chunk.level - 1) {
         if (!children.has(chunk.parentId)) children.set(chunk.parentId, []);
@@ -82,7 +88,17 @@ export function createLandscapeAppearancePlanner(input, appearanceInput) {
         visit(byId.get(manifest.overviewId));
         const visibleMaskIds = desiredMaskIds.filter(id => visibilityById[id]);
         const density = Math.max(0, ...visibleMaskIds.map(id => densityById[id]));
-        const desiredTiers = Object.fromEntries(appearance.materials.map(material => [material.soilId, tierFor(material.tileMeters * density / targetTexelPixels, previousTiers[material.soilId] ?? previousTier)]));
+        const desiredTiers = Object.fromEntries(appearance.materials.map(material => {
+            const tiling = tilings[material.soilId];
+            let texels = material.tileMeters * density;
+            if (tiling && density > 0) {
+                const footprint = 1 / density;
+                const near = footprint < tiling.blendEndMetersPerPixel ? tiling.nearTileMeters * density : 0;
+                const macro = tiling.macroTileMeters * density;
+                texels = Math.max(near, macro);
+            }
+            return [material.soilId, tierFor(texels / targetTexelPixels, previousTiers[material.soilId] ?? previousTier)];
+        }));
         const desiredTier = String(Math.max(...Object.values(desiredTiers).map(Number)));
         const desiredMaskPixels = Math.max(0, ...visibleMaskIds.map(id => maskPixelsById[id]));
         return Object.freeze({ desiredMaskIds: Object.freeze(desiredMaskIds), visibleMaskIds: Object.freeze(visibleMaskIds), desiredTier,

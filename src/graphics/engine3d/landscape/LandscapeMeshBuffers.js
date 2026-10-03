@@ -1,6 +1,6 @@
 // Builds transferable terrain buffers off the render thread; edge morphs preserve the parent surface.
 // @ts-check
-import { resolveLandscapeSoil } from '../../../app/landscape/LandscapeSoil.js';
+import { createLandscapeNaturalPresentation } from './LandscapeNaturalPresentation.js';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -51,8 +51,8 @@ export function estimateLandscapeMeshBuffers(descriptor) {
     };
 }
 
-/** @param {{chunk:any,parent?:any,root?:any,manifest:any}} options @returns {any} */
-export function buildLandscapeMeshBuffers({ chunk, parent = chunk, root = chunk, manifest }) {
+/** @param {{chunk:any,parent?:any,root?:any,manifest:any,presentation?:any}} options @returns {any} */
+export function buildLandscapeMeshBuffers({ chunk, parent = chunk, root = chunk, manifest, presentation = createLandscapeNaturalPresentation(manifest, root) }) {
     const { descriptor, heights, landCover } = chunk;
     const { columns, rows, bounds } = descriptor;
     if (!(heights instanceof Float32Array) || !(landCover instanceof Uint8Array) || heights.length !== columns * rows || landCover.length !== heights.length) throw new Error('Terrain mesh requires complete bounded decoded channels');
@@ -64,8 +64,7 @@ export function buildLandscapeMeshBuffers({ chunk, parent = chunk, root = chunk,
     const parentHeights = new Float32Array(estimate.vertices);
     const indices = new Uint32Array((columns - 1) * (rows - 1) * 6 + (estimate.vertices - heights.length) * 6);
     const wireIndices = new Uint32Array(estimate.wireIndexBytes / 4);
-    const palette = new Map(manifest.landCover.catalog.map(entry => [entry.id, linearColor(entry.color)]));
-    const coverSoils = new Map(manifest.soil.landCoverMapping.map(entry => [entry.landCoverId, entry.soilId]));
+    const soilIds = manifest.soil.catalog.map(entry => entry.id);
     const soilPalette = new Map(manifest.landCover.catalog.map(entry => [entry.soilId, linearColor(entry.color)]));
     for (let row = 0; row < rows; row++) {
         for (let column = 0; column < columns; column++) {
@@ -85,8 +84,7 @@ export function buildLandscapeMeshBuffers({ chunk, parent = chunk, root = chunk,
             const parentMixed = parentNormal.map((value, axis) => value * (1 - edgeWeight) + referenceNormal[axis] * edgeWeight);
             const parentLength = Math.hypot(...parentMixed);
             parentNormals.set(parentMixed.map(value => Math.round(value / parentLength * 32767)), i * 3);
-            const soil = manifest.soil.overrides.length ? resolveLandscapeSoil(manifest, x, z, landCover[i]) : coverSoils.get(landCover[i]);
-            colors.set(soil !== coverSoils.get(landCover[i]) ? soilPalette.get(soil) ?? palette.get(landCover[i]) : palette.get(landCover[i]), i * 3);
+            colors.set(soilPalette.get(soilIds[presentation.sample(x, z, landCover[i]) >> 4]), i * 3);
         }
     }
     let cursor = 0, wireCursor = 0;

@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { estimateLandscapeMeshBuffers } from '../../../src/graphics/engine3d/landscape/LandscapeMeshBuffers.js';
 
-const artifacts = path.resolve('tests/artifacts/screens/landscape/ai576/d7/performance');
+const artifacts = path.resolve(`tests/artifacts/screens/landscape/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'ai576/d7'}/performance`);
 const sourcePath = '/assets/public/landscape/coastal-city/manifest.json';
 const sourceText = await readFile(path.resolve(`.${sourcePath}`), 'utf8');
 const manifest = JSON.parse(sourceText);

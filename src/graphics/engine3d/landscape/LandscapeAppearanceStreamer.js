@@ -7,11 +7,14 @@ import { LandscapeMaskPages } from './LandscapeMaskPages.js';
 import { LandscapeMaterialPages } from './LandscapeMaterialPages.js';
 import { LandscapeWorkerPool } from './LandscapeWorkerPool.js';
 import { landscapeCameraSnapshot } from './LandscapeStreamer.js';
+import { LANDSCAPE_NATURAL_PRESENTATION, landscapeNaturalPresentationBytes } from './LandscapeNaturalPresentation.js';
 
 export class LandscapeAppearanceStreamer {
     /** @param {{loaded:any,budget:any,renderer:any,appearanceUrl?:string}} options */
-    constructor({ loaded, budget, renderer, appearanceUrl = new URL('./appearance/manifest.json', loaded.manifestUrl).href }) {
-        Object.assign(this, { loaded, renderer, appearanceUrl });
+    constructor({ loaded, budget, renderer, appearanceUrl }) {
+        Object.assign(this, { loaded, renderer });
+        this.resolveBindingFallback = appearanceUrl === undefined;
+        this.appearanceUrl = this.resolveBindingFallback ? new URL('./appearance/manifest.json', loaded.manifestUrl).href : appearanceUrl;
         this.prefix = `appearance/${crypto.randomUUID()}`;
         this.budget = new LandscapeAppearanceBudget(budget, this.prefix);
         this.uniforms = createLandscapeAppearanceUniforms();
@@ -27,16 +30,21 @@ export class LandscapeAppearanceStreamer {
         try {
             const admission = this.budget.reserve(key, { cpuBytes: 768 * 1024, gpuBytes: 0, kind: 'appearance-manifest-decode' });
             if (!admission.admitted) throw new Error(`Appearance manifest cannot fit: ${admission.reason}`);
-            this.appearance = await loadLandscapeAppearanceManifest(this.appearanceUrl, { landscape: this.loaded.manifest, signal: this.abort.signal });
+            this.appearance = await loadLandscapeAppearanceManifest(this.appearanceUrl, { landscape: this.loaded.manifest, signal: this.abort.signal, resolveBindingFallback: this.resolveBindingFallback });
             if (this.disposed) return;
             if (this.appearance.materials.length !== LANDSCAPE_SOIL_SLOTS) throw new Error(`Landscape PBR adapter currently supports exactly ${LANDSCAPE_SOIL_SLOTS} soil bindings`);
-            this.planner = createLandscapeAppearancePlanner(this.loaded.manifest, this.appearance);
-            this.pool = new LandscapeWorkerPool({ size: 1, workerUrl: new URL('./LandscapeAppearanceWorker.js', import.meta.url), context: { type: 'initialize', manifest: this.loaded.manifest, manifestUrl: this.loaded.manifestUrl, appearanceUrl: this.appearanceUrl } });
+            const root = { descriptor: this.loaded.chunk.descriptor, landCover: this.loaded.chunk.landCover };
+            const contextAdmission = this.budget.reserve(`${this.prefix}/natural-overview-worker`, { cpuBytes: root.landCover.byteLength + landscapeNaturalPresentationBytes(root.descriptor).workingBytes, gpuBytes: 0, kind: 'appearance-natural-worker-context' });
+            if (!contextAdmission.admitted) throw new Error(`Natural appearance worker cannot fit: ${contextAdmission.reason}`);
+            this.pool = new LandscapeWorkerPool({ size: 1, workerUrl: new URL('./LandscapeAppearanceWorker.js', import.meta.url), context: { type: 'initialize', manifest: this.loaded.manifest, manifestUrl: this.loaded.manifestUrl, appearanceUrl: this.appearanceUrl, root } });
             const capacity = this.budget.limits.gpuBytes < 8 * 1024 * 1024 ? 5 : LANDSCAPE_MASK_SLOTS;
             this.masks = new LandscapeMaskPages({ loaded: this.loaded, budget: this.budget, pool: this.pool, renderer: this.renderer, uniforms: this.uniforms, prefix: this.prefix, capacity });
             this.materials = new LandscapeMaterialPages({ appearance: this.appearance, budget: this.budget, pool: this.pool, renderer: this.renderer, uniforms: this.uniforms, prefix: this.prefix });
             await this.materials.initialize();
-            if (!this.disposed) this.initialized = true;
+            if (!this.disposed) {
+                this.planner = createLandscapeAppearancePlanner(this.loaded.manifest, this.appearance, { materialTiling: this.materials.tiling });
+                this.initialized = true;
+            }
         } catch (error) {
             if (error.name !== 'AbortError' && !this.disposed) this.errors.push({ message: error.message });
             this.releaseResources();
@@ -91,7 +99,9 @@ export class LandscapeAppearanceStreamer {
             pending, queueDepth: this.pool?.snapshot().queued ?? 0, canceled: this.pool?.snapshot().canceled ?? 0, loaded: (masks?.loaded ?? 0) + (materials?.loaded ?? 0), evicted: (masks?.evicted ?? 0) + (materials?.evicted ?? 0),
             uploadedBytesPerFrame: this.uploadedBytes, peakUploadedBytesPerFrame: this.peakUploadedBytes, frameCostMs: this.frameCostMs, errors,
             degradationReason: errors.length ? 'appearance-request-failed' : masks?.degradationReason ?? materials?.degradationReason ?? null,
-            revision: this.appearance?.revision ?? null, sourceRevision: this.loaded.manifest.revision, materialTransition: materials?.transition ?? null };
+            revision: this.appearance?.revision ?? null, sourceRevision: this.loaded.manifest.revision, materialTransition: materials?.transition ?? null,
+            presentation: { policy: LANDSCAPE_NATURAL_PRESENTATION, inferredSpacingMeters: this.loaded.chunk.descriptor.sampleStride * this.loaded.manifest.grid.spacingX, sourceCoverPreserved: true, semanticSoilPreserved: true },
+            materialTiling: this.materials?.tiling ?? {} };
     }
 
     releaseResources() {
