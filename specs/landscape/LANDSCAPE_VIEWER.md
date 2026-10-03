@@ -91,9 +91,10 @@ world scale/orientation. The appearance planner can refine flat root geometry's
 materials without requesting fine height meshes. Its raw source page tiers are
 32, 128 and 512 pixels; full-resolution PBR images are never startup resources.
 
-The same 128 MiB CPU / 64 MiB estimated GPU ledger covers both adapters. A small
-appearance allowance prevents geometry from taking all available texture capacity;
-fine texture tiers can use additional spare space. Geometry and appearance share
+The same 128 MiB CPU / 64 MiB estimated GPU ledger covers both adapters. A base
+appearance allowance and bounded view-demand credit protect planned material tiers
+before geometry admission. Delayed cover/halo work therefore cannot change their
+priority solely through completion order. Geometry and appearance share
 one per-frame upload allowance. The compact live strip now includes mask counts,
 per-soil texture tiers, pending appearance work and residency/degradation. Complete
 policies, shader calibration, world UVs, parent transitions, resource costs and
@@ -109,6 +110,11 @@ Explicit soil assignments, including unknown, override the inferred appearance.
 Smooth material responses and stationary near/macro texture lattices respond to
 projected footprint, including fixed-position orthographic zoom. The new beach
 uses the calibrated CC0 sand documented in `LANDSCAPE_NATURE_MATERIALS.md`.
+AI577 D1 adds continuous material coverage, classification-preserving local
+contour fits, world-meter transition widths and shared edge/corner availability.
+It retains categorical inspection, source elevations and existing PBR patterns;
+the precise source and filtering limits are in
+[LANDSCAPE_SURFACE_COVERAGE.md](LANDSCAPE_SURFACE_COVERAGE.md).
 
 ## D3 streamed geometry and inspection
 

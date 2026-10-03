@@ -1,6 +1,7 @@
 // Fetches and validates raw material pages and rasterizes semantic masks away from the render thread.
-import { loadLandscapeAppearancePage, loadLandscapeCoverMask } from '../../../app/landscape/LandscapeAppearancePayload.js';
-import { createLandscapeNaturalPresentation, rasterizeLandscapeDisplayMask } from './LandscapeNaturalPresentation.js';
+import { loadLandscapeAppearancePage } from '../../../app/landscape/LandscapeAppearancePayload.js';
+import { createLandscapeNaturalPresentation } from './LandscapeNaturalPresentation.js';
+import { createLandscapeCoverageMask } from './LandscapeCoverageMask.js';
 
 let context = null;
 let presentation = null;
@@ -9,11 +10,8 @@ self.onmessage = async ({ data }) => {
     const { id } = data;
     try {
         if (data.type === 'mask') {
-            const mask = data.landCover
-                ? { descriptor: context.manifest.chunks.find(chunk => chunk.id === data.chunkId), landCover: data.landCover, sourceRevision: context.manifest.revision }
-                : await loadLandscapeCoverMask(context.manifest, data.chunkId, { manifestUrl: context.manifestUrl });
-            const result = rasterizeLandscapeDisplayMask(presentation, mask.descriptor, mask.landCover);
-            self.postMessage({ id, ...result, sourceRevision: mask.sourceRevision }, [result.pixels.buffer]);
+            const result = await createLandscapeCoverageMask({ manifest: context.manifest, manifestUrl: context.manifestUrl, presentation, chunkId: data.chunkId, landCover: data.landCover });
+            self.postMessage({ id, ...result }, [result.pixels.buffer]);
         } else if (data.type === 'material') {
             const options = { manifestUrl: context.appearanceUrl };
             const baseColor = await loadLandscapeAppearancePage(data.tier.channels.baseColor, options);

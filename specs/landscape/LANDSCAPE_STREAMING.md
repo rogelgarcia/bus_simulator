@@ -96,6 +96,13 @@ separately accounted. The combined additional CPU reservation is 1,056,784 bytes
 for coastal 257² root pages; GPU mask capacity is unchanged. Details and exact
 semantic/display separation are in `LANDSCAPE_APPEARANCE_RUNTIME.md`.
 
+AI577 D1 keeps the mask slot count and sampler count, while each slot becomes a
+padded RGBA8 categorical/derived-contour page. Its controlled storage and source
+halo reservations are described in `LANDSCAPE_SURFACE_COVERAGE.md`. The appearance
+planner protects bounded view demand before geometry admission; real allocations
+replace that credit and shrinking demand releases unused credit. All of it remains
+inside the existing shared and per-appearance ceilings.
+
 `acquireLease(key, {consumer,priority,accuracy})` returns an idempotent release
 handle. A resource with any lease cannot be evicted when the main camera turns
 away. Query/edit, shadow and future collision or content-layer consumers use this

@@ -6,7 +6,7 @@ import { createLandscapeNaturalPresentation } from '../../../src/graphics/engine
 import { landscapeMaterialMacroWeight } from '../../../src/graphics/engine3d/landscape/LandscapeMaterialTiling.js';
 
 const root = path.resolve('.'), source = path.join(root, 'assets/public/landscape/coastal-city');
-const artifacts = path.join(root, 'tests/artifacts/screens/landscape/nature');
+const artifacts = path.join(root, 'tests/artifacts/screens/landscape', process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'nature');
 const manifest = JSON.parse(await readFile(path.join(source, 'manifest.json'), 'utf8'));
 const descriptor = manifest.chunks.find(chunk => chunk.id === manifest.overviewId);
 const landCover = await readFile(path.join(source, descriptor.channels.landCover.url));

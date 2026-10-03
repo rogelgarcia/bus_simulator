@@ -26,6 +26,7 @@ window.__landscapeTestHooks = Object.freeze({
     removeBookmark: id => view.removeBookmark(id),
     reportSelection: () => view.reportSelection(),
     appearanceSample: (x, z) => view.appearance?.sample(x, z) ?? null,
+    coverageSample: (x, z, options) => view.appearance?.coverageSample(x, z, options) ?? null,
     setBudgets: options => view.setBudgets(options),
     beginPerformanceCapture: options => view.beginPerformanceCapture(options),
     endPerformanceCapture: () => view.endPerformanceCapture(),

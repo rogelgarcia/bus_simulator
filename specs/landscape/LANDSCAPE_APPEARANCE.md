@@ -97,6 +97,13 @@ soil-only edit therefore refreshes every requested appearance level even though
 its original cover hashes do not change. Unload/reload cannot restore an older
 revision's overrides.
 
+The graphics adapter derives a continuous visual field from those authenticated
+categories using canonical halo reads and a bounded local contour fit. Its RGBA8
+page packing, world-meter blending, filtering limits and resource costs are
+specified in [LANDSCAPE_SURFACE_COVERAGE.md](LANDSCAPE_SURFACE_COVERAGE.md). This
+runtime derivative does not modify this prepared source format, material pages,
+categorical API or ordered semantic overrides.
+
 Source masks keep row zero north, matching terrain coordinates. Category and
 soil IDs use nearest sampling and never ordinary color filtering, gamma
 correction, numeric class blending, or color mip averages. Coarse masks use

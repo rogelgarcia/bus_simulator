@@ -8,7 +8,7 @@ import { landscapeAppearanceBindingKey } from '../../../src/app/landscape/index.
 const binding = createCoastalLandscapeCitySpec().landscape;
 const manifest = JSON.parse(await readFile(path.resolve(binding.manifestUrl), 'utf8'));
 const key = await landscapeAppearanceBindingKey(manifest);
-const artifacts = path.resolve('tests/artifacts/screens/landscape/nature/pinned-appearance');
+const artifacts = path.resolve('tests/artifacts/screens/landscape', process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'nature', 'pinned-appearance');
 
 test('Landscape appearance binding: original city terrain pin loads its retained material pages and releases resources', async ({ page }) => {
     test.setTimeout(90000);

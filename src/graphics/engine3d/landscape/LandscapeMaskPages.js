@@ -1,6 +1,9 @@
 // Keeps categorical soil/cover pages in a bounded nearest-sampled array with resident ancestor fallback.
 // @ts-check
 import * as THREE from 'three';
+import { landscapeCoverageMaskLayout, LANDSCAPE_SURFACE_COVERAGE, sampleLandscapeSurfaceCoverage, applyLandscapeContourCoverage } from './LandscapeSurfaceCoverage.js';
+import { LANDSCAPE_CONTOUR_COVERAGE } from './LandscapeContourCoverage.js';
+import { LANDSCAPE_NATURAL_PRESENTATION } from './LandscapeNaturalPresentation.js';
 
 const inside = (bounds, x, z) => x >= bounds.minX && x <= bounds.maxX && z >= bounds.minZ && z <= bounds.maxZ;
 
@@ -13,13 +16,14 @@ export class LandscapeMaskPages {
         this.columns = loaded.chunk.descriptor.columns;
         this.rows = loaded.chunk.descriptor.rows;
         if (this.manifest.chunks.some(value => value.columns !== this.columns || value.rows !== this.rows)) throw new Error('Appearance mask array requires equal prepared page dimensions');
-        this.pageBytes = this.columns * this.rows * 2;
+        this.layout = landscapeCoverageMaskLayout(loaded.chunk.descriptor);
+        this.pageBytes = this.layout.pageBytes;
         this.key = `${prefix}/categorical-mask-array`;
         const admission = budget.reserve(this.key, { cpuBytes: this.pageBytes * capacity, gpuBytes: this.pageBytes * capacity, kind: 'appearance-mask-array' });
         if (!admission.admitted) throw new Error(`Minimum appearance mask cannot fit: ${admission.reason}`);
         this.pixels = new Uint8Array(this.pageBytes * capacity);
-        this.texture = new THREE.DataArrayTexture(this.pixels, this.columns, this.rows, capacity);
-        this.texture.format = THREE.RGFormat;
+        this.texture = new THREE.DataArrayTexture(this.pixels, this.layout.width, this.layout.height, capacity);
+        this.texture.format = THREE.RGBAFormat;
         this.texture.colorSpace = THREE.NoColorSpace;
         this.texture.magFilter = this.texture.minFilter = THREE.NearestFilter;
         this.texture.generateMipmaps = false;
@@ -37,7 +41,7 @@ export class LandscapeMaskPages {
     request(id, slot, landCover = null) {
         const descriptor = this.descriptors.get(id);
         const key = `${this.prefix}/mask/${this.manifest.revision}/${id}/${descriptor.channels.landCover.sha256}`;
-        const admission = this.budget.reserve(key, { cpuBytes: descriptor.columns * descriptor.rows * 6, gpuBytes: 0, kind: 'appearance-mask-decode' });
+        const admission = this.budget.reserve(key, { cpuBytes: this.layout.decodeBytes, gpuBytes: 0, kind: 'appearance-mask-decode' });
         if (!admission.admitted) { this.degradationReason = admission.reason; return false; }
         const record = { id, key, descriptor, slot, progress: 0, status: 'loading', pixels: null, soils: [], abort: new AbortController(), sourceRevision: this.manifest.revision };
         record.lease = this.budget.shared.acquireLease(key, { consumer: `appearance-mask/${id}`, priority: id === this.manifest.overviewId ? 100 : 40, accuracy: 'approximate' });
@@ -47,6 +51,7 @@ export class LandscapeMaskPages {
             if (this.disposed || record.abort.signal.aborted || this.records.get(id) !== record) return;
             record.pixels = result.pixels;
             record.soils = result.soils;
+            record.sourceIds = result.sourceIds;
             record.sourceRevision = result.sourceRevision;
             record.status = 'decoded';
             this.budget.update(key, { cpuBytes: result.pixels.byteLength, kind: 'appearance-mask-upload-pending' });
@@ -80,6 +85,7 @@ export class LandscapeMaskPages {
     activeChild(record) { return [...this.records.values()].some(value => value.descriptor.parentId === record.id); }
 
     updateUniforms() {
+        const byPosition = new Map([...this.records.values()].filter(record => record.status === 'resident').map(record => [`${record.descriptor.level}/${record.descriptor.column}/${record.descriptor.row}`, record]));
         for (let slot = 0; slot < this.capacity; slot++) this.uniforms.uMaskMeta.value[slot].set(-1, 0, 0, 0);
         for (const record of this.records.values()) {
             if (record.status !== 'resident') continue;
@@ -87,6 +93,15 @@ export class LandscapeMaskPages {
             this.uniforms.uMaskBounds.value[record.slot].set(bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ);
             const parentSlot = this.records.get(record.descriptor.parentId)?.slot ?? record.slot;
             this.uniforms.uMaskMeta.value[record.slot].set(record.descriptor.level, record.progress, parentSlot, 1);
+            const { level, column, row } = record.descriptor, count = 2 ** level, neighbors = [];
+            for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+                if (dc === 0 && dr === 0) continue;
+                const c = column + dc, r = row + dr;
+                neighbors.push(c < 0 || r < 0 || c >= count || r >= count ? 1 : byPosition.get(`${level}/${c}/${r}`)?.progress ?? 0);
+            }
+            record.neighborProgress = neighbors;
+            this.uniforms.uMaskNeighbors0.value[record.slot].set(...neighbors.slice(0, 4));
+            this.uniforms.uMaskNeighbors1.value[record.slot].set(...neighbors.slice(4));
         }
     }
 
@@ -143,8 +158,21 @@ export class LandscapeMaskPages {
         const { bounds } = record.descriptor;
         const column = Math.round((x - bounds.minX) / (bounds.maxX - bounds.minX) * (this.columns - 1));
         const row = Math.round((bounds.maxZ - z) / (bounds.maxZ - bounds.minZ) * (this.rows - 1));
-        const index = record.slot * this.pageBytes + (row * this.columns + column) * 2;
+        const index = record.slot * this.pageBytes + ((row + this.layout.halo) * this.layout.width + column + this.layout.halo) * 4;
         return { soilId: this.manifest.soil.catalog[this.pixels[index] & 15].id, displaySoilId: this.manifest.soil.catalog[this.pixels[index] >> 4].id, coverId: this.pixels[index + 1], maskId: record.id, resolution: this.columns, level: record.descriptor.level, revision: record.sourceRevision, spacing: record.descriptor.sampleStride * this.manifest.grid.spacingX };
+    }
+
+    coverageSample(x, z, { dx = [0, 0], dy = [0, 0] } = {}) {
+        if (!Number.isFinite(x) || !Number.isFinite(z)) throw new Error('Coverage sample coordinates must be finite');
+        const record = this.best(x, z);
+        if (!record) return null;
+        const spacingX = record.descriptor.sampleStride * this.manifest.grid.spacingX, spacingZ = record.descriptor.sampleStride * this.manifest.grid.spacingZ;
+        const base = sampleLandscapeSurfaceCoverage({ bounds: record.descriptor.bounds, columns: this.columns, rows: this.rows, x, z, dx, dy,
+            soilCount: this.manifest.soil.catalog.length, soilAt: (column, row) => this.pixels[record.slot * this.pageBytes + ((row + this.layout.halo) * this.layout.width + column + this.layout.halo) * 4] >> 4 });
+        const result = applyLandscapeContourCoverage(base, { pixels: this.pixels, width: this.layout.width, height: this.layout.height, columns: this.columns, rows: this.rows,
+            spacingX, spacingZ, xGrid: (x - record.descriptor.bounds.minX) / spacingX, zGrid: (record.descriptor.bounds.maxZ - z) / spacingZ, byteOffset: record.slot * this.pageBytes, dx, dy });
+        return { ...result, recipe: LANDSCAPE_SURFACE_COVERAGE.id, maskId: record.id, sourceIds: record.sourceIds, level: record.descriptor.level,
+            sourceRevision: record.sourceRevision, soilIds: this.manifest.soil.catalog.map(soil => soil.id), inspection: 'resident-page-before-hierarchy-transition' };
     }
 
     interests(plan) {
@@ -190,6 +218,14 @@ export class LandscapeMaskPages {
             transitioning: [...this.records.values()].some(record => record.status === 'resident' && (record.progress !== 1 || !this.wanted.has(record.id))),
             residentMaskIds: [...this.records.values()].filter(record => record.status === 'resident').map(record => record.id),
             maskLods: [...this.records.values()].filter(record => record.status === 'resident').map(record => ({ id: record.id, level: record.descriptor.level, progress: record.progress, revision: record.sourceRevision })),
+            coverage: { ...LANDSCAPE_SURFACE_COVERAGE, maskWidth: this.layout.width, maskHeight: this.layout.height, allocatedMaskBytes: this.pixels.byteLength,
+                decodedMaskReservationBytes: this.layout.decodeBytes, contour: LANDSCAPE_CONTOUR_COVERAGE, sourceLimited: this.lastPlan?.sourceLimited ?? false,
+                coordinates: 'world-XZ-meters', landscapeId: this.manifest.id, sourceRevision: this.manifest.revision,
+                sourceSpacingMeters: { x: this.manifest.grid.spacingX, z: this.manifest.grid.spacingZ },
+                soilBindings: this.manifest.soil.catalog.map(soil => ({ soilId: soil.id, materialId: soil.materialId })),
+                naturalReference: { policy: LANDSCAPE_NATURAL_PRESENTATION, id: this.manifest.overviewId, sha256: this.loaded.chunk.descriptor.channels.landCover.sha256,
+                    spacingMeters: this.loaded.chunk.descriptor.sampleStride * this.manifest.grid.spacingX },
+                residentDependencies: [...this.records.values()].filter(record => record.status === 'resident').map(record => ({ id: record.id, sourceIds: record.sourceIds })) },
             wantedMaskIds: [...this.wanted], capacity: this.capacity, errors: [...this.failures.values()], loaded: this.loadedCount, evicted: this.evicted, degradationReason: this.degradationReason };
     }
 

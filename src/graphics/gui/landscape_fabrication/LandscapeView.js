@@ -641,6 +641,7 @@ export class LandscapeView {
             this.controls.update(Math.min(rawDt, .1));
             if (this.camera.isOrthographicCamera) this.camera.fov = 2 * Math.atan(this.orthoHeight / this.camera.zoom / (2 * this.camera.position.distanceTo(this.controls.target))) * 180 / Math.PI;
             if (!this.reloading) {
+                this.appearance?.prepare(this.camera, this.canvas.height);
                 this.stream?.update(rawDt, this.camera, this.canvas.height);
                 const geometryStats = this.stream?.snapshot();
                 const uploadLimit = geometryStats?.uploadLimitBytes ?? LANDSCAPE_STREAMING_BUDGETS.uploadBytesPerFrame;

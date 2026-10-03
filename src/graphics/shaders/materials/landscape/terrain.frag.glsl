@@ -6,8 +6,14 @@ uniform vec3 uDiagnosticRange;
 uniform float uAppearanceReady;
 uniform sampler2DArray uMaskPages;
 uniform vec2 uMaskDimensions;
+uniform vec4 uCoverageSettings;
+uniform vec4 uCoverageFilter;
+uniform float uCoveragePositiveClamp;
+uniform float uContourDistanceRange;
 uniform vec4 uMaskBounds[17];
 uniform vec4 uMaskMeta[17];
+uniform vec4 uMaskNeighbors0[17];
+uniform vec4 uMaskNeighbors1[17];
 uniform sampler2D uSoilBase0;
 uniform sampler2DArray uSoilSurface0;
 uniform sampler2D uSoilBase1;
@@ -59,7 +65,7 @@ int maskAt(vec2 world) {
 }
 
 int displaySoil(int slot, ivec2 sampleIndex) {
-    float encodedSoil = floor(texelFetch(uMaskPages, ivec3(sampleIndex, slot), 0).r * 255.0 + 0.5);
+    float encodedSoil = floor(texelFetch(uMaskPages, ivec3(sampleIndex + ivec2(int(uCoverageSettings.w)), slot), 0).r * 255.0 + 0.5);
     return int(floor(encodedSoil / 16.0));
 }
 
@@ -136,62 +142,285 @@ SoilSurface soilSurface(int soil, vec2 world, vec2 worldDx, vec2 worldDy, vec3 n
     return SoilSurface(albedo, mapped, clamp(roughness, 0.05, 1.0), clamp(max(orm.b, scale.w), 0.0, 1.0), clamp(1.0 - (1.0 - orm.r) * scale.z, 0.0, 1.0));
 }
 
-SoilSurface maskSurface(int slot, vec2 world, vec2 worldDx, vec2 worldDy, vec3 normal) {
-    vec4 bounds = uMaskBounds[slot];
-    vec2 grid = clamp(vec2((world.x - bounds.x) / (bounds.y - bounds.x), (bounds.w - world.y) / (bounds.w - bounds.z)), 0.0, 1.0) * (uMaskDimensions - 1.0);
+struct Coverage {
+    vec3 low;
+    vec3 high;
+};
+
+Coverage emptyCoverage() {
+    return Coverage(vec3(0.0), vec3(0.0));
+}
+
+Coverage mixCoverage(Coverage a, Coverage b, float weight) {
+    return Coverage(mix(a.low, b.low, weight), mix(a.high, b.high, weight));
+}
+
+float coverageWeight(Coverage value, int index) {
+    if (index == 0) return value.low.x;
+    if (index == 1) return value.low.y;
+    if (index == 2) return value.low.z;
+    if (index == 3) return value.high.x;
+    if (index == 4) return value.high.y;
+    return value.high.z;
+}
+
+Coverage coverageIdentity(int soil) {
+    return Coverage(vec3(equal(ivec3(0, 1, 2), ivec3(soil))), vec3(equal(ivec3(3, 4, 5), ivec3(soil))));
+}
+
+float coverageTotal(Coverage value) {
+    return dot(value.low + value.high, vec3(1.0));
+}
+
+vec2 cardinalKernel(float value) {
+    float x = abs(value), direction = sign(value);
+    if (x < 1.0) return vec2(1.0 - 2.5 * x * x + 1.5 * x * x * x, direction * (-5.0 * x + 4.5 * x * x));
+    if (x < 2.0) return vec2(2.0 - 4.0 * x + 2.5 * x * x - 0.5 * x * x * x, direction * (-4.0 + 5.0 * x - 1.5 * x * x));
+    return vec2(0.0);
+}
+
+float coverageSpline(float value) {
+    float x = abs(value);
+    if (x < 1.0) return 2.0 / 3.0 - x * x + 0.5 * x * x * x;
+    if (x < 2.0) return pow(2.0 - x, 3.0) / 6.0;
+    return 0.0;
+}
+
+float coverageSplineIntegral(float value) {
+    float x = abs(value), result;
+    if (x >= 2.0) result = 0.5;
+    else if (x >= 1.0) result = 0.5 - pow(2.0 - x, 4.0) / 24.0;
+    else result = 2.0 * x / 3.0 - x * x * x / 3.0 + x * x * x * x / 8.0;
+    return 0.5 + sign(value) * result;
+}
+
+float integratedCoverageSpline(float value, float halfWidth) {
+    if (halfWidth < 0.01) return coverageSpline(value);
+    return max(0.0, (coverageSplineIntegral(value + halfWidth) - coverageSplineIntegral(value - halfWidth)) / (2.0 * halfWidth));
+}
+
+float coverageRampIntegral(float value) {
+    if (value <= 0.0) return 0.0;
+    if (value >= 1.0) return value - 0.5;
+    return value * value * value - 0.5 * value * value * value * value;
+}
+
+float coverageRampDoubleIntegral(float value) {
+    if (value <= 0.0) return 0.0;
+    if (value >= 1.0) return 0.5 * value * value - 0.5 * value + 0.15;
+    float fourth = value * value * value * value;
+    return fourth / 4.0 - fourth * value / 10.0;
+}
+
+float coverageRampAverage(float center, vec2 projected) {
+    float a = max(projected.x, projected.y), b = min(projected.x, projected.y), halfWidth = (a + b) * 0.5;
+    if (center + halfWidth <= 0.0) return 0.0;
+    if (center - halfWidth >= 1.0) return 1.0;
+    if (a < uCoverageFilter.w) return smoothstep(0.0, 1.0, center);
+    if (b < uCoverageFilter.w || b < a * 0.01) return clamp((coverageRampIntegral(center + a * 0.5) - coverageRampIntegral(center - a * 0.5)) / a, 0.0, 1.0);
+    return clamp((coverageRampDoubleIntegral(center + halfWidth) - coverageRampDoubleIntegral(center + (a - b) * 0.5)
+        - coverageRampDoubleIntegral(center + (b - a) * 0.5) + coverageRampDoubleIntegral(center - halfWidth)) / (a * b), 0.0, 1.0);
+}
+
+Coverage fittedContourCoverage(int slot, vec2 grid, vec2 spacing, vec2 dx, vec2 dy, Coverage base) {
     ivec2 cell = min(ivec2(floor(grid)), ivec2(uMaskDimensions) - 2);
-    vec2 fraction = smoothstep(vec2(0.0), vec2(1.0), grid - vec2(cell));
-    ivec4 ids = ivec4(displaySoil(slot, cell), displaySoil(slot, cell + ivec2(1, 0)), displaySoil(slot, cell + ivec2(0, 1)), displaySoil(slot, cell + ivec2(1, 1)));
-    if (ids.x == ids.y && ids.x == ids.z && ids.x == ids.w) return soilSurface(ids.x, world, worldDx, worldDy, normal);
+    vec2 fraction = grid - vec2(cell);
+    ivec2 origin = cell + ivec2(int(uCoverageSettings.w));
+    ivec4 first = ivec4(floor(texelFetch(uMaskPages, ivec3(origin, slot), 0) * 255.0 + 0.5));
+    ivec4 second = ivec4(floor(texelFetch(uMaskPages, ivec3(origin + ivec2(1, 0), slot), 0) * 255.0 + 0.5));
+    ivec4 third = ivec4(floor(texelFetch(uMaskPages, ivec3(origin + ivec2(0, 1), slot), 0) * 255.0 + 0.5));
+    ivec4 fourth = ivec4(floor(texelFetch(uMaskPages, ivec3(origin + ivec2(1, 1), slot), 0) * 255.0 + 0.5));
+    ivec4 pairs = ivec4(first.w, second.w, third.w, fourth.w) / 16;
+    Coverage result = base;
+    if (!all(equal(pairs, ivec4(15)))) {
+    vec4 distances = (vec4(first.z + (first.w % 16) * 256, second.z + (second.w % 16) * 256,
+        third.z + (third.w % 16) * 256, fourth.z + (fourth.w % 16) * 256) / 4095.0 * 2.0 - 1.0) * uContourDistanceRange * max(spacing.x, spacing.y);
     vec4 weights = vec4((1.0 - fraction.x) * (1.0 - fraction.y), fraction.x * (1.0 - fraction.y), (1.0 - fraction.x) * fraction.y, fraction.x * fraction.y);
-    SoilSurface result = SoilSurface(vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    for (int soil = 0; soil < 6; soil++) {
-        float weight = 0.0;
-        for (int corner = 0; corner < 4; corner++) if (ids[corner] == soil) weight += weights[corner];
-        if (weight <= 0.0) continue;
-        SoilSurface part = soilSurface(soil, world, worldDx, worldDy, normal);
-        result.albedo += part.albedo * weight;
-        result.normal += part.normal * weight;
-        result.roughness += part.roughness * weight;
-        result.metalness += part.metalness * weight;
-        result.ao += part.ao * weight;
+    vec4 gradientX = vec4(fraction.y - 1.0, 1.0 - fraction.y, -fraction.y, fraction.y) / spacing.x;
+    vec4 gradientZ = vec4(1.0 - fraction.x, fraction.x, fraction.x - 1.0, -fraction.x) / spacing.y;
+    Coverage fitted = emptyCoverage();
+    float confidenceTotal = 0.0;
+    for (int pair = 0; pair < 15; pair++) {
+        vec4 selected = vec4(equal(pairs, ivec4(pair)));
+        float confidence = dot(selected, weights);
+        if (confidence <= 0.0) continue;
+        float distance = dot(selected * weights, distances) / confidence;
+        vec2 gradient = vec2(dot(selected * gradientX, distances) - distance * dot(selected, gradientX),
+            dot(selected * gradientZ, distances) - distance * dot(selected, gradientZ)) / confidence;
+        float high = coverageRampAverage(0.5 + distance / uCoverageSettings.x, abs(vec2(dot(gradient, dx), dot(gradient, dy))) / uCoverageSettings.x);
+        int lowSoil = pair < 5 ? 0 : pair < 9 ? 1 : pair < 12 ? 2 : pair < 14 ? 3 : 4;
+        int start = lowSoil == 0 ? 0 : lowSoil == 1 ? 5 : lowSoil == 2 ? 9 : lowSoil == 3 ? 12 : 14;
+        int highSoil = pair - start + lowSoil + 1;
+        Coverage response = mixCoverage(coverageIdentity(lowSoil), coverageIdentity(highSoil), high);
+        fitted.low += response.low * confidence; fitted.high += response.high * confidence;
+        confidenceTotal += confidence;
     }
-    result.normal = normalize(result.normal);
+    result = Coverage(base.low * (1.0 - confidenceTotal) + fitted.low, base.high * (1.0 - confidenceTotal) + fitted.high);
+    }
     return result;
 }
 
-SoilSurface transitioningMask(int slot, vec2 world, vec2 dx, vec2 dy, vec3 normal) {
-    SoilSurface surface = maskSurface(slot, world, dx, dy, normal);
-    if (uMaskMeta[slot].y < 1.0) surface = mixSurface(maskSurface(int(uMaskMeta[slot].z), world, dx, dy, normal), surface, uMaskMeta[slot].y);
-    return surface;
+Coverage maskCoverage(int slot, vec2 world, vec2 dx, vec2 dy) {
+    vec4 bounds = uMaskBounds[slot];
+    vec2 spacing = vec2(bounds.y - bounds.x, bounds.w - bounds.z) / (uMaskDimensions - 1.0);
+    vec2 grid = clamp(vec2(world.x - bounds.x, bounds.w - world.y) / spacing, vec2(0.0), uMaskDimensions - 1.0);
+    ivec2 cell = ivec2(floor(grid));
+    ivec4 anchor = ivec4(floor(texelFetch(uMaskPages, ivec3(cell + ivec2(int(uCoverageSettings.w)), slot), 0) * 255.0 + 0.5));
+    Coverage near = coverageIdentity(anchor.x / 16);
+    if (anchor.z != 1 || anchor.w != 240) {
+    vec2 extent = (abs(dx) + abs(dy)) / spacing;
+    float minification = smoothstep(uCoverageSettings.y, uCoverageSettings.z, max(extent.x, extent.y));
+    vec2 halfWidth = min(vec2(1.0), extent * 0.5);
+    Coverage raw = Coverage(vec3(0.0), vec3(0.0));
+    Coverage filtered = Coverage(vec3(0.0), vec3(0.0));
+    near = Coverage(vec3(0.0), vec3(0.0));
+    Coverage gradientX = Coverage(vec3(0.0), vec3(0.0));
+    Coverage gradientZ = Coverage(vec3(0.0), vec3(0.0));
+    int uniformSoil = -1;
+    bool uniformSupport = true;
+    for (int row = -2; row <= 3; row++) {
+        float offsetZ = grid.y - float(cell.y + row);
+        vec2 kz = cardinalKernel(offsetZ);
+        float fz = minification > 0.0 ? integratedCoverageSpline(offsetZ, halfWidth.y) : 0.0;
+        for (int column = -2; column <= 3; column++) {
+            float offsetX = grid.x - float(cell.x + column);
+            vec2 kx = cardinalKernel(offsetX);
+            float fx = minification > 0.0 ? integratedCoverageSpline(offsetX, halfWidth.x) : 0.0;
+            if (kx.x * kz.x == 0.0 && fx * fz == 0.0 && kx.y * kz.x == 0.0 && kx.x * kz.y == 0.0) continue;
+            int soil = displaySoil(slot, cell + ivec2(column, row));
+            if (uniformSoil < 0) uniformSoil = soil;
+            else if (soil != uniformSoil) uniformSupport = false;
+            Coverage identity = coverageIdentity(soil);
+            raw.low += identity.low * kx.x * kz.x; raw.high += identity.high * kx.x * kz.x;
+            gradientX.low += identity.low * kx.y * kz.x / spacing.x; gradientX.high += identity.high * kx.y * kz.x / spacing.x;
+            gradientZ.low -= identity.low * kx.x * kz.y / spacing.y; gradientZ.high -= identity.high * kx.x * kz.y / spacing.y;
+            filtered.low += identity.low * fx * fz; filtered.high += identity.high * fx * fz;
+        }
+    }
+    if (uniformSupport) near = coverageIdentity(uniformSoil);
+    else {
+    vec3 lowFraction = clamp(raw.low / uCoveragePositiveClamp, 0.0, 1.0), highFraction = clamp(raw.high / uCoveragePositiveClamp, 0.0, 1.0);
+    raw.low = max(raw.low, vec3(0.0)) * lowFraction * (2.0 - lowFraction);
+    raw.high = max(raw.high, vec3(0.0)) * highFraction * (2.0 - highFraction);
+    gradientX.low *= 4.0 * lowFraction - 3.0 * lowFraction * lowFraction;
+    gradientZ.low *= 4.0 * lowFraction - 3.0 * lowFraction * lowFraction;
+    gradientX.high *= 4.0 * highFraction - 3.0 * highFraction * highFraction;
+    gradientZ.high *= 4.0 * highFraction - 3.0 * highFraction * highFraction;
+    float total = coverageTotal(raw), totalX = coverageTotal(gradientX), totalZ = coverageTotal(gradientZ);
+    gradientX.low = (gradientX.low * total - raw.low * totalX) / (total * total);
+    gradientX.high = (gradientX.high * total - raw.high * totalX) / (total * total);
+    gradientZ.low = (gradientZ.low * total - raw.low * totalZ) / (total * total);
+    gradientZ.high = (gradientZ.high * total - raw.high * totalZ) / (total * total);
+    raw.low /= total; raw.high /= total;
+    float gradientScale = 0.00001;
+    vec2 maximumProjection = vec2(0.0);
+    for (int i = 0; i < 6; i++) for (int j = 0; j < i; j++) {
+        vec2 difference = vec2(coverageWeight(gradientX, i) - coverageWeight(gradientX, j), coverageWeight(gradientZ, i) - coverageWeight(gradientZ, j));
+        gradientScale = max(gradientScale, length(difference));
+        maximumProjection = max(maximumProjection, abs(vec2(dot(difference, dx), dot(difference, dy))));
+    }
+    vec2 projected = maximumProjection / (gradientScale * uCoverageSettings.x);
+    for (int i = 0; i < 6; i++) {
+        float competitor = 0.0;
+        for (int j = 0; j < 6; j++) if (j != i) competitor = max(competitor, coverageWeight(raw, j));
+        float weight = coverageWeight(raw, i), margin = (weight - competitor) / gradientScale;
+        Coverage identity = coverageIdentity(i);
+        float contribution = weight * coverageRampAverage(0.5 + margin / uCoverageSettings.x, projected);
+        near.low += identity.low * contribution; near.high += identity.high * contribution;
+    }
+    float nearTotal = coverageTotal(near);
+    near.low /= nearTotal; near.high /= nearTotal;
+    if (minification < 1.0) near = fittedContourCoverage(slot, grid, spacing, dx, dy, near);
+    if (minification > 0.0) {
+        float filteredTotal = coverageTotal(filtered);
+        filtered.low /= filteredTotal; filtered.high /= filteredTotal;
+        near = mixCoverage(near, filtered, minification);
+    }
+    }
+    }
+    return near;
+}
+
+Coverage filteredMaskCoverage(int slot, vec2 world, vec2 dx, vec2 dy) {
+    int current = slot;
+    float coarser = 0.0;
+    for (int depth = 0; depth < 17; depth++) {
+        vec4 bounds = uMaskBounds[current];
+        vec2 spacing = vec2(bounds.y - bounds.x, bounds.w - bounds.z) / (uMaskDimensions - 1.0);
+        vec2 extent = (abs(dx) + abs(dy)) / spacing;
+        int parent = int(uMaskMeta[current].z);
+        coarser = parent == current ? 0.0 : smoothstep(uCoverageFilter.x, uCoverageFilter.y, max(extent.x, extent.y));
+        if (coarser < 1.0) break;
+        current = parent;
+    }
+    Coverage result = maskCoverage(current, world, dx, dy);
+    if (coarser > 0.0) result = mixCoverage(result, maskCoverage(int(uMaskMeta[current].z), world, dx, dy), coarser);
+    return result;
+}
+
+float coverageNeighborProgress(int slot, int index) {
+    float result = uMaskNeighbors1[slot].w;
+    if (index == 0) result = uMaskNeighbors0[slot].x;
+    else if (index == 1) result = uMaskNeighbors0[slot].y;
+    else if (index == 2) result = uMaskNeighbors0[slot].z;
+    else if (index == 3) result = uMaskNeighbors0[slot].w;
+    else if (index == 4) result = uMaskNeighbors1[slot].x;
+    else if (index == 5) result = uMaskNeighbors1[slot].y;
+    else if (index == 6) result = uMaskNeighbors1[slot].z;
+    return result;
+}
+
+float coverageAvailability(int slot, vec2 world) {
+    int parent = int(uMaskMeta[slot].z);
+    if (slot == parent) return 1.0;
+    vec4 bounds = uMaskBounds[slot];
+    vec4 parentBounds = uMaskBounds[parent];
+    vec2 size = vec2(bounds.y - bounds.x, bounds.w - bounds.z);
+    vec2 parentSpacing = vec2(parentBounds.y - parentBounds.x, parentBounds.w - parentBounds.z) / (uMaskDimensions - 1.0);
+    float band = min(min(size.x, size.y), 2.0 * max(parentSpacing.x, parentSpacing.y));
+    float result = uMaskMeta[slot].y;
+    int index = 0;
+    for (int row = -1; row <= 1; row++) for (int column = -1; column <= 1; column++) {
+        if (row == 0 && column == 0) continue;
+        vec2 offset = vec2(float(column) * size.x, -float(row) * size.y);
+        vec2 low = vec2(bounds.x, bounds.z) + offset, high = vec2(bounds.y, bounds.w) + offset;
+        float distance = length(max(max(low - world, world - high), vec2(0.0)));
+        if (distance < band) {
+            float progress = coverageNeighborProgress(slot, index);
+            result = min(result, mix(progress, 1.0, smoothstep(0.0, band, distance)));
+        }
+        index++;
+    }
+    return result;
 }
 
 SoilSurface appearanceSurface(vec2 world, vec2 dx, vec2 dy, vec3 normal) {
-    int slot = maskAt(world);
-    SoilSurface surface = transitioningMask(slot, world, dx, dy, normal);
-    vec4 bounds = uMaskBounds[slot];
-    vec4 distances = vec4(world.x - bounds.x, bounds.y - world.x, world.y - bounds.z, bounds.w - world.y);
-    float width = 2.0 * (bounds.y - bounds.x) / (uMaskDimensions.x - 1.0);
-    for (int edge = 0; edge < 4; edge++) {
-        if (distances[edge] >= width) continue;
-        vec2 across = world;
-        if (edge == 0) across.x = bounds.x - 0.01;
-        else if (edge == 1) across.x = bounds.y + 0.01;
-        else if (edge == 2) across.y = bounds.z - 0.01;
-        else across.y = bounds.w + 0.01;
-        int neighbor = maskAt(across);
-        float neighborLevel = uMaskMeta[neighbor].x;
-        if (neighborLevel < uMaskMeta[slot].x) {
-            int ancestor = slot;
-            for (int depth = 0; depth < 4; depth++) if (uMaskMeta[ancestor].x > neighborLevel) ancestor = int(uMaskMeta[ancestor].z);
-            SoilSurface coarse = maskSurface(ancestor, world, dx, dy, normal);
-            if (uMaskMeta[neighbor].y < 1.0) coarse = mixSurface(maskSurface(int(uMaskMeta[ancestor].z), world, dx, dy, normal), coarse, uMaskMeta[neighbor].y);
-            surface = mixSurface(coarse, surface, smoothstep(0.0, width, distances[edge]));
-        } else if (neighborLevel == uMaskMeta[slot].x && uMaskMeta[neighbor].y < uMaskMeta[slot].y) {
-            SoilSurface coarse = maskSurface(int(uMaskMeta[slot].z), world, dx, dy, normal);
-            surface = mixSurface(coarse, surface, mix(uMaskMeta[neighbor].y / max(0.001, uMaskMeta[slot].y), 1.0, smoothstep(0.0, width, distances[edge])));
+    int current = maskAt(world);
+    Coverage coverage = emptyCoverage();
+    float remaining = 1.0;
+    for (int depth = 0; depth < 17; depth++) {
+        float activation = coverageAvailability(current, world);
+        if (activation > 0.0) {
+            Coverage part = filteredMaskCoverage(current, world, dx, dy);
+            coverage.low += part.low * remaining * activation;
+            coverage.high += part.high * remaining * activation;
         }
+        remaining *= 1.0 - activation;
+        if (remaining <= 0.0) break;
+        current = int(uMaskMeta[current].z);
     }
+    SoilSurface surface = SoilSurface(vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    for (int soil = 0; soil < 6; soil++) {
+        float weight = coverageWeight(coverage, soil);
+        if (weight <= 0.0) continue;
+        SoilSurface part = soilSurface(soil, world, dx, dy, normal);
+        surface.albedo += part.albedo * weight;
+        surface.normal += part.normal * weight;
+        surface.roughness += part.roughness * weight;
+        surface.metalness += part.metalness * weight;
+        surface.ao += part.ao * weight;
+    }
+    surface.normal = normalize(surface.normal);
     return surface;
 }
 

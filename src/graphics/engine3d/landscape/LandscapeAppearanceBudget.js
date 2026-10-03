@@ -18,6 +18,7 @@ export class LandscapeAppearanceBudget {
         this.entries = new Map();
         const limits = shared.snapshot().limits;
         this.floor = { cpuBytes: Math.floor(Math.min(12 * MIB, limits.cpuBytes * 3 / 32)), gpuBytes: Math.floor(Math.min(8 * MIB, limits.gpuBytes / 8)) };
+        this.baseFloor = { ...this.floor };
         this.limits = { cpuBytes: Math.floor(Math.min(40 * MIB, limits.cpuBytes / 2)), gpuBytes: Math.floor(Math.min(28 * MIB, limits.gpuBytes / 2)) };
         this.key = `${prefix}/appearance-headroom`;
         const admission = shared.reserve(this.key, { ...this.floor, kind: 'appearance-unused-reservation', pinned: true });
@@ -31,6 +32,18 @@ export class LandscapeAppearanceBudget {
     }
 
     credit(totals) { return { cpuBytes: Math.max(0, this.floor.cpuBytes - totals.cpuBytes), gpuBytes: Math.max(0, this.floor.gpuBytes - totals.gpuBytes) }; }
+
+    /** @param {{cpuBytes:number,gpuBytes:number}} demand */
+    protectDemand(demand) {
+        if (!['cpuBytes', 'gpuBytes'].every(key => Number.isSafeInteger(demand[key]) && demand[key] >= 0)) throw new Error('Appearance demand must contain nonnegative byte counts');
+        const next = Object.fromEntries(['cpuBytes', 'gpuBytes'].map(key => [key, Math.max(this.baseFloor[key], Math.min(this.limits[key], demand[key]))]));
+        const previous = this.floor;
+        this.floor = next;
+        const admission = this.shared.update(this.key, this.credit(this.totals()));
+        if (!admission.admitted) this.floor = previous;
+        this.demand = { requested: { ...demand }, protected: { ...this.floor }, admitted: admission.admitted, reason: admission.reason };
+        return admission;
+    }
 
     /** @param {string} key @param {{cpuBytes:number,gpuBytes:number,kind:string}} resources */
     reserve(key, resources) {
@@ -69,7 +82,7 @@ export class LandscapeAppearanceBudget {
         return true;
     }
 
-    snapshot() { return { ...this.totals(), reserved: this.credit(this.totals()), limits: this.limits, peakCpuBytes: this.peakCpuBytes, peakGpuBytes: this.peakGpuBytes }; }
+    snapshot() { return { ...this.totals(), reserved: this.credit(this.totals()), demand: this.demand ?? null, limits: this.limits, peakCpuBytes: this.peakCpuBytes, peakGpuBytes: this.peakGpuBytes }; }
 
     dispose() {
         for (const key of [...this.entries.keys()]) if (!this.release(key)) throw new Error(`Appearance resource still leased at disposal: ${key}`);

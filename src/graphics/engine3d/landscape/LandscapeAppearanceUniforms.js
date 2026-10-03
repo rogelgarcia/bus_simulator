@@ -1,18 +1,27 @@
 // Declares the shared landscape appearance shader interface.
 // @ts-check
 import * as THREE from 'three';
+import { LANDSCAPE_SURFACE_COVERAGE } from './LandscapeSurfaceCoverage.js';
+import { LANDSCAPE_CONTOUR_COVERAGE } from './LandscapeContourCoverage.js';
 
 export const LANDSCAPE_MASK_SLOTS = 17;
 export const LANDSCAPE_SOIL_SLOTS = 6;
 
 /** @returns {any} */
 export function createLandscapeAppearanceUniforms() {
+    const coverage = LANDSCAPE_SURFACE_COVERAGE;
     const uniforms = {
         uAppearanceReady: { value: 0 },
         uMaskPages: { value: null },
         uMaskDimensions: { value: new THREE.Vector2(257, 257) },
+        uCoverageSettings: { value: new THREE.Vector4(coverage.blendWidthMeters, coverage.minificationStartCells, coverage.minificationEndCells, coverage.haloSamples) },
+        uCoverageFilter: { value: new THREE.Vector4(coverage.ancestorFilterStartCells, coverage.ancestorFilterEndCells, coverage.maximumFilterWidthCells, coverage.projectionDegenerateWidth) },
+        uCoveragePositiveClamp: { value: coverage.positiveClampWidth },
+        uContourDistanceRange: { value: LANDSCAPE_CONTOUR_COVERAGE.distanceRangeSamples },
         uMaskBounds: { value: Array.from({ length: LANDSCAPE_MASK_SLOTS }, () => new THREE.Vector4()) },
         uMaskMeta: { value: Array.from({ length: LANDSCAPE_MASK_SLOTS }, () => new THREE.Vector4(-1, 0, 0, 0)) },
+        uMaskNeighbors0: { value: Array.from({ length: LANDSCAPE_MASK_SLOTS }, () => new THREE.Vector4()) },
+        uMaskNeighbors1: { value: Array.from({ length: LANDSCAPE_MASK_SLOTS }, () => new THREE.Vector4()) },
         uSoilScale: { value: Array.from({ length: LANDSCAPE_SOIL_SLOTS }, () => new THREE.Vector4(4, 1, 1, 0)) },
         uSoilTiling: { value: Array.from({ length: LANDSCAPE_SOIL_SLOTS }, () => new THREE.Vector4(4, 16, 4 / 128, 4 / 16)) },
         uSoilAlbedo: { value: Array.from({ length: LANDSCAPE_SOIL_SLOTS }, () => new THREE.Vector4(1, 0, 0, 0)) },

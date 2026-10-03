@@ -37,13 +37,19 @@ with at most one appearance job running. No image decoder or soil-region scan
 runs in the render loop. The original full-resolution PBR imagery is not fetched.
 
 Cover masks load their own `landCover` channel without a height request. Each
-257 by 257 page is interleaved as a packed soil byte and original cover ID.
+257 by 257 source page produces a 261 by 261 RGBA8 display page with a two-sample
+stored halo. R is a packed soil byte and G is the original cover ID.
 The low four soil bits identify the semantic soil; the high four identify the
 display soil. Both use validated catalog order; the current shader supports six
-bindings. A GPU RG8 texture array
+bindings. B/A hold a derived contour pair and quantized signed distance; invalid
+pair payload `0xf001` marks an exactly uniform 6 by 6 kernel neighborhood so the
+shader can return its one-hot soil directly. Other invalid fits use `0xf000`.
+The source-byte channels remain exact. A GPU RGBA8 texture array
 uses nearest filtering, no mipmaps, no color-space conversion and exact texel
-centers. Original cover bytes remain unchanged. Each record includes landscape
-revision, spatial ID, channel hash and the instance identity, so soil overrides
+centers. Original cover bytes remain unchanged. Canonical same-level cover
+neighbors provide a six-sample worker halo for the bounded contour fit; the
+worker authenticates and reads them serially. Each record includes landscape
+revision, spatial ID, halo source IDs, channel hash and the instance identity, so soil overrides
 invalidate rasterized masks even when source cover payload hashes are unchanged.
 
 Material resources contain one sRGB base-color `DataTexture` and a two-layer,
@@ -99,24 +105,26 @@ The surface uses a GGX sun response and hemisphere ambient illumination. It does
 not introduce terrain displacement, extra measured elevation, an environment
 bake or gameplay lighting integration.
 
-Within a mask cell, the shader fetches four discrete display IDs and builds
-smoothstep corner weights. Equal IDs are coalesced before sampling a material;
-a uniform cell takes the single-material path. Albedo, roughness, metalness and
-AO responses blend by those weights, with normalized world-space normals.
+AI577 D1 reconstructs normalized material coverage independently from geometry.
+An interpolating cubic one-hot field preserves narrow source features; a bounded
+worker contour fit removes longer digitized steps only when one two-material
+separator still classifies every sample in its 9 by 9 neighborhood. Other regions
+retain the cubic field. The approximate material transition is 0.75 world meters,
+with local analytic antialiasing and a bounded positive minification filter.
 Category IDs are never linearly filtered or treated as numerical blend values.
-The transition spans one source mask cell, so it is narrower at finer mask LOD.
-Identical border IDs and world coordinates make equal-level boundaries continuous;
-the existing ancestor transition handles differing mask levels.
+The recipe, packed contour format, canonical halos and precise filtering limits
+are specified in [Continuous surface coverage](LANDSCAPE_SURFACE_COVERAGE.md).
 
-New mask pages blend their visual material response from their resident parent
-over 0.3 seconds. IDs themselves are never interpolated. Coarsening reverses the
-fade and removes children before their parent. At mixed mask boundaries a
-two-texel band approaches the resident coarser ancestor; active neighbor fades
-also participate in the boundary weight. Equal-level masks use shared canonical
-border samples and shared world UVs. Geometry normals continue to use the D3
-common-border gradient policy. Material tier changes blend the old and new PBR
-responses for 0.3 seconds; only one such transition runs at a time. The old tier
-is released after the replacement is ready and the transition completes.
+New mask pages blend coverage weights from their resident parent over 0.3 seconds.
+Coarsening reverses the fade and removes children before their parent. A common
+per-level availability field uses neighboring tile progress, including diagonals,
+to approach the same ancestor at mixed-LOD edges and corners. Its world band is
+twice the parent sample spacing, capped at one tile width. Coverage is combined
+before shading so each contributing PBR soil is sampled once. Albedo, roughness,
+metalness and AO blend by normalized weights; the final world normal is normalized.
+Geometry normals continue to use the D3 common-border gradient policy. Material
+tier changes still blend old/new PBR responses for 0.3 seconds, one transition at
+a time, releasing the old tier only after replacement is ready and the fade ends.
 
 ## Natural presentation and imported reference data
 
@@ -154,8 +162,15 @@ buffers**. Geometry, native queries, appearance and the water reference use the
 same ledger. Appearance protects a small default allowance of 12 MiB CPU / 8 MiB
 GPU before geometry begins view refinement. Real appearance resources replace
 that credit; the unused part is separately labeled `appearance-unused-reservation`.
-Detail can borrow spare shared capacity, up to appearance ceilings of 40 MiB CPU
-and 28 MiB GPU. These ceilings are not additional memory above the shared limit.
+Before geometry admission each frame, appearance estimates the materials needed
+by visible interests at their planned tiers and protects that bounded demand in
+the same ledger. Actual resources replace this credit; delayed halo reads cannot
+let geometry consume a material's planned capacity merely by finishing first.
+The provisional source-soil set is cached once during initialization, and the
+plan/reservation work remains included in appearance frame timing. Demand credit
+shrinks promptly when the plan shrinks and disappears at disposal. Its lower bound
+is the base allowance above; its upper bounds remain the appearance ceilings of
+40 MiB CPU and 28 MiB GPU. These ceilings are not additional memory above the shared limit.
 
 For smaller profiles, the protected CPU/GPU allowances are respectively
 `min(12 MiB, totalCPU * 3/32)` and `min(8 MiB, totalGPU / 8)`. Appearance ceilings
@@ -163,14 +178,24 @@ are bounded by half the corresponding total budget. A 16/8 MiB test profile
 therefore protects 1.5/1 MiB and uses five mask slots. An appearance failure frees
 its allocations and allowance and leaves the valid terrain palette available.
 A profile too small for the terrain root still rejects minimum coverage.
+Protected demand uses only an attainable material composition within those
+appearance ceilings, in material-interest priority order. It includes fixed
+mask/context storage, every coarse fallback and one peak decode allowance.
+For the 16/8 MiB profile, unattainable 512-pixel pages do not pin speculative CPU
+credit needed by independent authoritative source leases; attainable 128-pixel
+pages still receive their bounded allowance. Full-profile demands that fit retain
+the same protected byte totals.
 
-An allocated 17-slot RG8 array is 2,245,666 bytes on CPU and GPU; a five-slot array
-is 660,490 bytes on each. Empty slots are reserved capacity, not claimed as
+An allocated 17-slot padded RGBA8 array is 4,632,228 bytes on CPU and GPU; a five-slot array
+is 1,362,420 bytes on each. Empty slots are reserved capacity, not claimed as
 resident source pages. A decoded material tier has `resolution² * 12` CPU bytes.
 GPU accounting sums every mip of all three RGBA maps: one 512-pixel material is
 4,194,300 bytes including mips. Decode admissions reserve twice the material's
-raw bytes for worker, fetch/hash and assembly overlap. Mask decode reserves six
-bytes per sample before work starts; after upload only the shared array remains.
+raw bytes for worker, fetch/hash and assembly overlap. Coastal mask decode reserves
+945,598 bytes: padded RGBA output, a temporary 269² RG source neighborhood, and
+eight bytes per original sample for serial fetch/hash/decode and transfer overlap.
+The contour fitter allocates no additional typed-array scratch. After upload only
+the shared array remains.
 
 Each worker's natural reference retains one 66,049-byte label array and builds
 it with a temporary 264,196-byte `Uint32Array` queue. Its 330,245-byte allowance
@@ -178,8 +203,8 @@ stays reserved so terminated workers can be reconstructed safely. The two mesh
 workers already have accounted copies of the overview channels. Their context
 reservation adds two such allowances. The appearance worker additionally owns
 one 66,049-byte overview cover copy and reserves 396,294 bytes for that copy plus
-infill construction. Combined additional natural-presentation reservations are
-1,056,784 CPU bytes, including scratch; the packed masks add no GPU allocation.
+infill construction. Combined natural-presentation worker reservations remain
+1,056,784 CPU bytes, including scratch; contour/mask storage is counted separately above.
 All context allowances are released only after their worker pool is disposed.
 
 The geometry adapter uploads first. Appearance receives only the remainder of
@@ -213,6 +238,13 @@ texel and reports semantic `soilId`, inferred/overridden `displaySoilId`, unchan
 `coverId`, spatial mask ID, level, spacing and revision. `appearance.presentation`
 identifies the root-infill policy and reference spacing, while `materialTiling`
 reports the calibrated near/macro periods and footprint thresholds.
+`coverageSample(x,z,{dx,dy})` reports the continuous resident-page weights, raw
+cubic weights, fitted-pair confidence and world footprint before hierarchy fades.
+It does not replace categorical inspection or claim to reproduce another page's
+ancestor/arrival blend. `appearance.coverage` exposes the versioned recipe,
+ordered soil/material bindings, world units, revision, native/infill source
+spacings, root policy/hash, halo dependencies and exact controlled storage costs.
+`demandReservation` distinguishes planned protected credit from actual resources.
 It is an appearance inspection value; authoritative editing still uses native
 terrain queries. `setWater(boolean)` and `snapshot().water` expose the separate
 reference surface for deterministic verification.

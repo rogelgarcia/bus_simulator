@@ -1,0 +1,9 @@
+/* Native-resolution side-by-side landscape capture labels. */
+html, body { margin: 0; padding: 0; width: 3840px; height: 1176px; overflow: hidden; background: #101b25; color: #e5eff4; font-family: Arial, sans-serif; }
+main { display: grid; grid-template-columns: 1920px 1920px; }
+section { width: 1920px; }
+header { box-sizing: border-box; height: 96px; padding: 12px 24px; }
+header div { float: right; margin-top: 4px; padding: 8px 14px; border: 1px solid #779b93; border-radius: 4px; color: #c6e8dc; font-size: 20px; font-weight: 700; letter-spacing: 1px; }
+h1 { margin: 0 0 7px; font-size: 30px; font-weight: 600; }
+p { margin: 0; color: #afc3d0; font-size: 17px; }
+img { display: block; width: 1920px; height: 1080px; }

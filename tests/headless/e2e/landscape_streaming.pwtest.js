@@ -1,4 +1,5 @@
 // Verifies real camera/zoom-driven requests, budget fallback, independent leases and teardown.
+// Pending native-build lifetime fixtures omit optional appearance so its residency cannot consume geometry staging capacity.
 import { test, expect } from '@playwright/test';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -21,6 +22,11 @@ async function open(page) {
     const state = await snapshot(page);
     expect(state.lastError).toBeNull();
     expect(state.ready).toBe(true);
+}
+
+async function openGeometryOnly(page) {
+    await page.route('**/coastal-city/appearance/manifest.json', route => route.fulfill({ status: 404, contentType: 'text/plain', body: 'Optional appearance excluded from geometry lifetime fixture' }));
+    await open(page);
 }
 
 async function settle(page) {
@@ -201,7 +207,7 @@ test('Landscape D3: corrupt detail and rapid reversal keep covering terrain with
 
 test('Landscape D3: camera owns pending native children after a shared query releases them', async ({ page }) => {
     test.setTimeout(60000);
-    await open(page);
+    await openGeometryOnly(page);
     await page.evaluate(view => window.__landscapeTestHooks.setCamera(view), nearView);
     await page.waitForFunction(() => {
         const state = window.__landscapeTestHooks.snapshot();
@@ -256,7 +262,7 @@ test('Landscape D3: camera reuses a pending leased build after canceling and rev
             }
         };
     });
-    await open(page);
+    await openGeometryOnly(page);
     const child = manifest.chunks.find(chunk => chunk.parentId === detailedTile.id);
     let releaseResponse;
     const responseGate = new Promise(resolve => { releaseResponse = resolve; });

@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createLandscapeModelFixture } from '../../node/unit/landscape_model_fixture.js';
 
-const artifacts = path.resolve('tests/artifacts/screens/landscape/ai576/d7/lifecycle');
+const artifacts = path.resolve('tests/artifacts/screens/landscape', process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'ai576/d7', 'lifecycle');
 const snapshot = page => page.evaluate(() => window.__landscapeTestHooks?.snapshot() ?? {});
 
 test('Landscape D7: actual Fabrication menu entry keeps one HUD and correct picking after resize/hide', async ({ page }) => {

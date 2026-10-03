@@ -61,3 +61,19 @@ test('Appearance textures: mip accounting includes every real level and shared m
     assert.equal(landscapeTextureBytes(1), 4);
     assert.throws(() => landscapeTextureBytes(0), /dimensions/);
 });
+
+test('Appearance budget: early view demand protects delayed pages from geometry and drops credit without double counting', () => {
+    const shared = new LandscapeResidencyBudget(), appearance = new LandscapeAppearanceBudget(shared, 'delayed');
+    assert.equal(appearance.protectDemand({ cpuBytes: 28 * MIB, gpuBytes: 25 * MIB }).admitted, true);
+    assert.equal(shared.reserve('geometry-too-fine', { cpuBytes: 50 * MIB, gpuBytes: 40 * MIB, kind: 'geometry' }).admitted, false);
+    assert.equal(shared.reserve('geometry-coarse', { cpuBytes: 30 * MIB, gpuBytes: 35 * MIB, kind: 'geometry' }).admitted, true);
+    assert.equal(appearance.reserve('delayed-materials', { cpuBytes: 24 * MIB, gpuBytes: 24 * MIB, kind: 'material-decode' }).admitted, true);
+    assert.equal(shared.snapshot().gpuBytes, 60 * MIB);
+    assert.deepEqual(appearance.snapshot().reserved, { cpuBytes: 4 * MIB, gpuBytes: MIB });
+    assert.equal(appearance.protectDemand({ cpuBytes: 0, gpuBytes: 0 }).admitted, true);
+    assert.deepEqual(appearance.snapshot().reserved, { cpuBytes: 0, gpuBytes: 0 });
+    appearance.release('delayed-materials');
+    assert.deepEqual(appearance.snapshot().reserved, { cpuBytes: 12 * MIB, gpuBytes: 8 * MIB });
+    appearance.dispose(); shared.release('geometry-coarse');
+    assert.equal(shared.snapshot().cpuBytes, 0); assert.equal(shared.snapshot().gpuBytes, 0);
+});
