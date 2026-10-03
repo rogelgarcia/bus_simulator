@@ -1,6 +1,7 @@
 // Samples the fixed NW-SE height triangulation and creates provisional AI context.
 // @ts-check
 import { landscapeWorldToGrid } from './LandscapeCoordinates.js';
+import { resolveLandscapeSoil } from './LandscapeSoil.js';
 import { clonePlainData, freezeData, requireCondition, requireFinite, requireId } from './internal/LandscapeValidation.js';
 
 /** @param {import('./LandscapeManifest.js').LandscapeManifest} manifest @param {import('./LandscapePayload.js').LandscapeChunk} chunk @param {number} x @param {number} z @returns {object} */
@@ -32,7 +33,7 @@ export function sampleLandscapeChunk(manifest, chunk, x, z) {
     const dz = -dv / spacingZ;
     const normalLength = Math.hypot(dx, 1, dz);
     const landCoverId = chunk.landCover[Math.round(row) * descriptor.columns + Math.round(column)];
-    const soilId = manifest.soil.landCoverMapping.find((entry) => entry.landCoverId === landCoverId)?.soilId;
+    const soilId = resolveLandscapeSoil(manifest, x, z, landCoverId);
     requireCondition(Number.isFinite(height) && !!soilId, 'chunk contains invalid height/land-cover data');
     const provisional = descriptor.sampleStride !== 1;
     return {

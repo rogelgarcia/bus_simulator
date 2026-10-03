@@ -42,7 +42,9 @@ test('Landscape D1: real overview, wireframe, pointing, reload, and teardown', a
     const canvas = await page.locator('#game-canvas').boundingBox();
     await page.mouse.click(canvas.x + canvas.width * .49, canvas.y + canvas.height * .54);
     await expect.poll(() => page.evaluate(() => window.__landscapeTestHooks.snapshot().selection)).not.toBeNull();
+    await expect.poll(() => page.evaluate(() => window.__landscapeTestHooks.snapshot().selection.editingReady)).toBe(true);
     await expect(page.locator('[data-field="handoff"]')).toContainText('saved for AI');
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const selected = await page.evaluate(() => window.__landscapeTestHooks.snapshot());
     expect(selected.selection.position.x).toBeGreaterThan(0);
     expect(selected.selection.position.z).toBeLessThan(4000);
@@ -55,6 +57,7 @@ test('Landscape D1: real overview, wireframe, pointing, reload, and teardown', a
     expect((await page.evaluate(() => window.__landscapeTestHooks.snapshot())).memory.overlayBytes).toBeGreaterThan(0);
     await page.mouse.click(canvas.x + canvas.width * .49, canvas.y + canvas.height * .54);
     await expect.poll(() => page.evaluate(() => window.__landscapeTestHooks.snapshot().selection.selectionId)).not.toBe(selected.selection.selectionId);
+    await expect.poll(() => page.evaluate(() => window.__landscapeTestHooks.snapshot().selection.editingReady)).toBe(true);
     expect((await page.evaluate(() => window.__landscapeTestHooks.snapshot())).selection.position).toEqual(selected.selection.position);
     await page.screenshot({ path: path.join(artifacts, '02-wireframe.png') });
     await page.getByRole('button', { name: 'Shaded + wire', exact: true }).click();
@@ -65,6 +68,7 @@ test('Landscape D1: real overview, wireframe, pointing, reload, and teardown', a
     expect((await page.evaluate(() => window.__landscapeTestHooks.snapshot())).renderer.memory.geometries).toBe(selected.renderer.memory.geometries);
     await page.getByRole('button', { name: 'Reload source', exact: true }).click();
     await expect.poll(() => page.locator('[data-field="status"]').textContent()).toContain('triangles');
+    await expect.poll(() => page.evaluate(() => window.__landscapeTestHooks.snapshot().selection.editingReady)).toBe(true);
     const reloaded = await page.evaluate(() => window.__landscapeTestHooks.snapshot());
     expect(reloaded.camera.position).toEqual(selected.camera.position);
     expect(reloaded.selection.position).toEqual(selected.selection.position);

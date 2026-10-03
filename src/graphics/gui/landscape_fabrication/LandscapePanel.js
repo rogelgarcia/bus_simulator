@@ -18,6 +18,7 @@ export class LandscapePanel {
                 <span class="landscape-eyebrow">INSPECT LOCATION</span>
                 <h2 data-field="selection-title">Point to the terrain</h2>
                 <p data-field="selection">Click a surface to identify its world coordinates and cover type.</p>
+                <label class="landscape-radius">Selection radius (m)<input data-field="radius" type="number" value="25" min="0" max="1000" step="1" aria-label="Selection radius in meters" /><small>0 selects a point. Larger areas are checked against the native-data budget.</small></label>
                 <div class="landscape-selection-actions" data-group="selection"></div>
                 <small data-field="handoff">Selections are view-only. Terrain is unchanged.</small>
             </aside>
@@ -29,7 +30,7 @@ export class LandscapePanel {
             camera: [['camera:home', 'Overview'], ['camera:top', 'Top'], ['camera:ground', 'Beach approach']],
             helpers: [['grid', 'Grid'], ['axes', 'Axes']],
             source: [['reload', 'Reload source']],
-            selection: [['copy', 'Copy context'], ['download', 'Download JSON'], ['clear', 'Clear']]
+            selection: [['focus-selection', 'Focus selection'], ['copy', 'Copy context'], ['download', 'Download JSON'], ['clear', 'Clear']]
         };
         for (const [group, actions] of Object.entries(groups)) {
             const host = this.root.querySelector(`[data-group="${group}"]`);
@@ -43,6 +44,7 @@ export class LandscapePanel {
             }
         }
         document.body.append(this.root);
+        this.root.querySelector('[data-field="radius"]').addEventListener('change', () => onAction('selection:radius'), { signal: this.abort.signal });
         this.active('mode:shaded', true);
         this.active('camera:home', true);
     }

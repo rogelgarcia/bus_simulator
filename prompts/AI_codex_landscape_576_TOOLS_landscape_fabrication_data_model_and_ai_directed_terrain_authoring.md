@@ -38,7 +38,7 @@ Implement D1 through D7 sequentially, one deliverable at a time. Use subagents w
 
 ### D2. First AI editing loop
 
-- [ ] Complete D2 and record its evidence below before marking this item done.
+- [x] Complete D2 and record its evidence below before marking this item done.
 - Add the renderer-independent authoritative query/acquisition contract from section 6, including explicit pending/unavailable/outside/no-data states. Load only the source chunks needed to refine a point or bounded circular/rectangular selection and release them after use.
 - Deliver the smallest useful operations from section 3: raise/lower, set/flatten height, and soil assignment. Implement explicit extents/falloff, deterministic within-batch and between-batch ordering for overlapping edits, revision targeting, duplicate-batch rejection, batch validation/publication, saved source revisions, and last-batch revert.
 - Finish the section 4 handoff loop with exact selection context and regenerated revision-aware context after reload. Rebuild the affected coarse preview when edited; preserve camera and unrelated source data.
@@ -98,6 +98,17 @@ Keep D1-D7 pending until implemented and verified. After each completed delivera
 - Validation: 17 model tests, 6 importer tests, 2 importer/framework integration tests, 13 existing bake-framework tests, 1 handoff-server test, 1 menu-registration test, and 2 browser integration tests passed. Browser checks cover navigation, actual picking in shaded and wireframe, saved context, mode resource release, camera-preserving reload, invalid-update fallback, shared-bar layout, and teardown. A reproduced Three.js wireframe cache retention issue was fixed with owned disposable line resources.
 - Evidence: `tests/artifacts/screens/landscape/ai576/d1/01-overview.png`, `02-wireframe.png`, `03-beach-approach.png`, `verification.json`, and `import-validation.json`. Evidence remains gitignored. Source: `assets/public/landscape/coastal-city/manifest.json`; transient selection: `tests/artifacts/screens/landscape/ai576/selection.latest.json`.
 - D1 limitations are intentional: no persisted terrain edits, native selection acquisition, streaming hierarchy traversal, PBR appearance pages, water surface, or city binding yet. These remain D2-D6. Buffer inventories are not measured total heap/GPU memory or a settled performance benchmark.
+
+#### D2 completed — 2026-10-03
+
+- Added exact native point/circle selection, explicit radius and focus controls, visible extent, native elevation/slope/soil readout, revision-bound AI context, and request cancellation/stale-response protection. Oversized selection remains provisional and cannot be bound into an editable batch.
+- Added renderer-independent circle/rectangle operations for signed raise/lower, flatten/set-height, and hard soil assignment, with explicit falloff and deterministic order. Soil overrides do not replace imported land cover. All affected native shared edges and the coarse overview update together; unrelated chunks retain their identities/payloads.
+- Added `tools/landscape_authoring/` with query, template binding, apply, state, and last-batch revert commands. Immutable payloads and saved manifest snapshots publish through one atomic current-manifest switch. Revert creates a new revision and retains accepted batch IDs to reject replay. The local server uses this same store; no separate editing engine or sculpting UI was introduced.
+- Canonical contract: `specs/landscape/LANDSCAPE_EDITING.md`; updated model/viewer specs and server documentation. Saved example: `tools/landscape_authoring/examples/raise_and_sand.template.json`, bound to an exact selection and a fresh batch ID before application.
+- Verified the real coastal workflow on an isolated retained-data copy: an 80-meter circle at the four-chunk intersection near X/Z 2000 acquired 1,320,980 decoded bytes; a 2-meter raise and sand assignment survived reload and full reopen, then reverted. Camera pose remained unchanged within floating-point precision; original land-cover channels and unrelated chunks stayed identical. Stale/duplicate batches, replay after revert, stale queries, and oversized native requests were rejected.
+- D2 limits: four native chunks, 2 MiB decoded query input, one active native working set per store, 8 MiB tracked edit working buffers, 64 KiB batch input, and 1 MiB manifests. The measured edit reservation was 3,764,793 bytes. These describe tracked buffers, not total process heap. Larger footprints, intermediate-LOD rebuilding, smoothing, and polygon edits remain subsequent deliverables.
+- Validation: 34 domain/model tests, 9 store/CLI tests, 21 importer/bake regression tests, 2 server/menu tests, and 4 browser tests passed. Browser coverage includes exact selection/edit/reopen/revert, visible budget rejection, clear-handoff cleanup, fractional-coordinate precision, and D1 viewer regressions. All verification browser contexts were closed.
+- Evidence: `tests/artifacts/screens/landscape/ai576/d2/01-native-selection.png`, `02-raised-sand-patch.png`, `03-reverted-patch.png`, and `verification.json`; isolated saved revisions remain in that artifact folder. Canonical coastal source assets were not changed by verification.
 
 ## 1. Scope and ownership
 

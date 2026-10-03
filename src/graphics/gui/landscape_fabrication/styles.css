@@ -19,6 +19,8 @@
 .landscape-selection small { display: block; color: #91a5b4; line-height: 1.6; overflow-wrap: anywhere; }
 .landscape-selection-actions { display: flex; flex-wrap: wrap; gap: 3px; pointer-events: auto; margin: 12px -5px; }
 .landscape-selection-actions button { border-color: #7c94a433; font-size: 11px; padding: 6px; }
+.landscape-radius { display: block; pointer-events: auto; color: #afc3cb; font-size: 11px; }
+.landscape-radius input { display: block; box-sizing: border-box; width: 100%; margin: 7px 0; border: 1px solid #71869655; border-radius: 4px; padding: 6px 8px; color: #e8edf2; background: #0b1722; font: inherit; }
 .landscape-legend { position: absolute; left: 24px; bottom: 65px; background: #10202ce6; border: 1px solid #6e8b9444; border-radius: 7px; padding: 11px 14px; color: #c7d3db; white-space: pre-line; line-height: 1.8; font-size: 11px; }
 .landscape-footer { position: absolute; inset: auto 0 0; padding: 12px 24px; display: flex; justify-content: space-between; gap: 18px; background: #101a24f2; border-top: 1px solid #ffffff16; color: #acbec9; font-size: 11px; }
 .landscape-notice { position: absolute; left: 24px; bottom: 150px; max-width: min(680px, calc(100% - 80px)); padding: 14px; border: 1px solid #d89658; border-radius: 7px; color: #ffe2c6; background: #35251aef; }

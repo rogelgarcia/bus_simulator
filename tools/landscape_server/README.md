@@ -11,11 +11,32 @@ while inspecting or testing and close it afterward.
 
 The viewer sends `POST /api/landscape/selection` with its versioned selection JSON.
 The server checks the local manifest identity/revision and finite in-bounds
-coordinates, limits payloads to 32 KiB, and atomically saves the latest context to
+coordinates, limits request bodies to 64 KiB, and atomically saves the latest context to
 `tests/artifacts/screens/landscape/ai576/selection.latest.json`. The AI can read
-that file; `GET /api/landscape/selection` returns the same saved context. No API
-can modify terrain in D1. A selection is a provisional coarse inspection sample,
-not authorization to apply an exact terrain edit.
+that file; `GET /api/landscape/selection` returns the same saved context and
+`DELETE /api/landscape/selection` clears it. A click is provisional until native
+acquisition succeeds. The AI must use context with `editingReady: true` and its
+matching `sourceRevision`.
+
+D2 adds the shared persistent authoring store, also available through
+`tools/landscape_authoring/run.mjs`:
+
+| Endpoint | Contract |
+| --- | --- |
+| `GET /api/landscape/state` | Current revision, revert availability, and bounded authoring limits. |
+| `POST /api/landscape/query` | Exact selection from `{x,z,selectionId,expectedRevision,radius?,camera?}`; acquires at most four native chunks and releases them after producing context. |
+| `POST /api/landscape/apply` | Validated `landscape-edit-batch` JSON; saves immutable payloads/snapshots before atomically switching the manifest. |
+| `POST /api/landscape/revert` | `{expectedRevision,batchId?}`; restores the last applied batch's source state as a new revision and retains duplicate-batch protection. |
+
+Mutations require JSON and the local origin; stale, duplicate, invalid, or
+over-budget work is rejected with a diagnostic. There is no manual sculpting
+toolbar. The AI uses the documented batch format/CLI and the user reloads the
+viewer without losing its camera pose. See `specs/landscape/LANDSCAPE_EDITING.md`.
+
+Tests can supply `createLandscapeServer({root,landscapeDirectory})` to serve an
+isolated copy through the same canonical asset URL. This directory is a trusted
+startup option, never a request parameter. Browser tests retain their edited
+fixtures and receipts under the prompt's gitignored screenshot artifact folder.
 
 The service binds loopback only, rejects unrelated Host/Origin values, and serves
 only application source, screen entries, the favicon, and retained landscape

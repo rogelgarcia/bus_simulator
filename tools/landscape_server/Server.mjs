@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createReadStream } from 'node:fs';
 import { mkdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { createLandscapeAuthoringApi } from './AuthoringApi.mjs';
 
 const MANIFEST = 'assets/public/landscape/coastal-city/manifest.json';
 export const SELECTION_FILE = 'tests/artifacts/screens/landscape/ai576/selection.latest.json';
@@ -21,15 +22,17 @@ async function readJson(request) {
     const chunks = [];
     for await (const chunk of request) {
         size += chunk.length;
-        if (size > 32768) throw new Error('Selection exceeds 32 KiB');
+        if (size > 65536) throw new Error('Landscape request exceeds 64 KiB');
         chunks.push(chunk);
     }
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
-/** @param {{root: string}} options */
-export function createLandscapeServer({ root }) {
+/** @param {{root: string,landscapeDirectory?:string}} options */
+export function createLandscapeServer({ root, landscapeDirectory }) {
     const workspace = path.resolve(root);
+    const landscape = path.resolve(landscapeDirectory ?? path.join(workspace, path.dirname(MANIFEST)));
+    const authoring = createLandscapeAuthoringApi({ directory: landscape, readJson, reply });
     let pendingWrite = Promise.resolve();
     const server = http.createServer(async (request, response) => {
         try {
@@ -38,6 +41,7 @@ export function createLandscapeServer({ root }) {
             const pathname = decodeURIComponent(new URL(request.url, `http://${host}`).pathname);
             if (pathname.includes('\\') || pathname.split('/').includes('..')) return reply(response, 403, { error: 'Invalid path' });
             if (pathname === '/__health') return reply(response, 200, { ready: true, service: 'landscape', root: workspace });
+            if (pathname.startsWith('/api/landscape/') && await authoring(request, response, pathname)) return;
             if (pathname === '/api/landscape/selection') {
                 if (request.method === 'GET') {
                     try { return reply(response, 200, JSON.parse(await readFile(path.join(workspace, SELECTION_FILE), 'utf8'))); }
@@ -56,7 +60,7 @@ export function createLandscapeServer({ root }) {
                 if (request.method !== 'POST') return reply(response, 405, { error: 'Use GET, POST, or DELETE' });
                 if (!String(request.headers['content-type']).startsWith('application/json')) return reply(response, 415, { error: 'JSON required' });
                 const selection = await readJson(request);
-                const manifest = JSON.parse(await readFile(path.join(workspace, MANIFEST), 'utf8'));
+                const manifest = JSON.parse(await readFile(path.join(landscape, 'manifest.json'), 'utf8'));
                 const position = selection.position;
                 if (selection.landscapeId !== manifest.id || selection.sourceRevision !== manifest.revision) return reply(response, 409, { error: 'Selection targets a stale or different landscape' });
                 if (!position || !['x', 'y', 'z'].every(axis => Number.isFinite(position[axis])) || typeof selection.selectionId !== 'string') return reply(response, 400, { error: 'Invalid selection coordinates or identity' });
@@ -75,11 +79,14 @@ export function createLandscapeServer({ root }) {
             if (!['GET', 'HEAD'].includes(request.method)) return reply(response, 405, { error: 'Read-only static files' });
             const relative = pathname === '/' ? 'screens/landscape_fabrication.html' : pathname.slice(1);
             if (!isPublicPath(relative)) return reply(response, 404, { error: 'Not found' });
-            const candidate = path.resolve(workspace, relative);
-            if (!candidate.startsWith(workspace + path.sep)) return reply(response, 403, { error: 'Invalid path' });
+            const sourcePrefix = 'assets/public/landscape/coastal-city/';
+            const sourceRequest = relative.startsWith(sourcePrefix);
+            const staticRoot = sourceRequest ? landscape : workspace;
+            const candidate = path.resolve(staticRoot, sourceRequest ? relative.slice(sourcePrefix.length) : relative);
+            if (!candidate.startsWith(staticRoot + path.sep)) return reply(response, 403, { error: 'Invalid path' });
             const resolved = await realpath(candidate);
-            if (!resolved.startsWith(workspace + path.sep)) return reply(response, 403, { error: 'Invalid source location' });
-            if (!isPublicPath(path.relative(workspace, resolved).split(path.sep).join('/'))) return reply(response, 403, { error: 'Invalid source location' });
+            if (!resolved.startsWith(staticRoot + path.sep)) return reply(response, 403, { error: 'Invalid source location' });
+            if (!sourceRequest && !isPublicPath(path.relative(workspace, resolved).split(path.sep).join('/'))) return reply(response, 403, { error: 'Invalid source location' });
             const info = await stat(resolved);
             if (!info.isFile()) return reply(response, 404, { error: 'Not found' });
             const etag = `"${info.size}-${info.mtimeMs}"`;

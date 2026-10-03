@@ -1,11 +1,12 @@
 // Validates the renderer-independent landscape manifest and spatial identities.
 // @ts-check
 import { LANDSCAPE_LAND_COVER_CATALOG, LANDSCAPE_SOIL_CATALOG } from './LandscapeCatalog.js';
+import { LANDSCAPE_EDIT_CAPABILITY, validateLandscapeAuthoring } from './LandscapeEditSchema.js';
 import { clonePlainData, freezeData, nearlyEqual, requireBounds, requireCondition, requireFinite, requireId, requireInteger, requireRelativeUrl, requireSha256 } from './internal/LandscapeValidation.js';
 
 export const LANDSCAPE_SCHEMA_VERSION = 1;
 export const LANDSCAPE_MAX_CHUNK_SAMPLES = 257 * 257;
-export const LANDSCAPE_SUPPORTED_CAPABILITIES = Object.freeze(['heightfield', 'land-cover', 'coarse-preview']);
+export const LANDSCAPE_SUPPORTED_CAPABILITIES = Object.freeze(['heightfield', 'land-cover', 'coarse-preview', LANDSCAPE_EDIT_CAPABILITY]);
 
 /** @typedef {{minX:number,maxX:number,minZ:number,maxZ:number}} LandscapeBounds */
 /** @typedef {{url:string,encoding:string,byteLength:number,decodedByteLength:number,sha256:string,revision:string}} LandscapeChannel */
@@ -44,7 +45,7 @@ function validateCatalogs(manifest) {
         soils.add(entry.id);
     }
     requireCondition(soils.has(soil.defaultId), 'soil.defaultId must exist in soil.catalog');
-    requireCondition(Array.isArray(soil.overrides) && soil.overrides.length === 0, 'D1 soil.overrides must be empty; unsupported editing capability');
+    requireCondition(Array.isArray(soil.overrides), 'soil.overrides must be an array');
     requireCondition(cover?.encoding === 'uint8' && cover.sampling === 'nearest' && Array.isArray(cover.catalog) && cover.catalog.length > 0, 'landCover requires uint8 nearest categorical data');
     const classes = new Set();
     for (const entry of cover.catalog) {
@@ -160,7 +161,8 @@ export function validateLandscapeManifest(input) {
         requireCondition(typeof reference.role === 'string' && reference.role.length > 0 && typeof reference.encoding === 'string' && reference.encoding.length > 0, 'reference role and encoding are required');
         referenceIds.add(reference.id);
     }
-    for (const field of ['operations', 'regions', 'attachments']) requireCondition(Array.isArray(manifest[field]) && manifest[field].length === 0, `D1 ${field} must be empty; unsupported authored/content capability`);
+    validateLandscapeAuthoring(manifest);
+    for (const field of ['regions', 'attachments']) requireCondition(Array.isArray(manifest[field]) && manifest[field].length === 0, `${field} must be empty; unsupported authored/content capability`);
     requireCondition(manifest.cityBinding === undefined, 'D1 cityBinding is reserved; unsupported city-binding capability');
     return freezeData(manifest);
 }
@@ -181,6 +183,6 @@ export function createLandscapeManifest(options) {
         landCover: { encoding: 'uint8', sampling: 'nearest', catalog: LANDSCAPE_LAND_COVER_CATALOG },
         overviewId: options.overviewId ?? 'l0/c0/r0', chunks: options.chunks,
         provenance: options.provenance, references: options.references ?? [],
-        regions: [], operations: [], attachments: [], capabilities: [...LANDSCAPE_SUPPORTED_CAPABILITIES]
+        regions: [], operations: [], attachments: [], capabilities: ['heightfield', 'land-cover', 'coarse-preview']
     });
 }

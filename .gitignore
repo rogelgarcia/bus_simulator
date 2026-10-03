@@ -5,6 +5,10 @@
 !/assets/public/
 /assets/public/*
 !/assets/public/landscape/
+/assets/public/landscape/**/authoring.lock
+/assets/public/landscape/**/authoring.lock.recovering
+/assets/public/landscape/**/*.partial
+/assets/public/landscape/**/authoring-interrupted-*.json
 /tools/baking/blender.local.json
 /downloads
 /docs

@@ -20,6 +20,9 @@ test('Landscape handoff: saves valid context and rejects stale or foreign reques
         assert.deepEqual(JSON.parse(await readFile(path.join(root, SELECTION_FILE), 'utf8')), selection);
         assert.equal((await post({ ...selection, sourceRevision: 'old' })).status, 409);
         assert.equal((await post(selection, { origin: 'http://evil.example' })).status, 403);
+        assert.equal((await fetch(`${origin}/api/landscape/apply`, { method: 'POST', headers: { origin: 'http://evil.example', 'content-type': 'application/json' }, body: '{}' })).status, 403);
+        assert.equal((await fetch(`${origin}/api/landscape/apply`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' })).status, 415);
+        assert.equal((await fetch(`${origin}/api/landscape/query`)).status, 405);
         assert.equal((await post({ ...selection, position: { x: -1, y: 0, z: 0 } })).status, 400);
         assert.equal((await fetch(`${origin}/.git/config`)).status, 404);
         assert.equal((await fetch(`${origin}/downloads/private.txt`)).status, 404);

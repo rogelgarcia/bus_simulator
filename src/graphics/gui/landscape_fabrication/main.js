@@ -9,6 +9,7 @@ window.__landscapeTestHooks = Object.freeze({
     setMode: mode => view.setMode(mode),
     preset: name => view.preset(name),
     select: (x, z) => view.select(x, z),
+    setSelectionRadius: radius => view.setSelectionRadius(radius),
     reload: () => view.load(),
     pause: () => view.pause(),
     resume: () => view.resume(),

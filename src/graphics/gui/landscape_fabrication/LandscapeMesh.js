@@ -1,12 +1,12 @@
 // Builds a bounded preview from the shared landscape sample lattice.
 // @ts-check
 import * as THREE from 'three';
-import { LANDSCAPE_LAND_COVER_CATALOG } from '../../../app/landscape/index.js';
+import { LANDSCAPE_LAND_COVER_CATALOG, resolveLandscapeSoil } from '../../../app/landscape/index.js';
 
 export const OVERVIEW_MEMORY_CAP = 32 * 1024 * 1024;
 
-/** @param {{descriptor: any, heights: Float32Array, landCover: Uint8Array}} chunk @param {{catalog?:ReadonlyArray<{id:number,color:string}>}} options */
-export function createLandscapeMesh(chunk, { catalog = LANDSCAPE_LAND_COVER_CATALOG } = {}) {
+/** @param {{descriptor: any, heights: Float32Array, landCover: Uint8Array}} chunk @param {{catalog?:ReadonlyArray<any>,manifest?:any}} options */
+export function createLandscapeMesh(chunk, { catalog = LANDSCAPE_LAND_COVER_CATALOG, manifest } = {}) {
     const { columns, rows, bounds } = chunk.descriptor;
     const count = columns * rows;
     const estimatedPeakBytes = count * 400;
@@ -14,13 +14,18 @@ export function createLandscapeMesh(chunk, { catalog = LANDSCAPE_LAND_COVER_CATA
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
     const palette = new Map(catalog.map(entry => [entry.id, new THREE.Color(entry.color)]));
+    const coverSoils = new Map(catalog.map(entry => [entry.id, entry.soilId]));
+    const soilPalette = new Map(catalog.map(entry => [entry.soilId, new THREE.Color(entry.color)]));
     for (let row = 0; row < rows; row++) {
         for (let column = 0; column < columns; column++) {
             const i = row * columns + column;
-            positions[i * 3] = bounds.minX + column * (bounds.maxX - bounds.minX) / (columns - 1);
+            const x = bounds.minX + column * (bounds.maxX - bounds.minX) / (columns - 1);
+            const z = bounds.maxZ - row * (bounds.maxZ - bounds.minZ) / (rows - 1);
+            positions[i * 3] = x;
             positions[i * 3 + 1] = chunk.heights[i];
-            positions[i * 3 + 2] = bounds.maxZ - row * (bounds.maxZ - bounds.minZ) / (rows - 1);
-            const color = palette.get(chunk.landCover[i]);
+            positions[i * 3 + 2] = z;
+            const soil = manifest ? resolveLandscapeSoil(manifest, x, z, chunk.landCover[i]) : coverSoils.get(chunk.landCover[i]);
+            const color = soil !== coverSoils.get(chunk.landCover[i]) ? (soilPalette.get(soil) ?? palette.get(chunk.landCover[i])) : palette.get(chunk.landCover[i]);
             colors.set([color.r, color.g, color.b], i * 3);
         }
     }

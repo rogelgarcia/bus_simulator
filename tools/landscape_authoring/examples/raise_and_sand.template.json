@@ -1,0 +1,23 @@
+{
+  "format": "landscape-edit-batch",
+  "schemaVersion": 1,
+  "id": "$batchId",
+  "landscapeId": "$selection.landscapeId",
+  "expectedRevision": "$selection.sourceRevision",
+  "operations": [
+    {
+      "id": "raise",
+      "type": "raise",
+      "region": "$selection.region",
+      "falloff": { "type": "linear", "distance": 5 },
+      "deltaMeters": 2
+    },
+    {
+      "id": "sand",
+      "type": "assign-soil",
+      "region": "$selection.region",
+      "falloff": { "type": "none" },
+      "soilId": "sand"
+    }
+  ]
+}

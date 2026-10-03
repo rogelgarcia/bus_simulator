@@ -1,12 +1,12 @@
 # Landscape model, version 1
 
-D1 provides persistent, renderer-independent source data, one bounded overview, validation, and provisional point context. Automatic streaming, authoritative region acquisition, editing, appearance pages, and city integration are later deliverables of AI 576. Opening this data does not make current game physics or city construction terrain-aware.
+D1 provides persistent, renderer-independent source data, one bounded overview, validation, and provisional point context. D2 adds bounded authoritative acquisition and terrain/soil edits through `LANDSCAPE_EDITING.md`. Automatic streaming, appearance pages, and city integration remain later deliverables of AI 576. Opening this data does not make current game physics or city construction terrain-aware.
 
 The public entry point is `src/app/landscape/index.js`. Its modules import no renderer, DOM, Three.js, or Node facilities. The valid retained example is `assets/public/landscape/coastal-city/manifest.json`. `tests/node/unit/landscape_model_fixture.js` generates a small deterministic example containing flat submerged ground, a slope/hill, and several soil regions for `landscape_model.test.js`.
 
 ## Authority and identity
 
-The JSON manifest and its independently hashed native height/land-cover channels are authoritative. Float32 heights are stored in meters at native vertices. Imported land cover is a separate semantic source channel. Initial soil is resolved by the explicit land-cover-to-soil mapping. D1 has no soil edits; the default `unknown` soil reserves a whole-extent substrate identity without claiming knowledge under planning pavement.
+The JSON manifest and its independently hashed native height/land-cover channels are authoritative. Float32 heights are stored in meters at native vertices. Imported land cover is a separate semantic source channel. Initial soil is resolved by the explicit land-cover-to-soil mapping; D2 applies ordered hard soil-region overrides afterward. The default `unknown` soil reserves a whole-extent substrate identity without claiming knowledge under planning pavement. Published height channels already contain their edits; loading never reapplies the audit operation log.
 
 Overview channels, mesh vertices, normals, and future intermediate LODs are derived. A coarse sample cannot be used as an exact edit instruction. Camera pose, inspection mode, hover, selection, and bookmarks do not belong to the source heightfield. Selection context is a separate document.
 
@@ -25,16 +25,17 @@ Landscape IDs and chunk IDs are independent of meshes, vertex numbers, and resid
 | `coordinates` | `units: meters`, `upAxis: Y`, `xDirection: east`, `zDirection: north`, `rasterRow0: north`; finite `origin: {x,y,z}` identifying the southwest datum and finite world-Y `seaLevel`. Origin X/Z equal minimum X/Z bounds. |
 | `grid` | `columns`, `rows`, positive `spacingX`, `spacingZ`, `chunkIntervals`, `maxLevel`. V1 is a dyadic square sample grid; physical X/Z spans may differ. |
 | `elevation` | `units: meters`, `encoding: float32-le`, `interpolation: triangulated-nw-se`, `noData: forbidden`, `outside: outside`. |
-| `soil` | `defaultId`, nonempty `catalog`, complete `landCoverMapping`, and `overrides: []` in D1. Soil IDs must resolve in the catalog. |
+| `soil` | `defaultId`, nonempty `catalog`, complete `landCoverMapping`, and `overrides: []` in D1 or validated ordered region assignments with D2's editing capability. Soil IDs must resolve in the catalog. |
 | `landCover` | `encoding: uint8`, `sampling: nearest`, and unique catalog IDs in 0–255. Every encountered payload ID must be declared. |
 | `overviewId` | Exactly `l0/c0/r0`, referencing one full-extent covering descriptor. |
 | `chunks` | Nonempty bounded array of descriptors. All finest-level spatial keys are present. Prepared coarser parents are required, with acyclic level ordering. |
 | `provenance` | `kind: designed-prototype` or `synthetic-fixture`, `sourceName`, lowercase `sourceSha256`, positive `nativeResolutionMeters`, and `preparation.algorithm`; preparation can preserve additional plain settings. |
 | `references` | Array of `{id,role,url,sha256,byteLength,encoding}`. IDs are unique; URLs are safe relative asset paths. These preserve planning/source information without creating gameplay objects. |
-| `capabilities` | Unique required capability IDs. D1 supports `heightfield`, `land-cover`, `coarse-preview`; the first two are mandatory. |
-| `regions`, `operations`, `attachments` | Empty arrays in D1. Reserved for explicitly supported later semantics. Nonempty unsupported blocks fail rather than being ignored. |
+| `capabilities` | Unique required capability IDs. Base documents support `heightfield`, `land-cover`, `coarse-preview`; the first two are mandatory. D2 additionally supports `terrain-editing-v1`. |
+| `operations`, `editHistory` | Operations are empty and history absent in D1. D2 requires validated ordered operations and revision/snapshot/batch-ID history under its capability; see `LANDSCAPE_EDITING.md`. |
+| `regions`, `attachments` | Empty arrays in D1–D2. Reserved for explicitly supported later semantics. Nonempty unsupported blocks fail rather than being ignored. |
 
-`cityBinding` is reserved and rejected in D1. D6 will add its explicit capability and validator. Later schema-1 readers must continue to load unchanged D1 documents; adding operations, soil overrides, masked no-data, or content layers requires implementing and advertising the corresponding capability before accepting those blocks. Optional diagnostic/provenance additions do not change the meaning of existing fields.
+`cityBinding` is reserved and rejected in D1–D2. D6 will add its explicit capability and validator. Schema-1 readers continue to load unchanged D1 documents. D2 implements operations/soil overrides under its required capability; masked no-data and content layers remain unsupported until their capability is implemented. Optional diagnostic/provenance additions do not change the meaning of existing fields. The manifest factory continues producing base documents without an editing history.
 
 `createLandscapeManifest({id,name,revision,bounds,grid,chunks,provenance,coordinates?,overviewId?,references?})` fills the fixed v1 contracts, standard catalogs, empty authoring/content blocks, and capabilities, then validates. The default coordinate datum is `{x: minX,y: 0,z: minZ}`, sea level is zero, the overview ID is `l0/c0/r0`, and references default to `[]`. Other required data has no fallback.
 
@@ -77,7 +78,7 @@ outside: point is outside the landscape
 unavailable: point is in the landscape but outside this supplied chunk
 ```
 
-`accuracy` is `authoritative` only for stride-1 native data; otherwise it is `approximate` and `provisional` is true. `waterDepth=max(0,seaLevel-height)` and `submerged=height<seaLevel`; land-cover class 0 alone is not a water surface. D1 calls sample only on resident data. D2 will introduce asynchronous authoritative acquisition and `pending`/`unavailable` states without silently substituting a camera-dependent coarse sample.
+`accuracy` is `authoritative` only for stride-1 native data; otherwise it is `approximate` and `provisional` is true. `waterDepth=max(0,seaLevel-height)` and `submerged=height<seaLevel`; land-cover class 0 alone is not a water surface. `sampleLandscapeChunk` calls only resident data. D2's asynchronous region-acquisition contract exposes pending/ready/outside/unavailable states without substituting a camera-dependent coarse sample; its native point owner is the east/south chunk at shared boundaries.
 
 ## Independent payloads and hierarchy
 
@@ -137,7 +138,7 @@ This adapts the semantic biome vocabulary from `specs/grass/TERRAIN_ENGINE_BIOME
 
 ## Selection and city-frame handoff
 
-`createLandscapeSelectionContext(manifest,chunk,{x,z,selectionId,radius?,camera?})` returns frozen plain JSON with `format: landscape-selection`, `schemaVersion: 1`, `landscapeId`, `sourceRevision`, `selectionId`, explicit coordinate convention, `position`, `region`, `sample`, `provisional`, and `editingReady`. The region is a point or an explicit world-meter circle wholly inside the landscape. Optional camera data is supplementary plain JSON. The supplied coastal overview always produces `provisional: true` and `editingReady: false`. D2 must reacquire native data and refresh the revision before editing, including all samples needed by an area; a displayed center sample alone does not authorize the whole region.
+`createLandscapeSelectionContext(manifest,chunk,{x,z,selectionId,radius?,camera?})` returns frozen plain JSON with `format: landscape-selection`, `schemaVersion: 1`, `landscapeId`, `sourceRevision`, `selectionId`, explicit coordinate convention, `position`, `region`, `sample`, `provisional`, and `editingReady`. The region is a point or an explicit world-meter circle wholly inside the landscape. Optional camera data is supplementary plain JSON. The supplied coastal overview always produces `provisional: true` and `editingReady: false`. D2's `queryLandscapeSelection` reacquires complete native area coverage and records its exact source revision before producing editing-ready context; a displayed coarse center alone does not authorize the whole region.
 
 The handoff follows the explicit source/revision/context separation used by `specs/graphics/mesh_fabrication_live_mesh_handoff.md`, without adopting its editor UI. Navigation/selection does not mutate the manifest. The screen and local handoff endpoint own persistence of the transient selection document.
 

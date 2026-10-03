@@ -1,6 +1,6 @@
 # Landscape Fabrication viewer
 
-Status: D1 implemented and verified (AI 576).
+Status: D1-D2 implemented and verified (AI 576).
 
 ## Entry and ownership
 
@@ -50,9 +50,22 @@ not memory bytes. Canvas sizing/picking uses the bar's live
 
 A short left click raycasts actual terrain. A miss or Clear removes the visible
 selection and clears the saved handoff with `DELETE /api/landscape/selection`.
-The point marker and readout show a provisional overview sample with world
-coordinates, semantic cover/soil, revision, and chunk identity. D1 does not permit
-exact terrain edits; D2 refines selections using authoritative chunks.
+The point marker first shows a provisional overview sample with world
+coordinates, semantic cover/soil, revision, and chunk identity. D2 then requests
+native context through `POST /api/landscape/query`, targeting the displayed
+revision. An explicit radius field (default 25 meters, zero for a point) defines
+the selected area; its circle is drawn on the displayed terrain. The native
+query admits at most four chunks and rejects areas outside the landscape or
+the acquisition budget. The panel distinguishes resolving, authoritative, and
+unavailable states. Late/obsolete replies cannot replace a newer selection.
+
+Native context includes elevation, normal/slope, semantic soil, retained cover
+ID, sample spacing, and the acquired chunk identities/revisions. It is marked
+`editingReady` only after the entire requested region is acquired successfully.
+Temporary native arrays are released after the query. The native point marker
+can differ vertically from the coarse preview by the declared overview error;
+the chosen world X/Z remains fixed. D3 will refine displayed terrain itself.
+Focus selection frames the chosen point/area for inspection.
 
 Selection JSON is copyable/downloadable and sent to
 `POST /api/landscape/selection` by the local development server. The server checks
@@ -66,6 +79,14 @@ updates leave the last valid revision visible with an error. Reload preserves
 camera position; retained world selections are resampled and receive fresh
 context. A newer load cancels obsolete work. Disposal removes listeners, aborts
 loads, stops frames, releases geometry/materials, and releases the WebGL context.
+
+D2 edits are data batches processed by the renderer-independent authoring store
+and CLI, documented in `LANDSCAPE_EDITING.md` and
+`tools/landscape_authoring/README.md`. Height edits rebuild native chunks and the
+affected overview samples; soil assignments remain separate ordered semantic
+regions. The preview colors those assignments without overwriting imported
+land-cover IDs. Apply/revert publishes one consistent source revision. Reload
+preserves the current camera and resolves fresh context against that revision.
 
 ## Verification
 
@@ -81,3 +102,10 @@ vertices, 131,072 triangles, and 3,950,628 estimated terrain GPU-buffer bytes.
 Combined inspection adds a temporary line buffer that returns to zero when
 disabled. These are buffer inventories, not a performance benchmark; startup
 FPS in the screenshots must not be treated as a settled-frame measurement.
+
+`tests/headless/e2e/landscape_authoring.pwtest.js` verifies native four-chunk
+selection, a two-meter raise plus sand assignment, saved reopen, stale/duplicate
+refusal, revert, oversized-region diagnostics, and clearing the handoff. It also
+checks that float32 rendering coordinates do not corrupt semantic queries at a
+fractional world origin. The coastal test uses an isolated retained-data copy;
+its saved revisions and screenshots are under `tests/artifacts/screens/landscape/ai576/d2/`.

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { ToolCameraController } from '../../engine3d/camera/ToolCameraController.js';
 import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
 import { ensureGlobalPerfBar } from '../perf_bar/PerfBar.js';
-import { loadLandscapeOverview, createLandscapeSelectionContext } from '../../../app/landscape/index.js';
+import { loadLandscapeOverview, createLandscapeSelectionContext, sampleLandscapeChunk } from '../../../app/landscape/index.js';
 import { LandscapePanel } from './LandscapePanel.js';
 import { createLandscapeMesh } from './LandscapeMesh.js';
 
@@ -17,6 +17,8 @@ export class LandscapeView {
         this.source = new URL(source, location.href).href;
         this.mode = 'shaded';
         this.selection = null;
+        this.selectionRadius = 25;
+        this.selectionSequence = 0;
         this.handoffQueue = Promise.resolve();
         this.disposed = false;
         this.frameIndex = 0;
@@ -43,6 +45,10 @@ export class LandscapeView {
         this.marker.renderOrder = 10;
         this.marker.visible = false;
         this.scene.add(this.marker);
+        this.selectionOutline = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffeaa8, depthTest: false }));
+        this.selectionOutline.renderOrder = 9;
+        this.selectionOutline.visible = false;
+        this.scene.add(this.selectionOutline);
         this.grid = new THREE.GridHelper(4000, 20, 0xc5d8d7, 0x819993);
         this.grid.position.set(2000, .4, 2000);
         this.grid.visible = false;
@@ -79,7 +85,7 @@ export class LandscapeView {
         try {
             const loaded = await loadLandscapeOverview(this.source, { signal: this.loadAbort.signal });
             if (this.disposed || sequence !== this.loadSequence) return;
-            const model = createLandscapeMesh(loaded.chunk, { catalog: loaded.manifest.landCover.catalog });
+            const model = createLandscapeMesh(loaded.chunk, { catalog: loaded.manifest.landCover.catalog, manifest: loaded.manifest });
             model.setMode(this.mode);
             if (this.model) { this.scene.remove(this.model.mesh); this.model.dispose(); }
             this.loaded = loaded;
@@ -140,17 +146,73 @@ export class LandscapeView {
     }
 
     /** @param {number} x @param {number} z */
-    select(x, z) {
+    async select(x, z) {
         if (!this.loaded) return null;
-        const context = createLandscapeSelectionContext(this.loaded.manifest, this.loaded.chunk, { x, z, selectionId: crypto.randomUUID(), camera: { position: this.camera.position.toArray(), target: this.controls.target.toArray() } });
+        const sequence = ++this.selectionSequence;
+        this.selectionAbort?.abort();
+        this.selectionAbort = new AbortController();
+        const options = { x, z, selectionId: crypto.randomUUID(), ...(this.selectionRadius > 0 ? { radius: this.selectionRadius } : {}), camera: { position: this.camera.position.toArray(), target: this.controls.target.toArray() } };
+        let context;
+        try { context = createLandscapeSelectionContext(this.loaded.manifest, this.loaded.chunk, options); }
+        catch (error) { await this.clearSelection(); this.panel.notice(error.message); return null; }
+        try {
+            this.showSelection(context);
+            this.saveSelection(context);
+            this.panel.text('selection-title', 'Resolving native terrain…');
+            const response = await fetch('/api/landscape/query', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...options, expectedRevision: this.loaded.manifest.revision }), signal: this.selectionAbort.signal });
+            const resolved = await response.json();
+            if (!response.ok) throw new Error(resolved.error ?? `HTTP ${response.status}`);
+            if (this.disposed || sequence !== this.selectionSequence) return null;
+            if (resolved.sourceRevision !== this.loaded.manifest.revision || resolved.provisional || !resolved.editingReady) throw new Error('Native selection did not resolve against the displayed revision');
+            this.showSelection(resolved);
+            await this.saveSelection(resolved);
+            return resolved;
+        } catch (error) {
+            if (error.name === 'AbortError' || sequence !== this.selectionSequence || this.disposed) return null;
+            this.panel.text('selection-title', 'Selection needs attention');
+            this.panel.text('handoff', `Exact selection unavailable: ${error.message}`);
+            this.panel.notice(error.message);
+            return null;
+        }
+    }
+
+    showSelection(context) {
         this.selection = context;
         this.marker.position.set(context.position.x, context.position.y, context.position.z);
         this.marker.visible = true;
-        const sample = context.sample ?? context;
-        this.panel.text('selection-title', 'Selected terrain point');
-        this.panel.text('selection', `X ${context.position.x.toFixed(2)} m\nY ${context.position.y.toFixed(3)} m\nZ ${context.position.z.toFixed(2)} m\nSoil: ${sample.soilId ?? context.soilId}\nCoarse preview · provisional`);
-        this.saveSelection(context);
-        return context;
+        this.selectionOutline.geometry.dispose();
+        this.selectionOutline.geometry = new THREE.BufferGeometry();
+        this.selectionOutline.visible = context.region.type === 'circle';
+        if (this.selectionOutline.visible) {
+            const points = [];
+            for (let i = 0; i < 72; i++) {
+                const angle = i / 72 * Math.PI * 2;
+                const x = context.position.x + Math.cos(angle) * context.region.radius;
+                const z = context.position.z + Math.sin(angle) * context.region.radius;
+                const sample = sampleLandscapeChunk(this.loaded.manifest, this.loaded.chunk, x, z);
+                points.push(new THREE.Vector3(x, sample.height + .2, z));
+            }
+            this.selectionOutline.geometry.setFromPoints(points);
+        }
+        const { sample } = context;
+        this.panel.text('selection-title', context.provisional ? 'Provisional terrain point' : 'Native terrain selection');
+        this.panel.text('selection', `X ${context.position.x.toFixed(2)} m\nY ${context.position.y.toFixed(3)} m\nZ ${context.position.z.toFixed(2)} m\nSoil: ${sample.soilId}\nSlope: ${sample.slopeDegrees.toFixed(2)}°\n${context.region.type === 'circle' ? `Radius: ${context.region.radius} m\n` : ''}${context.provisional ? 'Coarse preview · provisional' : `Authoritative · ${sample.sampleSpacing.x.toFixed(3)} m spacing`}`);
+        this.panel.notice('');
+    }
+
+    setSelectionRadius(value) {
+        if (!Number.isFinite(value) || value < 0 || value > 1000) { this.panel.notice('Selection radius must be between 0 and 1000 meters.'); return; }
+        this.selectionRadius = value;
+        this.panel.root.querySelector('[data-field="radius"]').value = String(value);
+        if (this.selection) return this.select(this.selection.position.x, this.selection.position.z);
+    }
+
+    focusSelection() {
+        if (!this.selection) return;
+        const { x, y, z } = this.selection.position;
+        const distance = Math.max(30, this.selectionRadius * 2.4);
+        this.controls.setLookAt({ position: { x: x + distance, y: y + distance * .8, z: z - distance }, target: { x, y, z } });
+        for (const id of ['home', 'top', 'ground']) this.panel.active(`camera:${id}`, false);
     }
 
     async saveSelection(context) {
@@ -162,15 +224,20 @@ export class LandscapeView {
             };
             this.handoffQueue = this.handoffQueue.then(save, save);
             await this.handoffQueue;
-            if (this.selection === context) this.panel.text('handoff', 'Context saved for AI. This is a provisional overview sample.');
+            if (this.selection === context) this.panel.text('handoff', context.provisional ? 'Provisional context saved for AI. Resolve native terrain before editing.' : 'Native context saved for AI. Ready for a revision-targeted edit.');
         } catch (error) {
             if (error.name !== 'AbortError' && this.selection === context) this.panel.text('handoff', 'Local handoff unavailable. Copy or download context, or use the landscape server on port 8002.');
         }
     }
 
     async clearSelection() {
+        this.selectionSequence++;
+        this.selectionAbort?.abort();
         this.selection = null;
         this.marker.visible = false;
+        this.selectionOutline.visible = false;
+        this.selectionOutline.geometry.dispose();
+        this.selectionOutline.geometry = new THREE.BufferGeometry();
         this.panel.text('selection-title', 'Point to the terrain');
         this.panel.text('selection', 'Click a surface to identify its world coordinates and cover type.');
         this.panel.text('handoff', 'Selections are view-only. Terrain is unchanged.');
@@ -186,6 +253,8 @@ export class LandscapeView {
     }
 
     async action(action) {
+        if (action === 'focus-selection') return this.focusSelection();
+        if (action === 'selection:radius') return this.setSelectionRadius(Number(this.panel.root.querySelector('[data-field="radius"]').value));
         if (action.startsWith('mode:')) return this.setMode(action.slice(5));
         if (action.startsWith('camera:')) return this.preset(action.slice(7));
         if (action === 'reload') return this.load();
@@ -249,13 +318,14 @@ export class LandscapeView {
         this.disposed = true;
         this.pause();
         this.loadAbort?.abort();
+        this.selectionAbort?.abort();
         this.abort.abort();
         this.resizeObserver.disconnect();
         this.controls.dispose();
         this.model?.dispose();
         this.model = null;
         this.gpuTimer.resetSamples();
-        for (const helper of [this.grid, this.axes, this.marker]) {
+        for (const helper of [this.grid, this.axes, this.marker, this.selectionOutline]) {
             helper.geometry.dispose();
             if (Array.isArray(helper.material)) helper.material.forEach(material => material.dispose());
             else helper.material.dispose();
