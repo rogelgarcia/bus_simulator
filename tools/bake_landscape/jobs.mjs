@@ -8,6 +8,7 @@ import { readCoastalArchive } from './CoastalArchive.mjs';
 import { prepareCoastalLandscape } from './CoastalPreparation.mjs';
 import { validatePreparedCoastal } from './CoastalValidation.mjs';
 import { publishPreparedCoastal } from './CoastalPublication.mjs';
+import { hierarchyJob } from './HierarchyJob.mjs';
 
 const DESTINATION = 'assets/public/landscape/coastal-city';
 
@@ -49,7 +50,7 @@ export const coastalImportJob = {
     }
 };
 
-export const landscapeJobs = Object.freeze([coastalImportJob, {
+export const landscapeJobs = Object.freeze([coastalImportJob, hierarchyJob, {
     id: 'landscape', configurationPaths: [], codePaths: ['tools/bake_landscape'],
     description: 'Explicit authored landscape preparation; no Blender, browser, or unrelated production bakes',
     children: ['landscape/coastal-import']

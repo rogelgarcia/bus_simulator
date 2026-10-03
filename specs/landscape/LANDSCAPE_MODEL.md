@@ -1,6 +1,6 @@
 # Landscape model, version 1
 
-D1 provides persistent, renderer-independent source data, one bounded overview, validation, and provisional point context. D2 adds bounded authoritative acquisition and terrain/soil edits through `LANDSCAPE_EDITING.md`. Automatic streaming, appearance pages, and city integration remain later deliverables of AI 576. Opening this data does not make current game physics or city construction terrain-aware.
+D1 provides persistent, renderer-independent source data, one bounded overview, validation, and provisional point context. D2 adds bounded authoritative acquisition and terrain/soil edits through `LANDSCAPE_EDITING.md`. D3 adds complete hierarchies and bounded automatic streaming through `LANDSCAPE_HIERARCHY.md` and `LANDSCAPE_STREAMING.md`. Appearance pages and city integration remain later deliverables of AI 576. Opening this data does not make current game physics or city construction terrain-aware.
 
 The public entry point is `src/app/landscape/index.js`. Its modules import no renderer, DOM, Three.js, or Node facilities. The valid retained example is `assets/public/landscape/coastal-city/manifest.json`. `tests/node/unit/landscape_model_fixture.js` generates a small deterministic example containing flat submerged ground, a slope/hill, and several soil regions for `landscape_model.test.js`.
 
@@ -8,7 +8,7 @@ The public entry point is `src/app/landscape/index.js`. Its modules import no re
 
 The JSON manifest and its independently hashed native height/land-cover channels are authoritative. Float32 heights are stored in meters at native vertices. Imported land cover is a separate semantic source channel. Initial soil is resolved by the explicit land-cover-to-soil mapping; D2 applies ordered hard soil-region overrides afterward. The default `unknown` soil reserves a whole-extent substrate identity without claiming knowledge under planning pavement. Published height channels already contain their edits; loading never reapplies the audit operation log.
 
-Overview channels, mesh vertices, normals, and future intermediate LODs are derived. A coarse sample cannot be used as an exact edit instruction. Camera pose, inspection mode, hover, selection, and bookmarks do not belong to the source heightfield. Selection context is a separate document.
+Overview/intermediate channels, mesh vertices and normals are derived. A coarse sample cannot be used as an exact edit instruction. Camera pose, inspection mode, hover, selection, and bookmarks do not belong to the source heightfield. Selection context is a separate document.
 
 Landscape IDs and chunk IDs are independent of meshes, vertex numbers, and residency. Content revisions and channel hashes identify their contents. An unchanged chunk can retain its revision and URLs through a later landscape revision. Changing the native grid, origin, or extent changes the addressing frame and requires a new landscape ID or an explicit migration of every spatial record; it must not silently reinterpret an existing ID.
 
@@ -31,7 +31,8 @@ Landscape IDs and chunk IDs are independent of meshes, vertex numbers, and resid
 | `chunks` | Nonempty bounded array of descriptors. All finest-level spatial keys are present. Prepared coarser parents are required, with acyclic level ordering. |
 | `provenance` | `kind: designed-prototype` or `synthetic-fixture`, `sourceName`, lowercase `sourceSha256`, positive `nativeResolutionMeters`, and `preparation.algorithm`; preparation can preserve additional plain settings. |
 | `references` | Array of `{id,role,url,sha256,byteLength,encoding}`. IDs are unique; URLs are safe relative asset paths. These preserve planning/source information without creating gameplay objects. |
-| `capabilities` | Unique required capability IDs. Base documents support `heightfield`, `land-cover`, `coarse-preview`; the first two are mandatory. D2 additionally supports `terrain-editing-v1`. |
+| `capabilities` | Unique required capability IDs. Base documents support `heightfield`, `land-cover`, `coarse-preview`; the first two are mandatory. D2 adds `terrain-editing-v1`; D3 adds `chunk-hierarchy-v1`. |
+| `hierarchy` | With D3's complete-tree capability: `algorithm: native-hierarchy-v1`, `errorPolicy: measured-native-vertices` or `conservative-after-edit`. Every level has all spatial keys and direct quadtree parents. |
 | `operations`, `editHistory` | Operations are empty and history absent in D1. D2 requires validated ordered operations and revision/snapshot/batch-ID history under its capability; see `LANDSCAPE_EDITING.md`. |
 | `regions`, `attachments` | Empty arrays in D1–D2. Reserved for explicitly supported later semantics. Nonempty unsupported blocks fail rather than being ignored. |
 
@@ -93,9 +94,9 @@ startRow = row * grid.chunkIntervals * sampleStride
 columns = rows = grid.chunkIntervals + 1
 ```
 
-Descriptors carry `id,level,column,row,startColumn,startRow,sampleStride,columns,rows,bounds,minHeight,maxHeight,geometricError,revision,parentId,channels`. Bounds follow the same coordinate equations. `minHeight/maxHeight` conservatively enclose the native source covered by the descriptor, including extrema missed by coarse samples. `geometricError` bounds vertical difference from native triangulated terrain; native descriptors use zero. A derived level must recompute its measured error when its source changes.
+Descriptors carry `id,level,column,row,startColumn,startRow,sampleStride,columns,rows,bounds,minHeight,maxHeight,geometricError,revision,parentId,channels`. Bounds follow the same coordinate equations. `minHeight/maxHeight` conservatively enclose the native source covered by the descriptor, including extrema missed by coarse samples. `geometricError` bounds vertical difference from native triangulated terrain; native descriptors use zero. A source edit rebuilds every affected ancestor and updates its conservative error; offline preparation measures tight errors again.
 
-For the coast, D1 prepares level 0 plus all 64 level-3 chunks. The overview has stride 8 and spacing 15.625 meters; each native chunk spans 500 meters. Level-3 descriptors initially name the root as their prepared parent. D3 may add levels 1 and 2 and update parent links without renaming native spatial IDs. Adjacent native chunks duplicate their shared edge vertices exactly, including land-cover values; source preparation validates those duplicates.
+For the coast, D1 prepares level 0 plus all 64 level-3 chunks. The overview has stride 8 and spacing 15.625 meters; each native chunk spans 500 meters. Level-3 descriptors initially name the root as their prepared parent. D3 adds all four level-1 and sixteen level-2 nodes and direct parent links without renaming native spatial IDs or changing native payloads. Adjacent native chunks duplicate their shared edge vertices exactly, including land-cover values; source preparation validates those duplicates. The current-source hierarchy workflow is specified in `LANDSCAPE_HIERARCHY.md`.
 
 Each `channels.height` and `channels.landCover` descriptor contains:
 

@@ -2,9 +2,10 @@
 
 AI576 D2 adds exact bounded queries, saved data-operation batches, and last-batch
 revert to the canonical landscape. This tool edits retained source revisions; it
-does not import the original coastal ZIP, run Blender, create a city, or implement
-the later movement/zoom streamer. Source preparation continues through the
-registered `landscape/coastal-import` bake leaf.
+does not import the original coastal ZIP, run Blender, or create a city. Source
+preparation uses the registered `landscape/coastal-import` and
+`landscape/hierarchy` bake leaves. D3 editing rebuilds every affected prepared
+ancestor and keeps the complete hierarchy consistent with saved native changes.
 
 The default directory is `assets/public/landscape/coastal-city`. Pass
 `--directory <directory>` to operate on a separately saved landscape. Tests always
@@ -119,9 +120,13 @@ entire query or batch, with inclusive boundaries so all shared sample copies are
 included. A point alone chooses the deterministic owning chunk. A circle must
 stay completely inside the landscape. The query decoded budget is **2 MiB**;
 four coastal chunks use **1,320,980 bytes**. Height editing additionally acquires
-one bounded root and copies affected height arrays. The domain admits its encoded,
+all affected bounded ancestors sequentially and copies affected height arrays. The domain admits its encoded,
 decoded, copied and scratch-buffer estimate against **8 MiB**, and reports
 `summary.workingBytes`; this is a buffer estimate, not measured process RSS.
+The coastal central four-native intersection has nine affected ancestors and
+reserves **6,406,753 bytes**. Deeper hierarchies can be refused before I/O if their
+ancestor buffers exceed the same cap. `summary.changedAncestorIds` lists rebuilt
+ancestors separately from native changes.
 
 The store admits one native query/edit/revert working set at a time. Concurrent
 requests receive `Working-set budget busy` without entering an unbounded queue;
@@ -141,11 +146,15 @@ read. The manifest limit is independent from the batch/context limit.
 
 Changed height channels use `payloads/<sha256>.f32le`. Unchanged channel URLs,
 native IDs, cover bytes, planning references and unrelated chunks remain intact.
-The derived overview copies changed native vertices at its existing stride,
-updates the source envelope and receives a conservative error bound; a tiny edit
-between overview vertices can remain visually unresolved while exact native
+Every affected prepared ancestor copies changed native vertices at its stride,
+updates its source envelope and receives a conservative error bound; a tiny edit
+between coarse vertices can remain visually unresolved while exact native
 queries correctly report it. Soil overrides are authoritative semantic regions;
 they do not replace the original land-cover raster.
+Unchanged ancestor channel bytes keep their existing content revision/hash/URL
+even when error metadata changes. Unaffected ancestors retain their complete
+descriptors. `landscape/hierarchy` can remeasure tight errors from current native
+terrain without resetting authored edits.
 
 The store writes immutable `manifest.<sha256>.json` snapshots beside
 `manifest.json`, so their relative resource URLs stay valid. The published
@@ -164,6 +173,9 @@ the viewer. D2 keeps saved versions rather than deleting history during edits.
 Revert authenticates the snapshot filename/hash and the changed payloads it will
 restore before publishing. It restores terrain, cover references and semantic
 operations from that snapshot while keeping the union of accepted batch IDs.
+All hierarchy levels restore together. Initial D3 hierarchy preparation also
+upgrades a pre-D3 last-batch snapshot, retaining the original snapshot, so revert
+cannot silently replace a complete tree with root/native-only descriptors.
 It is a one-level last-batch revert, independent of Git; after reverting, another
 revert is unavailable until a new batch is applied. Invalid/stale/duplicate
 requests never consume an ID or modify the current revision.
@@ -178,8 +190,9 @@ manifests or payload/reference trees.
 The local server integrates these methods through
 `tools/landscape_server/AuthoringApi.mjs`; it does not implement another editing
 engine. See the domain model and Fabrication viewer specs for source/viewer
-ownership and reload behavior. Smoothing, grading, polygons, oversized bounded
-work, intermediate LOD rebuilding and streaming remain later AI576 deliverables.
+ownership and reload behavior. Smoothing, grading, polygons and oversized bounded
+work remain later AI576 deliverables. Runtime streaming is specified separately
+from the Node store's authoring memory budget.
 
 ## Verification
 
@@ -192,3 +205,6 @@ saved cross-border height/soil operations, reopen, immutable inputs, atomic
 failure, authenticated revert, replay rejection after revert, lock ownership and
 the public CLI/template workflow. The root integration test separately performs
 the complete real coastal viewer/API workflow.
+`tests/node/unit/landscape_hierarchy.test.js` additionally verifies complete-tree
+edits/revert, conservative metadata-only ancestor changes and pre-D3 authoring
+history preservation.

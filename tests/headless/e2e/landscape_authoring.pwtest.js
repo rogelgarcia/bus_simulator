@@ -6,7 +6,7 @@ import { createLandscapeServer } from '../../../tools/landscape_server/Server.mj
 import { createLandscapeModelFixture } from '../../node/unit/landscape_model_fixture.js';
 
 const root = path.resolve('.');
-const artifacts = path.join(root, 'tests/artifacts/screens/landscape/ai576/d2');
+const artifacts = path.join(root, `tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'regression'}/authoring`);
 let server, origin, directory;
 
 test.beforeAll(async () => {
@@ -32,8 +32,9 @@ test('Landscape D2: rendering precision does not move soil queries outside fract
     await page.goto(`${origin}/screens/landscape_fabrication.html`);
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready);
     const encodedX = await page.evaluate(async ({ manifest, descriptor, heights, landCover }) => {
-        const { createLandscapeMesh } = await import('/src/graphics/gui/landscape_fabrication/LandscapeMesh.js');
-        const model = createLandscapeMesh({ descriptor, heights: new Float32Array(heights), landCover: new Uint8Array(landCover) }, { manifest, catalog: manifest.landCover.catalog });
+        const { createLandscapeMesh } = await import('/src/graphics/engine3d/landscape/LandscapeMesh.js');
+        const { buildLandscapeMeshBuffers } = await import('/src/graphics/engine3d/landscape/LandscapeMeshBuffers.js');
+        const model = createLandscapeMesh(buildLandscapeMeshBuffers({ chunk: { descriptor, heights: new Float32Array(heights), landCover: new Uint8Array(landCover) }, manifest }));
         const value = model.mesh.geometry.attributes.position.getX(0);
         model.dispose();
         window.__landscapeTestHooks.dispose();

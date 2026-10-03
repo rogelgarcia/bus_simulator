@@ -233,8 +233,9 @@ not conflict and the graph must have no cycles or missing jobs. Register a new
 domain in `tools/baking/registry.mjs`; do not add domain conditions to the planner.
 Every public entry uses `runBakeCli`, including standalone leaves.
 
-`tools/bake_landscape` owns the explicit `landscape/coastal-import` leaf and the
-`landscape` parent. They are registered but excluded from production `all`.
+`tools/bake_landscape` owns the explicit `landscape/coastal-import` and
+`landscape/hierarchy` leaves and the `landscape` import parent. They are registered
+but excluded from production `all`; the parent runs only the importer.
 The scoped `source` path selects the supplied authenticated coastal ZIP; tracked
 defaults contain no machine path. `configurationPaths: []` keeps this Node-only
 plan within the shared local configuration without requiring Blender, Python or
@@ -245,6 +246,21 @@ border, hashes and measured overview error. Optional publication installs
 immutable resources before switching the manifest atomically and refuses to
 replace an authored/changed current revision. Existing lighting, material and
 visibility gates are unchanged. See [the landscape workflow](../../tools/bake_landscape/README.md).
+
+The separate `landscape/hierarchy` maintenance leaf reads the current saved
+native payloads from its scoped `directory` (default coastal retained assets),
+without reimporting source or losing authored revisions. It creates every
+intermediate node, measures exact native-relative error, and uses one native
+chunk at a time under a 4 MiB working-array cap. This leaf always plans against a
+fresh immutable snapshot of current metadata. Native resources, an existing
+last-batch snapshot, domain contracts and authoring I/O code enter input identity.
+Current bytes must still match before publication, which shares the authoring
+mutation lock and validates upgraded revert snapshots too. The framework output
+claim is its distinct D3 receipt, avoiding overlapping graph claims with the
+importer's owned asset directory; optional shared current-index publication is
+serialized by that directory lock and manifest comparison. Candidate/installed
+files remain in the framework result inventory and validation gates. The leaf
+requires no machine executable paths or unrelated preparation branches.
 
 Explicit browser-only diagnostic plans may declare `configurationPaths` on every
 selected job. The shared loader then requires and checks only that union of machine

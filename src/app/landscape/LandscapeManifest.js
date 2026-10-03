@@ -6,7 +6,7 @@ import { clonePlainData, freezeData, nearlyEqual, requireBounds, requireConditio
 
 export const LANDSCAPE_SCHEMA_VERSION = 1;
 export const LANDSCAPE_MAX_CHUNK_SAMPLES = 257 * 257;
-export const LANDSCAPE_SUPPORTED_CAPABILITIES = Object.freeze(['heightfield', 'land-cover', 'coarse-preview', LANDSCAPE_EDIT_CAPABILITY]);
+export const LANDSCAPE_SUPPORTED_CAPABILITIES = Object.freeze(['heightfield', 'land-cover', 'coarse-preview', LANDSCAPE_EDIT_CAPABILITY, 'chunk-hierarchy-v1']);
 
 /** @typedef {{minX:number,maxX:number,minZ:number,maxZ:number}} LandscapeBounds */
 /** @typedef {{url:string,encoding:string,byteLength:number,decodedByteLength:number,sha256:string,revision:string}} LandscapeChannel */
@@ -144,6 +144,11 @@ export function validateLandscapeManifest(input) {
     }
     const nativeCount = manifest.chunks.filter((chunk) => chunk.level === grid.maxLevel).length;
     requireCondition(nativeCount === 4 ** grid.maxLevel, 'native chunk coverage must be complete');
+    if (manifest.capabilities.includes('chunk-hierarchy-v1')) {
+        for (let level = 0; level <= grid.maxLevel; level++) requireCondition(manifest.chunks.filter(chunk => chunk.level === level).length === 4 ** level, `complete hierarchy is missing level ${level} coverage`);
+        for (const chunk of manifest.chunks) if (chunk.level > 0) requireCondition(chunk.parentId === createLandscapeChunkId(chunk.level - 1, Math.floor(chunk.column / 2), Math.floor(chunk.row / 2)), `chunk ${chunk.id} requires its direct quadtree parent`);
+        requireCondition(manifest.hierarchy?.algorithm === 'native-hierarchy-v1' && ['measured-native-vertices', 'conservative-after-edit'].includes(manifest.hierarchy.errorPolicy), 'complete hierarchy requires its supported preparation/error policy');
+    }
     const provenance = manifest.provenance;
     requireCondition(provenance && ['designed-prototype', 'synthetic-fixture'].includes(provenance.kind), 'provenance.kind is required');
     requireCondition(typeof provenance.sourceName === 'string' && provenance.sourceName.length > 0, 'provenance.sourceName is required');

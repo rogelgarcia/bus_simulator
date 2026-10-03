@@ -4,18 +4,25 @@ import * as THREE from 'three';
 import { ToolCameraController } from '../../engine3d/camera/ToolCameraController.js';
 import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
 import { ensureGlobalPerfBar } from '../perf_bar/PerfBar.js';
-import { loadLandscapeOverview, createLandscapeSelectionContext, sampleLandscapeChunk } from '../../../app/landscape/index.js';
+import { loadLandscapeOverview, createLandscapeSelectionContext, sampleLandscapeChunk, planLandscapeRegion, queryLandscapeSelection, LandscapeResidencyBudget } from '../../../app/landscape/index.js';
 import { LandscapePanel } from './LandscapePanel.js';
-import { createLandscapeMesh } from './LandscapeMesh.js';
+import { LandscapeStreamer } from '../../engine3d/landscape/LandscapeStreamer.js';
 
 const DEFAULT_SOURCE = '/assets/public/landscape/coastal-city/manifest.json';
 
 export class LandscapeView {
     /** @param {HTMLCanvasElement} canvas @param {{source?: string}} options */
-    constructor(canvas, { source = DEFAULT_SOURCE } = {}) {
+    constructor(canvas, { source = DEFAULT_SOURCE, budgets = {} } = {}) {
         this.canvas = canvas;
         this.source = new URL(source, location.href).href;
         this.mode = 'shaded';
+        this.projection = 'perspective';
+        this.perspectiveFov = 50;
+        this.orthoHeight = 5000;
+        this.lodColors = false;
+        this.boundaries = false;
+        this.budget = new LandscapeResidencyBudget(budgets);
+        this.consumerLeases = new Map();
         this.selection = null;
         this.selectionRadius = 25;
         this.selectionSequence = 0;
@@ -38,9 +45,17 @@ export class LandscapeView {
         this.scene.add(sun);
         this.camera = new THREE.PerspectiveCamera(50, 1, 0.5, 25000);
         this.camera.position.set(4400, 3000, -2300);
-        this.panel = new LandscapePanel(action => this.action(action));
+        this.panel = new LandscapePanel(action => Promise.resolve(this.action(action)).catch(error => this.panel.notice(error.message)));
         this.controls = new ToolCameraController(this.camera, canvas, { uiRoot: this.panel.root, minDistance: 3, maxDistance: 18000, maxPolarAngle: Math.PI * .495 });
         this.controls.setLookAt({ position: this.camera.position, target: { x: 2000, y: 0, z: 2000 } });
+        canvas.addEventListener('wheel', event => {
+            if (!this.camera.isOrthographicCamera) return;
+            this.camera.zoom = Math.max(.1, Math.min(100, this.camera.zoom * Math.exp(-event.deltaY * .001)));
+            this.camera.updateProjectionMatrix();
+            this.panel.root.querySelector('[data-field="zoom"]').value = String(this.camera.zoom.toFixed(2));
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }, { signal: this.abort.signal, passive: false, capture: true });
         this.marker = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffeaa8, depthTest: false }));
         this.marker.renderOrder = 10;
         this.marker.visible = false;
@@ -80,22 +95,32 @@ export class LandscapeView {
     async load() {
         const sequence = ++this.loadSequence;
         this.loadAbort?.abort();
+        this.selectionAbort?.abort();
+        this.loadingStream?.dispose();
+        this.loadingStream = null;
+        this.stream?.coarsenToRoot();
         this.loadAbort = new AbortController();
+        this.reloading = true;
         this.panel.text('status', 'Loading and validating the coarse overview…');
+        const loadKey = `overview-load/${sequence}`;
+        const reservation = this.budget.reserve(loadKey, { cpuBytes: 3 * 1024 * 1024, gpuBytes: 0, kind: 'manifest-overview-decode' });
+        if (!reservation.admitted) { this.reloading = false; this.panel.notice(`Landscape reload cannot fit: ${reservation.reason}`); this.lastError = reservation.reason; return; }
         try {
             const loaded = await loadLandscapeOverview(this.source, { signal: this.loadAbort.signal });
             if (this.disposed || sequence !== this.loadSequence) return;
-            const model = createLandscapeMesh(loaded.chunk, { catalog: loaded.manifest.landCover.catalog, manifest: loaded.manifest });
-            model.setMode(this.mode);
-            if (this.model) { this.scene.remove(this.model.mesh); this.model.dispose(); }
+            const stream = new LandscapeStreamer({ loaded, budget: this.budget, renderer: this.renderer, scene: this.scene, mode: this.mode, lodColors: this.lodColors, boundaries: this.boundaries });
+            this.loadingStream = stream;
+            await stream.initialize(this.camera);
+            if (this.disposed || sequence !== this.loadSequence) { stream.dispose(); return; }
+            this.stream?.dispose();
             this.loaded = loaded;
             this.lastError = null;
-            this.model = model;
-            this.scene.add(model.mesh);
+            this.stream = stream;
+            this.loadingStream = null;
             const { manifest, chunk } = loaded;
             this.panel.text('source', `${manifest.name} · ${(manifest.bounds.maxX - manifest.bounds.minX) / 1000} × ${(manifest.bounds.maxZ - manifest.bounds.minZ) / 1000} km`);
-            this.panel.text('revision', `Revision ${manifest.revision} · ${chunk.descriptor.columns} × ${chunk.descriptor.rows} overview`);
-            this.panel.text('status', `${model.diagnostics().triangles.toLocaleString()} triangles · Native terrain preserved separately · Y up / +Z north`);
+            this.panel.text('revision', `Revision ${manifest.revision} · ${manifest.chunks.length} prepared tiles · Native level ${manifest.grid.maxLevel}`);
+            this.panel.text('status', 'Worker streaming ready · Y up / +Z north · Native queries independent of view LOD');
             this.panel.text('legend', `SURFACE REFERENCE\n${manifest.landCover.catalog.map(item => `${item.id}  ${item.label}`).join('\n')}\n\nWorld grid: 200 m · Elevations: meters\nNative spacing: ${manifest.grid.spacingX.toFixed(3)} m`);
             this.panel.notice('');
             if (this.selection) this.select(this.selection.position.x, this.selection.position.z);
@@ -105,6 +130,9 @@ export class LandscapeView {
             this.panel.notice(`Landscape update rejected: ${error.message}. ${this.loaded ? 'The last valid revision remains visible.' : 'Check the prepared manifest and local server.'}`);
             this.panel.text('status', this.loaded ? `Showing last valid revision ${this.loaded.manifest.revision}` : 'No valid terrain loaded');
             this.lastError = error.message;
+        } finally {
+            this.budget.release(loadKey);
+            if (sequence === this.loadSequence) this.reloading = false;
         }
     }
 
@@ -112,9 +140,72 @@ export class LandscapeView {
         const rect = this.canvas.getBoundingClientRect();
         if (!rect.width || !rect.height) return;
         this.renderer.setSize(Math.round(rect.width), Math.round(rect.height), false);
-        this.camera.aspect = rect.width / rect.height;
+        if (this.camera.isOrthographicCamera) {
+            this.camera.top = this.orthoHeight / 2;
+            this.camera.bottom = -this.orthoHeight / 2;
+            this.camera.left = -this.orthoHeight * rect.width / rect.height / 2;
+            this.camera.right = -this.camera.left;
+        } else this.camera.aspect = rect.width / rect.height;
         this.camera.updateProjectionMatrix();
     }
+
+    setCamera({ position, target, projection = this.projection, fov = this.perspectiveFov, orthoHeight = this.orthoHeight, zoom } = {}) {
+        if (!['perspective', 'orthographic'].includes(projection) || !Number.isFinite(fov) || fov < 5 || fov > 110 || !Number.isFinite(orthoHeight) || orthoHeight < 20 || orthoHeight > 20000 || (zoom !== undefined && (!Number.isFinite(zoom) || zoom < .1 || zoom > 100))) throw new Error('Invalid terrain camera projection or zoom');
+        this.perspectiveFov = fov;
+        this.orthoHeight = orthoHeight;
+        if (projection !== this.projection) {
+            const previous = this.camera;
+            this.camera = projection === 'orthographic' ? new THREE.OrthographicCamera(-2500, 2500, 2500, -2500, .5, 25000) : new THREE.PerspectiveCamera(fov, previous.aspect ?? 1, .5, 25000);
+            this.camera.position.copy(previous.position);
+            this.camera.quaternion.copy(previous.quaternion);
+            this.controls.camera = this.camera;
+            this.controls.syncFromCamera();
+            this.projection = projection;
+        }
+        if (this.camera.isPerspectiveCamera) this.camera.fov = fov;
+        if (zoom !== undefined) this.camera.zoom = zoom;
+        const toPoint = value => Array.isArray(value) ? { x: value[0], y: value[1], z: value[2] } : value;
+        if (position || target) this.controls.setLookAt({ position: toPoint(position), target: toPoint(target) });
+        this.resize();
+        this.panel.root.querySelector('[data-field="projection"]').value = projection;
+        this.panel.root.querySelector('[data-field="fov"]').value = String(fov);
+        this.panel.root.querySelector('[data-field="span"]').value = String(orthoHeight);
+        this.panel.root.querySelector('[data-field="zoom"]').value = String(this.camera.zoom);
+    }
+
+    setInspection({ lod = this.lodColors, boundaries = this.boundaries } = {}) {
+        this.stream?.setInspection({ lod, boundaries });
+        this.lodColors = lod;
+        this.boundaries = boundaries;
+        this.panel.active('lod', lod);
+        this.panel.active('boundaries', boundaries);
+    }
+
+    async setBudgets(budgets) {
+        this.loadSequence++;
+        this.loadAbort?.abort();
+        this.loadingStream?.dispose();
+        this.loadingStream = null;
+        this.selectionAbort?.abort();
+        for (const lease of this.consumerLeases.values()) lease.release();
+        this.consumerLeases.clear();
+        this.stream?.dispose();
+        this.stream = null;
+        this.loaded = null;
+        this.budget.dispose();
+        this.budget = new LandscapeResidencyBudget(budgets);
+        return this.load();
+    }
+
+    async acquireConsumer(ids, options = {}) {
+        const consumer = options.consumer ?? `test-consumer-${crypto.randomUUID()}`;
+        if (this.consumerLeases.has(consumer)) throw new Error(`Consumer ${consumer} already has a lease`);
+        const lease = await this.stream.acquireChunks(ids, { ...options, consumer });
+        this.consumerLeases.set(consumer, lease);
+        return { consumer, chunkIds: lease.chunkIds };
+    }
+
+    releaseConsumer(consumer) { this.consumerLeases.get(consumer)?.release(); this.consumerLeases.delete(consumer); }
 
     preset(name) {
         const presets = {
@@ -129,18 +220,19 @@ export class LandscapeView {
 
     setMode(mode) {
         if (!['shaded', 'wireframe', 'combined'].includes(mode)) throw new Error(`Unknown inspection mode: ${mode}`);
+        this.stream?.setInspection({ mode });
         this.mode = mode;
-        this.model?.setMode(mode);
         this.panel.mode(mode);
         this.perfBar.requestUpdate();
     }
 
     pick(clientX, clientY) {
-        if (!this.model) return null;
+        if (!this.stream) return null;
         const rect = this.canvas.getBoundingClientRect();
         this.raycaster.setFromCamera(new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1), this.camera);
-        this.model.mesh.updateMatrixWorld();
-        const hit = this.raycaster.intersectObject(this.model.mesh, false)[0];
+        const meshes = this.stream.renderedMeshes();
+        for (const mesh of meshes) mesh.updateMatrixWorld();
+        const hit = this.raycaster.intersectObjects(meshes, false)[0];
         if (!hit) { this.clearSelection(); this.panel.text('selection', 'No terrain at this point.'); return null; }
         return this.select(hit.point.x, hit.point.z);
     }
@@ -159,9 +251,12 @@ export class LandscapeView {
             this.showSelection(context);
             this.saveSelection(context);
             this.panel.text('selection-title', 'Resolving native terrain…');
-            const response = await fetch('/api/landscape/query', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...options, expectedRevision: this.loaded.manifest.revision }), signal: this.selectionAbort.signal });
-            const resolved = await response.json();
-            if (!response.ok) throw new Error(resolved.error ?? `HTTP ${response.status}`);
+            const manifest = this.loaded.manifest;
+            const plan = planLandscapeRegion(manifest, context.region);
+            const lease = await this.stream.acquireChunks(plan.chunkIds, { consumer: `selection/${options.selectionId}`, priority: 100, accuracy: 'authoritative', signal: this.selectionAbort.signal });
+            let resolved;
+            try { resolved = await queryLandscapeSelection(manifest, { ...options, expectedRevision: manifest.revision }, { readChunk: lease.readChunk, signal: this.selectionAbort.signal }); }
+            finally { lease.release(); }
             if (this.disposed || sequence !== this.selectionSequence) return null;
             if (resolved.sourceRevision !== this.loaded.manifest.revision || resolved.provisional || !resolved.editingReady) throw new Error('Native selection did not resolve against the displayed revision');
             this.showSelection(resolved);
@@ -189,7 +284,7 @@ export class LandscapeView {
                 const angle = i / 72 * Math.PI * 2;
                 const x = context.position.x + Math.cos(angle) * context.region.radius;
                 const z = context.position.z + Math.sin(angle) * context.region.radius;
-                const sample = sampleLandscapeChunk(this.loaded.manifest, this.loaded.chunk, x, z);
+                const sample = sampleLandscapeChunk(this.loaded.manifest, this.stream?.renderedChunkAt(x, z) ?? this.loaded.chunk, x, z);
                 points.push(new THREE.Vector3(x, sample.height + .2, z));
             }
             this.selectionOutline.geometry.setFromPoints(points);
@@ -253,6 +348,12 @@ export class LandscapeView {
     }
 
     async action(action) {
+        if (action === 'projection') return this.setCamera({ projection: this.panel.root.querySelector('[data-field="projection"]').value });
+        if (action === 'fov') return this.setCamera({ fov: Number(this.panel.root.querySelector('[data-field="fov"]').value) });
+        if (action === 'span') return this.setCamera({ orthoHeight: Number(this.panel.root.querySelector('[data-field="span"]').value) });
+        if (action === 'zoom') return this.setCamera({ zoom: Number(this.panel.root.querySelector('[data-field="zoom"]').value) });
+        if (action === 'lod') return this.setInspection({ lod: !this.lodColors });
+        if (action === 'boundaries') return this.setInspection({ boundaries: !this.boundaries });
         if (action === 'focus-selection') return this.focusSelection();
         if (action === 'selection:radius') return this.setSelectionRadius(Number(this.panel.root.querySelector('[data-field="radius"]').value));
         if (action.startsWith('mode:')) return this.setMode(action.slice(5));
@@ -282,10 +383,11 @@ export class LandscapeView {
     snapshot() {
         return {
             ready: !!this.loaded, disposed: this.disposed, mode: this.mode, revision: this.loaded?.manifest.revision,
-            selection: this.selection, camera: { position: this.camera.position.toArray(), target: this.controls.target.toArray() },
+            selection: this.selection, camera: { position: this.camera.position.toArray(), target: this.controls.target.toArray(), projection: this.projection, fov: this.perspectiveFov, orthoHeight: this.orthoHeight, zoom: this.camera.zoom },
             source: this.source, lastError: this.lastError ?? null, frameIndex: this.frameIndex,
             helpers: { grid: this.grid.visible, axes: this.axes.visible },
-            sourceBytes: this.loaded?.decodedBytes ?? 0, memory: this.model?.diagnostics() ?? null,
+            sourceBytes: this.stream?.snapshot().sourceBytes ?? 0, memory: this.stream?.snapshot() ?? null,
+            streaming: this.stream?.snapshot() ?? null, budget: this.budget.snapshot(),
             renderer: { ...this.renderer.info.render, memory: { ...this.renderer.info.memory } },
             canvas: { width: this.canvas.width, height: this.canvas.height }
         };
@@ -300,6 +402,22 @@ export class LandscapeView {
             const rawDt = (now - this.lastFrame) / 1000;
             this.lastFrame = now;
             this.controls.update(Math.min(rawDt, .1));
+            if (this.camera.isOrthographicCamera) this.camera.fov = 2 * Math.atan(this.orthoHeight / this.camera.zoom / (2 * this.camera.position.distanceTo(this.controls.target))) * 180 / Math.PI;
+            if (!this.reloading) this.stream?.update(rawDt, this.camera, this.canvas.height);
+            if (this.stream && (!this.lastTelemetryUpdate || now - this.lastTelemetryUpdate > 250)) {
+                const stats = this.stream.snapshot();
+                const mib = bytes => (bytes / (1024 * 1024)).toFixed(1);
+                const levels = stats.lods.map(lod => lod.level);
+                this.panel.text('streaming', `LOD ${Math.min(...levels)}–${Math.max(...levels)} · ${stats.residentLeafIds.length} tiles · ${stats.pending} pending · CPU ${mib(stats.budget.cpuBytes)}/${mib(stats.budget.limits.cpuBytes)} MiB · GPU est. ${mib(stats.budget.gpuBytes)}/${mib(stats.budget.limits.gpuBytes)} MiB · error ${stats.achievedErrorPixels.toFixed(2)}/${stats.targetErrorPixels.toFixed(1)} px · ${stats.degradationReason ?? 'ready'}`);
+                this.panel.text('streaming-detail', `Loaded ${stats.loaded} · evicted ${stats.evicted} · canceled ${stats.canceled} · queue ${stats.queueDepth} · upload ${mib(stats.uploadedBytesPerFrame)} MiB/frame · stream ${stats.frameCostMs.toFixed(2)} ms`);
+                if (this.selection) {
+                    const x = this.selection.position.x, z = this.selection.position.z;
+                    const chunk = this.stream.renderedChunkAt(x, z);
+                    const lod = stats.lods.find(value => value.id === chunk?.descriptor.id);
+                    this.panel.text('chunk', lod ? `${lod.id} · rendered / resident\nLOD ${lod.level} · error ${lod.errorPixels?.toFixed(2) ?? '—'} px\nSource error ≤ ${lod.geometricError.toFixed(3)} m` : 'Selected point is outside rendered terrain');
+                }
+                this.lastTelemetryUpdate = now;
+            }
             if (this.marker.visible) this.marker.scale.setScalar(Math.max(.3, this.camera.position.distanceTo(this.marker.position) * .004));
             this.gpuTimer.poll();
             this.gpuTimer.beginFrame();
@@ -322,8 +440,10 @@ export class LandscapeView {
         this.abort.abort();
         this.resizeObserver.disconnect();
         this.controls.dispose();
-        this.model?.dispose();
-        this.model = null;
+        this.loadingStream?.dispose();
+        this.stream?.dispose();
+        this.stream = null;
+        this.consumerLeases.clear();
         this.gpuTimer.resetSamples();
         for (const helper of [this.grid, this.axes, this.marker, this.selectionOutline]) {
             helper.geometry.dispose();

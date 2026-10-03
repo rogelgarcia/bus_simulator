@@ -15,6 +15,26 @@ const retained = path.join(root, 'assets/public/landscape/coastal-city');
 const evidence = path.join(root, 'tests/artifacts/screens/landscape/ai576/d1/import-tests');
 await mkdir(evidence, { recursive: true });
 const temporary = () => mkdtemp(path.join(evidence, 'fixture-'));
+let originalPreparation;
+
+// Current authoring/hierarchy revisions can evolve; the retained original source is the import oracle.
+function preparedOriginal() {
+    originalPreparation ??= (async () => {
+        const manifest = JSON.parse(await readFile(path.join(retained, 'manifest.json'), 'utf8'));
+        const provenance = JSON.parse(await readFile(path.join(retained, 'PROVENANCE.json'), 'utf8'));
+        const files = new Map();
+        for (const reference of manifest.references) {
+            const bytes = await readFile(path.join(retained, reference.url));
+            assert.equal(bytes.length, reference.byteLength); assert.equal(sha256(bytes), reference.sha256);
+            files.set(reference.url.split('/').slice(2).join('/'), bytes);
+        }
+        assert.equal(files.size, 29);
+        return prepareCoastalLandscape(path.join(await temporary(), 'original'), {
+            files, sourceSha256: COASTAL_SOURCE_SHA256, archiveByteLength: provenance.archiveByteLength
+        });
+    })();
+    return originalPreparation;
+}
 
 function pngChunk(type, data) {
     const typeBytes = Buffer.from(type), length = Buffer.alloc(4), crc = Buffer.alloc(4);
@@ -100,7 +120,7 @@ test('Landscape partitions preserve float32 bits, zero and class IDs across nati
 });
 
 test('Retained coastal import authenticates full native coverage, orientation, checkpoints, and all planning records', async () => {
-    const report = await validatePreparedCoastal(retained);
+    const report = await validatePreparedCoastal((await preparedOriginal()).directory);
     assert.equal(report.sourceSha256, COASTAL_SOURCE_SHA256);
     assert.equal(report.nativeChunks, 64); assert.equal(report.sourceFiles, 29); assert.equal(report.sharedBorders, 112);
     assert.equal(report.samplesCompared, 65 * 257 * 257);
@@ -112,7 +132,7 @@ test('Retained coastal import authenticates full native coverage, orientation, c
 });
 
 test('Coastal repeat preparation is byte-identical and corrupt candidates cannot replace a valid manifest', async () => {
-    const currentBytes = await readFile(path.join(retained, 'manifest.json'));
+    const currentBytes = await readFile((await preparedOriginal()).manifestFile);
     const manifest = JSON.parse(currentBytes), provenance = JSON.parse(await readFile(path.join(retained, 'PROVENANCE.json'), 'utf8'));
     const files = new Map();
     for (const reference of manifest.references) files.set(reference.url.split('/').slice(2).join('/'), await readFile(path.join(retained, reference.url)));
@@ -128,7 +148,7 @@ test('Coastal repeat preparation is byte-identical and corrupt candidates cannot
 });
 
 test('Coastal import refuses changed revisions and authored edits while allowing identical republishing', async () => {
-    const manifest = JSON.parse(await readFile(path.join(retained, 'manifest.json'), 'utf8'));
+    const manifest = JSON.parse(await readFile((await preparedOriginal()).manifestFile, 'utf8'));
     assert.doesNotThrow(() => assertCoastalPublicationCompatible(null, manifest));
     assert.doesNotThrow(() => assertCoastalPublicationCompatible(structuredClone(manifest), manifest));
     const revision = structuredClone(manifest); revision.revision += '-edited';

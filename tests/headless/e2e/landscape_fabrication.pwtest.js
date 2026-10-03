@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const artifacts = path.resolve('tests/artifacts/screens/landscape/ai576/d1');
+const artifacts = path.resolve(`tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'regression'}/viewer`);
 
 test('Landscape D1: real overview, wireframe, pointing, reload, and teardown', async ({ page }) => {
     const errors = [];
@@ -17,7 +17,7 @@ test('Landscape D1: real overview, wireframe, pointing, reload, and teardown', a
     await expect(page.locator('#ui-perf-bar')).toHaveCount(1);
     await expect(page.locator('.ui-perf-bar-fps')).not.toHaveText('FPS: -- (-- ms)');
     const initial = await page.evaluate(() => window.__landscapeTestHooks.snapshot());
-    expect(initial.memory.vertices).toBeLessThanOrEqual(257 * 257);
+    expect(initial.memory.vertices).toBeLessThanOrEqual(257 * 257 + 4 * 256);
     expect(initial.memory.estimatedPeakBytes).toBeLessThanOrEqual(initial.memory.memoryCapBytes);
     expect(initial.sourceBytes).toBeLessThan(1024 * 1024);
     expect(payloads.length).toBe(3);
@@ -67,7 +67,7 @@ test('Landscape D1: real overview, wireframe, pointing, reload, and teardown', a
     expect((await page.evaluate(() => window.__landscapeTestHooks.snapshot())).memory.overlayBytes).toBe(0);
     expect((await page.evaluate(() => window.__landscapeTestHooks.snapshot())).renderer.memory.geometries).toBe(selected.renderer.memory.geometries);
     await page.getByRole('button', { name: 'Reload source', exact: true }).click();
-    await expect.poll(() => page.locator('[data-field="status"]').textContent()).toContain('triangles');
+    await expect.poll(() => page.locator('[data-field="status"]').textContent()).toContain('Worker streaming ready');
     await expect.poll(() => page.evaluate(() => window.__landscapeTestHooks.snapshot().selection.editingReady)).toBe(true);
     const reloaded = await page.evaluate(() => window.__landscapeTestHooks.snapshot());
     expect(reloaded.camera.position).toEqual(selected.camera.position);

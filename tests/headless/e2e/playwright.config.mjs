@@ -18,7 +18,7 @@ export default {
     fullyParallel: false,
     retries: process.env.CI ? 1 : 0,
     reporter: [['list']],
-    outputDir: path.resolve(__dirname, '../../artifacts/headless/e2e'),
+    outputDir: process.env.E2E_OUTPUT_DIR ? path.resolve(repoRoot, process.env.E2E_OUTPUT_DIR) : path.resolve(__dirname, '../../artifacts/headless/e2e'),
     use: {
         baseURL,
         headless,

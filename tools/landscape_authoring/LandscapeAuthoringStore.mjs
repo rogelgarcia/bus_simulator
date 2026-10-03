@@ -1,8 +1,9 @@
 // Persists bounded landscape edits with immutable payloads, revision snapshots, and an atomic current-manifest switch.
 // @ts-check
 import path from 'node:path';
-import { validateLandscapeManifest, decodeLandscapeChannel, encodeLandscapeChannel, queryLandscapeSelection, applyLandscapeEditBatch, LANDSCAPE_MANIFEST_BYTE_LIMIT } from '../../src/app/landscape/index.js';
+import { validateLandscapeManifest, encodeLandscapeChannel, queryLandscapeSelection, applyLandscapeEditBatch, LANDSCAPE_MANIFEST_BYTE_LIMIT } from '../../src/app/landscape/index.js';
 import { acquireAuthoringLock, atomicAuthoringWrite, authoringFile, authoringHash, readAuthoringFile, writeImmutableAuthoringFile } from './AuthoringFiles.mjs';
+import { readLandscapeFileChunk, readLandscapeFileManifest } from './LandscapeFileIO.mjs';
 
 export const LANDSCAPE_AUTHORING_BUDGETS = Object.freeze({ maxNativeChunks: 4, maxDecodedBytes: 2 * 1024 * 1024, maxBatchBytes: 64 * 1024 });
 const jsonBytes = value => Buffer.from(JSON.stringify(value, null, 2) + '\n');
@@ -21,28 +22,11 @@ export function createLandscapeAuthoringStore({ directory }) {
     }
 
     async function readManifest(relative = 'manifest.json') {
-        const bytes = await readAuthoringFile(authoringFile(base, relative), LANDSCAPE_MANIFEST_BYTE_LIMIT);
-        const manifest = validateLandscapeManifest(JSON.parse(bytes.toString('utf8')));
-        return { bytes, manifest };
+        return readLandscapeFileManifest(base, relative);
     }
 
     function reader(manifest) {
-        return async (chunkId, { signal } = {}) => {
-            signal?.throwIfAborted();
-            const descriptor = manifest.chunks.find(chunk => chunk.id === chunkId);
-            if (!descriptor) throw new Error(`[LandscapeAuthoring] Unknown chunk ${chunkId}`);
-            const decoded = {};
-            for (const [name, channel] of Object.entries(descriptor.channels)) {
-                signal?.throwIfAborted();
-                const bytes = await readAuthoringFile(authoringFile(base, channel.url), channel.byteLength);
-                if (authoringHash(bytes) !== channel.sha256) throw new Error(`[LandscapeAuthoring] Channel hash mismatch: ${chunkId}/${name}`);
-                decoded[name] = decodeLandscapeChannel(bytes, channel, name === 'height'
-                    ? { minHeight: descriptor.minHeight, maxHeight: descriptor.maxHeight }
-                    : { allowedIds: new Set(manifest.landCover.catalog.map(entry => entry.id)) });
-            }
-            signal?.throwIfAborted();
-            return { descriptor, heights: decoded.height, landCover: decoded.landCover };
-        };
+        return (chunkId, options) => readLandscapeFileChunk(base, manifest, chunkId, options);
     }
 
     async function ensureCurrent(bytes) {
@@ -90,8 +74,9 @@ export function createLandscapeAuthoringStore({ directory }) {
             const candidate = result.manifestDraft;
             for (const changed of result.changedChunks) {
                 const bytes = encodeLandscapeChannel(changed.heights, 'float32-le'), hash = authoringHash(bytes), url = `payloads/${hash}.f32le`;
-                await writeImmutableAuthoringFile(authoringFile(base, url), bytes);
                 const descriptor = candidate.chunks.find(chunk => chunk.id === changed.descriptor.id);
+                if (descriptor.channels.height.sha256 === hash) continue;
+                await writeImmutableAuthoringFile(authoringFile(base, url), bytes);
                 descriptor.channels.height = { url, encoding: 'float32-le', byteLength: bytes.byteLength, decodedByteLength: bytes.byteLength, sha256: hash, revision };
             }
             candidate.editHistory.previousManifestUrl = await snapshot(before.bytes);
@@ -110,6 +95,7 @@ export function createLandscapeAuthoringStore({ directory }) {
             if (!/^manifest\.[a-f0-9]{64}\.json$/.test(history.previousManifestUrl)) throw new Error('[LandscapeAuthoring] Invalid previous manifest snapshot identity');
             const previous = await readManifest(history.previousManifestUrl);
             if (`manifest.${authoringHash(previous.bytes)}.json` !== history.previousManifestUrl || previous.manifest.id !== before.manifest.id) throw new Error('[LandscapeAuthoring] Previous manifest snapshot failed authentication');
+            if (before.manifest.capabilities.includes('chunk-hierarchy-v1') && !previous.manifest.capabilities.includes('chunk-hierarchy-v1')) throw new Error('[LandscapeAuthoring] Prepare the hierarchy to upgrade the previous saved snapshot before reverting');
             const restored = previous.manifest.chunks.filter(chunk => {
                 const current = before.manifest.chunks.find(item => item.id === chunk.id);
                 return !current || Object.keys(chunk.channels).some(name => chunk.channels[name].sha256 !== current.channels[name].sha256);

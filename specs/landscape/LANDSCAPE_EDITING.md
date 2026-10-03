@@ -1,6 +1,6 @@
 # Landscape editing and authoritative acquisition
 
-D2 extends the schema-1 landscape without changing D1 source documents. It implements bounded native queries, raise/lower, flatten/set-height, hard soil assignment, ordered batches, immutable publication, and one-batch revert. Movement/zoom streaming remains D3; smoothing, polygons, and large-area work remain D5.
+D2 extends the schema-1 landscape without changing D1 source documents. It implements bounded native queries, raise/lower, flatten/set-height, hard soil assignment, ordered batches, immutable publication, and one-batch revert. D3 extends rebuilding to every affected prepared ancestor; smoothing, polygons, and large-area work remain D5.
 
 The public pure-domain entry is `src/app/landscape/index.js`. Persistence is owned by `tools/landscape_authoring/LandscapeAuthoringStore.mjs`; the local server and viewer adapt it without adding renderer dependencies to the domain. The focused suites are `tests/node/unit/landscape_editing.test.js` and `landscape_model.test.js`.
 
@@ -109,13 +109,13 @@ The renderer may call this pure resolver at resident vertices to update visible 
   manifestDraft,
   changedChunks: [{descriptor,heights,landCover}],
   summary: {batchId,beforeRevision,revision,affectedBounds,channels,
-            changedChunkIds,changedNativeIds,changedVertexOccurrences,
+            changedChunkIds,changedNativeIds,changedAncestorIds,changedVertexOccurrences,
             maxNativeDelta,minHeight,maxHeight,acquiredNativeChunkIds,
             workingBytes,workingByteLimit,overviewErrorIsConservative}
 }
 ```
 
-This function has no filesystem/renderer side effects. Original manifests and source arrays remain unchanged. Only native height arrays whose values changed are returned, plus the covering root when any native height changed. All land-cover arrays/descriptors remain unchanged. Soil-only batches change manifest metadata without writing height or cover payloads. Unaffected native descriptors retain their IDs, revisions, URLs, and hashes. `changedVertexOccurrences` includes duplicated border occurrences; it is not a count of unique world vertices.
+This function has no filesystem/renderer side effects. Original manifests and source arrays remain unchanged. Only native height arrays whose values changed are returned, plus every affected prepared ancestor when any native height changed. All land-cover arrays/descriptors remain unchanged. Soil-only batches change manifest metadata without writing height or cover payloads. Unaffected native and ancestor descriptors retain their IDs, revisions, URLs, hashes and errors. `changedVertexOccurrences` includes duplicated border occurrences; it is not a count of unique world vertices.
 
 The draft is deliberately unpublished and incomplete: changed height channel references/hashes still refer to their old contents, and the previous snapshot pointer is not filled. The persistence owner must encode/hash/write immutable changed height payloads, replace those channel references with the new content revision, set `editHistory.previousManifestUrl`, validate the complete candidate and its payloads, save its immutable manifest, and atomically replace `manifest.json` last. Failure before the final switch leaves the last valid saved terrain active. Server/CLI locking prevents concurrent writers from interleaving batches. The viewer similarly retains its last valid displayed revision on reload failure.
 
@@ -131,16 +131,16 @@ editHistory: {
 
 `lastBatchId` and `previousManifestUrl` must be present together. The snapshot is relative to the manifest and passes the same path restrictions as payload URLs. One-batch revert verifies the requested current revision, restores the saved pre-batch source/soil/operation state as a new current revision, retains the union of batch-ID tombstones, and clears both last-batch fields. This prevents a retried relative edit from being applied twice even after revert. Revert is an authoring operation backed by saved data; it does not use Git.
 
-## Root rebuild, memory, and limitations
+## Ancestor rebuild, memory, and limitations
 
-D2 accepts the prepared root/native hierarchy. For every changed native sample aligned with the root stride, the root is updated to that exact float32 value. Shared duplicate writes are identical. The root's native min/max envelope is recomputed from all native descriptor envelopes, without reading unrelated native chunks. Its safe vertical error becomes:
+D3 accepts the complete prepared hierarchy while retaining base root/native compatibility. For every changed native sample aligned with an affected ancestor's stride, that ancestor is updated to the exact float32 value. Shared duplicate writes are identical. Each affected ancestor's native min/max envelope is recomputed from descendant native descriptor envelopes, without reading unrelated native chunks. Its safe vertical error becomes:
 
 ```text
-newError <= oldError + maxAbsoluteNativeHeightChange + maxAbsoluteRootHeightChange
+newError = oldError + maxAbsoluteNativeHeightChange + maxAbsoluteAncestorHeightChange
 ```
 
-The stored value is this conservative upper bound, not a new measured tight error. It follows from the triangle inequality and the unchanged nested triangulations. Source sample changes bound the change of each native triangle, and root vertex changes bound the change of each root triangle. D3 may tighten errors during hierarchy preparation. Even when an edited patch misses all root vertices, its native-envelope/error metadata must change; the root is still a dependency of that edit.
+The stored value is a conservative upper bound, not a new measured tight error. It follows from the triangle inequality and the unchanged nested triangulations. Source sample changes bound the change of each native triangle, and ancestor vertex changes bound the change of each coarse triangle. The registered `landscape/hierarchy` leaf tightens errors from current saved native channels. Even when an edited patch misses every coarse vertex, ancestor envelope/error metadata must change; those nodes remain dependencies of the edit. Identical channel bytes retain their previous channel hash, URL and content revision while descriptor/manifest revisions change.
 
-The kernel reserves up to 8 MiB of tracked working buffers, covering loaded native height/cover arrays, copied edited heights, loaded/copied overview data, and a three-height-channel allowance for read/encode/hash staging. A four-chunk coastal height edit reserves 3,764,793 bytes under this formula. This is array/staging accounting, not a measurement of the entire Node/browser heap or filesystem cache. Metadata is separately bounded by batch/operation limits. No full-resolution source grid is assembled. Actual general streaming CPU/GPU/cache budgets, concurrent consumers, and transient accounting are D3 work.
+The kernel reserves up to 8 MiB of tracked working buffers before native I/O, covering loaded native height/cover arrays, copied edited heights, all resulting ancestor arrays, one ancestor input-height scratch buffer, and a three-height-channel allowance for read/encode/hash staging. A four-chunk coastal height edit at the central intersection rebuilds nine ancestors and reserves 6,406,753 bytes. This is array/staging accounting, not a measurement of the entire Node/browser heap or filesystem cache. Metadata is separately bounded by batch/operation limits. No full-resolution source grid is assembled. Runtime streaming has independent shared CPU/GPU/transient budgets in `LANDSCAPE_STREAMING.md`.
 
-Native inputs load sequentially; abort/failure prevents publication. Editing never evicts unsaved authoritative data because the pure kernel owns its temporary copies until persistence completes. D2 rejects manifests with intermediate prepared levels rather than leave stale ancestors; D3 must extend rebuilding to every affected ancestor before enabling such manifests. Large regions, smoothing halos, polygon operations, arbitrary streaming consumers, and bounded multi-pass edits are explicitly deferred to D3/D5.
+Native inputs and affected ancestors load sequentially; abort/failure prevents publication. Editing never evicts unsaved authoritative data because the pure kernel owns its temporary copies until persistence completes. Revert restores consistent saved native and ancestor states together; initial hierarchy preparation also upgrades a pre-D3 last-batch snapshot before switching current data. See `LANDSCAPE_HIERARCHY.md` for that preservation contract. Large regions, smoothing halos, polygon operations and bounded multi-pass edits remain D5 work.
