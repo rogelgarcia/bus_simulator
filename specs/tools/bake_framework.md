@@ -233,6 +233,19 @@ not conflict and the graph must have no cycles or missing jobs. Register a new
 domain in `tools/baking/registry.mjs`; do not add domain conditions to the planner.
 Every public entry uses `runBakeCli`, including standalone leaves.
 
+`tools/bake_landscape` owns the explicit `landscape/coastal-import` leaf and the
+`landscape` parent. They are registered but excluded from production `all`.
+The scoped `source` path selects the supplied authenticated coastal ZIP; tracked
+defaults contain no machine path. `configurationPaths: []` keeps this Node-only
+plan within the shared local configuration without requiring Blender, Python or
+a browser. The domain is included in framework code identity. Preparation retains
+all source references, partitions exact native channels and creates a bounded
+overview; validation checks original sample bits, category IDs, every shared
+border, hashes and measured overview error. Optional publication installs
+immutable resources before switching the manifest atomically and refuses to
+replace an authored/changed current revision. Existing lighting, material and
+visibility gates are unchanged. See [the landscape workflow](../../tools/bake_landscape/README.md).
+
 Explicit browser-only diagnostic plans may declare `configurationPaths` on every
 selected job. The shared loader then requires and checks only that union of machine
 paths. Jobs without this declaration retain the existing Blender configuration

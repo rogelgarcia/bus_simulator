@@ -86,6 +86,14 @@ export const SCENE_SHORTCUT_REGISTRY = Object.freeze([
         description: 'Interactive mesh fabrication workspace',
         qGroup: Q_MENU_GROUP.fabrication,
         href: 'screens/mesh_fabrication.html'
+    }),
+    Object.freeze({
+        id: 'landscape_fabrication',
+        label: 'Landscape Fabrication',
+        key: '8',
+        description: 'Terrain authoring, inspection, and streamed landscape preview',
+        qGroup: Q_MENU_GROUP.fabrication,
+        href: 'screens/landscape_fabrication.html'
     })
 ]);
 

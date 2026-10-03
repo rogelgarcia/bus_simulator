@@ -19,7 +19,7 @@ export async function executeBakes(plan, settings, context) {
     try {
         await mkdir(runRoot, { recursive: true });
         const code = [];
-        for (const directory of ['tools/baking', 'tools/bake_lighting', 'tools/bake_visibility', 'tools/bake_materials']) {
+        for (const directory of ['tools/baking', 'tools/bake_lighting', 'tools/bake_visibility', 'tools/bake_materials', 'tools/bake_landscape']) {
             for (const file of await listFiles(path.join(context.root, directory)).catch(e => { if (e.code === 'ENOENT') return []; throw e; })) {
                 if (!file.endsWith('.mjs') && !file.endsWith('.py') && !file.endsWith('defaults.json')) continue;
                 code.push({ file: path.relative(context.root, file), ...await hashFile(file) });

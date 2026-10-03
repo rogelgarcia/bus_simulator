@@ -1,5 +1,10 @@
 # Shared worktree folders (symlinked from main)
 /assets
+!/assets/
+/assets/*
+!/assets/public/
+/assets/public/*
+!/assets/public/landscape/
 /tools/baking/blender.local.json
 /downloads
 /docs

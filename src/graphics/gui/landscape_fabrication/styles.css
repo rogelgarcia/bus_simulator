@@ -1,0 +1,25 @@
+/* Landscape inspection workspace and shared performance-bar layout. */
+:root { color-scheme: dark; }
+.landscape-ui { position: fixed; inset: var(--global-top-bar-height) 0 0; z-index: 8; pointer-events: none; color: #e8edf2; font-size: 12px; }
+.landscape-header { position: absolute; inset: 0 0 auto; min-height: 60px; padding: 17px 24px; display: flex; justify-content: space-between; align-items: center; gap: 20px; background: linear-gradient(#101820f5, #101820c9); border-bottom: 1px solid #ffffff14; }
+.landscape-eyebrow { color: #8fb7b0; font-size: 10px; letter-spacing: 1.8px; font-weight: 650; }
+.landscape-header h1 { font-size: 21px; font-weight: 600; margin: 5px 0 0; letter-spacing: -.4px; }
+.landscape-header h1 span { color: #8c9ca9; font-size: 12px; font-weight: 400; letter-spacing: 0; margin-left: 14px; }
+.landscape-source { text-align: right; font-variant-numeric: tabular-nums; }
+.landscape-source small { display: block; margin-top: 6px; color: #93a4b0; }
+.landscape-toolbar { position: absolute; top: 105px; left: 24px; display: flex; flex-wrap: wrap; gap: 10px; max-width: calc(100% - 48px); pointer-events: auto; }
+.landscape-toolbar > div { display: flex; padding: 3px; border-radius: 7px; background: #14212eea; border: 1px solid #71869640; }
+.landscape-ui button { color: #c6d2dd; border: 1px solid transparent; padding: 7px 10px; border-radius: 4px; background: transparent; font: inherit; cursor: pointer; }
+.landscape-ui button:hover { background: #29434e; color: #fff; }
+.landscape-ui button.active { background: #36594e; color: #effff7; border-color: #98c2ab4d; }
+.landscape-ui button:focus-visible { outline: 2px solid #92d8c3; outline-offset: 2px; }
+.landscape-selection { position: absolute; top: 164px; right: 24px; width: 252px; padding: 18px; border: 1px solid #9eafbb2a; border-radius: 8px; background: #111f2de8; box-shadow: 0 8px 25px #0002; }
+.landscape-selection h2 { font-size: 15px; margin: 12px 0; font-weight: 550; }
+.landscape-selection p { color: #c4d1d9; font-variant-numeric: tabular-nums; line-height: 1.8; white-space: pre-line; }
+.landscape-selection small { display: block; color: #91a5b4; line-height: 1.6; overflow-wrap: anywhere; }
+.landscape-selection-actions { display: flex; flex-wrap: wrap; gap: 3px; pointer-events: auto; margin: 12px -5px; }
+.landscape-selection-actions button { border-color: #7c94a433; font-size: 11px; padding: 6px; }
+.landscape-legend { position: absolute; left: 24px; bottom: 65px; background: #10202ce6; border: 1px solid #6e8b9444; border-radius: 7px; padding: 11px 14px; color: #c7d3db; white-space: pre-line; line-height: 1.8; font-size: 11px; }
+.landscape-footer { position: absolute; inset: auto 0 0; padding: 12px 24px; display: flex; justify-content: space-between; gap: 18px; background: #101a24f2; border-top: 1px solid #ffffff16; color: #acbec9; font-size: 11px; }
+.landscape-notice { position: absolute; left: 24px; bottom: 150px; max-width: min(680px, calc(100% - 80px)); padding: 14px; border: 1px solid #d89658; border-radius: 7px; color: #ffe2c6; background: #35251aef; }
+@media (max-width: 1000px) { .landscape-selection { top: 172px; right: 16px; width: 215px; } .landscape-header h1 span { display: none; } .landscape-footer { flex-wrap: wrap; } }

@@ -1,0 +1,311 @@
+# Problem
+
+We need Landscape Fabrication as the terrain-authoring foundation for future game cities. The user needs to navigate a terrain, point to a location or area, describe a change to the AI, and see the resulting terrain update. A full manual editing UI is not needed yet.
+
+Existing Terrain Debugger and TerrainEngine provide useful biome/material infrastructure, but they do not define a complete persistent landscape with authored elevations and soil types. Current city construction also contains flat-ground assumptions. Terrain must become structured, reusable city data rather than a mesh or debugger configuration that only works in its preview screen.
+
+The first landscape comes from the supplied coastal-city terrain v2 archive. Future game terrains will have much higher detail than can remain resident at once. Terrain resources must stream as the camera moves and zooms, with bounded CPU and GPU memory. Reducing drawn triangles while keeping the full-resolution map allocated does not meet this requirement.
+
+# Request
+
+Create a Landscape Fabrication screen and a versioned, renderer-independent landscape data model in the dependency-ordered deliverables below. Begin with a basic coastal-terrain viewer, then add AI editing, streaming, appearance, and city preparation in usable increments. Import the supplied coastal-city terrain as the first landscape and complete camera- and zoom-aware terrain streaming within this prompt. The same authored landscape and spatial streaming contracts must support later integration with asphalt, roads, buildings, props, and other city content.
+
+## Delivery plan and dependency order
+
+Keep all deliverables and their completion record in this file. The numbered requirements in sections 1-9 describe the final capability; the ownership and gates below define when each part must be delivered. Do not pull every later requirement into the basic version or defer required streaming beyond this prompt.
+
+| Deliverable | Depends on | Usable result |
+| --- | --- | --- |
+| D1. Basic coastal viewer and data foundation | None | Open the real terrain, navigate, point, inspect wireframe/coordinates, and see the game's performance top bar. |
+| D2. First AI editing loop | D1 | Point to an area, change height or soil, refresh, save, and revert. |
+| D3. Movement and zoom streaming | D2 | Stream geometry/source detail within CPU/GPU budgets as the view changes. |
+| D4. Streamed terrain appearance | D3 | Stream soil/material detail independently of geometry, with coherent transitions. |
+| D5. Advanced and large-area editing | D3 | Smooth, grade, edit polygons/multiple chunks, and rebuild affected detail safely. |
+| D6. City preparation and spec compatibility | D4 and D5 | Retain landscape references through city tools and inspect construction constraints. |
+| D7. Integrated validation and handoff | D6 | Demonstrate the full coastal workflow and measured resource behavior. |
+
+Implement D1 through D7 sequentially, one deliverable at a time. Use subagents with maximum reasoning within each deliverable. Verify and commit each completed deliverable before starting the next. Each deliverable must leave a runnable, saved example and update its relevant specs, focused tests, and completion notes; testing is not postponed until D7. Use port 8002 for this worktree, never 8001. Open the viewer only for verification and screenshots, then close it to release GPU resources. Post progress screenshots with a brief list of implemented capabilities after each deliverable. A request to implement a specific deliverable covers that deliverable and its unmet prerequisites, not every later increment.
+
+### D1. Basic coastal viewer and data foundation
+
+- [x] Complete D1 and record its evidence below before marking this item done.
+- Own the initial schema and coastal import from sections 2 and 7: identity/revision, source provenance, coordinates, native height/land-cover data, soil mapping, independently readable authoritative chunks, and one bounded coarse overview. Define the manifest and channel contracts that later hierarchy levels will extend; no full-resolution runtime allocation is allowed even in the basic version.
+- Implement the standalone screen/navigation entry from sections 1 and 5, camera movement, top-down/home views, visible scale/orientation, and a point marker with copyable/project-local selection context from section 4. Basic land-cover colors or a small existing material set are sufficient here. Clearly label coarse hit context as provisional; exact editing arrives in D2.
+- Include section 5's inspection controls immediately: shaded, wireframe, and shaded-with-wireframe modes, optional grid/axes, and the existing shared game performance top bar connected to the viewer's renderer/frame loop. These are part of the basic viewer, not a later city-planning feature.
+- Preserve all supplied planning/reference records during import, even though their overlays arrive in D6. Keep sea level and seabed distinct, and declare outside-bounds/no-data behavior; a valid zero-meter height is not missing data.
+- Define load/validation errors, last-valid-display behavior, source reload with camera retention, and the distinction between persistent landscape data and viewer state. Schema additions in later deliverables must remain compatible with saved D1 data or have an explicit migration.
+- Gate: the supplied 4 km terrain opens from prepared retained assets at correct scale/orientation; navigation, point context, and shaded/wireframe inspection work; the shared performance top bar reports live viewer metrics without covering controls; source checkpoints and load/reload validation pass; measured runtime allocation stays within the documented coarse-preview cap. No editing, automatic view-dependent refinement, or playable-city claim is required yet.
+
+### D2. First AI editing loop
+
+- [ ] Complete D2 and record its evidence below before marking this item done.
+- Add the renderer-independent authoritative query/acquisition contract from section 6, including explicit pending/unavailable/outside/no-data states. Load only the source chunks needed to refine a point or bounded circular/rectangular selection and release them after use.
+- Deliver the smallest useful operations from section 3: raise/lower, set/flatten height, and soil assignment. Implement explicit extents/falloff, deterministic within-batch and between-batch ordering for overlapping edits, revision targeting, duplicate-batch rejection, batch validation/publication, saved source revisions, and last-batch revert.
+- Finish the section 4 handoff loop with exact selection context and regenerated revision-aware context after reload. Rebuild the affected coarse preview when edited; preserve camera and unrelated source data.
+- Limit the first editor to a documented bounded edit footprint if necessary. Oversized work must be rejected with a clear size/budget diagnostic; it must not load the entire terrain. Arbitrarily large bounded-work edits and smoothing arrive in D5.
+- Gate: point/select -> refine context -> raise a patch by 2 meters -> assign sand -> refresh -> reload from disk -> revert works on the real coastal data. Invalid/stale/duplicate edits leave saved terrain intact, and unchanged chunks/soil/IDs remain unchanged.
+
+### D3. Movement and zoom streaming
+
+- [ ] Complete D3 and record its evidence below before marking this item done.
+- Complete the prepared multiresolution hierarchy and section 8 core scheduler: camera/zoom/viewport error selection, coarse coverage, asynchronous acquisition, cancellation/version checks, CPU/GPU accounting/admission/eviction, bounded decode/upload, mixed-LOD seams, and diagnostics. Use D1's inexpensive appearance while material detail streaming is still pending.
+- Extend inspection with tile/chunk boundaries, LOD coloring, selected-chunk identity/residency/error, and compact streaming statistics alongside the shared performance bar. Wireframe must follow the currently rendered LOD and remain correct as chunks load, change, and unload.
+- Separate resource residency from visibility. Define bounded consumer requests/leases for selection and other non-camera users; expose priority, required accuracy, release/cancel behavior, and budget-conflict diagnostics. Actual gameplay collision consumers remain future work.
+- Keep D2 edits correct across eviction/revisit and invalidate affected source chunks, borders, and coarse hierarchy levels. Add whole-batch publication and stale-job tests as soon as resources can be in flight.
+- Gate: deterministic travel plus fixed-position perspective/orthographic zoom refines/coarsens terrain and releases resources within stated budgets; overview coverage remains valid; low-budget, failed-request, rapid-turn, and teleport tests pass. Exact samples and edits do not depend on displayed LOD. This is the first streamed-terrain version.
+
+### D4. Streamed terrain appearance
+
+- [ ] Complete D4 and record its evidence below before marking this item done.
+- Finish soil/material catalog bindings, retained land-cover semantics, independently selected appearance detail, material/page/mask loading, shared texture reference counting, and all appearance-related budget accounting from sections 2, 5, 7, and 8.
+- Keep semantic IDs unfiltered and camera-independent while visual transitions can blend. Preserve physical material scale, orientation, borders/normals, and continuity across terrain tiles and LODs.
+- Add a simple separate sea-level water reference for coastal inspection; preserve wet/submerged-ground queries without requiring waves, water physics, erosion, or hydrology simulation.
+- Gate: sand, exposed rock, vegetation-related cover, and planning pavement classes remain aligned with the source; close/overview views vary geometry and appearance residency independently; changing a texture does not alter soil identity. Soil edits refresh all affected appearance levels after unload/reload.
+
+### D5. Advanced and large-area editing
+
+- [ ] Complete D5 and record its evidence below before marking this item done.
+- Complete section 3's smoothing, graded slopes, polygon regions, and large selections using bounded chunk work and explicit neighbor halos. Extend D2's established operation-ordering contract to these operations. Do not require all chunks in the selected region to be resident at once.
+- Publish/revert a consistent edited revision across source data, neighboring borders, and ancestor LODs. Keep dirty data until saved and prevent stale decoder/renderer results from resurrecting pre-edit terrain.
+- Report each applied batch's affected bounds/channels and changed height range so the user and later city consumers can identify its impact. Preserve stable region IDs and existing local edits when reproducible source preparation is repeated.
+- Gate: a cross-tile polygon edit and smoothing/grade operation survive unload, full reload, and revert without seams, lost edits, unintended changes, or a memory spike proportional to the full landscape.
+
+### D6. City preparation and spec compatibility
+
+- [ ] Complete D6 and record its evidence below before marking this item done.
+- Complete section 6's optional landscape binding and reference-only compatibility through city creation, normalization, load, export, and reload. Keep the current JS city-spec ownership and legacy city behavior. This delivers a usable data connection, not sloped roads, terrain colliders, or a completed coastal city.
+- Add the compact read-only planning aids specified below: named districts/reference points, saved camera bookmarks, contour/slope/water overlays, and footprint/corridor terrain reports. Reuse current reservation/parcel concepts instead of introducing a second building-placement model.
+- Define changed-region/revision invalidation for dependent placement plans and baked outputs, plus future per-layer streaming and non-camera residency contracts. Prove the public sampler works without importing the screen/renderer.
+- Gate: a landscape-aware city fixture survives the actual normalize/import/export path without losing its binding, reservations, or placement semantics; ordinary city edits cannot silently recenter or regenerate the landscape; source references align; diagnostic queries identify wet, steep, unavailable, and out-of-bounds regions. Existing flat cities pass regression checks.
+
+### D7. Integrated validation and handoff
+
+- [ ] Complete D7 and record its evidence below before marking this item done.
+- Run section 9's integrated acceptance scenarios across the coastal landscape and an over-budget/high-resolution test case, building on each deliverable's focused checks.
+- Collect the repeatable residency/frame-time table, cold/warm loads, source-fidelity captures, edit/revisit evidence, and invalidation/round-trip results. Resolve failures before marking the overall prompt complete.
+- Gate: all acceptance criteria below pass; the handoff states what is implemented, measured resource limits, known limitations, and exactly which city/content/collision adapters remain future work.
+
+### Deliverable completion record
+
+Keep D1-D7 pending until implemented and verified. After each completed deliverable, record a short change summary, spec/source locations, validation results, remaining limitations, and artifact paths under `tests/artifacts/screens/landscape/ai576/d1/` through `d7/` as applicable. Only mark the whole prompt DONE after all seven deliverables pass.
+
+#### D1 completed — 2026-10-02
+
+- Added the independent Landscape Fabrication viewer, Fabrication shortcut 8, camera navigation/poses, shaded/wireframe/combined inspection, grid/axes, actual terrain picking, project-local selection handoff, safe reload, and the shared live game performance bar. The dedicated local server defaults to port 8002. Verification browser contexts were closed after capture.
+- Added the versioned renderer-independent model, coordinate/sampling/soil contracts, bounded hash-checked loaders, and a deterministic synthetic fixture. Canonical specs: `specs/landscape/LANDSCAPE_MODEL.md`, `COASTAL_IMPORT.md`, and `LANDSCAPE_VIEWER.md`; domain API: `src/app/landscape/index.js`.
+- Registered and ran `landscape/coastal-import` through the existing bake framework. Retained all 29 source records byte-for-byte; validated 64 authoritative chunks and all 112 shared borders. Source SHA-256 matches the supplied archive. Native elevations remain -30 to 49.21965408325195 meters; land-cover IDs remain unchanged.
+- Browser startup fetched only the manifest and two overview channels: 330,245 decoded bytes, 66,049 vertices, 131,072 triangles, and 3,950,628 estimated terrain GPU-buffer bytes. The coarse overview's measured maximum vertical error is 1.8092246055603027 meters; selection context is explicitly provisional. Full source rasters and native chunks are not startup dependencies.
+- Validation: 17 model tests, 6 importer tests, 2 importer/framework integration tests, 13 existing bake-framework tests, 1 handoff-server test, 1 menu-registration test, and 2 browser integration tests passed. Browser checks cover navigation, actual picking in shaded and wireframe, saved context, mode resource release, camera-preserving reload, invalid-update fallback, shared-bar layout, and teardown. A reproduced Three.js wireframe cache retention issue was fixed with owned disposable line resources.
+- Evidence: `tests/artifacts/screens/landscape/ai576/d1/01-overview.png`, `02-wireframe.png`, `03-beach-approach.png`, `verification.json`, and `import-validation.json`. Evidence remains gitignored. Source: `assets/public/landscape/coastal-city/manifest.json`; transient selection: `tests/artifacts/screens/landscape/ai576/selection.latest.json`.
+- D1 limitations are intentional: no persisted terrain edits, native selection acquisition, streaming hierarchy traversal, PBR appearance pages, water surface, or city binding yet. These remain D2-D6. Buffer inventories are not measured total heap/GPU memory or a settled performance benchmark.
+
+## 1. Scope and ownership
+
+- Add Landscape Fabrication as a distinct authoring screen, accessible through the existing tool/setup navigation and a direct standalone entry.
+- Keep this phase focused on terrain data/import, terrain streaming and rendering, navigation, pointing/selection, and the AI edit handoff. A sculpting toolbar, material-painting panels, embedded AI chat, natural-language parser, and external AI service integration are not required. Streaming buildings, roads, props, and other placed content is a later phase; define its attachment boundaries now.
+- Inspection controls and live performance statistics are required viewer UI from D1. The absence of a full manual editing UI does not remove wireframe/view controls or the existing game performance top bar.
+- The AI works through the repository's documented landscape source and editing API. User navigation or selection alone must not modify terrain.
+- Keep domain models, validation, terrain operations, and sampling in `src/app/`; keep the screen, picking visualization, and rendering in `src/graphics/`.
+- Reuse applicable terrain, material-catalog, camera, scene-registration, and live-handoff infrastructure. Keep Landscape Fabrication independent of Terrain Debugger's transient UI state and avoid duplicating an existing terrain/material engine.
+
+## 2. Canonical landscape data model
+
+- Define and implement a concrete versioned schema, with field types, required/optional fields, defaults, units, ranges, reference validation, and valid example documents. Persist plain serializable data, not Three.js objects, DOM state, or GPU resources.
+- The model must cover these logical blocks:
+
+| Block | Required meaning |
+| --- | --- |
+| Identity | Format/schema version, stable landscape ID, display name, and content revision. |
+| Coordinates and extent | World origin, finite XZ bounds in meters, Y-up elevation convention and datum, and explicit conversion to city tile coordinates. |
+| Elevation | An authoritative heightfield with declared sample spacing, dimensions, indexing, elevation units, interpolation/triangulation rule, and references to independently readable height chunks or fully specified reproducible inputs. |
+| Soil | A default soil ID covering the entire extent plus spatial assignments/overrides, their resolution or region geometry, and deterministic overlap/priority rules. |
+| Soil catalog and appearance | Stable semantic soil IDs and explicit bindings to existing ground-eligible material catalog entries; any biome/humidity mappings must be declared separately. |
+| Authoring records | Stable IDs for named regions and authored operations/overrides, operation ordering, parameters, and seeds for any procedural behavior. |
+| Streaming manifest | Stable spatial tile keys, hierarchy/LOD relationships, world/elevation bounds, geometric error, resource channels, independently loadable payload references, content versions/hashes, and encoded/decoded size metadata. |
+| Import provenance | Source package identity/hash, coordinate conversion and encoding, native resolution, channel mappings, and reproducible preparation settings. |
+| City integration references | An optional versioned landscape binding with landscape/manifest identity, revision, explicit local-to-city transform and extent, and supported capabilities; no embedded editor-only state. |
+| Reference and validity channels | Stable named districts/reference points, separate water/land validity and planning constraints, with declared provenance and outside/no-data semantics. |
+
+- Use a single-valued heightfield for the initial surface: one authoritative elevation per XZ location. State its limits explicitly; caves, overhangs, tunnels, bridges, and stacked surfaces belong to later geometry/content layers.
+- Define exactly which persisted data is authoritative. If procedural generation and local edits are combined, document evaluation order and preserve explicit local edits on regeneration. Generated meshes, LODs, normals, and caches remain derived data.
+- Keep stable identifiers independent of mesh vertex/triangle indices and rendering LOD. Preserve unaffected IDs across local edits; document the identity policy when changing terrain resolution or extent.
+- Define boundary sampling and outside-extent behavior. Shared tile/chunk edges must resolve to identical elevations and soil assignments. Distinguish heightfield sample spacing from city tile size and render tessellation.
+- Establish partitioned source storage and a bounded overview in D1, then complete hierarchical resource streaming in D3-D4. Use a compact manifest/index plus independently loadable payloads; do not require the runtime to fetch/decode the source ZIP, full-resolution raster, or one giant JSON array before it can show the landscape. Keep a small synthetic fixture for focused tests alongside the first real coastal-city landscape.
+- Separate semantic soil from its visual texture, biome, humidity, and vegetation coverage. Changing a texture must not silently change soil identity or terrain geometry. Document how initial soil classes map to the existing `stone`, `grass`, and `land` biome contract where appropriate.
+- Soil assignment must support bounded regions and local changes without requiring one soil type per entire city tile. Resolve hard assignments deterministically; visual blending must not make the authoritative soil result camera-dependent.
+- Keep camera pose, hover state, temporary selection, and visualization settings outside the reusable landscape model.
+- Define compatibility/migration rules for saved schema versions, unknown required capabilities, missing source channels, and source no-data samples. Preserve intentional sea-level/zero values, negative seabed heights, and distinct authored soil/land-cover/reference channels. An unsupported or unavailable value must not silently become a valid flat surface.
+
+## 3. Terrain editing without a full editing UI
+
+- Expose a documented, renderer-independent editing API or command format that the AI can invoke against the canonical landscape. Edits must be expressed as data operations, not bespoke source-code changes for each hill or soil patch.
+- Deliver raise/lower elevation, set/flatten to a target elevation, and assign/replace soil in D2; add smooth terrain, graded slopes between defined heights, polygon selections, and large-area operations in D5. Every operation targets an explicit world-space selection.
+- Every operation must declare its target, affected area, parameters in meters where applicable, and edge/falloff behavior. Point edits need a declared extent; do not infer an affected radius from the camera or screenshot.
+- Support circular, rectangular, and polygonal regions in the data contract. The initial screen only needs point selection and a simple area-selection mechanism; richer shapes may be supplied through structured input.
+- Define deterministic ordering for overlapping operations, stable operation IDs, and an expected input revision. Invalid or stale edit batches must fail with useful diagnostics and leave the last valid landscape intact.
+- Validate a complete edit batch before publishing it. Repeated delivery of an already applied batch must not apply relative height changes twice.
+- Provide a way to revert the last applied batch or restore a previous saved revision without using Git commits as the editing mechanism. A full history UI is not required.
+- Update only affected terrain data/render resources where practical. Preserve unrelated terrain, soil assignments, named regions, and camera state.
+- Edits spanning nonresident chunks must load authoritative inputs on demand, including any neighbor halo needed by smoothing or normals. Process large selections in bounded work units, persist changes before eviction, and publish the batch atomically. Do not require the entire selection or terrain to be resident simultaneously.
+- Invalidate/rebuild affected chunk payloads, border dependencies, and ancestor overview LODs after an edit or revert. Version their derived resources so distant/coarse views cannot keep displaying obsolete terrain; unchanged chunks remain reusable.
+
+## 4. Pointing and AI context handoff
+
+- Let the user point at the actual rendered terrain, see a clear hit marker/highlight, and select a location or bounded area. Camera gestures must not accidentally become selections or edit operations.
+- Surface a compact readout of the selected world position, elevation, soil ID, and region/cell reference where applicable. A click that misses terrain must be reported as no hit.
+- Define a machine-readable selection payload containing the landscape ID, source revision, selection ID, world coordinates, selected region/extent, and relevant sampled terrain properties. Include camera context only as supplementary information.
+- Distinguish a provisional hit on coarse rendered terrain from resolved authoritative edit context. Expose the sampled LOD/accuracy and loading state, refine the selected location against source terrain on demand, and bind the final context to that revision. Never turn unloaded data into a false zero elevation or default-soil edit target.
+- Make the selection available to the AI through a documented project-local handoff and a copyable JSON representation. The workflow must identify the actual file or endpoint the AI reads; it must not depend on guessing a location from screen pixels or on inaccessible browser-only state.
+- Keep temporary selection/handoff state separate from published city terrain. Define ownership and versioning so selections from another landscape or an outdated revision cannot silently target the current terrain.
+- Support the complete loop: navigate -> point/select -> provide the selection context and requested change -> AI updates the landscape through the editing contract -> viewer refreshes -> inspect or revert the result.
+- Document at least two concrete examples, such as "raise this area by 2 meters with a smooth edge" and "set this selected patch to sand," including selection payload, edit batch, and resulting revision.
+
+## 5. Navigable terrain screen and live preview
+
+- Open the prepared coastal-city landscape with coarse coverage in D1 and progressive detail from D3 onward. Provide orbit/pan/zoom or the existing equivalent tool-camera controls, a useful ground-level navigation view, a top-down view, and a frame/reset action.
+- Keep controls compact: navigation, inspection/view modes, selection/context handoff, source/revision status, reload/revert access, and the shared performance top bar. Display a clear orientation and world scale so users can identify city-scale locations.
+- Render authored elevation and soil/material assignments with existing lighting and ground-material conventions. Define the error bound between displayed LOD geometry and authoritative height queries; refined selection must agree within the documented editing tolerance, including on slopes and at tile/chunk boundaries.
+- Reload valid AI-written data without resetting the camera. Preserve selection in world coordinates where possible and resample its elevation; clearly invalidate selections that no longer exist or are outside the changed extent.
+- After a successful reload, regenerate any retained selection payload with the displayed revision and newly sampled properties. Previously exported payloads remain stale and must be rejected for edits until replaced with refreshed context.
+- Define a canonical project-local landscape source/handoff location and a reliable refresh mechanism. Publish updates atomically and avoid reprocessing unchanged revisions.
+- Distinguish retained landscape source documents from temporary handoff state and generated evidence. Runtime inputs must not live under `tests/artifacts/` or `downloads/`; document how authoritative city JS modules reference the retained landscape source without changing the city-spec ownership convention.
+- Show load/validation failures and the displayed revision. Retain the last valid landscape on malformed or partial updates, while clearly indicating that the attempted revision was rejected.
+- Persist authored terrain across screen reloads and support validated import/export round trips. Opening the preview must not replace existing authored content with the default example.
+
+### Terrain inspection and performance UI
+
+- D1 must provide clearly labeled shaded, wireframe-only, and shaded-with-wireframe modes. Wireframe must show the actual rendered terrain triangulation, including the active coarse/LOD mesh, rather than a decorative grid or a separately loaded full-resolution mesh. Keep picking and selected-point/region highlights usable in every mode.
+- Provide optional world grid/axes and a legend/readout identifying the active inspection mode. In D3 add chunk boundaries and LOD coloring, plus selected-chunk ID, displayed LOD, residency and target/achieved error. In D6 add the existing planned elevation/contour, slope, and water/constraint overlays. Keep inspection controls compact; they do not require a terrain-editing panel.
+- Treat all inspection settings as viewer state. Switching modes must preserve the camera, selection, authored heights, soil assignments, and normal material bindings. Restoring shaded mode must restore the normal appearance; material/debug state must not leak into other screens or shared materials.
+- Reuse `src/graphics/gui/perf_bar/PerfBar.js` and its shared stylesheet through `ensureGlobalPerfBar()`, following the standalone integration in `src/graphics/gui/terrain_debugger/main.js` and the frame-listener lifecycle in `src/graphics/gui/mesh_fabrication/main.js`. Bind the active renderer with `setRenderer(...)` and feed its real frame loop to `onFrame(...)`, including unclamped `rawDt` where available so slow streaming frames are not hidden by simulation-delta clamping. Retain and release the frame subscription on teardown; do not create a second FPS widget or a static imitation of the game top bar.
+- Preserve the shared bar's existing live metrics and behavior: FPS/frame time, GPU frame time when available, draw calls, triangles/lines/points, geometry/texture/program counts, GPU identity, and show/hide control. Unsupported GPU timing stays explicitly unavailable. Geometry/texture counts are not GPU-memory byte measurements.
+- From D3 onward, expose streaming CPU bytes, estimated GPU bytes versus budgets, resident/pending tile counts, upload work, and LOD/error status through a compact companion diagnostics area or a small reusable extension to the shared bar. Keep estimates labeled, and keep the existing bar as the source for its standard metrics. D4 adds appearance residency to this accounting.
+- Respect `--global-top-bar-height` and the shared bar's resize/show/hide behavior for viewport dimensions, toolbar position, picking coordinates, and camera aspect. Both direct standalone entry and the tool/setup entry must show one correctly bound bar; controls and terrain must not be obscured or shifted by a duplicate offset.
+- Inspection overlays must operate only on resident resources, fit the resource budgets, and release temporary geometry/materials when disabled or chunks are evicted. They must not force full-map refinement/loading or pin all chunks. On screen teardown, detach its frame callbacks/providers/renderer binding without destroying a shared bar still owned by another screen.
+
+## 6. Foundation for future game cities
+
+- Provide a reusable sampling contract for elevation, surface normal/slope, soil identity, and relevant surface metadata at world XZ coordinates. Sampling must be deterministic and independent of the preview camera, renderer, or active screen.
+- Define asynchronous region acquisition and explicit ready/pending/unavailable states for nonresident data. Callers must distinguish authoritative samples from approximate LOD samples and request accuracy independently of the camera; residency changes cannot silently change a query's semantic meaning.
+- Document landscape-to-city coordinate conversion, including the existing `CityMap` tile-center origin convention, tile boundaries, and its mapping of tile Y to world +Z. Do not confuse terrain minimum bounds with a city tile's center.
+- Keep base terrain separate from future asphalt/road/sidewalk surfaces, building foundations, buildings, props, vegetation, and placement/exclusion data. Adding or removing an overlay/object must not erase the underlying authored soil or elevation.
+- Define the future placement contract for terrain-relative versus absolute elevation, vertical offsets, slope alignment versus upright placement, footprint queries, and terrain-change invalidation. Include an explicit path for flattening/grading foundations rather than silently moving terrain when placing a building.
+- Surface semantic soil queries and coverage/exclusion extension points without implementing vehicle traction, vegetation placement, road construction, or building/prop editing in this phase.
+- Demonstrate that a non-editor consumer can load and sample the same saved landscape. Document the adapter boundaries and remaining work for current city rendering, road elevations, foundations, physics/collision, and other systems that assume flat ground.
+- Preserve existing cities and tools. Future runtime integration must opt into the new landscape contract; do not claim that a navigable terrain preview alone makes all current city systems work on uneven ground.
+- Reserve versioned spatial attachment/resource channels for future roads/asphalt, buildings, props, vegetation, and collision data, with landscape references, spatial bounds, dependency/readiness information, and independent detail/residency policies. Terrain must load with these channels absent. Define ownership for features crossing terrain-tile boundaries so later streaming does not duplicate or clip them. Do not implement those content streamers in this phase.
+
+### City builder findings and required additions
+
+These requirements are grounded in the existing city code and belong to D6 unless an earlier owner is stated. Implement data compatibility and lightweight inspection here; actual nonflat road, building, vehicle, and content-streaming systems remain later work.
+
+- **Landscape binding must survive the real authoring path.** `src/states/MapDebuggerState.js` (`_normalizeSpec`, `_applySpec`) and `src/app/city/CityMap.js` (`fromSpec`, `exportSpec`) reconstruct a fixed set of fields. Explicitly preserve and validate the optional landscape binding through these paths and the JS source/registry workflow in `src/app/city/specs/`. Preserve authored parcel squares/limits, IDs, reservations, `rendered` state, and catalog references; do not replace authoring data with solved footprints or current LOD geometry. Consumers that cannot render a landscape binding must report that capability limitation instead of presenting a flat city as the imported landscape.
+- **City grid and landscape placement are separate.** Define the transform and extent contract in D1 and enforce round trips in D6. Terrain sample spacing, streaming chunk size, and city parcel tile size are independent. Test tile centers/edges, negative coordinates, and nonzero landscape origins. A 4,000-meter terrain need not divide evenly into current city tiles; define partial edge tiles and the supported city subregion without shifting or rescaling terrain. `MapDebuggerState._applyCitySettings` recenters the grid today; city dimension/seed changes must not silently recenter, resize, regenerate, or reseed an existing landscape. Terrain procedural seeds and city population seeds have separate ownership.
+- **Source roads retain elevation as reference data.** The supplied roads use `[X, Y, Z]` while existing road adapters/exporters primarily consume world XZ and sometimes treat legacy `y` as horizontal Z. Preserve source elevation/grade data separately and define an explicit conversion; never feed vertical Y into a horizontal coordinate or silently flatten source road references. Converting them to final drivable roads is deferred.
+- **Planning annotations and bookmarks.** Preserve stable district, road-corridor, shoreline, beach-arrival, bus-stop/reference-point, and view-corridor IDs where supplied. Distinguish informational overlays, advisory suitability masks, and explicit future hard constraints. Add compact read-only overlays and named navigation bookmarks so the user can refer to a district or beach approach when requesting edits. Bookmarks belong to viewer/project metadata, not terrain geometry. Overlay visibility must not change terrain or treat an imported marker as a placed game object.
+- **Footprint and corridor inspection.** Expose bounded, renderer-independent reports for selected regions and polylines: area, elevation min/max/difference, slope/grade with declared sampling resolution, soil/land-cover composition, water depth/submerged status, and overlap with known reservations or advisory masks. Show pending/unknown coverage explicitly. A simple selected-region report and elevation/slope/contour overlay are enough; no placement UI is required. Use these reports to evaluate future flattening pads, bus-stop areas, and road approaches without automatically changing terrain or claiming the source placement mask guarantees buildability.
+- **Reuse parcel/reservation and exclusion semantics.** `specs/city/construction_placement.md` already defines construction footprints, `bus_start`/area reservations, clearance, slabs, and fixed design dimensions. Keep these authored shapes and terrain contact policies distinct; later foundations can request explicit grading. Use exact footprint/corridor/exclusion queries, not only occupied city-tile flags. Preserve extension points for water, steep slopes, and authored keep-outs alongside the road/building/traffic-control exclusions in `src/app/city/TreePlacementExclusion.js`.
+- **Dependency identity and stale outputs.** Establish terrain source/operation/chunk revision keys in D2-D3. In D6, document dependencies from source revisions, affected bounds/channels, and algorithm/schema versions to LODs, normals, appearance, and future placement, collision, visibility, and lighting outputs. Terrain edits invalidate affected connected products; unrelated chunks remain reusable. Any currently connected cache must incorporate the landscape dependency or explicitly reject unsupported landscape-aware input. Respect freshness rules in `src/app/city/precomputed/CityInputPlans.js`, `specs/city/static_visibility.md`, and `specs/graphics/illumination_bake_input.md`; changing terrain must not activate an old bake as if it were current. Building those future bake/physics systems is not part of this deliverable.
+- **Incremental lifecycle.** Ordinary terrain chunk loads/unloads and local edits must not call the map debugger's whole-city `_setCity`/`_applySpec` reconstruction path. Establish independent terrain attachment, update, and teardown ownership in D1-D3. Switching landscape or leaving the screen releases its requests, leases, workers, CPU/GPU resources, and listeners; published saved data remains intact.
+- **Name the remaining flat-ground adapters.** Track `src/graphics/assets3d/generators/TerrainGenerator.js` (flat planes), `src/graphics/visuals/city/City.js` (shared slab elevation), `src/app/road_engine/RoadEngineCityMapAdapter.js` (XZ road geometry), `src/states/GameplayState.js` (spawn height), and `src/app/physics/simulations/RapierVehicleSim.js` (flat ground collider). Their terrain/collision/road-elevation upgrades are future deliverables, not implicit outcomes of D6. Do not declare the coastal landscape playable until those dependencies are implemented and verified separately.
+
+## 7. First landscape: coastal-city terrain v2
+
+- Use the supplied source archive: `C:\Users\rogel\Projects\bus_simulator_worktrees\buildings\downloads\coastal_city_terrain_v2.zip`.
+- Source SHA-256 at prompt preparation: `21702aab6210e2b576666b3fd5a4b6d48884e0372447357bee10dd8ea3d463ce`. Record and verify source provenance during import; expose the input location as configuration rather than hardcoding this machine path into runtime code.
+- Inspect `README.txt`, `terrain_settings.json`, and `validation.json` inside `coastal_city_terrain_v2/` before implementing the importer. Preserve the original archive and keep retained/imported runtime assets in the application's asset structure, following project provenance and asset rules.
+- The inspected package has the following source contract:
+
+| Property | Source value / interpretation |
+| --- | --- |
+| Extent | 4,000 by 4,000 meters; X/Z each run from 0 to 4,000. |
+| Coordinates | Southwest origin at sea level; X east, Y up, Z north; no vertical exaggeration. |
+| Height grid | 2,049 by 2,049 vertex samples; 2,048 intervals per axis; 1.953125-meter native spacing. |
+| Raster orientation | Row 0 is north/Z=4,000; column 0 is west/X=0. `x = column * 4000 / 2048`; `z = 4000 - row * 4000 / 2048`. |
+| Primary elevation source | `height_m_float32_le.raw`: headerless little-endian float32 meters, row-major, 4,198,401 samples / 16,793,604 bytes. |
+| Alternate elevation source | `heightmap_16bit.png`: unsigned 16-bit grayscale, decoded as `heightMeters = -30 + (value / 65535) * 90`; preserve precision and linear data semantics. |
+| Vertical range | Metadata reports actual terrain from -30 to about 49.219654 meters; encoding spans -30 to +60 meters. Sea level is Y=0, not the darkest pixel. |
+| Land cover | `landcover_ids.png`: 8-bit class IDs, nearest-neighbor categorical sampling. IDs 0-7 mean water/seabed, sand/beach, grass/low scrub, forest soil, exposed rock, urban ground, road surface, runway. |
+| Preview mesh | `terrain_preview.obj` is only a 257 by 257 sample preview at 15.625-meter spacing; it is not the authority for detailed terrain. |
+
+- Preserve raster orientation, boundary vertices, negative seabed elevations, and native height precision through partitioning and LOD preparation. Validate conversion against source checkpoints and the package's reported ranges rather than using preview images as height data.
+- Keep imported land-cover classes as their own semantic channel. Define explicit mappings to initial soil and visual materials; retain urban/road/runway classifications as planning/surface-cover information instead of treating them as authoritative soil composition or finished road geometry. Categorical IDs must never be averaged into invented classes, gamma-corrected, or read through ordinary filtered color mipmaps.
+- Retain `districts.json`, `district_ids.png`, `roads.json`, `shoreline.json`, `beach_points.json`, contours, and placement masks as separately identified reference/constraint data for later city construction. Their availability does not expand this phase into constructing roads, districts, buildings, or props.
+- Preserve the designed beach approach, district elevation relationships, shoreline, and submerged ground. If water is shown, keep its sea-level surface separate from the terrain heightfield. Record the package as designed prototype data, not survey measurements; road centerlines and placement masks are planning inputs.
+- Treat 1.953125 meters as the supplied native height resolution. Support higher-resolution future terrain through the same chunk/streaming model, but do not claim that upsampling this package creates new measured or authored terrain detail. Keep any later surface microdetail separately defined.
+- Register any offline terrain preparation/bake stage in the existing `node tools/bake.mjs` hierarchy following `tools/baking/README.md` and `specs/tools/bake_framework.md`, retaining validation/publication gates. Reuse `tools/baking/blender.local.json` if Blender is actually needed; do not introduce another standalone machine-specific bake command.
+
+## 8. Camera- and zoom-aware terrain streaming
+
+- Build a reusable terrain streamer shared by the Fabrication preview and future runtime consumers. Actual I/O, decoded CPU data, geometry, terrain masks/material pages, and GPU residency must be managed; geometry LOD alone or mipmaps on fully resident textures do not count as streaming.
+- Prepare a multiresolution spatial hierarchy, such as a quadtree or equivalent documented scheme, with independent chunk/channel payloads and a small coarse coverage level. Support progressively higher source resolutions without a full-resolution startup allocation.
+- Choose detail from projected screen-space error/footprint, accounting for camera position and altitude, viewing direction/frustum, perspective field of view, viewport pixel resolution, and orthographic view span/zoom. Distance-only rings are insufficient. Reevaluate on camera movement, zoom/FOV changes, projection changes, and viewport resize.
+- Zooming in must request useful finer elevation and appearance detail for the visible area even when camera position is unchanged. Zooming out or rising to an overview must coarsen and release unnecessary detail instead of loading every visible tile at its finest level. Respect native source resolution; stop refinement when no finer source exists.
+- Prioritize missing visible coverage first, then the most significant visible error, with bounded prefetch near the frustum and along camera movement. Teleports, fast turns, and rapid zoom changes must reprioritize work promptly; stale requests must not monopolize the queue.
+- Separate residency interests from color-pass visibility. D3 must support bounded acquisition/release for active editing/query and applicable shadow/auxiliary-view consumers, with priorities, accuracy, reference counts, and explicit handling of budget conflicts. Reserve the same contract for future vehicle/collision safety regions and content layers. Main-camera frustum exit or a city PVS visibility bit alone must not evict data still required by another consumer. Existing static city visibility explicitly excludes terrain and separates color visibility from shadows.
+- Use separate documented CPU and GPU memory budgets, bounded I/O/decode concurrency, and per-frame upload/rebuild work limits. Account for compressed cache bytes, decoded arrays/images, worker/staging buffers, geometry/index buffers, textures and mip chains, shared resources, and temporary old/new LOD overlap. Declare numeric targets and test profiles during implementation.
+- Reserve capacity before dispatching work or starting a refinement. Evict unneeded detailed resources with hysteresis and reuse recently needed chunks where budget permits; release GPU allocations and CPU references, not merely scene visibility. Under pressure, reduce detail/prefetch and retain valid coarse coverage. Define admission/failure behavior when even the minimum coverage cannot fit the configured budget.
+- Treat screen-space error as a refinement goal subject to source availability and hard resource budgets. When loading, failure, or memory pressure prevents the target, report desired versus achieved error and the degradation reason; retain coverage and budget limits instead of claiming the quality target was met.
+- Keep geometry detail and appearance detail separately selectable and budgeted. A low-triangle overview must not accidentally retain or upload full-resolution terrain masks, texture pages, or all material variants. Reference-count shared material resources and define a semantic-preserving coarse representation for categorical channels.
+- Bound background decode/mesh construction and GPU upload work so streaming does not freeze navigation. Support cancellation or safe disposal of obsolete completed work; cache/request identities must include landscape, spatial key, channel, LOD, and relevant content version. A late response from an old landscape/revision must never replace current data.
+- Keep a covering parent/coarse representation visible until replacement resources are ready; release superseded children/parents according to coverage and budget rules. Handle mixed LOD edges, borders, normals, and material transitions without cracks, holes, double-drawn terrain, or large sudden jumps. Use stable refinement/coarsening thresholds and transitions that avoid oscillation around boundaries.
+- Handle temporarily missing/corrupt/failed detail requests by retaining valid coarser coverage, exposing status, and using bounded retries. Do not silently synthesize authoritative terrain or block the entire landscape on one failed fine-detail tile.
+- Keep authoritative source data separate from residency. Region queries and edits may acquire needed chunks independently of render LOD, subject to bounded budgets; unload only data whose edits are saved. Updates must publish a consistent revision of affected chunks and their coarse representations without mixing old and new results.
+- Expose compact diagnostic telemetry for target/resident LODs, pending and canceled work, loaded/evicted chunks, CPU residency, estimated GPU residency, queue depth, bytes uploaded per frame, and streaming frame cost. Label GPU accounting estimates when exact measurements are unavailable. Surface live statistics alongside the required shared game performance top bar as described in section 5, and make the same telemetry available to the test harness; harness-only reporting does not satisfy the viewer requirement.
+
+## 9. Specifications and validation
+
+- Create canonical specifications under `specs/landscape/` for the landscape model, coastal import, chunk/LOD format and streaming lifecycle/budgets, editing/sampling contracts, and Fabrication screen/AI handoff. Update relevant city and terrain specifications wherever their contracts actually change.
+- Start from the existing references below and explicitly document reuse, adaptation, and remaining limitations:
+  - `specs/grass/TERRAIN_ENGINE_BIOME_PATCH_MASKS_SPEC.md`
+  - `specs/grass/TERRAIN_DEBUGGER_ENGINE_CONTRACT_SPEC.md`
+  - `specs/city/construction_placement.md`
+  - `src/app/city/specs/README.md`
+  - `specs/materials/PBR_MATERIAL_CATALOG_SPEC.md`
+  - `specs/graphics/mesh_fabrication_live_mesh_handoff.md` for applicable handoff patterns, without importing the full mesh-editing UI/workflow.
+  - `src/graphics/gui/perf_bar/PerfBar.js`, `src/graphics/gui/perf_bar/styles.css`, `src/graphics/gui/terrain_debugger/main.js`, and `src/graphics/gui/mesh_fabrication/main.js` for the existing game/tool performance top bar and its renderer/frame/layout integration.
+  - `src/states/MapDebuggerState.js`, `src/app/city/CityMap.js`, `src/app/city/CityConfig.js`, and `src/app/city/specs/CitySpecRegistry.js` for the current city authoring/round-trip path.
+  - `specs/trees/tree_placement_exclusions.md`, `specs/city/static_visibility.md`, and `specs/graphics/illumination_bake_input.md` for spatial ownership and freshness constraints.
+- Include a deterministic sample landscape containing flat ground, a slope/hill, and multiple soil regions. Include a boundary-spanning edit when data is partitioned.
+- Import and validate the supplied coastal landscape as the primary integration case. Check actual source dimensions/encoding, orientation and corner coordinates, elevations and sea level, class-ID preservation, and stitching across prepared tile boundaries.
+- Test schema rejection and round-trip persistence; reproducible evaluation; height/normal/soil sampling; operation extents and ordering; stale/duplicate batch handling; rollback; and unaffected-region preservation.
+- Verify the screen end to end: open, navigate, select terrain, obtain AI-readable context, apply elevation and soil edits, refresh while retaining camera state, revert, and reopen the saved result. Verify invalid updates preserve the last valid display with a visible error.
+- Verify inspection from D1: toggle shaded/wireframe/combined modes and grid/axes; preserve camera, picking, selection, source data, and material appearance on return. Confirm the single shared top bar reports the active renderer's live statistics, updates during navigation, and handles unavailable GPU timing without fabricated values. Check layout/picking after show/hide, resize, and direct versus tool-menu entry.
+- From D3, repeat inspection toggles while chunks refine/unload and after reload. Check LOD/boundary overlays and statistics match resident/rendered resources, no full-map debug allocation occurs, and disabling inspection or leaving the screen releases its temporary resources. Record active inspection modes in performance captures so debug-overlay cost is not confused with normal shaded-view performance.
+- Verify settled views meet the LOD error target when the required detail is available and fits the configured budget; verify explicit degradation reporting and retained coverage otherwise. Refined picking must match authoritative terrain. Soil identity and authoritative query results must remain stable as camera position, LOD, and residency change.
+- Exercise streaming with deterministic camera routes and fixed-position zoom-in/zoom-out sequences in both perspective and orthographic views, plus viewport resize, overview-to-ground transitions, teleports, rapid reversals, and repeated routes.
+- Test low-memory budgets, cancellation, out-of-order responses, failed detail loads, chunk eviction/disposal, local edits to unloaded/border regions, and reload during in-flight requests. Assert bounded CPU/GPU accounting including transient allocations, retained coarse coverage, stable seams, and no growth/leaks after repeated movement and zoom cycles.
+- Test multiple residency consumers and release order, leaving/reentering the screen, switching landscapes, and repeated teardown without leaks. Use fake non-camera consumers to prove required coverage cannot be evicted merely because it is offscreen; implementing a gameplay collider is not necessary for this test.
+- Verify actual city normalize/load/export/reload preserves the optional landscape binding and existing parcel/reservation data. Cover seed/dimension changes, tile-boundary transforms, source road coordinate conversion, capability diagnostics, stale dependency refusal, and legacy cities with no landscape reference. Planning reports must identify their resolution and missing data rather than assert unsupported precision or buildability.
+- Use an appropriately larger/higher-resolution generated test dataset or constrained budgets to demonstrate working-set residency rather than relying on this modest source fitting in memory. Runtime verification must show that neither all finest-level payloads nor a full-resolution mesh is fetched/decoded/uploaded at startup. The supplied grid alone would yield 8,388,608 triangles if fully meshed at native resolution.
+- Record a repeatable same-condition table for full-resident reference versus streamed residency, or pre-change versus post-change where an applicable implementation exists. Include hardware/browser, viewport/DPR, dataset and resolution, settings/budgets, route and zoom sequence, cold/warm cache state, warm-up, sample count, and statistics. Report CPU bytes, estimated/measured GPU bytes, peak transient use, loaded tiles/payload bytes, triangles/draw calls, frame time/FPS, upload work, and time to coarse coverage/requested detail. Mark unavailable metrics as `not measured` with a reason; projections do not replace measurements, and an intentionally unsafe full-resident run is not required.
+- Use the project's selected-test runner and relevant headless harness conventions. Save screenshots and other generated evidence under `tests/artifacts/screens/landscape/ai576/`; keep them gitignored and uncommitted.
+
+## Acceptance criteria
+
+- A user can open Landscape Fabrication, navigate visible terrain, and point to an unambiguous location or area without needing a manual terrain-editing interface.
+- The basic viewer includes working wireframe/shaded inspection and the game's existing live performance top bar. Later streaming increments add LOD/chunk inspection and resource-budget statistics without changing authored terrain or forcing full-resolution residency.
+- An AI can read that context and perform localized elevation/soil changes through the documented model/API; the user sees the result without losing their camera position.
+- Saved landscapes remain editable and reproduce the same terrain after reload, with validated versions, stable IDs, recoverable edits, and explicit data ownership.
+- Another application module can consume the landscape and query it without importing the editor or renderer.
+- The supplied coastal-city data is imported with correct scale, orientation, elevation precision, and surface classifications, and is viewable in Landscape Fabrication.
+- Moving and zooming across the terrain changes loaded detail while CPU/GPU residency and transient work remain inside documented budgets. Overview views coarsen, close views refine, and unloaded fine data is fetched only when needed.
+- Terrain remains continuously covered during normal refinement, failed detail requests, and fast navigation; repeated travel/zoom does not accumulate allocations. Exact edit context and persisted edits remain correct across unload/reload.
+- The specifications make future city placement and runtime integration concrete while clearly identifying flat-ground systems that still need adaptation.
+- Each dependency-ordered deliverable has its own verified usable result. The final city data connection preserves source semantics, provides planning diagnostics, and explicitly distinguishes authored landscape readiness from completed playable-city integration.
+
+## Optional follow-ups outside D1-D7
+
+These may be useful after the required deliverables; they are not prerequisites or permission to expand the initial implementation:
+
+- Cut/fill volume estimates and before/after terrain profiles for proposed roads or foundation pads, with an explicit error estimate tied to sample resolution.
+- Enforceable protected regions and grading limits for coastlines, beach sightlines, airport areas, and approved construction pads, with explicit operation semantics for deliberate overrides.
+- Import higher-resolution local patches while preserving source provenance, sample alignment, surrounding authored edits, and seam/error validation. Imported detail must come from an actual new source or explicit authoring, not unlabelled upsampling.
+
+## On completion
+
+- Mark the AI document as DONE in the first line only after D1-D7 and the overall acceptance criteria pass; individual deliverable completion does not rename the whole prompt.
+- Rename in `prompts/` to `AI_DONE_codex_landscape_576_TOOLS_landscape_fabrication_data_model_and_ai_directed_terrain_authoring_DONE.md`.
+- Do not move the prompt to `prompts/archive/` unless explicitly requested.
+- Add a high-level one-line summary per completed change, relevant test results, and workspace-relative links to generated evidence.
+- Include the canonical model/spec locations, screen entry, source/selection handoff locations, coastal import provenance, example editing workflow, measured streaming budgets/results, and remaining city/content-streaming integration limitations in the handoff.
