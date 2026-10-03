@@ -1,5 +1,11 @@
 # Natural coastal materials
 
+This document records the original nature pass and its retained evidence. AI577
+D1a subsequently replaces unsuitable repeating base materials and adds relief
+transitions; its current quality contract and source audit are in
+[LANDSCAPE_BASE_MATERIALS.md](LANDSCAPE_BASE_MATERIALS.md). The original beach
+appearance and all historical snapshots described below remain retained.
+
 The October 2026 nature pass binds beach soil to `pbr.aerial_beach_01` and uses
 natural ground presentation for the imported urban/road/runway planning areas.
 It adds no city objects and changes no source heights or land-cover bytes.

@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const artifacts = path.resolve(`tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'd3'}`);
+const artifacts = path.resolve(process.env.LANDSCAPE_EVIDENCE_ROOT ?? `tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'd3'}`);
 const manifest = JSON.parse(await readFile(path.resolve('assets/public/landscape/coastal-city/manifest.json'), 'utf8'));
 const detailedTile = manifest.chunks.filter(chunk => chunk.level === 2).sort((a, b) => b.geometricError - a.geometricError)[0];
 const x = (detailedTile.bounds.minX + detailedTile.bounds.maxX) / 2;

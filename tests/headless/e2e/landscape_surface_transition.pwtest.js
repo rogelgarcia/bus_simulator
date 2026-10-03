@@ -9,7 +9,11 @@ import path from 'node:path';
 const root = path.resolve('.'), source = path.join(root, 'assets/public/landscape/coastal-city');
 const phase = process.env.LANDSCAPE_SURFACE_PHASE ?? null;
 if (phase !== null && !['before', 'after'].includes(phase)) throw new Error('LANDSCAPE_SURFACE_PHASE must be before or after');
-const artifacts = path.join(root, 'tests/artifacts/screens/landscape/ai577/d1', phase ?? 'unselected');
+const deliverable = process.env.LANDSCAPE_SURFACE_DELIVERABLE ?? 'd1';
+if (!['d1', 'd1a'].includes(deliverable)) throw new Error('LANDSCAPE_SURFACE_DELIVERABLE must be d1 or d1a');
+const artifactPrefix = `/tests/artifacts/screens/landscape/ai577/${deliverable}`;
+const artifacts = path.join(root, artifactPrefix.slice(1), phase ?? 'unselected');
+const deliveryLabel = deliverable === 'd1a' ? 'D1a · Homogeneous materials and height transitions' : 'D1 · Visual surface transitions';
 const manifestText = await readFile(path.join(source, 'manifest.json'), 'utf8'), manifest = JSON.parse(manifestText);
 const viewport = { width: 1920, height: 1080 }, warmupFrames = 30, sampleFrames = 120, MiB = 1024 * 1024;
 const lightingDescription = 'Terrain shader illuminate(): fixed GGX sun direction [-0.44,0.87,-0.22], RGB [2.7,2.6,2.3], hemisphere ambient factor 0.68. LandscapeView fixed hemisphere 0xdceef4/0x536047 intensity 2.3 and directional 0xfff4dd intensity 2.2 at [-2000,4000,-1000].';
@@ -50,6 +54,30 @@ async function implementationFingerprint() {
         sourceImplementationSha256: createHash('sha256').update(JSON.stringify(hashes)).digest('hex'), sourceImplementationFiles: hashes };
 }
 
+async function assertImmutableBaseline(before) {
+    if (deliverable !== 'd1a') return;
+    const directory = path.join(artifacts, '../before');
+    const seal = JSON.parse(await readFile(path.join(directory, 'immutable-baseline.json'), 'utf8'));
+    expect(seal.gitRevision).toBe(before.gitRevision);
+    for (const entry of seal.files) {
+        const content = await readFile(path.join(directory, entry.file));
+        expect(content.length, `Immutable baseline byte count: ${entry.file}`).toBe(entry.bytes);
+        expect(createHash('sha256').update(content).digest('hex'), `Immutable baseline hash: ${entry.file}`).toBe(entry.sha256);
+    }
+}
+
+function terrainContent(value) {
+    const { revision, provenance, soil, ...terrain } = value;
+    return { ...terrain, soil: { ...soil, catalog: soil.catalog.map(({ materialId, ...entry }) => entry) } };
+}
+
+async function materialInputs() {
+    const content = await readFile(path.join(source, 'appearance/manifest.json'));
+    const appearance = JSON.parse(content);
+    return { appearanceRevision: appearance.revision, manifestSha256: createHash('sha256').update(content).digest('hex'),
+        materials: appearance.materials.map(({ soilId, materialId, tileMeters, calibration, height, tiers }) => ({ soilId, materialId, tileMeters, calibration, height, tiers })) };
+}
+
 async function writeComparisons(browser, baseURL, before, after) {
     const directory = path.join(artifacts, '../comparisons');
     await mkdir(directory, { recursive: true });
@@ -57,7 +85,7 @@ async function writeComparisons(browser, baseURL, before, after) {
     await writeFile(path.join(directory, 'comparison.css'), stylesheet);
     const context = await browser.newContext({ baseURL, viewport: { width: 3840, height: 1176 }, deviceScaleFactor: 1 });
     const page = await context.newPage(), comparisons = [];
-    const prefix = '/tests/artifacts/screens/landscape/ai577/d1', resources = new Map([[`${prefix}/comparisons/comparison.css`, { contentType: 'text/css', body: stylesheet }]]);
+    const prefix = artifactPrefix, resources = new Map([[`${prefix}/comparisons/comparison.css`, { contentType: 'text/css', body: stylesheet }]]);
     await page.route('**/*', request => {
         const resource = resources.get(new URL(request.request().url()).pathname);
         return resource ? request.fulfill(resource) : request.fallback();
@@ -65,15 +93,15 @@ async function writeComparisons(browser, baseURL, before, after) {
     try {
         for (const stop of route) {
             const html = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>AI577 D1 ${stop.label}</title>
+<html lang="en"><head><meta charset="utf-8"><title>AI577 ${deliverable.toUpperCase()} ${stop.label}</title>
 <link rel="stylesheet" href="comparison.css"></head>
-<body><main><section><header><div>BEFORE · ${before.gitRevision.slice(0, 8)}</div><h1>${stop.label}</h1><p>Native coastal source · 1920 × 1080 · DPR 1 · Fixed camera, PBR materials and lighting</p></header><img src="../before/${stop.id}.png" width="1920" height="1080" alt="Before: ${stop.label}"></section>
-<section><header><div>AFTER · AI577 D1 (working tree)</div><h1>${stop.label}</h1><p>AI577 D1 · Visual surface transitions · Original renders shown at native pixel dimensions</p></header><img src="../after/${stop.id}.png" width="1920" height="1080" alt="After: ${stop.label}"></section></main></body></html>`;
+<body><main><section><header><div>BEFORE · ${before.gitRevision.slice(0, 8)}</div><h1>${stop.label}</h1><p>Native coastal source · 1920 × 1080 · DPR 1 · Fixed camera and lighting</p></header><img src="../before/${stop.id}.png" width="1920" height="1080" alt="Before: ${stop.label}"></section>
+<section><header><div>AFTER · AI577 ${deliverable.toUpperCase()} (working tree)</div><h1>${stop.label}</h1><p>AI577 ${deliveryLabel} · Original renders shown at native pixel dimensions</p></header><img src="../after/${stop.id}.png" width="1920" height="1080" alt="After: ${stop.label}"></section></main></body></html>`;
             await writeFile(path.join(directory, `${stop.id}.html`), html);
             resources.set(`${prefix}/comparisons/${stop.id}.html`, { contentType: 'text/html', body: html });
             for (const phaseName of ['before', 'after']) resources.set(`${prefix}/${phaseName}/${stop.id}.png`, {
                 contentType: 'image/png', body: await readFile(path.join(directory, `../${phaseName}/${stop.id}.png`)) });
-            await page.goto(`/tests/artifacts/screens/landscape/ai577/d1/comparisons/${stop.id}.html`);
+            await page.goto(`${prefix}/comparisons/${stop.id}.html`);
             await expect(page.locator('img')).toHaveCount(2);
             await page.locator('img').evaluateAll(images => Promise.all(images.map(image => image.decode())));
             expect(await page.locator('img').evaluateAll(images => images.map(image => [image.naturalWidth, image.naturalHeight]))).toEqual([[1920, 1080], [1920, 1080]]);
@@ -146,6 +174,10 @@ test('Landscape surface: four native coastal transitions retain identical captur
     test.setTimeout(5 * 60 * 1000);
     const baseURL = String(testInfo.project.use.baseURL);
     expect(new URL(baseURL).port, 'Landscape verification uses port 8002').toBe('8002');
+    if (phase === 'before' && deliverable === 'd1a') {
+        const previous = await readFile(path.join(artifacts, 'report.json'), 'utf8').catch(error => { if (error.code !== 'ENOENT') throw error; return null; });
+        expect(previous && JSON.parse(previous).complete, 'The completed D1a baseline must never be overwritten').not.toBe(true);
+    }
     await mkdir(artifacts, { recursive: true });
     const descriptor = manifest.chunks.find(chunk => chunk.id === anchor.chunkId), cover = await readFile(path.join(source, descriptor.channels.landCover.url));
     expect(cover[anchor.row * descriptor.columns + anchor.column]).toBe(1);
@@ -159,11 +191,20 @@ test('Landscape surface: four native coastal transitions retain identical captur
         captureConditions: { water: true, mode: 'shaded', helpers: false, overlays: false, ui: false, cpuMiB: 128, gpuMiB: 64,
             lighting: lightingDescription,
             timing: 'Fresh browser context; each pose settles, discards 30 frames, samples 120 frames, and drains four query-tail frames. GPU uses completed unique timer queries matched to sampled submissions.' },
-        stops: [], errors: [], warnings: [], materialQualityFailures: [] };
+        stops: [], errors: [], warnings: [], materialQualityFailures: [], materialInputs: await materialInputs() };
     Object.assign(report, await implementationFingerprint());
     const before = phase === 'after' ? JSON.parse(await readFile(path.join(artifacts, '../before/report.json'), 'utf8')) : null;
     if (before) {
-        expect(before.complete).toBe(true); expect(report.dataset).toEqual(before.dataset);
+        expect(before.complete).toBe(true);
+        await assertImmutableBaseline(before);
+        if (deliverable === 'd1a') {
+            const previousText = await readFile(path.join(source, `manifest.${before.dataset.manifestSha256}.json`));
+            expect(createHash('sha256').update(previousText).digest('hex')).toBe(before.dataset.manifestSha256);
+            expect(terrainContent(manifest), 'Material rebinding must preserve all terrain content and semantic cover').toEqual(terrainContent(JSON.parse(previousText)));
+            const unchangedDataset = ({ revision, manifestSha256, ...value }) => value;
+            expect(unchangedDataset(report.dataset)).toEqual(unchangedDataset(before.dataset));
+            report.materialComparison = { before: JSON.parse(await readFile(path.join(artifacts, '../before/material-inputs.json'), 'utf8')), after: report.materialInputs };
+        } else expect(report.dataset).toEqual(before.dataset);
         expect(report.route).toEqual(before.route); expect(report.viewport).toEqual(before.viewport);
         expect(report.captureConditions).toEqual(before.captureConditions);
     }
@@ -226,12 +267,18 @@ test('Landscape surface: four native coastal transitions retain identical captur
             if (before) {
                 const previous = before.stops.find(value => value.id === stop.id);
                 expect(measured.state.camera).toEqual(previous.state.camera);
-                expect(measured.state.appearance.materialTiling).toEqual(previous.state.appearance.materialTiling);
+                expect(summary.triangles.median, 'Matched material evidence requires identical geometry').toBe(previous.triangles.median);
+                expect(summary.drawCalls.median, 'Matched material evidence requires identical draw calls').toBe(previous.drawCalls.median);
                 const identity = state => materialQuality(state).map(({ resolution, desiredResolution, ...material }) => material);
-                expect(identity(measured.state)).toEqual(identity(previous.state));
+                if (deliverable === 'd1') {
+                    expect(measured.state.appearance.materialTiling).toEqual(previous.state.appearance.materialTiling);
+                    expect(identity(measured.state)).toEqual(identity(previous.state));
+                } else entry.materialIdentityChanges = { before: identity(previous.state), after: identity(measured.state),
+                    tiling: { before: previous.state.appearance.materialTiling, after: measured.state.appearance.materialTiling } };
                 for (const material of measured.state.appearance.materials) {
-                    const original = previous.state.appearance.materials.find(value => value.materialId === material.materialId);
-                    if (['sand', 'loam', 'forest'].includes(material.soilId) && (material.refCount > 0 || original.refCount > 0) && material.resolution !== original.resolution) {
+                    const original = previous.state.appearance.materials.find(value => value.soilId === material.soilId);
+                    expect(original, `Missing baseline soil binding ${material.soilId}`).toBeTruthy();
+                    if ((deliverable === 'd1a' || ['sand', 'loam', 'forest'].includes(material.soilId)) && (material.refCount > 0 || original.refCount > 0) && material.resolution !== original.resolution) {
                         const failure = { stop: stop.id, soilId: material.soilId, materialId: material.materialId, before: original.resolution, after: material.resolution };
                         report.materialQualityFailures.push(failure);
                         console.warn(`[Landscape surface unmatched material tier] ${JSON.stringify(failure)}`);
@@ -265,6 +312,7 @@ test('Landscape surface: assemble saved matching captures without rerunning the 
     const before = JSON.parse(await readFile(path.join(artifacts, '../before/report.json'), 'utf8'));
     const after = JSON.parse(await readFile(path.join(artifacts, 'report.json'), 'utf8'));
     expect(before.complete).toBe(true); expect(after.complete).toBe(true);
+    await assertImmutableBaseline(before);
     expect(after.materialQualityFailures).toEqual([]);
     await writeComparisons(browser, String(testInfo.project.use.baseURL), before, after);
 });

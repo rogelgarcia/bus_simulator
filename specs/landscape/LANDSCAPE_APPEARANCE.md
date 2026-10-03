@@ -5,6 +5,11 @@ requests independent from geometry LOD. Native elevation, land-cover IDs and
 soil operations remain authoritative landscape data. Appearance refinement does
 not alter those identities or the results of exact terrain queries.
 
+Base source selection and material boundary acceptance follow
+[LANDSCAPE_BASE_MATERIALS.md](LANDSCAPE_BASE_MATERIALS.md): repeating tiles must be
+homogeneous single materials, and near-camera boundaries must interleave using
+material relief within the continuous terrain coverage support.
+
 ## Sidecar and material identity
 
 The canonical sidecar is `assets/public/landscape/coastal-city/appearance/manifest.json`.
@@ -42,6 +47,23 @@ bounded metadata and all referenced page hashes before creating the alias;
 these inputs participate in framework stability checks. It never scans history
 or changes an older terrain manifest or city binding.
 
+The optional `landscape/appearance:material-bindings=<json>` input explicitly
+replaces the soil catalog's material references. It requires
+`format: landscape-material-bindings`, `schemaVersion: 1`, the selected
+`landscapeId`, and a `materialIds` object naming every soil exactly once. The
+registered leaf derives a deterministic material revision and proves that restoring
+the previous material IDs and revision restores the complete original manifest.
+Heights, cover, soil operations, regions and authoring history therefore stay
+unchanged. No-change bindings keep the existing revision.
+
+Publication retains both terrain snapshots, installs authenticated material pages,
+and preserves the previous appearance binding alias before switching current
+appearance. Current terrain switches last under the existing authoring lock and
+input-stability gates. A reader in the handoff interval can still resolve its old
+terrain through the compatible alias. The shipped homogeneous binding request is
+`tools/bake_landscape/appearance/uniform-materials-v1.json`; this is an optional
+operation within the existing leaf, not a separate bake entry point.
+
 Materials follow the landscape soil catalog order; those indices identify visual
 soil-mask samples. Each binding contains `soilId`, stable `materialId`, physical
 `tileMeters`, retained `calibration` (`presetId`, config hash and adjustments),
@@ -54,7 +76,20 @@ Each tier has independently readable `baseColor`, `normal` and `orm` channels:
 
 URLs are safe relative paths. Dimensions must be one of the supported square
 tiers; byte lengths are exactly width × height × 4. Base color is sRGB; normals
-and ORM are linear. ORM channels are AO, roughness and metalness. Alpha is 255.
+and ORM are linear. ORM RGB channels are AO, roughness and metalness. Base-color
+and normal alpha remain 255. Legacy ORM alpha is also 255 and carries no relief.
+An optional per-material field opts into retained relative surface height:
+
+```text
+height: {encoding:'orm-alpha-unorm8',interpretation:'relative-relief',neutral:0.5}
+```
+
+For that material only, ORM alpha contains linear normalized displacement from
+the retained source height map, filtered with the other surface channels. This
+packing adds no page, texture sampler or resident allocation. Relative relief
+is not a claim of measured metric elevation or collision geometry. Materials
+without this metadata use neutral height 0.5, irrespective of their alpha bytes;
+historical sidecars with no height metadata retain legacy coverage mixing.
 The maximum page is 1 MiB and the maximum sidecar is 256 KiB. Hash authentication
 precedes use. Invalid/truncated/oversized data fails explicitly.
 
@@ -62,14 +97,18 @@ Runtime materials resolve stable IDs through the existing global
 `PbrTexturePipeline` and `PbrTextureCalibrationResolver`. Catalog defaults,
 calibration and explicit local overrides retain their existing precedence. The
 entire existing catalog/config import closure is retained byte-for-byte, plus
-the six correction configs used here; source imagery is not needed by runtime.
+the correction and optional landscape-preparation configs used here; source imagery
+is not needed by runtime.
 The prepared page URLs are bounded derivatives of those catalog map slots,
 not replacement material identities. BaseColor/normal/ORM are not loaded again
 through unbounded original map URLs.
 
-The current bindings are unknown→ground_037, seabed→gravelly_sand,
-sand→aerial_beach_01, loam→grass_004, forest→forrest_ground_01 and
-rock→rocky_terrain_02, all with the `pbr.` prefix. Imported planning classes 5–7
+The D1a bindings are unknown→landscape_soil_uniform_v1,
+seabed→aerial_beach_01, sand→aerial_beach_01,
+loam→landscape_grass_uniform_v1, forest→landscape_forest_soil_uniform_v1 and
+rock→landscape_rock_uniform_v1, all with the `pbr.` prefix. Source-selection
+reasons and preparation policy are in
+[LANDSCAPE_BASE_MATERIALS.md](LANDSCAPE_BASE_MATERIALS.md). Imported planning classes 5–7
 retain their original urban/road/runway meaning and map to unknown substrate;
 they do not create physical pavement, roads, or city objects. Water class 0
 remains seabed substrate. The separate sea-level water reference is a visual
@@ -177,10 +216,24 @@ Only square power-of-two 512..1024 source images are accepted, checked before
 decode. Sequential per-channel conversion uses a conservative 96 MiB tracked
 array allowance for source decodes, float/filter scratch and output, separate
 from runtime budgets and process overhead. No terrain sample grid is allocated.
+Optional `pbr.landscape.config.json` metadata declares a landscape-only preparation
+recipe. `periodic-log-microdetail-v1` removes broad per-channel tonal drift from a
+homogeneous replacement in linear light using three wrapped box-filter passes on
+log color, retaining the original channel mean before output clipping. Source
+images remain unchanged. The finite integer filter radius and exact configuration
+are retained in provenance. This treatment is opt-in; the accepted sand does not
+use it. Relative source height is centered on its median and normalized using its
+1st/99th-percentile range before linear area filtering into ORM alpha; constant
+source height produces neutral 0.5. Bit-depth normalization never converts a
+16-bit source directly into a saturated 8-bit grayscale image.
+
 Pages, normal ranges, metadata hashes and candidate sizes validate before
 immutable installation and the atomic appearance-sidecar switch. The authoring
-lock and framework source checks protect publication; the height manifest stays
-unchanged. Repeated identical inputs produce byte-identical pages and sidecar.
+lock and framework source checks protect publication. Default preparation leaves
+the terrain manifest unchanged. An explicit material-binding publication may
+advance only material references and landscape revision, retaining terrain
+channels and authoring history; compatible historical appearance bindings remain
+available. Repeated identical inputs produce byte-identical pages and sidecar.
 
 Focused tests cover schema rejection, JSON key-order independence, fixed-position
 appearance zoom on zero-error terrain, independent mask/texture targets,

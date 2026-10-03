@@ -50,12 +50,13 @@ Normals use normalized vector averaging. ORM means AO/roughness/metalness in
 linear RGB; separate scalar source maps are packed without inventing metal.
 Calibration remains runtime metadata and is not baked twice. Pages are flipped
 vertically once so GPU row zero is south and world UV `(X,Z)/tileMeters` has
-east/north orientation with OpenGL normals. Alpha is opaque.
+east/north orientation with OpenGL normals. Alpha is opaque except when explicit
+source-height metadata assigns ORM alpha to normalized linear relative relief.
 
-Preparation validates page hashes/sizes, normalized normals, opaque alpha and
+Preparation validates page hashes/sizes, normalized normals, channel alpha and
 exact catalog metadata. Optional publication installs immutable pages and a
 saved sidecar, then atomically switches `appearance/manifest.json`; the terrain
-manifest is unchanged. The authoring mutation lock and framework input-stability
+manifest is unchanged by default. The authoring mutation lock and framework input-stability
 gates prevent mixed source publication. An existing conflicting global config
 is rejected instead of overwritten. Repeating unchanged inputs is deterministic.
 
@@ -88,3 +89,61 @@ Focused tests are `landscape_appearance.test.js` and
 PNG/catalog fixtures; it requires the same shared Python dependencies and does
 not depend on another checkout or modify retained source materials. The canonical
 runtime/schema contract is [LANDSCAPE_APPEARANCE.md](../../../specs/landscape/LANDSCAPE_APPEARANCE.md).
+
+## Uniform materials and source height
+
+An optional per-material `pbr.landscape.config.json` is retained and hashed with
+catalog metadata. `baseColor.algorithm: periodic-log-microdetail-v1` removes
+broad tonal drift only from an explicitly selected homogeneous source. The
+bounded 8..128-pixel radius controls three wraparound box passes in log-linear
+RGB; each channel retains its original mean linear reflectance. Fine detail is
+preserved without changing the original images, normals, roughness or AO.
+This cannot turn a mixed grass/soil/stone mosaic into a suitable source: choose
+one material first and inspect both the prepared albedo and full shaded PBR
+response at 1× and repeated tiling. The current uniform recipe uses radius 16.
+
+`mapFiles.displacement` supplies source-authored height. Supplemental matching
+height for an immutable existing material can instead be declared by
+`displacement.file` in its landscape config, including URL/license/hash metadata.
+Integer height precision is retained through normalization; 16-bit PNG data is
+never converted through an 8-bit luminance image. Source median and the larger
+distance to its 1st/99th percentile set a centered relative range, with a flat
+source becoming 0.5. Linear box reduction precedes UNORM8 encoding in ORM alpha.
+The manifest declares `height: {encoding:'orm-alpha-unorm8',
+interpretation:'relative-relief',neutral:0.5}`. Historical materials without this
+metadata retain opaque alpha. The source-height normalization and color recipe
+are recorded per material in appearance provenance. Height is material relief,
+not new terrain geometry or a claim of physically measured depth.
+
+All source/filter arrays remain under the existing 96 MiB working allowance.
+At maximum 1024² input and 128-pixel radius, processing one RGB component at a
+time keeps the conservative typed-array peak below 88 MiB: source/linear RGB,
+log/residual fields, padded scalar fields, float64 prefix/slice arithmetic,
+and output. This is an allocation estimate, not a process-RSS measurement.
+Runtime pages, request bounds and texture byte accounting remain unchanged.
+
+The six uniform bindings are declared in `uniform-materials-v1.json`. To apply
+them through the same registered leaf:
+
+```sh
+node tools/bake.mjs --target landscape/appearance --set landscape/appearance:material-bindings=tools/bake_landscape/appearance/uniform-materials-v1.json
+node tools/bake.mjs --target landscape/appearance --set landscape/appearance:material-bindings=tools/bake_landscape/appearance/uniform-materials-v1.json --publish
+```
+
+The bounded JSON must provide every soil ID exactly once for the selected
+landscape. Only `soil.catalog[*].materialId` and the content-derived terrain
+revision may change; samples, classifications, source records and authoring
+history remain identical. Publication authenticates unchanged current input,
+installs immutable pages and both terrain snapshots, publishes the old/new
+appearance aliases, switches current appearance, then switches current terrain
+last. During that handoff the old terrain resolves its retained compatible
+alias. Reapplying identical bindings does not create another terrain revision.
+The authoring lock and existing source-stability gates cover this transaction.
+
+Current replacements retain CC0 ambientCG Grass008 (procedural with bitmap
+elements), Ground006 (approximation), and Granite005A (procedural) source maps.
+Their four-meter display periods and matte calibration are authored values,
+not measured source dimensions. Sand retains the accepted Aerial Beach 01
+response and 30-meter scale; the same material also supplies seabed. The new
+matching sand displacement affects only ORM alpha, preserving every RGB byte,
+normal page and calibration setting from the previous sand publication.

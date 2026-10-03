@@ -3,12 +3,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { createLandscapeModelFixture } from './landscape_model_fixture.js';
+import { createLandscapeModelFixture as createBaseLandscapeFixture } from './landscape_model_fixture.js';
 import { validateLandscapeAppearanceManifest, loadLandscapeAppearanceManifest, loadLandscapeAppearancePage, loadLandscapeCoverMask,
     createLandscapeAppearancePlanner, createLandscapeViewPlanner, applyLandscapeEditBatch, validateLandscapeManifest } from '../../../src/app/landscape/index.js';
 
 const retained = new URL('../../../assets/public/landscape/coastal-city/appearance/', import.meta.url);
-const saved = JSON.parse(await readFile(new URL('manifest.json', retained), 'utf8'));
+const saved = JSON.parse(await readFile(new URL('manifest.aec36e5b53837b67b6316803460980d4b805ce17bc8db7a1919f954bc4781b0b.json', retained), 'utf8'));
+function createLandscapeModelFixture(options) {
+    const fixture = createBaseLandscapeFixture(options), manifest = fixture.manifest;
+    fixture.manifest = validateLandscapeManifest({ ...manifest, soil: { ...manifest.soil,
+        catalog: manifest.soil.catalog.map(soil => ({ ...soil, materialId: saved.materials.find(material => material.soilId === soil.id).materialId })) } });
+    fixture.resources.set('manifest.json', new TextEncoder().encode(JSON.stringify(fixture.manifest)));
+    return fixture;
+}
 function appearance(manifest) {
     return validateLandscapeAppearanceManifest({ ...structuredClone(saved), landscapeId: manifest.id, preparedFromRevision: manifest.revision, bounds: manifest.bounds, grid: manifest.grid }, manifest);
 }
@@ -25,6 +32,20 @@ test('Appearance schema preserves catalog identity across height/soil revisions 
     const badUrl = structuredClone(value); badUrl.materials[0].tiers[0].channels.baseColor.url = '../source.png';
     assert.throws(() => validateLandscapeAppearanceManifest(badUrl), /relative asset path|traverse/);
     assert.throws(() => validateLandscapeAppearanceManifest({ ...value, landscapeId: 'different' }, manifest), /spatial identity/);
+});
+
+test('Appearance schema opts into relative relief explicitly while retaining legacy opaque ORM alpha', () => {
+    const { manifest } = createLandscapeModelFixture(), legacy = structuredClone(appearance(manifest));
+    for (const material of legacy.materials) delete material.height;
+    assert.ok(validateLandscapeAppearanceManifest(legacy, manifest).materials.every(material => material.height === undefined));
+    const updated = structuredClone(legacy);
+    updated.materials[0].height = { encoding: 'orm-alpha-unorm8', interpretation: 'relative-relief', neutral: .5 };
+    assert.deepEqual(validateLandscapeAppearanceManifest(updated, manifest).materials[0].height, updated.materials[0].height);
+    for (const height of [null, { encoding: 'baseColor-alpha-unorm8', interpretation: 'relative-relief', neutral: .5 },
+        { encoding: 'orm-alpha-unorm8', interpretation: 'meters', neutral: .5 }, { encoding: 'orm-alpha-unorm8', interpretation: 'relative-relief', neutral: 1 }]) {
+        updated.materials[0].height = height;
+        assert.throws(() => validateLandscapeAppearanceManifest(updated, manifest), /height must explicitly declare/);
+    }
 });
 
 test('Appearance selection refines on flat terrain independently from geometry, mask density and material texels', () => {

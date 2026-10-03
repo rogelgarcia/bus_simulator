@@ -35,6 +35,11 @@ uniform vec4 uSoilTiling[6];
 uniform vec4 uSoilAlbedo[6];
 uniform vec4 uSoilRoughness[6];
 uniform vec4 uSoilRange[6];
+uniform float uSurfaceBlendEnabled;
+uniform vec4 uSurfaceBlendSettings;
+uniform float uSoilHeightEnabled[6];
+uniform float uSoilResolution[6];
+uniform float uBlendResolution;
 varying vec3 vLandscapeColor;
 varying vec3 vLandscapeNormal;
 varying vec3 vLandscapeWorld;
@@ -45,10 +50,12 @@ struct SoilSurface {
     float roughness;
     float metalness;
     float ao;
+    float height;
+    float heightDetail;
 };
 
-SoilSurface mixSurface(SoilSurface a, SoilSurface b, float weight) {
-    return SoilSurface(mix(a.albedo, b.albedo, weight), normalize(mix(a.normal, b.normal, weight)), mix(a.roughness, b.roughness, weight), mix(a.metalness, b.metalness, weight), mix(a.ao, b.ao, weight));
+SoilSurface emptySurface() {
+    return SoilSurface(vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0, 0.5, 0.0);
 }
 
 int maskAt(vec2 world) {
@@ -69,36 +76,36 @@ int displaySoil(int slot, ivec2 sampleIndex) {
     return int(floor(encodedSoil / 16.0));
 }
 
-void soilTextures(int soil, vec2 uv, vec2 dx, vec2 dy, out vec3 albedo, out vec3 detailNormal, out vec3 orm) {
+void soilTextures(int soil, vec2 uv, vec2 dx, vec2 dy, out vec3 albedo, out vec3 detailNormal, out vec4 orm) {
     if (soil == 0) {
         albedo = textureGrad(uSoilBase0, uv, dx, dy).rgb;
         detailNormal = textureGrad(uSoilSurface0, vec3(uv, 0.0), dx, dy).rgb;
-        orm = textureGrad(uSoilSurface0, vec3(uv, 1.0), dx, dy).rgb;
+        orm = textureGrad(uSoilSurface0, vec3(uv, 1.0), dx, dy);
     } else if (soil == 1) {
         albedo = textureGrad(uSoilBase1, uv, dx, dy).rgb;
         detailNormal = textureGrad(uSoilSurface1, vec3(uv, 0.0), dx, dy).rgb;
-        orm = textureGrad(uSoilSurface1, vec3(uv, 1.0), dx, dy).rgb;
+        orm = textureGrad(uSoilSurface1, vec3(uv, 1.0), dx, dy);
     } else if (soil == 2) {
         albedo = textureGrad(uSoilBase2, uv, dx, dy).rgb;
         detailNormal = textureGrad(uSoilSurface2, vec3(uv, 0.0), dx, dy).rgb;
-        orm = textureGrad(uSoilSurface2, vec3(uv, 1.0), dx, dy).rgb;
+        orm = textureGrad(uSoilSurface2, vec3(uv, 1.0), dx, dy);
     } else if (soil == 3) {
         albedo = textureGrad(uSoilBase3, uv, dx, dy).rgb;
         detailNormal = textureGrad(uSoilSurface3, vec3(uv, 0.0), dx, dy).rgb;
-        orm = textureGrad(uSoilSurface3, vec3(uv, 1.0), dx, dy).rgb;
+        orm = textureGrad(uSoilSurface3, vec3(uv, 1.0), dx, dy);
     } else if (soil == 4) {
         albedo = textureGrad(uSoilBase4, uv, dx, dy).rgb;
         detailNormal = textureGrad(uSoilSurface4, vec3(uv, 0.0), dx, dy).rgb;
-        orm = textureGrad(uSoilSurface4, vec3(uv, 1.0), dx, dy).rgb;
+        orm = textureGrad(uSoilSurface4, vec3(uv, 1.0), dx, dy);
     } else {
         albedo = textureGrad(uSoilBase5, uv, dx, dy).rgb;
         detailNormal = textureGrad(uSoilSurface5, vec3(uv, 0.0), dx, dy).rgb;
-        orm = textureGrad(uSoilSurface5, vec3(uv, 1.0), dx, dy).rgb;
+        orm = textureGrad(uSoilSurface5, vec3(uv, 1.0), dx, dy);
     }
     if (soil == uMaterialBlendIndex) {
         albedo = mix(albedo, textureGrad(uBlendBase, uv, dx, dy).rgb, uMaterialBlend);
         detailNormal = mix(detailNormal, textureGrad(uBlendSurface, vec3(uv, 0.0), dx, dy).rgb, uMaterialBlend);
-        orm = mix(orm, textureGrad(uBlendSurface, vec3(uv, 1.0), dx, dy).rgb, uMaterialBlend);
+        orm = mix(orm, textureGrad(uBlendSurface, vec3(uv, 1.0), dx, dy), uMaterialBlend);
     }
 }
 
@@ -120,11 +127,13 @@ SoilSurface soilSurface(int soil, vec2 world, vec2 worldDx, vec2 worldDy, vec3 n
     mat2 rotation = mat2(c, s, -s, c);
     float footprint = max(length(worldDx), length(worldDy));
     float macroWeight = smoothstep(tiling.z, tiling.w, footprint);
-    vec3 albedo, detailNormal, orm;
+    vec3 albedo, detailNormal;
+    vec4 orm;
     float firstPeriod = macroWeight >= 1.0 ? tiling.y : tiling.x;
     soilTextures(soil, rotation * world / firstPeriod, rotation * worldDx / firstPeriod, rotation * worldDy / firstPeriod, albedo, detailNormal, orm);
     if (macroWeight > 0.0 && macroWeight < 1.0) {
-        vec3 macroAlbedo, macroNormal, macroOrm;
+        vec3 macroAlbedo, macroNormal;
+        vec4 macroOrm;
         soilTextures(soil, rotation * world / tiling.y, rotation * worldDx / tiling.y, rotation * worldDy / tiling.y, macroAlbedo, macroNormal, macroOrm);
         albedo = mix(albedo, macroAlbedo, macroWeight);
         detailNormal = mix(detailNormal, macroNormal, macroWeight);
@@ -139,7 +148,14 @@ SoilSurface soilSurface(int soil, vec2 world, vec2 worldDx, vec2 worldDy, vec3 n
     float roughness = range.y - range.x > 0.00001 ? clamp((orm.g - range.x) / (range.y - range.x), 0.0, 1.0) : orm.g;
     if (remap.w > 0.5) roughness = 1.0 - roughness;
     roughness = mix(remap.x, remap.y, pow(roughness, remap.z)) * range.z;
-    return SoilSurface(albedo, mapped, clamp(roughness, 0.05, 1.0), clamp(max(orm.b, scale.w), 0.0, 1.0), clamp(1.0 - (1.0 - orm.r) * scale.z, 0.0, 1.0));
+    float period = mix(tiling.x, tiling.y, macroWeight);
+    float heightDetail = 1.0 - smoothstep(uSurfaceBlendSettings.z, uSurfaceBlendSettings.w, max(footprint, period / uSoilResolution[soil]));
+    if (soil == uMaterialBlendIndex) {
+        float targetDetail = 1.0 - smoothstep(uSurfaceBlendSettings.z, uSurfaceBlendSettings.w, max(footprint, period / uBlendResolution));
+        heightDetail = mix(heightDetail, targetDetail, uMaterialBlend);
+    }
+    return SoilSurface(albedo, mapped, clamp(roughness, 0.05, 1.0), clamp(max(orm.b, scale.w), 0.0, 1.0), clamp(1.0 - (1.0 - orm.r) * scale.z, 0.0, 1.0),
+        mix(0.5, orm.a, uSoilHeightEnabled[soil]), heightDetail * uSoilHeightEnabled[soil]);
 }
 
 struct Coverage {
@@ -394,6 +410,39 @@ float coverageAvailability(int slot, vec2 world) {
     return result;
 }
 
+Coverage materialHeightCoverage(Coverage coverage, Coverage heights, float detail) {
+    if (uSurfaceBlendEnabled < 0.5) return coverage;
+    Coverage scores = Coverage(coverage.low * (1.0 + uSurfaceBlendSettings.x * (2.0 * heights.low - 1.0)),
+        coverage.high * (1.0 + uSurfaceBlendSettings.x * (2.0 * heights.high - 1.0)));
+    Coverage scoreDx = Coverage(dFdx(scores.low), dFdx(scores.high));
+    Coverage scoreDy = Coverage(dFdy(scores.low), dFdy(scores.high));
+    float maximumWeight = max(max(max(coverage.low.x, coverage.low.y), coverage.low.z), max(max(coverage.high.x, coverage.high.y), coverage.high.z));
+    if (detail <= 0.0 || maximumWeight >= coverageTotal(coverage)) return coverage;
+    float maximum = max(max(max(scores.low.x, scores.low.y), scores.low.z), max(max(scores.high.x, scores.high.y), scores.high.z));
+    vec2 projected = vec2(0.0);
+    for (int i = 0; i < 6; i++) for (int j = 0; j < i; j++) {
+        projected = max(projected, abs(vec2(coverageWeight(scoreDx, i) - coverageWeight(scoreDx, j), coverageWeight(scoreDy, i) - coverageWeight(scoreDy, j))));
+    }
+    projected /= uSurfaceBlendSettings.y;
+    Coverage result = emptyCoverage();
+    for (int i = 0; i < 6; i++) {
+        float weight = coverageWeight(coverage, i) * coverageRampAverage(1.0 + (coverageWeight(scores, i) - maximum) / uSurfaceBlendSettings.y, projected);
+        Coverage identity = coverageIdentity(i);
+        result.low += identity.low * weight; result.high += identity.high * weight;
+    }
+    float total = coverageTotal(result);
+    result.low /= total; result.high /= total;
+    return mixCoverage(coverage, result, detail);
+}
+
+void addSurface(inout SoilSurface result, SoilSurface part, float weight) {
+    result.albedo += part.albedo * weight;
+    result.normal += part.normal * weight;
+    result.roughness += part.roughness * weight;
+    result.metalness += part.metalness * weight;
+    result.ao += part.ao * weight;
+}
+
 SoilSurface appearanceSurface(vec2 world, vec2 dx, vec2 dy, vec3 normal) {
     int current = maskAt(world);
     Coverage coverage = emptyCoverage();
@@ -409,17 +458,18 @@ SoilSurface appearanceSurface(vec2 world, vec2 dx, vec2 dy, vec3 normal) {
         if (remaining <= 0.0) break;
         current = int(uMaskMeta[current].z);
     }
-    SoilSurface surface = SoilSurface(vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    for (int soil = 0; soil < 6; soil++) {
-        float weight = coverageWeight(coverage, soil);
-        if (weight <= 0.0) continue;
-        SoilSurface part = soilSurface(soil, world, dx, dy, normal);
-        surface.albedo += part.albedo * weight;
-        surface.normal += part.normal * weight;
-        surface.roughness += part.roughness * weight;
-        surface.metalness += part.metalness * weight;
-        surface.ao += part.ao * weight;
-    }
+    SoilSurface a = emptySurface(), b = emptySurface(), c = emptySurface(), d = emptySurface(), e = emptySurface(), f = emptySurface();
+    if (coverage.low.x > 0.0) a = soilSurface(0, world, dx, dy, normal);
+    if (coverage.low.y > 0.0) b = soilSurface(1, world, dx, dy, normal);
+    if (coverage.low.z > 0.0) c = soilSurface(2, world, dx, dy, normal);
+    if (coverage.high.x > 0.0) d = soilSurface(3, world, dx, dy, normal);
+    if (coverage.high.y > 0.0) e = soilSurface(4, world, dx, dy, normal);
+    if (coverage.high.z > 0.0) f = soilSurface(5, world, dx, dy, normal);
+    float detail = dot(coverage.low, vec3(a.heightDetail, b.heightDetail, c.heightDetail)) + dot(coverage.high, vec3(d.heightDetail, e.heightDetail, f.heightDetail));
+    coverage = materialHeightCoverage(coverage, Coverage(vec3(a.height, b.height, c.height), vec3(d.height, e.height, f.height)), detail);
+    SoilSurface surface = emptySurface();
+    addSurface(surface, a, coverage.low.x); addSurface(surface, b, coverage.low.y); addSurface(surface, c, coverage.low.z);
+    addSurface(surface, d, coverage.high.x); addSurface(surface, e, coverage.high.y); addSurface(surface, f, coverage.high.z);
     surface.normal = normalize(surface.normal);
     return surface;
 }

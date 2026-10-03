@@ -271,7 +271,17 @@ at 512..1024 square pixels before decoding; sequential channel conversion has a
 source image hashes enter input identity. Pages are independently hashed RGBA8
 at32/128/512 resolution; validation checks dimensions, byte lengths, normalized
 normals and metadata. Optional publication installs immutable files before the
-appearance-sidecar switch under the authoring lock, leaving terrain unchanged.
+appearance-sidecar switch under the authoring lock, leaving terrain unchanged
+unless an explicit complete `material-bindings` JSON selects a new material-only
+catalog revision. That option changes only material IDs and terrain revision,
+retains immutable old/new snapshots and compatible appearance aliases, then
+switches current terrain last. A frozen planned terrain snapshot participates
+in framework hashing; current terrain bytes are checked before preparation and
+before publication, so the authorized current-manifest switch is not mistaken
+for an external source mutation. Optional homogeneous-source log-color
+conditioning and scalar source displacement are processed by the same bounded
+leaf. Height retains native integer precision and occupies existing ORM alpha
+under explicit material metadata; historical pages remain compatible.
 Its distinct D4 receipt avoids colliding with the importer's output graph claim.
 See the [appearance workflow](../../tools/bake_landscape/appearance/README.md).
 

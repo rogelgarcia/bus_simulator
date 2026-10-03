@@ -1,0 +1,22 @@
+{
+  "format": "landscape-material-preparation",
+  "schemaVersion": 1,
+  "materialId": "pbr.aerial_beach_01",
+  "displacement": {
+    "file": "displacement.png",
+    "source": {
+      "provider": "Poly Haven",
+      "author": "Rob Tuytel",
+      "assetId": "aerial_beach_01",
+      "assetUrl": "https://polyhaven.com/a/aerial_beach_01",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://polyhaven.com/license",
+      "downloadedOn": "2026-10-03",
+      "originalFile": "aerial_beach_01_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/aerial_beach_01/aerial_beach_01_disp_1k.png",
+      "byteLength": 2209508,
+      "sha256": "0ad0fb69dd862f101ede0427d86665e83cacb20be82f10b9b4555a728812516c"
+    }
+  },
+  "sourceMapsUnmodified": true
+}

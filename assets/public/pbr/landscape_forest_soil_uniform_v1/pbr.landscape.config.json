@@ -1,0 +1,10 @@
+{
+  "format": "landscape-material-preparation",
+  "schemaVersion": 1,
+  "materialId": "pbr.landscape_forest_soil_uniform_v1",
+  "baseColor": {
+    "algorithm": "periodic-log-microdetail-v1",
+    "radiusPixels": 16
+  },
+  "sourceMapsUnmodified": true
+}

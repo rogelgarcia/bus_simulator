@@ -66,6 +66,10 @@ export function validateLandscapeAppearanceManifest(input, landscape) {
         requireId(material.soilId, 'appearance.soilId'); requireId(material.materialId, 'appearance.materialId');
         requireCondition(material.materialId.startsWith('pbr.') && !ids.has(material.soilId), 'appearance soil/material IDs must be unique catalog bindings'); ids.add(material.soilId);
         requireFinite(material.tileMeters, 'appearance.tileMeters'); requireCondition(material.tileMeters > 0, 'appearance tileMeters must be positive');
+        if (material.height !== undefined) {
+            requireCondition(material.height?.encoding === 'orm-alpha-unorm8' && material.height.interpretation === 'relative-relief' && material.height.neutral === .5,
+                'appearance height must explicitly declare linear ORM-alpha relative relief with neutral 0.5');
+        }
         requireCondition(material.calibration?.presetId === 'aces' && material.calibration.adjustments && typeof material.calibration.adjustments === 'object', 'appearance requires retained aces calibration');
         requireSha256(material.calibration.configSha256, 'appearance calibration hash');
         const range = material.roughnessInputRange;

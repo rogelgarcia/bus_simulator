@@ -5,6 +5,7 @@ import { applyTextureColorSpace, resolvePbrMaterialPipeline } from '../../conten
 import { getPbrTextureCalibrationResolver } from '../../content3d/materials/PbrTextureCalibrationResolver.js';
 import { landscapeTextureBytes } from './LandscapeAppearanceBudget.js';
 import { createLandscapeMaterialTiling } from './LandscapeMaterialTiling.js';
+import { LANDSCAPE_MATERIAL_BLEND } from './LandscapeMaterialBlend.js';
 
 export class LandscapeMaterialPages {
     /** @param {{appearance:any,budget:any,pool:any,renderer:any,uniforms:any,prefix:string}} options */
@@ -25,6 +26,7 @@ export class LandscapeMaterialPages {
         if (this.disposed) return;
         for (const material of this.materials) {
             const { definition, index } = material;
+            this.uniforms.uSoilHeightEnabled.value[index] = definition.height ? 1 : 0;
             material.pipeline = resolvePbrMaterialPipeline(definition.materialId, { calibrationOverrides: resolver.getCachedOverrides(definition.materialId), calibrationResolver: resolver });
             const effective = material.pipeline.overrides.effective;
             const remap = effective.roughnessRemap;
@@ -37,6 +39,7 @@ export class LandscapeMaterialPages {
             const normalize = Number.isFinite(remap?.lowPercentile) && Number.isFinite(remap?.highPercentile);
             this.uniforms.uSoilRange.value[index].set(normalize ? definition.roughnessInputRange.min : 0, normalize ? definition.roughnessInputRange.max : 1, effective.roughness, (material.pipeline.meta?.calibration?.uvRotationDegrees ?? 0) * Math.PI / 180);
         }
+        this.uniforms.uSurfaceBlendEnabled.value = this.materials.some(material => !!material.definition.height) ? 1 : 0;
         this.initialized = true;
     }
 
@@ -60,7 +63,7 @@ export class LandscapeMaterialPages {
         const failure = this.failures.get(id);
         if (failure && (failure.attempts >= 2 || performance.now() < failure.retryAt)) return false;
         const bytes = resolution * resolution * 12;
-        const key = `${this.prefix}/material/${material.definition.materialId}/${resolution}/${Object.values(tier.channels).map(value => value.sha256).join('/')}`;
+        const key = `${this.prefix}/material/${material.definition.soilId}/${material.definition.materialId}/${resolution}/${Object.values(tier.channels).map(value => value.sha256).join('/')}`;
         const admission = this.budget.reserve(key, { cpuBytes: bytes * 2, gpuBytes: landscapeTextureBytes(resolution) * 3, kind: 'appearance-material-decode' });
         if (!admission.admitted) { this.degradationReason = admission.reason; return false; }
         const record = { id, key, material, resolution, tier, bytes, status: 'loading', abort: new AbortController(), leases: new Map(), baseColor: null, surface: null, baseTexture: null, surfaceTexture: null };
@@ -96,6 +99,7 @@ export class LandscapeMaterialPages {
     bind(material, record) {
         this.uniforms[`uSoilBase${material.index}`].value = record.baseTexture;
         this.uniforms[`uSoilSurface${material.index}`].value = record.surfaceTexture;
+        this.uniforms.uSoilResolution.value[material.index] = record.resolution;
         material.current = record;
         this.syncLeases(record, material.refs);
     }
@@ -106,6 +110,7 @@ export class LandscapeMaterialPages {
         this.uniforms.uMaterialBlend.value = 0;
         this.uniforms.uBlendBase.value = target.baseTexture;
         this.uniforms.uBlendSurface.value = target.surfaceTexture;
+        this.uniforms.uBlendResolution.value = target.resolution;
     }
 
     update(dt, uploadAllowance) {
@@ -176,7 +181,8 @@ export class LandscapeMaterialPages {
 
     snapshot() {
         return { ready: this.ready, settled: this.idle === true && !this.pending && !this.transition, pending: this.pending ? 1 : 0, transition: this.transition ? { materialId: this.transition.material.definition.materialId, from: this.transition.from.resolution, to: this.transition.target.resolution, progress: this.transition.progress } : null,
-            materials: this.materials.map(material => ({ materialId: material.definition.materialId, soilId: material.definition.soilId, resolution: material.current?.resolution ?? 0, desiredResolution: material.desiredResolution, refCount: material.refs.size, tileMeters: material.pipeline?.overrides.effective.tileMeters ?? material.definition.tileMeters, calibration: material.pipeline?.diagnostics ?? null })),
+            blend: { enabled: this.uniforms.uSurfaceBlendEnabled.value === 1, recipe: LANDSCAPE_MATERIAL_BLEND },
+            materials: this.materials.map(material => ({ materialId: material.definition.materialId, soilId: material.definition.soilId, resolution: material.current?.resolution ?? 0, desiredResolution: material.desiredResolution, refCount: material.refs.size, tileMeters: material.pipeline?.overrides.effective.tileMeters ?? material.definition.tileMeters, calibration: material.pipeline?.diagnostics ?? null, height: material.definition.height ?? null })),
             errors: [...this.failures.values()], loaded: this.loaded, evicted: this.evicted, degradationReason: this.degradationReason };
     }
 

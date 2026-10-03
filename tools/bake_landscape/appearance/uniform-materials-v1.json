@@ -1,0 +1,13 @@
+{
+  "format": "landscape-material-bindings",
+  "schemaVersion": 1,
+  "landscapeId": "coastal-city",
+  "materialIds": {
+    "unknown": "pbr.landscape_soil_uniform_v1",
+    "seabed": "pbr.aerial_beach_01",
+    "sand": "pbr.aerial_beach_01",
+    "loam": "pbr.landscape_grass_uniform_v1",
+    "forest": "pbr.landscape_forest_soil_uniform_v1",
+    "rock": "pbr.landscape_rock_uniform_v1"
+  }
+}

@@ -3,12 +3,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createLandscapeModelFixture } from './landscape_model_fixture.js';
-import { landscapeAppearanceBindingKey, loadLandscapeAppearanceManifest, LandscapeAppearanceBindingError, validateLandscapeAppearanceManifest } from '../../../src/app/landscape/index.js';
+import { landscapeAppearanceBindingKey, loadLandscapeAppearanceManifest, LandscapeAppearanceBindingError, validateLandscapeAppearanceManifest, validateLandscapeManifest } from '../../../src/app/landscape/index.js';
 
-const saved = JSON.parse(await readFile(new URL('../../../assets/public/landscape/coastal-city/appearance/manifest.json', import.meta.url)));
+const saved = JSON.parse(await readFile(new URL('../../../assets/public/landscape/coastal-city/appearance/manifest.aec36e5b53837b67b6316803460980d4b805ce17bc8db7a1919f954bc4781b0b.json', import.meta.url)));
 const currentUrl = 'https://fixture/terrain/appearance/manifest.json';
 function fixture() {
-    const { manifest } = createLandscapeModelFixture();
+    const { manifest: defaults } = createLandscapeModelFixture();
+    const manifest = validateLandscapeManifest({ ...defaults, soil: { ...defaults.soil,
+        catalog: defaults.soil.catalog.map(soil => ({ ...soil, materialId: saved.materials.find(material => material.soilId === soil.id).materialId })) } });
     const current = { ...structuredClone(saved), landscapeId: manifest.id, preparedFromRevision: manifest.revision, bounds: manifest.bounds, grid: manifest.grid };
     const oldTerrain = structuredClone(manifest), oldAppearance = structuredClone(current);
     oldTerrain.soil.catalog[2].materialId = oldAppearance.materials[2].materialId = 'pbr.archived_sand';

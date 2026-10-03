@@ -6,12 +6,12 @@
 
 /** @type {ReadonlyArray<Readonly<LandscapeSoil>>} */
 export const LANDSCAPE_SOIL_CATALOG = Object.freeze([
-    { id: 'unknown', label: 'Unspecified substrate', materialId: 'pbr.ground_037', biome: 'land' },
-    { id: 'seabed', label: 'Seabed substrate', materialId: 'pbr.gravelly_sand', biome: 'land' },
+    { id: 'unknown', label: 'Unspecified substrate', materialId: 'pbr.landscape_soil_uniform_v1', biome: 'land' },
+    { id: 'seabed', label: 'Seabed substrate', materialId: 'pbr.aerial_beach_01', biome: 'land' },
     { id: 'sand', label: 'Sand', materialId: 'pbr.aerial_beach_01', biome: 'land' },
-    { id: 'loam', label: 'Loam', materialId: 'pbr.grass_004', biome: 'grass' },
-    { id: 'forest', label: 'Forest soil', materialId: 'pbr.forrest_ground_01', biome: 'land' },
-    { id: 'rock', label: 'Exposed rock', materialId: 'pbr.rocky_terrain_02', biome: 'stone' }
+    { id: 'loam', label: 'Loam', materialId: 'pbr.landscape_grass_uniform_v1', biome: 'grass' },
+    { id: 'forest', label: 'Forest soil', materialId: 'pbr.landscape_forest_soil_uniform_v1', biome: 'land' },
+    { id: 'rock', label: 'Exposed rock', materialId: 'pbr.landscape_rock_uniform_v1', biome: 'stone' }
 ].map((entry) => Object.freeze(entry)));
 
 /** @type {ReadonlyArray<Readonly<LandscapeLandCover>>} */

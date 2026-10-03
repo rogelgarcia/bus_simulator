@@ -131,6 +131,7 @@ export class LandscapeAppearanceStreamer {
             revision: this.appearance?.revision ?? null, sourceRevision: this.loaded.manifest.revision, materialTransition: materials?.transition ?? null,
             presentation: { policy: LANDSCAPE_NATURAL_PRESENTATION, inferredSpacingMeters: this.loaded.chunk.descriptor.sampleStride * this.loaded.manifest.grid.spacingX, sourceCoverPreserved: true, semanticSoilPreserved: true },
             coverage: masks?.coverage ?? null,
+            materialBlend: materials?.blend ?? null,
             materialTiling: this.materials?.tiling ?? {} };
     }
 

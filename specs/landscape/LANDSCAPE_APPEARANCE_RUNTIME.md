@@ -56,10 +56,21 @@ Material resources contain one sRGB base-color `DataTexture` and a two-layer,
 linear `DataArrayTexture` holding OpenGL normals and ORM. Prepared pages have
 independent 32, 128 and 512-pixel files. Both GPU textures use a real mip chain;
 base-color mip generation and sampling use the sRGB texture format. A resource
-key includes material ID, tier, every channel hash and the appearance instance.
+key includes soil-binding identity, material ID, tier, every channel hash and the
+appearance instance. Two soils may bind the same material; their independently
+allocated textures are charged and released separately. This implementation does
+not claim physical GPU deduplication merely because their page hashes match.
 The six soil bindings use twelve texture samplers. One active material tier
 transition adds two samplers and the semantic mask array adds one: fifteen in
 total, within the WebGL2 minimum of sixteen fragment texture units.
+
+AI577 D1a optionally packs relative material relief into ORM alpha. The manifest
+must explicitly declare `orm-alpha-unorm8`; absent metadata means neutral 0.5,
+not the legacy opaque alpha value. Height uses the same world coordinates,
+texture gradients, mip chain and old/new material-tier transition as the other
+surface channels. The existing RGBA allocation and fifteen-sampler count stay
+unchanged. The material snapshot exposes the active blend recipe and each
+material's height declaration for inspection.
 
 Worker cancellation terminates obsolete active work and removes queued work.
 Completed stale records are rejected by abort and record-identity checks. Source
@@ -125,6 +136,32 @@ metalness and AO blend by normalized weights; the final world normal is normaliz
 Geometry normals continue to use the D3 common-border gradient policy. Material
 tier changes still blend old/new PBR responses for 0.3 seconds, one transition at
 a time, releasing the old tier only after replacement is ready and the fade ends.
+
+With D1a height metadata, near-camera material weights instead use
+`landscape-height-competition-v1`. For supported coverage `c` and normalized
+relative relief `h`, the score is `q = c * (1 + 0.7 * (2*h - 1))`. Each score
+competes against the maximum supported score over a 0.12 score-width band. A
+coverage-weighted ramp integral removes lower scores and normalizes the remaining
+contributions. Its conservative footprint uses maximum pairwise score derivatives;
+those derivatives are evaluated before any nonuniform return. Raised detail thus
+survives the transition while lower areas admit the adjacent material, without
+introducing a zero-coverage layer. All PBR properties use the same final weights.
+
+Competition detail fades between 0.04 and 0.20 meters per effective sample. The
+effective sample size is the larger of projected world footprint and the active
+physical texture period divided by resident tier resolution. Detail readiness
+blends continuously between old and incoming tiers and is coverage weighted across
+the contributing materials. At unresolved distances it returns to the existing
+filtered terrain coverage. This is relative surface competition, not geometric
+displacement or an inferred physical material thickness. Historical sidecars with
+no height declaration keep their previous coverage mixing behavior. Source and
+visual acceptance rules are in [LANDSCAPE_BASE_MATERIALS.md](LANDSCAPE_BASE_MATERIALS.md).
+
+The box primitive integrates a locally planar score margin. Maximum-score
+selection, multiplication by coverage and final normalization make the combined
+multi-material filter approximate; it is not an exact area average of nonlinear
+height competition. It neither removes D1's source-resolution limitations nor
+implements the independently streamed fine coverage pages planned for D2.
 
 ## Natural presentation and imported reference data
 

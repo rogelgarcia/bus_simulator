@@ -1,3 +1,7 @@
+import landscapeUniform0 from './landscape_soil_uniform_v1/pbr.material.config.js';
+import landscapeUniform1 from './landscape_forest_soil_uniform_v1/pbr.material.config.js';
+import landscapeUniform2 from './landscape_grass_uniform_v1/pbr.material.config.js';
+import landscapeUniform3 from './landscape_rock_uniform_v1/pbr.material.config.js';
 import aerialBeach01 from './aerial_beach_01/pbr.material.config.js';
 import asphalt02 from './asphalt_02/pbr.material.config.js';
 import asphaltPitLane from './asphalt_pit_lane/pbr.material.config.js';
@@ -68,6 +72,10 @@ import whitewashedBrick from './whitewashed_brick/pbr.material.config.js';
 import wornMossyPlasterwall from './worn_mossy_plasterwall/pbr.material.config.js';
 
 export const PBR_MATERIAL_CATALOG = Object.freeze([
+    landscapeUniform0,
+    landscapeUniform1,
+    landscapeUniform2,
+    landscapeUniform3,
     aerialBeach01,
     asphalt02,
     asphaltPitLane,

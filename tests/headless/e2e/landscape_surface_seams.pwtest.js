@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 
-const artifacts = path.resolve('tests/artifacts/screens/landscape/ai577/d1/seams');
+const artifacts = path.resolve(process.env.LANDSCAPE_EVIDENCE_ROOT ?? 'tests/artifacts/screens/landscape/ai577/d1/seams');
 const maxDifference = (a, b) => Math.max(...a.map((value, channel) => Math.abs(value - b[channel])));
 test.use({ viewport: { width: 512, height: 512 }, deviceScaleFactor: 1, trace: 'off', video: 'off' });
 
