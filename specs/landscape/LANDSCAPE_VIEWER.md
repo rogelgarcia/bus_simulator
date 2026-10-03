@@ -253,3 +253,8 @@ Regression captures now accept `LANDSCAPE_EVIDENCE_PHASE`; D3 verification write
 the viewer and authoring evidence under `d3/viewer/` and `d3/authoring/`. The
 default phase is `regression`. `E2E_OUTPUT_DIR` redirects Playwright's automatic
 diagnostics to the selected phase under `tests/artifacts/screens/`.
+
+D7 repeatable performance conditions, initial lower-budget URL options, opt-in
+bounded capture hooks, measured cold/warm results, and accounting limitations are
+documented in `LANDSCAPE_PERFORMANCE.md`. Performance capture is inactive during
+ordinary viewing; its buffers are released on completion or teardown.

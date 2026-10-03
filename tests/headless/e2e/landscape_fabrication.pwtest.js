@@ -1,9 +1,12 @@
 // Verifies the bounded coastal viewer, real pointer inspection, and shared HUD lifecycle.
 import { test, expect } from '@playwright/test';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { LANDSCAPE_PLANNING_ROLES } from '../../../src/app/landscape/LandscapePlanningReferences.js';
 
 const artifacts = path.resolve(`tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'regression'}/viewer`);
+const manifest = JSON.parse(await readFile(path.resolve('assets/public/landscape/coastal-city/manifest.json'), 'utf8'));
+const planningPaths = new Set(manifest.references.filter(reference => LANDSCAPE_PLANNING_ROLES.includes(reference.role)).map(reference => `/assets/public/landscape/coastal-city/${reference.url}`));
 
 test('Landscape D1: real overview, wireframe, pointing, reload, and teardown', async ({ page }) => {
     const errors = [];
@@ -23,7 +26,8 @@ test('Landscape D1: real overview, wireframe, pointing, reload, and teardown', a
     expect(payloads.filter(url => url.endsWith('.f32le'))).toHaveLength(1);
     expect(payloads.filter(url => url.endsWith('/coastal-city/manifest.json'))).toHaveLength(1);
     expect(payloads.some(url => url.endsWith('.u8'))).toBe(true);
-    expect(payloads.some(url => url.includes('/source/') || url.includes('/l3/'))).toBe(false);
+    expect(payloads.filter(url => url.includes('/source/')).every(url => planningPaths.has(new URL(url).pathname))).toBe(true);
+    expect(payloads.some(url => url.includes('/l3/'))).toBe(false);
     await page.screenshot({ path: path.join(artifacts, '01-overview.png') });
 
     await page.getByRole('button', { name: 'Grid', exact: true }).click();

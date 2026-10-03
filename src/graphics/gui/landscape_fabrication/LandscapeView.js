@@ -12,12 +12,13 @@ import { createLandscapeWaterReference } from '../../engine3d/landscape/Landscap
 import { LandscapePlanningOverlay } from '../../engine3d/landscape/LandscapePlanningOverlay.js';
 import { landscapePlanningHeight } from '../../engine3d/landscape/LandscapePlanningGeometry.js';
 import { LandscapeBookmarks } from './LandscapeBookmarks.js';
+import { LandscapePerformanceCapture } from './LandscapePerformanceCapture.js';
 import { readLandscapeTerrainReport } from '../../../app/landscape/LandscapeTerrainReports.js';
 
 const DEFAULT_SOURCE = '/assets/public/landscape/coastal-city/manifest.json';
 
 export class LandscapeView {
-    /** @param {HTMLCanvasElement} canvas @param {{source?: string}} options */
+    /** @param {HTMLCanvasElement} canvas @param {{source?:string,budgets?:{cpuBytes?:number,gpuBytes?:number}}} options */
     constructor(canvas, { source = DEFAULT_SOURCE, budgets = {} } = {}) {
         this.canvas = canvas;
         this.source = new URL(source, location.href).href;
@@ -107,6 +108,7 @@ export class LandscapeView {
     /** Reloads a validated overview without changing the current camera pose. */
     async load() {
         const sequence = ++this.loadSequence;
+        this.loadTiming = { sequence, startedAtMs: performance.now(), coarseReadyAtMs: null, firstCoveredFrameAtMs: null, readyAtMs: null };
         this.loadAbort?.abort();
         this.selectionAbort?.abort();
         this.invalidateReport();
@@ -141,6 +143,7 @@ export class LandscapeView {
             this.lastError = null;
             this.stream = stream;
             this.loadingStream = null;
+            this.loadTiming.coarseReadyAtMs = performance.now();
             const appearance = new LandscapeAppearanceStreamer({ loaded, budget: this.budget, renderer: this.renderer });
             this.appearance = this.loadingAppearance = appearance;
             stream.setAppearance(appearance);
@@ -155,6 +158,7 @@ export class LandscapeView {
             await planning.initialize();
             if (this.disposed || sequence !== this.loadSequence) return;
             this.loadingPlanning = null;
+            this.loadTiming.readyAtMs = performance.now();
             this.panel.references(planning.features);
             this.syncPlanningPanel();
             if (this.bookmarkStore.error) this.panel.text('bookmark-status', this.bookmarkStore.error);
@@ -335,6 +339,7 @@ export class LandscapeView {
     }
 
     async setBudgets(budgets) {
+        this.performanceCapture?.dispose(); this.performanceCapture = null;
         this.loadSequence++;
         this.loadAbort?.abort();
         this.loadingStream?.dispose();
@@ -558,6 +563,7 @@ export class LandscapeView {
             ready: !!this.loaded, disposed: this.disposed, mode: this.mode, revision: this.loaded?.manifest.revision,
             selection: this.selection, camera: { position: this.camera.position.toArray(), target: this.controls.target.toArray(), projection: this.projection, fov: this.perspectiveFov, orthoHeight: this.orthoHeight, zoom: this.camera.zoom },
             source: this.source, lastError: this.lastError ?? null, frameIndex: this.frameIndex,
+            loadTiming: this.loadTiming ? { ...this.loadTiming } : null,
             helpers: { grid: this.grid.visible, axes: this.axes.visible },
             sourceBytes: this.stream?.snapshot().sourceBytes ?? 0, memory: this.stream?.snapshot() ?? null,
             streaming: this.stream?.snapshot() ?? null, budget: this.budget.snapshot(),
@@ -571,12 +577,38 @@ export class LandscapeView {
         };
     }
 
+    /** @param {{maxFrames?:number}} [options] */
+    beginPerformanceCapture(options = {}) {
+        if (this.disposed || this.performanceCapture) throw new Error('Performance capture requires a live viewer without another active capture');
+        this.performanceCapture = new LandscapePerformanceCapture({ ...options, budget: this.budget, gpuTimer: this.gpuTimer, nowMs: performance.now() });
+        return { capacity: this.performanceCapture.capacity, cpuBytes: this.performanceCapture.cpuBytes, startedAtMs: this.performanceCapture.startedAtMs };
+    }
+
+    endPerformanceCapture() {
+        if (!this.performanceCapture) throw new Error('No performance capture is active');
+        const result = this.performanceCapture.finish(); this.performanceCapture = null;
+        return result;
+    }
+
+    performanceMetadata() {
+        const gl = this.renderer.getContext(), debug = gl.getExtension('WEBGL_debug_renderer_info');
+        return { userAgent: navigator.userAgent, platform: navigator.platform, hardwareConcurrency: navigator.hardwareConcurrency,
+            deviceMemoryGiB: navigator.deviceMemory ?? null, viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
+            renderer: { pixelRatio: this.renderer.getPixelRatio(), width: this.canvas.width, height: this.canvas.height,
+                api: this.renderer.capabilities.isWebGL2 ? 'WebGL2' : 'WebGL', version: gl.getParameter(gl.VERSION),
+                vendor: gl.getParameter(debug?.UNMASKED_VENDOR_WEBGL ?? gl.VENDOR), renderer: gl.getParameter(debug?.UNMASKED_RENDERER_WEBGL ?? gl.RENDERER) },
+            gpuTimer: this.gpuTimer.getDiagnostics(), budgets: this.budget.snapshot().limits,
+            rendererSettings: { antialias: gl.getContextAttributes()?.antialias, powerPreference: gl.getContextAttributes()?.powerPreference,
+                toneMapping: this.renderer.toneMapping, exposure: this.renderer.toneMappingExposure, outputColorSpace: this.renderer.outputColorSpace } };
+    }
+
     resume() {
         if (this.disposed || this.frameRequest || document.hidden) return;
         this.lastFrame = performance.now();
         const frame = now => {
             this.frameRequest = null;
             if (this.disposed || document.hidden) return;
+            const frameStart = this.performanceCapture ? performance.now() : 0;
             const rawDt = (now - this.lastFrame) / 1000;
             this.lastFrame = now;
             this.controls.update(Math.min(rawDt, .1));
@@ -612,7 +644,13 @@ export class LandscapeView {
             this.gpuTimer.beginFrame();
             this.renderer.render(this.scene, this.camera);
             this.gpuTimer.endFrame();
+            if (this.stream && this.loadTiming?.coarseReadyAtMs !== null && this.loadTiming?.firstCoveredFrameAtMs === null) this.loadTiming.firstCoveredFrameAtMs = performance.now();
             this.perfBar.onFrame({ dt: Math.min(rawDt, .1), rawDt, nowMs: now, renderer: this.renderer, frameIndex: ++this.frameIndex });
+            this.performanceCapture?.record({ nowMs: now, intervalMs: rawDt * 1000, cpuFrameMs: performance.now() - frameStart,
+                geometryStreamingMs: this.reloading ? 0 : this.stream?.frameCostMs ?? 0,
+                appearanceStreamingMs: this.reloading ? 0 : this.appearance?.frameCostMs ?? 0,
+                uploadedBytes: this.reloading ? 0 : (this.stream?.uploadedBytes ?? 0) + (this.appearance?.uploadedBytes ?? 0) + (this.planning?.uploadedBytes ?? 0),
+                render: this.renderer.info.render, memory: this.renderer.info.memory });
             this.frameRequest = requestAnimationFrame(frame);
         };
         this.frameRequest = requestAnimationFrame(frame);
@@ -624,6 +662,7 @@ export class LandscapeView {
         if (this.disposed) return;
         this.disposed = true;
         this.pause();
+        this.performanceCapture?.dispose(); this.performanceCapture = null;
         this.loadAbort?.abort();
         this.selectionAbort?.abort();
         this.reportAbort?.abort();

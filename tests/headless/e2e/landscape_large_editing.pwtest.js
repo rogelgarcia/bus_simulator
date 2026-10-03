@@ -6,10 +6,19 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 import { createLandscapeServer } from '../../../tools/landscape_server/Server.mjs';
 import { copyLandscapePlanningSources } from '../../shared/landscape_fixture_files.js';
+import { createCoastalLandscapeCitySpec } from '../../../src/app/city/specs/CoastalLandscapeCitySpec.js';
+import { CityMap } from '../../../src/app/city/CityMap.js';
+import { createCityConfig } from '../../../src/app/city/CityConfig.js';
+import {
+    createLandscapeDependency, checkLandscapeDependency, landscapeChangeInvalidates,
+    validateLandscapeCityBinding, loadCityLandscape, loadLandscapeChunk, queryLandscapeSelection,
+    cityReservationsToLandscapeConstraints, readLandscapeTerrainReport
+} from '../../../src/app/landscape/index.js';
 
 const run = promisify(execFile), root = path.resolve('.');
 const artifacts = path.join(root, `tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'd5'}/large-editing`);
 const source = path.join(root, 'assets/public/landscape/coastal-city');
+const boundCity = createCoastalLandscapeCitySpec();
 let server, origin, directory;
 const snapshot = page => page.evaluate(() => window.__landscapeTestHooks.snapshot());
 const manifest = async () => JSON.parse(await readFile(path.join(directory, 'manifest.json'), 'utf8'));
@@ -21,6 +30,7 @@ test.beforeAll(async () => {
     await mkdir(artifacts, { recursive: true });
     directory = await mkdtemp(path.join(artifacts, 'coastal-run-'));
     for (const relative of ['manifest.json', 'payloads', 'appearance']) await cp(path.join(source, relative), path.join(directory, relative), { recursive: true });
+    await cp(path.join(root, boundCity.landscape.manifestUrl), path.join(directory, path.basename(boundCity.landscape.manifestUrl)));
     await copyLandscapePlanningSources(await manifest(), source, directory);
     server = createLandscapeServer({ root, landscapeDirectory: directory });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -53,6 +63,28 @@ async function query(page, revision, x, z) {
     return result;
 }
 
+async function terrainReport(page, saved, shape, constraints) {
+    const response = await page.request.post(`${origin}/api/landscape/report`, { data: {
+        expectedRevision: saved.revision, shape, sampleSpacingMeters: 50, maxSamples: 4096, constraints
+    } });
+    const bytes = await response.body();
+    expect(response.ok(), bytes.toString()).toBe(true);
+    const report = await readLandscapeTerrainReport(new Response(bytes), { landscapeId: saved.id, revision: saved.revision });
+    expect(report.status).toBe('ready');
+    expect(report.sampling.accuracy).toBe('authoritative-native-probes');
+    expect(report.sampling.nativeSpacingMeters).toBe(1.953125);
+    expect(report.resources.maxDecodedChunks).toBe(1);
+    expect(report.resources.workingBytes).toBeLessThanOrEqual(report.resources.workingByteLimit);
+    return report;
+}
+
+async function samplePinnedCity() {
+    const loaded = await loadCityLandscape(boundCity.landscape, { baseUrl: `${origin}/` });
+    return queryLandscapeSelection(loaded.manifest, {
+        x: 1250, z: 2000, selectionId: 'pinned-city-footprint', expectedRevision: loaded.manifest.revision
+    }, { readChunk: id => loadLandscapeChunk(loaded.manifest, id, { manifestUrl: loaded.manifestUrl }) });
+}
+
 // Only one native chunk and one neighbor are retained; checking the full border set does not assemble a raster.
 async function checkNativeBorders(saved) {
     const native = saved.chunks.filter(chunk => chunk.level === saved.grid.maxLevel);
@@ -75,16 +107,26 @@ async function checkNativeBorders(saved) {
     return { borders, samples, maximumResidentHeightChunks: 2 };
 }
 
-test('Landscape D5: polygon grade and halo smoothing survive preparation, eviction, reopen and complete revert', async ({ page }) => {
+test('Landscape D7: coastal edit, reports, city binding and dependency freshness survive preparation, eviction and revert', async ({ page }) => {
     test.setTimeout(240000);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error' && /WebGLProgram|VALIDATE_STATUS|shader error|GL_INVALID/i.test(message.text())) errors.push(message.text()); });
     const original = await manifest();
+    validateLandscapeCityBinding(boundCity.landscape, { manifest: original });
+    const reservations = cityReservationsToLandscapeConstraints(boundCity.landscape, CityMap.fromSpec(boundCity, createCityConfig()).reservations);
+    const studyShape = { type: 'footprint', region: polygon };
+    const corridorShape = { type: 'corridor', points: [{ x: 1800, z: 2000 }, { x: 2200, z: 2000 }], widthMeters: 20 };
+    const unrelatedDependency = createLandscapeDependency(original, { bounds: { minX: 400, maxX: 600, minZ: 400, maxZ: 600 }, channels: ['height', 'soil'], algorithm: 'city-pad-study-v1' });
+    const coverDependency = createLandscapeDependency(original, { bounds: { minX: 1100, maxX: 2800, minZ: 1200, maxZ: 2800 }, channels: ['landCover'], algorithm: 'cover-inspection-v1' });
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto(`${origin}/screens/landscape_fabrication.html`);
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready);
     const beforeCenter = await query(page, original.revision, 2000, 2000), beforeOutside = await query(page, original.revision, 500, 500);
+    const beforeReport = await terrainReport(page, original, studyShape, reservations);
+    const beforeCorridor = await terrainReport(page, original, corridorShape, reservations);
+    expect(beforeReport.overlaps).toContainEqual({ id: 'coastal-bus-start', classification: 'reservation', intersects: true, method: 'exact-horizontal-shape-contact' });
+    const pinnedBefore = await samplePinnedCity();
     await page.evaluate(async pose => { window.__landscapeTestHooks.setCamera(pose); await window.__landscapeTestHooks.select(2000, 2000); }, closePose);
     await settle(page);
     await page.screenshot({ path: path.join(artifacts, '01-before-terrain-grade.png') });
@@ -106,6 +148,23 @@ test('Landscape D5: polygon grade and halo smoothing survive preparation, evicti
     expect(applied.summary.heightDeltaRange.min).toBeLessThan(0);
     expect(applied.summary.heightDeltaRange.max).toBeGreaterThan(0);
     const saved = await manifest(), borders = await checkNativeBorders(saved);
+    expect(() => validateLandscapeCityBinding(boundCity.landscape, { manifest: saved })).toThrow(/revision is stale/);
+    const currentCityBinding = { ...boundCity.landscape, revision: saved.revision, manifestUrl: 'assets/public/landscape/coastal-city/manifest.json' };
+    validateLandscapeCityBinding(currentCityBinding, { manifest: saved });
+    expect(currentCityBinding.transform).toEqual(boundCity.landscape.transform);
+    expect(currentCityBinding.extent).toEqual(boundCity.landscape.extent);
+    const impact = { bounds: applied.summary.affectedBounds, channels: applied.summary.channels };
+    expect(landscapeChangeInvalidates(beforeReport.dependency, impact)).toBe(true);
+    expect(landscapeChangeInvalidates(unrelatedDependency, impact)).toBe(false);
+    expect(landscapeChangeInvalidates(coverDependency, impact)).toBe(false);
+    expect(checkLandscapeDependency(beforeReport.dependency, saved, { requireRevision: false })).toEqual({ status: 'stale', reason: 'dependent-content-changed' });
+    expect(checkLandscapeDependency(unrelatedDependency, saved)).toEqual({ status: 'stale', reason: 'revision-changed' });
+    expect(checkLandscapeDependency(unrelatedDependency, saved, { requireRevision: false })).toEqual({ status: 'current' });
+    expect(checkLandscapeDependency(coverDependency, saved, { requireRevision: false })).toEqual({ status: 'current' });
+    await expect(readLandscapeTerrainReport(new Response(JSON.stringify(beforeReport)), { landscapeId: saved.id, revision: saved.revision })).rejects.toThrow(/identity\/revision mismatch/);
+    const staleReportResponse = await page.request.post(`${origin}/api/landscape/report`, { data: { expectedRevision: original.revision, shape: studyShape, sampleSpacingMeters: 50 } });
+    expect(staleReportResponse.ok()).toBe(false);
+    expect((await staleReportResponse.json()).error).toMatch(/stale/);
     expect(borders.borders).toBe(112);
     expect(saved.regions.find(region => region.id === 'terrace-study').region).toEqual(polygon);
     for (const chunk of saved.chunks) expect(chunk.channels.landCover).toEqual(original.chunks.find(value => value.id === chunk.id).channels.landCover);
@@ -117,6 +176,15 @@ test('Landscape D5: polygon grade and halo smoothing survive preparation, evicti
     expect(editedCenter.sample.landCoverId).toBe(beforeCenter.sample.landCoverId);
     expect(editedOutside.sample.height).toBe(beforeOutside.sample.height);
     expect(editedOutside.sample.soilId).toBe(beforeOutside.sample.soilId);
+    const editedReport = await terrainReport(page, saved, studyShape, reservations);
+    const editedCorridor = await terrainReport(page, saved, corridorShape, reservations);
+    expect(editedReport.coverComposition).toEqual(beforeReport.coverComposition);
+    expect(editedReport.soilComposition).toEqual([{ id: 'sand', samples: editedReport.sampling.ready, fraction: 1 }]);
+    expect(editedReport.elevation).not.toEqual(beforeReport.elevation);
+    expect(editedReport.overlaps).toEqual(beforeReport.overlaps);
+    expect(editedCorridor.corridorProfile.find(point => point.x === 2000 && point.z === 2000).heightMeters).toBeCloseTo(editedCenter.sample.height, 5);
+    const pinnedAfterEdit = await samplePinnedCity();
+    expect(pinnedAfterEdit.sample).toEqual(pinnedBefore.sample);
     await page.evaluate(() => window.__landscapeTestHooks.reload());
     await settle(page);
     expect((await snapshot(page)).selection.sample.height).toBeCloseTo(editedCenter.sample.height, 5);
@@ -153,6 +221,9 @@ test('Landscape D5: polygon grade and halo smoothing survive preparation, evicti
     expect(prepared.regions).toEqual(saved.regions);
     expect(prepared.soil).toEqual(saved.soil);
     expect(prepared.editHistory.lastBatchId).toBe(batch.id);
+    expect(checkLandscapeDependency(editedReport.dependency, prepared, { requireRevision: false })).toEqual({ status: 'current' });
+    expect(checkLandscapeDependency(unrelatedDependency, prepared, { requireRevision: false })).toEqual({ status: 'current' });
+    expect(() => validateLandscapeCityBinding(boundCity.landscape, { manifest: prepared })).toThrow(/revision is stale/);
     for (const chunk of saved.chunks.filter(value => value.level === saved.grid.maxLevel)) expect(prepared.chunks.find(value => value.id === chunk.id).channels).toEqual(chunk.channels);
     await page.goto(`${origin}/screens/landscape_fabrication.html`);
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready);
@@ -160,11 +231,25 @@ test('Landscape D5: polygon grade and halo smoothing survive preparation, evicti
     const reopened = await settle(page);
     expect(reopened.selection.sample.height).toBeCloseTo(editedCenter.sample.height, 5);
     expect(reopened.selection.sample.soilId).toBe('sand');
+    const preparedReport = await terrainReport(page, prepared, studyShape, reservations);
+    expect(preparedReport.elevation).toEqual(editedReport.elevation);
+    expect(preparedReport.soilComposition).toEqual(editedReport.soilComposition);
     await page.screenshot({ path: path.join(artifacts, '04-reopened-graded-terrain.png') });
     const revertResponse = await page.request.post(`${origin}/api/landscape/revert`, { data: { expectedRevision: prepared.revision }, timeout: 120000 });
     const reverted = await revertResponse.json();
     expect(revertResponse.ok(), JSON.stringify(reverted)).toBe(true);
     const restored = await manifest(), restoredBorders = await checkNativeBorders(restored);
+    expect(() => validateLandscapeCityBinding(boundCity.landscape, { manifest: restored })).toThrow(/revision is stale/);
+    expect(checkLandscapeDependency(beforeReport.dependency, restored)).toEqual({ status: 'stale', reason: 'revision-changed' });
+    expect(checkLandscapeDependency(beforeReport.dependency, restored, { requireRevision: false })).toEqual({ status: 'current' });
+    expect(checkLandscapeDependency(editedReport.dependency, restored, { requireRevision: false })).toEqual({ status: 'stale', reason: 'dependent-content-changed' });
+    const restoredReport = await terrainReport(page, restored, studyShape, reservations);
+    const restoredCorridor = await terrainReport(page, restored, corridorShape, reservations);
+    expect(restoredReport.elevation).toEqual(beforeReport.elevation);
+    expect(restoredReport.soilComposition).toEqual(beforeReport.soilComposition);
+    expect(restoredCorridor.corridorProfile).toEqual(beforeCorridor.corridorProfile);
+    const pinnedAfterRevert = await samplePinnedCity();
+    expect(pinnedAfterRevert.sample).toEqual(pinnedBefore.sample);
     expect(restored.regions).toEqual(original.regions);
     expect(restored.operations).toEqual(original.operations);
     for (const chunk of original.chunks) expect(restored.chunks.find(value => value.id === chunk.id).channels).toEqual(chunk.channels);
@@ -179,5 +264,7 @@ test('Landscape D5: polygon grade and halo smoothing survive preparation, evicti
     const disposed = await snapshot(page);
     expect(disposed.budget.cpuBytes).toBe(0);
     expect(disposed.budget.gpuBytes).toBe(0);
-    await writeFile(path.join(artifacts, 'verification.json'), JSON.stringify({ directory, batch, applied, beforeCenter, editedCenter, borders, overview, revisited, preparedRevision: prepared.revision, reopened, reverted, restoredBorders, afterRevert, disposed, errors }, null, 2));
+    const planning = { beforeReport, beforeCorridor, editedReport, editedCorridor, preparedReport, restoredReport, restoredCorridor,
+        pinnedCityBinding: boundCity.landscape, currentCityBinding, pinnedBefore, pinnedAfterEdit, pinnedAfterRevert, unrelatedDependency, coverDependency };
+    await writeFile(path.join(artifacts, 'verification.json'), JSON.stringify({ directory, batch, applied, beforeCenter, editedCenter, borders, overview, revisited, preparedRevision: prepared.revision, reopened, reverted, restoredBorders, afterRevert, disposed, planning, errors }, null, 2));
 });

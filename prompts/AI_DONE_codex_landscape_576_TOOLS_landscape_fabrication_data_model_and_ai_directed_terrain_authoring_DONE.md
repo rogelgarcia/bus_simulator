@@ -1,3 +1,5 @@
+# DONE — Landscape Fabrication (AI 576)
+
 # Problem
 
 We need Landscape Fabrication as the terrain-authoring foundation for future game cities. The user needs to navigate a terrain, point to a location or area, describe a change to the AI, and see the resulting terrain update. A full manual editing UI is not needed yet.
@@ -80,7 +82,7 @@ Implement D1 through D7 sequentially, one deliverable at a time. Use subagents w
 
 ### D7. Integrated validation and handoff
 
-- [ ] Complete D7 and record its evidence below before marking this item done.
+- [x] Complete D7 and record its evidence below before marking this item done.
 - Run section 9's integrated acceptance scenarios across the coastal landscape and an over-budget/high-resolution test case, building on each deliverable's focused checks.
 - Collect the repeatable residency/frame-time table, cold/warm loads, source-fidelity captures, edit/revisit evidence, and invalidation/round-trip results. Resolve failures before marking the overall prompt complete.
 - Gate: all acceptance criteria below pass; the handoff states what is implemented, measured resource limits, known limitations, and exactly which city/content/collision adapters remain future work.
@@ -150,6 +152,27 @@ Keep D1-D7 pending until implemented and verified. After each completed delivera
 - Added terrain product dependency records and affected-bounds/channel invalidation; unchanged regional payloads can be reused explicitly while stale revision pins are rejected. Existing reservation loops feed reports through the city transform without introducing a second placement model. Future layer/consumer residency and remaining flat terrain/road/slab/spawn/collider adapters are documented, with no placed-content streamer or playable-city claim.
 - Verification: 144 landscape/bake Node checks passed; the focused city gate also passed 11 existing city-map/placement/spec regressions alongside its 10 new binding checks. Fourteen browser checks passed (planning 1, real City Builder roundtrip 1, streaming 6, appearance 6). Browser contexts were closed after capture; disposal reported zero controlled CPU/GPU residency. The city test's initial missing importmap was repaired in its isolated routed harness without broadening server filesystem access.
 - Canonical specs: `specs/landscape/LANDSCAPE_CITY_BINDING.md`, `LANDSCAPE_PLANNING.md`, `LANDSCAPE_PLANNING_REPORTS.md`, plus model/viewer and connected city/bake specs. Saved report request: `tools/landscape_authoring/examples/coastal_corridor_report.json`. Evidence: `tests/artifacts/screens/landscape/ai576/d6/planning/verification.json`, planning/diagnostic/report/bookmark captures, `whole-coast-report.json`, `coastal-corridor-report.json`, and `d6/city-binding/roundtrip.json`, exported `CitySpec.js`, and reference-plan capture. Streaming/material regression receipts and captures also live under `d6/`. Integrated measured performance and final handoff remain D7.
+
+#### D7 completed — 2026-10-03
+
+- Completed the integrated coastal workflow: cross-tile grading, smoothing and soil assignment; exact native reports and city reservation overlap; affected/unrelated dependency validation; stale report and revision-pin refusal; geometry/appearance eviction and revisit; full reopen; registered hierarchy preparation; and complete revert. Sixteen native chunks and nine ancestors changed through a 2,349,043-byte edit reservation, with all 112 native shared borders preserved exactly. The canonical coastal manifest remained unchanged.
+- Audited all 29 retained source records (32,860,674 bytes), 150 unique hierarchy channels and all 64 native chunks. All 4,227,136 duplicated native vertex occurrences match the original float32 height bits and categorical source IDs. The original archive provenance and 1.953125-meter native spacing remain explicit; the terrain is designed prototype data, not a survey or invented higher-resolution elevation source.
+- Added a real SetupState Fabrication-menu entry check, native picking through viewport resize and shared-HUD show/hide, and a cross-landscape navigation test with a deliberately held detail request. The departing page releases all controlled CPU/GPU/source resources, the different synthetic landscape loads correctly, and repeated disposal remains safe. Existing viewer checks now allow only the bounded declared planning-reference JSON files at startup.
+- Added opt-in, bounded frame/GPU-query capture and initial lower-budget URL profiles. The final serial benchmark measures the same 11 camera/travel/zoom stops under both profiles, with 30 warm-up frames and 120 sampled frames per settled stop. Each cold/warm route has 1,320 samples; movement/loading statistics are reported separately. Warm preparation I/O is separated from reload/route I/O after a review caught an attribution mismatch; the corrected complete benchmark passed again.
+- Validation: 157 landscape/bake Node checks and six D7 browser checks passed (viewer 2, lifecycle 2, integrated large editing 1, performance 1). Earlier D1-D6 focused evidence remains applicable. All verification browsers closed; the development server remains on port 8002 with no terrain-rendering page left open.
+- Measured on Ryzen 5 9600X, 12 logical CPUs, 31.17 GiB RAM, NVIDIA RTX 3060 through ANGLE/D3D11, Chromium 151.0.7922.34. Viewport 1920×1080, DPR 1; shared-bar drawing buffer 1920×1056. Shaded calibrated PBR and water on; inspection/planning overlays off. FPS is 1000 / mean measured frame interval; medians/p95 use settled windows. CPU/GPU peaks are controlled-buffer / estimated-allocation profile-lifetime high-water marks, including transition reservations and the 448 KiB optional recorder; warm peaks include cold. These are not total process memory or measured VRAM.
+
+| CPU/GPU budget MiB | Context | Frame median / p95 ms | Mean FPS | CPU peak MiB | Estimated GPU peak MiB | Logical payload I/O MiB |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 128 / 64 | Cold | 17.40 / 18.10 | 57.43 | 98.95 | 63.82 | 57.17 |
+| 128 / 64 | Warm | 17.40 / 18.10 | 57.45 | 98.95 | 63.82 | 57.17 |
+| 48 / 24 | Cold | 17.40 / 18.10 | 57.45 | 38.04 | 23.77 | 22.74 |
+| 48 / 24 | Warm | 17.30 / 18.10 | 57.49 | 38.04 | 23.77 | 22.74 |
+| Full native resident reference | Not run: exceeds the declared GPU budgets | not measured | not measured | not measured | not measured | not measured |
+
+- Startup uses only root geometry, no native decoded geometry sources, and fewer than all finest height payloads. The current adapter's separate analytic all-native geometry inventory is 224.41 MiB for 8,388,608 surface triangles before textures/parents/overlap; it is not a measured full-resident benchmark or an FPS prediction. Both profiles retain complete terrain coverage, coarsen back to identical resource counts, obey the 8 MiB/frame upload cap and explicitly report unmet detail under pressure. Cold means fresh context/viewer, not cleared OS/driver caches; warm means same-context reload after fine-resource eviction, not assumed HTTP-cache hits.
+- Canonical handoff: `specs/landscape/LANDSCAPE_HANDOFF.md`; measured conditions, complete residency/workload/latency/GPU/transition tables and limitations: `specs/landscape/LANDSCAPE_PERFORMANCE.md`. Public model/API: `specs/landscape/LANDSCAPE_MODEL.md` and `src/app/landscape/index.js`. Entry: `http://127.0.0.1:8002/screens/landscape_fabrication.html`; canonical data: `assets/public/landscape/coastal-city/manifest.json`; current selection handoff: `tests/artifacts/screens/landscape/ai576/selection.latest.json`; runnable editing templates: `tools/landscape_authoring/examples/`.
+- Evidence: `tests/artifacts/screens/landscape/ai576/d7/source-fidelity.json`, `large-editing/verification.json` and five edit/revert captures, `lifecycle/menu-entry.json`, `lifecycle/landscape-switch.json`, `viewer/verification.json`, and `performance/report.json`, `comparison.md`, per-stop frame/network receipts and six performance captures. Generated evidence remains gitignored. Actual city roads/foundations/content streaming, gameplay spawning, colliders and vehicle validation remain the explicitly documented future adapters; this delivery is not a playable coastal city.
 
 ## 1. Scope and ownership
 
