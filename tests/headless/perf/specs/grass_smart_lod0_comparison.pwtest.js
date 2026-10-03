@@ -19,7 +19,7 @@ test('Original versus Smart LOD0: nine fields at overview and fixed single-field
     const candidate = await readFile(path.join(output, 'after_GrassDebugV2RibbonShoot.js'), 'utf8');
     await page.route('**/GrassDebugV2RibbonShoot.js?v=*', route => route.fulfill({ contentType: 'text/javascript', body: candidate }));
     await page.route('**/GrassDebugV2RibbonShoot.js?benchmark=before-smart-lod0', route => route.fulfill({ contentType: 'text/javascript', body: before }));
-    await page.goto('/debug_tools/grass_litter_scene.html?revision=smart-lod0-benchmark#01_overview');
+    await page.goto('/debug_tools/grass_litter_scene.html?litter=alpha&revision=smart-lod0-benchmark#01_overview');
     await page.waitForFunction(() => !!window.__grassLitterReadiness); await page.evaluate(() => window.__grassLitterReadiness);
     await page.mouse.move(30, 30);
     const metadata = await page.evaluate(async () => {

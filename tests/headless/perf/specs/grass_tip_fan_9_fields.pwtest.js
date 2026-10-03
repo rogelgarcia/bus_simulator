@@ -29,7 +29,7 @@ test('Nine fields: before/after four-triangle LOD1 tip', async ({ page, browser 
     const errors = [], blocks = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.goto('/debug_tools/grass_litter_scene.html?revision=tip-fan-benchmark#01_overview');
+    await page.goto('/debug_tools/grass_litter_scene.html?litter=alpha&revision=tip-fan-benchmark#01_overview');
     await page.waitForFunction(() => !!window.__grassLitterReadiness);
     await page.evaluate(() => window.__grassLitterReadiness);
     await page.mouse.move(30, 30);

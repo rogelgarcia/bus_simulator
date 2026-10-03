@@ -9,7 +9,7 @@ test('Wide-field leaf shadows remain smooth and still receive the shade screen',
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.goto('/debug_tools/grass_litter_scene.html#06_closeup');
+    await page.goto('/debug_tools/grass_litter_scene.html?litter=alpha#06_closeup');
     await page.waitForFunction(() => !!window.__grassLitterReadiness);
     await page.evaluate(() => window.__grassLitterReadiness);
     await page.addStyleTag({ content: '#scene-panel, #scene-performance { display:none }' });

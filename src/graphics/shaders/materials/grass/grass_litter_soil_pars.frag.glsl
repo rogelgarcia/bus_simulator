@@ -1,0 +1,15 @@
+varying vec3 vLitterSoilWorld;
+uniform mat3 litterSoilUv;
+uniform mat3 litterSoilMapTransform;
+uniform mat3 litterSoilNormalTransform;
+uniform mat3 litterSoilOrmTransform;
+uniform mat3 litterSoilAoTransform;
+uniform sampler2D litterSoilMap;
+uniform sampler2D litterSoilNormal;
+uniform sampler2D litterSoilOrm;
+uniform sampler2D litterSoilAo;
+uniform vec3 litterSoilColor;
+uniform vec2 litterSoilNormalScale;
+uniform float litterSoilRoughness;
+uniform float litterSoilMetalness;
+uniform float litterSoilAoIntensity;

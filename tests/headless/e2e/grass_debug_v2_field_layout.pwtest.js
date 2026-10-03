@@ -12,7 +12,7 @@ test('One to nine fields share geometry and count the meshes in the camera view'
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
     await mkdir(folder, { recursive: true });
-    await page.goto('/debug_tools/grass_litter_scene.html?revision=fields-1#01_overview');
+    await page.goto('/debug_tools/grass_litter_scene.html?litter=alpha&revision=fields-1#01_overview');
     await page.waitForFunction(() => !!window.__grassLitterReadiness);
     await page.evaluate(() => window.__grassLitterReadiness);
     const snapshot = () => page.evaluate(() => window.__grassLitterScene.getSnapshot());
@@ -51,7 +51,12 @@ test('One to nine fields share geometry and count the meshes in the camera view'
     const sharing = await page.evaluate(async () => {
         const THREE = await import('three'), s = window.__grassLitterScene;
         const roots = Array.from({ length: 9 }, (_, i) => s.scene.getObjectByName('GrassFieldTile_' + (i + 1)));
-        const meshLists = roots.map(root => { const meshes = []; root.traverse(mesh => { if (mesh.isMesh) meshes.push(mesh); }); return meshes; });
+        const meshLists = roots.map(root => {
+            const meshes = [];
+            root.traverse(mesh => { if (mesh.isMesh) meshes.push(mesh); });
+            return meshes;
+        });
+        const details = roots.map(root => root.getObjectByName('GrassField-LOD3-Detail').children);
         const source = meshLists[0];
         s.scene.updateMatrixWorld(true); s.lighting.sun.shadow.updateMatrices(s.lighting.sun);
         const shadow = s.lighting.sun.shadow.camera, points = [];
@@ -60,12 +65,16 @@ test('One to nine fields share geometry and count the meshes in the camera view'
         }
         return {
             shared: meshLists.every(meshes => meshes.length === source.length && meshes.every((mesh, i) => mesh.geometry === source[i].geometry && mesh.material === source[i].material)),
+            detailSharedGeometry: details.every(meshes => meshes.length === 16 && meshes.every((mesh, i) => mesh.geometry === details[0][i].geometry)),
+            detailMaterials: new Set(details.flat().map(mesh => mesh.material)).size,
             roots: roots.length, tableMeshes: s.scene.getObjectByName('Perforated_shade_screen').children.length,
             cornersInsideShadow: points.every(point => point.every(value => Math.abs(value) <= 1)),
             bias: s.lighting.sun.shadow.bias, far: shadow.far
         };
     });
     expect(sharing.shared).toBe(true);
+    expect(sharing.detailSharedGeometry).toBe(true);
+    expect(sharing.detailMaterials).toBe(1);
     expect(sharing.tableMeshes).toBe(49);
     expect(sharing.cornersInsideShadow).toBe(true);
     expect(sharing.bias * (sharing.far - 0.05)).toBeCloseTo(-0.0002 * 39.95, 9);

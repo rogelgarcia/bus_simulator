@@ -17,7 +17,7 @@ test('LOD1 versus LOD2: nine fields at overview and fixed single-field camera', 
     page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     const before = await readFile(path.join(output, 'before_GrassDebugV2RibbonShoot.js'), 'utf8');
     await page.route('**/GrassDebugV2RibbonShoot.js?benchmark=before-lod2', route => route.fulfill({ contentType: 'text/javascript', body: before }));
-    await page.goto('/debug_tools/grass_litter_scene.html?revision=lod2-benchmark#01_overview');
+    await page.goto('/debug_tools/grass_litter_scene.html?litter=alpha&revision=lod2-benchmark#01_overview');
     await page.waitForFunction(() => !!window.__grassLitterReadiness); await page.evaluate(() => window.__grassLitterReadiness);
     await page.mouse.move(30, 30);
     const metadata = await page.evaluate(async () => {

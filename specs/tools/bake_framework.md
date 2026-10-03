@@ -307,6 +307,26 @@ fails. A destination pointer the bundle does not retain is never overwritten. It
 `tests/artifacts/landscape_cache_history/cache-install-validation.json`. See the
 [local cache workflow](../../tools/bake_landscape/README.md) and [cache install](../../tools/bake_landscape/cache_install/README.md).
 
+`materials/dry_litter` is an explicit maintenance leaf outside the default
+material tree. It repairs the known truncated ORM through the shared Python
+configuration, preserves complete source rows and independent AO, and validates
+decoded pixel values and hashes before publication. Missing roughness rows are
+reconstructed rather than claimed as recovered; the output includes provenance.
+
+`materials/grass/lod4-layout` is an explicit browser-only debug asset leaf,
+outside the default material tree. It uses the shared browser executable and
+owned browser/server lifecycle in `tools/baking/Browser.mjs`, runs the existing
+material and rendered feedback gates, and stages two compatible 2 m LOD4 source
+layouts. Shared boundary geometry and projected sun shadows are validated before
+publishing the pair; only its interior differs.
+A fresh scene must load those positions without requesting optimizer modules
+before atomic publication to `assets/public/grass/lod4/layout.json`. Input and
+checkpoint authentication covers source code, scene geometry, calibrated
+lighting, litter materials and the browser executable. Missing or stale assets
+fail visibly instead of falling back to a runtime search. The grass V2 gameplay
+review gate remains separate and unchanged. See the
+[layout compiler README](../../tools/bake_materials/grass/lod4_layout/README.md).
+
 Explicit browser-only diagnostic plans may declare `configurationPaths` on every
 selected job. The shared loader then requires and checks only that union of machine
 paths. Jobs without this declaration retain the existing Blender configuration

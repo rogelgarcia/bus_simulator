@@ -25,6 +25,16 @@ export const GRASS_V2_RIBBON_SHOOT = Object.freeze({
     ].map(specimen => Object.freeze({ ...specimen, leaves: Object.freeze(specimen.leaves.map(leaf => Object.freeze(leaf))) })))
 });
 
+
+// Two interleaved V pairs: the second root is 1 cm right and 1 cm behind the first.
+export const GRASS_V2_RIBBON_TUFT = Object.freeze({
+    leaves: 4, pairSpacingMeters: 0.01, pairDepthMeters: 0.01,
+    specimens: Object.freeze([
+        { id: 'front-pair', x: -0.005, z: 0.005 },
+        { id: 'rear-pair', x: 0.005, z: -0.005 }
+    ].map(pair => Object.freeze({ ...pair, leaves: GRASS_V2_RIBBON_SHOOT.specimens[1].leaves })))
+});
+
 function bladeLengthRatio(v) { return 1.02 * v - 0.02 * v * v * v; }
 
 function bladeStationAtLength(length) {
@@ -53,7 +63,8 @@ export const GRASS_V2_RIBBON_LODS = Object.freeze({
         rootTopology: 'edge-fit', maximumTrianglesPerLeaf: 10,
         bodyStations: LOD1_BODY_STATIONS }),
     LOD2: Object.freeze({ ...GRASS_V2_RIBBON_SHOOT, topology: 'two-face',
-        maximumTrianglesPerLeaf: 2, shortEdgeStation: 0.94, topWidthScale: 0.9, foldDegrees: 12 })
+        maximumTrianglesPerLeaf: 2, shortEdgeStation: 0.94, topWidthScale: 0.9, foldDegrees: 12 }),
+    LOD3: Object.freeze({ ...GRASS_V2_RIBBON_SHOOT, topology: 'alpha-card', maximumTrianglesPerLeaf: 0.5, maximumTrianglesPerCard: 2 })
 });
 
 function makeLeaf(recipe, definition) {
@@ -139,32 +150,42 @@ function makeLeaf(recipe, definition) {
     return geometry;
 }
 
-/** @param {{material: THREE.MeshStandardMaterial, lod?: 'LOD0'|'LOD0_SMART'|'LOD1'|'LOD2'}} options */
-export function createGrassDebugV2RibbonShoot({ material, lod = 'LOD0' }) {
+/** @param {{material: THREE.MeshStandardMaterial, lod?: 'LOD0'|'LOD0_SMART'|'LOD1'|'LOD2'|'LOD3', cardTemplates?: readonly THREE.BufferGeometry[], layout?: 'study'|'tuft', leafScale?: number}} options */
+export function createGrassDebugV2RibbonShoot({ material, lod = 'LOD0', cardTemplates = null, layout = lod === 'LOD3' ? 'tuft' : 'study', leafScale = 1 }) {
     if (!Object.hasOwn(GRASS_V2_RIBBON_LODS, lod)) throw new Error('Unknown ribbon LOD: ' + lod);
+    if (!['study', 'tuft'].includes(layout) || lod === 'LOD3' && layout !== 'tuft') throw new Error('Unknown ribbon layout.');
+    if (!(leafScale > 0)) throw new Error('Leaf scale must be positive.');
     const definition = GRASS_V2_RIBBON_LODS[lod];
     if (!material?.isMeshStandardMaterial || !material.vertexColors)
         throw new Error('Ribbon shoot requires a standard vertex-color material.');
     const group = new THREE.Group(); group.name = 'GrassV2RibbonShoot';
-    const { specimens, sourceLeaf, pairedLeaf, rootGapMeters, maximumTrianglesPerLeaf } = definition;
-    const templates = [makeLeaf(sourceLeaf, definition), makeLeaf(pairedLeaf, definition)];
-    const leaves = specimens.flatMap(specimen => {
+    const { specimens: studySpecimens, sourceLeaf, pairedLeaf, rootGapMeters, maximumTrianglesPerLeaf } = definition;
+    const specimens = layout === 'tuft' ? GRASS_V2_RIBBON_TUFT.specimens : studySpecimens;
+    if (lod === 'LOD3' && (!cardTemplates || cardTemplates.length !== 1 || cardTemplates.some(g => g.index?.count !== 6)))
+        throw new Error('LOD3 requires one four-leaf LOD0-projected card template.');
+    const templates = lod === 'LOD3' ? cardTemplates.map(g => g.clone()) : [makeLeaf(sourceLeaf, definition), makeLeaf(pairedLeaf, definition)];
+    const leaves = lod === 'LOD3' ? [new THREE.Mesh(templates[0].clone(), material)] : specimens.flatMap(specimen => {
         const paired = specimen.leaves.length === 2;
         const halfWidth = sourceLeaf.width * 0.5 * Math.sin(THREE.MathUtils.degToRad(sourceLeaf.openHalfAngleDegrees));
         const rootSpacing = paired ? rootGapMeters + specimen.leaves.reduce((total, pose) =>
-            total + halfWidth * pose.size * Math.cos(THREE.MathUtils.degToRad(pose.tiltDegrees)), 0) : 0;
+            total + halfWidth * pose.size * leafScale * Math.cos(THREE.MathUtils.degToRad(pose.tiltDegrees)), 0) : 0;
         return specimen.leaves.map((pose, i) => {
             const leaf = new THREE.Mesh(templates[paired ? 1 : 0].clone(), material);
             leaf.name = leaf.geometry.name = 'GrassV2RibbonLeaf-' + pose.id;
             leaf.rotation.z = THREE.MathUtils.degToRad(pose.tiltDegrees);
-            leaf.scale.set(pose.mirrored ? -pose.size : pose.size, pose.size, pose.size);
-            leaf.position.set(specimen.x + (paired ? (i ? 1 : -1) * rootSpacing * 0.5 : 0), 0, 0);
+            leaf.scale.set((pose.mirrored ? -pose.size : pose.size) * leafScale, pose.size * leafScale, pose.size * leafScale);
+            leaf.position.set(specimen.x + (paired ? (i ? 1 : -1) * rootSpacing * 0.5 : 0), 0, specimen.z ?? 0);
             leaf.castShadow = leaf.receiveShadow = true;
             leaf.userData.specimenId = specimen.id; leaf.userData.pose = pose;
             return leaf;
         });
     });
     templates.forEach(geometry => geometry.dispose());
+    leaves.forEach((leaf, index) => {
+        leaf.userData.leafId = index;
+        leaf.castShadow = leaf.receiveShadow = true;
+    });
+    if (lod === 'LOD3') leaves[0].name = 'GrassV2FourLeafCard';
     group.add(...leaves);
     const bounds = new THREE.Box3().setFromObject(group);
     return Object.freeze({
@@ -172,20 +193,22 @@ export function createGrassDebugV2RibbonShoot({ material, lod = 'LOD0' }) {
         roots: Object.freeze(specimens.map(specimen => specimen.x)), bakeMeshes: Object.freeze([...leaves]),
         trimAtSoil: heightAt => {
             for (const leaf of leaves) {
-                if (lod === 'LOD2') fitGrassDebugV2RibbonLod2Root(leaf, heightAt);
+                if (lod === 'LOD2' || lod === 'LOD3') fitGrassDebugV2RibbonLod2Root(leaf, heightAt);
                 else if (lod === 'LOD0') clipGrassDebugV2MeshAtSoil(leaf, heightAt);
                 else fitGrassDebugV2RibbonRoot(leaf, heightAt);
-                if (leaf.geometry.index.count / 3 > maximumTrianglesPerLeaf)
+                if (leaf.geometry.index.count / 3 > (definition.maximumTrianglesPerCard ?? maximumTrianglesPerLeaf))
                     throw new Error(lod + ' soil-clipped leaf exceeds the ' + maximumTrianglesPerLeaf + '-triangle budget.');
             }
             bounds.setFromObject(group);
         },
         getSnapshot: () => ({
             model: 'leaf-growth-comparison', stage: 'soil-rooted-blades', specimens: specimens.length,
-            leaves: leaves.length, matureLeaves: 0, emergingLeaves: leaves.length,
+            layout, leafScale, leaves: lod === 'LOD3' ? 4 : leaves.length, cards: lod === 'LOD3' ? 1 : 0, matureLeaves: 0, emergingLeaves: lod === 'LOD3' ? 4 : leaves.length,
             lod, definition, contacts: [], crownTriangles: 0,
             leafTriangles: leaves.reduce((total, leaf) => total + leaf.geometry.index.count / 3, 0),
-            trianglesPerLeaf: leaves.map(leaf => leaf.geometry.index.count / 3),
+            trianglesPerLeaf: lod === 'LOD3' ? [] : leaves.map(leaf => leaf.geometry.index.count / 3),
+            trianglesPerCard: lod === 'LOD3' ? [2] : [],
+            pairRoots: specimens.map(specimen => ({ x: specimen.x, z: specimen.z ?? 0 })),
             bounds: { min: bounds.min.toArray(), max: bounds.max.toArray() }
         }),
         dispose: () => leaves.forEach(leaf => leaf.geometry.dispose())

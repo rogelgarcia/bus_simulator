@@ -89,7 +89,7 @@ test('LOD2 has two folded faces with separate shading normals and fitted roots',
 
 test('Two-face LOD2 preserves field anchors and palette in nine fields', async ({ page }) => {
     const errors = []; page.on('pageerror', e => errors.push(e.message));
-    await page.goto('/debug_tools/grass_litter_scene.html?revision=lod2-two-tris-1#01_overview');
+    await page.goto('/debug_tools/grass_litter_scene.html?litter=alpha&revision=lod2-two-tris-1#01_overview');
     await page.waitForFunction(() => !!window.__grassLitterReadiness); await page.evaluate(() => window.__grassLitterReadiness);
     const parity = await page.evaluate(async () => {
         const THREE = await import('three'), s = window.__grassLitterScene;

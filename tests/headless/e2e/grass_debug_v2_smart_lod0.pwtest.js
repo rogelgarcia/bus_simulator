@@ -139,10 +139,10 @@ test('LOD0 has wider shoulders, equal upper body sections and a longer base', as
 
 test('Field Reference and LOD0 labels select the correct geometry and counts', async ({ page }) => {
     test.setTimeout(120000); const errors = []; page.on('pageerror', e => errors.push(e.message));
-    await page.goto('/debug_tools/grass_litter_scene.html?revision=root-fit-1#01_overview');
+    await page.goto('/debug_tools/grass_litter_scene.html?litter=alpha&revision=root-fit-1#01_overview');
     await page.waitForFunction(() => !!window.__grassLitterReadiness); await page.evaluate(() => window.__grassLitterReadiness);
     const lodControl = page.getByRole('combobox', { name: 'LOD', exact: true });
-    await expect(lodControl.locator('option')).toHaveText(['Reference', 'LOD0', 'LOD1', 'LOD2']);
+    await expect(lodControl.locator('option')).toHaveText(['Reference', 'LOD0', 'LOD1', 'LOD2', 'LOD3']);
     await lodControl.selectOption({ label: 'LOD0' });
     const result = await page.evaluate(() => {
         const s = window.__grassLitterScene, field = s.scene.getObjectByName('Offline_96000_Leaves');

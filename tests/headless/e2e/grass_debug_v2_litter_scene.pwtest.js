@@ -9,15 +9,15 @@ test('Live litter scene preserves the field and supports mouse plus WASDQE', asy
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.goto('/debug_tools/grass_litter_scene.html#06_closeup');
+    await page.goto('/debug_tools/grass_litter_scene.html?litter=alpha#06_closeup');
     await page.waitForFunction(() => !!window.__grassLitterReadiness);
     await page.evaluate(() => window.__grassLitterReadiness);
     const snapshot = () => page.evaluate(() => window.__grassLitterScene.getSnapshot());
     const initial = await snapshot();
-    expect(initial).toMatchObject({ leaves: 96000, triangles: 4235466, sceneTriangles: 4236154, views: 8,
+    expect(initial).toMatchObject({ leaves: 96000, triangles: 4235466, sceneTriangles: 4236154, views: 17,
         substrate: { elevationMeters: 0.005, rampWidthMeters: 0.02, edgeInsetMeters: 0.05, albedoMultiplier: 0.3 } });
     await expect(page.locator('#scene-loading')).toBeHidden();
-    await expect(page.locator('#scene-view option')).toHaveCount(8);
+    await expect(page.locator('#scene-view option')).toHaveCount(17);
     await expect(page.locator('#scene-counts')).toHaveText('12 × 12 m · 96,000 leaves · 4,235,512 triangles');
     await expect.poll(async () => (await snapshot()).performance.fps).toBeGreaterThan(0);
     const measured = (await snapshot()).performance;

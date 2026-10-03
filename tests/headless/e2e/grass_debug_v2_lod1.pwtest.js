@@ -178,7 +178,7 @@ test('Field LOD selection preserves all 96000 leaf positions, colors, layers and
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
     await mkdir(folder, { recursive: true });
-    await page.goto('/debug_tools/grass_litter_scene.html?revision=lod1-narrow-tip-1#01_overview');
+    await page.goto('/debug_tools/grass_litter_scene.html?litter=alpha&revision=lod1-narrow-tip-1#01_overview');
     await page.waitForFunction(() => !!window.__grassLitterReadiness);
     await page.evaluate(() => window.__grassLitterReadiness);
     const snapshot = () => page.evaluate(() => window.__grassLitterScene.getSnapshot());

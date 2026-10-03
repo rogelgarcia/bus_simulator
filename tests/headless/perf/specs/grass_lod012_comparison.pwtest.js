@@ -23,7 +23,7 @@ test('Current LOD0, LOD1 and LOD2: nine fields at overview and fixed single-fiel
     const errors = [], poses = {};
     page.on('pageerror', e => errors.push(e.message));
     page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-    await page.goto('/debug_tools/grass_litter_scene.html?revision=lod012-benchmark#01_overview');
+    await page.goto('/debug_tools/grass_litter_scene.html?litter=alpha&revision=lod012-benchmark#01_overview');
     await page.waitForFunction(() => !!window.__grassLitterReadiness);
     await page.evaluate(() => window.__grassLitterReadiness);
     await page.mouse.move(30, 30);

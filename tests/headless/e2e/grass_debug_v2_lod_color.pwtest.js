@@ -50,7 +50,7 @@ test('LOD2 preserves the body green when its color gradient has only two rows', 
 test('Capture matched lit and shaded fields for LOD1 and LOD2',async({page})=>{
     await mkdir(output,{recursive:true});
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
-    await page.goto('/debug_tools/grass_litter_scene.html?revision=lod2-color-1#06_closeup');
+    await page.goto('/debug_tools/grass_litter_scene.html?litter=alpha&revision=lod2-color-1#06_closeup');
     await page.waitForFunction(()=>!!window.__grassLitterReadiness);await page.evaluate(()=>window.__grassLitterReadiness);
     for(const view of [0,2,5,7])for(const lod of ['LOD1','LOD2']){
         const result=await page.evaluate(async({view,lod})=>{

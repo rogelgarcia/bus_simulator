@@ -15,3 +15,14 @@ Framework calls always stage procedural output and validate map dimensions befor
 optional `--publish`. Previous material directories are retained for rollback.
 Grass V2 is generated and authenticated as a proposal; its existing gameplay asset
 review is not bypassed by `--publish`.
+
+The explicit maintenance leaf `dry_litter` repairs the known truncated supplied
+ORM map, preserving complete rows and the independent AO source. It is registered
+outside the default material tree. Use `node tools/bake.mjs --target materials/dry_litter`
+and add `--publish` to replace the validated map. See [its repair contract](dry_litter/README.md).
+
+The explicit browser-only `materials/grass/lod4-layout` leaf compiles the debug
+field's two compatible optimized 2 m leaf layouts, authenticates them against the source,
+and validates ordinary scene loading before optional publication. It skips
+both pattern searches at runtime while retaining the final texture bake.
+See [the layout compiler](grass/lod4_layout/README.md).

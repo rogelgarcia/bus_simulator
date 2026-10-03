@@ -1,0 +1,24 @@
+/* Compact controls for the distance-transition field lab. */
+#scene-panel { max-width: min(1180px, calc(100vw - 64px)); }
+input[type="number"] { width: 56px; color: inherit; background: #26382a; border: 1px solid #637966; border-radius: 4px; padding: 5px; font: inherit; }
+details { margin-top: 10px; font-size: 13px; }
+summary { cursor: pointer; }
+#transition-error { color: #ffb0a8; }
+#transition-only-sides[hidden] { display: none; }
+#transition-legend span { border-left: 10px solid currentColor; padding-left: 5px; }
+.lod0 { color: #35e5dd; } .lod1 { color: #629cfa; } .lod2 { color: #e9df65; } .lod3 { color: #ff9a56; } .lod4 { color: #c287ed; }
+#transition-counts { color: #b9cbbb; }
+#scene-performance { max-width: calc(100vw - 56px); }
+.transition-distances { border: 0; padding: 0; margin: 12px 0 0; min-width: 0; font-size: 13px; }
+.transition-distances legend { padding: 0; margin-bottom: 6px; color: #b9cbbb; }
+.transition-range-grid { display: flex; flex-wrap: wrap; align-items: start; gap: 16px; }
+.transition-lod-grid { display: grid; grid-template-columns: repeat(4, 84px); gap: 12px; }
+.transition-distance, .transition-presets { display: grid; grid-template-rows: 18px 30px 30px; gap: 6px; text-align: center; }
+.transition-range-grid input, .transition-range-grid output, .transition-presets button { box-sizing: border-box; width: 100%; min-width: 0; height: 30px; }
+.transition-range-grid input { text-align: center; }
+.transition-range-grid output { padding: 5px 3px; border: 1px solid transparent; border-radius: 4px; color: #b9cbbb; background: #26382a66; }
+.transition-presets { width: 142px; }
+.transition-side-distance { width: 126px; }
+.transition-distance-note { padding-top: 5px; color: #b9cbbb; font-size: 12px; }
+.transition-range-grid output.is-active, .transition-presets button[aria-pressed="true"] { border-color: #b8dd91; background: #3a5031; color: #e6f4d8; }
+@media (max-width: 500px) { .transition-lod-grid { grid-template-columns: repeat(4, minmax(50px, 1fr)); gap: 8px; width: 100%; } }

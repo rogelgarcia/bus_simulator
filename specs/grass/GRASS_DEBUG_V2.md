@@ -2600,7 +2600,7 @@ longitudinal edges to meet the soil without splitting the lower quads.
 The count stays at 18 for every field inclination, with an 18-triangle ceiling.
 A 96,000-leaf LOD0 field has 1,728,000 grass triangles; nine have 15,552,000.
 The All scene total is 1,728,688 for one complete field or 15,553,472 for nine.
-Both pages expose **Reference / LOD0 / LOD1 / LOD2**, preserving camera, layer
+Both pages expose **Reference / LOD0 / LOD1 / LOD2 / LOD3**, preserving camera, layer
 and wireframe settings. Reference retains the previous default selection.
 
 `grass_debug_v2_smart_lod0.pwtest.js` verifies exactly three body sections,
@@ -2635,7 +2635,7 @@ with static shadow reuse and the cursor over the HUD.
 
 ### LOD1 soil-rooted blades
 
-`GRASS_V2_RIBBON_LODS` supplies LOD0, Smart LOD0, LOD1 and LOD2 definitions to the shared ribbon
+`GRASS_V2_RIBBON_LODS` supplies Reference, LOD0, LOD1, LOD2 and LOD3 definitions to the shared ribbon
 generator. LOD1 has two body sections and a two-triangle tip. The center
 junction stays at 90% of the blade's longitudinal parameter, matching Reference.
 The intermediate outer shoulder vertices are no longer referenced. The two
@@ -2660,15 +2660,15 @@ The source and fitted leaf both have 10 triangles (eight body, two tip),
 30 total in the study; the same 10-triangle ceiling holds at every
 field inclination. Reference keeps its original tip subdivisions and soil clipping.
 
-The shoot study exposes Reference / LOD0 / LOD1 / LOD2 buttons. Switching preserves the camera and
+The shoot study exposes Reference / LOD0 / LOD1 / LOD2 / LOD3 buttons. Switching preserves the camera and
 wireframe setting, displays only the selected meshes, and updates the total and
-individual counts. All LODs use the same soil and material. Other study layouts
+individual counts. All LODs use the same soil and lighting; LOD3 uses its captured material. Other study layouts
 retain their existing representations.
 
-`GrassDebugV2FieldLod1.js` constructs a runtime LOD1 mesh from the existing
-field manifest's 48,000 paired placements. It reuses their exact translations,
-yaw, scale and backward inclinations, with the same seeded brightness/dryness
-and material. Every inclined template is checked against the 10-triangle budget.
+`GrassDebugV2FieldLod1.js` constructs the live LOD1 mesh from the original
+48,000 recorded pair placements, preserving their exact translations, yaw,
+scale, inclination and seeded colors. Each source leaf also records its index
+range for the dynamic LOD3 capture. The ten-triangle budget is unchanged.
 The current field uses 10 triangles for every leaf: 960,000 leaf triangles
 instead of Reference's 4,235,466. Geometry is built once during scene load and retained
 for immediate manual switching; no new offline export or texture bake is needed.
@@ -2679,7 +2679,7 @@ leaf bounds, active wireframe and all three field layer modes. It also verifies
 the unchanged center junction, longer lower section and middle spine length,
 relocated outer corners, silhouette area within 2% of the earlier twelve-triangle shape,
 and unchanged Reference/LOD0 geometry. All 96,000 tip
-positions and colors are compared against the original exported LOD0 mesh.
+positions and colors are compared against the original exported Reference mesh.
 LOD0/LOD1 study, overview, rear and close-up captures plus validation data are in
 `tests/artifacts/screens/grass_debug_v2/lod1_narrow_tip/lod1/`.
 
@@ -2712,7 +2712,7 @@ It assumes smooth ground between the two base corners, without adding
 subdivisions to follow arbitrary terrain. Normals are recomputed independently
 per face after fitting.
 
-The shared field builder in `GrassDebugV2FieldLod1.js` retains the recorded
+The shared field builder in `GrassDebugV2FieldLod1.js` uses the original
 paired placements, seeded palette, material, shadows and field layout.
 LOD2 has 192,000 grass triangles per 96,000-leaf field and 1,728,000 across
 nine: 6,912,000 fewer than the current ten-triangle LOD1 (80%).
@@ -2751,6 +2751,179 @@ pairs each use 30 warmup and 60 measured frames: 720 valid GPU samples per
 LOD and camera, without discarded outliers. Report mean/P99 GPU times,
 observed FPS, camera-visible counts, source hashes and paired uncertainty;
 browser cadence and unlocked desktop workloads limit conclusions.
+
+### Fixed triad LOD3 plates
+
+The active field and shoot-study LOD3 uses **three upright intersecting card
+axes per group**, 60 degrees apart. Triad centers form a fixed 10 cm grid;
+20 cm cards cross each center, with 10 cm cards where the larger footprint
+would cross a boundary. Unpopulated axes are not drawn. Groups with only one
+assigned leaf on an axis retain that original LOD2 leaf instead of allocating
+a card. The earlier camera-aligned row representation below is superseded.
+
+`GrassDebugV2TriadLayout.js` assigns each source root once at load time.
+It chooses the best front-facing eligible axis from the source leaf's
+area-weighted horizontal normal, treating either side of a card as visible.
+A root must fit the card width and the 10 cm depth band centered on the triad.
+Card endpoints must remain inside the field throughout the permitted turn.
+Boundary roots and remaining uncovered/sparse areas retain original LOD2
+geometry. Camera yaw does not regroup roots, move centers, replace variants,
+or rewrite placement/fallback buffers. Near-overhead views retain the existing
+full-LOD2 fallback because all upright card planes become edge-on.
+
+Each card turns by at most **±5 degrees** around its own fixed center.
+The per-axis offset is 5 degrees times the sine of twice the angle between
+the camera bearing and the resting normal. This approaches the nearer
+front/back direction smoothly, with no 180-degree flip or jump at grazing
+angles. All cards on an axis share one scalar uniform. Only these three
+values update during ordinary camera rotation.
+
+Visible cards are double-sided alpha-tested geometry, with two triangles
+per card and no duplicate back-face geometry. They render in one opaque
+cutout pass. Wireframe follows the bounded visible-card turns. Custom depth geometry
+stays at each card's resting axis, providing stable alpha shadows. Yaw-only
+changes do not invalidate shadow maps; LOD, field, light and overhead-fallback
+changes still refresh them. This is an intentional shadow approximation: a
+20 cm card's corner moves at most 8.7 mm from its resting footprint. Normal
+lighting remains live.
+
+Ten shared texture variants are captured from optimized LOD0 leaves.
+Each capture uses its source triad axis as its local basis; normal-map
+derivatives retain unscaled source positions. Runtime normals are rotated
+back using the resting axis, not the small camera-driven turn, so turning
+does not drag the leaf's illumination with the camera. Back-facing source
+normals still receive the corresponding two-sided leaf-light response.
+Small cards crop the central half of a 20 cm variant. Variant selection
+uses the nearest leaf count and stays fixed during rotation.
+
+Field atlas storage remains one 1024 × 512 set of three RGBA8 maps,
+approximately **8 MiB GPU with mipmaps / 6 MiB CPU pixels**. The close study
+uses the existing 4096 × 1024 set (64 MiB GPU / 48 MiB CPU). All field copies
+share these textures and the instanced geometry.
+
+The current 96,000-root field has **14,396 populated triad centers** and
+**30,676 populated cards** (29,903 main / 773 small), plus **1,529 original
+LOD2 leaves**. This is 64,410 grass triangles, 65,098 full-scene triangles for
+one field and 581,162 for nine fully framed fields. These counts remain
+constant under yaw; frustum visibility and the overhead fallback can change
+the displayed totals. Reused texture silhouettes remain approximate, and
+the leaf readout reports assigned source roots.
+
+The triad unit test checks ownership, both widths, strip depth, full endpoint
+rotation bounds and continuity through a full turn. Viewer checks verify
+unchanged plan identity and fallback indices across 24 yaws, one/nine-field
+counts, overhead fallback and capture invariance. The material regression
+compares 144 camera/light/normal combinations across all three axes and
+checks front-lit alpha shadows. Captures and benchmark results live under
+`tests/artifacts/screens/grass_debug_v2/lod3_triads/`.
+Use `GRASS_PLATE_REVISION=triads` with the existing opt-in GPU benchmark.
+
+### Superseded camera-facing LOD3 strip plates
+
+LOD0, LOD1 and LOD2 retain the Reference placements, scales, pair spacing,
+inclinations and seeded colors. The study retains its original single leaf
+and two-leaf pair. The fixed W arrangement and **LOD3 – source** selector
+remain removed.
+
+`GrassDebugV2BillboardLayout.js` projects the field into the main camera's
+horizontal right/facing axes. Cards stay upright: yaw follows the camera,
+while pitch does not. Rows have **5 cm** depth; a root belongs to the strip
+immediately behind its front plane. The layout is rebuilt when yaw changes.
+It uses **30 cm** main cards and **15 cm** gap cards. Row intervals must fit
+inside the field at both the front and rear of each strip, so turning the
+camera does not create uncovered interior wedges between a fixed set of
+rotating card anchors. Cards do not overlap laterally.
+
+A 15 cm perimeter, residual row fragments too short for a small card, and
+groups containing fewer than two roots retain their original **LOD2 leaves**.
+Every source root is assigned exactly once to a card or fallback leaf.
+Empty strips create no geometry. Near-vertical views (absolute vertical
+camera direction above 0.98) use original LOD2 leaves throughout, because
+upright cards become edge-on. Study rows anchor at their frontmost root,
+avoiding a 5 cm displacement of the small study specimens.
+
+`GrassDebugV2BillboardAtlas.js` captures **10 LOD0 strip variants** once at
+page load. Representative 30 cm strips are selected across the source
+leaf-count distribution. Both widths share the same bank; 15 cm cards use
+the central half of a variant without squeezing its leaves. Each assigned
+strip chooses a nearest-count variant with a deterministic tie break.
+The atlas is not rebaked during camera movement. The study centers its
+small specimens inside each capture. Reused variants deliberately
+approximate the assigned strip's individual positions, shapes and colors.
+
+Capture preserves source depth and writes unlit albedo/alpha, source
+normals and packed blade warmth/roughness/transmission. A separate
+unscaled source-position attribute preserves normal-map derivatives during
+atlas packing. Live cards use the existing grass PBR and transmission
+lighting, with captured normals held in world orientation as card geometry
+turns. The normal flips for the source leaf's back-facing side; it is not
+bent toward the camera. Lighting and shadows are not baked.
+
+Cards render **one face**. Their custom depth material uses the same
+main-camera placement uniforms and casts alpha-tested shadows from either
+light direction. Camera yaw changes refresh the shadow map. First-use
+shader uniforms must be installed at compilation, including wireframe and
+depth passes. Wireframe displays the two actual card triangles. The LOD2
+fallback retains the original geometry, normals, UVs and colors.
+
+Field tiles are 256 × 128 pixels in one 1024 × 512 atlas set. Three RGBA8
+maps with mipmaps occupy an estimated **8 MiB GPU texture storage**, plus
+6 MiB of retained CPU pixels. The close study uses 1024 × 256 tiles in one
+4096 × 1024 set (64 MiB GPU / 48 MiB CPU). Ten populated tiles share a
+sixteen-slot allocation; no per-field-copy captures are made. Tile scissoring
+and two-pixel gutters prevent neighboring captures from bleeding together.
+Capture restores renderer state and is independent of output pixel ratio
+and exposure. These are runtime atlases, not persistent baked assets.
+
+`GrassDebugV2BillboardPlates.js` draws both widths in one instanced mesh and
+the fallback leaves in one additional mesh per field. Field copies share
+the atlas, materials, geometry and updated placement/index buffers.
+The overview currently has **9,070 cards** (8,756 large / 314 small) and
+**6,831 LOD2 fallback leaves**: 31,802 grass triangles. Counts vary with camera
+yaw; scene totals include the soil, table and selected litter. Leaf assignment
+budgets describe source roots, not guaranteed unique visible silhouettes
+inside reused images. Whole partially visible meshes count in full.
+
+The reduced atlas and draw count do not remove alpha overdraw. Rebuilding
+rows also has a CPU cost and refreshes shadows during camera turns.
+Reused images can produce repeated patterns and popping when strip
+membership changes. Card projection loses within-strip parallax and hidden
+surfaces; these remain prototype limitations.
+
+The earlier four-direction half-reuse experiment used 10,921 plates,
+5,482 baked images and eleven atlas sets (704 MiB GPU / 528 MiB CPU).
+The still earlier eight-direction bespoke version used 2.25 GiB GPU
+texture storage. Their captures and benchmark report remain under
+`tests/artifacts/screens/grass_debug_v2/lod3_four_reuse/`; they are not
+the active LOD3 representation.
+
+Validation is split between the pure
+`grass_debug_v2_billboard_layout.test.js` full-turn strip-volume test,
+`grass_debug_v2_dynamic_plates.pwtest.js` viewer/counter/capture tests, and
+`grass_debug_v2_billboard_lighting.pwtest.js` matched source-lighting and
+single-face shadow tests. The older plate-normal regression still verifies
+the shared capture normal/tangent-frame contract. Current screenshots and
+results are under `tests/artifacts/screens/grass_debug_v2/lod3_billboards/`.
+
+The opt-in hardware comparison is
+`tests/headless/perf/specs/grass_dynamic_plates_comparison.pwtest.js`.
+Use `GRASS_PLATE_BENCHMARK=1` and `GRASS_PLATE_REVISION=billboards`.
+It records six alternating blocks per LOD/camera (360 GPU samples), at
+one-field overview, nine framed fields, and one-field framing followed by
+nine fields without moving. A separate rotating-camera run includes row
+updates and shadow refreshes, with GPU, row-update CPU and frame-interval
+samples. Startup capture is excluded from steady-state measurements.
+
+
+Current RTX 3060 / 1920 × 1080 / 4× MSAA mean GPU times (LOD2 / LOD3)
+are **4.547 / 4.261 ms** for one-field overview, **6.420 / 4.441 ms**
+for nine framed fields, and **7.042 / 5.546 ms** for frame-one-then-nine.
+During a nine-field camera turn, LOD3 rises to **24.283 ms GPU** plus
+**5.032 ms mean row-update CPU time**, versus **6.952 ms GPU** for LOD2.
+A test-only frozen-shadow diagnostic reduces moving LOD3 to **6.054 ms GPU**,
+identifying shadow refresh as the dominant measured rotation penalty.
+Production retains correct live shadow updates. Results and limitations are
+recorded in `tests/artifacts/screens/grass_debug_v2/lod3_billboards/REPORT.md`.
 
 ### Current LOD0 / LOD1 / LOD2 benchmark
 
@@ -2851,7 +3024,7 @@ when the study closes.
 
 The panel retains the total and lists the final mesh count separately for
 Single leaf, Pair left and Pair right (Reference: 44 triangles each, 132 total;
-LOD0: 18 each, 54 total; LOD1: 10 each, 30 total; LOD2: 2 each, 6 total).
+LOD0: 18 each, 54 total; LOD1: 10 each, 30 total; LOD2: two each, six total; LOD3: one dynamic plate with two total).
 Counts come from the actual leaf meshes, independently of the overlay state.
 The study HTML versions its entry-module and stylesheet URLs so browsers with
 cached earlier quad-overlay code fetch the triangle-overlay update.
@@ -3151,11 +3324,1029 @@ capture checks the exported edge alpha as well as the existing leaf counts,
 dimensions and triangle budget. The standalone authoring page and earlier
 field recipes retain their original soil.
 
+### Opaque litter merged with soil
+
+The field viewer defaults to **Litter → Merged soil**. **Alpha litter** (or
+`?litter=alpha`) retains the original GLB materials and full soil plane for
+direct comparison. The leaf study, authoring substrate and offline export
+remain separate.
+
+`GrassDebugV2LitterSoilSurface.js` retains the nine original patches and all
+98 triangles per field, including the 5 mm center and the 2 cm ramps down to
+the contact fringe. The exported interior RGBA texture also has cutouts
+(about 18% of texels below the alpha threshold); these are filled with soil
+on the same raised surface. They no longer reveal another plane 5 mm below.
+
+`GrassDebugV2LitterSoilMaterial.js` combines the two PBR materials before
+standard lighting. Source RGBA coverage selects between litter and world-aligned
+soil albedo, normals, roughness, metalness and AO. The original colors, scales,
+texture transforms and shadow receiving are retained. Coverage is converted
+to a material blend using the original 0.5 threshold and screen-space derivative;
+it is not fragment discard, transparency, or alpha-to-coverage. There are no
+additional textures or runtime texture bakes. The result shades one surface,
+but still samples both original material map sets. Mixed material lighting and
+the raised soil filling can differ slightly from the original layered MSAA result.
+
+The single surrounding soil mesh is tessellated around each active 12.4 × 12.4 m
+substrate footprint (the 12 m planted patch plus its authored perimeter tiles).
+There is no soil geometry underneath the opaque patches. The exterior retains
+its original world UV phase, and copied fields sample soil at their own world
+coordinates. Cached cut meshes contain 16 soil triangles for one field and 80
+for nine. Litter's polygon offset and late render order are disabled in merged
+mode; they are restored in alpha mode. Grass only and Soil restore the full
+two-triangle ground plane and hide all litter patches. The shade table remains
+visible. Changing treatment preserves the camera and refreshes counts/timing,
+without regenerating the shadow map because neither ground representation casts
+shadows.
+
+The historical counts below describe Alpha litter. With merged litter visible,
+add 14 triangles for one field or 78 for nine to those scene totals.
+`grass_debug_v2_litter_merged.pwtest.js` checks one ground intersection, conserved
+projected area, 0–5 mm heights, opaque materials and layer restoration for every
+field count. Matched overview, rear, close-up and low-angle captures check shading
+and coverage. Historical alpha fixtures explicitly select `litter=alpha`.
+
+`grass_litter_merged_comparison.pwtest.js` compares LOD2 at 1920 × 1080, DPR 1,
+4× MSAA, all layers, with six alternating 60-sample blocks after 30 warm-up frames
+per block. Camera, field count, lighting and cached shadows match within each
+pair; GPU time includes shadow sampling and post-processing, excludes startup
+and shadow regeneration, and retains outliers. RTX 3060 / Chrome 154 measurements
+averaged alpha → merged: overview 5.898 → 5.856 ms, rear 5.935 → 6.005 ms,
+close-up 4.663 → 3.710 ms, nine framed fields 7.291 → 7.262 ms, and nine fields
+with the camera framed for one field 7.577 → 7.507 ms. The close-up improved
+20.4%; the other differences are within about 1.2% and should not be treated
+as a reliable gain. Artifacts and the full P99/raw-sample report are under
+`tests/artifacts/screens/grass_debug_v2/litter_merged/`.
+
+### Raised texture LOD4 field prototype
+
+#### Current side wall and grass coverage (2026-10-01)
+
+The sloped perimeter now has its own side captures in
+`GrassDebugV2CanopyWall.js`. The overhead texture is used only on the top;
+it is no longer stretched down the wall. Both compiled 2 m source variants
+are captured in four cardinal directions at elevations of 0°, 15°, 30° and
+60°. Each side sees a 2 m deep column of actual LOD2 leaves, including the
+5 cm foreground strip implied by the carrier's inset. Camera elevation and
+azimuth relative to each face select two adjacent captures. Their **lit
+radiance** is blended before tone mapping, avoiding the lighting change
+caused by interpolating and renormalizing the captured normals. Camera
+movement does not trigger recaptures or shadow rendering.
+
+Albedo and source-world normals remain separate. Roughness is one, as in
+compact LOD3. A temporary 2048² shadow map captures side self-shadow
+visibility; the map is released after capture. The small visibility atlas
+is multiplied by the existing cached external scene shadows. The wall
+also participates in that external-shadow cache's capture pass. Source
+leaf normals continue to respond to scene lighting; only self-shadow
+visibility is baked. As with the top tile, changing the source or sun
+requires rebuilding those baked self-shadows.
+
+The wall is opaque. Its uncovered texels use the separately measured
+background contribution from the active All/grass layer; soil/litter
+colors are not included in a grass-color average. The original LOD2
+perimeter leaves still provide the irregular outline. Wall and top share
+the same 50 cm edge subdivisions and heights, closing the seam even
+where the top varies by 5 mm. There are 208 wall triangles, 1,152 top
+triangles and 5,920 original edge triangles (7,280 total). This remains
+a distant surface approximation: close views still expose the flat top,
+and the wall cannot reproduce exact leaf parallax or foreground soil.
+
+Two 512 × 1024 atlases each contain RGBA8 albedo, RGBA8 normals/coverage
+and R8 self-shadow visibility. All fields and both 1K/4K top profiles
+share these wall maps. Including their mip chains and the shared 1 × 1
+roughness texture, the additional resident GPU texture storage is
+**12,582,922 bytes (12.00 MiB)**. CPU upload arrays and temporary bake
+targets are separate from this resident GPU estimate.
+
+`grass_debug_v2_lod4_coverage.pwtest.js` measures material masks rather
+than classifying pixels by hue. Nine 2 × 2 m interior sections exclude
+the perimeter. The bus cameras retain the canonical 4.5 m height,
+13.586° downward tilt and 55° FOV. Means across front/rear/side poses:
+
+| Range to field centre | LOD2 grass | LOD3 grass | LOD4 grass |
+| --- | ---: | ---: | ---: |
+| 14 m | 81.26% | 79.25% | 78.86% |
+| 19 m | 88.85% | 87.28% | 87.81% |
+| 24 m | 93.21% | 92.09% | 93.92% |
+
+LOD4 does not have substantially less grass coverage than LOD3 here.
+Its flatter appearance is not evidence of a lower material-mask average.
+The separate wall probes sample heights 2.5–8 cm on camera-facing sides:
+
+| Range | LOD2 wall | Previous overhead wall | New side wall |
+| --- | ---: | ---: | ---: |
+| 14 m | 70.44% | 75.10% | 70.54% |
+| 19 m | 76.58% | 83.25% | 76.46% |
+| 24 m | 81.05% | 88.01% | 80.69% |
+
+Each individual bus pose's unblended capture is within 2.5 percentage points of LOD2 wall
+coverage (regression gate), and LOD4 interior coverage is within 3.5
+points of LOD3. The suite also captures three 1.2 m low views, a high
+view and two close edge/corner views. Low-angle wall coverage is about
+92%, compared with LOD2's 95–96%; close views remain visibly different.
+RGB samples and material coverage are recorded separately: equal
+coverage is not a claim of equal per-leaf color, silhouette or lighting.
+
+With `GRASS_COVERAGE_BENCHMARK=1`, the same test measures full render
+cost at 1600 × 1000, nine fields, All/merged litter, using sustained
+12-render GPU query batches, three rotated LOD orders and six samples
+per block. Across the nine bus poses, means were LOD2 **3.25 ms**, LOD3
+**2.46 ms**, and LOD4 with the new wall **1.56 ms**. Startup captures are
+excluded. Shadow generations remain unchanged while comparing LODs and
+cameras. These timings are a same-run comparison, not a precise cost
+delta against older runs. Screenshots, raw masks/coverage summaries and
+timings are under `tests/artifacts/screens/grass_debug_v2/lod4_coverage/`.
+
+##### Upper-wall litter correction (2026-10-01)
+
+The first directional wall was too dark beside the canopy. A smooth background
+blend now starts at 20% of wall height and reaches 40% at the upper edge. It
+uses the existing separately measured All/grass background color; it does not
+tint the source leaves or add a texture. A normalized per-vertex height keeps
+the blend attached to the slightly uneven top. The lowest fifth retains its
+original coverage. The background receives horizontal ground lighting instead
+of the nearest captured leaf's lighting. Deep-column self-shadow strength
+decreases with the blend; cached external shadows remain fully effective.
+This is a controlled side-surface approximation, not an exact new litter bake.
+
+All fifteen comparison poses were rendered again, including nine bus views,
+three low views, a high view and two close views. At 14/19/24 m the mean wall
+display luma rose from 102.3/107.9/112.0 to 110.6/112.7/115.5 (0–255 display
+values, not linear luminance). Independent material-mask probes measured
+16.1/18.6/19.2 percentage points more background in the upper band, with the
+lower band's change below 0.001 points. The unblended source coverage gate
+is retained through a separate shader probe; this intentionally restored
+background is evaluated independently. Each multisampled mask pass is rebound
+and cleared after readback. No WebGL errors, geometry gaps or new shadow-cache
+generations were observed. Wall texture storage remains **12.00 MiB**, with
+no added textures or triangles. The extra height attribute is 1,664 bytes,
+shared by the fields. This small correction was not separately GPU benchmarked.
+Captures are in `lod4_coverage/litter-top/`; `lod4_coverage/wall-litter.html`
+compares them against the previous wall and LOD2/LOD3 references.
+
+##### Two-stage perimeter bevel and lighter base (2026-10-02)
+
+The current perimeter replaces the single slope with two connected slopes in
+the same 5 cm footprint. A middle ring sits 1.25 cm inward at 65% of canopy
+height (about 6.5 cm); the remaining 3.75 cm forms a shallower bevel up to the
+10 cm ± 5 mm top. Shared top positions and corner joins remain coincident.
+The wall now has 416 triangles instead of 208, with the same two material
+batches and texture atlases. Its geometry adds 8,736 bytes, shared by fields.
+
+The thin wall uses 45% of the two-metre capture's self-shadow strength. Cached
+external scene shadows remain at full strength. The upper bevel blends from
+captured leaves to litter between 65% and 100% of normalized wall height,
+reaching full litter at the top. All mode reuses the resident dry-litter albedo
+and its original material color multiplier, with the same physical scale and
+centered phase as the canopy bake. Its normal transitions toward world-up for
+matching background lighting. Grass-only mode retains its measured background
+without the litter sampler. No texture images are allocated for this change;
+the wall atlases still occupy **12.00 MiB**. The additional litter sample is
+limited to the wall shader; this revision was not separately GPU benchmarked.
+
+The deterministic bevel check captures front/rear edges and corners plus the
+14 m front, 19 m rear and 24 m side bus views. In the four close views, an
+isolated self-shadow comparison on identical geometry raised lower-wall display
+luma from 58–70 to 105–116 (0–255 display values, not linear luminance).
+Independent material masks confirm over 99.5% litter blend at the sampled
+upper edge and under 1% remaining leaf coverage there. All 108 downward ray
+probes hit the bevel/top without a gap or overlapping surfaces at different
+heights. WebGL reported no errors and shadow generations stayed unchanged.
+Both 1K/4K profile switching and the bevel regression pass. Before/after images
+and raw measurements are under `tests/artifacts/screens/grass_debug_v2/lod4_bevel/`.
+The broader coverage audit now follows the bevel profile and applies the live
+distance compression to its white-leaf masks. Its nine bus-view wall probes
+remain within 1.5 percentage points of unblended source coverage. It also
+reveals a separate unresolved interior mismatch: at 24 m, LOD4 has 4.9–5.3
+percentage points more grass coverage than distance-compressed LOD3, exceeding
+the existing 3.5-point gate. That gate remains unchanged and the broader test
+fails; this perimeter revision does not retune interior coverage. Its complete
+15-pose captures are retained in `lod4_coverage/bevel/`.
+The very close views still expose the opaque carrier and captured leaf stretching;
+the bevel softens the top join but does not introduce individual leaf parallax.
+
+##### Grass-covered bevel and detailed wall background (2026-10-02)
+
+The litter-only upper bevel produced a visible perimeter stripe. The current
+blend reveals at most 12% additional litter at the top instead of removing all
+grass. The two-stage geometry stays unchanged. The All-mode wall now samples
+the existing dry-litter albedo at every height, replacing its constant-color
+background. The vertical rise is unfolded into that texture at its physical
+0.4 m repeat, meeting the canopy bake's phase at the upper edge. Captured leaf
+normals remain active on the bevel; uncovered litter receives ground lighting.
+
+Each directional/elevation capture increases from **512 × 64** to **1024 × 128**.
+The atlas becomes 1024 × 2048, with a proportionate eight-pixel gutter.
+Explicit linear magnification replaces the DataTexture default nearest filter;
+trilinear mipmaps and anisotropy remain enabled. The two variants' albedo,
+normal/coverage and visibility atlases now total **48.00 MiB**, up from
+12.00 MiB, shared by every field and both 1K/4K canopy options. The litter map
+is still reused without duplication. Geometry and draw counts do not change.
+
+Base albedo gently ramps from 92% to 100% for leaves and 94% to 100% for litter.
+Self-shadow strength is 20%, with external cached shadows left fully effective.
+Nine captures cover front/rear close edges and corners, a near oblique view,
+and front/rear/side bus views at 14/19/24 m. Close-up upper-edge masks retain
+68–74% grass coverage instead of the preceding revision's near-zero coverage.
+An isolated tint toggle measures about 4.7–4.9 display-luma levels of lower
+leaf darkening and 2.7–3.0 for litter, on the 0–255 display scale. Background
+variation is measured only on uncovered litter pixels. Bevel ray probes still
+find no gaps, and camera changes leave the shadow-generation count unchanged.
+Captures and diagnostics are under
+`tests/artifacts/screens/grass_debug_v2/lod4_wall_detail/`. This material fix
+does not retune the separately documented 24 m interior-coverage mismatch.
+
+The sections below retain the earlier canopy experiments and their measurements.
+
+The field page adds **LOD4** (`?lod=LOD4`). This is a field representation;
+the individual leaf study retains its existing LOD choices. It replaces the
+interior with an opaque surface at **10 cm ± 5 mm**, with a 50 cm grid and
+5 cm sloping perimeter. The surface meets the ground 5 cm inside the planted
+boundary. It has no vertical box walls and does not cast a solid rectangular
+shadow. Corner diagonals connect each outer corner to the raised inner corner;
+no corner triangle lies flat on the ground.
+
+The outer **10 cm** keeps the original LOD2 leaves at their original positions,
+scales, colors and orientations. One field has **2,960 live leaves / 5,920 edge
+triangles**, plus **1,352 canopy triangles**: **7,272 grass triangles** in total,
+compared with LOD2's 192,000. The remaining 93,040 leaves are represented by the
+texture. The header still reports 96,000 represented source leaves; it does
+not imply that all of them remain geometric leaves. Nine fields share the
+same geometry and texture objects.
+
+`GrassDebugV2FieldCanopyBake.js` captures a **1 × 1 m periodic LOD2 source** from
+above when the field loads. Roots in the half-open central square `[-0.5, 0.5)` on
+both horizontal axes belong to the source tile. The current field supplies
+661 leaves. `GrassDebugV2CanopySourceLayout.js` redistributes the selected
+339 shoot groups before capture, keeping paired leaves together. It uses
+seeded best-candidate placement with distances wrapped across both axes;
+projected area weights the spacing and projected centroids locate each shoot.
+Only horizontal positions change: leaf shapes, heights, colors and normals
+are retained. Thirty-two candidates per shoot and seed `0x6d2b79f5` make this
+load-time arrangement deterministic without forming a regular placement grid.
+`GrassDebugV2PeriodicSource.js`, also used by the one-metre study bakes,
+repeats crossing leaves by exactly ±1 m across opposite sides and diagonal
+corners. After the material and rendered feedback passes described below,
+bounds culling retains 82 neighboring continuations (743 rendered leaves);
+the padded self-shadow source uses 1,065 instances.
+Copies exist only during capture; the live LOD2 field and LOD4 fringe retain
+their original placements. Merged source ranges share attributes, and temporary
+capture geometry is released afterward.
+
+The texture repeats twelve times per axis over each 12 m field. Carrier UVs remain
+continuous across repeats so derivatives and mip selection are continuous too.
+Background material repeats are rounded to whole cycles per 1 m capture:
+capture-only litter repeats three times and soil once. The source's 0.4 m
+litter period becomes one third of a metre in the capture. Live ground UVs
+are unchanged. All retained maps use repeat wrapping in both axes.
+
+The bake captures albedo with source height in alpha,
+source-world normals oriented into the capture-facing hemisphere with a material
+leaf mask, roughness with separately packed soil/litter color contributions,
+and a separate grayscale self-shadow visibility map.
+There are two sets: grass over soil, and grass over soil/litter. Each set has
+three **4096² RGBA8** maps and one **4096² R8** visibility map, with 4× MSAA during
+capture, mipmaps and anisotropic filtering. The six material maps consume
+**512 MiB including mips**; the two visibility maps add **42.7 MiB**. The retained
+**554.7 MiB** is shared by all nine fields (the previous 1 m/2048² material maps
+used 128 MiB). Texel size is approximately **0.244 mm**. Close views retain native texture detail; the 2 cm
+canopy filtering footprint ramps in as the camera footprint grows, preserving
+distant aggregate color without blurring every close-up to 2 cm.
+The tile is a representative sample, not a per-leaf image of the entire field.
+Capture render/depth buffers are disposed afterward.
+Alpha-to-coverage is disabled for the capture materials: output alpha is packed
+channel data and must not discard MSAA samples. Source alpha tests remain active.
+This is a runtime capture of the loaded scene, not a new offline baking job.
+
+`grass_debug_v2_lod4_tile.pwtest.js` checks exact one- and two-metre merged-source
+corner continuations, bounded leaf duplication, physical UV scale, memory size,
+unchanged live soil repeat, and seam continuity in all channels of all eight
+maps. It verifies the actual 8192-pixel shadow allocation and nontrivial baked
+shadow coverage. Leaf-mask coverage checks guard against sparse borders. Diagnostic maps
+and three alternating-field camera views are saved under
+`tests/artifacts/screens/grass_debug_v2/lod4_tile_1m_4k/`.
+
+For the self-shadow pass only, a temporary **8192² directional shadow map**
+renders the periodic LOD2 source. Neighboring source leaves extend past the
+tile by the maximum sun-ray reach at the source height plus a 1 cm guard.
+This includes shadows entering from opposite edges, not only leaves whose
+geometry crosses an edge. The light camera tightly fits that extended source.
+The two visibility captures reuse this shadow map; its depth/color targets and
+all temporary caster meshes/materials are released when capture finishes.
+The retained visibility maps contain no table or other external scene shadows.
+Their shadows depend on the captured sun direction, so changing that direction
+requires a tile rebake; camera movement does not. The current scene uses its
+fixed 55-degree-elevation sun.
+
+The supplied dry-litter `arm.png` was truncated inside its PNG IDAT stream:
+only 939 complete rows could decode. Browsers filled the remaining band with
+zero roughness, causing white specular strips. The separate roughness source
+was also truncated, but its 358 complete rows agree exactly with ORM green.
+The explicit `materials/dry_litter` bake leaf preserves all 939 complete rows,
+bridges only the missing 85 rows to the opposite edge within the original
+221–255 range, restores full AO from the intact separate map, and retains zero
+metallic. This is documented reconstruction, not exact recovery of missing data.
+Retained inputs and `repair.json` record provenance under the material asset.
+The older field GLB embeds the damaged map, so its litter materials resolve the
+repaired catalog texture at load time, preserving their UV transforms and using
+the source PNG's correct vertical orientation. LOD2, merged litter and LOD4
+therefore use the same repair. No shader roughness clamp is applied.
+`grass_debug_v2_lod4_glints.pwtest.js` validates the loaded channels and checks
+both near-field viewing directions; diagnostic renders and material histograms
+are saved under `tests/artifacts/screens/grass_debug_v2/lod4_glints/`.
+
+The earlier repaired 1 m/2048² revision passed source-channel, seam, canopy-integration
+and camera-motion shadow checks. Across 99 material-mask cameras, all grass
+means and the litter-background means stay within 15% of LOD2. One bare-soil
+background view (`d80_e15_a225`, Grass only) remains 19.2% too dark and fails
+that gate. A fixed-filter control has the same error; it is not caused by the
+new close-view filter. That earlier soil-color limitation is retained here as
+historical evidence; the later self-shadow bake has separate masked calibration
+and validation below.
+
+The historical 2 m revision passed the existing 99-camera material-mask color checks
+and the three camera-motion shadow-stability checks. Worst per-camera mean
+grass-color error is 9.7% with litter and 10.2% over bare soil, normalized by
+reference material luminance; the current 15% threshold is unchanged.
+This verifies aggregate color, not identical fine-scale texture or silhouettes.
+The shadow visibility cache remains a separate 5.3 MiB world-space texture.
+
+A historical 2 m/512² RTX 3060 run at 1920 × 1080, DPR 1 and 4× MSAA, using two alternating
+rounds of 60 warm-up/120 timed frames, measured LOD2 → tiled LOD4 means of
+5.170 → 4.317 ms (one-field overview), 5.181 → 4.149 ms (one-field rear), and
+7.754 → 3.870 ms (nine fields framed). These are paired LOD comparisons, not
+an isolated before/after measurement of tile size. Shadow refresh and loading
+are excluded; cached shadow sampling and post-processing are included.
+Raw samples and matched captures are in
+`tests/artifacts/screens/grass_debug_v2/lod4_tile_2m/performance/benchmark.json`.
+
+The material maps contain no baked sunlight color or table shadows. Self-shadow
+visibility is baked separately and modulates direct illumination. The material receives the
+current environment and sun, using captured world normals, leaf transmission,
+and normal-filter roughness. The carrier's slope does not rotate those captured
+normals. Consistent capture-facing normals prevent opposite sides of adjacent
+leaves from cancelling during filtering; the normalized direction drives leaf
+lighting while normal length affects roughness separately. The field material uses the live leaf reflection weight (0.72) and
+average warm transmission (0.55). The old extra self-occlusion approximation
+is removed now that the periodic source supplies actual self-shadow visibility.
+Filtered leaf coverage increases toward oblique views, using
+`1 - (1 - mask) ^ (1 / max(elevation, 0.1))`. This reweights the captured
+leaf and soil contributions with the longer optical path through upright grass;
+pure soil stays soil. A minimum 2 cm filtering
+footprint integrates small leaf clusters before this coverage reconstruction.
+The LOD4 shader independently calibrates captured leaf and ground contributions
+in linear space. Leaf gains vary smoothly with view elevation and view/sun
+alignment to compensate for the reflection/transmission bias of filtered normals;
+ground gains distinguish soil-only and soil/litter captures. A separate scalar
+response reduces excess canopy specular energy at shallow elevations. Fitting
+diffuse and specular grass independently avoids hiding a dark diffuse response
+behind excess sheen. These prototype
+coefficients are fitted to material-masked LOD2 sections under the scene's default
+lighting, not to a whole-patch average, and do not alter LOD2 or source textures.
+They are an aggregate approximation, not exact per-leaf relighting.
+
+External shadow coordinates use captured source height rather than the raised
+carrier height. Height occupies the existing albedo alpha channel. During each
+scene-shadow refresh, `GrassDebugV2CanopyShadows.js` renders only external
+casters into a temporary **2048²** directional shadow map, then resolves it onto
+the canopy from a fixed overhead camera. Grass and the canopy are excluded as
+casters, preventing the periodic grass self-shadows from being counted twice.
+A deterministic 4×4 filter resolves one **2048² R8** visibility texture covering the active field bounds.
+Its mip chain and anisotropic filtering supply stable, filtered visibility at
+distance. The shared cache adds approximately **5.3 MiB**, regardless of whether
+one or nine fields are active, giving approximately **560 MiB** for all retained
+canopy material and visibility maps. Ordinary canopy frames multiply this world-space
+visibility by the repeating tile visibility using two texture lookups with a
+two-pixel filter footprint; the 16 comparisons run only during scene refresh.
+The temporary external-caster shadow map is released after the resolve.
+The world-space cache is unbound from the material while being rendered to prevent a
+framebuffer feedback loop. Captured visibility is separate from base color:
+normals, sun/environment color and leaf transmission remain live.
+
+This addresses LOD4's moving black spots: direct sampling compared a minified,
+view-dependent average leaf height against individual leaf depths, using a
+screen-space rotated PCF kernel. Keeping the shadow depth map cached did not
+make that comparison stable as pixels moved. The new visibility is resolved
+before minification and stays anchored to world positions. It preserves the
+shade table's shadow and aggregate leaf shadowing rather than disabling them.
+
+`GrassDebugV2FieldShadows.js` treats LOD2, LOD4 and LOD2+4 as one shadow configuration.
+When a refresh is needed in LOD4 or LOD2+4, it briefly renders the full LOD2 field into
+a discarded one-pixel color target to generate the normal sun shadow map, then
+restores the selected field configuration. This existing geometric map remains
+8192² for the LOD2 comparison, live soil and fringe; it is separate from both
+the temporary 8192² tile bake and the 2048² LOD4 external-shadow capture.
+LOD4's live fringe receives the
+geometric map and its canopy receives the resolved visibility cache; neither
+casts additional shadows. Ordinary frames, camera movement and switches among LOD2, LOD4 and LOD2+4
+reuse both caches. Field/layer changes and switching from other LODs
+invalidate it. Shadow sampling still costs GPU time every frame; shadow-map
+generation is excluded from the warmed benchmark.
+
+The soil and litter triangles under the canopy are removed. Litter clipping
+preserves the remaining patches' UVs and raised edge profile; only 80 litter
+triangles per field remain. With All + Merged soil, the whole scene contains
+**7,956 triangles for one field**, or **66,836 for nine**, including the table
+and surrounding soil. Grass only switches to the capture without litter;
+Soil restores the original ground and hides the canopy and fringe. The litter
+treatment selector affects the live fringe, while the captured interior is
+always opaque. Switching away from LOD4 restores the original substrate.
+
+`grass_debug_v2_lod4_canopy.pwtest.js` checks unchanged shared geometric-shadow pixels,
+shadow generation counts during forced refresh and camera movement, shared
+resources across nine fields, and exactly one ground intersection beneath the
+canopy in all layer/treatment combinations. It verifies that the external cache
+contains the table shadow while the surrounding fields remain fully lit in that
+cache, excluding duplicate grass self-shadowing. Overview, rear, low-edge and close
+captures for the revised geometry are saved under
+`tests/artifacts/screens/grass_debug_v2/lod4_color_height/validation/`.
+`grass_debug_v2_lod4_masks.pwtest.js` now checks **99 camera positions**, with
+nine fields and both All and Grass only layers. The calibration grid uses eight
+bearings at 45-degree intervals, elevations 15/30/55 degrees and distances
+35/80 m. The independent grid uses the intervening bearings (22.5-degree offset),
+elevations 22/40/70 degrees and distances 55/110 m. Three additional cameras
+check the 88/90-degree near-overhead transition. Each pose samples four matching
+1.4 m square sections per field. Calibration uses only the first 48 poses under
+default lighting, not the holdout poses or the field under the shade table.
+
+An unlit material-ID pass labels grass and soil/litter independently, preserving
+alpha coverage and including dry blades. LOD4 uses its packed material mask after
+coverage reconstruction. Separate shading passes isolate grass diffuse color and
+the background's full PBR response in RGBA16F linear render targets. Source MSAA
+pixels are normalized by material coverage; excluding partially covered pixels
+would bias distant samples toward larger, brighter leaves. Samples are deduplicated
+in screen space. Sections with fewer than 120 pixels, less than 15 weighted
+material samples, or more than 5% table occlusion are excluded.
+
+Each camera/layer/material is checked independently: mean RGB error below 15%
+of reference material luminance and mean coverage difference below 7 percentage
+points. Grass section errors also have a 30% 95th-percentile limit. These are
+prototype regression limits, not a claim of a visually seamless transition.
+Background highlight outliers are recorded separately: the single top capture
+cannot reproduce individual litter glints. Whole-patch averages are never used
+to fit grass color. Linear HDR sampling replaces the earlier limited three-view
+display-RGB check, which omitted partially covered source pixels.
+
+`grass_debug_v2_lod4_color.pwtest.js` captures LOD2, LOD4 and LOD2+4 at eight
+matched camera poses: front/rear/side low views, rear overview, two higher
+bearings, and near/far rear views. It retains full PBR shading and checks that
+the 10 cm height, 5 cm ramp and non-flat corner triangles remain unchanged.
+All measurements, calibration coefficients and matched visual comparisons are
+under `tests/artifacts/screens/grass_debug_v2/lod4_color_match/`.
+The historical pre-tile 99-camera run passed. Worst per-camera grass mean RGB errors were 6.5%
+with litter and 7.1% without litter, normalized by reference grass luminance.
+Background maxima are 9.2% and 10.8%. Mean coverage differences remain below
+5.1 percentage points. At 15-degree elevation, the calibration set's mean grass
+coverage deficit decreases from 16.1 to 3.4 percentage points. Local litter
+highlight errors remain larger and are visible in the full-PBR captures.
+`MULTIVIEW.html` provides an eight-camera visual selector and links to all
+section data; `views-verified/` holds the passing measurements. The old
+`REPORT.html` describes the superseded limited-camera check.
+
+The shadow-cache revision (`lod4-shadow-cache-1`) also passes the 99-camera
+masked checks. Its bare-soil contribution has a measured 4% gain adjustment;
+grass gains, canopy height and ramp geometry remain unchanged. Passing results
+are in `lod4_color_match/views-shadow-cache-final/`. The earlier `views-verified/`
+measurements describe the pre-cache version.
+
+`grass_debug_v2_lod4_flicker.pwtest.js` isolates shadows, normals and specular
+response, then compares the previous PCF path with the cached path at identical
+world positions. Each of three camera paths has 24 steps of 0.04 degrees:
+azimuth/elevation/distance 225°/12°/40 m, 45°/20°/70 m and 135°/40°/110 m.
+Mean temporal shadow standard deviation decreases from 0.1570/0.1933/0.1865
+to 0.0071/0.0034/0.0029 (95.5–98.4% reduction). The 95th-percentile limits
+are below 0.04. The current periodic version compares distant mean visibility
+with the measured baked tile mean (within 0.06), rather than the old full-field
+height approximation, whose placements and occluders differ. Separate minimum
+shadow coverage and mean-visibility limits prevent an all-lit result from passing.
+Both cache generation counts must stay unchanged.
+This measures the isolated shadow contribution, not all texture or geometry
+aliasing. Matched mixed-field motion clips, diagnostic captures, measurements
+and the investigation log are under
+`tests/artifacts/screens/grass_debug_v2/lod4_flicker/`.
+
+The **8192² self-shadow / 4096² tile** revision (`lod4-self-shadow-1`) passes
+the seam, integration, camera-motion and 99-camera masked-color tests. The
+existing nine-term leaf and ground response curves were refitted with two
+least-squares passes using only the original 48 training cameras and excluding
+the central field under the table. Neither holdout cameras nor acceptance
+thresholds were used in the fit. The former extra leaf-occlusion approximation
+and separate bare-soil gain are removed. Final worst per-camera mean errors
+are 12.1%/14.2% for grass with/without litter and 7.2%/14.8% for their respective
+backgrounds; maximum coverage error is 6.75 percentage points. This is still
+an aggregate match: the filtered LOD4 interior visibly lacks LOD2's fine-scale
+contrast and parallax, including in the mixed-field captures.
+
+Across the three motion paths, mean temporal shadow standard deviation is
+0.0083/0.0025/0.0034, versus 0.1530/0.1913/0.1835 with the old direct PCF path.
+The periodic shadow mean is 0.564 and the seam error is lower than typical
+adjacent interior-pixel variation. The shadow source needs 1,050 periodic leaf
+instances for the 10.9 cm guard, compared with 721 for the material captures.
+Calibration inputs, coefficients, final measurements and eight matched camera
+sets are in `lod4_color_match/views-self-shadow-4k*` and
+`lod4_color_match/self-shadow-4k-visual/` under the grass debug artifact folder.
+
+A short RTX 3060 check at 1920 × 1080, DPR 1 and 4× MSAA used two alternating
+120-frame blocks per LOD/view. GPU means were LOD2 → LOD4 **5.243 → 4.851 ms**
+for one-field overview and **6.680 → 4.673 ms** for nine fields (7.5% and 30.0%
+lower respectively). The previous 2048² tile measured 4.820/4.623 ms for LOD4
+in the corresponding before run. The 0.03–0.05 ms increase is smaller than the
+unlocked desktop GPU's block variation, so this does not establish a precise
+resolution cost. Loading and shadow refresh are excluded; cached-shadow
+sampling and post-processing are included. Raw samples, resource snapshots,
+source hashes and captures are saved in
+`tests/artifacts/screens/grass_debug_v2/lod4_hires/self-shadow-4k/benchmark.json`.
+
+#### Periodic source pattern reduction
+
+The subsequent source-layout revision addresses broad sparse bands in the
+repeating one-metre capture. The original density was sufficient (661 leaves
+versus approximately 667 leaves/m² across the live field), but the sampled
+source contained visible clusters and gaps. Independent soil-plane root
+selection and a render of all nine complete neighboring tiles produce exactly
+the same coverage as the culled periodic source, both at the material boundary
+and at the 10.9 cm shadow guard. This rules out missing side/corner continuation
+as the cause of the reported empty-looking bands.
+
+The rearrangement reduces the standard deviation of sixteen 6.25 cm-wide
+leaf-coverage bands from 0.0513 to 0.0325 on X and 0.0570 to 0.0356 on Y
+(about 37%). Mean border/interior coverage is now 46.22%/46.09%; the former
+weakest edge band rises from 34.27% to 48.00%. Leaf count, 1 m period, 4096²
+maps, 8192² temporary shadow capture, retained memory, and per-frame sampling
+remain unchanged. The live LOD2 placement and LOD4 fringe are unaffected.
+
+Because reduced overlap increases overhead coverage, the angular coverage
+model uses optical depth `0.884 / max(viewElevation, 0.1)`, fitted only on the
+original 48 training cameras with separate grass material masks. The bare-soil
+background response was refitted on those same training cameras after the
+self-shadow distribution changed. Grass color and litter-background color
+coefficients were retained. All 99 camera checks pass: worst per-camera mean
+grass/background color errors are 10.71%/12.02% with litter and 13.31%/13.21%
+without litter; maximum coverage error is 4.96 percentage points. The existing
+15% color and 7-point coverage limits were not relaxed. Shadow-motion checks
+also pass.
+
+`grass_debug_v2_lod4_tile.pwtest.js` checks each edge's coverage, repeating
+density bands, deterministic placement, preservation of pair geometry, and
+equivalence to nine complete neighboring tiles. The matched visual review in
+`grass_debug_v2_lod4_patterns.pwtest.js` covers four bearings at 12°, 35° and
+65° elevation, with the same material response in before/after captures.
+The broader bands are reduced, but an exact one-metre repeat remains visible
+at grazing angles; this does not remove the flat carrier's lack of parallax.
+Evidence is under `tests/artifacts/screens/grass_debug_v2/lod4_patterns_*`;
+coverage calibration and the 99-view result are in
+`lod4_color_match/views-patterns*` within that artifact directory. These are
+visual/coverage validations, not a new performance benchmark.
+
+#### Automatic material-feedback optimization
+
+Spacing alone does not remove recognizable bright/dark motifs. The field
+capture now follows the initial placement with
+`GrassDebugV2CanopyPatternOptimizer.js`. It rasterizes the actual source
+triangles into a periodic 128² height/owner/material probe. Each visible
+sample retains its source shoot id, normal, luminance and leaf coverage.
+`GrassDebugV2CanopyPatternProbe.js` evaluates periodically filtered material
+response at five footprints, including elongated footprints, from eight
+view directions/elevations. This catches normal/lighting clusters as well
+as coverage gaps; the objective is not just row/column density variation.
+
+The seeded search traces high-error visible samples to their shoot groups,
+tries horizontal moves or swaps with other groups, and re-renders/re-scores
+each candidate. It accepts only a lower objective while keeping preview
+coverage within 0.6 percentage points of its initial value. Rejected moves
+are restored. Pair geometry, leaf count, colors, normals, UVs and height stay
+unchanged. Search stops after 240 consecutive rejections or a 3,600-trial
+budget, preserving the best state; reaching the budget is not convergence
+to a perfectly smooth texture. The snapshot records objective history,
+accepted/rejected counts, changed source shoot ids, and the stopping reason.
+
+Every 24 trials the loading overlay displays an updated 3 × 3 repeating
+layout preview and progress. This is a cheap material/coverage proxy,
+not the final PBR texture: it omits detailed litter and self-shadows.
+After optimization the normal 4096² material capture and 8192² self-shadow
+capture run once. The feedback pass uses no additional retained GPU textures
+or per-frame shader samples. The measured source pass takes about 24 seconds
+on the development machine in the original implementation. It now runs only
+in the explicit offline layout compiler described below.
+
+The fixed source run accepted 307 of 3,600 trials, affecting 236 of 339 shoots.
+Preview objective decreased from 0.0073985 to 0.0031610 (57.3% lower variance
+score); preview coverage changed from 47.278% to 46.918%. This score is only
+an optimization proxy and is not presented as the visible improvement.
+Independent final GPU renders fold six repeats onto a common texture-phase
+map and measure its filtered luminance contrast. Across the same twelve close
+cameras, mean contrast decreased 28.6%; individual reductions range from
+5.7% to 63.9%, with 34.1% at the low rear camera. Exact periodicity remains,
+particularly at grazing angles, so this pass does not promise an unrecognizable
+repeat or restore the carrier's missing interior parallax.
+
+All 99 material-mask cameras pass with unchanged color/coverage coefficients
+and thresholds. Worst mean grass/background errors are 10.07%/14.12% with
+litter and 12.88%/13.60% without; maximum coverage error is 5.02 percentage
+points. The tile regression independently repeats the optimizer, checks a
+monotonically decreasing objective and preserved pair geometry, and verifies
+zero differing mask pixels versus all nine full neighboring source tiles.
+Final litter-layer border/interior coverage is 47.70%/45.48%.
+
+The updated `grass_debug_v2_lod4_patterns.pwtest.js` compares feedback enabled
+and disabled with identical initial placement, shaders, and camera poses.
+It gates mean final-render pattern reduction and per-camera regressions,
+and captures the live loading preview. Evidence is in
+`tests/artifacts/screens/grass_debug_v2/lod4_feedback_views/`,
+`lod4_feedback_tile/`, and `lod4_color_match/views-feedback-final/`.
+
+#### Rendered-feedback refinement
+
+The material-feedback pass above is now the initializer for
+`GrassDebugV2CanopyRenderedOptimizer.js`. A second, bounded search evaluates
+candidate source layouts using the production canopy material, shared in
+`GrassDebugV2CanopyMaterial.js`. It captures the actual periodic grass,
+soil and repaired litter materials, re-bakes self-shadow visibility after
+every move, generates mipmaps, and renders the same normal/coverage/color/
+roughness shader under the field sun, hemisphere and HDR environment.
+
+Candidate previews use 512² material maps and 2048² shadow maps. Forty-eight
+perspective views combine eight bearings, elevations 12°/35°/65°, and two
+projected distances (6/12 m at a 384² viewport). Three repeats are folded
+onto a 32² phase map per view. The objective combines normalized spatial
+variance at three scales, the mean view ratio, and half the worst view
+ratio. The reference is the layout after the earlier CPU pass, not the
+unoptimized source. Postprocessing glare and external objects are excluded
+from this isolated source-layout objective; the final field regression
+checks the resulting material in the complete scene.
+
+Rendered residuals select hot tile phases. Source-triangle ownership maps
+attribute those phases to shoot groups for move/swap proposals. This is
+geometric attribution, not an exact attribution of shadow casters. Every
+candidate is evaluated by re-rendering, so a misleading attribution cannot
+force acceptance. Original shoot pairs, geometry, leaf count, normals,
+colors, UVs and height are preserved.
+
+A trial is accepted only if the combined rendered objective improves and
+no training view exceeds its initial variance by more than 3%. Material
+coverage must remain within 0.6 percentage points; separate leaf/background
+albedo averages (using material masks and excluding mixed edge pixels)
+must stay within 2% per channel. No blur or color adjustment is optimized.
+The search stops at 288 trials or 64 consecutive unsuccessful trials.
+Every four trials the loading overlay shows an actual rendered preview of
+the current accepted layout, including self-shadows.
+
+Before publication, the initial and winning layouts are both captured at
+4096² with 8192² self-shadows and re-evaluated across all 48 views. The
+winner is used only if this full-resolution check improves the objective,
+passes the same material-mask constraints, and no view regresses by more
+than 5% variance. Otherwise the initializer is retained. The snapshot
+exposes publication status, per-view metrics, objective history, source
+moves, masks, temporary resolutions, and elapsed time. The normal final
+4096² maps for both layer modes are then built from the chosen layout.
+All feedback render targets/materials are temporary; navigation incurs no
+additional shader samples or retained texture allocation.
+
+The reference run accepted 46 of 288 trials and moved 49 shoot groups.
+Refinement took 38.0 seconds in addition to the CPU initializer. The full
+resolution check passed: mean variance ratio 0.480, worst ratio 0.871.
+Independent complete-scene validation covers 48 poses (two distances,
+three elevations, four diagonal regression bearings and four intermediate
+bearings absent from training). Mean filtered repeating-pattern contrast
+decreased 25.7% relative to the previous material-feedback result, with
+every tested view improving (minimum 11.1%). These contrast measurements
+are separate from the optimizer's variance objective. Exact one-metre
+periodicity and the carrier's missing parallax remain.
+
+`grass_debug_v2_lod4_patterns.pwtest.js` now compares rendered refinement
+enabled/disabled, retaining the CPU initializer in both cases. Captures
+and metrics live under
+`tests/artifacts/screens/grass_debug_v2/lod4_rendered_feedback_views/`.
+The final source has 743 material-capture leaves including wrapped copies,
+and 1,065 instances in the padded shadow source, from the same 661 originals.
+All 99 masked-color cameras pass with existing coefficients and thresholds:
+worst mean grass/background errors are 10.94%/12.20% with litter and
+13.78%/13.24% without; maximum coverage error is 4.55 percentage points.
+The tile regression replays recorded source moves, preserves shoot geometry
+within 5.6e-8 m and finds zero differing boundary-mask pixels against all
+nine complete neighboring tiles. The cached-shadow flicker regression also
+passes. Additional evidence is under `lod4_rendered_feedback_tile/`,
+`lod4_color_match/views-rendered-feedback/`, and
+`lod4_flicker/rendered-feedback/` in the grass debug artifact directory.
+
+The original merged-litter and 1–9-field regressions also passed for the first version.
+
+#### Compiled LOD4 source positions
+
+Ordinary field loading fetches `assets/public/grass/lod4/layout.json` and applies
+its final positions to two compact 2 × 2 m sources before making periodic edge
+and shadow copies. It imports neither pattern optimizer nor the redistribution
+and probe modules. The final 4096² material textures and 8192² self-shadow bake
+still run once on scene load. This change concerns only LOD4's arrangement;
+LOD3 camera captures and other LOD leaf distributions retain their behavior.
+
+Regenerate through `node tools/bake.mjs --target materials/grass/lod4-layout --publish`.
+The explicit browser-only job uses the shared local `browserExecutable`, a
+separate browser/server and `compileLod4Layout=1` to run the same initializer
+and rendered refinement. All existing coverage, material-mask and 48-view
+full-resolution acceptance gates remain in force. A rejected refinement retains
+the valid initializer. The framework stages and authenticates outputs, validates
+a fresh page loading the staged asset, then publishes the positions atomically.
+It is outside the default production material tree.
+
+The rendered optimizer captures HDR radiance into RGBA16F before applying the
+same color-grading/output pass, exposure and tone mapper as the scene. Direct
+rendering into RGBA8 had clipped the earlier optimizer previews. The
+`hdr-display-v1` profile is now part of source identity and compiled validation;
+each of the 48 initial/final preview and verification views must include valid
+sample counts, luminance range and less than 2% clipped/black samples. Old
+overexposed evidence cannot pass this gate. This output pass runs only during
+offline compilation; ordinary loading imports only its small evidence validator.
+
+Schema v2 holds two v1 position records, a shared source identity and validated
+boundary-compatibility metadata. Each record stores exact Float32 vertex
+positions plus placement/optimizer reports. The SHA-256 identity covers compact source vertex
+attributes, indices, leaf ranges and selected field leaf IDs, tile size, sun
+direction, source height, filter footprint and protected boundary width. Application validates the source,
+count, finite values and unchanged leaf shapes/heights before mutating any
+vertices. UVs, normals, topology and materials continue to use the source data.
+Missing or incompatible layouts fail with the regeneration command; no automatic
+runtime optimization fallback is allowed. Snapshots expose `layout.mode`, source
+hash, counts and loading duration separately from historical optimizer timings.
+
+`grass_debug_v2_canopy_layout_asset.test.js` validates restoration, stale/invalid
+data rejection and optimizer gates. `grass_debug_v2_lod4_compiled_layout.pwtest.js`
+checks ordinary startup, no optimizer requests, both layers, alternating fields
+and missing-asset errors. The optimizer comparison test explicitly opts into
+the offline compilation path; it no longer represents ordinary scene startup.
+
+The first published layout stores 3,966 vertices for 661 original leaves in
+370,561 bytes (about 0.35 MiB), including validation metadata. The offline scene
+took 67.1 seconds through optimization/readiness; the fresh validated scene took
+1.86 seconds using the compiled asset, with 23 ms spent identifying/loading its
+layout. A separate normal-page regression took 2.64 seconds, with 19 ms for the
+layout. These are local startup measurements, not frame-time benchmarks. The
+compiled and loaded comparison screenshots were pixel-identical. Evidence is in
+the shared bake run's `materials/grass/lod4-layout/` directory and
+`tests/artifacts/screens/grass_debug_v2/lod4_compiled_layout/`.
+
+#### Independent LOD4 map-resolution comparison
+
+For automatic distance switches across large neighboring fields, see
+[`GRASS_TRANSITION_LAB.md`](GRASS_TRANSITION_LAB.md) and
+`debug_tools/grass_transition_scene.html`.
+
+The field selector exposes a single **LOD4** (`lod=LOD4`), using 1024² albedo,
+normal and roughness maps. `LOD2+4` and `LOD2+3+4` use those same maps. The former
+`LOD4_4K` and `LOD4_1K` links resolve to this single option. The normal scene no
+longer generates or retains the unused 4K map profile. Changing LOD preserves
+the camera and reuses the cached LOD2 shadows. Snapshots use canonical
+`lod: LOD4` and `lodSelection: LOD4` for the standalone selection.
+
+The field viewer accepts `canopyalbedo`, `canopynormal` and
+`canopyroughness` query parameters, each a power-of-two dimension from 256
+through 4096. Albedo, normal and roughness now default to 1024 after user review
+of the three-pose comparison. Explicit query values still override each map
+independently. Both compatible 2 m variants and both
+All/Grass-only debug layers remain available. The maps are captured from the
+same 4096² source, then smaller outputs are mip-filtered into independent
+render targets. Resolving packed data preserves alpha without blending:
+albedo includes height, normals include grass coverage, and roughness includes
+background color. The self-shadow outputs stay 4096², source shadow captures
+stay 8192², and the external visibility texture stays 2048². Temporary capture
+mipmaps are created only when a smaller output needs them and released with
+the capture target. Snapshots expose `bake.mapResolutions`, and map readback
+uses each output's dimensions. Texture estimates sum the exact mip chain.
+
+`tests/headless/visual/specs/grass_lod4_map_resolutions.pwtest.js` runs with
+`GRASS_LOD4_RESOLUTIONS=1` through the selected-test runner. Optional
+`GRASS_LOD4_RESOLUTION_PROFILES` selects comma-separated profile IDs such as
+`a4-n2-r2`. It records uploaded textures and three fixed 1920 × 1080 poses:
+2 m front close-up at 35° elevation, 48 m rear at 18°, and 95 m side at 30°.
+Grass and background linear-PBR contributions are measured independently
+using the material coverage mask. The close-up is a stress view, closer than
+the intended texture-only LOD range. Captures and the interactive comparison
+are under `tests/artifacts/screens/grass_debug_v2/lod4_map_resolutions/`.
+
+Production accounting includes All, both spatial variants, mipmaps, live LOD2
+perimeter leaves, and external visibility. Grass-only and optional card maps
+stay resident in the debug viewer but are reported separately. Common scene
+textures, geometry, bake scratch and driver allocation overhead are excluded;
+these figures are texture-format byte counts, not driver VRAM telemetry.
+
+| Albedo | Normal | Roughness | Production MB | Reduction |
+| ---: | ---: | ---: | ---: | ---: |
+| 4096 | 4096 | 4096 | 587.20 | 0% |
+| 4096 | 2048 | 4096 | 452.98 | 22.9% |
+| 4096 | 4096 | 2048 | 452.98 | 22.9% |
+| 4096 | 2048 | 2048 | 318.77 | 45.7% |
+| 4096 | 1024 | 1024 | 251.66 | 57.1% |
+| 2048 | 2048 | 2048 | 184.55 | 68.6% |
+| 2048 | 1024 | 1024 | 117.44 | 80.0% |
+| 1024 | 1024 | 1024 | 83.89 | 85.7% |
+
+On the RTX 3060 comparison, all lower-resolution profiles produced identical
+canopy-region pixels in the two distant captures because those views already
+sample coarser mip levels. At 2 m, 2048² normal/roughness with either 4096² or 2048²
+albedo differs by under 0.03/255 mean absolute display-channel values in the
+canopy regions; separated mean grass and background RGB changes stay below
+0.01%. Rare edge/highlight differences remain: with all three material maps at
+2048², 0.0054% of close-frame pixels differ by more than 8/255 in any channel.
+The 1024² normal/roughness cases soften close detail and shift mean
+grass channels by up to 2.16%; 1024² albedo further softens leaf edges.
+These are comparisons against the 4096² LOD4 baseline, not a claim of improved
+agreement with geometric LOD2 or a motion/flicker validation. The user selected
+1024² across the three material maps after finding no meaningful visual
+difference in the comparison. This is now the default, using **83.89 MB** for
+the production All texture set, an **85.7% reduction** from the 4096² baseline.
+Retaining both debug layers and optional border atlases with only the 1K
+profile uses **229.29 MB**. The live A/B selector retains both 4K and 1K sets
+for instant switching: **1,230.33 MB** of canopy maps, or approximately
+**1,303.03 MB** including the external visibility map and optional border
+atlases. Production figures above still describe just the chosen All profile.
+`bake.estimatedTextureBytes` describes the selected profile across both debug
+layers and tile variants; `bake.residentTextureBytes` counts all retained canopy
+profiles, deduplicating shared maps. These exclude external visibility and
+border atlases. The resolution comparison report adds inactive profile bytes
+to its debug total without adding them to production usage.
+The integration check verifies these default map dimensions and unchanged
+shadow resolutions. The tile-boundary reference check explicitly requests 4096²
+maps so its existing high-resolution seam measurements remain comparable.
+`grass_debug_v2_lod4_resolution_options.pwtest.js` also checks both tile variants,
+all nine fields, shared shadow IDs/counters, camera preservation, mixed-mode
+selection and legacy links. Three-view captures are under
+`tests/artifacts/screens/grass_debug_v2/lod4_resolution_options/`.
+
+#### Compatible 2 m LOD4 variants and distant scale
+
+The current layout contains 2,681 leaves per 2 × 2 m source. Both variants use
+1024² color/height, world-normal/grass-mask and roughness/soil maps, plus 4096²
+self-shadow maps, with 8192² source shadow captures. The original source leaf shapes, normals,
+materials and per-square-metre density are preserved. The second variant moves
+only interior shoots; any leaf or projected sun shadow reaching the outer 8 cm
+band stays exactly equal in both variants. Candidate moves cannot enter that
+band. Periodic copies complete all four sides and corners. The two variants
+therefore support either neighbor on any side, including self-shadow continuity.
+The compiled pair changes 989 shoots and shares 361, and occupies 2,972,606 bytes.
+Offline compilation took 151.1 s; a fresh normal scene loaded in 2.22 s and its
+render matched the compilation render pixel for pixel. These are startup figures.
+With the corrected HDR preview, full-resolution rendered refinement reduced its
+own initial pattern objective by 38.2% for A and 31.5% for B; every evaluated
+angle improved. This measures refinement of each initialized tile, not an
+equivalent percentage improvement over the previous 1 m scene. Both retain
+the source's masked color and coverage gates, with zero clipped samples in the
+verification views.
+
+All texture channels select A/B with the same checkerboard tile parity. Tiles
+stay aligned with the fixed source sun; rotating the baked shadows is not used.
+The near scale is 2 m and the far scale is 4 m, with a smooth 24–80 m transition.
+The material shades both scales independently inside this transition and blends
+their linear radiance before tone mapping, color conversion and fog. Outside
+the transition it evaluates only one scale. This preserves the lighting energy
+of each endpoint instead of interpolating and renormalizing normals or mixing
+coverage before lighting. Native mipmapping and anisotropy replace the former
+forced 2 cm filter. Scale transitions allocate no additional textures.
+
+The optional **LOD4 border** control compares original LOD2 leaves with fixed
+upright 2 m alpha cards, 1 m remainder cards, then original LOD2 leaves for
+corners, crossing blades and uncovered residual strips. Captures include separate
+front and back visibility with unlit color, source normals and roughness; the
+cards receive live lighting and the stable LOD2 scene shadow map. The 12 m patch
+uses 20 large and four small cards, representing 2,673 of the 2,960 perimeter
+leaves, retaining 287 as geometry. Both choices are built for immediate A/B
+switching and share their resources across all field clones. This comparison
+therefore retains the card atlases even when original leaves are selected.
+
+Regression coverage includes independently restored source geometry and exact
+periodic continuations for both variants, source/shadow boundary protection,
+full-shader radiance interpolation, both card faces and live light response,
+resource disposal, ordinary loading without optimizer imports, and material-mask
+comparisons across camera elevations, bearings and distances. Masked color
+comparisons keep grass and background statistics separate. The height/flatness
+limitations of a textured canopy at close range remain; LOD4 targets distant views.
+
+The final paired source passes 99 camera poses (396 separated grass/background
+comparisons across both layer modes). Maximum mean grass-channel error is 9.05%,
+grass-section P95 error is 19.20%, background mean error is 12.32%, and coverage
+difference is 4.52 percentage points. A bare-soil-only low-elevation correction
+addresses the separate Grass-only mode; merged litter retains its existing
+calibration. Eight additional specular-isolation views show merged-background
+reflections are muted rather than producing excess bright glints: canopy
+luminance 0.303–0.404 versus 0.372–0.899 for LOD2. Reflection detail is therefore
+still approximate; this pass retains merged litter. Evidence is under
+`tests/artifacts/screens/grass_debug_v2/lod4_color_match/views-paired-hdr-final/`
+and `views-paired-hdr-reflections/`.
+
+Resident texture accounting includes mipmaps, both All/Grass-only layers and
+the external canopy shadow-visibility map; textures are shared across fields.
+
+| Strategy | GPU texture MB (decimal) | MiB |
+| --- | ---: | ---: |
+| Previous single 1 m source | 587.20 | 560.00 |
+| Two 2 m sources, excluding optional border atlases | 1,168.81 | 1,114.67 |
+| 4096² comparison build, including border atlases | 1,235.92 | 1,178.67 |
+| Selected 1024² material maps, both debug modes and border atlases | 229.29 | 218.67 |
+
+Both border options stay resident for immediate switching, so selecting leaves
+does not free the 67.11 MB card atlases. Their retained CPU pixel buffers add
+50.33 MB. Common soil/environment maps, scene shadow maps, framebuffers and
+driver overhead are excluded. These are format-and-dimension byte counts, not
+driver VRAM measurements. The distance blend adds no texture allocation. Bake
+scratch is released between variants; the larger final pair increases memory
+even though its world coverage is larger. Compiled layout JSON is a separate
+2.97 MB disk asset; final material textures are still generated at startup.
+
+The final RTX 3060 / Chrome 154 benchmark uses 1920 × 1080, DPR 1, 4× MSAA,
+merged litter and cached LOD2 shadows, with three rotating rounds of 120 GPU
+samples per representation after 60 warm-up frames. Whole-scene means include
+post-processing, but exclude startup and shadow regeneration:
+
+| View | LOD2 | LOD4 / live border | LOD4 / card border |
+| --- | ---: | ---: | ---: |
+| One field overview | 6.187 ms | 5.419 ms | 5.429 ms |
+| Nine fields framed | 6.991 ms | 5.209 ms | 5.051 ms |
+| Close preset | 4.243 ms | 4.668 ms | 4.670 ms |
+
+Cards improve the nine-field mean by only 3.0% versus the live border and offer
+no gain in the other views. Dedicated outside-edge, corner and grazing captures
+show only 71.25%, 53.35% and 62.46% of the original border silhouette coverage,
+respectively. Although border triangles fall from 5,920 to 670, LOD2 leaves
+remain the default for fidelity. LOD4 itself helps distant multi-field rendering
+but is slower than LOD2 in the close preset. GPU clocks were not locked; the
+previous strategy's control timings differed, so absolute old/new times should
+not be interpreted as an isolated implementation speedup. Raw blocks, memory
+inventory and captures are in the `lod4_variants/` artifact directory.
+
+An independent rendered-pattern check compares the published pair with the same
+initializer without rendered refinement across 48 held-out camera poses. It
+integrates 8 × 8 subcells over four repeats at the actual mesh height, preventing
+individual leaf pixels from aliasing into the low-frequency metric. Mean contrast
+falls 8.74% (0.0097586 to 0.0089059); the worst view rises 1.13%, within the
+unchanged 5% per-view limit. Sparse single-pixel sampling had produced two false
+failures; a 1/16/64-sample convergence diagnostic is retained with the captures.
+The two variants' eight material boundary strips are byte-identical, while
+69–71% of their albedo/normal interior pixels differ. Periodic completion matches
+the independent full 3 × 3 source render pixel for pixel.
+
+**LOD2+4** assigns one representation to each field in a fixed checkerboard:
+the center and four diagonal cells use LOD2; the four cardinal neighbors use
+LOD4. With one field selected, the center remains LOD2. Later-enabled fields
+keep their assigned LOD. The camera and layer choices stay fixed while switching.
+Only LOD4 fields have canopy cutouts in their ground; LOD2 fields retain the
+selected litter treatment. Counters sum the actual LOD used by each active field.
+The URL `?lod=LOD2%2B4&fields=9` opens this comparison directly (encode the plus).
+`grass_debug_v2_lod24.pwtest.js` checks cell alternation, reversible field counts,
+rendered counters, ground intersections in every layer/treatment, and unchanged
+shadow pixels and generation counts when switching LODs or rotating the camera.
+
+**LOD2+3+4** cycles the three representations along both grid axes, with LOD2
+at the center. Nine fields contain three of each LOD; enabling or hiding fields
+preserves their assignment. LOD3 fields display compact geometric leaves over
+the original litter/soil. Only LOD4 fields use canopy ground cutouts; both share
+the same cached LOD2 shadows. Counters sum the active representations. Select this mode in the
+LOD dropdown or open `?lod=LOD2%2B3%2B4&fields=9`. The mixed-LOD test above
+also checks this mode's mesh visibility, coverage, counts and shadow reuse.
+
+This first version is intended for distant fields. A single overhead capture
+cannot preserve interior blade parallax or the low-angle silhouette. Filtered
+source heights and normals also approximate several leaves with one sample.
+These differences and the steep textured ramp remain visible in deliberately
+close comparison captures; the revised colors are closer, not identical.
+The geometric fringe retains the outer silhouette and leaf-shaped ground
+shadows. Automatic selection or cross-fading between LOD2 and LOD4 is not
+implemented; the texture-scale transition operates within LOD4.
+
+
+The later material-mask color calibration was checked with two alternating
+120-sample blocks per LOD/view at the same resolution and MSAA settings.
+LOD2 → LOD4 means were overview 4.276 → 4.460 ms (+4.3%), rear
+5.599 → 4.615 ms (−17.6%), and nine framed fields 7.003 → 4.337 ms (−38.1%).
+This short check supports a multi-field benefit, not a uniform speedup; the
+single-field overview was slightly slower. Raw blocks and metadata are under
+`tests/artifacts/screens/grass_debug_v2/lod4_color_match/performance/`.
+
+The opt-in `grass_lod4_canopy_comparison.pwtest.js` benchmark uses six
+alternating blocks of 120 GPU samples per LOD/camera, after 60 warm-up frames
+(720 samples each), at 1920 × 1080, DPR 1, 4× MSAA, All + Merged soil. The
+RTX 3060 / Chrome 154 confirmation run of the initial 7.5 cm / 15 cm-ramp
+version measured the following complete-scene
+means; cached-shadow sampling and post-processing are included, loading and
+shadow refresh excluded:
+
+| View | LOD2 | LOD4 | GPU time reduction |
+| --- | ---: | ---: | ---: |
+| One field · overview | 5.749 ms | 4.793 ms | 16.6% |
+| One field · rear | 5.526 ms | 4.771 ms | 13.6% |
+| One field · close-up | 3.249 ms | 2.903 ms | 10.7% |
+| Nine fields · frame all | 6.477 ms | 3.727 ms | 42.5% |
+| Nine fields · camera framed for one | 6.992 ms | 4.102 ms | 41.3% |
+
+The first shorter run had high variability and is retained separately.
+Desktop GPU clocks were not locked; per-block GPU clock/power observations,
+P99s and raw samples are saved alongside matching screenshots in the LOD4
+artifact directory. `REPORT.html` presents the full comparison.
+
 ### Navigable exported litter field
 
 `debug_tools/grass_litter_scene.html` opens the current 12 × 12 m,
 96,000-leaf scene from the gallery's `96000_leaves.glb` and `scene.json`.
-It retains the exported geometry and masked substrate, restores the shared
+It retains the exported grass geometry and offers merged or alpha litter, restores the shared
 grass transmission material, and reapplies the recorded sun, exposure,
 environment and shadow settings. It requires the existing local scene
 artifacts; a missing export produces a visible loading error.
@@ -3173,23 +4364,29 @@ map reused. The header counts camera-visible field leaves and mesh triangles
 Counts use the renderer's bounding-sphere frustum test: a partially visible mesh
 is counted in full, and occluded triangles are not subtracted. They update while
 moving or turning the camera, resizing, or changing fields, LOD or layers.
-The complete single-field overview in Reference has 96,000 leaves / 4,236,154 triangles;
+With Alpha litter, the complete single-field overview in Reference has 96,000 leaves / 4,236,154 triangles;
 the close-up excludes off-camera litter patches and table meshes.
-The LOD selector switches between Reference, LOD0, LOD1 and LOD2 without moving the camera or
-changing the All / Grass only / Soil choice. Only the selected LOD is rendered
-and casts shadows; selection refreshes shadow maps and resets telemetry samples.
-When the complete field is in view, LOD1 shows 1,344,688 scene triangles in All,
-1,344,590 in Grass only, and 590 in Soil. Reference remains the default.
+The LOD selector switches between Reference, LOD0, LOD1, LOD2, LOD3, LOD4,
+LOD2+4 and LOD2+3+4 without moving the camera or changing the All / Grass only /
+Soil choice. LOD3 shows compact geometric leaves; LOD2+4 shows
+the per-field checkerboard and LOD2+3+4 cycles all three levels across fields.
+LOD2, LOD3 and LOD4 share the cached LOD2 shadow
+source described above. Changes to other shadow sources refresh the cache,
+and every selection resets telemetry samples.
+When the complete field is in view, LOD1 shows 960,688 scene triangles in All,
+960,590 in Grass only, and 590 in Soil. Reference remains the default.
 
 The Fields menu selects 1–9 copies of the original 12 × 12 m field, defaulting
 to one. The original stays at the origin. Additional cells fill the north,
 east, south, west, northeast, northwest, southeast and southwest positions of
 a fixed 3 × 3 grid, with 13 m centre spacing and a 1 m soil gap between field
 boundaries. Nine fields span 38 × 38 m, containing 864,000 leaves. Each copy
-shares all four LOD geometries, all materials and textures, and the litter meshes;
+shares the four geometric LOD meshes, the sixteen compact LOD3 chunks, LOD4 canopy/fringe,
+all materials and textures, and the litter meshes;
 only transforms and visibility are independent. The soil and shade table are
 single objects, not duplicated per field. LOD and layer selection apply to
-every field, including copies enabled later.
+every field, including copies enabled later; the mixed modes use the fixed
+spatial assignments described above.
 
 Field selection preserves the camera. The Frame fields button fits all enabled
 fields from the original overview direction; saved viewpoints and Reset view
@@ -3197,8 +4394,10 @@ still restore their original poses. The shadow frustum expands to cover the
 enabled grid and retains the original world-space depth bias. Returning to one
 field restores the original shadow extent, light position and bias.
 
-For all nine fields fully in view, All has 38,120,666 triangles at Reference,
-15,553,472 at LOD0, 8,641,472 at LOD1 and 1,729,472 at LOD2. Grass only removes 882 litter triangles; Soil retains only
+With Alpha litter and all nine fields fully in view, All has 38,120,666 triangles at Reference,
+15,553,472 at LOD0, 8,641,472 at LOD1, 1,729,472 at LOD2,
+and historically 581,162 for the retired fixed-triad LOD3 layout. The current
+compact-leaf LOD3 is specified below. For the geometric LODs, Grass only removes 882 litter triangles; Soil retains only
 590 soil/table triangles. On-camera field counts exclude disabled and
 frustum-culled grass meshes. The snapshot reports both total configured
 geometry and camera-visible counts; the header displays the latter.
@@ -3259,3 +4458,490 @@ unoccluded leaf in the actual exported field, compares the correction with
 a temporary unshadowed reference, and separately verifies that the screen
 still darkens the grass. Before/after images and measured differences are
 under `tests/artifacts/screens/grass_debug_v2/leaf_banding/`.
+
+### LOD3 compact leaf detail at gameplay bus distances
+
+The active field LOD3 preserves actual LOD2 leaf silhouettes over the original
+litter/soil surface. It replaces the shallow canopy-relief representation,
+which remained too close visually to LOD4. The target is fidelity at 14–24 m
+with rendering cost between LOD2 and LOD4, rather than a single triangle budget.
+The shoot-study representations are unchanged.
+
+`GrassDebugV2FieldDetail.js` ranks LOD2 leaves by geometric surface area and
+retains the largest 85%, resolving ties by source index. Each retained leaf
+keeps both original triangles, normals, UVs and vertex colors. Width increases
+4% along its root axis, while height stays within the original maximum.
+The 12 × 12 m field contains 81,600 retained leaves / 163,200 triangles.
+Sixteen 3 × 3 m chunks preserve complete leaves at their boundaries and permit
+independent frustum culling. All field copies share the geometry and material.
+
+Vertex positions are signed normalized 16-bit values relative to each chunk;
+normals use normalized signed 8-bit values, linear colors normalized unsigned
+8-bit values, and UVs normalized unsigned 16-bit values. The shader decodes
+positions before world-position, lighting and shadow calculations. CPU culling
+bounds use decoded metres and include quantization tolerance. The material
+keeps the original PBR environment/direct lighting and thin-leaf transmission,
+using geometric normals and uniform roughness instead of the unresolved fine
+normal/roughness maps. A cheaper diffuse-only experiment changed lighting more
+and was rejected. GPU geometry storage is **7,833,600 bytes / 7.47 MiB**, versus
+**34,560,000 bytes / 32.96 MiB** for the full LOD2 geometry. LOD3 adds no textures
+and performs no runtime captures. These are geometry allocations, not total
+debug-page VRAM; the retained LOD4 profiles/debug data are unchanged.
+
+LOD3 receives the cached LOD2 shadows. Switching LOD2/3/4, mixed modes or camera
+poses does not regenerate them. LOD3 uses the same litter/soil treatment as
+LOD2, including removal of hidden soil under merged litter. It has neither a
+raised opaque canopy nor a distance-dependent shrinking/fading relief layer.
+The old relief implementation remains available as historical debug code; its
+old integration tests are explicitly superseded by the bus-camera test.
+
+The View menu adds nine **Bus** presets: 14, 19 and 24 m horizontal distance
+from the center field, at azimuths 40°, 220° and 130°. All use the canonical
+Grass Lab `gameplay_bus` height of **4.5 m**, **13.585991° downward pitch**,
+and the game's **55° FOV**. This is the fixed Grass Lab gameplay preset, not a
+new pitch computed by aiming at the ground at each distance. The older eight
+views retain their indices and behavior. `#bus_19m_rear` opens the middle rear
+view directly; LOD2+3+4 remains available for neighboring-field comparisons.
+
+`grass_debug_v2_lod3_bus.pwtest.js` validates packed data/bounds, maximum height,
+material inputs, all nine camera poses, separate pure-grass color masks,
+shared cached shadows, and matching LOD2/3/4 captures. The central-field image
+MAE is 3.8–4.9 levels out of 255; this measures geometry and background coverage.
+The separate grass-only mean RGB difference stays below 1.6 levels per channel;
+soil and litter are excluded from that color metric. The remaining difference
+is principally omitted small leaves and slightly wider retained leaves, so
+pixel identity or identical close-up appearance is not claimed.
+
+The RTX 3060 / 1600 × 1000 / nine-field All-mode run with merged litter and
+4× MSAA gave these representative total GPU render times, including post-processing:
+
+| Bus pose | LOD2 ms | LOD3 ms | LOD4 1K ms |
+| --- | ---: | ---: | ---: |
+| 14 m front | 2.97 | 2.12 | 1.37 |
+| 19 m rear | 2.80 | 2.20 | 1.45 |
+| 24 m side | 3.23 | 2.55 | 1.48 |
+
+LOD3 was 19–29% faster than LOD2 and slower than LOD4 in every measured pose.
+Across the nine poses the means were 3.03 / 2.31 / 1.43 ms for LOD2 / LOD3 /
+LOD4 respectively. A preceding complete pass had the same ordering in every pose.
+The optional `GRASS_LOD3_BUS_BENCHMARK=1` timing uses sustained batches to avoid
+the GPU downclocking variance seen in short VSync-limited samples: three
+rotating treatment orders, six measured batches of twelve complete renders,
+with warmup, GPU disjoint-query rejection and unchanged shadow-generation
+checks. Values describe sustained GPU rendering, not uncapped application FPS
+or startup/bake time. Captures, raw samples and an interactive split comparison
+are gitignored under `tests/artifacts/screens/grass_debug_v2/lod3_bus_detail/`.
+Exploratory shading/packing candidates remain in the opt-in
+`grass_lod3_bus_candidates.pwtest.js` and its `lod3_bus_candidates/` artifacts.
+
+### Distance appearance continuity for LOD2 / LOD3 / LOD4 (2026-10-02)
+
+The field viewer applies a continuous material/height treatment from **8 to
+30 m camera-to-surface distance**, independently of the manually selected LOD.
+This is a shared appearance envelope, not a new representation switch, alpha
+dissolve, per-frame capture or temporal filter. The 14/19/24 m bus presets still
+measure horizontal range to the field center; individual vertices/pixels may
+be nearer or farther than that label.
+
+`GrassDebugV2DistanceAppearance.js` installs the dedicated
+`grass_field_distance*` shader chunks on live LOD2, compact LOD3 and LOD4's
+geometric perimeter leaves. It gradually mixes 85% of the direct diffuse
+angular response toward a broad warm leaf response `(0.32, 0.30, 0.255)` at the
+far end. This reduces bright sun-facing blades and their neighboring dark
+angular lobes while retaining incoming light color, cast-shadow visibility,
+indirect/environment lighting and specular/roughness behavior. The values are
+tuned for this scene's lighting and bus views, not a universal foliage BRDF.
+
+The PCF shadow filter widens with the screen-pixel footprint, up to six shadow
+texels, over the same distance range. It uses the existing comparison taps and
+the existing cached shadow map. There is no extra shadow render or sample loop.
+Non-PCF shadow modes retain their standard lookup. Fine shadow contrast is
+therefore softened together with leaf lighting rather than leaving sharp
+dark flecks under subdued highlights.
+
+The lower **4 cm** of each leaf remains fixed. Above it, the vertex shader
+removes at most 30% of the remaining height. The highest source tip is 14.14 cm;
+its far-limit displayed height is approximately **11.10 cm**, closer to LOD4's
+10 cm canopy. Geometry bounds remain conservatively based on the source.
+After projection, the shader restores the original source position for cached
+shadow lookup, avoiding a mismatch against the unchanged LOD2 shadow caster.
+This is a small silhouette approximation: the cast shadow retains the original
+leaf height. No geometry allocation or source placement is changed.
+
+LOD4's top receives a smaller, smooth lighting correction, strongest when the
+camera and sun are on the same side. It limits the brightening caused by
+filtered normal texels converging toward an average orientation. Only the
+leaf contribution is adjusted; the separate litter/soil contribution, wall
+lighting and upper-wall litter blend are preserved. A full-strength uniform
+angular average on LOD4 was rejected because it darkened the other bearings.
+The treatment applies to both 1K and 4K material profiles.
+
+Live LOD2 owns a separate material and metadata object created **after** the
+captures. Reference/LOD0, LOD1, baked source materials and static shadow
+geometry retain their previous contracts. The live LOD2 material is shared
+across field copies and perimeter meshes, and is disposed with the scene.
+The scene snapshot exposes `distanceAppearance`. Added texture and geometry
+storage is **zero**; the cost is shader arithmetic and one material/program
+variant, not another image or mesh layer.
+
+Validation uses `grass_lod_distance_candidates.pwtest.js` with
+`GRASS_DISTANCE_CANDIDATES=1`, `GRASS_DISTANCE_FINAL=1`,
+`GRASS_DISTANCE_VERIFY=1` and optional `GRASS_DISTANCE_BENCHMARK=1`.
+The final run captured **102 images**: before/after LOD2/3/4 at nine bus poses
+plus eight independent 19 m bearings, with fixed gameplay height and pitch.
+All renders retained the shadow generation and passed WebGL/error checks.
+The test guards against accidentally modifying the reference material.
+
+Across the nine bus poses, the LOD3-to-LOD4 neighboring-pixel contrast gap
+decreased from **9.08 to 4.24** display-luminance levels (**53.3%**); the eight
+independent bearings decreased from **9.46 to 4.61** (**51.3%**). The 90th
+percentile highlight gap decreased by **48.4% / 49.3%** respectively. These
+are image-structure metrics in eight fixed interior sections, not grass/soil
+average-color fits. Pure-grass RGB uses separate rendered masks and is stored
+independently; not every bearing's grass color error improves. Side color and
+the flat LOD4 top remain visible, especially in close foreground views.
+
+Sustained 1600 × 1000, nine-field All-mode GPU timings (ms, including
+post-processing) use three rotated LOD rounds, six batches of twelve renders,
+warmup and disjoint-query rejection. The original benchmark removes the new
+shader hooks, rather than merely setting their strengths to zero:
+
+| 19 m bus pose | LOD2 original / new | LOD3 original / new | LOD4 1K original / new |
+| --- | ---: | ---: | ---: |
+| Front | 4.14 / 4.10 | 2.87 / 2.99 | 1.78 / 1.86 |
+| Rear | 3.39 / 3.27 | 2.63 / 2.62 | 1.75 / 1.75 |
+| Side | 3.44 / 3.37 | 2.71 / 2.76 | 1.76 / 1.72 |
+
+LOD3 remains between LOD2 and LOD4 in every pose. The small timing differences
+include run variance; this is an appearance change, not a claimed speedup.
+The separate LOD2/3 fidelity test now applies the same vertex treatment to
+its white-leaf masks. It passes all nine views with central-field RGB MAE
+**3.67–4.16 / 255**, and pure-grass mean channel error at most **1.81 / 255**.
+The 1K/4K switch regression covers camera, textures and shadow-cache sharing.
+
+The interactive before/after and cross-LOD report, raw samples and captures
+are under `tests/artifacts/screens/grass_debug_v2/lod_distance/final/`.
+Exploratory captures are in sibling `candidates/`, `shadow-filter/`,
+`canopy-response/` and `integrated/` folders. Network startup failures on the
+existing port-8001 server were isolated by using the dedicated test server;
+they were not rendered-image failures. A validation failure found shared
+material metadata on the shader-contract clone; giving the live material its
+own metadata object fixed it before the final captures and benchmark.
+
+### Historical LOD3 canopy with aligned single-triangle leaves
+
+This superseded field LOD3 used LOD4 plus sparse opaque leaf facets. The previous
+camera-dependent card captures are no longer allocated or updated by the field
+viewer. The plant study retains its separate historical representations.
+
+After restoring the two compiled 2 × 2 m leaf layouts, the relief builder selects
+one projected triangle per chosen source leaf. It checks ten interior samples
+against the bake's grass mask and height: at least eight must be grass pixels
+within 4 mm of that source facet. A deterministic selection with 7.5 cm minimum
+periodic spacing retains 192 facets per tile variant, twice the initial density.
+UV footprints stay inset to 82% of the source triangle to avoid sampling outside
+the selected leaf. The same A/B parity and source XZ-to-UV mapping as LOD4 repeat
+the selection across the field. Incomplete triangles at the perimeter are omitted
+in favor of the existing border treatment.
+
+The 12 × 12 m field adds **6,489 single triangles** (initially 3,268).
+Density remains 48 triangles/m² before perimeter trimming. Template dimensions
+are 20% larger than the preceding subtle relief pass: widths are **6–9 cm**, with
+a projected length of two thirds the width. Near the camera they use 60% scale
+(**3.6–5.4 cm**) and grow smoothly between 2 and 12 m to full template size,
+which is retained through 24 m.
+The tip varies continuously from center to 70% toward either end of the base.
+Seeded random yaw covers 360° and inclination ranges from −5° to +5° relative
+to horizontal. Shapes vary with tile coordinates as well as source leaf ID.
+Negative inclination raises the base instead of pushing the tip underground.
+The base clears the local canopy and rise is clamped against the tallest source
+leaf's absolute height, including the canopy height. The measured highest vertex
+is **10.98 cm**, below the source limit of **14.14 cm**.
+
+Only geometry widens/rotates: albedo, normals, roughness and self-shadow UVs remain
+on the chosen original leaf, rather than stretching a patch of neighboring litter
+across the triangle. From **24 to 64 m**, a quintic falloff shrinks each triangle
+uniformly toward its center and lowers it toward the local canopy, with 0.4 mm
+depth separation. This replaces the earlier 20–24 m morph between differently
+rotated footprints, which could cross through a degenerate triangle. The new
+transition preserves shape and winding, smoothly reaches zero projected area,
+and only then discards the triangle. There is no alpha blending or screen-door
+dither. Bounds contain the template and center for the full scale range.
+The mesh never rotates with the camera.
+
+The earlier 12–20 cm footprints covered too much litter with magnified pure-leaf
+texels. In addition to reducing their area, relief now uses the displaced ground
+footprint as a lower bound on sampling-gradient magnitudes for all material maps.
+Albedo, normals, roughness and self-shadow visibility therefore filter at a scale
+consistent with the canopy. Captured world normals and the complete canopy
+lighting equations remain shared with LOD4.
+
+Relief uses LOD4's full material evaluation and the same albedo, world-normal,
+roughness, A/B tile, self-shadow and cached external-shadow textures. Back-face
+visibility does not flip the captured leaf normal. All/Grass-only and both
+1K/4K resolution choices propagate to relief; LOD3 uses the most recently
+selected LOD4 resolution, initially 1K. The geometry is double-sided, opaque,
+and adds no alpha card maps, alpha blending, shadow redraws or runtime captures.
+LOD3 retains LOD4's ground cutout and live LOD2 perimeter treatment. Counts include
+the relief triangles without counting the represented source leaves twice.
+
+Added vertex buffers total **1,090,152 bytes (1.09 MB)**, shared by all nine fields;
+additional texture allocation is **zero**. Current field grass geometry totals
+13,761 triangles including canopy and perimeter, compared with 7,272 at LOD4 and
+192,000 at LOD2. Scene/table/soil counts depend on visibility and layer choices.
+
+`grass_debug_v2_lod3_relief.pwtest.js` checks projected alignment, both resolution
+sets, final height, tip offsets, width, inclination, randomized yaw,
+material/geometry sharing, ground removal, shadow cache stability, and
+five camera poses including low front/rear/side views. Captures and validation
+are under `tests/artifacts/screens/grass_debug_v2/lod3_relief_range/`. The retired
+runtime-card field integration test and benchmark are explicitly skipped;
+their implementation and prior evidence remain available for reference.
+
+In the preceding subtle relief pass, a flattened-relief control versus the bare canopy measured **0.092/255** mean
+absolute display-channel difference over 738,997 common grass pixels, with
+99% within 3/255 per channel. This checks material continuity separately from
+the intended parallax; it does not claim exact pixel equality for elevated
+leaves. Those earlier results remain in `lod3_subtle_relief/flat_color_validation.json`.
+
+`grass_debug_v2_lod3_color_transition.pwtest.js` measures grass coverage from the
+material mask and isolates grass lighting from ground/litter in linear HDR.
+In the preceding subtle relief pass, across six front/rear/side views at 5–45 m, the largest per-channel difference
+in a sampled section was **0.474% of reference leaf luminance**, with at most
+**1.16 percentage points** of additional grass coverage. The test also compares
+filtering enabled/disabled, and measures the disappearing silhouette at a fixed
+camera with one-meter fade steps. Coverage decreases monotonically from 22,139.5
+pixels at 12 m to zero at 48 m, with no step larger than 6.72% of the initial
+coverage. These measurements use the default 1K profile.
+
+For that earlier pass, matched screenshot differences against LOD4 fell from 8.45–12.68 to 0.67–1.66
+display levels out of 255 over the four near/overview grass-reference regions.
+This screen difference includes the intended added geometry; the separate
+material-mask test above verifies leaf color without averaging in litter.
+Reports are `before_after_difference.json` and `masked_color_transition.json`.
+
+The 20% size increase and 24–64 m fade retain the same source selection and
+lighting. Current six-view masked checks measure at most **0.955%** per-channel
+lighting difference relative to LOD4 leaf luminance and **1.96 percentage points**
+of added leaf coverage. At a fixed camera, the distance probe retains 31,841
+silhouette pixels through 24 m, 30,177.5 at 30 m, and 3,210.75 at 48 m, reaching
+zero at 64 m. The fade remains monotonic with each one-metre step below 9% of
+the initial coverage. Current measurements are in
+`lod3_relief_range/masked_color_transition.json`; previous measurements remain
+under `lod3_subtle_relief/`.
+
+### LOD3 twenty-metre fidelity candidate study (not adopted)
+
+The shallow relief remains visually close to LOD4. A 20 m comparison isolates
+two causes: very little vertical silhouette above the 10 cm opaque canopy, and
+the canopy's baked grass showing through live blades instead of the original
+soil/litter background. Reusing the full LOD2 geometry over the original ground
+reproduces LOD2; using it over a lowered green canopy still changes color and
+coverage. Widened single triangles and original upper-face-only triangles did
+not match the full leaf shape well enough from opposing views.
+
+An experimental candidate keeps the largest 75% of leaves by surface area,
+preserves their two original triangles, vertex colors, UVs and lighting normals,
+and widens their horizontal footprint by 12%. It renders over the original ground,
+without the green canopy. At 1600 × 1000 and 20 m from the field center, its mean
+absolute display-channel error against LOD2 over the same field footprint is
+7.24 (front), 6.90 (rear), 8.35 (low side), and 3.76 (high angle), versus
+33.09, 30.30, 30.31, and 29.38 for current LOD3. This metric measures the complete
+rendered footprint; it must not be described as an isolated leaf-color score.
+
+The candidate uses 144,000 grass triangles versus LOD2's 192,000. Hardware GPU
+measurements, three alternating 90-sample blocks per treatment/view after 30
+warm-up frames, showed no reliable performance benefit: front 5.250/5.196 ms,
+rear 5.213/5.052 ms, low side 4.305/4.484 ms (LOD2/candidate). Shadows remained
+cached. The candidate is not adopted because it changes the requested
+single-triangle-plus-LOD4 design, and triangle reduction alone has not reduced
+the rendering cost meaningfully. The subsequent bus-distance requirement is
+implemented by the compact-leaf strategy above, which also changes vertex
+storage, shading inputs and culling rather than only dropping triangles.
+
+The opt-in comparison is
+`tests/headless/visual/specs/grass_lod3_fidelity_candidates.pwtest.js`, enabled
+with `GRASS_LOD3_FIDELITY_CANDIDATES=1` or, including timing,
+`GRASS_LOD3_FIDELITY_BENCHMARK=1`. Captures, report and comparison page are under
+`tests/artifacts/screens/grass_debug_v2/lod3_twenty_meters/`.
+
+The first **3,268-triangle version's** RTX 3060 comparison at 1920 × 1080, DPR 1 and 4× MSAA used two
+interleaved rounds of 60 warm-up and 120 timed frames per LOD/pose. These are
+short local measurements, including cached shadow sampling and post-processing.
+No shadow refresh occurred inside a measured block.
+
+| Pose | LOD2 GPU ms | LOD3 GPU ms | LOD4 1K GPU ms |
+| --- | ---: | ---: | ---: |
+| One-field overview | 5.287 | 4.646 | 4.659 |
+| Close-up | 3.113 | 3.264 | 3.257 |
+| Nine fields | 7.751 | 4.648 | 4.583 |
+
+The relief cost is close to the canopy baseline in this run; small differences
+between LOD3 and LOD4 are within the observed run variation. LOD2 remains faster
+in the close-up pose. Raw samples and captures are under `lod3_relief/performance/`.
+These timings predate the wider, denser triangles and do not measure their cost.
+Reproduce with `grass_lod4_canopy_comparison.pwtest.js`, opting in using
+`GRASS_LOD4_BENCHMARK=1` and `GRASS_LOD4_BENCHMARK_LODS=LOD2,LOD3,LOD4`.
+
+### Historical LOD3 runtime patch impostors (512 fidelity prototype)
+
+This strategy was replaced by canopy relief and subsequently by compact leaf detail
+above. The following describes the earlier experiment and its measurements.
+
+In that experiment, LOD3 replaced the fixed-triad card strategy
+with camera-dependent captures of a representative 1 × 1 m patch from the
+existing LOD2 field. The leaf-authoring study and historical LOD3 benchmark
+results above retain their previous scope; those results do not measure this
+runtime strategy. LOD4 and its rendered-feedback bake are unchanged.
+
+The source preserves the selected leaves' geometry, vertex colors, source UVs,
+normal maps and roughness. Leaves crossing its boundary are completed from
+the opposite side before capture, including diagonal neighbors. Four clipping
+planes then restrict the capture to the owning metre's ground footprint.
+The camera is orthographic and fits the patch's projected volume, including
+leaf height, with 3 cm total padding. A card therefore represents a metre of
+ground and its grass volume; it is not an upright 1 m-tall square.
+
+Every completed view has 512 × 512 GPU textures containing:
+
+- linear, coverage-premultiplied albedo and alpha;
+- unoriented source-world normals and alpha;
+- leaf blade warmth, actual roughness and transmission, with coverage-weighted
+  source sun visibility in alpha;
+- unsigned-integer depth with nearest filtering.
+
+The three RGBA8 textures have mipmaps. All three capture passes share one
+depth texture and render directly on the GPU without CPU pixel readbacks.
+The display unpremultiplies filtered channel values by albedo coverage, reconstructs
+surface depth, and applies the scene lighting to captured leaf normals rather
+than to a flat card normal. Albedo and normals contain no baked lighting;
+sun visibility is retained separately in the surface texture. Their renderer
+viewport, scissor, clear values, clipping, XR,
+tone-mapping and shadow-update state are restored after each job.
+
+The display samples the cached image directly with explicit texture gradients.
+One depth lookup supplies surface depth; up to four nearby depth taps recover
+minified coverage whose center falls in a gap. If all five taps miss while
+filtered alpha still contains grass, the patch's center-plane depth is used.
+This bounds lookup cost and avoids rejecting thin leaves twice. It does not
+perform exact per-pixel parallax between captured views. Filtered alpha is
+passed directly to multisample coverage; thresholding its average at 0.5
+would erode thin leaves at distant and overhead views.
+
+Views are requested in 2-degree azimuth/elevation bins and shared across all
+enabled fields. A populated cached view is selected only within 2 degrees of
+the camera-to-patch direction. The cache holds at most 64 completed views,
+with one spare target while replacing an entry. A 512 view occupies about
+5 MiB for the three mipmapped color textures and shared depth; 64 populated
+views plus one spare are approximately 325 MiB, excluding other scene assets,
+geometry and driver overhead. A shared 2048² source-shadow render target adds
+approximately 32 MiB for its color and depth attachments. There is no separate
+full cache or source-shadow map per field.
+
+At most one complete capture job is submitted per visible frame. A job renders
+all three material channels before publication; partially refreshed images
+are never displayed. An existing suitable view remains visible while another
+is pending. A patch without a sufficiently close cached direction uses its
+original LOD2 leaves until a capture becomes available. The initial fidelity
+settings also retain LOD2 within 8 m of the camera, below the grass canopy,
+and in the outer 1 m-wide field perimeter. These fallbacks retain the original
+leaf ranges rather than independently distributing replacement leaves.
+
+View-to-view and view-to-geometry changes use a 300 ms complementary screen
+dissolve. The outgoing image and its target remain pinned until that transition
+finishes; its view error can temporarily exceed the normal selection limit.
+New camera requests do not replace either half of an unfinished transition.
+The cache fades unwanted in-use views out before recycling their targets, and
+capture submission waits when all eviction candidates are pinned. Near-camera
+geometry returns to cards beyond 9 m, giving the 8 m cutoff hysteresis. Fallback
+materials and small per-field blend textures are owned by LOD3, leaving the
+canonical LOD2 material and its shadow source unchanged. HUD leaf ownership
+counts one representation per patch even when both are drawn during a dissolve;
+triangle counts include both actual draws.
+
+This first version shares one source arrangement across the interior. It does
+not preserve exact correspondence with each unique LOD2 metre and can retain
+visible source repetition, especially across view changes. Single captured
+depth layers can correct modest viewpoint differences but cannot recover
+leaves that were hidden in that capture. These limitations must be evaluated
+from multiple camera elevations, directions and moving views before reducing
+fallback coverage or capture resolution.
+
+The field's stable LOD2 shadow source remains responsible for ground shadows.
+Impostor lighting separates the periodic source's own leaf shadows from
+external scene shade, avoiding shadow patterns from unrelated original leaves.
+A private 2048² directional map captures the source and eight surrounding
+periodic copies once. The image receiver is clipped to the owning metre while
+the shadow casters remain unclipped. Subsequent viewing directions reuse this
+source-shadow map and encode its visibility in the surface texture's alpha.
+External shade comes from the separate cached 2048² canopy shadow field.
+Camera-driven texture updates regenerate neither shadow source. Captured
+visibility is tied to the fixed source and sun direction; changing either
+requires rebuilding the capture cache. Normal lighting remains scene-driven.
+
+Runtime snapshots expose completed and pending views, capture/swap counts,
+selected view error, card/fallback counts, estimated texture bytes and CPU
+submission timings. Capture submission is part of the frame's GPU timing
+scope. Performance comparisons must include capture frames and moving-camera
+fallbacks as well as a stationary completed cache; no speedup is assumed from
+triangle counts alone.
+
+The runtime-impostor E2E comparison validates six camera poses from 15 to
+85 degrees elevation, using a separate white grass silhouette pass and
+opaque grass-only color samples. The 512 prototype measured silhouette
+coverage ratios of 0.919–1.047 against LOD2 and maximum RGB-channel error of
+0.122 relative to reference luminance. Gates require coverage within
+0.85–1.15 and channel error below 0.15. These figures describe the original
+ray-search prototype. Atomic publication, renderer-state
+restoration, stationary and look-only cache reuse, one-job submission and
+unchanged source/world shadow generation counts are also checked.
+
+The original ray-search prototype on an RTX 3060 at 1600 × 1000, with 90
+measured GPU frames after 60 warmup frames, gave the following means
+(milliseconds; capture work is included):
+
+| Fields | Camera | LOD2 | Runtime LOD3 |
+| --- | --- | ---: | ---: |
+| 1 | Stationary | 2.545 | 14.770 |
+| 1 | Moving | 2.883 | 13.138 |
+| 9 | Stationary | 6.498 | 15.160 |
+| 9 | Moving | 7.746 | 14.366 |
+
+The moving runs submitted 53 and 90 captures respectively; nine fields
+retained about 53–57% of leaves as LOD2 fallback under the 64-view cache cap.
+This established a fidelity baseline, not a performance improvement. The
+original depth search, material filtering and alpha coverage were expensive even
+after the cache stopped updating. GPU timings vary with the driver and load;
+full samples, percentiles, paired screenshots and validation are retained
+under the gitignored `tests/artifacts/screens/grass_debug_v2/lod3_runtime_512/`.
+
+The transition revision removes abrupt cache-view and LOD2-fallback swaps.
+Its integration test drives 120 moving frames, checks per-cell representation
+weights, and renders both halves of the actual dissolve shader separately.
+The latest run reported no abrupt weight changes, 119 blended frames, and
+49.95%/50.05% rendered coverage for the complementary masks (100% combined).
+Six camera poses still pass the unchanged silhouette and grass-only color
+gates. Unit tests cover in-flight retargeting and logical leaf ownership;
+the nine-field layout regression also passes. These checks do not establish
+perfect correspondence between the shared source patch and unique LOD2 leaves.
+
+The same 1600 × 1000 RTX 3060 benchmark after replacing the depth search and
+adding transitions gave these means in a subsequent 90-frame run:
+
+| Fields | Camera | LOD2 | Runtime LOD3 |
+| --- | --- | ---: | ---: |
+| 1 | Stationary | 2.173 | 14.793 |
+| 1 | Moving | 2.088 | 14.094 |
+| 9 | Stationary | 8.495 | 14.906 |
+| 9 | Moving | 6.035 | 11.298 |
+
+Moving runs included 53 and 43 captures. Nine fields retained about 53% of
+leaves as fallback while stationary and 68% at the end of the moving run.
+Stationary capture counts were zero, so the remaining cost is not solely
+runtime baking. Overlapping alpha coverage, texture sampling, per-pixel
+depth writes, lighting and fallback geometry still contribute to drawing
+cost; their individual shares have not been isolated. A preceding repeat
+measured 5.796 ms versus 13.974 ms for nine stationary fields, so timing
+variance is material and no speedup is claimed. This remains a fidelity
+prototype; LOD2 is faster in these comparisons. Current artifacts are under
+`tests/artifacts/screens/grass_debug_v2/lod3_runtime_transitions/`.

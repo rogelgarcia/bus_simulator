@@ -11,7 +11,7 @@ test('Field cursor measures visible surfaces without a triangle raycast', async 
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
     const folder = path.resolve('tests/artifacts/screens/grass_debug_v2/cursor_distance');
     await mkdir(folder, { recursive: true });
-    await page.goto('/debug_tools/grass_litter_scene.html?revision=cursor-distance-1#06_closeup');
+    await page.goto('/debug_tools/grass_litter_scene.html?litter=alpha&revision=cursor-distance-1#06_closeup');
     await page.waitForFunction(() => !!window.__grassLitterReadiness);
     await page.evaluate(() => window.__grassLitterReadiness);
     const state = () => page.evaluate(() => window.__grassLitterScene.getSnapshot().cursorDistance);

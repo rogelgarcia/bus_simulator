@@ -1,7 +1,7 @@
 // Both grass representations share thin-leaf transmission and direct-light canopy shading.
 // @ts-check
 import * as THREE from 'three';
-import { grassBladeLightingShader } from '../../shaders/materials/grass/GrassBladeLightingShaderLoader.js';
+import { grassBladeLightingShader } from '../../shaders/materials/grass/GrassBladeLightingShaderLoader.js?v=lod3-w-1';
 import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
 import { registerMaterialShaderHook } from '../../shaders/core/MaterialShaderHookRegistry.js';
 

@@ -85,6 +85,10 @@ test('Bake graph orders dependencies, deduplicates prerequisites and rejects inv
     assert.equal(production.filter(v => v.id === 'lighting/source').length, 1);
     for (const id of ['lighting/shadows', 'lighting/occlusion', 'lighting/preview-reference', 'visibility', 'materials/grass']) assert.ok(production.some(v => v.id === id));
     assert.ok(bakeJobs.some(v => v.id === 'lighting/illumination/preview'));
+    const layout = planBakes(bakeJobs, 'materials/grass/lod4-layout');
+    assert.equal(layout.length, 1);
+    assert.deepEqual(layout[0].configurationPaths, ['browserExecutable']);
+    assert.ok(!production.some(v => v.id === 'materials/grass/lod4-layout'));
     const shadows = planBakes(bakeJobs, 'lighting/shadows').map(job => job.id);
     assert.ok(shadows.indexOf('lighting/shadows/cutouts') < shadows.indexOf('lighting/shadows/provisional'));
     assert.ok(shadows.indexOf('lighting/shadows/provisional') < shadows.indexOf('lighting/shadows/parity'));

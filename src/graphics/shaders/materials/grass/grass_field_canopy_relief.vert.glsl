@@ -1,0 +1,9 @@
+vec3 grassReliefWorldCenter = (modelMatrix * vec4(grassReliefCenter, 1.0)).xyz;
+float grassReliefDistance = distance(cameraPosition, grassReliefWorldCenter);
+float grassReliefFade = clamp((grassReliefDistance - GRASS_RELIEF_FLATTEN_START) / (GRASS_RELIEF_FLATTEN_END - GRASS_RELIEF_FLATTEN_START), 0.0, 1.0);
+vGrassReliefWeight = 1.0 - grassReliefFade * grassReliefFade * grassReliefFade * (grassReliefFade * (grassReliefFade * 6.0 - 15.0) + 10.0);
+float grassReliefScale = mix(GRASS_RELIEF_NEAR_SCALE, 1.0, smoothstep(GRASS_RELIEF_GROW_START, GRASS_RELIEF_GROW_END, grassReliefDistance)) * vGrassReliefWeight;
+transformed.y += grassReliefRise;
+transformed.xz += grassReliefOffset;
+transformed = mix(grassReliefCenter, transformed, grassReliefScale);
+vGrassReliefFootprintUv = vec2(0.5) + vec2(transformed.x, -transformed.z) / GRASS_RELIEF_TILE_METERS;

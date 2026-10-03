@@ -65,6 +65,8 @@ The first implementation executes sequentially, including Blender and browser jo
 | `landscape/cache-install` | Authenticate a local landscape cache bundle (payloads, pages, snapshots and source archive by name or hashed record) and install it into the gitignored cache | Explicit Node CPU leaf (`configurationPaths: []`, `always`), excluded from `all` and the import parent; required scoped `bundle`, optional `directory`; refuses unretained local revisions, immutable conflicts and held locks; manifest-last publication with pointer rollback; [workflow](../bake_landscape/cache_install/README.md) |
 | `materials/<material>` | Eight procedural PBR sets from the existing bank, Bradbury and AI491 recipes; albedo, normal, packed AO/roughness/metalness | 1024px, deterministic recipes; stage and validate |
 | `materials/grass` | Grass V2 far maps and separate blade/clump atlases, including their AO maps | Existing calibrated 1024px recipe; validated proposal, existing gameplay review retained |
+| `materials/grass/lod4-layout` | Two compatible optimized periodic 2 m source layouts for the LOD4 debug canopy | Explicit browser-only job; preserve shared leaf/shadow boundaries, verify ordinary loading, optionally publish positions; texture maps still bake at scene startup |
+| `materials/dry_litter` | Repair the known truncated user-supplied ORM map | Explicit maintenance leaf; preserve complete roughness rows and intact AO, reconstruct only the missing band; strict pixel validation before optional publication |
 | `lighting/source` | Current BigCity2 resolved source, ready textures and repeated deterministic BSIB export | Always refresh; once for the requested tree |
 | `lighting/city-inputs` | Exact slab and receiver coplanar ownership plans from live inputs | Explicit CPU precomputation leaf; independent Node recomputation and fresh-game source/geometry parity before optional publication; [workflow](../bake_lighting/city_inputs/README.md) |
 | `lighting/shadows/candidates` | Authenticated Blender candidate lattices | Shared preparation for native foliage capture |
@@ -103,6 +105,18 @@ bounce samples; `reprocess` cannot convert older triangle-isolated maps to v5.
 Every material has its
 own callable `run.mjs` under `tools/bake_materials/<material>/`. `--target <job/id>`
 is equivalent to that entry point and also works for registered preparation jobs.
+
+The litter repair uses `node tools/bake.mjs --target materials/dry_litter --publish`.
+It reads the retained damaged source maps and independent AO, and uses the shared
+`pythonExecutable` configuration with Pillow; Blender is not required. Staging,
+input-stability checks, validated publication and provenance remain mandatory.
+See [the repair details](../bake_materials/dry_litter/README.md).
+
+Compile LOD4 source positions with `node tools/bake.mjs --target materials/grass/lod4-layout --publish`.
+It uses only `browserExecutable` from the shared configuration, runs the existing
+material/rendered pattern searches offline, and validates a fresh scene loading
+the resulting asset without optimizer imports. This explicit debug asset leaf
+is outside the default production material tree. See [the layout contract](../bake_materials/grass/lod4_layout/README.md).
 
 The following are deliberately not production jobs:
 

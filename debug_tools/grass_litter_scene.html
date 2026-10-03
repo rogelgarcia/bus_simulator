@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Grass · Field scene</title>
     <link rel="icon" href="../favicon.ico" />
-    <link rel="stylesheet" href="../src/graphics/gui/grass_debugger_v2/litter_scene.css?v=cursor-distance-1" />
+    <link rel="stylesheet" href="../src/graphics/gui/grass_debugger_v2/litter_scene.css?v=lod4-rendered-feedback-1" />
     <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/"}}</script>
 </head>
 <body>
@@ -18,7 +18,9 @@
             <button id="scene-reset" type="button" disabled>Reset view</button>
             <label>Fields <select id="scene-fields" disabled></select></label>
             <button id="scene-frame-fields" type="button" disabled>Frame fields</button>
-            <label>LOD <select id="scene-lod" disabled><option value="LOD0">Reference</option><option value="LOD0_SMART">LOD0</option><option value="LOD1">LOD1</option><option value="LOD2">LOD2</option></select></label>
+            <label>LOD <select id="scene-lod" disabled><option value="LOD0">Reference</option><option value="LOD0_SMART">LOD0</option><option value="LOD1">LOD1</option><option value="LOD2">LOD2</option><option value="LOD3">LOD3</option><option value="LOD4">LOD4</option><option value="LOD2+4">LOD2+4</option><option value="LOD2+3+4">LOD2+3+4</option></select></label>
+            <label>Litter <select id="scene-litter" disabled><option value="merged" selected>Merged soil</option><option value="alpha">Alpha litter</option></select></label>
+            <label>LOD4 border <select id="scene-canopy-border" disabled><option value="leaves">LOD2 leaves</option><option value="cards">2 m / 1 m cards</option></select></label>
             <label>Speed <input id="scene-speed" type="range" min="-2" max="0.7" step="0.05" value="-0.5" disabled /></label>
             <output id="speed-label"></output>
             <div id="scene-mode" role="radiogroup" aria-label="Scene layers">
@@ -27,10 +29,11 @@
                 <label><input type="radio" name="scene-mode" value="soil" disabled /> Soil</label>
             </div>
             <a href="../tests/artifacts/screens/grass_debug_v2/ninety_six_thousand_leaves_12m/index.html">Rendered views</a>
+            <a href="grass_transition_scene.html">Transition lab</a>
         </div>
     </aside>
     <output id="scene-performance" aria-label="Rendering performance and cursor distance" aria-live="off">FPS — · GPU — ms · Distance —</output>
     <div id="scene-loading" role="status">Loading the grass scene…</div>
-    <script type="module" src="../src/graphics/gui/grass_debugger_v2/GrassDebugV2LitterScene.js?v=lod2-color-1"></script>
+    <script type="module" src="../src/graphics/gui/grass_debugger_v2/GrassDebugV2LitterScene.js?v=lod4-single-1k-1"></script>
 </body>
 </html>

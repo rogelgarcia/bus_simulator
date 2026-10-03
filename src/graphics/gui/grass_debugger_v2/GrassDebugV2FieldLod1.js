@@ -47,7 +47,7 @@ export function createGrassDebugV2FieldLod({ material, placements, seed, lod = '
     }
     const positions = new Float32Array(vertexCount * 3), normals = new Float32Array(vertexCount * 3);
     const colors = new Float32Array(vertexCount * 3), uvs = new Float32Array(vertexCount * 2), indices = new Uint32Array(indexCount);
-    const color = new THREE.Color();
+    const color = new THREE.Color(), leafRanges = [];
     let state = seed, vertexOffset = 0, indexOffset = 0;
     const random = () => { state = (Math.imul(1664525, state) + 1013904223) >>> 0; return state / 4294967296; };
     for (const [i, placement] of placements.entries()) {
@@ -56,6 +56,7 @@ export function createGrassDebugV2FieldLod({ material, placements, seed, lod = '
         const brightness = 0.94 + random() * 0.12;
         const angle = THREE.MathUtils.degToRad(azimuthDegrees), cosine = Math.cos(angle), sine = Math.sin(angle);
         for (const [blade, part] of variants.get(backwardInclinationDegrees).entries()) {
+            leafRanges.push({ start: indexOffset, count: part.index.count });
             const p = part.attributes.position, n = part.attributes.normal, uv = part.attributes.uv;
             const variation = ((Math.imul(i * 2 + blade + 1, 1597334677) ^ seed) >>> 0) / 4294967296;
             const dryness = variation < 0.12 ? 0.65 + variation / 0.12 * 0.35 : (variation - 0.12) * 0.22;
@@ -85,6 +86,7 @@ export function createGrassDebugV2FieldLod({ material, placements, seed, lod = '
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     geometry.computeBoundingBox(); geometry.computeBoundingSphere();
     const mesh = new THREE.Mesh(geometry, material);
+    mesh.userData.grassLeafRanges = leafRanges;
     mesh.name = 'GrassField-' + lod; mesh.castShadow = mesh.receiveShadow = true;
     return Object.freeze({
         mesh,

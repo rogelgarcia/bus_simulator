@@ -1,0 +1,10 @@
+// Capture source blade warmth, roughness and transmission without illumination.
+uniform sampler2D roughnessMap;
+uniform float roughness;
+varying vec2 vGrassUv;
+void main() {
+    float blade = smoothstep(0.12, 0.28, vGrassUv.y);
+    float margin = smoothstep(0.1, 0.8, abs(2.0 * vGrassUv.x - 1.0));
+    float transmission = mix(0.35, mix(0.50, 0.64, margin), blade);
+    gl_FragColor = vec4(blade, roughness * texture2D(roughnessMap, vGrassUv).g, transmission, 1.0);
+}

@@ -1,13 +1,15 @@
-// Extend a one-metre source with exact boundary continuations from all eight neighboring tiles.
+// Extend a periodic source with exact boundary continuations from all eight neighboring tiles.
 // @ts-check
 import * as THREE from 'three';
 
-/** @param {THREE.Group} source @param {number} paddingMeters */
-export function createGrassDebugV2PeriodicSource(source, paddingMeters = 0) {
-    if (!Number.isFinite(paddingMeters) || paddingMeters < 0 || paddingMeters > 0.5) throw new Error('Periodic capture padding must be 0–0.5 m.');
-    const limit = 0.5 + paddingMeters;
+/** @param {THREE.Object3D} source @param {number} paddingMeters @param {number} periodMeters */
+export function createGrassDebugV2PeriodicSource(source, paddingMeters = 0, periodMeters = 1) {
+    if (!Number.isFinite(periodMeters) || periodMeters <= 0) throw new Error('Periodic capture requires a positive tile size.');
+    if (!Number.isFinite(paddingMeters) || paddingMeters < 0 || paddingMeters > periodMeters / 2) throw new Error('Periodic capture padding must not exceed half a tile.');
+    const limit = periodMeters / 2 + paddingMeters;
     const group = new THREE.Group(), matrix = new THREE.Matrix4(), relative = new THREE.Matrix4();
     const bounds = new THREE.Box3();
+    const geometries = [];
     const neighbors = [];
     for (let z = -1; z <= 1; z++) for (let x = -1; x <= 1; x++)
         neighbors.push({ x, z, instances: 0 });
@@ -18,6 +20,36 @@ export function createGrassDebugV2PeriodicSource(source, paddingMeters = 0) {
         if (!mesh.isMesh) return;
         if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
         relative.multiplyMatrices(inverse, mesh.matrixWorld);
+        // Merged field leaves have separate index ranges. Repeat only crossing
+        // leaves, sharing their attributes instead of drawing nine whole tiles.
+        const ranges = mesh.userData.grassLeafRanges;
+        if (ranges?.length) {
+            const position = mesh.geometry.attributes.position, index = mesh.geometry.index, point = new THREE.Vector3();
+            const selected = neighbors.map(() => []);
+            originalInstances += ranges.length;
+            for (const range of ranges) {
+                bounds.makeEmpty();
+                for (let i = range.start; i < range.start + range.count; i++)
+                    bounds.expandByPoint(point.fromBufferAttribute(position, index.getX(i)).applyMatrix4(relative));
+                neighbors.forEach((neighbor, n) => {
+                    const x = neighbor.x * periodMeters, z = neighbor.z * periodMeters;
+                    if (bounds.max.x + x <= -limit || bounds.min.x + x >= limit
+                        || bounds.max.z + z <= -limit || bounds.min.z + z >= limit) return;
+                    for (let i = range.start; i < range.start + range.count; i++) selected[n].push(index.getX(i));
+                    neighbor.instances++;
+                });
+            }
+            neighbors.forEach((neighbor, n) => {
+                if (!selected[n].length) return;
+                const geometry = new THREE.BufferGeometry();
+                for (const [name, attribute] of Object.entries(mesh.geometry.attributes)) geometry.setAttribute(name, attribute);
+                geometry.setIndex(selected[n]); geometries.push(geometry);
+                const copy = new THREE.Mesh(geometry, mesh.material);
+                copy.matrix.makeTranslation(neighbor.x * periodMeters, 0, neighbor.z * periodMeters).multiply(relative);
+                copy.matrixAutoUpdate = false; group.add(copy);
+            });
+            return;
+        }
         const transforms = [], count = mesh.isInstancedMesh ? mesh.count : 1;
         originalInstances += count;
         for (let i = 0; i < count; i++) {
@@ -25,7 +57,7 @@ export function createGrassDebugV2PeriodicSource(source, paddingMeters = 0) {
             matrix.premultiply(relative);
             bounds.copy(mesh.geometry.boundingBox).applyMatrix4(matrix);
             for (const neighbor of neighbors) {
-                const { x, z } = neighbor;
+                const x = neighbor.x * periodMeters, z = neighbor.z * periodMeters;
                 if (bounds.max.x + x <= -limit || bounds.min.x + x >= limit
                     || bounds.max.z + z <= -limit || bounds.min.z + z >= limit) continue;
                 const copy = matrix.clone();
@@ -46,9 +78,12 @@ export function createGrassDebugV2PeriodicSource(source, paddingMeters = 0) {
     });
     group.name = 'GrassV2PeriodicBakeSource';
     return Object.freeze({ group,
-        getSnapshot: () => ({ periodMeters: 1, paddingMeters, originalInstances,
+        getSnapshot: () => ({ periodMeters, paddingMeters, originalInstances,
             renderedInstances: neighbors.reduce((sum, neighbor) => sum + neighbor.instances, 0),
             neighbors: neighbors.map(neighbor => ({ ...neighbor })) }),
-        dispose: () => group.children.forEach(mesh => mesh.dispose())
+        dispose() {
+            group.children.forEach(mesh => { if (mesh.isInstancedMesh) mesh.dispose(); });
+            geometries.forEach(geometry => geometry.dispose());
+        }
     });
 }

@@ -18,3 +18,4 @@ output { min-width: 55px; font-variant-numeric: tabular-nums; }
 #scene-loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 18px 24px; border-radius: 10px; background: #14201bf2; max-width: 70vw; text-align: center; }
 #scene-performance { position: fixed; bottom: 16px; left: 16px; padding: 8px 12px; border: 1px solid #60736077; border-radius: 6px; background: #14201be8; font-size: 13px; font-variant-numeric: tabular-nums; pointer-events: none; }
 [hidden] { display: none !important; }
+.scene-pattern-preview { display: block; width: min(384px, 55vw); height: auto; margin: 12px auto 0; }

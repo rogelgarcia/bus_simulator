@@ -1,0 +1,1 @@
+grassCanopyShadowCoord(vDirectionalShadowCoord[ i ], diffuseColor.a)

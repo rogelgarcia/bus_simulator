@@ -50,7 +50,8 @@ individual leaf commands, scoped parameters and recovery, and
 | sunSkyRatios | `tools/bake_lighting/experiments/sun_sky_ratios/` | AI 563 saved-city stronger-sun matrix, card-matched exposure, ACESFilmic/AgX images and pose comparisons | `node tools/bake_lighting/experiments/sun_sky_ratios/run.mjs --set lighting/experiments/sun-sky-ratios:source-run=<AI560 run>`; see its README |
 | bakeVehicleDiffuseProbes | `tools/bake_lighting/diffuse_probes/` | Export static city, prepare spatial receivers, bake separate sky/bounce fields and authenticate optional publication | `node tools/bake_lighting/diffuse_probes/run.mjs --publish`; see its README for quality and coverage |
 | bakeVisibility | `tools/bake_visibility/` | Stages and validates the existing PVS bake before optional publication | `node tools/bake_visibility/run.mjs` |
-| bakeMaterials | `tools/bake_materials/` | Grass and individually callable existing procedural PBR recipes | `node tools/bake_materials/run.mjs`; `node tools/bake_materials/brownstone/run.mjs` |
+| bakeMaterials | `tools/bake_materials/` | Grass, existing procedural PBR recipes, and explicit dry-litter ORM repair | `node tools/bake_materials/run.mjs`; `node tools/bake.mjs --target materials/dry_litter` |
+| grassLod4Layout | `tools/bake_materials/grass/lod4_layout/` | Compile and validate the LOD4 periodic leaf positions for fast scene startup | `node tools/bake.mjs --target materials/grass/lod4-layout --publish` |
 | compareBusModels | `tools/compareBusModels.mjs` | Compare coach/city bus model offsets from wheel centers | `node tools/compareBusModels.mjs` |
 | computeTreeConfig | `tools/computeTreeConfig.mjs` | Compute tree orientation/size metadata and write `TreeConfig.js` | `node tools/computeTreeConfig.mjs` |
 | verifyTreeModels | `tools/verify_tree_models.mjs` | Verify tree model base alignment offline | `node tools/verify_tree_models.mjs` |

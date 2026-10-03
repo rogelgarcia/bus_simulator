@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Grass · Transition lab</title>
+    <link rel="icon" href="../favicon.ico" />
+    <link rel="stylesheet" href="../src/graphics/gui/grass_debugger_v2/litter_scene.css" />
+    <link rel="stylesheet" href="../src/graphics/gui/grass_debugger_v2/transition_scene.css?v=lod4-factors-1" />
+    <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/"}}</script>
+</head>
+<body>
+    <canvas id="scene-canvas" tabindex="0" aria-label="Grass transition field. Middle-mouse drag to look; WASD move horizontally; Q down; E up; R restores bus height and tilt."></canvas>
+    <aside id="scene-panel">
+        <h1>Grass transitions <span>4 × 32 × 32 m fields · abrupt switches · 1K canopy</span></h1>
+        <p>Middle-mouse drag to look · WASD horizontal · Q down / E up · R bus height/tilt · Shift faster</p>
+        <div class="scene-controls">
+            <label>View <select id="transition-pose"><option value="front">Bus · front</option><option value="rear">Bus · rear</option><option value="border">Bus · field border</option><option value="overview">Overhead overview</option></select></label>
+            <button id="transition-reset">Reset view</button>
+            <label>Configuration <select id="transition-configuration"><option value="distance">Distance LODs</option><option value="lod4-ground">LOD4 only · ground level</option><option value="lod4-flat">LOD4 only · flat, no sides</option><option value="lod4-elevated">LOD4 only · elevation + bevel</option><option value="lod4-elevated-sides">LOD4 only · elevation + side grass</option></select></label>
+            <label id="transition-only-sides" hidden>Side grass (m) <input id="transition-only-side-leaves" type="number" min="0" max="200" step="1" value="35" /></label>
+            <label>LOD4 version <select id="transition-optimization"><option value="optimized">Interior quads + shadow fix</option><option value="shadow">Shadow fix only</option><option value="original">Original · before both fixes</option></select></label>
+            <label>Speed <input id="transition-speed" type="range" min="0.1" max="5" value="3" step="0.1" /><output id="transition-speed-label">3.0 m/s</output></label>
+            <label><input id="transition-drive" type="checkbox" /> Drive forward</label>
+            <label><input id="transition-soil" type="checkbox" /> Soil only</label>
+            <label><input id="transition-shadows" type="checkbox" checked /> Shadows</label>
+        </div>
+        <fieldset class="transition-distances">
+            <legend>Switch to (m)</legend>
+            <div class="transition-range-grid">
+                <div class="transition-lod-grid">
+                    <div class="transition-distance"><label for="transition-limit-0">LOD1</label><input id="transition-limit-0" type="number" min="0.1" max="100" step="0.1" value="1" /><output id="transition-half-0" for="transition-limit-0" aria-label="LOD1 half distance">½ 0.5 m</output></div>
+                    <div class="transition-distance"><label for="transition-limit-1">LOD2</label><input id="transition-limit-1" type="number" min="0.1" max="100" step="0.1" value="3" /><output id="transition-half-1" for="transition-limit-1" aria-label="LOD2 half distance">½ 1.5 m</output></div>
+                    <div class="transition-distance"><label for="transition-limit-2">LOD3</label><input id="transition-limit-2" type="number" min="0.1" max="100" step="0.1" value="6" /><output id="transition-half-2" for="transition-limit-2" aria-label="LOD3 half distance">½ 3 m</output></div>
+                    <div class="transition-distance"><label for="transition-limit-3">LOD4</label><input id="transition-limit-3" type="number" min="0.1" max="100" step="0.1" value="25" /><output id="transition-half-3" for="transition-limit-3" aria-label="LOD4 half distance">½ 12.5 m</output></div>
+                </div>
+                <div class="transition-presets"><span>Preset</span><button id="transition-full" aria-pressed="true">Full distances</button><button id="transition-half" aria-pressed="false">Half distances</button></div>
+                <div class="transition-distance transition-side-distance"><label for="transition-side-leaves">LOD4 sides (m)</label><input id="transition-side-leaves" type="number" min="0" max="200" step="1" value="35" title="Hide LOD4 border leaves beyond this distance. Independent of full/half presets; 0 hides all." /><span class="transition-distance-note">Fixed cutoff</span></div>
+            </div>
+        </fieldset>
+        <details>
+            <summary>Selection cost and helpers</summary>
+            <div class="scene-controls">
+                <label>Minimum movement <input id="transition-movement" type="number" min="0" max="5" step="0.05" value="0.25" /> m</label>
+                <label>Minimum interval <input id="transition-interval" type="number" min="0" max="1000" step="10" value="100" /> ms</label>
+                <label><input id="transition-helpers" type="checkbox" checked /> LOD colors and distance rings</label>
+                <button id="transition-refresh">Refresh selection</button>
+                <a href="grass_litter_scene.html">Single-field lab</a>
+                <a href="../tests/artifacts/screens/grass_debug_v2/transition_lab/index.html">Benchmark report</a>
+                <a href="../tests/artifacts/screens/grass_debug_v2/transition_lab/lod4_interior_quads/index.html">LOD4 version comparison</a>
+            </div>
+            <p>Distances use the ground below the camera and 1 m cell centers. Stationary cameras and rotations reuse the assignment; movement triggers at most 10 scans/second with the defaults.</p>
+        </details>
+        <div id="transition-legend" class="scene-controls"><span class="lod0">LOD0</span><span class="lod1">LOD1</span><span class="lod2">LOD2</span><span class="lod3">LOD3</span><span class="lod4">LOD4</span><output id="transition-counts"></output></div>
+        <p id="transition-error" role="alert" hidden></p>
+    </aside>
+    <output id="scene-performance" aria-label="Rendering and LOD selection performance" title="Submitted triangles and draw calls for the complete rendered frame, including postprocessing and enabled helpers. Culled objects are excluded.">Preparing…</output>
+    <div id="scene-loading" role="status">Loading transition lab…</div>
+    <script type="module" src="../src/graphics/gui/grass_debugger_v2/GrassDebugV2TransitionScene.js?v=lod4-interior-quads-1"></script>
+</body>
+</html>
