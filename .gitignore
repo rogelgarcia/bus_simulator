@@ -5,6 +5,12 @@
 !/assets/public/
 /assets/public/*
 !/assets/public/landscape/
+!/assets/public/pbr/
+/assets/public/pbr/**
+!/assets/public/pbr/*/
+!/assets/public/pbr/_catalog_index.js
+!/assets/public/pbr/*/pbr.material.config.js
+!/assets/public/pbr/*/pbr.material.correction.config.js
 /assets/public/landscape/**/authoring.lock
 /assets/public/landscape/**/authoring.lock.recovering
 /assets/public/landscape/**/*.partial

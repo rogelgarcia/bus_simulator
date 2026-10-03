@@ -11,7 +11,7 @@ export class LandscapePanel {
                 <div><span class="landscape-eyebrow">FABRICATION / LANDSCAPE</span><h1>Coastal city <span>Terrain workspace</span></h1></div>
                 <div class="landscape-source"><span data-field="source">Loading landscape…</span><small data-field="revision">Validating prepared source</small></div>
             </header>
-            <div class="landscape-streaming"><span data-field="streaming" role="status">Preparing bounded terrain streaming…</span><small data-field="streaming-detail">CPU buffers and estimated GPU residency</small></div>
+            <div class="landscape-streaming"><span data-field="streaming" role="status">Preparing bounded terrain streaming…</span><small data-field="streaming-detail">CPU buffers and estimated GPU residency</small><small data-field="appearance">Preparing independent soil masks and PBR pages…</small></div>
             <nav class="landscape-toolbar" aria-label="Terrain inspection">
                 <div data-group="mode"></div><div data-group="camera"></div><div data-group="helpers"></div><div data-group="source"></div>
                 <div class="landscape-projection"><label>Projection<select data-field="projection" aria-label="Camera projection"><option value="perspective">Perspective</option><option value="orthographic">Orthographic</option></select></label><label>FOV °<input data-field="fov" type="number" min="5" max="110" value="50" aria-label="Perspective field of view" /></label><label>Ortho span m<input data-field="span" type="number" min="20" max="20000" value="5000" aria-label="Orthographic view span" /></label><label>Zoom<input data-field="zoom" type="number" min="0.1" max="100" step="0.1" value="1" aria-label="Projection zoom" /></label></div>
@@ -31,7 +31,7 @@ export class LandscapePanel {
         const groups = {
             mode: [['mode:shaded', 'Shaded'], ['mode:wireframe', 'Wireframe'], ['mode:combined', 'Shaded + wire']],
             camera: [['camera:home', 'Overview'], ['camera:top', 'Top'], ['camera:ground', 'Beach approach']],
-            helpers: [['grid', 'Grid'], ['axes', 'Axes'], ['lod', 'LOD colors'], ['boundaries', 'Chunk edges']],
+            helpers: [['grid', 'Grid'], ['axes', 'Axes'], ['lod', 'LOD colors'], ['boundaries', 'Chunk edges'], ['water', 'Water']],
             source: [['reload', 'Reload source']],
             selection: [['focus-selection', 'Focus selection'], ['copy', 'Copy context'], ['download', 'Download JSON'], ['clear', 'Clear']]
         };

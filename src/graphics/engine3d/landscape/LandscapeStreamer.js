@@ -131,6 +131,7 @@ export class LandscapeStreamer {
     uploadRecord(record, camera) {
         if (record.uploaded) return 0;
         record.model = createLandscapeMesh(record.buffers, record.chunk.heights);
+        if (this.appearance) record.model.setAppearance(this.appearance.uniforms);
         record.model.setMode(this.mode);
         record.model.setBoundaries(this.boundaries);
         record.model.setLodColors(this.lodColors);
@@ -140,6 +141,11 @@ export class LandscapeStreamer {
         record.uploaded = true;
         this.budget.update(record.key, { kind: 'terrain-resident' });
         return record.model.diagnostics().estimatedGpuBytes;
+    }
+
+    setAppearance(appearance) {
+        this.appearance = appearance;
+        for (const record of this.records.values()) record.model?.setAppearance(appearance.uniforms);
     }
 
     evict(record) {
@@ -275,10 +281,12 @@ export class LandscapeStreamer {
     }
 
     chooseTask() {
+        this.schedulerIdle = false;
         const coarsen = [...this.children].filter(([parentId, ids]) => ids.length === 4 && ids.every(id => this.leaves.has(id)) && !this.splitNeeded(parentId) && this.balancedAfterCoarsen(parentId)).sort((a, b) => this.descriptors.get(b[0]).level - this.descriptors.get(a[0]).level);
         for (const [parentId, ids] of coarsen) if (this.startTask('coarsen', parentId, ids)) return;
         const refine = [...this.leaves].filter(id => this.splitNeeded(id) && this.children.get(id)?.length === 4 && this.children.get(id).every(child => this.retryAllowed(child)) && this.balancedAfterRefine(id)).sort((a, b) => (this.lastPlan.errorsById[b] ?? 0) - (this.lastPlan.errorsById[a] ?? 0));
         for (const id of refine) if (this.startTask('refine', id, this.children.get(id))) return;
+        this.schedulerIdle = true;
     }
 
     updateEdges() {
@@ -371,6 +379,7 @@ export class LandscapeStreamer {
     }
 
     coarsenToRoot() {
+        this.schedulerIdle = false;
         this.cancelPrefetch();
         this.cancelTask();
         for (const id of this.leaves) { const record = this.records.get(id); if (record?.model) record.model.mesh.visible = false; }
@@ -455,7 +464,7 @@ export class LandscapeStreamer {
         if (this.task?.phase === 'morph' && this.lastPlan?.visibilityById[this.task.parentId]) achievedErrorPixels = Math.max(achievedErrorPixels, this.lastPlan.errorsById[this.task.parentId]);
         const pending = this.pool.snapshot();
         return {
-            settled: !this.task && !pending.active && !pending.queued,
+            settled: this.schedulerIdle === true && !this.task && !pending.active && !pending.queued && !this.inspectionUpload,
             desiredLeafIds: this.lastPlan?.desiredLeafIds ?? [this.manifest.overviewId], residentLeafIds: [...this.leaves],
             residentIds: records.map(record => record.id), residentSourceIds: records.filter(record => record.chunk).map(record => record.id),
             targetErrorPixels: this.targetErrorPixels, desiredErrorPixels: this.lastPlan?.desiredErrorPixels ?? null, achievedErrorPixels,

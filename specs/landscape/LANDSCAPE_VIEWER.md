@@ -1,6 +1,6 @@
 # Landscape Fabrication viewer
 
-Status: D1-D2 verified; D3 streamed viewer integrated (AI 576).
+Status: D1-D3 verified; D4 appearance integration under verification (AI 576).
 
 ## Entry and ownership
 
@@ -13,6 +13,30 @@ The reusable Three.js/worker adapter lives under
 `src/graphics/engine3d/landscape/`; the screen composes that adapter with its camera
 and DOM panel. Neither the adapter nor the domain requires the Fabrication panel.
 It does not create a city, game simulation, or flat placeholder ground.
+
+## D4 appearance and sea-level reference
+
+The viewer now composes independent categorical-mask and PBR-page streaming with
+the D3 geometry adapter. Sand, rock, vegetation-related soil and unknown substrate
+use the existing global PBR catalog and retained correction profiles, with stable
+world scale/orientation. The appearance planner can refine flat root geometry's
+materials without requesting fine height meshes. Its raw source page tiers are
+32, 128 and 512 pixels; full-resolution PBR images are never startup resources.
+
+The same 128 MiB CPU / 64 MiB estimated GPU ledger covers both adapters. A small
+appearance allowance prevents geometry from taking all available texture capacity;
+fine texture tiers can use additional spare space. Geometry and appearance share
+one per-frame upload allowance. The compact live strip now includes mask counts,
+per-soil texture tiers, pending appearance work and residency/degradation. Complete
+policies, shader calibration, world UVs, parent transitions, resource costs and
+test hooks are documented in `LANDSCAPE_APPEARANCE_RUNTIME.md`.
+
+Water toggles a separately owned translucent plane at the retained sea level.
+Terrain raycasts and native height/soil/submerged queries always use the actual
+heightfield. The water reference never converts seabed elevation into sea level.
+Planning urban/road/runway classes tint unknown substrate while retaining their
+categorical cover IDs. Assigning a known soil displays that material without
+changing the planning classification.
 
 ## D3 streamed geometry and inspection
 
@@ -100,8 +124,10 @@ lease owners. Explicit budget reconfiguration tears down the previous session;
 a profile too small for root coverage produces a visible error. Source reload,
 in contrast, retains the previous root until the new validated revision is ready.
 
-The sections below retain the original D1/D2 scope and measured evidence. D3
-supersedes their single-overview rendering and server-query implementation notes.
+The D3 section records the geometry contract; its original palette-only appearance
+is superseded by D4 above. The sections below retain the original D1/D2 scope and
+measured evidence. D3 supersedes their single-overview rendering and server-query
+implementation notes.
 
 Use `node tools/landscape_server/run.mjs` on loopback port **8002**. Port 8001 is
 reserved for the other worktree. The development server remains idle without a

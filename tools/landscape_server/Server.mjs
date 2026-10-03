@@ -10,7 +10,8 @@ import { createLandscapeAuthoringApi } from './AuthoringApi.mjs';
 const MANIFEST = 'assets/public/landscape/coastal-city/manifest.json';
 export const SELECTION_FILE = 'tests/artifacts/screens/landscape/ai576/selection.latest.json';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
-const isPublicPath = relative => relative === 'favicon.ico' || relative === 'index.html' || ['src/', 'screens/', 'debug_tools/', 'assets/public/landscape/'].some(prefix => relative.startsWith(prefix));
+const isPbrMetadata = relative => relative === 'assets/public/pbr/_catalog_index.js' || /^assets\/public\/pbr\/[a-z0-9_]+\/pbr\.material\.(?:correction\.)?config\.js$/.test(relative);
+const isPublicPath = relative => relative === 'favicon.ico' || relative === 'index.html' || isPbrMetadata(relative) || ['src/', 'screens/', 'debug_tools/', 'assets/public/landscape/'].some(prefix => relative.startsWith(prefix));
 
 function reply(response, status, body) {
     response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });

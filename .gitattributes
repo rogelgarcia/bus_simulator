@@ -10,3 +10,11 @@
 *.zip -text
 
 assets/public/** filter=lfs diff=lfs merge=lfs -text
+
+# Small authored PBR configuration is ordinary Git content, never Git LFS: the runtime imports it as code, and
+# reviews and merges need real diffs. -text keeps its exact bytes (no line-ending conversion), because the
+# landscape appearance provenance records each config by SHA-256. Keep these lines after the LFS rule above.
+assets/public/pbr/_catalog_index.js !filter !diff !merge -text
+assets/public/pbr/*/pbr.material.config.js !filter !diff !merge -text
+assets/public/pbr/*/pbr.material.correction.config.js !filter !diff !merge -text
+assets/public/pbr/*/pbr.landscape.config.json !filter !diff !merge -text

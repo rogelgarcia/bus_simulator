@@ -262,6 +262,19 @@ serialized by that directory lock and manifest comparison. Candidate/installed
 files remain in the framework result inventory and validation gates. The leaf
 requires no machine executable paths or unrelated preparation branches.
 
+`landscape/appearance` adds explicit bounded PBR page preparation. Its scoped
+`source-root` selects an existing public PBR folder; `directory` selects the saved
+landscape. It declares only shared `pythonExecutable`, requiring Pillow/NumPy,
+and never dispatches Blender or another bake branch. Source images are admitted
+at 512..1024 square pixels before decoding; sequential channel conversion has a
+96 MiB conservative working-array allowance. Exact global catalog metadata and
+source image hashes enter input identity. Pages are independently hashed RGBA8
+at32/128/512 resolution; validation checks dimensions, byte lengths, normalized
+normals and metadata. Optional publication installs immutable files before the
+appearance-sidecar switch under the authoring lock, leaving terrain unchanged.
+Its distinct D4 receipt avoids colliding with the importer's output graph claim.
+See the [appearance workflow](../../tools/bake_landscape/appearance/README.md).
+
 Explicit browser-only diagnostic plans may declare `configurationPaths` on every
 selected job. The shared loader then requires and checks only that union of machine
 paths. Jobs without this declaration retain the existing Blender configuration

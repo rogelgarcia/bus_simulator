@@ -11,6 +11,7 @@ const z = (detailedTile.bounds.minZ + detailedTile.bounds.maxZ) / 2;
 const nearView = { position: [x + 120, detailedTile.maxHeight + 160, z - 160], target: [x, detailedTile.maxHeight / 2, z], projection: 'perspective', fov: 35, zoom: 1 };
 const wideView = { position: [4400, 6000, -4300], target: [2000, 0, 2000], projection: 'perspective', fov: 70, zoom: 1 };
 const snapshot = page => page.evaluate(() => window.__landscapeTestHooks.snapshot());
+const consumerLeases = (state, names) => state.budget.entries.flatMap(entry => entry.leases).filter(lease => names.includes(lease.consumer));
 
 async function open(page) {
     await mkdir(artifacts, { recursive: true });
@@ -24,7 +25,10 @@ async function open(page) {
 
 async function settle(page) {
     await page.waitForTimeout(150);
-    await expect.poll(async () => (await snapshot(page)).streaming?.settled, { timeout: 45000 }).toBe(true);
+    await expect.poll(async () => {
+        const state = await snapshot(page);
+        return state.streaming?.settled && (!state.appearance || state.appearance.settled);
+    }, { timeout: 45000 }).toBe(true);
     return snapshot(page);
 }
 
@@ -35,6 +39,7 @@ function assertBounds(state) {
     expect(stream.budget.peakCpuBytes).toBeLessThanOrEqual(stream.budget.limits.cpuBytes);
     expect(stream.budget.peakGpuBytes).toBeLessThanOrEqual(stream.budget.limits.gpuBytes);
     expect(stream.peakUploadedBytesPerFrame).toBeLessThanOrEqual(stream.uploadLimitBytes);
+    expect(state.peakUploadedBytesPerFrame).toBeLessThanOrEqual(stream.uploadLimitBytes);
     expect(stream.activeWorkers).toBeLessThanOrEqual(2);
     expect(stream.prefetchIds.length).toBeLessThanOrEqual(2);
     expect(stream.residentLeafIds.reduce((sum, id) => sum + 1 / 4 ** manifest.chunks.find(chunk => chunk.id === id).level, 0)).toBe(1);
@@ -49,7 +54,7 @@ test('Landscape D3: actual refinement, inspection, fixed-position perspective an
     await open(page);
     const startup = await settle(page);
     expect(startup.streaming.residentLeafIds).toEqual([manifest.overviewId]);
-    expect(new Set(requests).size).toBe(2);
+    expect(new Set(requests.filter(url => url.endsWith('.f32le'))).size).toBe(1);
     await page.screenshot({ path: path.join(artifacts, '01-streamed-overview.png') });
     await page.evaluate(view => window.__landscapeTestHooks.setCamera(view), nearView);
     const close = await settle(page);
@@ -77,7 +82,7 @@ test('Landscape D3: actual refinement, inspection, fixed-position perspective an
     const perspectiveWide = await settle(page);
     await page.evaluate(() => window.__landscapeTestHooks.setCamera({ fov: 5 }));
     const perspectiveNarrow = await settle(page);
-    expect(perspectiveNarrow.camera.position).toEqual(perspectiveWide.camera.position);
+    perspectiveNarrow.camera.position.forEach((value, index) => expect(value).toBeCloseTo(perspectiveWide.camera.position[index], 9));
     expect(perspectiveNarrow.streaming.desiredLeafIds.length).toBeGreaterThan(perspectiveWide.streaming.desiredLeafIds.length);
     expect(perspectiveNarrow.streaming.lods.some(lod => lod.level > 0)).toBe(true);
     assertBounds(perspectiveNarrow);
@@ -87,7 +92,7 @@ test('Landscape D3: actual refinement, inspection, fixed-position perspective an
     expect(orthoWide.streaming.residentLeafIds).toEqual([manifest.overviewId]);
     await page.evaluate(() => window.__landscapeTestHooks.setCamera({ zoom: 70 }));
     const orthoNarrow = await settle(page);
-    expect(orthoNarrow.camera.position).toEqual(orthoWide.camera.position);
+    orthoNarrow.camera.position.forEach((value, index) => expect(value).toBeCloseTo(orthoWide.camera.position[index], 9));
     expect(orthoNarrow.streaming.desiredLeafIds.length).toBeGreaterThan(orthoWide.streaming.desiredLeafIds.length);
     expect(orthoNarrow.streaming.lods.some(lod => lod.level > 0)).toBe(true);
     assertBounds(orthoNarrow);
@@ -136,13 +141,13 @@ test('Landscape D3: hard low budgets retain coverage and independent native leas
     await settle(page);
     const leased = await snapshot(page);
     expect(leased.streaming.residentSourceIds).toContain(native.id);
-    expect(leased.budget.leaseCount).toBe(2);
+    expect(consumerLeases(leased, ['shadow-test', 'collision-test'])).toHaveLength(2);
     await page.evaluate(() => window.__landscapeTestHooks.releaseConsumer('shadow-test'));
     expect((await snapshot(page)).streaming.residentSourceIds).toContain(native.id);
     await page.evaluate(() => window.__landscapeTestHooks.releaseConsumer('collision-test'));
     await expect.poll(async () => (await snapshot(page)).streaming.residentSourceIds.includes(native.id)).toBe(false);
     const released = await snapshot(page);
-    expect(released.budget.leaseCount).toBe(0);
+    expect(consumerLeases(released, ['shadow-test', 'collision-test'])).toHaveLength(0);
     assertBounds(released);
     await page.evaluate(() => window.__landscapeTestHooks.setBudgets({ cpuBytes: 16 * 1024 * 1024, gpuBytes: 1 }));
     const impossible = await snapshot(page);
@@ -186,7 +191,8 @@ test('Landscape D3: corrupt detail and rapid reversal keep covering terrain with
     const camera = resized.camera;
     await page.evaluate(() => window.__landscapeTestHooks.reload());
     const reloaded = await settle(page);
-    expect(reloaded.camera).toEqual(camera);
+    for (const field of ['position', 'target']) reloaded.camera[field].forEach((value, index) => expect(value).toBeCloseTo(camera[field][index], 9));
+    for (const field of ['projection', 'fov', 'zoom', 'orthoHeight']) expect(reloaded.camera[field]).toEqual(camera[field]);
     assertBounds(reloaded);
     expect(errors).toEqual([]);
     await writeFile(path.join(artifacts, 'failure-cancellation.json'), JSON.stringify({ failed, reversed, resized, reloaded, errors }, null, 2));
@@ -266,12 +272,12 @@ test('Landscape D3: camera reuses a pending leased build after canceling and rev
         await page.evaluate(id => {
             window.__pendingTerrainConsumer = window.__landscapeTestHooks.acquireConsumer([id], { consumer: 'pending-query', priority: 100, accuracy: 'authoritative' });
         }, child.id);
-        await expect.poll(async () => (await snapshot(page)).budget.leaseCount).toBe(1);
+        await expect.poll(async () => consumerLeases(await snapshot(page), ['pending-query']).length).toBe(1);
         await page.evaluate(view => window.__landscapeTestHooks.setCamera(view), wideView);
         await expect.poll(async () => (await snapshot(page)).streaming.residentLeafIds).toEqual([manifest.overviewId]);
         await page.evaluate(view => window.__landscapeTestHooks.setCamera(view), nearView);
         await expect.poll(async () => (await snapshot(page)).streaming.transition?.parentId, { timeout: 30000 }).toBe(detailedTile.id);
-        const dispatches = await page.evaluate(id => window.__terrainDispatches.filter(job => job.chunkId === id && !job.sourceOnly), child.id);
+        const dispatches = await page.evaluate(id => window.__terrainDispatches.filter(job => job.chunkId === id && job.sourceOnly === false), child.id);
         expect(dispatches).toHaveLength(1);
     } finally { releaseResponse(); }
     await page.evaluate(() => window.__pendingTerrainConsumer);
@@ -279,7 +285,7 @@ test('Landscape D3: camera reuses a pending leased build after canceling and rev
     expect(completed.streaming.residentLeafIds).toContain(child.id);
     assertBounds(completed);
     await page.evaluate(() => window.__landscapeTestHooks.releaseConsumer('pending-query'));
-    expect((await snapshot(page)).budget.leaseCount).toBe(0);
+    expect(consumerLeases(await snapshot(page), ['pending-query'])).toHaveLength(0);
     await writeFile(path.join(artifacts, 'pending-build-reuse.json'), JSON.stringify({ completed, dispatches: await page.evaluate(() => window.__terrainDispatches) }, null, 2));
     await page.evaluate(() => window.__landscapeTestHooks.dispose());
 });

@@ -10,6 +10,11 @@ test('Landscape handoff: saves valid context and rejects stale or foreign reques
     const root = await mkdtemp(path.join(tmpdir(), 'landscape-handoff-'));
     await mkdir(path.join(root, 'assets/public/landscape/coastal-city'), { recursive: true });
     await writeFile(path.join(root, 'assets/public/landscape/coastal-city/manifest.json'), JSON.stringify({ id: 'coastal', revision: 'r1', bounds: { minX: 0, maxX: 4000, minZ: 0, maxZ: 4000 } }));
+    await mkdir(path.join(root, 'assets/public/pbr/sand'), { recursive: true });
+    await writeFile(path.join(root, 'assets/public/pbr/_catalog_index.js'), 'export const PBR_MATERIAL_CATALOG = [];');
+    await writeFile(path.join(root, 'assets/public/pbr/sand/pbr.material.config.js'), 'export default {};');
+    await writeFile(path.join(root, 'assets/public/pbr/sand/pbr.material.correction.config.js'), 'export default {};');
+    await writeFile(path.join(root, 'assets/public/pbr/sand/private-source.png'), 'not public');
     const server = createLandscapeServer({ root });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const origin = `http://127.0.0.1:${server.address().port}`;
@@ -27,6 +32,12 @@ test('Landscape handoff: saves valid context and rejects stale or foreign reques
         assert.equal((await fetch(`${origin}/.git/config`)).status, 404);
         assert.equal((await fetch(`${origin}/downloads/private.txt`)).status, 404);
         assert.equal((await fetch(`${origin}/assets/private.bin`)).status, 404);
+        for (const metadata of ['_catalog_index.js', 'sand/pbr.material.config.js', 'sand/pbr.material.correction.config.js']) {
+            const response = await fetch(`${origin}/assets/public/pbr/${metadata}`);
+            assert.equal(response.status, 200);
+            assert.equal(response.headers.get('content-type'), 'text/javascript');
+        }
+        assert.equal((await fetch(`${origin}/assets/public/pbr/sand/private-source.png`)).status, 404);
         assert.deepEqual(await (await fetch(`${origin}/api/landscape/selection`)).json(), selection);
         assert.equal((await fetch(`${origin}/api/landscape/selection`, { method: 'DELETE', headers: { origin: 'http://evil.example' } })).status, 403);
         assert.equal((await fetch(`${origin}/api/landscape/selection`, { method: 'DELETE' })).status, 200);

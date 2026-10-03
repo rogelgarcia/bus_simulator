@@ -1,5 +1,11 @@
 # Landscape preparation
 
+D4 adds [independent PBR appearance preparation](appearance/README.md) through
+`node tools/bake.mjs --target landscape/appearance`. It derives bounded texture
+tiers from existing public material sources while preserving the global catalog,
+calibration and current terrain. This separate leaf uses only the shared Python
+configuration and does not run height preparation or unrelated bakes.
+
 D3 adds explicit current-source hierarchy maintenance:
 
 ```sh

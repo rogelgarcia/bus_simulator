@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { createLandscapeShaderPayload } from '../../shaders/materials/landscape/LandscapeShaderLoader.js';
 import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
 import { withLandscapeMorphedPositions } from './LandscapeTileEdges.js';
+import { createLandscapeAppearanceUniforms } from './LandscapeAppearanceUniforms.js';
 
 const LOD_COLORS = [0x687dba, 0x46b89b, 0xe4b76c, 0xd279a8, 0x92ba5e, 0x7cadd9];
 export const OVERVIEW_MEMORY_CAP = 32 * 1024 * 1024;
@@ -23,7 +24,7 @@ export function createLandscapeMesh(buffers, sourceHeights) {
         vertexShader: terrainPayload.vertexSource,
         fragmentShader: terrainPayload.fragmentSource,
         vertexColors: true,
-        uniforms: { ...sharedUniforms, uTint: { value: new THREE.Color(LOD_COLORS[descriptor.level % LOD_COLORS.length]) }, uLodColor: { value: 0 } }
+        uniforms: { ...sharedUniforms, ...createLandscapeAppearanceUniforms(), uTint: { value: new THREE.Color(LOD_COLORS[descriptor.level % LOD_COLORS.length]) }, uLodColor: { value: 0 } }
     });
     attachShaderMetadata(material, terrainPayload);
     const geometry = new THREE.BufferGeometry();
@@ -74,6 +75,7 @@ export function createLandscapeMesh(buffers, sourceHeights) {
         chunkId: descriptor.id,
         get morph() { return sharedUniforms.uMorph.value; },
         setMorph(value) { sharedUniforms.uMorph.value = value; },
+        setAppearance(uniforms) { Object.assign(material.uniforms, uniforms); material.uniformsNeedUpdate = true; },
         setEdges(edges, morph = [1, 1, 1, 1]) { sharedUniforms.uEdges.value.set(...edges); sharedUniforms.uEdgeMorph.value.set(...morph); },
         setLodColors(enabled) { material.uniforms.uLodColor.value = enabled ? .78 : 0; },
         setMode(value) {

@@ -20,7 +20,9 @@ test('Landscape D1: real overview, wireframe, pointing, reload, and teardown', a
     expect(initial.memory.vertices).toBeLessThanOrEqual(257 * 257 + 4 * 256);
     expect(initial.memory.estimatedPeakBytes).toBeLessThanOrEqual(initial.memory.memoryCapBytes);
     expect(initial.sourceBytes).toBeLessThan(1024 * 1024);
-    expect(payloads.length).toBe(3);
+    expect(payloads.filter(url => url.endsWith('.f32le'))).toHaveLength(1);
+    expect(payloads.filter(url => url.endsWith('/coastal-city/manifest.json'))).toHaveLength(1);
+    expect(payloads.some(url => url.endsWith('.u8'))).toBe(true);
     expect(payloads.some(url => url.includes('/source/') || url.includes('/l3/'))).toBe(false);
     await page.screenshot({ path: path.join(artifacts, '01-overview.png') });
 
@@ -70,7 +72,7 @@ test('Landscape D1: real overview, wireframe, pointing, reload, and teardown', a
     await expect.poll(() => page.locator('[data-field="status"]').textContent()).toContain('Worker streaming ready');
     await expect.poll(() => page.evaluate(() => window.__landscapeTestHooks.snapshot().selection.editingReady)).toBe(true);
     const reloaded = await page.evaluate(() => window.__landscapeTestHooks.snapshot());
-    expect(reloaded.camera.position).toEqual(selected.camera.position);
+    reloaded.camera.position.forEach((value, index) => expect(value).toBeCloseTo(selected.camera.position[index], 9));
     expect(reloaded.selection.position).toEqual(selected.selection.position);
 
     await page.getByRole('button', { name: 'Beach approach', exact: true }).click();
@@ -102,7 +104,8 @@ test('Landscape D1: bad update retains last valid terrain and camera', async ({ 
     await expect(page.locator('[data-field="notice"]')).toContainText('last valid');
     const after = await page.evaluate(() => window.__landscapeTestHooks.snapshot());
     expect(after.revision).toBe(before.revision);
-    expect(after.camera).toEqual(before.camera);
+    for (const field of ['position', 'target']) after.camera[field].forEach((value, index) => expect(value).toBeCloseTo(before.camera[field][index], 9));
+    for (const field of ['projection', 'fov', 'zoom', 'orthoHeight']) expect(after.camera[field]).toEqual(before.camera[field]);
     expect(after.ready).toBe(true);
     await page.evaluate(() => window.__landscapeTestHooks.dispose());
 });

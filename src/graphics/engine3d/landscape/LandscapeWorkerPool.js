@@ -1,9 +1,10 @@
 // Bounds acquisition/build concurrency and terminates obsolete work before reusing a worker.
 // @ts-check
 export class LandscapeWorkerPool {
-    /** @param {{manifest:any,manifestUrl:string,root:any,size?:number}} options */
-    constructor({ manifest, manifestUrl, root, size = 2 }) {
-        this.context = { type: 'initialize', manifest, manifestUrl, root };
+    /** @param {{manifest?:any,manifestUrl?:string,root?:any,size?:number,workerUrl?:URL,context?:any}} options */
+    constructor({ manifest, manifestUrl, root, size = 2, workerUrl = new URL('./LandscapeMeshWorker.js', import.meta.url), context = null }) {
+        this.context = context ?? { type: 'initialize', manifest, manifestUrl, root };
+        this.workerUrl = workerUrl;
         this.slots = Array.from({ length: size }, () => ({ worker: null, job: null }));
         this.queue = [];
         this.sequence = 0;
@@ -26,7 +27,7 @@ export class LandscapeWorkerPool {
     }
 
     createWorker(slot) {
-        const worker = new Worker(new URL('./LandscapeMeshWorker.js', import.meta.url), { type: 'module' });
+        const worker = new Worker(this.workerUrl, { type: 'module' });
         worker.postMessage(this.context);
         worker.onmessage = ({ data }) => {
             if (slot.worker !== worker) return;

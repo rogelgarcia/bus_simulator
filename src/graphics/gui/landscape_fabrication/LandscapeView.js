@@ -4,9 +4,11 @@ import * as THREE from 'three';
 import { ToolCameraController } from '../../engine3d/camera/ToolCameraController.js';
 import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
 import { ensureGlobalPerfBar } from '../perf_bar/PerfBar.js';
-import { loadLandscapeOverview, createLandscapeSelectionContext, sampleLandscapeChunk, planLandscapeRegion, queryLandscapeSelection, LandscapeResidencyBudget } from '../../../app/landscape/index.js';
+import { loadLandscapeOverview, createLandscapeSelectionContext, sampleLandscapeChunk, planLandscapeRegion, queryLandscapeSelection, LandscapeResidencyBudget, LANDSCAPE_STREAMING_BUDGETS } from '../../../app/landscape/index.js';
 import { LandscapePanel } from './LandscapePanel.js';
 import { LandscapeStreamer } from '../../engine3d/landscape/LandscapeStreamer.js';
+import { LandscapeAppearanceStreamer } from '../../engine3d/landscape/LandscapeAppearanceStreamer.js';
+import { createLandscapeWaterReference } from '../../engine3d/landscape/LandscapeWaterReference.js';
 
 const DEFAULT_SOURCE = '/assets/public/landscape/coastal-city/manifest.json';
 
@@ -21,6 +23,7 @@ export class LandscapeView {
         this.orthoHeight = 5000;
         this.lodColors = false;
         this.boundaries = false;
+        this.waterVisible = true;
         this.budget = new LandscapeResidencyBudget(budgets);
         this.consumerLeases = new Map();
         this.selection = null;
@@ -29,6 +32,7 @@ export class LandscapeView {
         this.handoffQueue = Promise.resolve();
         this.disposed = false;
         this.frameIndex = 0;
+        this.peakUploadedBytes = 0;
         this.loadSequence = 0;
         this.abort = new AbortController();
         this.perfBar = ensureGlobalPerfBar();
@@ -46,6 +50,7 @@ export class LandscapeView {
         this.camera = new THREE.PerspectiveCamera(50, 1, 0.5, 25000);
         this.camera.position.set(4400, 3000, -2300);
         this.panel = new LandscapePanel(action => Promise.resolve(this.action(action)).catch(error => this.panel.notice(error.message)));
+        this.panel.active('water', true);
         this.controls = new ToolCameraController(this.camera, canvas, { uiRoot: this.panel.root, minDistance: 3, maxDistance: 18000, maxPolarAngle: Math.PI * .495 });
         this.controls.setLookAt({ position: this.camera.position, target: { x: 2000, y: 0, z: 2000 } });
         canvas.addEventListener('wheel', event => {
@@ -98,6 +103,9 @@ export class LandscapeView {
         this.selectionAbort?.abort();
         this.loadingStream?.dispose();
         this.loadingStream = null;
+        this.loadingAppearance?.dispose();
+        this.loadingAppearance = null;
+        this.appearance?.coarsenForReload();
         this.stream?.coarsenToRoot();
         this.loadAbort = new AbortController();
         this.reloading = true;
@@ -113,15 +121,24 @@ export class LandscapeView {
             await stream.initialize(this.camera);
             if (this.disposed || sequence !== this.loadSequence) { stream.dispose(); return; }
             this.stream?.dispose();
+            this.appearance?.dispose();
+            this.water?.dispose();
             this.loaded = loaded;
             this.lastError = null;
             this.stream = stream;
             this.loadingStream = null;
+            const appearance = new LandscapeAppearanceStreamer({ loaded, budget: this.budget, renderer: this.renderer });
+            this.appearance = this.loadingAppearance = appearance;
+            stream.setAppearance(appearance);
+            this.water = createLandscapeWaterReference({ manifest: loaded.manifest, budget: this.budget, scene: this.scene, visible: this.waterVisible });
+            await appearance.initialize();
+            if (this.disposed || sequence !== this.loadSequence) return;
+            this.loadingAppearance = null;
             const { manifest, chunk } = loaded;
             this.panel.text('source', `${manifest.name} · ${(manifest.bounds.maxX - manifest.bounds.minX) / 1000} × ${(manifest.bounds.maxZ - manifest.bounds.minZ) / 1000} km`);
             this.panel.text('revision', `Revision ${manifest.revision} · ${manifest.chunks.length} prepared tiles · Native level ${manifest.grid.maxLevel}`);
-            this.panel.text('status', 'Worker streaming ready · Y up / +Z north · Native queries independent of view LOD');
-            this.panel.text('legend', `SURFACE REFERENCE\n${manifest.landCover.catalog.map(item => `${item.id}  ${item.label}`).join('\n')}\n\nWorld grid: 200 m · Elevations: meters\nNative spacing: ${manifest.grid.spacingX.toFixed(3)} m`);
+            this.panel.text('status', 'Worker streaming ready · Soil PBR + independent masks · Y up / +Z north · Native queries independent of appearance');
+            this.panel.text('legend', `SURFACE REFERENCE\n${manifest.landCover.catalog.map(item => `${item.id}  ${item.label}`).join('\n')}\n\nPavement tint: planning reference over unknown soil\nWater: separate sea-level reference\nWorld grid: 200 m · Elevations: meters\nNative spacing: ${manifest.grid.spacingX.toFixed(3)} m`);
             this.panel.notice('');
             if (this.selection) this.select(this.selection.position.x, this.selection.position.z);
             this.perfBar.requestUpdate();
@@ -181,11 +198,24 @@ export class LandscapeView {
         this.panel.active('boundaries', boundaries);
     }
 
+    setWater(visible) {
+        if (typeof visible !== 'boolean') throw new Error('Water visibility must be boolean');
+        this.waterVisible = visible;
+        this.water?.setVisible(visible);
+        this.panel.active('water', visible);
+    }
+
     async setBudgets(budgets) {
         this.loadSequence++;
         this.loadAbort?.abort();
         this.loadingStream?.dispose();
         this.loadingStream = null;
+        this.loadingAppearance?.dispose();
+        this.loadingAppearance = null;
+        this.appearance?.dispose();
+        this.appearance = null;
+        this.water?.dispose();
+        this.water = null;
         this.selectionAbort?.abort();
         for (const lease of this.consumerLeases.values()) lease.release();
         this.consumerLeases.clear();
@@ -354,6 +384,7 @@ export class LandscapeView {
         if (action === 'zoom') return this.setCamera({ zoom: Number(this.panel.root.querySelector('[data-field="zoom"]').value) });
         if (action === 'lod') return this.setInspection({ lod: !this.lodColors });
         if (action === 'boundaries') return this.setInspection({ boundaries: !this.boundaries });
+        if (action === 'water') return this.setWater(!this.waterVisible);
         if (action === 'focus-selection') return this.focusSelection();
         if (action === 'selection:radius') return this.setSelectionRadius(Number(this.panel.root.querySelector('[data-field="radius"]').value));
         if (action.startsWith('mode:')) return this.setMode(action.slice(5));
@@ -388,6 +419,9 @@ export class LandscapeView {
             helpers: { grid: this.grid.visible, axes: this.axes.visible },
             sourceBytes: this.stream?.snapshot().sourceBytes ?? 0, memory: this.stream?.snapshot() ?? null,
             streaming: this.stream?.snapshot() ?? null, budget: this.budget.snapshot(),
+            appearance: this.appearance?.snapshot() ?? null, water: this.water?.snapshot() ?? { visible: false, seaLevel: null },
+            uploadedBytesPerFrame: (this.stream?.snapshot().uploadedBytesPerFrame ?? 0) + (this.appearance?.snapshot().uploadedBytesPerFrame ?? 0),
+            peakUploadedBytesPerFrame: this.peakUploadedBytes,
             renderer: { ...this.renderer.info.render, memory: { ...this.renderer.info.memory } },
             canvas: { width: this.canvas.width, height: this.canvas.height }
         };
@@ -403,13 +437,21 @@ export class LandscapeView {
             this.lastFrame = now;
             this.controls.update(Math.min(rawDt, .1));
             if (this.camera.isOrthographicCamera) this.camera.fov = 2 * Math.atan(this.orthoHeight / this.camera.zoom / (2 * this.camera.position.distanceTo(this.controls.target))) * 180 / Math.PI;
-            if (!this.reloading) this.stream?.update(rawDt, this.camera, this.canvas.height);
+            if (!this.reloading) {
+                this.stream?.update(rawDt, this.camera, this.canvas.height);
+                const geometryStats = this.stream?.snapshot();
+                this.appearance?.update(rawDt, this.camera, this.canvas.height, Math.max(0, (geometryStats?.uploadLimitBytes ?? LANDSCAPE_STREAMING_BUDGETS.uploadBytesPerFrame) - (geometryStats?.uploadedBytesPerFrame ?? 0)));
+                this.peakUploadedBytes = Math.max(this.peakUploadedBytes, (geometryStats?.uploadedBytesPerFrame ?? 0) + (this.appearance?.uploadedBytes ?? 0));
+            }
             if (this.stream && (!this.lastTelemetryUpdate || now - this.lastTelemetryUpdate > 250)) {
                 const stats = this.stream.snapshot();
                 const mib = bytes => (bytes / (1024 * 1024)).toFixed(1);
+                const errorBound = stats.achievedErrorPixels >= 10000 ? stats.achievedErrorPixels.toExponential(1) : stats.achievedErrorPixels.toFixed(2);
                 const levels = stats.lods.map(lod => lod.level);
-                this.panel.text('streaming', `LOD ${Math.min(...levels)}–${Math.max(...levels)} · ${stats.residentLeafIds.length} tiles · ${stats.pending} pending · CPU ${mib(stats.budget.cpuBytes)}/${mib(stats.budget.limits.cpuBytes)} MiB · GPU est. ${mib(stats.budget.gpuBytes)}/${mib(stats.budget.limits.gpuBytes)} MiB · error ${stats.achievedErrorPixels.toFixed(2)}/${stats.targetErrorPixels.toFixed(1)} px · ${stats.degradationReason ?? 'ready'}`);
+                this.panel.text('streaming', `LOD ${Math.min(...levels)}–${Math.max(...levels)} · ${stats.residentLeafIds.length} tiles · ${stats.pending} pending · CPU ${mib(stats.budget.cpuBytes)}/${mib(stats.budget.limits.cpuBytes)} MiB · GPU est. ${mib(stats.budget.gpuBytes)}/${mib(stats.budget.limits.gpuBytes)} MiB · error bound ${errorBound}/${stats.targetErrorPixels.toFixed(1)} px · ${stats.degradationReason ?? 'ready'}`);
                 this.panel.text('streaming-detail', `Loaded ${stats.loaded} · evicted ${stats.evicted} · canceled ${stats.canceled} · queue ${stats.queueDepth} · upload ${mib(stats.uploadedBytesPerFrame)} MiB/frame · stream ${stats.frameCostMs.toFixed(2)} ms`);
+                const appearance = this.appearance?.snapshot();
+                if (appearance) this.panel.text('appearance', `Appearance: ${appearance.residentMaskIds.length}/${appearance.maskCapacity} mask pages · ${appearance.materials.map(value => `${value.soilId}:${value.resolution}`).join(' / ')} px · ${appearance.pending} pending · CPU ${mib(appearance.cpuBytes)} / GPU est. ${mib(appearance.gpuBytes)} MiB · ${appearance.degradationReason ?? (appearance.settled ? 'ready' : 'streaming')}`);
                 if (this.selection) {
                     const x = this.selection.position.x, z = this.selection.position.z;
                     const chunk = this.stream.renderedChunkAt(x, z);
@@ -441,6 +483,11 @@ export class LandscapeView {
         this.resizeObserver.disconnect();
         this.controls.dispose();
         this.loadingStream?.dispose();
+        this.loadingAppearance?.dispose();
+        this.appearance?.dispose();
+        this.appearance = null;
+        this.water?.dispose();
+        this.water = null;
         this.stream?.dispose();
         this.stream = null;
         this.consumerLeases.clear();

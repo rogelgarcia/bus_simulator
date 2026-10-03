@@ -157,3 +157,11 @@ Notes:
 - URL/map-slot resolution remains catalog-driven via `resolvePbrMaterialUrls(materialId)`.
 - Calibration files are treated as session-cached inputs; edits are picked up on next app load/restart.
 - Diagnostics for resolved values should expose per-field source (`catalog`, `calibration`, `local`) to aid debugging.
+
+Landscape appearance streaming retains these same IDs and the complete catalog
+metadata closure. Its independently hashed32/128/512 baseColor/normal/ORM pages
+are derivatives of catalog map slots; they do not introduce a separate material
+registry or change calibration precedence. The renderer uses the shared pipeline
+to resolve tile scale/calibration and admits only the required retained page
+tier instead of loading original full map URLs. The page/schema/source contract
+is in [LANDSCAPE_APPEARANCE.md](../landscape/LANDSCAPE_APPEARANCE.md).

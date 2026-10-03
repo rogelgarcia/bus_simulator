@@ -6,6 +6,7 @@ uniform vec4 uEdgeMorph;
 uniform vec4 uBounds;
 varying vec3 vLandscapeColor;
 varying vec3 vLandscapeNormal;
+varying vec3 vLandscapeWorld;
 
 void main() {
     float morph = uMorph;
@@ -16,5 +17,6 @@ void main() {
     vec3 transformed = vec3(position.x, mix(parentHeight, position.y, morph), position.z);
     vLandscapeColor = color;
     vLandscapeNormal = normalize(mix(parentNormal, normal, morph));
+    vLandscapeWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
 }

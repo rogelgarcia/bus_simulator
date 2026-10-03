@@ -2,6 +2,7 @@
 // @ts-check
 import { LANDSCAPE_MAX_CHUNK_SAMPLES, validateLandscapeManifest } from './LandscapeManifest.js';
 import { requireCondition, requireFinite } from './internal/LandscapeValidation.js';
+import { readBoundedResponse, verifyLandscapeHash, resolveLandscapeUrl } from './internal/LandscapePayloadIO.js';
 
 export const LANDSCAPE_MANIFEST_BYTE_LIMIT = 1024 * 1024;
 export const LANDSCAPE_CHUNK_BYTE_LIMIT = 1024 * 1024;
@@ -51,51 +52,10 @@ export function decodeLandscapeChannel(input, channel, { minHeight = -Infinity, 
     return heights;
 }
 
-async function readBoundedResponse(response, limit, exact, label) {
-    requireCondition(response.ok, `${label} HTTP ${response.status}`);
-    const declared = response.headers?.get('content-length');
-    if (declared !== null && declared !== undefined) requireCondition(Number(declared) <= limit, `${label} Content-Length exceeds ${limit} bytes`);
-    requireCondition(response.body && typeof response.body.getReader === 'function', `${label} requires a bounded streaming response`);
-    const reader = response.body.getReader();
-    const output = new Uint8Array(limit);
-    let offset = 0;
-    try {
-        for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            requireCondition(value instanceof Uint8Array, `${label} returned a non-byte response`);
-            requireCondition(offset + value.length <= limit, `${label} exceeds ${limit} bytes`);
-            output.set(value, offset);
-            offset += value.length;
-        }
-        requireCondition(!exact || offset === limit, `${label} is truncated: ${offset}/${limit} bytes`);
-        return output.subarray(0, offset);
-    } catch (error) {
-        await reader.cancel().catch(() => {});
-        throw error;
-    } finally {
-        reader.releaseLock();
-    }
-}
-
-async function verifyHash(bytes, expected, label) {
-    requireCondition(!!globalThis.crypto?.subtle, 'SHA-256 verification requires Web Crypto');
-    const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
-    const actual = [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('');
-    requireCondition(actual === expected, `${label} SHA-256 mismatch`);
-}
-
-function resolveManifestUrl(manifestUrl) {
-    requireCondition(typeof manifestUrl === 'string' || manifestUrl instanceof URL, 'manifestUrl is required');
-    const url = new URL(manifestUrl, globalThis.location?.href);
-    requireCondition(url.protocol === 'http:' || url.protocol === 'https:', 'runtime landscape loading requires HTTP(S)');
-    return url.href;
-}
-
 /** @param {string|URL} manifestUrl @param {LandscapeLoadOptions} [options] @returns {Promise<import('./LandscapeManifest.js').LandscapeManifest>} */
 export async function loadLandscapeManifest(manifestUrl, { fetchImpl = globalThis.fetch, signal } = {}) {
     requireCondition(typeof fetchImpl === 'function', 'fetchImpl is required');
-    const url = resolveManifestUrl(manifestUrl);
+    const url = resolveLandscapeUrl(manifestUrl);
     const response = await fetchImpl(url, { signal, cache: 'no-store' });
     const bytes = await readBoundedResponse(response, LANDSCAPE_MANIFEST_BYTE_LIMIT, false, 'manifest');
     const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
@@ -111,12 +71,12 @@ export async function loadLandscapeChunk(input, chunkId, { manifestUrl, fetchImp
     requireFinite(maxDecodedBytes, 'maxDecodedBytes');
     const required = descriptor.channels.height.decodedByteLength + descriptor.channels.landCover.decodedByteLength;
     requireCondition(maxDecodedBytes > 0 && required <= maxDecodedBytes, `chunk ${chunkId} needs ${required} decoded bytes; budget ${maxDecodedBytes}`);
-    const base = resolveManifestUrl(manifestUrl);
+    const base = resolveLandscapeUrl(manifestUrl);
     const read = async (channel, options) => {
         signal?.throwIfAborted();
         const response = await fetchImpl(new URL(channel.url, base).href, { signal });
         const bytes = await readBoundedResponse(response, channel.byteLength, true, `chunk ${chunkId}`);
-        await verifyHash(bytes, channel.sha256, `chunk ${chunkId}`);
+        await verifyLandscapeHash(bytes, channel.sha256, `chunk ${chunkId}`);
         signal?.throwIfAborted();
         return decodeLandscapeChannel(bytes, channel, options);
     };
@@ -127,7 +87,7 @@ export async function loadLandscapeChunk(input, chunkId, { manifestUrl, fetchImp
 
 /** @param {string|URL} manifestUrl @param {LandscapeLoadOptions} [options] @returns {Promise<{manifest:import('./LandscapeManifest.js').LandscapeManifest,chunk:LandscapeChunk,manifestUrl:string,encodedBytes:number,decodedBytes:number}>} */
 export async function loadLandscapeOverview(manifestUrl, options = {}) {
-    const url = resolveManifestUrl(manifestUrl);
+    const url = resolveLandscapeUrl(manifestUrl);
     const manifest = await loadLandscapeManifest(url, options);
     const chunk = await loadLandscapeChunk(manifest, manifest.overviewId, { ...options, manifestUrl: url });
     const encodedBytes = chunk.descriptor.channels.height.byteLength + chunk.descriptor.channels.landCover.byteLength;
