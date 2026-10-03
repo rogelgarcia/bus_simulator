@@ -9,6 +9,7 @@ import { LANDSCAPE_MANIFEST_BYTE_LIMIT } from '../../src/app/landscape/index.js'
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const HELP = `Landscape authoring
   node tools/landscape_authoring/run.mjs state
+  node tools/landscape_authoring/run.mjs report --request <report-request.json> [--output <report.json>]
   node tools/landscape_authoring/run.mjs query --x <meters> --z <meters> --selection-id <id> --expected-revision <revision> [--radius <meters>] [--output <context.json>]
   node tools/landscape_authoring/run.mjs bind --template <template.json> --context <context.json> --batch-id <fresh-id> --output <batch.json>
   node tools/landscape_authoring/run.mjs bind --template <template.json> --state <state.json> --batch-id <fresh-id> --output <batch.json>
@@ -24,7 +25,7 @@ Use --output to save command JSON. This is an authoring tool, not a source-impor
 `;
 
 const OPTIONS = Object.freeze({
-    state: [], query: ['x', 'z', 'selection-id', 'expected-revision', 'radius'],
+    state: [], report: ['request'], query: ['x', 'z', 'selection-id', 'expected-revision', 'radius'],
     bind: ['template', 'context', 'state', 'batch-id'], apply: ['batch'], revert: ['expected-revision', 'batch-id']
 });
 
@@ -58,6 +59,7 @@ async function run(signal) {
     }
     let result;
     if (command === 'state') result = await store.readState();
+    if (command === 'report') result = await store.report({ ...await jsonFile(values.request, signal), signal });
     if (command === 'query') result = await store.query({ x: Number(values.x), z: Number(values.z), selectionId: values['selection-id'],
         expectedRevision: values['expected-revision'], signal, ...(values.radius === undefined ? {} : { radius: Number(values.radius) }) });
     if (command === 'bind') {

@@ -9,6 +9,10 @@ import { LandscapePanel } from './LandscapePanel.js';
 import { LandscapeStreamer } from '../../engine3d/landscape/LandscapeStreamer.js';
 import { LandscapeAppearanceStreamer } from '../../engine3d/landscape/LandscapeAppearanceStreamer.js';
 import { createLandscapeWaterReference } from '../../engine3d/landscape/LandscapeWaterReference.js';
+import { LandscapePlanningOverlay } from '../../engine3d/landscape/LandscapePlanningOverlay.js';
+import { landscapePlanningHeight } from '../../engine3d/landscape/LandscapePlanningGeometry.js';
+import { LandscapeBookmarks } from './LandscapeBookmarks.js';
+import { readLandscapeTerrainReport } from '../../../app/landscape/LandscapeTerrainReports.js';
 
 const DEFAULT_SOURCE = '/assets/public/landscape/coastal-city/manifest.json';
 
@@ -24,6 +28,10 @@ export class LandscapeView {
         this.lodColors = false;
         this.boundaries = false;
         this.waterVisible = true;
+        this.planningVisibility = { districts: false, roads: false, shoreline: false, points: false, corridors: false };
+        this.diagnostic = 'none';
+        this.report = { status: 'idle', pending: false, result: null, error: null };
+        this.reportSequence = 0;
         this.budget = new LandscapeResidencyBudget(budgets);
         this.consumerLeases = new Map();
         this.selection = null;
@@ -101,6 +109,9 @@ export class LandscapeView {
         const sequence = ++this.loadSequence;
         this.loadAbort?.abort();
         this.selectionAbort?.abort();
+        this.invalidateReport();
+        this.loadingPlanning?.dispose();
+        this.loadingPlanning = null;
         this.loadingStream?.dispose();
         this.loadingStream = null;
         this.loadingAppearance?.dispose();
@@ -123,7 +134,10 @@ export class LandscapeView {
             this.stream?.dispose();
             this.appearance?.dispose();
             this.water?.dispose();
+            this.planning?.dispose();
             this.loaded = loaded;
+            if (!this.bookmarkStore || this.bookmarkStore.landscapeId !== loaded.manifest.id) this.bookmarkStore = new LandscapeBookmarks({ landscapeId: loaded.manifest.id, source: this.source });
+            this.panel.bookmarks(this.bookmarkStore.snapshot());
             this.lastError = null;
             this.stream = stream;
             this.loadingStream = null;
@@ -134,6 +148,16 @@ export class LandscapeView {
             await appearance.initialize();
             if (this.disposed || sequence !== this.loadSequence) return;
             this.loadingAppearance = null;
+            const planning = new LandscapePlanningOverlay({ loaded, scene: this.scene, budget: this.budget,
+                visibility: this.planningVisibility, diagnostic: this.diagnostic });
+            this.planning = this.loadingPlanning = planning;
+            stream.setPlanning(planning);
+            await planning.initialize();
+            if (this.disposed || sequence !== this.loadSequence) return;
+            this.loadingPlanning = null;
+            this.panel.references(planning.features);
+            this.syncPlanningPanel();
+            if (this.bookmarkStore.error) this.panel.text('bookmark-status', this.bookmarkStore.error);
             const { manifest, chunk } = loaded;
             this.panel.text('source', `${manifest.name} · ${(manifest.bounds.maxX - manifest.bounds.minX) / 1000} × ${(manifest.bounds.maxZ - manifest.bounds.minZ) / 1000} km`);
             this.panel.text('revision', `Revision ${manifest.revision} · ${manifest.chunks.length} prepared tiles · Native level ${manifest.grid.maxLevel}`);
@@ -205,6 +229,111 @@ export class LandscapeView {
         this.panel.active('water', visible);
     }
 
+    setPlanning(options = {}) {
+        if (!this.planning) throw new Error('Planning references are still loading');
+        this.planning.set(options);
+        this.planningVisibility = { ...this.planning.visible }; this.diagnostic = this.planning.diagnostic;
+        this.panel.root.querySelector('[data-field="planning-panel"]').open = true;
+        this.syncPlanningPanel();
+        return this.planning.snapshot();
+    }
+
+    syncPlanningPanel() {
+        const planning = this.planning?.snapshot();
+        if (!planning) return;
+        for (const [name, visible] of Object.entries(planning.visible)) this.panel.active(`planning:${name}`, visible);
+        this.panel.root.querySelector('[data-field="diagnostic"]').value = planning.diagnostic;
+        this.panel.text('planning-status', planning.errors.length ? `References unavailable or limited: ${planning.errors.join('; ')}`
+            : `${planning.features.length} retained source references · Informational/advisory only`);
+        const legend = { none: 'Material surface. Optional guides preserve source XZ and drape on the coarse overview.',
+            elevation: 'Elevation: blue-green low → tan high. Contours every 5 m.', slope: 'Slope: green 0° → yellow 15° → red 35°+.',
+            water: `Depth below sea level ${this.loaded.manifest.coordinates.seaLevel} m: cyan 0 → blue 10 m+. Gray-green is dry.` };
+        this.panel.text('diagnostic-legend', `${legend[planning.diagnostic]}\nApproximate displayed terrain LOD; use Inspect area for native samples. Guides use ${planning.accuracy.overviewSpacingMeters.toFixed(3)} m overview spacing.`);
+    }
+
+    referenceInfo(id = this.panel.root.querySelector('[data-field="reference-list"]').value) {
+        const feature = this.planning?.features.find(value => value.id === id);
+        if (!feature) return null;
+        const point = feature.geometry.points[0], metadata = feature.metadata;
+        this.panel.text('reference-info', `${feature.name} · ${feature.id}\n${feature.classification} source reference; no object is placed.`
+            + (feature.geometry.type === 'point' ? `\nSource X ${point.x.toFixed(1)} / Y ${point.y?.toFixed(2) ?? 'unspecified'} / Z ${point.z.toFixed(1)} m` : '')
+            + (metadata.targetElevationMeters !== undefined ? `\nSource design target ${metadata.targetElevationMeters} m; not a current terrain query.` : '')
+            + (metadata.footprintMeters ? `\nReserved footprint ${metadata.footprintMeters.width} × ${metadata.footprintMeters.depth} m; orientation unspecified.` : '')
+            + (metadata.note ? `\n${metadata.note}` : ''));
+        return feature;
+    }
+
+    focusReference(id) {
+        const feature = this.referenceInfo(id);
+        if (!feature) throw new Error(`Unknown planning reference ${id}`);
+        const bounds = feature.bounds, x = (bounds.minX + bounds.maxX) / 2, z = (bounds.minZ + bounds.maxZ) / 2;
+        const y = landscapePlanningHeight(this.loaded.chunk, x, z), span = Math.max(100, bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ), distance = span * 1.2;
+        this.setCamera({ position: [x + distance * .7, y + distance * .8, z - distance * .8], target: [x, y, z], zoom: 1, orthoHeight: Math.min(20000, span * 1.6) });
+        this.panel.root.querySelector('[data-field="reference-list"]').value = id;
+        this.panel.root.querySelector('[data-field="planning-panel"]').open = true;
+        return { id, target: [x, y, z], accuracy: 'overview-navigation' };
+    }
+
+    saveBookmark(name) {
+        if (!this.bookmarkStore) throw new Error('Load a landscape before saving a camera bookmark');
+        const record = this.bookmarkStore.save(name, this.snapshot().camera);
+        this.panel.bookmarks(this.bookmarkStore.snapshot(), record.id);
+        this.panel.text('bookmark-status', `Saved locally: ${record.name}. Terrain revision is unchanged.`);
+        return record;
+    }
+
+    focusBookmark(id) {
+        const record = this.bookmarkStore?.get(id);
+        if (!record) throw new Error('No saved camera bookmarks are available');
+        this.setCamera(record.camera); this.panel.bookmarks(this.bookmarkStore.snapshot(), id);
+        return record;
+    }
+
+    removeBookmark(id) {
+        if (!this.bookmarkStore) throw new Error('No saved camera bookmarks are available');
+        this.bookmarkStore.remove(id); this.panel.bookmarks(this.bookmarkStore.snapshot());
+        this.panel.text('bookmark-status', 'Bookmark removed from local viewer state.');
+    }
+
+    invalidateReport() {
+        this.reportSequence++; this.reportAbort?.abort();
+        this.report = { status: this.report.result ? 'stale' : 'idle', pending: false, result: null, error: null };
+        this.panel?.text('report', 'Terrain report: select an area, then Inspect area.');
+    }
+
+    async reportSelection() {
+        if (!this.loaded || !this.selection || this.selection.region.type === 'point') throw new Error('Select an explicit area with a positive radius before requesting its terrain report');
+        this.reportAbort?.abort(); this.reportAbort = new AbortController();
+        const sequence = ++this.reportSequence, manifest = this.loaded.manifest, region = this.selection.region;
+        const diameter = region.type === 'circle' ? region.radius * 2 : Math.max(region.maxX - region.minX, region.maxZ - region.minZ);
+        const constraints = (this.planning?.features ?? []).filter(feature => feature.geometry.type === 'polygon' && feature.geometry.points.length <= 128)
+            .map(feature => ({ id: feature.id, classification: feature.classification, shape: { type: 'footprint', region: { type: 'polygon', points: feature.geometry.points.map(point => ({ x: point.x, z: point.z })) } } }));
+        this.report = { status: 'pending', pending: true, result: null, error: null };
+        this.panel.text('report', 'Resolving bounded native terrain report…');
+        try {
+            const response = await fetch('/api/landscape/report', { method: 'POST', headers: { 'content-type': 'application/json' }, signal: this.reportAbort.signal,
+                body: JSON.stringify({ expectedRevision: manifest.revision, shape: { type: 'footprint', region }, sampleSpacingMeters: Math.max(manifest.grid.spacingX, manifest.grid.spacingZ, diameter / 40), maxSamples: 4096, constraints }) });
+            const result = await readLandscapeTerrainReport(response, { landscapeId: manifest.id, revision: manifest.revision });
+            if (this.disposed || sequence !== this.reportSequence || manifest.revision !== this.loaded.manifest.revision) return null;
+            this.report = { status: result.status, pending: false, result, error: null };
+            const number = value => Number.isFinite(value) ? value.toFixed(2) : 'unknown';
+            this.panel.text('report', `${result.status.toUpperCase()} · ${result.sampling.ready}/${result.sampling.requested} native probes at ${number(result.sampling.spacingMeters)} m\n`
+                + `Elevation ${number(result.elevation?.min)}–${number(result.elevation?.max)} m · range ${number(result.elevation?.range)} m\n`
+                + `Slope ${number(result.slopeDegrees?.min)}–${number(result.slopeDegrees?.max)}° · mean ${number(result.slopeDegrees?.mean)}°\n`
+                + `Submerged ${number((result.water?.submergedFraction ?? NaN) * 100)}% · max depth ${number(result.water?.maxDepth)} m\n`
+                + `Area ${number(result.area?.squareMeters)} m² · ${result.area?.exact ? 'exact shape area' : 'estimated area'}\n`
+                + `Soil: ${(result.soilComposition ?? []).map(value => `${value.id} ${number(value.fraction * 100)}%`).join(', ')}\n`
+                + `Cover: ${(result.coverComposition ?? []).map(value => `${value.id} ${number(value.fraction * 100)}%`).join(', ')}\n`
+                + `Evaluated reference polygon overlaps: ${(result.overlaps ?? []).filter(value => value.intersects).map(value => value.id).join(', ') || 'none'}\nReference polygons only; other guides were not evaluated.\n`
+                + `Unknown ${result.sampling.unknown} / outside ${result.sampling.outside}. Sampled extrema and probe fractions; not continuous surface guarantees.`);
+            return result;
+        } catch (error) {
+            if (this.disposed || sequence !== this.reportSequence || error.name === 'AbortError') return null;
+            this.report = { status: 'unavailable', pending: false, result: null, error: error.message };
+            this.panel.text('report', `Terrain report unavailable: ${error.message}`); return null;
+        }
+    }
+
     async setBudgets(budgets) {
         this.loadSequence++;
         this.loadAbort?.abort();
@@ -216,6 +345,9 @@ export class LandscapeView {
         this.appearance = null;
         this.water?.dispose();
         this.water = null;
+        this.loadingPlanning?.dispose(); this.loadingPlanning = null;
+        this.planning?.dispose(); this.planning = null;
+        this.invalidateReport();
         this.selectionAbort?.abort();
         for (const lease of this.consumerLeases.values()) lease.release();
         this.consumerLeases.clear();
@@ -271,6 +403,7 @@ export class LandscapeView {
     async select(x, z) {
         if (!this.loaded) return null;
         const sequence = ++this.selectionSequence;
+        this.invalidateReport();
         this.selectionAbort?.abort();
         this.selectionAbort = new AbortController();
         const options = { x, z, selectionId: crypto.randomUUID(), ...(this.selectionRadius > 0 ? { radius: this.selectionRadius } : {}), camera: { position: this.camera.position.toArray(), target: this.controls.target.toArray() } };
@@ -356,6 +489,7 @@ export class LandscapeView {
     }
 
     async clearSelection() {
+        this.invalidateReport();
         this.selectionSequence++;
         this.selectionAbort?.abort();
         this.selection = null;
@@ -378,6 +512,14 @@ export class LandscapeView {
     }
 
     async action(action) {
+        if (action === 'report-selection') return this.reportSelection();
+        if (action === 'planning:diagnostic') return this.setPlanning({ diagnostic: this.panel.root.querySelector('[data-field="diagnostic"]').value });
+        if (action.startsWith('planning:')) { const layer = action.slice(9); return this.setPlanning({ [layer]: !this.planningVisibility[layer] }); }
+        if (action === 'reference:focus') return this.focusReference(this.panel.root.querySelector('[data-field="reference-list"]').value);
+        if (action === 'reference:info') return this.referenceInfo();
+        if (action === 'bookmark:save') return this.saveBookmark(this.panel.root.querySelector('[data-field="bookmark-name"]').value);
+        if (action === 'bookmark:focus') return this.focusBookmark(this.panel.root.querySelector('[data-field="bookmark-list"]').value);
+        if (action === 'bookmark:remove') return this.removeBookmark(this.panel.root.querySelector('[data-field="bookmark-list"]').value);
         if (action === 'projection') return this.setCamera({ projection: this.panel.root.querySelector('[data-field="projection"]').value });
         if (action === 'fov') return this.setCamera({ fov: Number(this.panel.root.querySelector('[data-field="fov"]').value) });
         if (action === 'span') return this.setCamera({ orthoHeight: Number(this.panel.root.querySelector('[data-field="span"]').value) });
@@ -420,7 +562,9 @@ export class LandscapeView {
             sourceBytes: this.stream?.snapshot().sourceBytes ?? 0, memory: this.stream?.snapshot() ?? null,
             streaming: this.stream?.snapshot() ?? null, budget: this.budget.snapshot(),
             appearance: this.appearance?.snapshot() ?? null, water: this.water?.snapshot() ?? { visible: false, seaLevel: null },
-            uploadedBytesPerFrame: (this.stream?.snapshot().uploadedBytesPerFrame ?? 0) + (this.appearance?.snapshot().uploadedBytesPerFrame ?? 0),
+            planning: this.planning?.snapshot() ?? { ready: false, settled: !this.reloading, features: [], errors: [], cpuBytes: 0, gpuBytes: 0 },
+            bookmarks: this.bookmarkStore?.snapshot() ?? [], report: this.report,
+            uploadedBytesPerFrame: (this.stream?.snapshot().uploadedBytesPerFrame ?? 0) + (this.appearance?.snapshot().uploadedBytesPerFrame ?? 0) + (this.planning?.uploadedBytes ?? 0),
             peakUploadedBytesPerFrame: this.peakUploadedBytes,
             renderer: { ...this.renderer.info.render, memory: { ...this.renderer.info.memory } },
             canvas: { width: this.canvas.width, height: this.canvas.height }
@@ -440,8 +584,11 @@ export class LandscapeView {
             if (!this.reloading) {
                 this.stream?.update(rawDt, this.camera, this.canvas.height);
                 const geometryStats = this.stream?.snapshot();
-                this.appearance?.update(rawDt, this.camera, this.canvas.height, Math.max(0, (geometryStats?.uploadLimitBytes ?? LANDSCAPE_STREAMING_BUDGETS.uploadBytesPerFrame) - (geometryStats?.uploadedBytesPerFrame ?? 0)));
-                this.peakUploadedBytes = Math.max(this.peakUploadedBytes, (geometryStats?.uploadedBytesPerFrame ?? 0) + (this.appearance?.uploadedBytes ?? 0));
+                const uploadLimit = geometryStats?.uploadLimitBytes ?? LANDSCAPE_STREAMING_BUDGETS.uploadBytesPerFrame;
+                this.appearance?.update(rawDt, this.camera, this.canvas.height, Math.max(0, uploadLimit - (geometryStats?.uploadedBytesPerFrame ?? 0)));
+                const terrainUploads = (geometryStats?.uploadedBytesPerFrame ?? 0) + (this.appearance?.uploadedBytes ?? 0);
+                const planningUploads = this.planning?.update(Math.max(0, uploadLimit - terrainUploads)) ?? 0;
+                this.peakUploadedBytes = Math.max(this.peakUploadedBytes, terrainUploads + planningUploads);
             }
             if (this.stream && (!this.lastTelemetryUpdate || now - this.lastTelemetryUpdate > 250)) {
                 const stats = this.stream.snapshot();
@@ -479,6 +626,7 @@ export class LandscapeView {
         this.pause();
         this.loadAbort?.abort();
         this.selectionAbort?.abort();
+        this.reportAbort?.abort();
         this.abort.abort();
         this.resizeObserver.disconnect();
         this.controls.dispose();
@@ -488,6 +636,8 @@ export class LandscapeView {
         this.appearance = null;
         this.water?.dispose();
         this.water = null;
+        this.loadingPlanning?.dispose(); this.loadingPlanning = null;
+        this.planning?.dispose(); this.planning = null;
         this.stream?.dispose();
         this.stream = null;
         this.consumerLeases.clear();

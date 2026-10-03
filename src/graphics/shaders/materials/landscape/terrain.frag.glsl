@@ -1,6 +1,8 @@
 precision highp sampler2DArray;
 uniform vec3 uTint;
 uniform float uLodColor;
+uniform int uDiagnostic;
+uniform vec3 uDiagnosticRange;
 uniform float uAppearanceReady;
 uniform sampler2DArray uMaskPages;
 uniform vec2 uMaskDimensions;
@@ -187,7 +189,23 @@ void main() {
     vec2 world = vLandscapeWorld.xz;
     vec2 dx = dFdx(world), dy = dFdy(world);
     vec3 color;
-    if (uAppearanceReady > 0.5) {
+    if (uDiagnostic == 1) {
+        float elevation = clamp((vLandscapeWorld.y - uDiagnosticRange.x) / max(0.001, uDiagnosticRange.y - uDiagnosticRange.x), 0.0, 1.0);
+        vec3 low = mix(vec3(0.10, 0.27, 0.29), vec3(0.43, 0.54, 0.28), smoothstep(0.0, 0.45, elevation));
+        color = mix(low, vec3(0.82, 0.70, 0.49), smoothstep(0.4, 1.0, elevation));
+        float contourHeight = vLandscapeWorld.y / 5.0;
+        float contourDistance = abs(fract(contourHeight - 0.5) - 0.5);
+        float contour = 1.0 - smoothstep(0.0, max(fwidth(contourHeight) * 1.2, 0.0001), contourDistance);
+        color = mix(color, vec3(0.07, 0.12, 0.13), contour * 0.82);
+    } else if (uDiagnostic == 2) {
+        vec3 faceNormal = normalize(cross(dFdx(vLandscapeWorld), dFdy(vLandscapeWorld)));
+        float slope = acos(clamp(abs(faceNormal.y), 0.0, 1.0)) * 57.2957795;
+        color = mix(vec3(0.16, 0.54, 0.34), vec3(0.91, 0.67, 0.17), smoothstep(0.0, 15.0, slope));
+        color = mix(color, vec3(0.81, 0.16, 0.10), smoothstep(15.0, 35.0, slope));
+    } else if (uDiagnostic == 3) {
+        float depth = max(0.0, uDiagnosticRange.z - vLandscapeWorld.y);
+        color = depth > 0.0 ? mix(vec3(0.18, 0.63, 0.72), vec3(0.04, 0.12, 0.33), clamp(depth / 10.0, 0.0, 1.0)) : vec3(0.46, 0.48, 0.37);
+    } else if (uAppearanceReady > 0.5) {
         SoilSurface surface = appearanceSurface(world, dx, dy, normal);
         surface.albedo = mix(surface.albedo, uTint, uLodColor);
         color = illuminate(surface);

@@ -3,6 +3,8 @@
 import { BUILDING_STYLE, isBuildingStyle } from '../buildings/BuildingStyle.js';
 import { getBuildingConfigById } from './buildings/index.js';
 import { createDemoCitySpec } from './specs/DemoCitySpec.js';
+import { validateLandscapeCityBinding } from '../landscape/LandscapeCityBinding.js';
+import { normalizeCitySpec } from './specs/CitySpecAuthoring.js';
 import { createRoadNetworkFromWorldSegments } from './roads/RoadNetwork.js';
 import { generateCenterlineFromPolyline } from '../geometry/PolylineTAT.js';
 import { planCityConstructions } from './placement/index.js';
@@ -284,7 +286,8 @@ function resolveBrickMidriseVariantConfigId(configId, { mapSeed, buildingId, til
 }
 
 export class CityMap {
-    constructor({ width, height, tileSize, origin }) {
+    constructor({ width, height, tileSize, origin, landscape = null }) {
+        this.landscape = landscape === null ? null : validateLandscapeCityBinding(landscape);
         this.width = width | 0;
         this.height = height | 0;
         this.tileSize = tileSize;
@@ -673,6 +676,7 @@ export class CityMap {
             roads: [],
             buildings: []
         };
+        if (this.landscape) spec.landscape = deepClone(this.landscape);
 
         const roads = Array.isArray(this.roadSegments) ? this.roadSegments : [];
         for (const road of roads) {
@@ -719,6 +723,7 @@ export class CityMap {
                 configId: typeof building.configId === 'string' ? building.configId : null,
                 tiles: tiles.map((tile) => [tile?.[0] | 0, tile?.[1] | 0])
             };
+            if (building.rendered === false) record.rendered = false;
 
             // A parcel placement is authored, not derived: the spec keeps the
             // squares + limits, never the world loops the planner produced.
@@ -783,12 +788,13 @@ export class CityMap {
     }
 
     static fromSpec(spec = {}, config, { roadGeometry = null } = {}) {
+        if (spec.landscape != null) spec = normalizeCitySpec(spec);
         const width = spec.width ?? config.map.width;
         const height = spec.height ?? config.map.height;
         const tileSize = spec.tileSize ?? config.map.tileSize;
         const origin = spec.origin ?? config.map.origin;
 
-        const map = new CityMap({ width, height, tileSize, origin });
+        const map = new CityMap({ width, height, tileSize, origin, landscape: spec.landscape ?? null });
 
         const roads = Array.isArray(spec.roads) ? spec.roads : [];
         roads.forEach((road, index) => {
@@ -1023,6 +1029,7 @@ export class CityMap {
             out.push({
                 id,
                 configId: config?.id ?? null,
+                rendered: raw?.rendered !== false,
                 tiles: accepted,
                 layers: runtimeLayers,
                 _catalogLayersBaseline: catalogLayers,

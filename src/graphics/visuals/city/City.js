@@ -2,6 +2,7 @@
 // Builds and manages the city scene
 // @ts-check
 import * as THREE from 'three';
+import { assertFlatCityCapability } from '../../../app/landscape/LandscapeCityBinding.js';
 import { createCityConfig } from '../../../app/city/CityConfig.js';
 import { CityMap } from '../../../app/city/CityMap.js';
 import { RESERVATION_GROUND } from '../../../app/city/placement/index.js';
@@ -87,6 +88,7 @@ function applyShadowSideToObject(root, useStaticSunDepthCasterSidedness) {
 
 export class City {
     constructor(options = {}) {
+        assertFlatCityCapability(options.mapSpec, 'City rendering and flat-city caches');
         const {
             size = 400,
             tileMeters = 2,

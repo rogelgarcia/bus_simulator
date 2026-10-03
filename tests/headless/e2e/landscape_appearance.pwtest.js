@@ -4,6 +4,7 @@ import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { createLandscapeServer } from '../../../tools/landscape_server/Server.mjs';
+import { copyLandscapePlanningSources } from '../../shared/landscape_fixture_files.js';
 
 const root = path.resolve('.');
 const source = path.join(root, 'assets/public/landscape/coastal-city');
@@ -42,6 +43,7 @@ test.beforeAll(async () => {
     directory = await mkdtemp(path.join(artifacts, 'flat-run-'));
     await cp(path.join(source, 'payloads'), path.join(directory, 'payloads'), { recursive: true });
     await cp(path.join(source, 'appearance'), path.join(directory, 'appearance'), { recursive: true });
+    await copyLandscapePlanningSources(canonical, source, directory);
     appearanceSource = JSON.parse(await readFile(path.join(directory, 'appearance/manifest.json'), 'utf8'));
     const flat = structuredClone(canonical);
     const heights = Buffer.alloc(257 * 257 * 4);

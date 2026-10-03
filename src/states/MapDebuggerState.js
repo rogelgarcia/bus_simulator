@@ -4,6 +4,8 @@
 import * as THREE from 'three';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { getSharedCity } from '../graphics/visuals/city/City.js';
+import { createLandscapeReferenceCity } from '../graphics/visuals/city/LandscapeReferenceCity.js';
+import { normalizeCitySpec, applyCitySpecSettings } from '../app/city/specs/CitySpecAuthoring.js';
 import { createCityConfig } from '../app/city/CityConfig.js';
 import { CityMap, TILE } from '../app/city/CityMap.js';
 import { CITY_SPEC_REGISTRY, DEFAULT_CITY_SPEC_ID, createCitySpecById } from '../app/city/specs/CitySpecRegistry.js';
@@ -434,6 +436,7 @@ export class MapDebuggerState {
 
         this.city?.detach(this.engine);
         this.engine.clearScene();
+        if (this.city?.isLandscapeReferencePlan) this.city.dispose();
         this.city = null;
     }
 
@@ -659,6 +662,7 @@ export class MapDebuggerState {
 
     _setCity(mapSpec) {
         this.city?.detach(this.engine);
+        if (this.city?.isLandscapeReferencePlan) this.city.dispose();
         this._clearConnectorOverlay();
         this._clearRoadGraphOverlay();
         this._clearCollisionMarkers();
@@ -667,7 +671,7 @@ export class MapDebuggerState {
         this.engine.clearScene();
         this.engine.context.city = null;
         if (mapSpec?.seed !== undefined) this._cityOptions.seed = mapSpec.seed;
-        this.city = getSharedCity(this.engine, { ...this._cityOptions, mapSpec });
+        this.city = mapSpec.landscape ? createLandscapeReferenceCity(mapSpec) : getSharedCity(this.engine, { ...this._cityOptions, mapSpec });
         this.city.config.fogNear = DEBUG_CITY_FOG_NEAR;
         this.city.config.fogFar = DEBUG_CITY_FOG_FAR;
         this.city.attach(this.engine);
@@ -761,40 +765,12 @@ export class MapDebuggerState {
     }
 
     _normalizeSpec(spec) {
-        const input = spec && typeof spec === 'object' ? spec : {};
-        const cfg = createCityConfig(this._cityOptions);
-
-        const version = Number.isFinite(input.version) ? (input.version | 0) : 1;
-        const width = Number.isFinite(input.width) ? Math.max(1, input.width | 0) : (cfg.map.width | 0);
-        const height = Number.isFinite(input.height) ? Math.max(1, input.height | 0) : (cfg.map.height | 0);
-        const tileSize = Number.isFinite(input.tileSize) ? Number(input.tileSize) : cfg.map.tileSize;
-
-        const seedRaw = input.seed ?? cfg.seed ?? this._cityOptions.seed ?? 'city';
-        const seed = String(seedRaw);
-
-        const originIn = input.origin ?? null;
-        const originOk = originIn && Number.isFinite(originIn.x) && Number.isFinite(originIn.z);
-        const origin = originOk ? { x: originIn.x, z: originIn.z } : this._centerOrigin(width, height, tileSize);
-
-        const roads = Array.isArray(input.roads) ? input.roads.slice() : [];
-        const buildings = Array.isArray(input.buildings) ? input.buildings.slice() : [];
-        const reservations = Array.isArray(input.reservations) ? input.reservations.slice() : [];
-
+        const normalized = normalizeCitySpec(spec, this._cityOptions);
+        const { tileSize } = normalized;
         if (Number.isFinite(tileSize) && tileSize > 0 && tileSize !== this._cityOptions.mapTileSize) {
             this._cityOptions.mapTileSize = tileSize;
         }
-
-        return {
-            version,
-            seed,
-            width,
-            height,
-            tileSize,
-            origin,
-            roads,
-            buildings,
-            reservations
-        };
+        return normalized;
     }
 
     _centerOrigin(width, height, tileSize) {
@@ -862,11 +838,13 @@ export class MapDebuggerState {
 
     _applyCitySettings({ width, height, seed } = {}) {
         if (!this._spec) return;
-        const nextWidth = Number.isFinite(width) ? Math.max(1, width | 0) : this._spec.width;
-        const nextHeight = Number.isFinite(height) ? Math.max(1, height | 0) : this._spec.height;
-        const tileSize = Number.isFinite(this._spec.tileSize) ? this._spec.tileSize : this._cityOptions.mapTileSize;
-        const nextSeed = typeof seed === 'string' && seed.trim() ? seed.trim() : this._spec.seed;
-        const origin = this._centerOrigin(nextWidth, nextHeight, tileSize);
+        let next;
+        try {
+            next = applyCitySpecSettings(this._spec, { width, height, seed });
+        } catch (error) {
+            this.editorPanel?.setStatus(error.message);
+            return;
+        }
 
         this._roadDraftPoints = [];
         this._roadDraftStart = null;
@@ -874,10 +852,10 @@ export class MapDebuggerState {
         this._buildingModeEnabled = false;
         this._buildingSelection.clear();
 
-        const desiredSize = Math.max(1, Math.max(nextWidth, nextHeight) * tileSize);
+        const desiredSize = Math.max(1, Math.max(next.width, next.height) * next.tileSize);
         this._cityOptions.size = desiredSize;
 
-        this._applySpec({ ...this._spec, width: nextWidth, height: nextHeight, seed: nextSeed, origin }, { resetCamera: true });
+        this._applySpec(next, { resetCamera: true });
     }
 
     _clearCity() {
@@ -2547,6 +2525,7 @@ export class MapDebuggerState {
     _setTreesEnabled(enabled) {
         this._treesEnabled = !!enabled;
         this.debugsPanel?.setTreesEnabled(this._treesEnabled);
+        if (this.city?.isLandscapeReferencePlan) return;
 
         const currentGen = this._cityOptions.generatorConfig ?? {};
         this._cityOptions.generatorConfig = {

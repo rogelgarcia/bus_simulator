@@ -13,3 +13,8 @@ Placement model:
 - Buildings and reservations may be authored as PARCELS (assigned squares +
   limits) instead of world coordinates. See `specs/city/construction_placement.md`
   and `src/app/city/placement/`.
+
+Optional landscape references:
+- `CoastalLandscapeCitySpec.js` / registry ID `coastal-landscape` is a runnable reference-plan fixture pinned to retained coastal terrain. Map Debugger preserves its binding, explicit origin, parcel and bus-start reservation through settings and export/reload.
+- `CitySpecAuthoring.js` owns normalization/settings and executable JS export/import helpers used by the real editor. **Download JS** exports a module factory; JSON remains an inspection artifact.
+- Bound cities open as labeled schematic reference plans. Gameplay rendering and flat-city bakes reject unsupported terrain input. See `specs/landscape/LANDSCAPE_CITY_BINDING.md` for coordinates, partial tiles, versioning and adapter boundaries.

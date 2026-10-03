@@ -16,3 +16,8 @@ export { LANDSCAPE_STREAMING_BUDGETS, LandscapeResidencyBudget } from './Landsca
 export { LANDSCAPE_APPEARANCE_TIERS, LANDSCAPE_APPEARANCE_MANIFEST_LIMIT, LANDSCAPE_APPEARANCE_PAGE_LIMIT, validateLandscapeAppearanceManifest, validateLandscapeAppearancePage } from './LandscapeAppearanceManifest.js';
 export { loadLandscapeAppearanceManifest, loadLandscapeAppearancePage, loadLandscapeCoverMask, rasterizeLandscapeSoilMask } from './LandscapeAppearancePayload.js';
 export { createLandscapeAppearancePlanner } from './LandscapeAppearancePlanner.js';
+export { LANDSCAPE_CITY_BINDING_CAPABILITY, validateLandscapeCityBinding, landscapePointToCity, cityPointToLandscape, cityRegionToLandscape, cityReservationsToLandscapeConstraints, loadCityLandscape, assertFlatCityCapability } from './LandscapeCityBinding.js';
+export { cityTileLandscapeCoverage } from './LandscapeCityCoverage.js';
+export { LANDSCAPE_REPORT_LIMITS, reportLandscapeTerrain, readLandscapeTerrainReport } from './LandscapeTerrainReports.js';
+export { createLandscapeDependency, checkLandscapeDependency, landscapeChangeInvalidates } from './LandscapeDependencies.js';
+export { LANDSCAPE_PLANNING_LIMITS, LANDSCAPE_PLANNING_ROLES, normalizeLandscapePlanningReference, loadLandscapePlanningReferences } from './LandscapePlanningReferences.js';

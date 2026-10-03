@@ -1,5 +1,19 @@
 # Persistent landscape authoring
 
+## Read-only planning reports
+
+`node tools/landscape_authoring/run.mjs report --request <request.json> --output <report.json>`
+surveys a footprint or corridor using one authenticated native chunk at a time.
+The request pins `expectedRevision` and declares `sampleSpacingMeters`; it may
+include resolved reservation/advisory shapes. Results distinguish ready, partial,
+unknown and outside coverage, with sampled height/slope/soil/water statistics and
+a terrain dependency record. See `specs/landscape/LANDSCAPE_PLANNING_REPORTS.md`
+for the JSON contract, bounds, exact overlap semantics, and future consumer rules.
+The saved `examples/coastal_corridor_report.json` runs against the supplied coastal
+revision. After editing, replace its revision with the current `state` output.
+
+## Persistent edits
+
 The authoring CLI and store edit retained landscape revisions through plain JSON
 operations. AI576 D5 adds named polygons, grading, smoothing, and large-area
 batches while preserving D2 exact queries and last-batch revert. The store uses

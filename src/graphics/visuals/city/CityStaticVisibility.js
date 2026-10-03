@@ -70,6 +70,10 @@ export class CityStaticVisibility {
 
     async _load() {
         const generation = ++this._loadGeneration;
+        if (this.city.map?.landscape || this.city.visibilitySourceSpec?.landscape) {
+            this._setFallback('landscape_binding_unsupported');
+            return;
+        }
         const assetUrl = ASSET_URLS[this.city.cityId];
         if (!assetUrl) {
             this._setFallback('unsupported_city');

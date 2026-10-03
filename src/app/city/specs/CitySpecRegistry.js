@@ -5,6 +5,7 @@
 import { createDemoCitySpec } from './DemoCitySpec.js';
 import { createBigCitySpec } from './BigCitySpec.js';
 import { createBigCity2Spec } from './BigCity2Spec.js';
+import { createCoastalLandscapeCitySpec } from './CoastalLandscapeCitySpec.js';
 
 export const DEFAULT_CITY_SPEC_ID = 'demo';
 
@@ -23,6 +24,11 @@ export const CITY_SPEC_REGISTRY = Object.freeze([
         id: 'bigcity2',
         label: 'Big City 2',
         createSpec: () => createBigCity2Spec()
+    }),
+    Object.freeze({
+        id: 'coastal-landscape',
+        label: 'Coastal landscape (reference plan)',
+        createSpec: () => createCoastalLandscapeCitySpec()
     })
 ]);
 

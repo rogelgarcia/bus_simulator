@@ -132,6 +132,7 @@ export class LandscapeStreamer {
         if (record.uploaded) return 0;
         record.model = createLandscapeMesh(record.buffers, record.chunk.heights);
         if (this.appearance) record.model.setAppearance(this.appearance.uniforms);
+        if (this.planning) record.model.setPlanning(this.planning.uniforms);
         record.model.setMode(this.mode);
         record.model.setBoundaries(this.boundaries);
         record.model.setLodColors(this.lodColors);
@@ -146,6 +147,11 @@ export class LandscapeStreamer {
     setAppearance(appearance) {
         this.appearance = appearance;
         for (const record of this.records.values()) record.model?.setAppearance(appearance.uniforms);
+    }
+
+    setPlanning(planning) {
+        this.planning = planning;
+        for (const record of this.records.values()) record.model?.setPlanning(planning.uniforms);
     }
 
     evict(record) {

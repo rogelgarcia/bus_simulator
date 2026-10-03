@@ -14,6 +14,7 @@ import {
     convertThreeMatrixToBlender
 } from '../../../app/illumination/bake_source/index.js';
 import { failBakeSource } from './BakeSourceErrors.js';
+import { assertFlatCityCapability } from '../../../app/landscape/LandscapeCityBinding.js';
 import { buildSourceIdentityInBackground } from './BakeSourceIdentityLoading.js';
 import {
     collectResolvedCityBakeRoots,
@@ -565,6 +566,7 @@ export function exportResolvedCityBakeIdentity(options = {}) {
 
 async function resolveCityBakeSource({ city, profile, readiness = {}, sourceEqualityVerified = false, includeLiveReferences = false,
     identityOnly = false, onProgress = () => {}, signal, textureConcurrency = 1 } = {}) {
+    assertFlatCityCapability(city?.map?.landscape ? city.map : city?.visibilitySourceSpec, 'Resolved city illumination export');
     if (!city?.cityId || !profile?.id) failBakeSource('export_context_missing', 'Resolved city export requires a city and explicit export profile.');
     const started = performance.now();
     const phaseTimings = {};

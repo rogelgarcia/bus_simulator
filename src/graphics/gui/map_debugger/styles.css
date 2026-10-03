@@ -1,5 +1,11 @@
 /* src/graphics/gui/map_debugger/styles.css */
 
+.map-debugger-landscape-status {
+    color: #a9e1ef;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
 .map-debugger-panel,
 .city-debug-panel {
     position: fixed;

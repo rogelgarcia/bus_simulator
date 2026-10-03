@@ -4,6 +4,7 @@ import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createLandscapeServer } from '../../../tools/landscape_server/Server.mjs';
 import { createLandscapeModelFixture } from '../../node/unit/landscape_model_fixture.js';
+import { copyLandscapePlanningSources } from '../../shared/landscape_fixture_files.js';
 
 const root = path.resolve('.');
 const artifacts = path.join(root, `tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'regression'}/authoring`);
@@ -16,6 +17,7 @@ test.beforeAll(async () => {
     await cp(path.join(source, 'manifest.json'), path.join(directory, 'manifest.json'));
     await cp(path.join(source, 'payloads'), path.join(directory, 'payloads'), { recursive: true });
     await cp(path.join(source, 'appearance'), path.join(directory, 'appearance'), { recursive: true });
+    await copyLandscapePlanningSources(JSON.parse(await readFile(path.join(source, 'manifest.json'), 'utf8')), source, directory);
     server = createLandscapeServer({ root, landscapeDirectory: directory });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     origin = `http://127.0.0.1:${server.address().port}`;

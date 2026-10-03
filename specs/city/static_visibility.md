@@ -1,5 +1,9 @@
 # Static City Visibility
 
+## Landscape-bound city limitation
+
+AI 576 D6 optional `spec.landscape` is a data/reference-plan capability, not terrain-aware visibility. Production City rendering refuses bound input before flat geometry/caches; `CityStaticVisibility` also reports `landscape_binding_unsupported` before fetching or activating PVS data. The existing canonical city hash includes authored/resolved binding data, so changes in pinned revision/transform affect identity. Future terrain-aware PVS needs explicit landscape dependency and terrain geometry support; an old flat payload cannot be accepted merely because city IDs match. See [Landscape city binding](../landscape/LANDSCAPE_CITY_BINDING.md).
+
 ## Scope
 
 Gameplay may apply a baked potential-visibility set (PVS) to independently hide static color-pass roots that are inside the camera frustum but occluded by nearer geometry. Version 1 covers only:

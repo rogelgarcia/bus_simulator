@@ -1,5 +1,9 @@
 # Resolved-City Illumination Bake Input
 
+## Landscape-bound city limitation
+
+AI 576 D6 adds an optional city-owned landscape reference, without terrain-aware city geometry or bake extraction. Production City construction and `exportResolvedCityBakeSource` / identity export explicitly reject bound input before geometry/cache/source work. The Map Debugger reference plan is never an illumination source. A future implementation must include supported terrain geometry and landscape revision/channel/transform dependencies in the existing freshness model, rather than treating a flat-city cache as compatible. See [Landscape city binding](../landscape/LANDSCAPE_CITY_BINDING.md).
+
 ## Status and authority
 
 This document is the authoritative resolved-city contract established by AI 528 and revised by AI 531 for extracting the fully resolved gameplay city and handing it to the offline illumination pipeline. It refines, but does not replace, [`illumination_framework.md`](./illumination_framework.md). If the two documents conflict, the framework owns lighting composition, channel meaning, coordinate conventions, and descendant ownership; this document owns the resolved-city interchange format, stable identity, provenance, canonical serialization, source freshness, and round-trip validation.

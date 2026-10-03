@@ -2,6 +2,7 @@
 // City/map spec editor panel for the map debugger view.
 
 import { PickerPopup } from '../shared/PickerPopup.js';
+import { serializeCitySpecToModule } from '../../../app/city/specs/CitySpecAuthoring.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -95,11 +96,15 @@ export class MapDebuggerEditorPanel {
         this.title = document.createElement('div');
         this.title.className = 'map-debugger-title';
         this.title.textContent = 'City editor';
+        this.status = document.createElement('div');
+        this.status.className = 'map-debugger-landscape-status hidden';
+        this.status.setAttribute('role', 'status');
 
         this.sections = document.createElement('div');
         this.sections.className = 'map-debugger-editor-sections';
 
         this.root.appendChild(this.title);
+        this.root.appendChild(this.status);
         this.root.appendChild(this.sections);
 
         this.createOverlay = document.createElement('div');
@@ -195,6 +200,7 @@ export class MapDebuggerEditorPanel {
 
     setSpec(spec) {
         this._spec = spec && typeof spec === 'object' ? spec : null;
+        this.setStatus(this._spec?.landscape ? `Landscape reference plan: ${this._spec.landscape.landscapeId}. Terrain is shown in Landscape Fabrication; roads, parcels and reservations here are schematic. Terrain gameplay and bakes are unsupported.` : '');
         const citySeed = typeof this._spec?.seed === 'string' ? this._spec.seed : '';
         if (this.seedInput) this.seedInput.value = citySeed;
         if (this.widthInput) this.widthInput.value = String(this._spec?.width ?? '');
@@ -207,6 +213,11 @@ export class MapDebuggerEditorPanel {
         this._renderBuildings(buildings);
 
         this._refreshExportText();
+    }
+
+    setStatus(message) {
+        this.status.textContent = message;
+        this.status.classList.toggle('hidden', !message);
     }
 
     setCitySpecs(specs) {
@@ -734,6 +745,11 @@ export class MapDebuggerEditorPanel {
         this.downloadExportBtn.className = 'map-debugger-editor-btn';
         this.downloadExportBtn.textContent = 'Download';
         actions.appendChild(this.downloadExportBtn);
+        this.downloadModuleBtn = document.createElement('button');
+        this.downloadModuleBtn.type = 'button';
+        this.downloadModuleBtn.className = 'map-debugger-editor-btn';
+        this.downloadModuleBtn.textContent = 'Download JS';
+        actions.appendChild(this.downloadModuleBtn);
 
         this.exportTextarea = document.createElement('textarea');
         this.exportTextarea.className = 'map-debugger-editor-export';
@@ -746,6 +762,7 @@ export class MapDebuggerEditorPanel {
 
         this.copyExportBtn.addEventListener('click', () => this._copyExport());
         this.downloadExportBtn.addEventListener('click', () => this._downloadExport());
+        this.downloadModuleBtn.addEventListener('click', () => this._downloadExport('module'));
     }
 
     _makeSection(title) {
@@ -1041,16 +1058,17 @@ export class MapDebuggerEditorPanel {
         }
     }
 
-    _downloadExport() {
+    _downloadExport(format = 'json') {
         this._refreshExportText();
-        const text = this.exportTextarea?.value ?? '';
+        const module = format === 'module';
+        const text = module ? serializeCitySpecToModule(this._spec) : this.exportTextarea?.value ?? '';
         if (!text) return;
 
-        const blob = new Blob([text], { type: 'application/json' });
+        const blob = new Blob([text], { type: module ? 'text/javascript' : 'application/json' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = 'city_spec.json';
+        link.download = module ? 'CitySpec.js' : 'city_spec.json';
         document.body.appendChild(link);
         link.click();
         link.remove();

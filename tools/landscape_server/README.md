@@ -25,6 +25,7 @@ D2 adds the shared persistent authoring store, also available through
 | --- | --- |
 | `GET /api/landscape/state` | Current revision, revert availability, and bounded authoring limits. |
 | `POST /api/landscape/query` | Exact selection from `{x,z,selectionId,expectedRevision,radius?,camera?}`; acquires at most four native chunks and releases them after producing context. |
+| `POST /api/landscape/report` | Read-only `{expectedRevision,shape,sampleSpacingMeters,maxSamples?,constraints?}` footprint/corridor survey; one native chunk at a time, explicit sampled resolution and unknown coverage. |
 | `POST /api/landscape/apply` | Validated `landscape-edit-batch` JSON; saves immutable payloads/snapshots before atomically switching the manifest. |
 | `POST /api/landscape/revert` | `{expectedRevision,batchId?}`; restores the last applied batch's source state as a new revision and retains duplicate-batch protection. |
 
@@ -32,6 +33,10 @@ Mutations require JSON and the local origin; stale, duplicate, invalid, or
 over-budget work is rejected with a diagnostic. There is no manual sculpting
 toolbar. The AI uses the documented batch format/CLI and the user reloads the
 viewer without losing its camera pose. See `specs/landscape/LANDSCAPE_EDITING.md`.
+Reports use the same single-working-set admission as edits/queries and cancel
+when their request closes. The current manifest is checked again before returning
+results. See `specs/landscape/LANDSCAPE_PLANNING_REPORTS.md` for report geometry,
+sampling, reservation overlaps, and dependency validation.
 
 Tests can supply `createLandscapeServer({root,landscapeDirectory})` to serve an
 isolated copy through the same canonical asset URL. This directory is a trusted

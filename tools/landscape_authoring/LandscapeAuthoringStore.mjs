@@ -5,6 +5,7 @@ import { validateLandscapeManifest, encodeLandscapeChannel, queryLandscapeSelect
 import { acquireAuthoringLock, atomicAuthoringWrite, authoringFile, authoringHash, readAuthoringFile, writeImmutableAuthoringFile } from './AuthoringFiles.mjs';
 import { readLandscapeFileChunk, readLandscapeFileManifest } from './LandscapeFileIO.mjs';
 import { validateLandscapePublication } from './LandscapePublication.mjs';
+import { reportLandscapeTerrain } from '../../src/app/landscape/LandscapeTerrainReports.js';
 
 export const LANDSCAPE_AUTHORING_BUDGETS = Object.freeze({ maxNativeChunks: 4, maxDecodedBytes: 2 * 1024 * 1024,
     maxWorkingBytes: 8 * 1024 * 1024, maxBatchBytes: 64 * 1024 });
@@ -137,7 +138,14 @@ export function createLandscapeAuthoringStore({ directory, maxWorkingBytes = LAN
             regions: manifest.regions, budgets: { ...LANDSCAPE_AUTHORING_BUDGETS, maxWorkingBytes } };
     }
 
+    async function report(options) {
+        const { manifest, bytes } = await readManifest('manifest.json', { signal: options.signal });
+        const result = await reportLandscapeTerrain(manifest, options, { readChunk: reader(manifest), signal: options.signal, maxWorkingBytes });
+        await ensureCurrent(bytes, options.signal);
+        return result;
+    }
+
     const select = options => admitWorkingSet('query', () => query(options));
     return Object.freeze({ query: select, select, apply: (batch, options) => admitWorkingSet('apply', () => apply(batch, options)),
-        revert: options => admitWorkingSet('revert', () => revert(options)), readState });
+        revert: options => admitWorkingSet('revert', () => revert(options)), report: options => admitWorkingSet('report', () => report(options)), readState });
 }

@@ -1,6 +1,6 @@
 # Landscape Fabrication viewer
 
-Status: D1-D3 verified; D4 appearance integration under verification (AI 576).
+Status: D1–D5 verified; D6 planning integration verified in the standalone viewer (AI 576).
 
 ## Entry and ownership
 
@@ -13,6 +13,27 @@ The reusable Three.js/worker adapter lives under
 `src/graphics/engine3d/landscape/`; the screen composes that adapter with its camera
 and DOM panel. Neither the adapter nor the domain requires the Fabrication panel.
 It does not create a city, game simulation, or flat placeholder ground.
+
+## D6 planning aids
+
+The compact Planning references & views panel adds authenticated retained
+district/road/shoreline/beach guides, named reference navigation, local camera
+bookmarks, and live elevation/5-meter-contour, slope, and water-depth diagnostics.
+Guides retain source XZ and use explicitly approximate overview heights;
+diagnostics use the actual displayed terrain LOD. Their legend does not present
+coarse display values as authoritative native terrain.
+
+Inspect area requests a bounded renderer-independent native footprint report
+through the public local API. It shows coverage, sampling resolution, elevation,
+slope, soil/cover probe fractions, water, area, and evaluated source polygon
+overlaps. Reports invalidate on selection/source changes. Unspecified road or
+reservation extents are not guessed into footprint constraints. Bookmarks live
+in browser-local source-scoped metadata and survive reopen without changing
+terrain revisions. All added guide buffers use the shared residency ledger and
+remaining frame upload allowance, and release on disable/reload/teardown.
+
+See [LANDSCAPE_PLANNING.md](LANDSCAPE_PLANNING.md) for source formats and IDs,
+accuracy, bookmark scope, report coverage, budgets, and verification hooks.
 
 ## D4 appearance and sea-level reference
 

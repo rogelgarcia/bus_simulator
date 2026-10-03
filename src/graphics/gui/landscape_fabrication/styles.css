@@ -30,4 +30,16 @@
 .landscape-legend { position: absolute; left: 24px; bottom: 65px; background: #10202ce6; border: 1px solid #6e8b9444; border-radius: 7px; padding: 11px 14px; color: #c7d3db; white-space: pre-line; line-height: 1.8; font-size: 11px; }
 .landscape-footer { position: absolute; inset: auto 0 0; padding: 12px 24px; display: flex; justify-content: space-between; gap: 18px; background: #101a24f2; border-top: 1px solid #ffffff16; color: #acbec9; font-size: 11px; }
 .landscape-notice { position: absolute; left: 24px; bottom: 150px; max-width: min(680px, calc(100% - 80px)); padding: 14px; border: 1px solid #d89658; border-radius: 7px; color: #ffe2c6; background: #35251aef; }
+.landscape-planning { position: absolute; top: 252px; left: 24px; width: 290px; max-height: calc(100% - 322px); overflow-y: auto; border: 1px solid #9eafbb35; border-radius: 8px; background: #111f2ded; pointer-events: auto; }
+.landscape-planning summary { padding: 12px 14px; cursor: pointer; color: #d1dedb; font-weight: 550; }
+.landscape-planning-body { padding: 0 14px 14px; }
+.landscape-planning label { display: block; margin: 11px 0 6px; color: #afc3cb; font-size: 11px; }
+.landscape-planning input, .landscape-planning select { display: block; width: 100%; box-sizing: border-box; margin-top: 5px; padding: 7px; border: 1px solid #71869655; border-radius: 4px; background: #0b1722; color: #e8edf2; font: inherit; }
+.landscape-planning small { display: block; color: #91a5b4; font-size: 10px; line-height: 1.55; white-space: pre-line; overflow-wrap: anywhere; }
+.landscape-planning-actions { display: flex; flex-wrap: wrap; gap: 3px; margin: 7px -3px; }
+.landscape-planning-actions button { border-color: #7c94a433; padding: 5px 6px; font-size: 10px; }
+.landscape-planning hr { border: 0; border-top: 1px solid #71869633; margin: 13px 0; }
+.landscape-ui.planning-open .landscape-legend { display: none; }
+.landscape-selection .landscape-report { margin-top: 12px; padding-top: 10px; border-top: 1px solid #71869633; color: #b7cec1; white-space: pre-line; }
 @media (max-width: 1200px) { .landscape-selection { top: 290px; right: 16px; width: 215px; } .landscape-header h1 span { display: none; } .landscape-footer { flex-wrap: wrap; } .landscape-streaming { font-size: 10px; } }
+@media (max-width: 1200px) { .landscape-planning { top: 290px; left: 16px; width: 250px; max-height: calc(100% - 380px); } }

@@ -2,6 +2,8 @@
 
 Status: implemented (AI 519).
 
+Optional landscape references (AI 576 D6) are defined in [Landscape city binding](../landscape/LANDSCAPE_CITY_BINDING.md). They preserve this parcel/reservation model, fixed design dimensions and authored IDs. Resolved reservation loops convert to terrain-report constraints without another placement authority. Terrain-relative/absolute elevation and surface-normal/upright contact remain explicit future policies; placement never silently grades terrain. Bound cities use the Map Debugger reference plan and cannot activate the flat foundation/slab renderer.
+
 Source of truth:
 - Model: `src/app/city/placement/` (`planCityConstructions`)
 - Wiring: `src/app/city/CityMap.js` (`fromSpec` → `_applyPlacementPlan`)

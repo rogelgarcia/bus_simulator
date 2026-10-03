@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { createLandscapeServer } from '../../../tools/landscape_server/Server.mjs';
+import { copyLandscapePlanningSources } from '../../shared/landscape_fixture_files.js';
 
 const run = promisify(execFile), root = path.resolve('.');
 const artifacts = path.join(root, `tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'd5'}/large-editing`);
@@ -20,6 +21,7 @@ test.beforeAll(async () => {
     await mkdir(artifacts, { recursive: true });
     directory = await mkdtemp(path.join(artifacts, 'coastal-run-'));
     for (const relative of ['manifest.json', 'payloads', 'appearance']) await cp(path.join(source, relative), path.join(directory, relative), { recursive: true });
+    await copyLandscapePlanningSources(await manifest(), source, directory);
     server = createLandscapeServer({ root, landscapeDirectory: directory });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     origin = `http://127.0.0.1:${server.address().port}`;

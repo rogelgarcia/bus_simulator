@@ -5,7 +5,7 @@ import { createLandscapeAuthoringStore } from '../landscape_authoring/LandscapeA
 /** @param {{directory:string,readJson:Function,reply:Function}} options */
 export function createLandscapeAuthoringApi({ directory, readJson, reply }) {
     const store = createLandscapeAuthoringStore({ directory });
-    const actions = Object.freeze({ query: value => store.query(value), apply: value => store.apply(value), revert: value => store.revert(value) });
+    const actions = Object.freeze({ query: value => store.query(value), report: value => store.report(value), apply: value => store.apply(value), revert: value => store.revert(value) });
     return async (request, response, pathname) => {
         const action = pathname.slice('/api/landscape/'.length);
         if (action !== 'state' && !Object.hasOwn(actions, action)) return false;
@@ -18,11 +18,11 @@ export function createLandscapeAuthoringApi({ directory, readJson, reply }) {
         if (request.headers.origin && request.headers.origin !== `http://${request.headers.host}`) { reply(response, 403, { error: 'Same-origin authoring required' }); return true; }
         if (!String(request.headers['content-type']).startsWith('application/json')) { reply(response, 415, { error: 'JSON required' }); return true; }
         const input = await readJson(request);
-        if (action === 'query') {
+        if (action === 'query' || action === 'report') {
             const controller = new AbortController();
             const abort = () => { if (!response.writableEnded) controller.abort(); };
             response.once('close', abort);
-            try { reply(response, 200, await store.query({ ...input, signal: controller.signal })); }
+            try { reply(response, 200, await actions[action]({ ...input, signal: controller.signal })); }
             finally { response.off('close', abort); }
         } else reply(response, 200, await actions[action](input));
         return true;

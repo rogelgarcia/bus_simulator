@@ -1,0 +1,10 @@
+{
+  "expectedRevision": "hierarchy-afaf934f8eb8fe074a0affb0",
+  "shape": {
+    "type": "corridor",
+    "points": [{ "x": 1200, "z": 1200 }, { "x": 1600, "z": 1500 }],
+    "widthMeters": 20
+  },
+  "sampleSpacingMeters": 10,
+  "maxSamples": 4096
+}
