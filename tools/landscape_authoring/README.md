@@ -1,210 +1,188 @@
 # Persistent landscape authoring
 
-AI576 D2 adds exact bounded queries, saved data-operation batches, and last-batch
-revert to the canonical landscape. This tool edits retained source revisions; it
-does not import the original coastal ZIP, run Blender, or create a city. Source
-preparation uses the registered `landscape/coastal-import` and
-`landscape/hierarchy` bake leaves. D3 editing rebuilds every affected prepared
-ancestor and keeps the complete hierarchy consistent with saved native changes.
+The authoring CLI and store edit retained landscape revisions through plain JSON
+operations. AI576 D5 adds named polygons, grading, smoothing, and large-area
+batches while preserving D2 exact queries and last-batch revert. The store uses
+the pure API from `src/app/landscape/index.js`; no edit depends on camera LOD,
+mesh indices, filtered cover imagery, or runtime appearance settings.
 
-The default directory is `assets/public/landscape/coastal-city`. Pass
-`--directory <directory>` to operate on a separately saved landscape. Tests always
-use isolated directories under `tests/artifacts/screens/landscape/ai576/d2/`.
+The default directory is `assets/public/landscape/coastal-city`. Every command
+accepts `--directory <directory>` for an isolated saved landscape. Source
+preparation remains under the registered `landscape/coastal-import`,
+`landscape/hierarchy`, and `landscape/appearance` bake leaves.
 
-## Query, change, reload, revert
+## Exact selection workflow
 
-First read the current source revision:
+Read the current revision, acquire an explicit native region, and bind a fresh
+batch ID to the returned context:
 
 ```sh
 node tools/landscape_authoring/run.mjs state
+node tools/landscape_authoring/run.mjs query --x 2000 --z 2000 --radius 80 --selection-id low-city-patch --expected-revision <current-revision> --output tests/artifacts/screens/landscape/ai576/d5/selection.json
+node tools/landscape_authoring/run.mjs bind --template tools/landscape_authoring/examples/raise_and_sand.template.json --context tests/artifacts/screens/landscape/ai576/d5/selection.json --batch-id low-city-raise-sand-001 --output tests/artifacts/screens/landscape/ai576/d5/batch.json
+node tools/landscape_authoring/run.mjs apply --batch tests/artifacts/screens/landscape/ai576/d5/batch.json
 ```
 
-Copy that exact `revision` into the query. The example selects an 80-meter circle
-around a real native chunk intersection in the coastal low city. It acquires four
-native chunks and returns exact terrain/soil context:
+The template raises the selected region by 2 meters, tapers within the inner
+5 meters of its boundary, then assigns semantic sand. Binding copies the exact
+context's landscape/revision/region and prefixes operation IDs with the batch
+ID. It refuses provisional and point-only contexts. `bind` saves reviewable
+JSON without changing terrain; a stale batch still fails at apply time.
+
+Exact queries retain a four-native-chunk and 2 MiB decoded-input limit. A coastal
+four-way query acquires 1,320,980 decoded bytes. A larger query fails before I/O;
+it never substitutes an approximate sample. Point ownership is deterministic
+at shared borders. The resolved context releases arrays before returning.
+
+## Large named-region workflow
+
+Large operations carry explicit world-space geometry and bind to saved state;
+they do not pretend the full region was acquired by a small selection query:
 
 ```sh
-node tools/landscape_authoring/run.mjs query --x 2000 --z 2000 --radius 80 --selection-id low-city-patch --expected-revision <current-revision> --output tests/artifacts/screens/landscape/ai576/d2/selection.json
+node tools/landscape_authoring/run.mjs state --output tests/artifacts/screens/landscape/ai576/d5/state.json
+node tools/landscape_authoring/run.mjs bind --template tools/landscape_authoring/examples/grade_smooth_polygon.template.json --state tests/artifacts/screens/landscape/ai576/d5/state.json --batch-id coastal-grade-study-001 --output tests/artifacts/screens/landscape/ai576/d5/large-batch.json
+node tools/landscape_authoring/run.mjs apply --batch tests/artifacts/screens/landscape/ai576/d5/large-batch.json
 ```
 
-Use a fresh batch ID when binding the saved template to that context:
+Review the example's explicit 1,200-meter polygon and target elevations before
+applying. It grades between two world-space endpoints, smooths one snapshot
+pass with an 8-meter radius and strength 0.6, then assigns sand. The named region
+ID `coastal-interior-grade` remains stable; operation IDs use the fresh batch
+prefix. Reuse an existing region with `regionId` and omit it from the next
+batch's `regions` array. Names and shapes are immutable: changed extents require
+a new region ID. State binding carries source identity only, with no
+`editingReady` or native-acquisition claim.
+
+Every batch requires `format:"landscape-edit-batch"`, `schemaVersion:1`, a new
+`id`, the saved `landscapeId`, `expectedRevision`, and 1–64 ordered operations.
+Operations are `raise`, `set-height`, `grade`, `smooth`, or `assign-soil`.
+Regions are circles, rectangles, or simple 3–128-vertex polygons without holes,
+fully inside the landscape. All coordinates, elevations, and distances are
+world meters. Height operations support explicit hard or inward linear falloff;
+soil assignment uses a hard boundary. Grade endpoints and smooth radius/strength
+are mandatory. Source cover IDs, including roads/runways, remain unchanged.
+See [editing semantics](../../specs/landscape/LANDSCAPE_EDITING.md) and the
+[streamed algorithm contract](../../specs/landscape/LANDSCAPE_STREAMED_EDITING.md).
+
+## Reload and revert
+
+Reload Fabrication after publication to display the saved revision; camera
+state is independent. Query again against that new revision for exact context.
+Revert the entire latest batch, including every native and ancestor change,
+soil overrides, named regions, and operation records:
 
 ```sh
-node tools/landscape_authoring/run.mjs bind --template tools/landscape_authoring/examples/raise_and_sand.template.json --context tests/artifacts/screens/landscape/ai576/d2/selection.json --batch-id low-city-raise-sand-001 --output tests/artifacts/screens/landscape/ai576/d2/batch.json
-node tools/landscape_authoring/run.mjs apply --batch tests/artifacts/screens/landscape/ai576/d2/batch.json
+node tools/landscape_authoring/run.mjs revert --expected-revision <edited-revision> --batch-id coastal-grade-study-001
 ```
 
-The template raises the selected terrain by 2 meters, tapering within the inner
-5 meters of its boundary, then assigns semantic sand throughout that same region.
-It copies the selection's landscape ID, source revision and explicit region;
-operation IDs are prefixed with the supplied batch ID. It refuses provisional
-contexts and point contexts without an area. The resulting ordinary JSON batch
-is reviewable and can be saved or passed to the local authoring API. `bind` does
-not edit terrain. A context that becomes stale after binding still fails when
-the batch is applied.
-
-Reload the Fabrication viewer to display the saved revision; its camera remains
-viewer state. Query again with the new revision to obtain fresh exact context.
-Revert only the most recent applied batch, using the current revision printed by
-`apply` or `state`:
-
-```sh
-node tools/landscape_authoring/run.mjs revert --expected-revision <edited-revision> --batch-id low-city-raise-sand-001
-```
-
-Revert publishes another revision. Previously exported selections become stale,
-and the accepted batch ID remains recorded, so the same ID cannot be replayed
-after revert. Further work uses a newly queried revision and a new batch ID.
-The initial original source and every saved payload/snapshot remain retained.
-
-## Data-operation contract
-
-An ordinary batch has this shape; values here are illustrative and must be bound
-to the actual selected source revision before applying:
-
-```json
-{
-  "format": "landscape-edit-batch",
-  "schemaVersion": 1,
-  "id": "flatten-patch-002",
-  "landscapeId": "coastal-city",
-  "expectedRevision": "<current-revision>",
-  "operations": [
-    {
-      "id": "flatten-patch-002/flatten",
-      "type": "set-height",
-      "region": { "type": "rectangle", "minX": 2010, "maxX": 2050, "minZ": 2010, "maxZ": 2050 },
-      "falloff": { "type": "linear", "distance": 5 },
-      "heightMeters": 18
-    }
-  ]
-}
-```
-
-Supported operations are `raise` with signed `deltaMeters` (negative lowers),
-`set-height` with `heightMeters` (zero is valid), and `assign-soil` with a catalog
-`soilId`. Every operation declares a circle or rectangle in world meters and
-`falloff: {type: "none"}` or an inward linear transition with positive `distance`.
-Soil assignments require `none`; their region boundary is hard and deterministic.
-Height operations evaluate in array order on the result of earlier operations;
-later saved batches evaluate on the current saved samples. Last matching soil
-assignment wins. Cover IDs remain unchanged, including planning road/runway IDs.
-
-The domain API in `src/app/landscape/index.js` owns validation, region planning,
-sampling, soil precedence and numeric edits. The store only handles local file
-I/O, identities and publication. No edit relies on mesh indices, camera LOD,
-filtered source imagery, or ad-hoc source-code patches.
+Revert publishes a new revision and retains accepted batch-ID tombstones.
+Previously exported selections become stale; the reverted batch ID cannot be
+replayed. Another revert is unavailable until a new batch is applied. Revert
+uses saved landscape data, independent of Git.
 
 ## Store API and admission
 
-`LandscapeAuthoringStore.mjs` exports
-`createLandscapeAuthoringStore({directory})`, returning a frozen interface:
+`createLandscapeAuthoringStore({directory,maxWorkingBytes?})` returns a frozen
+interface. The optional edit working limit can reduce the default 8 MiB ceiling.
 
-| Method | Result and contract |
+| Method | Contract |
 | --- | --- |
-| `readState()` | `{landscapeId,revision,lastBatchId,canRevert,budgets}` from the current validated manifest. |
-| `query({x,z,selectionId,expectedRevision,radius?,camera?,signal?})` | Exact versioned selection context; `provisional:false`, `editingReady:true`, authoritative sample and acquisition diagnostics. |
+| `readState()` | Current `landscapeId,revision,lastBatchId,canRevert,regions,budgets`; metadata only. |
+| `query({x,z,selectionId,expectedRevision,radius?,camera?,signal?})` | Exact selection context, with native acquisition diagnostics and released source arrays. |
 | `select(options)` | Alias of `query`. |
-| `apply(batch)` | `{status:"applied",landscapeId,batchId,beforeRevision,revision,summary,canRevert:true}` after atomic publication. |
-| `revert({expectedRevision,batchId?})` | `{status:"reverted",landscapeId,revertedBatchId,beforeRevision,revision,canRevert:false}` after restoring the last batch's source state under a new revision. |
+| `apply(batch,{signal?,onProgress?}?)` | Applied revision identity, impact `summary`, and `canRevert:true` after publication. |
+| `revert({expectedRevision,batchId?,signal?,onProgress?})` | Restored revision identity, bounded validation summary, and `canRevert:false`. |
 
-Methods return promises. The UI owns pending-request presentation. A failed,
-outside, stale, corrupt or over-budget request rejects with a diagnostic; it
-never supplies an invented zero height or an approximate sample as exact data.
-Selection acquisition reports native chunk IDs/revisions, decoded bytes, native
-spacing and `releasedAfterQuery:true`; leases/arrays are released before the
-context returns. If the manifest changes during a query, its result is rejected.
+The store admits one query/edit/revert working set at a time. Overlap receives
+`Working-set budget busy`, without an unbounded request queue. Separate
+mutation processes share the directory's exclusive authoring lock. There is
+no long-lived native-array cache.
 
-Admission happens before native I/O: at most **four native chunks** across the
-entire query or batch, with inclusive boundaries so all shared sample copies are
-included. A point alone chooses the deterministic owning chunk. A circle must
-stay completely inside the landscape. The query decoded budget is **2 MiB**;
-four coastal chunks use **1,320,980 bytes**. Height editing additionally acquires
-all affected bounded ancestors sequentially and copies affected height arrays. The domain admits its encoded,
-decoded, copied and scratch-buffer estimate against **8 MiB**, and reports
-`summary.workingBytes`; this is a buffer estimate, not measured process RSS.
-The coastal central four-native intersection has nine affected ancestors and
-reserves **6,406,753 bytes**. Deeper hierarchies can be refused before I/O if their
-ancestor buffers exceed the same cap. `summary.changedAncestorIds` lists rebuilt
-ancestors separately from native changes.
+Edits have no four-chunk footprint cap. Each operation streams a native chunk
+and its bounded halo, persists its immutable output, then releases the unit.
+The next operation reads a frozen map of those persisted descriptors. Ancestors
+rebuild one at a time. Array/staging admission stays within 8 MiB independently
+of region area; a bigger region increases I/O and elapsed work, not resident
+chunk count. `summary.workingBytes` is a conservative buffer estimate, not process
+RSS or filesystem cache. The final validation phase independently admits two
+decoded chunks and decode scratch, checking every height/cover hash, native
+envelope, same-level border, and aligned parent sample. The reported peak is the
+maximum of these sequential phases.
 
-The store admits one native query/edit/revert working set at a time. Concurrent
-requests receive `Working-set budget busy` without entering an unbounded queue;
-the caller can cancel/retry using fresh state. `readState` reads only metadata.
-Separate authoring processes are protected by the directory mutation lock, while
-each process owns its own bounded request working set. No long-lived native-array
-cache is retained by this D2 store.
+Impact summaries include requested `affectedBounds`, actual
+`changedSampleBounds`, `channels`, stable `regionIds`, native/ancestor IDs,
+signed batch-net `heightDeltaRange`, before/after `changedHeightRange`,
+duplicated `changedVertexOccurrences`, and I/O/working-set diagnostics.
+Height ranges are null for no net height change. Staging counters distinguish
+written units from unique newly installed content; intermediate outputs may
+be reused or become unreferenced when later operations cancel their effect.
 
-Current manifests and saved manifest snapshots each have a **1 MiB** file limit.
-Batch/template/context CLI inputs have a **64 KiB** limit. Channel files must fit
-their exact declared byte lengths before decoding, and hashes/ranges/classes are
-checked. Lock files have a separate 512-byte bound. File reads use a fixed admitted
-buffer and detect size changes; a small declaration cannot cause an unlimited
-read. The manifest limit is independent from the batch/context limit.
+An optional awaited `onProgress` callback receives frozen metadata only:
+`chunk-staged` (persisted URL/hash, phase, operation, completed/total),
+`candidate-validated`, or `publication-ready`. It never receives sample arrays.
+A callback rejection cancels publication and releases the transaction. Signals
+are checked between bounded reads, work units, staging, validation, and directly
+before the current-manifest rename. CLI SIGINT/SIGTERM uses the same cancellation
+path. Once that rename succeeds the revision is committed; cancellation cannot
+retroactively undo it.
 
-## Persistence and failure behavior
+Current/snapshot manifests and metadata-state CLI inputs have a 1 MiB file limit.
+Batch/template/context CLI inputs have a 64 KiB limit. There are at most 1,024 operation/history records
+and 256 named regions. Channels must fit exact declared byte sizes before
+decoding; hashes, ranges, and classes are authenticated. Lock files are bounded
+to 512 bytes. These metadata limits are separate from the edit buffer cap.
 
-Changed height channels use `payloads/<sha256>.f32le`. Unchanged channel URLs,
-native IDs, cover bytes, planning references and unrelated chunks remain intact.
-Every affected prepared ancestor copies changed native vertices at its stride,
-updates its source envelope and receives a conservative error bound; a tiny edit
-between coarse vertices can remain visually unresolved while exact native
-queries correctly report it. Soil overrides are authoritative semantic regions;
-they do not replace the original land-cover raster.
-Unchanged ancestor channel bytes keep their existing content revision/hash/URL
-even when error metadata changes. Unaffected ancestors retain their complete
-descriptors. `landscape/hierarchy` can remeasure tight errors from current native
-terrain without resetting authored edits.
+## Persistence, dirty state, and preparation
 
-The store writes immutable `manifest.<sha256>.json` snapshots beside
-`manifest.json`, so their relative resource URLs stay valid. The published
-manifest's `terrain-editing-v1` capability and `editHistory` record accepted batch
-IDs, the last batch, and its previous snapshot. There is no separate mutable
-journal that could disagree with the current terrain after a crash.
+Changed height channels use `payloads/<sha256>.f32le`; unchanged channel bytes
+keep their content URL/hash/revision. Each dirty work unit remains owned until
+its replacement file is flushed and atomically installed. No unsaved unit is
+evicted, and readers continue using the old current manifest throughout staging.
+There is no mutable operation journal that can disagree with saved heights.
 
-Each mutation takes the directory's exclusive `authoring.lock`, validates the
-complete batch and bounded inputs, writes immutable replacement payloads and
-snapshots, checks that current manifest bytes have not changed, then atomically
-replaces `manifest.json` last. Temporary files are flushed and renamed on the same
-filesystem. Any failure before that switch leaves the prior current revision
-active; unreferenced completed payloads/snapshots may remain and are not loaded by
-the viewer. D2 keeps saved versions rather than deleting history during edits.
+After every unit succeeds, the store validates the complete candidate, writes
+immutable `manifest.<sha256>.json` snapshots beside the current file, verifies
+that current bytes still match the transaction's input, and switches
+`manifest.json` last by a same-directory rename. Failure, corruption, callback
+error, or cancellation before that switch leaves current terrain/history
+unchanged and does not consume batch IDs. Completed unreferenced immutable
+payloads/snapshots may remain after a failed attempt; loaders cannot discover
+them through the unchanged current manifest. Temporary `.partial` files are
+removed on handled failures. This phase retains saved versions rather than
+garbage-collecting history.
 
-Revert authenticates the snapshot filename/hash and the changed payloads it will
-restore before publishing. It restores terrain, cover references and semantic
-operations from that snapshot while keeping the union of accepted batch IDs.
-All hierarchy levels restore together. Initial D3 hierarchy preparation also
-upgrades a pre-D3 last-batch snapshot, retaining the original snapshot, so revert
-cannot silently replace a complete tree with root/native-only descriptors.
-It is a one-level last-batch revert, independent of Git; after reverting, another
-revert is unavailable until a new batch is applied. Invalid/stale/duplicate
-requests never consume an ID or modify the current revision.
+Revert authenticates the prior snapshot filename/hash and validates its complete
+payload graph with the same bounded two-chunk pass. Native and ancestor state
+restore together, without a native-count limit. A missing/corrupt old file
+prevents the switch and leaves the edited current revision intact.
 
-The lock refuses a live process owner. A known dead owner can be recovered under
-an exclusive recovery guard, preserving an interrupted-owner note. An incomplete
-or malformed lock fails with an explicit recovery diagnostic. Temporary `.partial`
-files and lock/recovery notes are operational artifacts; immutable manifests and
-payloads are saved landscape data. CLI `--output` cannot overwrite managed source
-manifests or payload/reference trees.
+Hierarchy preparation reads current native authority, remeasures derived
+errors, and preserves soil, named regions, operation/history records, and the
+last-batch snapshot. It can upgrade an older root/native snapshot while
+retaining the original. Repeated coastal source import refuses to replace any
+changed/authored current landscape; it requires an explicit migration instead
+of resetting local work. Appearance preparation changes derived appearance
+resources without replaying height edits.
 
-The local server integrates these methods through
-`tools/landscape_server/AuthoringApi.mjs`; it does not implement another editing
-engine. See the domain model and Fabrication viewer specs for source/viewer
-ownership and reload behavior. Smoothing, grading, polygons and oversized bounded
-work remain later AI576 deliverables. Runtime streaming is specified separately
-from the Node store's authoring memory budget.
+A live authoring lock owner is refused. A known dead owner can be recovered
+under an exclusive guard, preserving an interrupted-owner note; malformed locks
+require inspection. CLI `--output` cannot overwrite managed manifests, locks,
+payloads, retained source files, appearance files, or chunk files.
 
 ## Verification
 
-Select `tests/node/unit/landscape_authoring_store.test.js` or
-`tests/node/unit/landscape_authoring_cli.test.js` in `tests/.selected_test` and run
-`node tools/run_selected_test/run.mjs`. Tests use synthetic saved files in the D2
-artifact directory; they never edit the canonical coastal source. They cover
-exact boundary-spanning context, pre-I/O budget refusal, concurrent admission,
-saved cross-border height/soil operations, reopen, immutable inputs, atomic
-failure, authenticated revert, replay rejection after revert, lock ownership and
-the public CLI/template workflow. The root integration test separately performs
-the complete real coastal viewer/API workflow.
-`tests/node/unit/landscape_hierarchy.test.js` additionally verifies complete-tree
-edits/revert, conservative metadata-only ancestor changes and pre-D3 authoring
-history preservation.
+The focused store/CLI suites are `landscape_authoring_store.test.js`,
+`landscape_authoring_streamed_store.test.js`, and
+`landscape_authoring_cli.test.js` under `tests/node/unit/`. They cover exact
+query bounds, 16/64-chunk constant-footprint edits, named state templates,
+cross-border grade/smooth/soil results, immutable inputs, stage/candidate/commit
+cancellation, injected staging failure, current-byte races, complete corruption
+checks, and whole-batch reopen/revert. Synthetic artifacts stay under the
+gitignored `tests/artifacts/screens/landscape/ai576/d5/authoring-tests/`
+(the original regression fixture paths retain their D2 grouping).
+
+The real coastal D5 browser workflow independently verifies 16 native and nine
+ancestor changes, all 112 native borders, appearance eviction/reload, registered
+hierarchy preparation, reopen, and full revert. Its evidence is under
+`tests/artifacts/screens/landscape/ai576/d5/large-editing/`.

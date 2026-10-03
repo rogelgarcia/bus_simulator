@@ -61,12 +61,13 @@ tombstones, as documented in `LANDSCAPE_EDITING.md`.
 
 ## Bounded ancestor updates
 
-Height edits keep the four-native-chunk, 2 MiB native-input and 8 MiB edit-working
-limits. Before I/O, admission includes every potentially affected prepared
-ancestor. Each changed native vertex updates every ancestor grid on which that
-vertex is aligned. Ancestors are read sequentially and rebuilt bottom-up; no
-unrelated native payload is fetched. Their envelopes are recomputed from native
-descriptor envelopes, and errors use the safe bound:
+The legacy D2 bounded kernel keeps its four-native-chunk, 2 MiB native-input and
+8 MiB edit-working limits. The D5 authoring store uses streamed native/halo work
+units under the same 8 MiB edit ceiling and admits larger footprints. Both paths
+update every ancestor grid aligned with changed native vertices. D5 rebuilds
+one ancestor at a time, bottom-up, by reading its immediate children sequentially;
+each child is already persisted before its parent consumes it. Ancestor envelopes
+come from the children's native envelopes, and errors use the safe bound:
 
 ```text
 newError = oldError + maxAbsoluteNativeDelta + maxAbsoluteAncestorDelta
@@ -80,14 +81,21 @@ URL and content revision remain unchanged while its descriptor/manifest revision
 changes. Unaffected ancestor descriptors and all category channels stay intact.
 Soil-only batches require no height rebuild. The complete edited candidate is
 validated and published under one manifest revision. Revert restores the saved
-consistent native/ancestor state after authenticating the changed resources.
+consistent native/ancestor state after authenticating the complete restored
+payload graph with a bounded two-chunk validation pass.
 
-The working estimate includes retained native inputs, native height copies,
-resulting ancestor height/category arrays, one ancestor input-height scratch
-buffer and three largest height channels for bounded I/O/encoding/hash staging.
-At the central coastal four-tile intersection this includes nine ancestors and
-uses 6,406,753 bytes. Deeper trees may reject a small edit if ancestor working
-buffers exceed the cap; they do not allocate an unbounded tree.
+The legacy bounded kernel's estimate includes retained native inputs, native
+height copies, all resulting ancestor arrays, ancestor scratch, and three
+height channels for I/O/encoding/hash staging. Its central coastal four-tile
+intersection includes nine ancestors and uses 6,406,753 bytes; a deeper tree
+can exceed that legacy estimate. The D5 streamed path retains one ancestor
+output and source plus one child, stages the finished output immediately, and
+keeps only immutable descriptors between ancestors. It never retains a whole
+ancestor list as decoded arrays. Its working cap is independent of how many
+native chunks or ancestors are affected; larger regions increase sequential
+I/O. See `LANDSCAPE_STREAMED_EDITING.md` for exact buffer admission and callback
+ownership. Final candidate validation runs separately, so its peak combines by
+maximum rather than by summing buffers from completed phases.
 
 Focused tests are `landscape_hierarchy.test.js`, the earlier authoring/editing
 suites and the importer source-authentication regression. Runtime planning and

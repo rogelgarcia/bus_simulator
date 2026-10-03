@@ -28,6 +28,7 @@ function combinedBounds(regions) {
 export async function applyLandscapeEditBatch(input, batchInput, { readChunk, newRevision, signal, maxNativeChunks = LANDSCAPE_MAX_NATIVE_CHUNKS, maxDecodedBytes = LANDSCAPE_QUERY_BYTE_LIMIT }) {
     const manifest = validateLandscapeManifest(input);
     const batch = validateLandscapeEditBatch(manifest, batchInput);
+    requireCondition(!(batch.regions?.length) && batch.operations.every(operation => ['raise', 'set-height', 'assign-soil'].includes(operation.type) && operation.region.type !== 'polygon' && operation.regionId === undefined), 'advanced operations require applyLandscapeEditBatchStreamed');
     requireId(newRevision, 'newRevision');
     requireCondition(newRevision !== manifest.revision, 'newRevision must differ from the expected input revision');
     requireCondition(typeof readChunk === 'function', 'readChunk is required');

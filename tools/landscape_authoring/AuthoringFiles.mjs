@@ -14,8 +14,9 @@ export function authoringFile(directory, relative) {
     return path.join(directory, relative);
 }
 
-/** @param {string} file @param {number} maximum */
-export async function readAuthoringFile(file, maximum) {
+/** @param {string} file @param {number} maximum @param {{signal?:AbortSignal}} [options] */
+export async function readAuthoringFile(file, maximum, { signal } = {}) {
+    signal?.throwIfAborted();
     const handle = await open(file, 'r');
     try {
         const metadata = await handle.stat();
@@ -23,37 +24,43 @@ export async function readAuthoringFile(file, maximum) {
         const bytes = Buffer.alloc(metadata.size + 1);
         let total = 0;
         while (total < bytes.length) {
+            signal?.throwIfAborted();
             const read = await handle.read(bytes, total, bytes.length - total, total);
             if (!read.bytesRead) break;
             total += read.bytesRead;
         }
         if (total !== metadata.size) throw new Error(`[LandscapeAuthoring] File changed size while reading: ${path.basename(file)}`);
+        signal?.throwIfAborted();
         return bytes.subarray(0, total);
     } finally { await handle.close(); }
 }
 
-/** @param {string} destination @param {Uint8Array|string} bytes */
-export async function atomicAuthoringWrite(destination, bytes) {
+/** @param {string} destination @param {Uint8Array|string} bytes @param {{signal?:AbortSignal}} [options] */
+export async function atomicAuthoringWrite(destination, bytes, { signal } = {}) {
+    signal?.throwIfAborted();
     await mkdir(path.dirname(destination), { recursive: true });
     const temporary = path.join(path.dirname(destination), `${path.basename(destination)}.${randomUUID()}.partial`);
     const handle = await open(temporary, 'wx');
     try {
         try { await handle.writeFile(bytes); await handle.sync(); }
         finally { await handle.close(); }
+        signal?.throwIfAborted();
         await rename(temporary, destination);
     }
     catch (error) { await unlink(temporary).catch(() => {}); throw error; }
 }
 
-/** @param {string} destination @param {Uint8Array|string} input */
-export async function writeImmutableAuthoringFile(destination, input) {
+/** @param {string} destination @param {Uint8Array|string} input @param {{signal?:AbortSignal}} [options] */
+export async function writeImmutableAuthoringFile(destination, input, { signal } = {}) {
+    signal?.throwIfAborted();
     const bytes = typeof input === 'string' ? Buffer.from(input) : Buffer.from(input.buffer, input.byteOffset, input.byteLength);
     try {
-        const previous = await readAuthoringFile(destination, bytes.length);
+        const previous = await readAuthoringFile(destination, bytes.length, { signal });
         if (!previous.equals(bytes)) throw new Error(`[LandscapeAuthoring] Immutable content changed: ${path.basename(destination)}`);
-        return;
+        return { created: false, byteLength: bytes.length };
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    await atomicAuthoringWrite(destination, bytes);
+    await atomicAuthoringWrite(destination, bytes, { signal });
+    return { created: true, byteLength: bytes.length };
 }
 
 /** @param {string} directory @returns {Promise<()=>Promise<void>>} */

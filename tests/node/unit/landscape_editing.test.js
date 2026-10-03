@@ -114,7 +114,7 @@ test('Landscape editing: invalid/stale/duplicate batches and invalid soil fallof
         [value => { value.expectedRevision = 'old'; }, /stale/],
         [value => { value.landscapeId = 'other'; }, /different landscape/],
         [value => { value.operations.push(clone(value.operations[0])); }, /duplicate operation/],
-        [value => { value.operations[0].region = { type: 'point', x: 0, z: 18 }; }, /explicit circle or rectangle/],
+        [value => { value.operations[0].region = { type: 'point', x: 0, z: 18 }; }, /explicit circle, rectangle, or polygon/],
         [value => { value.operations[0].deltaMeters = Infinity; }, /finite/],
         [value => { value.operations[0].falloff = { type: 'linear', distance: 4 }; }, /fit inside/],
         [value => { value.operations[0] = { ...soil('soil-1', 'sand'), falloff: { type: 'linear', distance: 1 } }; }, /hard falloff/],

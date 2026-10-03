@@ -1,0 +1,48 @@
+{
+  "format": "landscape-edit-batch",
+  "schemaVersion": 1,
+  "id": "$batchId",
+  "landscapeId": "$state.landscapeId",
+  "expectedRevision": "$state.revision",
+  "regions": [
+    {
+      "id": "coastal-interior-grade",
+      "name": "Coastal interior grading study",
+      "region": {
+        "type": "polygon",
+        "points": [
+          {"x": 1600, "z": 1600},
+          {"x": 2800, "z": 1600},
+          {"x": 2800, "z": 2400},
+          {"x": 2400, "z": 2800},
+          {"x": 1600, "z": 2800}
+        ]
+      }
+    }
+  ],
+  "operations": [
+    {
+      "id": "grade",
+      "type": "grade",
+      "regionId": "coastal-interior-grade",
+      "falloff": {"type": "linear", "distance": 80},
+      "start": {"x": 1600, "z": 2200, "heightMeters": 3},
+      "end": {"x": 2800, "z": 2200, "heightMeters": 9}
+    },
+    {
+      "id": "smooth",
+      "type": "smooth",
+      "regionId": "coastal-interior-grade",
+      "falloff": {"type": "linear", "distance": 80},
+      "radiusMeters": 8,
+      "strength": 0.6
+    },
+    {
+      "id": "soil",
+      "type": "assign-soil",
+      "regionId": "coastal-interior-grade",
+      "falloff": {"type": "none"},
+      "soilId": "sand"
+    }
+  ]
+}

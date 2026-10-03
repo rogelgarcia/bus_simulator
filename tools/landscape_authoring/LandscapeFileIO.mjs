@@ -3,21 +3,25 @@
 import { decodeLandscapeChannel, validateLandscapeManifest, LANDSCAPE_MANIFEST_BYTE_LIMIT } from '../../src/app/landscape/index.js';
 import { authoringFile, authoringHash, readAuthoringFile } from './AuthoringFiles.mjs';
 
-/** @param {string} directory @param {string} [relative] */
-export async function readLandscapeFileManifest(directory, relative = 'manifest.json') {
-    const bytes = await readAuthoringFile(authoringFile(directory, relative), LANDSCAPE_MANIFEST_BYTE_LIMIT);
+/** @param {string} directory @param {string} [relative] @param {{signal?:AbortSignal}} [options] */
+export async function readLandscapeFileManifest(directory, relative = 'manifest.json', { signal } = {}) {
+    const bytes = await readAuthoringFile(authoringFile(directory, relative), LANDSCAPE_MANIFEST_BYTE_LIMIT, { signal });
     return { bytes, manifest: validateLandscapeManifest(JSON.parse(bytes.toString('utf8'))) };
 }
 
-/** @param {string} directory @param {any} manifest @param {string} chunkId @param {{signal?:AbortSignal}} [options] */
-export async function readLandscapeFileChunk(directory, manifest, chunkId, { signal } = {}) {
+/** @param {string} directory @param {any} manifest @param {string} chunkId @param {{signal?:AbortSignal,descriptor?:any}} [options] */
+export async function readLandscapeFileChunk(directory, manifest, chunkId, { signal, descriptor: stagedDescriptor } = {}) {
     signal?.throwIfAborted();
-    const descriptor = manifest.chunks.find(chunk => chunk.id === chunkId);
-    if (!descriptor) throw new Error(`[LandscapeAuthoring] Unknown chunk ${chunkId}`);
+    const source = manifest.chunks.find(chunk => chunk.id === chunkId);
+    if (!source) throw new Error(`[LandscapeAuthoring] Unknown chunk ${chunkId}`);
+    const descriptor = stagedDescriptor ?? source;
+    if (descriptor.id !== chunkId || ['columns', 'rows', 'startColumn', 'startRow', 'sampleStride', 'level', 'column', 'row'].some(key => descriptor[key] !== source[key])) throw new Error(`[LandscapeAuthoring] Staged spatial identity differs for ${chunkId}`);
     const decoded = {};
     for (const [name, channel] of Object.entries(descriptor.channels)) {
         signal?.throwIfAborted();
-        const bytes = await readAuthoringFile(authoringFile(directory, channel.url), channel.byteLength);
+        const expectedBytes = descriptor.columns * descriptor.rows * (name === 'height' ? 4 : 1);
+        if (!['height', 'landCover'].includes(name) || channel.byteLength !== expectedBytes || channel.decodedByteLength !== expectedBytes) throw new Error(`[LandscapeAuthoring] Invalid staged channel size: ${chunkId}/${name}`);
+        const bytes = await readAuthoringFile(authoringFile(directory, channel.url), channel.byteLength, { signal });
         if (authoringHash(bytes) !== channel.sha256) throw new Error(`[LandscapeAuthoring] Channel hash mismatch: ${chunkId}/${name}`);
         decoded[name] = decodeLandscapeChannel(bytes, channel, name === 'height'
             ? { minHeight: descriptor.minHeight, maxHeight: descriptor.maxHeight }

@@ -1,12 +1,12 @@
 // Validates the renderer-independent landscape manifest and spatial identities.
 // @ts-check
 import { LANDSCAPE_LAND_COVER_CATALOG, LANDSCAPE_SOIL_CATALOG } from './LandscapeCatalog.js';
-import { LANDSCAPE_EDIT_CAPABILITY, validateLandscapeAuthoring } from './LandscapeEditSchema.js';
+import { LANDSCAPE_EDIT_CAPABILITY, LANDSCAPE_ADVANCED_EDIT_CAPABILITY, validateLandscapeAuthoring } from './LandscapeEditSchema.js';
 import { clonePlainData, freezeData, nearlyEqual, requireBounds, requireCondition, requireFinite, requireId, requireInteger, requireRelativeUrl, requireSha256 } from './internal/LandscapeValidation.js';
 
 export const LANDSCAPE_SCHEMA_VERSION = 1;
 export const LANDSCAPE_MAX_CHUNK_SAMPLES = 257 * 257;
-export const LANDSCAPE_SUPPORTED_CAPABILITIES = Object.freeze(['heightfield', 'land-cover', 'coarse-preview', LANDSCAPE_EDIT_CAPABILITY, 'chunk-hierarchy-v1']);
+export const LANDSCAPE_SUPPORTED_CAPABILITIES = Object.freeze(['heightfield', 'land-cover', 'coarse-preview', LANDSCAPE_EDIT_CAPABILITY, LANDSCAPE_ADVANCED_EDIT_CAPABILITY, 'chunk-hierarchy-v1']);
 
 /** @typedef {{minX:number,maxX:number,minZ:number,maxZ:number}} LandscapeBounds */
 /** @typedef {{url:string,encoding:string,byteLength:number,decodedByteLength:number,sha256:string,revision:string}} LandscapeChannel */
@@ -167,7 +167,7 @@ export function validateLandscapeManifest(input) {
         referenceIds.add(reference.id);
     }
     validateLandscapeAuthoring(manifest);
-    for (const field of ['regions', 'attachments']) requireCondition(Array.isArray(manifest[field]) && manifest[field].length === 0, `${field} must be empty; unsupported authored/content capability`);
+    requireCondition(Array.isArray(manifest.attachments) && manifest.attachments.length === 0, 'attachments must be empty; unsupported content capability');
     requireCondition(manifest.cityBinding === undefined, 'D1 cityBinding is reserved; unsupported city-binding capability');
     return freezeData(manifest);
 }

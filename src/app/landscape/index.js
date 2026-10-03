@@ -6,10 +6,11 @@ export { LANDSCAPE_MANIFEST_BYTE_LIMIT, LANDSCAPE_CHUNK_BYTE_LIMIT, encodeLandsc
 export { landscapeGridToWorld, landscapeWorldToGrid, landscapeCityTileToWorld, landscapeWorldToCityTile } from './LandscapeCoordinates.js';
 export { sampleLandscapeChunk, createLandscapeSelectionContext } from './LandscapeSampling.js';
 export { resolveLandscapeSoil } from './LandscapeSoil.js';
-export { validateLandscapeRegion, landscapeRegionBounds, landscapeRegionContains, landscapeRegionIntersectsBounds, landscapeRegionWeight } from './LandscapeRegions.js';
-export { LANDSCAPE_EDIT_CAPABILITY, LANDSCAPE_MAX_BATCH_OPERATIONS, validateLandscapeEditBatch } from './LandscapeEditSchema.js';
+export { LANDSCAPE_MAX_POLYGON_VERTICES, validateLandscapeRegion, landscapeRegionBounds, landscapeRegionContains, landscapeRegionIntersectsBounds, landscapeRegionWeight, landscapeRegionsEqual } from './LandscapeRegions.js';
+export { LANDSCAPE_EDIT_CAPABILITY, LANDSCAPE_ADVANCED_EDIT_CAPABILITY, LANDSCAPE_MAX_BATCH_OPERATIONS, LANDSCAPE_MAX_NAMED_REGIONS, LANDSCAPE_MAX_SMOOTH_RADIUS_SAMPLES, validateLandscapeEditBatch } from './LandscapeEditSchema.js';
 export { LANDSCAPE_MAX_NATIVE_CHUNKS, LANDSCAPE_QUERY_BYTE_LIMIT, planLandscapeRegion, acquireLandscapeRegion, queryLandscapeSelection, validateAcquiredLandscapeChunk, validateLandscapeNativeSeams } from './LandscapeAcquisition.js';
 export { LANDSCAPE_EDIT_WORKING_BYTE_LIMIT, applyLandscapeEditBatch } from './LandscapeEditing.js';
+export { LANDSCAPE_STREAMED_EDIT_WORKING_BYTE_LIMIT, applyLandscapeEditBatchStreamed } from './LandscapeStreamedEditing.js';
 export { createLandscapeViewPlanner, planLandscapeView, landscapeResourceKey } from './LandscapeStreaming.js';
 export { LANDSCAPE_STREAMING_BUDGETS, LandscapeResidencyBudget } from './LandscapeResidencyBudget.js';
 export { LANDSCAPE_APPEARANCE_TIERS, LANDSCAPE_APPEARANCE_MANIFEST_LIMIT, LANDSCAPE_APPEARANCE_PAGE_LIMIT, validateLandscapeAppearanceManifest, validateLandscapeAppearancePage } from './LandscapeAppearanceManifest.js';

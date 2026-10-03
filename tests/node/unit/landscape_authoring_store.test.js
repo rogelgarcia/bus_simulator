@@ -58,11 +58,11 @@ test('Authoring store admits one native working set and rejects overlapping requ
     assert.equal((await value.store.query(selection(value.manifest.revision))).editingReady, true);
 });
 
-test('Authoring store rejects oversized regions before reading unavailable native files', async () => {
+test('Authoring store caps query acquisition but large edits require their actual native files', async () => {
     const value = await fixture({ manifestOnly: true });
     await assert.rejects(value.store.query({ ...selection(value.manifest.revision), x: 8, z: 26, radius: 12 }), /native chunks; D2 limit is 4/);
     const large = batch(value.manifest); large.operations[0].region = { type: 'rectangle', ...value.manifest.bounds };
-    await assert.rejects(value.store.apply(large), /native chunks|chunk limit|D2 limit/);
+    await assert.rejects(value.store.apply(large), /ENOENT|unavailable/);
     assert.equal((await current(value.directory)).revision, value.manifest.revision);
 });
 
