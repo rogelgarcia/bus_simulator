@@ -1,7 +1,8 @@
 // Owns the landscape preview renderer, camera, and provisional inspection lifecycle.
 // @ts-check
 import * as THREE from 'three';
-import { ToolCameraController } from '../../engine3d/camera/ToolCameraController.js';
+import { LandscapeCameraController } from './LandscapeCameraController.js';
+import { LANDSCAPE_NAVIGATION } from './LandscapeNavigationState.js';
 import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
 import { ensureGlobalPerfBar } from '../perf_bar/PerfBar.js';
 import { loadLandscapeOverview, createLandscapeSelectionContext, sampleLandscapeChunk, planLandscapeRegion, queryLandscapeSelection, LandscapeResidencyBudget, LANDSCAPE_STREAMING_BUDGETS } from '../../../app/landscape/index.js';
@@ -24,7 +25,7 @@ export class LandscapeView {
         this.source = new URL(source, location.href).href;
         this.mode = 'shaded';
         this.projection = 'perspective';
-        this.perspectiveFov = 50;
+        this.perspectiveFov = LANDSCAPE_NAVIGATION.fov;
         this.orthoHeight = 5000;
         this.lodColors = false;
         this.boundaries = false;
@@ -56,20 +57,15 @@ export class LandscapeView {
         const sun = new THREE.DirectionalLight(0xfff4dd, 2.2);
         sun.position.set(-2000, 4000, -1000);
         this.scene.add(sun);
-        this.camera = new THREE.PerspectiveCamera(50, 1, 0.5, 25000);
+        this.camera = new THREE.PerspectiveCamera(this.perspectiveFov, 1, 0.1, 25000);
         this.camera.position.set(4400, 3000, -2300);
         this.panel = new LandscapePanel(action => Promise.resolve(this.action(action)).catch(error => this.panel.notice(error.message)));
         this.panel.active('water', true);
-        this.controls = new ToolCameraController(this.camera, canvas, { uiRoot: this.panel.root, minDistance: 3, maxDistance: 18000, maxPolarAngle: Math.PI * .495 });
+        this.controls = new LandscapeCameraController(this.camera, canvas, { uiRoot: this.panel.root,
+            onClick: event => this.pick(event.clientX, event.clientY), onNavigate: () => this.cancelCameraRequest(),
+            onZoom: () => { this.panel.root.querySelector('[data-field="zoom"]').value = String(this.camera.zoom.toFixed(2)); } });
         this.controls.setLookAt({ position: this.camera.position, target: { x: 2000, y: 0, z: 2000 } });
-        canvas.addEventListener('wheel', event => {
-            if (!this.camera.isOrthographicCamera) return;
-            this.camera.zoom = Math.max(.1, Math.min(100, this.camera.zoom * Math.exp(-event.deltaY * .001)));
-            this.camera.updateProjectionMatrix();
-            this.panel.root.querySelector('[data-field="zoom"]').value = String(this.camera.zoom.toFixed(2));
-            event.preventDefault();
-            event.stopImmediatePropagation();
-        }, { signal: this.abort.signal, passive: false, capture: true });
+        this.controls.setHomeFromCurrent();
         this.marker = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffeaa8, depthTest: false }));
         this.marker.renderOrder = 10;
         this.marker.visible = false;
@@ -88,15 +84,6 @@ export class LandscapeView {
         this.raycaster = new THREE.Raycaster();
         this.perfBar.setRenderer(this.renderer);
         this.gpuTimer = getOrCreateGpuFrameTimer(this.renderer);
-        this.onPointerDown = event => { if (event.button === 0) this.pointerDown = { x: event.clientX, y: event.clientY }; };
-        this.onPointerUp = event => {
-            const start = this.pointerDown;
-            this.pointerDown = null;
-            if (event.button !== 0 || !start || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 5) return;
-            this.pick(event.clientX, event.clientY);
-        };
-        canvas.addEventListener('pointerdown', this.onPointerDown, { signal: this.abort.signal });
-        canvas.addEventListener('pointerup', this.onPointerUp, { signal: this.abort.signal });
         window.addEventListener('resize', () => this.resize(), { signal: this.abort.signal });
         this.resizeObserver = new ResizeObserver(() => this.resize());
         this.resizeObserver.observe(canvas);
@@ -107,6 +94,8 @@ export class LandscapeView {
 
     /** Reloads a validated overview without changing the current camera pose. */
     async load() {
+        this.cancelCameraRequest();
+        this.controls.clearInput();
         const sequence = ++this.loadSequence;
         this.loadTiming = { sequence, startedAtMs: performance.now(), coarseReadyAtMs: null, firstCoveredFrameAtMs: null, readyAtMs: null };
         this.loadAbort?.abort();
@@ -196,11 +185,13 @@ export class LandscapeView {
 
     setCamera({ position, target, projection = this.projection, fov = this.perspectiveFov, orthoHeight = this.orthoHeight, zoom } = {}) {
         if (!['perspective', 'orthographic'].includes(projection) || !Number.isFinite(fov) || fov < 5 || fov > 110 || !Number.isFinite(orthoHeight) || orthoHeight < 20 || orthoHeight > 20000 || (zoom !== undefined && (!Number.isFinite(zoom) || zoom < .1 || zoom > 100))) throw new Error('Invalid terrain camera projection or zoom');
+        this.cancelCameraRequest();
+        this.controls.clearInput();
         this.perspectiveFov = fov;
         this.orthoHeight = orthoHeight;
         if (projection !== this.projection) {
             const previous = this.camera;
-            this.camera = projection === 'orthographic' ? new THREE.OrthographicCamera(-2500, 2500, 2500, -2500, .5, 25000) : new THREE.PerspectiveCamera(fov, previous.aspect ?? 1, .5, 25000);
+            this.camera = projection === 'orthographic' ? new THREE.OrthographicCamera(-2500, 2500, 2500, -2500, .1, 25000) : new THREE.PerspectiveCamera(fov, previous.aspect ?? 1, .1, 25000);
             this.camera.position.copy(previous.position);
             this.camera.quaternion.copy(previous.quaternion);
             this.controls.camera = this.camera;
@@ -216,6 +207,7 @@ export class LandscapeView {
         this.panel.root.querySelector('[data-field="fov"]').value = String(fov);
         this.panel.root.querySelector('[data-field="span"]').value = String(orthoHeight);
         this.panel.root.querySelector('[data-field="zoom"]').value = String(this.camera.zoom);
+        for (const id of ['home', 'top', 'ground', 'pov']) this.panel.active(`camera:${id}`, false);
     }
 
     setInspection({ lod = this.lodColors, boundaries = this.boundaries } = {}) {
@@ -375,14 +367,49 @@ export class LandscapeView {
     releaseConsumer(consumer) { this.consumerLeases.get(consumer)?.release(); this.consumerLeases.delete(consumer); }
 
     preset(name) {
+        if (name === 'pov') return this.gamePov();
         const presets = {
             home: { position: { x: 4400, y: 3000, z: -2300 }, target: { x: 2000, y: 0, z: 2000 } },
             top: { position: { x: 2000, y: 5800, z: 1999 }, target: { x: 2000, y: 0, z: 2000 } },
             ground: { position: { x: 970, y: 115, z: 240 }, target: { x: 1680, y: 14, z: 1100 } }
         };
         if (!presets[name]) throw new Error(`Unknown camera preset: ${name}`);
-        this.controls.setLookAt(presets[name]);
-        for (const id of Object.keys(presets)) this.panel.active(`camera:${id}`, id === name);
+        this.setCamera(presets[name]);
+        for (const id of [...Object.keys(presets), 'pov']) this.panel.active(`camera:${id}`, id === name);
+    }
+
+    cancelCameraRequest() { this.cameraRequestAbort?.abort(); this.cameraRequestAbort = null; }
+
+    async gamePov() {
+        if (!this.loaded || !this.stream || this.reloading) throw new Error('Load the landscape before choosing Game POV');
+        this.cancelCameraRequest();
+        const request = new AbortController(); this.cameraRequestAbort = request;
+        const manifest = this.loaded.manifest, point = this.selection?.position ?? this.controls.target;
+        const x = Math.max(manifest.bounds.minX, Math.min(manifest.bounds.maxX, point.x));
+        const z = Math.max(manifest.bounds.minZ, Math.min(manifest.bounds.maxZ, point.z));
+        const direction = this.camera.getWorldDirection(new THREE.Vector3());
+        direction.y = 0;
+        if (direction.lengthSq() < 1e-12) direction.set(0, 0, 1); else direction.normalize();
+        const options = { x, z, selectionId: `camera-${crypto.randomUUID()}`, expectedRevision: manifest.revision };
+        const plan = planLandscapeRegion(manifest, { type: 'point', x, z });
+        this.panel.notice('Resolving native ground for the Game POV camera…');
+        try {
+            const lease = await this.stream.acquireChunks(plan.chunkIds, { consumer: options.selectionId, priority: 100, accuracy: 'authoritative', signal: request.signal });
+            let context;
+            try { context = await queryLandscapeSelection(manifest, options, { readChunk: lease.readChunk, signal: request.signal }); }
+            finally { lease.release(); }
+            if (request.signal.aborted || this.disposed || manifest.revision !== this.loaded?.manifest.revision) return;
+            if (!context.editingReady) throw new Error('Native ground is unavailable for this camera position');
+            const height = context.position.y;
+            this.setCamera({ projection: 'perspective', fov: LANDSCAPE_NAVIGATION.fov, zoom: 1,
+                position: [x, height + LANDSCAPE_NAVIGATION.heightMeters, z],
+                target: [x + direction.x * LANDSCAPE_NAVIGATION.lookDistanceMeters, height + LANDSCAPE_NAVIGATION.targetHeightMeters, z + direction.z * LANDSCAPE_NAVIGATION.lookDistanceMeters] });
+            for (const id of ['home', 'top', 'ground', 'pov']) this.panel.active(`camera:${id}`, id === 'pov');
+            this.panel.notice('Game POV: 55° FOV, camera 4.5 m above native ground. Arrows move; PageUp/PageDown change camera elevation. Free flight does not follow the ground.');
+            this.canvas.focus({ preventScroll: true });
+        } catch (error) {
+            if (error.name !== 'AbortError' && !request.signal.aborted) throw error;
+        } finally { if (this.cameraRequestAbort === request) this.cameraRequestAbort = null; }
     }
 
     setMode(mode) {
@@ -474,8 +501,8 @@ export class LandscapeView {
         if (!this.selection) return;
         const { x, y, z } = this.selection.position;
         const distance = Math.max(30, this.selectionRadius * 2.4);
-        this.controls.setLookAt({ position: { x: x + distance, y: y + distance * .8, z: z - distance }, target: { x, y, z } });
-        for (const id of ['home', 'top', 'ground']) this.panel.active(`camera:${id}`, false);
+        this.setCamera({ position: { x: x + distance, y: y + distance * .8, z: z - distance }, target: { x, y, z } });
+        for (const id of ['home', 'top', 'ground', 'pov']) this.panel.active(`camera:${id}`, false);
     }
 
     async saveSelection(context) {
@@ -656,7 +683,7 @@ export class LandscapeView {
         this.frameRequest = requestAnimationFrame(frame);
     }
 
-    pause() { cancelAnimationFrame(this.frameRequest); this.frameRequest = null; }
+    pause() { cancelAnimationFrame(this.frameRequest); this.frameRequest = null; this.controls.clearInput(); this.cancelCameraRequest(); }
 
     dispose() {
         if (this.disposed) return;

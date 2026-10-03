@@ -62,7 +62,10 @@ export class FirstPersonCameraController {
         zoomSpeed = 1.0,
         minPitchDeg = -89.0,
         maxPitchDeg = 89.0,
-        getFocusTarget = null
+        getFocusTarget = null,
+        dragThreshold = 0,
+        onClick = null,
+        requireCanvasFocus = false
     } = {}) {
         this.camera = camera ?? null;
         this.canvas = canvas ?? null;
@@ -72,8 +75,8 @@ export class FirstPersonCameraController {
         this.panSpeed = clamp(panSpeed, 0.01, 10.0, 1.0);
         this.zoomSpeed = clamp(zoomSpeed, 0.01, 10.0, 1.0);
 
-        const minPitch = clamp(minPitchDeg, -89.9, 0.0, -89.0);
-        const maxPitch = clamp(maxPitchDeg, 0.0, 89.9, 89.0);
+        const minPitch = clamp(minPitchDeg, -90.0, 0.0, -89.0);
+        const maxPitch = clamp(maxPitchDeg, 0.0, 90.0, 89.0);
         this._minPitchRad = THREE.MathUtils.degToRad(minPitch);
         this._maxPitchRad = THREE.MathUtils.degToRad(Math.max(minPitch, maxPitch));
 
@@ -95,6 +98,10 @@ export class FirstPersonCameraController {
 
         this._uiRoot = uiRoot;
         this._getFocusTarget = typeof getFocusTarget === 'function' ? getFocusTarget : null;
+        this._dragThreshold = clamp(dragThreshold, 0, 100, 0);
+        this._onClick = typeof onClick === 'function' ? onClick : null;
+        this._requireCanvasFocus = !!requireCanvasFocus;
+        this._pointerDragged = false;
 
         this._home = {
             position: new THREE.Vector3(),
@@ -110,7 +117,8 @@ export class FirstPersonCameraController {
         this._onPointerDown = (e) => this._handlePointerDown(e);
         this._onPointerMove = (e) => this._handlePointerMove(e);
         this._onPointerUp = (e) => this._handlePointerUp(e);
-        this._onPointerCancel = (e) => this._handlePointerUp(e);
+        this._onPointerCancel = (e) => this._handlePointerUp(e, true);
+        this._onLostPointerCapture = (e) => this._handlePointerUp(e, true);
         this._onWheel = (e) => this._handleWheel(e);
         this._onKeyDown = (e) => this._handleKeyDown(e);
 
@@ -120,12 +128,26 @@ export class FirstPersonCameraController {
     }
 
     dispose() {
+        this.cancelInteraction();
         this._disconnect();
         this.camera = null;
         this.canvas = null;
     }
 
     update() {}
+
+    syncFromCamera() { this._syncFromCamera(); }
+
+    cancelInteraction() {
+        const pointerId = this._activePointerId;
+        this._state = null;
+        this._activePointerId = null;
+        this._activeButton = null;
+        this._pointerDragged = false;
+        if (pointerId !== null && canUsePointerCapture(this.canvas) && this.canvas?.releasePointerCapture) {
+            try { this.canvas.releasePointerCapture(pointerId); } catch (err) {}
+        }
+    }
 
     setLookAt({ position = null, target = null } = {}) {
         const cam = this.camera;
@@ -239,6 +261,7 @@ export class FirstPersonCameraController {
         this.canvas.addEventListener('pointermove', this._onPointerMove, { capture: true });
         this.canvas.addEventListener('pointerup', this._onPointerUp, { capture: true });
         this.canvas.addEventListener('pointercancel', this._onPointerCancel, { capture: true });
+        this.canvas.addEventListener('lostpointercapture', this._onLostPointerCapture, { capture: true });
         this.canvas.addEventListener('wheel', this._onWheel, { passive: false, capture: true });
         window.addEventListener('keydown', this._onKeyDown);
     }
@@ -249,6 +272,7 @@ export class FirstPersonCameraController {
             this.canvas.removeEventListener('pointermove', this._onPointerMove, { capture: true });
             this.canvas.removeEventListener('pointerup', this._onPointerUp, { capture: true });
             this.canvas.removeEventListener('pointercancel', this._onPointerCancel, { capture: true });
+            this.canvas.removeEventListener('lostpointercapture', this._onLostPointerCapture, { capture: true });
             this.canvas.removeEventListener('wheel', this._onWheel, { capture: true });
         }
         window.removeEventListener('keydown', this._onKeyDown);
@@ -266,6 +290,7 @@ export class FirstPersonCameraController {
 
     _handleKeyDown(e) {
         if (!this.enabled) return;
+        if (this._requireCanvasFocus && document.activeElement !== this.canvas) return;
         const key = e?.key;
         if (key !== 'f' && key !== 'F' && key !== 'r' && key !== 'R') return;
         if (isInteractiveElement(document.activeElement)) return;
@@ -276,6 +301,7 @@ export class FirstPersonCameraController {
 
     _handlePointerDown(e) {
         if (!this.enabled || !e || !this.canvas) return;
+        if (this._activePointerId !== null) return;
         if (this._isEventOverUi(e)) return;
         if (e.pointerType === 'touch') return;
 
@@ -290,6 +316,8 @@ export class FirstPersonCameraController {
         }
         this._activePointerId = e.pointerId;
         this._activeButton = e.button;
+        this._pointerDragged = false;
+        if (this._requireCanvasFocus) this.canvas.focus({ preventScroll: true });
         this._pointerStart.x = e.clientX;
         this._pointerStart.y = e.clientY;
         this._lookStart.yaw = this._yaw;
@@ -323,6 +351,8 @@ export class FirstPersonCameraController {
         if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
 
         if (this._state === 'look') {
+            if (!this._pointerDragged && Math.hypot(dx, dy) <= this._dragThreshold) return;
+            this._pointerDragged = true;
             const rot = 0.002 * this.lookSpeed;
             this._yaw = this._lookStart.yaw - dx * rot;
             this._pitch = clamp(this._lookStart.pitch - dy * rot, this._minPitchRad, this._maxPitchRad, 0);
@@ -342,20 +372,16 @@ export class FirstPersonCameraController {
         e.stopImmediatePropagation?.();
     }
 
-    _handlePointerUp(e) {
+    _handlePointerUp(e, canceled = false) {
         if (!e) return;
         if (e.pointerType === 'touch') return;
         if (e.pointerId !== this._activePointerId) return;
-        this._state = null;
-        this._activePointerId = null;
-        this._activeButton = null;
-        if (canUsePointerCapture(this.canvas) && this.canvas?.releasePointerCapture) {
-            try {
-                this.canvas.releasePointerCapture(e.pointerId);
-            } catch (err) {}
-        }
+        const click = !canceled && this.enabled && this._activeButton === 0 && !this._pointerDragged
+            && Math.hypot(e.clientX - this._pointerStart.x, e.clientY - this._pointerStart.y) <= this._dragThreshold;
+        this.cancelInteraction();
         e.preventDefault?.();
         e.stopImmediatePropagation?.();
+        if (click) this._onClick?.(e);
     }
 
     _handleWheel(e) {

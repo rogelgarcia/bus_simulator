@@ -14,7 +14,7 @@ export class LandscapePanel {
             <div class="landscape-streaming"><span data-field="streaming" role="status">Preparing bounded terrain streaming…</span><small data-field="streaming-detail">CPU buffers and estimated GPU residency</small><small data-field="appearance">Preparing independent soil masks and PBR pages…</small></div>
             <nav class="landscape-toolbar" aria-label="Terrain inspection">
                 <div data-group="mode"></div><div data-group="camera"></div><div data-group="helpers"></div><div data-group="source"></div>
-                <div class="landscape-projection"><label>Projection<select data-field="projection" aria-label="Camera projection"><option value="perspective">Perspective</option><option value="orthographic">Orthographic</option></select></label><label>FOV °<input data-field="fov" type="number" min="5" max="110" value="50" aria-label="Perspective field of view" /></label><label>Ortho span m<input data-field="span" type="number" min="20" max="20000" value="5000" aria-label="Orthographic view span" /></label><label>Zoom<input data-field="zoom" type="number" min="0.1" max="100" step="0.1" value="1" aria-label="Projection zoom" /></label></div>
+                <div class="landscape-projection"><label>Projection<select data-field="projection" aria-label="Camera projection"><option value="perspective">Perspective</option><option value="orthographic">Orthographic</option></select></label><label>FOV °<input data-field="fov" type="number" min="5" max="110" value="55" aria-label="Perspective field of view" /></label><label>Ortho span m<input data-field="span" type="number" min="20" max="20000" value="5000" aria-label="Orthographic view span" /></label><label>Zoom<input data-field="zoom" type="number" min="0.1" max="100" step="0.1" value="1" aria-label="Projection zoom" /></label></div>
             </nav>
             <details class="landscape-planning" data-field="planning-panel">
                 <summary>Planning references &amp; views</summary>
@@ -44,11 +44,11 @@ export class LandscapePanel {
                 <small class="landscape-report" data-field="report">Terrain report: select an area, then Inspect area.</small>
             </aside>
             <div class="landscape-legend" data-field="legend"></div>
-            <footer class="landscape-footer"><span data-field="status" role="status">Preparing overview</span><span>Click: inspect · Right drag: orbit · Middle / Shift+right: pan · Wheel: zoom</span></footer>
+            <footer class="landscape-footer"><span data-field="status" role="status">Preparing overview</span><span>Click: inspect · Left drag: look · Arrows/WASD: move · PageUp/Down: camera elevation · Shift: faster · Right drag: orbit · Middle: pan · Wheel: dolly / ortho zoom</span></footer>
             <output class="landscape-notice" data-field="notice" role="alert" hidden></output>`;
         const groups = {
             mode: [['mode:shaded', 'Shaded'], ['mode:wireframe', 'Wireframe'], ['mode:combined', 'Shaded + wire']],
-            camera: [['camera:home', 'Overview'], ['camera:top', 'Top'], ['camera:ground', 'Beach approach']],
+            camera: [['camera:home', 'Overview'], ['camera:top', 'Top'], ['camera:ground', 'Beach approach'], ['camera:pov', 'Game POV']],
             helpers: [['grid', 'Grid'], ['axes', 'Axes'], ['lod', 'LOD colors'], ['boundaries', 'Chunk edges'], ['water', 'Water']],
             source: [['reload', 'Reload source']],
             planning: [['planning:districts', 'Districts'], ['planning:roads', 'Roads'], ['planning:shoreline', 'Shoreline'], ['planning:points', 'Points'], ['planning:corridors', 'View corridor']],

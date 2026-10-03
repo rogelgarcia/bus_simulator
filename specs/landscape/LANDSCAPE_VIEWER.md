@@ -14,6 +14,53 @@ The reusable Three.js/worker adapter lives under
 and DOM panel. Neither the adapter nor the domain requires the Fabrication panel.
 It does not create a city, game simulation, or flat placeholder ground.
 
+## Navigation
+
+The perspective camera defaults to **55°**, matching `src/app/core/GameEngine.js`.
+Its 0.1-meter near plane matches the game; the 25,000-meter far plane accommodates
+the coastal landscape. Initial overview coverage is preserved. Overview, Top and
+Beach approach remain available, as do orthographic projection/span/zoom, saved
+bookmarks and source reload without moving the camera.
+
+`LandscapeCameraController` adapts the existing `FirstPersonCameraController`:
+
+- **Left drag** turns the view around a fixed camera position. A plain left click
+  still selects terrain. Motion up to five CSS pixels counts as a click and does
+  not turn the camera; crossing that threshold counts as a drag even if the
+  pointer returns to its starting position. Canceled/lost pointer capture does
+  not select terrain.
+- **Arrow keys or WASD** translate horizontally relative to the camera heading,
+  including while looking straight down. **PageUp/PageDown** raise/lower the
+  camera in world Y. These are free-flight camera controls; terrain elevations
+  remain unchanged and ground following/collision is not enabled.
+- Movement is 36 meters/second, or 84 with **Shift**. Combined axes are normalized
+  and each update admits at most 0.1 seconds of movement after a frame stall.
+- Canvas focus owns navigation. Clicking the canvas focuses it; editing any
+  field, canvas/window blur, hidden-page pause, reload or disposal clears held
+  movement and pointer state. Releasing a key outside the canvas also clears it.
+- **Right drag** retains orbit, **middle drag or Shift+right drag** pans, and the
+  wheel dollies in perspective. Orthographic wheel input changes projection
+  zoom at a fixed camera position; panning uses the actual visible span.
+
+**Game POV** resolves native ground at the selected point, or the current look
+target clamped to the landscape if no point is selected. It then uses the
+existing `gameplay_bus` inspection pose from
+`src/app/grass/GrassLabValidationContract.js`: 4.5 meters above native ground,
+12-meter horizontal look distance, 1.6-meter target height, and 55° perspective
+with zoom 1. The gameplay chase camera itself varies with the chosen vehicle.
+POV acquisition uses the existing bounded native query lease and releases it
+after sampling; later navigation, reload, hiding or disposal cancels obsolete
+requests. It does not replace the terrain selection or publish an edit. Subsequent
+movement is free flight, so camera height is not locked to the ground.
+
+The shared controller's click threshold/callback and focus requirement are
+opt-in. Existing callers keep immediate left-drag looking and their existing
+shortcuts. `tests/node/unit/landscape_navigation.test.js` verifies movement math
+and release behavior; `tests/headless/e2e/landscape_navigation.pwtest.js` exercises
+actual pointer/keyboard focus, canceled clicks, native POV, projection, bookmarks,
+reload and disposal. Verification artifacts go under
+`tests/artifacts/screens/landscape/navigation/step1/`.
+
 ## D6 planning aids
 
 The compact Planning references & views panel adds authenticated retained
@@ -64,9 +111,8 @@ changing the planning classification.
 The viewer starts with validated root coverage, then selects a covering quadtree
 partition using camera position/direction, physical viewport height, projection,
 field of view and zoom. Perspective FOV and orthographic span/zoom controls change
-detail while the camera remains stationary. The existing `ToolCameraController`
-owns orbit, pan and perspective wheel movement. Orthographic wheel input changes
-projection zoom; orthographic panning uses the effective visible span.
+detail while the camera remains stationary. Camera controls use the shared
+first-person controller with the navigation behavior documented above.
 
 Two module workers acquire, hash-check, decode and build bounded tile buffers.
 Root source data remains pinned for overview coverage and common border normals.
@@ -167,9 +213,9 @@ This estimate covers terrain buffers and construction/inspection overhead; it
 is not a measured browser heap or total GPU-memory limit. D3 introduces shared
 residency accounting and admission for simultaneous/transient resources.
 
-Right-drag orbits, middle-drag or Shift+right-drag pans, and the wheel zooms.
-Overview, top, and beach-approach poses are available. Top is a perspective
-inspection pose in D1; orthographic streaming is a later D3 addition. Grid/axes
+Overview, top, and beach-approach poses are available alongside the Game POV and
+free-flight navigation described above. Top began as a perspective inspection
+pose in D1; orthographic projection was added in D3. Grid/axes
 are view-only, with a 200-meter grid. World orientation is X east, Y up, Z north.
 
 Shaded, wireframe-only, and shaded-plus-wireframe modes share the same actual
