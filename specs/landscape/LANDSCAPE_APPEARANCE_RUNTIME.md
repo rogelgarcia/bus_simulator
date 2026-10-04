@@ -79,12 +79,12 @@ AI577 D2 sizes the per-slot coverage uniform arrays (`uMaskBounds`, `uMaskMeta`,
 `uMaskNeighbors0/1`) with the compile-time `LANDSCAPE_COVERAGE_SLOTS` define instead of a
 hardcoded seventeen. `chooseLandscapeCoverageSlots(renderer)` picks the count once per view
 and renderer: `min(81, floor((maxFragmentUniforms - fixed) / 4))`, where the fixed vector count
-is parsed from the actual shader source plus the vectors Three.js adds (125 since the AI577 D2
-warp and clump uniforms). Seventeen native mask slots are always required; the remainder (at
+is parsed from the actual shader source plus the vectors Three.js adds (134 since the AI577 D3
+stochastic tiling uniforms; 125 in D2). Seventeen native mask slots are always required; the remainder (at
 most 64) is the fine-page capacity of [LANDSCAPE_SURFACE_DETAIL.md](LANDSCAPE_SURFACE_DETAIL.md).
 The RTX 3060 / ANGLE D3D11 test machine reports 1,024 vectors and compiles 81 slots; the WebGL2
-minimum of 224 yields 24 slots (7 fine); a device that cannot fit seventeen slots fails with an
-explicit `[Landscape]` error.
+minimum of 224 yields 22 slots (5 fine); devices below 202 vectors cannot fit seventeen slots and
+fail with an explicit `[Landscape]` error.
 The geometry streamer's materials and the appearance uniforms receive the same count, and
 `setAppearance` rejects arrays of another length. The finest-page search loop is bounded by
 the mask array depth, so unused slots cost no fragment work. `snapshot().appearance.coverageSlots`
@@ -125,7 +125,9 @@ detail consistently. Both derivatives scale with their sampled period. Fully
 near or fully macro fragments sample only one lattice; transition fragments
 sample both. Grass retains its calibrated four-meter near period and uses a
 16-meter macro period; the new sand retains 30 meters near and 120 meters macro.
-These artistic scales do not claim new source resolution. The planner receives
+These artistic scales do not claim new source resolution. Since AI577 D3 both lattices are
+sampled stochastically (see Stochastic material sampling); periods and the footprint blend are
+unchanged. The planner receives
 the same periods and conservatively budgets texels for the larger one.
 
 The external terrain shader applies normal strength, AO intensity, metalness,
@@ -187,6 +189,54 @@ selection, multiplication by coverage and final normalization make the combined
 multi-material filter approximate; it is not an exact area average of nonlinear
 height competition. It neither removes D1's source-resolution limitations nor
 implements the independently streamed fine coverage pages planned for D2.
+
+## Stochastic material sampling (AI577 D3)
+
+Repeating material pages are sampled with world-anchored stochastic hex tiling
+(`landscape-hex-tiling-v1`; catalog and exact JavaScript mirror in `LandscapeMaterialSampling.js`,
+chunk `chunks/landscape/stochastic_tiling.glsl`). Each lattice, near and macro, is an equilateral
+triangle grid in texture periods: `uv` (world X/Z ÷ period, after the catalog UV rotation) is
+turned by a salt-derived angle in [0°, 60°) and scaled by the soil's cells per period. The
+fragment's triangle gives three vertices and barycentric weights. Each vertex has a hashed
+offset (uniform over one period along U and over the catalog V spread along V) and a rotation
+uniform in the catalog range; the sample coordinate is the fragment rotated about the vertex
+center plus the offset, wrapped to one period. Hashing reuses the surface-warp murmur finalizer
+on `(i·0x27d4eb2d)^(j·0x165667b1)^salt`; rotations re-hash it with `0x9e3779b9`. Near salts
+derive from `landscapeSurfaceDetailSeed` and `material-sampling/<soilId>`; the macro salt is
+the near salt hashed with `0x6a09e667`. The lattice never depends on the camera.
+
+One weight set drives base color, ORM (including the relief alpha consumed by the height
+competition and the D2 clump relief) and normals. UV gradients rotate with each sample before
+`textureGrad`, so mip and anisotropic selection match an unrotated sample. Tangent normals become
+slopes `n.xy / max(|n.z|, max(|n.x|,|n.y|)/128)`, are rotated back by the inverse sample
+rotation, blended, and rebuilt as `normalize(slope, 1)` before the unchanged catalog rotation,
+strength and terrain mapping. Arriving tiers blend inside every sample.
+
+The compile-time define `LANDSCAPE_MATERIAL_SAMPLING` selects `single` (0, pre-D3 path),
+`hex-linear` (1, barycentric weights), `hex-contrast` (2, default: barycentric^7 ×
+(0.4 + 0.6·signal), where signal is relief or, without height metadata, linear luminance) or
+`hex-variance` (3: barycentric³ weights and `μ + Σw(x−μ)/√Σw²` with μ from the one-texel mip and
+slope mean 0). Samples whose largest possible final weight is below 1/512 are skipped and fade in
+up to 2/512, keeping the blend continuous. Catalog: 3 cells per period for every soil; rotation
+±180° and V spread 1 for unknown, loam, forest and rock (patches of 1.33 m near / 5.33 m macro
+for 4 m tiles); rotation 0° and V spread 0 for sand and seabed, so ripple orientation and phase
+continue across patch borders (10 m / 40 m patches); contrast exponent 7.
+
+Interface: viewer parameter `landscapeMaterialSampling=single|hex-linear|hex-contrast|hex-variance`,
+hooks `setMaterialSampling(mode)` (recompiles all terrain programs, a test-only hitch of about
+3.5 s) and `setMaterialSamplingEnabled(boolean)` (zeroes the cells, keeping one unrotated sample),
+and `snapshot().appearance.materialSampling`.
+
+Cost: nine fragment uniform vectors (`uSoilStochastic[6]`, `uSoilStochasticSalts[2]`,
+`uStochasticSettings`) and no sampler, page or allocation. The per-lattice sample count is a uniform
+(three) and the near/macro lattices share a footprint-bounded loop, so the D3D compiler builds
+one lattice body per soil. Measured on the RTX 3060 / ANGLE D3D11 at the AI577 poses: +0.36–1.2 ms
+GPU (7–10%), +2.7 ms (16%) at the aerial oblique, and compile plus first draw 2.3 → 3.6 s.
+Tile-period autocorrelation of rendered uniform regions falls from 0.76–0.998 to 0.002–0.06.
+hex-linear lost about a quarter of the rendered contrast; hex-variance and an offline
+Gaussianized/inverse-LUT variant (evaluated only, not implemented: it needs new pages and a
+lookup per material) preserved variance at higher cost; hex-contrast keeps rendered contrast
+within −4.8…+1.2% of single sampling.
 
 ## Natural presentation and imported reference data
 

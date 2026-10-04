@@ -33,8 +33,8 @@ visually verified improvement at each step rather than postponing verification.
 
 - Implement one deliverable at a time, using subagents with maximum reasoning.
   Verify and commit each completed deliverable before proceeding. D1 and the
-  corrective D1a step are complete. D2 is complete. Leave D3–D7 pending for later
-  passes; D3 is next.
+  corrective D1a step are complete. D2 and D3 are complete. Leave D4–D7 pending for
+  later passes; D4 is next.
 - Use port 8002 for the worktree server, never 8001. Isolated automated fixture
   servers may use temporary OS-assigned ports. Open a renderer only for verification
   and captures, and close it after the run to release GPU resources.
@@ -152,14 +152,14 @@ visually verified improvement at each step rather than postponing verification.
 
 ### D3. Non-repeating material sampling
 
-- [ ] Add deterministic world-anchored stochastic patch sampling/blending to natural
+- [x] Add deterministic world-anchored stochastic patch sampling/blending to natural
   materials, maintaining coherence across base color, normals, ORM and micro-height.
-- [ ] Preserve color distribution and contrast through blending and mip selection;
+- [x] Preserve color distribution and contrast through blending and mip selection;
   compare histogram-preserving methods with cheaper alternatives using visual and
   GPU evidence. Correct derivatives and tangent normals under transforms.
-- [ ] Preserve directional structures such as beach ripples through constrained
+- [x] Preserve directional structures such as beach ripples through constrained
   rotations/orientation. Avoid obvious patch edges, ghosting, swimming and new grids.
-- [ ] Keep expensive sampling limited to contributing layers and useful detail.
+- [x] Keep expensive sampling limited to contributing layers and useful detail.
   Measure shader cost with otherwise identical coverage, cameras and assets.
 
 ### D4. Distinct macro, local and micro detail
@@ -193,6 +193,10 @@ visually verified improvement at each step rather than postponing verification.
   separately scoped. Optional Gaea imports must use retained interoperable maps and
   provenance, not introduce a mandatory proprietary runtime dependency.
 - [ ] Validate varied lighting/view conditions and source/authoring compatibility.
+- [ ] Replace the 15.625 m nearest-overview natural infill of planning-only areas, visible as
+  large stair-stepped forest/grass outlines in aerial views beyond fine-page range (observed
+  in the D3 baseline `rep-aerial-oblique`), with terrain-driven natural inference that stays
+  consistent across native and generated levels.
 
 ### D6. Profile-guided surface caching
 
@@ -214,6 +218,9 @@ visually verified improvement at each step rather than postponing verification.
   movement, FOV/zoom changes, pause, reload and repeated visits.
 - [ ] Exercise source/soil edits, pinned old revisions, natural planning infill,
   seam consistency, corrupt/delayed requests, low budgets and complete disposal.
+- [ ] Restore `landscape_large_editing`: its city fixture still pins the AI 576 revision
+  `hierarchy-afaf934…`, so setup fails since the D1a material-only publication. Re-pin
+  deliberately or rework the check around immutable snapshots, keeping strict-pin refusal.
 - [ ] Publish actual visual comparisons and reproducible same-condition benchmark
   results, quality profiles, limitations and canonical data/recipe references.
 - [ ] Keep all prior deliverables checked only when their gates pass; mark this AI
@@ -554,6 +561,99 @@ override over soil that changes along one edge can lose that boundary within abo
 Two pre-existing issues remain: `landscape_large_editing` stops at a stale city revision pin
 from the D1a material publication, and the top-down pose did not settle at an unusual
 80/56 MiB profile on HEAD either. This completes D2, not the entire AI.
+
+### D3 completed — 2026-10-04
+
+This step uses D2 commit `802188db` as its before baseline: four matched views in
+`d3/realism/before/` and seven repetition views in `d3/repetition/before/`, both sealed before
+rendering changed. D1, D1a and D2 remain completed history; D4–D7 remain pending and D4 is next.
+
+- Added world-anchored stochastic hex tiling (`landscape-hex-tiling-v1`, chunk
+  `chunks/landscape/stochastic_tiling.glsl`, exact JavaScript mirror in
+  `LandscapeMaterialSampling.js`) to every natural material and to both the near and macro
+  lattices. A salted equilateral triangle grid with three cells per texture period gives each
+  fragment three samples with hashed offsets and per-material constrained rotations. The lattice
+  is seeded from the landscape seed, so it is deterministic and never depends on the camera.
+- One weight set drives base color, ORM, the relief alpha consumed by the D1a competition and
+  the D2 clumps, and normals, so all material channels stay coherent. UV gradients rotate with
+  each sample before `textureGrad`. Tangent normals are blended as slopes after inverse
+  rotation; a dominant rotated sample lights exactly like the unrotated path.
+- Directional structure: grass, forest soil, rock and unknown substrate rotate freely. Sand and
+  seabed are not rotated and are offset only along the ripple crests, so ripple orientation and
+  phase continue across patch borders.
+- The default `hex-contrast` weighting (barycentric⁷ × relief or luminance signal) preserves
+  contrast. `hex-linear`, `hex-variance` (the Gaussian histogram-preserving operator with exact
+  mip means) and the pre-D3 `single` path remain selectable through
+  `landscapeMaterialSampling`/`setMaterialSampling` for A/B evidence. The full
+  Gaussianized-texture and inverse-LUT method was evaluated offline: it was indistinguishable
+  from `hex-variance` but needed new pages and per-material lookups, so it was not implemented.
+- Cost control: per-material coverage gating, skipping the zero-weight macro lattice and
+  negligible samples (1.86 fetches per lattice on average), a single compiled mode, and a
+  uniform sample count. Samplers stay at fifteen with no new page or allocation. Fixed fragment
+  uniforms rise from 125 to 134 vectors: this machine keeps 81 coverage slots, and the WebGL2
+  minimum keeps 22.
+
+Verification: all 258 landscape Node tests pass, including 11 sampling tests: hash determinism,
+grid and barycentric continuity, rotation and offset constraints, gradient Jacobians, the
+slope chain rule, variance preservation and the GLSL mirror. 34 browser tests across 11 suites
+pass: height blend 3, surface detail 8, seams 2, appearance 6, nature 1, planning 1, streaming 6,
+lifecycle 2, appearance binding 1, fabrication 2 and navigation 2. Authoring 2, city binding 1
+and the three-profile performance gate 1 also pass; `landscape_large_editing` still stops at the pre-existing
+stale city pin (tracked under D7).
+
+The production-shader probe matches the JavaScript lattice at all 2,051 sampled texels. Rotated
+dominant samples differ by 0 bytes from the unrotated path, and the largest step across patch
+borders falls to 2 bytes at 8× zoom. A one-pixel shift gives p99 0. The legacy relief probe
+keeps its 0.0058 weight error with stochastic tiling on and off. A 24-pixel orthographic camera
+move in the real viewer stays within p99 1 byte, so there is no swimming. The `single` mode
+reproduces the sealed HEAD frames within 1 byte apart from 2–3 pixels.
+
+Evidence root: `tests/artifacts/screens/landscape/ai577/d3/`.
+
+- Four matched realism views: `realism/comparisons/01-game-pov-comparison.png` through
+  `04-medium-distance-comparison.png`.
+- Repetition before/after: `comparisons/rep-*.png`; contrast-stretched low-frequency views:
+  `comparisons/stretch-*.png`; four-mode crops: `comparisons/modes-*.png`.
+- Metrics: `repetition/analysis.json`, `histogram/`, `performance/summary.json` and
+  `stability/report.json`. Logs are in `final/`, `final2/` and `realism/`.
+
+Measured on Windows 10.0.26200 x64, Ryzen 5 9600X, RTX 3060 through ANGLE/D3D11, Chromium
+151.0.7922.34, 1920×1080 at DPR 1 and 384/192 MiB, with 30 warm-up and 120 sampled frames and
+completed GPU timer queries. Matched realism views, before → after:
+
+| View | GPU median, ms | GPU p95, ms | CPU median, ms | Draws / triangles | CPU / GPU MiB | Peak upload, bytes/frame |
+| --- | --- | --- | --- | --- | --- | --- |
+| Game POV | 6.910 → 7.628 | 7.609 → 8.237 | 1.20 → 1.20 | 17 / 1,996,804 (unchanged) | 166.9 / 121.8 (unchanged) | 8,143,487 (unchanged) |
+| Oblique | 11.868 → 12.979 | 12.143 → 13.277 | 1.30 → 1.30 | 19 / 2,263,044 (unchanged) | 170.0 / 121.8 (unchanged) | 544,968 (unchanged) |
+| Top-down | 3.401 → 3.762 | 3.504 → 3.826 | 0.50 → 0.60 | 6 / 532,484 (unchanged) | 125.3 / 82.2 (unchanged) | 3,676,703 (unchanged) |
+| Medium distance | 17.466 → 18.698 | 17.808 → 19.263 | 1.20 → 1.30 | 19 / 2,263,044 (unchanged) | 187.3 → 187.6 / 132.3 | 4,494,155 (unchanged) |
+
+Lifetime peaks were 237.6 MiB CPU and 142.8 MiB GPU, and disposal returns zero. The medium view
+now exceeds the 16.7 ms frame budget, so its frame-interval p95 rose to 35.3 ms (occasional
+dropped frames).
+
+Repetition is the Pearson autocorrelation of high-passed luminance at the tile-period lag in
+rendered uniform regions. Values for single → hex-contrast: grass 20 m 0.998 → 0.004; grass
+60 m 0.966 → 0.045 near and 0.982 → 0.020 macro; grass 200 m 0.759 → 0.039; forest 60 m
+0.986 → 0.021 near and 0.993 → 0.008 macro; forest 200 m 0.823 → 0.059; forest 1 km
+0.931 → 0.003; sand 60 m 0.984 → 0.023.
+
+Rendered contrast relative to single sampling (standard deviation; Wasserstein-1 distance in
+sRGB bytes): hex-linear −19…−27% (0.38–1.42); hex-contrast −4.8…+1.2% (0.09–0.47);
+hex-variance +0.8…+6.8% (0.18–0.63).
+
+Mode GPU medians, single / hex-linear / hex-contrast / hex-variance in ms: game POV
+6.87/7.61/7.54/7.70; oblique 11.52/12.56/12.80/13.09; top-down 3.41/3.79/3.74/3.79; aerial
+oblique 16.94/19.78/19.65/20.47; beach POV 5.35/5.96/5.93/6.04; grass 60 m 2.98/3.51/3.26/3.58.
+Compile plus first draw goes from 2.3 s (HEAD) to 3.6 s (hex-contrast).
+
+Limitations: GPU and compile costs grow, and the medium-distance view now drops occasional
+frames at 60 Hz; reductions belong to D6. hex-contrast keeps 1–5% less rendered contrast than
+single sampling. The sand source's faint vertical light streaks remain as irregular ~10 m
+segments, and its macro ripples are still magnified 4× (D4). Patches add faint cellular
+variation of about 0.8 sRGB byte standard deviation at 200 m, so homogeneous sources remain
+required. Removing the grass page's 2.15° mean normal lean darkens sunlit grass by about
+0.45 bytes. Worker CPU and driver VRAM are not measured. This completes D3, not the entire AI.
 
 ## On completion
 

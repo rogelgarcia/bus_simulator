@@ -8,6 +8,7 @@ import { LandscapeWorkerPool } from './LandscapeWorkerPool.js';
 import { computeLandscapeTileEdges } from './LandscapeTileEdges.js';
 import { landscapeNaturalPresentationBytes } from './LandscapeNaturalPresentation.js';
 import { assertLandscapeCoverageSlots } from './LandscapeCoverageSlots.js';
+import { LANDSCAPE_MATERIAL_SAMPLING, landscapeMaterialSamplingMode } from './LandscapeMaterialSampling.js';
 
 const UPLOAD_BYTES_PER_FRAME = 8 * 1024 * 1024;
 const MORPH_SECONDS = .3;
@@ -32,9 +33,11 @@ export function landscapeCameraSnapshot(camera, viewportHeight) {
 }
 
 export class LandscapeStreamer {
-    /** @param {{loaded:any,budget:any,renderer:any,scene:any,coverageSlots:number,mode?:string,lodColors?:boolean,boundaries?:boolean,targetErrorPixels?:number}} options */
-    constructor({ loaded, budget, renderer, scene, coverageSlots, mode = 'shaded', lodColors = false, boundaries = false, targetErrorPixels = 1.5 }) {
+    /** @param {{loaded:any,budget:any,renderer:any,scene:any,coverageSlots:number,materialSampling?:string,mode?:string,lodColors?:boolean,boundaries?:boolean,targetErrorPixels?:number}} options */
+    constructor({ loaded, budget, renderer, scene, coverageSlots, materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, mode = 'shaded', lodColors = false, boundaries = false, targetErrorPixels = 1.5 }) {
         this.coverageSlots = assertLandscapeCoverageSlots(coverageSlots);
+        landscapeMaterialSamplingMode(materialSampling);
+        this.materialSampling = materialSampling;
         this.loaded = loaded;
         this.manifest = loaded.manifest;
         this.budget = budget;
@@ -133,7 +136,7 @@ export class LandscapeStreamer {
 
     uploadRecord(record, camera) {
         if (record.uploaded) return 0;
-        record.model = createLandscapeMesh(record.buffers, record.chunk.heights, { coverageSlots: this.coverageSlots });
+        record.model = createLandscapeMesh(record.buffers, record.chunk.heights, { coverageSlots: this.coverageSlots, materialSampling: this.materialSampling });
         if (this.appearance) record.model.setAppearance(this.appearance.uniforms);
         if (this.planning) record.model.setPlanning(this.planning.uniforms);
         record.model.setMode(this.mode);
@@ -155,6 +158,13 @@ export class LandscapeStreamer {
     setPlanning(planning) {
         this.planning = planning;
         for (const record of this.records.values()) record.model?.setPlanning(planning.uniforms);
+    }
+
+    /** Recompiles every terrain material for a material sampling mode; tiles uploaded later use it too. @param {string} materialSampling */
+    setMaterialSampling(materialSampling) {
+        landscapeMaterialSamplingMode(materialSampling);
+        this.materialSampling = materialSampling;
+        for (const record of this.records.values()) record.model?.setMaterialSampling(materialSampling);
     }
 
     evict(record) {
@@ -476,7 +486,7 @@ export class LandscapeStreamer {
             settled: this.schedulerIdle === true && !this.task && !pending.active && !pending.queued && !this.inspectionUpload,
             desiredLeafIds: this.lastPlan?.desiredLeafIds ?? [this.manifest.overviewId], residentLeafIds: [...this.leaves],
             residentIds: records.map(record => record.id), residentSourceIds: records.filter(record => record.chunk).map(record => record.id),
-            targetErrorPixels: this.targetErrorPixels, desiredErrorPixels: this.lastPlan?.desiredErrorPixels ?? null, achievedErrorPixels,
+            materialSampling: this.materialSampling, targetErrorPixels: this.targetErrorPixels, desiredErrorPixels: this.lastPlan?.desiredErrorPixels ?? null, achievedErrorPixels,
             targetMet: achievedErrorPixels <= this.targetErrorPixels, degradationReason: this.degradationReason ?? (this.task ? 'loading-detail' : null),
             pending: pending.active + pending.queued, canceled: pending.canceled, loaded: this.loadedCount, evicted: this.evictedCount,
             queueDepth: pending.queued, activeWorkers: pending.active, uploadedBytesPerFrame: this.uploadedBytes, peakUploadedBytesPerFrame: this.peakUploadBytes, uploadLimitBytes: UPLOAD_BYTES_PER_FRAME, frameCostMs: this.frameCostMs,

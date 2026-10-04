@@ -53,6 +53,7 @@ varying vec3 vLandscapeWorld;
 
 #include <shaderlib:landscape/surface_warp>
 #include <shaderlib:landscape/material_clumps>
+#include <shaderlib:landscape/stochastic_tiling>
 
 struct SoilSurface {
     vec3 albedo;
@@ -134,6 +135,101 @@ void soilTextures(int soil, vec2 uv, vec2 dx, vec2 dy, out vec3 albedo, out vec3
     }
 }
 
+struct LatticeSample {
+    vec3 albedo;
+    vec3 normal;
+    vec4 orm;
+};
+
+#if LANDSCAPE_MATERIAL_SAMPLING == 0
+LatticeSample soilLattice(int soil, vec2 uv, vec2 dx, vec2 dy, bool macroLattice) {
+    LatticeSample result;
+    vec3 encodedNormal;
+    soilTextures(soil, uv, dx, dy, result.albedo, encodedNormal, result.orm);
+    result.normal = encodedNormal * 2.0 - 1.0;
+    return result;
+}
+#else
+// exact material means from the one-texel mip, following an arriving tier
+void soilMeans(int soil, out vec3 albedo, out vec4 orm) {
+    const float coarsest = 16.0;
+    if (soil == 0) { albedo = textureLod(uSoilBase0, vec2(0.5), coarsest).rgb; orm = textureLod(uSoilSurface0, vec3(0.5, 0.5, 1.0), coarsest); }
+    else if (soil == 1) { albedo = textureLod(uSoilBase1, vec2(0.5), coarsest).rgb; orm = textureLod(uSoilSurface1, vec3(0.5, 0.5, 1.0), coarsest); }
+    else if (soil == 2) { albedo = textureLod(uSoilBase2, vec2(0.5), coarsest).rgb; orm = textureLod(uSoilSurface2, vec3(0.5, 0.5, 1.0), coarsest); }
+    else if (soil == 3) { albedo = textureLod(uSoilBase3, vec2(0.5), coarsest).rgb; orm = textureLod(uSoilSurface3, vec3(0.5, 0.5, 1.0), coarsest); }
+    else if (soil == 4) { albedo = textureLod(uSoilBase4, vec2(0.5), coarsest).rgb; orm = textureLod(uSoilSurface4, vec3(0.5, 0.5, 1.0), coarsest); }
+    else { albedo = textureLod(uSoilBase5, vec2(0.5), coarsest).rgb; orm = textureLod(uSoilSurface5, vec3(0.5, 0.5, 1.0), coarsest); }
+    if (soil == uMaterialBlendIndex) {
+        albedo = mix(albedo, textureLod(uBlendBase, vec2(0.5), coarsest).rgb, uMaterialBlend);
+        orm = mix(orm, textureLod(uBlendSurface, vec3(0.5, 0.5, 1.0), coarsest), uMaterialBlend);
+    }
+}
+
+// one world-anchored lattice: the rotated, offset samples of its grid triangle share one weight set for every surface channel;
+// soils without stochastic parameters take a single unrotated sample through the same loop
+LatticeSample soilLattice(int soil, vec2 uv, vec2 dx, vec2 dy, bool macroLattice) {
+    vec4 stochastic = uSoilStochastic[soil];
+    bool hex = stochastic.x > 0.0;
+#if LANDSCAPE_MATERIAL_SAMPLING == 1
+    float exponent = 1.0;
+#elif LANDSCAPE_MATERIAL_SAMPLING == 2
+    float exponent = stochastic.w;
+#else
+    float exponent = uStochasticSettings.z;
+#endif
+    uint salt = landscapeStochasticSalt(soil, macroLattice);
+    LandscapeHexLattice lattice = landscapeHexLattice(uv, salt, hex ? stochastic.x : 1.0, exponent);
+    vec3 bounds = landscapeHexWeightBounds(lattice.weights);
+#if LANDSCAPE_MATERIAL_SAMPLING == 3
+    vec3 meanAlbedo;
+    vec4 meanOrm;
+    soilMeans(soil, meanAlbedo, meanOrm);
+#else
+    vec3 meanAlbedo = vec3(0.0);
+    vec4 meanOrm = vec4(0.0);
+#endif
+    vec3 albedo = vec3(0.0);
+    vec2 slope = vec2(0.0);
+    vec4 orm = vec4(0.0);
+    float total = 0.0, squares = 0.0;
+    // the sample count is a uniform (always three) so FXC compiles one loop body instead of unrolling it per soil
+    int samples = hex ? min(int(uStochasticSettings.w), 3) : 1;
+    for (int k = 0; k < samples; k++) {
+        float weight = !hex ? 1.0 : k == 0 ? lattice.weights.x : k == 1 ? lattice.weights.y : lattice.weights.z;
+        float bound = !hex ? 1.0 : k == 0 ? bounds.x : k == 1 ? bounds.y : bounds.z;
+        if (bound < uStochasticSettings.y) continue;
+        weight *= smoothstep(uStochasticSettings.y, 2.0 * uStochasticSettings.y, bound);
+        vec2 sampleUv = uv, rotation = vec2(1.0, 0.0);
+        if (hex) landscapeHexVertex(lattice, k, salt, uv, stochastic.y, stochastic.z, sampleUv, rotation);
+        mat2 turn = mat2(rotation.x, rotation.y, -rotation.y, rotation.x);
+        vec3 sampleAlbedo, encodedNormal;
+        vec4 sampleOrm;
+        soilTextures(soil, sampleUv, turn * dx, turn * dy, sampleAlbedo, encodedNormal, sampleOrm);
+#if LANDSCAPE_MATERIAL_SAMPLING == 2
+        weight *= 1.0 - uStochasticSettings.x + uStochasticSettings.x * mix(dot(sampleAlbedo, vec3(0.2126, 0.7152, 0.0722)), sampleOrm.a, uSoilHeightEnabled[soil]);
+#endif
+        albedo += weight * (sampleAlbedo - meanAlbedo);
+        orm += weight * (sampleOrm - meanOrm);
+        slope += weight * landscapeHexSlope(encodedNormal * 2.0 - 1.0, rotation);
+        total += weight;
+        squares += weight * weight;
+    }
+    LatticeSample result;
+#if LANDSCAPE_MATERIAL_SAMPLING == 3
+    float gain = inversesqrt(squares);
+    result.albedo = clamp(meanAlbedo + albedo * gain, 0.0, 1.0);
+    result.orm = clamp(meanOrm + orm * gain, 0.0, 1.0);
+    slope *= gain;
+#else
+    result.albedo = albedo / total;
+    result.orm = orm / total;
+    slope /= total;
+#endif
+    result.normal = normalize(vec3(slope, 1.0));
+    return result;
+}
+#endif
+
 vec3 correctedAlbedo(vec3 color, vec4 correction) {
     const vec3 axis = vec3(0.57735026919);
     float cosine = cos(correction.y), sine = sin(correction.y);
@@ -152,20 +248,20 @@ SoilSurface soilSurface(int soil, vec2 world, vec2 worldDx, vec2 worldDy, vec3 n
     mat2 rotation = mat2(c, s, -s, c);
     float footprint = max(length(worldDx), length(worldDy));
     float macroWeight = smoothstep(tiling.z, tiling.w, footprint);
-    vec3 albedo, detailNormal;
-    vec4 orm;
-    float firstPeriod = macroWeight >= 1.0 ? tiling.y : tiling.x;
-    soilTextures(soil, rotation * world / firstPeriod, rotation * worldDx / firstPeriod, rotation * worldDy / firstPeriod, albedo, detailNormal, orm);
-    if (macroWeight > 0.0 && macroWeight < 1.0) {
-        vec3 macroAlbedo, macroNormal;
-        vec4 macroOrm;
-        soilTextures(soil, rotation * world / tiling.y, rotation * worldDx / tiling.y, rotation * worldDy / tiling.y, macroAlbedo, macroNormal, macroOrm);
-        albedo = mix(albedo, macroAlbedo, macroWeight);
-        detailNormal = mix(detailNormal, macroNormal, macroWeight);
-        orm = mix(orm, macroOrm, macroWeight);
+    // near then macro lattice; footprint bounds keep one inlined lattice body per soil, and transitions blend both
+    LatticeSample lattice = LatticeSample(vec3(0.0), vec3(0.0), vec4(0.0));
+    int firstLattice = macroWeight >= 1.0 ? 1 : 0, lastLattice = macroWeight > 0.0 ? 1 : 0;
+    for (int index = firstLattice; index <= lastLattice; index++) {
+        float period = index == 0 ? tiling.x : tiling.y;
+        float share = firstLattice == lastLattice ? 1.0 : index == 0 ? 1.0 - macroWeight : macroWeight;
+        LatticeSample part = soilLattice(soil, rotation * world / period, rotation * worldDx / period, rotation * worldDy / period, index == 1);
+        lattice.albedo += part.albedo * share;
+        lattice.normal += part.normal * share;
+        lattice.orm += part.orm * share;
     }
-    albedo = correctedAlbedo(albedo, uSoilAlbedo[soil]);
-    detailNormal = detailNormal * 2.0 - 1.0;
+    vec3 albedo = correctedAlbedo(lattice.albedo, uSoilAlbedo[soil]);
+    vec3 detailNormal = lattice.normal;
+    vec4 orm = lattice.orm;
     detailNormal.xy = transpose(rotation) * detailNormal.xy * scale.y;
     vec3 tangent = normalize(vec3(normal.y, -normal.x, 0.0));
     vec3 north = normalize(cross(tangent, normal));

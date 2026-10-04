@@ -138,10 +138,10 @@ Fine pages occupy additional layers of the existing nearest-filtered mask
 `DataArrayTexture`, after the native slots; they add no texture sampler (the fragment
 shader stays at fifteen). Fine slots are marked `meta.w = 2`. Per-slot uniform arrays are
 sized by the compile-time `LANDSCAPE_COVERAGE_SLOTS` define:
-`min(81, floor((maxFragmentUniforms − 125) / 4))` — seventeen native mask slots plus at most
-64 fine slots, four vectors per slot over 125 fixed vectors (warp and clump uniforms
-included). This machine compiles 81 slots (1,024 vectors); the WebGL2 minimum of 224 vectors
-yields 24 slots (7 fine); devices that cannot fit seventeen slots fail explicitly.
+`min(81, floor((maxFragmentUniforms − 134) / 4))` — seventeen native mask slots plus at most
+64 fine slots, four vectors per slot over 134 fixed vectors (warp, clump and D3 stochastic
+tiling uniforms included). This machine compiles 81 slots (1,024 vectors); the WebGL2 minimum
+of 224 vectors yields 22 slots (5 fine); devices below 202 vectors fail explicitly.
 `uMaskSlotRanges` bounds every slot search to resident slots.
 
 The shader reconstruction of each page is the D1 reconstruction: cubic one-hot fallback,
@@ -182,7 +182,9 @@ landscape seed and independent of texture residency, so they are stable through 
 arrival. The interleaved part of a straight ramp measures 0.66 m of the 1.2 m loam|sand
 band, 1.14 of 2.0 m forest|loam, 0.42 of 0.8 m rock|loam and 0.72 of 1.4 m forest|sand;
 clumped area stays within 0.97–1.02× the semantic coverage. Clumps add at most about 0.2 ms
-GPU at the AI577 poses. Historical sidecars without relief metadata keep legacy mixing.
+GPU at the AI577 poses. Historical sidecars without relief metadata keep legacy mixing. Since
+AI577 D3 the relief `h` and texture detail feeding the clump and competition terms are the
+stochastically sampled relief, blended with the same weights as color, normals and ORM.
 
 ## Planning, residency and failure
 

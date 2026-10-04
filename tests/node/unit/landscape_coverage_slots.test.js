@@ -11,7 +11,9 @@ import { LANDSCAPE_SOIL_CATALOG } from '../../../src/app/landscape/LandscapeCata
 const shader = await readFile(new URL('../../../src/graphics/shaders/materials/landscape/terrain.frag.glsl', import.meta.url), 'utf8');
 const warpChunk = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/surface_warp.glsl', import.meta.url), 'utf8');
 const clumpChunk = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/material_clumps.glsl', import.meta.url), 'utf8');
-const expandedShader = shader.replace('#include <shaderlib:landscape/surface_warp>', warpChunk).replace('#include <shaderlib:landscape/material_clumps>', clumpChunk);
+const samplingChunk = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/stochastic_tiling.glsl', import.meta.url), 'utf8');
+const expandedShader = shader.replace('#include <shaderlib:landscape/surface_warp>', warpChunk).replace('#include <shaderlib:landscape/material_clumps>', clumpChunk)
+    .replace('#include <shaderlib:landscape/stochastic_tiling>', samplingChunk);
 const warpSizes = { LANDSCAPE_SURFACE_WARP_OCTAVES: 4 };
 const count = (pattern) => (shader.match(pattern) ?? []).length;
 
@@ -36,16 +38,18 @@ test('Coverage slots: every slot array and slot loop in the terrain shader uses 
 });
 
 test('Coverage slots: conservative uniform accounting sizes the arrays from device fragment-uniform capacity', () => {
-    assert.match(shader, /#include <shaderlib:landscape\/surface_warp>\s+#include <shaderlib:landscape\/material_clumps>/, 'the terrain shader compiles the shared recipe warp chunk and the clump chunk that reuses its lattice noise');
+    assert.match(shader, /#include <shaderlib:landscape\/surface_warp>\s+#include <shaderlib:landscape\/material_clumps>\s+#include <shaderlib:landscape\/stochastic_tiling>/,
+        'the terrain shader compiles the shared recipe warp chunk and the clump and stochastic tiling chunks that reuse its hashing');
     assert.throws(() => landscapeFragmentUniformVectors(expandedShader), /unsupported array size LANDSCAPE_SURFACE_WARP_OCTAVES/, 'the warp octave arrays need their compile-time size');
     const vectors = landscapeFragmentUniformVectors(expandedShader, warpSizes);
-    assert.deepEqual(vectors, { fixedVectors: 125, slotVectors: 4 }, '93 historical vectors, the slot ranges, the warp enable flag, three four-octave warp arrays and 18 clump relief vectors');
+    assert.deepEqual(vectors, { fixedVectors: 134, slotVectors: 4 },
+        '93 historical vectors, the slot ranges, the warp enable flag, three four-octave warp arrays, 18 clump relief vectors and 9 stochastic tiling vectors');
     assert.equal(LANDSCAPE_THREE_FRAGMENT_UNIFORM_VECTORS, 7);
     assert.deepEqual(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 1024, ...vectors }),
-        { total: 81, native: 17, detail: 64, detailMax: 64, maxFragmentUniforms: 1024, fixedUniformVectors: 125, slotUniformVectors: 4 });
-    assert.equal(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 224, ...vectors }).total, 24, 'the WebGL2 minimum still admits 7 detail slots');
-    assert.equal(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 193, ...vectors }).detail, 0);
-    assert.throws(() => resolveLandscapeCoverageSlots({ maxFragmentUniforms: 192, ...vectors }), /\[Landscape\] Device MAX_FRAGMENT_UNIFORM_VECTORS 192 fits 16 terrain coverage slots/);
+        { total: 81, native: 17, detail: 64, detailMax: 64, maxFragmentUniforms: 1024, fixedUniformVectors: 134, slotUniformVectors: 4 });
+    assert.equal(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 224, ...vectors }).total, 22, 'the WebGL2 minimum still admits 5 detail slots');
+    assert.equal(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 202, ...vectors }).detail, 0);
+    assert.throws(() => resolveLandscapeCoverageSlots({ maxFragmentUniforms: 201, ...vectors }), /\[Landscape\] Device MAX_FRAGMENT_UNIFORM_VECTORS 201 fits 16 terrain coverage slots/);
     assert.throws(() => resolveLandscapeCoverageSlots({ maxFragmentUniforms: 1024.5, ...vectors }), /positive integer maxFragmentUniforms/);
 });
 

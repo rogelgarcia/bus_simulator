@@ -47,6 +47,12 @@ function lattice(u, v, salt) {
     return (top + (c + (d - c) * su - top) * sv) * NORMALIZATION;
 }
 
+/** The murmur3 finalizer behind every lattice hash (landscapeWarpMix in GLSL). @param {number} value uint32 @returns {number} uint32 */
+export function landscapeNoiseHash(value) {
+    requireUint32(value, 'hash input');
+    return mix(value | 0) >>> 0;
+}
+
 /** Salt for one noise component and octave of a seed. @param {number} seed @param {number} component @param {number} octave @returns {number} */
 export function landscapeNoiseSalt(seed, component, octave) {
     requireUint32(seed, 'noise seed');

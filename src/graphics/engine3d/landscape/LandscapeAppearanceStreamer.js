@@ -3,11 +3,14 @@
 // Generated fine surface-detail pages extend the mask array when the configured levels, device slots and appearance GPU
 // headroom allow; their two module workers have their contexts reserved before creation, and the recipe warp is shared
 // with the terrain shader so native and coarser coverage meander exactly like the generated pages. Material clump relief
-// uses the same landscape seed once the soil bindings are known; soils without relief metadata keep plain coverage.
+// uses the same landscape seed once the soil bindings are known; soils without relief metadata keep plain coverage. The
+// stochastic material tiling is seeded from that seed as well; its compile-time mode lives in the terrain programs, so
+// the view keeps this record and the geometry streamer's materials in step.
 import { createLandscapeAppearancePlanner, loadLandscapeAppearanceManifest, createLandscapeSurfaceDetailIndex, landscapeSurfaceDetailRecipeHash } from '../../../app/landscape/index.js';
 import { LandscapeAppearanceBudget } from './LandscapeAppearanceBudget.js';
 import { planLandscapeAppearanceDemand } from './LandscapeAppearanceDemand.js';
-import { createLandscapeAppearanceUniforms, setLandscapeMaterialClumpUniforms, setLandscapeSurfaceWarpUniforms, LANDSCAPE_MASK_SLOTS, LANDSCAPE_SOIL_SLOTS } from './LandscapeAppearanceUniforms.js';
+import { createLandscapeAppearanceUniforms, setLandscapeMaterialClumpUniforms, setLandscapeMaterialSamplingUniforms, setLandscapeSurfaceWarpUniforms, LANDSCAPE_MASK_SLOTS, LANDSCAPE_SOIL_SLOTS } from './LandscapeAppearanceUniforms.js';
+import { LANDSCAPE_MATERIAL_SAMPLING, landscapeMaterialSamplingDefinition, landscapeMaterialSamplingMode, landscapeMaterialSamplingSalt, landscapeMaterialSamplingUniforms } from './LandscapeMaterialSampling.js';
 import { LANDSCAPE_MATERIAL_CLUMPS, landscapeMaterialClumpDefinition, landscapeMaterialClumpUniforms } from './LandscapeMaterialBlend.js';
 import { LandscapeMaskPages } from './LandscapeMaskPages.js';
 import { LandscapeMaterialPages } from './LandscapeMaterialPages.js';
@@ -22,10 +25,13 @@ import { LANDSCAPE_SURFACE_DETAIL_RUNTIME, landscapeSurfaceDetailCapacity, lands
 export class LandscapeAppearanceStreamer {
     /**
      * @param {{loaded:any,budget:any,renderer:any,coverageSlots:{total:number,native:number,detail:number,detailMax:number,maxFragmentUniforms:number},appearanceUrl?:string,
-     *   surfaceDetail?:{levels:number},detailCache?:any}} options detailCache is the view-owned LandscapeSurfaceDetailCache (or null)
+     *   surfaceDetail?:{levels:number},detailCache?:any,materialSampling?:string}} options detailCache is the view-owned LandscapeSurfaceDetailCache (or null);
+     *   materialSampling is the compile-time mode of the view's terrain programs
      */
-    constructor({ loaded, budget, renderer, coverageSlots, appearanceUrl, surfaceDetail = { levels: 0 }, detailCache = null }) {
+    constructor({ loaded, budget, renderer, coverageSlots, appearanceUrl, surfaceDetail = { levels: 0 }, detailCache = null, materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode }) {
         Object.assign(this, { loaded, renderer });
+        landscapeMaterialSamplingMode(materialSampling);
+        this.materialSampling = materialSampling;
         this.coverageSlots = coverageSlots;
         this.uniforms = createLandscapeAppearanceUniforms(coverageSlots?.total);
         this.resolveBindingFallback = appearanceUrl === undefined;
@@ -73,6 +79,8 @@ export class LandscapeAppearanceStreamer {
             if (!this.disposed) {
                 this.clumpUniforms = landscapeMaterialClumpUniforms({ seed: this.seed, soils: this.appearance.materials.map(definition => ({ soilId: definition.soilId, enabled: !!definition.height })) });
                 setLandscapeMaterialClumpUniforms(this.uniforms, this.clumpUniforms, true);
+                this.samplingUniforms = landscapeMaterialSamplingUniforms({ seed: this.seed, soils: this.appearance.materials.map(definition => ({ soilId: definition.soilId, enabled: true })) });
+                setLandscapeMaterialSamplingUniforms(this.uniforms, this.samplingUniforms, true);
                 this.planner = createLandscapeAppearancePlanner(this.loaded.manifest, this.appearance, { materialTiling: this.materials.tiling, ...(this.masks.detail ? { surfaceDetail: { levels: this.detailLevels } } : {}) });
                 this.initialized = true;
             }
@@ -168,6 +176,24 @@ export class LandscapeAppearanceStreamer {
         setLandscapeMaterialClumpUniforms(this.uniforms, this.clumpUniforms, enabled);
     }
 
+    /** @param {string} mode compile-time mode the view has applied to its terrain programs */
+    setMaterialSampling(mode) { landscapeMaterialSamplingMode(mode); this.materialSampling = mode; }
+
+    /** @param {boolean} enabled runtime stochastic tiling; disabled soils fall back to the single lattice sample without recompiling */
+    setMaterialSamplingEnabled(enabled) {
+        if (!this.samplingUniforms) throw new Error('[Landscape] Material sampling is configured once the appearance materials are initialized');
+        setLandscapeMaterialSamplingUniforms(this.uniforms, this.samplingUniforms, enabled);
+    }
+
+    samplingSnapshot() {
+        const model = LANDSCAPE_MATERIAL_SAMPLING, enabled = !!this.samplingUniforms && this.uniforms.uSoilStochastic.value.some(value => value !== 0);
+        return { mode: this.materialSampling, define: landscapeMaterialSamplingMode(this.materialSampling), enabled, recipe: model.id, seed: this.seed,
+            contrastFalloff: model.contrastFalloff, weightCutoff: model.weightCutoff, varianceExponent: model.varianceExponent, samplesPerLattice: model.samplesPerLattice, slopeLimit: model.slopeLimit,
+            materials: (this.appearance?.materials ?? []).map(definition => ({ soilId: definition.soilId, materialId: definition.materialId, contrastSignal: definition.height ? 'relief' : 'luminance',
+                nearSalt: landscapeMaterialSamplingSalt(this.seed, definition.soilId), macroSalt: landscapeMaterialSamplingSalt(this.seed, definition.soilId, 'macro'),
+                ...landscapeMaterialSamplingDefinition(definition.soilId) })) };
+    }
+
     clumpSnapshot() {
         return { enabled: this.uniforms.uClumpSettings.value[3] === 1, recipe: LANDSCAPE_MATERIAL_CLUMPS.id, seed: this.seed, gain: LANDSCAPE_MATERIAL_CLUMPS.gain,
             octaves: LANDSCAPE_MATERIAL_CLUMPS.octaves.map(octave => ({ frequency: octave.frequency, amplitude: octave.amplitude })), fadeWavelengths: [LANDSCAPE_MATERIAL_CLUMPS.fadeStartWavelengths, LANDSCAPE_MATERIAL_CLUMPS.fadeEndWavelengths],
@@ -222,6 +248,7 @@ export class LandscapeAppearanceStreamer {
                 amplitudes: [...this.recipe.warp.amplitudes], maxDisplacementMeters: this.warpUniforms.maxDisplacementMeters, appliesTo: 'native-and-coarser-coverage; generated pages carry it baked' },
             materialBlend: materials?.blend ?? null,
             materialClumps: this.clumpSnapshot(),
+            materialSampling: this.samplingSnapshot(),
             materialTiling: this.materials?.tiling ?? {} };
     }
 

@@ -1,13 +1,15 @@
 // Builds isolated material measurements with the unchanged production landscape shaders and uniforms.
 import * as T from 'three';
 import { createLandscapeShaderPayload } from '/src/graphics/shaders/materials/landscape/LandscapeShaderLoader.js';
-import { createLandscapeAppearanceUniforms, chooseLandscapeCoverageSlots, setLandscapeMaterialClumpUniforms } from '/src/graphics/engine3d/landscape/LandscapeAppearanceUniforms.js';
+import { createLandscapeAppearanceUniforms, chooseLandscapeCoverageSlots, setLandscapeMaterialClumpUniforms, setLandscapeMaterialSamplingUniforms } from '/src/graphics/engine3d/landscape/LandscapeAppearanceUniforms.js';
 import { landscapeMaterialClumpUniforms } from '/src/graphics/engine3d/landscape/LandscapeMaterialBlend.js';
+import { landscapeMaterialSamplingUniforms } from '/src/graphics/engine3d/landscape/LandscapeMaterialSampling.js';
 import { LANDSCAPE_SOIL_CATALOG } from '/src/app/landscape/LandscapeCatalog.js';
 import { LandscapeMaskPages } from '/src/graphics/engine3d/landscape/LandscapeMaskPages.js';
 import { buildLandscapeContourCoverage } from '/src/graphics/engine3d/landscape/LandscapeContourCoverage.js';
 
-export function createLandscapeMaterialProbe({ size = 512, toneMapping = false } = {}) {
+// materialSampling selects the compiled production mode (recipe default when omitted); stochastic uniforms start disabled
+export function createLandscapeMaterialProbe({ size = 512, toneMapping = false, materialSampling } = {}) {
     const renderer = new T.WebGLRenderer({ canvas: document.getElementById('surface-probe'), antialias: false, preserveDrawingBuffer: true, powerPreference: 'low-power' });
     renderer.setSize(size, size, false); renderer.setPixelRatio(1);
     renderer.toneMapping = toneMapping ? T.ACESFilmicToneMapping : T.NoToneMapping;
@@ -15,7 +17,7 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false }
     renderer.outputColorSpace = toneMapping ? T.SRGBColorSpace : T.LinearSRGBColorSpace;
     const gl = renderer.getContext(), debug = gl.getExtension('WEBGL_debug_renderer_info');
     const coverageSlots = chooseLandscapeCoverageSlots(renderer).total;
-    const uniforms = createLandscapeAppearanceUniforms(coverageSlots), payload = createLandscapeShaderPayload('terrain', { coverageSlots });
+    const uniforms = createLandscapeAppearanceUniforms(coverageSlots), payload = createLandscapeShaderPayload('terrain', { coverageSlots, ...(materialSampling ? { materialSampling } : {}) });
     const geometry = new T.PlaneGeometry(4096, 4096).rotateX(-Math.PI / 2).translate(1024, 0, 1024);
     geometry.setAttribute('parentHeight', new T.BufferAttribute(new Float32Array(4), 1));
     geometry.setAttribute('parentNormal', geometry.attributes.normal.clone());
@@ -34,10 +36,10 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false }
     resources.push(masks);
     let center = [1024, 1024];
 
-    const texture = (data, resolution, layers = 1, srgb = false) => {
+    const texture = (data, resolution, layers = 1, srgb = false, nearest = false) => {
         const value = layers === 1 ? new T.DataTexture(data, resolution, resolution, T.RGBAFormat) : new T.DataArrayTexture(data, resolution, resolution, layers);
         value.colorSpace = srgb ? T.SRGBColorSpace : T.NoColorSpace;
-        value.magFilter = T.LinearFilter; value.minFilter = T.LinearMipmapLinearFilter; value.generateMipmaps = true;
+        value.magFilter = nearest ? T.NearestFilter : T.LinearFilter; value.minFilter = nearest ? T.NearestFilter : T.LinearMipmapLinearFilter; value.generateMipmaps = !nearest;
         value.wrapS = value.wrapT = T.RepeatWrapping; value.flipY = false; value.needsUpdate = true; resources.push(value); return value;
     };
     const bases = Array.from({ length: 6 }, () => texture(new Uint8Array([80, 80, 80, 255]), 1));
@@ -92,6 +94,17 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false }
         bases.forEach((base, soil) => { base.image.data.set(colors[soil], 0); base.needsUpdate = true; });
     }
 
+    // seed null disables stochastic tiling (single unrotated lattice sample); otherwise the catalog parameters of enabled soils apply
+    function setStochastic(seed, enabled = Array(6).fill(true)) {
+        const sampling = landscapeMaterialSamplingUniforms({ seed: seed ?? 0, soils: LANDSCAPE_SOIL_CATALOG.map((soil, index) => ({ soilId: soil.id, enabled: !!enabled[index] })) });
+        setLandscapeMaterialSamplingUniforms(uniforms, sampling, seed !== null);
+    }
+
+    function setMaterialSampling(mode) {
+        const next = createLandscapeShaderPayload('terrain', { coverageSlots, materialSampling: mode });
+        material.vertexShader = next.vertexSource; material.fragmentShader = next.fragmentSource; material.needsUpdate = true;
+    }
+
     function draw({ span = 4, offsetX = 0, offsetZ = 0, tilt = 0 } = {}) {
         camera.left = camera.bottom = -span / 2; camera.right = camera.top = span / 2;
         camera.position.set(center[0] + offsetX, 1000, center[1] + offsetZ - tilt * 1000);
@@ -142,7 +155,7 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false }
     }
 
     setCoverage([0, 0, 1, 0, 0, 0]); setSynthetic();
-    return { size, renderer, uniforms, material, texture, setCoverage, setSynthetic, setClumps, setColors, draw, measureWeights, setBoundary, setPatternedHeights,
+    return { size, renderer, uniforms, material, texture, setCoverage, setSynthetic, setClumps, setColors, setStochastic, setMaterialSampling, draw, measureWeights, setBoundary, setPatternedHeights,
         setCenter(value) { center = value; },
         snapshot: () => renderer.domElement.toDataURL('image/png'),
         rendererName: gl.getParameter(debug?.UNMASKED_RENDERER_WEBGL ?? gl.RENDERER),

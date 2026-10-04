@@ -14,7 +14,12 @@ color or removal of physical normal/roughness detail.
 Choose replacement sources by inspecting both one tile and repeated views at game
 POV, oblique and aerial scales. A seamless edge alone does not satisfy this rule.
 Do not hide mixed-material source content through a global contrast adjustment.
-Source selection comes before later stochastic anti-tiling. Broad ecological,
+Source selection comes before later stochastic anti-tiling. AI577 D3 samples every natural
+material with world-anchored stochastic hex tiling: it reshuffles, rotates and blends copies of
+the tile, so a distinctive feature would still recur at random positions, and homogeneous
+sources remain required. Sand and seabed keep their ripple orientation (no rotation, offsets
+along the crests only). Random rotation removes a page's mean normal lean; the grass page's
+2.15° lean shifts sunlit grass by about −0.45 sRGB bytes. Broad ecological,
 moisture and soil variation belongs to the terrain coverage/appearance model,
 where it can have an intentional landscape-scale distribution.
 

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { LANDSCAPE_SURFACE_COVERAGE } from './LandscapeSurfaceCoverage.js';
 import { LANDSCAPE_CONTOUR_COVERAGE } from './LandscapeContourCoverage.js';
 import { LANDSCAPE_MATERIAL_BLEND, LANDSCAPE_MATERIAL_CLUMP_OCTAVES, LANDSCAPE_MATERIAL_CLUMPS } from './LandscapeMaterialBlend.js';
+import { LANDSCAPE_MATERIAL_SAMPLING } from './LandscapeMaterialSampling.js';
 import { assertLandscapeCoverageSlots, resolveLandscapeCoverageSlots } from './LandscapeCoverageSlots.js';
 import { landscapeTerrainUniformVectors, landscapeTerrainWarpDefines } from '../../shaders/materials/landscape/LandscapeShaderLoader.js';
 
@@ -11,6 +12,7 @@ export { LANDSCAPE_MASK_SLOTS, LANDSCAPE_DETAIL_SLOTS_MAX, LANDSCAPE_COVERAGE_SL
 export const LANDSCAPE_SOIL_SLOTS = 6;
 const WARP_ARRAYS = Object.freeze({ uLandscapeWarpWaves: 4, uLandscapeWarpOffsets: 4, uLandscapeWarpSalts: 2 });
 const CLUMP_ARRAYS = Object.freeze(['uSoilClumps', 'uSoilClumpSalts', 'uClumpOctaves', 'uClumpSettings', 'uClumpConfidence']);
+const SAMPLING_ARRAYS = Object.freeze(['uSoilStochastic', 'uSoilStochasticSalts', 'uStochasticSettings']);
 
 /** @param {{capabilities:{maxFragmentUniforms:number}}} renderer @returns {ReturnType<typeof resolveLandscapeCoverageSlots>} */
 export function chooseLandscapeCoverageSlots(renderer) {
@@ -46,10 +48,25 @@ export function setLandscapeMaterialClumpUniforms(uniforms, clumps, enabled) {
     uniforms.uClumpSettings.value[3] = enabled ? 1 : 0;
 }
 
+/**
+ * Copies stochastic tiling parameters (landscapeMaterialSamplingUniforms) into shared appearance uniforms; disabled sampling
+ * zeroes every soil's lattice cells, which selects the single lattice sample without recompiling the terrain programs.
+ * @param {any} uniforms @param {Readonly<Record<string, Float32Array|Int32Array>>} sampling @param {boolean} enabled
+ */
+export function setLandscapeMaterialSamplingUniforms(uniforms, sampling, enabled) {
+    if (typeof enabled !== 'boolean') throw new Error('[Landscape] Material sampling enablement must be boolean');
+    for (const name of SAMPLING_ARRAYS) {
+        const source = sampling?.[name], target = uniforms[name]?.value;
+        if (!ArrayBuffer.isView(source) || !target || source.length !== target.length || source.constructor !== target.constructor) throw new Error(`[Landscape] Material sampling ${name} does not match the terrain interface`);
+        target.set(source);
+    }
+    if (!enabled) uniforms.uSoilStochastic.value.fill(0);
+}
+
 /** @param {number} coverageSlots compile-time terrain coverage slot count @returns {any} */
 export function createLandscapeAppearanceUniforms(coverageSlots) {
     const slots = assertLandscapeCoverageSlots(coverageSlots), octaves = landscapeTerrainWarpDefines().LANDSCAPE_SURFACE_WARP_OCTAVES;
-    const coverage = LANDSCAPE_SURFACE_COVERAGE, blend = LANDSCAPE_MATERIAL_BLEND, clumps = LANDSCAPE_MATERIAL_CLUMPS;
+    const coverage = LANDSCAPE_SURFACE_COVERAGE, blend = LANDSCAPE_MATERIAL_BLEND, clumps = LANDSCAPE_MATERIAL_CLUMPS, sampling = LANDSCAPE_MATERIAL_SAMPLING;
     const uniforms = {
         uAppearanceReady: { value: 0 },
         uMaskPages: { value: null },
@@ -80,6 +97,9 @@ export function createLandscapeAppearanceUniforms(coverageSlots) {
         uClumpOctaves: { value: new Float32Array(LANDSCAPE_MATERIAL_CLUMP_OCTAVES * 4) },
         uClumpSettings: { value: Float32Array.of(clumps.gain, clumps.fadeStartWavelengths, clumps.fadeEndWavelengths, 0) },
         uClumpConfidence: { value: Float32Array.of(clumps.coverageConfidence[0], clumps.coverageConfidence[1], clumps.reliefFloor, 0) },
+        uSoilStochastic: { value: new Float32Array(LANDSCAPE_SOIL_SLOTS * 4) },
+        uSoilStochasticSalts: { value: new Int32Array(8) },
+        uStochasticSettings: { value: Float32Array.of(sampling.contrastFalloff, sampling.weightCutoff, sampling.varianceExponent, sampling.samplesPerLattice) },
         uBlendBase: { value: null },
         uBlendSurface: { value: null },
         uSurfaceWarpEnabled: { value: 0 },

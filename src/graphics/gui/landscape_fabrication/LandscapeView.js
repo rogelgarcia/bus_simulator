@@ -16,6 +16,7 @@ import { chooseLandscapeCoverageSlots } from '../../engine3d/landscape/Landscape
 import { LANDSCAPE_SURFACE_LEVEL_COLORS, LANDSCAPE_SURFACE_SOIL_COLORS } from '../../engine3d/landscape/LandscapeTerrainDiagnostics.js';
 import { LandscapeSurfaceDetailCache, landscapeSurfaceDetailCacheCapacity } from '../../engine3d/landscape/LandscapeSurfaceDetailCache.js';
 import { landscapeCoverageMaskLayout } from '../../engine3d/landscape/LandscapeSurfaceCoverage.js';
+import { LANDSCAPE_MATERIAL_SAMPLING, landscapeMaterialSamplingMode } from '../../engine3d/landscape/LandscapeMaterialSampling.js';
 import { LandscapeBookmarks } from './LandscapeBookmarks.js';
 import { LandscapePerformanceCapture } from './LandscapePerformanceCapture.js';
 import { readLandscapeTerrainReport } from '../../../app/landscape/LandscapeTerrainReports.js';
@@ -26,9 +27,11 @@ const DEFAULT_SOURCE = '/assets/public/landscape/coastal-city/manifest.json';
 export const LANDSCAPE_SURFACE_DETAIL_MODES = Object.freeze({ off: 0, '50cm': 2, '25cm': 3 });
 
 export class LandscapeView {
-    /** @param {HTMLCanvasElement} canvas @param {{source?:string,budgets?:{cpuBytes?:number,gpuBytes?:number},surfaceDetail?:'off'|'50cm'|'25cm'}} options */
-    constructor(canvas, { source = DEFAULT_SOURCE, budgets = {}, surfaceDetail = '25cm' } = {}) {
+    /** @param {HTMLCanvasElement} canvas @param {{source?:string,budgets?:{cpuBytes?:number,gpuBytes?:number},surfaceDetail?:'off'|'50cm'|'25cm',materialSampling?:string}} options */
+    constructor(canvas, { source = DEFAULT_SOURCE, budgets = {}, surfaceDetail = '25cm', materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode } = {}) {
         if (!Object.hasOwn(LANDSCAPE_SURFACE_DETAIL_MODES, surfaceDetail)) throw new Error(`[Landscape] surfaceDetail must be one of ${Object.keys(LANDSCAPE_SURFACE_DETAIL_MODES).join(', ')}; received ${surfaceDetail}`);
+        landscapeMaterialSamplingMode(materialSampling);
+        this.materialSampling = materialSampling;
         this.canvas = canvas;
         this.surfaceDetail = surfaceDetail;
         this.surfaceDetailLevels = LANDSCAPE_SURFACE_DETAIL_MODES[surfaceDetail];
@@ -130,7 +133,8 @@ export class LandscapeView {
         try {
             const loaded = await loadLandscapeOverview(this.source, { signal: this.loadAbort.signal });
             if (this.disposed || sequence !== this.loadSequence) return;
-            const stream = new LandscapeStreamer({ loaded, budget: this.budget, renderer: this.renderer, scene: this.scene, coverageSlots: this.coverageSlots.total, mode: this.mode, lodColors: this.lodColors, boundaries: this.boundaries });
+            const stream = new LandscapeStreamer({ loaded, budget: this.budget, renderer: this.renderer, scene: this.scene, coverageSlots: this.coverageSlots.total, materialSampling: this.materialSampling,
+                mode: this.mode, lodColors: this.lodColors, boundaries: this.boundaries });
             this.loadingStream = stream;
             await stream.initialize(this.camera);
             if (this.disposed || sequence !== this.loadSequence) { stream.dispose(); return; }
@@ -146,7 +150,7 @@ export class LandscapeView {
             this.loadingStream = null;
             this.loadTiming.coarseReadyAtMs = performance.now();
             const appearance = new LandscapeAppearanceStreamer({ loaded, budget: this.budget, renderer: this.renderer, coverageSlots: this.coverageSlots,
-                surfaceDetail: { levels: this.surfaceDetailLevels }, detailCache: this.ensureDetailCache(loaded) });
+                surfaceDetail: { levels: this.surfaceDetailLevels }, detailCache: this.ensureDetailCache(loaded), materialSampling: this.materialSampling });
             this.appearance = this.loadingAppearance = appearance;
             stream.setAppearance(appearance);
             this.water = createLandscapeWaterReference({ manifest: loaded.manifest, budget: this.budget, scene: this.scene, visible: this.waterVisible });
@@ -214,6 +218,24 @@ export class LandscapeView {
         if (!this.appearance) throw new Error('[Landscape] Load the landscape appearance before changing material clump relief');
         this.appearance.setMaterialClumps(enabled);
         return this.appearance.snapshot().materialClumps;
+    }
+
+    /** Recompiles the terrain programs for a stochastic material sampling mode (A/B evidence; the program compiles on the next draw). @param {string} mode */
+    setMaterialSampling(mode) {
+        landscapeMaterialSamplingMode(mode);
+        this.materialSampling = mode;
+        this.loadingStream?.setMaterialSampling(mode);
+        this.stream?.setMaterialSampling(mode);
+        this.loadingAppearance?.setMaterialSampling(mode);
+        this.appearance?.setMaterialSampling(mode);
+        return this.appearance?.snapshot().materialSampling ?? { mode };
+    }
+
+    /** @param {boolean} enabled runtime stochastic tiling of the compiled mode; disabled soils keep one lattice sample */
+    setMaterialSamplingEnabled(enabled) {
+        if (!this.appearance) throw new Error('[Landscape] Load the landscape appearance before changing material sampling');
+        this.appearance.setMaterialSamplingEnabled(enabled);
+        return this.appearance.snapshot().materialSampling;
     }
 
     resize() {
@@ -647,6 +669,7 @@ export class LandscapeView {
             streaming: this.stream?.snapshot() ?? null, budget: this.budget.snapshot(),
             appearance: this.appearance?.snapshot() ?? null, water: this.water?.snapshot() ?? { visible: false, seaLevel: null },
             surfaceDetail: { mode: this.surfaceDetail, levels: this.surfaceDetailLevels, cache: this.detailCache?.snapshot() ?? null },
+            materialSampling: this.materialSampling,
             planning: this.planning?.snapshot() ?? { ready: false, settled: !this.reloading, features: [], errors: [], cpuBytes: 0, gpuBytes: 0 },
             bookmarks: this.bookmarkStore?.snapshot() ?? [], report: this.report,
             uploadedBytesPerFrame: (this.stream?.snapshot().uploadedBytesPerFrame ?? 0) + (this.appearance?.snapshot().uploadedBytesPerFrame ?? 0) + (this.planning?.uploadedBytes ?? 0),

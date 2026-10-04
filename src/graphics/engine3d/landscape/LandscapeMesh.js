@@ -10,7 +10,11 @@ import { createLandscapeDiagnosticUniforms } from './LandscapeTerrainDiagnostics
 const LOD_COLORS = [0x687dba, 0x46b89b, 0xe4b76c, 0xd279a8, 0x92ba5e, 0x7cadd9];
 export const OVERVIEW_MEMORY_CAP = 32 * 1024 * 1024;
 
-/** @param {any} buffers @param {Float32Array} sourceHeights @param {{coverageSlots:number}} options view-wide compile-time coverage slot count @returns {any} */
+/**
+ * @param {any} buffers @param {Float32Array} sourceHeights
+ * @param {{coverageSlots:number,materialSampling?:string}} options view-wide compile-time coverage slot count and material sampling mode
+ * @returns {any}
+ */
 export function createLandscapeMesh(buffers, sourceHeights, options) {
     const { descriptor } = buffers;
     const { bounds } = descriptor;
@@ -21,7 +25,7 @@ export function createLandscapeMesh(buffers, sourceHeights, options) {
         uBounds: { value: new THREE.Vector4(bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ) }
     };
     const coverageSlots = options?.coverageSlots;
-    const terrainPayload = createLandscapeShaderPayload('terrain', { coverageSlots });
+    const terrainPayload = createLandscapeShaderPayload('terrain', { coverageSlots, ...(options?.materialSampling ? { materialSampling: options.materialSampling } : {}) });
     const material = new THREE.ShaderMaterial({
         vertexShader: terrainPayload.vertexSource,
         fragmentShader: terrainPayload.fragmentSource,
@@ -83,6 +87,12 @@ export function createLandscapeMesh(buffers, sourceHeights, options) {
             Object.assign(material.uniforms, uniforms); material.uniformsNeedUpdate = true;
         },
         setPlanning(uniforms) { Object.assign(material.uniforms, uniforms); material.uniformsNeedUpdate = true; },
+        /** @param {string} materialSampling compile-time material sampling mode; the program recompiles on the next draw */
+        setMaterialSampling(materialSampling) {
+            const payload = createLandscapeShaderPayload('terrain', { coverageSlots, materialSampling });
+            material.vertexShader = payload.vertexSource; material.fragmentShader = payload.fragmentSource; material.needsUpdate = true;
+            attachShaderMetadata(material, payload);
+        },
         setEdges(edges, morph = [1, 1, 1, 1]) { sharedUniforms.uEdges.value.set(...edges); sharedUniforms.uEdgeMorph.value.set(...morph); },
         setLodColors(enabled) { material.uniforms.uLodColor.value = enabled ? .78 : 0; },
         setMode(value) {

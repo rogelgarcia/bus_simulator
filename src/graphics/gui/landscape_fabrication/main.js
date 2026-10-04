@@ -1,6 +1,7 @@
 // Starts the standalone landscape tool and exposes deterministic verification hooks.
 import { LandscapeView, LANDSCAPE_SURFACE_DETAIL_MODES } from './LandscapeView.js';
 import { LANDSCAPE_STREAMING_BUDGETS } from '../../../app/landscape/LandscapeResidencyBudget.js';
+import { LANDSCAPE_MATERIAL_SAMPLING, LANDSCAPE_MATERIAL_SAMPLING_MODES } from '../../engine3d/landscape/LandscapeMaterialSampling.js';
 
 const canvas = document.getElementById('game-canvas');
 const parameters = new URL(location.href).searchParams;
@@ -14,7 +15,9 @@ for (const [parameter, key] of [['landscapeCpuMiB', 'cpuBytes'], ['landscapeGpuM
 }
 const surfaceDetail = parameters.get('landscapeSurfaceDetail') ?? '25cm';
 if (!Object.hasOwn(LANDSCAPE_SURFACE_DETAIL_MODES, surfaceDetail)) throw new Error(`landscapeSurfaceDetail must be one of ${Object.keys(LANDSCAPE_SURFACE_DETAIL_MODES).join(', ')}; received ${surfaceDetail}`);
-const view = new LandscapeView(canvas, { ...(source ? { source } : {}), budgets, surfaceDetail });
+const materialSampling = parameters.get('landscapeMaterialSampling') ?? LANDSCAPE_MATERIAL_SAMPLING.defaultMode;
+if (!Object.hasOwn(LANDSCAPE_MATERIAL_SAMPLING_MODES, materialSampling)) throw new Error(`landscapeMaterialSampling must be one of ${Object.keys(LANDSCAPE_MATERIAL_SAMPLING_MODES).join(', ')}; received ${materialSampling}`);
+const view = new LandscapeView(canvas, { ...(source ? { source } : {}), budgets, surfaceDetail, materialSampling });
 window.__landscapeTestHooks = Object.freeze({
     snapshot: () => view.snapshot(),
     setMode: mode => view.setMode(mode),
@@ -32,6 +35,8 @@ window.__landscapeTestHooks = Object.freeze({
     detailSample: (x, z) => view.detailSample(x, z),
     setSurfaceWarp: enabled => view.setSurfaceWarp(enabled),
     setMaterialClumps: enabled => view.setMaterialClumps(enabled),
+    setMaterialSampling: mode => view.setMaterialSampling(mode),
+    setMaterialSamplingEnabled: enabled => view.setMaterialSamplingEnabled(enabled),
     setBudgets: options => view.setBudgets(options),
     beginPerformanceCapture: options => view.beginPerformanceCapture(options),
     endPerformanceCapture: () => view.endPerformanceCapture(),
